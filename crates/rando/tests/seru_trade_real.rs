@@ -533,20 +533,40 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
     gap(seru_overlay::TRADE_STR_VA, seru_overlay::TRADE_STR);
     gap(seru_overlay::ENTRY_STUB_VA, &entry);
     gap(seru_overlay::TRADE_DISPATCH_STUB_VA, &disp);
-    gap(seru_overlay::TRADE_HANDLER_VA, &handler);
     gap(seru_overlay::TITLE_STR_VA, seru_overlay::TITLE_STR);
 
-    // Lower-gap routines don't overlap (entry < dispatch < handler), and the grown
-    // handler body stays below the flee-EXP routine window at TRADE_HANDLER_END.
+    // The handler is embedded in the menu overlay 0899 (run-C dead region), not the
+    // SCUS gap: it lands at TRADE_HANDLER_VA - SLOT_A_BASE and stays within run-C.
+    let menu = patcher
+        .read_entry(seru_overlay::HANDLER_OVL_PROT_INDEX)
+        .expect("menu overlay");
+    let hoff = (seru_overlay::TRADE_HANDLER_VA - seru_overlay::SLOT_A_BASE) as usize;
+    assert_eq!(
+        &menu[hoff..hoff + handler.len()],
+        handler.as_slice(),
+        "handler embedded in 0899 at run-C"
+    );
+    assert!(
+        seru_overlay::TRADE_HANDLER_VA + handler.len() as u32 <= seru_overlay::TRADE_HANDLER_END,
+        "trade handler overruns the 0899 run-C dead region"
+    );
+
+    // The SCUS lower-gap stubs don't overlap and stay below the bucket table.
     assert!(
         seru_overlay::ENTRY_STUB_VA + entry.len() as u32 <= seru_overlay::TRADE_DISPATCH_STUB_VA
     );
     assert!(
-        seru_overlay::TRADE_DISPATCH_STUB_VA + disp.len() as u32 <= seru_overlay::TRADE_HANDLER_VA
+        seru_overlay::TRADE_DISPATCH_STUB_VA + disp.len() as u32 <= seru_overlay::BUCKET_TABLE_VA
     );
+    // The entry stub contains a `j` to the 0899-hosted handler VA (the gating jump).
+    let entry_words: Vec<u32> = entry
+        .chunks_exact(4)
+        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .collect();
+    let j_handler = 0x0800_0000 | ((seru_overlay::TRADE_HANDLER_VA & 0x0fff_ffff) >> 2);
     assert!(
-        seru_overlay::TRADE_HANDLER_VA + handler.len() as u32 <= seru_overlay::TRADE_HANDLER_END,
-        "trade handler overruns the flee-EXP window"
+        entry_words.contains(&j_handler),
+        "entry stub jumps to the 0899 handler VA"
     );
     // Upper row-4 gap tail packs cleanly: row-4 stub < @Trade < title < flag, all
     // below the config blob at 0x8007AF00.
@@ -568,10 +588,6 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
     // and the entry stub / handler reference the same flag cell.
     let flag_lui = 0x3c01_0000 | (seru_overlay::TRADE_ACTIVE_VA.wrapping_add(0x8000) >> 16);
     let disp_words: Vec<u32> = disp
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-        .collect();
-    let entry_words: Vec<u32> = entry
         .chunks_exact(4)
         .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
         .collect();
@@ -602,8 +618,7 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
         seru_trade::bucket_offers(seed, seru_trade::BUCKET_COUNT, &seru_trade::default_pool()),
         "on-disc schedule round-trips to the kernel offers"
     );
-    // The schedule sits in the gap tail, above the handler and below the row-4 stub.
-    assert!(seru_overlay::BUCKET_TABLE_VA >= seru_overlay::TRADE_HANDLER_VA + handler.len() as u32);
+    // The schedule sits in the SCUS gap tail, below the row-4 stub.
     assert!(
         seru_overlay::BUCKET_TABLE_VA + seru_overlay::BUCKET_TABLE_LEN as u32
             <= seru_overlay::ROW4_STUB_VA

@@ -955,7 +955,6 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
     let row4 = ov::words_to_bytes(&ov::assemble_row4_draw_stub_str(ov::QUIT_STR_VA));
     let entry = ov::words_to_bytes(&ov::assemble_trade_entry_stub());
     let disp = ov::words_to_bytes(&ov::assemble_trade_dispatch_stub());
-    let handler = ov::words_to_bytes(&ov::assemble_trade_handler());
     // The precomputed vendor schedule the handler indexes by play-time bucket: one
     // `[want, give]` pair per bucket, derived deterministically from `seed`.
     let bucket_table = st::bucket_table_to_bytes(&st::bucket_offers(
@@ -963,12 +962,11 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
         st::BUCKET_COUNT,
         &st::default_pool(),
     ));
-    let blobs: [(u32, &[u8], &str); 7] = [
+    let blobs: [(u32, &[u8], &str); 6] = [
         (ov::ROW4_STUB_VA, &row4, "row-4 draw stub"),
         (ov::TRADE_STR_VA, ov::TRADE_STR, "@Trade label"),
         (ov::ENTRY_STUB_VA, &entry, "entry stub"),
         (ov::TRADE_DISPATCH_STUB_VA, &disp, "dispatch stub"),
-        (ov::TRADE_HANDLER_VA, &handler, "trade handler"),
         (ov::TITLE_STR_VA, ov::TITLE_STR, "title string"),
         (ov::BUCKET_TABLE_VA, &bucket_table, "bucket schedule"),
     ];
@@ -978,6 +976,27 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
             .patch_named_file(SCUS_NAME, off as u64, bytes)
             .with_context(|| format!("write {what}"))?;
     }
+
+    // --- The trade handler: embedded in the menu overlay 0899's resident run-C dead
+    // region (reference-free, all-zero across the trade + slide states), so it stays
+    // resident through every shop with room to grow — no SCUS gap squeeze, no CD load.
+    let handler = ov::words_to_bytes(&ov::assemble_trade_handler());
+    let handler_off = (ov::TRADE_HANDLER_VA - base) as usize;
+    if ov::TRADE_HANDLER_VA + handler.len() as u32 > ov::TRADE_HANDLER_END {
+        anyhow::bail!("trade handler overruns the 0899 run-C dead region");
+    }
+    if menu
+        .get(handler_off..handler_off + handler.len())
+        .is_none_or(|r| r.iter().any(|&b| b != 0))
+    {
+        anyhow::bail!(
+            "0899 handler region {:#x} is not all-zero dead space",
+            ov::TRADE_HANDLER_VA
+        );
+    }
+    patcher
+        .patch_prot_entry(ov::HANDLER_OVL_PROT_INDEX, handler_off as u64, &handler)
+        .context("write trade handler into menu overlay 0899")?;
     Ok(())
 }
 

@@ -461,20 +461,31 @@ pub const TRADE_ACTIVE_VA: u32 = 0x8007_AEC0;
 pub const ENTRY_STUB_VA: u32 = 0x8007_AB38;
 /// Reorder dispatch stub (cursor 2 → Trade sub-mode, 3 → Quit, 0/1 → Buy/Sell).
 pub const TRADE_DISPATCH_STUB_VA: u32 = 0x8007_AB68;
-/// The in-shop trade-screen handler (draws + input + swap; runs in mode 0x17). Its
-/// body grows downward from here up to [`TRADE_HANDLER_END`] = [`BUCKET_TABLE_VA`].
-/// In the standalone in-shop trade build the bonus-drop / flee-EXP routines are off,
-/// so the whole window `0x8007ABB0..0x8007AE00` (past the flee-EXP slot at `0x8007AD00`)
-/// is free; the handler takes the lower 464 bytes and the bucket table the upper 128.
-pub const TRADE_HANDLER_VA: u32 = 0x8007_ABB0;
-/// Upper bound the handler body must stay below — the precomputed [`BUCKET_TABLE_VA`].
-pub const TRADE_HANDLER_END: u32 = BUCKET_TABLE_VA;
+/// The in-shop trade-screen handler (draws + input + swap; runs in mode 0x17).
+///
+/// HOSTED IN THE MENU OVERLAY 0899, not the tiny SCUS rodata gap: the gap only had
+/// ~116 words free, far too little for the full screen (slide + cursor + confirm +
+/// swap). 0899 is the overlay that hosts the shop and is resident throughout it, and
+/// it carries a large reference-free zero region (run-C, file `0x18CC7`, VA
+/// `0x801E74DF`, ~0xF00 bytes) that is part of the loaded image (reloaded with the
+/// overlay) and verified all-zero across the trade screen + both slide-transition
+/// states — so the handler embeds there, resident during every shop, with ~960 words
+/// of room and no runtime CD load. The entry detour (in the SCUS gap) `j`s here.
+pub const TRADE_HANDLER_VA: u32 = 0x801E_74E0;
+/// Upper bound the handler body must stay below (end of the 0899 run-C dead region,
+/// `0x801E83E2`, rounded down with a small margin).
+pub const TRADE_HANDLER_END: u32 = 0x801E_83E0;
+/// PROT entry hosting the handler (the menu overlay — same entry the picker edits
+/// target). Its load base is [`SLOT_A_BASE`]; the handler's file offset is
+/// `TRADE_HANDLER_VA - SLOT_A_BASE`.
+pub const HANDLER_OVL_PROT_INDEX: usize = PICKER_MENU_PROT_INDEX;
 
 /// The randomizer's precomputed vendor schedule (one `[want_id, give_id]` pair per
 /// time bucket; see [`legaia_asset::seru_trade::bucket_offers`] /
 /// [`legaia_asset::seru_trade::bucket_table_to_bytes`]). 128 bytes
-/// ([`legaia_asset::seru_trade::BUCKET_TABLE_LEN`]) in the gap tail, abutting the
-/// row-4 stub at [`STUB_VA`] (`0x8007AE00`). The handler indexes it by
+/// ([`legaia_asset::seru_trade::BUCKET_TABLE_LEN`]) in the SCUS rodata gap tail,
+/// abutting the row-4 stub at [`STUB_VA`] (`0x8007AE00`); resident always, so the
+/// 0899-hosted handler reads it by absolute address. The handler indexes it by
 /// `(play_time / `[`RESEED_PERIOD_FRAMES`]`) & `[`BUCKET_INDEX_MASK`].
 pub const BUCKET_TABLE_VA: u32 = 0x8007_AD80;
 /// Byte length of the on-disc bucket schedule (mirrors the shared kernel).
@@ -562,8 +573,8 @@ pub fn assemble_trade_dispatch_stub() -> Vec<u32> {
     w[b_trade] = beq(A0, T0, (trade as i32 - (b_trade as i32 + 1)) as i16);
     w[b_quit] = beq(A0, T0, (quit as i32 - (b_quit as i32 + 1)) as i16);
     debug_assert!(
-        TRADE_DISPATCH_STUB_VA + (w.len() as u32) * 4 <= TRADE_HANDLER_VA,
-        "dispatch stub overruns into the handler window"
+        TRADE_DISPATCH_STUB_VA + (w.len() as u32) * 4 <= BUCKET_TABLE_VA,
+        "dispatch stub overruns the SCUS gap (into the bucket table)"
     );
     w
 }
@@ -786,7 +797,7 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w[xb] = beq(T1, ZERO, (noexit as i32 - (xb as i32 + 1)) as i16);
     debug_assert!(
         TRADE_HANDLER_VA + (w.len() as u32) * 4 <= TRADE_HANDLER_END,
-        "trade handler overruns into the bucket-table window"
+        "trade handler overruns the 0899 run-C dead region"
     );
     w
 }
@@ -1739,9 +1750,10 @@ mod tests {
     #[test]
     fn trade_handler_renders_per_owner_offer() {
         let h = assemble_trade_handler();
-        // Fits its gap window (handler below the bucket table at TRADE_HANDLER_END).
-        assert!(TRADE_HANDLER_VA + (h.len() as u32) * 4 <= TRADE_HANDLER_END);
-        assert_eq!(TRADE_HANDLER_END, BUCKET_TABLE_VA);
+        // Fits the 0899 run-C dead region it's embedded in, and is hosted in that
+        // overlay (VA inside the 0899 image window), not the SCUS gap.
+        let end = TRADE_HANDLER_VA + (h.len() as u32) * 4;
+        assert!(end <= TRADE_HANDLER_END && TRADE_HANDLER_VA >= SLOT_A_BASE);
         // Refreshes the pad, draws native text + the level number + the window box.
         assert!(h.contains(&jal(PAD_POLL_FN)), "refreshes the pad");
         assert!(h.contains(&jal(TEXT_DRAW_FN)), "draws native text");
