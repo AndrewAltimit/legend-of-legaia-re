@@ -433,6 +433,23 @@ pub const QUIT_CODE_VA: u32 = 0x801D_B0D0;
 /// Dispatcher exit (shared `jal 0x80031d00` tail).
 pub const TRADE_EXIT_VA: u32 = 0x801D_B200;
 
+// --- Native window-slide (reuse the shop's own widget scripts) -----------------
+//
+// The shop windows are actor-VM widget scripts: `FUN_801d6628(&script)` interprets
+// 4-byte commands `[opcode, window_idx, p0, p1]` (terminator opcode `0`) over the
+// window table at `0x801e4738`. Opcode 1 = open/slide-in, opcode 4 = close/slide-
+// away. The Sell transition runs `DAT_801e4e54` = close {0x28, 0x2a (picker), 0x22},
+// leaving the gold (0x20) + vendor-name (0x21) boxes — exactly the "slide the menus
+// away, keep gold + name" effect. We reuse that on Trade entry, and the full open
+// script `DAT_801e4e38` (opens 0x21/0x2a/0x20/0x28/0x22) to slide them back on exit.
+
+/// Widget-script VM `FUN_801d6628(a0 = &script)` (overlay 0899, resident in-shop).
+pub const WIDGET_VM_FN: u32 = 0x801D_6628;
+/// The Sell slide-AWAY script `DAT_801e4e54`: close windows 0x28 / 0x2a / 0x22.
+pub const SLIDE_AWAY_SCRIPT_VA: u32 = 0x801E_4E54;
+/// The picker OPEN script `DAT_801e4e38`: (re)open windows 0x21/0x2a/0x20/0x28/0x22.
+pub const SLIDE_OPEN_SCRIPT_VA: u32 = 0x801E_4E38;
+
 /// `FUN_801dafd4` entry detour: route sub-mode 3 to the trade handler.
 pub const ENTRY_VA: u32 = 0x801D_AFD4;
 /// Rejoin after the replayed prologue (`lui s1,0x801e`).
@@ -562,6 +579,17 @@ pub fn assemble_trade_dispatch_stub() -> Vec<u32> {
     w.push(j(BUY_SELL_CHECK_VA)); // cursor 0/1 -> Buy/Sell
     w.push(nop());
     let trade = w.len();
+    // Slide the picker windows away (reuse the Sell transition) so the trade screen
+    // gets the cleared space. Preserve ra across the call — we exit via `j TRADE_EXIT`
+    // whose tail `jr ra` must still return to the menu tick.
+    w.push(addiu(SP, SP, 0xFFF8)); // sp -= 8
+    w.push(sw(RA, SP, 0));
+    w.push(lui(A0, hi(SLIDE_AWAY_SCRIPT_VA)));
+    w.push(addiu(A0, A0, lo(SLIDE_AWAY_SCRIPT_VA)));
+    w.push(jal(WIDGET_VM_FN)); // FUN_801d6628(&DAT_801e4e54) — slide away
+    w.push(nop());
+    w.push(lw(RA, SP, 0));
+    w.push(addiu(SP, SP, 8));
     w.push(addiu(T1, ZERO, 1)); //  \ TRADE_ACTIVE = 1 (private flag, menu-safe)
     w.push(lui(AT, hi(TRADE_ACTIVE_VA))); //  |
     w.push(sw(T1, AT, lo(TRADE_ACTIVE_VA))); //  /
@@ -781,6 +809,12 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(0); // beq t1,zero,.noexit (patched)
     w.push(nop());
     w.push(sw(ZERO, AT, lo(TRADE_ACTIVE_VA))); // clear the flag -> picker resumes
+    // Slide the picker windows back in (reuse the open script). ra is reloaded in the
+    // epilogue, so clobbering it here is fine; WIDGET_VM_FN preserves s0..s5.
+    w.push(lui(A0, hi(SLIDE_OPEN_SCRIPT_VA)));
+    w.push(addiu(A0, A0, lo(SLIDE_OPEN_SCRIPT_VA)));
+    w.push(jal(WIDGET_VM_FN)); // FUN_801d6628(&DAT_801e4e38) — slide back in
+    w.push(nop());
     let noexit = w.len();
     w.push(jal(FINALIZE_FN)); // FUN_801dafd4's per-frame finalize tail
     w.push(nop());
@@ -1809,6 +1843,22 @@ mod tests {
         assert!(
             h.contains(&sw(ZERO, AT, lo(TRADE_ACTIVE_VA))),
             "clears the flag"
+        );
+        // On exit it slides the picker windows back in via the widget VM.
+        assert!(
+            h.contains(&jal(WIDGET_VM_FN)),
+            "exit slides the picker back in"
+        );
+        assert!(
+            h.contains(&addiu(A0, A0, lo(SLIDE_OPEN_SCRIPT_VA))),
+            "exit runs the open script"
+        );
+        // The dispatch stub slides the picker away (Sell script) on Trade confirm.
+        let d = assemble_trade_dispatch_stub();
+        assert!(d.contains(&jal(WIDGET_VM_FN)), "Trade confirm slides away");
+        assert!(
+            d.contains(&addiu(A0, A0, lo(SLIDE_AWAY_SCRIPT_VA))),
+            "confirm runs the Sell slide-away script"
         );
     }
 
