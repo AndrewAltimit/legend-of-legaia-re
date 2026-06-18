@@ -475,7 +475,7 @@ pub const TRADE_HANDLER_END: u32 = BUCKET_TABLE_VA;
 /// [`legaia_asset::seru_trade::bucket_table_to_bytes`]). 128 bytes
 /// ([`legaia_asset::seru_trade::BUCKET_TABLE_LEN`]) in the gap tail, abutting the
 /// row-4 stub at [`STUB_VA`] (`0x8007AE00`). The handler indexes it by
-/// `(play_time / `[`SECONDS_PER_RESEED`]`) & `[`BUCKET_INDEX_MASK`].
+/// `(play_time / `[`RESEED_PERIOD_FRAMES`]`) & `[`BUCKET_INDEX_MASK`].
 pub const BUCKET_TABLE_VA: u32 = 0x8007_AD80;
 /// Byte length of the on-disc bucket schedule (mirrors the shared kernel).
 pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
@@ -484,10 +484,14 @@ pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
 /// reads it to pick the current bucket; the engine mirrors it as
 /// `World::play_time_seconds`.
 pub const PLAY_TIME_VA: u32 = 0x8008_4570;
-/// In-game seconds per offer reseed (two hours), mirrored from
-/// [`legaia_asset::seru_trade::SECONDS_PER_RESEED`]. Fits a 16-bit `addiu` immediate
-/// (`0x1C20`), so the handler divides by it directly.
-pub const SECONDS_PER_RESEED: u16 = legaia_asset::seru_trade::SECONDS_PER_RESEED as u16;
+/// Reseed period in **play-time ticks** (the unit of `_DAT_80084570`). HW-pinned:
+/// the counter advances ~per-frame (≈60/s), NOT per-second as the memory-map label
+/// suggests — a maxed save read `0x80084570 ≈ 10.4M`, which is ~48 h at 60/s, not
+/// the absurd ~2900 h it would be at 1/s. So the kernel's seconds-based
+/// `SECONDS_PER_RESEED` (engine-facing) does NOT apply here; the handler divides the
+/// frame counter by this. `32400` ticks ≈ 9 minutes at 60/s, and fits a single
+/// `addiu` immediate (`0x7E90 < 0x8000`); the full 64-bucket cycle is then ~9.6 h.
+pub const RESEED_PERIOD_FRAMES: u16 = 32400;
 /// Mask folding the raw bucket into the precomputed schedule
 /// (`BUCKET_COUNT - 1`; [`BUCKET_COUNT`](legaia_asset::seru_trade::BUCKET_COUNT) is a
 /// power of two, so the runtime modulo is a single `andi`).
@@ -593,7 +597,7 @@ pub fn assemble_trade_entry_stub() -> Vec<u32> {
 ///
 /// Renders the **want-a-type / offer-a-partner** offer (see
 /// [`legaia_asset::seru_trade`]): it reads the current `(want, give)` pair from the
-/// precomputed [`BUCKET_TABLE_VA`] indexed by `(play_time / `[`SECONDS_PER_RESEED`]`)
+/// precomputed [`BUCKET_TABLE_VA`] indexed by `(play_time / `[`RESEED_PERIOD_FRAMES`]`)
 /// & `[`BUCKET_INDEX_MASK`], draws the give-back seru as a reward header, then scans
 /// the four party records — for each member that owns the wanted seru it draws one
 /// selectable line `want_name  owner_name  LVL n` (so the same wanted type held by
@@ -642,10 +646,10 @@ pub fn assemble_trade_handler() -> Vec<u32> {
         w.push(addiu(S3, ZERO, SERU_DEMO_BASE_ID)); // want
         w.push(addiu(T5, ZERO, SERU_DEMO_BASE_ID + 1)); // give
     } else {
-        // bucket = (play_time / SECONDS_PER_RESEED) & (BUCKET_COUNT-1); entry = *2.
+        // bucket = (play_time / RESEED_PERIOD_FRAMES) & (BUCKET_COUNT-1); entry = *2.
         w.push(lui(AT, hi(PLAY_TIME_VA)));
         w.push(lw(T0, AT, lo(PLAY_TIME_VA)));
-        w.push(addiu(T1, ZERO, SECONDS_PER_RESEED)); // (fills the lw load-delay)
+        w.push(addiu(T1, ZERO, RESEED_PERIOD_FRAMES)); // (fills the lw load-delay)
         w.push(divu(T0, T1));
         w.push(mflo(T0)); // t0 = bucket
         w.push(andi(T0, T0, BUCKET_INDEX_MASK)); // % BUCKET_COUNT

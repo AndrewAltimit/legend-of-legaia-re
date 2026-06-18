@@ -47,7 +47,7 @@ citation table.
 | Address | Type | Purpose | Cheat citation |
 |---|---|---|---|
 | `0x80084540` | u16 | Active scene-name pool slot (also "Map Modifier"). | `View Credits` writes `0x030C` (credits scene). |
-| `0x80084570` | u32 | Game-time seconds counter. | `Game Time 0:00:00` zeroes it. |
+| `0x80084570` | u32 | Game-time play counter — advances ~per-frame (≈60/s), NOT per-second (the save screen divides it down for the `HH:MM:SS` display); a maxed save reads ~10.4M ≈ 48 h at 60/s. | `Game Time 0:00:00` zeroes it. |
 | `0x80084594` | u8 | Party member count. | `Character Activator` writes `0x03`. |
 | `0x80084599` | u8 | Noa "join the party" gate. | `Noa Activator` writes `0x01`. |
 | `0x8008459A` | u8 | Gala join-party gate. | `Gala Activator` writes `0x02`. |
