@@ -2292,7 +2292,11 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * in-shop trading vendor (a fourth Buy/Sell/Trade/Quit row) that swaps a party
  * member's learned Seru-magic for a different one at a fixed level, on a
  * time-bucketed schedule derived from the seed; all of it is hosted in the menu
- * overlay, so it composes with every other option here.
+ * overlay, so it composes with every other option here. `enemy_ally` injects a
+ * code hook into battle setup so that, with a per-battle chance, a random enemy
+ * is charmed onto the party's side as an uncontrolled ally (works in any fight,
+ * bosses included), plus a one-word widen of the victory check so the ally isn't
+ * an enemy you must defeat.
  * `starting_level`
  * begins the new game at that character level instead of 1 (`0` or `1` =
  * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -2331,9 +2335,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * @param {boolean} solo_strong_encounters
  * @param {boolean} flee_exp
  * @param {boolean} seru_trade
+ * @param {boolean} enemy_ally
  * @returns {any}
  */
-export function patch_rom(image, seed, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade) {
+export function patch_rom(image, seed, drops, encounters, encounter_scope, chests, shops, casino, steals, arts, doors, door_coupling, house_doors, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, monster_stats, move_power, element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally) {
     const ptr0 = passArray8ToWasm0(image, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -2370,7 +2375,7 @@ export function patch_rom(image, seed, drops, encounters, encounter_scope, chest
     const len16 = WASM_VECTOR_LEN;
     const ptr17 = passStringToWasm0(equip_bonus, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len17 = WASM_VECTOR_LEN;
-    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr13, len13, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade);
+    const ret = wasm.patch_rom(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, starting_items, door_of_wind, incense, speed_chain, chicken_heart, good_luck_bell, all_warps, unused_enemies, unused_items, equipment_drops, ptr13, len13, ptr14, len14, ptr15, len15, ptr16, len16, ptr17, len17, weapon_specialty, starting_level, solo_strong_encounters, flee_exp, seru_trade, enemy_ally);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

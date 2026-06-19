@@ -122,6 +122,7 @@ legaia-rando randomize --input DISC.bin --seed brutal --monster-stats shuffle \
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
 legaia-rando randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops   # +low-chance bonus gear drop
 legaia-rando randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
+legaia-rando randomize --input DISC.bin --seed pal --enemy-ally                         # 20% chance an enemy fights on your side
 legaia-rando randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
 legaia-rando randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
@@ -151,7 +152,10 @@ grants one extra random equipment piece on a low per-battle chance
 (see [Equipment drops](#equipment-drops)); `--flee-exp` injects a code hook into
 the battle-action escape teardown so a successful run banks `--flee-exp-pct`%
 (default 5) of the fled fight's experience into the party (see
-[Run-away EXP](#run-away-exp)); `--seru-trade` embeds a config so the clean-room
+[Run-away EXP](#run-away-exp)); `--enemy-ally` injects a code hook into battle
+setup so that, with `--enemy-ally-pct`% chance (default 20), a random enemy is
+charmed onto the party's side as an uncontrolled ally - bosses included (see
+[Enemy ally (charm)](#enemy-ally-charm)); `--seru-trade` embeds a config so the clean-room
 engine lets vendors swap one of a character's seru for another, reseeding every
 two in-game hours (`--seru-trade-offers N` caps offers per vendor; see
 [Seru trading](#seru-trading));
@@ -445,6 +449,51 @@ default in the web Balanced / Full Chaos presets.
 > displaced pair; the detour + routine decode as the hand-assembled code; each
 > edit is surgical and EDC/ECC-valid; the build guard refuses an unknown layout)
 > plus an emulator playtest.
+
+### Enemy ally (charm)
+
+`--enemy-ally` gives a per-battle chance (`--enemy-ally-pct`%, default **20**)
+that a random enemy fights on the **player's** side as an uncontrolled ally - a
+guest-character-style helper that can appear in any fight, bosses included
+(`enemy_ally` module).
+
+A genuine 4th player-side combatant is infeasible: retail battles are hard-wired
+to 3 party slots + up to 4 monster slots (`FUN_800513F0`; party meshes/CLUTs/HUD
+exist only for slots 0..2). So instead this rides a mechanic the game already
+implements - the **"AI-delegated" flag**. Setting an actor's `+0x16E |= 0x380`
+makes the action SM `FUN_801E295C` call the retarget helper `FUN_801E7320` at
+ActionSeed, which **flips that actor's target to the opposite side**; for a
+*monster*, the flip means it attacks the *other monsters*. The monster AI picker
+`FUN_801E9FD4` already honours `0x380` (plain attacks, no scripted specials), so
+"an enemy assists you" is just "set `0x380` on one monster at battle setup".
+
+Two same-size SCUS edits plus a one-word overlay edit (`apply::inject_enemy_ally`):
+
+1. a **setup detour** at `FUN_800513F0` `0x80051990` (right after the monster
+   loop, so the actor table + enemy count are populated) into a routine in the
+   preserved rodata gap at `0x8007ACA0` - the free window between the
+   equipment-drop routine+table (`0x8007AB80`..`0x8007ACA0`) and the flee-EXP
+   routine (`0x8007AD00`), so every gap feature coexists. The routine rolls the
+   chance and OR's `0x380` into the frontmost enemy (actor slot 3, `0x801C937C`,
+   always present), then replays the displaced pair and returns;
+2. a **victory-mask widen** in battle-action overlay 0898 at `0x801E6638`
+   (`andi v0,v0,0x4` -> `andi v0,v0,0x384`), so a `0x380`-charmed monster counts
+   as "down" in the monster-wipe gate (state `0x5A`) and the player doesn't have
+   to defeat their own ally to win.
+
+The planner guards on the SCUS hook words, the routine landing zone being all-zero
+dead space, and the overlay victory word matching the known `andi v0,v0,0x4` -
+refusing a differently-laid-out image rather than corrupting it. On a solo-enemy
+boss the lone enemy turns on itself. (Side effect: while on, a vanilla
+*confuse*-on-an-enemy - which also sets `0x380` - likewise stops counting toward
+"enemies remaining".) On by default in the web Balanced / Full Chaos presets.
+
+> Like the other code hooks, the clean-room engine can't execute injected MIPS, so
+> this has no engine runtime oracle. It is verified by the byte/disassembly checks
+> in `enemy_ally_real` (the real disc's hook site **is** `lui v1,0x8008` /
+> `lbu v1,-0x42f4(v1)` and the victory site **is** `andi v0,v0,0x4`; the detour +
+> routine decode as the hand-assembled code; it composes with flee-EXP in the same
+> gap; each edit is surgical and EDC/ECC-valid) plus an emulator playtest.
 
 ### Seru trading
 
@@ -1196,6 +1245,7 @@ bit-for-bit.
 | `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
 | `crates/rando` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/rando` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
+| `crates/rando` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |

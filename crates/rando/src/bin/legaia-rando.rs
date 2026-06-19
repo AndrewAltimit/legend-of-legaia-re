@@ -201,6 +201,16 @@ struct RandomizeArgs {
     /// (only with `--flee-exp`).
     #[arg(long, default_value_t = legaia_rando::flee_exp::DEFAULT_PCT)]
     flee_exp_pct: u8,
+    /// With `--enemy-ally-pct`% probability per battle, **charm a random enemy**
+    /// onto the party's side as an uncontrolled ally (a same-size code hook into
+    /// battle setup that sets the AI-delegated bits on the frontmost enemy, plus a
+    /// one-word widen of the victory check so the ally isn't an enemy you must
+    /// defeat). Works in any fight, bosses included.
+    #[arg(long, default_value_t = false)]
+    enemy_ally: bool,
+    /// Per-battle percentage chance an enemy is charmed (only with `--enemy-ally`).
+    #[arg(long, default_value_t = legaia_rando::enemy_ally::DEFAULT_PCT)]
+    enemy_ally_pct: u8,
     /// Let vendors offer to **trade** one of a character's seru for a different
     /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
     /// clean-room engine renders the trade UI and reseeds each vendor's offers
@@ -1232,6 +1242,22 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push(format!("flee_exp_pct = {}", report.pct));
     } else {
         manifest.push("flee_exp = false".to_string());
+    }
+
+    // Enemy ally ("charm"): a code hook in battle setup flags the frontmost enemy
+    // with the AI-delegated bits so it fights for the party (works on bosses), and
+    // a one-word widen of the victory check keeps it from being an enemy you must
+    // defeat.
+    if args.enemy_ally {
+        let report = apply::inject_enemy_ally(&mut patcher, args.enemy_ally_pct)?;
+        println!(
+            "enemy-ally: {}% chance per battle a random enemy fights on your side",
+            report.pct
+        );
+        manifest.push("enemy_ally = true".to_string());
+        manifest.push(format!("enemy_ally_pct = {}", report.pct));
+    } else {
+        manifest.push("enemy_ally = false".to_string());
     }
 
     // Seru trading: embed an enabled flag + the run's seed so the clean-room

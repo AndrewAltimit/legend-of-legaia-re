@@ -26,6 +26,7 @@ full design.
   - [Bonus equipment drop](#bonus-equipment-drop)
   - [Encounters](#encounters)
   - [Run-away EXP](#run-away-exp)
+  - [Enemy ally (charm)](#enemy-ally-charm)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
   - [Steals](#steals)
@@ -239,6 +240,27 @@ code injection**, not a data edit.
 The grant is **banked**, not an immediate level-up: it only writes the experience
 cell, so it shows in the status screen at once and applies as a level the next
 time a won battle tallies it. `apply::inject_flee_exp` performs the two edits.
+
+## Enemy ally (charm)
+
+Gives a per-battle chance (`--enemy-ally`, `--enemy-ally-pct`%, default **20**)
+that a random enemy fights on the player's side as an uncontrolled ally - any
+fight, bosses included (`enemy_ally` module). Retail can't host a genuine 4th
+party combatant (battles are hard-wired to 3 party + 4 monster slots), so this
+rides the stock **AI-delegated** flag: setting an actor's `+0x16E |= 0x380` makes
+the action SM retarget it to the opposite side, so a flagged *monster* attacks the
+other monsters. `apply::inject_enemy_ally` performs three same-size edits:
+
+- a **setup detour** at `FUN_800513F0` `0x80051990` (after the monster loop) into
+  a routine at `0x8007ACA0` - the gap window between the equipment-drop
+  routine+table and the flee-EXP routine, so every gap feature coexists - that
+  rolls the chance and OR's `0x380` into the frontmost enemy (actor slot 3),
+- a **victory-mask widen** in battle-action overlay 0898 at `0x801E6638`
+  (`andi v0,v0,0x4` -> `0x384`), so the charmed enemy counts as "down" in the
+  monster-wipe gate and the player needn't defeat their own ally.
+
+Same guards as the other hooks (known build at both sites, all-zero dead space at
+the routine). On a solo-enemy boss the lone enemy turns on itself.
 
 ## Seru trading
 
@@ -639,6 +661,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Drops | `current_drops` | `apply_drop_plan` / `randomize_drops` | a `DropApplyReport` records any slot too tight to re-pack. |
 | Equipment drops | - | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance - additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
 | Run-away EXP | - | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape - vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
+| Enemy ally (charm) | - | `inject_enemy_ally` | injects a code hook into battle setup that, on a per-battle chance, sets the AI-delegated bits (`0x380`) on the frontmost enemy so it fights on the player's side, plus a one-word widen of the victory check so the ally isn't an enemy you must defeat (a `SCUS_942.54` detour + gap routine + an overlay-0898 edit via `enemy_ally`). |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |
 | Encounters | - | `randomize_encounters` / `randomize_encounters_scoped` / `randomize_encounters_full` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). `_full` adds the optional [solo-strong](#solo-strong-fights) pass (`SoloStrongConfig`) on top of any scope/mode. |

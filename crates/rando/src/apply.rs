@@ -227,6 +227,54 @@ pub fn inject_flee_exp(patcher: &mut DiscPatcher, pct: u8) -> Result<FleeExpRepo
     Ok(FleeExpReport { pct: plan.pct })
 }
 
+/// Outcome of injecting the enemy-ally ("charm") feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnemyAllyReport {
+    /// Per-battle probability (percent) that an enemy is charmed onto the party's
+    /// side.
+    pub pct: u8,
+}
+
+/// Inject the **enemy-ally ("charm")** feature (see [`crate::enemy_ally`]): a code
+/// hook into battle setup that, with `pct`% probability per battle, flags the
+/// frontmost enemy with the AI-delegated bits (`+0x16E |= 0x380`) so it fights on
+/// the player's side - an uncontrolled ally that can appear in any fight,
+/// including bosses. A companion one-word widen of the victory check stops a
+/// charmed enemy from counting as an enemy you must defeat.
+///
+/// Three same-size edits: the setup detour + the routine blob in preserved
+/// `SCUS_942.54` rodata padding, and the victory-mask widen in the battle-action
+/// overlay's raw PROT entry. Fails (without touching the disc) if the build isn't
+/// the recognized US layout.
+pub fn inject_enemy_ally(patcher: &mut DiscPatcher, pct: u8) -> Result<EnemyAllyReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for enemy-ally injection")?;
+    let overlay = patcher
+        .read_entry(crate::enemy_ally::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay for enemy-ally injection")?;
+    let plan = crate::enemy_ally::EnemyAllyInjection::plan(&scus, &overlay, pct)?;
+
+    // Setup detour + routine live in SCUS; the victory-mask widen lives in the
+    // battle-action overlay PROT entry (raw, linear from base).
+    let detour: Vec<u8> = plan.detour.iter().flat_map(|w| w.to_le_bytes()).collect();
+    patcher
+        .patch_named_file(SCUS_NAME, plan.scus_hook_off as u64, &detour)
+        .context("write battle-setup detour")?;
+    patcher
+        .patch_named_file(SCUS_NAME, plan.routine_off as u64, &plan.blob)
+        .context("write injected enemy-ally routine")?;
+    patcher
+        .patch_prot_entry(
+            crate::enemy_ally::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+            plan.overlay_victory_off as u64,
+            &plan.victory_word.to_le_bytes(),
+        )
+        .context("write victory-mask widen")?;
+
+    Ok(EnemyAllyReport { pct: plan.pct })
+}
+
 /// Outcome of enabling seru trading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeruTradeReport {

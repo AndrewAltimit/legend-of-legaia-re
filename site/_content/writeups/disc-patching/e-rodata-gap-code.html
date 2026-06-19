@@ -12,12 +12,12 @@
 <section class="doc-section" id="mechanism">
   <h2>Mechanism at a glance</h2>
   <dl class="kv">
-    <dt>Why code</dt><dd>the change can't be a data edit: a second drop the one slot can't hold; an XP grant the flee teardown never reaches</dd>
+    <dt>Why code</dt><dd>the change can't be a data edit: a second drop the one slot can't hold; an XP grant the flee teardown never reaches; a charmed enemy no static table can flag</dd>
     <dt>Host</dt><dd>a reclaimed all-zero run of <code>SCUS_942.54</code> rodata (always resident), holding the hand-assembled routine</dd>
-    <dt>Hooks</dt><dd>bonus drop - reward routine <code>0x8004F610</code> &rarr; gap <code>0x8007AB80</code>; flee-EXP - escape teardown <code>0x801E5A10</code> (battle overlay) &rarr; gap <code>0x8007AD00</code></dd>
+    <dt>Hooks</dt><dd>bonus drop - reward routine <code>0x8004F610</code> &rarr; gap <code>0x8007AB80</code>; flee-EXP - escape teardown <code>0x801E5A10</code> (battle overlay) &rarr; gap <code>0x8007AD00</code>; enemy ally - battle setup <code>0x80051990</code> &rarr; gap <code>0x8007ACA0</code> (+ a one-word victory-check widen in the battle overlay)</dd>
     <dt>Detour shape</dt><dd>overwrite two instructions with <code>j routine</code> + <code>nop</code>; the routine runs the work, replays the displaced instructions, jumps back to the return address</dd>
     <dt>Edit class</dt><dd>in-place / same-size; <strong>consumes the shared rodata gap</strong></dd>
-    <dt>Oracles</dt><dd><code>equipment_drops_real.rs</code> &middot; <code>flee_exp_real.rs</code></dd>
+    <dt>Oracles</dt><dd><code>equipment_drops_real.rs</code> &middot; <code>flee_exp_real.rs</code> &middot; <code>enemy_ally_real.rs</code></dd>
   </dl>
 </section>
 
@@ -34,11 +34,14 @@
   <p>A monster record has exactly one drop slot, so &ldquo;also drop a rare piece of gear&rdquo; cannot be a data edit - there is nowhere to put the second item. The detour goes into the battle-end reward routine (<code>FUN_8004E568</code>) at <code>0x8004F610</code>, displacing two instructions; the gap routine at <code>0x8007AB80</code> rolls the per-battle chance, picks an equipment id from a small table appended right after it in the gap, grants it on top of the normal drop, replays the displaced pair, and returns to <code>0x8004F618</code>. The normal drop is never disturbed.</p>
   <h3>Run-away EXP - the path that grants nothing</h3>
   <p>The battle-action escape teardown (the state-machine <code>FUN_801E295C</code>, state <code>0x66</code>) tears the fight down without ever reaching an experience grant, so rewarding a successful flee needs code. The detour sits at <code>0x801E5A10</code> - inside the <strong>battle overlay</strong> - and routes to a routine in the always-resident SCUS gap at <code>0x8007AD00</code> that banks a configured percentage of the fled formation's EXP into the party. The split is deliberate: the hook lives in the overlay (reloaded each battle), but the routine lives in SCUS so it survives every overlay swap.</p>
+  <h3>Enemy ally - charm an enemy instead of adding one</h3>
+  <p>&ldquo;Have an enemy fight for you&rdquo; sounds like adding a party member, but retail battles are hard-wired to three party slots (the setup loop <code>FUN_800513F0</code> is bounded <code>&lt; 3</code>, and party meshes / HUD only exist for slots 0&ndash;2), so a genuine fourth combatant isn't possible. The trick is to reuse a state the game already has: <strong>Confuse/Charm</strong>. The action SM flips an actor's target to the opposite side when its <code>+0x16E &amp; 0x380</code> &ldquo;AI-delegated&rdquo; bits are set - the mechanism behind a confused party member attacking allies. Set the same bits on an <em>enemy</em> at battle setup and that enemy attacks the other enemies. So the gap routine is tiny: it just rolls the per-battle chance and OR-s <code>0x380</code> into the frontmost enemy's flags. The detour to it sits at <code>0x80051990</code> (in SCUS, right after the monster-setup loop, so the actor table is populated) and the routine lives at <code>0x8007ACA0</code> - the free window between the bonus-drop and flee-EXP routines.</p>
+  <p>It needs one companion edit outside the gap. The monster-wipe victory check counts a monster as &ldquo;down&rdquo; only if it is dead or non-targetable (<code>andi v0,v0,0x4</code> at <code>0x801E6638</code> in the battle overlay); a charmed-but-alive enemy would otherwise be one you still had to defeat. Widening that mask to <code>0x384</code> (a one-instruction edit) makes a <code>0x380</code>-charmed enemy also count as down, so the battle ends once the <em>real</em> enemies fall. On a solo-enemy boss the lone enemy simply turns on itself.</p>
 </section>
 
 <section class="doc-section" id="gap-map">
   <h2>The contended resource</h2>
-  <p>Both routines, the unused-item name string, the engine config blob, and an overlay-loader stub all live in the same ~1&nbsp;KB run. Each tenant guards its slot as all-zero, so they compose - but the region is finite, and that ceiling is exactly why a whole interactive screen goes somewhere else.</p>
+  <p>The three routines, the unused-item name string, the engine config blob, and an overlay-loader stub all live in the same ~1&nbsp;KB run. Each tenant guards its slot as all-zero, so they compose - but the region is finite, and that ceiling is exactly why a whole interactive screen goes somewhere else.</p>
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gap-map-title">
       <title id="gap-map-title">Occupants of the shared SCUS rodata gap</title>
@@ -55,37 +58,43 @@
       <text x="20" y="22" class="gp-band">Shared SCUS rodata gap - ~1 KB, guarded all-zero (0x8007AB38 &ndash; 0x8007AF40)</text>
       <rect x="20" y="34" width="840" height="300" class="gp-frame"/>
 
-      <text x="36" y="74" class="gp-addr">0x8007AB40</text>
-      <rect x="150" y="52" width="600" height="40" class="gp-card"/>
-      <text x="166" y="70" class="gp-owner">Seru Bell name string</text>
-      <text x="166" y="85" class="gp-sub">10 bytes &middot; variant I (--unused-items)</text>
-      <text x="744" y="76" class="gp-tag">data</text>
+      <text x="36" y="68" class="gp-addr">0x8007AB40</text>
+      <rect x="150" y="46" width="600" height="40" class="gp-card"/>
+      <text x="166" y="64" class="gp-owner">Seru Bell name string</text>
+      <text x="166" y="79" class="gp-sub">10 bytes &middot; variant I (--unused-items)</text>
+      <text x="744" y="70" class="gp-tag">data</text>
 
-      <text x="36" y="130" class="gp-addr">0x8007AB80</text>
-      <rect x="150" y="108" width="600" height="40" class="gp-card"/>
-      <text x="166" y="126" class="gp-owner">Bonus-equipment routine + id table</text>
-      <text x="166" y="141" class="gp-sub">~128 bytes &middot; Tier E (--equipment-drops)</text>
-      <text x="744" y="132" class="gp-tag">code</text>
+      <text x="36" y="116" class="gp-addr">0x8007AB80</text>
+      <rect x="150" y="94" width="600" height="40" class="gp-card"/>
+      <text x="166" y="112" class="gp-owner">Bonus-equipment routine + id table</text>
+      <text x="166" y="127" class="gp-sub">~128 bytes &middot; Tier E (--equipment-drops)</text>
+      <text x="744" y="118" class="gp-tag">code</text>
 
-      <text x="36" y="186" class="gp-addr">0x8007AD00</text>
-      <rect x="150" y="164" width="600" height="40" class="gp-card"/>
-      <text x="166" y="182" class="gp-owner">Run-away-EXP routine</text>
-      <text x="166" y="197" class="gp-sub">~237 bytes &middot; Tier E (--flee-exp)</text>
-      <text x="744" y="188" class="gp-tag">code</text>
+      <text x="36" y="164" class="gp-addr">0x8007ACA0</text>
+      <rect x="150" y="142" width="600" height="40" class="gp-card"/>
+      <text x="166" y="160" class="gp-owner">Enemy-ally charm routine</text>
+      <text x="166" y="175" class="gp-sub">~76 bytes &middot; Tier E (--enemy-ally)</text>
+      <text x="744" y="166" class="gp-tag">code</text>
 
-      <text x="36" y="242" class="gp-addr">0x8007AE00</text>
-      <rect x="150" y="220" width="600" height="40" class="gp-card"/>
-      <text x="166" y="238" class="gp-owner">Overlay-loader stub</text>
-      <text x="166" y="253" class="gp-sub">groundwork</text>
-      <text x="744" y="244" class="gp-tag">code</text>
+      <text x="36" y="212" class="gp-addr">0x8007AD00</text>
+      <rect x="150" y="190" width="600" height="40" class="gp-card"/>
+      <text x="166" y="208" class="gp-owner">Run-away-EXP routine</text>
+      <text x="166" y="223" class="gp-sub">~237 bytes &middot; Tier E (--flee-exp)</text>
+      <text x="744" y="214" class="gp-tag">code</text>
 
-      <text x="36" y="298" class="gp-addr">0x8007AF00</text>
-      <rect x="150" y="276" width="600" height="40" class="gp-card"/>
-      <text x="166" y="294" class="gp-owner">Seru-trade config blob</text>
-      <text x="166" y="309" class="gp-sub">24 bytes &middot; variant J (--seru-trade) &rarr; clean-room engine</text>
-      <text x="744" y="300" class="gp-tag">data</text>
+      <text x="36" y="260" class="gp-addr">0x8007AE00</text>
+      <rect x="150" y="238" width="600" height="40" class="gp-card"/>
+      <text x="166" y="256" class="gp-owner">Overlay-loader stub</text>
+      <text x="166" y="271" class="gp-sub">groundwork</text>
+      <text x="744" y="262" class="gp-tag">code</text>
+
+      <text x="36" y="308" class="gp-addr">0x8007AF00</text>
+      <rect x="150" y="286" width="600" height="40" class="gp-card"/>
+      <text x="166" y="304" class="gp-owner">Seru-trade config blob</text>
+      <text x="166" y="319" class="gp-sub">24 bytes &middot; variant J (--seru-trade) &rarr; clean-room engine</text>
+      <text x="744" y="310" class="gp-tag">data</text>
     </svg>
-    <figcaption>Five tenants already share the gap. A sixth feature - or anything screen-sized like a new vendor UI - won't fit, which is the entire reason <a href="f-overlay-dead-region.html">tier F</a> hosts its code in a resident overlay's dead region instead of here.</figcaption>
+    <figcaption>Six tenants now share the gap (the enemy-ally routine took the last comfortable window, between the bonus-drop and flee-EXP routines). Anything more - or anything screen-sized like a new vendor UI - won't fit, which is the entire reason <a href="f-overlay-dead-region.html">tier F</a> hosts its code in a resident overlay's dead region instead of here.</figcaption>
   </figure>
 </section>
 
@@ -94,6 +103,7 @@
   <ul>
     <li><strong>Bonus equipment drops</strong> (<code>--equipment-drops</code>) - an additive drop the one record slot can't encode.</li>
     <li><strong>Run-away EXP</strong> (<code>--flee-exp</code>) - a reward the escape path never grants on its own.</li>
+    <li><strong>Enemy ally (charm)</strong> (<code>--enemy-ally</code>) - flips an existing enemy onto your side by setting its Confuse/Charm bits at battle setup; no static table flags a charmed enemy. Pairs the gap routine with a one-word victory-check widen in the battle overlay.</li>
   </ul>
   <p class="hint">Adding a tier-E mod: confirm a reclaimable all-zero gap (and that it fits your routine), find a hook site at the right control-flow moment, preserve the displaced instructions, guard every write as dead space, and add a disc-gated oracle. If your routine is screen-sized, you've outgrown the gap - go to <a href="f-overlay-dead-region.html">tier F</a>.</p>
 </section>

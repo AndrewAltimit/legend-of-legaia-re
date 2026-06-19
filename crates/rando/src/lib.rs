@@ -58,6 +58,7 @@ pub mod door;
 pub mod drops;
 pub mod element_affinity;
 pub mod encounter;
+pub mod enemy_ally;
 pub mod equip_bonus;
 pub mod equipment;
 pub mod flee_exp;

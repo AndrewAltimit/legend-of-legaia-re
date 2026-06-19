@@ -1123,14 +1123,18 @@ export class LegaiaViewer {
  * in-shop trading vendor (a fourth Buy/Sell/Trade/Quit row) that swaps a party
  * member's learned Seru-magic for a different one at a fixed level, on a
  * time-bucketed schedule derived from the seed; all of it is hosted in the menu
- * overlay, so it composes with every other option here.
+ * overlay, so it composes with every other option here. `enemy_ally` injects a
+ * code hook into battle setup so that, with a per-battle chance, a random enemy
+ * is charmed onto the party's side as an uncontrolled ally (works in any fight,
+ * bosses included), plus a one-word widen of the victory check so the ally isn't
+ * an enemy you must defeat.
  * `starting_level`
  * begins the new game at that character level instead of 1 (`0` or `1` =
  * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
  * starting stats from the disc's growth curves. `seed` is a number or
  * any string (hashed). Returns `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean): any;
+export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean, enemy_ally: boolean): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -1293,7 +1297,7 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

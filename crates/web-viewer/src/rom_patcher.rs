@@ -90,7 +90,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// in-shop trading vendor (a fourth Buy/Sell/Trade/Quit row) that swaps a party
 /// member's learned Seru-magic for a different one at a fixed level, on a
 /// time-bucketed schedule derived from the seed; all of it is hosted in the menu
-/// overlay, so it composes with every other option here.
+/// overlay, so it composes with every other option here. `enemy_ally` injects a
+/// code hook into battle setup so that, with a per-battle chance, a random enemy
+/// is charmed onto the party's side as an uncontrolled ally (works in any fight,
+/// bosses included), plus a one-word widen of the victory check so the ally isn't
+/// an enemy you must defeat.
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -132,6 +136,7 @@ pub fn patch_rom(
     solo_strong_encounters: bool,
     flee_exp: bool,
     seru_trade: bool,
+    enemy_ally: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -263,6 +268,20 @@ pub fn patch_rom(
         ));
     } else {
         summary.push_str("flee-exp: untouched\n");
+    }
+
+    // Enemy ally ("charm"): a code hook in battle setup flags the frontmost enemy
+    // so it fights on the player's side (works on bosses); a one-word widen of the
+    // victory check keeps the charmed enemy from being one you must defeat.
+    if enemy_ally {
+        let rep = apply::inject_enemy_ally(&mut patcher, legaia_rando::enemy_ally::DEFAULT_PCT)
+            .map_err(|e| err(format!("enemy-ally: {e}")))?;
+        summary.push_str(&format!(
+            "enemy-ally: {}% chance per battle a random enemy fights on your side\n",
+            rep.pct
+        ));
+    } else {
+        summary.push_str("enemy-ally: untouched\n");
     }
 
     // Seru trading: a vendor in shops offers to trade a party member's Seru-magic for

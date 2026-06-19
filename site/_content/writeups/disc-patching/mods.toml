@@ -345,6 +345,18 @@ gap = true
 status = "shipped"
 test = "flee_exp_real.rs"
 
+[[mod]]
+key = "enemy_ally"
+name = "Enemy ally (charm)"
+flag = "--enemy-ally"
+tier = "E"
+target = "Detour at battle setup 0x80051990 -> routine at gap 0x8007ACA0 (sets AI-delegated 0x380 on the frontmost enemy); + victory-mask widen 0x801E6638 andi 0x4 -> 0x384 in overlay 0898"
+edit = "in-place"
+gap = true
+status = "shipped"
+test = "enemy_ally_real.rs"
+notes = "rides the stock AI-delegated retarget so a flagged monster attacks its own side; the victory widen keeps the ally from counting as an enemy you must defeat"
+
 # ---------------------------------------------------------------------------
 # Tier F - overlay dead-region injection
 # ---------------------------------------------------------------------------
