@@ -391,6 +391,32 @@ function buildSearchOverlay(depth) {
   return overlay;
 }
 
+/* ---------- Sidebar scroll persistence ---------- */
+/* The site is multi-page: every nav click loads a fresh document and rebuilds
+   the sidebar, which would otherwise snap back to the top. We stash the
+   sidebar's scrollTop in sessionStorage (per-tab, cleared on tab close) and
+   restore it before the first paint so the nav stays where the reader left it
+   while only the middle/right panels change. */
+const SIDEBAR_SCROLL_KEY = 'sidebar-scroll';
+
+function restoreSidebarScroll(sidebar) {
+  try {
+    const saved = parseInt(sessionStorage.getItem(SIDEBAR_SCROLL_KEY) || '', 10);
+    if (!isNaN(saved)) sidebar.scrollTop = saved;
+  } catch (e) {}
+
+  let raf = 0;
+  sidebar.addEventListener('scroll', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      try {
+        sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(sidebar.scrollTop));
+      } catch (e) {}
+    });
+  }, { passive: true });
+}
+
 /* ---------- Main ---------- */
 function injectLayout(opts) {
   const { active } = opts || {};
@@ -426,6 +452,10 @@ function injectLayout(opts) {
   document.body.insertBefore(toggle, document.body.firstChild);
   document.body.appendChild(scrim);
   document.body.appendChild(overlay);
+
+  /* Keep the sidebar's scroll position across page navigations (restore now,
+     before paint, then track further scrolling). */
+  restoreSidebarScroll(sidebar);
 
   /* Order matters: assign IDs first → build TOC (clean text) → add § anchors */
   assignHeadingIds();
