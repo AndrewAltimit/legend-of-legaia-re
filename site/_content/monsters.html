@@ -14,6 +14,13 @@
   padding: 0.4rem 0.6rem; font-family: var(--font-mono); font-size: 0.85rem; min-width: 220px;
 }
 .enemy-table-count { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.8rem; }
+.enemy-table-statmode {
+  display: inline-flex; gap: 0.4rem; align-items: center; cursor: pointer;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 0.82rem; user-select: none;
+}
+.enemy-table-statmode input { cursor: pointer; }
+/* Combat stats the battle loader boosts: tint them while the in-battle view is on. */
+table.enemy-table.show-inbattle tbody td.col-boosted { color: var(--accent); }
 .enemy-table-table-wrap { border: 1px solid var(--border); background: var(--bg-card); overflow-x: auto; }
 table.enemy-table {
   border-collapse: collapse; width: 100%;
@@ -90,6 +97,10 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
     <div class="enemy-table-toolbar" id="enemy-table-toolbar" style="display: none;">
       <input type="search" id="enemy-table-filter" placeholder="Filter by name or id…">
+      <label class="enemy-table-statmode" title="The international (US/PAL) release boosts enemy combat stats at battle-load (FUN_80054cb0): ATK ×5/4, UDF/LDF ×2, AGL ×9/8 over the raw on-disc record. Toggle off to see the raw record bytes.">
+        <input type="checkbox" id="enemy-table-inbattle" checked>
+        Show international release stats
+      </label>
       <span class="enemy-table-count" id="enemy-table-count"></span>
     </div>
 
@@ -101,10 +112,10 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <th class="col-name" data-key="name">Name</th>
             <th data-key="hp">HP</th>
             <th data-key="mp">MP</th>
-            <th data-key="s1" title="Attack - the enemy's offense">ATK</th>
-            <th data-key="s2" title="Defense (upper facet) - applies to some attacks">DEF↑</th>
-            <th data-key="s3" title="Defense (lower facet) - applies to others">DEF↓</th>
-            <th data-key="s4" title="Agility - seeds the hit / evade roll">AGL</th>
+            <th data-key="s1" title="Attack - the enemy's offense. In-battle view boosts it ×5/4 (+= ATK>>2).">ATK</th>
+            <th data-key="s2" title="UDF - upper defense (applies to some attacks). In-battle view doubles it (×2).">UDF</th>
+            <th data-key="s3" title="LDF - lower defense (applies to others). In-battle view doubles it (×2).">LDF</th>
+            <th data-key="s4" title="Agility - seeds the hit / evade roll. In-battle view boosts it ×9/8 (+= AGL>>3).">AGL</th>
             <th data-key="s5" title="Speed - sets turn order">SPD</th>
             <th data-key="s0" title="Spirit gauge - the budget the AI spends to cast">SP</th>
             <th data-key="element" title="Element (record +0x1D). The affinity scale multiplies an attacker's damage by matrix[attacker element][defender element] - a small ±4% nudge in retail.">Elem</th>
@@ -122,7 +133,13 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     </div>
   </div>
 
-  <p>Reading the columns: <strong>ATK</strong> is the enemy's offense; <strong>DEF↑ / DEF↓</strong> are two defense facets (which one applies depends on the attack); <strong>AGL</strong> seeds the hit / evade roll; <strong>SPD</strong> sets turn order; <strong>SP</strong> is the gauge the AI spends to cast. <strong>Elem</strong> is the monster's element (record <code>+0x1D</code>) - the affinity scale multiplies an attacker's damage by <code>matrix[attacker element][defender element]</code>, a small ±4% nudge in retail (same-element 96% / opposite-element 104% / otherwise 100%). <strong>EXP / Gold / Drop</strong> are the victory spoils - base values the game scales and splits at the end of a fight. <strong>Steal</strong> is what the player takes with the Evil God Icon equipped (item + chance), read from the static <code>SCUS_942.54</code> steal table (<code>DAT_80077828</code>) - a separate table from the drop, which is why a monster's steal and drop usually differ. <strong>Magic attacks</strong> lists the enemy's named spells and their MP cost. Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table needs the SCUS executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
+  <p>Reading the columns: <strong>ATK</strong> is the enemy's offense; <strong>UDF / LDF</strong> are the upper and lower defense (two facets - which one applies depends on the attack); <strong>AGL</strong> seeds the hit / evade roll; <strong>SPD</strong> sets turn order; <strong>SP</strong> is the gauge the AI spends to cast. <strong>Elem</strong> is the monster's element (record <code>+0x1D</code>) - the affinity scale multiplies an attacker's damage by <code>matrix[attacker element][defender element]</code>, a small ±4% nudge in retail (same-element 96% / opposite-element 104% / otherwise 100%). <strong>EXP / Gold / Drop</strong> are the victory spoils - base values the game scales and splits at the end of a fight. <strong>Steal</strong> is what the player takes with the Evil God Icon equipped (item + chance), read from the static <code>SCUS_942.54</code> steal table (<code>DAT_80077828</code>) - a separate table from the drop, which is why a monster's steal and drop usually differ. <strong>Magic attacks</strong> lists the enemy's named spells and their MP cost. Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table needs the SCUS executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
+
+  <div class="notice">
+    <div class="notice-title">International release stats vs. the raw record</div>
+    <p>The four combat columns (<strong>ATK</strong>, <strong>UDF</strong>, <strong>LDF</strong>, <strong>AGL</strong>) default to the <em>in-battle</em> values - what the player actually fights - because the raw on-disc record is <em>not</em> what gets installed into the enemy. When the battle loader (<code>FUN_80054cb0</code>) copies a record into the live actor it boosts those four stats: <code>ATK += ATK&gt;&gt;2</code> (×5/4), <code>UDF ×2</code>, <code>LDF ×2</code>, <code>AGL += AGL&gt;&gt;3</code> (×9/8). HP, MP, SP and SPD are copied unchanged. Untick <strong>Show international release stats</strong> in the toolbar to see the raw record bytes instead.</p>
+    <p>This boost is why retail enemies hit harder than the raw record (or older bestiaries built from it) suggest - a difference across regions first surfaced by <strong>Zetopheonix</strong>. The loader carries two boost profiles, picked by a per-battle flag (<code>_DAT_8007bd24 + 0x287</code>); the table shows the gate-set profile that a live international-retail capture reproduces byte-for-byte. EXP and gold are a separate story: the record holds a <em>pre-reduction</em> base that the victory-spoils routine (<code>FUN_8004e568</code>) scales down (EXP ×¾ then split among the party; gold roughly ×¼-⅓) at the end of a fight - the <strong>EXP / Gold</strong> columns show those base values.</p>
+  </div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="subsystems/battle-formulas.html">Battle formulas</a>
@@ -133,7 +150,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
 <section class="doc-section">
   <h2>How it works</h2>
-  <p>The whole roster lives in one archive on the disc. Each enemy id maps to a fixed slot that LZS-decompresses to a stat record followed by the enemy's 3D model and its animations. The same parser the native tools and the engine use runs here, compiled to WebAssembly - so what you see is exactly what the game reads.</p>
+  <p>The whole roster lives in one archive on the disc. Each enemy id maps to a fixed slot that LZS-decompresses to a stat record followed by the enemy's 3D model and its animations. The same parser the native tools and the engine use runs here, compiled to WebAssembly - so what you see is exactly what the game reads off the disc. The combat columns then apply the battle loader's stat boost so the numbers match what the player <em>fights</em> (see the note above); untick <strong>Show international release stats</strong> for the raw record bytes.</p>
   <p class="caption">Files are read with the browser's <code>FileReader</code> straight into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring your own disc). Your disc is cached locally and shared across pages, so it auto-loads on reload - use <em>Forget</em> to clear.</p>
   <div class="cli"><code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code></div>
   <div class="see-also">
@@ -185,6 +202,33 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   let records = [];        // normalized {id,name,hp,mp,s0..s5,magic}
   let sortKey = 'id';
   let sortDir = 1;         // 1 = asc, -1 = desc
+  const inBattleEl = document.getElementById('enemy-table-inbattle');
+  let inBattle = inBattleEl ? inBattleEl.checked : true;  // show the boosted in-battle stats
+
+  // The raw monster record is NOT what the player fights: the battle loader
+  // (FUN_80054cb0) boosts four combat stats when it installs the enemy. This
+  // mirrors the gate-set profile the international retail build uses (and that
+  // MonsterRecord::battle_stats() returns) - kept here as a fallback for cached
+  // wasm builds that predate the JSON's `battle_stats` field.
+  function boostStats(s) {
+    return [
+      s[0],                  // SP  - unchanged
+      s[1] + (s[1] >> 2),    // ATK + ATK>>2  (×5/4)
+      s[2] * 2,              // UDF ×2
+      s[3] * 2,              // LDF ×2
+      s[4] + (s[4] >> 3),    // AGL + AGL>>3  (×9/8)
+      s[5],                  // SPD - unchanged
+    ];
+  }
+
+  // Point r.s0..r.s5 at either the raw record or the boosted in-battle stats,
+  // so sort + render (which read s0..s5) follow the active view.
+  function applyView() {
+    const src = inBattle ? 'bs' : 'rs';
+    for (const r of records) {
+      for (let i = 0; i < 6; i++) r['s' + i] = r[src + i];
+    }
+  }
   let viewer = null;       // WASM LegaiaViewer (hoisted so the mesh view can call it)
   let selectedId = null;   // currently-rendered monster id
   let meshView = null;     // MonsterMeshView (lazily created on first selection)
@@ -193,8 +237,16 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
   function normalize(r) {
     const s = r.stats || [];
+    // Raw on-disc record stats (rs*) and the boosted in-battle stats (bs*).
+    // Prefer the wasm-computed battle_stats; fall back to the JS boost.
+    const b = (r.battle_stats && r.battle_stats.length === 6) ? r.battle_stats : boostStats(s);
     return {
       id: r.id, name: r.name, hp: r.hp, mp: r.mp,
+      rs0: s[0] ?? 0, rs1: s[1] ?? 0, rs2: s[2] ?? 0,
+      rs3: s[3] ?? 0, rs4: s[4] ?? 0, rs5: s[5] ?? 0,
+      bs0: b[0] ?? 0, bs1: b[1] ?? 0, bs2: b[2] ?? 0,
+      bs3: b[3] ?? 0, bs4: b[4] ?? 0, bs5: b[5] ?? 0,
+      // s0..s5 are set by applyView() to the active (raw / in-battle) view.
       s0: s[0] ?? 0, s1: s[1] ?? 0, s2: s[2] ?? 0,
       s3: s[3] ?? 0, s4: s[4] ?? 0, s5: s[5] ?? 0,
       magic: r.magic_count ?? 0,
@@ -254,6 +306,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   }
 
   function render() {
+    const tableEl = tableWrap.querySelector('table.enemy-table');
+    if (tableEl) tableEl.classList.toggle('show-inbattle', inBattle);
     const q = (filterInput.value || '').trim().toLowerCase();
     let rows = records;
     if (q) {
@@ -272,10 +326,10 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         <td class="col-name">${escapeHtml(r.name)}</td>
         <td>${r.hp}</td>
         <td class="${r.mp ? '' : 'dim'}">${r.mp}</td>
-        <td>${r.s1}</td>
-        <td>${r.s2}</td>
-        <td>${r.s3}</td>
-        <td>${r.s4}</td>
+        <td class="col-boosted">${r.s1}</td>
+        <td class="col-boosted">${r.s2}</td>
+        <td class="col-boosted">${r.s3}</td>
+        <td class="col-boosted">${r.s4}</td>
         <td>${r.s5}</td>
         <td>${r.s0}</td>
         <td class="${r.element === 7 ? 'dim' : ''}">${escapeHtml(fmtElement(r))}</td>
@@ -316,6 +370,14 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     });
   });
   filterInput.addEventListener('input', render);
+
+  if (inBattleEl) {
+    inBattleEl.addEventListener('change', () => {
+      inBattle = inBattleEl.checked;
+      applyView();
+      render();
+    });
+  }
 
   // Click a row -> render that monster's mesh.
   body.addEventListener('click', (e) => {
@@ -978,6 +1040,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         return;
       }
       records = (parsed.records || []).map(normalize);
+      applyView();
       if (records.length === 0) {
         status.textContent = `Loaded: ${f.name} - no enemy data found (PROT entry 867 absent). Is this a full Legaia disc / PROT.DAT?`;
         prog.fail('No enemy data found in this file.');

@@ -330,8 +330,8 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x0E` | u16 | **SP** → actor `+0x154/+0x156` (spirit/action gauge - AI spell-selection budget; spirit-charge source). |
 | `+0x10` | u16 | **MP** → actor `+0x150/+0x152/+0x174`. |
 | `+0x12` | u16 | **ATK** → actor `+0x158/+0x15A` (attacker offense in the damage routine). |
-| `+0x14` | u16 | **DEF↑** → actor `+0x15C/+0x15E` (defender defense, high facet). |
-| `+0x16` | u16 | **DEF↓** → actor `+0x160/+0x162` (defender defense, low facet). |
+| `+0x14` | u16 | **UDF** (upper defense) → actor `+0x15C/+0x15E` (defender defense, high facet). |
+| `+0x16` | u16 | **LDF** (lower defense) → actor `+0x160/+0x162` (defender defense, low facet). |
 | `+0x18` | u16 | **AGL** → actor `+0x168/+0x16A` (rescaled into the accuracy/evasion seed). |
 | `+0x1A` | u16 | **SPD** → actor `+0x164/+0x166` (turn-order initiative seed; buffable). |
 | `+0x21` | u8[3] | **Magic-attack ids** (`+0x21..+0x23`): up to three **global** spell ids the enemy casts. A slot is live when its value is `> 1`. The AI spell picker `FUN_801E9FD4` (`overlay_0898`) reads `record[0x21 + slot]`, writes it into the live actor at `+0x1DF`, and the battle-action SM names it via `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). These global ids are **distinct** from the local `+0x4C` entry ids (which only gate SP); they are the names that appear on screen. Parser: `MonsterRecord::magic_attacks` + `legaia_asset::spell_names`. |
@@ -343,6 +343,18 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x4C` | u32[] | Spell-entry offsets (count at `+0x4A`; block-relative, fixed to pointers at load). Each entry's first byte is a **spell/action id**: ids `2,3,4,5,0x0B` are elemental resist/affinity markers (`FUN_80054CB0` writes the slot index into actor `+0x1EF..+0x1F3`); ids `0x0C..0x1F` are offensive castable spells; `0x23` is special. Entry `+0x74` is the **SP cost**. See [battle-formulas.md → spell list](battle-formulas.md#spell-list-record-0x4c). |
 
 All six stat names are pinned by the consumers of those actor slots - see [battle-formulas.md](battle-formulas.md#actor-stat-block--monster-record-mapping). The parser exposes them via `legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility, speed, spirit}`.
+
+**Battle-load stat boost.** The record bytes are *not* what the player fights. After copying the record into the actor, `FUN_80054CB0` **boosts** four combat stats, choosing one of two profiles by the battle-context flag `_DAT_8007bd24 + 0x287` (= `(*(u8*)0x8007BD60 >> 5) & 4`, bit 7 of a per-battle flags byte set by `FUN_800513F0`):
+
+| stat | gate-set profile (B) | gate-clear profile (A) |
+|---|---|---|
+| **ATK** (`+0x12`) | `+= ATK>>2` (×5/4) | unchanged |
+| **UDF** (`+0x14`) | `× 2` | `+= (UDF>>1)+(UDF>>2)` (×7/4) |
+| **LDF** (`+0x16`) | `× 2` | `+= (LDF>>1)+(LDF>>2)` (×7/4) |
+| **AGL** (`+0x18`) | `+= AGL>>3` (×9/8) | `+= AGL>>2` (×5/4) |
+| HP / MP / SP / SPD | unchanged | unchanged |
+
+Both profiles boost; only the magnitude differs, so the raw record always understates the fight. Profile **B** (the gate-set branch) is what a live international-retail capture reproduces byte-for-byte (Gaza Sim-Seru id 166: raw `[SP 128, ATK 288, UDF 222, LDF 200, AGL 220, SPD 146]` → in-battle `ATK 360, UDF 444, LDF 400, AGL 247`), and is what the curated `enemies.toml` bestiary holds. `MonsterRecord::battle_stats()` returns profile B. This cross-region difficulty difference (international retail hitting harder than the raw record / the Japanese release) was first surfaced by **Zetopheonix**.
 
 **Rewards (EXP / gold / drop)** are inline in the record head at `+0x44..+0x49` (*not* at `+0x04`, which is the effect/animation data above). The victory-spoils function `FUN_8004E568` reads them from the per-enemy **record-pointer table at `0x801C9348`** (the loader `FUN_800542C8` populates it, so the actor *does* retain its record there - that's why monster-init never needed to copy the reward fields):
 
