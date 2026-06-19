@@ -230,12 +230,12 @@ pub trait FieldHost {
     /// `crates/mes` parses. **Not** wired to a field-VM opcode: it is the host's
     /// dialogue-open primitive, invoked from [`Self::field_interact`] with the
     /// interacted actor's inline interaction-script text (the real field-dialogue
-    /// source — retail `actor[+0x90]`). Field dialogue has no dedicated opcode;
+    /// source - retail `actor[+0x90]`). Field dialogue has no dedicated opcode;
     /// `0x3F` is the named scene-change, not a dialog op (see
     /// `docs/subsystems/script-vm.md` § Field dialogue). `world_x` / `world_z`
     /// are pre-decoded grid coordinates for the box position; `depth_id` is a raw
     /// depth selector. (`func_0x8001FD44` is the scene-change packet, not the
-    /// original opener — an earlier mislabel.)
+    /// original opener - an earlier mislabel.)
     fn open_dialog(
         &mut self,
         text_id: u16,
@@ -268,9 +268,9 @@ pub trait FieldHost {
         None
     }
 
-    /// Give the player one of inline item `item_id` (op 0x39 `GIVE_ITEM` — the
+    /// Give the player one of inline item `item_id` (op 0x39 `GIVE_ITEM` - the
     /// treasure-chest / scripted-gift item-give). The original calls
-    /// `func_0x8004313C()` (HUD/inventory window-bounds setup — writes the
+    /// `func_0x8004313C()` (HUD/inventory window-bounds setup - writes the
     /// `gp+0x2D2/0x2D4/0x2D6` start/end/span triple; see
     /// `docs/reference/functions.md` `8004313C`) then the capacity-checked
     /// add-item-by-id primitive `func_0x800421D4(item_id, 1)`. (The earlier
@@ -897,7 +897,7 @@ pub trait FieldHost {
     /// area), then writes 7 u32s of pose data (28 bytes) at TMD offset
     /// `+0xC + bytes[i]*0x1C` from either `+0x124..0x140` or `+0x140..0x158`,
     /// gated on a per-record flag byte at `record+0x75E`. (Earlier comments
-    /// labelled `FUN_8001ebec` the "retail dialog-box renderer" — that's
+    /// labelled `FUN_8001ebec` the "retail dialog-box renderer" - that's
     /// wrong; the disassembly shows the TMD-pose copier described above.
     /// The real dialog SM is `FUN_80039b7c`, pager `FUN_801D84D0`.) PC += 2.
     fn field_io_resync(&mut self) {}

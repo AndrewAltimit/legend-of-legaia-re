@@ -19,11 +19,11 @@ The on-disc encounter record installed onto a field actor when the script VM tri
 
 ## Confidence
 
-**Confirmed (record shape, reader, install path) — Inferred (encoding within scripts).**
+**Confirmed (record shape, reader, install path) - Inferred (encoding within scripts).**
 The reader (`FUN_801DA51C` body at `0x801DA620..0x801DA678`) is fully decoded.
 The install path is the script-VM dispatcher's set of "arm encounter" opcodes
 (0x37/0x41, 0x38, 0x43, 0x47, 0x4C); Ghidra's C decomp of `FUN_801de840`
-makes the install value explicit: `pbVar43 = (byte *)(param_1 + param_2)` —
+makes the install value explicit: `pbVar43 = (byte *)(param_1 + param_2)` -
 i.e. the **current script-bytecode opcode pointer**. So the encounter-record
 bytes (count at `+0x3`, ids at `+0x4..`) are the trailing operand bytes of
 the install opcode itself, inlined into the field-VM script for the scene
@@ -43,7 +43,7 @@ per opcode and is decoded case-by-case in the dispatcher (see
 +0x04  u8[N]  monster_ids           ; N == monster_count, each id indexes the
                                     ; monster catalog (the per-scene battle_data
                                     ; group)
-[possibly more after — fields not consumed by the formation copy]
+[possibly more after - fields not consumed by the formation copy]
 ```
 
 The reader copies `monster_ids[0..count]` into the global formation cell at `0x8007BD0C..0x8007BD0F` (a 4-byte array, one byte per slot). Slots beyond `count` stay zeroed. `monster_count == 0` clears the formation cell entirely (no monsters spawn this round).
@@ -80,7 +80,7 @@ The reader copies `monster_ids[0..count]` into the global formation cell at `0x8
 
 The `s1` register is the actor record (caller's `a0` in `FUN_801DA51C`); `+0x94` is the encounter-record pointer slot. The clear-then-copy ordering means a `monster_count < 4` record correctly leaves trailing slots zeroed. After the copy the reader clears `entity[+0x94]` and advances the entity's 5-state SM (`entity[+0x8A]++`), so the formation copy fires exactly once per arm.
 
-Just before the copy (`0x801DA5F8..0x801DA61C`) the reader also reads `record[+0]` (the **opcode byte** the record overlays — see the writer below) and, when it is non-zero, ORs bit `0x80` into a battle-setup flag byte. Because the install opcodes are themselves non-zero, this bit is effectively always raised for a scripted arm; the byte is the first of the record's three "reserved" bytes (`+0x00..+0x02` = the install opcode + its two operand bytes).
+Just before the copy (`0x801DA5F8..0x801DA61C`) the reader also reads `record[+0]` (the **opcode byte** the record overlays - see the writer below) and, when it is non-zero, ORs bit `0x80` into a battle-setup flag byte. Because the install opcodes are themselves non-zero, this bit is effectively always raised for a scripted arm; the byte is the first of the record's three "reserved" bytes (`+0x00..+0x02` = the install opcode + its two operand bytes).
 
 **Discriminator (relevant to wiring this in an engine).** There is no dedicated "encounter" opcode:
 
@@ -111,7 +111,7 @@ The script-VM dispatcher (`FUN_801DE840`, see [`subsystems/script-vm.md`](../sub
 `0x801DE858`, i.e. `s0 = param_1 + param_2 = bytecode_buffer + pc_offset`)
 and is the **current opcode pointer in the field-VM script bytecode**.
 The Ghidra C decomp surfaces this as `pbVar43 = (byte *)(param_1 + param_2)`.
-`s5` is the resolved target actor — frequently the player context
+`s5` is the resolved target actor - frequently the player context
 (`_DAT_8007C364`); when bit 7 of the opcode byte is set, byte +1 routes
 through the system-channel resolver `FUN_8003C83C`.
 
@@ -125,7 +125,7 @@ each advances the PC by a different amount past the opcode:
 | `0x38` | `0x801DEFA0` / `0x801DF038` | `+3` | Falls through to the same install clause; first branch reads a halfword table at `0x80073F04` into `actor[+0x26]` when low-7-bits of byte +1 are zero. |
 | `0x43` (sub-op `0/1/A/B`) | `0x801DF3FC` (decomp line 5223) | `+3` | Movement-target setup follows the install (`actor[+0x14..+0x1A]` from operand bytes); the encounter arms when the actor reaches the target. |
 | `0x47` | `0x801E1C38` (decomp line 5610) | `+3` | |
-| `0x4C` | `0x801E1F44` / `0x801E21C0` / `0x801E... ` (decomp lines 6341 / 6460 / 6556) | `+3` | Three internal install sites in the same case body — one per inner sub-op. |
+| `0x4C` | `0x801E1F44` / `0x801E21C0` / `0x801E... ` (decomp lines 6341 / 6460 / 6556) | `+3` | Three internal install sites in the same case body - one per inner sub-op. |
 
 All install paths share the same pre-install gate:
 
@@ -134,7 +134,7 @@ if (actor[+0x94] != 0  ||  actor == _DAT_8007C364) &&
    ((actor[+0x10] & 0x400) == 0  ||  *_DAT_801C6EA4[+8] != 0)
 ```
 
-— the actor already has a record installed (re-arm), OR it's the player
+- the actor already has a record installed (re-arm), OR it's the player
 context (always allowed); AND the armed flag is clear OR the scene
 explicitly allows re-arm.
 
@@ -163,7 +163,7 @@ Snapshots of the formation cell across captures (see [`scripts/scenarios.toml`](
 
 ### Worked example: the Rim Elm training fight
 
-The game's opening battle — the training fight in Rim Elm (`town01`) — is a
+The game's opening battle - the training fight in Rim Elm (`town01`) - is a
 scripted **single-monster** encounter. The opponent is monster archive id
 `0x4F` ("Tetsu"); it is the only monster in the formation. Reading the
 formation cell across the training-fight capture corpus shows the install
@@ -171,7 +171,7 @@ boundary cleanly:
 
 | Capture phase (`town01`) | `0x8007BD0C..0F` | Interpretation |
 |---|---|---|
-| Pre-battle field (free movement, before the fight) | `00 00 00 00` | No formation installed — the cell is clear. |
+| Pre-battle field (free movement, before the fight) | `00 00 00 00` | No formation installed - the cell is clear. |
 | Battle loading (`game_mode 0x15`, graphics not yet drawn) | `4F 00 00 00` | One-monster formation: id `0x4F` in slot 0. |
 | Battle running (graphics / command menu / submenu) | `4F 00 00 00` | Same lone-monster formation. |
 | Post-battle field (back to `game_mode 0x03`) | `4F 00 00 00` | Cell retains the last formation until the next install (it is cleared only at the next encounter, not on victory). |
@@ -180,11 +180,11 @@ So the formation copy happens at battle entry, exactly as the reader above
 describes: the cell is empty in the field and carries the lone id `0x4F`
 from battle-load onward.
 
-**The id `0x4F` is not an inline script literal — it is a per-scene formation
+**The id `0x4F` is not an inline script literal - it is a per-scene formation
 index.** Two independent surveys of town01's bytecode find no `[count=1][0x4F]`
 install operand anywhere:
 
-1. The `scene_event_scripts` prescript at PROT entry 3 — the small structured
+1. The `scene_event_scripts` prescript at PROT entry 3 - the small structured
    records carry no such pattern, and the `0x4F` bytes in the bulk payload are
    high-entropy asset data, not bytecode.
 2. The scene's **MAN partition-1 field-VM scripts** (record 0 = scene-entry system
@@ -194,17 +194,17 @@ install operand anywhere:
    on every `0x37`/`0x41` yield byte and decodes the trailing `[count][ids]` window
    at each: across 53 records and 71 yield sites, **zero** carry the `[1][0x4F]`
    Tetsu signature. Every window that decodes is a `count=0` artifact from the
-   walker stepping into embedded MES dialog text (the windows are plain ASCII —
+   walker stepping into embedded MES dialog text (the windows are plain ASCII -
    `1F 64 6F 20` = `"do "`, `1F 56 61` = `"Va"`, …). This is exactly the false
    positive a naive `0x37`/`0x41` byte-scan produces; the opcode-aware walk is what
    distinguishes a real arm boundary from a dialog byte. The system entry script
    (record 0) decodes near-cleanly (a real executable stream), while the
-   interaction records desync into dialog — itself evidence the encounter arm is
+   interaction records desync into dialog - itself evidence the encounter arm is
    not script-borne. See the disc-gated regression test
    `crates/engine-core/tests/town01_p1_arm_sites.rs` and the
    `legaia-engine man-scripts --scene <name>` survey CLI (its
    `--gflag-partition <n>` flag walks any partition's records for
-   `GFLAG_SET`/`GFLAG_CLEAR` writes — e.g. partition 2 surfaces the opening
+   `GFLAG_SET`/`GFLAG_CLEAR` writes - e.g. partition 2 surfaces the opening
    prologue's cutscene-timeline `GFLAG_SET 26` town01 hand-off arm).
 
 Instead, the lone-`0x4F` formation is **town01 MAN formation index 4**. The per-scene formations load from
@@ -225,13 +225,13 @@ formations for town01, `formation_id` 4 = `[0x4F]`). The scripted carrier entity
 selects this formation **by index** (it points `actor[+0x94]` at the table row, and
 `FUN_801DA51C` copies it into the cell on the dialogue-accept), which is why the
 cell shows the lone `0x4F` while no inline operand carries it. The pre-confirm
-capture has the cell still clear — the install fires on the accept press.
+capture has the cell still clear - the install fires on the accept press.
 
 ### The carrier entity
 
 The MAN-placed actor that installs this fight is pinned: town01 partition-1
 holds exactly one placement at **tile (76, 65)** with **model byte `0x6A`**,
-whose interaction record carries a long multi-page dialog block — the sparring
+whose interaction record carries a long multi-page dialog block - the sparring
 talk-menu and its battle-trigger branch. It is the only on-map placement whose
 inline dialog runs that long (the village's other NPCs are one- or two-line),
 which is what distinguishes it from them; it sits adjacent to the town01 spawn.
@@ -244,9 +244,9 @@ selector: a field interaction record is dominated by embedded message text whose
 bytes alias field-VM opcodes (a literal `>` is `0x3E`, the warp/interact opcode;
 ASCII punctuation hits the `0x37`/`0x41` yield bytes), so a linear disassembly
 desyncs inside the text and reports phantom interact / dialog ops with garbage
-operands. The dialog text itself is therefore recovered **structurally** — as a
+operands. The dialog text itself is therefore recovered **structurally** - as a
 run of `0x1F`-lead / `0x00`-terminated segments
-(`man_field_scripts::first_inline_dialog_offset`) — which is also how every
+(`man_field_scripts::first_inline_dialog_offset`) - which is also how every
 town01 NPC's message renders. Confirming the dialogue-accept → `actor[+0x94]`
 install on this specific entity still needs a mid-interaction RAM capture; the
 field-VM control flow from the menu branch to the formation-index install is the
@@ -256,7 +256,7 @@ The clean-room engine reaches this fight faithfully through the same indexed
 table: a cold boot loads town01's MAN formations (with the monster archive's real
 stats merged at scene entry), and `World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)`
 (`= 4`, in [`encounter_record.rs`](../../crates/engine-core/src/encounter_record.rs))
-installs the existing row as the forced next encounter — no re-encoded record, the
+installs the existing row as the forced next encounter - no re-encoded record, the
 scene's merged stats stand (Tetsu's HP 999). `EncounterRecord::rim_elm_training()`
 remains for the equivalent hand-built `[count=1][0x4F]` window used by the
 arm-seam path.
@@ -264,7 +264,7 @@ arm-seam path.
 The carrier set the field entity SM acts on is derived **from the MAN itself**
 rather than hand-built: `man_field_scripts::derive_field_carriers` walks the
 partition-1 placements and maps each interactable actor to a `FieldCarrierConfig`
-— the pinned sparring partner (`is_rim_elm_sparring_carrier`, by tile + model)
+- the pinned sparring partner (`is_rim_elm_sparring_carrier`, by tile + model)
 becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain
 `Npc` keyed by its record index; decorative/warp placements carry no carrier.
 `World::install_field_carriers_from_man` installs that derived set and returns the
@@ -274,14 +274,14 @@ the scene's own data. They sit Idle until the carrier is engaged, which advances
 the actual MAN actor's `FUN_801DA51C` SM. Engagement is driven by the
 field-interact dialogue-accept: a field-interact op (`0x3E`, `op0 < 100`) on the
 sparring carrier's placement opens its inline dialogue and arms the engage, and
-accepting the prompt (the dialog-advance dismiss, `0x4C` n5 sub-4) engages it —
+accepting the prompt (the dialog-advance dismiss, `0x4C` n5 sub-4) engages it -
 so the field-VM bytecode drives the fight, not a manual API. (`engage_field_carrier`
 remains the direct entry point the auto-arm and tests call.) Because the
 sparring dialogue's Yes/No box-selection logic is still undecoded, the engine
 treats the accept as the dialog dismiss; the tutorial fight is forced, so there
 is no decline path to gate. The formation *index* (`4`) is still a pinned
-constant — the interaction record selects its formation by index, not via an
-inline `[count][ids]` literal — but which actor is the carrier, and where it
+constant - the interaction record selects its formation by index, not via an
+inline `[count][ids]` literal - but which actor is the carrier, and where it
 stands, now come from the scene data.
 
 ## Scripted-battle id path (`FUN_8005567c`)
@@ -300,7 +300,7 @@ if (DAT_8007b7fc == 0) { cell = [4, _, 4, 4]; }                 // default-zero 
 
 `DAT_8007b7fc` is a **transient** parameter: it is `0` in every captured Tetsu
 frame (the id is consumed and cleared by the time the battle is resident). The
-distinguishing signature is the cell *shape* — `FUN_8005567c` writes slots 0/1/2
+distinguishing signature is the cell *shape* - `FUN_8005567c` writes slots 0/1/2
 for a plain id (`[0x4F,0x4F,0x4F,0]`), whereas the Tetsu cell is `[0x4F,0,0,0]`
 (slot 0 only, slots 1-3 cleared), which is the `FUN_801DA51C` count-1 record path.
 So the Rim Elm fight uses the indexed-record path; `FUN_8005567c` is the
@@ -315,7 +315,7 @@ arms. Random encounters use a separate path:
 
 **Roll function.** `FUN_801D9E1C` (in the world_map overlay; also paged
 in by dance / fishing / slot-machine / cutscene_mapview / dialog_typing /
-debug_menu overlays — same code each time) runs once per movement
+debug_menu overlays - same code each time) runs once per movement
 update. It walks the per-scene **region table** at
 `*(_DAT_801C6EA4 + 0x28) + 1` and matches the player's `(x, y)` against
 each region's AABB at `pbVar9[0..3]`. The matching region descriptor
@@ -367,7 +367,7 @@ installs it via `World::set_world_map_regions` (rolled per tile in
 `World::set_field_regions` (`SceneHost::enter_field_scene`), and
 `World::on_field_step` rolls the active region and feeds a trigger through the
 aggregated [`EncounterSession`](../../crates/engine-core/src/encounter.rs)'s
-transition / grace SM (`EncounterSession::trigger_with`) — so the field path now
+transition / grace SM (`EncounterSession::trigger_with`) - so the field path now
 varies the rate + formation pick by region instead of using the single
 mean-rate table, while keeping the same transition bracketing. A field scene
 whose MAN has no encounter-region section (towns) installs no tracker and falls
@@ -379,7 +379,7 @@ rate variation + the full region→session→drain flow).
 (`World::install_man_formation` by index, or
 `World::install_encounter_from_record` from an inline `[count][ids]` window)
 is a one-shot that must fire on the next step regardless of the per-region
-random rate — retail copies the carrier's `entity[+0x94]` formation into the
+random rate - retail copies the carrier's `entity[+0x94]` formation into the
 battle cell on confirm, independent of the `FUN_801D9E1C` roll. The engine
 models this with a `scripted_formation_pending` flag that `on_field_step`
 checks *before* the region path, driving the forced `0xFF`-rate session
@@ -529,7 +529,7 @@ region rows.
   small (often 1 byte, occasionally a few hundred), suggesting per-
   scene callbacks / inline state rather than record arrays.
 - **The pre-encounter live-pointer state.** No save state in the
-  current scenario corpus captures an actor with `+0x94` mid-armed —
+  current scenario corpus captures an actor with `+0x94` mid-armed -
   the corpus's `mc0` carries a stale value and every other slot is
   zero or `0xFFFFFFFF`. Byte-level verification of "the encounter
   record bytes at the live `actor[+0x94]` match the parsed Man's
@@ -548,25 +548,25 @@ a `[formation_range_base, +formation_range_count)` slice; the position-aware rol
 inside the AABB and, on overflow, picks a formation from that region's slice.
 
 A region with **`rate_increment == 0`** never advances the counter, so it never
-triggers — it can list formations without ever rolling them. The scene's
+triggers - it can list formations without ever rolling them. The scene's
 **scripted/boss** formations (the Rim Elm Tetsu fight, etc.) live in this same
 formation array but are engaged by explicit index from the field VM; they are
 reached only by rate-0 regions (or by no region at all), never by a rate>0 one.
 So a formation is a *random* encounter **iff some `rate_increment > 0` region
-reaches it**. Worked example — town01 (Rim Elm): rate-0 regions cover formations
+reaches it**. Worked example - town01 (Rim Elm): rate-0 regions cover formations
 2..=4, but the only rate>0 regions reach 0..=2, so the Tetsu formation at index 4
 is scripted-only. The encounter randomizer relies on this to leave boss fights
 untouched (`legaia_rando::encounter::random_formation_mask`). Its optional
 **solo-strong** pass reuses the same gate: it only ever thins a *random*
 formation (`enforce_solo_strong` skips scripted ones), collapsing a multi-monster
-formation whose strongest member is far above the scene's native average — its
+formation whose strongest member is far above the scene's native average - its
 `count` byte set to 1, the dropped id bytes zeroed within the fixed record stride
-— so an out-of-area heavy hitter from a `kingdom`/`world` roll is faced alone
+- so an out-of-area heavy hitter from a `kingdom`/`world` roll is faced alone
 rather than in a pack.
 
 ## Files referencing this format
 
-- [`crates/engine-vm`](../../crates/engine-vm/) — the field VM dispatcher port reads the operand and writes the actor pointer slot.
-- [`crates/engine-core::encounter`](../../crates/engine-core/) — the runtime engine's `EncounterRecord` parser exposes `monster_count` / `monster_ids` from a candidate byte slice.
-- [`subsystems/world-map.md`](../subsystems/world-map.md) — world-map controller integration.
-- [`subsystems/script-vm.md`](../subsystems/script-vm.md) — the dispatcher op-handler family that installs the pointer.
+- [`crates/engine-vm`](../../crates/engine-vm/) - the field VM dispatcher port reads the operand and writes the actor pointer slot.
+- [`crates/engine-core::encounter`](../../crates/engine-core/) - the runtime engine's `EncounterRecord` parser exposes `monster_count` / `monster_ids` from a candidate byte slice.
+- [`subsystems/world-map.md`](../subsystems/world-map.md) - world-map controller integration.
+- [`subsystems/script-vm.md`](../subsystems/script-vm.md) - the dispatcher op-handler family that installs the pointer.

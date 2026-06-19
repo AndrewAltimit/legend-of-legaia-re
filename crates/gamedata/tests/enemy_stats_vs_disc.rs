@@ -3,19 +3,19 @@
 //!
 //! Joining the curated `enemies.toml` to the disc records **by monster name**
 //! reveals that the curated bestiary stats are not raw copies of the disc
-//! record — they are **scaled derivations** by a small set of fixed factors
+//! record - they are **scaled derivations** by a small set of fixed factors
 //! (the walkthrough the tables were mined from reports display/derived values):
 //!
 //! | curated field | disc source (`MonsterRecord`) | factor |
 //! |---|---|---|
 //! | `hp`   | `hp`             | ×1 (exact) |
 //! | `spd`  | `speed()`        | ×1 (exact) |
-//! | `agl`  | `spirit()`       | ×1 (exact) — the curated "agl" is the disc SP/spirit stat |
+//! | `agl`  | `spirit()`       | ×1 (exact) - the curated "agl" is the disc SP/spirit stat |
 //! | `udf`  | `defense_high()` | ×2 (exact) |
 //! | `ldf`  | `defense_low()`  | ×2 (exact) |
 //! | `atk`  | `attack()`       | ×5/4 (±1 rounding) |
 //! | `exp`  | `exp`            | ×3/4 (±1 rounding) |
-//! | `intel`| `agility()`      | ×9/8 (±1 rounding) — the curated "int" is the disc AGL stat scaled |
+//! | `intel`| `agility()`      | ×9/8 (±1 rounding) - the curated "int" is the disc AGL stat scaled |
 //! | `gold` | `gold`           | ×5/16 (±1 rounding) |
 //!
 //! So the **disc is raw ground truth**; the curated `agl`/`intel` labels are in

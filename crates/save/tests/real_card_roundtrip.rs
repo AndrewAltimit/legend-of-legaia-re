@@ -33,7 +33,7 @@ use legaia_save::{
 /// blocks, so picking the first name match would make the decode test panic on
 /// a card that simply has nothing to decode. Scan all candidates (sorted for a
 /// stable choice) and return the first one with at least one active block;
-/// return `None` — so the tests skip — only when no usable card exists.
+/// return `None` - so the tests skip - only when no usable card exists.
 fn locate_card() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
     let dir = PathBuf::from(home).join(".mednafen/sav");

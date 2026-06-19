@@ -3,7 +3,7 @@
 -- Finds the VRAM CLUT-upload routine by watching READS of Vahn's known
 -- battle CLUT source. Vahn's row-490 palette lives in the resident
 -- field-scene buffer at 0x800E96A0 (pinned across every save). Whatever
--- reads it to DMA it into VRAM (0,490) is the upload routine — and the
+-- reads it to DMA it into VRAM (0,490) is the upload routine - and the
 -- same routine uploads Noa/Gala (rows 492/494) from their transient
 -- buffers. This probe arms a READ breakpoint on 0x800E96A0 and logs the
 -- reading PC + caller RA + GPRs each fire, so the uploader can be hooked

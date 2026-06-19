@@ -1,7 +1,7 @@
 //! Disc-gated end-to-end test for the starting-bag `GIVE_ITEM` injection: splice a
 //! guarded grant block (larger than the 7-slot direct-seed cap) into the opening
 //! scene's entry script on a scratch copy of the disc, then re-decode the patched
-//! MAN and confirm the edit is faithful — the block decodes at the entry-script
+//! MAN and confirm the edit is faithful - the block decodes at the entry-script
 //! start as the guard test → the gives in order → the set, the guard skip lands
 //! exactly past the block, the original entry-script bytes resume verbatim after it,
 //! the MAN re-parses and recompresses within its footprint, the image is the same
@@ -75,7 +75,7 @@ fn starting_bag_injects_into_town01_and_round_trips() {
     assert_eq!(report.scene_entry, Some(ext));
 
     // Re-decode the patched scene: this validates the descriptor size word matches
-    // the recompressed stream, and recomputes the entry-script pc0 — which is
+    // the recompressed stream, and recomputes the entry-script pc0 - which is
     // unchanged (the record start didn't move) and now points at the injected block.
     let entry = patcher.read_entry(ext).expect("read patched entry");
     SceneBagInject::locate(&entry, ext).expect("re-locate patched scene");
@@ -176,7 +176,7 @@ fn empty_bag_is_a_no_op() {
 }
 
 /// Decode the opening scene's MAN out of a PROT entry and return `(decoded_man,
-/// inject_offset)` — the offset `SceneBagInject` splices at (just past the entry
+/// inject_offset)` - the offset `SceneBagInject` splices at (just past the entry
 /// script's BGM op), used here to re-read the injected bytecode.
 fn decode_entry_script(entry: &[u8], _ext: usize) -> (Vec<u8>, usize) {
     use legaia_asset::field_disasm;
@@ -192,7 +192,7 @@ fn decode_entry_script(entry: &[u8], _ext: usize) -> (Vec<u8>, usize) {
     let rstart = mf.data_region_offset + off as usize;
     let locals = decoded[rstart] as usize;
     let pc0 = rstart + 1 + locals * 2 + 4;
-    // Walk to just past the first BGM op (0x35) — the injection point.
+    // Walk to just past the first BGM op (0x35) - the injection point.
     let mut pc = pc0;
     for _ in 0..64 {
         let insn = field_disasm::decode(&decoded, pc).expect("decode entry op");

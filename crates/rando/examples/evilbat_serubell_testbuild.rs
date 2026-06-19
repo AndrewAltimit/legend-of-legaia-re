@@ -8,7 +8,7 @@
 //!
 //! A dev generator, not part of the randomizer's shipped surface. Writes a
 //! patched `.bin` + a matching `.cue` next to the chosen output path. The image
-//! contains Sony bytes — local play only, never redistribute.
+//! contains Sony bytes - local play only, never redistribute.
 //!
 //! ```bash
 //! cargo run --release -p legaia-rando --example evilbat_serubell_testbuild -- \
@@ -159,5 +159,5 @@ fn main() {
         patched.len(),
         out_cue.display()
     );
-    println!("Sony bytes — local play only, do not redistribute.");
+    println!("Sony bytes - local play only, do not redistribute.");
 }

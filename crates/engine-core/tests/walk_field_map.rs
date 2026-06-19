@@ -12,7 +12,7 @@
 //! reads as the wrong continent - the old sparse-scatter bug).
 //!
 //! The continent ground is a procedural heightfield (corner elevations from the
-//! `+0x4000` floor-nibble grid, gated on the object-grid `0x1000` bit — the
+//! `+0x4000` floor-nibble grid, gated on the object-grid `0x1000` bit - the
 //! model `FUN_80019278` pins), NOT a per-cell pack-mesh sweep. The superseded
 //! `walk_terrain_tiles` per-cell sweep flooded ~97% of cells with pool-5
 //! because the bulk-terrain records carry `+0x10 == 0`.
@@ -103,7 +103,7 @@ fn walk_map_resolves_real_continent_for_kingdoms() {
         );
         // The continent ground is a terrain-type-keyed MULTI-page atlas (grass /
         // mountain / water / forest each on their own VRAM page), selected per
-        // cell from the record's +0x15 byte — not a single shared page. A
+        // cell from the record's +0x15 byte - not a single shared page. A
         // sea-surrounded kingdom continent must touch several terrain pages,
         // including a water page (0x1B / 0x1C).
         let mut pages: Vec<u16> = hf.cba_tsb.iter().map(|ct| ct[1]).collect();

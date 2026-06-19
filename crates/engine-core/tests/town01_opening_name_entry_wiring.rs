@@ -39,7 +39,7 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -67,7 +67,7 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
     );
     assert!(
         !host.world.name_entry_active(),
-        "name entry is NOT open at scene entry — it opens when the timeline reaches op-0x49"
+        "name entry is NOT open at scene entry - it opens when the timeline reaches op-0x49"
     );
 
     // 2. Tick until the timeline reaches its op-0x49 and opens name entry.

@@ -70,7 +70,7 @@ pub struct Scenario {
     pub diff_against: Vec<u8>,
 
     // ------------------------------------------------------------------
-    // Cross-emulator state paths. Optional — a scenario may be captured
+    // Cross-emulator state paths. Optional - a scenario may be captured
     // in one emulator and not another. Paths may contain `$HOME` or
     // `~`; consumers expand them at use time.
     /// PCSX-Redux save-state path (resolved by `run_probe.sh --scenario`).
@@ -97,7 +97,7 @@ pub struct Scenario {
     pub expected_active_scene: Option<String>,
     /// SHA-256 of the first 64 KiB of main RAM after the save-state
     /// load settles (default 60 vsyncs). Reproducible across emulators
-    /// modulo non-deterministic uninitialised regions — validates the
+    /// modulo non-deterministic uninitialised regions - validates the
     /// save state hasn't drifted vs the committed manifest.
     #[serde(default)]
     pub ram_fingerprint_sha256: Option<String>,

@@ -1,4 +1,4 @@
-//! Disc-gated runtime oracles for the **shop** randomizers — the buy-side
+//! Disc-gated runtime oracles for the **shop** randomizers - the buy-side
 //! counterparts to the chest / drop / steal oracles.
 //!
 //! The rando crate's own disc-gated test (`shop_patch_real`) proves a patched
@@ -6,7 +6,7 @@
 //! scene MAN / the casino table; the disc still parses). What it does not prove
 //! is that a runtime *reads the patched stock and lets the player buy the new
 //! item* rather than serving a stale value. A savestate can't answer that
-//! cleanly — the same RAM-cache trap the chest/drop oracles document: the menu
+//! cleanly - the same RAM-cache trap the chest/drop oracles document: the menu
 //! overlay's shop record is resident in RAM the moment the shop opens, so a
 //! state captured in a shop on a patched disc still offers the original stock; a
 //! patched shop is only observed after a fresh scene/overlay load re-reads it.
@@ -45,7 +45,7 @@ fn load_disc() -> Option<Vec<u8>> {
 }
 
 /// A shop session over `ids` (cursor `i` = `ids[i]`), each at 1 gold so any
-/// non-broke world can afford the buy — the assertion is about *which id* the
+/// non-broke world can afford the buy - the assertion is about *which id* the
 /// buy grants, not the price.
 fn session_over(ids: &[u8]) -> ShopSession {
     let items = ids

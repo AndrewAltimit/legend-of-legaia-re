@@ -1,6 +1,6 @@
 //! Disc-gated proof that the `scene_event_scripts` / `scene_v12_table`
 //! prescript records are a WORD-ALIGNED (16-bit) per-scene actor/event command
-//! structure — NOT field-VM (`FUN_801DE840`) bytecode.
+//! structure - NOT field-VM (`FUN_801DE840`) bytecode.
 //!
 //! This falsifies the long-standing "the prescript records are field-VM event
 //! scripts" claim (formerly in `scene_event_scripts`, `scene_v12_table`,

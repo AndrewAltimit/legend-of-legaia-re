@@ -30,7 +30,7 @@
 //!   player position should instead build the region-keyed table with
 //!   [`crate::region_encounter::region_encounter_table_from_man`] and roll
 //!   against the active region via
-//!   [`crate::region_encounter::RegionEncounterTracker`] — the per-region
+//!   [`crate::region_encounter::RegionEncounterTracker`] - the per-region
 //!   rate + formation-range model the world-map path already uses (see
 //!   [`crate::world::World::set_world_map_regions`]).
 //!

@@ -1,7 +1,7 @@
 //! Disc-gated end-to-end test for the random-encounter randomizer: shuffle the
 //! formation monster ids of every scene on a scratch copy of the disc, then
 //! re-decode each patched scene MAN straight off the patched image and confirm
-//! the edit is faithful — counts preserved, id multiset preserved (shuffle),
+//! the edit is faithful - counts preserved, id multiset preserved (shuffle),
 //! every id still within the scene's own pool, sectors EDC/ECC-valid, and a
 //! fixed seed byte-deterministic. Skips + passes without `LEGAIA_DISC_BIN`.
 
@@ -42,7 +42,7 @@ fn snapshot(patcher: &DiscPatcher, idx: usize) -> Option<(Vec<u8>, Vec<u8>, Vec<
     }
     ids.sort_unstable();
     // The "pool" the membership check uses is the full set of ids the scene
-    // loads (every formation, random + scripted) — a shuffled id must be one of
+    // loads (every formation, random + scripted) - a shuffled id must be one of
     // them. (`SceneEncounters::monster_pool` is now the narrower random-only
     // pool, so it isn't the right set for an all-formation membership check.)
     let mut pool = ids.clone();
@@ -189,7 +189,7 @@ fn protected_slots(patcher: &DiscPatcher) -> std::collections::BTreeMap<(usize, 
 /// The early Gimard Seru-boss fight is protected by an explicit id guard on top
 /// of the region-rate heuristic (the heuristic alone classifies its formation as
 /// random because a rate>0 region's range spans its index). Across every
-/// encounter mode and scope — including the solo-strong post-pass — every
+/// encounter mode and scope - including the solo-strong post-pass - every
 /// formation holding a protected id (Gimard, id 10) must stay byte-identical, and
 /// no other formation may acquire a protected id (no donation). Confirms the
 /// protected population is non-trivial so the test isn't vacuous.
@@ -240,7 +240,7 @@ fn protected_formations_survive_every_encounter_mode() {
 }
 
 /// Scripted / boss formations (the ones no region range reaches) must be left
-/// **byte-identical** by an encounter shuffle — randomizing them would replace a
+/// **byte-identical** by an encounter shuffle - randomizing them would replace a
 /// boss (Tetsu, Cort, Songi, …). This compares every non-random formation's ids
 /// before vs after a whole-disc shuffle, on real data, and confirms the
 /// population of scripted formations is non-trivial (so it isn't vacuous) and

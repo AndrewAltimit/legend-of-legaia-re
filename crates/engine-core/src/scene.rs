@@ -158,7 +158,7 @@ impl ProtIndex {
     ///
     /// Returns the **TOC-indexed sub-region** (the historical
     /// `toc[p+5] - toc[p+3] + 4` slice). Scene-side parsers were designed for
-    /// indexed bytes only — trailing-overlay sectors that some entries carry
+    /// indexed bytes only - trailing-overlay sectors that some entries carry
     /// are not scene-asset data (they're MIPS overlay code; see boot.md).
     /// Callers that want the full on-disc footprint should use
     /// [`Self::entry_bytes_extended`].
@@ -184,7 +184,7 @@ impl ProtIndex {
 
     /// Read an entry's full on-disc footprint (indexed payload + any
     /// trailing-overlay sectors). Use this when you want what the SCUS boot
-    /// loader actually reads — e.g. the title-screen overlay code lives in
+    /// loader actually reads - e.g. the title-screen overlay code lives in
     /// the trailing sectors past PROT 899's indexed end (see boot.md).
     /// Bypasses the indexed-only cache; callers expecting a single byte
     /// view of an entry should keep using [`Self::entry_bytes`].
@@ -203,13 +203,13 @@ impl ProtIndex {
         Ok(bytes)
     }
 
-    /// Read an entry's bytes trimmed to its **TOC-gap LBA footprint** —
+    /// Read an entry's bytes trimmed to its **TOC-gap LBA footprint** -
     /// the `(toc[idx+3] - toc[idx+2]) * 0x800` window the boot loader
     /// actually streams (start LBA + LBA count, see
     /// [`Self::entry_lba_count_retail`]).
     ///
     /// This is the correct view for the overlay code images whose
-    /// extraction `.BIN`s **over-read** into the following entry — the
+    /// extraction `.BIN`s **over-read** into the following entry - the
     /// per-summon move-VM stagers (PROT 0903.., the high-summon block,
     /// the enemy-boss block). [`Self::entry_bytes_extended`] returns the
     /// raw on-disc footprint, which for these entries runs past their own
@@ -235,7 +235,7 @@ impl ProtIndex {
     /// Read raw bytes from `PROT.DAT` at an arbitrary file offset.
     ///
     /// Used to reach unindexed gap regions that don't belong to any TOC
-    /// entry — e.g. the 240 KB system-UI gap between the TOC and
+    /// entry - e.g. the 240 KB system-UI gap between the TOC and
     /// `init_data` that carries the menu-glyph atlas and other
     /// boot-time UI TIMs (see [`docs/subsystems/boot.md`]).
     pub fn prot_dat_raw_bytes(&self, byte_offset: u64, len: usize) -> Result<Vec<u8>> {
@@ -268,7 +268,7 @@ impl ProtIndex {
     }
 
     /// PROT entries in `scene_name`'s CDNAME block whose payload is a
-    /// `scene_tmd_stream` — the battle-stage half-dome backdrops (sky + mountain
+    /// `scene_tmd_stream` - the battle-stage half-dome backdrops (sky + mountain
     /// ring + ground that the battle is fought inside; see
     /// [`docs/subsystems/battle.md`] "Battle background"). For an overworld
     /// scene like `map01` these are the per-area stage variants (e.g. 88/89/90:
@@ -851,7 +851,7 @@ impl Scene {
     /// from the walk `.MAP` floor grid (`+0x4000`) gated on the `0x1000`
     /// visible bit, with corner elevations from the per-scene floor-height LUT
     /// (the math `FUN_80019278` pins). This is the correct model for the bulk
-    /// ground — the slot-1 pack meshes are only the sparse placed landmarks
+    /// ground - the slot-1 pack meshes are only the sparse placed landmarks
     /// ([`Self::walk_object_placements`]), not a per-cell terrain mesh. Returns
     /// `Ok(None)` when the scene has no field map or no floor LUT.
     pub fn walk_heightfield(
@@ -1172,7 +1172,7 @@ impl MapIdResolver for DefaultMapIdResolver {
 ///
 /// **Not a [`MapIdResolver`].** That trait keys on a `u8` map id (the `0x3E`
 /// door-warp's 7 scene-*type* selectors, `0..=6`). The `0x3F` index is a
-/// distinct, wider id space — `i16`, observed past `u8` range (e.g. `630`) — so
+/// distinct, wider id space - `i16`, observed past `u8` range (e.g. `630`) - so
 /// a `u8`-keyed resolver can't represent it without lossy truncation. Hence the
 /// dedicated [`Self::resolve`]/[`Self::destination`] by `i16`.
 #[derive(Debug, Clone, Default)]
@@ -1463,7 +1463,7 @@ impl SceneHost {
         &self.scene_destinations
     }
 
-    /// A [`SceneDestinationResolver`] over the current scene's destinations —
+    /// A [`SceneDestinationResolver`] over the current scene's destinations -
     /// the live resolver for the `0x3F` named-scene-change `i16` index space,
     /// rebuilt from disc each scene entry. (The `0x3E` door-warp keeps the
     /// separate `u8`-keyed [`map_resolver`](Self::map_resolver).)
@@ -1704,7 +1704,7 @@ impl SceneHost {
         self.world
             .load_field_region_tables(&region_block, &zone_table);
         // Static prop colliders: one box centre per placed `.MAP` object
-        // (spawn position + the record's collision-footprint offset — the
+        // (spawn position + the record's collision-footprint offset - the
         // static-entity arm of the actor probe). Installed unconditionally
         // (empty for scenes with no field map) so a stale scene's props
         // never leak across a transition; blocking stays behind the opt-in
@@ -2237,7 +2237,7 @@ impl SceneHost {
         // Named scene-change (field-VM op 0x3F) takes precedence over the
         // map-id door-warp: its destination name is carried inline by the op,
         // so it loads directly without the map-id resolver. This is the live
-        // consumer of the disc-sourced scene-destination data — the same names
+        // consumer of the disc-sourced scene-destination data - the same names
         // [`crate::man_field_scripts::scene_destinations`] catalogs.
         if let Some((name, _entry_x, _entry_z)) = self.world.pending_named_scene_transition.take() {
             // Drop a stale map-id request from the same frame; the named target
@@ -2354,16 +2354,16 @@ const PROT_EFFECT_MODEL_LIBRARY_ENTRY: u32 = 871;
 /// head (`[3]`, `[4]`) - exactly retail's temporal layout (the field head
 /// seeds `[0..=4]`; battle init reloads `[3..=32]`).
 ///
-/// This is the engine's analogue of the retail **battle `gp[0x754]` value** —
+/// This is the engine's analogue of the retail **battle `gp[0x754]` value** -
 /// the additive base `FUN_80021B04` applies to a move-FX / summon part record's
 /// `model_sel` (`DAT_8007C018[model_sel + gp[0x754]]`). In retail that base is
 /// *not* a constant: it is `party_count + 2` (the two fixed pool slots + the live
 /// party-character meshes precede the library), i.e. `3` for the 1-member
-/// training party and `5` for the full 3-member party — save-corpus-pinned by
+/// training party and `5` for the full 3-member party - save-corpus-pinned by
 /// `crates/mednafen/tests/summon_model_base.rs` (see `docs/formats/move-power.md`).
 /// The engine instead registers the library at a *fixed* `[3..=32]` and keeps
 /// `model_sel` library-relative, so `model_sel + 3` lands on the same library
-/// model retail reaches via `model_sel + gp[0x754]` — the library content is
+/// model retail reaches via `model_sel + gp[0x754]` - the library content is
 /// identical, only its pool offset shifts with party size, so the two layouts are
 /// equivalent. `World::spawn_move_fx` uses this fixed base.
 pub(crate) const EFFECT_MODEL_LIBRARY_BASE: usize = 3;
@@ -3162,7 +3162,7 @@ opdeene = "MOV/MV1.STR"
             },
         ]);
         assert_eq!(r.len(), 2);
-        // Resolve by the i16 index (the 0x3F index space — wider than u8).
+        // Resolve by the i16 index (the 0x3F index space - wider than u8).
         assert_eq!(r.resolve(21), Some("town0c"));
         assert_eq!(r.resolve(155), Some("rikuroa"));
         assert_eq!(r.resolve(99), None);

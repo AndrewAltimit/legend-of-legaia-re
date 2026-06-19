@@ -3,7 +3,7 @@
 //!
 //! This is the glue the top-level CLI drives. It keeps the per-module logic
 //! (drop planning, slot re-pack, sector write-back) decoupled and testable while
-//! giving the binary a single call per feature. It embeds no game bytes — every
+//! giving the binary a single call per feature. It embeds no game bytes - every
 //! value it reads comes from the user's own disc image at runtime.
 
 use anyhow::{Context, Result};
@@ -151,7 +151,7 @@ pub struct EquipmentDropReport {
 /// Inject the **additive** bonus equipment drop (see [`crate::bonus_drop`]): a
 /// code hook into the battle-end reward routine that, on a `chance_pct` roll
 /// once per battle, grants one extra random equipment id picked from the disc's
-/// own equipment pool — *on top of* the normal drop, which is left untouched.
+/// own equipment pool - *on top of* the normal drop, which is left untouched.
 ///
 /// Two same-size `SCUS_942.54` edits: the detour at the reward-routine hook and
 /// the routine + id-table blob in preserved rodata padding. Fails (without
@@ -238,7 +238,7 @@ pub struct SeruTradeReport {
 /// (enabled flag + master `seed` + per-vendor offer cap) into preserved
 /// `SCUS_942.54` rodata padding. The clean-room engine reads the blob and, at
 /// runtime, lets vendors offer to swap one of a character's seru for a different
-/// one — the offers reseeding every two in-game hours from the same seed.
+/// one - the offers reseeding every two in-game hours from the same seed.
 ///
 /// A single same-size, in-place edit. Re-running with a new seed overwrites the
 /// prior blob. Fails (without touching the disc) if the build isn't the
@@ -287,7 +287,7 @@ pub struct OverlaySliceReport {
 }
 
 /// Find a pochi-filler PROT slot whose on-disc footprint can hold `need_bytes`
-/// (the "pochi" magic head marks reserved dev filler — safe to overwrite). Picks
+/// (the "pochi" magic head marks reserved dev filler - safe to overwrite). Picks
 /// the largest such slot (most headroom, deterministic by max-footprint then
 /// lowest index). `None` if none qualifies.
 fn find_pochi_host(patcher: &DiscPatcher, need_bytes: usize) -> Option<usize> {
@@ -319,7 +319,7 @@ fn find_pochi_host(patcher: &DiscPatcher, need_bytes: usize) -> Option<usize> {
 /// op-0x49 arm edge (overlay 0897) into the stub. The stub gates on the sub-op
 /// (only a merchant, sub-op `0`), FlushCaches, runs the overlay (which writes
 /// [`crate::seru_overlay::SENTINEL`] to [`crate::seru_overlay::SENTINEL_ADDR`]),
-/// then resumes the field VM — so the load fires when the player opens a vendor.
+/// then resumes the field VM - so the load fires when the player opens a vendor.
 /// No Sony bytes.
 pub fn inject_overlay_slice(patcher: &mut DiscPatcher) -> Result<OverlaySliceReport> {
     inject_overlay_slice_opts(patcher, true)
@@ -364,7 +364,7 @@ pub fn inject_overlay_slice_opts(
         .patch_named_file(SCUS_NAME, stub_off as u64, &stub)
         .context("write overlay-slice loader stub")?;
 
-    // 3. Detour the field-VM op-0x49 arm edge (overlay 0897, raw — maps linearly
+    // 3. Detour the field-VM op-0x49 arm edge (overlay 0897, raw - maps linearly
     //    from its base). Guard the displaced pair matches the recognized build.
     let overlay_entry = patcher
         .read_entry(ov::SHOP_OVERLAY_PROT_INDEX)
@@ -399,7 +399,7 @@ pub fn inject_overlay_slice_opts(
 /// As [`inject_overlay_slice`], but hosts the overlay via the **dead dev-mode**
 /// path (option 1): the op-0x49 detour only REQUESTS a repurposed dev game-mode
 /// ([`ov::DEAD_MODE_INDEX`]), and that mode's INIT handler (our gap loader) does
-/// the CD load in the safe between-frames context — avoiding the mid-tick
+/// the CD load in the safe between-frames context - avoiding the mid-tick
 /// reentrancy that froze the raw stub. Edits: the pochi overlay, two gap
 /// routines (trigger + mode-INIT loader), the op-0x49 detour, and the dead
 /// mode's mode-table handler word (guarded against an unexpected build). All 7
@@ -546,7 +546,7 @@ pub fn inject_overlay_slice_warp_opts(
         .context("read SCUS_942.54 for warp slice")?;
     // Fire-once guard is UNRELIABLE: its flag cell (0x8007AF28) sits in the gap
     // tail the game reuses at runtime, so it can read "already fired" before our
-    // first warp and skip it. The DRAW build avoids it entirely — its overlay holds
+    // first warp and skip it. The DRAW build avoids it entirely - its overlay holds
     // the draw mode indefinitely, so the warp never returns to re-trigger (no loop
     // even without fire-once). The sentinel build keeps fire-once only because its
     // round-trip returns; that path needs a reliable flag location later.
@@ -689,7 +689,7 @@ pub fn inject_overlay_slice_picker(patcher: &mut DiscPatcher) -> Result<OverlayS
         .patch_named_file(SCUS_NAME, redir_off as u64, &redirect)
         .context("write FUN_80025980 redirect")?;
 
-    // 3. Picker renderer prologue -> picker trigger (overlay 0899, slot A, raw —
+    // 3. Picker renderer prologue -> picker trigger (overlay 0899, slot A, raw -
     //    maps linearly from base).
     let menu_entry = patcher
         .read_entry(ov::PICKER_MENU_PROT_INDEX)
@@ -1019,7 +1019,7 @@ pub fn current_monster_stats(patcher: &DiscPatcher) -> Result<Vec<monster_stats:
 
 /// Randomize every monster's combat stats in place (see [`crate::monster_stats`]).
 /// Each monster's `0x14000`-byte slot is decompressed, the stat halfwords
-/// rewritten, and recompressed back to the same footprint — a same-size,
+/// rewritten, and recompressed back to the same footprint - a same-size,
 /// in-place edit. A slot too tight to re-pack is skipped (recorded in the
 /// report) rather than aborting the run. Returns the apply report.
 pub fn randomize_monster_stats(
@@ -1063,7 +1063,7 @@ pub fn randomize_monster_stats(
 }
 
 /// Build the `256`-entry "id is sellable" mask from the disc's SCUS item table:
-/// an id with a `> 0` price. Used to validate + delimit town-shop records — the
+/// an id with a `> 0` price. Used to validate + delimit town-shop records - the
 /// record `count` over-counts the purchasable stock by a trailing run of
 /// unsellable (price-`0`) template ids, so the sellable mask both rejects stray
 /// `0x49` payloads and trims the padding out of the stock (see
@@ -1156,7 +1156,7 @@ pub fn apply_item_price_edits(patcher: &mut DiscPatcher) -> Result<usize> {
 /// Randomize town-merchant stock (field-VM shop op `0x49`; see [`crate::shop`]).
 /// Shop item ids are global inventory ids, so this is a **global** reassignment
 /// across every town shop on the disc: `Shuffle` redistributes the existing
-/// shop-item multiset, `Random` draws each slot from the **sellable pool** —
+/// shop-item multiset, `Random` draws each slot from the **sellable pool** -
 /// items the game prices `> 0` (see [`crate::item_price::sellable_pool`]), which
 /// excludes every quest / key / story item (all price `0`) so a shop can never
 /// stock one. As a prerequisite this first prices the chest-found equipment
@@ -1364,7 +1364,7 @@ pub fn current_move_powers(patcher: &DiscPatcher) -> Result<Option<Vec<i16>>> {
 }
 
 /// Randomize the special-attack power table (see [`crate::move_power`]). Rewrites
-/// only each record's `+0x00` power halfword in PROT 0898 — a same-size raw edit
+/// only each record's `+0x00` power halfword in PROT 0898 - a same-size raw edit
 /// (no LZS). Returns the number of power values that changed.
 pub fn randomize_move_powers(
     patcher: &mut DiscPatcher,
@@ -1381,7 +1381,7 @@ pub fn randomize_move_powers(
         return Ok(0);
     };
     // Redistribute powers only among populated records. Empty (all-zero) records
-    // — including the index-0 sentinel `parse` keys on — must stay zero, so a
+    // - including the index-0 sentinel `parse` keys on - must stay zero, so a
     // move's power is never handed to an unused slot (nor a real move zeroed).
     let populated: Vec<usize> = records
         .iter()
@@ -1434,7 +1434,7 @@ pub fn current_affinity_matrix(
 }
 
 /// Randomize the element-affinity matrix (see [`crate::element_affinity`]).
-/// Rewrites the 64 matrix bytes in PROT 0898 — a same-size raw edit (no LZS).
+/// Rewrites the 64 matrix bytes in PROT 0898 - a same-size raw edit (no LZS).
 /// Returns the number of cells that changed.
 pub fn randomize_element_affinity(
     patcher: &mut DiscPatcher,
@@ -1476,7 +1476,7 @@ pub struct SpellCost {
 const SCUS_NAME: &str = "SCUS_942.54";
 
 /// Read every named, costed spell's id + name + MP cost from the SCUS spell
-/// table — the population the MP-cost randomizer redistributes. Empty / unnamed
+/// table - the population the MP-cost randomizer redistributes. Empty / unnamed
 /// internal-tier slots and zero-cost spells are excluded. `None` if SCUS / its
 /// spell table can't be parsed.
 pub fn current_spell_costs(patcher: &DiscPatcher) -> Result<Option<Vec<SpellCost>>> {
@@ -1501,7 +1501,7 @@ pub fn current_spell_costs(patcher: &DiscPatcher) -> Result<Option<Vec<SpellCost
 }
 
 /// Randomize spell MP costs in the SCUS spell table (see [`crate::spell_cost`]).
-/// Rewrites only the `+3` cost byte of each named, costed spell — a same-size
+/// Rewrites only the `+3` cost byte of each named, costed spell - a same-size
 /// in-place SCUS patch. Returns the number of spells whose cost changed.
 pub fn randomize_spell_costs(
     patcher: &mut DiscPatcher,
@@ -1606,7 +1606,7 @@ pub fn current_equip_bonuses(patcher: &DiscPatcher) -> Result<Option<Vec<EquipBo
 
 /// Randomize the equipment passive stat bonuses (see [`crate::equip_bonus`]).
 /// Rewrites only the `+0..+4` stat tuple of each bonus row that at least one
-/// equippable item references, reassigning it **within its slot category** — a
+/// equippable item references, reassigning it **within its slot category** - a
 /// same-size in-place SCUS patch. The equip-character mask, accessory passive,
 /// and slot type stay welded to their row. Returns the number of rows changed.
 ///
@@ -1671,7 +1671,7 @@ pub struct EncounterApplyReport {
     /// Total formation id bytes changed across all scenes.
     pub ids_changed: usize,
     /// Formation id slots (in written-back scenes) that ended up holding one of
-    /// the `unused_enemies` ids — i.e. how many unused enemies the run actually
+    /// the `unused_enemies` ids - i.e. how many unused enemies the run actually
     /// placed. Always `0` unless `unused_enemies` was non-empty and the mode was
     /// [`DropMode::Random`].
     pub unused_placed: usize,
@@ -1686,14 +1686,14 @@ pub struct EncounterApplyReport {
 
 /// Randomize every scene's random-encounter formations in place. For each scene
 /// bundle the monster ids are reassigned from the scene's own id pool, the MAN
-/// is recompressed, and — when it fits the original compressed footprint —
+/// is recompressed, and - when it fits the original compressed footprint -
 /// written back. Scenes whose re-pack overflows are recorded in `skipped` and
 /// left unchanged.
 ///
 /// `unused_enemies` is the curated set of monster ids no formation normally
 /// references (see [`crate::unused::UNUSED_ENEMY_IDS`]). When non-empty *and*
 /// `mode` is [`DropMode::Random`], those ids join each scene's candidate pool so
-/// the run can spawn them — the battle loader streams a monster's archive slot
+/// the run can spawn them - the battle loader streams a monster's archive slot
 /// on demand by id, so an id outside the scene's own set still loads. Under
 /// [`DropMode::Shuffle`] it has no effect (a multiset-preserving permutation
 /// can't introduce a new id). Pass an empty slice to keep the prior behaviour;
@@ -1735,10 +1735,10 @@ pub fn randomize_encounters(
 }
 
 /// How wide a net the encounter randomizer casts when reassigning a scene's
-/// monsters — the *pool* a random encounter is drawn from.
+/// monsters - the *pool* a random encounter is drawn from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncounterScope {
-    /// Each scene draws only from its own monster ids — the classic per-scene
+    /// Each scene draws only from its own monster ids - the classic per-scene
     /// behaviour ([`randomize_encounters`]). Difficulty stays local; a swap can
     /// never surprise you with a monster the area didn't already host.
     Scene,
@@ -1762,7 +1762,7 @@ const SCOPED_SHUFFLE_NONCE: u64 = 0x5343_4F50_4544_0001; // "SCOPED\0\1"
 /// For `Kingdom` / `World` scope the disc is processed in two passes:
 ///
 /// 1. **Collect** every scene's encounter data and (for `Kingdom`) its kingdom,
-///    then build the per-group monster pool — the union of each group's scenes'
+///    then build the per-group monster pool - the union of each group's scenes'
 ///    random-encounter ids (bosses excluded, exactly as the per-scene path).
 /// 2. **Reassign**: under [`DropMode::Random`] each scene's random slots are
 ///    redrawn from its group pool ([`SceneEncounters::fill_random_slots_from_pool`]);
@@ -1849,9 +1849,9 @@ pub fn randomize_encounters_scoped(
         }
     }
 
-    // Pass 2: reassign + write back. The two modes differ enough — Random fills
+    // Pass 2: reassign + write back. The two modes differ enough - Random fills
     // each scene independently; Shuffle moves ids *between* scenes and so must
-    // keep the group multiset intact across re-pack failures — that they own
+    // keep the group multiset intact across re-pack failures - that they own
     // their write-back loops.
     let mut report = EncounterApplyReport::default();
     match mode {
@@ -1880,7 +1880,7 @@ pub fn randomize_encounters_scoped(
         DropMode::Shuffle => {
             // A cross-scene shuffle conserves the group-wide id multiset only if
             // every shuffled scene is actually written. A scene whose mutated
-            // MAN no longer fits its compressed footprint can't be — and if it
+            // MAN no longer fits its compressed footprint can't be - and if it
             // silently kept its original ids, the ids it was *given* would
             // vanish while the ids it *gave away* would duplicate. So lock any
             // such scene to its original (removing it from the pool) and reshuffle
@@ -2013,7 +2013,7 @@ pub fn monster_power_table(patcher: &DiscPatcher) -> Result<crate::encounter::Mo
 /// Record each locatable scene's **native** combat-power baseline (mean random
 /// monster power), keyed by PROT entry index. Read **before** any encounter edit
 /// so the baseline is the area's authored difficulty, not the post-randomization
-/// monsters — see [`encounter::SceneEncounters::baseline_power`].
+/// monsters - see [`encounter::SceneEncounters::baseline_power`].
 fn solo_strong_baselines(
     patcher: &DiscPatcher,
     table: &crate::encounter::MonsterPowerTable,
@@ -2289,7 +2289,7 @@ pub fn randomize_chests(
                 for k in 0..sc.sites.len() {
                     // A chest whose original item is static keeps it (and consumes
                     // no rng draw, so the stream past it is unaffected by which
-                    // sites are static — only the pool composition is).
+                    // sites are static - only the pool composition is).
                     if keep_static.contains(&sc.decoded[sc.sites[k]]) {
                         continue;
                     }
@@ -2445,8 +2445,8 @@ pub struct DoorApplyReport {
 /// `B`, `A` is sent to where `B` is reached from (`dest(partner_orig(B))`) and
 /// vice versa, so walking `A → B`'s doorstep lands you on `B`, whose new
 /// destination is `A`'s doorstep. `partner_orig(X)` is the reverse door (same
-/// scene-pair, opposite direction); sites without one — or the odd site left
-/// over by an odd matching — are **left at their original destination**
+/// scene-pair, opposite direction); sites without one - or the odd site left
+/// over by an odd matching - are **left at their original destination**
 /// (untouched) and returned as the `unpaired` count: a door with no clean reverse
 /// can't be made two-way, so coupled mode leaves it vanilla rather than giving it
 /// a one-way reassignment. `homes[i]` is the CDNAME label of site `i`'s home
@@ -2468,7 +2468,7 @@ fn plan_doors_coupled(origs: &[Dest], homes: &[String], rng: &mut SplitMix64) ->
     let n = origs.len();
     let name_of = |d: &Dest| String::from_utf8_lossy(&d.name).into_owned();
 
-    // Group site indices by (home_scene, dest_scene) — both directions of a
+    // Group site indices by (home_scene, dest_scene) - both directions of a
     // connection live in mirror groups (a,b) / (b,a).
     let mut groups: HashMap<(String, String), Vec<usize>> = HashMap::new();
     for (i, d) in origs.iter().enumerate() {
@@ -2503,7 +2503,7 @@ fn plan_doors_coupled(origs: &[Dest], homes: &[String], rng: &mut SplitMix64) ->
             // Only couple a connection whose two directions have the SAME number
             // of doors. If they differ, pairing `min(len)` of them would leave
             // the majority direction's excess doors at their original
-            // destination while their lone reverse gets matched away — producing
+            // destination while their lone reverse gets matched away - producing
             // a dangling one-way edge (`HA→HB` survives, `HB→HA` vanishes). The
             // safe choice is to leave the whole unbalanced connection static so
             // both directions stay intact (it's reported in `unpaired`).
@@ -2521,8 +2521,8 @@ fn plan_doors_coupled(origs: &[Dest], homes: &[String], rng: &mut SplitMix64) ->
     // Match partnered doors into the new involution, constrained to
     // **length-preserving** swaps. When `a` matches `b`, `a` receives the
     // descriptor `origs[partner[b]]` (its name is `b`'s home-scene label) and
-    // vice versa. The rewrite keeps the MAN's decompressed size unchanged — so no
-    // scene grows and none can overflow on recompress — exactly when the name
+    // vice versa. The rewrite keeps the MAN's decompressed size unchanged - so no
+    // scene grows and none can overflow on recompress - exactly when the name
     // lengths line up: `len(home[b]) == len(dest[a])` and `len(home[a]) ==
     // len(dest[b])`. Bucketing each door by `key = (len(home), len(dest))` and
     // matching a `(p, q)` bucket against the mirror `(q, p)` bucket guarantees
@@ -2572,11 +2572,11 @@ fn plan_doors_coupled(origs: &[Dest], homes: &[String], rng: &mut SplitMix64) ->
         dest_new[b] = origs[partner[a].unwrap()].clone();
     }
 
-    // Unpaired: every door not placed in a matched pair — no reverse partner
+    // Unpaired: every door not placed in a matched pair - no reverse partner
     // (dead-end / one-way story warp, or a door orphaned by an unequal-direction
     // connection) or no length-compatible partner to swap with. These keep their
     // ORIGINAL destination (coupled mode never gives a door a one-way
-    // reassignment), so `dest_new` already holds the right bytes — only the count
+    // reassignment), so `dest_new` already holds the right bytes - only the count
     // is reported.
     let matched: std::collections::HashSet<usize> =
         matched_pairs.iter().flat_map(|&(a, b)| [a, b]).collect();
@@ -2593,7 +2593,7 @@ fn plan_doors_coupled(origs: &[Dest], homes: &[String], rng: &mut SplitMix64) ->
 ///   each door's destination from the global pool.
 /// - **Coupled**: re-pairs doors into two-way connections (the `mode` is treated
 ///   as the matching's randomness; doors with no reverse partner get the
-///   decoupled fallback — see `plan_doors_coupled`).
+///   decoupled fallback - see `plan_doors_coupled`).
 ///
 /// Because the destination name is variable length, this uses the
 /// [`crate::door::SceneDoors::rebuild`] relocation path (decompress → resize the
@@ -2695,8 +2695,8 @@ pub fn randomize_doors(
     // streams to write. `forced` is the set of global site indices pinned to
     // their ORIGINAL destination (a forced site contributes no edit).
     //
-    // The coupled revert is a transitive closure. If a site can't be written —
-    // its scene overflows — it keeps its original destination, which only stays a
+    // The coupled revert is a transitive closure. If a site can't be written -
+    // its scene overflows - it keeps its original destination, which only stays a
     // valid two-way connection if its matched partner *and* its original reverse
     // also keep theirs. So a forced site forces both `match_of[X]` (the new
     // partner, which was sending players to X) and `partner_of[X]` (the original
@@ -2719,7 +2719,7 @@ pub fn randomize_doors(
             let mut edits: Vec<DestEdit> = Vec::new();
             for (k, site) in scene.sites.iter().enumerate() {
                 if forced.contains(&(base + k)) {
-                    continue; // pinned to original — no edit
+                    continue; // pinned to original - no edit
                 }
                 let d = &new_descs[base + k];
                 let unchanged = d.index == site.index
@@ -2849,7 +2849,7 @@ pub fn current_house_doors(patcher: &DiscPatcher) -> Result<Vec<(usize, u8, u8)>
 /// Randomize intra-town (house / interior) doors by a **per-scene,
 /// class-preserving shuffle** of the player door-warp target tiles: `IN`-class
 /// (interior landing) targets permute among `IN` sites, `OUT`-class (exterior
-/// doorstep) targets among `OUT` sites (see [`crate::house_door`] — exiting
+/// doorstep) targets among `OUT` sites (see [`crate::house_door`] - exiting
 /// any interior always lands back outside, so no softlock is constructible).
 /// Each scene's MAN is recompressed (same-size operand edits) and written back
 /// when it fits; a scene that overflows keeps its original tiles. Only
@@ -2901,7 +2901,7 @@ pub struct StealSite {
 
 /// Read every stealable monster's current steal (item + chance) out of the
 /// static `SCUS_942.54` steal table (`DAT_80077828`). Non-stealable monsters
-/// (`item == 0` or `chance == 0`) are omitted. Purely read-only — the audit
+/// (`item == 0` or `chance == 0`) are omitted. Purely read-only - the audit
 /// surface for deciding what a steal randomization would change.
 pub fn current_steals(patcher: &DiscPatcher) -> Result<Vec<StealSite>> {
     let edits = crate::steal::StealEdits::locate(patcher.image())
@@ -2928,7 +2928,7 @@ pub struct StealApplyReport {
 
 /// Randomize the per-monster steal items in place. The steal table is a static
 /// `SCUS_942.54` table, so each edit is a single same-size byte overwrite of the
-/// item (the steal *chance* is preserved) — no re-pack, nothing skipped.
+/// item (the steal *chance* is preserved) - no re-pack, nothing skipped.
 /// `Shuffle` redistributes the existing steal-item multiset among the stealable
 /// monsters; `Random` draws each item from `item_pool`. Returns the plan plus
 /// the apply report.
@@ -2968,7 +2968,7 @@ pub struct ArtSite {
 }
 
 /// Read every Tactical Art's current button combo out of the static
-/// `SCUS_942.54` arts-name table (`DAT_80075EC4`). Purely read-only — the audit
+/// `SCUS_942.54` arts-name table (`DAT_80075EC4`). Purely read-only - the audit
 /// surface for what an arts-combo randomization would change. Includes the
 /// per-character Miracle Art rows (flagged `is_miracle`), which the randomizer
 /// leaves untouched.
@@ -2998,7 +2998,7 @@ pub struct ArtsApplyReport {
 }
 
 /// Randomize each art's button combo by rewriting its directional **glyph
-/// bytes in place** (same-size 2-byte SCUS edits — no re-pack, nothing
+/// bytes in place** (same-size 2-byte SCUS edits - no re-pack, nothing
 /// skipped). The bytes are the single copy both the Arts-menu display and the
 /// in-battle input matcher read, so the trigger and the display stay in sync.
 /// Input counts are preserved and each character's combos stay unique; the
@@ -3088,7 +3088,7 @@ pub fn inject_seru_bell_name(patcher: &mut DiscPatcher) -> Result<Option<String>
 
 /// Read the new game's current starting inventory (`(item_id, count)` slots) by
 /// decoding the seed code region in `SCUS_942.54`. Vanilla retail is a single
-/// slot — Healing Leaf (`0x77`) ×5. Purely read-only.
+/// slot - Healing Leaf (`0x77`) ×5. Purely read-only.
 pub fn current_starting_items(patcher: &DiscPatcher) -> Result<Vec<(u8, u8)>> {
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
@@ -3232,7 +3232,7 @@ pub struct StartingLevelReport {
     /// The level-`N` stats written into the lead (slot 0) template, in template
     /// order (`hp, mp, agl, atk, udf, ldf, spd, int`). Equal to `party_stats[0]`.
     pub stats: [u16; 8],
-    /// The number of party slots seeded to level `N` (Vahn / Noa / Gala — the
+    /// The number of party slots seeded to level `N` (Vahn / Noa / Gala - the
     /// growth-capable slots). The displayed level (`+0x130`) is stamped on every
     /// roster slot by the seed loop; these are the slots whose stats were also
     /// leveled to match.
@@ -3255,7 +3255,7 @@ pub struct StartingLevelReport {
 ///   `sw $t0, <+0x0>($s0)` stores that repurpose the slot-3 / slot-1 / slot-2
 ///   next-level-threshold seeds (and one redundant `lui`), and each slot's
 ///   next-level-threshold cell (`+0x4`), set to `reach(level + 1)`, so every
-///   character's status readout is coherent — not just the lead's (an earlier version
+///   character's status readout is coherent - not just the lead's (an earlier version
 ///   seeded only slot 0, leaving Noa with experience `0` and Gala with a stale level-1
 ///   threshold). All three `+0x4` cells take the same threshold; the small per-slot
 ///   `FUN_801E9504` correction is re-applied by the applier on each character's first
@@ -3603,7 +3603,7 @@ mod door_plan_tests {
         }
     }
 
-    /// Sorted multiset of (name, entry_x) — the descriptor identity for the
+    /// Sorted multiset of (name, entry_x) - the descriptor identity for the
     /// permutation check.
     fn multiset(v: &[Dest]) -> Vec<(Vec<u8>, u8)> {
         let mut m: Vec<_> = v.iter().map(|d| (d.name.clone(), d.entry_x)).collect();

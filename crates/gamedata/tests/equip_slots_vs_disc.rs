@@ -11,18 +11,18 @@
 //! 1. The 4 disc categories map to the four real equipment slots; the three
 //!    armour categories match gamedata exactly (body 20 / head 15 / footwear
 //!    16). Weapon (50) > curated weapons (27) only because the disc enumerates
-//!    the upgradeable Ra-Seru weapon as ~24 per-tier entries — still all weapons.
+//!    the upgradeable Ra-Seru weapon as ~24 per-tier entries - still all weapons.
 //! 2. The disc "Head" category is **exactly the gamedata helmets** (Legaia's
-//!    seals / clips / crowns / bands / earring / helmet / plume) — not a mix of
+//!    seals / clips / crowns / bands / earring / helmet / plume) - not a mix of
 //!    helmet + accessory. Name-match: Body 20/20, Footwear 16/16, Head >=14/15
 //!    (the lone gap is the "Power Earring(s)" singular/plural spelling).
 //! 3. **None of the 77 gamedata accessories ("Goods") appear in the equip-stat
-//!    table** — they are a separate system, so the `+7` byte was never meant to
+//!    table** - they are a separate system, so the `+7` byte was never meant to
 //!    classify them.
 //!
 //! So the `+7` byte fully drives Legaia's four armor/weapon slots; there is no
 //! helmet/accessory collision. The genuinely-separate open question is where
-//! the accessory/Goods records live — a distinct thread, not a `+7`
+//! the accessory/Goods records live - a distinct thread, not a `+7`
 //! disambiguation problem.
 //!
 //! Skips silently when `extracted/SCUS_942.54` is missing.
@@ -107,7 +107,7 @@ fn disc_equip_slots_map_one_to_one_to_gamedata() {
     // The three armor categories map to the curated gamedata slots *exactly*
     // (armor has no tier system). Weapons do NOT, because the disc enumerates
     // the upgradeable Ra-Seru weapon as ~24 separate per-tier entries (Meta
-    // $1..$9, Terra $1..$8, Ozma $1..$7) that gamedata collapses to one each —
+    // $1..$9, Terra $1..$8, Ozma $1..$7) that gamedata collapses to one each -
     // so disc Weapon (50) > curated weapons (27). That's expected, not a slot
     // problem: every disc Weapon-slot item is still a weapon.
     let db = Database::load();

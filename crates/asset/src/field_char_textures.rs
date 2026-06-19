@@ -1,20 +1,20 @@
-//! Field-character texture pack — PROT 0874 **section 2** (the third LZS
+//! Field-character texture pack - PROT 0874 **section 2** (the third LZS
 //! descriptor of the `player.lzs` container, the "etim.dat" texture section).
 //!
 //! The field-form player meshes ([`crate::character_pack`], PROT 0874 §0)
 //! reference a 4bpp texture page at PSX texpage `(832, 256)` (`tsb 0x3D`) with
 //! per-character CLUTs packed into VRAM **row 478**. Those textures are *not*
-//! in PROT 0876 (`player_data` — that is VAB + an empty TIM_LIST + SEQ); they
+//! in PROT 0876 (`player_data` - that is VAB + an empty TIM_LIST + SEQ); they
 //! live LZS-compressed in PROT 0874 §2 and are uploaded to VRAM at field-init.
 //!
 //! ## Loader provenance
 //!
 //! `FUN_8001E890` (the field player loader) loads `data\field\player.lzs`
-//! (disc index `0x36c`) — the same 3-descriptor [`crate::parse_player_lzs`]
+//! (disc index `0x36c`) - the same 3-descriptor [`crate::parse_player_lzs`]
 //! container the per-entry extractor labels PROT 0874. It LZS-decodes all three
 //! sections (`piVar2[2..7]`):
 //!
-//! - §0 → the 5-TMD character mesh pack (`DAT_8007C018[0..4]`) — [`crate::character_pack`].
+//! - §0 → the 5-TMD character mesh pack (`DAT_8007C018[0..4]`) - [`crate::character_pack`].
 //! - §1 → effect / vdf models (`DAT_8007b75c`).
 //! - **§2 → a [`crate::pack`] of asset chunks, each uploaded to VRAM via
 //!   `FUN_800198e0`.** This module decodes that section.
@@ -23,8 +23,8 @@
 //!
 //! Each pack entry is a standard PSX TIM (`magic 0x10`, `flags & 8` = has CLUT,
 //! 4bpp). `FUN_800198e0` uploads it with one **non-standard** detail: the CLUT
-//! block is written as a **flat horizontal strip** — `LoadImage(rect = { x =
-//! clut_x, y = clut_y, w = clut_w * clut_h, h = 1 })` — rather than the declared
+//! block is written as a **flat horizontal strip** - `LoadImage(rect = { x =
+//! clut_x, y = clut_y, w = clut_w * clut_h, h = 1 })` - rather than the declared
 //! `clut_w × clut_h` rectangle. So a TIM whose CLUT header says `(0, 478, 16, 4)`
 //! places 64 colours at VRAM row 478, columns 0..63 (four 16-colour palettes
 //! side by side), which is exactly where the meshes' per-primitive CBA columns

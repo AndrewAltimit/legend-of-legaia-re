@@ -4,7 +4,7 @@ extracted PROT corpus to pin each TIM's on-disc source entry.
 
 Methodology validated by pinning the title-overlay save-menu sprites
 (vaddr 0x801E5120 and 0x801EE120) to PROT[899] file offsets 0x16908
-and 0x1F908 — see memory file `project_title_tims_in_overlay`.
+and 0x1F908 - see memory file `project_title_tims_in_overlay`.
 
 Usage:
     scripts/asset-investigation/scan_tims_and_match_prot.py <ram_dump.bin> [options]
@@ -36,7 +36,7 @@ Options:
                         Default: `full`.
 
 The runtime patches CLUT_x / CLUT_y at +0x0C..+0x0F of each TIM
-when relocating CLUTs at upload time — see the publisher-logo case
+when relocating CLUTs at upload time - see the publisher-logo case
 in `crates/asset/src/init_pak.rs`. Both signature modes work on
 their respective input populations; use `--sig-mode pixel` when
 `full` finds no matches.

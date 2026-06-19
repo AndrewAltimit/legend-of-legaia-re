@@ -7,7 +7,7 @@
 --   RECT: [+0]=x (short), [+2]=y (short), [+4]=w, [+6]=h  (VRAM dest)
 -- It DMAs / FIFO-copies a1 -> VRAM(x,y,w,h). So when the dest y is in
 -- the character CLUT band (rows 488..499), a1 is the live source buffer
--- of that palette — dumped here before it is freed.
+-- of that palette - dumped here before it is freed.
 --
 -- Run from a band-absent field state and walk into a battle so the
 -- party CLUTs upload fresh:

@@ -10,11 +10,11 @@
 //! and character-level-up save triplet for Vahn pinned the destination
 //! offsets ([`crate::levelup::observations::vahn_4_level_jump`]).
 //!
-//! ## The growth source is RESOLVED — but not by this module
+//! ## The growth source is RESOLVED - but not by this module
 //!
 //! The retail growth source is now pinned in
 //! [`legaia_asset::level_up_tables`]: static `SCUS_942.54` tables read by the
-//! **victory-path** level-up applier `FUN_801E9504` — a per-character parameter
+//! **victory-path** level-up applier `FUN_801E9504` - a per-character parameter
 //! block at `DAT_80076918` (`{u16 start, u16 max, u8 jitter, u8 row}` per stat)
 //! selecting one of three growth curves at `DAT_800769CC`, with the per-level
 //! gain `(max - start) × curve[row][level-1] / 0x24C0`. The engine drives
@@ -29,7 +29,7 @@
 //!
 //! Why the source was hard to find (negative findings worth not re-walking):
 //! the growth values do *not* live in the level-up **display** overlay's data
-//! section — a writer-search across the captured `overlay_magic_level_up_*`
+//! section - a writer-search across the captured `overlay_magic_level_up_*`
 //! dumps for `sb` / `sh` writes targeting `+0x10E`, `+0x11C..+0x12C`, `+0x130`,
 //! `+0x161` returns no code-side hits, because the writer is `FUN_801E9504` (the
 //! victory-reward overlay), not the display code that was searched. And the

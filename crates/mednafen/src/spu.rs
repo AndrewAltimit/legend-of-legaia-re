@@ -167,7 +167,7 @@ impl<'a> PsxSpu<'a> {
     }
 
     /// Mednafen's `Reverb_Mode` sub-entry. **Despite the name this is not a
-    /// libspu mode byte (0..9)** — it is the 24-bit per-voice reverb-enable
+    /// libspu mode byte (0..9)** - it is the 24-bit per-voice reverb-enable
     /// register (`EON`), byte-for-byte equal to [`Self::voice_reverb_mask`]
     /// across every captured state (mednafen mirrors `EON` here as well as in
     /// the `Regs` shadow). Prefer [`Self::voice_reverb_mask`]; this accessor

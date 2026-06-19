@@ -3,12 +3,12 @@
 //! A town shop's price for an item is the `u16` at `+2` of that item's record
 //! in the `SCUS_942.54` item table (`legaia_asset::item_names::price_slot`).
 //! Quest / key / story / found-only items have price **0**, which is what makes
-//! `> 0` a clean "this item is something a shop sells" predicate — the shop
+//! `> 0` a clean "this item is something a shop sells" predicate - the shop
 //! randomizer draws its `Random` fill from that [`sellable_pool`], so no quest
 //! item can ever be put up for sale.
 //!
 //! A handful of genuinely-equippable items are normally **only found in chests**
-//! and so ship with price `0` — they'd appear free if a randomized shop stocked
+//! and so ship with price `0` - they'd appear free if a randomized shop stocked
 //! them. [`CHEST_EQUIPMENT_PRICES`] gives each a shop value (approximated from
 //! the nearest priced gear of the same type), and [`price_patches`] emits the
 //! same-size `SCUS_942.54` edits to install them. Once priced they are both
@@ -26,7 +26,7 @@ use std::collections::BTreeSet;
 /// (War God Plate / Triumph Boots / Battle Robe, ~28800–35000). These are the
 /// only `0`-price items that are real gear rather than quest/key items.
 pub const CHEST_EQUIPMENT_PRICES: &[(u8, u16)] = &[
-    // weapons (atk 96–100) — Great Axe tier
+    // weapons (atk 96–100) - Great Axe tier
     (0x1b, 55000), // Ra-Seru Blade
     (0x1f, 55000), // Ra-Seru Fangs
     (0x21, 55000), // Ra-Seru Club
@@ -35,7 +35,7 @@ pub const CHEST_EQUIPMENT_PRICES: &[(u8, u16)] = &[
     (0x38, 31000), // Ra-Seru Seal
     (0x3e, 35000), // Ra-Seru Plume
     (0x42, 31000), // Ra-Seru Helmet
-    // body armor / shoes — War God Plate tier
+    // body armor / shoes - War God Plate tier
     (0x4b, 28800), // Ra-Seru Armor
     (0x51, 28800), // Ra-Seru Robe
     (0x57, 28800), // Ra-Seru Plate
@@ -61,9 +61,9 @@ pub fn price_patches(scus: &[u8]) -> Result<Vec<(usize, [u8; 2])>> {
 }
 
 /// The shop-sellable item pool: every id whose item-table price is `> 0`. This
-/// is exactly the set of items the game prices for sale — consumables, buyable
+/// is exactly the set of items the game prices for sale - consumables, buyable
 /// weapons/armor/accessories, and (once [`price_patches`] is applied) the
-/// chest-found equipment — and it excludes every quest / key / story item
+/// chest-found equipment - and it excludes every quest / key / story item
 /// (which all have price `0`). Pass the `SCUS_942.54` bytes *after* applying the
 /// price patches so the priced equipment is included.
 pub fn sellable_pool(scus: &[u8]) -> Result<Vec<u8>> {
@@ -84,7 +84,7 @@ pub fn sellable_pool(scus: &[u8]) -> Result<Vec<u8>> {
 /// price-0 only because they're never sold.
 ///
 /// Price-0 is the game's own marker for "this is not a thing a shop trades"
-/// (see [`sellable_pool`]); for items it means a key/story/tool item — the door
+/// (see [`sellable_pool`]); for items it means a key/story/tool item - the door
 /// keys, the garden-quest tools, the egg/talisman/book collectibles, the
 /// letters and diaries, the fishing rods, the casino cards, and the internal
 /// Ra-Seru weapon-state template entries. None of these belong in the chest
@@ -93,7 +93,7 @@ pub fn sellable_pool(scus: &[u8]) -> Result<Vec<u8>> {
 /// chest randomizer treats this set as static (kept in place, dropped from the
 /// random-fill pool), so a quest item never moves and never spawns elsewhere.
 ///
-/// The chest-found **equipment** is excluded so it stays randomizable — it is
+/// The chest-found **equipment** is excluded so it stays randomizable - it is
 /// real gear, not a quest item. Buyable items (priced > 0, e.g. the Silver
 /// Compass accessory a shop sells) are likewise not protected: only genuinely
 /// unsellable quest items are. This is exactly the set

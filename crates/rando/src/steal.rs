@@ -6,7 +6,7 @@
 //! (1-based) is `[steal_chance_pct: u8, steal_item_id: u8]` at
 //! `table_base + M*2` (see [`legaia_asset::steal_table`] and
 //! `docs/formats/steal-table.md`). An edit is therefore a single same-size byte
-//! overwrite of the **item** byte (the chance is preserved) — no re-pack, no
+//! overwrite of the **item** byte (the chance is preserved) - no re-pack, no
 //! overflow risk, so nothing is ever skipped.
 //!
 //! The planning is identical to the drop randomizer's (reassign the item for

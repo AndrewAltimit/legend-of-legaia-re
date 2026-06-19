@@ -4,7 +4,7 @@
 //! and confirm:
 //!
 //! - the `+5/+6/+7` tail bytes (accessory passive / equip mask / slot type) of
-//!   every row are untouched — only the `+0..+4` stat tuple moves;
+//!   every row are untouched - only the `+0..+4` stat tuple moves;
 //! - per slot category, the multiset of stat tuples is preserved (a shuffle is a
 //!   1:1 reassignment within a category, so the gear-power budget is kept and no
 //!   tuple crosses a category boundary);

@@ -3,7 +3,7 @@
 //! Runs the Track-1 [`legaia_rando`] randomizer entirely client-side: the user
 //! supplies their own disc image, the patcher edits it in WASM memory, and the
 //! page downloads the patched image locally. No bytes leave the browser and
-//! nothing is uploaded — the same "user supplies the disc" model as the CLI, so
+//! nothing is uploaded - the same "user supplies the disc" model as the CLI, so
 //! the site still ships only code.
 //!
 //! [`patch_rom`] returns a JS object `{ data: Uint8Array, summary: String,
@@ -71,13 +71,13 @@ pub fn resolve_seed(seed: &str) -> String {
 /// `random` drop / chest / steal modes use it). `equipment_drops` injects a code
 /// hook into the battle-end reward routine that, on a low per-battle chance,
 /// grants one *extra* random weapon / armor / accessory on top of the normal
-/// drop — additive, so `drops` is never disturbed. `monster_stats` / `move_power` /
+/// drop - additive, so `drops` is never disturbed. `monster_stats` / `move_power` /
 /// `element_affinity` / `spell_cost` / `equip_bonus` are the battle-tuning +
 /// equipment-bonus passes, each `"shuffle"` / `"random"` / `"none"`: monster
 /// combat stats, special-attack power, the element-affinity matrix, spell MP
 /// costs, and the equipment passive stat tuples (redistributed within each slot
 /// category). `encounter_scope` widens the monster pool an
-/// encounter roll draws from: `"scene"` (default — each scene's own monsters),
+/// encounter roll draws from: `"scene"` (default - each scene's own monsters),
 /// `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
 /// `"world"` (any monster on the disc, so late-game monsters can appear at the
 /// start). Only matters when `encounters` is not `"none"`.
@@ -168,7 +168,7 @@ pub fn patch_rom(
         Vec::new()
     };
     // `--unused-items`: widen the random-fill pool with the curated unused items
-    // (the unnamed accessory in particular is otherwise excluded — no name), and
+    // (the unnamed accessory in particular is otherwise excluded - no name), and
     // give that accessory the name "Seru Bell" so it doesn't show as a blank.
     if unused_items && needs_pool {
         legaia_rando::unused::extend_pool(&mut pool, legaia_rando::unused::UNUSED_ITEM_IDS);

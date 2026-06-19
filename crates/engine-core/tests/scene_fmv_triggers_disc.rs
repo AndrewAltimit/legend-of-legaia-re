@@ -49,7 +49,7 @@ fn every_scene_fmv_trigger_decodes_from_disc() {
         return;
     }
     let Some(prot) = extracted_prot() else {
-        eprintln!("[skip] extracted/PROT/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/PROT/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -101,7 +101,7 @@ fn every_scene_fmv_trigger_decodes_from_disc() {
     // literal in the bytecode). fmv_id 0 (the MV1 intro) fires from the
     // title/new-game path, not a scene MAN; fmv_id 5 (the cut MOV15 slot)
     // appears in no scene script. town0d / uru / jouine fire ids 6..=8,
-    // which resolve to the dev-only `\DATA\MOV.STR` path — vestigial
+    // which resolve to the dev-only `\DATA\MOV.STR` path - vestigial
     // triggers for movies cut from the retail disc.
     let expected: &[(&str, &[i16])] = &[
         ("0004_town01", &[1]),

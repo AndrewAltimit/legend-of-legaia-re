@@ -1,5 +1,5 @@
 //! Disc-gated end-to-end oracle for the **house-door (intra-town) randomizer
-//! at runtime** — the sibling of the chest / door / encounter / steal oracles.
+//! at runtime** - the sibling of the chest / door / encounter / steal oracles.
 //!
 //! The randomizer's own disc-gated tests prove the patch is *written*
 //! faithfully (`crates/rando/tests/house_door_patch_real`: per-scene,
@@ -13,11 +13,11 @@
 //! oracles: a scene's MAN is resident in RAM the moment you're standing in the
 //! town, so loading a patched disc on such a state still warps to the
 //! *original* interior. A patched door is only observed after a fresh scene
-//! load re-streams the MAN — which is exactly what the clean-room engine does.
+//! load re-streams the MAN - which is exactly what the clean-room engine does.
 //!
 //! The mechanism was pinned by a live PCSX-Redux range write-watch
 //! (`probe.step.find_writer`): entering Mei's house executes the field-VM
-//! dispatcher's `case 0x23` with operands `(0x61, 0x36)` — tile `(97, 54)`,
+//! dispatcher's `case 0x23` with operands `(0x61, 0x36)` - tile `(97, 54)`,
 //! world `(0x30C0, 0x1B40)` via `tile * 128 + 0x40`. On disc that op is the
 //! cross-context player MOVE_TO `0xA3 0xF8 0x61 0x36` in town01's partition-0
 //! record named "...IN" (see `docs/tooling/randomizer.md` § House doors).
@@ -31,7 +31,7 @@
 //!      (`apply::randomize_house_doors`) and re-decodes the patched MAN off the
 //!      patched image,
 //!   3. drives the same op offset again and asserts the runtime now warps to
-//!      the **patched** tile's world coords — and not to Mei's interior.
+//!      the **patched** tile's world coords - and not to Mei's interior.
 //!
 //! town01 has two distinct IN-class targets, so the shuffle's anti-identity
 //! guard guarantees the Mei's-house entry changes under any seed (non-vacuous).
@@ -55,7 +55,7 @@ fn load_disc() -> Option<Vec<u8>> {
 }
 
 /// Field-VM grid byte → world coordinate (`(b & 0x7F) * 0x80 + 0x40`, plus
-/// `0x40` when the half-tile bit is set) — the retail `case 0x23` conversion.
+/// `0x40` when the half-tile bit is set) - the retail `case 0x23` conversion.
 fn grid_to_world(b: u8) -> u16 {
     let base = u16::from(b & 0x7F) * 0x80 + 0x40;
     if b & 0x80 != 0 { base + 0x40 } else { base }

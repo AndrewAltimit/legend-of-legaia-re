@@ -1,6 +1,6 @@
 //! Disc-gated enumeration test for scene-transition ("door / exit") sites: walk
 //! the whole disc, locate every `0x3F` named-scene-change op via the clean
-//! partition walk, and assert the census is sane — a healthy door count across
+//! partition walk, and assert the census is sane - a healthy door count across
 //! many scenes, the pinned town01 -> map01 exit present, every site carrying a
 //! clean CDNAME-shaped destination name. Skips + passes without `LEGAIA_DISC_BIN`.
 
@@ -33,7 +33,7 @@ fn doors_enumerate_across_the_disc() {
     );
 
     // Every destination name is a clean CDNAME-shaped label (lowercase + digits,
-    // 3..=12 chars) — the clean walk's gate; no text-desync phantoms.
+    // 3..=12 chars) - the clean walk's gate; no text-desync phantoms.
     for d in &doors {
         assert!(
             (3..=12).contains(&d.dest_scene.len())

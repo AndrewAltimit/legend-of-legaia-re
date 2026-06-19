@@ -1,5 +1,5 @@
 //! Disc-gated end-to-end oracle for the **door (scene-transition) randomizer at
-//! runtime** — the fourth-kind sibling of the chest / drop / encounter / steal
+//! runtime** - the fourth-kind sibling of the chest / drop / encounter / steal
 //! oracles.
 //!
 //! The randomizer's own disc-gated tests (`crates/rando/tests/door_patch_real`)
@@ -12,7 +12,7 @@
 //! a scene's MAN is resident in RAM the moment you're standing in it, so loading
 //! a patched disc on such a state still warps to the *original* destination
 //! (read from the already-loaded RAM copy). A patched door is only observed
-//! after a fresh scene load re-streams the MAN — which is exactly what the
+//! after a fresh scene load re-streams the MAN - which is exactly what the
 //! clean-room engine does. The mechanism was pinned by a live PCSX-Redux trace
 //! (the `drake_castle_to_worldmap` capture): a door destination is a partition-2
 //! MAN record the controller reaches by setting the field-VM bytecode base to
@@ -20,8 +20,8 @@
 //! script, whose `0x3F` op warps by the inline name.
 //!
 //! So this test:
-//!   1. patches Rim Elm's (`town01`, PROT 4) single exit — op `0x6f95`,
-//!      originally `-> map01` — to a **differently-named** scene (`keikoku`,
+//!   1. patches Rim Elm's (`town01`, PROT 4) single exit - op `0x6f95`,
+//!      originally `-> map01` - to a **differently-named** scene (`keikoku`,
 //!      exercising the variable-length resize), on a scratch copy of the disc,
 //!   2. re-decodes the patched scene MAN off the patched image (the bytes a
 //!      fresh scene load would stream),

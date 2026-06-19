@@ -292,7 +292,7 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
 /// Like [`tmd_to_vram_mesh_with_object_ids`] but also includes untextured
 /// primitives, emitting them with sentinel `(0, 0)` UVs and per-prim
 /// `(cba, tsb)` (typically `(0, 0)` for flat-shaded prims). Use for character
-/// meshes where the bulk of body parts are flat-shaded — the standard
+/// meshes where the bulk of body parts are flat-shaded - the standard
 /// extractor drops those, leaving only a few textured fragments. Consumers
 /// can decide how to render the sentinel-UV verts (e.g., solid-shaded
 /// fallback in the fragment shader).

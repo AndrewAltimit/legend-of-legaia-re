@@ -14,13 +14,13 @@ The catalog also resolves a move id to a full presentation/timing descriptor
 (`MovePowerCatalog::fx_for_move_id` → `MoveFx`): every behavioural field past
 `+0` plus the cross-table joins (the `+0x0a` impact selector → its config word,
 each `+0x12`/`+0x16` effect-id-list byte → an `EffectListEntry` with its
-spawn-prototype param + SFX cue). It is a descriptor surface only — see Open.
+spawn-prototype param + SFX cue). It is a descriptor surface only - see Open.
 Provenance is the battle-action overlay (PROT entry 0898, CDNAME
 `overlay_battle_action` / `overlay_0898`); dumps under `ghidra/scripts/funcs/`
 are labelled `overlay_battle_action_*` and the byte-identical aliases
 `overlay_0897_*` / `overlay_magic_*` / `overlay_muscle_dome_*`.
 
-## Location — static overlay data
+## Location - static overlay data
 
 | Thing | Value |
 |---|---|
@@ -32,13 +32,13 @@ are labelled `overlay_battle_action_*` and the byte-identical aliases
 | id → index map file offset | `0x2664B` (= table − `0xF9`) |
 | id → index map length | `0x80` (move ids `0x00..=0x7F`) |
 
-The whole `0x801F4F5C..0x801F69D8` window is **static** — loaded with the
+The whole `0x801F4F5C..0x801F69D8` window is **static** - loaded with the
 battle-action overlay image, not built per battle (byte-identical across two
-unrelated battle save states). Confidence: **Confirmed** — the raw PROT 0898
+unrelated battle save states). Confidence: **Confirmed** - the raw PROT 0898
 bytes byte-match the in-RAM table, and `FUN_801dd0ac`'s code body maps with the
 same overlay base.
 
-## Indexing — `power_table[map[move_id]]`
+## Indexing - `power_table[map[move_id]]`
 
 The kernel's record index is **not** the battle move id directly. The setup site
 reads the actor's move id at `actor[+0x1df]`, looks it up in the 128-byte
@@ -56,7 +56,7 @@ the two labels every record:
 
 - records `0x10..=0x2b` (move ids `0x25..=0x74`) are the **named monster
   special attacks** (Fire Breath `0x25`, Tail Fire `0x27`, … the late-game
-  attacks at `0x61..=0x74`) — this is their special-attack *power*, separate from
+  attacks at `0x61..=0x74`) - this is their special-attack *power*, separate from
   the *name* the spell table carries.
 - records `0x01..=0x0f` (move ids `0x04..=0x1f`) are the spell table's unnamed
   **internal enemy-attack tiers** (escalating-power triplets).
@@ -65,44 +65,44 @@ Record 0 is an all-zero unused slot.
 
 **Cross-checked against the monster archive** (PROT 867 `+0x21..=+0x23` global
 magic-attack ids): **28 of the 29** mapped named ids (`≥0x25`) are exactly the
-special attacks enemies cast — so the named-attack records line up with the
+special attacks enemies cast - so the named-attack records line up with the
 enemy roster's attack lists. But the table is a **subset** of all enemy
 named attacks: across 186 monsters, 46 distinct attack ids appear, of which only
 28 are in this table; the other 18 (`0x2E`/`0x2F`/`0x3C`/`0x4A..=0x6E`, and
-`0xA7`/`0xB8` — the last two beyond the `0x00..=0x7F` map entirely) have **no
+`0xA7`/`0xB8` - the last two beyond the `0x00..=0x7F` map entirely) have **no
 move-power record**. Those are the magic / elemental casts, whose damage is
-caster-state-derived (the magic path — see [spell-table.md](spell-table.md) and
+caster-state-derived (the magic path - see [spell-table.md](spell-table.md) and
 the per-spell-power thread in [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md)),
 consistent with this being the **physical/arts** power table, not the magic one.
-Every enemy attack id is `≥0x25` — none land in the basic-attack band — and
+Every enemy attack id is `≥0x25` - none land in the basic-attack band - and
 95 of 186 monsters carry no magic attack at all (they fight with the basic
 physical, the unmapped path).
 
 The **one** mapped named record with no caster (move id `0x2C`, record idx 22) is
-the **unused "Freeze Thunder" enemy spell** — a dummied-out attack
+the **unused "Freeze Thunder" enemy spell** - a dummied-out attack
 ([TCRF](https://tcrf.net/Talk:Legend_of_Legaia): forcing it via GameShark
 `30084845 002C` crashes with an "Opcode 14 UNK" / missing-asset error). Its
 move-power record survived (power 37, `sfx 0x4A`) but its on-contact/launch
-effect lists are empty and no production formation casts it — so it shows up as
+effect lists are empty and no production formation casts it - so it shows up as
 the single mapped record the roster never uses.
 
-### This table is special-attack-only — a party member's basic attacks / arts do *not* use it
+### This table is special-attack-only - a party member's basic attacks / arts do *not* use it
 
 The map covers exactly 44 special-attack ids (the internal tiers `0x04..=0x07` /
 `0x12..=0x1F` and the named monster attacks `0x25..=0x74`). The **basic-attack and
 Tactical-Art move-id bands `0x08..=0x11` and `0x16..=0x18` are entirely unmapped**
 (`map[id] == 0`). Pinned from a live battle capture: a party member's queued
 Tactical Art (Vahn's Somersault) carries move id `0x0F` in `actor[+0x1df]`, and a
-basic enemy's attack (Gobu Gobu) carries `0x09` — both resolve to record 0 (no
+basic enemy's attack (Gobu Gobu) carries `0x09` - both resolve to record 0 (no
 power). Since `FUN_801dd0ac`'s damage is `roll(record[map[actor+0x1df]].power)`,
-an unmapped id would roll against the zero-power record, i.e. deal nothing — so
+an unmapped id would roll against the zero-power record, i.e. deal nothing - so
 neither a party member's art nor an enemy *basic* attack draws its damage from
 this table.
 
 Damage sources therefore split cleanly: **enemy special attacks** roll through
 this move-power table (`FUN_801dd0ac`); **a party member's Tactical Art** takes its
 power from the per-strike *art-record* power byte ([art-data.md](art-data.md));
-enemy basic attacks use the generic physical path. The engine mirrors this — the
+enemy basic attacks use the generic physical path. The engine mirrors this - the
 move-power table is wired for enemy specials only, and a character's art damage
 uses the art power byte. (`move_power_map_is_special_attack_only` pins the
 coverage on disc.)
@@ -114,7 +114,7 @@ The record is consumed by three battle-action functions. `FUN_801dd0ac` /
 setup) computes the record address once and stashes the pointer in the
 per-battle context at `ctx+0x1014` (`overlay_battle_action_801dea50.txt:528`,
 `sw v0,0x1014(a0)`). `FUN_801e09f8` (the per-frame action tick) dereferences
-that held pointer ~25× and reads the residual fields off it — the byte offsets
+that held pointer ~25× and reads the residual fields off it - the byte offsets
 it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
 +0x16`, and **never `+0x0c`**.
 
@@ -128,7 +128,7 @@ it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
 | `+0x09` | `u8` | effect-tracks-strike flag | When non-zero, the move's live XY is copied into the spawned effect actor each frame (the effect follows the strike). | Confirmed (read); semantic Inferred |
 | `+0x0a` | `u8` | impact-effect selector | Enum (typically 1..5): stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(value-1)*4`) into `actor+0x04`, and values 3/4/5 branch to extra status-proc rolls. `0` = none. The table holds packed `u32` config words (`0x3FF`-masked lanes), not pointers. | Confirmed (read); enum naming Inferred |
 | `+0x0b` | `u8` | trail texture page | Trail / afterimage sprite-page id; the streak draw helper turns it into the GP0 texpage word `0x7700 + id` (`overlay_battle_action_801e1ab0.txt:250`). | Confirmed |
-| `+0x0c` | `u8` | designer tag | A `'C'/'E'/'G'/0` annotation baked into the data on the internal-tier records (ids 1,2,3,9,12,15) only. **No runtime reader exists** in any battle-action function — unused at runtime. | Unknown (no reader) |
+| `+0x0c` | `u8` | designer tag | A `'C'/'E'/'G'/0` annotation baked into the data on the internal-tier records (ids 1,2,3,9,12,15) only. **No runtime reader exists** in any battle-action function - unused at runtime. | Unknown (no reader) |
 | `+0x0d` | `u8` | sound cue id | Handed to the UI/voice cue dispatcher `FUN_8004fcc8`. | Confirmed |
 | `+0x0e` | `u8` | list mode | `0xFF` broadcasts the move's trail/effect to all four party arms (a sweeping / multi-target move); otherwise it is the head of a small effect-id list the setup loop spawns. | Confirmed (read); semantic Inferred |
 | `+0x12` | `[u8;4]` | on-contact effects | Effect-id list dispatched on the hit branch (`0x00`/`0xFF`-terminated). | Confirmed |
@@ -138,7 +138,7 @@ it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
 
 Both lists are up to 4 ids, walked until a terminator. `0x00` ends the list scan;
 each remaining byte is dispatched per `FUN_801e09f8` (`overlay_battle_action_801e09f8.txt:1182..1225`
-for `+0x16`, `:1285..1312` for `+0x12` — identical dispatch, the only difference
+for `+0x16`, `:1285..1312` for `+0x12` - identical dispatch, the only difference
 is *when* they fire):
 
 | entry | meaning |
@@ -150,19 +150,19 @@ is *when* they fire):
 | `0xFF` (and unused `0x65..=0x7F`) | no effect, scan continues |
 
 Both effect-id lists index the **same** two tables (the doc's earlier "+0x12 →
-`0x801f6324` / +0x16 → `0x801f6418`" pairing was imprecise — each list uses
+`0x801f6324` / +0x16 → `0x801f6418`" pairing was imprecise - each list uses
 both). The tables live in the same PROT 0898 overlay after the power table:
 
-- `0x801f6324` (file `0x27B0C`) — effect-**prototype pointer** table: a `u32`
+- `0x801f6324` (file `0x27B0C`) - effect-**prototype pointer** table: a `u32`
   per id, an **overlay VA** pointing at a **variable-length move-VM scene-graph
   record** (e.g. ids `0x27`/`0x28` → `0x801F5BBC`/`0x801F5BDC`). It is passed as
   arg 3 to `FUN_80050ed4`, which forwards it to the shared spawn stager
-  `FUN_80021B04` — the same record format and stager the player Seru-magic
+  `FUN_80021B04` - the same record format and stager the player Seru-magic
   **summons** use (`legaia_asset::summon_overlay`, `SPAWN_HELPER`). The "~`0x20`-
   byte struct" reading was a coincidence (record `0x27` is 0x20 bytes; `0x28`
-  begins where it ends — packed variable-length records, not a fixed stride). See
+  begins where it ends - packed variable-length records, not a fixed stride). See
   Open for the decoded layout.
-- `0x801f6418` (file `0x27C00`) — per-effect **SFX id** (`u8`, `0` = silent).
+- `0x801f6418` (file `0x27C00`) - per-effect **SFX id** (`u8`, `0` = silent).
 
 The prototype table is exactly `(0x6418 - 0x6324) / 4 = 61` entries; the same
 61-entry index space bounds both (the runtime's `< 100` spawn guard is a loose
@@ -188,7 +188,7 @@ A homing physical strike: it approaches at speed `0x20`, runs its strike phase
 for 480 frames, plays impact effect 1 + cue `0x4d`, spawns one effect list on
 launch and a different one on contact, and carries the unused designer tag `C`.
 
-## Effect-prototype records — the spawn path
+## Effect-prototype records - the spawn path
 
 A `0x01..=0x63` effect-list byte spawns the move-VM record `0x801f6324[id]`
 points at. The dispatch (`FUN_801e09f8`) calls
@@ -200,8 +200,8 @@ args intact (the Ghidra C decomp drops them; the disassembly preserves
 - reads the record's `+0x00` `model_sel` (`lh`/`lhu` at `80021b2c`/`b30`); `< 0`
   / `0x4000` / `0x4001` are transform-node / render-mode sentinels, else the mesh
   is `DAT_8007C018[model_sel + gp[0x754]]` (decomp `210..216`; in battle the base
-  `gp[0x754] = party_count + 2` — `3` for a 1-member party, `5` for the full
-  3-member party, save-corpus-pinned — see Open),
+  `gp[0x754] = party_count + 2` - `3` for a 1-member party, `5` for the full
+  3-member party, save-corpus-pinned - see Open),
 - allocates an actor (`jal 0x80020de0`), stores the record pointer as the actor's
   move-VM buffer base (`*(actor+0x48) = record`, `80021c80`), forces the move-VM
   PC to u16-index 2 (`*(actor+0x70) = 2`, `80021c78` → bytecode at `record+4`),
@@ -209,13 +209,13 @@ args intact (the Ghidra C decomp drops them; the disassembly preserves
 
 So each `0x801f6324` record is **byte-identical to a summon part record**
 (`+0x00 i16 model_sel`, `+0x02 u16 flags`, `+0x04` move-VM bytecode) and reuses
-the same stager, move VM, and `DAT_8007C018` TMD-pool bridge — see
+the same stager, move VM, and `DAT_8007C018` TMD-pool bridge - see
 [`legaia_asset::summon_overlay`](../../crates/asset/src/summon_overlay.rs).
 `move_power::parse_effect_proto_records` decodes the whole table to part records
 (VA → file offset via `BATTLE_OVERLAY_BASE` / `EffectAuxTables::proto_record_offset`),
 the helper `World::spawn_move_fx` uses. Every one of the 54 unique records drives
-cleanly through the ported move VM — seeded as the retail part-stager does (PC = 2)
-and run under the same `wait_timer` gate / per-frame budget — with no unimplemented
+cleanly through the ported move VM - seeded as the retail part-stager does (PC = 2)
+and run under the same `wait_timer` gate / per-frame budget - with no unimplemented
 opcode (disc-gated `move_fx_records_vm_exec_disc`; the corpus exercises ~20 distinct
 move-VM ops). The `0x80`-bit list bytes route to the
 *separate* 2D-billboard path (`FUN_801dfdf0(id & 0x7F)` → the `efect.dat`
@@ -223,7 +223,7 @@ move-VM ops). The `0x80`-bit list bytes route to the
 
 These records are not just authored data: a live capture seats one. The enemy
 Gimard "Fire Tail" mid-cast holds a live part-actor whose `+0x48` record pointer
-is `0x801F5484` — proto entries `0`/`0x30`/`0x31` (`model_sel` 5), the same
+is `0x801F5484` - proto entries `0`/`0x30`/`0x31` (`model_sel` 5), the same
 record `move_fx_records_real` pins statically (disc + library gated
 `firetail_movefx_liveness`; [battle-action.md § Enemy "Fire Tail"](../subsystems/battle-action.md#enemy-fire-tail--move-vm-part-not-the-widget-path)).
 
@@ -241,7 +241,7 @@ scene-graph**: `World::spawn_move_fx(move_id, origin)` parses a move's
 0871 effect-model library `global_tmd_pool[3..=32]`), and drives each part's
 `+0x04` bytecode through the ported move VM (`World::tick_move_fx` /
 `active_move_fx_part_draws`; `play-window` `H` cycles through the renderable
-moves, enumerated by `MovePowerCatalog::spawnable_move_ids()` — the ids whose
+moves, enumerated by `MovePowerCatalog::spawnable_move_ids()` - the ids whose
 effect lists hold a `Spawn` entry with a resolved prototype, i.e. exactly the
 set `spawn_move_fx` can stage). This
 reuses the summon machinery wholesale, so it inherits the same faithful-tick /
@@ -260,7 +260,7 @@ a pending id `World::take_pending_move_fx_cue()` the host routes through the por
 `FUN_8004fcc8` dispatch decode (`legaia_engine_audio::classify_cue` →
 `CueDispatch::Ring`/`Voice`; the SFX ring is `SfxScheduler`/`FUN_80035B50`, and the
 SPU note-on resolves through the [SFX descriptor table](sfx-table.md) against the
-**active scene's music VAB** — the same per-scene `scene_vab_stream` bank the BGM
+**active scene's music VAB** - the same per-scene `scene_vab_stream` bank the BGM
 sequencer plays, not a separate SFX master).
 
 The effect-list **`AltEffect`** entries (the high-bit `0x80` bytes, distinct from
@@ -279,14 +279,14 @@ read `gp` (`0x8007B318`) `+0x754` (global `0x8007BA6C`) = **3**. Read across the
 whole mednafen save corpus, that `3` is **not** a constant: `gp[0x754]` is `0`
 whenever no battle effect-model library is resident (every field / town / menu /
 minigame / cutscene / battle-loading frame), and **`party_count + 2`** whenever a
-battle has installed the library — **3** for the 1-member training party (Vahn
+battle has installed the library - **3** for the 1-member training party (Vahn
 alone) and **5** for the 3-member party (Vahn / Noa / Gala). So the base **tracks
 party size**: the two fixed pool slots plus the live party-character meshes precede
 the effect-model library, and `gp[0x754]` is where that library starts. A battle
 move-FX mesh is therefore `DAT_8007C018[model_sel + gp[0x754]]`, and `model_sel` is
-*library-relative* — the same library model regardless of party size; only the
+*library-relative* - the same library model regardless of party size; only the
 library's pool offset shifts. (This resolves the old "per-summon base is a separate
-capture" residual: there is no per-summon base — it is one per-battle,
+capture" residual: there is no per-summon base - it is one per-battle,
 party-size-derived value, the same for move-FX and summon-part spawns. The `+2`
 prefix is pinned across the two party sizes the corpus exercises; a 2-member-party
 capture could refine it if it is ever party-size-dependent rather than fixed.)
@@ -294,7 +294,7 @@ Pinned by `crates/mednafen/tests/summon_model_base.rs`
 (`model_library_base_tracks_party_size`).
 
 The **summon** branch of `FUN_801dd0ac` (attacker slot `param_2 == 7`) does
-*not* use this table — a summon's magnitude is derived from caster/summon battle
+*not* use this table - a summon's magnitude is derived from caster/summon battle
 state (see [spell-table.md](spell-table.md) and the summon-render thread in
 [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md)).
 
@@ -302,6 +302,6 @@ state (see [spell-table.md](spell-table.md) and the summon-render thread in
 
 The roll this table seeds is then scaled by the **element-affinity matrix**
 (`FUN_801dd864`), a sibling static table in the same overlay (PROT 0898) under
-the same link base — see
+the same link base - see
 [battle-formulas.md § Element-affinity matrix](../subsystems/battle-formulas.md#element-affinity-matrix-fun_801dd864-0x801f53e8)
 (parser `legaia_asset::element_affinity`).

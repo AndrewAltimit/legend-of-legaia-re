@@ -3,7 +3,7 @@
 //! the user asked for, on a scratch copy of the real disc:
 //!
 //! - **`world`** ("across regions"): late-game monsters can appear at the start
-//!   — a Karisto/Sebucus monster shows up in a Drake scene.
+//!   - a Karisto/Sebucus monster shows up in a Drake scene.
 //! - **`kingdom`** ("within a region"): monsters are reshuffled across a whole
 //!   kingdom (Drake / Sebucus / Karisto) but never cross a kingdom boundary.
 //!
@@ -131,7 +131,7 @@ fn world_random_mixes_monsters_across_kingdoms() {
         v.dedup();
         v
     };
-    // Monsters that do NOT belong to Drake originally — the "late-game" set.
+    // Monsters that do NOT belong to Drake originally - the "late-game" set.
     let foreign: Vec<u8> = world_pool
         .iter()
         .copied()
@@ -152,7 +152,7 @@ fn world_random_mixes_monsters_across_kingdoms() {
 
     // Every reassigned id is somewhere in the world pool (it stays a real,
     // loadable monster), and at least one Drake scene now hosts a foreign
-    // (non-Drake) monster — the user's "late-game monster at the start".
+    // (non-Drake) monster - the user's "late-game monster at the start".
     let mut saw_foreign_in_drake = false;
     for idx in scene_indices(&base) {
         if report.skipped.contains(&idx) {
@@ -320,7 +320,7 @@ fn world_shuffle_preserves_global_multiset_and_bosses() {
         .unwrap();
     let img = patcher.image();
     let (prot_lba, psize) = find_file_in_image(img, "PROT.DAT").unwrap();
-    // Recover the entry's start LBA from a fresh parse of the TOC — patches are
+    // Recover the entry's start LBA from a fresh parse of the TOC - patches are
     // same-size, so the LBA is unchanged from the original.
     let psectors = (psize as usize).div_ceil(USER_DATA_SIZE);
     let mut payload = Vec::with_capacity(psectors * USER_DATA_SIZE);

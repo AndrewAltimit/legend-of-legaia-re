@@ -12,14 +12,14 @@
 //! A backward sweep of every Ghidra dump in the corpus surfaces
 //! **three** writers of `_DAT_8007B83C = 0x1A`:
 //!
-//! 1. [`FIELD_VM_OP_4C_E2`] — the field-VM opcode `0x4C 0xE2 lo hi` handler
+//! 1. [`FIELD_VM_OP_4C_E2`] - the field-VM opcode `0x4C 0xE2 lo hi` handler
 //!    inside `FUN_801DE840`. Reachable only via the field-VM 2nd-stage
 //!    jump-table at `0x801CF008` entry `2`. Reads `fmv_id` from the
 //!    bytecode stream.
-//! 2. [`TITLE_ATTRACT_LOOP`] — the title-screen menu state machine in
+//! 2. [`TITLE_ATTRACT_LOOP`] - the title-screen menu state machine in
 //!    `FUN_801DE234`, case `0x10`. Hardcodes `fmv_id = 0` (intro
 //!    `MV1.STR`) when the attract-loop timer at `DAT_801ef16c` underflows.
-//! 3. [`TITLE_TICK_INLINE`] — an inline fall-through path inside the
+//! 3. [`TITLE_TICK_INLINE`] - an inline fall-through path inside the
 //!    title-overlay per-frame tick `FUN_801DD35C` at `0x801DDCF0`. The
 //!    `bgez v0, 0x801DFC3C` at `0x801DDCC8` keeps the normal path
 //!    short-circuiting away when the countdown is still positive; once
@@ -29,7 +29,7 @@
 //!    site downstream. PC-verified via a PCSX-Redux watchpoint on the
 //!    title-attract countdown (see `project_title_overlay_tick_pinned`).
 //!
-//! There is no static caller of the [`FIELD_VM_OP_4C_E2`] handler — the
+//! There is no static caller of the [`FIELD_VM_OP_4C_E2`] handler - the
 //! `FUN_801E30E4` label that the PRD refers to is reached **only** via
 //! the JT dispatch chain `0x4C → byte1 >> 4 == 0xE → byte1 & 0xF == 0x2`,
 //! and Ghidra's reference manager does not promote that to a call edge.
@@ -41,7 +41,7 @@
 //! field-VM-driven trigger and the title-screen attract path is
 //! hardcoded to `fmv_id = 0`, those seven scenes **must** trigger via
 //! the same `0x4C 0xE2` op. The byte sequence is not statically
-//! present in their on-disc PROT entries, however — a bytewise scan
+//! present in their on-disc PROT entries, however - a bytewise scan
 //! across the corpus surfaces only one in-range trigger
 //! (`PROT[371] taiku`, `fmv_id=5`). The conclusion is that the
 //! seven scenes' field-VM bytecode is reconstructed at scene-load

@@ -7,7 +7,7 @@
 //! the equip-character mask, and `+7` the slot type (`0x00` body / `0x20` head /
 //! `0x40` weapon / `0x60` footwear, plus a Ra-Seru bit). This pass moves only
 //! the `+0..+4` stat tuple **within a slot category**, so a weapon's stats only
-//! ever land on another weapon, armor on armor, and so on — the equip mask,
+//! ever land on another weapon, armor on armor, and so on - the equip mask,
 //! passive, and slot type stay welded to their record.
 //!
 //! It operates on bonus **rows**, not item ids: several items can share one
@@ -15,7 +15,7 @@
 //! corrupt its bonuses. [`plan_bonus_shuffle`] groups the rows it is handed by
 //! their `+7` slot category and, under [`StatMode::Shuffle`], permutes the stat
 //! tuples within each category (the per-category multiset of bonuses is
-//! preserved — the same gear power exists, just on different equipment); under
+//! preserved - the same gear power exists, just on different equipment); under
 //! [`StatMode::Random`] it draws each row's tuple from its category pool. The
 //! table lives in `SCUS_942.54`, so the edit is a same-size in-place SCUS patch.
 

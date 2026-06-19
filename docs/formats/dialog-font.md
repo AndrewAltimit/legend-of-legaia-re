@@ -140,9 +140,9 @@ The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive - it
 This renderer chain draws **field dialogue**, which has no dedicated opcode: a
 field NPC's text is its inline interaction-script MES (retail `actor[+0x90]`),
 shown by the per-frame actor-dialog SM `FUN_80039b7c` + the dialog pager
-`FUN_801D84D0`, triggered by the field-interact op (`0x3E` with `op0 < 100`) —
+`FUN_801D84D0`, triggered by the field-interact op (`0x3E` with `op0 < 100`) -
 see [`subsystems/script-vm.md` § Field dialogue](../subsystems/script-vm.md#field-dialogue-has-no-opcode).
-(`FUN_8001FD44` is **not** the opener — it is the scene-change packet, reached
+(`FUN_8001FD44` is **not** the opener - it is the scene-change packet, reached
 by the `0x3F` named scene-change; an earlier note mislabeled it. The
 `_DAT_1F800394 |= 0x40` it sets is a scene-transition-pending flag, not a
 "dialog active" lock.)

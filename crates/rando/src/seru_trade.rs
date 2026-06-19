@@ -4,12 +4,12 @@
 //!
 //! ## What the randomizer actually writes
 //!
-//! Unlike a drop / shop edit, the trade offers aren't a fixed table — they're a
+//! Unlike a drop / shop edit, the trade offers aren't a fixed table - they're a
 //! deterministic function of `(master_seed, vendor_id, in-game-time bucket,
 //! the character party's currently-owned seru)`, evaluated identically by the
 //! randomizer's preview and the clean-room engine's live UI (the shared kernel
 //! [`legaia_asset::seru_trade`]). So all the randomizer embeds on the disc is a
-//! tiny config blob — an *enabled* flag plus the run's master seed — and the
+//! tiny config blob - an *enabled* flag plus the run's master seed - and the
 //! engine recomputes the per-vendor offers at runtime, reseeding as the retail
 //! play-time counter crosses each two-hour boundary.
 //!
@@ -17,7 +17,7 @@
 //!
 //! The blob ([`legaia_asset::seru_trade::SeruTradeConfig::to_blob`], 24 bytes)
 //! is written into the preserved 1028-byte rodata zero gap at `0x8007AB38` in
-//! `SCUS_942.54` — the same loaded-and-preserved padding the
+//! `SCUS_942.54` - the same loaded-and-preserved padding the
 //! [`crate::item_name`] string and the [`crate::bonus_drop`] / [`crate::flee_exp`]
 //! code hooks use, but at a higher, non-overlapping offset
 //! ([`legaia_asset::seru_trade::CONFIG_VA`] = `0x8007AF00`). It is plain data,
@@ -28,7 +28,7 @@
 //! The write is a single same-size, in-place `SCUS_942.54` edit. The planner
 //! refuses to write unless the target region is all-zero dead space (or already
 //! holds a prior seru-trade blob, so re-running with a new seed is idempotent),
-//! exactly like the [`crate::item_name`] injection — a differently-laid-out
+//! exactly like the [`crate::item_name`] injection - a differently-laid-out
 //! image is left untouched rather than corrupted. No Sony bytes are embedded.
 
 use anyhow::{Result, bail};
@@ -63,7 +63,7 @@ impl SeruTradePlan {
 
         // Accept all-zero dead space, or a region already holding our magic (a
         // prior run we're free to overwrite). Anything else means the rodata gap
-        // isn't where we expect on this build — refuse rather than clobber it.
+        // isn't where we expect on this build - refuse rather than clobber it.
         let all_zero = region.iter().all(|&b| b == 0);
         let ours = region.len() >= 4 && region[0..4] == CONFIG_MAGIC;
         if !all_zero && !ours {

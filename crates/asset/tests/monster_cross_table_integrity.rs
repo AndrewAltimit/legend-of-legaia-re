@@ -5,7 +5,7 @@
 //! **global magic-attack** ids, and (via the steal table) a **steal item** id;
 //! those ids index the item-name table and the spell-name table. This test
 //! decodes the full roster and asserts every non-zero id resolves to a real
-//! named entry — so a layout drift in ANY of the four parsers (a shifted record
+//! named entry - so a layout drift in ANY of the four parsers (a shifted record
 //! field, a mis-strided table) surfaces as an out-of-range id here, not as a
 //! silently wrong name in-game.
 //!

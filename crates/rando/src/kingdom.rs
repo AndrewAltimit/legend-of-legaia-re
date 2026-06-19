@@ -1,5 +1,5 @@
-//! Map each field scene (a PROT entry) to the macro world-area — the in-game
-//! **kingdom** — it belongs to: Drake Kingdom, Sebucus Islands, or Karisto
+//! Map each field scene (a PROT entry) to the macro world-area - the in-game
+//! **kingdom** - it belongs to: Drake Kingdom, Sebucus Islands, or Karisto
 //! Kingdom. This is the grouping the scoped encounter randomizer uses to keep a
 //! "within a region" shuffle from leaking late-game monsters into the opening
 //! kingdom (and, inversely, to let a "across regions" shuffle do exactly that).
@@ -24,7 +24,7 @@
 //! hardcoded field-scene name): **Sebucus begins at the first CDNAME block
 //! after `map01`; Karisto begins at the first block after `map02`** and absorbs
 //! everything past it (including the post-`map03` dungeons, which have no
-//! following overworld marker). No game bytes are embedded — every threshold is
+//! following overworld marker). No game bytes are embedded - every threshold is
 //! read from the user's disc at runtime.
 
 use legaia_prot::cdname::{self, IndexMap, RAW_TOC_INDEX_OFFSET};
@@ -32,11 +32,11 @@ use legaia_prot::cdname::{self, IndexMap, RAW_TOC_INDEX_OFFSET};
 /// The three macro world-areas a field scene can belong to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kingdom {
-    /// Drake Kingdom — the opening region (Rim Elm, the first caves, `map01`).
+    /// Drake Kingdom - the opening region (Rim Elm, the first caves, `map01`).
     Drake,
-    /// Sebucus Islands — the middle region (begins at the block after `map01`).
+    /// Sebucus Islands - the middle region (begins at the block after `map01`).
     Sebucus,
-    /// Karisto Kingdom — the final region (begins at the block after `map02`;
+    /// Karisto Kingdom - the final region (begins at the block after `map02`;
     /// includes the late dungeons listed after the `map03` overworld marker).
     Karisto,
 }
@@ -82,7 +82,7 @@ pub struct KingdomMap {
 impl KingdomMap {
     /// Build the partition from a parsed CDNAME map. Returns `None` if the disc
     /// doesn't declare both `map01` and `map02` (so the anchors are missing) or
-    /// if their block order is inverted — in either case the caller should fall
+    /// if their block order is inverted - in either case the caller should fall
     /// back to world-scope (one global pool), which never needs the partition.
     pub fn from_cdname(map: &IndexMap) -> Option<Self> {
         let next_block_after = |anchor: u32| -> Option<u32> {
@@ -108,7 +108,7 @@ impl KingdomMap {
     /// converted to raw space (`+ RAW_TOC_INDEX_OFFSET`) before comparing
     /// against the thresholds (see [`cdname::block_for_extraction_index`]).
     ///
-    /// Every entry below the Sebucus threshold is Drake — including the handful
+    /// Every entry below the Sebucus threshold is Drake - including the handful
     /// of non-field entries before the first town, which simply never carry an
     /// encounter table and so never enter a pool.
     pub fn kingdom_for_extraction_index(&self, entry_idx: usize) -> Kingdom {

@@ -15,7 +15,7 @@ this page covers only the viewer + the capture-side tooling that feeds it.
 - [Continent ground heightfield](#continent-ground-heightfield) · [walk-frame placed landmarks](#walk-frame-placed-landmarks)
 - [Distance-cue fog pass](#distance-cue-fog-pass) · [per-kingdom fog colour](#per-kingdom-fog-colour)
 - [Bulk-terrain placement resolver (MAN `0x7F` sentinels)](#bulk-terrain-placement-resolver-man-0x7f-sentinels) · [global-pool placement placeholders](#global-pool-placement-placeholders)
-- [Ocean tile — disc-side asset + 13-frame CLUT animation](#ocean-tile--disc-side-asset--13-frame-clut-animation) · [web-overview shader plumbing](#web-overview-shader-plumbing)
+- [Ocean tile - disc-side asset + 13-frame CLUT animation](#ocean-tile--disc-side-asset--13-frame-clut-animation) · [web-overview shader plumbing](#web-overview-shader-plumbing)
 - [Camera anchors](#camera-anchors)
 
 ## Layout engine for unplaced slot-1 TMDs
@@ -27,21 +27,21 @@ field-VM via actor-mesh chains and don't carry a static world coord.
 The viewer's "show unplaced slot-1 TMDs" toggle drops those onto a
 canonical layout grid, classified by `slot1_classification.toml`:
 
-- **landmark** &mdash; row south of the kingdom bounds, sorted by slot.
-- **decoration** &mdash; row north of the kingdom bounds.
-- **ground_tile** &mdash; grid west of the kingdom (the runtime tiles
+- **landmark** - row south of the kingdom bounds, sorted by slot.
+- **decoration** - row north of the kingdom bounds.
+- **ground_tile** - grid west of the kingdom (the runtime tiles
   them via the overlay-routed dispatch table).
-- **npc_token** &mdash; hidden (reused generic actor bases; reporting
+- **npc_token** - hidden (reused generic actor bases; reporting
   the count avoids cluttering the view).
-- **unknown** &mdash; grid east of the kingdom.
+- **unknown** - grid east of the kingdom.
 
 Two per-mesh transforms keep the layout legible:
 
-1. **AABB-centroid anchor** &mdash; each unplaced TMD is drawn so its
+1. **AABB-centroid anchor** - each unplaced TMD is drawn so its
    AABB centroid sits at the assigned grid slot, instead of its
    TMD-local origin (which can be far from the visual centre and
    shift the mesh out of frame).
-2. **Class-conditional footprint normalisation** &mdash; per-class
+2. **Class-conditional footprint normalisation** - per-class
    target footprints in world units (landmark ~600, decoration ~200,
    ground_tile ~1200, unknown ~600). Each mesh's larger XZ extent maps
    to the target via a per-placement scale so the row reads at a
@@ -68,13 +68,13 @@ has in hand (`legaia_web_viewer::build_walk_ground`), mirroring
 `Scene::walk_heightfield` without the full `ProtIndex` / CDNAME stack:
 
 - **Walk `.MAP`** is the entry two slots before the kingdom block start
-  (`prot_base - 2`), identified by its `0x12000` extended footprint — the
+  (`prot_base - 2`), identified by its `0x12000` extended footprint - the
   universal field-map resolution (the scene PROT clusters overlap by two
   entries, so the within-block `0x12000` entry is the *next* scene's map;
   for a kingdom it reads as the wrong continent with only a handful of
   `0x1000` cells).
 - **Floor-height LUT** is `man[+0x02..+0x22]` (16 `s16` LE) from the
-  kingdom bundle's MAN slot (slot 2) — the same bytes
+  kingdom bundle's MAN slot (slot 2) - the same bytes
   `Scene::field_floor_height_lut` reads.
 
 `build_walk_ground` reuses `build_walk_heightfield` for the grid math, so
@@ -102,7 +102,7 @@ The `walk_ground_{positions,uvs,cba_tsb,indices,quad_count}` WASM
 accessors hand the surface to the WebGL renderer. `TmdRenderer.uploadGround`
 keeps it resident as one mesh; `renderAssembled` draws it after the ocean
 plane (so land occludes water via depth-test), with a fixed `diag(1, -1, 1)`
-model — the same Y-flip the placement models apply, since the heightfield is
+model - the same Y-flip the placement models apply, since the heightfield is
 already in world coordinates. The "terrain" checkbox toggles the ground pass
 (read per-frame, no kingdom re-entry). The heightfield drives the default
 camera framing (centred on its XZ centroid, sized to its extent); the
@@ -122,7 +122,7 @@ post-mirror basis.
 ## Walk-frame placed landmarks
 
 The continent isn't just terrain: the sparse **placed landmarks** (the
-`flags & 0x4` slot-1 pack objects `FUN_8003A55C` stamps on occupied tiles —
+`flags & 0x4` slot-1 pack objects `FUN_8003A55C` stamps on occupied tiles -
 towers, castles, bridges) draw on top of the heightfield, in the **same
 `col*128` world frame** as the ground. This is the same set the native
 `play-window --scene map01 --world-map` render draws over its heightfield.
@@ -132,7 +132,7 @@ PROT.DAT the viewer already holds, sharing the walk `.MAP` + floor-LUT
 resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
 
 - Runs `legaia_asset::field_objects::parse_placements` on the walk `.MAP`.
-- Each placement's mesh is the record's `+0x10` field (`pack_index`) — a
+- Each placement's mesh is the record's `+0x10` field (`pack_index`) - a
   slot into the kingdom's slot-1 TMD pack the `pack_mesh_*` accessors expose.
 - World position is the placement's `(world_x, world_z)` plus a world Y of
   `-lut[floor_nibble] + y_off` (the runtime stores the floor LUT negated), so
@@ -145,7 +145,7 @@ resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
 The `walk_placement_{count,slots,positions}` WASM accessors hand the list to
 JS, which uploads each referenced pack mesh once and pushes a draw record per
 landmark. `renderAssembled` draws them after the ground with
-`placementModelScaledY(x, y, z, 0, 1)` — scale `1` (the slot-1 meshes are
+`placementModelScaledY(x, y, z, 0, 1)` - scale `1` (the slot-1 meshes are
 already in true world units, unlike the legacy overview-frame icons that
 needed a presentation scale) and the same `(1, -1, 1)` Y-flip the ground and
 the native render use. The "landmarks" checkbox toggles the layer.
@@ -196,7 +196,7 @@ The WebGL port runs this in a vertex + fragment shader:
 
 The shader supports two LUT sources, in priority order:
 
-1. **Disc-extracted LUT (default)** &mdash; the WASM viewer locates
+1. **Disc-extracted LUT (default)** - the WASM viewer locates
    the 4 KiB (2048 u16) LUT inside `SCUS_942.54` via the
    `fog_lut::find` content-scan (monotone non-decreasing ramp with
    leading zero entries + saturating tail) and auto-uploads it on
@@ -204,7 +204,7 @@ The shader supports two LUT sources, in priority order:
    On the retail USA build the LUT sits at SCUS offset `0x05FCC0`
    (vaddr `0x8006FCC0`); the content scan handles regional variants
    without hardcoding.
-2. **Kingdom-tinted fallback** &mdash; when SCUS extraction doesn't
+2. **Kingdom-tinted fallback** - when SCUS extraction doesn't
    surface a LUT (raw PROT.DAT load, regional variant with shifted
    SCUS, modded disc), the shader falls back to using `v_fog_t`
    directly as the mix factor, still toward the kingdom haze tint.
@@ -330,7 +330,7 @@ field at priority above the hand-eyeballed ``KINGDOM_FOG_TINT``
 fallback. World-map saves that don't have an active atmospheric tick
 fall back to the hardcoded table.
 
-## Ocean tile — disc-side asset + 13-frame CLUT animation
+## Ocean tile - disc-side asset + 13-frame CLUT animation
 
 The world-map ocean is a **static 4bpp tile** + **CLUT cycling**
 animation, both shipped on disc:
@@ -409,13 +409,13 @@ loads.
 Per-kingdom camera centres + zoom anchors live in two tables and a
 JSON override:
 
-- `KINGDOM_CAM` &mdash; walk-view spawn anchors (load-time map-origin
+- `KINGDOM_CAM` - walk-view spawn anchors (load-time map-origin
   coords from `_DAT_80089118` / `_DAT_80089120`, decoded by
   `mednafen-state world-map-camera --table <save>`). This is the
   default view when a kingdom tab is opened.
-- `KINGDOM_TOPVIEW_CAM` &mdash; hardcoded fallback for the
+- `KINGDOM_TOPVIEW_CAM` - hardcoded fallback for the
   "lock to retail top-view" button.
-- ``world-overview.json[kingdom].topview_cam`` &mdash; per-kingdom
+- ``world-overview.json[kingdom].topview_cam`` - per-kingdom
   capture preferred over `KINGDOM_TOPVIEW_CAM` when present.
   ``resolve_bulk_terrain.py::capture_topview_cam`` writes this from
   ``mednafen-state world-map-camera`` against the user-supplied save
@@ -432,7 +432,7 @@ top-view also enters from this anchor before user input scrolls it.
 
 ## See also
 
-**Reference** —
+**Reference** -
 [World map](world-map.md) ·
 [World-map overlay](../formats/world-map-overlay.md) ·
 [Renderer](renderer.md)

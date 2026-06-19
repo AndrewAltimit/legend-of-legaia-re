@@ -120,7 +120,7 @@ pub fn list_directory(disc: &mut RawDisc, dir: &DirectoryRecord) -> Result<Vec<D
 
 /// Locate a top-level file in an **in-memory** Mode 2/2352 disc image by name,
 /// returning its `(lba, size_bytes)`. Unlike [`walk_files`] (which streams from
-/// a [`RawDisc`] file handle), this works on a byte slice — what an in-memory
+/// a [`RawDisc`] file handle), this works on a byte slice - what an in-memory
 /// patcher holds. Only the root directory is searched, which is where the disc's
 /// data files (`PROT.DAT`, `SCUS_942.54`, …) live.
 ///

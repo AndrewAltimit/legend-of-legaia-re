@@ -67,7 +67,7 @@ def main(path: str) -> int:
             printable = sum(1 for b in buf[:8] if 32 <= b < 127)
             if printable >= 4:
                 return "text"
-        # Many fixed-pattern bytes — texture-like (4bpp index runs etc.)
+        # Many fixed-pattern bytes - texture-like (4bpp index runs etc.)
         # Heuristic: low entropy in low nibble
         return "other"
 

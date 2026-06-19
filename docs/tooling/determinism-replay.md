@@ -158,5 +158,5 @@ is byte-identical. The scripted-encounter Battle leg is deferred (see the
 
 ## See also
 
-- [`docs/subsystems/engine.md`](../subsystems/engine.md) — the clean-room engine the record/replay loop drives.
-- [`docs/subsystems/script-vm.md`](../subsystems/script-vm.md) — the field/event VM whose pad-driven state the trace captures.
+- [`docs/subsystems/engine.md`](../subsystems/engine.md) - the clean-room engine the record/replay loop drives.
+- [`docs/subsystems/script-vm.md`](../subsystems/script-vm.md) - the field/event VM whose pad-driven state the trace captures.

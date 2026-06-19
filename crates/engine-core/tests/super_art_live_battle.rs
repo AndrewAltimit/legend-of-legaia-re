@@ -1,5 +1,5 @@
 //! In-app verification: a Super Art is selectable and executes through the
-//! **live** player-driven battle menu — not just the row builder.
+//! **live** player-driven battle menu - not just the row builder.
 //!
 //! Drives the same `World::tick` path the windowed app uses: walk into a
 //! battle, navigate the command menu to Arts, open the Arts submenu, and

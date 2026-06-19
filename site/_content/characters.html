@@ -120,7 +120,7 @@ table.arts-list .cmd-tag {
 <header>
   <div class="breadcrumb"><a href="index.html">home</a> · characters</div>
   <h1>Characters</h1>
-  <p class="lede">The five 3D meshes the engine keeps resident across every field scene — <strong>Vahn</strong>, <strong>Noa</strong>, <strong>Gala</strong>, and two smaller auxiliary actors — straight from your own disc image. The active party also runs an <em>equipment-conditional</em> mesh swap: a single per-character byte in the save record flips the visible weapon-bearing group between two pre-baked descriptors. Click any character to spin its model and try the toggle. Nothing leaves your machine.</p>
+  <p class="lede">The five 3D meshes the engine keeps resident across every field scene - <strong>Vahn</strong>, <strong>Noa</strong>, <strong>Gala</strong>, and two smaller auxiliary actors - straight from your own disc image. The active party also runs an <em>equipment-conditional</em> mesh swap: a single per-character byte in the save record flips the visible weapon-bearing group between two pre-baked descriptors. Click any character to spin its model and try the toggle. Nothing leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -138,7 +138,7 @@ table.arts-list .cmd-tag {
       <div>
         <canvas id="char-viewer-canvas" class="char-viewer-canvas" width="640" height="480"></canvas>
         <div class="char-arts" id="char-arts" style="display: none;">
-          <h3 id="char-arts-title">—</h3>
+          <h3 id="char-arts-title">-</h3>
           <div class="char-arts-kinds" id="char-arts-kinds"></div>
           <table class="arts-list">
             <thead>
@@ -150,23 +150,23 @@ table.arts-list .cmd-tag {
             </thead>
             <tbody id="char-arts-body"></tbody>
           </table>
-          <p class="char-info-note">Tactical Arts list for this character (name + AP + command sequence) — sourced from the curated <code>arts.toml</code> table that cross-validates against the <a href="formats/art-data.html">PROT 0x05C4 art records</a>. Animation playback with audio comes next, once the per-character ANM source is pinned.</p>
+          <p class="char-info-note">Tactical Arts list for this character (name + AP + command sequence) - sourced from the curated <code>arts.toml</code> table that cross-validates against the <a href="formats/art-data.html">PROT 0x05C4 art records</a>. Animation playback with audio comes next, once the per-character ANM source is pinned.</p>
         </div>
       </div>
       <div class="char-viewer-side">
-        <h3 id="char-name">—</h3>
+        <h3 id="char-name">-</h3>
         <div class="char-stat" id="char-stats"></div>
 
         <div class="char-section-label">Form</div>
         <div class="char-equip-toggle" id="char-form-toggle"></div>
         <div class="char-info-note" id="char-form-note">
-          Three forms, all from your own disc. <strong>Field form</strong> (PROT 0874 §0) is the smaller low-poly mesh resident across every town and dungeon, textured from its atlas in <strong>PROT 0874 §2</strong> (texpage 832,256 · CLUTs row 478). <strong>Battle form</strong> and <strong>Baka Fighter</strong> are the <em>same</em> higher-fidelity party meshes — a real battle <em>assembles</em> each character's copy from their player battle file by equipped item id and installs the result into <code>DAT_8007C018[0..=2]</code>, while PROT 1204 <code>other5</code> is the pre-assembled default-gear sibling shown here (see <a href="#baka-fighter-meshes">the assembly section</a>). A real turn-based battle relocates the mesh into a packed VRAM band (rows 481..483) and recolours it with a <em>separate per-battle palette</em> — that palette is embedded (LZS-compressed) in the character's player record and decoded by <code>FUN_80052FA0</code>; the <strong>Battle form</strong> here decodes all three party palettes straight from your disc (Vahn PROT 0863 byte-exact, Noa PROT 0864, Gala PROT 0865) and renders their real colours — blue-haired Vahn, pink-haired Noa, brown-haired Gala — while the <strong>Baka Fighter</strong> form shows the pack's <em>bundled (authoring) palette</em>. Both route through the same 1024×512 R16UI paletted VRAM pipeline the world-overview viewer uses.
+          Three forms, all from your own disc. <strong>Field form</strong> (PROT 0874 §0) is the smaller low-poly mesh resident across every town and dungeon, textured from its atlas in <strong>PROT 0874 §2</strong> (texpage 832,256 · CLUTs row 478). <strong>Battle form</strong> and <strong>Baka Fighter</strong> are the <em>same</em> higher-fidelity party meshes - a real battle <em>assembles</em> each character's copy from their player battle file by equipped item id and installs the result into <code>DAT_8007C018[0..=2]</code>, while PROT 1204 <code>other5</code> is the pre-assembled default-gear sibling shown here (see <a href="#baka-fighter-meshes">the assembly section</a>). A real turn-based battle relocates the mesh into a packed VRAM band (rows 481..483) and recolours it with a <em>separate per-battle palette</em> - that palette is embedded (LZS-compressed) in the character's player record and decoded by <code>FUN_80052FA0</code>; the <strong>Battle form</strong> here decodes all three party palettes straight from your disc (Vahn PROT 0863 byte-exact, Noa PROT 0864, Gala PROT 0865) and renders their real colours - blue-haired Vahn, pink-haired Noa, brown-haired Gala - while the <strong>Baka Fighter</strong> form shows the pack's <em>bundled (authoring) palette</em>. Both route through the same 1024×512 R16UI paletted VRAM pipeline the world-overview viewer uses.
         </div>
 
         <div class="char-section-label">Equipment swap</div>
         <div class="char-equip-toggle" id="char-equip-toggle"></div>
         <div class="char-info-note" id="char-equip-note">
-          Each active-party character has a single weapon-bearing mesh group that retail flips between two pre-baked variants based on a byte in the character record. The change is binary — different swords don't get their own meshes; the texture atlas conveys item identity.
+          Each active-party character has a single weapon-bearing mesh group that retail flips between two pre-baked variants based on a byte in the character record. The change is binary - different swords don't get their own meshes; the texture atlas conveys item identity.
         </div>
 
         <div class="char-section-label">View</div>
@@ -182,7 +182,7 @@ table.arts-list .cmd-tag {
           <select id="char-anm-bundle" class="char-anm-select"></select>
           <div class="char-anm-row">
             <input type="range" id="char-anm-record" min="0" max="0" value="0">
-            <span id="char-anm-record-label" class="char-anm-readout">—</span>
+            <span id="char-anm-record-label" class="char-anm-readout">-</span>
           </div>
           <div class="char-controls">
             <button id="char-anm-play-btn" type="button">▶ play</button>
@@ -190,10 +190,10 @@ table.arts-list .cmd-tag {
           </div>
           <div class="char-anm-row">
             <input type="range" id="char-anm-frame" min="0" max="0" value="0" disabled>
-            <span id="char-anm-frame-label" class="char-anm-readout">—</span>
+            <span id="char-anm-frame-label" class="char-anm-readout">-</span>
           </div>
           <div class="char-info-note" id="char-anm-info">
-            87 player-ANM bundles ship across the corpus, one per scene. Each record is one animation clip (a varying-length frame table over a small set of animated bones; `marker_1 = 0x080C` opens every record body, with size obeying <code>16 + 8 × bone_count × frame_count</code> byte-exact across the 296-record corpus). Pick a bundle + record, then play to apply the per-frame per-bone transforms to the field-form TMD. Each 8-byte (bone, frame) entry decodes — exactly as the retail interpreter <code>FUN_8001BE80</code> does — into a joint <strong>translation</strong> and <strong>rotation</strong>: bytes 0–4 carry three nibble-packed signed 12-bit translation values <code>(t<sub>x</sub>, t<sub>y</sub>, t<sub>z</sub>)</code>, bytes 5/6/7 are three <code>u8</code> rotation angles (each <code>&lt;&lt; 4</code> for a PSX 12-bit angle, 4096 = 360°). The piece is posed <code>R·v + T</code> about its own object origin (rotations composed Z→Y→X), with frame 0 of an idle clip being the rest pose — no centroid subtraction. (Battle-form posing follows the same pipeline; today only the field form is wired.)
+            87 player-ANM bundles ship across the corpus, one per scene. Each record is one animation clip (a varying-length frame table over a small set of animated bones; `marker_1 = 0x080C` opens every record body, with size obeying <code>16 + 8 × bone_count × frame_count</code> byte-exact across the 296-record corpus). Pick a bundle + record, then play to apply the per-frame per-bone transforms to the field-form TMD. Each 8-byte (bone, frame) entry decodes - exactly as the retail interpreter <code>FUN_8001BE80</code> does - into a joint <strong>translation</strong> and <strong>rotation</strong>: bytes 0–4 carry three nibble-packed signed 12-bit translation values <code>(t<sub>x</sub>, t<sub>y</sub>, t<sub>z</sub>)</code>, bytes 5/6/7 are three <code>u8</code> rotation angles (each <code>&lt;&lt; 4</code> for a PSX 12-bit angle, 4096 = 360°). The piece is posed <code>R·v + T</code> about its own object origin (rotations composed Z→Y→X), with frame 0 of an idle clip being the rest pose - no centroid subtraction. (Battle-form posing follows the same pipeline; today only the field form is wired.)
           </div>
         </div>
       </div>
@@ -210,8 +210,8 @@ table.arts-list .cmd-tag {
 
 <section class="doc-section">
   <h2>How it works</h2>
-  <p>PROT entry <code>0874</code> (filename label <code>befect_data</code>; the retail dev name is <code>player_data</code> / <code>player.lzs</code> &mdash; the <a href="formats/cdname.html#numbering-space">+2 label shift</a>) carries a five-TMD pack at the head of its first LZS section. The engine installs every body at <code>DAT_8007C018[0..=4]</code> at scene entry — a contiguous global pool the field renderer, the actor allocators, and the world-map dispatcher all read. The same five meshes are reused across every town and dungeon (and the world map), so they're loaded once and survive every transition.</p>
-  <p>Slots 0/1/2 are the <strong>active-party characters</strong> (Vahn / Noa / Gala). Each ships with twelve <em>group descriptors</em> on disc, but the engine immediately caps the live <code>group_count</code> to ten — the last two are <em>equipment-conditional templates</em>. Every frame, <code>FUN_8001EBEC</code> reads a single byte from each character's save record and overwrites one visible group with either template. That single bit is the entire equipment-swap mechanism for the mesh; weapon identity is conveyed through the texture atlas, not by adding new geometry.</p>
+  <p>PROT entry <code>0874</code> (filename label <code>befect_data</code>; the retail dev name is <code>player_data</code> / <code>player.lzs</code> - the <a href="formats/cdname.html#numbering-space">+2 label shift</a>) carries a five-TMD pack at the head of its first LZS section. The engine installs every body at <code>DAT_8007C018[0..=4]</code> at scene entry - a contiguous global pool the field renderer, the actor allocators, and the world-map dispatcher all read. The same five meshes are reused across every town and dungeon (and the world map), so they're loaded once and survive every transition.</p>
+  <p>Slots 0/1/2 are the <strong>active-party characters</strong> (Vahn / Noa / Gala). Each ships with twelve <em>group descriptors</em> on disc, but the engine immediately caps the live <code>group_count</code> to ten - the last two are <em>equipment-conditional templates</em>. Every frame, <code>FUN_8001EBEC</code> reads a single byte from each character's save record and overwrites one visible group with either template. That single bit is the entire equipment-swap mechanism for the mesh; weapon identity is conveyed through the texture atlas, not by adding new geometry.</p>
   <div class="cli"><code>asset character-pack extracted/PROT/0874_befect_data.BIN</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -221,7 +221,7 @@ table.arts-list .cmd-tag {
   </div>
 
   <h2>The equipment swap</h2>
-  <p>The toggle in the viewer mirrors what the engine does at runtime: it copies one of two pre-baked 28-byte group descriptors over a visible group in the TMD. Group 10 (<code>TMD+0x124</code>) is the variant the engine picks for a non-zero equipment byte; group 11 (<code>TMD+0x140</code>) is the variant for a zero byte. The patched-group index is character-specific — Vahn patches group 0, Noa patches group 3, Gala patches group 5 — because each character has its primary visible-equipment object in a different mesh slot.</p>
+  <p>The toggle in the viewer mirrors what the engine does at runtime: it copies one of two pre-baked 28-byte group descriptors over a visible group in the TMD. Group 10 (<code>TMD+0x124</code>) is the variant the engine picks for a non-zero equipment byte; group 11 (<code>TMD+0x140</code>) is the variant for a zero byte. The patched-group index is character-specific - Vahn patches group 0, Noa patches group 3, Gala patches group 5 - because each character has its primary visible-equipment object in a different mesh slot.</p>
   <div class="cli"><code>asset character-pack &hellip; --slot 0 --equip 1 --out vahn_equipped.tmd</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -229,27 +229,27 @@ table.arts-list .cmd-tag {
     <a href="reference/functions.html">FUN_8001EBEC asm trace</a>
   </div>
 
-  <h2 id="baka-fighter-meshes">The battle form — assembled per equipment, with PROT 1204 as the default-gear sibling</h2>
-  <p>The party's <strong>in-battle</strong> meshes are higher-fidelity than the field pack — and a real battle <em>builds</em> them: at battle setup the engine assembles each character's TMD from their player battle file (<code>data\battle\PLAYER&lt;n&gt;</code>), picking one mesh section per equipment slot by the <strong>equipped item ids</strong>, and installs the merged result into <code>DAT_8007C018[0..=2]</code>. <strong>PROT 1204</strong> (<code>other5</code>), shown in the viewer above, is the pre-assembled <em>default-equipment</em> copy of the same five fighters — the pack the Baka Fighter minigame loads directly. See <a href="formats/character-mesh.html">character mesh packs</a> for the full assembly chain.</p>
-  <p><strong>Provenance (byte-verified).</strong> In a full-party battle save, <code>DAT_8007C018[0]</code> points at the assembler's output blob exactly (<code>nobj=17</code>, bone-tag bytes <code>[0..14, 200, 201]</code>, attach bones <code>[5, 8]</code>), and every one of Vahn's 17 object vertex pools byte-matches a section of his player file, equipment-selectively — the Hunter Clothes body, the Survival Knife (bone object + visual extra), the Ra-Seru Meta piece, and the defaults for the bare slots. The five equipped-variant objects appear nowhere in PROT 1204; the other 12 default objects are byte-shared with it, which is what an earlier "battle renders PROT 1204 (12/17 match)" attribution was actually seeing. The runtime <code>nobj</code> +2 over the 1204 forms (15/16/15 → 17/18/17) is the weapon + Ra-Seru sections' extra objects — <em>not</em> <code>FUN_8001EBEC</code>, which only toggles a pose transform. <em>(Two earlier reads are superseded in turn: "battle reuses the field pack", then "battle renders PROT 1204 directly".)</em></p>
-  <p>The <a href="minigames.html">Baka Fighter</a> fist-fight minigame <strong>loads PROT 1204 directly</strong> — it lets you play <em>as</em> Vahn/Noa/Gala with default gear (<code>overlay_baka_fighter</code> loads <code>data\field\other5.lzs</code> + PROT 1205/1206), which is why captures taken during that minigame show the pack resident.</p>
+  <h2 id="baka-fighter-meshes">The battle form - assembled per equipment, with PROT 1204 as the default-gear sibling</h2>
+  <p>The party's <strong>in-battle</strong> meshes are higher-fidelity than the field pack - and a real battle <em>builds</em> them: at battle setup the engine assembles each character's TMD from their player battle file (<code>data\battle\PLAYER&lt;n&gt;</code>), picking one mesh section per equipment slot by the <strong>equipped item ids</strong>, and installs the merged result into <code>DAT_8007C018[0..=2]</code>. <strong>PROT 1204</strong> (<code>other5</code>), shown in the viewer above, is the pre-assembled <em>default-equipment</em> copy of the same five fighters - the pack the Baka Fighter minigame loads directly. See <a href="formats/character-mesh.html">character mesh packs</a> for the full assembly chain.</p>
+  <p><strong>Provenance (byte-verified).</strong> In a full-party battle save, <code>DAT_8007C018[0]</code> points at the assembler's output blob exactly (<code>nobj=17</code>, bone-tag bytes <code>[0..14, 200, 201]</code>, attach bones <code>[5, 8]</code>), and every one of Vahn's 17 object vertex pools byte-matches a section of his player file, equipment-selectively - the Hunter Clothes body, the Survival Knife (bone object + visual extra), the Ra-Seru Meta piece, and the defaults for the bare slots. The five equipped-variant objects appear nowhere in PROT 1204; the other 12 default objects are byte-shared with it, which is what an earlier "battle renders PROT 1204 (12/17 match)" attribution was actually seeing. The runtime <code>nobj</code> +2 over the 1204 forms (15/16/15 → 17/18/17) is the weapon + Ra-Seru sections' extra objects - <em>not</em> <code>FUN_8001EBEC</code>, which only toggles a pose transform. <em>(Two earlier reads are superseded in turn: "battle reuses the field pack", then "battle renders PROT 1204 directly".)</em></p>
+  <p>The <a href="minigames.html">Baka Fighter</a> fist-fight minigame <strong>loads PROT 1204 directly</strong> - it lets you play <em>as</em> Vahn/Noa/Gala with default gear (<code>overlay_baka_fighter</code> loads <code>data\field\other5.lzs</code> + PROT 1205/1206), which is why captures taken during that minigame show the pack resident.</p>
   <table>
     <thead>
       <tr><th>Slot</th><th>Field form (PROT 0874 §0)</th><th>Battle form (PROT 1204)</th></tr>
     </thead>
     <tbody>
-      <tr><td>0 — Vahn</td>     <td><code>nobj=12</code>, 13 220 bytes</td><td><code>nobj=15</code>, 33 516 bytes</td></tr>
-      <tr><td>1 — Noa</td>      <td><code>nobj=12</code>, 13 800 bytes</td><td><code>nobj=16</code>, 33 636 bytes</td></tr>
-      <tr><td>2 — Gala</td>     <td><code>nobj=12</code>, 11 656 bytes</td><td><code>nobj=15</code>, 24 780 bytes</td></tr>
-      <tr><td>3 — Extra</td>    <td><code>nobj=3</code>,   6 488 bytes</td><td><code>nobj=20</code>, 27 036 bytes</td></tr>
-      <tr><td>4 — Extra</td>    <td><code>nobj=2</code>,   1 048 bytes</td><td><code>nobj=15</code>, 33 340 bytes</td></tr>
+      <tr><td>0 - Vahn</td>     <td><code>nobj=12</code>, 13 220 bytes</td><td><code>nobj=15</code>, 33 516 bytes</td></tr>
+      <tr><td>1 - Noa</td>      <td><code>nobj=12</code>, 13 800 bytes</td><td><code>nobj=16</code>, 33 636 bytes</td></tr>
+      <tr><td>2 - Gala</td>     <td><code>nobj=12</code>, 11 656 bytes</td><td><code>nobj=15</code>, 24 780 bytes</td></tr>
+      <tr><td>3 - Extra</td>    <td><code>nobj=3</code>,   6 488 bytes</td><td><code>nobj=20</code>, 27 036 bytes</td></tr>
+      <tr><td>4 - Extra</td>    <td><code>nobj=2</code>,   1 048 bytes</td><td><code>nobj=15</code>, 33 340 bytes</td></tr>
     </tbody>
   </table>
-  <p>The pack is a flat streaming-format container with <strong>asset type 0x09 (TMD2)</strong> chunks — distinct from the field form's <code>parse_player_lzs</code>-shaped pack. The 7 atlases are 256×256 4bpp TIMs with 256-color sub-CLUTs at stride <code>0x8224</code> (bundled CLUTs at rows <code>490..495, 497</code>) — the face / hair / outfit textures the renderer samples. These same meshes + animations are also surfaced on the <a href="minigames.html">minigames</a> page (where this pack drives the Baka Fighter roster).</p>
+  <p>The pack is a flat streaming-format container with <strong>asset type 0x09 (TMD2)</strong> chunks - distinct from the field form's <code>parse_player_lzs</code>-shaped pack. The 7 atlases are 256×256 4bpp TIMs with 256-color sub-CLUTs at stride <code>0x8224</code> (bundled CLUTs at rows <code>490..495, 497</code>) - the face / hair / outfit textures the renderer samples. These same meshes + animations are also surfaced on the <a href="minigames.html">minigames</a> page (where this pack drives the Baka Fighter roster).</p>
 
-  <h2 id="battle-palette">The true battle palette — decoded from the disc</h2>
-  <p>The bundled CLUTs in PROT 1204 are the pack's <strong>authoring palette</strong> — what the <strong>Baka Fighter</strong> minigame renders with directly. A real <strong>turn-based battle</strong> does two things at load that the minigame doesn't: it <strong>relocates</strong> every party prim's texpage + CBA into a packed per-slot VRAM band (Vahn → row 481, Noa → row 482, Gala → row 483; pinned by reading the runtime <code>flags=1</code> TMD back out of <code>DAT_8007C018[0..2]</code> in a clean battle save), and it uploads a <strong>different palette</strong> there. That battle palette is a genuinely distinct asset: <strong>146 of Vahn's 256</strong> battle colours appear in <em>no</em> CLUT the pack ships. The band's <em>pixels</em> are likewise uploaded from the player battle file's per-section texture pools — each equipped section carries an upload block placed by a static per-slot rect table (<code>FUN_80052FA0</code> → the <code>LoadImage</code> front-end <code>FUN_80053B9C</code>), tiling each character's 128×256 band exactly; the 1204 atlas is the default-gear fallback content.</p>
-  <p>That palette <strong>is on the disc</strong> — it lives inside the character's player battle file (the data the <code>data\battle\PLAYERn</code> path resolves to — Vahn is extraction PROT 0863, raw TOC <code>0x361</code> = <code>PLAYER1</code>; the extraction filename label is <code>edstati3</code>, the <a href="formats/cdname.html#numbering-space">+2 label shift</a>), embedded in a small LZS record set that the loader decodes and STP-copies to VRAM. Running that decode + assembly as a unit (<code>FUN_80052FA0</code>: decode <code>record[0]</code> + 5 scattered sub-records into one buffer, read the CLUT structs at the header offsets, set bit&nbsp;15 on non-zero colours) reproduces the live battle VRAM <strong>byte-exact</strong>. Vahn's three bands — <code>base 0x00</code> (record[0]'s CLUT&nbsp;B), <code>0x40</code> (sub#0), <code>0x70</code> (sub#4) — are decoded straight from your disc and overlaid onto the rows his mesh samples, so the <strong>Battle form above shows his real blue-haired colours</strong>. Every earlier byte-search missed only because it used the bit-15-<em>set</em> runtime form of the colours instead of the disc's bit-15-<em>clear</em> form. <strong>Noa (PROT 0864)</strong> and <strong>Gala (PROT 0865)</strong> are wired too: a character carries one CLUT per equipment id plus an <code>id == 0</code> separator (the unequipped default), and picking the separator default for each band the mesh samples reproduces the palette — Noa ~98%, Gala <strong>100%</strong> vs a full-party capture, every sampled column covered. All three player files load by <code>char + 0x360</code> → <code>FUN_8003e8a8</code> → <code>toc[idx+2]</code> (a sector offset into <code>PROT.DAT</code>): Vahn, Noa, Gala, Terra sit contiguously, and the extractor's <code>0863</code>..<code>0866</code> entries begin at those offsets exactly; the historical <code>0861</code> reading matched the same bytes through an over-read window across two 1-sector stub entries (0861/0862) that reaches Vahn's file <code>0x1000</code> in. The one gotcha Gala exposed: the sub-record section base is <code>rec0 + align_up(recbase, 0x2000)</code> — a <code>0x1000</code> alignment happens to match for Vahn/Noa but lands Gala's subs on a zero-padded block.</p>
+  <h2 id="battle-palette">The true battle palette - decoded from the disc</h2>
+  <p>The bundled CLUTs in PROT 1204 are the pack's <strong>authoring palette</strong> - what the <strong>Baka Fighter</strong> minigame renders with directly. A real <strong>turn-based battle</strong> does two things at load that the minigame doesn't: it <strong>relocates</strong> every party prim's texpage + CBA into a packed per-slot VRAM band (Vahn → row 481, Noa → row 482, Gala → row 483; pinned by reading the runtime <code>flags=1</code> TMD back out of <code>DAT_8007C018[0..2]</code> in a clean battle save), and it uploads a <strong>different palette</strong> there. That battle palette is a genuinely distinct asset: <strong>146 of Vahn's 256</strong> battle colours appear in <em>no</em> CLUT the pack ships. The band's <em>pixels</em> are likewise uploaded from the player battle file's per-section texture pools - each equipped section carries an upload block placed by a static per-slot rect table (<code>FUN_80052FA0</code> → the <code>LoadImage</code> front-end <code>FUN_80053B9C</code>), tiling each character's 128×256 band exactly; the 1204 atlas is the default-gear fallback content.</p>
+  <p>That palette <strong>is on the disc</strong> - it lives inside the character's player battle file (the data the <code>data\battle\PLAYERn</code> path resolves to - Vahn is extraction PROT 0863, raw TOC <code>0x361</code> = <code>PLAYER1</code>; the extraction filename label is <code>edstati3</code>, the <a href="formats/cdname.html#numbering-space">+2 label shift</a>), embedded in a small LZS record set that the loader decodes and STP-copies to VRAM. Running that decode + assembly as a unit (<code>FUN_80052FA0</code>: decode <code>record[0]</code> + 5 scattered sub-records into one buffer, read the CLUT structs at the header offsets, set bit&nbsp;15 on non-zero colours) reproduces the live battle VRAM <strong>byte-exact</strong>. Vahn's three bands - <code>base 0x00</code> (record[0]'s CLUT&nbsp;B), <code>0x40</code> (sub#0), <code>0x70</code> (sub#4) - are decoded straight from your disc and overlaid onto the rows his mesh samples, so the <strong>Battle form above shows his real blue-haired colours</strong>. Every earlier byte-search missed only because it used the bit-15-<em>set</em> runtime form of the colours instead of the disc's bit-15-<em>clear</em> form. <strong>Noa (PROT 0864)</strong> and <strong>Gala (PROT 0865)</strong> are wired too: a character carries one CLUT per equipment id plus an <code>id == 0</code> separator (the unequipped default), and picking the separator default for each band the mesh samples reproduces the palette - Noa ~98%, Gala <strong>100%</strong> vs a full-party capture, every sampled column covered. All three player files load by <code>char + 0x360</code> → <code>FUN_8003e8a8</code> → <code>toc[idx+2]</code> (a sector offset into <code>PROT.DAT</code>): Vahn, Noa, Gala, Terra sit contiguously, and the extractor's <code>0863</code>..<code>0866</code> entries begin at those offsets exactly; the historical <code>0861</code> reading matched the same bytes through an over-read window across two 1-sector stub entries (0861/0862) that reaches Vahn's file <code>0x1000</code> in. The one gotcha Gala exposed: the sub-record section base is <code>rec0 + align_up(recbase, 0x2000)</code> - a <code>0x1000</code> alignment happens to match for Vahn/Noa but lands Gala's subs on a zero-padded block.</p>
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN</code></div>
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --slot 0 --out-tmd vahn_battle.tmd</code></div>
   <div class="cli"><code>asset battle-char-pack extracted/PROT/1204_other5.BIN --atlas 0 --out-tim vahn_atlas.tim</code></div>
@@ -257,13 +257,13 @@ table.arts-list .cmd-tag {
   <h2>What's wired</h2>
   <p>The status of each rendering input behind the viewer above:</p>
   <ul>
-    <li><strong>Field-form texture atlas</strong>. <em>Wired (textured).</em> The atlas lives in <strong>PROT 0874 section 2</strong>, the third LZS section of the <code>player.lzs</code> container &mdash; extraction 0874 <em>is</em> the retail <code>player_data</code> file; the extraction file <em>named</em> <code>player_data</code> (0876, a VAB + an empty <code>TIM_LIST</code> + a SEQ trailer) is the +2 filename shift that first sent the texture hunt to the wrong entry. <code>FUN_8001E890</code> loads that container (disc index <code>0x36c</code>) and uploads §2 to VRAM via <code>FUN_800198e0</code>: three atlas pages at texpage <code>(832, 256)</code> (Vahn / Noa / Gala, tiling cols 832..892) with per-character CLUTs on <strong>row 478</strong> (cols 0..63 / 64..127 / 128..191). The CLUT goes up as a <em>flat horizontal strip</em> (<code>w·h</code> colours at one row), not the declared <code>w×h</code> rectangle — which is exactly why each character samples several CBA <em>columns</em> of one row. Byte-exact against a live field VRAM dump; the Field form above renders against this VRAM through the same paletted pipeline the Battle form uses. The field mesh is a <strong>hybrid</strong>: only about a third of its prims are textured (the face / eyes / skin), and the rest — hair, vest, boots — are untextured flat / gouraud prims that carry per-vertex RGB in the TMD (a colour block before the vertex indices: one RGB for flat prims, one per corner for gouraud). The shader uses those colours for the untextured body parts (a <code>u_use_flat_colors</code>-gated branch) instead of sampling VRAM, so the whole figure renders in its real colours — blue-haired Vahn, auburn green-eyed Noa, orange-haired Gala — not just a textured face on an empty body.</li>
-    <li><strong>Battle-form rendering</strong>. <em>Wired (geometry + textures + assembly + Vahn's true palette).</em> The seven trailing TIMs in PROT 1204 upload into the same 1024×512 paletted VRAM the world-overview viewer uses; the fragment shader does the per-prim CBA / TSB lookup the retail GPU does, and the Battle form overlays Vahn's true per-battle palette (decoded from his player battle file, extraction PROT 0863) onto the rows his mesh samples — see <a href="#battle-palette">the battle-palette section</a>. The party mesh is assembled exactly as the retail engine does it (each object's local origin placed at its joint via the ANM per-bone <code>(T, R)</code>; see the Animation panel and note below). Orbit / zoom to inspect.</li>
+    <li><strong>Field-form texture atlas</strong>. <em>Wired (textured).</em> The atlas lives in <strong>PROT 0874 section 2</strong>, the third LZS section of the <code>player.lzs</code> container - extraction 0874 <em>is</em> the retail <code>player_data</code> file; the extraction file <em>named</em> <code>player_data</code> (0876, a VAB + an empty <code>TIM_LIST</code> + a SEQ trailer) is the +2 filename shift that first sent the texture hunt to the wrong entry. <code>FUN_8001E890</code> loads that container (disc index <code>0x36c</code>) and uploads §2 to VRAM via <code>FUN_800198e0</code>: three atlas pages at texpage <code>(832, 256)</code> (Vahn / Noa / Gala, tiling cols 832..892) with per-character CLUTs on <strong>row 478</strong> (cols 0..63 / 64..127 / 128..191). The CLUT goes up as a <em>flat horizontal strip</em> (<code>w·h</code> colours at one row), not the declared <code>w×h</code> rectangle - which is exactly why each character samples several CBA <em>columns</em> of one row. Byte-exact against a live field VRAM dump; the Field form above renders against this VRAM through the same paletted pipeline the Battle form uses. The field mesh is a <strong>hybrid</strong>: only about a third of its prims are textured (the face / eyes / skin), and the rest - hair, vest, boots - are untextured flat / gouraud prims that carry per-vertex RGB in the TMD (a colour block before the vertex indices: one RGB for flat prims, one per corner for gouraud). The shader uses those colours for the untextured body parts (a <code>u_use_flat_colors</code>-gated branch) instead of sampling VRAM, so the whole figure renders in its real colours - blue-haired Vahn, auburn green-eyed Noa, orange-haired Gala - not just a textured face on an empty body.</li>
+    <li><strong>Battle-form rendering</strong>. <em>Wired (geometry + textures + assembly + Vahn's true palette).</em> The seven trailing TIMs in PROT 1204 upload into the same 1024×512 paletted VRAM the world-overview viewer uses; the fragment shader does the per-prim CBA / TSB lookup the retail GPU does, and the Battle form overlays Vahn's true per-battle palette (decoded from his player battle file, extraction PROT 0863) onto the rows his mesh samples - see <a href="#battle-palette">the battle-palette section</a>. The party mesh is assembled exactly as the retail engine does it (each object's local origin placed at its joint via the ANM per-bone <code>(T, R)</code>; see the Animation panel and note below). Orbit / zoom to inspect.</li>
     <li><strong>All three party palettes are wired</strong>. Vahn (PROT 0863, byte-exact), Noa (PROT 0864, ~98%) and Gala (PROT 0865, 100%) are decoded from your disc. The player files are resolved by <code>char + 0x360</code> → <code>FUN_8003e8a8</code> reading <code>toc[idx+2]</code> as a sector offset into <code>PROT.DAT</code> (the retail ISO9660 open <code>FUN_800608f0</code> is a <code>trap</code> stub on this build). Terra (PROT 0866) would follow the same path if a fourth battle slot ever needed it.</li>
     <li><strong>Animations</strong>. <em>Wired.</em> Live in the <a href="formats/anm.html">ANM container</a> and feed through the per-actor anim record at <code>actor[+0x4C]</code>. The disc source is pinned: per-scene bundles for the field rig, and PROT 1203 (<code>other5</code>) for the battle rig, whose 30 records are organised in per-character banks (15-bone Vahn / 16-bone Noa / 15-bone Gala). The Animation panel steps records and plays frames; each frame poses through the exact retail per-bone pipeline (<code>R·v + T</code>, <code>FUN_8001B964</code> / <code>FUN_8001BE80</code>), so the rig stays assembled across the whole clip. Frame 0 of each bank's idle record is the combat-stance rest pose.</li>
   </ul>
   <div class="char-info-note">
-    <strong>Note on assembly.</strong> Each character is a set of object-local TMD pieces (head, torso, limbs), <em>not</em> a single pre-assembled mesh. The retail engine places each piece by rotating its object-local vertices about their own origin and translating to the joint position — <code>v_world = R<sub>bone</sub>·v + T<sub>bone</sub></code>, a flat per-object transform with no skeleton hierarchy (<code>FUN_8001B964</code> loads the actor matrix, <code>FUN_8001BE80</code> decodes the bone <code>(T, R)</code> and pushes <code>T</code> through the GTE's <code>MVMVA</code>, then <code>FUN_8002735C</code> draws the piece). The <code>(T, R)</code> values come from the ANM stream; frame 0 of the idle clip is the rest pose. This viewer applies that exact pipeline, so the pieces connect at their joints the way they do in-game. Both forms are textured: the field rig samples its atlas from PROT 0874 §2, the battle rig from PROT 1204.
+    <strong>Note on assembly.</strong> Each character is a set of object-local TMD pieces (head, torso, limbs), <em>not</em> a single pre-assembled mesh. The retail engine places each piece by rotating its object-local vertices about their own origin and translating to the joint position - <code>v_world = R<sub>bone</sub>·v + T<sub>bone</sub></code>, a flat per-object transform with no skeleton hierarchy (<code>FUN_8001B964</code> loads the actor matrix, <code>FUN_8001BE80</code> decodes the bone <code>(T, R)</code> and pushes <code>T</code> through the GTE's <code>MVMVA</code>, then <code>FUN_8002735C</code> draws the piece). The <code>(T, R)</code> values come from the ANM stream; frame 0 of the idle clip is the rest pose. This viewer applies that exact pipeline, so the pieces connect at their joints the way they do in-game. Both forms are textured: the field rig samples its atlas from PROT 0874 §2, the battle rig from PROT 1204.
   </div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -349,7 +349,7 @@ table.arts-list .cmd-tag {
     const character = (artsData.characters || []).find(c => c.name.toLowerCase() === name);
     if (!character) { wrap.style.display = 'none'; return; }
     wrap.style.display = '';
-    title.textContent = `${character.name} — Tactical Arts (${character.total})`;
+    title.textContent = `${character.name} - Tactical Arts (${character.total})`;
 
     const availableKinds = Object.keys(character.arts_by_kind || {})
       .filter(k => (character.arts_by_kind[k] || []).length > 0);
@@ -364,8 +364,8 @@ table.arts-list .cmd-tag {
     const list = character.arts_by_kind[curArtsKind] || [];
     body.innerHTML = list.map(a => {
       const cmd = (a.command || []).map(c =>
-        `<span class="cmd-tag">${escapeHtml(c)}</span>`).join('') || '<span class="cmd-tag">—</span>';
-      const ap = a.ap == null ? '—' : a.ap;
+        `<span class="cmd-tag">${escapeHtml(c)}</span>`).join('') || '<span class="cmd-tag">-</span>';
+      const ap = a.ap == null ? '-' : a.ap;
       return `<tr>
         <td>${escapeHtml(a.name || '?')}</td>
         <td class="col-ap">${ap}</td>
@@ -411,9 +411,9 @@ table.arts-list .cmd-tag {
     if (!formToggle) return;
     const haveBattle = !!battlePack && battlePack.slots && battlePack.slots.length > 0;
     const buttons = [
-      { val: 'field',  label: 'field form',  hint: 'PROT 0874 §0 — the 5 low-poly TMDs the engine keeps resident across every field scene', enabled: !!pack },
-      { val: 'battle', label: 'battle form', hint: 'PROT 1204 (other5) — the higher-detail party meshes the engine installs into DAT_8007C018[0..2] for turn-based battles, shown with the TRUE per-battle palette decoded from your disc. All three are wired: Vahn (PROT 0863) byte-exact vs a live battle VRAM capture, Noa (PROT 0864) ~98%, Gala (PROT 0865) 100% — each using the equipment-default CLUTs filtered to the columns its mesh samples. The player files resolve by char+0x360 → FUN_8003e8a8 → a sector offset into PROT.DAT.', enabled: haveBattle },
-      { val: 'baka',   label: 'Baka Fighter', hint: 'The same PROT 1204 meshes rendered with the palette the pack ships BUNDLED — the Baka Fighter fist-fight minigame colours. (The minigame reuses the battle meshes; only the palette differs from the turn-based battle form.)', enabled: haveBattle },
+      { val: 'field',  label: 'field form',  hint: 'PROT 0874 §0 - the 5 low-poly TMDs the engine keeps resident across every field scene', enabled: !!pack },
+      { val: 'battle', label: 'battle form', hint: 'PROT 1204 (other5) - the higher-detail party meshes the engine installs into DAT_8007C018[0..2] for turn-based battles, shown with the TRUE per-battle palette decoded from your disc. All three are wired: Vahn (PROT 0863) byte-exact vs a live battle VRAM capture, Noa (PROT 0864) ~98%, Gala (PROT 0865) 100% - each using the equipment-default CLUTs filtered to the columns its mesh samples. The player files resolve by char+0x360 → FUN_8003e8a8 → a sector offset into PROT.DAT.', enabled: haveBattle },
+      { val: 'baka',   label: 'Baka Fighter', hint: 'The same PROT 1204 meshes rendered with the palette the pack ships BUNDLED - the Baka Fighter fist-fight minigame colours. (The minigame reuses the battle meshes; only the palette differs from the turn-based battle form.)', enabled: haveBattle },
     ];
     formToggle.innerHTML = buttons.map(b => `
       <button class="char-equip-btn${b.val === curForm ? ' is-active' : ''}"
@@ -427,7 +427,7 @@ table.arts-list .cmd-tag {
   // slider walks 0..count-1 inside whichever bundle is selected. We report
   // record size + the (always 0x080C) marker byte so it's clear data IS
   // there. Per-frame pose application is still owed (the per-record
-  // keyframe table layout isn't fully decoded yet — see TODO in the
+  // keyframe table layout isn't fully decoded yet - see TODO in the
   // panel's info note).
   // scenes.json (loaded once on demand). Sorted by prot_start so a binary
   // search resolves any PROT index to the owning CDNAME block.
@@ -446,7 +446,7 @@ table.arts-list .cmd-tag {
 
   function findCdnameLabel(protIdx) {
     if (!scenesData) return `PROT ${String(protIdx).padStart(4, '0')}`;
-    // Linear walk — only 124 entries; the corpus has 87 lookups per disc
+    // Linear walk - only 124 entries; the corpus has 87 lookups per disc
     // load so a 124-entry walk per lookup is ~10k ops, well under the
     // dropdown-render budget.
     for (const s of scenesData) {
@@ -463,7 +463,7 @@ table.arts-list .cmd-tag {
       const label = findCdnameLabel(b.prot_index);
       const isBattle = b.prot_index === 1203;
       const tag = isBattle ? ' [battle]' : '';
-      return `<option value="${i}">${label} — ${b.record_count} records, ${b.decoded_bytes.toLocaleString()} bytes${tag}</option>`;
+      return `<option value="${i}">${label} - ${b.record_count} records, ${b.decoded_bytes.toLocaleString()} bytes${tag}</option>`;
     }).join('');
     anmBundleSel.innerHTML = opts;
     anmBundleSel.value = String(Math.min(curAnmBundleIdx, anmCorpus.bundles.length - 1));
@@ -486,7 +486,7 @@ table.arts-list .cmd-tag {
     if (!bundle) return;
     const rec = bundle.records[curAnmRecordIdx];
     if (!rec) {
-      anmRecordLabel.textContent = '—';
+      anmRecordLabel.textContent = '-';
       return;
     }
     const m = rec.marker_1.toString(16).padStart(4, '0').toUpperCase();
@@ -502,15 +502,15 @@ table.arts-list .cmd-tag {
     if (isBattlePackForm(curForm)) {
       const lbl = curForm === 'baka' ? 'n/a (Baka Fighter)' : 'n/a (battle form)';
       equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>${lbl}</button>`;
-      equipNote.textContent = 'PROT 1204 TMDs carry no group-10/11 equipment-swap templates — the higher-fidelity mesh is monolithic, and item identity is conveyed through the character\'s texture atlas page.';
+      equipNote.textContent = 'PROT 1204 TMDs carry no group-10/11 equipment-swap templates - the higher-fidelity mesh is monolithic, and item identity is conveyed through the character\'s texture atlas page.';
       return;
     }
     const slot = pack.slots[selectedSlot];
     if (!slot.patch) {
       equipToggle.innerHTML = `<button class="char-equip-btn is-active" disabled>disc form</button>`;
       equipNote.textContent = slot.slot === 3
-        ? 'The savepoint mesh ships as-is — it\'s an interactable object, not a character, so no FUN_8001EBEC patch runs on it.'
-        : 'Auxiliary slots ship as-is — only active-party slots carry the FUN_8001EBEC equipment-swap templates at TMD+0x124 / TMD+0x140.';
+        ? 'The savepoint mesh ships as-is - it\'s an interactable object, not a character, so no FUN_8001EBEC patch runs on it.'
+        : 'Auxiliary slots ship as-is - only active-party slots carry the FUN_8001EBEC equipment-swap templates at TMD+0x124 / TMD+0x140.';
       return;
     }
     equipNote.innerHTML = `Toggles the byte at character record <code>+0x${slot.patch.equip_byte_record_offset.toString(16).toUpperCase()}</code>; zero copies the group-11 template over visible group ${slot.patch.patched_group_index}, non-zero copies group 10.`;
@@ -526,7 +526,7 @@ table.arts-list .cmd-tag {
 
   // Index of the per-scene player ANM bundle a field-form character should
   // animate against by default (the corpus walks every scene, so we pick a
-  // common-purpose one — town01 (PROT 0004) — by lowest PROT index that
+  // common-purpose one - town01 (PROT 0004) - by lowest PROT index that
   // isn't the battle bundle). Computed lazily on first form swap.
   let _fieldBundleIdxCache = -1;
   function defaultFieldBundleIdx() {
@@ -543,7 +543,7 @@ table.arts-list .cmd-tag {
   }
 
   // Index of the battle-form bundle (PROT 1203 other5). Returns -1 if the
-  // corpus walk didn't pick it up — the form toggle won't engage unless
+  // corpus walk didn't pick it up - the form toggle won't engage unless
   // battlePack is present, so this is mostly belt-and-suspenders.
   function battleBundleIdx() {
     if (!anmCorpus || !anmCorpus.bundles) return -1;
@@ -558,7 +558,7 @@ table.arts-list .cmd-tag {
   // battle / Baka forms draw PROT 1204 against the other5 set at PROT 1203,
   // whose 30 records are organised in per-character banks (see
   // pickDefaultRecordFor). Both forms assemble via the exact retail pipeline
-  // (R·v + T about each object's local origin — FUN_8001B964 / FUN_8001BE80),
+  // (R·v + T about each object's local origin - FUN_8001B964 / FUN_8001BE80),
   // so the panel is shown for every form.
   function updateAnmVisibility() {
     const wrap = document.getElementById('char-anm-wrap');
@@ -575,7 +575,7 @@ table.arts-list .cmd-tag {
     // Destroy any current viewer so we can re-instantiate with the right class.
     if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
     meshView = null;
-    // Reset the canvas's GL context by replacing the element — switching
+    // Reset the canvas's GL context by replacing the element - switching
     // contexts on a live canvas isn't permitted in WebGL.
     const oldCanvas = document.getElementById('char-viewer-canvas');
     if (oldCanvas) {
@@ -608,7 +608,7 @@ table.arts-list .cmd-tag {
       const p = activePack();
       if (p && p.slots && p.slots[selectedSlot]) {
         const meta = p.slots[selectedSlot];
-        nameEl.textContent = `${meta.label} — slot ${meta.slot}`;
+        nameEl.textContent = `${meta.label} - slot ${meta.slot}`;
       }
       // Pick a slot-appropriate default record for the newly-active bundle.
       const p2 = activePack();
@@ -621,7 +621,7 @@ table.arts-list .cmd-tag {
   }
 
   // For active-party field-form slots (Vahn/Noa/Gala) the TMD ships with
-  // nobj=12 but the engine animates only the first 10 — groups 10/11 are
+  // nobj=12 but the engine animates only the first 10 - groups 10/11 are
   // equipment-conditional templates patched over visible groups 0/3/5
   // rather than drawn as standalone objects. Other slots animate every
   // disc object.
@@ -722,7 +722,7 @@ table.arts-list .cmd-tag {
     //
     // Although slot 0 (Vahn) and slot 2 (Gala) have the same bone_count,
     // each record's T values encode that character's specific joint
-    // positions — applying Vahn's rec 0 T to Gala's TMD would put Gala's
+    // positions - applying Vahn's rec 0 T to Gala's TMD would put Gala's
     // shoulders where Vahn's are, which doesn't match her proportions.
     // The first record of each bank is the combat-stance idle, which is
     // what the engine holds at battle start.
@@ -786,11 +786,11 @@ table.arts-list .cmd-tag {
     curEquip = -1;
     viewerWrap.style.display = 'grid';
     const meta = p.slots[slot];
-    nameEl.textContent = `${meta.label} — slot ${meta.slot}`;
+    nameEl.textContent = `${meta.label} - slot ${meta.slot}`;
     renderGrid();
     renderEquipToggle();
     // Auto-pick a record matching the slot's bone count before loading
-    // the mesh — the chain selectSlot → loadMesh → maybeLoadCurrentAnim
+    // the mesh - the chain selectSlot → loadMesh → maybeLoadCurrentAnim
     // applies the selected record's frame-0 (T, R) as the rest pose.
     curAnmRecordIdx = pickDefaultRecordFor(slot, p);
     syncAnmSlider();
@@ -811,12 +811,12 @@ table.arts-list .cmd-tag {
     const slot = selectedSlot;
     const canvasEl = document.getElementById('char-viewer-canvas');
     if (isBattlePackForm(curForm)) {
-      // Battle / Baka Fighter forms — the SAME PROT 1204 meshes, rendered with
+      // Battle / Baka Fighter forms - the SAME PROT 1204 meshes, rendered with
       // TmdRenderer against a virtual 1024×512 PSX VRAM, both with the bundled
       // (authoring) palette + nominal CBA. A real turn-based battle relocates
       // the mesh into a packed VRAM band (rows 481..483) and recolours it with a
       // separate, battle-allocated per-battle palette that is NOT recoverable
-      // from the disc (open thread — see docs/formats/character-mesh.md); so the
+      // from the disc (open thread - see docs/formats/character-mesh.md); so the
       // Battle form here is the bundled-palette render, visually identical to
       // Baka, until that palette's disc source is pinned.
       const positions = viewer.battle_char_mesh_positions(slot);
@@ -879,7 +879,7 @@ table.arts-list .cmd-tag {
         // Apply the current ANM record (frame 0 is the rest-pose assembly that
         // positions each TMD object at its joint; without it the objects sit at
         // their object-local origins and the rig looks scattered). The scrubber
-        // can step records / play frames — every frame poses through the same
+        // can step records / play frames - every frame poses through the same
         // retail R·v + T pipeline, so playback stays assembled.
         maybeLoadCurrentAnim();
       } catch (err) {
@@ -887,7 +887,7 @@ table.arts-list .cmd-tag {
       }
       return;
     }
-    // Field form — the low-poly PROT 0874 §0 meshes, now rendered TEXTURED
+    // Field form - the low-poly PROT 0874 §0 meshes, now rendered TEXTURED
     // through the same TmdRenderer (paletted 1024×512 VRAM) the battle form
     // uses. The textures come from PROT 0874 §2 (the third LZS section of the
     // player.lzs container): three atlas pages at texpage (832,256) with
@@ -992,7 +992,7 @@ table.arts-list .cmd-tag {
       anmFrameSlider.disabled = true;
       anmFrameSlider.max = '0';
       anmFrameSlider.value = '0';
-      if (anmFrameLabel) anmFrameLabel.textContent = '—';
+      if (anmFrameLabel) anmFrameLabel.textContent = '-';
       anmPlayBtn.disabled = true;
       anmStopBtn.disabled = true;
       return;
@@ -1143,7 +1143,7 @@ table.arts-list .cmd-tag {
       // Orbit defaults: the spin / drag / reset controls feel identical
       // across all three forms.
       this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
-      // Animation state — the page-side animator drives every form through a
+      // Animation state - the page-side animator drives every form through a
       // uniform interface (setAnimation / setFrame / setPlaying). The battle
       // form pose composition is identical to field form (v_world =
       // R_bone · v_object_local + T_bone): the per-character battle TMDs
@@ -1207,7 +1207,7 @@ table.arts-list .cmd-tag {
       this._lastPosedFrame = -1;
       this._poseAt(0);
       // Re-fit the camera on the assembled rest pose (frame 0 of the
-      // selected battle ANM record is the actor's combat stance — for
+      // selected battle ANM record is the actor's combat stance - for
       // Vahn rec 0 frame 0 this is the sideways sword-ready pose).
       let lo = [Infinity, Infinity, Infinity];
       let hi = [-Infinity, -Infinity, -Infinity];
@@ -1285,7 +1285,7 @@ table.arts-list .cmd-tag {
         // FUN_8001BE80 pushes the bone's decoded T through MVMVA (matrix · V0
         // + TR) to land the per-object world translation, composes the bone's
         // Rz·Ry·Rx onto the matrix, then FUN_8002735C draws the object's
-        // object-local vertices as M·v + TR. No pivot/centroid subtraction —
+        // object-local vertices as M·v + TR. No pivot/centroid subtraction -
         // the TMD authors each object so its local origin IS the joint.
         let x = base[v*3], y = base[v*3+1], z = base[v*3+2];
         // Rz · Ry · Rx · v + T
@@ -1409,7 +1409,7 @@ table.arts-list .cmd-tag {
 
   async function loadCharacters(f) {
     if (!f) { status.textContent = 'No file loaded.'; return; }
-    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — decoding character pack…`;
+    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) - decoding character pack…`;
 
     // The LegaiaViewer constructor validates a canvas id; we already have one.
     canvas.id = 'char-viewer-canvas'; // already set, but be explicit
@@ -1435,7 +1435,7 @@ table.arts-list .cmd-tag {
       }
       pack = parsed;
       if (!pack.slots || pack.slots.length === 0) {
-        status.textContent = `Loaded: ${f.name} — no character pack found (PROT entry 874 absent).`;
+        status.textContent = `Loaded: ${f.name} - no character pack found (PROT entry 874 absent).`;
         prog.fail('No character data found in this file.');
         return;
       }
@@ -1468,7 +1468,7 @@ table.arts-list .cmd-tag {
       const anmNote = anmCorpus
         ? ` · player ANM (${anmCorpus.bundles.length} bundles)`
         : '';
-      status.textContent = `Loaded: ${f.name} — decoded ${pack.slots.length} field-form slots${battleNote}${anmNote}.`;
+      status.textContent = `Loaded: ${f.name} - decoded ${pack.slots.length} field-form slots${battleNote}${anmNote}.`;
       renderFormToggle();
       renderGrid();
       // Fire-and-forget scenes.json fetch + re-render so the dropdown gets

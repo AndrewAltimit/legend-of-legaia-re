@@ -1,6 +1,6 @@
 //! Drop-table randomization: reassign monster item drops from a seed.
 //!
-//! Pure planning logic — it decides *what* each monster should drop; applying
+//! Pure planning logic - it decides *what* each monster should drop; applying
 //! the plan to the disc is [`crate::monster::set_drop`]. Deterministic in
 //! `(current drops, item pool, seed, mode)` so a published seed always
 //! reproduces the same drop table.

@@ -1,12 +1,12 @@
 //! Starting-bag expansion via field-VM `GIVE_ITEM` injection.
 //!
 //! The direct new-game inventory seed (rewriting `FUN_80034A6C`'s reclaimable
-//! code, see [`crate::starting_items`]) is hard-capped at 7 `(id, count)` slots —
+//! code, see [`crate::starting_items`]) is hard-capped at 7 `(id, count)` slots -
 //! the executable has no safe code cave and can't grow within the same-size patch
 //! model. To seed an arbitrarily large starting bag (all the convenience items
 //! **plus** the full requested random count), this module instead grants items the
 //! way a treasure chest does: a run of silent `GIVE_ITEM` field-VM ops (`0x39`,
-//! `[0x39, id]`, the same op the [chest randomizer](crate::chest) rewrites — the
+//! `[0x39, id]`, the same op the [chest randomizer](crate::chest) rewrites - the
 //! "found X!" text is a *separate* `0xC2` token, so a bare `0x39` is a silent add).
 //! A 10× consumable is just ten `0x39 <id>` ops; the bag stacks by id.
 //!
@@ -15,7 +15,7 @@
 //! story flag: test the flag, skip the whole block if it is already set, otherwise
 //! grant the bag and set the flag. The flag must live in the **saved** SC
 //! story-flag bitfield at `0x80085758` (where `--all-warps` writes), reached by the
-//! extended flag ops `0x50` (SET) / `0x70` (TEST) — *not* the cheap `0x2E`/`0x30`
+//! extended flag ops `0x50` (SET) / `0x70` (TEST) - *not* the cheap `0x2E`/`0x30`
 //! ops, which target the per-scene-reloaded scratchpad word `_DAT_1F800394` and so
 //! would not persist across a save/reload (the bag would re-grant). See
 //! `docs/subsystems/script-vm.md` (flag banks) and `docs/formats/new-game-table.md`.
@@ -43,7 +43,7 @@ pub const SYSFLAG_TEST_BASE: u8 = 0x70;
 /// of the saved SC bitfield (`0x80085758`): bit `0xD70` lands at SC `+0x17C6`, which
 /// is inside the new-game-zeroed / card-saved SC block yet reads zero across every
 /// near-complete retail save (so it is very likely an unused flag). **It is not
-/// proven unused at runtime** — boot-validate before trusting it; exposed as a knob
+/// proven unused at runtime** - boot-validate before trusting it; exposed as a knob
 /// so it can be moved if it collides.
 pub const DEFAULT_GUARD_BIT: u16 = 0xD70;
 
@@ -91,7 +91,7 @@ pub fn gives_len(items: &[(u8, u8)]) -> usize {
 /// `count == 0` item contributes nothing.
 ///
 /// Panics if `guard_bit > MAX_GUARD_BIT` (callers pass a constant) or if the gives
-/// run does not fit a `u16` skip delta (a bag of ~16k units — far past any real
+/// run does not fit a `u16` skip delta (a bag of ~16k units - far past any real
 /// use; the injector caps the bag well below this).
 pub fn guarded_grant_block(items: &[(u8, u8)], guard_bit: u16) -> Vec<u8> {
     assert!(
@@ -119,11 +119,11 @@ pub fn guarded_grant_block(items: &[(u8, u8)], guard_bit: u16) -> Vec<u8> {
 /// MAN sub-asset type byte in a scene bundle's asset table.
 const MAN_TYPE: u8 = 0x03;
 
-/// Field-VM `BGM` opcode (`0x35`) — the entry script's sound-bank loader.
+/// Field-VM `BGM` opcode (`0x35`) - the entry script's sound-bank loader.
 const BGM_OP: u8 = 0x35;
 
 /// Walk the entry script from `pc0` and return the offset just past the first `BGM`
-/// op (`0x35`) — the safe injection point (the scene's sound bank is loaded by then).
+/// op (`0x35`) - the safe injection point (the scene's sound bank is loaded by then).
 /// `None` if the script has no BGM op before its bytecode stops decoding cleanly
 /// (the caller falls back to `pc0`). Uses the shared field-VM disassembler to size
 /// each instruction, so it never mis-splits a multi-byte op.
@@ -147,7 +147,7 @@ fn bgm_injection_offset(decoded: &[u8], pc0: usize) -> Option<usize> {
 /// A scene whose opening event script can host the starting-bag grant block.
 ///
 /// Holds the decompressed MAN plus the absolute offset of its **entry script**
-/// (partition-1 record 0's first opcode — the per-entry system script that sets
+/// (partition-1 record 0's first opcode - the per-entry system script that sets
 /// BGM / fade / flags on every scene load), where the guarded grant block is
 /// spliced. The grant runs at scene entry; the guard keeps it to the first visit.
 pub struct SceneBagInject {
@@ -196,7 +196,7 @@ impl SceneBagInject {
         }
         // Inject *after* the entry script's BGM op (the scene's sound-bank loader,
         // op 0x35) rather than at pc0, so the entire vanilla scene-setup prologue
-        // (BGM / sound bank) runs byte-identically before the grant — otherwise the
+        // (BGM / sound bank) runs byte-identically before the grant - otherwise the
         // grant runs before the VAB is loaded and the BGM loader prints a stray
         // "WARNING VAB NO …". Walk from pc0 to the first 0x35 and inject past it;
         // fall back to pc0 if the script has no BGM op (still correct, just earlier).
@@ -239,7 +239,7 @@ impl SceneBagInject {
 
     /// Splice the guarded grant block at the entry-script start, recompress, and
     /// return `(recompressed_stream, new_decompressed_size)`. `None` when the entry
-    /// record carries an absolute reference (unsafe to shift — see
+    /// record carries an absolute reference (unsafe to shift - see
     /// [`legaia_asset::man_edit::apply_insertions`]), the rebuilt block fails to
     /// decode back, or the recompressed MAN overflows the original footprint (caller
     /// then leaves the scene unchanged). The caller writes the size word with

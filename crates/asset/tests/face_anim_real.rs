@@ -5,19 +5,19 @@
 //! Pins the live-traced anchors (the `autorun_battle_moveimage_trace.lua`
 //! stamps documented in `docs/formats/battle-data-pack.md` § Facial
 //! animation tracks): Vahn band-slot-0 eyes `(544,384) 15x17 -> (512,272)`
-//! and mouth `(544,452) 7x16 -> (516,298)` — plus the track census the
+//! and mouth `(544,452) 7x16 -> (516,298)` - plus the track census the
 //! stamp selection relies on:
 //!
 //! - every track record's `frame` id indexes inside its character's frame
 //!   table (eyes < 8, mouth < 6);
 //! - no record with a non-zero activity window selects frame 0 (the
 //!   neutral face is fallback-only);
-//! - the **idle** entry (slot 0) carries empty tracks in all four files —
+//! - the **idle** entry (slot 0) carries empty tracks in all four files -
 //!   resting party faces are the re-stamped neutral frames;
 //! - Vahn / Noa / Gala each have action entries with live eye AND mouth
 //!   records (the blink / talk content); Terra's tracks are all empty
 //!   (retail skips char 3 entirely);
-//! - the art-bank records' embedded entries (record `+0xB0` / `+0xBC` —
+//! - the art-bank records' embedded entries (record `+0xB0` / `+0xBC` -
 //!   the tracks the animator reads while a materialized art clip plays)
 //!   pass the same census, and nearly every Vahn / Noa / Gala art record
 //!   carries live records;

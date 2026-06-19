@@ -16,29 +16,29 @@ The dump count column reflects committed function dumps under [`ghidra/scripts/f
 
 | Overlay | Captured? | Named program | Subsystems |
 |---|---|---|---|
-| Title screen | ✓ | `overlay_title.bin` | Actor / sprite VM (`FUN_801D6628`); title-overlay tick `FUN_801DD35C` (pinned via watchpoint on the title-attract countdown at `0x801EF16C` &mdash; decrement instruction at `0x801DDCCC`, see [`subsystems/boot.md` § Tick function](../subsystems/boot.md#tick-function)). Captured live via [`scripts/pcsx-redux/autorun_countdown_trigger.lua`](../../scripts/pcsx-redux/autorun_countdown_trigger.lua) against a save state at the title screen; sidecar `.screen` blob is a PNG-decodable framebuffer of the live title (`scripts/pcsx-redux/decode_pcsx_screen.py`). |
+| Title screen | ✓ | `overlay_title.bin` | Actor / sprite VM (`FUN_801D6628`); title-overlay tick `FUN_801DD35C` (pinned via watchpoint on the title-attract countdown at `0x801EF16C` - decrement instruction at `0x801DDCCC`, see [`subsystems/boot.md` § Tick function](../subsystems/boot.md#tick-function)). Captured live via [`scripts/pcsx-redux/autorun_countdown_trigger.lua`](../../scripts/pcsx-redux/autorun_countdown_trigger.lua) against a save state at the title screen; sidecar `.screen` blob is a PNG-decodable framebuffer of the live title (`scripts/pcsx-redux/decode_pcsx_screen.py`). |
 | Town / field / dialog / inventory (`0897`) | ✓ | `overlay_dialog_mc4.bin` (= walk) / `overlay_dialog_typing.bin` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`); top-20 dumped per program |
 | Field overlay - battle-start transition | ✓ | `overlay_field_battle_intro.bin` | Partial 0897 image captured mid-camera-spin; 29 functions dumped including 13 unique to this capture (`FUN_801D081C`, `FUN_801D0370`, `FUN_801CFDA0`, `FUN_801D11D0`, and 9 more) |
 | Battle / battle-action (`0898`) | ✓ | `overlay_battle_action.bin` / `overlay_magic_capture.bin` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`); all 78 functions dumped |
-| Options / config / all pause-menus (`0899`) | ✓ | `overlay_menu.bin` | Items / magic / equipment / status / options UI; equipment stat aggregator (`FUN_801CF650` at base+0x0e38); all 129 functions dumped. **Source pinned: PROT 0899 @ base `0x801CE818`** (function-signature byte-search + 101/139 menu-dump function alignment + static base recovery; see [`static-overlay-pipeline.md`](static-overlay-pipeline.md)). VA-alias sibling of the field overlay (PROT 0897) in slot A — both load at `0x801CE818`. The earlier `0896` attribution was wrong (`0896`/`bat_back_dat` is not an overlay that loads here at all — its once-recovered `0x801C5818` base was an over-read artifact; see the static-overlay pipeline's cautionary tale). |
+| Options / config / all pause-menus (`0899`) | ✓ | `overlay_menu.bin` | Items / magic / equipment / status / options UI; equipment stat aggregator (`FUN_801CF650` at base+0x0e38); all 129 functions dumped. **Source pinned: PROT 0899 @ base `0x801CE818`** (function-signature byte-search + 101/139 menu-dump function alignment + static base recovery; see [`static-overlay-pipeline.md`](static-overlay-pipeline.md)). VA-alias sibling of the field overlay (PROT 0897) in slot A - both load at `0x801CE818`. The earlier `0896` attribution was wrong (`0896`/`bat_back_dat` is not an overlay that loads here at all - its once-recovered `0x801C5818` base was an over-read artifact; see the static-overlay pipeline's cautionary tale). |
 | Save / load screen | ✓ | `overlay_save_ui_select.bin` / `overlay_save_ui_saving.bin` | Save-screen SM (`FUN_801DC6B4`); 33 sub-state handlers at `PTR_FUN_801E4F40` dumped; top-20 per program dumped; select and saving layouts are identical. **Source: the save UI lives IN the menu overlay PROT 0899** (`FUN_801DC6B4` at base+0xDE9C; signature byte-matches only 0899 via `asset overlay find-sig`), not a separate entry. |
-| Shop / merchant | ✓ | `overlay_shop_save.bin` | Item buy / sell, gold ledger; 130 functions dumped. **Source: also IN the menu overlay PROT 0899** (shares `FUN_801CF650`), not a separate entry — `overlay_shop_save.bin` is a menu-overlay capture taken during a shop session. |
+| Shop / merchant | ✓ | `overlay_shop_save.bin` | Item buy / sell, gold ledger; 130 functions dumped. **Source: also IN the menu overlay PROT 0899** (shares `FUN_801CF650`), not a separate entry - `overlay_shop_save.bin` is a menu-overlay capture taken during a shop session. |
 | Level-up (`0891`) | ✓ | `overlay_magic_level_up.bin` / `overlay_magic_level_up_full.bin` | XP / stat gain UI; 78 functions dumped; full 256 KB re-capture for data section analysis |
-| World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); top-20 dumped per program; `world_map_top` lacks `FUN_801DE840` and `FUN_801EAD98` (top-view capture, no movement). **Source: the overworld controller lives IN the field overlay PROT 0897** (`FUN_801E76D4` at base+0x18EBC; signature byte-matches 0897 via `asset overlay find-sig`) — these captures are the field overlay resident during overworld, not a separate "world-map overlay". |
-| Cutscene / dialogue | ✓ | `overlay_cutscene_dialogue.bin` / `overlay_cutscene_mapview.bin` | These two are the FIELD overlay resident during actor-scripted dialogue (op*/ed* labels), NOT the FMV decoder. The actual STR/MDEC FMV-decoder overlay is **PROT 0970** (`cutscene_str`, modes 26/27; pinned statically from the disc — see [`static-overlay-pipeline.md`](static-overlay-pipeline.md)). |
-| Minigame hub - fishing, slot, Baka Fighter, dance, debug menu | ✓ | `overlay_fishing.bin` / `overlay_slot_machine.bin` / `overlay_baka_fighter.bin` / `overlay_dance.bin` / `overlay_debug_menu.bin` | Five DISTINCT slot-A overlays that VA-alias the same window, not one binary. **Static sources: fishing 0972, slot machine 0975, baka fighter 0976, dance 0980** — mode-24 door-warp sub-ids 0/3/4/6 (op `0x3E`; each anchored by a documented function prologue; the old 0973 slot attribution was its image in 0973's over-read tail). See [`script-vm.md § 0x3E WARP`](../subsystems/script-vm.md#0x3e-warp-mode-24-minigame-door-warp). → [detail](#minigame-hub-overlay-controllers) |
+| World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); top-20 dumped per program; `world_map_top` lacks `FUN_801DE840` and `FUN_801EAD98` (top-view capture, no movement). **Source: the overworld controller lives IN the field overlay PROT 0897** (`FUN_801E76D4` at base+0x18EBC; signature byte-matches 0897 via `asset overlay find-sig`) - these captures are the field overlay resident during overworld, not a separate "world-map overlay". |
+| Cutscene / dialogue | ✓ | `overlay_cutscene_dialogue.bin` / `overlay_cutscene_mapview.bin` | These two are the FIELD overlay resident during actor-scripted dialogue (op*/ed* labels), NOT the FMV decoder. The actual STR/MDEC FMV-decoder overlay is **PROT 0970** (`cutscene_str`, modes 26/27; pinned statically from the disc - see [`static-overlay-pipeline.md`](static-overlay-pipeline.md)). |
+| Minigame hub - fishing, slot, Baka Fighter, dance, debug menu | ✓ | `overlay_fishing.bin` / `overlay_slot_machine.bin` / `overlay_baka_fighter.bin` / `overlay_dance.bin` / `overlay_debug_menu.bin` | Five DISTINCT slot-A overlays that VA-alias the same window, not one binary. **Static sources: fishing 0972, slot machine 0975, baka fighter 0976, dance 0980** - mode-24 door-warp sub-ids 0/3/4/6 (op `0x3E`; each anchored by a documented function prologue; the old 0973 slot attribution was its image in 0973's over-read tail). See [`script-vm.md § 0x3E WARP`](../subsystems/script-vm.md#0x3e-warp-mode-24-minigame-door-warp). → [detail](#minigame-hub-overlay-controllers) |
 | Muscle Dome / Baka card battle | ✓ | `overlay_muscle_dome.bin` | Distinct from the minigame-hub family; per-frame match controller `FUN_801D0748`. → [detail](#muscle-dome-overlay-controllers) |
 
 #### Minigame-hub overlay controllers
 
-All five hub minigames are variants of the same overlay binary (101–154 shared prologues), but they **VA-alias** — they are distinct files sharing a library core, so a given address hosts a *different* function per minigame; always read the overlay-qualified dump. `overlay_debug_menu.bin` is the superset (189 functions). Per-frame controllers (each a switch-on-state-byte SM, documented in the per-minigame pages under [`subsystems/`](../subsystems/)):
+All five hub minigames are variants of the same overlay binary (101–154 shared prologues), but they **VA-alias** - they are distinct files sharing a library core, so a given address hosts a *different* function per minigame; always read the overlay-qualified dump. `overlay_debug_menu.bin` is the superset (189 functions). Per-frame controllers (each a switch-on-state-byte SM, documented in the per-minigame pages under [`subsystems/`](../subsystems/)):
 
 - Fishing `FUN_801CF3BC` (`DAT_801d926c` SM)
 - Slot machine `FUN_801CF0D8`
 - Baka Fighter `FUN_801D3468`
 - Dance `FUN_801CF470` (`DAT_801d5334` SM)
 
-The previously-listed per-minigame "main entry" addresses (`801D63B0` / `801D2CC0` / `801D5ED0` / `801D2F38`) are the shared **textured-quad sprite/HUD emitter** the minigame reuses for every draw — their high caller counts reflect that, not control flow. All functions dumped.
+The previously-listed per-minigame "main entry" addresses (`801D63B0` / `801D2CC0` / `801D5ED0` / `801D2F38`) are the shared **textured-quad sprite/HUD emitter** the minigame reuses for every draw - their high caller counts reflect that, not control flow. All functions dumped.
 
 #### Muscle Dome overlay controllers
 
@@ -59,11 +59,11 @@ in ten 4 KB blocks. Key findings:
 | `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner |
 | `0x801F6000+` | Live animation state globals (zero at rest) |
 
-Per-character growth does not come from a table in this *display* overlay — it
+Per-character growth does not come from a table in this *display* overlay - it
 is in static `SCUS_942.54` (`DAT_800769CC` curves + `DAT_80076918` param block),
 applied by the victory-path level-up function `FUN_801E9504`. The writer-search
 here came up empty because it scanned the `magic_level_up` overlay, not that
-applier. The earlier "HP grant at Seru `+0x74`" reading is **falsified** — those
+applier. The earlier "HP grant at Seru `+0x74`" reading is **falsified** - those
 `+0x74` reads surface a `0x80808080` battle-state flag, not a stat grant. See
 [`subsystems/level-up.md`](../subsystems/level-up.md#stat-gains).
 
@@ -128,7 +128,7 @@ A captured RAM dump often contains transient TIMs that the game staged in main R
 
 - The captured `captures/boot_walk/snap_vsync_0300.bin` (full 2 MiB main RAM, taken during the publisher-logo phase) contains four TIMs at `0x801D09DC`, `0x801DBBFC`, `0x801E761C`, `0x801EB65C`.
 - Visual decode: PROKION, Contrail "A Contrail Production", "Sony Computer Entertainment America Presents", and the WARNING screen.
-- All four CLUT fingerprints match `0895_bat_back_dat.BIN` at well-separated offsets - PROT 0895 is the boot `init.pak` bundle (the `bat_back_dat` label is inherited from the CDNAME define at 895 — the define numbers live in raw-TOC space, where 895/896 are the `summon.dat`/`readef.DAT` battle-backdrop files at extraction 893/894 and extraction 0895 is the first `xxx_dat` slot; see [`formats/summon-readef.md`](../formats/summon-readef.md) and [`cdname.md` § numbering space](../formats/cdname.md#numbering-space)). Documented in [`subsystems/boot.md` § Boot init.pak](../subsystems/boot.md#boot-initpak-prot-0895).
+- All four CLUT fingerprints match `0895_bat_back_dat.BIN` at well-separated offsets - PROT 0895 is the boot `init.pak` bundle (the `bat_back_dat` label is inherited from the CDNAME define at 895 - the define numbers live in raw-TOC space, where 895/896 are the `summon.dat`/`readef.DAT` battle-backdrop files at extraction 893/894 and extraction 0895 is the first `xxx_dat` slot; see [`formats/summon-readef.md`](../formats/summon-readef.md) and [`cdname.md` § numbering space](../formats/cdname.md#numbering-space)). Documented in [`subsystems/boot.md` § Boot init.pak](../subsystems/boot.md#boot-initpak-prot-0895).
 
 The same method should work for any other transient TIM (battle backgrounds, menu chrome, world map terrain textures) provided the source PROT entry stores the TIM uncompressed. LZS-compressed sources won't match by direct byte search - either decompress them first or use a different signature (e.g., the rendered pixel histogram or framebuffer-area VRAM coords).
 
@@ -153,7 +153,7 @@ scripts/ghidra-analysis/auto-name-overlay.py "$HOME/.mednafen/mcs/Legend of Lega
 ```
 
 When the auto-detection picks the wrong label (the anchor table is
-incomplete for some scenes &mdash; shop, cutscene, level-up subset all
+incomplete for some scenes - shop, cutscene, level-up subset all
 currently miss because no documented function is exclusive to them),
 pass `--label name` to override:
 
@@ -277,7 +277,7 @@ What to look for after import:
 - Functions that take a `MES container ptr + msg_id + (x, y)` shape - likely a
   message-box renderer feeding the dialog pager `FUN_801D84D0`. (Field NPC
   dialogue itself has no opener function: it's the actor's inline MES walked by
-  `FUN_80039b7c` — see [`subsystems/script-vm.md` § Field dialogue](../subsystems/script-vm.md#field-dialogue-has-no-opcode). `FUN_8001FD44` is the scene-change packet, not a dialog opener.)
+  `FUN_80039b7c` - see [`subsystems/script-vm.md` § Field dialogue](../subsystems/script-vm.md#field-dialogue-has-no-opcode). `FUN_8001FD44` is the scene-change packet, not a dialog opener.)
 - `LoadImage`-shaped writes to VRAM via `_DAT_8007AF40`-region SPU/GPU regs
   - that's the per-page glyph upload.
 
@@ -328,7 +328,7 @@ The bulk-imported overlays still need a subsystem-naming pass (correlating strin
 
 ## See also
 
-- [`docs/tooling/static-overlay-pipeline.md`](static-overlay-pipeline.md) — the **static** complement: extract each clean-copy overlay from the disc at its recovered base, with identity attached from the PROT entry (solves the VA-aliasing identity problem structurally). This page (dynamic capture) stays authoritative for runtime values.
-- [`docs/tooling/mednafen-automation.md`](mednafen-automation.md) — the save-state diff / bisect toolkit these slices come from.
-- [`docs/reference/functions.md`](../reference/functions.md) — overlay-resident entry points the captured slices expose.
-- [`docs/reference/memory-map.md`](../reference/memory-map.md) — the `0x801C0000+` overlay window addresses.
+- [`docs/tooling/static-overlay-pipeline.md`](static-overlay-pipeline.md) - the **static** complement: extract each clean-copy overlay from the disc at its recovered base, with identity attached from the PROT entry (solves the VA-aliasing identity problem structurally). This page (dynamic capture) stays authoritative for runtime values.
+- [`docs/tooling/mednafen-automation.md`](mednafen-automation.md) - the save-state diff / bisect toolkit these slices come from.
+- [`docs/reference/functions.md`](../reference/functions.md) - overlay-resident entry points the captured slices expose.
+- [`docs/reference/memory-map.md`](../reference/memory-map.md) - the `0x801C0000+` overlay window addresses.

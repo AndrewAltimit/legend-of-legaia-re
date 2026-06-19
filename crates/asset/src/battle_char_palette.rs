@@ -7,7 +7,7 @@
 //!
 //! The party's in-battle character CLUTs are **not** a plain disc blob: they are
 //! embedded inside the per-character battle record (`edstati3`, the data the
-//! `data\battle\PLAYERn` path resolves to — a PROT entry, not an ISO file) and
+//! `data\battle\PLAYERn` path resolves to - a PROT entry, not an ISO file) and
 //! only materialise after the loader decodes a small record set and STP-copies
 //! the CLUT structs to VRAM rows `481 + slot` (Vahn=481, Noa=482, Gala=483).
 //! This module is the clean-room port of that decode+assembly, validated
@@ -25,7 +25,7 @@
 //! ## On-disc record layout (the parser is self-describing)
 //!
 //! `record0` begins at `rec0` (offset 0 of the resolved record; PROT `0861` has
-//! a `"pochi…"` header so its copy sits at file `0x1000` — use [`find_record0`]):
+//! a `"pochi…"` header so its copy sits at file `0x1000` - use [`find_record0`]):
 //!
 //! ```text
 //! rec0+0x00  u32  desc_off    descriptor-table offset (rec0-relative)
@@ -39,7 +39,7 @@
 //! marks a section boundary. The five sub-records are located by:
 //!
 //! - `sec_base = rec0 + align_up(recbase - rec0, 0x2000)` (recbase = table end;
-//!   the `0x2000` alignment is rec0-relative — `0x1000` happens to match for
+//!   the `0x2000` alignment is rec0-relative - `0x1000` happens to match for
 //!   Vahn/Noa but misplaces Gala by 0x1000)
 //! - sub0..3 = `sec_base + a[entry following each internal id=0 separator]`
 //! - sub4    = `rec0 + (a_last + size_last)` (the descriptor's total span)
@@ -170,7 +170,7 @@ fn walk_descriptors(file: &[u8], desc_off: usize) -> Result<(Vec<DescEntry>, usi
 fn derive_sub_offsets(rec0: usize, entries: &[DescEntry], recbase: usize) -> Vec<usize> {
     // Saturating arithmetic throughout: a malformed candidate record (find_record0
     // probes many offsets) can carry garbage descriptor values, and `usize` is
-    // 32-bit on wasm — an offset that overruns the file is rejected later by the
+    // 32-bit on wasm - an offset that overruns the file is rejected later by the
     // bounds checks in `parse_record`, so saturating to a huge value is safe.
     let sec_base = rec0 + (recbase.saturating_sub(rec0).saturating_add(0x1FFF) & !0x1FFF);
     let mut subs = Vec::new();
@@ -279,7 +279,7 @@ pub fn find_record0(file: &[u8]) -> Option<usize> {
 /// bands whose base is one of the columns the character's mesh actually samples
 /// (`mesh_cols`, the distinct `(cba & 0x3F) * 16` of the battle TMD).
 ///
-/// [`parse_record`] reproduces a *specific* equipment configuration — its
+/// [`parse_record`] reproduces a *specific* equipment configuration - its
 /// fixed-stride assembly is exact for Vahn's tutorial state, but a character with
 /// more equipment variants overflows the `0x19000` work buffer. On disc each band
 /// ships once per equipment id plus an `id == 0` separator (the **unequipped

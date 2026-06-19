@@ -4,10 +4,10 @@
 //! static `SCUS_942.54` rodata table at VA `0x8006F198`. Two consumers index
 //! it (both at `&DAT_8006F198 + id*8`, gated `id < 0x200`):
 //!
-//! * **`FUN_800250d4(sound_id, voice)`** — the per-actor SFX trigger (called
+//! * **`FUN_800250d4(sound_id, voice)`** - the per-actor SFX trigger (called
 //!   from the actor tick `FUN_80021DF4`). It reads `entry[3] & 0x1F` as a voice
 //!   count and `SpuKeyOn`s (`FUN_800653c8`) that many consecutive voices.
-//! * **`FUN_80016b6c`** — the SFX cue-ring drainer. It walks the 4-entry ring
+//! * **`FUN_80016b6c`** - the SFX cue-ring drainer. It walks the 4-entry ring
 //!   `DAT_8007B6D8` (the same ring `FUN_8004fcc8` / [`crate::move_power`] sound
 //!   cues write into), reads the descriptor, and programs each voice through
 //!   `FUN_80065034` (the libsnd `SpuSetVoiceAttr` analogue).
@@ -17,14 +17,14 @@
 //!
 //! | Off | Name | Meaning |
 //! |---|---|---|
-//! | `+0` | `p` | program / VAG index — `FUN_80065034` arg 3, indexes the loaded VAB program-attr table at `_DAT_801ce334` (stride `0x10`). |
-//! | `+1` | `t` | tone / region base — `FUN_80065034` arg 4 (`+ i` per voice), indexes the ADSR region table at `_DAT_801ce340` (stride `0x20`). |
-//! | `+2` | `l` | note-level voice attribute — `FUN_80065034` arg 5 (values cluster around `60`, MIDI-ish). |
+//! | `+0` | `p` | program / VAG index - `FUN_80065034` arg 3, indexes the loaded VAB program-attr table at `_DAT_801ce334` (stride `0x10`). |
+//! | `+1` | `t` | tone / region base - `FUN_80065034` arg 4 (`+ i` per voice), indexes the ADSR region table at `_DAT_801ce340` (stride `0x20`). |
+//! | `+2` | `l` | note-level voice attribute - `FUN_80065034` arg 5 (values cluster around `60`, MIDI-ish). |
 //! | `+3` | `n` | low 5 bits = **voice count**; bit `0x20` = sustained / continuous mode. |
-//! | `+4` | `id` | category / channel index — selects a column in the channel-volume tables `DAT_80091510` / `DAT_80091513`. |
-//! | `+5..7` | — | no observed runtime reader (zero across the whole table). |
+//! | `+4` | `id` | category / channel index - selects a column in the channel-volume tables `DAT_80091510` / `DAT_80091513`. |
+//! | `+5..7` | - | no observed runtime reader (zero across the whole table). |
 //!
-//! Only the **first 100 entries (ids `0x00..=0x63`)** are real descriptors —
+//! Only the **first 100 entries (ids `0x00..=0x63`)** are real descriptors -
 //! every one is populated (voice count 1..=3, `+5..7` all zero). Id `0x64`
 //! onward is unrelated rodata (the `\PSX.EXE` dev-path string and friends); the
 //! `id < 0x200` runtime check is an upper bound, not the table size. Sound ids
@@ -53,19 +53,19 @@ pub const SFX_TABLE_ENTRIES: usize = 0x64;
 /// One decoded 8-byte sound-effect descriptor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 pub struct SfxDescriptor {
-    /// `+0` `p` — program / VAG index into the loaded bank's program-attr table.
+    /// `+0` `p` - program / VAG index into the loaded bank's program-attr table.
     pub program: u8,
-    /// `+1` `t` — tone / ADSR-region base (the per-voice loop adds the voice
+    /// `+1` `t` - tone / ADSR-region base (the per-voice loop adds the voice
     /// index, so a multi-voice cue spans consecutive regions).
     pub tone: u8,
-    /// `+2` `l` — note-level voice attribute (MIDI-ish, clusters near 60).
+    /// `+2` `l` - note-level voice attribute (MIDI-ish, clusters near 60).
     pub note: u8,
-    /// `+3` `n` — raw flags byte (voice count in the low 5 bits, sustained bit
+    /// `+3` `n` - raw flags byte (voice count in the low 5 bits, sustained bit
     /// `0x20`).
     pub flags: u8,
-    /// `+4` `id` — category / channel-volume index.
+    /// `+4` `id` - category / channel-volume index.
     pub category: u8,
-    /// `+5..7` — no observed runtime reader (zero across the real table).
+    /// `+5..7` - no observed runtime reader (zero across the real table).
     pub reserved: [u8; 3],
 }
 
@@ -88,7 +88,7 @@ impl SfxDescriptor {
         self.flags & 0x1F
     }
 
-    /// Sustained / continuous mode (`flags & 0x20`) — the `FUN_80016b6c`
+    /// Sustained / continuous mode (`flags & 0x20`) - the `FUN_80016b6c`
     /// branch that holds the voices on rather than firing a one-shot.
     pub fn sustained(&self) -> bool {
         self.flags & 0x20 != 0

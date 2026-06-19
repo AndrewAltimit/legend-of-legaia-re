@@ -1,12 +1,12 @@
 //! Bonus equipment drop: a code hook into the battle-end reward routine that,
-//! on a low chance, grants **one extra** random piece of equipment — on top of
+//! on a low chance, grants **one extra** random piece of equipment - on top of
 //! whatever the monster's normal drop slot already gives.
 //!
 //! ## Why a code hook (not a data edit)
 //!
 //! A monster record has a single drop slot (`+0x48` item id / `+0x49` chance,
 //! see [`crate::monster`]), so a data-only edit can never make a monster drop
-//! *two* things — turning a drop into equipment necessarily destroys the normal
+//! *two* things - turning a drop into equipment necessarily destroys the normal
 //! drop. To make equipment genuinely **additive** we instead patch the
 //! executable's reward resolver the same way the starting-bag feature splices a
 //! grant into the opening scene: a tiny routine is injected that rolls the
@@ -39,16 +39,16 @@
 //! ## The routine (lives in preserved rodata padding)
 //!
 //! The injected routine + an equipment-id table are written into the 1028-byte
-//! zero gap at `0x8007AB38` — the same loaded-and-preserved rodata padding the
+//! zero gap at `0x8007AB38` - the same loaded-and-preserved rodata padding the
 //! [`crate::item_name`] string injection uses, but at a non-overlapping offset
 //! ([`ROUTINE_VA`], clear of the Seru-Bell string at `0x8007AB40`). On PSX all
 //! resident RAM is executable, so a routine placed in that gap runs when jumped
 //! to. The routine:
 //!
-//! 1. `rand() % 100 < chance` — the low-chance gate (default
+//! 1. `rand() % 100 < chance` - the low-chance gate (default
 //!    [`DEFAULT_CHANCE_PCT`]). The roll reuses the battle RNG [`RAND_FN`].
 //! 2. `rand() % table_len` indexes the embedded equipment-id table.
-//! 3. `FUN_800421d4(id, 1)` ([`ADD_ITEM_FN`]) adds the gear to the bag — the
+//! 3. `FUN_800421d4(id, 1)` ([`ADD_ITEM_FN`]) adds the gear to the bag - the
 //!    same helper the normal drop, shop, and minigame rewards use (an unguarded
 //!    add, like the minigame completion reward `FUN_801C2748`).
 //!
@@ -247,7 +247,7 @@ impl BonusDropInjection {
         if at_hook != DISPLACED {
             bail!(
                 "reward-hook site {HOOK_VA:#x} = [{:#010x}, {:#010x}], expected \
-                 [{:#010x}, {:#010x}] (unrecognized build) — refusing to patch",
+                 [{:#010x}, {:#010x}] (unrecognized build) - refusing to patch",
                 at_hook[0],
                 at_hook[1],
                 DISPLACED[0],
@@ -275,7 +275,7 @@ impl BonusDropInjection {
         if region.iter().any(|&b| b != 0) {
             bail!(
                 "routine region {ROUTINE_VA:#x}..+{} is not all-zero dead space \
-                 (unrecognized build) — refusing to patch",
+                 (unrecognized build) - refusing to patch",
                 blob.len()
             );
         }

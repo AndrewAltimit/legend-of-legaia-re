@@ -111,7 +111,7 @@ the helmet/ring/accessory/hand-guard slots collapse to the disc "head" category
 test drives the whole chain on the real executable.
 
 **Slot model (resolved):** the four `+7` categories *are* Legaia's four
-armour/weapon equip slots — there is no missing "8-slot" disambiguation. Cross-
+armour/weapon equip slots - there is no missing "8-slot" disambiguation. Cross-
 referencing the parsed table against the curated [gamedata](../reference/gamedata.md)
 by item name pins it exactly:
 
@@ -124,11 +124,11 @@ by item name pins it exactly:
 
 The disc "Head" bucket is *exactly* the 15 gamedata helmets (Legaia's
 seals / clips / crowns / bands / earring / helmet / plume), not a helmet +
-accessory mix — so there is no "helmet vs. ring vs. accessory" collision to
+accessory mix - so there is no "helmet vs. ring vs. accessory" collision to
 resolve. (Weapon is the only non-1:1 category, because the disc enumerates the
 upgradeable Ra-Seru weapon as ~24 per-tier entries that the curated table
 collapses; every disc Weapon-slot item is still a weapon.) **None of the 77
-accessories ("Goods") appear in this table at all** — they are a separate
+accessories ("Goods") appear in this table at all** - they are a separate
 system, so the `+7` byte was never meant to classify them. The accessory
 system is resolved in [accessory-passive-table.md](accessory-passive-table.md):
 accessories are `kind == 2` items whose descriptor `+3` byte indexes the

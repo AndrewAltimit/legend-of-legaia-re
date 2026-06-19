@@ -3,9 +3,9 @@
 `scripts/ci/check-doc-density.py` keeps the committed documentation read-optimized
 by flagging the two patterns that make long-lived docs hard to skim:
 
-- **Over-long lines** — any line wider than `--max-line` characters (default
+- **Over-long lines** - any line wider than `--max-line` characters (default
   `800`). Usually a run-on sentence or an over-stuffed table row.
-- **Over-budget table cells** — any single markdown table cell holding more than
+- **Over-budget table cells** - any single markdown table cell holding more than
   `--max-cell-words` words (default `150`). The fix is to move the cell body into
   a dedicated section (same page) or a sub-page and leave a one-line summary +
   link in the cell.
@@ -18,12 +18,12 @@ convention: same information, more navigable structure.
 - Every `docs/**/*.md`.
 - Every top-level `crates/<name>/README.md`.
 - The generated `crates/web-viewer/pkg/README.md` is skipped.
-- Lines inside fenced code blocks (```` ``` ````) are skipped — CLI examples and
+- Lines inside fenced code blocks (```` ``` ````) are skipped - CLI examples and
   code are allowed to be wide.
 
 Cells are split naively on `|`; a pipe inside an inline code span only ever
 splits a cell into smaller fragments, so the word count can under-report but
-never false-positive — the safe direction for a commit gate (it never wrongly
+never false-positive - the safe direction for a commit gate (it never wrongly
 blocks a within-budget cell).
 
 ## Usage

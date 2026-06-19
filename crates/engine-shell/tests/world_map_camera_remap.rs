@@ -8,7 +8,7 @@
 //! this test projects the world direction the remap chooses back through the
 //! real `world_map_camera_mvp` and asserts its screen-space motion points the
 //! right way. If the remap's trig ever drifts from the camera geometry, this
-//! fails. Pure math — runs in CI without disc data.
+//! fails. Pure math - runs in CI without disc data.
 
 use glam::{Mat4, Vec3, Vec4};
 use legaia_engine_core::world::world_map_camera_relative_bits;

@@ -8,7 +8,7 @@
 //! (`FUN_80021B04`: PC = 2 → bytecode at `record+4`) and runs it through the
 //! same move VM the engine uses (`move_vm::step`, the `SUMMON_PART_BUDGET`
 //! per-frame cap, the `wait_timer` gate), asserting none returns
-//! `StepResult::Pending` — i.e. the engine can animate the whole authored
+//! `StepResult::Pending` - i.e. the engine can animate the whole authored
 //! move-FX set, not just the worked example.
 //!
 //! It also reports the opcode coverage the corpus exercises (a real spread of
@@ -27,7 +27,7 @@ const PER_FRAME_BUDGET: usize = 256;
 /// Frames to drive each record (well past any real move-FX scene length).
 const FRAMES: usize = 600;
 
-/// A host with every callback at its no-op default — opcode dispatch still
+/// A host with every callback at its no-op default - opcode dispatch still
 /// runs, so an unimplemented opcode surfaces as `StepResult::Pending`.
 struct NoopHost;
 impl MoveHost for NoopHost {}
@@ -84,7 +84,7 @@ fn drive_record(overlay: &[u8], record_off: usize) -> Result<(bool, BTreeSet<u16
             }
         }
     }
-    Ok((false, seen)) // never broke — fine, as long as no opcode was Pending.
+    Ok((false, seen)) // never broke - fine, as long as no opcode was Pending.
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn every_move_fx_record_runs_without_an_unimplemented_opcode() {
     );
 
     // The corpus must exercise a real spread of opcodes (it isn't all
-    // halt-immediately records) — sanity that the drive actually ran programs.
+    // halt-immediately records) - sanity that the drive actually ran programs.
     assert!(
         all_ops.len() >= 6,
         "move-FX records exercised only {} distinct opcodes",

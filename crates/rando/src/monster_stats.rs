@@ -5,27 +5,27 @@
 //! decoded `battle_data` block (PROT entry 867; offsets pinned in
 //! [`legaia_asset::monster_archive`]). [`plan_stats`] collects each field's
 //! value across the whole populated roster into a *column*, then either permutes
-//! the column ([`StatMode::Shuffle`] — a 1:1 reassignment, so the multiset of
+//! the column ([`StatMode::Shuffle`] - a 1:1 reassignment, so the multiset of
 //! each stat is preserved) or draws each cell from the column pool with
 //! replacement ([`StatMode::Random`]). Because every value that lands came from
 //! a real monster, the global stat budget is preserved and no field is ever
-//! pushed outside the game's own range — a tanky enemy may inherit a weakling's
+//! pushed outside the game's own range - a tanky enemy may inherit a weakling's
 //! HP while keeping its own attack, scrambling difficulty without producing
 //! impossible records.
 //!
-//! Spirit (`+0x0E`, the SP / action gauge) is **deliberately left alone** — it
+//! Spirit (`+0x0E`, the SP / action gauge) is **deliberately left alone** - it
 //! gates the enemy AI's spell economy rather than player-facing difficulty, and
 //! shuffling it would mostly perturb how often enemies cast, not how hard the
 //! fight is.
 //!
 //! A set of scripted enemies ([`PROTECTED_MONSTER_IDS`]) is left untouched so
-//! their fights stay coherent. Two kinds qualify. **Early tutorial enemies** —
+//! their fights stay coherent. Two kinds qualify. **Early tutorial enemies** -
 //! the scripted Rim Elm sparring partner fights the player in a teaching battle
 //! the game never expects the player to lose (there is no game-over branch out
 //! of it), so giving it a different monster's attack can let it one-shot the
 //! party and soft-lock a brand-new game; the first wild enemies are similarly
 //! fragile by design, and a late-game monster's stats can wall a fresh save.
-//! **Story bosses** — set-piece fights tuned around scripted HP/phase triggers
+//! **Story bosses** - set-piece fights tuned around scripted HP/phase triggers
 //! and a specific difficulty; scrambling their stats can make a mandatory fight
 //! unwinnable (or trivial), and donating a boss's extreme stats to a random
 //! trash mob is its own kind of soft-lock. Every version of each protected boss
@@ -36,7 +36,7 @@
 //!
 //! Each edit re-packs the monster's slot through [`crate::monster::repack_slot`]:
 //! the decoded block length is unchanged, so the slot stays its original
-//! `0x14000`-byte footprint and every other monster's slot offset is fixed — a
+//! `0x14000`-byte footprint and every other monster's slot offset is fixed - a
 //! same-size, in-place byte edit, exactly like the drop randomizer.
 
 use crate::monster::repack_slot;
@@ -65,7 +65,7 @@ pub const FIELD_COUNT: usize = STAT_FIELDS.len();
 
 /// 1-based monster ids the stat randomizer must never modify.
 ///
-/// 1-based monster ids pinned to their disc stats — never modified, and never a
+/// 1-based monster ids pinned to their disc stats - never modified, and never a
 /// donor into another monster's stats. Two groups (see the module docs):
 /// the early **tutorial enemies** (the Piura and the scripted Tetsu sparring
 /// partner) that must stay beatable on a fresh save, and the **story bosses**
@@ -74,10 +74,10 @@ pub const FIELD_COUNT: usize = STAT_FIELDS.len();
 /// boss is listed.
 pub const PROTECTED_MONSTER_IDS: &[u16] = &[
     // Early tutorial enemies.
-    19, 20, 21, // Red / Black / Blue Piura — the first wild enemies, deliberately weak.
+    19, 20, 21, // Red / Black / Blue Piura - the first wild enemies, deliberately weak.
     79, // Tetsu, the Rim Elm sparring partner (999/999, unwinnable by design).
     // Story bosses (all versions of each).
-    10, // Gimard — the early scripted Seru-boss fight (also guarded on the encounter side).
+    10, // Gimard - the early scripted Seru-boss fight (also guarded on the encounter side).
     73, 171, 172, // Caruban
     75,  // Zeto
     76, 136, 179, // Songi
@@ -103,7 +103,7 @@ pub struct StatAssignment {
 }
 
 /// A monster's overall **combat power**: the sum of its damage-relevant combat
-/// stats — every [`STAT_FIELDS`] entry **except MP**
+/// stats - every [`STAT_FIELDS`] entry **except MP**
 /// (`hp + attack + defense_high + defense_low + agility + speed`). A single
 /// scalar standing in for a monster's whole stat budget, so a swapped-in monster
 /// can be compared against an area's native average (the
@@ -238,7 +238,7 @@ mod tests {
 
     fn sample(n: usize) -> Vec<StatAssignment> {
         // Base ids at 100 so the synthetic roster never overlaps the real
-        // PROTECTED_MONSTER_IDS (the tutorial enemies) — a test that wants a
+        // PROTECTED_MONSTER_IDS (the tutorial enemies) - a test that wants a
         // protected monster sets one id explicitly.
         (0..n)
             .map(|i| StatAssignment {

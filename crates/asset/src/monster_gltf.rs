@@ -1,7 +1,7 @@
 //! glTF 2.0 (binary `.glb`) export for monster battle models.
 //!
 //! Packs a monster's decoded mesh, baked texture, and **every** action
-//! animation into one self-contained `.glb` file — the universal interchange
+//! animation into one self-contained `.glb` file - the universal interchange
 //! format that carries geometry, materials, and skeletal/rigid animation
 //! together (Blender, three.js, Windows 3D Viewer, …).
 //!
@@ -15,7 +15,7 @@
 //!
 //! - one **node** per TMD object, holding that object's geometry in its own
 //!   local space;
-//! - the node's `translation` / `rotation` are animated per frame — the rigid
+//! - the node's `translation` / `rotation` are animated per frame - the rigid
 //!   transform straight from the keyframe stream;
 //! - a root node rotates the whole rig 180° about X so the PSX `+Y`-down /
 //!   `+Z`-forward space reads upright in glTF's `+Y`-up convention (a proper
@@ -128,7 +128,7 @@ impl BinBuilder {
         self.accessors.len() - 1
     }
 
-    /// f32 VEC3 accessor (with min/max — required for `POSITION`).
+    /// f32 VEC3 accessor (with min/max - required for `POSITION`).
     fn push_vec3(&mut self, data: &[[f32; 3]], target: Option<u32>, with_bounds: bool) -> usize {
         let mut bytes = Vec::with_capacity(data.len() * 12);
         for v in data {

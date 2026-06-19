@@ -5,7 +5,7 @@ Offline validation of the battle-CLUT reading: the 1204 atlas image + the party
 palette resident at the mesh's NOMINAL CBA rows (490..497) produce a correctly-
 coloured character (blue-haired Vahn, etc.), which the bundled 1204 CLUT (the
 Baka Fighter palette) does NOT. The battle character renderer uses the nominal
-CBA directly — there is NO texpage->row relocation for characters (see
+CBA directly - there is NO texpage->row relocation for characters (see
 `docs/formats/character-mesh.md` -> Battle palette).
 
 The palette is read from a CLEAN battle mednafen save state's VRAM (command-menu
@@ -112,7 +112,7 @@ def main():
                 px[xx, yy] = color(row, cba_x + idx)
     img.save(args.out)
     print(f"wrote {args.out} (nominal CBA rows: Vahn 490/491, Noa 492/493, "
-          f"Gala 494/495 — sampled from the clean-battle save's VRAM)")
+          f"Gala 494/495 - sampled from the clean-battle save's VRAM)")
 
 
 if __name__ == "__main__":

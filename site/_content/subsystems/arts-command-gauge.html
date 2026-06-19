@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; arts command gauge</div>
-  <h1>Arts command gauge &mdash; weapon-specialty arm width</h1>
-  <p class="lede">When a character's turn opens the Arts command input, the battle UI draws an <strong>action gauge</strong>: a fixed AP pool the player spends by inputting directional commands (High / Low / the two <strong>arm</strong> swings). Each command costs AP, and the cost of the <strong>arm</strong> command depends on the equipped weapon's class versus the character's favored class. Equip off-class and the arm command costs more &mdash; the "longer arm input" players see. The Astral Sword costs the most of all.</p>
+  <h1>Arts command gauge - weapon-specialty arm width</h1>
+  <p class="lede">When a character's turn opens the Arts command input, the battle UI draws an <strong>action gauge</strong>: a fixed AP pool the player spends by inputting directional commands (High / Low / the two <strong>arm</strong> swings). Each command costs AP, and the cost of the <strong>arm</strong> command depends on the equipped weapon's class versus the character's favored class. Equip off-class and the arm command costs more - the "longer arm input" players see. The Astral Sword costs the most of all.</p>
 </header>
 
 <section class="doc-section" id="not-a-flat-double">
@@ -15,16 +15,16 @@
       <tr><td>Vahn + Astral Sword</td><td>always-double exception</td><td><code>0x36</code> (54)</td></tr>
     </tbody>
   </table>
-  <p>The other commands (<code>0x0D</code>/<code>0x0E</code>/<code>0x0F</code>) hold a constant <code>0x1E</code>. So: base <code>0x1E</code>, <strong><code>+0x0C</code> for an off-class weapon, <code>+0x18</code> for the Astral Sword</strong>. The Astral penalty is twice the off-class penalty &mdash; the source of the "double" shorthand &mdash; but the off-class case itself is <code>+0x0C</code> over base (&times;1.4), not &times;2.</p>
+  <p>The other commands (<code>0x0D</code>/<code>0x0E</code>/<code>0x0F</code>) hold a constant <code>0x1E</code>. So: base <code>0x1E</code>, <strong><code>+0x0C</code> for an off-class weapon, <code>+0x18</code> for the Astral Sword</strong>. The Astral penalty is twice the off-class penalty - the source of the "double" shorthand - but the off-class case itself is <code>+0x0C</code> over base (&times;1.4), not &times;2.</p>
 </section>
 
 <section class="doc-section" id="where-the-cost-lives">
   <h2>Where the cost lives</h2>
   <p>The per-command cost is a runtime field, not a static table row:</p>
   <ul class="bullets">
-    <li><code>DAT_801C9360</code> &mdash; per-character <strong>command-data pointer table</strong> (one pointer per active party member), in battle bss. Each entry points into the <strong>loaded player battle data</strong> (the <a href="../formats/battle-data-pack.html"><code>battle_data</code> block</a>, extraction 863..866).</li>
-    <li><code>DAT_801C9360[char]</code> &mdash; that character's array of per-command struct pointers, indexed by <strong>command code</strong> (<code>cmd * 4</code>).</li>
-    <li><code>&hellip;[cmd] + 0x74</code> &mdash; the <strong>arm width / AP cost</strong> byte. Full access: <code>*(u8*)( *(u32*)( *(u32*)(DAT_801C9360 + char*4) + cmd*4 ) + 0x74 )</code>.</li>
+    <li><code>DAT_801C9360</code> - per-character <strong>command-data pointer table</strong> (one pointer per active party member), in battle bss. Each entry points into the <strong>loaded player battle data</strong> (the <a href="../formats/battle-data-pack.html"><code>battle_data</code> block</a>, extraction 863..866).</li>
+    <li><code>DAT_801C9360[char]</code> - that character's array of per-command struct pointers, indexed by <strong>command code</strong> (<code>cmd * 4</code>).</li>
+    <li><code>&hellip;[cmd] + 0x74</code> - the <strong>arm width / AP cost</strong> byte. Full access: <code>*(u8*)( *(u32*)( *(u32*)(DAT_801C9360 + char*4) + cmd*4 ) + 0x74 )</code>.</li>
   </ul>
   <p>The default 4-command display uses command codes <code>DAT_801F4B8C = [0x0C 0x0F 0x0E 0x0D]</code> (overlay <code>0898</code> rodata) with an icon-base sibling <code>DAT_801F4B94 = [0x0D 0x10 0x11 0x0C]</code>. Command <strong><code>0x0C</code> is the arm command</strong> whose <code>+0x74</code> tracks the weapon; the others stay constant.</p>
 </section>
@@ -41,7 +41,7 @@ gauge_slot.icon_pos = bVar3 - 6;                             // visual width on 
 if (ctx[0x6DC] &lt; ctx[slot + 0x14]) return;                  // not enough AP
 ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the command</code></pre>
   <p>A higher <code>+0x74</code> widens the gauge slot (<code>bVar3 - 6</code>) <em>and</em> drains more of the AP pool, so an off-class arm both looks wider and lets fewer total commands fit.</p>
-  <aside class="notice"><p>A separate <code>+2</code> in the same case (<code>icon = DAT_801F4B94[i] + 2</code>, gated on an <em>empty</em> equip slot, <code>equip[cmd] == 0</code>) is an empty-slot icon tweak, <strong>not</strong> the class penalty &mdash; a fully-equipped off-class character still widens via the <code>+0x74</code> cost above.</p></aside>
+  <aside class="notice"><p>A separate <code>+2</code> in the same case (<code>icon = DAT_801F4B94[i] + 2</code>, gated on an <em>empty</em> equip slot, <code>equip[cmd] == 0</code>) is an empty-slot icon tweak, <strong>not</strong> the class penalty - a fully-equipped off-class character still widens via the <code>+0x74</code> cost above.</p></aside>
 </section>
 
 <section class="doc-section" id="weapon-classes">
@@ -60,17 +60,17 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
 
 <section class="doc-section" id="execution-path">
   <h2>Execution path</h2>
-  <p>Once a combo is committed it is replayed by the <strong>Arms execution resolver <code>FUN_801EC3E4</code></strong> (overlay <code>0898</code>), <strong>called from <code>SCUS_942.54</code> at <code>0x800478A0</code></strong> (<code>jal 0x801EC3E4</code>) &mdash; the execution driver is the static side, which is why the resolver has no caller inside the overlay. It advances the input cursor (<code>actor + 0x1F4</code>) one step per recorded command and dispatches per-command sub-handlers through <code>PTR_801CF4B4[(actor + 0x1D9) - 0xC]</code>. Those sub-handlers read the equipped weapon again (e.g. <code>0x801ECC00</code>: weapon id &rarr; item subtype <code>DAT_80074369</code> &rarr; equip record <code>DAT_80074F68</code>) to fold it into the damage / effect calculation &mdash; a read distinct from the gauge-build cost above.</p>
+  <p>Once a combo is committed it is replayed by the <strong>Arms execution resolver <code>FUN_801EC3E4</code></strong> (overlay <code>0898</code>), <strong>called from <code>SCUS_942.54</code> at <code>0x800478A0</code></strong> (<code>jal 0x801EC3E4</code>) - the execution driver is the static side, which is why the resolver has no caller inside the overlay. It advances the input cursor (<code>actor + 0x1F4</code>) one step per recorded command and dispatches per-command sub-handlers through <code>PTR_801CF4B4[(actor + 0x1D9) - 0xC]</code>. Those sub-handlers read the equipped weapon again (e.g. <code>0x801ECC00</code>: weapon id &rarr; item subtype <code>DAT_80074369</code> &rarr; equip record <code>DAT_80074F68</code>) to fold it into the damage / effect calculation - a read distinct from the gauge-build cost above.</p>
 </section>
 
 <section class="doc-section" id="who-writes-it">
   <h2>Who writes the cost</h2>
   <p>The cost is <strong>not</strong> computed by a runtime favored-class comparison. It is written once at battle load (the <code>game_mode 0x14 &rarr; 0x15</code> transition) as a <strong>verbatim copy</strong> out of the assembled battle-character buffer:</p>
   <ul class="bullets">
-    <li>The writer is <code>FUN_800557B8</code> (the per-command-struct copy routine in <code>SCUS_942.54</code>): a fixed 43-word block copy from source <code>a1</code> to the runtime struct <code>a0</code> (<code>lw v0,(a1)</code> &rarr; <code>sw v0,(a0)</code>; the cost word at struct <code>+0x74</code> lands inside that block). There is <strong>no arithmetic on the cost value</strong> between load and store &mdash; confirmed by a live write-watch on the field through a field&rarr;battle transition, where the only write fires here at <code>pc = 0x80055810</code>.</li>
+    <li>The writer is <code>FUN_800557B8</code> (the per-command-struct copy routine in <code>SCUS_942.54</code>): a fixed 43-word block copy from source <code>a1</code> to the runtime struct <code>a0</code> (<code>lw v0,(a1)</code> &rarr; <code>sw v0,(a0)</code>; the cost word at struct <code>+0x74</code> lands inside that block). There is <strong>no arithmetic on the cost value</strong> between load and store - confirmed by a live write-watch on the field through a field&rarr;battle transition, where the only write fires here at <code>pc = 0x80055810</code>.</li>
     <li>It is called from the <strong>battle character-assembly chain</strong> (<code>FUN_80052770</code> &hellip; the call site at <code>0x80053330</code>), which splices the equipped item's section into the per-character battle buffer.</li>
   </ul>
-  <p>So the arm cost originates in the <strong>equipped weapon's section of the per-character <a href="../formats/battle-data-pack.html">player battle file</a></strong> (extraction 863..866) and is carried verbatim into the runtime struct. The "off-class penalty" is therefore <strong>per-(character, weapon) data baked into those files</strong> &mdash; favored-class weapons carry a low arm cost in that character's file and off-class weapons a higher one &mdash; not a class comparison the engine performs. The same weapon yields different costs in different characters' files (a claw is cheap in Noa's file, expensive in Gala's).</p>
+  <p>So the arm cost originates in the <strong>equipped weapon's section of the per-character <a href="../formats/battle-data-pack.html">player battle file</a></strong> (extraction 863..866) and is carried verbatim into the runtime struct. The "off-class penalty" is therefore <strong>per-(character, weapon) data baked into those files</strong> - favored-class weapons carry a low arm cost in that character's file and off-class weapons a higher one - not a class comparison the engine performs. The same weapon yields different costs in different characters' files (a claw is cheap in Noa's file, expensive in Gala's).</p>
 </section>
 
 <section class="doc-section" id="disc-location">
@@ -80,16 +80,16 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
   +0x04  u32 swing_rec_a   ; offset (within the section) to the swing/arm command record
   ...
   swing_rec_a + 0x74       ; u8 arm cost  &larr; the weapon-specialty byte</code></pre>
-  <p>The descriptor table keys sections by equippable item id, so each weapon has its own section and swing record. Decoding the three player files (<code>asset battle-data-pack &lt;file&gt; --out</code>) and reading <code>section[+0x04] + 0x74</code> per weapon gives a byte-exact picture &mdash; favored-class weapons carry <code>0x1E</code> (30), off-class weapons higher costs that scale with class distance:</p>
+  <p>The descriptor table keys sections by equippable item id, so each weapon has its own section and swing record. Decoding the three player files (<code>asset battle-data-pack &lt;file&gt; --out</code>) and reading <code>section[+0x04] + 0x74</code> per weapon gives a byte-exact picture - favored-class weapons carry <code>0x1E</code> (30), off-class weapons higher costs that scale with class distance:</p>
   <table class="data-table">
     <thead><tr><th>character (file)</th><th>favored &rarr; <code>0x1E</code></th><th>off-class &rarr; <code>0x2A</code></th><th>far off-class &rarr; <code>0x36</code></th></tr></thead>
     <tbody>
-      <tr><td>Vahn (863)</td><td>blade / knife / sword / fist</td><td>claw, axe</td><td>&mdash;</td></tr>
+      <tr><td>Vahn (863)</td><td>blade / knife / sword / fist</td><td>claw, axe</td><td>-</td></tr>
       <tr><td>Noa (864)</td><td>claw / feral / fang (+ knife)</td><td>sword / blade</td><td>club / axe</td></tr>
-      <tr><td>Gala (865)</td><td>club / axe / mace</td><td>claw, knife</td><td>&mdash;</td></tr>
+      <tr><td>Gala (865)</td><td>club / axe / mace</td><td>claw, knife</td><td>-</td></tr>
     </tbody>
   </table>
-  <p>Cross-checked against live RAM: Gala + Nail Glove reads <code>0x2A</code>, Gala + Ra-Seru Club reads <code>0x1E</code> &mdash; matching that file's <code>0x28</code> and <code>0x21</code> sections. The cost lives inside the section's <strong>LZS-compressed</strong> stream, so an editor decompresses the section, rewrites the byte at <code>swing_rec_a + 0x74</code>, recompresses, and writes back within the slot footprint.</p>
+  <p>Cross-checked against live RAM: Gala + Nail Glove reads <code>0x2A</code>, Gala + Ra-Seru Club reads <code>0x1E</code> - matching that file's <code>0x28</code> and <code>0x21</code> sections. The cost lives inside the section's <strong>LZS-compressed</strong> stream, so an editor decompresses the section, rewrites the byte at <code>swing_rec_a + 0x74</code>, recompresses, and writes back within the slot footprint.</p>
 </section>
 
 <section class="doc-section" id="confidence">
@@ -98,7 +98,7 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
     <li><span class="tag tag-done">Confirmed</span> (live-pinned + byte-validated against the disc) the cost field <code>DAT_801C9360[char][0x0C] + 0x74</code>, its values, the case-<code>9</code> read / case-<code>0xB</code> spend in <code>FUN_801D388C</code>, the resolver call site, the <strong>writer</strong> (<code>FUN_800557B8</code>, verbatim copy from the LZS-decoded equipment section at battle load), and the <strong>disc location</strong> (<code>section[+0x04]</code> swing record <code>+0x74</code> in the player battle files, tabulated above).</li>
     <li><span class="tag tag-partial">Inferred</span> that command <code>0x0C</code> is "the arm" (it is the only command whose cost tracks the weapon).</li>
   </ul>
-  <p>The mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty &mdash; which is exactly what the <a href="../tooling/randomizer.html">randomizer</a>'s <code>--weapon-specialty</code> does, permuting the three favored families among the characters by rewriting these bytes in place.</p>
+  <p>The mechanic is therefore a fully editable data table: rewrite a character's favored-class arm costs up / another class's down to reassign their specialty - which is exactly what the <a href="../tooling/randomizer.html">randomizer</a>'s <code>--weapon-specialty</code> does, permuting the three favored families among the characters by rewriting these bytes in place.</p>
 </section>
 
 <section class="doc-section" id="see-also">

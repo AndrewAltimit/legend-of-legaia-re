@@ -115,7 +115,7 @@ pub enum GameMode {
     /// its own handler (`0x80025F74`). Hosts the memory-card UI AND the
     /// in-field pause menu: every menu-open capture in the save library
     /// (equipment / status / options, field and town) holds
-    /// `_DAT_8007B83C = 0x17` (23) — the pause menu runs under this mode,
+    /// `_DAT_8007B83C = 0x17` (23) - the pause menu runs under this mode,
     /// not field mode 3.
     CardMode,
     /// Mode 24 - other init.
@@ -183,7 +183,7 @@ impl GameMode {
             // to mode 3. MainInit holds Field like the other init modes
             // below hold their successors'.
             GameMode::MainInit | GameMode::MainMode => SceneMode::Field,
-            // MAPDISP (12/13) is the world-map DISPLAY mode, not the field —
+            // MAPDISP (12/13) is the world-map DISPLAY mode, not the field -
             // pinned by the disc mode table (legaia_asset::mode_table): its
             // per-frame handler 0x80025F2C routes the world-map render tick
             // (docs/subsystems/world-map.md). Field/town is MainMode above.
@@ -425,7 +425,7 @@ impl ModeHandler for NoopHandler {}
 ///
 /// - `MainInit`: spawn `actor_count` actors in the world via the actor VM
 ///   `SpawnAt` opcode, with positions arranged on a horizontal line. Returns
-///   `Done` so the driver advances to the table's next mode — mirroring the
+///   `Done` so the driver advances to the table's next mode - mirroring the
 ///   retail mode-2 handler's "load the scene, hand off to mode 3" shape.
 /// - `MainMode`: ticks the world (positions advance via the move VM). When
 ///   the host signals `Cross` (just-pressed), returns `GoTo(MapdispInit)` -

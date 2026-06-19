@@ -23,7 +23,7 @@ const EXPECTED_PROT_ENTRIES: usize = 1232;
 
 /// Class breakdown from `categorize::classify` over every PROT entry's
 /// **full on-disc footprint** (indexed payload + any trailing-overlay
-/// sectors the boot loader reads past the TOC-indexed end — see
+/// sectors the boot loader reads past the TOC-indexed end - see
 /// `docs/subsystems/boot.md`). Order doesn't matter; the test asserts each
 /// `(class_name, count)` pair.
 ///
@@ -59,7 +59,7 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // gained non-zero trailing-overlay content that shifts them out of the
     // dominant-zero bucket.
     ("mostly_zeros", 70),
-    // `overlay_data_blob` (27 → 27 — unchanged; trailing-overlay bytes are
+    // `overlay_data_blob` (27 → 27 - unchanged; trailing-overlay bytes are
     // mostly code or already-classified data, not the mixed-text shape).
     ("overlay_data_blob", 27),
     ("overlay_ptr_table", 42),
@@ -67,7 +67,7 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `scene_asset_table` 80 → 88: the detector now also accepts the
     // count=6 header variant used by the early standalone towns (first
     // descriptor anchored at 0x38, MAN at descriptor index 1/2). Eight
-    // entries (PROT 4, 13, 22, 183, 348, 742, 1196, 1229) shifted in — one
+    // entries (PROT 4, 13, 22, 183, 348, 742, 1196, 1229) shifted in - one
     // from `field_pack`, seven from `lzs_container`.
     ("scene_asset_table", 88),
     // `scene_tmd_stream` jumped (148 → 182) as 34 entries' trailing-overlay
@@ -85,7 +85,7 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("zero_sector_high_entropy", 4),
     // Residual buckets. Trailing-overlay MIPS code doesn't fit any PROT-
     // format detector, so some entries land here (~8.4 MiB total
-    // unclassified by extended coverage, vs 1.9 MiB by indexed coverage —
+    // unclassified by extended coverage, vs 1.9 MiB by indexed coverage -
     // see categorize_coverage.rs for the split).
     ("unknown_high_entropy", 1),
     ("unknown_low_entropy", 29),

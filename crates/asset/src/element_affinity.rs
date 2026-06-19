@@ -19,7 +19,7 @@
 //! So the matrix is **row-major, rows = attacker element, columns = defender
 //! element** (`matrix[atk][def]`), each cell a percentage applied as
 //! `roll * pct / 100`. (An earlier engine comment had the axes transposed.) The
-//! retail values are a small ±4% nudge — diagonal (same-element) `0x60` = 96,
+//! retail values are a small ±4% nudge - diagonal (same-element) `0x60` = 96,
 //! reciprocal opposite-element pairs `0x68` = 104, everything else `0x64` = 100.
 //!
 //! ## Per-actor element source
@@ -32,7 +32,7 @@
 //!   4=Terra). Disasm reads `*(byte*)(char_id + 0x801F547F)`, i.e. char id 1 →
 //!   first table byte.
 //! - **enemy / summon body** (actor slot `>= 3`): `element` is read **directly
-//!   from the monster-archive record's `+0x1d` byte** — no copy into a live-actor
+//!   from the monster-archive record's `+0x1d` byte** - no copy into a live-actor
 //!   field. `FUN_801dd864` indexes the per-enemy **record-pointer table** at
 //!   `DAT_801c9348` (`= 0x801C9348`, populated by the battle loader
 //!   `FUN_800542C8`; the same table the victory-spoils path reads rewards from)
@@ -40,7 +40,7 @@
 //!   `overlay_battle_action_801dd864.txt` `0x801dd8c4`/`0x801dd8dc`). So the
 //!   element source is the [`crate::monster_archive::MonsterRecord::element`]
 //!   field itself (same record whose `+0x44`/`+0x46`/`+0x48` reward fields the
-//!   spoils path reads) — there is no separate "monster→actor builder" copy to
+//!   spoils path reads) - there is no separate "monster→actor builder" copy to
 //!   pin. (The earlier "copied into a live `actor[+0x1d]`, not yet pinned"
 //!   framing is corrected: the read is record-direct.)
 //!
@@ -80,7 +80,7 @@ pub const ELEMENT_COUNT: usize = 8;
 /// ```
 ///
 /// So each caster has an 8-entry row of percentages indexed by the **summon
-/// creature's element** — the per-character summon efficiency. Retail values
+/// creature's element** - the per-character summon efficiency. Retail values
 /// (3 rows, Vahn / Noa / Gala): own element = 100, opposed element = 40
 /// (Vahn: water; Noa: earth), Gala's dark = 60, the rest 70–95. The table
 /// occupies exactly the 24 bytes before [`CHARACTER_ELEMENTS_VA`].
@@ -115,17 +115,17 @@ pub enum Element {
     Earth = 0,
     /// Inferred (opposite of [`Fire`](Element::Fire)).
     Water = 1,
-    /// Pinned — Vahn.
+    /// Pinned - Vahn.
     Fire = 2,
-    /// Pinned — Noa / Terra.
+    /// Pinned - Noa / Terra.
     Wind = 3,
-    /// Pinned — Gala.
+    /// Pinned - Gala.
     Thunder = 4,
     /// Inferred (opposite of [`Dark`](Element::Dark)).
     Light = 5,
     /// Inferred (opposite of [`Light`](Element::Light)).
     Dark = 6,
-    /// Pinned — the all-100 affinity row + column (no element interaction).
+    /// Pinned - the all-100 affinity row + column (no element interaction).
     Neutral = 7,
 }
 

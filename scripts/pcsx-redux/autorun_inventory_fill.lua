@@ -2,7 +2,7 @@
 --
 -- One-shot GameShark-equivalent inventory fill for Legend of Legaia (NTSC-U).
 -- Loads a save state, waits for RAM to settle, then writes a configurable set
--- of item-slot (id, qty) pairs directly into RAM — exactly what a batch of
+-- of item-slot (id, qty) pairs directly into RAM - exactly what a batch of
 -- GameShark `30` codes would do. PCSX-Redux is left running so you can
 -- open the in-game save menu and write a real memory-card save from the
 -- patched state.
@@ -22,7 +22,7 @@
 --       --scenario <your_scenario> \
 --       --lua scripts/pcsx-redux/autorun_inventory_fill.lua
 --
--- After the script prints "DONE — save in-game now", open the in-game menu,
+-- After the script prints "DONE - save in-game now", open the in-game menu,
 -- go to a save point, and save normally. The script does NOT quit PCSX-Redux.
 --
 -- Item id reference: docs/reference/gamedata.md, or use
@@ -34,7 +34,7 @@ local sstate = require("probe.sstate")
 local env = require("probe.env")
 
 -- ============================================================
--- CONFIG — edit these two sections for your session
+-- CONFIG - edit these two sections for your session
 -- ============================================================
 
 -- Save state to load. Defaults to your default pcsx-redux sstate.
@@ -46,7 +46,7 @@ local SSTATE_PATH = env.getenv("LEGAIA_SSTATE",
 -- Each entry: { slot = 0-based slot index, id = item id byte, qty = count }
 -- Slot indices 0..71 are the consumable window (ITEM_WINDOW_BASE 0x80085958).
 -- IDs: see docs/reference/gamedata.md "Items" or the GameShark codes you have.
--- Example below: fill all 72 slots with Water Talisman (id 0x73, qty 99) —
+-- Example below: fill all 72 slots with Water Talisman (id 0x73, qty 99) -
 -- this produces a full bag that triggers the OOB add primitive on any further
 -- item add (ACE backlog 2.1 reachability capture).
 --
@@ -71,7 +71,7 @@ local ITEM_WINDOW_BASE = 0x80085958   -- SC+0x1818, 2-byte (id,qty) stride
 local ITEM_WINDOW_SLOTS = 72
 
 -- ============================================================
--- Write loop — runs once after RAM settles
+-- Write loop - runs once after RAM settles
 -- ============================================================
 
 local function slot_addr(slot)
@@ -135,12 +135,12 @@ local function do_fill()
         "[inventory_fill] OOB target 0x%08X = 0x%02X (first key-item id; should be unchanged)",
         oob_target, oob_val or 0))
 
-    PCSX.log("[inventory_fill] DONE — open the in-game save menu and save now.")
+    PCSX.log("[inventory_fill] DONE - open the in-game save menu and save now.")
     PCSX.log("[inventory_fill] Script is detached; PCSX-Redux continues running.")
 end
 
 -- ============================================================
--- VSync driver — load sstate, wait 3 frames, write once, detach
+-- VSync driver - load sstate, wait 3 frames, write once, detach
 -- ============================================================
 
 local vsync = 0

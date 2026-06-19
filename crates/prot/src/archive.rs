@@ -35,7 +35,7 @@ pub struct Header {
 pub struct Entry {
     pub index: u32,
     pub start_lba: u32,
-    /// On-disc footprint in sectors — `max(indexed_size, next_start - start_lba)`.
+    /// On-disc footprint in sectors - `max(indexed_size, next_start - start_lba)`.
     /// This is what `read_entry` returns; covers trailing-overlay content the
     /// SCUS boot loader reads past the indexed end (see boot.md).
     pub size_sectors: u32,
@@ -96,7 +96,7 @@ impl Archive {
         //
         // The indexed formula describes the entry's TOC-declared payload, but
         // the SCUS boot loader sometimes reads CONTIGUOUS sectors past the
-        // indexed end into the next entry's LBA — those trailing sectors
+        // indexed end into the next entry's LBA - those trailing sectors
         // carry "trailing-overlay" content (e.g. PROT 899's trailing 60
         // sectors are the title-screen overlay code; see boot.md). We
         // surface the larger of the two so consumers see the full on-disc
@@ -118,7 +118,7 @@ impl Archive {
             let indexed_size_sectors = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
             // Trailing-gap candidate: bytes from start_lba to next entry's
             // start_lba. Use wrapping_sub so unsorted entries don't blow up
-            // — they fall back to the indexed size.
+            // - they fall back to the indexed size.
             let next_start_lba = toc[p + 3];
             let footprint_sectors = next_start_lba.wrapping_sub(start_lba);
             // Only honor the trailing extension when it's a sane positive
@@ -163,7 +163,7 @@ impl Archive {
     }
 
     /// Read an entry's full on-disc footprint (indexed payload + trailing
-    /// gap, if any). This is what consumers usually want — it matches what
+    /// gap, if any). This is what consumers usually want - it matches what
     /// the SCUS boot loader reads when it issues a multi-sector ReadN.
     pub fn read_entry(&mut self, entry: &Entry, out: &mut Vec<u8>) -> Result<()> {
         out.clear();
@@ -175,7 +175,7 @@ impl Archive {
 
     /// Read only an entry's TOC-indexed sub-region (the historical
     /// `toc[p+5] - toc[p+3] + 4` slice). Use when you specifically want the
-    /// indexed payload without any trailing-overlay sectors — most callers
+    /// indexed payload without any trailing-overlay sectors - most callers
     /// should prefer [`Self::read_entry`].
     pub fn read_entry_indexed(&mut self, entry: &Entry, out: &mut Vec<u8>) -> Result<()> {
         out.clear();

@@ -1,0 +1,93 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">disc patching</a> &middot; Tier D</div>
+  <h1>Tier D - variable-length relocation</h1>
+  <p class="lede">Every other data tier holds byte counts constant so nothing moves. This is the one where the edit's <em>meaning</em> forces a length change - a scene-transition door carries its destination's name inline, so re-pointing it at a differently-named scene resizes the record. That's only safe if you can rebuild the decompressed script, fix every internal offset the resize disturbs, and still land inside the asset's on-disc footprint.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">Tier D overview</div>
+  Tier D of the A&ndash;F ladder - the only data tier that changes a byte count. It's the variable-length cousin of <a href="c-field-vm-operands.html">tier C</a>. Start at the <a href="index.html">series index</a> for the same-size-vs-relocate editing model.
+</div>
+
+<section class="doc-section" id="mechanism">
+  <h2>Mechanism at a glance</h2>
+  <dl class="kv">
+    <dt>Target</dt><dd>a MAN record whose length changes - the <code>0x3F</code> scene-transition's inline destination name</dd>
+    <dt>Engine</dt><dd><code>legaia_asset::man_edit</code>: rebuild the decompressed MAN, apply the resize, fix every disturbed offset</dd>
+    <dt>Fix-ups</dt><dd>partition tables + partition-2 record-offset table + <code>u24_at_28</code> + intra-record relative-jump deltas + the external descriptor size word</dd>
+    <dt>Bound</dt><dd>the recompressed stream must still fit the asset footprint (or the scene is skipped); disc total size never changes</dd>
+    <dt>Edit class</dt><dd>relocate / variable-length - footprint-bounded</dd>
+    <dt>Oracles</dt><dd><code>door_patch_real.rs</code> &middot; <code>starting_bag_real.rs</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="reversing">
+  <h2>The reversing: everything a resize disturbs</h2>
+  <p>A door's destination is reached through the MAN's partition-2 record-offset table, and the destination scene's name is stored inline in that record. Re-pointing the door at a scene with a longer or shorter name changes the record's byte length - and the moment a record's length changes, every structure that encodes a position past it is wrong. Making the edit safe meant enumerating, from the MAN layout, the complete set of things a resize moves: the partition tables, the partition-2 record-offset table that indexes destinations, a <code>u24</code> length field at <code>+0x28</code>, the relative-jump deltas <em>inside</em> records that straddle the edit, and the external asset descriptor's size word. Miss one and the script desyncs or the door points into garbage. The relocation engine fixes all of them in one rebuild - see <a href="../../formats/man-relocation.html">MAN relocation</a>.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 122" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="reloc-title">
+      <title id="reloc-title">A record grows; offset tables and deltas are fixed up in one rebuild</title>
+      <style>
+        .rl-lab  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
+        .rl-rec  { fill: #131922; stroke: #2a323e; stroke-width: 1.2; }
+        .rl-edit { fill: #19212d; stroke: #58c4b3; stroke-width: 1.4; }
+        .rl-grow { fill: #1c2a2a; stroke: #58c4b3; stroke-width: 1.4; stroke-dasharray: 3 2; }
+        .rl-seg  { font: 10px 'Inter', sans-serif; fill: #8b949e; text-anchor: middle; }
+        .rl-fx   { font: 10px 'Inter', sans-serif; fill: #c19a4d; }
+      </style>
+
+      <text x="20" y="34" class="rl-lab">before</text>
+      <rect x="90"  y="20" width="150" height="28" class="rl-rec"/>
+      <rect x="240" y="20" width="120" height="28" class="rl-edit"/>
+      <rect x="360" y="20" width="360" height="28" class="rl-rec"/>
+      <text x="165" y="38" class="rl-seg">records</text>
+      <text x="300" y="38" class="rl-seg">door rec</text>
+      <text x="540" y="38" class="rl-seg">later records</text>
+
+      <text x="20" y="78" class="rl-lab">after</text>
+      <rect x="90"  y="64" width="150" height="28" class="rl-rec"/>
+      <rect x="240" y="64" width="170" height="28" class="rl-grow"/>
+      <rect x="410" y="64" width="360" height="28" class="rl-rec"/>
+      <text x="165" y="82" class="rl-seg">records</text>
+      <text x="325" y="82" class="rl-seg">door rec (longer name)</text>
+      <text x="585" y="82" class="rl-seg">shifted +&Delta;</text>
+
+      <text x="90"  y="112" class="rl-fx">fix-ups: partition tables &middot; partition-2 record-offset table &middot; u24_at_28 &middot; intra-record jump deltas &middot; descriptor size word</text>
+    </svg>
+    <figcaption>The door record grows by &Delta;; everything after it shifts, and five classes of offset are corrected in one rebuild. If the recompressed result won't fit the footprint, the scene is left vanilla rather than corrupted.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="examples">
+  <h2>Worked examples</h2>
+  <h3>Doors (scene transitions)</h3>
+  <p>Re-pointing a <code>0x3F</code> transition at a new destination is the canonical relocation: the inline name resizes the record, the relocation engine fixes the offset tables and deltas, and the recompressed MAN stays within footprint. Coupling can be bidirectional (a door and its return both move) or one-way.</p>
+  <h3>High-capacity starting bag (variant G)</h3>
+  <p>The same machinery powers a different shape: rather than re-point a record, the starting-bag feature <em>inserts</em> a guarded grant block into the opening scene's script - a story-flag test (<code>0x70</code>), a run of <code>GIVE_ITEM</code> ops (<code>0x39</code>), and a flag set (<code>0x50</code>) so it fires exactly once. That byte-insert is a length change like any other, relocated by <code>man_edit::apply_insertions</code>, which lifts the seven-slot cap of the same-size new-game seed path.</p>
+</section>
+
+<section class="doc-section" id="composition">
+  <h2>Composition</h2>
+  <p>Relocation is the one technique that changes byte counts, so it's the most constrained: an edit either fits the asset footprint after recompression or the scene is skipped, and the disc's total size is invariant either way (no LBA, PROT TOC, or ISO&nbsp;9660 record ever moves). Because same-size passes (tier C) leave descriptor offsets fixed, a relocation pass over a scene composes with them as long as it runs on the stable footprint - the boundary the budget is always read from.</p>
+</section>
+
+<section class="doc-section" id="mods">
+  <h2>Mods using this technique</h2>
+  <ul>
+    <li><strong>Doors (scene transitions)</strong> (<code>--doors</code>) - re-point a transition, resizing its inline destination name.</li>
+    <li><strong>High-capacity starting bag</strong> (<code>--starting-items</code>, variant G) - insert a guarded grant block into the opening MAN.</li>
+  </ul>
+  <p class="hint">Adding a tier-D mod: enumerate every offset/table/delta a resize disturbs from the container layout, fix them in one rebuild, keep the recompressed stream within the asset footprint (skip on overflow), and add a disc-gated oracle that re-decodes the patched image.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="index.html">Series index &middot; the ladder</a>
+    <a href="../../formats/man-relocation.html">MAN relocation</a>
+    <a href="../../subsystems/script-vm.html">Field / event script VM</a>
+    <a href="c-field-vm-operands.html">Tier C &middot; field-VM bytecode</a>
+    <a href="e-rodata-gap-code.html">Tier E &middot; rodata-gap code</a>
+  </div>
+</section>

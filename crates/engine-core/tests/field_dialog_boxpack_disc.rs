@@ -46,8 +46,8 @@ fn town01_dialog_boxes_pack_at_most_three_lines() {
         .expect("town01 MAN");
     let man = parse_man(&man_bytes).expect("parse MAN");
 
-    // Walk EVERY 0x1F lead in EVERY NPC pool and pack a box there — not just the
-    // first — so the cap is exercised against the whole corpus of lines, not one
+    // Walk EVERY 0x1F lead in EVERY NPC pool and pack a box there - not just the
+    // first - so the cap is exercised against the whole corpus of lines, not one
     // entry point.
     let mut boxes_checked = 0usize;
     let mut pools = 0usize;
@@ -66,7 +66,7 @@ fn town01_dialog_boxes_pack_at_most_three_lines() {
             }
             // Only treat it as a box start if the prior byte is a line
             // terminator / control byte (mirrors how the pager only enters a box
-            // from a yielded `& 0x7F < 0x20` position) — otherwise this 0x1F is
+            // from a yielded `& 0x7F < 0x20` position) - otherwise this 0x1F is
             // a wide-glyph argument inside another line.
             if i > 0 && inline[i - 1] >= 0x20 {
                 continue;
@@ -171,7 +171,7 @@ fn rim_elm_sparring_opening_packs_three_pages_then_a_four_option_menu() {
         "the opening narration ends on the 4-option topic menu"
     );
 
-    // The 0xC? escape: page 0 line 1 is "Mist appeared, .., but" — it carries a
+    // The 0xC? escape: page 0 line 1 is "Mist appeared, .., but" - it carries a
     // 0xC1 (character-name substitution) whose argument byte is 0x00. Packing
     // must NOT truncate the line at that 0x00; the bytes after the escape must
     // survive (the line ends ", but"). This is exactly the case the SM's

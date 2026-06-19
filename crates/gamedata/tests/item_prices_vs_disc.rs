@@ -3,7 +3,7 @@
 //!
 //! Each item's 12-byte property record (`DAT_80074368`, the table
 //! `legaia_asset::item_names` reads name pointers from at `+4`) carries the
-//! shop price as the `u16` at `+2` — the field the in-game buy/sell UI reads
+//! shop price as the `u16` at `+2` - the field the in-game buy/sell UI reads
 //! (verified there against a live shop). It is the authoritative price, so it
 //! makes a clean oracle for the curated `gamedata` prices mined from
 //! walkthroughs.

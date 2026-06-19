@@ -171,7 +171,7 @@ fn mode_trace_e3_all_scenarios_converge() {
         // engine into the field the way the windowed host does (cold boot ->
         // enter_field_live -> Field) rather than letting it sit in Title.
         // `phase = "menu"` captures hold the field PAUSE MENU open, which
-        // retail runs under game_mode 0x17 (CARD MODE, 23 — the menu/memory-
+        // retail runs under game_mode 0x17 (CARD MODE, 23 - the menu/memory-
         // card overlay's per-frame mode; all six library menu saves read 0x17
         // at 0x8007B83C). BootSession hosts the same field-menu runtime
         // headlessly (Start-edge path in `BootSession::tick` →

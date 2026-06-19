@@ -6,7 +6,7 @@
 //! the *engine wrapper* ([`legaia_engine_core::move_power::MovePowerCatalog`])
 //! end to end against the entry bytes a real boot streams, and joins the
 //! move-id space to a known named monster special-attack (Tail Fire, move id
-//! `0x27`, the enemy-Gimard move — power record index `0x12`). Skips without
+//! `0x27`, the enemy-Gimard move - power record index `0x12`). Skips without
 //! `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 use std::path::PathBuf;
 
@@ -33,7 +33,7 @@ fn move_power_catalog_resolves_named_monster_attacks() {
         .expect("move-power table parses from the real PROT 0898 overlay");
     assert!(cat.len() >= 44, "full table parsed ({} records)", cat.len());
 
-    // Tail Fire (move id 0x27) — a named monster special-attack — resolves to
+    // Tail Fire (move id 0x27) - a named monster special-attack - resolves to
     // record index 0x12 with a real, positive power (the arts-roll modulus
     // base). This is the move whose power the summon-reconciliation thread
     // pinned (enemy Tail Fire = move 0x27).

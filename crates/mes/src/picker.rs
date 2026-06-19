@@ -27,7 +27,7 @@
 //! draws each label as a standalone `0x1F`-lead glyph segment located **after**
 //! the continuation byte (measured by `FUN_8003CA38`, drawn by `FUN_80036888`).
 //! The N×2-byte region between the open byte and the continuation is **not** the
-//! labels — it is the per-option **jump table**.
+//! labels - it is the per-option **jump table**.
 //!
 //! ## Option entries are signed relative jumps
 //!
@@ -131,7 +131,7 @@ fn decode_label(buf: &[u8], lead: usize) -> Option<(usize, Vec<u8>)> {
 
 /// Attempt to decode a picker whose open byte sits at `open` in `buf`. Returns
 /// `None` if the bytes there don't form a structurally-valid picker (wrong open
-/// byte, missing continuation, or fewer than N decodable label segments) — this
+/// byte, missing continuation, or fewer than N decodable label segments) - this
 /// is the genuineness filter that rejects coincidental `0x27`/`0x28`/`0x29`
 /// glyph/data bytes.
 pub fn parse_picker_at(buf: &[u8], open: usize) -> Option<Picker> {
@@ -245,7 +245,7 @@ mod tests {
     fn scan_finds_the_picker_and_rejects_coincidences() {
         let mut b = yes_no();
         // Append a stray 0x29 inside a glyph run (not preceded by 0x00, no
-        // valid continuation) — must not be picked up.
+        // valid continuation) - must not be picked up.
         b.extend_from_slice(&[b'a', 0x29, b'b', b'c']);
         let found = scan_pickers(&b);
         assert_eq!(found.len(), 1, "exactly the one genuine picker");
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn high_bit_open_byte_is_accepted() {
         let mut b = yes_no();
-        b[4] = 0x27 | 0x80; // 0xA7 — masked form the pager also accepts
+        b[4] = 0x27 | 0x80; // 0xA7 - masked form the pager also accepts
         let p = parse_picker_at(&b, 4).expect("0xA7 is a 2-option open byte");
         assert_eq!(p.n, 2);
     }

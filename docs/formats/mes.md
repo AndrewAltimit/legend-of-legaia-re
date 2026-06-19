@@ -116,20 +116,20 @@ The crate-level Rust port of this pager lives in [`crates/engine-vm`](../../crat
 
 ### Box geometry
 
-Max lines per box is stored at `_DAT_801F2740`. The overlay's `case 6` / `case 9` init arms (the two box-open states) **both pin this to 3** — the standard dialog box scrolls in up to three lines, then state `0xD` advances to the "page full, wait for input" state `0xE`. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.
+Max lines per box is stored at `_DAT_801F2740`. The overlay's `case 6` / `case 9` init arms (the two box-open states) **both pin this to 3** - the standard dialog box scrolls in up to three lines, then state `0xD` advances to the "page full, wait for input" state `0xE`. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.
 
 ### Multi-segment box packing
 
 A field NPC's interaction text is a flat pool of `0x1F`-lead lines, each `0x1F <glyphs> 0x00`. The SM packs **consecutive** lines into one window of `_DAT_801F2740 = 3` rows: the byte after a line's `0x00` terminator being another `0x1F` means "same box, next row". A box ends after at most three rows, at the post-page control byte the pager reads in state `0x19` (the table below). So a three-line speech box is three back-to-back `0x1F` lines followed by a single `0x24` (next page); multi-page speech is several such boxes chained by `0x24`.
 
-The advance loop in `FUN_80039B7C` (state `0x2`, the `for (; 0x1e < *pbVar4; ...)` walk that skips a line the SM has shown) masks `(*pbVar4 & 0xF0) == 0xC0` and consumes the following data byte as part of the same token. So a `0xC0..=0xCF` escape whose argument byte falls in the `0x00..=0x1E` range — e.g. a `0xC1 0x00` character-name substitution — does **not** terminate the line early; the line ends only at a terminator that is not a `0xC?` escape argument. Every `0xC0..=0xCF` byte is a 2-byte token (see the token table above), so the standard interpreter strides past them correctly.
+The advance loop in `FUN_80039B7C` (state `0x2`, the `for (; 0x1e < *pbVar4; ...)` walk that skips a line the SM has shown) masks `(*pbVar4 & 0xF0) == 0xC0` and consumes the following data byte as part of the same token. So a `0xC0..=0xCF` escape whose argument byte falls in the `0x00..=0x1E` range - e.g. a `0xC1 0x00` character-name substitution - does **not** terminate the line early; the line ends only at a terminator that is not a `0xC?` escape argument. Every `0xC0..=0xCF` byte is a 2-byte token (see the token table above), so the standard interpreter strides past them correctly.
 
 Decoded by `legaia_mes::dialog_box`:
 
 - `pack_box` packs one box from a `0x1F` lead, capped at `LINES_PER_BOX = 3`, reporting the terminating `Dispatch`.
 - `pack_boxes` chains pages while the dispatch continues, stopping at `End` / `Terminate` / a `Picker` / field-VM bytecode.
 
-Pinned on real disc bytes by `field_dialog_boxpack_disc`: the Rim Elm sparring partner's (Tetsu) opening narration packs into three full 3-row pages chained by `0x24`, then a 2-row box that opens the 4-option "do you want something today?" topic menu — and that narration's `Mist appeared, .., but` line keeps its tail past a `0xC1 0x00` escape. Note the pool also holds the NPC's *other* story-branch lines; the contiguous box run stops where the pager hands control back to the field VM (a non-pager control byte), which `Dispatch::Unknown` marks.
+Pinned on real disc bytes by `field_dialog_boxpack_disc`: the Rim Elm sparring partner's (Tetsu) opening narration packs into three full 3-row pages chained by `0x24`, then a 2-row box that opens the 4-option "do you want something today?" topic menu - and that narration's `Mist appeared, .., but` line keeps its tail past a `0xC1 0x00` escape. Note the pool also holds the NPC's *other* story-branch lines; the contiguous box run stops where the pager hands control back to the field VM (a non-pager control byte), which `Dispatch::Unknown` marks.
 
 ### Post-page dispatch (state `0x19`)
 
@@ -150,7 +150,7 @@ So the picker controls are MES `0x27` / `0x28` / `0x29`:
 
 - The open byte is matched as `byte & 0x7F`, so both the bare `0x27..0x29` form and the high-bit `0xA7..0xA9` form are accepted; the field corpus stores the bare form.
 - Each picker arm sets the box dimensions from a per-N table (lines 1995-2003 of the dump) and clamps the choice cursor at `*(DAT_801c6ea4 + 0xc)`.
-- On confirm in the picker (`case 0x12` / `0x14` / `0x16` / `0x18`), the pager reads the **continuation byte at `pbVar14[N*2 + 1]`** (past the N-option jump table) — same `0x24` / `0x48` / `0x4C 0xFF` jump table as the post-page dispatch — and advances. The chosen index lives in `*(DAT_801c6ea4 + 0xc)`.
+- On confirm in the picker (`case 0x12` / `0x14` / `0x16` / `0x18`), the pager reads the **continuation byte at `pbVar14[N*2 + 1]`** (past the N-option jump table) - same `0x24` / `0x48` / `0x4C 0xFF` jump table as the post-page dispatch - and advances. The chosen index lives in `*(DAT_801c6ea4 + 0xc)`.
 
 ### Picker control-region layout
 
@@ -165,7 +165,7 @@ O+N*2+1                               continuation byte (0x24/0x25/0x48/0x4C 0xF
 N * [ 0x1F label segment 0x00 ]       the on-screen option labels
 ```
 
-The on-screen **option labels are standard `0x1F`-lead glyph segments located after the continuation byte** (the pager render loop at `FUN_801D84D0` ~lines 2166-2185 measures each with `FUN_8003CA38` and draws it with `FUN_80036888`). An earlier note that "the option labels are the 2-byte entries between the open byte and the continuation" is **falsified** — those 2-byte entries are the per-option **jump table**, not the labels.
+The on-screen **option labels are standard `0x1F`-lead glyph segments located after the continuation byte** (the pager render loop at `FUN_801D84D0` ~lines 2166-2185 measures each with `FUN_8003CA38` and draws it with `FUN_80036888`). An earlier note that "the option labels are the 2-byte entries between the open byte and the continuation" is **falsified** - those 2-byte entries are the per-option **jump table**, not the labels.
 
 Each 2-byte entry is a **signed 16-bit little-endian relative jump**. The inline-script control handler `FUN_80038050` (the per-actor `actor[+0x90]` script stepper, distinct from the pager) applies it on confirm: it reads the cursor at `DAT_801C6EA4+0xC` and sets the script PC `actor[+0x9E]` to
 
@@ -173,9 +173,9 @@ Each 2-byte entry is a **signed 16-bit little-endian relative jump**. The inline
 new_pc = (O + 1 + index*2) + i16_LE(entry[index])
 ```
 
-i.e. the displacement is relative to the **start of that option's own 2-byte entry**. Pinned empirically: across the four story-branch re-emissions of the `izumi` book menu, all four option entries shift by an identical per-emission delta (-518 / -564 / -549) — the signature of relative addressing to a moving site — and every decoded option across the field corpus jumps to a byte inside its own script. Parser `legaia_mes::picker` (`scan_pickers` / `parse_picker_at` + `Picker::jump_target`); disc-gated regression `field_dialog_pickers_disc`.
+i.e. the displacement is relative to the **start of that option's own 2-byte entry**. Pinned empirically: across the four story-branch re-emissions of the `izumi` book menu, all four option entries shift by an identical per-emission delta (-518 / -564 / -549) - the signature of relative addressing to a moving site - and every decoded option across the field corpus jumps to a byte inside its own script. Parser `legaia_mes::picker` (`scan_pickers` / `parse_picker_at` + `Picker::jump_target`); disc-gated regression `field_dialog_pickers_disc`.
 
-The engine consumes this directly: `engine_core::dialog::OwnedDialogPanel::from_inline_dialog` attaches the picker when it immediately follows the box's prompt segment; `legaia-engine play-window` draws the option labels under the prompt with an Up/Down cursor, and a confirm press runs `OwnedDialogPanel::confirm_menu` — the engine port of `FUN_80038050`: it applies the chosen option's relative jump, resumes typing at that branch's reply segment, and re-attaches a nested menu if one follows.
+The engine consumes this directly: `engine_core::dialog::OwnedDialogPanel::from_inline_dialog` attaches the picker when it immediately follows the box's prompt segment; `legaia-engine play-window` draws the option labels under the prompt with an Up/Down cursor, and a confirm press runs `OwnedDialogPanel::confirm_menu` - the engine port of `FUN_80038050`: it applies the chosen option's relative jump, resumes typing at that branch's reply segment, and re-attaches a nested menu if one follows.
 
 For the **faithful** path, `engine_core::inline_dialogue` (`World::step_inline_dialogue`, the port of the dialog SM `FUN_80039B7C`) drives the whole inline interaction script through the real field VM: it executes the control bytecode between text segments (story-flag tests, `SET`/`CLEAR` flag ops, scene changes) and only pauses at each `0x1F` segment to show a box, so a chosen option's branch handler runs its side effects before the reply. It is opt-in via `World::use_vm_dialogue` (`legaia-engine play-window --vm-dialogue`).
 
@@ -196,5 +196,5 @@ mes stats-all  <PATH>             # event-type histogram across every message
 ## Related
 
 - [`dialog-font.md`](dialog-font.md) - proportional dialog font in VRAM.
-- [`reference/functions.md`](../reference/functions.md) - the four MES interpreter functions. (`FUN_8001FD44` is **not** one of them — it is the scene-change packet. Field dialogue has no dedicated opcode: it is the actor's inline interaction-script MES text, shown by the actor-dialog SM `FUN_80039b7c` + pager `FUN_801D84D0`, triggered by the field-interact op `0x3E` `op0 < 100` — see [`subsystems/script-vm.md` § Field dialogue](../subsystems/script-vm.md#field-dialogue-has-no-opcode).)
+- [`reference/functions.md`](../reference/functions.md) - the four MES interpreter functions. (`FUN_8001FD44` is **not** one of them - it is the scene-change packet. Field dialogue has no dedicated opcode: it is the actor's inline interaction-script MES text, shown by the actor-dialog SM `FUN_80039b7c` + pager `FUN_801D84D0`, triggered by the field-interact op `0x3E` `op0 < 100` - see [`subsystems/script-vm.md` § Field dialogue](../subsystems/script-vm.md#field-dialogue-has-no-opcode).)
 - [`subsystems/script-vm.md`](../subsystems/script-vm.md) - field-VM opcode reference. Note `0x3F` is the named scene-change, not a dialog op.

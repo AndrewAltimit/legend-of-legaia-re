@@ -7,11 +7,11 @@
 //! 1. The field-pack **magic** (`0x01059B84`) prefixes the 97-entry schema in
 //!    only a handful of entries, NOT 124.
 //! 2. The 97-entry schema's signature also appears in further entries **without**
-//!    the magic prefix — the magic is not load-bearing.
+//!    the magic prefix - the magic is not load-bearing.
 //! 3. The ~91 KB schema-indexed region that follows the schema is a
 //!    **byte-identical global constant block** across the scene clusters that
 //!    carry it (town01 and town0c agree byte-for-byte). It is therefore a
-//!    shared template, not the per-scene field data — the per-scene payload is
+//!    shared template, not the per-scene field data - the per-scene payload is
 //!    the preamble that precedes the block.
 //!
 //! Skips silently when `extracted/PROT/` is missing.
@@ -35,7 +35,7 @@ fn prot_dir() -> Option<PathBuf> {
 }
 
 /// Byte signature of the first five schema entries (`0x60, 0x61, 0x20E9,
-/// 0x4171, 0x61F9`) — enough to locate the schema with or without the magic.
+/// 0x4171, 0x61F9`) - enough to locate the schema with or without the magic.
 fn schema_sig() -> Vec<u8> {
     let mut v = Vec::new();
     for x in [0x60u32, 0x61, 0x20E9, 0x4171, 0x61F9] {
@@ -91,7 +91,7 @@ fn field_pack_magic_is_rare_and_region_is_a_global_constant() {
         }
     }
 
-    // The magic is rare — a single-digit count, nowhere near "124". (Pinning
+    // The magic is rare - a single-digit count, nowhere near "124". (Pinning
     // the exact corpus members keeps the doc honest if the disc changes.)
     assert!(
         magic_entries.len() <= 8,
@@ -102,7 +102,7 @@ fn field_pack_magic_is_rare_and_region_is_a_global_constant() {
         magic_entries.iter().any(|n| n.contains("town01")),
         "expected the town01 cluster among the magic-bearing entries: {magic_entries:?}"
     );
-    // More entries carry the schema signature than carry the magic — the magic
+    // More entries carry the schema signature than carry the magic - the magic
     // is not a required prefix of the block.
     assert!(
         schema_entries.len() > magic_entries.len(),
@@ -111,7 +111,7 @@ fn field_pack_magic_is_rare_and_region_is_a_global_constant() {
 
     // The full ~91 KB region is a global constant: every entry that carries a
     // FULL-length region must agree on the same fingerprint. (Truncated
-    // regions — entries whose asset region is shorter than the schema span —
+    // regions - entries whose asset region is shorter than the schema span -
     // are excluded by the get() bound above.)
     let fps: Vec<u64> = full_region_fp.values().copied().collect();
     assert!(
@@ -124,7 +124,7 @@ fn field_pack_magic_is_rare_and_region_is_a_global_constant() {
         fps.iter().all(|&f| f == first),
         "the schema-indexed region is NOT byte-identical across entries: {full_region_fp:?}"
     );
-    // It must span more than one scene cluster (town01 + at least one other) —
+    // It must span more than one scene cluster (town01 + at least one other) -
     // proving it is a shared template, not per-scene data.
     let clusters: std::collections::BTreeSet<String> = full_region_fp
         .keys()

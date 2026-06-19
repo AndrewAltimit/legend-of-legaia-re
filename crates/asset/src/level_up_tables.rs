@@ -4,12 +4,12 @@
 //! battle reward resolver `FUN_8004E568` at `0x8004F34C`) reads three static
 //! `SCUS_942.54` tables:
 //!
-//! - **`DAT_80076AF4`** — the per-level XP-delta table (u16 LE). The XP-to-next-
+//! - **`DAT_80076AF4`** - the per-level XP-delta table (u16 LE). The XP-to-next-
 //!   level threshold for a character at `level` is the running sum of the first
 //!   `level` deltas, scaled by the formula below.
-//! - **`DAT_800769CC`** — three 0x62-byte (`= MAX_LEVEL − 1`) per-stat growth
+//! - **`DAT_800769CC`** - three 0x62-byte (`= MAX_LEVEL − 1`) per-stat growth
 //!   curves, indexed by level.
-//! - **`DAT_80076918`** — a parameter block whose entries select which growth
+//! - **`DAT_80076918`** - a parameter block whose entries select which growth
 //!   curve each stat reads.
 //!
 //! The XP threshold derivation is ported and validated ([`xp_thresholds_from_scus`]
@@ -19,7 +19,7 @@
 //! structured ([`GrowthTables::char_params`]). The parameter block is a
 //! per-character record (stride [`GROWTH_PARAM_STRIDE`], one per Vahn / Noa /
 //! Gala) of [`GROWTH_STAT_COUNT`] contiguous 6-byte sub-records
-//! `{u16 start, u16 max, u8 jitter, u8 row}` — `start` is the character's base
+//! `{u16 start, u16 max, u8 jitter, u8 row}` - `start` is the character's base
 //! (level-1) stat, validated against the new-game starting template
 //! ([`crate::new_game`]): **Gala matches the template on all 8 stats**, Vahn/Noa
 //! on HP/MP/AGL. `max` is the level-99 ceiling and `row` selects one of the
@@ -30,7 +30,7 @@
 //! divisor normalizes the per-level term to reach `max` at level 99, and the
 //! core matches a single-level capture (Noa L2→L3) within the jitter band on
 //! all 8 stats. The engine does not yet drive level-up from it (wiring the
-//! retail `rand()` jitter needs the RNG stream for determinism) — see
+//! retail `rand()` jitter needs the RNG stream for determinism) - see
 //! `docs/subsystems/level-up.md` § Stat gains.
 //!
 //! No `SCUS_942.54` bytes are committed; callers pass an image read from the
@@ -61,7 +61,7 @@ pub const XP_FORMULA_SWITCH_LEVEL: usize = 0x11;
 /// pointer, `_DAT_8007B81C`. **Constant in retail**: a pure-Rust read of all
 /// 45 library save states finds `0x80070A2C` in every one (boot through
 /// battle through menus), so the "runtime-sourced" value is statically
-/// derivable — it always points at [`XP_CORRECTION_TABLE_VA`].
+/// derivable - it always points at [`XP_CORRECTION_TABLE_VA`].
 pub const XP_CORRECTION_PTR_GLOBAL: u32 = 0x8007_B81C;
 
 /// The slots-1/2 XP-threshold correction divisor table the
@@ -71,7 +71,7 @@ pub const XP_CORRECTION_PTR_GLOBAL: u32 = 0x8007_B81C;
 /// slot 1 (Noa) `threshold -= threshold * 0x14 / divisor`, slot 2 (Gala)
 /// `threshold += threshold * 0x14 / divisor`; slot 0 (Vahn) is uncorrected.
 /// The bytes are the head of the GTE sin LUT (`0x80070A2C..0x80072A2C`)
-/// sampled at a 0x28-byte stride — sin-table data doubling as a divisor
+/// sampled at a 0x28-byte stride - sin-table data doubling as a divisor
 /// curve (divisors run 125, 251, 376, … peaking ~3800 around L48, so the
 /// correction shrinks from ~16% at L1 toward ~0.5% mid-game and back up at
 /// the top end). Dump: `overlay_magic_level_up_801e9504.txt` lines for
@@ -89,7 +89,7 @@ pub const GROWTH_ROW_STRIDE: usize = 0x62;
 /// Number of distinct growth curves at [`GROWTH_CURVES_VA`].
 pub const GROWTH_ROW_COUNT: usize = 3;
 /// Size (bytes) of the parameter block at [`GROWTH_PARAM_VA`] (gap to the
-/// growth curves) — `GROWTH_CHAR_COUNT × GROWTH_PARAM_STRIDE`.
+/// growth curves) - `GROWTH_CHAR_COUNT × GROWTH_PARAM_STRIDE`.
 pub const GROWTH_PARAM_LEN: usize = 0xB4;
 
 /// Number of party characters with a growth-param record at [`GROWTH_PARAM_VA`]
@@ -206,7 +206,7 @@ pub fn xp_threshold_correction(threshold: u32, divisor: i16) -> u32 {
 ///
 /// Use [`Self::char_params`] for the structured per-character view. The exact
 /// byte → gain arithmetic ([`Self::level_gain_core`]) is decoded and validated
-/// byte-exact against a single-level capture (Noa L2→L3) — see
+/// byte-exact against a single-level capture (Noa L2→L3) - see
 /// `docs/subsystems/level-up.md` § Stat gains.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrowthTables {
@@ -237,7 +237,7 @@ pub fn growth_tables_from_scus(scus: &[u8]) -> Option<GrowthTables> {
 /// One per-stat growth-param sub-record from `DAT_80076918` (`FUN_801E9504`).
 ///
 /// Decoded from the contiguous 6-byte layout `{u16 start, u16 max, u8 jitter,
-/// u8 row}`. `start` is the character's base (level-1) value for the stat —
+/// u8 row}`. `start` is the character's base (level-1) value for the stat -
 /// validated against the new-game starting template ([`crate::new_game`]):
 /// Gala's record matches the template on **all 8** stats, Vahn/Noa on HP/MP/AGL
 /// (their late-join templates are lightly retuned).
@@ -300,7 +300,7 @@ impl GrowthTables {
     /// "overshoots ~4.8x" reading was an artifact of the unreliable multi-level
     /// corpus observations, not this formula. See `docs/subsystems/level-up.md`
     /// § Stat gains. (Retail adds the `rand() % (2×jitter+1) − jitter` spread on
-    /// top; the engine does not yet drive level-up from this — wiring needs the
+    /// top; the engine does not yet drive level-up from this - wiring needs the
     /// jitter RNG stream for replay determinism.)
     pub fn level_gain_core(&self, p: &StatGrowthParam, level: usize) -> Option<u32> {
         Some(self.level_gain_core_raw(p, level)?.max(1))

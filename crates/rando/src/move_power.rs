@@ -5,14 +5,14 @@
 //! [`legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET`]) holds 44
 //! 26-byte records; the damage kernel reads each record's `+0x00` halfword as
 //! the move's **power** (the `rand % ((power >> shift) + 1)` roll modulus). This
-//! is the *special-attack* power space — enemy specials and Seru-magic, NOT
+//! is the *special-attack* power space - enemy specials and Seru-magic, NOT
 //! party Tactical Arts (those take power from the per-strike art-record byte).
 //!
 //! Only the `+0x00` power halfword moves: [`StatMode::Shuffle`] permutes it
 //! across the 44 records (the multiset of move powers is preserved), while
 //! [`StatMode::Random`] draws each from that pool. The other 24 bytes of each
-//! record — strike geometry, phase timing, impact-effect / trail-texpage / sound
-//! cue, contact / launch effect lists — are left untouched, so every move keeps
+//! record - strike geometry, phase timing, impact-effect / trail-texpage / sound
+//! cue, contact / launch effect lists - are left untouched, so every move keeps
 //! its own animation and effects; only how hard it hits changes. PROT 0898 is
 //! stored raw (no LZS), so the write is strictly same-size and in place.
 

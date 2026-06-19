@@ -33,13 +33,13 @@ pub struct SuperArt {
 impl SuperArt {
     /// The sequence of **named-art** action constants in this Super's [`find`]
     /// pattern, with the `0x19` starters and the interleaved connector
-    /// directions stripped out — e.g. Tri-Somersault's
+    /// directions stripped out - e.g. Tri-Somersault's
     /// `find = [19 27 0F 19 1F 0E 19 27]` yields `[0x27, 0x1F, 0x27]`.
     ///
     /// The connector direction after each art (the `0F` / `0E` here) is
-    /// **combo-specific** — the same art appears with different connectors
+    /// **combo-specific** - the same art appears with different connectors
     /// across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but
-    /// `0E` in Power Slash) — so it cannot be reconstructed from each art's own
+    /// `0E` in Power Slash) - so it cannot be reconstructed from each art's own
     /// command string. The exact runtime queue-builder that emits those
     /// connectors (`ctx[+0x274]`) is unpinned. This art-only projection is the
     /// part of the pattern that *is* pinned, and is what the live Arts submenu
@@ -135,7 +135,7 @@ impl SuperMatcher {
     }
 
     /// Find the Super Art whose **art-only** sequence ([`SuperArt::art_sequence`])
-    /// matches the tail of a *recognized* art chain — i.e. the player chained
+    /// matches the tail of a *recognized* art chain - i.e. the player chained
     /// these named arts in this order, ending on the Super's last art.
     ///
     /// This is the connector-abstracted sibling of [`Self::try_trigger_at_tail`]:

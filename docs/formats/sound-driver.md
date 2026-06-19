@@ -64,7 +64,7 @@ The sound-side chunk payloads are now pinned from the disc - the pack is a
 | Chunk type | Payload | Magic |
 |---|---|---|
 | `0` | VAB **header** section | `pBAV` (`0x5641_4270` LE) |
-| `1` | VAB **sample** section (SPU-ADPCM / VAG waveform pool) | — (raw samples) |
+| `1` | VAB **sample** section (SPU-ADPCM / VAG waveform pool) | - (raw samples) |
 | `2` | **SEQ** (the stream terminator) | `pQES` |
 
 The decisive invariant: **type-0 + type-1 reconstitute one contiguous VAB**

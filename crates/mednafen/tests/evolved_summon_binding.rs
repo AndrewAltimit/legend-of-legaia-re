@@ -7,12 +7,12 @@
 //! `spell_id - 0x79`, with the predicted stager (`extraction = loader_id + 895`)
 //! byte-resident at the slot-B link base `0x801F69D8`. The evolved-Seru block
 //! between them (`summon_overlay::EVOLVED_SUMMON_STAGER_PROT`, 914..923) was
-//! only *statically* mapped — the entries parse as stagers, but no mid-cast
+//! only *statically* mapped - the entries parse as stagers, but no mid-cast
 //! state had pinned the per-id binding.
 //!
 //! Eight catalogued mid-cast states pin eight of the ten legs with the same
-//! evidential shape — `0x8C..=0x8F` → `914..=917` and `0x92..=0x95` →
-//! `920..=923` — confirming the `(id − 0x81) + 903` arithmetic continues
+//! evidential shape - `0x8C..=0x8F` → `914..=917` and `0x92..=0x95` →
+//! `920..=923` - confirming the `(id − 0x81) + 903` arithmetic continues
 //! through the gap exactly as the bracket-pinned base and high blocks
 //! predicted. Both `0x4000` render-mode-node carriers (`0x8E → 916` Aluru,
 //! `0x93 → 921` Iota) are among them, confirming those carriers are player

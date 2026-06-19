@@ -12,9 +12,9 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 ## Contents
 
 - [Overlay structure](#overlay-structure) · [Key functions](#key-functions) · [Globals used](#globals-used)
-- [Sub-screen function pointer table](#sub-screen-function-pointer-table) — [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [per-character status preview](#per-character-status-preview-fun_801d9c14-sub-screen-0x14)
+- [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [per-character status preview](#per-character-status-preview-fun_801d9c14-sub-screen-0x14)
 - [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
-- [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) — [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned)
+- [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned)
 - [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
 
 ## Overlay structure
@@ -238,7 +238,7 @@ unrelated regions, and **the SC save/load path does not sync between them**:
 
 | Store | Address | Size | Persists in SC? | Touched by save/load |
 |---|---|---|---|---|
-| Wide bitmap | RAM `0x80085600..0x80085800` | 512 B (4096 bits) | Yes — at SC offset `0x14C0` | Yes, via the bulk RAM→card transfer at `FUN_8001A8B0(0x80084340, card, ...)` (live RAM region containing the bitmap is part of the linear SC body) |
+| Wide bitmap | RAM `0x80085600..0x80085800` | 512 B (4096 bits) | Yes - at SC offset `0x14C0` | Yes, via the bulk RAM→card transfer at `FUN_8001A8B0(0x80084340, card, ...)` (live RAM region containing the bitmap is part of the linear SC body) |
 | Scratchpad word | RAM `0x1F800394` | 4 B (32 bits) | No | No |
 
 The scratchpad word `_DAT_1F800394` is the field-VM transient that opcodes
@@ -262,7 +262,7 @@ written by the script-VM bit ops. No retail code path copies between
 In `legaia_save::SaveExt`, `story_flag_bits` mirrors the wide bitmap and
 round-trips through the LGSF v3 extension block; `story_flags` mirrors the
 scratchpad word and round-trips through the LGSF v1 prelude. The two fields
-are independently populated — that matches retail.
+are independently populated - that matches retail.
 
 ## Retail SC block layout
 
@@ -280,9 +280,9 @@ located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 | `0x0080` | 128 | icon pixels (16×16 @ 4bpp) |
 | `0x0100` | 256 | (duplicate icon frame or padding) |
 | `0x0200` | 0x3C8 | display/global header (see below) |
-| `0x05C8` | 0x414 × 4 | character records (Vahn, Noa, Gala, Terra) — base `game+0x3C8` = live RAM `0x80084708` |
-| `0x14C0` | 0x200 | story-flag bitmap (mirrors RAM `0x80085600..0x80085800`) — overlaps record [3]'s tail |
-| `0x1818` | 0x90 | inventory array — 72 × `(item_id: u8, count: u8)` (mirrors RAM `0x80085958..0x800859E8`) — overlaps record [3]'s tail |
+| `0x05C8` | 0x414 × 4 | character records (Vahn, Noa, Gala, Terra) - base `game+0x3C8` = live RAM `0x80084708` |
+| `0x14C0` | 0x200 | story-flag bitmap (mirrors RAM `0x80085600..0x80085800`) - overlaps record [3]'s tail |
+| `0x1818` | 0x90 | inventory array - 72 × `(item_id: u8, count: u8)` (mirrors RAM `0x80085958..0x800859E8`) - overlaps record [3]'s tail |
 
 **Display header** (`0x0200..0x05C7`):
 
@@ -300,7 +300,7 @@ verbatim dump of the resident save state, so the record array's base is `game+0x
 internal offset `+0x2A7` (`legaia_save::NAME_OFFSET`), so the visible "Vahn"/"Noa"/"Gala"/
 "Terra" strings sit at `game+0x66F + n*0x414` (SC `+0x86F` for slot 0). Four roster slots
 exist; the array runs into the global story-flag / inventory region, so slot 3 (Terra)'s
-tail (record offset ≥ `+0x2BC`) aliases the story-flag bitmap — her meaningful fields
+tail (record offset ≥ `+0x2BC`) aliases the story-flag bitmap - her meaningful fields
 (name, live stats at `+0x104`, RecordStats at `+0x11C`) sit before that boundary. Empty
 slots are all-zero; `read_retail_char_records` stops at the first all-zero record.
 
@@ -318,7 +318,7 @@ N blue SLOT pills on top of the dimmed title art. Asset sources:
 |---|---|---|
 | Title art behind (wordmark, NEW GAME / CONTINUE, copyright) | `PROT 0888` title TIM | Same atlas the title menu samples; rendered dimmed during SaveSelect. |
 | **`Load` panel TIM + CLUT** | **`PROT.DAT[0x018E0]` system-UI sprite sheet, CLUT row 2** | 4bpp 256x192 TIM in the unindexed pre-`init_data` PROT.DAT gap. CLUT block uploads to VRAM `(fb_x=0, fb_y=511)`; the panel-specific row (row 2 of the 16x16 CLUT block) uploads to VRAM `(32, 511)`. Byte-confirmed: the 32-byte CLUT signature appears at exactly one place in the disc corpus (PROT.DAT offset 0x1934). Constants exported by `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. |
-| `Load` panel **9-slice tile geometry** | **PINNED — engine renders byte-perfect** | Retail composes the 81x29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. Per-tile rects below; all exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and rendered by `legaia_engine_render::save_select_chrome_draws_for`. No interior fill sprite is drawn — the "marbled blue" look is the dimmed title art bleeding through the empty middle of the 9-slice frame. |
+| `Load` panel **9-slice tile geometry** | **PINNED - engine renders byte-perfect** | Retail composes the 81x29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. Per-tile rects below; all exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and rendered by `legaia_engine_render::save_select_chrome_draws_for`. No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the 9-slice frame. |
 | **"Load" text glyphs** | **PINNED to the dialog font (`legaia_font`)** | Drawn from the dialog font, not a menu-glyph atlas. Details in [Load-text glyph decode](#load-text-glyph-decode) below. |
 | `SLOT 1` pill | `PROT 0899 + 0x16908 (33, 97, 45, 15)` decoded with CLUT 7 | Saturated blue baked label; byte-equal to retail. |
 | `SLOT 2` pill | `PROT 0899 + 0x16908 (33, 113, 45, 15)` decoded with CLUT 7 | Stacked directly below the SLOT 1 pill in the source atlas. |
@@ -330,20 +330,20 @@ The `Load` text glyphs are **PINNED to the dialog font (`legaia_font`)**:
 
 - Retail emits 4 GP0 `0x64` textured-sprite primitives at dst stage `(35, 13)`,
   `(42, 13)`, `(48, 13)`, `(55, 13)`, each `14x15`, sampling **tpage 14** (VRAM
-  `(896, 0)` — the dialog font's runtime VRAM upload) with CLUT @ VRAM `(208, 510)`.
+  `(896, 0)` - the dialog font's runtime VRAM upload) with CLUT @ VRAM `(208, 510)`.
 - Source UVs `(192,32)`, `(240,64)`, `(16,64)`, `(64,64)` map to `L`/`o`/`a`/`d`
   via `col = (ascii − 0x20) % 16`, `row = (ascii − 0x20) / 16`, `x = col * 16`,
   `y = row * 16` (retail uploads the dialog font with a **16×16 cell pitch**, not
-  the `14×15` cell pitch used in `extracted/font/dialog_font_atlas.png` — same
+  the `14×15` cell pitch used in `extracted/font/dialog_font_atlas.png` - same
   glyphs, different packing).
-- CLUT entry `[15]` = `(206, 206, 206)` — exactly the bright "Load" pixel colour
+- CLUT entry `[15]` = `(206, 206, 206)` - exactly the bright "Load" pixel colour
   in the framebuffer. Per-glyph dst deltas (`+7, +6, +7, +6`) are byte-equal to
   `legaia_font::widths[c] + INTER_GLYPH_PAD = 1`.
 - Engine port: `legaia_engine_render::save_select_draws_for` now emits the title
   at `SAVE_SELECT_TITLE_POS` with `SAVE_SELECT_TITLE_COLOR` tint over the
   whitewashed dialog-font stencil (see `legaia_font::Font::load_paths`).
 - The earlier "menu-glyph atlas at `PROT.DAT[0x11218]` CLUT row 13" pin is
-  **falsified** — that atlas has zero glyph indices at all four documented rects
+  **falsified** - that atlas has zero glyph indices at all four documented rects
   (`scripts/pcsx-redux/verify_menu_glyph_load_rects.py` confirms; left here as a
   negative finding).
 
@@ -470,7 +470,7 @@ the focused slot.
 ### Slide-in animation (vertical)
 
 The info panel has its own bespoke vertical slide-in, distinct from
-the FUN_801E1C1C primitive — the primitive can only animate ONE
+the FUN_801E1C1C primitive - the primitive can only animate ONE
 element, while the info panel propagates a single `panel_y` across
 15+ separate sprite/text emit calls. Inlined math at the function
 entry:
@@ -483,7 +483,7 @@ local_34 = iVar4 + 0x18a;   // panel chrome top-y
 ```
 
 `local_34` ramps from **394 (off-screen below)** at `anim_t = 0`
-down to **138 (parked under load chrome)** at `anim_t = 0x1000` —
+down to **138 (parked under load chrome)** at `anim_t = 0x1000` -
 the SIXTH save-UI slide timer (after the four catalogued for the
 primitive). The timer `DAT_801ef1a0` is held to 0 while
 `DAT_801ef160` (NowChecking) is up, then increments once the
@@ -499,7 +499,7 @@ NowChecking dialog has retracted.
 | `2` | "Not a Legend of Legaia save." (invalid save in this slot). |
 | `3` | "Able to save." / "No data" (save mode). |
 | `4` | "Return" prompt. |
-| `100` | Blank panel — forced when `DAT_801ef160 != 0` (NowChecking dialog up) or `_DAT_801f0204 - 0xC < 2`. |
+| `100` | Blank panel - forced when `DAT_801ef160 != 0` (NowChecking dialog up) or `_DAT_801f0204 - 0xC < 2`. |
 
 ### Title row layout (mode 1, valid save)
 
@@ -563,7 +563,7 @@ SlotPreview / Confirm (matching retail's two-stage flow).
 `INFO_PANEL_PARKED_Y = 138` drive the interpolation. The renderer
 functions `slot_info_panel_draws_for` (chrome + portrait) and
 `slot_info_panel_text_draws_for` (text rows) now take a
-`panel_y_offset: i32` parameter — caller-provided delta from the
+`panel_y_offset: i32` parameter - caller-provided delta from the
 parked y. The shell driver
 (`legaia-engine play-window --boot-ui`) wires this via
 `info_panel_slide_offset(session)`. All per-element offset constants
@@ -575,7 +575,7 @@ the parked-y constant.
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Save record](../formats/save-record.md) ·
 [Inn](inn.md) ·
 [Shop UI](shop.md)

@@ -2,8 +2,8 @@
 //! PROT 0900 screen-WIDGET path, or a move-VM part-actor?
 //!
 //! Background. Unlike the player summons and the Cort/Delilas/Zeto boss
-//! specials — which page a per-spell *stager* into slot B and seat its part
-//! records (`enemy_stager_binding`, `summon_render_mode_node`) — the enemy
+//! specials - which page a per-spell *stager* into slot B and seat its part
+//! records (`enemy_stager_binding`, `summon_render_mode_node`) - the enemy
 //! Gimard "Fire Tail" mid-cast frames hold loader-B current-id `5` →
 //! extraction PROT 0900, the move-FX / screen-widget module (the same overlay
 //! whose mask/sprite/panel/letterbox widget family the ending sequences drive
@@ -12,7 +12,7 @@
 //!
 //! FINDING (both catalogued frames, `battle_gimard_tail_fire_a/_b`):
 //!
-//!   - PROT 0900 IS slot-B resident — byte-exact at the residency pin
+//!   - PROT 0900 IS slot-B resident - byte-exact at the residency pin
 //!     (file `0x1628` ↔ VA `0x801F8000`, the move-FX code region; the whole-
 //!     file figure is lower only because of the over-read tail + mutated bss).
 //!   - The 0900 screen-widget family has **zero** live actors. Fire Tail is
@@ -20,12 +20,12 @@
 //!   - The live effect is a **single** move-VM part-actor in the part pool
 //!     `DAT_801C90F0`, ticked per frame by the SCUS actor tick
 //!     **`FUN_80021DF4`** (`actor[+0xC]`; the tick that steps the move VM
-//!     `FUN_80023070`) — a live capture of that render-tail driver.
+//!     `FUN_80023070`) - a live capture of that render-tail driver.
 //!   - That part's `[i16 model_sel][u16 flags][move-VM bytecode @+4]` record
 //!     (`actor[+0x48]`) sits in the **battle overlay (0898)** resident data
 //!     (`0x801F5xxx`, below the 0900 slot-B link base `0x801F69D8`), not in a
 //!     0900 record. `model_sel` reads `-1` (transform/pivot node) / `5`
-//!     (library mesh `DAT_8007C018[5 + base]`) — the summon part-record format.
+//!     (library mesh `DAT_8007C018[5 + base]`) - the summon part-record format.
 //!
 //! Net: the enemy Fire Tail renders through a move-VM part-actor sourced from
 //! battle-overlay data and the generic SCUS part tick, while PROT 0900 is
@@ -182,11 +182,11 @@ fn firetail_runs_move_vm_part_not_widget_path() {
             "{label}: PROT 0900 not byte-exact at the residency pin ({pinmatch}/{win})",
         );
 
-        // (3) Zero live 0900 screen-widgets — Fire Tail is not the widget path.
+        // (3) Zero live 0900 screen-widgets - Fire Tail is not the widget path.
         let widgets = live_widgets(ram);
         assert!(
             widgets.is_empty(),
-            "{label}: {} live 0900 widget(s) — Fire Tail unexpectedly drives the widget path",
+            "{label}: {} live 0900 widget(s) - Fire Tail unexpectedly drives the widget path",
             widgets.len(),
         );
 
@@ -215,7 +215,7 @@ fn firetail_runs_move_vm_part_not_widget_path() {
             );
             assert!(
                 !(SUMMON_OVERLAY_LINK_BASE..slotb_end).contains(&rec),
-                "{label}: slot {k} record 0x{rec:08X} lands in the 0900 slot-B window — \
+                "{label}: slot {k} record 0x{rec:08X} lands in the 0900 slot-B window - \
                  Fire Tail DOES seat a 0900 record; re-open the thread",
             );
 
@@ -234,7 +234,7 @@ fn firetail_runs_move_vm_part_not_widget_path() {
         }
         assert!(
             live_parts >= 1,
-            "{label}: no live part-actor — expected the Fire Tail move-FX part",
+            "{label}: no live part-actor - expected the Fire Tail move-FX part",
         );
 
         eprintln!("{label}: PROT 0900 resident, 0 widgets, {live_parts} move-VM part(s)");

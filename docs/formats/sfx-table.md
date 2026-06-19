@@ -18,18 +18,18 @@ covers ids `>= 0x200`.
 
 The runtime readers gate on `sound_id < 0x200`, but that is an upper **bound**,
 not the table size: only ids `0x00..=0x63` are real descriptors (every one is
-populated — voice count `1..=3`, trailing bytes zero). Id `0x64` onward is
+populated - voice count `1..=3`, trailing bytes zero). Id `0x64` onward is
 unrelated rodata, starting with the `\PSX.EXE` dev-path string, so the table's
 true extent is 100 entries.
 
 | Offset | Name | Field |
 |---|---|---|
-| `+0` | `p` | program / VAG index — selects the loaded bank's program-attr entry |
+| `+0` | `p` | program / VAG index - selects the loaded bank's program-attr entry |
 | `+1` | `t` | tone / ADSR-region base; a multi-voice cue uses consecutive regions (`+i` per voice) |
 | `+2` | `l` | note-level voice attribute (MIDI-ish, clusters near `60`) |
 | `+3` | `n` | low 5 bits = **voice count**; bit `0x20` = sustained / continuous mode |
 | `+4` | `id` | category / mixer-channel index (selects a column in the channel-volume tables `DAT_80091510` / `DAT_80091513`) |
-| `+5..7` | — | no observed runtime reader (zero across the whole table) |
+| `+5..7` | - | no observed runtime reader (zero across the whole table) |
 
 The field names are the designer's own, recovered from the runtime debug format
 string `"setbl p:%d t:%d l:%d n:%d id:%d"`.
@@ -38,32 +38,32 @@ string `"setbl p:%d t:%d l:%d n:%d id:%d"`.
 
 Two functions read the table, both indexing `&DAT_8006F198 + id*8`:
 
-- **`FUN_800250D4(sound_id, voice)`** — the per-actor SFX trigger (from the actor
+- **`FUN_800250D4(sound_id, voice)`** - the per-actor SFX trigger (from the actor
   tick `FUN_80021DF4`). Uses only the voice count (`n & 0x1F`), `SpuKeyOn`-ing
   (`FUN_800653C8`) that many consecutive voices.
-- **`FUN_80016B6C`** — the per-frame SFX cue-ring drainer. It walks the 4-entry
+- **`FUN_80016B6C`** - the per-frame SFX cue-ring drainer. It walks the 4-entry
   ring `DAT_8007B6D8` (the same ring `FUN_8004FCC8` and the move-power `+0x0d`
   sound cues write into), then for each cue programs `voice_count` voices via
-  `FUN_80065034` — the libsnd `SpuSetVoiceAttr` analogue that takes program
+  `FUN_80065034` - the libsnd `SpuSetVoiceAttr` analogue that takes program
   (`+0`), note/region (`+1` `+i`), attr (`+2`), and the channel volume picked by
   category (`+4`).
 
 The SPU programming itself (`FUN_80065034` → `SpuSetVoiceAttr`) is libsnd and out
-of clean-room scope — the engine has its own SPU. What is portable is the static
+of clean-room scope - the engine has its own SPU. What is portable is the static
 **data**.
 
-## Program bank — the active scene's music VAB
+## Program bank - the active scene's music VAB
 
 The descriptors' `program` / `tone` fields index a VAB, and that VAB is **not a
-dedicated SFX master** — it is the per-scene [`scene_vab_stream`](scene-bundles.md)
+dedicated SFX master** - it is the per-scene [`scene_vab_stream`](scene-bundles.md)
 bank the BGM sequencer has open. `FUN_80065034` reads the libsnd "current bank"
 globals: `_DAT_801ce33c` (VAB-header base), `_DAT_801ce334` (`ProgAtr` at `+0x20`,
-stride `0x10`), `_DAT_801ce340` (`VagAtr` at `+0x820`, stride `0x20`) — so a
+stride `0x10`), `_DAT_801ce340` (`VagAtr` at `+0x820`, stride `0x20`) - so a
 sound effect plays through the low programs of the same bank the music does.
 
 Pinned from the save-state catalogue:
 
-- The bank **varies per scene** — across catalogued captures the open bank is 13
+- The bank **varies per scene** - across catalogued captures the open bank is 13
   distinct VABs (used-program counts ranging `1..=16`).
 - For a `music_01`-scene state the live bank is **byte-identical to the disc**
   `music_01` VAB ([`field-pack`](field-pack.md)-style stream, PROT 1004 at
@@ -72,7 +72,7 @@ Pinned from the save-state catalogue:
   (`ProgAtr +8..15`) is runtime-patched to the RAM `VagAtr` address.
 
 Because scene banks differ in size, a cue resolves only where its `program` /
-`tone` exists — SFX availability is **scene-dependent**, not a guaranteed
+`tone` exists - SFX availability is **scene-dependent**, not a guaranteed
 reservation. The engine therefore needs no separate SFX bank load:
 `SfxBank::from_descriptors(...)` (this table) plays through the scene's
 already-loaded BGM `VabBank` via `SfxBank::play_one_shot(spu, vab)`.
@@ -102,6 +102,6 @@ the disc bank; the bank varies per scene). CLI: `asset sfx-table <SCUS> [--json]
 
 ## See also
 
-- [`subsystems/audio.md`](../subsystems/audio.md) — the SFX bank + scheduler and the per-actor SFX trigger.
-- [Move-power table](move-power.md) — the `+0x0d` sound cue that feeds this table through `FUN_8004FCC8`.
-- [VAB sound bank](vab.md) — the program / tone data the `p` / `t` fields index.
+- [`subsystems/audio.md`](../subsystems/audio.md) - the SFX bank + scheduler and the per-actor SFX trigger.
+- [Move-power table](move-power.md) - the `+0x0d` sound cue that feeds this table through `FUN_8004FCC8`.
+- [VAB sound bank](vab.md) - the program / tone data the `p` / `t` fields index.

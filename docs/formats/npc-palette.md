@@ -8,7 +8,7 @@ battle-init walker (no special "hue-ramp generator" function exists).
 ## Layout
 
 Each contributing TIM has a CLUT block with `(fb_x, fb_y, w, h) = (0,
-479, 256, 1)` — a 256-color row spanning fb_x=0..256, which carves
+479, 256, 1)` - a 256-color row spanning fb_x=0..256, which carves
 into sixteen 16-color slots (slot N at fb_x = N*16..N*16+16). Field
 NPC TMDs sample these slots via CBA cells `0x77C0..0x77CF`.
 

@@ -6,7 +6,7 @@
 
 <section class="doc-section" id="confidence">
   <h2>Confidence</h2>
-  <p><strong>Inferred — structural reading.</strong> Compact-table layout pinned from a captured FMV-overlay-resident save. Runtime FMV-state table layout lifted from the str_fmv overlay's data section, cross-validated against the play loop's offset reads. The retail trigger range (<code>0..=8</code>) is pinned by the per-STR FMV trigger corpus (nine save states, <code>_DAT_8007BA78 ∈ 0..=8</code>).</p>
+  <p><strong>Inferred - structural reading.</strong> Compact-table layout pinned from a captured FMV-overlay-resident save. Runtime FMV-state table layout lifted from the str_fmv overlay's data section, cross-validated against the play loop's offset reads. The retail trigger range (<code>0..=8</code>) is pinned by the per-STR FMV trigger corpus (nine save states, <code>_DAT_8007BA78 ∈ 0..=8</code>).</p>
 </section>
 
 <section class="doc-section" id="compact-table">
@@ -38,7 +38,7 @@
       <tr><td><code>+0x08C</code></td><td><code>\MOV\MV1.STR;1</code></td></tr>
     </tbody>
   </table>
-  <p>Three of the nine paths (<code>\DATA\MOV.STR;1</code>, <code>\DATA\MOV15.STR;1</code>, <code>\MOV\MV1A.STR;1</code>) are dev-only — the corresponding files are not on the retail disc.</p>
+  <p>Three of the nine paths (<code>\DATA\MOV.STR;1</code>, <code>\DATA\MOV15.STR;1</code>, <code>\MOV\MV1A.STR;1</code>) are dev-only - the corresponding files are not on the retail disc.</p>
 </section>
 
 <section class="doc-section" id="runtime-table">
@@ -48,8 +48,8 @@
 0x801CEC9C: sll  v0, v0, 6              ; v0 = fmv_id * 64
 0x801CECA0: jal  FUN_801CF098
 0x801CECA4:  addu a1, v0, 0x801D0A6C    ; param_2 = &amp;dispatch_table[fmv_id]</code></pre>
-  <p>Each slot's leading 32-byte record is <code>[u32 path_ptr, u32 scale_flag, u32 start_frame, u32 end_frame, .., u32 (8), u32 width, u32 height]</code>. The play loop opens the file at <code>path_ptr</code>, seeks <code>(start_frame − 1) × 10</code> sectors in (the 15 fps cadence), and reads to <code>end_frame</code> — so one <code>MVn.STR</code> file carries several cutscenes by frame range.</p>
-  <p>This is <strong>static initialised data</strong> in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc — <code>legaia_asset::fmv_dispatch</code> reads it (per-<code>fmv_id</code> movie + frame range + dimensions), pinned by the disc-gated <code>fmv_dispatch_real</code> test, and the windowed player uses the frame range to seek to the right segment (<code>cutscene_av::fmv_segment_window</code>).</p>
+  <p>Each slot's leading 32-byte record is <code>[u32 path_ptr, u32 scale_flag, u32 start_frame, u32 end_frame, .., u32 (8), u32 width, u32 height]</code>. The play loop opens the file at <code>path_ptr</code>, seeks <code>(start_frame − 1) × 10</code> sectors in (the 15 fps cadence), and reads to <code>end_frame</code> - so one <code>MVn.STR</code> file carries several cutscenes by frame range.</p>
+  <p>This is <strong>static initialised data</strong> in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc - <code>legaia_asset::fmv_dispatch</code> reads it (per-<code>fmv_id</code> movie + frame range + dimensions), pinned by the disc-gated <code>fmv_dispatch_real</code> test, and the windowed player uses the frame range to seek to the right segment (<code>cutscene_av::fmv_segment_window</code>).</p>
   <p><code>_DAT_8007BA78</code> is a <code>s16</code> written by the field-VM FMV-trigger op (<code>0x4C 0xE2 lo hi …</code>); see the <a href="../subsystems/cutscene.html#fmv-trigger-op">cutscene subsystem</a> for the full opcode trace.</p>
 
   <h3>Authoritative mapping</h3>
@@ -65,7 +65,7 @@
       <tr><td>6..=11</td><td><code>\DATA\MOV.STR;1</code></td><td>dev-only path (file not on retail disc)</td></tr>
     </tbody>
   </table>
-  <p><strong><code>MV2.STR</code> and <code>MV5.STR</code> exist on the retail disc but are never referenced by any FMV slot</strong> — the FMV play engine never opens them. The same mapping ships in <code>legaia_engine_core::cutscene::fmv_index_to_str_filename</code> and is cross-checked byte-for-byte against the disc decode.</p>
+  <p><strong><code>MV2.STR</code> and <code>MV5.STR</code> exist on the retail disc but are never referenced by any FMV slot</strong> - the FMV play engine never opens them. The same mapping ships in <code>legaia_engine_core::cutscene::fmv_index_to_str_filename</code> and is cross-checked byte-for-byte against the disc decode.</p>
 </section>
 
 <section class="doc-section" id="trigger-corpus">
@@ -78,7 +78,7 @@
     <li>Active scene = <code>map01</code> (one of the seven mid-game FMV-trigger field scenes)</li>
     <li><code>recover_base()</code> = <code>0x80139530</code> (<code>map01</code>'s field-pack base)</li>
   </ul>
-  <p>The <code>0x4C 0xE2 lo hi</code> byte sequence does NOT appear in the field-pack RAM region for any save in the corpus — the saves were generated by debug-menu-driven trigger paths, NOT by stepping the field VM through a per-scene FMV trigger op. The corpus pins the trigger-side state across the full <code>0..=8</code> range but does not disambiguate which fmv_id each of the seven mid-game scenes' field-VM bytecode writes at runtime.</p>
+  <p>The <code>0x4C 0xE2 lo hi</code> byte sequence does NOT appear in the field-pack RAM region for any save in the corpus - the saves were generated by debug-menu-driven trigger paths, NOT by stepping the field VM through a per-scene FMV trigger op. The corpus pins the trigger-side state across the full <code>0..=8</code> range but does not disambiguate which fmv_id each of the seven mid-game scenes' field-VM bytecode writes at runtime.</p>
   <p>The corpus is codified at <code>legaia_engine_core::capture_observations::cutscene_trigger_corpus</code> and exercised by the disc-gated test <code>cutscene_trigger_corpus_pins_fmv_id_across_nine_saves</code>.</p>
 </section>
 

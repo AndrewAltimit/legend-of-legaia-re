@@ -7,7 +7,7 @@ load-screen "Load" title sampled the menu-glyph atlas at the four
 documented rects with CLUT row 13. This script reads PROT.DAT
 directly, parses the menu-glyph TIM at offset 0x11218, and dumps the
 raw 4bpp pixel indices at each documented rect. All four rects come
-back as zero (transparent) indices — the menu-glyph atlas does not
+back as zero (transparent) indices - the menu-glyph atlas does not
 carry the Load title glyphs at those positions in any CLUT row.
 
 The correct source is the dialog font at runtime VRAM tpage 14
@@ -64,7 +64,7 @@ def main() -> int:
         if opaque != 0:
             failures += 1
     if failures > 0:
-        print("\nUNEXPECTED: rects carry opaque pixels — the menu-glyph "
+        print("\nUNEXPECTED: rects carry opaque pixels - the menu-glyph "
               "atlas may have changed, or you're pointing at a different "
               "PROT.DAT region.")
         return 1

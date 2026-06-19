@@ -18,7 +18,7 @@ fn str_overlay() -> Option<Vec<u8>> {
         if !d.is_dir() {
             continue;
         }
-        // PROT 0970 — the STR/MDEC cutscene overlay.
+        // PROT 0970 - the STR/MDEC cutscene overlay.
         let entry = std::fs::read_dir(&d)
             .ok()?
             .flatten()

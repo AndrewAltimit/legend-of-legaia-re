@@ -173,7 +173,7 @@ impl World {
         // Hydrate the level-up tracker's per-slot level from the loaded
         // character records. Without this, the tracker keeps its default
         // 1-per-slot level even when the saved record has the party at
-        // level 30 — the next level-up grant would silently roll the
+        // level 30 - the next level-up grant would silently roll the
         // party back to level 1 + N.
         for (slot, rec) in self.roster.members.iter().enumerate() {
             if slot < self.level_up_tracker.level.len() {

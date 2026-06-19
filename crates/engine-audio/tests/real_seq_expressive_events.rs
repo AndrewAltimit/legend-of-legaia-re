@@ -1,5 +1,5 @@
 //! Disc-gated corpus sweep: does ANY retail Legaia SEQ carry expressive
-//! channel events — MIDI pitch-bend (`0xEn`) or aftertouch (`0xDn`/`0xAn`)?
+//! channel events - MIDI pitch-bend (`0xEn`) or aftertouch (`0xDn`/`0xAn`)?
 //!
 //! Finding: the retail BGM corpus **does** use pitch-bend (hundreds of `0xEn`
 //! events, concentrated in a handful of music banks) but uses **no** channel
@@ -122,7 +122,7 @@ fn retail_seq_uses_pitch_bend_but_no_aftertouch() {
 }
 
 /// Controller (`0xBn`) usage census across the whole SEQ corpus. The
-/// sequencer acts on a small set of control changes — CC7 (channel volume),
+/// sequencer acts on a small set of control changes - CC7 (channel volume),
 /// CC10 (pan), and CC99 (the NRPN-style loop markers). This sweep pins what
 /// the retail score actually emits so the "are we missing a modulation
 /// source" question stays answered from data:
@@ -131,9 +131,9 @@ fn retail_seq_uses_pitch_bend_but_no_aftertouch() {
 ///   30 (Loop Forever); there is no third value the loop handler would drop.
 /// - CC6 (Data Entry) is a constant 127 init the score emits ~once per file;
 ///   it varies nothing, so ignoring it is correct (it is not, e.g., a
-///   per-track pitch-bend-range parameter — that would not be constant).
+///   per-track pitch-bend-range parameter - that would not be constant).
 /// - Expression (CC11) and reverb-depth (CC91) never appear, so per-channel
-///   volume swells and per-cue reverb sends are NOT carried in the SEQ — the
+///   volume swells and per-cue reverb sends are NOT carried in the SEQ - the
 ///   live reverb-enable source for BGM, if any, lives elsewhere.
 #[test]
 fn retail_seq_controller_census() {
@@ -216,18 +216,18 @@ fn retail_seq_controller_census() {
     // can't be hiding a per-track parameter).
     assert!(
         data_entry_values.keys().all(|&v| v == 127),
-        "CC6 (Data Entry) carries a non-127 value — reinvestigate: {data_entry_values:?}"
+        "CC6 (Data Entry) carries a non-127 value - reinvestigate: {data_entry_values:?}"
     );
 
     // No expression or reverb-depth source in the score.
     assert_eq!(
         by_controller.get(&CC_EXPRESSION).copied().unwrap_or(0),
         0,
-        "unexpected expression (CC11) events — wire per-channel volume swell"
+        "unexpected expression (CC11) events - wire per-channel volume swell"
     );
     assert_eq!(
         by_controller.get(&CC_REVERB_DEPTH).copied().unwrap_or(0),
         0,
-        "unexpected reverb-depth (CC91) events — the SEQ carries a reverb send after all"
+        "unexpected reverb-depth (CC91) events - the SEQ carries a reverb send after all"
     );
 }

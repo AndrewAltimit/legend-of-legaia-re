@@ -246,7 +246,7 @@ The interleaved connector direction after each art (the `0F` / `0E` above) is **
 
 - The same art appears with different connectors across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but `0E` in Power Slash).
 - The runtime queue-builder that emits those connectors (`ctx[+0x274]`) is not yet pinned.
-- The live player-driven Arts submenu therefore matches a recognized art *ordering* against `SuperArt::art_sequence()` — the Find pattern projected to its art constants only (`[0x27, 0x1F, 0x27]` for Tri-Somersault) — via `legaia_art::recognize_art_sequence` + `SuperMatcher::trigger_by_art_sequence`, which is faithful to *which* combination triggers *which* Super without reproducing the byte-exact queue. See [`subsystems/battle-action.md`](../subsystems/battle-action.md#miracle--super-in-the-live-player-driven-arts-submenu).
+- The live player-driven Arts submenu therefore matches a recognized art *ordering* against `SuperArt::art_sequence()` - the Find pattern projected to its art constants only (`[0x27, 0x1F, 0x27]` for Tri-Somersault) - via `legaia_art::recognize_art_sequence` + `SuperMatcher::trigger_by_art_sequence`, which is faithful to *which* combination triggers *which* Super without reproducing the byte-exact queue. See [`subsystems/battle-action.md`](../subsystems/battle-action.md#miracle--super-in-the-live-player-driven-arts-submenu).
 
 ## Arts-name table (`DAT_80075EC4`)
 

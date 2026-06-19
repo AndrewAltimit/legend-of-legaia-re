@@ -16,20 +16,20 @@
 //!
 //! ## Accessor family (`SCUS_942.54`)
 //!
-//! - `FUN_80042EE0` — find-slot-by-id: linear scan `[0, window)`, returns the
+//! - `FUN_80042EE0` - find-slot-by-id: linear scan `[0, window)`, returns the
 //!   slot index or none. Bounded.
-//! - `FUN_80042F4C` — find-count-by-id: find-slot then return the count byte
+//! - `FUN_80042F4C` - find-count-by-id: find-slot then return the count byte
 //!   (0 if absent). Bounded.
-//! - `FUN_80042310` — consume-by-id: find-slot; decrement count; when it hits
+//! - `FUN_80042310` - consume-by-id: find-slot; decrement count; when it hits
 //!   0, compact via `FUN_800423E0`. Bounded.
-//! - `FUN_80043048` — consume-by-slot: decrement the count of a slot addressed
+//! - `FUN_80043048` - consume-by-slot: decrement the count of a slot addressed
 //!   by **index** (not id). When the count reaches 0 it zeroes the id byte
-//!   **in place** — unlike consume-by-id it does **not** compact, so the freed
+//!   **in place** - unlike consume-by-id it does **not** compact, so the freed
 //!   slot is left as a hole. Bounded; no-ops (echoing its third argument) when
 //!   the slot index is out of range or the slot is already empty.
-//! - `FUN_800423E0` — compact/merge: shift slots down to fill a freed gap and
+//! - `FUN_800423E0` - compact/merge: shift slots down to fill a freed gap and
 //!   zero the tail. Stack cap 99.
-//! - `FUN_800421D4` — ADD (the OOB primitive). MERGE pass first (existing id →
+//! - `FUN_800421D4` - ADD (the OOB primitive). MERGE pass first (existing id →
 //!   `count = min(count + qty, 99)`), then a FREE-SLOT pass (first `id == 0`).
 //!
 //! ## The out-of-bounds add primitive
@@ -74,7 +74,7 @@ pub const ITEM_WINDOW_SLOTS: usize = 72;
 /// Per-stack count cap enforced by the retail add/merge paths.
 pub const STACK_CAP: u8 = 99;
 
-/// The address one slot past a `(base, window)` window — the byte the retail
+/// The address one slot past a `(base, window)` window - the byte the retail
 /// add primitive (`FUN_800421D4`) writes the id to on a full bag.
 ///
 /// For the default consumable window this is `0x800859E8` (= SC+0x18A8).
@@ -114,7 +114,7 @@ pub enum AddOutcome {
 }
 
 /// The reverse-engineered call sites that invoke the unchecked add helper
-/// [`FUN_800421D4`] without pre-checking inventory room — i.e. the normal-play
+/// [`FUN_800421D4`] without pre-checking inventory room - i.e. the normal-play
 /// paths through which the full-window OOB id store ([`AddOutcome::OobIdWrite`])
 /// is reachable. Each carries its source function address for provenance.
 ///
@@ -258,7 +258,7 @@ impl RetailInventory {
     /// item id) and return the slot's remaining count. Faithful to retail
     /// `FUN_80043048`: bounds-checks `slot < window`, acts only on an occupied
     /// slot (`id != 0`), clamps the new count at 0, and zeroes the id byte
-    /// **in place** when the count reaches 0 — it does **not** compact the
+    /// **in place** when the count reaches 0 - it does **not** compact the
     /// window (the freed slot stays as a hole, distinguishing it from the
     /// id-keyed [`consume`](Self::consume), which compacts). On the no-op paths
     /// (slot out of range, or already empty) retail echoes back its third
@@ -276,7 +276,7 @@ impl RetailInventory {
         let remaining = self.slots[i].1.saturating_sub(amount);
         self.slots[i].1 = remaining;
         if remaining == 0 {
-            // Zero the id byte in place — NO compaction (the hole remains).
+            // Zero the id byte in place - NO compaction (the hole remains).
             self.slots[i].0 = 0;
         }
         remaining
@@ -361,7 +361,7 @@ mod tests {
         assert_eq!(inv.add(0x12, 3), AddOutcome::Placed { slot: 2 });
         // Consuming slot 1 to zero compacts; the next add reuses the lowest gap.
         assert!(inv.consume(0x11, 2));
-        // After compaction: [0x10,0x12, empty...] — new id goes to slot 2.
+        // After compaction: [0x10,0x12, empty...] - new id goes to slot 2.
         assert_eq!(inv.add(0x13, 4), AddOutcome::Placed { slot: 2 });
     }
 
@@ -443,7 +443,7 @@ mod tests {
         // Partial slot-consume leaves the stack and order intact.
         assert_eq!(inv.consume_slot(1, 2, 0), 3);
         assert_eq!(inv.slots()[1], (0xB1, 3));
-        // Consume slot 1 to zero: the id byte is zeroed IN PLACE — unlike
+        // Consume slot 1 to zero: the id byte is zeroed IN PLACE - unlike
         // consume-by-id, the window is NOT compacted, so the hole remains and
         // the trailing slot keeps its index.
         assert_eq!(inv.consume_slot(1, 3, 0), 0);
@@ -470,7 +470,7 @@ mod tests {
     /// A full window with all-distinct ids: the next add can never merge or
     /// place, so it always surfaces the OOB primitive.
     fn full_distinct_bag() -> RetailInventory {
-        // ids 1..=72 — all non-zero (no empty slot) and none equal to the test
+        // ids 1..=72 - all non-zero (no empty slot) and none equal to the test
         // ids below (0x80+), so neither the merge nor free-slot pass succeeds.
         let slots: Vec<(u8, u8)> = (0..ITEM_WINDOW_SLOTS)
             .map(|i| ((i as u8).wrapping_add(1), 5))
@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn oob_write_carries_the_added_id_as_value() {
-        // The written byte is the *added item's id*, not qty — this is the
+        // The written byte is the *added item's id*, not qty - this is the
         // attacker-influenced value of the primitive.
         for id in [0x80u8, 0xCD, 0xFE, 0xFF] {
             let mut inv = full_distinct_bag();

@@ -89,19 +89,19 @@ quad), flags `0x1D` → row 3, byte3 0x02 → **G3** (gouraud tri), `0x1F` → r
 The renderer then derives the per-prim byte stride from `ilen` and the vertex
 read offset from `byte4` with a quad adjustment (`vert_off = byte4`, `+2` for a
 quad, overridden to `8` when byte3==1 and `0xE` when byte3==3, and the `+2`
-cancelled when byte3==0; `× 2` for the byte offset — see
+cancelled when byte3==0; `× 2` for the byte offset - see
 `Descriptor::vertex_offset_bytes`).
 
 ### Per-prim color / texture block
 
 The bytes from the prim's start up to the vertex-index offset hold either a
 **texture block** (`FT*`/`GT*` textured prims) or a **color block** (`F*`/`G*`
-untextured prims) — selected by the packet shape (byte-3 low 2 bits: `1` / `3`
+untextured prims) - selected by the packet shape (byte-3 low 2 bits: `1` / `3`
 are textured, `0` / `2` are flat / gouraud). [`legaia_tmd::descriptor`](../../crates/tmd/src/descriptor.rs)
 resolves the shape and the `vertex_offset` per group.
 
 - **Textured** (`legaia_prims::extract_textures`): `[u0, v0, cba_lo, cba_hi, u1,
-  v1, tsb_lo, tsb_hi, u2, v2 (, u3, v3)]` — the block ends exactly at the
+  v1, tsb_lo, tsb_hi, u2, v2 (, u3, v3)]` - the block ends exactly at the
   vertex-index offset.
 - **Untextured**: a per-vertex RGB colour block (PSX `[R, G, B, code]` word; the
   4th byte is the SDK GP0 command/code, not part of the colour). **Flat**
@@ -134,14 +134,14 @@ colour slots and the vertex indices for quads, so `colour[i]` pairs with
 
 **No per-prim normal field.** The renderer reads only the prim pointer
 (`param_1[4]`), the vertex base (`param_1[0]`) and the loop count
-(`param_1[5]`) — it never reads the object header's normal table
+(`param_1[5]`) - it never reads the object header's normal table
 (`param_1[2]`/`param_1[3]`). Lighting is the GTE `NCDS` op fed the stored
 **colour** word; the object's global light/colour matrices are set once at
 function entry. Some TMDs populate a normal array, but the retail renderer
-ignores it — there is no per-prim normal offset to decode.
+ignores it - there is no per-prim normal offset to decode.
 
 Mis-reading an untextured colour block as a texture block yields bogus `(cba,
-tsb)` and samples a random VRAM page — the historic "flat green tint / transparent
+tsb)` and samples a random VRAM page - the historic "flat green tint / transparent
 hole". `legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid` surfaces both (textured
 UVs + untextured colours) for a hybrid render; see
 [`character-mesh.md` § Hybrid render](character-mesh.md#hybrid-render-textured--untextured-prims).
@@ -181,7 +181,7 @@ The per-prim data IS uniform 20 bytes (= `ilen*4`) - there are no per-prim sub-h
 | `FUN_80021B04` | Actor-spawn helper; builds per-actor OBJECT pointer table at `actor[0x44]+4` |
 | `FUN_80024D78` | Per-actor OBJECT-table rebuild |
 | `FUN_8001EBEC` | Per-frame OBJECT[10/11] swap (pose select for player TMDs) |
-| `FUN_8001E890` | "DATA_FIELD player loader" — calls `FUN_8003eb98(0x36C, …)` (PROT 876 = `player_data`) and the dev paths `data\field\player.lzs` / `h:\prot\all\data\field\player.lz`. The retail bytes the loader reads (PROT 876 = streaming-format VAB+TIM_LIST+SEQ; the dev `data\field\player.lzs` file is absent from the ISO9660 walk) **do not** carry the `[0..4]` character TMDs. Those come from PROT 0874 (`befect_data`) section 0 — see [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04). What this function *does* do that's still consumed at `DAT_8007C018[0..2]` is the post-install group-count cap (`entry[+0x08] = 10`) and the equipment-conditional patch dispatch into `FUN_8001EBEC`. |
+| `FUN_8001E890` | "DATA_FIELD player loader" - calls `FUN_8003eb98(0x36C, …)` (PROT 876 = `player_data`) and the dev paths `data\field\player.lzs` / `h:\prot\all\data\field\player.lz`. The retail bytes the loader reads (PROT 876 = streaming-format VAB+TIM_LIST+SEQ; the dev `data\field\player.lzs` file is absent from the ISO9660 walk) **do not** carry the `[0..4]` character TMDs. Those come from PROT 0874 (`befect_data`) section 0 - see [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04). What this function *does* do that's still consumed at `DAT_8007C018[0..2]` is the post-install group-count cap (`entry[+0x08] = 10`) and the equipment-conditional patch dispatch into `FUN_8001EBEC`. |
 
 The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` - `sizeof(OBJECT) = 28`.
 

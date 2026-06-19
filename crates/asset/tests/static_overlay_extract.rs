@@ -60,7 +60,7 @@ fn committed_overlays_reproduce_from_disc() {
         // (1) Fingerprint reproduces.
         static_overlay::verify_fingerprint(rec, &as_loaded).unwrap_or_else(|e| panic!("{e}"));
 
-        // (2) Static base recovery agrees with the committed base — but only
+        // (2) Static base recovery agrees with the committed base - but only
         // for rows whose base was sourced from jal-recovery. Timeshared-buffer
         // overlays (base_source = capture / cross_ref) have too sparse an
         // internal call graph to triangulate; their base comes from a capture
@@ -90,7 +90,7 @@ fn committed_overlays_reproduce_from_disc() {
         }
 
         // (3) If the row pins a known function VA, it must land on a prologue at
-        // the committed base — a capture-free base cross-check that keeps the
+        // the committed base - a capture-free base cross-check that keeps the
         // base claim non-vacuous even for rows whose base did not come from
         // jal-recovery (the slot-A minigame siblings sourced by doc-fn anchor).
         if let Some(anchor) = rec.anchor_va {

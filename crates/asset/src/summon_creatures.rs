@@ -3,7 +3,7 @@
 //!
 //! A player summon renders its namesake creature through the ordinary rigid-TRS
 //! battle draw (the move-VM stager is the spawn/effect side-channel, not the
-//! visual — see [`crate::summon_overlay`] and the open-RE thread on the summon
+//! visual - see [`crate::summon_overlay`] and the open-RE thread on the summon
 //! visual). Each summon's creature is installed from the `summon.dat` group's
 //! actor-record slot (`legaia_asset::summon_readef`), and that slot's Legaia TMD
 //! is **byte-identical** to a record in the monster archive (PROT 867,
@@ -12,15 +12,15 @@
 //!
 //! Two blocks resolve to archive creatures with byte-identical meshes:
 //!
-//! - **Base block** `0x81..=0x8B` (Gimard … Nova) — the eleven first-tier
+//! - **Base block** `0x81..=0x8B` (Gimard … Nova) - the eleven first-tier
 //!   Seru-magic summons.
-//! - **Evolved-Seru block** `0x8C..=0x95` (Gola Gola … Gilium) — the second-tier
+//! - **Evolved-Seru block** `0x8C..=0x95` (Gola Gola … Gilium) - the second-tier
 //!   summons. This pins the two legs that had no mid-cast capture state,
 //!   `0x90` → Kemaro and `0x91` → Spoon, by exact mesh identity.
 //!
 //! The **high block** `0x99..=0xA0` (Evil-Seru / Sim-Seru / Ra-Seru summons:
 //! Juggernaut, Palma, Mule, Horn, Jedo, Meta, Terra, Ozma) does **not** byte-
-//! match any archive record — those summons carry a **bespoke mesh** in the
+//! match any archive record - those summons carry a **bespoke mesh** in the
 //! `summon.dat` group's raw CLUT+texture+part-pool slot (the third slot of the
 //! four-slot big-summon groups), not a reused enemy body. The disc-gated
 //! `summon_creature_tmd_map_real` oracle asserts both facts: byte-identity for
@@ -39,7 +39,7 @@ pub struct SummonCreature {
 
 /// Base + evolved-Seru summon → creature map, byte-validated against the disc by
 /// `summon_creature_tmd_map_real`. The high block `0x99..=0xA0` is intentionally
-/// absent (bespoke summon meshes — see the module docs).
+/// absent (bespoke summon meshes - see the module docs).
 pub const SUMMON_CREATURES: &[SummonCreature] = &[
     // Base block 0x81..=0x8B.
     SummonCreature {

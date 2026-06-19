@@ -346,7 +346,7 @@ pub struct SceneResources {
 /// Resolve a world-map scene's kingdom slot-4 vertex pool. Returns `None`
 /// for any non-`WorldMap` scene class, and for a WorldMap scene whose
 /// primary entry isn't a parseable kingdom bundle (decode/parse failures
-/// fall through to `None` rather than erroring — the wireframe overlay is
+/// fall through to `None` rather than erroring - the wireframe overlay is
 /// an optional inspection layer). Accepts the first entry whose slot 4
 /// decodes and parses, mirroring `parse_scene_tmds_anms`'s "first kingdom
 /// bundle per scene" rule.

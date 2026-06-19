@@ -67,7 +67,7 @@ local BD10          = 0x8007BD10       -- DAT_8007bd10[i]: per-slot ACTIVE-MEMBE
                                        --   (1=Vahn,2=Noa,3=Gala,0=empty). Vahn-solo
                                        --   = [1,0,0,0]; full party = [1,2,3,0].
                                        --   FUN_800513F0's while<3 loop registers slot
-                                       --   i iff BD10[i] != 0 — so a full party
+                                       --   i iff BD10[i] != 0 - so a full party
                                        --   installs all three through that loop.
 local TMD_REGISTER  = 0x80026B4C       -- FUN_80026B4C: generic TMD registrar
 local BATTLE_LOADER = 0x800520F0       -- FUN_800520F0: captured battle scene loader

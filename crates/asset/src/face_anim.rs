@@ -3,51 +3,51 @@
 //!
 //! Retail animates the party's battle faces with a per-frame VRAM stamp pass
 //! (`FUN_8004C7B4`, called from the render-node update `FUN_80047430` with
-//! the node's `+0x68` anim cursor — in integer keyframes — as the frame
+//! the node's `+0x68` anim cursor - in integer keyframes - as the frame
 //! counter, for party bands 0..2 and every character except Terra). Two
 //! fields of the `0xAC`-byte action-entry header are per-clip facial
 //! keyframe tracks:
 //!
-//! - entry `+0x8C`: **eye** track — four 3-byte records
+//! - entry `+0x8C`: **eye** track - four 3-byte records
 //!   `[frame_id, start, end]`;
-//! - entry `+0x98`: **mouth** track — same shape.
+//! - entry `+0x98`: **mouth** track - same shape.
 //!
 //! The mid-battle **art clips** read the same offsets through a different
 //! entry: `FUN_8004AD80` installs the art-bank record's embedded entry
 //! (record `+0x24`) as the action-table slot `0x10`/`0x11` pointer, so a
-//! playing art's tracks are the embedded entry's — record `+0xB0` (eyes) /
+//! playing art's tracks are the embedded entry's - record `+0xB0` (eyes) /
 //! `+0xBC` (mouth), carried as
 //! [`crate::battle_char_assembly::ArtAnimRecord::face`].
 //!
 //! A record is active while `start <= clip_frame <= end` (`end != 0`); its
 //! `frame_id` selects a face frame from the static per-character tables in
-//! `SCUS_942.54` (eye source x/y at `DAT_80076824/26` — eight frames per
-//! character — mouth at `DAT_80076884/86` — six; rect sizes + destinations
+//! `SCUS_942.54` (eye source x/y at `DAT_80076824/26` - eight frames per
+//! character - mouth at `DAT_80076884/86` - six; rect sizes + destinations
 //! at `DAT_800768CC..`, all banded by the per-party-slot origin deltas at
 //! `DAT_800768FC/FE`). Each stamp is a libgpu `MoveImage` (wrapper
-//! `FUN_80058490`) from the face-frame strip — parked inside the member's
-//! texture band by the normal battle texture-pool uploads — onto the live
+//! `FUN_80058490`) from the face-frame strip - parked inside the member's
+//! texture band by the normal battle texture-pool uploads - onto the live
 //! face rows of the band. When no record is active the **neutral frame 0**
 //! is re-stamped instead (no active record on disc selects frame 0), and
-//! character-record word `+0xF8` flag `0x2000` (ability-bitfield bit 45 —
+//! character-record word `+0xF8` flag `0x2000` (ability-bitfield bit 45 -
 //! the Rage passive) forces the neutral mouth frame.
 //!
 //! During the battle-end **victory-celebration window** (`DAT_8007BD71 ==
-//! 0xFE` — the battle-end signal — with the victory sequencer
+//! 0xFE` - the battle-end signal - with the victory sequencer
 //! `FUN_8004E568` running: its phase halfword `ctx+0x6CE != 0` and the
 //! celebration flag `DAT_8007BD60` bit `0x80` set, which the party-wipe
 //! path explicitly clears) a member whose last-staged anim id
-//! (`actor[+0x1DB]`) is a dynamic-art-slot id `0x11..=0x18` — at victory
-//! time, the staged **win pose** — switches its mouth source to a
+//! (`actor[+0x1DB]`) is a dynamic-art-slot id `0x11..=0x18` - at victory
+//! time, the staged **win pose** - switches its mouth source to a
 //! 16-record track from the static SCUS table at `0x80077E80`
 //! ([`ArtMouthTables`], indexed `char*0x180 + staged_id*0x30 + i*3` with
-//! the *raw* band byte), and the whole animator's frame counter — mouth
-//! *and* eye pass — switches to the global victory counter `gp+0x9EA`
+//! the *raw* band byte), and the whole animator's frame counter - mouth
+//! *and* eye pass - switches to the global victory counter `gp+0x9EA`
 //! shifted right by one (the win-quote mouth flap).
 //!
 //! (The eye/mouth identity is pinned visually: in the catalogued battle
-//! captures the `DAT_80076824` strip frames are the wide two-eye band —
-//! frame 1 a narrowed blink — and the `DAT_80076884` frames the closed /
+//! captures the `DAT_80076824` strip frames are the wide two-eye band -
+//! frame 1 a narrowed blink - and the `DAT_80076884` frames the closed /
 //! open mouth shapes.)
 //!
 //! See `docs/formats/battle-data-pack.md` § Facial animation tracks.
@@ -74,7 +74,7 @@ pub const TRACK_RECORD_COUNT: usize = 4;
 /// call on `char != 3`) and the tables carry no fourth row.
 pub const FACE_CHAR_COUNT: usize = 3;
 /// Party bands covered by the per-slot origin deltas (`DAT_800768FC/FE`,
-/// 3 slots — the animator only runs for battle slots `< 3`).
+/// 3 slots - the animator only runs for battle slots `< 3`).
 pub const FACE_SLOT_COUNT: usize = 3;
 /// Eye frames per character (`DAT_80076824` char stride `0x20` = 8 x/y
 /// pairs).
@@ -102,7 +102,7 @@ pub const SLOT_DELTA_VA: u32 = 0x8007_68FC;
 /// override loop runs `0xC + 4` = sixteen 3-byte records).
 pub const ART_MOUTH_RECORD_COUNT: usize = 16;
 /// First staged-anim band id the override table covers (`actor[+0x1DB]`
-/// gate `0x10 < id < 0x19` — the dynamic-art-slot ids `0x11..=0x18`).
+/// gate `0x10 < id < 0x19` - the dynamic-art-slot ids `0x11..=0x18`).
 pub const ART_BAND_FIRST: u8 = 0x11;
 /// Last staged-anim band id the override table covers (inclusive).
 pub const ART_BAND_LAST: u8 = 0x18;
@@ -171,7 +171,7 @@ impl FaceTracks {
     }
 
     /// `true` when no record of either track is ever active (all `end`
-    /// bytes zero) — the clip shows the neutral face throughout. On disc
+    /// bytes zero) - the clip shows the neutral face throughout. On disc
     /// that's the case for every **idle** entry: the party's resting faces
     /// are the re-stamped neutral frames, and the eye/mouth records live on
     /// the reaction / defeat / swing clips.
@@ -187,10 +187,10 @@ impl FaceTracks {
 /// (extraction PROT 863..866). Indexed by action slot like
 /// [`crate::battle_char_assembly::battle_animations`]'s `action_id`; `None`
 /// for unpopulated slots. The runtime swing slots `0xC..0xF` are spliced
-/// from the equipment sections instead — see
-/// [`crate::battle_char_assembly::SwingAnimation::face`] — and the
+/// from the equipment sections instead - see
+/// [`crate::battle_char_assembly::SwingAnimation::face`] - and the
 /// dynamically-materialized art clips (staged ids `>= 0x10`) carry their
-/// tracks in the art-bank records' embedded entries — see
+/// tracks in the art-bank records' embedded entries - see
 /// [`crate::battle_char_assembly::ArtAnimRecord::face`].
 pub fn battle_face_tracks(file: &[u8]) -> Result<Vec<Option<FaceTracks>>> {
     let block = crate::battle_char_assembly::decode_record0(file)?;
@@ -291,7 +291,7 @@ pub struct FaceFrameTables {
     pub eye_geo: [FaceGeo; FACE_CHAR_COUNT],
     /// Mouth destination + rect size per character (`MOUTH_GEO_VA`).
     pub mouth_geo: [FaceGeo; FACE_CHAR_COUNT],
-    /// Per-party-slot origin delta (`SLOT_DELTA_VA`) — the member band's
+    /// Per-party-slot origin delta (`SLOT_DELTA_VA`) - the member band's
     /// VRAM origin, added to both source and destination.
     pub slot_delta: [(i16, i16); FACE_SLOT_COUNT],
 }
@@ -418,13 +418,13 @@ impl FaceFrameTables {
     /// `char_index` is the character (0 Vahn / 1 Noa / 2 Gala; Terra and
     /// out-of-range indices return no stamps, mirroring the retail skip),
     /// `party_slot` the present-party band ordinal (`>= 3` returns no
-    /// stamps), `tracks` the playing clip's facial tracks (`None` — a clip
-    /// with no registered tracks — behaves like a clip whose
+    /// stamps), `tracks` the playing clip's facial tracks (`None` - a clip
+    /// with no registered tracks - behaves like a clip whose
     /// records are never active: the neutral face is re-stamped),
     /// `clip_frame` the playing clip's integer keyframe counter and
     /// `force_neutral_mouth` the character-record `0x2000` flag.
     ///
-    /// Equivalent to [`Self::stamps_with_art_window`] with no override —
+    /// Equivalent to [`Self::stamps_with_art_window`] with no override -
     /// the every-frame path outside the victory-celebration window.
     pub fn stamps(
         &self,
@@ -448,7 +448,7 @@ impl FaceFrameTables {
     /// `art_mouth` is `Some`, the mouth pass walks the override's sixteen
     /// records instead of the entry's four, and the frame counter for
     /// **both** passes (the eye records still come from the entry track)
-    /// becomes the override's global counter shifted right by one — retail
+    /// becomes the override's global counter shifted right by one - retail
     /// replaces the single counter local before the clamp, so the eye pass
     /// clocks on it too. Neutral fallbacks and the `force_neutral_mouth`
     /// flag behave exactly as in the base pass.
@@ -549,7 +549,7 @@ pub struct ArtMouthOverride<'a> {
 /// mouth-frame table the entry tracks use ([`MOUTH_FRAME_COUNT`] frames).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtMouthTables {
-    /// `tracks[char][band - ART_BAND_FIRST]` — the override mouth track
+    /// `tracks[char][band - ART_BAND_FIRST]` - the override mouth track
     /// for that character's staged id.
     pub tracks: [[[FaceTrackRecord; ART_MOUTH_RECORD_COUNT]; ART_BAND_COUNT]; FACE_CHAR_COUNT],
 }

@@ -20,7 +20,7 @@
 --                        LEGAIA_NO_SSTATE=1 (the recommended cold-boot mode).
 --   LEGAIA_NO_SSTATE     if "1", skip save-state load and let Legaia cold-boot
 --                        from BIOS. This is the path that produces the
---                        publisher-logo + title-overlay LZS decodes — any
+--                        publisher-logo + title-overlay LZS decodes - any
 --                        in-game save state is past those decodes.
 --   LEGAIA_OUT_DIR       output directory (default: captures/boot_walk/title_staging)
 --   LEGAIA_FRAMES        max vsyncs to capture (default: 3600 = ~60s @ 60Hz)

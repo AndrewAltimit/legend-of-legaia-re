@@ -1,12 +1,12 @@
 # Tile-board grid (puzzle / board minigame mode)
 
-A discrete tile-board mode used by puzzle rooms / board minigames inside the field overlay. The board is a `width × height` array of byte cells, the player occupies one `(col, row)` cell, and each accepted d-pad press advances the player exactly one cell. The cell array *is* the collision data — a destination cell value of `2` is a wall. Each cell value also indexes a tile-actor table that the board renderer draws as a tile sprite at the cell's world position.
+A discrete tile-board mode used by puzzle rooms / board minigames inside the field overlay. The board is a `width × height` array of byte cells, the player occupies one `(col, row)` cell, and each accepted d-pad press advances the player exactly one cell. The cell array *is* the collision data - a destination cell value of `2` is a wall. Each cell value also indexes a tile-actor table that the board renderer draws as a tile sprite at the cell's world position.
 
 **This is not general town/field locomotion.** Legaia towns use free movement; that path is separate and still being reverse-engineered (see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)). The tile-board system was initially mistaken for town walking because it lives in the field overlay (`0897`) and reads the pad to move the player; the giveaways that it is a special board mode are the per-cell tile-actor rendering and the procedural board fill below.
 
 ## Where the board comes from
 
-A field-VM opcode points the global `_DAT_8007b450` at a board header. The header lives **inline in the field-VM event script** (the "data is an operand of the install op" pattern, same as encounter records — see [`formats/encounter.md`](../formats/encounter.md)). Confirmed header byte fields:
+A field-VM opcode points the global `_DAT_8007b450` at a board header. The header lives **inline in the field-VM event script** (the "data is an operand of the install op" pattern, same as encounter records - see [`formats/encounter.md`](../formats/encounter.md)). Confirmed header byte fields:
 
 | Offset | Meaning |
 |---|---|
@@ -36,7 +36,7 @@ Cells are indexed `board[row * width + col]`. Confirmed value classes:
 
 | Value | Meaning |
 |---|---|
-| `2` | **wall** — destination cell `== 2` rejects the move |
+| `2` | **wall** - destination cell `== 2` rejects the move |
 | `3`..`6` | walkable terrain types; sets `_DAT_8007b5f0 = (v - 3) * 2` (step variant) |
 | `7` | trigger; routes the walk SM to its event sub-state |
 | `8`..`10` | event / transition tile; reads header `+7`/`+9` as flag operands via the field-VM flag helpers (`func_0x8003ce08` set / `func_0x8003ce64` test), and applies a half-tile world offset |
@@ -67,7 +67,7 @@ The board controller is a small state machine keyed on the controller actor's `+
 | `4` | **read input + collision + commit**: see below |
 | `5` | menu / confirm (entered when the menu button edge `_DAT_8007b874 & 0x10` fires) |
 
-### State 4 — input, collision, commit
+### State 4 - input, collision, commit
 
 1. If the menu-button edge (`_DAT_8007b874 & 0x10`) is set, go to state `5`.
 2. Read the pad `_DAT_8007b850` and remap it by camera facing via `func_0x800467e8` (so "screen up" maps to the correct world direction regardless of camera azimuth).
@@ -98,7 +98,7 @@ Provenance: `overlay_0897_801ef2b0.txt` case 4; a denser duplicate of this logic
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Field locomotion](field-locomotion.md) ·
 [Field/event VM](script-vm.md) ·
 [Encounter record](../formats/encounter.md)

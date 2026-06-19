@@ -8,7 +8,7 @@
 //!
 //! ## Grammar (pinned on real town01 disc bytes)
 //!
-//! Each line is `0x1F <glyphs> 0x00`. Lines are packed into a box back-to-back —
+//! Each line is `0x1F <glyphs> 0x00`. Lines are packed into a box back-to-back -
 //! the byte after one line's `0x00` terminator being another `0x1F` means "same
 //! box, next row". A box holds up to [`LINES_PER_BOX`] rows; the box ends at a
 //! **post-page control byte** the pager reads in state `0x19`:
@@ -32,7 +32,7 @@
 //! the `for (; 0x1e < *pbVar4; ...)` loop), it masks `(*pbVar4 & 0xF0) == 0xC0`
 //! and skips the following data byte as part of the same token. So a line body
 //! containing e.g. `0xC1 0x00` (a character-name substitution whose argument is
-//! `0x00`) is **not** truncated at that `0x00` — the escape's argument byte can
+//! `0x00`) is **not** truncated at that `0x00` - the escape's argument byte can
 //! fall in the `0x00..=0x1E` terminator range without ending the line. The line
 //! ends only at a terminator byte that is *not* a `0xC?` escape argument. The
 //! standard [`Interpreter`] already decodes every `0xC0..=0xCF` byte as a
@@ -50,25 +50,25 @@ use crate::interp::{Interpreter, MesEvent};
 /// window pager `FUN_801D84D0`.
 pub const LINES_PER_BOX: usize = 3;
 
-/// What the pager does after a box's rows are shown — decoded from the control
+/// What the pager does after a box's rows are shown - decoded from the control
 /// byte that follows the box's last line terminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dispatch {
-    /// `0x24` — advance to the next page of the same conversation (the window
+    /// `0x24` - advance to the next page of the same conversation (the window
     /// stays open; the next up-to-3 lines follow).
     NextPage,
-    /// `0x48` — open a fresh box.
+    /// `0x48` - open a fresh box.
     NewBox,
-    /// `0x2A` — box-geometry resize, then continue.
+    /// `0x2A` - box-geometry resize, then continue.
     Resize,
-    /// `0x25` — end the conversation.
+    /// `0x25` - end the conversation.
     End,
-    /// `0x4C 0xFF` — terminate / close the window.
+    /// `0x4C 0xFF` - terminate / close the window.
     Terminate,
-    /// `0x27`/`0x28`/`0x29` — open a 2/3/4-option menu (the count is carried).
+    /// `0x27`/`0x28`/`0x29` - open a 2/3/4-option menu (the count is carried).
     Picker(usize),
     /// The box filled to [`LINES_PER_BOX`] and the next byte is another `0x1F`
-    /// lead with no explicit control byte between — an implicit new page.
+    /// lead with no explicit control byte between - an implicit new page.
     ImplicitNextPage,
     /// Ran off the end of the buffer with no dispatch byte.
     EndOfBuffer,
@@ -77,7 +77,7 @@ pub enum Dispatch {
 }
 
 impl Dispatch {
-    /// `true` when more dialogue follows in the same conversation branch — the
+    /// `true` when more dialogue follows in the same conversation branch - the
     /// pager should page-break and continue, not end.
     pub fn continues(self) -> bool {
         matches!(
@@ -104,7 +104,7 @@ pub struct DialogBox {
 }
 
 impl DialogBox {
-    /// Where the next box begins, given this box's dispatch — or `None` when the
+    /// Where the next box begins, given this box's dispatch - or `None` when the
     /// conversation ends here (`End`/`Terminate`/`Picker`/`EndOfBuffer`/unknown).
     /// `NextPage`/`Resize` consume their 1-byte control; `Terminate` is 2 bytes
     /// but ends the branch; `ImplicitNextPage`/`NewBox`'s next lead is already at
@@ -185,7 +185,7 @@ pub fn pack_box(buf: &[u8], pc: usize) -> Option<DialogBox> {
         // Position just past this line's 0x00 terminator.
         let after = (term + 1).min(buf.len());
         if lines.len() >= LINES_PER_BOX {
-            // Box is full — the dispatch byte is whatever sits here.
+            // Box is full - the dispatch byte is whatever sits here.
             return Some(DialogBox {
                 lead,
                 lines,
@@ -207,7 +207,7 @@ pub fn pack_box(buf: &[u8], pc: usize) -> Option<DialogBox> {
     }
 }
 
-/// Pack the whole conversation branch starting at `pc` — every box reachable by
+/// Pack the whole conversation branch starting at `pc` - every box reachable by
 /// following [`Dispatch::continues`] dispatches, stopping at the first box that
 /// ends the branch (`End`/`Terminate`/`Picker`/`EndOfBuffer`/unknown) or after
 /// `max_boxes` (a guard against a malformed stream that never terminates).
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn box_caps_at_lines_per_box_even_without_control_byte() {
-        // Four consecutive lines, no control byte between — the first box must
+        // Four consecutive lines, no control byte between - the first box must
         // cap at LINES_PER_BOX and report ImplicitNextPage.
         let mut b = Vec::new();
         for t in [&b"a"[..], b"b", b"c", b"d"] {

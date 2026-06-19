@@ -7,7 +7,7 @@
 //!
 //! A trading vendor offers to take **one of the seru a character already owns**
 //! and hand back a *different* seru. The seru id space is the player Seru-magic
-//! block — spell ids [`SERU_POOL_START`]`..=`[`SERU_POOL_END`] (base + evolved),
+//! block - spell ids [`SERU_POOL_START`]`..=`[`SERU_POOL_END`] (base + evolved),
 //! the same id space [`crate::spell_names`] resolves to display names like
 //! `Gimard` / `Orb`. Each owned seru also carries the roster slot of the
 //! character who holds it (so the UI can show "Gimard (Vahn)").
@@ -20,7 +20,7 @@
 //! with the *same* pure function ([`vendor_offers`]). The randomizer's preview
 //! and the engine's live UI therefore always agree for the same inputs, and the
 //! only thing the randomizer has to write to the disc is a tiny config blob
-//! (enabled flag + master seed) — see [`SeruTradeConfig`].
+//! (enabled flag + master seed) - see [`SeruTradeConfig`].
 //!
 //! The generator is intentionally free of game-data lookups (names,
 //! equippability, who-can-learn) so it stays a stable, testable kernel; the
@@ -68,7 +68,7 @@ pub fn time_bucket(play_time_seconds: u32) -> u32 {
     play_time_seconds / SECONDS_PER_RESEED
 }
 
-/// Derive a stable vendor id from a shop's identity — its display name plus the
+/// Derive a stable vendor id from a shop's identity - its display name plus the
 /// item ids it stocks. Each distinct vendor then reseeds its trade offers
 /// independently, and the same vendor is stable across visits (the offer
 /// generator keys on this id). FNV-1a over the name bytes then the stock ids,
@@ -165,7 +165,7 @@ pub struct OwnedSeru {
 }
 
 /// One trade a vendor offers this bucket: give [`give`](Self::give), receive a
-/// different seru. (Legacy per-instance model — see [`BucketOffer`] /
+/// different seru. (Legacy per-instance model - see [`BucketOffer`] /
 /// [`expand_offers`] for the want-a-type / offer-a-partner model the trade UI
 /// renders.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,7 +189,7 @@ pub struct BucketOffer {
     pub want_id: u8,
     /// Seru id the vendor hands back (always `!= want_id` when `want_id != 0`).
     pub give_id: u8,
-    /// Level the handed-back seru comes at — part of the trade's value, shown to the
+    /// Level the handed-back seru comes at - part of the trade's value, shown to the
     /// player before trading and applied to the received seru on confirm. Fixed per
     /// bucket (rolled into [`GIVE_LEVEL_MIN`]`..=`[`GIVE_LEVEL_MAX`] from the same RNG
     /// stream as the ids), so it's stable while the vendor shows this offer. `0` when
@@ -258,7 +258,7 @@ fn mix(seed: u64, vendor_id: u16, bucket: u32) -> u64 {
 ///
 /// Pure and deterministic: the same `(seed, vendor_id, time_bucket, owned set)`
 /// always yields the same offers, regardless of the order `owned` is passed
-/// (the function canonicalizes it). At most `max_offers` trades are returned —
+/// (the function canonicalizes it). At most `max_offers` trades are returned -
 /// fewer when the character party owns fewer seru. Each receive id is drawn from
 /// `pool` and is guaranteed to differ from the seru being given. An empty
 /// `owned` or `pool` yields no offers.
@@ -336,7 +336,7 @@ pub const BUCKET_ENTRY_LEN: usize = 3;
 
 /// Precompute the whole vendor schedule: for each bucket `0..count`, deterministically
 /// pick a `(want_id, give_id)` pair of distinct ids from `pool`. Ownership-independent
-/// — the live party is only consulted at render time (see [`expand_offers`]). The same
+/// - the live party is only consulted at render time (see [`expand_offers`]). The same
 /// `(seed, count, pool)` always yields the same schedule, so the randomizer's on-disc
 /// table and any engine preview agree. An empty / single-element `pool` yields all
 /// `(0, 0)` (no offer) entries.
@@ -351,7 +351,7 @@ pub fn bucket_offers(seed: u64, count: usize, pool: &[u8]) -> Vec<BucketOffer> {
                 };
             }
             // One RNG stream per bucket, mixed off the master seed (vendor id folded
-            // in as 0 — a single global trader; distinct vendors can reseed later).
+            // in as 0 - a single global trader; distinct vendors can reseed later).
             let mut rng = Rng(mix(seed, 0, bucket as u32));
             let want_id = pool[rng.below(pool.len())];
             // give id distinct from want.
@@ -409,7 +409,7 @@ pub fn bucket_index(play_time_seconds: u32) -> usize {
 /// `engine_core::seru_trade::party_owned_seru`). Empty when nobody owns the want
 /// or the bucket has no offer (`want_id == 0`).
 ///
-/// Owners who **already own the give-back seru** are filtered out — trading the
+/// Owners who **already own the give-back seru** are filtered out - trading the
 /// wanted seru for one you already hold is pointless (and would duplicate it), so
 /// they aren't offered the trade.
 pub fn expand_offers(offer: BucketOffer, owned: &[OwnedSeru]) -> Vec<OwnerTrade> {

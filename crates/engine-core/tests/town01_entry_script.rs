@@ -30,7 +30,7 @@ fn town01_man_entry_script_resolves_and_arm_lives_in_partition_one() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -54,7 +54,7 @@ fn town01_man_entry_script_resolves_and_arm_lives_in_partition_one() {
     let entry = scene
         .field_man_entry_script(&index)
         .expect("entry-script resolve")
-        .expect("town01 entry script is Some — the engine runs real bytecode");
+        .expect("town01 entry script is Some - the engine runs real bytecode");
     let (bytecode, pc0) = entry;
     assert_eq!(pc0, 11, "entry-script first-opcode offset");
     assert!(

@@ -1,4 +1,4 @@
-//! Custom-overlay loading on retail — the vertical slice that proves we can
+//! Custom-overlay loading on retail - the vertical slice that proves we can
 //! stream hand-written code from an (overwritten) pochi PROT slot into RAM and
 //! execute it on real hardware, the foundation the full retail seru-trade UI
 //! needs (its UI driver is far too big for the SCUS rodata gap, so it must ship
@@ -7,12 +7,12 @@
 //! ## The mechanism
 //!
 //! 1. The randomizer overwrites a **pochi-filler PROT slot** (265 exist, the
-//!    largest >1 MB — reserved dev fillers with real allocated disc sectors) with
+//!    largest >1 MB - reserved dev fillers with real allocated disc sectors) with
 //!    a small custom overlay. Because the randomizer placed it, it knows that
 //!    slot's exact start LBA + sector count from the disc TOC.
 //! 2. A tiny **loader stub** in the preserved SCUS rodata gap calls the
 //!    game's own synchronous CD reader [`LOADER_FN`]
-//!    (`FUN_8005E4D4(sector_count, lba, dest)` — verified sync: it issues the
+//!    (`FUN_8005E4D4(sector_count, lba, dest)` - verified sync: it issues the
 //!    read then waits) with those values **baked as literals**, so there is no
 //!    runtime PROT-index arithmetic (the recurring ±2 index-space trap can't
 //!    bite). It then `jalr`s the loaded code at [`DEST`], and on return replays
@@ -136,7 +136,7 @@ pub const SUBID_VA: u32 = 0x8007_BA34;
 pub const WINNINGS_VA: u32 = 0x8008_4440;
 /// Second housekeeping word zeroed on the op-0x3E warp.
 pub const WARP_HOUSEKEEP_VA: u32 = 0x8007_BAC0;
-/// `FUN_8003CE08(0xE)` — SysFlag set (field-VM 4th flag bank), called by the warp.
+/// `FUN_8003CE08(0xE)` - SysFlag set (field-VM 4th flag bank), called by the warp.
 pub const SYSFLAG_SET_FN: u32 = 0x8003_CE08;
 /// `a0` for [`SYSFLAG_SET_FN`] in the warp idiom.
 pub const SYSFLAG_WARP_ARG: u16 = 0x000E;
@@ -174,7 +174,7 @@ pub const ORIGIN_MODE_VA: u32 = 0x8007_AF24;
 /// Shares the stub window base; the mode-INIT loader sits just above it.
 pub const TRIGGER_VA: u32 = STUB_VA;
 /// VA of the mode-INIT loader (what the repurposed mode-table handler points at).
-/// 0x40 above [`TRIGGER_VA`] — past the trigger, still in the gap window.
+/// 0x40 above [`TRIGGER_VA`] - past the trigger, still in the gap window.
 pub const MODE_INIT_VA: u32 = STUB_VA + 0x40;
 
 /// VA of the dead mode's handler word in `SCUS_942.54` (what we overwrite with
@@ -188,7 +188,7 @@ pub const fn dead_mode_handler_va() -> u32 {
 // The robust path: the op-0x49 shop detour mirrors the op-0x3E minigame warp
 // (set sub-id + mode 0x18; [`assemble_warp_trigger_stub`]). The game's mode-24
 // INIT `FUN_80025980` then tears the field down, loads the slot-A overlay, runs
-// it, and on exit `FUN_80026018` restores + RELOADS the scene (mode 2) — a clean
+// it, and on exit `FUN_80026018` restores + RELOADS the scene (mode 2) - a clean
 // teardown+reload, unlike resume-in-place. We host a NEW sub-id by detouring
 // FUN_80025980's per-sub-id overlay-load call to a gap REDIRECT that, for our
 // sub-id, baked-LBA-loads our pochi slot to slot A and runs it (then returns to
@@ -210,7 +210,7 @@ pub const WARP_INIT_REJOIN_VA: u32 = 0x8002_5A38;
 pub const WARP_INIT_DISPLACED: [u32; 2] = [0x0C00_FAF9, 0x0000_2821];
 /// The game's slot-A overlay loader `FUN_8003EBE4` (replayed for non-our sub-ids).
 pub const OVERLAY_LOADER_A_FN: u32 = 0x8003_EBE4;
-/// `FUN_80026018` — the mode-24 return warp (restore scene + mode 2 reload).
+/// `FUN_80026018` - the mode-24 return warp (restore scene + mode 2 reload).
 pub const MODE24_RETURN_FN: u32 = 0x8002_6018;
 /// `FUN_80025980` stack-frame layout (so the redirect can return cleanly,
 /// bypassing the function's mode-0x19 epilogue): `lw ra,0x14(sp)`, `lw s0,0x10(sp)`,
@@ -220,7 +220,7 @@ pub const WARP_INIT_RA_OFF: u16 = 0x14;
 pub const WARP_INIT_S0_OFF: u16 = 0x10;
 
 /// Gap-tail "warp already fired" flag (u16). With fire-once enabled, the trigger
-/// warps a single time then lets the interrupted menu proceed — used for the
+/// warps a single time then lets the interrupted menu proceed - used for the
 /// name-entry sentinel test, where the mode-2 field reload re-runs the name-entry
 /// op-0x49 and would otherwise re-trigger the warp forever (black-screen <->
 /// Vahn oscillation). Not used by the real shop feature (shops don't auto-retrigger).
@@ -236,15 +236,15 @@ pub const WARP_REDIRECT_VA: u32 = STUB_VA + 0x60;
 //
 // The overlay is loaded to SLOT_A_BASE. Its INIT (offset 0, jalr'd by the
 // redirect) hands off to mode 13 (MAPDSIP MODE, `FUN_80025f2c`), whose per-frame
-// handler calls `func_0x801ce850` = SLOT_A_BASE + 0x38 every frame — so the
+// handler calls `func_0x801ce850` = SLOT_A_BASE + 0x38 every frame - so the
 // overlay's TICK lives at offset 0x38 and draws there. The general per-frame
 // updater (`FUN_80016444`, also run by `FUN_80025f2c`) flushes the queued text.
 
 /// Game-mode index 13 (MAPDSIP MODE): per-frame handler `FUN_80025f2c` calls the
-/// slot-A overlay tick at `SLOT_A_BASE + 0x38` directly each frame — our draw loop.
+/// slot-A overlay tick at `SLOT_A_BASE + 0x38` directly each frame - our draw loop.
 pub const MAPDISP_MODE_INDEX: u16 = 13;
 /// Native menu text drawer `FUN_80036888(a0=str, a1=0, a2=maxchars(0=all), a3=x,
-/// [sp+0x10]=y)` — the game's own dialog-font renderer (decodes the ASCII string
+/// [sp+0x10]=y)` - the game's own dialog-font renderer (decodes the ASCII string
 /// via `FUN_80036514`, control codes `^`=icon / `0xFF`=color). SCUS-resident, so
 /// callable from our slot-A overlay. Renders in the native font, unlike the debug
 /// drawer `FUN_8001AA68`. NOTE the 5th arg (y) is passed on the stack at `sp+0x10`.
@@ -256,7 +256,7 @@ pub const SLOT_A_TICK_OFFSET: u32 = 0x38;
 /// Seru-magic list: count at `+0x13C`, ids at `+0x13D[]`; displayed level `+0x130`.
 pub const CHAR_RECORD_BASE: u32 = 0x8008_4708;
 /// Dump start offset within the record. Starts at the level (`+0x130`, nonzero
-/// even at name-entry — proves the live read) and spans through the seru count
+/// even at name-entry - proves the live read) and spans through the seru count
 /// (`+0x13C`) + first ids (`+0x13D..`), so the seru list shows once learned.
 pub const SERU_DUMP_OFFSET: u16 = 0x130;
 /// Bytes to hex-dump from the record (level + a few following bytes; kept short
@@ -279,7 +279,7 @@ pub const SERU_MAX_ROWS: u16 = 6;
 /// `SERU_DEMO_BASE_ID + 1`) instead of reading the precomputed [`BUCKET_TABLE_VA`],
 /// so a save where any party member owns that fixed id lists a trade line without
 /// having to align the play-time bucket. `false` = the live table-driven want.
-/// (It cannot conjure a line on a *fresh* save — the per-owner render is empty when
+/// (It cannot conjure a line on a *fresh* save - the per-owner render is empty when
 /// nobody owns the want, which is correct behaviour, not a render bug.)
 pub const SERU_DEMO_FORCE_WANT: bool = false;
 /// The fixed want id used when [`SERU_DEMO_FORCE_WANT`]. `0x81` = Gimard, the first
@@ -287,12 +287,12 @@ pub const SERU_DEMO_FORCE_WANT: bool = false;
 pub const SERU_DEMO_BASE_ID: u16 = 0x81;
 
 /// Native window/box-frame draw `FUN_8002C69C(a0=x, a1=y, a2=w, a3=h)` (POLY_FT4
-/// / SPRT emitter — the dialog/menu window). SCUS-resident; 4 register args.
+/// / SPRT emitter - the dialog/menu window). SCUS-resident; 4 register args.
 pub const BOX_FN: u32 = 0x8002_C69C;
 /// Window-skin selector global `gp[+`[`WINDOW_SKIN_OFF`]`]` (set by `FUN_80034b6c`,
 /// read by [`BOX_FN`]): a skin index into the corner/edge table `DAT_800732a4`
 /// (12-byte stride). The per-frame finalize `FUN_80031d00` rewrites it from each
-/// drawn window's `+0x1d` skin byte, so it holds the *last* window's skin — which,
+/// drawn window's `+0x1d` skin byte, so it holds the *last* window's skin - which,
 /// once the blue picker windows slide away, is the brown name-plate's special skin
 /// (`0x31`), rendering our box as a brown name-plate. We force [`WINDOW_SKIN_STD`]
 /// (index 0 = the standard box; the blue fill is hardcoded regardless of index)
@@ -377,7 +377,7 @@ pub const YES_X: u16 = 0x40;
 pub const NO_X: u16 = 0x80;
 /// Cursor x just left of a Yes/No choice (re-uses the line-cursor sprite).
 pub const CHOICE_CURSOR_DX: u16 = 0x10;
-/// Native animated cursor sprite `FUN_8002b994(slot, mode, x, y)` — a 16×16 bobbing
+/// Native animated cursor sprite `FUN_8002b994(slot, mode, x, y)` - a 16×16 bobbing
 /// cursor (slot 0 = the standard menu cursor; `mode = 1` animates). Drawn at the
 /// selected owner line. (Already used by the row-4 stub as [`HIGHLIGHT_FN`].)
 pub const CURSOR_DRAW_FN: u32 = 0x8002_B994;
@@ -386,7 +386,7 @@ pub const CURSOR_X: u16 = COL_WANT_X - 0x10;
 /// Initial slide offset: box fully off the left edge (`-(BOX_X + BOX_W)` rounded).
 pub const SLIDE_START_OFF: i16 = -0xF0;
 /// Per-frame slide step toward 0. Divides `SLIDE_START_OFF` evenly so the box lands
-/// exactly on 0 (no overshoot) — see the compile-time asserts below.
+/// exactly on 0 (no overshoot) - see the compile-time asserts below.
 pub const SLIDE_STEP: u16 = 0x18;
 
 // Compile-time invariants the hand-assembled handler relies on:
@@ -413,7 +413,7 @@ pub const PAD_POLL_FN: u32 = 0x8001_822C;
 /// first increment has no input yet). Held long (~30s at 60fps) so the draw
 /// window can be observed + saved during; each tick also writes the live frame
 /// counter to [`SENTINEL_ADDR`] as a heartbeat (proves the tick is running, even
-/// if nothing is visible — distinguishes "tick ran, draw invisible" from "tick
+/// if nothing is visible - distinguishes "tick ran, draw invisible" from "tick
 /// never ran").
 pub const DRAW_HOLD_FRAMES: u16 = 0x7FFF;
 
@@ -473,7 +473,7 @@ pub const CLAMP_NEW: u32 = 0x2405_0004;
 /// In-body detour site in `FUN_801d4868`, immediately AFTER the Quit text draw
 /// (`jal FUN_80036888; sw s0,0x10(sp)` at 0x801d4a0c/10) and before the Quit
 /// highlight logic. Drawing the 4th row here links its glyphs at the SAME OT
-/// depth as Buy/Sell/Quit (in front of the box background) — an epilogue draw
+/// depth as Buy/Sell/Quit (in front of the box background) - an epilogue draw
 /// instead links them behind the box and they never show.
 pub const ROW4_DETOUR_VA: u32 = 0x801D_4A14;
 /// Rejoin: the Quit-highlight logic (a `nop`, then `andi v0,a1,0x4000`).
@@ -484,7 +484,7 @@ pub const ROW4_RETURN_VA: u32 = 0x801D_4A1C;
 pub const ROW4_DISPLACED: [u32; 2] = [0x3C02_801E, 0x8C45_46BC];
 /// Picker window-tile sprite definition (`DAT_801e4738 + 0x2a*0x10`): the
 /// Buy/Sell/Quit box. Layout `[u16 flags][u16 kind][u16 x][u16 y][u16 w][u16 h]
-/// [u32 draw-handler]` — here x=0x2a, y=0x2e, w=0x50, h=0x26, handler=FUN_801d4868
+/// [u32 draw-handler]` - here x=0x2a, y=0x2e, w=0x50, h=0x26, handler=FUN_801d4868
 /// (this is how the renderer is invoked: as the window's content callback).
 pub const PICKER_BOX_DEF_VA: u32 = 0x801E_49D8;
 /// VA of the box height field (`+0xa`). Grown by one row so the 4th "Trade" row
@@ -546,7 +546,7 @@ pub const TRADE_EXIT_VA: u32 = 0x801D_B200;
 // 4-byte commands `[opcode, window_idx, p0, p1]` (terminator opcode `0`) over the
 // window table at `0x801e4738`. Opcode 1 = open/slide-in, opcode 4 = close/slide-
 // away. The Sell transition runs `DAT_801e4e54` = close {0x28, 0x2a (picker), 0x22},
-// leaving the gold (0x20) + vendor-name (0x21) boxes — exactly the "slide the menus
+// leaving the gold (0x20) + vendor-name (0x21) boxes - exactly the "slide the menus
 // away, keep gold + name" effect. We reuse that on Trade entry, and the full open
 // script `DAT_801e4e38` (opens 0x21/0x2a/0x20/0x28/0x22) to slide them back on exit.
 
@@ -568,17 +568,17 @@ pub const FINALIZE_FN: u32 = 0x8003_1D00;
 /// Trade-screen exit button = ○ / CANCEL. In `PAD_CUR` (0x8007b850, built by
 /// `FUN_8001822C` as `~CONCAT11(rawbyte0,rawbyte1)`) the FACE buttons are the low
 /// byte: △=0x10, ○=0x20, ✕=0x40, □=0x80 (the D-pad is the high byte: Up=0x1000,
-/// Right=0x2000, Down=0x4000, Left=0x8000). So ○ = 0x20 — NOT 0x2000 (= Right) and
+/// Right=0x2000, Down=0x4000, Left=0x8000). So ○ = 0x20 - NOT 0x2000 (= Right) and
 /// NOT ✕ (0x40 = CONFIRM, which opens Trade).
 pub const HANDLER_CANCEL_MASK: u16 = 0x0020;
 /// Private "trade screen active" flag in dead gap space. The dispatch stub sets it,
 /// the entry detour gates on it, the handler clears it on exit. We DON'T reuse the
-/// picker sub-state `DAT_801e46ac`: the menu owns it — `FUN_801dc6b4` case 2 resets
+/// picker sub-state `DAT_801e46ac`: the menu owns it - `FUN_801dc6b4` case 2 resets
 /// it (`DAT_801e46ac = 0`) whenever its draw-state shadow desyncs, wiping our value.
 ///
 /// ALL seru-trade pieces (this flag + the other cells, both stubs, the row-4 stub,
 /// the strings, and the bucket table) live in the 0899 run-C dead region alongside
-/// the handler — NOT the SCUS rodata gap. That gap is crowded by other randomizer
+/// the handler - NOT the SCUS rodata gap. That gap is crowded by other randomizer
 /// features (the Seru-Bell name at `0x8007AB40`, the bonus-equipment-drop routine at
 /// `0x8007AB80`, the flee-EXP routine at `0x8007AD00`), so hosting in 0899 keeps
 /// seru trading compatible with all of them. 0899 is resident throughout the shop
@@ -586,7 +586,7 @@ pub const HANDLER_CANCEL_MASK: u16 = 0x0020;
 /// reset to 0 on each load and are re-initialised by the dispatch stub on entry.
 pub const TRADE_ACTIVE_VA: u32 = 0x801E_7E20;
 
-/// 0899 run-C VAs (all above the handler, below the run-C end; non-overlapping —
+/// 0899 run-C VAs (all above the handler, below the run-C end; non-overlapping -
 /// asserted by `trade_0899_layout_is_disjoint`). Reached by `j` from the 0899
 /// detours / handler, so no SCUS gap is used.
 pub const ENTRY_STUB_VA: u32 = 0x801E_7B00;
@@ -600,13 +600,13 @@ pub const TRADE_DISPATCH_STUB_VA: u32 = 0x801E_7B60;
 /// it carries a large reference-free zero region (run-C, file `0x18CC7`, VA
 /// `0x801E74DF`, ~0xF00 bytes) that is part of the loaded image (reloaded with the
 /// overlay) and verified all-zero across the trade screen + both slide-transition
-/// states — so the handler embeds there, resident during every shop, with ~960 words
+/// states - so the handler embeds there, resident during every shop, with ~960 words
 /// of room and no runtime CD load. The entry detour (in the SCUS gap) `j`s here.
 pub const TRADE_HANDLER_VA: u32 = 0x801E_74E0;
 /// Upper bound the handler body must stay below (end of the 0899 run-C dead region,
 /// `0x801E83E2`, rounded down with a small margin).
 pub const TRADE_HANDLER_END: u32 = 0x801E_83E0;
-/// PROT entry hosting the handler (the menu overlay — same entry the picker edits
+/// PROT entry hosting the handler (the menu overlay - same entry the picker edits
 /// target). Its load base is [`SLOT_A_BASE`]; the handler's file offset is
 /// `TRADE_HANDLER_VA - SLOT_A_BASE`.
 pub const HANDLER_OVL_PROT_INDEX: usize = PICKER_MENU_PROT_INDEX;
@@ -629,7 +629,7 @@ pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
 pub const PLAY_TIME_VA: u32 = 0x8008_4570;
 /// Reseed period in **play-time ticks** (the unit of `_DAT_80084570`). HW-pinned:
 /// the counter advances ~per-frame (≈60/s), NOT per-second as the memory-map label
-/// suggests — a maxed save read `0x80084570 ≈ 10.4M`, which is ~48 h at 60/s, not
+/// suggests - a maxed save read `0x80084570 ≈ 10.4M`, which is ~48 h at 60/s, not
 /// the absurd ~2900 h it would be at 1/s. So the kernel's seconds-based
 /// `SECONDS_PER_RESEED` (engine-facing) does NOT apply here; the handler divides the
 /// frame counter by this. `32400` ticks ≈ 9 minutes at 60/s, and fits a single
@@ -651,7 +651,7 @@ pub const SERU_LEVELS_OFFSET: u16 = 0x161;
 /// Display-name offset in the character record (`+0x2A7`); the owner name per line.
 pub const RECORD_NAME_OFFSET: u16 = 0x2A7;
 /// Native monospaced base-10 number formatter `FUN_80034b78(value, min_digits, x, y)`
-/// — draws the per-line `LVL` value. SCUS-resident; 4 register args.
+/// - draws the per-line `LVL` value. SCUS-resident; 4 register args.
 pub const NUMBER_FN: u32 = 0x8003_4B78;
 /// "SERU TRADE" title string for the handler. Relocated to the upper row-4 gap tail
 /// (past `@Trade` at [`TRADE_STR_VA`], below the config blob) to free the
@@ -695,13 +695,13 @@ pub fn assemble_trade_dispatch_stub() -> Vec<u32> {
     w.push(nop());
     let trade = w.len();
     // Slide the picker windows away (reuse the Sell transition) so the trade screen
-    // gets the cleared space. Preserve ra across the call — we exit via `j TRADE_EXIT`
+    // gets the cleared space. Preserve ra across the call - we exit via `j TRADE_EXIT`
     // whose tail `jr ra` must still return to the menu tick.
     w.push(addiu(SP, SP, 0xFFF8)); // sp -= 8
     w.push(sw(RA, SP, 0));
     w.push(lui(A0, hi(SLIDE_AWAY_SCRIPT_VA)));
     w.push(addiu(A0, A0, lo(SLIDE_AWAY_SCRIPT_VA)));
-    w.push(jal(WIDGET_VM_FN)); // FUN_801d6628(&DAT_801e4e54) — slide away
+    w.push(jal(WIDGET_VM_FN)); // FUN_801d6628(&DAT_801e4e54) - slide away
     w.push(nop());
     w.push(lw(RA, SP, 0));
     w.push(addiu(SP, SP, 8));
@@ -763,14 +763,14 @@ pub fn assemble_trade_entry_stub() -> Vec<u32> {
 /// [`legaia_asset::seru_trade`]): it reads the current `(want, give)` pair from the
 /// precomputed [`BUCKET_TABLE_VA`] indexed by `(play_time / `[`RESEED_PERIOD_FRAMES`]`)
 /// & `[`BUCKET_INDEX_MASK`], draws the give-back seru as a reward header, then scans
-/// the four party records — for each member that owns the wanted seru it draws one
+/// the four party records - for each member that owns the wanted seru it draws one
 /// selectable line `want_name  owner_name  LVL n` (so the same wanted type held by
 /// two members lists once per owner, matching `expand_offers`). Finally the native
 /// window box, and on ○ it clears the active flag to return to the picker.
 ///
 /// DRAW ORDER MATTERS: text is emitted FIRST, the opaque window box LAST. The native
 /// box (`FUN_8002C69C`) and the renderer's own pass both put a later-submitted prim
-/// at a DEEPER OT slot, so a box drawn after the text lands *behind* it — exactly the
+/// at a DEEPER OT slot, so a box drawn after the text lands *behind* it - exactly the
 /// fix used for the in-body row-4 label. Drawing the box first buries every glyph
 /// under the blue fill (verified: blank box in a VRAM dump).
 ///
@@ -861,7 +861,7 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(jal(TEXT_DRAW_FN));
     w.push(nop());
     // reward level (the bucket's fixed give-back level, shown so the player sees the
-    // trade's value): FUN_80034b78(s6, 1, COL_LEVEL_X + slide, ROW_HEADER_Y) — aligns
+    // trade's value): FUN_80034b78(s6, 1, COL_LEVEL_X + slide, ROW_HEADER_Y) - aligns
     // under the per-owner level column.
     w.push(addu(A0, ZERO, S6)); // value = give_level
     w.push(addiu(A1, ZERO, 1)); // min_digits
@@ -901,7 +901,7 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(nop());
     // MATCH: skip this owner if they ALREADY own the give-back seru (pointless trade).
     // Scan k=0..count for the give id; if found, jump to .nextslot (no line drawn).
-    // Uses t0/t1/t2 only — t6 still holds want*4 from the bne delay slot for the render.
+    // Uses t0/t1/t2 only - t6 still holds want*4 from the bne delay slot for the render.
     w.push(lui(AT, hi(TRADE_GIVE_ID_VA)));
     w.push(lw(T0, AT, lo(TRADE_GIVE_ID_VA))); // t0 = give id
     w.push(addiu(T1, ZERO, 0)); // t1 = k = 0 (fills the lw load-delay)
@@ -920,7 +920,7 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(j(va(gloop)));
     w.push(nop());
     let gskip = w.len();
-    w.push(0); // j .nextslot (skip owner) — patched once nextslot is known
+    w.push(0); // j .nextslot (skip owner) - patched once nextslot is known
     w.push(nop());
     let gnotfound = w.len();
     w[gdone_b] = beq(T2, ZERO, (gnotfound as i32 - (gdone_b as i32 + 1)) as i16);
@@ -1216,7 +1216,7 @@ pub fn assemble_trade_handler() -> Vec<u32> {
     w.push(sw(ZERO, AT, lo(TRADE_ACTIVE_VA)));
     w.push(lui(A0, hi(SLIDE_OPEN_SCRIPT_VA)));
     w.push(addiu(A0, A0, lo(SLIDE_OPEN_SCRIPT_VA)));
-    w.push(jal(WIDGET_VM_FN)); // FUN_801d6628(&DAT_801e4e38) — slide back in
+    w.push(jal(WIDGET_VM_FN)); // FUN_801d6628(&DAT_801e4e38) - slide back in
     w.push(nop());
 
     // .finalize: per-frame finalize tail + epilogue.
@@ -1265,7 +1265,7 @@ pub fn row4_detour_words() -> [u32; 2] {
 ///
 /// Draws + highlights the fourth "Trade" picker row from INSIDE the renderer body
 /// (right after the Quit text draw), so the glyphs link at the same OT depth as
-/// Buy/Sell/Quit — in front of the box background. At the detour site `s0` = the
+/// Buy/Sell/Quit - in front of the box background. At the detour site `s0` = the
 /// Quit row's y, `s2` = the text x, `s1` = the picker context (`param_1`); the
 /// native callees preserve them, and the function's `ra` was already stack-saved
 /// at the prologue, so the stub may `jal` freely. The Trade row sits at `s0+0xe`,
@@ -1489,7 +1489,7 @@ const fn hi(va: u32) -> u16 {
 const fn lo(va: u32) -> u16 {
     (va & 0xffff) as u16
 }
-/// Plain high half of a 32-bit immediate (no sign correction — for `lui`+`ori`).
+/// Plain high half of a 32-bit immediate (no sign correction - for `lui`+`ori`).
 const fn imm_hi(v: u32) -> u16 {
     (v >> 16) as u16
 }
@@ -1563,7 +1563,7 @@ pub fn assemble_shop_loader_stub(lba: u32, sectors: u16) -> Vec<u32> {
 /// As [`assemble_shop_loader_stub`], but `gated` selects whether the sub-op gate
 /// is live. With `gated = false` the gate branch is neutered (`bne zero,zero` is
 /// never taken) so the overlay loads on **every** op-`0x49` arm (shop / inn /
-/// save / name-entry alike) — a diagnostic build that proves whether the detour
+/// save / name-entry alike) - a diagnostic build that proves whether the detour
 /// fires at all, independent of the sub-op value. The word layout is identical
 /// either way (only the branch's `rs` register changes), so the sidecar + the
 /// disc oracle stay consistent.
@@ -1602,12 +1602,12 @@ pub fn assemble_shop_loader_stub_gated(lba: u32, sectors: u16, gated: bool) -> V
 /// the op-0x49 detour's `j STUB_VA`). Instead of a raw mid-tick CD read (which
 /// reentrantly froze), it MIRRORS the field-VM op-0x3E minigame door-warp arm
 /// (`0x801E078C`): zero the two housekeeping words, set the minigame `sub_id`,
-/// request mode 24 (`MODE_OTHER_INIT`), and call the SysFlag setter — then replay
+/// request mode 24 (`MODE_OTHER_INIT`), and call the SysFlag setter - then replay
 /// the op-0x49 displaced pair and return to the dispatcher. The current frame
 /// finishes normally; next frame the mode SM enters mode 24 (`FUN_80025980`),
 /// which loads the slot-A overlay for `sub_id` from the SAFE between-frames CD
 /// context and warps back to field on exit. `sub_id` selects which overlay
-/// `FUN_80025980` loads + dispatches — wiring our own overlay there is the
+/// `FUN_80025980` loads + dispatches - wiring our own overlay there is the
 /// payload-hosting step (the FUN_80025980 switch fork), separate from this
 /// trigger. Does NOT clear the op-0x3E `player[+0x10]&~0x80000` bit (that needs
 /// the live VM-ctx player pointer, absent at this hook; it is session cleanup,
@@ -1617,7 +1617,7 @@ pub fn assemble_warp_trigger_stub(sub_id: u16, fire_once: bool) -> Vec<u32> {
 }
 
 /// As [`assemble_warp_trigger_stub`], but `gate_shop` adds a sub-op gate so the
-/// warp only fires for a **merchant** (op-0x49 sub-op `0` — the shop record),
+/// warp only fires for a **merchant** (op-0x49 sub-op `0` - the shop record),
 /// skipping name-entry / inn / save. `s6` is the live operand pointer at the
 /// detour, so `*s6` is the sub-op. (Shops don't auto-retrigger, so the real
 /// feature uses `gate_shop=true, fire_once=false`.) Both guards branch to the
@@ -1675,7 +1675,7 @@ pub fn assemble_warp_trigger_stub_opts(sub_id: u16, fire_once: bool, gate_shop: 
 /// index), replays the op-0x49 displaced pair, and returns to the dispatcher.
 /// The current frame finishes; next frame the mode SM enters our dead mode and
 /// calls [`assemble_mode_init_loader_stub`] in the safe between-frames context.
-/// No CD read here — the load is deferred to the mode handler.
+/// No CD read here - the load is deferred to the mode handler.
 pub fn assemble_mode_request_trigger() -> Vec<u32> {
     vec![
         lui(AT, hi(MODE_INDEX_VA)),       // 0:  \ v0 = current mode index
@@ -1697,7 +1697,7 @@ pub fn assemble_mode_request_trigger() -> Vec<u32> {
 /// between-frames context, so the proven load sequence runs without mid-tick
 /// reentrancy: CD-read the pochi overlay (baked `lba`/`sectors`) to [`DEST`],
 /// FlushCache, run it, then request [`FIELD_MODE_INDEX`] to return to the field
-/// (the field overlay stays resident in slot A — we load to slot B) and `jr ra`.
+/// (the field overlay stays resident in slot A - we load to slot B) and `jr ra`.
 /// `ra` is saved across the inner calls on the stack.
 pub fn assemble_mode_init_loader_stub(lba: u32, sectors: u16) -> Vec<u32> {
     vec![
@@ -1734,7 +1734,7 @@ pub fn assemble_mode_init_loader_stub(lba: u32, sectors: u16) -> Vec<u32> {
 /// **our** sub-id ([`WARP_SUBID`]) it baked-LBA-loads our pochi overlay to slot A
 /// ([`SLOT_A_BASE`]), FlushCaches, runs the overlay's init, then calls the mode-24
 /// return warp [`MODE24_RETURN_FN`] (restore scene + request mode 2 reload) and
-/// runs `FUN_80025980`'s epilogue itself — bypassing the function's mode-0x19
+/// runs `FUN_80025980`'s epilogue itself - bypassing the function's mode-0x19
 /// hand-off (we go straight back to the field, not into a mode-25 minigame loop).
 /// For any other sub-id it replays the original loader and rejoins at
 /// [`WARP_INIT_REJOIN_VA`], so all 7 retail minigames are unaffected. `a0` still
@@ -1746,7 +1746,7 @@ pub fn assemble_warp_init_redirect(lba: u32, sectors: u16) -> Vec<u32> {
 /// As [`assemble_warp_init_redirect`], but `call_return_warp` selects what happens
 /// after our overlay's INIT returns. `true` (sentinel slice): call
 /// [`MODE24_RETURN_FN`] for an immediate field reload. `false` (draw side): skip it
-/// — the overlay's INIT itself requests the persistent draw mode (mode 13), so the
+/// - the overlay's INIT itself requests the persistent draw mode (mode 13), so the
 /// game keeps calling the overlay's TICK each frame until the TICK returns to field.
 pub fn assemble_warp_init_redirect_opts(
     lba: u32,
@@ -1800,7 +1800,7 @@ pub fn assemble_warp_init_redirect_opts(
 /// (offset 0) hands off to mode 13 so the game calls the TICK (offset
 /// [`SLOT_A_TICK_OFFSET`]) each frame. The TICK draws a native window box
 /// ([`BOX_FN`]) with a `"SERU TRADE"` title and the party lead's **learnable-seru
-/// list** — it reads the count ([`SERU_COUNT_VA`]) + ids ([`SERU_IDS_VA`]) live
+/// list** - it reads the count ([`SERU_COUNT_VA`]) + ids ([`SERU_IDS_VA`]) live
 /// from the character record, looks each id up in the spell display-name table
 /// ([`SERU_NAME_PTRS`]), and draws the name with [`TEXT_DRAW_FN`] (native font).
 /// CROSS returns to the field; heartbeats the frame counter to [`SENTINEL_ADDR`].
@@ -1840,7 +1840,7 @@ pub fn assemble_draw_overlay() -> Vec<u32> {
         t.push(jal(TEXT_DRAW_FN));
         t.push(nop());
     };
-    // Native window/box frame: FUN_8002C69C(x, y, w, h) — 4 register args.
+    // Native window/box frame: FUN_8002C69C(x, y, w, h) - 4 register args.
     let box_frame = |t: &mut Vec<u32>, x: u16, y: u16, bw: u16, bh: u16| {
         t.push(addiu(A0, ZERO, x));
         t.push(addiu(A1, ZERO, y));

@@ -84,7 +84,7 @@ fn move_fx_prototype_entries_are_summon_format_records() {
     );
 
     // Each record is a summon-format part: a transform node, a small library
-    // mesh index, or a node-mode sentinel — never garbage. Library indices stay
+    // mesh index, or a node-mode sentinel - never garbage. Library indices stay
     // small (they index the 30-entry effect-model window).
     for p in &parts {
         match p.kind() {
@@ -106,7 +106,7 @@ fn move_fx_prototype_entries_are_summon_format_records() {
     }
 
     // The worked-example records decode to their pinned model_sel (plus the
-    // Fire Tail record at 0x26C6C, model_sel 5 — what the live part-actor seats).
+    // Fire Tail record at 0x26C6C, model_sel 5 - what the live part-actor seats).
     let fire_tail_off = (0x801F_5484u32 - BATTLE_OVERLAY_BASE) as usize;
     let with_fire_tail =
         examples

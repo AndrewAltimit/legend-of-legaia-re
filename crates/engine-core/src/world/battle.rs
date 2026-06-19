@@ -337,7 +337,7 @@ impl World {
     /// index). Reads the caster's learned spells off their roster record and
     /// their live battle MP to grey out unaffordable rows. Returns `None` when
     /// there's no roster record for the slot, OR when the caster is **silenced
-    /// / petrified** (a `blocks_magic` status) — in both cases the caller
+    /// / petrified** (a `blocks_magic` status) - in both cases the caller
     /// reopens the command menu so the player picks a non-magic action, which
     /// is the party-side mirror of the monster AI's cast→physical fallback.
     pub(super) fn build_battle_spell_session(
@@ -547,7 +547,7 @@ impl World {
 
         // A party member's Seru-magic cast trains the spell: each damaged
         // target contributes spell XP (the `FUN_801ddb30` accrual tail runs
-        // once per finisher call, i.e. per hit — kernel
+        // once per finisher call, i.e. per hit - kernel
         // `battle_formulas::summon_spell_xp_gain`), summed here and banked
         // after the cast with the level-up check (`FUN_801e70bc`,
         // [`Self::accrue_summon_spell_xp`]). Retail keys on "attacker slot 7"
@@ -592,10 +592,10 @@ impl World {
             } else if let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome {
                 // Player Seru-magic path. When the monster catalog resolves
                 // the summon creature (disc-real battles), the magnitude
-                // rolls through the faithful summon branch of FUN_801dd0ac —
+                // rolls through the faithful summon branch of FUN_801dd0ac -
                 // summon-body HP/AGL + caster AGL + affinity + the caster's
                 // per-spell magic-power byte + the FUN_801ddb30 finisher
-                // (per-caster summon power-percent, 9999 cap) — replacing
+                // (per-caster summon power-percent, 9999 cap) - replacing
                 // the MP-scaled placeholder entirely.
                 if let Some(faithful) = self.player_summon_predamage(caster, t, def.id) {
                     *amount = faithful;
@@ -603,7 +603,7 @@ impl World {
                     // Fallback (creature unresolved): scale the placeholder
                     // by the element affinity of the summon creature vs. the
                     // target (FUN_801dd864). Post-roll, gated on the affinity
-                    // tables — neutral (100) otherwise — so disc-free battles
+                    // tables - neutral (100) otherwise - so disc-free battles
                     // keep an unchanged magnitude and RNG stream.
                     let pct = self.cast_affinity_pct(def.id, t);
                     if pct != 100 {
@@ -659,7 +659,7 @@ impl World {
     /// the non-summon branch of `FUN_801dd0ac`) seeded with the move's real
     /// per-move power (the move-power table's `+0`, `>> 2`). Returns the
     /// pre-finisher damage clamped to `1..=9999`, or `None` when the table
-    /// isn't loaded or `move_id` has no power record — in which case the caller
+    /// isn't loaded or `move_id` has no power record - in which case the caller
     /// keeps the MP-scaled spell placeholder.
     ///
     /// Stat bridge (all read live off the actor arrays, faithful to the retail
@@ -675,12 +675,12 @@ impl World {
     /// conditional bonus-arm threshold, matching retail's scale→bonus order),
     /// so a non-neutral affinity can change whether the lazy bonus pair is
     /// drawn. What is invariant is the *gating*: an uninstalled table resolves
-    /// to 100% (no scaling), reproducing the no-affinity baseline — magnitude
-    /// and RNG stream bit-identical — so disc-free / synthetic battles are
+    /// to 100% (no scaling), reproducing the no-affinity baseline - magnitude
+    /// and RNG stream bit-identical - so disc-free / synthetic battles are
     /// unperturbed.
     ///
     /// The `rand()` draws are taken in retail call order: attacker ×2, defender
-    /// ×1, then the bonus pair ×2 **lazily** — drawn only when the conditional
+    /// ×1, then the bonus pair ×2 **lazily** - drawn only when the conditional
     /// bonus arm fires ([`arts_physical_predamage_lazy`]). So the global RNG
     /// cursor advances by exactly three draws on the no-bonus path and five on
     /// the bonus path, matching `FUN_801dd0ac`'s call order.
@@ -726,7 +726,7 @@ impl World {
         Some(atk.saturating_sub(def).clamp(1, 9999) as u16)
     }
 
-    /// Build the defender-side [`SummonRollActor`] for an actor slot — the
+    /// Build the defender-side [`SummonRollActor`] for an actor slot - the
     /// stat bridge shared by the monster special-attack roll
     /// ([`Self::enemy_move_predamage`]) and the player summon roll
     /// ([`Self::player_summon_predamage`]). AGL = `battle_accuracy` (the
@@ -768,7 +768,7 @@ impl World {
     /// `0x80084869`). The retail loop bounds the search at `0x20` entries even
     /// though the record field holds 36; mirrored here. Returns `1` (the
     /// [`vm::battle_formulas::apply_magic_power`] identity) when the roster
-    /// doesn't carry the spell — a fresh cast with no recorded level.
+    /// doesn't carry the spell - a fresh cast with no recorded level.
     pub(super) fn caster_magic_power_byte(&self, caster: u8, spell_id: u8) -> u8 {
         const RETAIL_SEARCH_BOUND: usize = 0x20;
         // Battle ordinal -> the occupying character's record.
@@ -792,13 +792,13 @@ impl World {
     /// branch of the shared battle kernel (`FUN_801dd0ac` `attacker_slot ==
     /// 7`) plus the closed-form finisher stages (`FUN_801ddb30`), replacing
     /// the MP-scaled spell placeholder. Returns `None` when `spell_id` isn't
-    /// a summon or the monster catalog doesn't resolve the summon creature —
+    /// a summon or the monster catalog doesn't resolve the summon creature -
     /// disc-free / synthetic battles keep the placeholder path with an
     /// unchanged RNG stream.
     ///
     /// Faithful seeds:
     /// - **Summon body** (the retail slot-7 actor): the namesake `battle_data`
-    ///   creature's record HP (`+0x0C`) and AGL — the battle loader installs
+    ///   creature's record HP (`+0x0C`) and AGL - the battle loader installs
     ///   the record stats on the freshly-spawned summon actor
     ///   ([`Self::summon_creature_def`]).
     /// - **Caster AGL** (`DAT_801C9370[ctx+0x13]` `+0x168`): the casting
@@ -815,7 +815,7 @@ impl World {
     ///   drain, stat debuffs) stays in the live fold.
     ///
     /// RNG: draws attacker + defender eagerly, the bonus-arm and floor draws
-    /// lazily — the shared cursor advances exactly as retail's does (two,
+    /// lazily - the shared cursor advances exactly as retail's does (two,
     /// three, or four draws).
     ///
     /// PORT: FUN_801dd0ac (summon branch, live wiring; pure kernel in
@@ -932,8 +932,8 @@ impl World {
 
     /// Element id (`0..=7`) of a battle slot, resolved by slot the way the retail
     /// affinity stage [`FUN_801dd864`] does: a party member (slot `< party_count`)
-    /// takes its per-character table element; any other slot — an enemy, or the
-    /// slot-7 summon body — takes its monster record's `+0x1D` element
+    /// takes its per-character table element; any other slot - an enemy, or the
+    /// slot-7 summon body - takes its monster record's `+0x1D` element
     /// ([`crate::monster_catalog::MonsterDef::element`]). Returns `None` when the
     /// affinity tables aren't installed or no element resolves, so callers fall
     /// back to neutral.
@@ -949,15 +949,15 @@ impl World {
 
     /// Element id of the *summon creature* a player Seru-magic `spell_id` attacks
     /// as. Retail resolves a player magic cast's attacker element by slot, and a
-    /// summon cast runs through the slot-7 summon body — its namesake
-    /// `battle_data` creature ([`crate::summon::summon_creature_id`]) — so the
+    /// summon cast runs through the slot-7 summon body - its namesake
+    /// `battle_data` creature ([`crate::summon::summon_creature_id`]) - so the
     /// attacker element is that creature's record `+0x1D`, *not* the casting
     /// character's. Resolved off the loaded monster catalog by matching the
     /// spell's display name ([`crate::retail_magic`]) to the lowest creature id
     /// of that name (the `"$2"`/`"$3"` higher-level variants carry distinct names
     /// and are excluded). `None` for a non-summon id or when the catalog / spell
     /// name doesn't resolve.
-    /// The `battle_data` creature def a player Seru-magic `spell_id` summons —
+    /// The `battle_data` creature def a player Seru-magic `spell_id` summons -
     /// the namesake creature (Gimard spell → Gimard creature; see
     /// [`crate::summon::summon_creature_id`]). Resolved by matching the
     /// spell's display name against the loaded monster catalog, so the
@@ -986,7 +986,7 @@ impl World {
     /// attacker element is the summon creature's ([`Self::summon_attacker_element`]),
     /// the defender element is resolved by slot ([`Self::battle_slot_element`]).
     /// Returns `100` (neutral, no change) when the tables aren't installed, the id
-    /// isn't a summon, or either element fails to resolve — so disc-free /
+    /// isn't a summon, or either element fails to resolve - so disc-free /
     /// synthetic battles and non-summon casts are unaffected. Applied post-roll,
     /// so it never touches the RNG stream.
     fn cast_affinity_pct(&self, spell_id: u8, target: u8) -> u8 {
@@ -1115,7 +1115,7 @@ impl World {
     /// unconditional); the two equipment "spirit gain up" bits only apply to a
     /// party defender, and the engine doesn't model the per-character
     /// resistance words yet, so [`vm::battle_formulas::DefenderResist::default`]
-    /// (no gain-up, no resist) is passed — faithful for a character without
+    /// (no gain-up, no resist) is passed - faithful for a character without
     /// that gear and a no-op for an enemy. Draws no RNG, so the determinism
     /// stream is untouched; `over` is the post-mitigation damage already
     /// computed by the caller (the pre-nullify value retail accrues from).
@@ -1161,7 +1161,7 @@ impl World {
     ///
     /// **Stat-up buffs (`magnitude > 0`) use the retail multiplicative ramp.**
     /// Retail's stat-up selectors (1..7) raise the live stat by ×6/5 (clamped to
-    /// `0xFFFF`) — [`vm::battle_formulas::buff_ramp`], pinned from the SM dump —
+    /// `0xFFFF`) - [`vm::battle_formulas::buff_ramp`], pinned from the SM dump -
     /// not by a flat additive delta. So a positive buff ramps the scalar by +20%
     /// of its *current* value (the per-spell `magnitude` value is now only a
     /// sign hint for the pinned scalar stats). **Debuffs (`magnitude <= 0`) stay
@@ -1365,7 +1365,7 @@ impl World {
     }
 
     /// Drain the summon-magic level-up events (`(party_slot, spell_id,
-    /// new_level)`) resolved since the last drain — the engine analogue of
+    /// new_level)`) resolved since the last drain - the engine analogue of
     /// the retail level-up banner (`FUN_801e70bc` fires UI element `0x65`).
     pub fn drain_magic_level_ups(&mut self) -> Vec<(u8, u8, u8)> {
         std::mem::take(&mut self.magic_level_ups)
@@ -1375,21 +1375,21 @@ impl World {
     /// level-up.
     ///
     /// PORT: FUN_801e70bc (summon-magic level-up check, battle overlay 0898;
-    /// `ghidra/scripts/funcs/overlay_battle_action_801e70bc.txt`) — find the
+    /// `ghidra/scripts/funcs/overlay_battle_action_801e70bc.txt`) - find the
     /// cast spell id in the caster record's spell-id list (`+0x13D`, bound
     /// `0x20`), compare the accrued XP (`+0x8` u32 array) against the
     /// threshold table at `0x8007656C` indexed by the spell's level byte
     /// (`+0x161` array), and bump the level (strict `threshold < xp`, level
-    /// capped below 9 — kernel
+    /// capped below 9 - kernel
     /// [`vm::battle_formulas::summon_magic_levels_up`]).
     ///
     /// `gain` is the summed per-target accrual from the damage finisher's
     /// spell-XP tail (`FUN_801ddb30`, kernel
-    /// [`vm::battle_formulas::summon_spell_xp_gain`]) — the caller computes it
+    /// [`vm::battle_formulas::summon_spell_xp_gain`]) - the caller computes it
     /// per target hit, mirroring retail's one-finisher-call-per-hit shape.
     ///
     /// Retail re-checks the threshold once per summon return (state `0x36`),
-    /// so at most one level is gained per cast — mirrored here. The leveled
+    /// so at most one level is gained per cast - mirrored here. The leveled
     /// byte is what the next cast's magic-power stage reads
     /// ([`Self::caster_magic_power_byte`]). A level-up is recorded in
     /// [`Self::magic_level_ups`] (the banner the retail check fires as UI
@@ -1699,16 +1699,16 @@ impl World {
     /// The Lost Grail "Final Heal" auto-revive sweep.
     ///
     /// PORT: FUN_801e6968 (battle overlay 0898;
-    /// `ghidra/scripts/funcs/overlay_battle_action_801e6968.txt`) — the
+    /// `ghidra/scripts/funcs/overlay_battle_action_801e6968.txt`) - the
     /// action-cleanup helper state `0x50` of `FUN_801E295C` calls before its
     /// liveness count. For each party member in scope that is **down** (live
-    /// HP `+0x14C` == 0) and carries ability bit `0x27` — *Final Heal*, the
+    /// HP `+0x14C` == 0) and carries ability bit `0x27` - *Final Heal*, the
     /// Lost Grail passive, record `+0xF8 & 0x80` (bit 39 = word 1 bit 7 of
-    /// the `+0xF4` bitfield) — retail:
+    /// the `+0xF4` bitfield) - retail:
     ///
     /// - revives at **full max HP** via `FUN_800402F4(4, 1, slot)` (the
     ///   item-effect apply handler's revive class with the non-zero tier:
-    ///   `uVar13 = max_hp`, statuses cleared — `800402f4.txt` case 4);
+    ///   `uVar13 = max_hp`, statuses cleared - `800402f4.txt` case 4);
     /// - **consumes one equipped Lost Grail** (item id `0xE7`): zeroes the
     ///   first accessory slot (record `+0x19B..+0x19D`, equipment array
     ///   indices 5..8) holding `0xE7` and clears the ability bit;
@@ -1717,7 +1717,7 @@ impl World {
     ///
     /// Retail dispatches on the acting summon's target byte (`+0x1DD` `< 3`
     /// = the single party target, `== 8` = sweep all party slots); the
-    /// engine sweeps the whole party after each step — equivalent, since a
+    /// engine sweeps the whole party after each step - equivalent, since a
     /// member without the bit stays down and a member with it is revived by
     /// the first sweep after death. Item id `0xE7` = "Lost Grail"
     /// (disc-decoded `SCUS_942.54` item table); passive `0x27` mapping per
@@ -1725,7 +1725,7 @@ impl World {
     /// monster slot dead + `DAT_8007BD0C == 0xB5` boss-transition arm) is
     /// scripted-fight glue and is not modelled here.
     ///
-    /// REF: FUN_800402F4 (the revive arm this calls — case 4, tier 1 = full
+    /// REF: FUN_800402F4 (the revive arm this calls - case 4, tier 1 = full
     /// max HP + status clear)
     pub(super) fn apply_final_heal_revives(&mut self) {
         const LOST_GRAIL: u8 = 0xE7;
@@ -1869,7 +1869,7 @@ impl World {
             }
         }
 
-        // Final Heal sweep (FUN_801e6968) over this step's casualties — the
+        // Final Heal sweep (FUN_801e6968) over this step's casualties - the
         // engine point closest to retail's state-0x50 "cleanup before the
         // liveness count" placement.
         self.apply_final_heal_revives();
@@ -2561,7 +2561,7 @@ impl World {
 
     /// Lowest-HP living party member (slot `0..party_count`), ties broken by
     /// the lower slot index. `None` only when the whole party is down.
-    /// Consumes no RNG — used solely by the opt-in
+    /// Consumes no RNG - used solely by the opt-in
     /// [`World::smarter_monster_targeting`] override, which runs after the
     /// faithful random pick has already advanced the RNG stream.
     fn lowest_hp_living_party_member(&self, party_count: u8) -> Option<u8> {
@@ -2709,7 +2709,7 @@ impl World {
     /// (`overlay_0897_801e23ec`), so every living actor's key is `>= 1`.
     /// `true` while any *living* actor still holds an unspent initiative key.
     /// When this goes false the round is over and the next
-    /// [`Self::next_combatant_by_initiative`] reseeds — the live loop uses this
+    /// [`Self::next_combatant_by_initiative`] reseeds - the live loop uses this
     /// as its once-per-round boundary for status ticking. Dead actors' stale
     /// keys are ignored (only living actors count), so it agrees with the
     /// reseed condition inside the selector.

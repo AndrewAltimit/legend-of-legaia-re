@@ -1,7 +1,7 @@
 -- autorun_clut_upload_watch_live.lua
 -- Interactive capture: hooks the VRAM uploader FUN_80059bd4 and logs every
 -- upload whose dest is a character texture page (x>=512) or the character
--- CLUT band (y 488..499), deduped by (x,y,src). NO injected input — the
+-- CLUT band (y 488..499), deduped by (x,y,src). NO injected input - the
 -- USER plays the battle in the window so the party characters render and
 -- their textures/CLUTs upload. Captures whichever path the battle chars use.
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"

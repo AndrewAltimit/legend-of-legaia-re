@@ -129,7 +129,7 @@ enum Cmd {
     /// scene-graph: scan the `FUN_80021B04` + `FUN_80050ED4` spawn calls and
     /// print each part's record offset, mesh selector, flags, and bytecode
     /// span. Input is the raw overlay `.BIN`. Stager extraction files over-read
-    /// into the following TOC entries — pass `--trim` with the entry's
+    /// into the following TOC entries - pass `--trim` with the entry's
     /// unique-content length (`(next_start_lba - start_lba) * 0x800`, accepts
     /// `0x` hex) to drop the neighbour bytes.
     SummonOverlay {
@@ -139,14 +139,14 @@ enum Cmd {
         #[arg(long, value_parser = parse_hex_u32, default_value = "0x801F69D8")]
         base: u32,
         /// Trim the input to this many bytes before parsing (the entry's
-        /// TOC-gap unique-content footprint). Value is **hex** — the `0x`
+        /// TOC-gap unique-content footprint). Value is **hex** - the `0x`
         /// prefix is optional, so `0x1800` and `1800` both mean 6144 bytes
         /// (a bare `6144` would be read as `0x6144`).
         #[arg(long, value_parser = parse_hex_u32)]
         trim: Option<u32>,
     },
-    /// Parse a battle side-band streaming file — `summon.dat` (extraction PROT
-    /// 0893) or `readef.DAT` (0894) — into its `0x10800`-byte slots and print
+    /// Parse a battle side-band streaming file - `summon.dat` (extraction PROT
+    /// 0893) or `readef.DAT` (0894) - into its `0x10800`-byte slots and print
     /// each slot's class (texture / actor record / payload), texture layout,
     /// and attack-name string. `--texture-png-dir` additionally decodes every
     /// texture slot's 4bpp page through its first CLUT row to
@@ -203,7 +203,7 @@ enum Cmd {
     /// identity). A static table, so no disc input is required; pass `--scus` to
     /// annotate each row with the summon's spell name.
     SummonCreatures {
-        /// Optional `SCUS_942.54` image — adds each summon's spell name.
+        /// Optional `SCUS_942.54` image - adds each summon's spell name.
         #[arg(long)]
         scus: Option<PathBuf>,
         /// Emit the map as JSON instead of the text listing.
@@ -435,7 +435,7 @@ enum Cmd {
         #[arg(long)]
         anim: bool,
         /// Export the monster's mesh + texture + all action animations as a
-        /// binary glTF (`.glb`) to this path — a universal format that carries
+        /// binary glTF (`.glb`) to this path - a universal format that carries
         /// geometry, material, and animation together. Requires `--id`.
         #[arg(long)]
         glb: Option<PathBuf>,
@@ -855,7 +855,7 @@ enum OverlayCmd {
     /// Sweep a range of PROT entries: recover each base statically, count the
     /// votes, and print the leading dev string (the identity tell). Use this to
     /// enumerate the overlay corpus and triage which entries carry pinned
-    /// identity — a reproducible reconnaissance view, not committed anywhere.
+    /// identity - a reproducible reconnaissance view, not committed anywhere.
     Scan {
         /// Path to `PROT.DAT`.
         prot_dat: PathBuf,
@@ -869,7 +869,7 @@ enum OverlayCmd {
         #[arg(long, default_value_t = 8)]
         min_votes: u32,
         /// Only print entries whose base recovers to this VA (e.g. the slot-A
-        /// base 0x801CE818) — filters the sweep to one overlay slot.
+        /// base 0x801CE818) - filters the sweep to one overlay slot.
         #[arg(long, value_parser = parse_hex_u32)]
         base: Option<u32>,
         /// Emit JSON instead of a table.
@@ -879,7 +879,7 @@ enum OverlayCmd {
     /// Locate a function-head instruction signature across the corpus and, given
     /// the function's known VA, infer the host overlay's load base
     /// (`base = anchor_va - file_offset`). This is the byte-search that pins an
-    /// overlay's PROT entry with no capture — how the menu overlay (0899) was
+    /// overlay's PROT entry with no capture - how the menu overlay (0899) was
     /// found from `FUN_801CF650`'s signature.
     FindSig {
         /// Path to `PROT.DAT`.
@@ -5795,7 +5795,7 @@ fn overlay_generate_cmd(prot_dat: &Path, indices: &[u32], min_votes: u32) -> Res
 }
 
 /// Reconnaissance sweep: for each PROT entry in `[from, to]`, recover its base
-/// statically, count votes, and print the leading dev string. Not committed —
+/// statically, count votes, and print the leading dev string. Not committed -
 /// it's how the overlay corpus is triaged into slot-A / slot-B / non-overlay.
 fn overlay_scan_cmd(
     prot_dat: &Path,
@@ -5867,7 +5867,7 @@ fn overlay_scan_cmd(
 
 /// Locate a function-head signature across the corpus, printing the host PROT
 /// entry + file offset (and, given the anchor VA, the implied load base). The
-/// capture-free way to pin an overlay's entry — the menu-overlay method,
+/// capture-free way to pin an overlay's entry - the menu-overlay method,
 /// generalised into a CLI.
 fn overlay_find_sig_cmd(
     prot_dat: &Path,

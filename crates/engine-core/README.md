@@ -12,7 +12,7 @@ talk to this layer, and the render and audio crates read from it.
 - [Asset cache](#asset-cache)
 - [Frame timing](#frame-timing)
 - [Composite `World`](#composite-world)
-- [Battle helpers](#battle-helpers) — `art_strike`, `ap_gauge`, `battle_stats`, `items`, `battle_round`, `battle_runner`, `battle_session`, `battle_input`, `battle_hud`, `inventory_use`, `tactical_arts_editor`, `man_field_scripts`, field-resident carrier SM, `cutscene`
+- [Battle helpers](#battle-helpers) - `art_strike`, `ap_gauge`, `battle_stats`, `items`, `battle_round`, `battle_runner`, `battle_session`, `battle_input`, `battle_hud`, `inventory_use`, `tactical_arts_editor`, `man_field_scripts`, field-resident carrier SM, `cutscene`
 - [See also](#see-also)
 
 ## What it provides
@@ -56,7 +56,7 @@ struct. `World::tick` runs:
    - `SceneMode::Battle` → battle-action state machine step, preceded by
      the staged-anim commit (`commit_staged_battle_anims`, the
      `FUN_8004AD80` ladder): anim ids the SM stages into
-     `actor.queued_anim` play on the battle actors — equipment weapon
+     `actor.queued_anim` play on the battle actors - equipment weapon
      swings (`0xC..0xF`) directly, ids `>= 0x10` through the per-character
      art bank installed via `set_actor_battle_art_bank` (with the retail
      `0x10`/`0x1A` → dynamic-slot-`0x11` rewrite). The clip's finish
@@ -216,7 +216,7 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   on the overworld. `install_field_carriers([FieldCarrierConfig])` places the
   scene's carriers; a `ScriptedEncounter { formation_id }` sits Idle (towns
   run a 0% random rate, so its host gate disables self-firing) until
-  `engage_field_carrier(idx)` — the dialogue-accept stand-in — advances it
+  `engage_field_carrier(idx)` - the dialogue-accept stand-in - advances it
   Idle → Activating. The next `tick_field_carriers` runs the state-1 formation
   copy + the `case 2/3` fall-through battle handoff, resolving the carrier's
   MAN formation by index and flipping Field → Battle (returning to the field

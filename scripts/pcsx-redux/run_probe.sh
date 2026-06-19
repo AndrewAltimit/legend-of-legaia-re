@@ -30,13 +30,13 @@
 #   --iso PATH           disc image (default ~/Downloads/...)
 #   --pcsx PATH          pcsx-redux binary (default ~/Tools/pcsx-redux/pcsx-redux)
 #   --fast               drop -interpreter -debugger (recompiler ~10-50x
-#                        faster; Lua BPs do NOT fire in this mode — use
+#                        faster; Lua BPs do NOT fire in this mode - use
 #                        only for vsync-event-only probes)
 #   --log PATH           emulator log path (default logs/pcsx_probe_<stem>.log)
 #   --help               print this header and exit
 #
 # Why -interpreter -debugger by default:
-#   psxinterpreter.cc:1652 — Lua BPs only fire when both are set. The
+#   psxinterpreter.cc:1652 - Lua BPs only fire when both are set. The
 #   interpreter is required for the debug-process hook, and DebugSettings::Debug
 #   gates the hook itself. --fast skips both for probes that don't arm BPs.
 
@@ -165,7 +165,7 @@ if [[ ! -e "$LEGAIA_LUA" ]]; then
 fi
 
 # Derive stem from the lua probe basename for downstream defaults.
-# When --spec is used, the lua is _runner.lua for every spec — derive the
+# When --spec is used, the lua is _runner.lua for every spec - derive the
 # stem from the spec basename so each spec's captures land in its own
 # captures/<spec-stem>/ subtree instead of captures/_runner/.
 if [[ -n "$LEGAIA_PROBE_SPEC" ]]; then
@@ -206,14 +206,14 @@ cd "$REPO_ROOT"
     echo "  bios       : $LEGAIA_BIOS"
     echo "  iso        : $LEGAIA_ISO"
     [[ "${LEGAIA_NO_SSTATE:-0}" == "1" ]] \
-        && echo "  sstate     : (cold boot — LEGAIA_NO_SSTATE=1)" \
+        && echo "  sstate     : (cold boot - LEGAIA_NO_SSTATE=1)" \
         || echo "  sstate     : $LEGAIA_SSTATE${LEGAIA_SCENARIO:+ (from --scenario $LEGAIA_SCENARIO)}"
     echo "  lua        : $LEGAIA_LUA"
     [[ -n "$LEGAIA_PROBE_SPEC" ]] && echo "  spec       : $LEGAIA_PROBE_SPEC"
     echo "  frames     : $LEGAIA_FRAMES"
     [[ -n "$LEGAIA_OUT" ]]     && echo "  out        : $LEGAIA_OUT"
     [[ -n "$LEGAIA_OUT_DIR" ]] && echo "  out_dir    : $LEGAIA_OUT_DIR"
-    [[ $FAST -eq 1 ]] && echo "  mode       : fast (recompiler — no Lua BPs)" \
+    [[ $FAST -eq 1 ]] && echo "  mode       : fast (recompiler - no Lua BPs)" \
                       || echo "  mode       : interpreter+debugger (Lua BPs fire)"
     echo "  log        : $LOG_FILE"
     echo "===================="

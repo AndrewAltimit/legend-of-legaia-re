@@ -21,12 +21,12 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`move_power`](#move_power)
   - [`element_affinity`](#element_affinity)
   - [`befect_cluster`](#befect_cluster)
-  - [Character meshes, textures, animation](#character-meshes-textures-animation) — `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
-  - [World map](#world-map) — `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
-  - [Boot / title / menu UI](#boot--title--menu-ui) — `init_pak`, `title_pak`, `menu_glyph_atlas`
-  - [SCUS static tables](#scus-static-tables) — `item_names`, `item_effect`, `equip_stats`, `accessory_passive`, `spell_names`, `steal_table`, `sfx_table`, `level_up_tables`, `mode_table`, `new_game`
-  - [Cutscene / FMV / summon](#cutscene--fmv--summon) — `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`, `summon_creatures`
-  - [Scene + MAN](#scene--man) — `man_section`, `man_edit`, scene tables
+  - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
+  - [World map](#world-map) - `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
+  - [Boot / title / menu UI](#boot--title--menu-ui) - `init_pak`, `title_pak`, `menu_glyph_atlas`
+  - [SCUS static tables](#scus-static-tables) - `item_names`, `item_effect`, `equip_stats`, `accessory_passive`, `spell_names`, `steal_table`, `sfx_table`, `level_up_tables`, `mode_table`, `new_game`
+  - [Cutscene / FMV / summon](#cutscene--fmv--summon) - `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`, `summon_creatures`
+  - [Scene + MAN](#scene--man) - `man_section`, `man_edit`, scene tables
   - [TIM/TMD scan + catalog](#timtmd-scan--catalog)
 - [CLI](#cli)
 - [See also](#see-also)
@@ -89,7 +89,7 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 Static overlay-extraction pipeline. PSX overlays are clean copies of a
 fixed-VA-linked blob, so each runtime overlay (field / battle / …) is extracted
 straight from its `PROT.DAT` entry and disassembled at its load base, identity
-attached from the source entry — the structural fix for the VA-aliasing identity
+attached from the source entry - the structural fix for the VA-aliasing identity
 problem the `overlay_<label>_<addr>` dump naming works around. `recover_base`
 recovers the load base statically from the overlay's own internal `jal` call
 graph; `as_loaded` / `fingerprint` / `verify_fingerprint` back the committed map
@@ -118,7 +118,7 @@ slot.
 
 CLI `asset monster-archive --id N --obj <out>` exports the mesh, `--texture-png
 <out>` bakes the texture page, `--anim` lists the action animations, and `--glb
-<out>` exports the whole thing — mesh + baked texture + every action animation — as
+<out>` exports the whole thing - mesh + baked texture + every action animation - as
 a binary glTF (`monster_gltf::export_glb`; per-object animated nodes + a per-palette
 texture atlas).
 
@@ -161,7 +161,7 @@ PROT 0898, same link base as `move_power`. CLI `asset element-affinity <PROT 089
 ### `befect_cluster`
 
 Footprint-bounded extraction of the four-entry window the CDNAME symbol
-`befect_data` resolves to in define-number space (extraction PROT 872..875 —
+`befect_data` resolves to in define-number space (extraction PROT 872..875 -
 retail-semantically `vdf.dat` / `efect.dat` / the `player_data` file
 `player.lzs` / a `sound_data2` VAB stream; the retail befect block proper is
 extraction 870..873, see `docs/formats/cdname.md`). The naive per-entry
@@ -185,7 +185,7 @@ CLI `asset befect-cluster PROT.DAT --cdname CDNAME.TXT --out DIR`. See
 | `battle_char_assembly` (swing + art animations) | The runtime action table's equipment half: `swing_battle_animations` decodes the per-equipped-item weapon-swing records (section payload `+0x04`/`+0x08`, runtime slots `0xC..0xF`; splice `PORT: FUN_80052FA0`, record shape `FUN_800557B8`), and `art_animation_bank` / `art_animation` the record[0] `+0x58` art-anim bank (`[u32 count]` + `0xD0`-stride matcher+entry records; dynamic slots `0x10`/`0x11` via `FUN_8004AD80`), resolving each record's keyframe stream through its `readef.DAT` `"ME"` archive (`art_me_archive`). |
 | `me_archive` | `"ME"` keyframe-stream archive (`PORT: FUN_8002B28C` walk + `FUN_8002A9CC` channel-delta codec): `['M']['E'][u8 count][u16 sizes (bit 15 = compressed)][bodies]` → packed `[parts][frames][9-byte TRS]` streams. The art-animation stream source in `readef.DAT` slots `3*char+1` / `3*char+2`. |
 | `face_anim` | Battle facial animation (`PORT: FUN_8004C7B4`): the action entries' eye (`+0x8C`) / mouth (`+0x98`) keyframe tracks (`FaceTracks` / `battle_face_tracks`), the static `SCUS_942.54` face-frame tables (`FaceFrameTables::from_scus`, `DAT_80076824..0x80076908`) and the per-frame stamp selection (`FaceFrameTables::stamps` → `MoveImage` rects the engine applies via `legaia_tim::Vram::move_image`). See [`battle-data-pack.md` § Facial animation tracks](../../docs/formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98). |
-| `battle_char_palette` | In-battle party CLUTs decoded from the per-character player files (extraction PROT 0863/0864/0865 = `PLAYER1..3`) — `PORT: FUN_80052FA0`. The PROT 1204 bundled CLUTs are authoring defaults, not the battle palettes. |
+| `battle_char_palette` | In-battle party CLUTs decoded from the per-character player files (extraction PROT 0863/0864/0865 = `PLAYER1..3`) - `PORT: FUN_80052FA0`. The PROT 1204 bundled CLUTs are authoring defaults, not the battle palettes. |
 | `field_char_textures` | Field-character texture pack (PROT 0874 §2, "etim.dat"): eight TIM entries; 1/2/3 are the Vahn/Noa/Gala field atlas pages (texpage `(832,256)`, CLUT row 478). CLI `asset field-char-tex`. |
 | `player_anm` | Per-scene player ANM bundle (each scene bundle's type-0x05 "MOVE" section; battle-form at PROT 1203): per-(bone,frame) 8-byte entries, frame 0 of idle = rest pose. CLI `asset player-anm` / `player-anm-scan`. |
 
@@ -216,14 +216,14 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 | `sfx_table` | Sound-effect descriptor table (`DAT_8006F198`, 100 × 8-byte): `SfxTable::from_scus` → per-cue program/VAG, ADSR-region base, voice count + sustained bit, mixer channel. Feeds `SfxBank::from_descriptors`. CLI `asset sfx-table <SCUS>`. See [`sfx-table.md`](../../docs/formats/sfx-table.md). |
 | `level_up_tables` | Level-up data: `xp_thresholds_from_scus` (the 98-entry XP increment table) + `xp_correction_divisors_from_scus` (the per-level slots-1/2 threshold-correction divisors at `0x80070A2C`) + `growth_tables_from_scus` (the `DAT_80076918` per-character 8-stat growth curves). CLI `asset level-up <SCUS>`. |
 | `item_names` | `SCUS_942.54` item-name table (`PTR_DAT_8007436C[id*3]`, 256 ids): `ItemNameTable::from_scus` → `name(id)`. The id space a monster record's `drop_item` indexes; used by the web viewer's enemy table. See [`item-table.md`](../../docs/formats/item-table.md). |
-| `item_effect` | `SCUS_942.54` item-effect descriptor table (`DAT_800752C0`, 130 records): `ItemEffectTable::from_scus` → `effect(id)` (item id → subtype → `[class, tier, flags]`). Effect class/tier + all-party/field/battle usability, plus the **literal restore amounts** — `heal_amounts()` / `restore_amount(id)` decode the static heal-amount table at `0x8007655C` (HP `[200,800,9999]` / MP `[50,200,20]`) the apply handler `FUN_800402F4` reads — and the **stat-up / buff taxonomy** — `stat_effect(id)` → `StatItemEffect` for the permanent stat-up *Water* line (class 6), the one-battle `×6/5` buff Elixirs (class 7), and Fury Boost (class 5). See [`item-effect-table.md`](../../docs/formats/item-effect-table.md). |
+| `item_effect` | `SCUS_942.54` item-effect descriptor table (`DAT_800752C0`, 130 records): `ItemEffectTable::from_scus` → `effect(id)` (item id → subtype → `[class, tier, flags]`). Effect class/tier + all-party/field/battle usability, plus the **literal restore amounts** - `heal_amounts()` / `restore_amount(id)` decode the static heal-amount table at `0x8007655C` (HP `[200,800,9999]` / MP `[50,200,20]`) the apply handler `FUN_800402F4` reads - and the **stat-up / buff taxonomy** - `stat_effect(id)` → `StatItemEffect` for the permanent stat-up *Water* line (class 6), the one-battle `×6/5` buff Elixirs (class 7), and Fury Boost (class 5). See [`item-effect-table.md`](../../docs/formats/item-effect-table.md). |
 | `equip_stats` | `SCUS_942.54` equipment stat-bonus table (`DAT_80074F68`, 8-byte stride): `EquipStatTable::from_scus` → `bonus(id)` (equippable id → property `+1` byte → record). Attack/def-up/def-down (byte-exact vs gamedata) + equip-character mask + slot type + Ra-Seru flag. See [`equipment-table.md`](../../docs/formats/equipment-table.md). |
 | `accessory_passive` | Accessory ("Goods") passive effects: `AccessoryPassiveTable::from_scus` → `passive(id)` (item id → descriptor `+3` / equip `+5` index byte → 64-slot passive index + the `0x8007625C` name/description/scope record). `stat_boosts(index)` mirrors the `FUN_80042558` percent arithmetic, `bit_location(index)` the `char+0xF4` ability-bitfield placement. Byte-validated vs the curated gamedata accessory table. CLI `asset accessory-passive <SCUS>`. See [`accessory-passive-table.md`](../../docs/formats/accessory-passive-table.md). |
 | `spell_names` | `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 256 ids): `SpellNameTable::from_scus` → `name(id)` / `mp(id)`. Resolves a monster's global magic-attack ids (`MonsterRecord::magic_attacks`, record `+0x21..=+0x23`) into the on-screen spell name (`0x27` → `Tail Fire`). CLI `asset spell-names <SCUS>`. See [`spell-table.md`](../../docs/formats/spell-table.md). |
 | `steal_table` | `SCUS_942.54` per-monster steal table (`DAT_80077828`, 1-based monster id, 2-byte `[chance, item]`): `StealTable::from_scus` → `entry(id)` / `steal_item(id)`. What the Evil God Icon steals; the item id resolves through `item_names`. NOT in the PROT 867 record. CLI `asset steal-table <SCUS> [--all]`. See [`steal-table.md`](../../docs/formats/steal-table.md). |
 | `mode_table` | `SCUS_942.54` game-mode dispatch table (`0x8007078C`, 28 × 24-byte entries): `ModeTable::from_scus` → per-mode handler fn ptr / param / dev name. Recovers the index → retail-handler map from the disc (12 of 14 per-frame modes share `0x80025EEC`; field/town = 2/3 MAIN; world-map = 12/13 MAPDISP). CLI `asset mode-table` (`--json`). See [`boot.md`](../../docs/subsystems/boot.md#game-mode-state-machine). |
 
-`new_game` — `SCUS_942.54` new-game seed data:
+`new_game` - `SCUS_942.54` new-game seed data:
 
 - `StartingParty::from_scus` decodes the starting-party template (`0x80078C4C`, 4
   records, 26-byte stride) into per-member opening stats + name
@@ -239,7 +239,7 @@ Seeds for the live `0x80084708 + n*0x414` records + the `0x80085958` bag;
 
 ### Cutscene / FMV / summon
 
-`cutscene_text` — inline cutscene-narration text embedded in a field-VM
+`cutscene_text` - inline cutscene-narration text embedded in a field-VM
 cutscene-timeline record:
 
 - `parse_narration` / `narration_pages` decode the `0x1F`/`0x00`-framed ASCII
@@ -247,35 +247,35 @@ cutscene-timeline record:
   (the `opdeene` opening-prologue narration). See
   [`cutscene.md`](../../docs/subsystems/cutscene.md#inline-narration-format).
 
-`str_fmv_table` — the compact in-RAM STR FMV file table (`0x801CAE40`,
+`str_fmv_table` - the compact in-RAM STR FMV file table (`0x801CAE40`,
 24-byte stride × 6: name + libcd BCD MSF + size) the cutscene overlay uses to
 resolve a movie without an ISO9660 walk. See
 [`str-fmv-table.md`](../../docs/formats/str-fmv-table.md).
 
-`fmv_dispatch` — the per-`fmv_id` movie + frame-range dispatch the STR/MDEC
+`fmv_dispatch` - the per-`fmv_id` movie + frame-range dispatch the STR/MDEC
 overlay's play loop selects from, decoded straight from the overlay bytes.
 
-`summon_overlay` — Seru-magic **summon scene-graph** part records:
+`summon_overlay` - Seru-magic **summon scene-graph** part records:
 
-- A per-summon stager overlay (player extraction PROT 0903..=0913 — Gimard
+- A per-summon stager overlay (player extraction PROT 0903..=0913 - Gimard
   *Tail Fire* `0x81` arithmetics to 0903 under the corrected loader index math
-  — the evolved-Seru block `EVOLVED_SUMMON_STAGER_PROT` (0914..=0923,
+  - the evolved-Seru block `EVOLVED_SUMMON_STAGER_PROT` (0914..=0923,
   `spell_id 0x8C..=0x95`, the same arithmetic run), high-summon 0927..=0934, and
   the six Cort enemy boss stagers `ENEMY_BOSS_STAGER_PROT`) stages each summon
-  body part with a `FUN_80021B04` call passing a per-part record — directly or
+  body part with a `FUN_80021B04` call passing a per-part record - directly or
   through the `FUN_80050ED4` pool wrapper (both scanned).
 - `parse(bytes, link_base)` scans those call sites and recovers the records
   (`[i16 model_sel][u16 flags][move-VM bytecode]`, `model_sel == -1` =
   transform/pivot node, `0x4000`/`0x4001` = render-mode nodes). Records live
   in-file under link base `0x801F69D8`. Trim the entry to its TOC-gap
-  unique-content footprint first (`unique_content_len`) — stager extraction
+  unique-content footprint first (`unique_content_len`) - stager extraction
   files over-read into the following entries.
 
 CLI `asset summon-overlay <stager .BIN> [--trim 0xNNNN]`. See
 [`open-rev-eng-threads.md`](../../docs/reference/open-rev-eng-threads.md) (Seru-magic
 summon visual).
 
-`summon_readef` — the battle side-band streaming files `summon.dat` /
+`summon_readef` - the battle side-band streaming files `summon.dat` /
 `readef.DAT` (extraction PROT 893 / 894 = retail TOC `0x37F` / `0x380`,
 CDNAME block `bat_back_dat`): `0x10800`-byte slots carrying per-special-attack
 CLUT rows + 4bpp texture pages plus summon-creature actor records (name + Legaia
@@ -285,10 +285,10 @@ classifies every slot; `stream_target(action_id)` mirrors the retail
 id → (file, slot) formula (`FUN_801E295C` case `0x32`). See
 [`summon-readef.md`](../../docs/formats/summon-readef.md).
 
-`summon_creatures` — the player-summon → namesake `battle_data` creature map.
+`summon_creatures` - the player-summon → namesake `battle_data` creature map.
 A base or evolved-Seru summon renders an ordinary `monster_archive` creature
 (PROT 867), and that creature's mesh is **byte-identical** to the `summon.dat`
-group's actor-record Legaia TMD — so matching each group's TMD against the
+group's actor-record Legaia TMD - so matching each group's TMD against the
 archive recovers the whole map for `0x81..=0x95` (base block + evolved-Seru,
 including the two evolved legs no capture state covered: `0x90` Kemaro, `0x91`
 Spoon). The high block `0x99..=0xA0` has no archive byte-match (bespoke summon
@@ -299,13 +299,13 @@ disc-gated `summon_creature_tmd_map_real`. CLI `asset summon-creatures`
 
 ### Scene + MAN
 
-`man_section` — the per-scene MAN (asset type `0x03`) **multi-section header
+`man_section` - the per-scene MAN (asset type `0x03`) **multi-section header
 walker** (`PORT: FUN_8003AEB0 / FUN_8003A1E4 / FUN_8003A110`): partitions,
 per-section offset+length refs, the encounter section, and the world-map
 bulk-terrain flag. CLI `asset man` / `man-scan`. The engine's
 `encounter_table_from_man` builds on it.
 
-`man_edit` — **variable-length editing of a decompressed MAN.**
+`man_edit` - **variable-length editing of a decompressed MAN.**
 
 - `scene_change_sites` enumerates the field-VM `0x3F` named-scene-change ("door")
   ops via a clean partition walk (they're partition-2 records).

@@ -8,8 +8,8 @@
   <h2>Confidence levels</h2>
   <p>Each format below carries a badge for how solid its decode is:</p>
   <ul class="bullets">
-    <li><span class="tag tag-done">Confirmed</span> &mdash; verified end-to-end against real on-disc data, with passing tests.</li>
-    <li><span class="tag tag-partial">Inferred</span> &mdash; deduced empirically from byte patterns; structurally consistent but not yet exhaustively validated.</li>
+    <li><span class="tag tag-done">Confirmed</span> - verified end-to-end against real on-disc data, with passing tests.</li>
+    <li><span class="tag tag-partial">Inferred</span> - deduced empirically from byte patterns; structurally consistent but not yet exhaustively validated.</li>
   </ul>
 </section>
 
@@ -27,7 +27,7 @@
     </a>
     <a class="card" id="cdname" href="cdname.html">
       <div class="card-title"><span>CDNAME.TXT name map</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body"><code>#define name N</code> markers tag block <em>starts</em>; names inherit forward to subsequent entries. The define numbers are raw in-RAM TOC indices &mdash; extraction filename labels are shifted +2 (the historical vab_01 / move_program_no &ldquo;mislabels&rdquo; were this shift). Verify against the loader-call constant or magic bytes.</div>
+      <div class="card-body"><code>#define name N</code> markers tag block <em>starts</em>; names inherit forward to subsequent entries. The define numbers are raw in-RAM TOC indices - extraction filename labels are shifted +2 (the historical vab_01 / move_program_no &ldquo;mislabels&rdquo; were this shift). Verify against the loader-call constant or magic bytes.</div>
     </a>
     <a class="card" href="dmy.html">
       <div class="card-title"><span>DMY.DAT (dev fixtures)</span> <span class="tag tag-done">Confirmed</span></div>
@@ -87,7 +87,7 @@
     </a>
     <a class="card" id="vab" href="vab.html">
       <div class="card-title"><span>VAB sound bank</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">PSX-standard VAB (program/tone/SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. Banks live across the sound blocks; the retail <code>vab_01</code> block (extraction 1070..1192) is wall-to-wall VAB &mdash; the old &ldquo;vab_01 is misleading&rdquo; was the +2 filename shift.</div>
+      <div class="card-body">PSX-standard VAB (program/tone/SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. Banks live across the sound blocks; the retail <code>vab_01</code> block (extraction 1070..1192) is wall-to-wall VAB - the old &ldquo;vab_01 is misleading&rdquo; was the +2 filename shift.</div>
     </a>
     <a class="card" id="seq" href="seq.html">
       <div class="card-title"><span>PsyQ SEQ</span> <span class="tag tag-done">Confirmed</span></div>

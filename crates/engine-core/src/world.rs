@@ -20,7 +20,7 @@
 //! REF: FUN_8001E890, FUN_80021DF4, FUN_80026B4C, FUN_8003CA38, FUN_8003CE08, FUN_800520F0
 //! REF: FUN_801D65D8, FUN_801D77F4, FUN_801D8DE8, FUN_801DE840, FUN_801DFDF8
 //!
-//! PORT: FUN_800467E8 (`world_map_camera_relative_bits` — held-pad camera-yaw
+//! PORT: FUN_800467E8 (`world_map_camera_relative_bits` - held-pad camera-yaw
 //!       remap; the engine reads the world-map camera azimuth directly from
 //!       [`WorldMapController`] rather than the retail `gp+0x2D8` quadrant.)
 
@@ -102,7 +102,7 @@ const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
 /// 0897, file offset `0x239FC`), decoded from the disc. Indexed by travel
 /// direction (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+; the `FUN_801cfe4c`
 /// `param_3` convention), three `(dx, dz)` pairs each, applied to the
-/// player's CURRENT position as `(x + dx, z - dz)` — note the Z delta is
+/// player's CURRENT position as `(x + dx, z - dz)` - note the Z delta is
 /// SUBTRACTED, exactly as the retail probe reads it. A direction is blocked
 /// when ANY of its three probes lands on a wall sub-cell.
 ///
@@ -110,7 +110,7 @@ const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
 /// `ceil-1` X mapping ([`World::field_tile_is_wall`]) make 48 the crossing
 /// distance in the positive directions and 47 in the negative ones, so each
 /// edge sits one full tile ahead in cell space. (The on-disc rows are
-/// 16 bytes; the trailing fourth pair — a half-distance centre point — is
+/// 16 bytes; the trailing fourth pair - a half-distance centre point - is
 /// never read by the wall probe and is omitted here.)
 const FIELD_WALL_PROBES: [[(i16, i16); 3]; 4] = [
     [(-16, 48), (0, 48), (16, 48)], // dir 0: Z- (edge at z-48, ±16 in X)
@@ -142,7 +142,7 @@ const FIELD_ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
 /// Capture-pinned by `rimelm_npc_press_tetsu`: the sparring partner's flags
 /// (`0x08020884`) carry the `0x20000` class bit, putting him on this arm
 /// (result bit `1`), with the mutual `+0x98` collision link live in-frame.
-/// (STATIC entities — props, `flags & 0x1020000 == 0` — use a wider
+/// (STATIC entities - props, `flags & 0x1020000 == 0` - use a wider
 /// `0x40 + 0x10` = 80-unit box around their MAN record anchor instead; see
 /// [`FIELD_PROP_BOX_HALF`] / [`World::field_prop_colliders`].)
 const FIELD_NPC_BOX_HALF: i32 = 0x40 - 0x18;
@@ -150,12 +150,12 @@ const FIELD_NPC_BOX_HALF: i32 = 0x40 - 0x18;
 /// Retail interact facing-probe table `DAT_801f2254` (field overlay 0897,
 /// file offset `0x23A3C`, `0x40` bytes after [`FIELD_WALL_PROBES`]'s
 /// `DAT_801f2214`), decoded from the disc. One `(dx, dz)` displacement per
-/// 45° facing sector — a radius-64 compass point — applied to the player's
+/// 45° facing sector - a radius-64 compass point - applied to the player's
 /// position with the shared `(x + dx, z - dz)` convention, so every entry
 /// points 64 units *ahead* of the player along its sector's facing.
 /// Indexed by the retail sector `(facing & 0xfff) >> 9` where retail facing
 /// `0` looks along Z- (the engine's field heading stores `0` = Z+, a
-/// half-turn off — see [`World::field_interact_probe_slot`]).
+/// half-turn off - see [`World::field_interact_probe_slot`]).
 ///
 /// Retail reads this table in `FUN_801d01b0`'s touch dispatch: when the
 /// configured interact button is just-pressed (`_DAT_8007b874 &
@@ -176,14 +176,14 @@ const FIELD_FACING_PROBES: [(i16, i16); 8] = [
 /// Half-extent of the box a field NPC answers the *interact* probe with:
 /// the touch dispatch passes extents `0x20` into `FUN_801cf9f4`, whose
 /// moving-actor arm tests `|probe - pos| < 0x40 + (extent - 0x18)` per axis
-/// — ±72 units, wider than the ±40 the locomotion probe gets with its zero
+/// - ±72 units, wider than the ±40 the locomotion probe gets with its zero
 /// extents ([`FIELD_NPC_BOX_HALF`]).
 const FIELD_INTERACT_BOX_HALF: i32 = 0x40 + 0x20 - 0x18;
 
 /// Half-extent of a STATIC entity's (prop's) collision box: retail's
 /// static arm always tests `|probe - centre| < 0x40 + 0x10` per axis (the
 /// `0x10` is hard-coded, independent of the caller extents that widen the
-/// moving-actor box) — ±80 units around the record-derived footprint centre.
+/// moving-actor box) - ±80 units around the record-derived footprint centre.
 const FIELD_PROP_BOX_HALF: i32 = 0x40 + 0x10;
 
 /// Per-frame world-unit budget for one field-NPC motion-VM step. The exact
@@ -213,7 +213,7 @@ pub struct FieldNpcMotion {
     pub target: (i16, i16),
     /// For an autonomous route leg: the index into
     /// [`World::field_npc_routes`] this leg walks toward (the next leg starts
-    /// at `cursor + 1`, wrapping — a patrol loop). `None` for a
+    /// at `cursor + 1`, wrapping - a patrol loop). `None` for a
     /// script-started leg (interaction-prologue `0x4C 0x51` or actor-VM
     /// `start_motion`), which ends where it lands.
     pub route_cursor: Option<usize>,
@@ -240,7 +240,7 @@ pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 ///
 /// Mirrors retail `func_0x800467e8`, which remaps the held pad through the same
 /// camera yaw the renderer frames the overworld with. `azimuth` is PSX angle
-/// units (`4096` = full turn) — the
+/// units (`4096` = full turn) - the
 /// [`WorldMapController`] azimuth the
 /// renderer's `world_map_camera_mvp` orbits the eye by:
 /// `eye = center + (d·cosθ, -0.7d, d·sinθ)`, `θ = azimuth / 4096 · τ`.
@@ -969,7 +969,7 @@ pub struct World {
     /// for the same oracle-stability reason as
     /// [`Self::leading_edge_wall_probes`]. The locomotion-path touch
     /// dispatch (the `FUN_801d5b5c` auto event post for prop walk-touch) is
-    /// modelled separately and independent of this flag —
+    /// modelled separately and independent of this flag -
     /// `Self::check_field_walk_touch`; the button-press interact dispatch
     /// is (`Self::tick_field_interaction_probe`).
     pub solid_field_npcs: bool,
@@ -1119,7 +1119,7 @@ pub struct World {
     /// slot `i`, HUD row `i`, and the runtime VRAM texture band `i`
     /// (`relocate_tsb_cba` row `481 + i`) all key on the ORDINAL; the
     /// character content (player battle file `863 + roster_slot`,
-    /// equipment, spell list, XP recipient) keys on the roster slot —
+    /// equipment, spell list, XP recipient) keys on the roster slot -
     /// the live-verified retail banding rule (band = ordinal, file =
     /// 862 + char_id). Empty = identity mapping (slot `i` = roster `i`,
     /// the Vahn/Noa/Gala default). Resolve through
@@ -1154,7 +1154,7 @@ pub struct World {
     /// scene-change). When `Some`, the op carried the destination scene name
     /// inline (no map-id resolver needed); [`crate::scene::SceneHost::tick`]
     /// drains it and loads that scene directly. Fields: `(scene, entry_x,
-    /// entry_z)` — the entry-tile bytes are kept for future destination
+    /// entry_z)` - the entry-tile bytes are kept for future destination
     /// spawn-point wiring. `None` between transitions.
     pub pending_named_scene_transition: Option<(String, u8, u8)>,
 
@@ -1252,7 +1252,7 @@ pub struct World {
 
     /// Per-strike battle sound cues surfaced this frame for the host to play
     /// through its SFX bank (the art-record `HitCue` sound cues that
-    /// [`World::fold_battle_event`] resolves from an `ApplyArtStrike` outcome —
+    /// [`World::fold_battle_event`] resolves from an `ApplyArtStrike` outcome -
     /// previously dropped). Cosmetic, like [`Self::battle_hit_fx`]: no gameplay
     /// state depends on them. Drained via [`World::drain_battle_sfx_cues`];
     /// cleared on battle exit.
@@ -1294,21 +1294,21 @@ pub struct World {
     pub last_field_interact: Option<(u8, u8)>,
 
     /// Per-actor inline interaction-script dialogue, keyed by the actor's
-    /// MAN partition-1 record index — the `slot` a field-interact op
+    /// MAN partition-1 record index - the `slot` a field-interact op
     /// (`0x3E` with `op0 < 100`) carries. Populated at field-scene entry from
     /// the scene's actor placements. This is the **real** field NPC dialogue
     /// source (the actor's inline MES text at retail `actor[+0x90]`), so
     /// `crate::world::vm_hosts`'s `field_interact` opens the interacted
-    /// actor's dialogue from here — not from a `0x3F` op (which is the named
+    /// actor's dialogue from here - not from a `0x3F` op (which is the named
     /// scene-change, not dialogue). Empty between field scenes.
     pub field_npc_dialog: std::collections::HashMap<u8, Vec<u8>>,
 
     /// Prologue-aware companion to [`Self::field_npc_dialog`], keyed by the same
     /// `slot`. Carries each talk NPC's **untruncated** interaction record (full
     /// body + entry PC + first-segment offset) so the opt-in field-VM dialogue
-    /// runner ([`Self::use_vm_dialogue`]) can execute the interaction prologue —
+    /// runner ([`Self::use_vm_dialogue`]) can execute the interaction prologue -
     /// the story-flag `SysFlag.Test`/`JmpRel` segment-selection bytecode before
-    /// the first `0x1F` — instead of starting at the first segment. The default
+    /// the first `0x1F` - instead of starting at the first segment. The default
     /// simplified path ignores this and uses `field_npc_dialog` unchanged.
     pub field_npc_dialog_prologue:
         std::collections::HashMap<u8, crate::man_field_scripts::InlineDialogPrologue>,
@@ -1322,7 +1322,7 @@ pub struct World {
     /// same `slot` as [`Self::field_npc_dialog`]. Populated at field-scene entry
     /// from the MAN actor placements. The interaction probe
     /// (`Self::tick_field_interaction_probe`) box-tests the player's position
-    /// against these to fire a `field_interact` on the action button — the
+    /// against these to fire a `field_interact` on the action button - the
     /// clean-room analogue of retail's `FUN_801cf9f4` adjacency test.
     ///
     /// The runtime actor frame **is** the MAN placement frame: `FUN_8003A1E4`
@@ -1338,7 +1338,7 @@ pub struct World {
     pub field_npc_positions: std::collections::HashMap<u8, (i16, i16)>,
 
     /// Static prop collision-box centres `(world_x, world_z)`, one per placed
-    /// object of the scene's field `.MAP` object grid — the engine's source
+    /// object of the scene's field `.MAP` object grid - the engine's source
     /// for the **static-entity arm** of the actor-collision probe (retail
     /// `FUN_801cf9f4` result bit `4`; box half-extent
     /// `FIELD_PROP_BOX_HALF`). Installed at field-scene entry from
@@ -1353,7 +1353,7 @@ pub struct World {
     /// Per-NPC autonomous walk routes, keyed by the same placement `slot` as
     /// [`Self::field_npc_dialog`]: the ordered local waypoints the placement's
     /// own pre-text script walks the actor through (its `0x4C 0x51` NPC
-    /// move-to-tile ops — [`crate::man_field_scripts::placement_motion_route`]).
+    /// move-to-tile ops - [`crate::man_field_scripts::placement_motion_route`]).
     /// Driven through the motion VM by `Self::tick_field_npc_motions` when
     /// [`Self::animate_field_npcs`] is set. `BTreeMap` so the per-tick walk
     /// order is deterministic (the replay oracle requires bit-stable traces).
@@ -1375,17 +1375,17 @@ pub struct World {
 
     /// Per-placement walk-touch events, keyed by placement `slot`: the
     /// placements whose script fires on body contact (door warps, player
-    /// throw-back teleports — [`crate::man_field_scripts::placement_walk_touch_event`]),
+    /// throw-back teleports - [`crate::man_field_scripts::placement_walk_touch_event`]),
     /// with the placement's spawn position as the contact-box centre. The
     /// locomotion's per-step touch dispatch (`Self::check_field_walk_touch`)
-    /// posts these without a button press — retail's `FUN_801d5b5c` auto
+    /// posts these without a button press - retail's `FUN_801d5b5c` auto
     /// event post on the static-entity collision arm.
     pub field_walk_touch: std::collections::BTreeMap<u8, ((i16, i16), WalkTouchEvent)>,
 
     /// Walk-touch edge latch: the slot whose contact box the player currently
     /// stands in, so a sustained press posts its event once (retail gates the
     /// per-step post on the player's `+0x10 & 0x80000` engaged flag, cleared
-    /// by the dialog SM teardown — the engine latches per contact instead).
+    /// by the dialog SM teardown - the engine latches per contact instead).
     pub active_walk_touch: Option<u8>,
 
     /// While [`Self::step_inline_dialogue`] is stepping the field VM over an
@@ -1743,7 +1743,7 @@ pub struct World {
     /// [`World::active_summon_part_draws`].
     pub active_summon: Option<crate::summon::SummonScene>,
     /// Production cast-band request: a player Seru-magic cast (spell id
-    /// `0x81..=0x8b`) sets `(spell_id, target world pos)` here — the engine
+    /// `0x81..=0x8b`) sets `(spell_id, target world pos)` here - the engine
     /// equivalent of the retail cast band resolving the per-summon overlay
     /// (`FUN_8003EC70(id-0x79)`). The host (which has the PROT index) drains it
     /// via [`World::take_pending_summon_spawn`], loads the summon overlay
@@ -1755,7 +1755,7 @@ pub struct World {
     /// Active battle move-power effect-FX scene-graph, while one is playing. A
     /// move's `0x01..=0x63` on-contact / launch effect-list entries spawn the
     /// `0x801f6324` prototype records (summon-format move-VM parts) through the
-    /// same machinery as a summon — [`World::spawn_move_fx`] seeds it,
+    /// same machinery as a summon - [`World::spawn_move_fx`] seeds it,
     /// [`World::tick_move_fx`] advances it, [`World::active_move_fx_part_draws`]
     /// renders it. Separate from [`active_summon`](Self::active_summon) so a
     /// move's FX and a summon don't clobber each other.
@@ -1765,7 +1765,7 @@ pub struct World {
     /// move-FX scene, set by [`World::spawn_move_fx`] from the move record's
     /// `+0x0b` field and cleared when the scene drains. Surfaced via
     /// [`World::active_move_fx_trail_texpage`] for the render layer's streak
-    /// pass — the trail id this carries is what
+    /// pass - the trail id this carries is what
     /// `legaia_engine_render::afterimage::build_afterimage_quad` (the ported
     /// `FUN_801e1ab0`) turns into the jittered semi-transparent quad.
     pub active_move_fx_trail_texpage: Option<u16>,
@@ -1795,7 +1795,7 @@ pub struct World {
 
     /// Opt-in, NON-FAITHFUL gameplay tweak: when a monster picks a single
     /// living party member to attack, override the (faithful, random) choice
-    /// with the lowest-HP living member. Off by default — the retail behaviour
+    /// with the lowest-HP living member. Off by default - the retail behaviour
     /// is a uniform random target. The faithful random target is still rolled
     /// in full (identical RNG-call count + stream); only the final single
     /// party slot is replaced, so a replay stays internally deterministic and
@@ -1807,13 +1807,13 @@ pub struct World {
     /// runner ([`Self::drive_inline_dialogue`]) instead of the simplified
     /// `current_dialog` / `OwnedDialogPanel` path, so dialogue branch handlers
     /// actually execute (story-flag tests, `SET`/`CLEAR`, scene changes). Off
-    /// by default — when off, behaviour is identical to before.
+    /// by default - when off, behaviour is identical to before.
     pub use_vm_dialogue: bool,
 
     /// Opt-in: route the live basic-attack damage through the retail damage
     /// finisher ([`legaia_engine_vm::battle_formulas::damage_finish`], the port
     /// of `FUN_801ddb30`) instead of stopping at the raw roll. The finisher
-    /// adds the universal post-stages — elemental resistance, guard / enemy
+    /// adds the universal post-stages - elemental resistance, guard / enemy
     /// halve, the rand-based no-damage floor, and the 9999 cap. Equipment
     /// resistance + guard state aren't modelled on the battle actor yet, so
     /// those inputs default to "no mitigation"; with the gate on the finisher
@@ -1897,7 +1897,7 @@ pub struct World {
 
     /// Summon-magic level-ups resolved this session: `(party_slot, spell_id,
     /// new_level)` per event, in resolution order. The engine analogue of the
-    /// retail level-up banner (the level-up check fires UI element `0x65` —
+    /// retail level-up banner (the level-up check fires UI element `0x65` -
     /// REF: FUN_801e70bc, ported in `world::battle::accrue_summon_spell_xp`);
     /// hosts drain via [`World::drain_magic_level_ups`].
     pub magic_level_ups: Vec<(u8, u8, u8)>,
@@ -2041,7 +2041,7 @@ pub struct World {
     /// [`Self::install_field_carriers_from_man`] so a field-interact on the
     /// sparring partner's placement can find its carrier and auto-arm the fight
     /// (the dialogue-accept drives the engage instead of the manual API). Plain
-    /// talk NPCs are deliberately absent — interacting with them never launches
+    /// talk NPCs are deliberately absent - interacting with them never launches
     /// a battle.
     pub field_carrier_slots: std::collections::HashMap<u8, usize>,
 
@@ -2467,7 +2467,7 @@ impl World {
     ///
     /// Here that collapses to: clear the unambiguous new-game-owned state
     /// (story flags, money, inventory, and any pending transitions left
-    /// over from a prior session) and set [`SceneMode::Field`] — the
+    /// over from a prior session) and set [`SceneMode::Field`] - the
     /// engine's mapping of master mode 3. Distinct from the Continue path,
     /// which instead hydrates the world from a save slot.
     ///
@@ -2982,7 +2982,7 @@ impl World {
     }
 
     /// Begin running an inline interaction script through the field VM (the
-    /// faithful dialogue path — see [`crate::inline_dialogue`]). `inline` is the
+    /// faithful dialogue path - see [`crate::inline_dialogue`]). `inline` is the
     /// actor's interaction-script bytes (e.g. [`DialogRequest::inline`]), which
     /// begin at the first `0x1F` text segment. Replaces any running script.
     pub fn start_inline_dialogue(&mut self, inline: Vec<u8>) {
@@ -3012,7 +3012,7 @@ impl World {
     /// boxes the field VM executes the control bytecode (prologue story-flag
     /// tests, `SET`/`CLEAR` flag ops, scene changes) through the World host; at
     /// each `0x1F` segment it opens / ticks a dialog box. `confirm` dismisses the
-    /// current box, or commits a menu choice — applying that option's relative
+    /// current box, or commits a menu choice - applying that option's relative
     /// jump (`FUN_80038050`) and handing the branch to the VM so its side
     /// effects run before the reply. `up`/`down` move a menu cursor. No-op when
     /// no inline dialogue is running.
@@ -3101,9 +3101,9 @@ impl World {
                 FieldStepResult::Yield { resume_pc } => id.pc = resume_pc,
                 // A wait/hold, an unhandled op, or an end: stop. (Unlike the
                 // cutscene timeline the runner does not force-advance past a
-                // Halt — an inline interaction script that can't proceed ends.)
+                // Halt - an inline interaction script that can't proceed ends.)
                 // While a prologue is still running (no box opened yet), a halt
-                // means the prologue can't proceed — fall back to the first
+                // means the prologue can't proceed - fall back to the first
                 // segment so the dialogue is never worse than the truncated path.
                 FieldStepResult::Halt { .. }
                 | FieldStepResult::Pending { .. }
@@ -3599,7 +3599,7 @@ impl World {
                 // Super Arts next (after Miracle, matching the retail order):
                 // recognize the chain's named-art sequence from the caster's
                 // art catalog and tail-match it against the caster's Super art
-                // sequences (connectors abstracted — see `super_for_chain`).
+                // sequences (connectors abstracted - see `super_for_chain`).
                 let caster_records = || {
                     self.art_records
                         .iter()
@@ -3675,7 +3675,7 @@ impl World {
     /// replacement keeps the leading component arts and ends in the Super
     /// finisher constant(s) (e.g. Tri-Somersault → `… 1A 2B 2B 2B`), so each art
     /// constant in it contributes a strike via the shared resolver
-    /// ([`Self::art_actions_strike_profile`]) — real [`ArtRecord`] power where the
+    /// ([`Self::art_actions_strike_profile`]) - real [`ArtRecord`] power where the
     /// `(character, art)` record is staged, else a tier-0 synthetic strike.
     ///
     /// [`ArtRecord`]: legaia_art::ArtRecord
@@ -3915,7 +3915,7 @@ impl World {
     /// the class-7 Elixirs) to `target_slot`. The buffed stats are resolved from
     /// the installed on-disc item-effect table; each is ramped ×6/5 for the rest
     /// of the battle through the shared buff path ([`Self::apply_battle_buff`],
-    /// the same machinery as buff *spells*) — so it reuses the precise
+    /// the same machinery as buff *spells*) - so it reuses the precise
     /// revert-on-expiry / revert-at-battle-end bookkeeping. `Defense` ramps the
     /// single defence scalar; `Agility` maps to the accuracy/evasion proxy (no
     /// live scalar yet, so it only runs the turn timer, like a buff spell on
@@ -4182,7 +4182,7 @@ impl World {
     /// ([`vm::battle_formulas::victory_exp_per_member`], `FUN_8004E568`):
     ///
     /// - The summed reward is scaled by 3/4 (`v - (v >> 2)`), then **ceiling**-
-    ///   divided among the surviving (HP > 0) members — not a floor-divide of
+    ///   divided among the surviving (HP > 0) members - not a floor-divide of
     ///   the raw sum.
     /// - Dead members (HP == 0) receive zero XP and are excluded from the divisor.
     ///
@@ -4193,7 +4193,7 @@ impl World {
     ///
     /// If every party member is dead (TPK) but the caller still invokes this
     /// (e.g. a Phoenix Down style revive-after-victory), the split degenerates
-    /// to a no-op — there are no alive recipients.
+    /// to a no-op - there are no alive recipients.
     pub fn apply_battle_xp(&mut self, xp_reward: u32) -> Vec<LevelUpResult> {
         let party_count = self.party_count as usize;
         // Living-member count drives the divisor. We pull HP from
@@ -4364,11 +4364,11 @@ impl World {
     /// player can afford it, deduct the gold and add the item(s) to
     /// [`Self::inventory`], returning `(item_id, qty, gold_delta)` (the delta is
     /// negative). Returns `None` when the buy isn't valid (unaffordable, sell
-    /// mode, no pending item — see [`crate::shop::ShopSession::try_buy`]).
+    /// mode, no pending item - see [`crate::shop::ShopSession::try_buy`]).
     ///
     /// This is the engine's shop-purchase grant kernel, shared by the menu
     /// runtime's `ShopConfirm` commit and exercised directly by the shop /
-    /// casino randomizer runtime oracles — the buy counterpart to
+    /// casino randomizer runtime oracles - the buy counterpart to
     /// [`Self::apply_steal`] / [`Self::apply_battle_loot`]. The item id sold is
     /// whatever the shop's stock holds, which for a town merchant is decoded
     /// straight from the scene's field-VM script (op `0x49`) the randomizer
@@ -4959,7 +4959,7 @@ impl World {
         {
             // Borrow split: the move-VM host borrows the rest of `World` (sin
             // LUT etc.) while the scene's part states live in `scene`, taken out
-            // above. `current_slot = None` — summon parts are not World actors,
+            // above. `current_slot = None` - summon parts are not World actors,
             // so the slot-routed callbacks are inert for them.
             let mut host = MoveVmHostImpl {
                 world: self,
@@ -4995,7 +4995,7 @@ impl World {
     /// with model base `crate::scene::EFFECT_MODEL_LIBRARY_BASE` (the engine's
     /// fixed-library analogue of the retail `gp[0x754] = party_count + 2`; see
     /// that constant's docs), so each mesh part resolves to
-    /// `global_tmd_pool[model_sel + 3]` — the PROT 0871 effect-model library,
+    /// `global_tmd_pool[model_sel + 3]` - the PROT 0871 effect-model library,
     /// already resident.
     ///
     /// Returns `false` (no scene spawned) when the move-power table / overlay
@@ -5062,7 +5062,7 @@ impl World {
         // through the effect pool by its 7-bit id (no-op when efect.dat isn't
         // loaded). (Reached only on the scene-graph success path; a move whose
         // lists hold *only* AltEffect entries returns early above with the
-        // empty-Spawn-set guard — an documented edge case, rare for FX moves.)
+        // empty-Spawn-set guard - an documented edge case, rare for FX moves.)
         let alt_ids: Vec<u8> = fx
             .contact_effects
             .iter()
@@ -5307,7 +5307,7 @@ impl World {
                 self.step_cutscene_timeline();
                 self.step_field();
                 // Field-NPC walk legs (autonomous patrol routes + scripted
-                // interaction-prologue runs) — one motion-VM step per frame,
+                // interaction-prologue runs) - one motion-VM step per frame,
                 // writing back into `field_npc_positions` so collision /
                 // interact probes follow the live NPC.
                 self.tick_field_npc_motions();
@@ -5437,7 +5437,7 @@ impl World {
         }
         // Player is "walking" on the overworld this frame when any d-pad
         // direction is held. These are the Up/Right/Down/Left bits the
-        // locomotion step ([`Self::step_world_map_locomotion`]) reads — the
+        // locomotion step ([`Self::step_world_map_locomotion`]) reads - the
         // face buttons (Triangle/Circle/Cross/Square, 0x1000..0x8000) must not
         // count as walking or a confirm press would suppress the talk-to gate.
         const WORLD_MAP_DPAD: u16 = input::PadButton::Up as u16
@@ -5491,7 +5491,7 @@ impl World {
     /// Held d-pad is remapped through the overworld camera azimuth
     /// ([`world_map_camera_relative_bits`]) so "screen up" walks away from the
     /// follow camera and "screen right" walks screen-right regardless of how
-    /// the map is rotated — the same camera-relative remap retail's
+    /// the map is rotated - the same camera-relative remap retail's
     /// `func_0x800467e8` applies, and the counterpart to the field's
     /// [`Self::decode_field_direction`].
     ///
@@ -5721,7 +5721,7 @@ impl World {
             None => return,
         };
         // Collect the portals the player is standing on (still Idle), then
-        // engage them — separated so the immutable scan drops before the
+        // engage them - separated so the immutable scan drops before the
         // mutable `engage` borrow.
         let mut to_engage: Vec<usize> = Vec::new();
         for (idx, ctx) in self.world_map_entities.iter().enumerate() {
@@ -5756,7 +5756,7 @@ impl World {
     /// directly. Otherwise, a confirm press while the player stands within one
     /// tile of an [`WorldMapEntityConfig::Npc`] that carries inline dialog text
     /// (the `Dialog` op the placement walker found) opens that text against the
-    /// scene's MES container — sets [`Self::current_dialog`] and emits
+    /// scene's MES container - sets [`Self::current_dialog`] and emits
     /// [`FieldEvent::OpenDialog`], which the host renders through
     /// [`crate::scene::SceneHost::open_pending_dialog`], the same panel path
     /// the field VM's op `0x3F` feeds.
@@ -5961,7 +5961,7 @@ impl World {
             {
                 self.field_npc_dialog.insert(slot, inline);
                 // Stash the untruncated record so the opt-in field-VM runner can
-                // execute the interaction prologue (segment selection) — purely
+                // execute the interaction prologue (segment selection) - purely
                 // additive; the default path keeps using `field_npc_dialog`.
                 if let Some(prologue) =
                     crate::man_field_scripts::placement_inline_prologue(man_file, man, &placement)
@@ -5983,7 +5983,7 @@ impl World {
             }
             // Walk-touch events ride any non-parked placement (door warps are
             // Portal-classified, throw-back teleports are usually on guard
-            // NPCs) — the locomotion's touch dispatch posts them on contact.
+            // NPCs) - the locomotion's touch dispatch posts them on contact.
             if let Some(event) =
                 crate::man_field_scripts::placement_walk_touch_event(man_file, man, &placement)
             {
@@ -6052,7 +6052,7 @@ impl World {
             });
     }
 
-    /// Clean-room interaction probe — retail `FUN_801cf9f4`, the action-button
+    /// Clean-room interaction probe - retail `FUN_801cf9f4`, the action-button
     /// adjacency test that talks to a nearby field NPC.
     ///
     /// Mirrors [`Self::tick_world_map_npc_dialog`] for field mode: a single
@@ -6061,7 +6061,7 @@ impl World {
     /// script `0x4C` poll) still dismisses.
     ///
     /// - **Box up:** a just-pressed Cross / Circle dismisses it (and engages a
-    ///   pending scripted-encounter carrier — the dialogue-accept).
+    ///   pending scripted-encounter carrier - the dialogue-accept).
     /// - **No box:** a just-pressed Cross runs the retail facing probe
     ///   ([`Self::field_interact_probe_slot`]: the `DAT_801f2254` compass
     ///   point 64 units ahead, ±72 box); a hit opens that NPC's dialogue via
@@ -6100,7 +6100,7 @@ impl World {
         // Retail geometry: a single facing-indexed compass probe 64 units
         // ahead, box-tested at ±72 against each NPC
         // ([`Self::field_interact_probe_slot`]). A hit posts the touch event
-        // on the matched actor and turns the player toward it — the
+        // on the matched actor and turns the player toward it - the
         // face-the-NPC step retail applies to moving-class partners
         // (`flags & 0x20010 == 0x20000`), which every talk NPC is
         // (capture-pinned by `rimelm_npc_press_tetsu`).
@@ -6733,7 +6733,7 @@ impl World {
     /// Resolve a battle/party ordinal (actor slot, HUD row, VRAM texture
     /// band) to the **roster slot** of the character occupying it, per
     /// [`Self::active_party`]. Identity when no composition is installed
-    /// or the ordinal runs past it — the historical slot-`i`-is-character-`i`
+    /// or the ordinal runs past it - the historical slot-`i`-is-character-`i`
     /// behaviour every synthetic test relies on.
     pub fn party_roster_slot(&self, member: usize) -> usize {
         self.active_party
@@ -6748,7 +6748,7 @@ impl World {
     /// positions (the runtime texture-band count). Sets
     /// [`Self::party_count`] to the resulting length and, for each ordinal
     /// whose mapped roster record exists, reseeds the party actor's HP /
-    /// MP / liveness / SPD mirror from it — the same projection
+    /// MP / liveness / SPD mirror from it - the same projection
     /// [`Self::load_party`] performs for the identity mapping. Ordinals
     /// past the roster keep their live mirrors (zeroed-roster / synthetic
     /// setups render the character with default equipment, exactly like
@@ -7058,8 +7058,8 @@ impl World {
     /// `+0x3FFF` round-toward-zero on a negative accumulator).
     ///
     /// This is the town-field floor sampler: the retail function's `+0x8000`
-    /// attribute gating — the world-map continent `0x1000` on-grid flag side
-    /// effect and the `0x800` tile-board special branch (`func_0x801d5630`) — is
+    /// attribute gating - the world-map continent `0x1000` on-grid flag side
+    /// effect and the `0x800` tile-board special branch (`func_0x801d5630`) - is
     /// **not** reproduced here (the engine doesn't keep that attribute grid).
     /// Returns `0` when the grid / LUT isn't loaded or the tile is out of range.
     ///
@@ -7149,7 +7149,7 @@ impl World {
     /// floor indexing) while the biased read places that wall band one tile
     /// north, exactly where the on-screen wall blocks. The floor sampler
     /// ([`Self::sample_field_floor_height`], `FUN_80019278`) reads the SAME
-    /// grid bytes with plain floor indexing — the low (elevation) and high
+    /// grid bytes with plain floor indexing - the low (elevation) and high
     /// (wall) nibbles of one byte are addressed under two different
     /// world-to-cell mappings by their two retail consumers. See
     /// `docs/subsystems/field-locomotion.md` ("Collision") and the
@@ -7157,10 +7157,10 @@ impl World {
     ///
     /// Retail tests **three leading-edge footprint probes** through this
     /// sampler (47-48 units ahead, ±16 lateral; per-direction table
-    /// `DAT_801f2214` = `FIELD_WALL_PROBES`) — see
+    /// `DAT_801f2214` = `FIELD_WALL_PROBES`) - see
     /// [`World::field_dir_blocked`], wired into pad locomotion behind
     /// [`World::leading_edge_wall_probes`]. With the flag off, locomotion
-    /// tests one candidate-centre point — a standoff/feel difference, not an
+    /// tests one candidate-centre point - a standoff/feel difference, not an
     /// indexing one.
     pub fn field_tile_is_wall(&self, x: i16, z: i16) -> bool {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
@@ -7193,7 +7193,7 @@ impl World {
     /// This is the static-wall arm of `FUN_801cfe4c` (result bit `2`): the
     /// probes are taken at the player's pre-step position, so a step commits
     /// while the edge is still clear and the next step from the deeper
-    /// position blocks — the player rests 47-48 units off the wall plane,
+    /// position blocks - the player rests 47-48 units off the wall plane,
     /// step-exact (pinned by the `rimelm_wall_press_left`/`_down` captures).
     /// The actor-collision arm (result bits `1`/`4`) is
     /// [`Self::field_actor_dir_blocked`].
@@ -7216,7 +7216,7 @@ impl World {
     ///
     /// Covers both entity classes of `FUN_801cfc40`:
     ///
-    /// - the **moving-actor arm** (result bit `1`) — the class village NPCs
+    /// - the **moving-actor arm** (result bit `1`) - the class village NPCs
     ///   belong to, capture-pinned by `rimelm_npc_press_tetsu` (the sparring
     ///   partner's `flags+0x10 = 0x08020884` carries the `0x20000` class
     ///   bit, and the mutual `+0x98` collision link is live in-frame). The
@@ -7225,7 +7225,7 @@ impl World {
     ///   [`Self::field_npc_positions`], so a moving NPC's
     ///   ±`FIELD_NPC_BOX_HALF` (40) box follows it, exactly as retail
     ///   probes the live `+0x14`/`+0x18`.
-    /// - the **static-entity arm** (result bit `4`) — placed `.MAP` props,
+    /// - the **static-entity arm** (result bit `4`) - placed `.MAP` props,
     ///   box ±`FIELD_PROP_BOX_HALF` (80) around the record-derived
     ///   footprint centre ([`Self::field_prop_colliders`]).
     ///
@@ -7237,7 +7237,7 @@ impl World {
     /// modelled: the mutual `+0x98` partner-link bookkeeping itself and the
     /// `_DAT_8007b6b8 == 0x20` full-table delegation to `FUN_801cf9f4`.
     /// Faithful quirk kept: the probe has no near-side clamp, so a position
-    /// already deep inside a box (past the probe reach) reads clear —
+    /// already deep inside a box (past the probe reach) reads clear -
     /// exactly as retail's forward-only probe behaves.
     pub fn field_actor_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
         if self.field_npc_positions.is_empty() && self.field_prop_colliders.is_empty() {
@@ -7270,7 +7270,7 @@ impl World {
     /// NPC boxes retail keeps the *last* actor-list hit (the `+0x98` link is
     /// overwritten per match); the engine's NPC set is a hash map with no
     /// list order, so it picks the hit nearest the probe point instead
-    /// (tie-break: lowest slot) — identical whenever NPCs stand more than
+    /// (tie-break: lowest slot) - identical whenever NPCs stand more than
     /// 144 units apart, which every authored placement does.
     fn field_interact_probe_slot(&self) -> Option<u8> {
         let slot = self.player_actor_slot? as usize;
@@ -7302,7 +7302,7 @@ impl World {
     /// in the player's `+0x26`). The engine computes the same angle with
     /// float `atan2` in its own heading convention (`0` = Z+) rather than
     /// retail's arctan LUT at `0x8006f4c8`, so it is shape-faithful, not
-    /// bit-exact — the value only feeds the heading marker and the next
+    /// bit-exact - the value only feeds the heading marker and the next
     /// probe's 45° sector quantisation.
     ///
     /// REF: FUN_80019b28
@@ -7329,7 +7329,7 @@ impl World {
             ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF) as i16;
     }
 
-    /// Start a field NPC walking to world `(tx, tz)` through the motion VM —
+    /// Start a field NPC walking to world `(tx, tz)` through the motion VM -
     /// the engine's start-motion kernel for the MAN-placed actor set. Mirrors
     /// the retail start shape: write the walk target onto the actor and reset
     /// the glide state so the per-frame motion stepper picks it up (retail's
@@ -7337,7 +7337,7 @@ impl World {
     /// mirrors and clears the `+0x20` glide cursor; the per-frame consumer is
     /// the motion VM `FUN_8003774C`, ported in
     /// [`legaia_engine_vm::motion_vm`]). Returns `false` (and does nothing)
-    /// when `slot` is not an installed field NPC — the retail actor-list
+    /// when `slot` is not an installed field NPC - the retail actor-list
     /// search miss, which returns 0.
     ///
     /// A leg started here is *scripted* (`route_cursor = None`): it runs even
@@ -7371,18 +7371,18 @@ impl World {
 
     /// Step every in-flight field-NPC walk leg one frame through the ported
     /// motion VM and kick autonomous route legs, writing each NPC's new
-    /// position back into [`Self::field_npc_positions`] — so the moving NPC's
+    /// position back into [`Self::field_npc_positions`] - so the moving NPC's
     /// ±40-unit collision box ([`Self::field_actor_dir_blocked`]) and its
     /// interact box ([`Self::field_interact_probe_slot`]) follow the live
     /// position, exactly as retail probes the live `+0x14`/`+0x18` rather
     /// than the spawn anchor.
     ///
     /// Autonomous legs (started from [`Self::field_npc_routes`], gated by
-    /// [`Self::animate_field_npcs`]) loop their waypoints — a patrol — and
+    /// [`Self::animate_field_npcs`]) loop their waypoints - a patrol - and
     /// pause while a dialogue is up (retail's interaction motion-pause kick:
     /// the touch event post reloads every moving-class actor's pause timer,
     /// `FUN_8003c9ac`). Scripted legs (interaction-prologue `0x4C 0x51`,
-    /// actor-VM `start_motion`) keep stepping through a dialogue — they ARE
+    /// actor-VM `start_motion`) keep stepping through a dialogue - they ARE
     /// the interaction's choreography.
     ///
     /// REF: FUN_8003774C, FUN_8003c9ac
@@ -7464,7 +7464,7 @@ impl World {
 
     /// The locomotion's per-step **walk-touch dispatch**: when the player's
     /// body stands inside a walk-touch placement's static contact box
-    /// (±[`FIELD_PROP_BOX_HALF`]), post that placement's event — no button
+    /// (±[`FIELD_PROP_BOX_HALF`]), post that placement's event - no button
     /// press, the same dispatch path the button-gated interact uses
     /// ([`Self::trigger_field_interact`]) plus the decoded script effect:
     ///
@@ -7511,7 +7511,7 @@ impl World {
             return;
         };
         if self.active_walk_touch == Some(touch_slot) {
-            return; // still inside the same contact — already posted
+            return; // still inside the same contact - already posted
         }
         self.active_walk_touch = Some(touch_slot);
         // Post through the same dispatch path the button-gated interact uses.
@@ -7779,12 +7779,12 @@ impl World {
     ///
     /// With [`Self::leading_edge_wall_probes`] set, each axis instead blocks
     /// on retail's three-probe leading-edge footprint taken at the CURRENT
-    /// position ([`Self::field_dir_blocked`]) — the retail standoff — and
+    /// position ([`Self::field_dir_blocked`]) - the retail standoff - and
     /// commits the step whenever the edge is clear. The default candidate-
     /// centre test is kept (off-flag) for the locomotion oracles and the
     /// BFS nav drivers. With [`Self::solid_field_npcs`] set, each axis
     /// additionally blocks when the direction's actor-collision probes land
-    /// inside a field NPC's body box ([`Self::field_actor_dir_blocked`]) —
+    /// inside a field NPC's body box ([`Self::field_actor_dir_blocked`]) -
     /// retail gates a step on the actor bits and the wall bit together
     /// (`FUN_801cfe4c` returning any of `1`/`2`/`4` refuses the 2-unit step).
     pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
@@ -7850,7 +7850,7 @@ impl World {
     /// `true` once the player is within `tol` units of the target on both axes.
     ///
     /// This is the auto-navigation primitive a driver loops (following a path of
-    /// waypoints) to walk the player to a target — e.g. the v0.1 oracle walking
+    /// waypoints) to walk the player to a target - e.g. the v0.1 oracle walking
     /// from the cold-boot spawn to the sparring partner before talking to it.
     /// It drives the real locomotion stepping/collision, just without the pad →
     /// camera-relative remap. No-op without an active player actor.
@@ -7887,7 +7887,7 @@ impl World {
         }
         if dir != 0 {
             // Walking sets the heading, exactly as the pad path does (retail
-            // locomotion writes the facing every moved frame) — so a nav walk
+            // locomotion writes the facing every moved frame) - so a nav walk
             // leaves the player facing its travel direction and the interact
             // probe ([`Self::field_interact_probe_slot`]) sees the same state
             // a pad walk would produce.

@@ -77,7 +77,7 @@ prim data (count × ilen*4 bytes):
     <li><strong>G3</strong> (flags 0x1D, 20-byte record): 3 colour words at a 4-byte stride, then 3&times;u16 vertex offsets.</li>
     <li><strong>G4</strong> (flags 0x1F, 24-byte record): 4 colour words read in winding order <code>[0,1,3,2]</code> (table <code>DAT_8007b410 = 00 01 03 02</code>, applied to both colours and vertices), then 4&times;u16 vertex offsets.</li>
   </ul>
-  <p><strong>No per-prim normal field exists</strong> &mdash; the renderer reads only the prim pointer, the vertex base and the loop count, never the object's normal table; lighting is the GTE <code>NCDS</code> op fed the stored colour. <code>legaia_tmd::legaia_prims</code> decodes the colours into <code>Prim::colors</code>, and <code>tmd_to_color_mesh</code> builds a vertex-colour mesh the engine renders for untextured props (see <a href="../subsystems/renderer.html">renderer</a>).</p>
+  <p><strong>No per-prim normal field exists</strong> - the renderer reads only the prim pointer, the vertex base and the loop count, never the object's normal table; lighting is the GTE <code>NCDS</code> op fed the stored colour. <code>legaia_tmd::legaia_prims</code> decodes the colours into <code>Prim::colors</code>, and <code>tmd_to_color_mesh</code> builds a vertex-colour mesh the engine renders for untextured props (see <a href="../subsystems/renderer.html">renderer</a>).</p>
 </section>
 
 <section class="doc-section" id="worked-example">
@@ -188,7 +188,7 @@ prim data (count × ilen*4 bytes):
 </tr>
 <tr>
 <td><code>FUN_8001E890</code></td>
-<td>&ldquo;DATA_FIELD player loader&rdquo; &mdash; calls <code>FUN_8003eb98(0x36C, &hellip;)</code> (PROT 876 = <code>player_data</code>) and the dev paths <code>data\field\player.lzs</code> / <code>h:\prot\all\data\field\player.lz</code>. The retail bytes the loader reads (PROT 876 = streaming-format VAB+TIM_LIST+SEQ; the dev <code>data\field\player.lzs</code> file is absent from the ISO9660 walk) <strong>do not</strong> carry the <code>[0..4]</code> character TMDs. Those come from PROT 0874 (<code>befect_data</code>) section 0 &mdash; see <a href="world-map-overlay.html#disc-side-source-of-04">world-map-overlay.html &sect; Disc-side source of [0..4]</a>. What this function <em>does</em> do that&apos;s still consumed at <code>DAT_8007C018[0..2]</code> is the post-install group-count cap (<code>entry[+0x08] = 10</code>) and the equipment-conditional patch dispatch into <code>FUN_8001EBEC</code>.</td>
+<td>&ldquo;DATA_FIELD player loader&rdquo; - calls <code>FUN_8003eb98(0x36C, &hellip;)</code> (PROT 876 = <code>player_data</code>) and the dev paths <code>data\field\player.lzs</code> / <code>h:\prot\all\data\field\player.lz</code>. The retail bytes the loader reads (PROT 876 = streaming-format VAB+TIM_LIST+SEQ; the dev <code>data\field\player.lzs</code> file is absent from the ISO9660 walk) <strong>do not</strong> carry the <code>[0..4]</code> character TMDs. Those come from PROT 0874 (<code>befect_data</code>) section 0 - see <a href="world-map-overlay.html#disc-side-source-of-04">world-map-overlay.html &sect; Disc-side source of [0..4]</a>. What this function <em>does</em> do that&apos;s still consumed at <code>DAT_8007C018[0..2]</code> is the post-install group-count cap (<code>entry[+0x08] = 10</code>) and the equipment-conditional patch dispatch into <code>FUN_8001EBEC</code>.</td>
 </tr>
 </tbody>
 </table>

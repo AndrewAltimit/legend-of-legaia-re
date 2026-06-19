@@ -21,7 +21,7 @@
 //! | `+0x10` | u32 | handler function pointer |
 //! | `+0x14` | u32 | handler parameter |
 //!
-//! The `+0x08` word reads `0xFFFF0000` on self-managed modes — that is not a
+//! The `+0x08` word reads `0xFFFF0000` on self-managed modes - that is not a
 //! sentinel constant but the `i16` next-mode field at `+0x0A` holding `-1`
 //! over a zero low half. Retail uses only two values: `-1` (the mode manages
 //! its own transitions) and `0` (on completion, fall back to mode 0).

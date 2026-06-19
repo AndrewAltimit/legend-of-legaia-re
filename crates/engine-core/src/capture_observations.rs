@@ -419,7 +419,7 @@ pub mod field_pack_intra_transition {
         let base = super::field_pack_load::recover_base(main_ram)?;
         // The settled pre-transition state (`town01`) has
         // label="town01" + base=PREV_BASE. The mid-transition state
-        // (`town0c`) has label="town0c" + base=PREV_BASE — the label
+        // (`town0c`) has label="town0c" + base=PREV_BASE - the label
         // has flipped, the base has not. We surface that case.
         if label != "town01" && base == PREV_BASE {
             return Some((label, base));
@@ -548,11 +548,11 @@ pub mod str_fmv_overlay {
 ///
 /// **Record stat window** at `+0x11C..+0x12D` (9 u16 LE values). Values
 /// pinned across the corpus:
-/// - `[+0x11C]` HP_max — mirrors live `+0x106`.
-/// - `[+0x11E]` MP_max — mirrors live `+0x10A`.
-/// - `[+0x120]` per-stat cap constant `100` — unchanged across every
+/// - `[+0x11C]` HP_max - mirrors live `+0x106`.
+/// - `[+0x11E]` MP_max - mirrors live `+0x10A`.
+/// - `[+0x120]` per-stat cap constant `100` - unchanged across every
 ///   captured save and every character.
-/// - `[+0x122..+0x12D]` six u16 record-side stats — mirror live
+/// - `[+0x122..+0x12D]` six u16 record-side stats - mirror live
 ///   `+0x110..+0x11B`.
 ///
 /// SP_max at `+0x10E` lives only in the live in-battle copy. The record
@@ -886,7 +886,7 @@ pub mod item_use_battle_event {
 ///
 /// - The trigger-side state (`_DAT_8007BA78` + game mode) is fully
 ///   pinned and reproducible across the corpus.
-/// - The FMV overlay is **NOT** loaded in any of the saves — the
+/// - The FMV overlay is **NOT** loaded in any of the saves - the
 ///   compact-table-at-`0x801CAE40` and the runtime FMV-state-table
 ///   at `0x801D0A6C` aren't visible from these saves alone.
 /// - All nine saves were captured from the same active scene
@@ -894,30 +894,30 @@ pub mod item_use_battle_event {
 ///   field-VM trigger op. The `0x4C 0xE2 lo hi` byte sequence does
 ///   NOT appear in the field-pack RAM region for any save (a scan
 ///   of the 192 KB region following the loader-base pointer turns
-///   up zero matches in every save) — this is consistent with the
+///   up zero matches in every save) - this is consistent with the
 ///   debug menu poking `_DAT_8007BA78` directly rather than with
 ///   the field VM stepping through a trigger-bearing bytecode
 ///   buffer.
 ///
 /// **Findings.**
 ///
-/// 1. **`fmv_id` range extends to at least `0..=8`** — six more
+/// 1. **`fmv_id` range extends to at least `0..=8`** - six more
 ///    valid trigger values than the previously-documented
 ///    `0..=5`. Combined with the static read of the str_fmv
 ///    overlay's runtime FMV-state table at `0x801D0A6C` from a prior
 ///    corpus rotation, twelve slots are visible in the table; the
 ///    first nine are reachable through the debug menu.
-/// 2. **Game mode is `0x1A` (StrInit) for every save** — the trigger
+/// 2. **Game mode is `0x1A` (StrInit) for every save** - the trigger
 ///    op writes `_DAT_8007B83C = 0x1A` unconditionally, regardless
 ///    of which fmv_id was selected.
 /// 3. **All saves resolve to `map01`** in the scene-bundle pool
 ///    (slot 0 = slot 1 = `map01`). The field-pack base
-///    (`recover_base`) returns `0x80139530` consistently — a NEW
+///    (`recover_base`) returns `0x80139530` consistently - a NEW
 ///    cross-validation point for `map01`'s field-pack RAM
 ///    residency, as `map01` is one of the seven mid-game
 ///    FMV-trigger field scenes documented in
 ///    `legaia_engine_core::scene::FMV_TRIGGER_FIELD_SCENES`.
-/// 4. **BGM ID is `2000` (global pool index `0`) for every save** —
+/// 4. **BGM ID is `2000` (global pool index `0`) for every save** -
 ///    the FMV trigger path resets the BGM selector to the start of
 ///    the global pool.
 ///
@@ -960,7 +960,7 @@ pub mod cutscene_trigger_corpus {
     pub const EXPECTED_SCENE_LABEL: &str = "map01";
 
     /// Expected `recover_base` return value for every save in the
-    /// corpus — the `map01` field-pack base. Pins `map01`'s
+    /// corpus - the `map01` field-pack base. Pins `map01`'s
     /// field-pack runtime residency for cross-referencing against
     /// `FMV_TRIGGER_FIELD_SCENES` and the existing
     /// `field_pack_load::TOWN01_FIELD_PACK_BASE` constant.
@@ -1042,7 +1042,7 @@ pub mod cutscene_trigger_corpus {
     /// the field-VM FMV-trigger op `0x4C 0xE2 lo hi`. Returns each
     /// match as `(absolute_addr, fmv_id_operand)`. Used to confirm
     /// (or refute) that the captured save still has the trigger
-    /// bytecode resident — the corpus saves return zero matches, a
+    /// bytecode resident - the corpus saves return zero matches, a
     /// stable signature of the debug-menu-driven trigger path.
     pub fn scan_field_pack_for_trigger_ops(
         main_ram: &[u8],
@@ -1489,7 +1489,7 @@ mod tests {
         let hits = cutscene_trigger_corpus::scan_field_pack_for_trigger_ops(&ram, base, 0x200);
         assert_eq!(hits, vec![(base + 0x100, 5)]);
 
-        // No matches in a zero-filled RAM image — confirming the
+        // No matches in a zero-filled RAM image - confirming the
         // corpus's empirical "no trigger op found in field-pack"
         // observation when no op is planted.
         let zero = vec![0u8; 0x200000];

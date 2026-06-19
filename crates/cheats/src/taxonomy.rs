@@ -6,7 +6,7 @@
 //! per-byte deltas from a pair of save states via
 //! `legaia_mednafen::diff_ram`), this rolls them up into per-region counts +
 //! a few sample classifications each. It is the classification half of a
-//! gameplay-driven write tracer — feed it a capture diff and it answers
+//! gameplay-driven write tracer - feed it a capture diff and it answers
 //! "*what* changed, bucketed by subsystem", surfacing writes that land in
 //! unexpected regions (the `Unknown` bucket, or the `0x8007Bxxx` script-VM /
 //! build-flag scratch) as candidates worth a closer look.

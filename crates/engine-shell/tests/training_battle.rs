@@ -42,7 +42,7 @@ fn training_encounter_reaches_battle_with_real_monster() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
     // The training opponent's stats live in the monster archive's extended
@@ -51,7 +51,7 @@ fn training_encounter_reaches_battle_with_real_monster() {
     let archive_path = extracted.join("PROT").join("0867_battle_data.BIN");
     if !archive_path.exists() {
         eprintln!(
-            "[skip] {} missing — run `legaia-extract`",
+            "[skip] {} missing - run `legaia-extract`",
             archive_path.display()
         );
         return;
@@ -159,7 +159,7 @@ fn training_reaches_battle_via_man_formation_index() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -226,7 +226,7 @@ fn training_reaches_battle_via_man_formation_index() {
     );
 
     // The enemy slot is Tetsu with the real archive HP (999) merged at scene
-    // entry — no manual catalog seeding needed on this path.
+    // entry - no manual catalog seeding needed on this path.
     let world = &session.host.world;
     let monster_slot = world.party_count.clamp(1, 3) as usize;
     assert_eq!(
@@ -257,7 +257,7 @@ fn training_reaches_battle_via_field_carrier_sm() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -344,7 +344,7 @@ fn training_reaches_battle_via_field_carrier_sm() {
 /// accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss on a just-pressed
 /// Cross) engages the carrier and the SM flips Field -> Battle against the real
 /// per-scene MAN formation, with Tetsu (`0x4F`) in the enemy slot. This is the
-/// dialogue-accept auto-arm end to end on disc data — the field-VM bytecode now
+/// dialogue-accept auto-arm end to end on disc data - the field-VM bytecode now
 /// drives the engage the manual API stood in for.
 #[test]
 fn training_reaches_battle_via_field_vm_dialogue_accept() {
@@ -355,7 +355,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -445,7 +445,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
 
 /// The fully input-driven path via the interaction probe (retail `FUN_801cf9f4`):
 /// standing next to the sparring partner and pressing the action button talks to
-/// it, and pressing again accepts — starting the fight with no script injection
+/// it, and pressing again accepts - starting the fight with no script injection
 /// and no manual engage. The runtime actor frame is the MAN placement frame
 /// (`FUN_8003A1E4` spawns at `tile*128 + 0x40`, the placement's `world_x`), so
 /// the probe box-tests the player against the carrier's stored placement
@@ -460,7 +460,7 @@ fn training_reaches_battle_via_interaction_probe() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -482,7 +482,7 @@ fn training_reaches_battle_via_interaction_probe() {
     assert_eq!(session.host.world.mode, SceneMode::Field);
 
     // The sparring carrier's slot (the one scripted-encounter slot) and its
-    // stored placement position — what the probe box-tests against.
+    // stored placement position - what the probe box-tests against.
     let (slot, cx, cz) = {
         let w = &session.host.world;
         let slot = *w

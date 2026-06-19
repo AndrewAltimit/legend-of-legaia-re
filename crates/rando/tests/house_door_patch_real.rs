@@ -1,10 +1,10 @@
 //! Disc-gated end-to-end test for the intra-town (house / interior) door
 //! shuffle: per-scene, class-preserving shuffle of the player door-warp target
 //! tiles on a scratch copy of the disc, then re-decode every patched scene MAN
-//! straight off the patched image and confirm — the per-scene IN-class and
+//! straight off the patched image and confirm - the per-scene IN-class and
 //! OUT-class target multisets are each preserved (so every house entry still
 //! lands in some interior and every exit still lands at some exterior doorstep
-//! — no off-map placement, no interior-to-interior softlock), every patched
+//! - no off-map placement, no interior-to-interior softlock), every patched
 //! MAN re-parses through disc → ISO → PROT → LZS, every touched sector stays
 //! EDC/ECC-valid, the image size is unchanged, and a fixed seed is
 //! byte-deterministic. Skips + passes without `LEGAIA_DISC_BIN`.

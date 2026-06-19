@@ -153,7 +153,7 @@ returning the screen corners in the exact order the retail `POLY_FT4`
 packet consumes plus the OT-bucket depth. `afterimage::
 project_streak_corners` reproduces the streak caller's invocation
 (`+0x120` Y push, dynamic half-width, half-height `0x100`). `psx_sin` /
-`psx_cos` reproduce the retail `RotMatrix*` trig LUT —
+`psx_cos` reproduce the retail `RotMatrix*` trig LUT -
 `trunc(4096·sin(2π·a/4096))`, pinned entry-for-entry by the disc-gated
 `gte_sin_lut_real` oracle in `engine-shell`.
 

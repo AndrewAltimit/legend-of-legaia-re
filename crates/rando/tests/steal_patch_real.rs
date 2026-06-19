@@ -1,7 +1,7 @@
 //! Disc-gated end-to-end test for the steal-item randomizer: shuffle the
 //! per-monster steal items in the static `SCUS_942.54` table on a scratch copy
 //! of the disc, then re-read the patched table straight off the patched image
-//! and confirm the edit is faithful — item multiset preserved (shuffle), every
+//! and confirm the edit is faithful - item multiset preserved (shuffle), every
 //! steal chance byte untouched, the touched `SCUS_942.54` sectors EDC/ECC-valid,
 //! and a fixed seed byte-deterministic. Skips + passes without `LEGAIA_DISC_BIN`.
 
@@ -17,7 +17,7 @@ fn load_disc() -> Option<Vec<u8>> {
 }
 
 /// `(sorted (monster_id, chance) pairs, sorted item multiset)` for every
-/// stealable monster — the invariants a shuffle must preserve.
+/// stealable monster - the invariants a shuffle must preserve.
 fn snapshot(patcher: &DiscPatcher) -> (Vec<(u16, u8)>, Vec<u8>) {
     let steals = apply::current_steals(patcher).expect("read steal table");
     let mut chances: Vec<(u16, u8)> = steals.iter().map(|s| (s.monster_id, s.chance)).collect();

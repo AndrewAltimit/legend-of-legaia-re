@@ -1,4 +1,4 @@
-//! PROT-0900 **screen-effect widget family** — the 2D presentation layer the
+//! PROT-0900 **screen-effect widget family** - the 2D presentation layer the
 //! field/event VM drives during cutscene-style sequences (iris mask, scripted
 //! sprites, image panel, letterbox bands). Clean-room port from the resident
 //! slot-B overlay PROT 0900 (link base `0x801F69D8`).
@@ -8,7 +8,7 @@
 //! This family was the long-open "quad-emit / matrix half of `FUN_801F811C`"
 //! thread. Static decode of PROT 0900 at the correct link base resolves it:
 //! **there is no per-part 3D matrix in this path.** `FUN_801F811C` is the
-//! per-frame handler of a 2D *screen-mask widget* — its four tweened channels
+//! per-frame handler of a 2D *screen-mask widget* - its four tweened channels
 //! (`+0x3c/3e/40/42` targets against `+0x14/16/18/1a` current) are the
 //! **left / top / right / bottom edges of a screen rectangle**, and the four
 //! emitted quads are the black border bands framing that rectangle (an iris /
@@ -80,9 +80,9 @@
 pub enum InterpMode {
     /// `(a-b)*t/D + b`
     Linear,
-    /// `e = (a-b)*t; (e + (e/D)*(D-t))/D + b` — quadratic ease-out.
+    /// `e = (a-b)*t; (e + (e/D)*(D-t))/D + b` - quadratic ease-out.
     EaseOut,
-    /// `((a-b)*t/D)*t/D + b` — quadratic ease-in.
+    /// `((a-b)*t/D)*t/D + b` - quadratic ease-in.
     EaseIn,
     /// Ease-in to the midpoint over `D/2`, then ease-out to the target.
     EaseInOut,
@@ -101,7 +101,7 @@ impl InterpMode {
     }
 }
 
-/// Multi-mode integer interpolator — full port of `FUN_801DE4C8(a, b, t, D,
+/// Multi-mode integer interpolator - full port of `FUN_801DE4C8(a, b, t, D,
 /// mode)`: interpolate from `start` (`b`) toward `target` (`a`) at time `t` of
 /// duration `dur`. Returns `target` exactly when `target == start` or
 /// `t >= dur`. Division truncates toward zero (MIPS `div`), which is Rust `/`
@@ -180,7 +180,7 @@ fn interp_rgb(target: [u8; 3], start: [u8; 3], t: i32, d: i32, mode: InterpMode)
 }
 
 // ---------------------------------------------------------------------------
-// Kind 1 — screen mask (iris) widget
+// Kind 1 - screen mask (iris) widget
 // ---------------------------------------------------------------------------
 
 /// One axis-aligned black border quad of the mask draw. Vertices are packed
@@ -201,15 +201,15 @@ pub struct MaskQuad {
 /// time toward the requested targets.
 #[derive(Debug, Clone, Copy)]
 pub struct MaskWidget {
-    /// Current (latched) edges `[L, T, R, B]` — actor `+0x14/16/18/1a`. These
+    /// Current (latched) edges `[L, T, R, B]` - actor `+0x14/16/18/1a`. These
     /// only move on snap/latch; mid-tween display values are re-interpolated
     /// from here each frame.
     pub cur: [i16; 4],
-    /// Target edges — actor `+0x3c/3e/40/42`.
+    /// Target edges - actor `+0x3c/3e/40/42`.
     pub target: [i16; 4],
-    /// Tween clock — actor `+0x9c`.
+    /// Tween clock - actor `+0x9c`.
     pub t: i16,
-    /// Tween duration — actor `+0x9e` (0 = no active tween, snap to target).
+    /// Tween duration - actor `+0x9e` (0 = no active tween, snap to target).
     pub dur: i16,
 }
 
@@ -228,7 +228,7 @@ impl MaskWidget {
     }
 
     /// Start a tween of the visible rect toward `(l, t, r, b)` over `dur`
-    /// frames — the `FUN_801F8D4C` control API. An edge passed as `-1` takes
+    /// frames - the `FUN_801F8D4C` control API. An edge passed as `-1` takes
     /// its full-open default (`x0` / `0` / `0x140` / `height-1`), so e.g.
     /// `set_rect(-1, -1, -1, -1, d)` opens the mask and `set_rect(160, 120,
     /// 160, 120, d)` irises shut on the screen centre.
@@ -242,7 +242,7 @@ impl MaskWidget {
         self.dur = dur;
     }
 
-    /// Advance the tween one frame and return the four border quads — the
+    /// Advance the tween one frame and return the four border quads - the
     /// whole of `FUN_801F811C`. `frame_delta` is retail's per-frame byte
     /// `DAT_1F800393`.
     ///
@@ -314,7 +314,7 @@ impl MaskWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Kind 0 — scripted sprite widget
+// Kind 0 - scripted sprite widget
 // ---------------------------------------------------------------------------
 
 /// Static fields decoded from a sprite-widget spawn record (the `FUN_801F8004`
@@ -391,22 +391,22 @@ pub struct SpriteDraw {
 /// Live state of a scripted sprite widget (retail handler `FUN_801F7A9C`).
 #[derive(Debug, Clone)]
 pub struct SpriteWidget {
-    /// Current screen position — actor `+0x14/+0x16`.
+    /// Current screen position - actor `+0x14/+0x16`.
     pub x: i16,
     pub y: i16,
-    /// Tween-start position captured when a sub-op-3 tween begins — actor
+    /// Tween-start position captured when a sub-op-3 tween begins - actor
     /// `+0x3c/+0x3e`.
     pub start_x: i16,
     pub start_y: i16,
-    /// Current modulation colour — actor `+0x74..76`.
+    /// Current modulation colour - actor `+0x74..76`.
     pub rgb: [u8; 3],
-    /// Tween-start colour — actor `+0x7c..7e`.
+    /// Tween-start colour - actor `+0x7c..7e`.
     pub start_rgb: [u8; 3],
-    /// Tween clock — actor `+0x9c`.
+    /// Tween clock - actor `+0x9c`.
     pub t: i16,
-    /// Script cursor — actor `+0x90` (byte offset into the record).
+    /// Script cursor - actor `+0x90` (byte offset into the record).
     pub cursor: usize,
-    /// Kill flag — actor flag bit `0x8`; set by sub-op 0, suppresses the draw.
+    /// Kill flag - actor flag bit `0x8`; set by sub-op 0, suppresses the draw.
     pub killed: bool,
     /// Static draw fields from the spawn record.
     pub rec: SpriteRecord,
@@ -433,21 +433,21 @@ impl SpriteWidget {
     }
 
     /// Run one frame of the widget script then return the draw (or `None`
-    /// once killed) — the whole of `FUN_801F7A9C`. `script` is the spawn
+    /// once killed) - the whole of `FUN_801F7A9C`. `script` is the spawn
     /// record's byte buffer (the cursor indexes into it); `flag_test` is the
     /// story-flag probe `FUN_8003CE64` (bit `idx` of the `0x80085758` bank).
     ///
     /// Sub-ops (`script[cursor+2]`, dispatched via the 5-entry table at the
     /// overlay head):
     ///
-    /// * `0` — kill: set the actor's bit-8 flag; never draws again.
-    /// * `1` — wait until `flag_test(arg)` is **set**; then `cursor += 5` and
+    /// * `0` - kill: set the actor's bit-8 flag; never draws again.
+    /// * `1` - wait until `flag_test(arg)` is **set**; then `cursor += 5` and
     ///   continue interpreting the same frame.
-    /// * `2` — wait until the flag is **clear**; then `cursor += 5`.
-    /// * `3` — tween position + colour to `(x:i16@3, y:i16@5, rgb:u24@7)` with
+    /// * `2` - wait until the flag is **clear**; then `cursor += 5`.
+    /// * `3` - tween position + colour to `(x:i16@3, y:i16@5, rgb:u24@7)` with
     ///   ease mode `@0xa` over `dur:i16@0xb` frames; `cursor += 0xd` on
     ///   completion.
-    /// * `4` — tween colour only to `rgb:u24@3`, mode `@6`, `dur:i16@7`;
+    /// * `4` - tween colour only to `rgb:u24@3`, mode `@6`, `dur:i16@7`;
     ///   `cursor += 9` on completion.
     ///
     /// A cursor byte other than `0x40` (or a sub-op `>= 5`) leaves the script
@@ -559,12 +559,12 @@ impl SpriteWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Kind 2 — image panel widget
+// Kind 2 - image panel widget
 // ---------------------------------------------------------------------------
 
 /// One textured panel quad: GP0 `0x2C` (textured blended quad, colour
 /// `0x888888`) over a **15bpp direct-colour** texpage (the spawn ORs `0x100`
-/// into the page selector — depth bits = 15bpp, so no CLUT). OT slot `+0x10`.
+/// into the page selector - depth bits = 15bpp, so no CLUT). OT slot `+0x10`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PanelQuad {
     pub left: i16,
@@ -584,23 +584,23 @@ pub struct PanelQuad {
 /// wider than 256px splits across two 15bpp texpages).
 #[derive(Debug, Clone, Copy)]
 pub struct PanelWidget {
-    /// Current `[x, y, w, h, w_page0]` — actor `+0x14/16/18/1a` and `+0x24`.
+    /// Current `[x, y, w, h, w_page0]` - actor `+0x14/16/18/1a` and `+0x24`.
     pub cur: [i16; 5],
-    /// Targets — actor `+0x3c/3e/40/42` and `+0x26`.
+    /// Targets - actor `+0x3c/3e/40/42` and `+0x26`.
     pub target: [i16; 5],
-    /// Unscaled base `[w, h, w_page0]` — actor `+0xb8/ba/bc` (the `FUN_801F8E6C`
+    /// Unscaled base `[w, h, w_page0]` - actor `+0xb8/ba/bc` (the `FUN_801F8E6C`
     /// scale reference).
     pub base: [i16; 3],
-    /// Tween clock / duration — actor `+0x9c` / `+0x9e`.
+    /// Tween clock / duration - actor `+0x9c` / `+0x9e`.
     pub t: i16,
     pub dur: i16,
-    /// Spawn-time pixel size — actor `+0xaa/+0xac` (drives the UV extents).
+    /// Spawn-time pixel size - actor `+0xaa/+0xac` (drives the UV extents).
     pub w0: i16,
     pub h0: i16,
-    /// Texel origin — actor `+0xa4` (`u`) / `+0xa8` (`v`).
+    /// Texel origin - actor `+0xa4` (`u`) / `+0xa8` (`v`).
     pub u: u8,
     pub v: u8,
-    /// First / second 15bpp texpage — actor `+0xa0` / `+0xa2` (0 = no second
+    /// First / second 15bpp texpage - actor `+0xa0` / `+0xa2` (0 = no second
     /// page; set when the panel is wider than 256px).
     pub texpage: u16,
     pub texpage2: u16,
@@ -647,7 +647,7 @@ impl PanelWidget {
         })
     }
 
-    /// Start a move/scale tween — the `FUN_801F8E6C` control API. `scale` is
+    /// Start a move/scale tween - the `FUN_801F8E6C` control API. `scale` is
     /// 4.12 fixed point (`0x1000` = 1.0): the width / height / first-page
     /// width targets become `(base * scale) >> 12`.
     // PORT: FUN_801F8E6C
@@ -662,7 +662,7 @@ impl PanelWidget {
     }
 
     /// Advance the 5-channel tween one frame and return the 1–2 textured
-    /// quads — the whole of `FUN_801F849C`. Unlike the mask handler this one
+    /// quads - the whole of `FUN_801F849C`. Unlike the mask handler this one
     /// has no `dur == 0` snap arm: with no active tween the latched `cur`
     /// values draw as-is.
     // PORT: FUN_801F849C
@@ -726,11 +726,11 @@ impl PanelWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Kind 3 — letterbox-band widget
+// Kind 3 - letterbox-band widget
 // ---------------------------------------------------------------------------
 
 /// The letterbox widget (retail handler `FUN_801F8A34`): two solid black
-/// bands with gradient "feather" strips on their inner edges. No tween — the
+/// bands with gradient "feather" strips on their inner edges. No tween - the
 /// `FUN_801F8F28` config writes the band edges directly.
 ///
 /// Draw shape (all between `x_left..x_right`, OT slot `+0x4`):
@@ -738,14 +738,14 @@ impl PanelWidget {
 ///   (x_right, height)` (GP0 `0x28`);
 /// * gradient `y0` (white) → `y1` (black) and `y2` (black) → `y3` (white)
 ///   (GP0 `0x3B` shaded semi-transparent quads, preceded by a draw-mode
-///   packet selecting **subtractive** blending — `FUN_80059010(.., 0x55, ..)`,
+///   packet selecting **subtractive** blending - `FUN_80059010(.., 0x55, ..)`,
 ///   texpage blend bits mode 2), so the white edge subtracts to black.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Letterbox {
-    /// Horizontal extent — actor `+0xa0` / `+0xa2`.
+    /// Horizontal extent - actor `+0xa0` / `+0xa2`.
     pub x_left: i16,
     pub x_right: i16,
-    /// Band edges top..bottom — actor `+0xa4/a6/a8/aa`.
+    /// Band edges top..bottom - actor `+0xa4/a6/a8/aa`.
     pub y0: i16,
     pub y1: i16,
     pub y2: i16,
@@ -773,7 +773,7 @@ impl Letterbox {
 
     /// The two solid bands: `(left, top, right, bottom)` rects. Port of the
     /// `FUN_801F8A34` flat-quad pair (top band starts at `-y_off`; bottom band
-    /// ends at `height`, **not** `height - 1` — retail's literal).
+    /// ends at `height`, **not** `height - 1` - retail's literal).
     // PORT: FUN_801F8A34
     pub fn solid_bands(&self, screen: &Screen) -> [MaskQuad; 2] {
         [

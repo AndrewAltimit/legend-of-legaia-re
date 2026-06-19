@@ -1,8 +1,8 @@
 //! Starting-inventory randomization: replace the new game's fixed Healing Leaf
 //! with random consumables and/or forced convenience items.
 //!
-//! A vanilla New Game seeds exactly one inventory slot — Healing Leaf (item id
-//! `0x77`) ×5 — written in code by `FUN_80034A6C`
+//! A vanilla New Game seeds exactly one inventory slot - Healing Leaf (item id
+//! `0x77`) ×5 - written in code by `FUN_80034A6C`
 //! (see [`legaia_asset::new_game::StartingInventory`] and
 //! `docs/formats/new-game-table.md`). There is no static starting-inventory
 //! table to edit, so this randomizer rewrites the **seed code** itself: the
@@ -10,22 +10,22 @@
 //! (the original `li`/`sb` seed plus the redundant inline zero-loop the callers
 //! already cover with their `SC`-block `memset`).
 //!
-//! Each item is written with a single packed **halfword store** — an inventory
+//! Each item is written with a single packed **halfword store** - an inventory
 //! slot is two contiguous bytes `[id][count]`, so `sh $v0` writes both at once
 //! after `addiu $v0, $zero, (count << 8) | id`. That is two instructions per
 //! item, and the reclaimable inventory region is ten instructions, so it holds
 //! [`INV_REGION_SLOTS`] slots. When the all-warps preset is off, the seed also
 //! borrows the adjacent warp-preset region (four more instructions, using `$v1`)
-//! for [`WARP_REGION_SLOTS`] more slots that continue the same inventory array —
+//! for [`WARP_REGION_SLOTS`] more slots that continue the same inventory array -
 //! a combined [`MAX_STARTING_ITEMS`]. This keeps a full random fill *additive*
 //! to the forced convenience items rather than crowding it out. The patch is the
 //! same size as the original code (no executable growth or relocation) and is
 //! applied through [`crate::disc::DiscPatcher::patch_named_file`] like the steal
 //! table.
 //!
-//! The write lands **directly** in the new game's owned-item list — the single
+//! The write lands **directly** in the new game's owned-item list - the single
 //! ordered `(id, count)` array the inventory menu later filters into its Items /
-//! Goods / Key tabs by item category — bypassing the engine's id-routing add
+//! Goods / Key tabs by item category - bypassing the engine's id-routing add
 //! primitive. Because every category shares this one list (verified against a
 //! real end-game save: consumables, equipment, and accessories all sit in it as
 //! plain `(id, count)` pairs), an explicit convenience toggle can seed an
@@ -154,7 +154,7 @@ pub struct StartingSeedOptions {
     /// every destination from the start.
     pub all_warps: bool,
     /// Explicit `(item_id, count)` slots to seed into the starting bag, on top
-    /// of the convenience toggles. Additive — like the toggles, these are
+    /// of the convenience toggles. Additive - like the toggles, these are
     /// seeded into the "forced" prefix that always survives the capacity clamp,
     /// and their ids are excluded from the random reroll so they're never
     /// duplicated. Each `count` is clamped to [`MAX_ITEM_STACK`]; an entry with
@@ -162,7 +162,7 @@ pub struct StartingSeedOptions {
     /// (already a convenience item or an earlier `extra_items` entry) is skipped
     /// so every slot is distinct. The id space is the full 256-id item table
     /// (consumables, equipment, AND accessories all live in the one owned-item
-    /// list — see the module docs), so any item or accessory can be requested.
+    /// list - see the module docs), so any item or accessory can be requested.
     /// Slots beyond the direct-seed capacity overflow into the script-injection
     /// path ([`crate::starting_bag`]) like any other bag item.
     pub extra_items: Vec<(u8, u8)>,
@@ -197,7 +197,7 @@ pub struct SeedPlan {
 
 /// The consumable item-id pool starting items are drawn from: the contiguous
 /// block from Healing Leaf (`0x77`) through Wonder Elixir (`0x8e`) in the
-/// retail item-name table — restoratives, cures, Phoenix, Waters, Doors,
+/// retail item-name table - restoratives, cures, Phoenix, Waters, Doors,
 /// Incense, and Elixirs. Everything below `0x77` is equipment and everything
 /// above `0x8e` is magic books / quest / key items, none of which belong on the
 /// consumable inventory page this seed writes to directly.
@@ -217,7 +217,7 @@ fn addiu_v0(imm: u16) -> u32 {
 fn sh_v0_s0(off: u16) -> u32 {
     0xA602_0000 | off as u32
 }
-/// `addiu $v1, $zero, imm16` — the warp preset uses `$v1` so it never clobbers
+/// `addiu $v1, $zero, imm16` - the warp preset uses `$v1` so it never clobbers
 /// `$v0`, which carries a live constant through its region (see
 /// [`legaia_asset::new_game::WARP_SEED_VA`]).
 fn addiu_v1(imm: u16) -> u32 {
@@ -246,7 +246,7 @@ fn plan_random_items(seed: u64, n: usize, exclude: &[u8]) -> Vec<(u8, u8)> {
 
 /// Like [`plan_random_items`] but clamped to `cap` (and the pool size) instead of
 /// [`MAX_STARTING_ITEMS`]. The shuffle + per-item count RNG draws are identical
-/// regardless of `cap`, so a larger `cap` simply extends the same sequence — the
+/// regardless of `cap`, so a larger `cap` simply extends the same sequence - the
 /// first `min(small_cap, …)` items match a smaller-`cap` call exactly. This lets
 /// the script-injection path ([`plan_full_bag`]) plan a bag beyond the 7-slot
 /// direct-seed cap whose prefix still equals what [`plan_seed`] seeds directly.
@@ -306,7 +306,7 @@ fn forced_items(opts: &StartingSeedOptions) -> Vec<(u8, u8)> {
     items
 }
 
-/// The **full**, uncapped starting bag for `opts` — the forced convenience items
+/// The **full**, uncapped starting bag for `opts` - the forced convenience items
 /// then the full requested random fill (or the vanilla Healing Leaf base when no
 /// reroll), in the exact order [`plan_seed`] composes. So `plan_seed`'s output is
 /// this list truncated to [`direct_cap`], and the remainder is the [`overflow_bag`]
@@ -330,7 +330,7 @@ pub fn plan_full_bag(seed: u64, opts: &StartingSeedOptions) -> Vec<(u8, u8)> {
     items
 }
 
-/// The starting-bag slots beyond the direct seed's [`direct_cap`] — the items the
+/// The starting-bag slots beyond the direct seed's [`direct_cap`] - the items the
 /// script-injection path ([`crate::starting_bag`]) grants on top of what
 /// [`plan_seed`] writes directly. Empty when the whole bag fits the direct seed.
 /// Deterministic in `(seed, opts)`.
@@ -347,7 +347,7 @@ pub fn overflow_bag(seed: u64, opts: &StartingSeedOptions) -> Vec<(u8, u8)> {
 /// Resolve [`StartingSeedOptions`] into a concrete [`SeedPlan`] for `seed`.
 ///
 /// Composition, in slot order:
-/// 1. **Forced items** — the enabled convenience toggles (Door of Wind, Incense,
+/// 1. **Forced items** - the enabled convenience toggles (Door of Wind, Incense,
 ///    then the Speed Chain / Chicken Heart / Good Luck Bell accessories, each
 ///    `count`× clamped to [`MAX_ITEM_STACK`]) followed by the user's explicit
 ///    [`StartingSeedOptions::extra_items`], written first so they always survive
@@ -362,7 +362,7 @@ pub fn overflow_bag(seed: u64, opts: &StartingSeedOptions) -> Vec<(u8, u8)> {
 /// normally, or [`INV_REGION_SLOTS`] when the all-warps preset is on (it then
 /// claims the warp-preset region that would otherwise hold the last item
 /// slots). Convenience items are seeded first so they survive the clamp; the
-/// random fill takes whatever capacity is left — so the requested random count
+/// random fill takes whatever capacity is left - so the requested random count
 /// is preserved as long as it fits *on top of* the convenience items rather
 /// than being displaced by them. Deterministic in `(seed, opts)`.
 pub fn plan_seed(seed: u64, opts: &StartingSeedOptions) -> SeedPlan {
@@ -424,7 +424,7 @@ pub fn build_seed_patch_for(plan: &SeedPlan) -> [u8; STARTING_INV_SEED_LEN] {
 /// Emits one `addiu $v0, $zero, (count << 8) | id` + `sh $v0, (0x1818 + 2k)($s0)`
 /// pair per slot (slot `k` at `INVENTORY_SC_OFFSET + 2k`), padded to
 /// [`STARTING_INV_SEED_LEN`] with `nop` (which also overwrites the redundant
-/// zero-loop — required for the warp preset, see [`build_warp_patch`]). Panics
+/// zero-loop - required for the warp preset, see [`build_warp_patch`]). Panics
 /// if more than [`INV_REGION_SLOTS`] slots are given (callers clamp via
 /// [`plan_seed`]). The inventory base offset comes from [`INVENTORY_SC_OFFSET`].
 pub fn build_inv_patch(items: &[(u8, u8)]) -> [u8; STARTING_INV_SEED_LEN] {
@@ -503,7 +503,7 @@ pub fn build_warp_items_patch(items: &[(u8, u8)]) -> [u8; WARP_SEED_LEN] {
 /// in `$v0`. Only applied when `all_warps` is set; otherwise the region keeps
 /// its original (redundant) bytes. Because this region runs *before* the
 /// inventory seed's zero-loop, the caller must also rewrite the inventory region
-/// (dropping that loop) for the preset to survive — which is always the case
+/// (dropping that loop) for the preset to survive - which is always the case
 /// when any seed toggle is active.
 pub fn build_warp_patch() -> [u8; WARP_SEED_LEN] {
     let words = [
@@ -747,7 +747,7 @@ mod tests {
     fn door_plus_warps_plus_reroll_keeps_five_item_slots() {
         // Request 5 random + door of wind + warps: with all-warps on the bag is
         // capped at the inventory region (5 slots), so door takes one and 4
-        // random fills — the door is never crowded out.
+        // random fills - the door is never crowded out.
         let opts = StartingSeedOptions {
             random_items: 5,
             door_of_wind: DOOR_OF_WIND_COUNT,
@@ -865,7 +865,7 @@ mod tests {
     #[test]
     fn door_of_wind_and_incense_seed_distinct_slots() {
         // Both convenience items seeded: Door of Wind first, then Incense, then
-        // the vanilla Healing Leaf base — three distinct slots.
+        // the vanilla Healing Leaf base - three distinct slots.
         let plan = plan_seed(
             5,
             &StartingSeedOptions {
@@ -935,7 +935,7 @@ mod tests {
 
     #[test]
     fn all_convenience_items_seed_alongside_the_vanilla_base() {
-        // Door of Wind, Incense, then the three accessories — five forced items.
+        // Door of Wind, Incense, then the three accessories - five forced items.
         // With the inventory + warp capacity there is still room for the vanilla
         // Healing Leaf, so it stays (the toggles are additive to a normal new
         // game) and spills into the warp region as the sixth slot.
@@ -999,7 +999,7 @@ mod tests {
     fn direct_seed_is_the_full_bag_prefix_and_overflow_is_the_rest() {
         // A bag past the direct cap (2 convenience + a big random fill), with and
         // without all-warps (which lowers the cap). The direct seed must equal the
-        // full bag's prefix and `direct ++ overflow` must reconstruct it exactly —
+        // full bag's prefix and `direct ++ overflow` must reconstruct it exactly -
         // so the script path grants precisely the items the direct seed dropped, no
         // duplicate, no gap.
         for all_warps in [false, true] {
@@ -1065,7 +1065,7 @@ mod tests {
     #[test]
     fn extra_items_follow_convenience_items_in_slot_order() {
         // Convenience toggles seed first, then the explicit extras, then the
-        // vanilla base — a stable, predictable slot order.
+        // vanilla base - a stable, predictable slot order.
         let opts = StartingSeedOptions {
             door_of_wind: DOOR_OF_WIND_COUNT,
             extra_items: vec![(0x30, 2), (0x42, 9)], // arbitrary equipment ids

@@ -95,7 +95,7 @@ pub enum StatusKind {
     /// so the engine's auto-physical party behaviour is a stand-in. One pick is
     /// observed (`evil_medallion_rage_battle`, test `rage_delegated_pick`): the
     /// delegated actor's resolved action is category `+0x1DE == 3` (Attack) with
-    /// a 5-element multi-strike `+0x1DF` stream — consistent with auto-physical,
+    /// a 5-element multi-strike `+0x1DF` stream - consistent with auto-physical,
     /// but a single sample, so the stand-in stays a stand-in.
     Confuse,
     /// Blocks Magic actions (the Magic Amulet protects against Curse attacks).

@@ -1,4 +1,4 @@
-/* world-overview-app.js — viewer controller for the world-overview page.
+/* world-overview-app.js - viewer controller for the world-overview page.
  *
  * Extracted from site/world-overview.html (and its _content/ mirror) for
  * file modularity. Loads as a classic global script after webgl-{shaders,
@@ -480,7 +480,7 @@
           }
         } else if ($fogLutStatus) {
           $fogLutStatus.textContent =
-            'Fog LUT: not located in SCUS — kingdom-tinted fallback active.';
+            'Fog LUT: not located in SCUS - kingdom-tinted fallback active.';
         }
       } catch (err) {
         console.warn('fog_lut_bytes:', err);

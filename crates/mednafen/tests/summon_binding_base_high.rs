@@ -122,7 +122,7 @@ fn pin_block(block: &str, casts: &[(&str, u16, u32, u8, &str)]) -> usize {
         let save = SaveState::from_path(&save_path).expect("parse save");
         let ram = save.main_ram().expect("main RAM");
 
-        // The unified arithmetic the whole summon run rides — encoded so the
+        // The unified arithmetic the whole summon run rides - encoded so the
         // table constants can't silently drift apart.
         assert_eq!(
             extraction,

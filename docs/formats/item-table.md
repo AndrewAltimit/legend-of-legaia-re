@@ -21,15 +21,15 @@ becomes a readable name (`0x79` → `Healing Berry`).
 
 The MES `0xC2`/`0xC4` substitution indexes the table by the **name pointer** at
 record `+4` (`PTR_DAT_8007436C = DAT_80074368 + 4`), which is why the name table
-reads as `PTR_DAT_8007436C[id*3]` (three `u32` words: name, type-ptr, …) — but
+reads as `PTR_DAT_8007436C[id*3]` (three `u32` words: name, type-ptr, …) - but
 the record proper starts 4 bytes earlier, at `DAT_80074368`:
 
 | Offset | Type | Field |
 |---|---|---|
 | `+0` | u8 | kind (`1` = equipment, `2` = item/consumable/key) |
 | `+1` | u8 | (per-kind flags) |
-| `+2` | u16 | **shop price** in gold — what the buy/sell UI charges; `0` = quest / found-only item the shop never prices |
-| `+4` | u32 | `name_ptr` — pointer to the NUL-terminated display name |
+| `+2` | u16 | **shop price** in gold - what the buy/sell UI charges; `0` = quest / found-only item the shop never prices |
+| `+4` | u32 | `name_ptr` - pointer to the NUL-terminated display name |
 | `+8` | u32 | secondary pointer (a shared "type" / description string for some classes) |
 
 The shop price at `+2` is decisive (verified live: War God Band = 21000, Healing
@@ -46,7 +46,7 @@ The display strings carry the same MES control prefixes as every other in-game
 string: a leading `0x01` icon escape and `0xCE XX` colour-control bytes. The
 parser strips control bytes (keeping printable ASCII) and trims surrounding
 whitespace. A handful of ids (`0x00`, `0x12`, `0x1A`, `0x52`, `0xB9`, `0xFD`)
-have empty names — reserved / gap slots; `id 0` is "no item".
+have empty names - reserved / gap slots; `id 0` is "no item".
 
 ## Provenance + parser
 

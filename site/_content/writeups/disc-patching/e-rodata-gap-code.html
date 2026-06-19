@@ -1,0 +1,111 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">disc patching</a> &middot; Tier E</div>
+  <h1>Tier E - code injection via the rodata gap</h1>
+  <p class="lede">The first tier where you stop editing the game's <em>data</em> and start adding its <em>behavior</em>. Some changes can't be expressed as a byte flip - a second equipment drop the single drop slot physically can't hold, an experience reward the escape path never reaches. Those need new instructions: hand-assembled MIPS parked in a reclaimed all-zero region of the executable, reached by detouring an existing routine. This is where the technique stops being &ldquo;patch a value&rdquo; and becomes &ldquo;splice in code.&rdquo;</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">Tier E overview</div>
+  Tier E of the A&ndash;F ladder - the first code-injection tier. The next rung, <a href="f-overlay-dead-region.html">tier F</a>, exists precisely to escape this tier's one limitation: the gap is finite and shared. New here? Start at the <a href="index.html">series index</a>.
+</div>
+
+<section class="doc-section" id="mechanism">
+  <h2>Mechanism at a glance</h2>
+  <dl class="kv">
+    <dt>Why code</dt><dd>the change can't be a data edit: a second drop the one slot can't hold; an XP grant the flee teardown never reaches</dd>
+    <dt>Host</dt><dd>a reclaimed all-zero run of <code>SCUS_942.54</code> rodata (always resident), holding the hand-assembled routine</dd>
+    <dt>Hooks</dt><dd>bonus drop - reward routine <code>0x8004F610</code> &rarr; gap <code>0x8007AB80</code>; flee-EXP - escape teardown <code>0x801E5A10</code> (battle overlay) &rarr; gap <code>0x8007AD00</code></dd>
+    <dt>Detour shape</dt><dd>overwrite two instructions with <code>j routine</code> + <code>nop</code>; the routine runs the work, replays the displaced instructions, jumps back to the return address</dd>
+    <dt>Edit class</dt><dd>in-place / same-size; <strong>consumes the shared rodata gap</strong></dd>
+    <dt>Oracles</dt><dd><code>equipment_drops_real.rs</code> &middot; <code>flee_exp_real.rs</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="reversing">
+  <h2>The reversing: a gap to host it, a seam to enter it</h2>
+  <p>Code injection needs two finds, and both are reversing problems before they're engineering ones.</p>
+  <p><strong>A reclaimable host.</strong> The executable carries runs of zero bytes in its rodata segment that nothing references - padding between sections. One such ~1&nbsp;KB run (around <code>0x8007AB38</code>&ndash;<code>0x8007AF40</code>) is the routines' home. Reclaiming it safely means confirming it is genuinely unreferenced and genuinely zero, and then guarding every write as all-zero so an already-patched or atypical image is rejected, not corrupted.</p>
+  <p><strong>A seam at the right moment.</strong> The detour has to land in control flow at exactly the point where the new behavior belongs, with no live register clobbered across the jump. Finding it means tracing the relevant routine in Ghidra to the precise instruction pair to displace, then preserving those two instructions inside the routine so the original semantics survive. The detour itself is the standard idiom - <code>j</code> to the routine, do the work, replay the displaced pair, <code>j</code> back - but it only works because the hook site and the displaced instructions were pinned exactly.</p>
+</section>
+
+<section class="doc-section" id="examples">
+  <h2>Worked examples</h2>
+  <h3>Bonus equipment drops - the slot can't hold two</h3>
+  <p>A monster record has exactly one drop slot, so &ldquo;also drop a rare piece of gear&rdquo; cannot be a data edit - there is nowhere to put the second item. The detour goes into the battle-end reward routine (<code>FUN_8004E568</code>) at <code>0x8004F610</code>, displacing two instructions; the gap routine at <code>0x8007AB80</code> rolls the per-battle chance, picks an equipment id from a small table appended right after it in the gap, grants it on top of the normal drop, replays the displaced pair, and returns to <code>0x8004F618</code>. The normal drop is never disturbed.</p>
+  <h3>Run-away EXP - the path that grants nothing</h3>
+  <p>The battle-action escape teardown (the state-machine <code>FUN_801E295C</code>, state <code>0x66</code>) tears the fight down without ever reaching an experience grant, so rewarding a successful flee needs code. The detour sits at <code>0x801E5A10</code> - inside the <strong>battle overlay</strong> - and routes to a routine in the always-resident SCUS gap at <code>0x8007AD00</code> that banks a configured percentage of the fled formation's EXP into the party. The split is deliberate: the hook lives in the overlay (reloaded each battle), but the routine lives in SCUS so it survives every overlay swap.</p>
+</section>
+
+<section class="doc-section" id="gap-map">
+  <h2>The contended resource</h2>
+  <p>Both routines, the unused-item name string, the engine config blob, and an overlay-loader stub all live in the same ~1&nbsp;KB run. Each tenant guards its slot as all-zero, so they compose - but the region is finite, and that ceiling is exactly why a whole interactive screen goes somewhere else.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gap-map-title">
+      <title id="gap-map-title">Occupants of the shared SCUS rodata gap</title>
+      <style>
+        .gp-band  { font: 10px 'Inter', sans-serif; fill: #7c8893; letter-spacing: 0.06em; text-transform: uppercase; }
+        .gp-frame { fill: none; stroke: #2a323e; stroke-width: 1.3; rx: 4; ry: 4; }
+        .gp-card  { fill: #131922; stroke: #58c4b3; stroke-width: 1.3; rx: 4; ry: 4; }
+        .gp-addr  { font: 11px 'JetBrains Mono', monospace; fill: #58c4b3; }
+        .gp-owner { font: 600 12px 'JetBrains Mono', monospace; fill: #c9d1d9; }
+        .gp-sub   { font: 11px 'Inter', sans-serif; fill: #8b949e; }
+        .gp-tag   { font: 10px 'Inter', sans-serif; fill: #7c8893; text-anchor: end; }
+      </style>
+
+      <text x="20" y="22" class="gp-band">Shared SCUS rodata gap - ~1 KB, guarded all-zero (0x8007AB38 &ndash; 0x8007AF40)</text>
+      <rect x="20" y="34" width="840" height="300" class="gp-frame"/>
+
+      <text x="36" y="74" class="gp-addr">0x8007AB40</text>
+      <rect x="150" y="52" width="600" height="40" class="gp-card"/>
+      <text x="166" y="70" class="gp-owner">Seru Bell name string</text>
+      <text x="166" y="85" class="gp-sub">10 bytes &middot; variant I (--unused-items)</text>
+      <text x="744" y="76" class="gp-tag">data</text>
+
+      <text x="36" y="130" class="gp-addr">0x8007AB80</text>
+      <rect x="150" y="108" width="600" height="40" class="gp-card"/>
+      <text x="166" y="126" class="gp-owner">Bonus-equipment routine + id table</text>
+      <text x="166" y="141" class="gp-sub">~128 bytes &middot; Tier E (--equipment-drops)</text>
+      <text x="744" y="132" class="gp-tag">code</text>
+
+      <text x="36" y="186" class="gp-addr">0x8007AD00</text>
+      <rect x="150" y="164" width="600" height="40" class="gp-card"/>
+      <text x="166" y="182" class="gp-owner">Run-away-EXP routine</text>
+      <text x="166" y="197" class="gp-sub">~237 bytes &middot; Tier E (--flee-exp)</text>
+      <text x="744" y="188" class="gp-tag">code</text>
+
+      <text x="36" y="242" class="gp-addr">0x8007AE00</text>
+      <rect x="150" y="220" width="600" height="40" class="gp-card"/>
+      <text x="166" y="238" class="gp-owner">Overlay-loader stub</text>
+      <text x="166" y="253" class="gp-sub">groundwork</text>
+      <text x="744" y="244" class="gp-tag">code</text>
+
+      <text x="36" y="298" class="gp-addr">0x8007AF00</text>
+      <rect x="150" y="276" width="600" height="40" class="gp-card"/>
+      <text x="166" y="294" class="gp-owner">Seru-trade config blob</text>
+      <text x="166" y="309" class="gp-sub">24 bytes &middot; variant J (--seru-trade) &rarr; clean-room engine</text>
+      <text x="744" y="300" class="gp-tag">data</text>
+    </svg>
+    <figcaption>Five tenants already share the gap. A sixth feature - or anything screen-sized like a new vendor UI - won't fit, which is the entire reason <a href="f-overlay-dead-region.html">tier F</a> hosts its code in a resident overlay's dead region instead of here.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="mods">
+  <h2>Mods using this technique</h2>
+  <ul>
+    <li><strong>Bonus equipment drops</strong> (<code>--equipment-drops</code>) - an additive drop the one record slot can't encode.</li>
+    <li><strong>Run-away EXP</strong> (<code>--flee-exp</code>) - a reward the escape path never grants on its own.</li>
+  </ul>
+  <p class="hint">Adding a tier-E mod: confirm a reclaimable all-zero gap (and that it fits your routine), find a hook site at the right control-flow moment, preserve the displaced instructions, guard every write as dead space, and add a disc-gated oracle. If your routine is screen-sized, you've outgrown the gap - go to <a href="f-overlay-dead-region.html">tier F</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="index.html">Series index &middot; the ladder</a>
+    <a href="f-overlay-dead-region.html">Tier F &middot; overlay dead-region</a>
+    <a href="../../subsystems/battle-action.html">Battle action state machine</a>
+    <a href="../../formats/mips-overlay.html">MIPS overlay</a>
+    <a href="../../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+  </div>
+</section>

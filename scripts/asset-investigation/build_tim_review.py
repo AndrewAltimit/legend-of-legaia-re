@@ -8,7 +8,7 @@ distinct texture currently labeled the TARGET category is pre-selected. Click a
 cell to toggle; filter to scan quickly; "Download selection" saves the chosen
 fingerprints. Feed that file to `scripts/asset-investigation/apply_tim_review.py` to write the
 labels back. Because this grid pre-selects every current member of the
-category, the downloaded selection is the WHOLE category — so pass
+category, the downloaded selection is the WHOLE category - so pass
 `--allow-demotions` to apply_tim_review for this full-review workflow if you
 want deselected cells to fall back to "other".
 
@@ -174,7 +174,7 @@ function build(){
     c.dataset.label = d.label;
     c.innerHTML = `<div class="chk">${sel.has(d.fnv)?'✓':''}</div>`
       + `<img loading="lazy" src="${d.fnv}.png" alt="">`
-      + `<div class="meta">${d.w}x${d.h} ${d.bpp}b<br>${d.label||'—'}</div>`;
+      + `<div class="meta">${d.w}x${d.h} ${d.bpp}b<br>${d.label||'-'}</div>`;
     c.addEventListener('click', () => toggle(d.fnv));
     frag.appendChild(c);
     cellEls.set(d.fnv, c);

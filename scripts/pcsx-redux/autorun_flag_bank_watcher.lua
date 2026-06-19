@@ -13,7 +13,7 @@
 --   more bytes = 16 more flag indices.
 --
 --   The debug flag (0x8007B98F) is ~0x87B1 bytes BELOW the SC block start
---   (0x80084140) — OOB fills UPWARD, so it is unreachable via forward fill.
+--   (0x80084140) - OOB fills UPWARD, so it is unreachable via forward fill.
 --   The flag bank overlap (flags 5248..32767) is the only live game-logic
 --   surface in the OOB range.
 --

@@ -1,4 +1,4 @@
-//! Disc-gated tests for the **bonus equipment drop** — the additive code hook
+//! Disc-gated tests for the **bonus equipment drop** - the additive code hook
 //! that grants one extra random equipment piece from the battle-end reward
 //! routine (see `legaia_rando::bonus_drop`).
 //!
@@ -16,7 +16,7 @@
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. The patched image lives
 //! only in memory (never written to disk). NB the clean-room engine can't run
 //! injected MIPS, so unlike the data-edit randomizers this feature has no engine
-//! runtime oracle — verification is the byte/disassembly checks here plus an
+//! runtime oracle - verification is the byte/disassembly checks here plus an
 //! emulator playtest.
 
 use legaia_asset::item_names::file_offset_for_va;

@@ -64,7 +64,7 @@
       <rect x="40" y="290" width="800" height="22" class="ov-card" style="stroke:#2a323e"/>
       <text x="56" y="306" class="ov-sub">SCUS_942.54: boot path, asset dispatcher, move VM, motion VM, libsnd / libspu / libcd / libapi</text>
     </svg>
-    <figcaption>These overlays share one RAM window (the slot-A family loads at <code>0x801CE818</code>): battle loads on top of town's slot, never coexisting. Several &ldquo;subsystems&rdquo; are <strong>not</strong> separate overlays - the <strong>world map</strong> is a mode of the field overlay (0897), and <strong>save / shop / level-up / options</strong> all live inside the menu overlay (0899).</figcaption>
+    <figcaption>These overlays share one RAM window (the slot-A family loads at <code>0x801CE818</code>): battle loads on top of town's slot, never coexisting. Several &ldquo;subsystems&rdquo; are <strong>not</strong> separate overlays - the <strong>world map</strong> is a mode of the field overlay (0897), and <strong>save / shop / level-up / options</strong> all live inside the menu overlay (0899). The randomizer injects a whole new vendor screen into 0899's dead space - see the <a href="../writeups/disc-patching/f-overlay-dead-region.html">overlay dead-region write-up</a> for a zoom into that overlay.</figcaption>
   </figure>
 
   <p>The list below groups subsystems by what layer of the engine they sit at.</p>
@@ -152,7 +152,7 @@
     </a>
     <a class="card" href="arts-command-gauge.html">
       <div class="card-title">Arts command gauge</div>
-      <div class="card-body">The AP gauge the player spends inputting an arts combo, and the weapon-specialty arm width: the arm command's cost at <code>DAT_801C9360[char][0x0C]+0x74</code> escalates over base for an off-class weapon (favored <code>0x1E</code> / off-class <code>0x2A</code> / Astral <code>0x36</code>) &mdash; not a flat double.</div>
+      <div class="card-body">The AP gauge the player spends inputting an arts combo, and the weapon-specialty arm width: the arm command's cost at <code>DAT_801C9360[char][0x0C]+0x74</code> escalates over base for an off-class weapon (favored <code>0x1E</code> / off-class <code>0x2A</code> / Astral <code>0x36</code>) - not a flat double.</div>
     </a>
     <a class="card" href="audio.html">
       <div class="card-title">Audio</div>

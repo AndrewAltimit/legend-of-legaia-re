@@ -200,12 +200,12 @@ pub enum CueDispatch {
     /// A UI / SFX one-shot to enqueue into the cue ring. `ring_value` is the
     /// value stored (`id - 1` for `id < 0x40`, else `id`); `dedup_key` is what
     /// the dispatcher compares against the currently-selected cue
-    /// (`DAT_8007B724`) to suppress an immediate repeat — see
+    /// (`DAT_8007B724`) to suppress an immediate repeat - see
     /// [`CueDispatch::ring_suppressed_by`].
     Ring { ring_value: u16, dedup_key: i32 },
     /// A streamed voice trigger (`FUN_8003D53C`). `channel` is the voice channel
     /// after the `1 → 0x1A`, `3 → 0x1B`, `5 → 0x1C` remap; `submode = id & 7`;
-    /// `pitch_index` indexes the pitch table (`DAT_800788B8`) — feed its `u16`
+    /// `pitch_index` indexes the pitch table (`DAT_800788B8`) - feed its `u16`
     /// entry through [`voice_pitch`] to get the playback pitch.
     Voice {
         channel: u8,
@@ -235,7 +235,7 @@ impl CueDispatch {
 ///   `pitch_index = id - 0x100`.
 ///
 /// PORT: FUN_8004FCC8 (cue dispatch decode; the ring write / voice gate / SPU
-/// note-on stay with the caller — the ring is [`SfxScheduler`] / `FUN_80035B50`).
+/// note-on stay with the caller - the ring is [`SfxScheduler`] / `FUN_80035B50`).
 pub fn classify_cue(id: u32) -> CueDispatch {
     if id < 0x100 {
         if id < 0x40 {

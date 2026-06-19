@@ -1,4 +1,4 @@
-//! Menu-glyph atlas extractor — the small-caps font used to render the
+//! Menu-glyph atlas extractor - the small-caps font used to render the
 //! title-screen menu rows ("NEW GAME" / "CONTINUE" / "OPTIONS") and the
 //! same shape across the rest of the menu UI.
 //!
@@ -20,10 +20,10 @@
 //! header  : 8 bytes  (magic=0x10, flags=0x08)
 //! CLUT    : 12 + 16*16*2 = 524 bytes
 //!           rect = (fb_x=0, fb_y=510, w=16, h=16)
-//!           — 16 CLUT rows × 16 colours (4bpp palette banks)
+//!           - 16 CLUT rows × 16 colours (4bpp palette banks)
 //! pixels  : 12 + 64*256*2 = 32780 bytes
 //!           rect = (fb_x=960, fb_y=256, fb_w=64, h=256)
-//!           — 4bpp, decoded width = 256 px, height = 256 px
+//!           - 4bpp, decoded width = 256 px, height = 256 px
 //! total   : 33312 bytes
 //! ```
 //!
@@ -41,7 +41,7 @@
 //!
 //! The atlas also carries debug-only content (a `<DEMO>` row, an
 //! "ここは常駐エフェクトが入る予定 / Pochi" debug string, a `FONT CLUT`
-//! palette-bar indicator, and various cursor / arrow sprites) — all
+//! palette-bar indicator, and various cursor / arrow sprites) - all
 //! ignored by the engine. The retail menu paths only sample the two
 //! rows above.
 //!
@@ -101,11 +101,11 @@ const TIM_MAGIC: u32 = 0x0000_0010;
 pub struct MenuGlyphTim<'a> {
     /// Reference into the input buffer (no copy).
     pub bytes: &'a [u8],
-    /// PSX VRAM target rect for the pixel block — `(fb_x, fb_y, fb_w, h)`.
+    /// PSX VRAM target rect for the pixel block - `(fb_x, fb_y, fb_w, h)`.
     /// `fb_w` is in 16-bit halfword units; in 4bpp the decoded width
     /// is `fb_w * 4` pixels.
     pub pixel_rect: (u16, u16, u16, u16),
-    /// PSX VRAM target rect for the CLUT block — `(fb_x, fb_y, w, h)`.
+    /// PSX VRAM target rect for the CLUT block - `(fb_x, fb_y, w, h)`.
     pub clut_rect: (u16, u16, u16, u16),
 }
 
@@ -113,7 +113,7 @@ pub struct MenuGlyphTim<'a> {
 /// printable character. Returns `None` for characters not present in
 /// the atlas (e.g. punctuation outside the digits / alphabet rows).
 ///
-/// Space is intentionally `None` — callers should reserve [`GLYPH_W`]
+/// Space is intentionally `None` - callers should reserve [`GLYPH_W`]
 /// pixels of horizontal space for it without emitting any draw.
 pub fn glyph_rect(c: char) -> Option<(u32, u32, u32, u32)> {
     let upper = c.to_ascii_uppercase();
@@ -159,7 +159,7 @@ pub fn extract_from_prot_dat(prot_dat: &[u8]) -> Result<MenuGlyphTim<'_>> {
 }
 
 /// Extract the menu-glyph atlas TIM from a buffer that already contains
-/// the TIM bytes starting at offset 0 — e.g. the
+/// the TIM bytes starting at offset 0 - e.g. the
 /// [`TIM_SIZE`]-byte slice returned by an opaque PROT.DAT-raw reader.
 ///
 /// Validates the TIM header at offset 0 the same way as

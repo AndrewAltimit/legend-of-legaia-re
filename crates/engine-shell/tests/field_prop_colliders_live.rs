@@ -1,5 +1,5 @@
 //! Disc + save-library gated: the engine's static **prop collider** source
-//! (`Scene::field_object_placements` `collider_x`/`collider_z` — the
+//! (`Scene::field_object_placements` `collider_x`/`collider_z` - the
 //! static-entity arm of the actor-collision probe, retail `FUN_801cf9f4`
 //! result bit `4`) matches the live static collision actors of real retail
 //! sessions.
@@ -14,7 +14,7 @@
 //! - the live record-derived box centre (live position + the retail
 //!   footprint-offset formula over the **live** field-buffer record bytes,
 //!   including the `+0x52 & 8` correction) equals the placement's
-//!   `collider_x`/`collider_z` (computed from **disc** bytes) — pinning the
+//!   `collider_x`/`collider_z` (computed from **disc** bytes) - pinning the
 //!   engine's prop-collision source end to end.
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` /
@@ -129,7 +129,7 @@ fn field_prop_colliders_match_live_static_actors() {
             assert_eq!(ptr & 0xFF00_0000, 0x8000_0000, "{label}: actor ptr");
             let flags = rd32(ram, ptr + 0x10);
             if flags & 0x0102_0000 != 0 {
-                continue; // moving-class (NPC) entry — the other arm's oracle
+                continue; // moving-class (NPC) entry - the other arm's oracle
             }
             let live_x = rd16(ram, ptr + 0x14) as i16 as i32;
             let live_z = rd16(ram, ptr + 0x18) as i16 as i32;

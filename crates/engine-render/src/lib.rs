@@ -736,7 +736,7 @@ pub struct HudSlotMeta {
 
 /// Retail HP-bar text colour index for a battle slot.
 ///
-/// PORT: FUN_800349EC — returns the font-CLUT colour index the retail battle
+/// PORT: FUN_800349EC - returns the font-CLUT colour index the retail battle
 /// HUD tints a character's HP readout with, keyed on the cur/max ratio. Index 2
 /// is empty/K.O.; index 9 is danger (`cur <= max/4`); index 6 is caution
 /// (`cur <= max/2`, or any time a status flag is set); index 7 is normal. The
@@ -762,9 +762,9 @@ pub(crate) fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 
 
 /// Retail MP-bar text colour index for a battle slot.
 ///
-/// PORT: FUN_80035EA8 — the MP sibling of [`hp_bar_color_index`]. Same
+/// PORT: FUN_80035EA8 - the MP sibling of [`hp_bar_color_index`]. Same
 /// `cur <= max/4` / `cur <= max/2` ratio tiers (index 9 danger, 6 caution,
-/// 7 normal) but with no K.O. (2) state and no status-flag override — MP has no
+/// 7 normal) but with no K.O. (2) state and no status-flag override - MP has no
 /// "empty = dead" colour, so a depleted bar simply reads as danger.
 pub(crate) fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
     if (max >> 2) < cur {
@@ -999,7 +999,7 @@ pub fn title_draws_for(
         2 => {
             // Retail title menu carries only two rows; Options lives in
             // the in-game field menu. Color is the selection indicator
-            // (selected = white, unselected = dim) — no arrow / cursor
+            // (selected = white, unselected = dim) - no arrow / cursor
             // mark in retail. The disabled-Continue row reads the same
             // as a non-highlighted row.
             let _ = (gold, continue_enabled);
@@ -1021,7 +1021,7 @@ pub fn title_draws_for(
 /// / "CONTINUE") sampling the dedicated menu-glyph atlas from
 /// `PROT.DAT` (see [`legaia_asset::menu_glyph_atlas`]).
 ///
-/// Retail-faithful equivalent of phase 2 in [`title_draws_for`] — same
+/// Retail-faithful equivalent of phase 2 in [`title_draws_for`] - same
 /// row labels and cursor / dim semantics, but each row is a horizontal
 /// strip of sprite cells sampled from the menu-glyph atlas instead of
 /// dialog-font glyphs. Selected row gets a gold tint; the Continue
@@ -1035,7 +1035,7 @@ pub fn title_draws_for(
 /// corner of the first row's first glyph in surface pixels.
 ///
 /// Note: the menu-glyph atlas carries only uppercase letters and
-/// digits — no cursor marks.
+/// digits - no cursor marks.
 ///
 /// Returns an empty vec for any phase other than 2.
 pub fn title_menu_draws_for(
@@ -1050,7 +1050,7 @@ pub fn title_menu_draws_for(
     }
     // Retail uses color as the SELECTION INDICATOR: the highlighted row
     // is bright white and unselected rows are dim gray. There is no
-    // arrow / cursor mark — the brightness IS the cursor. Disabled
+    // arrow / cursor mark - the brightness IS the cursor. Disabled
     // (Continue with no save) reads the same as a non-highlighted row.
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
@@ -1117,19 +1117,19 @@ pub const SAVE_SELECT_PANEL_POS: (i32, i32) = (6, 4);
 pub const SAVE_SELECT_PANEL_SIZE: (i32, i32) = (81, 29);
 /// Retail PSX framebuffer position of the SLOT 1 pill **sprite top
 /// edge**. Pinned via direct framebuffer-pixel inspection at sstate9
-/// — the rounded pill outline starts at `fb_y=99` (transition pixels),
+/// - the rounded pill outline starts at `fb_y=99` (transition pixels),
 /// the saturated-blue body at `y=101`, sprite bottom at `y=112`. The
 /// earlier `y=102` pin tracked the saturated-blue body, not the
-/// sprite-top edge — drawing at that offset made the cursor finger
+/// sprite-top edge - drawing at that offset made the cursor finger
 /// look too high relative to the pill chrome.
 pub const SAVE_SELECT_SLOT1_POS: (i32, i32) = (137, 99);
 /// Retail pin of the SLOT 1 pill sprite top-left **after the user
-/// has committed to loading a slot** — once the load flow enters
+/// has committed to loading a slot** - once the load flow enters
 /// `NowChecking` / `SlotPreview`, retail relocates the active pill
 /// up under the Load panel. Pinned via the slide-in primitive
 /// `FUN_801E1C1C` mode 2 in `overlay_save_ui_select_801dd35c.txt`:
 /// the dispatcher calls `FUN_801e1c1c(2, DAT_801ef194, 0xa0, 0x60,
-/// 0x30, 0x28)` — slide from `(160, 96)` to **target `(48, 40)`**.
+/// 0x30, 0x28)` - slide from `(160, 96)` to **target `(48, 40)`**.
 /// Mode 2's GPU emit pre-shifts `sVar6 = param_3 - 0x18` so the
 /// composite's top-left lands at `(24, 40)`. The earlier
 /// screenshot-derived `(22, 41)` was ~2px off due to anti-aliased
@@ -1148,10 +1148,10 @@ pub const SAVE_SELECT_CURSOR_POS: (i32, i32) = (114, 100);
 /// SLOT 1 pill at [`SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE`]. Retail
 /// hides the pill cursor while the dialog is up and the grid
 /// emits its own cursor, so this constant is currently unused in
-/// emission — kept here for parity with the Browsing pin in case
+/// emission - kept here for parity with the Browsing pin in case
 /// a future variant needs it.
 pub const SAVE_SELECT_CURSOR_POS_LOAD_ACTIVE: (i32, i32) = (10, 41);
-/// **DEPRECATED** — superseded by [`SAVE_SELECT_CURSOR_POS`]. Old
+/// **DEPRECATED** - superseded by [`SAVE_SELECT_CURSOR_POS`]. Old
 /// callers used this with `SAVE_SELECT_SLOT1_POS` to derive cursor
 /// placement; new code should use [`SAVE_SELECT_CURSOR_POS`] directly.
 pub const SAVE_SELECT_CURSOR_X_OFFSET: i32 = -14;
@@ -1174,7 +1174,7 @@ pub const SAVE_SELECT_TITLE_POS: (i32, i32) = (35, 13);
 /// 206)` (= entry `[15]` of the menu CLUT at VRAM `(208, 510)`).
 /// The dialog-font atlas is whitewashed at load (see
 /// `legaia_font::Font::load_paths`), so `color * texel = color` at
-/// opaque texels — making the tint the source of truth for the
+/// opaque texels - making the tint the source of truth for the
 /// final pixel colour.
 pub const SAVE_SELECT_TITLE_COLOR: [f32; 4] = [206.0 / 255.0, 206.0 / 255.0, 206.0 / 255.0, 1.0];
 
@@ -1184,7 +1184,7 @@ pub const SAVE_SELECT_TITLE_COLOR: [f32; 4] = [206.0 / 255.0, 206.0 / 255.0, 206
 /// of the 256×256 title TIM (PROT 0888). Used as the anchor when
 /// composing the title-screen on the canonical 320×240 stage.
 pub const TITLE_ART_POS: (i32, i32) = (33, 6);
-/// Retail-pinned size the title quad is drawn at — same as its source
+/// Retail-pinned size the title quad is drawn at - same as its source
 /// sub-rect dimensions (no scaling).
 pub const TITLE_ART_SIZE: (i32, i32) = (254, 148);
 
@@ -1196,7 +1196,7 @@ pub const TITLE_ART_SIZE: (i32, i32) = (254, 148);
 ///
 /// The 9-slice panel tiles were pinned via
 /// `scripts/pcsx-redux/scan_panel_prims.py` against the PCSX-Redux
-/// sstate9 RAM dump — retail draws the panel as 14 separate
+/// sstate9 RAM dump - retail draws the panel as 14 separate
 /// `GP0_TEXTURED_SPRITE` primitives sampling CLUT row 2 of the
 /// system-UI sprite sheet at `PROT.DAT[0x018E0]`.
 #[derive(Debug, Clone, Copy)]
@@ -1209,7 +1209,7 @@ pub struct SaveMenuAtlasRects {
     pub panel_bl: (u32, u32, u32, u32),
     /// Panel bottom-right corner tile (4x4).
     pub panel_br: (u32, u32, u32, u32),
-    /// Panel top edge tile (24x4) — repeated horizontally between
+    /// Panel top edge tile (24x4) - repeated horizontally between
     /// the top corners with a 1-wide remainder if the panel width
     /// doesn't divide evenly.
     pub panel_top: (u32, u32, u32, u32),
@@ -1249,13 +1249,13 @@ pub struct SaveMenuAtlasRects {
 /// panel frame + slot pills) anchored at the supplied stage origin.
 ///
 /// Retail composes the 81×29 panel from 14 textured-sprite primitives
-/// — 4 corners (4×4 each), top + bottom edges (24×4 repeated 3× with
+/// - 4 corners (4×4 each), top + bottom edges (24×4 repeated 3× with
 /// a 1×4 remainder), and left + right edges (4×21). This function
 /// reproduces that composition exactly, pulling tiles from the
 /// system-UI sprite sheet at the byte-pinned source rects in
 /// `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`.
 ///
-/// No interior fill is drawn — retail leaves the middle of the
+/// No interior fill is drawn - retail leaves the middle of the
 /// 9-slice frame empty so the dimmed title art behind shows through.
 ///
 /// Layout (positions in stage pixels, relative to `stage_origin`):
@@ -1272,7 +1272,7 @@ pub struct SaveMenuAtlasRects {
 /// index `0` uses the SLOT 1 sprite while every other index falls
 /// back to the SLOT 2 sprite. Retail draws all pills during Browsing
 /// (`&[0, 1]`) but shows only the selected pill once a slot has been
-/// confirmed (`&[selected_slot]`) — the NowChecking dialog and
+/// confirmed (`&[selected_slot]`) - the NowChecking dialog and
 /// SlotPreview grid both hide the non-selected pills.
 ///
 /// `pill_anchor` is the framebuffer top-left of the slot-index-0
@@ -1317,7 +1317,7 @@ pub fn save_select_chrome_draws_for(
     // 9-slice panel composition. All dst coords are stage pixels;
     // the byte-perfect retail dimensions are (81 wide, 29 tall) with
     // 4-pixel corners + 24-wide edge tiles repeated. Pinned via
-    // GP0 primitive scan — see `project_load_screen_panel_source_pinned`.
+    // GP0 primitive scan - see `project_load_screen_panel_source_pinned`.
     let (panel_x, panel_y) = SAVE_SELECT_PANEL_POS;
     let (panel_w, panel_h) = SAVE_SELECT_PANEL_SIZE;
     let corner_w = rects.panel_tl.2 as i32; // 4
@@ -1416,7 +1416,7 @@ pub fn save_select_chrome_draws_for(
     }
     if remainder > 0 {
         // Sample only the first `remainder` columns of the edge tile
-        // — retail dispatches this as a separate sprite with width
+        // - retail dispatches this as a separate sprite with width
         // narrowed to the remainder.
         let (ux, uy, _, uh) = rects.panel_top;
         let top_rem = (ux, uy, remainder as u32, uh);
@@ -1558,7 +1558,7 @@ fn nine_slice_panel_into(
     let edge_h = rects.panel_top.3 as i32;
     let v_edge_h = rects.panel_left.3 as i32;
 
-    // Interior fill — horizontal tiling.
+    // Interior fill - horizontal tiling.
     let int_w = rects.panel_interior.2 as i32;
     let int_h = rects.panel_interior.3 as i32;
     // Match interior tile height to actual panel height (retail's panel
@@ -1636,7 +1636,7 @@ pub const NOW_CHECKING_PANEL_SIZE: (u32, u32) = (180, 39);
 
 /// Retail slide-in start position for the "Now checking" dialog's
 /// **center x** before it has slid into place. From Ghidra trace
-/// `FUN_801e1c1c(0, DAT_801ef160, 0x1a0, 0x70, 0xa0, 0x70)` — slide
+/// `FUN_801e1c1c(0, DAT_801ef160, 0x1a0, 0x70, 0xa0, 0x70)` - slide
 /// from `(0x1a0=416, 0x70=112)` to target `(0xa0=160, 0x70=112)`. The
 /// dialog starts off-screen to the right and slides left over 16
 /// frames. Engine code interpolates `slide_offset_x = (start - target) *
@@ -1744,7 +1744,7 @@ pub fn now_checking_text_draws_for(
 }
 
 /// Retail PSX framebuffer placement of the slot-preview 5×3 grid.
-/// Mirror of `legaia_asset::title_pak::OVERLAY_LOAD_SLOT_GRID_*` —
+/// Mirror of `legaia_asset::title_pak::OVERLAY_LOAD_SLOT_GRID_*` -
 /// retail-pinned via per-row/per-column blue-outline scan on
 /// `slot_info_fb.png`: cell visible top-left corners at fb-y rows
 /// 35 (row 0), 55 (row 1), 75 (row 2) and fb-x columns 104, 144,
@@ -1815,7 +1815,7 @@ pub fn slot_preview_grid_draws_for(
             // The full 32×32 sprite is drawn with its top-left at
             // (cell_x - 6, cell_y - 6) so the visible 20×20 border
             // sits at the cell position. Engines may instead sample
-            // sub-rect (6, 6, 20, 20) and skip the margin — both
+            // sub-rect (6, 6, 20, 20) and skip the margin - both
             // produce the same on-screen pixels.
             push(&mut out, frame, cell_x - 6, cell_y - 6, 32, 32);
         }
@@ -1837,7 +1837,7 @@ pub fn slot_preview_grid_draws_for(
     // Retail pin: in `slot_info_fb.png` the pointing-finger cursor
     // bbox sits at fb-x 90..105 (16 wide) pointing at cell (0, 0) at
     // fb-x 104. That puts the cursor's right edge 1 px shy of the
-    // cell's left edge — i.e. `cursor_x = cell_x - 14` (not -16).
+    // cell's left edge - i.e. `cursor_x = cell_x - 14` (not -16).
     let cursor_col = (cursor_slot as usize) % SLOT_GRID_COLS;
     let cursor_row = (cursor_slot as usize) / SLOT_GRID_COLS;
     let cursor_x = SLOT_GRID_ORIGIN.0 + (cursor_col as i32) * SLOT_GRID_PITCH_X - 14;
@@ -1936,7 +1936,7 @@ pub fn slot_info_panel_draws_for(
         stage_scale,
     );
 
-    // Leader portrait (16x16) inside the info panel — drawn only
+    // Leader portrait (16x16) inside the info panel - drawn only
     // when a save is present at the current slot. Position pinned
     // from FUN_801E08D8's `FUN_801e3ff0(0, _, iVar4=16, s3-4=154)`
     // with s3 = local_34 + 20: portrait top-left at (16, panel_y+16).
@@ -2030,7 +2030,7 @@ pub fn slot_info_panel_text_draws_for(
         ),
     );
 
-    // Character row (column 0 only — multi-character party expansion
+    // Character row (column 0 only - multi-character party expansion
     // would re-iterate at base_x += 96).
     emit_at(
         &mut out,
@@ -2090,7 +2090,7 @@ pub fn slot_info_panel_text_draws_for(
 
 /// Build [`TextDraw`]s for the save-select panel.
 ///
-/// Retail layout (positions in stage pixels — pairs with
+/// Retail layout (positions in stage pixels - pairs with
 /// [`save_select_chrome_draws_for`] for the panel / pill sprites):
 /// ```text
 ///   ┌──────────┐
@@ -2110,7 +2110,7 @@ pub fn slot_info_panel_text_draws_for(
 /// highlighted option determined by the second tuple element (0 =
 /// Yes, 1 = No).
 ///
-/// `rows` is retained for API compatibility — the row count and
+/// `rows` is retained for API compatibility - the row count and
 /// label strings drive cursor placement; per-slot Lv/play-time/gold
 /// details are deliberately not rendered (retail's load screen
 /// surfaces those on a separate sub-screen).
@@ -2181,7 +2181,7 @@ pub fn save_select_draws_for(
     //
     // Unit discipline: the layout runs in STAGE pixels and
     // `glyph_screen_scale = stage_scale`, so each engine glyph
-    // pixel becomes exactly `stage_scale` screen pixels — matching
+    // pixel becomes exactly `stage_scale` screen pixels - matching
     // the chrome sprites composed on the same 320x240 stage.
     let title_l = font.layout_ascii(title);
     emit_scaled(
@@ -4588,7 +4588,7 @@ impl Renderer {
     /// characteristic surface-warp on slanted surfaces), clip-space X/Y are
     /// snapped to integer pixels (the GTE's per-vertex jitter), and the
     /// shaded colour is ordered-dithered down to 15-bit BGR555 (the PSX
-    /// framebuffer depth — see `PSX_DITHER_WGSL` / [`psx_dither`]). Default
+    /// framebuffer depth - see `PSX_DITHER_WGSL` / [`psx_dither`]). Default
     /// `false` (smooth, full-precision modern rendering).
     pub fn set_psx_mode(&self, enable: bool) {
         self.psx_mode.set(enable);
@@ -5932,7 +5932,7 @@ pub mod psx_dither {
 /// textured prims the texel's own BGR555 STP bit (bit 15) then decides *per
 /// pixel*: STP=1 texels blend, STP=0 texels draw opaque even inside a
 /// semi-transparent prim (texel `0x0000` is never drawn at all, and `0x8000`
-/// — black with STP — blends). The blend equation comes from texpage (TSB)
+/// - black with STP - blends). The blend equation comes from texpage (TSB)
 /// bits 5..=6 ("ABR"):
 ///
 /// | ABR | equation            | wgpu mapping                                  |
@@ -7350,7 +7350,7 @@ mod tests {
     /// retail-pinned dst position (stage `(35, 13)` for L; subsequent
     /// glyphs advance by `width + INTER_GLYPH_PAD` per the dialog-font
     /// widths CSV) and tinted with `SAVE_SELECT_TITLE_COLOR`, NOT pure
-    /// white. Retail-pinned at sstate9 — see `SAVE_SELECT_TITLE_POS` /
+    /// white. Retail-pinned at sstate9 - see `SAVE_SELECT_TITLE_POS` /
     /// `SAVE_SELECT_TITLE_COLOR` doc comments. Regression-guard so a
     /// future "tidy up the centering math" patch can't silently revert
     /// the byte-equal alignment.
@@ -7358,7 +7358,7 @@ mod tests {
     fn save_select_title_uses_retail_pinned_pos_and_color() {
         // `synthetic_for_tests` widths are not retail's, but the layout
         // pen advances by `widths[c] + INTER_GLYPH_PAD` regardless of
-        // backing font — the property under test is that the FIRST
+        // backing font - the property under test is that the FIRST
         // glyph is placed at SAVE_SELECT_TITLE_POS in stage pixels and
         // every title glyph carries SAVE_SELECT_TITLE_COLOR. That's
         // what makes the engine port byte-equal to retail's 4-sprite
@@ -7499,7 +7499,7 @@ mod tests {
         assert_eq!(draws[4].dst, (176, 28, 8, 8));
         assert_eq!(draws[4].src, (188, 0, 4, 4));
         // The 1-pixel remainder tile must use a 1-wide src rect at
-        // (164, 0, 1, 4) — verifies the remainder slicing logic.
+        // (164, 0, 1, 4) - verifies the remainder slicing logic.
         let has_remainder = draws.iter().any(|d| d.src == (164, 0, 1, 4));
         assert!(
             has_remainder,
@@ -7519,7 +7519,7 @@ mod tests {
         let slot2 = draws.iter().find(|d| d.src == (33, 113, 45, 15)).unwrap();
         assert_eq!(slot2.dst.0, slot1.dst.0);
         assert_eq!(slot2.dst.1 - slot1.dst.1, SAVE_SELECT_SLOT_PITCH_Y * 2);
-        // All draws use white (no gold tint — CLUT row 2 has the
+        // All draws use white (no gold tint - CLUT row 2 has the
         // gold gradient baked in).
         for d in &draws {
             assert_eq!(d.color, [1.0, 1.0, 1.0, 1.0]);

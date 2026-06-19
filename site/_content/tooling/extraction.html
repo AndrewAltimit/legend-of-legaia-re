@@ -36,7 +36,7 @@
   <p>Walks ISO9660 and writes every file. See <a href="../formats/disc.html">disc + ISO9660</a>.</p>
   <h3>PROT.DAT → entries (<code>prot-extract</code>)</h3>
 <pre><code>prot-extract extract extracted/PROT.DAT extracted/PROT/ --cdname extracted/CDNAME.TXT</code></pre>
-  <p>Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint — <code>max(indexed_size, next_start - this_start)</code> — so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See <a href="../formats/prot.html">PROT TOC</a>.</p>
+  <p>Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint - <code>max(indexed_size, next_start - this_start)</code> - so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See <a href="../formats/prot.html">PROT TOC</a>.</p>
   <h3>LZS decode (<code>lzs-decode</code>)</h3>
 <pre><code>lzs-decode raw --size N &lt;file&gt;          # standalone LZS body
 lzs-decode container &lt;file&gt; &lt;out_dir&gt;   # multi-section player.lzs container, one file per section</code></pre>

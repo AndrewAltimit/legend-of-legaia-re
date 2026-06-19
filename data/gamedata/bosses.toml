@@ -2,7 +2,7 @@
 # through B0014 plus the Lapis optional fight and key Muscle Dome rounds).
 #
 # Per-enemy stat columns (`hp`, `atk`, `udf`, ...) live in `enemies.toml`
-# — see entries with `boss = true` for the same names. This file adds the
+# - see entries with `boss = true` for the same names. This file adds the
 # *fight-specific* layer the enemy table doesn't capture:
 #
 #   - `meth_id`             - B0001..B0014 / s0005 boss ID from the FAQ.

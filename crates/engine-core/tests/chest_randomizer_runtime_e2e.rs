@@ -4,7 +4,7 @@
 //! prove the patch is *written* faithfully: the field-VM `GIVE_ITEM` (op `0x39`)
 //! operand byte changes, the site offsets stay put, sectors stay EDC/ECC-valid.
 //! What they do **not** prove is that a runtime actually *reads the patched byte
-//! and grants the new item* — the question that matters for "is it truly
+//! and grants the new item* - the question that matters for "is it truly
 //! randomizing, or is something serving a stale value?".
 //!
 //! Answering that with a savestate is a trap: a mednafen savestate snapshots all
@@ -37,14 +37,14 @@ use legaia_engine_core::world::World;
 use legaia_rando::chest::SceneChests;
 use legaia_rando::disc::DiscPatcher;
 
-/// keikoku (Ravine) scene bundle PROT entry — the chest-randomizer ground-truth
+/// keikoku (Ravine) scene bundle PROT entry - the chest-randomizer ground-truth
 /// scene (see `crates/rando/tests/chest_patch_real.rs`).
 const KEIKOKU_ENTRY: usize = 112;
 /// keikoku's Phoenix chest gives item id `0x80` (pinned by the
 /// `keikoku_chest_pre` / `_open` savestate pair).
 const PHOENIX_ITEM: u8 = 0x80;
 /// An arbitrary but distinct replacement id. Validity is irrelevant to the
-/// runtime-grant proof — the engine `give_item` hook adds whatever id the
+/// runtime-grant proof - the engine `give_item` hook adds whatever id the
 /// bytecode carries; the point is that it differs from `PHOENIX_ITEM`.
 const REPLACEMENT_ITEM: u8 = 0x42;
 
@@ -110,7 +110,7 @@ fn patched_chest_grants_new_item_at_runtime() {
     };
 
     // Resolve item names from the disc's SCUS table purely for legible output
-    // (no Sony bytes are asserted) — so the run reads "Phoenix -> Ra-Seru Helmet"
+    // (no Sony bytes are asserted) - so the run reads "Phoenix -> Ra-Seru Helmet"
     // rather than raw ids.
     let names = legaia_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54")
         .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
@@ -164,7 +164,7 @@ fn patched_chest_grants_new_item_at_runtime() {
         .patch_prot_entry(KEIKOKU_ENTRY, sc.man_offset as u64, &stream)
         .expect("write patched keikoku MAN");
 
-    // Re-decode off the patched image — this is the disc-truth, not the in-memory
+    // Re-decode off the patched image - this is the disc-truth, not the in-memory
     // copy we mutated above.
     let patched_entry = patcher.read_entry(KEIKOKU_ENTRY).unwrap();
     let patched = SceneChests::locate(&patched_entry, KEIKOKU_ENTRY).unwrap();
@@ -183,12 +183,12 @@ fn patched_chest_grants_new_item_at_runtime() {
     assert!(
         !runtime.contains(&PHOENIX_ITEM),
         "runtime must NOT grant the original Phoenix 0x{PHOENIX_ITEM:02x} after the patch \
-         (got {runtime:02x?}) — a stale value here is the caching failure this test guards"
+         (got {runtime:02x?}) - a stale value here is the caching failure this test guards"
     );
 
     eprintln!(
         "chest runtime E2E: keikoku slot {phoenix_slot} baseline grants {baseline:02x?} \
-         ({}), patched grants {runtime:02x?} ({}) — 0x{PHOENIX_ITEM:02x} {} -> 0x{REPLACEMENT_ITEM:02x} {}",
+         ({}), patched grants {runtime:02x?} ({}) - 0x{PHOENIX_ITEM:02x} {} -> 0x{REPLACEMENT_ITEM:02x} {}",
         name_of(PHOENIX_ITEM),
         name_of(REPLACEMENT_ITEM),
         name_of(PHOENIX_ITEM),

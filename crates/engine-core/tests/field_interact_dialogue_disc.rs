@@ -14,7 +14,7 @@
 //! `rim_elm_sparring_carrier`). The gap this closes is the **round-trip**: that
 //! driving a real `[0x3E, op0, slot]` interact through the field VM opens
 //! exactly the interacted placement's own inline dialogue, for every populated
-//! slot — previously exercised only with hand-seeded `field_npc_dialog` entries.
+//! slot - previously exercised only with hand-seeded `field_npc_dialog` entries.
 //!
 //! It also pins two correctness properties of the mapping:
 //!   - **install == classify**: the dialogue map the engine installs matches an
@@ -23,7 +23,7 @@
 //!     field-VM interact operand carries (so the `u8::try_from` in
 //!     `install_field_carriers_from_man` never silently drops an NPC).
 //!
-//! No Sony text is asserted — only structural shape (slot keys, byte-identical
+//! No Sony text is asserted - only structural shape (slot keys, byte-identical
 //! inline buffers between install / classify / the opened dialog). Skip-passes
 //! without disc data / extracted assets (CLAUDE.md convention).
 //!
@@ -58,7 +58,7 @@ fn field_interact_slot_opens_real_npc_dialogue() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -128,7 +128,7 @@ fn field_interact_slot_opens_real_npc_dialogue() {
     // slot has an untruncated record whose tail from `first_segment` equals the
     // truncated `field_npc_dialog` buffer, and whose `entry_pc <= first_segment`.
     // At least one NPC must carry a real prologue (`entry_pc < first_segment`) so
-    // this is non-vacuous — proving the segment-selection bytecode the opt-in
+    // this is non-vacuous - proving the segment-selection bytecode the opt-in
     // VM-dialogue runner executes is actually present on real disc data.
     let mut npcs_with_prologue = 0usize;
     for (idx, inline) in &expected {
@@ -200,7 +200,7 @@ fn field_interact_slot_opens_real_npc_dialogue() {
 ///   - **round-trip**: driving a real `[0x3E, op0<100, slot]` op through the
 ///     field VM opens exactly that placement's own inline dialogue.
 ///
-/// This is the corpus generalisation of the single-scene check above — the
+/// This is the corpus generalisation of the single-scene check above - the
 /// mapping was previously validated only on town01, so a scene whose partition
 /// layout exposed a different index/slot relationship would have gone unnoticed.
 /// A coverage floor keeps the sweep from passing vacuously.
@@ -213,7 +213,7 @@ fn field_interact_slot_mapping_holds_across_field_scene_corpus() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 

@@ -1,6 +1,6 @@
 //! Disc-gated end-to-end test for the chest randomizer: shuffle every chest's
 //! item id on a scratch copy, then re-decode each patched scene MAN off the disc
-//! and confirm the edit is faithful — the give-item site offsets are unchanged,
+//! and confirm the edit is faithful - the give-item site offsets are unchanged,
 //! the global chest-item multiset is preserved (shuffle), sectors stay
 //! EDC/ECC-valid, and a fixed seed is byte-deterministic. Skips without
 //! `LEGAIA_DISC_BIN`.
@@ -144,7 +144,7 @@ fn shuffle_chests_round_trips_on_disc() {
 /// A chest's announcement text ("There is a {item}…" / "{name} now has the
 /// {item}!") renders the item name from a separate `0xC2 <id>` dialogue token,
 /// distinct from the `0x39` give operand. The randomizer must rewrite both so the
-/// flavor text names the item it actually grants — otherwise a patched chest
+/// flavor text names the item it actually grants - otherwise a patched chest
 /// gives the new item but still *reads* as the old one. Pinned on keikoku's
 /// Phoenix chest: change it and re-decode off the patched image; the give operand
 /// and every item-name token in that record must both carry the new id.
@@ -255,7 +255,7 @@ fn keep_static_items_never_move() {
     let after = snapshot(&patcher);
     let after_static = static_sites(&after);
 
-    // Each static id occupies exactly the same sites before and after — it never
+    // Each static id occupies exactly the same sites before and after - it never
     // moved, vanished, or appeared anywhere new.
     assert_eq!(
         before_static, after_static,

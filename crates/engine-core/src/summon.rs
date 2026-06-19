@@ -1,4 +1,4 @@
-//! Seru-magic **summon scene-graph driver** (engine stand-in render — see the
+//! Seru-magic **summon scene-graph driver** (engine stand-in render - see the
 //! reconciliation note below; this is **not** the faithful player-summon path).
 //!
 //! The per-summon stager overlay (extraction PROT 903..=913 = raw TOC
@@ -30,16 +30,16 @@
 //! `crate::world::World::request_summon_spawn` →
 //! [`crate::world::World::take_pending_summon_spawn`], and the host spawns the
 //! summon's namesake `battle_data` creature ([`summon_creature_id`]) as an
-//! ordinary battle actor — mesh + texture via
+//! ordinary battle actor - mesh + texture via
 //! [`legaia_asset::monster_archive::battle_render_mesh`], animation via
 //! [`legaia_asset::monster_archive::idle_animation`] →
 //! [`crate::battle_anim::MonsterAnimPlayer`] → the rigid TRS-keyframe draw
 //! (`FUN_80048A08` / `FUN_8004998C`, ported in `legaia_engine_vm::anim_vm`). That
 //! is the production summon visual.
 //!
-//! [`SummonScene`] is therefore *not* the production render — it is kept because
+//! [`SummonScene`] is therefore *not* the production render - it is kept because
 //! (1) it is the validated parser/driver for the genuinely-on-disc move-VM stager
-//! records (disc-gated `summon_scene_real` — every Gimard part runs the move VM
+//! records (disc-gated `summon_scene_real` - every Gimard part runs the move VM
 //! without an unimplemented opcode); (2) it backs the non-battle debug spawn
 //! (`play-window` `G` outside battle) that exercises the move-VM driver; and
 //! (3) the **enemy** Gimard *Fire Tail* boss move is untraced and may still use
@@ -51,7 +51,7 @@
 //! ## What is faithful vs. interpreted (within this stand-in model)
 //!
 //! - **Faithful:** the per-part animation *computation*. Each part's move-VM
-//!   program runs through [`legaia_engine_vm::move_vm`] verbatim — the same
+//!   program runs through [`legaia_engine_vm::move_vm`] verbatim - the same
 //!   opcode handlers, wait-timer gate, and tween/anim-bank state the retail move
 //!   VM produces. (Validated: every Gimard *Tail Fire* part record runs without
 //!   hitting an unimplemented opcode.)
@@ -59,7 +59,7 @@
 //!   (`+0x14/16/18`) glides toward the move-VM anim-bank target
 //!   (`anim_3c/3e/40`, op `0x00`, `v << 3`) over the time ratio
 //!   `+0x9C / +0x9E`, latching exactly on completion. The lerp *shape* reuses
-//!   `FUN_801F811C` / `FUN_801DE4C8` mode 1 — but the retail `FUN_801F811C` is
+//!   `FUN_801F811C` / `FUN_801DE4C8` mode 1 - but the retail `FUN_801F811C` is
 //!   **not a summon-part position update**: a full static decode of PROT 0900
 //!   at the correct link base resolved it as the per-frame handler of the 2D
 //!   **screen-mask (iris) widget**, whose four tweened channels are screen-rect
@@ -73,7 +73,7 @@
 //! - **Interpreted (rotation):** the part's *orientation*. Within this stand-in
 //!   model [`SummonScene::part_draws`] derives Euler angles from the move-VM
 //!   rotation banks. This is the engine's interpretation of the scene-graph
-//!   model, **not** a faithful port of retail's player-summon orientation —
+//!   model, **not** a faithful port of retail's player-summon orientation -
 //!   which the live trace resolved as the per-object TRS keyframes that
 //!   `FUN_8004998C` decodes (the battle-actor path above), not a move-VM /
 //!   `FUN_801F7088` rotation. (PROT 0900's `RotMatrixX/Y/Z` + camera-angle
@@ -100,15 +100,15 @@ pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 /// (`0x8C → 914 .. 0x95 → 923`, `summon_overlay::EVOLVED_SUMMON_STAGER_PROT`).
 /// Every entry is statically confirmed stager-shaped, and the arithmetic is
 /// capture-pinned on **both** sides of the gap (`0x8B → 913`, `0x99 → 927`).
-/// Three legs are now *individually* capture-pinned too — `0x8C → 914`,
+/// Three legs are now *individually* capture-pinned too - `0x8C → 914`,
 /// `0x8D → 915`, `0x8F → 917` (the `{gola_gola,mushura,barra}_summon_mid_cast`
 /// states, loader-B id read mid-cast + the stager byte-resident at slot B;
-/// disc+library-gated `evolved_summon_binding`) — so the block is no longer
+/// disc+library-gated `evolved_summon_binding`) - so the block is no longer
 /// purely predicted; the remaining legs ride the same bracketed run. Two of
 /// these stagers carry `0x4000` render-mode nodes (`0x8E → 916`, `0x93 → 921`).
 pub const EVOLVED_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x8C..=0x95;
 
-/// High summon block: Evil Seru Magic (`0x99` — the creature resolves
+/// High summon block: Evil Seru Magic (`0x99` - the creature resolves
 /// per-cast, e.g. Juggernaut), the Sim-Seru summons Palma / Mule / Horn /
 /// Jedo (`0x9A..=0x9D`), and the Ra-Seru summons Meta / Terra / Ozma
 /// (`0x9E..=0xA0`). All eight legs each carry a committed regression oracle
@@ -118,7 +118,7 @@ pub const HIGH_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x99..=0xA0;
 
 /// PROT entry holding the per-summon stager overlay for a Seru-magic `spell_id`,
 /// or `None` if `spell_id` is not a summon. Retail: `FUN_8003EC70(id - 0x79)`
-/// loads raw-TOC index `(id - 0x79) + 0x381` — the in-RAM TOC at `0x801C70F0`
+/// loads raw-TOC index `(id - 0x79) + 0x381` - the in-RAM TOC at `0x801C70F0`
 /// is raw `PROT.DAT` from byte 0 (header included), so the extraction entry
 /// sits 2 below the raw index: `0x81..=0x8B → 903..=913` and
 /// `0x99..=0xA0 → 927..=934` (see `docs/formats/prot.md` § index spaces).
@@ -153,7 +153,7 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 /// the ordinary battle TRS-keyframe path applied to that creature's
 /// monster-archive block (mesh via [`legaia_asset::monster_archive::battle_render_mesh`],
 /// animation via [`legaia_asset::monster_archive::idle_animation`] →
-/// [`crate::battle_anim::MonsterAnimPlayer`] → `tmd_to_vram_mesh_posed_rot`) —
+/// [`crate::battle_anim::MonsterAnimPlayer`] → `tmd_to_vram_mesh_posed_rot`) -
 /// **not** the move-VM scene-graph the [`SummonScene`] stand-in drives.
 ///
 /// Resolved from the disc-pinned base + evolved map
@@ -162,7 +162,7 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 /// covering `0x81..=0x95` (the base block plus the evolved-Seru block, including
 /// the two evolved legs Kemaro `0x90` / Spoon `0x91` that had no capture state).
 /// The high block `0x99..=0xA0` carries a bespoke mesh (not an archive creature)
-/// and is intentionally unmapped — those summons return `None` here for now.
+/// and is intentionally unmapped - those summons return `None` here for now.
 /// The map id is validated as live in this archive; a name-based fallback covers
 /// anything [`crate::retail_magic`] names but the map does not.
 pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16> {
@@ -191,7 +191,7 @@ pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16>
 /// Upper bound on a `model_sel` that names a real mesh (`DAT_8007C018[model_sel
 /// + base]`). The model library is small (~30 entries), so a part whose
 /// `model_sel` is `-1` (transform node) or a large sentinel (`0x1000`, `0x4000`,
-/// `0x4001` — special render-mode markers, per the summon-overlay decode) binds
+/// `0x4001` - special render-mode markers, per the summon-overlay decode) binds
 /// no mesh. Mesh parts have `0 <= model_sel < MAX_MESH_SEL`.
 pub const MAX_MESH_SEL: i16 = 0x100;
 
@@ -221,7 +221,7 @@ pub struct SummonPartRuntime {
 #[derive(Debug, Clone)]
 pub struct SummonScene {
     pub parts: Vec<SummonPartRuntime>,
-    /// Pool index a part's `model_sel == 0` resolves to — retail
+    /// Pool index a part's `model_sel == 0` resolves to - retail
     /// `DAT_8007C018[model_sel + gp[0x754]]`; in the engine this is the offset
     /// into [`crate::world::World::global_tmd_pool`] (for Gimard, the fire
     /// mesh-set base [`crate::scene::GIMARD_TAIL_FIRE_MODEL_INDEX`]).
@@ -290,7 +290,7 @@ impl SummonScene {
     /// product); a typical value keeps the parts on their authored timing.
     ///
     /// After the move-VM step, applies the **render-side translation glide**
-    /// (interpreted — see `apply_translation_update`'s provenance note; the
+    /// (interpreted - see `apply_translation_update`'s provenance note; the
     /// retail `FUN_801F811C` is the screen-mask widget handler, faithfully
     /// ported as [`crate::screen_fx::MaskWidget`]): the part's world
     /// position LERPs toward the move-VM anim-bank target (`anim_3c/3e/40`, set
@@ -301,7 +301,7 @@ impl SummonScene {
     /// is cleared. The anim banks are summon-local offsets, so the engine adds
     /// [`Self::origin`] to seat the part at the cast target. This is why a
     /// summon part animates off the spawn point even though no `WORLD_ADD` op
-    /// runs — its motion lives in the anim banks.
+    /// runs - its motion lives in the anim banks.
     ///
     /// `frame_delta` doubles as the wait-timer drain (retail's per-actor
     /// anim-speed × frame-rate scalar) and the `+0x9C` interpolation advance,
@@ -388,7 +388,7 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
     })
 }
 
-/// Per-axis linear interpolation — the `mode == 1` arm of `FUN_801DE4C8`
+/// Per-axis linear interpolation - the `mode == 1` arm of `FUN_801DE4C8`
 /// (`(a - b) * t / D + b` with truncating division; returns `a` when `a == b`
 /// or `t >= D`). The full multi-mode interpolator (ease modes 2/3/4 included)
 /// is ported as [`crate::screen_fx::interp`]; this delegates to it.
@@ -404,7 +404,7 @@ fn lerp_axis(target: i32, cur: i32, t: i32, d: i32) -> i32 {
 /// Provenance note: this glide **reuses the tween shape of `FUN_801F811C`**
 /// (advance-clamp-lerp-latch over the `+0x9C/+0x9E` clock with the
 /// `FUN_801DE4C8` mode-1 lerp + `FUN_801DE648` sized store), but the retail
-/// function is **not** a summon-part position update — it is the screen-mask
+/// function is **not** a summon-part position update - it is the screen-mask
 /// (iris) widget handler of the PROT-0900 screen-effect family, whose four
 /// channels are 2D rect edges and whose quads are the black border bands. The
 /// faithful port lives in [`crate::screen_fx::MaskWidget`]. As an engine
@@ -481,7 +481,7 @@ mod tests {
     use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
 
     /// A synthetic overlay: one transform node + one mesh part with a tiny
-    /// move-VM program (`0x00 ANIM_BANK_SET 1,2,3` then `0x08 HALT`) — the
+    /// move-VM program (`0x00 ANIM_BANK_SET 1,2,3` then `0x08 HALT`) - the
     /// anim banks are the per-part position the render-side latch reads.
     fn synthetic() -> (Vec<u8>, SummonOverlay) {
         // Record layout: [i16 model_sel][u16 flags][u16 move-VM bytecode...].

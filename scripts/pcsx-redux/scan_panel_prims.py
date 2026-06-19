@@ -21,7 +21,7 @@ absolute VRAM coords.
 Pairs with `autorun_load_screen_dump.lua` and other probes that
 capture `load_screen_ram.bin` (or any 2 MiB main-RAM snapshot). The
 output identifies every sprite the engine queued in the target rect
-along with its source u/v + CLUT — enough to cross-reference back
+along with its source u/v + CLUT - enough to cross-reference back
 to the source TIM in `PROT.DAT` and pin tile geometry byte-equal to
 retail.
 
@@ -80,7 +80,7 @@ def main() -> int:
         print(f"  0x{off:08X} 0x{cb:02X} ({dx:3d},{dy:3d})  "
               f"({u:3d},{v:3d})  ({cx:3d},{cy:3d})  {w:3d}x{h:2d}")
 
-    # Group by CLUT — distinct CLUTs typically = distinct source TIMs.
+    # Group by CLUT - distinct CLUTs typically = distinct source TIMs.
     by_clut = defaultdict(list)
     for c in candidates:
         by_clut[(c[7], c[8])].append((c[2], c[3], c[4], c[5], c[9], c[10]))

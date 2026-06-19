@@ -29,7 +29,7 @@
 //! Entries past `vs` in `vag_table` are zero. The decoder treats `vag_table[i+1]`
 //! (in 8-byte units) as the *size* of sample `i`; samples are concatenated
 //! immediately after the table. The table is **1-indexed**, so `vag_table[0]`
-//! is a reserved leading spacer — universally `0` across the retail corpus
+//! is a reserved leading spacer - universally `0` across the retail corpus
 //! (986 / 986 VABs), surfaced as [`VabReport::vag_table_spacer`]. It is **not**
 //! a master pitch / sample-rate shift: that hypothesis is falsified by the
 //! all-zero corpus, so nothing derives a pitch offset from it.
@@ -119,7 +119,7 @@ pub struct VabReport {
     pub tones: Vec<Vec<VagAtr>>,
     /// Byte offset (within input buffer) + size of each VAG sample body.
     pub vag_samples: Vec<VagSampleSpan>,
-    /// `vag_table[0]` — the reserved leading entry of the VAG size table. The
+    /// `vag_table[0]` - the reserved leading entry of the VAG size table. The
     /// table is **1-indexed**: `vag_table[1..=vs]` hold the sample sizes, so
     /// entry 0 is a spacer that is universally `0` across the retail corpus
     /// (986 / 986 VABs). It is **not** a master pitch / sample-rate shift (that

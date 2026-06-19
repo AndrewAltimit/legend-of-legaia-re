@@ -114,7 +114,7 @@ probe.run({
         if prev_fill < 32 and fill >= 128 then
             fired = true
             PCSX.log(string.format(
-                "[vramwatch] row %d filled at vsync %d (fill %d -> %d) — searching RAM for source",
+                "[vramwatch] row %d filled at vsync %d (fill %d -> %d) - searching RAM for source",
                 WATCH_ROW, elapsed, prev_fill, fill))
             -- needle = colors 8..23 of the freshly-uploaded row (skip slot0/transparent)
             local needle = rowbytes:sub(17, 17 + 47)

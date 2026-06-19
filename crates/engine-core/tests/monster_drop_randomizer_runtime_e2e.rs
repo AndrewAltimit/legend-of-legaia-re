@@ -5,20 +5,20 @@
 //! byte changes inside the re-packed `0x14000` `battle_data` slot, neighbouring
 //! records stay intact, and the touched PROT.DAT sectors stay EDC/ECC-valid.
 //! What it does **not** prove is that a runtime actually *reads the patched byte
-//! and grants the new item on victory* — the question behind "is it truly
+//! and grants the new item on victory* - the question behind "is it truly
 //! randomizing, or is something serving a stale value?".
 //!
 //! A savestate can't answer that cleanly (the same trap the chest oracle
 //! documents): a mednafen state snapshots all of RAM, and the `battle_data`
 //! archive is resident in RAM the moment a battle is loaded, so loading such a
-//! state on a patched disc still grants the *original* drop — the value is read
+//! state on a patched disc still grants the *original* drop - the value is read
 //! from the already-loaded RAM copy, never re-fetched from the (patched) disc.
 //! A patched drop is only observed after a *fresh battle load* re-reads the
 //! monster record off the (patched) disc.
 //!
 //! The clean-room engine sidesteps that cache entirely: it decodes the monster
 //! record straight from disc bytes (`legaia_asset::monster_archive`) and runs
-//! the very victory-spoils path the randomizer's edit feeds — the drop roll in
+//! the very victory-spoils path the randomizer's edit feeds - the drop roll in
 //! [`World::apply_battle_loot`] (ported from the reward resolver `FUN_8004E568`
 //! → `FUN_80054CB0` record→actor copy). So this test:
 //!   1. picks one monster that has a drop, on a scratch copy of the real disc,
@@ -165,12 +165,12 @@ fn patched_monster_drop_grants_new_item_at_runtime() {
     assert!(
         !runtime.contains(&original_item),
         "runtime must NOT grant the original 0x{original_item:02x} after the patch \
-         (got {runtime:02x?}) — a stale value here is the caching failure this test guards"
+         (got {runtime:02x?}) - a stale value here is the caching failure this test guards"
     );
 
     eprintln!(
         "monster drop runtime E2E: monster {monster_id} baseline drops {baseline:02x?} \
-         ({}), patched drops {runtime:02x?} ({}) — 0x{original_item:02x} {} -> 0x{replacement_item:02x} {}",
+         ({}), patched drops {runtime:02x?} ({}) - 0x{original_item:02x} {} -> 0x{replacement_item:02x} {}",
         name_of(original_item),
         name_of(replacement_item),
         name_of(original_item),

@@ -8,117 +8,117 @@
   <h2>Four names for one track</h2>
   <p>A single Legaia track has, in practice, four different names depending on where you read it, and they do not line up one-to-one:</p>
   <ul class="bullets">
-    <li><strong>Debug sound-test ID</strong> &mdash; the internal asset/track identifier the debug sound test exposes (<code>M01</code>, <code>M14A</code>, <code>M26B1</code>, plus a few non-<code>M</code> labels like <code>ALNDRA</code>, <code>JBGM</code>, <code>KANASIMI</code>). Closest handle to the on-disc track order.</li>
-    <li><strong>Debug sound-test title</strong> &mdash; the short Japanese working title shown beside that ID; describes the <em>scene the track was written for</em>.</li>
-    <li><strong>In-game context</strong> &mdash; where the track is actually heard (often broader than the debug title; tracks get reused across scenes).</li>
-    <li><strong>Official OST title</strong> &mdash; the title the published soundtrack album gives the track, where one exists.</li>
+    <li><strong>Debug sound-test ID</strong> - the internal asset/track identifier the debug sound test exposes (<code>M01</code>, <code>M14A</code>, <code>M26B1</code>, plus a few non-<code>M</code> labels like <code>ALNDRA</code>, <code>JBGM</code>, <code>KANASIMI</code>). Closest handle to the on-disc track order.</li>
+    <li><strong>Debug sound-test title</strong> - the short Japanese working title shown beside that ID; describes the <em>scene the track was written for</em>.</li>
+    <li><strong>In-game context</strong> - where the track is actually heard (often broader than the debug title; tracks get reused across scenes).</li>
+    <li><strong>Official OST title</strong> - the title the published soundtrack album gives the track, where one exists.</li>
   </ul>
-  <p>BGM lookup in retail is PROT-relative (there is no literal track-name table in the executable &mdash; see <a href="../subsystems/audio.html">audio</a> and <a href="../formats/seq.html">SEQ</a>), so a map between the debug IDs and where each cue plays is the ground-truth labelling that the curated-data tables provide for items and enemies.</p>
+  <p>BGM lookup in retail is PROT-relative (there is no literal track-name table in the executable - see <a href="../subsystems/audio.html">audio</a> and <a href="../formats/seq.html">SEQ</a>), so a map between the debug IDs and where each cue plays is the ground-truth labelling that the curated-data tables provide for items and enemies.</p>
 </section>
 
 <section class="doc-section" id="provenance">
   <h2>Provenance + confidence</h2>
   <p>Compiled by <strong><a href="https://github.com/Stann0xus" target="_blank" rel="noopener">Henrique Stanke Scandelari (Stann0x)</a></strong> and contributed to this project as a reference. The romaji, English glosses, and proposed relocalization titles are his analysis; the debug-mode IDs/titles and OST titles are factual short labels transcribed from the game's own debug sound test and the published soundtrack listing.</p>
-  <p>Treated here exactly like the other <a href="gamedata.html">curated reference tables</a>: only the <em>factual</em> labels are committed &mdash; track IDs, the short scene-name titles, and where each cue plays &mdash; as ground-truth labels for the binary SEQ/VAB records under reverse engineering. No Sony-owned bytes (sequence data, sample data, executable) are reproduced; the audio itself is decoded at runtime from the user's own disc.</p>
+  <p>Treated here exactly like the other <a href="gamedata.html">curated reference tables</a>: only the <em>factual</em> labels are committed - track IDs, the short scene-name titles, and where each cue plays - as ground-truth labels for the binary SEQ/VAB records under reverse engineering. No Sony-owned bytes (sequence data, sample data, executable) are reproduced; the audio itself is decoded at runtime from the user's own disc.</p>
   <p>Confidence is <span class="tag tag-partial">Inferred</span> unless a track is matched to its OST entry, in which case the OST columns are <span class="tag tag-done">Confirmed</span> against the published listing. The last three rows (highlighted in the source as uncertain) are flagged inline.</p>
 </section>
 
 <section class="doc-section" id="notable">
   <h2>Notable entries</h2>
   <ul class="bullets">
-    <li><strong>Borrowed placeholder cues.</strong> <code>ALNDRA</code> (#72) is <em>Alundra</em>'s Zazzan battle theme and <code>JBGM</code> (#73) is the <em>Wild Arms</em> battle theme &mdash; both other Contrail/Sony titles, present on the Legaia disc as dev placeholders.</li>
+    <li><strong>Borrowed placeholder cues.</strong> <code>ALNDRA</code> (#72) is <em>Alundra</em>'s Zazzan battle theme and <code>JBGM</code> (#73) is the <em>Wild Arms</em> battle theme - both other Contrail/Sony titles, present on the Legaia disc as dev placeholders.</li>
     <li><strong>Dev test files.</strong> <code>DUMMY</code> (#74, &ldquo;I'm a Dummy-dayo!&rdquo;), <code>PIANO</code> (#78), <code>LEVELUP</code> (#79), and <code>A</code> (#80) are test/placeholder entries, not shipping music.</li>
-    <li><strong>Reused themes under different IDs.</strong> <code>中ボス</code> / &ldquo;medium boss&rdquo; appears for <code>M27</code>, <code>M108</code>, <code>M33</code>; <code>ディスコ</code> / &ldquo;disco&rdquo; for <code>M112</code>, <code>M120</code>, <code>M117</code> &mdash; the same idea staged for different scenes.</li>
+    <li><strong>Reused themes under different IDs.</strong> <code>中ボス</code> / &ldquo;medium boss&rdquo; appears for <code>M27</code>, <code>M108</code>, <code>M33</code>; <code>ディスコ</code> / &ldquo;disco&rdquo; for <code>M112</code>, <code>M120</code>, <code>M117</code> - the same idea staged for different scenes.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="table">
   <h2>Track table</h2>
-  <p><code>#</code> is the debug sound-test order. <code>&mdash;</code> marks a column the source leaves blank. &ldquo;OST gloss&rdquo; is the English reading of the OST title; &ldquo;Relocalization&rdquo; is Stann0x's proposed English title.</p>
+  <p><code>#</code> is the debug sound-test order. <code>-</code> marks a column the source leaves blank. &ldquo;OST gloss&rdquo; is the English reading of the OST title; &ldquo;Relocalization&rdquo; is Stann0x's proposed English title.</p>
   <table>
     <thead><tr><th>#</th><th>ID</th><th>Debug title (JP)</th><th>Debug romaji</th><th>Debug gloss</th><th>In-game context</th><th>OST title (JP)</th><th>OST romaji</th><th>OST gloss</th><th>Relocalization</th></tr></thead>
     <tbody>
       <tr><td>0</td><td>M01</td><td>霧のあるフィールド</td><td>KIRI NO ARU FĪRUDO</td><td>Field with mist</td><td>Overworld with mist</td><td>霧の荒野</td><td>KIRI NO KŌYA</td><td>The misty wasteland</td><td>The Misty Barren Fields</td></tr>
       <tr><td>1</td><td>M02</td><td>霧の消えたフィールド</td><td>KIRI NO KIETA FĪRUDO</td><td>Field where the mist disappeared</td><td>Overworld with no mist</td><td>よろこびの大地</td><td>YOROKOBI NO DAICHI</td><td>The land of joy</td><td>The Land of Joy</td></tr>
       <tr><td>2</td><td>M03</td><td>創世樹復活後のダンジョン</td><td>SŌSEIJU FUKKATSU-GO NO DANJON</td><td>Dungeon after Genesis Tree revival</td><td>Mt. Rikuroa after tree is revived</td><td>風, 樹, 水</td><td>KAZE, KI, SUI</td><td>Wind, tree, water</td><td>Winds, Trees and Water</td></tr>
-      <tr><td>3</td><td>M04</td><td>森のダンジョンA</td><td>MORI NO DANJON A</td><td>Forest dungeon A/B</td><td>Underground path to Octam</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Path of Secrets</td></tr>
+      <tr><td>3</td><td>M04</td><td>森のダンジョンA</td><td>MORI NO DANJON A</td><td>Forest dungeon A/B</td><td>Underground path to Octam</td><td>-</td><td>-</td><td>-</td><td>Path of Secrets</td></tr>
       <tr><td>4</td><td>M04B</td><td>森のダンジョンB</td><td>MORI NO DANJON B</td><td>Forest of mystery</td><td>East Voz Forest</td><td>神秘の森</td><td>SHINPI NO MORI</td><td>The mysterious forest</td><td>Forest of Mystery</td></tr>
-      <tr><td>5</td><td>M05</td><td>霧のダンジョン</td><td>KIRI NO DANJON</td><td>Misty dungeon</td><td>Town/dungeon in mist</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Misty Town</td></tr>
-      <tr><td>6</td><td>M06</td><td>リクロア山霧</td><td>RIKUROA YAMA KIRI</td><td>Rikuroa mountain fog</td><td>Mt. Rikuroa/Mt. Dhini in the mist</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Misty Mountains</td></tr>
+      <tr><td>5</td><td>M05</td><td>霧のダンジョン</td><td>KIRI NO DANJON</td><td>Misty dungeon</td><td>Town/dungeon in mist</td><td>-</td><td>-</td><td>-</td><td>The Misty Town</td></tr>
+      <tr><td>6</td><td>M06</td><td>リクロア山霧</td><td>RIKUROA YAMA KIRI</td><td>Rikuroa mountain fog</td><td>Mt. Rikuroa/Mt. Dhini in the mist</td><td>-</td><td>-</td><td>-</td><td>The Misty Mountains</td></tr>
       <tr><td>7</td><td>M07</td><td>ガーメル城</td><td>GĀMERU-JŌ</td><td>Garmel Castle</td><td>Fire path/Xain's nest</td><td>王国騎士団</td><td>ŌKOKUKISHI-DAN</td><td>The royal knights</td><td>The Fire Fortress</td></tr>
       <tr><td>8</td><td>M08</td><td>遺跡ダンジョン</td><td>ISEKI DANJON</td><td>Ruin dungeon</td><td>Uru Mais</td><td>遺跡の呼び声</td><td>ISEKI NO YOBIGOE</td><td>The call of the ruins</td><td>Call of the Ruins</td></tr>
       <tr><td>9</td><td>M09</td><td>獣衣界への道</td><td>JŪI-KAI E NO MICHI</td><td>The path to the beast-garment world</td><td>Field with Juggernaut</td><td>闇の鼓動</td><td>YAMI NO KODŌ</td><td>The pulse of darkness</td><td>Heartbeat of Darkness</td></tr>
       <tr><td>10</td><td>M10</td><td>霧の発生</td><td>KIRI NO HASSEI</td><td>Mist outbreak</td><td>Drake/Vidna in mist</td><td>霧</td><td>KIRI</td><td>Mist</td><td>The Mist</td></tr>
-      <tr><td>11</td><td>M11</td><td>凶獣界</td><td>KYŌJŪ-KAI</td><td>Evil beast realm</td><td>Rogue's dungeon</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Profane Realm</td></tr>
-      <tr><td>12</td><td>M12</td><td>聖獣界</td><td>SEIJŪ-KAI</td><td>Holy beast realm</td><td>Octam's station</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Sacred Realm</td></tr>
+      <tr><td>11</td><td>M11</td><td>凶獣界</td><td>KYŌJŪ-KAI</td><td>Evil beast realm</td><td>Rogue's dungeon</td><td>-</td><td>-</td><td>-</td><td>The Profane Realm</td></tr>
+      <tr><td>12</td><td>M12</td><td>聖獣界</td><td>SEIJŪ-KAI</td><td>Holy beast realm</td><td>Octam's station</td><td>-</td><td>-</td><td>-</td><td>The Sacred Realm</td></tr>
       <tr><td>13</td><td>M13</td><td>生物城</td><td>SEIBUTSU-JŌ</td><td>Live creature castle</td><td>Bio-Castle dungeon</td><td>生物城</td><td>SEIBUTSU-JŌ</td><td>The creature castle</td><td>Bio-Castle</td></tr>
-      <tr><td>14</td><td>M14</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>M14A with sustained note</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>14</td><td>M14</td><td>-</td><td>-</td><td>-</td><td>M14A with sustained note</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
       <tr><td>15</td><td>M14A</td><td>リムエルム夕方</td><td>RIMU-ERUMU YŪGATA</td><td>Rim Elm evening</td><td>Juno's death/Rim Elm sunrise</td><td>夕映えのリムエルム</td><td>YŪBAE NO RIMU-ERUMU</td><td>Rim Elm in the sunset glow</td><td>Rim Elm's Evening Glow</td></tr>
       <tr><td>16</td><td>M14B</td><td>リムエルム昼</td><td>RIMU-ERUMU HIRU</td><td>Rim Elm noon</td><td>Rim Elm theme</td><td>リムエルム</td><td>RIMUERUMU</td><td>Rim Elm</td><td>Rim Elm's Sunshine</td></tr>
       <tr><td>17</td><td>M15</td><td>吹きだまりの洞窟</td><td>FUKIDAMARI NO DŌKUTSU</td><td>Snow-drift cave</td><td>Snowdrift Cave</td><td>ぬくもりの洞窟</td><td>NUKUMORI NO DŌKUTSU</td><td>The cavern of warmth</td><td>Cave of Warmth</td></tr>
       <tr><td>18</td><td>M16</td><td>サブゲーム</td><td>SABUGĒMU</td><td>Sub-game</td><td>Sol casino</td><td>ワイルド宣言</td><td>WAIRUDO SENGEN</td><td>Wild declaration</td><td>Wild Declaration</td></tr>
       <tr><td>19</td><td>M17</td><td>バイロン寺院</td><td>BAIRON JIIN</td><td>Byron Temple</td><td>Byron Monastery</td><td>我らバイロン僧兵団</td><td>WARERA BAIRON SŌHEI-DAN</td><td>We are the Byron monk warriors</td><td>We, the Byron Monk Warriors</td></tr>
-      <tr><td>20</td><td>M18</td><td>コル上層</td><td>KORU JŌSŌ</td><td>Top of the valley</td><td>Seru Kai</td><td>&mdash;</td><td>NOARU</td><td>Noaru</td><td>Valley of Noaru</td></tr>
+      <tr><td>20</td><td>M18</td><td>コル上層</td><td>KORU JŌSŌ</td><td>Top of the valley</td><td>Seru Kai</td><td>-</td><td>NOARU</td><td>Noaru</td><td>Valley of Noaru</td></tr>
       <tr><td>21</td><td>M20</td><td>復活したドルク城</td><td>FUKKATSU SHITA DORUKU-JŌ</td><td>Dolk Castle revived</td><td>Drake Castle after mist</td><td>にぎやかな王宮</td><td>NIGIYAKANA ŌKYŪ</td><td>The bustling royal palace</td><td>Lively Royal Castle</td></tr>
-      <tr><td>22</td><td>M21</td><td>ドーマン博士の研究所</td><td>DŌMAN HAKASE NO KENKYŪJO</td><td>Doctor Doman's laboratory</td><td>Dr. Usha's research lab</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Dr. Usha's Research Institute</td></tr>
+      <tr><td>22</td><td>M21</td><td>ドーマン博士の研究所</td><td>DŌMAN HAKASE NO KENKYŪJO</td><td>Doctor Doman's laboratory</td><td>Dr. Usha's research lab</td><td>-</td><td>-</td><td>-</td><td>Dr. Usha's Research Institute</td></tr>
       <tr><td>23</td><td>M22</td><td>みんなが踊ってる部屋</td><td>MIN'NA GA ODOTTERU HEYA</td><td>The room where everyone dances</td><td>Mei's theme</td><td>メイ</td><td>MEI</td><td>Mei</td><td>Where Everyone Dances</td></tr>
-      <tr><td>24</td><td>M23</td><td>酒場</td><td>SAKABA</td><td>Bar</td><td>Sol's bar</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Where Everyone Drinks</td></tr>
+      <tr><td>24</td><td>M23</td><td>酒場</td><td>SAKABA</td><td>Bar</td><td>Sol's bar</td><td>-</td><td>-</td><td>-</td><td>Where Everyone Drinks</td></tr>
       <tr><td>25</td><td>M25</td><td>創世樹周辺の曲</td><td>SŌSEIJU SHŪHEN NO KYOKU</td><td>Music about the Genesis Tree</td><td>Genesis Tree theme</td><td>静かなる創世樹</td><td>SHIZUKANARU SŌSEIJU</td><td>The silent Genesis Tree</td><td>The Quiet Genesis Tree</td></tr>
-      <tr><td>26</td><td>M26B1</td><td>雑魚戦闘バージョン1</td><td>ZAKO SENTŌ BĀJON 1</td><td>Minor enemy battle version 1</td><td>Battle theme 1</td><td>&mdash;</td><td>&mdash;</td><td>Brand of the Holy Knuckles</td><td>Brand of the Holy Knuckles</td></tr>
-      <tr><td>27</td><td>M26B2</td><td>雑魚戦闘バージョン2</td><td>ZAKO SENTŌ BĀJON 2</td><td>Minor enemy battle version 2</td><td>Battle theme 2</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>26</td><td>M26B1</td><td>雑魚戦闘バージョン1</td><td>ZAKO SENTŌ BĀJON 1</td><td>Minor enemy battle version 1</td><td>Battle theme 1</td><td>-</td><td>-</td><td>Brand of the Holy Knuckles</td><td>Brand of the Holy Knuckles</td></tr>
+      <tr><td>27</td><td>M26B2</td><td>雑魚戦闘バージョン2</td><td>ZAKO SENTŌ BĀJON 2</td><td>Minor enemy battle version 2</td><td>Battle theme 2</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
       <tr><td>28</td><td>M27</td><td>中ボス</td><td>CHŪ BOSU</td><td>Medium boss</td><td>Boss theme 1</td><td>襲撃</td><td>SHŪGEKI</td><td>Assault</td><td>Attack!</td></tr>
-      <tr><td>29</td><td>M28</td><td>霧の巣ボス戦</td><td>KIRI NO SU BOSU SEN</td><td>Mist nest boss battle</td><td>Koru battle theme</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Cold Koru</td></tr>
+      <tr><td>29</td><td>M28</td><td>霧の巣ボス戦</td><td>KIRI NO SU BOSU SEN</td><td>Mist nest boss battle</td><td>Koru battle theme</td><td>-</td><td>-</td><td>-</td><td>The Cold Koru</td></tr>
       <tr><td>30</td><td>M29</td><td>ソンギ戦闘</td><td>SONGI SENTŌ</td><td>Battle with Songi</td><td>Songi battle</td><td>我が名はソンギ</td><td>WAGA NA WA SONGI</td><td>My name is Songi</td><td>I Am Songi!</td></tr>
-      <tr><td>31</td><td>M30</td><td>コート戦1</td><td>KŌTO-SEN 1</td><td>Cort battle 1</td><td>Cort battle 1</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Cort's War</td></tr>
+      <tr><td>31</td><td>M30</td><td>コート戦1</td><td>KŌTO-SEN 1</td><td>Cort battle 1</td><td>Cort battle 1</td><td>-</td><td>-</td><td>-</td><td>Cort's War</td></tr>
       <tr><td>32</td><td>M32</td><td>中ボス序曲</td><td>CHŪ BOSU JOKYOKU</td><td>Medium boss overture</td><td>Boss theme 2</td><td>霧の使徒</td><td>KIRI NO SHITO</td><td>Apostles of the mist</td><td>Apostles of the Mist</td></tr>
       <tr><td>33</td><td>M34</td><td>ソンギ出現序曲</td><td>SONGI SHUTSUGEN JOKYOKU</td><td>Songi appearance overture</td><td>Songi theme</td><td>ソンギ推参</td><td>SONGI SUIZAN</td><td>Songi's arrival</td><td>Songi's Overture</td></tr>
-      <tr><td>34</td><td>M35</td><td>ジャガーノート襲撃2、3用</td><td>JAGĀNŌTO SHŪGEKI 2, 3 YŌ</td><td>For Juggernaut attack 2 and 3</td><td>Juggernaut appears</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Juggernaut's Attack</td></tr>
+      <tr><td>34</td><td>M35</td><td>ジャガーノート襲撃2、3用</td><td>JAGĀNŌTO SHŪGEKI 2, 3 YŌ</td><td>For Juggernaut attack 2 and 3</td><td>Juggernaut appears</td><td>-</td><td>-</td><td>-</td><td>Juggernaut's Attack</td></tr>
       <tr><td>35</td><td>M36</td><td>創世樹復活イベント</td><td>SŌSEIJU FUKKATSU IBENTO</td><td>Genesis Tree revival event</td><td>Genesis Tree resurrection</td><td>創世樹の目覚め</td><td>SŌSEIJU NO MEZAME</td><td>The awakening of the Genesis Tree</td><td>Awakening the Genesis Tree</td></tr>
-      <tr><td>36</td><td>M37</td><td>神秘的イベント2</td><td>SHINPITEKI IBENTO 2</td><td>Mystical event 2</td><td>Ra-Seru speaks/Hari</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Mystical Happening</td></tr>
+      <tr><td>36</td><td>M37</td><td>神秘的イベント2</td><td>SHINPITEKI IBENTO 2</td><td>Mystical event 2</td><td>Ra-Seru speaks/Hari</td><td>-</td><td>-</td><td>-</td><td>Mystical Happening</td></tr>
       <tr><td>37</td><td>M38</td><td>風来獣車</td><td>FŪRAISHŪ-SHA</td><td>Wandering beast-vehicle</td><td>Gondola flying train theme</td><td>風来獣車</td><td>FŪRAISHŪ-SHA</td><td>The wandering beast-vehicle</td><td>The Flying Train</td></tr>
-      <tr><td>38</td><td>M39</td><td>ソーン族の空中飛行</td><td>SŌN-ZOKU NO KŪCHŪ HIKŌ</td><td>Aerial flight of the Soren tribe</td><td>Soren flight</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Flying Soren Tribe</td></tr>
+      <tr><td>38</td><td>M39</td><td>ソーン族の空中飛行</td><td>SŌN-ZOKU NO KŪCHŪ HIKŌ</td><td>Aerial flight of the Soren tribe</td><td>Soren flight</td><td>-</td><td>-</td><td>-</td><td>The Flying Soren Tribe</td></tr>
       <tr><td>39</td><td>M40</td><td>予期せぬ出来事</td><td>YOKI SENU DEKIGOTO</td><td>Unpredicted event</td><td>Byron under attack/tense theme</td><td>予期せぬ出来事</td><td>YOKISENU DEKIGOTO</td><td>The unforeseen event</td><td>Unforeseen Event</td></tr>
-      <tr><td>40</td><td>M41</td><td>神秘的イベント1</td><td>SHINPITEKI IBENTO 1</td><td>Mystical event 1</td><td>Noa's dreams</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Mystical Dreaming</td></tr>
+      <tr><td>40</td><td>M41</td><td>神秘的イベント1</td><td>SHINPITEKI IBENTO 1</td><td>Mystical event 1</td><td>Noa's dreams</td><td>-</td><td>-</td><td>-</td><td>Mystical Dreaming</td></tr>
       <tr><td>41</td><td>M42</td><td>悲しいイベント全般</td><td>KANASHĪ IBENTO ZENPAN</td><td>Sad events in general</td><td>Conkram/sad events</td><td>霧の都</td><td>KIRI NO MIYAKO</td><td>The mist-capital</td><td>The Misty Capitol</td></tr>
-      <tr><td>42</td><td>M47</td><td>脱出イベント</td><td>DASSHUTSU IBENTO</td><td>Escape event</td><td>Floating castle escape</td><td>&mdash;</td><td>&mdash;</td><td>Hurry up</td><td>Hurry Up!</td></tr>
+      <tr><td>42</td><td>M47</td><td>脱出イベント</td><td>DASSHUTSU IBENTO</td><td>Escape event</td><td>Floating castle escape</td><td>-</td><td>-</td><td>Hurry up</td><td>Hurry Up!</td></tr>
       <tr><td>43</td><td>M48</td><td>スーパースペクタル</td><td>SŪPĀ SUPEKUTARU</td><td>Super spectacle</td><td>Mist dungeons</td><td>霧の巣</td><td>KIRI NO SU</td><td>The nest of mist</td><td>Misty Nest</td></tr>
-      <tr><td>44</td><td>M49</td><td>人間の世界</td><td>NINGEN NO SEKAI</td><td>Human world</td><td>Opening title pt 1 (incomplete?)</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
-      <tr><td>45</td><td>M100</td><td>イベント未定</td><td>IBENTO MITEI</td><td>Undecided event</td><td>Sol</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Sol Tower</td></tr>
-      <tr><td>46</td><td>M101</td><td>バン夢のシーン</td><td>BAN YUME NO SHĪN</td><td>Vahn dream scene</td><td>Vahn dream scene</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Vahn Dreams</td></tr>
+      <tr><td>44</td><td>M49</td><td>人間の世界</td><td>NINGEN NO SEKAI</td><td>Human world</td><td>Opening title pt 1 (incomplete?)</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td>45</td><td>M100</td><td>イベント未定</td><td>IBENTO MITEI</td><td>Undecided event</td><td>Sol</td><td>-</td><td>-</td><td>-</td><td>The Sol Tower</td></tr>
+      <tr><td>46</td><td>M101</td><td>バン夢のシーン</td><td>BAN YUME NO SHĪN</td><td>Vahn dream scene</td><td>Vahn dream scene</td><td>-</td><td>-</td><td>-</td><td>Vahn Dreams</td></tr>
       <tr><td>47</td><td>M102</td><td>町の曲</td><td>MACHI NO KYOKU</td><td>Town song</td><td>Jeremi</td><td>街の灯</td><td>MACHI NO AKARI</td><td>The town's light</td><td>Light of the Town</td></tr>
-      <tr><td>48</td><td>M104</td><td>バイロン寺院で宴の曲</td><td>BAIRON JĪN DE UTAGE NO KYOKU</td><td>Music for a banquet at Byron Temple</td><td>Party in Byron Monastery</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Byron Party</td></tr>
+      <tr><td>48</td><td>M104</td><td>バイロン寺院で宴の曲</td><td>BAIRON JĪN DE UTAGE NO KYOKU</td><td>Music for a banquet at Byron Temple</td><td>Party in Byron Monastery</td><td>-</td><td>-</td><td>-</td><td>Byron Party</td></tr>
       <tr><td>49</td><td>M106</td><td>思い出の曲</td><td>OMOIDE NO KYOKU</td><td>Music of memories</td><td>Nostalgic theme</td><td>思い出のメロディー</td><td>OMOIDE NO MERODĪ</td><td>Melody of memories</td><td>The Melody of Memories</td></tr>
-      <tr><td>50</td><td>M107</td><td>前向きな汎用イベント</td><td>MAEMUKI NA HANYŌ IBENTO</td><td>Positive generic event</td><td>Noa joins the party</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Positive Energy!</td></tr>
-      <tr><td>51</td><td>M108</td><td>中ボス</td><td>CHŪ BOSU</td><td>Medium boss</td><td>Koru battle theme 2</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Hot Heat</td></tr>
-      <tr><td>52</td><td>M109</td><td>不気味な気配</td><td>BUKIMI NA KEHAI</td><td>Eerie presence</td><td>Tense moment</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Ominous Presence</td></tr>
-      <tr><td>53</td><td>M110</td><td>中ボス出現序曲</td><td>CHŪ BOSU SHUTSUGEN JOKYOKU</td><td>Medium boss appearance overture</td><td>Boss overture/Vahn-Saryu</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Lords of the Mist</td></tr>
+      <tr><td>50</td><td>M107</td><td>前向きな汎用イベント</td><td>MAEMUKI NA HANYŌ IBENTO</td><td>Positive generic event</td><td>Noa joins the party</td><td>-</td><td>-</td><td>-</td><td>Positive Energy!</td></tr>
+      <tr><td>51</td><td>M108</td><td>中ボス</td><td>CHŪ BOSU</td><td>Medium boss</td><td>Koru battle theme 2</td><td>-</td><td>-</td><td>-</td><td>The Hot Heat</td></tr>
+      <tr><td>52</td><td>M109</td><td>不気味な気配</td><td>BUKIMI NA KEHAI</td><td>Eerie presence</td><td>Tense moment</td><td>-</td><td>-</td><td>-</td><td>Ominous Presence</td></tr>
+      <tr><td>53</td><td>M110</td><td>中ボス出現序曲</td><td>CHŪ BOSU SHUTSUGEN JOKYOKU</td><td>Medium boss appearance overture</td><td>Boss overture/Vahn-Saryu</td><td>-</td><td>-</td><td>-</td><td>Lords of the Mist</td></tr>
       <tr><td>54</td><td>M111</td><td>ニルボア</td><td>NIRUBOA</td><td>Nivora</td><td>Nivora Ravine</td><td>静かなる破滅</td><td>SHIZUKANARU HAMETSU</td><td>The silent ruin</td><td>Silent Doom</td></tr>
-      <tr><td>55</td><td>M112</td><td>ディスコ</td><td>DISUKO</td><td>Disco</td><td>Sol disco fever</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Sol's Disco Fever!</td></tr>
-      <tr><td>56</td><td>M113</td><td>スーパースペクタル2</td><td>SŪPĀ SUPEKUTARU 2</td><td>Super spectacle 2</td><td>Mist generator dungeon 2</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Misty Hideout</td></tr>
-      <tr><td>57</td><td>KANASIMI</td><td>悲しみイベント</td><td>KANASHIMI IBENTO</td><td>Sorrowful event</td><td>Cara's theme/Alundra requiem</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Requiem</td></tr>
-      <tr><td>58</td><td>M114</td><td>普通の街2</td><td>FUTSŪ NO MACHI 2</td><td>Ordinary town 2</td><td>Vidna</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Town of the Wind</td></tr>
-      <tr><td>59</td><td>M115</td><td>ディスコ予選</td><td>DISUKO YOSEN</td><td>Disco preliminaries</td><td>Sol disco preliminary</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Funky Ascent</td></tr>
-      <tr><td>60</td><td>M116</td><td>ディスコ決勝</td><td>DISUKO KESSHŌ</td><td>Disco finals</td><td>Sol disco final 1</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Tower Boogie</td></tr>
-      <tr><td>61</td><td>M31</td><td>コート戦2</td><td>KŌTO-SEN 2</td><td>Cort battle 2</td><td>Juggernaut final battle</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Apocalypse</td></tr>
-      <tr><td>62</td><td>M105</td><td>霧の谷の曲</td><td>KIRI NO TANI NO KYOKU</td><td>Mist valley song</td><td>Buma/misty valley</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Misty Valley</td></tr>
+      <tr><td>55</td><td>M112</td><td>ディスコ</td><td>DISUKO</td><td>Disco</td><td>Sol disco fever</td><td>-</td><td>-</td><td>-</td><td>Sol's Disco Fever!</td></tr>
+      <tr><td>56</td><td>M113</td><td>スーパースペクタル2</td><td>SŪPĀ SUPEKUTARU 2</td><td>Super spectacle 2</td><td>Mist generator dungeon 2</td><td>-</td><td>-</td><td>-</td><td>Misty Hideout</td></tr>
+      <tr><td>57</td><td>KANASIMI</td><td>悲しみイベント</td><td>KANASHIMI IBENTO</td><td>Sorrowful event</td><td>Cara's theme/Alundra requiem</td><td>-</td><td>-</td><td>-</td><td>Requiem</td></tr>
+      <tr><td>58</td><td>M114</td><td>普通の街2</td><td>FUTSŪ NO MACHI 2</td><td>Ordinary town 2</td><td>Vidna</td><td>-</td><td>-</td><td>-</td><td>Town of the Wind</td></tr>
+      <tr><td>59</td><td>M115</td><td>ディスコ予選</td><td>DISUKO YOSEN</td><td>Disco preliminaries</td><td>Sol disco preliminary</td><td>-</td><td>-</td><td>-</td><td>Funky Ascent</td></tr>
+      <tr><td>60</td><td>M116</td><td>ディスコ決勝</td><td>DISUKO KESSHŌ</td><td>Disco finals</td><td>Sol disco final 1</td><td>-</td><td>-</td><td>-</td><td>Tower Boogie</td></tr>
+      <tr><td>61</td><td>M31</td><td>コート戦2</td><td>KŌTO-SEN 2</td><td>Cort battle 2</td><td>Juggernaut final battle</td><td>-</td><td>-</td><td>-</td><td>Apocalypse</td></tr>
+      <tr><td>62</td><td>M105</td><td>霧の谷の曲</td><td>KIRI NO TANI NO KYOKU</td><td>Mist valley song</td><td>Buma/misty valley</td><td>-</td><td>-</td><td>-</td><td>The Misty Valley</td></tr>
       <tr><td>63</td><td>M118</td><td>オープニングキャラ劇1</td><td>ŌPUNINGU KYARA GEKI 1</td><td>Opening character act 1</td><td>Opening title pt 1</td><td>プロローグ</td><td>PURORŌGU</td><td>Prologue</td><td>Prologue</td></tr>
-      <tr><td>64</td><td>M119</td><td>オープニングキャラ劇2</td><td>ŌPUNINGU KYARA GEKI 2</td><td>Opening character act 2</td><td>Opening title pt 2</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Henchmen of the Mist</td></tr>
+      <tr><td>64</td><td>M119</td><td>オープニングキャラ劇2</td><td>ŌPUNINGU KYARA GEKI 2</td><td>Opening character act 2</td><td>Opening title pt 2</td><td>-</td><td>-</td><td>-</td><td>Henchmen of the Mist</td></tr>
       <tr><td>65</td><td>M65</td><td>タイトル画面</td><td>TAITORU GAMEN</td><td>Title screen</td><td>Title screen theme</td><td>タイトル</td><td>TAITORU</td><td>Title</td><td>Legend of Legaia</td></tr>
-      <tr><td>66</td><td>M120</td><td>ディスコ決勝</td><td>DISUKO KESSHŌ</td><td>Disco finals</td><td>Sol disco final 2</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Disco Hero</td></tr>
-      <tr><td>67</td><td>M33</td><td>中ボス</td><td>CHŪ BOSU</td><td>Medium boss</td><td>Vahn-Saryu</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Tense Presence</td></tr>
+      <tr><td>66</td><td>M120</td><td>ディスコ決勝</td><td>DISUKO KESSHŌ</td><td>Disco finals</td><td>Sol disco final 2</td><td>-</td><td>-</td><td>-</td><td>Disco Hero</td></tr>
+      <tr><td>67</td><td>M33</td><td>中ボス</td><td>CHŪ BOSU</td><td>Medium boss</td><td>Vahn-Saryu</td><td>-</td><td>-</td><td>-</td><td>Tense Presence</td></tr>
       <tr><td>68</td><td>M50</td><td>エンディング</td><td>ENDINGU</td><td>Ending</td><td>Credits theme</td><td>エンドタイトル</td><td>ENDO TAITORU</td><td>End title</td><td>Song of the Genesis Tree</td></tr>
       <tr><td>69</td><td>M121</td><td>生物城崩壊</td><td>SEIBUTSU-JŌ HŌKAI</td><td>Creature castle collapse</td><td>Bio-Castle collapse</td><td>生物城の崩壊</td><td>SEIBUTSU-JŌ NO HŌKAI</td><td>The collapse of the creature castle</td><td>The Collapse of the Bio-Castle</td></tr>
       <tr><td>70</td><td>M122</td><td>祝福のリムエルム</td><td>SHUKUFUKU NO RIMU-ERUMU</td><td>Blessed Rim-Elm</td><td>Rim Elm ending</td><td>人間の世界</td><td>NINGEN NO SEKAI</td><td>The human world</td><td>The Blessed Human World</td></tr>
-      <tr><td>71</td><td>M123</td><td>コート序曲</td><td>KŌTO JOKYOKU</td><td>Cort overture</td><td>Bio-Castle</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Rise of the Bio-Castle</td></tr>
-      <tr><td>72</td><td>ALNDRA</td><td>アランドラ</td><td>ARANDORA</td><td>Alundra</td><td>Alundra Zazzan's battle theme</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Excitement</td></tr>
-      <tr><td>73</td><td>JBGM</td><td>ワイルドアームズ</td><td>WAIRUDO ĀMUZU</td><td>Wild Arms</td><td>Wild Arms battle theme</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Wild Arms Battle Theme</td></tr>
-      <tr><td>74</td><td>&mdash;</td><td>&mdash;</td><td>DAMĪ</td><td>Dummy</td><td>Dummy test music file</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&ldquo;I'm a Dummy-dayo!&rdquo;</td></tr>
-      <tr><td>75</td><td>M47B</td><td>スーパースペクタクルB</td><td>SŪPĀ SUPEKUTAKURU B</td><td>Super spectacle B</td><td>Another flying castle escape</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Hurry Up! Faster!</td></tr>
-      <tr><td>76</td><td>M13</td><td>&mdash;</td><td>&mdash;</td><td>No name file</td><td>Soren flute/Soren theme</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The Melody of Memories (Piano)</td></tr>
-      <tr><td>77</td><td>M117</td><td>ディスコ</td><td>DISUKO</td><td>Disco</td><td>Sol disco fever 2</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Disco Legend</td></tr>
-      <tr><td>78</td><td>MPIANO</td><td>ピアノ</td><td>PIANO</td><td>Piano</td><td>Piano? <em>(uncertain)</em></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
-      <tr><td>79</td><td>獸衣</td><td>&mdash;</td><td>LEVELUP</td><td>Levelup</td><td>Level up? <em>(uncertain)</em></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
-      <tr><td>80</td><td>M26A</td><td>A</td><td>A</td><td>A</td><td>A? Another test file maybe? <em>(uncertain)</em></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>71</td><td>M123</td><td>コート序曲</td><td>KŌTO JOKYOKU</td><td>Cort overture</td><td>Bio-Castle</td><td>-</td><td>-</td><td>-</td><td>The Rise of the Bio-Castle</td></tr>
+      <tr><td>72</td><td>ALNDRA</td><td>アランドラ</td><td>ARANDORA</td><td>Alundra</td><td>Alundra Zazzan's battle theme</td><td>-</td><td>-</td><td>-</td><td>Excitement</td></tr>
+      <tr><td>73</td><td>JBGM</td><td>ワイルドアームズ</td><td>WAIRUDO ĀMUZU</td><td>Wild Arms</td><td>Wild Arms battle theme</td><td>-</td><td>-</td><td>-</td><td>Wild Arms Battle Theme</td></tr>
+      <tr><td>74</td><td>-</td><td>-</td><td>DAMĪ</td><td>Dummy</td><td>Dummy test music file</td><td>-</td><td>-</td><td>-</td><td>&ldquo;I'm a Dummy-dayo!&rdquo;</td></tr>
+      <tr><td>75</td><td>M47B</td><td>スーパースペクタクルB</td><td>SŪPĀ SUPEKUTAKURU B</td><td>Super spectacle B</td><td>Another flying castle escape</td><td>-</td><td>-</td><td>-</td><td>Hurry Up! Faster!</td></tr>
+      <tr><td>76</td><td>M13</td><td>-</td><td>-</td><td>No name file</td><td>Soren flute/Soren theme</td><td>-</td><td>-</td><td>-</td><td>The Melody of Memories (Piano)</td></tr>
+      <tr><td>77</td><td>M117</td><td>ディスコ</td><td>DISUKO</td><td>Disco</td><td>Sol disco fever 2</td><td>-</td><td>-</td><td>-</td><td>Disco Legend</td></tr>
+      <tr><td>78</td><td>MPIANO</td><td>ピアノ</td><td>PIANO</td><td>Piano</td><td>Piano? <em>(uncertain)</em></td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td>79</td><td>獸衣</td><td>-</td><td>LEVELUP</td><td>Levelup</td><td>Level up? <em>(uncertain)</em></td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td>80</td><td>M26A</td><td>A</td><td>A</td><td>A</td><td>A? Another test file maybe? <em>(uncertain)</em></td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
     </tbody>
   </table>
 </section>
@@ -126,8 +126,8 @@
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <ul class="see-also">
-    <li><a href="../subsystems/audio.html">Audio subsystem</a> &mdash; the BGM director, SsAPI sequencer, and per-scene BGM lookup that play these tracks.</li>
-    <li><a href="../formats/seq.html">SEQ format</a> &mdash; the sequenced-music format the tracks are stored in.</li>
-    <li><a href="gamedata.html">Curated game-data tables</a> &mdash; the sibling curated-label tables this follows the pattern of.</li>
+    <li><a href="../subsystems/audio.html">Audio subsystem</a> - the BGM director, SsAPI sequencer, and per-scene BGM lookup that play these tracks.</li>
+    <li><a href="../formats/seq.html">SEQ format</a> - the sequenced-music format the tracks are stored in.</li>
+    <li><a href="gamedata.html">Curated game-data tables</a> - the sibling curated-label tables this follows the pattern of.</li>
   </ul>
 </section>

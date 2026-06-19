@@ -139,7 +139,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · asset viewer</div>
   <h1>Asset viewer</h1>
-  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) and the WASM build parses it client-side. The top viewer renders every 3D mesh (Legaia TMD) in <code>PROT.DAT</code>; below it, two texture grids show every 2D TIM &mdash; the raw catalog and a deep tier that recovers textures from inside LZS-compressed sections. Nothing leaves your machine.</p>
+  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) and the WASM build parses it client-side. The top viewer renders every 3D mesh (Legaia TMD) in <code>PROT.DAT</code>; below it, two texture grids show every 2D TIM - the raw catalog and a deep tier that recovers textures from inside LZS-compressed sections. Nothing leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -174,7 +174,7 @@
           <h3>Bring your own disc</h3>
           <p>This viewer doesn't ship any Sony bytes. Provide a <code>.bin</code> Mode2/2352 image of <em>Legend of Legaia</em> (NA SCUS-94254). A single <code>.tim</code> file also works for one-off image previews.</p>
           <p style="margin-top: 0.75rem; color: var(--text-dim); font-size: 0.85rem;">
-            Files are read with the browser's <code>FileReader</code> API. Nothing is uploaded; everything happens locally in WebAssembly. Your disc is cached locally in the browser (IndexedDB) and shared across the viewer, audio, monster, and world-overview pages, so it auto-loads on reload &mdash; hit <em>Forget</em> on the chip to clear it.
+            Files are read with the browser's <code>FileReader</code> API. Nothing is uploaded; everything happens locally in WebAssembly. Your disc is cached locally in the browser (IndexedDB) and shared across the viewer, audio, monster, and world-overview pages, so it auto-loads on reload - hit <em>Forget</em> on the chip to clear it.
           </p>
         </div>
       </div>
@@ -243,7 +243,7 @@
     }
   </style>
   <h2>PROT.DAT TIM catalog</h2>
-  <p class="lede">Every standard PSX TIM in <code>PROT.DAT</code>, flat-scanned with strict validation and keyed by a stable id. This set matches an independent reference decoder's TIM index exactly &mdash; same offsets, dimensions, and palette counts &mdash; and includes TIMs in the unindexed system-UI gap (e.g. the menu-glyph atlas) that the 3D browser above can't reach. Click a thumbnail to load it full-size and switch CLUT variants.</p>
+  <p class="lede">Every standard PSX TIM in <code>PROT.DAT</code>, flat-scanned with strict validation and keyed by a stable id. This set matches an independent reference decoder's TIM index exactly - same offsets, dimensions, and palette counts - and includes TIMs in the unindexed system-UI gap (e.g. the menu-glyph atlas) that the 3D browser above can't reach. Click a thumbnail to load it full-size and switch CLUT variants.</p>
   <div id="catalog-pane" style="display: none;">
     <div id="catalog-grid"></div>
     <div id="catalog-detail" style="display: none; margin-top: 0.75rem;">
@@ -266,7 +266,7 @@
 
 <section class="doc-section" id="compressed-textures">
   <h2>Compressed textures (LZS-embedded)</h2>
-  <p class="lede">Most character and scene textures aren't stored as raw bytes &mdash; they live inside <strong>LZS-compressed</strong> <code>PROT.DAT</code> sections, invisible to the flat scan above (which, like the reference decoder, reads only raw bytes). This grid is the <em>deep</em> tier: every entry is LZS-decompressed and the standard PSX TIMs inside each decoded section are recovered, keyed by <code>(entry, section, offset)</code>. A hit is admitted only when the decompressed bytes strict-parse <em>and</em> decode to RGBA &mdash; &ldquo;decompresses without error&rdquo; is never a validity signal, since the LZS ring buffer initialises to zeros. Click a thumbnail to load it full-size and switch CLUT variants.</p>
+  <p class="lede">Most character and scene textures aren't stored as raw bytes - they live inside <strong>LZS-compressed</strong> <code>PROT.DAT</code> sections, invisible to the flat scan above (which, like the reference decoder, reads only raw bytes). This grid is the <em>deep</em> tier: every entry is LZS-decompressed and the standard PSX TIMs inside each decoded section are recovered, keyed by <code>(entry, section, offset)</code>. A hit is admitted only when the decompressed bytes strict-parse <em>and</em> decode to RGBA - &ldquo;decompresses without error&rdquo; is never a validity signal, since the LZS ring buffer initialises to zeros. Click a thumbnail to load it full-size and switch CLUT variants.</p>
   <div id="deep-catalog-pane" style="display: none;">
     <div id="deep-catalog-grid"></div>
     <div id="deep-catalog-detail" style="display: none; margin-top: 0.75rem;">
@@ -289,14 +289,14 @@
 
 <section class="doc-section" id="using-the-viewer">
   <h2>Using the viewer</h2>
-  <p>The top viewer lists every PROT entry that carries a Legaia TMD; pick one from the sidebar or jump by PROT index. By default it renders textured (WebGL2; the same paletted fragment shader the native engine uses); toggle "textured" off for a flat-shaded fallback. Below it, the <strong>PROT.DAT TIM catalog</strong> grid shows every raw 2D texture and the <strong>compressed textures</strong> grid shows the LZS-embedded ones &mdash; click a thumbnail in either to load it full-size and switch CLUT (palette) variants.</p>
+  <p>The top viewer lists every PROT entry that carries a Legaia TMD; pick one from the sidebar or jump by PROT index. By default it renders textured (WebGL2; the same paletted fragment shader the native engine uses); toggle "textured" off for a flat-shaded fallback. Below it, the <strong>PROT.DAT TIM catalog</strong> grid shows every raw 2D texture and the <strong>compressed textures</strong> grid shows the LZS-embedded ones - click a thumbnail in either to load it full-size and switch CLUT (palette) variants.</p>
   <p class="hint">Sound and cutscene video on disc live on the <a href="media.html">media browser</a>. The native build adds stage geometry and cross-PROT-entry CLUT chains (via <code>--vram-extra-dir</code>):</p>
   <div class="cli"><code>./target/release/asset-viewer prot extracted/PROT.DAT</code></div>
 </section>
 
 <section class="doc-section" id="related">
   <h2>Related</h2>
-  <p>Loaded disc data never leaves your browser &mdash; <code>FileReader</code> reads straight into WebAssembly memory, with no network calls for the disc bytes. The project ships zero Sony bytes (bring your own disc).</p>
+  <p>Loaded disc data never leaves your browser - <code>FileReader</code> reads straight into WebAssembly memory, with no network calls for the disc bytes. The project ships zero Sony bytes (bring your own disc).</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="subsystems/engine.html">Engine port plan</a>
@@ -946,7 +946,7 @@
 
 <section class="doc-section">
   <h2>Run engine</h2>
-  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) and <code>CDNAME.TXT</code> is extracted automatically via ISO9660 walk. Files are read locally via <code>FileReader</code>; nothing is uploaded. The shared browser-cached disc (from any of these pages) is reused here &mdash; just hit <strong>Load engine</strong>, no need to re-pick.</p>
+  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) and <code>CDNAME.TXT</code> is extracted automatically via ISO9660 walk. Files are read locally via <code>FileReader</code>; nothing is uploaded. The shared browser-cached disc (from any of these pages) is reused here - just hit <strong>Load engine</strong>, no need to re-pick.</p>
   <p class="hint">The same disc image you use in the asset browser above works here.</p>
 
   <div class="engine-panel" id="engine-panel">

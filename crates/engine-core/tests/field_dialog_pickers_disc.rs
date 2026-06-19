@@ -47,7 +47,7 @@ fn field_inline_pickers_decode_and_jump_in_bounds() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
     let index = Arc::new(ProtIndex::open_extracted(&extracted).expect("open ProtIndex"));
@@ -94,7 +94,7 @@ fn field_inline_pickers_decode_and_jump_in_bounds() {
                     pk.n
                 );
                 // Every option's relative jump must resolve to a byte INSIDE
-                // the same interaction script — the decisive correctness
+                // the same interaction script - the decisive correctness
                 // signal for the "2-byte entry = relative jump" reading. A
                 // garbage match would jump out of bounds.
                 for i in 0..pk.n {

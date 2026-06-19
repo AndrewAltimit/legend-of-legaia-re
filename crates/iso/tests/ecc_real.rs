@@ -4,7 +4,7 @@
 //!
 //! The decisive correctness check: for a large sample of real PROT.DAT sectors,
 //! our freshly computed EDC/ECC must equal the bytes Sony's mastering tool wrote
-//! — if we reproduce the disc's parity exactly, the encoder is correct. Then we
+//! - if we reproduce the disc's parity exactly, the encoder is correct. Then we
 //! exercise the write path on a scratch copy: patch a byte, confirm the touched
 //! sector is still valid and the byte reads back, and confirm restoring the
 //! original byte returns the sector byte-for-byte.
@@ -103,7 +103,7 @@ fn patch_round_trips_a_real_sector() {
         "patch must touch only the user byte and the recomputed parity"
     );
 
-    // Restoring the original byte yields the original sector byte-for-byte —
+    // Restoring the original byte yields the original sector byte-for-byte -
     // proving our re-encode reproduces Sony's parity, not just a valid one.
     patch_file_logical(&mut image, lba, logical_off, &[original_byte]).expect("restore");
     assert_eq!(

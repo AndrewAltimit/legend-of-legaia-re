@@ -1,0 +1,73 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">disc patching</a> &middot; Tier A</div>
+  <h1>Tier A - static-table overwrites</h1>
+  <p class="lede">The foundation of the <a href="index.html#ladder">ladder</a>. Flip bytes in a fixed-width table that already exists in the executable or a raw overlay - no compression, no relocation, no new code. It looks like the cheat-code tier, and the <em>write</em> is trivial. The work is entirely in the reversing: pinning the exact table base, stride, and which byte in each record is the field you mean, in a stripped binary where &ldquo;no static caller&rdquo; does not mean dead.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">Tier A overview</div>
+  Tier A of the A&ndash;F ladder - same-size data edits, the base every other technique builds on. New here? Start at the <a href="index.html">series index</a> for the editing model and the full ladder.
+</div>
+
+<section class="doc-section" id="mechanism">
+  <h2>Mechanism at a glance</h2>
+  <dl class="kv">
+    <dt>Target</dt><dd>Fixed-width tables in <code>SCUS_942.54</code> or a raw overlay's data section</dd>
+    <dt>Edit class</dt><dd>in-place / same-size; structural bytes (1-based ids, masks, slot types) left untouched</dd>
+    <dt>The work</dt><dd>locate the table via its consumer function, then byte-validate every field against the curated game-data tables</dd>
+    <dt>Tables</dt><dd>steal <code>DAT_80077828</code> &middot; spell MP <code>DAT_800754C8+3</code> &middot; equip-bonus <code>DAT_80074F68</code> &middot; move power + element affinity (PROT 0898) &middot; prices <code>0x80074368+2</code> &middot; casino (PROT 0899 <code>0x15D00</code>)</dd>
+    <dt>Cross-check</dt><dd><code>cross_table_integrity_real.rs</code> + per-feature oracles</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="reversing">
+  <h2>The reversing: pinning a table in a stripped binary</h2>
+  <p>None of these tables is labelled. Each was located by tracing its <strong>consumer</strong> in Ghidra - the routine that reads it at runtime - back to the <code>lui</code>/<code>addiu</code> pair that forms the base address, then walking the access pattern to recover the stride and the byte offset of each field. The steal table surfaces from the steal resolver, the spell costs from the cast-MP deduction, the move powers from the damage kernel, the prices from the shop pricer. Two recurring traps make this harder than it sounds:</p>
+  <ul>
+    <li><strong>&ldquo;No static caller&rdquo; &ne; dead.</strong> Most game logic lives in RAM overlays, so a table read only by overlay code shows zero references in the executable. The reader has to be found in the captured overlay, not assumed absent.</li>
+    <li><strong>LUI+ADDIU base pairs aren't auto-resolved.</strong> Ghidra's reference manager doesn't connect a split 32-bit address, so a direct xref on the table address returns nothing even when it's heavily used. The base is recovered by scanning for the <code>lui</code>/<code>addiu</code> writers, not by querying references.</li>
+  </ul>
+  <p>Once the base, stride, and field offset are known, each table is <strong>byte-validated field-by-field against the curated <code>gamedata</code> tables</strong> - the ground-truth labels mined from walkthroughs. That validation is what turns &ldquo;a plausible address&rdquo; into a confirmed table, and it's the reason a same-size column shuffle is safe: the randomizer moves only the value column and leaves every structural byte in place.</p>
+</section>
+
+<section class="doc-section" id="examples">
+  <h2>Worked examples</h2>
+  <h3>Steal items (the field-order trap)</h3>
+  <p>The per-monster steal table is <code>DAT_80077828 + monster_id*2</code> (1-based id, 2-byte stride). Its layout is <code>[steal_chance, steal_item]</code> - chance <em>first</em>, item second, the <strong>reverse</strong> of the drop field's order in the monster record. The randomizer overwrites only the item byte at <code>+1</code>; the chance is preserved, so what an enemy carries changes but how often it can be stolen does not. The mechanic was pinned from a live steal capture and is byte-exact against the published steal table (<code>steal-table.md</code>).</p>
+  <h3>Spell MP costs &amp; equipment bonuses (column within a record)</h3>
+  <p>Spell costs sit at <code>+3</code> of the 12-byte spell record (<code>DAT_800754C8</code>, <code>spell-table.md</code>); the equip-bonus table is <code>DAT_80074F68</code> on an 8-byte stride (<code>equipment-table.md</code>). Both edits permute a single column within a record class - the cost byte across costed spells, the stat tuple within a slot category - without touching the surrounding fields (the capture class, the equip-character mask, the slot type).</p>
+  <h3>Move power &amp; element affinity (a static table inside an overlay)</h3>
+  <p>Not every &ldquo;static&rdquo; table lives in the executable. The special-attack <a href="../../formats/move-power.html">power table</a> and the 8&times;8 element-affinity matrix are fixed tables in the <strong>battle overlay's</strong> data section (PROT 0898). The technique is identical - same-size in-place overwrite of a located table - the only difference is that the patch targets a PROT overlay entry rather than the executable.</p>
+</section>
+
+<section class="doc-section" id="composition">
+  <h2>Composition</h2>
+  <p>Tier A is the most composable tier: every edit is same-size and self-contained, so none can disturb another's offsets and all of them combine freely with the higher tiers. Two specializations ride on the same shape:</p>
+  <ul>
+    <li><strong>New-game seed stamp (variant H).</strong> Starting level overwrites the new-game roster-seed literals - the displayed-level byte, the growth-curve stat rows, the lead's cumulative-XP words - all same-size SCUS edits, just aimed at the boot seed rather than a gameplay table.</li>
+    <li><strong>String injection (variant I).</strong> Naming an unused item repoints its name-table pointer (a tier-A edit) <em>and</em> writes the new string into a reserved zero gap - that second write shares the executable's rodata gap, the contended region the <a href="e-rodata-gap-code.html">tier E</a> map lays out.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="mods">
+  <h2>Mods using this technique</h2>
+  <ul>
+    <li><strong>Steal items</strong> (<code>--steals</code>) &middot; <strong>Spell MP costs</strong> (<code>--spell-cost</code>) &middot; <strong>Equipment stat bonuses</strong> (<code>--equip-bonus</code>)</li>
+    <li><strong>Special-attack power</strong> (<code>--move-power</code>) &middot; <strong>Element-affinity matrix</strong> (<code>--element-affinity</code>)</li>
+    <li><strong>Item prices</strong> (<code>--shops</code> pricing) &middot; <strong>Casino prize exchange</strong> (<code>--casino</code>)</li>
+    <li><strong>Starting level</strong> (<code>--starting-level</code>, variant H) &middot; <strong>Unused-item naming</strong> (<code>--unused-items</code>, variant I)</li>
+  </ul>
+  <p class="hint">Adding a tier-A mod: locate the table via its consumer function (overlay sweep + <code>lui</code>/<code>addiu</code> scan, not an xref query), byte-validate every field against <code>gamedata</code>, move only the value column, and add a disc-gated oracle.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="index.html">Series index &middot; the ladder</a>
+    <a href="e-rodata-gap-code.html">Tier E &middot; the rodata gap</a>
+    <a href="../../formats/move-power.html">Move-power table</a>
+    <a href="../../reference/gamedata.html">Curated game-data tables</a>
+    <a href="../../tooling/ghidra.html">Ghidra (LUI+ADDIU recovery)</a>
+  </div>
+</section>

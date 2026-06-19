@@ -52,7 +52,7 @@ fn world_map_kind_lifts_terrain_residency() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -71,7 +71,7 @@ fn world_map_kind_lifts_terrain_residency() {
     eprintln!("[align] {SCENE} texpage non-zero words: field={field_n} world_map={world_n}",);
 
     // The world-map build must add a substantial run of terrain-atlas pages the
-    // field build never loads — well beyond noise.
+    // field build never loads - well beyond noise.
     // Retail observed: field ~51k, world_map ~104k (the terrain atlas roughly
     // doubles residency). Require a generous fraction of that delta so the
     // guard is robust to incidental atlas-packing changes but still fails if the

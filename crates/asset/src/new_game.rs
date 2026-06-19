@@ -54,7 +54,7 @@ pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
 /// RAM address of the new-game seed routine's **next-level XP-threshold** literal
 /// for party slot 0 (Vahn): the `addiu $v0, $zero, 0x79` (= 121) in `FUN_800560B4`
 /// whose value the routine stores to the live record's **next-level threshold**
-/// cell (`+0x4`) — the "XP to next level" the status screen labels *next*, NOT the
+/// cell (`+0x4`) - the "XP to next level" the status screen labels *next*, NOT the
 /// cumulative experience (which is its neighbour `+0x0`). Vanilla `121` is the
 /// level-1→2 threshold (`reach(L2)`); Noa's is `102`, Gala's `140` (a value confirmed
 /// live: Gala's in-game "next level" marker reads `140`). The same `$v0` is reused
@@ -62,7 +62,7 @@ pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
 /// 16-bit immediate, so a seeded threshold must fit a positive `imm16`.
 ///
 /// The seed routine sets every slot's `+0x4` by storing `$v0` (this literal) to that
-/// slot's cell — Vahn at `0x5cc`, Noa at `0x9e0`, Gala at `0xdf4` — with two
+/// slot's cell - Vahn at `0x5cc`, Noa at `0x9e0`, Gala at `0xdf4` - with two
 /// intervening `addiu $v0` reloads (the vanilla `102` / `140` literals at
 /// [`CURRENT_XP_STORE_VA`] / [`NOA_XP_STORE_VA`]) giving Noa / Gala their distinct
 /// per-character values. The per-character spread is the `FUN_801E9504` slots-1/2
@@ -70,7 +70,7 @@ pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
 /// re-derives at every level-up. The starting-level randomizer drops those two
 /// reloads (repurposing them as cumulative-experience stores, see below), so `$v0`
 /// holds the seeded `reach(N+1)` threshold uncorrupted from here through Gala's store
-/// and **all three growth slots take the same threshold** — the ≤2 % per-character
+/// and **all three growth slots take the same threshold** - the ≤2 % per-character
 /// correction is re-applied by the applier on each character's first post-seed
 /// level-up.
 ///
@@ -98,7 +98,7 @@ pub const CURRENT_XP_PRELOAD_VA: u32 = 0x8005_60FC;
 /// (vanilla `addiu $v0, $zero, 0x66`). The starting-level randomizer overwrites it
 /// with `sw $t0, 0x5c8($s0)`, storing the preloaded experience value
 /// ([`CURRENT_XP_PRELOAD_VA`]) into party slot 0's **cumulative-experience cell
-/// `+0x0`** — the status screen's "Experience" readout and the value the level-up
+/// `+0x0`** - the status screen's "Experience" readout and the value the level-up
 /// applier compares against the next-level threshold. (The instruction after it, the
 /// Noa `+0x4` store, then writes the now-`$v0`-resident threshold to Noa's `+0x4`
 /// instead of her vanilla `102`; the per-character correction is re-applied on Noa's
@@ -110,14 +110,14 @@ pub const CURRENT_XP_STORE_VA: u32 = 0x8005_6100;
 /// it with `sw $t0, 0x9dc($s0)`, storing the preloaded experience value
 /// ([`CURRENT_XP_PRELOAD_VA`]) into party slot 1's (**Noa**) cumulative-experience
 /// cell `+0x0`. Dropping the `140` reload also leaves `$v0` holding the seeded
-/// `reach(N+1)` threshold for the Gala `+0x4` store two instructions later — so the
+/// `reach(N+1)` threshold for the Gala `+0x4` store two instructions later - so the
 /// same edit that gives Noa her experience also fixes Gala's threshold (vanilla left
 /// it at the level-1 literal `140`, which would trigger a spurious level-up). A store,
 /// so it takes no immediate.
 pub const NOA_XP_STORE_VA: u32 = 0x8005_6108;
 
 /// RAM address of a redundant `lui $at, 0x8008` in `FUN_800560B4`'s prefix
-/// (`0x80056118`): the second of two identical `lui $at, 0x8008` reloads — `$at` is
+/// (`0x80056118`): the second of two identical `lui $at, 0x8008` reloads - `$at` is
 /// unchanged between them and both `sb $zero, off($at)` global clears read it, so the
 /// reload is dead. The starting-level randomizer reclaims it for `sw $t0, 0xdf0($s0)`,
 /// storing the preloaded experience value ([`CURRENT_XP_PRELOAD_VA`]) into party slot
@@ -149,7 +149,7 @@ pub const LIVE_RECORD_STRIDE: u32 = 0x414;
 /// two stores after it write the byte to the live record's **displayed-level cell
 /// `+0x130`** and the magic-rank cell `+0x131`, so vanilla seeds every slot at level
 /// 1 / rank 1. The displayed combat level is read from `+0x130` directly (it is *not*
-/// re-derived from cumulative experience at a New Game — confirmed live: a record
+/// re-derived from cumulative experience at a New Game - confirmed live: a record
 /// with level-10 experience + stats but `+0x130 == 1` still shows "LV 1"). The
 /// starting-level randomizer rewrites this literal to `(1 << 8) | level` and the
 /// first store to a `sh` ([`LEVEL_STORE_VA`]) so the halfword sets `+0x130 = level`
@@ -185,8 +185,8 @@ pub const PARTY_RECORDS: usize = 4;
 /// (`DAT_80085958 = 0x77` / `DAT_80085959 = 5` = Healing Leaf ×5) with a
 /// `li`/`sb` pair, immediately followed by an inline loop that zeroes the 512
 /// bytes *below* the inventory. Both callers (`FUN_8001DCF8`'s new-game branch
-/// and `FUN_8001FFA4`) memset `SC[0..0x1a18)` — which includes the whole
-/// inventory — right before calling, so that inline zero-loop is redundant.
+/// and `FUN_8001FFA4`) memset `SC[0..0x1a18)` - which includes the whole
+/// inventory - right before calling, so that inline zero-loop is redundant.
 /// The 10 instructions from here on (`0x80034b04..0x80034b2b`, 40 bytes) are
 /// therefore reclaimable as the starting-item seed region.
 pub const STARTING_INV_SEED_VA: u32 = 0x8003_4B04;
@@ -201,12 +201,12 @@ pub const STARTING_INV_SEED_LEN: usize = 40;
 /// with these offsets, so the decoder reads slots from here.
 pub const INVENTORY_SC_OFFSET: u32 = 0x1818;
 
-/// Item id of Door of Wind — the consumable that opens the warp menu (a teleport
+/// Item id of Door of Wind - the consumable that opens the warp menu (a teleport
 /// to any *previously visited* town). In the contiguous consumable block, so the
 /// starting-item seed can write it directly to the inventory page.
 pub const DOOR_OF_WIND_ITEM: u8 = 0x89;
 
-/// Item id of Incense — the consumable that lowers the random-encounter rate for
+/// Item id of Incense - the consumable that lowers the random-encounter rate for
 /// a while. In the same contiguous consumable block as Door of Wind, so the
 /// starting-item seed can write it directly to the inventory page.
 pub const INCENSE_ITEM: u8 = 0x8A;
@@ -231,7 +231,7 @@ pub const WARP_ALL_FLAGS_HI: u16 = 0xF8FF;
 /// RAM address of a **second** reclaimable region in `FUN_80034A6C`, used to
 /// preset the Door-of-Wind warp bitmask **without** stealing from the
 /// inventory-seed budget. At `0x80034adc..0x80034aeb` the routine clears four
-/// `SC` words it has already been told are zero —
+/// `SC` words it has already been told are zero -
 ///
 /// ```text
 /// 80034adc  sw $zero, 0x460($s0)
@@ -240,13 +240,13 @@ pub const WARP_ALL_FLAGS_HI: u16 = 0xF8FF;
 /// 80034ae8  sw $zero, 0x478($s0)
 /// ```
 ///
-/// — all inside `SC[0..0x1a18)`, which both callers `memset` before the call,
+/// - all inside `SC[0..0x1a18)`, which both callers `memset` before the call,
 /// so these four stores are redundant in exactly the way the zero-loop is. They
 /// are reclaimable for the warp preset. **Crucially the preset must not touch
 /// `$v0`**: it holds `0x2dc0` set just above (`0x80034ad8`) and consumed just
 /// below (`0x80034af0` → `DAT_80073ef8`), so the warp stores use `$v1` (dead
 /// after `0x80034acc`). The party-stat seeder `FUN_800560b4` called between this
-/// region and gameplay never touches the warp window, so the preset survives —
+/// region and gameplay never touches the warp window, so the preset survives -
 /// **provided** the zero-loop at [`STARTING_INV_SEED_VA`] (which would otherwise
 /// re-clear `SC+0x161C`) is overwritten, which it always is whenever the seed is
 /// rewritten at all.
@@ -464,7 +464,7 @@ fn replay_seed_stores(region: &[u8]) -> std::collections::BTreeMap<u32, u8> {
 
 /// `true` if a 40-byte seed region presets the full [`WARP_ALL_FLAGS_LO`] /
 /// [`WARP_ALL_FLAGS_HI`] "all towns" Door-of-Wind bitmask at
-/// [`WARP_FLAGS_SC_OFFSET`] — i.e. the all-warps starting toggle is enabled.
+/// [`WARP_FLAGS_SC_OFFSET`] - i.e. the all-warps starting toggle is enabled.
 pub fn region_unlocks_all_warps(region: &[u8]) -> bool {
     let bytes = replay_seed_stores(region);
     let halfword = |off: u32| -> Option<u16> {
@@ -493,7 +493,7 @@ pub fn scus_unlocks_all_warps(scus: &[u8]) -> Option<bool> {
 /// `(0x77, 5)` (Healing Leaf ×5); the starting-item randomizer rewrites this
 /// region to seed multiple slots. The randomizer can also borrow the adjacent
 /// warp-preset region ([`WARP_SEED_VA`]) for the last couple of slots when the
-/// all-warps preset is not in use, so a decode must replay both regions — the
+/// all-warps preset is not in use, so a decode must replay both regions - the
 /// slots they write are contiguous in the inventory.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StartingInventory {
@@ -510,7 +510,7 @@ impl StartingInventory {
     /// (`addiu $v0,(count<<8)|id; sh …`). This walks the 40 bytes, replays
     /// every `sb $v0`/`sh $v0` store into a sparse `SC`-offset → byte map, then
     /// reads `(id, count)` slots from [`INVENTORY_SC_OFFSET`] until the
-    /// id-`0` terminator — so it handles either encoding (and any future one)
+    /// id-`0` terminator - so it handles either encoding (and any future one)
     /// without special-casing instruction order. Both the inventory-seed region
     /// and the warp-preset region are replayed (the randomizer can spill the
     /// last slots into the latter when all-warps is off; when it holds the warp

@@ -36,7 +36,7 @@
   <h2>Numbering space (the &minus;2 correction)</h2>
   <p>The boot TOC loader copies <code>PROT.DAT</code> verbatim (8-byte header included) into <code>0x801C70F0</code>, so <strong>raw index = extraction index + 2</strong> (see <a href="prot.html">PROT TOC &sect; In-RAM TOC</a>). The default <code>NNNN_&lt;name&gt;.BIN</code> naming is kept for stability; <code>legaia_prot::cdname::block_for_extraction_index</code> resolves the retail-space name for an extraction index, and <code>scripts/asset-investigation/cdname_shift_analysis.py</code> reproduces the full quantitative analysis against a local extraction.</p>
   <h3>Evidence</h3>
-  <p><strong>Loader-constant identities</strong> (strongest &mdash; retail hard-codes raw-TOC indices for dev-named files, and each constant <em>equals</em> the same-named define):</p>
+  <p><strong>Loader-constant identities</strong> (strongest - retail hard-codes raw-TOC indices for dev-named files, and each constant <em>equals</em> the same-named define):</p>
   <table>
     <thead><tr><th>Block (defines)</th><th>Retail raw-TOC constant</th><th>Provenance</th></tr></thead>
     <tbody>
@@ -47,7 +47,7 @@
     </tbody>
   </table>
   <p><strong>Structural (scene region, defines 3..864):</strong> the per-scene <a href="scene-v12-table.html">v12 fixup table</a> recurs once per scene block, and scene block <em>lengths vary</em> (7..11 slots), so its slot position is shift-sensitive. At shift 0 the 96 scene-region v12 tables scatter across slots 4..10; at &minus;2 <strong>all 96 sit at slot 1</strong>. The identity anchors pin &minus;2 exactly. The universal field-<code>.MAP</code>-at-<code>define &minus; 2</code> rule is this same fact: each scene's <code>.MAP</code> is retail <strong>slot 0</strong> of its block, the v12 table slot 1, the event prescript slot 2, the 7-asset table slot 3.</p>
-  <p><strong>Semantic scoring:</strong> over the name blocks with checkable expectations (VAB/SEQ shapes for the sound blocks, the <code>\DATA\MOV*.STR</code> program table for <code>move_program_no</code>, <code>OTHER&lt;n&gt;</code> overlay banners for <code>other_game</code>), shift &minus;2 outscores shift 0 &mdash; e.g. <code>vab_01</code> &rarr; extraction 1070..1192 is 121/121 VAB-headed.</p>
+  <p><strong>Semantic scoring:</strong> over the name blocks with checkable expectations (VAB/SEQ shapes for the sound blocks, the <code>\DATA\MOV*.STR</code> program table for <code>move_program_no</code>, <code>OTHER&lt;n&gt;</code> overlay banners for <code>other_game</code>), shift &minus;2 outscores shift 0 - e.g. <code>vab_01</code> &rarr; extraction 1070..1192 is 121/121 VAB-headed.</p>
 </section>
 
 <section class="doc-section" id="relabelings">
@@ -56,21 +56,21 @@
   <table>
     <thead><tr><th>Extraction</th><th>Filename label says</th><th>Retail-space block (content)</th></tr></thead>
     <tbody>
-      <tr><td>raw 0..1 (LBA 3..120, unindexed by extraction)</td><td>&mdash;</td><td><code>init_data</code> + <code>gameover_data</code> slot 0 &mdash; the boot-UI gap with the menu-glyph atlas</td></tr>
+      <tr><td>raw 0..1 (LBA 3..120, unindexed by extraction)</td><td>-</td><td><code>init_data</code> + <code>gameover_data</code> slot 0 - the boot-UI gap with the menu-glyph atlas</td></tr>
       <tr><td>0000</td><td><code>init_data</code></td><td><code>gameover_data</code> (second slot)</td></tr>
       <tr><td>0863..0866</td><td><code>edstati3</code>/<code>battle_data</code></td><td><code>battle_data</code> = the four per-character battle files <code>PLAYER1..4</code> (<a href="battle-data-pack.html">player battle files</a>)</td></tr>
-      <tr><td>0867</td><td><code>battle_data</code></td><td><code>monster_data</code> &mdash; the 16 MB monster stat archive (resolves the long-standing &ldquo;battle_data 0865 vs monster archive 0867&rdquo; tangle)</td></tr>
+      <tr><td>0867</td><td><code>battle_data</code></td><td><code>monster_data</code> - the 16 MB monster stat archive (resolves the long-standing &ldquo;battle_data 0865 vs monster archive 0867&rdquo; tangle)</td></tr>
       <tr><td>0868..0869</td><td><code>monster_data</code>/<code>sound_data</code></td><td><code>sound_data</code> (VAB-prefixed streams)</td></tr>
-      <tr><td>0870..0873</td><td><code>sound_data</code>/<code>befect_data</code></td><td><code>befect_data</code> &mdash; <code>etim</code> (0870, the pixel-verified effect-texture source), <code>etmd</code>+<code>vdf</code>, billboard pack, <code>efect.dat</code> (0873) &mdash; see <a href="effect.html#befect-cluster">effect bundles</a></td></tr>
-      <tr><td>0874</td><td><code>befect_data</code></td><td><code>player_data</code> &mdash; the field character-mesh pack (<a href="character-mesh.html">character-mesh</a>); the field-char-texture hunt first searched 0876 because of the shifted label</td></tr>
+      <tr><td>0870..0873</td><td><code>sound_data</code>/<code>befect_data</code></td><td><code>befect_data</code> - <code>etim</code> (0870, the pixel-verified effect-texture source), <code>etmd</code>+<code>vdf</code>, billboard pack, <code>efect.dat</code> (0873) - see <a href="effect.html#befect-cluster">effect bundles</a></td></tr>
+      <tr><td>0874</td><td><code>befect_data</code></td><td><code>player_data</code> - the field character-mesh pack (<a href="character-mesh.html">character-mesh</a>); the field-char-texture hunt first searched 0876 because of the shifted label</td></tr>
       <tr><td>0875..0888</td><td><code>player_data</code>/<code>sound_data2</code></td><td><code>sound_data2</code> (VAB streams)</td></tr>
       <tr><td>0889..0890</td><td><code>sound_data2</code>/<code>level_up</code></td><td><code>level_up</code> (large VAB carriers)</td></tr>
       <tr><td>0891</td><td><code>level_up</code></td><td><code>monster_se</code> = <code>monster.snd</code>, the 206-bank monster-SE archive</td></tr>
       <tr><td>0892</td><td><code>level_up</code></td><td><code>card_data</code> (12 MB LZS container; content not yet pinned)</td></tr>
       <tr><td>0893..0894</td><td><code>monster_se</code>/<code>card_data</code></td><td><code>bat_back_dat</code> = <code>summon.dat</code>/<code>readef.DAT</code> mid-cast backdrop streams</td></tr>
-      <tr><td>0895..0969</td><td><code>bat_back_dat</code>/<code>xxx_dat</code></td><td><code>xxx_dat</code> &mdash; slot 0 (extraction 0895) is the boot <code>init.pak</code> bundle loaded through overlay-slot param 0 (<a href="../subsystems/boot.html">boot</a>); overlay code blobs follow (<a href="mips-overlay.html">MIPS overlay</a>, <a href="overlay-ptr-table.html">overlay pointer-table</a>)</td></tr>
-      <tr><td>0970..0971</td><td><code>xxx_dat</code></td><td><code>move_program_no</code> &mdash; a <code>\DATA\MOV*.STR</code> FMV program/path table + debug strings. Dissolves the old &ldquo;move_program_no doesn't match <code>move.mdt</code>&rdquo; puzzle: the block names <strong>MOV</strong>ie program numbers (<a href="str-fmv-table.html">STR FMV table</a>), not Tactical-Arts moves, and the extraction files <code>0972/0973</code> it was tested against are <code>other_game</code> overlays</td></tr>
-      <tr><td>0972..0977</td><td><code>move_program_no</code>/<code>other_game</code></td><td><code>other_game</code> &mdash; casino/minigame overlays; extraction 0973/0974 open with literal <code>OTHER2</code> / <code>OTHER3</code> banners</td></tr>
+      <tr><td>0895..0969</td><td><code>bat_back_dat</code>/<code>xxx_dat</code></td><td><code>xxx_dat</code> - slot 0 (extraction 0895) is the boot <code>init.pak</code> bundle loaded through overlay-slot param 0 (<a href="../subsystems/boot.html">boot</a>); overlay code blobs follow (<a href="mips-overlay.html">MIPS overlay</a>, <a href="overlay-ptr-table.html">overlay pointer-table</a>)</td></tr>
+      <tr><td>0970..0971</td><td><code>xxx_dat</code></td><td><code>move_program_no</code> - a <code>\DATA\MOV*.STR</code> FMV program/path table + debug strings. Dissolves the old &ldquo;move_program_no doesn't match <code>move.mdt</code>&rdquo; puzzle: the block names <strong>MOV</strong>ie program numbers (<a href="str-fmv-table.html">STR FMV table</a>), not Tactical-Arts moves, and the extraction files <code>0972/0973</code> it was tested against are <code>other_game</code> overlays</td></tr>
+      <tr><td>0972..0977</td><td><code>move_program_no</code>/<code>other_game</code></td><td><code>other_game</code> - casino/minigame overlays; extraction 0973/0974 open with literal <code>OTHER2</code> / <code>OTHER3</code> banners</td></tr>
       <tr><td>1070..1192</td><td><code>music_01</code>/<code>vab_01</code></td><td><code>vab_01</code> (121/121 VAB-headed)</td></tr>
     </tbody>
   </table>
@@ -80,7 +80,7 @@
     <li><code>level_up</code> &rarr; extraction 0890 is a DATA_FIELD streaming carrier (its VABs are wrapped inside), so bare-magic checks miss it at <em>every</em> shift.</li>
     <li>Extraction 0888 (in <code>sound_data2</code>) and 1062 (in <code>music_01</code>) are unidentified non-VAB blobs under any shift.</li>
     <li><code>other_game</code>: only 2 of 6 entries carry an <code>OTHER&lt;n&gt;</code> banner; the rest are banner-less minigame data, undecidable by name.</li>
-    <li>Extraction 0893 (<code>summon.dat</code>) opens with a <code>[u32 2][u16 table&hellip;]</code> shape that mimics a sound-address bank &mdash; a shift-0 reading &ldquo;confirms&rdquo; <code>monster_se</code> on it spuriously; the byte-pins show texture streaming slots. Trust byte-pins over shape coincidences.</li>
+    <li>Extraction 0893 (<code>summon.dat</code>) opens with a <code>[u32 2][u16 table&hellip;]</code> shape that mimics a sound-address bank - a shift-0 reading &ldquo;confirms&rdquo; <code>monster_se</code> on it spuriously; the byte-pins show texture streaming slots. Trust byte-pins over shape coincidences.</li>
     <li>One v12-shaped header sits at extraction 1227 (<code>other7</code> region), outside the scene region.</li>
     <li>Opaque names (<code>other1</code>/<code>other4</code>/<code>other5</code>/<code>other6</code>/<code>other7</code>, <code>card_data</code>) are unscoreable; nothing about them conflicts with &minus;2.</li>
   </ul>
@@ -88,7 +88,7 @@
 
 <section class="doc-section" id="block-names-can-be-misleading">
   <h2>Block names can still mislead</h2>
-  <p>A block name describes the developer's organisation, not the runtime semantics of every entry inside the block &mdash; and any name read off an extraction <em>filename</em> must first be corrected by the +2 numbering shift above. Once that shift is applied, the dev names turn out to be accurate far more often than the historical &ldquo;label gotcha&rdquo; catalogue suggested: <code>vab_01</code> really is wall-to-wall VAB banks, <code>battle_data</code> really is the player battle files, <code>bat_back_dat</code> really names the battle side-band <code>summon.dat</code>/<code>readef.DAT</code> files (extraction 893/894). When a (shift-corrected) block name still conflicts with what the bytes look like, trust the bytes: re-derive structure from the leading magic + the loader-call constant in SCUS, not from the CDNAME label.</p>
+  <p>A block name describes the developer's organisation, not the runtime semantics of every entry inside the block - and any name read off an extraction <em>filename</em> must first be corrected by the +2 numbering shift above. Once that shift is applied, the dev names turn out to be accurate far more often than the historical &ldquo;label gotcha&rdquo; catalogue suggested: <code>vab_01</code> really is wall-to-wall VAB banks, <code>battle_data</code> really is the player battle files, <code>bat_back_dat</code> really names the battle side-band <code>summon.dat</code>/<code>readef.DAT</code> files (extraction 893/894). When a (shift-corrected) block name still conflicts with what the bytes look like, trust the bytes: re-derive structure from the leading magic + the loader-call constant in SCUS, not from the CDNAME label.</p>
 </section>
 
 <section class="doc-section" id="per-scene-asset-reservations">

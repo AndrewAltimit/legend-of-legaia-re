@@ -1,4 +1,4 @@
-//! Save-menu sprite atlas — byte-perfect retail save/load-screen UI.
+//! Save-menu sprite atlas - byte-perfect retail save/load-screen UI.
 //!
 //! Composes a single 256x256 RGBA atlas containing:
 //!
@@ -16,7 +16,7 @@
 //! Retail draws the panel from **14 GP0_TEXTURED_SPRITE primitives**:
 //! 4 corners (4×4 each), top + bottom edges (24×4 tiles repeated 3×
 //! with a 1×4 remainder), and left + right edges (4×21). **No
-//! interior fill is drawn** — the "marbled blue" look in retail is
+//! interior fill is drawn** - the "marbled blue" look in retail is
 //! the dimmed title art bleeding through the empty middle of the
 //! 9-slice frame. Engines that need an opaque interior must draw it
 //! themselves.
@@ -56,7 +56,7 @@ const PANEL_CLUT_ROW: usize = title_pak::OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW as usi
 /// cursor. Mirror of [`title_pak::OVERLAY_SYSTEM_UI_CURSOR_CLUT_ROW`].
 const CURSOR_CLUT_ROW: usize = title_pak::OVERLAY_SYSTEM_UI_CURSOR_CLUT_ROW as usize;
 
-/// Pre-decoded save-menu atlas — RGBA8 pixels + the source rects
+/// Pre-decoded save-menu atlas - RGBA8 pixels + the source rects
 /// engines sample to compose the retail save/load screen.
 ///
 /// Build once at boot from PROT.DAT + PROT 0899 bytes via
@@ -88,7 +88,7 @@ impl SaveMenuAtlas {
     pub fn band_panel_br(&self) -> (u32, u32, u32, u32) {
         title_pak::OVERLAY_SYSTEM_UI_PANEL_BR
     }
-    /// Panel top edge tile (24x4) — repeated horizontally between
+    /// Panel top edge tile (24x4) - repeated horizontally between
     /// the top corners.
     pub fn band_panel_top(&self) -> (u32, u32, u32, u32) {
         title_pak::OVERLAY_SYSTEM_UI_PANEL_TOP
@@ -124,7 +124,7 @@ impl SaveMenuAtlas {
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR
     }
     /// Empty-cell frame sprite for the load-screen slot grid (32x32,
-    /// 20x20 hollow blue border centred in the sprite — outer 6 px
+    /// 20x20 hollow blue border centred in the sprite - outer 6 px
     /// margin is transparent).
     pub fn band_load_empty_frame(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_EMPTY_FRAME
@@ -153,8 +153,8 @@ impl SaveMenuAtlas {
 /// bytes of PROT 0899 (carries the save-menu TIM with the slot pills).
 ///
 /// The panel tiles are decoded from the system-UI TIM with CLUT row 2
-/// — byte-equal to the retail VRAM contents at parked-on-load-screen
-/// sstate9. The slot pills are decoded from PROT 0899 with CLUT 7 —
+/// - byte-equal to the retail VRAM contents at parked-on-load-screen
+/// sstate9. The slot pills are decoded from PROT 0899 with CLUT 7 -
 /// byte-equal as well.
 pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Result<SaveMenuAtlas> {
     // --- Slot pills from PROT 0899 ---
@@ -196,7 +196,7 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
     // --- Compose into single 256x256 atlas ---
     let mut out = vec![0u8; (ATLAS_WIDTH * ATLAS_HEIGHT * 4) as usize];
 
-    // Slot pills — copy from pill plane (256x256) at retail src coords.
+    // Slot pills - copy from pill plane (256x256) at retail src coords.
     copy_rect(
         &mut out,
         ATLAS_WIDTH,
@@ -214,7 +214,7 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         title_pak::OVERLAY_SAVE_MENU_BAND_SLOT2,
     );
 
-    // Panel 9-slice tiles — copy from panel plane (256x192) into
+    // Panel 9-slice tiles - copy from panel plane (256x192) into
     // atlas at the same source coords (160..192, 0..32). Those atlas
     // pixels are unused in the PROT 0899 layout, so the panel tiles
     // and pills coexist in a single 256x256 atlas.
@@ -231,7 +231,7 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         copy_rect(&mut out, ATLAS_WIDTH, &panel_rgba, panel_src_w, tile, tile);
     }
 
-    // Pointing-finger cursor — same TIM, different CLUT row. Source
+    // Pointing-finger cursor - same TIM, different CLUT row. Source
     // rect (152, 64, 16, 16) is well outside both the panel-tile and
     // pill regions, so it slots in without overlap.
     copy_rect(
@@ -243,7 +243,7 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         title_pak::OVERLAY_SYSTEM_UI_CURSOR,
     );
 
-    // Panel interior tile — pre-baked with the gouraud gray gradient
+    // Panel interior tile - pre-baked with the gouraud gray gradient
     // retail applies via the 0x3C textured-quad primitives. The
     // source region (128..160, 0..29) of CLUT row 2 carries the
     // marbled-blue stippled pattern; we multiply each pixel by a
@@ -279,13 +279,13 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
 /// atlas at the documented `ATLAS_RECT_*` positions.
 ///
 /// `prot_dat_bytes` may be:
-///   * the full `PROT.DAT` buffer — portraits are loaded from
+///   * the full `PROT.DAT` buffer - portraits are loaded from
 ///     absolute offsets;
 ///   * the slice that already starts at the system-UI TIM header
-///     (offset `OVERLAY_SYSTEM_UI_TIM_OFFSET = 0x018E0`) — portraits
+///     (offset `OVERLAY_SYSTEM_UI_TIM_OFFSET = 0x018E0`) - portraits
 ///     are loaded from slice-relative offsets if the slice extends
 ///     far enough;
-///   * any shorter slice — portrait / frame loading is skipped
+///   * any shorter slice - portrait / frame loading is skipped
 ///     silently (atlas just won't have those rects populated).
 ///
 /// Each portrait TIM ships with its own CLUT (single row, 16 entries);
@@ -300,7 +300,7 @@ fn add_load_slot_grid_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> anyhow::
         // Looks like a full PROT.DAT.
         title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET
     } else {
-        // System-UI-rooted slice — portraits live at
+        // System-UI-rooted slice - portraits live at
         // `(portrait_off - system_ui_off)` into the slice. If the
         // slice doesn't extend that far, skip portrait loading.
         let system_ui_off = title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET;
@@ -317,7 +317,7 @@ fn add_load_slot_grid_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> anyhow::
     for idx in 0..title_pak::OVERLAY_LOAD_PORTRAIT_COUNT {
         let off = portrait_base + idx * title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE;
         if off + title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE > prot_dat_bytes.len() {
-            // Slice exhausted mid-atlas — stop after the portraits we
+            // Slice exhausted mid-atlas - stop after the portraits we
             // could load.
             break;
         }
@@ -429,7 +429,7 @@ fn bake_panel_interior_gradient(
 
 /// Copy a `(x, y, w, h)` rect from `src` (sized `src_w x src_h`,
 /// implicit from the slice length) into `dst` (sized `dst_w x ?`).
-/// `src_rect` and `dst_rect` may use different `(x, y)` origins — the
+/// `src_rect` and `dst_rect` may use different `(x, y)` origins - the
 /// `(w, h)` values must match.
 fn copy_rect(
     dst: &mut [u8],
@@ -532,7 +532,7 @@ mod tests {
         }
         assert!(
             blue_hits > 30,
-            "slot 1 pill has too few blue pixels ({blue_hits}) — CLUT may be off"
+            "slot 1 pill has too few blue pixels ({blue_hits}) - CLUT may be off"
         );
     }
 }

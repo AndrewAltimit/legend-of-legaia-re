@@ -14,7 +14,7 @@
 //! Partition 1 of a scene MAN (the "actor-placement / scripts" partition)
 //! holds one field-VM script per record:
 //!
-//! - record `0` is the scene-entry **system script** — the one
+//! - record `0` is the scene-entry **system script** - the one
 //!   [`crate::scene::Scene::field_man_entry_script`] resolves and
 //!   `enter_field_scene` loads via `load_field_script_at`;
 //! - records `1..` are per-actor **interaction scripts**, dispatched when
@@ -32,7 +32,7 @@
 //! operand / SJIS byte that happens to equal `0x37` / `0x41`. Walking the
 //! opcode stream means an [`ArmSite`] is reported only at a real `Yield`
 //! instruction boundary, and the inline record bytes are decoded with
-//! [`EncounterRecord::parse`] — the same `+0x3` count / `+0x4` ids layout
+//! [`EncounterRecord::parse`] - the same `+0x3` count / `+0x4` ids layout
 //! the retail reader at `0x801DA620` consumes.
 //!
 //! ## What this can and cannot conclude
@@ -44,7 +44,7 @@
 //! [`ArmSite`] whose inline window decodes as a valid `[count][ids]` record
 //! is a *candidate*, not a proof. The value here is empirical: it surfaces
 //! whether any P1 script carries an inline `[count=1][id=0x4F]` Tetsu
-//! literal at a real yield boundary — which adjudicates the inline-literal
+//! literal at a real yield boundary - which adjudicates the inline-literal
 //! hypothesis against the indexed-formation-table hypothesis
 //! (see [`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
@@ -59,14 +59,14 @@ use crate::world::FieldCarrierConfig;
 /// Inclusive `op0` range a genuine field-VM warp (`scene_transition`) uses.
 ///
 /// The WARP opcode is `0x3E` with `op0 = map_id + 100`, and only **7** door-warp
-/// destinations exist — `map_id 0..=6` (each selects a scene-*type* code overlay
+/// destinations exist - `map_id 0..=6` (each selects a scene-*type* code overlay
 /// at PROT `0x4d + map_id`; see [`crate::scene::DefaultMapIdResolver`] and
 /// `docs/subsystems/asset-loader.md`). So a real warp's `op0` is `100..=106`.
 ///
 /// This range matters for [`classify_placement`]: the per-actor walk is an
 /// over-approximating linear disassembly that *desyncs* inside embedded message
 /// text, and a desynced read can land on a `0x3E` whose following byte happens
-/// to be `>= 100` — a phantom warp. Every observed phantom carries an `op0` far
+/// to be `>= 100` - a phantom warp. Every observed phantom carries an `op0` far
 /// outside this range (175 / 179 / 200, i.e. SJIS or dialog bytes) and rides the
 /// `0x80` cross-context prefix, while every genuine corpus warp is the *base*
 /// `0x3E` with `op0` in `100..=106`. So the kind decision requires both signals.
@@ -103,7 +103,7 @@ pub struct ArmSite {
 
 impl ArmSite {
     /// `true` when the inline window decodes as the lone Rim Elm Tetsu
-    /// formation — `count == 1` and `monster_ids[0] == 0x4F`.
+    /// formation - `count == 1` and `monster_ids[0] == 0x4F`.
     pub fn matches_tetsu(&self) -> bool {
         matches!(
             self.record,
@@ -181,7 +181,7 @@ pub fn walk_partition1_scripts(man_file: &ManFile, man: &[u8]) -> Vec<ManScriptR
         let pc0 = 1 + n * 2 + 4;
         let end = record_end_bound(man_file, man.len(), script_start);
         if script_start + pc0 >= end {
-            // Degenerate / empty record body — record it with no sites.
+            // Degenerate / empty record body - record it with no sites.
             out.push(ManScriptRecord {
                 index,
                 script_start,
@@ -244,8 +244,8 @@ pub fn walk_partition1_scripts(man_file: &ManFile, man: &[u8]) -> Vec<ManScriptR
 /// - a **warp** (`0x3E` with `op0 >= 100`, retail `scene_transition`), found by
 ///   the linear opcode walk → a [`Portal`](Self::Portal) whose target map id is
 ///   `op0 - 100`;
-/// - otherwise, an **inline dialog-text block** — a run of `0x1F`-lead /
-///   `0x00`-terminated message segments embedded in the record — found
+/// - otherwise, an **inline dialog-text block** - a run of `0x1F`-lead /
+///   `0x00`-terminated message segments embedded in the record - found
 ///   *structurally* (see [`first_inline_dialog_offset`]) → an
 ///   [`Npc`](Self::Npc) carrying that text;
 /// - none of those → [`Plain`](Self::Plain) (a moving / animated / model-only
@@ -279,7 +279,7 @@ pub enum PlacementKind {
         /// [`dialog_inline`](Self::Npc::dialog_inline).
         interact_id: Option<u8>,
         /// Record bytes from the start of the first inline `0x1F`-lead text
-        /// segment through the record's bounded end — the actual message text;
+        /// segment through the record's bounded end - the actual message text;
         /// [`crate::dialog::OwnedDialogPanel::from_inline_dialog`] renders it
         /// (it re-finds the `0x1F` lead and types the first segment).
         dialog_inline: Option<Vec<u8>>,
@@ -353,7 +353,7 @@ pub struct SceneDestination {
     /// Destination CDNAME scene label (e.g. `"town0c"`, `"rikuroa"`).
     pub scene_name: String,
     /// The `i16` index operand the op carries (a story/entry id; *not* the
-    /// `0x3E` door-warp `map_id` — distinct id space, observed past 100).
+    /// `0x3E` door-warp `map_id` - distinct id space, observed past 100).
     pub index: i16,
     /// Entry tile X byte at the destination (`& 0x7F` tile, `& 0x80` half-tile).
     pub entry_x: u8,
@@ -368,7 +368,7 @@ pub struct SceneDestination {
 /// in first-seen order. Only ops whose inline name passes
 /// [`scene_change_name`]'s clean-CDNAME-label gate are kept, so the
 /// over-approximating walk's text-desync phantoms (a literal `?` = `0x3F` inside
-/// a message, which decodes a bogus name) are dropped — exactly the desync
+/// a message, which decodes a bogus name) are dropped - exactly the desync
 /// hazard the `0x3E` warp gate guards against. Genuine destinations recur with
 /// stable indices across the controller's records; phantoms don't survive the
 /// gate.
@@ -431,7 +431,7 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
 /// One inline FMV trigger decoded from a `0x4C 0xE2` op in a scene's scripts.
 ///
 /// The field-VM FMV trigger carries its `fmv_id` as a literal `i16` operand
-/// (`[4C, E2, lo, hi, _, _, _]` — it writes `_DAT_8007BA78` and pokes the
+/// (`[4C, E2, lo, hi, _, _, _]` - it writes `_DAT_8007BA78` and pokes the
 /// next game mode to `StrInit`), so the per-scene movie assignment is
 /// disc-sourced script data, not a runtime value. See
 /// [`docs/formats/str-fmv-table.md`] and the `MenuCtrlKind::FmvTrigger`
@@ -447,7 +447,7 @@ pub struct SceneFmvTrigger {
 }
 
 /// Recover every inline `0x4C 0xE2` FMV trigger from a scene's MAN by walking
-/// its partition-1 scripts — the same record walk (and the same
+/// its partition-1 scripts - the same record walk (and the same
 /// over-approximation caveats) as [`scene_destinations`].
 ///
 /// Phantom guard: a literal `4C E2` inside message text can desync-decode a
@@ -509,16 +509,16 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
     // portal). A real warp is the base `0x3E op0 ...` with `op0` in the 7-id
     // door-warp range ([`WARP_OP0_RANGE`]). The over-approximating linear walk
     // can still desync inside embedded message / SJIS text and land on a `0x3E`
-    // whose next byte is `>= 100` — but every such phantom in the corpus rides
+    // whose next byte is `>= 100` - but every such phantom in the corpus rides
     // the `0x80` cross-context prefix and carries an out-of-range `op0`
     // (175 / 179 / 200), so [`is_genuine_warp`] rejects it. The decoded interact
     // / dialog hints, likewise, are unreliable on text-heavy field records (the
-    // walk desyncs inside the message), so they are best-effort only — the real
+    // walk desyncs inside the message), so they are best-effort only - the real
     // dialog text is recovered structurally below.
     let mut interact_id = None;
     for insn in LinearWalker::new(body, p.script_pc0).flatten() {
         match insn.info {
-            // A warp wins outright — but only when it is a *genuine* door-warp,
+            // A warp wins outright - but only when it is a *genuine* door-warp,
             // not a text-desync phantom (see [`is_genuine_warp`]). A phantom
             // warp (cross-context `0x80` prefix and/or `op0` outside the 7-id
             // door-warp range) is dropped here so the actor falls through to the
@@ -540,7 +540,7 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
                 interact_id.get_or_insert(op1);
             }
             // NB: `0x3F` (`InsnInfo::SceneChange`) is deliberately *not* read as a
-            // dialog hint here — it is the named scene-change opcode, not a dialog
+            // dialog hint here - it is the named scene-change opcode, not a dialog
             // op (field dialogue is the `0x4C` nibble-5 path). Its inline string is
             // a destination scene name, recovered by the scene-destination resolver,
             // not NPC message text.
@@ -566,7 +566,7 @@ pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) ->
 /// The prologue-aware form of a talk NPC's inline interaction script.
 ///
 /// [`classify_placement`]'s [`PlacementKind::Npc::dialog_inline`] is the record
-/// truncated to start at the first `0x1F` text segment — enough for the
+/// truncated to start at the first `0x1F` text segment - enough for the
 /// simplified renderer, but it discards the **interaction prologue**: the
 /// field-VM bytecode between the record's `script_pc0` and that first segment
 /// (story-flag `SysFlag.Test` / `JmpRel` chains, `CFlag.Set`, NPC move-to-tile).
@@ -614,12 +614,12 @@ pub fn placement_inline_prologue(
 }
 
 /// The parked-actor sentinel tile `(0x7F, 0x7F)`: a placement (or a move
-/// target) at this tile is off-field — retail parks despawned/conditional
+/// target) at this tile is off-field - retail parks despawned/conditional
 /// actors there (the `0x7F,0x7F` parked-sentinel decode `FUN_8003A1E4`
 /// consumes). Move ops targeting it are despawns, not walks.
 pub const PARKED_SENTINEL_TILE: (u8, u8) = (0x7F, 0x7F);
 
-/// Decode a placement-script grid-coordinate byte to a world coordinate —
+/// Decode a placement-script grid-coordinate byte to a world coordinate -
 /// the same `(b & 0x7F) * 0x80 + 0x40` (+`0x40` when bit 7 is set) formula
 /// the field VM applies to op `0x23` / `0x4C 0x51` position bytes (see the
 /// `grid_to_world` decode in `legaia_engine_vm::field`).
@@ -638,7 +638,7 @@ pub const NPC_ROUTE_LOCALITY: i32 = 0x300;
 /// The pre-text region of a placement's script: the record bytes from
 /// `script_pc0` up to (exclusive) the first inline `0x1F` text segment, or the
 /// record's bounded end when it carries no text. This is the same region the
-/// interaction-prologue runner executes — real field-VM bytecode, free of the
+/// interaction-prologue runner executes - real field-VM bytecode, free of the
 /// text-desync hazard the full-record walk has.
 fn placement_pretext_region<'a>(
     man_file: &ManFile,
@@ -659,7 +659,7 @@ fn placement_pretext_region<'a>(
 /// `(world_x, world_z)` waypoints its own pre-text script bytecode walks the
 /// actor through. The carrier ops are the `0x4C 0x51` NPC move-to-tile
 /// instructions ([`MenuCtrlKind::Nibble5NpcRun`]) in the actor's own context
-/// (no `0x80` cross-context prefix) — the same ops retail's per-actor script
+/// (no `0x80` cross-context prefix) - the same ops retail's per-actor script
 /// channel feeds into the NPC run/glide path. Dropped: cross-context targets
 /// (another actor's walk), the [`PARKED_SENTINEL_TILE`] despawn, waypoints
 /// beyond [`NPC_ROUTE_LOCALITY`] of the spawn anchor (story-flag-gated
@@ -667,7 +667,7 @@ fn placement_pretext_region<'a>(
 /// (facing/wait re-issues of the same tile).
 ///
 /// What this does NOT model: the per-actor field-VM channel that paces these
-/// ops with yields and story-flag branches — the engine consumer drives the
+/// ops with yields and story-flag branches - the engine consumer drives the
 /// kept waypoints as a loop through the motion VM instead. See
 /// `docs/subsystems/motion-vm.md`.
 pub fn placement_motion_route(
@@ -717,7 +717,7 @@ pub const PLAYER_CHANNEL: u8 = 0xF8;
 /// A walk-touch event a placement's script fires when the player's movement
 /// collides with the placed actor's body (retail: the locomotion's per-step
 /// touch dispatch posts `FUN_801d5b5c` on the mutual `+0x98` collision
-/// partner, which runs the touched entity's script — no button press).
+/// partner, which runs the touched entity's script - no button press).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalkTouchEvent {
     /// The script door-warps (`0x3E`, `op0 = map_id + 100`): walking into the
@@ -725,13 +725,13 @@ pub enum WalkTouchEvent {
     Warp { target_map: u8 },
     /// The script teleports the **player** (cross-context `0x23 | 0x80` into
     /// the [`PLAYER_CHANNEL`]): walking into the placement snaps the player to
-    /// `(world_x, world_z)` — the cave-guard throw-back / intra-scene door
+    /// `(world_x, world_z)` - the cave-guard throw-back / intra-scene door
     /// mechanism.
     PlayerMoveTo { world_x: i16, world_z: i16 },
 }
 
 /// Classify placement `p`'s walk-touch behaviour, if any. `None` for parked
-/// placements (no touchable body until a script un-parks them — not modelled)
+/// placements (no touchable body until a script un-parks them - not modelled)
 /// and for placements whose script carries neither a genuine door-warp nor a
 /// player-channel teleport in its pre-text region.
 pub fn placement_walk_touch_event(
@@ -807,8 +807,8 @@ pub struct DerivedFieldCarrier {
 /// pinned constant: a town01 field interaction record selects its formation by
 /// index, not via an inline `[count][ids]` literal (proven by the partition-1
 /// script walk), so the selection bytecode is not yet decoded. What this
-/// derives from the MAN is the carrier's *identity and placement* — which actor
-/// is the carrier, where it stands, and that the scene actually contains it —
+/// derives from the MAN is the carrier's *identity and placement* - which actor
+/// is the carrier, where it stands, and that the scene actually contains it -
 /// rather than fabricating a standalone carrier with no MAN linkage.
 pub fn derive_field_carriers(man_file: &ManFile, man: &[u8]) -> Vec<DerivedFieldCarrier> {
     classify_placements(man_file, man)
@@ -1166,7 +1166,7 @@ mod tests {
     #[test]
     fn classify_out_of_range_warp_is_not_a_portal() {
         // `0x3E` with op0 = 200 decodes as `is_warp` (op0 >= 100) but lands far
-        // outside the 7-id door-warp range — the signature of a text-desynced
+        // outside the 7-id door-warp range - the signature of a text-desynced
         // read (corpus: `geremi` op0=200, `other7` op0=175/179). With no inline
         // text after it, the actor is Plain, never a phantom portal to map 100.
         let (mf, man) = man_with_placement_script(&[0x3E, 200, 0, 0, 0, 0, 0x21]);

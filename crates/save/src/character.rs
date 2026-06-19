@@ -426,7 +426,7 @@ impl CharacterRecord {
     /// triplet: the level-up event at L9 → L10 grew the value at this
     /// offset by `+365` (an empirical per-level XP delta from the real save;
     /// the actual retail curve is the static-SCUS table `DAT_80076AF4` read by
-    /// `FUN_801E9504` — see `docs/subsystems/level-up.md` § XP table — not the
+    /// `FUN_801E9504` - see `docs/subsystems/level-up.md` § XP table - not the
     /// falsified `0x8007123C` slice the engine still ships as a placeholder).
     /// Returns the cumulative XP value the engine can feed into
     /// [`crate::level_for_cumulative_xp`] to derive the character level.
@@ -439,27 +439,27 @@ impl CharacterRecord {
         self.raw[0x04..0x06].copy_from_slice(&xp.to_le_bytes());
     }
 
-    /// Byte at `+0x100` (u8). **Not the retail displayed level** — `+0x100` is zero
+    /// Byte at `+0x100` (u8). **Not the retail displayed level** - `+0x100` is zero
     /// in retail (both card saves and live RAM); the live displayed level is at
     /// `+0x130` (see [`Self::magic_rank`], boot-confirmed via the starting-level
     /// randomizer). This accessor is kept as the engine port's *own* internal level
-    /// cell, written/read by its level-up sync for its LGSF saves — self-consistent
+    /// cell, written/read by its level-up sync for its LGSF saves - self-consistent
     /// for the port, a deliberate divergence from the retail byte, not a mirror.
     pub fn level(&self) -> u8 {
         self.raw[0x100]
     }
 
-    /// Replace the `+0x100` byte (the engine port's internal level cell — see
+    /// Replace the `+0x100` byte (the engine port's internal level cell - see
     /// [`Self::level`]). The retail displayed level is [`Self::magic_rank`] (`+0x130`).
     pub fn set_level(&mut self, level: u8) {
         self.raw[0x100] = level;
     }
 
-    /// Byte at `+0x130` (u8) — the **retail displayed character level** (legacy
+    /// Byte at `+0x130` (u8) - the **retail displayed character level** (legacy
     /// accessor name).
     ///
     /// Boot-confirmed via the starting-level randomizer: this is the byte the status
-    /// screen reads as "LV" and the GameShark `Level 99` code targets — a New Game
+    /// screen reads as "LV" and the GameShark `Level 99` code targets - a New Game
     /// record with level-10 cumulative experience (`+0x0`), level-10 stats, and the
     /// right next-level threshold (`+0x4`) but `+0x130 == 1` still shows LV 1, and
     /// `+0x130 = 10` shows LV 10. The retail level-up applier maintains it `+1` per

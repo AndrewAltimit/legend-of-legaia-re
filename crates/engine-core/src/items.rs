@@ -108,7 +108,7 @@ pub enum StatBoostTarget {
     /// Agility (`+0x110` live block). The permanent stat-up *Water* line raises
     /// it directly (vs. the Accuracy/Evasion aliases, which also derive from AGL).
     Agility,
-    /// Speed (`+0x118`) — turn-order initiative stat.
+    /// Speed (`+0x118`) - turn-order initiative stat.
     Speed,
     /// Intelligence (`+0x11A`).
     Intelligence,
@@ -214,7 +214,7 @@ impl ItemCatalog {
     /// `0x7A`, Healing Fruit `0x7B`), which fan out across the party via the
     /// item-effect descriptor's all-party flag (see [`Self::is_all_party`]).
     ///
-    /// The stat-affecting consumables are **not** in this static set — they are
+    /// The stat-affecting consumables are **not** in this static set - they are
     /// seeded from the on-disc effect table (so they only appear when the disc
     /// is present) and resolve their per-stat changes from that table at use
     /// time: the permanent stat-up *Water* line (`0x82..=0x87` + the all-stats

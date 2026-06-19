@@ -131,7 +131,7 @@ fn town01_opening_name_entry_trigger_is_op49_at_0x02c6() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 

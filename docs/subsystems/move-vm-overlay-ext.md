@@ -1,4 +1,4 @@
-# Move VM — `0x2F` overlay-extension dispatcher
+# Move VM - `0x2F` overlay-extension dispatcher
 
 This page details the move VM's `0x2F` `OVERLAY_EXT` opcode and the 61 sub-opcodes
 of its overlay-resident extension dispatcher. It is split out of
@@ -16,10 +16,10 @@ param_3 = func_0x801d362c(actor, op);
 
 The sub-opcode is bounds-checked before the indirect jump:
 
-- `lh v1, 0x2(s3)` loads it sign-extended, then `sltiu v1, 0x3D` gates the `jr` — out-of-range values branch to the dispatcher's plain return (`size = 1`).
+- `lh v1, 0x2(s3)` loads it sign-extended, then `sltiu v1, 0x3D` gates the `jr` - out-of-range values branch to the dispatcher's plain return (`size = 1`).
 - Because the compare is *unsigned*, the sign-extended `lh` also rejects negative sub-opcodes (they read as huge unsigned values).
 
-So this overlay-escape, despite being an indirect-jump-table dispatch on a bytecode-supplied operand, has **no out-of-bounds-jump path** — a relevant property given the move buffer is partly attacker-influenceable (the self-modifying sub-ops `0x04`/`0x1B`/`0x1E` below write into it). The clean-room port mirrors the guarded return with a `_ => default_arm()` catch-all for any sub-opcode `>= 0x3D`.
+So this overlay-escape, despite being an indirect-jump-table dispatch on a bytecode-supplied operand, has **no out-of-bounds-jump path** - a relevant property given the move buffer is partly attacker-influenceable (the self-modifying sub-ops `0x04`/`0x1B`/`0x1E` below write into it). The clean-room port mirrors the guarded return with a `_ => default_arm()` catch-all for any sub-opcode `>= 0x3D`.
 
 ### Overlay residency
 

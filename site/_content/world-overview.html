@@ -2,7 +2,7 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Each kingdom's overworld in real-time WebGL 3D, straight from your disc image &mdash; no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately. Your disc is cached locally in the browser (shared with the viewer, audio, and monster pages), so it auto-loads on reload &mdash; use <em>Forget</em> on the chip to clear.
+    Each kingdom's overworld in real-time WebGL 3D, straight from your disc image - no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately. Your disc is cached locally in the browser (shared with the viewer, audio, and monster pages), so it auto-loads on reload - use <em>Forget</em> on the chip to clear.
   </p>
 </header>
 
@@ -65,7 +65,7 @@
 
     <aside class="wo-side">
       <h3>Top-down placement map</h3>
-      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">2D minimap of every world-placed actor. Always available &mdash; baked from the disc into <code>world-overview.json</code>. Hover a dot for the location's in-game name.</p>
+      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">2D minimap of every world-placed actor. Always available - baked from the disc into <code>world-overview.json</code>. Hover a dot for the location's in-game name.</p>
       <canvas id="wo-canvas2d" width="280" height="280" aria-label="Top-down placement scatter"></canvas>
       <div id="wo-hover" class="wo-hover-2d">&nbsp;</div>
       <h3 style="margin-top:1rem">Snapshot</h3>
@@ -81,7 +81,7 @@
 <section class="doc-section" id="quick-travel">
   <h2>World-map quick-travel menu (whole Legaia)</h2>
   <p>
-    The PSX retail build ships a 16-entry landmark name table at <code>DAT_80073B18</code> + a 20-record placement table at <code>DAT_80073A98</code> in <code>SCUS_942.54</code> &mdash; the data the in-game world-map menu uses to draw labelled markers when the player presses the &quot;visit&quot; button.
+    The PSX retail build ships a 16-entry landmark name table at <code>DAT_80073B18</code> + a 20-record placement table at <code>DAT_80073A98</code> in <code>SCUS_942.54</code> - the data the in-game world-map menu uses to draw labelled markers when the player presses the &quot;visit&quot; button.
   </p>
   <p class="hint" style="margin: 0 0 0.6rem 0;">Coordinates are the in-game menu screen-space. Hover a dot for the name and the destination scene id. Load a disc above to populate.</p>
   <div class="wo-layout">
@@ -111,7 +111,7 @@
 
 <section class="doc-section" id="related">
   <h2>Related</h2>
-  <p>The runtime semantics behind the world map &mdash; controller, top-view toggle, render pipeline, bulk-terrain emit &mdash; live on the <strong>world-map subsystem</strong>. The reverse-engineering specific to this WebGL viewer &mdash; slot-1 layout heuristics, fog approximation, the MAN <code>0x7F</code> sentinel resolver, ocean extraction, camera anchors &mdash; is on the <strong>world-overview viewer</strong> page.</p>
+  <p>The runtime semantics behind the world map - controller, top-view toggle, render pipeline, bulk-terrain emit - live on the <strong>world-map subsystem</strong>. The reverse-engineering specific to this WebGL viewer - slot-1 layout heuristics, fog approximation, the MAN <code>0x7F</code> sentinel resolver, ocean extraction, camera anchors - is on the <strong>world-overview viewer</strong> page.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="subsystems/world-map.html">World-map subsystem</a>

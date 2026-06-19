@@ -38,8 +38,8 @@ pub fn block_for(map: &IndexMap, entry_index: u32) -> Option<&str> {
         .map(|(_, v)| v.as_str())
 }
 
-/// CDNAME `#define` numbers are **raw in-RAM PROT-TOC indices** — the index
-/// space `FUN_8003E8A8` consumes — not extraction-entry indices. The boot TOC
+/// CDNAME `#define` numbers are **raw in-RAM PROT-TOC indices** - the index
+/// space `FUN_8003E8A8` consumes - not extraction-entry indices. The boot TOC
 /// loader copies `PROT.DAT` verbatim (8-byte header included) to `0x801C70F0`,
 /// so `raw index = extraction index + 2`. Pinned by loader-constant
 /// identities: `PLAYER1..4 = 0x361..0x364` (`battle_data 865..868`),

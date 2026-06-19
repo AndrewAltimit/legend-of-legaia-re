@@ -31,7 +31,7 @@
 //! Across the retail corpus there are **no absolute-reference ops**
 //! (`0x45 0xC0` camera-apply, `0x4E` abs-jump) at/after any destination op, so
 //! [`apply_dest_edits`] **errors out** (rather than risk a wrong fixup) if it
-//! finds one in an edited record — the caller then leaves that scene unchanged.
+//! finds one in an edited record - the caller then leaves that scene unchanged.
 //! [`validate`] re-parses + re-walks the rebuilt MAN as a final backstop.
 
 use crate::field_disasm::{self, CameraKind, InsnInfo, InventoryCmpKind};
@@ -68,7 +68,7 @@ pub enum ManEditError {
     /// `pc0` are unknown, and intra-record jumps can't be checked).
     RecordNotFound { op_pc: usize },
     /// An edited record contains an absolute-reference op (`0x45 0xC0` /
-    /// `0x4E` abs-jump) at/after the edit — too risky to relocate.
+    /// `0x4E` abs-jump) at/after the edit - too risky to relocate.
     AbsoluteRef { op_pc: usize, ref_pc: usize },
     /// A new name is empty or longer than a u8 length field allows.
     BadName { len: usize },
@@ -275,7 +275,7 @@ pub struct SceneChangeSite {
 
 /// Enumerate every `0x3F` named-scene-change site in a decompressed MAN by
 /// walking each partition record from its true `pc0` with a **clean
-/// fall-through** decode (stop at the first desync — the rest is data). This is
+/// fall-through** decode (stop at the first desync - the rest is data). This is
 /// the correct door enumeration: the destinations are partition-2 records, so a
 /// partition-1 recovering walk mis-attributes them. Only ops whose inline name
 /// passes the clean-CDNAME-label gate are returned; sites are unique by `op_pc`.
@@ -375,7 +375,7 @@ impl MoveToSite {
 /// Enumerate every `0x23 MOVE_TO` site in a decompressed MAN via the same clean
 /// partition-walk as [`scene_change_sites`]. Sites are unique by `op_pc`,
 /// sorted. (The `(0x7F, 0x7F)` sentinel "here" target appears throughout and is
-/// not a door — callers filter it.)
+/// not a door - callers filter it.)
 pub fn move_to_sites(man: &[u8]) -> Vec<MoveToSite> {
     let Ok(mf) = man_section::parse(man) else {
         return Vec::new();
@@ -449,7 +449,7 @@ struct Splice {
 
 /// Apply destination-name edits to a decompressed MAN, returning the rebuilt
 /// buffer. See the module docs for the relocation it performs. Does **not**
-/// touch the external descriptor size — the caller rewrites that after
+/// touch the external descriptor size - the caller rewrites that after
 /// recompressing (and should call [`validate`] on the result).
 pub fn apply_dest_edits(man: &[u8], edits: &[DestEdit]) -> Result<Vec<u8>, ManEditError> {
     let mf = man_section::parse(man).map_err(|_| ManEditError::Parse)?;
@@ -592,7 +592,7 @@ pub struct Insertion {
 ///
 /// Each insertion must sit at an instruction boundary inside a record's script body,
 /// and that record must contain no absolute reference (`0x4E` abs-jump, `0x45 0xC0`
-/// camera-apply, inventory abs-jump) — those store an absolute target that a shift
+/// camera-apply, inventory abs-jump) - those store an absolute target that a shift
 /// would invalidate, so the call errors [`ManEditError::AbsoluteRef`] and the caller
 /// leaves the scene unchanged (relative jumps shift with their record and are
 /// preserved). The caller rewrites the external descriptor size after recompressing

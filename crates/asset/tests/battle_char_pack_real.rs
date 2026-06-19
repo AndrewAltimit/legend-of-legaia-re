@@ -11,7 +11,7 @@ use legaia_asset::battle_char_pack::{
 };
 use std::path::PathBuf;
 
-/// Pinned on-disc TMD body byte sizes (5 slots) — matches the streaming
+/// Pinned on-disc TMD body byte sizes (5 slots) - matches the streaming
 /// chunk sizes `0x82EC`, `0x8364`, `0x60CC`, `0x699C`, `0x823C`.
 const EXPECTED_BODY_SIZES: [usize; SLOT_COUNT] = [33516, 33636, 24780, 27036, 33340];
 
@@ -113,7 +113,7 @@ fn real_pack_layout() {
 /// "battle does not reuse the field pack" finding: the empirical (save-state)
 /// half lives outside the committed tree (it reads `DAT_8007C018[0..=2]` out of
 /// real-battle RAM and byte-matches the party vertex data to this pack and not
-/// to 0874 — see the module-level provenance note). Here we assert the two
+/// to 0874 - see the module-level provenance note). Here we assert the two
 /// packs share no character geometry: the battle pack's Vahn vertex pool does
 /// not appear anywhere in the field-pack entry.
 #[test]
@@ -143,7 +143,7 @@ fn battle_pack_is_distinct_from_field_pack() {
     let battle = parse(&battle_bytes).expect("parse battle pack");
     let field_bytes = std::fs::read(&field_path).expect("read PROT 0874");
 
-    // Battle Vahn (slot 0) is nobj 15; the field Vahn is nobj 12 — different
+    // Battle Vahn (slot 0) is nobj 15; the field Vahn is nobj 12 - different
     // object counts to begin with.
     assert_eq!(battle.slot(0).unwrap().disc_nobj, 15);
 
@@ -154,7 +154,7 @@ fn battle_pack_is_distinct_from_field_pack() {
     let vahn = legaia_tmd::parse(&battle.slot(0).unwrap().tmd_bytes).expect("battle Vahn TMD");
     let obj0 = &vahn.objects[0];
     // Rebuild the raw 8-byte SVECTOR stream (x,y,z,pad LE) from the parsed
-    // vertices — pack-form-independent geometry bytes.
+    // vertices - pack-form-independent geometry bytes.
     let mut vbytes = Vec::with_capacity(obj0.vertices.len() * 8);
     for v in &obj0.vertices {
         vbytes.extend_from_slice(&v.x.to_le_bytes());

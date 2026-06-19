@@ -9,7 +9,7 @@
 //! blit. When [`PublisherLogosSession::is_done`] returns true, the
 //! caller transitions to the title screen.
 
-/// Per-logo timing (in frames @ 60 Hz). Tunable; retail timings TBD —
+/// Per-logo timing (in frames @ 60 Hz). Tunable; retail timings TBD -
 /// these match a typical PSX boot pacing.
 const FADE_IN_FRAMES: u16 = 30;
 const HOLD_FRAMES: u16 = 90;
@@ -23,7 +23,7 @@ pub const LOGO_COUNT: usize = 4;
 /// into strips for on-screen layout.
 ///
 /// PROKION (176×256) and SCEA (256×128) are stored as vertically-packed
-/// sprite atlases in VRAM — retail boot draws `cols * rows` GPU quads
+/// sprite atlases in VRAM - retail boot draws `cols * rows` GPU quads
 /// to unfold them. Source strips are stored in **column-major** order
 /// (top to bottom in the bitmap = column 0 top to column 0 bottom, then
 /// column 1 top to column 1 bottom, …); the output grid is row-major.
@@ -44,14 +44,14 @@ pub const STRIP_GRID: [(u32, u32); LOGO_COUNT] = [(2, 1), (1, 1), (2, 2), (1, 1)
 /// pixels.
 pub type LogoRect = (u32, u32, u32, u32);
 
-/// Pre-decoded publisher-logo atlas — vertically stacked RGBA pixels +
+/// Pre-decoded publisher-logo atlas - vertically stacked RGBA pixels +
 /// per-logo source rects. Build once from PROT 0895 bytes via
 /// [`build_atlas_from_init_pak`], hand to engine-render's
 /// `upload_sprite_atlas`, then sample the rect for the current logo
 /// each frame.
 #[derive(Debug, Clone)]
 pub struct LogosAtlas {
-    /// Stacked RGBA bytes — `4 * width * height`.
+    /// Stacked RGBA bytes - `4 * width * height`.
     pub rgba: Vec<u8>,
     pub width: u32,
     pub height: u32,

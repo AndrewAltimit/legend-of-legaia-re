@@ -2,7 +2,7 @@
 
 Helper scripts for the two project tracks: developer/CI maintenance, Ghidra
 overlay analysis, asset reverse-engineering, and emulator-driven runtime
-capture. This is a **map** of the layout — each script carries its own usage
+capture. This is a **map** of the layout - each script carries its own usage
 header (`--help` or a top-of-file comment block).
 
 Two files stay at this top level because they are operational entry points
@@ -31,14 +31,14 @@ referenced by code, not analysis one-offs:
 Run from the repo root; the pre-commit hook (`git-hooks/pre-commit`) and CI
 invoke them by `scripts/ci/<name>` path.
 
-- `install-hooks.sh` — point `core.hooksPath` at `git-hooks/` (run once per clone).
-- `install-tools.sh` — install the local toolchain (Ghidra container, capstone, emulators).
-- `check-doc-density.py` — doc legibility-density gate (long lines / over-budget table cells).
-- `check-site-links.py` — static-site internal-link + anchor gate.
-- `check-port-tags.py` — `// PORT:` / `// REF:` tag drift checker (warn-only in the hook).
-- `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`) — per-function port worklist + `--dashboard`.
-- `function-coverage.py` — Ghidra-dump citation coverage report.
-- `build-wasm.sh` / `check-wasm.sh` — web-viewer WASM build + CI smoke.
+- `install-hooks.sh` - point `core.hooksPath` at `git-hooks/` (run once per clone).
+- `install-tools.sh` - install the local toolchain (Ghidra container, capstone, emulators).
+- `check-doc-density.py` - doc legibility-density gate (long lines / over-budget table cells).
+- `check-site-links.py` - static-site internal-link + anchor gate.
+- `check-port-tags.py` - `// PORT:` / `// REF:` tag drift checker (warn-only in the hook).
+- `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`) - per-function port worklist + `--dashboard`.
+- `function-coverage.py` - Ghidra-dump citation coverage report.
+- `build-wasm.sh` / `check-wasm.sh` - web-viewer WASM build + CI smoke.
 
 ### ghidra-analysis/
 
@@ -47,12 +47,12 @@ modules (`disasm-overlay-fn.py` → `mips_gte`; `find-addprim-emitters.py` /
 `analyze-walk-ground-tiles.py` → `gpu_packets`), which is why they share this
 directory.
 
-- `extract-mednafen-overlay.py` / `extract-duckstation-overlay.py` — slice a runtime overlay out of a save state.
-- `analyze-overlay.sh` / `import-overlay-named.sh` / `bulk-import-overlays.sh` / `sweep-overlays.sh` — extract → import-into-Ghidra pipelines (`overlays*.spec` drive the sweep).
-- `auto-name-overlay.py` — auto-label an imported overlay.
-- `disasm-overlay-fn.py` + `mips_gte.py` — capstone MIPS disassembly with COP2/GTE annotation.
-- `gpu_packets.py` + `find-addprim-emitters.py` + `analyze-walk-ground-tiles.py` — PSX GPU-primitive decode + emitter/ground-tile analysis.
-- `call-graph.py` / `scan_funcs_for_addr_range.py` — call-graph + address-range scans over the Ghidra dumps.
+- `extract-mednafen-overlay.py` / `extract-duckstation-overlay.py` - slice a runtime overlay out of a save state.
+- `analyze-overlay.sh` / `import-overlay-named.sh` / `bulk-import-overlays.sh` / `sweep-overlays.sh` - extract → import-into-Ghidra pipelines (`overlays*.spec` drive the sweep).
+- `auto-name-overlay.py` - auto-label an imported overlay.
+- `disasm-overlay-fn.py` + `mips_gte.py` - capstone MIPS disassembly with COP2/GTE annotation.
+- `gpu_packets.py` + `find-addprim-emitters.py` + `analyze-walk-ground-tiles.py` - PSX GPU-primitive decode + emitter/ground-tile analysis.
+- `call-graph.py` / `scan_funcs_for_addr_range.py` - call-graph + address-range scans over the Ghidra dumps.
 
 See [`docs/tooling/ghidra.md`](../docs/tooling/ghidra.md) and
 [`docs/tooling/static-overlay-pipeline.md`](../docs/tooling/static-overlay-pipeline.md).

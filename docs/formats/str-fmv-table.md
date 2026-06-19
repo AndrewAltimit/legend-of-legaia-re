@@ -9,7 +9,7 @@ A third copy of the six MV files appears nearby in full ISO9660 directory-record
 
 ## Confidence
 
-**Inferred — structural reading.** The compact-table layout is pinned from a captured FMV-overlay-resident save state. The runtime FMV-state table layout is pinned from the same overlay binary, cross-validated against the play loop's offset reads at `FUN_801CF098 +0x38..+0x60`. The retail trigger range (`0..=8`) is pinned by the per-STR FMV trigger corpus (nine save states, `_DAT_8007BA78 ∈ 0..=8`).
+**Inferred - structural reading.** The compact-table layout is pinned from a captured FMV-overlay-resident save state. The runtime FMV-state table layout is pinned from the same overlay binary, cross-validated against the play loop's offset reads at `FUN_801CF098 +0x38..+0x60`. The retail trigger range (`0..=8`) is pinned by the per-STR FMV trigger corpus (nine save states, `_DAT_8007BA78 ∈ 0..=8`).
 
 ## Compact table layout (`0x801CAE40`, 6 × 24 B)
 
@@ -77,7 +77,7 @@ The play loop's selector lives at `0x801CECA0`:
 0x801CECA4:  addu a1, v0, 0x801D0A6C    ; param_2 = &runtime_table[fmv_id]
 ```
 
-Each slot's leading 32-byte record is `[u32 path_ptr, u32 scale_flag, u32 start_frame, u32 end_frame, u32 reserved, u32 (8), u32 width, u32 height]` (the second 32-byte half is a sibling segment the loop doesn't read for the primary path). The play loop opens the file at `path_ptr`, seeks `(start_frame - 1) * 10` sectors in (the 15 fps cadence), and reads to `end_frame` — which is how one `MVn.STR` carries several cutscenes by frame range. The `path_ptr` resolves into the path-string table at the **overlay start** (`0x801CE818`).
+Each slot's leading 32-byte record is `[u32 path_ptr, u32 scale_flag, u32 start_frame, u32 end_frame, u32 reserved, u32 (8), u32 width, u32 height]` (the second 32-byte half is a sibling segment the loop doesn't read for the primary path). The play loop opens the file at `path_ptr`, seeks `(start_frame - 1) * 10` sectors in (the 15 fps cadence), and reads to `end_frame` - which is how one `MVn.STR` carries several cutscenes by frame range. The `path_ptr` resolves into the path-string table at the **overlay start** (`0x801CE818`).
 
 This table is **static initialised data** in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc: `legaia_asset::fmv_dispatch::FmvTable::from_str_overlay` reads it (per-`fmv_id` path + frame range + dimensions), pinned by the disc-gated `fmv_dispatch_real` test. The windowed-cutscene player uses the frame range to seek to the right segment (`cutscene_av::fmv_segment_window`), so e.g. `fmv_id 2` correctly starts at `MV3.STR` frame `0x1A5`.
 

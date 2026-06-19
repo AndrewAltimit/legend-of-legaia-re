@@ -1,7 +1,7 @@
 //! Disc-gated end-to-end oracle for the `--unused-items` toggle at runtime.
 //!
 //! The toggle does two things, and this proves both at runtime:
-//!   1. it makes the unused accessory (item `0xFD`) **obtainable** — it adds it
+//!   1. it makes the unused accessory (item `0xFD`) **obtainable** - it adds it
 //!      to the random-fill pool so a drop / chest / steal can hand it out; and
 //!   2. it names that otherwise-blank accessory **"Seru Bell"** so it shows a
 //!      real name when it lands.
@@ -10,7 +10,7 @@
 //! proves the *bytes*: the pool widens to include `0xFD`, and the name injection
 //! repoints only `0xFD`'s pointer to a "Seru Bell" string in reclaimable SCUS
 //! space. What it does **not** prove is that a runtime actually *grants `0xFD`
-//! into the bag and resolves it to the injected name* — the runtime-grant and
+//! into the bag and resolves it to the injected name* - the runtime-grant and
 //! name-resolution paths the player sees.
 //!
 //! So this oracle, on a scratch copy of the real disc:
@@ -36,7 +36,7 @@ use legaia_rando::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_rando::item_name::{SERU_BELL_ID, SERU_BELL_NAME};
 
 /// World RNG seed for which the first `apply_battle_loot` drop roll is `0` (so
-/// the drop lands for any positive rate) — same value the drop oracle uses.
+/// the drop lands for any positive rate) - same value the drop oracle uses.
 const ROLL_LANDS_SEED: u32 = 229;
 
 fn load_disc() -> Option<Vec<u8>> {

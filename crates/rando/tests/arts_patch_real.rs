@@ -2,7 +2,7 @@
 //! rewrite each art's directional **glyph bytes in place** in the static
 //! `SCUS_942.54` arts table on a scratch copy of the disc (the bytes both the
 //! menu display and the in-battle matcher read), then re-decode the patched
-//! combos straight off the patched image and confirm the edit is faithful —
+//! combos straight off the patched image and confirm the edit is faithful -
 //! every art keeps its input count, each character's combos stay unique, the
 //! Miracle Arts are untouched, a shuffle preserves the global per-length set of
 //! distinct combos, the touched `SCUS_942.54` sectors stay EDC/ECC-valid, the

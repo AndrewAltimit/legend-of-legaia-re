@@ -2,13 +2,13 @@
 """Byte-match a PROT overlay payload against RAM from a capture.
 
 Answers "is this overlay RESIDENT at its recovered base in this state?"
-— the overlay-identity question the static-overlay pipeline cannot
+- the overlay-identity question the static-overlay pipeline cannot
 settle on its own (it recovers a self-consistent base, but only a live
 RAM image proves which game mode actually loads the entry).
 
 Accepts any of three RAM sources:
   * a PCSX-Redux .sstate (gzipped protobuf; main RAM = field 1 of the
-    outer message, 8 MiB — the PSX 2 MiB plus the dev-console mirror);
+    outer message, 8 MiB - the PSX 2 MiB plus the dev-console mirror);
   * a raw full-RAM dump (2 MiB, e.g. autorun_dump_full_ram.lua output);
   * a window dump with --window-base <va> (e.g. the window_plus*.bin
     files from autorun_minigame_overlay_capture.lua).

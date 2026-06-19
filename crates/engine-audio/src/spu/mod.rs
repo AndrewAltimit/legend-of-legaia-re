@@ -120,7 +120,7 @@ impl Spu {
     /// Studio C everywhere, and the per-voice `EON` mask routes nearly all
     /// voices). See `docs/subsystems/audio.md`. Reverb is a fixed global in
     /// this game, not a per-cue effect, so the engine selects it once. (Output
-    /// depth — `SpuSetReverbDepth` — is a fixed approximation; tune with
+    /// depth - `SpuSetReverbDepth` - is a fixed approximation; tune with
     /// [`Reverb::set_output_volume`] if needed.)
     pub fn set_retail_reverb(&mut self) {
         self.reverb_mode_raw = 4; // libspu SPU_REV_MODE_STUDIO_C

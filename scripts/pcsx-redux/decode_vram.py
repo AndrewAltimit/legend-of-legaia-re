@@ -13,7 +13,7 @@ The PNG is 1024x512 BGR555 -> RGB888 (5-bit replicated to 8-bit per
 channel, matching PSX hardware). Pixel coordinates map 1:1 to PSX
 VRAM (fb_x, fb_y), so a CLUT at row 511 in the PNG sits at fb_y=511.
 
-Stdlib-only (no Pillow) — uses zlib + manual PNG chunks.
+Stdlib-only (no Pillow) - uses zlib + manual PNG chunks.
 """
 import struct
 import sys

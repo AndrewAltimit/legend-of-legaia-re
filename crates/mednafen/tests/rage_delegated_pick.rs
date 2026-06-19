@@ -7,7 +7,7 @@
 //! *chooses* the action is not in the dumped corpus (see
 //! `docs/subsystems/battle-action.md` § AI-delegated party members), so the
 //! engine uses an auto-physical stand-in. This test pins the lone observed
-//! sample from `evil_medallion_rage_battle` so it is not lost — it does NOT
+//! sample from `evil_medallion_rage_battle` so it is not lost - it does NOT
 //! resolve the writer or the pick variability (still open; needs a probe or
 //! more samples).
 //!
@@ -19,10 +19,10 @@
 //!     carry `+0x16E == 0`.
 //!   - The battle-actor `+0xF8` bit `0x2000` is set on every party slot here, so
 //!     within the battle-actor struct it is NOT the per-actor delegation
-//!     discriminator — `+0x16E & 0x380` is. (Corrects the scenario prose's
+//!     discriminator - `+0x16E & 0x380` is. (Corrects the scenario prose's
 //!     "+0xF8 bit 0x2000 marks the Rage actor" reading.)
 //!   - The delegated actor's resolved pick is category `+0x1DE == 3` (Attack)
-//!     with the `+0x1DF` action stream `[0x22,0x26,0x25,0x22,0x21]` — a
+//!     with the `+0x1DF` action stream `[0x22,0x26,0x25,0x22,0x21]` - a
 //!     five-element multi-strike, not a single plain attack. The non-delegated
 //!     party slots carry the default `+0x1DE == 4` (Spirit) with an empty stream.
 //!

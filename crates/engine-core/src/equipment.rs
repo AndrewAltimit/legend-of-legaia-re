@@ -198,7 +198,7 @@ pub fn equip_modifier_table_from_disc(
 /// `id >> 5` slot rule + previously-missing character gate.
 ///
 /// Only the four disc slot *categories* (weapon / body / head / footwear) are
-/// pinned — the `+7` byte does not distinguish helmet vs. ring vs. accessory
+/// pinned - the `+7` byte does not distinguish helmet vs. ring vs. accessory
 /// (all read as "head"), so this table cannot fully drive the engine's 8-slot
 /// model. [`DiscEquipInfo::category`] returns the disc category; the equip
 /// session maps it onto the four unambiguous UI slots and falls back to the

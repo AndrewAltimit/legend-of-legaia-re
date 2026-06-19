@@ -34,7 +34,7 @@
 //! at the record positions; real scene-event-script bundles carry it on
 //! the majority of records (50–92 %).
 //!
-//! ### Format meaning — a WORD-ALIGNED command structure, NOT field-VM bytecode
+//! ### Format meaning - a WORD-ALIGNED command structure, NOT field-VM bytecode
 //!
 //! The prescript records were long assumed to be field-VM (`FUN_801DE840`)
 //! event scripts. **That is wrong.** Running the field-VM disassembler
@@ -61,7 +61,7 @@
 //!
 //! Record `0` carries no sentinel and is a different shape again: a fixed
 //! 768-byte table of 96 × 8-byte slots (`[u16][u16][u16][u16]`), byte-identical
-//! across several town scenes — a shared default/dispatch table, not a script.
+//! across several town scenes - a shared default/dispatch table, not a script.
 //!
 //! The **real** per-scene field-VM (`FUN_801DE840`) scripts live in the scene's
 //! MAN sub-asset, not here: `FUN_8003A1E4` walks the MAN partition-1
@@ -72,7 +72,7 @@
 //!
 //! The records still encode per-scene structure (actor/NPC placement, event
 //! triggers, interaction hooks), but the **consuming command VM and the
-//! per-opcode operand widths are not yet identified** — that is the open
+//! per-opcode operand widths are not yet identified** - that is the open
 //! residual. [`record_words`] surfaces the raw 16-bit word stream of a record
 //! up to its terminator without claiming opcode semantics.
 //!
@@ -85,7 +85,7 @@
 //! records (40 random-restart hill-climbs; anchored-record consistency ~52 %).
 //! A genuine fixed-width opcode set would resolve to >90 %, so the operand
 //! structure is **data-dependent** (e.g. a length/flag word governing how many
-//! operands follow) and cannot be recovered structurally — it needs the
+//! operands follow) and cannot be recovered structurally - it needs the
 //! consumer VM. Hence `record_words` returns the flat word stream only.
 
 use serde::Serialize;
@@ -101,7 +101,7 @@ const MIN_PRESCRIPT_COUNT: u16 = 3;
 
 /// Per-record header sentinel - `0xFFFF 0x0000` little-endian. (Historically
 /// mislabelled "the field VM's frame divider opcode"; it is neither field-VM
-/// nor an opcode — see the module-level "Format meaning" note.)
+/// nor an opcode - see the module-level "Format meaning" note.)
 const FRAME_OPENER: u32 = 0x0000_FFFF;
 
 /// The word-aligned record terminator (`0x0008`), present on 99.9 % of framed
@@ -204,8 +204,8 @@ pub fn record_is_framed(record: &[u8]) -> bool {
 /// open with the header sentinel.
 ///
 /// This is deliberately a *structural* view: it does not split the stream into
-/// `(opcode, operands)` because the per-opcode operand widths — and the
-/// consuming command VM — are not yet identified (see the module note). The
+/// `(opcode, operands)` because the per-opcode operand widths - and the
+/// consuming command VM - are not yet identified (see the module note). The
 /// low byte of each word is the opcode; the high byte is `0` for the bulk of
 /// words and non-zero only on packed coordinate operands.
 pub fn record_words(record: &[u8]) -> Option<Vec<u16>> {

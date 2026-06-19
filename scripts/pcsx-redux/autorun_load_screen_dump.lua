@@ -45,7 +45,7 @@ probe.run({
     end,
 
     on_done = function(_, _)
-        -- 1) framebuffer screenshot — the rendered load-screen frame.
+        -- 1) framebuffer screenshot - the rendered load-screen frame.
         local ok, ss = pcall(function() return PCSX.GPU.takeScreenShot() end)
         if ok and ss ~= nil then
             local bpp = tonumber(ss.bpp) or 0
@@ -79,7 +79,7 @@ probe.run({
             PCSX.log("[load_screen_dump] takeScreenShot() unavailable")
         end
 
-        -- 2) main RAM dump — useful for cross-referencing the GPU
+        -- 2) main RAM dump - useful for cross-referencing the GPU
         -- DMA command list pointer (DMA chan 2 base reg in scratch)
         -- and for locating any sprite-descriptor tables the title
         -- overlay built up before reaching the load-screen state.

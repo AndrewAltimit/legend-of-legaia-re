@@ -1,8 +1,8 @@
 # Curated game-data tables
 
 The repo ships a curated dataset of *Legend of Legaia* (NTSC-U) game
-data — arts, magic, items, weapons, armor, accessories, enemies,
-shops, casino prizes, fishing prizes, and character profiles —
+data - arts, magic, items, weapons, armor, accessories, enemies,
+shops, casino prizes, fishing prizes, and character profiles -
 mined from public walkthroughs and exposed as typed Rust accessors.
 
 This page documents:
@@ -18,12 +18,12 @@ Two GameFAQs walkthroughs supply the raw values:
 
 - Tan Yong Hua, "Legend of Legaia Walkthrough" v6.6 (1999).
 - Psycho Penguin (mcfaddendaman), "Legend of Legaia Walkthrough"
-  (2001) — the more complete table dump (PSM Magazine attribution
+  (2001) - the more complete table dump (PSM Magazine attribution
   for the enemy drop / steal table).
 
 Only the *factual* columns are committed (item names, prices, art
 command sequences, MP costs, monster locations, drop tables). No
-prose passages from either guide are reproduced in the repo —
+prose passages from either guide are reproduced in the repo -
 lawyer-friendly, since prices and stats are not independently
 copyrightable but the prose is. Walkthrough 2 is the primary
 source; walkthrough 1 fills in gaps and contributes the boss-HP
@@ -69,7 +69,7 @@ Implementation: [`crates/gamedata`](../../crates/gamedata).
 
 Each art has a `command` (player-facing input tokens: `Arms`,
 `Ra-Seru`, `High`, `Low`) **and** a `directions` array of raw
-direction bytes (`1=L, 2=R, 3=D, 4=U`) — exactly the prefix that
+direction bytes (`1=L, 2=R, 3=D, 4=U`) - exactly the prefix that
 ends up in the on-disc Art Record per
 [`docs/formats/art-data.md`](../formats/art-data.md). The mapping
 between the two is per-character because Noa is left-handed:
@@ -127,7 +127,7 @@ Each row has a stable snake_case `key` used by `shops.toml`,
 `accessories.toml` carries an informal `effect_class` taxonomy
 (`hp_max_pct`, `ap_accrual_pct`, `mp_cost_pct`, `attack_pct`,
 `speed_pct`, `revive_once`, `protect_status`, `elemental_def`,
-`summon_seru`, …). This is *not* retail data — it's a structured
+`summon_seru`, …). This is *not* retail data - it's a structured
 re-encoding of the walkthrough effect text designed for the engine
 to dispatch on. As individual cheats / battle-formula reverse-
 engineering pins exact retail mechanics, `effect_class` rows can
@@ -216,18 +216,18 @@ Run with `cargo test -p legaia-gamedata`. Enforced rules:
 These validate the curated tables against the real executable, so the disc
 is the tie-breaker when the two disagree:
 
-- `item_prices_vs_disc` — every priced weapon / armor / accessory whose name
+- `item_prices_vs_disc` - every priced weapon / armor / accessory whose name
   resolves to a disc item id has a curated `price` equal to the authoritative
   `SCUS` shop-price field (the `u16` at `+2` of the item-property record). 119+
   cross-checks, **zero** mismatches. This oracle pinned three walkthrough price
   errors that were corrected to the disc values (Forest / Magic Amulet
   4000→2000, Evil Medallion 9998→9999).
-- `equip_slots_vs_disc` — the disc equip-stat table's four `+7` slot categories
+- `equip_slots_vs_disc` - the disc equip-stat table's four `+7` slot categories
   map name-exactly to the four gamedata armour/weapon slots (body 20, head 15,
   footwear 16), and none of the 77 accessories appear in that table (they are a
   separate system). See [`equipment-table.md`](../formats/equipment-table.md).
-- `enemy_stats_vs_disc` — joins `enemies.toml` to the monster-stat archive
-  (`PROT 0867`) by name (unambiguous names only — multi-form bosses like Gaza
+- `enemy_stats_vs_disc` - joins `enemies.toml` to the monster-stat archive
+  (`PROT 0867`) by name (unambiguous names only - multi-form bosses like Gaza
   are skipped). The curated bestiary stats are **scaled derivations** of the raw
   disc record, not copies, by fixed factors: `hp`/`spd` ×1, `udf`/`ldf` ×2,
   `atk` ×5/4, `exp` ×3/4, `gold` ×5/16 (all exact, ±1 on the fractional ones).
@@ -236,31 +236,31 @@ is the tie-breaker when the two disagree:
   So the disc is the raw ground truth; the test pins all nine fields across 120+
   enemies. See [`monster-animation.md`](../formats/monster-animation.md) and
   `legaia_asset::monster_archive`.
-- `magic_vs_disc` — joins `magic.toml` to the static spell table in
+- `magic_vs_disc` - joins `magic.toml` to the static spell table in
   `SCUS_942.54` (`legaia_asset::spell_names`) by spell name. All **21** Seru
   spells (ids `0x81..=0x95`) and **7** of the 8 Ra-Seru summons (`0x9a..=0xa0`;
   the hidden `Juggernaut` isn't in the contiguous named region) name-join, and
   every one's **MP cost is byte-exact** against the disc `+2…+3` record. Target
   shape (`+2` byte) agrees for all joins except the revive Ra-Seru `Horn` /
   "Resurrector", whose byte is enemy-side though the effect revives all allies
-  (checked explicitly). The oracle pinned one curated target error — `Mushura` /
-  "Crazy Driver" is single-enemy, not all-enemies — corrected to the disc value.
+  (checked explicitly). The oracle pinned one curated target error - `Mushura` /
+  "Crazy Driver" is single-enemy, not all-enemies - corrected to the disc value.
   See [`spell-table.md`](../formats/spell-table.md).
-- `shop_inventory_vs_disc` — scans every PROT entry for the gold-shop stock
+- `shop_inventory_vs_disc` - scans every PROT entry for the gold-shop stock
   records embedded inline in each scene MAN (`legaia_asset::shop_stock`, op
   `0x49` sub-op `0`), decodes each record's sellable item ids to names, and
   joins disc shops to curated shops by the **item-name set** (order-independent;
   the item set is far more distinctive than the shop title, which repeats as
   "Arms Shop" / "Items Shop" across towns). Every located disc shop's stock
   matches a curated inventory as an exact set, with one documented disc-only
-  exception — **Soru's Bakery**, which sells only the novelty "Soru Bread" and
+  exception - **Soru's Bakery**, which sells only the novelty "Soru Bread" and
   has no curated counterpart (asserted explicitly). This oracle pinned a curated
   item-name error: the Gala helmet the disc names **"Power Earring"** (singular)
   was curated as "Power Earrings", which broke the Wind Cave and
   Biron-after-mist joins until corrected to the disc spelling (the price oracle
-  missed it — a name-mismatch is a tolerated miss there). The shop-record format
+  missed it - a name-mismatch is a tolerated miss there). The shop-record format
   is documented in `legaia_asset::shop_stock`.
-- `casino_prizes_vs_disc` — joins `casino.toml` to the coin prize-exchange table
+- `casino_prizes_vs_disc` - joins `casino.toml` to the coin prize-exchange table
   in the menu/save/shop overlay's data segment (PROT entry 0899, stored raw; the
   canonical reader is `legaia_rando::casino::CasinoExchange`). Each prize is an
   8-byte record `[u16 item_id][u16 story_gate][u32 coin_price]` in `0x60`-byte
@@ -268,7 +268,7 @@ is the tie-breaker when the two disagree:
   counter (high-value prizes story-gated via the `+2` word), and blocks 2/3 are
   short pre-progression states (one cheap healing item each). Every curated
   prize joins a disc record byte-exact on **(item name, coin price)** across both
-  full lists, and every disc record in those lists is a curated prize — with one
+  full lists, and every disc record in those lists is a curated prize - with one
   documented exception, **Earth Egg @ 100000 coins** (the Muscle Paradise
   "Chicken King" easter egg), a separate hidden exchange that is not in the
   four-block table (asserted explicitly).
@@ -321,7 +321,7 @@ records being reverse-engineered:
   for each sequence so `crates/art` extracted output can be
   validated against retail.
 - **Spell records** can be linked to MP costs, elements, and
-  display names — anchoring the offsets that the
+  display names - anchoring the offsets that the
   `battle-formulas` reverse-engineering pins for damage / MP-cost
   arithmetic.
 - **Inventory item-modifier values** seen in cheat databases will
@@ -330,7 +330,7 @@ records being reverse-engineered:
   identifier so when that mapping does land, it can be one extra
   TOML column without churning every consumer.
 - **Enemy drop / steal tables** encode part of the retail combat
-  data — once the per-encounter table lives at a known RAM offset,
+  data - once the per-encounter table lives at a known RAM offset,
   the gamedata enables a sanity-check that the parsed bytes match
   the published drop list.
 - **Per-enemy stat columns** + **per-boss stat blocks** ground the
@@ -356,11 +356,11 @@ records being reverse-engineered:
 
 ## See also
 
-- [Cheat databases](cheats.md) — the GameShark / Mednafen `.cht`
+- [Cheat databases](cheats.md) - the GameShark / Mednafen `.cht`
   pipeline that already pins many of these RAM offsets.
-- [Per-character save record](../formats/save-record.md) — the
+- [Per-character save record](../formats/save-record.md) - the
   `0x414`-byte runtime record cheats and gamedata both anchor on.
-- [Art data format](../formats/art-data.md) — the on-disc Art
+- [Art data format](../formats/art-data.md) - the on-disc Art
   Record layout the gamedata `directions` field cross-validates.
-- [Music-track disambiguation](music-tracks.md) — the sibling
+- [Music-track disambiguation](music-tracks.md) - the sibling
   curated table this crate also exposes (the `music` accessors).

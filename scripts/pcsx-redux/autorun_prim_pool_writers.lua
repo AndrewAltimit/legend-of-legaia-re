@@ -1,9 +1,9 @@
 -- autorun_prim_pool_writers.lua
 --
 -- Pins which code writes the GPU prim pool at 0x800AD400+ (~341 KB,
--- ~5000 POLY_FT4 packets — the world-map continent emit target). The
+-- ~5000 POLY_FT4 packets - the world-map continent emit target). The
 -- draw VM at FUN_801D362C does NOT re-execute continent-render ops
--- during play, so the pool must be populated by a different path —
+-- during play, so the pool must be populated by a different path -
 -- either at scene load or by a per-frame refresh outside the move VM.
 --
 -- Strategy: arm Write breakpoints at 13 offsets spanning OT head +
@@ -78,7 +78,7 @@ probe.run({
                 local ra = n32(tonumber(r.GPR.n.ra) or 0)
                 -- The value being written is in some store-source GPR
                 -- that we can't identify without disassembling. Read
-                -- back the address — that IS the value that just landed.
+                -- back the address - that IS the value that just landed.
                 local v = probe.read_u32(addr) or 0
                 csv:row("%d,0x%08X,0x%08X,4,0x%08X,0x%08X",
                     idx - 1, addr, pc, v, ra)

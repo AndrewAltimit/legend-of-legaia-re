@@ -10,7 +10,7 @@
 //! ## Not Sony IP
 //!
 //! The EDC/ECC algorithm is the generic CD-ROM error-correction scheme defined
-//! by ECMA-130 / the Yellow Book — the same math every PSX disc (and every
+//! by ECMA-130 / the Yellow Book - the same math every PSX disc (and every
 //! mastering tool) uses. It is not game-specific and embeds no game bytes. The
 //! disc-gated test [`tests`] proves the encoder reproduces the *existing*
 //! EDC/ECC of thousands of real PROT.DAT sectors bit-for-bit, which is the
@@ -29,7 +29,7 @@
 //! ```
 //!
 //! The ECC is computed with the 4-byte header (`0x00C..0x010`) treated as zero
-//! — the Form 1 convention — so the parity does not depend on the sector's MSF
+//! - the Form 1 convention - so the parity does not depend on the sector's MSF
 //! address.
 
 use crate::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
@@ -138,7 +138,7 @@ pub fn is_form2(sector: &[u8]) -> bool {
 ///
 /// Call after overwriting any of the sector's 2048-byte user data. Errors if
 /// the slice is not exactly one sector or if the subheader marks it Form 2
-/// (which has no ECC and a different EDC range — patching those is unsupported
+/// (which has no ECC and a different EDC range - patching those is unsupported
 /// here because the game's data files are all Form 1).
 pub fn encode_mode2_form1_sector(sector: &mut [u8]) -> Result<()> {
     if sector.len() != SECTOR_SIZE {
@@ -170,7 +170,7 @@ pub fn encode_mode2_form1_sector(sector: &mut [u8]) -> Result<()> {
     Ok(())
 }
 
-/// `true` if the sector's stored EDC/ECC already match a fresh encode — i.e.
+/// `true` if the sector's stored EDC/ECC already match a fresh encode - i.e.
 /// the sector is internally consistent. Used by validators / tests.
 pub fn mode2_form1_sector_is_valid(sector: &[u8]) -> bool {
     if sector.len() != SECTOR_SIZE || is_form2(sector) {
@@ -190,7 +190,7 @@ pub fn mode2_form1_sector_is_valid(sector: &[u8]) -> bool {
 /// `file_lba` is the file's start sector on the disc (e.g. from
 /// [`crate::iso9660::find_file_in_image`]). `logical_off` is a byte offset into
 /// the file's 2048-byte-per-sector logical payload (e.g. a PROT.DAT-relative
-/// offset). The write stays inside existing sectors — it never grows the image
+/// offset). The write stays inside existing sectors - it never grows the image
 /// or shifts any LBA, which is exactly what same-size asset edits need.
 ///
 /// Errors (leaving the image unchanged at the point of failure) if a touched

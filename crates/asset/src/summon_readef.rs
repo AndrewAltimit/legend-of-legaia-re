@@ -1,4 +1,4 @@
-//! `\data\battle\summon.dat` / `\data\battle\readef.DAT` — the battle
+//! `\data\battle\summon.dat` / `\data\battle\readef.DAT` - the battle
 //! side-band streaming files (CDNAME block `bat_back_dat`): per-special-attack
 //! VRAM texture pages + summon-creature actor records, streamed mid-battle in
 //! fixed `0x10800`-byte slots.
@@ -16,7 +16,7 @@
 //!
 //! `FUN_8003E8A8` reads `word[(idx + 2) * 4]` of the **raw** in-RAM TOC copy
 //! at `0x801C70F0` (the boot loader copies PROT.DAT's first 3 sectors
-//! verbatim, 8-byte header included — `streaming_read_api(3, 0x801c70f0,
+//! verbatim, 8-byte header included - `streaming_read_api(3, 0x801c70f0,
 //! 0x80)` in `FUN_8003E4E8`). [`legaia_prot::archive::Archive`] strips the
 //! header and indexes entries at `toc[p + 2]`, so a retail TOC index maps to
 //! the extraction-space entry index **minus 2**:
@@ -57,7 +57,7 @@
 //! bit 7 is set or `base == 0x36`), so the last streamed slot is the group's
 //! actor record / payload. `summon.dat` groups are 3 slots wide for ids
 //! `0x81..=0x99` (25 groups × 3 = slots 0..=74) and 4 slots wide for the
-//! seven big-summon ids `0x9A..=0xA0` (slots 75..=102) — 103 total.
+//! seven big-summon ids `0x9A..=0xA0` (slots 75..=102) - 103 total.
 //! `readef.DAT` is 26 groups × 3 = 78 slots, ids `0x01..=0x1A`.
 //!
 //! A texture slot is `[u32 mode][CLUT rows][4bpp texture page]`: mode 0 =
@@ -85,7 +85,7 @@ pub const SUMMON_PROT_INDEX: u16 = 893;
 /// `readef.DAT` PROT entry index in extraction space.
 pub const READEF_PROT_INDEX: u16 = 894;
 
-/// `summon.dat` retail TOC index — the literal fourth argument the battle
+/// `summon.dat` retail TOC index - the literal fourth argument the battle
 /// overlay passes to `FUN_800558FC` (= extraction index + 2).
 pub const SUMMON_RETAIL_TOC_INDEX: u16 = 0x37F;
 /// `readef.DAT` retail TOC index.
@@ -102,13 +102,13 @@ const TMD_MAGIC: u32 = 0x8000_0002;
 /// Which side-band file a cast streams from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamFile {
-    /// `\data\battle\summon.dat` — Seru-magic summons (base byte bit 7 set).
+    /// `\data\battle\summon.dat` - Seru-magic summons (base byte bit 7 set).
     Summon,
-    /// `\data\battle\readef.DAT` — non-summon special attacks.
+    /// `\data\battle\readef.DAT` - non-summon special attacks.
     Readef,
 }
 
-/// Base slot byte for an action id — the value `FUN_801E295C` case `0x32`
+/// Base slot byte for an action id - the value `FUN_801E295C` case `0x32`
 /// writes into the applier context at `+0x277`.
 ///
 /// REF: FUN_801E295C
@@ -136,7 +136,7 @@ pub fn stream_target(action_id: u8) -> (StreamFile, u8) {
 /// A `[u32 mode]`-headed texture slot (the 1st/2nd slot of a group).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextureSlot {
-    /// Layout selector — `0`, `1` or `2` (see module docs).
+    /// Layout selector - `0`, `1` or `2` (see module docs).
     pub mode: u32,
     /// Number of 256-entry CLUT rows at byte `+4` (mode 1 → 2, else 1).
     pub clut_rows: usize,
@@ -184,11 +184,11 @@ pub struct ActorRecordSlot {
 /// Classification of one `0x10800` slot.
 #[derive(Debug, Clone)]
 pub enum SlotKind {
-    /// `[u32 mode][CLUT][texture page]` — uploaded to VRAM by `FUN_801F12D0`.
+    /// `[u32 mode][CLUT][texture page]` - uploaded to VRAM by `FUN_801F12D0`.
     Texture(TextureSlot),
-    /// Summon-creature actor record — TMD + texture pool + part table.
+    /// Summon-creature actor record - TMD + texture pool + part table.
     ActorRecord(ActorRecordSlot),
-    /// `"ME"` keyframe-stream archive at the slot head — a player
+    /// `"ME"` keyframe-stream archive at the slot head - a player
     /// **art-animation stream source** (`readef.DAT` slots `3*char + 1` /
     /// `3*char + 2`, read by `FUN_8002B28C` out of the `_DAT_8007BD74`
     /// streaming buffer this file fills). See [`crate::me_archive`] and

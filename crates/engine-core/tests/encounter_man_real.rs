@@ -148,7 +148,7 @@ fn real_corpus_encounter_tables_load_for_every_scene_bundle() {
 
 /// Cross-table integrity: every monster id a scene's encounter formations
 /// reference must resolve to a real monster in the archive (PROT 867). This
-/// ties the encounter-MAN parser to the monster-archive parser — a drift in
+/// ties the encounter-MAN parser to the monster-archive parser - a drift in
 /// either (a shifted formation field, a wrong slot stride) would make a
 /// formation point at an empty/out-of-range monster slot, which the encounter
 /// and door randomizers would then spawn as garbage. Guards both at once.

@@ -16,7 +16,7 @@ bounded by the active-spell table at `+0x2B0`.
 Slot 3's `0x414` footprint runs into the global story-flag bitmap
 (RAM `0x80085600`, record offset `+0x2BC`) and inventory, so only its
 leading fields (name, live stats `+0x104`, RecordStats `+0x11C`) are
-exclusive; the tail aliases the globals. This is benign — Terra is never
+exclusive; the tail aliases the globals. This is benign - Terra is never
 saved as an active member.
 
 The on-disc save block (PSX memory-card record) is a verbatim dump of
@@ -155,7 +155,7 @@ The status screen reads `+0x130` as "LV" and the `Level 99` GameShark cheat sets
 to `0x63` (99). **Boot-confirmed via the starting-level randomizer**: a New Game
 record with level-10 cumulative experience (`+0x0`), level-10 stats, and the correct
 next-level threshold (`+0x4`) but `+0x130 == 1` still displays **LV 1**, and setting
-`+0x130 = 10` makes it display **LV 10** — so the shown level is read from `+0x130`
+`+0x130 = 10` makes it display **LV 10** - so the shown level is read from `+0x130`
 directly, *not* re-derived from cumulative XP at a New Game.
 
 The retail level-up applier maintains `+0x130` by incrementing it `+1` per level-up
@@ -173,7 +173,7 @@ always zero in retail (the engine port uses it as its own internal level cell).
 
 `+0x0` is the cumulative experience (the "Max Exp" cheat target and the "Experience"
 readout, and the value the level-up applier compares against the threshold); `+0x4`
-is the **next-level XP threshold** — the "next" readout on the status screen. (The
+is the **next-level XP threshold** - the "next" readout on the status screen. (The
 displayed level itself is read from `+0x130`, above, not derived from `+0x0`.)
 Confirmed live: a randomized ROM that wrote a level-10 XP value into `+0x4` showed
 it as "next level: 11195" while *experience* stayed `0`, leaving the derived level

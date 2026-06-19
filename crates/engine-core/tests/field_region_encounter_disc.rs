@@ -9,14 +9,14 @@
 //! `region_encounter_disc.rs` already exercises at the tracker level.
 //!
 //! Three things are pinned here:
-//!   1. *install* — at least one field (non-world-map) scene installs the field
+//!   1. *install* - at least one field (non-world-map) scene installs the field
 //!      region tracker at entry, and the installed table is byte-equal to the
 //!      one `region_encounter_table_from_man` decodes from the same MAN.
-//!   2. *faithfulness* — at least one such scene carries regions with two or more
+//!   2. *faithfulness* - at least one such scene carries regions with two or more
 //!      distinct rate increments (or distinct formation ranges), i.e. the
 //!      per-region routing is a genuine refinement over the single mean rate and
 //!      not a cosmetic re-wrap.
-//!   3. *flow* — driving `on_field_step` from inside a rollable region drives the
+//!   3. *flow* - driving `on_field_step` from inside a rollable region drives the
 //!      shared `EncounterSession` transition SM (via `trigger_with`) to a real
 //!      `Triggered` roll whose formation id lands inside the scene's range.
 //!
@@ -101,12 +101,12 @@ fn field_entry_routes_per_region_encounters() {
             continue; // battle / menu / cutscene labels that aren't field scenes.
         }
         if host.world.field_region_tracker.is_none() {
-            continue; // towns etc. — no encounter-region section; mean path stays.
+            continue; // towns etc. - no encounter-region section; mean path stays.
         }
         installed += 1;
 
         // (1) The installed tracker's table must match a fresh decode of the
-        // same MAN — proving the scene-entry path wires the real disc table.
+        // same MAN - proving the scene-entry path wires the real disc table.
         let man = host
             .scene
             .as_ref()

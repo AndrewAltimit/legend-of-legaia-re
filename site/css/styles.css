@@ -302,6 +302,25 @@ hr {
   background: var(--bg-card);
 }
 
+/* Visually nested child items (e.g. write-up tier pages under their series).
+   Indented, smaller, with a guide rail; the active border stays at the rail. */
+.sidebar-nav a.nav-child {
+  padding-left: 2.3rem;
+  font-size: 0.86em;
+  color: var(--text-dim);
+}
+.sidebar-nav a.nav-child::before {
+  content: "";
+  position: absolute;
+  left: 1.5rem;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border-hi);
+}
+.sidebar-nav a.nav-child { position: relative; }
+.sidebar-nav a.nav-child:hover,
+.sidebar-nav a.nav-child.active { color: var(--accent); }
+
 .sidebar-foot {
   margin-top: auto;
   padding: 1rem 0.5rem 0;
@@ -378,6 +397,22 @@ hr {
  * for readability. */
 .content.wide-page {
   max-width: 1480px;
+}
+
+/* Write-up pages: running text, headings, callouts, and lists keep the original
+ * reading measure; only the diagrams and the wide mod-catalog table break out to
+ * the full 1180px column. */
+.content.dp-page {
+  max-width: 1180px;
+}
+.content.dp-page > .page-header,
+.content.dp-page > .notice,
+.content.dp-page section.doc-section > * {
+  max-width: 720px;
+}
+.content.dp-page section.doc-section > .overlay-strip,
+.content.dp-page section.doc-section > .table-wrap {
+  max-width: 1180px;
 }
 
 @media (max-width: 720px) {
@@ -557,6 +592,26 @@ td strong { color: var(--text); }
 td.col-addr { font-family: var(--font-mono); color: var(--text); white-space: nowrap; font-size: 0.83rem; }
 td.col-status { white-space: nowrap; }
 td.col-crate { font-family: var(--font-mono); color: var(--text-muted); font-size: 0.82rem; white-space: nowrap; }
+
+/* Disc-patching catalog: tier group rows */
+tr.dp-tier td {
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  border-bottom: 1px solid var(--border-hi);
+}
+tr.dp-tier td strong { color: var(--text); }
+tr.dp-tier:hover td { background: var(--bg-raised); }
+
+/* Secondary note under a catalog Target cell: a plain dim sub-line, not the
+ * block .hint callout (whose padding/background would paint over other rows). */
+.dp-note {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
 
 /* ---------- Definition list ---------- */
 dl.kv {
@@ -2015,6 +2070,14 @@ kbd {
 .vm-graph figcaption code,
 .overlay-strip figcaption code {
   font-size: 0.85em;
+}
+/* On narrow screens, scroll dense diagrams horizontally rather than shrinking
+   their text to illegibility. */
+@media (max-width: 720px) {
+  .vm-graph,
+  .overlay-strip { overflow-x: auto; }
+  .vm-graph svg,
+  .overlay-strip svg { min-width: 580px; }
 }
 
 /* -------------------------------------------------------------------------

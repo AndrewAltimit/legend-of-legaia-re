@@ -41,7 +41,7 @@
 //!
 //! Note: the prescript records are the **word-aligned** per-scene actor/event
 //! structure described in [`crate::scene_event_scripts`], **not** field-VM
-//! (`FUN_801DE840`) bytecode — it disassembles as field-VM with a 65–88 %
+//! (`FUN_801DE840`) bytecode - it disassembles as field-VM with a 65–88 %
 //! error rate. The real per-scene field-VM scripts live in the MAN sub-asset
 //! (see [`crate::man_section`]).
 //!

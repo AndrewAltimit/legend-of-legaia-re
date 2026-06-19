@@ -167,7 +167,7 @@ pub struct LegaiaViewer {
     /// loaded (raw PROT.DAT / single TIM paths leave this `None`).
     worldmap_menu: Option<worldmap_menu::WorldmapMenu>,
     /// Fog LUT bytes extracted from SCUS at load time. 4 KiB (2048 u16
-    /// entries) — the shared depth-cue ramp the world-map overlay leaves
+    /// entries) - the shared depth-cue ramp the world-map overlay leaves
     /// at `0x801F7644..0x801F8690` consult on every vertex. None when
     /// the SCUS extract or LUT scan didn't surface a match (raw
     /// PROT.DAT load, regional variant, modded disc).
@@ -1447,7 +1447,7 @@ impl LegaiaViewer {
 
     /// Decode the global monster stat archive (PROT entry 867, the
     /// `battle_data` block's extended footprint) into a JSON array of every
-    /// populated record. Sony bytes never leave the browser — the archive is
+    /// populated record. Sony bytes never leave the browser - the archive is
     /// LZS-decoded from the user's own loaded disc, the same client-side model
     /// the rest of this viewer uses; nothing is shipped with the static site.
     ///
@@ -1827,7 +1827,7 @@ impl LegaiaViewer {
     }
 
     /// Monster `id`'s mesh + baked texture + **all** action animations packed
-    /// into one binary glTF (`.glb`) blob — the universal format that carries
+    /// into one binary glTF (`.glb`) blob - the universal format that carries
     /// geometry, material, and animation together (Blender / three.js / etc.).
     /// Each TMD object becomes an animated node; the texture is baked into a
     /// per-palette atlas. Empty if the slot has no exportable mesh.
@@ -1842,7 +1842,7 @@ impl LegaiaViewer {
     }
 
     // -----------------------------------------------------------------------
-    // Player-character pack (PROT 0874 §0) — Vahn / Noa / Gala + 2 auxiliary
+    // Player-character pack (PROT 0874 §0) - Vahn / Noa / Gala + 2 auxiliary
     //
     // Sister accessors of `monster_*`: surface the five character TMDs the
     // engine keeps resident at `DAT_8007C018[0..=4]`. The active-party slots
@@ -1961,7 +1961,7 @@ impl LegaiaViewer {
             cslot.tmd_bytes.clone()
         };
         if cslot.is_active_party() && tmd_bytes.len() >= 0x0C {
-            // Overwrite TMD header `nobj` to 10 — the retail cap.
+            // Overwrite TMD header `nobj` to 10 - the retail cap.
             let cap = 10u32.to_le_bytes();
             tmd_bytes[0x08..0x0C].copy_from_slice(&cap);
         }
@@ -1972,7 +1972,7 @@ impl LegaiaViewer {
     /// Convenience: return the renderable `VramMesh` for slot `slot` under
     /// the chosen equipment toggle. Uses the lenient extractor that keeps
     /// flat-shaded primitives (the bulk of field-form character body
-    /// parts) — the standard one would drop them.
+    /// parts) - the standard one would drop them.
     fn build_character_vram_mesh(
         &self,
         slot: usize,
@@ -2082,8 +2082,8 @@ impl LegaiaViewer {
     /// **hybrid** render, parallel to [`Self::character_mesh_positions`]: 4
     /// bytes per vertex `[r, g, b, textured_flag]`. The field-form player mesh
     /// mixes textured prims (face / skin / clothing that sample the PROT 0874
-    /// §2 atlas — `textured_flag == 1`) with untextured flat / gouraud prims
-    /// (the bulk of the body — `textured_flag == 0`) that carry per-vertex RGB
+    /// §2 atlas - `textured_flag == 1`) with untextured flat / gouraud prims
+    /// (the bulk of the body - `textured_flag == 0`) that carry per-vertex RGB
     /// in the TMD instead of UVs. The shader samples VRAM for textured verts
     /// and uses `[r, g, b]` for untextured verts, so the body parts the pure
     /// textured path would discard render in their real colours. Vertex order
@@ -2109,8 +2109,8 @@ impl LegaiaViewer {
     /// Section 2 of the `player.lzs` container is an 8-TIM pack; entries 1/2/3
     /// are the Vahn/Noa/Gala atlas pages at texpage `(832, 256)` with their
     /// CLUTs on row 478 (cols 0..63 / 64..127 / 128..191). Each TIM is uploaded
-    /// via the retail `FUN_800198e0` semantic — image at its declared rect, CLUT
-    /// as a **flat horizontal strip** (`w*h` colours at one row), STP off — so
+    /// via the retail `FUN_800198e0` semantic - image at its declared rect, CLUT
+    /// as a **flat horizontal strip** (`w*h` colours at one row), STP off - so
     /// the meshes' per-primitive CBA columns sample the right palettes. Byte-
     /// exact against a live field VRAM dump (see
     /// [`legaia_asset::field_char_textures`]). The Field form renders against
@@ -2127,7 +2127,7 @@ impl LegaiaViewer {
         vram.as_bytes().to_vec()
     }
 
-    /// Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
+    /// Raw disc-form TMD bytes for slot `slot` - the same bytes the engine
     /// installs into `DAT_8007C018[slot]`. Useful for an in-page .tmd
     /// download / debug round-trip.
     pub fn character_tmd_bytes(&self, slot: u32) -> Vec<u8> {
@@ -2143,14 +2143,14 @@ impl LegaiaViewer {
     }
 
     // ------------------------------------------------------------------
-    // Battle-form character pack — PROT 1204 (`other5`).
+    // Battle-form character pack - PROT 1204 (`other5`).
     //
     // Sister pack to the field-form one above. Same 5-slot shape, but
     // higher-fidelity battle TMDs (typical disc-nobj 15/16/15 vs 12/12/12)
     // and an explicit 7-atlas trailer (256x256 4bpp TIMs at fixed stride).
     // ------------------------------------------------------------------
 
-    /// JSON summary of PROT 1204 (`other5`) — the battle-form mesh pack:
+    /// JSON summary of PROT 1204 (`other5`) - the battle-form mesh pack:
     /// 5 TMD slots + 7 character-atlas TIMs. Shape:
     /// ```text
     /// {
@@ -2337,17 +2337,17 @@ impl LegaiaViewer {
     /// Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
     /// uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`
     /// (rows 490..495, 497). These bundled sub-CLUTs are the pack's **authoring
-    /// palette** — what the Baka Fighter minigame renders with directly. Both
+    /// palette** - what the Baka Fighter minigame renders with directly. Both
     /// the Battle and Baka Fighter forms on the site render against this VRAM
     /// with the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
     ///
     /// A real turn-based battle relocates the same geometry + textures into a
     /// packed per-slot VRAM band (rows 481..483) and recolours it with a
     /// per-battle party palette that is a **separate, battle-allocated runtime
-    /// asset** (resident at RAM `0x800ebee8`+, 480 B / 15 sub-CLUTs per char) —
+    /// asset** (resident at RAM `0x800ebee8`+, 480 B / 15 sub-CLUTs per char) -
     /// distinct from this bundled palette and **not recoverable from the disc by
     /// byte search** (see `docs/formats/character-mesh.md`). Until that palette's
-    /// disc source is pinned (open thread — needs a battle-LOAD overlay capture),
+    /// disc source is pinned (open thread - needs a battle-LOAD overlay capture),
     /// the Battle form is the bundled-palette render, visually identical to Baka.
     pub fn battle_char_vram_bytes(&self) -> Vec<u8> {
         let Some(raw) = self.battle_char_pack_slice() else {
@@ -2367,18 +2367,18 @@ impl LegaiaViewer {
 
     /// Battle VRAM with the **true per-battle palette** overlaid for the slots
     /// whose disc palette source is known. This is the colour-correct render a
-    /// real turn-based battle produces — the party CLUTs decoded from the
+    /// real turn-based battle produces - the party CLUTs decoded from the
     /// character's `edstati3` record (`FUN_80052FA0`, see
     /// [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
     /// mesh's nominal CBA samples.
     ///
-    /// Vahn (slot 0, extraction PROT `0863` — the `PLAYER1` file, raw TOC
+    /// Vahn (slot 0, extraction PROT `0863` - the `PLAYER1` file, raw TOC
     /// `0x361`; see `docs/formats/cdname.md` § numbering space) is validated
     /// byte-exact against a live battle VRAM capture (his tutorial-equipped
     /// state via [`legaia_asset::battle_char_palette::parse_record`]). Noa
     /// (slot 1, extraction `0864`) and Gala (slot 2, extraction `0865`) use the
     /// equipment-robust [`legaia_asset::battle_char_palette::collect_palette`]
-    /// — record0 + the section separators' unequipped-default CLUTs, filtered
+    /// - record0 + the section separators' unequipped-default CLUTs, filtered
     /// to the columns each mesh samples (validated against a full-party
     /// capture: Noa ~98%, Gala 100%). All three player files load by
     /// `char + 0x360` → `FUN_8003e8a8` → `toc[idx+2]` (a sector offset into
@@ -2409,7 +2409,7 @@ impl LegaiaViewer {
 
     /// Parse the battle CLUT bands out of a character's `edstati3` PROT entry
     /// (the fixed-stride [`parse_record`](legaia_asset::battle_char_palette::parse_record)
-    /// assembly — exact for Vahn).
+    /// assembly - exact for Vahn).
     fn edstati3_palette(
         &self,
         prot_index: u32,
@@ -2457,7 +2457,7 @@ impl LegaiaViewer {
     }
 
     /// Distinct CLUT x-columns the battle mesh at `slot` samples
-    /// (`(cba & 0x3F) * 16`) — the band bases that belong to this character.
+    /// (`(cba & 0x3F) * 16`) - the band bases that belong to this character.
     fn battle_char_clut_cols(&self, slot: usize) -> Vec<u16> {
         let Some(mesh) = self.build_battle_char_vram_mesh(slot) else {
             return Vec::new();
@@ -2469,7 +2469,7 @@ impl LegaiaViewer {
     }
 
     // ------------------------------------------------------------------
-    // Player ANM bundles — per-scene asset bundle, section 2, type 0x05
+    // Player ANM bundles - per-scene asset bundle, section 2, type 0x05
     // ("MOVE" label but canonical ANM content with marker_1 = 0x080C).
     // See `legaia_asset::player_anm` + docs/formats/anm.md.
     // ------------------------------------------------------------------
@@ -2607,9 +2607,9 @@ impl LegaiaViewer {
 
     /// Decoded per-record header for one player-ANM record. Returned as a
     /// `Vec<i32>` packed as `[a, b, marker_1, flag, bone_count, frame_count,
-    /// frame0_bone0_u8[0..8]]` — total 14 entries (the 8 bytes after the
+    /// frame0_bone0_u8[0..8]]` - total 14 entries (the 8 bytes after the
     /// header are bone 0 of frame 0's TR entry, since the body sits
-    /// immediately after the 8-byte header — there is no prologue).
+    /// immediately after the 8-byte header - there is no prologue).
     /// Returns an empty Vec on out-of-range record or size-invariant failure.
     pub fn player_anm_record_header(&self, prot_index: u32, record_index: u32) -> Vec<i32> {
         let decoded = self.player_anm_decoded(prot_index);
@@ -2686,7 +2686,7 @@ impl LegaiaViewer {
     /// produces the assembled character.
     ///
     /// The output is padded to `target_part_count` parts (typically the
-    /// TMD's `nobj`) — bones beyond the record's own `bone_count` get
+    /// TMD's `nobj`) - bones beyond the record's own `bone_count` get
     /// identity transforms so the un-animated parts (e.g. field-form
     /// equipment templates at groups 10/11) stay at their TMD-local
     /// origin. Pass `0` to leave the part count at the record's own
@@ -3855,7 +3855,7 @@ fn rects_overlap(a: (u16, u16, u16, u16), b: (u16, u16, u16, u16)) -> bool {
     a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
 }
 
-/// Vertex-centroid bounding sphere — `[cx, cy, cz, r]`. The center is the
+/// Vertex-centroid bounding sphere - `[cx, cy, cz, r]`. The center is the
 /// mean of every vertex (mass-weighted by vertex count, since every vertex
 /// contributes equally), so a model whose AABB is asymmetric (an extended
 /// weapon, an arm thrown out for a strike pose) anchors the camera target on
@@ -4002,7 +4002,7 @@ pub fn build_walk_ground(
 /// Mirrors the native engine's `resolve_placement_draws` world transform: the
 /// placement anchor sits at `world_y = -lut[floor_nibble] + y_off` (the runtime
 /// stores the floor LUT negated) and the JS renderer applies the shared
-/// `(1, -1, 1)` model flip at scale `1` — the slot-1 pack meshes are already in
+/// `(1, -1, 1)` model flip at scale `1` - the slot-1 pack meshes are already in
 /// true world units, unlike the legacy overview-frame icons that needed an
 /// arbitrary presentation scale. This is why these placements line up on top of
 /// [`build_walk_ground`]'s terrain while the old `world-overview.json`
@@ -4647,7 +4647,7 @@ impl Default for LegaiaAudio {
 
 /// Write a character's true battle palette into the 1 MB PSX VRAM byte buffer.
 /// Each band's STP-set colours (`PaletteBand::vram_words`) are written at
-/// `(row, base + i)` for every CLUT row the mesh samples — the runtime collapses
+/// `(row, base + i)` for every CLUT row the mesh samples - the runtime collapses
 /// a character's two nominal rows to one palette, so writing both is equivalent.
 fn overlay_palette_rows(
     vram: &mut [u8],

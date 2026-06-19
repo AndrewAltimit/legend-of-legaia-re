@@ -63,7 +63,7 @@ fn town01_sparring_carrier_is_pinned_and_renders_dialogue() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 

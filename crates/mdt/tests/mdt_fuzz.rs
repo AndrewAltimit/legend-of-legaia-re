@@ -6,7 +6,7 @@
 //! `MoveBuffer::parse` is intentionally a best-effort, over-reading parser
 //! (the project uses `looks_like_move_buffer()` rather than a strict fitness
 //! check on retail tables; see `docs/formats/mdt.md`). This suite does NOT
-//! tighten that behavior — it only asserts that malformed / truncated / junk
+//! tighten that behavior - it only asserts that malformed / truncated / junk
 //! / huge-count input can never PANIC (OOB slice, capacity overflow, or
 //! arithmetic over/underflow). A best-effort `Ok` or an `Err` are both fine.
 //!

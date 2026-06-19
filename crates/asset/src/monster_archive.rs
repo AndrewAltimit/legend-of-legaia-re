@@ -54,9 +54,9 @@
 //!
 //! Each spell entry's head:
 //!
-//! - `+0x00` (u8) — spell/action id. The id doubles as a category selector:
+//! - `+0x00` (u8) - spell/action id. The id doubles as a category selector:
 //!   ids `2,3,4,5,0x0B` mark the **hit-reaction animation family** (light
-//!   flinch / heavy flinch / knockdown / get-up / block — `FUN_80054CB0`
+//!   flinch / heavy flinch / knockdown / get-up / block - `FUN_80054CB0`
 //!   caches the matching entry index into actor `+0x1EF..+0x1F3`, the map
 //!   the damage primitive `FUN_800402F4` and the anim commit `FUN_8004AD80`
 //!   stage reactions from); ids in `0x0C..=0x1F` are **offensive castable
@@ -64,10 +64,10 @@
 //!   `0x22` are the attack-approach family the action SM resolves by
 //!   first-byte search (`FUN_80050E2C`: pre-approach / close-in / victory);
 //!   `0x23` (`'#'`) is a special category.
-//! - `+0x74` (u8) — **SP (spirit) cost**. The enemy-AI spell picker only
+//! - `+0x74` (u8) - **SP (spirit) cost**. The enemy-AI spell picker only
 //!   considers a spell when `cost != 0xFF` and the actor's current SP
 //!   (`+0x154`) is `>= cost`, then subtracts it on cast. `0xFF` = unavailable.
-//! - `+0x04` / `+0x08` (u32) — on disc these are **1-based indices** (`0` =
+//! - `+0x04` / `+0x08` (u32) - on disc these are **1-based indices** (`0` =
 //!   none), not pointers. Each indexes the per-block **effect-offset table**
 //!   that immediately follows the `+0x4C` spell-offset array (table word base
 //!   `magic_count + 0x13`). The battle loader `FUN_800542C8` resolves them with
@@ -121,14 +121,14 @@
 //! which is effect/animation data). The victory-spoils function `FUN_8004E568`
 //! reads them from the per-enemy record-pointer table at `0x801C9348`:
 //!
-//! - `+0x44` (u16) — base gold. Summed `>> 1` across dead enemies, optionally
+//! - `+0x44` (u16) - base gold. Summed `>> 1` across dead enemies, optionally
 //!   `* 1.25` (if a living party member has ability bit `0x10000`), then the
 //!   total is halved: a lone enemy yields `floor((gold >> 1) / 2)` gold
 //!   (Gimard `60` -> `15`, runtime-confirmed).
-//! - `+0x46` (u16) — base EXP. Summed `* 3/4` across dead enemies, then split
+//! - `+0x46` (u16) - base EXP. Summed `* 3/4` across dead enemies, then split
 //!   evenly among living party members.
-//! - `+0x48` (u8) — drop item id (`0` = no drop).
-//! - `+0x49` (u8) — drop chance in percent (`rand() % 100 < chance`).
+//! - `+0x48` (u8) - drop item id (`0` = no drop).
+//! - `+0x49` (u8) - drop chance in percent (`rand() % 100 < chance`).
 //!
 //! See [`MonsterRecord::gold`] / [`exp`](MonsterRecord::exp) /
 //! [`drop_item`](MonsterRecord::drop_item) /
@@ -172,7 +172,7 @@ pub struct MonsterSpell {
 
 impl MonsterSpell {
     /// True when the entry is an offensive castable spell (id `0x0C..=0x1F`)
-    /// with a usable cost (`!= 0xFF`) — the slots the battle AI rolls over.
+    /// with a usable cost (`!= 0xFF`) - the slots the battle AI rolls over.
     pub fn is_castable(&self) -> bool {
         (0x0C..=0x1F).contains(&self.id) && self.sp_cost != 0xFF
     }
@@ -208,9 +208,9 @@ pub struct MonsterRecord {
     /// Element id (`+0x1D`, `0..=7`): the affinity scale `FUN_801dd864` reads
     /// this byte **directly from the record** (via the per-enemy record-pointer
     /// table `0x801C9348[slot-3]`, dump `overlay_battle_action_801dd864.txt`
-    /// `0x801dd8dc`) — it is **not** copied into a live-actor field the way the
+    /// `0x801dd8dc`) - it is **not** copied into a live-actor field the way the
     /// `+0x0E..+0x1A` stats are. Id space `earth=0/water=1/fire=2/wind=3/
-    /// thunder=4/light=5/dark=6/neutral=7` — matches
+    /// thunder=4/light=5/dark=6/neutral=7` - matches
     /// [`crate::element_affinity::Element`].
     /// Pinned by correlating this byte against the curated enemy elements across
     /// the whole roster (the four party-table ids fire/wind/thunder/neutral
@@ -492,7 +492,7 @@ const TMD_MAGIC: u32 = 0x8000_0002;
 /// The monster mesh is a [Legaia TMD](../../tmd) stored verbatim in the block
 /// at the offset held in the stat record's `+0x04` field (the same pointer the
 /// battle loader fixes up into the actor's `+0x230` attack-effect/animation
-/// data slot — the "0x1C-stride geometry records" walked by `FUN_80049858`
+/// data slot - the "0x1C-stride geometry records" walked by `FUN_80049858`
 /// are this TMD's per-object table). The matching texture / CLUT pool is at
 /// `+0x08`; [`texture`](MonsterMesh::texture) decodes it into palettes + a 4bpp
 /// page (layout pinned from the loader `FUN_80055468`; see [`MonsterTexture`]).
@@ -816,7 +816,7 @@ pub struct PartPose {
 /// [`PartPose`] for every animated object (`part_count`).
 ///
 /// Sourced from a per-action entry's packed stream at entry `+0x8c` (the
-/// entries the `+0x4C` offset array points at — see [`MonsterRecord::spells`]).
+/// entries the `+0x4C` offset array points at - see [`MonsterRecord::spells`]).
 /// The stream head is `[u8 part_count][u8 frame_count]` followed by
 /// `frame_count * part_count` nine-byte part records. `part_count` matches the
 /// monster TMD's object count (one part per object). Action **index 0** is the

@@ -180,7 +180,7 @@ mapped to named buttons here).
 
 The CPU move picker is `overlay_baka_fighter_801d487c.txt`. It rolls `rand()%6`:
 on `< 3` it returns a uniformly random attack type (`rand%6 % 3`); otherwise it
-advances a **per-opponent scripted pattern** — a null-terminated byte list at
+advances a **per-opponent scripted pattern** - a null-terminated byte list at
 `DAT_801d76e8` indexed `opponent_id * 0x6c` (opponent id from
 `DAT_801dc050[slot]`), stepping a cursor in `&DAT_801dc044[slot]`. So each
 opponent mixes random throws with a canned sequence. The return is always
@@ -276,7 +276,7 @@ Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Battle character mesh](../formats/character-mesh.md) ·
 [Battle scene loader](battle.md) ·
 [Tile-board grid](tile-board.md) ·

@@ -14,7 +14,7 @@
 //! so a PROT-entry-relative byte offset maps to the PROT.DAT-logical offset
 //! `start_lba[N] * 2048 + offset_in_entry`, which
 //! [`legaia_iso::write::patch_file_logical`] turns into physical-sector writes
-//! plus EDC/ECC re-encode. Every edit is **same-size** — it overwrites bytes in
+//! plus EDC/ECC re-encode. Every edit is **same-size** - it overwrites bytes in
 //! place and never moves an LBA, so no TOC or directory needs rewriting.
 //!
 //! [`DiscPatcher`] owns a mutable copy of the user's disc; it reads and writes
@@ -91,7 +91,7 @@ impl DiscPatcher {
         self.entries.len()
     }
 
-    /// Absolute disc sector (LBA) where PROT entry `index`'s content begins —
+    /// Absolute disc sector (LBA) where PROT entry `index`'s content begins -
     /// `prot_lba + start_lba[index]`. This is the value the game's CD reader
     /// (`FUN_8005E4D4`) takes, so an injected loader stub can be given this LBA
     /// as a literal to stream the entry in at runtime. `None` if out of range.
@@ -174,7 +174,7 @@ impl DiscPatcher {
     }
 
     /// Read an arbitrary ISO 9660 file by name from the current (possibly
-    /// patched) image. Used for static tables that live outside `PROT.DAT` —
+    /// patched) image. Used for static tables that live outside `PROT.DAT` -
     /// e.g. the steal table in `SCUS_942.54`.
     pub fn read_named_file(&self, name: &str) -> Option<Vec<u8>> {
         legaia_iso::iso9660::read_file_in_image(&self.image, name)
@@ -183,7 +183,7 @@ impl DiscPatcher {
     /// Overwrite `bytes` at `logical_off` bytes into an arbitrary ISO 9660 file
     /// (by name), re-encoding every touched sector's EDC/ECC. Same-size,
     /// in-place; never grows the image or moves an LBA. This is the non-PROT
-    /// sibling of [`Self::patch_prot_entry`] — the steal randomizer uses it to
+    /// sibling of [`Self::patch_prot_entry`] - the steal randomizer uses it to
     /// edit the `SCUS_942.54` steal table.
     pub fn patch_named_file(&mut self, name: &str, logical_off: u64, bytes: &[u8]) -> Result<()> {
         let (lba, size) = find_file_in_image(&self.image, name)

@@ -2,7 +2,7 @@
 //! toggle. A vendor offers to swap one of a character's seru for a different
 //! one; the offers reseed every two in-game hours.
 //!
-//! The offer table itself isn't stored — it's recomputed on demand from the
+//! The offer table itself isn't stored - it's recomputed on demand from the
 //! shared kernel [`legaia_asset::seru_trade`] using `(master seed, vendor id,
 //! play-time bucket, the party's currently-owned seru)`. The randomizer embeds
 //! only the master seed (+ enabled flag + offer cap) in the disc;

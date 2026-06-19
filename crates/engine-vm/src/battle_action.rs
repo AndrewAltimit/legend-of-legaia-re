@@ -186,7 +186,7 @@ pub enum ActionState {
     /// Run - flee anim begin.
     RunBegin = 0x64,
     /// Run - wait. On timer expiry the retail 0x65 case branches on the
-    /// run outcome: a FAILED run routes back to `0x50` (Done band — the
+    /// run outcome: a FAILED run routes back to `0x50` (Done band - the
     /// action is consumed, the battle continues), a SUCCESSFUL escape
     /// routes to `0x66`.
     RunWait = 0x65,
@@ -194,10 +194,10 @@ pub enum ActionState {
     /// 0x40-frame `(0xFF,0xFF,0xFF) → (0,0,0)` screen fade through the
     /// fade-primitive spawner (`FUN_80024E80`, template at `DAT_801C9070`),
     /// sets the battle-end signal `DAT_8007BD71 = 0xFE` (the same byte the
-    /// `0x5A` wipe gate sets), and parks in the `0x67` terminal hold — the
+    /// `0x5A` wipe gate sets), and parks in the `0x67` terminal hold - the
     /// party leaves the battle. (An earlier reading labelled this state
     /// "run failed, battle continues"; the battle-end signal byte falsifies
-    /// that — the failed-run path is the `0x65 → 0x50` branch above.)
+    /// that - the failed-run path is the `0x65 → 0x50` branch above.)
     RunEscape = 0x66,
     /// Capture - start.
     CaptureStart = 0x68,

@@ -224,7 +224,7 @@ def check_file(
       - is not itself the body of a PORT/REF tag line.
 
     Files with no `// PORT:` tags anywhere are treated as reference-only and
-    skipped — citations inside them are descriptive doc-comment matter, and
+    skipped - citations inside them are descriptive doc-comment matter, and
     requiring REF tags in pure-docs files would be churn for no signal.
     """
     try:
@@ -308,7 +308,7 @@ def run_backfill(dumped: set[str]) -> int:
     `//! REF: ...` block listing every untagged address. Writes in place.
 
     The pass is conservative: it only touches files that are already in
-    scope of the drift check (i.e. port-bearing) and only adds tags — no
+    scope of the drift check (i.e. port-bearing) and only adds tags - no
     text is removed. Pure-docs files (no PORT tag) stay untouched.
     """
     n_files = 0

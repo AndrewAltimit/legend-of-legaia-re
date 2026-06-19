@@ -33,7 +33,7 @@ fn snapshot(patcher: &DiscPatcher) -> Vec<(usize, Vec<usize>, Vec<u8>)> {
     out
 }
 
-/// Named quest / key / story items the player must keep predictable — the door
+/// Named quest / key / story items the player must keep predictable - the door
 /// keys, garden-quest tools, letters, diaries, and one-off story items. Every
 /// one must land in the disc-derived default keep-static set.
 const QUEST_ITEMS: &[(u8, &str)] = &[

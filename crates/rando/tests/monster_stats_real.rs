@@ -138,7 +138,7 @@ fn shuffle_monster_stats_round_trips_on_disc() {
     let before_by_id = by_id(&before);
     for &pid in legaia_rando::monster_stats::PROTECTED_MONSTER_IDS {
         let (Some(b), Some(r)) = (before_by_id.get(&pid), a.get(&pid)) else {
-            continue; // id not populated on this disc — nothing to pin
+            continue; // id not populated on this disc - nothing to pin
         };
         assert_eq!(
             stat_vec(r),

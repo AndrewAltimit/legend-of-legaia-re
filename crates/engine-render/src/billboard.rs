@@ -9,33 +9,33 @@
 //! world-map sprite emitters such as `FUN_800485BC`) rides it. The exact
 //! retail instruction stream, mirrored here step for step:
 //!
-//! 1. **Center transform** — `FUN_8003d344` runs one GTE `MVMVA`
+//! 1. **Center transform** - `FUN_8003d344` runs one GTE `MVMVA`
 //!    (`cop2 0x480012`: rotation matrix × V0 + TR, sf=1) on the center
 //!    vector and reads back MAC1..MAC3: the **view-space** position under
 //!    the ambient camera matrix. The caller then reads each MAC word's low
 //!    halfword (`lhu`), so the view position wraps to i16.
-//! 2. **Corner fan-out** — four corners are formed by 16-bit adds/subs in
+//! 2. **Corner fan-out** - four corners are formed by 16-bit adds/subs in
 //!    view space, all sharing the view Z:
 //!    `c0 = (x-hw, y-hh)`, `c1 = (x+hw, y-hh)`, `c2 = (x-hw, y+hh)`,
 //!    `c3 = (x+hw, y+hh)`.
-//! 3. **Matrix reset** — `FUN_8003d178` writes identity into the GTE
+//! 3. **Matrix reset** - `FUN_8003d178` writes identity into the GTE
 //!    rotation control words **and zeroes TRX/TRY/TRZ**, so the projection
 //!    pass is a pure perspective divide of the view-space corners.
-//! 4. **Optional in-plane spin** — when `angle & 0xFFF != 0`,
+//! 4. **Optional in-plane spin** - when `angle & 0xFFF != 0`,
 //!    `FUN_8004638c` composes the (now identity) rotation with
 //!    `Rz(angle)` from the in-image sin/cos LUT pair (sin at `0x80070A2C`,
 //!    cos at `0x8007122C` = the same table read 0x400 entries ahead),
 //!    preserving TR. The corner vectors include the view-space center, so a
 //!    non-zero angle spins the quad about the **camera axis**, not the quad
-//!    center — retail callers pass `0` unless they want exactly that.
-//! 5. **Projection** — `FUN_8005bac8` runs `RTPT` (`cop2 0x280030`) on
+//!    center - retail callers pass `0` unless they want exactly that.
+//! 5. **Projection** - `FUN_8005bac8` runs `RTPT` (`cop2 0x280030`) on
 //!    corners 0..2 and one `RTPS` (`cop2 0x180001`) on corner 3, storing the
 //!    four SXY words through the out-pointers and returning `SZ3 >> 2` (the
 //!    classic OT-bucket depth, from the last corner's view Z).
-//! 6. **Depth shift** — the return value is shifted right by the scratchpad
+//! 6. **Depth shift** - the return value is shifted right by the scratchpad
 //!    OT-resolution byte `DAT_1F8003A4` (passed in here as `ot_shift`), and
 //!    `FUN_8003d1a4` restores the GTE control words saved at `DAT_1F8003C8`
-//!    (state save/restore is implicit here — the camera arguments are
+//!    (state save/restore is implicit here - the camera arguments are
 //!    borrowed, never mutated).
 //!
 //! The corner order matters: `FUN_801e1ab0` wires the four out-pointers
@@ -61,7 +61,7 @@ pub const PSX_ANGLE_TURN: u16 = 0x1000;
 /// Mirrors the retail sin LUT at `0x80070A2C` (indexed `base + 2*angle`
 /// by `FUN_8004638c` and the other `RotMatrix*` builders). The retail table
 /// is `4096 * sin(2*pi*angle/4096)` **truncated toward zero** (a C `(int)`
-/// cast — so `cos(tiny) = 4095` and both lobes bias one step toward zero,
+/// cast - so `cos(tiny) = 4095` and both lobes bias one step toward zero,
 /// not round-to-nearest); the disc-gated LUT oracle asserts the
 /// reproduction entry-for-entry against the real table.
 pub fn psx_sin(angle: u16) -> i32 {
@@ -83,7 +83,7 @@ pub fn psx_cos(angle: u16) -> i32 {
 ///
 /// The 12-bit-angle sibling of [`GteMat3::rot_z`] (which takes radians);
 /// this is the exact matrix `FUN_8004638c` assembles when the current GTE
-/// rotation is identity — the state [`project_billboard`] runs it in.
+/// rotation is identity - the state [`project_billboard`] runs it in.
 pub fn rot_z_psx(angle: u16) -> GteMat3 {
     let c = psx_cos(angle).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
     let s = psx_sin(angle).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
@@ -106,13 +106,13 @@ pub fn apply_rot_z(rot: &GteMat3, angle: u16) -> GteMat3 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BillboardCorners {
     /// Screen-space corners in the retail out-pointer order
-    /// (`(-w,-h)`, `(+w,-h)`, `(-w,+h)`, `(+w,+h)`) — the order
+    /// (`(-w,-h)`, `(+w,-h)`, `(-w,+h)`, `(+w,+h)`) - the order
     /// `FUN_801e1ab0` writes them into `POLY_FT4.xy0..xy3`.
     pub xy: [(i16, i16); 4],
     /// View-space Z of the billboard plane (shared by all four corners;
     /// the low 16 bits the retail caller reads back with `lhu`).
     pub view_z: i16,
-    /// The function's return value: `(SZ3 >> 2) >> ot_shift` — the OT
+    /// The function's return value: `(SZ3 >> 2) >> ot_shift` - the OT
     /// bucket the caller links the packet at (via `addPrim`,
     /// `FUN_8003d2c4`).
     pub depth: i32,
@@ -124,7 +124,7 @@ pub struct BillboardCorners {
 
 /// Project a billboard quad about `center` under the camera `(rot, trans)`.
 ///
-/// PORT: FUN_800195a8 — see the module docs for the per-step mapping to the
+/// PORT: FUN_800195a8 - see the module docs for the per-step mapping to the
 /// retail instruction stream. `h`/`ofx`/`ofy` are the ambient GTE projection
 /// registers (battle uses `H = 256` with the orbit camera); `ot_shift` is
 /// the scratchpad OT-resolution byte `DAT_1F8003A4` (`0` collapses the shift).
@@ -147,7 +147,7 @@ pub fn project_billboard(
     let vy = view.y as i16;
     let vz = view.z as i16;
 
-    // Step 2: 16-bit corner fan-out (retail subu/addu then sh — wrapping).
+    // Step 2: 16-bit corner fan-out (retail subu/addu then sh - wrapping).
     let corners = [
         (vx.wrapping_sub(half_w), vy.wrapping_sub(half_h)),
         (vx.wrapping_add(half_w), vy.wrapping_sub(half_h)),
@@ -160,7 +160,7 @@ pub fn project_billboard(
     // spin and every corner keeps `vz`.
     let spin = (angle & (PSX_ANGLE_TURN - 1) != 0).then(|| rot_z_psx(angle));
 
-    // Step 5: perspective divide per corner (RTPT ×3 + RTPS ×1 — identical
+    // Step 5: perspective divide per corner (RTPT ×3 + RTPS ×1 - identical
     // arithmetic per slot). IR saturation clamps the rotated components to
     // i16 before the divide, matching the GTE data path.
     let mut xy = [(0i16, 0i16); 4];
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn quarter_turn_spin_rotates_about_view_origin() {
         // angle 0x400 = 90°: (x, y) -> (-y, x) about the camera axis. The
-        // center offset rotates too — the documented retail semantics.
+        // center offset rotates too - the documented retail semantics.
         let b = project_billboard(
             &GteMat3::IDENTITY,
             GteVec3::default(),

@@ -166,7 +166,7 @@ fn hash3(d: &[u8], i: usize) -> usize {
 ///
 /// It uses **one-step lazy matching** (defer a match by a byte when the next
 /// position yields a strictly longer one), which closes the small, near-constant
-/// gap a purely greedy parse leaves versus the retail packer — enough that a
+/// gap a purely greedy parse leaves versus the retail packer - enough that a
 /// re-packed asset fits its original tightly-packed footprint (e.g. a scene MAN,
 /// which has no compressed slack). Positions are inserted into the hash chain
 /// one at a time as the cursor reaches them so the lazy look-ahead at `i+1` sees

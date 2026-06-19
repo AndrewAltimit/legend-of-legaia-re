@@ -143,7 +143,7 @@ fn decodes_the_heal_amount_table_or_skips() {
 /// The stat-affecting consumables (classes 5/6/7) the apply handler
 /// `FUN_800402F4` writes, decoded off the disc by their real retail ids. Pins
 /// that the *Water* line is permanent stat-up, the Elixirs are one-battle
-/// buffs, and Fury Boost is the action-gauge extension — the items the engine
+/// buffs, and Fury Boost is the action-gauge extension - the items the engine
 /// catalog historically omitted for lack of a buff taxonomy.
 #[test]
 fn decodes_the_stat_item_taxonomy_or_skips() {

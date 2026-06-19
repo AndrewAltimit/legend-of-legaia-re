@@ -23,7 +23,7 @@ fn item_names(image: &[u8]) -> Option<legaia_asset::item_names::ItemNameTable> {
 /// tail each record's `count` carries past its sellable stock: keyed by
 /// `(entry_idx, count_off)` so a record matches across a re-pack, valued by the
 /// decoded padding bytes (positions `stock..count`). The shop randomizer must
-/// leave these untouched — it only rewrites the leading sellable run.
+/// leave these untouched - it only rewrites the leading sellable run.
 ///
 /// The price table is read from the SAME image: `randomize_shops` (Random mode)
 /// also prices the chest-found equipment, so judging "sellable" with a stale
@@ -192,7 +192,7 @@ fn casino_shuffle_preserves_prizes_and_round_trips() {
 /// The shop randomizer rewrites only the leading sellable stock of each record,
 /// never the trailing unsellable template-id padding the `count` over-counts.
 /// Decode every shop's padding tail before and after a randomization and assert
-/// it is byte-identical — a regression that let the randomizer shuffle the
+/// it is byte-identical - a regression that let the randomizer shuffle the
 /// padding back into the stock (the pre-fix behaviour) would change a tail.
 #[test]
 fn shop_randomization_leaves_the_padding_tail_untouched() {
@@ -201,7 +201,7 @@ fn shop_randomization_leaves_the_padding_tail_untouched() {
         return;
     };
     let before = shop_padding_tails(&DiscPatcher::open(disc.clone()).unwrap());
-    // The disc genuinely carries padding (most shops do) — otherwise the test is
+    // The disc genuinely carries padding (most shops do) - otherwise the test is
     // vacuous.
     assert!(
         before.values().any(|t| !t.is_empty()),

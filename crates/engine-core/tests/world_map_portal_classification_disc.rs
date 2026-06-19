@@ -7,7 +7,7 @@
 //! with an over-approximating linear disassembly that desyncs inside embedded
 //! message / SJIS text. Before the genuine-warp gate, a desynced read could land
 //! on a `0x3E` whose next byte happened to be `>= 100` and report a phantom
-//! `scene_transition` — e.g. `geremi` (`op0=200`) and the leftover-JP `other7`
+//! `scene_transition` - e.g. `geremi` (`op0=200`) and the leftover-JP `other7`
 //! (`op0=175/179`), both riding the `0x80` cross-context prefix, classified as
 //! portals to non-existent maps 75 / 79 / 86 / 100. The overworld portal-spawn
 //! path consumes these, so a phantom became a phantom on-map portal.
@@ -58,7 +58,7 @@ fn classified_portals_carry_valid_map_ids_across_the_corpus() {
         return;
     }
     let Some(prot) = extracted_prot() else {
-        eprintln!("[skip] extracted/PROT/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/PROT/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -95,7 +95,7 @@ fn classified_portals_carry_valid_map_ids_across_the_corpus() {
                 assert!(
                     target_map <= 6,
                     "{stem} placement[{i}]: portal target_map={target_map} is outside the \
-                     7-id door-warp range (0..=6) — a text-desync phantom slipped the gate"
+                     7-id door-warp range (0..=6) - a text-desync phantom slipped the gate"
                 );
                 if stem.contains("geremi") {
                     geremi_portals += 1;

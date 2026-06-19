@@ -2,7 +2,7 @@
 //!
 //! Retail's static-wall probe (`FUN_801cfe4c`, field overlay 0897) derives
 //! each walkability-grid sub-cell as `zc = (z>>6)+2`, `xc = ((x+0x3f)>>6)-1`.
-//! `World::field_tile_is_wall` uses the same derivation — these tests pin it
+//! `World::field_tile_is_wall` uses the same derivation - these tests pin it
 //! against live blocked positions from two cheat-free wall-press captures:
 //!
 //!  - `rimelm_wall_press_left` (screen-left = world `X-`): the player rests
@@ -13,8 +13,8 @@
 //!    camera): the Z-row discriminator that PROVED the `+2` bias is
 //!    authored into the wall bits, not an optional look-ahead. The live
 //!    player legally stands at a position whose plain floor-indexed cell is
-//!    an all-quads wall byte — under floor indexing the position would be
-//!    unreachable — while the biased read places that wall band one tile
+//!    an all-quads wall byte - under floor indexing the position would be
+//!    unreachable - while the biased read places that wall band one tile
 //!    north, exactly where the press blocks with a step-exact 47-unit
 //!    standoff. (The floor sampler `FUN_80019278` reads the same bytes with
 //!    plain floor indexing: one byte's two nibbles are addressed under two
@@ -23,7 +23,7 @@
 //! Leading-edge probe layout per `docs/subsystems/field-locomotion.md`
 //! (`DAT_801f2214`, applied as `x+dx`, `z-dz`; disc-pinned from the field
 //! overlay file at `0x239FC`): dir 0 `Z-` probes `(x±16, z-48)`; dir 1 `X-`
-//! probes `(x-47, z±16)` — the crossing distance is 48 in the positive
+//! probes `(x-47, z±16)` - the crossing distance is 48 in the positive
 //! directions and 47 in the negative ones under the biased cell mapping.
 //!
 //! Ground truth is the RETAIL LIVE grid: the field buffer pointer is read
@@ -524,10 +524,10 @@ fn wall_press_down_full_scene_rest_matches_retail() {
 /// partner Tetsu. Pins the ACTOR arm of the collision check from live RAM:
 ///
 /// - the mutual `+0x98` collision link is live in-frame BOTH ways
-///   (player -> actor, actor -> player) — `FUN_801cfc40`'s hit path;
+///   (player -> actor, actor -> player) - `FUN_801cfc40`'s hit path;
 /// - the village NPC's flags carry the `0x20000` class bit, putting him on
 ///   the MOVING-actor arm (result bit `1`, ±40-unit box around the live
-///   position with the locomotion's zero caller extents) — the ground truth
+///   position with the locomotion's zero caller extents) - the ground truth
 ///   for the engine's `FIELD_NPC_BOX_HALF`;
 /// - the engine's ported probe (`World::field_actor_dir_blocked`) must
 ///   refuse the press direction at the captured configuration (the player

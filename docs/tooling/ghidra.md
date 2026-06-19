@@ -169,7 +169,7 @@ Every script needs the `# @runtime Jython` header line (with `# @category Legaia
 |---|---|
 | `dump_funcs.py` | Dump disassembly + decompiled C for a list of function entry points. Output goes to `ghidra/scripts/funcs/<addr>.txt`. |
 | `force_disasm_dump.py` | Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Validates the result has `>=8` instructions ending in `jr $ra` before committing the function. |
-| `dump_menu_inventory_refs.py` | Content-grep dumper: decompiles every function in the current program and dumps the C for any whose body mentions a configurable needle list (default: the inventory array `0x80085958` + the SCUS accessor family + the `gp+0x2D2/0x2D4/0x2D6` window registers). Robust against the LUI+ADDIU xref gap (matches decompiled text, not the reference manager). Used to audit `overlay_menu.bin` for raw-index inventory writes (found none — every mutation goes through the bounds-checked helpers). |
+| `dump_menu_inventory_refs.py` | Content-grep dumper: decompiles every function in the current program and dumps the C for any whose body mentions a configurable needle list (default: the inventory array `0x80085958` + the SCUS accessor family + the `gp+0x2D2/0x2D4/0x2D6` window registers). Robust against the LUI+ADDIU xref gap (matches decompiled text, not the reference manager). Used to audit `overlay_menu.bin` for raw-index inventory writes (found none - every mutation goes through the bounds-checked helpers). |
 | `dump_arts_input.py` | Decompiles the battle-overlay (0898) arts-combo execution cluster: the Arms resolver `FUN_801EC3E4` (with its caller list from the reference manager) plus every function referencing the move-power tables (`0x801F4F5C` per-move power, `0x801F64E4` power-byte, `0x801F4E63` 128-byte action map). Confirms the resolver is dispatched by a runtime function pointer (0 static callers) and that the move-power referrers are damage/action-step builders, not the arts-input bar builder. |
 | `dump_terrain_trigger.py` | Per-overlay-aware dumper for the world-map render-pipeline chain (`FUN_801D7EA0` / `FUN_801D8258` / `FUN_801D1344` / `FUN_80016444` + SCUS callers and the 0897 relocation copy). Uses `prog.getMemory().contains(addr)` to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: `<program_label>_<addr>.txt`. |
 | `trace_field_loader.py` | Targeted trace of the per-scene field-file loader `FUN_8001f7c0`; pins the loader's **dual-mode** dispatch. → [detail](#trace_field_loaderpy-detail) |
@@ -217,8 +217,8 @@ Pins the loader's **dual-mode** dispatch: retail resolves the `.MAP` by **PROT i
 | `find_tmd_renderer.py` | Readers of the TMD pointer table at `0x8007C018 + idx*4`. |
 | `find_gte_users.py` | Count COP2 / GTE instructions per function - surfaces renderer + transform candidates. |
 | `find_streaming_consumers.py` | DATA_FIELD streaming buffer trail: callers of `FUN_8002541c` plus direct readers of `0x8007b85c`. |
-| `find_xp_table_readers.py` | LUI+ADDIU resolver targeting the address originally (and wrongly) documented as the retail XP table (`0x8007123C..0x80071300`). **Superseded:** the real XP curve is `DAT_80076AF4`, read by the overlay applier `FUN_801E9504`, not anything near `0x8007123C` (an off-by-`0x800` confusion; the corrected `0x80070A3C` is a sin-LUT slice) — see [`subsystems/level-up.md`](../subsystems/level-up.md#xp-table). Kept only for the generic LUI+ADDIU resolver pattern; retarget before re-running. |
-| `find_xp_table_all_overlays.py` | Same scan, recursive across every imported program. Returns zero hits — but that finding is moot in the current framing (see the row above). |
+| `find_xp_table_readers.py` | LUI+ADDIU resolver targeting the address originally (and wrongly) documented as the retail XP table (`0x8007123C..0x80071300`). **Superseded:** the real XP curve is `DAT_80076AF4`, read by the overlay applier `FUN_801E9504`, not anything near `0x8007123C` (an off-by-`0x800` confusion; the corrected `0x80070A3C` is a sin-LUT slice) - see [`subsystems/level-up.md`](../subsystems/level-up.md#xp-table). Kept only for the generic LUI+ADDIU resolver pattern; retarget before re-running. |
+| `find_xp_table_all_overlays.py` | Same scan, recursive across every imported program. Returns zero hits - but that finding is moot in the current framing (see the row above). |
 | `find_prot_consumers.py` | Static map of every call site that passes a constant PROT index to the LBA resolver chain. |
 | `find_scene_name_writers.py` | Writers of the scene-name buffer at `0x80084548`. |
 | `find_field_loader_callers.py` | Callers of the field/town asset loaders (`FUN_8001f7c0` / `FUN_800255b8`) with arg-prep context. |
@@ -227,7 +227,7 @@ Pins the loader's **dual-mode** dispatch: retail resolves the `.MAP` by **PROT i
 | `dump_field_locomotion_cluster.py` | Re-decompile the 0897 field camera / region cluster (`801db81c` / `801dbec4` / `801f5748`) + raw-disassemble the surrounding window. Read-only; surfaces the data holes that corrupt the decompiles. |
 | `fix_field_locomotion_flow.py` | DB-modifying repair for the same cluster: force-disassemble the `jal 0x8003ce9c` (non-returning operand reader) data holes, drop mid-block fake `FUN_` entries, re-create functions at real `addiu sp,sp,-N` prologues, then re-decompile. General pattern for any overlay region split into bogus mid-block functions by a non-returning-call hole. |
 | `dump_player_locomotion_integrator.py` | Dumps the player free-movement controller `FUN_801d01b0` + collision `FUN_801cfe4c` / `FUN_801cf9f4` + pad-remap `func_0x800467e8` / `FUN_80046494`, pinned by the `autorun_player_pos_watch.lua` write-watchpoint. `in_program` guards run it across SCUS + overlay_0897. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). |
-| `dump_4c_jumptables.py` | Dumps the field-VM main dispatcher JT (`0x801E00F4`) + the `0x4C` outer-nibble JT (`0x801CEE60`, 16 entries) with each target's containing function. Use to pin a `0x4C` sub-opcode's exact nibble when the decompiler's reconstructed `case` numbering is ambiguous — e.g. confirmed the collision-grid paint is nibble-7 (`0x801e1c64`), not the decompile's misleading "case 5". |
+| `dump_4c_jumptables.py` | Dumps the field-VM main dispatcher JT (`0x801E00F4`) + the `0x4C` outer-nibble JT (`0x801CEE60`, 16 entries) with each target's containing function. Use to pin a `0x4C` sub-opcode's exact nibble when the decompiler's reconstructed `case` numbering is ambiguous - e.g. confirmed the collision-grid paint is nibble-7 (`0x801e1c64`), not the decompile's misleading "case 5". |
 
 **Game-mode state-machine recon**
 
@@ -288,7 +288,7 @@ The `h:\` prefix indicates a Windows dev box. The runtime doesn't actually open 
 
 ## See also
 
-- [`docs/reference/functions.md`](../reference/functions.md) — the canonical directory of Ghidra-traced entry points these scripts dump.
-- [`docs/reference/memory-map.md`](../reference/memory-map.md) — RAM map + globals the LUI+ADDIU writer hunts resolve.
-- [`docs/tooling/port-catalog.md`](port-catalog.md) — tracks which dumped functions are documented / ported.
-- [`docs/tooling/extraction.md`](extraction.md) — the disc-side extraction that feeds `extracted/` into the container.
+- [`docs/reference/functions.md`](../reference/functions.md) - the canonical directory of Ghidra-traced entry points these scripts dump.
+- [`docs/reference/memory-map.md`](../reference/memory-map.md) - RAM map + globals the LUI+ADDIU writer hunts resolve.
+- [`docs/tooling/port-catalog.md`](port-catalog.md) - tracks which dumped functions are documented / ported.
+- [`docs/tooling/extraction.md`](extraction.md) - the disc-side extraction that feeds `extracted/` into the container.

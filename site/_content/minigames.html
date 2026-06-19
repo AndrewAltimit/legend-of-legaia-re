@@ -106,9 +106,9 @@
   <div id="baka-fighter-rounds"></div>
 
   <h3 id="baka-fighter-meshes">The fighters (3D meshes)</h3>
-  <p>The minigame's fighters <strong>reuse the party's battle character pack</strong> — <strong>PROT 1204</strong> (CDNAME <code>other5</code>; the <code>1203-1206</code> family), loaded here by <code>overlay_baka_fighter</code> via <code>func_0x8003e6bc("data\field\other5.lzs", …)</code> + <code>func_0x8003eb98(0x4B5/0x4B6, …)</code> (debug string <code>"OTHER5 %d %d"</code>). Baka Fighter lets you play <em>as</em> Vahn/Noa/Gala, so it borrows the same higher-detail meshes the engine installs for turn-based battles. The container is flat streaming-format: five <a href="formats/tmd.html">TMD2</a> meshes (asset type <code>0x09</code>) plus seven 256×256 4bpp character TIM atlases (CLUTs at VRAM rows <code>490..495, 497</code>). The PLAYER SELECT roster — the red-gi fighter, the red-haired fighter in the blue/orange vest, the green-trousered fighter — is exactly these meshes.</p>
+  <p>The minigame's fighters <strong>reuse the party's battle character pack</strong> - <strong>PROT 1204</strong> (CDNAME <code>other5</code>; the <code>1203-1206</code> family), loaded here by <code>overlay_baka_fighter</code> via <code>func_0x8003e6bc("data\field\other5.lzs", …)</code> + <code>func_0x8003eb98(0x4B5/0x4B6, …)</code> (debug string <code>"OTHER5 %d %d"</code>). Baka Fighter lets you play <em>as</em> Vahn/Noa/Gala, so it borrows the same higher-detail meshes the engine installs for turn-based battles. The container is flat streaming-format: five <a href="formats/tmd.html">TMD2</a> meshes (asset type <code>0x09</code>) plus seven 256×256 4bpp character TIM atlases (CLUTs at VRAM rows <code>490..495, 497</code>). The PLAYER SELECT roster - the red-gi fighter, the red-haired fighter in the blue/orange vest, the green-trousered fighter - is exactly these meshes.</p>
   <div class="notice">
-    <strong>View them in 3D.</strong> These meshes render textured + animated (per-frame per-bone <a href="formats/anm.html">ANM</a> from PROT 1203) in the interactive viewer on the <a href="characters.html#baka-fighter-meshes">characters page</a> — open your disc image, pick a slot, and toggle <em>battle form</em> to orbit and play each fighter's animation. They are the party's <strong>main-battle</strong> appearance (the minigame reuses the same pack); see the provenance note there.
+    <strong>View them in 3D.</strong> These meshes render textured + animated (per-frame per-bone <a href="formats/anm.html">ANM</a> from PROT 1203) in the interactive viewer on the <a href="characters.html#baka-fighter-meshes">characters page</a> - open your disc image, pick a slot, and toggle <em>battle form</em> to orbit and play each fighter's animation. They are the party's <strong>main-battle</strong> appearance (the minigame reuses the same pack); see the provenance note there.
   </div>
 </section>
 
@@ -116,7 +116,7 @@
   <h2>Internals (reverse-engineered)</h2>
   <p>
     The tables above are the player-facing prize / roster data. Each minigame
-    also has a reverse-engineered <strong>runtime</strong> write-up &mdash; its
+    also has a reverse-engineered <strong>runtime</strong> write-up - its
     per-frame state machine, scoring math, and RAM-state globals, traced from
     the captured overlay code. Each is its own page under
     <code>docs/subsystems/</code> in the repo.
@@ -161,11 +161,11 @@
   <div class="hint">
     The slot machine's <strong>per-spin balance is overlay-local</strong>; the
     shared casino coin bank (<code>0x800845A4</code>) is only written when you
-    cash out at the counter &mdash; which is why an "Infinite Coins" code reads
+    cash out at the counter - which is why an "Infinite Coins" code reads
     full at the cage but doesn't make individual spins free. The four hub
     minigames (fishing / slot / Baka Fighter / dance) are distinct overlay
     files that share a library core, so the <em>same</em> code address hosts a
-    <em>different</em> function in each (VA aliasing) &mdash; the controllers
+    <em>different</em> function in each (VA aliasing) - the controllers
     above are each read from their own overlay's dump.
   </div>
 </section>
@@ -173,7 +173,7 @@
 <section class="doc-section" id="related">
   <h2>Related</h2>
   <p>
-    Curated tables drive every prize and stat block on this page &mdash; <a href="reference/gamedata.html#casino-schema">game-data reference</a> for schema + library access. Muscle Dome rosters cross-validate the <a href="formats/encounter.html">on-disc encounter records</a>; Master-course gating + the Sol Tower side-quest beats hit the <a href="subsystems/script-vm.html">field-VM flag banks</a>.
+    Curated tables drive every prize and stat block on this page - <a href="reference/gamedata.html#casino-schema">game-data reference</a> for schema + library access. Muscle Dome rosters cross-validate the <a href="formats/encounter.html">on-disc encounter records</a>; Master-course gating + the Sol Tower side-quest beats hit the <a href="subsystems/script-vm.html">field-VM flag banks</a>.
   </p>
 </section>
 

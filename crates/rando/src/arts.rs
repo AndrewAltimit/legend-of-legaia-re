@@ -8,7 +8,7 @@
 //!    at RAM `0x80160EFC`/`0x80176998`/`0x8018BA54`, where the combo is stored
 //!    in `1=L,2=R,3=D,4=U` form (0-terminated) at record `+0`, on a fixed `0xD0`
 //!    stride. Those records load from each character's player-data file
-//!    `record0` — Vahn `PROT 0861`, Noa `0864`, Gala `0865` ([`player_entry_index`]).
+//!    `record0` - Vahn `PROT 0861`, Noa `0864`, Gala `0865` ([`player_entry_index`]).
 //!    [`patch_player_record0`] decompresses `record0`, rewrites the combo bytes
 //!    (same length), and recompresses to fit.
 //! 2. **The display** is a glyph string in the static `SCUS_942.54` arts-name
@@ -27,7 +27,7 @@
 //! distinct combo strings within each length class. Because every character's
 //! arts map to **distinct** strings (combos are unique within a character on
 //! the retail disc), a bijection over the distinct strings keeps each
-//! character's combos distinct by construction — so "each art is a unique combo
+//! character's combos distinct by construction - so "each art is a unique combo
 //! within its character" holds automatically, and the **input count is
 //! preserved** (permutation stays within a length class). The per-character
 //! Miracle Art (`0xFF09` marker) strings are excluded.
@@ -284,7 +284,7 @@ pub fn player_record0_decoded(entry: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// `true` if `combo` (in `1=L,2=R,3=D,4=U` bytes) appears as a matcher art
-/// record in `decoded` record0 — a clean-start (preceding byte not a direction)
+/// record in `decoded` record0 - a clean-start (preceding byte not a direction)
 /// 0-terminated run. This is what the in-battle input matcher recognises.
 pub fn record0_has_combo(decoded: &[u8], combo: &[Command]) -> bool {
     if combo.is_empty() {
@@ -489,7 +489,7 @@ mod tests {
         for (va, dirs, m) in &combos {
             write_combo(&mut img, *va, dirs, *m, false);
         }
-        // Miracle string (0xFF09 marker) — must be excluded from edits.
+        // Miracle string (0xFF09 marker) - must be excluded from edits.
         write_combo(
             &mut img,
             0x8007_4050,

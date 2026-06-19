@@ -340,7 +340,7 @@ fn impact_effect_table_parses_from_disc() {
 
     let table = move_power::parse_impact_effect_table(&bytes).expect("impact-effect table parses");
     // Five packed u32 config words written to the strike actor's +0x04 (these are
-    // NOT pointers — they carry the `0x3FF`-masked packed lanes of the impact
+    // NOT pointers - they carry the `0x3FF`-masked packed lanes of the impact
     // config). Byte-matched against the real PROT 0898 bytes.
     assert_eq!(
         table,

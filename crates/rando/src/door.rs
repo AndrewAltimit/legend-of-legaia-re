@@ -5,7 +5,7 @@
 //! `[i16 index][u8 name_len][name][entry_x][entry_z][dir]`. These ops live in
 //! **partition-2 MAN records**, addressed at runtime through the partition-2
 //! record-offset table (the controller sets the VM bytecode base to
-//! `man_base + data_region + partition2[slot]` and runs the record — pinned by a
+//! `man_base + data_region + partition2[slot]` and runs the record - pinned by a
 //! PCSX-Redux dispatch trace). Selection is by stable slot index, so the op's
 //! `index` is just the destination-scene id.
 //!
@@ -14,14 +14,14 @@
 //! [`legaia_asset::man_edit`] relocation engine makes that safe: it resizes the
 //! name and fixes the partition record-offset tables (the door dispatch index),
 //! the header section-0 offset, and any intra-record relative-jump deltas that
-//! straddle the edit. So — unlike encounters/chests, which are same-size edits —
+//! straddle the edit. So - unlike encounters/chests, which are same-size edits -
 //! a door's destination can be **any** scene regardless of name length.
 //!
 //! [`SceneDoors`] locates a scene bundle's MAN, decompresses it, and enumerates
 //! its door sites ([`legaia_asset::man_edit::scene_change_sites`], the clean
 //! partition walk). [`SceneDoors::rebuild`] applies a set of destination
 //! rewrites, recompresses, and returns the new MAN stream + decompressed size
-//! when it fits the original compressed footprint and validates — the caller
+//! when it fits the original compressed footprint and validates - the caller
 //! then writes both the recompressed stream and the descriptor's
 //! decompressed-size word back to the disc.
 
@@ -41,7 +41,7 @@ pub struct SceneDoors {
     /// length; the data after belongs to the next asset).
     pub compressed_budget: usize,
     /// Byte offset, within the entry, of the MAN descriptor's
-    /// `(type<<24)|size` word — rewritten when the decompressed size changes.
+    /// `(type<<24)|size` word - rewritten when the decompressed size changes.
     pub man_descriptor_off: usize,
     /// Decompressed MAN buffer.
     pub decoded: Vec<u8>,

@@ -195,12 +195,12 @@ fn town01_placement_pack_indices_resolve_in_loaded_pack() {
 /// textured-only VRAM filter; an empty build drops the placement. There are
 /// two distinct causes, and they are NOT the same fix:
 ///
-///   * **untextured props** — the mesh is all flat / gouraud (per-vertex RGB,
+///   * **untextured props** - the mesh is all flat / gouraud (per-vertex RGB,
 ///     no UVs), so the textured builder skips every prim. These are now
 ///     recovered by the engine's vertex-colour path: `tmd_to_color_mesh` builds
 ///     a [`legaia_tmd::mesh::ColorMesh`] from the per-prim colour blocks, which
 ///     play-window uploads + draws on the colour pipeline (asserted below).
-///   * **missing-CLUT props** — the mesh IS textured, but its prims sample a
+///   * **missing-CLUT props** - the mesh IS textured, but its prims sample a
 ///     CLUT row the field VRAM pre-pass didn't upload, so the coverage filter
 ///     correctly drops them (rendering them would show flat `CLUT[0]`).
 ///     Recovering these is a VRAM-coverage question, not a shading one.

@@ -77,7 +77,7 @@ This crate exists to make that workflow scriptable.
   when `LEGAIA_MEDNAFEN_DIR` is unset.
 - Library-gated save oracles that pin a runtime invariant against the
   content-hashed backup corpus (`saves/library/mednafen/`, resolved via each
-  scenario's `backup_fingerprint`) and skip-pass when the corpus is absent —
+  scenario's `backup_fingerprint`) and skip-pass when the corpus is absent -
   e.g. `tests/training_formation.rs` (the lone-Tetsu formation cell) and
   `tests/summon_model_base.rs` (the battle effect-model-library base
   `gp[0x754] = party_count + 2`).
