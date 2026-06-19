@@ -211,6 +211,17 @@ struct RandomizeArgs {
     /// Per-battle percentage chance an enemy is charmed (only with `--enemy-ally`).
     #[arg(long, default_value_t = legaia_rando::enemy_ally::DEFAULT_PCT)]
     enemy_ally_pct: u8,
+    /// With `--shiny-pct`% probability per battle, the frontmost **capturable**
+    /// enemy spawns as a rare **shiny** variant: +35% stats, and the Seru you
+    /// capture from it deals +35% damage forever (a same-size code hook into
+    /// battle setup + the capture/damage paths; the shiny flag rides the spell's
+    /// level byte and is masked from the level-up + menu readers).
+    #[arg(long, default_value_t = false)]
+    shiny_seru: bool,
+    /// Per-battle percentage chance a capturable enemy is shiny (only with
+    /// `--shiny-seru`).
+    #[arg(long, default_value_t = legaia_rando::shiny_seru::DEFAULT_PCT)]
+    shiny_pct: u8,
     /// Let vendors offer to **trade** one of a character's seru for a different
     /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
     /// clean-room engine renders the trade UI and reseeds each vendor's offers
@@ -1260,6 +1271,23 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push(format!("enemy_ally_pct = {}", report.pct));
     } else {
         manifest.push("enemy_ally = false".to_string());
+    }
+
+    // Shiny Seru: a code hook in battle setup boosts a rare capturable enemy's
+    // stats +35% and marks it; the capture/damage hooks flag the captured Seru so
+    // its spell deals +35% damage forever (flag masked from the level-up + menu
+    // readers so the Seru still levels up and displays normally).
+    if args.shiny_seru {
+        let report = apply::inject_shiny_seru(&mut patcher, args.shiny_pct)?;
+        println!(
+            "shiny-seru: {}% chance per battle a capturable enemy is shiny (+35% stats, \
+             +35% damage when captured)",
+            report.pct
+        );
+        manifest.push("shiny_seru = true".to_string());
+        manifest.push(format!("shiny_pct = {}", report.pct));
+    } else {
+        manifest.push("shiny_seru = false".to_string());
     }
 
     // Seru trading: embed an enabled flag + the run's seed so the clean-room

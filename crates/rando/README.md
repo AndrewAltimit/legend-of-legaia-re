@@ -27,6 +27,7 @@ full design.
   - [Encounters](#encounters)
   - [Run-away EXP](#run-away-exp)
   - [Enemy ally (charm)](#enemy-ally-charm)
+  - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
   - [Steals](#steals)
@@ -261,6 +262,27 @@ other monsters. `apply::inject_enemy_ally` performs three same-size edits:
 
 Same guards as the other hooks (known build at both sites, all-zero dead space at
 the routine). On a solo-enemy boss the lone enemy turns on itself.
+
+## Shiny Seru
+
+Gives a per-battle chance (`--shiny-seru`, `--shiny-pct`%, default **2**) that the
+frontmost **capturable** enemy spawns as a rare *shiny* variant: +35% stats at
+battle load, and the Seru you capture from it deals +35% damage on every future
+cast, permanently (`shiny_seru` module; mirrors the engine
+`seru_learning::SHINY_DAMAGE_BONUS_PCT`). "Capturable" is the enemy actor's own
+runtime `+0x3e` field, so no monster list is needed; the persistent bonus rides
+the free high bit `0x80` of the captured spell's level byte (max legit level 9),
+so it survives a memory-card save and the spell-list insertion shift.
+
+`apply::inject_shiny_seru` performs **eight** same-size detours into routines in a
+*new* preserved SCUS rodata gap at `0x80077728` (padding before the steal table,
+distinct from the `0x8007AB38` gap so it composes with all those features) plus
+the battle overlay 0898's move-power padding at `0x801F4FC4`: setup boost
+(`0x80051A20`) + capture-copy (`0x801EE2E8`) + grant-OR (`0x801E93B4`) + damage
+`×135/100` (`0x801DDB08`) + level-up gate/read/write (`0x801E71C8`/`71DC`/`7224`,
+so a shiny Seru still levels and keeps its flag) + menu-digit mask (`0x801D2FA0`,
+overlay 0899). Same all-zero / known-build guards as the other hooks. On by
+default in the web Balanced / Full Chaos presets.
 
 ## Seru trading
 
@@ -662,6 +684,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Equipment drops | - | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance - additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
 | Run-away EXP | - | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape - vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
 | Enemy ally (charm) | - | `inject_enemy_ally` | injects a code hook into battle setup that, on a per-battle chance, sets the AI-delegated bits (`0x380`) on the frontmost enemy so it fights on the player's side, plus a one-word widen of the victory check so the ally isn't an enemy you must defeat (a `SCUS_942.54` detour + gap routine + an overlay-0898 edit via `enemy_ally`). |
+| Shiny Seru | - | `inject_shiny_seru` | injects eight code hooks so that, on a per-battle chance, a capturable enemy spawns with +35% stats and its captured Seru deals +35% damage forever (the flag rides the spell-level high bit, masked from the level-up + menu readers); routines live in a new SCUS rodata gap `0x80077728` + the overlay-0898 move-power padding via `shiny_seru`. |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |
 | Encounters | - | `randomize_encounters` / `randomize_encounters_scoped` / `randomize_encounters_full` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). `_full` adds the optional [solo-strong](#solo-strong-fights) pass (`SoloStrongConfig`) on top of any scope/mode. |

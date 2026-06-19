@@ -59,8 +59,9 @@ pub use character::{
     NAME_LEN, NAME_OFFSET, Party, SpellList,
 };
 pub use ext::{
-    CharSaveExt, SAVE_FILE_EXT_MAGIC, SAVE_FILE_EXT3_MAGIC, SAVE_FILE_MAGIC, SAVE_FILE_VERSION,
-    SAVE_FILE_VERSION_V1, SAVE_FILE_VERSION_V2, SaveExt, SaveExtV2, SaveFile, SavedChainRecord,
+    CharSaveExt, SAVE_FILE_EXT_MAGIC, SAVE_FILE_EXT3_MAGIC, SAVE_FILE_EXT4_MAGIC, SAVE_FILE_MAGIC,
+    SAVE_FILE_VERSION, SAVE_FILE_VERSION_V1, SAVE_FILE_VERSION_V2, SAVE_FILE_VERSION_V3, SaveExt,
+    SaveExtV2, SaveFile, SavedChainRecord,
 };
 pub use retail_inventory::{
     AddOutcome, ITEM_WINDOW_BASE, ITEM_WINDOW_SLOTS, RetailInventory, STACK_CAP,

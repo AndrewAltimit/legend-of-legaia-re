@@ -20,9 +20,9 @@
 
 use legaia_save::{
     BLOCK_SIZE, CharSaveExt, CharacterRecord, HpMpSp, Party, RETAIL_STORY_FLAGS_SIZE,
-    SAVE_BLOCK_MAGIC, SAVE_FILE_EXT_MAGIC, SAVE_FILE_EXT3_MAGIC, SAVE_FILE_MAGIC,
-    SAVE_FILE_VERSION, SaveExt, SaveExtV2, SaveFile, SavedChainRecord, read_retail_inventory,
-    read_retail_story_flags,
+    SAVE_BLOCK_MAGIC, SAVE_FILE_EXT_MAGIC, SAVE_FILE_EXT3_MAGIC, SAVE_FILE_EXT4_MAGIC,
+    SAVE_FILE_MAGIC, SAVE_FILE_VERSION, SaveExt, SaveExtV2, SaveFile, SavedChainRecord,
+    read_retail_inventory, read_retail_story_flags,
 };
 
 const LGSF_FIXTURE: &str = "tests/fixtures/schema_synthetic.lgsf.bin";
@@ -85,6 +85,7 @@ fn build_synthetic_save() -> SaveFile {
                     spells: vec![0x10, 0x11, 0x20],
                     seru_captures: vec![(1, 50)],
                     active_chains: [[1, 2, 3, 4], [0; 4], [0; 4], [0; 4]],
+                    shiny_spells: vec![0x11],
                 },
             )],
             saved_chains: vec![SavedChainRecord {
@@ -161,6 +162,10 @@ fn lgsf_v2_writer_matches_golden_fixture() {
     assert!(
         bytes.windows(4).any(|w| w == SAVE_FILE_EXT3_MAGIC),
         "LGSF v3 buffer must contain the LGX3 sentinel"
+    );
+    assert!(
+        bytes.windows(4).any(|w| w == SAVE_FILE_EXT4_MAGIC),
+        "LGSF v4 buffer must contain the LGX4 sentinel"
     );
 
     assert_golden(LGSF_FIXTURE, &bytes);

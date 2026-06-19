@@ -357,6 +357,18 @@ status = "shipped"
 test = "enemy_ally_real.rs"
 notes = "rides the stock AI-delegated retarget so a flagged monster attacks its own side; the victory widen keeps the ally from counting as an enemy you must defeat"
 
+[[mod]]
+key = "shiny_seru"
+name = "Shiny Seru"
+flag = "--shiny-seru"
+tier = "E"
+target = "8 detours -> routines in a NEW preserved SCUS gap 0x80077728 (padding before the steal table) + the 0898 move-power padding cave 0x801F4FC4. Setup boost 0x80051A20, capture-copy 0x801EE2E8, grant-OR 0x801E93B4, damage x1.35 0x801DDB08, level-up gate/read/write 0x801E71C8/71DC/7224, menu mask 0x801D2FA0 (overlay 0899)"
+edit = "in-place"
+gap = true
+status = "shipped"
+test = "shiny_seru_real.rs"
+notes = "2%/battle a capturable enemy (actor +0x3e != 0) gets +35% stats; capture sets the spell-level high bit 0x80 as a persistent shiny flag (rides the spell-list shift, survives save); damage reads it x135/100, and the level-up + menu readers mask it. Mirrors the engine seru_learning shiny set. Uses a distinct SCUS gap from the 0x8007AB38 features so it composes with all of them"
+
 # ---------------------------------------------------------------------------
 # Tier F - overlay dead-region injection
 # ---------------------------------------------------------------------------

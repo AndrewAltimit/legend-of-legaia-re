@@ -9,6 +9,73 @@ use legaia_engine_vm as vm;
 use vm::battle_action::{BattleEndCause, StepOutcome};
 
 impl World {
+    /// Default chance (percent) that a capturable enemy spawns shiny.
+    /// Matches the `--shiny-seru` randomizer default and the rare-encounter
+    /// feel the feature is named for.
+    pub const DEFAULT_SHINY_CHANCE_PCT: u8 = 2;
+
+    /// Set the per-battle shiny-enemy chance (percent, clamped to `0..=100`).
+    /// `0` disables shiny enemies.
+    pub fn set_shiny_chance_pct(&mut self, pct: u8) {
+        self.shiny_chance_pct = pct.min(100);
+    }
+
+    /// Roll for a shiny capturable enemy at battle entry. On a hit (chance
+    /// [`Self::shiny_chance_pct`]) one capturable monster slot (a monster the
+    /// catalog maps to a Seru) is chosen, its battle stats boosted by
+    /// [`crate::seru_learning::SHINY_DAMAGE_BONUS_PCT`]% (HP / ATK / DEF /
+    /// SPD), and its slot recorded in [`Self::shiny_enemy_slots`] so a capture
+    /// marks the learned spell shiny. Mirrors the retail `--shiny-seru` battle
+    /// hook (`FUN_800513F0` → cave routine). Idempotent per battle; the slot
+    /// sets are cleared by [`Self::enter_battle_from_formation`] first.
+    pub(super) fn roll_shiny_enemy(&mut self, first_monster: u8) {
+        if self.shiny_chance_pct == 0 {
+            return;
+        }
+        if (self.next_rng() % 100) as u8 >= self.shiny_chance_pct {
+            return;
+        }
+        // Gather capturable monster slots (those whose monster id maps to a
+        // Seru in the catalog - the only enemies whose capture yields a spell).
+        let candidates: Vec<u8> = (first_monster as usize..self.actors.len())
+            .filter(|&s| {
+                self.actors[s].battle.liveness != 0
+                    && self.actors[s].battle.max_hp > 0
+                    && self.actors[s]
+                        .battle_monster_id
+                        .and_then(|mid| self.monster_catalog.get(mid))
+                        .is_some_and(|d| d.seru_id.is_some())
+            })
+            .map(|s| s as u8)
+            .collect();
+        if candidates.is_empty() {
+            return;
+        }
+        let pick = candidates[(self.next_rng() as usize) % candidates.len()];
+        self.boost_shiny_stats(pick);
+        self.shiny_enemy_slots.insert(pick);
+    }
+
+    /// Apply the shiny +35% stat boost to one battle slot's combat stats.
+    fn boost_shiny_stats(&mut self, slot: u8) {
+        let pct = crate::seru_learning::SHINY_DAMAGE_BONUS_PCT;
+        let bump = |v: u16| (((v as u32) * (100 + pct)) / 100).min(u16::MAX as u32) as u16;
+        let s = slot as usize;
+        if let Some(a) = self.actors.get_mut(s) {
+            a.battle.hp = bump(a.battle.hp);
+            a.battle.max_hp = bump(a.battle.max_hp);
+        }
+        if let Some(v) = self.battle_attack.get_mut(s) {
+            *v = bump(*v);
+        }
+        if let Some(v) = self.battle_defense.get_mut(s) {
+            *v = bump(*v);
+        }
+        if let Some(v) = self.battle_speed.get_mut(s) {
+            *v = bump(*v);
+        }
+    }
+
     /// Open the player-driven command menu for party member `actor` and park
     /// the action SM. The action context's `active_actor` is set now; the
     /// queued action / target is filled in by [`Self::tick_battle_command`]
@@ -557,6 +624,14 @@ impl World {
         // = 8/9 for a group cast): the per-hit unit drops from 12 to 4.
         let is_party_summon_cast = (caster as usize) < self.party_count as usize
             && crate::summon::SERU_SUMMON_IDS.contains(&def.id);
+        // Shiny bonus: when the casting character learned this Seru's spell
+        // from a shiny capture, every cast deals +35% damage (on top of the
+        // normal roll). Mirrors the retail `--shiny-seru` damage hook
+        // (`FUN_801dd864` `+0x161` high-bit read). Computed once per cast.
+        let shiny_cast = is_party_summon_cast
+            && self
+                .seru_log
+                .is_shiny(self.party_roster_slot(caster as usize) as u8, def.id);
         let group_target = matches!(def.target, crate::spells::SpellTarget::AllEnemies);
         let mut summon_xp_gain: u32 = 0;
 
@@ -610,6 +685,13 @@ impl World {
                         *amount = ((*amount as u32 * pct as u32) / 100).min(9999) as u16;
                     }
                 }
+            }
+            // Shiny Seru: +35% on the final magnitude (9999-capped), after the
+            // affinity / summon roll so it stacks on the spell's normal output.
+            if shiny_cast && let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome {
+                let boosted =
+                    (*amount as u32 * (100 + crate::seru_learning::SHINY_DAMAGE_BONUS_PCT)) / 100;
+                *amount = boosted.min(9999) as u16;
             }
             // Per-hit spell-XP gain (FUN_801ddb30 tail): the final damage
             // delta against the target's live/max HP at the moment of the hit
@@ -1300,6 +1382,12 @@ impl World {
         }
         if let Some(id) = monster_id {
             self.battle_captures.push(id);
+            // A shiny enemy's capture marks the learned spell shiny (+35%
+            // damage forever). Tracked in parallel; resolved in
+            // `resolve_captures`.
+            if self.shiny_enemy_slots.contains(&target) {
+                self.shiny_captures.push(id);
+            }
         }
     }
 
@@ -1490,6 +1578,42 @@ impl World {
                 },
             );
             self.current_capture_banner = Some(banner);
+        }
+
+        // Mark shiny: every Seru captured as shiny flags its spell shiny for
+        // each eligible party character (the same set `record_capture` awards
+        // points to). This persists into the save's LGX4 block and grants the
+        // +35% damage on every future cast - whether or not the spell was
+        // newly learned this battle (re-capturing a shiny Seru you already
+        // know still upgrades it). Mirrors the retail `+0x161` high-bit flag.
+        let shiny = std::mem::take(&mut self.shiny_captures);
+        if !shiny.is_empty() {
+            let party_slots: Vec<u8> = (0..self.party_count.clamp(1, 3))
+                .map(|i| self.party_roster_slot(i as usize) as u8)
+                .collect();
+            for mid in shiny {
+                // Resolve to (spell_id, eligible slots) as owned data before
+                // mutating the log (the registry borrow can't overlap the
+                // mark_shiny &mut self).
+                let resolved = self
+                    .monster_catalog
+                    .get(mid)
+                    .and_then(|d| d.seru_id)
+                    .and_then(|sid| self.seru_registry.get(sid))
+                    .map(|seru| {
+                        let elig: Vec<u8> = party_slots
+                            .iter()
+                            .copied()
+                            .filter(|&slot| seru.can_be_learned_by(slot))
+                            .collect();
+                        (seru.spell_id, elig)
+                    });
+                if let Some((spell_id, elig)) = resolved {
+                    for slot in elig {
+                        self.seru_log.mark_shiny(slot, spell_id);
+                    }
+                }
+            }
         }
     }
 

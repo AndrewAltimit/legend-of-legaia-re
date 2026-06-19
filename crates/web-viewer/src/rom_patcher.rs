@@ -94,7 +94,11 @@ pub fn resolve_seed(seed: &str) -> String {
 /// code hook into battle setup so that, with a per-battle chance, a random enemy
 /// is charmed onto the party's side as an uncontrolled ally (works in any fight,
 /// bosses included), plus a one-word widen of the victory check so the ally isn't
-/// an enemy you must defeat.
+/// an enemy you must defeat. `shiny_seru` injects code hooks so that, with a
+/// per-battle chance, the frontmost *capturable* enemy spawns as a rare shiny
+/// variant (+35% stats) whose captured Seru deals +35% damage on every future
+/// cast (the flag rides the spell's level byte and is masked from the level-up +
+/// menu readers).
 /// `starting_level`
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
@@ -137,6 +141,7 @@ pub fn patch_rom(
     flee_exp: bool,
     seru_trade: bool,
     enemy_ally: bool,
+    shiny_seru: bool,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
     let drops_mode = parse_mode(drops);
@@ -282,6 +287,19 @@ pub fn patch_rom(
         ));
     } else {
         summary.push_str("enemy-ally: untouched\n");
+    }
+
+    // Shiny Seru: a code hook boosts a rare capturable enemy's stats +35%; the
+    // capture/damage hooks make its captured Seru deal +35% damage forever.
+    if shiny_seru {
+        let rep = apply::inject_shiny_seru(&mut patcher, legaia_rando::shiny_seru::DEFAULT_PCT)
+            .map_err(|e| err(format!("shiny-seru: {e}")))?;
+        summary.push_str(&format!(
+            "shiny-seru: {}% chance per battle a capturable enemy is shiny (+35% stats / damage)\n",
+            rep.pct
+        ));
+    } else {
+        summary.push_str("shiny-seru: untouched\n");
     }
 
     // Seru trading: a vendor in shops offers to trade a party member's Seru-magic for

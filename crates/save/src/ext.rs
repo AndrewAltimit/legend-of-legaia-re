@@ -68,6 +68,26 @@
 //! 2      story_flag_bits_len (u16 LE)
 //! N      story_flag_bits (bytes, mirrors retail SC `+0x14C0`)
 //! ```
+//!
+//! ## Binary layout (`LGSF v4` - extends v3)
+//!
+//! v4 appends a per-character "shiny Seru" list - spell ids learned from a
+//! shiny-captured Seru (the rare 2%-per-battle variant; see the `shiny_seru`
+//! randomizer feature + `engine_core::seru_learning`). Such a spell deals
+//! +35% damage for that character. The retail disc encodes this in the high
+//! bit of the spell-level byte (`record+0x161`); the engine save carries it
+//! out-of-band so the spell-id list stays clean.
+//!
+//! ```text
+//! ... v3 fields above ...
+//! 4      ext4_magic: b"LGX4" (sentinel - v3 readers stop here)
+//! 4      ext4_total_size (u32 LE)
+//! 1      shiny_char_count (X)
+//! per char (only chars with at least one shiny spell):
+//!   1    char_slot
+//!   1    shiny_spell_count (S)
+//!   S    shiny spell ids (u8 each)
+//! ```
 
 use anyhow::{Context, Result, bail};
 
@@ -76,15 +96,19 @@ use crate::character::{CHARACTER_RECORD_SIZE, Party};
 /// Four-byte magic at the start of every `LGSF` save file.
 pub const SAVE_FILE_MAGIC: [u8; 4] = *b"LGSF";
 /// Current format version stored in byte 4.
-pub const SAVE_FILE_VERSION: u8 = 3;
+pub const SAVE_FILE_VERSION: u8 = 4;
 /// V1 sentinel kept for legacy save reads.
 pub const SAVE_FILE_VERSION_V1: u8 = 1;
 /// V2 sentinel - first version with the LGX2 ext block but no LGX3 story-flag bitmap.
 pub const SAVE_FILE_VERSION_V2: u8 = 2;
+/// V3 sentinel - has the LGX3 story-flag bitmap but no LGX4 shiny block.
+pub const SAVE_FILE_VERSION_V3: u8 = 3;
 /// Magic at the start of the v2 extension block.
 pub const SAVE_FILE_EXT_MAGIC: [u8; 4] = *b"LGX2";
 /// Magic at the start of the v3 extension block (full story-flag bitmap).
 pub const SAVE_FILE_EXT3_MAGIC: [u8; 4] = *b"LGX3";
+/// Magic at the start of the v4 extension block (per-character shiny Seru list).
+pub const SAVE_FILE_EXT4_MAGIC: [u8; 4] = *b"LGX4";
 
 /// Engine-wide global state that is not part of any per-character record.
 ///
@@ -140,6 +164,11 @@ pub struct CharSaveExt {
     /// quick-call slots. Each chain is up to four packed `Command` bytes
     /// (`0` terminator). Mirrors the retail in-RAM chain table.
     pub active_chains: [[u8; 4]; 4],
+    /// Spell ids learned from a **shiny** Seru (the rare 2%-per-battle
+    /// variant). Each deals +35% damage for this character. Persisted in the
+    /// LGSF v4 `LGX4` block, out-of-band from [`Self::spells`] so the spell-id
+    /// list stays clean. Mirrors the retail `+0x161` spell-level high bit.
+    pub shiny_spells: Vec<u8>,
 }
 
 /// One named saved chain in the v2 ext block.
@@ -271,6 +300,29 @@ impl SaveFile {
         out.extend_from_slice(&ext3_total_size.to_le_bytes());
         out.extend_from_slice(&ext3_block);
 
+        // V4 extension block: per-character shiny-Seru spell lists. Emit
+        // unconditionally so the LGX4 magic is a stable parse marker; only
+        // characters with at least one shiny spell are listed.
+        let mut ext4_block = Vec::new();
+        let shiny_chars: Vec<&(u8, CharSaveExt)> = self
+            .ext_v2
+            .per_char
+            .iter()
+            .filter(|(_, ce)| !ce.shiny_spells.is_empty())
+            .collect();
+        let shiny_count = shiny_chars.len().min(255) as u8;
+        ext4_block.push(shiny_count);
+        for (cs, ce) in shiny_chars.iter().take(shiny_count as usize) {
+            ext4_block.push(*cs);
+            let s_len = ce.shiny_spells.len().min(255) as u8;
+            ext4_block.push(s_len);
+            ext4_block.extend_from_slice(&ce.shiny_spells[..s_len as usize]);
+        }
+        out.extend_from_slice(&SAVE_FILE_EXT4_MAGIC);
+        let ext4_total_size = ext4_block.len() as u32;
+        out.extend_from_slice(&ext4_total_size.to_le_bytes());
+        out.extend_from_slice(&ext4_block);
+
         out
     }
 
@@ -296,7 +348,8 @@ impl SaveFile {
         }
         let version = buf[4];
         match version {
-            SAVE_FILE_VERSION_V1 | SAVE_FILE_VERSION_V2 | SAVE_FILE_VERSION => {}
+            SAVE_FILE_VERSION_V1 | SAVE_FILE_VERSION_V2 | SAVE_FILE_VERSION_V3
+            | SAVE_FILE_VERSION => {}
             other => bail!("LGSF: unsupported version {other}"),
         }
         let story_flags = u32::from_le_bytes(buf[5..9].try_into().unwrap());
@@ -364,11 +417,11 @@ impl SaveFile {
             bail!("LGSF v2: ext block truncated");
         }
         let ext_buf = &buf[cursor..ext_end];
-        let ext_v2 = parse_ext_v2(ext_buf).context("parse LGSF v2 ext block")?;
+        let mut ext_v2 = parse_ext_v2(ext_buf).context("parse LGSF v2 ext block")?;
         cursor = ext_end;
 
         // V3 LGX3 ext block carries the 512-byte retail story-flag bitmap.
-        if version == SAVE_FILE_VERSION {
+        if version >= SAVE_FILE_VERSION_V3 {
             if cursor + 8 > buf.len() {
                 bail!("LGSF v3: LGX3 ext header missing (cursor {cursor:#x})");
             }
@@ -386,6 +439,27 @@ impl SaveFile {
             }
             ext.story_flag_bits =
                 parse_ext_v3(&buf[cursor..ext3_end]).context("parse LGSF v3 ext block")?;
+            cursor = ext3_end;
+        }
+
+        // V4 LGX4 ext block carries the per-character shiny-Seru spell lists.
+        if version >= SAVE_FILE_VERSION {
+            if cursor + 8 > buf.len() {
+                bail!("LGSF v4: LGX4 ext header missing (cursor {cursor:#x})");
+            }
+            let magic4 = &buf[cursor..cursor + 4];
+            if magic4 != SAVE_FILE_EXT4_MAGIC {
+                bail!("LGSF v4: missing LGX4 magic at {cursor:#x}");
+            }
+            cursor += 4;
+            let ext4_total_size =
+                u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let ext4_end = cursor + ext4_total_size;
+            if buf.len() < ext4_end {
+                bail!("LGSF v4: LGX4 ext block truncated");
+            }
+            apply_ext_v4(&buf[cursor..ext4_end], &mut ext_v2).context("parse LGSF v4 ext block")?;
         }
 
         Ok(Self { party, ext, ext_v2 })
@@ -455,6 +529,37 @@ impl SaveFile {
         crate::card::write_retail_inventory(sc_block, &self.ext.inventory)?;
         Ok(())
     }
+}
+
+/// Parse the LGX4 shiny block and fold each char's shiny spell list into the
+/// matching [`SaveExtV2::per_char`] entry. Characters not present in `per_char`
+/// (which always comes from the LGX2 block) are skipped. Empty blocks are a
+/// no-op.
+fn apply_ext_v4(buf: &[u8], ext_v2: &mut SaveExtV2) -> Result<()> {
+    if buf.is_empty() {
+        return Ok(());
+    }
+    let mut p = 0usize;
+    let char_count = buf[p] as usize;
+    p += 1;
+    for _ in 0..char_count {
+        if p + 2 > buf.len() {
+            bail!("LGX4: char prelude truncated");
+        }
+        let cs = buf[p];
+        p += 1;
+        let s_len = buf[p] as usize;
+        p += 1;
+        if p + s_len > buf.len() {
+            bail!("LGX4: shiny spell list truncated");
+        }
+        let shiny = buf[p..p + s_len].to_vec();
+        p += s_len;
+        if let Some((_, ce)) = ext_v2.per_char.iter_mut().find(|(slot, _)| *slot == cs) {
+            ce.shiny_spells = shiny;
+        }
+    }
+    Ok(())
 }
 
 fn parse_ext_v3(buf: &[u8]) -> Result<Vec<u8>> {
@@ -536,6 +641,9 @@ fn parse_ext_v2(buf: &[u8]) -> Result<SaveExtV2> {
                 spells,
                 seru_captures,
                 active_chains,
+                // LGX2 carries no shiny data; the LGX4 block (parsed later)
+                // folds it into the matching entry by char_slot.
+                shiny_spells: Vec::new(),
             },
         ));
     }
@@ -687,6 +795,7 @@ mod tests {
                             spells: vec![0x10, 0x11, 0x20],
                             seru_captures: vec![(1, 50), (2, 100)],
                             active_chains: [[1, 2, 3, 4], [4, 4, 4, 0], [0, 0, 0, 0], [2, 1, 3, 4]],
+                            shiny_spells: vec![0x11],
                         },
                     ),
                     (
@@ -696,6 +805,7 @@ mod tests {
                             spells: vec![],
                             seru_captures: vec![(5, 25)],
                             active_chains: [[0; 4]; 4],
+                            shiny_spells: vec![],
                         },
                     ),
                 ],
@@ -936,6 +1046,7 @@ mod tests {
                         spells: vec![1, 2, 3],
                         seru_captures: vec![(0x81, 100), (0x82, 50)],
                         active_chains: [[1, 2, 3, 4]; 4],
+                        shiny_spells: vec![2],
                     },
                 )],
                 saved_chains: vec![SavedChainRecord {

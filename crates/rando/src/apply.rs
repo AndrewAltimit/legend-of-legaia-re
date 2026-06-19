@@ -275,6 +275,52 @@ pub fn inject_enemy_ally(patcher: &mut DiscPatcher, pct: u8) -> Result<EnemyAlly
     Ok(EnemyAllyReport { pct: plan.pct })
 }
 
+/// Outcome of enabling shiny Seru.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShinySeruReport {
+    /// Per-battle probability (percent) that a capturable enemy spawns shiny.
+    pub pct: u8,
+}
+
+/// Inject the **shiny Seru** feature (see [`crate::shiny_seru`]): with `pct`%
+/// probability per battle, the frontmost *capturable* enemy spawns with +35%
+/// stats; capturing it flags the learned Seru so its spell deals +35% damage
+/// forever (the flag persists in the spell-level byte's high bit and is masked
+/// from the level-up + menu readers).
+///
+/// Eight same-size detours + their routines, split between a new preserved
+/// `SCUS_942.54` rodata gap and the battle-action overlay's move-power padding
+/// (both reference-free, and disjoint from every other gap feature so they
+/// compose). Fails (without touching the disc) if the build isn't the
+/// recognized US layout or a routine region isn't dead space.
+pub fn inject_shiny_seru(patcher: &mut DiscPatcher, pct: u8) -> Result<ShinySeruReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for shiny-seru injection")?;
+    let ov0898 = patcher
+        .read_entry(crate::shiny_seru::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay (0898) for shiny-seru injection")?;
+    let ov0899 = patcher
+        .read_entry(crate::shiny_seru::MENU_OVERLAY_PROT_INDEX)
+        .context("read menu overlay (0899) for shiny-seru injection")?;
+    let plan = crate::shiny_seru::ShinySeruInjection::plan(&scus, &ov0898, &ov0899, pct)?;
+
+    for edit in &plan.edits {
+        match edit.prot_index {
+            None => patcher
+                .patch_named_file(SCUS_NAME, edit.file_off as u64, &edit.bytes)
+                .with_context(|| format!("write shiny-seru SCUS edit at {:#x}", edit.file_off))?,
+            Some(idx) => patcher
+                .patch_prot_entry(idx, edit.file_off as u64, &edit.bytes)
+                .with_context(|| {
+                    format!("write shiny-seru PROT {idx} edit at {:#x}", edit.file_off)
+                })?,
+        }
+    }
+
+    Ok(ShinySeruReport { pct: plan.pct })
+}
+
 /// Outcome of enabling seru trading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeruTradeReport {

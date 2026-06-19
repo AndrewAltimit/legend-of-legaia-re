@@ -21,7 +21,7 @@
 //!   "Genocide Crystal succeeded → captured Seru: `<name>`" → "`<X>` learned
 //!   `<spell>`!" → close popup flow.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// One Seru that can be captured. Engines populate a [`SeruRegistry`]
 /// with these at startup from the level_up overlay's `seru_table`
@@ -269,7 +269,20 @@ pub struct SeruCaptureLog {
     /// Per-character learned-spell list (spell ids the character knows).
     /// Save layer persists this; battle layer reads it for the spell menu.
     learned_spells: HashMap<u8, Vec<u8>>,
+    /// `(char_slot, spell_id)` pairs that were learned from a **shiny** Seru
+    /// (the rare 2%-per-battle variant). A shiny-captured Seru's spell deals
+    /// `+SHINY_DAMAGE_BONUS_PCT`% extra damage for that character on every
+    /// future cast, on top of its normal scaling. Mirrors the retail
+    /// `+0x161` spell-level-byte high-bit flag (see the `shiny_seru`
+    /// randomizer feature); persisted in the LGSF v4 `LGX4` save block.
+    shiny: HashSet<(u8, u8)>,
 }
+
+/// Extra damage a shiny-captured Seru's spell deals, in percent, on top of
+/// the normal summon-damage roll. Matches the `--shiny-seru` randomizer's
+/// retail `+35%` (×135/100) damage boost so the engine and patched-disc
+/// behaviours agree.
+pub const SHINY_DAMAGE_BONUS_PCT: u32 = 35;
 
 impl SeruCaptureLog {
     pub fn new() -> Self {
@@ -340,6 +353,24 @@ impl SeruCaptureLog {
         self.rows
             .get(&(char_slot, seru_id))
             .is_some_and(|r| r.learned)
+    }
+
+    /// Mark `char_slot`'s `spell_id` as shiny (learned from a shiny Seru).
+    /// Idempotent. The spell deals [`SHINY_DAMAGE_BONUS_PCT`]% extra damage
+    /// for this character thereafter.
+    pub fn mark_shiny(&mut self, char_slot: u8, spell_id: u8) {
+        self.shiny.insert((char_slot, spell_id));
+    }
+
+    /// `true` if `char_slot`'s `spell_id` was learned from a shiny Seru.
+    pub fn is_shiny(&self, char_slot: u8, spell_id: u8) -> bool {
+        self.shiny.contains(&(char_slot, spell_id))
+    }
+
+    /// Iterate every `(char_slot, spell_id)` flagged shiny. Engines use this
+    /// to persist the shiny set into the save file.
+    pub fn iter_shiny(&self) -> impl Iterator<Item = (u8, u8)> + '_ {
+        self.shiny.iter().copied()
     }
 
     /// Total accumulated capture points for diagnostics.
@@ -666,6 +697,21 @@ mod tests {
         assert!(out.learns.is_empty());
         // Spell list still has one entry.
         assert_eq!(log.learned_spells(0).len(), 1);
+    }
+
+    #[test]
+    fn shiny_flag_round_trips_per_char_spell() {
+        let mut log = SeruCaptureLog::new();
+        assert!(!log.is_shiny(0, 0x81));
+        log.mark_shiny(0, 0x81);
+        log.mark_shiny(0, 0x81); // idempotent
+        log.mark_shiny(1, 0x82);
+        assert!(log.is_shiny(0, 0x81));
+        assert!(!log.is_shiny(1, 0x81), "shiny is per (char, spell)");
+        assert!(log.is_shiny(1, 0x82));
+        let set: std::collections::HashSet<(u8, u8)> = log.iter_shiny().collect();
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&(0, 0x81)) && set.contains(&(1, 0x82)));
     }
 
     #[test]

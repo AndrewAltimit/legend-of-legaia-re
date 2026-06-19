@@ -119,6 +119,15 @@ impl World {
                 .map(|(_, sid, row)| (sid, row.points))
                 .collect();
             ce.seru_captures.sort_by_key(|&(sid, _)| sid);
+            // Shiny spells: spell ids this character learned from a shiny
+            // capture (+35% damage). Persisted in the LGSF v4 LGX4 block.
+            ce.shiny_spells = self
+                .seru_log
+                .iter_shiny()
+                .filter(|(s, _)| *s == slot)
+                .map(|(_, spell_id)| spell_id)
+                .collect();
+            ce.shiny_spells.sort_unstable();
             // Active-chain selection still lives in the per-char ext mirror.
             if let Some((_, src)) = self.per_char_ext.iter().find(|(s, _)| *s == slot) {
                 ce.active_chains = src.active_chains;
@@ -215,6 +224,10 @@ impl World {
                 } else {
                     self.seru_log.mark_learned(*slot, spell_id as u16, spell_id);
                 }
+            }
+            // Restore the shiny set (+35% damage spells).
+            for &spell_id in &ce.shiny_spells {
+                self.seru_log.mark_shiny(*slot, spell_id);
             }
         }
     }
