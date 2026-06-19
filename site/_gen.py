@@ -1032,7 +1032,11 @@ def write_gitignore(generated: list[str]) -> None:
         "# them on the GitHub Pages deploy. This manifest file is itself tracked.",
         "",
     ]
-    lines = header + sorted(generated) + [""]
+    # Anchor every entry to the site/ root with a leading slash. A bare path
+    # like `index.html` would otherwise match that name anywhere in the tree -
+    # including the source fragments under _content/ (e.g. the writeups index
+    # pages), silently un-tracking them so CI checks out without their content.
+    lines = header + [f"/{p}" for p in sorted(generated)] + [""]
     (ROOT / ".gitignore").write_text("\n".join(lines))
 
 

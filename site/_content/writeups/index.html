@@ -1,0 +1,31 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; write-ups</div>
+  <h1>Technical write-ups</h1>
+  <p class="lede">Long-form walk-throughs of how a piece of the game was reverse-engineered and what the project built on top of it. The rest of the site is reference - per-format byte specs, per-subsystem function maps; these pages are the <em>narrative</em>: the reasoning, the dead ends, and the payoff, told in reading order.</p>
+</header>
+
+<section class="doc-section" id="index">
+  <h2>Series</h2>
+  <ul>
+    <li>
+      <a href="disc-patching/index.html"><strong>Patching a sealed disc</strong></a>
+      - how the randomizer rewrites a retail Legaia disc with no source and no SDK, told as a ladder of <strong>injection techniques</strong>: from same-size byte edits, through editing inside compression and rewriting field-VM bytecode, up to hand-assembled MIPS hosted in a resident overlay's dead space (the in-shop Seru-trading vendor). One page per technique; the mods are the worked examples. Includes a generated <a href="disc-patching/index.html#catalog">mod catalog + roadmap</a>.
+    </li>
+  </ul>
+</section>
+
+<section class="doc-section" id="conventions">
+  <h2>How to read these</h2>
+  <p>Each write-up leads with the <strong>reverse engineering</strong> - the static and runtime evidence that pinned a function, an offset, or a structure - and only then describes what was built. Addresses are PSX virtual addresses (<code>0x801C0000+</code> is the overlay window); function labels are Ghidra's <code>FUN_8xxxxxxx</code> entry points, cross-referenced to the per-subsystem and per-format reference pages. No Sony-owned bytes appear here or anywhere in the repo - only addresses, offsets, and the project's own clean-room code.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../tooling/randomizer.html">Randomizer / disc patcher</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher (in browser)</a>
+    <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>
+    <a href="../subsystems/shop.html">Shop subsystem</a>
+  </div>
+</section>
