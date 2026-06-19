@@ -98,8 +98,15 @@ fn injection_writes_detours_and_routines_surgically() {
         .unwrap();
     let ov0899_0 = patcher.read_entry(MENU_OVERLAY_PROT_INDEX).unwrap();
 
+    // Capturable-Seru ids derived from the disc (same as apply does).
+    let archive = patcher.read_entry(867).unwrap();
+    let ids = shiny_seru::capturable_monster_ids(&archive).expect("capturable ids");
+    assert!(
+        ids.contains(&10) && !ids.contains(&4),
+        "Gimard (10) capturable, gobu (4) not: {ids:?}"
+    );
     // Plan first so we can check exactly the planned bytes landed.
-    let plan = ShinySeruInjection::plan(&scus0, &ov0898_0, &ov0899_0, pct).expect("plan");
+    let plan = ShinySeruInjection::plan(&scus0, &ov0898_0, &ov0899_0, pct, &ids).expect("plan");
     let report = apply::inject_shiny_seru(&mut patcher, pct).expect("inject");
     assert_eq!(report.pct, pct);
 
@@ -230,25 +237,32 @@ fn planner_refuses_an_unrecognized_build() {
         .read_entry(BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .unwrap();
     let ov0899 = patcher.read_entry(MENU_OVERLAY_PROT_INDEX).unwrap();
+    let ids = shiny_seru::capturable_monster_ids(&patcher.read_entry(867).unwrap()).unwrap();
 
     // Plans on the real build.
-    assert!(ShinySeruInjection::plan(&scus, &ov0898, &ov0899, 20).is_ok());
+    assert!(ShinySeruInjection::plan(&scus, &ov0898, &ov0899, 20, &ids).is_ok());
 
     // Corrupt the SCUS setup hook -> refuse.
     let mut scus_bad = scus.clone();
     let off = file_offset_for_va(&scus_bad, HOOK_SETUP_VA).unwrap();
     scus_bad[off] ^= 0xFF;
-    assert!(ShinySeruInjection::plan(&scus_bad, &ov0898, &ov0899, 20).is_err());
+    assert!(ShinySeruInjection::plan(&scus_bad, &ov0898, &ov0899, 20, &ids).is_err());
 
     // Dirty the SCUS routine landing zone -> refuse.
     let mut scus_dirty = scus.clone();
     let goff = file_offset_for_va(&scus_dirty, SCUS_GAP_VA).unwrap();
     scus_dirty[goff + 8] = 0x42;
-    assert!(ShinySeruInjection::plan(&scus_dirty, &ov0898, &ov0899, 20).is_err());
+    assert!(ShinySeruInjection::plan(&scus_dirty, &ov0898, &ov0899, 20, &ids).is_err());
 
     // Corrupt a 0898 hook -> refuse.
     let mut ov_bad = ov0898.clone();
     let doff = (HOOK_DAMAGE_VA - OVERLAY_BASE_VA) as usize;
     ov_bad[doff] ^= 0xFF;
-    assert!(ShinySeruInjection::plan(&scus, &ov_bad, &ov0899, 20).is_err());
+    assert!(ShinySeruInjection::plan(&scus, &ov_bad, &ov0899, 20, &ids).is_err());
+
+    // Dirty the second SCUS gap (bitmap region) -> refuse.
+    let mut scus_g2 = scus.clone();
+    let g2off = file_offset_for_va(&scus_g2, shiny_seru::SCUS_GAP2_VA).unwrap();
+    scus_g2[g2off + 4] = 0x42;
+    assert!(ShinySeruInjection::plan(&scus_g2, &ov0898, &ov0899, 20, &ids).is_err());
 }

@@ -303,7 +303,15 @@ pub fn inject_shiny_seru(patcher: &mut DiscPatcher, pct: u8) -> Result<ShinySeru
     let ov0899 = patcher
         .read_entry(crate::shiny_seru::MENU_OVERLAY_PROT_INDEX)
         .context("read menu overlay (0899) for shiny-seru injection")?;
-    let plan = crate::shiny_seru::ShinySeruInjection::plan(&scus, &ov0898, &ov0899, pct)?;
+    // Derive the capturable-Seru monster ids from the disc's monster names so
+    // the allowlist tracks the actual `battle_data` archive (no hardcoded ids).
+    let archive = patcher
+        .read_entry(MONSTER_ARCHIVE_ENTRY)
+        .context("read monster battle_data archive for shiny-seru allowlist")?;
+    let capturable = crate::shiny_seru::capturable_monster_ids(&archive)
+        .context("derive capturable-Seru ids")?;
+    let plan =
+        crate::shiny_seru::ShinySeruInjection::plan(&scus, &ov0898, &ov0899, pct, &capturable)?;
 
     for edit in &plan.edits {
         match edit.prot_index {

@@ -362,12 +362,12 @@ key = "shiny_seru"
 name = "Shiny Seru"
 flag = "--shiny-seru"
 tier = "E"
-target = "8 detours -> routines in a NEW preserved SCUS gap 0x80077728 (padding before the steal table) + the 0898 move-power padding cave 0x801F4FC4. Setup boost 0x80051A20, capture-copy 0x801EE2E8, grant-OR 0x801E93B4, damage x1.35 0x801DDB08, level-up gate/read/write 0x801E71C8/71DC/7224, menu mask 0x801D2FA0 (overlay 0899)"
+target = "8 detours -> routines across 3 reference-free regions: a NEW SCUS gap 0x80077728 (padding before the steal table) + the 0898 move-power padding cave 0x801F4FC4 + a 2nd SCUS gap 0x800783C4 (capturable bitmap + level-up read-masks). Setup boost+capturable check 0x80051A20, capture-copy 0x801EE2E8, grant-OR 0x801E93B4, damage x1.35 0x801DDB08, level-up gate/read/write 0x801E71C8/71DC/7224, menu mask 0x801D2FA0 (overlay 0899)"
 edit = "in-place"
 gap = true
 status = "shipped"
 test = "shiny_seru_real.rs"
-notes = "2%/battle a capturable enemy (actor +0x3e != 0) gets +35% stats; capture sets the spell-level high bit 0x80 as a persistent shiny flag (rides the spell-list shift, survives save); damage reads it x135/100, and the level-up + menu readers mask it. Mirrors the engine seru_learning shiny set. Uses a distinct SCUS gap from the 0x8007AB38 features so it composes with all of them"
+notes = "2%/battle a capturable enemy gets +35% stats; capture sets the spell-level high bit 0x80 as a persistent shiny flag (rides the spell-list shift, survives save); damage reads it x135/100, and the level-up + menu readers mask it. Capturable = first-monster id DAT_8007BD0C indexed into an allowlist bitmap built at patch time from the disc's monster names matching the 11 player Seru-magic names (NOT actor+0x3e, which is volatile). Every routine honours the R3000 load-delay slot. Mirrors the engine seru_learning shiny set; distinct gaps from the 0x8007AB38 features so it composes"
 
 # ---------------------------------------------------------------------------
 # Tier F - overlay dead-region injection

@@ -269,20 +269,25 @@ Gives a per-battle chance (`--shiny-seru`, `--shiny-pct`%, default **2**) that t
 frontmost **capturable** enemy spawns as a rare *shiny* variant: +35% stats at
 battle load, and the Seru you capture from it deals +35% damage on every future
 cast, permanently (`shiny_seru` module; mirrors the engine
-`seru_learning::SHINY_DAMAGE_BONUS_PCT`). "Capturable" is the enemy actor's own
-runtime `+0x3e` field, so no monster list is needed; the persistent bonus rides
-the free high bit `0x80` of the captured spell's level byte (max legit level 9),
-so it survives a memory-card save and the spell-list insertion shift.
+`seru_learning::SHINY_DAMAGE_BONUS_PCT`). "Capturable" is decided by indexing the
+first-monster id (`DAT_8007BD0C`) into a 256-bit allowlist bitmap built **at patch
+time** from the disc's monster names that match a player Seru-magic name
+(`capturable_monster_ids` / `SERU_NAMES`) - NOT the `actor+0x3e` byte (volatile,
+not a Seru flag). The persistent bonus rides the free high bit `0x80` of the
+captured spell's level byte (max legit level 9), so it survives a memory-card save
+and the spell-list insertion shift.
 
-`apply::inject_shiny_seru` performs **eight** same-size detours into routines in a
-*new* preserved SCUS rodata gap at `0x80077728` (padding before the steal table,
-distinct from the `0x8007AB38` gap so it composes with all those features) plus
-the battle overlay 0898's move-power padding at `0x801F4FC4`: setup boost
-(`0x80051A20`) + capture-copy (`0x801EE2E8`) + grant-OR (`0x801E93B4`) + damage
-`×135/100` (`0x801DDB08`) + level-up gate/read/write (`0x801E71C8`/`71DC`/`7224`,
-so a shiny Seru still levels and keeps its flag) + menu-digit mask (`0x801D2FA0`,
-overlay 0899). Same all-zero / known-build guards as the other hooks. On by
-default in the web Balanced / Full Chaos presets.
+`apply::inject_shiny_seru` performs **eight** same-size detours into routines
+across three reference-free regions - a *new* preserved SCUS rodata gap at
+`0x80077728` (padding before the steal table, distinct from the `0x8007AB38` gap
+so it composes), the battle overlay 0898's move-power padding at `0x801F4FC4`, and
+a second SCUS gap at `0x800783C4` (the capturable bitmap + the level-up
+read-masks): setup boost + capturable check (`0x80051A20`) + capture-copy
+(`0x801EE2E8`) + grant-OR (`0x801E93B4`) + damage `×135/100` (`0x801DDB08`) +
+level-up gate/read/write (`0x801E71C8`/`71DC`/`7224`, so a shiny Seru still levels
+and keeps its flag) + menu-digit mask (`0x801D2FA0`, overlay 0899). Every routine
+honours the R3000 load-delay slot. Same all-zero / known-build guards as the other
+hooks. On by default in the web Balanced / Full Chaos presets.
 
 ## Seru trading
 

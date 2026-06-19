@@ -510,22 +510,30 @@ every future cast (on top of its normal abilities), permanently (`shiny_seru`
 module). This mirrors the clean-room engine implementation
 (`legaia_engine_core::seru_learning`'s shiny set + `SHINY_DAMAGE_BONUS_PCT`).
 
-"Capturable" is read at runtime from the enemy actor's own `+0x3e` byte (the
-Seru-spell id the capture roll keys on; `0` = not capturable), so no monster-id
-allowlist is needed. The persistent +35% rides the **free high bit `0x80` of the
-captured spell's level byte** (`record+0x161`; max legit level is 9, so the bit
-is spare) - which means it survives a memory-card save and the spell-list
-insertion shift when more Seru are captured.
+"Capturable" is decided by indexing the **first-monster id global**
+(`DAT_8007BD0C`, reliably set before the setup hook - the game's own `0xB5` check
+reads it) into a 256-bit **allowlist bitmap** built *at patch time* from the
+disc's monster names that match a player Seru-magic name (`capturable_monster_ids`
+/ `SERU_NAMES`: Gimard / Theeder / Vera / Gizam / Nighto / Zenoir / Viguro /
+Swordie / Orb / Freed / Nova + variants = 33 ids). The earlier `actor+0x3e` idea
+was wrong - that byte is volatile (reads 0x55 for gobu) and isn't a Seru flag.
+The persistent +35% rides the **free high bit `0x80` of the captured spell's level
+byte** (`record+0x161`; max legit level is 9, so the bit is spare) - which means
+it survives a memory-card save and the spell-list insertion shift when more Seru
+are captured. (Every injected routine honours the R3000 load-delay slot - a
+just-loaded register is never used by the next instruction, else the value isn't
+ready yet; the boost loop in particular cascades into garbage without this.)
 
-`apply::inject_shiny_seru` performs **eight** same-size detours into routines in a
-*new* preserved SCUS rodata gap at `0x80077728` (the padding before the steal
-table `DAT_80077828`, distinct from the `0x8007AB38` gap so it composes with all
-those features) plus the battle-action overlay 0898's move-power-table padding at
-`0x801F4FC4`:
+`apply::inject_shiny_seru` performs **eight** same-size detours into routines
+across three reference-free regions: a *new* preserved SCUS rodata gap at
+`0x80077728` (the padding before the steal table `DAT_80077828`, distinct from the
+`0x8007AB38` gap so it composes), the battle-action overlay 0898's
+move-power-table padding at `0x801F4FC4`, and a second SCUS gap at `0x800783C4`
+(hosting the capturable bitmap + the level-up read-masks):
 
 1. **setup** (`FUN_800513F0` `0x80051A20`) - roll the chance; if the frontmost
-   enemy is capturable, boost its stat block `×135/100` and stamp the free
-   per-actor byte `+0x226` as a shiny marker;
+   enemy's monster id is set in the capturable bitmap, boost its stat block
+   `×135/100` and stamp the free per-actor byte `+0x226` as a shiny marker;
 2. **capture-success** (`0x801EE2E8`) - stash the captured enemy's `+0x226`
    marker into a scratch word (the captured-enemy actor isn't reachable at the
    grant site, so the link is carried here);
@@ -540,8 +548,8 @@ those features) plus the battle-action overlay 0898's move-power-table padding a
 8. **menu** (`FUN_801d2e74` `0x801D2FA0`, overlay 0899) - mask `0x80` so the
    spell-list level digit renders correctly.
 
-The planner guards every hook's fingerprint word and both routine regions being
-all-zero dead space - refusing a differently-laid-out image rather than
+The planner guards every hook's fingerprint word and all three routine regions
+being all-zero dead space - refusing a differently-laid-out image rather than
 corrupting it. On by default in the web Full Chaos / Balanced presets.
 
 > Like the other code hooks, the clean-room engine can't execute injected MIPS,
@@ -1304,7 +1312,7 @@ bit-for-bit.
 | `crates/rando` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/rando` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/rando` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
-| `crates/rando` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all eight hook sites match the known US build (setup `0x80051A20`, capture `0x801EE2E8`, grant `0x801E93B4`, damage `0x801DDB08`, level-up `0x801E71C8`/`71DC`/`7224`, menu `0x801D2FA0`) and the new SCUS gap `0x80077728` is dead space, then off the patched image that every detour became `j routine` + nop, every byte outside the planned edits is untouched (across SCUS + overlays 0898/0899), the disc still parses + stays EDC/ECC-valid, it composes with enemy-ally (disjoint gaps), byte-deterministic, and the build guards refuse a corrupted hook / non-dead region |
+| `crates/rando` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all eight hook sites match the known US build (setup `0x80051A20`, capture `0x801EE2E8`, grant `0x801E93B4`, damage `0x801DDB08`, level-up `0x801E71C8`/`71DC`/`7224`, menu `0x801D2FA0`) and all three routine regions (`0x80077728` / `0x801F4FC4` / `0x800783C4`) are dead space, then off the patched image that every detour became `j routine` + nop, the capturable bitmap has Gimard (10) set and gobu (4) clear, every byte outside the planned edits is untouched (across SCUS + overlays 0898/0899), the disc still parses + stays EDC/ECC-valid, it composes with enemy-ally (disjoint gaps), byte-deterministic, and the build guards refuse a corrupted hook / non-dead region |
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
