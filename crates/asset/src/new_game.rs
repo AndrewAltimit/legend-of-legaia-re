@@ -241,15 +241,15 @@ pub const WARP_ALL_FLAGS_HI: u16 = 0xF8FF;
 /// ```
 ///
 /// - all inside `SC[0..0x1a18)`, which both callers `memset` before the call,
-/// so these four stores are redundant in exactly the way the zero-loop is. They
-/// are reclaimable for the warp preset. **Crucially the preset must not touch
-/// `$v0`**: it holds `0x2dc0` set just above (`0x80034ad8`) and consumed just
-/// below (`0x80034af0` → `DAT_80073ef8`), so the warp stores use `$v1` (dead
-/// after `0x80034acc`). The party-stat seeder `FUN_800560b4` called between this
-/// region and gameplay never touches the warp window, so the preset survives -
-/// **provided** the zero-loop at [`STARTING_INV_SEED_VA`] (which would otherwise
-/// re-clear `SC+0x161C`) is overwritten, which it always is whenever the seed is
-/// rewritten at all.
+///   so these four stores are redundant in exactly the way the zero-loop is. They
+///   are reclaimable for the warp preset. **Crucially the preset must not touch
+///   `$v0`**: it holds `0x2dc0` set just above (`0x80034ad8`) and consumed just
+///   below (`0x80034af0` → `DAT_80073ef8`), so the warp stores use `$v1` (dead
+///   after `0x80034acc`). The party-stat seeder `FUN_800560b4` called between this
+///   region and gameplay never touches the warp window, so the preset survives -
+///   **provided** the zero-loop at [`STARTING_INV_SEED_VA`] (which would otherwise
+///   re-clear `SC+0x161C`) is overwritten, which it always is whenever the seed is
+///   rewritten at all.
 pub const WARP_SEED_VA: u32 = 0x8003_4ADC;
 
 /// Byte length of the reclaimable warp-preset region ([`WARP_SEED_VA`]): four

@@ -337,9 +337,9 @@ pub const BUCKET_ENTRY_LEN: usize = 3;
 /// Precompute the whole vendor schedule: for each bucket `0..count`, deterministically
 /// pick a `(want_id, give_id)` pair of distinct ids from `pool`. Ownership-independent
 /// - the live party is only consulted at render time (see [`expand_offers`]). The same
-/// `(seed, count, pool)` always yields the same schedule, so the randomizer's on-disc
-/// table and any engine preview agree. An empty / single-element `pool` yields all
-/// `(0, 0)` (no offer) entries.
+///   `(seed, count, pool)` always yields the same schedule, so the randomizer's on-disc
+///   table and any engine preview agree. An empty / single-element `pool` yields all
+///   `(0, 0)` (no offer) entries.
 pub fn bucket_offers(seed: u64, count: usize, pool: &[u8]) -> Vec<BucketOffer> {
     (0..count)
         .map(|bucket| {

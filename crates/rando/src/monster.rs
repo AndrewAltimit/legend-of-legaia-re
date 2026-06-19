@@ -4,8 +4,8 @@
 //! laid out as `[u32 decompressed_size][Legaia LZS stream]` (see
 //! [`legaia_asset::monster_archive`]). To change a value in the decoded record
 //! - e.g. the item drop the randomizer shuffles - we decompress the slot, edit
-//! the decoded block in place, recompress with [`legaia_lzs::compress`], and
-//! rebuild `[u32 size][stream]` zero-padded back to the original slot size.
+//!   the decoded block in place, recompress with [`legaia_lzs::compress`], and
+//!   rebuild `[u32 size][stream]` zero-padded back to the original slot size.
 //!
 //! The decoded length is unchanged, so the slot size and therefore every other
 //! monster's slot offset stay fixed: a drop edit is a same-size, in-place byte

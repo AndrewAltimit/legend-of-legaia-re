@@ -30,7 +30,7 @@
 //!
 //! The ECC is computed with the 4-byte header (`0x00C..0x010`) treated as zero
 //! - the Form 1 convention - so the parity does not depend on the sector's MSF
-//! address.
+//!   address.
 
 use crate::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use anyhow::{Result, bail};

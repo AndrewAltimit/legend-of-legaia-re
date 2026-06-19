@@ -166,10 +166,10 @@ pub const MOVE_ID_INDEX_NONE: u8 = 0xFF;
 /// effect-id lists index. Each `u32` entry is the spawn parameter `FUN_801e09f8`
 /// passes to the effect spawner `FUN_80050ed4` (→ the part-stager `FUN_80021B04`)
 /// - and it is a **pointer into this same overlay's data** at a move-VM part
-/// record `[i16 model_sel][u16 flags][bytecode]` (the summon part-record format).
-/// So the table is the move-FX **part-record index**: every entry resolves to a
-/// scene-graph head the move VM then animates. Resolve entries with
-/// [`EffectAuxTables::proto_record_offset`] / [`parse_effect_proto_records`].
+///   record `[i16 model_sel][u16 flags][bytecode]` (the summon part-record format).
+///   So the table is the move-FX **part-record index**: every entry resolves to a
+///   scene-graph head the move VM then animates. Resolve entries with
+///   [`EffectAuxTables::proto_record_offset`] / [`parse_effect_proto_records`].
 pub const EFFECT_PROTO_TABLE_VA: u32 = 0x801F_6324;
 
 /// Runtime VA of the **per-effect SFX table** indexed by the same effect-list
@@ -573,10 +573,10 @@ impl EffectAuxTables {
 /// Each of the table's [`EFFECT_AUX_TABLE_LEN`] entries is a pointer into this
 /// overlay's own data at a `[i16 model_sel][u16 flags][move-VM bytecode]` record
 /// - the same scene-graph part format the summon stagers use
-/// ([`crate::summon_overlay`]). Entries can alias (several effect ids reuse one
-/// record), so the returned parts are the **unique** records, sorted by offset,
-/// each with its `bytecode` range bounded by the next record. Map a proto index
-/// back to its record with [`EffectAuxTables::proto_record_offset`].
+///   ([`crate::summon_overlay`]). Entries can alias (several effect ids reuse one
+///   record), so the returned parts are the **unique** records, sorted by offset,
+///   each with its `bytecode` range bounded by the next record. Map a proto index
+///   back to its record with [`EffectAuxTables::proto_record_offset`].
 ///
 /// Returns `None` if the overlay fails the move-power structural guard (so a
 /// wrong / different-build entry can't yield garbage). The `bytecode` ranges

@@ -177,7 +177,7 @@ const FIELD_FACING_PROBES: [(i16, i16); 8] = [
 /// the touch dispatch passes extents `0x20` into `FUN_801cf9f4`, whose
 /// moving-actor arm tests `|probe - pos| < 0x40 + (extent - 0x18)` per axis
 /// - ±72 units, wider than the ±40 the locomotion probe gets with its zero
-/// extents ([`FIELD_NPC_BOX_HALF`]).
+///   extents ([`FIELD_NPC_BOX_HALF`]).
 const FIELD_INTERACT_BOX_HALF: i32 = 0x40 + 0x20 - 0x18;
 
 /// Half-extent of a STATIC entity's (prop's) collision box: retail's

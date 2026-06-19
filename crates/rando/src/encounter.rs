@@ -319,9 +319,9 @@ impl SceneEncounters {
 
     /// The distinct monster ids this scene uses across its **random** formations
     /// - the safe pool to draw from (every id is already scene-loaded, and
-    /// scripted/boss ids are excluded so a `Random` roll never drops a boss into
-    /// an ordinary encounter). Scripted formations are skipped (see
-    /// [`Self::is_random_formation`]).
+    ///   scripted/boss ids are excluded so a `Random` roll never drops a boss into
+    ///   an ordinary encounter). Scripted formations are skipped (see
+    ///   [`Self::is_random_formation`]).
     pub fn monster_pool(&self) -> Vec<u8> {
         let mut pool = Vec::new();
         for i in 0..self.formation_count {

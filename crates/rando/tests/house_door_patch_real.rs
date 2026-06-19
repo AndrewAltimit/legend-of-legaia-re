@@ -5,9 +5,9 @@
 //! OUT-class target multisets are each preserved (so every house entry still
 //! lands in some interior and every exit still lands at some exterior doorstep
 //! - no off-map placement, no interior-to-interior softlock), every patched
-//! MAN re-parses through disc → ISO → PROT → LZS, every touched sector stays
-//! EDC/ECC-valid, the image size is unchanged, and a fixed seed is
-//! byte-deterministic. Skips + passes without `LEGAIA_DISC_BIN`.
+//!   MAN re-parses through disc → ISO → PROT → LZS, every touched sector stays
+//!   EDC/ECC-valid, the image size is unchanged, and a fixed seed is
+//!   byte-deterministic. Skips + passes without `LEGAIA_DISC_BIN`.
 
 use std::collections::BTreeMap;
 

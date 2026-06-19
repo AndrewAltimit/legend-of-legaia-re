@@ -184,11 +184,11 @@ pub struct Prim {
     /// Per-vertex `[R, G, B]` colours for **untextured** prims (`F*`/`G*`), in
     /// the same stored order as [`vertex_indices_raw`](Self::vertex_indices_raw)
     /// - `colors[i]` pairs with `vertex_indices_raw[i]`. A **flat** prim stores
-    /// one colour word at the prim start, replicated to every vertex here; a
-    /// **gouraud** prim stores one colour word per vertex at a 4-byte stride.
-    /// Empty for textured prims (their pre-vertex block is UV/CBA/TSB, exposed
-    /// via [`uvs`](Self::uvs)/[`cba`](Self::cba)/[`tsb`](Self::tsb)). The 4th
-    /// byte of each colour word is the SDK GP0 code byte and is dropped here.
+    ///   one colour word at the prim start, replicated to every vertex here; a
+    ///   **gouraud** prim stores one colour word per vertex at a 4-byte stride.
+    ///   Empty for textured prims (their pre-vertex block is UV/CBA/TSB, exposed
+    ///   via [`uvs`](Self::uvs)/[`cba`](Self::cba)/[`tsb`](Self::tsb)). The 4th
+    ///   byte of each colour word is the SDK GP0 code byte and is dropped here.
     pub colors: Vec<[u8; 3]>,
 }
 
