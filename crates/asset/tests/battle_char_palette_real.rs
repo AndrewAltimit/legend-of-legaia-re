@@ -4,10 +4,10 @@
 //! battle record (extraction PROT `0863`, raw TOC `0x361` = the `PLAYER1`
 //! file; see `docs/formats/cdname.md` § numbering space). The historical
 //! `0861` reading matched the same record through the two 1-sector stub
-//! entries preceding it — their `2 × 0x800` bytes are exactly the `+0x1000`
+//! entries preceding it - their `2 × 0x800` bytes are exactly the `+0x1000`
 //! "pochi header" the old assert documented. The
 //! band colours themselves are Sony data, so this asserts only the structure
-//! (band bases + counts) plus an FNV-1a digest of the colours — never the raw
+//! (band bases + counts) plus an FNV-1a digest of the colours - never the raw
 //! palette bytes. Skips when `LEGAIA_DISC_BIN` is unset so CI works without
 //! redistributing disc data.
 

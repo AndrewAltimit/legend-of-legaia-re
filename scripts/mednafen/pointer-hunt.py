@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generalised "find the RAM cell holding a pointer into <window>" tool.
 
-Companion to `mednafen-state diff` — that command surfaces *changed bytes*, this
+Companion to `mednafen-state diff` - that command surfaces *changed bytes*, this
 one surfaces *changed pointers*. The output is a list of u32-aligned RAM cells
 whose value is a PSX-RAM pointer (`0x80000000..0x80200000`) into a target
 window in either save or both.
@@ -9,15 +9,15 @@ window in either save or both.
 The pattern shows up everywhere in retail engine RE work: a structure is
 loaded into RAM by an overlay, and then the rest of the code reads it through
 a base-pointer that some scene-init writer set up. To find that writer, you
-first need to know where the base-pointer LIVES — that's what this tool does.
+first need to know where the base-pointer LIVES - that's what this tool does.
 
 Two main modes:
 
-  - `into-window <save> --target-lo X --target-hi Y` — list every cell in
+  - `into-window <save> --target-lo X --target-hi Y` - list every cell in
     `<save>` that holds a pointer into `[X, Y)`. Use this to find the
     "table base" cell after you've located the table window with `diff`.
 
-  - `flips <save_a> <save_b> --target-lo X --target-hi Y` — list cells that
+  - `flips <save_a> <save_b> --target-lo X --target-hi Y` - list cells that
     flipped from "not pointing into the window" to "pointing into the
     window" (or vice-versa) between the two saves. Use this to find a
     base-pointer cell that gets newly populated when an overlay loads.

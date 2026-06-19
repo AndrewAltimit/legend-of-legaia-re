@@ -12,7 +12,7 @@
 //! Read across the whole corpus, the value is **not** a constant `3`: it is `0`
 //! whenever no battle effect-model library is resident (every field / town /
 //! menu / minigame / cutscene / battle-loading frame), and **`party_count + 2`**
-//! whenever a battle has installed the library — `3` for the 1-member training
+//! whenever a battle has installed the library - `3` for the 1-member training
 //! party (Vahn alone) and `5` for the 3-member party (Vahn / Noa / Gala). So the
 //! base tracks party size: the two fixed pool slots plus the live party-character
 //! meshes precede the effect-model library, and `gp[0x754]` is where that library
@@ -24,7 +24,7 @@
 //! model retail reaches via `model_sel + gp[0x754]` (the library content is the
 //! same; only its pool offset shifts with party size). The two layouts are
 //! equivalent. This test pins the retail *relationship* so the observation
-//! survives — and so a future capture with a 2-member party can refine the `+2`
+//! survives - and so a future capture with a 2-member party can refine the `+2`
 //! prefix if it ever turns out to be party-size-dependent rather than fixed.
 //!
 //! Library-gated (not disc-gated): the capture states live as immutable,
@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 
 use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice, scenarios};
 
-/// PSX address of `gp[0x754]` — the battle effect-model-library additive base
+/// PSX address of `gp[0x754]` - the battle effect-model-library additive base
 /// (`gp` base `0x8007B318` + `0x754`). See `docs/formats/move-power.md`.
 const GP_754_MODEL_BASE: u32 = 0x8007_BA6C;
 

@@ -1,13 +1,13 @@
 //! Treasure-chest (field item-give) randomization.
 //!
 //! A chest gives its item via the field-VM **`GIVE_ITEM` opcode `0x39`**,
-//! encoded `[0x39, item_id]` — the item id is a single inline operand byte in
+//! encoded `[0x39, item_id]` - the item id is a single inline operand byte in
 //! the per-scene field-VM script bytecode (pinned in the dispatcher
 //! `FUN_801DE840` case `0x39`; see `docs/subsystems/script-vm.md`). The give
 //! sites live in the MAN partition-1 per-actor interaction scripts (a chest is
 //! an interactable actor).
 //!
-//! Finding the sites safely needs an **opcode-aware walk** — a naive `0x39`
+//! Finding the sites safely needs an **opcode-aware walk** - a naive `0x39`
 //! byte scan would hit literal `0x39` bytes inside dialogue / other operands.
 //! [`give_item_sites`] walks each partition-1 record's interaction script from
 //! its true entry PC with the Track-1 field-VM disassembler
@@ -27,16 +27,16 @@
 //! a record into unrelated data and mis-read a `0x39` data byte as an op.
 //!
 //! Multi-`0x39` runs are genuine multi-item gifts (e.g. a 10× consumable chest,
-//! or the fishing starter kit of a rod + several lures), not false positives —
+//! or the fishing starter kit of a rod + several lures), not false positives -
 //! each `0x39 <id>` is its own 2-byte op in a coherent script flow.
 //!
 //! An earlier version stopped at the **first** `0x1F` (dialogue) instead of
 //! skipping it, which silently missed the ~85% of give-item sites that sit after
-//! their announcement text — including every chest in scenes whose first
+//! their announcement text - including every chest in scenes whose first
 //! interactable record opens with dialogue.
 //!
 //! **Display vs grant.** A chest's announcement renders the item *name* from a
-//! separate dialogue token (`ITEM_NAME_ESCAPE` `<id>` — "There is a {item} in
+//! separate dialogue token (`ITEM_NAME_ESCAPE` `<id>` - "There is a {item} in
 //! the treasure chest!" / "{name} now has the {item}!"), which is a **different
 //! byte** from the `0x39` give operand that actually adds the item to the bag.
 //! Patching only the give operand grants the new item but leaves the text naming
@@ -67,7 +67,7 @@ pub struct SceneChests {
     pub sites: Vec<usize>,
     /// Per-site (parallel to [`Self::sites`]) absolute offsets of the **item-name
     /// display-token** argument bytes (`0xC2 <id>`) in the same chest record whose
-    /// id equals that site's original give operand — the "There is a {item}…" /
+    /// id equals that site's original give operand - the "There is a {item}…" /
     /// "{name} now has the {item}!" flavor text the game renders. Keeping these in
     /// sync with the give operand (via [`Self::set_site`]) makes the chest's
     /// announcement match the item it actually grants. Empty for sites whose
@@ -162,7 +162,7 @@ pub fn give_item_sites(man: &[u8]) -> Vec<usize> {
 ///
 /// Each display token is associated with the **nearest** give site in its record
 /// (so a multi-item-gift record routes each `0xC2` to the right give), and only
-/// when the token's id already equals that give's operand — so tokens that name a
+/// when the token's id already equals that give's operand - so tokens that name a
 /// *different* item the dialogue happens to mention are left untouched.
 pub fn give_sites_and_display_tokens(man: &[u8]) -> (Vec<usize>, Vec<Vec<usize>>) {
     use std::collections::BTreeMap;
@@ -264,7 +264,7 @@ fn walk_record(man: &[u8], rec: usize, pc0: usize, end: usize) -> (Vec<usize>, V
                 pc += insn.size;
             }
             // A decode error AT a 0x1F byte is the start of an inline dialogue
-            // segment (glyph text, not bytecode) — scan it for item-name tokens
+            // segment (glyph text, not bytecode) - scan it for item-name tokens
             // and resume decoding past it.
             Err(_) if script.get(pc) == Some(&0x1F) => {
                 pc = scan_dialogue_segment(script, pc, rec, &mut tokens);
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn finds_give_item_in_a_clean_record() {
         // Build a minimal MAN with one partition-1 record whose script is:
-        //   GFLAG.Set? — use simple known ops. We just need a clean walk that
+        //   GFLAG.Set? - use simple known ops. We just need a clean walk that
         //   contains a 0x39 GIVE_ITEM. Use Nop-like op 0x21 (Nop, 1 byte) then
         //   0x39 <id>, then a terminator the walker can stop on.
         // Easiest: craft the record prefix and a script of [0x21, 0x39, 0xAB, 0x00].

@@ -11,7 +11,7 @@ starting items,
 starting level, equipment passive stat bonuses, weapon specialty (which class
 each character favors), and a set of battle-tuning tables (monster combat stats,
 special-attack power, the element-affinity matrix, spell MP costs). It is
-Track-1-adjacent tooling — it does **not** touch the clean-room engine — and it
+Track-1-adjacent tooling - it does **not** touch the clean-room engine - and it
 ships only code: no game bytes are embedded or committed, and every test that
 needs real data is disc-gated.
 
@@ -20,7 +20,7 @@ full design.
 
 ## Contents
 
-- [Foundations](#foundations) — [`rng`](#rng), [`items`](#items), [`monster`](#monster), [`disc`](#disc)
+- [Foundations](#foundations) - [`rng`](#rng), [`items`](#items), [`monster`](#monster), [`disc`](#disc)
 - Randomizer features
   - [Drops](#drops)
   - [Bonus equipment drop](#bonus-equipment-drop)
@@ -69,14 +69,14 @@ pinned by a test).
 The valid item-id pool from the SCUS item-name table (`legaia_asset::item_names`),
 so a randomized drop is always an item the game has a name and handler for.
 
-- `valid_item_pool` — the pool builder.
-- `default_static_chest_items` — the chest randomizer's disc-derived default
+- `valid_item_pool` - the pool builder.
+- `default_static_chest_items` - the chest randomizer's disc-derived default
   keep-static set: the data-driven quest/key/story items
   (`item_price::quest_item_ids` = named, price-0 items minus the chest-found
   equipment). Keeps every unsellable quest item out of chest randomization
   automatically, with no hand-list to maintain; buyable items (e.g. the Silver
   Compass accessory) stay randomizable.
-- `DEFAULT_STATIC_CHEST_ITEMS` — the curated fallback (a subset of the
+- `DEFAULT_STATIC_CHEST_ITEMS` - the curated fallback (a subset of the
   disc-derived set) used only when the item table can't be read.
 
 ### `monster`
@@ -104,8 +104,8 @@ The drop-table planner (`drops` module).
 
 `plan_drops` reassigns the monsters that currently drop something, in:
 
-- `Shuffle` mode — redistribute the existing drops (preserves the economy).
-- `Random` mode — draw from the item pool.
+- `Shuffle` mode - redistribute the existing drops (preserves the economy).
+- `Random` mode - draw from the item pool.
 
 Deterministic in `(current drops, pool, seed, mode)`.
 
@@ -115,7 +115,7 @@ A code hook that grants one *extra* random equipment piece on a low per-battle
 chance, **on top of** the normal drop (`bonus_drop` + `equipment` modules).
 
 A monster record has a single drop slot (`+0x48` item / `+0x49` chance), so no
-data edit can make a monster drop two things — turning the slot into equipment
+data edit can make a monster drop two things - turning the slot into equipment
 would destroy the normal drop. So this feature is **additive by code injection**,
 not a data edit: it patches the executable's reward routine, like the
 [starting bag](#beyond-the-direct-cap-starting_bag-module) splices a grant into
@@ -138,12 +138,12 @@ the opening scene.
   join is reached once per battle, so the roll fires once per battle.
 - The routine + id table live in the 1028-byte preserved rodata gap at
   `0x8007AB38` (the same loaded-and-preserved padding [name injection](#name-injection)
-  uses, at a non-overlapping offset clear of the Seru-Bell string) — on PSX all
+  uses, at a non-overlapping offset clear of the Seru-Bell string) - on PSX all
   resident RAM is executable. Every write is a same-size in-place `SCUS_942.54`
   edit; the planner guards on the detour-site words matching the known US build
   and the routine region being all-zero dead space, refusing a different layout.
 
-The grant is silent (no victory-screen "received" line — the gear just appears in
+The grant is silent (no victory-screen "received" line - the gear just appears in
 the bag). `apply::inject_equipment_bonus_drop` performs the two edits.
 
 ## Encounters
@@ -156,30 +156,30 @@ Random-encounter randomizer (`encounter` module).
   every monster stays scene-loaded) in `Shuffle` / `Random` mode.
 - `apply::randomize_encounters_scoped` widens that pool via `EncounterScope`:
   `Scene` (default), `Kingdom` (any monster in the same Drake/Sebucus/Karisto
-  kingdom — partition derived from `CDNAME.TXT` in the `kingdom` module), or
+  kingdom - partition derived from `CDNAME.TXT` in the `kingdom` module), or
   `World` (any monster on the disc, so late-game monsters can appear at the
   start). `Shuffle` conserves the scope-wide multiset via a lock-and-reshuffle
   fixpoint that survives re-pack skips.
 - `repack` recompresses and reports whether it fits the original footprint.
 
-**Only random formations are touched** — a formation is random iff a
+**Only random formations are touched** - a formation is random iff a
 `rate_increment > 0` region's `[base, +count)` range reaches it
 (`random_formation_mask` / `is_random_formation`), so scripted/boss fights like
 Tetsu (reached only by rate-0 regions) are left byte-identical.
 
 **An explicit id guard backs that heuristic.** The region-rate test correctly
 marks every story boss's formation scripted except the early **Gimard**
-Seru-boss fight, whose formation sits at an index a rate>0 region's range spans —
+Seru-boss fight, whose formation sits at an index a rate>0 region's range spans -
 so the heuristic alone would treat it as random and a roll could replace that
 mandatory tutorial fight or donate the boss-tier enemy into an early encounter.
 `PROTECTED_FORMATION_IDS` (Gimard) lists the ids that must never be a random
 encounter; `locate` forces any formation holding one back to scripted and keeps
 it out of every donor pool, so the fight ships exactly as authored. (The first
-wild Piura are *not* listed — they are genuine random encounters.) Mirrors the
+wild Piura are *not* listed - they are genuine random encounters.) Mirrors the
 stat-side `monster_stats::PROTECTED_MONSTER_IDS`, which also pins Gimard.
 
 `randomize_with_extra` unions extra ids (the unused enemies) into the Random pool
-— see [Unused content](#unused-content).
+- see [Unused content](#unused-content).
 
 ### Solo strong fights
 
@@ -190,14 +190,14 @@ lone enemy, so a wide-pool roll can't gang up 2+ over-strong monsters on the
 party.
 
 - Each monster is scored by `monster_stats::combat_power` (the sum of its combat
-  stats — every field except MP), built once into a `MonsterPowerTable`.
+  stats - every field except MP), built once into a `MonsterPowerTable`.
 - The baseline is each scene's **native** average power
-  (`SceneEncounters::baseline_power`, read *before* randomizing — the area's
+  (`SceneEncounters::baseline_power`, read *before* randomizing - the area's
   authored difficulty, a stand-in for how strong the party is there).
 - `SceneEncounters::enforce_solo_strong` collapses every multi-monster random
   formation whose strongest member clears `threshold_pct`% of that baseline
   (default `200` = twice as strong): it keeps the strongest monster in slot 0,
-  zeroes the rest, and sets `count := 1` — a same-size edit inside the formation
+  zeroes the rest, and sets `count := 1` - a same-size edit inside the formation
   record's fixed stride.
 
 The pass runs as a post-step over the already-randomized scenes, so it composes
@@ -212,16 +212,16 @@ A code hook that banks a slice of a fled fight's experience into the party on a
 **successful escape** (`flee_exp` module). Vanilla awards nothing for running.
 
 Like the [bonus equipment drop](#bonus-equipment-drop), the flee path never
-reaches an experience grant, so there is no value to edit — it is **additive by
+reaches an experience grant, so there is no value to edit - it is **additive by
 code injection**, not a data edit.
 
 - `flee_exp::FleeExpInjection::plan` / `assemble_routine` build the injection. The
   per-actor battle state machine `FUN_801E295C` (battle-action overlay, base
   `0x801CE818` = **PROT entry 898**) handles "Run" across states `0x64..0x66`;
   state `0x66` is the **successful-escape teardown** (reached only when the run
-  roll succeeds — a failed run goes `0x65 → 0x50`). Its handler entry at
+  roll succeeds - a failed run goes `0x65 → 0x50`). Its handler entry at
   `0x801E5A10` (`lui v1,0x801d` / `addiu a0,v1,-0x6f90`) is overwritten with
-  `j <routine>` + `nop` — a same-size **raw** edit of the overlay PROT entry,
+  `j <routine>` + `nop` - a same-size **raw** edit of the overlay PROT entry,
   which maps linearly from its base (`file_off = va - 0x801CE818`).
 - The injected routine sums the formation's listed experience (each live enemy
   record's EXP halfword at `+0x46`, via the table at `0x801C9348` for `actor[+1]`
@@ -256,8 +256,8 @@ fully **deterministic from the seed**.
   bucket against the live party to **one line per member who owns the wanted
   seru**, *excluding* members who already own the give-back (a pointless trade).
   Id space is the player Seru-magic block `0x81..=0x95`.
-- **Where it lives.** All of it — the picker edits, both stubs, the trade
-  handler, the strings, the bucket table, and the runtime cells — is hosted in the
+- **Where it lives.** All of it - the picker edits, both stubs, the trade
+  handler, the strings, the bucket table, and the runtime cells - is hosted in the
   **menu overlay (PROT 0899)**: two byte-verified edits add the Trade row + route
   a confirm into an unused picker sub-mode, and everything else sits in 0899's
   reference-free ~3.8 KB all-zero dead run (resident throughout the shop). Nothing
@@ -292,7 +292,7 @@ A chest also names its item in a **separate** dialogue token `0xC2 <id>` (the
 "There is a {item}…" announcement) distinct from the `0x39` grant.
 
 - `give_sites_and_display_tokens` recovers each site's `0xC2` tokens.
-- `SceneChests::set_site` rewrites the operand **and** those tokens together — the
+- `SceneChests::set_site` rewrites the operand **and** those tokens together - the
   flavor text tracks what the chest actually grants.
 
 ## Steals
@@ -306,7 +306,7 @@ Steal-item randomizer (the Evil God Icon) (`steal` module).
   (`Shuffle` redistributes the existing steal-item multiset, `Random` draws from
   the item pool).
 - `item_patches` emits same-size single-byte SCUS edits that touch the **item**
-  only — the steal chance is preserved. No LZS re-pack, so nothing is ever skipped.
+  only - the steal chance is preserved. No LZS re-pack, so nothing is ever skipped.
 
 ## Monster stats
 
@@ -328,7 +328,7 @@ Special-attack power randomizer (`move_power` module).
   (`0x801F4F5C`, PROT 0898; enemy specials + Seru-magic, not party arts). Only
   populated records participate, so the index-0 sentinel + empty slots stay zero.
 - `plan_powers` permutes the power column (`Shuffle`) or draws from it (`Random`);
-  the apply path writes the halfwords back — a same-size raw PROT-0898 edit. Every
+  the apply path writes the halfwords back - a same-size raw PROT-0898 edit. Every
   other record byte (geometry, timing, effects, sound) is untouched.
 
 ## Element affinity
@@ -362,7 +362,7 @@ Equipment passive stat-bonus randomizer (`equip_bonus` module).
   permutes the tuples within each category (`Shuffle`) or draws from the
   category pool (`Random`). The `+5/+6/+7` tail (accessory passive / equip mask /
   slot type) never moves, so a tuple never crosses a slot boundary.
-- Operates on bonus **rows**, not item ids — several items can share a row, so a
+- Operates on bonus **rows**, not item ids - several items can share a row, so a
   per-id rewrite would double-edit it (`equip_stats::items_for_rows` maps rows →
   the ids that reach them; only referenced rows participate, so an unused row
   can't hand a real item a junk tuple).
@@ -382,7 +382,7 @@ Weapon-specialty randomizer (`weapon_specialty` module).
   `decoded_section[+0x04]` (the swing-record offset) `+0x74` (favored `0x1E` /
   off-class `0x2A`). See [`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md).
 - `plan_favored` permutes the three favored families (`{blade, claw, club}`)
-  among the three characters (a seeded bijection — one specialist per class).
+  among the three characters (a seeded bijection - one specialist per class).
   `weapon_family` maps each equippable weapon id to its family; non-class weapons
   (the Astral Sword, armor) map to `None` and are never touched, so the Astral
   Sword stays always-wide.
@@ -390,7 +390,7 @@ Weapon-specialty randomizer (`weapon_specialty` module).
   files (`0863`/`0864`/`0865`), and for each weapon section decompresses it,
   rewrites the arm-cost byte for its new favored relationship, and re-compresses
   in place. A section whose re-compressed stream wouldn't fit its slot is skipped
-  (counted in the report) rather than aborting — in practice every section
+  (counted in the report) rather than aborting - in practice every section
   re-packs.
 
 ## Arts
@@ -424,7 +424,7 @@ preserved** and each character's combos stay unique by construction.
 
 Scene-transition ("door / exit") randomizer (`door` module).
 
-Doors are the field-VM `0x3F` named-scene-change ops — **partition-2 MAN records**
+Doors are the field-VM `0x3F` named-scene-change ops - **partition-2 MAN records**
 reached via the partition-2 record-offset table (see
 [`man-relocation.md`](../../docs/formats/man-relocation.md)).
 
@@ -446,7 +446,7 @@ Entering a house is a field-VM MOVE_TO to an interior tile within the
 in `FUN_801de840` `case 0x23`). The door warp has a clean structural signature:
 the **cross-context player form `0xA3 0xF8 xb zb`** (opcode `0x23 | 0x80`
 dispatched into the system/player channel `0xF8`) inside a **named partition-0
-door record** — record names pair fullwidth ＩＮ/ＯＵＴ, the 入口/出口 kanji,
+door record** - record names pair fullwidth ＩＮ/ＯＵＴ, the 入口/出口 kanji,
 or trailing Ａ/Ｂ endpoint letters. Plain `0x23` MOVE_TOs are actor (NPC /
 prop / cutscene) positioning and are never touched.
 
@@ -454,7 +454,7 @@ prop / cutscene) positioning and are never touched.
   (partition-0 record walk with the chest module's inline-dialogue skip).
 - `shuffle` does a per-scene, **class-preserving** shuffle: interior landing
   tiles permute among ＩＮ sites, exterior doorsteps among ＯＵＴ sites
-  (same-size 2-byte operand edits) — every exit still lands outside, so no
+  (same-size 2-byte operand edits) - every exit still lands outside, so no
   interior-to-interior softlock is constructible.
 
 Shuffle-only. Census + signature + the runtime-captured Mei's-house anchor are
@@ -470,7 +470,7 @@ carrying `[u8 count][count× item_id][ASCII name\0]` (pinned from live Rim Elm +
 Biron captures).
 
 - `SceneShops` finds sites by **scanning** the MAN for the op-`0x49` sub-0
-  signature — *not* an opcode walk, which desyncs on shops gated behind a Yes/No
+  signature - *not* an opcode walk, which desyncs on shops gated behind a Yes/No
   "Buy them?" picker (Biron's Corey) and silently misses them. Strict validation
   (sub-op byte `0`, small non-zero count, all ids non-zero + SCUS-named via
   `locate_with_items`, printable letter-initial name) rules out false positives.
@@ -485,9 +485,9 @@ Global shuffle/random in `apply`; `Random` draws from the priced sellable pool (
 Casino prize-exchange randomizer (`casino` module).
 
 Unlike town shops, the casino prizes are a **static raw table** in the menu
-overlay's data segment — PROT entry 899 (`0899_xxx_dat`), file offset `0x15D00`,
+overlay's data segment - PROT entry 899 (`0899_xxx_dat`), file offset `0x15D00`,
 four `0x60`-byte blocks of 8-byte `[u16 id][u16 story-gate][u32 coin-price]` records
-(it debits casino *coins*, `_DAT_800845A4`, not gold — which is how it's told apart
+(it debits casino *coins*, `_DAT_800845A4`, not gold - which is how it's told apart
 from a gold shop).
 
 `CasinoExchange::parse`/`randomize`/`write_back` shuffle/random the whole records
@@ -497,7 +497,7 @@ from a gold shop).
 
 New-game starting-inventory randomizer (`starting_items` module).
 
-There is no static starting-inventory table — the new-game data-init `FUN_80034A6C`
+There is no static starting-inventory table - the new-game data-init `FUN_80034A6C`
 code-builds the bag, writing one slot (Healing Leaf `0x77` ×5) into the live
 consumable inventory (see [`legaia_asset::new_game::StartingInventory`]). So this
 rewrites the **seed code**: the reclaimable 40-byte region at `0x80034b04` (the
@@ -520,15 +520,15 @@ toggles:
 - `door_of_wind` (a count, default 10, clamped to 99) forces that many Door of Wind
   (`0x89`) into a slot.
 - `incense` (a count, default 10, clamped to 99) forces that many Incense (`0x8A`,
-  the encounter-rate consumable) into a slot — same shape as `door_of_wind`; both
+  the encounter-rate consumable) into a slot - same shape as `door_of_wind`; both
   are seeded first (surviving the five-slot clamp) and excluded from a reroll.
 - `speed_chain` / `chicken_heart` / `good_luck_bell` (a count, default 1, clamped
   to 99) force those accessories (`0xD1` / `0xF4` / `0xFC`) into a slot. They are
   "Goods", but the owned-item list is one ordered `(id, count)` array shared by
   every category, so they seed exactly like a consumable.
 - `extra_items` is an explicit `(id, count)` list (CLI `--start-with`). Unlike the
-  random fill (consumable pool only), it takes **any** id — consumable, equipment,
-  or accessory — and is seeded into the forced prefix after the toggles, excluded
+  random fill (consumable pool only), it takes **any** id - consumable, equipment,
+  or accessory - and is seeded into the forced prefix after the toggles, excluded
   from the reroll, and de-duplicated (id/count `0` and already-seeded ids dropped).
 - `all_warps` presets the all-towns visited bitmask (`0x8008575C = 0xF77F`,
   `0x8008575E = 0xF8FF`).
@@ -545,7 +545,7 @@ both regions write are contiguous, and `StartingInventory::from_scus` replays bo
 
 The reclaimable seed code can't grow, so anything past the seven-slot direct cap
 (`overflow_bag`) is granted a different way: a run of **silent `GIVE_ITEM` field-VM
-ops** (`0x39`) — the same op a treasure chest uses — spliced into the opening scene
+ops** (`0x39`) - the same op a treasure chest uses - spliced into the opening scene
 `town01`'s entry script, wrapped in a **once-only guard** on a persistent SC
 story flag (the `0x50` SET / `0x70` TEST bank at `0x80085758`). The block is emitted
 by `starting_bag::guarded_grant_block` (round-tripped through `legaia_asset::field_disasm`)
@@ -561,28 +561,28 @@ random count. Disc-gated oracle: `starting_bag_real`.
 
 `apply_starting_level` begins a New Game with the starting party at a chosen level
 instead of 1 (`starting_level` module). The **displayed level** is the byte at
-`+0x130` (boot-confirmed — *not* derived from experience at a New Game; `+0x100` is
+`+0x130` (boot-confirmed - *not* derived from experience at a New Game; `+0x100` is
 zero in retail), and the seed routine's **record-init loop stamps `+0x130` on every
 roster slot**, so the level applies party-wide. Same-size SCUS edits make a level-`N`
 start coherent:
 
-- **Level** — the seed loop's level literal + stores set `+0x130 = N` for every party
+- **Level** - the seed loop's level literal + stores set `+0x130 = N` for every party
   record (packed `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop`, keeping magic rank
   `+0x131` at 1).
-- **Stats** — overwrite **each growth-capable slot's** eight `u16` template stats
+- **Stats** - overwrite **each growth-capable slot's** eight `u16` template stats
   (`PARTY_TEMPLATE_VA`) with that character's level-`N` values, accumulated from the
   disc's deterministic per-level growth curves (`GrowthTables::level_gain_core`) on
   top of the level-1 template. The growth table covers `GROWTH_CHAR_COUNT` characters
   (Vahn/Noa/Gala); the 4th template slot (Terra) has no curve and keeps its base
-  stats. This keeps the stats coherent with the level the loop stamps for every slot —
+  stats. This keeps the stats coherent with the level the loop stamps for every slot -
   fixing the prior bug where Noa/Gala showed level `N` with level-1 stats.
-- **Experience + threshold** — **each growth-capable slot's** `+0x0` gets the midpoint
+- **Experience + threshold** - **each growth-capable slot's** `+0x0` gets the midpoint
   of level `N`'s XP band (from the disc's own `xp_thresholds_from_scus`) and its `+0x4`
   gets `reach(N+1)`. The seed routine never writes `+0x0` natively and seeds `+0x4` by
   storing one shared `$v0` literal, so the edit feeds a single `$t0` preload into three
   `sw $t0, <+0x0>($s0)` stores (repurposing the slot-1/slot-2 threshold reloads and a
   redundant `lui`), and dropping those reloads leaves `$v0` = `reach(N+1)` intact for
-  the routine's existing `+0x4` stores — so all three slots take the same threshold.
+  the routine's existing `+0x4` stores - so all three slots take the same threshold.
   The small per-slot `FUN_801E9504` correction is re-applied by the level-up applier on
   each character's first post-seed level-up. The preload is a single 16-bit immediate,
   which caps the level at `MAX_STARTING_LEVEL` (14). Fixes the prior bug where only the
@@ -600,7 +600,7 @@ Item shop-price edits + the sellable pool (`item_price` module).
 The shop price is the `u16` at item-record `+2` (table base `0x80074368`); price
 `0` marks a quest/found-only item.
 
-- `sellable_pool` = ids priced `> 0` (the shop `Random` pool — auto-excludes quest
+- `sellable_pool` = ids priced `> 0` (the shop `Random` pool - auto-excludes quest
   items).
 - `CHEST_EQUIPMENT_PRICES` gives the 13 chest-found Ra-Seru/Astral gear (which ship
   free) reviewed values (~28800–55000), and `price_patches` emits the same-size SCUS
@@ -619,10 +619,10 @@ Curated "unused content" the opt-in toggles re-introduce (`unused` module).
 
 ## Name injection
 
-`item_name` module — `NameInjection`: name the otherwise-blank accessory `0xFD`
+`item_name` module - `NameInjection`: name the otherwise-blank accessory `0xFD`
 "Seru Bell" so `--unused-items` hands out a presentable item.
 
-A same-size SCUS patch — write the string into preserved rodata padding
+A same-size SCUS patch - write the string into preserved rodata padding
 (`SERU_BELL_STRING_VA = 0x8007AB40`, pinned for the US build inside a 1028-byte zero
 gap flanked by rodata constants proven preserved file→RAM; **not** the data-segment
 zero-fill tail, which is `.sbss` scratch the game clobbers, nor an arbitrary
@@ -637,26 +637,26 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Feature | Read-only | Randomize | Notes |
 |---|---|---|---|
 | Drops | `current_drops` | `apply_drop_plan` / `randomize_drops` | a `DropApplyReport` records any slot too tight to re-pack. |
-| Equipment drops | — | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance — additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
-| Run-away EXP | — | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape — vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
+| Equipment drops | - | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance - additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
+| Run-away EXP | - | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape - vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |
-| Encounters | — | `randomize_encounters` / `randomize_encounters_scoped` / `randomize_encounters_full` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). `_full` adds the optional [solo-strong](#solo-strong-fights) pass (`SoloStrongConfig`) on top of any scope/mode. |
-| Chests | — | `randomize_chests` | treasure (global shuffle/random of chest item ids → `ChestApplyReport`); honors a `keep_static` id set — kept items never move and never enter the shuffle/random pool. |
+| Encounters | - | `randomize_encounters` / `randomize_encounters_scoped` / `randomize_encounters_full` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). `_full` adds the optional [solo-strong](#solo-strong-fights) pass (`SoloStrongConfig`) on top of any scope/mode. |
+| Chests | - | `randomize_chests` | treasure (global shuffle/random of chest item ids → `ChestApplyReport`); honors a `keep_static` id set - kept items never move and never enter the shuffle/random pool. |
 | Steals | `current_steals` | `randomize_steals` | the steal table (`StealApplyReport`). |
 | Arts | `current_arts` | `randomize_arts` | Tactical-Arts button combos (`ArtsApplyReport`; same-size `+8` pointer reassignment, input count + within-character uniqueness preserved). |
 | Doors | `current_doors` | `randomize_doors` | scene transitions (`DoorApplyReport`; takes a `DoorCoupling` = `Coupled` re-pairs doors into genuinely two-way connections / `Decoupled` reassigns each independently). |
 | House doors | `current_house_doors` | `randomize_house_doors` | intra-town house doors (`HouseDoorApplyReport`; per-scene class-preserving shuffle of the player door warps, shuffle-only). |
 | Starting items | `current_starting_items` | `randomize_starting_items` | the new game's starting inventory (`StartingItemsApplyReport`; rewrites the SCUS seed code with random consumables + convenience items, additively, across the inventory + warp-preset reclaimable regions). |
 | Starting level | `current_starting_level` | `apply_starting_level` | the new game's starting level (`StartingLevelReport`; rewrites the seed routine's XP literal + recomputes slot 0's stat template to the level via the disc's growth curves). |
-| Name injection | — | `inject_seru_bell_name` | names the unnamed accessory. |
+| Name injection | - | `inject_seru_bell_name` | names the unnamed accessory. |
 
 ## Door coupling
 
 `Decoupled` uses the full variable-length relocation, so any destination can land
 in any door (a scene that overflows on rebuild is skipped).
 
-`Coupled` instead restricts itself to **length-preserving** swaps — it re-pairs
+`Coupled` instead restricts itself to **length-preserving** swaps - it re-pairs
 only balanced connections (equal door counts each direction) whose names match in
 length, so the decompressed MAN size never changes and no scene (including the
 un-growable overworld hubs) can overflow. That keeps every reconnection genuinely
@@ -672,7 +672,7 @@ PPF 3.0 patch writer.
 - `write_ppf3` serializes them.
 - `apply_ppf3` replays a patch (used by the round-trip test).
 
-The PPF is the redistributable deliverable — it ships only deltas the user already
+The PPF is the redistributable deliverable - it ships only deltas the user already
 owns.
 
 ## CLI (`legaia-rando`)
@@ -751,11 +751,11 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 
 - `--drops` / `--encounters` / `--chests` / `--shops` / `--casino` / `--steals` /
   `--arts` / `--doors` each take `shuffle` / `random` / `none`.
-- The battle-tuning + equipment-bonus passes — `--monster-stats` / `--move-power` /
-  `--element-affinity` / `--spell-cost` / `--equip-bonus` — each also take
+- The battle-tuning + equipment-bonus passes - `--monster-stats` / `--move-power` /
+  `--element-affinity` / `--spell-cost` / `--equip-bonus` - each also take
   `shuffle` / `random` / `none`.
 - `--equipment-drops` injects a low-chance bonus equipment drop into the
-  battle-end reward routine — granted on top of `--drops`, never disturbing it.
+  battle-end reward routine - granted on top of `--drops`, never disturbing it.
   `--equipment-drop-chance N` sets the per-battle percent (default 5).
 - `--door-coupling` is `coupled` (default, bidirectional) or `decoupled` (one-way).
 - `--starting-items N` seeds the new game with `N` random consumables
@@ -790,7 +790,7 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 
 - `--dry-run` plans + reports the run without writing any files.
 - `--manifest` writes a small TOML record of the seed + options + change counts (no
-  game bytes — safe to share).
+  game bytes - safe to share).
 - `verify` applies a PPF to a copy of your disc and confirms the result still parses
   (records applied, PROT entry + drop counts).
 
@@ -802,7 +802,7 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 - `--drops random` needs the SCUS item table off the disc for the valid item pool;
   the others need no external table.
 - `--encounters` reassigns each scene's formation monster ids; `--encounter-scope`
-  sets the pool it draws from: `scene` (default — the scene's own ids, every swap is
+  sets the pool it draws from: `scene` (default - the scene's own ids, every swap is
   one the scene already loads), `kingdom` (any monster in the scene's Drake / Sebucus
   / Karisto kingdom), or `world` (any monster on the disc). The wider pools rely on
   the battle loader streaming a monster by id, so an out-of-area enemy still loads.
@@ -818,7 +818,7 @@ legaia-rando verify --input DISC.bin --patch run.ppf
 A PROT-entry-relative offset maps to the PROT.DAT-logical offset
 `start_lba[entry] * 2048 + offset_in_entry`, which
 `legaia_iso::write::patch_file_logical` turns into physical-sector writes plus
-EDC/ECC re-encode. Every edit is same-size and in place — no LBA, TOC, or
+EDC/ECC re-encode. Every edit is same-size and in place - no LBA, TOC, or
 directory record moves.
 
 ## Tests
@@ -836,7 +836,7 @@ directory record moves.
   deterministic, **and that scripted/boss formations (Tetsu, …) stay
   byte-identical**; a whole-disc World-scope random pass that asserts the
   solo-strong option collapses every strong pack (a multi-monster formation with
-  a monster ≥ 2× the area's native average) to a lone enemy — non-vacuous
+  a monster ≥ 2× the area's native average) to a lone enemy - non-vacuous
   (strong packs exist without it), sector-valid, and deterministic; a whole-disc
   chest shuffle asserting give-item site offsets
   unchanged, the chest-item multiset preserved, sectors valid, and deterministic;
@@ -867,7 +867,7 @@ memory. A patched `.bin` contains Sony data and must never be committed.
 
 ## See also
 
-- [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md) — design + the patch chain.
-- [`crates/lzs`](../lzs/README.md) — the LZS encoder (`compress`) re-packing relies on.
-- [`crates/iso`](../iso/README.md) — Mode 2/2352 sector write-back (`write` module).
-- [`crates/asset`](../asset/README.md) — the monster-archive + item-name parsers it edits.
+- [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md) - design + the patch chain.
+- [`crates/lzs`](../lzs/README.md) - the LZS encoder (`compress`) re-packing relies on.
+- [`crates/iso`](../iso/README.md) - Mode 2/2352 sector write-back (`write` module).
+- [`crates/asset`](../asset/README.md) - the monster-archive + item-name parsers it edits.

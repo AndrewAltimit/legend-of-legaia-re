@@ -124,12 +124,12 @@ impl Font {
         // CLUT-row colours into the texels: `(131,131,131)` for the
         // glyph fill and `(32,32,32)` for a drop-shadow offset +1,+1
         // from each fill pixel (retail PSX-era font convention; see
-        // `extracted/font/dialog_font_atlas.png` — the shadow is the
+        // `extracted/font/dialog_font_atlas.png` - the shadow is the
         // visible second tone in every glyph cell).
         //
         // Retail's renderer picks the fill colour at draw time via
         // per-context CLUT swaps. Our `texel.rgb * color.rgb` shader
-        // mirrors that, but only if the fill texel is pure white —
+        // mirrors that, but only if the fill texel is pure white -
         // otherwise the tint can never reach retail's brightness (e.g.
         // the load-screen `(206,206,206)` requires a `>1.0` multiplier
         // against the baked `(131,131,131)`, which clamps).

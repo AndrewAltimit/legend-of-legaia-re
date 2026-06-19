@@ -4,7 +4,7 @@
 //!
 //! Needs the full disc image (it rewrites physical sectors), so it gates on
 //! `LEGAIA_DISC_BIN` and skips+passes when unset. It never writes the patched
-//! image anywhere — the edit lives only in memory.
+//! image anywhere - the edit lives only in memory.
 
 use legaia_asset::monster_archive::{self, SLOT_STRIDE};
 use legaia_iso::iso9660::find_file_in_image;

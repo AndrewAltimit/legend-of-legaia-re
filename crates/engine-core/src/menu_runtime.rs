@@ -120,7 +120,7 @@ impl MenuRuntime {
     }
 
     /// Open a shop into its **top-level Buy / Sell / Trade picker**
-    /// ([`MenuState::ShopMenu`]) — the field-VM op-`0x49` merchant trigger path.
+    /// ([`MenuState::ShopMenu`]) - the field-VM op-`0x49` merchant trigger path.
     /// The Trade row appears only when the disc enabled seru trading; selecting
     /// it opens this vendor's [`crate::seru_trade::SeruTradeSession`].
     pub fn open_shop_menu(&mut self, session: ShopSession) {

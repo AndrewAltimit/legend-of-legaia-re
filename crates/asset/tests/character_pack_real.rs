@@ -57,7 +57,7 @@ fn character_pack_parses_five_slots_from_prot_0874() {
     // Disc-pinned per-slot nobj (matches docs/formats/world-map-overlay.md
     // table: 12/12/12/3/2).
     let expected_nobj = [12u32, 12, 12, 3, 2];
-    // Runtime-allocated TMD body sizes — what the LZS decode produces under
+    // Runtime-allocated TMD body sizes - what the LZS decode produces under
     // retail's compressed-size-bounded path. Slot 4's 1 048 bytes match the
     // live DAT_8007C018[4] allocation byte-for-byte.
     let expected_bytes = [13_220usize, 13_800, 11_656, 6_488, 1_048];

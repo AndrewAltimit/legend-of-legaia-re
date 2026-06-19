@@ -274,7 +274,7 @@ export class LegaiaViewer {
      */
     battle_char_mesh_uvs(slot: number): Int32Array;
     /**
-     * JSON summary of PROT 1204 (`other5`) — the battle-form mesh pack:
+     * JSON summary of PROT 1204 (`other5`) - the battle-form mesh pack:
      * 5 TMD slots + 7 character-atlas TIMs. Shape:
      * ```text
      * {
@@ -294,35 +294,35 @@ export class LegaiaViewer {
      * Build the 1 MB PSX VRAM with each of PROT 1204's seven atlas TIMs
      * uploaded **with its bundled CLUT** at the declared `(fb_x, fb_y)`
      * (rows 490..495, 497). These bundled sub-CLUTs are the pack's **authoring
-     * palette** — what the Baka Fighter minigame renders with directly. Both
+     * palette** - what the Baka Fighter minigame renders with directly. Both
      * the Battle and Baka Fighter forms on the site render against this VRAM
      * with the mesh's nominal CBA ([`Self::battle_char_mesh_cba_tsb`]).
      *
      * A real turn-based battle relocates the same geometry + textures into a
      * packed per-slot VRAM band (rows 481..483) and recolours it with a
      * per-battle party palette that is a **separate, battle-allocated runtime
-     * asset** (resident at RAM `0x800ebee8`+, 480 B / 15 sub-CLUTs per char) —
+     * asset** (resident at RAM `0x800ebee8`+, 480 B / 15 sub-CLUTs per char) -
      * distinct from this bundled palette and **not recoverable from the disc by
      * byte search** (see `docs/formats/character-mesh.md`). Until that palette's
-     * disc source is pinned (open thread — needs a battle-LOAD overlay capture),
+     * disc source is pinned (open thread - needs a battle-LOAD overlay capture),
      * the Battle form is the bundled-palette render, visually identical to Baka.
      */
     battle_char_vram_bytes(): Uint8Array;
     /**
      * Battle VRAM with the **true per-battle palette** overlaid for the slots
      * whose disc palette source is known. This is the colour-correct render a
-     * real turn-based battle produces — the party CLUTs decoded from the
+     * real turn-based battle produces - the party CLUTs decoded from the
      * character's `edstati3` record (`FUN_80052FA0`, see
      * [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
      * mesh's nominal CBA samples.
      *
-     * Vahn (slot 0, extraction PROT `0863` — the `PLAYER1` file, raw TOC
+     * Vahn (slot 0, extraction PROT `0863` - the `PLAYER1` file, raw TOC
      * `0x361`; see `docs/formats/cdname.md` § numbering space) is validated
      * byte-exact against a live battle VRAM capture (his tutorial-equipped
      * state via [`legaia_asset::battle_char_palette::parse_record`]). Noa
      * (slot 1, extraction `0864`) and Gala (slot 2, extraction `0865`) use the
      * equipment-robust [`legaia_asset::battle_char_palette::collect_palette`]
-     * — record0 + the section separators' unequipped-default CLUTs, filtered
+     * - record0 + the section separators' unequipped-default CLUTs, filtered
      * to the columns each mesh samples (validated against a full-party
      * capture: Noa ~98%, Gala 100%). All three player files load by
      * `char + 0x360` → `FUN_8003e8a8` → `toc[idx+2]` (a sector offset into
@@ -363,8 +363,8 @@ export class LegaiaViewer {
      * **hybrid** render, parallel to [`Self::character_mesh_positions`]: 4
      * bytes per vertex `[r, g, b, textured_flag]`. The field-form player mesh
      * mixes textured prims (face / skin / clothing that sample the PROT 0874
-     * §2 atlas — `textured_flag == 1`) with untextured flat / gouraud prims
-     * (the bulk of the body — `textured_flag == 0`) that carry per-vertex RGB
+     * §2 atlas - `textured_flag == 1`) with untextured flat / gouraud prims
+     * (the bulk of the body - `textured_flag == 0`) that carry per-vertex RGB
      * in the TMD instead of UVs. The shader samples VRAM for textured verts
      * and uses `[r, g, b]` for untextured verts, so the body parts the pure
      * textured path would discard render in their real colours. Vertex order
@@ -427,7 +427,7 @@ export class LegaiaViewer {
      */
     character_pack_json(): string;
     /**
-     * Raw disc-form TMD bytes for slot `slot` — the same bytes the engine
+     * Raw disc-form TMD bytes for slot `slot` - the same bytes the engine
      * installs into `DAT_8007C018[slot]`. Useful for an in-page .tmd
      * download / debug round-trip.
      */
@@ -510,8 +510,8 @@ export class LegaiaViewer {
      * Section 2 of the `player.lzs` container is an 8-TIM pack; entries 1/2/3
      * are the Vahn/Noa/Gala atlas pages at texpage `(832, 256)` with their
      * CLUTs on row 478 (cols 0..63 / 64..127 / 128..191). Each TIM is uploaded
-     * via the retail `FUN_800198e0` semantic — image at its declared rect, CLUT
-     * as a **flat horizontal strip** (`w*h` colours at one row), STP off — so
+     * via the retail `FUN_800198e0` semantic - image at its declared rect, CLUT
+     * as a **flat horizontal strip** (`w*h` colours at one row), STP off - so
      * the meshes' per-primitive CBA columns sample the right palettes. Byte-
      * exact against a live field VRAM dump (see
      * [`legaia_asset::field_char_textures`]). The Field form renders against
@@ -592,7 +592,7 @@ export class LegaiaViewer {
     /**
      * Decode the global monster stat archive (PROT entry 867, the
      * `battle_data` block's extended footprint) into a JSON array of every
-     * populated record. Sony bytes never leave the browser — the archive is
+     * populated record. Sony bytes never leave the browser - the archive is
      * LZS-decoded from the user's own loaded disc, the same client-side model
      * the rest of this viewer uses; nothing is shipped with the static site.
      *
@@ -615,7 +615,7 @@ export class LegaiaViewer {
     monster_archive_json(): string;
     /**
      * Monster `id`'s mesh + baked texture + **all** action animations packed
-     * into one binary glTF (`.glb`) blob — the universal format that carries
+     * into one binary glTF (`.glb`) blob - the universal format that carries
      * geometry, material, and animation together (Blender / three.js / etc.).
      * Each TMD object becomes an animated node; the texture is baked into a
      * per-palette atlas. Empty if the slot has no exportable mesh.
@@ -806,9 +806,9 @@ export class LegaiaViewer {
     /**
      * Decoded per-record header for one player-ANM record. Returned as a
      * `Vec<i32>` packed as `[a, b, marker_1, flag, bone_count, frame_count,
-     * frame0_bone0_u8[0..8]]` — total 14 entries (the 8 bytes after the
+     * frame0_bone0_u8[0..8]]` - total 14 entries (the 8 bytes after the
      * header are bone 0 of frame 0's TR entry, since the body sits
-     * immediately after the 8-byte header — there is no prologue).
+     * immediately after the 8-byte header - there is no prologue).
      * Returns an empty Vec on out-of-range record or size-invariant failure.
      */
     player_anm_record_header(prot_index: number, record_index: number): Int32Array;
@@ -832,7 +832,7 @@ export class LegaiaViewer {
      * produces the assembled character.
      *
      * The output is padded to `target_part_count` parts (typically the
-     * TMD's `nobj`) — bones beyond the record's own `bone_count` get
+     * TMD's `nobj`) - bones beyond the record's own `bone_count` get
      * identity transforms so the un-animated parts (e.g. field-form
      * equipment templates at groups 10/11) stay at their TMD-local
      * origin. Pass `0` to leave the part count at the record's own
@@ -1103,13 +1103,13 @@ export class LegaiaViewer {
  * `random` drop / chest / steal modes use it). `equipment_drops` injects a code
  * hook into the battle-end reward routine that, on a low per-battle chance,
  * grants one *extra* random weapon / armor / accessory on top of the normal
- * drop — additive, so `drops` is never disturbed. `monster_stats` / `move_power` /
+ * drop - additive, so `drops` is never disturbed. `monster_stats` / `move_power` /
  * `element_affinity` / `spell_cost` / `equip_bonus` are the battle-tuning +
  * equipment-bonus passes, each `"shuffle"` / `"random"` / `"none"`: monster
  * combat stats, special-attack power, the element-affinity matrix, spell MP
  * costs, and the equipment passive stat tuples (redistributed within each slot
  * category). `encounter_scope` widens the monster pool an
- * encounter roll draws from: `"scene"` (default — each scene's own monsters),
+ * encounter roll draws from: `"scene"` (default - each scene's own monsters),
  * `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
  * `"world"` (any monster on the disc, so late-game monsters can appear at the
  * start). Only matters when `encounters` is not `"none"`.

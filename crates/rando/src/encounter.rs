@@ -6,27 +6,27 @@
 //! `[3 reserved][u8 count 0..4][u8 ids...]` (see
 //! [`legaia_asset::man_section`] and `docs/formats/encounter.md`). An edit is
 //! therefore: locate the MAN inside the scene's PROT entry, decompress, rewrite
-//! the id bytes (same length — count is preserved), recompress, and write the
+//! the id bytes (same length - count is preserved), recompress, and write the
 //! stream back over the original (the LZS decoder stops at the descriptor's
 //! decompressed size, so a shorter or equal re-pack is safe).
 //!
 //! **Sane pool.** Reassignment draws only from the ids the scene *already*
-//! uses, so every swapped-in monster is one the scene loads — no missing model
+//! uses, so every swapped-in monster is one the scene loads - no missing model
 //! / crash. `Shuffle` redistributes the existing ids (same monsters, new
-//! formations — difficulty preserved); `Random` draws each id uniformly from
+//! formations - difficulty preserved); `Random` draws each id uniformly from
 //! the scene's distinct-id set.
 //!
 //! **Bosses are protected.** A scene's formation array holds both random
 //! encounters *and* scripted/boss fights (Tetsu, Cort, Songi, …) that the field
-//! VM engages by explicit index. Only the random ones — the formations reached
+//! VM engages by explicit index. Only the random ones - the formations reached
 //! by a region whose `rate_increment > 0` (a region that can actually trigger an
-//! encounter) — are randomized; scripted formations are left exactly as
+//! encounter) - are randomized; scripted formations are left exactly as
 //! authored, so a randomized run never replaces a boss (see
 //! `random_formation_mask` / [`SceneEncounters::is_random_formation`]).
 //!
 //! **An explicit id guard backs the heuristic.** The region-rate test classifies
 //! every story boss's formation as scripted except the early **Gimard** fight,
-//! whose formation sits at an index a rate>0 region's range happens to span — so
+//! whose formation sits at an index a rate>0 region's range happens to span - so
 //! the heuristic alone would treat it as random and could replace that tutorial
 //! boss (stranding a fresh save) or donate Gimard, a boss-tier enemy, into an
 //! ordinary early encounter. [`PROTECTED_FORMATION_IDS`] lists the ids that must
@@ -45,24 +45,24 @@ use crate::rng::SplitMix64;
 const MAN_TYPE: u8 = 0x03;
 
 /// 1-based `battle_data` monster ids that must never take part in a **random**
-/// encounter — neither donated into one nor replaced out of an existing fight —
+/// encounter - neither donated into one nor replaced out of an existing fight -
 /// *on top of* the formations [`random_formation_mask`] already marks scripted.
 ///
 /// The region-rate heuristic correctly classifies every story boss's formation
 /// as scripted, with one exception: the early **Gimard** Seru-boss fight sits at
 /// a formation index a rate>0 region's range spans, so the heuristic alone would
 /// treat it as a random encounter. Left unguarded a randomized run could replace
-/// that mandatory tutorial fight (soft-locking a fresh save) or donate Gimard — a
-/// boss-tier enemy — into an ordinary early encounter the party can't yet beat.
+/// that mandatory tutorial fight (soft-locking a fresh save) or donate Gimard - a
+/// boss-tier enemy - into an ordinary early encounter the party can't yet beat.
 /// Listing its id forces every formation that holds it back to scripted (see
 /// [`SceneEncounters::locate`]) and keeps it out of every donor pool, so the
-/// fight is preserved no matter how the scene's regions are laid out — the same
+/// fight is preserved no matter how the scene's regions are laid out - the same
 /// intent as the matching stat-side guard (`crate::monster_stats`).
 ///
 /// The first wild Piura are deliberately **not** listed: they are genuine random
 /// encounters, and the heuristic already leaves their scripted appearances fixed.
 pub const PROTECTED_FORMATION_IDS: &[u8] = &[
-    10, // Gimard — the early scripted Seru-boss fight.
+    10, // Gimard - the early scripted Seru-boss fight.
 ];
 
 /// Whether `id` is a [`PROTECTED_FORMATION_IDS`] enemy (one that must never be a
@@ -72,7 +72,7 @@ pub fn is_protected_formation_id(id: u8) -> bool {
 }
 
 /// Per-monster **combat-power** lookup, keyed by the formation byte (a 1-based
-/// `battle_data` archive id — the same id space [`SceneEncounters`] writes into a
+/// `battle_data` archive id - the same id space [`SceneEncounters`] writes into a
 /// formation slot). The metric the "limit strong fights to a solo enemy" option
 /// compares formations against: a single scalar per monster (its stat budget; see
 /// [`crate::monster_stats::combat_power`]), so a swapped-in monster can be judged
@@ -117,13 +117,13 @@ impl MonsterPowerTable {
 /// into **and** a `rate_increment`: the per-step amount it adds to the encounter
 /// counter while the player stands in the AABB. A region with
 /// `rate_increment == 0` never advances the counter, so it never triggers a
-/// random encounter — it can reference formations without ever rolling them
+/// random encounter - it can reference formations without ever rolling them
 /// (the retail position-aware roll `FUN_801D9E1C`; mirrored in
 /// `engine_core::region_encounter`).
 ///
 /// So a formation is a random encounter iff some region with **`rate_increment >
 /// 0`** reaches it. Formations reached only by rate-0 regions (or by no region)
-/// are *scripted* fights the field VM engages by explicit index — boss battles
+/// are *scripted* fights the field VM engages by explicit index - boss battles
 /// (Tetsu, Cort, Songi, …) and story encounters. Randomizing those would replace
 /// a boss, so the randomizer must leave them alone.
 ///
@@ -136,7 +136,7 @@ fn random_formation_mask(body: &[u8], sec: &EncounterSection) -> Vec<bool> {
     let mut mask = vec![false; sec.formation_count as usize];
     for r in man_section::region_records(body, sec).flatten() {
         // A zero-rate region never triggers an encounter, so the formations it
-        // references are not (by themselves) random — only rate>0 regions do.
+        // references are not (by themselves) random - only rate>0 regions do.
         if r.rate_increment == 0 {
             continue;
         }
@@ -198,7 +198,7 @@ pub struct SceneEncounters {
     formation_count: usize,
     /// Per-formation flag: `true` when the formation is reachable by some region
     /// (a **random** encounter), `false` when it's a scripted/boss fight the
-    /// field VM engages by index. Only random formations are randomized — see
+    /// field VM engages by index. Only random formations are randomized - see
     /// [`random_formation_mask`].
     random_mask: Vec<bool>,
 }
@@ -206,7 +206,7 @@ pub struct SceneEncounters {
 impl SceneEncounters {
     /// Try to locate a scene bundle's encounter data in a PROT entry's bytes.
     /// Returns `None` when the entry isn't a scene asset table, carries no MAN,
-    /// or the MAN doesn't decode / parse — i.e. "nothing to randomize here".
+    /// or the MAN doesn't decode / parse - i.e. "nothing to randomize here".
     pub fn locate(entry: &[u8], entry_idx: usize) -> Option<Self> {
         let table = scene_asset_table::detect(entry)?;
         let man = table
@@ -318,7 +318,7 @@ impl SceneEncounters {
     }
 
     /// The distinct monster ids this scene uses across its **random** formations
-    /// — the safe pool to draw from (every id is already scene-loaded, and
+    /// - the safe pool to draw from (every id is already scene-loaded, and
     /// scripted/boss ids are excluded so a `Random` roll never drops a boss into
     /// an ordinary encounter). Scripted formations are skipped (see
     /// [`Self::is_random_formation`]).
@@ -374,8 +374,8 @@ impl SceneEncounters {
     /// `--unused-enemies` toggle re-introduces monsters no formation references:
     /// the battle loader streams a monster's archive slot on demand by id, so an
     /// id outside the scene's own set still loads and renders. `extra` has no
-    /// effect under [`DropMode::Shuffle`] — a multiset-preserving permutation
-    /// can't introduce a new id, by construction — so passing it there is a
+    /// effect under [`DropMode::Shuffle`] - a multiset-preserving permutation
+    /// can't introduce a new id, by construction - so passing it there is a
     /// no-op (a `Shuffle` run never spawns an unused enemy; document that at the
     /// CLI). The base RNG sequence is unchanged when `extra` is empty, so the
     /// existing (no-unused) results stay byte-identical.
@@ -398,7 +398,7 @@ impl SceneEncounters {
 
         // Every **random** formation id slot, in a stable order. Scripted/boss
         // formations (no region references them) are excluded, so a randomized
-        // run never replaces a Tetsu / Cort / Songi fight — only the ordinary
+        // run never replaces a Tetsu / Cort / Songi fight - only the ordinary
         // random encounters are shuffled/redrawn.
         let slots = self.random_slot_offsets();
         let originals: Vec<u8> = slots.iter().map(|&o| self.decoded[o]).collect();
@@ -424,7 +424,7 @@ impl SceneEncounters {
 
     /// Absolute `decoded` offsets of every **random**-formation monster-id slot,
     /// in a stable order (ascending formation index, then slot). Scripted/boss
-    /// formations are excluded — this is exactly the population every randomize
+    /// formations are excluded - this is exactly the population every randomize
     /// path rewrites. Shared by the per-scene [`Self::randomize_with_extra`] and
     /// the cross-scene scoped passes ([`Self::random_slot_ids`] /
     /// [`Self::fill_random_slots_from_pool`] / [`Self::apply_random_slots`]).
@@ -443,7 +443,7 @@ impl SceneEncounters {
     }
 
     /// How many random-encounter monster-id slots this scene exposes to a
-    /// scoped (kingdom / world) pass — the count of ids it contributes to a
+    /// scoped (kingdom / world) pass - the count of ids it contributes to a
     /// cross-scene shuffle and consumes back from it.
     pub fn random_slot_count(&self) -> usize {
         self.random_slot_offsets().len()
@@ -504,7 +504,7 @@ impl SceneEncounters {
 
     /// The scene's native **combat-power baseline**: the mean
     /// [`MonsterPowerTable::power_of`] across every monster currently in its
-    /// **random** formation slots. This is the area's intended enemy strength —
+    /// **random** formation slots. This is the area's intended enemy strength -
     /// the stand-in for "what the party can handle here" the solo-strong option
     /// compares a swapped-in monster against.
     ///
@@ -526,7 +526,7 @@ impl SceneEncounters {
     /// `threshold_pct`% of `baseline` combat power down to a **solo** fight: keep
     /// the single strongest monster (in slot 0) and drop the rest (`count := 1`,
     /// trailing id bytes zeroed). This is what keeps a randomized run from ganging
-    /// up 2+ over-strong monsters on the party — an out-of-area heavy hitter is
+    /// up 2+ over-strong monsters on the party - an out-of-area heavy hitter is
     /// faced alone, never in a pack.
     ///
     /// Only multi-monster (`count >= 2`) random formations are eligible; solo

@@ -40,7 +40,7 @@
 //!
 //! CORRECTION (CDNAME numbering space): the extraction files *named*
 //! `0972/0973_move_program_no` carry the +2 filename shift (see
-//! `docs/formats/cdname.md` § numbering space) — they are actually
+//! `docs/formats/cdname.md` § numbering space) - they are actually
 //! `other_game` minigame overlays (0972 = the fishing minigame overlay,
 //! 0973 = the 1-sector `OTHER2` dev module). The `move_program_no` define
 //! covers extraction 0970..0971, a `\DATA\MOV*.STR` FMV program/path table

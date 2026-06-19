@@ -35,7 +35,7 @@ verified across several extracted banks.
 - **SPU-level pitch modulation, noise, FM.** None of these *hardware* voice
   modes are used by Legaia (verified against the libspu calls in the SCUS
   dumps). Sequencer-level **MIDI pitch-bend** (`0xEn`) *is* used and *is*
-  handled — the [`Sequencer`](src/sequencer.rs) applies it by scaling the
+  handled - the [`Sequencer`](src/sequencer.rs) applies it by scaling the
   voice's pitch register over the tone's own `pbmin`/`pbmax` range, alongside
   dynamic channel volume (CC7) and pan (CC10). See the audio subsystem doc.
 - **Asynchronous DMA timing.** The transfer engine here is synchronous;

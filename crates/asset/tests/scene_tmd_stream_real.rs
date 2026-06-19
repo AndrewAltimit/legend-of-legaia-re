@@ -143,7 +143,7 @@ fn town01_two_substreams_each_with_own_tmd() {
     assert_eq!(subs[0].stream.tmd_size, 0x383c);
 
     // Sub-stream 1 starts on the next sector boundary (0x14000) with its OWN
-    // TMD (body 0x2c20) — proving it is a self-contained scene_tmd_stream,
+    // TMD (body 0x2c20) - proving it is a self-contained scene_tmd_stream,
     // not a bare TIM tail of sub-stream 0.
     assert_eq!(subs[1].base, 0x14000, "second sub-stream is sector-aligned");
     assert_eq!(subs[1].base % 0x800, 0, "sub-streams are 0x800-aligned");

@@ -1,4 +1,4 @@
-/* webgl-prim-replay.js — replay the live PSX GPU primitive pool extracted
+/* webgl-prim-replay.js - replay the live PSX GPU primitive pool extracted
  * from a mednafen save state. Each vertex is a 14-byte record produced by
  * `LegaiaViewer.save_state_prim_replay` (Rust → WASM):
  *

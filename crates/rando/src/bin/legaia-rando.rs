@@ -1,9 +1,9 @@
-//! `legaia-rando` — top-level randomizer / disc patcher CLI.
+//! `legaia-rando` - top-level randomizer / disc patcher CLI.
 //!
 //! Reads a **user-supplied** retail Legaia disc image, plans a randomization
 //! from a seed, and emits a portable PPF 3.0 patch (the redistributable
 //! deliverable) plus, optionally, a full patched `.bin` copy for local play.
-//! The patched `.bin` contains Sony bytes and must never be shared — the
+//! The patched `.bin` contains Sony bytes and must never be shared - the
 //! shareable artifacts are the patcher and the seed.
 //!
 //! ```text
@@ -74,7 +74,7 @@ enum Cmd {
         input: PathBuf,
     },
     /// Read-only: list the intra-town (house / interior) door-warp target
-    /// tiles the house-door shuffle would touch, grouped by scene — the
+    /// tiles the house-door shuffle would touch, grouped by scene - the
     /// cross-context player MOVE_TOs in named partition-0 door records (NPC /
     /// cutscene movement is excluded by construction).
     HouseDoors {
@@ -83,7 +83,7 @@ enum Cmd {
         input: PathBuf,
     },
     /// Read-only: show the new game's current starting inventory (the
-    /// `(item, count)` slots a New Game begins with — vanilla is Healing Leaf
+    /// `(item, count)` slots a New Game begins with - vanilla is Healing Leaf
     /// ×5).
     StartingItems {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
@@ -105,7 +105,7 @@ enum Cmd {
         input: PathBuf,
     },
     /// Read-only: list every monster's current combat stats (HP / MP / ATK /
-    /// DEF↑ / DEF↓ / AGL / SPD) from the `battle_data` archive — the population
+    /// DEF↑ / DEF↓ / AGL / SPD) from the `battle_data` archive - the population
     /// the `--monster-stats` randomizer redistributes.
     MonsterStats {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
@@ -129,14 +129,14 @@ enum Cmd {
         input: PathBuf,
     },
     /// Read-only: list every named spell's current MP cost from the SCUS spell
-    /// table — the population the `--spell-cost` randomizer redistributes.
+    /// table - the population the `--spell-cost` randomizer redistributes.
     SpellCosts {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
         #[arg(long)]
         input: PathBuf,
     },
     /// Read-only: list the equipment stat-bonus table (`DAT_80074F68`), grouped
-    /// by slot category, with each row's stats and the items that reference it —
+    /// by slot category, with each row's stats and the items that reference it -
     /// the population the `--equip-bonus` randomizer redistributes.
     EquipBonuses {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
@@ -144,7 +144,7 @@ enum Cmd {
         input: PathBuf,
     },
     /// Read-only: show each character's current favored weapon class (read from
-    /// the player battle files) — what the `--weapon-specialty` randomizer
+    /// the player battle files) - what the `--weapon-specialty` randomizer
     /// permutes.
     WeaponSpecialty {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
@@ -184,7 +184,7 @@ struct RandomizeArgs {
     /// Inject an *additional* low-chance equipment drop into the battle-end
     /// reward routine (a same-size `SCUS_942.54` code hook). On a per-battle
     /// roll it grants one extra random weapon / armor / accessory **on top of**
-    /// the normal drop — the regular drop table (vanilla or `--drops`) is never
+    /// the normal drop - the regular drop table (vanilla or `--drops`) is never
     /// disturbed.
     #[arg(long, default_value_t = false)]
     equipment_drops: bool,
@@ -204,7 +204,7 @@ struct RandomizeArgs {
     /// Let vendors offer to **trade** one of a character's seru for a different
     /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
     /// clean-room engine renders the trade UI and reseeds each vendor's offers
-    /// every two in-game hours. (Inert on real hardware — retail has no trade UI.)
+    /// every two in-game hours. (Inert on real hardware - retail has no trade UI.)
     #[arg(long, default_value_t = false)]
     seru_trade: bool,
     /// Maximum trades a single vendor offers at once (only with `--seru-trade`).
@@ -215,7 +215,7 @@ struct RandomizeArgs {
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     encounters: DropArg,
     /// Pool an encounter randomization draws from: `scene` (each scene's own
-    /// monsters — the default, every monster stays a local resident),
+    /// monsters - the default, every monster stays a local resident),
     /// `kingdom` (any monster from the same kingdom: Drake / Sebucus / Karisto),
     /// or `world` (any monster on the disc, so late-game monsters can appear at
     /// the start). Only applies when `--encounters` is set. `kingdom` needs the
@@ -241,7 +241,7 @@ struct RandomizeArgs {
     /// the valid item pool, `shuffle` redistributes the existing chest items).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     chests: DropArg,
-    /// How town-merchant shops are reassigned — what stores sell (global;
+    /// How town-merchant shops are reassigned - what stores sell (global;
     /// `shuffle` redistributes the existing shop-item multiset across all towns,
     /// `random` draws each slot from the valid item pool). The town shop stock is
     /// inline in each scene's field-VM script (op `0x49`).
@@ -262,9 +262,9 @@ struct RandomizeArgs {
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     monster_stats: DropArg,
     /// How special-attack power is reassigned (the battle-action move-power
-    /// table — enemy specials + Seru-magic, NOT party Tactical Arts). `shuffle`
+    /// table - enemy specials + Seru-magic, NOT party Tactical Arts). `shuffle`
     /// permutes the 44 power values (multiset preserved); `random` draws each
-    /// from that pool. Only the power changes — each move keeps its own
+    /// from that pool. Only the power changes - each move keeps its own
     /// animation, effects, and sound. `legaia-rando move-powers` lists them.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     move_power: DropArg,
@@ -299,7 +299,7 @@ struct RandomizeArgs {
     weapon_specialty: bool,
     /// How per-monster steal items are reassigned (the Evil God Icon table;
     /// `shuffle` redistributes the existing steal items, `random` draws from the
-    /// valid item pool — the steal *chance* is always preserved).
+    /// valid item pool - the steal *chance* is always preserved).
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     steals: DropArg,
     /// How each Tactical Art's button combo is reassigned. `shuffle` permutes a
@@ -310,7 +310,7 @@ struct RandomizeArgs {
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     arts: DropArg,
     /// How scene-transition doors/exits are reassigned (one-way / decoupled:
-    /// each door's whole destination — scene + entry tile + facing — is
+    /// each door's whole destination - scene + entry tile + facing - is
     /// reassigned globally; `shuffle` permutes the existing destinations across
     /// all doors, `random` draws each from the global pool). Going back through
     /// the destination's own doors is not guaranteed to return you.
@@ -332,7 +332,7 @@ struct RandomizeArgs {
     /// vanilla Healing Leaf ×5 untouched). Each is a distinct random consumable
     /// with a small random count. The random fill shares the seed's capacity
     /// (7 slots, or 5 with `--all-warps`) with the convenience-item toggles, and
-    /// takes whatever they leave — so it adds on top of them rather than being
+    /// takes whatever they leave - so it adds on top of them rather than being
     /// crowded out. `legaia-rando starting-items` shows the current contents.
     #[arg(long, default_value_t = 0)]
     starting_items: usize,
@@ -391,7 +391,7 @@ struct RandomizeArgs {
     /// convenience toggles and the Healing Leaf base. Comma-separated
     /// `id[:count]` entries, id in decimal or `0xHH`, count defaulting to 1
     /// (e.g. `--start-with 0x89:10,0xd1,154:3`). The id space is the full item
-    /// table — any consumable, weapon, armor, or accessory id works. Items
+    /// table - any consumable, weapon, armor, or accessory id works. Items
     /// beyond the 7-slot direct seed (5 with `--all-warps`) are granted via the
     /// opening scene like the random fill. `legaia-rando starting-items` shows
     /// the resulting bag.
@@ -422,7 +422,7 @@ struct RandomizeArgs {
     #[arg(long, default_value_t = false)]
     unused_items: bool,
     /// Comma-separated item ids (decimal or `0xHH`) to keep in their original
-    /// chests, never randomized — and dropped from the random-fill pool so they
+    /// chests, never randomized - and dropped from the random-fill pool so they
     /// can't be duplicated elsewhere. Defaults to the disc's full quest / key /
     /// story item set (every unsellable item except the chest-found equipment,
     /// so no door key, garden tool, letter, book, or one-off story item is ever
@@ -434,12 +434,12 @@ struct RandomizeArgs {
     /// Write the portable PPF 3.0 patch here (defaults to `<input>.ppf`).
     #[arg(long)]
     patch: Option<PathBuf>,
-    /// Also write a full patched disc-image copy here (contains Sony bytes —
+    /// Also write a full patched disc-image copy here (contains Sony bytes -
     /// for local play only, never redistribute).
     #[arg(long)]
     output: Option<PathBuf>,
     /// Write a reproducibility manifest (seed + options + change summary) here.
-    /// Safe to share alongside the PPF — it embeds no game bytes.
+    /// Safe to share alongside the PPF - it embeds no game bytes.
     #[arg(long)]
     manifest: Option<PathBuf>,
     /// Plan and report the run but write no files (patch / output / manifest).
@@ -449,9 +449,9 @@ struct RandomizeArgs {
 
 #[derive(Copy, Clone, ValueEnum)]
 enum CouplingArg {
-    /// Bidirectional — you can return the way you came.
+    /// Bidirectional - you can return the way you came.
     Coupled,
-    /// One-way — going back leads somewhere else.
+    /// One-way - going back leads somewhere else.
     Decoupled,
 }
 
@@ -806,7 +806,7 @@ fn cmd_equip_bonuses(input: &Path) -> Result<()> {
             }
             let referenced = rows.iter().filter(|r| !r.items.is_empty()).count();
             println!(
-                "\n{} bonus rows ({} referenced by equipment — the randomizable population)",
+                "\n{} bonus rows ({} referenced by equipment - the randomizable population)",
                 rows.len(),
                 referenced
             );
@@ -1146,7 +1146,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         Vec::new()
     };
     // `--unused-items` widens the random-fill pool with the curated unused items
-    // (the unnamed accessory in particular is otherwise excluded — it has no
+    // (the unnamed accessory in particular is otherwise excluded - it has no
     // name). It only matters for the `random` modes, which are the pool's only
     // consumers; warn if it can't take effect.
     if args.unused_items {
@@ -1712,7 +1712,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // Diff original vs patched -> PPF.
     let patched = patcher.into_image();
     if patched.len() != original.len() {
-        bail!("patched image changed size — refusing to emit (all edits must be same-size)");
+        bail!("patched image changed size - refusing to emit (all edits must be same-size)");
     }
     let runs = ppf::diff_runs(&original, &patched);
     let changed_bytes: usize = runs.iter().map(|r| r.bytes.len()).sum();
@@ -1750,7 +1750,7 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     if let Some(out) = &args.output {
         std::fs::write(out, &patched).with_context(|| format!("write {}", out.display()))?;
         println!(
-            "patched image: {} (contains Sony bytes — do not redistribute)",
+            "patched image: {} (contains Sony bytes - do not redistribute)",
             out.display()
         );
     }
@@ -1784,7 +1784,7 @@ fn cmd_verify(input: &Path, patch: &Path, output: Option<&Path>) -> Result<()> {
     if let Some(out) = output {
         std::fs::write(out, patcher.image()).with_context(|| format!("write {}", out.display()))?;
         println!(
-            "patched image: {} (contains Sony bytes — do not redistribute)",
+            "patched image: {} (contains Sony bytes - do not redistribute)",
             out.display()
         );
     }

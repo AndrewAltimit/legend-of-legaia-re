@@ -202,7 +202,7 @@ def pick_ocean_color(save: Path, mednafen_state_bin: Path,
     The walk-view prim pool already includes the kingdom's ocean tiles
     (the user's save states are walk-view with ocean visible on screen),
     so this works without dev-menu top-view captures."""
-    # 1. Cluster list (stdout text — mednafen-state JSON omits non-matching
+    # 1. Cluster list (stdout text - mednafen-state JSON omits non-matching
     # clusters, which we still want here).
     proc = subprocess.run([
         str(mednafen_state_bin), "prim-trace",

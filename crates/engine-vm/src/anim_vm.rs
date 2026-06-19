@@ -690,7 +690,7 @@ impl<'a> ActorAnimState<'a> {
 
     /// Folded LOD step: `8 / max(stride, 1)`, clamped to `[1, 8]`. For
     /// the observed inputs `0 / 2 / 4 / 8` this returns `8 / 4 / 2 / 1`
-    /// — i.e. how many child actors the renderer skips per outer step.
+    /// - i.e. how many child actors the renderer skips per outer step.
     pub fn lod_step_factor(&self) -> Option<u8> {
         let raw = self.lod_step_raw()?;
         let denom = if raw == 0 { 1 } else { raw };
@@ -850,11 +850,11 @@ pub const NESTED_HEADER_SIZE: usize = 2;
 pub enum NestedFrameDataError {
     /// Slice shorter than 2 bytes (no header).
     HeaderTooSmall,
-    /// `bones_per_frame` (the header byte at `+0`) is zero — the
+    /// `bones_per_frame` (the header byte at `+0`) is zero - the
     /// renderer's loop bound (`bones * 6` ushorts) would degenerate
     /// to nothing useful.
     ZeroBonesPerFrame,
-    /// `frame_count` (the header byte at `+1`) is zero — the consumer
+    /// `frame_count` (the header byte at `+1`) is zero - the consumer
     /// reads `(frame_count - 1) * 16` to seed the actor's frame-counter
     /// cap, so a zero count produces a wrap-around bug at runtime.
     ZeroFrameCount,
@@ -890,7 +890,7 @@ impl std::error::Error for NestedFrameDataError {}
 /// +0x02..+0x02 + N*B*9        N frames × B bones × 9-byte keyframe
 /// ```
 ///
-/// Per-bone 9-byte block decodes as a [`BoneFrame`] — six packed
+/// Per-bone 9-byte block decodes as a [`BoneFrame`] - six packed
 /// sign-extended 12-bit values arranged as two `[i16; 3]` vectors.
 ///
 /// ## Provenance

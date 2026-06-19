@@ -251,7 +251,7 @@ struct ResolveDriver {
     armed: bool,
 }
 
-/// One entry in [`ResolveDriver::queue`] — a party slot the action SM still
+/// One entry in [`ResolveDriver::queue`] - a party slot the action SM still
 /// needs to drive this round.
 #[derive(Debug, Clone, Copy)]
 struct ResolveSlot {
@@ -761,7 +761,7 @@ impl BattleSession {
         let head = match self.resolve_driver.as_ref() {
             Some(d) if d.pos < d.queue.len() => d.queue[d.pos],
             Some(_) => {
-                // Queue drained — finish Resolve.
+                // Queue drained - finish Resolve.
                 self.resolve_driver = None;
                 self.transition_emit(BattlePhase::RoundOutro, out);
                 return;
@@ -780,7 +780,7 @@ impl BattleSession {
         if !driver_armed {
             let monster_target = self.first_alive_monster_slot(world);
             let Some(target) = monster_target else {
-                // No monsters left — drop the rest of the queue and let
+                // No monsters left - drop the rest of the queue and let
                 // the action SM observe MonsterWipe on its next tick.
                 if let Some(d) = self.resolve_driver.as_mut() {
                     d.pos = d.queue.len();

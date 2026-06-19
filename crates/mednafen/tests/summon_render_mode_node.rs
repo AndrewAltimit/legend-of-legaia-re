@@ -10,7 +10,7 @@
 //! slot-B record table) but all carried `-1` records, never `0x4000`.
 //!
 //! FINDING (this test): in the player Sim-Seru summon mid-cast corpus the
-//! stager scene-graph is **not live at all** — zero words anywhere in main RAM
+//! stager scene-graph is **not live at all** - zero words anywhere in main RAM
 //! point at any of the stager's record starts (or their `record+4` bytecode),
 //! even though the stager is byte-resident at slot B. The references that *do*
 //! land in the stager window are the overlay's own internal code pointers
@@ -23,7 +23,7 @@
 //! Net: the `0x4000`/`0x4001` render modes have **no live exerciser in the
 //! catalogued corpus**. Closing their draw behaviour needs a frame-stepped
 //! capture inside an *enemy* stager-spawn window whose stager carries a
-//! `0x4000` record — not reachable from the current states. See
+//! `0x4000` record - not reachable from the current states. See
 //! `docs/subsystems/battle-action.md` § summon render-mode nodes.
 //!
 //! Disc + library gated: needs the extracted PROT (stager bytes) and the
@@ -176,15 +176,15 @@ fn render_mode_nodes_have_no_live_exerciser_in_player_casts() {
             match_pct * 100.0,
         );
 
-        // The sound finding: no live scene-graph part in this player cast — the
+        // The sound finding: no live scene-graph part in this player cast - the
         // summon is the creature pipeline at the captured instant, so the
         // 0x4000 render-mode records are present but never seated. A future
         // capture that flips this (a nonzero ref count) would mean the stager
-        // IS live here and the render-mode draw can be pinned — update the doc.
+        // IS live here and the render-mode draw can be pinned - update the doc.
         assert_eq!(
             ref_starts + ref_bytecodes,
             0,
-            "{label}: a stager record is referenced by a live actor — the \
+            "{label}: a stager record is referenced by a live actor - the \
              scene-graph IS live here; pin the 0x4000 render mode and update \
              docs/subsystems/battle-action.md"
         );

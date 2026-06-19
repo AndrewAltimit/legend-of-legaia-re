@@ -307,7 +307,7 @@ VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system pro
 </tr>
 </tbody>
 </table>
-  <p>This renderer chain draws <strong>field dialogue</strong>, which has no dedicated opcode: a field NPC's text is its inline interaction-script MES (retail <code>actor[+0x90]</code>), shown by the per-frame actor-dialog SM <code>FUN_80039b7c</code> + the dialog pager <code>FUN_801D84D0</code>, triggered by the field-interact op (<code>0x3E op0&lt;100</code>) &mdash; see <a href="../subsystems/script-vm.html">field script VM &sect; Field dialogue</a>. (<code>FUN_8001FD44</code> is <strong>not</strong> the opener &mdash; it is the scene-change packet reached by the <code>0x3F</code> named scene-change; the <code>_DAT_1F800394 |= 0x40</code> it sets is a scene-transition-pending flag, not a "dialog active" lock.)</p>
+  <p>This renderer chain draws <strong>field dialogue</strong>, which has no dedicated opcode: a field NPC's text is its inline interaction-script MES (retail <code>actor[+0x90]</code>), shown by the per-frame actor-dialog SM <code>FUN_80039b7c</code> + the dialog pager <code>FUN_801D84D0</code>, triggered by the field-interact op (<code>0x3E op0&lt;100</code>) - see <a href="../subsystems/script-vm.html">field script VM &sect; Field dialogue</a>. (<code>FUN_8001FD44</code> is <strong>not</strong> the opener - it is the scene-change packet reached by the <code>0x3F</code> named scene-change; the <code>_DAT_1F800394 |= 0x40</code> it sets is a scene-transition-pending flag, not a "dialog active" lock.)</p>
     </div>
   </details>
 </section>

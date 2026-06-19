@@ -2,7 +2,7 @@
 //!
 //! The VAB VAG size table is 1-indexed (`vag_table[1..=vs]` hold the sizes), so
 //! `vag_table[0]` is a leading spacer. This scans every VAB in the extracted
-//! PROT corpus and asserts the spacer is universally `0` — the empirical
+//! PROT corpus and asserts the spacer is universally `0` - the empirical
 //! confirmation that it carries no master pitch / sample-rate correction (see
 //! [`legaia_vab::VabReport::vag_table_spacer`]).
 //!
@@ -30,7 +30,7 @@ fn vag_table_spacer_is_zero_across_corpus() {
         return;
     }
     let Some(prot) = extracted_prot_dir() else {
-        eprintln!("[skip] extracted/PROT missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/PROT missing - run `legaia-extract` first");
         return;
     };
 

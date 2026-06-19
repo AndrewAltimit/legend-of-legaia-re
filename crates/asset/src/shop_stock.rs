@@ -3,7 +3,7 @@
 //! Unlike the casino prize exchange (a static overlay table), a gold town
 //! merchant's stock is defined **inline in the scene's field-VM script** (the
 //! MAN, asset type `0x03`), the same place chests (op `0x39`) and doors
-//! (op `0x3F`) live. Opening a shop is field-VM **op `0x49` (`STATE_RESUME`)** —
+//! (op `0x3F`) live. Opening a shop is field-VM **op `0x49` (`STATE_RESUME`)** -
 //! the multi-frame state machine that drives the menu-request register
 //! `_DAT_8007B450`. In its sub-op-`0` form it carries an inline payload that,
 //! for a shop, is:
@@ -22,13 +22,13 @@
 //! ## `count` includes unsellable padding
 //!
 //! The `count` byte counts the purchasable stock **plus** a trailing run of
-//! unsellable, price-`0` *template* ids — commonly the "Ra-Seru Meta $N"
+//! unsellable, price-`0` *template* ids - commonly the "Ra-Seru Meta $N"
 //! placeholders `0x01/0x02/0x03`, or a lone `0x03`. The on-screen shop stops at
 //! the sellable run, so this tail is structural padding, not stock. The Rim Elm
 //! Variety Store that pinned the format happens to have a tail-less ten-item
 //! list, which is why the padding wasn't in the original capture. Across the
-//! whole disc every shop partitions cleanly — a leading run of price-`> 0` items
-//! then an unsellable tail (≤ 3 ids), never interleaved — and the priced prefix
+//! whole disc every shop partitions cleanly - a leading run of price-`> 0` items
+//! then an unsellable tail (≤ 3 ids), never interleaved - and the priced prefix
 //! matches the curated walkthrough stock (e.g. "Market" decodes to 10 ids but
 //! sells 7). [`ShopRecord::sellable_count`] returns the priced-prefix length
 //! given the SCUS price table; the asset-`tests` cross-table sweep
@@ -43,7 +43,7 @@
 //! Corey vendor is the case that exposed this), so a walk silently misses those
 //! shops. The scan doesn't care how the script reaches the op. False positives
 //! are ruled out by a strict record validation ([`parse_record`]): the byte
-//! after the opcode must be `0x00` (sub-op 0 — this alone rejects almost every
+//! after the opcode must be `0x00` (sub-op 0 - this alone rejects almost every
 //! stray `0x49`), the count is small and non-zero, every id is non-zero (and,
 //! with the SCUS item mask, names a real item), and the trailing shop name is a
 //! printable, letter-initial, `0x00`-terminated string.
@@ -82,7 +82,7 @@ pub struct ShopRecord {
 }
 
 impl ShopRecord {
-    /// The number of leading **purchasable** item ids — the real shop stock,
+    /// The number of leading **purchasable** item ids - the real shop stock,
     /// excluding the trailing unsellable template-id padding the record `count`
     /// over-counts (see the module docs). `man` is the decoded MAN the offsets
     /// index into; `is_priced` reports whether an id has a `> 0` `SCUS_942.54`
@@ -192,7 +192,7 @@ pub fn parse_record(man: &[u8], op_abs: usize, valid: Option<&[bool; 256]>) -> O
     // unsellable template-id padding (see the module docs). When a `valid` mask
     // is supplied, the stock is the leading run of valid ids; the record holds
     // only if it sells at least one valid item, the padding tail is entirely
-    // invalid (no interleaving — verified disc-wide), and the padding stays
+    // invalid (no interleaving - verified disc-wide), and the padding stays
     // within the observed bound. This both rejects non-shop `0x49` payloads and
     // trims the padding out of the returned stock. With no mask the whole
     // declared list is kept verbatim.
@@ -336,8 +336,8 @@ mod tests {
 
     /// With a mask, the stock is the leading valid run; a bounded trailing run
     /// of invalid (unsellable) ids is treated as padding and trimmed, but a shop
-    /// that doesn't *lead* with a valid item — or interleaves valid past the
-    /// padding, or pads too far — is rejected.
+    /// that doesn't *lead* with a valid item - or interleaves valid past the
+    /// padding, or pads too far - is rejected.
     #[test]
     fn valid_mask_splits_stock_from_padding() {
         let mut mask = [true; 256];

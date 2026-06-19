@@ -6,7 +6,7 @@
 //! oracle pins the parse against the retail executable. The decisive
 //! cross-table tie is that each placement's `scene_id` is the destination
 //! scene's PROT bundle index: the three kingdom bundles (Drake 85, Sebucus
-//! 244, Karisto 391 — `docs/formats/world-map-overlay.md`) all appear as
+//! 244, Karisto 391 - `docs/formats/world-map-overlay.md`) all appear as
 //! destinations, so a drift in either the placement table base or the kingdom
 //! bundle indexing would break this test.
 

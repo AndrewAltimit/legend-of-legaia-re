@@ -134,7 +134,7 @@ param_3 = func_0x801d362c(actor, op);
 
 **Escape to overlay-defined extension opcodes.** `FUN_801D362C` reads `op[1]` as a 16-bit sub-opcode (range `0x00..0x3C`) and dispatches via its own JT at `0x801CE868` (61 entries × 4 bytes), bounds-checked so there is no out-of-bounds-jump path. **61/61 sub-ops are dispatched in `crates/engine-vm`.**
 
-The full sub-op reference — bounds check, the shared `&DAT_801F3498` scratch table, world-position lerps, bbox/distance gates, self-modifying bytecode ops, HSV color ramps, the `DAT_80085758` fourth flag bank, and per-sub-op coverage — is in **[move-vm-overlay-ext.md](move-vm-overlay-ext.md)**.
+The full sub-op reference - bounds check, the shared `&DAT_801F3498` scratch table, world-position lerps, bbox/distance gates, self-modifying bytecode ops, HSV color ramps, the `DAT_80085758` fourth flag bank, and per-sub-op coverage - is in **[move-vm-overlay-ext.md](move-vm-overlay-ext.md)**.
 
 ### 0x30 - `KEY_BUFFER_FREE` (size 0, ends loop / falls into 0x22)
 
@@ -199,7 +199,7 @@ the live rect), and a move program cycles them by stamping one frame per
 breakpoint on `FUN_80058490` (`scripts/pcsx-redux/autorun_battle_moveimage_trace.lua`):
 field scenes run 4-frame strip cycles (e.g. 16×64 strips at one-frame
 cadence) from this op. (The battle party's facial-texel stamps share the
-`MoveImage` primitive but are NOT this op — they come from the dedicated
+`MoveImage` primitive but are NOT this op - they come from the dedicated
 facial animator `FUN_8004C7B4`; see
 [`battle-data-pack.md` § Facial animation tracks](../formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98).)
 Engine hook: `MoveVmHost::move_image` (`crates/engine-vm/src/move_vm.rs`).
@@ -222,7 +222,7 @@ After the loop exits, the function returns; the caller (`FUN_80021B04` or `FUN_8
 > **stand-in** render for a Seru-magic cast, not retail's player-summon path. A
 > live trace resolved that the **player** summon is drawn as an ordinary battle
 > actor via the per-object TRS-keyframe decoder `FUN_8004998C` (ported in
-> `engine-vm/anim_vm.rs`), with the move VM firing only as noise — see
+> `engine-vm/anim_vm.rs`), with the move VM firing only as noise - see
 > [`battle-action.md`](battle-action.md#seru-magic-summon-overlay-dispatch). The
 > move-VM stager records (extraction PROT 903..913) are real on-disc data and this driver
 > runs them faithfully opcode-for-opcode, but they aren't the player render
@@ -230,8 +230,8 @@ After the loop exits, the function returns; the caller (`FUN_80021B04` or `FUN_8
 >
 > **Provenance correction (`FUN_801F811C`):** a full static decode of PROT 0900
 > at the slot-B link base `0x801F69D8` resolves `FUN_801F811C` as the per-frame
-> handler of the 2D **screen-mask (iris) widget** — kind 1 of the
-> [screen-effect widget family](#screen-effect-widget-family-prot-0900) below —
+> handler of the 2D **screen-mask (iris) widget** - kind 1 of the
+> [screen-effect widget family](#screen-effect-widget-family-prot-0900) below -
 > **not** a summon-part position update. Its four tweened channels
 > (`+0x3c/3e/40/42` targets vs `+0x14/16/18/1a` current) are the left / top /
 > right / bottom edges of a screen rectangle, and the "4 render quads" are the
@@ -252,7 +252,7 @@ banks as summon-local offsets, so `summon::SummonScene` adds the cast-target
 ## Screen-effect widget family (PROT 0900)
 
 The resident slot-B overlay PROT 0900 (link base `0x801F69D8`) hosts a
-four-kind family of 2D screen widgets — the cutscene-style presentation layer
+four-kind family of 2D screen widgets - the cutscene-style presentation layer
 (iris mask, scripted sprites, image panel, letterbox bands). Engine port:
 `crates/engine-core/src/screen_fx.rs`; layout pinned on disc bytes by the
 disc-gated `screen_fx_disc` test.
@@ -265,10 +265,10 @@ a live widget by handler. The four 0x18-byte handler-binding descriptors sit at
 
 | kind | handler | per-frame behaviour | spawn / control API |
 |---|---|---|---|
-| sprite | `FUN_801F7A9C` | widget-script-driven tweened 2D sprite: GP0 `0x64` SPRT (pos `+0x14/16`, size `+0xa8/aa`, UV `+0xa4/a6`, CLUT `+0xa2`, RGB `+0x74`), texpage packet from `+0xa0`, OT `+0xc` | `FUN_801F8004(record)` — record `[x][y][w][h][tex_x][tex_y][clut_x][clut_y]` i16s + `rgb` u24, script at `+0x13`; derives `texpage = (tex_x>>6) + ((tex_y & ~0xff)>>4)`, `u = (tex_x & 0x3f)<<2`, `v = tex_y & 0xff`, `clut = (clut_y<<6) + (clut_x>>4)` |
-| mask | `FUN_801F811C` | 4-edge rect tween + **4 black border quads** (GP0 `0x28`, colour 0, OT `+0x1c`): top `(x0,0)-(0x140,T)`, bottom `(x0,B)-(0x140,H-1)`, left `(x0,T)-(L-1,B)`, right `(R,T)-(0x140,B)` — `x0`/`H` from render scratch `0x1F800388`/`0x1F80038E` | `FUN_801F8D4C(l,t,r,b,dur)` — `-1` per edge selects the full-open default; fresh spawn starts fully open `[x0, 0, 0x140, H-1]` |
-| panel | `FUN_801F849C` | **five**-channel tween (x, y, w, h, first-page width `+0x24↔+0x26`) + 1–2 textured quads (GP0 `0x2C`, colour `0x888888`, OT `+0x10`) over **15bpp** texpages (spawn ORs `0x100` into the page selector — no CLUT); a panel wider than 256px splits across two pages | `FUN_801F88FC(rec)` spawn (`[x][y][w][h][tex_x][tex_y]` from operand `+1`; `w > 0x100` computes the second page + clamps the first-page width); `FUN_801F8E6C(x, y, scale, dur)` move/scale — `scale` is 4.12 fixed against the `+0xb8/ba/bc` base sizes |
-| letterbox | `FUN_801F8A34` | no tween: two solid black bands (`-y_off..y0`, `y3..H`) + two gradient feather strips (`y0`→`y1` white→black, `y2`→`y3` black→white; GP0 `0x3B` shaded semi-transparent behind a **subtractive**-blend draw-mode packet `FUN_80059010(…, 0x55, …)`), OT `+0x4` | `FUN_801F8F28(block)` — six i16s `[x_left][x_right][y0][y1][y2][y3]` |
+| sprite | `FUN_801F7A9C` | widget-script-driven tweened 2D sprite: GP0 `0x64` SPRT (pos `+0x14/16`, size `+0xa8/aa`, UV `+0xa4/a6`, CLUT `+0xa2`, RGB `+0x74`), texpage packet from `+0xa0`, OT `+0xc` | `FUN_801F8004(record)` - record `[x][y][w][h][tex_x][tex_y][clut_x][clut_y]` i16s + `rgb` u24, script at `+0x13`; derives `texpage = (tex_x>>6) + ((tex_y & ~0xff)>>4)`, `u = (tex_x & 0x3f)<<2`, `v = tex_y & 0xff`, `clut = (clut_y<<6) + (clut_x>>4)` |
+| mask | `FUN_801F811C` | 4-edge rect tween + **4 black border quads** (GP0 `0x28`, colour 0, OT `+0x1c`): top `(x0,0)-(0x140,T)`, bottom `(x0,B)-(0x140,H-1)`, left `(x0,T)-(L-1,B)`, right `(R,T)-(0x140,B)` - `x0`/`H` from render scratch `0x1F800388`/`0x1F80038E` | `FUN_801F8D4C(l,t,r,b,dur)` - `-1` per edge selects the full-open default; fresh spawn starts fully open `[x0, 0, 0x140, H-1]` |
+| panel | `FUN_801F849C` | **five**-channel tween (x, y, w, h, first-page width `+0x24↔+0x26`) + 1–2 textured quads (GP0 `0x2C`, colour `0x888888`, OT `+0x10`) over **15bpp** texpages (spawn ORs `0x100` into the page selector - no CLUT); a panel wider than 256px splits across two pages | `FUN_801F88FC(rec)` spawn (`[x][y][w][h][tex_x][tex_y]` from operand `+1`; `w > 0x100` computes the second page + clamps the first-page width); `FUN_801F8E6C(x, y, scale, dur)` move/scale - `scale` is 4.12 fixed against the `+0xb8/ba/bc` base sizes |
+| letterbox | `FUN_801F8A34` | no tween: two solid black bands (`-y_off..y0`, `y3..H`) + two gradient feather strips (`y0`→`y1` white→black, `y2`→`y3` black→white; GP0 `0x3B` shaded semi-transparent behind a **subtractive**-blend draw-mode packet `FUN_80059010(…, 0x55, …)`), OT `+0x4` | `FUN_801F8F28(block)` - six i16s `[x_left][x_right][y0][y1][y2][y3]` |
 
 The **sprite widget script** (cursor at `actor+0x90`) is byte-coded: opcode
 `0x40`, sub-op at `+2` dispatched through the 5-entry table at the overlay head
@@ -277,13 +277,13 @@ dispatcher `FUN_801F2D68` consumes via `jr *(0x801F69D8 + sub*4)`):
 
 | sub | operands | semantics |
 |---|---|---|
-| 0 | — | kill: set actor flag bit 8 (suppresses the draw; `FUN_8003CF04` skips it) |
+| 0 | - | kill: set actor flag bit 8 (suppresses the draw; `FUN_8003CF04` skips it) |
 | 1 | `flag:i16@3` | wait until story flag set (`FUN_8003CE64`, bank `0x80085758`); then `cursor += 5` and continue same-frame |
 | 2 | `flag:i16@3` | wait until story flag **clear**; then `cursor += 5` |
 | 3 | `x:i16@3, y:i16@5, rgb:u24@7, mode:u8@0xA, dur:i16@0xB` | tween position + colour; `cursor += 0xD` on completion |
 | 4 | `rgb:u24@3, mode:u8@6, dur:i16@7` | tween colour only; `cursor += 9` on completion |
 
-All tweens share `FUN_801DE4C8(a, b, t, D, mode)` — `if (a == b || D <= t)
+All tweens share `FUN_801DE4C8(a, b, t, D, mode)` - `if (a == b || D <= t)
 return a;` mode 1 = linear `(a-b)*t/D + b`, mode 2 = quadratic ease-out,
 mode 3 = quadratic ease-in, mode 4 = two-segment ease-in-out (integer
 truncating division throughout; `overlay_dance_801de4c8.txt`; ported as
@@ -291,13 +291,13 @@ truncating division throughout; `overlay_dance_801de4c8.txt`; ported as
 `FUN_801DE648(value, *dst, size)` (`overlay_baka_fighter_801de648.txt`).
 Crucially, a tween **re-interpolates from a captured start value each frame**
 (mask: the latched `+0x14..` edges; sprite: the `+0x3c/3e` / `+0x7c` start
-slots written when `+0x9C == 0`) — not iteratively from the moving current
-value — and latches exactly on `+0x9C == +0x9E`.
+slots written when `+0x9C == 0`) - not iteratively from the moving current
+value - and latches exactly on `+0x9C == +0x9E`.
 
 **Consumers.** The spawn/control APIs are called by **field-VM op `0x43`
 sub-ops `0x10`/`0x11`/`0x13`/`0x14`/`0x15`**
 ([script-vm.md § 0x43 sub-0x10..0x15](script-vm.md)), dispatched through the
-0x43 sub-op JT at `0x801CEDA8` — `jal` sites inside `FUN_801DE840` at
+0x43 sub-op JT at `0x801CEDA8` - `jal` sites inside `FUN_801DE840` at
 `0x801DF918` (sub-`0x10` sprite, inline record), `0x801DF974` (sub-`0x11`
 mask, operands `[L][T][R][B][dur]` i16s), `0x801DFA70` (sub-`0x13` panel),
 `0x801DFABC` (sub-`0x14` panel move/scale), `0x801DFACC` (sub-`0x15`
@@ -320,7 +320,7 @@ single **move-VM part-actor** in the part pool `DAT_801C90F0`, ticked each frame
 by the generic SCUS actor tick `FUN_80021DF4` (→ `FUN_80023070`); its
 `[i16 model_sel][u16 flags][bytecode]` record sits in the **battle overlay
 (0898)** resident data at `0x801F5xxx` (below the 0900 slot-B link base), with
-`model_sel` reading `-1` (transform node) / `5` (library mesh) — the summon
+`model_sel` reading `-1` (transform node) / `5` (library mesh) - the summon
 part-record format, sourced from the battle overlay rather than a per-spell
 stager. So the widget family stays **ending-scene-exclusive**, and `FUN_80021DF4`
 is pinned as the live part render-tail. Disc + library gated
@@ -342,7 +342,7 @@ is pinned as the live part render-tail. Disc + library gated
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Move table (MDT)](../formats/mdt.md) ·
 [Motion VM](motion-vm.md) ·
 [Battle action SM](battle-action.md) ·

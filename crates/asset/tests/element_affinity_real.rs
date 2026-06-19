@@ -49,7 +49,7 @@ fn element_affinity_tables_parse_with_pinned_values() {
     let aff = element_affinity::parse(&bytes).expect("element-affinity tables parse");
 
     // Same-element diagonal is a slight self-resist (96) for every real
-    // element; the neutral element (7) is exempt — its whole row/column is 100.
+    // element; the neutral element (7) is exempt - its whole row/column is 100.
     for e in 0..7u8 {
         assert_eq!(
             aff.affinity_pct(e, e),

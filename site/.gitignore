@@ -103,3 +103,11 @@ viewer.html
 world-overview.html
 world.html
 world.json
+writeups/disc-patching/a-static-tables.html
+writeups/disc-patching/b-lzs-slots.html
+writeups/disc-patching/c-field-vm-operands.html
+writeups/disc-patching/d-man-relocation.html
+writeups/disc-patching/e-rodata-gap-code.html
+writeups/disc-patching/f-overlay-dead-region.html
+writeups/disc-patching/index.html
+writeups/index.html

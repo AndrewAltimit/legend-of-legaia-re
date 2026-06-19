@@ -11,24 +11,24 @@
 //! the individual `pub fn` docs below).
 //! PORT: FUN_800402F4 (selector-dispatch lives in battle_action; this
 //! module ports the arithmetic kernel the dispatch feeds into).
-//! PORT: FUN_801DD0AC (damage roll — both branches. Summon branch
+//! PORT: FUN_801DD0AC (damage roll - both branches. Summon branch
 //! (`attacker_slot == 7`): `summon_attacker_roll` / `summon_defender_roll` /
 //! `summon_bonus_roll` / `summon_predamage`. Arts/physical branch
 //! (`attacker_slot != 7`, seeded by the `0x801F4F5C` move-power table):
 //! `arts_attacker_roll` / `arts_bonus_roll` / `arts_physical_predamage`
 //! (defender roll shared with the summon branch). The live `FUN_801DDB30`
-//! mitigation/finisher glue is not reproduced here — see the REF below.)
-//! PORT: FUN_801DD864 (summon-roll scale stage — `apply_element_affinity` /
+//! mitigation/finisher glue is not reproduced here - see the REF below.)
+//! PORT: FUN_801DD864 (summon-roll scale stage - `apply_element_affinity` /
 //! `apply_status_weaken` / `apply_magic_power`).
-//! PORT: FUN_8004E568 (victory-spoils gold + EXP scaling — `victory_gold_*` /
+//! PORT: FUN_8004E568 (victory-spoils gold + EXP scaling - `victory_gold_*` /
 //! `victory_exp_per_member`. The reward resolver's drop roll + level-up
 //! application live in engine-core `apply_battle_loot` / `apply_battle_xp`.)
-//! PORT: FUN_801DDB30 (damage finisher — the closed-form damage-finalisation
+//! PORT: FUN_801DDB30 (damage finisher - the closed-form damage-finalisation
 //! arithmetic (`damage_finish`: equipment elemental-resistance halving, the
 //! guard halve, the no-damage `rand%9+8` floor, the summon power-percent scale,
 //! the 9999 cap) + the spirit-gauge fill (`spirit_gauge_fill`). The finisher's
-//! state-mutating tail — damage-popup accumulator, AI revenge table, MP drain,
-//! and the per-element stat-debuff switch — reads/writes ~20 battle globals and
+//! state-mutating tail - damage-popup accumulator, AI revenge table, MP drain,
+//! and the per-element stat-debuff switch - reads/writes ~20 battle globals and
 //! stays in the live battle context; see the REF below + `damage_finish` docs.)
 //! REF: FUN_801E295C, FUN_801EED1C (the action-SM glue that drives the kernels
 //! and applies the finisher's coupled global side effects).
@@ -223,7 +223,7 @@ pub fn buff_ramp(value: u16) -> u16 {
 //      drain, and per-element stat-debuff application. That stage reads ~20
 //      battle globals + both actors' full records and mutates live battle state,
 //      so it is the deeply-coupled tail of the live battle context, **not** a
-//      pure kernel — it is intentionally not reproduced here. The pieces below
+//      pure kernel - it is intentionally not reproduced here. The pieces below
 //      are the bounded, state-free arithmetic the roll and scale stages are made
 //      of; the engine supplies the live stats / RNG / affinity / power-byte.
 //
@@ -280,7 +280,7 @@ pub fn summon_defender_roll(defender: &SummonRollActor, rand: u16) -> u32 {
 /// indexed `matrix[attacker_element][defender_element]` (the disasm computes
 /// `def_elem + atk_elem*8`, so the **row is the attacker**, the column the
 /// defender). The matrix is parsed off the disc by
-/// [`legaia_asset::element_affinity`]; retail values are a small nudge —
+/// [`legaia_asset::element_affinity`]; retail values are a small nudge -
 /// 100 = neutral, 96 = same-element self-resist, 104 = opposite-element bonus.
 pub fn apply_element_affinity(roll: u32, affinity_pct: u8) -> u32 {
     roll.saturating_mul(affinity_pct as u32) / 100
@@ -363,8 +363,8 @@ pub fn summon_predamage(i: &SummonPredamage) -> (u32, u32) {
 /// actually fires**.
 ///
 /// Retail (`FUN_801dd0ac` summon branch) draws that `rand()` *inside* the bonus
-/// arm — `func_0x80056798(7)` after the `local_24 + summon_hp <= local_28`
-/// check fails — so a caller pulling from a shared RNG cursor (e.g.
+/// arm - `func_0x80056798(7)` after the `local_24 + summon_hp <= local_28`
+/// check fails - so a caller pulling from a shared RNG cursor (e.g.
 /// `World::player_summon_predamage`) advances the cursor by exactly **two**
 /// draws on the no-bonus path and **three** on the bonus path, matching the
 /// retail call order. The eager [`summon_predamage`] wrapper passes a closure
@@ -413,7 +413,7 @@ pub fn heal_summon_amount(power_byte: u8) -> u16 {
 }
 
 // ---------------------------------------------------------------------------
-// FUN_801dd0ac — arts / physical branch (attacker_slot != 7)
+// FUN_801dd0ac - arts / physical branch (attacker_slot != 7)
 // ---------------------------------------------------------------------------
 //
 // The same shared kernel `FUN_801dd0ac` also resolves every melee / Tactical-Art
@@ -422,7 +422,7 @@ pub fn heal_summon_amount(power_byte: u8) -> u16 {
 //
 //   * the attacker roll is seeded by a **static per-move power scalar** from the
 //     26-byte-stride move-power table at `0x801F4F5C` (now parsed off the disc as
-//     [`legaia_asset::move_power`], PROT 0898 file `0x26744`) — `move_type * 0x1a
+//     [`legaia_asset::move_power`], PROT 0898 file `0x26744`) - `move_type * 0x1a
 //     + 0x801F4F5C`, the i16 at `+0`. This is the one true per-move power scalar
 //     in the battle system; summons have no such scalar (see the summon block
 //     above + `docs/formats/move-power.md`).
@@ -434,7 +434,7 @@ pub fn heal_summon_amount(power_byte: u8) -> u16 {
 // The `FUN_801dd864` scale stage and the `FUN_801ddb30` finisher are shared with
 // the summon branch; the scale's per-character magic-power arm is summon-only
 // (`param_1 == 7` in `FUN_801dd864`), so arts hits scale by element affinity +
-// status weaken only — exactly [`apply_element_affinity`] + [`apply_status_weaken`].
+// status weaken only - exactly [`apply_element_affinity`] + [`apply_status_weaken`].
 //
 // `power` is the **sign-extended i16** read of the move-power record's `+0`, so
 // the `power >> 1/2/3` folds are arithmetic shifts. Real records carry
@@ -562,7 +562,7 @@ pub fn arts_physical_predamage_lazy(
 }
 
 // ---------------------------------------------------------------------------
-// FUN_801ddb30 — damage finisher (post-roll finalisation)
+// FUN_801ddb30 - damage finisher (post-roll finalisation)
 // ---------------------------------------------------------------------------
 //
 // The shared finisher `FUN_801ddb30` (`overlay_battle_action_801ddb30.txt`) takes
@@ -572,12 +572,12 @@ pub fn arts_physical_predamage_lazy(
 // stage rewrites `over` in place. The closed-form arithmetic splits cleanly into
 // two pure kernels:
 //
-//   * [`damage_finish`] — equipment elemental-resistance halving (one element
+//   * [`damage_finish`] - equipment elemental-resistance halving (one element
 //     bit per attacker element; the absorb-bit `0x10` gate routes to a 3/4 scale
 //     instead), the defender-guard halve (`actor+0x1de == 4`), the no-damage
 //     `rand()%9 + 8` floor, the summon power-percent scale (`attacker_slot == 7`),
 //     and the `9999` cap. Returns the final `over` (HP loss).
-//   * [`spirit_gauge_fill`] — the defender's spirit-gauge accrual from the same
+//   * [`spirit_gauge_fill`] - the defender's spirit-gauge accrual from the same
 //     `over`, plus the two "spirit gain up" equipment bits, clamped to 100.
 //
 // The finisher's remaining tail is genuinely coupled to live battle state and is
@@ -618,7 +618,7 @@ pub struct DefenderResist {
 }
 
 impl DefenderResist {
-    /// `true` if the defender resists `element` (0..=6) — the per-element bit set.
+    /// `true` if the defender resists `element` (0..=6) - the per-element bit set.
     fn resists(&self, element: u8) -> bool {
         match element {
             0 => self.hi & 0x2000_0000 != 0,
@@ -637,7 +637,7 @@ impl DefenderResist {
 #[derive(Debug, Clone, Copy)]
 pub struct DamageFinish {
     /// Pre-finisher damage above base (`attacker_roll - defender_roll`, the
-    /// `over` the roll/scale stages produce — already saturated to `>= 0`).
+    /// `over` the roll/scale stages produce - already saturated to `>= 0`).
     pub predamage: u32,
     /// Attacker actor slot (`param_1`); `7` is the summon body, `>= 3` an enemy.
     pub attacker_slot: u8,
@@ -649,7 +649,7 @@ pub struct DamageFinish {
     /// The party defender's equipment resistance flags. Ignored for an enemy
     /// defender (`defender_slot >= 3`).
     pub defender_resist: DefenderResist,
-    /// Defender is in the guard/defend state (`actor+0x1de == 4`) — halves `over`.
+    /// Defender is in the guard/defend state (`actor+0x1de == 4`) - halves `over`.
     pub defender_guarding: bool,
     /// The `_DAT_8007bd84` global, consulted only for an enemy defender
     /// (`defender_slot >= 3`): when set, the enemy takes half damage.
@@ -674,7 +674,7 @@ pub struct DamageFinish {
 /// 1. **Party-defender elemental resistance** (`defender_slot < 3`, attacker is
 ///    an enemy `>= 3`, and `!bypass_party_resist`): if the defender's absorb bit
 ///    (`hi & 0x10`) is clear *or* the attacker is non-elemental (element 7), the
-///    per-element halve ladder runs — `over >>= 1` when the defender resists the
+///    per-element halve ladder runs - `over >>= 1` when the defender resists the
 ///    attacker's element. Otherwise `over = over * 3 >> 2` (3/4).
 /// 2. **Enemy-defender halve** (`defender_slot >= 3`): `over >>= 1` when
 ///    `enemy_defender_halve`.
@@ -684,14 +684,14 @@ pub struct DamageFinish {
 /// 6. **9999 cap**.
 ///
 /// The multi-hit pointer bump (`if *param_3 == *param_4 param_3++`) and the
-/// `+0x16e` nullify status are not part of this value — they are caller concerns
+/// `+0x16e` nullify status are not part of this value - they are caller concerns
 /// (see the module section comment).
 pub fn damage_finish(i: &DamageFinish) -> u32 {
     damage_finish_lazy(i, || i.floor_rand)
 }
 
 /// As [`damage_finish`], but the stage-4 floor `rand()` is produced lazily by
-/// `floor_rand`, invoked **only when mitigation has reduced `over` to zero** —
+/// `floor_rand`, invoked **only when mitigation has reduced `over` to zero** -
 /// the single point retail's `FUN_801ddb30` draws RNG. A caller pulling from a
 /// shared RNG cursor advances it by zero or one draw, exactly as retail does;
 /// [`DamageFinish::floor_rand`] is ignored on this path.
@@ -751,7 +751,7 @@ pub fn damage_finish_lazy(i: &DamageFinish, floor_rand: impl FnOnce() -> u16) ->
 ///
 /// `over` is the **pre-nullify** damage (spirit still accrues when a `+0x16e`
 /// nullify status later zeroes the HP loss). `defender_maxhp` is `actor+0x14e`;
-/// retail `trap`s on a zero max-HP — the kernel instead returns the gauge
+/// retail `trap`s on a zero max-HP - the kernel instead returns the gauge
 /// unchanged (the caller guarantees a living defender). Returns the new gauge
 /// value (already clamped to `100`).
 ///
@@ -786,12 +786,12 @@ pub fn spirit_gauge_fill(
 }
 
 // ---------------------------------------------------------------------------
-// FUN_8004E568 — victory spoils (gold + EXP reward arithmetic)
+// FUN_8004E568 - victory spoils (gold + EXP reward arithmetic)
 // ---------------------------------------------------------------------------
 //
 // The post-battle reward resolver `FUN_8004E568`
 // (`ghidra/scripts/funcs/8004e568.txt`) builds the gold and EXP awards from the
-// dead enemies' record fields (`+0x44` gold, `+0x46` EXP). Both are scaled — the
+// dead enemies' record fields (`+0x44` gold, `+0x46` EXP). Both are scaled - the
 // engine must not credit the raw record sums. Pinned arithmetic (decompiled
 // block at `8004e568.txt:411..461`):
 //
@@ -858,7 +858,7 @@ pub fn victory_exp_per_member(exp_sum: u32, alive: u32) -> u32 {
 //   (`overlay_battle_action_801e70bc.txt`).
 //
 // The leveled byte is the **magic-power** stage input of the next cast
-// (`FUN_801dd864` reads the same `+0x161` byte — see [`apply_magic_power`]),
+// (`FUN_801dd864` reads the same `+0x161` byte - see [`apply_magic_power`]),
 // so the loop is: cast → XP → level → stronger cast.
 //
 // Unmodelled retail gates (documented, intentionally not reproduced): the
@@ -866,7 +866,7 @@ pub fn victory_exp_per_member(exp_sum: u32, alive: u32) -> u32 {
 // same flag battle-formulas.md notes as the unmodelled gold gate) and the
 // unidentified accrual skip `_DAT_8007BDB8`.
 
-/// One target's spell-XP gain from a summon hit — PORT: FUN_801ddb30
+/// One target's spell-XP gain from a summon hit - PORT: FUN_801ddb30
 /// (spell-XP accrual tail, `attacker_slot == 7` only; decompiled block
 /// `overlay_battle_action_801ddb30.txt:1049..1084`).
 ///
@@ -906,12 +906,12 @@ pub fn summon_spell_xp_gain(
     }
 }
 
-/// The six spell ids whose level-up threshold is scaled ×1.5 — the explicit
+/// The six spell ids whose level-up threshold is scaled ×1.5 - the explicit
 /// `switch` cases of `FUN_801e70bc` (`iVar1 = 3` instead of `2`, halved into
 /// `(threshold * mult) >> 1`).
 pub const SUMMON_XP_TRIPLE_THRESHOLD_IDS: [u8; 6] = [0x86, 0x88, 0x8D, 0x99, 0x9B, 0xA0];
 
-/// The spell-XP total a spell at `level` must **exceed** to level up —
+/// The spell-XP total a spell at `level` must **exceed** to level up -
 /// PORT: FUN_801e70bc (battle overlay 0898,
 /// `overlay_battle_action_801e70bc.txt`).
 ///
@@ -919,7 +919,7 @@ pub const SUMMON_XP_TRIPLE_THRESHOLD_IDS: [u8; 6] = [0x86, 0x88, 0x8D, 0x99, 0x9
 /// `[level - 1]` (8 ascending entries for levels 1..=8; level 9 is the cap).
 /// The retail comparison is `((table[level-1] * mult) >> 1) < xp` with
 /// `mult = 3` for the [`SUMMON_XP_TRIPLE_THRESHOLD_IDS`] and `2` otherwise
-/// (so the default multiplier is the raw table value — the same compare the
+/// (so the default multiplier is the raw table value - the same compare the
 /// heal-spell inline copy in `FUN_800402F4` case-0 tier-4 uses).
 ///
 /// Returns `None` when no level-up is possible: level already at the cap
@@ -938,7 +938,7 @@ pub fn summon_magic_level_threshold(spell_id: u8, level: u8, table: &[u16]) -> O
     Some((base * mult) >> 1)
 }
 
-/// `true` when a spell at `level` with accrued `xp` levels up — the
+/// `true` when a spell at `level` with accrued `xp` levels up - the
 /// strict-greater compare of `FUN_801e70bc` (`threshold < xp`). The caller
 /// applies the level increment (`level += 1`, cap 9) and the UI banner.
 /// REF: FUN_801e70bc
@@ -1241,7 +1241,7 @@ mod tests {
         use std::cell::Cell;
 
         // (a) reproduce the eager result exactly and (b) invoke the bonus
-        // closure exactly when the bonus arm fires — zero times on the
+        // closure exactly when the bonus arm fires - zero times on the
         // no-bonus path (shared RNG cursor advances by two, not three) and
         // once on the bonus path, mirroring FUN_801dd0ac's in-arm rand().
         let strong_summon = SummonRollActor {

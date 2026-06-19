@@ -20,7 +20,7 @@
 //!
 //! Six of the twelve slots reference real `MV*.STR` files via the
 //! path string table at `0x801CE810`. `MV2.STR` and `MV5.STR` are
-//! **NOT** referenced by any slot — they're disc-resident files that
+//! **NOT** referenced by any slot - they're disc-resident files that
 //! the runtime never plays:
 //!
 //! | `fmv_id` | path resolved | notes |
@@ -48,7 +48,7 @@
 //! match the disc layout for the same names (entry `[0]` "MV1.STR" has
 //! a size + LBA that points at disc `MV2.STR`; entry `[5]` "MV6.STR"
 //! points at `XA15.XA`). The compact table is a separate dev/init
-//! lookup, not the FMV play engine's table — the play loop reads from
+//! lookup, not the FMV play engine's table - the play loop reads from
 //! `0x801D0A6C`, not `0x801CAE40`.
 //!
 //! See [`docs/subsystems/cutscene.md`](../../../../docs/subsystems/cutscene.md)
@@ -75,7 +75,7 @@ pub fn fmv_index_to_str_filename(fmv_id: i16) -> Option<&'static str> {
         3 => Some("MOV/MV4.STR"),
         4 => Some("MOV/MV6.STR"),
         // 5..=11: cut paths (`\DATA\MOV15.STR;1`, `\DATA\MOV.STR;1`)
-        // — disc files don't exist on retail USA. The field VM and
+        // - disc files don't exist on retail USA. The field VM and
         // debug menu can still write these values; engines should
         // treat them as a no-op.
         _ => None,
@@ -90,7 +90,7 @@ pub fn fmv_index_to_str_filename(fmv_id: i16) -> Option<&'static str> {
 /// them (so `MV3.STR` returns `Some(1)` even though slot `2` also
 /// plays it as a second segment).
 ///
-/// Returns `None` for filenames that no FMV slot references — this
+/// Returns `None` for filenames that no FMV slot references - this
 /// includes `MV2.STR` and `MV5.STR` (disc-resident but unused by the
 /// FMV runtime), plus arbitrary names.
 pub fn str_filename_to_fmv_index(str_filename: &str) -> Option<i16> {
@@ -104,7 +104,7 @@ pub fn str_filename_to_fmv_index(str_filename: &str) -> Option<i16> {
         "MV4.STR" => Some(3),
         "MV6.STR" => Some(4),
         // MV2.STR and MV5.STR are disc-resident but never reached by
-        // the runtime — no slot in the FMV-state table points at them.
+        // the runtime - no slot in the FMV-state table points at them.
         _ => None,
     }
 }
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn fmv_id_2_and_5_disc_files_have_no_active_slot() {
         // MV2 and MV5 exist on the retail disc but no FMV slot points
-        // at them — they're never reached by the play loop.
+        // at them - they're never reached by the play loop.
         assert_eq!(str_filename_to_fmv_index("MV2.STR"), None);
         assert_eq!(str_filename_to_fmv_index("MV5.STR"), None);
         assert_eq!(str_filename_to_fmv_index("MOV/MV2.STR"), None);
@@ -171,7 +171,7 @@ mod tests {
     fn fmv_id_5_through_11_resolve_to_cut_paths() {
         // Slots 5..=11 point at \DATA\MOV15.STR / \DATA\MOV.STR which
         // don't exist on retail. fmv_index_to_str_filename returns
-        // None for them — engines should treat as a no-op.
+        // None for them - engines should treat as a no-op.
         for i in 5..=11 {
             assert_eq!(fmv_index_to_str_filename(i), None);
         }

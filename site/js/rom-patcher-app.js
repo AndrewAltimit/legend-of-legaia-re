@@ -94,8 +94,8 @@ const STARTING_BUNDLE = {
   speedChain: true, chickenHeart: true, goodLuckBell: true,
 };
 
-// Equipment drops are additive — a code hook grants one extra random gear piece
-// on a low per-battle chance, on top of the normal drop — so every gameplay
+// Equipment drops are additive - a code hook grants one extra random gear piece
+// on a low per-battle chance, on top of the normal drop - so every gameplay
 // preset turns them on; only vanilla leaves them off.
 const PRESETS = {
   vanilla: { ...PRESET_BASE },
@@ -213,7 +213,7 @@ function init() {
     // Solo-strong only does anything while encounters are being randomized.
     if (soloRow) soloRow.classList.toggle('is-disabled', !encOn);
     // Equipment drops are additive (an extra reward-routine grant), so the
-    // Monster drops control stays fully live alongside them — nothing to grey.
+    // Monster drops control stays fully live alongside them - nothing to grey.
   }
 
   // Preset chip clicks.

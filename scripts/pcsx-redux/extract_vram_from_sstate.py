@@ -10,7 +10,7 @@ need to scan for, and the 1 MiB that follows is the raw BGR555 VRAM.
 
 This is the equivalent of `mednafen-state vram-dump` but for the
 PCSX-Redux side, so we can ground-truth-pin sprite sources by looking
-at actual VRAM contents at a parked save-state — the same way we use
+at actual VRAM contents at a parked save-state - the same way we use
 mednafen-state's GPU section as a byte-exact oracle for the engine
 port's VRAM state.
 

@@ -56,7 +56,7 @@ type AssembledPartyMesh = (
 struct BattleMemberFace {
     /// World actor slot (= present-party band ordinal, 0..3).
     actor_slot: usize,
-    /// Character index (0 Vahn / 1 Noa / 2 Gala; Terra never gets an entry —
+    /// Character index (0 Vahn / 1 Noa / 2 Gala; Terra never gets an entry -
     /// the retail animator skips char 3).
     char_index: usize,
     /// Face tracks indexed by action slot (record[0] entries + the
@@ -65,13 +65,13 @@ struct BattleMemberFace {
     /// Face tracks of the art-bank records' embedded entries, indexed by
     /// bank record (= playing clip `action_id - 0x10`). Retail reads these
     /// through the `FUN_8004AD80`-installed entry pointer (bank record
-    /// `+0x24`), i.e. record `+0xB0` eyes / `+0xBC` mouth — the mid-battle
+    /// `+0x24`), i.e. record `+0xB0` eyes / `+0xBC` mouth - the mid-battle
     /// art-strike faces.
     art_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>>,
     /// Stamp set applied on the previous frame (`None` = nothing applied
     /// yet, force the first stamp).
     last_stamps: Option<Vec<legaia_asset::face_anim::FaceStamp>>,
-    /// Victory-window frame counter — the engine's per-member equivalent
+    /// Victory-window frame counter - the engine's per-member equivalent
     /// of the retail global `gp+0x9EA` (reset to 0 when the win pose is
     /// staged, advanced per frame; the stamp pass halves it). `Some`
     /// while the member's mouth-override window is open, `None` outside
@@ -355,7 +355,7 @@ struct PlayWindowApp {
     /// World-map continent **ground**: the heightfield surface built from the
     /// walk `.MAP` floor grid (`Scene::walk_heightfield`). `None` off the world
     /// map. Drawn in `SceneMode::WorldMap` as the continent ground (texturing
-    /// provisional — a uniform ground texel); `world_map_terrain_draws` carries
+    /// provisional - a uniform ground texel); `world_map_terrain_draws` carries
     /// the sparse placed landmarks on top. Kept out of `meshes` (it has no
     /// `Tmd` / actor binding); drawn directly with a constant Y-flip model.
     world_map_heightfield: Option<UploadedVramMesh>,
@@ -409,7 +409,7 @@ struct PlayWindowApp {
     battle_faces: Vec<BattleMemberFace>,
     /// The static SCUS face-frame tables (`legaia_asset::face_anim`),
     /// lazily read from the boot source's `SCUS_942.54` on first battle
-    /// entry. `None` after a failed attempt (disc-free runs) — facial
+    /// entry. `None` after a failed attempt (disc-free runs) - facial
     /// animation is skipped.
     face_tables: Option<legaia_asset::face_anim::FaceFrameTables>,
     /// The static SCUS victory-window mouth-override table (the
@@ -2485,7 +2485,7 @@ impl PlayWindowApp {
 
     /// Battle camera: frame the **monster** actors (the ones carrying a bound
     /// mesh + idle animation) rather than the player vicinity. The live-loop
-    /// seats battle actors around the world origin (`enter_battle(.., 600)` —
+    /// seats battle actors around the world origin (`enter_battle(.., 600)` -
     /// party at `x=-600`, monsters at `x=+600`), far from the field player's
     /// world coords, so `camera_mvp`'s player-centred box leaves the enemies
     /// entirely off-screen. Framing the enemy cluster (gently orbiting) puts
@@ -2514,7 +2514,7 @@ impl PlayWindowApp {
             any = true;
         }
         if !any {
-            // No bound monsters yet — fall back to the field framing.
+            // No bound monsters yet - fall back to the field framing.
             return self.camera_mvp(aspect);
         }
         // The bare position box collapses to a point/line; expand it to enclose
@@ -3799,9 +3799,9 @@ impl PlayWindowApp {
     /// `action_id` selects the member's face tracks, its integer keyframe
     /// cursor is the frame counter, and the selected frames are VRAM-to-VRAM
     /// copies from the band's face-frame strip (`Vram::move_image`, the
-    /// `MoveImage` stamp). During the victory window — the battle ended in
+    /// `MoveImage` stamp). During the victory window - the battle ended in
     /// a monster wipe while a member still plays a dynamic-art-slot clip
-    /// (staged id `0x11..=0x18`, e.g. the killing art) — the mouth records
+    /// (staged id `0x11..=0x18`, e.g. the killing art) - the mouth records
     /// come from the static `0x80077E80` override table and the animator
     /// clocks on the halved victory counter instead (the win-quote mouth
     /// flap). The GPU texture is only re-uploaded on a frame
@@ -3828,9 +3828,9 @@ impl PlayWindowApp {
         // Retail gate 1 of the victory-window mouth override: the
         // battle-end signal `DAT_8007BD71 == 0xFE` raised by a monster
         // wipe (the SM `0x5A` arm; the engine mirror is the
-        // `BattleActionHost::battle_end` latch). Gates 2/3 — the victory
+        // `BattleActionHost::battle_end` latch). Gates 2/3 - the victory
         // sequencer's phase halfword `ctx+0x6CE != 0` and the celebration
-        // flag `DAT_8007BD60 & 0x80` (which the party-wipe path clears) —
+        // flag `DAT_8007BD60 & 0x80` (which the party-wipe path clears) -
         // are the retail victory presentation's internal progress flags;
         // the engine has no victory sequencer, so "the won battle is
         // still on screen" stands in for them. Escapes also raise 0xFE
@@ -4095,7 +4095,7 @@ impl PlayWindowApp {
         // accordingly so the sprite chrome matches retail. AND retail
         // relocates that single visible pill up under the Load panel
         // (SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE) during Load-active.
-        // The relocation is animated — mode 2 of FUN_801E1C1C slides
+        // The relocation is animated - mode 2 of FUN_801E1C1C slides
         // the slot composite linearly from screen `(136, 96)` (=
         // param_3=0xa0 with `sVar6 -= 0x18` x-shift, param_4=0x60) to
         // `(24, 40)` over 16 frames, driven by `DAT_801ef194`. We
@@ -4126,7 +4126,7 @@ impl PlayWindowApp {
             stage_origin,
             stage_scale,
         );
-        // Pointing-finger cursor sprite — retail's small white hand
+        // Pointing-finger cursor sprite - retail's small white hand
         // pointing at the selected slot pill, byte-pinned to CLUT row
         // 7 of the system-UI TIM. Emit last so it draws on top of
         // the pills. Suppress during NowChecking (dialog covers the
@@ -4275,7 +4275,7 @@ impl PlayWindowApp {
         }
         // Share the canonical PSX framebuffer (320×240) stage with
         // every other boot-UI element so the title art aligns with
-        // the save-select panel, slot pills, and cursor — all of
+        // the save-select panel, slot pills, and cursor - all of
         // which use retail-pinned framebuffer coords. The title TIM's
         // bands are sampled at their natural src (sx, sy) but drawn
         // at dst (TITLE_ART_POS + sx, TITLE_ART_POS + sy), i.e.
@@ -4330,9 +4330,9 @@ impl PlayWindowApp {
             push_band(&mut out, ps, ps.0 as i32, ps.1 as i32, color);
         }
 
-        // Main-menu rows (NEW GAME / CONTINUE) — drawn during MainMenu
+        // Main-menu rows (NEW GAME / CONTINUE) - drawn during MainMenu
         // (selected row bright, unselected dim) and also during
-        // SaveSelect (both dim — they sit in the background behind the
+        // SaveSelect (both dim - they sit in the background behind the
         // slot pills and don't reflect a live cursor).
         let menu_state: Option<(u8, bool)> = match &self.boot_ui {
             BootUiState::Title(s) => match s.phase() {
@@ -4406,7 +4406,7 @@ impl PlayWindowApp {
         }
         // When the title-screen atlas is loaded, the retail-faithful
         // path inside `title_screen_sprite_draws` already emits the
-        // NEW GAME / CONTINUE rows from the title TIM itself — skip
+        // NEW GAME / CONTINUE rows from the title TIM itself - skip
         // the debug-atlas fallback to avoid double-rendering.
         if self.title_screen.is_some() {
             return Vec::new();
@@ -4419,7 +4419,7 @@ impl PlayWindowApp {
         // Anchor inside the same centred + integer-scaled 256×256
         // title stage that `title_screen_sprite_draws` uses. The menu
         // rows sit between the wordmark band (ends at src y=140) and
-        // the copyright bands (start at src y=195) — the menu-glyph
+        // the copyright bands (start at src y=195) - the menu-glyph
         // cell is 14 px tall at 1× and we render at 2× the title-art
         // scale for retail-faithful sizing (~28 px atlas-pixels per
         // row, two rows + gutter = ~60 px in source).
@@ -6042,15 +6042,15 @@ impl ApplicationHandler for PlayWindowApp {
                         let in_battle = self.session.host.world.mode == SceneMode::Battle;
                         if in_battle {
                             // Battle backdrop: the scene's `scene_tmd_stream`
-                            // dome (PROT 88 for the overworld map01 battle) —
-                            // sky hemisphere + mountain arc + grass — drawn at its
+                            // dome (PROT 88 for the overworld map01 battle) -
+                            // sky hemisphere + mountain arc + grass - drawn at its
                             // **raw world coordinates** under the exact retail
                             // orbit camera (`retail_battle_mvp`). `model = F`
                             // (plain Y-flip): the camera bakes in `F`, so
                             // `cam * F` recovers the raw PSX vertex the retail
                             // transform expects.
                             //
-                            // Drawn ONCE, world-fixed — matching retail, which
+                            // Drawn ONCE, world-fixed - matching retail, which
                             // sets the dome up as a background **actor**
                             // (`FUN_800513F0`: `tmd_register` -> `DAT_8007C018[]`
                             // + `FUN_80020de0` actor_alloc + `FUN_80020f88` link)
@@ -6059,7 +6059,7 @@ impl ApplicationHandler for PlayWindowApp {
                             // +12155]`), so it is NOT a full surround: as the
                             // camera orbits, different portions of the front arc
                             // come into view and the rest of the horizon is open
-                            // sky/grass. The retail captures bear this out —
+                            // sky/grass. The retail captures bear this out -
                             // mountains cover only 44–81% of the horizon columns
                             // depending on angle (NOT a ring). Earlier engine
                             // builds added a 180° mirror to "complete" the
@@ -6159,7 +6159,7 @@ impl ApplicationHandler for PlayWindowApp {
                     // Boot-phase sprite overlay: alternates between the
                     // publisher-logos atlas (during PublisherLogos) and
                     // the title-screen atlas (during Title). PROKION/SCEA
-                    // are vertically-packed sprite atlases —
+                    // are vertically-packed sprite atlases -
                     // `publisher_logo_sprite_draws` unfolds them into N
                     // side-by-side strips; Contrail/WARNING + the title
                     // TIM produce a single quad each.
@@ -6684,7 +6684,7 @@ fn world_map_player_line_geometry(
 /// Build a LineList wireframe of a kingdom's decoded slot-4 vertex pool
 /// (`SceneResources::world_map_slot4`), as world-space `(positions, colors,
 /// indices)`. Each body's records are emitted at their raw object-local
-/// coordinates (no per-object placement transform — the cluster-A command
+/// coordinates (no per-object placement transform - the cluster-A command
 /// stream that supplies those is unpinned), Y-negated to match the
 /// heightfield's `cam * yflip` frame. Colour is keyed by body `kind`
 /// (`1` = the shared universal mesh set, `2` = kingdom-specific objects,
@@ -7217,7 +7217,7 @@ fn cmd_play_window_with_record(
     // gap in `PROT.DAT` (offset `0x11218`). Carries the small-caps font
     // retail samples for "NEW GAME" / "CONTINUE" menu rows. The
     // per-entry extractor never visits this gap, so we read PROT.DAT
-    // raw bytes — see `legaia_asset::menu_glyph_atlas`.
+    // raw bytes - see `legaia_asset::menu_glyph_atlas`.
     let menu_glyph_atlas_data = match session.host.index.prot_dat_raw_bytes(
         legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
         legaia_asset::menu_glyph_atlas::TIM_SIZE,
@@ -7250,7 +7250,7 @@ fn cmd_play_window_with_record(
     // The atlas builder composites both into one 256x256 RGBA atlas;
     // see `crates/engine-core/src/save_menu_atlas.rs`. The 9-slice
     // tile geometry was pinned via `scripts/pcsx-redux/scan_panel_prims.py`
-    // against sstate9's RAM dump — every primitive's source u/v + CLUT
+    // against sstate9's RAM dump - every primitive's source u/v + CLUT
     // is byte-pinned to the retail render.
     let save_menu_atlas_data = match (
         session
@@ -7277,7 +7277,7 @@ fn cmd_play_window_with_record(
             match legaia_engine_core::save_menu_atlas::build_atlas(&panel_bytes, &pill_bytes) {
                 Ok(a) => {
                     log::info!(
-                        "play-window: save-menu atlas built ({}x{}) — 9-slice from PROT.DAT[0x018E0] + pills from PROT 0899",
+                        "play-window: save-menu atlas built ({}x{}) - 9-slice from PROT.DAT[0x018E0] + pills from PROT 0899",
                         a.width,
                         a.height
                     );
@@ -7533,7 +7533,7 @@ fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSn
                     location,
                     money: sf.ext.money.max(0) as u32,
                     // Lead char is always Vahn (char_id=0) in retail
-                    // Legaia — Vahn is the protagonist and slot 0 of
+                    // Legaia - Vahn is the protagonist and slot 0 of
                     // the SC character record array.
                     leader_char_id: 0,
                     leader_name: "Vahn".to_string(),
@@ -7811,7 +7811,7 @@ mod battle_camera_tests {
 
     /// `retail_battle_mvp` must reproduce the exact retail overworld-battle
     /// projection `screen = H*(Rx(32u)*Ry(yaw)*v + (0,1280,7680))/Ze`, H=256,
-    /// PSX +Y down, screen-centre (160,120) over 320x240 — pinned from the
+    /// PSX +Y down, screen-centre (160,120) over 320x240 - pinned from the
     /// `overworld_battle_bg_angle_*` saves + `FUN_80026988`. Disc-free: pure
     /// math. Guards the glam matrix construction against regression.
     #[test]

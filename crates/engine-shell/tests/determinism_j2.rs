@@ -1,4 +1,4 @@
-//! Phase J2 — engine determinism gate.
+//! Phase J2 - engine determinism gate.
 //!
 //! Drives a synthetic [`legaia_engine_core::world::World`] twice through
 //! the same [`legaia_engine_shell::replay::ReplayFile`] and asserts the

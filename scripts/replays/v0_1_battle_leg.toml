@@ -1,4 +1,4 @@
-# v0.1 playthrough oracle — Battle-leg fixture.
+# v0.1 playthrough oracle - Battle-leg fixture.
 #
 # Companion to v0_1_playthrough.toml (the Field leg). Where that file pins
 # the cold-boot-reproducible Field anchor, this one pins the *literal*
@@ -6,7 +6,7 @@
 # training fight.
 #
 # The trace is built by `build_engine_mode_trace_new_game_battle_leg`: a NEW
-# GAME cold boot (Vahn seeded from the SCUS template — the game's pre-Tetsu
+# GAME cold boot (Vahn seeded from the SCUS template - the game's pre-Tetsu
 # story state), `enter_field_live` into town01 (which auto-installs the
 # sparring carrier), then a real field-interact + dialogue-accept on the
 # carrier slot that arms the scripted lone-Tetsu encounter and flips the

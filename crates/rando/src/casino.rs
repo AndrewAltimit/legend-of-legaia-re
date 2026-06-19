@@ -3,11 +3,11 @@
 //! ## On-disc layout
 //!
 //! Unlike the town gold merchants (which are inline in each scene's field-VM
-//! script — see [`crate::shop`]), the **casino prize exchange** is a static
+//! script - see [`crate::shop`]), the **casino prize exchange** is a static
 //! table in the menu/save/shop overlay's data segment (`DAT_801e4518`, read by
 //! the buy/confirm handlers `FUN_801d5de0` / `FUN_801dc1cc`). It debits the
 //! **casino coin** bank (`_DAT_800845A4`, the "Infinite Coins" cheat target),
-//! not gold — which is how it's distinguished from a gold shop.
+//! not gold - which is how it's distinguished from a gold shop.
 //!
 //! The overlay's data segment is **PROT entry 0899** (`0899_xxx_dat.BIN`),
 //! stored **raw** (no LZS). The table base `DAT_801e4518` maps to file offset
@@ -31,11 +31,11 @@
 //!
 //! The whole 8-byte record (id + gate + price) is the unit that moves, so a
 //! prize always carries its own coin price and progression gate wherever it
-//! lands — no external price table is needed. `Shuffle` redistributes the
+//! lands - no external price table is needed. `Shuffle` redistributes the
 //! existing multiset of prize entries across all active slots (each block keeps
 //! its prize *count*); `Random` draws each active slot from that same pool with
 //! replacement. Every block's active count and terminator stay put, so the edit
-//! is strictly same-size and in place — and since 0899 is raw, no recompression
+//! is strictly same-size and in place - and since 0899 is raw, no recompression
 //! is involved.
 
 use crate::drops::DropMode;
@@ -57,7 +57,7 @@ pub const CASINO_ENTRY: usize = 899;
 /// Number of prize blocks the retail US disc's casino table holds.
 pub const CASINO_BLOCK_COUNT: usize = 4;
 
-/// One casino prize entry — a verbatim 8-byte record.
+/// One casino prize entry - a verbatim 8-byte record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrizeRecord {
     /// Item id (`0` is the list terminator and never appears in an active slot).

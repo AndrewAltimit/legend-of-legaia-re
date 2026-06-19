@@ -324,7 +324,7 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     let pre_inventory: std::collections::HashMap<u8, u8> = world.inventory.clone();
     let pre_levels: Vec<u8> = world.level_up_tracker.level[..3].to_vec();
 
-    // 2. Walk the field — install encounter, step until trigger.
+    // 2. Walk the field - install encounter, step until trigger.
     world.mode = SceneMode::Field;
     let mut table = EncounterTable::new("e2e_test_field");
     table.set_trigger_rate(255); // guaranteed to fire on first step
@@ -344,7 +344,7 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
         .drain_encounter_formation()
         .expect("encounter session should yield a formation roll");
 
-    // 3. Trigger the encounter — populate monsters from the formation.
+    // 3. Trigger the encounter - populate monsters from the formation.
     let formation = world
         .formation_table
         .formation(roll.formation_id)
@@ -706,7 +706,7 @@ fn battle_session_phase_transitions_during_loop() {
 /// action SM (one `world.tick()` per frame), so a single `bs.tick()` per
 /// iteration advances both the menu phase machine and the underlying
 /// SM. The test commits via `bs.tick(SessionInput { start: true, .. })`
-/// rather than mutating `world.battle_ctx` directly — the only thing the
+/// rather than mutating `world.battle_ctx` directly - the only thing the
 /// real shell will do differently is route player input into
 /// `push_command` / `push_command_with_target`.
 #[test]
@@ -809,7 +809,7 @@ fn battle_session_drives_action_sm_to_monster_wipe() {
 
     bs.begin_round(&mut world);
 
-    // Tick until CommandInput — the intro splash takes intro_frames + 1.
+    // Tick until CommandInput - the intro splash takes intro_frames + 1.
     let mut frames = 0u32;
     while !matches!(bs.phase(), BattlePhase::CommandInput) && frames < 600 {
         let _ = bs.tick(&mut world, SessionInput::default());
@@ -899,7 +899,7 @@ fn extracted_prot_path() -> Option<std::path::PathBuf> {
 /// Disc-gated: parse an encounter record off a real `battle_data` PROT
 /// entry, install it through [`World::install_encounter_from_record`],
 /// then drive the encounter session into a battle and resolve it. This
-/// closes the synthetic data leak in the field → battle handoff —
+/// closes the synthetic data leak in the field → battle handoff -
 /// every byte of the formation came from the disc, not a clean-room
 /// catalog.
 ///

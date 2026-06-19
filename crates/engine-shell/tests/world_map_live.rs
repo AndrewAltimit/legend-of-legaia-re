@@ -33,7 +33,7 @@ fn world_map_live_installs_regions_and_player() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -294,7 +294,7 @@ fn world_map_live_walk_reaches_battle() {
 ///
 /// The overworld walk overlay's locomotion is the same `FUN_801d01b0` +
 /// `FUN_801cfe4c` as the field, colliding against the same
-/// `_DAT_1f8003ec + 0x4000` grid — and the three kingdom maps carry thousands
+/// `_DAT_1f8003ec + 0x4000` grid - and the three kingdom maps carry thousands
 /// of wall sub-cells in that grid. This guards the regression where a redundant
 /// `install_field_player` after scene load reset the grid to zeros and left the
 /// overworld player roaming unbounded.
@@ -328,14 +328,14 @@ fn overworld_scenes_load_nonempty_walkability_grid() {
         eprintln!("[{scene}] live walkability grid: {walls} wall sub-cells");
         assert!(
             walls > 0,
-            "{scene}: overworld must keep its walkability grid (got {walls} walls — \
+            "{scene}: overworld must keep its walkability grid (got {walls} walls - \
              a re-install likely zeroed it)"
         );
     }
 }
 
 /// A field-VM `scene_transition(map_id)` that resolves to an overworld scene is
-/// auto-routed into world-map mode with its region table seeded — the
+/// auto-routed into world-map mode with its region table seeded - the
 /// boot/transition path, not the explicit `--world-map` entry. This is the
 /// regression guard for "the overworld seeds itself when the game walks onto
 /// it", driving the real `SceneHost::tick` transition handler.
@@ -400,7 +400,7 @@ fn world_map_scene_transition_auto_enters_world_map() {
 /// A real overworld portal auto-engages when the player walks onto its tile:
 /// teleport the player onto a classified `Portal` entity's tile and confirm the
 /// next world-map ticks surface a `WorldMapTransition` to the portal's target
-/// map — no host `engage_world_map_entity` call.
+/// map - no host `engage_world_map_entity` call.
 #[test]
 fn world_map_walking_onto_real_portal_transitions() {
     use legaia_engine_core::field_events::FieldEvent;
@@ -478,7 +478,7 @@ fn world_map_walking_onto_real_portal_transitions() {
 /// press confirm, and assert (a) the world's `current_dialog` opens carrying
 /// the inline text and (b) `SceneHost::open_pending_dialog` builds a panel that
 /// types real glyphs out of it. The inline path is what makes placement-NPC
-/// dialogue render at all — its `text_id` is a box-config id that never
+/// dialogue render at all - its `text_id` is a box-config id that never
 /// resolves through the scene MES. Portals are walk-onto; NPCs are talk-to.
 #[test]
 fn world_map_talking_to_real_npc_renders_inline_dialogue() {
@@ -584,7 +584,7 @@ fn world_map_talking_to_real_npc_renders_inline_dialogue() {
 /// `Scene::field_object_placements`). This is the data feeding the world-map
 /// render's per-tile terrain draw (`resolve_field_placement_draws`): every
 /// placement must sit on the 128-unit world tile grid (not pack-local), resolve
-/// to a slot-1 pack mesh index, and land inside the world bounds — the same
+/// to a slot-1 pack mesh index, and land inside the world bounds - the same
 /// frame the player marker uses, which is what aligns the continent under the
 /// player instead of piling it at the pack origin.
 #[test]
@@ -598,7 +598,7 @@ fn world_maps_decode_world_frame_terrain_placements() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
     let index = Arc::new(ProtIndex::open_extracted(&extracted).expect("open prot index"));

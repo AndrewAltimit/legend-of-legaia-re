@@ -7,7 +7,7 @@ the field/town overlay with a fresh game state. Part of that fresh state is the
 member's opening stats and display name, which the seed routine expands into the
 live per-character records at `0x80084708 + n*0x414`.
 
-The interactive scene a New Game enters is `town01` (Rim Elm) — the executable's
+The interactive scene a New Game enters is `town01` (Rim Elm) - the executable's
 default map-name buffer at `0x8007050C` holds the literal `"town01"`, and the
 global reset/init `FUN_8001D424` reads an optional dev `initmap.txt` override
 when the debug flag `_DAT_8007B8C2` is clear.
@@ -18,13 +18,13 @@ when the debug flag `_DAT_8007B8C2` is clear.
 |---|---|
 | Base address | `0x80078C4C` (Vahn's record) |
 | Stride | `26` bytes (`8×u16` stats + 10-byte name) |
-| Records | `4` — `Vahn`, `Noa`, `Gala`, `Terra`, in roster order |
+| Records | `4` - `Vahn`, `Noa`, `Gala`, `Terra`, in roster order |
 
 | Offset | Type | Field |
 |---|---|---|
 | `+0`  | u16 | `hp_max` (also the starting HP) |
 | `+2`  | u16 | `mp_max` (also the starting MP) |
-| `+4`  | u16 | `agl` — also seeds the spirit-gauge value + stat cap |
+| `+4`  | u16 | `agl` - also seeds the spirit-gauge value + stat cap |
 | `+6`  | u16 | `atk` |
 | `+8`  | u16 | `udf` (upper / physical defence) |
 | `+10` | u16 | `ldf` (lower / magical defence) |
@@ -52,7 +52,7 @@ per-character archetypes (`Noa = 120`, `Gala = 80`) read as agility.
 
 ## Starting inventory (code-built, not a table)
 
-The opening inventory is **not** a static table like the party stats — the
+The opening inventory is **not** a static table like the party stats - the
 new-game data-init `FUN_80034A6C` (`docs/subsystems/boot.md`) builds it in code,
 writing a single slot into the live owned-item array at `0x80085958`
 (= `SC` base `0x80084140` + `0x1818`; 2 bytes/slot `[id: u8][count: u8]`,
@@ -67,19 +67,19 @@ id-`0` terminator):
 
 So a vanilla New Game starts with **Healing Leaf ×5** and nothing else. A
 6-instruction loop right after (`0x80034b04..`, `0x80034b1c..0x80034b2b`) zeroes
-the 512 bytes *below* the inventory — but **both** callers of `FUN_80034A6C`
+the 512 bytes *below* the inventory - but **both** callers of `FUN_80034A6C`
 (`FUN_8001DCF8`'s new-game branch, guarded by the new-game flag at
-`0x8007b7ac`, and `FUN_8001FFA4`) `memset` the whole `SC[0..0x1a18)` region —
-which contains the entire 72-slot inventory — immediately before the call, so
+`0x8007b7ac`, and `FUN_8001FFA4`) `memset` the whole `SC[0..0x1a18)` region -
+which contains the entire 72-slot inventory - immediately before the call, so
 that inline zero-loop is redundant. The reclaimable seed region is therefore
 the **10 instructions at [`STARTING_INV_SEED_VA`] (`0x80034b04`, 40 bytes)**.
 
 The array at `0x1818` is a **single ordered `(id, count)` owned-item list shared
-by every item category** — the inventory menu only *filters* it into Items /
+by every item category** - the inventory menu only *filters* it into Items /
 Goods / Key tabs by item id. (Verified against a real end-game save: consumables,
 equipment, and accessories all sit in this one list as plain `(id, count)` pairs,
 running past the first 72 slots to a `(0, 0)` terminator.) So a seeded slot can
-hold any item id regardless of category — the randomizer's starting-bag toggles
+hold any item id regardless of category - the randomizer's starting-bag toggles
 seed the Door of Wind / Incense consumables and the Speed Chain / Chicken Heart /
 Good Luck Bell accessories through this same array (see
 [`randomizer.md`](../tooling/randomizer.md#starting-bag-convenience-toggles)).
@@ -106,40 +106,40 @@ randomizer):
 |---|---|---|
 | `+0x0` (u32) | cumulative experience (the "Max Exp" cheat target / "Experience" readout; the level-up applier compares it against the threshold) | `0` |
 | `+0x4` (u32) | next-level XP threshold (the status screen's "next" readout) | `reach(L2)`: Vahn/Terra `121`, Noa `102`, Gala `140` |
-| `+0x130` (u8) | **displayed character level** — what "LV" shows and the `Level 99` cheat targets; the applier maintains it `+1` per level-up event | `1` |
+| `+0x130` (u8) | **displayed character level** - what "LV" shows and the `Level 99` cheat targets; the applier maintains it `+1` per level-up event | `1` |
 | `+0x131` (u8) | a second per-character byte the seed also inits to `1` (magic-rank candidate, unconfirmed) | `1` |
 
 `+0x100` stays zero and is unrelated to the level (the engine port uses it as its
 own internal level cell). The shown level is read from `+0x130` directly, **not**
-re-derived from experience at a New Game — confirmed live: a record with level-10
+re-derived from experience at a New Game - confirmed live: a record with level-10
 experience + stats but `+0x130 == 1` still shows LV 1.
 
 The starting-level randomizer seeds the whole growth-capable party
 (Vahn / Noa / Gala) at level `N` with same-size in-place edits to the seed routine.
 The seed routine seeds `+0x4` for each slot by storing one `$v0` literal, reloading
-it twice for the per-character values — so the edits work by controlling that one
+it twice for the per-character values - so the edits work by controlling that one
 register and reclaiming the two reload sites (plus a redundant `lui`) as the
 experience stores:
 
-1. **Level** — the loop's level literal + stores set `+0x130 = N` for *every* record
+1. **Level** - the loop's level literal + stores set `+0x130 = N` for *every* record
    (packed `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop` at `0x800561C4`/`C8`/`CC`,
    keeping `+0x131` at 1).
-2. **Experience** — each growth slot's `+0x0` gets an in-band level-`N` value (the
+2. **Experience** - each growth slot's `+0x0` gets an in-band level-`N` value (the
    midpoint of `reach(N)..reach(N+1)`). A single `addiu $t0` preload (at
    `0x800560FC`, the old slot-3 / Terra threshold store) feeds three
-   `sw $t0, <+0x0>($s0)` stores — Vahn `0x5c8`, Noa `0x9dc`, Gala `0xdf0` — written at
+   `sw $t0, <+0x0>($s0)` stores - Vahn `0x5c8`, Noa `0x9dc`, Gala `0xdf0` - written at
    `0x80056100` (old Noa `0x66` literal), `0x80056108` (old Gala `0x8c` literal), and
    `0x80056118` (a redundant second `lui $at, 0x8008`; the first `lui` at `0x80056110`
    still serves both `sb $zero` global clears).
-3. **Next threshold** — each growth slot's `+0x4` gets `reach(N+1)`. The literal at
+3. **Next threshold** - each growth slot's `+0x4` gets `reach(N+1)`. The literal at
    `0x800560F0` loads it into `$v0`; dropping the two per-character reloads (now
    experience stores) leaves `$v0` intact through the existing
    `sw $v0, 0x5cc/0x9e0/0xdf4($s0)` stores, so all three take the same threshold. The
    small per-slot `FUN_801E9504` correction (Noa −, Gala +; ≤2 % near these levels) is
    re-applied by the level-up applier on each character's first post-seed level-up.
-   (Vanilla `+0x4`: Vahn `121`, Noa `102`, Gala `140` — these differ *because* of that
+   (Vanilla `+0x4`: Vahn `121`, Noa `102`, Gala `140` - these differ *because* of that
    correction, not because the XP curve is per-character.)
-4. **Stats** — each growth slot's template stats are recomputed to level `N`.
+4. **Stats** - each growth slot's template stats are recomputed to level `N`.
 
 Seeding only slot 0 would leave Noa with an experience readout of `0` and Gala with a
 stale level-1 `+0x4` of `140` (which triggers a spurious early level-up); seeding all

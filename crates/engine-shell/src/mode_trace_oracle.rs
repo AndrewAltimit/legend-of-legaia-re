@@ -179,7 +179,7 @@ pub fn build_engine_mode_trace_field_live(
 /// sequence is:
 ///
 /// 1. [`BootSession::begin_new_game`] seeds the opening party (Vahn, the
-///    game's pre-Tetsu story state — there is no earlier save).
+///    game's pre-Tetsu story state - there is no earlier save).
 /// 2. [`BootSession::enter_field_live`] drops into `scene_name` with the live
 ///    loop armed; the cold boot auto-installs the town's sparring carrier.
 /// 3. A real field-interact op on the carrier's slot opens its dialogue; a

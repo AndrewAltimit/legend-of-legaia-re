@@ -1,4 +1,4 @@
-//! Player-character mesh pack — the head of PROT 0874 (`befect_data`) §0.
+//! Player-character mesh pack - the head of PROT 0874 (`befect_data`) §0.
 //!
 //! Section 0 of the LZS-container at PROT 0874 decompresses to a canonical
 //! [`crate::pack`]-shaped TMD pack with **five** Legaia TMDs. These are the
@@ -9,9 +9,9 @@
 //! ```text
 //! Pack slot | nobj (disc) | Runtime body bytes | Role
 //! ----------|-------------|--------------------|--------------------------
-//!     0     |     12      |       13 220       | Vahn — active party slot 0
-//!     1     |     12      |       13 800       | Noa  — active party slot 1
-//!     2     |     12      |       11 656       | Gala — active party slot 2
+//!     0     |     12      |       13 220       | Vahn - active party slot 0
+//!     1     |     12      |       13 800       | Noa  - active party slot 1
+//!     2     |     12      |       11 656       | Gala - active party slot 2
 //!     3     |      3      |        6 488       | Savepoint (save crystal)
 //!     4     |      2      |        1 048       | Auxiliary actor (untriaged)
 //! ```
@@ -20,7 +20,7 @@
 //! (and what retail allocates at `DAT_8007C018[..]`). Slot 4's underlying
 //! compressed stream would expand to ~20 KB if decoded unbounded, but the
 //! descriptor's compressed-size hint caps the decode at the first ~46 KB so
-//! slot 4 receives only its 1 048-byte TMD prefix — byte-equality verified
+//! slot 4 receives only its 1 048-byte TMD prefix - byte-equality verified
 //! against the live `DAT_8007C018[4]` allocation (see
 //! [`docs/formats/world-map-overlay.md` § Disc-side source of `[0..4]`](../../../docs/formats/world-map-overlay.md#disc-side-source-of-04)).
 //!
@@ -54,7 +54,7 @@ pub const PROT_ENTRY_INDEX: u32 = 874;
 
 /// Short display label for one player-character pack slot. Pack slots 0/1/2
 /// are the active-party characters (Vahn / Noa / Gala). Slot 3 is the
-/// **savepoint** mesh — the star-crystal interactable that lets the player
+/// **savepoint** mesh - the star-crystal interactable that lets the player
 /// save their game in towns and dungeons (its mesh is small enough at
 /// `nobj=3` / ~6.5 KB that it's worth pinning resident alongside the party
 /// so the engine doesn't re-page it every time the player approaches a save
@@ -156,7 +156,7 @@ impl CharacterSlot {
     }
 }
 
-/// The full parsed character pack — five slots in disc order.
+/// The full parsed character pack - five slots in disc order.
 #[derive(Debug, Clone)]
 pub struct CharacterPack {
     pub slots: [CharacterSlot; SLOT_COUNT],
@@ -237,7 +237,7 @@ pub fn parse(prot_0874_bytes: &[u8]) -> Result<CharacterPack> {
     Ok(CharacterPack { slots })
 }
 
-/// Equipment-swap descriptor patch — the [`FUN_8001EBEC`] runtime patch.
+/// Equipment-swap descriptor patch - the [`FUN_8001EBEC`] runtime patch.
 ///
 /// At runtime, for each of the 3 active-party slots, retail picks one of the
 /// two pre-built 28-byte group templates (group 10 / group 11) baked into the
@@ -251,7 +251,7 @@ pub fn parse(prot_0874_bytes: &[u8]) -> Result<CharacterPack> {
 /// |     2     | 5 | `+0x19B` | Gala (active party slot 2) |
 ///
 /// (The "patched group index" and "equip-byte offset within the per-slot
-/// byte window" are the same three numbers `{0, 3, 5}` — retail's
+/// byte window" are the same three numbers `{0, 3, 5}` - retail's
 /// `FUN_8001EBEC` reuses one tiny stack table for both roles. See the asm
 /// trace in `ghidra/scripts/funcs/8001ebec.txt`.)
 ///
@@ -313,7 +313,7 @@ pub mod equipment_swap {
     /// Mirrors one iteration of `FUN_8001EBEC` for a single active-party slot:
     /// copies the 28-byte template at [`template_offset_for_equip_byte`] over
     /// the visible group descriptor at index `patched_group_index`. The result
-    /// is a TMD buffer that — when the engine caps `group_count` to 10 — renders
+    /// is a TMD buffer that - when the engine caps `group_count` to 10 - renders
     /// with the equip-conditional mesh swap applied.
     ///
     /// `tmd_bytes` must be the disc-form TMD body (e.g. `slot.tmd_bytes`).
@@ -404,7 +404,7 @@ mod tests {
         // `FUN_8001EBEC` only copies a 28-byte transform over an existing
         // group; it never grows the object/group count. The runtime `nobj`
         // +2 (15->17) seen in battle comes from a *different* (still-unpinned)
-        // loader — D-WEAP — not from this swap. Pin that here so the doc claim
+        // loader - D-WEAP - not from this swap. Pin that here so the doc claim
         // can't silently drift back to "the equipment swap adds the +2 groups".
         let mut tmd = Vec::new();
         tmd.extend_from_slice(&0x8000_0002u32.to_le_bytes()); // magic

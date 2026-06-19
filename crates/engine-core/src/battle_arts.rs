@@ -252,7 +252,7 @@ fn chain_commands(sequence: &[u8]) -> Vec<Command> {
 /// **Connector-abstracted.** The byte-exact queue the retail builder emits
 /// (`ctx[+0x274]`) interleaves combo-specific connector directions between the
 /// arts; those bytes are unpinned, so this matches only the pinned named-art
-/// ordering — faithful to *which* combination triggers *which* Super, without
+/// ordering - faithful to *which* combination triggers *which* Super, without
 /// reproducing the literal queue bytes (see [`legaia_art::SuperArt::art_sequence`]).
 ///
 /// `records` is the caster's `(action, ArtRecord)` catalog (the World's

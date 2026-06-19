@@ -68,7 +68,7 @@ pub use retail_inventory::{
 
 /// Cumulative XP thresholds for levels 2..=99, prefix-summed from a 98-entry
 /// **placeholder** increment table. NOTE: these numbers are a sin-LUT slice an
-/// earlier pass mis-read as XP, not the retail curve — the real source is the
+/// earlier pass mis-read as XP, not the retail curve - the real source is the
 /// static-SCUS table `DAT_80076AF4` + formula read by `FUN_801E9504` (see
 /// `engine_core::levelup::retail_xp_table` and `docs/subsystems/level-up.md`).
 /// Kept as a plausible-shape fallback until the SCUS curve is wired in.

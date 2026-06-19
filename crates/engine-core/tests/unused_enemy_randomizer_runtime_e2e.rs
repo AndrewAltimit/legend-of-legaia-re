@@ -5,7 +5,7 @@
 //! formations: with the toggle on, the curated Evil Bat ids join each scene's
 //! Random pool and get placed, and the patched scene MAN re-packs in its
 //! footprint. What it does **not** prove is that a runtime actually *reads that
-//! injected id and spawns the Evil Bat into battle* — the question behind "does
+//! injected id and spawns the Evil Bat into battle* - the question behind "does
 //! enabling the unused enemy really make it appear?".
 //!
 //! This is the runtime counterpart, mirroring the encounter oracle
@@ -104,7 +104,7 @@ fn enabling_unused_enemies_spawns_the_evil_bat_at_runtime() {
             continue;
         }
         let Some(stream) = patched.repack() else {
-            continue; // overflow — the randomizer would skip this scene too
+            continue; // overflow - the randomizer would skip this scene too
         };
         for row in 0..patched.formation_count() as u16 {
             let patched0 = patched.formation_ids(row as usize);
@@ -157,7 +157,7 @@ fn enabling_unused_enemies_spawns_the_evil_bat_at_runtime() {
         "patched disc bytes must carry the unused enemy at the chosen slot"
     );
 
-    // --- Runtime: drive the SAME row on the patched MAN — it must spawn an
+    // --- Runtime: drive the SAME row on the patched MAN - it must spawn an
     //     unused enemy. ---
     let spawned = spawn_enemy0_for_formation(&patched.decoded, row)
         .expect("patched scene must drive the formation row into battle");

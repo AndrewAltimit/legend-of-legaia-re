@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn cursor_skips_continue_when_disabled() {
         // With only two rows (NewGame / Continue) and Continue disabled,
-        // pressing Down wraps right back to NewGame — that's the
+        // pressing Down wraps right back to NewGame - that's the
         // intended UX (don't land on a greyed-out row).
         let mut s = TitleSession::without_save_data();
         s.skip_fade_in();

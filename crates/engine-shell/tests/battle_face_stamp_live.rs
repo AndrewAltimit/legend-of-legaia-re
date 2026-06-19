@@ -6,7 +6,7 @@
 //! from the member band's face-frame strip onto the band's live face rows.
 //! Invariant: in any mid-battle capture, each animated member's live face
 //! rows must byte-equal the strip content of SOME frame of the per-character
-//! `SCUS_942.54` frame table (whichever frame the animator stamped last) —
+//! `SCUS_942.54` frame table (whichever frame the animator stamped last) -
 //! for the eyes AND the mouth, at the documented destination rects.
 //!
 //! Terra (char id 4) is excluded: the retail animator skips char index 3

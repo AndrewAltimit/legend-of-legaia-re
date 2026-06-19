@@ -3,7 +3,7 @@
 //! stride; parsed by `legaia_asset::spell_names`).
 //!
 //! The spell table is the single source the battle-action SM reads a cast's
-//! on-screen name, MP cost (`stats +3`) and target shape (`stats +2`) from —
+//! on-screen name, MP cost (`stats +3`) and target shape (`stats +2`) from -
 //! for both party and enemy casts. So it is authoritative ground truth for the
 //! curated player-magic chart mined from walkthroughs.
 //!
@@ -20,12 +20,12 @@
 //! only a present-but-different MP / target is a failure.
 //!
 //! **MP** is byte-exact for every name-join (this oracle pinned a curated
-//! target error — Mushura / "Crazy Driver", whose disc `+2` is `0x44`
-//! single-enemy, not all-enemies — which was corrected to the disc value).
+//! target error - Mushura / "Crazy Driver", whose disc `+2` is `0x44`
+//! single-enemy, not all-enemies - which was corrected to the disc value).
 //!
 //! **Target shape** agrees for every name-join except the one revive Ra-Seru
 //! summon, **Horn / "Resurrector"** (id `0x9c`): its `+2` byte is `0x24`
-//! (enemy-side) even though the effect revives all allies — the summon's
+//! (enemy-side) even though the effect revives all allies - the summon's
 //! projection plays toward the enemy field while the revive is special-cased by
 //! id. The other six Ra-Seru summons (offensive, all-enemies) carry the correct
 //! enemy-side byte, so this is a per-spell encoding nuance, not a model gap.

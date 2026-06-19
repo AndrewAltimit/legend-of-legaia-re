@@ -2,7 +2,7 @@
 //! new-game seed routine's level / current-XP / next-threshold instructions and
 //! every growth-capable slot's stat template in `SCUS_942.54` on a scratch copy of
 //! the disc, then re-decode straight off the patched image and confirm the edit is
-//! faithful — the level literal decodes back to the requested level, the seed
+//! faithful - the level literal decodes back to the requested level, the seed
 //! instructions carry the planned XP values with the right register/opcode shape,
 //! each leveled slot's stats are that character's growth-curve values (strictly
 //! above its vanilla level-1 stats) with its name preserved, the `sw $ra` after the
@@ -160,7 +160,7 @@ fn starting_level_round_trips_on_disc() {
     );
     // The per-slot `+0x4` stores are left intact (they still write `$v0`, which now
     // holds the seeded threshold because the per-slot reloads were dropped). The first
-    // `lui $at` and both `sb $zero` global clears in the prefix are preserved — only
+    // `lui $at` and both `sb $zero` global clears in the prefix are preserved - only
     // the *second* (redundant) `lui` was reclaimed.
     let lui_first = scus_file_offset(&scus0, 0x8005_6110).expect("first lui");
     let clear_a = scus_file_offset(&scus0, 0x8005_6114).expect("global clear a");
@@ -341,7 +341,7 @@ fn sim_exec_one(
 /// and return the live-record memory it wrote. A tiny MIPS-subset interpreter: it
 /// stubs the per-record name-copy `jal` (irrelevant to the XP / level cells), runs
 /// the prefix + all four loop iterations, and stops at the epilogue. This proves the
-/// seeded `+0x0` / `+0x4` / `+0x130` cells end up correct for *every* record —
+/// seeded `+0x0` / `+0x4` / `+0x130` cells end up correct for *every* record -
 /// catching exactly the register-leftover class of bug the lead-only seed had.
 fn simulate_seed_routine(scus: &[u8]) -> std::collections::BTreeMap<u32, u8> {
     const ENTRY: u32 = 0x8005_60B4;
@@ -390,7 +390,7 @@ fn simulate_seed_routine(scus: &[u8]) -> std::collections::BTreeMap<u32, u8> {
 
 /// The strongest oracle: patch the starting level, then actually *run* the patched
 /// seed routine and assert every growth-capable record (Vahn / Noa / Gala) lands with
-/// the planned level, in-band experience, and next-level threshold — not just the
+/// the planned level, in-band experience, and next-level threshold - not just the
 /// lead. Reproduces the in-game status screen the bug report flagged (Noa with
 /// experience 0, Gala with a level-1 "next" threshold) and proves it fixed.
 #[test]

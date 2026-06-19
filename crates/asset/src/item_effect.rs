@@ -94,10 +94,10 @@ pub const FLAG_FIELD_USABLE: u8 = 0x02;
 /// only tiers `0..=2` read; tier `3+` falls through to the character-relative
 /// Seru-heal path (the `0x80084140`-based per-character spell tables) instead:
 ///
-/// - `+0x00` (this VA): **HP** restore caps — `[200, 800, 9999, 0]`. The single-
+/// - `+0x00` (this VA): **HP** restore caps - `[200, 800, 9999, 0]`. The single-
 ///   target HP heal (class `0`) and the all-party HP heal (class `1`) both read
 ///   it; tier `2` (`9999`) is an effective full restore.
-/// - `+0x08` (`0x80076564`): **MP** restore caps — `[50, 200, 20, 0]`, read by
+/// - `+0x08` (`0x80076564`): **MP** restore caps - `[50, 200, 20, 0]`, read by
 ///   the MP heal (class `2`).
 ///
 /// Each restore is `min(max - current, table[tier])` (deficit-clamped). Pinned
@@ -273,7 +273,7 @@ pub struct HealAmounts {
 
 impl HealAmounts {
     /// The flat restore for a `(class, tier)`, or `None` when the class isn't a
-    /// flat-amount heal (cure/buff/arts-book/flute/field) — read
+    /// flat-amount heal (cure/buff/arts-book/flute/field) - read
     /// [`ItemEffect::category`] for those. Class `0`/`1` (single/all-party HP)
     /// read the HP table; class `2` (MP) reads the MP table; tier `3+` and the
     /// revive class resolve to [`RestoreAmount::CharRelative`].
@@ -307,12 +307,12 @@ pub enum StatTarget {
     Agility,
     /// Attack (record `+0x124`, actor `+0x158/+0x15A`).
     Attack,
-    /// Defence — both facets together (record `+0x126/+0x128`, actor
+    /// Defence - both facets together (record `+0x126/+0x128`, actor
     /// `+0x15C/+0x15E` + `+0x160/+0x162`).
     Defense,
     /// Speed (record `+0x12A`, actor `+0x164/+0x166`).
     Speed,
-    /// Intelligence (record `+0x12C`); permanent stat-up only — battle buffs
+    /// Intelligence (record `+0x12C`); permanent stat-up only - battle buffs
     /// never touch it.
     Intelligence,
 }
@@ -338,7 +338,7 @@ pub struct StatChange {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatItemEffect {
     /// Class 5 (Fury Boost): extend the action gauge for one battle. No stat
-    /// target — sets the actor `+0x1F9` gauge flag.
+    /// target - sets the actor `+0x1F9` gauge flag.
     ActionGauge,
     /// Class 6 (the *Water* line + Honey / Miracle Water): permanent stat
     /// increase(s) written to the **character record** (`0x80084708 + slot*0x414`,
@@ -368,7 +368,7 @@ const CAP_STD: u16 = 999;
 
 /// The `(class, tier)` -> [`StatItemEffect`] mapping the apply handler
 /// `FUN_800402F4` implements for the stat-affecting classes (5/6/7). Returns
-/// `None` for any other class (heal / cure / revive / field utility — those are
+/// `None` for any other class (heal / cure / revive / field utility - those are
 /// [`HealAmounts::resolve`] / [`ItemEffect::category`]). An out-of-range tier
 /// returns the variant with an empty change/target list.
 pub fn stat_item_effect(class: u8, tier: u8) -> Option<StatItemEffect> {
@@ -513,16 +513,16 @@ impl ItemEffectTable {
 
     /// The literal restore an item id applies, decoded from the heal-amount
     /// table via the item's `(class, tier)` descriptor. `None` for non-heal
-    /// effects (cure / buff / arts book / flute / field) or unparsed ids — read
+    /// effects (cure / buff / arts book / flute / field) or unparsed ids - read
     /// [`Self::effect`] / [`ItemEffect::category`] for those.
     pub fn restore_amount(&self, id: u8) -> Option<RestoreAmount> {
         let eff = self.effect(id)?;
         self.heal_amounts.resolve(eff.class, eff.tier)
     }
 
-    /// The stat effect an item id applies — the action-gauge extension (class
+    /// The stat effect an item id applies - the action-gauge extension (class
     /// 5), permanent stat-up (class 6, the *Water* line), or one-battle buff
-    /// (class 7, the Elixirs) — decoded from the apply handler via the item's
+    /// (class 7, the Elixirs) - decoded from the apply handler via the item's
     /// `(class, tier)` descriptor. `None` for non-stat effects (heal / cure /
     /// revive / arts book / flute / field) or unparsed ids; see
     /// [`stat_item_effect`] for the raw mapping and [`Self::restore_amount`] for

@@ -185,19 +185,19 @@ Sits between the SsApi seq layer and the libspu register primitives. This is the
 
 The retail SPU implements reverb as a same-side / different-side IIR reflection pair feeding a 4-tap comb early-echo and two all-pass stages, run at 22050 Hz over a work buffer at the top of SPU RAM (`mBASE = 0x80000 - work_size`). The 9 standard libspu modes (`Room` / `StudioA-C` / `Hall` / `Space` / `Echo` / `Delay` / `Pipe`) plus `Off` each select a 32-register set (work-area size + IIR/comb/all-pass coefficients + tap addresses).
 
-The `engine-audio` clean-room port reproduces that network register-for-register in [`spu::reverb`](../../crates/engine-audio/src/spu/reverb.rs): each [`ReverbMode`](../../crates/engine-audio/src/spu/reverb.rs) loads the standard libspu preset (public PSX hardware-reference constants — the same tables every open SPU emulator ships, not Sony game data) into a recirculating `i16` work buffer sized to that mode's work area. Address-type registers are in 8-byte units, taps wrap within the work area, and the reverb multiply is `(sample * coeff) / 0x8000` (signed Q15, so a `0x8000` coefficient inverts phase exactly as the hardware does).
+The `engine-audio` clean-room port reproduces that network register-for-register in [`spu::reverb`](../../crates/engine-audio/src/spu/reverb.rs): each [`ReverbMode`](../../crates/engine-audio/src/spu/reverb.rs) loads the standard libspu preset (public PSX hardware-reference constants - the same tables every open SPU emulator ships, not Sony game data) into a recirculating `i16` work buffer sized to that mode's work area. Address-type registers are in 8-byte units, taps wrap within the work area, and the reverb multiply is `(sample * coeff) / 0x8000` (signed Q15, so a `0x8000` coefficient inverts phase exactly as the hardware does).
 
 Per-voice routing is opt-in: `Voice::reverb_send = true` (libspu `SpuSetVoiceReverb` analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in `Spu::tick`.
 
-#### Retail reverb routing — Studio C, always on (capture-confirmed)
+#### Retail reverb routing - Studio C, always on (capture-confirmed)
 
 A pure-Rust sweep of the save-state corpus (`mednafen-state spu <state>`, reading the SPU register shadow via [`PsxSpu::reverb_registers`](../../crates/mednafen/src/spu.rs) / `voice_reverb_mask` / `reverb_master_enabled`) pins what retail actually runs, and it falsifies the earlier "Spirit-Arts / echo cues selectively opt in, everything else dry" reading:
 
-- **The reverb network is master-enabled in every captured state** (`SPUCNT` bit 7 set) — field, town, battle, summon, title, minigames. There is no scene or cue that toggles it on.
+- **The reverb network is master-enabled in every captured state** (`SPUCNT` bit 7 set) - field, town, battle, summon, title, minigames. There is no scene or cue that toggles it on.
 - **The mode is `Studio C` everywhere.** The 32 reverb coefficient/address registers (`0x1F801DC0..0x1F801DFF`) are byte-identical across all 45 mednafen states and match the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block to `StudioC`.
-- **Per-voice reverb-send (`EON`) is broad and always populated** — typically 15–22 of the 24 voices in any given state, including BGM and SFX voices, not a handful of "echo" voices. So reverb is the *default* routing, applied to nearly every keyed-on voice, not a per-cue effect.
+- **Per-voice reverb-send (`EON`) is broad and always populated** - typically 15–22 of the 24 voices in any given state, including BGM and SFX voices, not a handful of "echo" voices. So reverb is the *default* routing, applied to nearly every keyed-on voice, not a per-cue effect.
 
-So the C7-REVERB blocker dissolves: there is no per-cue reverb-enable source to trace. The live engine matches retail by calling [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) once at SPU init (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this) — it selects `ReverbMode::StudioC` and routes every voice into the reverb send. (Output depth — `vLIN`/`vROUT`, set separately by `SpuSetReverbDepth` — is the one piece not fixed by the preset; the engine applies a fixed half-scale depth, overridable via `Reverb::set_output_volume`. The EON mask's exact per-voice membership varies per frame with which voices happen to be sounding; the engine routes all voices, a faithful approximation of the broad mask.)
+So the C7-REVERB blocker dissolves: there is no per-cue reverb-enable source to trace. The live engine matches retail by calling [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) once at SPU init (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this) - it selects `ReverbMode::StudioC` and routes every voice into the reverb send. (Output depth - `vLIN`/`vROUT`, set separately by `SpuSetReverbDepth` - is the one piece not fixed by the preset; the engine applies a fixed half-scale depth, overridable via `Reverb::set_output_volume`. The EON mask's exact per-voice membership varies per frame with which voices happen to be sounding; the engine routes all voices, a faithful approximation of the broad mask.)
 
 Boundaries:
 - Mode selection via `Spu::write_reverb_mode_byte(raw)` matches the libspu byte API (1=Room, 2=StudioA, …, 9=Pipe). Out-of-range bytes fall back to `Off`. This is the engine half of `SpuSetReverbModeParam` (`FUN_8006B1B4`, the 30-attribute commit).
@@ -264,7 +264,7 @@ base rather than compounding.
 
 The bend **range is a per-tone disc value**, not a global constant: each VAB
 tone carries `pbmin`/`pbmax` (downward/upward bend in semitones), and the
-wheel scales by the sounding tone's own range — `+pbmax` semitones at
+wheel scales by the sounding tone's own range - `+pbmax` semitones at
 full-up, `-pbmin` at full-down (`VabBank::pitch_bend_range`, captured into
 the `ActiveNote` at NoteOn). A tone with a `(0, 0)` range does not respond
 to the wheel at all, exactly as libsnd applies the per-tone range. A
@@ -293,15 +293,15 @@ four retail tracks with no markers.
 changes the retail score actually emits: CC7 (channel volume) and CC10 (pan)
 carry the bulk; CC99 carries **only** the two loop-marker values 20 and 30
 (so the loop handler drops nothing); and CC6 (Data Entry) is a constant 127
-emitted ~once per track (a fixed init the engine ignores — it varies nothing,
+emitted ~once per track (a fixed init the engine ignores - it varies nothing,
 so it is not a per-track parameter). Notably **absent**: expression (CC11)
 and reverb-depth (CC91). So per-channel volume swells and per-cue reverb
-sends are not encoded in the SEQ stream — consistent with the capture
+sends are not encoded in the SEQ stream - consistent with the capture
 finding above that reverb is a fixed global (Studio C, master-on, voices
 routed by default), not a per-cue or per-channel parameter the score drives.
 
 **Dynamic channel expression (CC7 volume + CC10 pan).** Volume and pan are
-the two most-used controllers, and both are **dynamic** — the score swells
+the two most-used controllers, and both are **dynamic** - the score swells
 volume and pans voices around mid-note, not just at note-on (a corpus sweep
 finds the majority of CC7 events fire while a note is already sounding). The
 sequencer treats them as channel-expression layered over a per-note base:
@@ -356,7 +356,7 @@ Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay s
 
 `SfxBank::from_descriptors` builds the catalog straight from the disc-decoded static SFX table (`legaia_asset::sfx_table`): each active descriptor's `program` becomes the `program_index` and its `note` the `key`, so the cue ids `0x00..=0x63` resolve to the retail program/tone instead of a hand-authored stand-in.
 
-The bank those programs index is **not a dedicated SFX VAB** — it is the active scene's music VAB. `FUN_80065034` reads the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`), which point at the per-scene `scene_vab_stream` bank the BGM sequencer has open: across the save-state catalogue that bank is 13 distinct VABs, and for a `music_01`-scene state it is byte-identical to the disc `music_01` VAB. So the engine fires a cue with `SfxBank::play_one_shot(spu, scene_vab)` against the BGM `VabBank` it already loaded — no separate SFX bank. Because scene banks differ in size (`1..=16` used programs), a cue resolves only where its program/tone exists; see [`formats/sfx-table.md`](../formats/sfx-table.md).
+The bank those programs index is **not a dedicated SFX VAB** - it is the active scene's music VAB. `FUN_80065034` reads the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`), which point at the per-scene `scene_vab_stream` bank the BGM sequencer has open: across the save-state catalogue that bank is 13 distinct VABs, and for a `music_01`-scene state it is byte-identical to the disc `music_01` VAB. So the engine fires a cue with `SfxBank::play_one_shot(spu, scene_vab)` against the BGM `VabBank` it already loaded - no separate SFX bank. Because scene banks differ in size (`1..=16` used programs), a cue resolves only where its program/tone exists; see [`formats/sfx-table.md`](../formats/sfx-table.md).
 
 | Cue ID | Meaning |
 |---|---|
@@ -403,8 +403,8 @@ Entry points:
 - Library: [`engine_shell::audio_trace_oracle`](../../crates/engine-shell/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `load_runtime_audio_trace_jsonl`, `first_audio_trace_divergence`, `first_audio_trace_divergence_multi`, JSONL round-trip.
 - CLI: `legaia-engine audio-trace --scene NAME` (explicit), `--scenario LABEL` (single-snapshot vs `.mc{slot}` SPU), or `--retail-jsonl PATH` (multi-frame vs PCSX-Redux capture).
 - Disc-gated tests:
-  - [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) — auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
-  - [`audio_trace_multi`](../../crates/engine-shell/tests/audio_trace_multi.rs) — same scenario walk but skips unless `LEGAIA_AUDIO_TRACE_JSONL_DIR` points at a directory containing `<label>.jsonl` files from the PCSX-Redux probe.
+  - [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) - auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
+  - [`audio_trace_multi`](../../crates/engine-shell/tests/audio_trace_multi.rs) - same scenario walk but skips unless `LEGAIA_AUDIO_TRACE_JSONL_DIR` points at a directory containing `<label>.jsonl` files from the PCSX-Redux probe.
 
 The engine drives BGM through a private `TraceBgmDirector` that routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `NoFrameMatched` is treated as tolerable drift (scene prescript may not emit op `0x35` within the trace window, or may target a different track than retail captured); `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures.
 
@@ -412,7 +412,7 @@ The **Field↔Battle BGM-swap** is *not* yet observable through this
 voice-activity oracle, and not for an oracle reason: the engine's opening
 battle is a `SceneMode::Battle` overlay on the loaded field scene
 (`enter_battle_from_formation` does not load a distinct battle audio bundle),
-and a field scene's per-scene BGM table carries no battle track — `town01`
+and a field scene's per-scene BGM table carries no battle track - `town01`
 resolves *zero* battle ids through `SceneAssets::bgm_seq_entry`, so the
 `swap_to_battle_bgm` start event resolves to no SEQ bytes and no battle voices
 key on. The swap *contract* (track stash → battle start → field restore) is
@@ -431,7 +431,7 @@ Eventual home: a `crates/sound` companion to `crates/vab`.
 
 ## See also
 
-**Reference** —
+**Reference** -
 [VAB sound bank](../formats/vab.md) ·
 [SEQ sequence](../formats/seq.md) ·
 [Sound-driver outputs](../formats/sound-driver.md) ·

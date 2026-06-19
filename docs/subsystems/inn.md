@@ -67,7 +67,7 @@ engine. Per-character HP/MP maxima are at `+0xFE / +0x102` (hp_max) and
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Shop UI](shop.md) ·
 [Save screen](save-screen.md) ·
 [Level-up](level-up.md)

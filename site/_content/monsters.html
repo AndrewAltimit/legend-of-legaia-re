@@ -76,7 +76,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 <header>
   <div class="breadcrumb"><a href="index.html">home</a> · enemy table</div>
   <h1>Enemy table</h1>
-  <p class="lede">Decode every enemy's stat record <em>and 3D battle model</em> straight from your own disc image. The full archive — names, HP, MP, combat stats, and the embedded mesh for the whole roster — is LZS-decompressed in your browser via WebAssembly. Click any row to spin its model. No game data ships with this site; bring your own <code>.bin</code> and nothing leaves your machine.</p>
+  <p class="lede">Decode every enemy's stat record <em>and 3D battle model</em> straight from your own disc image. The full archive - names, HP, MP, combat stats, and the embedded mesh for the whole roster - is LZS-decompressed in your browser via WebAssembly. Click any row to spin its model. No game data ships with this site; bring your own <code>.bin</code> and nothing leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -101,17 +101,17 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <th class="col-name" data-key="name">Name</th>
             <th data-key="hp">HP</th>
             <th data-key="mp">MP</th>
-            <th data-key="s1" title="Attack — the enemy's offense">ATK</th>
-            <th data-key="s2" title="Defense (upper facet) — applies to some attacks">DEF↑</th>
-            <th data-key="s3" title="Defense (lower facet) — applies to others">DEF↓</th>
-            <th data-key="s4" title="Agility — seeds the hit / evade roll">AGL</th>
-            <th data-key="s5" title="Speed — sets turn order">SPD</th>
-            <th data-key="s0" title="Spirit gauge — the budget the AI spends to cast">SP</th>
-            <th data-key="element" title="Element (record +0x1D). The affinity scale multiplies an attacker's damage by matrix[attacker element][defender element] — a small ±4% nudge in retail.">Elem</th>
+            <th data-key="s1" title="Attack - the enemy's offense">ATK</th>
+            <th data-key="s2" title="Defense (upper facet) - applies to some attacks">DEF↑</th>
+            <th data-key="s3" title="Defense (lower facet) - applies to others">DEF↓</th>
+            <th data-key="s4" title="Agility - seeds the hit / evade roll">AGL</th>
+            <th data-key="s5" title="Speed - sets turn order">SPD</th>
+            <th data-key="s0" title="Spirit gauge - the budget the AI spends to cast">SP</th>
+            <th data-key="element" title="Element (record +0x1D). The affinity scale multiplies an attacker's damage by matrix[attacker element][defender element] - a small ±4% nudge in retail.">Elem</th>
             <th data-key="magic" title="Total spell slots the record carries (includes passive / affinity markers)">Magic</th>
             <th data-key="castable" class="col-name" title="The enemy's named magic attacks, with MP cost. Names resolve from a full disc image; a raw PROT.DAT shows the raw id.">Magic attacks (MP)</th>
-            <th data-key="exp" title="Base EXP reward — the game scales it and splits it among the party">EXP</th>
-            <th data-key="gold" title="Base gold reward — scaled at the end of a fight">Gold</th>
+            <th data-key="exp" title="Base EXP reward - the game scales it and splits it among the party">EXP</th>
+            <th data-key="gold" title="Base gold reward - scaled at the end of a fight">Gold</th>
             <th data-key="drop_chance" title="Item the enemy can drop, and the chance. Name resolves from a full disc image; a raw PROT.DAT shows the raw id.">Drop</th>
             <th data-key="steal_chance" title="Item the player steals with the Evil God Icon, and the chance. From the static SCUS_942.54 steal table; name resolves from a full disc image.">Steal</th>
             <th class="col-mesh" title="Click a row to view the enemy's 3D battle model">3D</th>
@@ -122,7 +122,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     </div>
   </div>
 
-  <p>Reading the columns: <strong>ATK</strong> is the enemy's offense; <strong>DEF↑ / DEF↓</strong> are two defense facets (which one applies depends on the attack); <strong>AGL</strong> seeds the hit / evade roll; <strong>SPD</strong> sets turn order; <strong>SP</strong> is the gauge the AI spends to cast. <strong>Elem</strong> is the monster's element (record <code>+0x1D</code>) — the affinity scale multiplies an attacker's damage by <code>matrix[attacker element][defender element]</code>, a small ±4% nudge in retail (same-element 96% / opposite-element 104% / otherwise 100%). <strong>EXP / Gold / Drop</strong> are the victory spoils — base values the game scales and splits at the end of a fight. <strong>Steal</strong> is what the player takes with the Evil God Icon equipped (item + chance), read from the static <code>SCUS_942.54</code> steal table (<code>DAT_80077828</code>) — a separate table from the drop, which is why a monster's steal and drop usually differ. <strong>Magic attacks</strong> lists the enemy's named spells and their MP cost. Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table needs the SCUS executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
+  <p>Reading the columns: <strong>ATK</strong> is the enemy's offense; <strong>DEF↑ / DEF↓</strong> are two defense facets (which one applies depends on the attack); <strong>AGL</strong> seeds the hit / evade roll; <strong>SPD</strong> sets turn order; <strong>SP</strong> is the gauge the AI spends to cast. <strong>Elem</strong> is the monster's element (record <code>+0x1D</code>) - the affinity scale multiplies an attacker's damage by <code>matrix[attacker element][defender element]</code>, a small ±4% nudge in retail (same-element 96% / opposite-element 104% / otherwise 100%). <strong>EXP / Gold / Drop</strong> are the victory spoils - base values the game scales and splits at the end of a fight. <strong>Steal</strong> is what the player takes with the Evil God Icon equipped (item + chance), read from the static <code>SCUS_942.54</code> steal table (<code>DAT_80077828</code>) - a separate table from the drop, which is why a monster's steal and drop usually differ. <strong>Magic attacks</strong> lists the enemy's named spells and their MP cost. Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table needs the SCUS executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="subsystems/battle-formulas.html">Battle formulas</a>
@@ -133,8 +133,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
 <section class="doc-section">
   <h2>How it works</h2>
-  <p>The whole roster lives in one archive on the disc. Each enemy id maps to a fixed slot that LZS-decompresses to a stat record followed by the enemy's 3D model and its animations. The same parser the native tools and the engine use runs here, compiled to WebAssembly — so what you see is exactly what the game reads.</p>
-  <p class="caption">Files are read with the browser's <code>FileReader</code> straight into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring your own disc). Your disc is cached locally and shared across pages, so it auto-loads on reload — use <em>Forget</em> to clear.</p>
+  <p>The whole roster lives in one archive on the disc. Each enemy id maps to a fixed slot that LZS-decompresses to a stat record followed by the enemy's 3D model and its animations. The same parser the native tools and the engine use runs here, compiled to WebAssembly - so what you see is exactly what the game reads.</p>
+  <p class="caption">Files are read with the browser's <code>FileReader</code> straight into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring your own disc). Your disc is cached locally and shared across pages, so it auto-loads on reload - use <em>Forget</em> to clear.</p>
   <div class="cli"><code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -143,7 +143,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h2>The 3D model</h2>
-  <p>Click any row to spin its <strong>battle model</strong> — rendered textured and directional-lit straight from your disc, the same model the battle camera shows. 186 of the 194 enemies carry one (the rest are filler ids).</p>
+  <p>Click any row to spin its <strong>battle model</strong> - rendered textured and directional-lit straight from your disc, the same model the battle camera shows. 186 of the 194 enemies carry one (the rest are filler ids).</p>
   <div class="cli"><code>asset monster-archive … --id N --obj enemy.obj --texture-png enemy.png</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -153,7 +153,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h2>Animations</h2>
-  <p>The model isn't static. Every action an enemy can play — its <strong>idle</strong> resting loop, its <strong>move</strong> cycle (the approach it plays advancing on a target — a walk for grounded enemies, a flight cycle for fliers), and each <strong>spell / special</strong> — ships as its own transform-keyframe stream in the same archive. The viewer opens on the idle loop; when a monster carries more than one animation, a row of toggle buttons appears beside the model so you can switch between them. Each one re-poses the body parts frame to frame exactly as the battle renderer does.</p>
+  <p>The model isn't static. Every action an enemy can play - its <strong>idle</strong> resting loop, its <strong>move</strong> cycle (the approach it plays advancing on a target - a walk for grounded enemies, a flight cycle for fliers), and each <strong>spell / special</strong> - ships as its own transform-keyframe stream in the same archive. The viewer opens on the idle loop; when a monster carries more than one animation, a row of toggle buttons appears beside the model so you can switch between them. Each one re-poses the body parts frame to frame exactly as the battle renderer does.</p>
   <div class="cli"><code>asset monster-archive … --id N --anim</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -161,7 +161,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h2>Download</h2>
-  <p>The <strong>⬇ Download .glb</strong> button packs the selected enemy — mesh, baked texture, and <em>all</em> of its action animations — into a single binary <a href="https://www.khronos.org/gltf/">glTF</a> file. glTF is the universal 3D interchange format, so the model drops straight into Blender, three.js, the Windows 3D Viewer, or any glTF tool, animations and all. Each TMD body part becomes an animated node; the per-part palettes are baked into one texture atlas. The same export is available offline from the CLI.</p>
+  <p>The <strong>⬇ Download .glb</strong> button packs the selected enemy - mesh, baked texture, and <em>all</em> of its action animations - into a single binary <a href="https://www.khronos.org/gltf/">glTF</a> file. glTF is the universal 3D interchange format, so the model drops straight into Blender, three.js, the Windows 3D Viewer, or any glTF tool, animations and all. Each TMD body part becomes an animated node; the per-part palettes are baked into one texture atlas. The same export is available offline from the CLI.</p>
   <div class="cli"><code>asset monster-archive … --id N --glb enemy.glb</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -198,7 +198,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       s0: s[0] ?? 0, s1: s[1] ?? 0, s2: s[2] ?? 0,
       s3: s[3] ?? 0, s4: s[4] ?? 0, s5: s[5] ?? 0,
       magic: r.magic_count ?? 0,
-      // Element id (record +0x1D, 0..7) + resolved name (always present — the
+      // Element id (record +0x1D, 0..7) + resolved name (always present - the
       // table is in the same overlay, no full-disc dependency).
       element: r.element ?? 7, element_name: r.element_name ?? null,
       spells: r.spells || [],
@@ -220,14 +220,14 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
   // Drop cell text: prefer the resolved item name, fall back to the raw id.
   function fmtDrop(r) {
-    if (!r.drop_item) return '—';
+    if (!r.drop_item) return '-';
     const label = r.drop_item_name || ('#' + r.drop_item);
     return label + ' @ ' + r.drop_chance + '%';
   }
 
   // Steal cell text: same shape as the drop cell, from the steal table.
   function fmtSteal(r) {
-    if (!r.steal_item) return '—';
+    if (!r.steal_item) return '-';
     const label = r.steal_item_name || ('#' + r.steal_item);
     return label + ' @ ' + r.steal_chance + '%';
   }
@@ -240,7 +240,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   // Named magic attacks: resolved spell name (+ MP cost) from the SCUS spell
   // table, falling back to the raw global id when no name is loaded.
   function fmtMagic(magic) {
-    if (!magic || magic.length === 0) return '—';
+    if (!magic || magic.length === 0) return '-';
     return magic.map(m => {
       const nm = m.name || ('0x' + m.id.toString(16).toUpperCase().padStart(2, '0'));
       return m.mp ? `${nm} (${m.mp} MP)` : nm;
@@ -734,7 +734,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <canvas class="mesh-viewer-canvas" id="mesh-viewer-canvas" width="360" height="320"></canvas>
           </div>
           <div class="mesh-viewer-side">
-            <h3 id="mesh-viewer-name">—</h3>
+            <h3 id="mesh-viewer-name">-</h3>
             <div class="mesh-stat" id="mesh-viewer-stats"></div>
             <div class="mesh-viewer-controls">
               <button id="mesh-spin-btn" type="button">⏸ stop spin</button>
@@ -816,7 +816,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     // `wasmIdx` is the entry's true position in the unfiltered WASM array (the
     // handle monster_animation_frames_at expects); keep it through the filter
     // so dropped entries can't desync the indices. We only list genuinely
-    // animated actions (>1 keyframe) — a single-frame entry has no rest pose to
+    // animated actions (>1 keyframe) - a single-frame entry has no rest pose to
     // assemble and the raw per-object geometry sits collapsed at the origin.
     animList = JSON.parse(viewer.monster_animations_json(id) || '[]')
       .map((a, i) => ({ ...a, wasmIdx: i }))
@@ -909,8 +909,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     updateActionStats();
   }
 
-  // Export the selected monster as a binary glTF (.glb) — mesh + baked texture
-  // + every action animation, in one universal file — and trigger a download.
+  // Export the selected monster as a binary glTF (.glb) - mesh + baked texture
+  // + every action animation, in one universal file - and trigger a download.
   function downloadCurrentGlb() {
     if (!viewer || selectedId === null) return;
     const btn = detailRow.querySelector('#mesh-glb-btn');
@@ -945,7 +945,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
    * expose name / size / arrayBuffer(). */
   async function loadEnemyTable(f) {
     if (!f) { status.textContent = 'No file loaded.'; return; }
-    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — decoding enemy table…`;
+    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) - decoding enemy table…`;
 
     /* The LegaiaViewer constructor validates a canvas id even though the
      * enemy-table path never draws to it. Inject a throwaway one. */
@@ -964,7 +964,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       const mod = await import('./wasm/legaia_web_viewer.js');
       await mod.default();
       viewer = new mod.LegaiaViewer('enemy-table-canvas');
-      prog.indeterminate('Parsing PROT.DAT — this can take a few seconds…');
+      prog.indeterminate('Parsing PROT.DAT - this can take a few seconds…');
       await prog.paint(); // let the bar render before the blocking parse
       viewer.load_disc(buf);
       selectedId = null;
@@ -979,11 +979,11 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       }
       records = (parsed.records || []).map(normalize);
       if (records.length === 0) {
-        status.textContent = `Loaded: ${f.name} — no enemy data found (PROT entry 867 absent). Is this a full Legaia disc / PROT.DAT?`;
+        status.textContent = `Loaded: ${f.name} - no enemy data found (PROT entry 867 absent). Is this a full Legaia disc / PROT.DAT?`;
         prog.fail('No enemy data found in this file.');
         return;
       }
-      status.textContent = `Loaded: ${f.name} — decoded ${records.length} enemy records.`;
+      status.textContent = `Loaded: ${f.name} - decoded ${records.length} enemy records.`;
       toolbar.style.display = 'flex';
       tableWrap.style.display = 'block';
       render();

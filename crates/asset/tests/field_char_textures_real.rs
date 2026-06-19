@@ -120,7 +120,7 @@ fn field_texture_upload_matches_pinned_vram() {
 
     // FNV of the full reconstructed VRAM. Deterministic from disc; byte-exact
     // vs a live field-scene VRAM dump over the union of the eight uploaded
-    // rects. No Sony bytes are committed — only this digest.
+    // rects. No Sony bytes are committed - only this digest.
     let digest = fnv1a64(vram.as_bytes());
     assert_eq!(
         digest, 0x64615c6915ba9a80,

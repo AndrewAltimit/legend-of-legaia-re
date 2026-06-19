@@ -108,12 +108,12 @@ Leaf `50` MP, Magic Fruit `200` MP, Healing Shroom `200`).
 
 ## Stat-up / buff items (class 5/6/7)
 
-The stat-affecting classes do **not** read a data table — their magnitudes are
+The stat-affecting classes do **not** read a data table - their magnitudes are
 inline immediates in the apply handler's switch (`FUN_800402F4` `case 5/6/7`).
 The `(class, tier)` → effect mapping is therefore pinned to the disassembly,
 while each item's `(class, tier)` is parsed from the descriptor table above.
 
-**Class 6 — permanent stat-up** (field-use, flag byte `0x82`). Adds a flat
+**Class 6 - permanent stat-up** (field-use, flag byte `0x82`). Adds a flat
 increment to the **character record** (`0x80084708 + slot*0x414`, the same
 record window the [save schema](../../crates/save/src/character.rs) maps), `tier`
 selecting which stat. The amounts and caps:
@@ -126,9 +126,9 @@ selecting which stat. The amounts and caps:
 | 3 | SPD | `+0x12A` | `+4` | `999` | Swift Water (`0x85`) |
 | 4 | INT | `+0x12C` | `+4` | `999` | Wisdom Water (`0x86`) |
 | 5 | Max MP | `+0x11E` | `+8` | `999` | Magic Water (`0x87`) |
-| 6 | **all** (AGL/HP/ATK/SPD/INT/MP/DEF) | — | `+4` each | AGL `280`, HP `9999`, else `999` | Honey (`0x65`), Miracle Water (`0x6D`) |
+| 6 | **all** (AGL/HP/ATK/SPD/INT/MP/DEF) | - | `+4` each | AGL `280`, HP `9999`, else `999` | Honey (`0x65`), Miracle Water (`0x6D`) |
 
-**Class 7 — one-battle buff** (battle-use, flag byte `0x84`). Multiplies the
+**Class 7 - one-battle buff** (battle-use, flag byte `0x84`). Multiplies the
 **battle-actor** stat halfwords by `6/5` (+20%, the handler's `uVar + uVar/5`),
 clamped to `0xFFFF`, for the rest of the battle. `param_2` = `tier`:
 
@@ -137,9 +137,9 @@ clamped to `0xFFFF`, for the rest of the battle. `param_2` = `tier`:
 | 1 | SPD (`+0x164/+0x166`) | Speed Elixir (`0x8D`) |
 | 2 | DEF, both facets (`+0x15C/+0x15E` + `+0x160/+0x162`) | Shield Elixir (`0x8C`) |
 | 3 | ATK (`+0x158/+0x15A`) | Power Elixir (`0x8B`) |
-| 4 | **all** — SPD + DEF + ATK + AGL (`+0x168/+0x16A`) | Wonder Elixir (`0x8E`) |
+| 4 | **all** - SPD + DEF + ATK + AGL (`+0x168/+0x16A`) | Wonder Elixir (`0x8E`) |
 
-**Class 5 — Fury Boost** (`0x81`): extends the action gauge for one battle
+**Class 5 - Fury Boost** (`0x81`): extends the action gauge for one battle
 (sets the actor `+0x1F9` gauge flag); no stat target. See the buff-selector
 table in [`battle-formulas.md`](../subsystems/battle-formulas.md#stat-buff-selectors-17).
 

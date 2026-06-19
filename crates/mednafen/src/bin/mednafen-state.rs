@@ -146,7 +146,7 @@ enum Cmd {
     /// bit 7), reverb mode, and the per-voice reverb-send mask (EON), plus a
     /// per-voice line (active / reverb-on / volume). This is the read side of
     /// the "which voices does retail reverb" question for the C7-REVERB live
-    /// routing hunt — pure-Rust over an existing save state, no live probe.
+    /// routing hunt - pure-Rust over an existing save state, no live probe.
     Spu {
         save: PathBuf,
         /// Print all 24 voices instead of only the audible ones.
@@ -995,7 +995,7 @@ fn cmd_spu(save: &Path, all: bool) -> Result<()> {
         println!(
             "    {i:>2}: {} {} vol=({:>6},{:>6}) pitch={}",
             if active { "ON " } else { "off" },
-            if rev { "REV" } else { "—  " },
+            if rev { "REV" } else { "-  " },
             v.vol_left.unwrap_or(0),
             v.vol_right.unwrap_or(0),
             v.pitch.map(|p| format!("0x{p:04X}")).unwrap_or_default(),

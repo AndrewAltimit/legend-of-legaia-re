@@ -30,7 +30,7 @@ fn town01_partition1_scripts_walk_and_report_arm_sites() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -65,7 +65,7 @@ fn town01_partition1_scripts_walk_and_report_arm_sites() {
             continue;
         }
         // Only print records that carry at least one decodable inline record
-        // or are the system entry script — keeps the log readable.
+        // or are the system entry script - keeps the log readable.
         if !candidates.is_empty() || rec.index == 0 {
             eprintln!(
                 "  P1[{:3}] start=0x{:05X} pc0={} body={:5}b insns={:4} errs={:3} yields={} candidates={}",
@@ -116,7 +116,7 @@ fn town01_partition1_scripts_walk_and_report_arm_sites() {
     } else {
         eprintln!(
             "[tetsu] no inline [count=1][id=0x4F] literal at any P1 yield site \
-             — supports the indexed-formation-table install path (formation index {})",
+             - supports the indexed-formation-table install path (formation index {})",
             legaia_engine_core::encounter_record::RIM_ELM_TRAINING_FORMATION_ID
         );
     }
@@ -152,6 +152,6 @@ fn town01_partition1_scripts_walk_and_report_arm_sites() {
     assert!(
         tetsu_sites.is_empty(),
         "no inline Tetsu literal in town01 P1 scripts (found {tetsu_sites:?}) \
-         — the training fight installs via the indexed formation table"
+         - the training fight installs via the indexed formation table"
     );
 }

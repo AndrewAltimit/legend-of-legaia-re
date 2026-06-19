@@ -2,8 +2,8 @@
 //! read the live field buffer (scratchpad `_DAT_1f8003ec`) and classify its
 //! `+0x4000` collision grid AND its `+0x8000` object-index grid against
 //! candidate on-disc `.MAP` base grids (town01 = PROT 0010, town0c = PROT
-//! 0028). Answers which base map a session's field buffer actually holds —
-//! the cold-vs-variant `.MAP` streaming question — and cross-validates the
+//! 0028). Answers which base map a session's field buffer actually holds -
+//! the cold-vs-variant `.MAP` streaming question - and cross-validates the
 //! object-placement source (`Scene::field_object_placements`) the same way
 //! the collision grid was pinned.
 //!

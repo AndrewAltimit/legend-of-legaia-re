@@ -33,7 +33,7 @@ fn opdeene_partition2_carries_the_gflag_set_26_handoff_arm() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -132,7 +132,7 @@ fn town01_partition2_has_no_prologue_handoff_arm() {
         .expect("town01 has a MAN payload");
     let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
 
-    // The interactive scene must NOT carry the prologue arm — otherwise the
+    // The interactive scene must NOT carry the prologue arm - otherwise the
     // data-driven arm would fire a spurious hand-off back into town01.
     let mut world = World::new();
     world.set_active_scene_label("town01");

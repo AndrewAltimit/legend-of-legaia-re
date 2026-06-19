@@ -59,7 +59,7 @@ Walks ISO9660 and writes every file. See [disc + ISO9660](../formats/disc.md).
 prot-extract extract extracted/PROT.DAT extracted/PROT/ --cdname extracted/CDNAME.TXT
 ```
 
-Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint — `max(indexed_size, next_start - this_start)` — so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See [PROT TOC](../formats/prot.md).
+Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint - `max(indexed_size, next_start - this_start)` - so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See [PROT TOC](../formats/prot.md).
 
 ### LZS decode (`lzs-decode`)
 
@@ -136,7 +136,7 @@ the count + digest the test pins.
 every entry and catalogs the TIMs inside each decoded section (most character /
 scene textures are compressed). Each row is keyed by `(entry, LZS section,
 offset-in-section)`. A hit is admitted only when the decompressed bytes
-strict-parse **and** decode to RGBA — LZS "decodes without error" is never a
+strict-parse **and** decode to RGBA - LZS "decodes without error" is never a
 validity signal (the ring buffer inits to zeros). It has its own committed
 reference + disc-gated regression. See
 [`formats/tim.md`](../formats/tim.md#deep-catalog-tims-inside-lzs-compressed-sections).
@@ -180,7 +180,7 @@ asset-viewer tim extracted/PROT/tim/<entry>.TIM
 
 # TIM at a non-zero offset within a larger file. Use this for TIMs in
 # the unindexed pre-`init_data` gap of PROT.DAT (system-UI sprite
-# sheet, menu-glyph atlas, etc.) — these aren't reachable through
+# sheet, menu-glyph atlas, etc.) - these aren't reachable through
 # the `prot` browser because no TOC entry covers them.
 asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 2   # system-UI panel CLUT
 asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 7   # system-UI cursor CLUT

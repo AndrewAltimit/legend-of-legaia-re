@@ -37,7 +37,7 @@ pub const SCREEN_Y_OFFSET: i16 = 0x120;
 
 /// Billboard half-HEIGHT handed to the GTE projection (`0x100`, the constant
 /// third argument of the `FUN_800195a8` call). The half-WIDTH is dynamic:
-/// the move-FX state halfword at `+0x6c6` minus `0x200` — see
+/// the move-FX state halfword at `+0x6c6` minus `0x200` - see
 /// [`streak_half_width`].
 pub const PROJECTION_HALF_SIZE: i16 = 0x100;
 
@@ -83,7 +83,7 @@ pub fn project_streak_corners(
     )
 }
 
-/// 24-bit modulation colour baked into the command word `0x2e808080` — a
+/// 24-bit modulation colour baked into the command word `0x2e808080` - a
 /// neutral 50%-grey so the texel passes through the semi-transparency blend
 /// unmodulated.
 pub const MODULATION_COLOR: u32 = 0x0080_8080;
@@ -93,7 +93,7 @@ pub const MODULATION_COLOR: u32 = 0x0080_8080;
 pub const TEXPAGE: u16 = 0x0027;
 
 /// Base of the CLUT framebuffer word; the trail-texture id is added to select
-/// the column. `0x7700` decodes to framebuffer CLUT (X = id, Y = 476) — the
+/// the column. `0x7700` decodes to framebuffer CLUT (X = id, Y = 476) - the
 /// row-476..479 trail/NPC CLUT band.
 pub const CLUT_BASE: u16 = 0x7700;
 
@@ -115,7 +115,7 @@ pub struct AfterimageQuad {
     pub tpage: u16,
     /// 24-bit modulation colour ([`MODULATION_COLOR`]).
     pub color: u32,
-    /// Always `true` — command `0x2e` is a semi-transparent textured quad.
+    /// Always `true` - command `0x2e` is a semi-transparent textured quad.
     pub semi_transparent: bool,
 }
 

@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; ROM patcher</div>
   <h1>ROM patcher (in browser)</h1>
-  <p class="lede">Run the <a href="randomizer.html">randomizer</a> on your own Legend of Legaia disc image, entirely in your browser. Pick a preset (or fine-tune), choose a seed, and download a patched image. The disc bytes never leave your machine &mdash; the patch runs as WebAssembly locally, nothing is uploaded.</p>
+  <p class="lede">Run the <a href="randomizer.html">randomizer</a> on your own Legend of Legaia disc image, entirely in your browser. Pick a preset (or fine-tune), choose a seed, and download a patched image. The disc bytes never leave your machine - the patch runs as WebAssembly locally, nothing is uploaded.</p>
 </header>
 
 <section class="doc-section" id="patch">
@@ -13,7 +13,7 @@
       <input type="file" id="rom-file" accept=".bin,application/octet-stream">
     </label>
     <label class="rom-row">
-      <span class="rom-label">Seed <span class="rom-hint">&mdash; same seed always makes the same disc</span></span>
+      <span class="rom-label">Seed <span class="rom-hint">- same seed always makes the same disc</span></span>
       <input type="text" id="rom-seed" placeholder="any word or number (blank = random)">
     </label>
 
@@ -36,8 +36,8 @@
 
     <!-- Legend: the one place the two modes are defined. -->
     <p class="rom-legend">
-      <span class="rom-legend-item"><span class="rom-chip rom-chip-shuffle">Shuffle</span> <em>rebalanced</em> &mdash; redistributes what's already there (same set, new places &mdash; keeps the game's balance).</span>
-      <span class="rom-legend-item"><span class="rom-chip rom-chip-random">Randomize</span> <em>wild</em> &mdash; draws fresh from the whole pool (anything can land anywhere &mdash; less predictable).</span>
+      <span class="rom-legend-item"><span class="rom-chip rom-chip-shuffle">Shuffle</span> <em>rebalanced</em> - redistributes what's already there (same set, new places - keeps the game's balance).</span>
+      <span class="rom-legend-item"><span class="rom-chip rom-chip-random">Randomize</span> <em>wild</em> - draws fresh from the whole pool (anything can land anywhere - less predictable).</span>
     </p>
 
     <!-- ---- Items & rewards ---- -->
@@ -81,7 +81,7 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Steal items <span class="rom-opt-note">&mdash; chance kept; only the item changes</span></span>
+        <span class="rom-opt-label">Steal items <span class="rom-opt-note">- chance kept; only the item changes</span></span>
         <div class="seg" role="group" aria-label="Steal items">
           <input type="radio" name="steals" id="steals-none" value="none" checked><label for="steals-none">Off</label>
           <input type="radio" name="steals" id="steals-shuffle" value="shuffle"><label for="steals-shuffle">Shuffle</label>
@@ -107,20 +107,20 @@
         <div class="seg" role="group" aria-label="Encounter monster pool">
           <input type="radio" name="encounter_scope" id="scope-scene" value="scene" checked><label for="scope-scene" title="Each area's own monsters">Scene</label>
           <input type="radio" name="encounter_scope" id="scope-kingdom" value="kingdom"><label for="scope-kingdom" title="Any monster from the same kingdom (Drake / Sebucus / Karisto)">Kingdom</label>
-          <input type="radio" name="encounter_scope" id="scope-world" value="world"><label for="scope-world" title="Any monster on the disc — late-game monsters can appear at the start">World</label>
+          <input type="radio" name="encounter_scope" id="scope-world" value="world"><label for="scope-world" title="Any monster on the disc - late-game monsters can appear at the start">World</label>
         </div>
       </div>
       <label class="rom-check-row rom-sub" id="rom-solo-strong-row">
         <input type="checkbox" id="rom-solo-strong">
-        <span>&#8627; Solo strong fights &mdash; when a randomized encounter would field a monster much stronger than the area's natives, make it a lone enemy instead of a pack of 2+</span>
+        <span>&#8627; Solo strong fights - when a randomized encounter would field a monster much stronger than the area's natives, make it a lone enemy instead of a pack of 2+</span>
       </label>
       <label class="rom-check-row" id="rom-flee-exp-row">
         <input type="checkbox" id="rom-flee-exp">
-        <span>Experience on the run &mdash; successfully running away banks 5% of the fight's experience into the party (vanilla gives nothing for fleeing)</span>
+        <span>Experience on the run - successfully running away banks 5% of the fight's experience into the party (vanilla gives nothing for fleeing)</span>
       </label>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Arts button combos <span class="rom-opt-note">&mdash; input count kept; Miracle Arts left alone</span></span>
+        <span class="rom-opt-label">Arts button combos <span class="rom-opt-note">- input count kept; Miracle Arts left alone</span></span>
         <div class="seg" role="group" aria-label="Arts button combos">
           <input type="radio" name="arts" id="arts-none" value="none" checked><label for="arts-none">Off</label>
           <input type="radio" name="arts" id="arts-shuffle" value="shuffle"><label for="arts-shuffle">Shuffle</label>
@@ -129,7 +129,7 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Monster stats <span class="rom-opt-note">&mdash; HP / MP / ATK / DEF / AGL / SPD</span></span>
+        <span class="rom-opt-label">Monster stats <span class="rom-opt-note">- HP / MP / ATK / DEF / AGL / SPD</span></span>
         <div class="seg" role="group" aria-label="Monster stats">
           <input type="radio" name="monster_stats" id="mstats-none" value="none" checked><label for="mstats-none">Off</label>
           <input type="radio" name="monster_stats" id="mstats-shuffle" value="shuffle"><label for="mstats-shuffle">Shuffle</label>
@@ -138,7 +138,7 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Special-attack power <span class="rom-opt-note">&mdash; enemy specials &amp; Seru magic (not party Arts)</span></span>
+        <span class="rom-opt-label">Special-attack power <span class="rom-opt-note">- enemy specials &amp; Seru magic (not party Arts)</span></span>
         <div class="seg" role="group" aria-label="Special-attack power">
           <input type="radio" name="move_power" id="mpow-none" value="none" checked><label for="mpow-none">Off</label>
           <input type="radio" name="move_power" id="mpow-shuffle" value="shuffle"><label for="mpow-shuffle">Shuffle</label>
@@ -147,7 +147,7 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Element affinity <span class="rom-opt-note">&mdash; which element beats which</span></span>
+        <span class="rom-opt-label">Element affinity <span class="rom-opt-note">- which element beats which</span></span>
         <div class="seg" role="group" aria-label="Element affinity">
           <input type="radio" name="element_affinity" id="eaff-none" value="none" checked><label for="eaff-none">Off</label>
           <input type="radio" name="element_affinity" id="eaff-shuffle" value="shuffle"><label for="eaff-shuffle">Shuffle</label>
@@ -156,7 +156,7 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Spell MP costs <span class="rom-opt-note">&mdash; named, costed spells</span></span>
+        <span class="rom-opt-label">Spell MP costs <span class="rom-opt-note">- named, costed spells</span></span>
         <div class="seg" role="group" aria-label="Spell MP costs">
           <input type="radio" name="spell_cost" id="scost-none" value="none" checked><label for="scost-none">Off</label>
           <input type="radio" name="spell_cost" id="scost-shuffle" value="shuffle"><label for="scost-shuffle">Shuffle</label>
@@ -165,7 +165,7 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Equipment stat bonuses <span class="rom-opt-note">&mdash; gear stats, redistributed within each slot type</span></span>
+        <span class="rom-opt-label">Equipment stat bonuses <span class="rom-opt-note">- gear stats, redistributed within each slot type</span></span>
         <div class="seg" role="group" aria-label="Equipment stat bonuses">
           <input type="radio" name="equip_bonus" id="ebonus-none" value="none" checked><label for="ebonus-none">Off</label>
           <input type="radio" name="equip_bonus" id="ebonus-shuffle" value="shuffle"><label for="ebonus-shuffle">Shuffle</label>
@@ -175,17 +175,17 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-equipment-drops">
-        <span>Equipment drops &mdash; a low per-battle chance to win one extra random weapon / armor / accessory, on top of the normal drop <span class="rom-opt-note">(additive code hook)</span></span>
+        <span>Equipment drops - a low per-battle chance to win one extra random weapon / armor / accessory, on top of the normal drop <span class="rom-opt-note">(additive code hook)</span></span>
       </label>
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-seru-trade">
-        <span>Seru trading &mdash; a vendor in shops offers to trade a party member's learned Seru-magic for a different one at a set level; the offer rotates over play time <span class="rom-opt-note">(in-shop menu, deterministic from the seed)</span></span>
+        <span>Seru trading - a vendor in shops offers to trade a party member's learned Seru-magic for a different one at a set level; the offer rotates over play time <span class="rom-opt-note">(in-shop menu, deterministic from the seed)</span></span>
       </label>
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-weapon-specialty">
-        <span>Weapon specialty &mdash; reassign which weapon class each character favors (Vahn blades / Noa claws / Gala clubs by default); an off-class weapon widens the Arms command in an arts combo <span class="rom-opt-note">(the Astral Sword stays always-wide)</span></span>
+        <span>Weapon specialty - reassign which weapon class each character favors (Vahn blades / Noa claws / Gala clubs by default); an off-class weapon widens the Arms command in an arts combo <span class="rom-opt-note">(the Astral Sword stays always-wide)</span></span>
       </label>
     </details>
 
@@ -211,7 +211,7 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-house-doors">
-        <span>House doors (experimental) &mdash; shuffle intra-town interior/exit door targets <span class="rom-opt-note">(also scrambles some actor positions)</span></span>
+        <span>House doors (experimental) - shuffle intra-town interior/exit door targets <span class="rom-opt-note">(also scrambles some actor positions)</span></span>
       </label>
     </details>
 
@@ -249,12 +249,12 @@
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-door-of-wind">
-        <span>Seed Door of Wind (warp consumable) into the starting bag &mdash; count
+        <span>Seed Door of Wind (warp consumable) into the starting bag - count
           <input type="number" id="rom-door-of-wind-count" min="1" max="99" value="10"></span>
       </label>
       <label class="rom-check-row">
         <input type="checkbox" id="rom-incense">
-        <span>Seed Incense (lowers the random-encounter rate) into the starting bag &mdash; count
+        <span>Seed Incense (lowers the random-encounter rate) into the starting bag - count
           <input type="number" id="rom-incense-count" min="1" max="99" value="10"></span>
       </label>
       <label class="rom-check-row">
@@ -296,35 +296,35 @@
     <pre id="rom-summary" class="rom-summary"></pre>
   </div>
 
-  <p class="note"><strong>Two files download:</strong> the patched <code>.bin</code> and a matching <code>.cue</code> (same base name). Keep them together and point your emulator at the <code>.cue</code> &mdash; it references the <code>.bin</code> by name. Legend of Legaia is a single-track <code>MODE2/2352</code> disc, so the cue is just a track header. If you'd rather reuse your original <code>.cue</code>, rename the patched <code>.bin</code> to match its <code>FILE</code> line.</p>
-  <p class="note"><strong>Heads up:</strong> a full disc is ~470&nbsp;MB, so patching holds a couple of copies in memory and the download is the same size &mdash; give it a moment, and use a desktop browser with enough RAM. The patched image contains Sony data: it is for your own local play, <strong>do not redistribute it</strong>. (Sharing a run is what the <a href="randomizer.html">CLI</a>'s seed + PPF patch are for.)</p>
+  <p class="note"><strong>Two files download:</strong> the patched <code>.bin</code> and a matching <code>.cue</code> (same base name). Keep them together and point your emulator at the <code>.cue</code> - it references the <code>.bin</code> by name. Legend of Legaia is a single-track <code>MODE2/2352</code> disc, so the cue is just a track header. If you'd rather reuse your original <code>.cue</code>, rename the patched <code>.bin</code> to match its <code>FILE</code> line.</p>
+  <p class="note"><strong>Heads up:</strong> a full disc is ~470&nbsp;MB, so patching holds a couple of copies in memory and the download is the same size - give it a moment, and use a desktop browser with enough RAM. The patched image contains Sony data: it is for your own local play, <strong>do not redistribute it</strong>. (Sharing a run is what the <a href="randomizer.html">CLI</a>'s seed + PPF patch are for.)</p>
 </section>
 
 <section class="doc-section" id="how">
   <h2>What it does</h2>
-  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded edit &mdash; same-size in place for drops / encounters / chests / steals, and a variable-length <a href="../formats/man-relocation.html">MAN rebuild</a> for doors (the disc's total size never changes either way). Every randomizable category offers two modes: <strong>Shuffle</strong> (<em>rebalanced</em> &mdash; redistributes the existing set, so difficulty is preserved) or <strong>Randomize</strong> (<em>wild</em> &mdash; draws fresh from the whole valid pool).</p>
+  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Each option is a deterministic, seeded edit - same-size in place for drops / encounters / chests / steals, and a variable-length <a href="../formats/man-relocation.html">MAN rebuild</a> for doors (the disc's total size never changes either way). Every randomizable category offers two modes: <strong>Shuffle</strong> (<em>rebalanced</em> - redistributes the existing set, so difficulty is preserved) or <strong>Randomize</strong> (<em>wild</em> - draws fresh from the whole valid pool).</p>
   <ul class="bullets">
-    <li><strong>Monster drops</strong> &mdash; reassigns the item each monster drops (and its chance). <em>Shuffle</em> redistributes the existing drops; <em>Randomize</em> draws from the valid item table.</li>
-    <li><strong>Random encounters</strong> &mdash; reassigns the monster ids in each scene's encounter formations. The <strong>Monster pool</strong> sub-option sets how wide a net is cast: <em>Scene</em> (each area's own monsters &mdash; every swap is one the area already loads), <em>Kingdom</em> (any monster from the same Drake / Sebucus / Karisto kingdom), or <em>World</em> (any monster on the disc, so late-game monsters can appear at the start). Boss / scripted fights are never touched. The <strong>Solo strong fights</strong> sub-option keeps the wider pools fair: it scores each monster by its combat-stat budget and, for any randomized formation whose strongest member is at least twice the area's native average, drops the pack down to that lone enemy &mdash; so an out-of-area heavy hitter shows up alone, never two or three at once. The baseline is each area's own original monsters (a stand-in for the party's strength there), so it adapts as the game scales.</li>
-    <li><strong>Treasure chests</strong> &mdash; reassigns the item each chest gives (the field-VM <code>GIVE_ITEM</code> inline operand), globally across every chest. The full quest / key / story item set (every unsellable item the disc prices at <code>0</code> &mdash; door keys, garden tools, eggs / talismans / books, letters, fishing rods, casino cards &mdash; minus the chest-found Ra-Seru equipment) is kept static so progression items stay where the player expects them and never spawn in an unrelated chest.</li>
-    <li><strong>Town shops</strong> &mdash; reassigns what each town store sells (the field-VM op <code>0x49</code> stock list).</li>
-    <li><strong>Casino prizes</strong> &mdash; reassigns the casino prize-exchange items; each prize keeps its coin price and progression gate.</li>
-    <li><strong>Steal items</strong> &mdash; reassigns what each monster yields to the Evil God Icon (the static <code>SCUS_942.54</code> steal table). The steal <em>chance</em> is always preserved &mdash; only the item changes.</li>
-    <li><strong>Arts button combos</strong> &mdash; reassigns the directional combo that fires each Tactical Art (the <code>SCUS_942.54</code> arts table, the one place the combo lives, so the menu arrows and the trigger always match). Every art keeps its <em>input count</em> and each character's combos stay unique. Each character's Miracle Art is left alone.</li>
-    <li><strong>Monster stats</strong> &mdash; redistributes each monster's combat stats (HP / MP / ATK / DEF&uarr; / DEF&darr; / AGL / SPD) from the <code>battle_data</code> archive. <em>Shuffle</em> permutes each stat column across the roster (the difficulty budget is kept); <em>Randomize</em> draws each stat from that column. Spirit/SP is left alone.</li>
-    <li><strong>Special-attack power</strong> &mdash; redistributes the per-move power of the battle-action move table (enemy specials &amp; Seru magic &mdash; <em>not</em> party Tactical Arts). Each move keeps its own animation, effects, and sound; only how hard it hits changes.</li>
-    <li><strong>Element affinity</strong> &mdash; scrambles the 8&times;8 element matrix (which element is strong / weak against which). <em>Shuffle</em> keeps the same number of weaknesses &amp; resistances, just between different pairs; the per-character element assignment is untouched.</li>
-    <li><strong>Spell MP costs</strong> &mdash; redistributes the MP costs of the named, costed spells in the <code>SCUS_942.54</code> spell table. Free / internal enemy-tier entries never gain a cost.</li>
-    <li><strong>Equipment stat bonuses</strong> &mdash; redistributes the passive stat bonuses (INT / ATK / DEF&uarr; / DEF&darr; / SPD) of the equipment table, <em>within each slot type</em> (weapon power lands on another weapon, armor on armor). The equip-character restriction, accessory passive, and slot type never move.</li>
-    <li><strong>Equipment drops</strong> &mdash; a low per-battle chance (default 5%) to win one extra random weapon / armor / accessory, granted <em>on top of</em> the normal drop. Because a monster has only one drop slot, this can't be a data edit (that would destroy the normal drop) &mdash; instead it injects a tiny code hook into the battle-end reward routine that rolls the chance and adds a random gear id. The normal drop table (vanilla or shuffled / randomized) is never touched.</li>
-    <li><strong>Experience on the run</strong> &mdash; banks a slice of a fight's experience into the party whenever they successfully run away (vanilla awards nothing for fleeing). Like the equipment drop, this can't be a data edit &mdash; it injects a tiny code hook into the battle-action escape teardown that sums the fled formation's listed experience, takes 5% of it, and adds that to every party member's experience. The experience shows in the status screen immediately and applies as a level the next time a won battle tallies it.</li>
-    <li><strong>Weapon specialty</strong> &mdash; reassigns which weapon class each character favors (Vahn blades, Noa claws, Gala clubs/axes by default), permuting the three favored classes among them. Equipping an off-class weapon widens that character's <em>Arms</em> command in an arts combo, so fewer commands fit; this rewrites the per-(character, weapon) arm-cost byte in the player battle files (decompressing / re-compressing each section in place). The Astral Sword stays always-wide and can't be specialized in.</li>
-    <li><strong>Doors / exits</strong> &mdash; reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Two-way</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
-    <li><strong>House doors (experimental)</strong> &mdash; shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving). The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town &mdash; opt-in chaos.</li>
-    <li><strong>Starting items</strong> &mdash; replaces the new game's fixed Healing Leaf &times;5 with distinct random consumables (each a small random count), by rewriting the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place. The random fill shares the seed's seven-slot capacity (five with all-warps) with the convenience toggles below and adds on top of them rather than crowding them out.</li>
-    <li><strong>Starting level</strong> &mdash; begins the new game with the starting party already at the chosen level (up to 14) instead of 1. The new-game seed routine stamps the displayed level on every roster slot, so this rewrites that loop to the chosen level <em>and</em> recomputes each growth-capable character's stats (Vahn / Noa / Gala) from the disc's own growth curves &mdash; a level-10 start gives the whole party level-10 HP/ATK, not level-1 stats under a level-10 label. Each of those characters also gets a matching cumulative-XP / next-threshold seed so every status readout is exact &mdash; not just the lead's.</li>
-    <li><strong>Unused enemies</strong> &mdash; brings back two fully-formed monsters the shipped game never places: <strong>&ldquo;Comm&rdquo;</strong> and the <strong>Evil Bat</strong>. Only takes effect with <em>Randomize</em> encounters (a Shuffle can't introduce a new monster).</li>
-    <li><strong>Unused items</strong> &mdash; adds two items the game ships but never hands out: &ldquo;Something Good&rdquo; (a sell item) and a no-name accessory the randomizer names <strong>&ldquo;Seru Bell&rdquo;</strong>. Only affects the <em>Randomize</em> drop / chest / steal fills.</li>
+    <li><strong>Monster drops</strong> - reassigns the item each monster drops (and its chance). <em>Shuffle</em> redistributes the existing drops; <em>Randomize</em> draws from the valid item table.</li>
+    <li><strong>Random encounters</strong> - reassigns the monster ids in each scene's encounter formations. The <strong>Monster pool</strong> sub-option sets how wide a net is cast: <em>Scene</em> (each area's own monsters - every swap is one the area already loads), <em>Kingdom</em> (any monster from the same Drake / Sebucus / Karisto kingdom), or <em>World</em> (any monster on the disc, so late-game monsters can appear at the start). Boss / scripted fights are never touched. The <strong>Solo strong fights</strong> sub-option keeps the wider pools fair: it scores each monster by its combat-stat budget and, for any randomized formation whose strongest member is at least twice the area's native average, drops the pack down to that lone enemy - so an out-of-area heavy hitter shows up alone, never two or three at once. The baseline is each area's own original monsters (a stand-in for the party's strength there), so it adapts as the game scales.</li>
+    <li><strong>Treasure chests</strong> - reassigns the item each chest gives (the field-VM <code>GIVE_ITEM</code> inline operand), globally across every chest. The full quest / key / story item set (every unsellable item the disc prices at <code>0</code> - door keys, garden tools, eggs / talismans / books, letters, fishing rods, casino cards - minus the chest-found Ra-Seru equipment) is kept static so progression items stay where the player expects them and never spawn in an unrelated chest.</li>
+    <li><strong>Town shops</strong> - reassigns what each town store sells (the field-VM op <code>0x49</code> stock list).</li>
+    <li><strong>Casino prizes</strong> - reassigns the casino prize-exchange items; each prize keeps its coin price and progression gate.</li>
+    <li><strong>Steal items</strong> - reassigns what each monster yields to the Evil God Icon (the static <code>SCUS_942.54</code> steal table). The steal <em>chance</em> is always preserved - only the item changes.</li>
+    <li><strong>Arts button combos</strong> - reassigns the directional combo that fires each Tactical Art (the <code>SCUS_942.54</code> arts table, the one place the combo lives, so the menu arrows and the trigger always match). Every art keeps its <em>input count</em> and each character's combos stay unique. Each character's Miracle Art is left alone.</li>
+    <li><strong>Monster stats</strong> - redistributes each monster's combat stats (HP / MP / ATK / DEF&uarr; / DEF&darr; / AGL / SPD) from the <code>battle_data</code> archive. <em>Shuffle</em> permutes each stat column across the roster (the difficulty budget is kept); <em>Randomize</em> draws each stat from that column. Spirit/SP is left alone.</li>
+    <li><strong>Special-attack power</strong> - redistributes the per-move power of the battle-action move table (enemy specials &amp; Seru magic - <em>not</em> party Tactical Arts). Each move keeps its own animation, effects, and sound; only how hard it hits changes.</li>
+    <li><strong>Element affinity</strong> - scrambles the 8&times;8 element matrix (which element is strong / weak against which). <em>Shuffle</em> keeps the same number of weaknesses &amp; resistances, just between different pairs; the per-character element assignment is untouched.</li>
+    <li><strong>Spell MP costs</strong> - redistributes the MP costs of the named, costed spells in the <code>SCUS_942.54</code> spell table. Free / internal enemy-tier entries never gain a cost.</li>
+    <li><strong>Equipment stat bonuses</strong> - redistributes the passive stat bonuses (INT / ATK / DEF&uarr; / DEF&darr; / SPD) of the equipment table, <em>within each slot type</em> (weapon power lands on another weapon, armor on armor). The equip-character restriction, accessory passive, and slot type never move.</li>
+    <li><strong>Equipment drops</strong> - a low per-battle chance (default 5%) to win one extra random weapon / armor / accessory, granted <em>on top of</em> the normal drop. Because a monster has only one drop slot, this can't be a data edit (that would destroy the normal drop) - instead it injects a tiny code hook into the battle-end reward routine that rolls the chance and adds a random gear id. The normal drop table (vanilla or shuffled / randomized) is never touched.</li>
+    <li><strong>Experience on the run</strong> - banks a slice of a fight's experience into the party whenever they successfully run away (vanilla awards nothing for fleeing). Like the equipment drop, this can't be a data edit - it injects a tiny code hook into the battle-action escape teardown that sums the fled formation's listed experience, takes 5% of it, and adds that to every party member's experience. The experience shows in the status screen immediately and applies as a level the next time a won battle tallies it.</li>
+    <li><strong>Weapon specialty</strong> - reassigns which weapon class each character favors (Vahn blades, Noa claws, Gala clubs/axes by default), permuting the three favored classes among them. Equipping an off-class weapon widens that character's <em>Arms</em> command in an arts combo, so fewer commands fit; this rewrites the per-(character, weapon) arm-cost byte in the player battle files (decompressing / re-compressing each section in place). The Astral Sword stays always-wide and can't be specialized in.</li>
+    <li><strong>Doors / exits</strong> - reassigns where scene-transition doors lead (the field-VM <code>0x3F</code> named-scene-change ops). <em>Two-way</em> re-pairs doors so you can walk back the way you came; <em>one-way</em> reassigns each independently. A few big overworld hubs whose data can't grow in place keep their original doors.</li>
+    <li><strong>House doors (experimental)</strong> - shuffles the intra-town <code>0x23 MOVE_TO</code> target tiles per scene (multiset-preserving). The op is shared with NPC/cutscene movement, so this also scrambles some actor positions within each town - opt-in chaos.</li>
+    <li><strong>Starting items</strong> - replaces the new game's fixed Healing Leaf &times;5 with distinct random consumables (each a small random count), by rewriting the new-game seed <em>code</em> in <code>SCUS_942.54</code> (<code>FUN_80034A6C</code>) in place. The random fill shares the seed's seven-slot capacity (five with all-warps) with the convenience toggles below and adds on top of them rather than crowding them out.</li>
+    <li><strong>Starting level</strong> - begins the new game with the starting party already at the chosen level (up to 14) instead of 1. The new-game seed routine stamps the displayed level on every roster slot, so this rewrites that loop to the chosen level <em>and</em> recomputes each growth-capable character's stats (Vahn / Noa / Gala) from the disc's own growth curves - a level-10 start gives the whole party level-10 HP/ATK, not level-1 stats under a level-10 label. Each of those characters also gets a matching cumulative-XP / next-threshold seed so every status readout is exact - not just the lead's.</li>
+    <li><strong>Unused enemies</strong> - brings back two fully-formed monsters the shipped game never places: <strong>&ldquo;Comm&rdquo;</strong> and the <strong>Evil Bat</strong>. Only takes effect with <em>Randomize</em> encounters (a Shuffle can't introduce a new monster).</li>
+    <li><strong>Unused items</strong> - adds two items the game ships but never hands out: &ldquo;Something Good&rdquo; (a sell item) and a no-name accessory the randomizer names <strong>&ldquo;Seru Bell&rdquo;</strong>. Only affects the <em>Randomize</em> drop / chest / steal fills.</li>
   </ul>
   <p>The same seed always produces the same patched image, so a seed (shown after patching) reproduces a run exactly. Edits that can't be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
 </section>
@@ -334,6 +334,7 @@
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="randomizer.html">Randomizer / disc patcher</a>
+    <a href="../writeups/disc-patching/index.html">How it works: disc-patching techniques</a>
     <a href="../formats/lzs.html">LZS compression</a>
     <a href="../subsystems/script-vm.html">Field / event script VM</a>
   </div>

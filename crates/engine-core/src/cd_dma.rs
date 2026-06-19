@@ -256,7 +256,7 @@ pub trait CdDmaHost {
 }
 
 // =========================================================================
-// ProtCdDmaHost — concrete offline/WASM implementation
+// ProtCdDmaHost - concrete offline/WASM implementation
 // =========================================================================
 
 /// PSX main RAM size (2 MiB) used as the synthetic destination buffer.

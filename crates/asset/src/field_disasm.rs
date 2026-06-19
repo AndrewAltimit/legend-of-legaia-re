@@ -159,7 +159,7 @@ pub enum InsnInfo {
     Yield { kind: YieldKind },
     /// `0x38 CAM_CFG` - 3-byte camera config.
     CamCfg { op0: u8, op1: u8 },
-    /// `0x39 GIVE_ITEM` — add one of inline item `item_id` to the inventory
+    /// `0x39 GIVE_ITEM` - add one of inline item `item_id` to the inventory
     /// (`FUN_8004313C` window setup + `FUN_800421D4(item_id, 1)`; dispatcher
     /// `FUN_801DE840` case `0x39`). This is the treasure-chest item-give op; the
     /// earlier `PLAY_SFX` label was wrong (SFX cues go through `FUN_80035B50`).
@@ -208,7 +208,7 @@ pub enum InsnInfo {
         skip_delta: u16,
         skip_target: usize,
     },
-    /// `0x3F` — **named scene-change** ("warp by name").
+    /// `0x3F` - **named scene-change** ("warp by name").
     ///
     /// Copies a length-prefixed destination scene *name* from the bytecode and
     /// hands it to the scene-change packet (`FUN_8001FD44`, which writes the
@@ -219,12 +219,12 @@ pub enum InsnInfo {
     ///
     /// The destination name is a *slice of the bytecode* at `operand + 3`, not
     /// carried inline here; recover it with [`scene_change_name`]. This is
-    /// **not** a dialog opcode — field dialogue is the `0x4C` nibble-5 sub-3/4
+    /// **not** a dialog opcode - field dialogue is the `0x4C` nibble-5 sub-3/4
     /// path ([`MenuCtrlKind::Nibble5Dialog`]); only the over-approximating walk
     /// desyncing on a literal `?` (`0x3F`) in message text makes it *look* like
     /// one in text-heavy records.
     SceneChange {
-        /// Sign-extended `i16` at `operand[0..2]` — the destination's
+        /// Sign-extended `i16` at `operand[0..2]` - the destination's
         /// story/entry index (`FUN_8003CE9C` read). Not the 7-id door-warp
         /// `map_id`; distinct id space (observed values reach 155+).
         index: i16,
@@ -921,7 +921,7 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
         }
         // System-flag bank: 0x5x SET, 0x6x CLEAR, 0x7x TEST. The VM routes the
         // whole `0x50..=0x7F` range by `opcode & 0x70` (and masks the flag index
-        // with `0x8F`), so high-index flags reach TEST opcodes `0x78..=0x7F` —
+        // with `0x8F`), so high-index flags reach TEST opcodes `0x78..=0x7F` -
         // covered here too, not just `0x70..=0x77`.
         0x50..=0x7F => {
             need(1)?;
@@ -1400,7 +1400,7 @@ fn decode_menu_ctrl(
                 // Sub-1: 6-byte NPC / player move-to-tile with run dispatch.
                 // Mirrors the step handler's `[4C, 0x51, x_enc, z_enc, depth,
                 // move_id]` encoding (`crates/engine-vm/src/field/step.rs`).
-                // Common in placement records — without this arm the linear
+                // Common in placement records - without this arm the linear
                 // walker desyncs across every dialog NPC's `[story-flag,
                 // move-to-tile, JmpRel]` per-branch prologue.
                 1 => {
@@ -1862,7 +1862,7 @@ fn render_mnemonic(insn: &Insn) -> String {
 /// The name is a `name_len`-byte slice at `insn_start + header + 3` (header is
 /// 2 for the `0x80` cross-context form, 1 otherwise). Returns `None` when `insn`
 /// is not a `SceneChange`, the slice runs past `bytecode`, or the bytes aren't a
-/// clean ASCII scene label — the same desync guard the `0x3E` warp gate uses:
+/// clean ASCII scene label - the same desync guard the `0x3E` warp gate uses:
 /// the linear walk hits literal `?` (`0x3F`) bytes inside message text, so a
 /// caller must reject names that aren't lowercase-ASCII-ish CDNAME labels.
 /// Genuine destinations are short (`town01`, `dolk`, `rikuroa`, …).
@@ -1879,7 +1879,7 @@ pub fn scene_change_name(bytecode: &[u8], insn: &Insn) -> Option<String> {
 /// The clean-CDNAME-label gate shared by [`scene_change_name`] and the field-VM
 /// `0x3F` executor. A genuine destination name is short, non-empty, and a
 /// lowercase-ASCII / digit CDNAME label (`town01`, `dolk`, `rikuroa`, …).
-/// Rejects anything else — the desync guard for a literal `?` (`0x3F`) landing
+/// Rejects anything else - the desync guard for a literal `?` (`0x3F`) landing
 /// inside message text, which would otherwise decode a bogus "name". Returns the
 /// owned name on success.
 pub fn clean_scene_name(raw: &[u8]) -> Option<String> {

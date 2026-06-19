@@ -207,7 +207,7 @@ local function on_vsync()
         logline(string.format(
             "armed %d Read BPs on [0x%08X, +0x%X); passive Write BPs on 0x%08X + 0x%08X",
             WATCH_LEN, KEY_ITEM_START, WATCH_LEN, DEBUG_B8C2, DEBUG_B98F))
-        logline("READY — navigate menus / trigger item adds / warp scenes to generate reads.")
+        logline("READY - navigate menus / trigger item adds / warp scenes to generate reads.")
         logline("grep the output for unique PCs; heartbeat prints a summary every ~8 s.")
     end
 
@@ -231,7 +231,7 @@ logline(string.format("TRIGGER_OOB=%s OOB_ID=0x%02X  MAX_LOG=%d",
     TRIGGER_OOB and "yes" or "no", OOB_ID, MAX_LOG))
 logline("")
 logline("This probe logs every native read of the key-item bytes (the OOB write target).")
-logline("After the run, check the summary for unique PCs — those are the consumers.")
+logline("After the run, check the summary for unique PCs - those are the consumers.")
 logline("Any consumer that uses the id byte as an index without a bound is an exploit chain.")
 logline("")
 

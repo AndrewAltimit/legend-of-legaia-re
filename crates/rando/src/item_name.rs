@@ -5,12 +5,12 @@
 //! when the `--unused-items` toggle hands it out in a chest / drop / steal.
 //! This gives it the name **"Seru Bell"** by a same-size `SCUS_942.54` patch:
 //! write the string into a reserved constant region of the executable and
-//! repoint **only** id `0xFD`'s name pointer at it — the other ids that share
+//! repoint **only** id `0xFD`'s name pointer at it - the other ids that share
 //! the empty-string slot (`0x12`/`0x1A`/`0x52`/`0xB9`) are left alone.
 //!
 //! ## Where the string goes (and where it must NOT)
 //!
-//! The naive choice — the trailing zero-fill at the end of the data segment —
+//! The naive choice - the trailing zero-fill at the end of the data segment -
 //! is **wrong**: that span is zero in the file but is `.sbss`/`.bss`-class
 //! scratch the game overwrites with variables at runtime, so a string placed
 //! there renders as a single glyph that changes every frame (confirmed in
@@ -19,7 +19,7 @@
 //! runtime**.
 //!
 //! [`SERU_BELL_STRING_VA`] is such a region. The subtlety: a region that is zero
-//! in the file *and* zero in every runtime state is **not** automatically safe —
+//! in the file *and* zero in every runtime state is **not** automatically safe -
 //! it could be boot-cleared `.bss`/scratch (the loader / startup memsets it), in
 //! which case a string written to the file is wiped to zero at runtime (the name
 //! then renders empty). The first attempt fell into exactly this trap. The
@@ -45,7 +45,7 @@ pub const SERU_BELL_ID: u8 = 0xFD;
 /// optional, so this plain name renders cleanly without one).
 pub const SERU_BELL_NAME: &str = "Seru Bell";
 
-/// Virtual address the injected name string is written to — preserved rodata
+/// Virtual address the injected name string is written to - preserved rodata
 /// padding in the US-build data segment (see the module docs: inside the
 /// 1028-byte zero gap at `0x8007AB38`, flanked by rodata constants proven
 /// loaded-and-preserved across the file + every sampled runtime state). Sixteen

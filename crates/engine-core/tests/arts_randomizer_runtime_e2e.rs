@@ -1,5 +1,5 @@
 //! Disc-gated end-to-end oracle for the Tactical-Arts button-combo randomizer
-//! **at runtime** — the engine member of the randomizer oracle set (chest,
+//! **at runtime** - the engine member of the randomizer oracle set (chest,
 //! monster-drop, encounter, steal, shop, …).
 //!
 //! The randomizer's own disc-gated test (`crates/rando/tests/arts_patch_real`)
@@ -8,7 +8,7 @@
 //! reassigned, input counts + uniqueness + the Miracle Arts are preserved, and
 //! the touched SCUS sector stays EDC/ECC-valid. What it does **not** prove is
 //! that a runtime actually *recognises the new combo and fires the art* (and no
-//! longer fires it on the old combo) — "is it truly randomizing, or is the old
+//! longer fires it on the old combo) - "is it truly randomizing, or is the old
 //! combo still the trigger?".
 //!
 //! A savestate can't answer that cleanly (the same cache trap the other oracles
@@ -19,7 +19,7 @@
 //!
 //! The clean-room engine sidesteps that cache: it decodes the combo straight
 //! from the patched `SCUS_942.54` bytes and runs the real combo-recognition
-//! kernel — [`battle_arts::chain_matches_record`], the tail-match a directional
+//! kernel - [`battle_arts::chain_matches_record`], the tail-match a directional
 //! chain triggers an art with in retail. So this test, on a scratch copy of the
 //! real disc:
 //!   1. shuffles the arts combos and re-decodes the patched table off the
@@ -109,7 +109,7 @@ fn engine_matcher_fires_on_the_patched_combo_not_the_original() {
         let old = combo_bytes(b);
         let new = combo_bytes(a);
         if old == new {
-            continue; // unchanged (singleton length class) — nothing to assert
+            continue; // unchanged (singleton length class) - nothing to assert
         }
         // Same length (length-preserving randomizer) + different => neither is a
         // tail of the other.

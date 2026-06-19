@@ -13,7 +13,7 @@ below to jump within this page.
 
 **Overlay + key functions**
 - [Overlay structure](#overlay-structure)
-- [Key functions](#key-functions) — [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
+- [Key functions](#key-functions) - [controller `FUN_801E76D4`](#fun_801e76d4---world-map-controller-9320-bytes) · [debug-menu renderer `FUN_801EAD98`](#fun_801ead98---world-map-debug-menu-renderer-7280-bytes) · [entity tick `FUN_801DA51C`](#fun_801da51c---world-map-entity-tick-260-bytes)
 
 **Entity / encounter SM**
 - [Encounter-record installation](#encounter-record-installation) · [clean-room port](#clean-room-port--both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
@@ -26,8 +26,8 @@ below to jump within this page.
 - [Loading the kingdom geometry](#loading-the-kingdom-geometry-engine-port) · [placing the continent terrain](#placing-the-continent-terrain-engine-port) · [ground texturing](#ground-texturing) · [rendering the placed entities](#rendering-the-placed-entities) · [auto-engage on walk-over](#auto-engage-on-walk-over)
 
 **Render pipeline**
-- [Render pipeline](#render-pipeline) — [per-frame dispatch](#per-frame-dispatch-scus-resident) · [render tick `FUN_80016444`](#fun_80016444---scus-world-map-render-tick-1352-bytes) · [horizon emitter `FUN_801D7EA0`](#fun_801d7ea0---world-map-poly_ft4-batch-emitter-832-bytes)
-- [Top-view bulk-terrain render path](#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers) — [per-slot delta vs SCUS sibling](#per-slot-delta-vs-scus-sibling)
+- [Render pipeline](#render-pipeline) - [per-frame dispatch](#per-frame-dispatch-scus-resident) · [render tick `FUN_80016444`](#fun_80016444---scus-world-map-render-tick-1352-bytes) · [horizon emitter `FUN_801D7EA0`](#fun_801d7ea0---world-map-poly_ft4-batch-emitter-832-bytes)
+- [Top-view bulk-terrain render path](#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers) - [per-slot delta vs SCUS sibling](#per-slot-delta-vs-scus-sibling)
 - [Per-frame render-pass iterator `FUN_8002519c`](#per-frame-render-pass-iterator---fun_8002519c) · [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-render-dispatcher---fun_8001ada4) · [gate-arm chain](#gate-arm-chain---fun_801d1344---fun_801d8258)
 
 **Reference**
@@ -123,13 +123,13 @@ iterates the sprite-descriptor list at `DAT_801C93C8`. Present only in the
 
 Entry: `(entity_ptr)`. 5-state dispatcher on `entity[+0x8A]` (jump table at
 `0x801CEC28`). When `_DAT_80083808 == 0` and the entity state is 0: calls
-`FUN_800243F0` (the per-frame **BGM/asset poller** — it resolves the pending
+`FUN_800243F0` (the per-frame **BGM/asset poller** - it resolves the pending
 BGM id to a PROT slot, see [`asset-loader.md`](asset-loader.md#music--sfx-selection-bgm-lookup); it is
 *not* a location→scene resolver) and handles pad-button checks against
 `_DAT_8007BB38` for entity interaction. Called once per world-map entity per
-frame by the entity pool tick loop. (The body is the encounter→battle handoff —
+frame by the entity pool tick loop. (The body is the encounter→battle handoff -
 state 1 installs the formation cell and state 2/3 writes `_DAT_8007B83C = 8`;
-**scene/town transitions are not here** — those are the field-VM `0x3F`
+**scene/town transitions are not here** - those are the field-VM `0x3F`
 named-scene-change op, see [scene destinations](#scene-destinations).)
 
 #### Encounter-record installation
@@ -138,7 +138,7 @@ The body at `0x801DA620..0x801DA678` populates the global encounter formation
 cell from a per-encounter record pointed at by `entity[+0x94]`:
 
 1. Clear the 4-slot formation array at `0x8007BD0C..0x8007BD0F` (slots 3, 2,
-   1, then 0 — slot 0 is cleared in the delay slot of `JAL 0x801DE190`).
+   1, then 0 - slot 0 is cleared in the delay slot of `JAL 0x801DE190`).
 2. Read `monster_count = entity[+0x94][+0x3]`.
 3. Copy `entity[+0x94][+0x4 .. +0x4 + monster_count]` into the formation
    cell, byte-for-byte.
@@ -152,7 +152,7 @@ player context (`_DAT_8007C364[+0x10]`, which state 1 had raised). So the
 formation install and the battle launch happen in the **same tick** the
 carrier reaches state 1. State 0 reaches state 1 either via the random roll
 `FUN_801D9E1C` (which sets `+0x88`/`+0x8A`/`+0x94` from the rolled formation
-index) or — in a 0%-random town like `town01` — via a scripted advance from
+index) or - in a 0%-random town like `town01` - via a scripted advance from
 the scene's interaction bytecode.
 
 The carrier `entity_ptr` (`param_1`) is a **dedicated field entity**, distinct
@@ -169,7 +169,7 @@ at `0x8007BD0C` is the input to the battle-scene loader (`FUN_800520F0`); the
 adjacent byte at `0x8007BD11` is a battle-data PROT-id selector that picks
 between PROT entries `0x367` and `0x36D`.
 
-#### Clean-room port — both overworld and field
+#### Clean-room port - both overworld and field
 
 The same SM serves overworld entities **and** field-resident carriers. The
 clean-room port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
@@ -183,7 +183,7 @@ clean-room port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
   `false` and it never self-fires) until the field-interact dialogue-accept
   engages it: interacting with the carrier's placement (op `0x3E`, `op0 < 100`)
   arms the engage, and accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss)
-  calls `World::engage_field_carrier`, advancing it Idle → Activating — so the
+  calls `World::engage_field_carrier`, advancing it Idle → Activating - so the
   field-VM bytecode drives the fight rather than a manual API. The next
   `tick_field_carriers` then runs the state-1 body (`on_activating`, the
   `entity[+0x94]` formation copy) immediately followed by the `case 2/3`
@@ -220,17 +220,17 @@ via `install_world_map_entities_with_configs`):
   the inline bytes) when the player presses confirm while standing within one
   tile of the entity, and dismisses it on the next confirm/cancel press. This is
   the overworld talk-to path - portals are walk-onto, NPCs are talk-to. (`text_id`
-  is no longer sourced from the script — it was mis-read off the `0x3F` op, which
+  is no longer sourced from the script - it was mis-read off the `0x3F` op, which
   is the named scene-change, not a dialog op; the MAN classifier now passes
   `None` and the inline block is the text source.)
 
 #### NPC dialogue text source
 
 Placement-NPC and event dialogue text is **inline** in the record, not in the
-scene MES container — and it is found **structurally**, not by a dialog opcode.
+scene MES container - and it is found **structurally**, not by a dialog opcode.
 A field-scene interaction record carries its message as a run of `0x1F`-lead /
 `0x00`-terminated MES-glyph segments; `first_inline_dialog_offset` locates the
-first such segment directly (the field-VM walk can't be trusted inside text — it
+first such segment directly (the field-VM walk can't be trusted inside text - it
 desyncs on glyph bytes that look like opcodes). `OwnedDialogPanel::from_inline_dialog`
 skips to that `0x1F` lead and decodes the segment through the standard MES
 interpreter; `SceneHost::open_pending_dialog` prefers this inline path and falls
@@ -238,14 +238,14 @@ back to a `text_id` -> scene-MES lookup for the message-table dialogue paths. Th
 geometry-header layout and multi-segment (full menu) rendering are not yet pinned
 - the first segment renders today.
 
-> **Not the `0x3F` op — and not any opcode.** Earlier notes attributed this
+> **Not the `0x3F` op - and not any opcode.** Earlier notes attributed this
 > inline text to a `0x3F` "Dialog" opcode; `0x3F` is actually the **named
 > scene-change** (it copies a destination scene *name* and calls the scene-change
 > packet `FUN_8001FD44`; see [`script-vm.md`](script-vm.md) and
 > [scene destinations](#scene-destinations)). In fact field dialogue has **no
 > dedicated opcode**: the field-interact op (`0x3E`, `op0 < 100`) arms the actor's
 > interaction context, and the per-frame actor-dialog SM (`FUN_80039b7c`) + pager
-> (`FUN_801D84D0`) display the actor's inline interaction-script MES text — the
+> (`FUN_801D84D0`) display the actor's inline interaction-script MES text - the
 > structural `0x1F` pool above. See
 > [`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode).
 > The `0x3F`-as-dialog reading only arises when the over-approximating walk
@@ -301,7 +301,7 @@ field.
 
 The held d-pad is remapped through the overworld camera azimuth so "screen up"
 walks the player toward the top of the screen and "screen right" walks
-screen-right, regardless of how the map is framed — the same camera-relative
+screen-right, regardless of how the map is framed - the same camera-relative
 remap retail's `func_0x800467e8` applies (it feeds the pad through the camera
 yaw the renderer uses). `World::world_map_camera_relative_bits(azimuth, sx, sy)`
 rotates the screen delta into world space against the same azimuth
@@ -360,13 +360,13 @@ scene-init routine `FUN_8003AEB0` runs `FUN_8003A1E4` over partition-1 records
   initialised to `-1` and set later by that script.
 
 Real scenes decode cleanly: `town01` places 52 actors, the kingdom overworlds
-`map01`/`map02`/`map03` place 8 / 7 / 19 (several parked at tile `(127,127)` —
+`map01`/`map02`/`map03` place 8 / 7 / 19 (several parked at tile `(127,127)` -
 preloaded models the script repositions). So the placement gives **position +
 model + script pointer** for every entity.
 
 #### Classifying the entity kind from its script
 
-Retail has no static "entity kind" field — a placed actor *is* what its script
+Retail has no static "entity kind" field - a placed actor *is* what its script
 does. [`classify_placements`](../../crates/engine-core/src/man_field_scripts.rs)
 linearly disassembles each placement's per-entity interaction script (records
 `1..` are the actor interaction scripts) and reads the kind off its
@@ -375,13 +375,13 @@ distinguishing opcodes:
 - a **genuine warp** (the *base* `0x3E` with `op0` in `100..=106`, retail
   `scene_transition`) → a **Portal** whose target is the field-VM map id
   `op0 - 100` (`0..=6`). The map id selects a scene-*type* code overlay
-  (PROT `0x4d + map_id`), **not** a unique scene — the destination scene *name*
+  (PROT `0x4d + map_id`), **not** a unique scene - the destination scene *name*
   is set separately by the pre-WARP handler / scene-change packet, which lives in
   an uncaptured overlay, so the id is reported raw (see
   [`asset-loader.md` → WARP opcode flow](asset-loader.md#warp-opcode--scene-transition-flow-map_id));
 - an inline `0x1F`-lead **dialog-text block** or a **field interact** (`0x3E`
   with `op0 < 100`) and no warp → an **NPC** (sign / talk-to / event trigger).
-  (The dialog signal is the *structural* `0x1F` text scan, not an opcode — see
+  (The dialog signal is the *structural* `0x1F` text scan, not an opcode - see
   [NPC dialogue text source](#npc-dialogue-text-source);
 - none of those → **Plain** (a moving / animated / model-only actor, e.g. the
   lead-actor slot).
@@ -393,7 +393,7 @@ whose next byte is `>= 100`. Every such phantom in the corpus rides the `0x80`
 cross-context prefix and carries an out-of-range `op0` (175 / 179 / 200, i.e.
 text bytes), so the genuine-warp gate (`!extended && op0 in 100..=106`, see
 [`man_field_scripts::classify_placement`](../../crates/engine-core/src/man_field_scripts.rs))
-rejects it — `geremi` (a talk NPC, `op0=200`) and the leftover-JP `other7`
+rejects it - `geremi` (a talk NPC, `op0=200`) and the leftover-JP `other7`
 (`op0=175/179`) used to mis-classify as portals to non-existent maps 75 / 79 / 86
 / 100. Real data: `town01` classifies 14 NPCs / 38 plain; across the whole PROT
 corpus exactly **11** genuine door-warp portals survive (all map_id `0..=6`),
@@ -411,13 +411,13 @@ position** (Plain placements are skipped). So overworld portals + NPCs are
 
 #### Scene destinations
 
-The overworld doesn't enter towns through a partition-1 warp NPC — a corpus scan
+The overworld doesn't enter towns through a partition-1 warp NPC - a corpus scan
 finds none on the kingdom maps (only fishing-spot `0x3E` warps). Instead the
 scene's **controller script lists every destination as a `0x3F` named
 scene-change op** that carries the destination scene *name* inline (`[0x3F]`
 `[i16 index][u8 name_len][name][entry_x][entry_z][dir]`; the op hands the name to
 the scene-change packet `FUN_8001FD44`). So the destinations are recoverable
-straight from the disc bytes — the answer the "`map_id` → scene-name table lives
+straight from the disc bytes - the answer the "`map_id` → scene-name table lives
 in an uncaptured overlay" note assumed unreachable (that note is about the
 *separate* `0x3E` door-warp, whose 7-id selector still resolves its name in an
 uncaptured handler).
@@ -427,14 +427,14 @@ walks the partition-1 records, decodes the `0x3F` ops, and keeps each whose
 inline name passes a clean-CDNAME-label gate (rejecting the text-desync phantoms
 a literal `?` = `0x3F` inside a message produces). On `map01` (Drake overworld)
 it recovers `town01`, `town0b`, `town0c`, `dolk`, `dolk2`, `rikuroa`, `cave01`,
-`vell`, `vozz`, `suimon`, `keikoku`, `jou` — all real CDNAME scenes. Disc-gated
+`vell`, `vozz`, `suimon`, `keikoku`, `jou` - all real CDNAME scenes. Disc-gated
 `scene_destinations_disc.rs` pins the set + asserts every recovered name is a
 known CDNAME label.
 
 **Live wiring.** `SceneHost` decodes + caches this table on every scene load
 (`load_scene` → `refresh_scene_destinations`) and exposes it as
 `SceneHost::scene_destinations()` plus a `SceneDestinationResolver`
-(`SceneHost::destination_resolver()`) — an `i16`-keyed `index → scene-name`
+(`SceneHost::destination_resolver()`) - an `i16`-keyed `index → scene-name`
 resolver rebuilt from disc per scene. The `0x3F` op's `i16 index` is a
 story/entry id in its **own** id space (observed past `u8` range, e.g. `630`),
 so the resolver keys on `i16` and is deliberately **not** the `u8`-keyed
@@ -447,7 +447,7 @@ clean-CDNAME-label check), calls `host.scene_transition_named`, and
 [`SceneHost::tick`] drains the resulting `World::pending_named_scene_transition`
 to load that scene directly (world-map vs field routed by `is_world_map_scene`),
 ahead of the `0x3E` map-id path. Field **dialogue** was re-grounded off `0x3F`
-onto its real trigger — the field-interact op (`0x3E` with `op0 < 100`) opens the
+onto its real trigger - the field-interact op (`0x3E` with `op0 < 100`) opens the
 interacted actor's inline interaction-script text (see
 [`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode)).
 
@@ -460,7 +460,7 @@ The engine port loads the scene's **kingdom-bundle slot-1 landmark TMD pack**
 decodes slot 1 (via [`legaia_asset::kingdom_bundle`] + [`legaia_asset::pack`])
 into the TMD pool and slot 0 into the VRAM upload set, **instead of** the generic
 raw/LZS `tmd_scan` sweep. The generic sweep can't follow the LZS-compressed
-descriptor table, so before this it picked up only a handful of stray meshes —
+descriptor table, so before this it picked up only a handful of stray meshes -
 the historical "the world map looks like a battle map" symptom. Only the
 scene's primary kingdom entry contributes; the sub-area sibling entries are
 skipped so they neither leak stray meshes nor inflate `scene_aabb`.
@@ -473,7 +473,7 @@ which walks the scene's main field file (streamed into `_DAT_8007b85c`) and
 dispatches every descriptor through `FUN_8001f05c`. **Only dispatcher cases
 `0x02` (TMD pack) and `0x09` (bare TMD) install** into `DAT_8007C018` via
 `FUN_80026B4C`; the type-`0x05` slot-4 "MOVE" case only allocates a buffer and
-never installs — so slot-4 is *not* the terrain-mesh source.
+never installs - so slot-4 is *not* the terrain-mesh source.
 
 **The walk-view pool (pinned).** A real `map01` walk-view capture (game mode
 `0x03`, standing on the Drake overworld) settles `DAT_8007C018` to exactly **45
@@ -481,16 +481,16 @@ entries**: `[0..4]` = 5 party meshes (heap addresses ~`0x8014xxxx`), `[5..44]` =
 **the 40-mesh slot-1 landmark pack** (`prefix = 5`, install count 45). So the
 walk-view pool *is* the landmark pack the port already loads. (0085's and 0093's
 slot-0 atlases target the *same* VRAM pages, so the walk-view and overview pools
-are mutually-exclusive sets that clobber each other if co-loaded — see
+are mutually-exclusive sets that clobber each other if co-loaded - see
 [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).)
 
 Parsed live (absolute-pointer-fixed-up TMDs), the 40 scene meshes are all
 **small object-local tile/prop meshes** (dx/dz ≤ ~768 = a few 128-unit tiles,
-centred near origin, Y ≤ 0) — not one map-spanning stage. These 40 are the
+centred near origin, Y ≤ 0) - not one map-spanning stage. These 40 are the
 **landmark layer** (trees, mountains, the castle); they are *not* the continent
 ground, which is a procedural heightfield (see below).
 
-**Walk view ≠ overview — different pools, different placement.** The two retail
+**Walk view ≠ overview - different pools, different placement.** The two retail
 sweeps over the `.MAP` object grid serve two different render modes:
 
 - **Overview** (top-down, game mode `0x0D`): `FUN_801F69D8` over the
@@ -500,7 +500,7 @@ sweeps over the `.MAP` object grid serve two different render modes:
   [`legaia_asset::field_objects::parse_terrain_tiles`] + `pack_mesh_index`
   models, and it is correct **for the overview pool only**.
 - **Walk** (game mode `0x03`): the bulk continent ground is **not** a per-cell
-  pack-mesh sweep at all — it is a procedural heightfield (corner heights from
+  pack-mesh sweep at all - it is a procedural heightfield (corner heights from
   the `+0x4000` floor-nibble grid, confirmed by `FUN_80019278`; see below). The
   `.MAP` records' `+0x10` field is used only by the sparse placed-landmark layer
   (`FUN_8003A55C`, `flags & 0x4`); for the bulk ground cells `+0x10` is 0.
@@ -543,7 +543,7 @@ the `.MAP` grid record index and `actor[+0x90]` = the object's MAN interaction
 script. A direct walk of the live render list (head `*(0x8007C354) = 0x80083BCC`,
 via node `+0x0`; for each actor `+0x56` = render mode, `+0x60` = record index,
 `+0x44` = mesh chain whose first entry equals `DAT_8007C018[i] + 0xc`) gives the
-`rec → pool` pairs: `349→11, 414→36, 430→34, 474→21, 411→19, 409→7, …` — the pool
+`rec → pool` pairs: `349→11, 414→36, 430→34, 474→21, 411→19, 409→7, …` - the pool
 is `actor+0x64` (see below), matched exactly 14/14.
 
 **The per-object pool index is `record[+0x10] + prefix`** (pinned via
@@ -558,20 +558,20 @@ actor+0x64 = *(s16*)(_DAT_1f8003ec + (actor+0x60)*0x20 + 0x10) + DAT_8007b6f8
            = .MAP_record[obj_idx].+0x10 (model) + prefix          (prefix = 5)
 ```
 
-i.e. **`pool = record[+0x10] + prefix`** — the existing
+i.e. **`pool = record[+0x10] + prefix`** - the existing
 [`legaia_asset::field_objects::pack_mesh_index`] (`+0x10`) *plus* the prefix.
 Confirmed at the real live `.MAP` buffer `_DAT_1f8003ec = 0x80139530`
 (`474 → 16+5=21`, `349 → 6+5=11`, `414 → 31+5=36`, `430 → 29+5=34`,
 `411 → 14+5=19`). `FUN_80024e08(actor, model)` is the direct set-model primitive
 for script-driven (non-`.MAP`-grid) actors. The **walk continent grid gate is
 cell bit `0x1000`** (15389 cells in the live grid), distinct from the overview's
-`0x2000` (304 cells) — so the walk sweep is `(cell & 0x1000)`, not
+`0x2000` (304 cells) - so the walk sweep is `(cell & 0x1000)`, not
 `parse_terrain_tiles`'s `0x2000`. MAN partition 1 supplies the NPC/portal/party
 placements (decoded via
 [`legaia_asset::man_section::ManFile::actor_placements`]).
 
 **The continent ground is a procedural heightfield, not instanced meshes.**
-This is confirmed by **`FUN_80019278`** (SCUS, always-resident — unambiguous, no
+This is confirmed by **`FUN_80019278`** (SCUS, always-resident - unambiguous, no
 overlay aliasing), the bilinear **ground-height sampler**: from an entity's XZ
 (`actor+0x14/+0x18`) it reads the object-grid cell (`+0x8000`, tests the `0x1000`
 walk bit and the `0x1800` mask, sets the actor's `0x800000` off-map flag), then
@@ -588,13 +588,13 @@ The only per-cell terrain emitter that sweeps this grid is **`FUN_801F69D8`**
 cell it reads the object record (grid base + `(cell & 0x1ff) * 0x20`), takes the
 **mesh-pool index from `+0x10`** (`record[+0x10]` plus a per-scene base, into a
 drawable-pointer table), computes the same bilinear corner height as
-`FUN_80019278`, and submits the per-cell mesh through `FUN_80043390` — the sole
+`FUN_80019278`, and submits the per-cell mesh through `FUN_80043390` - the sole
 caller of that bulk-terrain emit. The overview ground is therefore **per-cell
 meshes** keyed by `+0x10`, each carrying its own TMD UVs. `FUN_80019278` (the
 height math) is the reliable anchor and is all the heightfield port needs for
 correct geometry. (The earlier `FUN_801F5748` write-probe lead is dead: in a
 genuine continent-**walk** RAM image that address disassembles as data, not
-code — the `0x801F76xx` range aliases across overlays.)
+code - the `0x801F76xx` range aliases across overlays.)
 
 **Engine status.** The continent ground now renders as a **heightfield
 surface**: [`Scene::walk_heightfield`] →
@@ -605,11 +605,11 @@ uploads it and draws it as the ground, with the placed landmarks
 ([`Scene::walk_object_placements`], the `flags & 0x4` slot-1 pack meshes via
 `record[+0x10]+prefix`) on top. Verified against the real disc: map01/02/03
 build dense (>10k-quad) heightfields with genuine elevation variation. The old
-`walk_terrain_tiles` per-cell pack-mesh sweep — which flooded ~97% of cells
-with pool-5 because the bulk-terrain records carry `+0x10 == 0` — is removed.
+`walk_terrain_tiles` per-cell pack-mesh sweep - which flooded ~97% of cells
+with pool-5 because the bulk-terrain records carry `+0x10 == 0` - is removed.
 
 **Slot-4 vertex-pool inspection overlay.** The kingdom bundle's slot 4 (the
-per-kingdom object-mesh library — confirmed object-local GTE vertex pools, see
+per-kingdom object-mesh library - confirmed object-local GTE vertex pools, see
 [`world-map-overlay.md`](../formats/world-map-overlay.md)) is decoded onto
 [`SceneResources::world_map_slot4`] for every `SceneLoadKind::WorldMap` scene
 (and only those). With `LEGAIA_WORLDMAP_SLOT4=1`, `play-window` builds a
@@ -627,7 +627,7 @@ The walk-view continent ground is drawn as a field of **`POLY_FT4` (cmd `0x2C`)
 textured quads, one `32×32`-texel quad per visible cell** in a window around the
 player, emitted in a **row-major world-cell sweep** (the quads sit in contiguous
 runs in the prim pool, screen-X stepping along each swept row). Each cell's
-texture is selected **per cell** from a **terrain-type-keyed multi-page atlas** —
+texture is selected **per cell** from a **terrain-type-keyed multi-page atlas** -
 grass, mountain, water, and forest cells each sample a different VRAM page.
 
 The selector is the cell's object-record `+0x14..+0x18` run (the record reached
@@ -636,13 +636,13 @@ through `cell & 0x1ff` → `×0x20`), byte-verified against the retail prim pool
 | record byte | meaning |
 |---|---|
 | `+0x14` | `8×8` atlas **tile** index (`u = (id % 8) × 32`, `v = (id / 8) × 32`); `0..63` |
-| `+0x15` | PSX **`tpage`** word — the terrain VRAM page (= terrain type) |
+| `+0x15` | PSX **`tpage`** word - the terrain VRAM page (= terrain type) |
 | `+0x16..+0x18` | PSX **`clut`** (CBA) word (`r[0x16] | r[0x17] << 8`) |
 
 **Corner→texel orientation.** Within each cell's `32×32` rect, **U runs along
 +X/col** (left edge = the tile's `u_lo`) but **V is flipped relative to +Z/row**:
 the low-Z (row) corner takes the tile's *bottom* texel row, the high-Z corner the
-*top* row. Measured camera-independently from the retail prim pool — recovering
+*top* row. Measured camera-independently from the retail prim pool - recovering
 each ground `POLY_FT4`'s world `(col, row)` (run-aligned + per-cell tile/page/clut
 matched) and reading its per-corner UVs gives `(c,r)→(u_lo,v_hi)`,
 `(c,r+1)→(u_lo,v_lo)` for **~96–100%** of cells across the mountain + coast
@@ -664,8 +664,8 @@ on the aligned cells the quad's tile / page / clut equal the record's
 `+0x14` / `+0x15` / `+0x16..+0x18` for **100%** of cells across mountain + coast
 captures.
 
-> The earlier reading — "single `0x1A` grass page, positional `(col % 3,
-> row % 3)`, `+0x14` unused metadata" — was a **misread**. Grass cells happen to
+> The earlier reading - "single `0x1A` grass page, positional `(col % 3,
+> row % 3)`, `+0x14` unused metadata" - was a **misread**. Grass cells happen to
 > use page `0x1A` with `+0x14` in the top-left `3×3` block of the `8×8` atlas, so
 > the mod-3 cross-row sequence was coincidental. `+0x14` **is** the tile
 > selector; the page/CLUT come from `+0x15`/`+0x16`.
@@ -677,12 +677,12 @@ single ground mesh samples grass / mountain / water / forest pages per cell;
 `play-window` draws it. `GROUND_ATLAS_TPAGE` / `_CLUT` remain only as the grass
 fallback for cells whose record carries no terrain run. (Distinct from the
 **top-view** bulk continent, which is per-cell *meshes* via `FUN_80043390` / the
-MAN `0x7F`-sentinel resolver — see
+MAN `0x7F`-sentinel resolver - see
 [`world-overview-viewer.md`](world-overview-viewer.md).)
 
 **Ocean animation.** The water tile is a 4bpp texture at fb `(768, 256)` whose
 CLUT row at fb `(0, 506)` (CBA `0x7E80`) the retail engine DMAs one of 13
-precomputed BGR555 frames into each animation step — the rolling-wave shimmer.
+precomputed BGR555 frames into each animation step - the rolling-wave shimmer.
 The 13-frame table is the shared global asset across the three kingdoms; the
 tile texture + base CLUT are per-kingdom ([`legaia_asset::ocean`]). In the live
 engine the ocean texture + base CLUT already land in VRAM via the kingdom
@@ -703,7 +703,7 @@ tail at 40..47, all phase-locked to the ocean), row **508** animates head
 entries `{1, 14, 15, 26, 27}` and live-maintains a mirror `[32..47] ==
 [0..15]` over a disc-base palette it overwrites, and row **509** animates
 exactly cols `{42, 43}`. Row 507 is fully static. The `(48, 500)` sibling
-destination (next paragraph) is censused dynamic too — cols `62..63` vary
+destination (next paragraph) is censused dynamic too - cols `62..63` vary
 across the map01-band captures, so the whole 16-wide cell is excluded (a
 `MoveImage` rewrites all 16 entries; the stable columns merely coincide
 across the strip's frames). The VRAM parity oracle excludes exactly the
@@ -711,8 +711,8 @@ censused columns for world-map scenes and asserts the rest
 (`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`).
 
 The destination-cell set is **kingdom-universal**: on the resident Sebucus /
-Karisto captures every censused destination cell — `(0/16/32, 506)`,
-`(0/16/32, 508)`, `(32, 509)`, `(48, 500)` — holds a 16-px-aligned window of
+Karisto captures every censused destination cell - `(0/16/32, 506)`,
+`(0/16/32, 508)`, `(32, 509)`, `(48, 500)` - holds a 16-px-aligned window of
 that state's own strip park rows (same test file, cross-kingdom leg), i.e.
 the copy family runs against per-kingdom strips with kingdom-invariant
 destination operands. The row-508 mirror, by contrast, is a **map01 script
@@ -722,18 +722,18 @@ that differs from `(0, 508)`.
 **The writer is the script-driven CLUT-cell effect family**, not a single
 hardcoded DMA. A map01-resident capture's libgpu command queue holds the
 smoking gun: 16×1 GP0 `0x80` VRAM→VRAM copy packets whose destinations are
-exactly the censused cells — `(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`
-plus a `(48, 500)` sibling — and whose sources walk frame strips parked in
+exactly the censused cells - `(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`
+plus a `(48, 500)` sibling - and whose sources walk frame strips parked in
 VRAM rows 498 / 501..505 in 16-px steps (the 13-frame palette banks). Two
 field-overlay handlers emit them:
 
-- `FUN_801E4C58` — the field-VM `0x4C` n6 sub-`0x61` emitter: a one-shot
+- `FUN_801E4C58` - the field-VM `0x4C` n6 sub-`0x61` emitter: a one-shot
   16×1 CLUT-cell write whose **coordinates are script operands** (source
   `(x, y)` at instruction `+5`/`+7`, destination at `+9`/`+0xB`, read via the
   misaligned-u16 helper `FUN_8003CE9C`). Non-zero source-y enqueues a libgpu
   `MoveImage` cell copy; zero source-y replicates the `+5` halfword as a flat
   BGR555 colour across all 16 entries and `LoadImage`s it.
-- `FUN_801E4794` — the multi-frame **cross-fade** state machine (installed
+- `FUN_801E4794` - the multi-frame **cross-fade** state machine (installed
   via the `[0xFFFF0000][handler]` descriptor records at `0x801F291C+`):
   captures two 16-colour cells (`StoreImage` of `+1`/`+3` and `+5`/`+7`),
   precomputes per-entry per-channel step deltas `(B−A)/frames` (`+0xD`),
@@ -742,7 +742,7 @@ field-overlay handlers emit them:
 
 Both bottom out in the statically-linked libgpu (`MoveImage FUN_80058490`,
 which patches the static 5-word GP0 packet template at `0x80078DFC`;
-`LoadImage FUN_800583C8`; `StoreImage FUN_8005842C`) — which is why no
+`LoadImage FUN_800583C8`; `StoreImage FUN_8005842C`) - which is why no
 `y = 506/508/509` rect constant exists in any code image: the rows live in
 the scene's field-VM bytecode operands. The lockstep phase coupling across
 rows comes from sibling script ops sharing the frame counter, not from one
@@ -758,7 +758,7 @@ else                                            // DEV-HOST
     FUN_8003e6bc("DATA\FIELD\<scene>.MAP", ...) // break 0x103 fopen on the dev PC
 ```
 
-On **retail** (`_DAT_8007b8c2 != 0`, `_DAT_8007b868 == 0` — both confirmed live)
+On **retail** (`_DAT_8007b8c2 != 0`, `_DAT_8007b868 == 0` - both confirmed live)
 the `.MAP` is resolved purely by **PROT entry index**: `param_3` is read by the
 field-init caller (`FUN_801d6704` @ `0x801d6ae8`) from the global at
 **`0x80084540`** (the word right before the scene-name string at `0x80084548`),
@@ -767,14 +767,14 @@ and `FUN_8003e8a8` indexes the in-RAM PROT TOC at `0x801c70f0`
 `FUN_8003e8a8`). So the entry a scene loads is pinned by `0x80084540`, and a live
 Drake walk capture reads **`0x80084540 = 0x55 = 85`** → the walk `.MAP` is **PROT
 CDNAME/runtime index 85**, which `FUN_8003e8a8` resolves to `toc[87] = 3243` →
-**PROT.DAT offset `0x655800`** — and that region is the `.MAP` records+grid
+**PROT.DAT offset `0x655800`** - and that region is the `.MAP` records+grid
 **raw** (99.7% byte-identical to the live buffer; records & walkability 100%, no
 compression). NB the per-entry *extractor* mis-slices this: its `0085_map01.BIN`
 is a `[u16 count=46][46×u16 offsets]` field-object/script pack at `0x668000`,
 **not** the `.MAP`; the real `.MAP` is filed under the overlapping manifest entry
 83 (the extractor's entry numbering is offset ~2 from the runtime `toc[p+2]`).
 
-The **`break 0x103`** path (`FUN_800608f0`) is the **dev-host `fopen`** — a PsyQ
+The **`break 0x103`** path (`FUN_800608f0`) is the **dev-host `fopen`** - a PsyQ
 host-link open of a real `DATA\FIELD\<scene>.MAP` (+ `<scene>.PCH` at `+0x12000`,
 + `\efect.dat`; extensions from `DAT_8007b3bc`/`DAT_8007b3c4`, scene name from
 `0x80084548`) on the *developer's PC*. It carries **no** extension→PROT mapping,
@@ -797,7 +797,7 @@ pairing the placement coordinate with its coarse `WorldMapEntityKind`
 plane (the placements are 2D), so markers sit on the walking plane. The native
 `play-window` draws each as a kind-coded upright marker (a vertical post plus a
 small base cross, colour-keyed: portals cyan, NPCs green, encounter zones red)
-through the Lines pipeline — the same overlay slot the effect outlines use, and
+through the Lines pipeline - the same overlay slot the effect outlines use, and
 mutually exclusive with them since no effects spawn on the world map. The
 markers share the player's coordinate frame (both come from the scene MAN), so
 they read correctly relative to the player even while the kingdom terrain mesh
@@ -825,12 +825,12 @@ axes equally, so a diagonal would otherwise travel ~1.41x the cardinal speed.
 The portals fire themselves. [`World::auto_engage_world_map_portals`] runs each
 `tick_world_map` (right after locomotion, before the entity-SM step): any
 `Portal` entity whose placement tile (`pos >> 7`) matches the player's current
-tile is driven to its transition state — exactly what a host
-[`World::engage_world_map_entity`] call does — so the same tick's SM step
+tile is driven to its transition state - exactly what a host
+[`World::engage_world_map_entity`] call does - so the same tick's SM step
 surfaces the [`FieldEvent::WorldMapTransition`] with the portal's target map and
 the host loads the destination. Only `Idle` portals are engaged (a portal fires
 once per visit; standing on the tile doesn't re-trigger). NPCs are **not**
-auto-engaged — they are talk-to, driven by the SM's idle-interact path, not
+auto-engaged - they are talk-to, driven by the SM's idle-interact path, not
 walk-onto. The clean-room stand-in for retail's per-entity
 player-position-in-zone check; the region table (the random-encounter driver)
 is the other half of overworld gameplay, fully boot-path seeded.
@@ -1042,7 +1042,7 @@ overlay (SCUS-side candidates are all HUD/menu sprite batchers). The dynamic
 prim-pool-writers probe
 ([`scripts/pcsx-redux/autorun_prim_pool_writers.lua`](../../scripts/pcsx-redux/autorun_prim_pool_writers.lua))
 confirms it: top-of-list PC hits land in the `0x801F7344..0x801F8DBC`
-overlay-resident range — the eight high-mode renderers pinned by the dispatch
+overlay-resident range - the eight high-mode renderers pinned by the dispatch
 table above. The source mesh data is the kingdom slot-1 TMD pack the landmarks
 come from, plus the runtime-positioned character/NPC mesh chains in
 `_DAT_8007C354` and siblings.
@@ -1113,7 +1113,7 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
   - `FUN_80029888(...)` - environment-mapped TMD when
     `actor[+0x7a] != 0`.
   - `FUN_8002735C(...)` - 60-GTE Legaia TMD renderer (the
-    **landmark emit leaf** — each landmark TMD in Drake's 40-mesh
+    **landmark emit leaf** - each landmark TMD in Drake's 40-mesh
     kingdom pack passes through here; the bulk continent ground
     terrain is *not* drawn from here).
 - **cases 1, 2, 3, 6, 7, 8, B** - distance-LOD / particle / sprite-billboard
@@ -1177,14 +1177,14 @@ landmark layer in real-time WebGL 3D from a disc image. Its docs live
 in a sibling file because the viewer is a clean-room deliverable
 distinct from the retail subsystem analysis above:
 
-- [`world-overview-viewer.md`](world-overview-viewer.md) — layout
+- [`world-overview-viewer.md`](world-overview-viewer.md) - layout
   engine for unplaced slot-1 TMDs, distance-cue fog pass, bulk-terrain
   placement resolver, per-kingdom fog colour, ocean tile + 13-frame
   CLUT animation, camera anchors.
 
 ## See also
 
-**Reference** —
+**Reference** -
 [World-overview viewer](world-overview-viewer.md) ·
 [Motion VM](motion-vm.md) ·
 [Encounter record](../formats/encounter.md) ·

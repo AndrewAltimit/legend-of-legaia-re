@@ -3,7 +3,7 @@
 //! A randomizer's whole contract is that a given seed always produces the same
 //! result. Pulling that from an external crate's generator risks the output
 //! shifting when the dependency changes its algorithm, so the randomizer uses
-//! its own [`SplitMix64`] — a tiny, well-known generator whose output is fixed
+//! its own [`SplitMix64`] - a tiny, well-known generator whose output is fixed
 //! forever by the constants below. Same seed in, same byte-stream out, on any
 //! machine and any build.
 

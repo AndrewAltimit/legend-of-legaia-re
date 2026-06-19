@@ -75,7 +75,7 @@ fn vahn_battle_palette_lands_on_mesh_rows() {
 }
 
 /// Noa (PROT 0864) and Gala (PROT 0865) equipment-robust palettes cover every
-/// column their battle mesh samples — the condition for a colour-complete render.
+/// column their battle mesh samples - the condition for a colour-complete render.
 /// Gala in particular validates the rec0-relative `0x2000` `sec_base` alignment
 /// (a `0x1000`-aligned `sec_base` lands his sub region on a zero-padded block).
 #[test]

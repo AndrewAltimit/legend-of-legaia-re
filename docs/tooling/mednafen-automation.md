@@ -367,18 +367,18 @@ Live `.mc{slot}` files get overwritten every time you play, so a slot can
 silently drift away from the scenario it's catalogued as. Two fields guard
 against trusting a drifted slot:
 
-- **`backup_fingerprint`** — sha256 of an immutable copy stashed in
+- **`backup_fingerprint`** - sha256 of an immutable copy stashed in
   `saves/library/<emulator>/<fingerprint>.<ext>` (gitignored; the manifest
   field is the committed catalogue, the library is the bytes). When set,
   consumers resolve this stable copy *in preference to* the live slot.
   `scripts/manage-states.py` and `ScenarioManifest::mednafen_save_path` both
   honour it.
-- **`ram_fingerprint_sha256`** — sha256 of the first 64 KiB of main RAM in the
+- **`ram_fingerprint_sha256`** - sha256 of the first 64 KiB of main RAM in the
   save state. Computed directly from the save (no emulator re-run) by
   `legaia_engine_shell::mode_trace_oracle::save_ram_fingerprint`. The mode-trace
   oracle tests (`mode_trace_e3`, `v0_1_playthrough`) gate the live-slot fallback
   on this digest: a slot that no longer matches the catalogued value is
-  **skipped, not failed** — comparing the engine against an arbitrary save
+  **skipped, not failed** - comparing the engine against an arbitrary save
   proves nothing. A scenario with a `backup_fingerprint` resolves to the stable
   library copy and passes the gate by construction.
 

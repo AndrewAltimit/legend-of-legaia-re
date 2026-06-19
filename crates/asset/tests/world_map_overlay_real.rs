@@ -116,7 +116,7 @@ fn slot4_parses_for_every_kingdom() {
         // The 3D segment emitter (the live-engine inspection overlay's
         // geometry source) uses the same row-major group-polyline topology,
         // so it yields the same segment count as the (X, Z)-projected
-        // RowMajor path — but preserves the full 3D coordinate, so at least
+        // RowMajor path - but preserves the full 3D coordinate, so at least
         // one segment must carry a non-zero Y endpoint (the bodies are
         // object-local 3D meshes, not flat top-down contours).
         let segs = world_map_overlay::wireframe_segments_3d(&parsed, &opts);

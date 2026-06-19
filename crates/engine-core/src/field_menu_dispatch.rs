@@ -727,7 +727,7 @@ mod tests {
     }
 
     /// Equipping over an occupied slot returns the swapped-out item to the bag
-    /// and removes the newly-equipped one — no item loss, no duplication.
+    /// and removes the newly-equipped one - no item loss, no duplication.
     #[test]
     fn apply_equip_outcome_returns_the_swapped_out_item_to_the_bag() {
         let mut w = fresh_world();

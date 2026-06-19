@@ -7,7 +7,7 @@
 //! `ghidra/scripts/funcs/80042558.txt`) walks each active party member's
 //! eight equipment-slot bytes, resolves every equipped item to a 64-slot
 //! passive-effect index (`legaia_asset::accessory_passive`: descriptor `+3`
-//! byte for accessories, equip-record `+5` byte for equipment — both
+//! byte for accessories, equip-record `+5` byte for equipment - both
 //! sentinel-gated at `< 0x40`), and sets bit `index` in the character's
 //! 4×`u32` ability bitfield at record `+0xF4`. The four words are then OR'd
 //! across the party into the global mask at `DAT_80074358` (bit-tested by
@@ -100,7 +100,7 @@ impl AccessoryPassives {
     }
 
     /// The 4×`u32` ability bitfield a character's eight equipment slots
-    /// derive — the bit-resolution arm of `FUN_80042558`: every equipped
+    /// derive - the bit-resolution arm of `FUN_80042558`: every equipped
     /// item's passive index becomes bit `index & 0x1F` of word `index >> 5`.
     /// Empty slots (id `0`) and items without a passive contribute nothing.
     pub fn bits_for_equipment(&self, equip: &[u8; 8]) -> [u32; ABILITY_WORDS] {

@@ -109,7 +109,7 @@ pub struct BattleHitFx {
 
 /// One battle sound-effect cue surfaced for the host to play through its SFX
 /// bank. Mirrors [`BattleHitFx`]'s "drain and present" pattern, but for audio:
-/// it carries no gameplay-state side effect — the host just fires the sound.
+/// it carries no gameplay-state side effect - the host just fires the sound.
 ///
 /// `kind` is the [`crate::art_strike::ScheduledCue`] kind = the art-record
 /// `HitCue::kind` (e.g. `0x1A` generic hit). It is the **SfxBank cue id

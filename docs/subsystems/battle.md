@@ -9,13 +9,13 @@ clean-room engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0)
-- [Battle background](#battle-background) — [ground grid](#backdrop-ground--a-procedural-flat-grid-func_0x801d02c0) · [dome](#backdrop-dome--sky--distant-mountains-prot-88-for-map01) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground--a-procedural-flat-grid-func_0x801d02c0) · [dome](#backdrop-dome--sky--distant-mountains-prot-88-for-map01) · [camera](#battle-camera-exact) · [party meshes](#battle-party-meshes-assembled)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
 - [Battle context struct](#battle-context-struct)
 - [Range / line-of-sight (`FUN_8004E2F0`)](#range--line-of-sight-fun_8004e2f0)
-- [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) — [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
+- [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
 - [Stat aggregator (`FUN_80042558`)](#stat-aggregator-fun_80042558)
 - [Battle archive (`FUN_80052FA0` / `FUN_800542C8`)](#battle-archive-fun_80052fa0--fun_800542c8)
 - [Character record layout](#character-record-layout)
@@ -26,7 +26,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 - [Battle round lifecycle](#battle-round-lifecycle) · [command runner](#battle-command-runner) · [BattleSession Resolve driver](#battlesession-resolve-driver) · [HUD model](#battle-hud-model) · [SFX bank](#sfx-bank--scheduler)
 - [Inventory item-use session](#inventory-item-use-session) · [Encounter system](#encounter-system) · [target picker](#battle-target-picker)
 - [Equipment catalog](#equipment-catalog) · [Seru capture + spell learning](#seru-capture--spell-learning) · [Tactical Arts chain editor](#tactical-arts-chain-editor) · [rewards composite](#battle-rewards-composite)
-- [Live gameplay loop — Field ↔ Battle](#live-gameplay-loop--field--battle-in-tick) — [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
+- [Live gameplay loop - Field ↔ Battle](#live-gameplay-loop--field--battle-in-tick) - [auto vs player-driven](#auto-resolve-vs-player-driven) · [post-battle Seru learning](#post-battle-seru-learning)
 
 **Runtime-memory captures + tests**
 - [Encounter trigger memory layout](#encounter-trigger---runtime-memory-layout) · [scene-init residency](#battle-scene-init-residency-window) · [item-use residency](#item-use-battle-event-residency) · [stat-growth observations](#captured-stat-growth-observations)
@@ -45,7 +45,7 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
   entry (`jal 0x80026b4c` = `FUN_80026B4C`, the sole `DAT_8007C018` installer),
   then loads `efect.dat` / PROT `0x36b` (875). **This registration fills the
   effect/model window `DAT_8007C018[3..]`, NOT the party `[0..=2]`.** The party
-  battle meshes come from a **separate** pack — **PROT 1204 (`other5`)**,
+  battle meshes come from a **separate** pack - **PROT 1204 (`other5`)**,
   installed into `DAT_8007C018[0..=2]` for Vahn/Noa/Gala by **static SCUS battle
   state-handlers** (NOT an overlay): `FUN_800513F0` registers the active-actor
   meshes (`tmd_register(*(actor+0x50)+0x18)` in a `while<3` loop, alongside the
@@ -53,12 +53,12 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
   party members (per-member loop, `tmd_register(*(*rec+4))`). Both are dispatched
   indirectly, so a static `DAT_8007C018` cross-reference finds no writer; pinned
   by a write-watchpoint at battle entry ([`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua),
-  installed pointers byte-match the battle form — e.g. Vahn at `0x80165f48`). The
+  installed pointers byte-match the battle form - e.g. Vahn at `0x80165f48`). The
   party actors' mesh pointer `actor[+0x230]` resolves
   to those `[0..=2]` entries. The installed meshes are **assembled per
   character from the player battle files** (equipment-id-selected sections,
   spliced by `FUN_80052FA0`/`FUN_800536BC`; byte-verified against the live
-  party vertex pools — [character-mesh.md § Battle form](../formats/character-mesh.md#battle-form--assembled-from-the-player-files)).
+  party vertex pools - [character-mesh.md § Battle form](../formats/character-mesh.md#battle-form--assembled-from-the-player-files)).
   The field pack 0874 §0 is field-only; PROT 1204 is the Baka Fighter
   default-equipment sibling pack.
 - **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
@@ -72,19 +72,19 @@ The `asset-viewer battle-scene` subcommand drives the engine-side composite end-
 ## Battle background
 
 A battle is fought **on the environment where the encounter triggered, kept
-resident and rendered as a full 3D backdrop** — the battle does not load a
+resident and rendered as a full 3D backdrop** - the battle does not load a
 separate flat arena. The battle-action SM only swaps the **camera** (from the
 field/world walk camera to a slow orbit around the party↔enemy midpoint) and
 overlays the actors + HUD; the surrounding terrain keeps drawing through its
 normal renderer.
 
-For an **overworld (world-map) encounter** the backdrop is **two layers** —
+For an **overworld (world-map) encounter** the backdrop is **two layers** -
 a flat tiled **ground grid** + the map's `scene_tmd_stream` **dome** (sky +
-distant mountains) — pinned from a 4-angle capture set
+distant mountains) - pinned from a 4-angle capture set
 (`overworld_battle_bg_angle_a..d`, the same Vahn-vs-Gobu-Gobu battle paused on
 the Begin/Run menu while the camera idly orbits).
 
-### Backdrop ground — a procedural flat grid (`func_0x801d02c0`)
+### Backdrop ground - a procedural flat grid (`func_0x801d02c0`)
 
 The grass underfoot is **not** geometry from a file; it is a procedural flat
 tiled grid emitted by `func_0x801d02c0` (battle-overlay variant), the **sole
@@ -94,17 +94,17 @@ TMD walk:
 
 - A `_DAT_1f8003f8 × _DAT_1f8003fa` cell grid (cell pitch `0x200`, sub-step
   `0x100`), centred at the world origin on a **`Y ≈ 0` flat plane**.
-- **Pass 1** — RTPS each grid point and write a per-cell visibility byte
+- **Pass 1** - RTPS each grid point and write a per-cell visibility byte
   (`-1`/`0`/`1`) into the `0x1000`-byte buffer `_DAT_8007b814` (so the grid can
-  be up to ~64×64). **Pass 2** — for each visible cell, RTPT its corners and
+  be up to ~64×64). **Pass 2** - for each visible cell, RTPT its corners and
   emit one `POLY_GT4` (GP0 `0x0C000000`) into the ordering table.
 - These tiles are the **619 `POLY_GT4`** in the live pool. Because the grid is a
   *full* flat plane centred on the actors, it fills the foreground/ground at
-  **every** orbit angle — there is no half-dome gap for the ground.
+  **every** orbit angle - there is no half-dome gap for the ground.
   The historical overlay capture filed under the `0896` label (a mislabeled
   slot-A window image; PROT 0896 itself is neither the battle background nor
   an overlay that loads here) shows the same grid renderer + `_DAT_8007b814`
-  buffer — it is battle-overlay code seen through that capture.
+  buffer - it is battle-overlay code seen through that capture.
 
 > **Correction.** An earlier reading called the backdrop the *world-map continent
 > heightfield* per a `prim-trace` "3715 hits in `0x80190000`". That was a **false
@@ -112,10 +112,10 @@ TMD walk:
 > window). The ground is this **flat procedural grid**, not a per-tile continent
 > descriptor table read from RAM, and not a 3D heightfield (cell `Y ≈ 0`).
 
-### Backdrop dome — sky + distant mountains (PROT 88 for `map01`)
+### Backdrop dome - sky + distant mountains (PROT 88 for `map01`)
 
 The sky hemisphere + distant mountain ring come from the map's `scene_tmd_stream`
-dome (PROT `88` for `map01`) — the `POLY_GT3` prims (116 in angle-a):
+dome (PROT `88` for `map01`) - the `POLY_GT3` prims (116 in angle-a):
 
 - PROT 88 loads contiguously into battle RAM at base `0x800A8B34` (byte-matched
   across all four saves; leading TMD magic `0x80000002` at file `+4`,
@@ -130,7 +130,7 @@ dome (PROT `88` for `map01`) — the `POLY_GT3` prims (116 in angle-a):
   `0x8007680c + 4` = `DAT_80076810`), then `FUN_80020de0` (`actor_alloc`)
   allocates a battle actor whose mesh index is that slot and `FUN_80020f88`
   links it into the actor list. So the dome is rendered by the **normal battle
-  actor path** (`FUN_80048A08`) — same as monsters/party — with no special
+  actor path** (`FUN_80048A08`) - same as monsters/party - with no special
   dome-draw function (which is why `DAT_80076810` has no resolved reader: the
   actor list is walked pointer-indirect).
 - **No full surround.** The dome geometry is a **front half** (`X ∈ [-12155,
@@ -139,7 +139,7 @@ dome (PROT `88` for `map01`) — the `POLY_GT3` prims (116 in angle-a):
   front arc come into view and the rest of the horizon is open sky/grass. The
   retail captures confirm this: mountains cover only **44–81 % of the horizon
   columns** depending on angle (peak when the camera looks into the arc, trough
-  along its edge) — *not* a ring. The dome's own ground ring (inner radius
+  along its edge) - *not* a ring. The dome's own ground ring (inner radius
   `2889`) is the far grass behind the flat grid.
 
 **Engine status.** `legaia-engine play-window --scene map01 --live-loop` renders
@@ -149,7 +149,7 @@ read as a full circle, a flat tiled grass grid under the actors (the
 `func_0x801d02c0` grid, `0x200` cell pitch, sampling the dome's grass tile), a
 sky-blue clear so the open horizon reads as sky, the real **assembled** battle
 party (see below), and animated monsters. One caveat: the live camera uses a
-*closer* unified depth than the exact `tr.z = 7680` — the battle meshes are small
+*closer* unified depth than the exact `tr.z = 7680` - the battle meshes are small
 (party 134–284 units, monsters 77–368), so at the true depth they are a few
 pixels (retail draws actors off the rotation-only `DAT_8007bf10` + a per-actor
 position, not the backdrop's deep matrix). Cosmetic gaps remain (the ground-mist
@@ -183,7 +183,7 @@ These values are **live-confirmed byte-exact** by
 run on a real `map01` battle save (reading at the `func_0x801d02c0` grid-render
 breakpoint, since at frame 0 the globals hold stale field state) it reports
 `mode=0x15 pitch=32 roll=0 TR=(0,1280,7680) H=256`, the grid as **28×28** cells,
-the battle actors at scale `+0x72 = 0x1000` (1.0, *not* scaled up — the
+the battle actors at scale `+0x72 = 0x1000` (1.0, *not* scaled up - the
 on-screen size comes from the mesh, not a scale), and the dome registered at
 `DAT_8007C018[2]`.
 
@@ -196,17 +196,17 @@ sections (`legaia_asset::battle_char_assembly`, extraction PROT 863..865,
 equipped ids from the roster record's `+0x196..+0x19A` bytes) and relocated
 into the slot's runtime VRAM band by
 `battle_char_assembly::relocate_tsb_cba` (the registration-time TSB/CBA pass,
-`FUN_80053a28` — texpages `x ∈ [512, 896), y = 256`, CLUT row `481 + slot`;
+`FUN_80053a28` - texpages `x ∈ [512, 896), y = 256`, CLUT row `481 + slot`;
 see [`character-mesh.md` § Battle render](../formats/character-mesh.md#battle-render-load-time-tsbcba-relocation)).
 PROT 1204 (the Baka Fighter / default-equipment sibling pack) is the
-per-member fallback when assembly fails, and supplies the atlas pixel pages —
+per-member fallback when assembly fails, and supplies the atlas pixel pages -
 uploaded at their authoring rects and, when an assembled mesh is bound, also
 written into the runtime band the relocated meshes sample.
 
 The battle char TMD is a set of object-local pieces (head/torso/limbs),
 **not** a single pre-assembled mesh, so the engine sockets them with the
 **character's own idle keyframe stream from `record[0]` of the same player
-file** (`battle_char_assembly::idle_battle_animation` — the monster-format
+file** (`battle_char_assembly::idle_battle_animation` - the monster-format
 `[parts][frames][9-byte TRS]` stream at action entry `+0xAC`, `parts` =
 skeleton bones; see
 [`battle-data-pack.md` § Battle animations](../formats/battle-data-pack.md#battle-animations-record0)).
@@ -217,17 +217,17 @@ Frame 0 is the combat-stance rest pose, applied `R*v + T` per object
 pass duplicates each `200+` equipment extra's **attach-bone** channel onto
 it (the assembler's `anm_bones` map), which is what makes the duplicate
 weapon/Ra-Seru pieces coincide with their attach piece instead of floating
-apart. The **PROT 1203 ANM (`other5`) is NOT this pose source** — its banks
+apart. The **PROT 1203 ANM (`other5`) is NOT this pose source** - its banks
 (Vahn @ 0 / Noa @ 9 / Gala @ 18) are authored against PROT 1204's own
 object order, which differs from the assembled tag order per character, so
 it stays the rest-pose source for the **1204 fallback mesh only** (identity
 object→bone). Pinned live + cross-pipeline in
 `crates/engine-shell/tests/battle_party_pose_live.rs`. Palette: each
 character's decoded battle palette (Vahn `parse_record` PROT 0863; Noa/Gala
-`collect_palette` 0864/0865 — the `PLAYER1..3` files) overlays the CLUT rows
+`collect_palette` 0864/0865 - the `PLAYER1..3` files) overlays the CLUT rows
 its mesh samples (`481 + slot` after relocation), so the party reads in its
 real colours (blue Vahn / pink Noa / Gala). A stage battle draws **only
-active actors** — the scene-init actors are bound but inactive and parked at
+active actors** - the scene-init actors are bound but inactive and parked at
 the world origin, so without that gate they pile their meshes at `(0,0,0)`.
 A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
@@ -324,7 +324,7 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | Offset | Type | Use |
 |---|---|---|
 | `+0x00` | u32 | Name string pointer (disc offset → pointer; `strlen` copied into actor `+0x1BC`). |
-| `+0x04` | u32 | Block-relative offset of the monster's **battle-model TMD** → actor `+0x230` (walked as `0x1C`-stride geometry records — a TMD object-table entry is `0x1C` bytes — by `FUN_80049858` / `FUN_800495C8`). **Not** XP/drop. See [Monster mesh](#monster-mesh-record-0x04). |
+| `+0x04` | u32 | Block-relative offset of the monster's **battle-model TMD** → actor `+0x230` (walked as `0x1C`-stride geometry records - a TMD object-table entry is `0x1C` bytes - by `FUN_80049858` / `FUN_800495C8`). **Not** XP/drop. See [Monster mesh](#monster-mesh-record-0x04). |
 | `+0x08` | u32 | Shared-resource pointer (fixed up at load). |
 | `+0x0C` | u16 | **HP** → actor `+0x14C/+0x14E/+0x172`. |
 | `+0x0E` | u16 | **SP** → actor `+0x154/+0x156` (spirit/action gauge - AI spell-selection budget; spirit-charge source). |
@@ -350,17 +350,17 @@ All six stat names are pinned by the consumers of those actor slots - see [battl
 - **EXP** (`+0x46`, u16): summed `* 3/4`, then split evenly among living party members.
 - **drop** (`+0x48` item id, `+0x49` chance %): per dead enemy, `rand() % 100 < chance` grants the item (id added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`).
 
-(`FUN_80026018` is **not** part of this commit path — it is the mode-24 **minigame exit / return-warp** handler, whose `_DAT_800845A4 += _DAT_80084440` commit is the **casino-coin** bank, not battle XP; no battle-path caller exists in the dump corpus. See [`script-vm.md § 0x3E WARP`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).) Drop *item names* cross-check against [`legaia-gamedata`](../reference/gamedata.md) (Gimard `+0x48`=119 @ 10% — drops Healing Leaf). The reward formula detail lives in [battle-formulas.md](battle-formulas.md#victory-spoils-rewards).
+(`FUN_80026018` is **not** part of this commit path - it is the mode-24 **minigame exit / return-warp** handler, whose `_DAT_800845A4 += _DAT_80084440` commit is the **casino-coin** bank, not battle XP; no battle-path caller exists in the dump corpus. See [`script-vm.md § 0x3E WARP`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).) Drop *item names* cross-check against [`legaia-gamedata`](../reference/gamedata.md) (Gimard `+0x48`=119 @ 10% - drops Healing Leaf). The reward formula detail lives in [battle-formulas.md](battle-formulas.md#victory-spoils-rewards).
 
 ### Monster archive (PROT entry 867)
 
 `FUN_800542C8` streams the records as **per-monster `0x14000`-byte LZS slots** at archive offset `(id-1)*0x14000` (the monster id is the global monster-table index, ~194 fixed slots). Each slot is `[u32 decompressed_size][Legaia LZS stream]`; the decoded block's head is the stat record above, with the name and spell-entry payloads at the block-relative offsets the loader fixes up.
 
-The archive is **extraction PROT entry `0867_battle_data`** (the EXTENDED footprint — the 15.9 MB archive lives in the entry's trailing-gap sectors, not its small indexed payload). Retail-semantically it **is** the `monster_data` block: the define `monster_data 869` names extraction 867 under the raw-TOC −2 correction ([`cdname.md`](../formats/cdname.md#numbering-space)), and the loader index `0x365` = define-space 869 resolves there directly (the earlier "misleading `monster_data` stub at extraction 869" reading was the filename shift; extraction 869 is a `sound_data` VAB stream).
+The archive is **extraction PROT entry `0867_battle_data`** (the EXTENDED footprint - the 15.9 MB archive lives in the entry's trailing-gap sectors, not its small indexed payload). Retail-semantically it **is** the `monster_data` block: the define `monster_data 869` names extraction 867 under the raw-TOC −2 correction ([`cdname.md`](../formats/cdname.md#numbering-space)), and the loader index `0x365` = define-space 869 resolves there directly (the earlier "misleading `monster_data` stub at extraction 869" reading was the filename shift; extraction 869 is a `sound_data` VAB stream).
 
 The shipped retail build takes the debug `FUN_8003E8A8(0x365)` PROT-index path (`_DAT_8007B8C2 != 0`); the alternate `data\battle\<name>` open via the `break 0x103` host trap (`FUN_800608F0`) is a build-time dev-host artifact with no matching ISO9660 file on the disc.
 
-Pinned by a PCSX-Redux watchpoint during the Rim Elm scripted battles (`scripts/pcsx-redux/autorun_monster_record_source.lua`): the loader's relative seek `(id-1)*40` sectors + the `disc_read` CdlLOC resolve to PROT.DAT offset `0x38AF000` = entry 867, and three decoded records match the live actor stats byte-for-byte (Gimard id 10 = HP 99 / MP 20, Killer Bee id 62 = 288 / 288, Queen Bee id 63 = 888 / 888). town01's encounter formations resolve to the Rim Elm Mist-attack set (Gobu Gobu id 4, Green Slime 7, Gimard 10, Hornet 61, Killer Bee 62, Queen Bee 63, Tetsu 79 — Tetsu being the 999/999 tutorial sparring partner).
+Pinned by a PCSX-Redux watchpoint during the Rim Elm scripted battles (`scripts/pcsx-redux/autorun_monster_record_source.lua`): the loader's relative seek `(id-1)*40` sectors + the `disc_read` CdlLOC resolve to PROT.DAT offset `0x38AF000` = entry 867, and three decoded records match the live actor stats byte-for-byte (Gimard id 10 = HP 99 / MP 20, Killer Bee id 62 = 288 / 288, Queen Bee id 63 = 888 / 888). town01's encounter formations resolve to the Rim Elm Mist-attack set (Gobu Gobu id 4, Green Slime 7, Gimard 10, Hornet 61, Killer Bee 62, Queen Bee 63, Tetsu 79 - Tetsu being the 999/999 tutorial sparring partner).
 
 Parser: [`legaia_asset::monster_archive`](../../crates/asset/README.md) (`record(entry, id)` / `records(entry)`; CLI `asset monster-archive`). Engine bridge: `legaia_engine_core::monster_catalog::catalog_from_monster_archive`, merged into the catalog by `SceneHost::enter_field_scene` for the scene's encounter ids so triggered battles spawn real stats.
 
@@ -370,7 +370,7 @@ Each decoded monster block carries the monster's **battle model**: a
 [Legaia TMD](../formats/tmd.md) embedded at the block-relative offset held in
 the stat record's `+0x04` field (immediately after the name string). This is
 the same pointer the loader installs at battle-actor `+0x230` and that
-`FUN_80049858` / `FUN_800495C8` walk as `0x1C`-stride records — a TMD
+`FUN_80049858` / `FUN_800495C8` walk as `0x1C`-stride records - a TMD
 object-table entry is exactly `0x1C` bytes, so that walk is iterating the
 mesh's per-object table. Verified across the archive: **186 of the 194 slots
 carry a Legaia TMD at `+0x04` that the parser walks cleanly** (the other 8 are
@@ -403,12 +403,12 @@ The loader uploads the CLUT region to VRAM `(0, 484 + slot)` (256 colours wide,
 STP bit set on non-zero entries) and the page to `(slot*64 + 320, 256)`. The
 page is **always 256 rows tall**; its width is **128 texels** (32 fb-units) for
 most monsters or **256 texels** (64 fb-units) when the per-monster wide flag is
-set — so `width_texels = (pool_len - 0x1E0) / 256 * 2`. A primitive selects its
+set - so `width_texels = (pool_len - 0x1E0) / 256 * 2`. A primitive selects its
 palette by `cba & 0x3F` and samples the page at its per-vertex `(u, v)`; PSX
 index 0 (colour `0x0000`) is transparent. The byte arithmetic is exact: Gimard
 `0x1E0 + 128*256/2 = 0x41E0`, Tetsu `0x1E0 + 256*256/2 = 0x81E0`, both equal to
 their pool sizes. (The on-disc CBA/TSB are nominal defaults the loader relocates
-per slot, so the raw pool bytes do not appear verbatim in a battle VRAM dump —
+per slot, so the raw pool bytes do not appear verbatim in a battle VRAM dump -
 the `FUN_80055468` layout is the ground truth; see
 `ghidra/scripts/funcs/80055468.txt`.)
 
@@ -507,7 +507,7 @@ reads `LEGAIA_SMART_MONSTERS=1`) instead redirects a single-target attack to the
 lowest-HP living member. It is RNG-neutral by construction: the faithful random
 pick is still rolled in full (magic roll, target roll + re-roll loop, scripted
 override, anti-repeat ring), and only the resolved single party slot is replaced
-afterwards — so the RNG stream and call count are byte-identical to the faithful
+afterwards - so the RNG stream and call count are byte-identical to the faithful
 path, all-party / monster-band / self targets are never touched, and a run stays
 deterministic. The default path is bit-for-bit unchanged.
 
@@ -533,7 +533,7 @@ fields the engine doesn't fully consume yet. The `actor+0x170` **spirit-art
 gauge** is modelled (`BattleActor::spirit_gauge`) and filled on every damaging
 hit by the finisher's spirit stage (`spirit_gauge_fill`, see
 [`battle-formulas.md`](battle-formulas.md)); monster `0x8A`'s AI now reads that
-gauge as a charge gate — once it passes `0x31` the monster fires its `0x4E`
+gauge as a charge gate - once it passes `0x31` the monster fires its `0x4E`
 all-enemies cast and the gauge is clamped back to `0x32`
 (`MonsterAiCtx::spirit_gauge` + `AiCast::spirit_gauge_writeback`, drawing no
 RNG). Still unwired: the `'O'` (`0x4F`) boss that rewrites another actor slot,
@@ -591,7 +591,7 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x04..+0x06` | u16 LE | `0x016D` → `0x02DA` (365 → 730) | XP word delta (+365). Matches the published level-up XP curves. |
 | `+0x10E` | u8 | `0x3A` → `0x42` (+8) | Max-HP / vitality byte. |
 | `+0x11C..+0x122` | 6× u8 | `67/1C/13/10/16/0B` → `6B/20/15/12/1A/0F` | Per-stat increments (`+4 +4 +2 +2 +4 +4`). |
-| `+0x130` | u8 | `0x02` → `0x03` | Displayed character level (+1 — the level 2 → 3 event). |
+| `+0x130` | u8 | `0x02` → `0x03` | Displayed character level (+1 - the level 2 → 3 event). |
 
 Noa and Gala records are byte-identical across the same pair - the level-up event in this capture pair is for Vahn alone.
 
@@ -638,21 +638,21 @@ Conditions are named with the game's in-game ailment terms (the `enemy_effect` b
 | Numb | `2` | 3 turns | Paralysis: cannot act; clears on being hit or after some turns | full block + clear-on-hit (enforced, same shape as Sleep) |
 | Venom | `3` (Other) | 6 turns | "Poison": HP drains (lesser than Toxic) | `min(max_hp/32, 128)` tick, never kills (`FUN_801E752C`); combat rolls ×9/10 (`FUN_801DD864` bit 1), mirrored as ATK & DEF ×0.9 |
 | Sleep | `4` | 3 turns | Asleep; wakes when hit | block + clear-on-hit (matches) |
-| Confuse | `5` | 3 turns | Acts uncontrollably / random target | a confused action (monster *or* party physical, plus monster casts) retargets to a random living member of the opposite side (`FUN_801E7320`); a confused party member auto-acts a physical strike with no command menu — an engine stand-in (retail's party-side delegated action pick is unpinned; see [battle-action](battle-action.md) § AI-delegated party members) |
+| Confuse | `5` | 3 turns | Acts uncontrollably / random target | a confused action (monster *or* party physical, plus monster casts) retargets to a random living member of the opposite side (`FUN_801E7320`); a confused party member auto-acts a physical strike with no command menu - an engine stand-in (retail's party-side delegated action pick is unpinned; see [battle-action](battle-action.md) § AI-delegated party members) |
 | Curse | `6` | 4 turns | Blocks Magic | blocks Magic (matches) |
 | Stone | `7` | whole battle (255) | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block + whole-battle duration + invulnerability at every damage entry point + counts-as-defeated in the wipe checks; escape restores (see below) |
 | Faint | `8` | until cured | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
 
 Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines. Both battle drivers tick it once per round: the runner path at `BattleRound::end`, and the live loop at the initiative round boundary (when no living actor still holds an initiative key, just before the keys reseed).
 
-The tick folds the Venom / Toxic DoT into `BattleActor::hp` with the retail never-kill clamp — a tick that would reach 0 leaves the actor at 1 HP instead (`FUN_801E752C` subtracts `current − 1` before applying the per-status cap), so poison alone never downs an actor. It draws no RNG, so it never perturbs the reseed RNG stream.
+The tick folds the Venom / Toxic DoT into `BattleActor::hp` with the retail never-kill clamp - a tick that would reach 0 leaves the actor at 1 HP instead (`FUN_801E752C` subtracts `current − 1` before applying the per-status cap), so poison alone never downs an actor. It draws no RNG, so it never perturbs the reseed RNG stream.
 
-**Stone escape-restore.** The retail run band (`FUN_801E295C` case `0x64`, successful-escape branch) walks the party slots and floors any 0-HP actor at 1 — the concrete mechanism behind "a petrified member returns to normal when the party escapes". The engine models it as a tracker-level Stone clear when the battle ends with `BattleEndCause::Escaped` (Stone's runtime bit representation is not pinned in the dumped corpus — see `status_effects.rs`).
+**Stone escape-restore.** The retail run band (`FUN_801E295C` case `0x64`, successful-escape branch) walks the party slots and floors any 0-HP actor at 1 - the concrete mechanism behind "a petrified member returns to normal when the party escapes". The engine models it as a tracker-level Stone clear when the battle ends with `BattleEndCause::Escaped` (Stone's runtime bit representation is not pinned in the dumped corpus - see `status_effects.rs`).
 
 **Turn-level enforcement (live loop).** The action-blocking columns above are
 enforced at the turn grant, not just modelled. When the live battle loop
 (`World::live_battle_tick`) hands a combatant its turn, an actor carrying a
-`blocks_actions` status (Numb / Sleep / Stone / Faint) **loses the turn** — its
+`blocks_actions` status (Numb / Sleep / Stone / Faint) **loses the turn** - its
 initiative key is already consumed, so play passes on and the SM stays at
 `EndOfAction` with no action armed (the status duration ticks once per round at
 the initiative boundary, so the affliction wears off). A caster carrying a
@@ -662,7 +662,7 @@ strike** (`World::take_monster_turn`, mirroring the MP-affordability fallback).
 The gate reads `StatusKind::blocks_actions`/`blocks_magic` via
 `World::actor_blocked_from_acting`/`actor_blocked_from_magic`. The party side
 mirrors this: a silenced/petrified player who picks **Magic** can't open the
-submenu — `World::build_battle_spell_session` returns `None` for a `blocks_magic`
+submenu - `World::build_battle_spell_session` returns `None` for a `blocks_magic`
 caster, so the caller bounces back to the command menu (the same graceful
 fallback it uses when there's no caster record).
 
@@ -670,7 +670,7 @@ fallback it uses when there's no caster record).
 
 Each character has a per-turn AP budget that limits how many art commands they can chain. The retail engine reads this from the character record's `+0xC9` (`current_ap`) and `+0xCA` (`bonus_ap`) bytes. Pressing the Spirit button during command input adds `+5` AP exactly once per turn.
 
-The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 5 AP, …, 60+ → 10 AP capped; `ap_base_for_level`). The engine seeds each party member's `ApGauge::base_ap` from that formula at battle entry — `seed_party_battle_stats` reads the live character level alongside the attack / defense fold, so a higher-level character chains more arts per turn. The round-start `reset_party_ap` then refills `current_ap` to that base, and Fury Boost extends from / reverts to it.
+The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 5 AP, …, 60+ → 10 AP capped; `ap_base_for_level`). The engine seeds each party member's `ApGauge::base_ap` from that formula at battle entry - `seed_party_battle_stats` reads the live character level alongside the attack / defense fold, so a higher-level character chains more arts per turn. The round-start `reset_party_ap` then refills `current_ap` to that base, and Fury Boost extends from / reverts to it.
 
 | Action constant range | AP cost | Notes |
 |---|---|---|
@@ -772,7 +772,7 @@ exposed as `BattleSession::rng_seed` (configurable via
 
 End-to-end coverage:
 [`crates/engine-core/tests/end_to_end_gameplay_loop.rs::battle_session_drives_action_sm_to_monster_wipe`](../../crates/engine-core/tests/end_to_end_gameplay_loop.rs)
-exercises the full pipeline — encounter trigger → BattleSession setup →
+exercises the full pipeline - encounter trigger → BattleSession setup →
 `push_command` per slot → commit via `SessionInput { start: true, .. }` →
 Resolve → `BattlePhase::Victory`.
 
@@ -1026,9 +1026,9 @@ Implementation: [`crates/engine-core::tactical_arts_editor`](../../crates/engine
 
 Monster ids missing from the catalog contribute zero (silently skipped) so a partially-populated catalog still drives a battle-end transition. Implementation: [`crates/engine-core::world::World::apply_battle_loot`](../../crates/engine-core/src/world.rs).
 
-## Live gameplay loop — Field ↔ Battle in `tick`
+## Live gameplay loop - Field ↔ Battle in `tick`
 
-`World::tick` drives the full Field → Battle → Field round trip itself when `World::live_gameplay_loop` is set. The flag is an opt-in: with it clear (the default), the `Field` branch runs the field VM + locomotion but never rolls encounters, and the `Battle` branch runs a single `step_battle` without applying damage or re-arming — preserving every existing caller and test that drives those externally.
+`World::tick` drives the full Field → Battle → Field round trip itself when `World::live_gameplay_loop` is set. The flag is an opt-in: with it clear (the default), the `Field` branch runs the field VM + locomotion but never rolls encounters, and the `Battle` branch runs a single `step_battle` without applying damage or re-arming - preserving every existing caller and test that drives those externally.
 
 With the flag set, the per-frame flow is:
 
@@ -1052,8 +1052,8 @@ cross-fades to exactly like a field op-`0x35` start.
 
 The battle tick has two modes.
 
-- By **default** it auto-resolves: every turn commits a generic physical strike against the first living combatant on the opposing side, with no player choice. The whole actor table takes turns, so **monsters take turns too** — a monster turn strikes a living party member, and a party wipe ends the battle (`game_over`) the same way a monster wipe does. The strike side is chosen by the attacker's slot (`World::first_living_opponent_of`).
-- When `World::battle_player_driven` is set (requires the live loop), each *party* turn instead pauses the action SM and opens a `battle_input::BattleCommandSession` (monster turns still auto-resolve) — the player picks a command from the battle command menu and a target before the strike commits. While a session is open `live_battle_tick` skips the SM advance and drives the picker from `World::input`; on confirm `World::tick_battle_command` arms `battle_ctx.{active_actor, queued_action, action_state}` plus the acting actor's `active_target` and resumes the SM. An abort (no valid target) falls back to a default strike so the loop can't deadlock. Target selection reuses the [battle target picker](#battle-target-picker).
+- By **default** it auto-resolves: every turn commits a generic physical strike against the first living combatant on the opposing side, with no player choice. The whole actor table takes turns, so **monsters take turns too** - a monster turn strikes a living party member, and a party wipe ends the battle (`game_over`) the same way a monster wipe does. The strike side is chosen by the attacker's slot (`World::first_living_opponent_of`).
+- When `World::battle_player_driven` is set (requires the live loop), each *party* turn instead pauses the action SM and opens a `battle_input::BattleCommandSession` (monster turns still auto-resolve) - the player picks a command from the battle command menu and a target before the strike commits. While a session is open `live_battle_tick` skips the SM advance and drives the picker from `World::input`; on confirm `World::tick_battle_command` arms `battle_ctx.{active_actor, queued_action, action_state}` plus the acting actor's `active_target` and resumes the SM. An abort (no valid target) falls back to a default strike so the loop can't deadlock. Target selection reuses the [battle target picker](#battle-target-picker).
 
 **Turn order.** Who acts next is chosen by `World::next_combatant_by_initiative`, the port of `recompute_battle_order` (`FUN_801daba4`).
 
@@ -1061,9 +1061,9 @@ The battle tick has two modes.
 - The selector picks the living actor with the highest key (random tiebreak via `rand % tie_count`), then consumes that actor's key so the next turn picks another; once every living actor's key is spent, a new round is seeded.
 - Dead actors' keys are zeroed each call (the function's first loop) so they can't be picked.
 - Party SPD is seeded from each character record's live stats in `World::load_party`; monster SPD from `MonsterDef::speed` (record `stats[5]`) at battle setup.
-- When **no** living actor carries SPD — the disc-free / synthetic case where speed data hasn't been loaded — the selector falls back to round-robin slot order (`World::next_living_combatant`), which keeps the synthetic loop deterministic.
+- When **no** living actor carries SPD - the disc-free / synthetic case where speed data hasn't been loaded - the selector falls back to round-robin slot order (`World::next_living_combatant`), which keeps the synthetic loop deterministic.
 
-All four commands — **Attack**, **Arts**, **Magic**, **Item** — are wired into the live loop. Attack opens a target cursor and commits a physical strike through the action SM. Arts / Magic / Item resolve to `Resolution::OpenArtsMenu` / `OpenSpellMenu` / `OpenItemMenu` — the command session can't run those pickers itself (they need the caster's saved chains / learned spells / live MP / inventory + party stats), so it hands off to a host-owned submenu:
+All four commands - **Attack**, **Arts**, **Magic**, **Item** - are wired into the live loop. Attack opens a target cursor and commits a physical strike through the action SM. Arts / Magic / Item resolve to `Resolution::OpenArtsMenu` / `OpenSpellMenu` / `OpenItemMenu` - the command session can't run those pickers itself (they need the caster's saved chains / learned spells / live MP / inventory + party stats), so it hands off to a host-owned submenu:
 
 - **Item** opens a battle-context `inventory_use::InventoryUseSession` on
 `World::battle_item_menu` (built by `World::build_battle_item_session` from the
@@ -1074,7 +1074,7 @@ by item: heals / cures / revives validate against ally rows, offensive items
 cursor auto-positions on the first valid-side target
 (`target_valid_for_effect`). On a completed use the item applies via
 `World::use_item`, one copy is removed (`World::consume_item`), and a popup is
-surfaced — heal-coloured for heals/revives, damage-coloured for offensive items.
+surfaced - heal-coloured for heals/revives, damage-coloured for offensive items.
 `World::use_item` folds the offensive outcomes too: `DamageDealt` subtracts
 enemy HP and downs it at zero, `CaptureRolled` reuses `World::resolve_capture`
 (down + log id into `battle_captures`), and `EscapeRequested` sets
@@ -1083,7 +1083,7 @@ enemy HP and downs it at zero, `CaptureRolled` reuses `World::resolve_capture`
 - **Magic** opens a `battle_magic::BattleSpellSession` on `World::battle_spell_menu` (built by `World::build_battle_spell_session` from the caster's learned spells off their roster record + live MP, MP-gated). The picker kind matches the spell's `SpellTarget` shape. On confirm `World::apply_battle_spell` deducts MP once, resolves each affected slot through `spells::cast_spell` (caster magic from `World::battle_magic`, target magic-defense reusing `World::battle_defense`), and folds the outcome into the live actor table via `World::fold_spell_outcome`. All `SpellOutcome` shapes apply:
     - damage / heal / cure / revive;
     - **buffs** (`World::apply_battle_buff` writes the delta straight into the per-slot `battle_attack` / `battle_defense` / `battle_magic` scalar with refresh semantics + a per-turn timer aged in the re-arm path, reverted exactly on expiry);
-    - **capture** (`World::resolve_capture` rolls vs the monster's missing-HP fraction — reliable only on a weakened Seru — downing it and logging the id into `World::battle_captures` on success);
+    - **capture** (`World::resolve_capture` rolls vs the monster's missing-HP fraction - reliable only on a weakened Seru - downing it and logging the id into `World::battle_captures` on success);
     - and **escape** (sets `World::battle_escaped`, and the spell tick returns to the field via `finish_battle` with no loot).
     - Accuracy / Evasion / Speed buffs are tracked but have no live-loop scalar to move yet.
 - **Arts** opens a `battle_arts::BattleArtsSession` on `World::battle_arts_menu`
@@ -1098,7 +1098,7 @@ art's status effect lands on a hit. The profile comes from a staged `ArtRecord`
 disc PROT entry `0x05C4` via `World::set_art_record`) when a record's command
 string the saved chain ends with (`chain_matches_record`); with no matching
 record it falls back to a synthetic per-direction profile
-(`battle_arts::synthetic_power` — Down → LDF, else UDF, tier-0 ×12, clamped to
+(`battle_arts::synthetic_power` - Down → LDF, else UDF, tier-0 ×12, clamped to
 `MAX_ART_HITS`). Both paths share the one `apply_art_strike` kernel; the
 synthetic fallback keeps a saved chain playable when the disc art tables aren't
 loaded.
@@ -1107,7 +1107,7 @@ While any submenu is open both the SM and the command session are parked;
 `World::tick_battle_{arts,spell,item}_menu` drives it from `World::input`. On a
 completed action the result is applied, the relevant popup is surfaced
 (`battle_hit_fx`), and the action SM is **parked at `EndOfAction`** so the
-re-arm block cycles to the next combatant — a cast / art / item use is the
+re-arm block cycles to the next combatant - a cast / art / item use is the
 actor's whole turn, no Attack-SM strike fires. Backing out reopens the command
 menu for the same actor. Implementation:
 [`crates/engine-core::battle_input`](../../crates/engine-core/src/battle_input.rs)
@@ -1122,18 +1122,18 @@ monster wipe + loot.
 Capturing a monster (magic capture roll or a capture item) downs it and logs its **monster id** into `World::battle_captures`.
 
 - `World::finish_battle` resolves these through `World::resolve_captures`: each captured monster id maps to a **Seru id** via `MonsterCatalog`'s `MonsterDef::seru_id`, and `seru_learning::record_capture` banks that Seru's capture points against `World::seru_log` for every active party slot eligible by the Seru's `learnable_mask`.
-- When a slot's accumulated points cross the Seru's `learn_threshold` the taught spell id joins that character's learned list, and `World::build_battle_spell_session` unions the roster's saved spells with `seru_log.learned_spells(slot)` so a freshly-learned spell is immediately castable — no save/load round-trip needed.
+- When a slot's accumulated points cross the Seru's `learn_threshold` the taught spell id joins that character's learned list, and `World::build_battle_spell_session` unions the roster's saved spells with `seru_log.learned_spells(slot)` so a freshly-learned spell is immediately castable - no save/load round-trip needed.
 - The accepted `CaptureOutcome`s are stashed in `World::last_capture_outcomes` (`drain_last_capture_outcomes`); `resolve_captures` also builds the first accepted capture into `World::current_capture_banner` (a `seru_learning::SeruCaptureSession`), the sibling of `World::current_level_up_banner`.
 - `World::tick` advances the banner one frame per call and clears it when the session reaches `Done`, so it plays out over the field after the battle ends. The session's `current_banner()` yields the active line (`"Captured: <Seru>!"` then per-learn `"<char> learned <spell>!"`); the play-window renders it via `legaia_engine_render::capture_banner_draws_for`.
-- `resolve_captures` always drains `battle_captures`; with an empty `World::seru_registry` (the default) it banks nothing — the monster is still downed, but no Seru is learned.
+- `resolve_captures` always drains `battle_captures`; with an empty `World::seru_registry` (the default) it banks nothing - the monster is still downed, but no Seru is learned.
 - Capture-point progress (including sub-threshold totals) persists through `World::save_full` / `load_full` as `(seru_id, points)` pairs in each `CharSaveExt::seru_captures`; reload restores the points and, with the registry installed, re-marks any over-threshold Seru as learned.
 - The `MonsterDef::seru_id` mapping + `learn_threshold` / `capture_points` values are clean-room approximations (`SeruRegistry::vanilla`); pinning the real per-monster Seru attachments and capture arithmetic is gated on the still-uncaptured stat-grant table loader (see [`crate::capture_observations::battle_init_overlay`]).
 
 The `legaia-engine play-window` host exposes both as flags:
 
 - `--live-loop` walks-and-fights through the round trip.
-- `--player-battle` (which implies `--live-loop`) makes battles player-driven and renders the party/monster HP plus the live command menu / target cursor / arts + spell + item submenus in the HUD (it installs the vanilla spell + item catalogs and, when the boot save has none, seeds a couple of demo saved chains plus a few demo items — Healing Leaf + Bomb — so the ally-heal and offensive item paths are both exercisable).
-- `--battle-bgm <id>` enables the Battle↔Field music swap: the live loop cross-fades to `<id>` on encounter and resumes the field track on battle end (the id is routed through the same director as field op-`0x35` starts, so it must resolve in the current scene's BGM table — the live loop doesn't load a separate battle audio bundle).
+- `--player-battle` (which implies `--live-loop`) makes battles player-driven and renders the party/monster HP plus the live command menu / target cursor / arts + spell + item submenus in the HUD (it installs the vanilla spell + item catalogs and, when the boot save has none, seeds a couple of demo saved chains plus a few demo items - Healing Leaf + Bomb - so the ally-heal and offensive item paths are both exercisable).
+- `--battle-bgm <id>` enables the Battle↔Field music swap: the live loop cross-fades to `<id>` on encounter and resumes the field track on battle end (the id is routed through the same director as field op-`0x35` starts, so it must resolve in the current scene's BGM table - the live loop doesn't load a separate battle audio bundle).
 - Without a flag, play-window keeps the legacy "explore but never fight" behaviour.
 
 The spine began as physical-attack-only, single-formation; the Arts / Magic / Item submenus (above) and monster AI turns layer on top of it. The damage path for art-driven strikes flows through `apply_art_strike` → `fold_battle_event` in the SM-driven `battle_session` runner, and the player-driven Arts submenu reuses the same `apply_art_strike` kernel directly. Implementation: [`crates/engine-core::world`](../../crates/engine-core/src/world.rs); integration test `crates/engine-core/tests/live_loop_tick.rs` drives boot → walk → encounter → victory → return-to-field through `tick` alone with no test-side battle glue.
@@ -1142,12 +1142,12 @@ The spine began as physical-attack-only, single-formation; the Arts / Magic / It
 
 `crates/engine-core/tests/end_to_end_gameplay_loop.rs` stitches every gameplay-side subsystem into one cycle:
 
-1. **Boot** — load an `LGSF` `SaveFile` (party + story flags + money + inventory) into a fresh `World` via `load_full`. `load_full` hydrates the `LevelUpTracker` per-slot level from each record's `+0x100` byte so reloads don't roll the tracker back to L1.
-2. **Field walk** — switch to `SceneMode::Field`, install an `EncounterSession` keyed to `vanilla_formation_table` at saturated trigger rate, step until `EncounterPhase::Triggered`.
-3. **Encounter** — drain the formation roll, populate monster slots 3..N from the `MonsterCatalog`, flip mode to `SceneMode::Battle`.
-4. **Battle SM** — drive `World::tick` while applying clean-room formula damage on every `AttackChain → AttackRecovery` transition until the action SM resolves to `BattleEndCause::MonsterWipe`.
-5. **Rewards** — call `World::apply_battle_loot` to credit the per-character XP / gold split, fire drop rolls, and trigger per-character level-ups; assert at least one party slot crossed a threshold.
-6. **Save round-trip** — `world.save_full().write() → SaveFile::parse() → load_full()` into a fresh `World`; assert HP/MP, level, money, story flags, and inventory survived intact.
+1. **Boot** - load an `LGSF` `SaveFile` (party + story flags + money + inventory) into a fresh `World` via `load_full`. `load_full` hydrates the `LevelUpTracker` per-slot level from each record's `+0x100` byte so reloads don't roll the tracker back to L1.
+2. **Field walk** - switch to `SceneMode::Field`, install an `EncounterSession` keyed to `vanilla_formation_table` at saturated trigger rate, step until `EncounterPhase::Triggered`.
+3. **Encounter** - drain the formation roll, populate monster slots 3..N from the `MonsterCatalog`, flip mode to `SceneMode::Battle`.
+4. **Battle SM** - drive `World::tick` while applying clean-room formula damage on every `AttackChain → AttackRecovery` transition until the action SM resolves to `BattleEndCause::MonsterWipe`.
+5. **Rewards** - call `World::apply_battle_loot` to credit the per-character XP / gold split, fire drop rolls, and trigger per-character level-ups; assert at least one party slot crossed a threshold.
+6. **Save round-trip** - `world.save_full().write() → SaveFile::parse() → load_full()` into a fresh `World`; assert HP/MP, level, money, story flags, and inventory survived intact.
 
 The crate ships four test variants:
 
@@ -1155,7 +1155,7 @@ The crate ships four test variants:
 |---|---|
 | `synthetic_party_completes_full_gameplay_loop` | The default CI cycle; hand-spins the action SM with `apply_strike`. |
 | `battle_session_phase_transitions_during_loop` | Smoke around the BattleSession side; verifies the session reaches `CommandInput`. |
-| `battle_session_drives_action_sm_to_monster_wipe` | Drives the same loop through `BattleSession::tick` instead of `world.tick` — `push_command` → `SessionInput { start: true }` → Resolve → `BattlePhase::Victory`. The session owns the action SM during `Resolve`. |
+| `battle_session_drives_action_sm_to_monster_wipe` | Drives the same loop through `BattleSession::tick` instead of `world.tick` - `push_command` → `SessionInput { start: true }` → Resolve → `BattlePhase::Victory`. The session owns the action SM during `Resolve`. |
 | `real_battle_data_encounter_drives_loop` | Disc-gated: scans an early `PROT.DAT` entry for a valid `EncounterRecord` byte pattern, installs it via `World::install_encounter_from_record`, and runs the battle through to `MonsterWipe`. Closes the synthetic-formation leak in the field → battle handoff. |
 | `real_psx_memory_card_save_drives_full_loop` | Disc-gated: boots the same loop from a real Legaia memory-card save block via `Party::from_retail_sc_block` when `~/.mednafen/sav/` holds a Legaia card. |
 
@@ -1163,7 +1163,7 @@ Disc-gated variants skip silently when `extracted/PROT.DAT` / the mednafen card 
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Battle action SM](battle-action.md) ·
 [Damage / accuracy formulas](battle-formulas.md) ·
 [Encounter record](../formats/encounter.md) ·

@@ -31,7 +31,7 @@
 //!
 //! ## `param_1` is a *mapped* index, not the raw move id
 //!
-//! The kernel's `param_1` is not the battle move id directly — it is looked up
+//! The kernel's `param_1` is not the battle move id directly - it is looked up
 //! through a 128-byte **id → index map** immediately before the table at
 //! [`MOVE_ID_INDEX_MAP_VA`] (`0x801F4E63`, raw-entry offset
 //! [`MOVE_ID_INDEX_MAP_FILE_OFFSET`]). The setup site passes
@@ -39,19 +39,19 @@
 //! 0x801F4E63, …)` in `overlay_battle_action_801e09f8`). The map covers move ids
 //! `0x00..=0x7F` and resolves the ids `0x04..=0x74` to power indices `0x01..=0x2b`
 //! (a `0x00` entry = the unused record 0, `0xFF` = a no-record sentinel). So the
-//! full resolution is `power_table[map[move_id]]` — see [`index_for_move_id`] /
+//! full resolution is `power_table[map[move_id]]` - see [`index_for_move_id`] /
 //! [`record_for_move_id`]. The map is static (byte-identical across the same two
 //! battle save states) and sits exactly `0x80` bytes before the 8-byte-record
 //! table at `0x801F4EE3`.
 //!
-//! ## Provenance — static overlay data, pinned on disc
+//! ## Provenance - static overlay data, pinned on disc
 //!
 //! The table is **static** (loaded with the battle-action overlay image, not
 //! built per-battle): the `0x801F4F5C..0x801F69D8` window is byte-identical
 //! between two unrelated battle save states (a full-party Gobu Gobu fight and
 //! the Tetsu-tutorial command menu). Its bytes live in **PROT entry 0898** (the
 //! battle-action overlay, `overlay_0898` / `overlay_battle_action`) at raw-entry
-//! file offset [`MOVE_POWER_TABLE_FILE_OFFSET`] — pinned by byte-matching the
+//! file offset [`MOVE_POWER_TABLE_FILE_OFFSET`] - pinned by byte-matching the
 //! raw PROT 0898 entry against the in-RAM table at VA `0x801F4F5C` (both the
 //! table window and the `FUN_801dd0ac` code body map with one consistent base).
 //!
@@ -75,34 +75,34 @@
 //! - `FUN_801e09f8` (per-frame action tick) dereferences that held pointer
 //!   (`lw …,0x1014(…)`) ~25× and reads the residual fields off it. The byte
 //!   offsets it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,
-//!   +0x0e,+0x12,+0x16` — **never `+0x0c`** (confirmed: no `lbu …,0xc(…)` off
+//!   +0x0e,+0x12,+0x16` - **never `+0x0c`** (confirmed: no `lbu …,0xc(…)` off
 //!   the held pointer anywhere).
 //!
 //! ## Decoded record fields (each code-traced to a battle-action reader)
 //!
 //! | off | type | meaning | confidence | reader (`overlay_battle_action_*`) |
 //! |---|---|---|---|---|
-//! | `+0x00` | `i16` | **power** — roll modulus (used `>>0/1/2` at full/half/quarter) | Confirmed | `_801dd0ac.txt:299/343/388` |
-//! | `+0x02` | `i16` | **strike-position Y offset** — subtracted from the per-arm Y lane (`ctx + arm*8 + 0x1146`) when the hit point is seeded from the target | Inferred | `_801e09f8.txt:1181/1363` |
+//! | `+0x00` | `i16` | **power** - roll modulus (used `>>0/1/2` at full/half/quarter) | Confirmed | `_801dd0ac.txt:299/343/388` |
+//! | `+0x02` | `i16` | **strike-position Y offset** - subtracted from the per-arm Y lane (`ctx + arm*8 + 0x1146`) when the hit point is seeded from the target | Inferred | `_801e09f8.txt:1181/1363` |
 //! | `+0x04` | `u16` | **whole-move timing counter** → `ctx+0x6c6`, decremented per frame | Confirmed | `_801dea50.txt:937` |
 //! | `+0x06` | `u16` | **per-arm phase duration** → `ctx + arm*2 + 0x6c6` at the strike/re-arm transitions | Inferred | `_801e09f8.txt:1175/1357` |
-//! | `+0x08` | `u8` | **homing / approach speed** — scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - x` reseeds the approach counter | Inferred | `_801e09f8.txt:1277/1282/1316` |
-//! | `+0x09` | `u8` | **flag: effect tracks the strike** — when set, the live XY is copied into the spawned effect each frame | Confirmed reader | `_801e09f8.txt:1319` |
-//! | `+0x0a` | `u8` | **impact-effect selector** (enum 1..5) — stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(x-1)*4`) into `actor+0x04`, and switches (3/4/5) extra status-proc rolls | Confirmed reader | `_801e09f8.txt:1412/1416/1420/1422` |
-//! | `+0x0b` | `u8` | **trail / afterimage texture-page id** — passed to the streak draw helpers; becomes the GP0 texpage word `0x7700 + id` | Confirmed | `_801e09f8.txt:1244` → `_801e1ab0.txt:250` |
-//! | `+0x0c` | `u8` | **designer category tag** (`'C'/'E'/'G'/0`) — present only on the unnamed internal-tier records 1..15; **no runtime reader** (unused at runtime) | Unknown (no reader) | — |
+//! | `+0x08` | `u8` | **homing / approach speed** - scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - x` reseeds the approach counter | Inferred | `_801e09f8.txt:1277/1282/1316` |
+//! | `+0x09` | `u8` | **flag: effect tracks the strike** - when set, the live XY is copied into the spawned effect each frame | Confirmed reader | `_801e09f8.txt:1319` |
+//! | `+0x0a` | `u8` | **impact-effect selector** (enum 1..5) - stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(x-1)*4`) into `actor+0x04`, and switches (3/4/5) extra status-proc rolls | Confirmed reader | `_801e09f8.txt:1412/1416/1420/1422` |
+//! | `+0x0b` | `u8` | **trail / afterimage texture-page id** - passed to the streak draw helpers; becomes the GP0 texpage word `0x7700 + id` | Confirmed | `_801e09f8.txt:1244` → `_801e1ab0.txt:250` |
+//! | `+0x0c` | `u8` | **designer category tag** (`'C'/'E'/'G'/0`) - present only on the unnamed internal-tier records 1..15; **no runtime reader** (unused at runtime) | Unknown (no reader) | - |
 //! | `+0x0d` | `u8` | **sound / voice cue id** → `FUN_8004fcc8` | Confirmed | `_801e09f8.txt:1452` |
-//! | `+0x0e` | `u8` | **list-mode flag / effect-list head** — `0xFF` broadcasts the trail to all four arms; otherwise the head of a small id list the setup loop spawns | Confirmed reader | `_801e09f8.txt:1239`, `_801dea50.txt:983/1007` |
+//! | `+0x0e` | `u8` | **list-mode flag / effect-list head** - `0xFF` broadcasts the trail to all four arms; otherwise the head of a small id list the setup loop spawns | Confirmed reader | `_801e09f8.txt:1239`, `_801dea50.txt:983/1007` |
 //! | `+0x12` | `[u8;4]` | **on-contact effect-id list** (`0`/`0xFF`-terminated) dispatched via `0x801f6324`/`0x801f6418` on the hit branch | Confirmed | `_801e09f8.txt:1162/1285/1312/1335` |
-//! | `+0x16` | `[u8;4]` | **launch-strike effect-id list** — same dispatch as `+0x12`, fired at the initial-strike transition | Confirmed | `_801e09f8.txt:1182/1224/1364/1406/1506` |
+//! | `+0x16` | `[u8;4]` | **launch-strike effect-id list** - same dispatch as `+0x12`, fired at the initial-strike transition | Confirmed | `_801e09f8.txt:1182/1224/1364/1406/1506` |
 //!
 //! The effect-id lists `+0x12`/`+0x16` index two auxiliary tables that live in
-//! the same overlay right after the power table — `0x801f6324` (effect
+//! the same overlay right after the power table - `0x801f6324` (effect
 //! prototypes) and `0x801f6418` (per-effect SFX); ids `< 100` index those, `==
 //! 100` spawns a fixed flash, the high bit (`& 0x80`) routes to `FUN_801dfdf0`,
 //! `0xFF` is the skip sentinel and `0x00` terminates the list.
 //!
-//! Still genuinely open (no clear reader): nothing — the remaining table bytes
+//! Still genuinely open (no clear reader): nothing - the remaining table bytes
 //! at the record tail past `+0x19` belong to the next record (stride 26). See
 //! `docs/formats/move-power.md` for the full write-up.
 //!
@@ -114,7 +114,7 @@
 //! labels every record:
 //!
 //! - **records `0x10..=0x2b`** (move ids `0x25..=0x74`) are the **named monster
-//!   special-attacks** — every one resolves to a non-empty spell-table name (Fire
+//!   special-attacks** - every one resolves to a non-empty spell-table name (Fire
 //!   Breath `0x25`, Tail Fire `0x27` (the enemy-Gimard move), … through the
 //!   late-game attacks at `0x61..=0x74`). This is their physical/special-attack
 //!   *power*, separate from the *name* the spell table carries.
@@ -165,7 +165,7 @@ pub const MOVE_ID_INDEX_NONE: u8 = 0xFF;
 /// Runtime VA of the **effect-prototype table** the records' `+0x12` / `+0x16`
 /// effect-id lists index. Each `u32` entry is the spawn parameter `FUN_801e09f8`
 /// passes to the effect spawner `FUN_80050ed4` (→ the part-stager `FUN_80021B04`)
-/// — and it is a **pointer into this same overlay's data** at a move-VM part
+/// - and it is a **pointer into this same overlay's data** at a move-VM part
 /// record `[i16 model_sel][u16 flags][bytecode]` (the summon part-record format).
 /// So the table is the move-FX **part-record index**: every entry resolves to a
 /// scene-graph head the move VM then animates. Resolve entries with
@@ -189,7 +189,7 @@ pub const EFFECT_SFX_TABLE_FILE_OFFSET: usize =
 /// Entry count shared by both effect tables. The `u32`-stride prototype table is
 /// immediately followed by the byte-stride SFX table, so its extent is exactly
 /// `(0x6418 - 0x6324) / 4 = 61`; the same index space bounds both (the runtime's
-/// `< 100` spawn guard is a loose safety check — an `index >= 61` would alias the
+/// `< 100` spawn guard is a loose safety check - an `index >= 61` would alias the
 /// SFX table into the prototype read).
 pub const EFFECT_AUX_TABLE_LEN: usize = (EFFECT_SFX_TABLE_VA - EFFECT_PROTO_TABLE_VA) as usize / 4;
 
@@ -228,18 +228,18 @@ pub struct MoveRecord {
 
 impl MoveRecord {
     /// The roll-modulus base `FUN_801dd0ac` derives from `+0`: `(i16)power >> 2`
-    /// (arithmetic shift — preserves sign).
+    /// (arithmetic shift - preserves sign).
     pub fn power(&self) -> i32 {
         (self.power_raw as i32) >> 2
     }
 
-    /// `+0x04` `u16` — the move's timing-window counter the action SM seeds at
+    /// `+0x04` `u16` - the move's timing-window counter the action SM seeds at
     /// `ctx+0x6c6` and decrements (`FUN_801dea50` → `801e09f8`).
     pub fn counter_init(&self) -> u16 {
         u16::from_le_bytes([self.raw[4], self.raw[5]])
     }
 
-    /// `+0x02` `i16` — strike-position **Y offset**: subtracted from the per-arm
+    /// `+0x02` `i16` - strike-position **Y offset**: subtracted from the per-arm
     /// Y lane (`ctx + arm*8 + 0x1146`) when the move's hit point is seeded from
     /// the target's position (`801e09f8`). Inferred semantic; the read is
     /// confirmed.
@@ -247,7 +247,7 @@ impl MoveRecord {
         i16::from_le_bytes([self.raw[2], self.raw[3]])
     }
 
-    /// `+0x06` `u16` — **per-arm phase duration**: written into the per-arm
+    /// `+0x06` `u16` - **per-arm phase duration**: written into the per-arm
     /// countdown slot `ctx + arm*2 + 0x6c6` at the strike / re-arm transitions,
     /// distinct from the whole-move [`counter_init`](Self::counter_init) at
     /// `+0x04`. Inferred semantic; the read is confirmed.
@@ -255,21 +255,21 @@ impl MoveRecord {
         u16::from_le_bytes([self.raw[6], self.raw[7]])
     }
 
-    /// `+0x08` `u8` — **homing / approach speed**: scales the per-frame XY step
+    /// `+0x08` `u8` - **homing / approach speed**: scales the per-frame XY step
     /// toward the target (`* DAT_1f800393 * 8`) and reseeds the approach counter
     /// as `0x40 - speed` (`801e09f8`). Inferred semantic; the read is confirmed.
     pub fn homing_speed(&self) -> u8 {
         self.raw[8]
     }
 
-    /// `+0x09` `u8` — **flag**: when non-zero the move's live XY position is
+    /// `+0x09` `u8` - **flag**: when non-zero the move's live XY position is
     /// copied into the spawned effect actor each frame (the effect tracks the
     /// strike). Confirmed reader (`801e09f8`).
     pub fn effect_tracks_strike(&self) -> bool {
         self.raw[9] != 0
     }
 
-    /// `+0x0a` `u8` — **impact-effect selector** (enum, typically 1..5): stored
+    /// `+0x0a` `u8` - **impact-effect selector** (enum, typically 1..5): stored
     /// at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4`
     /// (`(value-1)*4`) into `actor+0x04` ([`parse_impact_effect_table`]), and
     /// values 3/4/5 branch to extra status-proc rolls. `0` = no impact effect.
@@ -278,14 +278,14 @@ impl MoveRecord {
         self.raw[0x0a]
     }
 
-    /// `+0x0b` `u8` — **trail / afterimage texture-page id**: the streak draw
+    /// `+0x0b` `u8` - **trail / afterimage texture-page id**: the streak draw
     /// helper turns it into the GP0 texpage word `0x7700 + id` (`801e1ab0`).
     /// Confirmed.
     pub fn trail_texture_page(&self) -> u8 {
         self.raw[0x0b]
     }
 
-    /// `+0x0c` `u8` — a **designer category tag** (`'C'`/`'E'`/`'G'`/`0`) baked
+    /// `+0x0c` `u8` - a **designer category tag** (`'C'`/`'E'`/`'G'`/`0`) baked
     /// into the unnamed internal-tier records only. **No runtime reader exists**
     /// for this byte in any battle-action function, so it is unused at runtime;
     /// exposed for completeness / data inspection. Returns `Some(c)` for a
@@ -295,13 +295,13 @@ impl MoveRecord {
         (b.is_ascii_graphic()).then_some(b as char)
     }
 
-    /// `+0x0d` `u8` — the move's sound / voice cue id, handed to the cue
+    /// `+0x0d` `u8` - the move's sound / voice cue id, handed to the cue
     /// dispatcher `FUN_8004fcc8` by the action SM (`801e09f8`).
     pub fn sound_cue_id(&self) -> u8 {
         self.raw[0x0d]
     }
 
-    /// `+0x0e` `u8` — **list-mode flag**: `0xFF` broadcasts the move's trail to
+    /// `+0x0e` `u8` - **list-mode flag**: `0xFF` broadcasts the move's trail to
     /// all four party arms (a sweeping / multi-target move); otherwise it is the
     /// head of a small effect-id list the setup loop spawns. Confirmed reader
     /// (`801e09f8` / `801dea50`).
@@ -309,7 +309,7 @@ impl MoveRecord {
         self.raw[0x0e]
     }
 
-    /// `+0x12` `[u8;4]` — the raw **on-contact effect-id list**, dispatched on
+    /// `+0x12` `[u8;4]` - the raw **on-contact effect-id list**, dispatched on
     /// the hit branch. Use [`contact_effects`](Self::contact_effects) for the
     /// terminator-trimmed view.
     pub fn contact_effects_raw(&self) -> [u8; 4] {
@@ -321,7 +321,7 @@ impl MoveRecord {
         ]
     }
 
-    /// `+0x16` `[u8;4]` — the raw **launch-strike effect-id list**, dispatched at
+    /// `+0x16` `[u8;4]` - the raw **launch-strike effect-id list**, dispatched at
     /// the initial-strike transition. Use [`launch_effects`](Self::launch_effects)
     /// for the terminator-trimmed view.
     pub fn launch_effects_raw(&self) -> [u8; 4] {
@@ -353,7 +353,7 @@ impl MoveRecord {
 }
 
 /// Collect a 4-byte effect-id list up to its first terminator: `0x00` ends the
-/// list and `0xFF` is the skip sentinel — both stop collection (matching the
+/// list and `0xFF` is the skip sentinel - both stop collection (matching the
 /// `id == -1` / `id == 0` loop guards in `FUN_801e09f8`).
 fn trim_effect_list(raw: &[u8; 4]) -> Vec<u8> {
     raw.iter()
@@ -365,7 +365,7 @@ fn trim_effect_list(raw: &[u8; 4]) -> Vec<u8> {
 /// Parse `count` records from `bytes` starting at `offset`. Returns `None` when
 /// the slice doesn't fit or the structural guard fails (record 0 must be the
 /// all-zero unused slot and at least the first few real records must be
-/// populated — a cheap check that the pinned offset still lands on the table).
+/// populated - a cheap check that the pinned offset still lands on the table).
 pub fn parse_at(bytes: &[u8], offset: usize, count: usize) -> Option<Vec<MoveRecord>> {
     let end = offset.checked_add(count.checked_mul(MOVE_POWER_RECORD_STRIDE)?)?;
     if end > bytes.len() {
@@ -457,22 +457,22 @@ pub fn record_for_move_id<'a>(
 /// effect-id list, classified exactly as the `FUN_801e09f8` dispatch loop reads
 /// the byte (`overlay_battle_action_801e09f8.txt:1182..1225` / `1285..1312`).
 ///
-/// Both lists dispatch their bytes identically — the only difference is *when*
+/// Both lists dispatch their bytes identically - the only difference is *when*
 /// they fire (on contact vs at the launch transition).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectListEntry {
-    /// `0x00` — terminates the list scan (no effect).
+    /// `0x00` - terminates the list scan (no effect).
     Terminator,
-    /// `0x01..=0x63` — spawn the effect prototype [`EffectAuxTables::effect_proto`]
+    /// `0x01..=0x63` - spawn the effect prototype [`EffectAuxTables::effect_proto`]
     /// at this index and, when non-zero, play its SFX
     /// [`EffectAuxTables::effect_sfx`].
     Spawn(u8),
-    /// `0x64` (`== 100`) — the fixed screen-flash effect (no table lookup).
+    /// `0x64` (`== 100`) - the fixed screen-flash effect (no table lookup).
     FixedFlash,
-    /// High bit set (and not `0xFF`) — routed to `FUN_801dfdf0` with the low 7
+    /// High bit set (and not `0xFF`) - routed to `FUN_801dfdf0` with the low 7
     /// bits as the id.
     AltEffect(u8),
-    /// `0xFF`, or an unused `0x65..=0x7F` byte — no effect, but the scan does not
+    /// `0xFF`, or an unused `0x65..=0x7F` byte - no effect, but the scan does not
     /// terminate here (only `0x00` terminates).
     Skip,
 }
@@ -572,7 +572,7 @@ impl EffectAuxTables {
 ///
 /// Each of the table's [`EFFECT_AUX_TABLE_LEN`] entries is a pointer into this
 /// overlay's own data at a `[i16 model_sel][u16 flags][move-VM bytecode]` record
-/// — the same scene-graph part format the summon stagers use
+/// - the same scene-graph part format the summon stagers use
 /// ([`crate::summon_overlay`]). Entries can alias (several effect ids reuse one
 /// record), so the returned parts are the **unique** records, sorted by offset,
 /// each with its `bytecode` range bounded by the next record. Map a proto index

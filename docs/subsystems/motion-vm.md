@@ -53,11 +53,11 @@ The default mode follows a target actor slot at a configured distance + height.
 
 `World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM step per field tick, writing the live position back into `World::field_npc_positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Three start paths feed it:
 
-- **Autonomous patrol routes** (`World::field_npc_routes`, gated by `World::animate_field_npcs` / `play-window --live-npcs`): each placement's own pre-text script bytecode carries `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints (dropping the `(127,127)` park sentinel, cross-context targets, and beyond-locality story-relocation branches) and the engine loops them as a patrol. Autonomous legs pause while a dialogue is up — retail's interaction motion-pause kick (`FUN_8003c9ac` reloading every moving-class actor's pause timer on the touch event post).
-- **Interaction-prologue runs**: when the opt-in field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::op4c_n5_sub1_npc_run`) starts the interacted actor's walk leg. These run through the dialogue — they are the interaction's choreography.
+- **Autonomous patrol routes** (`World::field_npc_routes`, gated by `World::animate_field_npcs` / `play-window --live-npcs`): each placement's own pre-text script bytecode carries `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints (dropping the `(127,127)` park sentinel, cross-context targets, and beyond-locality story-relocation branches) and the engine loops them as a patrol. Autonomous legs pause while a dialogue is up - retail's interaction motion-pause kick (`FUN_8003c9ac` reloading every moving-class actor's pause timer on the touch event post).
+- **Interaction-prologue runs**: when the opt-in field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::op4c_n5_sub1_npc_run`) starts the interacted actor's walk leg. These run through the dialogue - they are the interaction's choreography.
 - **Actor-VM `start_motion`** (op `0x09` `MotionAt`, retail `FUN_800358c0`): `World::start_actor_motion` records the glide target and steps the actor's sprite position toward it through the same pursue kernel (`World::tick_actor_motions`).
 
-The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape — write the target, reset the glide cursor — and the per-frame consumer is this VM. Residue: the exact retail per-NPC glide speed (the `+0x72` multiplier path) is unpinned; the engine paces NPCs at the player walking step. Per-actor field-VM channels (yield-paced, story-flag-branched script execution) are not modelled — the engine drives the decoded waypoint list directly.
+The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape - write the target, reset the glide cursor - and the per-frame consumer is this VM. Residue: the exact retail per-NPC glide speed (the `+0x72` multiplier path) is unpinned; the engine paces NPCs at the player walking step. Per-actor field-VM channels (yield-paced, story-flag-branched script execution) are not modelled - the engine drives the decoded waypoint list directly.
 
 ## Provenance
 
@@ -65,7 +65,7 @@ The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` sh
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Move-table VM](move-vm.md) ·
 [Actor VM](actor-vm.md) ·
 [World-map controller](world-map.md)

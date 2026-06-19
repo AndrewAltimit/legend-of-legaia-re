@@ -9,7 +9,7 @@
 //! [`legaia_asset::element_affinity`].
 //!
 //! [`plan_matrix`] randomizes the 64 cells: [`StatMode::Shuffle`] permutes them
-//! (the multiset of scale percentages is preserved — the same number of
+//! (the multiset of scale percentages is preserved - the same number of
 //! weaknesses / resistances exists, just between different element pairs), while
 //! [`StatMode::Random`] draws each cell from that pool. Only the matrix moves;
 //! the per-character element assignment and the summon-power rows are left

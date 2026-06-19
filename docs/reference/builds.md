@@ -241,6 +241,6 @@ Useful as fixtures for validating extractors:
 
 ## See also
 
-- [`docs/reference/gamedata.md`](gamedata.md) — the curated enemy / item tables the unused-content indices reference.
-- [`docs/reference/memory-map.md`](memory-map.md) — the per-mini-game RAM slabs and region-shifted globals.
-- [`docs/reference/cheats.md`](cheats.md) — region-specific RAM offsets validated against these builds.
+- [`docs/reference/gamedata.md`](gamedata.md) - the curated enemy / item tables the unused-content indices reference.
+- [`docs/reference/memory-map.md`](memory-map.md) - the per-mini-game RAM slabs and region-shifted globals.
+- [`docs/reference/cheats.md`](cheats.md) - region-specific RAM offsets validated against these builds.

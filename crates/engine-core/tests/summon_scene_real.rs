@@ -4,7 +4,7 @@
 //! Pins, on real disc bytes, that the summon scene-graph driver
 //! ([`legaia_engine_core::summon`]) seeds one move-VM actor per parsed part and
 //! advances every part each frame through `legaia_engine_vm::move_vm` without
-//! hitting an unimplemented opcode — the faithful per-part animation
+//! hitting an unimplemented opcode - the faithful per-part animation
 //! computation. Skips when `LEGAIA_DISC_BIN` / `extracted/` is absent.
 
 use std::path::PathBuf;

@@ -1,6 +1,6 @@
 //! Disc-gated validation for the house-door warp classifier
 //! (`legaia_rando::house_door`): across the whole retail PROT corpus, the
-//! classified door-warp population must match the byte-audited census —
+//! classified door-warp population must match the byte-audited census -
 //! per-scene IN / OUT class counts, the structural op signature
 //! (`0xA3 0xF8` = cross-context player MOVE_TO), non-sentinel targets, and the
 //! runtime-pinned Mei's-house anchor (town01 interior tile `(97, 54)`, the
@@ -25,7 +25,7 @@ fn load_disc() -> Option<Vec<u8>> {
 /// 53 = bylon, 166 = geremi, 183 = balden, 192 = conc, 255 = tower,
 /// 282 = retockin, 291 = retona, 348 = town0d, 435 = uru.) `unclassified`
 /// counts the partition-0 player warps without a door-name class (story
-/// repositions, e.g. the town01 intro "inside the house" warp) — found but
+/// repositions, e.g. the town01 intro "inside the house" warp) - found but
 /// never shuffled.
 const EXPECTED: &[(usize, (usize, usize, usize))] = &[
     (4, (2, 2, 1)),
@@ -94,7 +94,7 @@ fn classifier_census_matches_the_disc() {
         );
     }
 
-    // The census is exactly the byte-audited population — no scene gained or
+    // The census is exactly the byte-audited population - no scene gained or
     // lost a classified door warp.
     let expected: BTreeMap<usize, (usize, usize, usize)> = EXPECTED.iter().copied().collect();
     assert_eq!(

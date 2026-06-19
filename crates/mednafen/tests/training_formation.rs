@@ -4,7 +4,7 @@
 //! The global formation cell at `0x8007BD0C..0x8007BD0F` holds up to four
 //! monster ids (one per battle slot). Across the training-fight captures it
 //! reads empty in the pre-battle field and a lone monster id `0x4F` ("Tetsu")
-//! from battle-load onward — see `docs/formats/encounter.md`. This pins that
+//! from battle-load onward - see `docs/formats/encounter.md`. This pins that
 //! observation so a regression in the formation-cell address or the corpus
 //! surfaces here.
 //!
@@ -157,19 +157,19 @@ fn training_fight_formation_cell_matches_corpus() {
 /// field-mode actor-interaction frame, distinct from the free-roam pre-battle
 /// field in two retail-observable ways:
 ///
-///   1. **No formation is installed yet** — the global formation cell is clear,
+///   1. **No formation is installed yet** - the global formation cell is clear,
 ///      exactly like the free-roam frame. The lone-Tetsu formation is written at
 ///      the engage -> battle-load transition, not while the prompt is up. This
 ///      matches the engine's carrier SM, which installs the formation when the
 ///      carrier fires (`World::begin_field_carrier_battle`), not on interaction.
-///   2. **Free movement is locked** — the player actor's flag word carries the
+///   2. **Free movement is locked** - the player actor's flag word carries the
 ///      `0x80000` movement-disabled bit, which is clear in the free-roam frame.
 ///
 /// Together these pin the precondition the deferred field-VM dialogue-accept
 /// auto-arm must detect: a movement-locked actor interaction with the formation
 /// not yet installed. (The `0x1000000` "action requested" bit and the `+0x98`
-/// interaction-target pointer are both non-distinguishing here — set / non-null
-/// in the free-roam frame too — so the load-bearing signal is `0x80000`.)
+/// interaction-target pointer are both non-distinguishing here - set / non-null
+/// in the free-roam frame too - so the load-bearing signal is `0x80000`.)
 #[test]
 fn dialogue_accept_frame_is_movement_locked_pre_install() {
     let Some(manifest_path) = manifest_path() else {

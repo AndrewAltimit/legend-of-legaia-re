@@ -1,4 +1,4 @@
-//! Disc-gated end-to-end oracle for the steal-item randomizer **at runtime** —
+//! Disc-gated end-to-end oracle for the steal-item randomizer **at runtime** -
 //! the fourth member of the randomizer runtime-oracle set (chest, monster-drop,
 //! encounter, and now steal).
 //!
@@ -7,7 +7,7 @@
 //! `SCUS_942.54` steal table changes, every steal chance byte is untouched, and
 //! the touched SCUS sector stays EDC/ECC-valid. What it does **not** prove is
 //! that a runtime actually *reads the patched byte and grants the new item* on a
-//! successful steal — the question behind "is it truly randomizing, or is
+//! successful steal - the question behind "is it truly randomizing, or is
 //! something serving a stale value?".
 //!
 //! A savestate can't answer that cleanly (the same trap the other oracles
@@ -20,13 +20,13 @@
 //! The clean-room engine sidesteps that cache entirely: it decodes the steal
 //! table straight from the disc's `SCUS_942.54` bytes
 //! ([`StealTable::from_scus`]) and runs the steal-grant kernel the randomizer's
-//! edit feeds — the percent roll + inventory add in [`World::apply_steal`] (the
+//! edit feeds - the percent roll + inventory add in [`World::apply_steal`] (the
 //! steal counterpart to the `apply_battle_loot` drop grant). So this test:
 //!   1. picks a stealable monster (the Skeleton, id 13 → Incense, the same
 //!      monster the live `player_steal_skeleton_*` capture pinned the table
 //!      with) on a scratch copy of the real disc,
 //!   2. patches only its steal **item** byte in `SCUS_942.54` to a distinct id
-//!      (chance untouched — the surgical single-byte edit the randomizer makes),
+//!      (chance untouched - the surgical single-byte edit the randomizer makes),
 //!   3. re-decodes the patched steal table off the patched image (the bytes a
 //!      fresh executable load would stream),
 //!   4. drives `apply_steal` for that monster and asserts the runtime grants the
@@ -49,7 +49,7 @@ use legaia_rando::disc::DiscPatcher;
 const ROLL_LANDS_SEED: u32 = 32937;
 
 /// keikoku-capture anchor: the Skeleton (monster id 13) steals Incense (0x8a) at
-/// 30% — the table entry the live `player_steal_skeleton_*` save pair pinned.
+/// 30% - the table entry the live `player_steal_skeleton_*` save pair pinned.
 const SKELETON_ID: u16 = 13;
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -154,12 +154,12 @@ fn patched_steal_grants_new_item_at_runtime() {
         runtime,
         Some(original),
         "runtime must NOT grant the original 0x{original:02x} after the patch \
-         — a stale value here is the caching failure this test guards"
+         - a stale value here is the caching failure this test guards"
     );
 
     eprintln!(
         "steal runtime E2E: monster {SKELETON_ID} baseline steals 0x{original:02x} ({}), \
-         patched steals 0x{replacement:02x} ({}) — 0x{original:02x} -> 0x{replacement:02x}",
+         patched steals 0x{replacement:02x} ({}) - 0x{original:02x} -> 0x{replacement:02x}",
         name_of(original),
         name_of(replacement),
     );

@@ -33,7 +33,7 @@
 //! ### Format meaning - partially understood
 //!
 //! The prescript is the **word-aligned per-scene actor/event record structure**
-//! shared with [`crate::scene_event_scripts`] — NOT field-VM (`FUN_801DE840`)
+//! shared with [`crate::scene_event_scripts`] - NOT field-VM (`FUN_801DE840`)
 //! bytecode (it disassembles as field-VM with a 65–88 % error rate). The
 //! per-record `0xFFFF 0x0000` markers are 16-bit record header sentinels, not
 //! field-VM frame-divider opcodes. The real per-scene field-VM scripts live in

@@ -130,7 +130,7 @@ This is the reverse of an earlier reading. Consequences:
 
 - The oft-cited `0x7680` is the **CLUT**, not the tpage: as a CBA it decodes to fb `(0, 474)`, an effect-CLUT row (PROT 870 TIM0's CLUT), *not* page `(0,0)`.
 - The real tpage is the single byte at `+6` (e.g. `0x25` = page `(320,0)`, 4bpp).
-- So effect sprites sample the loaded effect-texture pages (PROT 870 / `etim`, `fb_x≥320`) with effect-band CLUTs — confirmed against a melee hit-spark battle capture (the live impact quads sample exactly pages `(320,0)`/`(448,0)` with CLUT rows 473..480).
+- So effect sprites sample the loaded effect-texture pages (PROT 870 / `etim`, `fb_x≥320`) with effect-band CLUTs - confirmed against a melee hit-spark battle capture (the live impact quads sample exactly pages `(320,0)`/`(448,0)` with CLUT rows 473..480).
 
 The pixels live in VRAM, blitted at battle load; the atlas carries only the VRAM coordinates.
 
@@ -138,7 +138,7 @@ The pixels live in VRAM, blitted at battle load; the atlas carries only the VRAM
 
 ### Battle effect cluster (`befect_data`)
 
-`efect.dat` is one of four dev-named files in the retail `befect_data` CDNAME block (defines `872..875` → **extraction entries 870..873** under the [−2 numbering correction](cdname.md#numbering-space)). The battle scene loader `FUN_800520F0` pulls them as a sequential state machine (sub-state byte at `gp+0xa59`); each state loads one file through the dual-mode loader — retail opens the dev-path string (a trap stub on this build), so the load resolves through the **raw TOC index** (`FUN_8003e8a8`; raw = extraction + 2). The full case → index → entry map, read off the decomp (`ghidra/scripts/funcs/800520f0.txt`) and byte-checked per entry below:
+`efect.dat` is one of four dev-named files in the retail `befect_data` CDNAME block (defines `872..875` → **extraction entries 870..873** under the [−2 numbering correction](cdname.md#numbering-space)). The battle scene loader `FUN_800520F0` pulls them as a sequential state machine (sub-state byte at `gp+0xa59`); each state loads one file through the dual-mode loader - retail opens the dev-path string (a trap stub on this build), so the load resolves through the **raw TOC index** (`FUN_8003e8a8`; raw = extraction + 2). The full case → index → entry map, read off the decomp (`ghidra/scripts/funcs/800520f0.txt`) and byte-checked per entry below:
 
 | Loader state / case | Dev-path string | Raw index | Extraction entry | Content |
 |---|---|---|---|---|
@@ -146,9 +146,9 @@ The pixels live in VRAM, blitted at battle load; the atlas carries only the VRAM
 | case `0xb` | `h:\prot\battle\etmd.dat` (`0x80015370`) | `0x369` | **0871** | Effect 3D-model library (30-TMD `asset::pack`; registered via `FUN_80026b4c`). |
 | case `0xb` | `h:\prot\battle\vdf.dat` (`0x80015388`) | `0x36A` | **0872** | VDF buffer (32-entry offset pack; asset type `0x07`, appended via `FUN_8001fbcc`). |
 | case `0xc` | `data\battle\efect.dat` (`0x800153a0`) | `0x36B` | **0873** | The 2-pack above; initialised by `FUN_801DE914` (offset fixup only). |
-| case `0x4` | — (battle-type-conditional) | `0x367` / `0x36D` | 0869 / 0875 | Streaming files `[type-0 VAB chunk][type-3 chunk]`; `0x36D` when `DAT_8007bd11 == 4`. Outside the befect block (retail `sound_data` / `sound_data2`). |
+| case `0x4` | - (battle-type-conditional) | `0x367` / `0x36D` | 0869 / 0875 | Streaming files `[type-0 VAB chunk][type-3 chunk]`; `0x36D` when `DAT_8007bd11 == 4`. Outside the befect block (retail `sound_data` / `sound_data2`). |
 
-So the dev names map 1:1 onto the four retail `befect_data` slots. Earlier readings that applied the raw indices as extraction indices ("etim = entry 872", "etmd loads at `0x367`", "PROT 870 = index `0x366`, blitted by a separate unpinned site") are superseded — extraction 0870 **is** the case-`0x8` `etim.dat` load. The extraction filename labels for 0870/0871 say `sound_data` (the +2 label shift), and extraction **0874** — which an earlier cluster analysis read as "etmd/vdf/etim LZS sections" — is the retail `player_data` file (`player.lzs`): its three LZS sections are the **field character mesh pack / auxiliary models / field-character textures** (see [`character-mesh.md`](character-mesh.md)).
+So the dev names map 1:1 onto the four retail `befect_data` slots. Earlier readings that applied the raw indices as extraction indices ("etim = entry 872", "etmd loads at `0x367`", "PROT 870 = index `0x366`, blitted by a separate unpinned site") are superseded - extraction 0870 **is** the case-`0x8` `etim.dat` load. The extraction filename labels for 0870/0871 say `sound_data` (the +2 label shift), and extraction **0874** - which an earlier cluster analysis read as "etmd/vdf/etim LZS sections" - is the retail `player_data` file (`player.lzs`): its three LZS sections are the **field character mesh pack / auxiliary models / field-character textures** (see [`character-mesh.md`](character-mesh.md)).
 
 #### Entry contents (byte-checked)
 
@@ -159,7 +159,7 @@ So the dev names map 1:1 onto the four retail `befect_data` slots. Earlier readi
 | 0872 | `vdf.dat` | Offset pack, 32 strictly-ascending entries (~96 B records). |
 | 0873 | `efect.dat` | The 2-pack: 144 atlas entries, `pack0@0x488` (14 anim batches), `pack1@0x900` (33 scripts). Byte-identical to the live post-init buffer at `_DAT_8007BD5C` (PROT.DAT sector `0x9086` = this entry's start). |
 
-The per-entry PROT extractor over-reads here (neighbouring entries' extended footprints overlap), so naive `.BIN` files bleed into their neighbours. `asset befect-cluster PROT.DAT --cdname CDNAME.TXT [--out DIR]` footprint-bounds and classifies a window of entries; note it resolves the CDNAME symbol in define-number space, so its "befect" window is extraction 872..875 — retail `vdf.dat`, `efect.dat`, `player.lzs` (= `player_data`), and a `sound_data2` VAB stream. Its LZS-section expansion of entry 874 is the **player.lzs** split, not the battle effect files.
+The per-entry PROT extractor over-reads here (neighbouring entries' extended footprints overlap), so naive `.BIN` files bleed into their neighbours. `asset befect-cluster PROT.DAT --cdname CDNAME.TXT [--out DIR]` footprint-bounds and classifies a window of entries; note it resolves the CDNAME symbol in define-number space, so its "befect" window is extraction 872..875 - retail `vdf.dat`, `efect.dat`, `player.lzs` (= `player_data`), and a `sound_data2` VAB stream. Its LZS-section expansion of entry 874 is the **player.lzs** split, not the battle effect files.
 
 #### Effect texels in VRAM - pixel-verified
 
@@ -167,9 +167,9 @@ The per-entry PROT extractor over-reads here (neighbouring entries' extended foo
 
 **Two texture pools serve battle effects** (an earlier reading conflated them under one "etim" label):
 
-1. **`etim.dat` = extraction 0870** (the 3-TIM pack above). **Battle-only**: byte-verified pixel-exact in VRAM against every stable Rim Elm battle capture (command-menu / submenu / pre- and post-Seru-capture frames match 100%; a still-loading frame matches partially — the mid-DMA snapshot). Its pages sit at `fb_y=0` in the same VRAM columns the field uses for town stage textures, so the town01 *field* captures hold unrelated texels there. The engine uploads it on **battle entry** (`engine-core::scene::upload_flame_atlas_into_vram`, into a throwaway VRAM copy that battle exit discards, so field VRAM is never clobbered).
+1. **`etim.dat` = extraction 0870** (the 3-TIM pack above). **Battle-only**: byte-verified pixel-exact in VRAM against every stable Rim Elm battle capture (command-menu / submenu / pre- and post-Seru-capture frames match 100%; a still-loading frame matches partially - the mid-DMA snapshot). Its pages sit at `fb_y=0` in the same VRAM columns the field uses for town stage textures, so the town01 *field* captures hold unrelated texels there. The engine uploads it on **battle entry** (`engine-core::scene::upload_flame_atlas_into_vram`, into a throwaway VRAM copy that battle exit discards, so field VRAM is never clobbered).
 
-2. **The `player_data` §2 band (extraction 0874 §2)** — eight TIMs at `fb_y=256+`:
+2. **The `player_data` §2 band (extraction 0874 §2)** - eight TIMs at `fb_y=256+`:
    the three field-character atlases at `(832,256)`/`(852,256)`/`(872,256)`, two
    shared 256-colour pages at `(320,256)`/`(384,256)`, two 16×64 extension tiles
    at `(880,384)`/`(880,448)`, CLUTs in rows 473/475/478 (full table:
@@ -177,8 +177,8 @@ The per-entry PROT extractor over-reads here (neighbouring entries' extended foo
    byte-exact vs a live field VRAM dump). These were previously mislabeled
    "etim" here. They are **field-resident** (uploaded at field entry, kept
    through battle), which is why mid-cast battle captures byte-match them:
-   during a Gimard *Tail Fire* cast, five of the blocks — `(832,256)`,
-   `(852,256)`, `(872,256)`, `(880,384)`, `(880,448)` — match VRAM at their
+   during a Gimard *Tail Fire* cast, five of the blocks - `(832,256)`,
+   `(852,256)`, `(872,256)`, `(880,384)`, `(880,448)` - match VRAM at their
    rect-header targets, and the `(320,256)`/`(384,256)` pages match a `town01`
    field capture 256 rows byte-exact. The engine uploads them at scene entry
    (`scene::upload_effect_textures_into_vram`); the field VRAM-parity oracle
@@ -190,19 +190,19 @@ The per-entry PROT extractor over-reads here (neighbouring entries' extended foo
    **Render path (which model is the flame).** Walking the live GPU primitive pool from the same mid-cast capture (decoded with `legaia_mednafen::prim_pool`) isolates the flame:
 
    - It is a tight cluster of ~15 visible **Gouraud-textured** primitives (`POLY_GT3` / `POLY_GT4`) in a ~40×50px screen region.
-   - All sample page `(832,256)` 4bpp + CLUT **row 478** across columns 0/16/32 *simultaneously* (a static multi-shade look, **not** a temporal CLUT cycle: see "Animation is geometric" below) — i.e. the flame samples the **`player_data` §2 band**, not the 0870 pages.
+   - All sample page `(832,256)` 4bpp + CLUT **row 478** across columns 0/16/32 *simultaneously* (a static multi-shade look, **not** a temporal CLUT cycle: see "Animation is geometric" below) - i.e. the flame samples the **`player_data` §2 band**, not the 0870 pages.
    - The `cba`/`tsb` are applied at *render* time (none of the ~33 TMDs registered in `DAT_8007C018` during the cast bake that CBA).
 
    **Where the battle flame model comes from.**
 
    - A player Seru-magic cast pages in a **per-summon code overlay** (`FUN_8003EC70(id - 0x79)` → extraction PROT 903..913 under the corrected loader index math; Gimard *Tail Fire* `0x81` → PROT 903), and that overlay supplies the summon's spawn logic.
-   - Confirmed against the live Tail-Fire RAM: the `player_data` §2 texels are resident in VRAM, yet **none of 874 §0's five TMDs are resident in main RAM** — 874 §0 is the *field* character pack (Vahn / Noa / Gala / savepoint / auxiliary; [`character-mesh.md` § On-disc layout](character-mesh.md#on-disc-layout)), not an effect-model pack. Its 5th/smallest TMD (2 objects / 18 verts / 25 prims) *does* bake `cba=0x778E@(224,478)` / `tsb=0x001D@(832,256)` and looks flame-like; the engine keeps it only as a preview fallback (`engine-core::scene::ETMD_TAIL_FIRE_MODEL_INDEX`).
+   - Confirmed against the live Tail-Fire RAM: the `player_data` §2 texels are resident in VRAM, yet **none of 874 §0's five TMDs are resident in main RAM** - 874 §0 is the *field* character pack (Vahn / Noa / Gala / savepoint / auxiliary; [`character-mesh.md` § On-disc layout](character-mesh.md#on-disc-layout)), not an effect-model pack. Its 5th/smallest TMD (2 objects / 18 verts / 25 prims) *does* bake `cba=0x778E@(224,478)` / `tsb=0x001D@(832,256)` and looks flame-like; the engine keeps it only as a preview fallback (`engine-core::scene::ETMD_TAIL_FIRE_MODEL_INDEX`).
    - See [`subsystems/battle-action.md`](../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch).
 
    **The real effect-model library is extraction entry 0871 (`etmd.dat`).** Verified against the live Tail-Fire RAM:
 
    - The 30-entry TMD pack loads verbatim at `0x800CA25C`, and all 30 register into `DAT_8007C018[3..32]` via `FUN_80026B4C` (battle init, loader case `0xb`, raw index `0x369`).
-   - Gimard's flame is `DAT_8007C018[26]` (see [`subsystems/battle-action.md`](../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch)); its animation is **geometric** (the summon stager overlay spawns 8 flame part-actors via `FUN_80021B04` and the actor system ticks them — **not** the move VM, and **not** CLUT cycling), see "Animation is geometric" below. (The "8 parts" phase loop is decoded from the extraction-905 stager file — the spell-`0x83` slot under the corrected loader math; Gimard's own file is 903.)
+   - Gimard's flame is `DAT_8007C018[26]` (see [`subsystems/battle-action.md`](../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch)); its animation is **geometric** (the summon stager overlay spawns 8 flame part-actors via `FUN_80021B04` and the actor system ticks them - **not** the move VM, and **not** CLUT cycling), see "Animation is geometric" below. (The "8 parts" phase loop is decoded from the extraction-905 stager file - the spell-`0x83` slot under the corrected loader math; Gimard's own file is 903.)
    - The engine loads it at scene entry (`engine-core::scene::seed_effect_model_library_from_etmd`): the uncompressed pack is walked over the entry's extended footprint and the 30 TMDs register into `World::global_tmd_pool[3..=32]`, overwriting the two field-pack tail slots `[3]`/`[4]` exactly as retail's battle init does. The Gimard flame is `GIMARD_TAIL_FIRE_MODEL_INDEX = 26` (= pack entry 23).
 
    **Animation is geometric, not CLUT cycling (earlier reading falsified).**
@@ -210,8 +210,8 @@ The per-entry PROT extractor over-reads here (neighbouring entries' extended foo
    - Two animation-distinct Tail Fire capture frames (catalogued `battle_gimard_tail_fire_a`/`_b`) have a **byte-identical CLUT band** (VRAM rows 470..499) while their framebuffers differ ~21% - so *no* per-frame CLUT/CBA cycling occurs. The visible flame motion is **geometric**.
    - A live PCSX-Redux trace of a player Gimard *Burning Attack* cast pins the render path: the **battle per-actor draw `FUN_80048A08` fires 35-64×/frame** → the per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A `FUN_80043390`, while `FUN_801F7088` fires **0×** and the move VM `FUN_80023070` only **2-3×** (noise).
    - So the **player** summon is posed like an enemy monster body (per-object rigid TRS keyframes), and the faithful render is the battle TRS-keyframe draw ported in `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`).
-   - The summon stager overlays (extraction 903..913) *do* carry real move-VM part records — recovered under the corrected link base `0x801F69D8` by `legaia_asset::summon_overlay`, which supersedes the earlier wrong-link-base "PROT 905 has zero `jal 0x80023070` → no move VM" reading (the `jal` is in the SCUS stager `FUN_80021B04`, not inside the overlay); the engine drives them as a stand-in (`summon::SummonScene`), but the trace shows that scene-graph is not the player summon's per-frame render path.
-   - The overlay's 3 conditional `LoadImage` (`0x800583C8`) CLUT uploads — `RECT = {x=0, y=481+s5, w=240, h=1}`, source `a2 + s5*480 + 0x894` — target VRAM row **481+** (the character/party-CLUT region), not the flame's row 478, and that region is byte-identical across the two frames.
+   - The summon stager overlays (extraction 903..913) *do* carry real move-VM part records - recovered under the corrected link base `0x801F69D8` by `legaia_asset::summon_overlay`, which supersedes the earlier wrong-link-base "PROT 905 has zero `jal 0x80023070` → no move VM" reading (the `jal` is in the SCUS stager `FUN_80021B04`, not inside the overlay); the engine drives them as a stand-in (`summon::SummonScene`), but the trace shows that scene-graph is not the player summon's per-frame render path.
+   - The overlay's 3 conditional `LoadImage` (`0x800583C8`) CLUT uploads - `RECT = {x=0, y=481+s5, w=240, h=1}`, source `a2 + s5*480 + 0x894` - target VRAM row **481+** (the character/party-CLUT region), not the flame's row 478, and that region is byte-identical across the two frames.
    - SCOPE: the trace covers the **player** "Burning Attack"; the **enemy** Gimard *Fire Tail* boss move is untraced. The engine renders the static flame mesh with the correct row-478 CLUT.
 
 2. **2D sprite billboards.** The `efect.dat` sprite atlas (entry 873) drives the per-frame billboard emit in `FUN_801E0088` pass 2.
@@ -219,7 +219,7 @@ The per-entry PROT extractor over-reads here (neighbouring entries' extended foo
    - The atlas entry layout is confirmed from that consumer: `u8 u, u8 v, u8 w, u8 h, u16 clut, u8 tpage, u8 unk` - the pass-2 code copies the u16 at atlas `+4` into the primitive's CLUT field (`*(puVar3+0xe)`) and the byte at `+6` into its tpage field (`*(puVar3+0x16)`), and builds the sprite UV rectangle from `(u, v)..(u+w-1, v+h-1)` (see the Field order note above).
    - The "billboards sample page `(0,0)`, 8bpp" reading was a **field-order misread of the atlas entry** (see the Field order note above): the `0x7680` everyone decoded as a tpage is actually the **CLUT** (the u16 at `+4`), and the real tpage is the byte at `+6`. So the billboards sample the **loaded effect-texture pages**, not page `(0,0)`.
    - Confirmed from a live battle capture on the impact frame of a melee attack (the small white hit-spark): walking the GPU prim pool, **no on-screen prim samples page `(0,0)`, 8bpp, or `tpage 0x7680` anywhere** (there are zero 8bpp textured prims in the whole battle).
-   - The white hit-spark is drawn as **textured quads** (`POLY_FT4`/`POLY_GT4`, cmds `0x2c`/`0x2e`/`0x3c`/`0x3e`) sampling the **extraction-0870 `etim.dat` pages `(320,0)` and `(448,0)`** (4bpp, effect-band CLUTs in rows 473..480) — pages that appear *only* in the impact frame (absent from a no-spark command-menu frame from the same fight), confirming they are the effect, not the persistent scene (party/monster meshes sit at pages `(512,256)`/`(576,256)`/`(832,0)`).
+   - The white hit-spark is drawn as **textured quads** (`POLY_FT4`/`POLY_GT4`, cmds `0x2c`/`0x2e`/`0x3c`/`0x3e`) sampling the **extraction-0870 `etim.dat` pages `(320,0)` and `(448,0)`** (4bpp, effect-band CLUTs in rows 473..480) - pages that appear *only* in the impact frame (absent from a no-spark command-menu frame from the same fight), confirming they are the effect, not the persistent scene (party/monster meshes sit at pages `(512,256)`/`(576,256)`/`(832,0)`).
    - The engine reads the atlas in the correct order now (`engine-vm` `SpriteAtlasEntry`: CLUT u16 `+4`, tpage byte `+6`), so `World::active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident `etim` texels.
 
 (An earlier note guessed the billboard texel source was extraction entry 875 - wrong twice over: the live-VRAM oracle pins the texels to `etim` (0870) and the `player_data` §2 band, and 875 is the battle-type-4 conditional stream in the loader table above. A separate note suggested the atlas layout might be mis-decoded - it is not; the pass-2 consumer confirms it.)
@@ -254,29 +254,29 @@ Decompiled output: `ghidra/scripts/funcs/overlay_battle_*.txt`.
 - `data\battle\summon.dat` - selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
 - `data\battle\readef.dat` - opposite branch.
 
-**Resolved** — both entries are pinned and the format is decoded; full reference
+**Resolved** - both entries are pinned and the format is decoded; full reference
 in [`summon-readef.md`](summon-readef.md). In retail `FUN_800558FC` ignores the
 path string (the ISO9660 open is a trap stub) and consumes its fourth argument
 as a **retail TOC index** directly: `summon.dat` = `0x37F`, `readef.DAT` =
 `0x380`. The retail index space includes the PROT.DAT 8-byte header in the
 in-RAM TOC copy, so those map to **extraction entries 893 / 894** (retail
-index − 2) — exactly 103 / 78 slots of `0x10800` bytes. Byte-verified in the
+index − 2) - exactly 103 / 78 slots of `0x10800` bytes. Byte-verified in the
 `battle_gimard_tail_fire_a` save state (stream buffer ↔ disc slot, slot-0
 CLUT + texture page ↔ VRAM `(0,488)` / `(512,0)`). The slots carry
 per-special-attack CLUT rows + 4bpp texture pages and summon-creature actor
 records (TMD + texture pool installed via `FUN_80055468`); parser
 `legaia_asset::summon_readef`. The earlier reading that placed `0x37F/0x380`
 at extraction entries 895 / 896 (init pak / `0896` blob) failed because it
-compared against the extraction numbering — the two index spaces differ by 2.
+compared against the extraction numbering - the two index spaces differ by 2.
 
 ### Open questions
 
 - **Effect-ID → human effect name.** Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal". Reachable by tracing call sites of `FUN_801DFDF8` in damage / battle-action code.
-- **2D billboard texel source — RESOLVED (page-(0,0) was a field-order misread).**
+- **2D billboard texel source - RESOLVED (page-(0,0) was a field-order misread).**
   - The atlas entry's `+4`/`+6` fields are CLUT/tpage, not tpage/CLUT (see the Field order note): `0x7680` is the CLUT (CBA → fb `(0,474)`), and the real tpage is the byte at `+6`.
-  - A melee hit-spark capture confirms it — the spark draws as textured quads sampling the **PROT 870 flame atlas at `(320,0)`/`(448,0)`** (effect-band CLUTs), with no prim anywhere sampling page (0,0)/8bpp.
+  - A melee hit-spark capture confirms it - the spark draws as textured quads sampling the **PROT 870 flame atlas at `(320,0)`/`(448,0)`** (effect-band CLUTs), with no prim anywhere sampling page (0,0)/8bpp.
   - The engine now reads the atlas in the right order, so the billboards sample the resident PROT 870 / `etim` texels.
-- **summon.dat / readef.dat formats — RESOLVED.** Pinned to extraction PROT entries 893 / 894 and decoded; see [`summon-readef.md`](summon-readef.md). Still open there: the consumer of the low-band `readef.DAT` aux slots.
+- **summon.dat / readef.dat formats - RESOLVED.** Pinned to extraction PROT entries 893 / 894 and decoded; see [`summon-readef.md`](summon-readef.md). Still open there: the consumer of the low-band `readef.DAT` aux slots.
 
 ## Field-pack format (magic `0x01059B84`)
 

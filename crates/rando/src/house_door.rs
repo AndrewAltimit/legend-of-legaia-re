@@ -4,24 +4,24 @@
 //! change that leaves to another *scene*), entering a house in a town is an
 //! **intra-scene reposition**: the field VM runs a `MOVE_TO` op that teleports
 //! the player to an interior sub-area tile within the *same* scene (pinned by a
-//! PCSX-Redux `probe.step.find_writer` trace — the writer lands in the field-VM
+//! PCSX-Redux `probe.step.find_writer` trace - the writer lands in the field-VM
 //! dispatcher `FUN_801de840` `case 0x23` at `0x801debc4`; see
 //! `docs/tooling/pcsx-redux-automation.md`).
 //!
 //! **The door warp has a clean structural signature.** A house-door reposition
-//! is not a plain `0x23 xb zb` (that form moves the *executing actor* — NPC /
+//! is not a plain `0x23 xb zb` (that form moves the *executing actor* - NPC /
 //! prop / cutscene positioning). It is the **cross-context form**
 //! `0xA3 0xF8 xb zb`: opcode `0x23 | 0x80` dispatched into the system/player
 //! script channel `0xF8` (the channel pair documented for `FUN_8003C83C` /
 //! `FUN_8001FD44`), i.e. "make the *player* MOVE_TO this tile". These ops live
-//! in **partition-0 interaction records** of the scene MAN — the named
-//! door-trigger records — and the records carry an explicit pairing convention
+//! in **partition-0 interaction records** of the scene MAN - the named
+//! door-trigger records - and the records carry an explicit pairing convention
 //! in their SJIS names: fullwidth `IN`/`OUT` (optionally digit-suffixed,
 //! e.g. the Ratayu inn's one `IN` and three numbered `OUT`s), the kanji pair
 //! entrance/exit (`0x93FC 0x8CFB` / `0x8F6F 0x8CFB`, the Sol city gates), or
 //! the endpoint letters `A`/`B` (the tower elevators). The runtime-pinned
 //! Mei's-house entry (`town01`, interior tile `(97, 54)`) is exactly the
-//! `0xA3 0xF8 0x61 0x36` in the record named "...IN" — the anchor the
+//! `0xA3 0xF8 0x61 0x36` in the record named "...IN" - the anchor the
 //! disc-gated classifier test (`house_door_classifier_real`) re-checks.
 //!
 //! The randomizer does a **per-scene, class-preserving shuffle**: `IN`-class
@@ -29,14 +29,14 @@
 //! `OUT`-class targets (exterior doorstep tiles) among its `OUT` sites. Every
 //! target stays a tile the scene's door system already uses, and every
 //! `OUT`-class warp still lands at an exterior doorstep, so a player inside any
-//! interior always exits back to the town proper — no interior-to-interior
+//! interior always exits back to the town proper - no interior-to-interior
 //! cycle (no softlock) is constructible. The edit is a same-size 2-byte operand
-//! swap (no MAN relocation — recompress in place like [`crate::encounter`]).
+//! swap (no MAN relocation - recompress in place like [`crate::encounter`]).
 //!
 //! Player warps that carry **no** door-name class (a handful of partition-0
 //! story warps, e.g. the town01 intro "inside the house" reposition) and the
 //! partition-1/2 cutscene player warps are deliberately left vanilla, as are
-//! all plain (actor-context) `MOVE_TO`s — NPC and prop positions never move.
+//! all plain (actor-context) `MOVE_TO`s - NPC and prop positions never move.
 //!
 //! Record walk notes: partition-0 records are `[u8 n][n*2 SJIS name][u8 attr]`
 //! then bytecode (NOT the partition-1 `[n][n*2][4-byte header]` shape), and the
@@ -51,7 +51,7 @@ use crate::rng::SplitMix64;
 
 const MAN_TYPE: u8 = 0x03;
 /// The system/player script channel a cross-context op targets to act on the
-/// player (`0xF8` — see the script-VM context channels in
+/// player (`0xF8` - see the script-VM context channels in
 /// `docs/subsystems/script-vm.md`).
 const PLAYER_CHANNEL: u8 = 0xF8;
 /// `0x23 MOVE_TO` with the cross-context bit set.
@@ -103,7 +103,7 @@ pub struct SceneHouseDoors {
     /// Classified door-warp sites, in record order.
     pub sites: Vec<HouseDoorSite>,
     /// Partition-0 player warps found but carrying no door-name class
-    /// (story repositions) — counted for audit, never shuffled.
+    /// (story repositions) - counted for audit, never shuffled.
     pub unclassified: usize,
 }
 
@@ -262,7 +262,7 @@ fn door_warp_sites(man: &[u8]) -> (Vec<HouseDoorSite>, usize) {
 
 /// Walk one record's bytecode from `pc` to `end`, returning the op offsets of
 /// every cross-context player MOVE_TO (`0xA3 0xF8`). A decode error AT a `0x1F`
-/// byte is an inline-dialogue segment — skip past its terminating `0x00` and
+/// byte is an inline-dialogue segment - skip past its terminating `0x00` and
 /// resume (the [`crate::chest`] walk rule); any other decode error ends the
 /// walk.
 fn player_warps_in_script(man: &[u8], mut pc: usize, end: usize) -> Vec<usize> {

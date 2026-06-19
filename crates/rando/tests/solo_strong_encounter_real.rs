@@ -1,14 +1,14 @@
 //! Disc-gated end-to-end test for the "limit strong fights to a solo enemy"
 //! encounter option. On a scratch copy of the disc it runs a World-scope random
 //! encounter pass (the mode most likely to drop a late-game heavy hitter into an
-//! early area) twice — once with the solo-strong option off, once on — then
+//! early area) twice - once with the solo-strong option off, once on - then
 //! re-decodes every patched scene straight off the image and asserts:
 //!
 //! - **off:** at least one random formation ends up a *pack* (count >= 2) that
-//!   holds a monster much stronger than that area's native average — i.e. the
+//!   holds a monster much stronger than that area's native average - i.e. the
 //!   problem the option exists to fix actually occurs (non-vacuous).
-//! - **on:** *no* multi-monster random formation holds such a monster anymore —
-//!   every strong pack was collapsed to a lone enemy — and the run reports the
+//! - **on:** *no* multi-monster random formation holds such a monster anymore -
+//!   every strong pack was collapsed to a lone enemy - and the run reports the
 //!   collapses, the patched sectors stay EDC/ECC-valid, and a fixed seed is
 //!   byte-deterministic.
 //!
@@ -29,7 +29,7 @@ fn load_disc() -> Option<Vec<u8>> {
 }
 
 /// The native combat-power baseline of every locatable scene, keyed by PROT entry
-/// index — read from the *original* disc, exactly as the apply path does.
+/// index - read from the *original* disc, exactly as the apply path does.
 fn native_baselines(patcher: &DiscPatcher, table: &MonsterPowerTable) -> HashMap<usize, u32> {
     let mut out = HashMap::new();
     for idx in 0..patcher.entry_count() {
@@ -47,7 +47,7 @@ fn native_baselines(patcher: &DiscPatcher, table: &MonsterPowerTable) -> HashMap
 
 /// Count the random formations (across all scenes) that are a *pack* (>= 2
 /// monsters) and hold at least one monster whose combat power clears
-/// `threshold_pct`% of that scene's native baseline — the "strong pack" the
+/// `threshold_pct`% of that scene's native baseline - the "strong pack" the
 /// option targets. `skip` are PROT entries to ignore (re-pack failures).
 fn strong_pack_count(
     patcher: &DiscPatcher,

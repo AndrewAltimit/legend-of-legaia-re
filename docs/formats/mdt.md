@@ -28,9 +28,9 @@ The per-frame interpretation in `FUN_800204F8` clamps `actor[0x68]` (current pla
 
 ## The `move_program_no` name (dissolved mismatch)
 
-The extraction files *named* `0972` / `0973` `move_program_no.BIN` are not move tables at all — under the [+2 filename-numbering shift](cdname.md#numbering-space) they sit in the `other_game` block: 0972 is the **fishing minigame overlay** (dev `other1`) and 0973 is the 1-sector `OTHER2` dev module. The `move_program_no` define actually covers **extraction 0970..0971** — a `\DATA\MOV*.STR` FMV program/path table + debug strings (the block names **MOV**ie program numbers, see [str-fmv-table.md](str-fmv-table.md)), not Tactical-Arts moves. The historical "flat 128-byte record array" reading of 0972/0973 was a loose parse of overlay code/data.
+The extraction files *named* `0972` / `0973` `move_program_no.BIN` are not move tables at all - under the [+2 filename-numbering shift](cdname.md#numbering-space) they sit in the `other_game` block: 0972 is the **fishing minigame overlay** (dev `other1`) and 0973 is the 1-sector `OTHER2` dev module. The `move_program_no` define actually covers **extraction 0970..0971** - a `\DATA\MOV*.STR` FMV program/path table + debug strings (the block names **MOV**ie program numbers, see [str-fmv-table.md](str-fmv-table.md)), not Tactical-Arts moves. The historical "flat 128-byte record array" reading of 0972/0973 was a loose parse of overlay code/data.
 
-`crates/mdt` parses both layouts and surfaces a verdict (`OffsetTableLayout` / `FlatRecordTable` / `Unknown`); `mdt classify` correctly reports that neither file matches the runtime buffer layout above — expected, since they aren't move data.
+`crates/mdt` parses both layouts and surfaces a verdict (`OffsetTableLayout` / `FlatRecordTable` / `Unknown`); `mdt classify` correctly reports that neither file matches the runtime buffer layout above - expected, since they aren't move data.
 
 ### Caveat: `MoveBuffer::parse` over-reads past the real table boundary
 

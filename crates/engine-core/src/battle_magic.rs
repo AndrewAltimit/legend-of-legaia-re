@@ -111,7 +111,7 @@ impl BattleSpellSession {
     /// cost the cast actually charges
     /// ([`legaia_engine_vm::battle_formulas::mp_cost_after_ability_bits`]),
     /// so an MP-saver lets the caster select a spell whose raw cost exceeds
-    /// their MP — matching `World::cast_spell_on_slots`. The cursor starts on
+    /// their MP - matching `World::cast_spell_on_slots`. The cursor starts on
     /// the first affordable spell (or row 0 when none are affordable). Spell ids
     /// missing from the catalog are dropped.
     pub fn new(
@@ -408,7 +408,7 @@ mod tests {
     }
 
     /// An MP-saver accessory (Half bit `0x20`) halves the displayed cost and
-    /// makes a spell whose RAW cost exceeds the caster's MP affordable — the
+    /// makes a spell whose RAW cost exceeds the caster's MP affordable - the
     /// same reduced cost `World::cast_spell_on_slots` charges. Without the bit
     /// the spell is unaffordable; with it, both the displayed cost and the
     /// affordability flip.

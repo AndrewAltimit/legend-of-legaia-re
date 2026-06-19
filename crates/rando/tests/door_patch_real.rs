@@ -1,7 +1,7 @@
 //! Disc-gated end-to-end test for the one-way (decoupled) door randomizer:
 //! shuffle scene-transition destinations on a scratch copy of the disc, then
 //! re-decode every patched scene MAN straight off the patched image and confirm
-//! the edit is faithful — the destination multiset is preserved (shuffle is a
+//! the edit is faithful - the destination multiset is preserved (shuffle is a
 //! permutation), every patched MAN re-parses + re-walks cleanly through
 //! disc → ISO → PROT → LZS, every touched sector stays EDC/ECC-valid, the image
 //! size is unchanged, and a fixed seed is byte-deterministic. Skips + passes
@@ -81,7 +81,7 @@ fn shuffle_doors_round_trips_on_disc() {
     } else {
         // With skipped scenes the multiset isn't a clean permutation, but every
         // patched destination must still be an original destination name (the
-        // shuffle only ever moves existing descriptors — no garbage introduced).
+        // shuffle only ever moves existing descriptors - no garbage introduced).
         let orig_names: std::collections::BTreeSet<&str> =
             before.iter().map(|d| d.1.as_str()).collect();
         for d in &after {
@@ -174,7 +174,7 @@ fn coupled_doors_round_trip_on_disc() {
     }
 
     // Bidirectionality at the whole-graph level: coupled mode uses only
-    // length-preserving swaps, so no scene overflows and nothing is skipped —
+    // length-preserving swaps, so no scene overflows and nothing is skipped -
     // which means coupling must not introduce a single NEW one-way connection.
     // Concretely, the set of scene-level edges (home -> dest) that lack a reverse
     // (dest -> home) in the patched graph must be a SUBSET of that set in the

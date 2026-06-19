@@ -1,4 +1,4 @@
-//! Disc-gated runtime oracle for the **seru-trade** feature — the engine-side
+//! Disc-gated runtime oracle for the **seru-trade** feature - the engine-side
 //! counterpart to the rando crate's `seru_trade_real` config round-trip.
 //!
 //! The rando test proves the config blob (enabled flag + master seed) is
@@ -8,7 +8,7 @@
 //! `--seru-trade` edit), re-decodes the config straight from the patched SCUS
 //! bytes, installs it into a clean-room [`World`] holding a party with known
 //! seru, opens a trade session, confirms a trade, and asserts the runtime
-//! rewrites the owner's spell list to the offered seru — and that the offers
+//! rewrites the owner's spell list to the offered seru - and that the offers
 //! reseed across a two-in-game-hour boundary.
 //!
 //! A baseline pass over the *unpatched* SCUS first confirms the engine reports

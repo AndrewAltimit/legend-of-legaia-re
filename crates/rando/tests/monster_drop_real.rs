@@ -4,7 +4,7 @@
 //! For a sample of real monster slots, edit the drop fields, re-pack the LZS
 //! slot, and confirm: (1) the slot stays exactly `0x14000` bytes, (2) the
 //! re-parsed record shows the new drop, and (3) every other field (gold, exp,
-//! hp, mp, stats, name, spells) is byte-identical — i.e. the edit is surgical.
+//! hp, mp, stats, name, spells) is byte-identical - i.e. the edit is surgical.
 //!
 //! Reads the per-entry file the extractor writes under `extracted/PROT/`; skips
 //! and passes when it is absent.

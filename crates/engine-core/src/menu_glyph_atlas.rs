@@ -1,4 +1,4 @@
-//! Menu-glyph sprite atlas — RGBA decode + per-character draw helpers.
+//! Menu-glyph sprite atlas - RGBA decode + per-character draw helpers.
 //!
 //! Pairs with [`legaia_asset::menu_glyph_atlas`] (TIM source pin) and
 //! [`crate::title_screen_atlas`] (title-art bands). Decodes the 256×256
@@ -35,7 +35,7 @@ pub const GLYPH_W: u32 = src::GLYPH_W;
 /// Alphabet-row glyph height.
 pub const ALPHABET_GLYPH_H: u32 = src::ALPHABET_GLYPH_H;
 
-/// Pre-decoded menu-glyph atlas — RGBA8 stencil pixels + the source
+/// Pre-decoded menu-glyph atlas - RGBA8 stencil pixels + the source
 /// rects engines sample to render text.
 ///
 /// See module docs for the stencil rationale. Engines upload `rgba`
@@ -53,7 +53,7 @@ impl MenuGlyphAtlas {
     /// Source rect (atlas pixels, `(x, y, w, h)`) for a single character.
     ///
     /// Returns `None` for characters not present in the atlas (space,
-    /// punctuation outside `A..Z` / `0..9`). Case-insensitive — the
+    /// punctuation outside `A..Z` / `0..9`). Case-insensitive - the
     /// atlas only carries uppercase letterforms.
     pub fn glyph_rect(&self, c: char) -> Option<(u32, u32, u32, u32)> {
         src::glyph_rect(c)
@@ -118,7 +118,7 @@ fn build_from_view(view: &src::MenuGlyphTim<'_>) -> Result<MenuGlyphAtlas> {
 
     // Walk the 4bpp pixel block directly and emit a stencil: index 0
     // -> (0,0,0,0); index != 0 -> (255,255,255,255). We deliberately
-    // ignore the CLUT — see module docs.
+    // ignore the CLUT - see module docs.
     let fb_w = parsed.image.fb_w as usize; // halfwords per row
     let row_bytes = fb_w * 2; // = width / 2 for 4bpp
     let mut rgba = vec![0u8; (width * height * 4) as usize];

@@ -13,14 +13,14 @@ supported:
 
 The crate exposes:
 
-- [`CheatCode`] — a single `(addr, value, width, op)` write.
-- [`CheatEntry`] — one named effect (description + one or more
+- [`CheatCode`] - a single `(addr, value, width, op)` write.
+- [`CheatEntry`] - one named effect (description + one or more
   writes; conditional codes are first-class).
-- [`Database`] — a collection of entries plus deduplication
+- [`Database`] - a collection of entries plus deduplication
   helpers.
-- [`parse_gs_text`] / [`parse_mednafen_cht`] — format-specific
+- [`parse_gs_text`] / [`parse_mednafen_cht`] - format-specific
   parsers.
-- [`classify`] — assign each address a [`Category`] (per-character
+- [`classify`] - assign each address a [`Category`] (per-character
   record, inventory slot, battle actor pool, engine global,
   mini-game scratch, …) plus a stable subtype label.
 
@@ -48,5 +48,5 @@ flagging writes that land outside every known data region
 scratch. It is the classification half of a gameplay-driven write
 tracer; feed it the per-byte deltas from a pair of save states (see
 `mednafen-state write-taxonomy LEFT RIGHT`) to see *what* changed,
-bucketed by subsystem. Pure and capture-free — unit-tested with
+bucketed by subsystem. Pure and capture-free - unit-tested with
 synthetic deltas.

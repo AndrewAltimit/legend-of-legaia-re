@@ -238,7 +238,7 @@ fn retail_subcell(ix: i32, iz: i32) -> (i32, i32, u8) {
 fn field_tile_is_wall_matches_retail_subcell_derivation() {
     // `World::field_tile_is_wall` uses retail's exact biased derivation
     // (`zc=(z>>6)+2`, `xc=((x+0x3f)>>6)-1`). The bias is authored into the
-    // wall bits — proven by the `rimelm_wall_press_down` capture, where the
+    // wall bits - proven by the `rimelm_wall_press_down` capture, where the
     // live player legally stands at a position whose plain floor-indexed
     // cell is an all-quads wall byte (see
     // `engine-shell/tests/field_collision_discriminator.rs`). Sweep a span
@@ -370,7 +370,7 @@ fn leading_edge_wall_probes_rest_at_retail_standoff() {
 #[test]
 fn solid_field_npcs_block_at_retail_actor_standoff() {
     // The actor-collision probes (`FIELD_ACTOR_PROBES`, retail
-    // `DAT_801f21b4` through `FUN_801cfc40`'s moving-actor box test — the
+    // `DAT_801f21b4` through `FUN_801cfc40`'s moving-actor box test - the
     // class village NPCs belong to, capture-pinned by
     // `rimelm_npc_press_tetsu`) make an NPC block a walk: probe 64 ahead,
     // hit when strictly within `FIELD_NPC_BOX_HALF` (40) of the NPC on both
@@ -404,7 +404,7 @@ fn solid_field_props_block_at_retail_static_standoff() {
     // placed prop blocks with the wider ±80 box (`FIELD_PROP_BOX_HALF`)
     // around its record-derived footprint centre. Head-on X+ press: the
     // probe 64 ahead reads clear at exactly 144 out (delta 80, strict), the
-    // 2-unit step commits, and the next probe blocks — resting 142 short of
+    // 2-unit step commits, and the next probe blocks - resting 142 short of
     // the centre, 40 units further out than the ±40 moving-NPC box (the
     // same pre-step parity as the NPC arm's 102).
     let press = |solid: bool, prop: (i32, i32), start: (i16, i16)| {
@@ -2627,7 +2627,7 @@ fn inline_dialogue_prologue_selects_segment_by_story_flag() {
     // The interaction record's prologue is a single `SysFlag.Test` (op `0x70`)
     // on story flag 7: when the flag is set it jumps to segment B, otherwise it
     // falls through to segment A. This is the retail segment-selection mechanism
-    // — the prologue's story-flag-gated jump chooses which line the box opens at.
+    // - the prologue's story-flag-gated jump chooses which line the box opens at.
     //
     //   pc 0: 70 07 06 00   SysFlag.Test flag 7 -> jump to pc (2 + 6) = 8
     //   pc 4: 1F 'A' 'A' 00  segment A (fall-through)
@@ -2657,7 +2657,7 @@ fn inline_dialogue_prologue_selects_segment_by_story_flag() {
 fn inline_dialogue_prologue_falls_back_when_it_cannot_reach_a_segment() {
     // A prologue that can't proceed (here a `CFLAG_TST` on a clear ctx bit, which
     // halts) must not silently drop the dialogue: the runner falls back to the
-    // first segment so the box still shows — never worse than the truncated path.
+    // first segment so the box still shows - never worse than the truncated path.
     //
     //   pc 0: 33 05         CFLAG_TST bit 5 (clear on a fresh ctx) -> Halt
     //   pc 2: 1F 'X' 'X' 00 first segment (fallback target)
@@ -2959,7 +2959,7 @@ fn field_op_3f_rejects_phantom_name() {
 
 /// Field dialogue opens from the **field-interact op** (`0x3E` with
 /// `op0 < 100`) reading the interacted actor's inline interaction-script
-/// text (keyed by the op's `slot` = the actor's MAN record index) — the real
+/// text (keyed by the op's `slot` = the actor's MAN record index) - the real
 /// field-dialogue mechanism that replaces the `0x3F`-as-dialog stand-in.
 #[test]
 fn field_interact_opens_actor_inline_dialogue() {
@@ -2996,7 +2996,7 @@ fn field_interact_opens_actor_inline_dialogue() {
 }
 
 /// A field-interact on an actor with **no** inline text just surfaces the
-/// interaction (a sign / flag-only NPC) — no dialogue box.
+/// interaction (a sign / flag-only NPC) - no dialogue box.
 #[test]
 fn field_interact_without_inline_text_opens_no_dialogue() {
     let mut world = World::new();
@@ -3014,7 +3014,7 @@ fn field_interact_without_inline_text_opens_no_dialogue() {
 /// Interacting with the carrier's placement (field-interact op `0x3E`,
 /// `op0 < 100`) opens its dialogue and arms the engage; accepting the prompt
 /// (the dialog-advance dismiss, op `0x4C` n5 sub-4) engages the carrier, so the
-/// SM (`FUN_801DA51C`) runs its scene-transition and flips Field -> Battle —
+/// SM (`FUN_801DA51C`) runs its scene-transition and flips Field -> Battle -
 /// with no manual `engage_field_carrier` call. This is the field-VM-driven
 /// counterpart to the carrier-engage API.
 #[test]
@@ -3080,7 +3080,7 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
 
 /// The interaction probe (retail `FUN_801cf9f4` via the `DAT_801f2254`
 /// facing compass): a just-pressed action button talks to the NPC the player
-/// is *facing* (probe point 64 ahead, ±72 box), and only that one — a
+/// is *facing* (probe point 64 ahead, ±72 box), and only that one - a
 /// distant NPC is not triggered, and after the talk the player has been
 /// turned toward the matched NPC (the face-the-NPC step).
 #[test]
@@ -3175,8 +3175,8 @@ fn interaction_probe_no_npc_in_range_opens_nothing() {
 /// Capture-grounded probe geometry: the `rimelm_npc_press_tetsu` frame has
 /// the player at (2762, 1782) pressed Z+ into Tetsu at (2752, 1856). With
 /// the player facing Z+, the `DAT_801f2254` sector-4 probe point lands at
-/// (2762, 1846) — deltas (10, 10) from Tetsu, well inside the ±72 interact
-/// box — so the action button talks to him from the captured rest position.
+/// (2762, 1846) - deltas (10, 10) from Tetsu, well inside the ±72 interact
+/// box - so the action button talks to him from the captured rest position.
 #[test]
 fn interaction_probe_matches_tetsu_capture_geometry() {
     use crate::input::PadButton;
@@ -3202,7 +3202,7 @@ fn interaction_probe_matches_tetsu_capture_geometry() {
 }
 
 /// Walking up to the scripted-encounter carrier and pressing the action button
-/// twice (talk, then accept) starts the fight through the probe — the fully
+/// twice (talk, then accept) starts the fight through the probe - the fully
 /// input-driven counterpart to the field-VM dialogue-accept.
 #[test]
 fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
@@ -4443,7 +4443,7 @@ fn initiative_orders_turns_by_speed_then_reseeds() {
         a.battle.liveness = 0;
     }
     // slot 0 (party) SPD 10, slot 1 (monster) SPD 50, slot 2 (monster) 30.
-    // Key ranges: 11..=16, 51..=76, 31..=46 — disjoint.
+    // Key ranges: 11..=16, 51..=76, 31..=46 - disjoint.
     world.actors[0].battle.liveness = 1;
     world.actors[1].battle.liveness = 1;
     world.actors[2].battle.liveness = 1;
@@ -4914,7 +4914,7 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
 /// monster attack to the lowest-HP living party member, but does NOT move the
 /// RNG stream: the faithful random pick is still rolled in full, so for every
 /// seed the post-decision RNG state is byte-identical between the faithful and
-/// smart modes — only the chosen slot differs. Default (faithful) behaviour is
+/// smart modes - only the chosen slot differs. Default (faithful) behaviour is
 /// thus bit-for-bit unchanged, and a smart-mode replay stays deterministic.
 #[test]
 fn smarter_targeting_redirects_to_lowest_hp_without_moving_rng() {
@@ -4975,8 +4975,8 @@ fn smarter_targeting_redirects_to_lowest_hp_without_moving_rng() {
 /// When the move-power table is installed and the monster's cast id resolves
 /// to a power record, the special-attack damage rolls through the faithful
 /// arts/physical kernel (move-power-seeded) instead of the MP-scaled spell
-/// placeholder. Proven by comparing two identically-seeded worlds — one with
-/// the table, one without — and asserting (a) the table changes the dealt
+/// placeholder. Proven by comparing two identically-seeded worlds - one with
+/// the table, one without - and asserting (a) the table changes the dealt
 /// damage (the path engaged) and (b) the table path is deterministic.
 #[test]
 fn move_power_table_drives_monster_special_attack_damage() {
@@ -5057,7 +5057,7 @@ fn move_power_table_drives_monster_special_attack_damage() {
 /// (`FUN_801dd864`). Proven by running the same seeded cast through a neutral
 /// (100%) matrix vs a weakness (200%) matrix and asserting the weakness matrix
 /// deals more damage. A `None` affinity table reproduces the neutral result
-/// exactly — so the affinity is gated and never perturbs the RNG stream.
+/// exactly - so the affinity is gated and never perturbs the RNG stream.
 #[test]
 fn element_affinity_scales_monster_special_attack_damage() {
     use crate::monster_catalog::vanilla_monster_catalog;
@@ -5146,7 +5146,7 @@ fn element_affinity_scales_monster_special_attack_damage() {
 }
 
 /// A player Seru-magic cast scales by the element affinity of its summon
-/// CREATURE vs the target — `matrix[summon-creature element][target element]`
+/// CREATURE vs the target - `matrix[summon-creature element][target element]`
 /// (`FUN_801dd864`), not the casting character's element. The Gimard spell
 /// (id `0x81`) summons the namesake "Gimard" creature, so the attacker element
 /// is that creature's record element. With the creature resolved, the
@@ -5192,7 +5192,7 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
         // the target enemy, each with a distinct element. The summon body's HP
         // is kept SMALL and the caster's AGL large so the attacker roll
         // dominates the bonus-arm threshold (`defender + summon_hp >
-        // attacker`) at every pct exercised here — the bonus re-roll rebuilds
+        // attacker`) at every pct exercised here - the bonus re-roll rebuilds
         // the roll WITHOUT the affinity scale (retail-faithful; covered by the
         // kernel tests), which would break the monotonic relation this test
         // pins.
@@ -5257,7 +5257,7 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
 /// The player Seru-magic cast path rolls the faithful summon kernel: the
 /// HP delta produced by `cast_spell_on_slots` equals the value built by
 /// composing `summon_predamage_lazy` + `damage_finish_lazy` directly with the
-/// same seeds — summon-body stats from the namesake creature's catalog def,
+/// same seeds - summon-body stats from the namesake creature's catalog def,
 /// caster AGL doubled, and the shared LCG drawn in retail call order.
 #[test]
 fn player_summon_cast_matches_the_summon_kernel_composition() {

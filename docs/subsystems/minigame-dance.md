@@ -27,7 +27,7 @@ The per-frame controller is `FUN_801cf470` (the overlay's dance tick). It is a `
 
 The block guarded by `DAT_801d5334 - 10 < 3` (states 10/11/12) at the tail of `FUN_801cf470` is the **beat clock**: each frame it adds `DAT_1f800393 * 10` to the beat phase `DAT_801d581c` (wrapping every `0x2320`) and to the total-song accumulators `DAT_801d5820` / `DAT_801d5824`. `DAT_1f800393` is the frame-delta scalar the rest of the engine uses, so the clock is framerate-compensated. **Confirmed.**
 
-Song end (state 10 only): when `DAT_801d5820` reaches the song-length limit — `0x41dc` in one mode, `0x64fc` otherwise — the state advances to `0xb` (Finish). **Confirmed.**
+Song end (state 10 only): when `DAT_801d5820` reaches the song-length limit - `0x41dc` in one mode, `0x64fc` otherwise - the state advances to `0xb` (Finish). **Confirmed.**
 
 ### Mode global `DAT_801d514c`
 
@@ -37,14 +37,14 @@ Selected in state 0 and used throughout for layout. It distinguishes a single-da
 
 Two routines read the step chart and judge a press; both share the same window arithmetic.
 
-`FUN_801d1820(player)` — chart lookup for "what should be pressed right now":
-- Compute the **intra-beat phase** `DAT_801d581c % 0x119` (mod 281). If it exceeds `0xd2` (210) the function returns 0 (dead zone between beats — no note is active). So each 281-unit beat slot has a ~210-unit acceptance window followed by a ~71-unit gap. **Confirmed.**
+`FUN_801d1820(player)` - chart lookup for "what should be pressed right now":
+- Compute the **intra-beat phase** `DAT_801d581c % 0x119` (mod 281). If it exceeds `0xd2` (210) the function returns 0 (dead zone between beats - no note is active). So each 281-unit beat slot has a ~210-unit acceptance window followed by a ~71-unit gap. **Confirmed.**
 - Compute the **beat index** `DAT_801d581c / 0x119`. When `beat_index & 3 == 3` (every 4th beat) a special "held-sequence" entry from the per-lane progression table is checked, advancing the chart cursor `DAT_801d574c[player]` and returning the sequence symbol `3`. **Confirmed.**
 - Otherwise return the chart byte `chart_base[lane*0x20 + beat_index]`, where `chart_base` is the step-chart table at `0x801d509c`, `lane` (the chart row, 0..) is `DAT_801d544c[player] / 1000` (the groove gauge selects difficulty row), and each row is `0x20` (32) bytes = 32 beats. **Confirmed.**
 
 `FUN_801d4040(player)` maps the chart symbol to a pad-mask bit: symbol `1 → 0x80`, `2 → 0x20`, `3 → 0x10`, else 0. These three bits are the three judged directions. **Confirmed** (mapping); which physical d-pad direction each bit is is **Inferred** (they are the same three direction bits `FUN_801d1af4` masks against the live pad `_DAT_8007b874`).
 
-`FUN_801d1960(player, lane, variant)` — the actual hit-judge, called when the player presses:
+`FUN_801d1960(player, lane, variant)` - the actual hit-judge, called when the player presses:
 - Same dead-zone test (`phase % 0x119 > 0xd2` → return 0 = miss). **Confirmed.**
 - Compute the **accuracy weight** `w = 0x1000 - (phase * 0x1000) / 0xd2`, a `0..0x1000` ramp that is maximal at phase 0 (dead-on the beat) and decays to 0 at the window edge. Stored in `DAT_801d6090`. **Confirmed.**
 - Look up the chart symbol at `chart_base[lane*0x20 + beat_index]` and compare it to the pressed direction `(pressed & 0xf) + 1`. If they don't match → return 0 (wrong direction). **Confirmed.**
@@ -52,7 +52,7 @@ Two routines read the step chart and judge a press; both share the same window a
 
 So the judge has three tiers:
 - **Miss** (0): outside the window, or wrong direction.
-- **Hit** (1): correct direction inside the window — a single matched note.
+- **Hit** (1): correct direction inside the window - a single matched note.
 - **Sequence / bonus** (2): a hit that also completes the lane's chart, awarding the weighted bonus from `DAT_801d41a4`.
 
 There is no separate Perfect/Good text tier exposed by the judge itself; the *quality* of a hit is carried continuously by the accuracy weight `w` (closer to the beat → larger `w` → larger awarded points and bonus). The Perfect-vs-Good distinction the player sees is **Inferred** to be derived from `w`/`DAT_801d6090` by the banner-spawning code in `FUN_801d1af4`. **Inferred.**
@@ -112,7 +112,7 @@ All globals live in the overlay's data region around `0x801d5xxx`/`0x801d6xxx`. 
 | `DAT_801d43a0` | i16 table | Per-step world/screen anchor positions (HUD step interpolation) | Inferred |
 | `DAT_801d583c` | i16 table | Easing LUT used to interpolate the dancer/marker between beats | Inferred |
 
-The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](../reference/cheats.md)) is exactly `DAT_801d53cc[0]` — the human player's score. **Confirmed.**
+The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](../reference/cheats.md)) is exactly `DAT_801d53cc[0]` - the human player's score. **Confirmed.**
 
 ## Key functions
 
@@ -132,11 +132,11 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 - The exact per-tier score multipliers and the visible Perfect/Good/Miss banner thresholds (derived from the accuracy weight `DAT_801d6090`) are read but not yet mapped to the on-screen rating labels.
 - The precise meaning of each `DAT_801d514c` mode value (solo / multi / vs-CPU / practice), and the per-mode win/lose flag set.
 - Whether the per-player step counter `DAT_801d534c` running to 0 ends a dancer's run or only gates input.
-- Where the step-chart bytes at `0x801d509c` originate (baked into the overlay vs. loaded per song) — not yet traced.
+- Where the step-chart bytes at `0x801d509c` originate (baked into the overlay vs. loaded per song) - not yet traced.
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Cheats](../reference/cheats.md) ·
 [Move-table VM](move-vm.md) ·
 [Actor / sprite VM](actor-vm.md) ·

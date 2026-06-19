@@ -201,7 +201,7 @@ fn spanning_forward_jump_delta_is_fixed() {
 #[test]
 fn non_spanning_jump_delta_is_unchanged() {
     // A backward self-loop AFTER the op (26 ff ff = JmpRel -1) must keep its
-    // delta — both endpoints sit after the edit, so they shift together.
+    // delta - both endpoints sit after the edit, so they shift together.
     let prefix = p2_prefix();
     let op = scene_change_op(0x07, b"ab", 0, 0, 0);
     let mut rec = prefix;

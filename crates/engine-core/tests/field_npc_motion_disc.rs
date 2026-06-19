@@ -12,7 +12,7 @@
 //! writing live positions back into `field_npc_positions` so the ±40-unit
 //! moving-actor collision box and the interact probe follow the walking NPC.
 //!
-//! Assertions are structural (slots, world coordinates, movement deltas) — no
+//! Assertions are structural (slots, world coordinates, movement deltas) - no
 //! Sony bytes. Skip-passes without `LEGAIA_DISC_BIN` / `extracted/`
 //! (CLAUDE.md convention).
 
@@ -41,7 +41,7 @@ fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -113,7 +113,7 @@ fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
     );
 
     // Collision consistency: a moved NPC blocks at its LIVE position with the
-    // ±40-unit moving-actor box, exactly like the anchored case — the probes
+    // ±40-unit moving-actor box, exactly like the anchored case - the probes
     // read `field_npc_positions`, which the motion tick keeps live.
     world.solid_field_npcs = true;
     let slot = moved[0];

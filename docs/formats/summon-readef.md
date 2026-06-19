@@ -1,4 +1,4 @@
-# summon.dat / readef.DAT — battle side-band streaming slots
+# summon.dat / readef.DAT - battle side-band streaming slots
 
 `\data\battle\summon.dat` and `\data\battle\readef.DAT` are the two battle
 side-band streaming files (CDNAME block `bat_back_dat`): per-special-attack
@@ -28,7 +28,7 @@ path is a debug-build referent only.
 the in-RAM TOC copy. The boot TOC loader (`FUN_8003E4E8`) fills `0x801C70F0`
 with PROT.DAT's first 3 sectors **verbatim, 8-byte header included**, while
 `legaia_prot::archive::Archive` strips the header and indexes entry `p` at
-`toc[p + 2]` — so a retail TOC index maps to the extraction-space entry index
+`toc[p + 2]` - so a retail TOC index maps to the extraction-space entry index
 **minus 2**:
 
 | File | Retail TOC index | Extraction entry | Footprint | Slots |
@@ -50,7 +50,7 @@ Verification (executed comparisons, not inference):
 
 The same `idx + 2` arithmetic applies to every `FUN_8003E8A8` consumer
 (including the overlay loaders' `param + 0x381`), so CDNAME `#define` numbers
-live in the retail index space, not the extraction space — see
+live in the retail index space, not the extraction space - see
 [`cdname.md`](cdname.md#numbering-space).
 
 ## Streaming state machine
@@ -91,7 +91,7 @@ The id bands tile both files exactly:
 bit 7 is set or `base == 0x36`, the one readef id with a four-slot group);
 the second texture upload is also skipped for `base < 0x0C` and
 `base 0x37..=0x41`. Summon group 0 (spell id `0x81`, Gimard) carries the
-"Burning Attack" actor record — consistent with the
+"Burning Attack" actor record - consistent with the
 [spell table](spell-table.md)'s player Seru-magic block.
 
 ## Slot formats
@@ -100,7 +100,7 @@ the second texture upload is also skipped for `base < 0x0C` and
 
 ```text
 +0x000  u32  mode
-+0x004  CLUT rows — 256 BGR555 entries each (mode 1: 2 rows, else 1 row)
++0x004  CLUT rows - 256 BGR555 entries each (mode 1: 2 rows, else 1 row)
 +0x204 / +0x404  4bpp texture page, 256 rows tall:
         mode 0: 64 halfwords wide (0x8000 bytes)
         mode 1: 128 halfwords wide (0x10000 bytes), CLUTs at +4..+0x404
@@ -113,11 +113,11 @@ texture slot → CLUT at `(0, 488)` + page at `(512, 0)`; the second → CLUT at
 
 ### Big-summon raw slot (3rd slot, `base >= 0xCB` only)
 
-Consumed headerless by case 6 — the three regions tile the slot exactly
+Consumed headerless by case 6 - the three regions tile the slot exactly
 (`0x1E0 + 0x8000 + 0x8620 = 0x10800`):
 
 ```text
-+0x0000  240 BGR555 entries — STP bit forced on non-zero entries,
++0x0000  240 BGR555 entries - STP bit forced on non-zero entries,
          uploaded to VRAM (0, 486) as a 240×1 rect
 +0x01E0  64×256-halfword texture page → VRAM (448, 256)
 +0x81E0  0x8620-byte part pool → RAM *0x8007B85C + 0x44000
@@ -130,8 +130,8 @@ Consumed in place by `FUN_801F19EC` (offsets are slot-relative; the installer
 adds the buffer base to each):
 
 ```text
-+0x00  u32  name offset    — NUL-terminated attack-name string
-+0x04  u32  TMD offset     — Legaia TMD, magic 0x80000002 (every record
++0x00  u32  name offset    - NUL-terminated attack-name string
++0x04  u32  TMD offset     - Legaia TMD, magic 0x80000002 (every record
                              in the corpus passes the magic check)
 +0x08  u32  texture-pool offset
 +0x4A  u8   part count
@@ -140,9 +140,9 @@ adds the buffer base to each):
        the part offsets)
 ```
 
-`FUN_801F19EC` then routes the TMD + texture pool through `FUN_80055468` — the
+`FUN_801F19EC` then routes the TMD + texture pool through `FUN_80055468` - the
 same mesh/texture installer the [monster archive](../formats/monster-animation.md)
-uses — and stages the summon creature as a battle actor (`FUN_80024C88`
+uses - and stages the summon creature as a battle actor (`FUN_80024C88`
 allocation, scale `(part_pool_byte_0x1F) << 5`, etc.).
 
 For the **base + evolved-Seru summons (`0x81..=0x95`)** this actor-record TMD is
@@ -154,21 +154,21 @@ capture-less evolved legs `0x90`→ Kemaro 144, `0x91`→ Spoon 147). The map li
 in `legaia_asset::summon_creatures` and is byte-validated by the disc-gated
 `summon_creature_tmd_map_real`. The **big-summon block `0x9A..=0xA0`** instead
 carries a **bespoke mesh** in the group's third (raw CLUT+texture+part-pool)
-slot — no archive byte-match — so those summons are not reused enemy bodies.
+slot - no archive byte-match - so those summons are not reused enemy bodies.
 See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md) (Seru-magic
 summon visual).
 
 ### Art `"ME"` stream-archive slot (readef groups 0..3)
 
-The aux slots of `readef.DAT` groups 0..3 — slots `3*char + 1` and
-`3*char + 2` for char = Vahn / Noa / Gala / Terra — carry the player
+The aux slots of `readef.DAT` groups 0..3 - slots `3*char + 1` and
+`3*char + 2` for char = Vahn / Noa / Gala / Terra - carry the player
 **art-animation keyframe-stream archives** at the slot head: magic
 `'M' 'E'`, `u8 count`, `u16 entry_sizes[count]` (bit 15 = compressed),
 concatenated bodies. The consumer is `FUN_8002B28C` (called by the anim
 commit `FUN_8004AD80` with the `*0x8007BD74` streaming buffer as the
 archive), and every retail entry decompresses through the channel-delta
 codec `FUN_8002A9CC` into a packed
-`[u8 parts][u8 frames][9-byte TRS]` stream — the art-bank side is decoded
+`[u8 parts][u8 frames][9-byte TRS]` stream - the art-bank side is decoded
 in [`battle-data-pack.md` § "ME" stream
 archives](battle-data-pack.md#me-stream-archives-readefdat). Parser
 `legaia_asset::me_archive`; the side-band classifier reports these as
@@ -191,10 +191,10 @@ page decodes to a legible dev "back read test" texture.
 
 ## See also
 
-- [`effect.md`](effect.md) — the resident efect.dat 2-pack this side-band
+- [`effect.md`](effect.md) - the resident efect.dat 2-pack this side-band
   channel complements.
-- [`prot.md`](prot.md) — TOC math and the in-RAM index space.
-- [`subsystems/effect-vm.md`](../subsystems/effect-vm.md) — the effect pool
+- [`prot.md`](prot.md) - TOC math and the in-RAM index space.
+- [`subsystems/effect-vm.md`](../subsystems/effect-vm.md) - the effect pool
   and the streaming handler's place in it.
 
 Provenance: `ghidra/scripts/funcs/overlay_battle_801f17f8.txt`,

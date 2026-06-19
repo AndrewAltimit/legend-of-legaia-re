@@ -1,4 +1,4 @@
-//! Screen-fade primitive state — clean-room port of the retail fade-state
+//! Screen-fade primitive state - clean-room port of the retail fade-state
 //! loader (`FUN_80020B00`, `see ghidra/scripts/funcs/80020b00.txt`).
 //!
 //! Retail stages full-screen fades as pool actors: `FUN_80024E80` allocates an
@@ -21,15 +21,15 @@
 /// indices in brackets).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FadeTemplate {
-    /// `[0]` — fade kind/id, copied verbatim onto the state.
+    /// `[0]` - fade kind/id, copied verbatim onto the state.
     pub kind: i16,
-    /// `[1]` — ramp duration in frames (the per-frame delta divisor).
+    /// `[1]` - ramp duration in frames (the per-frame delta divisor).
     pub duration: i16,
-    /// `[3..=5]` — start RGB.
+    /// `[3..=5]` - start RGB.
     pub start_rgb: [i16; 3],
-    /// `[7..=9]` — end RGB.
+    /// `[7..=9]` - end RGB.
     pub end_rgb: [i16; 3],
-    /// `[10]` / `[11]` / `[12]` — mode words copied verbatim onto the state
+    /// `[10]` / `[11]` / `[12]` - mode words copied verbatim onto the state
     /// (consumed by the pool actor's draw handler; semantics not yet pinned).
     pub mode: [i16; 3],
 }
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn loader_matches_the_retail_fixed_point_layout() {
         // start 0x20, end 0xFF over 0x40 frames: delta = (0xDF * 0x40)/0x40
-        // = 0xDF in 10.6 — i.e. (end-start)/duration per displayed unit.
+        // = 0xDF in 10.6 - i.e. (end-start)/duration per displayed unit.
         let t = FadeTemplate {
             kind: 2,
             duration: 0x40,

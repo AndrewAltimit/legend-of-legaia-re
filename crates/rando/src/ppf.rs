@@ -4,7 +4,7 @@
 //! the *bytes that changed* between the user's original disc and the patched
 //! one, keyed by absolute file offset. Applying it to a fresh copy of the same
 //! disc reproduces the patch. Because it ships only deltas the user already
-//! owns (they supply the original disc), it embeds no standalone Sony asset —
+//! owns (they supply the original disc), it embeds no standalone Sony asset -
 //! the diff is meaningless without the original image.
 //!
 //! Format (PPF 3.0, "Undo data not available" variant):

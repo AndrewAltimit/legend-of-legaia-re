@@ -1,4 +1,4 @@
-//! Title-screen sprite atlas — RGBA decode + per-frame draw helper.
+//! Title-screen sprite atlas - RGBA decode + per-frame draw helper.
 //!
 //! Companion to [`crate::title`] (state machine) and
 //! [`crate::publisher_logos`] (boot-phase logo atlas). Decodes the
@@ -20,7 +20,7 @@ pub const ATLAS_WIDTH: u32 = 256;
 /// Height of the title atlas in pixels (matches the source 256×256 TIM).
 pub const ATLAS_HEIGHT: u32 = 256;
 
-/// Pre-decoded title atlas — RGBA8 pixels + the source rects engines
+/// Pre-decoded title atlas - RGBA8 pixels + the source rects engines
 /// sample to compose the retail title screen.
 ///
 /// Build once at boot from PROT 0888 bytes via

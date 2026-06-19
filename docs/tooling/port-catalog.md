@@ -7,7 +7,7 @@ equivalents rather than porting line-by-line):
 
 | Column | Source of truth |
 |---|---|
-| **dumped** | A Ghidra decompiler dump exists under `ghidra/scripts/funcs/` (gitignored — regenerable from the Ghidra project). |
+| **dumped** | A Ghidra decompiler dump exists under `ghidra/scripts/funcs/` (gitignored - regenerable from the Ghidra project). |
 | **documented** | The address is cited from at least one file under `docs/` (`FUN_<addr>` or `0x<addr>`, case-insensitive). |
 | **ported** | A Rust source under `crates/` carries a `// PORT: FUN_<addr>` tag for that address. |
 | **ignored** | The address is listed in `scripts/ci/port-catalog-ignore.toml` as a non-port-site (BIOS thunk / libc shim / libgte / libgs / libgpu / libcd / libsnd / libspu / libapi / libetc). Excluded from `--missing-ports` by default. |
@@ -29,18 +29,18 @@ The catalog's "ported" column keys off a structured comment in Rust source:
 /// PORT: FUN_801dd35c                      // inside `///` outer doc
 ```
 
-The tag may appear as plain `//`, doc `//!`, or outer-doc `///` — putting it in
+The tag may appear as plain `//`, doc `//!`, or outer-doc `///` - putting it in
 the doc block keeps the provenance co-located with the rustdoc description and
 makes it visible in generated docs.
 
 Rules:
 
 - The tag is the only signal trusted for "ported". Plain mentions of
-  `FUN_<addr>` in module docs or comments are ignored — they show up in many
+  `FUN_<addr>` in module docs or comments are ignored - they show up in many
   contexts that don't imply a port (cross-refs, "inspired by", "not yet
   ported", etc.) and noisily inflate the column.
 - Address must be lowercase hex in the SCUS / overlay code range.
-- Match is line-local — put the tag on its own line or as a trailing comment.
+- Match is line-local - put the tag on its own line or as a trailing comment.
 - A single Rust file can carry many tags. The catalog records the crate name
   each tag appears in.
 - One Ghidra function can be ported into more than one crate (e.g. a
@@ -52,7 +52,7 @@ When porting a Ghidra function, add the tag once in the Rust function that
 
 ## The `// REF:` tag
 
-Sibling of `// PORT:`. Marks an address as a **cross-reference citation** —
+Sibling of `// PORT:`. Marks an address as a **cross-reference citation** -
 the file mentions `FUN_<addr>` in a docstring or comment but isn't claiming
 to port it. Same comment shapes as `// PORT:` (plain `//`, doc `//!`,
 outer-doc `///`) and same multi-address syntax.
@@ -62,7 +62,7 @@ outer-doc `///`) and same multi-address syntax.
 //! REF: FUN_801E7320, FUN_801CF098  -- callees, not yet ported
 ```
 
-`port-catalog.py` ignores REF tags — they don't set the "ported" column —
+`port-catalog.py` ignores REF tags - they don't set the "ported" column -
 but the drift checker (`scripts/ci/check-port-tags.py`, see below) treats them
 as equivalent to PORT for warning suppression.
 
@@ -74,7 +74,7 @@ when a `FUN_<addr>` citation lacks a matching `// PORT:` or `// REF:` tag
 tag" pattern so the catalog stays in sync with what the engine actually
 implements.
 
-Default mode is `--staged` — only lines being added in the staging area
+Default mode is `--staged` - only lines being added in the staging area
 are checked, which is what the pre-commit hook runs. `--scan-all` audits
 every line of every engine-crate file (full historical sweep). `--strict`
 turns warnings into a nonzero exit for CI.
@@ -89,7 +89,7 @@ python3 scripts/ci/check-port-tags.py --backfill-refs  # one-shot grandfather pa
 
 **Scope rule:** only files that already carry a `// PORT:` tag are checked.
 Pure-docs files (no port tag anywhere) are treated as reference-only and
-skipped — they exist to describe retail behaviour without claiming ports,
+skipped - they exist to describe retail behaviour without claiming ports,
 and requiring REF tags inside them would be churn for no signal.
 
 **Backfill workflow:** `--backfill-refs` rewrites in place. For each
@@ -100,7 +100,7 @@ ports or citations land to keep the REF set fresh.
 
 **Pre-commit integration:** `scripts/git-hooks/pre-commit` runs
 `check-port-tags.py --staged --quiet` after `cargo clippy`. The hook is
-**warn-only** — drift output prints but never blocks the commit, so the
+**warn-only** - drift output prints but never blocks the commit, so the
 checker doesn't gate unrelated PRs. CI can tighten by switching to
 `--strict`.
 
@@ -122,9 +122,9 @@ python3 scripts/ci/port-catalog.py --dashboard           # open-work rollup -> o
 
 Output is written to `target/port-catalog/` (gitignored):
 
-- `catalog.csv` / `catalog.md` — every tracked address, machine-readable + markdown.
-- `<feature>.csv` / `<feature>.md` — per-feature subset when `--feature` is used.
-- `open-work.md` — single-page dashboard combining per-feature port % + top-N missing-ports per feature + ignore-list summary (see "Open-work dashboard" below).
+- `catalog.csv` / `catalog.md` - every tracked address, machine-readable + markdown.
+- `<feature>.csv` / `<feature>.md` - per-feature subset when `--feature` is used.
+- `open-work.md` - single-page dashboard combining per-feature port % + top-N missing-ports per feature + ignore-list summary (see "Open-work dashboard" below).
 
 ## Features (BFS from roots)
 
@@ -145,7 +145,7 @@ stop_at = ["801de840", "801e295c"]
 max_depth = 2
 ```
 
-The citation graph only has edges between *dumped* functions — undumped
+The citation graph only has edges between *dumped* functions - undumped
 helpers have no outgoing edges, so the BFS frontier widens as more dumps
 land. This is intentional: it lets you start tight (small feature with few
 dumps) and progressively widen as you dig in.
@@ -160,7 +160,7 @@ Use feature views to:
 ## Ignore list
 
 `scripts/ci/port-catalog-ignore.toml` lists addresses that the catalog should
-treat as out-of-scope for engine porting — statically-linked PsyQ kernel /
+treat as out-of-scope for engine porting - statically-linked PsyQ kernel /
 runtime / SDK code. The clean-room port maps these clusters to native
 equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the
 PSX wrappers, so they shouldn't pollute the port worklist.
@@ -177,7 +177,7 @@ PSX wrappers, so they shouldn't pollute the port worklist.
 "80062340" = "SsSeqOpen (slot-bitmap walk + load)"
 ```
 
-Categories are organisational (one TOML table per cluster — `bios` / `libc` /
+Categories are organisational (one TOML table per cluster - `bios` / `libc` /
 `libgte` / `libgs` / `libcd` / `libapi` / `libsnd` / `libspu` / `libetc`); the
 tool treats every entry the same way. Provenance for each entry lives in
 [`docs/reference/functions.md`](../reference/functions.md) and the audio /
@@ -192,7 +192,7 @@ Default behaviour:
 
 Adding an entry: copy the address into the appropriate category table with a
 one-line reason that names the PsyQ function and (where known) the BIOS
-vector. Keep the reason factual — it shows up in catalog drill-down output.
+vector. Keep the reason factual - it shows up in catalog drill-down output.
 Provenance citations belong in `docs/reference/functions.md`, not in the TOML
 reason field.
 
@@ -202,24 +202,24 @@ reason field.
 page that answers "what's left to port, in what scope" at a glance. The
 dashboard combines four signals:
 
-1. **Global counts** — dumped / documented / ported / ignored / remaining port
+1. **Global counts** - dumped / documented / ported / ignored / remaining port
    worklist.
-2. **Per-feature status table** — for each feature in
+2. **Per-feature status table** - for each feature in
    [`scripts/ci/features.toml`](../../scripts/ci/features.toml): reachable, ported,
    port %, missing (port worklist within the feature, ignore-list excluded),
    ignored.
-3. **Per-feature top-N missing-ports** — the highest-citation-count helpers
+3. **Per-feature top-N missing-ports** - the highest-citation-count helpers
    reachable from each feature's roots that don't yet carry a `// PORT:` tag.
    Sorted high-leverage first, so a feature's blockers surface immediately.
    Cap is `--dashboard-top N` (default 10).
-4. **Ignore-list summary** — count per category (bios / libc / libgte / libgs /
+4. **Ignore-list summary** - count per category (bios / libc / libgte / libgs /
    libcd / libapi / libsnd / libspu / libetc).
-5. **Provenance gaps** — addresses with a `// PORT:` tag but missing a dump or
+5. **Provenance gaps** - addresses with a `// PORT:` tag but missing a dump or
    doc citation (shown only when nonzero).
 
 The page is gitignored output (lives under `target/`). Re-run after landing a
 batch of ports to see which helpers are now top-of-list. The question-level
-companion — open *hunts* rather than per-function status — is
+companion - open *hunts* rather than per-function status - is
 [`docs/reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ## What the columns surface
@@ -241,21 +241,21 @@ The point of the table is to make the cross-cuts cheap to read:
 ## Caveats
 
 - **Citation graph is dump-local.** The "cited" signal comes from grepping
-  dump files — so an undumped helper has no outgoing edges. The frontier of
+  dump files - so an undumped helper has no outgoing edges. The frontier of
   reachable functions widens only as dumps land.
 - **`functions.md` is curated, but `documented` is broader.** Any doc page
   that mentions `FUN_<addr>` or `0x<addr>` counts. The catalog won't tell you
-  which docs are authoritative — that's still a judgement call per topic.
+  which docs are authoritative - that's still a judgement call per topic.
 - **One `// PORT:` tag does not guarantee semantic equivalence.** The tag is a
   provenance link, not a correctness proof. Tests + retail-comparison still
   do that job.
 - **The ignore-list is curated, not exhaustive.** Newly-dumped PsyQ helpers
-  don't auto-classify — `--missing-ports` will surface them until they're
+  don't auto-classify - `--missing-ports` will surface them until they're
   explicitly added to `port-catalog-ignore.toml`. Treat unfamiliar 16-byte
   thunks in `0x8005xxxx` / `0x8006xxxx` as likely ignore candidates rather
   than ports.
 
 ## See also
 
-- [`docs/tooling/ghidra.md`](ghidra.md) — produces the `ghidra/scripts/funcs/` dumps that drive the "dumped" column.
-- [`docs/reference/functions.md`](../reference/functions.md) — the curated entry-point directory the "documented" signal draws from.
+- [`docs/tooling/ghidra.md`](ghidra.md) - produces the `ghidra/scripts/funcs/` dumps that drive the "dumped" column.
+- [`docs/reference/functions.md`](../reference/functions.md) - the curated entry-point directory the "documented" signal draws from.

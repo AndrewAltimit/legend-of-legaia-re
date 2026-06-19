@@ -10,13 +10,13 @@
 //! Two structural facts are pinned here:
 //!
 //! 1. **Each entry must be trimmed to its TOC-gap unique-content footprint**
-//!    (`unique_content_len`) — the extraction `.BIN`s over-read into the
+//!    (`unique_content_len`) - the extraction `.BIN`s over-read into the
 //!    following entries, and the over-read tail's spawn sites belong to
 //!    *neighbouring* stagers (their record pointers are only valid for the
 //!    neighbour's own load). The live mid-cast captures pin the boundary: the
 //!    slot-B resident image matches the file exactly up to the TOC gap.
 //! 2. After trimming, every recovered record first word is a `-1` transform
-//!    node or a small library-mesh index — no out-of-band "sentinel" values
+//!    node or a small library-mesh index - no out-of-band "sentinel" values
 //!    (those were over-read artifacts). The enemy stagers spawn dominantly
 //!    through the `FUN_80050ED4` pool wrapper, which `parse` scans alongside
 //!    the direct `FUN_80021B04` calls.
@@ -105,7 +105,7 @@ fn enemy_boss_stagers_parse_as_summon_scene_graphs() {
                 SummonPartKind::TransformNode => nodes += 1,
                 SummonPartKind::LibraryMesh => meshes += 1,
                 SummonPartKind::Sentinel => panic!(
-                    "PROT {entry_idx} part {i}: unexpected sentinel {:#06x} at {:#x} — \
+                    "PROT {entry_idx} part {i}: unexpected sentinel {:#06x} at {:#x} - \
                      out-of-band first words are the over-read signature and must not \
                      survive trimming",
                     p.model_sel as u16, p.record_off,

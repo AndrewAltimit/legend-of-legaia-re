@@ -26,7 +26,7 @@
 //! `docs/formats/encounter.md` for the install-opcode catalogue
 //! (0x37/0x41, 0x38, 0x43, 0x47, 0x4C). Random-encounter triggers
 //! (rate-roll on `_DAT_8007B5F8`) may populate the formation cell via a
-//! different path that bypasses `actor[+0x94]` — that's an open thread.
+//! different path that bypasses `actor[+0x94]` - that's an open thread.
 //! The [`EncounterRegistry`](crate::encounter_registry) abstraction is a
 //! clean-room composition layer that lets engines synthesize per-scene
 //! tables until disc-side decoding catches up.
@@ -69,7 +69,7 @@ pub const IDS_OFFSET: usize = 0x4;
 ///
 /// Pinned from the training-fight save-state corpus: the global formation
 /// cell at `0x8007BD0C` is empty (`00 00 00 00`) in the pre-battle field
-/// state and reads `4F 00 00 00` from battle-load onward — a lone monster in
+/// state and reads `4F 00 00 00` from battle-load onward - a lone monster in
 /// slot 0. See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md).
 pub const RIM_ELM_TRAINING_OPPONENT_ID: u8 = 0x4F;
 
@@ -115,13 +115,13 @@ pub const RIM_ELM_SPARRING_CARRIER_MODEL: u8 = 0x6A;
 /// The placement tile is the partner's *post-tutorial* village spot, in a
 /// town01 sub-area not walk-reachable from the cold-boot spawn (tile 20). For
 /// the opening tutorial fight the engine's opening sequence repositions the
-/// partner next to Vahn — pinned here from a retail capture at the dialogue-
+/// partner next to Vahn - pinned here from a retail capture at the dialogue-
 /// accept frame (the live actor's `+0x14/+0x18`), tile `(21, 14)`, a short
 /// walk-reachable hop from the spawn. The clean-room cold boot enters town01
 /// free-roam without replaying that reposition, so a driver that needs the
 /// partner where retail's tutorial puts it uses this position. Confirmed: the
 /// live actor at this position resolves (via `actor[+0x90]`) to the
-/// `(76, 65)` / model `0x6A` placement record — same carrier, repositioned.
+/// `(76, 65)` / model `0x6A` placement record - same carrier, repositioned.
 pub const RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS: (i16, i16) = (2752, 1856);
 
 /// Decoded encounter record.
@@ -137,7 +137,7 @@ pub struct EncounterRecord {
 }
 
 impl EncounterRecord {
-    /// Empty record — zero monsters, all slots cleared.
+    /// Empty record - zero monsters, all slots cleared.
     pub const EMPTY: Self = Self {
         count: 0,
         monster_ids: [0; FORMATION_SLOTS],
@@ -222,7 +222,7 @@ impl EncounterRecord {
     /// battle session.
     ///
     /// The retail engine identifies a battle by the bytes of the formation
-    /// cell — there is no separate "formation id" on disc. We synthesize one
+    /// cell - there is no separate "formation id" on disc. We synthesize one
     /// from the cell bytes (`monster_ids` packed little-endian into the low
     /// 32 bits, then folded into the u16 id space) so engines can register
     /// and look up the formation in [`FormationTable`].

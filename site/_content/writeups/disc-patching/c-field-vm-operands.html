@@ -1,0 +1,104 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">disc patching</a> &middot; Tier C</div>
+  <h1>Tier C - rewriting field-VM bytecode</h1>
+  <p class="lede">Some of the most player-visible content - what's in a chest, what a shop sells, what a zone throws at you - isn't stored as data at all. It's an operand inside the per-scene field-VM script. Editing it means treating the scene's MAN as <em>code</em>: decode the bytecode, rewrite one opcode's inline argument, recompress within the script's original footprint. The trap is finding the operand without mistaking data for an instruction.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">You are here</div>
+  Tier C of the A&ndash;F ladder - like <a href="b-lzs-slots.html">tier B</a> it edits inside compression, but the payload is executable bytecode, which raises the bar on <em>finding</em> the byte. Start at the <a href="index.html">series index</a> for the editing model.
+</div>
+
+<section class="doc-section" id="mechanism">
+  <h2>Mechanism at a glance</h2>
+  <dl class="kv">
+    <dt>Target</dt><dd>an opcode's inline operand in a per-scene MAN's field-VM script (dispatcher <code>FUN_801DE840</code>)</dd>
+    <dt>Find</dt><dd>an opcode-aware, dialogue-skipping walk from each record's true entry PC - never a raw byte scan</dd>
+    <dt>Write</dt><dd>overwrite the operand same-size, recompress the MAN, keep the stream within its footprint budget</dd>
+    <dt>Budget</dt><dd>distance from the MAN's <code>data_offset</code> to the next descriptor's - read from the boundary, not the rewritten stream, so multi-pass edits stay stable</dd>
+    <dt>Opcodes</dt><dd>chest <code>0x39</code> + display <code>0xC2</code> &middot; shop <code>0x49</code> &middot; encounter formation ids &middot; house-door <code>0xA3 0xF8</code></dd>
+    <dt>Oracles</dt><dd><code>chest_patch_real.rs</code> &middot; <code>shop_patch_real.rs</code> &middot; <code>encounter_patch_real.rs</code> &middot; <code>house_door_patch_real.rs</code></dd>
+  </dl>
+  <div class="evidence">
+    <span class="evidence-label">Evidence</span>
+    <span class="ev">field-VM disasm</span>
+    <span class="ev">ghidra trace</span>
+    <span class="ev">disc oracle</span>
+  </div>
+</section>
+
+<section class="doc-section" id="reversing">
+  <h2>The reversing: don't mistake data for an instruction</h2>
+  <p>Field-VM bytecode is variable-width and interleaved with inline dialogue - runs of <code>0x1F</code>-led glyph segments that are <strong>not</strong> opcodes. A chest's <code>GIVE_ITEM</code> (<code>0x39 item_id</code>) almost always sits <em>after</em> the dialogue that announces it, so a naive scan for the byte <code>0x39</code> would trip over a glyph or an operand byte and rewrite the wrong thing. The site finder instead walks each partition-1 record with the field-VM disassembler from its true entry PC, decoding opcode by opcode: a decode error <em>at a <code>0x1F</code></em> is treated as a dialogue segment to skip (advance past it, consume glyphs to the terminating <code>0x00</code>), and decoding resumes - the inter-segment control bytes stay in sync, so the walk reaches the real post-dialogue give. Any <em>other</em> decode error stops the walk, and each record's walk is bounded to the next record's start, so it can never run off into unrelated data. An earlier walk that stopped at the <em>first</em> <code>0x1F</code> silently missed the give in ~85% of sites - the kind of bug a byte scan hides.</p>
+  <p>Two pins make the rest exact: each opcode's operand encoding comes from the field-VM dispatcher (<code>FUN_801DE840</code>, see <a href="../../subsystems/script-vm.html">script VM</a>), and a chest's announcement text renders its item <em>name</em> from a separate <code>0xC2 id</code> dialogue token - patch only the <code>0x39</code> give and the flavor text still names the old item, so both bytes move together.</p>
+</section>
+
+<section class="doc-section" id="budget">
+  <h2>The footprint budget</h2>
+  <p>After the operand is rewritten the MAN is recompressed, and the new stream must still fit where the old one lived - the gap to the next asset's descriptor. The budget is read from the <strong>descriptor boundary</strong>, not the just-written stream, which matters because several passes (encounter, chest, shop) each decode and re-pack the <em>same</em> MAN: our packer is often a touch tighter, so reading the budget back from a shorter stream would shrink it each pass and make a later pass overflow a scene it should have edited.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="budget-title">
+      <title id="budget-title">MAN recompression must fit within the descriptor-boundary footprint</title>
+      <style>
+        .mb-lab  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
+        .mb-addr { font: 11px 'JetBrains Mono', monospace; fill: #58c4b3; }
+        .mb-man  { fill: #131922; stroke: #58c4b3; stroke-width: 1.3; }
+        .mb-head { fill: #0d1117; stroke: #2a323e; stroke-width: 1.1; stroke-dasharray: 3 3; }
+        .mb-seg  { font: 10px 'Inter', sans-serif; fill: #8b949e; text-anchor: middle; }
+        .mb-bound{ stroke: #b56b6b; stroke-width: 1.6; }
+        .mb-bl   { font: 10px 'JetBrains Mono', monospace; fill: #b56b6b; text-anchor: middle; }
+      </style>
+
+      <text x="20" y="44" class="mb-lab">original</text>
+      <rect x="120" y="30" width="600" height="32" class="mb-man"/>
+      <text x="420" y="50" class="mb-seg">MAN LZS stream</text>
+      <rect x="720" y="30" width="120" height="32" class="mb-head"/>
+      <text x="780" y="50" class="mb-seg">headroom</text>
+
+      <text x="20" y="114" class="mb-lab">re-packed</text>
+      <rect x="120" y="100" width="560" height="32" class="mb-man"/>
+      <text x="400" y="120" class="mb-seg">edited MAN (re-packed)</text>
+      <rect x="680" y="100" width="160" height="32" class="mb-head"/>
+      <text x="760" y="120" class="mb-seg">headroom</text>
+
+      <line x1="840" y1="18" x2="840" y2="150" class="mb-bound"/>
+      <text x="840" y="170" class="mb-bl">next descriptor</text>
+      <text x="120" y="170" class="mb-addr">data_offset</text>
+      <text x="430" y="170" class="mb-lab" text-anchor="middle">budget = boundary &minus; data_offset (constant across passes)</text>
+    </svg>
+    <figcaption>Both streams must end left of the next descriptor. Reading the budget from that fixed boundary - not the rewritten stream - keeps every pass on the same full budget; a scene whose re-pack would overflow is skipped rather than corrupted.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="examples">
+  <h2>Worked examples</h2>
+  <h3>Treasure chests &amp; town shops</h3>
+  <p>Chests rewrite the <code>0x39</code> give operand and the matching <code>0xC2</code> display token together. Shops reassign the inline op-<code>0x49</code> stock list - the gold-merchant's wares are bytecode operands in the scene script, not a separate table (mind the unsellable template tail that over-counts stock).</p>
+  <h3>Random encounters &amp; house doors</h3>
+  <p>Encounters rewrite a formation's monster-id bytes while preserving the leading count/reserved bytes, so the formation shape is intact. House doors shuffle the player-warp operands of the intra-town <code>0xA3 0xF8</code> move-to ops, class-preserving across the named IN/OUT records so interiors still connect sensibly.</p>
+</section>
+
+<section class="doc-section" id="composition">
+  <h2>Composition</h2>
+  <p>Tier C edits are same-size at the operand level, but several can target the same scene MAN, so they share one rule: every pass reads the footprint budget from the descriptor boundary, never from a previously-rewritten stream. With that, encounter, chest, and shop passes over one scene compose cleanly. The variable-length cousin - when an edit must change a byte count - is <a href="d-man-relocation.html">tier D</a>.</p>
+</section>
+
+<section class="doc-section" id="mods">
+  <h2>Mods using this technique</h2>
+  <ul>
+    <li><strong>Treasure chests</strong> (<code>--chests</code>) &middot; <strong>Town shops</strong> (<code>--shops</code>) &middot; <strong>Random encounters</strong> (<code>--encounters</code>) &middot; <strong>House doors</strong> (<code>--house-doors</code>)</li>
+  </ul>
+  <p class="hint">Adding a tier-C mod: find sites with an opcode-aware walk bounded to each record (never a raw byte scan), patch any paired display token alongside the operand, recompress reading the budget from the descriptor boundary, skip scenes that overflow, and add a disc-gated oracle.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="index.html">Series index &middot; the ladder</a>
+    <a href="../../subsystems/script-vm.html">Field / event script VM</a>
+    <a href="../../formats/encounter.html">Encounter record</a>
+    <a href="d-man-relocation.html">Tier D &middot; MAN relocation</a>
+    <a href="b-lzs-slots.html">Tier B &middot; editing inside LZS</a>
+  </div>
+</section>

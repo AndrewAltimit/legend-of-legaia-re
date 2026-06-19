@@ -1,4 +1,4 @@
-//! Disc-gated tests for the **run-away EXP reward** — the code hook that banks a
+//! Disc-gated tests for the **run-away EXP reward** - the code hook that banks a
 //! slice of a fled fight's experience into the party (see `legaia_rando::flee_exp`).
 //!
 //! The injection is two same-size edits: a detour at the battle-action escape
@@ -15,7 +15,7 @@
 //!
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. The patched image lives
 //! only in memory. NB the clean-room engine can't run injected MIPS, so unlike
-//! the data-edit randomizers this feature has no engine runtime oracle —
+//! the data-edit randomizers this feature has no engine runtime oracle -
 //! verification is the byte/disassembly checks here plus an emulator playtest.
 
 use legaia_asset::item_names::file_offset_for_va;
@@ -59,7 +59,7 @@ fn baseline_hook_site_matches_the_known_build() {
         .read_entry(BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .expect("read battle-action overlay");
     // The escape-teardown handler entry is the expected `lui v1,0x801d` /
-    // `addiu a0,v1,-0x6f90` pair — the build fingerprint the planner guards on.
+    // `addiu a0,v1,-0x6f90` pair - the build fingerprint the planner guards on.
     assert_eq!(
         overlay_words(&overlay, HOOK_VA, 2),
         DISPLACED.to_vec(),

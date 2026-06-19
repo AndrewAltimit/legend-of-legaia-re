@@ -28,7 +28,7 @@ The per-frame driver is `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`). It is d
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
 | `200` (`0xc8`) | Exit / fade-out: ramps a fade value to white and, once full, plays the leaving XA cue and tears the mode down. |
 
-The shared tail also services three auxiliary one-shot animation timers (`DAT_801d9160` / `DAT_801d915c` / `DAT_801d90f0`, each advanced through `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4`), applies the screen fade, draws the persistent HUD (`FUN_801d13f0`) and — while a fish is hooked (`DAT_801d9058`) — the catch HUD (`FUN_801d1580`), and honours a global "confirm-to-leave" edge that returns to state `10`.
+The shared tail also services three auxiliary one-shot animation timers (`DAT_801d9160` / `DAT_801d915c` / `DAT_801d90f0`, each advanced through `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4`), applies the screen fade, draws the persistent HUD (`FUN_801d13f0`) and - while a fish is hooked (`DAT_801d9058`) - the catch HUD (`FUN_801d1580`), and honours a global "confirm-to-leave" edge that returns to state `10`.
 
 The reeling / fish-AI tick `FUN_801d4004` and the per-fish actor handler `FUN_801d26cc` run from the actor side of the run loop (`FUN_801d26cc` calls `FUN_801d4004` while the fish is engaged), not directly from the mode switch.
 
@@ -42,7 +42,7 @@ The hooked-fight is a tug-of-war between the player's reel input and the fish's 
 
 `_DAT_80084454` is a persistent rod / upgrade stat read from the save block; a higher value softens the per-frame tension change. The fish's own behaviour is a sub-state machine on `DAT_801d910c` (run / dart-left / dart-right / dive, selected pseudo-randomly via the BIOS `rand` `func_0x80056798`), which moves the fish actor and modulates the pull; the timer `DAT_801d9110` counts down each behaviour and re-rolls the next. Per-fish parameters (pull magnitudes, dart thresholds, behaviour-selection cutoffs) come from a per-species table indexed by `DAT_801d91cc * 0x28` based at `&DAT_801d81a8` (`Inferred` field meanings; the indexing and stride are `Confirmed` from the disassembly).
 
-The catch HUD `FUN_801d1580` (`overlay_fishing_801d1580.txt`) renders the live state: the line length / record number `DAT_801d927c`, the casting-power bar `DAT_801d9274`, the depth `DAT_801d9298`, and — gated on `DAT_801d91b4` — the tension bar `DAT_801d9168` itself (drawn via `FUN_801d1870`). It uses the digit / glyph blitters `FUN_801d76e0` (number) and `FUN_801d63b0` (single sprite-quad).
+The catch HUD `FUN_801d1580` (`overlay_fishing_801d1580.txt`) renders the live state: the line length / record number `DAT_801d927c`, the casting-power bar `DAT_801d9274`, the depth `DAT_801d9298`, and - gated on `DAT_801d91b4` - the tension bar `DAT_801d9168` itself (drawn via `FUN_801d1870`). It uses the digit / glyph blitters `FUN_801d76e0` (number) and `FUN_801d63b0` (single sprite-quad).
 
 A landed catch is resolved in `FUN_801d5298` (`overlay_fishing_801d5298.txt`). The awarded points are
 `points = (fish_base_value * (DAT_801d91b8 + 0x9c0)) / 0x32000`,
@@ -77,16 +77,16 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 
 ## Key functions
 
-- `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`) — per-frame fishing mode driver; the `DAT_801d926c` state machine plus the HUD / fade / leave tail.
-- `FUN_801d4004` (`overlay_fishing_801d4004.txt`) — fish-AI + tension-gauge tick: reel-input integration into `DAT_801d9168`, the `DAT_801d910c` behaviour sub-state, and the next-behaviour roll.
-- `FUN_801d26cc` (`overlay_fishing_801d26cc.txt`) — hooked-fish actor handler; positions the fish / lure / line actors and calls `FUN_801d4004` while engaged.
-- `FUN_801d5298` (`overlay_fishing_801d5298.txt`) — catch resolution + scoring: computes the point award, credits `_DAT_8008444c`, and updates the best-catch record.
-- `FUN_801d1580` (`overlay_fishing_801d1580.txt`) — catch HUD: draws tension, casting power, depth, and record values.
-- `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) — persistent HUD: draws the fishing-point total (`_DAT_8008444c`, capped) and the rod-type label.
-- `FUN_801d712c` (`overlay_fishing_801d712c.txt`) — rod-ownership gate; queries inventory item ids `0x9d`..`0x9f` (`func_0x80042f4c`).
+- `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`) - per-frame fishing mode driver; the `DAT_801d926c` state machine plus the HUD / fade / leave tail.
+- `FUN_801d4004` (`overlay_fishing_801d4004.txt`) - fish-AI + tension-gauge tick: reel-input integration into `DAT_801d9168`, the `DAT_801d910c` behaviour sub-state, and the next-behaviour roll.
+- `FUN_801d26cc` (`overlay_fishing_801d26cc.txt`) - hooked-fish actor handler; positions the fish / lure / line actors and calls `FUN_801d4004` while engaged.
+- `FUN_801d5298` (`overlay_fishing_801d5298.txt`) - catch resolution + scoring: computes the point award, credits `_DAT_8008444c`, and updates the best-catch record.
+- `FUN_801d1580` (`overlay_fishing_801d1580.txt`) - catch HUD: draws tension, casting power, depth, and record values.
+- `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) - persistent HUD: draws the fishing-point total (`_DAT_8008444c`, capped) and the rod-type label.
+- `FUN_801d712c` (`overlay_fishing_801d712c.txt`) - rod-ownership gate; queries inventory item ids `0x9d`..`0x9f` (`func_0x80042f4c`).
 
 ## Open
 
 - The per-species parameter table at `&DAT_801d81a8` (stride `0x28`): individual field offsets (`+0x8` line-tension factor, `+0x18`/`+0x1c`/`+0x20` behaviour-roll cutoffs, `+0x24` minimum-time, etc.) are read by `FUN_801d4004` but their designer-level meanings are `Inferred`.
 - The exact bit assignment of the reel buttons within `_DAT_8007b850` (which physical face/shoulder buttons `0x40` / `0x80` map to) is not pinned from these dumps.
-- Whether the point-exchange shop branch (states `0x64`..`0x7a`) spends fishing points for in-game items or rod upgrades — the helpers `FUN_801d06c8` / `FUN_801d092c` / `FUN_801d0c3c` read `PTR_DAT_801d90b8` price records, but the record layout is not yet documented.
+- Whether the point-exchange shop branch (states `0x64`..`0x7a`) spends fishing points for in-game items or rod upgrades - the helpers `FUN_801d06c8` / `FUN_801d092c` / `FUN_801d0c3c` read `PTR_DAT_801d90b8` price records, but the record layout is not yet documented.

@@ -12,8 +12,8 @@
 //! It is the prerequisite the Super-Art live wiring needs: a Super fires when a
 //! recognized art *sequence* ends on a known combination (see
 //! [`crate::super_art::SuperMatcher::trigger_by_art_sequence`]). The exact
-//! byte-level queue the retail builder emits — including the interleaved
-//! connector directions between arts — is unpinned (`ctx[+0x274]`), so this
+//! byte-level queue the retail builder emits - including the interleaved
+//! connector directions between arts - is unpinned (`ctx[+0x274]`), so this
 //! recognizer **abstracts** those connectors: a direction that begins no art is
 //! skipped (treated as a connector), rather than aborting recognition. That
 //! keeps the recovered art ordering faithful even though the literal queue bytes
@@ -31,7 +31,7 @@ pub type ArtCommands<'a> = (ActionConstant, &'a [Command]);
 /// Greedy **longest-match**, left to right: at each position the longest art
 /// whose command string is a prefix of the remaining input is consumed and its
 /// action constant emitted; a position that begins no art is skipped (an
-/// abstracted connector direction — see the module docs). Arts with an empty
+/// abstracted connector direction - see the module docs). Arts with an empty
 /// command string are ignored (they can never match and would loop).
 ///
 /// Returns the arts in performed order. An input that performs no recognizable

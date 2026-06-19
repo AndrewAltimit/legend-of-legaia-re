@@ -12,7 +12,7 @@
 //!
 //! PSX overlays are normally **clean copies** of a fixed-VA-linked blob: the
 //! loader DMAs the bytes into the overlay window, runs `FlushCache`, and jumps
-//! in — no per-load relocation. This game's overlay code ships as
+//! in - no per-load relocation. This game's overlay code ships as
 //! MIPS-code entries inside `PROT.DAT` (the [`crate::mips_overlay`] /
 //! [`crate::overlay_ptr_table`] detectors already flag the small ones; the big
 //! scene overlays are raw too, just data-section-first). So each overlay can be
@@ -21,12 +21,12 @@
 //! at base X", not a guessed label.
 //!
 //! What this buys (and its limit):
-//! - It solves the VA-aliasing identity problem **structurally** — the source
+//! - It solves the VA-aliasing identity problem **structurally** - the source
 //!   PROT entry is the identity.
 //! - Overlay disassembly becomes reproducible from the user's disc with no
 //!   curated save state, including overlays nobody ever captured.
 //! - It does **not** unblock runtime-value captures (`gp[0x754]==3`,
-//!   watchpoint results, `ctx[+0x274]` bytes) — those still need live probes.
+//!   watchpoint results, `ctx[+0x274]` bytes) - those still need live probes.
 //!   This is a workflow + coverage + identity win; the dynamic captures remain
 //!   authoritative for runtime values.
 //!
@@ -35,13 +35,13 @@
 //! A clean copy is verified two ways:
 //! - **Static reproducibility:** the as-loaded bytes extracted from the disc
 //!   hash to the committed [`OverlayRecord::fingerprint_sha256`] (no Sony bytes
-//!   committed — just the hash).
+//!   committed - just the hash).
 //! - **Runtime byte-match (disc + save-state gated):** the on-disc as-loaded
 //!   bytes are byte-identical to the resident RAM image over the whole
 //!   `.text`+`.rodata` region; only the trailing `.bss` / runtime-state region
 //!   diverges (the runtime zeroes / writes it after the copy). The verified
 //!   prefix length is [`OverlayRecord::clean_copy_bytes`]. For PROT 0898
-//!   (battle) the prefix is `0x28800` of `0x29800` bytes — 100% of code/rodata.
+//!   (battle) the prefix is `0x28800` of `0x29800` bytes - 100% of code/rodata.
 //!
 //! ### Base recovery
 //!
@@ -69,10 +69,10 @@ pub const OVERLAY_WINDOW_HI: u32 = 0x8020_0000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OverlayForm {
-    /// Stored uncompressed — the entry bytes are the as-loaded bytes verbatim.
+    /// Stored uncompressed - the entry bytes are the as-loaded bytes verbatim.
     #[default]
     Raw,
-    /// Stored LZS-compressed — decompress to get the as-loaded bytes. Requires
+    /// Stored LZS-compressed - decompress to get the as-loaded bytes. Requires
     /// [`OverlayRecord::decompressed_size`] (LZS carries no length prefix).
     Lzs,
 }
@@ -88,12 +88,12 @@ pub enum Eligibility {
     /// state captures this overlay resident, so the clean copy is asserted from
     /// the disc bytes alone (no RAM cross-check).
     Static,
-    /// Not a clean copy — runtime-relocated or runtime-constructed. Keep on the
+    /// Not a clean copy - runtime-relocated or runtime-constructed. Keep on the
     /// dynamic capture path; do not trust a static disassembly.
     Ineligible,
 }
 
-/// How the committed `base_va` was determined — gates the reproducibility
+/// How the committed `base_va` was determined - gates the reproducibility
 /// check (jal-recovery is asserted only for `Jal`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -121,13 +121,13 @@ pub struct OverlayRecord {
     pub prot_index: u32,
     /// Short identity handle (matches the `overlay_<label>_<addr>` dump naming).
     pub label: String,
-    /// Load base VA inside the overlay window — the first as-loaded byte maps
+    /// Load base VA inside the overlay window - the first as-loaded byte maps
     /// here.
     pub base_va: u32,
     /// On-disc storage form.
     #[serde(default)]
     pub form: OverlayForm,
-    /// Decompressed size in bytes — required (and only used) when `form = lzs`.
+    /// Decompressed size in bytes - required (and only used) when `form = lzs`.
     #[serde(default)]
     pub decompressed_size: Option<u32>,
     /// Length of the byte-verified `.text`+`.rodata` prefix (the clean-copy
@@ -142,13 +142,13 @@ pub struct OverlayRecord {
     pub base_source: BaseSource,
     /// Optional known function VA that must land on a function prologue at
     /// `base_va` (file offset `anchor_va - base_va`). A capture-free,
-    /// disc-reproducible cross-check of the load base — decisive for rows whose
+    /// disc-reproducible cross-check of the load base - decisive for rows whose
     /// `base_source` is not `jal` (the jal-recovery assertion is skipped for
     /// those, so the anchor keeps the base claim non-vacuous). See
     /// [`anchor_lands_on_prologue`].
     #[serde(default)]
     pub anchor_va: Option<u32>,
-    /// sha256 (hex) of the as-loaded bytes. Disc-derived hash — committable, no
+    /// sha256 (hex) of the as-loaded bytes. Disc-derived hash - committable, no
     /// Sony bytes. Re-extraction must reproduce this exactly.
     #[serde(default)]
     pub fingerprint_sha256: Option<String>,
@@ -163,7 +163,7 @@ impl OverlayRecord {
         format!("overlay_{}", self.label)
     }
 
-    /// Filename for the extracted as-loaded blob (gitignored — it's Sony code).
+    /// Filename for the extracted as-loaded blob (gitignored - it's Sony code).
     pub fn bin_filename(&self) -> String {
         format!("overlay_{}_{:04}.bin", self.label, self.prot_index)
     }
@@ -179,7 +179,7 @@ pub struct OverlayMap {
 const MAP_TOML: &str = include_str!("../data/static-overlays.toml");
 
 /// The committed static-overlay map, parsed once. Panics at first use if the
-/// embedded TOML is malformed — that is a build-time authoring error, caught by
+/// embedded TOML is malformed - that is a build-time authoring error, caught by
 /// [`tests::embedded_map_parses`].
 pub fn overlay_map() -> &'static OverlayMap {
     static MAP: OnceLock<OverlayMap> = OnceLock::new();
@@ -221,7 +221,7 @@ pub fn as_loaded(entry_bytes: &[u8], rec: &OverlayRecord) -> Result<Vec<u8>> {
     }
 }
 
-/// sha256 (lowercase hex) of a byte slice — the as-loaded fingerprint.
+/// sha256 (lowercase hex) of a byte slice - the as-loaded fingerprint.
 pub fn fingerprint(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
@@ -270,7 +270,7 @@ pub fn head_string(bytes: &[u8], window: usize, min_len: usize) -> Option<String
 
 /// Locate a function-head instruction signature in a blob. Returns the file
 /// offset of the first occurrence. Pair with a known anchor VA to infer the
-/// load base (`base = anchor_va - offset`) — the byte-search that pinned the
+/// load base (`base = anchor_va - offset`) - the byte-search that pinned the
 /// menu overlay (PROT 0899) by `FUN_801CF650`'s signature, generalised. The
 /// signature is the literal little-endian machine code of the first few
 /// instructions; instructions that reference fixed SCUS globals (`lui`/`lw`
@@ -285,8 +285,8 @@ pub fn find_signature(blob: &[u8], signature: &[u8]) -> Option<usize> {
 
 /// How many of an overlay's internal absolute pointers resolve inside the
 /// file when it is loaded at `base_va`. The slot-B overlays (summon stagers,
-/// effect data) have sparse internal `jal` call graphs — too sparse to
-/// recover a base from — but they are dense with absolute self-pointers built
+/// effect data) have sparse internal `jal` call graphs - too sparse to
+/// recover a base from - but they are dense with absolute self-pointers built
 /// as `lui rX, hi ; addiu rX, rX, lo` (the standard MIPS 32-bit-immediate
 /// idiom). If the committed base is right, a high fraction of those pointers
 /// land inside `[base_va, base_va + len)`. This is the base cross-check for

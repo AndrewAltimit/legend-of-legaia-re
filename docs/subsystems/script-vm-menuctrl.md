@@ -1,4 +1,4 @@
-# Field VM — `0x4C` `MENU_CTRL` outer-nibble dispatch
+# Field VM - `0x4C` `MENU_CTRL` outer-nibble dispatch
 
 This page details the field/event VM's longest-tail opcode, `0x4C` `MENU_CTRL`,
 whose outer high nibble selects 16 sub-dispatchers. It is split out of
@@ -31,11 +31,11 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 
 The full per-sub-op table is in the field-VM dump (`overlay_0897_801de840.txt`). The clean-room port mirrors the dispatcher shape with host hooks per sub-cluster - see [`crates/engine-vm/src/field.rs`](../../crates/engine-vm/src/field.rs).
 
-#### 0x4C nibble 0x70..0x7F — collision-grid rectangular wall paint
+#### 0x4C nibble 0x70..0x7F - collision-grid rectangular wall paint
 
 **Collision-grid rectangular wall paint** (`[4C, 0x7s, col0, row0, col1, row1 (, mask)]`; handler `0x801e1c64`). Writes the walkability grid at `_DAT_1f8003ec + 0x4000` (the per-scene field buffer; one byte per 128-unit tile, **high nibble = 4 sub-cell wall bits**), the same grid the locomotion collision check `FUN_801cfe4c` reads.
 
-Paints the rectangle `col ∈ [col0, col1+1)`, `row ∈ [row0+1, row1+2)` at index `_DAT_1f8003ec + col + row*0x80 + 0x4000` — note the **row** bounds carry an extra `+1` the column bounds do not (disasm `0x801e1cb4`: `addiu a2, v0, 1` for the row start vs the raw `lbu` for the column start).
+Paints the rectangle `col ∈ [col0, col1+1)`, `row ∈ [row0+1, row1+2)` at index `_DAT_1f8003ec + col + row*0x80 + 0x4000` - note the **row** bounds carry an extra `+1` the column bounds do not (disasm `0x801e1cb4`: `addiu a2, v0, 1` for the row start vs the raw `lbu` for the column start).
 
 Sub-op `s` (= `op0 & 0xF`):
 - `0` = clear walls (`byte &= 0x0F`, make walkable)
@@ -47,7 +47,7 @@ Sub-op `s` (= `op0 & 0xF`):
 
 These conditional deltas layer on top of the disc-streamed base grid (see [`field-locomotion.md`](field-locomotion.md)); they ride the scene event script and are commonly gated behind nibble-`5`/`7` system-flag tests (story-conditional terrain). (The byte's low nibble is a separate floor-elevation tier; the sibling `_DAT_1f8003ec + 0x8000` grid is a per-tile object/attribute map, not a terrain-flag grid.)
 
-#### 0x4C nibble 0x80..0x8F — large multi-purpose dispatcher
+#### 0x4C nibble 0x80..0x8F - large multi-purpose dispatcher
 
 Large multi-purpose dispatcher (party page mirror, conditional jump on `+0x68`, …).
 - **Sub-1** (round 18, 9-byte) sets actor model + animation frame: `[4C, 0x81, m0..m2, anim_lo, anim_hi, frames_lo, frames_hi]` decodes via [`load_u24_le`](script-vm.md#helper-functions) + `load_u16_le×2`; host applies the immediate-or-tween path based on its actor pool state.
@@ -58,7 +58,7 @@ Large multi-purpose dispatcher (party page mirror, conditional jump on `+0x68`, 
 - **Sub-D** (round 18, 6-byte) is a tristate per-character actor-search: `[4C, 0x8D, char_idx, marker, target_lo, target_hi]` returns one of [`ActorSearchResult::EmptySlot`](../../crates/engine-vm/src/field.rs) (advance 6), `Found` (jump to u16 at +3..=4), or `NoMatch` (halt).
 - **Sub-5/E/F** share a single halt-acquire idiom: writes `ctx.saved_pc = pc`, clears `wait_accum`, sets the halt bit, then halts.
 
-#### 0x4C nibble 0xC0..0xCF — small per-actor / per-scene writes
+#### 0x4C nibble 0xC0..0xCF - small per-actor / per-scene writes
 
 Small per-actor / per-scene writes (slot table, sub-tile broadcast, sound trigger, `field_74` XOR). **All 16 sub-ops are now ported.** Sub-0 is a 2-byte move-table cancel via `func_0x800204F8`; the host gates on whether a move is currently active.
 - **Sub-1** is a 1-byte trigger-flag record-array reset: walks `_DAT_80073ED8[..count]` (stride `0xB`), tests each record's 16-bit index via [`party_flag_test`](script-vm.md#helper-functions), writes the inverted bit to `record[0]`; PC always += 2.
@@ -68,7 +68,7 @@ Small per-actor / per-scene writes (slot table, sub-tile broadcast, sound trigge
 - **Sub-0xF** is a position broadcast: 4-byte `[4C, 0xCF, b1, b2]` resolves each byte to either the actor's world coord (`0xFF`), the tile-center conversion (non-zero), or 0; advances by 4.
 - **Sub-9** is a 2-byte global-pair compare gate: PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts.
 
-#### 0x4C nibble 0xD0..0xDF — party state + inverted-Y mirror cluster
+#### 0x4C nibble 0xD0..0xDF - party state + inverted-Y mirror cluster
 
 Party state + inverted-Y mirror cluster.
 - **Sub-0** (round 18, 6-byte) is a field SE trigger with a conditional u16 pair: `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]` decodes both via [`load_u16_le`](script-vm.md#helper-functions); the original gates `func_0x8002B994(a, b)` on three flag globals (`_DAT_8007B874`, `_DAT_800846D0`, `_DAT_800846D4`); PC always += 6.
@@ -80,7 +80,7 @@ Party state + inverted-Y mirror cluster.
 - **Sub-0xB** (13-byte) calls `FUN_801E57F0(operand)` then PC += 13 (the call site falls through to `LAB_801E2EA0: return param_2 + 0xD`); the helper itself was not decompilable (Ghidra's dump for that address shows data masquerading as code).
 - **Sub-0xC** (5-byte) and sub-0xE (5-byte) both call [`small_table_search`](script-vm.md#helper-functions) on a 1-byte needle, then loop over the active party records (stride `0x414`, byte at `+0x196`); on hit, both advance via the `LAB_801E360C` ce9c-jump path; sub-0xC additionally writes the matching slot. Both miss with PC += 5.
 
-#### 0x4C nibble 0xE0..0xEF — misc scene writes + emitter helpers
+#### 0x4C nibble 0xE0..0xEF - misc scene writes + emitter helpers
 
 Misc scene writes + emitter helpers. Ported sub-ops:
 
@@ -140,7 +140,7 @@ The n6 sub-`0x61` emitter's retail payload is a **one-shot 16×1 VRAM CLUT-cell 
 The `n8 sub-0` host hook (`FieldHost::op4c_n8_sub_0_actor_allocator`) receives `(count, tail)`: `count` is the byte at `operand+1` and `tail` is the raw bytecode slice from `operand+2` onward. The host walks `count` variable-length child-actor records out of `tail` using the [`packet_length`](script-vm.md#helper-functions) rule (`FUN_8003CA38`): bytes `<= 0x1E` terminate a record; bytes whose top nibble is `0xC` consume one extra byte. The parent script's PC always advances by 3 regardless of how many records were walked - the records remain embedded in the bytecode buffer and become the spawned actors' own bytecode (retail stores the per-actor bytecode pointer at `actor[+0x90]`). The engine-core implementation (`FieldHostImpl::op4c_n8_sub_0_actor_allocator`) splits the records,
 queues each one into `World::pending_actor_spawns`, and emits a `FieldEvent::ActorAllocate { records }` so engines can route them into their own actor pool.
 
-Materializing the queued records into actor slots is a separate engine-side step. [`World::materialize_actor_spawns(start_slot)`] drains `pending_actor_spawns`, allocates the first inactive slot from `actors[start_slot..MAX_ACTORS]`, populates `Actor::spawn_record` with the raw bytecode bytes, and emits one `FieldEvent::ActorSpawned { slot, kind, variant, record }` per allocation. The retail allocator for this opcode (`overlay_world_map_801de840.txt:7080-7123`, case `8 sub-0`) allocates from pool `0x801f28a0` and writes `actor[+0x90]` (bytecode start), `actor[+0x94]` (parent back-pointer) and `actor[+0x54] = 0`; it does **not** write `actor[+0x3C]` (kind) or `actor[+0x3E]` (variant), so the event's `kind = 0` / `variant = 0` match retail — this is a faithful zero, not a placeholder.
+Materializing the queued records into actor slots is a separate engine-side step. [`World::materialize_actor_spawns(start_slot)`] drains `pending_actor_spawns`, allocates the first inactive slot from `actors[start_slot..MAX_ACTORS]`, populates `Actor::spawn_record` with the raw bytecode bytes, and emits one `FieldEvent::ActorSpawned { slot, kind, variant, record }` per allocation. The retail allocator for this opcode (`overlay_world_map_801de840.txt:7080-7123`, case `8 sub-0`) allocates from pool `0x801f28a0` and writes `actor[+0x90]` (bytecode start), `actor[+0x94]` (parent back-pointer) and `actor[+0x54] = 0`; it does **not** write `actor[+0x3C]` (kind) or `actor[+0x3E]` (variant), so the event's `kind = 0` / `variant = 0` match retail - this is a faithful zero, not a placeholder.
 The `0x4C 0xD8` path is the one that decodes explicit `(kind, variant)` u16 immediates and routes through `FUN_801D77F4`; the `0x4C 0x80` path is bytecode-only by design. When the slot range is exhausted, a `FieldEvent::ActorSpawnFailed { record }` event surfaces the dropped request instead.
 
 `SceneHost::tick` runs the materializer every frame with `start_slot = FIELD_SPAWN_START_SLOT` (defined in `engine_core::world`; currently `8`, brackets the party + small scripted-NPC reservation). Engines that drive `SceneHost::tick` (the `legaia-engine` binary's `play` / `play-window`, every engine-core integration test that ticks through a scene) get the queue drained automatically. The asset-viewer's `tick_field_frame` does the same materializer pass between `step_field` and the field-event histogram so the `ActorSpawned` / `ActorSpawnFailed` events surface on the HUD next to the `ActorAllocate` event that produced them. The bare `World::materialize_actor_spawns` is still public for tests and engines that want a custom `start_slot` policy.

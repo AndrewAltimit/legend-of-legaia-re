@@ -226,7 +226,7 @@ The consumers (`FUN_80047430`, `FUN_80049348`, `FUN_8004AD80`,
 | `+0x176` | `u16` | Animation-frame counter. |
 | `+0x1BA` | `u16` | Per-actor render flag set (copied to render-ctx `+0x7A`). |
 
-`actor[+0x21D]` (NOT a consumer-struct field — it's a byte on the
+`actor[+0x21D]` (NOT a consumer-struct field - it's a byte on the
 actor record itself) is a per-actor LOD-step byte. `FUN_80049348`
 reads it as `lod_step = 8 / max(actor[+0x21D], 1)` and uses the result
 to skip child actors during the render pass. Observed values are
@@ -361,7 +361,7 @@ state, mc7):
 The field-form bundles all have 69-72 records (the full player-locomotion
 + interaction anim set). PROT `1203_other5` is the battle-form player
 animation set **for the PROT 1204 pack's own object order** (its banks'
-bone counts match the player skeletons, bone `i` driving 1204 object `i` —
+bone counts match the player skeletons, bone `i` driving 1204 object `i` -
 the Baka Fighter / viewer configuration). It is **not** what a real battle
 poses the [assembled battle meshes](character-mesh.md#battle-form--assembled-from-the-player-files)
 with: 1204's object order differs from the assembled blob's sorted bone-tag
@@ -389,7 +389,7 @@ exactly:
 verified byte-exact across all **296 records** in the 5 pinned scenes (and
 across every other scene's bundle the corpus sweep finds; `f(a,b) == size`
 falls out 100%). The runtime layout (traced through
-[`FUN_8001B964`](../../ghidra/scripts/funcs/8001b964.txt) — the per-actor
+[`FUN_8001B964`](../../ghidra/scripts/funcs/8001b964.txt) - the per-actor
 animated character renderer):
 
 ```text
@@ -451,7 +451,7 @@ Each entry decodes to a `(T, R)` transform via
   `DAT_8007122C` and composes a single-axis rotation into the current
   matrix.
 
-Frame 0 of an idle animation is the rest-pose assembly transform — it
+Frame 0 of an idle animation is the rest-pose assembly transform - it
 places each TMD object at its joint position with its rest-pose
 orientation. For Vahn's field form (nobj=12, bone_count=10) the rest
 pose decodes to a bilaterally symmetric humanoid with joint centroids

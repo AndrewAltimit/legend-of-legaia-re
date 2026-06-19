@@ -7,10 +7,10 @@
 --
 -- The countdown gets written twice during boot:
 --   1. CD-DMA-channel-3 read at FUN_8005D9A0 stamps the 0x8000 sentinel
---      into the title-overlay BSS region — fires early, before the
+--      into the title-overlay BSS region - fires early, before the
 --      title overlay's tick function ever runs.
 --   2. The title overlay's per-frame tick decrements it once the title
---      screen has become live. This is the moment we want to capture —
+--      screen has become live. This is the moment we want to capture -
 --      PC + RA pin the title-overlay tick function.
 --
 -- LEGAIA_HIT_SKIP controls how many BP hits to ignore before capturing:

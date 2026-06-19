@@ -1,6 +1,6 @@
 //! Run-away EXP reward: a code hook into the battle-action **escape teardown**
 //! that banks a small slice of the battle's experience into the party whenever
-//! they successfully flee — vanilla awards nothing for running.
+//! they successfully flee - vanilla awards nothing for running.
 //!
 //! ## Why a code hook (not a data edit)
 //!
@@ -15,7 +15,7 @@
 //!
 //! The per-actor battle state machine `FUN_801E295C` (battle-action overlay,
 //! base VA `0x801CE818`) handles "Run" across states `0x64..0x66`. State `0x66`
-//! is the **successful-escape teardown** — reached only when the run roll
+//! is the **successful-escape teardown** - reached only when the run roll
 //! succeeds (the failed run goes `0x65 -> 0x50` and the battle continues; see
 //! `docs/subsystems/battle-action.md`). Its handler begins at VA `0x801E5A10`:
 //!
@@ -30,7 +30,7 @@
 //! We overwrite the two instructions at `0x801E5A10`/`0x801E5A14` with
 //! `j <routine>` + `nop` (a detour), run the EXP-grant routine, replay those two
 //! displaced instructions, and `j 0x801E5A18` back. State `0x66` advances itself
-//! to the terminal `0x67` (no body), so it runs exactly once per escape — the
+//! to the terminal `0x67` (no body), so it runs exactly once per escape - the
 //! grant fires once per successful flee. The handler clobbers `v0`/`v1`/`a0`/`a1`
 //! freely after the join and restores `ra` from its own stack frame, and the
 //! party HP was already floored to `>= 1` in state `0x64` (the "escape restores a
@@ -55,7 +55,7 @@
 //!    party slot -> character-record-id map is at [`SLOT_ID_MAP_VA`]
 //!    (`0x8007BD10`), the record array is based at [`RECORD_BASE_VA`]
 //!    (`0x80084140`, stride [`RECORD_STRIDE`] = `0x414`), and cumulative XP lives
-//!    at [`XP_OFFSET`] (`+0x5C8`) — exactly where `FUN_8004E568` accumulates a
+//!    at [`XP_OFFSET`] (`+0x5C8`) - exactly where `FUN_8004E568` accumulates a
 //!    win's EXP and where `FUN_801E9504` reads it to apply levels. Each cell is
 //!    clamped to the game's [`XP_CAP`] (`9,999,999`).
 //!
@@ -66,7 +66,7 @@
 //! small and side-effect-free during the escape fade (no stray level-up screen).
 //!
 //! Two same-size edits: the detour at the escape-teardown hook (PROT entry 898,
-//! raw — the overlay maps linearly from base `0x801CE818`) and the routine blob
+//! raw - the overlay maps linearly from base `0x801CE818`) and the routine blob
 //! in `SCUS_942.54` rodata padding. The planner guards on the detour-site words
 //! matching the known US build and on the routine region being all-zero dead
 //! space, so a differently-laid-out image is refused rather than corrupted. No
@@ -315,7 +315,7 @@ pub fn detour_words() -> [u32; 2] {
     [j(ROUTINE_VA), nop()]
 }
 
-/// A planned injection: the two same-size writes — the detour at the escape-
+/// A planned injection: the two same-size writes - the detour at the escape-
 /// teardown hook (PROT entry [`BATTLE_ACTION_OVERLAY_PROT_INDEX`]) and the routine
 /// blob in `SCUS_942.54` rodata padding.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -353,7 +353,7 @@ impl FleeExpInjection {
         if at_hook != DISPLACED {
             bail!(
                 "escape-teardown hook {HOOK_VA:#x} = [{:#010x}, {:#010x}], expected \
-                 [{:#010x}, {:#010x}] (unrecognized build) — refusing to patch",
+                 [{:#010x}, {:#010x}] (unrecognized build) - refusing to patch",
                 at_hook[0],
                 at_hook[1],
                 DISPLACED[0],
@@ -381,7 +381,7 @@ impl FleeExpInjection {
         if region.iter().any(|&b| b != 0) {
             bail!(
                 "flee-EXP routine region {ROUTINE_VA:#x}..+{} is not all-zero dead space \
-                 (unrecognized build / collides with another injection) — refusing to patch",
+                 (unrecognized build / collides with another injection) - refusing to patch",
                 blob.len()
             );
         }

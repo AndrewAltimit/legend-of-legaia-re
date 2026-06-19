@@ -9,8 +9,8 @@
 //! decoded by `FUN_8004998C`). Action 0 is the idle loop.
 //!
 //! [`MonsterAnimPlayer::tick`] advances a fixed-point frame cursor and produces
-//! a [`legaia_anm::PoseFrame`] — the same per-object `(translation, rotation)`
-//! shape the field player produces — so the renderer's existing posed-mesh path
+//! a [`legaia_anm::PoseFrame`] - the same per-object `(translation, rotation)`
+//! shape the field player produces - so the renderer's existing posed-mesh path
 //! consumes both. Battle meshes deform through
 //! [`legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot`] (the rigid `R·v + T`
 //! builder) so the per-object rotations actually turn the limbs.
@@ -41,8 +41,8 @@ pub struct MonsterAnimPlayer {
     frame_count: u32,
     part_count: usize,
     /// The clip's `action_id` (the action-table slot for player files /
-    /// archive entry index for monsters), retained so per-frame consumers —
-    /// the facial animator looks up the playing entry's face tracks by it —
+    /// archive entry index for monsters), retained so per-frame consumers -
+    /// the facial animator looks up the playing entry's face tracks by it -
     /// can identify the clip without holding the `MonsterAnimation`.
     action_id: u8,
     /// 8.8 fixed-point frame cursor (integer part = keyframe index).
@@ -118,7 +118,7 @@ impl MonsterAnimPlayer {
         self.action_id
     }
 
-    /// Integer keyframe index of the cursor — the value retail's render-node
+    /// Integer keyframe index of the cursor - the value retail's render-node
     /// update passes to the facial animator as the frame counter
     /// (`FUN_80047430` hands `FUN_8004C7B4` the node's 12.4 `+0x68` cursor
     /// shifted to whole keyframes; this player's 8.8 phase shifts the same

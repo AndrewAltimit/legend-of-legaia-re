@@ -6,7 +6,7 @@
 //! The sweep pins what the retail banks actually carry:
 //!
 //! - Vibrato (`vibw`/`vibt`) and portamento (`porw`/`port`) are zero on every
-//!   tone — Legaia never uses them, so the SPU voice model needs no LFO.
+//!   tone - Legaia never uses them, so the SPU voice model needs no LFO.
 //! - Some tones DO carry a non-zero pitch-bend range, and the ranges are
 //!   small, musical semitone counts (the common value is 2 = ±2 semitones,
 //!   the General-MIDI default). This is what `VabBank::pitch_bend_range`
@@ -85,17 +85,17 @@ fn vab_tones_have_no_vibrato_or_portamento_but_real_pitch_bend_ranges() {
 
     assert!(tones > 1000, "expected a large VAB tone corpus");
 
-    // No LFO modulation anywhere — the voice model needs no vibrato/portamento.
+    // No LFO modulation anywhere - the voice model needs no vibrato/portamento.
     assert_eq!(
         vibrato_or_porta, 0,
-        "a tone carries vibrato/portamento — the SPU voice model would need an LFO"
+        "a tone carries vibrato/portamento - the SPU voice model would need an LFO"
     );
 
     // Pitch-bend range is a real, per-tone disc value (so the sequencer must
     // source it from the tone, not a constant).
     assert!(
         tones_with_bend_range > 0,
-        "no tone carries a pitch-bend range — pitch-bend would be a no-op"
+        "no tone carries a pitch-bend range - pitch-bend would be a no-op"
     );
 
     // Ranges are small musical semitone counts, not garbage.

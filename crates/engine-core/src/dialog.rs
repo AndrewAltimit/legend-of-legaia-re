@@ -30,7 +30,7 @@ use std::sync::Arc;
 /// An interaction record's inline text is a flat **pool** of segments, each
 /// introduced by a `0x1F` lead byte and terminated by an MES end byte
 /// (`0x00..=0x1E`). Empirically (decoding real town01 placements) this pool is
-/// the NPC's *entire* dialogue line set — every line across every story-state
+/// the NPC's *entire* dialogue line set - every line across every story-state
 /// branch of that NPC's conversation, with interspersed option labels (e.g.
 /// `"Yes"` / `"No"`). It is **not** a single box's "prompt then option labels":
 /// most segments are consecutive speech lines, and the field-VM script (gated
@@ -39,8 +39,8 @@ use std::sync::Arc;
 ///
 /// **There is no separate "box-geometry header" format.** The bytes between
 /// the placement's `script_pc0` and the first `0x1F` lead are normal field-VM
-/// bytecode — `CFlag` / `SysFlag.Test` / `JmpRel` / `Nop` / `0x4C 0x51`
-/// NPC-move-to-tile — that runs as the NPC's interaction prologue (face the
+/// bytecode - `CFlag` / `SysFlag.Test` / `JmpRel` / `Nop` / `0x4C 0x51`
+/// NPC-move-to-tile - that runs as the NPC's interaction prologue (face the
 /// player, set conversation flags, walk to the talk position, branch on story
 /// flags). It is consumed by the field-VM dispatcher `FUN_801DE840` from
 /// state 0 of the per-actor dialog SM `FUN_80039b7c`, which loops until the
@@ -51,7 +51,7 @@ use std::sync::Arc;
 /// `JmpRel`s past unwanted segments to the desired one. See
 /// `field_actor_placements_disc::dialog_prefix_decodes_as_field_vm_bytecode`
 /// for the disc-gated proof. An earlier note pointed at `func_0x8001ebec` as
-/// the renderer — that is **wrong**; the disassembly shows it is a
+/// the renderer - that is **wrong**; the disassembly shows it is a
 /// per-character TMD-pose copier indexed by the slot-4 freeze flag, not the
 /// dialog box renderer.
 ///
@@ -63,7 +63,7 @@ use std::sync::Arc;
 /// [`legaia_mes::pack_box`] / [`legaia_mes::pack_boxes`] and the disc-gated
 /// `field_dialog_boxpack_disc` regression.
 ///
-/// This function still returns the raw, ungrouped segment pool — the simplest
+/// This function still returns the raw, ungrouped segment pool - the simplest
 /// faithful view of the record's whole line set. Callers that want boxes use
 /// the `pack_box` decoder on the same bytes.
 /// The field-VM bytecode preceding the first `0x1F` is skipped (its bytes
@@ -302,7 +302,7 @@ impl OwnedDialogPanel {
     /// `text_id` is a box-config id, not a message index - it never resolves
     /// through [`Self::from_scene_mes`]); the message text is the inline buffer
     /// itself, a run of `0x1F`-lead text/option segments (MES glyph bytecode)
-    /// preceded by the actor's field-VM interaction prologue — `CFlag` /
+    /// preceded by the actor's field-VM interaction prologue - `CFlag` /
     /// `SysFlag.Test` / `JmpRel` / `0x4C 0x51` NPC-move-to-tile / `Nop`,
     /// branched on story flags. The prologue is **not a custom header
     /// format**; it is normal field-VM bytecode that retail consumes through
@@ -342,7 +342,7 @@ impl OwnedDialogPanel {
     /// immediately follows it. Used by the inline-script field-VM runner
     /// ([`crate::inline_dialogue`]), which lands the VM on each text segment and
     /// opens a box there. Unlike [`Self::from_inline_dialog`] it does not search
-    /// for the first segment — the caller already knows the exact lead.
+    /// for the first segment - the caller already knows the exact lead.
     pub fn at_segment(bytes: Arc<Vec<u8>>, seg_lead: usize) -> Self {
         let mut panel = Self::new(bytes, seg_lead + 1);
         panel.picker = Self::picker_following_segment(&panel.bytes, seg_lead + 1);
@@ -362,7 +362,7 @@ impl OwnedDialogPanel {
     }
 
     /// The option-picker (if any) that sits immediately after the text segment
-    /// whose glyph run starts at `seg_start` — i.e. whose open byte equals the
+    /// whose glyph run starts at `seg_start` - i.e. whose open byte equals the
     /// segment's end index. This is the faithful "is this box a menu?" test:
     /// the picker open byte directly follows the box's last typed line.
     fn picker_following_segment(bytes: &[u8], seg_start: usize) -> Option<legaia_mes::Picker> {

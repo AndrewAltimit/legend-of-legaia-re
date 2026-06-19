@@ -4,8 +4,8 @@
 //! Retail's locomotion (`FUN_801d01b0`) runs a touch dispatch on every
 //! movement sub-step: a static-entity contact (the `FUN_801cfc40` probe's
 //! result bit `4`, the mutual `+0x98` partner link) posts the touched
-//! entity's event with **no button press** — `FUN_801d5b5c`, the same post
-//! kernel the button-gated interact uses — and the dispatched script runs.
+//! entity's event with **no button press** - `FUN_801d5b5c`, the same post
+//! kernel the button-gated interact uses - and the dispatched script runs.
 //! The engine mirrors the decoded script effects:
 //!
 //! - a genuine `0x3E` door-warp placement (`koin1`'s mine exits) queues the
@@ -15,7 +15,7 @@
 //!
 //! Both post a `FieldEvent::FieldInteract` through the same
 //! `trigger_field_interact` dispatch the interact probe uses, once per
-//! contact. Structural assertions only (slots, coords, event shapes) — no
+//! contact. Structural assertions only (slots, coords, event shapes) - no
 //! Sony bytes. Skip-passes without `LEGAIA_DISC_BIN` / `extracted/`.
 
 use std::path::PathBuf;
@@ -45,7 +45,7 @@ fn world_for_scene(scene_name: &str) -> Option<World> {
         return None;
     }
     let extracted = extracted_dir().or_else(|| {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         None
     })?;
     let index = Arc::new(ProtIndex::open_extracted(&extracted).expect("open ProtIndex"));
@@ -150,7 +150,7 @@ fn cave01_guard_walk_touch_teleports_the_player() {
         "cave01 derives several walk-touch player teleports (got {})",
         throws.len()
     );
-    // Every guard throws to the same gathering tile — a structural pin of
+    // Every guard throws to the same gathering tile - a structural pin of
     // the decoded target (all five retail guards converge on one spot).
     let target = throws[0].2;
     assert!(

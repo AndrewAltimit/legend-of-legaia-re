@@ -1,5 +1,5 @@
 //! Disc-gated end-to-end oracle for the starting-item randomizer **at runtime**
-//! — the sixth member of the randomizer runtime-oracle set (chest, monster-drop,
+//! - the sixth member of the randomizer runtime-oracle set (chest, monster-drop,
 //! encounter, steal, door, and now starting items).
 //!
 //! The randomizer's own disc-gated test (`crates/rando/tests/starting_items_patch_real`)
@@ -18,7 +18,7 @@
 //! The clean-room engine sidesteps that: it decodes the starting inventory
 //! straight from the disc's `SCUS_942.54` bytes
 //! ([`StartingInventory::from_scus`]) and seeds the bag via
-//! [`World::seed_starting_inventory`] — the same path `BootSession::begin_new_game`
+//! [`World::seed_starting_inventory`] - the same path `BootSession::begin_new_game`
 //! drives. So this test:
 //!   1. confirms a New Game off the *unpatched* disc seeds the vanilla Healing
 //!      Leaf ×5 (baseline, so the patched assertion can't pass vacuously),
@@ -126,12 +126,12 @@ fn patched_starting_items_seed_the_bag_at_runtime() {
 }
 
 /// Runtime oracle for the **Door of Wind** convenience toggle: forcing the warp
-/// consumable into the new game's starting bag. Same structure as above — seed a
+/// consumable into the new game's starting bag. Same structure as above - seed a
 /// fresh world from the patched seed and assert the bag holds Door of Wind. The
 /// all-warps toggle is a story-flag preset the clean-room engine has no consumer
 /// for yet (there is no Door-of-Wind warp menu), so its runtime check stays at
 /// the disc-round-trip level (`crates/rando/tests/starting_items_patch_real`);
-/// here we cover the half that the engine *does* run — the item grant.
+/// here we cover the half that the engine *does* run - the item grant.
 #[test]
 fn forced_door_of_wind_seeds_the_bag_at_runtime() {
     let Some(disc) = load_disc() else {

@@ -5,8 +5,8 @@
 //! For every base + evolved-Seru summon `0x81..=0x95`, the `summon.dat` group's
 //! actor-record Legaia TMD is **byte-identical** to the mapped `battle_data`
 //! creature's mesh (PROT 867), and the archive record carries the mapped name.
-//! This pins the whole map — including the two evolved legs (`0x90` Kemaro,
-//! `0x91` Spoon) that no mid-cast capture state covers — from disc bytes alone.
+//! This pins the whole map - including the two evolved legs (`0x90` Kemaro,
+//! `0x91` Spoon) that no mid-cast capture state covers - from disc bytes alone.
 //!
 //! The high block `0x99..=0xA0` is asserted to NOT byte-match any archive record
 //! (only a short header prefix overlaps): those summons carry a bespoke mesh in
@@ -157,7 +157,7 @@ fn high_block_summons_are_bespoke_not_archive_meshes() {
         assert!(
             best < 0x100,
             "0x{spell:02X}: a high-block summon unexpectedly byte-matches an \
-             archive mesh ({best}-byte prefix) — revisit the bespoke-mesh reading",
+             archive mesh ({best}-byte prefix) - revisit the bespoke-mesh reading",
         );
         eprintln!("0x{spell:02X}: bespoke summon mesh (best archive prefix {best} bytes)");
     }

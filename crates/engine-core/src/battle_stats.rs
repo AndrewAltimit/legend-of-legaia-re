@@ -239,8 +239,8 @@ fn mul_clamp(value: u16, mult: f32) -> u16 {
 /// [`BattleStats`]. Accuracy / evasion are derived from AGL upstream and are
 /// not equipment-fed, so the equipment loop leaves them alone. It also folds
 /// status-effect multipliers, which the SCUS pass leaves to the battle-side
-/// kernels in `FUN_801EC3E4`. (The town-overlay alias at the same address —
-/// emitter ramp-actor allocator — is a separate function; see
+/// kernels in `FUN_801EC3E4`. (The town-overlay alias at the same address -
+/// emitter ramp-actor allocator - is a separate function; see
 /// `docs/reference/functions.md`.)
 pub fn compute_battle_stats(
     record: &StatRecord,
@@ -259,15 +259,15 @@ pub fn compute_battle_stats(
 /// Mirrors the two passive arms of `FUN_80042558`
 /// (`ghidra/scripts/funcs/80042558.txt`) exactly:
 ///
-/// 1. **Bit resolution** — every equipped item's passive index (`< 0x40`)
+/// 1. **Bit resolution** - every equipped item's passive index (`< 0x40`)
 ///    becomes a bit in the resolved ability mask
 ///    ([`crate::accessory_passives::AccessoryPassives::bits_for_equipment`]),
 ///    OR'd into [`BattleStats::abilities`] bytes `0..16` (the engine mirror of
 ///    the record `+0xF4` 4×u32 bitfield).
-/// 2. **Percent stat rebuild** — for each set boost index the matching stat
+/// 2. **Percent stat rebuild** - for each set boost index the matching stat
 ///    line gains `base / divisor` (`legaia_asset::accessory_passive::stat_boosts`:
 ///    divisor `10` = +10%, `4` = +25%, `5` = +20%), where `base` is the
-///    **base** stat (`StatRecord::base_*` — retail reads the `+0x11C..` base
+///    **base** stat (`StatRecord::base_*` - retail reads the `+0x11C..` base
 ///    window, *not* the post-equipment value, so the percent magnitude is
 ///    independent of flat equipment bonuses) with unsigned truncating
 ///    division (retail's `mulhi 0xCCCCCCCD >> 3` = `/10`, `>> 2` = `/4`,
@@ -278,7 +278,7 @@ pub fn compute_battle_stats(
 /// After the boosts the retail clamp block applies: ATK / UDF / LDF / SPD /
 /// INT cap at `999`, the AGL-derived lines at `0x118` (= 280). (Retail also
 /// caps max HP at 9999 / max MP at 999; [`BattleStats`] carries no HP / MP
-/// lines — `World::seed_party_battle_stats` applies the max-HP boost + cap to
+/// lines - `World::seed_party_battle_stats` applies the max-HP boost + cap to
 /// the live battle actor.)
 ///
 /// The boosts derive from the **wearer's own** equipment bits only, exactly
@@ -341,7 +341,7 @@ fn compute_battle_stats_inner(
     }
     // Percent stat boosts from the wearer's own passive bits, then the retail
     // clamp block. The magnitude reads the BASE stat (truncating unsigned
-    // division), exactly as `FUN_80042558` — see
+    // division), exactly as `FUN_80042558` - see
     // [`compute_battle_stats_with_passives`].
     if let Some(words) = &passive_words {
         use legaia_asset::accessory_passive::{BoostedStat, stat_boosts};

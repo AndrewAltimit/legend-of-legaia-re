@@ -94,7 +94,7 @@ fn shop_random_only_stocks_priced_items() {
     apply::randomize_shops(&mut patcher, 0xBEEF, DropMode::Random).expect("randomize shops");
 
     // Re-decode the patched shops; every stocked item must be priced > 0 in the
-    // (now price-patched) SCUS — i.e. never a quest / free item.
+    // (now price-patched) SCUS - i.e. never a quest / free item.
     let scus = patcher.read_named_file("SCUS_942.54").expect("SCUS");
     let shops = apply::current_shops(&patcher).expect("shops");
     let mut checked = 0;

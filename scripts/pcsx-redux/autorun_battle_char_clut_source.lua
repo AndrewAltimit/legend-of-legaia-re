@@ -1,7 +1,7 @@
 -- autorun_battle_char_clut_source.lua
 --
 -- Pins the disc SOURCE of the battle-form party character CLUT band
--- (VRAM rows 490..497, x=0..255 — the 256-colour palettes the battle
+-- (VRAM rows 490..497, x=0..255 - the 256-colour palettes the battle
 -- character TMDs sample: Vahn 490/491, Noa 492/493, Gala 494/495,
 -- aux 496/497).
 --
@@ -10,7 +10,7 @@
 --   The PROT 1204 atlas TIMs carry the correct IMAGES but WRONG default
 --   CLUTs (row-492 value match vs retail VRAM = 0/256). The correct
 --   party palettes are uploaded to VRAM at battle-context entry and
---   then the staging buffer is freed — they are NOT in main RAM in any
+--   then the staging buffer is freed - they are NOT in main RAM in any
 --   captured save state (checked across 7 mednafen saves) and NOT
 --   verbatim on disc except Vahn's row 490 (map01/map02 sec0). Only
 --   Vahn appears because he is the lone overworld walker; Noa/Gala come
@@ -21,7 +21,7 @@
 --
 -- Strategy:
 --   Load a field sstate where the band is NOT yet resident (e.g. early
---   game / a state where VRAM was cleared — the band is battle-context
+--   game / a state where VRAM was cleared - the band is battle-context
 --   loaded, not boot-global), hold a walk direction to trigger a random
 --   encounter, and log EVERY disc read's CdlLOC -> absolute LBA ->
 --   PROT.DAT byte offset over the capture window. The read that fills
@@ -107,7 +107,7 @@ probe.run({
                 idx, idx, msf, lba, ra))
         end)
 
-        -- Relative seek (delta sectors) — some loaders stream this way.
+        -- Relative seek (delta sectors) - some loaders stream this way.
         table.insert(bps, { addr = FUN_8003E964, name = "rel_seek" })
         probe.arm_breakpoint(FUN_8003E964, "Exec", 4, "rel_seek", function()
             local r = PCSX.getRegisters()

@@ -5,8 +5,8 @@
 //!
 //! The magic `0x01059B84` appears **raw in exactly four PROT entries**
 //! (`0002_gameover_data`, `0003`/`0004`/`0005_town01`); the 97-entry schema
-//! *signature* appears in **eight** (the other four — `0020_town0b`,
-//! `0021`/`0022`/`0023_town0c` — carry it **without** the magic prefix). The
+//! *signature* appears in **eight** (the other four - `0020_town0b`,
+//! `0021`/`0022`/`0023_town0c` - carry it **without** the magic prefix). The
 //! magic is a build-tool stamp, not a runtime parser anchor (a SCUS + overlay
 //! scan finds zero references to it). Layout of a carrier:
 //!
@@ -22,10 +22,10 @@
 //!
 //! The 97 schema entries are ascending u32 LE values from `0x60` to `0x16651`,
 //! the same in every carrier. **The ≈ 91 KB region the schema indexes is a
-//! global constant** — byte-identical (FNV/SHA `c85d6a44d742…`) across town01
+//! global constant** - byte-identical (FNV/SHA `c85d6a44d742…`) across town01
 //! AND town0c. So the schema slots are a fixed template, **not** filled
 //! per-scene; the per-scene field data is the preamble. (Corrected from a raw
-//! disc scan — the earlier "124 entries / preamble fills the slots" reading was
+//! disc scan - the earlier "124 entries / preamble fills the slots" reading was
 //! wrong; see `docs/formats/field-pack.md` and `tests/field_pack_real.rs`.)
 //! This parser locates the magic-prefixed schema + the packed asset region
 //! after it.
@@ -44,8 +44,8 @@
 //! ## What this doesn't do
 //!
 //! - Decode the **preamble** (the per-scene payload before the magic). It is a
-//!   count + `u16` offset table + records — the same shape the magic-less
-//!   town0b / town0c field files open with — i.e. a scene event/actor
+//!   count + `u16` offset table + records - the same shape the magic-less
+//!   town0b / town0c field files open with - i.e. a scene event/actor
 //!   structure, not yet fully decoded here. (There is no "map preamble bytes to
 //!   schema slots" step: the schema-indexed region is a global constant, so the
 //!   slots are a fixed template, not per-scene-filled. The earlier

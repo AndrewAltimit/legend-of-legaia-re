@@ -1162,7 +1162,7 @@ fn cutscene_trigger_corpus_pins_fmv_id_across_nine_saves() {
         );
 
         // Field-pack region carries no `0x4C 0xE2 lo hi` byte
-        // sequence — empirical signature of the debug-menu trigger
+        // sequence - empirical signature of the debug-menu trigger
         // path (the field VM never executed a trigger op for these
         // saves, so the bytecode pattern was never written into the
         // field-pack region).

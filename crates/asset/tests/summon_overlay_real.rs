@@ -4,7 +4,7 @@
 //!
 //! Pins, on real disc bytes, that the per-summon stager overlay's
 //! `FUN_80021B04` spawn calls reference part records in-file (under the
-//! `0x801F69D8` link base) — correcting the earlier "records beyond the 0x5800
+//! `0x801F69D8` link base) - correcting the earlier "records beyond the 0x5800
 //! file" reading, which conflated the 0905 stager with the resident 0900 render
 //! overlay. Skips when `LEGAIA_DISC_BIN` / `extracted/` is absent.
 
@@ -66,7 +66,7 @@ fn summon_stager_parses_into_move_vm_part_records() {
 
     let overlay = summon_overlay::parse(&bytes, SUMMON_OVERLAY_LINK_BASE);
 
-    // The stager spawns the summon's body parts via FUN_80021B04 — many calls.
+    // The stager spawns the summon's body parts via FUN_80021B04 - many calls.
     assert!(
         overlay.spawn_sites >= 20,
         "expected many FUN_80021B04 spawn sites (got {})",
@@ -92,7 +92,7 @@ fn summon_stager_parses_into_move_vm_part_records() {
     }
 
     // Most parts are transform/pivot nodes (`model_sel == -1`) whose mesh is
-    // bound by the move-VM anim-bank ops — the dominant kind in the corpus.
+    // bound by the move-VM anim-bank ops - the dominant kind in the corpus.
     let transform_nodes = overlay
         .parts
         .iter()
@@ -105,7 +105,7 @@ fn summon_stager_parses_into_move_vm_part_records() {
     );
 
     // Each transform-node record's move-VM bytecode opens with the same opcode
-    // the corpus shows (0x13) — a sanity check that the records are real move-VM
+    // the corpus shows (0x13) - a sanity check that the records are real move-VM
     // programs and not arbitrary code/data the pointer scan stumbled into.
     let first_node = overlay
         .parts

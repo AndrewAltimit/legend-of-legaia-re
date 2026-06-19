@@ -43,10 +43,10 @@
 //! Both scene modes route this tracker off the scene's MAN encounter section
 //! ([`region_encounter_table_from_man`]):
 //!
-//! - **Overworld** — [`crate::world::World::set_world_map_regions`]; the per-tile
+//! - **Overworld** - [`crate::world::World::set_world_map_regions`]; the per-tile
 //!   roll lives in `World::live_world_map_tick`, latching
 //!   `World::pending_world_map_encounter`.
-//! - **Field** — [`crate::world::World::set_field_regions`]; the roll lives in
+//! - **Field** - [`crate::world::World::set_field_regions`]; the roll lives in
 //!   [`crate::world::World::on_field_step`], which drives a trigger through the
 //!   mean-rate [`crate::encounter::EncounterSession`]'s transition / grace SM via
 //!   [`crate::encounter::EncounterSession::trigger_with`]. A field scene whose MAN

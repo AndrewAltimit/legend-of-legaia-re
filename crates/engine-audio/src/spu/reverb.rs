@@ -93,7 +93,7 @@ impl ReverbMode {
     /// exactly, or `None` if the block matches no standard preset (a
     /// custom/edited reverb or a non-reverb capture). The trailing
     /// `vLIN`/`vRIN` input-volume registers (indices 30/31) are *not* part of
-    /// the preset identity — they are set separately by `SpuSetReverbDepth` —
+    /// the preset identity - they are set separately by `SpuSetReverbDepth` -
     /// so they are excluded from the comparison.
     pub fn identify(regs: &[u16; 32]) -> Option<ReverbMode> {
         Self::ALL
@@ -536,7 +536,7 @@ mod tests {
     }
 
     /// The reverb-register block retail installs (captured from real
-    /// mednafen save states across field / battle / summon scenes — all
+    /// mednafen save states across field / battle / summon scenes - all
     /// byte-identical) is the Studio C preset. This pins what the live engine
     /// must select to match retail's global reverb. See the C7-REVERB hunt.
     #[test]

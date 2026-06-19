@@ -19,7 +19,7 @@ The curve source:
 
 - **Per-level XP-delta table `DAT_80076AF4`** (u16 entries, referenced literally
   as `&DAT_80076AF4` at `0x801E9588`/`0x801E9594`). It is static `SCUS_942.54`
-  data — below the `0x801C0000` overlay boundary and clear of the sin LUT range
+  data - below the `0x801C0000` overlay boundary and clear of the sin LUT range
   (`0x80070A2C..0x80072A2C`). The threshold for the current level is the running
   sum `sum = Σ DAT_80076AF4[0 .. level]`.
 - **Scaling formula** (`0x801E95D0`–`0x801E9624`): for `level < 0x11` (17),
@@ -55,7 +55,7 @@ at `0x8004F34C` (`ghidra/scripts/funcs/8004e568.txt`).
 ## Stat gains
 
 Per-character stat growth is **also `FUN_801E9504`'s job, sourced from static
-`SCUS_942.54` tables** — the writer the earlier capture work could not find is
+`SCUS_942.54` tables** - the writer the earlier capture work could not find is
 `FUN_801E9504` itself (a victory-path overlay function, not the
 `overlay_magic_level_up` display code that was searched). It takes the 0-based
 party slot (`a0 = active-slot − 1`; slot 3 returns immediately), indexes the
@@ -76,12 +76,12 @@ byte at `+0x6F8`.
   a0,a0,0x6918`): stride `0x3C`, one record per Vahn / Noa / Gala (the 4th slot
   is never grown). Each record is **8 contiguous 6-byte sub-records**
   `{u16 start, u16 max, u8 jitter, u8 row}`. `start` is the stat's base
-  (level-1) value — **validated against the new-game starting template**
+  (level-1) value - **validated against the new-game starting template**
   (`legaia_asset::new_game`): **Gala's record matches the template on all 8
   stats**, Vahn/Noa on HP/MP/AGL (their late-join templates are lightly
   retuned). `max` is the level-99 ceiling, `row` selects a curve, `jitter` the
   spread. (The leading `0x00B4` of the block is Vahn's HP `start` = 180, **not**
-  a length word — an earlier note mislabeled it.)
+  a length word - an earlier note mislabeled it.)
 
 ### Per-level gain arithmetic (decoded + validated)
 
@@ -100,10 +100,10 @@ record[stat] += gain                                  ; then caps: HP ≤ 9999, 
 Slots 1/2 also apply a per-character XP-threshold correction
 (`±(threshold×0x14)/divisor`; Noa subtracts, Gala adds). The divisor is the
 `i16` at `table + level×0x28` (indexed by the character's *current* level)
-through the pointer global `_DAT_8007B81C` — which is **constant in retail**:
+through the pointer global `_DAT_8007B81C` - which is **constant in retail**:
 a pure-Rust read across all 45 library save states finds `0x80070A2C` in every
 one, so the "runtime struct" is plain static `SCUS_942.54` data (the head of
-the GTE sin LUT sampled at a `0x28` stride — sin data doubling as a divisor
+the GTE sin LUT sampled at a `0x28` stride - sin data doubling as a divisor
 curve: 125, 251, 376, … by level, so the correction shrinks from ~16% at L1
 toward ~0.5% mid-game). Parsed by
 `legaia_asset::level_up_tables::xp_correction_divisors_from_scus`, applied by
@@ -114,7 +114,7 @@ the first divisors plus the captured-L3 example (365 ± 29).
 **The divisor `0x24C0` is the curve normalizer.** Each of the three growth
 curves sums to *exactly* `0x24C0` (= 9408), so the per-level term
 `(max−start)×byte/Σcurve` accumulates to exactly `(max−start)` across all 98
-levels — every stat lands precisely on its `max` at level 99. The record-write
+levels - every stat lands precisely on its `max` at level 99. The record-write
 offsets are confirmed too: the applier's `+0x6E4` block is the same RAM as the
 `+0x11C..+0x12D` record stat window (the two bases differ by a constant `0x5C8`
 at the same `0x414` stride).
@@ -126,7 +126,7 @@ single-level deltas: HP +39, MP +5, and the six record stats +2 / +4 / +4 / +3
 / +4 / +3. Leveling **from** L2 reads `curve[row][1]`; every one of the 8 deltas
 lands within `[core − jitter, core + jitter]` of the formula above (e.g. HP
 core `(4500−150)×82/9408 = 37`, observed +39, jitter half-range 4). So the
-arithmetic is correct as written — the earlier "~4.3..4.8x overshoot" reading
+arithmetic is correct as written - the earlier "~4.3..4.8x overshoot" reading
 was an artifact of the *multi-level* corpus observations
 (`noa_4_level_jump` / `gala_4_level_jump`), whose stated HP deltas (≈+32 over a
 claimed 4 levels) are impossible under the validated ≈+38/level rate; those
@@ -138,7 +138,7 @@ aliases); decoded + checked in `legaia_asset::level_up_tables`
 (`GrowthTables::char_params` / `level_gain_core`) by the disc-gated
 `crates/asset/tests/level_up_tables_real.rs`.
 
-**Engine wiring (deterministic core — done, all 8 stats).** `StatGain` carries
+**Engine wiring (deterministic core - done, all 8 stats).** `StatGain` carries
 the full eight-stat gain (HP, MP, AGL, ATK, UDF, LDF, SPD, INT).
 `LevelUpTracker::with_growth_tables` builds a per-character
 `StatGrowthCurve::PerLevel` from the parsed SCUS tables (the jitter-free
@@ -147,7 +147,7 @@ the user's `SCUS_942.54` at boot (alongside the XP curve), replacing the flat
 10 HP / 5 MP placeholder for Vahn/Noa/Gala. `apply_to_record` bumps HP/MP maxima
 (restoring cur to max) and grows the six battle stats in the record-side window
 (`+0x11C..+0x12D`), then **mirrors** them into the live window
-(`+0x110..+0x11B`) — matching the applier's write-then-mirror. Disc-gated
+(`+0x110..+0x11B`) - matching the applier's write-then-mirror. Disc-gated
 `boot_installs_the_real_per_character_growth_curves_from_disc` checks Noa's curve
 produces the validated L2→L3 core (HP 37, MP 6).
 
@@ -155,9 +155,9 @@ produces the validated L2→L3 core (HP 37, MP 6).
 spread is implemented as an **opt-in** layer:
 `LevelUpTracker::with_level_up_jitter(seed)` seeds a faithful PSX BIOS-rand LCG
 (`BiosRand`: `seed = seed×0x41C6_4E6D + 0x3039; (seed>>16)&0x7FFF`) and the
-level-up pass then draws **one** `rand()` per stat per level — in the applier's
+level-up pass then draws **one** `rand()` per stat per level - in the applier's
 stat order (HP, MP, AGL, ATK, UDF, LDF, SPD, INT), *including* the draw when
-`jitter == 0` (`rand() % 1 == 0`) — applying the spread to the **unfloored**
+`jitter == 0` (`rand() % 1 == 0`) - applying the spread to the **unfloored**
 core (`level_gain_core_raw`) before the `max(1, …)` floor, exactly as
 `FUN_801E9504` does. It is **off by default**: with no jitter RNG installed the
 tracker applies only the deterministic core and draws zero `rand()`, so every
@@ -172,7 +172,7 @@ to the battle actor. That is wrong, and this finding confirms it from the other
 side: growth comes from the `DAT_800769CC` / `DAT_80076918` static tables, not a
 Seru `+0x74` dereference. (The only `+0x74` reads in the captured overlays
 surface a 32-bit battle-state flag the SCUS handler `FUN_800480D8` stamps with
-`0x80808080`.) Battle actor base for reference: `DAT_801C9370[slot]`, 8 slots —
+`0x80808080`.) Battle actor base for reference: `DAT_801C9370[slot]`, 8 slots -
 party 0..2, monsters 3..7; current HP at `+0x14C`.
 
 The level-up overlay data section (`overlay_magic_level_up_full.bin`,
@@ -186,7 +186,7 @@ The level-up overlay data section (`overlay_magic_level_up_full.bin`,
 | `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner `FUN_80050ED4` |
 | `0x801F6000+` | Live animation state globals (runtime values; zero at rest) |
 
-No increment table lives in this *display* overlay — the growth tables
+No increment table lives in this *display* overlay - the growth tables
 (`DAT_800769CC` / `DAT_80076918`) are in static `SCUS_942.54`, read by the
 victory-path applier `FUN_801E9504` (above). The captured per-character triplets
 below (Vahn / Noa / Gala observed deltas) remain useful as an empirical
@@ -196,7 +196,7 @@ against them.
 `StatGain::default()` uses placeholder flat rates: +10 HP / +5 MP per level for
 all characters. Retail varies growth per character via the `DAT_80076918`
 parameter block; until the SCUS tables are wired into the engine, don't
-fabricate numbers — populate a measured curve via `with_stat_gains` /
+fabricate numbers - populate a measured curve via `with_stat_gains` /
 `SeruStatTable`, or extract the real `DAT_800769CC` curve at runtime.
 
 The tracker supports per-slot overrides via `with_stat_gains([StatGain; 4])`.
@@ -258,15 +258,15 @@ with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
 - **The `+0x120` u16 LE field is a per-stat cap constant `100`**, not SP_max.
   Pinned across every captured save (Vahn, Noa, Gala) and every state. The
   earlier `legaia_save::character::CharacterRecord::stat_cap` accessor
-  reading `+0x11A` is misnamed — `+0x11A` is one of the live stat slots and
+  reading `+0x11A` is misnamed - `+0x11A` is one of the live stat slots and
   is mutated on level-up. Engines should read the cap from `+0x120` instead.
 - **Displayed character level at `+0x130`.** This is the byte the status
-  screen reads as "LV" and the `Level 99` GameShark code targets — **boot-confirmed
+  screen reads as "LV" and the `Level 99` GameShark code targets - **boot-confirmed
   via the starting-level randomizer**: a New Game record with level-10 cumulative
   experience (`+0x0`), level-10 stats, and the correct next-level threshold (`+0x4`)
   but `+0x130 == 1` still displays **LV 1**, and setting `+0x130 = 10` makes it
   display **LV 10**. So the shown level is *not* re-derived from experience at a New
-  Game — it is read from `+0x130` directly (the new-game seed writes it; see
+  Game - it is read from `+0x130` directly (the new-game seed writes it; see
   [`new-game-table.md`](../formats/new-game-table.md)). The retail level-up applier
   maintains it by **incrementing it `+1` per level-up event** (the captured 4-level
   jumps bumped it by one, so it can momentarily lag the XP-derived level after a rare
@@ -275,7 +275,7 @@ with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
   cumulative XP" reading for the *level* question; whether a separate magic-rank byte
   lives at the adjacent `+0x131` (which the seed also inits to 1) is unconfirmed.
   NB the engine port tracks its own level at `+0x100` (always zero in retail, where
-  the live byte is `+0x130`) — self-consistent for the port's own LGSF saves, a
+  the live byte is `+0x130`) - self-consistent for the port's own LGSF saves, a
   deliberate divergence from the retail byte, not a mirror of it.
 
 ### Cross-character delta search (negative finding)
@@ -289,7 +289,7 @@ ramp-up-peak-ramp-down patterns (`06 06 07 08 09 0A 0B 0C 0D 0E 0F 0F 0F 0E
 The matched stat-shape patterns (Vahn `04 04 02 02 04 04`, Gala `02 04 04
 02 02 02`) sit inside these animation curves as coincidental byte runs.
 
-Net: cross-character u8-pattern search does not surface a stat-grant table —
+Net: cross-character u8-pattern search does not surface a stat-grant table -
 because the grant table is not in PROT.DAT at all. It is the static-SCUS pair
 `DAT_800769CC` / `DAT_80076918` read by `FUN_801E9504` (see *Stat gains*).
 
@@ -408,7 +408,7 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
 
 ## Open items
 
-- **Per-character stat grants — source RESOLVED.** Vahn / Noa / Gala have
+- **Per-character stat grants - source RESOLVED.** Vahn / Noa / Gala have
   distinct HP/MP/stat growth. The growth source is the static SCUS pair
   `DAT_800769CC` (per-stat 98-entry curves, stride `0x62`, indexed by level) +
   `DAT_80076918` (per-stat parameter block selecting curve rows), read and
@@ -431,11 +431,11 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
   additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping
   has not been traced from the stat aggregator.
-- **Real retail XP table source — RESOLVED + PORTED.** The curve is the static
+- **Real retail XP table source - RESOLVED + PORTED.** The curve is the static
   SCUS table `DAT_80076AF4` + the scaling formula, read by `FUN_801E9504` (see
   *XP table* above). The prior sweeps targeting `0x8007123C` / `0x80070A3C`
   found nothing because both are wrong addresses. The engine now extracts it at
-  boot — parser `legaia_asset::level_up_tables::xp_thresholds_from_scus`
+  boot - parser `legaia_asset::level_up_tables::xp_thresholds_from_scus`
   (disc-gated `level_up_tables_real`), installed by `BootSession` (disc-gated
   `new_game_seed::boot_installs_the_real_retail_xp_curve_from_disc`). The stale
   scanners [`scripts/find_xp_table_readers.py`](../../ghidra/scripts/find_xp_table_readers.py)
@@ -448,7 +448,7 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Battle scene](battle.md) ·
 [Battle formulas](battle-formulas.md) ·
 [Shop UI](shop.md) ·

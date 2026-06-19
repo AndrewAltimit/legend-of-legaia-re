@@ -3,21 +3,21 @@
 //! segment (PROT entry 0899, stored raw).
 //!
 //! Unlike a town gold merchant (inline in a scene's field-VM script), the coin
-//! prize counter is a static table at `DAT_801e4518` — file offset
-//! `0x15D00` of PROT 0899 — decoded by the randomizer's canonical reader
+//! prize counter is a static table at `DAT_801e4518` - file offset
+//! `0x15D00` of PROT 0899 - decoded by the randomizer's canonical reader
 //! `legaia_rando::casino::CasinoExchange`. Each prize is an 8-byte record
 //! `[u16 item_id][u16 story_gate][u32 coin_price]`; blocks are `0x60` bytes
 //! (12 records), terminated by the first `item_id == 0`. The retail US disc
 //! holds four blocks: block 1 is the Vidna casino counter, block 0 the Sol
 //! Tower Muscle Dome counter (its high-value prizes story-gated via the `+2`
 //! word), and blocks 2/3 are short pre-progression states (a single cheap
-//! healing item each — the counter shows these before progression unlocks the
+//! healing item each - the counter shows these before progression unlocks the
 //! full list). To avoid a dev-dependency cycle (`legaia-rando` already depends
 //! on `legaia-gamedata`) the 8-byte record walk is reproduced inline here; the
 //! constants mirror `legaia_rando::casino`.
 //!
 //! Every curated prize joins a disc record byte-exact on (item name, coin
-//! price) — across both the Vidna and Sol lists — with one documented
+//! price) - across both the Vidna and Sol lists - with one documented
 //! exception: **Earth Egg @ 100000 coins**, the Muscle Paradise "Chicken King"
 //! easter egg, which is a separate hidden exchange and is NOT in the four-block
 //! prize table. The exception is asserted explicitly so it can't go vacuous.
@@ -108,7 +108,7 @@ fn curated_casino_prizes_match_the_disc() {
     );
 
     // Blocks 0 and 1 are the full Sol / Vidna prize lists; blocks 2+ are the
-    // short pre-progression states (a single cheap item) — not curated prizes.
+    // short pre-progression states (a single cheap item) - not curated prizes.
     let full = &blocks[0..2];
     let early = &blocks[2..];
     assert!(
@@ -160,7 +160,7 @@ fn curated_casino_prizes_match_the_disc() {
     );
     assert!(
         earth_egg_seen,
-        "Earth Egg easter-egg exception went vacuous — curated table no longer lists it @ 100000"
+        "Earth Egg easter-egg exception went vacuous - curated table no longer lists it @ 100000"
     );
 
     // Reverse: every disc prize in the two full lists is a curated prize, so

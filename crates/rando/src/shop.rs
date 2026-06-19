@@ -2,11 +2,11 @@
 //!
 //! ## Where a town shop lives
 //!
-//! Unlike the casino prize exchange (a static overlay table — see
+//! Unlike the casino prize exchange (a static overlay table - see
 //! [`crate::casino`]), a **gold town merchant's** stock is defined **inline in
 //! the scene's field-VM script** (the MAN), the same place chests
 //! ([op `0x39`](crate::chest)) and doors (op `0x3F`) live. Opening a shop is
-//! field-VM **op `0x49` (`STATE_RESUME`)** — the multi-frame state machine that
+//! field-VM **op `0x49` (`STATE_RESUME`)** - the multi-frame state machine that
 //! drives the menu-request register `_DAT_8007B450` (the same register the
 //! "Shop Modifier" cheat pokes). In its sub-op-`0` form it carries an inline
 //! payload that, for a shop, is:
@@ -28,11 +28,11 @@
 //! sub-op-`0` shop signature, *not* by an opcode walk. A shop's `0x49` is often
 //! gated behind a dialogue confirm-picker ("Buy them?") whose option-jump table
 //! desyncs a linear disassembler before it reaches the op (Biron Monastery's
-//! Corey vendor is the case that exposed this — its op is reached only past a
+//! Corey vendor is the case that exposed this - its op is reached only past a
 //! Yes/No picker), so a walk silently misses those shops. The scan doesn't care
 //! how the script reaches the op. False positives are ruled out by a strict
 //! record validation ([`legaia_asset::shop_stock::parse_record`]): the byte after the opcode must be
-//! `0x00` (sub-op 0 — this alone rejects almost every stray `0x49`, since ids,
+//! `0x00` (sub-op 0 - this alone rejects almost every stray `0x49`, since ids,
 //! operands and `0x49`-lead names like "Items Shop" are followed by non-zero),
 //! the count is small and non-zero, every id is non-zero (and, with the SCUS
 //! mask the apply layer supplies, names a real item), and the trailing shop name
@@ -42,7 +42,7 @@
 //!
 //! ## Randomization
 //!
-//! Only the `count` item-id bytes are rewritten — the count, name, price logic
+//! Only the `count` item-id bytes are rewritten - the count, name, price logic
 //! (prices are looked up per item elsewhere) and surrounding script are
 //! untouched, so the edit is same-size and the MAN recompresses + writes back
 //! exactly like the [encounter](crate::encounter) / [chest](crate::chest) paths.
@@ -111,7 +111,7 @@ impl SceneShops {
     }
 
     /// Flat list of every item-id byte offset across all this scene's shops,
-    /// in shop-then-slot order — the population a randomizer rewrites.
+    /// in shop-then-slot order - the population a randomizer rewrites.
     pub fn id_offsets(&self) -> Vec<usize> {
         self.shops
             .iter()

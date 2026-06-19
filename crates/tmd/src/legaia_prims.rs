@@ -183,7 +183,7 @@ pub struct Prim {
     pub tsb: u16,
     /// Per-vertex `[R, G, B]` colours for **untextured** prims (`F*`/`G*`), in
     /// the same stored order as [`vertex_indices_raw`](Self::vertex_indices_raw)
-    /// — `colors[i]` pairs with `vertex_indices_raw[i]`. A **flat** prim stores
+    /// - `colors[i]` pairs with `vertex_indices_raw[i]`. A **flat** prim stores
     /// one colour word at the prim start, replicated to every vertex here; a
     /// **gouraud** prim stores one colour word per vertex at a 4-byte stride.
     /// Empty for textured prims (their pre-vertex block is UV/CBA/TSB, exposed
@@ -279,7 +279,7 @@ fn extract_textures(
 /// The colour block sits at the prim's start (before the vertex indices). A
 /// **flat** prim (`F3`/`F4`) stores one colour word at offset 0 shared by every
 /// vertex; a **gouraud** prim (`G3`/`G4`) stores one colour word per vertex at a
-/// 4-byte stride. The returned colours are in stored order — `colors[i]` pairs
+/// 4-byte stride. The returned colours are in stored order - `colors[i]` pairs
 /// with the prim's `vertex_indices_raw[i]`. The colour word's 4th byte (the SDK
 /// GP0 code) is dropped. Returns `n_verts` entries; a colour word that runs past
 /// the buffer falls back to mid-grey so a malformed tail can't panic.

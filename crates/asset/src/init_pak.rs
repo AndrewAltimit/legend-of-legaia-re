@@ -1,4 +1,4 @@
-//! Boot `init.pak` parser — extracts the four publisher-logo TIMs from
+//! Boot `init.pak` parser - extracts the four publisher-logo TIMs from
 //! PROT entry 0895 (`bat_back_dat` per CDNAME, actually init.pak).
 //!
 //! ## Format
@@ -13,13 +13,13 @@
 //!   "h:\prot\field\init\init.pak"
 //!   "h:\prot\field\title\title.pak"
 //!   "h:\mpack\monster.snd"
-//! [pointer / function-table region — references into 0x801CExxx, varies]
+//! [pointer / function-table region - references into 0x801CExxx, varies]
 //! ...
 //! [four PSX TIM blobs at fixed file offsets]
-//!   0x021C4: PROKION logo  — 8bpp 88x256, CLUT 256 colours at fb=(0,480),  pixels at fb=(768,0)
-//!   0x0D3E4: Contrail logo — 8bpp 92x256, CLUT 256 colours at fb=(0,480),  pixels at fb=(0,  0)
-//!   0x18E04: SCEA logo     — 4bpp 64x128, CLUT  16 colours at fb=(0,497),  pixels at fb=(640,0)
-//!   0x1CE44: WARNING logo  — 4bpp 64x256, CLUT  16 colours at fb=(0,492),  pixels at fb=(704,0)
+//!   0x021C4: PROKION logo  - 8bpp 88x256, CLUT 256 colours at fb=(0,480),  pixels at fb=(768,0)
+//!   0x0D3E4: Contrail logo - 8bpp 92x256, CLUT 256 colours at fb=(0,480),  pixels at fb=(0,  0)
+//!   0x18E04: SCEA logo     - 4bpp 64x128, CLUT  16 colours at fb=(0,497),  pixels at fb=(640,0)
+//!   0x1CE44: WARNING logo  - 4bpp 64x256, CLUT  16 colours at fb=(0,492),  pixels at fb=(704,0)
 //! ```
 //!
 //! The TIM byte offsets are stable across the known build (NA retail).
@@ -30,7 +30,7 @@
 //! for the methodology that validated these.
 //!
 //! The pack also contains debug strings referencing `init.pak` /
-//! `title.pak` paths, but those are debug-print referents only — SCUS
+//! `title.pak` paths, but those are debug-print referents only - SCUS
 //! doesn't resolve them by name. The four TIMs are the only consumable
 //! payload in the retail build.
 
@@ -55,16 +55,16 @@ pub struct PublisherLogoTim<'a> {
     /// Slice of the input buffer pointing at the TIM blob; parse with
     /// [`legaia_tim::parse_tim`] or similar.
     pub bytes: &'a [u8],
-    /// PSX VRAM target rect for the pixel block — `(fb_x, fb_y, w, h)`.
+    /// PSX VRAM target rect for the pixel block - `(fb_x, fb_y, w, h)`.
     /// The CLUT block goes into `clut_rect`.
     pub pixel_rect: (u16, u16, u16, u16),
-    /// PSX VRAM target rect for the CLUT block — `(fb_x, fb_y, w, h)`.
+    /// PSX VRAM target rect for the CLUT block - `(fb_x, fb_y, w, h)`.
     pub clut_rect: (u16, u16, u16, u16),
     /// TIM colour mode (`0`=4bpp, `1`=8bpp, `2`=15bpp, `3`=24bpp).
     pub mode: u8,
 }
 
-/// Parsed `init.pak` view — references into the input buffer (no copy).
+/// Parsed `init.pak` view - references into the input buffer (no copy).
 #[derive(Debug, Clone)]
 pub struct InitPak<'a> {
     /// The four publisher-logo TIMs in the canonical display order:

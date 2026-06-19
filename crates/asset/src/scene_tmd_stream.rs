@@ -36,7 +36,7 @@
 //! Some scene_tmd_stream entries hold **more than one complete sub-stream**
 //! concatenated: each is a full `[chunk0 TMD][type-0x01 TIM chunks][terminator]`
 //! block, and each starts on a **`0x800` (sector) boundary** with zero padding
-//! filling the gap. `0006_town01.BIN` is the canonical example — sub-stream 0
+//! filling the gap. `0006_town01.BIN` is the canonical example - sub-stream 0
 //! at `0x0` (TMD `0x383C` + TIMs at `0x3840` / `0xBA64`) and sub-stream 1 at
 //! `0x14000` (its **own** leading TMD `0x2C20` + TIMs at `0x16C24` / `0x1EE48`).
 //! So the bytes earlier docs called a "continuation TIM list" are really the
@@ -46,7 +46,7 @@
 //!
 //! `FUN_8001FE70` walks exactly one sub-stream and **returns a pointer just
 //! past its terminator** (`return param_1 + 1`), i.e. the start of the next
-//! sub-stream's region — so a sector/slot-indexed caller can walk the rest by
+//! sub-stream's region - so a sector/slot-indexed caller can walk the rest by
 //! re-invoking the walker on that boundary. The one static caller
 //! (`FUN_800513F0`, battle init) calls it **once** and consumes only
 //! sub-stream 0 (its `s3 < 4` loop above the call is the 4-party-member setup,
@@ -230,12 +230,12 @@ pub struct SubStream {
     /// Always `0x800`-aligned in retail (sub-stream 0 is at `0`).
     pub base: usize,
     /// The parsed sub-stream. All of its offsets (`tmd_range`, `tail_end`,
-    /// …) are **relative to [`Self::base`]** — add `base` for an absolute
+    /// …) are **relative to [`Self::base`]** - add `base` for an absolute
     /// file offset.
     pub stream: SceneTmdStream,
 }
 
-/// Maximum sub-streams to enumerate before giving up — a runaway guard far
+/// Maximum sub-streams to enumerate before giving up - a runaway guard far
 /// above the observed max (2).
 const MAX_SUB_STREAMS: usize = 16;
 
@@ -266,7 +266,7 @@ pub fn sub_streams(buf: &[u8]) -> Vec<SubStream> {
             next += 4;
         }
         if next <= base {
-            break; // no forward progress — defensive
+            break; // no forward progress - defensive
         }
         base = next;
     }
@@ -644,7 +644,7 @@ mod tests {
     }
 
     /// Concatenate two full `[TMD][TIM][TIM][terminator]` sub-streams with a
-    /// zero-padded gap — the real "two-list" shape (each sub-stream carries
+    /// zero-padded gap - the real "two-list" shape (each sub-stream carries
     /// its OWN leading TMD), distinct from the bare post-terminator TIM list
     /// `synth_two_list` models.
     fn synth_two_sub_streams(gap: usize) -> Vec<u8> {

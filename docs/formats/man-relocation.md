@@ -14,7 +14,7 @@ A `0x3F` op carries its destination inline:
 ```
 
 The ops are **partition-2 MAN records** (the named cutscene-timeline-style
-records — see [encounter.md](encounter.md) for the MAN layout, including the
+records - see [encounter.md](encounter.md) for the MAN layout, including the
 `[u8 name_len][name*2 SJIS][cond-blocks]` partition-2 header). They are reached
 at runtime through the **partition-2 record-offset table**: on a transition the
 field controller sets the VM bytecode base to
@@ -31,7 +31,7 @@ minus the MAN base equalled `data_region + partition2[0]` exactly. Corpus census
 partition 2; **zero absolute-reference ops** at/after any destination op.
 
 The practical consequence: the destination "index" *is* a structural offset
-table the MAN parser already exposes, so resizing a record is safe — fix the
+table the MAN parser already exposes, so resizing a record is safe - fix the
 table, and every door stays addressable.
 
 ## Relocation surface
@@ -67,13 +67,13 @@ fixups (all offsets per [`man_section`](../../crates/asset/src/man_section.rs)):
 - **Validate-or-skip**: `man_edit::validate` re-parses + re-walks the rebuilt MAN
   and confirms each edited op now decodes as a `0x3F` carrying the intended name.
 - **Footprint**: the recompressed MAN must fit the original asset's on-disc
-  footprint (the gap to the next descriptor). A scene that can't grow in place —
-  the big overworld hubs, whose next asset is flush after the MAN — is skipped
+  footprint (the gap to the next descriptor). A scene that can't grow in place -
+  the big overworld hubs, whose next asset is flush after the MAN - is skipped
   and reported rather than relocating the whole bundle.
 
 ## See also
 
-- [Randomizer](../tooling/randomizer.md) — the door feature this enables.
-- [encounter.md](encounter.md) — the MAN multi-section layout.
-- [`field_disasm`](../subsystems/script-vm.md) — the field-VM opcode decoder the
+- [Randomizer](../tooling/randomizer.md) - the door feature this enables.
+- [encounter.md](encounter.md) - the MAN multi-section layout.
+- [`field_disasm`](../subsystems/script-vm.md) - the field-VM opcode decoder the
   jump fixup uses.

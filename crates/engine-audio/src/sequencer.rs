@@ -94,8 +94,8 @@ fn apply_channel_pan(left: i16, right: i16, pan: u8) -> (i16, i16) {
     }
 }
 
-/// Combine a note's channel-expression — channel volume (CC7) then channel
-/// pan (CC10) — over its channel-free base `(left, right)` (master × velocity
+/// Combine a note's channel-expression - channel volume (CC7) then channel
+/// pan (CC10) - over its channel-free base `(left, right)` (master × velocity
 /// × tone vol, tone-panned). Volume scales both sides by `volume/127`; pan
 /// then attenuates the opposite side. Both are dynamic: a mid-note CC7 or
 /// CC10 recomputes the live voice volume from this same base, so successive

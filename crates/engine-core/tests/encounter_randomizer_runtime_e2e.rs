@@ -1,5 +1,5 @@
 //! Disc-gated end-to-end oracle for the random-**encounter** randomizer at
-//! runtime — the third member of the randomizer runtime-oracle set, alongside
+//! runtime - the third member of the randomizer runtime-oracle set, alongside
 //! the chest ([`chest_randomizer_runtime_e2e`]) and monster-drop
 //! ([`monster_drop_randomizer_runtime_e2e`]) oracles.
 //!
@@ -8,13 +8,13 @@
 //! bytes change inside the re-packed scene MAN, formation counts + the id multiset
 //! are preserved, every id stays in the scene's pool, and the touched PROT.DAT
 //! sectors stay EDC/ECC-valid. What it does **not** prove is that a runtime
-//! actually *reads the patched id and spawns that monster into battle* — the
+//! actually *reads the patched id and spawns that monster into battle* - the
 //! question behind "is it truly randomizing, or is something serving a stale
 //! value?".
 //!
 //! A savestate can't answer that cleanly (the same trap the chest + drop oracles
-//! document): a mednafen state snapshots all of RAM, and a scene's MAN — every
-//! formation row included — is resident in RAM the moment you stand in the scene,
+//! document): a mednafen state snapshots all of RAM, and a scene's MAN - every
+//! formation row included - is resident in RAM the moment you stand in the scene,
 //! so loading such a state on a patched disc still spawns the *original* monster.
 //! A patched formation is only observed after a *fresh scene load* re-reads the
 //! MAN off the (patched) disc.
@@ -183,7 +183,7 @@ fn patched_encounter_grants_new_monster_at_runtime() {
         .patch_prot_entry(entry_idx, sc.man_offset as u64, &stream)
         .expect("write patched scene MAN");
 
-    // Re-decode off the patched image — disc-truth, not the in-memory copy.
+    // Re-decode off the patched image - disc-truth, not the in-memory copy.
     let patched_entry = patcher.read_entry(entry_idx).unwrap();
     let patched = SceneEncounters::locate(&patched_entry, entry_idx).unwrap();
     assert_eq!(
@@ -200,7 +200,7 @@ fn patched_encounter_grants_new_monster_at_runtime() {
     assert_eq!(
         runtime, replacement as u16,
         "runtime must spawn the patched id 0x{replacement:02x} (scene {entry_idx} formation {row}), \
-         got 0x{runtime:04x} — a stale value here is the caching failure this test guards"
+         got 0x{runtime:04x} - a stale value here is the caching failure this test guards"
     );
     assert_ne!(
         runtime, original as u16,
@@ -210,6 +210,6 @@ fn patched_encounter_grants_new_monster_at_runtime() {
     eprintln!(
         "encounter runtime E2E: scene {entry_idx} formation {row} slot 0 \
          baseline spawns 0x{baseline:04x}, patched spawns 0x{runtime:04x} \
-         — 0x{original:02x} -> 0x{replacement:02x}"
+         - 0x{original:02x} -> 0x{replacement:02x}"
     );
 }

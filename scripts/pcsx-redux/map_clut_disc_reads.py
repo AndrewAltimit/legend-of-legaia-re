@@ -10,7 +10,7 @@ PROT entry by bracketing against the extracted PROT/*.BIN locations in PROT.DAT.
 
 Step 2 (with --vram <mc.bin>): for each distinct candidate entry, LZS-decompress
 its sections and search for the retail Noa (row 492) / Gala (row 494) palette
-lifted from the supplied VRAM dump. Prints the entry + offset that holds it —
+lifted from the supplied VRAM dump. Prints the entry + offset that holds it -
 that pins the disc source. No Sony bytes are committed; this reads the user's
 own disc + save-state dump locally.
 

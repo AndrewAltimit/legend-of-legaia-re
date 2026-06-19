@@ -1,12 +1,12 @@
 //! Disc + library gated: enemy special attacks ride the same loader-B stager
-//! mechanism as the player summons — both the final-boss Cort specials and the
+//! mechanism as the player summons - both the final-boss Cort specials and the
 //! ordinary (non-final-boss) bosses.
 //!
 //! The Cort stager *files* are pinned structurally by `enemy_stager_real`
 //! (disc-only: trim to TOC-gap footprint, parse as a stager), but that test does
 //! not read RAM, so the Cort loader-B binding itself had no committed coverage.
 //! This oracle adds the RAM pin for all six Cort legs (`ENEMY_BOSS_STAGER_PROT`)
-//! and extends it to two ordinary bosses — the Delilas brothers and Zeto —
+//! and extends it to two ordinary bosses - the Delilas brothers and Zeto -
 //! confirming the mechanism is not Cort-specific. For each, the loader-B
 //! current-id (`0x8007BC4C`) read mid-cast
 //! resolves the stager entry on the universal `extraction = id + 895`
@@ -23,11 +23,11 @@
 //!
 //! Zeto's Call Wave and Big Wave are one logical attack spread over two turns
 //! (Call Wave summons the wave one turn, Big Wave unleashes it the next), so
-//! they legitimately share the single stager 0946 — the matching loader-B id
+//! they legitimately share the single stager 0946 - the matching loader-B id
 //! across both states is the move's identity, not a stale tracker.
 //!
 //! None of these stagers carries a `0x4000` render-mode node, and at the
-//! captured instants the part-actor pool `DAT_801C90F0` is empty — so they do
+//! captured instants the part-actor pool `DAT_801C90F0` is empty - so they do
 //! not seat a live render-mode part either (logged, not asserted: pool
 //! occupancy is instant-specific). The render-mode draw still needs an enemy
 //! whose stager carries a `0x4000` record with a live part seated.
@@ -182,7 +182,7 @@ fn pin_casts(casts: &[(&str, u16, u32)]) -> usize {
             "{label}: PROT {extraction} unexpectedly carries 0x4000 render-mode records",
         );
 
-        // Pool occupancy is instant-specific — log it, don't assert it.
+        // Pool occupancy is instant-specific - log it, don't assert it.
         let pool = ram_slice(ram, PART_POOL_VA, PART_POOL_VA + PART_POOL_SLOTS * 4)
             .expect("part pool window");
         let live_parts = (0..PART_POOL_SLOTS as usize)

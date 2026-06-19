@@ -1,0 +1,409 @@
+# Master catalog for the "Patching a sealed disc" write-up series.
+#
+# This file is the single source of truth for the mod -> technique-tier table
+# rendered on writeups/disc-patching/index.html. site/_gen.py reads it and emits
+# the grouped HTML table in place of the <!--DISC_PATCHING_TABLE--> placeholder,
+# so adding a mod is a one-row edit here, never a hand-maintained table.
+#
+# Tiers A-F are the sophistication ladder (each gets its own page). G-J are
+# *variants* - specializations of a parent tier - shown as a tag on the row.
+#
+# Fields per [[mod]]:
+#   key       stable slug
+#   name      display name
+#   flag      CLI flag (legaia-rando)
+#   tier      A-F primary technique
+#   variant   optional G/H/I/J specialization tag ("" if none)
+#   target    what + where the edit lands (concise; addresses where pinned)
+#   edit      "in-place" (same-size) | "relocate" (variable-length, footprint-bounded)
+#   gap       true if it consumes the shared SCUS rodata gap (composition-relevant)
+#   status    "shipped" | "planned"
+#   test      disc oracle test (crates/rando/tests/*), or ""
+#   notes     optional one-liner
+
+# ---------------------------------------------------------------------------
+# Technique tiers (the ladder). `published` gates whether the table links to
+# the tier's page - flip to true as each page lands so the link-check stays green.
+# ---------------------------------------------------------------------------
+
+[[tier]]
+id = "A"
+title = "Static-table overwrites"
+page = "a-static-tables.html"
+published = true
+summary = "Same-size byte edits to a fixed table in SCUS or a raw overlay. No compression, no relocation - but reverse-engineered to the exact field."
+
+[[tier]]
+id = "B"
+title = "Editing inside LZS"
+page = "b-lzs-slots.html"
+published = true
+summary = "The value lives in a compressed slot: decompress, mutate, re-pack (one-step lazy matching, about as tight as Sony's - not tighter), zero-pad back to the fixed slot so nothing downstream moves."
+
+[[tier]]
+id = "C"
+title = "Rewriting field-VM bytecode"
+page = "c-field-vm-operands.html"
+published = true
+summary = "The data is bytecode - rewrite an opcode's inline operand and recompress the per-scene MAN within its original footprint budget. Needs an opcode-aware walk to find sites safely."
+
+[[tier]]
+id = "D"
+title = "Variable-length relocation"
+page = "d-man-relocation.html"
+published = true
+summary = "When an edit must change a byte count: rebuild the decompressed MAN, fix every internal offset / table / delta, keep it inside the asset's footprint."
+
+[[tier]]
+id = "E"
+title = "Code injection via the rodata gap"
+page = "e-rodata-gap-code.html"
+published = true
+summary = "Behavior the game can't express as data: detour an existing routine into hand-assembled MIPS parked in a reclaimed all-zero region of the executable."
+
+[[tier]]
+id = "F"
+title = "Overlay dead-region injection"
+page = "f-overlay-dead-region.html"
+published = true
+summary = "Host hand-assembled code inside a resident overlay's reference-free dead space - so a whole new screen or system costs nothing and never competes for the shared rodata gap."
+
+# ---------------------------------------------------------------------------
+# Variant specializations (shown as tags, not ladder rungs).
+# ---------------------------------------------------------------------------
+
+[[variant]]
+id = "G"
+title = "GIVE_ITEM splice into the opening MAN"
+
+[[variant]]
+id = "H"
+title = "New-game seed-table stamp"
+
+[[variant]]
+id = "I"
+title = "String injection into a reserved zero gap"
+
+[[variant]]
+id = "J"
+title = "Config blob consumed by the clean-room engine"
+
+# ---------------------------------------------------------------------------
+# Tier A - static-table overwrites
+# ---------------------------------------------------------------------------
+
+[[mod]]
+key = "steal"
+name = "Steal items"
+flag = "--steals"
+tier = "A"
+target = "SCUS steal table DAT_80077828, item byte at +1 (chance byte untouched)"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "steal_patch_real.rs"
+
+[[mod]]
+key = "spell_cost"
+name = "Spell MP costs"
+flag = "--spell-cost"
+tier = "A"
+target = "SCUS spell table DAT_800754C8, cost byte at +3"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "spell_cost_real.rs"
+
+[[mod]]
+key = "equip_bonus"
+name = "Equipment stat bonuses"
+flag = "--equip-bonus"
+tier = "A"
+target = "SCUS equip-bonus table DAT_80074F68, stat tuple +0..+4 (mask/slot bytes kept)"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "equip_bonuses_real.rs"
+
+[[mod]]
+key = "move_power"
+name = "Special-attack power"
+flag = "--move-power"
+tier = "A"
+target = "Battle overlay (PROT 0898) move-power table, power halfword at +0x00"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "move_power_real.rs"
+
+[[mod]]
+key = "element_affinity"
+name = "Element-affinity matrix"
+flag = "--element-affinity"
+tier = "A"
+target = "Battle overlay (PROT 0898) 8x8 affinity matrix"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "element_affinity_real.rs"
+
+[[mod]]
+key = "item_price"
+name = "Item prices"
+flag = "--shops (pricing)"
+tier = "A"
+target = "SCUS item table 0x80074368, u16 price at record +2"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "item_price_real.rs"
+
+[[mod]]
+key = "casino"
+name = "Casino prize exchange"
+flag = "--casino"
+tier = "A"
+target = "Menu overlay (PROT 0899) raw prize table at file offset 0x15D00"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "disc_patch_real.rs"
+
+[[mod]]
+key = "starting_level"
+name = "Starting level"
+flag = "--starting-level"
+tier = "A"
+variant = "H"
+target = "SCUS new-game roster seed: level literal +0x130, growth-curve stats, lead XP +0x0/+0x4"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "starting_level_real.rs"
+
+[[mod]]
+key = "item_name"
+name = "Unused-item naming (Seru Bell)"
+flag = "--unused-items"
+tier = "A"
+variant = "I"
+target = "Seru Bell name string at reserved gap 0x8007AB40 + name-pointer repoint for id 0xFD"
+edit = "in-place"
+gap = true
+status = "shipped"
+test = "unused_content_real.rs"
+
+# ---------------------------------------------------------------------------
+# Tier B - editing inside LZS
+# ---------------------------------------------------------------------------
+
+[[mod]]
+key = "drops"
+name = "Monster drops"
+flag = "--drops"
+tier = "B"
+target = "Monster archive (PROT 867) slot, drop id/chance at +0x48/+0x49"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "monster_drop_real.rs"
+
+[[mod]]
+key = "monster_stats"
+name = "Monster combat stats"
+flag = "--monster-stats"
+tier = "B"
+target = "Monster archive (PROT 867) slot, HP/MP/ATK/DEF/AGL/SPD halfwords at +0x0C.."
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "monster_stats_real.rs"
+
+[[mod]]
+key = "weapon_specialty"
+name = "Weapon specialty"
+flag = "--weapon-specialty"
+tier = "B"
+target = "Player battle files (PROT 0863..0865) swing record, arm-cost byte at +0x74"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "weapon_specialty_real.rs"
+
+# ---------------------------------------------------------------------------
+# Tier C - rewriting field-VM bytecode
+# ---------------------------------------------------------------------------
+
+[[mod]]
+key = "chest"
+name = "Treasure chests"
+flag = "--chests"
+tier = "C"
+target = "Per-scene MAN: GIVE_ITEM op 0x39 operand + 0xC2 display token"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "chest_patch_real.rs"
+
+[[mod]]
+key = "shop"
+name = "Town shops"
+flag = "--shops"
+tier = "C"
+target = "Per-scene MAN: inline op 0x49 shop-stock item ids"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "shop_patch_real.rs"
+
+[[mod]]
+key = "encounter"
+name = "Random encounters"
+flag = "--encounters"
+tier = "C"
+target = "Per-scene MAN: formation monster-id bytes (count/reserved preserved)"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "encounter_patch_real.rs"
+notes = "incl. encounter-scope + on-by-default solo-strong pass"
+
+[[mod]]
+key = "house_door"
+name = "House doors (intra-town)"
+flag = "--house-doors"
+tier = "C"
+target = "Per-scene MAN partition-0: player-warp op 0xA3 0xF8 tile operands"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "house_door_patch_real.rs"
+
+# ---------------------------------------------------------------------------
+# Tier D - variable-length relocation
+# ---------------------------------------------------------------------------
+
+[[mod]]
+key = "door"
+name = "Doors (scene transitions)"
+flag = "--doors"
+tier = "D"
+target = "Per-scene MAN: 0x3F transition destination name (resizes the record)"
+edit = "relocate"
+gap = false
+status = "shipped"
+test = "door_patch_real.rs"
+
+[[mod]]
+key = "starting_bag"
+name = "Starting bag (high-capacity)"
+flag = "--starting-items"
+tier = "D"
+variant = "G"
+target = "Opening-scene MAN: guarded GIVE_ITEM block (0x70 test / 0x39 give / 0x50 set) spliced in"
+edit = "relocate"
+gap = false
+status = "shipped"
+test = "starting_bag_real.rs"
+
+[[mod]]
+key = "starting_items"
+name = "Starting items (seed code)"
+flag = "--starting-items"
+tier = "D"
+variant = "H"
+target = "SCUS new-game seed routine FUN_80034A6C: reclaimed region re-stamped with grant code"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "starting_items_patch_real.rs"
+notes = "low-count path; high-count uses the MAN splice (G) above"
+
+# ---------------------------------------------------------------------------
+# Tier E - code injection via the rodata gap
+# ---------------------------------------------------------------------------
+
+[[mod]]
+key = "bonus_drop"
+name = "Bonus equipment drops"
+flag = "--equipment-drops"
+tier = "E"
+target = "Detour at reward routine 0x8004F610 -> hand-assembled routine + id table at gap 0x8007AB80"
+edit = "in-place"
+gap = true
+status = "shipped"
+test = "equipment_drops_real.rs"
+
+[[mod]]
+key = "flee_exp"
+name = "Run-away EXP"
+flag = "--flee-exp"
+tier = "E"
+target = "Detour at battle-action escape teardown 0x801E5A10 -> routine at gap 0x8007AD00"
+edit = "in-place"
+gap = true
+status = "shipped"
+test = "flee_exp_real.rs"
+
+# ---------------------------------------------------------------------------
+# Tier F - overlay dead-region injection
+# ---------------------------------------------------------------------------
+
+[[mod]]
+key = "seru_trade"
+name = "Seru trading vendor"
+flag = "--seru-trade"
+tier = "F"
+variant = "J"
+target = "Menu overlay (PROT 0899) dead region 0x801E74E0..0x801E83E0: full Trade screen; SCUS config blob 0x8007AF00 drives the engine mirror"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "seru_trade_real.rs"
+notes = "config blob is the only gap-resident byte; the UI escapes the gap entirely"
+
+# --- Roadmap (planned) -----------------------------------------------------
+
+[[mod]]
+key = "battle_assist"
+name = "Enemy battle assist"
+flag = "(planned)"
+tier = "F"
+target = "Battle overlay: a defeated/random enemy joins as a non-controllable ally actor"
+edit = "in-place"
+gap = false
+status = "planned"
+notes = "new battle-actor behavior; likely overlay-hosted code + an extra actor slot"
+
+[[mod]]
+key = "seru_racing"
+name = "Seru racing"
+flag = "(planned)"
+tier = "F"
+target = "New minigame (horse-racing shape): race state machine, odds, betting payout"
+edit = "in-place"
+gap = false
+status = "planned"
+notes = "new system; hosted in a minigame overlay's dead space"
+
+[[mod]]
+key = "muscle_spectate"
+name = "Muscle Dome spectate + betting"
+flag = "(planned)"
+tier = "F"
+target = "Muscle Dome overlay: watch two NPCs fight, place a pre-match wager, settle payout"
+edit = "in-place"
+gap = false
+status = "planned"
+notes = "extends the existing match SM with a spectator + betting path"
+
+[[mod]]
+key = "blood_moon"
+name = "Blood Moon event"
+flag = "(planned)"
+tier = "F"
+target = "Periodic overworld event: red tint + stronger enemies + better loot for a window every ~30 min"
+edit = "in-place"
+gap = false
+status = "planned"
+notes = "periodic global timer + encounter/loot modulation + overworld CLUT tint"

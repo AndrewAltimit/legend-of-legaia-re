@@ -85,7 +85,7 @@ def main(argv: list[str]) -> int:
         in_field = sum(1 for w in windows if w in field_pack)
         if in_battle == 0 and in_field == 0:
             # Matches neither pack: a non-party mesh (enemy / aux) parked in
-            # this slot — happens for slots 1/2 in a Vahn-only battle.
+            # this slot - happens for slots 1/2 in a Vahn-only battle.
             verdict = "non-party (enemy/aux)"
         elif in_battle > in_field:
             verdict = "BATTLE pack (1204)"
@@ -100,13 +100,13 @@ def main(argv: list[str]) -> int:
         )
 
     if not any_party:
-        print("  (no party meshes resident — is this a battle save?)")
+        print("  (no party meshes resident - is this a battle save?)")
         return 1
     print()
     print(
         "RESULT: party meshes come from the battle pack PROT 1204."
         if ok
-        else "RESULT: UNEXPECTED — a party slot matched the field pack; finding contradicted."
+        else "RESULT: UNEXPECTED - a party slot matched the field pack; finding contradicted."
     )
     return 0 if ok else 1
 

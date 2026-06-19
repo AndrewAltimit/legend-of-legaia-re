@@ -33,7 +33,7 @@ normal is stored** (the renderer never reads the object's normal table). See
 - `FUN_80021B04` - actor-spawn helper, builds per-actor OBJECT pointer table.
 - `FUN_80024D78` - per-actor OBJECT-table rebuild.
 - `FUN_8001EBEC` - per-frame OBJECT[10/11] swap (pose select for player TMDs).
-- `FUN_8001E890` - "DATA_FIELD player loader". The retail-PROT branch targets PROT 876 (`player_data`), which is a streaming-format VAB+TIM_LIST+SEQ payload — not a TMD pack. The dev string `data\field\player.lzs` maps to that same PROT 876 entry. The `DAT_8007C018[0..4]` character TMDs actually come from PROT 0874 (`befect_data`) section 0; see [`docs/formats/world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04). What `FUN_8001E890` does end up writing into `DAT_8007C018[0..2]` is the post-install group-count cap (`entry[+0x08] = 10`) and the equipment-conditional patch dispatch into `FUN_8001EBEC`.
+- `FUN_8001E890` - "DATA_FIELD player loader". The retail-PROT branch targets PROT 876 (`player_data`), which is a streaming-format VAB+TIM_LIST+SEQ payload - not a TMD pack. The dev string `data\field\player.lzs` maps to that same PROT 876 entry. The `DAT_8007C018[0..4]` character TMDs actually come from PROT 0874 (`befect_data`) section 0; see [`docs/formats/world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04). What `FUN_8001E890` does end up writing into `DAT_8007C018[0..2]` is the post-install group-count cap (`entry[+0x08] = 10`) and the equipment-conditional patch dispatch into `FUN_8001EBEC`.
 
 The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` - `sizeof(OBJECT) = 28`.
 
@@ -54,7 +54,7 @@ The same filter is wired into engine-side scene loads through `ResolvedTmd::buil
 
 `SceneResources::build_targeted` is the engine-side mirror of the asset-viewer's targeted-upload path: it parses every TMD in a scene, collects the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes), then walks every TIM and decides per-block whether to write it. This matches what the retail field loader does - DMA only the texture bytes the current scene's meshes need - and avoids the CLUT-row collisions that drop 80%+ of textured prims under the naive "upload every TIM" path.
 
-`build_targeted` also accepts a list of *shared* CDNAME blocks via the [`FIELD_SHARED_BLOCKS`](../../crates/engine-core/src/scene_resources.rs) constant (`init_data` + `player_data`). These are the blocks the retail engine keeps resident across field-scene transitions - `player_data` (PROT 876) is a streaming-format file whose `0x01` (TIM_LIST) chunk carries the 256x256 player atlas at VRAM `fb=(768, 0)` with CLUT at `(0, 500)` (the other chunks are a VAB header and a small SEQ-magic trailer; the file carries **no TMDs** — character meshes come from PROT 0874, see [`docs/formats/world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04)); `init_data` (PROT 0) holds shared UI / sprite tiles. The shared blocks are uploaded *first*,
+`build_targeted` also accepts a list of *shared* CDNAME blocks via the [`FIELD_SHARED_BLOCKS`](../../crates/engine-core/src/scene_resources.rs) constant (`init_data` + `player_data`). These are the blocks the retail engine keeps resident across field-scene transitions - `player_data` (PROT 876) is a streaming-format file whose `0x01` (TIM_LIST) chunk carries the 256x256 player atlas at VRAM `fb=(768, 0)` with CLUT at `(0, 500)` (the other chunks are a VAB header and a small SEQ-magic trailer; the file carries **no TMDs** - character meshes come from PROT 0874, see [`docs/formats/world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04)); `init_data` (PROT 0) holds shared UI / sprite tiles. The shared blocks are uploaded *first*,
 so scene-local TIMs win any slot collision (mirrors the retail boot-then-scene order).
 
 `SceneHost::enter_field_scene` calls `build_targeted` with the field shared blocks by default; the legacy `SceneResources::build` / `build_with_shared` paths remain for tests and engines that want the unfiltered upload for diagnostic purposes.
@@ -174,7 +174,7 @@ The detector is preserved as a signal during exploration ("this buffer contains 
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Legaia TMD](../formats/tmd.md) ·
 [PSX TIM](../formats/tim.md) ·
 [NPC palettes](../formats/npc-palette.md) ·

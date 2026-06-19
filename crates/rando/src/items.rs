@@ -4,7 +4,7 @@
 //! [`legaia_asset::item_names`]). Restricting the randomizer's replacement
 //! drops to ids that name a real item ensures it never assigns a drop the game
 //! has no name or handler for. Pass the retail executable (`SCUS_942.54`)
-//! bytes, not the disc image — the table lives in the executable's data segment.
+//! bytes, not the disc image - the table lives in the executable's data segment.
 
 use anyhow::{Context, Result};
 use legaia_asset::item_names::ItemNameTable;
@@ -12,7 +12,7 @@ use legaia_asset::item_names::ItemNameTable;
 /// Curated **fallback** set of quest / key items kept out of chest
 /// randomization when the disc's item table can't be read. Every entry is an
 /// unsellable (price-0) quest item, so this is a strict subset of the
-/// data-driven [`crate::item_price::quest_item_ids`] — the chest randomizer's
+/// data-driven [`crate::item_price::quest_item_ids`] - the chest randomizer's
 /// real default ([`default_static_chest_items`]) prefers that disc-derived set
 /// and only falls back to this constant. Override at the CLI with
 /// `--keep-static-items` (pass an empty value to randomize everything).
@@ -26,7 +26,7 @@ use legaia_asset::item_names::ItemNameTable;
 /// | `0xb0` | Spring Salts | Genesis-tree garden quest tool |
 /// | `0xa0` | Old Rod | fishing enabler |
 ///
-/// Buyable items are deliberately excluded — a shop-tradeable accessory like
+/// Buyable items are deliberately excluded - a shop-tradeable accessory like
 /// the Silver Compass (lowers the battle-start ambush rate) is a fine
 /// chest-randomization candidate, so only genuinely unsellable quest items are
 /// protected.
@@ -34,8 +34,8 @@ pub const DEFAULT_STATIC_CHEST_ITEMS: &[u8] = &[0x9a, 0x71, 0xa9, 0xaa, 0xb0, 0x
 
 /// The chest randomizer's default keep-static set, derived from the disc.
 ///
-/// Returns the data-driven [`crate::item_price::quest_item_ids`] — every named,
-/// unsellable (price-0) item except the chest-found equipment — which catches
+/// Returns the data-driven [`crate::item_price::quest_item_ids`] - every named,
+/// unsellable (price-0) item except the chest-found equipment - which catches
 /// the door keys, garden tools, eggs/talismans/books, letters, fishing rods,
 /// casino cards, and Ra-Seru template entries automatically, so no quest item
 /// is ever moved out of its chest or dropped into an unrelated one. Buyable

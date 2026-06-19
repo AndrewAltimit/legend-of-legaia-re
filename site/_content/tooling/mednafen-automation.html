@@ -85,7 +85,7 @@
   <h3>Decode the per-prim renderer dispatch tables</h3>
 <pre><code>mednafen-state prim-dispatch-table &lt;save&gt;
 mednafen-state prim-dispatch-table &lt;save&gt; --overlay-targets-only</code></pre>
-  <p>Decodes <code>FUN_80043390</code>'s SCUS-resident table at <code>0x8007657C</code> (4 alpha rows &times; 20 slots) and the overlay-resident variant at <code>0x801F8968</code> (1 alpha row only &mdash; the overlay path skips the alpha offset). Reports every populated slot, classifies it (SCUS / overlay / other), and surfaces the eight overlay-resident high-mode renderers at <code>0x801F7644..0x801F8690</code> &mdash; the per-prim emit leaves the world-map top-view routes its TMD prims through. The overlay table reports as empty when the world-map overlay isn't paged in; pass <code>--overlay-targets-only</code> to pipe the eight addresses into a Ghidra <code>dump_funcs.py</code> <code>TARGETS</code> list. See <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">subsystems / world-map &mdash; bulk continent terrain emit mechanism</a>.</p>
+  <p>Decodes <code>FUN_80043390</code>'s SCUS-resident table at <code>0x8007657C</code> (4 alpha rows &times; 20 slots) and the overlay-resident variant at <code>0x801F8968</code> (1 alpha row only - the overlay path skips the alpha offset). Reports every populated slot, classifies it (SCUS / overlay / other), and surfaces the eight overlay-resident high-mode renderers at <code>0x801F7644..0x801F8690</code> - the per-prim emit leaves the world-map top-view routes its TMD prims through. The overlay table reports as empty when the world-map overlay isn't paged in; pass <code>--overlay-targets-only</code> to pipe the eight addresses into a Ghidra <code>dump_funcs.py</code> <code>TARGETS</code> list. See <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">subsystems / world-map - bulk continent terrain emit mechanism</a>.</p>
 
   <h3>Survey dispatch tables across multiple saves</h3>
 <pre><code>mednafen-state prim-dispatch-survey &lt;save&gt; &lt;save&gt;...</code></pre>
@@ -93,7 +93,7 @@ mednafen-state prim-dispatch-table &lt;save&gt; --overlay-targets-only</code></p
   <ul class="bullets">
     <li>The SCUS-resident dispatch table is <strong>byte-identical</strong> across every save (it lives in code, so RAM writes can&apos;t legally touch it). The command exits non-zero if drift is detected.</li>
     <li>Which saves have the world-map overlay paged in (<code>status = POP</code>, eight high-mode targets in <code>0x801F76xx..0x801F86xx</code>) vs. saves where the overlay address space holds leftover code or zeros (<code>stale</code> / <code>empty</code>).</li>
-    <li>Targets outside the documented <code>0x801C0000..0x801F9000</code> window flag with <code>(OTHER!)</code> &mdash; that&apos;s an early-warning sign the overlay window needs widening.</li>
+    <li>Targets outside the documented <code>0x801C0000..0x801F9000</code> window flag with <code>(OTHER!)</code> - that&apos;s an early-warning sign the overlay window needs widening.</li>
   </ul>
   <p>The same invariants are asserted as disc-gated tests in <code>crates/mednafen/tests/dispatch_table.rs</code>; the survey command is the one-shot equivalent for spot-checking.</p>
   <h3>Pin SC-block fields by diffing two saves</h3>
@@ -173,7 +173,7 @@ hint = "133 KB battle overlay. Loaded between the pre-encounter and post-encount
     <dt><code>backup_fingerprint</code></dt>
     <dd>sha256 of an immutable copy stashed in <code>saves/library/&lt;emulator&gt;/&lt;fingerprint&gt;.&lt;ext&gt;</code> (gitignored; the manifest field is the committed catalogue, the library is the bytes). When set, consumers resolve this stable copy <em>in preference to</em> the live slot. <code>scripts/manage-states.py</code> and <code>ScenarioManifest::mednafen_save_path</code> both honour it.</dd>
     <dt><code>ram_fingerprint_sha256</code></dt>
-    <dd>sha256 of the first 64 KiB of main RAM in the save state. Computed directly from the save (no emulator re-run) by <code>legaia_engine_shell::mode_trace_oracle::save_ram_fingerprint</code>. The mode-trace oracle tests (<code>mode_trace_e3</code>, <code>v0_1_playthrough</code>) gate the live-slot fallback on this digest: a slot that no longer matches the catalogued value is <strong>skipped, not failed</strong> &mdash; comparing the engine against an arbitrary save proves nothing. A scenario with a <code>backup_fingerprint</code> resolves to the stable library copy and passes the gate by construction.</dd>
+    <dd>sha256 of the first 64 KiB of main RAM in the save state. Computed directly from the save (no emulator re-run) by <code>legaia_engine_shell::mode_trace_oracle::save_ram_fingerprint</code>. The mode-trace oracle tests (<code>mode_trace_e3</code>, <code>v0_1_playthrough</code>) gate the live-slot fallback on this digest: a slot that no longer matches the catalogued value is <strong>skipped, not failed</strong> - comparing the engine against an arbitrary save proves nothing. A scenario with a <code>backup_fingerprint</code> resolves to the stable library copy and passes the gate by construction.</dd>
   </dl>
 </section>
 

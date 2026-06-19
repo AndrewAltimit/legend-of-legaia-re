@@ -53,8 +53,8 @@ impl<'a> ActorVmHost for ActorVmHostImpl<'a> {
         // pursue step is the motion VM. The world installs a motion-VM leg
         // gliding the actor's sprite position toward the target
         // ([`World::start_actor_motion`], stepped by `tick_actor_motions`),
-        // and — when the actor id is also an installed field-NPC placement
-        // slot — walks that NPC in the field frame (y → z).
+        // and - when the actor id is also an installed field-NPC placement
+        // slot - walks that NPC in the field frame (y → z).
         // PORT: FUN_800358c0
         self.world.start_actor_motion(actor_id, target);
         if self.world.field_npc_positions.contains_key(&actor_id) {
@@ -676,7 +676,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
     }
 
-    /// Field-VM op 0x4C n5 sub-4 — dialog-advance poll.
+    /// Field-VM op 0x4C n5 sub-4 - dialog-advance poll.
     ///
     /// The retail dispatcher calls `FUN_801D65D8(0)` (dialog "advance one
     /// frame" query); a non-zero return halts the VM at `pc`, a zero
@@ -970,7 +970,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::ActorAllocate { records });
     }
 
-    /// Op `0x4C 0x51` — NPC / player move-to-tile with run dispatch. The NPC
+    /// Op `0x4C 0x51` - NPC / player move-to-tile with run dispatch. The NPC
     /// arm walks the executing actor to the decoded tile; the engine routes
     /// it to the interacted NPC's placement slot (the inline-dialogue runner
     /// exposes it while stepping that record) and starts a motion-VM walk

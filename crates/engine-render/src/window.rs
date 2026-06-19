@@ -177,7 +177,7 @@ impl EngineWindow {
 /// Frames the given AABB, orbits it at `orbit_speed` radians/second, and
 /// uses the standard PSX convention (60° FOV, Y-up camera, Y-down geometry).
 /// Because callers draw their geometry Y-flipped (`scale(1,-1,1)`), this frames
-/// the *flipped* centre (`-(lo.y+hi.y)/2`) with the eye above it — otherwise an
+/// the *flipped* centre (`-(lo.y+hi.y)/2`) with the eye above it - otherwise an
 /// off-centre scene renders from underneath ("ground on the ceiling").
 ///
 /// # Parameters
@@ -201,7 +201,7 @@ pub fn orbit_camera_mvp(
     // renderer's Y-up, so the drawn geometry's Y-range is `[-hi.y, -lo.y]`.
     // Frame *that* flipped centre. Framing the raw, un-flipped AABB (as before)
     // put the look target on the opposite Y side from the geometry whenever the
-    // model isn't centred on Y=0 — large off-centre field/battle scenes then
+    // model isn't centred on Y=0 - large off-centre field/battle scenes then
     // rendered from underneath ("ground on the ceiling"). Centred single models
     // (the asset-viewer's TMD previews) have `lo.y ≈ -hi.y`, so this is a no-op
     // for them. Same correction the world-map camera already carries.
@@ -382,9 +382,9 @@ pub fn walk_view_camera_mvp(
 /// REF: FUN_8001CF50, FUN_800461A4, FUN_8004629C, FUN_8004638C
 ///
 /// `FUN_8001CF50` (SCUS) composes the retail view rotation by rotating about
-/// each axis with the three camera-angle globals — `RotMatrixX(pitch)` at
+/// each axis with the three camera-angle globals - `RotMatrixX(pitch)` at
 /// `0x800461A4`, `RotMatrixY(yaw)` at `0x8004629C`, `RotMatrixZ(roll)` at
-/// `0x8004638C` — each masking the 12-bit angle (`4096 = 360 deg`), indexing
+/// `0x8004638C` - each masking the 12-bit angle (`4096 = 360 deg`), indexing
 /// the sin/cos LUT at `0x80070A2C`, and composing via GTE `mvmva`. Roll is
 /// rarely non-zero in retail shots, so this MVP folds the pitch + yaw
 /// composition into a spherical orbit + `glam::Mat4::look_at_rh` rather than
@@ -434,16 +434,16 @@ pub fn cutscene_camera_mvp(
 /// `t` (0..=1), so a faster redraw cadence simply converges sooner. Yaw eases
 /// along the shortest arc so a wrap across ±π doesn't spin the long way round.
 /// [`Self::reset`] makes the next [`Self::approach`] snap directly to the
-/// target — call it when a cutscene (re)starts so the opening shot doesn't
+/// target - call it when a cutscene (re)starts so the opening shot doesn't
 /// sweep in from a stale pose.
 ///
-/// REF: FUN_801DB510 (cutscene overlay) — retail's per-frame camera ease, which
+/// REF: FUN_801DB510 (cutscene overlay) - retail's per-frame camera ease, which
 /// lerps the focus globals + shake/offset trio + the typed `0x801F2798` param
 /// table toward their control-block targets with an exponential right-shift step
 /// (`srav` by `_DAT_8007B60B>>4`). This is an approximation of that ease (an
 /// orbit on decoded pitch/yaw rather than retail's world-in-camera GTE model),
 /// not a byte-faithful port. NB the same RAM address in the *dialog* overlay is
-/// an unrelated actor sprite emitter (overlays alias) — see
+/// an unrelated actor sprite emitter (overlays alias) - see
 /// `docs/reference/functions.md`.
 #[derive(Debug, Clone, Default)]
 pub struct CutsceneCameraInterp {

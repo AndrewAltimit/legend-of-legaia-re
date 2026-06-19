@@ -109,7 +109,7 @@ pub fn engine_spu_from_retail(psx_spu: &PsxSpu<'_>) -> Option<Spu> {
         spu.master_right = r;
     }
     // Identify the reverb preset from the captured coefficient registers
-    // rather than mednafen's `Reverb_Mode` sub-entry — that field is actually
+    // rather than mednafen's `Reverb_Mode` sub-entry - that field is actually
     // the per-voice reverb-enable mask (EON), not a libspu mode byte, so
     // `from_byte(reverb_mode())` previously mis-mapped the busy EON value to
     // `Off` and the retail-side PCM never had reverb. Retail runs Studio C

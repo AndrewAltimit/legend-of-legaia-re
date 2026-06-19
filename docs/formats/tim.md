@@ -26,7 +26,7 @@ The PSX TIM spec allows a 4bpp TIM's CLUT block to contain multiple CLUT rows (e
 
 | Source TIM | Layout | CLUT-row usage |
 |---|---|---|
-| **System-UI sprite sheet** at `PROT.DAT[0x018E0]` (4bpp, 256×192, 16×16 CLUT block) | Lives in the unindexed pre-`init_data` gap — not reachable through the per-PROT-entry walker. Constants in `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. | **Row 2** = the load-screen panel chrome (gold-bronze 9-slice border + dark-blue marbled interior region). **Row 7** = the pointing-finger cursor (white ink + grey shadow). Other rows render HP/MP/money panels, battle chrome, equipment frames, etc. |
+| **System-UI sprite sheet** at `PROT.DAT[0x018E0]` (4bpp, 256×192, 16×16 CLUT block) | Lives in the unindexed pre-`init_data` gap - not reachable through the per-PROT-entry walker. Constants in `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. | **Row 2** = the load-screen panel chrome (gold-bronze 9-slice border + dark-blue marbled interior region). **Row 7** = the pointing-finger cursor (white ink + grey shadow). Other rows render HP/MP/money panels, battle chrome, equipment frames, etc. |
 | **Menu-glyph atlas** at `PROT.DAT[0x11218]` (4bpp, 256×256, multi-row CLUT block) | Same pre-`init_data` gap. See `legaia_asset::menu_glyph_atlas`. | **Row 13** carries the "Load" text glyphs the load screen draws inside its panel. Other rows render NEW GAME / CONTINUE / OPTIONS strings + smaller menu labels. |
 
 Both TIMs are byte-confirmed against retail VRAM dumps; see [`subsystems/save-screen.md`](../subsystems/save-screen.md#sprite-asset-sources-continue--load-screen) for the pinning method (PCSX-Redux save state → `extract_vram_from_sstate.py` → CLUT-row byte cross-reference against `PROT.DAT`).
@@ -37,7 +37,7 @@ Browse them in the asset viewer with `asset-viewer tim extracted/PROT.DAT --offs
 
 `PROT.DAT` is also indexable as one flat 2048-byte-sector stream. Scanning the
 whole image (rather than per-TOC-entry) catches every standard TIM regardless
-of which addressing layer hosts it — including the TIMs in the unindexed
+of which addressing layer hosts it - including the TIMs in the unindexed
 system-UI gap before the first entry (the menu-glyph atlas and load-screen
 chrome above). `legaia_asset::tim_catalog` does this and maps each hit back to
 its owning PROT entry + byte offset (or the gap), producing a per-TIM catalog
@@ -50,7 +50,7 @@ asset tim-catalog extracted/PROT.DAT --rollup            # count + digest
 
 ### Strict validation (what counts as a TIM)
 
-A magic-only scan over arbitrary bytes turns up many spurious matches — a
+A magic-only scan over arbitrary bytes turns up many spurious matches - a
 coincidental `0x00000010` word inside another TIM's pixel data, blocks with
 trailing padding, or `Mixed`/garbage pixel modes. `legaia_tim::parse_strict`
 applies the extra checks that separate real, VRAM-ready TIMs from noise:
@@ -59,7 +59,7 @@ applies the extra checks that separate real, VRAM-ready TIMs from noise:
   set; a flags word like `0x00010008` (reserved bit 16 set) is rejected.
 - **A real pixel mode.** `pmode` must be 0..=3.
 - **Exact block lengths.** Each block's `size` field must equal `12 + w*h*2`
-  precisely — no trailing padding.
+  precisely - no trailing padding.
 - **Nonzero dimensions** and an **in-VRAM-bounds image rectangle** (the image
   must fit inside the 1024×512 16-bit framebuffer at its load position).
 
@@ -77,15 +77,15 @@ rejections would only get in the way.
 
 The committed reference catalog
 (`crates/asset/tests/data/prot_tim_catalog.tsv`) holds derived metadata only
-(offsets, dimensions, CLUT counts, byte lengths, FNV-1a fingerprints) — never
-pixel bytes — and a disc-gated regression rebuilds it from the disc and pins
+(offsets, dimensions, CLUT counts, byte lengths, FNV-1a fingerprints) - never
+pixel bytes - and a disc-gated regression rebuilds it from the disc and pins
 the count + a rollup digest. The in-browser asset viewer builds the same
 catalog live from a user-supplied disc and lets you page through every TIM by
 id with its CLUT variants.
 
 ### Deep catalog: TIMs inside LZS-compressed sections
 
-The flat catalog — like the reference decoder — scans only **raw** bytes, so
+The flat catalog - like the reference decoder - scans only **raw** bytes, so
 any TIM stored inside an [LZS-compressed](lzs.md) `PROT.DAT` section is
 invisible to it, and most character and scene textures are compressed.
 `legaia_asset::tim_deep_catalog` recovers them as a **separate tier**: it walks
@@ -101,15 +101,15 @@ asset tim-deep-catalog extracted/PROT.DAT --rollup                 # count + dig
 Each deep hit is keyed by `(entry index, LZS section index, offset within the
 decoded section)` plus dimensions / bpp / CLUT count / byte length / an FNV-1a
 of the decoded bytes. The validity gate matters: **LZS "decompresses without
-error" is never a validity signal** — the 4 KB ring buffer initialises to
+error" is never a validity signal** - the 4 KB ring buffer initialises to
 zeros, so random input decodes to plausible-looking bytes (see
 [`lzs.md`](lzs.md)). A deep hit is admitted only when the decoded bytes both
 pass `parse_strict` *and* decode to RGBA, which rejects the coincidental
 TIM-magic-in-noise a magic-only scan of decompressed garbage would produce.
 
 The deep tier is kept wholly separate from the flat catalog (which stays
-byte-identical to its reference). It has no external decoder oracle — the
-reference decoder doesn't decompress — so its disc-gated regression
+byte-identical to its reference). It has no external decoder oracle - the
+reference decoder doesn't decompress - so its disc-gated regression
 (`crates/asset/tests/tim_deep_catalog_coverage.rs`) instead guards the decode
 path + validity gate by pinning count + rollup digest + a byte-exact committed
 reference (`crates/asset/tests/data/prot_tim_deep_catalog.tsv`, metadata + FNV
@@ -120,8 +120,8 @@ distinct "compressed textures" grid below the raw catalog.
 
 The catalog records *where* each texture lives, not *what* it is.
 `legaia_asset::tim_labels` is a curated label table that answers the "what" for
-identified textures. It is keyed by **content fingerprint** — the FNV-1a-64 the
-catalogs already record — so a single label propagates to every catalog id that
+identified textures. It is keyed by **content fingerprint** - the FNV-1a-64 the
+catalogs already record - so a single label propagates to every catalog id that
 shares those bytes (duplicate textures, and textures aliased across overlapping
 PROT entries), and one table serves both the raw and the deep tier. The label
 is surfaced as a `label` column in the committed reference TSVs and in the
@@ -137,7 +137,7 @@ A label is one of:
   the four `init.pak` publisher / warning logos, and the load-screen UI sheet +
   party portraits + empty-slot frame.
 
-Both are our own observations — not asset strings or pixel data — so the table
+Both are our own observations - not asset strings or pixel data - so the table
 ships in the repo (`crates/asset/src/data/tim_categories.tsv`), like the
 ground-truth gamedata tables. A `table_is_valid` check (unique fingerprints,
 controlled vocabulary) plus the disc-gated catalog regressions guard it.
@@ -146,7 +146,7 @@ The coarse categories were assigned by reviewing the decoded thumbnails:
 `asset tim-render-distinct <PROT.DAT> --out <dir>` decodes each distinct
 texture (deduped by fingerprint) to a local PNG, and `scripts/asset-investigation/montage_tims.py`
 lays them into indexed contact sheets for review. Those PNGs are decoded pixel
-data and stay local — only the resulting fingerprint→label table is committed.
+data and stay local - only the resulting fingerprint→label table is committed.
 
 > **Note:** an earlier revision tried to derive an "NPC palette" label
 > *structurally* from the CLUT load position `fb=(0, 479)`. That is unsound:

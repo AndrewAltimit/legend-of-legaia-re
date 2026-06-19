@@ -297,7 +297,7 @@ impl World {
                 *s = stats.eva;
             }
             self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
-            // Seed the AP gauge base from the captured level. Base only — the
+            // Seed the AP gauge base from the captured level. Base only - the
             // round-start `reset_party_ap` refills `current_ap` to it, and Fury
             // Boost still extends from / reverts to this base. Re-seeding
             // mid-battle (a permanent stat-up item also calls this) is a no-op:

@@ -159,7 +159,7 @@ def duckstation_path(scenario: dict) -> Path | None:
 
 
 # --------------------------------------------------------------------
-# Fingerprinting — per emulator
+# Fingerprinting - per emulator
 
 def fingerprint_mednafen(save_path: Path) -> str:
     """Extract first 64 KiB of main RAM via `mednafen-state extract` and
@@ -197,7 +197,7 @@ def fingerprint_pcsx_redux(save_path: Path) -> str:
     """Currently unimplemented. Wiring this up requires running PCSX-Redux
     headlessly via run_probe.sh with a one-shot dump probe; deferred."""
     raise NotImplementedError(
-        "PCSX-Redux fingerprinting not wired yet — defer to follow-up "
+        "PCSX-Redux fingerprinting not wired yet - defer to follow-up "
         "task. Use mednafen-side fingerprint as the source of truth "
         "for now (the same scenario across emulators should produce "
         "the same first-64-KiB RAM contents modulo emulator BSS init "
@@ -206,7 +206,7 @@ def fingerprint_pcsx_redux(save_path: Path) -> str:
 
 
 # --------------------------------------------------------------------
-# Manifest writeback — line-edit one field per scenario
+# Manifest writeback - line-edit one field per scenario
 
 _SCENARIO_LABEL_RE = re.compile(r'^\s*label\s*=\s*"([^"]+)"\s*$')
 

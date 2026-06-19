@@ -6,20 +6,20 @@
 //! 0905, covered byte-for-byte by `summon_overlay_real`).
 //!
 //! The evolved-Seru block extends the structural pin: those ten entries
-//! (`spell_id 0x8C..=0x95`) parse as the same move-VM stagers, and two of them —
-//! `0x8E` → 916, `0x93` → 921 — carry `0x4000` render-mode nodes, the only such
+//! (`spell_id 0x8C..=0x95`) parse as the same move-VM stagers, and two of them -
+//! `0x8E` → 916, `0x93` → 921 - carry `0x4000` render-mode nodes, the only such
 //! records outside the Sim-Seru high stagers (0928/0929/0931).
 //!
 //! Each entry is a per-summon stager overlay: [`summon_overlay::parse`] scans
 //! its `FUN_80021B04` + `FUN_80050ED4` spawn calls and recovers a move-VM
 //! scene-graph of part records. Each entry is first **trimmed to its TOC-gap
-//! unique-content footprint** ([`unique_content_len`]) — the extraction `.BIN`s
+//! unique-content footprint** ([`unique_content_len`]) - the extraction `.BIN`s
 //! over-read into the following entries, so the untrimmed tail carries
 //! *neighbouring* stagers' spawn sites whose record pointers dereference
 //! unrelated bytes here. This sweep pins the post-trim structural invariants
 //! across both blocks: spawn sites present, a non-trivial contiguous record
-//! table, all records in-file, every bytecode range in bounds, and — the
-//! sentinel resolution — every record first word is a `-1` transform node, a
+//! table, all records in-file, every bytecode range in bounds, and - the
+//! sentinel resolution - every record first word is a `-1` transform node, a
 //! small library-mesh index, or the `0x4000` render-mode node (five stagers
 //! carry `0x4000` records: the Sim-Seru trio 0928/0929/0931 and the
 //! evolved-Seru casts 0916/0921; the historical `0x1000`/`0x8000`-class

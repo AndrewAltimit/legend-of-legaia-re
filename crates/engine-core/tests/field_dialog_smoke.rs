@@ -3,7 +3,7 @@
 //! dialogue into `World::current_dialog`; `OwnedDialogPanel::from_inline_dialog`
 //! renders it; ticking the panel emits the glyphs.
 //!
-//! Field dialogue has no dedicated opcode — it is the actor's own inline MES
+//! Field dialogue has no dedicated opcode - it is the actor's own inline MES
 //! text (retail `actor[+0x90]`), keyed by the interact op's `slot`. (Opcode
 //! `0x3F`, which an earlier model treated as the dialog opener, is the named
 //! scene-change; see `docs/subsystems/script-vm.md` § Field dialogue.) This

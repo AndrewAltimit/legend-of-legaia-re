@@ -33,7 +33,7 @@
 //! additive base for `model_sel` is `party_count + 2` in battle (3 for the
 //! 1-member party, 5 for the full 3-member party; save-corpus-pinned by
 //! `crates/mednafen/tests/summon_model_base.rs`), and `model_sel` is
-//! library-relative — so a battle move-FX mesh is the resident PROT 0871
+//! library-relative - so a battle move-FX mesh is the resident PROT 0871
 //! effect-model library, which the engine registers at a fixed
 //! `DAT_8007C018[3..]` (the equivalent 1-member layout). [`crate::world::World::spawn_move_fx`]
 //! renders it: it parses a move's spawn records and stages them as a
@@ -74,7 +74,7 @@ pub struct MovePowerCatalog {
 impl MovePowerCatalog {
     /// Parse the table + map out of the raw PROT 0898 (battle-action overlay)
     /// entry bytes. Returns `None` if either structural guard fails (the pinned
-    /// offsets no longer land on the table — e.g. a different build).
+    /// offsets no longer land on the table - e.g. a different build).
     ///
     /// The auxiliary effect tables ([`EffectAuxTables`]) and the impact-effect
     /// config table are parsed best-effort: they live further into the same
@@ -194,7 +194,7 @@ impl MovePowerCatalog {
 
     /// Battle move ids whose on-contact (`+0x12`) / launch (`+0x16`) effect
     /// lists hold at least one library-mesh [`EffectListEntry::Spawn`] entry
-    /// with a resolved `0x801F6324` prototype pointer — i.e. the moves
+    /// with a resolved `0x801F6324` prototype pointer - i.e. the moves
     /// [`crate::world::World::spawn_move_fx`] can render as a 3D ETMD
     /// scene-graph (the same Spawn-with-proto predicate that function selects
     /// records by). Sorted ascending; empty when the aux tables weren't in the
@@ -241,7 +241,7 @@ pub struct ResolvedEffect {
 ///
 /// This is pure data: the render / audio layers consume it (trail texpage,
 /// impact config, effect spawns, sound cue). Effect-spawn wiring is blocked on
-/// the `0x801F6324` prototype-struct layout — see the module docs.
+/// the `0x801F6324` prototype-struct layout - see the module docs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoveFx {
     /// The battle move id this descriptor was resolved for.
@@ -256,7 +256,7 @@ pub struct MoveFx {
     pub phase_duration: u16,
     /// `+0x08` homing / approach speed.
     pub homing_speed: u8,
-    /// `+0x09` — the spawned effect tracks the live strike position each frame.
+    /// `+0x09` - the spawned effect tracks the live strike position each frame.
     pub effect_tracks_strike: bool,
     /// `+0x0a` impact-effect selector (`0` = none, else 1-based into the config
     /// table).
@@ -329,7 +329,7 @@ mod tests {
 
     /// The table-only synthetic overlay doesn't reach the aux tables (they live
     /// further into the real overlay), so the catalog parses but leaves the
-    /// cross-table joins unresolved — and the FX descriptor still decodes every
+    /// cross-table joins unresolved - and the FX descriptor still decodes every
     /// field carried by the record itself.
     #[test]
     fn fx_descriptor_resolves_without_aux_tables() {

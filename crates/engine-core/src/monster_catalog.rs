@@ -158,14 +158,14 @@ impl MonsterCatalog {
 /// Mapping traced from `FUN_80054CB0` (record→actor field copy) plus the
 /// damage / accuracy formulas (see `legaia_asset::monster_archive` and
 /// `docs/subsystems/battle-formulas.md`):
-/// - `attack` <- `rec.attack()` (`stats[1]`, record `+0x12`) — the value the
+/// - `attack` <- `rec.attack()` (`stats[1]`, record `+0x12`) - the value the
 ///   physical-damage routine reads as the attacker's offense (actor `+0x158`).
 /// - `udf` / `ldf` <- `rec.defense_high()` / `rec.defense_low()` (`stats[2]` /
-///   `stats[3]`) — the two defense facets the routine selects by move index.
+///   `stats[3]`) - the two defense facets the routine selects by move index.
 /// - `accuracy` / `evasion` <- `rec.agility()` (`stats[4]`) clamped to a byte
-///   — the actor seeds both the accuracy and evasion roll from this stat.
+///   - the actor seeds both the accuracy and evasion roll from this stat.
 ///
-/// - `speed` <- `rec.speed()` (`stats[5]`, record `+0x1A`) — the turn-order
+/// - `speed` <- `rec.speed()` (`stats[5]`, record `+0x1A`) - the turn-order
 ///   initiative seed (actor `+0x164`). The battle's next-actor selector seeds
 ///   each living actor's per-turn key from it.
 ///

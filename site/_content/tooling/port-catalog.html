@@ -26,12 +26,12 @@
 // PORT: FUN_801dd35c (sub-mode jump table) // trailing context allowed
 //! PORT: FUN_801dd35c                      // inside `//!` module doc
 /// PORT: FUN_801dd35c                      // inside `///` outer doc</code></pre>
-  <p>The tag may appear as plain <code>//</code>, doc <code>//!</code>, or outer-doc <code>///</code> &mdash; putting it in the doc block keeps the provenance co-located with the rustdoc description and makes it visible in generated docs.</p>
+  <p>The tag may appear as plain <code>//</code>, doc <code>//!</code>, or outer-doc <code>///</code> - putting it in the doc block keeps the provenance co-located with the rustdoc description and makes it visible in generated docs.</p>
   <p>Rules:</p>
   <ul class="bullets">
-    <li>The tag is the only signal trusted for "ported". Plain mentions of <code>FUN_&lt;addr&gt;</code> in module docs or comments are ignored &mdash; they show up in many contexts that don't imply a port (cross-refs, "inspired by", "not yet ported", etc.) and noisily inflate the column.</li>
+    <li>The tag is the only signal trusted for "ported". Plain mentions of <code>FUN_&lt;addr&gt;</code> in module docs or comments are ignored - they show up in many contexts that don't imply a port (cross-refs, "inspired by", "not yet ported", etc.) and noisily inflate the column.</li>
     <li>Address must be lowercase hex in the SCUS / overlay code range.</li>
-    <li>Match is line-local &mdash; put the tag on its own line or as a trailing comment.</li>
+    <li>Match is line-local - put the tag on its own line or as a trailing comment.</li>
     <li>A single Rust file can carry many tags. The catalog records the crate name each tag appears in.</li>
     <li>One Ghidra function can be ported into more than one crate (e.g. a formula shared between <code>engine-vm::battle_formulas</code> and a helper in <code>engine-core</code>). The catalog lists every crate that tags the address.</li>
   </ul>
@@ -40,24 +40,24 @@
 
 <section class="doc-section" id="ref-tag">
   <h2>The <code>// REF:</code> tag</h2>
-  <p>Sibling of <code>// PORT:</code>. Marks an address as a <strong>cross-reference citation</strong> &mdash; the file mentions <code>FUN_&lt;addr&gt;</code> in a docstring or comment but isn't claiming to port it. Same comment shapes as <code>// PORT:</code> (plain <code>//</code>, doc <code>//!</code>, outer-doc <code>///</code>) and same multi-address syntax.</p>
+  <p>Sibling of <code>// PORT:</code>. Marks an address as a <strong>cross-reference citation</strong> - the file mentions <code>FUN_&lt;addr&gt;</code> in a docstring or comment but isn't claiming to port it. Same comment shapes as <code>// PORT:</code> (plain <code>//</code>, doc <code>//!</code>, outer-doc <code>///</code>) and same multi-address syntax.</p>
 <pre><code>//! PORT: FUN_801E30E4
 //! REF: FUN_801E7320, FUN_801CF098  -- callees, not yet ported</code></pre>
-  <p><code>port-catalog.py</code> ignores REF tags &mdash; they don't set the "ported" column &mdash; but the drift checker (<code>scripts/ci/check-port-tags.py</code>, see below) treats them as equivalent to PORT for warning suppression.</p>
+  <p><code>port-catalog.py</code> ignores REF tags - they don't set the "ported" column - but the drift checker (<code>scripts/ci/check-port-tags.py</code>, see below) treats them as equivalent to PORT for warning suppression.</p>
 </section>
 
 <section class="doc-section" id="drift-checker">
   <h2>Tag drift checker</h2>
   <p><code>scripts/ci/check-port-tags.py</code> walks <code>crates/engine-*/src/**.rs</code> and warns when a <code>FUN_&lt;addr&gt;</code> citation lacks a matching <code>// PORT:</code> or <code>// REF:</code> tag <em>in the same file</em>. The goal is to catch the "I ported X but forgot the tag" pattern so the catalog stays in sync with what the engine actually implements.</p>
-  <p>Default mode is <code>--staged</code> &mdash; only lines being added in the staging area are checked, which is what the pre-commit hook runs. <code>--scan-all</code> audits every line of every engine-crate file (full historical sweep). <code>--strict</code> turns warnings into a nonzero exit for CI.</p>
+  <p>Default mode is <code>--staged</code> - only lines being added in the staging area are checked, which is what the pre-commit hook runs. <code>--scan-all</code> audits every line of every engine-crate file (full historical sweep). <code>--strict</code> turns warnings into a nonzero exit for CI.</p>
 <pre><code>python3 scripts/ci/check-port-tags.py                  # default = --staged
 python3 scripts/ci/check-port-tags.py --scan-all       # full audit
 python3 scripts/ci/check-port-tags.py --strict         # exit 1 on warning
 python3 scripts/ci/check-port-tags.py --addr 80019b28  # drill-down
 python3 scripts/ci/check-port-tags.py --backfill-refs  # one-shot grandfather pass</code></pre>
-  <p><strong>Scope rule:</strong> only files that already carry a <code>// PORT:</code> tag are checked. Pure-docs files (no port tag anywhere) are treated as reference-only and skipped &mdash; they exist to describe retail behaviour without claiming ports, and requiring REF tags inside them would be churn for no signal.</p>
+  <p><strong>Scope rule:</strong> only files that already carry a <code>// PORT:</code> tag are checked. Pure-docs files (no port tag anywhere) are treated as reference-only and skipped - they exist to describe retail behaviour without claiming ports, and requiring REF tags inside them would be churn for no signal.</p>
   <p><strong>Backfill workflow:</strong> <code>--backfill-refs</code> rewrites in place. For each port-bearing file with untagged citations, it inserts a <code>//! REF: ...</code> block after the last <code>//!</code> line of the leading module-doc comment (or at the top of the file if there's no leading block). Re-run whenever new ports or citations land to keep the REF set fresh.</p>
-  <p><strong>Pre-commit integration:</strong> <code>scripts/git-hooks/pre-commit</code> runs <code>check-port-tags.py --staged --quiet</code> after <code>cargo clippy</code>. The hook is <strong>warn-only</strong> &mdash; drift output prints but never blocks the commit, so the checker doesn't gate unrelated PRs. CI can tighten by switching to <code>--strict</code>.</p>
+  <p><strong>Pre-commit integration:</strong> <code>scripts/git-hooks/pre-commit</code> runs <code>check-port-tags.py --staged --quiet</code> after <code>cargo clippy</code>. The hook is <strong>warn-only</strong> - drift output prints but never blocks the commit, so the checker doesn't gate unrelated PRs. CI can tighten by switching to <code>--strict</code>.</p>
 </section>
 
 <section class="doc-section" id="usage">
@@ -75,9 +75,9 @@ python3 scripts/ci/port-catalog.py --feature title-screen   # BFS from a feature
 python3 scripts/ci/port-catalog.py --dashboard           # open-work rollup -> open-work.md</code></pre>
   <p>Output is written to <code>target/port-catalog/</code> (gitignored):</p>
   <ul class="bullets">
-    <li><code>catalog.csv</code> / <code>catalog.md</code> &mdash; every tracked address, machine-readable + markdown.</li>
-    <li><code>&lt;feature&gt;.csv</code> / <code>&lt;feature&gt;.md</code> &mdash; per-feature subset when <code>--feature</code> is used.</li>
-    <li><code>open-work.md</code> &mdash; single-page dashboard combining per-feature port % + top-N missing-ports per feature + ignore-list summary (see "Open-work dashboard" below).</li>
+    <li><code>catalog.csv</code> / <code>catalog.md</code> - every tracked address, machine-readable + markdown.</li>
+    <li><code>&lt;feature&gt;.csv</code> / <code>&lt;feature&gt;.md</code> - per-feature subset when <code>--feature</code> is used.</li>
+    <li><code>open-work.md</code> - single-page dashboard combining per-feature port % + top-N missing-ports per feature + ignore-list summary (see "Open-work dashboard" below).</li>
   </ul>
 </section>
 
@@ -92,7 +92,7 @@ roots = ["801dd35c"]
 stop_at = ["801de840", "801e295c"]
 # Optional BFS depth cap.
 max_depth = 2</code></pre>
-  <p>The citation graph only has edges between <em>dumped</em> functions &mdash; undumped helpers have no outgoing edges, so the BFS frontier widens as more dumps land. This is intentional: it lets you start tight (small feature with few dumps) and progressively widen as you dig in.</p>
+  <p>The citation graph only has edges between <em>dumped</em> functions - undumped helpers have no outgoing edges, so the BFS frontier widens as more dumps land. This is intentional: it lets you start tight (small feature with few dumps) and progressively widen as you dig in.</p>
   <p>Use feature views to:</p>
   <ul class="bullets">
     <li>Find unported helpers in scope of a specific feature (filter by <code>--feature X --missing-ports</code>).</li>
@@ -103,7 +103,7 @@ max_depth = 2</code></pre>
 
 <section class="doc-section" id="ignore-list">
   <h2>Ignore list</h2>
-  <p><code>scripts/ci/port-catalog-ignore.toml</code> lists addresses that the catalog should treat as out-of-scope for engine porting &mdash; statically-linked PsyQ kernel / runtime / SDK code. The clean-room port maps these clusters to native equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the PSX wrappers, so they shouldn't pollute the port worklist.</p>
+  <p><code>scripts/ci/port-catalog-ignore.toml</code> lists addresses that the catalog should treat as out-of-scope for engine porting - statically-linked PsyQ kernel / runtime / SDK code. The clean-room port maps these clusters to native equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the PSX wrappers, so they shouldn't pollute the port worklist.</p>
 <pre><code>[bios]
 "80056678" = "EnterCriticalSection (syscall(0), a0=1)"
 "80056688" = "ExitCriticalSection (syscall(0), a0=2)"
@@ -113,27 +113,27 @@ max_depth = 2</code></pre>
 
 [libsnd]
 "80062340" = "SsSeqOpen (slot-bitmap walk + load)"</code></pre>
-  <p>Categories are organisational (one TOML table per cluster &mdash; <code>bios</code> / <code>libc</code> / <code>libgte</code> / <code>libgs</code> / <code>libcd</code> / <code>libapi</code> / <code>libsnd</code> / <code>libspu</code> / <code>libetc</code>); the tool treats every entry the same way. Provenance for each entry lives in <a href="../reference/functions.html"><code>docs/reference/functions.md</code></a> and the audio / save-screen subsystem docs.</p>
+  <p>Categories are organisational (one TOML table per cluster - <code>bios</code> / <code>libc</code> / <code>libgte</code> / <code>libgs</code> / <code>libcd</code> / <code>libapi</code> / <code>libsnd</code> / <code>libspu</code> / <code>libetc</code>); the tool treats every entry the same way. Provenance for each entry lives in <a href="../reference/functions.html"><code>docs/reference/functions.md</code></a> and the audio / save-screen subsystem docs.</p>
   <p>Default behaviour:</p>
   <ul class="bullets">
     <li><code>--missing-ports</code> excludes ignored entries. The summary line breaks the count down (<code>of which ignored / remaining port worklist</code>).</li>
     <li><code>--include-ignored</code> opts back in for completeness checks.</li>
     <li><code>--ignored-only</code> lists the ignore-list itself (useful for auditing).</li>
   </ul>
-  <p>Adding an entry: copy the address into the appropriate category table with a one-line reason that names the PsyQ function and (where known) the BIOS vector. Keep the reason factual &mdash; it shows up in catalog drill-down output. Provenance citations belong in <code>docs/reference/functions.md</code>, not in the TOML reason field.</p>
+  <p>Adding an entry: copy the address into the appropriate category table with a one-line reason that names the PsyQ function and (where known) the BIOS vector. Keep the reason factual - it shows up in catalog drill-down output. Provenance citations belong in <code>docs/reference/functions.md</code>, not in the TOML reason field.</p>
 </section>
 
 <section class="doc-section" id="dashboard">
   <h2>Open-work dashboard</h2>
   <p><code>--dashboard</code> emits <code>target/port-catalog/open-work.md</code>, a single regenerable page that answers "what's left to port, in what scope" at a glance. The dashboard combines four signals:</p>
   <ol class="bullets">
-    <li><strong>Global counts</strong> &mdash; dumped / documented / ported / ignored / remaining port worklist.</li>
-    <li><strong>Per-feature status table</strong> &mdash; for each feature in <code>scripts/ci/features.toml</code>: reachable, ported, port %, missing (port worklist within the feature, ignore-list excluded), ignored.</li>
-    <li><strong>Per-feature top-N missing-ports</strong> &mdash; the highest-citation-count helpers reachable from each feature's roots that don't yet carry a <code>// PORT:</code> tag. Sorted high-leverage first, so a feature's blockers surface immediately. Cap is <code>--dashboard-top N</code> (default 10).</li>
-    <li><strong>Ignore-list summary</strong> &mdash; count per category (bios / libc / libgte / libgs / libcd / libapi / libsnd / libspu / libetc).</li>
-    <li><strong>Provenance gaps</strong> &mdash; addresses with a <code>// PORT:</code> tag but missing a dump or doc citation (shown only when nonzero).</li>
+    <li><strong>Global counts</strong> - dumped / documented / ported / ignored / remaining port worklist.</li>
+    <li><strong>Per-feature status table</strong> - for each feature in <code>scripts/ci/features.toml</code>: reachable, ported, port %, missing (port worklist within the feature, ignore-list excluded), ignored.</li>
+    <li><strong>Per-feature top-N missing-ports</strong> - the highest-citation-count helpers reachable from each feature's roots that don't yet carry a <code>// PORT:</code> tag. Sorted high-leverage first, so a feature's blockers surface immediately. Cap is <code>--dashboard-top N</code> (default 10).</li>
+    <li><strong>Ignore-list summary</strong> - count per category (bios / libc / libgte / libgs / libcd / libapi / libsnd / libspu / libetc).</li>
+    <li><strong>Provenance gaps</strong> - addresses with a <code>// PORT:</code> tag but missing a dump or doc citation (shown only when nonzero).</li>
   </ol>
-  <p>The page is gitignored output (lives under <code>target/</code>). Re-run after landing a batch of ports to see which helpers are now top-of-list. The question-level companion &mdash; open <em>hunts</em> rather than per-function status &mdash; is <a href="../reference/open-rev-eng-threads.html"><code>open-rev-eng-threads.html</code></a>.</p>
+  <p>The page is gitignored output (lives under <code>target/</code>). Re-run after landing a batch of ports to see which helpers are now top-of-list. The question-level companion - open <em>hunts</em> rather than per-function status - is <a href="../reference/open-rev-eng-threads.html"><code>open-rev-eng-threads.html</code></a>.</p>
 </section>
 
 <section class="doc-section" id="cross-cuts">
@@ -150,10 +150,10 @@ max_depth = 2</code></pre>
 <section class="doc-section" id="caveats">
   <h2>Caveats</h2>
   <ul class="bullets">
-    <li><strong>Citation graph is dump-local.</strong> The "cited" signal comes from grepping dump files &mdash; so an undumped helper has no outgoing edges. The frontier of reachable functions widens only as dumps land.</li>
-    <li><strong><code>functions.md</code> is curated, but <code>documented</code> is broader.</strong> Any doc page that mentions <code>FUN_&lt;addr&gt;</code> or <code>0x&lt;addr&gt;</code> counts. The catalog won't tell you which docs are authoritative &mdash; that's still a judgement call per topic.</li>
+    <li><strong>Citation graph is dump-local.</strong> The "cited" signal comes from grepping dump files - so an undumped helper has no outgoing edges. The frontier of reachable functions widens only as dumps land.</li>
+    <li><strong><code>functions.md</code> is curated, but <code>documented</code> is broader.</strong> Any doc page that mentions <code>FUN_&lt;addr&gt;</code> or <code>0x&lt;addr&gt;</code> counts. The catalog won't tell you which docs are authoritative - that's still a judgement call per topic.</li>
     <li><strong>One <code>// PORT:</code> tag does not guarantee semantic equivalence.</strong> The tag is a provenance link, not a correctness proof. Tests + retail-comparison still do that job.</li>
-    <li><strong>The ignore-list is curated, not exhaustive.</strong> Newly-dumped PsyQ helpers don't auto-classify &mdash; <code>--missing-ports</code> will surface them until they're explicitly added to <code>port-catalog-ignore.toml</code>. Treat unfamiliar 16-byte thunks in <code>0x8005xxxx</code> / <code>0x8006xxxx</code> as likely ignore candidates rather than ports.</li>
+    <li><strong>The ignore-list is curated, not exhaustive.</strong> Newly-dumped PsyQ helpers don't auto-classify - <code>--missing-ports</code> will surface them until they're explicitly added to <code>port-catalog-ignore.toml</code>. Treat unfamiliar 16-byte thunks in <code>0x8005xxxx</code> / <code>0x8006xxxx</code> as likely ignore candidates rather than ports.</li>
   </ul>
 </section>
 

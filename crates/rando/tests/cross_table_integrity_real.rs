@@ -3,14 +3,14 @@
 //! Companion to `legaia-asset`'s `monster_cross_table_integrity` (which ties the
 //! monster archive's drop / magic / steal ids back to the item + spell tables).
 //! Where that one covers the *static* roster tables, this one covers the ids the
-//! field-VM scripts embed inline in every scene MAN — the same populations the
-//! randomizer rewrites — and asserts each resolves in the table it indexes:
+//! field-VM scripts embed inline in every scene MAN - the same populations the
+//! randomizer rewrites - and asserts each resolves in the table it indexes:
 //!
 //!   * **chest grant id  -> item-name table**   every `GIVE_ITEM` (op `0x39`)
 //!     hands out a real, named item.
 //!   * **shop stock id   -> item price slot**    every town-merchant record is a
 //!     run of sellable (`SCUS_942.54` price `> 0`) items followed by an optional
-//!     trailing run of unsellable template ids — the record `count` over-counts
+//!     trailing run of unsellable template ids - the record `count` over-counts
 //!     the real stock by this padding (see below). The guard pins that clean
 //!     partition: the stock never interleaves priced + unpriced ids, and the
 //!     padding stays within the observed bound.
@@ -31,8 +31,8 @@
 //! "Ra-Seru Meta $N" placeholders `0x01/0x02/0x03`, or a lone `0x03`); the real
 //! shop UI stops at the sellable run. The original record doc was pinned from the
 //! Rim Elm Variety Store, which happens to have a tail-less ten-item list, so the
-//! padding never showed. Across the whole disc every shop partitions cleanly —
-//! a priced prefix then an unpriced tail, never interleaved — and the priced
+//! padding never showed. Across the whole disc every shop partitions cleanly -
+//! a priced prefix then an unpriced tail, never interleaved - and the priced
 //! prefix matches the curated walkthrough stock (e.g. "Market" = 7 items, not the
 //! decoded 10). That clean partition is exactly what this guard asserts.
 //!
@@ -101,7 +101,7 @@ fn every_shop_stock_partitions_into_priced_then_padding() {
     let priced = |id: u8| item_names::price_slot(&scus, id).is_some_and(|(_, price)| price > 0);
 
     // Scan structurally (no mask) so each record exposes its FULL declared list,
-    // padding included — the consumer scanners trim the padding, so this checks
+    // padding included - the consumer scanners trim the padding, so this checks
     // the raw on-disc partition the trim relies on.
     let mut shops = 0usize;
     let mut ids_checked = 0usize;
@@ -129,7 +129,7 @@ fn every_shop_stock_partitions_into_priced_then_padding() {
                     r.name
                 ));
             }
-            // The tail must be ENTIRELY unsellable — a priced id after an
+            // The tail must be ENTIRELY unsellable - a priced id after an
             // unpriced one means the partition isn't clean (record drift).
             if let Some(&id) = tail.iter().find(|&&id| priced(id)) {
                 bad.push(format!(
@@ -182,7 +182,7 @@ fn every_door_destination_resolves_to_a_real_scene() {
     let mut dangling: Vec<String> = Vec::new();
     for d in &doors {
         // The inline destination name a 0x3F op carries must be a scene block
-        // declared in CDNAME.TXT — i.e. a real, loadable scene. A name that
+        // declared in CDNAME.TXT - i.e. a real, loadable scene. A name that
         // doesn't resolve is a warp to nowhere (or a mis-decoded record).
         if cdname::block_range_for_name(&cd, &d.dest_scene).is_none() {
             dangling.push(format!(
@@ -285,7 +285,7 @@ fn every_art_display_combo_is_recognized_by_the_matcher() {
     // Each Tactical Art has TWO copies of its button combo: the DISPLAY glyph
     // string in the SCUS arts-name table (what current_arts decodes) and the
     // MATCHER record in the character's player-data record0 (what the in-battle
-    // input actually fires on). They must agree — if they drift, the on-screen
+    // input actually fires on). They must agree - if they drift, the on-screen
     // combo wouldn't trigger the art. Decode the matcher block once per character
     // and assert every displayed regular-art combo appears in it.
     let mut matcher: std::collections::HashMap<usize, Vec<u8>> = Default::default();
@@ -295,7 +295,7 @@ fn every_art_display_combo_is_recognized_by_the_matcher() {
     let mut dangling: Vec<String> = Vec::new();
     for a in &arts {
         // Miracle Arts are triggered through a different path (not the regular
-        // combo matcher) — the randomizer leaves them alone; skip here too.
+        // combo matcher) - the randomizer leaves them alone; skip here too.
         if a.is_miracle || a.commands.is_empty() {
             continue;
         }

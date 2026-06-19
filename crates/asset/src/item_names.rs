@@ -142,7 +142,7 @@ pub fn item_price(scus: &[u8], id: u8) -> Option<u16> {
 /// to write a string it stashes at a known-constant VA.
 ///
 /// NB: do **not** stash a string in the *trailing* zero-fill of the data
-/// segment — that span is zero in the file but is `.sbss`/`.bss`-class scratch
+/// segment - that span is zero in the file but is `.sbss`/`.bss`-class scratch
 /// the game overwrites with variables at runtime (a string put there renders as
 /// changing garbage). A safe target is a region verified constant across diverse
 /// runtime states; see `legaia_rando::item_name`.

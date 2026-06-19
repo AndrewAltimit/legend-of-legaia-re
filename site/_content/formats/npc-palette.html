@@ -6,7 +6,7 @@
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-  <p>Each contributing TIM has a CLUT block with <code>(fb_x, fb_y, w, h) = (0, 479, 256, 1)</code> &mdash; a 256-color row spanning fb_x=0..256, which carves into sixteen 16-color slots (slot N at fb_x = N*16..N*16+16). Field NPC TMDs sample these slots via CBA cells <code>0x77C0..0x77CF</code>.</p>
+  <p>Each contributing TIM has a CLUT block with <code>(fb_x, fb_y, w, h) = (0, 479, 256, 1)</code> - a 256-color row spanning fb_x=0..256, which carves into sixteen 16-color slots (slot N at fb_x = N*16..N*16+16). Field NPC TMDs sample these slots via CBA cells <code>0x77C0..0x77CF</code>.</p>
   <p>The actual contents are <strong>scene-specific</strong>: each town/area embeds its own row-479 TIMs with the NPC palettes for that scene. Town01, town0b, town0c, town0d share one palette set (the human-villager NPCs); balden, bubu1, urudre1, nilboa, chitei2 each have their own.</p>
 </section>
 
@@ -26,7 +26,7 @@
 +0x18: 512 bytes of CLUT data (256 BGR555 halfwords)
 +...:  standard TIM image block (typically a 256x256 4bpp at fb_x=832)</code></pre>
   <p>The leading byte <code>0x20</code> (file order) is the <strong>low byte of the chunk size field</strong>, not a type byte. The type byte in <code>FUN_8001FE70</code>'s walker convention is the <strong>high byte of the LE u32</strong> (= <code>0x01</code>). The same byte packing that the standard asset-type dispatcher uses; the difference is the semantics: <code>FUN_8001F05C</code> case 1 means <code>TIM_LIST</code> (a <code>[count + offsets + TIMs]</code> pack), but <code>FUN_8001FE70</code>'s case 1 means "single bare TIM via LoadImage". The chunk payload's first u32 is the TIM magic <code>0x10</code> (= 16), so calling the standard streaming walker on these chunks would mis-parse it as a 16-entry pack count and crash.</p>
-  <p><code>legaia_asset::tim_scan</code> detects these via the inner TIM magic at offset +4 from the chunk header; it does not need to interpret the wrapper. The structured walker that <em>does</em> recognise it is <code>scene_tmd_stream::battle_tim_chunks</code> &mdash; it reports every type-0x01 chunk and tags whether it sits inside <code>FUN_8001FE70</code>'s reach (<code>WalkSource::Tail</code>) or past the first terminator in a continuation list (<code>WalkSource::Continuation</code>).</p>
+  <p><code>legaia_asset::tim_scan</code> detects these via the inner TIM magic at offset +4 from the chunk header; it does not need to interpret the wrapper. The structured walker that <em>does</em> recognise it is <code>scene_tmd_stream::battle_tim_chunks</code> - it reports every type-0x01 chunk and tags whether it sits inside <code>FUN_8001FE70</code>'s reach (<code>WalkSource::Tail</code>) or past the first terminator in a continuation list (<code>WalkSource::Continuation</code>).</p>
 </section>
 
 <section class="doc-section" id="multi-tim-clut-merge">
@@ -43,7 +43,7 @@
     <li>mednafen captures inside town01 with no battle entered yet have VRAM row 479 fb_x=0..256 entirely zero.</li>
     <li>mednafen captures mid-battle (or post-battle, since PSX VRAM is persistent across scene transitions) have row 479 populated.</li>
   </ul>
-  <p><code>FUN_8001FE70</code> walks the streaming tail until it hits either a zero-size chunk header or a type-0x02 chunk; for every type-0x01 chunk it calls <code>LoadImage(payload)</code> to DMA the TIM to VRAM. The walker stops at the first terminator. Files with the two-list shape (<code>0006_town01.BIN</code> has chunks at <code>0x3840</code>, <code>0xba64</code>, then a zero-padded gap, then <code>0x16c24</code>, <code>0x1ee48</code>) leave the continuation list past the terminator unreached by the standard battle-init dispatch &mdash; whether a separate code path picks them up later is not pinned.</p>
+  <p><code>FUN_8001FE70</code> walks the streaming tail until it hits either a zero-size chunk header or a type-0x02 chunk; for every type-0x01 chunk it calls <code>LoadImage(payload)</code> to DMA the TIM to VRAM. The walker stops at the first terminator. Files with the two-list shape (<code>0006_town01.BIN</code> has chunks at <code>0x3840</code>, <code>0xba64</code>, then a zero-padded gap, then <code>0x16c24</code>, <code>0x1ee48</code>) leave the continuation list past the terminator unreached by the standard battle-init dispatch - whether a separate code path picks them up later is not pinned.</p>
 </section>
 
 <section class="doc-section" id="field-vs-battle">

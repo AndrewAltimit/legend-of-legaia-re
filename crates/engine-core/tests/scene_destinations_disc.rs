@@ -5,7 +5,7 @@
 //! scene name inline in the bytecode (`[i16 index][u8 len][name][entry_x]`
 //! `[entry_z][dir]`) and hands it to the scene-change packet `FUN_8001FD44`. A
 //! scene's controller script lists every place it can warp to as one such op, so
-//! [`scene_destinations`] recovers the destinations straight from disc bytes —
+//! [`scene_destinations`] recovers the destinations straight from disc bytes -
 //! the answer the old "map_id -> scene-name table lives in an uncaptured overlay"
 //! note assumed was unreachable.
 //!
@@ -68,7 +68,7 @@ fn map01_controller_lists_its_overworld_destinations() {
         return;
     }
     let Some(prot) = extracted_prot() else {
-        eprintln!("[skip] extracted/PROT/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/PROT/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -157,7 +157,7 @@ fn scene_host_builds_destination_resolver_on_entry() {
     // Every destination index resolves to a catalogued scene name (the resolver
     // dedups by index, so when two names share an index it returns the first;
     // either way the result is a real destination in this scene). The index is
-    // i16 — observed past u8 range — so the resolver keys on i16, not u8.
+    // i16 - observed past u8 range - so the resolver keys on i16, not u8.
     let resolver = host.destination_resolver();
     for d in &dests {
         let resolved = resolver

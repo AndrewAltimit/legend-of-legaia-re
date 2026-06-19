@@ -113,7 +113,7 @@ pub struct ObjectRecord {
     /// `+0x07` signed row delta to the footprint anchor.
     pub row_delta: i8,
     /// `+0x0E` signed sub-tile X delta (16-unit steps) to the collision
-    /// footprint anchor — only read by the static-entity collision arm
+    /// footprint anchor - only read by the static-entity collision arm
     /// (`FUN_801cf9f4`; see [`collision_footprint_offset`]).
     pub sub_anchor_x: i8,
     /// `+0x0F` signed sub-tile Z delta (16-unit steps); pairs with
@@ -127,7 +127,7 @@ pub struct ObjectRecord {
     /// `+0x14` ground-tile atlas index (`0..63`) into the `8 x 8` grid of
     /// `32 x 32`-texel tiles on the cell's terrain page (`u = (id % 8) * 32`,
     /// `v = (id / 8) * 32`). The per-cell texture selector for the walk-view
-    /// continent ground — see [`WalkHeightfield`].
+    /// continent ground - see [`WalkHeightfield`].
     pub terrain_tile: u8,
     /// `+0x15` ground-tile PSX `tpage` word (4bpp; e.g. `0x1A` -> fb `(640, 256)`
     /// grass, `0x0C` -> mountain, `0x1B`/`0x1C` -> water, `0x0B` -> forest). The
@@ -167,7 +167,7 @@ impl ObjectRecord {
 }
 
 /// The collision-footprint offset of a placed static object, relative to its
-/// spawn (placement) world position — what retail's static-entity collision
+/// spawn (placement) world position - what retail's static-entity collision
 /// arm adds to the spawned actor's live position to centre the ±80-unit
 /// blocking box (`FUN_801cf9f4`, result bit `4`):
 ///
@@ -340,7 +340,7 @@ pub fn parse_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
 ///
 /// The walk mesh is **`record[+0x10]` uniformly** (retail `FUN_80020f88`:
 /// `actor+0x64 = record[+0x10] + prefix`), so the band-positional fallback in
-/// [`pack_mesh_index`] is bypassed here — some continent tiles reference object
+/// [`pack_mesh_index`] is bypassed here - some continent tiles reference object
 /// ids in [`FIELD_ACTOR_BAND`], and applying the band rule would push their
 /// pack index past the 40-mesh slot-1 pool. Taking `+0x10` directly keeps every
 /// continent tile in-pool (verified ≤ pool size against a live `map01` walk).
@@ -434,7 +434,7 @@ pub const GROUND_ATLAS_TPAGE: u16 = 0x001A;
 pub const GROUND_ATLAS_CLUT: u16 = 0x7C40;
 
 /// A triangulated heightfield surface for the world-map walk-view continent
-/// ground — the clean-room analogue of the retail terrain renderer, whose
+/// ground - the clean-room analogue of the retail terrain renderer, whose
 /// elevation comes from the `+0x4000` floor-nibble grid (the height math is
 /// pinned by `FUN_80019278`, the SCUS bilinear ground-height sampler: a tile's
 /// low nibble indexes the 16-entry floor LUT, and the surface interpolates
@@ -460,7 +460,7 @@ pub const GROUND_ATLAS_CLUT: u16 = 0x7C40;
 pub struct WalkHeightfield {
     /// Per-vertex world position (pre-Y-flip): `(col*128, -lut[nibble], row*128)`.
     pub positions: Vec<[f32; 3]>,
-    /// Per-vertex source-tile `+0x14` id (`0..63`) — the atlas tile index this
+    /// Per-vertex source-tile `+0x14` id (`0..63`) - the atlas tile index this
     /// cell draws, also usable as terrain-class metadata (see the struct docs).
     pub tile_ids: Vec<u8>,
     /// Per-vertex page-local texture coordinates into the cell's terrain page.
@@ -500,10 +500,10 @@ impl WalkHeightfield {
 /// `2 x 2` block of `+0x4000` nibbles (`grid[0], [1], [0x80], [0x81]`, each
 /// `& 0xF` -> `DAT_1F80035C[nibble]` LUT, weighted by the sub-tile XZ
 /// position, `>> 0xE`). This builder shares the nibble-LUT decode but only at
-/// integer cell corners — pre-baking the heightfield mesh once so the
+/// integer cell corners - pre-baking the heightfield mesh once so the
 /// renderer's GPU vertex interpolation supplies the same bilinear surface in
 /// a single pass. A clean-room per-entity bilinear sampler (what
-/// `FUN_80019278` literally does) is not currently needed — entities walking
+/// `FUN_80019278` literally does) is not currently needed - entities walking
 /// on the heightfield get implicit interpolation from the rasteriser.
 pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfield {
     let mut hf = WalkHeightfield::default();
@@ -557,7 +557,7 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             // `(u, v) = ((id % 8) * 32, (id / 8) * 32)`. Compute in a wide type
             // and clamp to the u8 page extent: the bottom-right tile origin is
             // `(224, 224)` and `+31` reaches the page edge `(255, 255)`, but the
-            // intermediate `224 + 32` overflows a u8 — so widen, then cast.
+            // intermediate `224 + 32` overflows a u8 - so widen, then cast.
             let px = GROUND_ATLAS_TILE_PX as usize;
             let u_lo = ((tile_id as usize % GROUND_ATLAS_AXIS) * px).min(255) as u8;
             let v_lo = ((tile_id as usize / GROUND_ATLAS_AXIS) * px).min(255) as u8;
@@ -570,7 +570,7 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             // retail prim pool: recovering each ground POLY_FT4's world (col,row)
             // and reading its per-corner UVs gives, for ~96–100% of cells across
             // the mountain + coast captures and every terrain page,
-            // `(c,r)→(u_lo,v_hi)`, `(c,r+1)→(u_lo,v_lo)` — i.e. V decreases as the
+            // `(c,r)→(u_lo,v_hi)`, `(c,r+1)→(u_lo,v_lo)` - i.e. V decreases as the
             // row index increases. Baking V the other way mirrors every tile
             // vertically in place, which leaves uniform tiles (grass) looking fine
             // but makes directional transition tiles (coastline sand, ridges) face
@@ -728,7 +728,7 @@ mod tests {
     fn ground_page_and_clut_are_per_cell_from_record() {
         // Two adjacent walk-visible cells with different terrain records: a
         // grass cell (page 0x1A) and a water cell (page 0x1B) coexist in one
-        // heightfield, each sampling its own page — the multi-page terrain atlas.
+        // heightfield, each sampling its own page - the multi-page terrain atlas.
         let lut = [0i16; 16];
         let mut map = vec![0u8; 0x12000];
         // record 1: grass tile 9 on page 0x1A / CLUT 0x7C40.

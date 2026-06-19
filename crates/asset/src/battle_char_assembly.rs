@@ -759,8 +759,8 @@ pub const AUTHORING_FIRST_TEXPAGE: u16 = 0x15;
 /// Relocate an assembled battle TMD's texture addressing into party slot
 /// `slot`'s runtime VRAM band, in place. Retail runs this pass at battle
 /// registration, right after installing the blob into
-/// `DAT_8007C018[slot]`; the on-disc (authoring) TSB/CBA — texpages
-/// `0x15`/`0x16` = `(320, 256)`/`(384, 256)`, CLUT row 480 — are never
+/// `DAT_8007C018[slot]`; the on-disc (authoring) TSB/CBA - texpages
+/// `0x15`/`0x16` = `(320, 256)`/`(384, 256)`, CLUT row 480 - are never
 /// sampled by a normal battle. Per **textured** primitive (group-header
 /// mode byte TME bit set):
 ///

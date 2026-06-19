@@ -2,7 +2,7 @@
 --
 -- Dump the full 2 MiB main RAM from a PCSX-Redux save state to disk. The
 -- 2 MiB single readAt() permanently degrades subsequent vsync delivery
--- (see lib/probe.lua caveats), so this script does ONE dump and quits —
+-- (see lib/probe.lua caveats), so this script does ONE dump and quits -
 -- multi-snapshot probes should use autorun_boot_walk_snapshots.lua's
 -- chunked-per-vsync pattern instead.
 --
@@ -27,7 +27,7 @@ probe.run({
     sstate         = SSTATE_PATH,
     capture_frames = SETTLE,
 
-    -- No breakpoints — the lib still runs the boot/load/settle state
+    -- No breakpoints - the lib still runs the boot/load/settle state
     -- machine for us. on_arm just announces the wait.
     on_arm = function(_)
         PCSX.log(string.format(

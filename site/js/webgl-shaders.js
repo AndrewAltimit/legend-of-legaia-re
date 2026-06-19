@@ -1,8 +1,8 @@
-/* webgl-shaders.js — WebGL2 shader sources + render constants for
+/* webgl-shaders.js - WebGL2 shader sources + render constants for
  * the WASM viewer's TMD pipeline. Split out of webgl-tmd.js for
  * file modularity; consumed by webgl-tmd.js's TmdRenderer class.
  *
- * Loads as a classic global script — exposes: VRAM_W, VRAM_H,
+ * Loads as a classic global script - exposes: VRAM_W, VRAM_H,
  * FOG_LUT_SIZE, OCEAN_VS_SRC, OCEAN_FS_SRC, VS_SRC, FS_SRC.
  * Must be loaded before webgl-tmd.js.
  */

@@ -933,7 +933,7 @@ topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "keikoku"]
 # savestate captured INSIDE keikoku already has each chest's GIVE_ITEM
 # (0x39) bytecode resident in RAM (keikoku_chest_pre's MAN sits at
 # 0x8012f4c8), so loading it on a patched disc still grants the ORIGINAL
-# item — the chest id is read from the resident RAM copy, never re-fetched
+# item - the chest id is read from the resident RAM copy, never re-fetched
 # from the patched disc. Captured on the overworld BEFORE the load, the
 # patched MAN is read on scene entry, so a patched chest is actually
 # observed. Companion to the deterministic engine oracle in
@@ -948,15 +948,15 @@ ram_fingerprint_sha256 = "f697ac277c14720a179e542c24d4c50a249a226b3586ef38926a3d
 backup_fingerprint = "903185b20b9ada6fb6f18cc5abe5814caa090b7d8430635afdc92301d9dc8149"
 phase = "field"
 expected_active_scene = "map01"
-description = "Kingdom overworld (map01), standing just outside the keikoku (Ravine) entrance. Walking up ~1s crosses the portal and streams the keikoku scene bundle fresh from disc — the pre-scene-load state for validating a patched-disc chest in an emulator without the savestate RAM-cache trap."
+description = "Kingdom overworld (map01), standing just outside the keikoku (Ravine) entrance. Walking up ~1s crosses the portal and streams the keikoku scene bundle fresh from disc - the pre-scene-load state for validating a patched-disc chest in an emulator without the savestate RAM-cache trap."
 topics = ["chest", "randomizer", "keikoku", "scene-load", "preload", "map01"]
 
 # ----------------------------------------------------------------
 # PCSX-Redux trace state: standing directly in front of an early
 # treasure chest (normally a Healing Leaf). Used to trace the field-VM
-# GIVE_ITEM (op 0x39) path at runtime — capturing the RAM address the
+# GIVE_ITEM (op 0x39) path at runtime - capturing the RAM address the
 # game reads the item-id operand from (s6 at 0x801E0450) and the granted
-# id (FUN_800421D4 a0) — to verify whether a randomizer chest patch
+# id (FUN_800421D4 a0) - to verify whether a randomizer chest patch
 # reaches the running game. Probe: autorun_chest_give_trace.lua.
 # ----------------------------------------------------------------
 
@@ -966,7 +966,7 @@ label = "chest_open_trace_pcsx"
 backup_fingerprint = "083275b4ab53021546759c3a0d36534d43ffcce40c6dd7b1c0629414d84a07f4"
 phase = "field"
 pcsx_redux_sstate = "~/Tools/pcsx-redux/SCUS94254.sstate1"
-description = "PCSX-Redux: standing in front of an early treasure chest (normally a Healing Leaf), for the field-VM GIVE_ITEM (0x39) runtime trace — operand RAM address + granted item id."
+description = "PCSX-Redux: standing in front of an early treasure chest (normally a Healing Leaf), for the field-VM GIVE_ITEM (0x39) runtime trace - operand RAM address + granted item id."
 topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "trace", "pcsx-redux"]
 
 # ----------------------------------------------------------------
@@ -987,7 +987,7 @@ ram_fingerprint_sha256 = "aca366d22fd9fca9127b1ce3a452e043c7a319dfea3b4d2de33668
 backup_fingerprint = "4dda3e8b2b9099024785896db03425a53c98bb9204ee910400802d4063612b8d"
 phase = "battle"
 expected_game_mode = 0x15
-description = "Player-steal capture (Evil God Icon equipped): in battle, at the start of Vahn's attack that kills a skeleton and steals an 'Incense' — the frame before the steal resolves. Pairs with player_steal_skeleton_banner."
+description = "Player-steal capture (Evil God Icon equipped): in battle, at the start of Vahn's attack that kills a skeleton and steals an 'Incense' - the frame before the steal resolves. Pairs with player_steal_skeleton_banner."
 topics = ["steal", "Evil God Icon", "battle", "skeleton", "incense", "randomizer", "RE"]
 
 [scenarios.overlay_slice]
@@ -1288,7 +1288,7 @@ label = "casino_ticket_counter_dialog"
 backup_fingerprint = "9e4fdec5c2e4ec77c92c5b87948c1ac3f8a9ac4f86cedad9518223ff31c8c318"
 phase = "field"
 expected_game_mode = 0x03
-description = "Casino floor, mid-dialog with the prize-exchange ticket-counter attendant. Middle of the prize-exchange flow bracket (see casino_ticket_counter). Measured: still game_mode 0x03 (field) — the dialog runs under the field overlay, not a menu session."
+description = "Casino floor, mid-dialog with the prize-exchange ticket-counter attendant. Middle of the prize-exchange flow bracket (see casino_ticket_counter). Measured: still game_mode 0x03 (field) - the dialog runs under the field overlay, not a menu session."
 topics = ["casino", "prize exchange", "dialog", "game mode", "RE"]
 
 [[scenarios]]
@@ -1297,7 +1297,7 @@ label = "casino_prize_shop"
 backup_fingerprint = "231209cd8a981bf9b1d60d5410f2535546ba7546e240b28863be049376f70da4"
 phase = "menu"
 expected_game_mode = 0x17
-description = "Inside the casino ticket-counter prize-exchange shop UI (the PROT 0899 @0x15D00 prize table's consumer). FINDING: the prize shop runs at game_mode 0x17 (the CARD/menu pair, same as the pause menu) with the MENU overlay PROT 0899 resident in slot A (clean prefix 1.0000) and the field overlay swapped out — the prize exchange is a menu-overlay session, consistent with its table + debit kernel living in PROT 0899."
+description = "Inside the casino ticket-counter prize-exchange shop UI (the PROT 0899 @0x15D00 prize table's consumer). FINDING: the prize shop runs at game_mode 0x17 (the CARD/menu pair, same as the pause menu) with the MENU overlay PROT 0899 resident in slot A (clean prefix 1.0000) and the field overlay swapped out - the prize exchange is a menu-overlay session, consistent with its table + debit kernel living in PROT 0899."
 topics = ["casino", "prize exchange", "shop", "PROT 0899", "game mode", "RE"]
 
 [[scenarios]]

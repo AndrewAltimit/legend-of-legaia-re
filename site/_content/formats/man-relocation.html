@@ -1,13 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; MAN relocation</div>
   <h1>MAN relocation <span class="tag tag-done">Runtime-pinned indexing + variable-length editor</span></h1>
-  <p class="lede">How to <strong>resize</strong> a field-VM <code>0x3F</code> named-scene-change ("door / exit") destination in a decompressed scene MAN and rebuild the buffer so every internal offset stays valid &mdash; what lets the <a href="../tooling/randomizer.html">randomizer</a> re-point a door at a scene with a differently-sized name. Engine: <code>legaia_asset::man_edit</code>.</p>
+  <p class="lede">How to <strong>resize</strong> a field-VM <code>0x3F</code> named-scene-change ("door / exit") destination in a decompressed scene MAN and rebuild the buffer so every internal offset stays valid - what lets the <a href="../tooling/randomizer.html">randomizer</a> re-point a door at a scene with a differently-sized name. Engine: <code>legaia_asset::man_edit</code>.</p>
 </header>
 
 <section class="doc-section" id="indexing">
   <h2>The destination table is the partition-2 record-offset table</h2>
-  <p>A <code>0x3F</code> op carries its destination inline: <code>0x3F [i16 index][u8 name_len][name bytes][entry_x][entry_z][dir]</code>. The ops are <strong>partition-2 MAN records</strong> (the named records &mdash; see <a href="encounter.html">the MAN layout</a>). They are reached at runtime through the <strong>partition-2 record-offset table</strong>: on a transition the field controller sets the VM bytecode base to <code>man_base + data_region + partition2[slot]</code> and runs that record's small script by fall-through (<code>SysFlag.Set; CFlag.Set; EFFECT; yield; 0x3F; entry-trailer; JmpRel-1 self-loop</code>), whose <code>0x3F</code> op warps by the inline name. Selection is by stable <strong>slot index</strong>, so the op's <code>index</code> field is only the destination-scene id passed to the warp packet (<code>FUN_8001FD44</code>), not a record selector.</p>
-  <p>Pinned by a live PCSX-Redux dispatch trace (<code>autorun_door_dispatch_trace.lua</code> on the <code>drake_castle_to_worldmap</code> capture): the executing op's bytecode base minus the MAN base equalled <code>data_region + partition2[0]</code> exactly. Corpus census (clean partition walk, disc-wide): 160 destination ops across 48 scenes, 153 in partition 2; <strong>zero absolute-reference ops</strong> at/after any destination op. The consequence: the destination "index" <em>is</em> a structural offset table the MAN parser already exposes, so resizing a record is safe &mdash; fix the table and every door stays addressable.</p>
+  <p>A <code>0x3F</code> op carries its destination inline: <code>0x3F [i16 index][u8 name_len][name bytes][entry_x][entry_z][dir]</code>. The ops are <strong>partition-2 MAN records</strong> (the named records - see <a href="encounter.html">the MAN layout</a>). They are reached at runtime through the <strong>partition-2 record-offset table</strong>: on a transition the field controller sets the VM bytecode base to <code>man_base + data_region + partition2[slot]</code> and runs that record's small script by fall-through (<code>SysFlag.Set; CFlag.Set; EFFECT; yield; 0x3F; entry-trailer; JmpRel-1 self-loop</code>), whose <code>0x3F</code> op warps by the inline name. Selection is by stable <strong>slot index</strong>, so the op's <code>index</code> field is only the destination-scene id passed to the warp packet (<code>FUN_8001FD44</code>), not a record selector.</p>
+  <p>Pinned by a live PCSX-Redux dispatch trace (<code>autorun_door_dispatch_trace.lua</code> on the <code>drake_castle_to_worldmap</code> capture): the executing op's bytecode base minus the MAN base equalled <code>data_region + partition2[0]</code> exactly. Corpus census (clean partition walk, disc-wide): 160 destination ops across 48 scenes, 153 in partition 2; <strong>zero absolute-reference ops</strong> at/after any destination op. The consequence: the destination "index" <em>is</em> a structural offset table the MAN parser already exposes, so resizing a record is safe - fix the table and every door stays addressable.</p>
 </section>
 
 <section class="doc-section" id="surface">
@@ -17,21 +17,21 @@
     <li><strong>Partition record-offset tables</strong> (<code>MAN[0x2B..]</code>, u24LE entries relative to <code>data_region_offset</code>): bump every entry whose record starts after the edit by <code>delta</code>. This table <em>is</em> the door dispatch index.</li>
     <li><strong><code>u24_at_28</code></strong> (header section-0 offset, relative to <code>data_region</code>): the section chain sits after the records, so it shifts by the total delta.</li>
     <li><strong>Intra-record relative jumps</strong> in the edited record whose source/target straddle the edit (<code>0x26</code> / <code>0x42</code> / <code>0x4D</code> / <code>0x4E</code> / <code>0x70</code>): the stored u16 delta is recomputed; a jump wholly on one side is unaffected. The delta field sits at the jump's relative base (<code>target - delta</code>), so the rewrite is op-agnostic. (37 of 160 corpus ops have such a jump.)</li>
-    <li><strong>External descriptor</strong> (<code>scene_asset_table</code>): the MAN's <em>decompressed</em> size is stored only in the scene-bundle descriptor word <code>(type&lt;&lt;24)|size</code> &mdash; rewrite it after recompressing.</li>
+    <li><strong>External descriptor</strong> (<code>scene_asset_table</code>): the MAN's <em>decompressed</em> size is stored only in the scene-bundle descriptor word <code>(type&lt;&lt;24)|size</code> - rewrite it after recompressing.</li>
   </ol>
   <p><code>data_region_offset</code> is derived (<code>0x2B + 3*total_records</code>) and does not move.</p>
 </section>
 
 <section class="doc-section" id="safety">
   <h2>Safety</h2>
-  <p><strong>Absolute-reference ops</strong> (<code>0x45 0xC0</code> camera-apply, <code>0x4E</code> abs-jump) are record-local and can't be relocated blindly; <code>apply_dest_edits</code> errors out if it finds one in an edited record (none exist in the retail corpus), and the caller leaves that scene unchanged. <code>man_edit::validate</code> re-parses + re-walks the rebuilt MAN and confirms each edited op still decodes as a <code>0x3F</code> carrying the intended name. The recompressed MAN must fit the original asset's on-disc footprint (the gap to the next descriptor); a scene that can't grow in place &mdash; the big overworld hubs, whose next asset is flush after the MAN &mdash; is skipped and reported rather than relocating the whole bundle.</p>
+  <p><strong>Absolute-reference ops</strong> (<code>0x45 0xC0</code> camera-apply, <code>0x4E</code> abs-jump) are record-local and can't be relocated blindly; <code>apply_dest_edits</code> errors out if it finds one in an edited record (none exist in the retail corpus), and the caller leaves that scene unchanged. <code>man_edit::validate</code> re-parses + re-walks the rebuilt MAN and confirms each edited op still decodes as a <code>0x3F</code> carrying the intended name. The recompressed MAN must fit the original asset's on-disc footprint (the gap to the next descriptor); a scene that can't grow in place - the big overworld hubs, whose next asset is flush after the MAN - is skipped and reported rather than relocating the whole bundle.</p>
 </section>
 
 <section class="doc-section see-also" id="see-also">
   <h2>See also</h2>
   <ul class="bullets">
-    <li><a href="../tooling/randomizer.html">Randomizer</a> &mdash; the door feature this enables.</li>
-    <li><a href="encounter.html">Encounter record</a> &mdash; the MAN multi-section layout.</li>
-    <li><a href="../subsystems/script-vm.html">Field/event script VM</a> &mdash; the opcode decoder the jump fixup uses.</li>
+    <li><a href="../tooling/randomizer.html">Randomizer</a> - the door feature this enables.</li>
+    <li><a href="encounter.html">Encounter record</a> - the MAN multi-section layout.</li>
+    <li><a href="../subsystems/script-vm.html">Field/event script VM</a> - the opcode decoder the jump fixup uses.</li>
   </ul>
 </section>

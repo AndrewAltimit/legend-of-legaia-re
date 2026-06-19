@@ -110,7 +110,7 @@ pub(crate) enum Cmd {
     /// This is the scripted-encounter hunt: it distinguishes a real inline
     /// `[count][ids]` arm at a decoded opcode boundary from the byte-scan
     /// false positives (every `0x37`/`0x41` byte in dialog text). For
-    /// town01 the survey finds no inline literal — the opening Tetsu fight
+    /// town01 the survey finds no inline literal - the opening Tetsu fight
     /// installs via the indexed formation table instead.
     ManScripts {
         /// CDNAME scene name (e.g. `town01`, `dolk`, `cave01`).
@@ -449,7 +449,7 @@ pub(crate) enum Cmd {
     /// active_scene)` into JSONL, and (with `--strict`) compares
     /// against the file's optional `[[expected]]` fixture.
     ///
-    /// No disc required — the replay binds an RNG seed and a
+    /// No disc required - the replay binds an RNG seed and a
     /// scenario label, not a CDNAME scene. This is Phase J's
     /// determinism + scripted-replay entry point; pair with `record`
     /// to capture human input from a play-window session.

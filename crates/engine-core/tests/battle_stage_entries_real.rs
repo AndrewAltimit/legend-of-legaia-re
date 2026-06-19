@@ -1,6 +1,6 @@
 //! Disc-gated: a scene's battle-stage backdrop entries resolve from its CDNAME
 //! block. The overworld `map01` battle is fought inside the `scene_tmd_stream`
-//! half-dome at PROT 88 (with 89/90 as texture variants) — pinned from the
+//! half-dome at PROT 88 (with 89/90 as texture variants) - pinned from the
 //! fingerprinted `overworld_battle_bg_angle_*` captures.
 use std::path::PathBuf;
 

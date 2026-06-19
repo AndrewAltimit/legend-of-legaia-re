@@ -13,7 +13,7 @@
 //!   PROT entry.
 //!
 //! CAVEAT (`scene-event-scripts` / `scan-prot`): the prescript records are NOT
-//! field-VM (`FUN_801DE840`) bytecode — they are a word-aligned (16-bit)
+//! field-VM (`FUN_801DE840`) bytecode - they are a word-aligned (16-bit)
 //! per-scene actor/event command structure (see
 //! `legaia_asset::scene_event_scripts`). Walking them as field-VM yields a
 //! 65–88 % `decode error` rate with only COINCIDENTAL opcode matches: a
@@ -90,7 +90,7 @@ enum Cmd {
         scene: Option<String>,
         /// By default, the scan only reports FMV triggers whose fmv_id is in
         /// the retail valid range (0..=8). The runtime FMV-state table at
-        /// `0x801D0A6C` has 12 slots — slots 0..=4 reference real
+        /// `0x801D0A6C` has 12 slots - slots 0..=4 reference real
         /// `MV*.STR` files; slots 5..=11 reference cut paths. The
         /// per-STR FMV trigger corpus pins fmv_ids 0..=8 as
         /// debug-menu-reachable values. Pass this to disable

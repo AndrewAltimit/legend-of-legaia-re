@@ -28,7 +28,7 @@ fn extracted_dir() -> Option<PathBuf> {
 #[test]
 fn new_game_seeds_vahn_from_disc_template() {
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ (with SCUS_942.54) missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ (with SCUS_942.54) missing - run `legaia-extract` first");
         return;
     };
 
@@ -69,7 +69,7 @@ fn new_game_seeds_vahn_from_disc_template() {
 #[test]
 fn boot_installs_the_real_retail_xp_curve_from_disc() {
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ (with SCUS_942.54) missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ (with SCUS_942.54) missing - run `legaia-extract` first");
         return;
     };
 
@@ -93,7 +93,7 @@ fn boot_installs_the_real_retail_xp_curve_from_disc() {
 #[test]
 fn boot_installs_the_real_per_character_growth_curves_from_disc() {
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ (with SCUS_942.54) missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ (with SCUS_942.54) missing - run `legaia-extract` first");
         return;
     };
 

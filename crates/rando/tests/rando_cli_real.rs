@@ -2,7 +2,7 @@
 //! enumerate drops -> plan from a seed -> apply to a scratch disc -> diff into a
 //! PPF -> apply the PPF to a fresh copy and confirm it reproduces the patched
 //! image. Gates on `LEGAIA_DISC_BIN`; skips + passes when unset. Writes nothing
-//! to disk — the patched image lives only in memory.
+//! to disk - the patched image lives only in memory.
 
 use legaia_rando::apply::{self, DropApplyReport};
 use legaia_rando::disc::DiscPatcher;
@@ -51,7 +51,7 @@ fn shuffle_drops_ppf_round_trips_and_is_deterministic() {
 
     // Each non-skipped monster reads back exactly its planned drop; each
     // skipped (too-full) monster keeps its original drop unchanged. This is the
-    // precise invariant — under skips the global multiset isn't preserved (the
+    // precise invariant - under skips the global multiset isn't preserved (the
     // skipped slot rejects its assigned pair while donating its own twice).
     let plan_for = |id: u16| plan.iter().find(|a| a.monster_id == id).copied();
     for b in &before {

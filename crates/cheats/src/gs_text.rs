@@ -8,11 +8,11 @@
 //!
 //! Field layout (whitespace-separated):
 //!
-//! 1. `R` — read/write classifier (always `R` in the corpus we ship).
-//! 2. `I` — encoding flag (always `I`).
+//! 1. `R` - read/write classifier (always `R` in the corpus we ship).
+//! 2. `I` - encoding flag (always `I`).
 //! 3. width-in-bytes literal (`1`, `2`, or `4`).
-//! 4. `L` — endianness (always `L` for little-endian).
-//! 5. `0` — placeholder for compression group (always `0`).
+//! 4. `L` - endianness (always `L` for little-endian).
+//! 5. `0` - placeholder for compression group (always `0`).
 //! 6. address (8-hex-digit, no `0x` prefix). The high byte encodes
 //!    the [`CheatOp`].
 //! 7. value (1-4 hex digits, no leading `0x`).

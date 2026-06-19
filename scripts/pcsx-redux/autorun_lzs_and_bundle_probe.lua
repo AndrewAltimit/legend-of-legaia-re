@@ -2,15 +2,15 @@
 --
 -- Captures both legs of a world-map terrain load in one run:
 --
---   1. LZS decoder entry (FUN_8001A55C) — logs (src, dst, ra). If dst
+--   1. LZS decoder entry (FUN_8001A55C) - logs (src, dst, ra). If dst
 --      lands inside [0x800AD400, 0x800EFFFF] AND src matches a known
 --      CD staging address, the LZS→pool hypothesis is proven.
---   2. CD setup entry (FUN_8003E800) — correlates LZS calls against
+--   2. CD setup entry (FUN_8003E800) - correlates LZS calls against
 --      the staging-write timeline.
---   3. Write probes at 0x80184BD0 + two deeper offsets — confirm the
+--   3. Write probes at 0x80184BD0 + two deeper offsets - confirm the
 --      DMA actually lands bytes (Write breakpoints may or may not fire
 --      on DMA writes; worth measuring).
---   4. Write probes at 0x800AD408, 0x800B5000, 0x800D5000 — pool head
+--   4. Write probes at 0x800AD408, 0x800B5000, 0x800D5000 - pool head
 --      + mid Buffer A + mid Buffer B. Catches any non-LZS pool writer.
 --
 -- Env vars:
@@ -46,7 +46,7 @@ PCSX.log(string.format("[lbp] sstate=%s frames=%d out=%s",
 
 local function n32(v) return bit.band(v, 0xFFFFFFFF) end
 
--- Region classifier — turns any pointer into a one-word bin.
+-- Region classifier - turns any pointer into a one-word bin.
 local function classify(addr)
     if addr == 0 then return "null" end
     local ka = bit.band(addr, 0x1FFFFFFF)

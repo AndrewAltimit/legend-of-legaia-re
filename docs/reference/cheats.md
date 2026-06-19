@@ -16,7 +16,7 @@ are committed to the repo. They contain no Sony-owned bytes - just
 labelled `(addr, value)` pairs published in public cheat databases
 since the late 1990s.
 
-## Format 1 — GameShark text dump
+## Format 1 - GameShark text dump
 
 `legaia-ntsc-u.gs.txt` is a plain-text dump where each line is one
 write:
@@ -48,7 +48,7 @@ ground truth (1 / 2 / 4) and rewrites the prefix accordingly - this
 matters because user-edited dumps occasionally desync the prefix
 from the column value.
 
-## Format 2 — Mednafen `.cht`
+## Format 2 - Mednafen `.cht`
 
 `legaia-ntsc-u.cht` is a TOML-shaped dump where each effect is one
 indexed triplet:
@@ -82,8 +82,8 @@ encoding as Format 1.
 the [`Category`] region they fall in (via [`classify_address`]), de-duped and
 with per-bucket sample classifications. It flags writes that land **outside**
 every known data region (`Category::Unknown`) or in the `0x8007Bxxx` script-VM /
-build-flag scratch (`Category::ScriptVmGlobal` — the band holding the
-`0x8007B8C2` build-mode selector and the debug-menu enable) — the anomalies a
+build-flag scratch (`Category::ScriptVmGlobal` - the band holding the
+`0x8007B8C2` build-mode selector and the debug-menu enable) - the anomalies a
 write tracer exists to surface. Pure and capture-free (input is a list of
 `u32`), so it is unit-tested with synthetic deltas. Wired end-to-end as
 `mednafen-state write-taxonomy LEFT RIGHT`, which diffs two save states at byte
@@ -239,9 +239,9 @@ either:
 
 ## See also
 
-- [`docs/formats/save-record.md`](../formats/save-record.md) — full
+- [`docs/formats/save-record.md`](../formats/save-record.md) - full
   record offset table that the cheat citations anchor.
-- [`docs/reference/memory-map.md`](memory-map.md) — newly-pinned
+- [`docs/reference/memory-map.md`](memory-map.md) - newly-pinned
   globals from the cheat database.
-- [`crates/cheats/README.md`](../../crates/cheats/README.md) —
+- [`crates/cheats/README.md`](../../crates/cheats/README.md) -
   parser + CLI reference.

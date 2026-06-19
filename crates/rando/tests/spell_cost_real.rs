@@ -22,7 +22,7 @@ fn load_disc() -> Option<Vec<u8>> {
     p.is_file().then(|| std::fs::read(&p).ok()).flatten()
 }
 
-/// `(sorted (id) list, sorted MP multiset)` — the invariants a shuffle keeps.
+/// `(sorted (id) list, sorted MP multiset)` - the invariants a shuffle keeps.
 fn snapshot(patcher: &DiscPatcher) -> (Vec<u8>, Vec<u8>) {
     let spells = apply::current_spell_costs(patcher)
         .expect("read spell costs")

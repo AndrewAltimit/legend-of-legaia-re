@@ -2,7 +2,7 @@
 //! (weapons / armor / accessories) from the disc's own item-name table.
 //!
 //! This is the id pool the **bonus equipment drop** ([`crate::bonus_drop`])
-//! embeds in its injected reward-routine table — the low-chance extra drop picks
+//! embeds in its injected reward-routine table - the low-chance extra drop picks
 //! uniformly from it. A monster has a single drop slot, so equipment is not a
 //! data edit of that slot (which would destroy the normal drop) but an additive
 //! code hook; this module only supplies the id list.
@@ -16,7 +16,7 @@
 //! [`legaia_gamedata`] tables is matched (case-insensitively) against the
 //! disc's own item-name table to recover its id. The names come from public
 //! walkthroughs and ship in the repo; the ids come from the *user's* disc at
-//! runtime — no Sony bytes are embedded, and the join double-checks the curated
+//! runtime - no Sony bytes are embedded, and the join double-checks the curated
 //! tables against the real executable.
 
 use anyhow::{Context, Result};
@@ -43,7 +43,7 @@ pub struct EquipmentItem {
 ///
 /// Returns an error only if `scus` isn't a PSX-EXE / the item table is absent.
 /// Items the gamedata names but the disc doesn't (or vice versa) are simply
-/// absent from the pool — a few character-default weapons and quest items don't
+/// absent from the pool - a few character-default weapons and quest items don't
 /// match by name, which is harmless for a drop pool.
 pub fn equipment_pool(scus: &[u8]) -> Result<Vec<EquipmentItem>> {
     let table = ItemNameTable::from_scus(scus)

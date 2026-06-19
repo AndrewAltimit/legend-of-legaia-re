@@ -278,7 +278,7 @@ pub trait MenuHost {
     fn commit(&mut self, _state: MenuState, _selected_slot: u8) {}
 
     /// Override the forward (Cross) route for screens whose next state depends
-    /// on runtime context the static [`commit_route`] can't see — chiefly the
+    /// on runtime context the static [`commit_route`] can't see - chiefly the
     /// shop top menu ([`MenuState::ShopMenu`]), whose row layout (and so which
     /// slot is Buy / Sell / Trade / Exit) changes with whether seru trading is
     /// enabled. Consulted *after* [`MenuHost::commit`] and *before*

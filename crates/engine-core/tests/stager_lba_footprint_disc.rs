@@ -65,7 +65,7 @@ fn lba_footprint_trims_summon_stager_to_unique_content() {
 
         // The trimmed window parses into the stager's move-VM scene-graph
         // with every recovered record sitting inside the window (the whole
-        // point of the trim — the over-read tail's pointers are dropped).
+        // point of the trim - the over-read tail's pointers are dropped).
         let overlay = summon_overlay::parse(&trimmed, SUMMON_OVERLAY_LINK_BASE);
         assert!(
             overlay.spawn_sites >= 1,

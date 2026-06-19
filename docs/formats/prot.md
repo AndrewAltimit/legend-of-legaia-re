@@ -30,19 +30,19 @@ size_bytes            = size_sectors * 0x800
 
 ### Trailing-overlay sectors (`indexed_size` vs `size`)
 
-For ~24% of entries the on-disc contiguous range to the next entry's start LBA is **larger** than the indexed payload — the trailing sectors carry overlay content the SCUS boot loader reads via a multi-sector `ReadN` past the TOC-claimed end. PROT entry 899 is the canonical example: indexed payload is 14 sectors (28 KiB, the options menu), but the on-disc footprint is 74 sectors — the trailing 60 sectors are the title-screen overlay code (see [`subsystems/boot.md`](../subsystems/boot.md#title-overlay-source-on-disc)).
+For ~24% of entries the on-disc contiguous range to the next entry's start LBA is **larger** than the indexed payload - the trailing sectors carry overlay content the SCUS boot loader reads via a multi-sector `ReadN` past the TOC-claimed end. PROT entry 899 is the canonical example: indexed payload is 14 sectors (28 KiB, the options menu), but the on-disc footprint is 74 sectors - the trailing 60 sectors are the title-screen overlay code (see [`subsystems/boot.md`](../subsystems/boot.md#title-overlay-source-on-disc)).
 
 [`legaia_prot::archive::Archive`](../../crates/prot/src/archive.rs) exposes both views:
 
-- `Entry::size_sectors` / `size_bytes` — full on-disc footprint (default).
-- `Entry::indexed_size_sectors` / `indexed_size_bytes` — TOC-indexed payload only.
+- `Entry::size_sectors` / `size_bytes` - full on-disc footprint (default).
+- `Entry::indexed_size_sectors` / `indexed_size_bytes` - TOC-indexed payload only.
 - `Archive::read_entry` reads the footprint; `Archive::read_entry_indexed` reads only the indexed sub-region.
 
 Scene-side parsers were designed for the indexed view and use `read_entry_indexed` via [`ProtIndex::entry_bytes`](../../crates/engine-core/src/scene.rs). Asset-viewer / disc-browser consumers use the full footprint so trailing-overlay content is visible.
 
 > **Historical note.**
 >
-> - An earlier Python proof-of-concept used `start_lba = toc[p+5] - toc[p+2]`. That subtraction actually computes the SIZE in sectors and was misinterpreted as the start LBA — under that math `start_lba` collapsed to a small relative offset within "block 0" of the file, and ~80% of PROT entries ended up reading the SAME few low-LBA byte ranges.
+> - An earlier Python proof-of-concept used `start_lba = toc[p+5] - toc[p+2]`. That subtraction actually computes the SIZE in sectors and was misinterpreted as the start LBA - under that math `start_lba` collapsed to a small relative offset within "block 0" of the file, and ~80% of PROT entries ended up reading the SAME few low-LBA byte ranges.
 > - Anything written using that formula's outputs is artefacted; trust only post-`toc[p+2]` extractions.
 > - The `size_sectors = max(indexed, footprint)` extension is a later correction (the indexed formula alone misses trailing-overlay sectors for entries like 899).
 
@@ -56,16 +56,16 @@ end_lba      = TABLE[(idx + 3) * 4 + 0x801C70F0]
 size_sectors = end_lba - start_lba
 ```
 
-The in-RAM copy is **raw `PROT.DAT` from byte 0** — `FUN_8003E4E8` reads the first three sectors of `PROT.DAT` into `0x801C70F0` at boot, header words included (byte-verified against a live save state's RAM). There is no transformation; but the **index space differs by 2** from the extraction's:
+The in-RAM copy is **raw `PROT.DAT` from byte 0** - `FUN_8003E4E8` reads the first three sectors of `PROT.DAT` into `0x801C70F0` at boot, header words included (byte-verified against a live save state's RAM). There is no transformation; but the **index space differs by 2** from the extraction's:
 the extraction (`crates/prot`, and the `NNNN` in `extracted/PROT/NNNN_*.BIN`) builds its
 `toc[]` array *after* the two file-header words, so extraction entry `p`'s `start_lba`
 sits at file word `p + 4`, while the resolver's `TABLE[(idx + 2)]` is file word `idx + 2`.
-Hence `resolver idx = extraction index + 2` — any PROT index recovered from a
+Hence `resolver idx = extraction index + 2` - any PROT index recovered from a
 `FUN_8003E8A8` argument must subtract 2 to land in extraction space (byte-verified for
 the battle side-band files: TOC indices `0x37F`/`0x380` resolve to extraction entries
 893/894, see [`summon-readef.md`](summon-readef.md)). Raw-TOC entries 0 and 1 cover the
 pre-`init_data` boot-UI region (LBA 3..120) that extraction indexing leaves unindexed.
-[`CDNAME.TXT`](cdname.md)'s `#define` numbers are authored in this raw-TOC space — the
+[`CDNAME.TXT`](cdname.md)'s `#define` numbers are authored in this raw-TOC space - the
 extractor's filename labels are shifted +2 relative to the content the defines name; see
 [`cdname.md` § numbering space](cdname.md#numbering-space) for the evidence and the
 consequential relabelings.
@@ -81,7 +81,7 @@ Names come from [`CDNAME.TXT`](cdname.md), which lives at the top level of the d
 
 ## Overlay loaders (parallel slots)
 
-Two paired wrappers on top of `FUN_8003E8A8` + `FUN_8003E800` (async LBA-based loader) manage two **independently swappable** overlay slots. Both call `FUN_8003E8A8(param + 0x381)` — which, per the index-space note above, is **extraction entry `param + 0x37F`** (e.g. param 2 → 0897 field, 3 → 0898 battle, 4 → 0899 menu):
+Two paired wrappers on top of `FUN_8003E8A8` + `FUN_8003E800` (async LBA-based loader) manage two **independently swappable** overlay slots. Both call `FUN_8003E8A8(param + 0x381)` - which, per the index-space note above, is **extraction entry `param + 0x37F`** (e.g. param 2 → 0897 field, 3 → 0898 battle, 4 → 0899 menu):
 
 | Loader | Destination buffer ptr | Current-id tracker |
 |---|---|---|

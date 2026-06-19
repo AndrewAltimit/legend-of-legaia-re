@@ -2,7 +2,7 @@
 //!
 //! The simplified [`crate::dialog::OwnedDialogPanel`] types one `0x1F` text
 //! segment and resolves a picker locally, but it never *executes* the field-VM
-//! bytecode that surrounds the segments — the prologue's story-flag tests, the
+//! bytecode that surrounds the segments - the prologue's story-flag tests, the
 //! `SET`/`CLEAR` flag ops, and the scene-change a branch handler runs after a
 //! choice. This runner closes that gap by driving the inline script through the
 //! real ported field VM ([`legaia_engine_vm::field::step`]) and only pausing to
@@ -12,9 +12,9 @@
 //! field-VM dispatcher `FUN_801DE840` on the inline stream (`actor[+0x90]` base,
 //! `actor[+0x9E]` PC) and transitions into the pager only when the dispatcher
 //! leaves the PC on a byte where `& 0x7F < 0x20` (a `0x1F` lead or a `0x00..1E`
-//! terminator). Between boxes the field VM's side effects — flag writes
+//! terminator). Between boxes the field VM's side effects - flag writes
 //! (`system_flag_set`/`_clear`), the choice-selected branch jump
-//! (`FUN_80038050`, applied by the host on confirm), scene changes — run
+//! (`FUN_80038050`, applied by the host on confirm), scene changes - run
 //! through the World host exactly as the scene script's do.
 //!
 //! The stepping itself lives on [`crate::world::World`] (it needs the
@@ -26,7 +26,7 @@ use legaia_engine_vm::field::FieldCtx;
 
 use crate::dialog::OwnedDialogPanel;
 
-/// Maximum field-VM steps to run between text boxes in one tick — bounds a
+/// Maximum field-VM steps to run between text boxes in one tick - bounds a
 /// pathological inline script that never reaches a text segment or end.
 pub const INLINE_DIALOGUE_STEP_BUDGET: u32 = 256;
 
@@ -50,8 +50,8 @@ pub struct InlineDialogue {
     pub last_choice: Option<usize>,
     /// When the runner is started with a prologue (`pc` points before the first
     /// text segment), this holds the offset of that first `0x1F` segment. If the
-    /// prologue terminates — hits a `Halt`/`Unknown` op or a non-`0x1F`
-    /// terminator — before opening any box, the runner resumes here instead of
+    /// prologue terminates - hits a `Halt`/`Unknown` op or a non-`0x1F`
+    /// terminator - before opening any box, the runner resumes here instead of
     /// ending, so prologue execution is never worse than the truncated path.
     /// Consumed (set to `None`) the first time a box opens or the fallback fires.
     pub fallback_segment_pc: Option<usize>,
@@ -84,8 +84,8 @@ impl InlineDialogue {
     }
 
     /// Start running the full interaction record `bytecode` from `entry_pc` (the
-    /// record's `script_pc0`) so the **interaction prologue** — the field-VM
-    /// bytecode before the first text segment — executes first. The prologue's
+    /// record's `script_pc0`) so the **interaction prologue** - the field-VM
+    /// bytecode before the first text segment - executes first. The prologue's
     /// `SysFlag.Test`/`JmpRel` chain selects which segment the box opens at per
     /// story state. `first_segment` is the offset of the first `0x1F`; if the
     /// prologue can't reach a segment the runner falls back to it. Mirrors retail

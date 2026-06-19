@@ -190,7 +190,7 @@ impl Vram {
     }
 
     /// VRAM-to-VRAM rectangle copy: `w x h` halfwords from `(src_x, src_y)`
-    /// to `(dst_x, dst_y)` — the libgpu `MoveImage` primitive. A zero `w` or
+    /// to `(dst_x, dst_y)` - the libgpu `MoveImage` primitive. A zero `w` or
     /// `h` is a no-op (the retail wrapper rejects those rects); cells falling
     /// outside the 1024x512 framebuffer are skipped. The source rect is
     /// snapshotted first, so overlapping copies behave like the GPU's

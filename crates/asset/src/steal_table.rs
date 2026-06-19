@@ -67,7 +67,7 @@ impl ExeMap {
     }
 }
 
-/// File offset within a `SCUS_942.54` image of the steal table's entry 0 — the
+/// File offset within a `SCUS_942.54` image of the steal table's entry 0 - the
 /// byte the `+id*2` indexing is relative to. Monster `M`'s chance byte is at
 /// `base + M*2`, its item byte at `base + M*2 + 1`. Returns `None` if `scus`
 /// isn't a PSX-EXE or the table address is outside its data segment.

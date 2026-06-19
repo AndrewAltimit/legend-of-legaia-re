@@ -1,4 +1,4 @@
-//! Battle-form character mesh pack — PROT entry `1204` (`other5`).
+//! Battle-form character mesh pack - PROT entry `1204` (`other5`).
 //!
 //! This is the party's **in-battle** character mesh set: the higher-detail
 //! Vahn / Noa / Gala models (plus two extra fighter slots) the engine installs
@@ -7,7 +7,7 @@
 //! vs. the field pack's 12/12/12; the runtime patches +2 equipment groups, so
 //! a live battle slot reads 17/18/17).
 //!
-//! The **Baka Fighter** fist-fight minigame reuses this same pack — it lets you
+//! The **Baka Fighter** fist-fight minigame reuses this same pack - it lets you
 //! play *as* Vahn / Noa / Gala, so it borrows the battle character models
 //! (`overlay_baka_fighter` loads `data\field\other5.lzs` + PROT 1205/1206 with
 //! the debug string `"OTHER5 %d %d"`). That minigame reuse is why earlier
@@ -23,7 +23,7 @@
 //!
 //! **Provenance (empirical, decisive).** The party slots' live vertex data,
 //! read out of `DAT_8007C018[0..=2]` in real-battle save states, byte-matches
-//! this pack and **not** the field pack — across the Tetsu tutorial fight, the
+//! this pack and **not** the field pack - across the Tetsu tutorial fight, the
 //! Gimard Seru-boss fight (an unambiguous turn-based battle), and the
 //! full-party `party_battle_gobu_gobu` capture. See
 //! [`battle_char_pack_real`](../../tests/battle_char_pack_real.rs).
@@ -38,31 +38,31 @@
 //! Offset      Type    Size      Contents
 //! ----------  ------  --------  -------------------------------------------
 //! 0x000000    [hdr]   4         streaming chunk0 header: type=0x09 size=33516
-//! 0x000004    TMD2    33516     slot 0 — Vahn battle (nobj 15)
+//! 0x000004    TMD2    33516     slot 0 - Vahn battle (nobj 15)
 //! 0x0082F0    [hdr]   4         chunk1 header: type=0x09 size=33636
-//! 0x0082F4    TMD2    33636     slot 1 — Noa battle (nobj 16)
+//! 0x0082F4    TMD2    33636     slot 1 - Noa battle (nobj 16)
 //! 0x010658    [hdr]   4         chunk2 header: type=0x09 size=24780
-//! 0x01065C    TMD2    24780     slot 2 — Gala battle (nobj 15)
+//! 0x01065C    TMD2    24780     slot 2 - Gala battle (nobj 15)
 //! 0x016728    [hdr]   4         chunk3 header: type=0x09 size=27036
-//! 0x01672C    TMD2    27036     slot 3 — extra battle character (nobj 20)
+//! 0x01672C    TMD2    27036     slot 3 - extra battle character (nobj 20)
 //! 0x01D0C8    [hdr]   4         chunk4 header: type=0x09 size=33340
-//! 0x01D0CC    TMD2    33340     slot 4 — extra battle character (nobj 15)
+//! 0x01D0CC    TMD2    33340     slot 4 - extra battle character (nobj 15)
 //! 0x025308    [hdr]   4         terminator (0x00000000)
 //! 0x02530C    -       4         (alignment padding to next sector boundary)
-//! 0x025804    TIM     ~33312    atlas[0] — 256x256 4bpp + 256x1 CLUT @ (0,490)
-//! 0x02DA28    TIM     ~33312    atlas[1] — CLUT @ (0,491)
-//! 0x035C4C    TIM     ~33312    atlas[2] — CLUT @ (0,492)
-//! 0x03DE70    TIM     ~33312    atlas[3] — CLUT @ (0,493)
-//! 0x046094    TIM     ~33312    atlas[4] — CLUT @ (0,494)
-//! 0x04E2B8    TIM     ~33312    atlas[5] — CLUT @ (0,495)
-//! 0x0564DC    TIM     ~33312    atlas[6] — CLUT @ (0,497)
+//! 0x025804    TIM     ~33312    atlas[0] - 256x256 4bpp + 256x1 CLUT @ (0,490)
+//! 0x02DA28    TIM     ~33312    atlas[1] - CLUT @ (0,491)
+//! 0x035C4C    TIM     ~33312    atlas[2] - CLUT @ (0,492)
+//! 0x03DE70    TIM     ~33312    atlas[3] - CLUT @ (0,493)
+//! 0x046094    TIM     ~33312    atlas[4] - CLUT @ (0,494)
+//! 0x04E2B8    TIM     ~33312    atlas[5] - CLUT @ (0,495)
+//! 0x0564DC    TIM     ~33312    atlas[6] - CLUT @ (0,497)
 //! ```
 //!
 //! The TIM stride is exactly `0x8224` (33316 bytes); each TIM is a 256x256
 //! 4bpp image plus a 256-color (16x16) sub-CLUT row at VRAM `(0, 490..497)`
 //! (row 496 is skipped). The character atlases sit just below the
 //! [row-479 NPC CLUT band](crate::npc_palette) but above the dialog-font
-//! glyph band — the runtime uploads them via the same targeted-upload pass
+//! glyph band - the runtime uploads them via the same targeted-upload pass
 //! the field engine uses for scene textures.
 //!
 //! ## Slot identity
@@ -115,7 +115,7 @@ pub const BATTLE_TMD_CHUNK_TYPE: u8 = 0x09;
 /// Number of 256x256 4bpp character TIM atlases that follow the TMD chunks.
 pub const ATLAS_COUNT: usize = 7;
 
-/// Stride between successive atlas TIMs in bytes — 32 bytes of TIM header
+/// Stride between successive atlas TIMs in bytes - 32 bytes of TIM header
 /// padding, 524 bytes of CLUT block, ~32 KiB of image block; empirically
 /// pinned at `0x8224` in the corpus.
 pub const ATLAS_STRIDE_BYTES: usize = 0x8224;
@@ -177,7 +177,7 @@ pub struct BattleCharAtlas {
     pub tim_bytes: Vec<u8>,
 }
 
-/// The full parsed battle-form character pack — five TMD slots + seven TIM
+/// The full parsed battle-form character pack - five TMD slots + seven TIM
 /// atlases in disc order.
 #[derive(Debug, Clone)]
 pub struct BattleCharPack {
@@ -262,7 +262,7 @@ pub fn parse(prot_1204_bytes: &[u8]) -> Result<BattleCharPack> {
         });
         cursor = body_off + size;
     }
-    // Terminator at `cursor` — a zero u32. (We don't strictly require it, but
+    // Terminator at `cursor` - a zero u32. (We don't strictly require it, but
     // bail if a sixth chunk of type=0x09 turned up, which would indicate the
     // SLOT_COUNT is wrong for this corpus.)
     if cursor + 4 <= buf.len() {

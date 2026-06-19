@@ -1,7 +1,7 @@
 //! Disc-gated end-to-end test for the starting-item randomizer: rewrite the
 //! new-game inventory-seed code in `SCUS_942.54` on a scratch copy of the disc,
 //! then re-decode the seed straight off the patched image and confirm the edit
-//! is faithful — the seeded items match the plan, every id is a valid consumable
+//! is faithful - the seeded items match the plan, every id is a valid consumable
 //! from the pool, the surrounding `FUN_80034A6C` prologue/epilogue bytes are
 //! untouched, the image is the same size, the touched SCUS sector stays
 //! EDC/ECC-valid, and a fixed seed is byte-deterministic. Skips + passes without
@@ -390,7 +390,7 @@ fn accessories_round_trip_on_disc() {
 /// The additive fix: convenience items + a full random fill, beyond the
 /// inventory region's five slots, with all-warps off. The last slots overflow
 /// into the warp-preset region; decoding both regions off the patched disc must
-/// recover the whole seven-item bag — so the random items are NOT crowded out by
+/// recover the whole seven-item bag - so the random items are NOT crowded out by
 /// the convenience picks. Also pins that the overflow write leaves the live code
 /// bracketing the warp region intact (the `$v0 = 0x2dc0` it must preserve).
 #[test]
@@ -494,7 +494,7 @@ fn convenience_plus_random_overflow_round_trips_on_disc() {
 
 /// Explicit `--start-with` items: the user names exact `(id, count)` slots to seed
 /// into the starting bag. Unlike the random fill (consumable-pool only), the
-/// explicit path takes ANY item id — including accessories ("Goods"), since the
+/// explicit path takes ANY item id - including accessories ("Goods"), since the
 /// owned-item list is one unified array shared by every menu category. This patches
 /// two accessory ids directly and confirms they decode back verbatim, additively to
 /// the vanilla Healing Leaf base, with the surrounding code untouched.
@@ -504,7 +504,7 @@ fn explicit_start_with_items_round_trip_on_disc() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    // Two accessories requested explicitly — neither is a consumable-pool id, so a
+    // Two accessories requested explicitly - neither is a consumable-pool id, so a
     // pass proves the explicit path bypasses the random fill's pool restriction.
     let opts = StartingSeedOptions {
         extra_items: vec![(SPEED_CHAIN_ID, 1), (GOOD_LUCK_BELL_ID, 1)],

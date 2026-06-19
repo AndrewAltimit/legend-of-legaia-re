@@ -1,13 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; scene_v12_table</div>
-  <h1>scene_v12_table — scene header + event-script bundle <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A per-scene container that bundles a small "runtime fixup" header with a full <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene event-scripts</a> prescript at a sector-aligned offset. 97 PROT entries — one per game scene.</p>
+  <h1>scene_v12_table - scene header + event-script bundle <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">A per-scene container that bundles a small "runtime fixup" header with a full <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene event-scripts</a> prescript at a sector-aligned offset. 97 PROT entries - one per game scene.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
   <p>Implementation: <code>crates/asset/src/scene_v12_table.rs</code>. CLI: <code>asset scene-v12 &lt;PROT-entry&gt;</code> (single), <code>asset scene-v12-scan &lt;dir&gt;</code> (bulk).</p>
-  <p><strong>Confidence:</strong> Confirmed — header algebra, inline-record shape, and prescript-at-0x800 layout verified across all 97 corpus entries by the disc-gated <code>scene_v12_corpus</code> test. The semantics of the inline records is inferred from grouping patterns; the exact runtime consumer of the <code>(b0, b1)</code> pair hasn't been pinned to a specific function.</p>
+  <p><strong>Confidence:</strong> Confirmed - header algebra, inline-record shape, and prescript-at-0x800 layout verified across all 97 corpus entries by the disc-gated <code>scene_v12_corpus</code> test. The semantics of the inline records is inferred from grouping patterns; the exact runtime consumer of the <code>(b0, b1)</code> pair hasn't been pinned to a specific function.</p>
 </section>
 
 <section class="doc-section" id="on-disc-layout">
@@ -32,7 +32,7 @@
 +0x800 + offsets[i]              ;   per-record word-aligned command bytes
                                  ;   (records typically open with the
                                  ;   `0xFFFF 0x0000` header sentinel; NOT
-                                 ;   field-VM bytecode — see below).</code></pre>
+                                 ;   field-VM bytecode - see below).</code></pre>
 </section>
 
 <section class="doc-section" id="header-algebra">
@@ -48,7 +48,7 @@
     </tbody>
   </table>
   <p><code>N</code> is the byte distance from the start of the file to the <strong>first runtime fixup slot</strong>, which sits immediately past the inline records: <code>N = (0x14 + 4*param) + 2 = 4*param + 22</code>. The slots at <code>+N</code>, <code>+N+2</code>, <code>+N+4</code> are zero on disc; the loader writes computed pointers into them at scene init. The three u16 fields at the header front therefore double as slot-offset hints for the loader and as a strict validation signature.</p>
-  <p>The constants <code>0x0012</code> at <code>u16[1]</code> and <code>0x0014</code> at <code>u16[3]</code> are stable across the whole corpus; <code>u16[3]</code> also happens to equal the byte offset of the inline records table (<code>+0x14</code>), which is unlikely to be a coincidence — the loader probably re-reads it as the records pointer.</p>
+  <p>The constants <code>0x0012</code> at <code>u16[1]</code> and <code>0x0014</code> at <code>u16[3]</code> are stable across the whole corpus; <code>u16[3]</code> also happens to equal the byte offset of the inline records table (<code>+0x14</code>), which is unlikely to be a coincidence - the loader probably re-reads it as the records pointer.</p>
 </section>
 
 <section class="doc-section" id="inline-records">
@@ -60,7 +60,7 @@
       <tr><td><code>+0</code></td><td><code>b0</code></td><td>Scene-local identifier (sub-index / region-id).</td></tr>
       <tr><td><code>+1</code></td><td><code>b1</code></td><td>Scene-local identifier (region-id / target-id).</td></tr>
       <tr><td><code>+2</code></td><td><code>b2</code></td><td>Categorises records into 1..N groups within the scene.</td></tr>
-      <tr><td><code>+3</code></td><td><code>flag</code></td><td>Always <code>0x01</code> across all 97 entries — probably "live" bit.</td></tr>
+      <tr><td><code>+3</code></td><td><code>flag</code></td><td>Always <code>0x01</code> across all 97 entries - probably "live" bit.</td></tr>
     </tbody>
   </table>
   <p><code>b2</code> partitions records into per-scene groups. Drake (<code>map01</code>) has 8 distinct <code>b2</code> values across 12 records (one group of 3, one of 3, then singletons); Karisto (<code>map03</code>) groups 12 of its 23 records under a single <code>(b1=0x2F, b2=0x05)</code> triple, plus several smaller groups. This "many records share a <code>b2</code>, a few singletons" pattern matches a scene-region transition table: rooms / sub-areas of the scene each get a <code>b2</code> group, and sub-records inside each group correspond to interactive objects, NPCs, or exits.</p>
@@ -82,7 +82,7 @@
 
 <section class="doc-section" id="event-script-prescript">
   <h2>Event-script prescript at +0x800</h2>
-  <p>Identical shape to the standalone <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene_event_scripts</a> format: <code>[u16 count][u16 offsets[count]]</code> followed by per-record <strong>word-aligned (16-bit) command records</strong> — <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode (it disassembles as field-VM with a 65–88% error rate; see the scene_event_scripts section for the falsification). The per-record <code>0xFFFF 0x0000</code> lead is a record header sentinel, not a frame-divider opcode. The genuine per-scene field-VM scripts live in the scene MAN sub-asset (see <a href="../subsystems/script-vm.html">script VM</a>).</p>
+  <p>Identical shape to the standalone <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene_event_scripts</a> format: <code>[u16 count][u16 offsets[count]]</code> followed by per-record <strong>word-aligned (16-bit) command records</strong> - <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode (it disassembles as field-VM with a 65–88% error rate; see the scene_event_scripts section for the falsification). The per-record <code>0xFFFF 0x0000</code> lead is a record header sentinel, not a frame-divider opcode. The genuine per-scene field-VM scripts live in the scene MAN sub-asset (see <a href="../subsystems/script-vm.html">script VM</a>).</p>
   <p>Across the 97 v12 entries:</p>
   <table>
     <thead><tr><th>Metric</th><th>Value</th></tr></thead>
@@ -145,16 +145,16 @@ for (i, s) in t.scripts.iter().enumerate() {
   <ul class="bullets">
     <li><strong>Where does the loader stage the file?</strong> The <code>FUN_8001F7C0</code> / <code>FUN_800255B8</code> field-loader chain (see <a href="../subsystems/asset-loader.html">asset loader</a>) is the canonical scene-asset path, but the static call graph for v12 entries hasn't been pinned. Earlier overlay captures put the file at RAM <code>0x8014B530</code> for one scene; that address is heap-allocated and varies per load.</li>
     <li><strong>What does <code>b0</code> index into?</strong> For Drake the <code>b0</code> values fit inside the scene's TMD pack count (40 slots), but for other scenes they exceed it, ruling out "global TMD-slot index". They probably index a scene-local resource table the loader builds from the v12 header.</li>
-    <li><strong>Two scripts per scene</strong> — the offset-0 script and the offset-0x800 script — likely encode different runtime phases (boot vs. live). The field-VM opcode stream from each would tell us, once the VM opcode table is exhaustively walked.</li>
+    <li><strong>Two scripts per scene</strong> - the offset-0 script and the offset-0x800 script - likely encode different runtime phases (boot vs. live). The field-VM opcode stream from each would tell us, once the VM opcode table is exhaustively walked.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="related">
   <h2>Related</h2>
   <ul class="bullets">
-    <li><a href="scene-bundles.html">Scene bundles overview</a> — the four other scene-prefixed asset layouts.</li>
-    <li><a href="../subsystems/script-vm.html">Field/event script VM</a> — <code>FUN_801DE840</code>, the runtime that walks the prescript records.</li>
-    <li><a href="../subsystems/world-map.html">World-map subsystem</a> — the kingdom-map renderer that consumes parts of the v12 inline-record table for actor placements.</li>
+    <li><a href="scene-bundles.html">Scene bundles overview</a> - the four other scene-prefixed asset layouts.</li>
+    <li><a href="../subsystems/script-vm.html">Field/event script VM</a> - <code>FUN_801DE840</code>, the runtime that walks the prescript records.</li>
+    <li><a href="../subsystems/world-map.html">World-map subsystem</a> - the kingdom-map renderer that consumes parts of the v12 inline-record table for actor placements.</li>
   </ul>
 </section>
 

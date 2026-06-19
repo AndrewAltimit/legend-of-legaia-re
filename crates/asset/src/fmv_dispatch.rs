@@ -1,4 +1,4 @@
-//! STR FMV dispatch table — the per-`fmv_id` movie + frame range the cutscene
+//! STR FMV dispatch table - the per-`fmv_id` movie + frame range the cutscene
 //! play loop selects, decoded straight from the STR/MDEC overlay.
 //!
 //! ## How an FMV is triggered + dispatched
@@ -47,7 +47,7 @@
 pub const STR_OVERLAY_BASE_VA: u32 = 0x801C_E818;
 /// PROT entry index of the STR/MDEC cutscene overlay this table lives in.
 pub const STR_OVERLAY_PROT_INDEX: u32 = 970;
-/// Sectors per STR video frame — the fixed 15 fps cadence (2x speed / 150
+/// Sectors per STR video frame - the fixed 15 fps cadence (2x speed / 150
 /// sectors-per-second) every Legaia movie runs at. The play loop seeks
 /// `(start_frame - 1) * SECTORS_PER_FRAME` into the file.
 pub const SECTORS_PER_FRAME: u32 = 10;
@@ -86,7 +86,7 @@ impl FmvEntry {
         no_ver.rsplit(['\\', '/']).next().unwrap_or(no_ver)
     }
 
-    /// Engine-shape path: forward slashes, no version, no leading slash — e.g.
+    /// Engine-shape path: forward slashes, no version, no leading slash - e.g.
     /// `MOV/MV1.STR`. Matches `legaia_engine_core::cutscene::fmv_index_to_str_filename`.
     pub fn engine_path(&self) -> String {
         let no_ver = self.path.split(';').next().unwrap_or(&self.path);
@@ -111,14 +111,14 @@ pub struct FmvTable {
 impl FmvTable {
     /// Decode the dispatch table from the STR overlay loaded at its committed
     /// base ([`STR_OVERLAY_BASE_VA`]). `overlay` is the raw PROT 0970 entry
-    /// (byte-identical to the as-loaded overlay — `form = raw`).
+    /// (byte-identical to the as-loaded overlay - `form = raw`).
     pub fn from_str_overlay(overlay: &[u8]) -> Option<Self> {
         Self::from_overlay(overlay, STR_OVERLAY_BASE_VA)
     }
 
     /// Decode the dispatch table from an overlay loaded at `base_va`. Returns
     /// `None` if the table region is out of range or the first slot doesn't
-    /// resolve to the expected intro movie (`MV1.STR`) — a base/offset-drift
+    /// resolve to the expected intro movie (`MV1.STR`) - a base/offset-drift
     /// guard.
     pub fn from_overlay(overlay: &[u8], base_va: u32) -> Option<Self> {
         let table_off = FMV_TABLE_VA.checked_sub(base_va)? as usize;

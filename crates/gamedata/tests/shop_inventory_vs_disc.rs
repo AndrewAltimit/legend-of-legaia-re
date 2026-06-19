@@ -7,7 +7,7 @@
 //! `shops.toml` mined from walkthroughs. This scans every PROT entry for shop
 //! records, decodes each record's **sellable** item ids to names through the
 //! SCUS item table, and joins disc shops to curated shops by the **item-name
-//! set** (order-independent — the item set is far more distinctive than the
+//! set** (order-independent - the item set is far more distinctive than the
 //! on-screen shop title, which repeats across towns as "Arms Shop" / "Items
 //! Shop").
 //!
@@ -17,7 +17,7 @@
 //! curated shops-table counterpart. The exception is asserted explicitly so it
 //! can't go vacuous.
 //!
-//! This oracle pinned a curated item-name error — the Gala helmet the disc
+//! This oracle pinned a curated item-name error - the Gala helmet the disc
 //! names "Power Earring" (singular) was curated as "Power Earrings", breaking
 //! the Wind Cave and Biron-after-mist set joins until corrected to the disc
 //! spelling. (The price oracle missed it: a name-mismatch there is a tolerated
@@ -71,7 +71,7 @@ fn curated_shop_inventories_match_the_disc() {
         }
     }
 
-    // Scan every PROT entry; dedup disc shops by (name, item-name set) — the
+    // Scan every PROT entry; dedup disc shops by (name, item-name set) - the
     // same scene MAN is reachable from duplicate PROT entries and a shop op can
     // appear more than once in one MAN.
     let mut paths: Vec<PathBuf> = entries

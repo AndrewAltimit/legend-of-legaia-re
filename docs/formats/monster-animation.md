@@ -3,7 +3,7 @@
 Per-object rigid-transform keyframe animation for battle monsters. Distinct
 from the [ANM container](anm.md) (which drives player / field actors): monster
 animation lives **inside the monster's archive block** (extraction PROT entry
-867 — retail-space CDNAME block `monster_data` under the
+867 - retail-space CDNAME block `monster_data` under the
 [−2 numbering correction](cdname.md#numbering-space); see
 [monster stat archive](../subsystems/battle.md) and `legaia_asset::monster_archive`).
 The archive is **not** the [player battle files](battle-data-pack.md)
@@ -18,7 +18,7 @@ Implementation: `legaia_asset::monster_archive` (`MonsterAnimation`, `PartPose`,
 Each monster's decoded archive block is `[stat record + +0x4C action-offset
 array][name][TMD mesh @ +0x04][per-action entries][texture pool @ +0x08]`. The
 `magic_count` (`+0x4A`) **action entries** the `+0x4C` u32 array points at are
-not just "spells" — each is an action descriptor whose head holds the action id
+not just "spells" - each is an action descriptor whose head holds the action id
 (`+0x00`), SP cost (`+0x74`), and a sub-id (`+0x77`), and whose **`+0x8c`**
 field begins a packed transform-keyframe stream. (The runtime keyframe pointers
 at entry `+0x04`/`+0x08` and the self-pointer at `+0x88` are zero on disc; the
@@ -53,7 +53,7 @@ exists); the party installer `FUN_80053CB8` hardcodes `[2,3,4,5,0xB]` because
 the player files store the family identity-ordered. Consumers:
 
 - the damage primitive `FUN_800402F4` stages the target's reaction from the
-  map — a surviving target with no get-up entry queues `+0x1EF` (light
+  map - a surviving target with no get-up entry queues `+0x1EF` (light
   flinch, with the exit-to-idle flag), any other hit queues `+0x1F1`
   (knockdown);
 - the anim commit `FUN_8004AD80` chains a finished knockdown (record tag 4)
@@ -67,7 +67,7 @@ the player files store the family identity-ordered. Consumers:
 ## Anim selection (`actor +0x1D9/+0x1DA` → entry)
 
 The per-actor anim state is a pair of bytes: `+0x1DA` = queued anim id,
-`+0x1D9` = current. The id **is the entry index** — the commit function
+`+0x1D9` = current. The id **is the entry index** - the commit function
 `FUN_8004AD80` installs `node+0x4C = *(record_ptr + 0x4C + id*4)` for
 monsters (record pointers at `0x801C9348 + (slot-3)*4`) and
 `node+0x4C = *(table + id*4)` for party (per-character record[0] tables at
@@ -77,11 +77,11 @@ battle SM's `FUN_801D5854(actor, 6..9)` "pose" calls are a separate
 camera/presentation program space that never touches the anim fields.
 Party ids `≥ 0x10` (basic swings staged as direction bytes `0x0C..0x0F` are
 still table-direct; art starters `0x19`/`0x1A` and art constants `0x1B+` are
-not) trigger the dynamic-slot path instead — see
+not) trigger the dynamic-slot path instead - see
 [`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
 
 The **player battle files** carry the same per-action entry family for the
-party's assembled meshes — action-offset table at the head of `record[0]`,
+party's assembled meshes - action-offset table at the head of `record[0]`,
 packed stream at entry `+0xAC` instead of `+0x8C`, `parts` = the
 character's skeleton bone count. See
 [`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
@@ -122,7 +122,7 @@ object is modelled at its own local origin (all parts overlap near `(0,0,0)`),
 and the per-part `[tx, ty, tz]` places that object at its socket while
 `[rx, ry, rz]` orients it about its local origin. The assembled vertex is
 `world = Rz·Ry·Rx · v_local + t`. **Frame 0 is therefore the assembled rest
-pose** — the translations of a humanoid's left/right limb objects are mirror-symmetric (e.g. Gobu Gobu's arm sockets at `tx ≈ +120` / `-115`), and assembling
+pose** - the translations of a humanoid's left/right limb objects are mirror-symmetric (e.g. Gobu Gobu's arm sockets at `tx ≈ +120` / `-115`), and assembling
 frame 0 spreads the collapsed model into its full silhouette.
 
 ## Playback
@@ -138,7 +138,7 @@ loop, then `FUN_800495c8` / `FUN_8005b038` blend it onto the object vertices.
 The per-frame cursor advance lives in the anim-node tick `FUN_80047430`:
 `phase += (frame_dt * actor[+0x21D] * record[+0x78]) >> 1`, where `+0x21D`
 is the actor's speed scale (normally `4`) and the entry's `+0x78` byte is
-its **playback rate** (`1` or `2` across the retail corpus — `rate/8`
+its **playback rate** (`1` or `2` across the retail corpus - `rate/8`
 keyframes per 60 Hz tick in the normal case). When the cursor passes the
 stream's frame count (or the `+0x1DC` event flags fire mid-clip) the tick
 calls the commit `FUN_8004AD80`, which swaps the entry, zeroes the cursor,
@@ -151,34 +151,34 @@ cue fired at install.
 
 ## Provenance
 
-- `FUN_8004998c` — packed-stream decoder + frame interpolation (`ghidra/scripts/funcs/8004998c.txt`).
-- `FUN_80048a08` — per-actor battle draw; reads the phase, drives the decoder, applies the pose per object (`ghidra/scripts/funcs/80048a08.txt`).
-- `FUN_800495c8` / `FUN_8005b038` — GTE vertex blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
-- `FUN_80054cb0` — monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` and builds the `+0x1EF..+0x1F3` tag map (`ghidra/scripts/funcs/80054cb0.txt`).
-- `FUN_80047430` — per-frame anim-node tick: cursor advance, end-of-clip detect, commit dispatch (`ghidra/scripts/funcs/80047430.txt`). Its own caller is not in the dump corpus (open).
-- `FUN_8004AD80` — anim commit/transition: id → entry install, `+0x1D9` convergence, reaction chaining, dynamic party art slots (`ghidra/scripts/funcs/8004ad80.txt`).
-- `FUN_800402F4` — damage primitive; stages the target's hit reaction from the `+0x1EF` map (`ghidra/scripts/funcs/800402f4.txt`).
-- `FUN_80050E2C` — first-byte tag search over the entry-pointer array (`ghidra/scripts/funcs/80050e2c.txt`).
+- `FUN_8004998c` - packed-stream decoder + frame interpolation (`ghidra/scripts/funcs/8004998c.txt`).
+- `FUN_80048a08` - per-actor battle draw; reads the phase, drives the decoder, applies the pose per object (`ghidra/scripts/funcs/80048a08.txt`).
+- `FUN_800495c8` / `FUN_8005b038` - GTE vertex blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
+- `FUN_80054cb0` - monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` and builds the `+0x1EF..+0x1F3` tag map (`ghidra/scripts/funcs/80054cb0.txt`).
+- `FUN_80047430` - per-frame anim-node tick: cursor advance, end-of-clip detect, commit dispatch (`ghidra/scripts/funcs/80047430.txt`). Its own caller is not in the dump corpus (open).
+- `FUN_8004AD80` - anim commit/transition: id → entry install, `+0x1D9` convergence, reaction chaining, dynamic party art slots (`ghidra/scripts/funcs/8004ad80.txt`).
+- `FUN_800402F4` - damage primitive; stages the target's hit reaction from the `+0x1EF` map (`ghidra/scripts/funcs/800402f4.txt`).
+- `FUN_80050E2C` - first-byte tag search over the entry-pointer array (`ghidra/scripts/funcs/80050e2c.txt`).
 
 ## Engine playback
 
 The clean-room engine plays this stream for battle actors. At battle entry the
 shell decodes each monster's idle clip (`idle_animation`, action 0) into a
-`legaia_engine_core::battle_anim::MonsterAnimPlayer` — an 8.8 fixed-point loop
+`legaia_engine_core::battle_anim::MonsterAnimPlayer` - an 8.8 fixed-point loop
 cursor whose `tick()` interpolates the keyframes (translation linear, rotation
 shortest-path 12-bit step, matching `FUN_8004998C`) into a
 `legaia_anm::PoseFrame` (one `(translation, rotation)` per object, the same
 shape the field ANM player produces). `World::tick_battle_animations` advances
 every battle actor's player each frame, and the renderer deforms the mesh with
 the rigid `legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot` builder (`R·v + T`,
-`Rz·Ry·Rx` about each object's local origin — the same composition as the
+`Rz·Ry·Rx` about each object's local origin - the same composition as the
 glTF export below and the site animator). The disc-gated `battle_anim_real`
 test drives the whole decode → player → deform path on a real monster and
 asserts the posed mesh moves frame-to-frame. The per-tick phase advance is
 retail-pinned through the entry's rate byte
 (`battle_anim::step_for_rate`, the `FUN_80047430` formula reduced to the
 normal `frame_dt = 1`, `+0x21D = 4` case); the engine also plays the
-hit-reaction family — `World::queue_battle_reaction` mirrors the
+hit-reaction family - `World::queue_battle_reaction` mirrors the
 `FUN_800402F4` staging and `tick_battle_animations` the knockdown → get-up
 chain. The decoder's cross-blend into the queued clip is a known engine
 simplification (transitions restart at frame 0 without the tween).
@@ -186,7 +186,7 @@ simplification (transitions restart at frame 0 without the tween).
 ## Export
 
 `legaia_asset::monster_gltf::export_glb(entry, id)` packs a monster's mesh, its
-baked texture, and **every** action animation into one binary glTF (`.glb`) — the
+baked texture, and **every** action animation into one binary glTF (`.glb`) - the
 universal interchange format. The rigid-per-object model maps directly onto glTF
 node animation: each TMD object becomes a node, the keyframe stream's
 translation + Euler rotation drive that node's `translation` / `rotation`

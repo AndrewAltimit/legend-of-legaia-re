@@ -12,14 +12,14 @@
 //! This module owns the data plumbing both kernels need:
 //!
 //! - [`thresholds_from_scus`] decodes the threshold table off the user's
-//!   `SCUS_942.54` (no Sony bytes committed — same pattern as
+//!   `SCUS_942.54` (no Sony bytes committed - same pattern as
 //!   [`crate::shop_catalog::ShopItemData::from_scus`]);
 //! - the record accessors read/write the `+0x8` XP array through
 //!   [`legaia_save::CharacterRecord::raw`], so the accrued XP round-trips
 //!   through saves for free.
 //!
 //! The live wiring is `World::cast_spell_on_slots` (accrual + level-up after
-//! a party summon cast) — the leveled `+0x161` byte is exactly what the next
+//! a party summon cast) - the leveled `+0x161` byte is exactly what the next
 //! cast's magic-power stage reads (`caster_magic_power_byte`), closing the
 //! cast → XP → level → stronger-cast loop.
 //!
@@ -52,7 +52,7 @@ pub const SPELL_SEARCH_BOUND: usize = 0x20;
 /// the PS-X EXE header's `t_addr` (file offset `va - t_addr + 0x800`).
 /// Returns `None` when the bytes aren't a PS-X EXE, the address falls outside
 /// the text segment, or the table fails its integrity shape (strictly
-/// ascending, all non-zero — the retail table is `17, 50, 92, … 536`).
+/// ascending, all non-zero - the retail table is `17, 50, 92, … 536`).
 pub fn thresholds_from_scus(scus: &[u8]) -> Option<[u16; THRESHOLD_STEPS]> {
     if scus.len() < 0x800 || &scus[0..8] != b"PS-X EXE" {
         return None;
@@ -78,7 +78,7 @@ pub fn thresholds_from_scus(scus: &[u8]) -> Option<[u16; THRESHOLD_STEPS]> {
 }
 
 /// Index of `spell_id` in the record's spell-id list (`+0x13D`), scanning at
-/// most [`SPELL_SEARCH_BOUND`] entries — the shared lookup both retail
+/// most [`SPELL_SEARCH_BOUND`] entries - the shared lookup both retail
 /// functions open with. `None` when the spell isn't in the list (retail would
 /// fall through with slot `0x20` and touch bytes past the arrays; the engine
 /// skips instead).
@@ -90,7 +90,7 @@ pub fn spell_slot(record: &CharacterRecord, spell_id: u8) -> Option<usize> {
         .position(|&id| id == spell_id)
 }
 
-/// Accrued XP for the spell at `slot` — the u32 at record `+0x8 + slot * 4`.
+/// Accrued XP for the spell at `slot` - the u32 at record `+0x8 + slot * 4`.
 pub fn spell_xp(record: &CharacterRecord, slot: usize) -> u32 {
     let off = SPELL_XP_OFFSET + slot * 4;
     match record.raw.get(off..off + 4) {

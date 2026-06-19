@@ -88,7 +88,7 @@ fn decodes_the_growth_tables_or_skips() {
     assert_eq!(*g.curves[0].last().unwrap(), 0x40);
 
     // The param block is a per-character record (stride 0x3C) of 8 contiguous
-    // 6-byte {start, max, jitter, row} sub-records — NOT a length-prefixed blob
+    // 6-byte {start, max, jitter, row} sub-records - NOT a length-prefixed blob
     // (the leading 0x00B4 is Vahn's HP `start` = 180, not a length word). `start`
     // is the base stat: validate it against the new-game starting template.
     let party = StartingParty::from_scus(&scus).expect("starting party");
@@ -115,7 +115,7 @@ fn decodes_the_growth_tables_or_skips() {
         assert_eq!(cp.stats[2].start, t[2], "slot {slot} AGL start == template");
     }
 
-    // Gala (slot 2) matches the template on ALL 8 stats — the decisive pin that
+    // Gala (slot 2) matches the template on ALL 8 stats - the decisive pin that
     // `start` is the base stat and the sub-records are contiguous 6-byte.
     let gala = g.char_params(2).unwrap();
     let gt = tmpl(party.member(2).unwrap());

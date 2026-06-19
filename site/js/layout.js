@@ -36,6 +36,19 @@ const NAV = [
     ],
   },
   {
+    label: 'write-ups',
+    items: [
+      { href: 'writeups/index.html',                              text: 'Technical write-ups',     key: 'writeups/index' },
+      { href: 'writeups/disc-patching/index.html',                text: 'Patching a sealed disc',  key: 'writeups/disc-patching/index' },
+      { href: 'writeups/disc-patching/a-static-tables.html',       text: 'Tier A - static tables',  key: 'writeups/disc-patching/a-static-tables', indent: true },
+      { href: 'writeups/disc-patching/b-lzs-slots.html',           text: 'Tier B - editing inside LZS', key: 'writeups/disc-patching/b-lzs-slots', indent: true },
+      { href: 'writeups/disc-patching/c-field-vm-operands.html',   text: 'Tier C - field-VM bytecode', key: 'writeups/disc-patching/c-field-vm-operands', indent: true },
+      { href: 'writeups/disc-patching/d-man-relocation.html',      text: 'Tier D - MAN relocation',  key: 'writeups/disc-patching/d-man-relocation', indent: true },
+      { href: 'writeups/disc-patching/e-rodata-gap-code.html',     text: 'Tier E - rodata-gap code', key: 'writeups/disc-patching/e-rodata-gap-code', indent: true },
+      { href: 'writeups/disc-patching/f-overlay-dead-region.html', text: 'Tier F - overlay dead-region', key: 'writeups/disc-patching/f-overlay-dead-region', indent: true },
+    ],
+  },
+  {
     label: 'subsystems',
     items: [
       { href: 'subsystems/index.html',          text: 'Subsystems index',         key: 'subsystems/index' },
@@ -221,6 +234,7 @@ function buildSidebar(active, depth) {
       a.textContent = item.text;
       a.dataset.key = item.key;
       if (item.key === active) a.classList.add('active');
+      if (item.indent) a.classList.add('nav-child');
       nav.appendChild(a);
     }
     sec.appendChild(nav);

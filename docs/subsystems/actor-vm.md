@@ -131,7 +131,7 @@ Read against `FUN_801D77F4`'s walker - `*puVar11 = record_count`, `puVar10 = puV
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Field/event VM](script-vm.md) ·
 [Move-table VM](move-vm.md) ·
 [Motion VM](motion-vm.md) ·

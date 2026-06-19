@@ -26,7 +26,7 @@ The SPU sub-message schema is sourced from PCSX-Redux's
         Channel.field 3  ADSRInfoEx
             .field 1  state  Int32  (0=Atk 1=Dcy 2=Sus 3=Rel 4=Stopped)
 
-A voice is "audible" when `on || stop` — `on` means actively keyed,
+A voice is "audible" when `on || stop` - `on` means actively keyed,
 `stop` means in the release tail (still producing samples until the
 envelope reaches zero).
 
@@ -56,7 +56,7 @@ ADSR_STATE_STOPPED = 4  # PCSX-Redux ADSRState::Stopped
 
 # PSX SPU register offsets within the SPUPorts blob (covers
 # 0x1F801C00..0x1F801DFF). The MainVol regs are mednafen's "left/right
-# master volume" — taken at face value as i16 LE.
+# master volume" - taken at face value as i16 LE.
 SPU_REG_MAINVOL_L = 0x180
 SPU_REG_MAINVOL_R = 0x182
 SPU_REG_REVERB_MODE = 0x1AA  # u32 split across 0x1AA/0x1AE? mednafen
@@ -150,7 +150,7 @@ def parse_channel(channel_bytes: bytes) -> dict:
     # and not yet in the release tail; `stop` flips on at KOFF and stays
     # set while the envelope decays. ADSRInfoEx.state is the *configured*
     # envelope shape for the next attack and stays at Sustain for unused
-    # voices, so it's not a reliable audibility signal — `on || stop` is
+    # voices, so it's not a reliable audibility signal - `on || stop` is
     # the correct match against mednafen PsxSpu's `voice_state.active`.
     _ = state  # state retained from the schema walk for future use
     active = on or stop
@@ -198,7 +198,7 @@ def parse_spu_section(spu_bytes: bytes) -> dict:
         master_volume = (ml, mr)
         rm = struct.unpack_from("<H", ports, SPU_REG_REVERB_MODE)[0]
         reverb_mode = rm  # u16 zero-extended; mednafen sometimes reports
-                          # the 4-byte block — see audio_trace_oracle.
+                          # the 4-byte block - see audio_trace_oracle.
 
     out: dict = {
         "active_voice_mask": active_mask,

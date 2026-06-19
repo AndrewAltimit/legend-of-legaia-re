@@ -1,5 +1,5 @@
 //! Disc-gated: the MAN partition-1 NPC/actor placement table (`FUN_8003A1E4`)
-//! decodes into sane entity placements for real scenes — towns and the three
+//! decodes into sane entity placements for real scenes - towns and the three
 //! kingdom overworlds. Skips when `LEGAIA_DISC_BIN` is unset.
 
 use std::path::PathBuf;
@@ -162,7 +162,7 @@ fn placement_scripts_classify_into_kinds() {
 /// Disc-gated: a town01 placement's inline dialogue decodes into its full
 /// `0x1F`-lead segment **pool**, not just the first line.
 ///
-/// An interaction record carries the NPC's whole dialogue line set — every
+/// An interaction record carries the NPC's whole dialogue line set - every
 /// line across every story-state branch, plus interspersed option labels like
 /// `"Yes"` / `"No"`. This verifies `dialog::decode_inline_segments` recovers
 /// every segment from real disc bytes (the conversational NPCs decode into
@@ -252,7 +252,7 @@ fn inline_dialogue_decodes_into_full_segment_pool() {
 /// `actor[+0x9e]` on a byte whose `& 0x7F < 0x20` (i.e. a `0x1F` lead or a
 /// `0x21` terminator). So the "header" is just whatever the NPC's
 /// interaction script does (CFlag/SysFlag/JmpRel/NPC-move-to-tile) before
-/// the conversation text — the multi-segment selection is story-flag-gated
+/// the conversation text - the multi-segment selection is story-flag-gated
 /// `SysFlag.Test` branches, the same `COND_JMP` half the open thread
 /// previously identified.
 ///
@@ -324,18 +324,18 @@ fn dialog_prefix_decodes_as_field_vm_bytecode() {
             continue;
         };
         if lead == p.script_pc0 {
-            // The very first byte IS 0x1F — no prefix to validate.
+            // The very first byte IS 0x1F - no prefix to validate.
             continue;
         }
         // The dialog SM `FUN_80039B7C` state 0 loops `FUN_801DE840` (the
         // field VM) on bytes from `actor[+0x90] + actor[+0x9e]` until it
         // lands on a byte whose `& 0x7F < 0x20` (any of `0x00`, `0x1F`,
-        // `0x21` ...). Those low-range bytes are not field-VM opcodes — they
+        // `0x21` ...). Those low-range bytes are not field-VM opcodes - they
         // are the SM-yield markers (terminator / page-break / inline dialog
         // lead), so the walker is allowed to err on them. What it must NOT
         // do is desync on the original regression: `UnknownSubOp { 0x4C,
         // 0x51 }` (NPC move-to-tile) or `UnknownSubOp { 0x4C, 0x52 }` (menu
-        // poll) — every dialog NPC's story-flag-gated prologue uses these.
+        // poll) - every dialog NPC's story-flag-gated prologue uses these.
         let walker = LinearWalker::new(body, p.script_pc0);
         let mut ops = 0usize;
         for r in walker {
@@ -365,7 +365,7 @@ fn dialog_prefix_decodes_as_field_vm_bytecode() {
                     } = err
                     {
                         panic!(
-                            "[town01 #{}] disassembler desync on 0x4C 0x5{{1,2}} at 0x{:04X}: {:?} — this means the regression fix has been undone",
+                            "[town01 #{}] disassembler desync on 0x4C 0x5{{1,2}} at 0x{:04X}: {:?} - this means the regression fix has been undone",
                             p.index, pc, err
                         );
                     }

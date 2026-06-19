@@ -3,34 +3,34 @@
 //! Each cheat targets a single PSX RAM address. The classifier maps
 //! that address to one of:
 //!
-//! - [`Category::CharacterRecord`] — inside one of the four party
+//! - [`Category::CharacterRecord`] - inside one of the four party
 //!   per-character `0x414`-byte records at `0x80084708 + n * 0x414`.
 //!   The [`ClassifiedAddress::detail`] then names the field offset
 //!   inside the record (e.g. `"hp_max_live(+0x106)"`).
-//! - [`Category::PartyMoney`] — gold / coins / game time globals
+//! - [`Category::PartyMoney`] - gold / coins / game time globals
 //!   that sit between the inventory header and the per-character
 //!   records.
-//! - [`Category::Inventory`] — slots in the 2-byte-stride inventory
+//! - [`Category::Inventory`] - slots in the 2-byte-stride inventory
 //!   array starting at `0x80085958`.
-//! - [`Category::BattleActor`] — slots in the per-actor battle pool
+//! - [`Category::BattleActor`] - slots in the per-actor battle pool
 //!   at `0x800EC9E8 + n * 0x2D4`.
-//! - [`Category::ScriptVmGlobal`] — globals around `0x8007Bxxx`
+//! - [`Category::ScriptVmGlobal`] - globals around `0x8007Bxxx`
 //!   (BGM ID, story-flag word, debug menu trigger, encounter
 //!   counter, save-anywhere flag).
-//! - [`Category::PadInput`] — the per-frame button-mask cells.
-//! - [`Category::CameraGlobal`] — camera mode / azimuth / zoom.
-//! - [`Category::WorldStoryFlag`] — Door of Wind / town visited
+//! - [`Category::PadInput`] - the per-frame button-mask cells.
+//! - [`Category::CameraGlobal`] - camera mode / azimuth / zoom.
+//! - [`Category::WorldStoryFlag`] - Door of Wind / town visited
 //!   bitmaps that live outside the per-character records.
-//! - [`Category::Minigame`] — fishing / baka / dance / slots scratch.
-//! - [`Category::FieldVmCollision`] — walk-through-walls cells
+//! - [`Category::Minigame`] - fishing / baka / dance / slots scratch.
+//! - [`Category::FieldVmCollision`] - walk-through-walls cells
 //!   inside the field overlay.
-//! - [`Category::ScratchActiveActor`] — the shared "currently-acting
+//! - [`Category::ScratchActiveActor`] - the shared "currently-acting
 //!   character" HP/MP scratch cell at `0x8007A6BC`.
-//! - [`Category::CodePatch`] — addresses inside `SCUS_942.54` code
+//! - [`Category::CodePatch`] - addresses inside `SCUS_942.54` code
 //!   that cheats patch to NOP (`0x2400`); these are usually
 //!   "Maxed HP for All Characters" / "Remove Vahn's Chest" /
 //!   "Infinite Items All Slots".
-//! - [`Category::Unknown`] — none of the above.
+//! - [`Category::Unknown`] - none of the above.
 
 use serde::{Deserialize, Serialize};
 

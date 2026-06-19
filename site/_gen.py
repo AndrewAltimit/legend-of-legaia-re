@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parent
 CONTENT = ROOT / "_content"
 REPO_ROOT = ROOT.parent
 GAMEDATA = REPO_ROOT / "data" / "gamedata"
+DISC_PATCHING_TOML = CONTENT / "writeups" / "disc-patching" / "mods.toml"
 
 # Base for linking a committed repo file (the `<repo>/blob/main/<path>` form the
 # pages already use for "full reference" links).
@@ -44,7 +45,7 @@ def _committed_md_index() -> tuple[set[str], dict[str, str]]:
     unique** (ambiguous basenames like `README.md` are left out so they only
     resolve via an exact path). Deliberately excludes generated trees (`target/`)
     and the agent-only memory files (which live outside the repo), so an
-    unresolved reference — e.g. a `project_*.md` memory note — is left as plain
+    unresolved reference - e.g. a `project_*.md` memory note - is left as plain
     text rather than linked to a 404."""
     paths: set[str] = set()
     for base in ("docs", "crates"):
@@ -67,7 +68,7 @@ def _committed_md_index() -> tuple[set[str], dict[str, str]]:
 def _resolve_md(ref: str, paths: set[str], by_basename: dict[str, str]) -> str | None:
     """Resolve a Markdown reference as written in page prose to a committed
     repo-relative path, or `None` if it isn't a committed file. Tries the
-    reference verbatim, then under `docs/`, then by unique basename — covering
+    reference verbatim, then under `docs/`, then by unique basename - covering
     full paths (`docs/...`, `crates/.../README.md`), docs-relative paths
     (`subsystems/foo.md`), and bare filenames (`extraction.md`)."""
     ref = ref.strip().removeprefix("./")
@@ -170,6 +171,15 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("characters.html",            "Characters (WASM)",             "characters",                 "characters.html"),
     ("world-overview.html",        "World overview (3D)",           "world-overview",             "world-overview.html"),
     # depth = 1
+    # Technical write-ups (narrative deep-dives)
+    ("writeups/index.html",        "Technical write-ups",           "writeups/index",             "writeups/index.html"),
+    ("writeups/disc-patching/index.html","Patching a sealed disc",   "writeups/disc-patching/index","writeups/disc-patching/index.html"),
+    ("writeups/disc-patching/a-static-tables.html","Tier A - static-table overwrites","writeups/disc-patching/a-static-tables","writeups/disc-patching/a-static-tables.html"),
+    ("writeups/disc-patching/b-lzs-slots.html","Tier B - editing inside LZS","writeups/disc-patching/b-lzs-slots","writeups/disc-patching/b-lzs-slots.html"),
+    ("writeups/disc-patching/c-field-vm-operands.html","Tier C - rewriting field-VM bytecode","writeups/disc-patching/c-field-vm-operands","writeups/disc-patching/c-field-vm-operands.html"),
+    ("writeups/disc-patching/d-man-relocation.html","Tier D - variable-length relocation","writeups/disc-patching/d-man-relocation","writeups/disc-patching/d-man-relocation.html"),
+    ("writeups/disc-patching/e-rodata-gap-code.html","Tier E - rodata-gap code injection","writeups/disc-patching/e-rodata-gap-code","writeups/disc-patching/e-rodata-gap-code.html"),
+    ("writeups/disc-patching/f-overlay-dead-region.html","Tier F - overlay dead-region injection","writeups/disc-patching/f-overlay-dead-region","writeups/disc-patching/f-overlay-dead-region.html"),
     ("subsystems/index.html",      "Subsystems",                    "subsystems/index",           "subsystems/index.html"),
     ("subsystems/boot.html",       "Boot path",                     "subsystems/boot",            "subsystems/boot.html"),
     ("subsystems/asset-loader.html","Asset loader",                 "subsystems/asset-loader",    "subsystems/asset-loader.html"),
@@ -784,6 +794,73 @@ ARTS_CHARACTERS: list[str] = ["Vahn", "Noa", "Gala"]
 ARTS_KINDS: list[str] = ["regular", "hyper", "super", "miracle"]
 
 
+def _esc(s: str) -> str:
+    """Minimal HTML-escape for text pulled from the TOML catalog."""
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def build_disc_patching_table() -> str:
+    """Render the mod -> technique-tier master table for the disc-patching
+    write-up index from `mods.toml`, grouped by tier in ladder order. Returns
+    the HTML substituted for the `<!--DISC_PATCHING_TABLE-->` placeholder, or ""
+    if the catalog is absent. A tier title links to its page only when that page
+    is published (`published = true`), so the internal-link gate stays green
+    while tier pages are still being written."""
+    if not DISC_PATCHING_TOML.exists():
+        return ""
+    with DISC_PATCHING_TOML.open("rb") as f:
+        data = tomllib.load(f)
+    tiers = data.get("tier", [])
+    variants = {v["id"]: v["title"] for v in data.get("variant", [])}
+    by_tier: dict[str, list[dict]] = {}
+    for m in data.get("mod", []):
+        by_tier.setdefault(m["tier"], []).append(m)
+
+    out = [
+        '<div class="table-wrap">',
+        "<table>",
+        "<thead><tr>"
+        "<th>Mod</th><th>Flag</th><th>Target</th>"
+        "<th>Edit</th><th>Gap</th><th>Status</th><th>Test</th>"
+        "</tr></thead>",
+        "<tbody>",
+    ]
+    for t in tiers:
+        tid = t["id"]
+        title = f'Tier {tid} - {_esc(t["title"])}'
+        if t.get("published"):
+            title = f'<a href="{t["page"]}">{title}</a>'
+        out.append(
+            f'<tr class="dp-tier"><td colspan="7"><strong>{title}</strong> '
+            f'- {_esc(t.get("summary", ""))}</td></tr>'
+        )
+        for m in by_tier.get(tid, []):
+            name = f'<strong>{_esc(m["name"])}</strong>'
+            var = m.get("variant")
+            if var:
+                name += f' <span class="tag" title="{_esc(variants.get(var, var))}">{var}</span>'
+            target = _esc(m.get("target", ""))
+            notes = m.get("notes")
+            if notes:
+                target += f'<br><span class="hint">{_esc(notes)}</span>'
+            gap = "shared gap" if m.get("gap") else "-"
+            status = m.get("status", "")
+            status_cls = "tag-done" if status == "shipped" else "tag-planned"
+            test = m.get("test")
+            test_html = f"<code>{_esc(test)}</code>" if test else "-"
+            out.append(
+                f"<tr><td>{name}</td>"
+                f'<td><code>{_esc(m.get("flag", ""))}</code></td>'
+                f"<td>{target}</td>"
+                f'<td>{_esc(m.get("edit", ""))}</td>'
+                f"<td>{gap}</td>"
+                f'<td class="col-status"><span class="tag {status_cls}">{status}</span></td>'
+                f"<td>{test_html}</td></tr>"
+            )
+    out += ["</tbody>", "</table>", "</div>"]
+    return "\n".join(out)
+
+
 def build_arts_json() -> dict:
     arts_raw = _load_toml("arts.toml").get("arts", [])
     by_char: dict[str, dict[str, list[dict]]] = {
@@ -964,6 +1041,10 @@ def main() -> int:
     # any page links to the real file in the repo.
     md_paths, md_by_basename = _committed_md_index()
 
+    # The disc-patching master table is rendered once from mods.toml and spliced
+    # into whichever page carries the placeholder.
+    disc_patching_table = build_disc_patching_table()
+
     for out_path, title, active, body_file in PAGES:
         depth = out_path.count("/")
         src = CONTENT / body_file
@@ -979,6 +1060,8 @@ def main() -> int:
             body = body[end + 3:].lstrip()
 
         body = autolink_md_refs(body, md_paths, md_by_basename)
+        if "<!--DISC_PATCHING_TABLE-->" in body:
+            body = body.replace("<!--DISC_PATCHING_TABLE-->", disc_patching_table)
 
         html = html_template(title, depth, active, body, extra_head)
         out = ROOT / out_path

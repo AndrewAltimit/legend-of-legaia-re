@@ -90,7 +90,7 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; media</div>
   <h1>Media browser <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Play every sound &mdash; and watch every cutscene &mdash; on the disc straight from your browser. Pick your <code>.bin</code> Mode2/2352 image once, then flip between three categories: <strong>BGM</strong> sequenced music (VAB + SEQ), the <strong>FMV</strong> movies (<code>MV*.STR</code>, decoded and played with synced MDEC video), and the <strong>SE</strong> sound banks (<code>XA*.XA</code>, each holding several interleaved voices). The same WASM build that powers the asset viewer parses, decodes, and plays everything locally &mdash; nothing leaves your machine. Your disc is cached locally in the browser and shared across pages, so it auto-loads on reload (use <em>Forget</em> to clear).
+    Play every sound - and watch every cutscene - on the disc straight from your browser. Pick your <code>.bin</code> Mode2/2352 image once, then flip between three categories: <strong>BGM</strong> sequenced music (VAB + SEQ), the <strong>FMV</strong> movies (<code>MV*.STR</code>, decoded and played with synced MDEC video), and the <strong>SE</strong> sound banks (<code>XA*.XA</code>, each holding several interleaved voices). The same WASM build that powers the asset viewer parses, decodes, and plays everything locally - nothing leaves your machine. Your disc is cached locally in the browser and shared across pages, so it auto-loads on reload (use <em>Forget</em> to clear).
   </p>
 </header>
 
@@ -103,7 +103,7 @@
       <span class="viewer-status" id="audio-status">No disc loaded.</span>
     </div>
     <p class="hint" style="margin: 0; font-size: 0.82rem;">
-      Requires the full Mode2/2352 <code>.bin</code> &mdash; XA streams live in CD sectors outside <code>PROT.DAT</code>. The browser autoplay policy means BGM will only start after you click <em>Play</em>.
+      Requires the full Mode2/2352 <code>.bin</code> - XA streams live in CD sectors outside <code>PROT.DAT</code>. The browser autoplay policy means BGM will only start after you click <em>Play</em>.
     </p>
   </div>
 </section>
@@ -149,7 +149,7 @@
     </div>
     <ul class="audio-list" id="fmv-list"></ul>
     <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
-      <code>MV*.STR</code> files carry interleaved MDEC video + XA audio. Playing one decodes the <a href="formats/xa.html">XA audio</a> and drives the <a href="subsystems/cutscene.html">MDEC video</a> off the audio clock, frame by frame &mdash; the same clean-room decoders the engine port uses (<code>legaia-mdec</code> + <code>legaia-xa</code>). Decode can take a few seconds for the longer streams; the button stays in &ldquo;decoding…&rdquo; while it works.
+      <code>MV*.STR</code> files carry interleaved MDEC video + XA audio. Playing one decodes the <a href="formats/xa.html">XA audio</a> and drives the <a href="subsystems/cutscene.html">MDEC video</a> off the audio clock, frame by frame - the same clean-room decoders the engine port uses (<code>legaia-mdec</code> + <code>legaia-xa</code>). Decode can take a few seconds for the longer streams; the button stays in &ldquo;decoding…&rdquo; while it works.
     </p>
   </div>
 
@@ -161,7 +161,7 @@
     </div>
     <ul class="audio-list" id="se-list"></ul>
     <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
-      Each <code>XA*.XA</code> file is a CD-XA bank holding <strong>several interleaved voices</strong> &mdash; one per <code>(file_no, ch_no)</code> sub-stream &mdash; not a single track. Click a file to demux it and list the voices it contains; each one decodes to <a href="formats/xa.html">XA-ADPCM</a> audio independently (<code>legaia-xa::demux</code> + <code>decode</code>). Demuxing a bank decodes every voice in it, so the first click can take a moment.
+      Each <code>XA*.XA</code> file is a CD-XA bank holding <strong>several interleaved voices</strong> - one per <code>(file_no, ch_no)</code> sub-stream - not a single track. Click a file to demux it and list the voices it contains; each one decodes to <a href="formats/xa.html">XA-ADPCM</a> audio independently (<code>legaia-xa::demux</code> + <code>decode</code>). Demuxing a bank decodes every voice in it, so the first click can take a moment.
     </p>
   </div>
 </section>
@@ -791,7 +791,7 @@
    * expose name / size / arrayBuffer(). */
   async function loadAudioDisc(f) {
     if (!f) { status.textContent = 'No file loaded.'; return; }
-    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — parsing…`;
+    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) - parsing…`;
     const prog = LoadProgress.create(status);
     try {
       const bytes = await prog.read(f, `Reading ${f.name}`);
@@ -801,10 +801,10 @@
         await wasmMod.default();
       }
       audio = new wasmMod.LegaiaAudio();
-      prog.indeterminate('Parsing PROT.DAT — this can take a few seconds…');
+      prog.indeterminate('Parsing PROT.DAT - this can take a few seconds…');
       await prog.paint(); // let the bar render before the blocking parse
       const protCount = audio.load_disc(bytes);
-      status.textContent = `Loaded ${f.name} — ${protCount} PROT entries; scanning audio…`;
+      status.textContent = `Loaded ${f.name} - ${protCount} PROT entries; scanning audio…`;
 
       prog.indeterminate('Scanning for BGM + streaming media…');
       await prog.paint();
@@ -819,7 +819,7 @@
       renderFmvList('');
       renderSeList('');
       browseSec.style.display = 'block';
-      status.textContent = `Loaded ${f.name} — ${bgmEntries.length} BGM pairs, ${fmvEntries.length} FMV movies, ${seEntries.length} SE banks.`;
+      status.textContent = `Loaded ${f.name} - ${bgmEntries.length} BGM pairs, ${fmvEntries.length} FMV movies, ${seEntries.length} SE banks.`;
       prog.done(`${bgmEntries.length} BGM pairs, ${fmvEntries.length} FMV, ${seEntries.length} SE.`);
     } catch (err) {
       status.textContent = `Couldn't load: ${err.message || err}.`;

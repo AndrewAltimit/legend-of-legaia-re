@@ -1,8 +1,8 @@
-/* webgl-math.js — pure-function math + placement helpers for the
+/* webgl-math.js - pure-function math + placement helpers for the
  * WASM viewer's TMD pipeline. Split out of webgl-tmd.js for file
  * modularity; consumed by webgl-tmd.js's TmdRenderer class.
  *
- * Loads as a classic global script — exposes: IDENTITY4, MESH_SCALE,
+ * Loads as a classic global script - exposes: IDENTITY4, MESH_SCALE,
  * compileProgram, mulMat4, perspective, translate, rotateY, rotateX,
  * scaleMat, buildMvp, placementModelScaled, placementModelScaledY,
  * placementModelCentered,

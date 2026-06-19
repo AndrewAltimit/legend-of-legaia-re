@@ -2,11 +2,11 @@
 //!
 //! The extracted PROT files include both each entry's TOC-indexed payload
 //! AND, for entries with a trailing gap, the unindexed sectors the boot
-//! loader reads past the indexed end (carrying trailing-overlay code — see
+//! loader reads past the indexed end (carrying trailing-overlay code - see
 //! `docs/subsystems/boot.md`). Coverage is reported in two flavors:
 //!
 //! - **Indexed coverage** (the assertion): classify only each entry's
-//!   indexed sub-region. This is the historical invariant — every TOC-
+//!   indexed sub-region. This is the historical invariant - every TOC-
 //!   declared PROT byte should fall into a known PROT-format class.
 //!   Threshold: >= 99 %.
 //! - **Extended coverage** (informational): classify each entry's full

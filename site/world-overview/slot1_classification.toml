@@ -1,6 +1,6 @@
 # Per-kingdom classification of slot-1 TMDs that the MAN placement table
 # doesn't pin at a world coordinate. Drives the "show unplaced slot-1 TMDs"
-# layout on /world-overview/. Pure UI hint — runtime correctness is unaffected.
+# layout on /world-overview/. Pure UI hint - runtime correctness is unaffected.
 #
 # The MAN table only pins a handful of slots per kingdom; the rest are
 # positioned by the field-VM at scene-load via the runtime actor lists
@@ -72,7 +72,7 @@ note = "tall narrow tower / spire"
 
 [drake.5]
 class = "landmark"
-note = "dome with concentric / spiralled top — structure"
+note = "dome with concentric / spiralled top - structure"
 
 [drake.6]  # live actor-placed
 class = "landmark"
@@ -144,7 +144,7 @@ note = "small faceted prop (~528B)"
 
 [drake.23]
 class = "landmark"
-note = "terraced mountain peak — concentric square layering on top view"
+note = "terraced mountain peak - concentric square layering on top view"
 
 [drake.24]
 class = "decoration"
@@ -225,7 +225,7 @@ note = "tall obelisk / pillar (~5.6KB)"
 
 [sebucus.7]
 class = "landmark"
-note = "4-corner-tower cluster (nobj=2, ~5.3KB) — temple / fortress quad layout"
+note = "4-corner-tower cluster (nobj=2, ~5.3KB) - temple / fortress quad layout"
 
 [sebucus.8]
 class = "landmark"
@@ -257,7 +257,7 @@ note = "thin bar / road segment; md5 0ac44cdca45c shared with karisto.2"
 
 [sebucus.15]
 class = "landmark"
-note = "mountain / dome — triangular peak silhouette"
+note = "mountain / dome - triangular peak silhouette"
 
 [sebucus.16]
 class = "landmark"
@@ -354,7 +354,7 @@ note = "tall multi-element building (nobj=4)"
 
 [karisto.8]
 class = "landmark"
-note = "dome with multiple spires on top — temple / antenna pavilion"
+note = "dome with multiple spires on top - temple / antenna pavilion"
 
 [karisto.9]
 class = "decoration"
@@ -382,7 +382,7 @@ note = "large single mountain"
 
 [karisto.15]
 class = "landmark"
-note = "cluster of 4 small huts (nobj=4) — village"
+note = "cluster of 4 small huts (nobj=4) - village"
 
 [karisto.16]
 class = "landmark"

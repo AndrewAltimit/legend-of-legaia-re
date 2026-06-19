@@ -266,7 +266,7 @@ pub trait PrimHost {
     /// horizontal bar.
     ///
     /// (The retail allocator entry point for this is not yet pinned;
-    /// `FUN_80034B6C` was an earlier mis-guess — that address is a
+    /// `FUN_80034B6C` was an earlier mis-guess - that address is a
     /// one-instruction tail fragment of the number formatter
     /// `FUN_80034B78`, not a packet allocator.)
     fn prim_packet_alloc(&mut self, _packet_type: u8) {}

@@ -497,7 +497,7 @@ fn load_tim_path(path: &Path, clut_idx: usize) -> Result<(Vec<u8>, u32, u32)> {
 /// offset within `path`. Useful for parsing TIMs embedded in larger
 /// containers (PROT entries) and for TIMs in the unindexed pre-
 /// `init_data` gap of `PROT.DAT` (e.g. the system-UI sprite sheet at
-/// offset `0x018E0` or the menu-glyph atlas at offset `0x11218` —
+/// offset `0x018E0` or the menu-glyph atlas at offset `0x11218` -
 /// see [`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`]).
 fn load_tim_path_at_offset(
     path: &Path,

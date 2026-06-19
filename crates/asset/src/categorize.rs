@@ -95,7 +95,7 @@ pub enum Class {
     /// Composite shape: `[u16 count][u16 offsets[count]][record bodies]
     /// [zero pad to next 0x800 sector][canonical scene_asset_table]`. The
     /// leading prescript carries the word-aligned per-scene actor/event
-    /// record structure (NOT field-VM bytecode — see
+    /// record structure (NOT field-VM bytecode - see
     /// [`crate::scene_event_scripts`]) and the asset table at the next sector
     /// boundary holds the standard 7-asset scene bundle. 77 PROT entries match.
     /// See [`crate::scene_scripted_asset_table`].

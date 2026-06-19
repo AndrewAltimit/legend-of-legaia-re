@@ -44,7 +44,7 @@ end
 local TARGETS = parse_targets(probe.getenv("LEGAIA_TARGETS",
     "60,300,900,1500,1800"))
 
-local CHUNK = 0x10000  -- 64 KiB per vsync — safe per-callback read size
+local CHUNK = 0x10000  -- 64 KiB per vsync - safe per-callback read size
 
 PCSX.log(string.format(
     "[boot_walk] sstate=%s out_dir=%s targets=[%s] chunk=0x%X",

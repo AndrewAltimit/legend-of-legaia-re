@@ -1,6 +1,6 @@
 # Muscle Dome minigame
 
-The **Muscle Dome** is a card-battle arena contest. The player fields one party character against an opponent; each round both sides choose a set of action cards from a hand, the chosen cards are queued onto the fighters, and the round is resolved by playing the queued actions out. The minigame ships in its own overlay (`overlay_muscle_dome.bin`) and is **completely distinct** from the fishing / slot / dance / Baka Fighter minigame-hub family — it shares only the generic field-engine prologues, not their controller library, so this page documents its own structure.
+The **Muscle Dome** is a card-battle arena contest. The player fields one party character against an opponent; each round both sides choose a set of action cards from a hand, the chosen cards are queued onto the fighters, and the round is resolved by playing the queued actions out. The minigame ships in its own overlay (`overlay_muscle_dome.bin`) and is **completely distinct** from the fishing / slot / dance / Baka Fighter minigame-hub family - it shares only the generic field-engine prologues, not their controller library, so this page documents its own structure.
 
 The whole contest runs on a shared context block at `_DAT_8007bd24` (referred to below as **ctx**). The fighters are ordinary battle actors reached through the global actor pointer table `&DAT_801c9370` (the same table the main battle system uses), so a "card play" ultimately resolves through the battle action machinery against actor records.
 
@@ -14,12 +14,12 @@ The per-frame controller is `FUN_801d0748` (`overlay_muscle_dome_801d0748.txt`).
 
 A small number of phase arms are confirmed by content:
 - Phase `0x14` arm: copies the four pressed-direction card handles, sets `ctx+0x880` to the chosen direction bit, and marks the selected card slot's actor field `+0x1d = 2` (selection lock). This is the **player card-pick** phase.
-- Phase `0x3c` / `0x46` / `0x50` arms: write the chosen action id into the fighter actor's `+0x1dd` (action) and `+0x1de` (action-state) fields and kick the battle action — this is **commit the queued cards and play them out**.
-- Phase `0x6e` arm (`FUN_801d0748` near `0x801d0f24`): when a sub-result tag equals `0xb6` it computes a percentage `actor[+0x14c]*0x6c/actor[+0x14e]` (current/max ratio ×108) and renders it as a number — the **score / HP-percentage readout**.
+- Phase `0x3c` / `0x46` / `0x50` arms: write the chosen action id into the fighter actor's `+0x1dd` (action) and `+0x1de` (action-state) fields and kick the battle action - this is **commit the queued cards and play them out**.
+- Phase `0x6e` arm (`FUN_801d0748` near `0x801d0f24`): when a sub-result tag equals `0xb6` it computes a percentage `actor[+0x14c]*0x6c/actor[+0x14e]` (current/max ratio ×108) and renders it as a number - the **score / HP-percentage readout**.
 
 Auxiliary per-frame helpers the controller calls every frame:
-- `FUN_801d3444` — animates the round **time meter**: ramps a 0..0xc counter `DAT_801f4e0a` up while the phase tag `ctx+6 == 'P'` (0x50) and an enable flag is set, down otherwise, and maps it to a bar Y position. (`overlay_muscle_dome_801d3444.txt`.)
-- `FUN_801d9bbc` — advances every **active animated sprite handle** (`ctx+0x1074[]`, up to 0x28 entries) one step toward its target screen position over a per-handle frame count; returns the count still in flight. (`overlay_muscle_dome_801d9bbc.txt`.)
+- `FUN_801d3444` - animates the round **time meter**: ramps a 0..0xc counter `DAT_801f4e0a` up while the phase tag `ctx+6 == 'P'` (0x50) and an enable flag is set, down otherwise, and maps it to a bar Y position. (`overlay_muscle_dome_801d3444.txt`.)
+- `FUN_801d9bbc` - advances every **active animated sprite handle** (`ctx+0x1074[]`, up to 0x28 entries) one step toward its target screen position over a per-handle frame count; returns the count still in flight. (`overlay_muscle_dome_801d9bbc.txt`.)
 
 ## Card / move representation + selection
 
@@ -33,7 +33,7 @@ A "card" is an action drawn from the active fighter's move set. Cards are built 
 The **round point budget** lives at `ctx+0x6dc`, seeded from the fighter record field `+0x154` (the character's available "spirit"/AP pool); the running spent total is `ctx+0x6d8`. The number of cards already committed this round is the **selection index `ctx+0x19`**, and the slot currently being committed is `ctx+0x1a`.
 
 `FUN_801d388c` case `0xb` is **commit one selected card**:
-- It rejects the commit if the remaining budget `ctx+0x6dc` is smaller than the card's cost (`ctx[ctx+0x1a + 0x14]`) — you cannot overspend.
+- It rejects the commit if the remaining budget `ctx+0x6dc` is smaller than the card's cost (`ctx[ctx+0x1a + 0x14]`) - you cannot overspend.
 - Otherwise it spawns the committed-card sprite, **records the chosen move id into the fighter actor's queue** at `actor+0x1df + ctx+0x19` (an in-actor list of queued action ids), debits the cost from `ctx+0x6dc`, adds it to `ctx+0x6d8`, and increments `ctx+0x19`.
 
 So selection = repeatedly pick a hand slot (a direction), which appends that slot's move id into the actor's `+0x1df` action queue while there is budget left.
@@ -59,7 +59,7 @@ The `func_0x80035f04` calls throughout are the shared screen-projection helper (
 ## Opponent + scoring
 
 - The fighters are battle actors in `&DAT_801c9370`; the active fighter index is `ctx+0x13`, the player party member id is `ctx+0x20`, and the opponent id is `ctx+0x21` (clamped to ≤ 2 in `FUN_801d8de8`). The character→record mapping uses `&DAT_8007bd10` (per-actor character id) to index the 0x414-byte party records.
-- The opponent's hand is built by the **same** deal/commit code paths (`FUN_801d388c` cases `9`/`0x2c`/`0xb`) keyed on the opponent's `ctx+0x13`; the AI simply commits cards from its own move set against the same budget rule. There is **no separate scripted AI table** in this overlay — the opponent uses the shared selection logic with its own record. **(Inferred from the symmetric use of `ctx+0x13` across both fighters; no dome-specific AI scorer was found.)**
+- The opponent's hand is built by the **same** deal/commit code paths (`FUN_801d388c` cases `9`/`0x2c`/`0xb`) keyed on the opponent's `ctx+0x13`; the AI simply commits cards from its own move set against the same budget rule. There is **no separate scripted AI table** in this overlay - the opponent uses the shared selection logic with its own record. **(Inferred from the symmetric use of `ctx+0x13` across both fighters; no dome-specific AI scorer was found.)**
 - Scoring is HP-ratio based: the phase-`0x6e` arm renders `current_hp(+0x14c) * 108 / max_hp(+0x14e)` as the readout, and the win/lose phases (`0x64`/`0x65`/`0x66`/`0x67`) branch on the fighter HP fields. The HUD draws each fighter's HP/stat bars from record fields `+0x14e`/`+0x152`/`+0x172`/`+0x174` (`FUN_801d8de8` via `func_0x8003563c`, the bar/gauge primitive).
 - **Reward:** `FUN_801d8de8` case `0x59` composes a victory message from a victory-message string-pointer table at `0x801f4dfc` plus a spell/seru name looked up in the static spell-name table `DAT_800754d0` (12-byte stride, indexed by `ctx+0x269 + 0x80`). This matches Muscle Dome awarding a Seru / magic on a win. **(Confirmed: the message pulls a name from the shared spell-name table at the player Seru-magic block `0x80+`.)**
 
@@ -85,7 +85,7 @@ All offsets are relative to the context base `_DAT_8007bd24` unless noted otherw
 | `ctx+0x269` | u8 | awarded spell/seru id (offset into spell-name table at `+0x80`) | Confirmed |
 | `ctx+0x275` | u8 | active panel id (vs `PTR_DAT_801f4d34` record `[2]`) | Confirmed |
 | `ctx+0x6b2` | u16 | per-frame tick counter (bumped each `FUN_801d388c` call) | Confirmed |
-| `ctx+0x6d6` | — | scratch sub-block used for HUD layout (`pbVar10` base) | Inferred |
+| `ctx+0x6d6` | - | scratch sub-block used for HUD layout (`pbVar10` base) | Inferred |
 | `ctx+0x6d8` | u16 | **points spent this round** | Confirmed |
 | `ctx+0x6dc` | u16 | **remaining point budget** (seeded from record `+0x154`) | Confirmed |
 | `ctx+0x880` | u32 | chosen card-direction bitmask (`0x8000`/`0x2000`/`0x1000`/`0x4000`) | Confirmed |
@@ -123,13 +123,13 @@ All offsets are relative to the context base `_DAT_8007bd24` unless noted otherw
 
 ## Open
 
-- The exact phase ordering and meaning of every `ctx+6` value (deal/select/confirm/resolve/win/lose) — partially confirmed; a live phase-byte capture would pin the full graph.
+- The exact phase ordering and meaning of every `ctx+6` value (deal/select/confirm/resolve/win/lose) - partially confirmed; a live phase-byte capture would pin the full graph.
 - The byte layout of the deck tables `&DAT_801f4b8c`/`&DAT_801f4b94` and the per-step script table `&PTR_DAT_801f4d34` (these are overlay rodata; only their access patterns are reversed here, not their contents).
 - Whether card resolution applies any dome-specific damage scaling or uses the shared `battle_formulas` unmodified.
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Tile-board grid](tile-board.md) ·
 [Battle action SM](battle-action.md) ·
 [Spell table](../formats/spell-table.md) ·

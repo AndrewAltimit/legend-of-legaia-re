@@ -39,7 +39,7 @@ fn player_summons_map_to_their_namesake_battle_data_creatures() {
         (0x89, "Orb", 83),
         (0x8a, "Freed", 92),
         (0x8b, "Nova", 95),
-        // Evolved-Seru block (disc-pinned by mesh identity, not name) — the two
+        // Evolved-Seru block (disc-pinned by mesh identity, not name) - the two
         // legs 0x90/0x91 had no mid-cast capture and are pinned from disc bytes.
         (0x8c, "Gola Gola", 98),
         (0x8d, "Mushura", 101),

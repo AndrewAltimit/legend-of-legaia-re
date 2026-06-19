@@ -4,7 +4,7 @@
 //!
 //! (`FUN_8003A110` is the section-0 carve: it reads the three stride bytes that
 //! follow the section-0 pointer and walks `count * stride + 1` past each
-//! sub-table to derive the formation / condition / region table bases — the
+//! sub-table to derive the formation / condition / region table bases - the
 //! exact layout the [`EncounterSection`] parse + `region_records` reproduce.)
 //!
 //! The MAN sub-asset is the third descriptor in every scene's

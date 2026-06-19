@@ -6,7 +6,7 @@ The bytecode interpreter that drives Legaia's overworld scripting - NPC movement
 
 The decompiled source is at `ghidra/scripts/funcs/overlay_0897_801de840.txt`. References to `func_0x80xxxxxx` are calls into `SCUS_942.54`; `FUN_801xxxxx` are sister functions inside the 0897 overlay.
 
-## On-disc form: the scene MAN — NOT `scene_event_scripts`
+## On-disc form: the scene MAN - NOT `scene_event_scripts`
 
 The on-disc carrier for field-VM bytecode is the **scene MAN** sub-asset
 (asset type `0x03`, the third descriptor in each scene's asset-table bundle;
@@ -22,7 +22,7 @@ records `1..` are per-actor interaction scripts. The engine mirrors this:
 field-VM (~8% linear-walk error on the retail town MANs).
 
 > **The `scene_event_scripts` / `scene_v12_table` prescript is a DIFFERENT
-> structure — not field-VM bytecode.** The `[u16 count][u16 offsets[count]]`
+> structure - not field-VM bytecode.** The `[u16 count][u16 offsets[count]]`
 > prescript (offset 0, or `+0x800` behind the v12 header) was long assumed to
 > carry field-VM scripts because its records open with `0xFFFF 0x0000`. It does
 > not: running the field-VM disassembler over those records yields a 65–88 %
@@ -223,41 +223,41 @@ PC += 4.
 
 #### 0x39 GIVE_ITEM
 
-`[39, item_id]` — adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path — the **granted** item is this single inline operand byte, **not** a per-scene table. `FUN_800421D4` is the inventory adder (see [`functions.md`](../reference/functions.md)), so the earlier `PLAY_SFX` / `func_0x800421D4(sfx_id, 1)` label was wrong. (The standalone `FUN_801D71F0` add-item copy has zero callers — dead/duplicate;
-the live give-item is inlined in the dispatcher here.) NB the chest's announcement *text* ("There is a {item}…") names the item from a **separate** `0xC2 <id>` MES item-name token (display only), distinct from this give operand — editing one without the other makes the on-screen message disagree with what lands in the bag (see [randomizer.md](../tooling/randomizer.md)).
+`[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path - the **granted** item is this single inline operand byte, **not** a per-scene table. `FUN_800421D4` is the inventory adder (see [`functions.md`](../reference/functions.md)), so the earlier `PLAY_SFX` / `func_0x800421D4(sfx_id, 1)` label was wrong. (The standalone `FUN_801D71F0` add-item copy has zero callers - dead/duplicate;
+the live give-item is inlined in the dispatcher here.) NB the chest's announcement *text* ("There is a {item}…") names the item from a **separate** `0xC2 <id>` MES item-name token (display only), distinct from this give operand - editing one without the other makes the on-screen message disagree with what lands in the bag (see [randomizer.md](../tooling/randomizer.md)).
 
 #### 0x3F SCENE_CHANGE (named warp)
 
-`[3F, idx_lo, idx_hi, name_len, [name_len name bytes], entry_x, entry_z, dir]` — **Named scene-change ("warp by name"), NOT a dialog op.**
+`[3F, idx_lo, idx_hi, name_len, [name_len name bytes], entry_x, entry_z, dir]` - **Named scene-change ("warp by name"), NOT a dialog op.**
 
-- Copies the `name_len`-byte destination scene NAME from operand+3 into a local buffer (null-terminated) and calls `func_0x8001FD44(name, idx)` — the **scene-change packet** (writes the name into the active scene-name buffers `0x8007050C` / `0x80084548`; sets the transition flag `_DAT_1F800394 |= 0x40`).
+- Copies the `name_len`-byte destination scene NAME from operand+3 into a local buffer (null-terminated) and calls `func_0x8001FD44(name, idx)` - the **scene-change packet** (writes the name into the active scene-name buffers `0x8007050C` / `0x80084548`; sets the transition flag `_DAT_1F800394 |= 0x40`).
 - `idx` is the sign-extended `i16` at operand[0..2] (a story/entry id; distinct from the `0x3E` 7-id `map_id`).
 - Writes the destination entry tile via `_DAT_80073EF4`/`_DAT_80073EF8` (formula `(b & 0x7F) * 0x80 + 0x40`, +0x40 if high bit) and facing from `dir & 7`.
 - PC += 7 + name_len.
 
-A scene's controller script lists every reachable destination as one of these ops — see [world-map § scene destinations](world-map.md). (This op only *looks* like dialog when the over-approximating walk desyncs on a literal `?` = `0x3F` inside message text. Field **dialogue** has no dedicated opcode — see [§ Field dialogue](#field-dialogue-has-no-opcode).)
+A scene's controller script lists every reachable destination as one of these ops - see [world-map § scene destinations](world-map.md). (This op only *looks* like dialog when the over-approximating walk desyncs on a literal `?` = `0x3F` inside message text. Field **dialogue** has no dedicated opcode - see [§ Field dialogue](#field-dialogue-has-no-opcode).)
 
 #### 0x3E WARP (mode-24 minigame door-warp)
 
-The `op0 >= 100` arm of op `0x3E` is the **minigame entry warp**. Unlike the named `0x3F` scene-change, it carries **no destination scene name** — the destination is a code overlay selected by `sub_id = op0 - 100`, and the "destination-name handling" is a backup/restore of the *current* scene so the minigame can warp back. The whole chain is **SCUS-resident** (no overlay capture needed):
+The `op0 >= 100` arm of op `0x3E` is the **minigame entry warp**. Unlike the named `0x3F` scene-change, it carries **no destination scene name** - the destination is a code overlay selected by `sub_id = op0 - 100`, and the "destination-name handling" is a backup/restore of the *current* scene so the minigame can warp back. The whole chain is **SCUS-resident** (no overlay capture needed):
 
 1. **VM arm** (`case 0x3e` in `FUN_801DE840`, field overlay PROT 0897): `_DAT_8007BA34 = op0 - 100`; `_DAT_8007B83C = 0x18` (mode 24 OTHER INIT); `_DAT_80084440 = 0` (session-winnings accumulator); `_DAT_8007BAC0 = 0`; clears `player[+0x10]` bit `0x80000`. `see ghidra/scripts/funcs/overlay_0897_801de840.txt`.
-2. **Mode-24 OTHER INIT** `FUN_80025980` (static `SCUS_942.54`): **backs up the active scene name** — `memcpy(0x8007BAE8, 0x80084548, 8)` — and the companion scene-id word `_DAT_80084540` into the gp-pool slot `0x8007BAC4` (`gp+0x7ac`, `gp = 0x8007B318`). Then loads the per-sub-id minigame overlay into slot A via `FUN_8003EBE4(sub_id + 0x4D)` (`sub_id >= 6` adds 2 first), calls the sub-id's init entry in the freshly loaded overlay (switch on `_DAT_8007BA34`, bracketed by the `"other init"` / `"other init end"` debug prints), and hands off to mode 0x19 (OTHER MODE run). `see ghidra/scripts/funcs/80025980.txt`.
-3. **Return warp** `FUN_80026018` (static SCUS; the minigame overlays call it on exit): **restores the scene name** — `memcpy(0x80084548, 0x8007BAE8, 8)` — and `_DAT_80084540` from `0x8007BAC4`, commits the session winnings into the casino-coin bank (`_DAT_800845A4 += _DAT_80084440`, saturating at 9,999,999), and sets `_DAT_8007B83C = 2` (mode 2 MAIN INIT), whose per-scene initializer `FUN_801D6704` reloads the restored scene — completing the round trip. `see ghidra/scripts/funcs/80026018.txt`.
+2. **Mode-24 OTHER INIT** `FUN_80025980` (static `SCUS_942.54`): **backs up the active scene name** - `memcpy(0x8007BAE8, 0x80084548, 8)` - and the companion scene-id word `_DAT_80084540` into the gp-pool slot `0x8007BAC4` (`gp+0x7ac`, `gp = 0x8007B318`). Then loads the per-sub-id minigame overlay into slot A via `FUN_8003EBE4(sub_id + 0x4D)` (`sub_id >= 6` adds 2 first), calls the sub-id's init entry in the freshly loaded overlay (switch on `_DAT_8007BA34`, bracketed by the `"other init"` / `"other init end"` debug prints), and hands off to mode 0x19 (OTHER MODE run). `see ghidra/scripts/funcs/80025980.txt`.
+3. **Return warp** `FUN_80026018` (static SCUS; the minigame overlays call it on exit): **restores the scene name** - `memcpy(0x80084548, 0x8007BAE8, 8)` - and `_DAT_80084540` from `0x8007BAC4`, commits the session winnings into the casino-coin bank (`_DAT_800845A4 += _DAT_80084440`, saturating at 9,999,999), and sets `_DAT_8007B83C = 2` (mode 2 MAIN INIT), whose per-scene initializer `FUN_801D6704` reloads the restored scene - completing the round trip. `see ghidra/scripts/funcs/80026018.txt`.
 
 Sub-id → overlay dispatch (init VAs are entries in the loaded overlay at slot-A base `0x801CE818`; each verified by the init VA landing on a function prologue in exactly that PROT entry):
 
 | sub_id | init VA | PROT entry | Content |
 |---|---|---|---|
 | 0 | `0x801CF070` | 0972 | Fishing minigame (dev `other1`) |
-| 1 | `0x801CE8A0` | 0973 | 1-sector dev module `OTHER2` (runtime slice is a single sector; leading strings `OTHER2 / CICLE1 / SPRITE1 / SPREAD / GT4 DIV16` — identity open) |
-| 2 | `0x801CEE80` | 0974 | Dev module `OTHER3` (7-sector slice, leading strings `OTHER3 / SELECT NO %d DEPTH %d` — identity open) |
-| 3 | `0x801CEC94` | 0975 | **Casino slot machine** (dev `other4`; the documented reel-SM overlay — `FUN_801CF0D8`/`FUN_801D13E8` land on prologues in this entry, and the `"insert 3 coins"` / `"game_coin %d"` help text sits inside the runtime slice; see [`minigame-slot-machine.md`](minigame-slot-machine.md)) |
-| 4 | `0x801CF00C` | 0976 | Baka Fighter (dev `other5`; live-confirmed — the mode-24 entry capture holds `_DAT_8007BA34 = 4`, `autorun_minigame_overlay_capture.lua`) |
-| 5 | `0x801CEA6C` | 0977 | Monster-roster minigame (dev `other6`; arena monster-name table — NOT the Muscle Dome SM, whose `FUN_801D0748` does not land in this image) |
+| 1 | `0x801CE8A0` | 0973 | 1-sector dev module `OTHER2` (runtime slice is a single sector; leading strings `OTHER2 / CICLE1 / SPRITE1 / SPREAD / GT4 DIV16` - identity open) |
+| 2 | `0x801CEE80` | 0974 | Dev module `OTHER3` (7-sector slice, leading strings `OTHER3 / SELECT NO %d DEPTH %d` - identity open) |
+| 3 | `0x801CEC94` | 0975 | **Casino slot machine** (dev `other4`; the documented reel-SM overlay - `FUN_801CF0D8`/`FUN_801D13E8` land on prologues in this entry, and the `"insert 3 coins"` / `"game_coin %d"` help text sits inside the runtime slice; see [`minigame-slot-machine.md`](minigame-slot-machine.md)) |
+| 4 | `0x801CF00C` | 0976 | Baka Fighter (dev `other5`; live-confirmed - the mode-24 entry capture holds `_DAT_8007BA34 = 4`, `autorun_minigame_overlay_capture.lua`) |
+| 5 | `0x801CEA6C` | 0977 | Monster-roster minigame (dev `other6`; arena monster-name table - NOT the Muscle Dome SM, whose `FUN_801D0748` does not land in this image) |
 | 6 | `0x801CEF54` | 0980 | Noa dance rhythm minigame (Disco King) |
 
-The PROT indices follow the corrected overlay-loader arithmetic — `prot_index = param + 0x37F` in extraction index space (see [boot.md § overlay loaders](boot.md#game-mode-state-machine)): the in-RAM TOC at `0x801C70F0` is raw `PROT.DAT` from byte 0 (byte-verified against the `door_warp_town01_to_map01` save state), so the resolver's `toc[idx+2]` start-LBA read sits 2 entries above the extraction's per-entry indexing. The runtime image for each sub-id is the slice `[entry_start, next_entry_start)` (the resolver's size return), which is why the minigame entries' larger extraction footprints over-read into their neighbours.
+The PROT indices follow the corrected overlay-loader arithmetic - `prot_index = param + 0x37F` in extraction index space (see [boot.md § overlay loaders](boot.md#game-mode-state-machine)): the in-RAM TOC at `0x801C70F0` is raw `PROT.DAT` from byte 0 (byte-verified against the `door_warp_town01_to_map01` save state), so the resolver's `toc[idx+2]` start-LBA read sits 2 entries above the extraction's per-entry indexing. The runtime image for each sub-id is the slice `[entry_start, next_entry_start)` (the resolver's size return), which is why the minigame entries' larger extraction footprints over-read into their neighbours.
 
 ### 0x43 ACTOR_CTRL - sub-dispatcher
 
@@ -457,18 +457,18 @@ The Rust ports are exhaustively tested (39 tests covering escape sequences, term
 There is **no dedicated "open dialogue" field-VM opcode.** Talking to a field
 NPC is the **interaction pipeline**, not a text-carrying instruction:
 
-1. **Trigger** — the field-interact op (`0x3E` with `op0 < 100`) arms the actor's
+1. **Trigger** - the field-interact op (`0x3E` with `op0 < 100`) arms the actor's
    interaction context: it sets `sys_ctx[+0x94]` to the actor's interaction-script
    pointer (`scene_data + op1*stride + 1`) and `sys_ctx[+0x8a] = 1`. (`0x3E` with
-   `op0 >= 100` is the door-warp; `0x3F` is the named scene-change — neither is
+   `op0 >= 100` is the door-warp; `0x3F` is the named scene-change - neither is
    dialogue.)
-2. **Text source** — the dialogue text is the **actor's own inline
+2. **Text source** - the dialogue text is the **actor's own inline
    interaction-script MES** at `actor[+0x90] + actor[+0x9e]` (the actor's script
    buffer base + the running text offset). Confirmed by `FUN_80039b7c`, which sets
    the pager's text pointer `_DAT_801f3538 = *(actor+0x90) + (short)*(actor+0x9e)`.
    This is the same `0x1F`-lead / glyph stream the placement classifier finds
    structurally.
-3. **Display** — the per-frame **actor-dialog SM `FUN_80039b7c`** advances
+3. **Display** - the per-frame **actor-dialog SM `FUN_80039b7c`** advances
    `actor[+0x9c]` through `0 → 1 → 2` in lockstep with the pager state
    `_DAT_801f2734`, walking MES glyph bytes (the `0xC0`-stride / `< 0x20`-terminator
    rule), and feeds the **dialog pager `FUN_801D84D0`** (line-pointer array
@@ -488,7 +488,7 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
 An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
 wrong twice over: `0x3F` is the named scene-change, and field dialogue is the
 interaction-driven actor-text pipeline above, not an inline-text opcode. (The
-`0x4C` nibble-5 sub-3/4 op — `FUN_801d65d8` — is an actor-script wait/sync,
+`0x4C` nibble-5 sub-3/4 op - `FUN_801d65d8` - is an actor-script wait/sync,
 **not** the dialog open/poll an earlier note assumed.)
 
 **Engine wiring (re-grounded).** The clean-room engine now matches this:
@@ -555,26 +555,26 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scene-event-scripts <PATH> [
 # Walk every PROT.DAT entry and report 0x4C 0xE2 byte-pattern hits with
 # their CDNAME label and decoded fmv_id (filtered to the retail valid
 # range 0..=8 unless --no-filter is passed; the runtime FMV-state table
-# at 0x801D0A6C carries 12 slots — slots 5..=11 point at cut paths):
+# at 0x801D0A6C carries 12 slots - slots 5..=11 point at cut paths):
 cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
     --disc <PROT.DAT> --cdname <CDNAME.TXT> --bytewise
 ```
 
 The library exposes `legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` for downstream tooling. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
 
-> **CAVEAT — `scene-event-scripts` / `scan-prot` walk a NON-field-VM
+> **CAVEAT - `scene-event-scripts` / `scan-prot` walk a NON-field-VM
 > structure.** The `0xFFFF 0x0000` lead is a per-record header sentinel, and
-> the `scene-event-scripts` mode skips it before walking the record body — but
+> the `scene-event-scripts` mode skips it before walking the record body - but
 > those records are the word-aligned actor/event structure, not field-VM
 > bytecode (see the "On-disc form" note above), so the disassembly is mostly
 > `decode error` with coincidental matches. Any `0x4C 0xE2` FMV trigger these
 > modes report inside a prescript record is a **false positive** (a word-table
 > byte that equals `0x4C` followed by one equal to `0xE2`). The genuine FMV
-> triggers are pinned structurally instead — see the exhaustive sweep below and
-> the disc-decoded `fmv_dispatch` table — and the per-scene FMV-id remains
+> triggers are pinned structurally instead - see the exhaustive sweep below and
+> the disc-decoded `fmv_dispatch` table - and the per-scene FMV-id remains
 > capture-blocked.
 
-## FMV-trigger sites — exhaustive backward sweep
+## FMV-trigger sites - exhaustive backward sweep
 
 A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds **only two distinct writers**. Both are codified in [`legaia_engine_vm::cutscene_trigger`](../../crates/engine-vm/src/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
 
@@ -585,11 +585,11 @@ A grep across every Ghidra dump in the corpus for writes to the global game-mode
 
 **`FUN_801E30E4` has zero static callers.** It is a label inside `FUN_801DE840`, not a callable subroutine. Ghidra promotes it to a `FUN_` symbol because the JT entry at `0x801CF008[2]` resolves there; the actual control flow is the dispatch chain above. A direct `grep -rn 'jal 0x801e30e4' ghidra/scripts/funcs/` returns zero matches.
 
-The corollary for §2.7's seven mid-game scenes (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`): they **must** trigger via the same `0x4C 0xE2` op, but the byte sequence is not in their on-disc PROT entries (a bytewise scan of every PROT entry finds only `PROT[371] taiku, fmv_id=5`). The bytecode is therefore reconstructed at scene-load time from the field-pack preamble's runtime-projected slot — the lift is blocked on the same intra-transition byte-level capture that gates [`docs/formats/field-pack.md`](../formats/field-pack.md).
+The corollary for §2.7's seven mid-game scenes (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`): they **must** trigger via the same `0x4C 0xE2` op, but the byte sequence is not in their on-disc PROT entries (a bytewise scan of every PROT entry finds only `PROT[371] taiku, fmv_id=5`). The bytecode is therefore reconstructed at scene-load time from the field-pack preamble's runtime-projected slot - the lift is blocked on the same intra-transition byte-level capture that gates [`docs/formats/field-pack.md`](../formats/field-pack.md).
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Actor VM](actor-vm.md) ·
 [Move-table VM](move-vm.md) ·
 [Motion VM](motion-vm.md) ·

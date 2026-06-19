@@ -5,8 +5,8 @@
 //!
 //! - the favored-family assignment is a permutation of `{blade, claw, club}`;
 //! - every weapon section re-decodes cleanly (the LZS round-trip held) and now
-//!   carries the cost its new favored family dictates — `0x1E` for the
-//!   character's favored class, `0x2A` otherwise — except sections skipped
+//!   carries the cost its new favored family dictates - `0x1E` for the
+//!   character's favored class, `0x2A` otherwise - except sections skipped
 //!   because the re-compressed stream wouldn't fit, which keep their old cost
 //!   (and the count of such must equal the reported fit-skips);
 //! - non-class weapons (the Astral Sword) are never touched;

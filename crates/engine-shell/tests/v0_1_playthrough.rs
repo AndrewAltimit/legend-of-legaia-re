@@ -22,7 +22,7 @@
 //! reads Battle. Two flavours: the dialogue-accept auto-arm (drives the
 //! field-interact op directly), and the fully **emergent** path where the
 //! player walks to the partner and talks to it through the interaction probe.
-//! (Still open: the dialogue box's Yes/No selection is undecoded — the engine
+//! (Still open: the dialogue box's Yes/No selection is undecoded - the engine
 //! treats accept as dismiss, faithful for the forced tutorial.)
 //!
 //! The Field-leg recording lives at `scripts/replays/v0_1_playthrough.toml`
@@ -216,7 +216,7 @@ fn v0_1_replay_file_parses_clean() {
     let path = replay_path();
     assert!(
         path.exists(),
-        "v0.1 replay scaffold missing at {} — was the file deleted?",
+        "v0.1 replay scaffold missing at {} - was the file deleted?",
         path.display(),
     );
     let replay = ReplayFile::from_path(&path)
@@ -284,7 +284,7 @@ fn v0_1_oracle_convergence() {
 
     let Some(scenario_label) = replay.meta.scenario.as_deref() else {
         eprintln!(
-            "[skip] v0.1 replay carries no `meta.scenario` binding — scaffold not yet populated. \
+            "[skip] v0.1 replay carries no `meta.scenario` binding - scaffold not yet populated. \
              See scripts/replays/v0_1_playthrough.toml for the recording recipe."
         );
         return;
@@ -295,7 +295,7 @@ fn v0_1_oracle_convergence() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
     let Some(manifest_path) = manifest_path() else {
@@ -316,7 +316,7 @@ fn v0_1_oracle_convergence() {
     };
     let Some(scene_name) = scn.expected_active_scene.as_deref() else {
         eprintln!(
-            "[skip] scenario {scenario_label:?} has no `expected_active_scene` — needed to \
+            "[skip] scenario {scenario_label:?} has no `expected_active_scene` - needed to \
              drive build_engine_mode_trace"
         );
         return;
@@ -337,7 +337,7 @@ fn v0_1_oracle_convergence() {
         return;
     }
     // Only trust the resolved save for the retail-snapshot convergence check
-    // when it still matches the catalogued RAM fingerprint — a live `.mc{slot}`
+    // when it still matches the catalogued RAM fingerprint - a live `.mc{slot}`
     // that's been overwritten no longer holds the documented scenario, so
     // comparing the engine against it proves nothing. A scenario with a
     // `backup_fingerprint` resolves to the stable library copy above and passes
@@ -349,7 +349,7 @@ fn v0_1_oracle_convergence() {
             Ok(actual) if actual.eq_ignore_ascii_case(expected) => true,
             Ok(actual) => {
                 eprintln!(
-                    "[drift] scenario {scenario_label:?}: save slot {} != catalogued {} — overwritten, skipping retail convergence",
+                    "[drift] scenario {scenario_label:?}: save slot {} != catalogued {} - overwritten, skipping retail convergence",
                     &actual[..16.min(actual.len())],
                     &expected[..16.min(expected.len())],
                 );
@@ -495,7 +495,7 @@ fn v0_1_oracle_convergence() {
         );
     }
 
-    // The literal Battle mode-trace row now lands too — see
+    // The literal Battle mode-trace row now lands too - see
     // `v0_1_battle_leg_mode_trace_matches_expected`, which diffs the
     // Field -> Battle engine trace against `scripts/replays/v0_1_battle_leg.toml`.
     //
@@ -543,7 +543,7 @@ fn print_scene_mode_transitions(scenario_label: &str, trace: &[ModeTraceFrame]) 
 ///
 /// **Story-seed.** `BootSession::begin_new_game` seeds the opening party (Vahn,
 /// 180 HP) from the `SCUS_942.54` template. The Tetsu fight is the game's first
-/// battle, so this fresh state *is* retail's pre-fight story state — there is no
+/// battle, so this fresh state *is* retail's pre-fight story state - there is no
 /// earlier save to seed from (you cannot save before the tutorial fight). Cold
 /// boot then installs the sparring carrier from town01's MAN, so interacting
 /// with it and accepting its prompt arms and launches the fight.
@@ -565,7 +565,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -644,7 +644,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
     );
 
     // Retail convergence: pre-fight anchor reads Field, battle anchor reads
-    // Battle — matching the engine's Field -> Battle.
+    // Battle - matching the engine's Field -> Battle.
     let Some(manifest_path) = manifest_path() else {
         return;
     };
@@ -690,11 +690,11 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
 /// The fully input-driven Battle leg: a NEW GAME cold boot, then the player
 /// **walks** from the spawn to the sparring partner (BFS path over the real
 /// collision grid, driven through `World::nav_step_toward`), **talks** to it via
-/// the interaction probe, and **accepts** — reaching Battle with no teleport,
+/// the interaction probe, and **accepts** - reaching Battle with no teleport,
 /// no script injection, no manual engage.
 ///
 /// The opening sequence repositions the partner next to Vahn for the tutorial
-/// ([`RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS`] — its placement tile (76,65) is the
+/// ([`RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS`] - its placement tile (76,65) is the
 /// unreachable post-tutorial village spot); the cold boot skips that reposition,
 /// so the test places the carrier at its tutorial position first (standing in
 /// for the opening). From there the walk is fully emergent.
@@ -709,7 +709,7 @@ fn v0_1_battle_leg_walk_talk_accept() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 
@@ -746,7 +746,7 @@ fn v0_1_battle_leg_walk_talk_accept() {
         .insert(slot, (TUT.0, TUT.1));
 
     // BFS a path from the player spawn to the carrier over the real collision
-    // grid (64-unit sub-cells, 4-connected — the locomotion axes).
+    // grid (64-unit sub-cells, 4-connected - the locomotion axes).
     let (sx, sz) = {
         let p = session.host.world.player_actor_slot.expect("player") as usize;
         let ms = &session.host.world.actors[p].move_state;
@@ -938,7 +938,7 @@ fn v0_1_battle_leg_mode_trace_matches_expected() {
         return;
     }
     let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing — run `legaia-extract` first");
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
 

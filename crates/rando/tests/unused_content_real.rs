@@ -7,7 +7,7 @@
 //!   Bat (id 140);
 //! - the unused items ([`legaia_rando::unused::UNUSED_ITEM_IDS`]): "Something
 //!   Good" (`0x6B`) is named (so already in the valid pool) while the unnamed
-//!   accessory (`0xFD`) has no name (so excluded — the toggle is what adds it);
+//!   accessory (`0xFD`) has no name (so excluded - the toggle is what adds it);
 //! - turning the toggle on actually injects an unused enemy into the
 //!   random-encounter result, and leaving it off injects none.
 //!
@@ -34,7 +34,7 @@ fn load_disc() -> Option<Vec<u8>> {
 const EVIL_BAT_INUSE_ID: u16 = 140;
 /// The unused Evil Bat clones (a subset of [`UNUSED_ENEMY_IDS`]).
 const EVIL_BAT_CLONE_IDS: &[u8] = &[176, 177, 178];
-/// "Comm" — a standalone unused enemy (not a clone).
+/// "Comm" - a standalone unused enemy (not a clone).
 const COMM_ID: u16 = 78;
 
 #[test]
@@ -133,7 +133,7 @@ fn unused_items_split_named_vs_unnamed() {
 }
 
 /// Count, across every scene, how many formation id slots hold an unused-enemy
-/// id — re-decoding each scene MAN straight off the (possibly patched) image.
+/// id - re-decoding each scene MAN straight off the (possibly patched) image.
 fn unused_spawns_on_disc(patcher: &DiscPatcher) -> usize {
     let mut n = 0;
     for idx in 0..patcher.entry_count() {

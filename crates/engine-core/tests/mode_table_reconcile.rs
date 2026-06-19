@@ -1,7 +1,7 @@
 //! Reconcile the engine's transcribed mode table (`engine_core::mode::TABLE`)
 //! against the dispatch table decoded straight off the user's executable
 //! (`legaia_asset::mode_table`). Skips and passes when `extracted/SCUS_942.54`
-//! isn't on disk — same gating pattern as the other SCUS-table tests so CI
+//! isn't on disk - same gating pattern as the other SCUS-table tests so CI
 //! runs without Sony bytes.
 
 use legaia_engine_core::mode::{GameMode, TABLE};

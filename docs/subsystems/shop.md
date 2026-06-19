@@ -121,12 +121,12 @@ confirmed constants. The cost prompt and Yes/No cursor are rendered in
 
 ## Gold-shop stock source
 
-A gold town merchant's stock is **not** an overlay data table — it lives **inline
+A gold town merchant's stock is **not** an overlay data table - it lives **inline
 in the scene's field-VM script** (the MAN, asset type `0x03`), as field-VM op
 `0x49` (`STATE_RESUME`) sub-op `0` carrying `[count][item_ids][ASCII name]`. The
 `count` over-counts the purchasable stock by a trailing run of unsellable,
 price-`0` *template* ids (the `Ra-Seru Meta $N` placeholders `0x01/0x02/0x03`, or
-a lone `0x03`) that the on-screen shop skips — see the sellable-mask note below.
+a lone `0x03`) that the on-screen shop skips - see the sellable-mask note below.
 The shared scanner [`legaia_asset::shop_stock`] (a byte-scan, robust to the
 dialogue-picker jump tables a linear walk desyncs on) locates these records;
 [`legaia_engine_core::shop_catalog`] pairs them with item prices to build a priced
@@ -144,25 +144,25 @@ stages a priced `ShopSession` on `World::pending_field_shop` and arms the
 op-0x49 tristate (so the script stays suspended exactly the way the name-entry
 overlay suspends it). The host drains `World::take_pending_field_shop`, drives
 the buy/sell UI (the engine's `MenuRuntime` shop screens), and calls
-`World::finish_field_shop` when the player leaves — flipping the tristate
+`World::finish_field_shop` when the player leaves - flipping the tristate
 Armed -> Done so the field VM resumes past the merchant op. Non-shop op-0x49
 sub-0 payloads (inn / save prompts carry MES text, not a priced item list) fail
 the validation and arm nothing; with no `item_shop_data` installed (disc-free)
 the path is inert. `play-window` wires this end to end (it opens the menu-runtime
 shop on the pending signal and finishes on close).
 
-Buy **prices** come from the static `SCUS_942.54` item table — the `u16` at item
+Buy **prices** come from the static `SCUS_942.54` item table - the `u16` at item
 record `+2` (`legaia_asset::item_names::item_price`, base `TABLE_BASE_VA`), the
 same field the gold-debiting buy handler `FUN_801db380` reads (`_DAT_8008459C -=
 price[item_id]`). A price of `0` marks a quest / key / found-only / internal item
 the game never sells, so the price table doubles as a **sellable mask** (price
 `> 0`) for the shop-record scan. The mask does double duty: a record must lead
-with a sellable item (rejecting non-shop `0x49` payloads — inn / save prompts
+with a sellable item (rejecting non-shop `0x49` payloads - inn / save prompts
 carry MES text, not a priced list), and the trailing unsellable template-id
 padding the `count` over-counts (the `Ra-Seru Meta $N` slots `0x01..=0x03`, which
 *are* named but priced `0`) is trimmed out of the stock. Across the disc every
-shop partitions cleanly — a leading priced run then an unsellable tail (≤3 ids),
-never interleaved — and the priced prefix matches the curated walkthrough stock
+shop partitions cleanly - a leading priced run then an unsellable tail (≤3 ids),
+never interleaved - and the priced prefix matches the curated walkthrough stock
 (e.g. "Market" decodes to 10 ids but sells 7). Both the engine and the randomizer
 now use this mask, so each surfaces exactly the real stock; the whole gold-shop
 population decodes (earlier the "every id sellable" rule dropped every shop that
@@ -170,13 +170,13 @@ carried the padding). Validated against the Rim Elm Variety Store's 10 pinned id
 (a tail-less list) and the disc-wide partition guard.
 
 > The casino / prize-exchange table at `0x801E4518` (8-byte `[u16 item_id][u16
-> gate][u32 price]` records in `0x60`-byte blocks) is a different thing — its buy
+> gate][u32 price]` records in `0x60`-byte blocks) is a different thing - its buy
 > handler (`overlay_shop_save_801dc1cc.txt`) debits `_DAT_800845A4` (the **casino
 > coin bank**, not party gold), so it is already parsed by the randomizer's
 > `casino::CasinoExchange`. The prize-exchange UI is a **menu-overlay session**
 > like the gold shop: a save state taken inside the ticket-counter prize shop
 > holds `game_mode 0x17` (the CARD/menu pair, same as the pause menu) with the
-> menu overlay PROT 0899 resident in slot A and the field overlay swapped out —
+> menu overlay PROT 0899 resident in slot A and the field overlay swapped out -
 > while talking to the counter attendant the game is still field mode 3 under
 > the field overlay (the dialog itself is not a menu session).
 
@@ -195,7 +195,7 @@ engine. Inventory is a `HashMap<u8, u8>` (`item_id → count`) in `World::invent
 
 ## See also
 
-**Reference** —
+**Reference** -
 [Inn](inn.md) ·
 [Level-up](level-up.md) ·
 [Save screen](save-screen.md) ·
