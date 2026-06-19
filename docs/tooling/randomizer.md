@@ -642,7 +642,7 @@ current table (the audit surface).
 `--monster-stats` redistributes every enemy's combat stats across the
 `battle_data` archive (PROT 867). Each monster's record carries its stats as
 `u16` halfwords at fixed offsets in the decoded block (HP `+0x0C`, MP `+0x10`,
-then ATK / DEF↑ / DEF↓ / AGL / SPD; see
+then ATK / UDF / LDF / AGL / SPD; see
 [battle-data-pack.md](../formats/battle-data-pack.md) and the
 [monster stat-record archive](../formats/battle-data-pack.md) docs). The
 randomizer works **column-wise**: it collects each stat field across the whole

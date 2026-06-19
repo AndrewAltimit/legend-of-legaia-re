@@ -154,8 +154,8 @@ impl SaveMenuAtlas {
 ///
 /// The panel tiles are decoded from the system-UI TIM with CLUT row 2
 /// - byte-equal to the retail VRAM contents at parked-on-load-screen
-/// sstate9. The slot pills are decoded from PROT 0899 with CLUT 7 -
-/// byte-equal as well.
+///   sstate9. The slot pills are decoded from PROT 0899 with CLUT 7 -
+///   byte-equal as well.
 pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Result<SaveMenuAtlas> {
     // --- Slot pills from PROT 0899 ---
     let pill_tim = title_pak::extract_overlay_save_menu_tim(prot_0899_bytes)?;

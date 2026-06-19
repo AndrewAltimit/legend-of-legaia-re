@@ -3,25 +3,33 @@
 //!
 //! Joining the curated `enemies.toml` to the disc records **by monster name**
 //! reveals that the curated bestiary stats are not raw copies of the disc
-//! record - they are **scaled derivations** by a small set of fixed factors
-//! (the walkthrough the tables were mined from reports display/derived values):
+//! record - they are the **in-battle stats**, i.e. the raw record run through
+//! the battle loader's stat boost (`FUN_80054cb0`; see
+//! `legaia_asset::monster_archive` "Battle-load stat boost"). The combat-stat
+//! factors below are exactly that boost (gate-set profile B), which is why the
+//! curated numbers - mined from walkthroughs that recorded what the player
+//! *fights* - are higher than the disc bytes:
 //!
 //! | curated field | disc source (`MonsterRecord`) | factor |
 //! |---|---|---|
 //! | `hp`   | `hp`             | ×1 (exact) |
 //! | `spd`  | `speed()`        | ×1 (exact) |
 //! | `agl`  | `spirit()`       | ×1 (exact) - the curated "agl" is the disc SP/spirit stat |
-//! | `udf`  | `defense_high()` | ×2 (exact) |
-//! | `ldf`  | `defense_low()`  | ×2 (exact) |
-//! | `atk`  | `attack()`       | ×5/4 (±1 rounding) |
-//! | `exp`  | `exp`            | ×3/4 (±1 rounding) |
-//! | `intel`| `agility()`      | ×9/8 (±1 rounding) - the curated "int" is the disc AGL stat scaled |
-//! | `gold` | `gold`           | ×5/16 (±1 rounding) |
+//! | `udf`  | `defense_high()` | ×2 (exact, the battle UDF boost) |
+//! | `ldf`  | `defense_low()`  | ×2 (exact, the battle LDF boost) |
+//! | `atk`  | `attack()`       | ×5/4 (±1 rounding; battle boost `+= atk>>2`) |
+//! | `exp`  | `exp`            | ×3/4 (±1 rounding; the victory-spoils EXP scale) |
+//! | `intel`| `agility()`      | ×9/8 (±1 rounding; battle boost `+= agl>>3`) - the curated "int" is the disc AGL stat boosted |
+//! | `gold` | `gold`           | ×5/16 (±1 rounding; the victory-spoils gold scale) |
 //!
-//! So the **disc is raw ground truth**; the curated `agl`/`intel` labels are in
-//! fact the disc *spirit* and *(scaled) agility* stats. This both validates the
-//! monster-archive parser (all nine stat fields relate by clean factors across
-//! 120+ enemies) and documents the derivation.
+//! So the **disc record is raw ground truth**, and the curated table is the
+//! *boosted* in-battle view; the curated `agl`/`intel` labels are in fact the
+//! disc *spirit* and *(boosted) agility* stats. The five combat-stat factors
+//! match [`MonsterRecord::battle_stats`] exactly; `exp`/`gold` are the separate
+//! reward-scaling steps (`FUN_8004e568`), not stat boosts. This both validates
+//! the monster-archive parser (all nine stat fields relate by clean factors
+//! across 120+ enemies) and pins the cross-region difficulty difference first
+//! surfaced by Zetopheonix.
 //!
 //! Only **unambiguously-named** enemies are cross-checked: a few multi-form
 //! bosses (e.g. Gaza) share a name across several disc records, so a name join

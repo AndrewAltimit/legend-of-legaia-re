@@ -73,8 +73,8 @@ pub const MIN_STARTING_LEVEL: u8 = 2;
 /// Highest level the toggle accepts. The XP seeds are single `addiu` immediates
 /// (16-bit), and the largest one written - the next-level threshold `reach(N+1)`
 /// - stays within a positive `imm16` (`<= 0x7FFF`) through level 14 (`reach(15)`
-/// = 32370); beyond that the literal would need a second instruction the
-/// surrounding code has no room for.
+///   = 32370); beyond that the literal would need a second instruction the
+///   surrounding code has no room for.
 pub const MAX_STARTING_LEVEL: u8 = 14;
 
 /// A resolved starting-level plan: the XP literals to seed and the level-`N`

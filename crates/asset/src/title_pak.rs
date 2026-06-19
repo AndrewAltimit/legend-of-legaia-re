@@ -238,8 +238,8 @@ pub const OVERLAY_SYSTEM_UI_PANEL_INTERIOR_BOT_RGB: (u8, u8, u8) = (136, 136, 13
 /// row (white-ink, not gold-bronze). Byte-pinned via the same
 /// `scripts/pcsx-redux/scan_panel_prims.py` scan as the panel tiles
 /// - retail dispatches it as a single textured-sprite primitive
-/// with `dst=(114, 100)`, `src=(152, 64, 16, 16)`, CLUT at
-/// VRAM `(112, 511)`.
+///   with `dst=(114, 100)`, `src=(152, 64, 16, 16)`, CLUT at
+///   VRAM `(112, 511)`.
 pub const OVERLAY_SYSTEM_UI_CURSOR: (u32, u32, u32, u32) = (152, 64, 16, 16);
 
 /// CLUT block row used to render the pointing-finger cursor (white-
@@ -249,8 +249,8 @@ pub const OVERLAY_SYSTEM_UI_CURSOR_CLUT_ROW: u16 = 7;
 
 /// Retail framebuffer placement of the cursor: dst origin `(114, 100)`
 /// - directly left of the SLOT 1 pill at `(150, 100)`. The cursor's
-/// y coord stays fixed (100); engines change x or y for SLOT 2 by
-/// adjusting by `SAVE_SELECT_SLOT_PITCH_Y` (typically 16 stage pixels).
+///   y coord stays fixed (100); engines change x or y for SLOT 2 by
+///   adjusting by `SAVE_SELECT_SLOT_PITCH_Y` (typically 16 stage pixels).
 pub const OVERLAY_SAVE_CURSOR_RETAIL_DST: (u32, u32) = (114, 100);
 
 // -----------------------------------------------------------------------

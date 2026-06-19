@@ -361,7 +361,7 @@ The monster archive is **PROT entry `0867_battle_data`** (extended footprint; th
 
 Pinned by a live-battle PCSX-Redux watchpoint (`autorun_monster_record_source.lua`) - relative seek `(id-1)*40` sectors + `disc_read` CdlLOC → PROT.DAT `0x38AF000` = entry 867; three records match live actor stats byte-for-byte. Retail-semantically the archive **is** the `monster_data` block: the define `monster_data 869` names extraction entry 867 under the raw-TOC −2 correction ([`cdname.md`](../formats/cdname.md#numbering-space)) - the earlier "misleading `monster_data` stub at 869" reading was the filename shift.
 
-Parser `legaia_asset::monster_archive`; bridge `legaia_engine_core::monster_catalog::catalog_from_monster_archive` wired into `enter_field_scene`. The record is now fully decoded: all six stats are named (ATK/DEF↑/DEF↓/AGL/SPD/SP), rewards are inline at `+0x44..0x49`, and `+0x04` is the monster's **battle-model TMD** offset (not XP/drop - see the mesh thread below).
+Parser `legaia_asset::monster_archive`; bridge `legaia_engine_core::monster_catalog::catalog_from_monster_archive` wired into `enter_field_scene`. The record is now fully decoded: all six stats are named (ATK/UDF/LDF/AGL/SPD/SP), rewards are inline at `+0x44..0x49`, and `+0x04` is the monster's **battle-model TMD** offset (not XP/drop - see the mesh thread below).
 
 
 ### Monster mesh + texture pool

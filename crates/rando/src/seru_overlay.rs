@@ -1747,7 +1747,7 @@ pub fn assemble_warp_init_redirect(lba: u32, sectors: u16) -> Vec<u32> {
 /// after our overlay's INIT returns. `true` (sentinel slice): call
 /// [`MODE24_RETURN_FN`] for an immediate field reload. `false` (draw side): skip it
 /// - the overlay's INIT itself requests the persistent draw mode (mode 13), so the
-/// game keeps calling the overlay's TICK each frame until the TICK returns to field.
+///   game keeps calling the overlay's TICK each frame until the TICK returns to field.
 pub fn assemble_warp_init_redirect_opts(
     lba: u32,
     sectors: u16,

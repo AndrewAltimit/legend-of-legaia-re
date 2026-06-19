@@ -52,12 +52,17 @@ The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** o
 | `+0x10` | `+0x150/+0x152` (+`+0x174`) | MP | direct |
 | `+0x0E` | `+0x154/+0x156` | **SP** | spirit/action gauge - AI spell-selection budget; spirit-charge source |
 | `+0x12` | `+0x158/+0x15A` | **ATK** | attacker's offense in the damage routine |
-| `+0x14` | `+0x15C/+0x15E` | **DEF↑** (high/upper) | defender defense, branch A |
-| `+0x16` | `+0x160/+0x162` | **DEF↓** (low/lower) | defender defense, branch B |
+| `+0x14` | `+0x15C/+0x15E` | **UDF** (high/upper) | defender defense, branch A |
+| `+0x16` | `+0x160/+0x162` | **LDF** (low/lower) | defender defense, branch B |
 | `+0x18` | `+0x168/+0x16A` | **AGL** | accuracy/evasion seed (selector 9) |
 | `+0x1A` | `+0x164/+0x166` | **SPD** | turn-order initiative seed |
 
-`stat4` (`+0x18`) is also rescaled into the accuracy/evasion pair at copy time (`+0x168/+0x16A = stat4 + stat4/4` or `+ stat4/8` under the `_DAT_8007BD24+0x287` difficulty flag).
+**Battle-load stat boost.** The record halfwords above are *not* the values the fight uses. After the plain copy, `FUN_80054CB0` boosts four combat stats, picking one of two profiles by the battle-context flag `_DAT_8007BD24 + 0x287` (= `(*(u8*)0x8007BD60 >> 5) & 4`, bit 7 of a per-battle flags byte set by `FUN_800513F0`):
+
+- **gate-set profile (B):** `ATK += ATK>>2` (×5/4), `UDF × 2`, `LDF × 2`, `AGL += AGL>>3` (×9/8).
+- **gate-clear profile (A):** `UDF`/`LDF += (x>>1)+(x>>2)` (×7/4), `AGL += AGL>>2` (×5/4), ATK unchanged.
+
+HP/MP/SP/SPD are copied unchanged in both. Both profiles boost - the raw record always understates the fight. A live international-retail capture reproduces profile **B** byte-for-byte (Gaza Sim-Seru id 166: raw ATK 288 / UDF 222 / LDF 200 / AGL 220 → in-battle 360 / 444 / 400 / 247), which is also what the curated `enemies.toml` holds and what `MonsterRecord::battle_stats()` returns. This cross-region difficulty difference was first surfaced by **Zetopheonix**; the [enemy table](../../site/_content/monsters.html) shows the boosted stats by default with a raw-record toggle.
 
 **SPD** (`+0x164`): `overlay_0897_801e23ec` seeds each actor's per-turn initiative key from it: `+0x16C = speed + (rand() % (speed/2 + 1)) + 1`. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from AGL, which governs the hit/dodge roll rather than turn order. The next-actor selector `recompute_battle_order` (`FUN_801daba4`) reads the seeded `+0x16C` keys: it picks the living actor with the highest key (random tiebreak via `rand % tie_count`), zeroing dead actors' keys first. Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle.md#auto-resolve-vs-player-driven).
 
@@ -79,18 +84,18 @@ Real-data sanity check: Gimard (id 10, SP 60) has 9 slots - the affinity prefix 
 
 ### Physical attack damage - `overlay_battle_action_801ec3e4`
 
-Lines 2716-2826. The raw hit value is built from the **attacker's ATK** (`actor[+0x158]`) and reduced by the **defender's defense** - the routine reads `actor[+0x15C]` (DEF↑) when the attack's move index satisfies `(move - 0xC) % 10 < 5`, else `actor[+0x160]` (DEF↓):
+Lines 2716-2826. The raw hit value is built from the **attacker's ATK** (`actor[+0x158]`) and reduced by the **defender's defense** - the routine reads `actor[+0x15C]` (UDF) when the attack's move index satisfies `(move - 0xC) % 10 < 5`, else `actor[+0x160]` (LDF):
 
 ```c
 atk = attacker[+0x158];                                  // stat1 = ATK
-def = ((move - 0xC) % 10 < 5) ? target[+0x15C]           // DEF↑ (stat2)
-                              : target[+0x160];           // DEF↓ (stat3)
+def = ((move - 0xC) % 10 < 5) ? target[+0x15C]           // UDF (stat2)
+                              : target[+0x160];           // LDF (stat3)
 raw   = (atk + rand() % (atk/8 + 1)) * armor_factor>>4 + … ;
 guard = def + rand() % (def/8 + 1) + … ;
 // damage applied when raw exceeds guard, scaled by the difference
 ```
 
-This is the binding that names ATK / DEF↑ / DEF↓; the `legaia_asset::monster_archive` accessors (`attack()` / `defense_high()` / `defense_low()`) and `engine-core`'s `monster_def_from_record` follow it.
+This is the binding that names ATK / UDF / LDF; the `legaia_asset::monster_archive` accessors (`attack()` / `defense_high()` / `defense_low()`) and `engine-core`'s `monster_def_from_record` follow it.
 
 ### Selector 0 - basic damage (Attack / item / generic spell)
 
@@ -149,12 +154,12 @@ descriptor `tier` byte (`legaia_asset::item_effect`):
 | `param_2` (= tier) | Actor pairs raised | Stat(s) | Item |
 |---|---|---|---|
 | 1 | `+0x164/+0x166` | **SPD** | Speed Elixir |
-| 2 | `+0x15C/+0x15E` and `+0x160/+0x162` | both defence facets (DEF↑ + DEF↓) | Shield Elixir |
+| 2 | `+0x15C/+0x15E` and `+0x160/+0x162` | both defence facets (UDF + LDF) | Shield Elixir |
 | 3 | `+0x158/+0x15A` | **ATK** | Power Elixir |
 | 4 | `+0x164/+0x166` + the two DEF pairs + `+0x158/+0x15A` + `+0x168/+0x16A` | **all** (SPD + DEF + ATK + AGL) | Wonder Elixir |
 
 (This corrects an earlier reading that labelled `param_2 == 1` "`stat5` (role
-open)" and `param_2 == 4` "`stat5` + DEF↑" - the `+0x164` field is **SPD** (Speed
+open)" and `param_2 == 4` "`stat5` + UDF" - the `+0x164` field is **SPD** (Speed
 Elixir confirms it), and `param_2 == 4` raises every battle stat (Wonder Elixir,
 the full `case 7` arm at lines 2555-2638), not just two.)
 

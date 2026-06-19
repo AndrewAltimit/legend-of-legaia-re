@@ -791,9 +791,9 @@ impl LevelUpTracker {
     /// When a jitter RNG is installed *and* this slot has parsed growth params
     /// (the three playable characters), this applies the full retail jitter pass
     /// - one `rand()` per stat per level on the unfloored core, then `max(1, …)`,
-    /// summed across the levels crossed (the `FUN_801E9504` order). Otherwise it
-    /// falls back to the deterministic per-level curve / flat rate, consuming no
-    /// `rand()`.
+    ///   summed across the levels crossed (the `FUN_801E9504` order). Otherwise it
+    ///   falls back to the deterministic per-level curve / flat rate, consuming no
+    ///   `rand()`.
     fn accumulate_growth(&mut self, slot: usize, old_level: u8, new_level: u8) -> StatGain {
         // Disjoint-field borrow (`growth_tables` shared + `jitter_rng` mut) plus
         // a growth record for this slot (the three playable chars).

@@ -105,7 +105,7 @@ enum Cmd {
         input: PathBuf,
     },
     /// Read-only: list every monster's current combat stats (HP / MP / ATK /
-    /// DEF↑ / DEF↓ / AGL / SPD) from the `battle_data` archive - the population
+    /// UDF / LDF / AGL / SPD) from the `battle_data` archive - the population
     /// the `--monster-stats` randomizer redistributes.
     MonsterStats {
         /// Path to the user's retail disc image (`.bin`, Mode 2/2352).

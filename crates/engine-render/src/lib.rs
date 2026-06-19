@@ -1118,10 +1118,10 @@ pub const SAVE_SELECT_PANEL_SIZE: (i32, i32) = (81, 29);
 /// Retail PSX framebuffer position of the SLOT 1 pill **sprite top
 /// edge**. Pinned via direct framebuffer-pixel inspection at sstate9
 /// - the rounded pill outline starts at `fb_y=99` (transition pixels),
-/// the saturated-blue body at `y=101`, sprite bottom at `y=112`. The
-/// earlier `y=102` pin tracked the saturated-blue body, not the
-/// sprite-top edge - drawing at that offset made the cursor finger
-/// look too high relative to the pill chrome.
+///   the saturated-blue body at `y=101`, sprite bottom at `y=112`. The
+///   earlier `y=102` pin tracked the saturated-blue body, not the
+///   sprite-top edge - drawing at that offset made the cursor finger
+///   look too high relative to the pill chrome.
 pub const SAVE_SELECT_SLOT1_POS: (i32, i32) = (137, 99);
 /// Retail pin of the SLOT 1 pill sprite top-left **after the user
 /// has committed to loading a slot** - once the load flow enters
@@ -1250,10 +1250,10 @@ pub struct SaveMenuAtlasRects {
 ///
 /// Retail composes the 81×29 panel from 14 textured-sprite primitives
 /// - 4 corners (4×4 each), top + bottom edges (24×4 repeated 3× with
-/// a 1×4 remainder), and left + right edges (4×21). This function
-/// reproduces that composition exactly, pulling tiles from the
-/// system-UI sprite sheet at the byte-pinned source rects in
-/// `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`.
+///   a 1×4 remainder), and left + right edges (4×21). This function
+///   reproduces that composition exactly, pulling tiles from the
+///   system-UI sprite sheet at the byte-pinned source rects in
+///   `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`.
 ///
 /// No interior fill is drawn - retail leaves the middle of the
 /// 9-slice frame empty so the dimmed title art behind shows through.
@@ -5933,7 +5933,7 @@ pub mod psx_dither {
 /// pixel*: STP=1 texels blend, STP=0 texels draw opaque even inside a
 /// semi-transparent prim (texel `0x0000` is never drawn at all, and `0x8000`
 /// - black with STP - blends). The blend equation comes from texpage (TSB)
-/// bits 5..=6 ("ABR"):
+///   bits 5..=6 ("ABR"):
 ///
 /// | ABR | equation            | wgpu mapping                                  |
 /// |-----|---------------------|-----------------------------------------------|

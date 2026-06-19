@@ -115,6 +115,34 @@
 //! [`spirit`](MonsterRecord::spirit)); [`stats`](MonsterRecord::stats) keeps
 //! all six in raw record order.
 //!
+//! ## Battle-load stat boost
+//!
+//! The values in the record are **not** the values the player fights. When
+//! `FUN_80054cb0` copies a record into the live battle actor it then *boosts*
+//! four of the six combat stats - so the raw record systematically understates
+//! the enemy. The function carries two scaling profiles, selected by the
+//! battle-context flag at `_DAT_8007bd24 + 0x287` (itself
+//! `(*(u8*)0x8007BD60 >> 5) & 4` = bit 7 of a per-battle flags byte, set by the
+//! actor-registration routine `FUN_800513f0`):
+//!
+//! | stat | gate-set profile (B) | gate-clear profile (A) |
+//! |---|---|---|
+//! | `attack` (ATK)        | `+= atk >> 2` (`×5/4`) | unchanged |
+//! | `defense_high` (UDF)  | `× 2`                  | `+= (udf>>1)+(udf>>2)` (`×7/4`) |
+//! | `defense_low` (LDF)   | `× 2`                  | `+= (ldf>>1)+(ldf>>2)` (`×7/4`) |
+//! | `agility` (AGL)       | `+= agl >> 3` (`×9/8`) | `+= agl >> 2` (`×5/4`) |
+//! | HP / MP / SP / SPD    | unchanged              | unchanged |
+//!
+//! Both profiles boost; the flag only picks which. The **gate-set profile (B)**
+//! is the one a live international-retail battle capture (Gaza Sim-Seru, id 166)
+//! reproduces byte-for-byte, and the one the curated `enemies.toml` bestiary
+//! matches - so [`MonsterRecord::battle_stats`] returns it as *the* in-battle
+//! stat block. The cross-region origin of this boost (the international US/PAL
+//! build hitting harder than the raw record / the Japanese release) was first
+//! surfaced by **Zetopheonix**; this module pins the mechanism and exact
+//! factors. See `docs/subsystems/battle.md` ("Monster-record source layout" -
+//! the *Battle-load stat boost* note) and `docs/subsystems/battle-formulas.md`.
+//!
 //! ## Rewards (EXP / gold / drop)
 //!
 //! These are inline in the record head at `+0x44..+0x49` (**not** at `+0x04`,
@@ -270,6 +298,38 @@ impl MonsterRecord {
     /// regenerates to base each round and seeds the spirit-charge value.
     pub fn spirit(&self) -> u16 {
         self.stats[0]
+    }
+
+    /// The six stats as the battle loader **installs them into the live actor**,
+    /// in [`stats`](Self::stats) order. The raw record bytes are *not* what the
+    /// player fights: `FUN_80054cb0` boosts four of the six combat stats while
+    /// copying the record into the battle actor (see the module's *Battle-load
+    /// stat boost* note). This returns the **boosted
+    /// (gate-set) profile** - the one the international retail build uses for the
+    /// captured fights, and the one the curated `enemies.toml` bestiary matches
+    /// byte-for-byte:
+    ///
+    /// - `attack`   += `attack >> 2`   (`×5/4`, truncating)
+    /// - `defense_high` `× 2` (the **upper** defense, UDF)
+    /// - `defense_low`  `× 2` (the **lower** defense, LDF)
+    /// - `agility`  += `agility >> 3`  (`×9/8`, truncating)
+    /// - `spirit` (SP), HP, MP and `speed` (SPD) are copied unchanged.
+    ///
+    /// Each op is a 16-bit truncating integer step matching the MIPS exactly
+    /// (`wrapping` so a degenerate record can't panic; no real record overflows).
+    /// The alternate gate-clear profile (`DEF ×7/4`, `AGL ×5/4`, ATK unchanged)
+    /// is documented in the module note but not produced here - both profiles
+    /// boost, so the raw record always understates the fight.
+    pub fn battle_stats(&self) -> [u16; 6] {
+        let s = self.stats;
+        [
+            s[0],                         // SP   - copied unchanged
+            s[1].wrapping_add(s[1] >> 2), // ATK  + ATK>>2   (×5/4)
+            s[2].wrapping_mul(2),         // UDF  ×2
+            s[3].wrapping_mul(2),         // LDF  ×2
+            s[4].wrapping_add(s[4] >> 3), // AGL  + AGL>>3   (×9/8)
+            s[5],                         // SPD  - copied unchanged
+        ]
     }
 }
 
@@ -1112,6 +1172,38 @@ mod tests {
         );
         assert!(rec.spells[0].is_castable());
         assert!(!rec.spells[1].is_castable());
+    }
+
+    #[test]
+    fn battle_stats_applies_the_load_boost() {
+        // Gaza (Sim-Seru), monster id 166, raw disc record:
+        //   stats [SP 128, ATK 288, UDF 222, LDF 200, AGL 220, SPD 146].
+        // A live international-retail battle capture of this fight shows the
+        // actor with ATK 360, UDF 444, LDF 400, AGL 247 - the gate-set boost
+        // profile (FUN_80054cb0): ATK ×5/4, UDF/LDF ×2, AGL ×9/8; SP/SPD ×1.
+        let rec = MonsterRecord {
+            id: 166,
+            name: "Gaza".into(),
+            hp: 15000,
+            mp: 1200,
+            stats: [128, 288, 222, 200, 220, 146],
+            element: 6,
+            gold: 30000,
+            exp: 42000,
+            drop_item: 0,
+            drop_chance_pct: 0,
+            magic_count: 0,
+            spells: vec![],
+            magic_attacks: vec![],
+        };
+        assert_eq!(rec.battle_stats(), [128, 360, 444, 400, 247, 146]);
+        // SP, HP, MP and SPD are pass-through; the four combat stats are boosted.
+        assert_eq!(rec.battle_stats()[0], rec.spirit());
+        assert_eq!(rec.battle_stats()[5], rec.speed());
+        assert_eq!(rec.battle_stats()[1], rec.attack() + (rec.attack() >> 2));
+        assert_eq!(rec.battle_stats()[2], rec.defense_high() * 2);
+        assert_eq!(rec.battle_stats()[3], rec.defense_low() * 2);
+        assert_eq!(rec.battle_stats()[4], rec.agility() + (rec.agility() >> 3));
     }
 
     #[test]

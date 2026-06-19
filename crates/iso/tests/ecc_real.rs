@@ -5,9 +5,9 @@
 //! The decisive correctness check: for a large sample of real PROT.DAT sectors,
 //! our freshly computed EDC/ECC must equal the bytes Sony's mastering tool wrote
 //! - if we reproduce the disc's parity exactly, the encoder is correct. Then we
-//! exercise the write path on a scratch copy: patch a byte, confirm the touched
-//! sector is still valid and the byte reads back, and confirm restoring the
-//! original byte returns the sector byte-for-byte.
+//!   exercise the write path on a scratch copy: patch a byte, confirm the touched
+//!   sector is still valid and the byte reads back, and confirm restoring the
+//!   original byte returns the sector byte-for-byte.
 
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};

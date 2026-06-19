@@ -1,6 +1,6 @@
 //! Disc-gated end-to-end oracle for the starting-item randomizer **at runtime**
 //! - the sixth member of the randomizer runtime-oracle set (chest, monster-drop,
-//! encounter, steal, door, and now starting items).
+//!   encounter, steal, door, and now starting items).
 //!
 //! The randomizer's own disc-gated test (`crates/rando/tests/starting_items_patch_real`)
 //! proves a patched starting inventory is *written* faithfully: the seed code in
