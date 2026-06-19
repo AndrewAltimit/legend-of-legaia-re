@@ -138,7 +138,9 @@ legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-c
 `randomize` plans the run, applies it to an in-memory copy of the disc, diffs
 the result against the original, and writes the changes as a **PPF 3.0** patch
 (default `<input>.ppf`). `--output` also writes a full patched `.bin` for local
-play. The seed is resolved from a number or a hashed string and always printed,
+play, plus a matching single-track Mode 2/2352 `.cue` beside it (so emulators
+that reject a bare BIN - e.g. mednafen on a >64 MiB image - can open it
+directly). The seed is resolved from a number or a hashed string and always printed,
 so a run reproduces exactly; the same seed yields a byte-identical patched image
 and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
 `--steals`, `--arts`, `--doors`, `--monster-stats`, `--move-power`,

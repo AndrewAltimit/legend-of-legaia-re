@@ -445,7 +445,9 @@ struct RandomizeArgs {
     #[arg(long)]
     patch: Option<PathBuf>,
     /// Also write a full patched disc-image copy here (contains Sony bytes -
-    /// for local play only, never redistribute).
+    /// for local play only, never redistribute). A matching `.cue` is written
+    /// beside it (single-track Mode 2/2352) so emulators that won't load a bare
+    /// BIN - e.g. mednafen rejects a >64 MiB BIN - can open the image directly.
     #[arg(long)]
     output: Option<PathBuf>,
     /// Write a reproducibility manifest (seed + options + change summary) here.
@@ -1779,6 +1781,16 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             "patched image: {} (contains Sony bytes - do not redistribute)",
             out.display()
         );
+        // Emit a matching .cue next to the image so emulators that won't load a
+        // bare BIN (e.g. mednafen rejects >64 MiB BIN) can open it directly.
+        let cue_path = out.with_extension("cue");
+        let bin_name = out
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "disc.bin".to_string());
+        std::fs::write(&cue_path, cue_contents(&bin_name))
+            .with_context(|| format!("write {}", cue_path.display()))?;
+        println!("cue sheet:     {}", cue_path.display());
     }
 
     if let Some(mpath) = &args.manifest {
@@ -1790,6 +1802,14 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// A single-track Mode 2/2352 CUE sheet pointing at `bin_name` (the patched
+/// image's file name). The randomizer only operates on Mode 2/2352 PSX discs, so
+/// the one-track layout matches the source disc; `bin_name` is bare (no path) so
+/// the CUE stays valid as long as it sits beside the image.
+fn cue_contents(bin_name: &str) -> String {
+    format!("FILE \"{bin_name}\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n")
 }
 
 /// Apply a PPF to a copy of the disc and confirm the result still parses.
@@ -1827,6 +1847,33 @@ fn with_extension(input: &Path, ext: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cue_points_at_the_bare_bin_name_as_mode2_2352() {
+        let cue = cue_contents("legaia_enemy_ally_100.bin");
+        assert_eq!(
+            cue,
+            "FILE \"legaia_enemy_ally_100.bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n"
+        );
+        // The quoted FILE name has no directory component - the cue must sit
+        // beside the image (the MODE2/2352 token's slash is fine).
+        let file_line = cue.lines().next().unwrap();
+        assert!(!file_line.contains('/'));
+    }
+
+    #[test]
+    fn output_cue_path_swaps_the_extension() {
+        let out = Path::new("/tmp/some dir/patched.bin");
+        assert_eq!(
+            out.with_extension("cue"),
+            Path::new("/tmp/some dir/patched.cue")
+        );
+        assert_eq!(
+            out.file_name().unwrap().to_string_lossy(),
+            "patched.bin",
+            "cue FILE uses the bare image name, not the full path"
+        );
+    }
 
     #[test]
     fn seed_resolution_is_stable_and_parses_numbers() {
