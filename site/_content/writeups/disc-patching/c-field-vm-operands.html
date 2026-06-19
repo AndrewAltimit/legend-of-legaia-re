@@ -5,7 +5,7 @@
 </header>
 
 <div class="notice">
-  <div class="notice-title">You are here</div>
+  <div class="notice-title">Tier C overview</div>
   Tier C of the A&ndash;F ladder - like <a href="b-lzs-slots.html">tier B</a> it edits inside compression, but the payload is executable bytecode, which raises the bar on <em>finding</em> the byte. Start at the <a href="index.html">series index</a> for the editing model.
 </div>
 
@@ -19,12 +19,6 @@
     <dt>Opcodes</dt><dd>chest <code>0x39</code> + display <code>0xC2</code> &middot; shop <code>0x49</code> &middot; encounter formation ids &middot; house-door <code>0xA3 0xF8</code></dd>
     <dt>Oracles</dt><dd><code>chest_patch_real.rs</code> &middot; <code>shop_patch_real.rs</code> &middot; <code>encounter_patch_real.rs</code> &middot; <code>house_door_patch_real.rs</code></dd>
   </dl>
-  <div class="evidence">
-    <span class="evidence-label">Evidence</span>
-    <span class="ev">field-VM disasm</span>
-    <span class="ev">ghidra trace</span>
-    <span class="ev">disc oracle</span>
-  </div>
 </section>
 
 <section class="doc-section" id="reversing">
@@ -37,7 +31,7 @@
   <h2>The footprint budget</h2>
   <p>After the operand is rewritten the MAN is recompressed, and the new stream must still fit where the old one lived - the gap to the next asset's descriptor. The budget is read from the <strong>descriptor boundary</strong>, not the just-written stream, which matters because several passes (encounter, chest, shop) each decode and re-pack the <em>same</em> MAN: our packer is often a touch tighter, so reading the budget back from a shorter stream would shrink it each pass and make a later pass overflow a scene it should have edited.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="budget-title">
+    <svg viewBox="0 18 880 114" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="budget-title">
       <title id="budget-title">MAN recompression must fit within the descriptor-boundary footprint</title>
       <style>
         .mb-lab  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
@@ -45,26 +39,23 @@
         .mb-man  { fill: #131922; stroke: #58c4b3; stroke-width: 1.3; }
         .mb-head { fill: #0d1117; stroke: #2a323e; stroke-width: 1.1; stroke-dasharray: 3 3; }
         .mb-seg  { font: 10px 'Inter', sans-serif; fill: #8b949e; text-anchor: middle; }
-        .mb-bound{ stroke: #b56b6b; stroke-width: 1.6; }
-        .mb-bl   { font: 10px 'JetBrains Mono', monospace; fill: #b56b6b; text-anchor: middle; }
+        .mb-hl   { font: 9px 'Inter', sans-serif; fill: #7c8893; text-anchor: middle; }
       </style>
 
-      <text x="20" y="44" class="mb-lab">original</text>
-      <rect x="120" y="30" width="600" height="32" class="mb-man"/>
-      <text x="420" y="50" class="mb-seg">MAN LZS stream</text>
-      <rect x="720" y="30" width="120" height="32" class="mb-head"/>
-      <text x="780" y="50" class="mb-seg">headroom</text>
+      <text x="20" y="48" class="mb-lab">original</text>
+      <rect x="120" y="30" width="540" height="28" class="mb-man"/>
+      <text x="390" y="48" class="mb-seg">MAN LZS stream</text>
+      <rect x="660" y="30" width="160" height="28" class="mb-head"/>
+      <text x="740" y="48" class="mb-hl">headroom</text>
 
-      <text x="20" y="114" class="mb-lab">re-packed</text>
-      <rect x="120" y="100" width="560" height="32" class="mb-man"/>
-      <text x="400" y="120" class="mb-seg">edited MAN (re-packed)</text>
-      <rect x="680" y="100" width="160" height="32" class="mb-head"/>
-      <text x="760" y="120" class="mb-seg">headroom</text>
+      <text x="20" y="86" class="mb-lab">re-packed</text>
+      <rect x="120" y="72" width="500" height="28" class="mb-man"/>
+      <text x="370" y="90" class="mb-seg">edited MAN (re-packed)</text>
+      <rect x="620" y="72" width="200" height="28" class="mb-head"/>
+      <text x="720" y="90" class="mb-hl">headroom</text>
 
-      <line x1="840" y1="18" x2="840" y2="150" class="mb-bound"/>
-      <text x="840" y="170" class="mb-bl">next descriptor</text>
-      <text x="120" y="170" class="mb-addr">data_offset</text>
-      <text x="430" y="170" class="mb-lab" text-anchor="middle">budget = boundary &minus; data_offset (constant across passes)</text>
+      <text x="120" y="120" class="mb-addr">data_offset</text>
+      <text x="470" y="120" class="mb-lab" text-anchor="middle">budget = descriptor boundary &minus; data_offset (constant across passes)</text>
     </svg>
     <figcaption>Both streams must end left of the next descriptor. Reading the budget from that fixed boundary - not the rewritten stream - keeps every pass on the same full budget; a scene whose re-pack would overflow is skipped rather than corrupted.</figcaption>
   </figure>

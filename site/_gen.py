@@ -129,7 +129,14 @@ def html_template(title: str, depth: int, active_key: str, body: str, extra_head
     layout_js = "../" * depth + "js/layout.js"
     main_js = "../" * depth + "js/main.js"
     favicon = "../" * depth + "img/favicon.svg"
-    content_cls = "content wide-page" if active_key in WIDE_PAGES else "content"
+    if active_key in WIDE_PAGES:
+        content_cls = "content wide-page"
+    elif active_key.startswith("writeups/disc-patching/"):
+        # Write-up pages use one consistent measure for prose, diagrams, and the
+        # mod-catalog table so nothing is wider than the running text.
+        content_cls = "content dp-page"
+    else:
+        content_cls = "content"
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -842,7 +849,7 @@ def build_disc_patching_table() -> str:
             target = _esc(m.get("target", ""))
             notes = m.get("notes")
             if notes:
-                target += f'<br><span class="hint">{_esc(notes)}</span>'
+                target += f'<span class="dp-note">{_esc(notes)}</span>'
             gap = "shared gap" if m.get("gap") else "-"
             status = m.get("status", "")
             status_cls = "tag-done" if status == "shipped" else "tag-planned"

@@ -399,6 +399,22 @@ hr {
   max-width: 1480px;
 }
 
+/* Write-up pages: running text, headings, callouts, and lists keep the original
+ * reading measure; only the diagrams and the wide mod-catalog table break out to
+ * the full 1180px column. */
+.content.dp-page {
+  max-width: 1180px;
+}
+.content.dp-page > .page-header,
+.content.dp-page > .notice,
+.content.dp-page section.doc-section > * {
+  max-width: 720px;
+}
+.content.dp-page section.doc-section > .overlay-strip,
+.content.dp-page section.doc-section > .table-wrap {
+  max-width: 1180px;
+}
+
 @media (max-width: 720px) {
   .content { padding: 1.4rem 1.2rem 3rem; }
 }
@@ -529,33 +545,6 @@ section.doc-section > p {
 .tag-planned { color: var(--planned); border-color: var(--planned); }
 .tag-stub    { color: var(--text-dim); border-color: var(--border-hi); font-weight: 500; }
 
-/* ---------- Evidence / provenance chips ---------- */
-.evidence {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  margin: -0.2rem 0 1rem;
-}
-.evidence-label {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-dim);
-}
-.ev {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  background: var(--bg-card);
-  border: 1px solid var(--border-hi);
-  border-left: 2px solid var(--accent);
-  border-radius: 2px;
-  padding: 0.08rem 0.45rem;
-  line-height: 1.5;
-}
-
 /* ---------- Tables ---------- */
 .table-wrap, table {
   border: 1px solid var(--border);
@@ -613,6 +602,16 @@ tr.dp-tier td {
 }
 tr.dp-tier td strong { color: var(--text); }
 tr.dp-tier:hover td { background: var(--bg-raised); }
+
+/* Secondary note under a catalog Target cell: a plain dim sub-line, not the
+ * block .hint callout (whose padding/background would paint over other rows). */
+.dp-note {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
 
 /* ---------- Definition list ---------- */
 dl.kv {

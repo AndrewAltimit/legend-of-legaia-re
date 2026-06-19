@@ -5,7 +5,7 @@
 </header>
 
 <div class="notice">
-  <div class="notice-title">You are here</div>
+  <div class="notice-title">Tier D overview</div>
   Tier D of the A&ndash;F ladder - the only data tier that changes a byte count. It's the variable-length cousin of <a href="c-field-vm-operands.html">tier C</a>. Start at the <a href="index.html">series index</a> for the same-size-vs-relocate editing model.
 </div>
 
@@ -19,53 +19,40 @@
     <dt>Edit class</dt><dd>relocate / variable-length - footprint-bounded</dd>
     <dt>Oracles</dt><dd><code>door_patch_real.rs</code> &middot; <code>starting_bag_real.rs</code></dd>
   </dl>
-  <div class="evidence">
-    <span class="evidence-label">Evidence</span>
-    <span class="ev">container layout</span>
-    <span class="ev">runtime-pinned tables</span>
-    <span class="ev">disc oracle</span>
-  </div>
 </section>
 
 <section class="doc-section" id="reversing">
   <h2>The reversing: everything a resize disturbs</h2>
   <p>A door's destination is reached through the MAN's partition-2 record-offset table, and the destination scene's name is stored inline in that record. Re-pointing the door at a scene with a longer or shorter name changes the record's byte length - and the moment a record's length changes, every structure that encodes a position past it is wrong. Making the edit safe meant enumerating, from the MAN layout, the complete set of things a resize moves: the partition tables, the partition-2 record-offset table that indexes destinations, a <code>u24</code> length field at <code>+0x28</code>, the relative-jump deltas <em>inside</em> records that straddle the edit, and the external asset descriptor's size word. Miss one and the script desyncs or the door points into garbage. The relocation engine fixes all of them in one rebuild - see <a href="../../formats/man-relocation.html">MAN relocation</a>.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="reloc-title">
-      <title id="reloc-title">A record grows; offset tables and deltas are fixed up within the footprint</title>
+    <svg viewBox="0 0 880 122" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="reloc-title">
+      <title id="reloc-title">A record grows; offset tables and deltas are fixed up in one rebuild</title>
       <style>
         .rl-lab  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
-        .rl-addr { font: 11px 'JetBrains Mono', monospace; fill: #58c4b3; }
         .rl-rec  { fill: #131922; stroke: #2a323e; stroke-width: 1.2; }
         .rl-edit { fill: #19212d; stroke: #58c4b3; stroke-width: 1.4; }
         .rl-grow { fill: #1c2a2a; stroke: #58c4b3; stroke-width: 1.4; stroke-dasharray: 3 2; }
         .rl-seg  { font: 10px 'Inter', sans-serif; fill: #8b949e; text-anchor: middle; }
         .rl-fx   { font: 10px 'Inter', sans-serif; fill: #c19a4d; }
-        .rl-bound{ stroke: #b56b6b; stroke-width: 1.6; }
-        .rl-bl   { font: 10px 'JetBrains Mono', monospace; fill: #b56b6b; text-anchor: middle; }
       </style>
 
-      <text x="20" y="44" class="rl-lab">before</text>
-      <rect x="90"  y="30" width="150" height="30" class="rl-rec"/>
-      <rect x="240" y="30" width="120" height="30" class="rl-edit"/>
-      <rect x="360" y="30" width="360" height="30" class="rl-rec"/>
-      <text x="165" y="50" class="rl-seg">records</text>
-      <text x="300" y="50" class="rl-seg">door rec</text>
-      <text x="540" y="50" class="rl-seg">later records</text>
+      <text x="20" y="34" class="rl-lab">before</text>
+      <rect x="90"  y="20" width="150" height="28" class="rl-rec"/>
+      <rect x="240" y="20" width="120" height="28" class="rl-edit"/>
+      <rect x="360" y="20" width="360" height="28" class="rl-rec"/>
+      <text x="165" y="38" class="rl-seg">records</text>
+      <text x="300" y="38" class="rl-seg">door rec</text>
+      <text x="540" y="38" class="rl-seg">later records</text>
 
-      <text x="20" y="114" class="rl-lab">after</text>
-      <rect x="90"  y="100" width="150" height="30" class="rl-rec"/>
-      <rect x="240" y="100" width="170" height="30" class="rl-grow"/>
-      <rect x="410" y="100" width="350" height="30" class="rl-rec"/>
-      <text x="165" y="120" class="rl-seg">records</text>
-      <text x="325" y="120" class="rl-seg">door rec (longer name)</text>
-      <text x="585" y="120" class="rl-seg">shifted +&Delta;</text>
+      <text x="20" y="78" class="rl-lab">after</text>
+      <rect x="90"  y="64" width="150" height="28" class="rl-rec"/>
+      <rect x="240" y="64" width="170" height="28" class="rl-grow"/>
+      <rect x="410" y="64" width="360" height="28" class="rl-rec"/>
+      <text x="165" y="82" class="rl-seg">records</text>
+      <text x="325" y="82" class="rl-seg">door rec (longer name)</text>
+      <text x="585" y="82" class="rl-seg">shifted +&Delta;</text>
 
-      <text x="90"  y="168" class="rl-fx">fix-ups: partition tables &middot; partition-2 record-offset table &middot; u24_at_28 &middot; intra-record jump deltas &middot; descriptor size word</text>
-
-      <line x1="780" y1="20" x2="780" y2="190" class="rl-bound"/>
-      <text x="780" y="208" class="rl-bl">footprint end</text>
-      <text x="380" y="208" class="rl-lab" text-anchor="middle">recompressed stream must still end left of the footprint boundary, or the scene is skipped</text>
+      <text x="90"  y="112" class="rl-fx">fix-ups: partition tables &middot; partition-2 record-offset table &middot; u24_at_28 &middot; intra-record jump deltas &middot; descriptor size word</text>
     </svg>
     <figcaption>The door record grows by &Delta;; everything after it shifts, and five classes of offset are corrected in one rebuild. If the recompressed result won't fit the footprint, the scene is left vanilla rather than corrupted.</figcaption>
   </figure>

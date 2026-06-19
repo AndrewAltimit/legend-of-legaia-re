@@ -5,7 +5,7 @@
 </header>
 
 <div class="notice">
-  <div class="notice-title">You are here</div>
+  <div class="notice-title">Tier E overview</div>
   Tier E of the A&ndash;F ladder - the first code-injection tier. The next rung, <a href="f-overlay-dead-region.html">tier F</a>, exists precisely to escape this tier's one limitation: the gap is finite and shared. New here? Start at the <a href="index.html">series index</a>.
 </div>
 
@@ -19,12 +19,6 @@
     <dt>Edit class</dt><dd>in-place / same-size; <strong>consumes the shared rodata gap</strong></dd>
     <dt>Oracles</dt><dd><code>equipment_drops_real.rs</code> &middot; <code>flee_exp_real.rs</code></dd>
   </dl>
-  <div class="evidence">
-    <span class="evidence-label">Evidence</span>
-    <span class="ev">ghidra trace</span>
-    <span class="ev">live capture</span>
-    <span class="ev">disc oracle</span>
-  </div>
 </section>
 
 <section class="doc-section" id="reversing">
@@ -49,13 +43,13 @@
     <svg viewBox="0 0 880 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gap-map-title">
       <title id="gap-map-title">Occupants of the shared SCUS rodata gap</title>
       <style>
-        .gp-band  { font: 10px 'Inter', sans-serif; fill: #636b76; letter-spacing: 0.06em; text-transform: uppercase; }
+        .gp-band  { font: 10px 'Inter', sans-serif; fill: #7c8893; letter-spacing: 0.06em; text-transform: uppercase; }
         .gp-frame { fill: none; stroke: #2a323e; stroke-width: 1.3; rx: 4; ry: 4; }
         .gp-card  { fill: #131922; stroke: #58c4b3; stroke-width: 1.3; rx: 4; ry: 4; }
         .gp-addr  { font: 11px 'JetBrains Mono', monospace; fill: #58c4b3; }
         .gp-owner { font: 600 12px 'JetBrains Mono', monospace; fill: #c9d1d9; }
         .gp-sub   { font: 11px 'Inter', sans-serif; fill: #8b949e; }
-        .gp-tag   { font: 10px 'Inter', sans-serif; fill: #636b76; text-anchor: end; }
+        .gp-tag   { font: 10px 'Inter', sans-serif; fill: #7c8893; text-anchor: end; }
       </style>
 
       <text x="20" y="22" class="gp-band">Shared SCUS rodata gap - ~1 KB, guarded all-zero (0x8007AB38 &ndash; 0x8007AF40)</text>
