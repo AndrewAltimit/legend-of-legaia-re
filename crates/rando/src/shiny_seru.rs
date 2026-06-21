@@ -9,7 +9,11 @@
 //!
 //! 1. **Battle (B).** At battle setup, with probability `pct`, **if the frontmost
 //!    enemy is a capturable Seru**, its combat stats are multiplied by 135/100
-//!    and it is marked shiny on a free per-actor byte (`+0x226`). The capturable
+//!    and its per-actor **fade level** `+0x226` is set to `1`. That byte is the
+//!    game's own translucency field (the draw helper `FUN_8004A908` renders the
+//!    actor semi-transparent when it's nonzero), so a shiny enemy renders
+//!    **see-through** in battle - a free, game-native visual tell - and the same
+//!    byte doubles as the capture-link marker. The capturable
 //!    check indexes a 256-bit allowlist bitmap by the first-monster id global
 //!    (`DAT_8007BD0C`, reliably set before this hook - the game's own `0xB5`
 //!    check reads it). The bitmap is built at patch time from the disc's monster
@@ -91,19 +95,15 @@ const HOOK_CAPTURE_W0: u32 = 0xA082_0269; // sb v0,0x269(a0)
 /// `=1`; the routine ORs `0x80` when the captured enemy was shiny.
 pub const HOOK_GRANT_VA: u32 = 0x801E_93B4;
 const HOOK_GRANT_W0: u32 = 0xA043_0729; // sb v1,0x729(v0)
+/// Grant shift hook (overlay 0898, `FUN_801e92dc`): just before the insert-at-
+/// front shift loop, `v0` = the caster's record base. The shift-hook (K2) mirrors
+/// the level-array shift onto the parallel shiny-byte array.
+pub const HOOK_GRANT_SHIFT_VA: u32 = 0x801E_9320;
+const HOOK_GRANT_SHIFT_W0: u32 = 0x9046_0704; // lbu a2,0x704(v0)
 /// Damage hook (overlay 0898, `FUN_801dd864`): the spell level is read into the
-/// summon-damage scaler.
+/// summon-damage scaler; `v0` = the matched spell's slot base.
 pub const HOOK_DAMAGE_VA: u32 = 0x801D_DB08;
 const HOOK_DAMAGE_W0: u32 = 0x9042_0729; // lbu v0,0x729(v0)
-/// Level-up gate read (overlay 0898, `FUN_801E70BC`): the `< 9` cap test.
-pub const HOOK_LVL_GATE_VA: u32 = 0x801E_71C8;
-const HOOK_LVL_GATE_W0: u32 = 0x90C2_0729; // lbu v0,0x729(a2)
-/// Level-up working read (overlay 0898, `FUN_801E70BC`): the value incremented.
-pub const HOOK_LVL_READ_VA: u32 = 0x801E_71DC;
-const HOOK_LVL_READ_W0: u32 = 0x90C7_0729; // lbu a3,0x729(a2)
-/// Level-up writeback (overlay 0898, `FUN_801E70BC`): the new level store.
-pub const HOOK_LVL_WRITE_VA: u32 = 0x801E_7224;
-const HOOK_LVL_WRITE_W0: u32 = 0xA0C2_0729; // sb v0,0x729(a2)
 /// Menu spell-list level-digit read (overlay 0899, `FUN_801d2e74`).
 pub const HOOK_MENU_VA: u32 = 0x801D_2FA0;
 const HOOK_MENU_W0: u32 = 0x8C63_46B0; // lw v1,0x46b0(v1)
@@ -112,10 +112,25 @@ const HOOK_MENU_W0: u32 = 0x8C63_46B0; // lw v1,0x46b0(v1)
 
 /// Battle-actor pointer table slot 3 (frontmost enemy) VA.
 const ACTOR_SLOT3_VA: u32 = 0x801C_937C;
-/// Per-actor free byte used as the shiny marker (zero-init each battle).
+/// Per-actor **fade / translucency level** (zero-init each battle). The draw
+/// helper `FUN_8004A908` (`0x8004AD0C`), when this byte is nonzero, modulates the
+/// actor's draw colour `× (128 - fade) / 128` and renders it with the
+/// semi-transparent primitive (high byte `0x81`). The shiny feature sets it to
+/// `1`, which makes the shiny enemy render **see-through** - the intended shiny
+/// visual tell - AND serves as the capture-link marker (C1 reads it). (The
+/// scout that picked this offset called it "free"; it is not - it is the fade
+/// field, and the translucency is a deliberate, game-native effect, not a side
+/// effect.)
 const ACTOR_SHINY_OFF: u16 = 0x226;
-/// Spell-level byte offset in the live character record / SC block.
-const LEVEL_OFF: u16 = 0x729;
+/// Per-spell-slot **shiny byte** offset, parallel to the level array. The shiny
+/// flag lives here (`0x80` = shiny) instead of in the level byte's high bit, so
+/// no level reader (the spell-level-up + display fn `FUN_800402f4`, the Lv menus)
+/// ever sees it - eliminating the blank-level-up-box / corrupted-mouth / "Lv 129"
+/// leaks. `0x788 = LEVEL_OFF + (0x1C0 - 0x161)`: a 32-byte run at record `+0x1C0`,
+/// verified all-zero / unused across 228 record samples and inside the saved
+/// record footprint. The grant shift-hook (K2) keeps it in sync with the level
+/// array on spell insert; reads are slot-indexed off the same base as the level.
+const SHINY_BYTE_OFF: u16 = 0x788;
 /// First boosted stat halfword (HP base) ...
 const STAT_FIRST_OFF: u16 = 0x14C;
 /// ... and one past the last (AGL current is `0x16A`, loop end is exclusive).
@@ -149,19 +164,122 @@ pub const SCUS_GAP_END_VA: u32 = 0x8007_7828;
 pub const CAVE_VA: u32 = 0x801F_4FC4;
 /// First VA past the 0898 cave; cave routines must end at or below this.
 pub const CAVE_END_VA: u32 = 0x801F_5044;
-/// Second SCUS rodata gap (reference-free padding) hosting the capturable
-/// bitmap + the level-up read-mask routines.
+/// Second SCUS rodata gap (reference-free padding) hosting the capturable bitmap.
+/// (Formerly also held the level-up read-mask routines G1/G2/G3, now removed -
+/// the level byte is clean so no level masking is needed.)
 pub const SCUS_GAP2_VA: u32 = 0x8007_83C4;
 /// First VA past the second SCUS gap; its contents must end at or below this.
 pub const SCUS_GAP2_END_VA: u32 = 0x8007_8420;
+/// Reference-free 87-byte SCUS run hosting the grant shift routine (K2). (Same
+/// proven-safe steal-table-adjacent class as the banner / summon-fade runs.)
+pub const SHIFT_RUN_VA: u32 = 0x8007_82DC;
+/// First VA past the shift run; K2 must end at or below this.
+pub const SHIFT_RUN_END_VA: u32 = 0x8007_8330;
+/// Small reference-free SCUS run (45-byte rodata gap, same proven-safe class as
+/// gap 2) hosting the 11-word colour-aware menu routine (F). Sized to fit F
+/// exactly so the three 87-byte runs stay free for the summon routine.
+pub const MENU_RUN_VA: u32 = 0x8007_82A4;
+/// First VA past the menu run; F must end at or below this.
+pub const MENU_RUN_END_VA: u32 = 0x8007_82D0;
+/// Reference-free 87-byte SCUS run hosting the +35% cast-banner routine (J) AND
+/// its display string (the string sits right after the routine in the same run).
+/// (Two more such runs at 0x8007821C / 0x800782DC stay reserved-dead - they held
+/// a reverted summon-transparency attempt; a correct version needs a summon-spawn
+/// hook that isn't located yet.)
+pub const BANNER_RUN_VA: u32 = 0x8007_81BC;
+pub const BANNER_RUN_END_VA: u32 = 0x8007_8210;
+/// The "+35% DMG!" display string lives at routine-end within the banner run.
+const BANNER_STR_VA: u32 = 0x8007_8200;
+/// One-byte "current cast is shiny" flag the in-battle menu masker (H) stamps
+/// with the selected spell's level byte (bit 0x80 = shiny); the +35% banner (J)
+/// reads it. Lives at the tail of the menu-masker run.
+pub const SHINY_CAST_FLAG_VA: u32 = 0x8007_8358;
+/// Text-colour global `_DAT_8007b454`: the menu writes a CLUT index here before
+/// each glyph draw (`6` = the normal name/digit colour).
+const TEXT_COLOR_GLOBAL_VA: u32 = 0x8007_B454;
+/// CLUT colour index used for a shiny Seru's menu level digit (distinct from the
+/// normal `6`). Picked from the documented in-game indices (`9` = red).
+const SHINY_MENU_COLOR: u16 = 9;
+
+// --- In-battle magic-menu level display (overlay 0898 `FUN_801d0748`) -------
+
+/// The in-battle magic menu reads the selected spell's level byte here and
+/// stores it into the menu struct (`sb v1,0x15(s1)`) for the "Lv NN" header,
+/// WITHOUT masking - so the shiny bit leaks and shows as "Lv 129". (Distinct
+/// from the field menu's `HOOK_MENU_VA` in 0899, which F already masks.)
+pub const HOOK_BMENU_LVL_VA: u32 = 0x801D_1B00;
+/// `lbu v1,0x729(v0)` - the displaced word the masker replays.
+const HOOK_BMENU_LVL_W0: u32 = 0x9043_0729;
+/// Small reference-free SCUS run (36-byte rodata gap) hosting the 5-word masker.
+pub const BMENU_RUN_VA: u32 = 0x8007_833C;
+/// First VA past the battle-menu masker run.
+pub const BMENU_RUN_END_VA: u32 = 0x8007_8360;
+
+// --- Summon transparency (SCUS `FUN_8004a908`, draw-time fade modulator) ----
+
+/// The sole draw-time reader of an actor's fade byte `+0x226`
+/// (`lbu v0,0x226(s1)` inside `FUN_8004a908`; `s1` = the actor being drawn).
+/// The summon creature's `+0x226` is rebuilt to 0 every frame (a per-frame
+/// struct rebuild no write-watch can trap), so pre-writing the byte can never
+/// fade it. Instead the detour overrides the value AT THE READ: if the cast is
+/// shiny (`SHINY_CAST_FLAG`) and `s1` is the summon actor, force `v0` to
+/// `SUMMON_FADE`. Live-validated on a real Gimard cast.
+pub const HOOK_FADE_VA: u32 = 0x8004_AD0C;
+/// `lbu v0,0x226(s1)` - the displaced word the routine replays.
+const HOOK_FADE_W0: u32 = 0x9222_0226;
+/// Where the function continues (the `beq v0,zero` after the fade read); the
+/// routine returns here (= hook + 8).
+const HOOK_FADE_RET_VA: u32 = 0x8004_AD14;
+/// Battle actor-pointer table slot 7 (`0x801C9370 + 7*4`). The 8-slot battle
+/// actor array (`0x800EC9E8 + i*0x2D4`) is a fixed layout - party 0..2, enemies
+/// 3..6, summon = slot 7 (the dedicated summon slot, confirmed across battles).
+const SUMMON_ACTOR_SLOT_VA: u32 = 0x801C_938C;
+/// Fade strength for the summon. `FUN_8004a908` scales colour by
+/// `(0x80-fade)/0x80` then STP-blends 50/50 with the background, so a *higher*
+/// fade reads as *more* transparent: `0x40` -> creature contributes ~25% of its
+/// colour, `0x60` -> ~12.5% (clearly translucent over the dark battle floor).
+const SUMMON_FADE: u16 = 0x60;
+/// Reference-free SCUS run (steal-table-adjacent rodata padding) for the
+/// summon-fade routine (K).
+pub const SUMMON_FADE_RUN_VA: u32 = 0x8007_821C;
+/// First VA past the summon-fade run.
+pub const SUMMON_FADE_RUN_END_VA: u32 = 0x8007_8270;
+
+// --- +35% cast text (SCUS `FUN_80031d00` battle text-widget renderer) --------
+
+/// The cast spell-name banner is drawn by the battle HUD text-widget loop in
+/// `FUN_80031d00`: `lw a0,0x18(s4)` loads the widget's string ptr just before
+/// `jal FUN_80036888` (the glyph renderer). The detour replays the load + the
+/// following `li v0,7`, then - if the cast is shiny (`SHINY_CAST_FLAG`) and this
+/// is the move-name banner widget (`a1 == 0x801C`, the move-banner style; the
+/// caster/target NAME widgets drawn by the same call use `a1 == 0`) - redirects
+/// `a0` at a custom "+35% DMG!" string. (The earlier approach of overriding the
+/// `0x80077344` banner globals at the SM spawn was a no-op; those globals don't
+/// drive the visible banner.)
+pub const HOOK_BANNER_VA: u32 = 0x8003_21D4;
+const HOOK_BANNER_W0: u32 = 0x8E84_0018; // lw a0,0x18(s4)
+/// Where the routine returns (the `sw v0,0x13c(gp)` after the a0 load = hook + 8).
+const HOOK_BANNER_RET_VA: u32 = 0x8003_21DC;
+/// The move-banner widget's style halfword (`s4+0x12`, passed as `a1`). Name
+/// widgets use `0`, so this distinguishes the spell banner from the HUD names.
+const BANNER_STYLE_TAG: u16 = 0x801C;
+/// Y screen coordinate for the relocated "+35% DMG!" text: the renderer reads
+/// the line's Y from the 5th arg at `0x10(sp)` (`FUN_80036888`'s `lw s6,0x50(sp)`;
+/// the spell banner's native Y is ~150 = mid-screen). The empty top HUD box has a
+/// blue interior spanning screen rows ~8..23 (measured from VRAM), so `0x0A`
+/// centres the 12px glyph line inside it. The detour overwrites that stack slot
+/// (it keeps the caller's sp).
+const BANNER_TOP_Y: u16 = 0x0A;
 
 // --- MIPS R3000 encoders (little-endian) -----------------------------------
 
 const ZERO: u32 = 0;
+const AT: u32 = 1; // assembler temp - safe to clobber (never held live)
 const V0: u32 = 2;
 const V1: u32 = 3;
+const A0: u32 = 4;
+const A1: u32 = 5;
 const A2: u32 = 6;
-const A3: u32 = 7;
 const T0: u32 = 8;
 const T1: u32 = 9;
 const T2: u32 = 10;
@@ -170,7 +288,9 @@ const T4: u32 = 12;
 const T5: u32 = 13;
 const T6: u32 = 14;
 const T7: u32 = 15;
+const S1: u32 = 17; // live actor pointer in FUN_8004a908 (compared, never written)
 const T8: u32 = 24;
+const SP: u32 = 29; // stack pointer (the banner detour keeps the caller's sp)
 const T9: u32 = 25;
 
 const fn j(t: u32) -> u32 {
@@ -229,9 +349,6 @@ const fn srl(rd: u32, rt: u32, sa: u32) -> u32 {
 }
 const fn srlv(rd: u32, rt: u32, rs: u32) -> u32 {
     (rs << 21) | (rt << 16) | (rd << 11) | 0x06
-}
-const fn or_(rd: u32, rs: u32, rt: u32) -> u32 {
-    (rs << 21) | (rt << 16) | (rd << 11) | 0x25
 }
 const fn multu(rs: u32, rt: u32) -> u32 {
     (rs << 21) | (rt << 16) | 0x19
@@ -370,98 +487,193 @@ fn assemble_capture_copy(scratch_va: u32, disp: [u32; 2], ret: u32) -> Vec<u32> 
     ]
 }
 
-/// (C2) Grant: OR `0x80` into the just-granted level byte when `scratch != 0`,
-/// then replay. `v0`=record base (preserved), `v1`=1 (the level).
-fn assemble_grant_or(scratch_va: u32, disp: [u32; 2], ret: u32) -> Vec<u32> {
-    const W: i32 = 6; // index of the replayed level store (the `beq` skip target)
+/// (C2) Grant: write the just-granted spell's level byte **clean** (no shiny bit)
+/// and set its slot-0 **shiny byte** (`+0x788`) to `0x80` iff the captured enemy
+/// was shiny (`scratch != 0`), else `0`. The new spell is always inserted at
+/// slot 0, so the shiny byte lands at `+0x788(v0)`. `v0`=record base (preserved),
+/// `v1`=1 (the level). Replays `sb v1,0x729(v0)` + `sw zero,0x5d0(v0)` unchanged
+/// (the level stays clean - shininess no longer rides the level byte).
+fn assemble_grant_shiny(scratch_va: u32, disp: [u32; 2], ret: u32) -> Vec<u32> {
+    const STORE: i32 = 8; // index of the shiny-byte store (the `beq` skip target)
     vec![
-        lui(T9, hi(scratch_va)),       // 0
-        lbu(T8, T9, lo(scratch_va)),   // 1
-        nop(),                         // 2 load delay
-        beq(T8, ZERO, (W - 4) as i16), // 3 not shiny -> skip the OR
-        nop(),                         // 4
-        ori(V1, V1, SHINY_FLAG),       // 5 v1 = 1 | 0x80
-        disp[0],                       // 6 W: sb v1,0x729(v0)
-        disp[1],                       // 7 sw zero,0x5d0(v0)
-        j(ret),                        // 8
-        nop(),                         // 9
+        disp[0],                           // 0 sb v1,0x729(v0)  (clean level=1)
+        disp[1],                           // 1 sw zero,0x5d0(v0)
+        lui(T9, hi(scratch_va)),           // 2
+        lbu(T8, T9, lo(scratch_va)),       // 3 t8 = scratch (enemy shiny marker)
+        ori(T7, ZERO, 0),                  // 4 default shiny byte = 0 (fills load delay)
+        beq(T8, ZERO, (STORE - 6) as i16), // 5 not shiny -> store 0
+        nop(),                             // 6
+        ori(T7, ZERO, SHINY_FLAG),         // 7 shiny -> 0x80
+        sb(T7, V0, SHINY_BYTE_OFF),        // 8 STORE: shiny[slot 0] = t7
+        j(ret),                            // 9
+        nop(),                             // 10
     ]
 }
 
-/// (D) Damage: when the level byte has `0x80`, multiply the running summon
-/// damage (`*a2`) ×135/100; then strip the bit so the original `(level-1)/8`
-/// math is correct. `v0`=level base (leave masked level), `a2`=damage ptr.
+/// (K2) Grant shift: when a new spell is inserted at slot 0 the game shifts the
+/// id / level / xp arrays down by one (`FUN_801e92dc`); mirror that for the
+/// parallel shiny-byte array so each spell keeps its shiny flag. Hooked just
+/// before the game's shift loop (`lbu a2,0x704(v0)` at `0x801e9320`, `v0`=record
+/// base), it shifts `shiny[i] = shiny[i-1]` for `i = count..1`, then replays the
+/// count load so the game's loop proceeds. `v0`/`a0`/`v1` preserved.
+fn assemble_grant_shift(disp: [u32; 2], ret: u32) -> Vec<u32> {
+    const LOOP: i32 = 6;
+    const END: i32 = 13;
+    vec![
+        lbu(T8, V0, 0x704),                // 0 t8 = spell count (load)
+        nop(),                             // 1 load delay
+        beq(T8, ZERO, (END - 3) as i16),   // 2 count==0 -> nothing to shift
+        nop(),                             // 3
+        addu(T9, V0, T8),                  // 4 t9 = base + count
+        addiu(T9, T9, SHINY_BYTE_OFF),     // 5 t9 = &shiny[count] (dst cursor)
+        lbu(AT, T9, 0xFFFF),               // 6 LOOP: at = shiny[i-1]
+        nop(),                             // 7 load delay
+        sb(AT, T9, 0),                     // 8 shiny[i] = at
+        addiu(T9, T9, 0xFFFF),             // 9 cursor--
+        addiu(T8, T8, 0xFFFF),             // 10 count--
+        bne(T8, ZERO, (LOOP - 12) as i16), // 11 -> LOOP
+        nop(),                             // 12
+        disp[0],                           // 13 END: lbu a2,0x704(v0) (replay; a2=count)
+        disp[1],                           // 14 nop (replay)
+        j(ret),                            // 15
+        nop(),                             // 16
+    ]
+}
+
+/// (D) Damage: read the matched spell's **shiny byte** (`+0x788(v0)`, where `v0`
+/// is the matched slot base) and, if shiny, multiply the running summon damage
+/// (`*a2`) ×135/100. The level byte is now clean, so it feeds the original
+/// `(level-1)/8` power scaling unchanged - no masking. The shiny byte is read
+/// *before* the replayed `lbu v0,0x729(v0)` overwrites `v0`. The boosted `*a2`
+/// is reloaded by the replayed `lw v1,0(a2)` so the scaling sees it.
 fn assemble_damage(disp: [u32; 2], ret: u32) -> Vec<u32> {
-    const SKIP: i32 = 13; // index of the final `andi v0`
+    const SKIP: i32 = 13; // index of the replayed `lw v1,0(a2)`
     vec![
-        disp[0],                          // 0  lbu v0,0x729(v0)  (replay the level load)
-        addiu(T0, ZERO, BONUS),           // 1  LOAD-DELAY SLOT: t0=135 (doesn't touch v0)
-        andi(T8, V0, SHINY_FLAG),         // 2  v0 valid now
+        lbu(T8, V0, SHINY_BYTE_OFF), // 0  t8 = shiny[slot] (v0 = slot base here)
+        disp[0],                     // 1  lbu v0,0x729(v0)  (v0 = clean level)
+        andi(T8, T8, SHINY_FLAG),    // 2  shiny? (fills v0 load delay)
         beq(T8, ZERO, (SKIP - 4) as i16), // 3  not shiny -> skip boost
-        nop(),                            // 4
-        lw(T9, A2, 0),                    // 5  t9 = *a2 (running damage)
-        nop(),                            // 6  LOAD-DELAY SLOT for the lw
-        multu(T9, T0),                    // 7  t9 * 135
-        mflo(T9),                         // 8
-        addiu(T0, ZERO, 100),             // 9
-        divu(T9, T0),                     // 10
-        mflo(T9),                         // 11
-        sw(T9, A2, 0),                    // 12 *a2 = damage*135/100
-        andi(V0, V0, 0x7F),               // 13 SKIP: strip shiny bit
-        disp[1],                          // 14 lw v1,0(a2)  (replay)
-        j(ret),                           // 15
-        nop(),                            // 16
+        nop(),                       // 4
+        lw(T9, A2, 0),               // 5  t9 = *a2 (running damage)
+        addiu(T0, ZERO, BONUS),      // 6  t0=135 (fills lw load delay)
+        multu(T9, T0),               // 7  t9 * 135
+        mflo(T9),                    // 8
+        addiu(T0, ZERO, 100),        // 9
+        divu(T9, T0),                // 10
+        mflo(T9),                    // 11
+        sw(T9, A2, 0),               // 12 *a2 = damage*135/100
+        disp[1],                     // 13 SKIP: lw v1,0(a2)  (reload boosted; replay)
+        j(ret),                      // 14
+        nop(),                       // 15
     ]
 }
 
-/// (G1) Level-up gate read: mask the shiny bit so the `< 9` cap sees the real
-/// level (a shiny Seru still levels up). `v0` = level (leave masked).
-fn assemble_lvl_gate(disp: [u32; 2], ret: u32) -> Vec<u32> {
+// NOTE: the level-up mask routines G1/G2/G3 are GONE. With the shiny flag moved
+// out of the level byte (now the parallel `+0x788` shiny array), the spell-level
+// byte is always clean, so the level-up math, the `< 9` cap, and the spell-level
+// display read correct levels natively - no masking needed. Removing them also
+// frees the SCUS gap they occupied.
+
+/// (F) Menu display: tint the level digit orange when the selected spell is
+/// shiny. Reads the slot's **shiny byte** (`+0x788(v0)`, `v0`=slot base before
+/// the replayed `lbu v0,0x729(v0)` overwrites it). The level byte is clean now,
+/// so the digit value needs no masking - F only sets the colour global.
+fn assemble_menu_color(disp: [u32; 2], ret: u32) -> Vec<u32> {
+    const END: i32 = 9;
     vec![
-        disp[0],            // lbu v0,0x729(a2)  (replay the level load)
-        disp[1],            // LOAD-DELAY SLOT: replay the original successor (doesn't use v0)
-        andi(V0, V0, 0x7F), // strip shiny bit (v0 valid now)
-        j(ret),
-        nop(),
+        lbu(T8, V0, SHINY_BYTE_OFF),       // 0 t8 = shiny[slot] (v0 = slot base)
+        disp[0],                           // 1 lw v1,0x46b0(v1) (doesn't touch v0/t8)
+        disp[1],                           // 2 lbu v0,0x729(v0) (clean level digit)
+        andi(T8, T8, SHINY_FLAG),          // 3 shiny? (fills v0 load delay)
+        beq(T8, ZERO, (END - 4) as i16),   // 4 not shiny -> skip the colour set
+        nop(),                             // 5
+        lui(T9, hi(TEXT_COLOR_GLOBAL_VA)), // 6
+        addiu(T0, ZERO, SHINY_MENU_COLOR), // 7
+        sw(T0, T9, lo(TEXT_COLOR_GLOBAL_VA)), // 8 _DAT_8007b454 = shiny colour
+        j(ret),                            // 9 END
+        nop(),                             // 10
     ]
 }
 
-/// (G2) Level-up working read: mask the shiny bit so the level math + threshold
-/// index see the real level. `a3` = level (leave masked).
-fn assemble_lvl_read(disp: [u32; 2], ret: u32) -> Vec<u32> {
+/// (H) In-battle magic-menu: stamp `SHINY_CAST_FLAG` (= `0x80` iff the selected
+/// spell is shiny) for the summon-fade (K) + cast-text (J') hooks. Reads the
+/// slot's **shiny byte** (`+0x788(v0)`); the level byte (`v1`) is clean, so the
+/// "Lv N" header needs no masking. `v0`=slot base (survives the `lbu v1` load).
+fn assemble_bmenu(disp: [u32; 2], ret: u32) -> Vec<u32> {
     vec![
-        disp[0],            // lbu a3,0x729(a2)  (replay the level load)
-        disp[1],            // LOAD-DELAY SLOT: replay the original successor (doesn't use a3)
-        andi(A3, A3, 0x7F), // strip shiny bit (a3 valid now)
-        j(ret),
-        nop(),
+        disp[0],                            // 0 lbu v1,0x729(v0) (clean level; v0 survives)
+        lbu(T8, V0, SHINY_BYTE_OFF),        // 1 t8 = shiny[slot] (v0 still = base)
+        disp[1],                            // 2 lbu v0,0x2(s1) (replay; fills loads)
+        andi(T8, T8, SHINY_FLAG),           // 3 t8 = 0x80 if shiny else 0
+        lui(AT, hi(SHINY_CAST_FLAG_VA)),    // 4
+        sb(T8, AT, lo(SHINY_CAST_FLAG_VA)), // 5 SHINY_CAST_FLAG = shiny bit
+        j(ret),                             // 6
+        nop(),                              // 7
     ]
 }
 
-/// (G3) Level-up writeback: re-apply the shiny bit (read from the old byte
-/// before the store) so leveling preserves it. `v0` = new level, `a2` = base.
-fn assemble_lvl_write(disp: [u32; 2], ret: u32) -> Vec<u32> {
+/// (K) Summon transparency: at the draw-time fade read in `FUN_8004a908`, if the
+/// current cast is shiny (`SHINY_CAST_FLAG`) and the actor being drawn (`s1`) is
+/// the summon creature (battle actor slot 7), override the fade `v0` with
+/// `SUMMON_FADE` so the creature renders semi-transparent. The summon's own
+/// `+0x226` is rebuilt to 0 every frame, so the fade must be injected at the
+/// read. The hook fires for every drawn actor, but only the shiny-summon case
+/// changes anything; non-matching cases return the real fade unchanged.
+fn assemble_summon_fade(disp: [u32; 2], ret: u32) -> Vec<u32> {
+    const RET: i32 = 12; // index of the closing `j(ret)`
     vec![
-        lbu(T8, A2, LEVEL_OFF),   // t8 = old byte (still has 0x80 if shiny)
-        disp[1],                  // LOAD-DELAY SLOT: replay the original successor (doesn't use t8)
-        andi(T8, T8, SHINY_FLAG), // keep just the shiny bit (t8 valid now)
-        or_(V0, V0, T8),          // v0 = new level | shiny
-        disp[0],                  // sb v0,0x729(a2)  (replay; v0 now carries 0x80)
-        j(ret),
-        nop(),
+        disp[0],                              // 0  lbu v0,0x226(s1) (replay; v0 = real fade)
+        disp[1],                              // 1  nop (replay; v0 load-delay slot)
+        lui(AT, hi(SHINY_CAST_FLAG_VA)),      // 2
+        lbu(A0, AT, lo(SHINY_CAST_FLAG_VA)),  // 3  a0 = shiny-cast flag (load)
+        lui(AT, hi(SUMMON_ACTOR_SLOT_VA)),    // 4  (fills a0 load-delay)
+        lw(A1, AT, lo(SUMMON_ACTOR_SLOT_VA)), // 5  a1 = actor_table[7] = summon ptr (load)
+        andi(A0, A0, SHINY_FLAG),             // 6  a0 valid; isolate shiny bit
+        beq(A0, ZERO, (RET - 8) as i16),      // 7  not shiny -> keep real fade
+        nop(),                                // 8  (a1 valid after this)
+        bne(A1, S1, (RET - 10) as i16),       // 9  not the summon -> keep real fade
+        nop(),                                // 10
+        addiu(V0, ZERO, SUMMON_FADE),         // 11 override fade for the summon
+        j(ret),                               // 12 RET: back to the `beq v0,zero`
+        nop(),                                // 13
     ]
 }
 
-/// (F) Menu display: mask the shiny bit so the level digit renders correctly.
-/// `v1` = table base (replay loads it), `v0` = level (leave masked).
-fn assemble_menu_mask(disp: [u32; 2], ret: u32) -> Vec<u32> {
+/// (J) +35% cast text: at the battle text-widget draw, if the cast is shiny
+/// (`SHINY_CAST_FLAG`) and the widget is the move-name banner (`a1 == 0x801C`),
+/// redirect the string pointer `a0` at the custom "+35% DMG!" string so the
+/// banner reads it instead of the spell name. Replays the displaced
+/// `lw a0,..`/`li v0,7` and returns to the `sw v0,0x13c(gp)` (hook + 8).
+/// `a1`/`s4`/`v0` are preserved; only `a0` (intentionally), `AT` and `v1` change.
+fn assemble_banner_replace(str_va: u32, disp: [u32; 2], ret: u32) -> Vec<u32> {
+    const RET: i32 = 14; // index of the closing `j(ret)`
     vec![
-        disp[1],            // lbu v0,0x729(v0)  (replay the level load FIRST)
-        disp[0],            // LOAD-DELAY SLOT: lw v1,0x46b0(v1) (replay; doesn't use v0)
-        andi(V0, V0, 0x7F), // strip shiny bit for the digit (v0 valid now)
-        j(ret),
-        nop(),
+        disp[0],                             // 0  lw a0,0x18(s4) (replay; a0 = name ptr)
+        disp[1],                             // 1  li v0,7 (replay; fills a0 delay, sets v0)
+        lui(AT, hi(SHINY_CAST_FLAG_VA)),     // 2
+        lbu(AT, AT, lo(SHINY_CAST_FLAG_VA)), // 3  AT = shiny-cast flag (load)
+        ori(V1, ZERO, BANNER_STYLE_TAG),     // 4  v1 = move-banner style (fills AT delay)
+        andi(AT, AT, SHINY_FLAG),            // 5  AT valid; isolate shiny bit
+        beq(AT, ZERO, (RET - 7) as i16),     // 6  not shiny -> keep the spell name
+        nop(),                               // 7
+        bne(A1, V1, (RET - 9) as i16),       // 8  not the banner widget -> keep name
+        nop(),                               // 9
+        lui(A0, hi(str_va)),                 // 10
+        addiu(A0, A0, lo(str_va)),           // 11 a0 = "+35% DMG!" string
+        ori(AT, ZERO, BANNER_TOP_Y),         // 12 AT = top-box Y
+        sw(AT, SP, 0x10),                    // 13 overwrite the 5th-arg Y slot (top box)
+        j(ret),                              // 14 RET: back to `sw v0,0x13c(gp)`
+        nop(),                               // 15
     ]
+}
+
+/// The "+35% DMG!" banner string: plain ASCII + `0x00` terminator (the banner
+/// path inherits the colour from the widget style, so no escape is needed).
+/// Our own text (no Sony bytes).
+fn banner_string() -> Vec<u8> {
+    let mut s = b"+35% DMG!".to_vec();
+    s.push(0x00);
+    s
 }
 
 /// One same-size write into a target file.
@@ -548,11 +760,12 @@ impl ShinySeruInjection {
         let setup = scus_hook(scus, HOOK_SETUP_VA, HOOK_SETUP_W0)?;
         let capture = ov_hook(ov0898, HOOK_CAPTURE_VA, HOOK_CAPTURE_W0)?;
         let grant = ov_hook(ov0898, HOOK_GRANT_VA, HOOK_GRANT_W0)?;
+        let gshift = ov_hook(ov0898, HOOK_GRANT_SHIFT_VA, HOOK_GRANT_SHIFT_W0)?;
         let damage = ov_hook(ov0898, HOOK_DAMAGE_VA, HOOK_DAMAGE_W0)?;
-        let lgate = ov_hook(ov0898, HOOK_LVL_GATE_VA, HOOK_LVL_GATE_W0)?;
-        let lread = ov_hook(ov0898, HOOK_LVL_READ_VA, HOOK_LVL_READ_W0)?;
-        let lwrite = ov_hook(ov0898, HOOK_LVL_WRITE_VA, HOOK_LVL_WRITE_W0)?;
         let menu = ov_hook(ov0899, HOOK_MENU_VA, HOOK_MENU_W0)?;
+        let bmenu = ov_hook(ov0898, HOOK_BMENU_LVL_VA, HOOK_BMENU_LVL_W0)?;
+        let banner = scus_hook(scus, HOOK_BANNER_VA, HOOK_BANNER_W0)?;
+        let fade = scus_hook(scus, HOOK_FADE_VA, HOOK_FADE_W0)?;
 
         // The capturable allowlist bitmap lives at the head of the second SCUS
         // gap; the setup routine indexes it by the first-monster id.
@@ -570,13 +783,14 @@ impl ShinySeruInjection {
             }
             Ok((va, words))
         };
-        // --- region 3: SCUS gap 2 (bitmap, then the level-up read-mask routines) ---
-        let mut gap2_va = SCUS_GAP2_VA + bitmap.len() as u32;
-        let mut place_gap2 = |words: Vec<u32>| -> Result<(u32, Vec<u32>)> {
-            let va = gap2_va;
-            gap2_va += (words.len() * 4) as u32;
-            if gap2_va > SCUS_GAP2_END_VA {
-                bail!("shiny routines overrun the second SCUS gap end {SCUS_GAP2_END_VA:#x}");
+        // --- region 3: SCUS gap 2 now holds only the bitmap (G2/G3 removed). ---
+        let gap2_va = SCUS_GAP2_VA + bitmap.len() as u32;
+        // Fixed-VA placement for the single-routine runs (menu F, battle-menu H,
+        // grant-shift K2, summon-fade K): each routine has its own reference-free
+        // run, asserted dead + length-checked below.
+        let fit = |va: u32, end: u32, words: Vec<u32>, what: &str| -> Result<(u32, Vec<u32>)> {
+            if va + (words.len() * 4) as u32 > end {
+                bail!("shiny {what} routine overruns its run end {end:#x}");
             }
             Ok((va, words))
         };
@@ -598,13 +812,47 @@ impl ShinySeruInjection {
             capture.1,
             HOOK_CAPTURE_VA + 8,
         ))?;
-        let (g1_va, g1_words) = place_scus(assemble_lvl_gate(lgate.1, HOOK_LVL_GATE_VA + 8))?;
-        let (f_va, f_words) = place_scus(assemble_menu_mask(menu.1, HOOK_MENU_VA + 8))?;
-        let (g2_va, g2_words) = place_gap2(assemble_lvl_read(lread.1, HOOK_LVL_READ_VA + 8))?;
-        let (g3_va, g3_words) = place_gap2(assemble_lvl_write(lwrite.1, HOOK_LVL_WRITE_VA + 8))?;
         let (d_va, d_words) = place_cave(assemble_damage(damage.1, HOOK_DAMAGE_VA + 8))?;
         let (c2_va, c2_words) =
-            place_cave(assemble_grant_or(scratch_va, grant.1, HOOK_GRANT_VA + 8))?;
+            place_cave(assemble_grant_shiny(scratch_va, grant.1, HOOK_GRANT_VA + 8))?;
+        // Colour-aware menu routine (F) in its own small reference-free run.
+        let (f_va, f_words) = fit(
+            MENU_RUN_VA,
+            MENU_RUN_END_VA,
+            assemble_menu_color(menu.1, HOOK_MENU_VA + 8),
+            "menu",
+        )?;
+        // In-battle magic-menu shiny-flag stamper (H).
+        let (h_va, h_words) = fit(
+            BMENU_RUN_VA,
+            BMENU_RUN_END_VA,
+            assemble_bmenu(bmenu.1, HOOK_BMENU_LVL_VA + 8),
+            "battle-menu",
+        )?;
+        // Grant shift-hook (K2): mirrors the spell-list shift onto the shiny array.
+        let (k2_va, k2_words) = fit(
+            SHIFT_RUN_VA,
+            SHIFT_RUN_END_VA,
+            assemble_grant_shift(gshift.1, HOOK_GRANT_SHIFT_VA + 8),
+            "grant-shift",
+        )?;
+        // Summon-transparency routine (K) in its own reference-free SCUS run.
+        let (k_va, k_words) = fit(
+            SUMMON_FADE_RUN_VA,
+            SUMMON_FADE_RUN_END_VA,
+            assemble_summon_fade(fade.1, HOOK_FADE_RET_VA),
+            "summon-fade",
+        )?;
+        // +35% cast-text routine (J) + its display string in one run. The string
+        // sits at BANNER_STR_VA after the routine; assert the routine fits before it.
+        let banner_words = assemble_banner_replace(BANNER_STR_VA, banner.1, HOOK_BANNER_RET_VA);
+        let banner_str = banner_string();
+        if BANNER_RUN_VA + (banner_words.len() * 4) as u32 > BANNER_STR_VA {
+            bail!("banner routine overruns its string at {BANNER_STR_VA:#x}");
+        }
+        if BANNER_STR_VA + banner_str.len() as u32 > BANNER_RUN_END_VA {
+            bail!("banner routine+string overrun the run end {BANNER_RUN_END_VA:#x}");
+        }
 
         // --- dead-space guards ---------------------------------------------
         // SCUS gap 1: scratch word + its routines (one contiguous span).
@@ -616,7 +864,7 @@ impl ShinySeruInjection {
             (scus_va - SCUS_GAP_VA) as usize,
             SCUS_GAP_VA,
         )?;
-        // SCUS gap 2: bitmap + its routines (one contiguous span).
+        // SCUS gap 2: just the capturable bitmap now.
         let scus_gap2_off = item_names::file_offset_for_va(scus, SCUS_GAP2_VA)
             .ok_or_else(|| anyhow::anyhow!("can't resolve SCUS gap 2 VA"))?;
         assert_zero(
@@ -625,6 +873,23 @@ impl ShinySeruInjection {
             (gap2_va - SCUS_GAP2_VA) as usize,
             SCUS_GAP2_VA,
         )?;
+        // Single-routine SCUS runs (menu F, battle-menu H, grant-shift K2,
+        // summon-fade K): each its own dead run.
+        for (va, words) in [
+            (MENU_RUN_VA, &f_words),
+            (BMENU_RUN_VA, &h_words),
+            (SHIFT_RUN_VA, &k2_words),
+            (SUMMON_FADE_RUN_VA, &k_words),
+        ] {
+            let off = item_names::file_offset_for_va(scus, va)
+                .ok_or_else(|| anyhow::anyhow!("can't resolve SCUS run {va:#x}"))?;
+            assert_zero(scus, off, words.len() * 4, va)?;
+        }
+        // Banner run: routine + its string are one contiguous dead span.
+        let banner_off = item_names::file_offset_for_va(scus, BANNER_RUN_VA)
+            .ok_or_else(|| anyhow::anyhow!("can't resolve banner run VA"))?;
+        let banner_span = (BANNER_STR_VA - BANNER_RUN_VA) as usize + banner_str.len();
+        assert_zero(scus, banner_off, banner_span, BANNER_RUN_VA)?;
         // 0898 cave: all cave routines (one contiguous span).
         let cave_off = (CAVE_VA - OVERLAY_BASE_VA) as usize;
         assert_zero(ov0898, cave_off, (cave_va - CAVE_VA) as usize, CAVE_VA)?;
@@ -653,28 +918,33 @@ impl ShinySeruInjection {
             },
             Edit {
                 prot_index: Some(BATTLE_ACTION_OVERLAY_PROT_INDEX),
+                file_off: gshift.0,
+                bytes: detour(SHIFT_RUN_VA),
+            },
+            Edit {
+                prot_index: Some(BATTLE_ACTION_OVERLAY_PROT_INDEX),
                 file_off: damage.0,
                 bytes: detour(d_va),
-            },
-            Edit {
-                prot_index: Some(BATTLE_ACTION_OVERLAY_PROT_INDEX),
-                file_off: lgate.0,
-                bytes: detour(g1_va),
-            },
-            Edit {
-                prot_index: Some(BATTLE_ACTION_OVERLAY_PROT_INDEX),
-                file_off: lread.0,
-                bytes: detour(g2_va),
-            },
-            Edit {
-                prot_index: Some(BATTLE_ACTION_OVERLAY_PROT_INDEX),
-                file_off: lwrite.0,
-                bytes: detour(g3_va),
             },
             Edit {
                 prot_index: Some(MENU_OVERLAY_PROT_INDEX),
                 file_off: menu.0,
                 bytes: detour(f_va),
+            },
+            Edit {
+                prot_index: Some(BATTLE_ACTION_OVERLAY_PROT_INDEX),
+                file_off: bmenu.0,
+                bytes: detour(h_va),
+            },
+            Edit {
+                prot_index: None,
+                file_off: banner.0,
+                bytes: detour(BANNER_RUN_VA),
+            },
+            Edit {
+                prot_index: None,
+                file_off: fade.0,
+                bytes: detour(SUMMON_FADE_RUN_VA),
             },
             // SCUS-hosted routines.
             Edit {
@@ -689,23 +959,36 @@ impl ShinySeruInjection {
             },
             Edit {
                 prot_index: None,
-                file_off: scus_off(g2_va),
-                bytes: words_to_bytes(&g2_words),
-            },
-            Edit {
-                prot_index: None,
-                file_off: scus_off(g3_va),
-                bytes: words_to_bytes(&g3_words),
-            },
-            Edit {
-                prot_index: None,
                 file_off: scus_off(f_va),
                 bytes: words_to_bytes(&f_words),
             },
             Edit {
                 prot_index: None,
-                file_off: scus_off(g1_va),
-                bytes: words_to_bytes(&g1_words),
+                file_off: scus_off(h_va),
+                bytes: words_to_bytes(&h_words),
+            },
+            // Grant shift-hook routine (K2).
+            Edit {
+                prot_index: None,
+                file_off: scus_off(k2_va),
+                bytes: words_to_bytes(&k2_words),
+            },
+            // Summon-transparency routine (K).
+            Edit {
+                prot_index: None,
+                file_off: scus_off(k_va),
+                bytes: words_to_bytes(&k_words),
+            },
+            // +35% banner routine (J) + its display string, in the banner run.
+            Edit {
+                prot_index: None,
+                file_off: scus_off(BANNER_RUN_VA),
+                bytes: words_to_bytes(&banner_words),
+            },
+            Edit {
+                prot_index: None,
+                file_off: scus_off(BANNER_STR_VA),
+                bytes: banner_str.clone(),
             },
             // Capturable allowlist bitmap (SCUS gap 2, ahead of g2/g3).
             Edit {
@@ -801,53 +1084,117 @@ mod tests {
     }
 
     #[test]
-    fn damage_routine_boosts_and_masks() {
-        let disp = [HOOK_DAMAGE_W0, 0x8CC3_0000];
+    fn summon_fade_routine_shape() {
+        // The hook fingerprint is the real `lbu v0,0x226(s1)`.
+        assert_eq!(HOOK_FADE_W0, lbu(V0, S1, 0x226));
+        let disp = [HOOK_FADE_W0, nop()];
+        let r = assemble_summon_fade(disp, HOOK_FADE_RET_VA);
+        assert_eq!(r.len(), 14);
+        assert_eq!(r[0], HOOK_FADE_W0, "replays the fade read");
+        // Gate on the shiny-cast flag, then on s1 == summon actor.
+        assert_eq!(
+            r[3],
+            lbu(A0, AT, lo(SHINY_CAST_FLAG_VA)),
+            "loads shiny flag"
+        );
+        assert_eq!(
+            r[5],
+            lw(A1, AT, lo(SUMMON_ACTOR_SLOT_VA)),
+            "loads summon ptr"
+        );
+        assert_eq!(r[6], andi(A0, A0, SHINY_FLAG));
+        // beq (idx7) and bne (idx9) both skip to the closing j(ret) at idx12.
+        assert_eq!(op(r[7]), 0x04, "idx7 is beq");
+        assert_eq!(
+            7 + 1 + ((r[7] & 0xffff) as i16 as i32),
+            12,
+            "beq targets RET"
+        );
+        assert_eq!(op(r[9]), 0x05, "idx9 is bne");
+        assert_eq!(
+            9 + 1 + ((r[9] & 0xffff) as i16 as i32),
+            12,
+            "bne targets RET"
+        );
+        assert_eq!(r[11], addiu(V0, ZERO, SUMMON_FADE), "overrides the fade");
+        // Returns to the `beq v0,zero` right after the read (hook + 8).
+        assert_eq!(op(r[12]), 0x02);
+        assert_eq!((r[12] & 0x03ff_ffff) << 2, HOOK_FADE_RET_VA & 0x0fff_ffff);
+        assert_eq!(HOOK_FADE_RET_VA, HOOK_FADE_VA + 8);
+    }
+
+    #[test]
+    fn damage_routine_boosts_via_shiny_byte() {
+        let disp = [HOOK_DAMAGE_W0, 0x8CC3_0000]; // lbu v0,0x729(v0) ; lw v1,0(a2)
         let r = assemble_damage(disp, HOOK_DAMAGE_VA + 8);
-        assert_eq!(r.len(), 17);
-        assert_eq!(r[0], HOOK_DAMAGE_W0, "replays the level load");
-        // The shiny test is one instr later now (load-delay slot between).
-        assert_eq!(r[2], andi(T8, V0, SHINY_FLAG), "tests the shiny bit");
-        assert_eq!(r[6], nop(), "load-delay slot after the *a2 load");
+        assert_eq!(r.len(), 16);
+        // Reads the parallel shiny byte BEFORE the level load clobbers v0.
+        assert_eq!(
+            r[0],
+            lbu(T8, V0, SHINY_BYTE_OFF),
+            "reads the slot shiny byte"
+        );
+        assert_eq!(r[1], HOOK_DAMAGE_W0, "replays the (clean) level load");
+        assert_eq!(r[2], andi(T8, T8, SHINY_FLAG), "tests the shiny bit");
         assert_eq!(r[7], multu(T9, T0));
-        assert_eq!(r[13], andi(V0, V0, 0x7F), "strips the bit for level-1 math");
-        assert_eq!(r[14], 0x8CC3_0000, "replays the displaced lw");
+        assert_eq!(r[13], 0x8CC3_0000, "replays the boosted-*a2 reload");
+        // No masking of v0 - the level byte is clean now.
+        assert!(!r.iter().any(|&w| w == andi(V0, V0, 0x7F)), "no level mask");
         // beq idx3 skips the boost to SKIP (idx13).
-        let off = (r[3] & 0xffff) as i16 as i32;
-        assert_eq!(3 + 1 + off, 13);
+        assert_eq!(3 + 1 + ((r[3] & 0xffff) as i16 as i32), 13);
     }
 
     #[test]
-    fn grant_sets_shiny_bit() {
-        let disp = [HOOK_GRANT_W0, 0xAC40_05D0];
-        let r = assemble_grant_or(SCUS_GAP_VA, disp, HOOK_GRANT_VA + 8);
-        assert_eq!(r[5], ori(V1, V1, SHINY_FLAG));
-        assert_eq!(r[6], HOOK_GRANT_W0, "replays the level store");
-        assert_eq!(r[7], 0xAC40_05D0);
-        // beq idx3 skips the OR to W (idx6).
-        let off = (r[3] & 0xffff) as i16 as i32;
-        assert_eq!(3 + 1 + off, 6);
+    fn grant_writes_clean_level_and_shiny_byte() {
+        let disp = [HOOK_GRANT_W0, 0xAC40_05D0]; // sb v1,0x729(v0) ; sw zero,0x5d0(v0)
+        let r = assemble_grant_shiny(SCUS_GAP_VA, disp, HOOK_GRANT_VA + 8);
+        // Level store is replayed UNCHANGED (no shiny OR) - the level stays clean.
+        assert_eq!(r[0], HOOK_GRANT_W0, "replays the clean level store");
+        assert!(
+            !r.iter().any(|&w| w == ori(V1, V1, SHINY_FLAG)),
+            "no level OR"
+        );
+        // Writes the slot-0 shiny byte (0x80 when shiny, else 0).
+        assert_eq!(r[7], ori(T7, ZERO, SHINY_FLAG));
+        assert_eq!(r[8], sb(T7, V0, SHINY_BYTE_OFF), "stores the shiny byte");
+        // beq idx5 skips the 0x80 set to STORE (idx8).
+        assert_eq!(5 + 1 + ((r[5] & 0xffff) as i16 as i32), 8);
     }
 
     #[test]
-    fn levelup_write_preserves_shiny() {
-        let disp = [HOOK_LVL_WRITE_W0, 0x2404_0065];
-        let r = assemble_lvl_write(disp, HOOK_LVL_WRITE_VA + 8);
-        assert_eq!(r[0], lbu(T8, A2, LEVEL_OFF));
-        assert_eq!(r[1], 0x2404_0065, "load-delay slot replays the successor");
-        assert_eq!(r[2], andi(T8, T8, SHINY_FLAG));
-        assert_eq!(r[3], or_(V0, V0, T8));
-        assert_eq!(r[4], HOOK_LVL_WRITE_W0);
+    fn grant_shift_routine_shape() {
+        assert_eq!(HOOK_GRANT_SHIFT_W0, lbu(A2, V0, 0x704));
+        let disp = [HOOK_GRANT_SHIFT_W0, nop()];
+        let r = assemble_grant_shift(disp, HOOK_GRANT_SHIFT_VA + 8);
+        assert_eq!(r[0], lbu(T8, V0, 0x704), "reads the spell count");
+        // The loop shifts shiny[i] = shiny[i-1] (lbu -1, sb 0, decrement cursor + count).
+        assert_eq!(r[6], lbu(AT, T9, 0xFFFF), "shiny[i-1]");
+        assert_eq!(r[8], sb(AT, T9, 0), "shiny[i]");
+        // bne idx11 loops back to LOOP (idx6); beq idx2 skips to END (idx13).
+        assert_eq!(11 + 1 + ((r[11] & 0xffff) as i16 as i32), 6, "bne -> LOOP");
+        assert_eq!(2 + 1 + ((r[2] & 0xffff) as i16 as i32), 13, "beq -> END");
+        assert_eq!(r[13], HOOK_GRANT_SHIFT_W0, "replays the count load");
     }
 
     #[test]
-    fn menu_mask_strips_bit() {
-        let disp = [HOOK_MENU_W0, 0x9042_0729];
-        let r = assemble_menu_mask(disp, HOOK_MENU_VA + 8);
-        // The level load (disp[1]) goes first; the lw (disp[0]) fills its delay slot.
-        assert_eq!(r[0], 0x9042_0729, "lbu level load first");
-        assert_eq!(r[1], HOOK_MENU_W0, "lw in the load-delay slot");
-        assert_eq!(r[2], andi(V0, V0, 0x7F));
+    fn menu_color_no_mask() {
+        let disp = [HOOK_MENU_W0, 0x9042_0729]; // lw v1,0x46b0(v1) ; lbu v0,0x729(v0)
+        let r = assemble_menu_color(disp, HOOK_MENU_VA + 8);
+        assert_eq!(
+            r[0],
+            lbu(T8, V0, SHINY_BYTE_OFF),
+            "reads the slot shiny byte"
+        );
+        assert_eq!(r[1], HOOK_MENU_W0, "replays the lw");
+        assert_eq!(r[2], 0x9042_0729, "replays the (clean) level digit load");
+        assert_eq!(r[3], andi(T8, T8, SHINY_FLAG), "tests the shiny bit");
+        assert_eq!(
+            r[8],
+            sw(T0, T9, lo(TEXT_COLOR_GLOBAL_VA)),
+            "set shiny colour"
+        );
+        // No level masking - the byte is clean.
+        assert!(!r.iter().any(|&w| w == andi(V0, V0, 0x7F)), "no digit mask");
     }
 
     #[test]
@@ -855,10 +1202,8 @@ mod tests {
         assert_eq!(HOOK_SETUP_W0, lui(V0, 0x8008));
         assert_eq!(HOOK_CAPTURE_W0, sb(V0, 4, 0x269)); // sb v0,0x269(a0)
         assert_eq!(HOOK_GRANT_W0, sb(V1, V0, 0x729));
+        assert_eq!(HOOK_GRANT_SHIFT_W0, lbu(A2, V0, 0x704));
         assert_eq!(HOOK_DAMAGE_W0, lbu(V0, V0, 0x729));
-        assert_eq!(HOOK_LVL_GATE_W0, lbu(V0, A2, 0x729));
-        assert_eq!(HOOK_LVL_READ_W0, lbu(A3, A2, 0x729));
-        assert_eq!(HOOK_LVL_WRITE_W0, sb(V0, A2, 0x729));
         assert_eq!(HOOK_MENU_W0, lw(V1, V1, 0x46b0));
     }
 
@@ -874,26 +1219,120 @@ mod tests {
     #[test]
     fn routines_fit_their_regions() {
         let bm = SCUS_GAP2_VA;
-        // Region 1 (SCUS gap 1): scratch(4) + B + C1 + G1 + F.
+        // Region 1 (SCUS gap 1): scratch(4) + B + C1 (G1 removed).
         let r1 = 4
-            + (assemble_setup(2, bm, [0, 0], 0).len()
-                + assemble_capture_copy(0, [0, 0], 0).len()
-                + assemble_lvl_gate([0, 0], 0).len()
-                + assemble_menu_mask([0, 0], 0).len())
+            + (assemble_setup(2, bm, [0, 0], 0).len() + assemble_capture_copy(0, [0, 0], 0).len())
                 * 4;
         assert!(
             SCUS_GAP_VA + r1 as u32 <= SCUS_GAP_END_VA,
             "region 1 fits ({r1} bytes)"
         );
-        // Region 3 (SCUS gap 2): bitmap + G2 + G3.
-        let r3 = BITMAP_BYTES
-            + (assemble_lvl_read([0, 0], 0).len() + assemble_lvl_write([0, 0], 0).len()) * 4;
+        // Region 3 (SCUS gap 2): just the bitmap now (G2/G3 removed).
         assert!(
-            SCUS_GAP2_VA + r3 as u32 <= SCUS_GAP2_END_VA,
-            "region 3 fits ({r3} bytes)"
+            SCUS_GAP2_VA + BITMAP_BYTES as u32 <= SCUS_GAP2_END_VA,
+            "region 3 fits"
+        );
+        // Menu run (F), battle-menu run (H), grant-shift run (K2): each its own run.
+        let rf = assemble_menu_color([0, 0], 0).len() * 4;
+        assert!(
+            MENU_RUN_VA + rf as u32 <= MENU_RUN_END_VA,
+            "menu run fits ({rf})"
+        );
+        let rh = assemble_bmenu([0, 0], 0).len() * 4;
+        assert!(
+            BMENU_RUN_VA + rh as u32 <= BMENU_RUN_END_VA,
+            "bmenu run fits ({rh})"
+        );
+        let rk2 = assemble_grant_shift([0, 0], 0).len() * 4;
+        assert!(
+            SHIFT_RUN_VA + rk2 as u32 <= SHIFT_RUN_END_VA,
+            "shift run fits ({rk2})"
         );
         // Region 2 (0898 cave): D + C2.
-        let r2 = (assemble_damage([0, 0], 0).len() + assemble_grant_or(0, [0, 0], 0).len()) * 4;
+        let r2 = (assemble_damage([0, 0], 0).len() + assemble_grant_shiny(0, [0, 0], 0).len()) * 4;
         assert!(CAVE_VA + r2 as u32 <= CAVE_END_VA, "cave fits ({r2} bytes)");
+    }
+
+    #[test]
+    fn bmenu_stamps_shiny_flag_from_byte() {
+        let r = assemble_bmenu([HOOK_BMENU_LVL_W0, 0x9222_0002], HOOK_BMENU_LVL_VA + 8);
+        assert_eq!(r[0], HOOK_BMENU_LVL_W0, "replays the (clean) level load");
+        assert_eq!(
+            r[1],
+            lbu(T8, V0, SHINY_BYTE_OFF),
+            "reads the slot shiny byte"
+        );
+        assert_eq!(r[3], andi(T8, T8, SHINY_FLAG), "isolates the shiny bit");
+        assert_eq!(
+            r[5],
+            sb(T8, AT, lo(SHINY_CAST_FLAG_VA)),
+            "stamps the shiny-cast flag"
+        );
+        // No display masking - the level byte is clean.
+        assert!(
+            !r.iter().any(|&w| w == andi(V1, V1, 0x7F)),
+            "no display mask"
+        );
+    }
+
+    #[test]
+    fn banner_routine_and_string() {
+        // HOOK_BANNER_W0 is `lw a0,0x18(s4)` (s4 = $20); verified against the disc
+        // by the disc-gated `baseline_hooks_match_the_known_build`.
+        assert_eq!(HOOK_BANNER_W0, lw(A0, 20, 0x18));
+        let disp = [HOOK_BANNER_W0, 0x2402_0007]; // lw a0,0x18(s4) ; li v0,7
+        let r = assemble_banner_replace(BANNER_STR_VA, disp, HOOK_BANNER_RET_VA);
+        assert_eq!(r.len(), 16);
+        assert_eq!(r[0], HOOK_BANNER_W0, "replays the string load");
+        // Gate on the shiny flag, then on the move-banner style tag.
+        assert_eq!(
+            r[3],
+            lbu(AT, AT, lo(SHINY_CAST_FLAG_VA)),
+            "loads shiny flag"
+        );
+        assert_eq!(
+            r[4],
+            ori(V1, ZERO, BANNER_STYLE_TAG),
+            "loads the banner-style tag"
+        );
+        assert_eq!(r[5], andi(AT, AT, SHINY_FLAG));
+        // beq (idx6) and bne (idx8) both skip to the closing j(ret) at idx14.
+        assert_eq!(op(r[6]), 0x04, "idx6 is beq");
+        assert_eq!(
+            6 + 1 + ((r[6] & 0xffff) as i16 as i32),
+            14,
+            "beq targets RET"
+        );
+        assert_eq!(op(r[8]), 0x05, "idx8 is bne (a1 != style tag)");
+        assert_eq!(
+            8 + 1 + ((r[8] & 0xffff) as i16 as i32),
+            14,
+            "bne targets RET"
+        );
+        // Shiny banner path points a0 at the custom string + relocates Y to the box.
+        assert_eq!(r[10], lui(A0, hi(BANNER_STR_VA)));
+        assert_eq!(
+            r[11],
+            addiu(A0, A0, lo(BANNER_STR_VA)),
+            "a0 = custom string"
+        );
+        assert_eq!(r[12], ori(AT, ZERO, BANNER_TOP_Y), "loads the top-box Y");
+        assert_eq!(r[13], sw(AT, SP, 0x10), "overwrites the 5th-arg Y slot");
+        // Returns to the `sw v0,0x13c(gp)` right after the load (hook + 8).
+        assert_eq!(op(r[14]), 0x02);
+        assert_eq!((r[14] & 0x03ff_ffff) << 2, HOOK_BANNER_RET_VA & 0x0fff_ffff);
+        assert_eq!(HOOK_BANNER_RET_VA, HOOK_BANNER_VA + 8);
+        // The string is plain ASCII with a 0x00 terminator and fits the run.
+        let s = banner_string();
+        assert_eq!(s[0], b'+', "plain ASCII (no colour escape)");
+        assert_eq!(*s.last().unwrap(), 0x00, "0x00 terminator");
+        assert!(
+            BANNER_RUN_VA + (r.len() * 4) as u32 <= BANNER_STR_VA,
+            "routine fits before string"
+        );
+        assert!(
+            BANNER_STR_VA + s.len() as u32 <= BANNER_RUN_END_VA,
+            "string fits the run"
+        );
     }
 }

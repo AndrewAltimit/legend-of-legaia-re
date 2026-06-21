@@ -1,8 +1,11 @@
 //! Disc-gated tests for the **shiny Seru** feature (see `legaia_rando::shiny_seru`):
 //! a rare capturable enemy with +35% stats whose captured Seru deals +35% damage
-//! forever. The injection is eight same-size detours + their routines, split
-//! between a new preserved `SCUS_942.54` rodata gap (`0x80077728`) and the
-//! battle-action overlay's move-power padding (`0x801F4FC4`).
+//! forever (+ translucent summon and a "+35% DMG!" cast banner). The injection is
+//! nine same-size detours + their routines, split across a new preserved
+//! `SCUS_942.54` rodata gap (`0x80077728`), the battle-action overlay's move-power
+//! padding (`0x801F4FC4`), and steal-table-adjacent SCUS runs. The persistent
+//! shiny flag lives in a parallel per-spell byte at `record+0x1C0`, not the
+//! spell-level byte (which keeps the level-up + display reads clean).
 //!
 //! These apply it to a scratch copy of the real disc and assert, off the patched
 //! image, that every hook is the recognized US build, each detour becomes
@@ -19,8 +22,8 @@ use legaia_iso::iso9660::read_file_in_image;
 use legaia_rando::apply;
 use legaia_rando::disc::DiscPatcher;
 use legaia_rando::shiny_seru::{
-    self, BATTLE_ACTION_OVERLAY_PROT_INDEX, HOOK_CAPTURE_VA, HOOK_DAMAGE_VA, HOOK_GRANT_VA,
-    HOOK_LVL_GATE_VA, HOOK_LVL_READ_VA, HOOK_LVL_WRITE_VA, HOOK_MENU_VA, HOOK_SETUP_VA,
+    self, BATTLE_ACTION_OVERLAY_PROT_INDEX, HOOK_BANNER_VA, HOOK_BMENU_LVL_VA, HOOK_CAPTURE_VA,
+    HOOK_DAMAGE_VA, HOOK_FADE_VA, HOOK_GRANT_SHIFT_VA, HOOK_GRANT_VA, HOOK_MENU_VA, HOOK_SETUP_VA,
     MENU_OVERLAY_PROT_INDEX, OVERLAY_BASE_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, ShinySeruInjection,
 };
 
@@ -41,14 +44,15 @@ fn overlay_word(entry: &[u8], va: u32) -> u32 {
 
 /// The expected first word at each hook (the recognized US build fingerprints).
 const HOOK_FINGERPRINTS: &[(u32, u32)] = &[
-    (HOOK_SETUP_VA, 0x3C02_8008),     // lui v0,0x8008
-    (HOOK_CAPTURE_VA, 0xA082_0269),   // sb v0,0x269(a0)
-    (HOOK_GRANT_VA, 0xA043_0729),     // sb v1,0x729(v0)
-    (HOOK_DAMAGE_VA, 0x9042_0729),    // lbu v0,0x729(v0)
-    (HOOK_LVL_GATE_VA, 0x90C2_0729),  // lbu v0,0x729(a2)
-    (HOOK_LVL_READ_VA, 0x90C7_0729),  // lbu a3,0x729(a2)
-    (HOOK_LVL_WRITE_VA, 0xA0C2_0729), // sb v0,0x729(a2)
-    (HOOK_MENU_VA, 0x8C63_46B0),      // lw v1,0x46b0(v1)
+    (HOOK_SETUP_VA, 0x3C02_8008),       // lui v0,0x8008
+    (HOOK_CAPTURE_VA, 0xA082_0269),     // sb v0,0x269(a0)
+    (HOOK_GRANT_VA, 0xA043_0729),       // sb v1,0x729(v0)
+    (HOOK_GRANT_SHIFT_VA, 0x9046_0704), // lbu a2,0x704(v0)
+    (HOOK_DAMAGE_VA, 0x9042_0729),      // lbu v0,0x729(v0)
+    (HOOK_MENU_VA, 0x8C63_46B0),        // lw v1,0x46b0(v1)
+    (HOOK_BMENU_LVL_VA, 0x9043_0729),   // lbu v1,0x729(v0)
+    (HOOK_BANNER_VA, 0x8E84_0018),      // lw a0,0x18(s4) (SCUS)
+    (HOOK_FADE_VA, 0x9222_0226),        // lbu v0,0x226(s1) (SCUS)
 ];
 
 #[test]
@@ -68,20 +72,50 @@ fn baseline_hooks_match_the_known_build() {
 
     for &(va, want) in HOOK_FINGERPRINTS {
         let got = match va {
-            HOOK_SETUP_VA => scus_word(&scus, va),
+            HOOK_SETUP_VA | HOOK_FADE_VA | HOOK_BANNER_VA => scus_word(&scus, va),
             HOOK_MENU_VA => overlay_word(&ov0899, va),
             _ => overlay_word(&ov0898, va),
         };
         assert_eq!(got, want, "hook {va:#x} is the recognized US build");
     }
 
-    // The SCUS gap that hosts the routines is preserved dead space.
-    let gap_off = file_offset_for_va(&scus, SCUS_GAP_VA).unwrap();
-    let gap_len = (SCUS_GAP_END_VA - SCUS_GAP_VA) as usize;
-    assert!(
-        scus[gap_off..gap_off + gap_len].iter().all(|&b| b == 0),
-        "the new SCUS rodata gap is all-zero dead space"
-    );
+    // The SCUS rodata runs that host the routines are preserved dead space.
+    for (start, end, label) in [
+        (SCUS_GAP_VA, SCUS_GAP_END_VA, "gap 1"),
+        (
+            shiny_seru::SCUS_GAP2_VA,
+            shiny_seru::SCUS_GAP2_END_VA,
+            "gap 2",
+        ),
+        (shiny_seru::MENU_RUN_VA, shiny_seru::MENU_RUN_END_VA, "menu"),
+        (
+            shiny_seru::BANNER_RUN_VA,
+            shiny_seru::BANNER_RUN_END_VA,
+            "+35% banner",
+        ),
+        (
+            shiny_seru::BMENU_RUN_VA,
+            shiny_seru::BMENU_RUN_END_VA,
+            "battle-menu masker",
+        ),
+        (
+            shiny_seru::SHIFT_RUN_VA,
+            shiny_seru::SHIFT_RUN_END_VA,
+            "grant-shift",
+        ),
+        (
+            shiny_seru::SUMMON_FADE_RUN_VA,
+            shiny_seru::SUMMON_FADE_RUN_END_VA,
+            "summon-fade",
+        ),
+    ] {
+        let off = file_offset_for_va(&scus, start).unwrap();
+        let len = (end - start) as usize;
+        assert!(
+            scus[off..off + len].iter().all(|&b| b == 0),
+            "SCUS rodata {label} is all-zero dead space"
+        );
+    }
 }
 
 #[test]
@@ -119,13 +153,13 @@ fn injection_writes_detours_and_routines_surgically() {
     // Every detour landed as a `j` (opcode 0x02) + nop.
     for &(va, _) in HOOK_FINGERPRINTS {
         let w = match va {
-            HOOK_SETUP_VA => scus_word(&scus, va),
+            HOOK_SETUP_VA | HOOK_FADE_VA | HOOK_BANNER_VA => scus_word(&scus, va),
             HOOK_MENU_VA => overlay_word(&ov0899, va),
             _ => overlay_word(&ov0898, va),
         };
         assert_eq!(w >> 26, 0x02, "hook {va:#x} became a `j`");
         let delay = match va {
-            HOOK_SETUP_VA => scus_word(&scus, va + 4),
+            HOOK_SETUP_VA | HOOK_FADE_VA | HOOK_BANNER_VA => scus_word(&scus, va + 4),
             HOOK_MENU_VA => overlay_word(&ov0899, va + 4),
             _ => overlay_word(&ov0898, va + 4),
         };

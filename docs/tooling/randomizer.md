@@ -505,9 +505,11 @@ boss the lone enemy turns on itself. (Side effect: while on, a vanilla
 
 `--shiny-seru` gives a per-battle chance (`--shiny-pct`%, default **2**) that the
 frontmost **capturable** enemy spawns as a rare *shiny* variant: +35% combat
-stats at battle load, and the Seru you capture from it deals **+35% damage** on
-every future cast (on top of its normal abilities), permanently (`shiny_seru`
-module). This mirrors the clean-room engine implementation
+stats at battle load (and a translucent render), and the Seru you capture from it
+deals **+35% damage** on every future cast (on top of its normal abilities),
+permanently (`shiny_seru` module). Two cosmetics ride along: on a shiny cast the
+summoned creature renders semi-transparent and a "+35% DMG!" banner replaces the
+spell name. This mirrors the clean-room engine implementation
 (`legaia_engine_core::seru_learning`'s shiny set + `SHINY_DAMAGE_BONUS_PCT`).
 
 "Capturable" is decided by indexing the **first-monster id global**
@@ -517,49 +519,70 @@ disc's monster names that match a player Seru-magic name (`capturable_monster_id
 / `SERU_NAMES`: Gimard / Theeder / Vera / Gizam / Nighto / Zenoir / Viguro /
 Swordie / Orb / Freed / Nova + variants = 33 ids). The earlier `actor+0x3e` idea
 was wrong - that byte is volatile (reads 0x55 for gobu) and isn't a Seru flag.
-The persistent +35% rides the **free high bit `0x80` of the captured spell's level
-byte** (`record+0x161`; max legit level is 9, so the bit is spare) - which means
-it survives a memory-card save and the spell-list insertion shift when more Seru
-are captured. (Every injected routine honours the R3000 load-delay slot - a
-just-loaded register is never used by the next instruction, else the value isn't
-ready yet; the boost loop in particular cascades into garbage without this.)
+The persistent +35% is stored in a **parallel per-spell-slot shiny-byte array** at
+`record+0x1C0` (`0x788` from the runtime `+0x729` base; a 32-byte run verified
+all-zero/unused across 228 record samples and inside the saved record footprint).
+The flag lives there, **not** in the spell-level byte's free `0x80` bit. That
+earlier design (OR `0x80` into the level byte) worked for the gameplay readers but
+leaked into the shared spell-level-up + display function `FUN_800402f4`, which
+reads the level *unmasked* and does a `level < 9` cap + `(level-1)` table index:
+with the bit set the level reads 129/130, so the "grew to level" message rendered
+blank and the out-of-bounds index corrupted a victory-pose texture. Masking that
+function too didn't fit the gaps, so the flag was moved out entirely - now the
+level byte is always clean and no display masking is needed. Because the array is
+slot-indexed, a **grant-shift hook** mirrors the spell-list insert-at-front shift
+onto it so each Seru keeps its flag; the byte is inside the saved record so it
+survives a memory-card save. (Every injected routine honours the R3000 load-delay
+slot - a just-loaded register is never used by the next instruction, else the
+value isn't ready yet; the boost loop in particular cascades into garbage without
+this.)
 
-`apply::inject_shiny_seru` performs **eight** same-size detours into routines
-across three reference-free regions: a *new* preserved SCUS rodata gap at
-`0x80077728` (the padding before the steal table `DAT_80077828`, distinct from the
-`0x8007AB38` gap so it composes), the battle-action overlay 0898's
-move-power-table padding at `0x801F4FC4`, and a second SCUS gap at `0x800783C4`
-(hosting the capturable bitmap + the level-up read-masks):
+`apply::inject_shiny_seru` performs **nine** same-size detours into routines
+across reference-free regions: a *new* preserved SCUS rodata gap at `0x80077728`
+(the padding before the steal table `DAT_80077828`, distinct from the `0x8007AB38`
+gap so it composes), the battle-action overlay 0898's move-power-table padding at
+`0x801F4FC4`, a second SCUS gap at `0x800783C4` (the capturable bitmap), and
+steal-table-adjacent SCUS runs (menu / battle-menu / grant-shift / cosmetics):
 
 1. **setup** (`FUN_800513F0` `0x80051A20`) - roll the chance; if the frontmost
    enemy's monster id is set in the capturable bitmap, boost its stat block
-   `×135/100` and stamp the free per-actor byte `+0x226` as a shiny marker;
+   `×135/100` and stamp the free per-actor byte `+0x226` as a shiny marker
+   (it renders the enemy translucent);
 2. **capture-success** (`0x801EE2E8`) - stash the captured enemy's `+0x226`
    marker into a scratch word (the captured-enemy actor isn't reachable at the
    grant site, so the link is carried here);
-3. **grant** (`FUN_801E92DC` `0x801E93B4`) - when the scratch says shiny, OR
-   `0x80` into the just-granted spell-level byte;
-4. **damage** (`FUN_801dd864` `0x801DDB08`) - when `0x80` is set, multiply the
-   summon-damage roll `×135/100`, then strip the bit for the normal
-   `(level-1)/8` math;
-5-7. **level-up gate / working read / write-back** (`FUN_801E70BC`
-   `0x801E71C8` / `0x801E71DC` / `0x801E7224`) - mask `0x80` so a shiny Seru
-   still levels up and the increment re-applies the flag;
-8. **menu** (`FUN_801d2e74` `0x801D2FA0`, overlay 0899) - mask `0x80` so the
-   spell-list level digit renders correctly.
+3. **grant** (`FUN_801E92DC` `0x801E93B4`) - write a **clean** level byte plus
+   the slot-0 **shiny byte** (`+0x788`, `0x80` when the scratch says shiny);
+4. **grant-shift** (`FUN_801E92DC` `0x801E9320`) - mirror the insert-at-front
+   spell-list shift onto the shiny-byte array so it stays slot-aligned;
+5. **damage** (`FUN_801dd864` `0x801DDB08`) - read the matched slot's shiny byte
+   (`+0x788`); when set, multiply the summon-damage roll `×135/100` (the clean
+   level still feeds the normal `(level-1)/8` math);
+6. **menu** (`FUN_801d2e74` `0x801D2FA0`, overlay 0899) - read the shiny byte to
+   tint the spell-list level digit (no masking - the digit is already correct);
+7. **battle-menu** (`FUN_801d0748` `0x801D1B00`) - read the shiny byte to stamp a
+   `SHINY_CAST_FLAG` the cosmetics consume;
+8. **summon-fade** (`FUN_8004a908` `0x8004AD0C`) - override the summon actor's
+   draw-time fade so the creature renders semi-transparent on a shiny cast;
+9. **+35% text** (`FUN_80031d00` `0x800321D4`) - swap the cast banner's string to
+   "+35% DMG!" on a shiny cast.
 
-The planner guards every hook's fingerprint word and all three routine regions
-being all-zero dead space - refusing a differently-laid-out image rather than
-corrupting it. On by default in the web Full Chaos / Balanced presets.
+The planner guards every hook's fingerprint word and all routine regions being
+all-zero dead space - refusing a differently-laid-out image rather than corrupting
+it. On by default in the web Full Chaos / Balanced presets. **Applies to Seru
+captured *after* patching** - the shiny byte is set at the (post-patch) capture,
+so a Seru already captured on an unpatched save isn't retroactively shiny.
 
 > Like the other code hooks, the clean-room engine can't execute injected MIPS,
 > so the disc path has no engine runtime oracle - it's verified by the
-> byte/disassembly checks in `shiny_seru_real` (all eight hooks match the known
+> byte/disassembly checks in `shiny_seru_real` (all nine hooks match the known
 > US build, every detour becomes `j routine` + nop, the injection is surgical and
 > EDC/ECC-valid, it composes with enemy-ally, byte-deterministic, and the build
-> guards refuse a corrupted hook / non-dead region) plus an emulator playtest. The
-> *behaviour* is covered on the engine side by `legaia-engine-core`'s `shiny_*`
-> tests (roll/boost, capture marking, +35% damage, LGSF v4 persistence).
+> guards refuse a corrupted hook / non-dead region) plus an emulator playtest
+> (fresh capture: translucent summon, +35% text, correct level, working level-up
+> message). The *behaviour* is covered on the engine side by
+> `legaia-engine-core`'s `shiny_*` tests (roll/boost, capture marking, +35%
+> damage, LGSF v4 persistence).
 
 ### Seru trading
 

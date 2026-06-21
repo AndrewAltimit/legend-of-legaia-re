@@ -362,12 +362,12 @@ key = "shiny_seru"
 name = "Shiny Seru"
 flag = "--shiny-seru"
 tier = "E"
-target = "8 detours -> routines across 3 reference-free regions: a NEW SCUS gap 0x80077728 (padding before the steal table) + the 0898 move-power padding cave 0x801F4FC4 + a 2nd SCUS gap 0x800783C4 (capturable bitmap + level-up read-masks). Setup boost+capturable check 0x80051A20, capture-copy 0x801EE2E8, grant-OR 0x801E93B4, damage x1.35 0x801DDB08, level-up gate/read/write 0x801E71C8/71DC/7224, menu mask 0x801D2FA0 (overlay 0899)"
+target = "9 detours -> routines across reference-free regions: a NEW SCUS gap 0x80077728 (before the steal table), the 0898 move-power cave 0x801F4FC4, a 2nd SCUS gap 0x800783C4 (capturable bitmap), and steal-table-adjacent SCUS runs. Setup boost+capturable check 0x80051A20, capture-copy 0x801EE2E8, grant 0x801E93B4, grant-shift 0x801E9320, damage x1.35 0x801DDB08, menu colour 0x801D2FA0 (overlay 0899), battle-menu flag 0x801D1B00, summon-fade 0x8004AD0C, +35% cast-text 0x800321D4"
 edit = "in-place"
 gap = true
 status = "shipped"
 test = "shiny_seru_real.rs"
-notes = "2%/battle a capturable enemy gets +35% stats; capture sets the spell-level high bit 0x80 as a persistent shiny flag (rides the spell-list shift, survives save); damage reads it x135/100, and the level-up + menu readers mask it. Capturable = first-monster id DAT_8007BD0C indexed into an allowlist bitmap built at patch time from the disc's monster names matching the 11 player Seru-magic names (NOT actor+0x3e, which is volatile). Every routine honours the R3000 load-delay slot. Mirrors the engine seru_learning shiny set; distinct gaps from the 0x8007AB38 features so it composes"
+notes = "2%/battle a capturable enemy gets +35% stats and renders translucent; the Seru you capture from it deals +35% damage forever, with cosmetics: the summoned creature renders semi-transparent and a '+35% DMG!' banner replaces the spell name. The persistent shiny flag is a parallel per-spell-slot byte array at record+0x1C0 (NOT the spell-level byte's 0x80 bit - that earlier design leaked into the spell-level-up+display fn FUN_800402f4 and corrupted the level-up message / a victory-pose texture; moving it out keeps the level byte clean). The grant-shift hook mirrors the spell-list insert-at-front shift onto the shiny array so it stays slot-aligned across captures; the byte lives inside the saved record so it survives a memory-card save. Capturable = first-monster id DAT_8007BD0C indexed into an allowlist bitmap built at patch time from the disc's monster names matching the 11 player Seru-magic names (NOT actor+0x3e, which is volatile). Every routine honours the R3000 load-delay slot. Mirrors the engine seru_learning shiny set; distinct gaps from the 0x8007AB38 features so it composes"
 
 # ---------------------------------------------------------------------------
 # Tier F - overlay dead-region injection
