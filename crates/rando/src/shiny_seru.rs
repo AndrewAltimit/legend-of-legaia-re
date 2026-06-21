@@ -53,11 +53,21 @@
 //! - **arena 1** `0x8007AE00` (high tail of the shared `0x8007AB38` rodata gap,
 //!   above the bonus-drop/charm/flee-EXP routines): damage (D), grant (C2),
 //!   summon-fade (K), grant-shift (K2).
-//! - **arena 2** `0x8007AFF6`: +35% cast-banner (J) + its display string.
-//! - **arena 3** `0x80070759`: field-menu colour routine (F).
-//! - **arena 4** `0x8007933D`: in-battle menu shiny-flag stamper (H) + the
+//! - **arena 2** `0x8007AFF8`: the +35% cast-banner routine (J).
+//! - **arena 3** `0x8007075C`: field-menu colour routine (F).
+//! - **arena 4** `0x80079340`: in-battle menu shiny-flag stamper (H) + the
 //!   one-byte `SHINY_CAST_FLAG`.
-//! - **arena 5** `0x80079509`: the 32-byte capturable allowlist bitmap.
+//! - **arena 5** `0x80079509`: data only - the 32-byte capturable allowlist
+//!   bitmap + the "+35% DMG!" display string.
+//!
+//! Every **routine** VA is **4-byte aligned**: a routine is the target of a `j`
+//! detour, and `j` drops the target's low 2 bits, so an unaligned entry jumps 2-3
+//! bytes into garbage. The zero-run scan returns run *starts* that are often
+//! unaligned (a run begins right after the previous non-zero byte), so each
+//! routine VA is rounded up to a word boundary; only byte-addressed data (arena
+//! 5) may sit unaligned. (An earlier relocation skipped this and put J/F/H at
+//! unaligned arena starts, which froze the Tetsu tutorial when J's detour fired.
+//! `place` now refuses an unaligned routine VA.)
 //!
 //! ### Why "reference-free zero region" was not enough
 //!
@@ -214,25 +224,30 @@ pub const SCUS_GAP_END_VA: u32 = 0x8007_7828;
 /// grant (C2), summon-fade (K) and grant-shift (K2) routines.
 pub const ARENA1_VA: u32 = 0x8007_AE00;
 pub const ARENA1_END_VA: u32 = 0x8007_AF00;
-/// Verified-dead arena 2 (74-byte constant-zero run after the `0x8007AB38` gap).
-/// Hosts the +35% cast-banner routine (J) + its display string.
-pub const ARENA2_VA: u32 = 0x8007_AFF6;
+/// Verified-dead arena 2 (constant-zero run after the `0x8007AB38` gap). Hosts
+/// the +35% cast-banner routine (J). **4-byte aligned**: this is a routine
+/// jumped to by a `j` detour, and a `j` drops the target's low 2 bits, so an
+/// unaligned entry would jump 2 bytes into garbage (the bug that froze the Tetsu
+/// tutorial). The raw zero-run started at `0x8007AFF6`; rounded up to `0x8007AFF8`.
+pub const ARENA2_VA: u32 = 0x8007_AFF8;
 pub const ARENA2_END_VA: u32 = 0x8007_B040;
-/// Verified-dead arena 3 (51-byte constant-zero run, early SCUS). Hosts the
-/// colour-aware field-menu routine (F).
-pub const ARENA3_VA: u32 = 0x8007_0759;
+/// Verified-dead arena 3 (early SCUS). Hosts the colour-aware field-menu routine
+/// (F). 4-byte aligned (zero-run start `0x80070759` rounded up to `0x8007075C`).
+pub const ARENA3_VA: u32 = 0x8007_075C;
 pub const ARENA3_END_VA: u32 = 0x8007_078C;
-/// Verified-dead arena 4 (59-byte constant-zero run). Hosts the in-battle
-/// menu shiny-flag stamper (H) + the one-byte `SHINY_CAST_FLAG`.
-pub const ARENA4_VA: u32 = 0x8007_933D;
+/// Verified-dead arena 4. Hosts the in-battle menu shiny-flag stamper (H) + the
+/// one-byte `SHINY_CAST_FLAG`. 4-byte aligned (`0x8007933D` -> `0x80079340`).
+pub const ARENA4_VA: u32 = 0x8007_9340;
 pub const ARENA4_END_VA: u32 = 0x8007_9378;
-/// Verified-dead arena 5 (59-byte constant-zero run). Hosts the 32-byte
-/// capturable allowlist bitmap.
+/// Verified-dead arena 5. Holds **data only** (the capturable allowlist bitmap +
+/// the "+35% DMG!" display string), so alignment is irrelevant - both are read
+/// byte-wise, never jumped to.
 pub const ARENA5_VA: u32 = 0x8007_9509;
 pub const ARENA5_END_VA: u32 = 0x8007_9544;
 
 // Per-routine VAs carved from the arenas above (assigned in `plan`). The public
-// consts the tests pin point at these arena addresses.
+// consts the tests pin point at these arena addresses. Every ROUTINE VA must be
+// 4-byte aligned (it is a `j` target); data VAs need not be.
 /// Summon-fade routine (K) VA (arena 1).
 pub const SUMMON_FADE_RUN_VA: u32 = 0x8007_AE6C;
 /// Grant-shift routine (K2) VA (arena 1).
@@ -241,8 +256,10 @@ pub const SHIFT_RUN_VA: u32 = 0x8007_AEA4;
 pub const MENU_RUN_VA: u32 = ARENA3_VA;
 /// +35% cast-banner routine (J) VA (arena 2).
 pub const BANNER_RUN_VA: u32 = ARENA2_VA;
-/// The "+35% DMG!" display string, right after the banner routine in arena 2.
-const BANNER_STR_VA: u32 = ARENA2_VA + 16 * 4;
+/// The "+35% DMG!" display string - data, placed in arena 5 right after the
+/// 32-byte capturable bitmap (kept out of arena 2 so the banner routine there
+/// stays whole + aligned).
+const BANNER_STR_VA: u32 = ARENA5_VA + BITMAP_BYTES as u32;
 /// One-byte "current cast is shiny" flag the in-battle menu stamper (H) writes
 /// (bit 0x80 = shiny); the +35% banner (J) and summon-fade (K) read it. Tail of
 /// arena 4, after the H routine.
@@ -859,6 +876,11 @@ impl ShinySeruInjection {
         let place =
             |cursor: &mut u32, end: u32, words: Vec<u32>, what: &str| -> Result<(u32, Vec<u32>)> {
                 let va = *cursor;
+                // A routine is the target of a `j` detour; `j` drops the low 2
+                // bits, so an unaligned entry jumps into garbage. Refuse it.
+                if va & 3 != 0 {
+                    bail!("shiny {what} routine VA {va:#x} is not 4-byte aligned");
+                }
                 let len = (words.len() * 4) as u32;
                 if va + len > end {
                     bail!("shiny {what} routine overruns its arena end {end:#x}");
@@ -936,22 +958,25 @@ impl ShinySeruInjection {
         }
         assert_not_in_tables(SHINY_CAST_FLAG_VA, 1, SCUS_TABLE_RANGES, "cast-flag")?;
 
-        // --- arena 5: capturable bitmap ---
-        if bitmap_va + bitmap.len() as u32 > ARENA5_END_VA {
-            bail!("capturable bitmap overruns arena 5 end {ARENA5_END_VA:#x}");
-        }
-        assert_not_in_tables(bitmap_va, bitmap.len() as u32, SCUS_TABLE_RANGES, "bitmap")?;
-
-        // --- arena 2: +35% cast-banner routine (J) + its display string ---
-        let banner_words = assemble_banner_replace(BANNER_STR_VA, banner.1, HOOK_BANNER_RET_VA);
+        // --- arena 5: capturable bitmap + the +35% display string (data) ---
         let banner_str = banner_string();
-        let banner_span = (BANNER_STR_VA - BANNER_RUN_VA) + banner_str.len() as u32;
-        assert_not_in_tables(BANNER_RUN_VA, banner_span, SCUS_TABLE_RANGES, "banner")?;
-        if BANNER_RUN_VA + (banner_words.len() * 4) as u32 > BANNER_STR_VA {
-            bail!("banner routine overruns its string at {BANNER_STR_VA:#x}");
+        let arena5_span = bitmap.len() as u32 + banner_str.len() as u32;
+        debug_assert_eq!(
+            BANNER_STR_VA,
+            bitmap_va + bitmap.len() as u32,
+            "string after bitmap"
+        );
+        if ARENA5_VA + arena5_span > ARENA5_END_VA {
+            bail!("bitmap + banner string overrun arena 5 end {ARENA5_END_VA:#x}");
         }
-        if BANNER_STR_VA + banner_str.len() as u32 > ARENA2_END_VA {
-            bail!("banner routine+string overrun arena 2 end {ARENA2_END_VA:#x}");
+        assert_not_in_tables(bitmap_va, arena5_span, SCUS_TABLE_RANGES, "arena5")?;
+
+        // --- arena 2: +35% cast-banner routine (J) only (string is in arena 5) ---
+        let banner_words = assemble_banner_replace(BANNER_STR_VA, banner.1, HOOK_BANNER_RET_VA);
+        let banner_len = (banner_words.len() * 4) as u32;
+        assert_not_in_tables(BANNER_RUN_VA, banner_len, SCUS_TABLE_RANGES, "banner")?;
+        if BANNER_RUN_VA + banner_len > ARENA2_END_VA {
+            bail!("banner routine overruns arena 2 end {ARENA2_END_VA:#x}");
         }
 
         // --- dead-space guards: every region must be all-zero in the clean image ---
@@ -964,8 +989,8 @@ impl ShinySeruInjection {
         dead(ARENA1_VA, (a1 - ARENA1_VA) as usize, "arena1")?;
         dead(ARENA3_VA, (a3 - ARENA3_VA) as usize, "arena3")?;
         dead(ARENA4_VA, (a4 - ARENA4_VA) as usize + 1, "arena4")?; // + cast-flag byte
-        dead(ARENA5_VA, bitmap.len(), "bitmap")?;
-        dead(BANNER_RUN_VA, banner_span as usize, "banner")?;
+        dead(ARENA5_VA, arena5_span as usize, "arena5")?; // bitmap + banner string
+        dead(BANNER_RUN_VA, banner_len as usize, "banner")?;
 
         // --- collect all edits ---------------------------------------------
         let detour = |target_va: u32| -> Vec<u8> { words_to_bytes(&[j(target_va), nop()]) };
@@ -1417,17 +1442,46 @@ mod tests {
         assert_eq!(op(r[14]), 0x02);
         assert_eq!((r[14] & 0x03ff_ffff) << 2, HOOK_BANNER_RET_VA & 0x0fff_ffff);
         assert_eq!(HOOK_BANNER_RET_VA, HOOK_BANNER_VA + 8);
-        // The string is plain ASCII with a 0x00 terminator and fits the run.
+        // The string is plain ASCII with a 0x00 terminator.
         let s = banner_string();
         assert_eq!(s[0], b'+', "plain ASCII (no colour escape)");
         assert_eq!(*s.last().unwrap(), 0x00, "0x00 terminator");
+        // The J routine is 4-byte aligned and fits arena 2 (string lives in arena 5).
+        assert_eq!(BANNER_RUN_VA & 3, 0, "banner routine is 4-byte aligned");
         assert!(
-            BANNER_RUN_VA + (r.len() * 4) as u32 <= BANNER_STR_VA,
-            "routine fits before string"
+            BANNER_RUN_VA + (r.len() * 4) as u32 <= ARENA2_END_VA,
+            "routine fits arena 2"
+        );
+        // The string follows the bitmap in arena 5.
+        assert_eq!(
+            BANNER_STR_VA,
+            ARENA5_VA + BITMAP_BYTES as u32,
+            "string after bitmap"
         );
         assert!(
-            BANNER_STR_VA + s.len() as u32 <= ARENA2_END_VA,
-            "string fits the run"
+            BANNER_STR_VA + s.len() as u32 <= ARENA5_END_VA,
+            "string fits arena 5"
         );
+    }
+
+    #[test]
+    fn all_routine_arenas_are_word_aligned() {
+        // A routine VA is a `j` target; `j` drops the low 2 bits, so an unaligned
+        // entry jumps into garbage (the bug that froze the Tetsu tutorial).
+        for (va, what) in [
+            (SCUS_GAP_VA, "gap1"),
+            (ARENA1_VA, "arena1"),
+            (ARENA2_VA, "arena2/banner"),
+            (ARENA3_VA, "arena3/menu"),
+            (ARENA4_VA, "arena4/bmenu"),
+            (SUMMON_FADE_RUN_VA, "summon-fade"),
+            (SHIFT_RUN_VA, "grant-shift"),
+        ] {
+            assert_eq!(
+                va & 3,
+                0,
+                "{what} routine VA {va:#x} must be 4-byte aligned"
+            );
+        }
     }
 }
