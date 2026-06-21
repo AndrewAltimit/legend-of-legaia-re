@@ -278,25 +278,37 @@ disc's monster names that match a player Seru-magic name (`capturable_monster_id
 
 The persistent bonus is stored in a **parallel per-spell-slot shiny byte at
 `record+0x1C0`** (`+0x788` from the runtime base), **not** the spell-level byte's
-`0x80` bit. The earlier 0x80-in-level design leaked into the shared
-spell-level-up+display fn `FUN_800402f4` (unmasked `level < 9` cap + `(level-1)`
-index → blank "grew to level" message and a corrupted victory-pose texture);
-moving the flag out keeps the level byte clean (no display masking needed). The
-byte is inside the saved record so it survives a memory-card save, and a
-grant-shift hook keeps it slot-aligned across the spell-list insert-at-front shift.
-Applies to Seru captured **after** patching.
+`0x80` bit (which leaked into the shared spell-level-up+display fn
+`FUN_800402f4`). The byte is inside the saved record so it survives a memory-card
+save, and a grant-shift hook keeps it slot-aligned across the spell-list
+insert-at-front shift. The "+35% DMG!" caption is dropped to Y `0x1E` so it sits
+one line below the native "Magic effect:" box instead of overlapping it. Applies
+to Seru captured **after** patching.
 
-`apply::inject_shiny_seru` performs **nine** same-size detours into routines across
-reference-free regions - a *new* preserved SCUS rodata gap at `0x80077728`
-(padding before the steal table, distinct from the `0x8007AB38` gap so it
-composes), the battle overlay 0898's move-power padding at `0x801F4FC4`, a second
-SCUS gap at `0x800783C4` (the capturable bitmap), and steal-table-adjacent SCUS
-runs: setup boost + capturable check (`0x80051A20`) + capture-copy (`0x801EE2E8`)
-+ grant clean-level + shiny-byte (`0x801E93B4`) + grant-shift (`0x801E9320`) +
-damage `×135/100` (`0x801DDB08`) + menu-digit colour (`0x801D2FA0`, overlay 0899)
-+ battle-menu flag (`0x801D1B00`) + summon-fade (`0x8004AD0C`) + "+35% DMG!" text
-(`0x800321D4`). Every routine honours the R3000 load-delay slot. Same all-zero /
-known-build guards as the other hooks. On by default in the web Balanced / Full
+**Region placement - "zero is not dead".** An earlier layout put routines in the
+zero *padding* of two live indexed tables - the victory mouth-override table
+(`ART_MOUTH_VA 0x80077E80`, addressed rows `0x800781B0..`) and the move-power
+table (`0x801F4FC4`, inside the `0x801F4F5C` window). Those slots are zero in the
+file but still indexed at runtime, so the victory face animator read the routine
+bytes as facial keyframes (**corrupted victory mouth**) and six move ids
+(`0x07/0x12..0x15/0x19`) read them as garbage move-power records. `assert_zero`
+passed because the bytes *are* zero - so the fix relocates everything to regions
+verified all-zero **and** constant-zero across battle states **and** outside every
+known table, with a structural `assert_not_in_tables` guard
+(`SCUS_TABLE_RANGES` / `OVERLAY_TABLE_RANGES`) that refuses any in-table region.
+
+`apply::inject_shiny_seru` performs **nine** same-size detours; all routines/data
+are SCUS-resident, in six verified-dead arenas: gap 1 `0x80077728` (scratch +
+setup + capture), arena 1 `0x8007AE00` (damage / grant / summon-fade /
+grant-shift), arena 2 `0x8007AFF6` (+35% caption + string), arena 3 `0x80070759`
+(field-menu colour), arena 4 `0x8007933D` (battle-menu flag + the cast flag),
+arena 5 `0x80079509` (capturable bitmap). Hook sites: setup boost + capturable
+check (`0x80051A20`), capture-copy (`0x801EE2E8`), grant clean-level + shiny-byte
+(`0x801E93B4`), grant-shift (`0x801E9320`), damage `×135/100` (`0x801DDB08`),
+menu-digit colour (`0x801D2FA0`, overlay 0899), battle-menu flag (`0x801D1B00`),
+summon-fade (`0x8004AD0C`), "+35% DMG!" caption (`0x800321D4`). Every routine
+honours the R3000 load-delay slot. Same all-zero / known-build guards as the other
+hooks, plus the table-overlap guard. On by default in the web Balanced / Full
 Chaos presets.
 
 ## Seru trading
@@ -699,7 +711,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Equipment drops | - | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance - additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
 | Run-away EXP | - | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape - vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
 | Enemy ally (charm) | - | `inject_enemy_ally` | injects a code hook into battle setup that, on a per-battle chance, sets the AI-delegated bits (`0x380`) on the frontmost enemy so it fights on the player's side, plus a one-word widen of the victory check so the ally isn't an enemy you must defeat (a `SCUS_942.54` detour + gap routine + an overlay-0898 edit via `enemy_ally`). |
-| Shiny Seru | - | `inject_shiny_seru` | injects nine code hooks so that, on a per-battle chance, a capturable enemy spawns with +35% stats (translucent) and its captured Seru deals +35% damage forever, plus cosmetics (translucent summon + "+35% DMG!" cast banner); the persistent flag is a parallel per-spell shiny byte at `record+0x1C0` (not the spell-level byte, which kept the display clean), with a grant-shift hook keeping it slot-aligned; routines live in a new SCUS rodata gap `0x80077728` + the overlay-0898 move-power padding + steal-table-adjacent runs via `shiny_seru`. |
+| Shiny Seru | - | `inject_shiny_seru` | injects nine code hooks so that, on a per-battle chance, a capturable enemy spawns with +35% stats (translucent) and its captured Seru deals +35% damage forever, plus cosmetics (translucent summon + a "+35% DMG!" caption below the effect box); the persistent flag is a parallel per-spell shiny byte at `record+0x1C0` (not the spell-level byte), with a grant-shift hook keeping it slot-aligned; all routines/data live in six verified-dead SCUS arenas **outside every live table** (an earlier layout squatted in the victory mouth-override + move-power tables - corrupted mouth + 6 broken moves - now guarded by `assert_not_in_tables`) via `shiny_seru`. |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |
 | Encounters | - | `randomize_encounters` / `randomize_encounters_scoped` / `randomize_encounters_full` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). `_full` adds the optional [solo-strong](#solo-strong-fights) pass (`SoloStrongConfig`) on top of any scope/mode. |

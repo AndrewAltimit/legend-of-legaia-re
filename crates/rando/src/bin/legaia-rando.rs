@@ -212,10 +212,12 @@ struct RandomizeArgs {
     #[arg(long, default_value_t = legaia_rando::enemy_ally::DEFAULT_PCT)]
     enemy_ally_pct: u8,
     /// With `--shiny-pct`% probability per battle, the frontmost **capturable**
-    /// enemy spawns as a rare **shiny** variant: +35% stats, and the Seru you
-    /// capture from it deals +35% damage forever (a same-size code hook into
-    /// battle setup + the capture/damage paths; the shiny flag rides the spell's
-    /// level byte and is masked from the level-up + menu readers).
+    /// enemy spawns as a rare **shiny** variant: +35% stats (translucent), and the
+    /// Seru you capture from it deals +35% damage forever, with a translucent
+    /// summon + a "+35% DMG!" cast caption (a same-size code hook into battle
+    /// setup + the capture/damage/draw paths; the persistent shiny flag is a
+    /// parallel per-spell byte at `record+0x1C0`, and every injected routine lives
+    /// in verified-dead SCUS space outside all live tables).
     #[arg(long, default_value_t = false)]
     shiny_seru: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
@@ -1274,9 +1276,10 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     // Shiny Seru: a code hook in battle setup boosts a rare capturable enemy's
-    // stats +35% and marks it; the capture/damage hooks flag the captured Seru so
-    // its spell deals +35% damage forever (flag masked from the level-up + menu
-    // readers so the Seru still levels up and displays normally).
+    // stats +35% and marks it; the capture/damage hooks flag the captured Seru
+    // (persistent byte at record+0x1C0, kept off the level byte so the Seru still
+    // levels up + displays normally) so its spell deals +35% damage forever.
+    // Routines live in verified-dead SCUS arenas outside every live table.
     if args.shiny_seru {
         let report = apply::inject_shiny_seru(&mut patcher, args.shiny_pct)?;
         println!(

@@ -79,43 +79,35 @@ fn baseline_hooks_match_the_known_build() {
         assert_eq!(got, want, "hook {va:#x} is the recognized US build");
     }
 
-    // The SCUS rodata runs that host the routines are preserved dead space.
+    // The SCUS arenas that host the routines/data are preserved dead space - AND
+    // none of them overlaps a live static table (the trap that put the old layout
+    // inside the victory mouth-override table at 0x800781B0 and the move-power
+    // table at 0x801F4FC4). The mouth-override table rows must read as the clean
+    // game's keyframes, not our code.
     for (start, end, label) in [
         (SCUS_GAP_VA, SCUS_GAP_END_VA, "gap 1"),
-        (
-            shiny_seru::SCUS_GAP2_VA,
-            shiny_seru::SCUS_GAP2_END_VA,
-            "gap 2",
-        ),
-        (shiny_seru::MENU_RUN_VA, shiny_seru::MENU_RUN_END_VA, "menu"),
-        (
-            shiny_seru::BANNER_RUN_VA,
-            shiny_seru::BANNER_RUN_END_VA,
-            "+35% banner",
-        ),
-        (
-            shiny_seru::BMENU_RUN_VA,
-            shiny_seru::BMENU_RUN_END_VA,
-            "battle-menu masker",
-        ),
-        (
-            shiny_seru::SHIFT_RUN_VA,
-            shiny_seru::SHIFT_RUN_END_VA,
-            "grant-shift",
-        ),
-        (
-            shiny_seru::SUMMON_FADE_RUN_VA,
-            shiny_seru::SUMMON_FADE_RUN_END_VA,
-            "summon-fade",
-        ),
+        (shiny_seru::ARENA1_VA, shiny_seru::ARENA1_END_VA, "arena 1"),
+        (shiny_seru::ARENA2_VA, shiny_seru::ARENA2_END_VA, "arena 2"),
+        (shiny_seru::ARENA3_VA, shiny_seru::ARENA3_END_VA, "arena 3"),
+        (shiny_seru::ARENA4_VA, shiny_seru::ARENA4_END_VA, "arena 4"),
+        (shiny_seru::ARENA5_VA, shiny_seru::ARENA5_END_VA, "arena 5"),
     ] {
         let off = file_offset_for_va(&scus, start).unwrap();
         let len = (end - start) as usize;
         assert!(
             scus[off..off + len].iter().all(|&b| b == 0),
-            "SCUS rodata {label} is all-zero dead space"
+            "SCUS arena {label} ({start:#x}..{end:#x}) is all-zero dead space"
         );
     }
+
+    // The victory mouth-override table rows the OLD layout clobbered must be the
+    // clean game's data (the mouth bug = our routines were read here as facial
+    // keyframes). Spot-check the first addressed row is non-trivial keyframes.
+    let mouth_row0 = file_offset_for_va(&scus, 0x8007_81B0).unwrap();
+    assert!(
+        scus[mouth_row0..mouth_row0 + 12].iter().any(|&b| b != 0),
+        "victory mouth-override table row 0 carries the clean game's keyframes"
+    );
 }
 
 #[test]
@@ -294,9 +286,9 @@ fn planner_refuses_an_unrecognized_build() {
     ov_bad[doff] ^= 0xFF;
     assert!(ShinySeruInjection::plan(&scus, &ov_bad, &ov0899, 20, &ids).is_err());
 
-    // Dirty the second SCUS gap (bitmap region) -> refuse.
+    // Dirty arena 5 (the bitmap region) -> refuse.
     let mut scus_g2 = scus.clone();
-    let g2off = file_offset_for_va(&scus_g2, shiny_seru::SCUS_GAP2_VA).unwrap();
+    let g2off = file_offset_for_va(&scus_g2, shiny_seru::ARENA5_VA).unwrap();
     scus_g2[g2off + 4] = 0x42;
     assert!(ShinySeruInjection::plan(&scus_g2, &ov0898, &ov0899, 20, &ids).is_err());
 }
