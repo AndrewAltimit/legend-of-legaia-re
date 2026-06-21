@@ -355,7 +355,7 @@ edit = "in-place"
 gap = true
 status = "shipped"
 test = "enemy_ally_real.rs"
-notes = "rides the stock AI-delegated retarget so a flagged monster attacks its own side; the victory widen keeps the ally from counting as an enemy you must defeat"
+notes = "rides the stock AI-delegated retarget so a flagged monster attacks its own side; the victory widen keeps the ally from counting as an enemy you must defeat. Gated to MULTI-ENEMY fights: the routine reads DAT_8007BD0C[1] (2nd formation slot) and skips charm when it's zero, so single-enemy fights are left alone. Pinned from a live softlock - charming the lone enemy of the input-gated Tetsu tutorial (monster id 0x4F) stalls the scripted fight (it waits for the enemy that is now an ally); solo bosses are likewise scripted set-pieces, while multi-enemy fights are the random encounters where the ally is the intended effect."
 
 [[mod]]
 key = "shiny_seru"

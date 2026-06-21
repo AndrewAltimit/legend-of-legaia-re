@@ -245,8 +245,11 @@ time a won battle tallies it. `apply::inject_flee_exp` performs the two edits.
 ## Enemy ally (charm)
 
 Gives a per-battle chance (`--enemy-ally`, `--enemy-ally-pct`%, default **20**)
-that a random enemy fights on the player's side as an uncontrolled ally - any
-fight, bosses included (`enemy_ally` module). Retail can't host a genuine 4th
+that a random enemy fights on the player's side as an uncontrolled ally, in any
+**multi-enemy** fight (`enemy_ally` module). Single-enemy fights are skipped (the
+routine reads `DAT_8007BD0C[1]` and bails when there is no 2nd monster): charming
+the lone enemy of an input-gated tutorial (the Tetsu sparring match) softlocks the
+scripted fight, and solo bosses are likewise set-pieces. Retail can't host a genuine 4th
 party combatant (battles are hard-wired to 3 party + 4 monster slots), so this
 rides the stock **AI-delegated** flag: setting an actor's `+0x16E |= 0x380` makes
 the action SM retarget it to the opposite side, so a flagged *monster* attacks the

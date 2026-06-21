@@ -157,7 +157,7 @@ the battle-action escape teardown so a successful run banks `--flee-exp-pct`%
 (default 5) of the fled fight's experience into the party (see
 [Run-away EXP](#run-away-exp)); `--enemy-ally` injects a code hook into battle
 setup so that, with `--enemy-ally-pct`% chance (default 20), a random enemy is
-charmed onto the party's side as an uncontrolled ally - bosses included (see
+charmed onto the party's side as an uncontrolled ally, in multi-enemy fights (see
 [Enemy ally (charm)](#enemy-ally-charm)); `--shiny-seru` injects code hooks so
 that, with `--shiny-pct`% chance (default 2), a capturable enemy spawns as a rare
 shiny variant (+35% stats) whose captured Seru deals +35% damage forever (see
@@ -460,8 +460,15 @@ default in the web Balanced / Full Chaos presets.
 
 `--enemy-ally` gives a per-battle chance (`--enemy-ally-pct`%, default **20**)
 that a random enemy fights on the **player's** side as an uncontrolled ally - a
-guest-character-style helper that can appear in any fight, bosses included
-(`enemy_ally` module).
+guest-character-style helper that appears in **multi-enemy** fights
+(`enemy_ally` module). The routine reads `DAT_8007BD0C[1]` (the 2nd formation
+slot) and skips charm when it is zero, so single-enemy fights are left alone:
+charming the lone enemy of an *input-gated* tutorial (the Tetsu sparring match,
+monster id `0x4F`) softlocks the scripted fight - it waits for the enemy that is
+now an ally - and solo story bosses are likewise scripted set-pieces. (Pinned
+from a live softlock: PCSX-Redux slot on the Tetsu tutorial showed the lone enemy
+actor with `+0x16E = 0x380` and the battle SM stalled.) Multi-enemy fights are
+the random encounters where an uncontrolled ally is the intended, safe effect.
 
 A genuine 4th player-side combatant is infeasible: retail battles are hard-wired
 to 3 party slots + up to 4 monster slots (`FUN_800513F0`; party meshes/CLUTs/HUD

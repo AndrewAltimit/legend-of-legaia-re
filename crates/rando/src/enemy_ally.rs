@@ -1,7 +1,10 @@
 //! Enemy-ally ("charm") battle feature: a code hook into the **battle setup**
 //! that, with a per-battle probability, flags one enemy so it fights on the
-//! player's side - an uncontrolled ally, like a guest character, that can show
-//! up in any fight including bosses.
+//! player's side - an uncontrolled ally, like a guest character, in any
+//! **multi-enemy** fight. Single-enemy fights are skipped (see
+//! [`SECOND_MONSTER_ID_VA`]): charming the lone enemy of an input-gated tutorial
+//! (the Tetsu sparring match) softlocks the scripted fight, and solo bosses are
+//! likewise scripted set-pieces.
 //!
 //! ## Why a code hook (and why "charm", not a 4th party member)
 //!
@@ -103,6 +106,14 @@ pub const ROUTINE_VA: u32 = 0x8007_ACA0;
 /// must end at or below this.
 pub const ROUTINE_REGION_END_VA: u32 = 0x8007_AD00;
 
+/// Second formation slot (`DAT_8007BD0C[1]`). Zero when the fight has a single
+/// enemy. Charm **skips single-enemy fights**: charming the lone enemy of an
+/// input-gated tutorial (the Tetsu sparring match, monster id 0x4F) softlocks the
+/// scripted fight (the tutorial waits for the enemy that is now an ally), and
+/// solo story bosses are likewise scripted set-pieces; multi-enemy fights are the
+/// random encounters where an uncontrolled ally is the intended, safe effect.
+pub const SECOND_MONSTER_ID_VA: u32 = 0x8007_BD0D;
+
 /// Battle-actor pointer table (`0x801C9370`): slots 0..2 party, 3..6 monsters.
 /// Slot 3 (`0x801C937C`) is the frontmost enemy, always present in a battle.
 pub const ACTOR_SLOT3_VA: u32 = 0x801C_937C;
@@ -159,6 +170,9 @@ const fn lhu(rt: u32, rs: u32, off: u16) -> u32 {
 const fn lw(rt: u32, rs: u32, off: u16) -> u32 {
     (0x23 << 26) | (rs << 21) | (rt << 16) | off as u32
 }
+const fn lbu(rt: u32, rs: u32, off: u16) -> u32 {
+    (0x24 << 26) | (rs << 21) | (rt << 16) | off as u32
+}
 const fn sh(rt: u32, rs: u32, off: u16) -> u32 {
     (0x29 << 26) | (rs << 21) | (rt << 16) | off as u32
 }
@@ -186,37 +200,49 @@ const fn hi(va: u32) -> u16 {
 }
 
 /// Assemble the charm routine for a `pct`-percent per-battle chance. Rolls the
-/// BIOS RNG, and on a hit OR's [`AI_DELEGATE_BITS`] into the frontmost monster's
-/// `+0x16E`, then replays [`DISPLACED`] and jumps back to [`RETURN_VA`].
-/// 19 instructions, fully self-contained.
+/// BIOS RNG; on a hit AND only when the fight has a 2nd enemy (so single-enemy
+/// tutorial / solo-boss set-pieces are never charmed - see [`SECOND_MONSTER_ID_VA`]),
+/// OR's [`AI_DELEGATE_BITS`] into the frontmost monster's `+0x16E`, then replays
+/// [`DISPLACED`] and jumps back to [`RETURN_VA`]. 24 instructions, self-contained,
+/// fits the 96-byte gap window exactly.
 pub fn assemble_routine(pct: u8) -> Vec<u32> {
-    const DONE: usize = 15;
-    const BEQ: usize = 6;
-    let skip_off = (DONE as i32 - (BEQ as i32 + 1)) as i16;
+    const DONE: usize = 20;
+    const PCT_BEQ: usize = 6;
+    const SOLO_BEQ: usize = 11;
+    let pct_skip = (DONE as i32 - (PCT_BEQ as i32 + 1)) as i16;
+    let solo_skip = (DONE as i32 - (SOLO_BEQ as i32 + 1)) as i16;
 
     let words = vec![
-        jal(RAND_FUNC_VA),               // 0:  v0 = rand()
-        nop(),                           // 1:  (branch delay)
-        addiu(T0, ZERO, 100),            // 2:  t0 = 100
-        divu(V0, T0),                    // 3:  lo/hi = rand / 100
-        mfhi(T1),                        // 4:  t1 = rand % 100
-        sltiu(T1, T1, pct as u16),       // 5:  t1 = (rand%100 < pct) ? 1 : 0
-        beq(T1, ZERO, skip_off),         // 6:  miss -> DONE (no charm)
-        nop(),                           // 7:  (branch delay)
-        lui(V0, hi(ACTOR_SLOT3_VA)),     // 8:  \ t5 = actor-table[3]
-        lw(T5, V0, lo(ACTOR_SLOT3_VA)),  // 9:  /   (frontmost enemy, 0x801C937C)
-        nop(),                           // 10: (load delay)
-        lhu(T6, T5, FIELD_FLAGS_OFFSET), // 11: t6 = actor flags (+0x16E)
-        nop(),                           // 12: (load delay)
-        ori(T6, T6, AI_DELEGATE_BITS),   // 13: t6 |= 0x380 (AI-delegated)
-        sh(T6, T5, FIELD_FLAGS_OFFSET),  // 14: write flags back
-        // DONE (idx 15): replay displaced instructions, return.
-        DISPLACED[0], // 15: lui v1,0x8008
-        DISPLACED[1], // 16: lbu v1,-0x42f4(v1)
-        j(RETURN_VA), // 17: back to the join
-        nop(),        // 18: (branch delay)
+        jal(RAND_FUNC_VA),         // 0:  v0 = rand()
+        nop(),                     // 1:  (branch delay)
+        addiu(T0, ZERO, 100),      // 2:  t0 = 100
+        divu(V0, T0),              // 3:  lo/hi = rand / 100
+        mfhi(T1),                  // 4:  t1 = rand % 100
+        sltiu(T1, T1, pct as u16), // 5:  t1 = (rand%100 < pct) ? 1 : 0
+        beq(T1, ZERO, pct_skip),   // 6:  miss -> DONE (no charm)
+        nop(),                     // 7:  (branch delay)
+        // Single-enemy gate: skip charm unless the formation has a 2nd monster
+        // (DAT_8007BD0C[1] != 0). Charming the lone enemy of an input-gated
+        // tutorial / solo boss softlocks the scripted fight.
+        lui(T0, hi(SECOND_MONSTER_ID_VA)), // 8:  \ t0 = 2nd monster id
+        lbu(T0, T0, lo(SECOND_MONSTER_ID_VA)), // 9: /  (DAT_8007BD0C[1])
+        nop(),                             // 10: (load delay)
+        beq(T0, ZERO, solo_skip),          // 11: single enemy -> DONE (no charm)
+        nop(),                             // 12: (branch delay)
+        lui(V0, hi(ACTOR_SLOT3_VA)),       // 13: \ t5 = actor-table[3]
+        lw(T5, V0, lo(ACTOR_SLOT3_VA)),    // 14: /   (frontmost enemy, 0x801C937C)
+        nop(),                             // 15: (load delay)
+        lhu(T6, T5, FIELD_FLAGS_OFFSET),   // 16: t6 = actor flags (+0x16E)
+        nop(),                             // 17: (load delay)
+        ori(T6, T6, AI_DELEGATE_BITS),     // 18: t6 |= 0x380 (AI-delegated)
+        sh(T6, T5, FIELD_FLAGS_OFFSET),    // 19: write flags back
+        // DONE (idx 20): replay displaced instructions, return.
+        DISPLACED[0], // 20: lui v1,0x8008
+        DISPLACED[1], // 21: lbu v1,-0x42f4(v1)
+        j(RETURN_VA), // 22: back to the join
+        nop(),        // 23: (branch delay)
     ];
-    debug_assert_eq!(words.len(), 19);
+    debug_assert_eq!(words.len(), 24);
     debug_assert_eq!(words[DONE], DISPLACED[0]);
     words
 }
@@ -347,32 +373,43 @@ mod tests {
     #[test]
     fn routine_has_the_expected_shape() {
         let r = assemble_routine(20);
-        assert_eq!(r.len(), 19);
+        assert_eq!(r.len(), 24);
         // RNG roll + percent gate.
         assert_eq!(r[0], jal(RAND_FUNC_VA));
         assert_eq!(r[2], addiu(T0, ZERO, 100));
         assert_eq!(r[3], divu(V0, T0));
         assert_eq!(r[4], mfhi(T1));
         assert_eq!(r[5], sltiu(T1, T1, 20));
+        // Single-enemy gate: read DAT_8007BD0C[1] (2nd monster id).
+        assert_eq!(r[9], lbu(T0, T0, lo(SECOND_MONSTER_ID_VA)));
+        assert_eq!(op(r[11]), 0x04, "idx 11 is the single-enemy beq");
         // Charm = OR 0x380 into the frontmost monster's +0x16E.
-        assert_eq!(r[8], lui(V0, hi(ACTOR_SLOT3_VA)));
-        assert_eq!(r[9], lw(T5, V0, lo(ACTOR_SLOT3_VA)));
-        assert_eq!(r[11], lhu(T6, T5, FIELD_FLAGS_OFFSET));
-        assert_eq!(r[13], ori(T6, T6, AI_DELEGATE_BITS));
-        assert_eq!(r[14], sh(T6, T5, FIELD_FLAGS_OFFSET));
+        assert_eq!(r[13], lui(V0, hi(ACTOR_SLOT3_VA)));
+        assert_eq!(r[14], lw(T5, V0, lo(ACTOR_SLOT3_VA)));
+        assert_eq!(r[16], lhu(T6, T5, FIELD_FLAGS_OFFSET));
+        assert_eq!(r[18], ori(T6, T6, AI_DELEGATE_BITS));
+        assert_eq!(r[19], sh(T6, T5, FIELD_FLAGS_OFFSET));
         // Returns by replaying the displaced pair then `j RETURN_VA`.
-        assert_eq!(r[15], DISPLACED[0]);
-        assert_eq!(r[16], DISPLACED[1]);
-        assert_eq!(op(r[17]), 0x02);
-        assert_eq!((r[17] & 0x03ff_ffff) << 2, RETURN_VA & 0x0fff_ffff);
+        assert_eq!(r[20], DISPLACED[0]);
+        assert_eq!(r[21], DISPLACED[1]);
+        assert_eq!(op(r[22]), 0x02);
+        assert_eq!((r[22] & 0x03ff_ffff) << 2, RETURN_VA & 0x0fff_ffff);
     }
 
     #[test]
-    fn gate_branch_targets_done() {
+    fn gate_branches_target_done() {
         let r = assemble_routine(20);
-        // beq (idx 6) -> DONE (idx 15): off = 8.
+        // Both the percent-miss beq (idx 6) and the single-enemy beq (idx 11)
+        // land on DONE (idx 20 = the DISPLACED replay).
         assert_eq!(op(r[6]), 0x04);
-        assert_eq!((r[6] & 0xffff) as i16, 8);
+        assert_eq!(6 + 1 + (r[6] & 0xffff) as i16 as i32, 20, "pct beq -> DONE");
+        assert_eq!(op(r[11]), 0x04);
+        assert_eq!(
+            11 + 1 + (r[11] & 0xffff) as i16 as i32,
+            20,
+            "solo beq -> DONE"
+        );
+        assert_eq!(r[20], DISPLACED[0]);
     }
 
     #[test]

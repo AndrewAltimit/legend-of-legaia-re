@@ -110,8 +110,8 @@ fn injection_writes_the_detour_routine_and_victory_widen() {
     let expect = assemble_routine(pct);
     let got = scus_words(&scus, ROUTINE_VA, expect.len());
     assert_eq!(got, expect, "routine matches the assembler");
-    assert_eq!(got[15], DISPLACED[0], "routine replays displaced[0]");
-    assert_eq!(got[16], DISPLACED[1], "routine replays displaced[1]");
+    assert_eq!(got[20], DISPLACED[0], "routine replays displaced[0]");
+    assert_eq!(got[21], DISPLACED[1], "routine replays displaced[1]");
 
     // 3. The overlay victory check is widened to `andi v0,v0,0x384`.
     assert_eq!(

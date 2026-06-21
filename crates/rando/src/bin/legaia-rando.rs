@@ -205,7 +205,9 @@ struct RandomizeArgs {
     /// onto the party's side as an uncontrolled ally (a same-size code hook into
     /// battle setup that sets the AI-delegated bits on the frontmost enemy, plus a
     /// one-word widen of the victory check so the ally isn't an enemy you must
-    /// defeat). Works in any fight, bosses included.
+    /// defeat). Fires only in **multi-enemy** fights - single-enemy fights (every
+    /// input-gated tutorial and solo boss) are skipped, since charming the lone
+    /// enemy of a scripted fight softlocks it.
     #[arg(long, default_value_t = false)]
     enemy_ally: bool,
     /// Per-battle percentage chance an enemy is charmed (only with `--enemy-ally`).
