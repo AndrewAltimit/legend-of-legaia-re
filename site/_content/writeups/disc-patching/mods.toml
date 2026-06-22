@@ -350,24 +350,24 @@ key = "enemy_ally"
 name = "Enemy ally (charm)"
 flag = "--enemy-ally"
 tier = "E"
-target = "Detour at battle setup 0x80051990 -> routine at gap 0x8007ACA0 (sets AI-delegated 0x380 on the frontmost enemy); + victory-mask widen 0x801E6638 andi 0x4 -> 0x384 in overlay 0898"
+target = "Detour at battle setup 0x80051990 -> charm routine at gap 0x8007ACA0; + one-word victory-mask widen 0x801E6638 in overlay 0898"
 edit = "in-place"
 gap = true
 status = "shipped"
 test = "enemy_ally_real.rs"
-notes = "rides the stock AI-delegated retarget so a flagged monster attacks its own side; the victory widen keeps the ally from counting as an enemy you must defeat. Gated to MULTI-ENEMY fights: the routine reads DAT_8007BD0C[1] (2nd formation slot) and skips charm when it's zero, so single-enemy fights are left alone. Pinned from a live softlock - charming the lone enemy of the input-gated Tetsu tutorial (monster id 0x4F) stalls the scripted fight (it waits for the enemy that is now an ally); solo bosses are likewise scripted set-pieces, while multi-enemy fights are the random encounters where the ally is the intended effect."
+notes = "A per-battle chance to flip an enemy onto your side, riding the game's own Confuse/Charm retarget; gated to multi-enemy fights so scripted solo and tutorial battles can't softlock. Full story on the Tier E page."
 
 [[mod]]
 key = "shiny_seru"
 name = "Shiny Seru"
 flag = "--shiny-seru"
 tier = "E"
-target = "9 detours; all routines/data in four READ-WATCH-VERIFIED-dead SCUS regions OUTSIDE every live table (incl. the 0x80079xxx SsAPI sound tables): gap1 0x80077728 (scratch+setup+capture+capturable bitmap+cast flag+'+35% DMG!' string), arena1 0x8007AE00 (damage/grant/grant-shift/battle-menu flag/field-menu colour; usable to 0x8007AF00 where the SsAPI I/O table begins), arena2 0x8007AFF8 (+35% caption), slot6 0x80078A88 (summon-fade). Hooks: setup boost+capturable check 0x80051A20, capture-copy 0x801EE2E8, grant 0x801E93B4, grant-shift 0x801E9320, damage x1.35 0x801DDB08, menu colour 0x801D2FA0 (overlay 0899), battle-menu flag 0x801D1B00, summon-fade 0x8004AD0C, +35% caption 0x800321D4"
+target = "9 detours across the battle / menu / capture paths; routines + data in four read-watch-verified-dead SCUS regions outside every live table (gap1 0x80077728, arena1 0x8007AE00, arena2 0x8007AFF8, slot6 0x80078A88)"
 edit = "in-place"
 gap = true
 status = "shipped"
 test = "shiny_seru_real.rs"
-notes = "2%/battle a capturable enemy gets +35% stats and renders translucent; the Seru you capture from it deals +35% damage forever, with cosmetics: the summoned creature renders semi-transparent and a '+35% DMG!' caption appears one line BELOW the native 'Magic effect:' box (so they stack, not overlap). The persistent shiny flag is a parallel per-spell-slot byte array at record+0x1C0 (NOT the spell-level byte's 0x80 bit, which leaked into the spell-level-up+display fn FUN_800402f4). 'ZERO IS NOT DEAD' lesson (it bit this feature THREE times - a zero run is dead only if no code READS it): earlier layouts squatted in the zero padding of live indexed tables - (1) the victory mouth-override table (ART_MOUTH_VA 0x80077E80, rows 0x800781B0.., FUN_8004C7B4) -> corrupted victory mouth; (2) the move-power table (0x801F4FC4) -> six move ids read garbage; (3) the 0x80079xxx SsAPI sound/effect tables - the item-use sound engine indexes 0x800794F0 (FUN_8005d0b8) into the old bitmap, so using a Healing Leaf read our bytes as garbage and the item banner never dismissed (froze the Tetsu tutorial). assert_zero passed every time because the bytes ARE zero; fixed by relocating to regions verified all-zero AND constant-zero across battle states AND outside all tables (structural assert_not_in_tables guard, now incl. the SsAPI ranges) AND - the part a static check can't prove - read-watch-verified UNREFERENCED on a live battle (item use, victory, summon cast). The grant-shift hook keeps the shiny array slot-aligned across captures; the byte lives inside the saved record so it survives a memory-card save. Capturable = first-monster id DAT_8007BD0C indexed into an allowlist bitmap built at patch time from the disc's monster names matching the 11 player Seru-magic names (NOT actor+0x3e, which is volatile). Every routine honours the R3000 load-delay slot. Mirrors the engine seru_learning shiny set; distinct arenas from the 0x8007AB38 features so it composes"
+notes = "A per-battle chance that a capturable enemy spawns shiny (+35% stats, translucent); the Seru you capture from it keeps a permanent +35% damage bonus, stored in a spare per-Seru byte so it survives saving. The Tier E page tells the placement story (the 'zero is not dead' trap that bit this three times)."
 
 # ---------------------------------------------------------------------------
 # Tier F - overlay dead-region injection
