@@ -196,15 +196,25 @@ const BITMAP_BYTES: usize = 32;
 
 /// Known live data tables in `SCUS_942.54` (VA start, end-exclusive). A routine
 /// or data region must not overlap any of these even if the overlapped bytes are
-/// zero - they are indexed at runtime. Pinned from `docs/reference/memory-map.md`
-/// + `legaia_asset::face_anim` / `item_names` table addresses.
+/// zero - they are indexed at runtime. Pinned from `docs/reference/memory-map.md`,
+/// the `legaia_asset::face_anim` / `item_names` table addresses, and the SsAPI
+/// sound/effect tables found by read-watching a live battle (their zero padding
+/// is what the old arena3/4/5 wrongly squatted in - the Healing-Leaf freeze).
 const SCUS_TABLE_RANGES: &[(u32, u32)] = &[
     (0x8007_436C, 0x8007_625C), // item / equipment / spell name + stat tables
     (0x8007_625C, 0x8007_6900), // accessory table + face source/geo/delta tables
+    (0x8007_0700, 0x8007_078C), // pad before the 28-mode game-mode table (old arena3)
     (0x8007_7828, 0x8007_7A28), // per-monster steal table (256 * 2 bytes)
     (0x8007_7E80, 0x8007_8800), // victory mouth-override table (rows 0x800781B0..) + party-size
     (0x8007_8870, 0x8007_88C0), // party-member size table (`0x80078878`)
     (0x8007_8C4C, 0x8007_8CC0), // new-game starting-party template
+    // SsAPI sound/effect tables (read-watch-pinned: FUN_8005c0c8/8005d0b8 index
+    // 0x800794f0 etc; FUN_8005a210/8005a358 read 0x80078d54/0x80078e48; SPU DMA
+    // + FUN_8006xxxx read the 0x80079800.. buffer and the 0x8007af00 I/O table).
+    (0x8007_8D00, 0x8007_9800), // sound tables incl. 0x800794f0 (old arena4/arena5)
+    (0x8007_97D0, 0x8007_A900), // SsAPI value/DMA buffer cluster
+    (0x8007_AF00, 0x8007_AFF8), // SsAPI I/O register table (between arena1 and arena2)
+    (0x8007_B040, 0x8007_B800), // trailing SsAPI value tables + SPU-transfer scratch
 ];
 /// Known live tables in the battle-action overlay (0898), same VA space. The
 /// move-id index map + the move-power table window (which absorbed the old cave).
@@ -217,53 +227,60 @@ pub const SCUS_GAP_VA: u32 = 0x8007_7728;
 /// First VA used by the steal table; gap-1 routines must end at or below this.
 pub const SCUS_GAP_END_VA: u32 = 0x8007_7828;
 
+// "Zero is not dead", part 3: the earlier arena3/4/5 (`0x8007075C`,
+// `0x80079340`, `0x80079509`) were picked as plain zero-runs but turned out to
+// be the **zero padding inside the live SsAPI sound/effect tables** in the
+// `0x80079xxx` cluster - the item-use sound engine indexes a table at
+// `0x800794F0` (read by `FUN_8005d0b8`) straight into the old arena5 bitmap, so
+// using a Healing Leaf read our bytes as garbage table entries and the
+// sound-synced item banner never dismissed (the Tetsu-tutorial Healing-Leaf
+// freeze). A zero run is dead ONLY if no code references it; every region below
+// is now **read-watch-verified unreferenced** on a live PCSX-Redux battle (item
+// use, victory pose, AND a summon cast) - not merely all-zero.
+//
 /// Verified-dead arena 1: the high tail of the shared `0x8007AB38` rodata gap
 /// (the same gap the bonus-drop / charm / flee-EXP code hooks use), above all of
-/// them (flee-EXP ends `0x8007AE00`) and below the gap's live tail byte at
-/// `0x8007AF3C`. Constant-zero across battle states. Hosts the damage (D),
-/// grant (C2), summon-fade (K) and grant-shift (K2) routines.
+/// them (flee-EXP ends `0x8007AE00`). The SsAPI sound I/O table begins exactly at
+/// `0x8007AF00` (read every frame by `FUN_8006a7d0`/`8006b880`); read-watching
+/// confirms `0x8007AE00..0x8007AF00` is unread, so the whole 256 bytes are
+/// usable. Hosts the damage (D), grant (C2), grant-shift (K2), in-battle-menu
+/// flag (H) and field-menu colour (F) routines.
 pub const ARENA1_VA: u32 = 0x8007_AE00;
 pub const ARENA1_END_VA: u32 = 0x8007_AF00;
-/// Verified-dead arena 2 (constant-zero run after the `0x8007AB38` gap). Hosts
-/// the +35% cast-banner routine (J). **4-byte aligned**: this is a routine
-/// jumped to by a `j` detour, and a `j` drops the target's low 2 bits, so an
-/// unaligned entry would jump 2 bytes into garbage (the bug that froze the Tetsu
-/// tutorial). The raw zero-run started at `0x8007AFF6`; rounded up to `0x8007AFF8`.
+/// Verified-dead arena 2: a dead pocket between two SsAPI tables (`0x8007AF40`
+/// I/O table .. `0x8007B040` value table), read-watch-verified unread. Hosts the
+/// +35% cast-banner routine (J). **4-byte aligned**: a `j` detour drops the
+/// target's low 2 bits, so an unaligned entry would jump into garbage (the
+/// earlier alignment freeze). Raw zero-run `0x8007AFF6` -> rounded to `0x8007AFF8`.
 pub const ARENA2_VA: u32 = 0x8007_AFF8;
 pub const ARENA2_END_VA: u32 = 0x8007_B040;
-/// Verified-dead arena 3 (early SCUS). Hosts the colour-aware field-menu routine
-/// (F). 4-byte aligned (zero-run start `0x80070759` rounded up to `0x8007075C`).
-pub const ARENA3_VA: u32 = 0x8007_075C;
-pub const ARENA3_END_VA: u32 = 0x8007_078C;
-/// Verified-dead arena 4. Hosts the in-battle menu shiny-flag stamper (H) + the
-/// one-byte `SHINY_CAST_FLAG`. 4-byte aligned (`0x8007933D` -> `0x80079340`).
-pub const ARENA4_VA: u32 = 0x8007_9340;
-pub const ARENA4_END_VA: u32 = 0x8007_9378;
-/// Verified-dead arena 5. Holds **data only** (the capturable allowlist bitmap +
-/// the "+35% DMG!" display string), so alignment is irrelevant - both are read
-/// byte-wise, never jumped to.
-pub const ARENA5_VA: u32 = 0x8007_9509;
-pub const ARENA5_END_VA: u32 = 0x8007_9544;
+/// Verified-dead slot 6: a 69-byte padding gap between two `0x80078xxx` tables
+/// (party-size .. new-game), read-watch-verified unread on item use, victory and
+/// a live summon cast (its neighbours `0x80078870`/`0x80078d54` are hammered by
+/// the sound funcs; this gap is silent). Hosts the summon-fade routine (K).
+/// 4-byte aligned (zero-run start `0x80078A87` -> `0x80078A88`).
+pub const SLOT6_VA: u32 = 0x8007_8A88;
+pub const SLOT6_END_VA: u32 = 0x8007_8ACC;
 
 // Per-routine VAs carved from the arenas above (assigned in `plan`). The public
 // consts the tests pin point at these arena addresses. Every ROUTINE VA must be
 // 4-byte aligned (it is a `j` target); data VAs need not be.
-/// Summon-fade routine (K) VA (arena 1).
-pub const SUMMON_FADE_RUN_VA: u32 = 0x8007_AE6C;
-/// Grant-shift routine (K2) VA (arena 1).
-pub const SHIFT_RUN_VA: u32 = 0x8007_AEA4;
-/// Field-menu colour routine (F) VA (arena 3).
-pub const MENU_RUN_VA: u32 = ARENA3_VA;
+/// Summon-fade routine (K) VA - the verified-dead slot 6 (its own pocket; K is
+/// 56 bytes, slot 6 is 68).
+pub const SUMMON_FADE_RUN_VA: u32 = SLOT6_VA;
+/// Grant-shift routine (K2) VA (arena 1, after D + C2).
+pub const SHIFT_RUN_VA: u32 = 0x8007_AE6C;
+/// Field-menu colour routine (F) VA (arena 1, after K2 + H). SCUS-resident, so
+/// the 0899 menu detour can jump to it.
+pub const MENU_RUN_VA: u32 = 0x8007_AED0;
 /// +35% cast-banner routine (J) VA (arena 2).
 pub const BANNER_RUN_VA: u32 = ARENA2_VA;
-/// The "+35% DMG!" display string - data, placed in arena 5 right after the
-/// 32-byte capturable bitmap (kept out of arena 2 so the banner routine there
-/// stays whole + aligned).
-const BANNER_STR_VA: u32 = ARENA5_VA + BITMAP_BYTES as u32;
+/// The "+35% DMG!" display string - data in gap 1, after the bitmap + flag.
+const BANNER_STR_VA: u32 = SHINY_CAST_FLAG_VA + 1;
 /// One-byte "current cast is shiny" flag the in-battle menu stamper (H) writes
-/// (bit 0x80 = shiny); the +35% banner (J) and summon-fade (K) read it. Tail of
-/// arena 4, after the H routine.
-pub const SHINY_CAST_FLAG_VA: u32 = ARENA4_VA + 8 * 4;
+/// (bit 0x80 = shiny); the +35% banner (J) and summon-fade (K) read it. In gap 1,
+/// after the 32-byte capturable bitmap.
+pub const SHINY_CAST_FLAG_VA: u32 = SCUS_GAP_VA + 4 + 44 * 4 + 7 * 4 + BITMAP_BYTES as u32;
 /// Text-colour global `_DAT_8007b454`: the menu writes a CLUT index here before
 /// each glyph draw (`6` = the normal name/digit colour).
 const TEXT_COLOR_GLOBAL_VA: u32 = 0x8007_B454;
@@ -280,9 +297,8 @@ const SHINY_MENU_COLOR: u16 = 9;
 pub const HOOK_BMENU_LVL_VA: u32 = 0x801D_1B00;
 /// `lbu v1,0x729(v0)` - the displaced word the masker replays.
 const HOOK_BMENU_LVL_W0: u32 = 0x9043_0729;
-/// In-battle menu shiny-flag stamper (H) VA (arena 4; the `SHINY_CAST_FLAG`
-/// byte follows it in the same arena).
-pub const BMENU_RUN_VA: u32 = ARENA4_VA;
+/// In-battle menu shiny-flag stamper (H) VA (arena 1, after K2).
+pub const BMENU_RUN_VA: u32 = 0x8007_AEB0;
 
 // --- Summon transparency (SCUS `FUN_8004a908`, draw-time fade modulator) ----
 
@@ -308,8 +324,8 @@ const SUMMON_ACTOR_SLOT_VA: u32 = 0x801C_938C;
 /// fade reads as *more* transparent: `0x40` -> creature contributes ~25% of its
 /// colour, `0x60` -> ~12.5% (clearly translucent over the dark battle floor).
 const SUMMON_FADE: u16 = 0x60;
-// (The summon-fade routine K lives at `SUMMON_FADE_RUN_VA` in arena 1, declared
-// with the other arena routine VAs above.)
+// (The summon-fade routine K lives at `SUMMON_FADE_RUN_VA` = the verified-dead
+// slot 6, declared with the other routine VAs above.)
 
 // --- +35% cast text (SCUS `FUN_80031d00` battle text-widget renderer) --------
 
@@ -864,9 +880,11 @@ impl ShinySeruInjection {
             assert_not_in_tables(va, 8, OVERLAY_TABLE_RANGES, name)?;
         }
 
-        // Capturable allowlist bitmap (verified-dead arena 5).
+        // Capturable allowlist bitmap + the +35% string (data; placed in gap 1,
+        // after scratch + B + C1 - all read-watch-verified-dead on a live battle).
         let bitmap = build_bitmap(capturable_ids);
-        let bitmap_va = ARENA5_VA;
+        let banner_str = banner_string();
+        let bitmap_va = SHINY_CAST_FLAG_VA - BITMAP_BYTES as u32;
 
         // Bump-allocator over a verified-dead arena: place a routine, advance the
         // cursor, and refuse if it overruns the arena OR overlaps any known live
@@ -890,7 +908,8 @@ impl ShinySeruInjection {
                 Ok((va, words))
             };
 
-        // --- gap 1 (before the steal table): scratch word + setup (B) + capture (C1) ---
+        // --- gap 1 (before the steal table): scratch + setup (B) + capture (C1)
+        //     + bitmap + cast flag + +35% string (data) -------------------------
         let scratch_va = SCUS_GAP_VA;
         let mut gap1 = SCUS_GAP_VA + 4; // 4-byte scratch word reserved first
         let (b_va, b_words) = place(
@@ -905,8 +924,27 @@ impl ShinySeruInjection {
             assemble_capture_copy(scratch_va, capture.1, HOOK_CAPTURE_VA + 8),
             "capture",
         )?;
+        // gap-1 data region: bitmap, then the 1-byte cast flag, then the string.
+        debug_assert_eq!(gap1, bitmap_va, "bitmap follows scratch+B+C1 in gap 1");
+        debug_assert_eq!(
+            SHINY_CAST_FLAG_VA,
+            bitmap_va + BITMAP_BYTES as u32,
+            "cast flag after bitmap"
+        );
+        debug_assert_eq!(
+            BANNER_STR_VA,
+            SHINY_CAST_FLAG_VA + 1,
+            "string after cast flag"
+        );
+        let gap1_data_span = BITMAP_BYTES as u32 + 1 + banner_str.len() as u32;
+        if bitmap_va + gap1_data_span > SCUS_GAP_END_VA {
+            bail!("gap-1 data overruns the steal table at {SCUS_GAP_END_VA:#x}");
+        }
+        assert_not_in_tables(bitmap_va, gap1_data_span, SCUS_TABLE_RANGES, "gap1-data")?;
+        gap1 += gap1_data_span;
 
-        // --- arena 1: damage (D), grant (C2), summon-fade (K), grant-shift (K2) ---
+        // --- arena 1: damage (D), grant (C2), grant-shift (K2), in-battle-menu
+        //     flag (H), field-menu colour (F) ----------------------------------
         let mut a1 = ARENA1_VA;
         let (d_va, d_words) = place(
             &mut a1,
@@ -920,58 +958,39 @@ impl ShinySeruInjection {
             assemble_grant_shiny(scratch_va, grant.1, HOOK_GRANT_VA + 8),
             "grant",
         )?;
-        let (k_va, k_words) = place(
-            &mut a1,
-            ARENA1_END_VA,
-            assemble_summon_fade(fade.1, HOOK_FADE_RET_VA),
-            "summon-fade",
-        )?;
         let (k2_va, k2_words) = place(
             &mut a1,
             ARENA1_END_VA,
             assemble_grant_shift(gshift.1, HOOK_GRANT_SHIFT_VA + 8),
             "grant-shift",
         )?;
-        debug_assert_eq!(k_va, SUMMON_FADE_RUN_VA, "summon-fade VA matches the const");
-        debug_assert_eq!(k2_va, SHIFT_RUN_VA, "grant-shift VA matches the const");
-
-        // --- arena 3: colour-aware field-menu routine (F) ---
-        let mut a3 = ARENA3_VA;
-        let (f_va, f_words) = place(
-            &mut a3,
-            ARENA3_END_VA,
-            assemble_menu_color(menu.1, HOOK_MENU_VA + 8),
-            "menu",
-        )?;
-
-        // --- arena 4: in-battle menu shiny-flag stamper (H) + the 1-byte cast flag ---
-        let mut a4 = ARENA4_VA;
         let (h_va, h_words) = place(
-            &mut a4,
-            ARENA4_END_VA,
+            &mut a1,
+            ARENA1_END_VA,
             assemble_bmenu(bmenu.1, HOOK_BMENU_LVL_VA + 8),
             "battle-menu",
         )?;
-        debug_assert_eq!(SHINY_CAST_FLAG_VA, a4, "cast flag follows the H routine");
-        if SHINY_CAST_FLAG_VA >= ARENA4_END_VA {
-            bail!("cast flag overruns arena 4 end {ARENA4_END_VA:#x}");
-        }
-        assert_not_in_tables(SHINY_CAST_FLAG_VA, 1, SCUS_TABLE_RANGES, "cast-flag")?;
+        let (f_va, f_words) = place(
+            &mut a1,
+            ARENA1_END_VA,
+            assemble_menu_color(menu.1, HOOK_MENU_VA + 8),
+            "menu",
+        )?;
+        debug_assert_eq!(k2_va, SHIFT_RUN_VA, "grant-shift VA matches the const");
+        debug_assert_eq!(h_va, BMENU_RUN_VA, "bmenu VA matches the const");
+        debug_assert_eq!(f_va, MENU_RUN_VA, "menu VA matches the const");
 
-        // --- arena 5: capturable bitmap + the +35% display string (data) ---
-        let banner_str = banner_string();
-        let arena5_span = bitmap.len() as u32 + banner_str.len() as u32;
-        debug_assert_eq!(
-            BANNER_STR_VA,
-            bitmap_va + bitmap.len() as u32,
-            "string after bitmap"
-        );
-        if ARENA5_VA + arena5_span > ARENA5_END_VA {
-            bail!("bitmap + banner string overrun arena 5 end {ARENA5_END_VA:#x}");
-        }
-        assert_not_in_tables(bitmap_va, arena5_span, SCUS_TABLE_RANGES, "arena5")?;
+        // --- slot 6: summon-fade (K) ---------------------------------------
+        let mut s6 = SLOT6_VA;
+        let (k_va, k_words) = place(
+            &mut s6,
+            SLOT6_END_VA,
+            assemble_summon_fade(fade.1, HOOK_FADE_RET_VA),
+            "summon-fade",
+        )?;
+        debug_assert_eq!(k_va, SUMMON_FADE_RUN_VA, "summon-fade VA matches the const");
 
-        // --- arena 2: +35% cast-banner routine (J) only (string is in arena 5) ---
+        // --- arena 2: +35% cast-banner routine (J) -------------------------
         let banner_words = assemble_banner_replace(BANNER_STR_VA, banner.1, HOOK_BANNER_RET_VA);
         let banner_len = (banner_words.len() * 4) as u32;
         assert_not_in_tables(BANNER_RUN_VA, banner_len, SCUS_TABLE_RANGES, "banner")?;
@@ -979,7 +998,9 @@ impl ShinySeruInjection {
             bail!("banner routine overruns arena 2 end {ARENA2_END_VA:#x}");
         }
 
-        // --- dead-space guards: every region must be all-zero in the clean image ---
+        // --- dead-space guards: every region must be all-zero in the clean image
+        //     (necessary, not sufficient - the regions are also read-watch-verified
+        //     unreferenced on a live battle, the part a static check can't prove). -
         let dead = |va: u32, len: usize, what: &str| -> Result<()> {
             let off = item_names::file_offset_for_va(scus, va)
                 .ok_or_else(|| anyhow::anyhow!("can't resolve {what} VA {va:#x}"))?;
@@ -987,9 +1008,7 @@ impl ShinySeruInjection {
         };
         dead(SCUS_GAP_VA, (gap1 - SCUS_GAP_VA) as usize, "gap1")?;
         dead(ARENA1_VA, (a1 - ARENA1_VA) as usize, "arena1")?;
-        dead(ARENA3_VA, (a3 - ARENA3_VA) as usize, "arena3")?;
-        dead(ARENA4_VA, (a4 - ARENA4_VA) as usize + 1, "arena4")?; // + cast-flag byte
-        dead(ARENA5_VA, arena5_span as usize, "arena5")?; // bitmap + banner string
+        dead(SLOT6_VA, (s6 - SLOT6_VA) as usize, "slot6")?;
         dead(BANNER_RUN_VA, banner_len as usize, "banner")?;
 
         // --- collect all edits ---------------------------------------------
@@ -1311,66 +1330,72 @@ mod tests {
 
     #[test]
     fn routines_fit_their_regions() {
-        let bm = ARENA5_VA;
-        // gap 1: scratch(4) + B + C1.
+        // gap 1: scratch(4) + B + C1 + bitmap + cast flag + "+35% DMG!" string.
+        let bm = bitmap_va_for_test();
         let r1 = 4
             + (assemble_setup(2, bm, [0, 0], 0).len() + assemble_capture_copy(0, [0, 0], 0).len())
-                * 4;
+                * 4
+            + BITMAP_BYTES
+            + 1
+            + banner_string().len();
         assert!(
             SCUS_GAP_VA + r1 as u32 <= SCUS_GAP_END_VA,
             "gap 1 fits ({r1} bytes)"
         );
-        // arena 1: D + C2 + K + K2 (all four).
+        assert_eq!(
+            bm,
+            SHINY_CAST_FLAG_VA - BITMAP_BYTES as u32,
+            "bitmap before flag"
+        );
+        assert_eq!(BANNER_STR_VA, SHINY_CAST_FLAG_VA + 1, "string after flag");
+        // arena 1: D + C2 + K2 + H + F (the five battle/menu routines; K moved out).
         let a1 = (assemble_damage([0, 0], 0).len()
             + assemble_grant_shiny(0, [0, 0], 0).len()
-            + assemble_summon_fade([0, 0], 0).len()
-            + assemble_grant_shift([0, 0], 0).len())
+            + assemble_grant_shift([0, 0], 0).len()
+            + assemble_bmenu([0, 0], 0).len()
+            + assemble_menu_color([0, 0], 0).len())
             * 4;
         assert!(
             ARENA1_VA + a1 as u32 <= ARENA1_END_VA,
             "arena 1 fits ({a1} bytes)"
         );
-        // arena 2: banner routine + "+35% DMG!" string.
-        let banner_end = BANNER_STR_VA + banner_string().len() as u32;
-        assert!(banner_end <= ARENA2_END_VA, "arena 2 (banner+str) fits");
-        // arena 3: menu (F).
-        let rf = assemble_menu_color([0, 0], 0).len() * 4;
+        // slot 6: summon-fade (K).
+        let k = assemble_summon_fade([0, 0], 0).len() * 4;
+        assert!(SLOT6_VA + k as u32 <= SLOT6_END_VA, "slot 6 (K) fits ({k})");
+        // arena 2: banner routine (J) (string lives in gap 1).
+        let banner = assemble_banner_replace(0, [0, 0], 0).len() * 4;
         assert!(
-            ARENA3_VA + rf as u32 <= ARENA3_END_VA,
-            "arena 3 fits ({rf})"
+            ARENA2_VA + banner as u32 <= ARENA2_END_VA,
+            "arena 2 (banner) fits ({banner})"
         );
-        // arena 4: bmenu (H) + 1-byte cast flag.
-        let rh = assemble_bmenu([0, 0], 0).len() * 4;
-        assert!(
-            ARENA4_VA + (rh as u32) < ARENA4_END_VA,
-            "arena 4 fits ({rh} + flag)"
-        );
-        assert_eq!(SHINY_CAST_FLAG_VA, ARENA4_VA + rh as u32, "flag follows H");
-        // arena 5: capturable bitmap.
-        assert!(
-            ARENA5_VA + BITMAP_BYTES as u32 <= ARENA5_END_VA,
-            "arena 5 (bitmap) fits"
-        );
+    }
+
+    /// The bitmap VA the plan computes (after scratch + B + C1 in gap 1).
+    fn bitmap_va_for_test() -> u32 {
+        SHINY_CAST_FLAG_VA - BITMAP_BYTES as u32
     }
 
     #[test]
     fn no_region_overlaps_a_live_table() {
         // The whole point of the relocation: every shiny SCUS region is outside
-        // the victory mouth-override + move-power + other static tables.
+        // every live static table AND the SsAPI sound/effect tables (the old
+        // arena3/4/5 trap). These are the only read-watch-verified-dead regions.
         for (va, len) in [
-            (SCUS_GAP_VA, 0x100u32),
+            (SCUS_GAP_VA, SCUS_GAP_END_VA - SCUS_GAP_VA),
             (ARENA1_VA, ARENA1_END_VA - ARENA1_VA),
             (ARENA2_VA, ARENA2_END_VA - ARENA2_VA),
-            (ARENA3_VA, ARENA3_END_VA - ARENA3_VA),
-            (ARENA4_VA, ARENA4_END_VA - ARENA4_VA),
-            (ARENA5_VA, ARENA5_END_VA - ARENA5_VA),
+            (SLOT6_VA, SLOT6_END_VA - SLOT6_VA),
         ] {
             assert_not_in_tables(va, len, SCUS_TABLE_RANGES, "arena").unwrap_or_else(|e| {
                 panic!("region {va:#x}..+{len} should be table-free: {e}");
             });
         }
-        // And the guard actually fires for an in-table address (mouth-override).
+        // And the guard fires for the old, live regions (mouth-override + the
+        // 0x80079xxx SsAPI sound tables the old arena4/arena5 squatted in).
         assert!(assert_not_in_tables(0x8007_81BC, 0x40, SCUS_TABLE_RANGES, "x").is_err());
+        assert!(assert_not_in_tables(0x8007_9340, 0x20, SCUS_TABLE_RANGES, "old-arena4").is_err());
+        assert!(assert_not_in_tables(0x8007_9509, 0x3B, SCUS_TABLE_RANGES, "old-arena5").is_err());
+        assert!(assert_not_in_tables(0x8007_075C, 0x30, SCUS_TABLE_RANGES, "old-arena3").is_err());
     }
 
     #[test]
@@ -1446,21 +1471,21 @@ mod tests {
         let s = banner_string();
         assert_eq!(s[0], b'+', "plain ASCII (no colour escape)");
         assert_eq!(*s.last().unwrap(), 0x00, "0x00 terminator");
-        // The J routine is 4-byte aligned and fits arena 2 (string lives in arena 5).
+        // The J routine is 4-byte aligned and fits arena 2 (string lives in gap 1).
         assert_eq!(BANNER_RUN_VA & 3, 0, "banner routine is 4-byte aligned");
         assert!(
             BANNER_RUN_VA + (r.len() * 4) as u32 <= ARENA2_END_VA,
             "routine fits arena 2"
         );
-        // The string follows the bitmap in arena 5.
+        // The string follows the bitmap + cast flag in gap 1.
         assert_eq!(
             BANNER_STR_VA,
-            ARENA5_VA + BITMAP_BYTES as u32,
-            "string after bitmap"
+            SHINY_CAST_FLAG_VA + 1,
+            "string after cast flag"
         );
         assert!(
-            BANNER_STR_VA + s.len() as u32 <= ARENA5_END_VA,
-            "string fits arena 5"
+            BANNER_STR_VA + s.len() as u32 <= SCUS_GAP_END_VA,
+            "string fits gap 1"
         );
     }
 
@@ -1472,10 +1497,11 @@ mod tests {
             (SCUS_GAP_VA, "gap1"),
             (ARENA1_VA, "arena1"),
             (ARENA2_VA, "arena2/banner"),
-            (ARENA3_VA, "arena3/menu"),
-            (ARENA4_VA, "arena4/bmenu"),
+            (SLOT6_VA, "slot6/summon-fade"),
             (SUMMON_FADE_RUN_VA, "summon-fade"),
             (SHIFT_RUN_VA, "grant-shift"),
+            (BMENU_RUN_VA, "bmenu"),
+            (MENU_RUN_VA, "menu"),
         ] {
             assert_eq!(
                 va & 3,

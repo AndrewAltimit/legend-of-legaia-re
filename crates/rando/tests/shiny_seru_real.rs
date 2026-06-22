@@ -88,9 +88,7 @@ fn baseline_hooks_match_the_known_build() {
         (SCUS_GAP_VA, SCUS_GAP_END_VA, "gap 1"),
         (shiny_seru::ARENA1_VA, shiny_seru::ARENA1_END_VA, "arena 1"),
         (shiny_seru::ARENA2_VA, shiny_seru::ARENA2_END_VA, "arena 2"),
-        (shiny_seru::ARENA3_VA, shiny_seru::ARENA3_END_VA, "arena 3"),
-        (shiny_seru::ARENA4_VA, shiny_seru::ARENA4_END_VA, "arena 4"),
-        (shiny_seru::ARENA5_VA, shiny_seru::ARENA5_END_VA, "arena 5"),
+        (shiny_seru::SLOT6_VA, shiny_seru::SLOT6_END_VA, "slot 6"),
     ] {
         let off = file_offset_for_va(&scus, start).unwrap();
         let len = (end - start) as usize;
@@ -286,9 +284,9 @@ fn planner_refuses_an_unrecognized_build() {
     ov_bad[doff] ^= 0xFF;
     assert!(ShinySeruInjection::plan(&scus, &ov_bad, &ov0899, 20, &ids).is_err());
 
-    // Dirty arena 5 (the bitmap region) -> refuse.
+    // Dirty the arena-1 routine region (non-dead) -> refuse.
     let mut scus_g2 = scus.clone();
-    let g2off = file_offset_for_va(&scus_g2, shiny_seru::ARENA5_VA).unwrap();
+    let g2off = file_offset_for_va(&scus_g2, shiny_seru::ARENA1_VA).unwrap();
     scus_g2[g2off + 4] = 0x42;
     assert!(ShinySeruInjection::plan(&scus_g2, &ov0898, &ov0899, 20, &ids).is_err());
 }

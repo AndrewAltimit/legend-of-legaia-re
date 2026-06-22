@@ -288,24 +288,28 @@ insert-at-front shift. The "+35% DMG!" caption is dropped to Y `0x1E` so it sits
 one line below the native "Magic effect:" box instead of overlapping it. Applies
 to Seru captured **after** patching.
 
-**Region placement - "zero is not dead".** An earlier layout put routines in the
-zero *padding* of two live indexed tables - the victory mouth-override table
-(`ART_MOUTH_VA 0x80077E80`, addressed rows `0x800781B0..`) and the move-power
-table (`0x801F4FC4`, inside the `0x801F4F5C` window). Those slots are zero in the
-file but still indexed at runtime, so the victory face animator read the routine
-bytes as facial keyframes (**corrupted victory mouth**) and six move ids
-(`0x07/0x12..0x15/0x19`) read them as garbage move-power records. `assert_zero`
-passed because the bytes *are* zero - so the fix relocates everything to regions
-verified all-zero **and** constant-zero across battle states **and** outside every
-known table, with a structural `assert_not_in_tables` guard
-(`SCUS_TABLE_RANGES` / `OVERLAY_TABLE_RANGES`) that refuses any in-table region.
+**Region placement - "zero is not dead" (three times).** A zero run is usable only
+if **no code reads it**. Earlier layouts squatted in the zero padding of live
+indexed tables three times, each passing `assert_zero` because the bytes *are*
+zero: (1) the victory mouth-override table (`ART_MOUTH_VA 0x80077E80`, rows
+`0x800781B0..`) -> **corrupted victory mouth**; (2) the move-power table
+(`0x801F4FC4`) -> six move ids read garbage; (3) the **`0x80079xxx` SsAPI
+sound/effect tables** - the item-use sound engine indexes `0x800794F0` into the
+old bitmap, so a Healing Leaf read our bytes as garbage and the item banner never
+dismissed (**the Tetsu-tutorial Healing-Leaf freeze**). The fix relocates
+everything to regions verified all-zero **and** constant-zero across battle states
+**and** outside every known table (a structural `assert_not_in_tables` guard over
+`SCUS_TABLE_RANGES` / `OVERLAY_TABLE_RANGES`, now incl. the SsAPI sound ranges)
+**and** - the part static checks can't prove - **read-watch-verified unreferenced
+on a live battle** (item use, victory, summon cast).
 
 `apply::inject_shiny_seru` performs **nine** same-size detours; all routines/data
-are SCUS-resident, in six verified-dead arenas: gap 1 `0x80077728` (scratch +
-setup + capture), arena 1 `0x8007AE00` (damage / grant / summon-fade /
-grant-shift), arena 2 `0x8007AFF6` (+35% caption + string), arena 3 `0x80070759`
-(field-menu colour), arena 4 `0x8007933D` (battle-menu flag + the cast flag),
-arena 5 `0x80079509` (capturable bitmap). Hook sites: setup boost + capturable
+are SCUS-resident, in four read-watch-verified-dead regions: gap 1 `0x80077728`
+(scratch + setup + capture + capturable bitmap + cast flag + "+35% DMG!" string),
+arena 1 `0x8007AE00` (damage / grant / grant-shift / battle-menu flag / field-menu
+colour; usable to `0x8007AF00` where the SsAPI I/O table begins), arena 2
+`0x8007AFF8` (+35% caption routine), slot 6 `0x80078A88` (summon-fade). Hook sites:
+setup boost + capturable
 check (`0x80051A20`), capture-copy (`0x801EE2E8`), grant clean-level + shiny-byte
 (`0x801E93B4`), grant-shift (`0x801E9320`), damage `×135/100` (`0x801DDB08`),
 menu-digit colour (`0x801D2FA0`, overlay 0899), battle-menu flag (`0x801D1B00`),

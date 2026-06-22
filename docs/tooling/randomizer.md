@@ -545,30 +545,39 @@ slot - a just-loaded register is never used by the next instruction, else the
 value isn't ready yet; the boost loop in particular cascades into garbage without
 this.)
 
-**Where the routines live - and the "zero is not dead" trap.** Every routine is
-reached by a two-word `j routine` + `nop` detour and lives in `SCUS_942.54`-
-resident dead space. An earlier layout placed routines in the zero *padding* of
-two **live indexed tables** - the victory mouth-override table (`ART_MOUTH_VA =
-0x80077E80`, `FUN_8004C7B4`; addressed rows `0x800781B0..`, 0x30-byte rows with
-zero keyframe tails) and the move-power table (`0x801F4F5C`, records 4..8 zero).
-Those slots are zero in the file but are still indexed at runtime: the victory
-face animator read the routine bytes as facial keyframes (**corrupted victory
-mouth**) and six move ids (`0x07/0x12..0x15/0x19`) read them as move-power
-records (**garbage damage + trail texpage**). The `assert_zero` check passed
-because the bytes *are* zero - "is it zero?" is necessary but not sufficient. The
-fix relocates everything to regions verified (a) all-zero in the clean image, (b)
-constant-zero across diverse in-battle save states (so not a runtime buffer), and
-(c) **outside every known table**, the last enforced by a structural guard
-(`assert_not_in_tables` over `SCUS_TABLE_RANGES` / `OVERLAY_TABLE_RANGES`) that
-refuses any region overlapping a live table even if it reads as zero. (Same
+**Where the routines live - and the "zero is not dead" trap (three times).** Every
+routine is reached by a two-word `j routine` + `nop` detour and lives in
+`SCUS_942.54`-resident dead space. "Dead" is a runtime property, not a file-byte
+one: a zero run is usable **only if no code reads it**. This bit the feature three
+times, each time `assert_zero` passing because the bytes *are* zero:
+
+1. The victory mouth-override table (`ART_MOUTH_VA = 0x80077E80`, `FUN_8004C7B4`;
+   rows `0x800781B0..`) - the victory face animator read routine bytes as facial
+   keyframes (**corrupted mouth**).
+2. The move-power table (`0x801F4F5C`, records 4..8 zero) - six move ids
+   (`0x07/0x12..0x15/0x19`) read them as move-power records (**garbage damage**).
+3. The **`0x80079xxx` SsAPI sound/effect tables** - the item-use sound engine
+   indexes a table at `0x800794F0` (read by `FUN_8005d0b8`) straight into the old
+   arena5 bitmap, so using a Healing Leaf read our bytes as garbage and the
+   sound-synced item banner never dismissed (**the Tetsu-tutorial Healing-Leaf
+   freeze**). The old arena3 `0x8007075C` and arena4 `0x80079340` were in the same
+   live cluster.
+
+The fix relocates everything to regions verified (a) all-zero in the clean image,
+(b) constant-zero across battle states, (c) **outside every known table** (the
+structural `assert_not_in_tables` guard over `SCUS_TABLE_RANGES` /
+`OVERLAY_TABLE_RANGES`, now extended with the SsAPI sound-table ranges), and -
+the part a static check can't prove - (d) **read-watch-verified unreferenced on a
+live PCSX-Redux battle** (item use, victory pose, AND a summon cast). Same
 "looks-dead-but-isn't" lesson as the level byte and `+0x1C0`; see also
-[Dead-code claims overstated]). The arenas: gap 1 `0x80077728` (scratch + setup +
-capture, padding before the steal table), arena 1 `0x8007AE00` (damage / grant /
-summon-fade / grant-shift, in the high tail of the shared `0x8007AB38` gap above
-the bonus-drop/charm/flee-EXP routines), arena 2 `0x8007AFF8` (+35% caption
-routine), arena 3 `0x8007075C` (field-menu colour), arena 4 `0x80079340`
-(battle-menu stamper + the `SHINY_CAST_FLAG` byte), arena 5 `0x80079509`
-(data only: the capturable bitmap + the "+35% DMG!" string).
+[Dead-code claims overstated]. The final regions: gap 1 `0x80077728` (scratch +
+setup B + capture C1 + the capturable bitmap + `SHINY_CAST_FLAG` byte + "+35%
+DMG!" string), arena 1 `0x8007AE00` (damage D / grant C2 / grant-shift K2 /
+battle-menu stamper H / field-menu colour F; the SsAPI I/O table begins exactly at
+`0x8007AF00`, read-watch-confirmed, so all 256 bytes below are usable), arena 2
+`0x8007AFF8` (+35% caption routine J, a dead pocket between two SsAPI tables), and
+slot 6 `0x80078A88` (summon-fade K, a read-watch-verified padding gap between the
+`0x80078xxx` tables).
 
 **Routine VAs must be 4-byte aligned.** A routine is reached by a `j routine`
 detour, and the `j` encoding drops the target's low 2 bits - so an unaligned entry
@@ -1374,7 +1383,7 @@ bit-for-bit.
 | `crates/rando` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/rando` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/rando` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
-| `crates/rando` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and all six SCUS arenas (`0x80077728` / `0x8007AE00` / `0x8007AFF8` / `0x8007075C` / `0x80079340` / `0x80079509`) are all-zero dead space outside every live table (routine VAs 4-byte aligned), that the victory mouth-override table row at `0x800781B0` keeps the clean game's keyframes; then off the patched image that every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, every byte outside the planned edits is untouched (SCUS + overlays 0898/0899), the disc still parses + stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted hook / non-dead / in-table region |
+| `crates/rando` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
