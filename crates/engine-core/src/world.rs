@@ -1883,6 +1883,23 @@ pub struct World {
     /// registry, so the learn step itself lives outside the battle tick).
     pub battle_captures: Vec<u16>,
 
+    /// Chance, in percent, that a capturable enemy spawns as a **shiny**
+    /// variant in a given battle: a single rare enemy with +35% stats whose
+    /// captured Seru deals +35% damage forever (see the `--shiny-seru`
+    /// randomizer feature). `0` disables. Default
+    /// [`World::DEFAULT_SHINY_CHANCE_PCT`].
+    pub shiny_chance_pct: u8,
+
+    /// Battle slots flagged shiny this battle (filled by
+    /// [`World::roll_shiny_enemy`] at battle entry, drained at battle end).
+    /// A shiny enemy's stats are pre-boosted; capturing it marks the learned
+    /// spell shiny.
+    pub shiny_enemy_slots: std::collections::HashSet<u8>,
+
+    /// Monster ids captured **as shiny** this battle (subset of
+    /// [`Self::battle_captures`]; `resolve_captures` marks their spell shiny).
+    pub shiny_captures: Vec<u16>,
+
     /// Magic-XP threshold table from `SCUS_942.54` (`0x8007656C`, 8 ascending
     /// u16 steps). Installed at boot via
     /// [`World::install_magic_xp_thresholds`]; while `None` (disc-free) summon
@@ -2380,6 +2397,9 @@ impl World {
             art_records: std::collections::HashMap::new(),
             battle_buffs: Vec::new(),
             battle_captures: Vec::new(),
+            shiny_chance_pct: Self::DEFAULT_SHINY_CHANCE_PCT,
+            shiny_enemy_slots: std::collections::HashSet::new(),
+            shiny_captures: Vec::new(),
             magic_xp_thresholds: None,
             seru_trade_config: None,
             magic_level_ups: Vec::new(),
@@ -8098,6 +8118,13 @@ impl World {
                 }
             }
         }
+        // Roll for a rare shiny capturable enemy now that every monster slot
+        // carries its stats + id (so capturability + the +35% boost see final
+        // values). Clears last battle's flags first.
+        self.shiny_enemy_slots.clear();
+        self.shiny_captures.clear();
+        self.roll_shiny_enemy(first_monster);
+
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.

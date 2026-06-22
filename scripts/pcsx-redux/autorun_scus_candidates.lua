@@ -1,0 +1,34 @@
+package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
+local probe = require("probe")
+local f = assert(io.open(probe.out_path("scus_candidates.txt"), "w"))
+local function w(s) f:write(s.."\n"); f:flush() end
+local gframe=0; local hits={}; local nlog=0
+local WATCH = {
+  {"pre_itemtab", 0x800740E8, 0x208},  -- 0x800740E8..0x800742F0 (~520B)
+  {"post_newgame",0x80078D54, 0x80},   -- 0x80078D54..0x80078DD4 (128B)
+}
+probe.run({
+  sstate = probe.getenv("LEGAIA_SSTATE", os.getenv("HOME").."/Tools/pcsx-redux/SCUS94254.sstate1"),
+  capture_frames = probe.getenv_num("LEGAIA_FRAMES", 280),
+  on_arm = function()
+    for _,a in ipairs(WATCH) do local name=a[1]
+      probe.arm_breakpoint(a[2], "Read", a[3], "sc_"..name, function()
+        local r=PCSX.getRegisters(); local pc=(tonumber(r.pc) or 0)%0x100000000
+        local key=string.format("%08X->%s",pc,name); hits[key]=(hits[key] or 0)+1
+        if nlog<16 then w(string.format("  READ %s by pc=%08X f=%d",name,pc,gframe)); nlog=nlog+1 end
+      end)
+    end
+    return {}
+  end,
+  on_capture = function(ctx, el)
+    gframe=el
+    if el==4 or el==24 or el==44 or el==120 or el==200 then probe.pad_force(probe.BTN.CROSS) end
+    if el==8 or el==28 or el==48 or el==124 or el==204 then probe.pad_release(probe.BTN.CROSS) end
+    if el==275 then
+      w("-- reader pc -> slot (count) --"); local any=false
+      for k,v in pairs(hits) do w(string.format("  %s : %d",k,v)); any=true end
+      if not any then w("  (no reads of either candidate -> both safe)") end
+      w("done"); f:close(); ctx.request_quit=true
+    end
+  end,
+})

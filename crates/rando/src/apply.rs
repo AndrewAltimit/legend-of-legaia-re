@@ -227,6 +227,108 @@ pub fn inject_flee_exp(patcher: &mut DiscPatcher, pct: u8) -> Result<FleeExpRepo
     Ok(FleeExpReport { pct: plan.pct })
 }
 
+/// Outcome of injecting the enemy-ally ("charm") feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnemyAllyReport {
+    /// Per-battle probability (percent) that an enemy is charmed onto the party's
+    /// side.
+    pub pct: u8,
+}
+
+/// Inject the **enemy-ally ("charm")** feature (see [`crate::enemy_ally`]): a code
+/// hook into battle setup that, with `pct`% probability per battle, flags the
+/// frontmost enemy with the AI-delegated bits (`+0x16E |= 0x380`) so it fights on
+/// the player's side - an uncontrolled ally that can appear in any fight,
+/// including bosses. A companion one-word widen of the victory check stops a
+/// charmed enemy from counting as an enemy you must defeat.
+///
+/// Three same-size edits: the setup detour + the routine blob in preserved
+/// `SCUS_942.54` rodata padding, and the victory-mask widen in the battle-action
+/// overlay's raw PROT entry. Fails (without touching the disc) if the build isn't
+/// the recognized US layout.
+pub fn inject_enemy_ally(patcher: &mut DiscPatcher, pct: u8) -> Result<EnemyAllyReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for enemy-ally injection")?;
+    let overlay = patcher
+        .read_entry(crate::enemy_ally::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay for enemy-ally injection")?;
+    let plan = crate::enemy_ally::EnemyAllyInjection::plan(&scus, &overlay, pct)?;
+
+    // Setup detour + routine live in SCUS; the victory-mask widen lives in the
+    // battle-action overlay PROT entry (raw, linear from base).
+    let detour: Vec<u8> = plan.detour.iter().flat_map(|w| w.to_le_bytes()).collect();
+    patcher
+        .patch_named_file(SCUS_NAME, plan.scus_hook_off as u64, &detour)
+        .context("write battle-setup detour")?;
+    patcher
+        .patch_named_file(SCUS_NAME, plan.routine_off as u64, &plan.blob)
+        .context("write injected enemy-ally routine")?;
+    patcher
+        .patch_prot_entry(
+            crate::enemy_ally::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+            plan.overlay_victory_off as u64,
+            &plan.victory_word.to_le_bytes(),
+        )
+        .context("write victory-mask widen")?;
+
+    Ok(EnemyAllyReport { pct: plan.pct })
+}
+
+/// Outcome of enabling shiny Seru.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShinySeruReport {
+    /// Per-battle probability (percent) that a capturable enemy spawns shiny.
+    pub pct: u8,
+}
+
+/// Inject the **shiny Seru** feature (see [`crate::shiny_seru`]): with `pct`%
+/// probability per battle, the frontmost *capturable* enemy spawns with +35%
+/// stats; capturing it flags the learned Seru so its spell deals +35% damage
+/// forever (the flag persists in the spell-level byte's high bit and is masked
+/// from the level-up + menu readers).
+///
+/// Eight same-size detours + their routines, split between a new preserved
+/// `SCUS_942.54` rodata gap and the battle-action overlay's move-power padding
+/// (both reference-free, and disjoint from every other gap feature so they
+/// compose). Fails (without touching the disc) if the build isn't the
+/// recognized US layout or a routine region isn't dead space.
+pub fn inject_shiny_seru(patcher: &mut DiscPatcher, pct: u8) -> Result<ShinySeruReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for shiny-seru injection")?;
+    let ov0898 = patcher
+        .read_entry(crate::shiny_seru::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay (0898) for shiny-seru injection")?;
+    let ov0899 = patcher
+        .read_entry(crate::shiny_seru::MENU_OVERLAY_PROT_INDEX)
+        .context("read menu overlay (0899) for shiny-seru injection")?;
+    // Derive the capturable-Seru monster ids from the disc's monster names so
+    // the allowlist tracks the actual `battle_data` archive (no hardcoded ids).
+    let archive = patcher
+        .read_entry(MONSTER_ARCHIVE_ENTRY)
+        .context("read monster battle_data archive for shiny-seru allowlist")?;
+    let capturable = crate::shiny_seru::capturable_monster_ids(&archive)
+        .context("derive capturable-Seru ids")?;
+    let plan =
+        crate::shiny_seru::ShinySeruInjection::plan(&scus, &ov0898, &ov0899, pct, &capturable)?;
+
+    for edit in &plan.edits {
+        match edit.prot_index {
+            None => patcher
+                .patch_named_file(SCUS_NAME, edit.file_off as u64, &edit.bytes)
+                .with_context(|| format!("write shiny-seru SCUS edit at {:#x}", edit.file_off))?,
+            Some(idx) => patcher
+                .patch_prot_entry(idx, edit.file_off as u64, &edit.bytes)
+                .with_context(|| {
+                    format!("write shiny-seru PROT {idx} edit at {:#x}", edit.file_off)
+                })?,
+        }
+    }
+
+    Ok(ShinySeruReport { pct: plan.pct })
+}
+
 /// Outcome of enabling seru trading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeruTradeReport {

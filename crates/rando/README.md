@@ -26,6 +26,8 @@ full design.
   - [Bonus equipment drop](#bonus-equipment-drop)
   - [Encounters](#encounters)
   - [Run-away EXP](#run-away-exp)
+  - [Enemy ally (charm)](#enemy-ally-charm)
+  - [Shiny Seru](#shiny-seru)
   - [Seru trading](#seru-trading)
   - [Chests](#chests)
   - [Steals](#steals)
@@ -239,6 +241,82 @@ code injection**, not a data edit.
 The grant is **banked**, not an immediate level-up: it only writes the experience
 cell, so it shows in the status screen at once and applies as a level the next
 time a won battle tallies it. `apply::inject_flee_exp` performs the two edits.
+
+## Enemy ally (charm)
+
+Gives a per-battle chance (`--enemy-ally`, `--enemy-ally-pct`%, default **20**)
+that a random enemy fights on the player's side as an uncontrolled ally, in any
+**multi-enemy** fight (`enemy_ally` module). Single-enemy fights are skipped (the
+routine reads `DAT_8007BD0C[1]` and bails when there is no 2nd monster): charming
+the lone enemy of an input-gated tutorial (the Tetsu sparring match) softlocks the
+scripted fight, and solo bosses are likewise set-pieces. Retail can't host a genuine 4th
+party combatant (battles are hard-wired to 3 party + 4 monster slots), so this
+rides the stock **AI-delegated** flag: setting an actor's `+0x16E |= 0x380` makes
+the action SM retarget it to the opposite side, so a flagged *monster* attacks the
+other monsters. `apply::inject_enemy_ally` performs three same-size edits:
+
+- a **setup detour** at `FUN_800513F0` `0x80051990` (after the monster loop) into
+  a routine at `0x8007ACA0` - the gap window between the equipment-drop
+  routine+table and the flee-EXP routine, so every gap feature coexists - that
+  rolls the chance and OR's `0x380` into the frontmost enemy (actor slot 3),
+- a **victory-mask widen** in battle-action overlay 0898 at `0x801E6638`
+  (`andi v0,v0,0x4` -> `0x384`), so the charmed enemy counts as "down" in the
+  monster-wipe gate and the player needn't defeat their own ally.
+
+Same guards as the other hooks (known build at both sites, all-zero dead space at
+the routine). On a solo-enemy boss the lone enemy turns on itself.
+
+## Shiny Seru
+
+Gives a per-battle chance (`--shiny-seru`, `--shiny-pct`%, default **2**) that the
+frontmost **capturable** enemy spawns as a rare *shiny* variant: +35% stats at
+battle load (and a translucent render), and the Seru you capture from it deals
++35% damage on every future cast, permanently (`shiny_seru` module; mirrors the
+engine `seru_learning::SHINY_DAMAGE_BONUS_PCT`). Two cosmetics: the summoned
+creature renders semi-transparent and a "+35% DMG!" banner replaces the spell name
+on a shiny cast. "Capturable" is decided by indexing the first-monster id
+(`DAT_8007BD0C`) into a 256-bit allowlist bitmap built **at patch time** from the
+disc's monster names that match a player Seru-magic name (`capturable_monster_ids`
+/ `SERU_NAMES`) - NOT the `actor+0x3e` byte (volatile, not a Seru flag).
+
+The persistent bonus is stored in a **parallel per-spell-slot shiny byte at
+`record+0x1C0`** (`+0x788` from the runtime base), **not** the spell-level byte's
+`0x80` bit (which leaked into the shared spell-level-up+display fn
+`FUN_800402f4`). The byte is inside the saved record so it survives a memory-card
+save, and a grant-shift hook keeps it slot-aligned across the spell-list
+insert-at-front shift. The "+35% DMG!" caption is dropped to Y `0x1E` so it sits
+one line below the native "Magic effect:" box instead of overlapping it. Applies
+to Seru captured **after** patching.
+
+**Region placement - "zero is not dead" (three times).** A zero run is usable only
+if **no code reads it**. Earlier layouts squatted in the zero padding of live
+indexed tables three times, each passing `assert_zero` because the bytes *are*
+zero: (1) the victory mouth-override table (`ART_MOUTH_VA 0x80077E80`, rows
+`0x800781B0..`) -> **corrupted victory mouth**; (2) the move-power table
+(`0x801F4FC4`) -> six move ids read garbage; (3) the **`0x80079xxx` SsAPI
+sound/effect tables** - the item-use sound engine indexes `0x800794F0` into the
+old bitmap, so a Healing Leaf read our bytes as garbage and the item banner never
+dismissed (**the Tetsu-tutorial Healing-Leaf freeze**). The fix relocates
+everything to regions verified all-zero **and** constant-zero across battle states
+**and** outside every known table (a structural `assert_not_in_tables` guard over
+`SCUS_TABLE_RANGES` / `OVERLAY_TABLE_RANGES`, now incl. the SsAPI sound ranges)
+**and** - the part static checks can't prove - **read-watch-verified unreferenced
+on a live battle** (item use, victory, summon cast).
+
+`apply::inject_shiny_seru` performs **nine** same-size detours; all routines/data
+are SCUS-resident, in four read-watch-verified-dead regions: gap 1 `0x80077728`
+(scratch + setup + capture + capturable bitmap + cast flag + "+35% DMG!" string),
+arena 1 `0x8007AE00` (damage / grant / grant-shift / battle-menu flag / field-menu
+colour; usable to `0x8007AF00` where the SsAPI I/O table begins), arena 2
+`0x8007AFF8` (+35% caption routine), slot 6 `0x80078A88` (summon-fade). Hook sites:
+setup boost + capturable
+check (`0x80051A20`), capture-copy (`0x801EE2E8`), grant clean-level + shiny-byte
+(`0x801E93B4`), grant-shift (`0x801E9320`), damage `×135/100` (`0x801DDB08`),
+menu-digit colour (`0x801D2FA0`, overlay 0899), battle-menu flag (`0x801D1B00`),
+summon-fade (`0x8004AD0C`), "+35% DMG!" caption (`0x800321D4`). Every routine
+honours the R3000 load-delay slot. Same all-zero / known-build guards as the other
+hooks, plus the table-overlap guard. On by default in the web Balanced / Full
+Chaos presets.
 
 ## Seru trading
 
@@ -639,6 +717,8 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Drops | `current_drops` | `apply_drop_plan` / `randomize_drops` | a `DropApplyReport` records any slot too tight to re-pack. |
 | Equipment drops | - | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance - additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
 | Run-away EXP | - | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape - vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
+| Enemy ally (charm) | - | `inject_enemy_ally` | injects a code hook into battle setup that, on a per-battle chance, sets the AI-delegated bits (`0x380`) on the frontmost enemy so it fights on the player's side, plus a one-word widen of the victory check so the ally isn't an enemy you must defeat (a `SCUS_942.54` detour + gap routine + an overlay-0898 edit via `enemy_ally`). |
+| Shiny Seru | - | `inject_shiny_seru` | injects nine code hooks so that, on a per-battle chance, a capturable enemy spawns with +35% stats (translucent) and its captured Seru deals +35% damage forever, plus cosmetics (translucent summon + a "+35% DMG!" caption below the effect box); the persistent flag is a parallel per-spell shiny byte at `record+0x1C0` (not the spell-level byte), with a grant-shift hook keeping it slot-aligned; all routines/data live in six verified-dead SCUS arenas **outside every live table** (an earlier layout squatted in the victory mouth-override + move-power tables - corrupted mouth + 6 broken moves - now guarded by `assert_not_in_tables`) via `shiny_seru`. |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |
 | Casino | `current_casino` | `randomize_casino` | the casino prize exchange. |
 | Encounters | - | `randomize_encounters` / `randomize_encounters_scoped` / `randomize_encounters_full` | per-scene formations (`EncounterApplyReport`; takes an `unused_enemies` id slice unioned into the Random pool). `_full` adds the optional [solo-strong](#solo-strong-fights) pass (`SoloStrongConfig`) on top of any scope/mode. |

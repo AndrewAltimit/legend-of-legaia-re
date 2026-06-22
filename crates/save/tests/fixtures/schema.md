@@ -41,7 +41,7 @@ want it durable need to keep emitting LGSF v2 alongside the SC export.
 | `SaveFile` field | LGSF v2 offset | SC offset | Width | Note |
 |------------------|----------------|-----------|-------|------|
 | `LGSF` magic | `0x00` | - | 4 B | LGSF v2 only |
-| version byte | `0x04` | - | 1 B | `3` for v3-shaped writers |
+| version byte | `0x04` | - | 1 B | `4` for v4-shaped writers (LGX4 shiny block) |
 | `ext.story_flags` | `0x05` | `0x14C0` (low u32 of bitmap) | 4 B | LGSF u32 LE; SC's first four bitmap bytes form the same scratchpad word on `from_retail_sc_block`. |
 | `ext.money` | `0x09` | engine-only | 4 B | `RETAIL_GAME_DATA_OFFSET + 0x025C` exists in retail RAM but `write_into_retail_sc_block` doesn't expose a write helper - the engine save is the source of truth. |
 | `inv_count` | `0x0D` | - | 1 B | LGSF v2: variable-length list. |
@@ -58,6 +58,8 @@ want it durable need to keep emitting LGSF v2 alongside the SC export.
 | `ext_v2.saved_chains` | inside LGX2 | engine-only | varies | Cross-character chain library. |
 | `LGX3` ext block | after LGX2 | - | varies | LGSF v3 only |
 | `ext.story_flag_bits` | inside LGX3 | `0x14C0` (`0x200` bytes) | `0x200` B | Bitmap mirrors live RAM `0x80085600..0x80085800`. `from_retail_sc_block` returns the full slice; LGSF v3 stores it with a `u16 LE` length prefix. |
+| `LGX4` ext block | after LGX3 | - | varies | LGSF v4 only |
+| `ext_v2.per_char[*].shiny_spells` | inside LGX4 | engine-only | 1 + S B / char | Spell ids learned from a shiny Seru (+35% damage). Only chars with ≥1 shiny spell are listed. Retail encodes this in the `+0x161` spell-level high bit. |
 
 ## `SC`-block-only fields the engine doesn't read
 

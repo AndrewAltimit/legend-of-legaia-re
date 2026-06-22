@@ -12,12 +12,12 @@
 <section class="doc-section" id="mechanism">
   <h2>Mechanism at a glance</h2>
   <dl class="kv">
-    <dt>Why code</dt><dd>the change can't be a data edit: a second drop the one slot can't hold; an XP grant the flee teardown never reaches</dd>
-    <dt>Host</dt><dd>a reclaimed all-zero run of <code>SCUS_942.54</code> rodata (always resident), holding the hand-assembled routine</dd>
-    <dt>Hooks</dt><dd>bonus drop - reward routine <code>0x8004F610</code> &rarr; gap <code>0x8007AB80</code>; flee-EXP - escape teardown <code>0x801E5A10</code> (battle overlay) &rarr; gap <code>0x8007AD00</code></dd>
+    <dt>Why code</dt><dd>the change can't be a data edit: a second drop the one slot can't hold; an XP grant the flee teardown never reaches; a charmed enemy no static table can flag; a persistent per-Seru bonus retail saves have no field for</dd>
+    <dt>Host</dt><dd>a reclaimed all-zero run of <code>SCUS_942.54</code> rodata (always resident), holding the hand-assembled routine - and, when the gaps fill up, additional reference-free SCUS runs. Each candidate must be verified all-zero <em>and</em> constant across runtime states <em>and</em> outside every live table (shiny Seru spreads across six such SCUS arenas)</dd>
+    <dt>Hooks</dt><dd>bonus drop - reward routine <code>0x8004F610</code> &rarr; gap <code>0x8007AB80</code>; flee-EXP - escape teardown <code>0x801E5A10</code> (battle overlay) &rarr; gap <code>0x8007AD00</code>; enemy ally - battle setup <code>0x80051990</code> &rarr; gap <code>0x8007ACA0</code> (+ a one-word victory-check widen in the battle overlay); shiny Seru - nine detours (setup / capture / grant / grant-shift / damage / menu / battle-menu / summon-fade / +35% caption) &rarr; four read-watch-verified-dead SCUS regions (<code>0x80077728</code> gap 1, <code>0x8007AE00</code> arena 1, <code>0x8007AFF8</code> arena 2, <code>0x80078A88</code> slot 6); the persistent flag lives in a parallel shiny-byte array in the character record, <em>not</em> the spell-level byte</dd>
     <dt>Detour shape</dt><dd>overwrite two instructions with <code>j routine</code> + <code>nop</code>; the routine runs the work, replays the displaced instructions, jumps back to the return address</dd>
-    <dt>Edit class</dt><dd>in-place / same-size; <strong>consumes the shared rodata gap</strong></dd>
-    <dt>Oracles</dt><dd><code>equipment_drops_real.rs</code> &middot; <code>flee_exp_real.rs</code></dd>
+    <dt>Edit class</dt><dd>in-place / same-size; <strong>consumes reclaimed rodata / table padding</strong></dd>
+    <dt>Oracles</dt><dd><code>equipment_drops_real.rs</code> &middot; <code>flee_exp_real.rs</code> &middot; <code>enemy_ally_real.rs</code> &middot; <code>shiny_seru_real.rs</code></dd>
   </dl>
 </section>
 
@@ -34,11 +34,25 @@
   <p>A monster record has exactly one drop slot, so &ldquo;also drop a rare piece of gear&rdquo; cannot be a data edit - there is nowhere to put the second item. The detour goes into the battle-end reward routine (<code>FUN_8004E568</code>) at <code>0x8004F610</code>, displacing two instructions; the gap routine at <code>0x8007AB80</code> rolls the per-battle chance, picks an equipment id from a small table appended right after it in the gap, grants it on top of the normal drop, replays the displaced pair, and returns to <code>0x8004F618</code>. The normal drop is never disturbed.</p>
   <h3>Run-away EXP - the path that grants nothing</h3>
   <p>The battle-action escape teardown (the state-machine <code>FUN_801E295C</code>, state <code>0x66</code>) tears the fight down without ever reaching an experience grant, so rewarding a successful flee needs code. The detour sits at <code>0x801E5A10</code> - inside the <strong>battle overlay</strong> - and routes to a routine in the always-resident SCUS gap at <code>0x8007AD00</code> that banks a configured percentage of the fled formation's EXP into the party. The split is deliberate: the hook lives in the overlay (reloaded each battle), but the routine lives in SCUS so it survives every overlay swap.</p>
+  <h3>Enemy ally - charm an enemy instead of adding one</h3>
+  <p>&ldquo;Have an enemy fight for you&rdquo; sounds like adding a party member, but retail battles are hard-wired to three party slots (the setup loop <code>FUN_800513F0</code> is bounded <code>&lt; 3</code>, and party meshes / HUD only exist for slots 0&ndash;2), so a genuine fourth combatant isn't possible. The trick is to reuse a state the game already has: <strong>Confuse/Charm</strong>. The action SM flips an actor's target to the opposite side when its <code>+0x16E &amp; 0x380</code> &ldquo;AI-delegated&rdquo; bits are set - the mechanism behind a confused party member attacking allies. Set the same bits on an <em>enemy</em> at battle setup and that enemy attacks the other enemies. So the gap routine is tiny: it just rolls the per-battle chance and OR-s <code>0x380</code> into the frontmost enemy's flags. The detour to it sits at <code>0x80051990</code> (in SCUS, right after the monster-setup loop, so the actor table is populated) and the routine lives at <code>0x8007ACA0</code> - the free window between the bonus-drop and flee-EXP routines.</p>
+  <p>It needs one companion edit outside the gap. The monster-wipe victory check counts a monster as &ldquo;down&rdquo; only if it is dead or non-targetable (<code>andi v0,v0,0x4</code> at <code>0x801E6638</code> in the battle overlay); a charmed-but-alive enemy would otherwise be one you still had to defeat. Widening that mask to <code>0x384</code> (a one-instruction edit) makes a <code>0x380</code>-charmed enemy also count as down, so the battle ends once the <em>real</em> enemies fall. On a solo-enemy boss the lone enemy simply turns on itself.</p>
+
+  <h3>Shiny Seru - a persistent bonus with nowhere to store it</h3>
+  <p>A &ldquo;shiny&rdquo; capturable enemy (2% per battle) is two problems at once. The first is easy: at battle setup, roll the chance and, if the frontmost enemy is capturable, multiply its stat block <code>&times;135/100</code> and stamp a free per-actor byte (<code>+0x226</code>) as a shiny marker. There's no clean &ldquo;is a Seru&rdquo; field on retail (the <code>actor+0x3e</code> byte an early pass guessed is volatile - it reads non-Seru values like <code>0x55</code> for a Gobu), so the capturable set is built <em>at patch time</em> from the disc's own monster names - every enemy named after a player Seru-magic (Gimard, Theeder, &hellip;) - baked into a 256-bit allowlist bitmap that the setup routine indexes by the first-monster id. (Subtle but vital: every injected routine has to honour the R3000 load-delay slot - a value you just loaded isn't in the register until one instruction later. The stat-boost loop reading <code>lhu</code> then immediately <code>multu</code> silently multiplied the <em>previous</em> field instead, turning the &times;1.35 into a runaway cascade until a <code>nop</code>/reorder fixed it.)</p>
+  <p>The second is the interesting one: the +35% <em>damage</em> bonus must persist <strong>after you capture the Seru</strong>, across save/load, forever. Retail's character record has no spare per-Seru field - a captured Seru is just an <code>(id, level)</code> pair. The first design leaned on a clever-looking trick: the level byte is never above 9, so its high bit <code>0x80</code> is free; OR it in at capture and the flag rides <em>inside</em> the level byte for free - through the spell-list insertion shift (each capture slides the list down) and through a memory-card save. It works for the gameplay readers, as long as <em>every</em> reader masks it: the damage scaler, the level-up <code>&lt; 9</code> gate, the level-up write-back, the menu digit. But that &ldquo;mask it everywhere&rdquo; assumption is exactly where overloading a live field bites back. The spell <em>level-up + display</em> routine (<code>FUN_800402f4</code>, shared by the post-battle results, the magic menu, and battle) reads the level unmasked and does both a <code>level &lt; 9</code> cap and a <code>(level-1)</code> table index. With the bit set the level reads <code>0x81</code>/<code>0x82</code> (129/130): the <code>&lt; 9</code> test fails so the &ldquo;grew to level N&rdquo; box renders <em>blank</em>. Masking that function too didn't fit the remaining gaps, and it's a whack-a-mole anyway - so the fix was to stop overloading the level byte at all.</p>
+  <p>The flag moved <em>out</em> of the level byte into a parallel <strong>per-spell-slot shiny-byte array</strong> in a reclaimed-free run of the character record. Now the level byte is always clean - the display reads correct levels, no masking needed anywhere - and the four level-mask routines simply disappear (the patch got <em>smaller</em>). The price is one new routine: because the array is indexed by slot, a <strong>grant-shift hook</strong> mirrors the game's insert-at-front spell-list shift onto the shiny array so each Seru keeps its flag as the list slides. The capture path writes a clean level plus the shiny byte; one scratch word links &ldquo;this enemy was shiny&rdquo; to the grant. That fixed the blank level-up box. The lesson is the technique's own caution sign: a free bit in a live field is free only if you control <em>every</em> reader - and on a sealed disc you usually don't.</p>
+  <h3>The same trap, one level down: &ldquo;zero&rdquo; is not &ldquo;dead&rdquo;</h3>
+  <p>A separate symptom shipped alongside that first version: during the victory pose, a character's mouth texture was garbled (green when open, scrambled when closed). It was first lumped in with the level-byte bug - the out-of-bounds <code>(level-1)</code> index looked like a plausible cause. But it <em>survived</em> the refactor above untouched, which was the tell: it was never the level byte. The actual cause is the gap-code technique biting its own hand. The routines themselves had been dropped into &ldquo;reference-free all-zero&rdquo; runs that were really the <strong>zero padding of two live, indexed tables</strong>: the victory mouth-override table (<code>0x80077E80</code>, addressed rows from <code>0x800781B0</code> - the per-character facial keyframes the victory animator plays) and the battle overlay's move-power table (<code>0x801F4F5C</code>). Those tables have rows/records that are all-zero for unused entries, but the game still <em>indexes</em> them at runtime. So the victory face animator dutifully read our routine bytes as facial keyframes (the garbled mouth), and six attack ids whose move-power records landed in the cave read our code as power + trail-texpage data (wrong damage, garbage effect textures). The <code>assert_zero</code> guard had passed - the bytes genuinely were zero in the clean ROM - which is exactly why &ldquo;is it zero?&rdquo; is necessary but not sufficient.</p>
+  <p>The fix relocates every routine and datum to runs verified three ways: all-zero in the clean image, <em>constant-zero across diverse in-battle save states</em> (which catches runtime scratch buffers - e.g. a name buffer that's zero in the file but holds &ldquo;Vahn&rdquo; at runtime), and <em>outside every known table</em> - a structural guard (<code>assert_not_in_tables</code> over the catalogued SCUS / overlay table ranges) that refuses any region overlapping a live table even if it reads as zero.</p>
+  <h3>The trap a third time - and the only check that actually closes it</h3>
+  <p>That guard was confidently described as making the bug &ldquo;impossible to recur.&rdquo; It recurred. The relocation moved three of the routines/data into fresh zero runs in the <code>0x80079xxx</code> region - which turned out to be the zero padding <em>inside the SsAPI sound/effect tables</em>. The guard didn't catch it for the dullest possible reason: those tables weren't <em>in</em> the denylist, because nobody had mapped them yet. The symptom was specific and baffling: the game froze only when you used an <strong>item</strong> in the tutorial fight - a Healing Leaf would announce, the HP would refill, and then the battle just&hellip; spun, forever, taking no input. No patched code was even running at the freeze (the menu/draw hooks were inert with their flag clear). The cause was data, not code: the item-use sound engine indexes a table at <code>0x800794F0</code>, and a few entries past its real end it walked straight into our capturable-Seru bitmap. It read our bytes as sound parameters, the item's sound never reported &ldquo;done,&rdquo; and the sound-synced item banner waited on it forever.</p>
+  <p>The lesson sharpens: a denylist of &ldquo;known tables&rdquo; is only ever as complete as your map of the binary, and on a sealed disc that map is never complete. The authoritative test isn't &ldquo;is this address in a table I know about?&rdquo; - it's &ldquo;does any instruction <em>read</em> this address at runtime?&rdquo; So the final placements were chosen by putting a <strong>read-watchpoint</strong> on each candidate run in a live emulator and exercising the worst cases - an item use, a victory pose, a summon cast - keeping only the runs that no instruction ever touched. Shiny's nine routines now live in four such read-watch-verified regions (<code>0x80077728</code> gap 1, <code>0x8007AE00</code> arena 1 up to the sound table at <code>0x8007AF00</code>, <code>0x8007AFF8</code> arena 2, <code>0x80078A88</code> slot 6), and the &ldquo;+35% DMG!&rdquo; caption sits one line below the native effect box instead of overlapping it. It mirrors the clean-room engine, where the same feature is just a <code>HashSet</code> of <code>(character, spell)</code> in <code>seru_learning</code> and a <code>&times;1.35</code> in the damage kernel - the gap-code version is what that idea costs on a sealed disc, including the cost of being wrong, three times, about which bytes are free.</p>
 </section>
 
 <section class="doc-section" id="gap-map">
   <h2>The contended resource</h2>
-  <p>Both routines, the unused-item name string, the engine config blob, and an overlay-loader stub all live in the same ~1&nbsp;KB run. Each tenant guards its slot as all-zero, so they compose - but the region is finite, and that ceiling is exactly why a whole interactive screen goes somewhere else.</p>
+  <p>The three routines, the unused-item name string, the engine config blob, and an overlay-loader stub all live in the same ~1&nbsp;KB run. Each tenant guards its slot as all-zero, so they compose - but the region is finite, and that ceiling is exactly why a whole interactive screen goes somewhere else.</p>
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gap-map-title">
       <title id="gap-map-title">Occupants of the shared SCUS rodata gap</title>
@@ -55,37 +69,43 @@
       <text x="20" y="22" class="gp-band">Shared SCUS rodata gap - ~1 KB, guarded all-zero (0x8007AB38 &ndash; 0x8007AF40)</text>
       <rect x="20" y="34" width="840" height="300" class="gp-frame"/>
 
-      <text x="36" y="74" class="gp-addr">0x8007AB40</text>
-      <rect x="150" y="52" width="600" height="40" class="gp-card"/>
-      <text x="166" y="70" class="gp-owner">Seru Bell name string</text>
-      <text x="166" y="85" class="gp-sub">10 bytes &middot; variant I (--unused-items)</text>
-      <text x="744" y="76" class="gp-tag">data</text>
+      <text x="36" y="68" class="gp-addr">0x8007AB40</text>
+      <rect x="150" y="46" width="600" height="40" class="gp-card"/>
+      <text x="166" y="64" class="gp-owner">Seru Bell name string</text>
+      <text x="166" y="79" class="gp-sub">10 bytes &middot; variant I (--unused-items)</text>
+      <text x="744" y="70" class="gp-tag">data</text>
 
-      <text x="36" y="130" class="gp-addr">0x8007AB80</text>
-      <rect x="150" y="108" width="600" height="40" class="gp-card"/>
-      <text x="166" y="126" class="gp-owner">Bonus-equipment routine + id table</text>
-      <text x="166" y="141" class="gp-sub">~128 bytes &middot; Tier E (--equipment-drops)</text>
-      <text x="744" y="132" class="gp-tag">code</text>
+      <text x="36" y="116" class="gp-addr">0x8007AB80</text>
+      <rect x="150" y="94" width="600" height="40" class="gp-card"/>
+      <text x="166" y="112" class="gp-owner">Bonus-equipment routine + id table</text>
+      <text x="166" y="127" class="gp-sub">~128 bytes &middot; Tier E (--equipment-drops)</text>
+      <text x="744" y="118" class="gp-tag">code</text>
 
-      <text x="36" y="186" class="gp-addr">0x8007AD00</text>
-      <rect x="150" y="164" width="600" height="40" class="gp-card"/>
-      <text x="166" y="182" class="gp-owner">Run-away-EXP routine</text>
-      <text x="166" y="197" class="gp-sub">~237 bytes &middot; Tier E (--flee-exp)</text>
-      <text x="744" y="188" class="gp-tag">code</text>
+      <text x="36" y="164" class="gp-addr">0x8007ACA0</text>
+      <rect x="150" y="142" width="600" height="40" class="gp-card"/>
+      <text x="166" y="160" class="gp-owner">Enemy-ally charm routine</text>
+      <text x="166" y="175" class="gp-sub">~76 bytes &middot; Tier E (--enemy-ally)</text>
+      <text x="744" y="166" class="gp-tag">code</text>
 
-      <text x="36" y="242" class="gp-addr">0x8007AE00</text>
-      <rect x="150" y="220" width="600" height="40" class="gp-card"/>
-      <text x="166" y="238" class="gp-owner">Overlay-loader stub</text>
-      <text x="166" y="253" class="gp-sub">groundwork</text>
-      <text x="744" y="244" class="gp-tag">code</text>
+      <text x="36" y="212" class="gp-addr">0x8007AD00</text>
+      <rect x="150" y="190" width="600" height="40" class="gp-card"/>
+      <text x="166" y="208" class="gp-owner">Run-away-EXP routine</text>
+      <text x="166" y="223" class="gp-sub">~237 bytes &middot; Tier E (--flee-exp)</text>
+      <text x="744" y="214" class="gp-tag">code</text>
 
-      <text x="36" y="298" class="gp-addr">0x8007AF00</text>
-      <rect x="150" y="276" width="600" height="40" class="gp-card"/>
-      <text x="166" y="294" class="gp-owner">Seru-trade config blob</text>
-      <text x="166" y="309" class="gp-sub">24 bytes &middot; variant J (--seru-trade) &rarr; clean-room engine</text>
-      <text x="744" y="300" class="gp-tag">data</text>
+      <text x="36" y="260" class="gp-addr">0x8007AE00</text>
+      <rect x="150" y="238" width="600" height="40" class="gp-card"/>
+      <text x="166" y="256" class="gp-owner">Overlay-loader stub</text>
+      <text x="166" y="271" class="gp-sub">groundwork</text>
+      <text x="744" y="262" class="gp-tag">code</text>
+
+      <text x="36" y="308" class="gp-addr">0x8007AF00</text>
+      <rect x="150" y="286" width="600" height="40" class="gp-card"/>
+      <text x="166" y="304" class="gp-owner">Seru-trade config blob</text>
+      <text x="166" y="319" class="gp-sub">24 bytes &middot; variant J (--seru-trade) &rarr; clean-room engine</text>
+      <text x="744" y="310" class="gp-tag">data</text>
     </svg>
-    <figcaption>Five tenants already share the gap. A sixth feature - or anything screen-sized like a new vendor UI - won't fit, which is the entire reason <a href="f-overlay-dead-region.html">tier F</a> hosts its code in a resident overlay's dead region instead of here.</figcaption>
+    <figcaption>Six tenants now share the gap (the enemy-ally routine took the last comfortable window, between the bonus-drop and flee-EXP routines). Anything more - or anything screen-sized like a new vendor UI - won't fit, which is the entire reason <a href="f-overlay-dead-region.html">tier F</a> hosts its code in a resident overlay's dead region instead of here.</figcaption>
   </figure>
 </section>
 
@@ -94,6 +114,7 @@
   <ul>
     <li><strong>Bonus equipment drops</strong> (<code>--equipment-drops</code>) - an additive drop the one record slot can't encode.</li>
     <li><strong>Run-away EXP</strong> (<code>--flee-exp</code>) - a reward the escape path never grants on its own.</li>
+    <li><strong>Enemy ally (charm)</strong> (<code>--enemy-ally</code>) - flips an existing enemy onto your side by setting its Confuse/Charm bits at battle setup; no static table flags a charmed enemy. Pairs the gap routine with a one-word victory-check widen in the battle overlay.</li>
   </ul>
   <p class="hint">Adding a tier-E mod: confirm a reclaimable all-zero gap (and that it fits your routine), find a hook site at the right control-flow moment, preserve the displaced instructions, guard every write as dead space, and add a disc-gated oracle. If your routine is screen-sized, you've outgrown the gap - go to <a href="f-overlay-dead-region.html">tier F</a>.</p>
 </section>

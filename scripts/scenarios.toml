@@ -2036,3 +2036,67 @@ expected_game_mode = 0x15
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
+
+# ----------------------------------------------------------------------
+# Multi-enemy active battle with the enemy-ally "charm" randomizer on a
+# disc patched at --enemy-ally-pct 100: a Gobu Gobu (charmed: +0x16E has
+# the AI-delegated bits 0x380, so it fights the player's side) alongside a
+# normal Slime. The one clean *multi-enemy* battle anchor in the corpus -
+# the only other live battle state, party_battle_gobu_gobu, is solo, so it
+# can't show a charmed enemy striking a packmate. game_mode 0x15.
+# LIBRARY-ONLY (slot 255): resolves via backup_fingerprint; the bytes are
+# from a charm-patched image and stay local + gitignored.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 255
+label = "enemy_ally_charm_gobu_slime"
+ram_fingerprint_sha256 = "436da14abfeb3dff03854e90ae55fa0260b7d355c142d8cac0d99de943eeee96"
+backup_fingerprint = "be8e1ef7a6073b255ee3114d78935561dc12791ac2f950f7d489940649653afc"
+description = "Multi-enemy battle (Gobu Gobu charmed via the enemy-ally 0x380 bits + a normal Slime) on an --enemy-ally-pct 100 patched disc; the charmed Gobu attacks the Slime. game_mode 0x15 BattleMode."
+topics = ["enemy ally", "charm", "0x380", "AI-delegated", "multi-enemy", "battle", "BattleMode", "randomizer"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+# ----------------------------------------------------------------------
+# Post-REFACTOR validation captures (shiny flag moved out of the spell-level
+# byte into the parallel +0x1C0 shiny-byte array). A FRESHLY captured shiny
+# Gimard on legaia_shiny_100 - confirms the new encoding works end to end:
+# partial summon transparency, "+35% DMG!" text, correct level (no Lv 129),
+# and a correctly-rendering "grew to level" message. These supersede the
+# old-encoding captures above for regression-checking the refactor.
+# LIBRARY-ONLY (slot 255): resolves via backup_fingerprint; shiny-patched
+# image bytes stay local + gitignored.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 255
+label = "shiny_refactor_gimard_precast"
+pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate1"
+backup_fingerprint = "4642e41b3dfcd5f397c9bd9c973f8b429ceea58c0026500eb0ec5e03dd9d02dc"
+description = "Fresh-captured shiny Gimard (new +0x1C0 shiny-byte encoding), frame just before its first Burning Attack cast. Validates the post-refactor storage (clean level byte, shiny byte set). game_mode 0x15."
+topics = ["shiny seru", "refactor", "Gimard", "shiny byte", "battle", "randomizer"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 255
+label = "shiny_refactor_gimard_plus35"
+pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate2"
+backup_fingerprint = "3fdb3fcd08da20222ae42d9605cce88673262e1660265cabdb542ae9842457b8"
+description = "Fresh-captured shiny Gimard mid-cast with the '+35% DMG!' text on screen + partial summon transparency, post-refactor. game_mode 0x15."
+topics = ["shiny seru", "refactor", "Gimard", "+35%", "transparency", "battle", "randomizer"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+slot = 255
+label = "shiny_refactor_gimard_levelup"
+pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate3"
+backup_fingerprint = "e291b758439059bdc5bf6d14ea73c88b3201bd0b7b141f2bc582e02d380e6411"
+description = "Fresh-captured shiny Gimard Seru level-up, post-refactor - the 'grew to level' message renders correctly (the pre-refactor blank-box bug is fixed; level is correct, not Lv 129). game_mode 0x15."
+topics = ["shiny seru", "refactor", "Gimard", "level up", "battle", "randomizer"]
+phase = "battle"
+expected_game_mode = 0x15

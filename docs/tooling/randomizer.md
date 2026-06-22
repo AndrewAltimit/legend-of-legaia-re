@@ -122,6 +122,8 @@ legaia-rando randomize --input DISC.bin --seed brutal --monster-stats shuffle \
     --move-power shuffle --element-affinity shuffle --spell-cost shuffle    # battle-tuning shuffle
 legaia-rando randomize --input DISC.bin --seed gear --drops shuffle --equipment-drops   # +low-chance bonus gear drop
 legaia-rando randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
+legaia-rando randomize --input DISC.bin --seed pal --enemy-ally                         # 20% chance an enemy fights on your side
+legaia-rando randomize --input DISC.bin --seed pal --shiny-seru                         # 2% chance a capturable enemy is shiny (+35% stats / captured-Seru damage)
 legaia-rando randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (clean-room engine UI)
 legaia-rando randomize --input DISC.bin --seed mart --shops shuffle --casino shuffle
 legaia-rando randomize --input DISC.bin --seed 0xC0FFEE --drops random \
@@ -137,7 +139,9 @@ legaia-rando verify    --input DISC.bin --patch run.ppf       # apply + sanity-c
 `randomize` plans the run, applies it to an in-memory copy of the disc, diffs
 the result against the original, and writes the changes as a **PPF 3.0** patch
 (default `<input>.ppf`). `--output` also writes a full patched `.bin` for local
-play. The seed is resolved from a number or a hashed string and always printed,
+play, plus a matching single-track Mode 2/2352 `.cue` beside it (so emulators
+that reject a bare BIN - e.g. mednafen on a >64 MiB image - can open it
+directly). The seed is resolved from a number or a hashed string and always printed,
 so a run reproduces exactly; the same seed yields a byte-identical patched image
 and PPF. `--drops`, `--encounters`, `--chests`, `--shops`, `--casino`,
 `--steals`, `--arts`, `--doors`, `--monster-stats`, `--move-power`,
@@ -151,7 +155,13 @@ grants one extra random equipment piece on a low per-battle chance
 (see [Equipment drops](#equipment-drops)); `--flee-exp` injects a code hook into
 the battle-action escape teardown so a successful run banks `--flee-exp-pct`%
 (default 5) of the fled fight's experience into the party (see
-[Run-away EXP](#run-away-exp)); `--seru-trade` embeds a config so the clean-room
+[Run-away EXP](#run-away-exp)); `--enemy-ally` injects a code hook into battle
+setup so that, with `--enemy-ally-pct`% chance (default 20), a random enemy is
+charmed onto the party's side as an uncontrolled ally, in multi-enemy fights (see
+[Enemy ally (charm)](#enemy-ally-charm)); `--shiny-seru` injects code hooks so
+that, with `--shiny-pct`% chance (default 2), a capturable enemy spawns as a rare
+shiny variant (+35% stats) whose captured Seru deals +35% damage forever (see
+[Shiny Seru](#shiny-seru)); `--seru-trade` embeds a config so the clean-room
 engine lets vendors swap one of a character's seru for another, reseeding every
 two in-game hours (`--seru-trade-offers N` caps offers per vendor; see
 [Seru trading](#seru-trading));
@@ -445,6 +455,182 @@ default in the web Balanced / Full Chaos presets.
 > displaced pair; the detour + routine decode as the hand-assembled code; each
 > edit is surgical and EDC/ECC-valid; the build guard refuses an unknown layout)
 > plus an emulator playtest.
+
+### Enemy ally (charm)
+
+`--enemy-ally` gives a per-battle chance (`--enemy-ally-pct`%, default **20**)
+that a random enemy fights on the **player's** side as an uncontrolled ally - a
+guest-character-style helper that appears in **multi-enemy** fights
+(`enemy_ally` module). The routine reads `DAT_8007BD0C[1]` (the 2nd formation
+slot) and skips charm when it is zero, so single-enemy fights are left alone:
+charming the lone enemy of an *input-gated* tutorial (the Tetsu sparring match,
+monster id `0x4F`) softlocks the scripted fight - it waits for the enemy that is
+now an ally - and solo story bosses are likewise scripted set-pieces. (Pinned
+from a live softlock: PCSX-Redux slot on the Tetsu tutorial showed the lone enemy
+actor with `+0x16E = 0x380` and the battle SM stalled.) Multi-enemy fights are
+the random encounters where an uncontrolled ally is the intended, safe effect.
+
+A genuine 4th player-side combatant is infeasible: retail battles are hard-wired
+to 3 party slots + up to 4 monster slots (`FUN_800513F0`; party meshes/CLUTs/HUD
+exist only for slots 0..2). So instead this rides a mechanic the game already
+implements - the **"AI-delegated" flag**. Setting an actor's `+0x16E |= 0x380`
+makes the action SM `FUN_801E295C` call the retarget helper `FUN_801E7320` at
+ActionSeed, which **flips that actor's target to the opposite side**; for a
+*monster*, the flip means it attacks the *other monsters*. The monster AI picker
+`FUN_801E9FD4` already honours `0x380` (plain attacks, no scripted specials), so
+"an enemy assists you" is just "set `0x380` on one monster at battle setup".
+
+Two same-size SCUS edits plus a one-word overlay edit (`apply::inject_enemy_ally`):
+
+1. a **setup detour** at `FUN_800513F0` `0x80051990` (right after the monster
+   loop, so the actor table + enemy count are populated) into a routine in the
+   preserved rodata gap at `0x8007ACA0` - the free window between the
+   equipment-drop routine+table (`0x8007AB80`..`0x8007ACA0`) and the flee-EXP
+   routine (`0x8007AD00`), so every gap feature coexists. The routine rolls the
+   chance and OR's `0x380` into the frontmost enemy (actor slot 3, `0x801C937C`,
+   always present), then replays the displaced pair and returns;
+2. a **victory-mask widen** in battle-action overlay 0898 at `0x801E6638`
+   (`andi v0,v0,0x4` -> `andi v0,v0,0x384`), so a `0x380`-charmed monster counts
+   as "down" in the monster-wipe gate (state `0x5A`) and the player doesn't have
+   to defeat their own ally to win.
+
+The planner guards on the SCUS hook words, the routine landing zone being all-zero
+dead space, and the overlay victory word matching the known `andi v0,v0,0x4` -
+refusing a differently-laid-out image rather than corrupting it. On a solo-enemy
+boss the lone enemy turns on itself. (Side effect: while on, a vanilla
+*confuse*-on-an-enemy - which also sets `0x380` - likewise stops counting toward
+"enemies remaining".) On by default in the web Balanced / Full Chaos presets.
+
+> Like the other code hooks, the clean-room engine can't execute injected MIPS, so
+> this has no engine runtime oracle. It is verified by the byte/disassembly checks
+> in `enemy_ally_real` (the real disc's hook site **is** `lui v1,0x8008` /
+> `lbu v1,-0x42f4(v1)` and the victory site **is** `andi v0,v0,0x4`; the detour +
+> routine decode as the hand-assembled code; it composes with flee-EXP in the same
+> gap; each edit is surgical and EDC/ECC-valid) plus an emulator playtest.
+
+### Shiny Seru
+
+`--shiny-seru` gives a per-battle chance (`--shiny-pct`%, default **2**) that the
+frontmost **capturable** enemy spawns as a rare *shiny* variant: +35% combat
+stats at battle load (and a translucent render), and the Seru you capture from it
+deals **+35% damage** on every future cast (on top of its normal abilities),
+permanently (`shiny_seru` module). Two cosmetics ride along: on a shiny cast the
+summoned creature renders semi-transparent and a "+35% DMG!" caption is shown one
+glyph line **below** the native "Magic effect:" announcement box (so they stack
+instead of overlapping). This mirrors the clean-room engine implementation
+(`legaia_engine_core::seru_learning`'s shiny set + `SHINY_DAMAGE_BONUS_PCT`).
+
+"Capturable" is decided by indexing the **first-monster id global**
+(`DAT_8007BD0C`, reliably set before the setup hook - the game's own `0xB5` check
+reads it) into a 256-bit **allowlist bitmap** built *at patch time* from the
+disc's monster names that match a player Seru-magic name (`capturable_monster_ids`
+/ `SERU_NAMES`: Gimard / Theeder / Vera / Gizam / Nighto / Zenoir / Viguro /
+Swordie / Orb / Freed / Nova + variants = 33 ids). The earlier `actor+0x3e` idea
+was wrong - that byte is volatile (reads 0x55 for gobu) and isn't a Seru flag.
+The persistent +35% is stored in a **parallel per-spell-slot shiny-byte array** at
+`record+0x1C0` (`0x788` from the runtime `+0x729` base; a 32-byte run verified
+all-zero/unused across 228 record samples and inside the saved record footprint).
+The flag lives there, **not** in the spell-level byte's free `0x80` bit. That
+earlier design (OR `0x80` into the level byte) worked for the gameplay readers but
+leaked into the shared spell-level-up + display function `FUN_800402f4`, which
+reads the level *unmasked* and does a `level < 9` cap + `(level-1)` table index:
+with the bit set the level reads 129/130, so the "grew to level" message rendered
+blank and the out-of-bounds index corrupted a victory-pose texture. Masking that
+function too didn't fit the gaps, so the flag was moved out entirely - now the
+level byte is always clean and no display masking is needed. Because the array is
+slot-indexed, a **grant-shift hook** mirrors the spell-list insert-at-front shift
+onto it so each Seru keeps its flag; the byte is inside the saved record so it
+survives a memory-card save. (Every injected routine honours the R3000 load-delay
+slot - a just-loaded register is never used by the next instruction, else the
+value isn't ready yet; the boost loop in particular cascades into garbage without
+this.)
+
+**Where the routines live - and the "zero is not dead" trap (three times).** Every
+routine is reached by a two-word `j routine` + `nop` detour and lives in
+`SCUS_942.54`-resident dead space. "Dead" is a runtime property, not a file-byte
+one: a zero run is usable **only if no code reads it**. This bit the feature three
+times, each time `assert_zero` passing because the bytes *are* zero:
+
+1. The victory mouth-override table (`ART_MOUTH_VA = 0x80077E80`, `FUN_8004C7B4`;
+   rows `0x800781B0..`) - the victory face animator read routine bytes as facial
+   keyframes (**corrupted mouth**).
+2. The move-power table (`0x801F4F5C`, records 4..8 zero) - six move ids
+   (`0x07/0x12..0x15/0x19`) read them as move-power records (**garbage damage**).
+3. The **`0x80079xxx` SsAPI sound/effect tables** - the item-use sound engine
+   indexes a table at `0x800794F0` (read by `FUN_8005d0b8`) straight into the old
+   arena5 bitmap, so using a Healing Leaf read our bytes as garbage and the
+   sound-synced item banner never dismissed (**the Tetsu-tutorial Healing-Leaf
+   freeze**). The old arena3 `0x8007075C` and arena4 `0x80079340` were in the same
+   live cluster.
+
+The fix relocates everything to regions verified (a) all-zero in the clean image,
+(b) constant-zero across battle states, (c) **outside every known table** (the
+structural `assert_not_in_tables` guard over `SCUS_TABLE_RANGES` /
+`OVERLAY_TABLE_RANGES`, now extended with the SsAPI sound-table ranges), and -
+the part a static check can't prove - (d) **read-watch-verified unreferenced on a
+live PCSX-Redux battle** (item use, victory pose, AND a summon cast). Same
+"looks-dead-but-isn't" lesson as the level byte and `+0x1C0`; see also
+[Dead-code claims overstated]. The final regions: gap 1 `0x80077728` (scratch +
+setup B + capture C1 + the capturable bitmap + `SHINY_CAST_FLAG` byte + "+35%
+DMG!" string), arena 1 `0x8007AE00` (damage D / grant C2 / grant-shift K2 /
+battle-menu stamper H / field-menu colour F; the SsAPI I/O table begins exactly at
+`0x8007AF00`, read-watch-confirmed, so all 256 bytes below are usable), arena 2
+`0x8007AFF8` (+35% caption routine J, a dead pocket between two SsAPI tables), and
+slot 6 `0x80078A88` (summon-fade K, a read-watch-verified padding gap between the
+`0x80078xxx` tables).
+
+**Routine VAs must be 4-byte aligned.** A routine is reached by a `j routine`
+detour, and the `j` encoding drops the target's low 2 bits - so an unaligned entry
+jumps 2-3 bytes into garbage and crashes. The zero-run scan returns run *starts*
+that are frequently unaligned (a run begins right after the prior non-zero byte),
+so each routine VA is rounded up to a word boundary; only byte-addressed data
+(arena 5) may sit unaligned. (Pinned from a Tetsu-tutorial freeze: an earlier
+relocation left J/F/H at unaligned arena starts and the banner detour `j 0x8007AFF6`
+jumped to `0x8007AFF4`. `place` now refuses an unaligned routine VA.)
+
+`apply::inject_shiny_seru` performs **nine** same-size detours:
+
+1. **setup** (`FUN_800513F0` `0x80051A20`) - roll the chance; if the frontmost
+   enemy's monster id is set in the capturable bitmap, boost its stat block
+   `×135/100` and stamp the free per-actor byte `+0x226` as a shiny marker
+   (it renders the enemy translucent);
+2. **capture-success** (`0x801EE2E8`) - stash the captured enemy's `+0x226`
+   marker into a scratch word (the captured-enemy actor isn't reachable at the
+   grant site, so the link is carried here);
+3. **grant** (`FUN_801E92DC` `0x801E93B4`) - write a **clean** level byte plus
+   the slot-0 **shiny byte** (`+0x788`, `0x80` when the scratch says shiny);
+4. **grant-shift** (`FUN_801E92DC` `0x801E9320`) - mirror the insert-at-front
+   spell-list shift onto the shiny-byte array so it stays slot-aligned;
+5. **damage** (`FUN_801dd864` `0x801DDB08`) - read the matched slot's shiny byte
+   (`+0x788`); when set, multiply the summon-damage roll `×135/100` (the clean
+   level still feeds the normal `(level-1)/8` math);
+6. **menu** (`FUN_801d2e74` `0x801D2FA0`, overlay 0899) - read the shiny byte to
+   tint the spell-list level digit (no masking - the digit is already correct);
+7. **battle-menu** (`FUN_801d0748` `0x801D1B00`) - read the shiny byte to stamp a
+   `SHINY_CAST_FLAG` the cosmetics consume;
+8. **summon-fade** (`FUN_8004a908` `0x8004AD0C`) - override the summon actor's
+   draw-time fade so the creature renders semi-transparent on a shiny cast;
+9. **+35% text** (`FUN_80031d00` `0x800321D4`) - on a shiny cast, point the cast
+   caption at a "+35% DMG!" string and drop its Y to `0x1E` so it lands one line
+   below the native effect box instead of overlapping it.
+
+The planner guards every hook's fingerprint word, requires all routine regions to
+be all-zero dead space, **and** refuses any region that overlaps a known live
+table - so a differently-laid-out image (or a region that looks dead but is an
+indexed table) is rejected rather than corrupting the disc. On by default in the web Full Chaos / Balanced presets. **Applies to Seru
+captured *after* patching** - the shiny byte is set at the (post-patch) capture,
+so a Seru already captured on an unpatched save isn't retroactively shiny.
+
+> Like the other code hooks, the clean-room engine can't execute injected MIPS,
+> so the disc path has no engine runtime oracle - it's verified by the
+> byte/disassembly checks in `shiny_seru_real` (all nine hooks match the known
+> US build, every detour becomes `j routine` + nop, the injection is surgical and
+> EDC/ECC-valid, it composes with enemy-ally, byte-deterministic, and the build
+> guards refuse a corrupted hook / non-dead region) plus an emulator playtest
+> (fresh capture: translucent summon, +35% text, correct level, working level-up
+> message). The *behaviour* is covered on the engine side by
+> `legaia-engine-core`'s `shiny_*` tests (roll/boost, capture marking, +35%
+> damage, LGSF v4 persistence).
 
 ### Seru trading
 
@@ -1196,6 +1382,8 @@ bit-for-bit.
 | `crates/rando` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
 | `crates/rando` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/rando` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
+| `crates/rando` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
+| `crates/rando` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |

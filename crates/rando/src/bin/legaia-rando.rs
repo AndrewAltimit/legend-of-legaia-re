@@ -201,6 +201,31 @@ struct RandomizeArgs {
     /// (only with `--flee-exp`).
     #[arg(long, default_value_t = legaia_rando::flee_exp::DEFAULT_PCT)]
     flee_exp_pct: u8,
+    /// With `--enemy-ally-pct`% probability per battle, **charm a random enemy**
+    /// onto the party's side as an uncontrolled ally (a same-size code hook into
+    /// battle setup that sets the AI-delegated bits on the frontmost enemy, plus a
+    /// one-word widen of the victory check so the ally isn't an enemy you must
+    /// defeat). Fires only in **multi-enemy** fights - single-enemy fights (every
+    /// input-gated tutorial and solo boss) are skipped, since charming the lone
+    /// enemy of a scripted fight softlocks it.
+    #[arg(long, default_value_t = false)]
+    enemy_ally: bool,
+    /// Per-battle percentage chance an enemy is charmed (only with `--enemy-ally`).
+    #[arg(long, default_value_t = legaia_rando::enemy_ally::DEFAULT_PCT)]
+    enemy_ally_pct: u8,
+    /// With `--shiny-pct`% probability per battle, the frontmost **capturable**
+    /// enemy spawns as a rare **shiny** variant: +35% stats (translucent), and the
+    /// Seru you capture from it deals +35% damage forever, with a translucent
+    /// summon + a "+35% DMG!" cast caption (a same-size code hook into battle
+    /// setup + the capture/damage/draw paths; the persistent shiny flag is a
+    /// parallel per-spell byte at `record+0x1C0`, and every injected routine lives
+    /// in verified-dead SCUS space outside all live tables).
+    #[arg(long, default_value_t = false)]
+    shiny_seru: bool,
+    /// Per-battle percentage chance a capturable enemy is shiny (only with
+    /// `--shiny-seru`).
+    #[arg(long, default_value_t = legaia_rando::shiny_seru::DEFAULT_PCT)]
+    shiny_pct: u8,
     /// Let vendors offer to **trade** one of a character's seru for a different
     /// seru. Embeds an enabled flag + the run's seed in `SCUS_942.54`; the
     /// clean-room engine renders the trade UI and reseeds each vendor's offers
@@ -435,7 +460,9 @@ struct RandomizeArgs {
     #[arg(long)]
     patch: Option<PathBuf>,
     /// Also write a full patched disc-image copy here (contains Sony bytes -
-    /// for local play only, never redistribute).
+    /// for local play only, never redistribute). A matching `.cue` is written
+    /// beside it (single-track Mode 2/2352) so emulators that won't load a bare
+    /// BIN - e.g. mednafen rejects a >64 MiB BIN - can open the image directly.
     #[arg(long)]
     output: Option<PathBuf>,
     /// Write a reproducibility manifest (seed + options + change summary) here.
@@ -1234,6 +1261,40 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("flee_exp = false".to_string());
     }
 
+    // Enemy ally ("charm"): a code hook in battle setup flags the frontmost enemy
+    // with the AI-delegated bits so it fights for the party (works on bosses), and
+    // a one-word widen of the victory check keeps it from being an enemy you must
+    // defeat.
+    if args.enemy_ally {
+        let report = apply::inject_enemy_ally(&mut patcher, args.enemy_ally_pct)?;
+        println!(
+            "enemy-ally: {}% chance per battle a random enemy fights on your side",
+            report.pct
+        );
+        manifest.push("enemy_ally = true".to_string());
+        manifest.push(format!("enemy_ally_pct = {}", report.pct));
+    } else {
+        manifest.push("enemy_ally = false".to_string());
+    }
+
+    // Shiny Seru: a code hook in battle setup boosts a rare capturable enemy's
+    // stats +35% and marks it; the capture/damage hooks flag the captured Seru
+    // (persistent byte at record+0x1C0, kept off the level byte so the Seru still
+    // levels up + displays normally) so its spell deals +35% damage forever.
+    // Routines live in verified-dead SCUS arenas outside every live table.
+    if args.shiny_seru {
+        let report = apply::inject_shiny_seru(&mut patcher, args.shiny_pct)?;
+        println!(
+            "shiny-seru: {}% chance per battle a capturable enemy is shiny (+35% stats, \
+             +35% damage when captured)",
+            report.pct
+        );
+        manifest.push("shiny_seru = true".to_string());
+        manifest.push(format!("shiny_pct = {}", report.pct));
+    } else {
+        manifest.push("shiny_seru = false".to_string());
+    }
+
     // Seru trading: embed an enabled flag + the run's seed so the clean-room
     // engine can offer vendor seru-for-seru swaps (offers reseed every two
     // in-game hours from this seed). A plain data write; inert on real hardware.
@@ -1753,6 +1814,16 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             "patched image: {} (contains Sony bytes - do not redistribute)",
             out.display()
         );
+        // Emit a matching .cue next to the image so emulators that won't load a
+        // bare BIN (e.g. mednafen rejects >64 MiB BIN) can open it directly.
+        let cue_path = out.with_extension("cue");
+        let bin_name = out
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "disc.bin".to_string());
+        std::fs::write(&cue_path, cue_contents(&bin_name))
+            .with_context(|| format!("write {}", cue_path.display()))?;
+        println!("cue sheet:     {}", cue_path.display());
     }
 
     if let Some(mpath) = &args.manifest {
@@ -1764,6 +1835,14 @@ fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// A single-track Mode 2/2352 CUE sheet pointing at `bin_name` (the patched
+/// image's file name). The randomizer only operates on Mode 2/2352 PSX discs, so
+/// the one-track layout matches the source disc; `bin_name` is bare (no path) so
+/// the CUE stays valid as long as it sits beside the image.
+fn cue_contents(bin_name: &str) -> String {
+    format!("FILE \"{bin_name}\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n")
 }
 
 /// Apply a PPF to a copy of the disc and confirm the result still parses.
@@ -1801,6 +1880,33 @@ fn with_extension(input: &Path, ext: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cue_points_at_the_bare_bin_name_as_mode2_2352() {
+        let cue = cue_contents("legaia_enemy_ally_100.bin");
+        assert_eq!(
+            cue,
+            "FILE \"legaia_enemy_ally_100.bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n"
+        );
+        // The quoted FILE name has no directory component - the cue must sit
+        // beside the image (the MODE2/2352 token's slash is fine).
+        let file_line = cue.lines().next().unwrap();
+        assert!(!file_line.contains('/'));
+    }
+
+    #[test]
+    fn output_cue_path_swaps_the_extension() {
+        let out = Path::new("/tmp/some dir/patched.bin");
+        assert_eq!(
+            out.with_extension("cue"),
+            Path::new("/tmp/some dir/patched.cue")
+        );
+        assert_eq!(
+            out.file_name().unwrap().to_string_lossy(),
+            "patched.bin",
+            "cue FILE uses the bare image name, not the full path"
+        );
+    }
 
     #[test]
     fn seed_resolution_is_stable_and_parses_numbers() {
