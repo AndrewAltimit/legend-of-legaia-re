@@ -1,11 +1,11 @@
 //! Disc-gated end-to-end test for the monster combat-stat randomizer: shuffle
-//! the per-monster HP / MP / ATK / DEF / AGL / SPD across the `battle_data`
+//! the per-monster HP / MP / ATK / DEF / INT / SPD across the `battle_data`
 //! archive (PROT entry 867) on a scratch copy of the disc, then re-decode the
 //! patched archive straight off the patched image and confirm the edit is
 //! faithful:
 //!
 //! - each stat column's multiset is preserved (a shuffle is a 1:1 reassignment);
-//! - the un-randomized fields (spirit/SP, drop, exp, gold, name, element) are
+//! - the un-randomized fields (AGL gauge, drop, exp, gold, name, element) are
 //!   byte-untouched on every monster;
 //! - every monster slot stays exactly `0x14000` bytes (so no LBA moves);
 //! - a fixed seed reproduces the patched image byte-for-byte.
@@ -39,7 +39,7 @@ fn columns(recs: &[monster_archive::MonsterRecord]) -> [Vec<u16>; FIELD_COUNT] {
             r.attack(),
             r.defense_high(),
             r.defense_low(),
-            r.agility(),
+            r.intelligence(),
             r.speed(),
         ];
         for (c, v) in cols.iter_mut().zip(vals) {
@@ -104,7 +104,7 @@ fn shuffle_monster_stats_round_trips_on_disc() {
             continue;
         }
         let r = a.get(&b.id).expect("monster present after patch");
-        assert_eq!(r.stats[0], b.stats[0], "id {}: spirit/SP changed", b.id);
+        assert_eq!(r.stats[0], b.stats[0], "id {}: AGL gauge changed", b.id);
         assert_eq!(r.drop_item, b.drop_item, "id {}: drop changed", b.id);
         assert_eq!(
             r.drop_chance_pct, b.drop_chance_pct,
@@ -131,7 +131,7 @@ fn shuffle_monster_stats_round_trips_on_disc() {
             r.attack(),
             r.defense_high(),
             r.defense_low(),
-            r.agility(),
+            r.intelligence(),
             r.speed(),
         ]
     };

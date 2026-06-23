@@ -27,12 +27,13 @@
 //!                           ;    FUN_80049858 / FUN_800495C8). NOT XP/drop.
 //! +0x08  u32  ptr3          ; -> shared resource pointer (fixed up at load)
 //! +0x0C  u16  hp            ; -> actor +0x14C/+0x14E/+0x172
-//! +0x0E  u16  stat0=SP      ; -> actor +0x154/+0x156  (spirit/action gauge)
+//! +0x0E  u16  stat0=AGL     ; -> actor +0x154/+0x156  (agility / action gauge,
+//!                           ;    cur+base; spent per action, reset each round)
 //! +0x10  u16  mp            ; -> actor +0x150/+0x152/+0x174
 //! +0x12  u16  stat1=ATK     ; -> actor +0x158/+0x15A  (attacker offense)
 //! +0x14  u16  stat2=DEF_hi  ; -> actor +0x15C/+0x15E  (defender defense A)
 //! +0x16  u16  stat3=DEF_lo  ; -> actor +0x160/+0x162  (defender defense B)
-//! +0x18  u16  stat4=AGL     ; -> actor +0x168/+0x16A  (accuracy/evasion)
+//! +0x18  u16  stat4=INT     ; -> actor +0x168/+0x16A  (accuracy/evasion seed)
 //! +0x1A  u16  stat5=SPD     ; -> actor +0x164/+0x166  (turn-order speed)
 //! +0x1D  u8   element       ; element id 0..7; read record-DIRECT by affinity scale
 //!                           ; FUN_801dd864 (record-ptr table 0x801C9348, NOT copied to actor)
@@ -64,9 +65,10 @@
 //!   `0x22` are the attack-approach family the action SM resolves by
 //!   first-byte search (`FUN_80050E2C`: pre-approach / close-in / victory);
 //!   `0x23` (`'#'`) is a special category.
-//! - `+0x74` (u8) - **SP (spirit) cost**. The enemy-AI spell picker only
-//!   considers a spell when `cost != 0xFF` and the actor's current SP
-//!   (`+0x154`) is `>= cost`, then subtracts it on cast. `0xFF` = unavailable.
+//! - `+0x74` (u8) - **AGL (action) cost**. Every battle action draws down the
+//!   actor's AGL gauge; the enemy-AI spell picker only considers a spell when
+//!   `cost != 0xFF` and the actor's current AGL (`+0x154`) is `>= cost`, then
+//!   subtracts it on cast. `0xFF` = unavailable.
 //! - `+0x04` / `+0x08` (u32) - on disc these are **1-based indices** (`0` =
 //!   none), not pointers. Each indexes the per-block **effect-offset table**
 //!   that immediately follows the `+0x4C` spell-offset array (table word base
@@ -82,11 +84,12 @@
 //!   `+0x04`" were wrong twice over: they are indices (max observed `0x0A`), and
 //!   the target is a small descriptor, not TMD geometry.
 //!
-//! ## Stat-name mapping (traced from `FUN_80054CB0` + the formula consumers)
+//! ## Stat-name mapping
 //!
+//! The stat names match the game's own labels and the fan bestiaries (AGL /
+//! INT / SPD), cross-checked against the runtime consumer each value feeds.
 //! `FUN_80054CB0` copies each record halfword into a **pair** of adjacent
-//! actor halfwords (a working value at the lower offset + a base at `+2`).
-//! Naming follows the consumers of those actor slots:
+//! actor halfwords (a working value at the lower offset + a base at `+2`):
 //!
 //! - `stat1` (`+0x12`) is the **attacker's offensive value** in the
 //!   physical-damage routine (`overlay_battle_action_801ec3e4`, actor `+0x158`)
@@ -95,25 +98,34 @@
 //!   the routine picks one or the other by the attack's move index (`+0x15C`
 //!   vs `+0x160`), and the "Defense Up" buff raises both together -> the
 //!   two-facet **defense pair** (`MonsterDef::udf` / `ldf`).
-//! - `stat4` (`+0x18`) seeds the **accuracy/evasion** roll (`FUN_800402F4`
-//!   selector 9, actor `+0x168`) -> **AGL**.
+//! - `stat0` (`+0x0E`) is the **AGL / agility (action) gauge** (actor `+0x154`
+//!   current, `+0x156` base). Confirmed in-game: the "Power Up" buff prints
+//!   *"<enemy>'s agility increased!"* and raises this cur/base pair
+//!   (live-RAM-verified by Zetopheonix). Every action draws it down; the enemy
+//!   AI only queues an action whose `+0x74` cost it can still afford
+//!   (`overlay_0898_801e9fd4`), and it resets to base each round
+//!   (`overlay_battle_action_801d88cc`; the "Spirit"/charge state raises the
+//!   reset value via the `(base*7/5)+8` cap-288 shape). This is the gauge fan
+//!   bestiaries call **AGL** (30 AGL ~= one extra command slot); earlier notes
+//!   mislabeled it "SP / spirit".
+//! - `stat4` (`+0x18`) is the **INT** stat (the curated `enemies.toml` `int`
+//!   column byte-matches it; see `gamedata/tests/enemy_stats_vs_disc`).
+//!   Meth962's walkthrough: INT governs **magical damage and defense against
+//!   magic** - and the summon/arts damage kernel (`FUN_801dd0ac`) confirms it,
+//!   reading the attacker's INT as a damage term and the defender's INT as a
+//!   mitigation term; it also seeds the **accuracy/evasion** roll (`FUN_800402F4`
+//!   selector 9, actor `+0x168`). Earlier notes mislabeled it "AGL".
 //! - `stat5` (`+0x1A`) seeds the per-turn **initiative roll**
 //!   (`+0x16C = stat5 + rand(0..stat5/2) + 1` in `overlay_0897_801e23ec`),
 //!   has a dedicated "Speed Up" buff, and resets to base each round -> **SPD**
 //!   (turn-order speed).
-//! - `stat0` (`+0x0E`) is the actor's **SP / spirit-action gauge** (actor
-//!   `+0x154` current, `+0x156` base): the AI spends it picking spells
-//!   (`overlay_0898_801e9fd4` deducts each spell's `+0x74` cost), it
-//!   regenerates to base each round, and the spirit-charge value derives from
-//!   it via the `(base*7/5)+8` cap-288 shape (`overlay_battle_action_801d88cc`).
-//!   Corroborates the HP/MP/SP-triplet reading in `docs/subsystems/battle.md`.
 //!
 //! Use the named accessors ([`attack`](MonsterRecord::attack) /
 //! [`defense_high`](MonsterRecord::defense_high) /
 //! [`defense_low`](MonsterRecord::defense_low) /
 //! [`agility`](MonsterRecord::agility) / [`speed`](MonsterRecord::speed) /
-//! [`spirit`](MonsterRecord::spirit)); [`stats`](MonsterRecord::stats) keeps
-//! all six in raw record order.
+//! [`intelligence`](MonsterRecord::intelligence)); [`stats`](MonsterRecord::stats)
+//! keeps all six in raw record order.
 //!
 //! ## Battle-load stat boost
 //!
@@ -127,11 +139,11 @@
 //!
 //! | stat | gate-set profile (B) | gate-clear profile (A) |
 //! |---|---|---|
-//! | `attack` (ATK)        | `+= atk >> 2` (`×5/4`) | unchanged |
-//! | `defense_high` (UDF)  | `× 2`                  | `+= (udf>>1)+(udf>>2)` (`×7/4`) |
-//! | `defense_low` (LDF)   | `× 2`                  | `+= (ldf>>1)+(ldf>>2)` (`×7/4`) |
-//! | `agility` (AGL)       | `+= agl >> 3` (`×9/8`) | `+= agl >> 2` (`×5/4`) |
-//! | HP / MP / SP / SPD    | unchanged              | unchanged |
+//! | `attack` (ATK)          | `+= atk >> 2` (`×5/4`) | unchanged |
+//! | `defense_high` (UDF)    | `× 2`                  | `+= (udf>>1)+(udf>>2)` (`×7/4`) |
+//! | `defense_low` (LDF)     | `× 2`                  | `+= (ldf>>1)+(ldf>>2)` (`×7/4`) |
+//! | `intelligence` (INT)    | `+= int >> 3` (`×9/8`) | `+= int >> 2` (`×5/4`) |
+//! | HP / MP / AGL / SPD     | unchanged              | unchanged |
 //!
 //! Both profiles boost; the flag only picks which. The **gate-set profile (B)**
 //! is the one a live international-retail battle capture (Gaza Sim-Seru, id 166)
@@ -179,9 +191,10 @@ pub struct MonsterSpell {
     /// resist/affinity, `0x0C..=0x1F` are offensive castable spells, `0x23`
     /// (`'#'`) is a special category.
     pub id: u8,
-    /// SP (spirit) cost (entry `+0x74`). `0xFF` = unavailable (the AI never
-    /// picks it; treated as a non-castable / passive slot).
-    pub sp_cost: u8,
+    /// AGL (action) cost (entry `+0x74`) - spent from the actor's AGL gauge.
+    /// `0xFF` = unavailable (the AI never picks it; a non-castable / passive
+    /// slot).
+    pub agl_cost: u8,
     /// Block-relative byte offset of this spell entry (the `+0x4C` array
     /// element, before the loader's add-block-base fixup).
     pub offset: u32,
@@ -202,7 +215,7 @@ impl MonsterSpell {
     /// True when the entry is an offensive castable spell (id `0x0C..=0x1F`)
     /// with a usable cost (`!= 0xFF`) - the slots the battle AI rolls over.
     pub fn is_castable(&self) -> bool {
-        (0x0C..=0x1F).contains(&self.id) && self.sp_cost != 0xFF
+        (0x0C..=0x1F).contains(&self.id) && self.agl_cost != 0xFF
     }
 }
 
@@ -219,10 +232,10 @@ pub struct MonsterRecord {
     /// Max MP.
     pub mp: u16,
     /// The six stat halfwords at record `+0x0E/+0x12/+0x14/+0x16/+0x18/+0x1A`,
-    /// in raw record order: `stats[0]` = SP, `stats[1]` = ATK,
-    /// `stats[2]`/`stats[3]` = the defense pair (DEF↑/DEF↓), `stats[4]` = AGL
-    /// (accuracy/evasion), `stats[5]` = SPD (turn-order speed). Prefer the
-    /// named accessors below.
+    /// in raw record order: `stats[0]` = AGL (agility/action gauge),
+    /// `stats[1]` = ATK, `stats[2]`/`stats[3]` = the defense pair (DEF↑/DEF↓),
+    /// `stats[4]` = INT (accuracy/evasion seed), `stats[5]` = SPD (turn-order
+    /// speed). Prefer the named accessors below.
     pub stats: [u16; 6],
     /// Base gold reward (`+0x44`). Victory spoils scale this; see the
     /// module docs for the lone-enemy `(gold >> 1) / 2` formula.
@@ -257,7 +270,7 @@ pub struct MonsterRecord {
     /// `+0x1DF` and names through `&DAT_800754D0 + id*0xC`, so it resolves with
     /// [`crate::spell_names::SpellNameTable`] (`0x27` -> `Tail Fire`). This is
     /// distinct from the local `spells` ids above (the `+0x4C` action entries):
-    /// those gate the SP cost, these carry the on-screen name. Pinned from the
+    /// those gate the AGL cost, these carry the on-screen name. Pinned from the
     /// AI spell picker `FUN_801E9FD4` (`overlay_0898`).
     pub magic_attacks: Vec<u8>,
 }
@@ -281,9 +294,14 @@ impl MonsterRecord {
         self.stats[3]
     }
 
-    /// Agility (`stats[4]`, record `+0x18`, actor `+0x168`). Seeds the
-    /// accuracy/evasion roll (`FUN_800402F4` selector 9).
-    pub fn agility(&self) -> u16 {
+    /// Intelligence (`stats[4]`, record `+0x18`, actor `+0x168`) - the **INT**
+    /// stat. Meth962's walkthrough: INT "affects your magical damage and defense
+    /// against other magical spells". The binary bears this out - the summon/arts
+    /// damage kernel (`FUN_801dd0ac`) reads the attacker's INT as a damage term
+    /// and the defender's INT as a mitigation (magic-defense) term; it also seeds
+    /// the accuracy/evasion roll (`FUN_800402F4` selector 9). Curated
+    /// `enemies.toml` `int` column byte-matches it ×9/8.
+    pub fn intelligence(&self) -> u16 {
         self.stats[4]
     }
 
@@ -293,10 +311,11 @@ impl MonsterRecord {
         self.stats[5]
     }
 
-    /// SP / spirit-action gauge (`stats[0]`, record `+0x0E`, actor `+0x154`
-    /// current / `+0x156` base). The AI spends it selecting spells; it
-    /// regenerates to base each round and seeds the spirit-charge value.
-    pub fn spirit(&self) -> u16 {
+    /// AGL / agility (action) gauge (`stats[0]`, record `+0x0E`, actor `+0x154`
+    /// current / `+0x156` base). Every action spends it; it resets to base each
+    /// round, and the "Power Up" buff raises it ("agility increased!"). This is
+    /// the gauge fan bestiaries label AGL.
+    pub fn agility(&self) -> u16 {
         self.stats[0]
     }
 
@@ -312,22 +331,22 @@ impl MonsterRecord {
     /// - `attack`   += `attack >> 2`   (`×5/4`, truncating)
     /// - `defense_high` `× 2` (the **upper** defense, UDF)
     /// - `defense_low`  `× 2` (the **lower** defense, LDF)
-    /// - `agility`  += `agility >> 3`  (`×9/8`, truncating)
-    /// - `spirit` (SP), HP, MP and `speed` (SPD) are copied unchanged.
+    /// - `intelligence` += `int >> 3`  (`×9/8`, truncating)
+    /// - `agility` (AGL), HP, MP and `speed` (SPD) are copied unchanged.
     ///
     /// Each op is a 16-bit truncating integer step matching the MIPS exactly
     /// (`wrapping` so a degenerate record can't panic; no real record overflows).
-    /// The alternate gate-clear profile (`DEF ×7/4`, `AGL ×5/4`, ATK unchanged)
+    /// The alternate gate-clear profile (`DEF ×7/4`, `INT ×5/4`, ATK unchanged)
     /// is documented in the module note but not produced here - both profiles
     /// boost, so the raw record always understates the fight.
     pub fn battle_stats(&self) -> [u16; 6] {
         let s = self.stats;
         [
-            s[0],                         // SP   - copied unchanged
+            s[0],                         // AGL  - copied unchanged
             s[1].wrapping_add(s[1] >> 2), // ATK  + ATK>>2   (×5/4)
             s[2].wrapping_mul(2),         // UDF  ×2
             s[3].wrapping_mul(2),         // LDF  ×2
-            s[4].wrapping_add(s[4] >> 3), // AGL  + AGL>>3   (×9/8)
+            s[4].wrapping_add(s[4] >> 3), // INT  + INT>>3   (×9/8)
             s[5],                         // SPD  - copied unchanged
         ]
     }
@@ -461,12 +480,12 @@ fn parse_spells(block: &[u8], magic_count: u8) -> Vec<MonsterSpell> {
             break;
         };
         let entry = offset as usize;
-        let (Some(&id), Some(&sp_cost)) = (block.get(entry), block.get(entry + 0x74)) else {
+        let (Some(&id), Some(&agl_cost)) = (block.get(entry), block.get(entry + 0x74)) else {
             continue;
         };
         out.push(MonsterSpell {
             id,
-            sp_cost,
+            agl_cost,
             offset,
             effect_offset: resolve_effect_offset(block, magic_count, read_u32(block, entry + 4)),
             aux_offset: resolve_effect_offset(block, magic_count, read_u32(block, entry + 8)),
@@ -1129,7 +1148,7 @@ mod tests {
         block[0x50..0x54].copy_from_slice(&0x180u32.to_le_bytes());
         // name "^A Gimard\0" at 0x80 (caret color-escape + space stripped).
         block[0x80..0x89].copy_from_slice(b"^A Gimard");
-        // spell entry 0 @ 0x100: id 0x0D (castable), SP cost 12.
+        // spell entry 0 @ 0x100: id 0x0D (castable), AGL cost 12.
         block[0x100] = 0x0D;
         block[0x100 + 0x74] = 12;
         // spell entry 1 @ 0x180: id 0x03 (elemental affinity), cost 0xFF.
@@ -1146,7 +1165,8 @@ mod tests {
         assert_eq!(rec.attack(), 23);
         assert_eq!(rec.defense_high(), 12);
         assert_eq!(rec.speed(), 22);
-        assert_eq!(rec.spirit(), 60);
+        assert_eq!(rec.agility(), 60);
+        assert_eq!(rec.intelligence(), 16);
         assert_eq!(rec.gold, 60);
         assert_eq!(rec.exp, 55);
         assert_eq!(rec.drop_item, 119);
@@ -1156,14 +1176,14 @@ mod tests {
             vec![
                 MonsterSpell {
                     id: 0x0D,
-                    sp_cost: 12,
+                    agl_cost: 12,
                     offset: 0x100,
                     effect_offset: None,
                     aux_offset: None,
                 },
                 MonsterSpell {
                     id: 0x03,
-                    sp_cost: 0xFF,
+                    agl_cost: 0xFF,
                     offset: 0x180,
                     effect_offset: None,
                     aux_offset: None,
@@ -1177,10 +1197,10 @@ mod tests {
     #[test]
     fn battle_stats_applies_the_load_boost() {
         // Gaza (Sim-Seru), monster id 166, raw disc record:
-        //   stats [SP 128, ATK 288, UDF 222, LDF 200, AGL 220, SPD 146].
+        //   stats [AGL 128, ATK 288, UDF 222, LDF 200, INT 220, SPD 146].
         // A live international-retail battle capture of this fight shows the
-        // actor with ATK 360, UDF 444, LDF 400, AGL 247 - the gate-set boost
-        // profile (FUN_80054cb0): ATK ×5/4, UDF/LDF ×2, AGL ×9/8; SP/SPD ×1.
+        // actor with ATK 360, UDF 444, LDF 400, INT 247 - the gate-set boost
+        // profile (FUN_80054cb0): ATK ×5/4, UDF/LDF ×2, INT ×9/8; AGL/SPD ×1.
         let rec = MonsterRecord {
             id: 166,
             name: "Gaza".into(),
@@ -1197,13 +1217,16 @@ mod tests {
             magic_attacks: vec![],
         };
         assert_eq!(rec.battle_stats(), [128, 360, 444, 400, 247, 146]);
-        // SP, HP, MP and SPD are pass-through; the four combat stats are boosted.
-        assert_eq!(rec.battle_stats()[0], rec.spirit());
+        // AGL, HP, MP and SPD are pass-through; the four combat stats are boosted.
+        assert_eq!(rec.battle_stats()[0], rec.agility());
         assert_eq!(rec.battle_stats()[5], rec.speed());
         assert_eq!(rec.battle_stats()[1], rec.attack() + (rec.attack() >> 2));
         assert_eq!(rec.battle_stats()[2], rec.defense_high() * 2);
         assert_eq!(rec.battle_stats()[3], rec.defense_low() * 2);
-        assert_eq!(rec.battle_stats()[4], rec.agility() + (rec.agility() >> 3));
+        assert_eq!(
+            rec.battle_stats()[4],
+            rec.intelligence() + (rec.intelligence() >> 3)
+        );
     }
 
     #[test]

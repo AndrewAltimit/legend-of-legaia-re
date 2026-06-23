@@ -390,10 +390,10 @@ Steal-item randomizer (the Evil God Icon) (`steal` module).
 
 Monster combat-stat randomizer (`monster_stats` module).
 
-- Redistributes every enemy's HP / MP / ATK / UDF / LDF / AGL / SPD across the
+- Redistributes every enemy's HP / MP / ATK / UDF / LDF / INT / SPD across the
   `battle_data` archive (PROT 867), **column-wise**: `plan_stats` permutes each
   stat field across the populated roster (`Shuffle`, multiset-preserving) or
-  draws each cell from the column pool (`Random`). Spirit/SP is left untouched.
+  draws each cell from the column pool (`Random`). The AGL action gauge (`+0x0E`) is left untouched.
 - `set_stats` re-packs a monster slot through [`monster::repack_slot`]; the
   decoded length is unchanged, so each slot keeps its `0x14000` footprint (a slot
   too tight to re-pack is skipped, like drops).

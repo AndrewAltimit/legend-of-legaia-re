@@ -103,8 +103,8 @@ fn spell_list_decodes_from_record_offset_array() {
 
     // Gimard (id 10): magic_count 9; the +0x4C offsets resolve to the
     // passive/affinity prefix (ids 0,1,2,4,5,0x0B at cost 0), two offensive
-    // castable spells (0x0D @ 28 SP, 0x0F @ 32 SP, both <= its SP stat 60),
-    // and the 0x23 ('#') special slot. Spirit (stats[0]) gates casting.
+    // castable spells (0x0D @ 28 AGL, 0x0F @ 32 AGL, both <= its AGL stat 60),
+    // and the 0x23 ('#') special slot. AGL (stats[0], the action gauge) gates casting.
     let gimard = monster_archive::record(&entry, 10).unwrap().unwrap();
     assert_eq!(gimard.magic_count as usize, gimard.spells.len());
     assert_eq!(gimard.magic_count, 9);
@@ -112,14 +112,14 @@ fn spell_list_decodes_from_record_offset_array() {
         .spells
         .iter()
         .filter(|s| s.is_castable())
-        .map(|s| (s.id, s.sp_cost))
+        .map(|s| (s.id, s.agl_cost))
         .collect();
     assert_eq!(castable, vec![(0x0D, 28), (0x0F, 32)]);
     for (id, cost) in &castable {
         assert!(
-            (*cost as u16) <= gimard.spirit(),
-            "Gimard spell 0x{id:02X} cost {cost} should be <= SP {}",
-            gimard.spirit()
+            (*cost as u16) <= gimard.agility(),
+            "Gimard spell 0x{id:02X} cost {cost} should be <= AGL {}",
+            gimard.agility()
         );
     }
 

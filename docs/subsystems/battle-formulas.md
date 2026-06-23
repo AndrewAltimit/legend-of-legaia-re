@@ -50,23 +50,25 @@ The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** o
 |---|---|---|---|
 | `+0x0C` | `+0x14C/+0x14E` (+`+0x172`) | HP | direct |
 | `+0x10` | `+0x150/+0x152` (+`+0x174`) | MP | direct |
-| `+0x0E` | `+0x154/+0x156` | **SP** | spirit/action gauge - AI spell-selection budget; spirit-charge source |
+| `+0x0E` | `+0x154/+0x156` | **AGL** | agility / action gauge - spent per action, reset each round; the "Power Up" buff raises it ("agility increased!") |
 | `+0x12` | `+0x158/+0x15A` | **ATK** | attacker's offense in the damage routine |
 | `+0x14` | `+0x15C/+0x15E` | **UDF** (high/upper) | defender defense, branch A |
 | `+0x16` | `+0x160/+0x162` | **LDF** (low/lower) | defender defense, branch B |
-| `+0x18` | `+0x168/+0x16A` | **AGL** | accuracy/evasion seed (selector 9) |
+| `+0x18` | `+0x168/+0x16A` | **INT** | magical damage / magic defense (summon/arts kernel) + accuracy/evasion seed (selector 9); the bestiary INT column |
 | `+0x1A` | `+0x164/+0x166` | **SPD** | turn-order initiative seed |
+
+> **Stat names** match the game's own labels (the "Power Up" buff prints *"agility increased!"* and bumps `+0x0E`) and the fan bestiaries; the curated `enemies.toml` `agl` / `int` columns byte-match `+0x0E` / `+0x18` (see `gamedata/tests/enemy_stats_vs_disc`). Earlier drafts of this doc swapped two of them - what was labeled "SP/spirit" is **AGL** (`+0x0E`), and what was labeled "AGL" is **INT** (`+0x18`). The `+0x168` actor slot ("accuracy" below) is therefore the monster's INT; party members seed `+0x168` from their AGL-derived accuracy instead (an engine model). Per Meth962, INT "affects your magical damage and defense against other magical spells" - which the summon/arts kernel (`FUN_801dd0ac`) bears out: attacker INT is a damage term, defender INT a mitigation term.
 
 **Battle-load stat boost.** The record halfwords above are *not* the values the fight uses. After the plain copy, `FUN_80054CB0` boosts four combat stats, picking one of two profiles by the battle-context flag `_DAT_8007BD24 + 0x287` (= `(*(u8*)0x8007BD60 >> 5) & 4`, bit 7 of a per-battle flags byte set by `FUN_800513F0`):
 
-- **gate-set profile (B):** `ATK += ATK>>2` (×5/4), `UDF × 2`, `LDF × 2`, `AGL += AGL>>3` (×9/8).
-- **gate-clear profile (A):** `UDF`/`LDF += (x>>1)+(x>>2)` (×7/4), `AGL += AGL>>2` (×5/4), ATK unchanged.
+- **gate-set profile (B):** `ATK += ATK>>2` (×5/4), `UDF × 2`, `LDF × 2`, `INT += INT>>3` (×9/8).
+- **gate-clear profile (A):** `UDF`/`LDF += (x>>1)+(x>>2)` (×7/4), `INT += INT>>2` (×5/4), ATK unchanged.
 
-HP/MP/SP/SPD are copied unchanged in both. Both profiles boost - the raw record always understates the fight. A live international-retail capture reproduces profile **B** byte-for-byte (Gaza Sim-Seru id 166: raw ATK 288 / UDF 222 / LDF 200 / AGL 220 → in-battle 360 / 444 / 400 / 247), which is also what the curated `enemies.toml` holds and what `MonsterRecord::battle_stats()` returns. This cross-region difficulty difference was first surfaced by **Zetopheonix**; the [enemy table](../../site/_content/monsters.html) shows the boosted stats by default with a raw-record toggle.
+HP/MP/AGL/SPD are copied unchanged in both. Both profiles boost - the raw record always understates the fight. A live international-retail capture reproduces profile **B** byte-for-byte (Gaza Sim-Seru id 166: raw ATK 288 / UDF 222 / LDF 200 / INT 220 → in-battle 360 / 444 / 400 / 247), which is also what the curated `enemies.toml` holds and what `MonsterRecord::battle_stats()` returns. This cross-region difficulty difference was first surfaced by **Zetopheonix**; the [enemy table](../../site/_content/monsters.html) shows the boosted stats by default with a raw-record toggle.
 
-**SPD** (`+0x164`): `overlay_0897_801e23ec` seeds each actor's per-turn initiative key from it: `+0x16C = speed + (rand() % (speed/2 + 1)) + 1`. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from AGL, which governs the hit/dodge roll rather than turn order. The next-actor selector `recompute_battle_order` (`FUN_801daba4`) reads the seeded `+0x16C` keys: it picks the living actor with the highest key (random tiebreak via `rand % tie_count`), zeroing dead actors' keys first. Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle.md#auto-resolve-vs-player-driven).
+**SPD** (`+0x164`): `overlay_0897_801e23ec` seeds each actor's per-turn initiative key from it: `+0x16C = speed + (rand() % (speed/2 + 1)) + 1`. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from INT, which governs the hit/dodge roll rather than turn order, and from AGL, which is the per-round action gauge. The next-actor selector `recompute_battle_order` (`FUN_801daba4`) reads the seeded `+0x16C` keys: it picks the living actor with the highest key (random tiebreak via `rand % tie_count`), zeroing dead actors' keys first. Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle.md#auto-resolve-vs-player-driven).
 
-**SP** (`+0x154` current / `+0x156` base): a per-round spirit/action gauge. The enemy-AI spell picker (`overlay_0898_801e9fd4`) spends it - it deducts each candidate spell's cost byte (`spell_entry +0x74`) from `+0x154` and only queues spells it can still afford. Each round `FUN_801D88CC` resets `+0x154` to its base (`+0x156`), or, when the actor is spirit-charged (`+0x1DE == 4`), sets it to `(base*7/5)+8` capped at `0x120` (the same shape as the [spirit-damage formula](#spirit-damage-formula)). The damage popup (`_DAT_80076D7E`) reads `+0x154`. This corroborates the HP/MP/SP-triplet reading of `+0x14C..+0x156` in [battle.md](battle.md).
+**AGL** (`+0x154` current / `+0x156` base): the per-round agility / action gauge. Every action draws it down; the enemy-AI action picker (`overlay_0898_801e9fd4`) deducts each candidate action's `+0x74` cost from `+0x154` and only queues actions it can still afford. Each round `FUN_801D88CC` resets `+0x154` to its base (`+0x156`), or, when spirit-charged (`+0x1DE == 4`), to `(base*7/5)+8` capped at `0x120` (the same shape as the [spirit-damage formula](#spirit-damage-formula)). Live-RAM confirmed by Zetopheonix: the "Power Up" buff prints *"agility increased!"* and raises this cur/base pair. The damage popup (`_DAT_80076D7E`) reads `+0x154`; this is the HP/MP/AGL triplet at `+0x14C..+0x156` in [battle.md](battle.md).
 
 ### Spell list (`record +0x4C`)
 
@@ -78,9 +80,9 @@ The descriptor's interior field semantics are still open (its runtime consumer i
 Each spell entry's head:
 
 - **`+0x00` (u8) - spell/action id**, which doubles as a category selector. `FUN_80054CB0` (lines 700-727) treats ids `2,3,4,5,0x0B` as **elemental resist/affinity** markers and writes the matching spell's index into actor `+0x1EF..+0x1F3`. The AI picker treats ids `0x0C..=0x1F` as **offensive castable spells** (`*entry - 0xC < 0x14`) and `0x23` (`'#'`) as a special category.
-- **`+0x74` (u8) - SP cost**. The picker only rolls a spell when `cost != 0xFF` and current SP (`+0x154`) `>= cost`, then subtracts it (lines 2219-2252 of `overlay_0898_801e9fd4`).
+- **`+0x74` (u8) - AGL (action) cost**. The picker only rolls a spell when `cost != 0xFF` and current AGL (`+0x154`) `>= cost`, then subtracts it (lines 2219-2252 of `overlay_0898_801e9fd4`).
 
-Real-data sanity check: Gimard (id 10, SP 60) has 9 slots - the affinity prefix `0,1,2,4,5,0x0B` (cost 0), two castable spells `0x0D @ 28` and `0x0F @ 32` (both `<= 60`), and the `0x23` special. Hornet (id 61, SP 88) has `0x0C @ 88` and `0x13 @ 88`. Across every populated record the decoded list length equals the declared count and no offset escapes the block. The `legaia_asset::monster_archive::MonsterRecord::spells` field (`MonsterSpell { id, sp_cost, offset, effect_offset, aux_offset }`, with `is_castable()`) exposes this; the [enemy table](../../site/_content/monsters.html) renders the castable set with SP cost.
+Real-data sanity check: Gimard (id 10, AGL 60) has 9 slots - the affinity prefix `0,1,2,4,5,0x0B` (cost 0), two castable spells `0x0D @ 28` and `0x0F @ 32` (both `<= 60`), and the `0x23` special. Hornet (id 61, AGL 88) has `0x0C @ 88` and `0x13 @ 88`. Across every populated record the decoded list length equals the declared count and no offset escapes the block. The `legaia_asset::monster_archive::MonsterRecord::spells` field (`MonsterSpell { id, agl_cost, offset, effect_offset, aux_offset }`, with `is_castable()`) exposes this; the [enemy table](../../site/_content/monsters.html) renders the castable set with AGL cost.
 
 ### Physical attack damage - `overlay_battle_action_801ec3e4`
 
@@ -136,8 +138,8 @@ if (target_evasion < roll) {
 
 `+0x168` is the **accuracy/evasion** halfword in the actor record (one stat field shared by both rolls - caster's at attacker actor, target's at defender actor). The roll is `rand % (caster + target)` so the **hit probability** is `caster / (caster + target)`. Standard JRPG-flat-roll model.
 
-**Engine wiring.** `battle_formulas::accuracy_roll` ports this roll, and the live battle loop applies it per strike in both the arts/spell strike resolver and the basic-attack path (`engine-core::world::battle`). Each actor's `+0x168` value lives in the World-side `battle_accuracy` / `battle_evasion` arrays: party slots are seeded from each character's AGL-derived `acc`/`eva` (via `compute_battle_stats` in `seed_party_battle_stats`), monster slots from `MonsterDef::accuracy`/`evasion` (both = the monster's AGL) at battle setup. The roll engages **only when the attacker's accuracy is seeded** (`acc != 0`); an unseeded attacker auto-hits and consumes no RNG, so disc-free / synthetic battles keep their always-land behaviour and bit-identical RNG streams.
-Because both accuracy and evasion derive from AGL with the same scaling, the retail `+0x168 = AGL + AGL/4` rescale is ratio-preserving and not separately applied.
+**Engine wiring.** `battle_formulas::accuracy_roll` ports this roll, and the live battle loop applies it per strike in both the arts/spell strike resolver and the basic-attack path (`engine-core::world::battle`). Each actor's `+0x168` value lives in the World-side `battle_accuracy` / `battle_evasion` arrays: party slots are seeded from each character's AGL-derived `acc`/`eva` (via `compute_battle_stats` in `seed_party_battle_stats`), monster slots from `MonsterDef::accuracy`/`evasion` (both = the monster's INT, record `+0x18`) at battle setup. The roll engages **only when the attacker's accuracy is seeded** (`acc != 0`); an unseeded attacker auto-hits and consumes no RNG, so disc-free / synthetic battles keep their always-land behaviour and bit-identical RNG streams.
+For party members, both accuracy and evasion derive from the character's AGL with the same scaling, so the retail `+0x168 = AGL + AGL/4` rescale is ratio-preserving and not separately applied. (For monsters, `+0x168` is loaded directly from record `+0x18` = INT.)
 
 ### Stat-buff selectors (1..7)
 
@@ -156,7 +158,7 @@ descriptor `tier` byte (`legaia_asset::item_effect`):
 | 1 | `+0x164/+0x166` | **SPD** | Speed Elixir |
 | 2 | `+0x15C/+0x15E` and `+0x160/+0x162` | both defence facets (UDF + LDF) | Shield Elixir |
 | 3 | `+0x158/+0x15A` | **ATK** | Power Elixir |
-| 4 | `+0x164/+0x166` + the two DEF pairs + `+0x158/+0x15A` + `+0x168/+0x16A` | **all** (SPD + DEF + ATK + AGL) | Wonder Elixir |
+| 4 | `+0x164/+0x166` + the two DEF pairs + `+0x158/+0x15A` + `+0x168/+0x16A` | **all** (SPD + DEF + ATK + INT) | Wonder Elixir |
 
 (This corrects an earlier reading that labelled `param_2 == 1` "`stat5` (role
 open)" and `param_2 == 4` "`stat5` + UDF" - the `+0x164` field is **SPD** (Speed
@@ -305,13 +307,16 @@ A player Seru-magic *damage* summon does **not** go through `FUN_800402F4`'s
 selector dispatch and has no static per-spell power scalar (see
 [spell-table.md](../formats/spell-table.md#per-spell-damage-power-is-not-static-data--it-is-caster-state-derived)).
 Its HP delta is built from live battle stats in three stages - all byte-traced
-from `overlay_battle_action_801dd0ac.txt` and the two helpers it calls:
+from `overlay_battle_action_801dd0ac.txt` and the two helpers it calls. In the
+pseudocode below `INT` is the actor's `+0x168` stat (for monsters that is
+record `+0x18`, the bestiary INT column; for the party caster it is the
+character's `+0x168` accuracy line) - **not** the AGL action gauge (`+0x0E`):
 
 ```c
 // Stage 1 - rolls (FUN_801dd0ac, summon branch attacker_slot == 7)
-atk = rand() % (summon.AGL + 1) + summon.HP + caster.AGL*2;
-def = rand() % ((tgt.AGL >> 1) + 1) + (tgt.HP >> 8)
-    + (tgt.DEFa >> 4) + (tgt.DEFb >> 4) + tgt.AGL*2;
+atk = rand() % (summon.INT + 1) + summon.HP + caster.INT*2;
+def = rand() % ((tgt.INT >> 1) + 1) + (tgt.HP >> 8)
+    + (tgt.DEFa >> 4) + (tgt.DEFb >> 4) + tgt.INT*2;
 
 // Stage 2 - scale (FUN_801dd864)
 atk = atk * affinity[atk_elem*8 + def_elem] / 100;   // 8x8 matrix @ 0x801F53E8
@@ -320,7 +325,7 @@ if (tgt.guard == 4)    def <<= 1;
 if (tgt.status & 1)    def = def*9/10;   if (tgt.status & 2)   def = def*7/10;
 atk += atk * (magic_power_byte - 1) >> 3;             // SC + 0x729, summon only
 // FUN_801dd0ac re-rolls a weak attacker:
-if (def + summon.HP > atk) atk = def + rand() % ((summon.AGL >> 1) + 1) + summon.HP;
+if (def + summon.HP > atk) atk = def + rand() % ((summon.INT >> 1) + 1) + summon.HP;
 
 // Stage 3 - finish (FUN_801ddb30): equipment elemental-resistance halving,
 //   guard halve, rand%9+8 no-damage floor, summon power-% scale, 9999 cap,
@@ -362,15 +367,16 @@ summon-only (`param_1 == 7`), so arts hits scale by affinity + status only.
 
 ```c
 // Stage 1 - rolls (FUN_801dd0ac, arts/physical branch). power = (i16)move_power[id].+0
-atk = rand() % ((power >> 2) + 1) + rand() % ((atk.AGL >> 1) + 1)
-    + (atk.HP >> 8) + power + atk.AGL*2;
+//   atk.INT = the attacker's +0x168 stat (record +0x18 for monsters)
+atk = rand() % ((power >> 2) + 1) + rand() % ((atk.INT >> 1) + 1)
+    + (atk.HP >> 8) + power + atk.INT*2;
 def = /* identical to the summon-branch defender roll above */;
 
 // Stage 2 - scale (FUN_801dd864): affinity + status only (no magic-power arm).
 // Stage 2c - FUN_801dd0ac re-rolls a weak attacker, this time off the power scalar:
-if (atk < def + (power >> 1) + (atk.AGL >> 1))
+if (atk < def + (power >> 1) + (atk.INT >> 1))
     atk = def + (power >> 1) + rand() % ((power >> 3) + 1)
-        + (atk.AGL >> 1) + rand() % ((atk.AGL >> 3) + 1);
+        + (atk.INT >> 1) + rand() % ((atk.INT >> 3) + 1);
 ```
 
 The bounded, state-free arithmetic of stages 1 + 2 ports to pure kernels for
@@ -399,8 +405,8 @@ finisher's remaining tail - the damage-popup accumulator (`_DAT_8007bd14`), the
 a monster's chosen move id resolves to a power record, `cast_spell_on_slots`
 overrides the cast's damage magnitude with `arts_physical_predamage` seeded by
 that move's power (`World::enemy_move_predamage`, `engine-core::world::battle`).
-The stat bridge reads live actor fields faithfully - AGL from `battle_accuracy`
-(`+0x168`), HP from `battle.hp`, the two defender defense terms from the
+The stat bridge reads live actor fields faithfully - INT (the `+0x168` stat,
+record `+0x18`) from `battle_accuracy`, HP from `battle.hp`, the two defender defense terms from the
 `battle_defense_split` (UDF/LDF) pair - and takes the `rand()` draws in retail
 call order: attacker ×2 + defender ×1 up front, then the bonus pair **lazily**
 (only when the bonus arm fires, via `arts_physical_predamage_lazy`), so the
@@ -421,8 +427,8 @@ flat `art_strike_damage_default` for a no-art generic hit is a stand-in.)
 (`World::player_summon_predamage`): when the monster catalog resolves the
 spell's namesake summon creature, `cast_spell_on_slots` replaces the MP-scaled
 placeholder with `summon_predamage_lazy` seeded faithfully - summon-body
-HP/AGL from the creature's `battle_data` record (the stats the loader installs
-on the freshly-spawned slot-7 actor), the caster's `battle_accuracy` AGL
+HP/INT from the creature's `battle_data` record (the stats the loader installs
+on the freshly-spawned slot-7 actor; INT = record `+0x18`), the caster's `battle_accuracy` (`+0x168`)
 doubled, the affinity percent inside the roll, and the caster's per-spell
 **magic-power byte** searched the way `FUN_801dd864` does (the character
 record's 32-entry spell-id list at `+0x13D` with parallel level bytes at

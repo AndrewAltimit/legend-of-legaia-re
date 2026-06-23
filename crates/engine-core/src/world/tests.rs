@@ -5277,7 +5277,7 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
         world.mode = SceneMode::Battle;
         let mut catalog = MonsterCatalog::new();
         let mut creature = MonsterDef::new(10, "Gimard", 100, 10);
-        creature.agl = 36;
+        creature.intel = 36;
         creature.element = 2;
         catalog.insert(creature);
         let mut enemy = MonsterDef::new(5, "Goblin", 120, 8);

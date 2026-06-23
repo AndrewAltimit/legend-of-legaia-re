@@ -19,7 +19,7 @@ Each monster's decoded archive block is `[stat record + +0x4C action-offset
 array][name][TMD mesh @ +0x04][per-action entries][texture pool @ +0x08]`. The
 `magic_count` (`+0x4A`) **action entries** the `+0x4C` u32 array points at are
 not just "spells" - each is an action descriptor whose head holds the action id
-(`+0x00`), SP cost (`+0x74`), and a sub-id (`+0x77`), and whose **`+0x8c`**
+(`+0x00`), AGL (action) cost (`+0x74`), and a sub-id (`+0x77`), and whose **`+0x8c`**
 field begins a packed transform-keyframe stream. (The runtime keyframe pointers
 at entry `+0x04`/`+0x08` and the self-pointer at `+0x88` are zero on disc; the
 loader reconstructs them, with `+0x88` pointing at the `+0x8c` stream.)

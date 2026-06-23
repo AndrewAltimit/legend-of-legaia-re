@@ -138,7 +138,7 @@
       </div>
 
       <div class="rom-opt">
-        <span class="rom-opt-label">Monster stats <span class="rom-opt-note">- HP / MP / ATK / DEF / AGL / SPD</span></span>
+        <span class="rom-opt-label">Monster stats <span class="rom-opt-note">- HP / MP / ATK / DEF / INT / SPD</span></span>
         <div class="seg" role="group" aria-label="Monster stats">
           <input type="radio" name="monster_stats" id="mstats-none" value="none" checked><label for="mstats-none">Off</label>
           <input type="radio" name="monster_stats" id="mstats-shuffle" value="shuffle"><label for="mstats-shuffle">Shuffle</label>
@@ -320,7 +320,7 @@
     <li><strong>Casino prizes</strong> - reassigns the casino prize-exchange items; each prize keeps its coin price and progression gate.</li>
     <li><strong>Steal items</strong> - reassigns what each monster yields to the Evil God Icon (the static <code>SCUS_942.54</code> steal table). The steal <em>chance</em> is always preserved - only the item changes.</li>
     <li><strong>Arts button combos</strong> - reassigns the directional combo that fires each Tactical Art (the <code>SCUS_942.54</code> arts table, the one place the combo lives, so the menu arrows and the trigger always match). Every art keeps its <em>input count</em> and each character's combos stay unique. Each character's Miracle Art is left alone.</li>
-    <li><strong>Monster stats</strong> - redistributes each monster's combat stats (HP / MP / ATK / DEF&uarr; / DEF&darr; / AGL / SPD) from the <code>battle_data</code> archive. <em>Shuffle</em> permutes each stat column across the roster (the difficulty budget is kept); <em>Randomize</em> draws each stat from that column. Spirit/SP is left alone.</li>
+    <li><strong>Monster stats</strong> - redistributes each monster's combat stats (HP / MP / ATK / DEF&uarr; / DEF&darr; / INT / SPD) from the <code>battle_data</code> archive. <em>Shuffle</em> permutes each stat column across the roster (the difficulty budget is kept); <em>Randomize</em> draws each stat from that column. The AGL action gauge is left alone.</li>
     <li><strong>Special-attack power</strong> - redistributes the per-move power of the battle-action move table (enemy specials &amp; Seru magic - <em>not</em> party Tactical Arts). Each move keeps its own animation, effects, and sound; only how hard it hits changes.</li>
     <li><strong>Element affinity</strong> - scrambles the 8&times;8 element matrix (which element is strong / weak against which). <em>Shuffle</em> keeps the same number of weaknesses &amp; resistances, just between different pairs; the per-character element assignment is untouched.</li>
     <li><strong>Spell MP costs</strong> - redistributes the MP costs of the named, costed spells in the <code>SCUS_942.54</code> spell table. Free / internal enemy-tier entries never gain a cost.</li>
