@@ -919,7 +919,9 @@ impl World {
         let creature = self.summon_creature_def(spell_id)?;
         let summon = SummonRollActor {
             hp: creature.hp,
-            agl: creature.agl,
+            // The summon-roll's "agl" slot is the actor's `+0x168` stat, which
+            // for a monster is record `+0x18` = INT (`MonsterDef::intel`).
+            agl: creature.intel,
             ..Default::default()
         };
         let summon_element = creature.element;

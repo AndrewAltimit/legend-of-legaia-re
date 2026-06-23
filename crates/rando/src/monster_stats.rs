@@ -1,4 +1,4 @@
-//! Monster combat-stat randomizer: redistribute HP / MP / ATK / DEF / AGL / SPD
+//! Monster combat-stat randomizer: redistribute HP / MP / ATK / DEF / INT / SPD
 //! across the enemy roster.
 //!
 //! Each monster's combat stats live as `u16` halfwords at fixed offsets in the
@@ -13,10 +13,10 @@
 //! HP while keeping its own attack, scrambling difficulty without producing
 //! impossible records.
 //!
-//! Spirit (`+0x0E`, the SP / action gauge) is **deliberately left alone** - it
-//! gates the enemy AI's spell economy rather than player-facing difficulty, and
-//! shuffling it would mostly perturb how often enemies cast, not how hard the
-//! fight is.
+//! AGL (`+0x0E`, the agility / action gauge) is **deliberately left alone** - it
+//! gates the enemy AI's action economy (how many actions / casts it can afford
+//! per round) rather than player-facing difficulty, and shuffling it would
+//! mostly perturb how often enemies act, not how hard the fight is.
 //!
 //! A set of scripted enemies ([`PROTECTED_MONSTER_IDS`]) is left untouched so
 //! their fights stay coherent. Two kinds qualify. **Early tutorial enemies** -
@@ -56,7 +56,7 @@ pub const STAT_FIELDS: [(&str, usize); 7] = [
     ("attack", 0x12),
     ("defense_high", 0x14),
     ("defense_low", 0x16),
-    ("agility", 0x18),
+    ("intelligence", 0x18),
     ("speed", 0x1A),
 ];
 
@@ -98,7 +98,7 @@ pub struct StatAssignment {
     /// 1-based monster id (the `battle_data` archive slot index + 1).
     pub monster_id: u16,
     /// The randomized stat halfwords, in [`STAT_FIELDS`] order
-    /// (`[hp, mp, attack, defense_high, defense_low, agility, speed]`).
+    /// (`[hp, mp, attack, defense_high, defense_low, intelligence, speed]`).
     pub stats: [u16; FIELD_COUNT],
 }
 
@@ -107,13 +107,13 @@ pub struct StatAssignment {
 /// (`hp + attack + defense_high + defense_low + agility + speed`). A single
 /// scalar standing in for a monster's whole stat budget, so a swapped-in monster
 /// can be compared against an area's native average (the
-/// solo-strong-encounter option). MP is excluded for the same reason Spirit is
-/// left out of the stat shuffle: it gates the enemy's spell economy, not raw
-/// danger. Saturating, so a degenerate record can never overflow.
+/// solo-strong-encounter option). MP is excluded for the same reason the AGL
+/// gauge is left out of the stat shuffle: it gates the enemy's action economy,
+/// not raw danger. Saturating, so a degenerate record can never overflow.
 pub fn combat_power(stats: &[u16; FIELD_COUNT]) -> u32 {
-    // STAT_FIELDS order: hp, mp, attack, defense_high, defense_low, agility, speed.
-    let [hp, _mp, atk, dhi, dlo, agl, spd] = *stats;
-    [hp, atk, dhi, dlo, agl, spd]
+    // STAT_FIELDS order: hp, mp, attack, defense_high, defense_low, intelligence, speed.
+    let [hp, _mp, atk, dhi, dlo, intl, spd] = *stats;
+    [hp, atk, dhi, dlo, intl, spd]
         .into_iter()
         .fold(0u32, |acc, v| acc.saturating_add(v as u32))
 }

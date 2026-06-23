@@ -1460,7 +1460,7 @@ impl LegaiaViewer {
     ///                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
     ///                  "steal_item": u8, "steal_item_name": "Incense"|null,
     ///                  "steal_chance_pct": u8,
-    ///                  "spells": [ { "id": u8, "sp_cost": u8,
+    ///                  "spells": [ { "id": u8, "agl_cost": u8,
     ///                               "castable": bool } ] }, ... ] }
     /// ```
     ///
@@ -1525,7 +1525,7 @@ impl LegaiaViewer {
                     "mp": r.mp,
                     "stats": r.stats,
                     // The combat stats the battle loader installs into the live
-                    // actor (FUN_80054cb0 boost: ATK ×5/4, UDF/LDF ×2, AGL ×9/8),
+                    // actor (FUN_80054cb0 boost: ATK ×5/4, UDF/LDF ×2, INT ×9/8),
                     // i.e. what the player actually fights - the raw `stats`
                     // understate it. See `MonsterRecord::battle_stats`.
                     "battle_stats": r.battle_stats(),
@@ -1543,7 +1543,7 @@ impl LegaiaViewer {
                     "steal_chance_pct": steal_chance,
                     "spells": r.spells.iter().map(|s| serde_json::json!({
                         "id": s.id,
-                        "sp_cost": s.sp_cost,
+                        "agl_cost": s.agl_cost,
                         "castable": s.is_castable(),
                     })).collect::<Vec<_>>(),
                     "magic": magic_attacks(&r.magic_attacks),

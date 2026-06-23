@@ -112,7 +112,7 @@ legaia-rando house-doors --input DISC.bin                     # read-only: intra
 legaia-rando starting-items --input DISC.bin                  # read-only: new-game starting bag
 legaia-rando shops     --input DISC.bin                       # read-only: what town stores sell
 legaia-rando casino    --input DISC.bin                       # read-only: casino prize exchange
-legaia-rando monster-stats --input DISC.bin                   # read-only: monster HP/MP/ATK/DEF/AGL/SPD
+legaia-rando monster-stats --input DISC.bin                   # read-only: monster HP/MP/ATK/DEF/INT/SPD
 legaia-rando move-powers   --input DISC.bin                   # read-only: special-attack power table
 legaia-rando affinity      --input DISC.bin                   # read-only: element-affinity matrix
 legaia-rando spell-costs   --input DISC.bin                   # read-only: spell MP costs
@@ -828,15 +828,15 @@ current table (the audit surface).
 `--monster-stats` redistributes every enemy's combat stats across the
 `battle_data` archive (PROT 867). Each monster's record carries its stats as
 `u16` halfwords at fixed offsets in the decoded block (HP `+0x0C`, MP `+0x10`,
-then ATK / UDF / LDF / AGL / SPD; see
+then ATK / UDF / LDF / INT / SPD; see
 [battle-data-pack.md](../formats/battle-data-pack.md) and the
 [monster stat-record archive](../formats/battle-data-pack.md) docs). The
 randomizer works **column-wise**: it collects each stat field across the whole
 populated roster, then `Shuffle` permutes that column (a 1:1 reassignment, so
 the multiset of, say, every monster's HP is exactly preserved - the overall
 difficulty budget stays put, only *which* monster is tanky changes) while
-`Random` draws each cell from the column pool. Spirit/SP (`+0x0E`) is left
-alone, since it gates the AI's spell economy rather than player-facing
+`Random` draws each cell from the column pool. The AGL action gauge (`+0x0E`) is left
+alone, since it gates the AI's action economy rather than player-facing
 difficulty. Each edit re-packs the monster's slot through the same
 decompress → edit → recompress path as the drop randomizer
 (`monster::repack_slot`); the decoded length is unchanged, so every slot keeps
@@ -1387,7 +1387,7 @@ bit-for-bit.
 | `crates/rando` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
 | `crates/rando` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
 | `crates/rando` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
-| `crates/rando` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (spirit, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic |
+| `crates/rando` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (the AGL gauge, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic |
 | `crates/rando` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
 | `crates/rando` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
 | `crates/rando` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |

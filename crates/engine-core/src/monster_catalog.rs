@@ -52,12 +52,14 @@ pub struct MonsterDef {
     /// `docs/subsystems/battle-formulas.md`). `0` leaves the battle on the
     /// round-robin turn-order fallback.
     pub speed: u16,
-    /// Agility (record `stats[3]`, actor `+0x168`), unclamped. Seeds the
-    /// summon-damage roll when this creature is the spell's summon body
-    /// (`FUN_801dd0ac` summon branch reads the slot-7 actor's `+0x168`);
-    /// [`MonsterDef::accuracy`] / [`MonsterDef::evasion`] carry the same
-    /// stat clamped to a byte for the hit/evade paths.
-    pub agl: u16,
+    /// Intelligence (record `stats[4]` / `+0x18`, actor `+0x168`), unclamped -
+    /// the bestiary **INT** stat. Seeds the summon-damage roll when this
+    /// creature is the spell's summon body (`FUN_801dd0ac` summon branch reads
+    /// the slot-7 actor's `+0x168`); [`MonsterDef::accuracy`] /
+    /// [`MonsterDef::evasion`] carry the same stat clamped to a byte for the
+    /// hit/evade paths. (The enemy's AGL action gauge - record `+0x0E` - has no
+    /// `MonsterDef` field yet; nothing in the engine consumes it.)
+    pub intel: u16,
     pub accuracy: u8,
     pub evasion: u8,
     /// Experience awarded to the party on defeat.
@@ -97,7 +99,7 @@ impl MonsterDef {
             udf: attack / 2,
             ldf: attack / 2,
             speed: 0,
-            agl: 70,
+            intel: 70,
             accuracy: 70,
             evasion: 10,
             exp: hp / 2,
@@ -162,15 +164,17 @@ impl MonsterCatalog {
 ///   physical-damage routine reads as the attacker's offense (actor `+0x158`).
 /// - `udf` / `ldf` <- `rec.defense_high()` / `rec.defense_low()` (`stats[2]` /
 ///   `stats[3]`) - the two defense facets the routine selects by move index.
-/// - `accuracy` / `evasion` <- `rec.agility()` (`stats[4]`) clamped to a byte
-///   - the actor seeds both the accuracy and evasion roll from this stat.
+/// - `intel` / `accuracy` / `evasion` <- `rec.intelligence()` (`stats[4]`,
+///   record `+0x18`; the bestiary INT stat) - `accuracy`/`evasion` clamp it to
+///   a byte; the actor seeds both the accuracy and evasion roll from this stat.
 ///
 /// - `speed` <- `rec.speed()` (`stats[5]`, record `+0x1A`) - the turn-order
 ///   initiative seed (actor `+0x164`). The battle's next-actor selector seeds
 ///   each living actor's per-turn key from it.
 ///
-/// `stats[0]` (SP / spirit-action gauge) is identified but has no `MonsterDef`
-/// field yet, so it's not consumed here. `exp` / `gold` / `drop_item` /
+/// `stats[0]` (AGL / agility-action gauge, record `+0x0E`) is identified but
+/// has no `MonsterDef` field yet, so it's not consumed here. `exp` / `gold` /
+/// `drop_item` /
 /// `drop_rate_q8` come from the
 /// record's reward fields (`+0x44..+0x49`) - these are the **base** values;
 /// the retail victory-spoils formula scales them (EXP `* 3/4` then split among
@@ -182,10 +186,10 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     def.udf = rec.defense_high();
     def.ldf = rec.defense_low();
     def.speed = rec.speed();
-    def.agl = rec.agility();
-    let agl = rec.agility().min(u8::MAX as u16) as u8;
-    def.accuracy = agl;
-    def.evasion = agl;
+    def.intel = rec.intelligence();
+    let int_byte = rec.intelligence().min(u8::MAX as u16) as u8;
+    def.accuracy = int_byte;
+    def.evasion = int_byte;
     def.exp = rec.exp;
     def.gold = rec.gold;
     def.drop_item = (rec.drop_item != 0).then_some(rec.drop_item);
@@ -342,7 +346,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             // Real per-monster SPD comes from the disc archive via
             // `monster_def_from_record`.
             speed: 0,
-            agl: acc as u16,
+            intel: acc as u16,
             accuracy: acc,
             evasion: eva,
             exp,

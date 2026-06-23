@@ -694,7 +694,7 @@ fn cmd_monster_stats(input: &Path) -> Result<()> {
         legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
     println!(
         "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
-        "id", "name", "hp", "mp", "atk", "def+", "def-", "agl", "spd"
+        "id", "name", "hp", "mp", "atk", "def+", "def-", "int", "spd"
     );
     for r in &records {
         println!(
@@ -706,7 +706,7 @@ fn cmd_monster_stats(input: &Path) -> Result<()> {
             r.attack(),
             r.defense_high(),
             r.defense_low(),
-            r.agility(),
+            r.intelligence(),
             r.speed()
         );
     }

@@ -14,17 +14,19 @@
 //! |---|---|---|
 //! | `hp`   | `hp`             | ×1 (exact) |
 //! | `spd`  | `speed()`        | ×1 (exact) |
-//! | `agl`  | `spirit()`       | ×1 (exact) - the curated "agl" is the disc SP/spirit stat |
+//! | `agl`  | `agility()`      | ×1 (exact) - both name the disc `+0x0E` action gauge |
 //! | `udf`  | `defense_high()` | ×2 (exact, the battle UDF boost) |
 //! | `ldf`  | `defense_low()`  | ×2 (exact, the battle LDF boost) |
 //! | `atk`  | `attack()`       | ×5/4 (±1 rounding; battle boost `+= atk>>2`) |
 //! | `exp`  | `exp`            | ×3/4 (±1 rounding; the victory-spoils EXP scale) |
-//! | `intel`| `agility()`      | ×9/8 (±1 rounding; battle boost `+= agl>>3`) - the curated "int" is the disc AGL stat boosted |
+//! | `intel`| `intelligence()` | ×9/8 (±1 rounding; battle boost `+= int>>3`) - both name the disc `+0x18` stat (boosted) |
 //! | `gold` | `gold`           | ×5/16 (±1 rounding; the victory-spoils gold scale) |
 //!
 //! So the **disc record is raw ground truth**, and the curated table is the
-//! *boosted* in-battle view; the curated `agl`/`intel` labels are in fact the
-//! disc *spirit* and *(boosted) agility* stats. The five combat-stat factors
+//! *boosted* in-battle view. The curated `agl` / `intel` labels match the disc
+//! `agility()` (`+0x0E`) and `intelligence()` (`+0x18`) accessors directly -
+//! this byte-exact join is what pins those two names to those two offsets. The
+//! five combat-stat factors
 //! match [`MonsterRecord::battle_stats`] exactly; `exp`/`gold` are the separate
 //! reward-scaling steps (`FUN_8004e568`), not stat boosts. This both validates
 //! the monster-archive parser (all nine stat fields relate by clean factors
@@ -118,9 +120,9 @@ fn curated_enemy_stats_are_scaled_disc_stats() {
         exact(
             &mut exact_fail,
             &e.name,
-            "agl=spirit",
+            "agl=agility",
             e.agl,
-            r.spirit() as u32,
+            r.agility() as u32,
         );
         exact(
             &mut exact_fail,
@@ -154,9 +156,9 @@ fn curated_enemy_stats_are_scaled_disc_stats() {
         approx(
             &mut scaled_fail,
             &e.name,
-            "int=agl*9/8",
+            "int=intelligence*9/8",
             e.intel,
-            scale(r.agility(), 9, 8),
+            scale(r.intelligence(), 9, 8),
         );
         approx(
             &mut scaled_fail,

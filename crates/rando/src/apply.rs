@@ -1112,7 +1112,7 @@ pub fn current_monster_stats(patcher: &DiscPatcher) -> Result<Vec<monster_stats:
                 r.attack(),
                 r.defense_high(),
                 r.defense_low(),
-                r.agility(),
+                r.intelligence(),
                 r.speed(),
             ],
         })

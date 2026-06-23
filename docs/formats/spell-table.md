@@ -80,7 +80,7 @@ to the pinned `retail_seru_magic_catalog` on a disc-free build); the disc-gated
 
 The `0x00..=0x24` records carry MP / element / target but their `name_ptr` is an
 empty string. These are **not** the ids a monster's archive spell entries store
-(those local `+0x4C` entry ids in `0x0C..=0x1F` only gate the SP cost). The
+(those local `+0x4C` entry ids in `0x0C..=0x1F` only gate the AGL/action cost). The
 named monster attacks live at **`0x25..`** in this same table, and an enemy is
 named exactly like a party caster: the AI spell picker (`FUN_801E9FD4`,
 `overlay_0898`) reads a **global** spell id from the monster record's
@@ -162,7 +162,7 @@ they split cleanly into damage vs. heal:
   target's current HP, add it to the damage-popup accumulator at `actor+0x10`, then
   store `HP = curHP - amount` (`subu`). For the summon path (`param_2 == 7`) the
   attacker roll is
-  `rand % (AGL@+0x168 + 1) + HP@+0x14c + DAT_801C9370[ctx+0x13]_AGL@+0x168 * 2`
+  `rand % (INT@+0x168 + 1) + HP@+0x14c + DAT_801C9370[ctx+0x13]_INT@+0x168 * 2`
   minus a defender-mitigation term (`FUN_801dd0ac` returns `roll - mitigation`) - i.e.
   **caster/summon battle-state-derived, not a static per-spell scalar.**
 - **Heal summons** (PROT 0903 / 0905 / 0910 / 0911 / 0913, plus 0915's first arm)

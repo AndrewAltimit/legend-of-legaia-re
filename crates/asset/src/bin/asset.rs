@@ -5118,10 +5118,10 @@ fn monster_archive_one(
                 .spells
                 .iter()
                 .map(|s| {
-                    let cost = if s.sp_cost == 0xFF {
+                    let cost = if s.agl_cost == 0xFF {
                         "--".to_string()
                     } else {
-                        s.sp_cost.to_string()
+                        s.agl_cost.to_string()
                     };
                     format!("0x{:02X}@{}", s.id, cost)
                 })

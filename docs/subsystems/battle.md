@@ -295,7 +295,7 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x34` / `+0x38` | i16 | Current world X / Z. |
 | `+0x3C` / `+0x40` | i16 | Previous-frame X / Z (for delta tracking). |
 | `+0x4A` | u8 | Magic-slot count. |
-| `+0x4C` | int* | Spell-entry pointer array (each entry: `[u8 spell/action id, …, u8 SP cost @ +0x74]`). |
+| `+0x4C` | int* | Spell-entry pointer array (each entry: `[u8 spell/action id, …, u8 AGL (action) cost @ +0x74]`). |
 | `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max - three-way mirror layout. |
 | `+0x1BC..+0x1BE` | u8 | "Show damage" overlay byte triplet. |
 | `+0x1DF` | u8 | Monster size byte (read from a monster record at `+0x1F` and stored here at init). |
@@ -310,7 +310,7 @@ Combatant struct fields surfaced by helpers analysed so far:
 
 Called from `FUN_800542C8` (secondary battle archive loader). Populates a battle-actor at `[DAT_801C9370 + (slot+3)*4]` from a monster record:
 
-- HP / MP / SP triplets at `+0x14C..0x158` and `+0x172..0x174`.
+- HP / MP / AGL triplets at `+0x14C..0x158` and `+0x172..0x174` (AGL = the agility / action gauge at `+0x154/+0x156`).
 - Magic-resistance bytes at `+0x1EF..+0x1F3` (5 elements; one nibble per element).
 - Walks the spell list at `+0x4C` (count at `+0x4A`): for the elemental ids (`2,3,4,5,0xB`) it records the matching spell's slot index into the per-element table at `+0x1EF..+0x1F3`.
 - Attack-effect / animation data pointer (record `+0x04`) into `+0x230`.
@@ -327,22 +327,22 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x04` | u32 | Block-relative offset of the monster's **battle-model TMD** → actor `+0x230` (walked as `0x1C`-stride geometry records - a TMD object-table entry is `0x1C` bytes - by `FUN_80049858` / `FUN_800495C8`). **Not** XP/drop. See [Monster mesh](#monster-mesh-record-0x04). |
 | `+0x08` | u32 | Shared-resource pointer (fixed up at load). |
 | `+0x0C` | u16 | **HP** → actor `+0x14C/+0x14E/+0x172`. |
-| `+0x0E` | u16 | **SP** → actor `+0x154/+0x156` (spirit/action gauge - AI spell-selection budget; spirit-charge source). |
+| `+0x0E` | u16 | **AGL** → actor `+0x154/+0x156` (agility / action gauge, cur+base; spent per action, reset each round; "Power Up" raises it - *"agility increased!"*). |
 | `+0x10` | u16 | **MP** → actor `+0x150/+0x152/+0x174`. |
 | `+0x12` | u16 | **ATK** → actor `+0x158/+0x15A` (attacker offense in the damage routine). |
 | `+0x14` | u16 | **UDF** (upper defense) → actor `+0x15C/+0x15E` (defender defense, high facet). |
 | `+0x16` | u16 | **LDF** (lower defense) → actor `+0x160/+0x162` (defender defense, low facet). |
-| `+0x18` | u16 | **AGL** → actor `+0x168/+0x16A` (rescaled into the accuracy/evasion seed). |
+| `+0x18` | u16 | **INT** → actor `+0x168/+0x16A` (magical damage / magic defense in the summon/arts kernel + the accuracy/evasion seed; the bestiary INT column. Meth962: INT "affects your magical damage and defense against other magical spells"). |
 | `+0x1A` | u16 | **SPD** → actor `+0x164/+0x166` (turn-order initiative seed; buffable). |
-| `+0x21` | u8[3] | **Magic-attack ids** (`+0x21..+0x23`): up to three **global** spell ids the enemy casts. A slot is live when its value is `> 1`. The AI spell picker `FUN_801E9FD4` (`overlay_0898`) reads `record[0x21 + slot]`, writes it into the live actor at `+0x1DF`, and the battle-action SM names it via `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). These global ids are **distinct** from the local `+0x4C` entry ids (which only gate SP); they are the names that appear on screen. Parser: `MonsterRecord::magic_attacks` + `legaia_asset::spell_names`. |
+| `+0x21` | u8[3] | **Magic-attack ids** (`+0x21..+0x23`): up to three **global** spell ids the enemy casts. A slot is live when its value is `> 1`. The AI spell picker `FUN_801E9FD4` (`overlay_0898`) reads `record[0x21 + slot]`, writes it into the live actor at `+0x1DF`, and the battle-action SM names it via `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). These global ids are **distinct** from the local `+0x4C` entry ids (which only gate the AGL cost); they are the names that appear on screen. Parser: `MonsterRecord::magic_attacks` + `legaia_asset::spell_names`. |
 | `+0x44` | u16 | **gold** (base victory-spoils gold). |
 | `+0x46` | u16 | **EXP** (base victory-spoils experience). |
 | `+0x48` | u8 | **drop item id** (`0` = no drop). |
 | `+0x49` | u8 | **drop chance** in percent (`rand() % 100 < pct`). |
 | `+0x4A` | u8 | Magic-slot count. |
-| `+0x4C` | u32[] | Spell-entry offsets (count at `+0x4A`; block-relative, fixed to pointers at load). Each entry's first byte is a **spell/action id**: ids `2,3,4,5,0x0B` are elemental resist/affinity markers (`FUN_80054CB0` writes the slot index into actor `+0x1EF..+0x1F3`); ids `0x0C..0x1F` are offensive castable spells; `0x23` is special. Entry `+0x74` is the **SP cost**. See [battle-formulas.md → spell list](battle-formulas.md#spell-list-record-0x4c). |
+| `+0x4C` | u32[] | Spell-entry offsets (count at `+0x4A`; block-relative, fixed to pointers at load). Each entry's first byte is a **spell/action id**: ids `2,3,4,5,0x0B` are elemental resist/affinity markers (`FUN_80054CB0` writes the slot index into actor `+0x1EF..+0x1F3`); ids `0x0C..0x1F` are offensive castable spells; `0x23` is special. Entry `+0x74` is the **AGL (action) cost**. See [battle-formulas.md → spell list](battle-formulas.md#spell-list-record-0x4c). |
 
-All six stat names are pinned by the consumers of those actor slots - see [battle-formulas.md](battle-formulas.md#actor-stat-block--monster-record-mapping). The parser exposes them via `legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility, speed, spirit}`.
+All six stat names match the game's own labels + the fan bestiaries, cross-checked against the runtime consumer of each actor slot - see [battle-formulas.md](battle-formulas.md#actor-stat-block--monster-record-mapping). The parser exposes them via `legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, intelligence, speed, agility}`.
 
 **Battle-load stat boost.** The record bytes are *not* what the player fights. After copying the record into the actor, `FUN_80054CB0` **boosts** four combat stats, choosing one of two profiles by the battle-context flag `_DAT_8007bd24 + 0x287` (= `(*(u8*)0x8007BD60 >> 5) & 4`, bit 7 of a per-battle flags byte set by `FUN_800513F0`):
 
@@ -351,10 +351,10 @@ All six stat names are pinned by the consumers of those actor slots - see [battl
 | **ATK** (`+0x12`) | `+= ATK>>2` (×5/4) | unchanged |
 | **UDF** (`+0x14`) | `× 2` | `+= (UDF>>1)+(UDF>>2)` (×7/4) |
 | **LDF** (`+0x16`) | `× 2` | `+= (LDF>>1)+(LDF>>2)` (×7/4) |
-| **AGL** (`+0x18`) | `+= AGL>>3` (×9/8) | `+= AGL>>2` (×5/4) |
-| HP / MP / SP / SPD | unchanged | unchanged |
+| **INT** (`+0x18`) | `+= INT>>3` (×9/8) | `+= INT>>2` (×5/4) |
+| HP / MP / AGL / SPD | unchanged | unchanged |
 
-Both profiles boost; only the magnitude differs, so the raw record always understates the fight. Profile **B** (the gate-set branch) is what a live international-retail capture reproduces byte-for-byte (Gaza Sim-Seru id 166: raw `[SP 128, ATK 288, UDF 222, LDF 200, AGL 220, SPD 146]` → in-battle `ATK 360, UDF 444, LDF 400, AGL 247`), and is what the curated `enemies.toml` bestiary holds. `MonsterRecord::battle_stats()` returns profile B. This cross-region difficulty difference (international retail hitting harder than the raw record / the Japanese release) was first surfaced by **Zetopheonix**.
+Both profiles boost; only the magnitude differs, so the raw record always understates the fight. Profile **B** (the gate-set branch) is what a live international-retail capture reproduces byte-for-byte (Gaza Sim-Seru id 166: raw `[AGL 128, ATK 288, UDF 222, LDF 200, INT 220, SPD 146]` → in-battle `ATK 360, UDF 444, LDF 400, INT 247`), and is what the curated `enemies.toml` bestiary holds. `MonsterRecord::battle_stats()` returns profile B. This cross-region difficulty difference (international retail hitting harder than the raw record / the Japanese release) was first surfaced by **Zetopheonix**.
 
 **Rewards (EXP / gold / drop)** are inline in the record head at `+0x44..+0x49` (*not* at `+0x04`, which is the effect/animation data above). The victory-spoils function `FUN_8004E568` reads them from the per-enemy **record-pointer table at `0x801C9348`** (the loader `FUN_800542C8` populates it, so the actor *does* retain its record there - that's why monster-init never needed to copy the reward fields):
 
@@ -588,7 +588,7 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x2A7..+0x2B0` | NUL-padded ASCII display name (`Vahn`/`Noa`/`Gala`/`Terra`/player-entered lead), 9 bytes bounded by the active-spell table at `+0x2B0`. Pinned across six in-game RAM captures for all four roster slots. In the retail SC save block this lands at `game+0x66F + n*0x414` (SC `+0x86F` for slot 0); see [`save-screen.md`](save-screen.md). Accessor `legaia_save::CharacterRecord::name` (`NAME_OFFSET`). |
 | `+0x2B0..+0x37F` | Active spell-slot array (stride `0x14`, up to N entries). Populated by `FUN_80042DBC` from the spell list. |
 | `+0xF4..0x100` | "Active abilities" 16-byte block - OR'd into the global 4×u32 bitmask at `0x80074358..0x80074368` by `FUN_80042558`. |
-| `+0x104..0x110` | HP / MP / SP triplets (cur, max stored as separate u16s). |
+| `+0x104..0x110` | HP / MP / AP triplets (cur, max stored as separate u16s; AP = the arts / action-point gauge, its max sized by AGL - the AGL stat itself is the adjacent "Max AGL" field at `+0x110`/`+0x122`, see [save-record.md](../formats/save-record.md)). |
 | `+0x10E` | u8 - written on level-up (delta `+8` for Vahn slot in the captured pre→post pair). Likely max-HP byte component or stat-derived rank. |
 | `+0x11A` | Stat-cap field (clamped to `0x3E7`). |
 | `+0x11C..+0x122` | Six adjacent stat bytes (paired) - incremented by small deltas (`+1..+4`) on level-up. Likely the per-stat rank table consumed by the level-up apply path. |
@@ -953,7 +953,7 @@ The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../to
 | Magic-rank up | `+0x161` | `0x02 → 0x03` | spell-level array (`spell_levels[0]` +1) |
 | Level-up, 4-level jump (pre → post) | `+0x00` | `0x4F → 0x73` | unconfirmed (jump +0x24 doesn't match a single-level granularity) |
 | Level-up | `+0x04..+0x06` | `0x016D → 0x02DA` | u16 LE XP delta (+365) |
-| Level-up | `+0x10E` | `0x3A → 0x42` | low byte of `sp_max` (Spirit, +8) |
+| Level-up | `+0x10E` | `0x3A → 0x42` | low byte of `ap_max` (AP / arts gauge, +8) |
 | Level-up | `+0x11C..+0x12C` | six per-byte +1..+4 | per-stat increments at byte stride 2 |
 | Level-up | `+0x130` | `0x02 → 0x03` | displayed character level (+1) |
 
