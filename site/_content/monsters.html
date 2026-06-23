@@ -112,19 +112,19 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <th class="col-name" data-key="name">Name</th>
             <th data-key="hp">HP</th>
             <th data-key="mp">MP</th>
-            <th data-key="s1" title="Attack - the enemy's offense. In-battle view boosts it ×5/4 (+= ATK>>2).">ATK</th>
-            <th data-key="s2" title="UDF - upper defense (applies to some attacks). In-battle view doubles it (×2).">UDF</th>
-            <th data-key="s3" title="LDF - lower defense (applies to others). In-battle view doubles it (×2).">LDF</th>
-            <th data-key="s4" title="INT (intelligence) - governs magical damage and defense against magic (summon / arts kernel), and also seeds the hit / evade roll. In-battle view boosts it ×9/8 (+= INT>>3). This is the column fan bestiaries call INT.">INT</th>
-            <th data-key="s5" title="Speed - sets turn order">SPD</th>
-            <th data-key="s0" title="AGL (agility / action gauge) - the per-round budget the AI spends to act; the 'Power Up' buff raises it ('agility increased!').">AGL</th>
-            <th data-key="element" title="Element (record +0x1D). The affinity scale multiplies an attacker's damage by matrix[attacker element][defender element] - a small ±4% nudge in retail.">Elem</th>
-            <th data-key="magic" title="Total spell slots the record carries (includes passive / affinity markers)">Magic</th>
-            <th data-key="castable" class="col-name" title="The enemy's named magic attacks, with MP cost. Names resolve from a full disc image; a raw PROT.DAT shows the raw id.">Magic attacks (MP)</th>
-            <th data-key="exp" title="Base EXP reward - the game scales it and splits it among the party">EXP</th>
-            <th data-key="gold" title="Base gold reward - scaled at the end of a fight">Gold</th>
-            <th data-key="drop_chance" title="Item the enemy can drop, and the chance. Name resolves from a full disc image; a raw PROT.DAT shows the raw id.">Drop</th>
-            <th data-key="steal_chance" title="Item the player steals with the Evil God Icon, and the chance. From the static SCUS_942.54 steal table; name resolves from a full disc image.">Steal</th>
+            <th data-key="s1" title="Attack - the enemy's physical offense.">ATK</th>
+            <th data-key="s2" title="Upper defense - reduces most (non-low) attacks.">UDF</th>
+            <th data-key="s3" title="Lower defense - reduces low attacks.">LDF</th>
+            <th data-key="s4" title="Intelligence - magical damage and magic defense.">INT</th>
+            <th data-key="s5" title="Speed - battle turn order.">SPD</th>
+            <th data-key="s0" title="Agility - the action gauge the enemy spends to act.">AGL</th>
+            <th data-key="element" title="Element - shifts elemental damage dealt and taken.">Elem</th>
+            <th data-key="magic" title="Number of spell slots in the record.">Magic</th>
+            <th data-key="castable" class="col-name" title="The enemy's named magic attacks and their MP cost.">Magic attacks (MP)</th>
+            <th data-key="exp" title="Base EXP reward.">EXP</th>
+            <th data-key="gold" title="Base gold reward.">Gold</th>
+            <th data-key="drop_chance" title="Item the enemy can drop, and the chance.">Drop</th>
+            <th data-key="steal_chance" title="Item stolen with the Evil God Icon, and the chance.">Steal</th>
             <th class="col-mesh" title="Click a row to view the enemy's 3D battle model">3D</th>
           </tr>
         </thead>
