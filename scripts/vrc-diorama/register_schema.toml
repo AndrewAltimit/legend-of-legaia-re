@@ -1,0 +1,85 @@
+# register_schema.toml
+#
+# SINGLE SOURCE OF TRUTH for the Legend of Legaia battle-diorama MIDI register
+# protocol. `codegen.py` reads this file and emits BOTH sides of the wire:
+#   - generated/registers.lua  -- consumed by the Lua MIDI encoder (PCSX side)
+#   - generated/Registers.cs   -- consumed by the UdonSharp decoder (VRChat side)
+# Hand-editing either generated file is a build error by convention; change this
+# TOML and re-run codegen. `codegen.py --check` fails if they have drifted.
+#
+# Addressing model (PRD sec 6.1): a MIDI Control-Change carries
+# (channel 0..15, cc number 0..127, value 0..127) ~ 18 usable bits/event.
+#   channel  = address space (meta + one per actor slot)
+#   cc       = register within that space
+#   value    = 7-bit payload
+# Wide registers are an (hi, lo) cc PAIR carrying a 14-bit value, MSB (hi) sent
+# FIRST. Every channel has a `commit` register (cc 0x7F): the decoder latches
+# all pending registers on that channel only when commit is written, so a
+# multi-register update is applied atomically (no torn reads). Because hi < lo <
+# 0x7F, ascending-cc emission already orders MSB before LSB before commit.
+
+# Bump on ANY layout change below; the decoder shows a mismatch warning when the
+# meta schema_version register disagrees with its compiled-in value.
+schema_version = 1
+
+# ----------------------------------------------------------------------------
+# Meta channel -- battle-wide state (not per-actor).
+# ----------------------------------------------------------------------------
+[meta]
+channel = 15
+
+[meta.registers]
+schema_version = { cc = 0x00, doc = "compiled schema_version; decoder warns on mismatch" }
+session_flags  = { cc = 0x01, doc = "bit0 randomized, bit1.. reserved" }
+heartbeat      = { cc = 0x02, doc = "probe frame counter & 0x7F; drives LIVE/STALE" }
+game_mode      = { cc = 0x03, doc = "battle render mode (0x15 = BattleMode orbit)" }
+region_id      = { cc = 0x04, wide = true, doc = "scene/region id (hi 0x04, lo 0x05)" }
+battle_phase   = { cc = 0x06, doc = "0 none 1 intro 2 active 3 victory 4 defeat" }
+refresh_marker = { cc = 0x07, doc = "increments on each full-state sweep" }
+commit         = { cc = 0x7F, doc = "latch all pending meta registers" }
+
+# ----------------------------------------------------------------------------
+# Actor-slot channels. The probe's BattleState actor slots map 1:1 to channels:
+# party slots 0..2 (Vahn/Noa/Gala order) and enemy slots 3..7 (formation order).
+# ----------------------------------------------------------------------------
+[party]
+channels = [0, 1, 2]
+
+[enemy]
+channels = [3, 4, 5, 6, 7]
+
+# Registers shared by every actor-slot channel (party + enemy).
+[slot.registers]
+flags       = { cc = 0x00, doc = "bitfield; see slot.flag_bits" }
+id          = { cc = 0x01, wide = true, doc = "enemy: monster id; party: character id (hi 0x01, lo 0x02)" }
+action_id   = { cc = 0x03, doc = "current battle-action / move id (actor +0x1DF)" }
+hp          = { cc = 0x04, wide = true, doc = "current HP (hi 0x04, lo 0x05)" }
+maxhp       = { cc = 0x06, wide = true, doc = "max HP (hi 0x06, lo 0x07)" }
+status      = { cc = 0x08, doc = "status-effect mask (7-bit; see slot.status_bits)" }
+target_slot = { cc = 0x09, doc = "slot this actor is acting on (0x7F = none)" }
+commit      = { cc = 0x7F, doc = "latch all pending registers on this slot" }
+
+# Bit positions within the slot `flags` register.
+[slot.flag_bits]
+present  = 0
+dead     = 1
+acting   = 2
+targeted = 3
+
+# Bit positions within the slot `status` register. Derived from the actor status
+# word (+0x00); only confuse/charm (word bit 0x2000) is pinned today -- the rest
+# of the word's bit layout is an open RE thread, so higher bits stay reserved.
+[slot.status_bits]
+confuse = 0
+
+# Named values for the meta battle_phase register.
+[battle_phase_values]
+none    = 0
+intro   = 1
+active   = 2
+victory = 3
+defeat  = 4
+
+# Sentinel for "no target" in the target_slot register (0x7F = max 7-bit value).
+[constants]
+target_none = 0x7F
