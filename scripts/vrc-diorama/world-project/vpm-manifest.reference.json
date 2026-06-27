@@ -1,0 +1,13 @@
+{
+  "_comment": [
+    "REFERENCE ONLY -- not a live project manifest.",
+    "The VRChat Creator Companion (VCC) writes the authoritative vpm-manifest.json",
+    "when you Create New World; let it resolve the latest versions. This file just",
+    "documents the packages LegaiaDiorama needs. The Worlds SDK bundles UdonSharp,",
+    "so com.vrchat.worlds is the only direct dependency.",
+    "Version strings below are indicative -- use whatever VCC offers as current."
+  ],
+  "dependencies": {
+    "com.vrchat.worlds": { "version": "3.7.x" }
+  }
+}

@@ -46,6 +46,25 @@ if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-doc-density.py"
     fi
 fi
 
+# VRChat-diorama register-protocol codegen drift gate. When staged changes touch
+# scripts/vrc-diorama/, the generated Lua/C# register files must match the schema
+# (PRD: hand-editing the generated side is a build error). Bypass via the global
+# LEGAIA_SKIP_PRECOMMIT=1 handled above.
+VRC_TOUCHED=0
+while IFS= read -r path; do
+    case "$path" in
+        scripts/vrc-diorama/*) VRC_TOUCHED=1; break ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+if [[ "$VRC_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/vrc-diorama/codegen.py" ]]; then
+    printf '[pre-commit] vrc-diorama register codegen drift check\n'
+    if ! python3 scripts/vrc-diorama/codegen.py --check; then
+        printf '[pre-commit] generated register files are stale -- run scripts/vrc-diorama/codegen.py and stage the result (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Site internal-link gate. When staged changes touch site/, regenerate-free
 # check of the existing generated pages' relative hrefs + anchors. (The full
 # regenerate-then-check runs inside site/_gen.py; this catches fragment edits

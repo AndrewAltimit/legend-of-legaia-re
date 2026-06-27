@@ -21,6 +21,7 @@ referenced by code, not analysis one-offs:
 | [`ghidra-analysis/`](#ghidra-analysis) | Static analysis: overlay extraction + import into Ghidra, MIPS/GTE disassembly, GPU-packet and call-graph tooling. |
 | [`asset-investigation/`](#asset-investigation) | One-off RE probes over disc assets: TIM/TMD review + render, slot-4 / world-map decode, scene/font/CDNAME/save-format hunts. |
 | `pcsx-redux/` | PCSX-Redux Lua probe library (`lib/probe`) + `autorun_*.lua` capture scripts + Python decoders. See [`docs/tooling/pcsx-redux-automation.md`](../docs/tooling/pcsx-redux-automation.md). |
+| [`vrc-diorama/`](#vrc-diorama) | Clean-room MIDI transport for the VRChat live battle-diorama: register schema + codegen, the Lua encoder/sink riding the battle-state probe, and the UdonSharp decoder scaffold. No Sony bytes. |
 | `mednafen/` | Mednafen save-state automation: capture, diff, bisect, bulk-terrain resolve. See [`docs/tooling/mednafen-automation.md`](../docs/tooling/mednafen-automation.md). |
 | `git-hooks/` | The shipped `pre-commit` hook (installed via `ci/install-hooks.sh`). |
 | `engine/` | Engine-side `scenarios.toml` for the determinism replay harness (distinct from the capture manifest above). |
@@ -66,3 +67,22 @@ Disc-asset RE probes. `decode_slot4_subbodies.py`, `slot4_to_obj.py`, and
 - World-map / slot-4: `decode_slot4_subbodies.py`, `slot4_to_obj.py`, `slot4_topdown_png.py`, `classify_dat_8007c018.py`, `extract-world-placements.py`, `analyze_world_map_vm_log.py` (the live-RAM GPU-tile variant `analyze-walk-ground-tiles.py` lives in `ghidra-analysis/`).
 - Scene / font / naming / save: `scene-asset-detect.py`, `find-font-carrier.py`, `cdname_shift_analysis.py`, `match_title_staging_to_prot.py`, `find_save_offsets.py`.
 - Overlay disasm: `overlay_disasm.py <overlay.bin> <base_va_hex> [start_va_hex [n]]` - linear MIPS32-LE disassembler over an as-loaded overlay `.bin` (from `asset overlay extract`); decodes per-word so embedded data emits `.word` instead of halting the sweep. Whole-file dump (grep target) or a windowed function view.
+
+### vrc-diorama/
+
+The transport layer that carries live battle state into a VRChat world for the
+diorama feature. It rides on the battle-state probe (`pcsx-redux/lib/probe/battle_state.lua`)
+and is otherwise self-contained; its own [`README.md`](vrc-diorama/README.md) is the
+reference. No Sony bytes - wire-protocol structure only.
+
+- `register_schema.toml` - single source of truth for the MIDI register protocol.
+- `codegen.py` - emits `generated/registers.lua` (encoder) + the UdonSharp
+  `Registers.cs` (decoder); `--check` is a pre-commit drift gate.
+- `midi_encoder.lua` / `midi_sink.lua` - `BattleState` -> CC messages (MSB-first,
+  commit-latched) -> ALSA `snd-virmidi` device. Driven by
+  `pcsx-redux/autorun_battle_midi_stream.lua`.
+- `setup-virmidi.sh` / `verify-virmidi.sh` - one-time virtual-port setup + a
+  no-VRChat end-to-end loopback check.
+- `test_*.lua` - offline encoder/sink/round-trip validation (run with `luajit`).
+- `world-project/` - drop-in VRChat world assets (UdonSharp decoder + `.meta` +
+  Windows VCC setup guide).
