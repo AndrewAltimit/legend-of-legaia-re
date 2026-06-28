@@ -15,6 +15,14 @@ The three are wired:
 - Actor tick (`FUN_80021DF4`, per frame) and actor spawn (`FUN_80021B04`, one-shot) both call `FUN_80023070(actor)` to step the move buffer.
 - Move-VM opcode `0x2F` calls `FUN_801D362C(actor, opcode_ptr)` for **overlay-defined extension opcodes**. The dispatcher exists in many overlays (town, world-map and its variants, dialog, cutscene); each overlay carries its own copy with its own JT contents.
 
+### Move-buffer record sources
+
+The move buffer (`actor[+0x48]`) is seated from one of three record tables, all in the **same record format** `[i16 model_sel][u16 flags][move-VM bytecode]` (`model_sel = -1` transform node / `0x4000`-`0x4001` render-mode node / `>=0` library mesh; bytecode ends at op `0x08` Halt):
+
+1. **`FUN_800204F8`** - the `EXEC_MOVE` path: a per-actor move record from the runtime root (`_DAT_8007B888` MOVE / `_DAT_8007B840` MOVE2).
+2. **Per-summon stagers** - `FUN_80021B04` spawns parts from a stager overlay's records (see [`formats/effect.md`](../formats/effect.md), `legaia_asset::summon_overlay`).
+3. **Per-scene prescript stager table** - the `scene_event_scripts` / `scene_v12_table` prescript: a `[u16 count][u16 offsets]` table of these same records, loaded into `_DAT_8007b8d0`. The field VM (`FUN_801DE840`) installs a record by id via **`FUN_800252EC`** (`record = _DAT_8007b8d0 + offsets[id]`) → `FUN_80021B04` → this VM. See [`formats/scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only) (parser `legaia_asset::scene_event_scripts::move_stager_records`).
+
 ## Function signature
 
 ```c

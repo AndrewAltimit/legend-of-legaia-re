@@ -113,13 +113,17 @@ on towns and dungeons the pair selects different runtime resources.
 ## Event-script prescript at `+0x800`
 
 Identical shape to the standalone [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only)
-format: `[u16 count][u16 offsets[count]]` followed by per-record **word-aligned
-(16-bit) command records** - **not** field-VM (`FUN_801DE840`) bytecode (it
-disassembles as field-VM with a 65–88 % error rate; see the scene_event_scripts
-section for the falsification). The per-record `0xFFFF 0x0000` lead is a record
-header sentinel, not a frame-divider opcode. The genuine per-scene field-VM
-scripts live in the scene MAN sub-asset (see
-[`subsystems/script-vm.md`](../subsystems/script-vm.md)).
+format: a `[u16 count][u16 offsets[count]]` table indexing **move-VM
+(`FUN_80023070`) records in the summon-stager format** (`[i16 model_sel][u16 flags][move-VM bytecode]`)
+- **not** field-VM (`FUN_801DE840`) bytecode (it disassembles as field-VM with a
+65–88 % error rate). The per-record `0xFFFF 0x0000` lead is `model_sel = -1`
+(a transform/pivot node) + `flags = 0`, and the `0x0008` terminator is move-VM
+opcode `0x08` (Halt). The field VM installs a record by id via `FUN_800252EC`
+(→ part-stager `FUN_80021B04` → move VM); see the
+[scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only)
+section for the full chain. The genuine per-scene field-VM *scripts* live in the
+scene MAN sub-asset (see [`subsystems/script-vm.md`](../subsystems/script-vm.md));
+this prescript is the move-VM *stager* table they spawn from.
 
 Across the 97 v12 entries:
 
@@ -206,10 +210,12 @@ for (i, s) in t.scripts.iter().enumerate() {
   scene's TMD pack count (40 slots), but for other scenes they exceed it,
   ruling out "global TMD-slot index". They probably index a scene-local
   resource table the loader builds from the v12 header.
-- **Two scripts per scene** - the offset-0 script and the offset-0x800
-  script - likely encode different runtime phases (boot vs. live). The
-  field-VM opcode stream from each would tell us, once the VM opcode
-  table is exhaustively walked.
+- **Two prescript tables per scene** - the sister offset-0 `scene_event_scripts`
+  entry and this offset-0x800 table - carry the same move-VM stager records. Both
+  are consumed by the move VM via `FUN_800252EC` → `FUN_80021B04`
+  (see [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only)).
+  The exact per-record decode follows the move VM's control flow (a linear
+  disassembly desyncs at its jump ops `0x18/0x19/0x1A/0x1B`).
 
 ## Related
 

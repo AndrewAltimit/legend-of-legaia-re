@@ -9,10 +9,11 @@
 //! +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
 //!                                          ; monotonically non-decreasing,
 //!                                          ; all <= file size
-//! +offsets[i]        record bytecode        ; per-record opcodes; the bulk
-//!                                          ; of records open with the
-//!                                          ; field-VM frame sentinel
-//!                                          ; `0xFFFF 0x0000`
+//! +offsets[i]        stager record         ; [i16 model_sel][u16 flags][move-VM
+//!                                          ; bytecode]; the bulk lead with
+//!                                          ; `model_sel = -1` (= the old
+//!                                          ; "0xFFFF 0x0000" lead, a transform
+//!                                          ; node). See "Format meaning" below.
 //! ...                                       ; bulk asset payload after the
 //!                                          ; prescript (format unidentified;
 //!                                          ; varies per scene)
@@ -34,60 +35,59 @@
 //! at the record positions; real scene-event-script bundles carry it on
 //! the majority of records (50–92 %).
 //!
-//! ### Format meaning - a WORD-ALIGNED command structure, NOT field-VM bytecode
+//! ### Format meaning - a per-scene MOVE-VM stager table (summon-stager format)
 //!
 //! The prescript records were long assumed to be field-VM (`FUN_801DE840`)
-//! event scripts. **That is wrong.** Running the field-VM disassembler
-//! ([`crate::field_disasm`]) over these records yields a 65–88 % decode-error
-//! rate, and the record bytes are plainly **16-bit word-aligned**:
+//! event scripts. They are not (field-VM disassembly yields a 65–88 % error
+//! rate). They are **move-VM (`FUN_80023070`) records in the summon-stager
+//! format** - byte-identical in shape to the per-summon stager parts
+//! ([`crate::summon_overlay`]):
 //!
 //! ```text
-//! +0x00   u16  0xFFFF            ; record header sentinel ...
-//! +0x02   u16  0x0000            ; ... (the "frame opener", together a u32)
-//! +0x04   [u16 opcode][u16 operand...]   ; little-endian words: the low byte
-//!                                         ; is the opcode, the high byte is 0
-//!                                         ; for ~83 % of body words (the rest
-//!                                         ; are packed coordinate operands)
-//! ...     u16  0x0008            ; record terminator word (99.9 % of records)
+//! +0x00   i16  model_sel   ; -1 = transform/pivot node (the dominant kind; this
+//!                          ;   is the "0xFFFF" of the old "0xFFFF 0x0000" lead),
+//!                          ;   0x4000/0x4001 = render-mode node, >=0 = library mesh
+//! +0x02   u16  flags       ; (the "0x0000" of the old lead)
+//! +0x04   ..   move-VM bytecode   ; ticked by FUN_80023070; op 0x08 = Halt (the
+//!                          ;   "0x0008 terminator"), all opcodes in 0x00..=0x46
 //! ```
 //!
-//! The opcodes seen (`0x01 0x06 0x09 0x0D 0x15 0x1D 0x25 0x2C 0x2F …`) sit
-//! mostly **below the field VM's valid opcode floor** (`FUN_801DE840`'s
-//! dispatch starts at `0x22`), and a record like
-//! `FF FF 00 00 25 00 29 00 25 00 2A 00 08 00` reads cleanly word-aligned as
-//! `cmd(0x25, 0x29) cmd(0x25, 0x2A) term(0x08)` but is garbage byte-by-byte.
-//! So `0xFFFF 0x0000` is a **per-record header sentinel**, not "the field VM's
-//! frame divider opcode".
+//! **The full runtime chain (pinned from disc + resident-overworld RAM):**
+//! 1. The scripted bundle is loaded into `_DAT_8007b8d0` (the field scratch slot
+//!    `_DAT_1f8003ec + 0x12800`).
+//! 2. The per-scene **field VM `FUN_801DE840`** (the scene MAN script) calls the
+//!    **installer `FUN_800252EC(id)`**, which resolves
+//!    `record = _DAT_8007b8d0 + (offsets[id] & ~1)` from the `[count][offsets]`
+//!    table and calls the part-stager `FUN_80021B04`.
+//! 3. `FUN_80021B04` seats an actor (`actor[+0x48] = record`, `actor[+0x70] = 2`
+//!    move-VM PC, tick fn `FUN_80021DF4`) and kicks the move VM.
+//! 4. `FUN_80021DF4` (per frame) → `FUN_80023070` runs the record's move-VM
+//!    bytecode (from `record+4`) until the Halt op (`0x08`).
 //!
-//! Record `0` carries no sentinel and is a different shape again: a fixed
-//! 768-byte table of 96 × 8-byte slots (`[u16][u16][u16][u16]`), byte-identical
-//! across several town scenes - a shared default/dispatch table, not a script.
+//! So the "consuming command VM" is the **move VM** (already decoded: 71 ops
+//! `0x00..=0x46`, operand widths in `legaia_engine_vm::move_vm`), and the
+//! records parse with the same [`crate::summon_overlay::SummonPart`] shape -
+//! see [`move_stager_records`]. This is the *per-scene* sibling of the summon
+//! stagers (same record format, same `FUN_80021B04` + move-VM consumer). It is
+//! NOT field-VM, NOT a bespoke command VM, and NOT vestigial: live
+//! kingdom-overworld RAM shows these records resident at `_DAT_8007b8d0` with
+//! actors (`actor[+0x48]`) executing them through the move VM.
 //!
-//! The **real** per-scene field-VM (`FUN_801DE840`) scripts live in the scene's
-//! MAN sub-asset, not here: `FUN_8003A1E4` walks the MAN partition-1
-//! actor-placement records and runs the field VM on each actor's script
-//! (`actor[+0x90]`, body at `1 + N*2 + 4`). See [`crate::man_section`] and
-//! `docs/subsystems/script-vm.md`. The engine executes those MAN scripts; it
-//! never feeds these prescript bytes to its field VM.
+//! The earlier "operand widths aren't a fixed per-opcode table / ~56 % cap"
+//! finding is explained: decoding was attempted (a) with the *wrong VM* and
+//! (b) from offset 0 (the `[model_sel][flags]` header), not from `record+4`;
+//! the move VM's widths *are* fixed per opcode, but a *linear* disasm still
+//! desyncs at the move VM's jump ops (`0x18/0x19/0x1A/0x1B`) - decode with the
+//! move VM (which follows jumps), not a linear pass.
 //!
-//! The records still encode per-scene structure (actor/NPC placement, event
-//! triggers, interaction hooks), but the **consuming command VM and the
-//! per-opcode operand widths are not yet identified** - that is the open
-//! residual. [`record_words`] surfaces the raw 16-bit word stream of a record
-//! up to its terminator without claiming opcode semantics.
-//!
-//! **Falsified (don't re-walk): the operand widths are NOT a fixed per-opcode
-//! table.** Each command leads with a pure-opcode word (high byte `0` on
-//! 1508/1508 record leads) followed by operand words, but the operand *count*
-//! is not a constant function of the opcode. Inferring a per-opcode width table
-//! by the exact-terminator constraint (a width assignment must make the greedy
-//! walk land precisely on the `0x0008` word) caps at **~56 %** of 1508 framed
-//! records (40 random-restart hill-climbs; anchored-record consistency ~52 %).
-//! A genuine fixed-width opcode set would resolve to >90 %, so the operand
-//! structure is **data-dependent** (e.g. a length/flag word governing how many
-//! operands follow) and cannot be recovered structurally - it needs the
-//! consumer VM. Hence `record_words` returns the flat word stream only.
+//! Record `0`'s lead is a different shape (a small dispatch/default table, not a
+//! stager record). The genuine per-scene field-VM (`FUN_801DE840`) *scripts*
+//! live in the scene's MAN sub-asset (`FUN_8003A1E4`; see [`crate::man_section`]
+//! and `docs/subsystems/script-vm.md`); this prescript is the move-VM *stager*
+//! table the MAN scripts spawn from. [`record_words`] still surfaces the raw
+//! 16-bit word stream; [`move_stager_records`] surfaces the structured records.
 
+use crate::summon_overlay::SummonPart;
 use serde::Serialize;
 
 /// Maximum sane prescript record count. Real hits sit in `8..=71`; 4096
@@ -99,9 +99,10 @@ const MAX_PRESCRIPT_COUNT: u16 = 4096;
 /// arbitrary `[count][offsets]`-style data by chance.
 const MIN_PRESCRIPT_COUNT: u16 = 3;
 
-/// Per-record header sentinel - `0xFFFF 0x0000` little-endian. (Historically
-/// mislabelled "the field VM's frame divider opcode"; it is neither field-VM
-/// nor an opcode - see the module-level "Format meaning" note.)
+/// Lead of a transform-node stager record - `0xFFFF 0x0000` little-endian, i.e.
+/// `model_sel = -1` (transform/pivot node) + `flags = 0`. (Historically
+/// mislabelled "the field VM's frame divider opcode"; it is the summon-stager
+/// record lead - see the module-level "Format meaning" note.)
 const FRAME_OPENER: u32 = 0x0000_FFFF;
 
 /// The word-aligned record terminator (`0x0008`), present on 99.9 % of framed
@@ -221,6 +222,39 @@ pub fn record_words(record: &[u8]) -> Option<Vec<u16>> {
         }
         out.push(w);
         i += 2;
+    }
+    Some(out)
+}
+
+/// Parse the prescript records as **summon-stager-format move-VM records**.
+///
+/// Each `[u16 count][u16 offsets]`-indexed record is
+/// `[i16 model_sel][u16 flags][move-VM bytecode]` - the same shape the per-summon
+/// stagers use ([`crate::summon_overlay::SummonPart`]). At runtime the field VM
+/// (`FUN_801DE840`) installs a record by id via `FUN_800252EC`
+/// (`record = bundle_base + offsets[id]`) → the part-stager `FUN_80021B04`
+/// (`actor[+0x48] = record`) → the move VM `FUN_80023070` runs `record+4`.
+///
+/// Returns one [`SummonPart`] per prescript record (`bytecode` = `record+4`
+/// up to the next record's start). Returns `None` if the prescript shape is
+/// invalid. Record `0` is included as-is (its lead is a small dispatch/default
+/// table rather than a stager record - classify via [`SummonPart::kind`]).
+pub fn move_stager_records(buf: &[u8]) -> Option<Vec<SummonPart>> {
+    let ranges = record_ranges(buf)?;
+    let mut out = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        // Need the 4-byte [model_sel][flags] header to classify the record.
+        if start + 4 > end {
+            continue;
+        }
+        let model_sel = i16::from_le_bytes(buf[start..start + 2].try_into().ok()?);
+        let flags = u16::from_le_bytes(buf[start + 2..start + 4].try_into().ok()?);
+        out.push(SummonPart {
+            record_off: start,
+            model_sel,
+            flags,
+            bytecode: (start + 4)..end,
+        });
     }
     Some(out)
 }
