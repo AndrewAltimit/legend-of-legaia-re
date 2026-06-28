@@ -88,15 +88,23 @@ pub enum StatusKind {
     /// runs; only the per-monster-id scripted-cast overrides are suppressed,
     /// `overlay_battle_action_801e9fd4` `& 0x380` guards) and the target
     /// re-rolls to the opposite side at ActionSeed (`FUN_801E7320`, ported as
-    /// `engine-core::World::resolve_monster_target`). For a party member the
-    /// dumps pin only the AI-delegation flag (`FUN_80047430` sets
-    /// `+0x16E |= 0x380` from the Rage accessory passive); the retail action
-    /// pick *writer* for a delegated party member is not in the dumped corpus,
-    /// so the engine's auto-physical party behaviour is a stand-in. One pick is
-    /// observed (`evil_medallion_rage_battle`, test `rage_delegated_pick`): the
-    /// delegated actor's resolved action is category `+0x1DE == 3` (Attack) with
-    /// a 5-element multi-strike `+0x1DF` stream - consistent with auto-physical,
-    /// but a single sample, so the stand-in stays a stand-in.
+    /// `engine-core::World::resolve_monster_target`). For a party member, the
+    /// `0x380`-delegated *controllable* character (Rage / Evil Medallion, via
+    /// `FUN_80047430`) is the one piece still capture-blocked: the `0x380` flag
+    /// is consumed only in `FUN_801E295C` / `FUN_801E9FD4` / `FUN_801DABA4`
+    /// (+ the charm redirect `FUN_801E7320`), none of which fills a controllable
+    /// character's action stream, so the Rage auto-pick *writer* is upstream
+    /// (the undumped command-menu controller). NB the AI **companion** Terra
+    /// (char id 4) IS dumped - `FUN_801EED1C`'s `== 4` branch picks Magic
+    /// (ids `0x16`/`0x0D`/`0x11`) when its gauge is low or it is statused, else a
+    /// 50/50 short-physical-vs-standby roll (see `docs/subsystems/battle-action.md`
+    /// AI-delegated section) - it is just unported (no engine consumer in the
+    /// playable slice). The engine's auto-physical party behaviour is a stand-in
+    /// for the Rage path. One Rage pick is observed
+    /// (`evil_medallion_rage_battle`, test `rage_delegated_pick`): category
+    /// `+0x1DE == 3` (Attack) with a 5-element `+0x1DF` stream of *art constants*
+    /// `[0x22,0x26,0x25,0x22,0x21]` (an Arts combo, not a plain multi-strike) -
+    /// a single sample, so the stand-in stays a stand-in.
     Confuse,
     /// Blocks Magic actions (the Magic Amulet protects against Curse attacks).
     Curse,

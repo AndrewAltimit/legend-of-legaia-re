@@ -890,6 +890,23 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn effect_anim_trigger(&mut self, _ctx: &mut FieldCtx, arg: u8) {
+        // Faithful op 0x34 sub-3: FUN_800252EC(arg + 1) installs the prescript
+        // move-VM stager record at offsets[arg + 1] and stages it at the actor
+        // position via FUN_80021B04 → the move VM. The engine spawns a one-part
+        // field scene-graph effect; the event is still surfaced for host HUD.
+        let origin = self
+            .world
+            .player_actor_slot
+            .and_then(|s| self.world.actors.get(s as usize))
+            .map(|a| {
+                [
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                ]
+            })
+            .unwrap_or([0, 0, 0]);
+        self.world.spawn_field_stager(arg as usize + 1, origin);
         self.world
             .pending_field_events
             .push(FieldEvent::EffectAnimTrigger { arg });

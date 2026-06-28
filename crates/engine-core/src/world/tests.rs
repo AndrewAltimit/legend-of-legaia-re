@@ -9598,3 +9598,74 @@ fn shiny_spell_deals_35_percent_more_damage() {
         "shiny cast deals +35% (plain {plain_dmg} -> shiny {shiny_dmg})"
     );
 }
+
+/// Field move-VM stager spawn (op 0x34 sub-3 / `FUN_800252EC` → `spawn_field_stager`):
+/// a stager record spawns a one-part field scene-graph effect, and the
+/// non-visual `0x4001` sound-emitter node is split off the mesh draw path into
+/// the render-node channel (the `FUN_80021DF4` `+0x5A` classification).
+#[test]
+fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
+    use crate::summon::RenderMode;
+    use legaia_asset::summon_overlay::{RENDER_NODE_MODE_B, SummonPart};
+
+    let mut world = World::new();
+
+    // Two prescript records back-to-back: a transform node then a 0x4001 sound
+    // node. Each = [i16 model_sel][u16 flags][move-VM HALT].
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(-1i16).to_le_bytes());
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    bytes.extend_from_slice(&0x08u16.to_le_bytes()); // HALT
+    bytes.extend_from_slice(&0u16.to_le_bytes()); // pad
+    let r1 = bytes.len();
+    bytes.extend_from_slice(&RENDER_NODE_MODE_B.to_le_bytes()); // 0x4001 sound
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    bytes.extend_from_slice(&0x08u16.to_le_bytes()); // HALT
+
+    world.field_stager_bytes = bytes.clone();
+    world.field_stagers = vec![
+        SummonPart {
+            record_off: 0,
+            model_sel: -1,
+            flags: 0,
+            bytecode: 4..8,
+        },
+        SummonPart {
+            record_off: r1,
+            model_sel: RENDER_NODE_MODE_B,
+            flags: 0,
+            bytecode: (r1 + 4)..bytes.len(),
+        },
+    ];
+
+    // Spawn the 0x4001 sound node (id 1) at a world position.
+    assert!(world.spawn_field_stager(1, [5, 6, 7]));
+    assert_eq!(world.active_field_fx.len(), 1);
+
+    // It surfaces as a SoundEmitter render node, NOT a mesh draw.
+    let nodes = world.active_field_fx_render_nodes();
+    assert_eq!(nodes.len(), 1);
+    assert_eq!(nodes[0].mode, RenderMode::SoundEmitter);
+    assert_eq!(nodes[0].world_pos, [5.0, 6.0, 7.0]);
+    assert!(
+        world.active_field_fx_part_draws().is_empty(),
+        "the sound node never mesh-draws"
+    );
+
+    // Out-of-range id no-ops (retail bounds behaviour).
+    assert!(!world.spawn_field_stager(99, [0, 0, 0]));
+    // After a tick the effect is KEPT (a finished part holds its final pose
+    // rather than draining the same frame it halts).
+    world.tick_field_fx(0x0400);
+    assert_eq!(
+        world.active_field_fx.len(),
+        1,
+        "a finished field effect is kept (held at its final pose), not drained"
+    );
+    // Scene entry (install) clears live effects.
+    world.install_field_stagers(&bytes);
+    assert!(
+        world.active_field_fx.is_empty(),
+        "scene entry clears live field effects"
+    );
+}
