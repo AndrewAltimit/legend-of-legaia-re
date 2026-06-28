@@ -218,13 +218,41 @@ passive `0x2D` Rage / Evil Medallion - the neighbouring bits byte-match the
 SM and the next-actor selector treat the bits as "AI-controlled", but the code
 that *chooses* an action for a delegated **party** member is not in the dumped
 corpus: the round driver `FUN_801D0748` routes party slots to the player
-command menu with no `0x380` test, `FUN_801DABA4` calls the AI picker only for
-monster slots, and `FUN_801EED1C`'s auto-fight block is keyed to character id 4
-(the prologue wolf), not to `0x380`. Pinning the party-side auto-pick *writer*
-(does it cast? does the pattern vary?) still needs a runtime capture watching
-the writers of `actor[+0x1DE]`/`+0x1DD` during the command phase. The
-monster-side confuse behaviour *is* pinned (picker `& 0x380` guards +
-`FUN_801E7320` retarget at ActionSeed).
+command menu with no `0x380` test, `FUN_801DABA4` calls the AI picker
+(`FUN_801E9FD4`, fully dumped + ported as `engine-core::monster_ai`) only for
+monster slots (`a0 = active_index - 3`, gated `active_index >= 3` at
+`0x801DAEF8`), and `FUN_801EED1C`'s auto-fight block is keyed to **character id
+4** (`(&DAT_8007BD10)[slot] == 4`; `DAT_8007BD10[slot]` is the per-slot roster
+character id - byte-confirmed `01 02 03` = Vahn/Noa/Gala in
+`evil_medallion_rage_battle` - and the block indexes the live char record
+`(id-1)*0x414 + 0x800847FC`), **not** to `0x380`. So char id 4 is the
+AI-controlled companion (Terra in the retail roster), not a Rage delegate.
+Pinning the **Rage** party-side auto-pick *writer* (does it cast? does the
+pattern vary?) still needs a runtime capture watching the writers of
+`actor[+0x1DE]`/`+0x1DD` during the command phase - the `0x380` flag is consumed
+in **only** three dumped battle functions (`FUN_801E295C`, `FUN_801E9FD4`,
+`FUN_801DABA4`) plus the charm redirect `FUN_801E7320`, none of which fills an
+arts-combo stream for a controllable character, so the captured arts combo below
+was set upstream (the command-menu controller, undumped). The monster-side
+confuse behaviour *is* pinned (picker `& 0x380` guards + `FUN_801E7320` retarget
+at ActionSeed).
+
+**Char-id-4 (Terra) auto-AI pick - pinned.** `FUN_801EED1C`'s `== 4` block
+chooses by the actor's special gauge (`+0x14C` current / `+0x14E` max; seeded to
+`0xC8` when `DAT_8007BD11 == 4`) and status word (`+0x16E`):
+
+| condition | category `+0x1DE` | detail | writer PC |
+|---|---|---|---|
+| `+0x14C == 0` | `2` (Magic) | spell id `0x16`, target 0 | `0x801EEE70` |
+| `+0x14C < +0x14E >> 1` | `2` (Magic) | spell id `0x0D` | `0x801EEEAC` |
+| healthy, `+0x16E != 0` (statused) | `2` (Magic) | spell id `0x11` | `0x801EEEE0` |
+| healthy, no status | `3` (Attack) or none | `rand()&1`: 50% Attack with a 1-2 hit directional stream (`0x0C`/`0x0D`/`0x0E`), else category 0 (no action) | `0x801EEF28` |
+
+The spell id lands in `+0x1DF` (`0x801EEEF8`) and `+0x1E7 = 9` (`0x801EEF00`).
+So the AI companion *does* vary its pick (magic when low/statused, else a coin-flip
+between a short physical and standing by); it is not a flat auto-attack. This
+branch has no engine consumer yet (Terra joins past the playable slice), so it is
+documented but unported.
 
 **One delegated pick is now observed** (`evil_medallion_rage_battle`; disc +
 library gated `rage_delegated_pick`). In the battle-actor pool, exactly the

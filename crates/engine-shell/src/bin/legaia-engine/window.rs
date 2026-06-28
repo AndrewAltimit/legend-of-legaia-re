@@ -338,6 +338,15 @@ struct PlayWindowApp {
     /// scenes. Drawn in `SceneMode::Field` so the town renders its buildings /
     /// terrain at their world positions instead of all at the origin.
     field_placement_draws: Vec<(usize, Mat4)>,
+    /// The current scene's TMD pack indexed by `pack_index` (= a field move-VM
+    /// stager's relative `model_sel`): `res.tmds` filtered to the
+    /// `scene_asset_table` bundle entry, in scan order - the same `env_tmds` the
+    /// field-placement renderer + the asset viewer use, retail
+    /// `DAT_8007C018[5..]`. Built at scene load (the `SceneResources` is consumed
+    /// by `upload_assets`, so the field-FX render path keeps its own clone). Used
+    /// to draw op-0x34-sub-3 field effects against the SCENE meshes, not the
+    /// battle `global_tmd_pool`.
+    field_stager_tmds: Vec<(legaia_tmd::Tmd, Vec<u8>)>,
     /// Untextured (`F*`/`G*`) vertex-colour meshes for field props whose prims
     /// carry per-vertex colours instead of UVs (the textured VRAM-mesh path
     /// drops them). Parallel render list to `meshes`.
@@ -2294,6 +2303,28 @@ impl PlayWindowApp {
         let field_placement_color_draws =
             self.resolve_field_placement_draws(&res, &color_tmd_src_index);
         let world_map_terrain_draws = self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
+        // Field move-VM stager scene-pack TMD list: `env_tmds` (res.tmds @ the
+        // scene_asset_table bundle entry, scan order) = retail `DAT_8007C018[5..]`,
+        // indexed by a field stager's relative `model_sel`. Kept as its own clone
+        // because `res` is consumed below; the field-FX render path looks meshes up
+        // here instead of the battle `global_tmd_pool`.
+        let field_stager_tmds: Vec<(legaia_tmd::Tmd, Vec<u8>)> = self
+            .session
+            .host
+            .scene
+            .as_ref()
+            .and_then(|scene| {
+                legaia_engine_core::scene_bundle::find_bundle(scene).map(|b| b.entry_idx())
+            })
+            .map(|bundle_entry| {
+                res.tmds
+                    .iter()
+                    .filter(|t| t.entry_idx == bundle_entry)
+                    .map(|t| (t.tmd.clone(), t.raw.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.field_stager_tmds = field_stager_tmds;
         // Keep a clean CPU copy of the scene VRAM so a battle can inject
         // monster textures into a throwaway clone and restore this on exit.
         self.cpu_vram_base = Some(res.vram.clone());
@@ -5451,6 +5482,68 @@ impl ApplicationHandler for PlayWindowApp {
                     }
                     return;
                 }
+                // `J`: debug-spawn one field move-VM scene-graph effect from the
+                // current scene's prescript stager table (the op-0x34-sub-3 /
+                // `FUN_800252EC` path), cycling through the table across presses.
+                // Exercises the field-FX tick/draw wiring without waiting for the
+                // field VM to execute an op-0x34-sub-3; the production trigger is
+                // `FieldHostImpl::effect_anim_trigger`.
+                if matches!(code, KeyCode::KeyJ)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    let count = self.session.host.world.field_stagers.len();
+                    if count == 0 {
+                        log::info!("field-FX spawn (J): no prescript stager table for this scene");
+                        return;
+                    }
+                    let origin = self
+                        .session
+                        .host
+                        .world
+                        .actors
+                        .iter()
+                        .find(|a| a.active)
+                        .map(|a| {
+                            [
+                                a.move_state.world_x,
+                                a.move_state.world_y,
+                                a.move_state.world_z,
+                            ]
+                        })
+                        .unwrap_or([0, 0, 0]);
+                    use std::sync::atomic::{AtomicUsize, Ordering};
+                    static FIELD_FX_CYCLE: AtomicUsize = AtomicUsize::new(0);
+                    let id = FIELD_FX_CYCLE.fetch_add(1, Ordering::Relaxed) % count;
+                    // Debug ergonomics: isolate one record per press (the
+                    // production op-0x34-sub-3 path lets them stack).
+                    self.session.host.world.active_field_fx.clear();
+                    if self.session.host.world.spawn_field_stager(id, origin) {
+                        let mesh: Vec<usize> = self
+                            .session
+                            .host
+                            .world
+                            .active_field_fx_part_draws()
+                            .iter()
+                            .map(|d| d.model_index)
+                            .collect();
+                        let nodes: Vec<_> = self
+                            .session
+                            .host
+                            .world
+                            .active_field_fx_render_nodes()
+                            .iter()
+                            .map(|n| n.mode)
+                            .collect();
+                        log::info!(
+                            "field-FX spawn {}/{count} at {origin:?}: {} mesh parts (model_index {mesh:?}), {} render-mode nodes {nodes:?}",
+                            id + 1,
+                            mesh.len(),
+                            nodes.len(),
+                        );
+                    }
+                    return;
+                }
                 // `N`: open the name-entry overlay for the lead character. The
                 // NEW GAME flow now opens it automatically at the `opdeene` ->
                 // `town01` opening hand-off (see the prologue-handoff block
@@ -5679,6 +5772,11 @@ impl ApplicationHandler for PlayWindowApp {
                     // Advance an active battle move-FX scene-graph (the `H` debug
                     // spawn) through the same move VM.
                     self.session.host.world.tick_move_fx(0x0400);
+                    // Advance any field move-VM scene-graph effects spawned by the
+                    // field-VM op 0x34 sub-3 ("Play 3D animation") - the per-scene
+                    // prescript stagers (`FUN_800252EC` → `FUN_80021DF4`). No-op
+                    // when none are live (off the field / no trigger fired).
+                    self.session.host.world.tick_field_fx(0x0400);
                     // In battle, advance each monster actor's per-object idle
                     // animation into its `pose_frame` (the render pass below
                     // deforms the mesh via the rigid `posed_rot` builder).
@@ -6367,8 +6465,10 @@ impl ApplicationHandler for PlayWindowApp {
                     let mut summon_part_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
                     if !self.boot_ui.is_active() && !in_world_map {
                         // Summon parts and battle move-FX parts render identically
-                        // (both are move-VM scene-graph parts resolving into
-                        // `global_tmd_pool`); draw both sets the same way.
+                        // (move-VM scene-graph parts resolving into the battle
+                        // `global_tmd_pool` = PROT 0871 effect library). FIELD
+                        // move-VM effects are drawn separately below: their meshes
+                        // live in the SCENE's TMD pack, not the battle pool.
                         let part_draws = self
                             .session
                             .host
@@ -6410,6 +6510,57 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     }
                     for (mesh, model) in &summon_part_draws {
+                        draws.push(SceneDraw {
+                            mesh,
+                            mvp: cam * *model,
+                        });
+                    }
+                    // Field move-VM effect parts (op 0x34 sub-3 stagers): resolve
+                    // each mesh part against the SCENE's TMD pack - `env_tmds` =
+                    // `res.tmds` filtered to the scene_asset_table bundle entry,
+                    // the same source the field-placement renderer + the
+                    // asset-viewer use - NOT the battle `global_tmd_pool`. Retail
+                    // resolves a field stager's mesh as `DAT_8007C018[model_sel +
+                    // DAT_8007B6F8]`, where `DAT_8007B6F8 = 5` is the character-mesh
+                    // prefix and `DAT_8007C018[5..]` is exactly this scene pack; so
+                    // the part's relative `model_sel` (spawn base 0, surfaced as
+                    // `model_index`) indexes `env_tmds` directly, mirroring how a
+                    // placement's `pack_index` does.
+                    let mut field_fx_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
+                    if !self.boot_ui.is_active() && !in_world_map {
+                        for fp in self.session.host.world.active_field_fx_part_draws() {
+                            // `model_index` = the stager record's relative
+                            // `model_sel` (spawn base 0) → the scene TMD pack
+                            // (`field_stager_tmds`, the env_tmds / asset-viewer
+                            // source = DAT_8007C018[5 + model_sel]).
+                            let Some((tmd, raw)) = self.field_stager_tmds.get(fp.model_index)
+                            else {
+                                continue;
+                            };
+                            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
+                            if vmesh.indices.is_empty() {
+                                continue;
+                            }
+                            match r.upload_vram_mesh(
+                                &vmesh.positions,
+                                &vmesh.uvs,
+                                &vmesh.cba_tsb,
+                                &vmesh.normals,
+                                &vmesh.indices,
+                            ) {
+                                Ok(m) => {
+                                    let model = Mat4::from_translation(Vec3::from(fp.world_pos))
+                                        * Mat4::from_rotation_y(fp.rot[1])
+                                        * Mat4::from_rotation_x(fp.rot[0])
+                                        * Mat4::from_rotation_z(fp.rot[2])
+                                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                    field_fx_draws.push((m, model));
+                                }
+                                Err(e) => log::warn!("field-FX part mesh upload: {e:#}"),
+                            }
+                        }
+                    }
+                    for (mesh, model) in &field_fx_draws {
                         draws.push(SceneDraw {
                             mesh,
                             mvp: cam * *model,
@@ -7334,6 +7485,7 @@ fn cmd_play_window_with_record(
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
         field_placement_draws: Vec::new(),
+        field_stager_tmds: Vec::new(),
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),

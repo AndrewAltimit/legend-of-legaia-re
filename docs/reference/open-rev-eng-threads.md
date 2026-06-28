@@ -166,10 +166,33 @@ at slot B (the player summon is the creature pipeline by the on-screen phase).
 Newly-captured *ordinary*-enemy casts (the Delilas brothers → 0958/0959/0960,
 Zeto → 0946; `enemy_stager_binding`) confirm the enemy stager path generalizes
 beyond Cort, but none of those stagers carries a `0x4000` record either, so they
-don't seat one. Closing it needs a frame-stepped *enemy* stager-spawn capture
-whose stager carries a `0x4000` record - i.e. an enemy that casts one of the
-Sim-Seru creatures (Palma/Mule/Jedo, the only `0x4000` carriers that are also
-*enemies*) (`crates/mednafen/tests/summon_render_mode_node.rs`).
+don't seat one. A frame-stepped *enemy* stager-spawn capture whose stager
+carries a `0x4000` record (an enemy casting a Sim-Seru creature Palma/Mule/Jedo)
+would seat one live (`crates/mednafen/tests/summon_render_mode_node.rs`).
+
+**DECODED (no capture required) + classification ported.** The per-part-tick
+`FUN_80021DF4` (the SCUS driver `FUN_80021B04` binds at `actor[+0x70] = 2`)
+dispatches the render mode `+0x5A` into **six modes**, fully decoded in
+[`move-vm.md` § Part render-tail](../subsystems/move-vm.md#part-render-tail-the-0x5a-render-modes-fun_80021df4):
+`2`/`6` = parameter/colour tween, `3` (the `0x4000` node) = moving particle
+(`FUN_80019D50`), `4` = VRAM-blit beam (`LoadImage`/`MoveImage`/`StoreImage`
+`0x8005842C`/`0x80058490`/`0x800583C8`), `5` (the `0x4001` node) = **3D positional
+*sound* emitter** (range/volume + SE trigger - *not a visual node*), `7` = matrix
+transform + billboard, else = transform pivot. Key result: `0x4001 → +0x5A = 5`
+is audio, so the two "render-mode" sentinels are a particle node and a sound
+node, not two draws. `FUN_80021DF4` is a host-emission-heavy dispatcher
+(GP0/SPU/VRAM + ~30 abstracted part fields), so the renderer-agnostic surface
+that is **ported** is the render-mode classification
+`engine-core::summon::RenderMode` (`from_model_sel`, `// PORT: FUN_80021B04`),
+consumed by `SummonScene::special_render_nodes` / `part_draws` to split the
+audio-only node off the mesh draw path
+(`render_mode_classifies_only_the_sentinel_nodes` +
+`special_render_nodes_are_split_from_the_mesh_draw_list`); the per-mode
+integration + emit paths stay documented for a future renderer/audio host. The
+move-VM call gate was already ported (`move_vm::actor_tick`). PR #273's **239**
+field-resident prescript render-mode nodes remain the non-summon validation
+source (a resident-overworld mednafen read, no live probe) if byte-validation of
+the integration is ever wanted - but the draw behaviour is no longer unknown.
 
 **This CORRECTS the earlier "records beyond the `0x5800` file / `0x180C` only coincidentally record-shaped / parser reverted" reading - that was the wrong link base (`0x801F0000` instead of `0x801F69D8`), which pushed the runtime record addresses past the file.** **Still pinned:** the CLUT band is byte-identical across the two animation-distinct frames (motion is geometric, not palette cycling); flame texture is **PROT 870** (three 64x256 4bpp TIMs → battle VRAM `(320/384/448,0)`, CLUTs rows 474..476); the bound flame mesh comes from **PROT 871** (`etmd.dat`, 30-TMD pack) at `DAT_8007C018[26]`.
 
@@ -534,6 +557,7 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Field collision-map source | resolved | [details ↓](#field-collision-map-source) | `project_field_locomotion_integrator.md` |
 | Tile-board grid mode | resolved (re-scoped) | The `_DAT_8007b450`/`DAT_801f35c0`/`801ef2b0` tile-grid walk is a puzzle / board minigame (procedural `rand`-filled board, per-cell drawn tiles), not town locomotion. Documented in `docs/subsystems/tile-board.md`. Open sub-questions: which minigames use it; whether any board is fixed (inline-script cells) vs. always procedural; the inline cell-array offset. | `project_tile_board_grid.md` |
 | game_mode 0x03 = field/town gameplay | resolved | [details ↓](#game_mode-0x03--fieldtown-gameplay) | `project_mode_table_structure.md` |
+| Scene prescript: field-VM event scripts vs move-VM stagers (dual consumer) | open | The prescript bundle (`[count][offsets]` records) has **two** consumers: the field VM runs a record as bytecode (`World::load_field_record`, town01-verified) **and** op `0x34` sub-3 → `FUN_800252EC` installs a record by id as a **move-VM stager** (`move_stager_records`, 100% valid leads; engine `World::spawn_field_stager`). Both skip the `0xFFFF 0x0000` header, so the same body is read by either VM by role. Open = how the bundle splits (which indices are field-VM vs move-VM, any dual-purpose). Closes via a field-VM op-`0x34` operand census per scene vs. the indices the entry timeline runs. | `project_track_b_field_stager_wiring.md` |
 | Engine VRAM byte-exactness for town01 | resolved (major source); minor residue | [details ↓](#engine-vram-byte-exactness-for-town01) | `project_town01_targeted_upload_fix.md` |
 
 | Scene-transition (`0x3F` door) destination indexing | resolved | [details ↓](#scene-transition-0x3f-door-destination-indexing) | `project_scene_destination_table_indexing.md` |

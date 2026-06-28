@@ -1770,6 +1770,29 @@ pub struct World {
     /// `FUN_801e1ab0`) turns into the jittered semi-transparent quad.
     pub active_move_fx_trail_texpage: Option<u16>,
 
+    /// The current scene's **field move-VM stager table** - the prescript
+    /// records (`scene_event_scripts` / `scene_v12_table` offset `0x800`) parsed
+    /// as summon-format move-VM stager records, the field-resident sibling of the
+    /// per-summon stagers (see `docs/formats/scene-v12-table.md` +
+    /// `legaia_asset::scene_event_scripts::move_stager_records`). The field VM's
+    /// op `0x34` sub-3 ("Play 3D animation") installs one by id through
+    /// `FUN_800252EC` → the part-stager `FUN_80021B04` → the move VM; the engine
+    /// mirrors that in [`World::spawn_field_stager`]. Empty until
+    /// [`World::install_field_stagers`] runs at scene entry. Distinct from the
+    /// field-VM bytecode the scene also runs (`field_bytecode`); these records are
+    /// the move-VM side of the same prescript bundle.
+    pub field_stagers: Vec<legaia_asset::summon_overlay::SummonPart>,
+    /// The prescript bundle bytes the [`field_stagers`](Self::field_stagers)
+    /// records index into (needed to seed a part's move buffer when spawning).
+    pub field_stager_bytes: Vec<u8>,
+    /// Live field move-VM scene-graph effects spawned by op `0x34` sub-3, each a
+    /// one-part [`crate::summon::SummonScene`]; ticked by
+    /// [`World::tick_field_fx`], drawn via [`World::active_field_fx_part_draws`],
+    /// with the non-visual nodes (the `0x4001` sound emitter) surfaced separately
+    /// through [`World::active_field_fx_render_nodes`]. A `Vec` because several
+    /// can be live at once (the prescript triggers them independently).
+    pub active_field_fx: Vec<crate::summon::SummonScene>,
+
     /// Pending move-FX sound cue id (`+0x0d`), set by [`World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
     /// [`World::take_pending_move_fx_cue`] and routes it through
@@ -2418,6 +2441,9 @@ impl World {
             move_power_overlay: None,
             active_move_fx: None,
             active_move_fx_trail_texpage: None,
+            field_stagers: Vec::new(),
+            field_stager_bytes: Vec::new(),
+            active_field_fx: Vec::new(),
             pending_move_fx_cue: None,
             element_affinity: None,
             item_shop_data: None,
@@ -5002,6 +5028,97 @@ impl World {
             .as_ref()
             .map(|s| s.part_draws())
             .unwrap_or_default()
+    }
+
+    /// Install the current scene's field move-VM stager table from the scene's
+    /// event-scripts container bytes (a `SceneEventScripts` /
+    /// `SceneScriptedAssetTable` entry). Parses the prescript records as
+    /// summon-format move-VM stagers and retains both the parsed records and the
+    /// bundle bytes they index into. Clears any prior table. Call at scene entry,
+    /// alongside the field-VM `load_field_script` path.
+    ///
+    /// REF: the prescript bundle the retail `FUN_800252EC` indexes
+    /// (`legaia_asset::scene_event_scripts::move_stager_records`).
+    pub fn install_field_stagers(&mut self, entry_bytes: &[u8]) {
+        self.active_field_fx.clear();
+        self.field_stager_bytes = entry_bytes.to_vec();
+        self.field_stagers =
+            legaia_asset::scene_event_scripts::move_stager_records(entry_bytes).unwrap_or_default();
+    }
+
+    /// Spawn one field move-VM stager record by id at `origin` (world units),
+    /// mirroring the field-VM op `0x34` sub-3 → `FUN_800252EC(id)` →
+    /// `FUN_80021B04` → move VM chain. `id` is the installer argument
+    /// (`operand + 1`); it indexes [`Self::field_stagers`] (= the bundle's
+    /// `offsets[id]` record). No-ops (returns `false`) when the id is out of
+    /// range or no table is installed, matching the retail bounds behaviour.
+    /// Tick the spawned effect with [`Self::tick_field_fx`].
+    ///
+    /// PORT: FUN_800252EC (id → `offsets[id]` record → part-stager spawn)
+    pub fn spawn_field_stager(&mut self, id: usize, origin: [i16; 3]) -> bool {
+        let Some(part) = self.field_stagers.get(id).cloned() else {
+            return false;
+        };
+        // One stager record = one scene-graph part, staged exactly like a summon
+        // part (PC = 2 → record+4). Model base 0 here means a mesh part's
+        // `model_index` is its **relative** `model_sel` - the index into the
+        // SCENE's TMD pack (retail `DAT_8007C018[model_sel + DAT_8007B6F8]`, where
+        // `DAT_8007B6F8 = 5` is the character-mesh prefix and `DAT_8007C018[5..]`
+        // is that pack). The host resolves it against the scene pack (the
+        // asset-viewer / field-placement `env_tmds` source), NOT the battle
+        // `global_tmd_pool`; the `+5` prefix is implicit in indexing the
+        // scene-pack list directly. Most field stager records are transform /
+        // render-mode (particle / sound) nodes that bind no mesh.
+        let scene =
+            crate::summon::SummonScene::spawn_parts(&[part], &self.field_stager_bytes, 0, origin);
+        self.active_field_fx.push(scene);
+        true
+    }
+
+    /// Advance every live field move-VM scene-graph effect one frame. Finished
+    /// scenes are **kept** (not drained): a finished part stops ticking
+    /// ([`crate::summon::SummonScene::tick`] skips finished parts) but holds its
+    /// final transform, so a quick-halting mesh effect stays visible at its last
+    /// pose rather than vanishing the same frame it halts (which would race the
+    /// render). Effects are cleared on scene entry ([`Self::install_field_stagers`])
+    /// and, for the debug exerciser, before each `spawn_field_stager`. Faithful
+    /// per-effect teardown (when retail removes a finished field effect) is a
+    /// future refinement. No-op when none are live.
+    pub fn tick_field_fx(&mut self, frame_delta: u16) {
+        if self.active_field_fx.is_empty() {
+            return;
+        }
+        let mut scenes = std::mem::take(&mut self.active_field_fx);
+        for scene in &mut scenes {
+            let mut host = MoveVmHostImpl {
+                world: self,
+                current_slot: None,
+                deferred_writes: std::collections::BTreeMap::new(),
+            };
+            scene.tick(&mut host, frame_delta);
+        }
+        self.active_field_fx = scenes;
+    }
+
+    /// Per-part mesh draws across all live field move-VM effects (the visual
+    /// parts). The non-visual nodes (`0x4001` sound emitter) never appear here -
+    /// see [`Self::active_field_fx_render_nodes`].
+    pub fn active_field_fx_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
+        self.active_field_fx
+            .iter()
+            .flat_map(|s| s.part_draws())
+            .collect()
+    }
+
+    /// The live special render-mode nodes across all field move-VM effects -
+    /// the `0x4000` particle and `0x4001` **sound-emitter** sentinels, classified
+    /// for the renderer / audio host (the sound emitter is *not* a draw). Mirrors
+    /// `FUN_80021DF4`'s `+0x5A` split of these nodes off the mesh draw path.
+    pub fn active_field_fx_render_nodes(&self) -> Vec<crate::summon::SpecialRenderNode> {
+        self.active_field_fx
+            .iter()
+            .flat_map(|s| s.special_render_nodes())
+            .collect()
     }
 
     /// Spawn a battle move's effect-FX scene-graph at `origin` (world units).

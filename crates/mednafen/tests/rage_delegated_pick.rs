@@ -3,13 +3,18 @@
 //!
 //! When a party member wears the Evil Medallion, `FUN_80047430` promotes its
 //! Rage accessory passive to the per-actor AI-delegation bits `+0x16E |= 0x380`,
-//! and the battle SM then auto-picks that member's action. The code that
-//! *chooses* the action is not in the dumped corpus (see
-//! `docs/subsystems/battle-action.md` § AI-delegated party members), so the
-//! engine uses an auto-physical stand-in. This test pins the lone observed
+//! and the battle SM then auto-picks that member's action. The `0x380` flag is
+//! consumed only in `FUN_801E295C` / `FUN_801E9FD4` / `FUN_801DABA4` (+ the charm
+//! redirect `FUN_801E7320`) - none of which fills a *controllable* character's
+//! action stream - so the Rage auto-pick *writer* is upstream (the undumped
+//! command-menu controller). (The AI **companion** path, char id 4 = Terra, IS
+//! dumped: `FUN_801EED1C`'s `== 4` branch; see
+//! `docs/subsystems/battle-action.md` § AI-delegated party members.) The engine
+//! uses an auto-physical stand-in for Rage. This test pins the lone observed
 //! sample from `evil_medallion_rage_battle` so it is not lost - it does NOT
-//! resolve the writer or the pick variability (still open; needs a probe or
-//! more samples).
+//! resolve the writer or the pick variability (still capture-blocked; needs a
+//! write-watch on `+0x1DE`/`+0x1DF` during a Rage command phase, or more
+//! samples).
 //!
 //! Pinned facts (battle-actor pool `0x800EC9E8`, stride `0x2D4`, indexed via the
 //! 8-slot pointer table `0x801C9370`):
@@ -22,9 +27,10 @@
 //!     discriminator - `+0x16E & 0x380` is. (Corrects the scenario prose's
 //!     "+0xF8 bit 0x2000 marks the Rage actor" reading.)
 //!   - The delegated actor's resolved pick is category `+0x1DE == 3` (Attack)
-//!     with the `+0x1DF` action stream `[0x22,0x26,0x25,0x22,0x21]` - a
-//!     five-element multi-strike, not a single plain attack. The non-delegated
-//!     party slots carry the default `+0x1DE == 4` (Spirit) with an empty stream.
+//!     with the `+0x1DF` stream `[0x22,0x26,0x25,0x22,0x21]` - these are *art
+//!     constants* (`0x1B..0x32` range), i.e. a Tactical Arts combo, not a plain
+//!     multi-strike of target indices. The non-delegated party slots carry the
+//!     default `+0x1DE == 4` (Spirit) with an empty stream.
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN` / `scripts/scenarios.toml` /
 //! `saves/library`.

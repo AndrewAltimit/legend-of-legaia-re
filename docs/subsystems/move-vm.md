@@ -334,6 +334,60 @@ stager. So the widget family stays **ending-scene-exclusive**, and `FUN_80021DF4
 is pinned as the live part render-tail. Disc + library gated
 `firetail_movefx_liveness` (crate `legaia-mednafen`).
 
+### Part render-tail: the `+0x5A` render modes (`FUN_80021DF4`)
+
+`FUN_80021DF4` (the per-frame part tick) wraps the move-VM call
+(`FUN_80023070`) with a per-part **render mode** dispatch keyed on the part's
+`+0x5A` field. The seater `FUN_80021B04` sets `+0x5A` from the record's
+`model_sel` (`0x4000 → 3`, `0x4001 → 5`; all others default), and move-VM
+anim-bank ops can rebind it. Each mode integrates a different channel set by the
+global per-frame delta (`DAT_1F800393` × the speed scalar `DAT_1F80037D`) and
+selects a different draw/emit path. This decodes the long-open **render-mode-node
+draw behaviour** (the `0x4000`/`0x4001` summon-stager nodes + the 239
+field-resident prescript render-mode nodes) - and shows mode `5` is **not a
+visual node at all**.
+
+| `+0x5A` | model_sel | mode | per-frame integration | draw / emit (host-delegated) |
+|---|---|---|---|---|
+| `2` / `6` | - | parameter / color tween | `+0xB4..+0xC8` colour/scalar channels by frame-delta (`>> 6`), `+200` clamped `>= 0` | (mode 6 also does the keyframe-mesh blend below) |
+| `3` | `0x4000` | moving particle | position channels `+0x90/+0x92/+0x94` (+ `+0x68` scale `<= 0x100`) by frame-delta | particle setup `FUN_80019D50` |
+| `4` | - | VRAM-blit beam | beam length channels `+0xC6`/`+0xCE` countdown | libgpu `LoadImage`/`MoveImage`/`StoreImage` (`FUN_8005842C`/`FUN_80058490`/`FUN_800583C8`) into the OT scratch `_DAT_1F8003A0` |
+| `5` | `0x4001` | **3D positional sound emitter** | screen-space position + L/R range & volume attenuation (`SE_RANGE`/`SE_VOL`/`CH_NO..SE_NO..VOL_LV` debug strings) | SE trigger `FUN_80065034` / `FUN_800657D0` / `FUN_800250D4` - **no mesh draw** |
+| `7` | - | matrix transform + billboard | screen position from the `_DAT_8007B81C`/`DAT_8007B7F8` sine tables (`+0x96` phase) | matrix `FUN_8003D368` + GP0 emit `FUN_800468A4` |
+| else | `-1` | transform node | generic transform: `+0x14/+0x18` screen pos via sine tables, `+0x24/+0x26/+0x28` rotation, `+0x72/+0x78/+0x7A` scale | none (pivot for child meshes) |
+
+After the mode dispatch the tick calls the move VM
+(`if +0x54 >= 0 || (FUN_80023070() ran && !(flags & 8))`), then the mode-`4`/`7`
+draw and the mode-`6` keyframe-mesh interpolation run: for each of `*(+0x44)`
+vertices it LERPs two keyframes by the 12-bit cursor `+0x22`
+(`a + ((b - a) * cursor >> 12)`) into the GTE-packed output buffer at `+0x4C`.
+
+**Port boundary (deliberate).** `FUN_80021DF4` is a host-emission-heavy
+dispatcher (GP0 packets, SPU SE triggers, libgpu VRAM copies, and ~30 part-struct
+fields the clean-room engine abstracts), so it is **not** transcribed wholesale -
+that would be a fake port. The renderer-agnostic surface that *is* ported is the
+**render-mode classification** (`engine-core::summon::RenderMode` -
+`from_model_sel`: `0x4000 → Particle`, `0x4001 → SoundEmitter`), which
+`SummonScene::part_draws` / `special_render_nodes` consume to exclude the
+audio-only mode-`5` parts from the mesh draw list and surface them (plus the
+`0x4000` particle nodes) separately. The move-VM call gate itself is already
+ported as `move_vm::actor_tick` (the `+0x54`/`flags & 8` gate above).
+
+This is wired into the **field** path: the field-VM op `0x34` sub-3 ("Play 3D
+animation" → `FUN_800252EC`) spawns a per-scene prescript stager record
+(`World::spawn_field_stager`, the `// PORT: FUN_800252EC` indexer; table installed
+by `World::install_field_stagers` at `Scene::enter_field_scene`), advanced by
+`World::tick_field_fx` and drawn through `active_field_fx_part_draws` (mesh parts)
+in `play-window`, with `active_field_fx_render_nodes` carrying the particle / sound
+nodes for a future particle / positional-SE pass. The `play-window` `J` key
+debug-spawns one prescript stager (cycling the table) to exercise it.
+
+The per-mode channel integration + emit paths stay documented here for a future
+renderer /
+audio host; none has a live retail exerciser in the catalogued corpus (battle
+parts run mode `-1`/`5`-as-transform), so the table is the faithful reference, not
+executable engine code.
+
 ## Connection to other crates
 
 - **`crates/mdt`** - parses the [MDT format](../formats/mdt.md). The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, `crates/mdt` can grow a disassembler.

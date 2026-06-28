@@ -80,7 +80,9 @@
 //!   `FUN_801F7088` build is the **world-map top-view tile renderer** aliasing
 //!   the same `0x801Fxxxx` band, not the battle-summon code.)
 
-use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
+use legaia_asset::summon_overlay::{
+    RENDER_NODE_MODE_A, RENDER_NODE_MODE_B, SummonOverlay, SummonPart,
+};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome, MoveHost};
 
 /// Per-frame opcode budget for one part's move-VM tick (defensive cap; retail
@@ -199,6 +201,68 @@ pub const MAX_MESH_SEL: i16 = 0x100;
 /// or a special-mode sentinel).
 fn is_mesh_sel(model_sel: i16) -> bool {
     (0..MAX_MESH_SEL).contains(&model_sel)
+}
+
+/// A move-VM scene-graph part's **render mode** - the `actor[+0x5A]` discriminant
+/// the per-frame part tick `FUN_80021DF4` dispatches on. Each value integrates a
+/// different channel set and selects a different draw/emit path; see
+/// [`docs/subsystems/move-vm.md`](../../../docs/subsystems/move-vm.md) §
+/// "Part render-tail" for the full table.
+///
+/// Only the two values the spawner `FUN_80021B04` seeds from a record's
+/// `model_sel` sentinel ([`RENDER_NODE_MODE_A`] `0x4000`, [`RENDER_NODE_MODE_B`]
+/// `0x4001`) are classified statically here - the rest of the `+0x5A` space is
+/// rebound at runtime by move-VM anim ops, which the clean-room engine abstracts
+/// away (it carries no `+0x5A` cell), so this is the faithful static surface.
+///
+/// The important fact this captures: **`SoundEmitter` (`0x4001` → `+0x5A = 5`)
+/// is not a visual node** - it is a 3D positional sound-effect emitter (range /
+/// volume attenuation + SE trigger), so it must be excluded from the mesh draw
+/// list and routed to the audio host instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderMode {
+    /// `0x4000` → `+0x5A = 3`: moving particle (position channels integrated by
+    /// frame-delta; retail draw `FUN_80019D50`).
+    Particle,
+    /// `0x4001` → `+0x5A = 5`: 3D positional **sound** emitter - no mesh draw.
+    SoundEmitter,
+}
+
+impl RenderMode {
+    /// Classify the `+0x5A` render mode `FUN_80021B04` seeds from a part record's
+    /// `model_sel`. Returns `None` for ordinary mesh parts (`0 <= sel < 0x100`)
+    /// and transform nodes (`-1`), whose render mode is the move-VM-driven
+    /// default the engine models through its normal part transform.
+    // PORT: FUN_80021B04 (the +0x5A seeding: 0x4000 -> 3, 0x4001 -> 5);
+    // REF: FUN_80021DF4 (the per-mode draw/emit dispatch, host-delegated).
+    pub fn from_model_sel(model_sel: i16) -> Option<Self> {
+        match model_sel {
+            RENDER_NODE_MODE_A => Some(RenderMode::Particle),
+            RENDER_NODE_MODE_B => Some(RenderMode::SoundEmitter),
+            _ => None,
+        }
+    }
+
+    /// The raw retail `actor[+0x5A]` value (`3` for [`RenderMode::Particle`],
+    /// `5` for [`RenderMode::SoundEmitter`]).
+    pub fn raw(self) -> i16 {
+        match self {
+            RenderMode::Particle => 3,
+            RenderMode::SoundEmitter => 5,
+        }
+    }
+}
+
+/// A live special render-mode node (a `0x4000`/`0x4001` part), surfaced for the
+/// renderer (particle) / audio (positional SE) host. These carry no library mesh
+/// so they never appear in [`SummonScene::part_draws`]; this is the channel a
+/// host consumes them through instead.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpecialRenderNode {
+    /// Which non-visual / particle behaviour the node drives.
+    pub mode: RenderMode,
+    /// The node's current world position (move-VM `world_x/y/z`).
+    pub world_pos: [f32; 3],
 }
 
 /// Runtime state of one staged summon part.
@@ -358,6 +422,30 @@ impl SummonScene {
             .iter()
             .filter(|p| is_mesh_sel(p.model_sel))
             .count()
+    }
+
+    /// The live special render-mode nodes (`0x4000` particle / `0x4001` sound),
+    /// classified for the renderer / audio host. These carry a sentinel
+    /// `model_sel`, so they are absent from [`Self::part_draws`] (which only emits
+    /// `is_mesh_sel` parts); this is the channel a host consumes them through -
+    /// e.g. spawning a particle for [`RenderMode::Particle`] or a positional SE
+    /// for [`RenderMode::SoundEmitter`]. Mirrors the `FUN_80021DF4` `+0x5A`
+    /// dispatch's split of these nodes away from the mesh draw path.
+    pub fn special_render_nodes(&self) -> Vec<SpecialRenderNode> {
+        self.parts
+            .iter()
+            .filter(|p| !p.finished)
+            .filter_map(|p| {
+                RenderMode::from_model_sel(p.model_sel).map(|mode| SpecialRenderNode {
+                    mode,
+                    world_pos: [
+                        p.state.world_x as f32,
+                        p.state.world_y as f32,
+                        p.state.world_z as f32,
+                    ],
+                })
+            })
+            .collect()
     }
 }
 
@@ -721,5 +809,58 @@ mod tests {
         let draws = scene.part_draws();
         assert_eq!(draws.len(), 1, "only the mesh part draws");
         assert_eq!(draws[0].model_index, 26, "model_sel 0 + base 26");
+    }
+
+    #[test]
+    fn render_mode_classifies_only_the_sentinel_nodes() {
+        // FUN_80021B04: 0x4000 -> +0x5A=3 (Particle), 0x4001 -> +0x5A=5 (Sound).
+        assert_eq!(
+            RenderMode::from_model_sel(0x4000),
+            Some(RenderMode::Particle)
+        );
+        assert_eq!(
+            RenderMode::from_model_sel(0x4001),
+            Some(RenderMode::SoundEmitter)
+        );
+        assert_eq!(RenderMode::Particle.raw(), 3);
+        assert_eq!(RenderMode::SoundEmitter.raw(), 5);
+        // Mesh parts and transform nodes are not statically classified.
+        assert_eq!(RenderMode::from_model_sel(0), None);
+        assert_eq!(RenderMode::from_model_sel(-1), None);
+        assert_eq!(RenderMode::from_model_sel(5), None);
+    }
+
+    #[test]
+    fn special_render_nodes_are_split_from_the_mesh_draw_list() {
+        // One mesh part (sel 0) + a 0x4000 particle node + a 0x4001 sound node.
+        let mut bytes = Vec::new();
+        let mut part = |sel: i16| {
+            let off = bytes.len();
+            bytes.extend_from_slice(&sel.to_le_bytes());
+            bytes.extend_from_slice(&0u16.to_le_bytes()); // flags
+            bytes.extend_from_slice(&0x08u16.to_le_bytes()); // HALT
+            bytes.extend_from_slice(&0u16.to_le_bytes()); // pad
+            SummonPart {
+                record_off: off,
+                model_sel: sel,
+                flags: 0,
+                bytecode: (off + 4)..(off + 6),
+            }
+        };
+        let parts = vec![part(0), part(RENDER_NODE_MODE_A), part(RENDER_NODE_MODE_B)];
+        let scene = SummonScene::spawn_parts(&parts, &bytes, 26, [10, 20, 30]);
+
+        // The mesh draw list carries only the real mesh part - the two sentinel
+        // render nodes (incl. the audio-only 0x4001) never mesh-draw.
+        let draws = scene.part_draws();
+        assert_eq!(draws.len(), 1, "sentinel render nodes never mesh-draw");
+        assert_eq!(draws[0].model_index, 26);
+
+        // The render-mode nodes surface through the dedicated channel instead.
+        let nodes = scene.special_render_nodes();
+        assert_eq!(nodes.len(), 2, "the 0x4000 + 0x4001 nodes");
+        assert_eq!(nodes[0].mode, RenderMode::Particle);
+        assert_eq!(nodes[1].mode, RenderMode::SoundEmitter);
+        assert_eq!(nodes[1].world_pos, [10.0, 20.0, 30.0]);
     }
 }

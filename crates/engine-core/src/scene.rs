@@ -667,8 +667,21 @@ impl Scene {
 
     /// Find the per-scene event-scripts container - either a standalone
     /// `SceneEventScripts` entry or the prescript prefix of a
-    /// `SceneScriptedAssetTable` entry. The records inside are the field-VM
-    /// (`FUN_801DE840`) per-event bytecode the scene runs on entry.
+    /// `SceneScriptedAssetTable` entry.
+    ///
+    /// **The records have two consumers and which one a given record belongs to
+    /// is an open thread.** [`legaia_asset::scene_event_scripts::move_stager_records`]
+    /// parses the same `[count][offsets]`-indexed records as summon-format
+    /// **move-VM stager** records (100% valid stager leads across the corpus -
+    /// the field-resident sibling of the per-summon stagers, installed by field-VM
+    /// op `0x34` sub-3 → `FUN_800252EC`, ported as
+    /// [`crate::world::World::spawn_field_stager`]). The engine *also* runs an
+    /// individual record through the **field VM** (`load_field_record`) for the
+    /// scene-entry timeline. Both consumers skip the leading `0xFFFF 0x0000`
+    /// header (= `model_sel -1` to the move VM), so the body bytes are read by one
+    /// VM or the other depending on the record's role; how the bundle splits
+    /// between field-VM event scripts and move-VM stagers is unresolved (see
+    /// `docs/reference/open-rev-eng-threads.md`).
     ///
     /// Returns the first match in CDNAME order; most scenes carry exactly one
     /// such entry. Returns `None` if the scene has no event scripts (some
@@ -1620,7 +1633,7 @@ impl SceneHost {
         // re-installs one below, so it must not leak into the scene we hand off
         // to (Rim Elm).
         self.world.cutscene_timeline = None;
-        let record_bytes: Vec<u8> = {
+        let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self
                 .scene
                 .as_ref()
@@ -1635,10 +1648,14 @@ impl SceneHost {
                     scripts.len()
                 )
             })?;
-            record.to_vec()
+            (record.to_vec(), scripts.bytes.to_vec())
         };
         self.world.mode = crate::world::SceneMode::Field;
         self.world.load_field_record(&record_bytes);
+        // Install the scene's move-VM stager table (the same prescript bundle,
+        // read as `FUN_800252EC` stager records) so field-VM op 0x34 sub-3 can
+        // spawn 3D-anim effects via `World::spawn_field_stager`.
+        self.world.install_field_stagers(&stager_entry_bytes);
         // Configure the party leader (slot 0) as the free-movement player.
         // (This also clears the collision grid; we repopulate it below.)
         // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
