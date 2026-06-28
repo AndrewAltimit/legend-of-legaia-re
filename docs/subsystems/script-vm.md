@@ -21,23 +21,26 @@ records `1..` are per-actor interaction scripts. The engine mirrors this:
 `World::load_field_script_at`. These MAN scripts disassemble cleanly as
 field-VM (~8% linear-walk error on the retail town MANs).
 
-> **The `scene_event_scripts` / `scene_v12_table` prescript is a DIFFERENT
-> structure - not field-VM bytecode.** The `[u16 count][u16 offsets[count]]`
-> prescript (offset 0, or `+0x800` behind the v12 header) was long assumed to
-> carry field-VM scripts because its records open with `0xFFFF 0x0000`. It does
-> not: running the field-VM disassembler over those records yields a 65–88 %
-> decode-error rate, the bytes are 16-bit **word-aligned** (low byte = opcode,
-> high byte 0 on ~83 % of body words), records terminate with a `0x0008` word,
-> and the opcodes sit mostly below the field VM's `0x22` opcode floor. The
-> `0xFFFF 0x0000` lead is a per-record **header sentinel**, not a frame-divider
-> opcode, and record 0 is a fixed 768-byte dispatch table. The consuming
-> command VM is not yet identified. See `legaia_asset::scene_event_scripts`
-> (module note + `record_words`) and the disc-gated falsification test
-> `scene_event_records_word_aligned_real`. The engine never feeds these
-> prescript bytes to its field VM; the vestigial `Scene::find_event_scripts()`
-> / `World::load_field_record()` diagnostic path that does is why ticking a
-> prescript record as field-VM "halts at pc 0 / yields immediately" rather than
-> running scene logic (see [`field-locomotion.md`](field-locomotion.md)).
+> **The `scene_event_scripts` / `scene_v12_table` prescript is a MOVE-VM stager
+> table, not field-VM bytecode.** The `[u16 count][u16 offsets[count]]` prescript
+> (offset 0, or `+0x800` behind the v12 header) was long assumed to carry
+> field-VM scripts because its records open with `0xFFFF 0x0000`. It does not:
+> the records are **move-VM (`FUN_80023070`) records in the summon-stager format**
+> `[i16 model_sel][u16 flags][move-VM bytecode]` - the `0xFFFF 0x0000` lead is
+> `model_sel = -1` (a transform/pivot node) + `flags = 0`, and the `0x0008`
+> terminator is move-VM opcode `0x08` (Halt). The runtime chain: the field VM
+> itself (`FUN_801DE840`) calls the installer **`FUN_800252EC(id)`**, which
+> resolves `record = _DAT_8007b8d0 + offsets[id]` and hands it to the part-stager
+> **`FUN_80021B04`** (`actor[+0x48] = record`, `actor[+0x70] = 2` PC, tick fn
+> `FUN_80021DF4`); the move VM `FUN_80023070` then runs `record+4` each frame. So
+> the prescript is the *per-scene* sibling of the summon stagers (same record
+> format, same consumer). See `legaia_asset::scene_event_scripts`
+> (`move_stager_records` + module note) and the disc-gated tests
+> `scene_event_records_word_aligned_real` + `prescript_move_stager_records_real`
+> (78 entries / 1855 records, 100 % valid stager-kind leads). The engine's field
+> VM correctly does not run these as field-VM scripts; the genuine per-scene
+> field-VM *scripts* are in the scene MAN (`FUN_8003A1E4`), and they are what spawn
+> from this stager table (see [`field-locomotion.md`](field-locomotion.md)).
 
 The `asset-viewer field <scene>` subcommand drives this end-to-end -
 it loads a scene, finds the event-script entry, ticks the VM frame-by-frame

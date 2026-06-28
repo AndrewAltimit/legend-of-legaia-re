@@ -235,7 +235,7 @@ Strict gate validates **both** the prescript and the inner asset table:
 
 The two-level gate is what makes this detector zero-false-positive: the prescript shape alone occasionally matches arbitrary `[count][offsets]`-shaped data, but the asset-table check at the next sector boundary is a strong second signal.
 
-The prescript is a **word-aligned (16-bit) per-scene actor/event command structure**, **not** field-VM (`FUN_801DE840`) bytecode - see the [scene_event_scripts](#scene_event_scripts---prescript-only) section for the disc-gated falsification. The `0xFFFF 0x0000` lead is a per-record header sentinel, not a frame-divider opcode. The consuming command VM and per-opcode operand widths are not yet identified; the genuine per-scene field-VM scripts live in the scene MAN sub-asset.
+The prescript is a **per-scene move-VM stager table** (summon-stager record format), **not** field-VM (`FUN_801DE840`) bytecode - see the [scene_event_scripts](#scene_event_scripts---prescript-only) section for the full chain. Each record is `[i16 model_sel][u16 flags][move-VM bytecode]` (the `0xFFFF 0x0000` lead = `model_sel = -1` transform node); installed by the field VM via `FUN_800252EC` and run by the move VM `FUN_80023070`. The genuine per-scene field-VM scripts live in the scene MAN sub-asset.
 
 ## tmd_size_prefix - truncated TMD-prefix
 
@@ -290,7 +290,29 @@ Strict structural detection:
 The frame-opener rate is what makes this detector zero-false-positive on its own. Random `[count][offsets]`-shaped data carries no `0xFFFF` opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).
 
 **These records are NOT field-VM (`FUN_801DE840`) bytecode** (the long-standing assumption). Running the field-VM disassembler over them yields a 65–88 % decode-error rate; the bytes are 16-bit **word-aligned** (low byte = opcode, high byte 0 on ~83 % of body words), framed records terminate with a `0x0008` word, and the opcodes sit mostly below the field VM's `0x22` opcode floor - a record like `FF FF 00 00 25 00 29 00 25 00 2A 00 08 00` reads cleanly word-aligned (`cmd(0x25,0x29) cmd(0x25,0x2A) term(0x08)`) but is garbage byte-by-byte. So `0xFFFF 0x0000` is a per-record header sentinel, not a field-VM frame divider, and record 0 is a fixed 768-byte dispatch table (96 × 8-byte slots), not a script. The records still encode per-scene structure (actor/NPC placement, event triggers,
-interaction hooks), but the **consuming command VM and per-opcode operand widths are not yet identified**. The genuine per-scene field-VM scripts live in the scene MAN sub-asset (see [`subsystems/script-vm.md`](../subsystems/script-vm.md)). Pinned by the disc-gated `scene_event_records_word_aligned_real` test; `legaia_asset::scene_event_scripts::record_words` surfaces the raw 16-bit word stream of a record.
+interaction hooks). The records are **move-VM (`FUN_80023070`) records in the
+summon-stager format** - `[i16 model_sel][u16 flags][move-VM bytecode]`,
+byte-identical in shape to the per-summon stagers (`legaia_asset::summon_overlay`):
+the `0xFFFF 0x0000` lead is `model_sel = -1` (a transform/pivot node, the dominant
+kind) + `flags = 0`, and the `0x0008` terminator is move-VM opcode `0x08` (Halt).
+
+Runtime chain: the per-scene field VM (`FUN_801DE840`) installs a record by id via
+the installer **`FUN_800252EC`** (`record = bundle_base + offsets[id]`, bundle base
+= `_DAT_8007b8d0` = the field scratch `_DAT_1f8003ec + 0x12800`) → the part-stager
+**`FUN_80021B04`** (`actor[+0x48] = record`, `actor[+0x70] = 2` PC, tick fn
+`FUN_80021DF4`) → the move VM **`FUN_80023070`** runs `record+4` each frame. So the
+prescript is the *per-scene* sibling of the summon stagers - same record format,
+same consumer. (Not field-VM, not a bespoke command VM, not vestigial; live
+kingdom-overworld RAM shows the records resident at `_DAT_8007b8d0` with actors
+executing them through the move VM.)
+
+Pinned by the disc-gated `scene_event_records_word_aligned_real` +
+`prescript_move_stager_records_real` tests (the latter: 78 entries / 1855 records,
+100% valid stager-kind leads); `legaia_asset::scene_event_scripts::move_stager_records`
+parses the records (as `summon_overlay::SummonPart`) and `record_words` surfaces the
+raw word stream. The genuine per-scene field-VM *scripts* live in the scene MAN
+sub-asset (see [`subsystems/script-vm.md`](../subsystems/script-vm.md)); this
+prescript is the move-VM *stager* table those scripts spawn from.
 
 Detection runs after `scene_scripted_asset_table` and `scene_asset_table`, so any composite layouts those detectors recognize claim their entries first.
 
