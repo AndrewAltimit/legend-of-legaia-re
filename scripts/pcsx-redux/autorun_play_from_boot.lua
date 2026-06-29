@@ -14,10 +14,16 @@
 -- phase). Navigation is pure pad injection - no breakpoints.
 --
 -- COLD BOOT requires the emulator's `-fastboot` flag (the default boot path
--- hangs on a CD read in headless -run); even then the title-overlay load can
--- hang on a CD read in this setup - see the doc. The RESUME path (LEGAIA_SSTATE
--- = a catalogued checkpoint) is fully working, and is how the segment corpus is
--- grown: each run resumes the previous segment's checkpoint and drives forward.
+-- stalls on an early CD read in headless -run). With it the game boots fine and
+-- reaches the title - but this listener goes vsync-BLIND there: the title's
+-- XA-BGM streaming stops VSync(0) delivery to the autorun, so the vsync-gated
+-- mash can't confirm NEW GAME and the title idles to the attract FMV (GDB shows
+-- game_mode advancing to 0x1A while the listener sees a "freeze"). Navigating
+-- the title needs a tick source that survives XA streaming (an exec-bp on the
+-- per-frame title tick FUN_801DD35C, or host-driven input over the GDB stub).
+-- The RESUME path (LEGAIA_SSTATE = a catalogued checkpoint) is fully working and
+-- is how the segment corpus is grown: each run resumes the previous checkpoint
+-- and drives forward through dense in-game vsyncs. See the doc.
 --
 -- Env vars:
 --   LEGAIA_SSTATE      resume from this save (segment chaining); cold boot if
@@ -53,6 +59,11 @@ local MASH_EVERY = tonumber(env.getenv("LEGAIA_MASH_EVERY", "20")) or 20
 local SETTLE     = tonumber(env.getenv("LEGAIA_SETTLE", "30")) or 30
 local MAX_FRAMES = tonumber(env.getenv("LEGAIA_MAX_FRAMES", "20000")) or 20000
 local NO_MASH    = env.getenv("LEGAIA_NO_MASH", "") == "1"
+-- During XA-streamed intro/FMV phases the game stops calling VSync(0), so the
+-- GPU::Vsync-driven mash can't pulse. HOLD_SKIP forces START+CROSS held
+-- continuously (pad override persists without vsyncs), so a level-triggered
+-- FMV/"PRESS START" skip sees the button down even while no frames render.
+local HOLD_SKIP  = env.getenv("LEGAIA_HOLD_SKIP", "") == "1"
 -- Mash START (skip logos + "PRESS START" gate) AND CROSS (confirm NEW GAME row 0
 -- + advance opening dialogue). Pressing both each pulse covers every screen.
 local MASH_BTNS  = { pad.BTN.START, pad.BTN.CROSS }
@@ -147,11 +158,17 @@ local function on_vsync()
     end
 
     if PHASE == "ADVANCE" then
-        if mash_until > 0 and vsync >= mash_until then
-            mash_release(); mash_until = 0
-        end
-        if not NO_MASH and (vsync % MASH_EVERY) == 0 and mash_until == 0 then
-            mash_press(); mash_until = vsync + 5
+        if HOLD_SKIP and not NO_MASH then
+            -- Force the buttons held once; the override persists through frozen
+            -- (no-vsync) FMV/XA phases where pulsing can't fire.
+            mash_press()
+        else
+            if mash_until > 0 and vsync >= mash_until then
+                mash_release(); mash_until = 0
+            end
+            if not NO_MASH and (vsync % MASH_EVERY) == 0 and mash_until == 0 then
+                mash_press(); mash_until = vsync + 5
+            end
         end
         if m == CKPT_MODE then
             if target_since == nil then

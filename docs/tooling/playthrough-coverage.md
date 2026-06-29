@@ -167,18 +167,34 @@ API: `Support.File.open(path,"CREATE"):writeMoveSlice(slice)`, emitting the raw
 (`manage-states.py backup pcsx-redux x.sstate --label sN_…`). Byte-validated:
 the gzipped checkpoint reloads and restores the exact captured mode.
 
-**Cold-boot blocker (open).** Cold boot needs the emulator's `-fastboot` flag -
-the default boot path hangs on a CD read (`loc 30 52 28`) in headless `-run`,
-under both interpreter and `--fast`. With `-fastboot` the boot advances to the
-title-arm state (`game_mode 0x10`→`0x11`, `title_cd=0x8000`) but then the
-title-overlay load hangs on its own CD read (vsync freezes at mode `0x11`).
-i.e. *significant boot/title CD reads hang in this headless setup* (runtime reads
-from a loaded save work fine, which is why the resume path is unaffected). This
-is an emulator/CD-emulation issue, not a driver-logic one - the driver is ready
-the moment the boot completes. Fix candidates: a CD-ROM read-speed / async
-setting, a different BIOS, or a PCSX-Redux build fix; until then, the S1 anchor
-must be captured interactively once, after which the driver chains forward from
-it. The resume + checkpoint + catalog loop is fully working today.
+**Cold boot works; the open issue is Lua vsync-blindness, not a CD hang.** Two
+findings, corrected by a GDB-stub probe:
+
+1. Cold boot needs the emulator's `-fastboot` flag. The *default* boot path does
+   stall on an early CD read (`loc 30 52 28`) in headless `-run` (both
+   interpreter and `--fast`); `-fastboot` clears it and the game boots normally.
+2. With `-fastboot` the game reaches the title and **keeps running** - but the
+   bespoke `GPU::Vsync` Lua listener goes *blind* there: the title's XA-BGM
+   streaming stops `VSync(0)` delivery to the autorun, so the driver's
+   vsync-gated mash never fires, the title gets no NEW GAME confirm, and it
+   idle-times-out to the attract FMV. This looked like a "freeze at mode `0x11`"
+   from the listener's side, but a GDB read of `game_mode` (0x8007B83C) from
+   *outside* the Lua VM shows it advancing to `0x1A` (the attract/intro FMV) -
+   the game is fine; the listener just can't see it.
+
+So the blocker is in the **driver/harness**, not the emulator: a vsync-gated
+input loop can't navigate XA-streaming phases (title BGM, FMV). The fix is a
+tick source that survives those phases - an exec breakpoint on the per-frame
+title tick (`FUN_801DD35C`) or another always-run function (fires regardless of
+GPU rendering), or host-driven input over the GDB stub (which reads/writes state
+independent of Lua callbacks). Until that lands, the S1 anchor is captured
+interactively once; the resume + checkpoint + catalog loop is fully working
+today and is how every later segment is built.
+
+(GDB note: `gdb_probe.py`'s packet parser mis-frames the `+` ack into the
+payload, raising a spurious checksum error - the read value is still visible in
+the error text. A one-line framing fix makes GDB state-polling clean; useful as
+the host-side state oracle for the tick-source fix above.)
 
 ## Attribution: SCUS vs overlay
 
