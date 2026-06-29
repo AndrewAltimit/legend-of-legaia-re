@@ -423,6 +423,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_minigame_slot_machine.lua`](../../scripts/pcsx-redux/autorun_minigame_slot_machine.lua) | Will pin the slot payout/jackpot table + RNG. Exec-bps reel SM `FUN_801cf0d8` + win eval `FUN_801d13e8` + LCG `FUN_801d30cc`; Write-watches the coin bank `_DAT_800845A4` (cash-out commit) and dumps the payout-byte table `DAT_801d3598`. Scenario `minigame_slot_machine_pcsx`. |
 | [`autorun_minigame_baka.lua`](../../scripts/pcsx-redux/autorun_minigame_baka.lua) | Will pin Baka Fighter best-of-N + gold-payout constants. Exec-bps round SM `FUN_801d3468` + RPS resolver `FUN_801d3a14` (samples round index + attack types); Write-watches the gold counter `_DAT_80084440` and dumps the AI move-pattern table `DAT_801d76e8`. Scenario `minigame_baka_pcsx`. |
 | [`autorun_minigame_muscle_dome.lua`](../../scripts/pcsx-redux/autorun_minigame_muscle_dome.lua) | Will pin the Muscle Dome deck/card-table bytes + per-round commit. Exec-bps match SM `FUN_801d0748` (phase `ctx+6`) + card driver `FUN_801d388c`; the per-site note resolves `ctx` → fighter actor and reads the `+0x1df` card queue, plus one-shot dumps of the deck tables `DAT_801f4b8c`/`DAT_801f4b94`. Scenario `minigame_muscle_dome_pcsx`. |
+| [`autorun_trace_segment.lua`](../../scripts/pcsx-redux/autorun_trace_segment.lua) | The trace-driven-coverage segment harness. Arms a non-pausing exec-bp on every not-yet-understood function entry (the gap-set worklist from [`build_gap_worklist.py`](../../scripts/pcsx-redux/build_gap_worklist.py)), plays one segment of the opening, and records which gap-set functions actually ran (`addr, hits, first_frame, first_mode, first_ra, stem`) + a `.modes.txt` game-mode timeline. Passive (input optional via `LEGAIA_INPUTS`); `LEGAIA_NO_SSTATE=1` for cold-boot S1. Drives the program in [`playthrough-coverage.md`](playthrough-coverage.md). |
 
 #### Runtime probe details
 
@@ -772,6 +773,7 @@ project state.
 
 ## See also
 
+- [`playthrough-coverage.md`](playthrough-coverage.md) - the trace-driven-coverage program these gap-set traces feed (segment ledger + gap-burndown).
 - [`mednafen-automation.md`](mednafen-automation.md) - the save-state diff / bisect sibling of these live probes.
 - [`overlay-capture.md`](overlay-capture.md) - capturing overlay RAM slices for Ghidra import.
 - [`docs/reference/memory-map.md`](../reference/memory-map.md) - the RAM addresses the probes break on and watch.
