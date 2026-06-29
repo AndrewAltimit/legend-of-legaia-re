@@ -239,24 +239,32 @@ triaged).
 
 | Seg | Span | Start anchor | Status | New hits | Documented |
 |---|---|---|---|---:|---:|
-| S1 | cold boot -> title -> NEW GAME -> opening cutscene | cold boot (`LEGAIA_NO_SSTATE=1`) | PENDING | - | - |
-| S2 | name entry -> Rim Elm (town01) spawn | S1 end state | PENDING | - | - |
+| S1 | cold boot -> title -> NEW GAME -> opening field scene | cold boot (`-fastboot`) | CAPTURED + CATALOGED (`s1_newgame_field`) | - | - |
+| S2 | name entry -> Rim Elm (town01) spawn | S1 checkpoint | BLOCKED (save-resume instability) | - | - |
 | S3 | first free walk + first NPC dialogue | S2 end state | PENDING | - | - |
 | S4 | first scene transition / house door | S3 end state | PENDING | - | - |
 | S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING | - | - |
 
-S1 runs the full 780-entry gap-set (all buckets - no `LEGAIA_ADDR_HI` filter),
-so its overlay hits need the mode/overlay disambiguation in
-[Attribution](#attribution-scus-vs-overlay) before documenting; the 167 SCUS
-hits are clean. S1's checkpoints come from the
-[boot-onward driver](#driving-from-boot-segment-s1) - the resume + checkpoint +
-catalog loop works today; the cold-boot entry is currently blocked by a headless
-CD-read hang (documented there), so the first anchor is captured interactively
-until that is fixed, after which the driver chains forward. Name entry (end of
-S1) is fiddly to script letter-by-letter;
-capturing an "after name entry" save state as the S2 anchor is preferred over
-scripting the input. Encounter timing (S5) is RNG-sensitive - keep it a short
-standalone segment and expect a couple of attempts.
+**S1 is captured cold from boot + cataloged** as scenario `s1_newgame_field`
+(`scripts/scenarios.toml` + `saves/library`, by `backup_fingerprint`) - a fresh
+NEW GAME at the opening field scene (`game_mode 0x03`), driven by the boot-onward
+driver and validated to reload to the field. Its gap-set trace is the next step
+(run the windowed passes against the catalogued scenario).
+
+**S2 chaining is blocked by PCSX-Redux's save-resume instability** (the same
+issue [`battle.md`](../subsystems/battle.md) and the audio-trace probe note):
+resuming the S1 checkpoint segfaults within ~180 vsyncs (~3 s). Rim Elm is
+*minutes* of opening (cutscene + name entry) past S1, so it cannot be reached
+inside that window - segment-chaining via resume is not viable here for distant
+targets. The robust path is a **single continuous cold-boot run** to Rim Elm (no
+resume), which still needs: (a) a universal per-frame tick that survives the
+post-title vsync-blind phases *and* field-run (the title-tick BP stops at
+field-run; candidates: a field/event-VM or SCUS frame-timer exec-bp), and (b)
+name-entry grid navigation (mashing CROSS fills the grid but does not reach END;
+the default name is "Vahn"). Both are tractable but unbuilt. The driver already
+supports scene-name targeting (`LEGAIA_CKPT_SCENE=town01`) and correct in-game
+mashing (CROSS-only; START opens the field menu) for when the tick lands.
+Encounter timing (S5) is RNG-sensitive - keep it a short standalone segment.
 
 ## Gap-burndown
 

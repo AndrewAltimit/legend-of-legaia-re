@@ -57,6 +57,11 @@ local bp     = require("probe.bp")
 
 local GM         = 0x8007B83C -- game_mode (low byte = mode value)
 local TITLE_CD   = 0x801EF16C -- title attract countdown (init 0x8000, ticks down)
+local SCENE_NAME = 0x8007050C -- active scene-name buffer ("opdeene", "town01", ...)
+-- Optional: checkpoint when the active scene name matches this (segment chaining
+-- by scene, e.g. CKPT_SCENE=town01 to stop at Rim Elm). Empty = use CKPT_MODE.
+local CKPT_SCENE = env.getenv("LEGAIA_CKPT_SCENE", "")
+if CKPT_SCENE == "" then CKPT_SCENE = nil end
 local OUT_DIR    = env.getenv("LEGAIA_OUT_DIR", "captures/play")
 local CKPT_MODE  = tonumber(env.getenv("LEGAIA_CKPT_MODE", "3")) or 3
 local CKPT_LABEL = env.getenv("LEGAIA_CKPT_LABEL", "s1_field")
@@ -64,11 +69,6 @@ local MASH_EVERY = tonumber(env.getenv("LEGAIA_MASH_EVERY", "20")) or 20
 local SETTLE     = tonumber(env.getenv("LEGAIA_SETTLE", "30")) or 30
 local MAX_FRAMES = tonumber(env.getenv("LEGAIA_MAX_FRAMES", "20000")) or 20000
 local NO_MASH    = env.getenv("LEGAIA_NO_MASH", "") == "1"
--- During XA-streamed intro/FMV phases the game stops calling VSync(0), so the
--- GPU::Vsync-driven mash can't pulse. HOLD_SKIP forces START+CROSS held
--- continuously (pad override persists without vsyncs), so a level-triggered
--- FMV/"PRESS START" skip sees the button down even while no frames render.
-local HOLD_SKIP  = env.getenv("LEGAIA_HOLD_SKIP", "") == "1"
 -- Mash START (skip logos + "PRESS START" gate) AND CROSS (confirm NEW GAME row 0
 -- + advance opening dialogue). Pressing both each pulse covers every screen.
 local MASH_BTNS  = { pad.BTN.START, pad.BTN.CROSS }
@@ -101,6 +101,21 @@ end
 local function read_cd()
     if not mem.in_ram(TITLE_CD) then return nil end
     return mem.read_u32(TITLE_CD)
+end
+local function read_scene()
+    if not mem.in_ram(SCENE_NAME) then return "" end
+    local s = {}
+    for i = 0, 7 do
+        local b = mem.read_u8(SCENE_NAME + i) or 0
+        if b < 0x20 or b >= 0x7f then break end
+        s[#s + 1] = string.char(b)
+    end
+    return table.concat(s)
+end
+-- Target reached? scene-name match if CKPT_SCENE is set, else game_mode match.
+local function reached_target()
+    if CKPT_SCENE then return read_scene() == CKPT_SCENE end
+    return read_mode() == CKPT_MODE
 end
 
 -- Write the full createSaveState slice to disk. PCSX.createSaveState() returns
@@ -170,24 +185,23 @@ local function on_vsync()
     end
 
     if PHASE == "ADVANCE" then
-        if HOLD_SKIP and not NO_MASH then
-            -- Force the buttons held once; the override persists through frozen
-            -- (no-vsync) FMV/XA phases where pulsing can't fire.
-            mash_press()
-        else
-            if mash_until > 0 and vsync >= mash_until then
-                mash_release(); mash_until = 0
-            end
-            if not NO_MASH and (vsync % MASH_EVERY) == 0 and mash_until == 0 then
-                mash_press(); mash_until = vsync + 5
-            end
+        -- In-game advance (resume/segment-chain path): pulse CROSS only - START
+        -- would open the pause menu in the field. The title's START+CROSS mash
+        -- is the title-tick BP's job; here vsyncs are dense so this drives the
+        -- opening dialogue / cutscene advance.
+        if mash_until > 0 and vsync >= mash_until then
+            pad.release(pad.BTN.CROSS); mash_until = 0
         end
-        if m == CKPT_MODE then
+        if not NO_MASH and (vsync % MASH_EVERY) == 0 and mash_until == 0 then
+            pad.force(pad.BTN.CROSS); mash_until = vsync + 5
+        end
+        if reached_target() then
             if target_since == nil then
                 target_since = vsync
             elseif vsync - target_since >= SETTLE then
-                mash_release()
-                log(string.format("settled at target mode 0x%02X; checkpointing", CKPT_MODE))
+                pad.release(pad.BTN.CROSS)
+                log(string.format("settled at target (mode 0x%02X scene=%q); checkpointing",
+                    m or 0xFF, read_scene()))
                 PHASE = "AT_TARGET"
             end
         else
@@ -239,8 +253,8 @@ local function arm_tick_bp()
             -- log game_mode periodically: the title→new-game progression happens
             -- while the vsync listener is blind, so this is the only view of it.
             if (tick_hits % 30) == 0 then
-                local m = read_mode()
-                log(string.format("  [tick %d] game_mode=0x%02X", tick_hits, m or 0xFF))
+                log(string.format("  [tick %d] game_mode=0x%02X scene=%q",
+                    tick_hits, read_mode() or 0xFF, read_scene()))
             end
             -- Pulse START+CROSS together (empirically navigates the title's
             -- PRESS-START gate + NEW GAME confirm; single-button variants stall
@@ -254,14 +268,13 @@ local function arm_tick_bp()
             -- delivery to Lua stays stopped after the title's XA streaming, so
             -- the vsync listener can't see the field; this BP fires per-frame in
             -- both the title and the field).
-            local md = read_mode()
-            if md == CKPT_MODE then
+            if reached_target() then
                 if tick_target_since == nil then
                     tick_target_since = tick_hits
                 elseif tick_hits - tick_target_since >= SETTLE then
                     mash_release()
-                    log(string.format("BP: settled at target mode 0x%02X (tick %d); checkpointing",
-                        CKPT_MODE, tick_hits))
+                    log(string.format("BP: settled at target (mode 0x%02X scene=%q, tick %d); checkpointing",
+                        read_mode() or 0xFF, read_scene(), tick_hits))
                     write_checkpoint()
                     PHASE = "DONE"
                     -- quit ASAP - the field-init phase can crash a few frames

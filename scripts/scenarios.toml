@@ -2021,3 +2021,17 @@ description = "Fresh-captured shiny Gimard Seru level-up, post-refactor - the 'g
 topics = ["shiny seru", "refactor", "Gimard", "level up", "battle", "randomizer"]
 phase = "battle"
 expected_game_mode = 0x15
+
+# ----------------------------------------------------------------------
+# Trace-driven playthrough segment anchors (docs/tooling/playthrough-coverage.md).
+# Each Sn checkpoint is captured by autorun_play_from_boot.lua and chained: Sn's
+# end state is the start anchor for Sn+1. Built from boot (no ephemeral slots).
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 255
+label = "s1_newgame_field"
+backup_fingerprint = "a7e8e2646f666a21801d2b153d273c8bc9a6f30ea8a40d12294a04c175fcec30"
+phase = "field"
+expected_game_mode = 3
+description = "S1 of the trace-driven playthrough: a fresh NEW GAME driven COLD FROM BOOT by autorun_play_from_boot.lua (the non-vsync title-tick exec-bp FUN_801DD35C navigates the title's PRESS-START gate + NEW GAME confirm past the XA-streaming vsync-blind window). Captured at the opening field scene (game_mode 0x03, after 'walking set'); validated to reload to the field. The start anchor for chaining S2 (name entry -> Rim Elm)."
+topics = ["playthrough", "trace-coverage", "S1", "cold-boot", "new-game", "pcsx-redux"]
