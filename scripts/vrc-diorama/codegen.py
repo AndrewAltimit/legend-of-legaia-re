@@ -118,9 +118,16 @@ def gen_cs(s: dict) -> str:
         else:
             a(f"        public const int {cname} = {spec['cc']};")
     a("")
-    a("        // Channel layout.")
-    a(f"        public static readonly int[] PartyChannels = {{ {', '.join(str(c) for c in s['party']['channels'])} }};")
-    a(f"        public static readonly int[] EnemyChannels = {{ {', '.join(str(c) for c in s['enemy']['channels'])} }};")
+    # Channel layout is intentionally NOT emitted as static int[] arrays:
+    # UdonSharp forbids static fields on user-defined types (it errors out the
+    # whole U# compile), and the C# decoder derives party/enemy role from the
+    # channel index, so it never referenced them. Emit as a doc comment instead.
+    # (The Lua encoder DOES use them -- see M.PARTY_CHANNELS/ENEMY_CHANNELS above.)
+    a("        // Channel layout (party = first slots, enemy = the rest). Not emitted")
+    a("        // as static int[] arrays: UdonSharp forbids static fields, and the")
+    a("        // decoder derives role from the channel index.")
+    a(f"        //   party channels = {{ {', '.join(str(c) for c in s['party']['channels'])} }}")
+    a(f"        //   enemy channels = {{ {', '.join(str(c) for c in s['enemy']['channels'])} }}")
     a("")
     a("        // Slot flag-bit positions.")
     for k, v in s["slot"]["flag_bits"].items():
