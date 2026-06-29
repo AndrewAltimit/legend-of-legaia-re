@@ -282,6 +282,7 @@ is printed) or `scripts/ci/port-catalog.py --dashboard`.
 | field/mode-24 trace | 780 | 167 | 613 | 42 SCUS + 60 overlay functions confirmed live; SCUS-low mostly infra; overlay hits attribution-pending. Checkpoint records *what executes*. |
 | dance-cluster deep-dive | 762 | 161 | 601 | Mode-24 pinned = Noa dance overlay 0980 (resident slot-A help text + sub-id 0x06). Documented the dance-floor render cluster (`FUN_801d2a10`/`801d3f54`/`801d3ec0`/`801d3a2c` + interior PCs) in [`minigame-dance.md`](../subsystems/minigame-dance.md); identified the SCUS-low infra hits (SPU queue drain, heap allocator, angle-lerp). -18 from the gap-set. |
 | field-0897 deep-dive | 762 | 161 | 601 | No net burndown - the hot field matches resolve to the already-documented per-actor tick path (validation that the trace surfaces the central per-frame actor loop). Promoted the per-actor dispatcher `FUN_8003BC08` to the canonical `functions.md`; surfaced the `FUN_801D79E8` mesh-vs-glyph open thread. |
+| S1/S2 anchor SCUS trace | 739 | 138 | 601 | First trace against the **reproducible** cataloged anchors (`s1_newgame_field` + `s2_rimelm_town01`), not an ephemeral save. 43 SCUS gap-set functions hit (union). Resolved the 23 always-resident S1 hits: **18 -> ignore-set** (PsyQ libgte/libcd/libc + libgpu prim composers + dev-profiler HUD + a noop stub), **4 -> `functions.md`** (field footstep/ambient + timed audio-cue ticks, a guarded sub-dispatch), 1 already documented (`8005A5FC` = the `FUN_8005A4A0` flusher interior). -23 from the gap-set (all SCUS). The 20 S2-only hits are the town scene-load path (mostly `first_mode 0x02`) - the next worklist (left uncited to keep them in the gap-set). |
 
 Each documented function moves an address out of the gap-set on the next
 regenerate; the table above grows one row per triage pass.
@@ -356,3 +357,53 @@ static-object actor as drawing its **mesh**, but the (interior-entry, incomplete
 decomp at `0x801D79E8` emits dialog-font glyph cells (`func_0x8003c1f8` cells
 4/5) + a 3-digit number field (`func_0x80034b78`). A clean re-decompile from the
 true entry is needed to reconcile these; not asserted either way.
+
+### Cataloged-anchor SCUS trace (S1 opening / S2 Rim Elm, mode 0x03)
+
+The first gap-set trace run against the **reproducible catalogued anchors**
+(`run_probe.sh --scenario s1_newgame_field` / `s2_rimelm_town01`) rather than an
+ephemeral live save, driven by `scripts/pcsx-redux/trace_scenario.sh` (one
+windowed pass per address window, CROSS-mash to advance dialogue, union the
+per-window CSVs). Captures land in `captures/trace/<label>/union.csv`.
+
+- **S1 (`opdeene`, opening prologue):** 52 gap-set functions hit (23 SCUS + 29
+  overlay), every window armed first-try.
+- **S2 (`town01`, Rim Elm):** 111 hit (42 SCUS + 69 overlay). Richer than S1 -
+  the town has more actors/NPCs, and the CROSS-mash walked into a door so the
+  trace also captured the **scene-load path** (`first_mode 0x02`), e.g. the
+  per-cell tile-sprite emitter (1024 hits during load).
+
+**SCUS resolution (the burndown).** The 23 always-resident SCUS functions S1
+surfaced were triaged by decomp. The honest split: most always-resident
+per-frame field SCUS code is host-replaced infrastructure, not portable game
+logic.
+
+- **18 -> ignore-set** (`scripts/ci/port-catalog-ignore.toml`): PsyQ libgte
+  (`8003D190` clear-translation, `8005B268` PushMatrix, `8005B4B8`
+  set-translation, `8005B4E8` ScaleMatrix, `8005B648` SetLightMatrix), libcd
+  (`8005CA34` CdSync, `8005CF80` CdControl, `8005FEDC` CD-status accessor), libc
+  (`8002B688` heap block-size summer), libgpu prim-word composers (`80059280`
+  sprite builder, `80059510` tpage, `80059744` texwindow, `8005AA30` GPU-queue
+  timeout-arm), the dev-profiler HUD (`800173BC` + its `800178F0` / `8001A89C`
+  marks and `8001ABC8` digit drawer), and a noop stub (`80019890`).
+- **4 -> `functions.md`** (genuine field-tick logic, in `## Audio` / `##
+  Helpers`): `80018DB0` (field footstep/ambient audio cadence tick), `80018F94`
+  (positional-voice slot update), `800267FC` (timed audio-cue / event trigger),
+  `8001D058` (guarded per-frame sub-dispatch to `FUN_80026CE4`).
+- **1 already documented:** `8005A5FC` re-traces the interior of the
+  GPU-queue flusher `FUN_8005A4A0` - confirmation the trace hits known code too.
+
+Net: gap-set 762 -> 739 (SCUS 161 -> 138). Every overlay-range hit attributes to
+the **field overlay 0897** (all `first_mode 0x03`); the misleading dump stems
+(`overlay_dance_*`, `overlay_slot_machine_*`, ...) are just the static dump's
+home overlay under VA-aliasing, not the resident code.
+
+**Next worklist:** the 20 S2-only SCUS hits - the town **scene-load** path
+(mostly `first_mode 0x02`: the partition/MAN install, tile-window background
+build, and asset-stage helpers), characterization pending. Their addresses are
+left as bare entries in `captures/trace/s2_rimelm_town01/union.csv` and the
+regenerated `gap_worklist.txt` rather than cited here, so they stay in the
+gap-set as live targets (citing an address under `docs/` marks it *documented*
+and silently drops it). The high-overlay window `ov5` (the top of the overlay
+range) is boot-lottery-flaky for the S2 anchor and low-yield in the field state -
+those VAs host mostly non-resident overlays - so S2's overlay union omits it.
