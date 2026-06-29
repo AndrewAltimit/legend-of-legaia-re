@@ -86,16 +86,20 @@ if (-not $OutDir) { $OutDir = Join-Path $RepoRoot "captures\$stem\win-run" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $log = Join-Path $OutDir "pcsx.log"
 
+# Most repo autoruns build a default save-state path as
+# `os.getenv("HOME") .. "/Tools/pcsx-redux/..."`. Lua evaluates that default
+# expression EAGERLY even when LEGAIA_SSTATE is set, and HOME is unset on Windows
+# -> "attempt to concatenate a nil value" aborts the autorun. Provide HOME so the
+# (discarded) default is harmless. Does not affect which state actually loads.
+if (-not $env:HOME) { $env:HOME = $env:USERPROFILE }
+
 # ---- env the autorun reads ----
 $env:LEGAIA_SSTATE        = $Sstate
 $env:LEGAIA_STREAM_FRAMES = "$Frames"
 $env:LEGAIA_STREAM_SWEEP  = "$Sweep"
 $env:LEGAIA_OUT_DIR       = $OutDir
-if ($NoMidi) {
-    Remove-Item Env:\LEGAIA_MIDI_WINPORT -ErrorAction SilentlyContinue
-} else {
-    $env:LEGAIA_MIDI_WINPORT = $MidiPort
-}
+# Empty string reads as "unset" to the sink's from_env (null sink / dry run).
+$env:LEGAIA_MIDI_WINPORT  = $(if ($NoMidi) { "" } else { $MidiPort })
 
 # ---- emulator flags (interpreter+debugger unless -Fast) ----
 $emuArgs = @('-bios', $Bios, '-iso', $Iso, '-run', '-stdout', '-dofile', $Lua)
