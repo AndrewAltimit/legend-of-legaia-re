@@ -67,6 +67,7 @@ pub mod scene_vab_stream;
 pub mod seru_trade;
 pub mod sfx_table;
 pub mod shop_stock;
+pub mod slot_payout;
 pub mod sound_pack;
 pub mod spell_names;
 pub mod stage_geom;

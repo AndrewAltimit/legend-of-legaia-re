@@ -21,6 +21,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`move_power`](#move_power)
   - [`fishing_species`](#fishing_species)
   - [`dance_chart`](#dance_chart)
+  - [`slot_payout`](#slot_payout)
   - [`element_affinity`](#element_affinity)
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
@@ -173,6 +174,19 @@ beat-clock `/ 0x119`). Baked into the dance overlay (PROT 0980, base
   judged directions). `symbol(lane, beat)` / `step_count(lane)` (row density
   rises with difficulty). No Sony bytes committed (disc-gated `dance_chart_real`).
   See [`minigame-dance.md`](../../docs/subsystems/minigame-dance.md).
+
+### `slot_payout`
+
+Casino slot-machine **per-symbol payout table** (overlay VA `0x801D3598`), the
+10-byte table the win-evaluator `FUN_801d13e8` indexes by the winning symbol id
+(`0..=9`) to credit a line (`balance += DAT_801d3598[symbol]`). Baked into the
+slot overlay (PROT 0975, base `0x801CE818`, file offset `0x4D80`), bounded by
+zero padding + an overlay string at `+0x10`.
+
+- `parse` → a [`SlotPayoutTable`] of 10 bytes; `payout(symbol)` /
+  `is_bonus_symbol(id)` (ids 8/9 trigger the bonus round). No Sony bytes
+  committed (disc-gated `slot_payout_real`). See
+  [`minigame-slot-machine.md`](../../docs/subsystems/minigame-slot-machine.md).
 
 ### `element_affinity`
 
