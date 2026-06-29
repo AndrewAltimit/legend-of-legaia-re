@@ -19,6 +19,8 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`static_overlay`](#static_overlay)
   - [`monster_archive`](#monster_archive)
   - [`move_power`](#move_power)
+  - [`fishing_species`](#fishing_species)
+  - [`dance_chart`](#dance_chart)
   - [`element_affinity`](#element_affinity)
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
@@ -142,6 +144,35 @@ Static battle-overlay data, pinned in PROT 0898 at fixed raw-entry offsets
 
 CLI `asset move-power <PROT 0898 .BIN>` (`--json` for the machine-readable table). See
 [`spell-table.md`](../../docs/formats/spell-table.md).
+
+### `fishing_species`
+
+Fishing-minigame **per-species parameter table** (overlay VA `0x801D81A4`), the
+10-record `0x28`-stride table the fish-AI tick `FUN_801d4004` and catch-scoring
+`FUN_801d5298` index by the hooked-fish id `DAT_801d91cc`. Static `.rodata` in
+the fishing overlay (PROT 0972, base `0x801CE818`); the `+0x00` head is a fish-name
+pointer into the same overlay.
+
+- `parse` → 10 `FishingSpecies` records (`+0x04` score base, `+0x08` pull, `+0x0c`
+  dart, `+0x10` sink, `+0x14` depth gate, `+0x18`/`+0x1c`/`+0x20` behaviour-roll
+  cutoffs, `+0x24` strike gate).
+- `FishingSpecies::score_for(strength)` reproduces the award formula
+  (`value * (strength + 0x9c0) / 0x32000`); `name(overlay)` resolves the `+0x00`
+  pointer. No Sony bytes committed (disc-gated `fishing_species_real`). See
+  [`minigame-fishing.md`](../../docs/subsystems/minigame-fishing.md#per-species-parameter-table).
+
+### `dance_chart`
+
+Noa dance-minigame **step chart** (overlay VA `0x801D509C`), the `3 × 0x20`-byte
+direction-symbol grid the hit-judge `FUN_801d1960` indexes by
+`chart[lane*0x20 + beat]` (lane = groove gauge `/ 1000` ∈ {0,1,2}, beat =
+beat-clock `/ 0x119`). Baked into the dance overlay (PROT 0980, base
+`0x801CE818`, file offset `0x6884`) - not loaded per song.
+
+- `parse` → a [`DanceChart`] of 3 rows × 32 beats (symbol `0` none, `1`/`2`/`3`
+  judged directions). `symbol(lane, beat)` / `step_count(lane)` (row density
+  rises with difficulty). No Sony bytes committed (disc-gated `dance_chart_real`).
+  See [`minigame-dance.md`](../../docs/subsystems/minigame-dance.md).
 
 ### `element_affinity`
 

@@ -40,13 +40,34 @@ The hooked-fight is a tug-of-war between the player's reel input and the fish's 
 - **Reel released** (`(_DAT_8007b850 & 0xc0) == 0`): tension *decreases* by `(_DAT_80084454 * 0x40 + 0x4a) * DAT_1f800393`.
 - The gauge is then clamped to `[0, 0x1000]`. (Confirmed: clamp at `0x1000` high, `0` low.)
 
-`_DAT_80084454` is a persistent rod / upgrade stat read from the save block; a higher value softens the per-frame tension change. The fish's own behaviour is a sub-state machine on `DAT_801d910c` (run / dart-left / dart-right / dive, selected pseudo-randomly via the BIOS `rand` `func_0x80056798`), which moves the fish actor and modulates the pull; the timer `DAT_801d9110` counts down each behaviour and re-rolls the next. Per-fish parameters (pull magnitudes, dart thresholds, behaviour-selection cutoffs) come from a per-species table indexed by `DAT_801d91cc * 0x28` based at `&DAT_801d81a8` (`Inferred` field meanings; the indexing and stride are `Confirmed` from the disassembly).
+`_DAT_80084454` is a persistent rod / upgrade stat read from the save block; a higher value softens the per-frame tension change. The fish's own behaviour is a sub-state machine on `DAT_801d910c` (run / dart-left / dart-right / dive, selected pseudo-randomly via the BIOS `rand` `func_0x80056798`), which moves the fish actor and modulates the pull; the timer `DAT_801d9110` counts down each behaviour and re-rolls the next. Per-fish parameters (pull magnitudes, dart push, behaviour-selection cutoffs, scoring value) come from the per-species table documented in [Per-species parameter table](#per-species-parameter-table) below, indexed by `DAT_801d91cc * 0x28` based at `&DAT_801d81a4`.
 
 The catch HUD `FUN_801d1580` (`overlay_fishing_801d1580.txt`) renders the live state: the line length / record number `DAT_801d927c`, the casting-power bar `DAT_801d9274`, the depth `DAT_801d9298`, and - gated on `DAT_801d91b4` - the tension bar `DAT_801d9168` itself (drawn via `FUN_801d1870`). It uses the digit / glyph blitters `FUN_801d76e0` (number) and `FUN_801d63b0` (single sprite-quad).
 
 A landed catch is resolved in `FUN_801d5298` (`overlay_fishing_801d5298.txt`). The awarded points are
 `points = (fish_base_value * (DAT_801d91b8 + 0x9c0)) / 0x32000`,
-where `fish_base_value` is the species value at `&DAT_801d81a8 + DAT_801d91cc*0x28` and `DAT_801d91b8` is the accumulated pull / strength for the fight. The points are added to the persistent counter `_DAT_8008444c` (clamped to `999999`), guarded by a per-catch latch at actor `+0x2a` so a single fish is scored once. If the catch beats the current best (`_DAT_80084458`), the best value and its fish id (`_DAT_8008445c`) are updated.
+where `fish_base_value` is the species record's `+0x04` field (`&DAT_801d81a8 + DAT_801d91cc*0x28`) and `DAT_801d91b8` is the accumulated pull / strength for the fight. The points are added to the persistent counter `_DAT_8008444c` (clamped to `999999`), guarded by a per-catch latch at actor `+0x2a` so a single fish is scored once. If the catch beats the current best (`_DAT_80084458`), the best value and its fish id (`_DAT_8008445c`) are updated.
+
+## Per-species parameter table
+
+The species table is **static `.rodata`** in the fishing overlay (PROT entry 0972, `data\OTHER1`; base `0x801CE818`, table head `0x801D81A4` = file offset `0x998C`). Record `N` lives at `0x801D81A4 + N*0x28`; the decompiler resolves the head as `(&PTR_s_Spikefish_801d81a4)[DAT_801d91cc * 10]`, so `+0x00` is a pointer to the fish-name string (also in this overlay). The structure runs for **10 records** (`Spikefish` = id 0 .. the rarest catch = id 9); record 10's `+0x00` is no longer an in-overlay pointer, which bounds the table.
+
+Each record is 10 words (stride `0x28`). Every field has a *confirmed reader* in `FUN_801d4004` (fish-AI tick) or `FUN_801d5298` (scoring); the designer-level meaning is the consuming formula:
+
+| Off | Field | Consuming site / formula |
+|---|---|---|
+| `+0x00` | name pointer | `FUN_801d4004` - the hooked-fish name banner |
+| `+0x04` | score base value | `FUN_801d5298` - `points = value * (strength + 0x9c0) / 0x32000` |
+| `+0x08` | pull factor | `FUN_801d4004` - per-frame pull `((rand & 0xff) + bias) * f / 150` (also a `/0xc8000` term) |
+| `+0x0c` | dart push factor | `FUN_801d4004` - dart-state lateral push `((step >> 2) + 0x20) * f / 100` |
+| `+0x10` | depth-sink factor | `FUN_801d4004` - run-state line-sink `(pull * f) / 150` |
+| `+0x14` | depth gate | `FUN_801d4004` - behaviour pick when `f < line-depth` |
+| `+0x18` | behaviour-roll cutoff A | `FUN_801d4004` - `f <= rand & 0xfff` |
+| `+0x1c` | behaviour-roll cutoff B | `FUN_801d4004` - `rand & 0xfff < f` |
+| `+0x20` | behaviour-roll cutoff C | `FUN_801d4004` - `rand & 0xfff < f` |
+| `+0x24` | strike / record gate | `FUN_801d4004` - hook check `record < f + 300` |
+
+The `+0x04` score value and `+0x08` pull factor both climb monotonically with rarity (the rarest catch carries the largest of each), so a higher-value fish is also the harder fight. Parser: [`legaia_asset::fishing_species`] (`parse` decodes the 10 records from the overlay image; `FishingSpecies::score_for` reproduces the award formula; `name` resolves the `+0x00` pointer). No Sony bytes are committed - the values + names decode from the user's disc (disc-gated `fishing_species_real`).
 
 ## RAM state
 
@@ -85,8 +106,9 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 - `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) - persistent HUD: draws the fishing-point total (`_DAT_8008444c`, capped) and the rod-type label.
 - `FUN_801d712c` (`overlay_fishing_801d712c.txt`) - rod-ownership gate; queries inventory item ids `0x9d`..`0x9f` (`func_0x80042f4c`).
 
+Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species.rs) decodes the [per-species table](#per-species-parameter-table) from the disc.
+
 ## Open
 
-- The per-species parameter table at `&DAT_801d81a8` (stride `0x28`): individual field offsets (`+0x8` line-tension factor, `+0x18`/`+0x1c`/`+0x20` behaviour-roll cutoffs, `+0x24` minimum-time, etc.) are read by `FUN_801d4004` but their designer-level meanings are `Inferred`.
 - The exact bit assignment of the reel buttons within `_DAT_8007b850` (which physical face/shoulder buttons `0x40` / `0x80` map to) is not pinned from these dumps.
 - Whether the point-exchange shop branch (states `0x64`..`0x7a`) spends fishing points for in-game items or rod upgrades - the helpers `FUN_801d06c8` / `FUN_801d092c` / `FUN_801d0c3c` read `PTR_DAT_801d90b8` price records, but the record layout is not yet documented.
