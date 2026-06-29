@@ -706,7 +706,7 @@
 0x801f30c4  overlay_muscle_dome_801f30c4   # bucket=overlay refs=3
 0x801f3894  overlay_0897_801f3894   # bucket=overlay refs=3
 0x801f3c34  overlay_slot_machine_801f3c34   # bucket=overlay refs=11
-0x801f3d3c  overlay_debug_menu_801f3d3c   # bucket=overlay refs=5
+0x801f3d3c  overlay_debug_menu_801f3d3c   # bucket=overlay refs=6
 0x801f4318  overlay_0897_xxx_dat_801f4318   # bucket=overlay refs=2
 0x801f44a0  overlay_baka_fighter_801f44a0   # bucket=overlay refs=7
 0x801f452c  overlay_fishing_801f452c   # bucket=overlay refs=12

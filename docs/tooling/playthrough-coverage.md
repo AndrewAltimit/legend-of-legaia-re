@@ -201,6 +201,7 @@ is printed) or `scripts/ci/port-catalog.py --dashboard`.
 | program start | 780 | 167 | 613 | - |
 | field/mode-24 trace | 780 | 167 | 613 | 42 SCUS + 60 overlay functions confirmed live; SCUS-low mostly infra; overlay hits attribution-pending. Checkpoint records *what executes*. |
 | dance-cluster deep-dive | 762 | 161 | 601 | Mode-24 pinned = Noa dance overlay 0980 (resident slot-A help text + sub-id 0x06). Documented the dance-floor render cluster (`FUN_801d2a10`/`801d3f54`/`801d3ec0`/`801d3a2c` + interior PCs) in [`minigame-dance.md`](../subsystems/minigame-dance.md); identified the SCUS-low infra hits (SPU queue drain, heap allocator, angle-lerp). -18 from the gap-set. |
+| field-0897 deep-dive | 762 | 161 | 601 | No net burndown - the hot field matches resolve to the already-documented per-actor tick path (validation that the trace surfaces the central per-frame actor loop). Promoted the per-actor dispatcher `FUN_8003BC08` to the canonical `functions.md`; surfaced the `FUN_801D79E8` mesh-vs-glyph open thread. |
 
 Each documented function moves an address out of the gap-set on the next
 regenerate; the table above grows one row per triage pass.
@@ -254,3 +255,24 @@ overlay is the real code. Resolution by `first_mode`:
 Next deep-dive: the clean field-0897 matches, and pinning sstate1's mode-24
 resident overlay (e.g. `asset overlay find-sig` on the hot cluster's prologue),
 before writing per-function docs.
+
+### Field-0897 matches (mode 0x03) - resolve to the per-actor tick path
+
+The clean field hits (mode `0x03`, `overlay_0897` stem) resolve to the
+**already-documented per-actor tick loop**, which is itself the finding: the
+trace correctly surfaces the central per-frame actor driver. The two hottest
+(`0x801D7A5C` / `0x801D7B40`, ~420 each, both called from `0x8003BC3C`) are
+interior PCs of `FUN_801D79E8`, the field overlay's per-actor draw helper,
+invoked by `FUN_8003BC08` - the per-actor tick for the `_DAT_8007C354` list.
+`FUN_8003BC08` is the unifying driver that runs, per actor, the inline-dialogue
+SM (`FUN_80039B7C`), the motion VM (`FUN_8003774C`), and the move-table VM; it
+was documented only in two subsystem tables, so it is now promoted to the
+canonical [`functions.md`](../reference/functions.md) directory with its full
+verified dispatch list.
+
+Open thread surfaced here: `FUN_801D79E8`'s precise render is unsettled -
+[`field-locomotion.md`](../subsystems/field-locomotion.md) describes the
+static-object actor as drawing its **mesh**, but the (interior-entry, incomplete)
+decomp at `0x801D79E8` emits dialog-font glyph cells (`func_0x8003c1f8` cells
+4/5) + a 3-digit number field (`func_0x80034b78`). A clean re-decompile from the
+true entry is needed to reconcile these; not asserted either way.
