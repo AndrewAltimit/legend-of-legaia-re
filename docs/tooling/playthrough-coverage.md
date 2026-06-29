@@ -196,9 +196,10 @@ The headline metric. Snapshot the global gap-set size after each documentation
 pass so the trend is visible. Regenerate with the worklist generator (the count
 is printed) or `scripts/ci/port-catalog.py --dashboard`.
 
-| Checkpoint | Gap-set size | SCUS | Overlay |
-|---|---:|---:|---:|
-| program start | 780 | 167 | 613 |
+| Checkpoint | Gap-set size | SCUS | Overlay | Notes |
+|---|---:|---:|---:|---|
+| program start | 780 | 167 | 613 | - |
+| field/mode-24 trace | 780 | 167 | 613 | 42 SCUS + 60 overlay functions confirmed live; SCUS-low mostly infra; overlay hits attribution-pending (deep-dive next). No docs landed yet, so the gap-set is unchanged - this checkpoint records *what executes*, the input to burndown. |
 
 Each documented function moves an address out of the gap-set on the next
 regenerate; the table above grows one row per triage pass.
@@ -224,3 +225,31 @@ gap-set (battle / field / menu) and higher SCUS functions, not these low-SCUS
 helpers. Several SCUS hits carry an overlay-range caller `ra` (e.g. `8003d0bc`
 called from `0x801D2D28`), i.e. SCUS leaf helpers invoked by overlay code - so
 the overlay passes are where the burndown should focus.
+
+### Overlay capture (613 addrs, 6 windowed passes, same field/mode-24 state)
+
+The 613 overlay gap-set addresses were captured as a union of six ~120-bp
+address windows (each armed first-try - the windowed count is well under the
+ceiling). **60 functions hit**, split by `first_mode`: 39 at `0x03` (field), 21
+at `0x18` (mode 24). The hottest field hits are `0x801D7B40` / `0x801D7A5C`
+(~420 each, both called from SCUS `0x8003BC3C`) and the `0x801F7xxx` render band.
+
+This pass is the concrete demonstration of the **VA-aliasing attribution rule**:
+an overlay address has *multiple* dumps (e.g. `0x801D7A5C` carries 0897 / dance /
+fishing / slot / debug_menu dumps), and only the one matching the resident
+overlay is the real code. Resolution by `first_mode`:
+
+- **mode `0x03` + `overlay_0897` stem = clean match** (the field overlay is 0897,
+  resident at field mode). `0x801D7B40` is genuine field code - it branches on
+  `_DAT_8007b450`, the documented tile-board-grid flag.
+- **mode `0x03` + non-0897 stem = alias mismatch** (e.g. `0x801F7000`'s
+  `magic_level_up` stem): the hit is real but the dump identity is wrong for this
+  context; the resident code is the field/world-map overlay at that VA. Do not
+  document from the mismatched dump.
+- **mode `0x18` (mode 24) hits** need the resident mode-24 overlay pinned before
+  attribution (the `0x801D2xxx`/`0x801D3xxx` cluster is a tight self-calling
+  subroutine group; stems are mixed dance/menu).
+
+Next deep-dive: the clean field-0897 matches, and pinning sstate1's mode-24
+resident overlay (e.g. `asset overlay find-sig` on the hot cluster's prologue),
+before writing per-function docs.
