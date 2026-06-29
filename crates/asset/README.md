@@ -23,6 +23,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`dance_chart`](#dance_chart)
   - [`slot_payout`](#slot_payout)
   - [`baka_opponents`](#baka_opponents)
+  - [`muscle_dome`](#muscle_dome)
   - [`element_affinity`](#element_affinity)
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
@@ -202,6 +203,19 @@ offset `0x8EA4`).
   (`pattern[cursor % len] - 1`). `ROUND_WIN_TARGET = 2` (best of 3). No Sony
   bytes committed (disc-gated `baka_opponents_real`). See
   [`minigame-baka-fighter.md`](../../docs/subsystems/minigame-baka-fighter.md).
+
+### `muscle_dome`
+
+Resolves the Muscle Dome minigame's overlay identity: its match SM
+`FUN_801d0748` + data tables (deck `0x801f4b8c`, sub-draw script `0x801f4d34`,
+victory messages `0x801f4dfc`) are **resident in the battle-action overlay
+(PROT 0898)** - it is a mode of the battle engine, not a separate overlay.
+
+- `verify_resident(overlay)` confirms a PROT 0898 image hosts the arena (the
+  match-controller prologue signature at file offset `0x1F30` reads the ctx
+  `_DAT_8007bd24`, and the sub-draw / victory tables hold in-overlay pointers).
+  Disc-gated `muscle_dome_real`. See
+  [`minigame-muscle-dome.md`](../../docs/subsystems/minigame-muscle-dome.md).
 
 ### `element_affinity`
 
