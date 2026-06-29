@@ -12,7 +12,7 @@ A directory of the Ghidra-traced functions that matter for understanding Legaia'
 | `8001F05C` | Asset-type dispatcher. The `(type_size, copy_only)` switch - see [`formats/asset-type.md`](../formats/asset-type.md). |
 | `8001FE70` | Battle-init per-PROT walker for [`scene_tmd_stream`](../formats/scene-bundles.md) entries. Reads chunk0 as `[TMD body size][TMD body]` (copies into `_DAT_8007B864`), then loops: type `0x01` -> `LoadImage(payload)`, type `0x02` or size `0` -> stop, otherwise skip. Called from `FUN_800513F0` (battle scene-loader state) after `FUN_8001FA88` reads the PROT entry. Distinct from `FUN_8002541C` despite the matching chunk-header packing - type `0x01` here means "single bare TIM", not `TIM_LIST`. See [`formats/scene-bundles.md`](../formats/scene-bundles.md#streaming-tail---fun_8001fe70-walker). |
 | `80020224` | Descriptor-pair walker. No static caller in `SCUS_942.54`; called at runtime from the town overlay's `FUN_801D6704`. |
-| `80020454` / `80020DE0` | Actor allocator pair. Free-list LIFO at `_DAT_8007C348`, 512-pointer pool at `0x8007C370`. |
+| `80020454` / `80020DE0` | Actor allocator pair. Free-list LIFO at `_DAT_8007C348`, 512-pointer pool at `0x8007C370`. The free-list is primed at scene entry by `FUN_800203EC` (build) / `FUN_80020424` (pop); interior PC `80020E3C` is the template zero-init body of `FUN_80020DE0`. |
 
 ## Per-stage asset table machinery
 
@@ -54,6 +54,25 @@ Full 13-function CD-read API stack documented in [`subsystems/boot.md` § CD-rea
 | `8005E9A4` | **Public streaming-read API.** `(sector_count, dest_buffer, mode_flags)`. Sets the streaming-read source globals + calls `FUN_8005E788(0)`. Caller must SetLoc beforehand. Sector size from `mode_flags`: `& 0x30 == 0` → 0x800 (2048, data); `== 0x20` → 0x924 (2336, XA); else 0x918. |
 | `8005E4D4` | Synchronous LBA-based file reader: `(sector_count, lba, dest_buffer)`. Wraps `FUN_8005C328` + `CdControl(SetLoc)` + `FUN_8005E9A4` + completion poll. |
 | `8003EF14` | Field-buffer per-sector streaming poller - [details ↓](#8003ef14) |
+
+## Scene / stage init (mode-0x02 loader callees)
+
+These run during scene entry (`game_mode 0x02`) as callees of the per-stage
+asset loader `FUN_8001E1B4` / boot mode-init `FUN_8001DCF8` and the field
+initializer `FUN_801D6704`; surfaced by the playthrough gap-set trace on the
+town01 (Rim Elm) entry.
+
+| Address | Role |
+|---|---|
+| `80017910` | **Scene overlay-slot teardown.** Iterates the `gp+0x5D0` held-slot count calling the field-overlay slot free `FUN_800653C8(7+i)`, then clears `gp+0x5D0` and sets `gp+0x40C = -1`. Releases the N overlay slots a scene held, on exit. `see ghidra/scripts/funcs/80017910.txt`. |
+| `80017BEC` | **Scene tile visibility/adjacency build.** Rebuilds per-cell visibility/adjacency bitmasks over the scene grid (`_DAT_1F8003EC` base): 0x200 cells (0x20 stride), an 0x80×0x80 map at `+0x8000` setting/clearing neighbor bits `0x1000`/`0x2000`, then ORs edge bits from three lists at `+0x10000`. The grid-prep half of field scene entry (caller `FUN_801D6704`). `see ghidra/scripts/funcs/80017bec.txt`. |
+| `800203EC` / `80020424` | **Actor node-pool init + pop.** `_800203EC` builds the 0x8E-entry node free-stack (entries 0xD8 bytes apart, each ptr written into `slot+0x28`) and sets the live count `_DAT_8007C348 = 0x8E`; `_80020424` pops one node (decrement `_DAT_8007C348`) and initialises it as an empty circular doubly-linked list head. The per-scene reset + allocate primitives priming the `_DAT_8007C348` free-list the actor allocator `FUN_80020454` draws from. `see ghidra/scripts/funcs/800203ec.txt`. |
+| `80025C24` | **Field-camera reset on scene entry.** Resets the field-camera defaults: angle words `DAT_8007B790 = 0x1B8` / `DAT_8007B792 = 0x64` / `DAT_8007B794 = 0`, and target `0x800840B8 = 0` / `0x800840BC = 0xFFFFFF00` / `0x800840C0 = 0x4024` (caller `FUN_801D6704`, field init). `see ghidra/scripts/funcs/80025c24.txt`. |
+| `8003A9D4` | **Bind scene-script refs to actors.** Walks the loaded scene-script block (`*_DAT_801C6EA4`) record by record, resolving each 2-byte entry id against the live actor lists (system channels `0xF8`/`0xFB`, or id-match at `actor+0x50`), then writing the matched actor `+0x80 = ptr-into-script-data` and `+0x8A = byte`. Links the per-scene event script onto its spawned actors. `see ghidra/scripts/funcs/8003a9d4.txt`. |
+| `8003ADAC` | **Scene-entry overlay-sprite pair build.** Clears a draw-control bit in `_DAT_8007C364+0x10`, sets `DAT_8007B6B4 = 0x28`, reads flag `DAT_8008575B`, then builds two sprite/box primitives (color 0xFF, sizes 0x1E then 0x08) via the panel emitter `FUN_80024E80`. Interior PC `8003ADCC` is its prologue register-save region. `see ghidra/scripts/funcs/8003adac.txt`. |
+| `80020038` | **Object default-field stamp.** Stamps defaults on a passed actor/object struct: `+0x28 = 0x1F`, `+0x2C = 1`, `+0x2A = 0`. A small init helper in the mode-init chain (`FUN_8001DCF8`). `see ghidra/scripts/funcs/80020038.txt`. |
+| `800353E0` / `8003C110` | **Field-subsystem state reset + its mode setter.** `_800353E0` zeroes `gp+0x148` and `gp+0x138`, calls the setter `FUN_8003C110(0xC)`, and sets `gp+0x13C = 7`; `_8003C110` is the one-line setter `DAT_80073F20 = param`. Resets a field subsystem's state block on scene entry. `see ghidra/scripts/funcs/800353e0.txt`. |
+| `8005ACF8` / `8005AD54` | **GTE projection-scale setup.** Compute an app-specific projection scale (`8005ACF8` = `(param1*-64)/param2`, `8005AD54` = `(param1*-320)/param2`) and load it through the documented GTE rotation/translation word-setters `FUN_8005B7C0` / `FUN_8005B7CC`. Screen-geometry setup the engine's `Camera` subsumes - the GTE half is host-replaced, the scale math is app logic. `see ghidra/scripts/funcs/8005acf8.txt`. |
 
 ## PSX runtime / standard libraries
 

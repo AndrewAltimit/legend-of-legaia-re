@@ -9,15 +9,13 @@
 # overlay addresses (0x801c..0x8020) are VA-aliased - attribute them with
 # the trace CSV's first_mode column + the dump_stem here.
 #
-# Counts: 739 total (138 scus, 601 overlay).
+# Counts: 719 total (118 scus, 601 overlay).
 #
 # Columns: <0x-addr>  <dump_stem>   # bucket=<b> refs=<n>
 0x80016e4c  80016e4c   # bucket=scus refs=1
 0x80016eb8  80016eb8   # bucket=scus refs=1
 0x8001763c  8001763c   # bucket=scus refs=17
-0x80017910  80017910   # bucket=scus refs=5
 0x80017978  80017978   # bucket=scus refs=2
-0x80017bec  80017bec   # bucket=scus refs=16
 0x80019098  80019098   # bucket=scus refs=1
 0x8001a374  8001a374   # bucket=scus refs=2
 0x8001a6a4  8001a6a4   # bucket=scus refs=6
@@ -28,29 +26,20 @@
 0x8001d184  8001d184   # bucket=scus refs=7
 0x8001ed9c  8001ed9c   # bucket=scus refs=0
 0x8001fa00  8001fa00   # bucket=scus refs=16
-0x80020038  80020038   # bucket=scus refs=2
 0x80020310  80020310   # bucket=scus refs=2
 0x8002035c  8002035c   # bucket=scus refs=2
-0x800203ec  800203ec   # bucket=scus refs=2
-0x80020424  80020424   # bucket=scus refs=2
-0x80020e3c  80020e3c   # bucket=scus refs=0
 0x80021248  80021248   # bucket=scus refs=16
 0x800212c4  800212c4   # bucket=scus refs=0
-0x80025c24  80025c24   # bucket=scus refs=16
 0x80025cb4  80025cb4   # bucket=scus refs=9
 0x800267a8  800267a8   # bucket=scus refs=13
 0x8002689c  8002689c   # bucket=scus refs=3
 0x80026be0  80026be0   # bucket=scus refs=2
-0x80026c18  80026c18   # bucket=scus refs=2
 0x800271a8  800271a8   # bucket=scus refs=2
 0x80027c6c  80027c6c   # bucket=scus refs=2
 0x80027f00  80027f00   # bucket=scus refs=2
 0x80029724  80029724   # bucket=scus refs=2
 0x80029dd8  80029dd8   # bucket=scus refs=2
-0x8002b3d4  8002b3d4   # bucket=scus refs=2
-0x8002b584  8002b584   # bucket=scus refs=2
 0x8002b790  8002b790   # bucket=scus refs=3
-0x8002b96c  8002b96c   # bucket=scus refs=3
 0x8002b974  8002b974   # bucket=scus refs=2
 0x8002b984  8002b984   # bucket=scus refs=2
 0x8002b98c  8002b98c   # bucket=scus refs=2
@@ -71,7 +60,6 @@
 0x80034fa0  80034fa0   # bucket=scus refs=2
 0x800351c0  800351c0   # bucket=scus refs=4
 0x80035394  80035394   # bucket=scus refs=13
-0x800353e0  800353e0   # bucket=scus refs=4
 0x800355f0  800355f0   # bucket=scus refs=14
 0x80035bac  80035bac   # bucket=scus refs=15
 0x80035c00  80035c00   # bucket=scus refs=2
@@ -81,10 +69,6 @@
 0x80037044  80037044   # bucket=scus refs=2
 0x8003789c  8003789c   # bucket=scus refs=4
 0x800379a8  800379a8   # bucket=scus refs=1
-0x8003a9d4  8003a9d4   # bucket=scus refs=2
-0x8003adac  8003adac   # bucket=scus refs=3
-0x8003adcc  8003adcc   # bucket=scus refs=6
-0x8003c110  8003c110   # bucket=scus refs=13
 0x8003c43c  8003c43c   # bucket=scus refs=2
 0x8003c510  8003c510   # bucket=scus refs=2
 0x8003c6a4  8003c6a4   # bucket=scus refs=13
@@ -92,7 +76,6 @@
 0x8003cc88  8003cc88   # bucket=scus refs=2
 0x8003cc90  8003cc90   # bucket=scus refs=2
 0x8003cd68  8003cd68   # bucket=scus refs=1
-0x8003d1ec  8003d1ec   # bucket=scus refs=4
 0x8003d38c  8003d38c   # bucket=scus refs=9
 0x8003dda0  8003dda0   # bucket=scus refs=1
 0x8003e9c0  8003e9c0   # bucket=scus refs=2
@@ -109,9 +92,6 @@
 0x80051d84  80051d84   # bucket=scus refs=3
 0x80054a6c  80054a6c   # bucket=scus refs=2
 0x800597c8  800597c8   # bucket=scus refs=2
-0x8005acf8  8005acf8   # bucket=scus refs=2
-0x8005ad54  8005ad54   # bucket=scus refs=2
-0x8005b678  8005b678   # bucket=scus refs=2
 0x8005ba38  8005ba38   # bucket=scus refs=8
 0x8005bbf8  8005bbf8   # bucket=scus refs=2
 0x8005bd40  8005bd40   # bucket=scus refs=3

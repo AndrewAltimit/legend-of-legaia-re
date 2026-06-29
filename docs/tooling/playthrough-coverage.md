@@ -282,7 +282,8 @@ is printed) or `scripts/ci/port-catalog.py --dashboard`.
 | field/mode-24 trace | 780 | 167 | 613 | 42 SCUS + 60 overlay functions confirmed live; SCUS-low mostly infra; overlay hits attribution-pending. Checkpoint records *what executes*. |
 | dance-cluster deep-dive | 762 | 161 | 601 | Mode-24 pinned = Noa dance overlay 0980 (resident slot-A help text + sub-id 0x06). Documented the dance-floor render cluster (`FUN_801d2a10`/`801d3f54`/`801d3ec0`/`801d3a2c` + interior PCs) in [`minigame-dance.md`](../subsystems/minigame-dance.md); identified the SCUS-low infra hits (SPU queue drain, heap allocator, angle-lerp). -18 from the gap-set. |
 | field-0897 deep-dive | 762 | 161 | 601 | No net burndown - the hot field matches resolve to the already-documented per-actor tick path (validation that the trace surfaces the central per-frame actor loop). Promoted the per-actor dispatcher `FUN_8003BC08` to the canonical `functions.md`; surfaced the `FUN_801D79E8` mesh-vs-glyph open thread. |
-| S1/S2 anchor SCUS trace | 739 | 138 | 601 | First trace against the **reproducible** cataloged anchors (`s1_newgame_field` + `s2_rimelm_town01`), not an ephemeral save. 43 SCUS gap-set functions hit (union). Resolved the 23 always-resident S1 hits: **18 -> ignore-set** (PsyQ libgte/libcd/libc + libgpu prim composers + dev-profiler HUD + a noop stub), **4 -> `functions.md`** (field footstep/ambient + timed audio-cue ticks, a guarded sub-dispatch), 1 already documented (`8005A5FC` = the `FUN_8005A4A0` flusher interior). -23 from the gap-set (all SCUS). The 20 S2-only hits are the town scene-load path (mostly `first_mode 0x02`) - the next worklist (left uncited to keep them in the gap-set). |
+| S1/S2 anchor SCUS trace | 739 | 138 | 601 | First trace against the **reproducible** cataloged anchors (`s1_newgame_field` + `s2_rimelm_town01`), not an ephemeral save. 43 SCUS gap-set functions hit (union). Resolved the 23 always-resident S1 hits: **18 -> ignore-set** (PsyQ libgte/libcd/libc + libgpu prim composers + dev-profiler HUD + a noop stub), **4 -> `functions.md`** (field footstep/ambient + timed audio-cue ticks, a guarded sub-dispatch), 1 already documented (`8005A5FC` = the `FUN_8005A4A0` flusher interior). -23 from the gap-set (all SCUS). |
+| S2 scene-load characterization | 719 | 118 | 601 | Characterized the 20 S2-only town scene-load callees (callees of the per-stage loader `FUN_8001E1B4` / boot mode-init `FUN_8001DCF8` / field init `FUN_801D6704`). **14 -> `functions.md`** (new "Scene / stage init" section: overlay-slot teardown, tile visibility/adjacency build, actor node-pool init/pop, field-camera reset, scene-script-ref binding, overlay-sprite pair, GTE projection-scale), **6 -> ignore-set** (2 retail-stripped noop tile emitters, libc InitHeap + coalescing-free, libgte SetTrans-vector + SetColorMatrix). -20, all SCUS. |
 
 Each documented function moves an address out of the gap-set on the next
 regenerate; the table above grows one row per triage pass.
@@ -398,12 +399,22 @@ the **field overlay 0897** (all `first_mode 0x03`); the misleading dump stems
 (`overlay_dance_*`, `overlay_slot_machine_*`, ...) are just the static dump's
 home overlay under VA-aliasing, not the resident code.
 
-**Next worklist:** the 20 S2-only SCUS hits - the town **scene-load** path
-(mostly `first_mode 0x02`: the partition/MAN install, tile-window background
-build, and asset-stage helpers), characterization pending. Their addresses are
-left as bare entries in `captures/trace/s2_rimelm_town01/union.csv` and the
-regenerated `gap_worklist.txt` rather than cited here, so they stay in the
-gap-set as live targets (citing an address under `docs/` marks it *documented*
-and silently drops it). The high-overlay window `ov5` (the top of the overlay
-range) is boot-lottery-flaky for the S2 anchor and low-yield in the field state -
-those VAs host mostly non-resident overlays - so S2's overlay union omits it.
+**S2 scene-load callees (now characterized).** The 20 S2-only SCUS hits are the
+town **scene-load** path (mostly `first_mode 0x02`), all callees of the per-stage
+asset loader `FUN_8001E1B4`, the boot mode-init `FUN_8001DCF8`, and the field
+init `FUN_801D6704`. They split cleanly: the genuine Legaia scene-init logic
+(overlay-slot teardown, tile visibility/adjacency rebuild, actor node-pool
+init/pop, field-camera reset, scene-script-ref binding, GTE projection-scale)
+went to the new "Scene / stage init" section of [`functions.md`](../reference/functions.md);
+the host-replaced infra (two retail-stripped noop tile-sprite emitters, the libc
+heap InitHeap/free pair, two libgte matrix-register loaders) to the ignore-set.
+The high-overlay window `ov5` (top of the overlay range) is boot-lottery-flaky
+for the S2 anchor and low-yield in the field state - those VAs host mostly
+non-resident overlays - so S2's overlay union omits it.
+
+**Cautionary note (the documented-classifier trap).** "Documented" =
+*the address hex is cited from any file under `docs/`*, so naming a still-open
+target in prose silently drops it from the gap-set. When recording a *pending*
+target, refer to it by cluster/mode and leave the bare address in the capture
+CSV + `gap_worklist.txt`, not under `docs/`; only cite the hex once it is
+actually characterized.
