@@ -128,31 +128,31 @@
         <tr>
           <td>Fishing</td>
           <td><code>FUN_801cf3bc</code></td>
-          <td>Tension-gauge (<code>0x801d9168</code>) reel tug-of-war; catch score into the persistent counter <code>0x8008444c</code>.</td>
+          <td>Tension-gauge (<code>0x801d9168</code>) reel tug-of-war; catch score into the persistent counter <code>0x8008444c</code>. The 10 fish are a per-species parameter table (pull / behaviour-roll cutoffs / score value), decoded from the disc.</td>
           <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md">minigame-fishing.md</a></td>
         </tr>
         <tr>
           <td>Slot machine</td>
           <td><code>FUN_801cf0d8</code></td>
-          <td>Reel SM + dual RNG (an in-overlay LCG for reels, BIOS <code>rand</code> for balance-bracketed feature odds); payout / jackpot eval.</td>
+          <td>Reel SM + dual RNG (an in-overlay LCG for reels, BIOS <code>rand</code> for balance-bracketed feature odds); payout via a 10-entry per-symbol payout table (<code>0x801d3598</code>), bonus rounds via a 3-factor product.</td>
           <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-slot-machine.md">minigame-slot-machine.md</a></td>
         </tr>
         <tr>
           <td>Baka Fighter</td>
           <td><code>FUN_801d3468</code></td>
-          <td>Rock-paper-scissors attack-type exchange; loads the PROT 1204 party meshes (the default-equipment battle-form pack).</td>
+          <td>Rock-paper-scissors attack-type exchange, <strong>best of 3</strong> (first to 2 round wins); 17 opponents in a per-opponent table (<code>0x801d76bc</code>) carrying each one's gold prize + scripted attack pattern. Loads the PROT 1204 party meshes.</td>
           <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-baka-fighter.md">minigame-baka-fighter.md</a></td>
         </tr>
         <tr>
           <td>Dance</td>
           <td><code>FUN_801cf470</code></td>
-          <td>Beat-clock SM with an accuracy-weighted timing-window judge; direction-symbol step chart.</td>
+          <td>Beat-clock SM with an accuracy-weighted timing-window judge; a baked 3-row direction-symbol step chart (<code>0x801d509c</code>) the groove gauge selects by difficulty; per-tier score multipliers (ordinary / combo / Perfect).</td>
           <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-dance.md">minigame-dance.md</a></td>
         </tr>
         <tr>
           <td>Muscle Dome</td>
           <td><code>FUN_801d0748</code></td>
-          <td>Card-battle: deal a hand, commit cards into the fighter's action queue under a point budget, resolve via the shared battle-action path.</td>
+          <td>Card-battle: deal a hand, commit cards into the fighter's action queue under a point budget, resolve via the shared battle-action path. Runs <em>inside</em> the battle-action overlay (PROT 0898), not its own overlay.</td>
           <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">minigame-muscle-dome.md</a></td>
         </tr>
       </tbody>
@@ -166,7 +166,10 @@
     minigames (fishing / slot / Baka Fighter / dance) are distinct overlay
     files that share a library core, so the <em>same</em> code address hosts a
     <em>different</em> function in each (VA aliasing) - the controllers
-    above are each read from their own overlay's dump.
+    above are each read from their own overlay's dump. <strong>Muscle Dome is
+    the exception</strong>: it is not a separate overlay at all - its controller
+    and data live inside the <em>battle-action</em> overlay (PROT 0898), because
+    the arena reuses the battle engine wholesale.
   </div>
 </section>
 
