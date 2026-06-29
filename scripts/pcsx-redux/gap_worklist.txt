@@ -9,7 +9,7 @@
 # overlay addresses (0x801c..0x8020) are VA-aliased - attribute them with
 # the trace CSV's first_mode column + the dump_stem here.
 #
-# Counts: 780 total (167 scus, 613 overlay).
+# Counts: 762 total (161 scus, 601 overlay).
 #
 # Columns: <0x-addr>  <dump_stem>   # bucket=<b> refs=<n>
 0x80016e4c  80016e4c   # bucket=scus refs=1
@@ -33,7 +33,6 @@
 0x8001c93c  8001c93c   # bucket=scus refs=2
 0x8001cd68  8001cd68   # bucket=scus refs=2
 0x8001d058  8001d058   # bucket=scus refs=3
-0x8001d088  8001d088   # bucket=scus refs=2
 0x8001d184  8001d184   # bucket=scus refs=7
 0x8001ed9c  8001ed9c   # bucket=scus refs=0
 0x8001fa00  8001fa00   # bucket=scus refs=16
@@ -42,7 +41,6 @@
 0x8002035c  8002035c   # bucket=scus refs=2
 0x800203ec  800203ec   # bucket=scus refs=2
 0x80020424  80020424   # bucket=scus refs=2
-0x800204a4  800204a4   # bucket=scus refs=12
 0x80020e3c  80020e3c   # bucket=scus refs=0
 0x80021248  80021248   # bucket=scus refs=16
 0x800212c4  800212c4   # bucket=scus refs=0
@@ -59,7 +57,6 @@
 0x80029724  80029724   # bucket=scus refs=2
 0x80029dd8  80029dd8   # bucket=scus refs=2
 0x8002b3d4  8002b3d4   # bucket=scus refs=2
-0x8002b468  8002b468   # bucket=scus refs=2
 0x8002b584  8002b584   # bucket=scus refs=2
 0x8002b688  8002b688   # bucket=scus refs=3
 0x8002b790  8002b790   # bucket=scus refs=3
@@ -105,7 +102,6 @@
 0x8003cc88  8003cc88   # bucket=scus refs=2
 0x8003cc90  8003cc90   # bucket=scus refs=2
 0x8003cd68  8003cd68   # bucket=scus refs=1
-0x8003d0bc  8003d0bc   # bucket=scus refs=14
 0x8003d190  8003d190   # bucket=scus refs=2
 0x8003d1ec  8003d1ec   # bucket=scus refs=4
 0x8003d38c  8003d38c   # bucket=scus refs=9
@@ -165,7 +161,6 @@
 0x8005f994  8005f994   # bucket=scus refs=2
 0x8005f9c8  8005f9c8   # bucket=scus refs=2
 0x8005fdb8  8005fdb8   # bucket=scus refs=2
-0x8005fde8  8005fde8   # bucket=scus refs=9
 0x8005fe18  8005fe18   # bucket=scus refs=4
 0x8005fe7c  8005fe7c   # bucket=scus refs=2
 0x8005feac  8005feac   # bucket=scus refs=1
@@ -173,7 +168,6 @@
 0x80062164  80062164   # bucket=scus refs=2
 0x80066f4c  80066f4c   # bucket=scus refs=2
 0x80068c70  80068c70   # bucket=scus refs=2
-0x8006a7c8  8006a7c8   # bucket=scus refs=2
 0x8006ca04  8006ca04   # bucket=scus refs=2
 0x8007326c  data_8007325c_around_DAT_8007326c   # bucket=scus refs=0
 0x80073280  data_80073280   # bucket=scus refs=0
@@ -350,13 +344,7 @@
 0x801d2914  overlay_slot_machine_801d2914   # bucket=overlay refs=2
 0x801d2958  overlay_0897_801d2958   # bucket=overlay refs=2
 0x801d2968  overlay_0897_801d2968   # bucket=overlay refs=2
-0x801d2a10  overlay_dance_801d2a10   # bucket=overlay refs=1
 0x801d2a28  overlay_baka_fighter_801d2a28   # bucket=overlay refs=10
-0x801d2b44  overlay_menu_801d2b44   # bucket=overlay refs=3
-0x801d2c98  overlay_menu_801d2c98   # bucket=overlay refs=3
-0x801d2cfc  overlay_0897_801d2cfc   # bucket=overlay refs=4
-0x801d2d1c  overlay_0897_801d2d1c   # bucket=overlay refs=2
-0x801d2d2c  overlay_0897_801d2d2c   # bucket=overlay refs=2
 0x801d2d98  overlay_dance_801d2d98   # bucket=overlay refs=2
 0x801d30b4  overlay_0896_801d30b4   # bucket=overlay refs=2
 0x801d30b8  overlay_0897_801d30b8   # bucket=overlay refs=3
@@ -374,16 +362,13 @@
 0x801d34a4  overlay_0896_801d34a4   # bucket=overlay refs=2
 0x801d3730  801d3730   # bucket=overlay refs=2
 0x801d387c  overlay_dance_801d387c   # bucket=overlay refs=1
-0x801d3a2c  overlay_dance_801d3a2c   # bucket=overlay refs=1
 0x801d3b0c  overlay_0897_801d3b0c   # bucket=overlay refs=2
 0x801d3d78  overlay_0897_801d3d78   # bucket=overlay refs=4
 0x801d3d84  overlay_0897_801d3d84   # bucket=overlay refs=2
 0x801d3db4  overlay_debug_menu_801d3db4   # bucket=overlay refs=7
 0x801d3df0  overlay_0897_801d3df0   # bucket=overlay refs=2
 0x801d3e28  overlay_dance_801d3e28   # bucket=overlay refs=3
-0x801d3ec0  overlay_dance_801d3ec0   # bucket=overlay refs=2
 0x801d3f24  overlay_0897_801d3f24   # bucket=overlay refs=4
-0x801d3f54  overlay_dance_801d3f54   # bucket=overlay refs=2
 0x801d4098  overlay_dance_801d4098   # bucket=overlay refs=1
 0x801d40dc  overlay_0897_801d40dc   # bucket=overlay refs=4
 0x801d414c  overlay_dance_801d414c   # bucket=overlay refs=2
@@ -463,8 +448,6 @@
 0x801d78c0  overlay_fishing_801d78c0   # bucket=overlay refs=2
 0x801d7964  overlay_slot_machine_801d7964   # bucket=overlay refs=9
 0x801d79e0  overlay_slot_machine_801d79e0   # bucket=overlay refs=6
-0x801d7a5c  overlay_0897_801d7a5c   # bucket=overlay refs=8
-0x801d7b40  overlay_0897_801d7b40   # bucket=overlay refs=3
 0x801d7b50  overlay_cutscene_dialogue_801d7b50   # bucket=overlay refs=4
 0x801d7bb8  overlay_debug_menu_801d7bb8   # bucket=overlay refs=16
 0x801d7c30  overlay_debug_menu_801d7c30   # bucket=overlay refs=6
@@ -723,7 +706,7 @@
 0x801f30c4  overlay_muscle_dome_801f30c4   # bucket=overlay refs=3
 0x801f3894  overlay_0897_801f3894   # bucket=overlay refs=3
 0x801f3c34  overlay_slot_machine_801f3c34   # bucket=overlay refs=11
-0x801f3d3c  overlay_debug_menu_801f3d3c   # bucket=overlay refs=6
+0x801f3d3c  overlay_debug_menu_801f3d3c   # bucket=overlay refs=5
 0x801f4318  overlay_0897_xxx_dat_801f4318   # bucket=overlay refs=2
 0x801f44a0  overlay_baka_fighter_801f44a0   # bucket=overlay refs=7
 0x801f452c  overlay_fishing_801f452c   # bucket=overlay refs=12
@@ -748,7 +731,6 @@
 0x801f6a84  overlay_muscle_dome_801f6a84   # bucket=overlay refs=2
 0x801f6c70  overlay_muscle_dome_801f6c70   # bucket=overlay refs=2
 0x801f6d48  overlay_dance_801f6d48   # bucket=overlay refs=14
-0x801f7000  overlay_magic_level_up_data_0x801f7000   # bucket=overlay refs=0
 0x801f71e0  overlay_0897_801f71e0   # bucket=overlay refs=3
 0x801f73e4  overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4   # bucket=overlay refs=2
 0x801f7624  overlay_muscle_dome_801f7624   # bucket=overlay refs=2
