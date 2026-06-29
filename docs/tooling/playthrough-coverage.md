@@ -86,16 +86,28 @@ whatever runs - so an input timeline is optional. Key env knobs:
 ### Running it headless (agent-operated)
 
 The agent runs the emulator directly under a headless X server - this is not an
-author/run hand-off. The reliable recipe is a **save-state-anchored** segment:
-load a PCSX-Redux `.sstate` (the save jumps past the slow BIOS boot and fires
-`GPU::Vsync` immediately, so the probe arms at once), with `boot_delay=2`:
+author/run hand-off.
+
+> **Anchor on catalogued, fingerprinted saves - never an ephemeral live slot.**
+> A PCSX-Redux quicksave slot (`~/Tools/pcsx-redux/SCUS94254.sstateN`) is
+> overwritten the next time you save in it; reverse-engineering against one is
+> not reproducible and silently changes meaning. Every reproducible trace must
+> load a save from the immutable library (`saves/library/pcsx-redux/<sha>`) by
+> its `backup_fingerprint`, via `run_probe.sh --scenario <label>`. The library
+> corpus is built by the boot-onward driver below (it `createSaveState`s each
+> checkpoint, which is then `manage-states.py backup`-ed and catalogued), not by
+> grabbing whatever happens to be in a live slot.
+
+A save-state-anchored trace loads a catalogued checkpoint (the save jumps past
+the slow BIOS boot and fires `GPU::Vsync` immediately, so the probe arms at
+once), with `boot_delay=2`:
 
 ```bash
-LEGAIA_SSTATE="$HOME/Tools/pcsx-redux/SCUS94254.sstate1" \
 LEGAIA_BOOT_DELAY=2 \
 LEGAIA_LUA=scripts/pcsx-redux/autorun_trace_segment.lua \
 LEGAIA_OUT=captures/trace/seg.csv LEGAIA_FRAMES=600 \
-    xvfb-run -a timeout --kill-after=15s 220s bash scripts/pcsx-redux/run_probe.sh
+    xvfb-run -a timeout --kill-after=15s 220s \
+    bash scripts/pcsx-redux/run_probe.sh --scenario <checkpoint_label>
 ```
 
 Reliability notes (hard-won; these are the environment's quirks, not the
@@ -112,12 +124,16 @@ harness's):
 - **Boot is a lottery - retry.** A run that never logs `gap-set exec probes
   armed` lost the boot race; just relaunch. A small retry loop (relaunch until
   the CSV has rows) makes capture reliable.
-- **Cold boot (`LEGAIA_NO_SSTATE=1`) is not viable headless.** The title is
-  reached only after minutes of interpreter boot, and `GPU::Vsync` (the arming
-  gate) does not fire during the pre-render CD-boot phase - the probe sits in
-  `waiting for boot` indefinitely. Capture the S1 title/new-game code by
-  anchoring on a title-screen `.sstate` instead (capture one interactively
-  once), not by cold boot.
+- **Cold boot needs a bespoke per-vsync driver, not the gap-set harness's
+  arming gate.** `autorun_trace_segment.lua` defers to `probe.run`, which waits
+  `boot_delay` `GPU::Vsync` events before doing anything - and those are sparse
+  during the pre-render CD-boot phase, so a cold boot can sit in `waiting for
+  boot`. The fix (used by [the boot-onward driver](#driving-from-boot-segment-s1))
+  is a bespoke `GPU::Vsync` listener that polls `game_mode` from the first frame
+  and reacts to state transitions: navigation is pure pad injection (no
+  breakpoints), so the arming gate is irrelevant to it. Tracing the boot/title
+  code itself (if wanted) arms on a memory-watchpoint at a known boot-transition
+  register (`_DAT_801EF16C`, the title countdown) rather than a vsync count.
 - **Breakpoint-count ceiling: arm a SMALL set per run.** Arming the full
   780-entry gap-set in one go stalls the emulator before capture; ~150 arms
   fine. Capture the whole gap-set as a UNION of windowed passes
@@ -129,6 +145,40 @@ harness's):
 
 For a scripted-input segment, add `LEGAIA_INPUTS` / `LEGAIA_MASH`; in-game
 vsyncs are dense so the timeline times reliably.
+
+### Driving from boot (segment S1)
+
+[`autorun_play_from_boot.lua`](../../scripts/pcsx-redux/autorun_play_from_boot.lua)
+is the boot-onward driver that builds the catalogued checkpoint corpus. It is a
+bespoke `GPU::Vsync` listener (not `probe.run`) that polls `game_mode` every
+frame, mashes START+CROSS to skip logos / the "PRESS START" gate / intro FMV and
+confirm NEW GAME (row 0) + advance opening dialogue, logs the `game_mode`
+timeline, and at a target mode writes a checkpoint. It also **resumes** from a
+save (`LEGAIA_SSTATE`) to drive the *next* segment forward - that is how the
+corpus grows: each run resumes the previous segment's checkpoint and plays on.
+
+**Checkpoint mechanism (validated round-trip).** `PCSX.createSaveState()` returns
+a `{_type="Slice", _wrapper=cdata}` wrapper; this PCSX-Redux build does **not**
+export the ffi slice accessors (`getSliceSize`/`getSliceData` - the older
+audio-trace pattern is dead here), so the slice is written via the Support.File
+API: `Support.File.open(path,"CREATE"):writeMoveSlice(slice)`, emitting the raw
+(uncompressed) protobuf (~19 MB). The host gzips it to the GUI `.sstate` format
+(`gzip -c x.rawsstate > x.sstate`, ~1.8 MB) and catalogs it
+(`manage-states.py backup pcsx-redux x.sstate --label sN_…`). Byte-validated:
+the gzipped checkpoint reloads and restores the exact captured mode.
+
+**Cold-boot blocker (open).** Cold boot needs the emulator's `-fastboot` flag -
+the default boot path hangs on a CD read (`loc 30 52 28`) in headless `-run`,
+under both interpreter and `--fast`. With `-fastboot` the boot advances to the
+title-arm state (`game_mode 0x10`→`0x11`, `title_cd=0x8000`) but then the
+title-overlay load hangs on its own CD read (vsync freezes at mode `0x11`).
+i.e. *significant boot/title CD reads hang in this headless setup* (runtime reads
+from a loaded save work fine, which is why the resume path is unaffected). This
+is an emulator/CD-emulation issue, not a driver-logic one - the driver is ready
+the moment the boot completes. Fix candidates: a CD-ROM read-speed / async
+setting, a different BIOS, or a PCSX-Redux build fix; until then, the S1 anchor
+must be captured interactively once, after which the driver chains forward from
+it. The resume + checkpoint + catalog loop is fully working today.
 
 ## Attribution: SCUS vs overlay
 
@@ -182,10 +232,12 @@ triaged).
 S1 runs the full 780-entry gap-set (all buckets - no `LEGAIA_ADDR_HI` filter),
 so its overlay hits need the mode/overlay disambiguation in
 [Attribution](#attribution-scus-vs-overlay) before documenting; the 167 SCUS
-hits are clean. **S1 cannot be captured by headless cold boot** (see the
-reliability notes - the arming gate never fires during BIOS boot); anchor it on
-a title-screen `.sstate` captured interactively. Name entry (end of S1) is
-fiddly to script letter-by-letter;
+hits are clean. S1's checkpoints come from the
+[boot-onward driver](#driving-from-boot-segment-s1) - the resume + checkpoint +
+catalog loop works today; the cold-boot entry is currently blocked by a headless
+CD-read hang (documented there), so the first anchor is captured interactively
+until that is fixed, after which the driver chains forward. Name entry (end of
+S1) is fiddly to script letter-by-letter;
 capturing an "after name entry" save state as the S2 anchor is preferred over
 scripting the input. Encounter timing (S5) is RNG-sensitive - keep it a short
 standalone segment and expect a couple of attempts.
