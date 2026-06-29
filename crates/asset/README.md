@@ -22,6 +22,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`fishing_species`](#fishing_species)
   - [`dance_chart`](#dance_chart)
   - [`slot_payout`](#slot_payout)
+  - [`baka_opponents`](#baka_opponents)
   - [`element_affinity`](#element_affinity)
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
@@ -187,6 +188,20 @@ zero padding + an overlay string at `+0x10`.
   `is_bonus_symbol(id)` (ids 8/9 trigger the bonus round). No Sony bytes
   committed (disc-gated `slot_payout_real`). See
   [`minigame-slot-machine.md`](../../docs/subsystems/minigame-slot-machine.md).
+
+### `baka_opponents`
+
+Baka Fighter **per-opponent table** (overlay VA `0x801D76BC`), the 17-record
+`0x6c`-stride table the match code indexes by opponent id. Each record carries
+the `+0x00` gold reward (`FUN_801d0fe4` loads it into the gold bank on a win) and
+the `+0x2c` NUL-terminated AI move-pattern (symbols `1`/`2`/`3` = the three
+attack types). Baked into the Baka overlay (PROT 0976, base `0x801CE818`, file
+offset `0x8EA4`).
+
+- `parse` → 17 `BakaOpponent` records; `attack_at(cursor)` plays the CPU pattern
+  (`pattern[cursor % len] - 1`). `ROUND_WIN_TARGET = 2` (best of 3). No Sony
+  bytes committed (disc-gated `baka_opponents_real`). See
+  [`minigame-baka-fighter.md`](../../docs/subsystems/minigame-baka-fighter.md).
 
 ### `element_affinity`
 
