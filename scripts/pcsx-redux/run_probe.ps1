@@ -118,14 +118,22 @@ Write-Host "  out_dir    : $OutDir"
 Write-Host "  log        : $log"
 Write-Host "====================="
 
-# Run from repo root so the autorun's relative package.path entries resolve.
-Push-Location $RepoRoot
-try {
-    & $Pcsx @emuArgs *>&1 | Tee-Object -FilePath $log
-    $code = $LASTEXITCODE
-} finally {
-    Pop-Location
+# Launch from the repo root so the autorun's relative package.path entries resolve.
+# Use Start-Process with redirected output rather than `& ... | Tee-Object`: PCSX-Redux
+# is a GUI-subsystem app, so piping its output through a pipeline both fails to capture
+# its -stdout and makes it exit with a spurious STATUS_CONTROL_C_EXIT (0xC000013A) code
+# even on a clean PCSX.quit(0). Quote args containing spaces (BIOS/ISO paths) so the
+# arg list survives on both Windows PowerShell 5.1 and PowerShell 7.
+$argline = ($emuArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
+$errlog  = "$log.err"
+$proc = Start-Process -FilePath $Pcsx -ArgumentList $argline -WorkingDirectory $RepoRoot `
+    -RedirectStandardOutput $log -RedirectStandardError $errlog -PassThru
+$proc.WaitForExit()
+$code = $proc.ExitCode
+if ((Test-Path $errlog) -and ((Get-Item $errlog).Length -gt 0)) {
+    Add-Content -Path $log -Value "`n----- stderr -----"
+    Get-Content $errlog | Add-Content -Path $log
 }
 Write-Host ""
-Write-Host "pcsx-redux exited with status $code"
+Write-Host "pcsx-redux exited with status $code  (log: $log)"
 exit $code
