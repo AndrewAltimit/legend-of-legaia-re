@@ -14,33 +14,34 @@
 -- phase). Navigation is pure pad injection - no breakpoints.
 --
 -- COLD BOOT (validated): launch with `-interpreter -debugger -fastboot`. The
--- title's XA-BGM streaming stops VSync(0) delivery to this autorun, so the
--- vsync-gated mash alone can't navigate it - instead an exec breakpoint on the
--- per-frame title tick FUN_801DD35C (LEGAIA_TICK_BP) fires regardless of GPU
--- rendering and drives both the START+CROSS mash (PRESS-START gate + NEW GAME
--- confirm) AND the target-mode detection + checkpoint (GPU::Vsync stays blind
--- through the field load, so the vsync listener can't see the field; the BP
--- can). Validated end to end: cold boot -> title -> NEW GAME -> field (mode
--- 0x03) -> checkpoint, which gzips to a GUI .sstate that reloads to the field.
--- Use a small SETTLE: the title-tick BP fires through field-INIT but stops once
--- field-RUN begins, so the checkpoint must land in the init window.
---
--- The RESUME path (LEGAIA_SSTATE = a catalogued checkpoint, in-game vsyncs are
--- dense) is the other half: each run resumes the previous segment's checkpoint
--- and drives forward. See the doc.
+-- title's XA-BGM streaming stops VSync(0) delivery to this autorun (and it does
+-- not resume through the field load), so the vsync listener cannot drive. Two
+-- per-frame EXEC BREAKPOINTS - which fire on CPU execution regardless of GPU
+-- rendering - drive everything instead (see make_tick):
+--   * FUN_801DD35C (TITLE_BP) - the title tick; fires through the title +
+--     field-INIT; mashes START+CROSS (PRESS-START gate + NEW GAME confirm).
+--   * FUN_8001698C (FIELD_BP) - the default mode handler's per-frame vsync-sync;
+--     fires at field-RUN + 12-13 of 14 game modes (where the title tick stops);
+--     mashes CROSS only (in-game advance) + does target-detect + checkpoint.
+-- Validated end to end: cold boot -> title -> NEW GAME -> opening prologue
+-- (scene "opdeene") field-RUN -> checkpoint (S1); then resume S1 + CROSS-mash
+-- through the prologue scenes -> Rim Elm "town01" -> checkpoint (S2). Use a
+-- SETTLE >= ~20 so the checkpoint lands at field-RUN (stable/resumable), not the
+-- title tick's brief field-INIT window (which segfaults on resume).
 --
 -- Env vars:
 --   LEGAIA_SSTATE      resume from this save (segment chaining); cold boot if
 --                      empty or LEGAIA_NO_SSTATE=1.
---   LEGAIA_CKPT_MODE   target game_mode to checkpoint at (default 3 = field-run;
---                      2 = field-launch, 0x15 = battle, 0x17 = menu, 0x1A = STR).
+--   LEGAIA_CKPT_MODE   target game_mode to checkpoint at (default 3 = field-run).
+--   LEGAIA_CKPT_SCENE  target active scene name (e.g. town01); overrides CKPT_MODE.
 --   LEGAIA_CKPT_LABEL  checkpoint file stem (default "s1_field").
+--   LEGAIA_TICK_BP     title-tick exec-bp addr (default 0x801DD35C; 0 disables).
+--   LEGAIA_FIELD_BP    field-tick exec-bp addr (default 0x8001698C; 0 disables).
 --   LEGAIA_OUT_DIR     output dir (default captures/play).
---   LEGAIA_MASH_EVERY  vsyncs between START+CROSS pulses (default 20).
---   LEGAIA_SETTLE      vsyncs to hold at the target mode before checkpointing
---                      (default 30) so a transient pass-through isn't captured.
---   LEGAIA_MAX_FRAMES  safety cap; checkpoint wherever we are if exceeded.
---   LEGAIA_NO_MASH     "1" = observe only (log the mode timeline, no input).
+--   LEGAIA_MASH_EVERY  frames between button pulses (default 20).
+--   LEGAIA_SETTLE      frames at the target before checkpointing (default 30).
+--   LEGAIA_MAX_FRAMES  safety cap.
+--   LEGAIA_NO_MASH     "1" = observe only (log the timeline, arm no tick BPs).
 --
 -- Output:
 --   <OUT_DIR>/play.log              the game_mode transition timeline
@@ -80,7 +81,10 @@ local function mash_release() for _, b in ipairs(MASH_BTNS) do pad.release(b) en
 -- NEW GAME at the title before it idles to the attract FMV. Needs the
 -- interpreter (`-interpreter -debugger`). 0 / "" disables. Default = the title
 -- tick; harmless in-game (the address isn't executed once past the title).
-local TICK_BP    = tonumber(env.getenv("LEGAIA_TICK_BP", "0x801DD35C")) or 0
+-- Two per-frame tick breakpoints (see make_tick): the title tick and the field
+-- vsync-sync. 0 / "" disables either.
+local TITLE_BP   = tonumber(env.getenv("LEGAIA_TICK_BP", "0x801DD35C")) or 0
+local FIELD_BP   = tonumber(env.getenv("LEGAIA_FIELD_BP", "0x8001698C")) or 0
 -- Optional start save: resume from a catalogued checkpoint to drive the NEXT
 -- segment forward (segment chaining). Empty / LEGAIA_NO_SSTATE=1 => cold boot.
 local START_SAVE = env.getenv("LEGAIA_SSTATE", "")
@@ -148,12 +152,9 @@ local function write_checkpoint()
     return ok
 end
 
-local PHASE = "ADVANCE" -- ADVANCE -> AT_TARGET -> DONE
+local PHASE = "ADVANCE" -- ADVANCE -> DONE (driven by the tick BPs)
 local vsync = 0
 local last_mode = -1
-local target_since = nil
-local quit_at = nil
-local mash_until = 0
 local start_loaded = false
 
 local function on_vsync()
@@ -184,113 +185,84 @@ local function on_vsync()
             vsync, PHASE, m or 0xFF, cd and string.format("0x%X", cd) or "n/a"))
     end
 
-    if PHASE == "ADVANCE" then
-        -- In-game advance (resume/segment-chain path): pulse CROSS only - START
-        -- would open the pause menu in the field. The title's START+CROSS mash
-        -- is the title-tick BP's job; here vsyncs are dense so this drives the
-        -- opening dialogue / cutscene advance.
-        if mash_until > 0 and vsync >= mash_until then
-            pad.release(pad.BTN.CROSS); mash_until = 0
+    -- All input + target-detection + checkpoint is driven by the per-frame exec
+    -- breakpoints (see make_tick below): GPU::Vsync delivery to Lua stops during
+    -- XA streaming and does not resume through the field load, so it cannot be
+    -- the driver. on_vsync only loads the start save + logs the timeline.
+end
+
+-- Unified per-frame tick. Exec breakpoints fire on CPU execution regardless of
+-- GPU::Vsync delivery, so they drive the whole opening even while the vsync
+-- listener is blind. TWO ticks cover every phase:
+--   * the title tick FUN_801DD35C (TITLE_BP) - fires through the title +
+--     field-INIT, mashes START+CROSS (PRESS-START gate + NEW GAME confirm);
+--   * the per-frame vsync-sync FUN_8001698C (FIELD_BP) - the default mode
+--     handler's tick, fires at field-RUN + 12-13 of 14 game modes where the
+--     title tick stops, mashes CROSS only (in-game advance; START opens the
+--     field menu).
+-- Both feed one shared SM (counter / target-detect / checkpoint). With a SETTLE
+-- larger than the title tick's brief field-INIT window, the checkpoint lands at
+-- field-RUN (via FIELD_BP) - a stable, resumable state.
+local g_tick = 0
+local g_mash_until = 0
+local g_target_since = nil
+local g_quit_at = nil
+
+local function make_tick(press_fn, release_fn, label)
+    return function()
+        g_tick = g_tick + 1
+        if PHASE == "DONE" then
+            if g_quit_at and g_tick >= g_quit_at then
+                if LOG then LOG:close() end
+                PCSX.quit(0)
+            end
+            return
         end
-        if not NO_MASH and (vsync % MASH_EVERY) == 0 and mash_until == 0 then
-            pad.force(pad.BTN.CROSS); mash_until = vsync + 5
+        if PHASE ~= "ADVANCE" or NO_MASH then return end
+        if (g_tick % 60) == 0 then
+            log(string.format("[%s tick %d] mode=0x%02X scene=%q",
+                label, g_tick, read_mode() or 0xFF, read_scene()))
+        end
+        if g_mash_until > 0 and g_tick >= g_mash_until then
+            release_fn(); g_mash_until = 0
+        elseif (g_tick % MASH_EVERY) == 0 and g_mash_until == 0 then
+            press_fn(); g_mash_until = g_tick + 5
         end
         if reached_target() then
-            if target_since == nil then
-                target_since = vsync
-            elseif vsync - target_since >= SETTLE then
-                pad.release(pad.BTN.CROSS)
-                log(string.format("settled at target (mode 0x%02X scene=%q); checkpointing",
-                    m or 0xFF, read_scene()))
-                PHASE = "AT_TARGET"
+            if g_target_since == nil then
+                g_target_since = g_tick
+            elseif g_tick - g_target_since >= SETTLE then
+                release_fn()
+                log(string.format("settled at target (mode 0x%02X scene=%q, tick %d); checkpointing",
+                    read_mode() or 0xFF, read_scene(), g_tick))
+                write_checkpoint()
+                PHASE = "DONE"
+                g_quit_at = g_tick + 2
             end
         else
-            target_since = nil
-        end
-        if vsync >= MAX_FRAMES then
-            mash_release()
-            log(string.format("MAX_FRAMES at mode 0x%02X; checkpointing in place",
-                m or 0xFF))
-            PHASE = "AT_TARGET"
-        end
-    elseif PHASE == "AT_TARGET" then
-        write_checkpoint()
-        PHASE = "DONE"
-        quit_at = vsync + 30
-    elseif PHASE == "DONE" then
-        if quit_at and vsync >= quit_at then
-            if LOG then LOG:close() end
-            PCSX.quit(0)
+            g_target_since = nil
         end
     end
 end
 
--- Non-vsync tick: drive the mash from the title-tick exec breakpoint during the
--- title (where GPU::Vsync delivery to Lua stops). Only mashes while ADVANCEing;
--- the phase SM + checkpoint stay on the vsync listener. Counts its own hits so
--- the pulse cadence is independent of vsyncs.
-local tick_hits = 0
-local tick_mash_until = 0
-local tick_target_since = nil
-local tick_quit_at = nil
-local tick_armed = false
-local function arm_tick_bp()
-    if TICK_BP == 0 or NO_MASH then return end
-    local ok = pcall(function()
-        bp.arm(TICK_BP, "Exec", 4, "title_tick", function()
-            tick_hits = tick_hits + 1
-            if PHASE == "DONE" then
-                if tick_quit_at and tick_hits >= tick_quit_at then
-                    if LOG then LOG:close() end
-                    PCSX.quit(0)
-                end
-                return
-            end
-            if PHASE ~= "ADVANCE" then return end
-            if tick_hits == 1 then
-                log(string.format("title-tick BP live at 0x%08X (non-vsync mash engaged)", TICK_BP))
-            end
-            -- log game_mode periodically: the title→new-game progression happens
-            -- while the vsync listener is blind, so this is the only view of it.
-            if (tick_hits % 30) == 0 then
-                log(string.format("  [tick %d] game_mode=0x%02X scene=%q",
-                    tick_hits, read_mode() or 0xFF, read_scene()))
-            end
-            -- Pulse START+CROSS together (empirically navigates the title's
-            -- PRESS-START gate + NEW GAME confirm; single-button variants stall
-            -- at the menu mode 0x17).
-            if tick_mash_until > 0 and tick_hits >= tick_mash_until then
-                mash_release(); tick_mash_until = 0
-            elseif (tick_hits % MASH_EVERY) == 0 and tick_mash_until == 0 then
-                mash_press(); tick_mash_until = tick_hits + 5
-            end
-            -- Target detection + checkpoint, driven from the BP (GPU::Vsync
-            -- delivery to Lua stays stopped after the title's XA streaming, so
-            -- the vsync listener can't see the field; this BP fires per-frame in
-            -- both the title and the field).
-            if reached_target() then
-                if tick_target_since == nil then
-                    tick_target_since = tick_hits
-                elseif tick_hits - tick_target_since >= SETTLE then
-                    mash_release()
-                    log(string.format("BP: settled at target (mode 0x%02X scene=%q, tick %d); checkpointing",
-                        read_mode() or 0xFF, read_scene(), tick_hits))
-                    write_checkpoint()
-                    PHASE = "DONE"
-                    -- quit ASAP - the field-init phase can crash a few frames
-                    -- later; the checkpoint is already flushed to disk.
-                    tick_quit_at = tick_hits + 2
-                end
-            else
-                tick_target_since = nil
-            end
-        end)
-    end)
-    tick_armed = ok
-    log(string.format("title-tick BP armed=%s at 0x%08X", tostring(ok), TICK_BP))
+local function cross_press() pad.force(pad.BTN.CROSS) end
+local function cross_release() pad.release(pad.BTN.CROSS) end
+
+if not NO_MASH then
+    local armed = {}
+    if TITLE_BP ~= 0 then
+        pcall(function() bp.arm(TITLE_BP, "Exec", 4, "title_tick",
+            make_tick(mash_press, mash_release, "title")) end)
+        armed[#armed + 1] = string.format("title=0x%08X", TITLE_BP)
+    end
+    if FIELD_BP ~= 0 then
+        pcall(function() bp.arm(FIELD_BP, "Exec", 4, "field_tick",
+            make_tick(cross_press, cross_release, "field")) end)
+        armed[#armed + 1] = string.format("field=0x%08X", FIELD_BP)
+    end
+    log("tick BPs armed: " .. table.concat(armed, " "))
 end
 
-arm_tick_bp()
-log(string.format("driver: target mode=0x%02X label=%s mash=%s tick_bp=0x%08X out=%s",
-    CKPT_MODE, CKPT_LABEL, tostring(not NO_MASH), TICK_BP, OUT_DIR))
+log(string.format("driver: target mode=0x%02X scene=%s label=%s out=%s",
+    CKPT_MODE, tostring(CKPT_SCENE), CKPT_LABEL, OUT_DIR))
 PCSX.Events.createEventListener("GPU::Vsync", on_vsync)

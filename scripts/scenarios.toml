@@ -2030,8 +2030,19 @@ expected_game_mode = 0x15
 [[scenarios]]
 slot = 255
 label = "s1_newgame_field"
-backup_fingerprint = "a7e8e2646f666a21801d2b153d273c8bc9a6f30ea8a40d12294a04c175fcec30"
+backup_fingerprint = "01ea51754ff3495360d06469983a1258816c1c8bdc7d09f385f219d18707b51e"
 phase = "field"
 expected_game_mode = 3
-description = "S1 of the trace-driven playthrough: a fresh NEW GAME driven COLD FROM BOOT by autorun_play_from_boot.lua (the non-vsync title-tick exec-bp FUN_801DD35C navigates the title's PRESS-START gate + NEW GAME confirm past the XA-streaming vsync-blind window). Captured at the opening field scene (game_mode 0x03, after 'walking set'); validated to reload to the field. The start anchor for chaining S2 (name entry -> Rim Elm)."
+expected_active_scene = "opdeene"
+description = "S1 of the trace-driven playthrough: a fresh NEW GAME driven COLD FROM BOOT by autorun_play_from_boot.lua (title-tick exec-bp FUN_801DD35C navigates PRESS-START + NEW GAME; field-tick exec-bp FUN_8001698C drives + checkpoints past the XA-streaming vsync-blind window). Captured at the opening prologue scene 'opdeene' at FIELD-RUN (game_mode 0x03, after the scene load + 20-tick settle) - a stable, resumable state (the earlier field-INIT capture crashed on resume). The start anchor for chaining S2 (Rim Elm)."
 topics = ["playthrough", "trace-coverage", "S1", "cold-boot", "new-game", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "s2_rimelm_town01"
+backup_fingerprint = "7193710080c9881d615735ff31683b093844243f72211beff0b83995a494247c"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "town01"
+description = "S2 of the trace-driven playthrough: Rim Elm (town01) reached by CHAINING FORWARD from the S1 checkpoint (autorun_play_from_boot.lua, field-tick exec-bp FUN_8001698C CROSS-mashing through the opening prologue scenes opdeene -> opstati -> opurud -> map01 -> town01, ~3500 frames, no resume between). Validated to reload to the field; the start anchor for S3 (first free walk + NPC dialogue)."
+topics = ["playthrough", "trace-coverage", "S2", "rim-elm", "town01", "segment-chaining", "pcsx-redux"]

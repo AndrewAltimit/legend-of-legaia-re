@@ -239,32 +239,36 @@ triaged).
 
 | Seg | Span | Start anchor | Status | New hits | Documented |
 |---|---|---|---|---:|---:|
-| S1 | cold boot -> title -> NEW GAME -> opening field scene | cold boot (`-fastboot`) | CAPTURED + CATALOGED (`s1_newgame_field`) | - | - |
-| S2 | name entry -> Rim Elm (town01) spawn | S1 checkpoint | BLOCKED (save-resume instability) | - | - |
-| S3 | first free walk + first NPC dialogue | S2 end state | PENDING | - | - |
+| S1 | cold boot -> title -> NEW GAME -> opening prologue (`opdeene`) | cold boot (`-fastboot`) | CAPTURED + CATALOGED (`s1_newgame_field`) | - | - |
+| S2 | opening prologue -> Rim Elm (`town01`) | S1 checkpoint | CAPTURED + CATALOGED (`s2_rimelm_town01`) | - | - |
+| S3 | first free walk + first NPC dialogue | S2 checkpoint | PENDING | - | - |
 | S4 | first scene transition / house door | S3 end state | PENDING | - | - |
 | S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING | - | - |
 
-**S1 is captured cold from boot + cataloged** as scenario `s1_newgame_field`
-(`scripts/scenarios.toml` + `saves/library`, by `backup_fingerprint`) - a fresh
-NEW GAME at the opening field scene (`game_mode 0x03`), driven by the boot-onward
-driver and validated to reload to the field. Its gap-set trace is the next step
-(run the windowed passes against the catalogued scenario).
+Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
+`backup_fingerprint`, resolvable via `run_probe.sh --scenario <label>`.
 
-**S2 chaining is blocked by PCSX-Redux's save-resume instability** (the same
-issue [`battle.md`](../subsystems/battle.md) and the audio-trace probe note):
-resuming the S1 checkpoint segfaults within ~180 vsyncs (~3 s). Rim Elm is
-*minutes* of opening (cutscene + name entry) past S1, so it cannot be reached
-inside that window - segment-chaining via resume is not viable here for distant
-targets. The robust path is a **single continuous cold-boot run** to Rim Elm (no
-resume), which still needs: (a) a universal per-frame tick that survives the
-post-title vsync-blind phases *and* field-run (the title-tick BP stops at
-field-run; candidates: a field/event-VM or SCUS frame-timer exec-bp), and (b)
-name-entry grid navigation (mashing CROSS fills the grid but does not reach END;
-the default name is "Vahn"). Both are tractable but unbuilt. The driver already
-supports scene-name targeting (`LEGAIA_CKPT_SCENE=town01`) and correct in-game
-mashing (CROSS-only; START opens the field menu) for when the tick lands.
-Encounter timing (S5) is RNG-sensitive - keep it a short standalone segment.
+**The universal field tick made chaining work.** The breakthrough was a second
+per-frame exec-bp on `FUN_8001698C` (the default mode handler's vsync-sync,
+`FUN_80025EEC`), which fires every frame at field-run + 12-13 of 14 modes - where
+the title-tick BP (`FUN_801DD35C`) stops. The driver runs both:
+`FUN_801DD35C` navigates the title (START+CROSS), `FUN_8001698C` drives the
+in-game advance (CROSS-only) + target-detection + checkpoint, both regardless of
+GPU::Vsync delivery. Two consequences:
+
+- **S1 is now captured at field-RUN** (scene `opdeene`, after the scene load +
+  a 20-tick settle), not the fragile field-INIT - it resumes cleanly (the
+  field-INIT capture segfaulted within ~180 vsyncs on resume).
+- **S2 was reached by chaining forward from S1 in one continuous resumed run**:
+  the field tick CROSS-mashed through the opening prologue scenes
+  (`opdeene` -> `opstati` -> `opurud` -> `map01` -> `town01`, ~3500 frames, no
+  crash), and `LEGAIA_CKPT_SCENE=town01` checkpointed at Rim Elm. So
+  segment-chaining-by-resume *is* viable - the earlier "blocked" reading was a
+  consequence of the fragile field-INIT anchor + the missing field tick.
+
+S3+ chain the same way: resume the previous segment's scenario, drive with the
+field tick, checkpoint on the next scene/mode. Encounter timing (S5) is
+RNG-sensitive - keep it a short standalone segment.
 
 ## Gap-burndown
 
