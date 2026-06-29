@@ -89,9 +89,14 @@ A separate timer/ready sequence lives in `overlay_baka_fighter_801d21fc.txt`
 per-frame sprite-actor draw callback is `FUN_801d67f0`, installed into the
 overlay's actor-draw hook `_DAT_8007ba2c` during init.
 
-Confidence: **Confirmed** state globals and the call graph; **Inferred** the
-exact round-count / best-of policy (the win-count records are read but the
-target-wins constant was not pinned).
+A match is **best of 3 - first to 2 round wins**. `FUN_801cf00c` init writes the
+target `DAT_801dbed0 = 2`, and the match-over check in `FUN_801d0fe4` tears the
+match down (`DAT_801dbf78 = 0`) once a fighter's round-win count
+(`DAT_801dbff0` for the player, `DAT_801dc098` for the opponent) equals
+`DAT_801dbed0`. **Confirmed.**
+
+Confidence: **Confirmed** state globals, the call graph, and the best-of-3
+target.
 
 ### Exchange resolution (`FUN_801d3a14`)
 
@@ -186,6 +191,15 @@ advances a **per-opponent scripted pattern** - a null-terminated byte list at
 opponent mixes random throws with a canned sequence. The return is always
 reduced `% 3` into one of the three attack types.
 
+`DAT_801d76e8` is field `+0x2c` of a **per-opponent record table** based at
+`0x801d76bc` (`0x6c` stride, **17 records** = the same `0x11` count the action
+table walks). Each record carries the opponent's `+0x00` **gold reward** and
+`+0x2c` AI pattern; `FUN_801d0fe4` loads the gold prize on a player win as
+`DAT_801dbee8 = *(u32*)(opp*0x6c + 0x801d76bc)`. Parser
+[`legaia_asset::baka_opponents`] (`parse` → the 17 records; `BakaOpponent::attack_at`
+plays the pattern). The gold values + patterns decode from the disc
+(`baka_opponents_real`); they are not reproduced here.
+
 The **HUD** is rendered by `overlay_baka_fighter_801d2afc.txt`: two HP bars
 (per-fighter record `&DAT_801dbfbc[slot*0xa8]`, HP at `+0x08`, drawn left at X
 0x1c and right at X 0xb0), round-win pips, a combo counter (record `+0x8c`,
@@ -196,9 +210,11 @@ counters (`DAT_801dbee0`/`ed8`/`edc`/`ee8`) draining into the total
 (`DAT_801dbee4`) and into the player's gold (`_DAT_80084440`), via the digit
 drawer `FUN_801d6710`.
 
-Confidence: **Confirmed** AI roll + scripted-pattern table and the HUD/tally
-draw paths; **Inferred** the exact prize/gold payout policy (gold is credited
-but the conversion rate constants were not pinned).
+Confidence: **Confirmed** AI roll + scripted-pattern table, the HUD/tally draw
+paths, and the gold payout (a flat per-opponent prize from the record table's
+`+0x00`, drained into `_DAT_80084440`); the other three tally counters
+(`DAT_801dbee0`/`ed8`/`edc`) feed the on-screen score total `DAT_801dbee4`, not
+gold.
 
 ## RAM state
 
@@ -235,9 +251,9 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `DAT_801dbee4` | running high score |
 | `DAT_801dbee0` / `DAT_801dbed8` / `DAT_801dbedc` / `DAT_801dbee8` | end-of-match score counters drained into the total / gold |
 | `DAT_801dc134` / `DAT_801dc138` | round-start banner state / timer |
-| `DAT_801dbf78`-adjacent `DAT_801dbed0` | drawn HP-pip count |
+| `DAT_801dbed0` | round-win **target = 2** (best of 3); also the drawn round-win-pip count (init `FUN_801cf00c`) |
 | `PTR_DAT_801db8b8[char]` | per-character action-table base |
-| `DAT_801d76e8` | per-opponent AI move-pattern table (`0x6c` stride, null-terminated) |
+| `DAT_801d76bc` | per-opponent **record table** (`0x6c` stride, 17 records): `+0x00` gold reward, `+0x24` actor anchor, `+0x2c` AI pattern (= `DAT_801d76e8`). Parser `legaia_asset::baka_opponents`. |
 | `DAT_801d7684` | special-attack effect-actor template |
 | `_DAT_8007b8c2` | streaming-mode flag (selects LZS `other5` vs raw PROT load) |
 | `_DAT_8007ba2c` | actor-draw hook (set to `FUN_801d67f0`) |
@@ -267,8 +283,6 @@ Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<
 
 ## Open
 
-- The best-of-N round target and the gold-payout rate constants are read by the
-  resolution / tally code but were not pinned to literal values.
 - The physical pad-button → attack-type binding (the `0x80`/`0x20`/`0x40` mask
   bits are populated from `_DAT_8007b874` / `DAT_801dc124`, but the named button
   for each was not separated out).

@@ -117,12 +117,14 @@ All overlay-local; the block clusters in `0x801d3c80..0x801d4140`. **Confirmed**
 | `_DAT_800845A4` | global casino **coin bank** (written on cash-out; read by the HUD) |
 | `_DAT_8008459C` | coin record / high value (HUD compare) |
 
-Symbol-art and payout tables (overlay rodata, **Inferred**, not reproduced):
+Symbol-art and payout tables (overlay rodata; **values** decode from the disc, not reproduced here):
 
 | Table | Role |
 |---|---|
-| `DAT_801d347c` (0x14 stride) | per-symbol sprite-quad descriptor (UVs / colour), indexed by symbol id in `FUN_801d2cc0` |
-| `DAT_801d3598` | per-symbol payout byte, indexed by winning symbol id in `FUN_801d13e8` |
+| `DAT_801d347c` (0x14 stride) | per-symbol sprite-quad descriptor (UVs / colour), indexed by symbol id in `FUN_801d2cc0`. **Values still open.** |
+| `DAT_801d3598` | per-symbol line-payout byte, indexed by winning symbol id `0..=9` in `FUN_801d13e8` (and the HUD preview `FUN_801d2aa4`). **10 entries** (PROT 0975 file offset `0x4D80`), bounded by zero padding + an overlay string at `+0x10`. Parser [`legaia_asset::slot_payout`]. **Confirmed.** |
+
+The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_801d13e8` special-cases for the jackpot symbols 8/9. The normal-line credit is `balance += DAT_801d3598[symbol]`; a bonus round instead multiplies the three matched `(value − 0xf)` factors (the bonus reel strip carries values `0x10..=0x19`, so the factors are `1..=10`) and does not read this table.
 
 ## Key functions
 
@@ -152,7 +154,7 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 
 ## Open
 
-- The **payout-byte table** at `DAT_801d3598` and the **symbol-descriptor table** at `DAT_801d347c` are read but their values are not lifted here (Sony rodata). Lifting them would pin the exact payout-per-symbol and the symbol→sprite mapping.
+- The **symbol-descriptor table** at `DAT_801d347c` (sprite UVs / colour per symbol) is read by `FUN_801d2cc0` but its layout/values are not lifted - the head records look `0x14`-stride but the region transitions into a pointer array a few entries in, so the exact extent needs more tracing. (The sibling **payout-byte table** at `DAT_801d3598` is now decoded - see [RAM state](#ram-state) / `legaia_asset::slot_payout`.)
 - The exact **coins-per-line bet cost** is read in state `1` next to the balance subtraction; the constant is not pinned.
 - Whether the casino field entry point seeds `DAT_801d4114` from `_DAT_800845A4` on open (the symmetric counterpart of the state-`100` commit) - implied by the cash-out being an assignment, but the seed store was not located in the dumps reviewed.
 

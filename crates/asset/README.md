@@ -19,6 +19,11 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`static_overlay`](#static_overlay)
   - [`monster_archive`](#monster_archive)
   - [`move_power`](#move_power)
+  - [`fishing_species`](#fishing_species)
+  - [`dance_chart`](#dance_chart)
+  - [`slot_payout`](#slot_payout)
+  - [`baka_opponents`](#baka_opponents)
+  - [`muscle_dome`](#muscle_dome)
   - [`element_affinity`](#element_affinity)
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
@@ -142,6 +147,75 @@ Static battle-overlay data, pinned in PROT 0898 at fixed raw-entry offsets
 
 CLI `asset move-power <PROT 0898 .BIN>` (`--json` for the machine-readable table). See
 [`spell-table.md`](../../docs/formats/spell-table.md).
+
+### `fishing_species`
+
+Fishing-minigame **per-species parameter table** (overlay VA `0x801D81A4`), the
+10-record `0x28`-stride table the fish-AI tick `FUN_801d4004` and catch-scoring
+`FUN_801d5298` index by the hooked-fish id `DAT_801d91cc`. Static `.rodata` in
+the fishing overlay (PROT 0972, base `0x801CE818`); the `+0x00` head is a fish-name
+pointer into the same overlay.
+
+- `parse` → 10 `FishingSpecies` records (`+0x04` score base, `+0x08` pull, `+0x0c`
+  dart, `+0x10` sink, `+0x14` depth gate, `+0x18`/`+0x1c`/`+0x20` behaviour-roll
+  cutoffs, `+0x24` strike gate).
+- `FishingSpecies::score_for(strength)` reproduces the award formula
+  (`value * (strength + 0x9c0) / 0x32000`); `name(overlay)` resolves the `+0x00`
+  pointer. No Sony bytes committed (disc-gated `fishing_species_real`). See
+  [`minigame-fishing.md`](../../docs/subsystems/minigame-fishing.md#per-species-parameter-table).
+
+### `dance_chart`
+
+Noa dance-minigame **step chart** (overlay VA `0x801D509C`), the `3 × 0x20`-byte
+direction-symbol grid the hit-judge `FUN_801d1960` indexes by
+`chart[lane*0x20 + beat]` (lane = groove gauge `/ 1000` ∈ {0,1,2}, beat =
+beat-clock `/ 0x119`). Baked into the dance overlay (PROT 0980, base
+`0x801CE818`, file offset `0x6884`) - not loaded per song.
+
+- `parse` → a [`DanceChart`] of 3 rows × 32 beats (symbol `0` none, `1`/`2`/`3`
+  judged directions). `symbol(lane, beat)` / `step_count(lane)` (row density
+  rises with difficulty). No Sony bytes committed (disc-gated `dance_chart_real`).
+  See [`minigame-dance.md`](../../docs/subsystems/minigame-dance.md).
+
+### `slot_payout`
+
+Casino slot-machine **per-symbol payout table** (overlay VA `0x801D3598`), the
+10-byte table the win-evaluator `FUN_801d13e8` indexes by the winning symbol id
+(`0..=9`) to credit a line (`balance += DAT_801d3598[symbol]`). Baked into the
+slot overlay (PROT 0975, base `0x801CE818`, file offset `0x4D80`), bounded by
+zero padding + an overlay string at `+0x10`.
+
+- `parse` → a [`SlotPayoutTable`] of 10 bytes; `payout(symbol)` /
+  `is_bonus_symbol(id)` (ids 8/9 trigger the bonus round). No Sony bytes
+  committed (disc-gated `slot_payout_real`). See
+  [`minigame-slot-machine.md`](../../docs/subsystems/minigame-slot-machine.md).
+
+### `baka_opponents`
+
+Baka Fighter **per-opponent table** (overlay VA `0x801D76BC`), the 17-record
+`0x6c`-stride table the match code indexes by opponent id. Each record carries
+the `+0x00` gold reward (`FUN_801d0fe4` loads it into the gold bank on a win) and
+the `+0x2c` NUL-terminated AI move-pattern (symbols `1`/`2`/`3` = the three
+attack types). Baked into the Baka overlay (PROT 0976, base `0x801CE818`, file
+offset `0x8EA4`).
+
+- `parse` → 17 `BakaOpponent` records; `attack_at(cursor)` plays the CPU pattern
+  (`pattern[cursor % len] - 1`). `ROUND_WIN_TARGET = 2` (best of 3). No Sony
+  bytes committed (disc-gated `baka_opponents_real`). See
+  [`minigame-baka-fighter.md`](../../docs/subsystems/minigame-baka-fighter.md).
+
+### `muscle_dome`
+
+Resolves the Muscle Dome minigame's overlay identity: its match SM
+`FUN_801d0748` + data tables (deck `0x801f4b8c`, sub-draw script `0x801f4d34`,
+victory messages `0x801f4dfc`) are **resident in the battle-action overlay
+(PROT 0898)** - it is a mode of the battle engine, not a separate overlay.
+
+- `verify_resident(overlay)` confirms a PROT 0898 image hosts the arena (the
+  match-controller prologue signature at file offset `0x1F30` reads the ctx
+  `_DAT_8007bd24`, and the sub-draw / victory tables hold in-overlay pointers).
+  Disc-gated `muscle_dome_real`. See
+  [`minigame-muscle-dome.md`](../../docs/subsystems/minigame-muscle-dome.md).
 
 ### `element_affinity`
 

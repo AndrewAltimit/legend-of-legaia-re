@@ -55,7 +55,7 @@ So the judge has three tiers:
 - **Hit** (1): correct direction inside the window - a single matched note.
 - **Sequence / bonus** (2): a hit that also completes the lane's chart, awarding the weighted bonus from `DAT_801d41a4`.
 
-There is no separate Perfect/Good text tier exposed by the judge itself; the *quality* of a hit is carried continuously by the accuracy weight `w` (closer to the beat → larger `w` → larger awarded points and bonus). The Perfect-vs-Good distinction the player sees is **Inferred** to be derived from `w`/`DAT_801d6090` by the banner-spawning code in `FUN_801d1af4`. **Inferred.**
+There is no separate Perfect/Good text tier exposed by the judge itself; the *quality* of a hit is carried continuously by the accuracy weight `w` (closer to the beat → larger `w` → larger awarded points and bonus). The **scoring** routine `FUN_801d1af4` does carry a discrete Perfect tier, though: a combo hit whose streak counter `DAT_801d5334 - 0xb < 2` takes the `× 0x22` branch and raises the flag `DAT_801d538c = 1` (vs. the ordinary `× 0x19` combo). That flag is **Confirmed** to mark the top tier; which on-screen banner string it spawns is **Inferred** (capture-leaning).
 
 ## Scoring
 
@@ -63,7 +63,16 @@ There is no separate Perfect/Good text tier exposed by the judge itself; the *qu
 
 Key accumulators (all per-player, `player * 4` stride from the listed base):
 
-- **Score** `DAT_801d53cc[player]`: incremented on a hit. The increment scales with the chart-row index `lane = DAT_801d544c[player] / 1000`: roughly `(lane + 1) * k` where `k` is `3` for an ordinary hit, larger (`0x19` / `0x22`) on an on-beat combo hit, and a table-driven bonus (`DAT_801d6088`/`DAT_801d608c` from `FUN_801d1960`) on a completed sequence. Score is **clamped to `999`** (`0x3e7`). **Confirmed** (clamp + that higher lanes score more); the exact per-tier multipliers are read from the dump but not reproduced here.
+- **Score** `DAT_801d53cc[player]`: incremented on a hit, scaled by the chart-row index `lane = DAT_801d544c[player] / 1000` (0/1/2). The exact per-tier increments (`FUN_801d1af4`, all `× (lane + 1)`, score then **clamped to `999`** / `0x3e7`): **Confirmed.**
+
+  | Tier | Increment | Selector |
+  |---|---|---|
+  | Ordinary on-beat hit | `(lane + 1) * 3` | timing button (`pad & 0x10`), off-beat or outside the window |
+  | Combo hit | `(lane + 1) * 0x19` (25) | on a `4`-beat boundary (`(beat & 3) == 3`) inside the window (`phase < 0xd2`), streak `DAT_801d5334 - 0xb >= 2` |
+  | Perfect combo | `(lane + 1) * 0x22` (34) | same, but streak `< 2`; also raises the Perfect banner flag `DAT_801d538c = 1` |
+  | Direction sequence complete | `+ DAT_801d608c` | a judged direction press (`pad & 0x80` / `& 0x20`) where `FUN_801d1960` returns 2; also adds the bonus base `DAT_801d6088 = 0xfa` to the gauge |
+
+  The combo / Perfect tiers also bump the gauge `+1000`, so they self-promote the dancer to a higher (denser, higher-multiplier) lane.
 - **Groove gauge** `DAT_801d544c[player]`: stepped up `+1000` on success and clamped to `[0, 2999]`. Because the chart row is `gauge / 1000`, the gauge crossing 1000 / 2000 promotes the dancer to the next (harder, higher-scoring) chart row. On a miss the gauge floors to 0 / drops a row. So the gauge is simultaneously the combo/excitement meter, the difficulty selector, and the score multiplier. **Confirmed.**
 - **Remaining-step / life counters** `DAT_801d534c[player]` (3 at reset): a press is only judged while this is non-zero, and it is decremented as steps are consumed. **Confirmed**; whether running out ends the player's run early vs. just gating input is **Inferred.**
 - **Per-player hit-tier state** `DAT_801d548c[player]` (0/1/2/3) and timer `DAT_801d54cc[player]`: latch which direction/animation is active for the current step so a held button isn't re-judged every frame. **Confirmed.**
@@ -106,7 +115,7 @@ All globals live in the overlay's data region around `0x801d5xxx`/`0x801d6xxx`. 
 | `DAT_801d6088` | u32 | Bonus-window timer set on a completed sequence | Confirmed |
 | `DAT_801d608c` | u32 | Computed sequence-bonus points (weighted by accuracy) | Confirmed |
 | `DAT_801d6090` | u32 | **Accuracy weight** `0..0x1000` (peaks on-beat) | Confirmed |
-| `DAT_801d509c` | bytes | **Step chart table**: `row*0x20 + beat`, byte = direction symbol 1/2/3 | Confirmed |
+| `DAT_801d509c` | bytes | **Step chart table** (3 rows × `0x20` beats; `row*0x20 + beat`, byte = direction symbol 0/1/2/3). **Baked** into the overlay static image (PROT 0980 file offset `0x6884`), not loaded per song. | Confirmed |
 | `DAT_801d41a4` | i32 table | Per-lane / per-step point values for the sequence bonus | Confirmed |
 | `DAT_801d41e4` | i32 table | Per-lane held-sequence threshold table (the `&3==3` combo slot) | Confirmed |
 | `DAT_801d43a0` | i16 table | Per-step world/screen anchor positions (HUD step interpolation) | Inferred |
@@ -127,12 +136,13 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d03c4` | Dancer pose / animation switch driven by hit results. `overlay_dance_801d03c4.txt` |
 | `FUN_801d2f38` | Textured-quad sprite emitter (HUD digits / banners / gauge); shared presentation helper. `overlay_dance_801d2f38.txt` |
 
+Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.
+
 ## Open
 
-- The exact per-tier score multipliers and the visible Perfect/Good/Miss banner thresholds (derived from the accuracy weight `DAT_801d6090`) are read but not yet mapped to the on-screen rating labels.
+- The visible Perfect/Good/Miss banner *strings* each tier spawns (the `× 0x22` / `DAT_801d538c` Perfect tier and the accuracy weight `DAT_801d6090`) - the score tiers are pinned (see [Scoring](#scoring)); only the on-screen label each spawns is unmapped (capture-leaning).
 - The precise meaning of each `DAT_801d514c` mode value (solo / multi / vs-CPU / practice), and the per-mode win/lose flag set.
 - Whether the per-player step counter `DAT_801d534c` running to 0 ends a dancer's run or only gates input.
-- Where the step-chart bytes at `0x801d509c` originate (baked into the overlay vs. loaded per song) - not yet traced.
 
 ## See also
 

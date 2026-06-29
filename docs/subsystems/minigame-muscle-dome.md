@@ -1,6 +1,10 @@
 # Muscle Dome minigame
 
-The **Muscle Dome** is a card-battle arena contest. The player fields one party character against an opponent; each round both sides choose a set of action cards from a hand, the chosen cards are queued onto the fighters, and the round is resolved by playing the queued actions out. The minigame ships in its own overlay (`overlay_muscle_dome.bin`) and is **completely distinct** from the fishing / slot / dance / Baka Fighter minigame-hub family - it shares only the generic field-engine prologues, not their controller library, so this page documents its own structure.
+The **Muscle Dome** is a card-battle arena contest. The player fields one party character against an opponent; each round both sides choose a set of action cards from a hand, the chosen cards are queued onto the fighters, and the round is resolved by playing the queued actions out. It is **distinct from the fishing / slot / dance / Baka Fighter minigame-hub family** - it does not share their controller library.
+
+Instead, the Muscle Dome runs **inside the battle-action overlay** (PROT entry **0898**, base `0x801CE818` - the same overlay [`move-power.md`](../formats/move-power.md) reads): its match SM `FUN_801d0748` and all its data tables (deck `0x801f4b8c`, sub-draw script `0x801f4d34`, victory messages `0x801f4dfc`) are resident there, so they are statically extractable from the disc (parser [`legaia_asset::muscle_dome`], disc-gated `muscle_dome_real`).
+
+This matches the design - the arena reuses the battle engine wholesale (its fighters are battle actors, card plays resolve through the battle-action path). The "`overlay_muscle_dome.bin`" Duckstation capture was that battle-overlay slot resident during the arena, **not** a separate overlay; the `0977` "Ronginus" entry is only the mode-24 sub-id-5 door/init slot (arena roster + `other6` paths), not the match SM.
 
 The whole contest runs on a shared context block at `_DAT_8007bd24` (referred to below as **ctx**). The fighters are ordinary battle actors reached through the global actor pointer table `&DAT_801c9370` (the same table the main battle system uses), so a "card play" ultimately resolves through the battle action machinery against actor records.
 
@@ -124,7 +128,7 @@ All offsets are relative to the context base `_DAT_8007bd24` unless noted otherw
 ## Open
 
 - The exact phase ordering and meaning of every `ctx+6` value (deal/select/confirm/resolve/win/lose) - partially confirmed; a live phase-byte capture would pin the full graph.
-- The byte layout of the deck tables `&DAT_801f4b8c`/`&DAT_801f4b94` and the per-step script table `&PTR_DAT_801f4d34` (these are overlay rodata; only their access patterns are reversed here, not their contents).
+- The byte layout of the deck tables `&DAT_801f4b8c`/`&DAT_801f4b94` and the per-step script table `&PTR_DAT_801f4d34` (now known to be **battle-overlay 0898 rodata** at file offsets `0x26374` / `0x2651c`, statically extractable; only their access patterns are reversed here, not their full contents). `&DAT_801f4b8c[slot]` is a 4-entry per-slot move-set index list; `&DAT_801f4b84[move_id]` is a per-move display/cost lookup the commit path uses.
 - Whether card resolution applies any dome-specific damage scaling or uses the shared `battle_formulas` unmodified.
 
 ## See also
