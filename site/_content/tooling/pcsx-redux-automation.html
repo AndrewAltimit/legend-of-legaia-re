@@ -28,7 +28,10 @@
   <p>PCSX-Redux quicksave slots (<code>&lt;TITLE_ID&gt;.sstate&lt;N&gt;</code>) and mednafen <code>mc{N}</code> cards are <strong>ephemeral</strong> - the next time you save in that slot, the bytes are gone, and a save you reverse-engineered against has to be recaptured from scratch. To stop that, back interesting states up into a fingerprint-named library:</p>
 <pre><code>scripts/manage-states.py backup pcsx-redux ~/Tools/pcsx-redux/SCUS94254.sstate6 \
     --label field_walled_collision_pin
-scripts/manage-states.py library          # list what's backed up + catalogue status</code></pre>
+scripts/manage-states.py library          # list what's backed up + catalogue status
+scripts/manage-states.py library --audit  # scenario-centric: emulator-aware catalogue
+                                          # status + PCSX-probe-usability + orphan/missing gaps</code></pre>
+  <p><code>library --audit</code> is the inverse view: it walks every manifest scenario and classifies it as CATALOGED (for which emulator), EPHEMERAL-ONLY (a live-slot pointer never backed up), BACKUP-MISSING (fingerprint recorded but the file is gone), or NO-SAVE (a pure phase marker), and flags which scenarios are usable for a PCSX-Redux breakpoint probe - a <strong>mednafen-only</strong> backup is catalogued but <strong>cannot</strong> be loaded by <code>run_probe.sh</code> (PCSX-Redux needs a <code>pcsx-redux</code> <code>.sstate</code>).</p>
   <p><code>backup</code> copies the file to <code>saves/library/&lt;emulator&gt;/&lt;sha256&gt;.&lt;ext&gt;</code> (immutable; the sha256 is the filename, so it never collides or gets overwritten) and records the fingerprint on the named <code>scripts/scenarios.toml</code> scenario as <code>backup_fingerprint</code>. The library directory is <strong>gitignored</strong> (it holds Sony game RAM); the committed pointer is the manifest's <code>backup_fingerprint</code> field. When a scenario has one, both <code>scripts/manage-states.py</code> and <code>run_probe.sh --scenario</code> resolve the <strong>library copy in preference</strong> to the live slot - so probes keep working after you've saved over the original slot. See the field schema + workflow at the top of <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/scenarios.toml"><code>scripts/scenarios.toml</code></a>.</p>
 </section>
 
@@ -198,8 +201,14 @@ bash scripts/pcsx-redux/run_probe.sh
 # Pick a different probe.
 bash scripts/pcsx-redux/run_probe.sh --lua scripts/pcsx-redux/autorun_dump_slot4.lua
 
-# Resolve the save state via a named scenario from scripts/scenarios.toml.
-bash scripts/pcsx-redux/run_probe.sh --scenario cold_boot_pre_init \
+# Resolve the save state via a named scenario from scripts/scenarios.toml
+# (a PCSX-Redux-backed scenario; mednafen-only backups can't load here -
+# see `manage-states.py library --audit` for which scenarios qualify).
+bash scripts/pcsx-redux/run_probe.sh --scenario party_basic_attack_vs_gobu_gobu \
+    --lua scripts/pcsx-redux/autorun_battle_state_stream.lua
+
+# Cold-boot a title/boot probe (no save state - runs from power-on).
+LEGAIA_NO_SSTATE=1 bash scripts/pcsx-redux/run_probe.sh \
     --lua scripts/pcsx-redux/autorun_countdown_trigger.lua
 
 # Fast (recompiler) mode - drops `-interpreter -debugger`. Lua **BPs do

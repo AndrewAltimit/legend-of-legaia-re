@@ -446,9 +446,111 @@ def cmd_backup(args: argparse.Namespace) -> int:
     return 0
 
 
+def library_emulators_for(fingerprint: str) -> list[str]:
+    """Emulator subdirs in which a (full or prefix) fingerprint has a file.
+
+    Distinct from `find_library_file`, which stops at the first hit: the audit
+    needs the full emulator set because PCSX-Redux probes can only load a
+    `pcsx-redux` `.sstate`, never a `mednafen` `.mcr` backed up under the same
+    fingerprint."""
+    if not LIBRARY_DIR.is_dir():
+        return []
+    emus: list[str] = []
+    for emu_dir in sorted(p for p in LIBRARY_DIR.iterdir() if p.is_dir()):
+        if any(f.is_file() and f.stem.startswith(fingerprint)
+               for f in emu_dir.iterdir()):
+            emus.append(emu_dir.name)
+    return emus
+
+
+def cmd_library_audit(args: argparse.Namespace) -> int:
+    """Scenario-centric catalogue audit. For every manifest scenario, report
+    whether it has an immutable library backup, for which emulator(s), and
+    whether it is usable for a PCSX-Redux breakpoint probe (which needs a
+    `pcsx-redux` `.sstate` - a mednafen-only backup does not qualify, even
+    though it IS catalogued). Also flags orphan backups (library files no
+    scenario references) and BACKUP-MISSING pointers (fingerprint recorded
+    but the file is gone)."""
+    manifest = load_manifest(args.manifest)
+    scenarios = manifest.get("scenarios", [])
+
+    rows = []  # (label, phase, cls, pcsx_ok, fp, has_pcsx_path, has_real_slot)
+    referenced: set[str] = set()
+    for s in scenarios:
+        label = s.get("label", "<no-label>")
+        phase = s.get("phase", "-")
+        fp = s.get("backup_fingerprint")
+        if fp:
+            referenced.add(fp)
+        pcsx_path = bool(s.get("pcsx_redux_sstate"))
+        slot = s.get("slot")
+        # 255 is the manifest's "no live mc slot" sentinel, not a real pointer.
+        real_slot = slot is not None and slot != 255
+        live_ptr = pcsx_path or real_slot or bool(s.get("duckstation_sav"))
+        emus = library_emulators_for(fp) if fp else []
+
+        if fp and emus:
+            cls = "CATALOGED(" + "+".join(emus) + ")"
+        elif fp and not emus:
+            cls = "BACKUP-MISSING"
+        elif live_ptr:
+            cls = "EPHEMERAL-ONLY"
+        else:
+            cls = "NO-SAVE"
+        pcsx_ok = ("pcsx-redux" in emus) or pcsx_path
+        rows.append((label, phase, cls, pcsx_ok, fp, pcsx_path, real_slot))
+
+    # Summary counts.
+    from collections import Counter
+    cnt = Counter(r[2] for r in rows)
+    print(f"# scenario catalogue audit ({args.manifest.name}) - {len(rows)} scenarios")
+    for k in sorted(cnt):
+        print(f"    {k:22} {cnt[k]}")
+    print(f"    {'PCSX-probe-usable':22} {sum(1 for r in rows if r[3])}")
+    print(f"    {'NOT PCSX-usable':22} {sum(1 for r in rows if not r[3])}")
+
+    # Orphan backups: on-disk library files no scenario fingerprint references.
+    # Only the fingerprint-named emulator dirs are in scope; the `cards/`
+    # subdir holds named full-playthrough memory cards (a swap-in capture
+    # library), not fingerprint scenario backups, so it is never "orphaned".
+    if LIBRARY_DIR.is_dir():
+        for emu_dir in sorted(p for p in LIBRARY_DIR.iterdir()
+                              if p.is_dir() and p.name in EMULATOR_EXT):
+            files = [f for f in emu_dir.iterdir() if f.is_file()]
+            orphans = [f.name for f in files
+                       if not any(f.stem.startswith(r) for r in referenced)]
+            if orphans:
+                print(f"\n# ORPHAN backups in {emu_dir.name} "
+                      f"({len(orphans)} of {len(files)} unreferenced):")
+                for o in sorted(orphans):
+                    print(f"    {o}")
+
+    def section(title, pred):
+        sub = [r for r in rows if pred(r)]
+        if not sub:
+            return
+        print(f"\n# {title} ({len(sub)})")
+        for label, phase, cls, pcsx_ok, fp, _pp, _rs in sub:
+            tag = "PCSX-OK" if pcsx_ok else "no-pcsx"
+            fps = fp[:12] if fp else "-"
+            print(f"    [{phase:9}] {label:42} {cls:20} {tag:8} fp={fps}")
+
+    section("BACKUP-MISSING (fingerprint recorded but file gone -> re-capture or drop)",
+            lambda r: r[2] == "BACKUP-MISSING")
+    section("EPHEMERAL-ONLY (live-slot pointer, never backed up -> back up or toss)",
+            lambda r: r[2] == "EPHEMERAL-ONLY")
+    section("NO-SAVE (pure markers / slot=255 sentinel; nothing to back up)",
+            lambda r: r[2] == "NO-SAVE")
+    section("CATALOGED but NOT PCSX-probe-usable (mednafen-only backup)",
+            lambda r: r[2].startswith("CATALOGED") and not r[3])
+    return 0
+
+
 def cmd_library(args: argparse.Namespace) -> int:
     """List the immutable save-state library and cross-reference which
     manifest scenario (if any) points at each backed-up file."""
+    if getattr(args, "audit", False):
+        return cmd_library_audit(args)
     manifest = load_manifest(args.manifest)
     # fingerprint -> scenario label
     by_fp: dict[str, str] = {}
@@ -544,9 +646,15 @@ def main(argv: list[str] | None = None) -> int:
     pb.add_argument("--ext", help="override the library file extension")
     pb.set_defaults(func=cmd_backup)
 
-    sub.add_parser(
+    pl = sub.add_parser(
         "library", help="List the immutable save-state library + catalogue status"
-    ).set_defaults(func=cmd_library)
+    )
+    pl.add_argument(
+        "--audit", action="store_true",
+        help="Scenario-centric audit: emulator-aware catalogue status, "
+             "PCSX-probe-usability, orphan backups + missing/ephemeral gaps",
+    )
+    pl.set_defaults(func=cmd_library)
 
     args = p.parse_args(argv)
     return args.func(args)
