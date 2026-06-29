@@ -769,21 +769,18 @@ topics = ["level-up", "stat growth", "Noa", "FUN_801E9504", "field", "post-level
 [[scenarios]]
 label = "gimard_summon_start"
 slot = 255
-pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate5"
 backup_fingerprint = "e7a26939600744e64577be4f3f5868f91a46fadbcd8d70baf90395202ac602c5"
 description = "Player Gimard Seru-magic cast, first frames of the summon (Vahn solo caster, no party). Pre-mesh-visible; the summon scene-graph spawn-stager window."
 
 [[scenarios]]
 label = "gimard_summon_visible"
 slot = 255
-pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate6"
 backup_fingerprint = "8aa0ee1a261277bc987b57eaf283fcd074474601abbefd3d4593e5725009a0d4"
 description = "Player Gimard summon with the mesh visible on screen, pre-attack (Vahn solo caster). Steady-state summon render; resident summon overlay + per-part transform target."
 
 [[scenarios]]
 label = "gimard_burning_attack"
 slot = 255
-pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate7"
 backup_fingerprint = "8653d14b3efae4e102e98b1e03d594d9a013baa028f4f481955d7e9a486d3050"
 description = "Player Gimard performing the Burning Attack move (move text + fire animation on screen, Vahn solo caster). The live summon-part mesh-rotation window for the FUN_801F7088 source hunt."
 
@@ -860,7 +857,6 @@ slot = 255
 label = "chest_open_trace_pcsx"
 backup_fingerprint = "083275b4ab53021546759c3a0d36534d43ffcce40c6dd7b1c0629414d84a07f4"
 phase = "field"
-pcsx_redux_sstate = "~/Tools/pcsx-redux/SCUS94254.sstate1"
 description = "PCSX-Redux: standing in front of an early treasure chest (normally a Healing Leaf), for the field-VM GIVE_ITEM (0x39) runtime trace - operand RAM address + granted item id."
 topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "trace", "pcsx-redux"]
 
@@ -1016,6 +1012,60 @@ backup_fingerprint = "9dda14702d18b7d80ffcf1f7b4d6daefbbc6490d0ed60ee8c4aaae2503
 phase = "minigame"
 description = "Casino slot-machine minigame, parked in its playable state (the coin economy the casino prize-exchange randomizer feeds)"
 topics = ["minigame", "slot machine", "casino", "RE"]
+
+# ----------------------------------------------------------------------
+# Minigame captures - PCSX-Redux. Breakpoint-probable twins of the five
+# mednafen minigame states above (mednafen's debugger is GUI-only, so those
+# can only be read offline). Each is a LOAD-TRANSITION capture: parked at the
+# earliest reachable frame of the minigame loading (the mode-24 OTHER-INIT
+# entry window), NO button presses needed. To probe: load the save and run
+# FORWARD a few frames - the overlay finishes loading (its score/payout/deck/
+# step-chart DATA tables become resident in RAM, readable even without play)
+# and the gameplay SM begins ticking (the exec-bp dispatchers fire). Gameplay
+# EVENTS that need input (a payout-on-win, a judged beat) require playing
+# forward / pad injection - a later mid-game save is the cleaner source for
+# those. Probes: scripts/pcsx-redux/autorun_minigame_*.lua. Deep-RE ROI order
+# (lowest port-catalog coverage first): fishing, dance, slot, baka, muscle.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 255
+label = "minigame_dance_pcsx"
+backup_fingerprint = "e9ae63ed4cecc05b96722bfe4ed5bb586a5b90341c7174ab2b740f85da9ffdb2"
+phase = "minigame"
+description = "Noa dance rhythm minigame, load-transition capture (earliest reachable, no input). Run forward to resident-load the overlay + start the SM. Overlay: beat-clock SM FUN_801cf470, timing-window judge FUN_801d1960, step chart 0x801d509c, groove gauge DAT_801d544c (per-tier rating multipliers unpinned)."
+topics = ["minigame", "dance", "RE", "pcsx-redux", "load-transition", "breakpoint-probe"]
+
+[[scenarios]]
+slot = 255
+label = "minigame_baka_pcsx"
+backup_fingerprint = "2126e54f99600b31377eaaea97bab695145b702df90d3e9819ecc093d88b3185"
+phase = "minigame"
+description = "Baka Fighter duel minigame, load-transition capture (earliest reachable, no input). Run forward to resident-load the overlay + start the SM. Overlay: round SM FUN_801d3468, rock-paper-scissors exchange resolver FUN_801d3a14, stat/combo damage (best-of-N + gold-payout constants unpinned). Reuses the PROT 1204 battle-form party meshes."
+topics = ["minigame", "baka fighter", "RE", "pcsx-redux", "load-transition", "breakpoint-probe"]
+
+[[scenarios]]
+slot = 255
+label = "minigame_slot_machine_pcsx"
+backup_fingerprint = "d96c9a9dabb08742b38407b0792cea25da30c0e72501060ed836084169d6ffc1"
+phase = "minigame"
+description = "Casino slot-machine minigame, load-transition capture (earliest reachable, no input). Run forward to resident-load the overlay + start the SM. Overlay: reel SM FUN_801cf0d8, dual RNG (LCG FUN_801d30cc + BIOS-rand feature rolls), payout/jackpot eval FUN_801d13e8; cash-out commits into coin bank 0x800845A4."
+topics = ["minigame", "slot machine", "casino", "RE", "pcsx-redux", "load-transition", "breakpoint-probe"]
+
+[[scenarios]]
+slot = 255
+label = "minigame_muscle_dome_pcsx"
+backup_fingerprint = "ed174405c2685db529b0e9bd6a4deb5024db916b963588f43c44cefa3a8905cb"
+phase = "minigame"
+description = "Muscle Dome card-battle minigame, load-transition capture (earliest reachable, no input). Run forward to resident-load the overlay + start the SM. Overlay: match SM FUN_801d0748 (phase byte ctx+6), 4-slot hand deal/commit into the actor +0x1df action queue, resolution via the shared battle-action path (deck / card-table bytes unpinned)."
+topics = ["minigame", "muscle dome", "RE", "pcsx-redux", "load-transition", "breakpoint-probe"]
+
+[[scenarios]]
+slot = 255
+label = "minigame_fishing_pcsx"
+backup_fingerprint = "1592a3b1ab7522a336e24da7ce9b8bd6b554e46044d1890e0071c12b59caba64"
+phase = "minigame"
+description = "Fishing minigame, load-transition capture (earliest reachable, no input). Run forward to resident-load the overlay + start the SM. Overlay: state machine FUN_801cf3bc, tension gauge 0x801d9168 (fish-AI/tension tick FUN_801d4004), catch scoring into 0x8008444c (FUN_801d5298). Lowest-ported overlay = highest RE ROI."
+topics = ["minigame", "fishing", "RE", "pcsx-redux", "load-transition", "breakpoint-probe"]
 
 [[scenarios]]
 slot = 255
@@ -1948,7 +1998,6 @@ end = 0x80200000
 [[scenarios]]
 slot = 255
 label = "shiny_refactor_gimard_precast"
-pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate1"
 backup_fingerprint = "4642e41b3dfcd5f397c9bd9c973f8b429ceea58c0026500eb0ec5e03dd9d02dc"
 description = "Fresh-captured shiny Gimard (new +0x1C0 shiny-byte encoding), frame just before its first Burning Attack cast. Validates the post-refactor storage (clean level byte, shiny byte set). game_mode 0x15."
 topics = ["shiny seru", "refactor", "Gimard", "shiny byte", "battle", "randomizer"]
@@ -1958,7 +2007,6 @@ expected_game_mode = 0x15
 [[scenarios]]
 slot = 255
 label = "shiny_refactor_gimard_plus35"
-pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate2"
 backup_fingerprint = "3fdb3fcd08da20222ae42d9605cce88673262e1660265cabdb542ae9842457b8"
 description = "Fresh-captured shiny Gimard mid-cast with the '+35% DMG!' text on screen + partial summon transparency, post-refactor. game_mode 0x15."
 topics = ["shiny seru", "refactor", "Gimard", "+35%", "transparency", "battle", "randomizer"]
@@ -1968,7 +2016,6 @@ expected_game_mode = 0x15
 [[scenarios]]
 slot = 255
 label = "shiny_refactor_gimard_levelup"
-pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate3"
 backup_fingerprint = "e291b758439059bdc5bf6d14ea73c88b3201bd0b7b141f2bc582e02d380e6411"
 description = "Fresh-captured shiny Gimard Seru level-up, post-refactor - the 'grew to level' message renders correctly (the pre-refactor blank-box bug is fixed; level is correct, not Lv 129). game_mode 0x15."
 topics = ["shiny seru", "refactor", "Gimard", "level up", "battle", "randomizer"]
