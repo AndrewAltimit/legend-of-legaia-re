@@ -80,23 +80,55 @@ whatever runs - so an input timeline is optional. Key env knobs:
 | `LEGAIA_ADDR_LO` / `LEGAIA_ADDR_HI` | Address window, e.g. SCUS-only with `HI=0x801C0000`. |
 | `LEGAIA_MAX_BPS` | Cap breakpoints (0 = all) for a smoke run. |
 | `LEGAIA_INPUTS` | Optional `<frame>:+BTN,<frame>:-BTN,...` timeline (vsync-since-capture). |
+| `LEGAIA_MASH` | Optional `<BTN>:<period>` auto-advance pulse (headless title/dialog/cutscene driver). |
 | `LEGAIA_FRAMES` | Capture budget in vsyncs. |
 
-Run a segment (cold-boot S1 example - drive the title menu by hand or via
-`LEGAIA_INPUTS`; wrap in `timeout` because PCSX-Redux does not reliably self-
-quit):
+### Running it headless (agent-operated)
+
+The agent runs the emulator directly under a headless X server - this is not an
+author/run hand-off. The reliable recipe is a **save-state-anchored** segment:
+load a PCSX-Redux `.sstate` (the save jumps past the slow BIOS boot and fires
+`GPU::Vsync` immediately, so the probe arms at once), with `boot_delay=2`:
 
 ```bash
-LEGAIA_NO_SSTATE=1 \
+LEGAIA_SSTATE="$HOME/Tools/pcsx-redux/SCUS94254.sstate1" \
+LEGAIA_BOOT_DELAY=2 \
 LEGAIA_LUA=scripts/pcsx-redux/autorun_trace_segment.lua \
-LEGAIA_OUT=captures/trace/s1_boot.csv \
-LEGAIA_FRAMES=5400 \
-    timeout --kill-after=10s 420s bash scripts/pcsx-redux/run_probe.sh
+LEGAIA_OUT=captures/trace/seg.csv LEGAIA_FRAMES=600 \
+    xvfb-run -a timeout --kill-after=15s 220s bash scripts/pcsx-redux/run_probe.sh
 ```
 
-For a save-state-anchored segment (S2+), drop `LEGAIA_NO_SSTATE` and pass
-`--scenario <label>` (or `LEGAIA_SSTATE=<path>`); scripted `LEGAIA_INPUTS` time
-reliably against the dense in-game vsync clock.
+Reliability notes (hard-won; these are the environment's quirks, not the
+harness's):
+
+- **Use a headless X server (`xvfb-run -a`).** On a real `DISPLAY`, PCSX-Redux
+  v-syncs to the monitor and an unfocused/occluded window is throttled to a
+  crawl - boot never reaches the arming point. Bare `Xvfb` (vs `xvfb-run`) can
+  crash PCSX's GLX init during boot; `xvfb-run` sets up the Xauthority it needs.
+- **Save-state load must be early (`boot_delay=2`).** The driver waits
+  `boot_delay` `GPU::Vsync` events before loading; those are sparse during BIOS
+  boot, and the boot occasionally hangs on a CD read before the save loads. A
+  low `boot_delay` wins that race more often.
+- **Boot is a lottery - retry.** A run that never logs `gap-set exec probes
+  armed` lost the boot race; just relaunch. A small retry loop (relaunch until
+  the CSV has rows) makes capture reliable.
+- **Cold boot (`LEGAIA_NO_SSTATE=1`) is not viable headless.** The title is
+  reached only after minutes of interpreter boot, and `GPU::Vsync` (the arming
+  gate) does not fire during the pre-render CD-boot phase - the probe sits in
+  `waiting for boot` indefinitely. Capture the S1 title/new-game code by
+  anchoring on a title-screen `.sstate` instead (capture one interactively
+  once), not by cold boot.
+- **Breakpoint-count ceiling: arm a SMALL set per run.** Arming the full
+  780-entry gap-set in one go stalls the emulator before capture; ~150 arms
+  fine. Capture the whole gap-set as a UNION of windowed passes
+  (`LEGAIA_ADDR_HI=0x801C0000` for the 167 SCUS, then overlay windows via
+  `LEGAIA_ADDR_LO/HI`), each pass under the ceiling. The probe writes the CSV
+  incrementally (every ~60 vsyncs) so a late PCSX abort - this build aborts a
+  few hundred vsyncs into some resumed saves - still leaves the captured hits on
+  disk; the `.hits.txt` snapshot is a second copy.
+
+For a scripted-input segment, add `LEGAIA_INPUTS` / `LEGAIA_MASH`; in-game
+vsyncs are dense so the timeline times reliably.
 
 ## Attribution: SCUS vs overlay
 
@@ -111,15 +143,17 @@ and the `.modes.txt` timeline (which overlay window was resident then), plus the
 addresses as the clean signal and confirm overlay hits against the resident
 overlay before documenting.
 
-## The latency loop
+## The capture + triage loop
 
-The author/run split is structural: the agent authors probes + input timelines
-and mines artifacts; the operator runs PCSX-Redux with the disc. Each segment is
-one turn of the loop:
+The agent runs the emulator headless (see above) and mines the artifacts itself.
+The one input the agent cannot synthesize is a PCSX-Redux save state at a desired
+new location; capturing those interactively (a title screen, a post-name field
+spawn) is where the operator helps. Each segment is one turn of the loop:
 
-1. **Author** the input timeline + run command for the next segment.
-2. **Operator runs** the probe; hands back `trace_segment.csv` + `.modes.txt` +
-   an end-of-segment save state.
+1. **Author** the segment: pick the start `.sstate`, the gap-set window, and any
+   `LEGAIA_INPUTS` / `LEGAIA_MASH` timeline.
+2. **Run** the probe headless (retry past the boot lottery); produce
+   `trace_segment.csv` + `.modes.txt`.
 3. **Triage** the CSV: drop addresses already documented (the worklist already
    excludes them), then for each new hit in hit-count order, read the dump
    (`ghidra/scripts/funcs/<addr>.txt`; extend `dump_funcs.py` TARGETS if
@@ -148,7 +182,10 @@ triaged).
 S1 runs the full 780-entry gap-set (all buckets - no `LEGAIA_ADDR_HI` filter),
 so its overlay hits need the mode/overlay disambiguation in
 [Attribution](#attribution-scus-vs-overlay) before documenting; the 167 SCUS
-hits are clean. Name entry (end of S1) is fiddly to script letter-by-letter;
+hits are clean. **S1 cannot be captured by headless cold boot** (see the
+reliability notes - the arming gate never fires during BIOS boot); anchor it on
+a title-screen `.sstate` captured interactively. Name entry (end of S1) is
+fiddly to script letter-by-letter;
 capturing an "after name entry" save state as the S2 anchor is preferred over
 scripting the input. Encounter timing (S5) is RNG-sensitive - keep it a short
 standalone segment and expect a couple of attempts.
@@ -165,3 +202,25 @@ is printed) or `scripts/ci/port-catalog.py --dashboard`.
 
 Each documented function moves an address out of the gap-set on the next
 regenerate; the table above grows one row per triage pass.
+
+### First-capture finding (SCUS-167, field/mode-24 state)
+
+The first headless capture armed the 167 SCUS gap-set addresses against a
+field-then-mode-24 save (`game_mode` `0x03` -> `0x18` -> `0x19`); 42 functions
+hit. Triaging the hottest by decomp showed the **SCUS-low residue is dominated
+by host-replaced library infrastructure**, not game logic:
+
+- `FUN_8005a4a0` - SPU/DMA transfer-queue drain (64-entry ring, spins on the
+  hardware-ready bit).
+- `FUN_8002b468` - best-fit heap allocator (free-list walk + block split).
+- `FUN_8005fde8` / `FUN_8006a7c8` - fn-ptr dispatch wrapper + a GPU/IO table
+  bit-set helper.
+- `FUN_8001d088` - a genuine engine helper: 12-bit angle lerp with wraparound
+  (shortest-arc on a 4096-unit circle), writing interpolated facing into a
+  per-slot table; the one clear game-logic helper in the hot set.
+
+Implication for targeting: the game-logic residue concentrates in the **overlay**
+gap-set (battle / field / menu) and higher SCUS functions, not these low-SCUS
+helpers. Several SCUS hits carry an overlay-range caller `ra` (e.g. `8003d0bc`
+called from `0x801D2D28`), i.e. SCUS leaf helpers invoked by overlay code - so
+the overlay passes are where the burndown should focus.
