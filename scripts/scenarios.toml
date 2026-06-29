@@ -44,7 +44,8 @@
 #      (copies to saves/library/, sets backup_fingerprint on the scenario).
 #   3. Add/extend the [[scenarios]] block here with label / phase / scene.
 #   4. (mednafen only) `manage-states.py fingerprint <label>` for the RAM
-#      fingerprint; `manage-states.py library` lists what's backed up.
+#      fingerprint; `manage-states.py library` lists what's backed up
+#      (`library --audit` = scenario-centric catalogue + PCSX-probe-usability).
 #   5. Commit (the manifest only - the save bytes stay local + gitignored).
 #
 # See `docs/tooling/mednafen-automation.md` for the diff-sweep workflow
@@ -83,45 +84,6 @@ filename_pattern = "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc{s
 # (Left unset here so the manifest is portable.)
 
 # ----------------------------------------------------------------------
-# mc0 - v0.1 playthrough oracle anchor D: first frame of running
-# battle (Tetsu tutorial fight).
-#
-# game_mode = 0x15 (BattleMode); active_scene stays "town01" because
-# battles run as a scene-mode overlay on top of the loaded field scene,
-# not a scene swap. The transitional `BattleInit (0x14)` lasts a single
-# frame and is not captured here; mc0 is one frame later, in steady-
-# state BattleMode where the battle action SM is ticking.
-#
-# Anchor in the v0.1 slice taxonomy (see backlog item 1): the
-# comparison target for the recorded battle-start frame. The replay's
-# `[[expected]]` block (once recorded) will name the frame at which
-# the engine must reach scene_mode=Battle / active_scene=town01.
-#
-# Supersedes the FMV-trigger-corpus `fmv_trigger_str_8` capture that
-# previously occupied this slot.
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 0
-label = "v0_1_battle_first_frame_tetsu"
-ram_fingerprint_sha256 = "a6272a82f24bdee953e4f8dc19caa8df7621556e618d9bc9af7bc88712ad6f59"
-description = "v0.1 slice anchor D: first frame inside the Tetsu tutorial battle (BattleMode running)"
-topics = ["v0.1 slice", "battle init", "Tetsu tutorial", "BattleMode", "town01"]
-phase = "battle"
-# `expected_active_scene` is intentionally unset. `mode_trace_e3`
-# treats that field as "engine reaches this scene_mode from a cold
-# boot on this scene" -- which this anchor cannot satisfy (the engine
-# boots into Title/town01, not Battle/town01). The actual scene under
-# the battle IS "town01" with game_mode 0x15 BattleMode; the v0.1
-# oracle picks this anchor up via [[expected]] frame comparisons in
-# scripts/replays/v0_1_playthrough.toml when the field-VM-to-battle
-# handoff exists in-engine.
-expected_game_mode = 0x15
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-# ----------------------------------------------------------------------
 # mc1 - mid-battle with full 3-character active party (Vahn/Noa/Gala) vs
 # 1 Gobu Gobu enemy, command menu open. game_mode = 0x15 (BattleMode).
 # Useful as the canonical "battle with full party" oracle because all
@@ -148,41 +110,6 @@ label = "character_tmd_pointers"
 start = 0x8007C018
 end = 0x8007C02C
 hint = "DAT_8007C018[0..=4]: 5 character TMD pointers (Vahn/Noa/Gala + 2 aux); battle-form addresses differ from field-form."
-
-# ----------------------------------------------------------------------
-# mc2 - per-STR FMV trigger corpus, slot 2 maps to STR 0 (fmv_id 0).
-# fmv_id 0 plays \MOV\MV1.STR;1 (intro logo). This is also the same FMV
-# that the title-screen attract loop fires after the idle countdown.
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 2
-label = "fmv_trigger_str_0"
-ram_fingerprint_sha256 = "12fb95bba98f6da4946b599a5b2cb2683be62c8c215429e2a56b817301ed6b67"
-description = "Per-STR FMV trigger captured for fmv_id=0 → MV1.STR (intro logo)"
-topics = ["FMV trigger", "fmv_id 0", "MV1.STR"]
-diff_against = [3]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 = `00 00` (fmv_id = 0)."
-
-[[scenarios.watchpoints]]
-label = "next_game_mode_global"
-start = 0x8007B83C
-end = 0x8007B83D
-hint = "_DAT_8007B83C = 0x1A (StrInit)."
-
-[[scenarios.watchpoints]]
-label = "field_pack_base_pointer"
-start = 0x8007B8D0
-end = 0x8007B8D4
-hint = "_DAT_8007B8D0 = 0x8014BD30 (= 0x80139530 + 0x12800). map01's field-pack base; constant: `cutscene_trigger_corpus::MAP01_FIELD_PACK_BASE`."
 
 # ----------------------------------------------------------------------
 # mc3 - ROTATED to the chest-randomizer pre-scene-load capture
@@ -400,26 +327,6 @@ start = 0x801C0000
 end = 0x80200000
 
 # ----------------------------------------------------------------------
-# mc9 - fmv_id=7. Maps to slot[7] which points at \DATA\MOV.STR;1 (cut).
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 9
-label = "fmv_trigger_str_7"
-description = "Per-STR FMV trigger captured for fmv_id=7 (cut path slot)"
-topics = ["FMV trigger", "fmv_id 7", "cut path slot"]
-diff_against = [0]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 = `07 00` (fmv_id = 7). Slot[7] points at \\DATA\\MOV.STR;1 - cut path."
-
-# ----------------------------------------------------------------------
 # Boot-to-first-town arc checkpoints (mednafen-side slot not allocated;
 # these are primarily PCSX-Redux save-state references for the
 # step-by-step launch -> first town reverse-engineering walk).
@@ -436,18 +343,6 @@ hint = "_DAT_8007BA78 = `07 00` (fmv_id = 7). Slot[7] points at \\DATA\\MOV.STR;
 # Allocate a real mednafen mc{0..9} slot if/when a mednafen capture of
 # the same state is added.
 # ----------------------------------------------------------------------
-
-[[scenarios]]
-slot = 255
-label = "cold_boot_pre_init"
-# STALE POINTER: the live sstate7 slot has rotated since this entry was
-# written - it now holds a mid-game state (befect band resident), not a
-# pre-BIOS-init boot state. No library backup_fingerprint exists for the
-# original capture. Re-capture before relying on this scenario.
-description = "Save state taken pre-BIOS-init; cold-boot the title overlay LZS decode + countdown trigger from here. (Pointer stale - see comment.)"
-phase = "boot"
-pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate7"
-topics = ["boot path", "title overlay load", "countdown trigger"]
 
 [[scenarios]]
 slot = 255
@@ -1904,27 +1799,6 @@ phase = "battle"
 expected_game_mode = 0x15
 description = "Enemy boss Cort casting Evil Seru Magic (Juggernaut) mid-cast. Loader-B current-id 0x8007BC4C = 0x47 -> stager extraction 0966 (byte-resident at slot B 0x801F69D8) - DISTINCT from the player-side Juggernaut stager 0927 (loader id 0x20): the enemy arm of the same spell ships its own stager."
 topics = ["battle", "Cort", "boss", "stager", "loader-B", "Evil Seru Magic", "Juggernaut", "enemy cast"]
-
-# ----------------------------------------------------------------------
-# CAPTURE PENDING (no fingerprint yet). ACE backlog 2.1 reachability:
-# a save state with a FULL 72-slot consumable bag (item window
-# 0x80085958..0x800859E8 all occupied, distinct ids) positioned in front
-# of a shop, so a single buy drives the unchecked add helper FUN_800421D4
-# into its out-of-bounds id store at 0x800859E8. Consumed by
-# scripts/pcsx-redux/autorun_inventory_oob_writer.lua. To produce it:
-# fill the consumable page (buy/farm to 72 distinct stacks), stand at any
-# shop's buy menu, save state, then:
-#   scripts/manage-states.py backup pcsx-redux <path> --label inventory_full_shop
-# and add `backup_fingerprint` here. Battle-loot (FUN_8004E568) and
-# captured-monster pay (FUN_801F138C) reach the same helper if a shop is
-# inconvenient; a full-bag pre-drop battle save works for those.
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 8
-label = "inventory_full_shop"
-phase = "field"
-description = "Full 72-slot consumable bag at a shop buy menu; drives the FUN_800421D4 full-window OOB id store to 0x800859E8 (ACE backlog 2.1 reachability). Capture pending."
-topics = ["ace", "inventory", "oob", "FUN_800421D4", "shop", "reachability", "capture-pending"]
 
 # ----------------------------------------------------------------------
 # Weapon-specialty / arts-bar arm-width corpus. Three PCSX-Redux states,

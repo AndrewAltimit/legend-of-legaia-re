@@ -657,8 +657,8 @@ is a single ~220-byte cluster in section 1's rect (face rows), identical
 across captures - the facial animator's current frame, stamped over the
 pool default every frame (see
 [Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98)),
-not a placement error. (`v0_1_battle_first_frame_tetsu` is captured
-before the upload pass runs and still shows field texels in the band.)
+not a placement error. (A first-battle-frame capture, before the upload
+pass runs, still shows field texels in the band.)
 
 Typed port: `legaia_asset::battle_char_assembly` -
 `SECTION_TEXTURE_RECTS` / `RECORD0_TEXTURE_RECTS` /

@@ -82,7 +82,17 @@ fingerprint-named library:
 scripts/manage-states.py backup pcsx-redux ~/Tools/pcsx-redux/SCUS94254.sstate6 \
     --label field_walled_collision_pin
 scripts/manage-states.py library          # list what's backed up + catalogue status
+scripts/manage-states.py library --audit  # scenario-centric: emulator-aware catalogue
+                                          # status + PCSX-probe-usability + orphan/missing gaps
 ```
+
+`library --audit` is the inverse view: it walks every manifest scenario and
+classifies it as CATALOGED (for which emulator), EPHEMERAL-ONLY (a live-slot
+pointer never backed up), BACKUP-MISSING (fingerprint recorded but the file is
+gone), or NO-SAVE (a pure phase marker). It flags which scenarios are usable
+for a PCSX-Redux breakpoint probe - a **mednafen-only** backup is catalogued
+but **cannot** be loaded by `run_probe.sh` (PCSX-Redux needs a `pcsx-redux`
+`.sstate`), which is the most common "but it IS backed up" surprise.
 
 `backup` copies the file to `saves/library/<emulator>/<sha256>.<ext>`
 (immutable; the sha256 is the filename, so it never collides or gets
@@ -407,6 +417,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_key_item_consumer_hunt.lua`](../../scripts/pcsx-redux/autorun_key_item_consumer_hunt.lua) | ACE Phase 3 / Path C: fills the consumable bag in RAM, optionally seeds key-item slot 0 with a chosen id, then arms Read BPs on the first 24 bytes of the key-item area (`0x800859E8..+0x18`) plus passive Write BPs on the debug bytes (`0x8007B8C2`/`0x8007B98F`). Logs every read with PC + RA; heartbeat prints a unique-PC summary for post-analysis. Use to find native consumers of the OOB-writable bytes that may be exploitable as a chain. |
 | [`autorun_shiny_recon.lua`](../../scripts/pcsx-redux/autorun_shiny_recon.lua) | Shiny-Seru playtest recon. Static: reports whether each of the 8 shiny detour sites is patched (`j`) or vanilla, and whether the new SCUS gap `0x80077728` carries routines. Live: scans the battle-actor table for the setup routine's shiny marker (`+0x226`) on a boosted capturable enemy, and the party records' Seru level bytes (`record+0x161`) for the grant routine's `0x80` flag. Run against the booted patched disc (`legaia_shiny_100.bin`); the `+35%` damage is read-side and confirmed in-game. |
 | [`autorun_battle_state_stream.lua`](../../scripts/pcsx-redux/autorun_battle_state_stream.lua) | The shared live battle-state EVENT SOURCE. Per-VSync poll (no breakpoints, `--fast`-safe) of the typed battle state via the [`probe.battle_state`](../../scripts/pcsx-redux/lib/probe/battle_state.lua) extraction layer, diffed frame-to-frame into a newline-delimited JSON stream (delta on change + full sweep every `LEGAIA_STREAM_SWEEP` vsyncs + on every battle-enter). → [detail](#autorun_battle_state_streamlua) |
+| [`autorun_anim_node_tick_caller.lua`](../../scripts/pcsx-redux/autorun_anim_node_tick_caller.lua) | Pins the unpinned CALLER of the battle anim-node tick `FUN_80047430` (no static `jal` site → fn-ptr dispatch). Exec-bp at the function entry where `$ra` still holds the dispatch site's return address; dedupes by `$ra`, decodes the branch at `$ra-8` (a `jalr` confirms indirect dispatch + names the register), and dumps the call-context ra-chain. Default save `party_basic_attack_vs_gobu_gobu` (the tick fires every frame per actor). Closes the F-PROBES "`FUN_80047430` caller" row in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md). |
 
 #### Runtime probe details
 
@@ -563,8 +574,14 @@ bash scripts/pcsx-redux/run_probe.sh
 # Pick a different probe.
 bash scripts/pcsx-redux/run_probe.sh --lua scripts/pcsx-redux/autorun_dump_slot4.lua
 
-# Resolve the save state via a named scenario from scripts/scenarios.toml.
-bash scripts/pcsx-redux/run_probe.sh --scenario cold_boot_pre_init \
+# Resolve the save state via a named scenario from scripts/scenarios.toml
+# (a PCSX-Redux-backed scenario; mednafen-only backups can't load here -
+# see `manage-states.py library --audit` for which scenarios qualify).
+bash scripts/pcsx-redux/run_probe.sh --scenario party_basic_attack_vs_gobu_gobu \
+    --lua scripts/pcsx-redux/autorun_battle_state_stream.lua
+
+# Cold-boot a title/boot probe (no save state - runs from power-on).
+LEGAIA_NO_SSTATE=1 bash scripts/pcsx-redux/run_probe.sh \
     --lua scripts/pcsx-redux/autorun_countdown_trigger.lua
 
 # Fast (recompiler) mode - drops `-interpreter -debugger`. Lua **BPs do

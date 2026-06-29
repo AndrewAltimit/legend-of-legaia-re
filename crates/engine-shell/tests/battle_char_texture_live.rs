@@ -28,9 +28,9 @@ use legaia_engine_core::scene::ProtIndex;
 use legaia_mednafen::{PsxGpu, SaveState, ScenarioManifest, VRAM_WIDTH};
 
 /// Catalogued mid-battle captures with the party texture bands resident.
-/// (`v0_1_battle_first_frame_tetsu` is deliberately absent: captured on the
-/// first battle frame, before the `FUN_80052FA0` upload pass has run, its
-/// band still holds field-scene texels - ~20% residual match.)
+/// (A first-battle-frame capture is deliberately excluded: before the
+/// `FUN_80052FA0` upload pass has run, the band still holds field-scene
+/// texels - ~20% residual match.)
 const CAPTURES: &[&str] = &[
     "party_battle_gobu_gobu",
     "noa_levelup_fight_pre",
