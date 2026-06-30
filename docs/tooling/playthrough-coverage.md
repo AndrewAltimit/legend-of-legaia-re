@@ -404,11 +404,14 @@ what turned "blind coverage exhausted" into a first-attempt capture.
 ### S5: the first battle is the scripted Tetsu spar, not a random encounter
 
 The S5 span as originally written ("first random encounter") does not match the
-game: **Rim Elm (`town01`) has no random encounters.** `autorun_s5_encounter.lua`
-wandered the exterior for ~148 tile-steps from the S4 anchor with `game_mode`
-pinned at `0x03` the whole time and no battle - the town is safe. (The MAN does
-declare formations, but the region records keep them gated in the playable town.)
-The actual first battle in the opening is the **scripted Tetsu sparring tutorial**
+opening: **Rim Elm (`town01`) has no random encounters at this story point.**
+`autorun_s5_encounter.lua` wandered the exterior for ~148 tile-steps from the S4
+anchor with `game_mode` pinned at `0x03` the whole time and no battle. The town's
+encounters are **story-gated**, not absent: the MAN declares formations, and they
+switch on **briefly after a later story-dialogue beat**, go peaceful again, and
+return briefly **near the endgame** - so the encounter table is real but inactive
+during the post-name-entry free-roam the S4 anchor sits in. The actual first
+battle in the opening is the **scripted Tetsu sparring tutorial**
 (`formation_id` 4), started by **talking to the sparring partner** - the same
 fight the existing `v0_1_*_tetsu` anchor chain captures
 (`v0_1_pre_battle_tetsu` -> `v0_1_tetsu_dialogue_accept` -> `v0_1_battle_start_tetsu`
@@ -426,14 +429,37 @@ Where S5 stands:
   there from the S4 spot (tile `(25,27)`), recalibrating the pad->world map after
   each door warp (the camera yaw differs per sub-area), and **reaches tile `(21,15)`
   adjacent to Tetsu and engages an NPC at his tile**.
-- **Open step: accept the spar.** CROSS-mashing the engaged dialogue does not
-  start the fight (the run stays in field mode, engaged). This is the same shape
-  as the S3 name-entry Yes/No: the spar prompt needs the accepting option
-  selected, not a blind mash - **or** the spar is not yet story-available at this
-  exact point (the grid-BFS S4 shortcut may have walked out of the house ahead of
-  a scripted prerequisite beat). Resolving which is the next move: a focused
-  dialogue-state recon at the Tetsu engagement (the `_DAT_801C6EA4` dialog-control
-  byte + pager/option-picker cursor), mirroring the S3 name-entry decode.
+- **Open step: the spar does not start from this state.** `autorun_s5_spar.lua`
+  navigates to Tetsu's tile (`goal_dist = 0`) and engages an NPC there, then
+  advances the dialogue with CROSS ~370 times over ~5600 frames - and it
+  **neither starts a battle nor ends** (the player stays engaged in field mode the
+  whole time). The dialog-control offset hunt was inconclusive: `*(0x801C6EA4)
+  +0x62` reads a **typewriter/blink sawtooth** (`0x20 -> 0x00` by 2s, looping),
+  not the option-picker, and no Yes/No picker surfaced at the offsets the S3
+  name-entry used. A normal villager line would *end* on CROSS and the spar
+  Yes/No would *battle or end* - neither happens, so this engagement is anomalous.
+  The leading cause: **the S4 shortcut landed off the scripted opening path.** The
+  canonical spar-talk position is tile `(21,13)`, one tile **south** of Tetsu,
+  player facing `+Z` (`rimelm_npc_press_tetsu`). Re-targeting the nav at `(21,13)`
+  still funnels the player to `(21,15)` (one tile **north**) and engages the same
+  NPC - i.e. `(21,13)` is **not reachable** from where the grid-BFS S4 walk-touch
+  warp dropped the player; Tetsu's tile blocks passage to his south side. So the
+  door-nav walked Vahn out of the house into a sub-area from which the scripted
+  Tetsu approach cannot be reached, which also fits the spar simply **not being
+  story-armed** yet at this free-roam point (the walk-touch warp bypasses the
+  opening beat that arms the tutorial). The decisive confirmation is a **story-flag
+  diff** of the bank at `0x80085758` between the S4 anchor and the known-good
+  `v0_1_pre_battle_tetsu` ("in front of the house, before Tetsu") -
+  `autorun_dump_storyflags.lua` dumps it; the S4 dump is in hand but
+  `v0_1_pre_battle_tetsu` is resume-crash-prone and still needs a clean dump.
+
+  **Implication for the trace chain:** the faithful S5 needs the **scripted opening
+  sequence** between name-entry and the spar to actually run - the grid-BFS S4
+  door shortcut, while a valid "walked out of the house" capture, is off the
+  story rails for the tutorial. The fix is either a story-sequence driver for the
+  post-name-entry beats (the forced family conversations that arm the spar), or
+  re-anchoring S5 onto the canonical pre-spar state the `v0_1_*_tetsu` chain
+  already holds.
 
 ## Gap-burndown
 
