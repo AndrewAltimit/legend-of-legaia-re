@@ -242,7 +242,7 @@ triaged).
 | S1 | cold boot -> title -> NEW GAME -> opening prologue (`opdeene`) | cold boot (`-fastboot`) | CAPTURED + CATALOGED (`s1_newgame_field`) | - | - |
 | S2 | opening prologue -> Rim Elm (`town01`) | S1 checkpoint | CAPTURED + CATALOGED (`s2_rimelm_town01`) | - | - |
 | S3 | first free walk (Rim Elm) | S2 checkpoint | CAPTURED + CATALOGED (`s3_rimelm_freeroam`); was [name entry](#s3-captured-the-town01-opening-is-the-name-entry-screen) | - | - |
-| S4 | first scene transition / house door | S3 checkpoint | PENDING | - | - |
+| S4 | first scene transition / house door | S3 checkpoint | IN PROGRESS - free-roam confirmed walkable; doors exist; [needs deterministic targeting](#s4-navigation-the-doors-exist-but-need-deterministic-targeting) | - | - |
 | S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING | - | - |
 
 Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
@@ -344,6 +344,35 @@ free-roam in `town01`. Catalogued as `s3_rimelm_freeroam`; re-decode/resume via
 `run_probe.sh --scenario s3_rimelm_freeroam`. (The clean-room mirror of this
 screen is `legaia_engine_core::name_entry`.) Encounter timing (S5) is
 RNG-sensitive - keep it a short standalone segment.
+
+### S4 navigation: the doors exist but need deterministic targeting
+
+From `s3_rimelm_freeroam` the player walks freely (confirmed: big X/Z swings under
+the d-pad; `autorun_s4_recon.lua` sweeps directions and logs the trajectory), and
+town01 **does** have first-transition doors - the decoded MAN carries 9 `house`
+records, 7 `A3 F8` player-MoveTo door warps, and one `map01` (village exit)
+reference. But a **free wander does not reach them**: `autorun_s4_capture.lua`
+(bump-and-turn - hold a direction, turn when the player position stops changing,
+press CROSS to interact at walls, dismiss any NPC dialogue) ran 18 seeds
+(two full 6000-frame wanders + early-crash retries) without a single scene
+change. Two reasons it does not converge:
+
+- **Camera-relative pad mapping.** The field controller remaps the held pad by
+  the camera yaw, so a fixed pad direction is not a fixed world direction (the
+  sweep shows "LEFT" reaching +X) - blind fixed-direction walking does not
+  systematically approach a target.
+- **Doors are specific tiles.** House-door / exit triggers are narrow tile
+  regions; bump-and-turn passes them rather than landing on them, and the
+  player-struct position fields (`player+0x14`/`+0x18`) are not yet mapped to the
+  tile coordinates the door BBoxTests use.
+
+So S4 needs **deterministic door-targeting**, not wandering: (1) pin the
+pad-direction -> world-axis mapping (press each dir from a known spot, watch which
+position component moves + its sign), (2) map `player+0x14/+0x18` to the door
+BBoxTest tile space, (3) read a `house`/`map01` door trigger's tile region from
+the MAN and closed-loop-navigate to it. The free-roam anchor + the wander harness
+are in place; this is the remaining piece. (Story-gating is *not* the blocker -
+the doors are present in the scene.)
 
 ## Gap-burndown
 
