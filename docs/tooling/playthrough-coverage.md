@@ -241,7 +241,7 @@ triaged).
 |---|---|---|---|---:|---:|
 | S1 | cold boot -> title -> NEW GAME -> opening prologue (`opdeene`) | cold boot (`-fastboot`) | CAPTURED + CATALOGED (`s1_newgame_field`) | - | - |
 | S2 | opening prologue -> Rim Elm (`town01`) | S1 checkpoint | CAPTURED + CATALOGED (`s2_rimelm_town01`) | - | - |
-| S3 | first free walk + first NPC dialogue | S2 checkpoint | BLOCKED ([town01 opening gate](#s3-blocked-the-town01-opening-is-a-non-dialogue-script-wait)) | - | - |
+| S3 | first free walk + first NPC dialogue | S2 checkpoint | BLOCKED on [name entry](#s3-blocked-the-town01-opening-stall-is-the-name-entry-screen) (driveable: navigate to `End` + Yes) | - | - |
 | S4 | first scene transition / house door | S3 end state | PENDING (needs S3) | - | - |
 | S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING (needs S3) | - | - |
 
@@ -271,72 +271,70 @@ with the field tick, checkpoint on the next scene/mode). **S3 does not chain by
 input mashing** - the town01 opening is a non-dialogue script wait, detailed
 below. S4/S5 depend on an S3 free-roam anchor, so they wait on it.
 
-### S3 BLOCKED: the town01 opening is a non-dialogue script wait
+### S3 BLOCKED: the town01 opening stall is the name-entry screen
 
-The `s2_rimelm_town01` anchor sits at the **start of the Rim Elm opening
-sequence**, and that sequence cannot be advanced to free-roam by input
-automation. Pinned with [`autorun_s3_recon.lua`](../../scripts/pcsx-redux/autorun_s3_recon.lua)
-(resume the anchor, poll the player engaged flag + field-control dialog state off
-the `FUN_8001698C` field tick):
+**Root cause (fully traced):** the `s2_rimelm_town01` "opening" stall is the
+**"Select your name." name-entry screen** for Vahn - not a mysterious cutscene
+wait. Naive input automation can't complete it, so S3 (first free walk) is never
+reached by mashing.
 
-- **The player is engaged the whole time.** `*0x8007C364 +0x10 & 0x80000`
-  (movement-disabled = encounter/cutscene owns the player) is set at the anchor
-  and **never clears**. Free-roam ("first free walk") is never reached.
-- **Auto-play then stall.** With no input the opening choreography drives the
-  lead actor for ~510 frames, then freezes at a fixed position (`~5184, 13504`)
-  and stays there. The earlier transient `0x80000` clear (~tick 27) was a
-  save-load settling artifact, not real free-roam.
-- **No input advances it.** A full button sweep (CROSS, CIRCLE, START, the four
-  d-pad dirs, TRIANGLE, SQUARE - 200 frames each) and a sustained CROSS+CIRCLE
-  mash (8000 frames from the save anchor) leave `0x80000` set and the position
-  frozen. Driving **continuously from the S1 anchor** (timeline never
-  save-interrupted at town01) reaches town01 and runs ~18000 ticks of CROSS+CIRCLE
-  there - still no free-roam. So the deadlock is **inherent to the sequence**, not
-  a save-resume artifact.
-- **It is not a dialogue/picker wait.** At the stall the field-control dialog
-  byte (`*0x801C6EA4 +0x62`), the option-picker cursor (`+0xc`), and the touch
-  interact flag (`+0x60`) are all `0`, and the dialog pager global `0x801F2740`
-  is its idle default `0x03`. So nothing is waiting for a confirm - the engaged
-  state is a **cutscene/establishing-timeline wait on a script condition** (a
-  timer, a story flag, or a sub-event), which is why no button moves it.
+The trace that pinned it, layer by layer:
 
-**The opening, disassembled (the parked instruction is pinned).** town01's MAN
-is `PROT[4]`, partition counts `[36, 53, 39]`; the opening is the **partition-2
-cutscene-timeline chain** P2[3]->P2[6] (`man-scripts --scene town01 --disc <bin>
---disasm-partition 2 --disasm-record N`). It is an establishing Rim Elm sequence
-that scripts the player + party through `CC F8 51` NpcRun waypoints interleaved
-with `WaitFrames` (0x4A) and actor `Yield`s - **no subtitle narration** (matching
-"no dialogue at the stall").
+1. **Engaged, no dialogue.** With [`autorun_s3_recon.lua`](../../scripts/pcsx-redux/autorun_s3_recon.lua):
+   the player engaged flag `*0x8007C364 +0x10 & 0x80000` is set and never clears;
+   the field-control dialog byte (`*0x801C6EA4 +0x62`), picker cursor (`+0xc`) and
+   interact flag (`+0x60`) are all `0`. No input advances it - a full button
+   sweep and a sustained CROSS+CIRCLE mash (8000 frames from the anchor, and
+   ~18000 ticks driving **continuously from S1**, timeline never save-interrupted)
+   all leave it frozen. So the wait is inherent, and it is not a dialog/picker.
+2. **The parked instruction.** A field-VM PC histogram ([`autorun_s3_pc.lua`](../../scripts/pcsx-redux/autorun_s3_pc.lua),
+   BP on `FUN_801DE840`) shows the engaged context re-enters at one constant
+   `pc=0x02C6` every frame; its runtime byte signature locates it uniquely at
+   **town01 partition-2 record 3, `+0x02C6`, opcode `49 03`** = `STATE_RESUME`
+   (op 0x49) subtype 3.
+3. **The hand-off.** `STATE_RESUME` is a tristate on `_DAT_8007B450` (`FUN_801DE840`
+   case 0x49): Idle arms it + spawns the effect-actor `FUN_80020DE0(0x8007065C,…)`;
+   **Armed** halts at the same PC every frame; Done (`==1`) advances. The spawned
+   actor's handler is `FUN_801F159C` (0897; dumped via
+   `ghidra/scripts/dump_state_resume_overlay.py`): it runs the inner sub-state
+   dispatch `PTR_FUN_801F33B4[actor+0x50]` and writes `_DAT_8007B450 = 1` (Done)
+   **only when `*(_DAT_801C6EA4 +0x3E) == 0`**. Its worker `FUN_801F1278` sets
+   `scene+0x3E = 1` and `actor+0x50` into the dispatch chain.
+4. **The parked sub-state.** A runtime histogram of `actor+0x50` at `FUN_801F159C`
+   ([`autorun_s3_substate.lua`](../../scripts/pcsx-redux/autorun_s3_substate.lua))
+   shows the actor parked in sub-state **`0x22`** with `scene+0x3E` stuck at `1`
+   and `_DAT_8007B450` Armed. `PTR_FUN_801F33B4[0x22] = FUN_801F03F0` - the
+   **name-entry state machine** (`docs/reference/functions.md` `801F03F0`: the
+   char-grid "Select your name." screen; substate at `struct+0x54`).
 
-A field-VM PC histogram at the stall ([`autorun_s3_pc.lua`](../../scripts/pcsx-redux/autorun_s3_pc.lua),
-breakpoint on `FUN_801DE840` = `(record_base, pc, ctx)`) pins the deadlock to a
-**single instruction**: the only context dispatched while engaged re-enters the
-VM at the same `pc=0x02C6` every frame (n=646/646 in the window). Matching its
-runtime byte signature (`WaitFrames` at `+0x0230/0251/0270/028F/02AE` then the
-park) against the decoded MAN locates it uniquely in **P2[3] at `+0x02C6`,
-opcode `49 03`** = **`STATE_RESUME` (op 0x49) subtype 3**.
+So the field op `49 03` suspends the opening script and hands off to name entry;
+name entry holds the player engaged (no dialog box - hence `+0x62`/`+0x60`/pager
+all idle) until a name is entered + confirmed, at which point it drives
+`scene+0x3E -> 0`, the effect-actor sets `_DAT_8007B450 = 1`, and the field VM
+unparks. Mashing CROSS only appends grid glyphs (a garbage name) and never
+reaches the `End` sentinel (`0x65`) + Yes confirm, so it stalls forever. This was
+already pinned statically in `functions.md`; the trace confirms it from the
+runtime side and identifies the exact parked sub-state.
 
-`STATE_RESUME` is a tristate on `_DAT_8007B450` (`FUN_801DE840` case 0x49,
-`ghidra/scripts/funcs/overlay_0897_801de840.txt`): **Idle** (`==0`) arms it -
-spawns an effect-actor (`FUN_80020DE0`, pool `0x8007065C`) and sets
-`_DAT_8007B450 = operand_ptr`; **Armed** (`!=0,!=1`) does `return param_2` (halts
-at the same PC every frame - **where the opening is parked**); **Done** (`==1`)
-clears it and advances. The opening is stuck in **Armed**, waiting for the
-spawned effect-actor to signal completion by writing `_DAT_8007B450 = 1` (the
-Done writer is the field-overlay `FUN_801F159C`-class actor routine). That
-completion **never fires** under headless automation - and it didn't fire in the
-continuous-from-S1 run either, so the effect-actor's completion condition (not a
-save-resume artifact) is the true gate.
+**Reproduce the disassembly.** town01's MAN is `PROT[4]`, partition counts
+`[36, 53, 39]`; the name-entry hand-off lives in partition-2 record 3:
+`legaia-engine man-scripts --scene town01 --disc <bin> --disasm-partition 2
+--disasm-record 3`. The 0897 effect-actor handler chain (`FUN_801F159C` +
+`FUN_801F1278` + dispatch table `PTR_FUN_801F33B4` + the parked sub-handler
+`FUN_801F03F0`) is dumped by `ghidra/scripts/dump_state_resume_overlay.py`
+against `overlay_0897.bin.0`.
 
-**To unblock S3:** dump the field-overlay (0897) `STATE_RESUME` subtype-3
-effect-actor handler (the `FUN_80020DE0(0x8007065C, …)` routine that writes
-`_DAT_8007B450 = 1`) and identify its completion condition - the one input /
-flag / resource the automation isn't providing. Then either satisfy it, or
-capture a free-roam anchor from a human-played save past the opening. The
-driver's flag-target (`LEGAIA_CKPT_PTR=0x8007C364 OFF=0x10 MASK=0x80000
-WANT=clear REQ_SCENE=town01` = "checkpoint when the player is free-roaming in
-town01") is ready to capture S3 the moment the opening can be advanced. Encounter
-timing (S5) is RNG-sensitive - keep it a short standalone segment.
+**To unblock S3 (now concrete):** **drive the name-entry screen.** The default
+name "Vahn" is pre-filled, so the automation only needs to move the grid cursor
+to the `End` control sentinel (`0x65`) and confirm Yes - then `scene+0x3E -> 0`,
+`STATE_RESUME` completes, and the field VM resumes into the rest of the opening.
+The name-entry grid layout + sentinels are in `docs/reference/functions.md`
+(`801F03F0`) and ported clean-room as `legaia_engine_core::name_entry`; a
+keyframed pad timeline (navigate to `End`, CROSS, then Yes) drives it. Once name
+entry clears, the driver's flag-target (`LEGAIA_CKPT_PTR=0x8007C364 OFF=0x10
+MASK=0x80000 WANT=clear REQ_SCENE=town01` = "checkpoint when the player is
+free-roaming in town01") captures the S3 anchor. Encounter timing (S5) is
+RNG-sensitive - keep it a short standalone segment.
 
 ## Gap-burndown
 
