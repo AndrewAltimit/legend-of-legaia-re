@@ -243,7 +243,7 @@ triaged).
 | S2 | opening prologue -> Rim Elm (`town01`) | S1 checkpoint | CAPTURED + CATALOGED (`s2_rimelm_town01`) | - | - |
 | S3 | first free walk (Rim Elm) | S2 checkpoint | CAPTURED + CATALOGED (`s3_rimelm_freeroam`); was [name entry](#s3-captured-the-town01-opening-is-the-name-entry-screen) | - | - |
 | S4 | first scene transition / house door | S3 checkpoint | CAPTURED + CATALOGED (`s4_rimelm_door_transition`); [grid-BFS door-nav out of Vahn's house](#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house) | - | - |
-| S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING | - | - |
+| S5 | first battle -> victory -> loot | S4 end state | IN PROGRESS - [Rim Elm has no random encounters; the first battle is the scripted Tetsu spar; nav reaches Tetsu, the spar-accept dialogue is the open step](#s5-the-first-battle-is-the-scripted-tetsu-spar-not-a-random-encounter) | - | - |
 
 Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
 `backup_fingerprint`, resolvable via `run_probe.sh --scenario <label>`.
@@ -400,6 +400,40 @@ The lesson generalises: **when a probe reads a struct field, match the field's
 real width** - the locomotion position fields are `s16`, and the neighbouring
 facing word silently poisons a `u32` read. The clean grid + correct field width is
 what turned "blind coverage exhausted" into a first-attempt capture.
+
+### S5: the first battle is the scripted Tetsu spar, not a random encounter
+
+The S5 span as originally written ("first random encounter") does not match the
+game: **Rim Elm (`town01`) has no random encounters.** `autorun_s5_encounter.lua`
+wandered the exterior for ~148 tile-steps from the S4 anchor with `game_mode`
+pinned at `0x03` the whole time and no battle - the town is safe. (The MAN does
+declare formations, but the region records keep them gated in the playable town.)
+The actual first battle in the opening is the **scripted Tetsu sparring tutorial**
+(`formation_id` 4), started by **talking to the sparring partner** - the same
+fight the existing `v0_1_*_tetsu` anchor chain captures
+(`v0_1_pre_battle_tetsu` -> `v0_1_tetsu_dialogue_accept` -> `v0_1_battle_start_tetsu`
+-> ... -> `v0_1_post_battle_tetsu_town`).
+
+Where S5 stands:
+
+- **Battle detector pinned.** A battle is live when `game_mode` (`0x8007B83C`) is
+  `0x15` **or** the battle-context pointer `0x8007BD24` is non-zero (`0` in the
+  field; `0x800EB654` while a battle is resident). The capture must run from the
+  `GPU::Vsync` listener, not the field-tick exec-BP - the field tick
+  `FUN_8001698C` stops firing the instant the mode flips to battle.
+- **Tetsu located + reached.** `rimelm_npc_press_tetsu` pins the sparring partner
+  at world `(2752,1856)` = tile `(21,14)`. `autorun_s5_tetsu.lua` grid-BFS-navigates
+  there from the S4 spot (tile `(25,27)`), recalibrating the pad->world map after
+  each door warp (the camera yaw differs per sub-area), and **reaches tile `(21,15)`
+  adjacent to Tetsu and engages an NPC at his tile**.
+- **Open step: accept the spar.** CROSS-mashing the engaged dialogue does not
+  start the fight (the run stays in field mode, engaged). This is the same shape
+  as the S3 name-entry Yes/No: the spar prompt needs the accepting option
+  selected, not a blind mash - **or** the spar is not yet story-available at this
+  exact point (the grid-BFS S4 shortcut may have walked out of the house ahead of
+  a scripted prerequisite beat). Resolving which is the next move: a focused
+  dialogue-state recon at the Tetsu engagement (the `_DAT_801C6EA4` dialog-control
+  byte + pager/option-picker cursor), mirroring the S3 name-entry decode.
 
 ## Gap-burndown
 
