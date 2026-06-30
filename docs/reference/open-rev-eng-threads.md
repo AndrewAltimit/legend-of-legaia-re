@@ -735,6 +735,7 @@ Mixed meshes (some textured + some untextured prims) now render **both** halves:
 |---|---|---|---|
 | Dialog font extraction | done - kept for reference | Earlier "blocked on runtime trace" framing was wrong; tile-page lives at VRAM `(896, 0)..(960, 256)`, extracted by `legaia-font::font-extract` from any in-game save state. Listed here only so the older "open" framing doesn't get re-opened. | `project_dialog_font_hunt.md` |
 | Inline dialog-box format (`0x1F`-lead segments) | resolved | [details ↓](#inline-dialog-box-format-0x1f-lead-segments) | - |
+| Tetsu 4-option spar menu mechanism | open | The Rim Elm spar is a few text boxes then a **4-option menu whose 3rd entry ("training fight") starts the fight** (input recording `s5_tetsu_battle`). It is **not** a MES inline picker (`scan_pickers` over town01's whole MAN = 0 of `0x27/0x28/0x29`) and **not** a `0x4C MenuCtrl` sub-op; the carrier's own script is positioning logic (`NpcRun` to tile (21,14), gated on system flags `0x146`/`0x22E`). Next step = a PCSX-Redux probe replaying the recorded inputs up to the menu, histogramming the field-VM / actor-script PC + the cursor global while the list is up. Until then the engine arms the carrier on *any* dialogue-accept (a documented simplification at `World::pending_carrier_engage`). | - |
 
 
 ### Inline dialog-box format (`0x1F`-lead segments)

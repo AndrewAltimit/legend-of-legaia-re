@@ -2090,6 +2090,14 @@ pub struct World {
     /// accept). Set in `crate::world::vm_hosts`'s `field_interact`, consumed
     /// by the dialog-advance dismiss (`op 0x4C n5 sub-4`). `None` when no
     /// scripted carrier's prompt is up.
+    ///
+    /// SIMPLIFICATION (vs retail): the engage fires on *any* accept of the
+    /// carrier's prompt. Retail's Rim Elm spar is a few text boxes then a
+    /// **4-option menu whose 3rd entry ("training fight") arms the spar** -
+    /// picking a different option does not fight. That menu is **not** a MES
+    /// inline picker (`0x27/0x28/0x29` - town01 has zero) nor a `0x4C MenuCtrl`
+    /// sub-op; its render/dispatch mechanism is not yet reverse-engineered. See
+    /// `docs/reference/open-rev-eng-threads.md` (Tetsu 4-option spar menu).
     pub pending_carrier_engage: Option<usize>,
 
     /// Per-party-slot display names. Seeded from the starting-party template
