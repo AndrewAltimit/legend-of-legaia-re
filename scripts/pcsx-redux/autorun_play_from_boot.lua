@@ -34,6 +34,11 @@
 --                      empty or LEGAIA_NO_SSTATE=1.
 --   LEGAIA_CKPT_MODE   target game_mode to checkpoint at (default 3 = field-run).
 --   LEGAIA_CKPT_SCENE  target active scene name (e.g. town01); overrides CKPT_MODE.
+--   LEGAIA_CKPT_PTR    flag target (highest precedence): poll *PTR then +OFF and
+--   LEGAIA_CKPT_OFF    test &MASK. WANT "clear" => (val&mask)==0, "set" => !=0.
+--   LEGAIA_CKPT_MASK   single-bit mask. REQ_SCENE gates the flag test to a scene.
+--   LEGAIA_CKPT_WANT   e.g. PTR=0x8007C364 OFF=0x10 MASK=0x80000 WANT=clear
+--   LEGAIA_CKPT_REQ_SCENE  REQ_SCENE=town01 = "checkpoint at town01 free-roam".
 --   LEGAIA_CKPT_LABEL  checkpoint file stem (default "s1_field").
 --   LEGAIA_TICK_BP     title-tick exec-bp addr (default 0x801DD35C; 0 disables).
 --   LEGAIA_FIELD_BP    field-tick exec-bp addr (default 0x8001698C; 0 disables).
@@ -63,6 +68,18 @@ local SCENE_NAME = 0x8007050C -- active scene-name buffer ("opdeene", "town01", 
 -- by scene, e.g. CKPT_SCENE=town01 to stop at Rim Elm). Empty = use CKPT_MODE.
 local CKPT_SCENE = env.getenv("LEGAIA_CKPT_SCENE", "")
 if CKPT_SCENE == "" then CKPT_SCENE = nil end
+-- Optional flag-clear/set target (highest precedence): poll the struct pointed to
+-- by *CKPT_PTR at +CKPT_OFF and test against CKPT_MASK. WANT "clear" => target is
+-- (val & mask)==0, "set" => (val & mask)!=0. Used for S3: wait for the player
+-- engaged flag (*0x8007C364 +0x10 & 0x80000) to CLEAR = free-roam reached.
+local CKPT_PTR  = tonumber(env.getenv("LEGAIA_CKPT_PTR", "0")) or 0
+local CKPT_OFF  = tonumber(env.getenv("LEGAIA_CKPT_OFF", "0")) or 0
+local CKPT_MASK = tonumber(env.getenv("LEGAIA_CKPT_MASK", "0")) or 0
+local CKPT_WANT = env.getenv("LEGAIA_CKPT_WANT", "clear")
+-- Optional: only honor the flag target while this scene is active (so a prologue
+-- free-roam moment doesn't trip the town01 free-roam target early).
+local CKPT_REQ_SCENE = env.getenv("LEGAIA_CKPT_REQ_SCENE", "")
+if CKPT_REQ_SCENE == "" then CKPT_REQ_SCENE = nil end
 local OUT_DIR    = env.getenv("LEGAIA_OUT_DIR", "captures/play")
 local CKPT_MODE  = tonumber(env.getenv("LEGAIA_CKPT_MODE", "3")) or 3
 local CKPT_LABEL = env.getenv("LEGAIA_CKPT_LABEL", "s1_field")
@@ -116,8 +133,18 @@ local function read_scene()
     end
     return table.concat(s)
 end
--- Target reached? scene-name match if CKPT_SCENE is set, else game_mode match.
+-- Target reached? flag test (CKPT_PTR) > scene-name (CKPT_SCENE) > game_mode.
 local function reached_target()
+    if CKPT_PTR ~= 0 then
+        if CKPT_REQ_SCENE and read_scene() ~= CKPT_REQ_SCENE then return false end
+        if not mem.in_ram(CKPT_PTR) then return false end
+        local base = mem.read_u32(CKPT_PTR)
+        if base == nil or not mem.in_ram(base + CKPT_OFF) then return false end
+        local v = mem.read_u32(base + CKPT_OFF)
+        if v == nil then return false end
+        local bit_set = (math.floor(v / CKPT_MASK) % 2 == 1)
+        if CKPT_WANT == "set" then return bit_set else return not bit_set end
+    end
     if CKPT_SCENE then return read_scene() == CKPT_SCENE end
     return read_mode() == CKPT_MODE
 end
@@ -245,8 +272,11 @@ local function make_tick(press_fn, release_fn, label)
     end
 end
 
-local function cross_press() pad.force(pad.BTN.CROSS) end
-local function cross_release() pad.release(pad.BTN.CROSS) end
+-- Field advance: press CROSS (US confirm) + CIRCLE (JP confirm) so the opening
+-- dialogue advances under either convention; START is omitted in-game (it opens
+-- the field menu).
+local function cross_press() pad.force(pad.BTN.CROSS); pad.force(pad.BTN.CIRCLE) end
+local function cross_release() pad.release(pad.BTN.CROSS); pad.release(pad.BTN.CIRCLE) end
 
 if not NO_MASH then
     local armed = {}

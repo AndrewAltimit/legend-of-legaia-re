@@ -241,9 +241,9 @@ triaged).
 |---|---|---|---|---:|---:|
 | S1 | cold boot -> title -> NEW GAME -> opening prologue (`opdeene`) | cold boot (`-fastboot`) | CAPTURED + CATALOGED (`s1_newgame_field`) | - | - |
 | S2 | opening prologue -> Rim Elm (`town01`) | S1 checkpoint | CAPTURED + CATALOGED (`s2_rimelm_town01`) | - | - |
-| S3 | first free walk + first NPC dialogue | S2 checkpoint | PENDING | - | - |
-| S4 | first scene transition / house door | S3 end state | PENDING | - | - |
-| S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING | - | - |
+| S3 | first free walk + first NPC dialogue | S2 checkpoint | BLOCKED ([town01 opening gate](#s3-blocked-the-town01-opening-is-a-non-dialogue-script-wait)) | - | - |
+| S4 | first scene transition / house door | S3 end state | PENDING (needs S3) | - | - |
+| S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING (needs S3) | - | - |
 
 Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
 `backup_fingerprint`, resolvable via `run_probe.sh --scenario <label>`.
@@ -266,9 +266,49 @@ GPU::Vsync delivery. Two consequences:
   segment-chaining-by-resume *is* viable - the earlier "blocked" reading was a
   consequence of the fragile field-INIT anchor + the missing field tick.
 
-S3+ chain the same way: resume the previous segment's scenario, drive with the
-field tick, checkpoint on the next scene/mode. Encounter timing (S5) is
-RNG-sensitive - keep it a short standalone segment.
+S3+ were *intended* to chain the same way (resume the previous scenario, drive
+with the field tick, checkpoint on the next scene/mode). **S3 does not chain by
+input mashing** - the town01 opening is a non-dialogue script wait, detailed
+below. S4/S5 depend on an S3 free-roam anchor, so they wait on it.
+
+### S3 BLOCKED: the town01 opening is a non-dialogue script wait
+
+The `s2_rimelm_town01` anchor sits at the **start of the Rim Elm opening
+sequence**, and that sequence cannot be advanced to free-roam by input
+automation. Pinned with [`autorun_s3_recon.lua`](../../scripts/pcsx-redux/autorun_s3_recon.lua)
+(resume the anchor, poll the player engaged flag + field-control dialog state off
+the `FUN_8001698C` field tick):
+
+- **The player is engaged the whole time.** `*0x8007C364 +0x10 & 0x80000`
+  (movement-disabled = encounter/cutscene owns the player) is set at the anchor
+  and **never clears**. Free-roam ("first free walk") is never reached.
+- **Auto-play then stall.** With no input the opening choreography drives the
+  lead actor for ~510 frames, then freezes at a fixed position (`~5184, 13504`)
+  and stays there. The earlier transient `0x80000` clear (~tick 27) was a
+  save-load settling artifact, not real free-roam.
+- **No input advances it.** A full button sweep (CROSS, CIRCLE, START, the four
+  d-pad dirs, TRIANGLE, SQUARE - 200 frames each) and a sustained CROSS+CIRCLE
+  mash (8000 frames from the save anchor) leave `0x80000` set and the position
+  frozen. Driving **continuously from the S1 anchor** (timeline never
+  save-interrupted at town01) reaches town01 and runs ~18000 ticks of CROSS+CIRCLE
+  there - still no free-roam. So the deadlock is **inherent to the sequence**, not
+  a save-resume artifact.
+- **It is not a dialogue/picker wait.** At the stall the field-control dialog
+  byte (`*0x801C6EA4 +0x62`), the option-picker cursor (`+0xc`), and the touch
+  interact flag (`+0x60`) are all `0`, and the dialog pager global `0x801F2740`
+  is its idle default `0x03`. So nothing is waiting for a confirm - the engaged
+  state is a **cutscene/establishing-timeline wait on a script condition** (a
+  timer, a story flag, or a sub-event), which is why no button moves it.
+
+**To unblock S3:** disassemble the `town01` MAN opening event-script (field-VM
+disassembler) and find the wait-opcode the establishing timeline parks on +
+the condition it expects, then either satisfy that condition or capture a
+free-roam anchor from a human-played save past the opening. The recon harness +
+the driver's flag-target (`LEGAIA_CKPT_PTR`/`OFF`/`MASK`/`WANT`/`REQ_SCENE`,
+e.g. `0x8007C364`/`0x10`/`0x80000`/`clear`/`town01` = "checkpoint when the player
+is free-roaming in town01") are ready to capture S3 the moment the opening can be
+advanced. Encounter timing (S5) is RNG-sensitive - keep it a short standalone
+segment.
 
 ## Gap-burndown
 
