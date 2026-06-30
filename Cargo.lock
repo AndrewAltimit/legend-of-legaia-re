@@ -1264,6 +1264,7 @@ dependencies = [
  "legaia-lzs",
  "legaia-mdt",
  "legaia-mes",
+ "legaia-pcsxr",
  "legaia-prot",
  "legaia-rando",
  "legaia-save",
@@ -1447,6 +1448,15 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-pcsxr"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "legaia-mednafen",
 ]
 
 [[package]]
