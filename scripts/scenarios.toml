@@ -2066,3 +2066,13 @@ expected_game_mode = 3
 expected_active_scene = "town01"
 description = "S4 of the trace-driven playthrough: FIRST DOOR TRANSITION - the player walks OUT of Vahn's house into Rim Elm proper, reached by the grid-BFS door-nav controller (autorun_s4_doornav.lua resumes S3, reads the per-scene walkability grid at *(_DAT_1f8003ec)+0x4000, BFS's the reachable house-interior tiles from the player tile, walks the boundary tiles with online-adaptive pad input pulsing CROSS; at the front-door tile a walk-touch warp jumps the player (4134,10588)->(3264,3520) = tile (32,82)->(25,27), an intra-town01 warp into the open exterior, settled at mode 0x03). KEY: player+0x14/+0x18 are 16-BIT signed (+0x16 facing sits between them); the earlier 'dynamic camera' dead-end was a u32 read folding the facing word into the X high half. Faithful playthrough: D-pad + interact only, no pokes. See docs/tooling/playthrough-coverage.md."
 topics = ["playthrough", "trace-coverage", "S4", "rim-elm", "town01", "door", "grid-bfs", "scene-transition", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "s5_tetsu_battle"
+backup_fingerprint = "4e9c1e5ffd5972c33da9bdf2304964979037cdfaf77a50df5b03a68c67a55e6f"
+phase = "battle"
+expected_game_mode = 21
+expected_active_scene = "town01"
+description = "S5 of the trace-driven playthrough: FIRST BATTLE - the scripted Tetsu sparring tutorial (formation_id 4), entered from the S4 exterior anchor. Rim Elm has no random encounters at this story point (story-gated), so the first fight is the spar, started by talking to the sparring partner and picking the 3rd 'training fight' list option. Reached by a record-then-replay loop: a human played the route (S4 -> walk to Tetsu at world (2752,1856) -> his dialogue -> 3rd option -> start) under autorun_record_inputs.lua, and autorun_replay_inputs.lua reproduces it deterministically (drives the pad via pad.force from the recorded 0x8007B850 mask, since FUN_8001822C rebuilds the mask after the field-tick BP so direct RAM writes don't stick). Validated: reloads to game_mode 0x15 (BattleMode), battle_ctx 0x8007BD24 = 0x800EB654 (resident), over town01. Faithful: real D-pad + interact inputs, no pokes. See docs/tooling/playthrough-coverage.md."
+topics = ["playthrough", "trace-coverage", "S5", "rim-elm", "town01", "tetsu", "battle", "record-replay", "pcsx-redux"]

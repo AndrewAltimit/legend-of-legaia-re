@@ -13,8 +13,9 @@
 -- byte-swapped PSX controller word (button index b -> bit 1<<(b+8) for b<8 else
 -- 1<<(b-8); UP=0x1000 DOWN=0x4000 CROSS=0x0040, pinned by autorun_btnmap.lua).
 -- Frame 0 = first field tick after load, matching the recorder's clock. A battle
--- (game_mode 0x15 OR battle-ctx 0x8007BD24 != 0) is captured from the Vsync
--- handler (the field tick stops at the mode flip).
+-- (game_mode 0x15 OR battle-ctx 0x8007BD24 != 0) is captured from the field-tick
+-- clock (FUN_8001698C keeps firing through this battle; a Vsync-only capture
+-- missed it), settling LEGAIA_SETTLE field-ticks before the checkpoint.
 --
 -- Env: LEGAIA_SSTATE, LEGAIA_INPUTS (CSV path), LEGAIA_OUT_DIR,
 --      LEGAIA_CKPT_LABEL, LEGAIA_SETTLE, LEGAIA_MAX_FRAMES, LEGAIA_BOOT_DELAY.
@@ -78,20 +79,17 @@ end
 local vsync, loaded, done = 0, false, false
 local frame, ti, cur_held, prev_held = -1, 1, 0, 0
 local battle_seen, cap_since = false, nil
+local last_eng, lx, lz = false, nil, nil
 
-PCSX.Events.createEventListener("GPU::Vsync", function()
-    vsync=vsync+1
-    if not loaded and START_SAVE~="" and vsync>=START_DELAY then
-        loaded=true
-        log(sstate.load(START_SAVE) and ("resumed "..START_SAVE) or ("FAILED "..START_SAVE)); return
-    end
-    if not loaded or done then return end
-    -- battle capture (field tick has stopped by now)
+-- shared battle capture: callable from whichever clock is still ticking in
+-- battle (the field-tick BP keeps firing here; GPU::Vsync may not). `clock` is a
+-- monotonically-increasing frame counter. Returns true while a battle is up.
+local function try_capture(clock)
     local m=ru8(GM); local bc=ru32(BATTLE_CTX)
     if m==BATTLE_MODE or bc~=0 then
-        if not battle_seen then battle_seen=true; log(string.format("*** [v%d] BATTLE mode=0x%02X ctx=0x%08X ***", vsync, m, bc)) end
-        if cap_since==nil then cap_since=vsync
-        elseif vsync-cap_since>=SETTLE then
+        if not battle_seen then battle_seen=true; log(string.format("*** BATTLE mode=0x%02X ctx=0x%08X (clock %d) ***", m, bc, clock)) end
+        if cap_since==nil then cap_since=clock
+        elseif clock-cap_since>=SETTLE then
             local ok=pcall(function()
                 local w=PCSX.createSaveState()
                 local fhh=Support.File.open(OUT_DIR.."/"..CKPT_LABEL..".rawsstate","CREATE"); fhh:writeMoveSlice(w); fhh:close()
@@ -99,20 +97,41 @@ PCSX.Events.createEventListener("GPU::Vsync", function()
             log(ok and ("checkpoint written: "..OUT_DIR.."/"..CKPT_LABEL..".rawsstate") or "checkpoint FAILED")
             done=true; if LOG then LOG:close() end; PCSX.quit(0)
         end
-    else cap_since=nil end
+        return true
+    end
+    cap_since=nil; return false
+end
+
+PCSX.Events.createEventListener("GPU::Vsync", function()
+    vsync=vsync+1
+    if not loaded and START_SAVE~="" and vsync>=START_DELAY then
+        loaded=true
+        log(sstate.load(START_SAVE) and ("resumed "..START_SAVE) or ("FAILED "..START_SAVE)); return
+    end
+    -- battle capture is driven from the field-tick clock (it keeps firing in
+    -- battle here); the Vsync listener only resumes the save.
 end)
 
 bp.arm(FIELD_BP, "Exec", 4, "field_tick", function()
     if not loaded or done then return end
     frame=frame+1
-    if frame>=MAX_FRAMES then log("MAX_FRAMES, no battle scene="..read_scene()); if LOG then LOG:close() end; PCSX.quit(0); return end
+    if try_capture(frame) then return end   -- in battle: capture, stop driving input
+    if frame>=MAX_FRAMES and not battle_seen then log("MAX_FRAMES, no battle scene="..read_scene()); if LOG then LOG:close() end; PCSX.quit(0); return end
     -- advance to the active transition for this frame
     while ti<=#timeline and timeline[ti][1]<=frame do cur_held=timeline[ti][2]; ti=ti+1 end
     apply_mask(cur_held)
+    -- diagnostics: position, engaged flag, warps, engaged transitions
+    local p=ru32(PLAYER); local px,pz,eng=0,0,false
+    if p~=0 then
+        px=mem.read_u16(p+0x14) or 0; pz=mem.read_u16(p+0x18) or 0
+        if px>=0x8000 then px=px-0x10000 end; if pz>=0x8000 then pz=pz-0x10000 end
+        local fl=ru32(p+0x10); eng=(math.floor(fl/0x80000)%2==1)
+    end
+    if eng~=last_eng then log(string.format("[f%d] engaged %s->%s pos=(%d,%d) held=0x%04X", frame, tostring(last_eng), tostring(eng), px, pz, cur_held)); last_eng=eng end
+    if lx~=nil and (math.abs(px-lx)+math.abs(pz-lz))>300 then log(string.format("[f%d] WARP (%d,%d)->(%d,%d)", frame, lx,lz,px,pz)) end
+    lx,lz=px,pz
     if (frame%120)==0 then
-        local p=ru32(PLAYER); local px,pz=0,0
-        if p~=0 then px=mem.read_u16(p+0x14) or 0; pz=mem.read_u16(p+0x18) or 0; if px>=0x8000 then px=px-0x10000 end; if pz>=0x8000 then pz=pz-0x10000 end end
-        log(string.format("[f%d] held=0x%04X pos=(%d,%d) scene=%q mode=0x%02X", frame, cur_held, px, pz, read_scene(), ru8(GM)))
+        log(string.format("[f%d] held=0x%04X pos=(%d,%d) eng=%s scene=%q mode=0x%02X", frame, cur_held, px, pz, tostring(eng), read_scene(), ru8(GM)))
     end
 end)
 
