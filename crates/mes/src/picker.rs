@@ -138,17 +138,25 @@ pub fn parse_picker_at(buf: &[u8], open: usize) -> Option<Picker> {
     let open_byte = *buf.get(open)?;
     let n = option_count(open_byte)?;
 
-    // Continuation byte sits just past the N*2-byte jump table.
+    // Just past the N*2-byte jump table sits EITHER a post-page continuation
+    // byte (`0x24`/`0x25`/`0x48`/`0x4c`) before the labels, OR - when the menu
+    // has no post-page dispatch - the first label's `0x1F` lead directly (the
+    // labels start immediately). The izumi book menu uses the continuation-byte
+    // form; the Rim Elm spar (`town01`) uses the immediate-labels form (pinned
+    // live: open `0x29` at the actor's dialogue buffer, 4 jump entries, then the
+    // option labels straight after - see `autorun_tetsu_picker_data.lua`).
     let cont_idx = open + n * 2 + 1;
     let continuation = *buf.get(cont_idx)?;
     let cm = continuation & 0x7f;
-    if !matches!(cm, 0x24 | 0x25 | 0x48 | 0x4c) {
+    let labels_immediate = cm == 0x1f;
+    if !labels_immediate && !matches!(cm, 0x24 | 0x25 | 0x48 | 0x4c) {
         return None;
     }
 
     // Label region begins past the continuation. A 1-byte continuation
     // (`0x24` continue / `0x25` end / `0x48` new box) is consumed inline; a
-    // leading `0x4C 0xFF` terminate marker is also skipped (per FUN_801D84D0).
+    // leading `0x4C 0xFF` terminate marker is also skipped (per FUN_801D84D0);
+    // the immediate-labels form starts the labels at `cont_idx` itself.
     let mut ls = cont_idx;
     if matches!(cm, 0x24 | 0x25 | 0x48) {
         ls += 1;
@@ -265,5 +273,36 @@ mod tests {
         // Open byte with no valid continuation byte after the jump table.
         let b = vec![0x00, 0x27, 0x01, 0x00, 0x02, 0x00, 0x99];
         assert!(parse_picker_at(&b, 1).is_none());
+    }
+
+    #[test]
+    fn parses_immediate_labels_picker() {
+        // The Rim Elm Tetsu spar form: open `0x29` + 4 jump entries + the option
+        // labels straight after, with NO post-page continuation byte (the cont
+        // position is the first label's `0x1F` lead). Pinned live from the spar
+        // menu's dialogue buffer (`autorun_tetsu_picker_data.lua`).
+        let mut b = vec![0x1F, b'Q', 0x00]; // prompt segment
+        let open = b.len(); // == 3
+        b.push(0x29); // open, N=4
+        for j in [0x10i16, 0x20, 0x30, 0x40] {
+            b.extend_from_slice(&j.to_le_bytes());
+        }
+        // labels immediately - no continuation byte
+        for lbl in [&b"A"[..], &b"BB"[..], &b"CCC"[..], &b"D"[..]] {
+            b.push(0x1F);
+            b.extend_from_slice(lbl);
+            b.push(0x00);
+        }
+        let p = parse_picker_at(&b, open).expect("immediate-labels 4-option picker");
+        assert_eq!(p.n, 4);
+        assert_eq!(p.continuation, 0x1F);
+        assert_eq!(p.options[0].label, b"A");
+        assert_eq!(p.options[2].label, b"CCC");
+        assert_eq!(p.options[0].rel_jump, 0x10);
+        assert_eq!(p.options[3].rel_jump, 0x40);
+        // jump_target(0) = (open+1+0) + 0x10
+        assert_eq!(p.jump_target(0), Some(open + 1 + 0x10));
+        // scan_pickers finds it (the open byte is preceded by the prompt 0x00)
+        assert_eq!(scan_pickers(&b).len(), 1);
     }
 }

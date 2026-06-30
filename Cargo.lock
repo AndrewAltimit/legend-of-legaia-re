@@ -1315,6 +1315,7 @@ dependencies = [
  "legaia-iso",
  "legaia-mdec",
  "legaia-mednafen",
+ "legaia-mes",
  "legaia-prot",
  "legaia-save",
  "legaia-seq",
