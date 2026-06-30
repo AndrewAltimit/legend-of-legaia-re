@@ -242,7 +242,7 @@ triaged).
 | S1 | cold boot -> title -> NEW GAME -> opening prologue (`opdeene`) | cold boot (`-fastboot`) | CAPTURED + CATALOGED (`s1_newgame_field`) | - | - |
 | S2 | opening prologue -> Rim Elm (`town01`) | S1 checkpoint | CAPTURED + CATALOGED (`s2_rimelm_town01`) | - | - |
 | S3 | first free walk (Rim Elm) | S2 checkpoint | CAPTURED + CATALOGED (`s3_rimelm_freeroam`); was [name entry](#s3-captured-the-town01-opening-is-the-name-entry-screen) | - | - |
-| S4 | first scene transition / house door | S3 checkpoint | IN PROGRESS - free-roam confirmed walkable; doors exist; [needs deterministic targeting](#s4-navigation-the-doors-exist-but-need-deterministic-targeting) | - | - |
+| S4 | first scene transition / house door | S3 checkpoint | CAPTURED + CATALOGED (`s4_rimelm_door_transition`); [grid-BFS door-nav out of Vahn's house](#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house) | - | - |
 | S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING | - | - |
 
 Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
@@ -269,7 +269,8 @@ GPU::Vsync delivery. Two consequences:
 S3+ were *intended* to chain the same way (resume the previous scenario, drive
 with the field tick, checkpoint on the next scene/mode). **S3 does not chain by
 input mashing** - the town01 opening is a non-dialogue script wait, detailed
-below. S4/S5 depend on an S3 free-roam anchor, so they wait on it.
+below. S4 chains from S3 by the grid-BFS door-nav (`autorun_s4_doornav.lua`); S5
+chains from the S4 exterior anchor.
 
 ### S3 captured: the town01 opening is the name-entry screen
 
@@ -345,55 +346,60 @@ free-roam in `town01`. Catalogued as `s3_rimelm_freeroam`; re-decode/resume via
 screen is `legaia_engine_core::name_entry`.) Encounter timing (S5) is
 RNG-sensitive - keep it a short standalone segment.
 
-### S4 navigation: the doors exist but need deterministic targeting
+### S4 captured: the grid-BFS door-nav walks out of Vahn's house
 
-From `s3_rimelm_freeroam` the player walks freely (confirmed: big X/Z swings under
-the d-pad; `autorun_s4_recon.lua` sweeps directions and logs the trajectory), and
-town01 **does** have first-transition doors - the decoded MAN carries 9 `house`
-records, 7 `A3 F8` player-MoveTo door warps, and one `map01` (village exit)
-reference. But a **free wander does not reach them**: `autorun_s4_capture.lua`
-(bump-and-turn - hold a direction, turn when the player position stops changing,
-press CROSS to interact at walls, dismiss any NPC dialogue) ran 18 seeds
-(two full 6000-frame wanders + early-crash retries) without a single scene
-change. Two reasons it does not converge:
+`s4_rimelm_door_transition` is captured + cataloged by **`autorun_s4_doornav.lua`**,
+a grid-BFS door-navigation controller. From `s3_rimelm_freeroam` the player spawns
+**inside a walled room** (Vahn's house interior); the controller walks it to the
+front-door tile, where a walk-touch warp jumps the player
+`(4134,10588) -> (3264,3520)` - tile `(32,82) -> (25,27)`, an intra-`town01`
+warp out into the open village exterior (the post-warp grid map is a large bounded
+town, not the small interior room). It settles at mode `0x03` free-roam and
+checkpoints. Faithful playthrough: D-pad + the interact button only, real
+collision, **no position pokes**.
 
-- **Camera-relative pad mapping.** The field controller remaps the held pad by
-  the camera yaw, so a fixed pad direction is not a fixed world direction (the
-  sweep shows "LEFT" reaching +X) - blind fixed-direction walking does not
-  systematically approach a target.
-- **Doors are specific tiles.** House-door / exit triggers are narrow tile
-  regions; bump-and-turn passes them rather than landing on them, and the
-  player-struct position fields (`player+0x14`/`+0x18`) are not yet mapped to the
-  tile coordinates the door BBoxTests use.
+How it works:
 
-**Deterministic-nav attempt (`autorun_s4_padmap.lua` + `autorun_s4_navsweep.lua`).**
-A self-calibrating world-space coverage sweep (move into open space, measure each
-pad direction's net `(dX,dZ)` in `player+0x14`/`+0x18`, then serpentine the
-walkable area with continuous CROSS-interact). What it pinned:
+1. Read the per-scene walkability grid at `*(_DAT_1f8003ec)+0x4000` (1 byte /
+   128-unit tile, `0x80`-byte rows; high nibble = 4 sub-cell wall bits) and the
+   player tile from `player+0x14`/`+0x18`. BFS the reachable walkable tiles from
+   the player tile (159 reachable in the house interior), then collect the
+   **boundary** tiles (a reachable tile touching a wall - door triggers live on
+   the edge) and visit them nearest-first.
+2. Follow each BFS path with **online-adaptive** pad input: keep a per-pad-button
+   EMA of its observed world `(dX,dZ)` and each frame press the button whose
+   direction best matches the vector to the next path tile (handles a rotated
+   camera). Pulse CROSS throughout (walk-touch doors + NPC story triggers), and at
+   each boundary tile nudge toward the adjacent wall - where the warp fires.
+3. A transition = the scene name leaves `town01` **or** the player position jumps
+   `> 300` units in a single field tick (the warp signal that actually fired here:
+   a `7938`-unit jump). Settle, then checkpoint a raw save state.
 
-- **The position fields are confirmed:** `player+0x14` = X, `player+0x18` = Z,
-  both 16.16 fixed (the spawn is `(-128.06, ~0.18)` tile). The player covers a
-  real 2D area (the wander reached X across `+-9.5M` raw and Z `3182..11866`).
-- **The camera-remap is *dynamic*, not a fixed yaw.** At the spawn corridor
-  calibration reads `RIGHT=+X`, `LEFT=-X`, `DOWN=-X` (no clean +Z), yet elsewhere
-  the same pad reaches different Z - the camera rotates as the player moves, so a
-  *pre-calibrated* pad->world map is invalid mid-run. Online-adaptive input
-  (observe actual `dpos` per held dir each frame) is required.
-- **Coverage != hitting a door.** Even a wander that visits a 2D *area* misses
-  the doors because a door is a *point* target (an exact tile / narrow trigger
-  region); a sweep with path gaps walks past it. CROSS-interact only fires within
-  the ~72-unit facing probe, so it needs the player essentially *on* the door.
+**Root cause of the earlier "this is impossible" dead-end (a measurement bug, not
+game behaviour).** The prior nav attempts read `player+0x14`/`+0x18` as **`u32`**.
+But `+0x14` (X, `s16`) and `+0x18` (Z, `s16`) each have a **16-bit** field
+*immediately after* them - `+0x16` is the facing word - so a `u32` read folds the
+facing into the high 16 bits of the coordinate. Live proof from
+`autorun_s4_gridrecon.lua`: at the house spawn the clean read is `X=4160`, the
+`u32` read is `4286582848` (`= facing 0xFF80 << 16 | 4160`). Every displacement
+measurement was corrupted the instant the player turned. The two conclusions that
+bug produced are **both false** and are retracted:
 
-So the blind/coverage approaches are exhausted: **S4 needs true grid
-pathfinding**, not heuristics. The concrete build: (1) read the per-scene
-walkability grid at `*(_DAT_1f8003ec)+0x4000` (4 sub-cell wall bits / 128-unit
-tile) + the player tile (`player+0x14/+0x18 >> ...`); (2) read a `house`/`map01`
-door trigger tile from the MAN placement records; (3) BFS a tile path; (4) follow
-it with **online-adaptive** pad input (re-derive the pad->world map each frame
-from the observed `dpos`, since the camera rotates). The free-roam anchor, the
-position-field identification, and the sweep harness are in place; the grid-BFS +
-adaptive-follow controller is the remaining work. (Story-gating is *not* the
-blocker - the doors are present in the scene.)
+- *"Positions are 16.16 fixed, spawn `(-128.06, 0.18)`"* - **no**, they are plain
+  `s16` 1-unit world coordinates (spawn tile `(32,92)`, byte-walkable); the
+  `-128.06` was the facing word read as a fixed-point fraction.
+- *"The camera-remap is dynamic - the same pad reaches different Z as the player
+  moves"* - **no**, with the clean 16-bit read the facing word holds constant
+  through a direction hold (`-128` unchanged across an entire press) and the pad
+  maps to world consistently (`RIGHT -> +X`). The "dynamic" wandering was the
+  facing word leaking into the position. The controller still estimates pad->world
+  online (cheap insurance against real camera yaw between rooms), but the static
+  per-room camera is why a simple greedy follow converges.
+
+The lesson generalises: **when a probe reads a struct field, match the field's
+real width** - the locomotion position fields are `s16`, and the neighbouring
+facing word silently poisons a `u32` read. The clean grid + correct field width is
+what turned "blind coverage exhausted" into a first-attempt capture.
 
 ## Gap-burndown
 

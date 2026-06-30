@@ -2056,3 +2056,13 @@ expected_game_mode = 3
 expected_active_scene = "town01"
 description = "S3 of the trace-driven playthrough: FIRST FREE WALK in Rim Elm (town01), reached by completing the opening NAME-ENTRY screen (autorun_s3_capture.lua resumes S2, selects 'End' with CROSS, holds the Yes/No toggle _DAT_8007B458 = 0 = the advancing/accept option, accepts the default name 'Vahn'; the field-VM op-0x49 STATE_RESUME unparks, the rest of the opening plays ~1300 frames, the player engaged flag 0x80000 clears -> free-roam). The town01 'opening deadlock' was the name-entry screen; see docs/tooling/playthrough-coverage.md. The start anchor for S4 (first scene transition)."
 topics = ["playthrough", "trace-coverage", "S3", "rim-elm", "town01", "name-entry", "free-roam", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "s4_rimelm_door_transition"
+backup_fingerprint = "a89f131f74811b56ef12146fcae0f49867f2a3307941a39c292bbd15831c890e"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "town01"
+description = "S4 of the trace-driven playthrough: FIRST DOOR TRANSITION - the player walks OUT of Vahn's house into Rim Elm proper, reached by the grid-BFS door-nav controller (autorun_s4_doornav.lua resumes S3, reads the per-scene walkability grid at *(_DAT_1f8003ec)+0x4000, BFS's the reachable house-interior tiles from the player tile, walks the boundary tiles with online-adaptive pad input pulsing CROSS; at the front-door tile a walk-touch warp jumps the player (4134,10588)->(3264,3520) = tile (32,82)->(25,27), an intra-town01 warp into the open exterior, settled at mode 0x03). KEY: player+0x14/+0x18 are 16-BIT signed (+0x16 facing sits between them); the earlier 'dynamic camera' dead-end was a u32 read folding the facing word into the X high half. Faithful playthrough: D-pad + interact only, no pokes. See docs/tooling/playthrough-coverage.md."
+topics = ["playthrough", "trace-coverage", "S4", "rim-elm", "town01", "door", "grid-bfs", "scene-transition", "pcsx-redux"]

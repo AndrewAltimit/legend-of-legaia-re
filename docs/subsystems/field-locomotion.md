@@ -22,6 +22,8 @@ The player actor pointer is the global `_DAT_8007c364`. Confirmed fields on the 
 
 World coordinates are plain `s16` in 1-unit resolution; one collision tile is `0x80` (128) units (see below). The field camera derives its origin by negating these - see [`world-map.md`](world-map.md) and the camera notes in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
+**Probe trap - read these as 16-bit, not `u32`.** `+0x14` (X), `+0x16` (facing), and `+0x18` (Z) are adjacent `s16` fields, so a 32-bit read of `+0x14` folds the facing word into the X high half and a 32-bit read of `+0x18` folds the next word into the Z high half. A headless nav probe that read them as `u32` measured the *facing* as position drift and (wrongly) concluded the camera-to-pad mapping was "dynamic"; reading `s16` shows the per-room camera is static and the pad maps to world consistently. See the [S4 grid-BFS capture](../tooling/playthrough-coverage.md#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house).
+
 ## Spawn position on scene entry
 
 The player actor's spawn position is set by the per-scene initializer `FUN_801D6704` (MAIN_INIT), not by the locomotion controller. There are two cases, selected by the field-entry mode global `_DAT_8007b8b8`:
