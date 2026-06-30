@@ -2046,3 +2046,13 @@ expected_game_mode = 3
 expected_active_scene = "town01"
 description = "S2 of the trace-driven playthrough: Rim Elm (town01) reached by CHAINING FORWARD from the S1 checkpoint (autorun_play_from_boot.lua, field-tick exec-bp FUN_8001698C CROSS-mashing through the opening prologue scenes opdeene -> opstati -> opurud -> map01 -> town01, ~3500 frames, no resume between). Validated to reload to the field; the start anchor for S3 (first free walk + NPC dialogue)."
 topics = ["playthrough", "trace-coverage", "S2", "rim-elm", "town01", "segment-chaining", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "s3_rimelm_freeroam"
+backup_fingerprint = "2fba9adf4ade2f14de2a10c82e066b76025ac7ded1f063b852de9d498be00a6a"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "town01"
+description = "S3 of the trace-driven playthrough: FIRST FREE WALK in Rim Elm (town01), reached by completing the opening NAME-ENTRY screen (autorun_s3_capture.lua resumes S2, selects 'End' with CROSS, holds the Yes/No toggle _DAT_8007B458 = 0 = the advancing/accept option, accepts the default name 'Vahn'; the field-VM op-0x49 STATE_RESUME unparks, the rest of the opening plays ~1300 frames, the player engaged flag 0x80000 clears -> free-roam). The town01 'opening deadlock' was the name-entry screen; see docs/tooling/playthrough-coverage.md. The start anchor for S4 (first scene transition)."
+topics = ["playthrough", "trace-coverage", "S3", "rim-elm", "town01", "name-entry", "free-roam", "pcsx-redux"]

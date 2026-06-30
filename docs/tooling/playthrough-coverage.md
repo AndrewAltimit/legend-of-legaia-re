@@ -241,9 +241,9 @@ triaged).
 |---|---|---|---|---:|---:|
 | S1 | cold boot -> title -> NEW GAME -> opening prologue (`opdeene`) | cold boot (`-fastboot`) | CAPTURED + CATALOGED (`s1_newgame_field`) | - | - |
 | S2 | opening prologue -> Rim Elm (`town01`) | S1 checkpoint | CAPTURED + CATALOGED (`s2_rimelm_town01`) | - | - |
-| S3 | first free walk + first NPC dialogue | S2 checkpoint | BLOCKED on [name entry](#s3-blocked-the-town01-opening-stall-is-the-name-entry-screen) (driveable: navigate to `End` + Yes) | - | - |
-| S4 | first scene transition / house door | S3 end state | PENDING (needs S3) | - | - |
-| S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING (needs S3) | - | - |
+| S3 | first free walk (Rim Elm) | S2 checkpoint | CAPTURED + CATALOGED (`s3_rimelm_freeroam`); was [name entry](#s3-captured-the-town01-opening-is-the-name-entry-screen) | - | - |
+| S4 | first scene transition / house door | S3 checkpoint | PENDING | - | - |
+| S5 | first random encounter -> battle -> victory -> loot | S4 end state | PENDING | - | - |
 
 Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
 `backup_fingerprint`, resolvable via `run_probe.sh --scenario <label>`.
@@ -271,12 +271,14 @@ with the field tick, checkpoint on the next scene/mode). **S3 does not chain by
 input mashing** - the town01 opening is a non-dialogue script wait, detailed
 below. S4/S5 depend on an S3 free-roam anchor, so they wait on it.
 
-### S3 BLOCKED: the town01 opening stall is the name-entry screen
+### S3 captured: the town01 opening is the name-entry screen
 
-**Root cause (fully traced):** the `s2_rimelm_town01` "opening" stall is the
+**Resolved + captured.** The `s2_rimelm_town01` "opening" stall is the
 **"Select your name." name-entry screen** for Vahn - not a mysterious cutscene
-wait. Naive input automation can't complete it, so S3 (first free walk) is never
-reached by mashing.
+wait. Driving it to completion reaches first free-roam in Rim Elm, captured as
+the catalogued anchor **`s3_rimelm_freeroam`** (resumes to `game_mode 0x03`,
+scene `town01`, player engaged flag `0x80000` clear). The pad timeline that
+completes it is at the end of this section.
 
 The trace that pinned it, layer by layer:
 
@@ -311,10 +313,10 @@ So the field op `49 03` suspends the opening script and hands off to name entry;
 name entry holds the player engaged (no dialog box - hence `+0x62`/`+0x60`/pager
 all idle) until a name is entered + confirmed, at which point it drives
 `scene+0x3E -> 0`, the effect-actor sets `_DAT_8007B450 = 1`, and the field VM
-unparks. Mashing CROSS only appends grid glyphs (a garbage name) and never
-reaches the `End` sentinel (`0x65`) + Yes confirm, so it stalls forever. This was
-already pinned statically in `functions.md`; the trace confirms it from the
-runtime side and identifies the exact parked sub-state.
+unparks. Naive CROSS-mashing only appends grid glyphs (a garbage name) and never
+selects the accept option, so it stalls forever - the targeted driver below
+completes it. This was already pinned statically in `functions.md`; the trace
+confirms it from the runtime side and identifies the exact parked sub-state.
 
 **Reproduce the disassembly.** town01's MAN is `PROT[4]`, partition counts
 `[36, 53, 39]`; the name-entry hand-off lives in partition-2 record 3:
@@ -324,16 +326,23 @@ runtime side and identifies the exact parked sub-state.
 `FUN_801F03F0`) is dumped by `ghidra/scripts/dump_state_resume_overlay.py`
 against `overlay_0897.bin.0`.
 
-**To unblock S3 (now concrete):** **drive the name-entry screen.** The default
-name "Vahn" is pre-filled, so the automation only needs to move the grid cursor
-to the `End` control sentinel (`0x65`) and confirm Yes - then `scene+0x3E -> 0`,
-`STATE_RESUME` completes, and the field VM resumes into the rest of the opening.
-The name-entry grid layout + sentinels are in `docs/reference/functions.md`
-(`801F03F0`) and ported clean-room as `legaia_engine_core::name_entry`; a
-keyframed pad timeline (navigate to `End`, CROSS, then Yes) drives it. Once name
-entry clears, the driver's flag-target (`LEGAIA_CKPT_PTR=0x8007C364 OFF=0x10
-MASK=0x80000 WANT=clear REQ_SCENE=town01` = "checkpoint when the player is
-free-roaming in town01") captures the S3 anchor. Encounter timing (S5) is
+**The pad timeline that captures S3** ([`autorun_s3_capture.lua`](../../scripts/pcsx-redux/autorun_s3_capture.lua)).
+The name grid (read live via [`autorun_s3_namegrid.lua`](../../scripts/pcsx-redux/autorun_s3_namegrid.lua))
+is 17 cols x 7 rows; the cursor (`0x8007BB88`) already sits on `End` (idx 116,
+bottom-right) and the name buffer holds the default "Vahn". The confirm button is
+**CROSS** - not by assumption: the interactive handler `0x801F0480` selects when
+`_DAT_8007B874 & *(0x800846D0)` is nonzero, and the configured select mask
+`*(0x800846D0) = 0x44` matches CROSS's `0x40` ([`autorun_s3_btnmask.lua`](../../scripts/pcsx-redux/autorun_s3_btnmask.lua)).
+Sequence: press CROSS on `End` -> the inner sub-state `actor+0x54` opens the
+Yes/No confirm (`2`/`4`). Its selection is the toggle `_DAT_8007B458`; the
+confirm sub-handler `0x801F097C` shows that toggle `!= 0` **loops** (`actor+0x50`
+stays `0x22`) while toggle `== 0` **advances** the outer state to `0x1A` (out of
+name entry). So the driver holds `_DAT_8007B458 = 0` (selecting the accept
+option, equivalent to navigating to it) and pulses CROSS. The opening then plays
+~1300 more frames, the engaged flag clears, and the driver checkpoints first
+free-roam in `town01`. Catalogued as `s3_rimelm_freeroam`; re-decode/resume via
+`run_probe.sh --scenario s3_rimelm_freeroam`. (The clean-room mirror of this
+screen is `legaia_engine_core::name_entry`.) Encounter timing (S5) is
 RNG-sensitive - keep it a short standalone segment.
 
 ## Gap-burndown
