@@ -35,30 +35,38 @@ fn library_save(fp: &str) -> Option<PathBuf> {
     None
 }
 
-/// `(label, fingerprint, expected_scene, expected_mode, expected_pos)`. The
-/// fingerprints + expectations are the cataloged facts in `scripts/scenarios.toml`.
-const ANCHORS: &[(&str, &str, &str, u8, Option<(i16, i16)>)] = &[
-    (
-        "s3_rimelm_freeroam",
-        "2fba9adf4ade2f14de2a10c82e066b76025ac7ded1f063b852de9d498be00a6a",
-        "town01",
-        0x03,
-        Some((4160, 11840)),
-    ),
-    (
-        "s4_rimelm_door_transition",
-        "a89f131f74811b56ef12146fcae0f49867f2a3307941a39c292bbd15831c890e",
-        "town01",
-        0x03,
-        Some((3264, 3520)),
-    ),
-    (
-        "s5_tetsu_battle",
-        "4e9c1e5ffd5972c33da9bdf2304964979037cdfaf77a50df5b03a68c67a55e6f",
-        "town01",
-        0x15,
-        None, // battle: player parked at (0,0); only scene+mode asserted
-    ),
+/// A cataloged anchor + the facts its capture pinned (`scripts/scenarios.toml`).
+struct AnchorExpect {
+    label: &'static str,
+    fingerprint: &'static str,
+    scene: &'static str,
+    mode: u8,
+    pos: Option<(i16, i16)>,
+}
+
+const ANCHORS: &[AnchorExpect] = &[
+    AnchorExpect {
+        label: "s3_rimelm_freeroam",
+        fingerprint: "2fba9adf4ade2f14de2a10c82e066b76025ac7ded1f063b852de9d498be00a6a",
+        scene: "town01",
+        mode: 0x03,
+        pos: Some((4160, 11840)),
+    },
+    AnchorExpect {
+        label: "s4_rimelm_door_transition",
+        fingerprint: "a89f131f74811b56ef12146fcae0f49867f2a3307941a39c292bbd15831c890e",
+        scene: "town01",
+        mode: 0x03,
+        pos: Some((3264, 3520)),
+    },
+    AnchorExpect {
+        // battle: player parked at (0,0); only scene+mode asserted
+        label: "s5_tetsu_battle",
+        fingerprint: "4e9c1e5ffd5972c33da9bdf2304964979037cdfaf77a50df5b03a68c67a55e6f",
+        scene: "town01",
+        mode: 0x15,
+        pos: None,
+    },
 ];
 
 #[test]
@@ -73,23 +81,24 @@ fn reads_back_cataloged_anchor_facts() {
     }
 
     let mut checked = 0;
-    for (label, fp, scene, mode, pos) in ANCHORS {
-        let Some(path) = library_save(fp) else {
-            eprintln!("[skip] {label}: no library save on disk");
+    for a in ANCHORS {
+        let Some(path) = library_save(a.fingerprint) else {
+            eprintln!("[skip] {}: no library save on disk", a.label);
             continue;
         };
         let st = SaveState::from_path(&path).expect("load .sstate");
         eprintln!(
-            "[{label}] scene={:?} mode=0x{:02X} player_ptr={:?} pos={:?}",
+            "[{}] scene={:?} mode=0x{:02X} player_ptr={:?} pos={:?}",
+            a.label,
             st.scene_name(),
             st.game_mode(),
             st.player_ptr().map(|p| format!("0x{p:08X}")),
             st.player_pos(),
         );
-        assert_eq!(st.scene_name(), *scene, "[{label}] scene");
-        assert_eq!(st.game_mode(), *mode, "[{label}] game_mode");
-        if let Some(expected) = pos {
-            assert_eq!(st.player_pos(), Some(*expected), "[{label}] player_pos");
+        assert_eq!(st.scene_name(), a.scene, "[{}] scene", a.label);
+        assert_eq!(st.game_mode(), a.mode, "[{}] game_mode", a.label);
+        if let Some(expected) = a.pos {
+            assert_eq!(st.player_pos(), Some(expected), "[{}] player_pos", a.label);
         }
         checked += 1;
     }
