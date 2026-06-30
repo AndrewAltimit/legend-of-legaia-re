@@ -19,6 +19,15 @@ from ghidra.app.decompiler import DecompInterface, DecompileOptions
 from ghidra.util.task import ConsoleTaskMonitor
 
 TARGETS = [
+    # mode-24 dance-floor render/lookup cluster (live-hit gap-set, sstate1 mode 0x18)
+    "801d2b44",  # cluster hot (36 hits)
+    "801d2c98",  # cluster hot (35 hits)
+    "801d2cfc",  # cluster hot (35 hits)
+    "801d2d1c",  # cluster hot (35 hits)
+    "801d2d2c",  # cluster hot (35 hits)
+    "801d2a28",  # cluster (1 hit)
+    "801d0604",  # cluster (5 hits)
+    "801d0520",  # cluster (5 hits)
     "801d2f38",  # FUN_801d2f38, inc=18, sz=960
     "801de4c8",  # FUN_801de4c8, inc=16, sz=384
     "801de648",  # FUN_801de648, inc=16, sz=80

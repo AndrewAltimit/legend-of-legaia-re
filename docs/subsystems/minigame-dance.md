@@ -87,6 +87,21 @@ In results state `0x14`, `FUN_801cf470` copies the three player scores into disp
 
 The high score is tracked in the save block (`_DAT_80084464` is updated when `DAT_801d53cc` exceeds it). **Confirmed.**
 
+## Dance-floor rendering
+
+The scrolling dance floor (the step-lane grid the markers travel down) is drawn by a small cluster that **reuses the field engine's scene infrastructure** rather than a dance-specific renderer: the scene-data base `_DAT_1f8003ec` (the scratchpad-resolved per-scene pointer, the same one whose `+0x4000` slice is the field walkability grid - see [`field-locomotion.md`](field-locomotion.md)) and the actor-list head `_DAT_8007c36c`. The dance step layers live at fixed offsets inside that scene data: a tile grid at `+0x8000` and two step-marker layers at `+0x10000` / `+0x12000`. **Confirmed** (the offsets and the shared bases are read directly from the dump).
+
+This cluster is what the live trace surfaced as the resident mode-24 code (the `game_mode 0x18` hits in a dance-minigame save); the pin to the dance overlay is the resident slot-A help text (`"how to dance?"` / `"Disco King"`). Note one trace artifact: the gap-set listed several *interior* addresses of `FUN_801d2a10` (`0x801d2b44`, `0x801d2c98`, `0x801d2cfc`, `0x801d2d1c`, `0x801d2d2c`) as separate entries, because sibling slot-A overlays (menu / field) have real function entries at those VAs; in the resident dance overlay they are loop-body PCs of the one function.
+
+| Function | Role | Confidence |
+|---|---|---|
+| `FUN_801d3a2c` | **Per-frame floor draw pass.** Clears `DAT_801d6084`, then (when not paused: `(_DAT_8007b868 & 2) == 0 && _DAT_8007b8b8 == 0`) walks the actor list `*_DAT_8007c36c` emitting each actor via the shared sprite/actor helpers (`func_0x80024dfc` / `func_0x800204a4`; actors flagged `[4] & 0x800` also call `func_0x80017b94(actor[0x11])`), then sweeps the tile grid (bounds `DAT_1f800384..387`, cells at `_DAT_1f8003ec + ... + 0x8000`, `0x20`-byte records). | Confirmed (structure); the exact per-cell emit is Inferred |
+| `FUN_801d2a10` | **Floor tile-grid blit.** Builds a 16-entry per-column Y-offset table in scratchpad (`0x1f800332+0x48`, `0x1e0` stepping `-0x20` = a 16-row column at 32-unit spacing), then nested-loops a rect (`param_1..param_3` x, `param_2..param_4` y; `param_2 << 8` fixed-point) emitting the floor quads. Hit at entry and at its loop-body PCs. | Confirmed (structure) |
+| `FUN_801d3ec0` | **Two-layer step lookup.** Calls `FUN_801d3f54` against scene-data layer `+0x10000`; on a miss, retries against layer `+0x12000`. So a floor cell can carry a marker in either of two overlaid step layers. | Confirmed |
+| `FUN_801d3f54` | **Per-cell step-marker lookup.** Indexes a per-row header at `base + row*4` (count at `+4`, sub-list offset at `+2`), walks the sub-list (per-row stride from a table at `row - 0x7ff84ce8`) and returns the record whose first two bytes match the requested `(x, y)`, else NULL. | Confirmed |
+
+The lookup pair (`FUN_801d3ec0` → `FUN_801d3f54`) is the read side of the step chart in *screen space* - "is there a marker at floor cell (x,y) right now" - complementing the *beat-space* chart read in [Input judging](#input-judging--timing-windows) (`FUN_801d1820`, which indexes the baked chart `DAT_801d509c` by beat). The two are the same step data addressed two ways: by time (judging) and by floor position (rendering).
+
 ## RAM state
 
 All globals live in the overlay's data region around `0x801d5xxx`/`0x801d6xxx`. Per-player arrays use a `player * 4` stride from the listed base (3 dancers).
@@ -135,6 +150,10 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d231c` | Score / gauge HUD render (per-player score + groove gauge via the sprite emitter). `overlay_dance_801d231c.txt` |
 | `FUN_801d03c4` | Dancer pose / animation switch driven by hit results. `overlay_dance_801d03c4.txt` |
 | `FUN_801d2f38` | Textured-quad sprite emitter (HUD digits / banners / gauge); shared presentation helper. `overlay_dance_801d2f38.txt` |
+| `FUN_801d3a2c` | Per-frame dance-floor draw pass (actor list + tile-grid sweep). See [Dance-floor rendering](#dance-floor-rendering). `overlay_dance_801d3a2c.txt` |
+| `FUN_801d2a10` | Dance-floor tile-grid blit (scratchpad column-Y table + rect quad emit). `overlay_dance_801d2a10.txt` |
+| `FUN_801d3ec0` | Two-layer step-marker lookup wrapper (scene-data `+0x10000` / `+0x12000`). `overlay_dance_801d3ec0.txt` |
+| `FUN_801d3f54` | Per-cell step-marker lookup (per-row sub-list, match `(x, y)`). `overlay_dance_801d3f54.txt` |
 
 Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.
 
