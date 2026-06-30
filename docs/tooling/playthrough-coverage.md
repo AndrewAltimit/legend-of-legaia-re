@@ -366,13 +366,34 @@ change. Two reasons it does not converge:
   player-struct position fields (`player+0x14`/`+0x18`) are not yet mapped to the
   tile coordinates the door BBoxTests use.
 
-So S4 needs **deterministic door-targeting**, not wandering: (1) pin the
-pad-direction -> world-axis mapping (press each dir from a known spot, watch which
-position component moves + its sign), (2) map `player+0x14/+0x18` to the door
-BBoxTest tile space, (3) read a `house`/`map01` door trigger's tile region from
-the MAN and closed-loop-navigate to it. The free-roam anchor + the wander harness
-are in place; this is the remaining piece. (Story-gating is *not* the blocker -
-the doors are present in the scene.)
+**Deterministic-nav attempt (`autorun_s4_padmap.lua` + `autorun_s4_navsweep.lua`).**
+A self-calibrating world-space coverage sweep (move into open space, measure each
+pad direction's net `(dX,dZ)` in `player+0x14`/`+0x18`, then serpentine the
+walkable area with continuous CROSS-interact). What it pinned:
+
+- **The position fields are confirmed:** `player+0x14` = X, `player+0x18` = Z,
+  both 16.16 fixed (the spawn is `(-128.06, ~0.18)` tile). The player covers a
+  real 2D area (the wander reached X across `+-9.5M` raw and Z `3182..11866`).
+- **The camera-remap is *dynamic*, not a fixed yaw.** At the spawn corridor
+  calibration reads `RIGHT=+X`, `LEFT=-X`, `DOWN=-X` (no clean +Z), yet elsewhere
+  the same pad reaches different Z - the camera rotates as the player moves, so a
+  *pre-calibrated* pad->world map is invalid mid-run. Online-adaptive input
+  (observe actual `dpos` per held dir each frame) is required.
+- **Coverage != hitting a door.** Even a wander that visits a 2D *area* misses
+  the doors because a door is a *point* target (an exact tile / narrow trigger
+  region); a sweep with path gaps walks past it. CROSS-interact only fires within
+  the ~72-unit facing probe, so it needs the player essentially *on* the door.
+
+So the blind/coverage approaches are exhausted: **S4 needs true grid
+pathfinding**, not heuristics. The concrete build: (1) read the per-scene
+walkability grid at `*(_DAT_1f8003ec)+0x4000` (4 sub-cell wall bits / 128-unit
+tile) + the player tile (`player+0x14/+0x18 >> ...`); (2) read a `house`/`map01`
+door trigger tile from the MAN placement records; (3) BFS a tile path; (4) follow
+it with **online-adaptive** pad input (re-derive the pad->world map each frame
+from the observed `dpos`, since the camera rotates). The free-roam anchor, the
+position-field identification, and the sweep harness are in place; the grid-BFS +
+adaptive-follow controller is the remaining work. (Story-gating is *not* the
+blocker - the doors are present in the scene.)
 
 ## Gap-burndown
 
