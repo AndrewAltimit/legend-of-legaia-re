@@ -2093,10 +2093,15 @@ pub struct World {
     ///
     /// SIMPLIFICATION (vs retail): the engage fires on *any* accept of the
     /// carrier's prompt. Retail's Rim Elm spar is a few text boxes then a
-    /// **4-option menu whose 3rd entry ("training fight") arms the spar** -
-    /// picking a different option does not fight. That menu is **not** a MES
-    /// inline picker (`0x27/0x28/0x29` - town01 has zero) nor a `0x4C MenuCtrl`
-    /// sub-op; its render/dispatch mechanism is not yet reverse-engineered. See
+    /// **4-option menu whose index-2 entry ("training fight") arms the spar** -
+    /// picking a different option does not fight. The mechanism is live-cracked
+    /// (`autorun_tetsu_confirm.lua`): a **dialog-SM inline picker** (the field VM
+    /// `FUN_801DE840` is suspended while it is up), cursor at the documented
+    /// `*(0x801C6EA4)+0x0C`; confirming index 2 with CROSS drives `0x03 -> 0x09
+    /// -> 0x15`. The engine already has the `+0xC` cursor + `jump_target`
+    /// machinery (`step_inline_dialogue`); the faithful wiring presents the menu
+    /// and arms the carrier only on index 2 - the open piece is where town01's
+    /// 4 option entries come from (`scan_pickers` finds none in its MAN). See
     /// `docs/reference/open-rev-eng-threads.md` (Tetsu 4-option spar menu).
     pub pending_carrier_engage: Option<usize>,
 
