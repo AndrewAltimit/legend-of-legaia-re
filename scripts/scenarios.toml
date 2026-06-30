@@ -2021,3 +2021,58 @@ description = "Fresh-captured shiny Gimard Seru level-up, post-refactor - the 'g
 topics = ["shiny seru", "refactor", "Gimard", "level up", "battle", "randomizer"]
 phase = "battle"
 expected_game_mode = 0x15
+
+# ----------------------------------------------------------------------
+# Trace-driven playthrough segment anchors (docs/tooling/playthrough-coverage.md).
+# Each Sn checkpoint is captured by autorun_play_from_boot.lua and chained: Sn's
+# end state is the start anchor for Sn+1. Built from boot (no ephemeral slots).
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 255
+label = "s1_newgame_field"
+backup_fingerprint = "01ea51754ff3495360d06469983a1258816c1c8bdc7d09f385f219d18707b51e"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "opdeene"
+description = "S1 of the trace-driven playthrough: a fresh NEW GAME driven COLD FROM BOOT by autorun_play_from_boot.lua (title-tick exec-bp FUN_801DD35C navigates PRESS-START + NEW GAME; field-tick exec-bp FUN_8001698C drives + checkpoints past the XA-streaming vsync-blind window). Captured at the opening prologue scene 'opdeene' at FIELD-RUN (game_mode 0x03, after the scene load + 20-tick settle) - a stable, resumable state (the earlier field-INIT capture crashed on resume). The start anchor for chaining S2 (Rim Elm)."
+topics = ["playthrough", "trace-coverage", "S1", "cold-boot", "new-game", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "s2_rimelm_town01"
+backup_fingerprint = "7193710080c9881d615735ff31683b093844243f72211beff0b83995a494247c"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "town01"
+description = "S2 of the trace-driven playthrough: Rim Elm (town01) reached by CHAINING FORWARD from the S1 checkpoint (autorun_play_from_boot.lua, field-tick exec-bp FUN_8001698C CROSS-mashing through the opening prologue scenes opdeene -> opstati -> opurud -> map01 -> town01, ~3500 frames, no resume between). Validated to reload to the field; the start anchor for S3 (first free walk + NPC dialogue)."
+topics = ["playthrough", "trace-coverage", "S2", "rim-elm", "town01", "segment-chaining", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "s3_rimelm_freeroam"
+backup_fingerprint = "2fba9adf4ade2f14de2a10c82e066b76025ac7ded1f063b852de9d498be00a6a"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "town01"
+description = "S3 of the trace-driven playthrough: FIRST FREE WALK in Rim Elm (town01), reached by completing the opening NAME-ENTRY screen (autorun_s3_capture.lua resumes S2, selects 'End' with CROSS, holds the Yes/No toggle _DAT_8007B458 = 0 = the advancing/accept option, accepts the default name 'Vahn'; the field-VM op-0x49 STATE_RESUME unparks, the rest of the opening plays ~1300 frames, the player engaged flag 0x80000 clears -> free-roam). The town01 'opening deadlock' was the name-entry screen; see docs/tooling/playthrough-coverage.md. The start anchor for S4 (first scene transition)."
+topics = ["playthrough", "trace-coverage", "S3", "rim-elm", "town01", "name-entry", "free-roam", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "s4_rimelm_door_transition"
+backup_fingerprint = "a89f131f74811b56ef12146fcae0f49867f2a3307941a39c292bbd15831c890e"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "town01"
+description = "S4 of the trace-driven playthrough: FIRST DOOR TRANSITION - the player walks OUT of Vahn's house into Rim Elm proper, reached by the grid-BFS door-nav controller (autorun_s4_doornav.lua resumes S3, reads the per-scene walkability grid at *(_DAT_1f8003ec)+0x4000, BFS's the reachable house-interior tiles from the player tile, walks the boundary tiles with online-adaptive pad input pulsing CROSS; at the front-door tile a walk-touch warp jumps the player (4134,10588)->(3264,3520) = tile (32,82)->(25,27), an intra-town01 warp into the open exterior, settled at mode 0x03). KEY: player+0x14/+0x18 are 16-BIT signed (+0x16 facing sits between them); the earlier 'dynamic camera' dead-end was a u32 read folding the facing word into the X high half. Faithful playthrough: D-pad + interact only, no pokes. See docs/tooling/playthrough-coverage.md."
+topics = ["playthrough", "trace-coverage", "S4", "rim-elm", "town01", "door", "grid-bfs", "scene-transition", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "s5_tetsu_battle"
+backup_fingerprint = "4e9c1e5ffd5972c33da9bdf2304964979037cdfaf77a50df5b03a68c67a55e6f"
+phase = "battle"
+expected_game_mode = 21
+expected_active_scene = "town01"
+description = "S5 of the trace-driven playthrough: FIRST BATTLE - the scripted Tetsu sparring tutorial (formation_id 4), entered from the S4 exterior anchor. Rim Elm has no random encounters at this story point (story-gated), so the first fight is the spar, started by talking to the sparring partner and picking the 3rd 'training fight' list option. Reached by a record-then-replay loop: a human played the route (S4 -> walk to Tetsu at world (2752,1856) -> his dialogue -> 3rd option -> start) under autorun_record_inputs.lua, and autorun_replay_inputs.lua reproduces it deterministically (drives the pad via pad.force from the recorded 0x8007B850 mask, since FUN_8001822C rebuilds the mask after the field-tick BP so direct RAM writes don't stick). Validated: reloads to game_mode 0x15 (BattleMode), battle_ctx 0x8007BD24 = 0x800EB654 (resident), over town01. Faithful: real D-pad + interact inputs, no pokes. See docs/tooling/playthrough-coverage.md."
+topics = ["playthrough", "trace-coverage", "S5", "rim-elm", "town01", "tetsu", "battle", "record-replay", "pcsx-redux"]

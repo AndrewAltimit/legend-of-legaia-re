@@ -697,6 +697,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if self.world.current_dialog.is_none() || self.world.inline_dialogue.is_some() {
             return false;
         }
+        // A carrier's spar menu owns the dialog input while it is up: navigate +
+        // confirm the fight option (engages only then), vs the any-accept path.
+        if self.world.carrier_menu.is_some() {
+            self.world.handle_carrier_menu();
+            return self.world.current_dialog.is_some();
+        }
         let dismissed = (self.world.input.just_pressed(input::PadButton::Cross)
             || self.world.input.just_pressed(input::PadButton::Circle))
             && !self.world.dialog_input_consumed;

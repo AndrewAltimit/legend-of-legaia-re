@@ -403,18 +403,43 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         world.current_dialog.is_some(),
         "the field-interact opens the sparring partner's dialogue"
     );
+    // The carrier presents its real 4-option spar menu (the faithful path); the
+    // engage is gated on the index-2 fight option, not on any accept.
+    let menu = world
+        .carrier_menu
+        .expect("the sparring partner's 4-option spar menu is up");
+    assert_eq!(menu.n, 4, "4-option picker");
+    assert_eq!(
+        menu.fight_option, 2,
+        "fight option = index 2 (\"...practice...\")"
+    );
     assert!(
-        world.pending_carrier_engage.is_some(),
-        "the scripted carrier's engage is armed, waiting for the accept"
+        world.pending_carrier_engage.is_none(),
+        "the menu gates the engage; the any-accept arm is not used"
     );
     assert_eq!(
         world.mode,
         SceneMode::Field,
-        "still in the field while the prompt is up"
+        "still in the field while the menu is up"
     );
 
-    // Accept: just-pressed Cross dismisses the dialogue and engages the carrier;
-    // the SM runs the transition and flips Field -> Battle within a few ticks.
+    // Navigate down to the fight option (one fresh Down edge per step).
+    for _ in 0..menu.fight_option {
+        world.input.set_pad(0);
+        let _ = world.tick();
+        world.input.set_pad(PadButton::Down.mask());
+        let _ = world.tick();
+    }
+    assert_eq!(
+        world.carrier_menu.expect("menu still up").cursor,
+        2,
+        "cursor moved to the fight option"
+    );
+
+    // Confirm the fight option: the SM runs the transition and flips Field ->
+    // Battle within a few ticks.
+    world.input.set_pad(0);
+    let _ = world.tick();
     world.input.set_pad(PadButton::Cross.mask());
     let mut reached_battle = false;
     for _ in 0..8 {
@@ -423,12 +448,12 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
             reached_battle = true;
             break;
         }
-        // Release the button so a later tick doesn't re-trigger a dismiss.
+        // Release the button so a later tick doesn't re-trigger a confirm.
         world.input.set_pad(0);
     }
     assert!(
         reached_battle,
-        "the dialogue-accept auto-arm flips Field -> Battle (no manual engage)"
+        "confirming the fight option (\"...practice...\") flips Field -> Battle"
     );
 
     let monster_slot = world.party_count.clamp(1, 3) as usize;
@@ -510,12 +535,27 @@ fn training_reaches_battle_via_interaction_probe() {
         session.host.world.current_dialog.is_some(),
         "the interaction probe opens the sparring partner's dialogue (slot {slot})"
     );
+    // The carrier presents its 4-option spar menu; the engage is gated on the
+    // index-2 fight option, not on any accept.
+    let fight = session
+        .host
+        .world
+        .carrier_menu
+        .expect("the spar's 4-option menu is up")
+        .fight_option;
+    assert_eq!(fight, 2, "fight option = index 2 (\"...practice...\")");
     assert!(
-        session.host.world.pending_carrier_engage.is_some(),
-        "the scripted carrier's engage is armed"
+        session.host.world.pending_carrier_engage.is_none(),
+        "the menu gates the engage (no any-accept arm)"
     );
 
-    // Accept: release, then press again -> dismiss -> engage -> Battle.
+    // Navigate down to the fight option, then confirm -> Battle.
+    for _ in 0..fight {
+        session.host.world.input.set_pad(0);
+        let _ = session.host.world.tick();
+        session.host.world.input.set_pad(PadButton::Down.mask());
+        let _ = session.host.world.tick();
+    }
     session.host.world.input.set_pad(0);
     let _ = session.host.world.tick();
     session.host.world.input.set_pad(PadButton::Cross.mask());
@@ -530,7 +570,7 @@ fn training_reaches_battle_via_interaction_probe() {
     }
     assert!(
         reached_battle,
-        "the interaction probe (talk + accept) flips Field -> Battle"
+        "the interaction probe (talk + navigate to the fight option + confirm) flips Field -> Battle"
     );
     let world = &session.host.world;
     let monster_slot = world.party_count.clamp(1, 3) as usize;

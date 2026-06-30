@@ -161,11 +161,14 @@ Relative to the open byte at index `O`, a picker occupies:
 O                                     open byte (0x27 / 0x28 / 0x29)
 O+1 .. O+N*2                          N option entries, 2 bytes each (i16 LE)
 O+N*2+1                               continuation byte (0x24/0x25/0x48/0x4C 0xFF)
+                                      OR the first label's 0x1F (immediate-labels)
 [ optional 0x4C 0xFF terminate ]
 N * [ 0x1F label segment 0x00 ]       the on-screen option labels
 ```
 
 The on-screen **option labels are standard `0x1F`-lead glyph segments located after the continuation byte** (the pager render loop at `FUN_801D84D0` ~lines 2166-2185 measures each with `FUN_8003CA38` and draws it with `FUN_80036888`). An earlier note that "the option labels are the 2-byte entries between the open byte and the continuation" is **falsified** - those 2-byte entries are the per-option **jump table**, not the labels.
+
+**Two continuation forms.** The byte at `O+N*2+1` is either a post-page dispatch byte (`0x24`/`0x25`/`0x48`/`0x4C`) before the labels, **or** the first label's `0x1F` lead directly - an **immediate-labels** menu with no post-page continuation. The `izumi` book menu uses the dispatch-byte form; **Rim Elm's Tetsu spar menu** (and town01's other pickers) use the immediate-labels form (open `0x29`, 4 jump entries, then the labels - option 2 "I want to practice with you." is the training fight). `parse_picker_at` accepts both (an earlier version required the dispatch byte and so found zero pickers in town01); pinned live by `scripts/pcsx-redux/autorun_tetsu_picker_data.lua` (the spar dialogue buffer) + disc-gated `tetsu_spar_picker_disc`.
 
 Each 2-byte entry is a **signed 16-bit little-endian relative jump**. The inline-script control handler `FUN_80038050` (the per-actor `actor[+0x90]` script stepper, distinct from the pager) applies it on confirm: it reads the cursor at `DAT_801C6EA4+0xC` and sets the script PC `actor[+0x9E]` to
 

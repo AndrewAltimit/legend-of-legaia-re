@@ -3258,6 +3258,128 @@ fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
     );
 }
 
+/// A synthetic sparring dialogue carrying the immediate-labels 4-option picker
+/// (option 2 = the "practice" / fight choice), mirroring the real Rim Elm spar.
+fn spar_dialogue() -> Vec<u8> {
+    let mut b = vec![0x1F, b'S', b'p', b'a', b'r', 0x00]; // prompt, 0x00-terminated
+    b.push(0x29); // open, N=4
+    for j in [0x10i16, 0x20, 0x30, 0x40] {
+        b.extend_from_slice(&j.to_le_bytes()); // 4 jump entries
+    }
+    // labels immediately (no continuation byte) - index 2 is the fight option
+    for lbl in [&b"go"[..], &b"no"[..], &b"practice"[..], &b"bye"[..]] {
+        b.push(0x1F);
+        b.extend_from_slice(lbl);
+        b.push(0x00);
+    }
+    b
+}
+
+/// Set up a world with a scripted-encounter carrier whose dialogue is the spar
+/// menu, the player adjacent and facing it (`(slot 5)` at tile (21, 20)).
+fn world_with_spar_carrier() -> World {
+    let mut world = World::new();
+    world.set_formation_table(
+        crate::monster_catalog::vanilla_formation_table(),
+        crate::monster_catalog::vanilla_monster_catalog(),
+    );
+    world.set_active_scene_label("town01");
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    world.actors[0].move_state.render_26 = 0x400; // facing X+, toward the NPC
+    world.install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
+        formation_id: 1,
+    }]);
+    world.field_carrier_slots.insert(5, 0);
+    world.field_npc_dialog.insert(5, spar_dialogue());
+    world.field_npc_positions.insert(5, (2752, 2624));
+    world
+}
+
+/// Talking to the sparring carrier raises its 4-option spar menu (NOT the
+/// any-accept arm), and **confirming a non-fight option does not start a fight** -
+/// the box just closes. The fight is gated on the index-2 ("practice") option.
+#[test]
+fn carrier_spar_menu_gates_engage_on_the_fight_option() {
+    use crate::input::PadButton;
+
+    let mut world = world_with_spar_carrier();
+
+    // Talk: opens the menu (not the any-accept engage).
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(world.current_dialog.is_some(), "carrier dialogue opens");
+    assert!(
+        world.pending_carrier_engage.is_none(),
+        "the menu path is used, not the any-accept arm"
+    );
+    let menu = world.carrier_menu.expect("the spar's 4-option menu is up");
+    assert_eq!(menu.n, 4, "4-option picker");
+    assert_eq!(
+        menu.fight_option, 2,
+        "the fight option is index 2 (\"practice\")"
+    );
+    assert_eq!(menu.cursor, 0, "cursor starts on option 0");
+    assert_eq!(world.mode, SceneMode::Field);
+
+    // Confirm at cursor 0 (a talk option): the box closes, no fight.
+    world.input.set_pad(0);
+    let _ = world.tick();
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "confirming a non-fight option does not start the fight"
+    );
+    assert!(world.carrier_menu.is_none(), "the menu closed");
+    assert!(world.current_dialog.is_none(), "the box closed");
+}
+
+/// Navigating the spar menu down to the index-2 fight option and confirming
+/// flips Field -> Battle (the faithful 4-option path).
+#[test]
+fn carrier_spar_menu_fight_option_starts_battle() {
+    use crate::input::PadButton;
+
+    let mut world = world_with_spar_carrier();
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    let fight = world.carrier_menu.expect("menu up").fight_option;
+
+    // Move the cursor down to the fight option (one fresh Down edge per step).
+    for _ in 0..fight {
+        world.input.set_pad(0);
+        let _ = world.tick();
+        world.input.set_pad(PadButton::Down.mask());
+        let _ = world.tick();
+    }
+    assert_eq!(
+        world.carrier_menu.expect("menu still up").cursor,
+        fight,
+        "cursor on the fight option"
+    );
+    assert_eq!(world.mode, SceneMode::Field, "still field while navigating");
+
+    // Confirm: flips to Battle within a tick or two.
+    world.input.set_pad(0);
+    let _ = world.tick();
+    world.input.set_pad(PadButton::Cross.mask());
+    let mut reached = false;
+    for _ in 0..4 {
+        let _ = world.tick();
+        if world.mode == SceneMode::Battle {
+            reached = true;
+            break;
+        }
+        world.input.set_pad(0);
+    }
+    assert!(reached, "confirming the fight option starts the spar");
+}
+
 /// `nav_step_toward` walks the player to a target across open field (no walls).
 #[test]
 fn nav_step_toward_walks_player_to_target() {

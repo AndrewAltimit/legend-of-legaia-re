@@ -36,3 +36,7 @@ tempfile = "3"
 # memory, then drive the patched bytes through the field VM. rando depends only
 # on asset/lzs/prot/iso (never engine-core), so this dev-only edge is acyclic.
 legaia-rando = { path = "../rando" }
+# Disc-gated field-state oracles: load a cataloged PCSX-Redux playthrough anchor's
+# main RAM and assert the engine reproduces the captured retail facts. pcsxr
+# depends only on mednafen (never engine-core), so this dev-only edge is acyclic.
+legaia-pcsxr = { path = "../pcsxr" }
