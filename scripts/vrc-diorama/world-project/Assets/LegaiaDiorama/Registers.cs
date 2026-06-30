@@ -32,9 +32,11 @@ namespace LegaiaDiorama
         public const int SlotTargetSlot = 9;
         public const int SlotCommit = 127;
 
-        // Channel layout.
-        public static readonly int[] PartyChannels = { 0, 1, 2 };
-        public static readonly int[] EnemyChannels = { 3, 4, 5, 6, 7 };
+        // Channel layout (party = first slots, enemy = the rest). Not emitted
+        // as static int[] arrays: UdonSharp forbids static fields, and the
+        // decoder derives role from the channel index.
+        //   party channels = { 0, 1, 2 }
+        //   enemy channels = { 3, 4, 5, 6, 7 }
 
         // Slot flag-bit positions.
         public const int FlagPresent = 0;
