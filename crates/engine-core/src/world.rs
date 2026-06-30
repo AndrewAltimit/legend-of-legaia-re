@@ -2105,6 +2105,14 @@ pub struct World {
     /// `docs/reference/open-rev-eng-threads.md` (Tetsu 4-option spar menu).
     pub pending_carrier_engage: Option<usize>,
 
+    /// The faithful counterpart to [`Self::pending_carrier_engage`]: when the
+    /// opened carrier dialogue carries a 4-option picker (the Rim Elm spar menu),
+    /// this holds the live menu so the engage fires **only** on the fight option
+    /// ("I want to practice with you.", picker index 2 - RE-pinned live by
+    /// `autorun_tetsu_confirm.lua`), not on any accept. `None` when the carrier
+    /// has no picker (then `pending_carrier_engage` keeps the any-accept path).
+    pub carrier_menu: Option<CarrierMenu>,
+
     /// Per-party-slot display names. Seeded from the starting-party template
     /// at [`Self::seed_starting_party`] and overwritten by the name-entry
     /// overlay ([`Self::open_name_entry`]). Indexed by party slot; a slot with
@@ -2169,6 +2177,46 @@ pub struct World {
     /// (establishing shot + Vahn walk-out + name-entry handoff). Cleared when
     /// the entry consumes it, so only the prologue path runs the opening.
     pub entering_town01_opening: bool,
+}
+
+/// A live scripted-encounter carrier menu: the 4-option picker its dialogue
+/// presents (the Rim Elm spar's "hear about Biron / secrets of fighting /
+/// **practice with you** / nothing"). Navigated with Up/Down; confirming the
+/// `fight_option` index engages the carrier (-> Battle), any other option just
+/// closes (its talk branch). Mirrors the retail inline-picker cursor
+/// `*(0x801C6EA4)+0x0C`; the engine can't run the option's field-VM branch, so it
+/// gates the engage on `fight_option` directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CarrierMenu {
+    /// Index into [`World::field_carriers`] this menu engages.
+    pub carrier_idx: usize,
+    /// Number of options in the picker (4 for the spar).
+    pub n: usize,
+    /// The picker option whose confirm engages the carrier (the fight choice).
+    pub fight_option: usize,
+    /// Highlighted option `0..n`.
+    pub cursor: usize,
+}
+
+/// If `dialogue` presents the spar's 4-option picker, return `(n_options,
+/// fight_option_index)`. The fight option is the choice whose label is the
+/// "practice" request ("I want to practice with you." - RE-pinned index 2 for
+/// the Rim Elm spar). `None` when the dialogue carries no such picker, so a
+/// carrier without a menu keeps the any-accept engage path.
+fn spar_menu_of(dialogue: &[u8]) -> Option<(usize, usize)> {
+    for p in legaia_mes::scan_pickers(dialogue) {
+        if p.n != 4 {
+            continue;
+        }
+        if let Some(f) = p.options.iter().position(|o| {
+            o.label
+                .windows(8)
+                .any(|w| w.eq_ignore_ascii_case(b"practice"))
+        }) {
+            return Some((p.n, f));
+        }
+    }
+    None
 }
 
 /// Per-field-carrier role. The retail engine builds one record per MAN-placed
@@ -2501,6 +2549,7 @@ impl World {
             pending_field_carrier_battle: None,
             field_carrier_slots: std::collections::HashMap::new(),
             pending_carrier_engage: None,
+            carrier_menu: None,
             party_names: Vec::new(),
             name_entry: None,
             cutscene_narration: None,
@@ -6044,6 +6093,7 @@ impl World {
         // so a re-install never leaves a stale slot pointing at the old set.
         self.field_carrier_slots.clear();
         self.pending_carrier_engage = None;
+        self.carrier_menu = None;
         // NPC motion + walk-touch state is placement-keyed too: never let a
         // previous scene's routes / in-flight legs / door events leak.
         self.field_npc_routes.clear();
@@ -6160,20 +6210,30 @@ impl World {
         // Remember which NPC this interaction belongs to: the inline runner
         // routes the prologue's `0x4C 0x51` NPC-run ops to this slot.
         self.active_inline_slot = Some(slot);
-        let opened_dialog = if let Some(inline) = self.field_npc_dialog.get(&slot).cloned() {
-            self.open_field_dialog(inline);
+        let inline = self.field_npc_dialog.get(&slot).cloned();
+        let opened_dialog = if let Some(ref text) = inline {
+            self.open_field_dialog(text.clone());
             true
         } else {
             false
         };
-        // A scripted-encounter carrier on this slot (the sparring partner): with
-        // a prompt up, the engage waits for the accept (dialog dismiss); a
-        // carrier with no inline text engages immediately on interaction.
+        // A scripted-encounter carrier on this slot (the sparring partner):
+        // - no inline text -> engages immediately on interaction;
+        // - dialogue with the 4-option spar picker -> a `CarrierMenu` gates the
+        //   engage on the fight option (faithful);
+        // - dialogue without a picker -> the any-accept `pending_carrier_engage`.
         if let Some(&carrier_idx) = self.field_carrier_slots.get(&slot) {
-            if opened_dialog {
-                self.pending_carrier_engage = Some(carrier_idx);
-            } else {
+            if !opened_dialog {
                 self.engage_field_carrier(carrier_idx);
+            } else if let Some((n, fight_option)) = inline.as_deref().and_then(spar_menu_of) {
+                self.carrier_menu = Some(CarrierMenu {
+                    carrier_idx,
+                    n,
+                    fight_option,
+                    cursor: 0,
+                });
+            } else {
+                self.pending_carrier_engage = Some(carrier_idx);
             }
         }
         self.pending_field_events
@@ -6200,6 +6260,55 @@ impl World {
                 world_z: 0,
                 depth_id: 0,
             });
+    }
+
+    /// While a carrier's spar [`CarrierMenu`] is up, handle Up/Down navigation
+    /// and the confirm. Returns `true` when a menu is active (so the generic
+    /// dialog-dismiss must skip - the menu owns the input). On **confirm**:
+    /// engages the carrier iff the cursor is on the fight option, else just
+    /// closes the box (the other options' talk branches, which the engine does
+    /// not run); **Circle** cancels (closes, no engage); Up/Down move the cursor
+    /// without closing. Mirrors the retail inline-picker cursor.
+    fn handle_carrier_menu(&mut self) -> bool {
+        use crate::input::PadButton;
+        if self.current_dialog.is_none() {
+            // Box closed elsewhere; drop a stale menu.
+            self.carrier_menu = None;
+            return false;
+        }
+        let Some(menu) = self.carrier_menu else {
+            return false;
+        };
+        if self.dialog_input_consumed {
+            return true; // already handled this tick
+        }
+        let confirm = self.input.just_pressed(PadButton::Cross);
+        let cancel = self.input.just_pressed(PadButton::Circle);
+        if confirm || cancel {
+            self.dialog_input_consumed = true;
+            self.carrier_menu = None;
+            self.current_dialog = None;
+            self.pending_field_events
+                .push(crate::field_events::FieldEvent::DialogDismissed);
+            if confirm && menu.cursor == menu.fight_option {
+                self.engage_field_carrier(menu.carrier_idx);
+            }
+            return true;
+        }
+        let up = self.input.just_pressed(PadButton::Up);
+        let down = self.input.just_pressed(PadButton::Down);
+        if up || down {
+            let mut m = menu;
+            if up {
+                m.cursor = m.cursor.saturating_sub(1);
+            }
+            if down && m.cursor + 1 < m.n {
+                m.cursor += 1;
+            }
+            self.carrier_menu = Some(m);
+            self.dialog_input_consumed = true;
+        }
+        true
     }
 
     /// Clean-room interaction probe - retail `FUN_801cf9f4`, the action-button
@@ -6230,6 +6339,11 @@ impl World {
         let cancel = self.input.just_pressed(PadButton::Circle);
 
         if self.current_dialog.is_some() {
+            // A carrier's spar menu owns the input while it is up (navigate +
+            // confirm the fight option); only then does the generic dismiss run.
+            if self.handle_carrier_menu() {
+                return;
+            }
             // The inline-script runner, when active, owns box dismissal.
             if self.inline_dialogue.is_none() && (confirm || cancel) && !self.dialog_input_consumed
             {
