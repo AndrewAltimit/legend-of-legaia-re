@@ -2091,18 +2091,13 @@ pub struct World {
     /// by the dialog-advance dismiss (`op 0x4C n5 sub-4`). `None` when no
     /// scripted carrier's prompt is up.
     ///
-    /// SIMPLIFICATION (vs retail): the engage fires on *any* accept of the
-    /// carrier's prompt. Retail's Rim Elm spar is a few text boxes then a
-    /// **4-option menu whose index-2 entry ("training fight") arms the spar** -
-    /// picking a different option does not fight. The mechanism is live-cracked
-    /// (`autorun_tetsu_confirm.lua`): a **dialog-SM inline picker** (the field VM
-    /// `FUN_801DE840` is suspended while it is up), cursor at the documented
-    /// `*(0x801C6EA4)+0x0C`; confirming index 2 with CROSS drives `0x03 -> 0x09
-    /// -> 0x15`. The engine already has the `+0xC` cursor + `jump_target`
-    /// machinery (`step_inline_dialogue`); the faithful wiring presents the menu
-    /// and arms the carrier only on index 2 - the open piece is where town01's
-    /// 4 option entries come from (`scan_pickers` finds none in its MAN). See
-    /// `docs/reference/open-rev-eng-threads.md` (Tetsu 4-option spar menu).
+    /// This any-accept path is used for a carrier whose dialogue has **no
+    /// picker**. The Rim Elm spar's dialogue *does* (a 4-option menu whose
+    /// index-2 entry "I want to practice with you." arms the fight), so it takes
+    /// the faithful [`Self::carrier_menu`] path instead - the engage there fires
+    /// only on the fight option, matching retail (live-pinned by
+    /// `autorun_tetsu_confirm.lua`: a dialog-SM inline picker, cursor at
+    /// `*(0x801C6EA4)+0x0C`, confirming index 2 drives `0x03 -> 0x09 -> 0x15`).
     pub pending_carrier_engage: Option<usize>,
 
     /// The faithful counterpart to [`Self::pending_carrier_engage`]: when the
