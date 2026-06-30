@@ -300,15 +300,43 @@ the `FUN_8001698C` field tick):
   state is a **cutscene/establishing-timeline wait on a script condition** (a
   timer, a story flag, or a sub-event), which is why no button moves it.
 
-**To unblock S3:** disassemble the `town01` MAN opening event-script (field-VM
-disassembler) and find the wait-opcode the establishing timeline parks on +
-the condition it expects, then either satisfy that condition or capture a
-free-roam anchor from a human-played save past the opening. The recon harness +
-the driver's flag-target (`LEGAIA_CKPT_PTR`/`OFF`/`MASK`/`WANT`/`REQ_SCENE`,
-e.g. `0x8007C364`/`0x10`/`0x80000`/`clear`/`town01` = "checkpoint when the player
-is free-roaming in town01") are ready to capture S3 the moment the opening can be
-advanced. Encounter timing (S5) is RNG-sensitive - keep it a short standalone
-segment.
+**The opening, disassembled (the parked instruction is pinned).** town01's MAN
+is `PROT[4]`, partition counts `[36, 53, 39]`; the opening is the **partition-2
+cutscene-timeline chain** P2[3]->P2[6] (`man-scripts --scene town01 --disc <bin>
+--disasm-partition 2 --disasm-record N`). It is an establishing Rim Elm sequence
+that scripts the player + party through `CC F8 51` NpcRun waypoints interleaved
+with `WaitFrames` (0x4A) and actor `Yield`s - **no subtitle narration** (matching
+"no dialogue at the stall").
+
+A field-VM PC histogram at the stall ([`autorun_s3_pc.lua`](../../scripts/pcsx-redux/autorun_s3_pc.lua),
+breakpoint on `FUN_801DE840` = `(record_base, pc, ctx)`) pins the deadlock to a
+**single instruction**: the only context dispatched while engaged re-enters the
+VM at the same `pc=0x02C6` every frame (n=646/646 in the window). Matching its
+runtime byte signature (`WaitFrames` at `+0x0230/0251/0270/028F/02AE` then the
+park) against the decoded MAN locates it uniquely in **P2[3] at `+0x02C6`,
+opcode `49 03`** = **`STATE_RESUME` (op 0x49) subtype 3**.
+
+`STATE_RESUME` is a tristate on `_DAT_8007B450` (`FUN_801DE840` case 0x49,
+`ghidra/scripts/funcs/overlay_0897_801de840.txt`): **Idle** (`==0`) arms it -
+spawns an effect-actor (`FUN_80020DE0`, pool `0x8007065C`) and sets
+`_DAT_8007B450 = operand_ptr`; **Armed** (`!=0,!=1`) does `return param_2` (halts
+at the same PC every frame - **where the opening is parked**); **Done** (`==1`)
+clears it and advances. The opening is stuck in **Armed**, waiting for the
+spawned effect-actor to signal completion by writing `_DAT_8007B450 = 1` (the
+Done writer is the field-overlay `FUN_801F159C`-class actor routine). That
+completion **never fires** under headless automation - and it didn't fire in the
+continuous-from-S1 run either, so the effect-actor's completion condition (not a
+save-resume artifact) is the true gate.
+
+**To unblock S3:** dump the field-overlay (0897) `STATE_RESUME` subtype-3
+effect-actor handler (the `FUN_80020DE0(0x8007065C, …)` routine that writes
+`_DAT_8007B450 = 1`) and identify its completion condition - the one input /
+flag / resource the automation isn't providing. Then either satisfy it, or
+capture a free-roam anchor from a human-played save past the opening. The
+driver's flag-target (`LEGAIA_CKPT_PTR=0x8007C364 OFF=0x10 MASK=0x80000
+WANT=clear REQ_SCENE=town01` = "checkpoint when the player is free-roaming in
+town01") is ready to capture S3 the moment the opening can be advanced. Encounter
+timing (S5) is RNG-sensitive - keep it a short standalone segment.
 
 ## Gap-burndown
 
