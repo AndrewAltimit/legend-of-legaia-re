@@ -177,6 +177,8 @@ fn scene_mode_name(m: SceneMode) -> &'static str {
         SceneMode::Battle => "Battle",
         SceneMode::Cutscene => "Cutscene",
         SceneMode::WorldMap => "WorldMap",
+        SceneMode::Dance => "Dance",
+        SceneMode::Fishing => "Fishing",
         SceneMode::Menu => "Menu",
     }
 }

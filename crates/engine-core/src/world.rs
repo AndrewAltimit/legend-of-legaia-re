@@ -513,6 +513,18 @@ pub enum SceneMode {
     Cutscene,
     /// World-map mode - `WorldMapController` drives camera and entity ticks.
     WorldMap,
+    /// Noa dance (rhythm) minigame - the beat clock + hit judge own the frame
+    /// ([`crate::dance::DanceGame`]); field / battle dispatch is suspended. The
+    /// hosting session preserves the suspended scene state and restores its
+    /// mode on exit, like the pause menu. Retail `game_mode 0x18` (`OTHER MODE`)
+    /// overlay pair for the dance overlay (PROT 0980).
+    Dance,
+    /// Fishing minigame - the cast / fight / score loop owns the frame
+    /// ([`crate::fishing::FishingSession`]); field / battle dispatch is
+    /// suspended and the interrupted mode restored on exit. Retail
+    /// `game_mode 0x18` (`OTHER MODE`) overlay pair for the fishing overlay
+    /// (PROT 0972).
+    Fishing,
     /// In-field pause menu - the retail CARD mode pair (`game_mode 0x17`,
     /// `CARD MODE`, which hosts both the memory-card UI and the pause menu;
     /// every menu-open capture holds `_DAT_8007B83C = 0x17`). Field/battle
@@ -1504,6 +1516,30 @@ pub struct World {
     /// (`overlay_0897_801ef2b0` case 2).
     pub tile_board_target: Option<(i32, i32)>,
 
+    /// Noa dance (rhythm) minigame state. `Some` while `mode ==
+    /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
+    /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
+    pub dance: Option<crate::dance::DanceGame>,
+
+    /// The scene mode to restore when the dance minigame ends
+    /// ([`World::enter_dance`] snapshots the mode it interrupted). Mirrors the
+    /// pause-menu suspend/restore contract.
+    pub dance_return_mode: SceneMode,
+
+    /// The most recent dance-press judgement, kept for the host HUD (the
+    /// score/gauge banner). Reset to `None` on [`World::enter_dance`]; updated
+    /// each frame a directional press is judged.
+    pub dance_last_judge: Option<crate::dance::Judge>,
+
+    /// Fishing minigame session. `Some` while `mode == SceneMode::Fishing`; the
+    /// cast / fight / score loop runs each tick. See
+    /// [`crate::fishing::FishingSession`] and [`World::enter_fishing`].
+    pub fishing: Option<crate::fishing::FishingSession>,
+
+    /// The scene mode to restore when the fishing minigame ends
+    /// ([`World::enter_fishing`] snapshots the interrupted mode).
+    pub fishing_return_mode: SceneMode,
+
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`World::fold_battle_event`] on `ApplyArtStrike` events whose
@@ -2477,6 +2513,11 @@ impl World {
             world_map_ctrl: None,
             tile_board: None,
             tile_board_target: None,
+            dance: None,
+            dance_return_mode: SceneMode::Field,
+            dance_last_judge: None,
+            fishing: None,
+            fishing_return_mode: SceneMode::Field,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             fury_boost: [None; 3],
@@ -5570,6 +5611,14 @@ impl World {
                 self.tick_world_map();
                 None
             }
+            SceneMode::Dance => {
+                self.tick_dance();
+                None
+            }
+            SceneMode::Fishing => {
+                self.tick_fishing();
+                None
+            }
             // The pause menu owns the frame (retail CARD mode 0x17): field /
             // battle dispatch is suspended; the hosting session drives the
             // menu state machine and restores the suspended mode on close.
@@ -5626,6 +5675,156 @@ impl World {
         };
         if let Some((tx, tz)) = self.tile_board.as_mut().and_then(|b| b.try_step(dir)) {
             self.tile_board_target = Some((tx, tz));
+        }
+    }
+
+    /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current
+    /// scene mode. The suspended mode is restored by [`World::exit_dance`] (and
+    /// automatically once the song ends). Mirrors the pause-menu suspend/restore
+    /// contract: the interrupted field/battle state stays intact underneath.
+    pub fn enter_dance(&mut self, game: crate::dance::DanceGame) {
+        // Don't stack a suspend: if the dance is already running, just swap the
+        // game so a re-entry keeps the true return mode.
+        if self.mode != SceneMode::Dance {
+            self.dance_return_mode = self.mode;
+        }
+        self.dance = Some(game);
+        self.dance_last_judge = None;
+        self.mode = SceneMode::Dance;
+    }
+
+    /// Clear the dance minigame and return the final [`DanceGame`] so the host
+    /// can read the score / pass result. Restores the interrupted mode if it is
+    /// still `Dance` (a mid-song abort); when the song already auto-ended
+    /// [`tick_dance`](Self::tick_dance) has restored the mode but left the game
+    /// installed for one frame so the host can read it - this take clears it.
+    pub fn exit_dance(&mut self) -> Option<crate::dance::DanceGame> {
+        if self.mode == SceneMode::Dance {
+            self.mode = self.dance_return_mode;
+        }
+        self.dance_last_judge = None;
+        self.dance.take()
+    }
+
+    /// Advance the dance minigame one frame: step the beat clock, judge this
+    /// frame's directional presses, and end the run when the song finishes.
+    ///
+    /// The three judged directions map to the retail pad bits
+    /// ([`crate::dance::DanceDir::pad_bit`] = `0x80`/`0x20`/`0x10`), which are
+    /// this pad's [`Left`](input::PadButton::Left) / [`Right`](input::PadButton::Right)
+    /// / [`Up`](input::PadButton::Up) - a press on any of them on this frame is
+    /// judged against the active beat's chart cell. Edge-triggered
+    /// (`just_pressed`) so a held button scores at most one note per press.
+    ///
+    /// PORT: the dance overlay's per-frame driver (`FUN_801cf470` beat clock ->
+    /// `FUN_801d1960` hit judge), one advance + one judged press pass per frame.
+    fn tick_dance(&mut self) {
+        let Some(game) = self.dance.as_mut() else {
+            // Mode is Dance but no game installed - drop back to a sane mode.
+            self.mode = self.dance_return_mode;
+            return;
+        };
+        game.advance(1);
+        // Judge at most one directional press this frame (retail reads one pad
+        // word per beat-clock tick). Priority Left -> Right -> Up is arbitrary
+        // among simultaneous presses; a rhythm player presses one at a time.
+        use crate::dance::DanceDir;
+        let dir = if self.input.just_pressed(input::PadButton::Left) {
+            Some(DanceDir::A)
+        } else if self.input.just_pressed(input::PadButton::Right) {
+            Some(DanceDir::B)
+        } else if self.input.just_pressed(input::PadButton::Up) {
+            Some(DanceDir::C)
+        } else {
+            None
+        };
+        if let Some(dir) = dir {
+            self.dance_last_judge = Some(game.judge_press(dir));
+        }
+        if game.song_over() {
+            // Song finished: restore the interrupted mode, leaving `dance`
+            // in place so the host can read the final score before clearing.
+            self.mode = self.dance_return_mode;
+        }
+    }
+
+    /// Enter the fishing minigame on `session`, suspending the current scene
+    /// mode (restored by [`World::exit_fishing`]). Like the dance / pause-menu
+    /// suspend contract, the interrupted field state stays intact underneath.
+    pub fn enter_fishing(&mut self, session: crate::fishing::FishingSession) {
+        if self.mode != SceneMode::Fishing {
+            self.fishing_return_mode = self.mode;
+        }
+        self.fishing = Some(session);
+        self.mode = SceneMode::Fishing;
+    }
+
+    /// Leave the fishing minigame and restore the interrupted mode, returning
+    /// the session so the host can read the final [`FishingRecord`]. No-op when
+    /// fishing isn't active.
+    ///
+    /// [`FishingRecord`]: crate::fishing::FishingRecord
+    pub fn exit_fishing(&mut self) -> Option<crate::fishing::FishingSession> {
+        if self.mode == SceneMode::Fishing {
+            self.mode = self.fishing_return_mode;
+        }
+        self.fishing.take()
+    }
+
+    /// Advance the fishing minigame one frame, reading this frame's pad:
+    ///
+    /// - **Casting**: the power meter oscillates; a confirm press
+    ///   ([`Cross`](input::PadButton::Cross)) locks the cast and hooks a fish.
+    /// - **Fighting**: holding a reel button raises tension - [`Cross`] is reel
+    ///   A (the `rod*9 + 0x23` divisor), [`Circle`] reel B (`rod*6 + 0x19`);
+    ///   neither held bleeds tension off. The line snaps at max tension.
+    /// - **Done**: a confirm press recasts.
+    ///
+    /// [`Cross`]: input::PadButton::Cross
+    /// [`Circle`]: input::PadButton::Circle
+    ///
+    /// PORT: the fishing overlay's per-frame driver (`FUN_801cf3bc` mode SM ->
+    /// `FUN_801d4004` tension). The casting-meter step is not byte-pinned (the
+    /// retail meter sweeps visibly fast); `FISHING_CAST_STEP` is the host rate.
+    fn tick_fishing(&mut self) {
+        use crate::fishing::{FishingPhase, ReelInput};
+        /// Per-frame casting-meter step (see the method note - not byte-pinned).
+        const FISHING_CAST_STEP: i32 = 0x80;
+        let Some(phase) = self.fishing.as_ref().map(|s| s.phase()) else {
+            // Mode is Fishing but no session installed - drop back to a sane mode.
+            self.mode = self.fishing_return_mode;
+            return;
+        };
+        match phase {
+            FishingPhase::Casting => {
+                if let Some(s) = self.fishing.as_mut() {
+                    s.advance_cast(FISHING_CAST_STEP);
+                }
+                if self.input.just_pressed(input::PadButton::Cross)
+                    && let Some(s) = self.fishing.as_mut()
+                {
+                    s.lock_cast();
+                }
+            }
+            FishingPhase::Fighting => {
+                let input = if self.input.pressed(input::PadButton::Cross) {
+                    ReelInput::ReelA
+                } else if self.input.pressed(input::PadButton::Circle) {
+                    ReelInput::ReelB
+                } else {
+                    ReelInput::Idle
+                };
+                if let Some(s) = self.fishing.as_mut() {
+                    s.reel(input, 1);
+                }
+            }
+            FishingPhase::Done => {
+                if self.input.just_pressed(input::PadButton::Cross)
+                    && let Some(s) = self.fishing.as_mut()
+                {
+                    s.recast();
+                }
+            }
         }
     }
 

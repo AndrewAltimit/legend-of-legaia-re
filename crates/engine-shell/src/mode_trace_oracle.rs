@@ -281,6 +281,8 @@ fn scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
         SceneMode::Battle => "Battle",
         SceneMode::Cutscene => "Cutscene",
         SceneMode::WorldMap => "WorldMap",
+        SceneMode::Dance => "Dance",
+        SceneMode::Fishing => "Fishing",
         SceneMode::Menu => "Menu",
     }
 }
