@@ -354,6 +354,14 @@ struct PlayWindowApp {
     /// Field static-geometry colour draws: `(index into `color_meshes`, world
     /// model)` for the untextured props. Drawn alongside `field_placement_draws`.
     field_placement_color_draws: Vec<(usize, Mat4)>,
+    /// Field-scene **terrain / ground** draws: `(uploaded-mesh index, world
+    /// model)` per visible cell of the field `.MAP` object grid
+    /// (`Scene::field_terrain_tiles`, the `CELL_VISIBLE` sweep - the dense
+    /// ground / floor layer, as opposed to the placed-flag interactive objects
+    /// in `field_placement_draws`). Empty for scenes with no field-map terrain.
+    /// Drawn in `SceneMode::Field` UNDER the placed buildings so the town rests
+    /// on its ground instead of floating over the bare clear colour.
+    field_terrain_draws: Vec<(usize, Mat4)>,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
@@ -1929,6 +1937,26 @@ impl PlayWindowApp {
         self.resolve_placement_draws(res, tmd_src_index, &placements)
     }
 
+    /// Resolve the field scene's **terrain / ground** tiles (the `CELL_VISIBLE`
+    /// sweep in `Scene::field_terrain_tiles`) to `(mesh, model)` draws, the same
+    /// way `resolve_field_placement_draws` resolves the placed objects. This is
+    /// the town's floor / ground layer; without it a field scene renders its
+    /// buildings floating over the bare clear colour.
+    fn resolve_field_terrain_draws(
+        &self,
+        res: &SceneResources,
+        tmd_src_index: &[usize],
+    ) -> Vec<(usize, Mat4)> {
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Vec::new();
+        };
+        let tiles = match scene.field_terrain_tiles(&self.session.host.index) {
+            Ok(Some(t)) if !t.is_empty() => t,
+            _ => return Vec::new(),
+        };
+        self.resolve_placement_draws(res, tmd_src_index, &tiles)
+    }
+
     /// World-map continent terrain draws: the dense visible-tile set
     /// (`Scene::field_terrain_tiles`, the `FUN_801F69D8` overhead sweep) rather
     /// than the placed-flag interactive objects. Tiles whose pack index falls
@@ -2313,6 +2341,11 @@ impl PlayWindowApp {
         // props' placement transforms map to `color_meshes` indices.
         let field_placement_color_draws =
             self.resolve_field_placement_draws(&res, &color_tmd_src_index);
+        let field_terrain_draws = self.resolve_field_terrain_draws(&res, &tmd_src_index);
+        log::info!(
+            "play-window: {} field terrain draws (ground layer)",
+            field_terrain_draws.len()
+        );
         let world_map_terrain_draws = self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
         // Field move-VM stager scene-pack TMD list: `env_tmds` (res.tmds @ the
         // scene_asset_table bundle entry, scan order) = retail `DAT_8007C018[5..]`,
@@ -2442,6 +2475,7 @@ impl PlayWindowApp {
         }
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
+        self.field_terrain_draws = field_terrain_draws;
         self.field_placement_draws = field_placement_draws;
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
@@ -6446,6 +6480,18 @@ impl ApplicationHandler for PlayWindowApp {
                                 });
                             }
                         } else {
+                            // Ground / terrain layer FIRST (drawn under the
+                            // buildings): the `CELL_VISIBLE` field-map tiles the
+                            // town's floor is made of. Without it the placed
+                            // buildings float over the bare clear colour.
+                            for (mesh_idx, model) in &self.field_terrain_draws {
+                                if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                    draws.push(SceneDraw {
+                                        mesh,
+                                        mvp: cam * *model,
+                                    });
+                                }
+                            }
                             // Static environment geometry: draw each placed
                             // building / terrain mesh at its world transform
                             // (resolved at scene load in
@@ -7749,6 +7795,7 @@ fn cmd_play_window_with_record(
         field_stager_tmds: Vec::new(),
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
+        field_terrain_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         world_map_heightfield: None,
         world_map_slot4_lines: None,
