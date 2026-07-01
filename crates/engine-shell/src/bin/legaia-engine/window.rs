@@ -384,6 +384,10 @@ struct PlayWindowApp {
     /// Kept out of `meshes` (it has no `Tmd` / actor binding); drawn directly
     /// with a constant Y-flip model.
     ground_heightfield: Option<UploadedVramMesh>,
+    /// `C`-key toggle: when `true`, the field render uses the wide debug
+    /// orbit vantage (`camera_mvp`) instead of the retail follow camera
+    /// (`field_follow_camera_mvp`). Defaults to the retail view.
+    field_debug_camera: bool,
     /// Kingdom slot-4 vertex-pool inspection wireframe, as raw line geometry
     /// `(positions, colors, line-indices)` in world space. `Some` only on a
     /// world-map scene when `LEGAIA_WORLDMAP_SLOT4=1` is set; `None`
@@ -2657,6 +2661,48 @@ impl PlayWindowApp {
         )
     }
 
+    /// The retail **field follow camera**, parametrized from the town01
+    /// anchor savestate's camera globals (see docs/subsystems/cutscene.md for
+    /// the global map): pitch `_DAT_8007B790 = 450` (~39.6 deg down-tilt),
+    /// yaw `_DAT_8007B792 = -160`, roll 0, GTE `H = _DAT_8007B6F4 = 512`.
+    /// The look-at target is the player anchor - retail's follow-cam
+    /// (`FUN_801DBE9C`) folds `-(anchor X/Z)` into the focus globals each
+    /// frame. The eye-space depth is an engine calibration (retail's exact
+    /// field TR composition isn't pinned yet - the offset trio in the
+    /// savestate doesn't project to the observed framing); `FIELD_CAM_DEPTH`
+    /// is fitted so the player's on-screen height matches the retail frame
+    /// (~55 px of 240 for the ~130-unit mesh at H = 512).
+    ///
+    /// Falls back to the fixed orbit vantage (`camera_mvp`) when no player
+    /// actor exists to follow.
+    fn field_follow_camera_mvp(&self, aspect: f32) -> Option<Mat4> {
+        const PITCH_UNITS: f32 = 450.0;
+        const YAW_UNITS: f32 = -160.0;
+        const FIELD_H: f32 = 512.0;
+        const FIELD_CAM_DEPTH: f32 = 1200.0;
+        let world = &self.session.host.world;
+        let p = world
+            .actors
+            .first()
+            .filter(|p| p.active || p.tmd_binding.is_some())?;
+        let (wx, wz) = (p.move_state.world_x, p.move_state.world_z);
+        // Anchor the look-at to the floor under the player, not the actor's
+        // raw Y: `follow_terrain_height` is opt-in, so `world_y` is usually 0
+        // while the town ground sits at a LUT-elevated tier - targeting y=0
+        // there points the camera under the ground.
+        let floor_y = world.sample_field_floor_height(wx as i32, wz as i32);
+        let target = Vec3::new(wx as f32, floor_y as f32, wz as f32);
+        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        Some(Self::psx_camera_mvp(
+            to_rad(PITCH_UNITS),
+            to_rad(YAW_UNITS),
+            FIELD_H,
+            Vec3::new(0.0, 0.0, FIELD_CAM_DEPTH),
+            target,
+            aspect,
+        ))
+    }
+
     /// Battle camera: frame the **monster** actors (the ones carrying a bound
     /// mesh + idle animation) rather than the player vicinity. The live-loop
     /// seats battle actors around the world origin (`enter_battle(.., 600)` -
@@ -2749,10 +2795,32 @@ impl PlayWindowApp {
     /// foreground and backdrop orbiting in lock-step; the differing `tr.z`
     /// is what lets the party read large while the dome sits on the horizon.
     fn battle_mvp_with_tr(yaw_rad: f32, tr: Vec3, aspect: f32) -> Mat4 {
-        const H: f32 = 256.0;
         const PITCH_UNITS: f32 = 32.0;
         let pitch = PITCH_UNITS / 4096.0 * std::f32::consts::TAU;
-        let r = Mat4::from_rotation_x(pitch) * Mat4::from_rotation_y(yaw_rad);
+        Self::psx_camera_mvp(pitch, yaw_rad, 256.0, tr, Vec3::ZERO, aspect)
+    }
+
+    /// Shared PSX-projection camera: `screen = H * (R*(v - target) + tr) / Ze`
+    /// with `R = Rx(pitch)·Ry(yaw)` (the retail GTE camera-rotation build
+    /// `FUN_8001CF50`), `tr` the post-rotation eye-space translation, `target`
+    /// the world-space look-at (retail folds it into the GTE translation as
+    /// the negated focus trio `_DAT_80089118/1C/20`), and `H` the GTE
+    /// projection register (`_DAT_8007B6F4`). The battle camera is this with
+    /// `target = origin`, `H = 256`; the field camera drives `target` from
+    /// the player anchor with the savestate-pinned angle globals.
+    ///
+    /// The engine draws its meshes Y-flipped (`scale(1,-1,1)` = `F`, PSX
+    /// Y-down -> renderer Y-up); every draw's `model` carries an `F`, and
+    /// `F*F = I` recovers the raw PSX vertex the retail transform expects.
+    fn psx_camera_mvp(
+        pitch_rad: f32,
+        yaw_rad: f32,
+        h: f32,
+        tr: Vec3,
+        target: Vec3,
+        aspect: f32,
+    ) -> Mat4 {
+        let r = Mat4::from_rotation_x(pitch_rad) * Mat4::from_rotation_y(yaw_rad);
         let t = Mat4::from_translation(tr);
         let f = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
         // PSX perspective onto a 320x240 frame: ndc.x = H*Ex/(160*Ez),
@@ -2764,12 +2832,12 @@ impl PlayWindowApp {
         let b = -near * far / (far - near);
         let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
         let proj = Mat4::from_cols(
-            Vec4::new(H / 160.0 * aspect_fix, 0.0, 0.0, 0.0),
-            Vec4::new(0.0, -H / 120.0, 0.0, 0.0),
+            Vec4::new(h / 160.0 * aspect_fix, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, -h / 120.0, 0.0, 0.0),
             Vec4::new(0.0, 0.0, a, 1.0),
             Vec4::new(0.0, 0.0, b, 0.0),
         );
-        proj * t * r * f
+        proj * t * r * Mat4::from_translation(-target) * f
     }
 
     /// The single battle camera, used for **everything** in a stage-dome battle
@@ -5890,6 +5958,25 @@ impl ApplicationHandler for PlayWindowApp {
                     }
                     return;
                 }
+                // `C`: toggle the field camera between the retail follow view
+                // (savestate-pinned pitch/yaw/H, player-anchored - the
+                // faithful framing) and the wide debug orbit vantage (better
+                // for eyeballing scene completeness).
+                if matches!(code, KeyCode::KeyC)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    self.field_debug_camera = !self.field_debug_camera;
+                    log::info!(
+                        "camera: field vantage = {}",
+                        if self.field_debug_camera {
+                            "debug orbit"
+                        } else {
+                            "retail follow"
+                        }
+                    );
+                    return;
+                }
                 // `N`: open the name-entry overlay for the lead character. The
                 // NEW GAME flow now opens it automatically at the `opdeene` ->
                 // `town01` opening hand-off (see the prologue-handoff block
@@ -6341,8 +6428,15 @@ impl ApplicationHandler for PlayWindowApp {
                             // actors live at the world origin).
                             self.battle_camera_mvp(aspect)
                         }
-                    } else {
+                    } else if self.field_debug_camera {
+                        // Wide debug orbit vantage (`C` toggles).
                         self.camera_mvp(aspect)
+                    } else {
+                        // Field: the retail follow camera (savestate-pinned
+                        // pitch/yaw/H, player-anchored) when a player actor
+                        // exists; the fixed debug orbit vantage otherwise.
+                        self.field_follow_camera_mvp(aspect)
+                            .unwrap_or_else(|| self.camera_mvp(aspect))
                     };
                     // Drain queued spawn slots: build a VRAM mesh from each
                     // actor's `tmd_ref` (global-pool TMD that the field-VM
@@ -7904,6 +7998,9 @@ fn cmd_play_window_with_record(
         field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         ground_heightfield: None,
+        // Headless capture harnesses can't press `C`; let them start on the
+        // wide debug vantage via the env switch.
+        field_debug_camera: std::env::var_os("LEGAIA_FIELD_DEBUG_CAM").is_some(),
         world_map_slot4_lines: None,
         ocean_anim: None,
         cpu_vram_base: None,

@@ -141,6 +141,12 @@ impl Camera {
                         ];
                     }
                     let _ = (apply_trigger, mode);
+                    if std::env::var_os("LEGAIA_DIAG_CAMERA").is_some() {
+                        eprintln!(
+                            "DIAG camera configure: params={params:?} -> pitch={:.3} yaw={:.3} look_at={:?}",
+                            self.pitch, self.yaw, self.look_at
+                        );
+                    }
                     applied += 1;
                 }
                 FieldEvent::CameraSave => {
