@@ -381,6 +381,16 @@ Identity + base are pinned by a live-battle-RAM (`s5_tetsu_battle`) vs static-bl
 | `801F6C70` / `801F6D48` | **Tutorial-step text emitters.** Call the box helper `FUN_801F747C(str, mode)` with the step's message and run the same pacing tail as `FUN_801F71E0`. `FUN_801F6D48` dispatches on the step index (`0/1/2/3` → the attack-mode / item / spirit / Hyper-Arts lessons; step 2 also calls `FUN_801F7628`). |
 | `801F747C` | **Tutorial text-box display helper** `(str, mode)`. Emits the prompt through the SCUS text-actor register+draw `FUN_8003541C` (the switch case `0x801F74F4` calls `func_0x8003541C(1, 0xD)`). |
 
+## Battle command-block persistence + target menu (overlay 0898, trace-surfaced)
+
+The [S6 trace](../tooling/playthrough-coverage.md) (first non-tutorial battle, the Queen Bee ambush) surfaced the path that carries a party member's chosen **16-arm Arts command block** across battles and builds the enemy target list. All three live in overlay `0898` (containment-attributed against the resident battle-action image; the aliased dump stems are VA mismatches). The 16-byte block sits at live-actor `+0x1DF` and is mirrored into the persistent character record at `record[char-1]+0x1B7` (`0x80084708 + (char-1)*0x414 + 0x1B7`); the enemy formation ids come from `DAT_8007BD0C`, the same global the [charm](../tooling/randomizer.md) / shiny-Seru features key on. See [`subsystems/arts-command-gauge.md`](../subsystems/arts-command-gauge.md) for the command-gauge side.
+
+| Address | Role |
+|---|---|
+| `801DA34C` | **Restore the lead actor's command block at battle start** (592 B). Reads the battle context `_DAT_8007BD24`; when the enter flag `DAT_8007BD04 == 0` it zeroes the live actor's 16-byte block (`DAT_801C9370[actor[+0x13]] + 0x1DF .. +0x1EE`). Otherwise, HP-gated (`+0x154 <= +0x156`), it copies the saved block from `record+0x1B7` back into the actor (or zeroes it when the record flag is clear). `DAT_8007BD10[actor]-1` selects the character record. |
+| `801DA59C` | **Persist a party member's command block** (280 B). `FUN_801da59c(actor_index)`: guarded on `actor[+0x14C] != 0` and phase byte `actor[+0x1DE] == 3`, copies the actor's 16-byte `+0x1DF` block back out to `record+0x1B7`; a min/max compare on `+0x154`/`+0x156` picks which of two write banks. The save-side inverse of `FUN_801DA34C`. |
+| `801D9D3C` | **Enemy target-selection-menu builder** (1552 B). Walks the formation-id table `DAT_8007BD0C`, collapsing consecutive identical monster ids into one menu row, and for each distinct enemy copies its name (`func_0x8003ca78` string copy into `_DAT_8007BD24 + slot*0x20 + 0x29`) plus stats (`DAT_801C9370[i+3] + 0x34` / `+0x1BC`). Produces the "which enemy" list the command menu offers. |
+
 ## Script VMs
 
 | Address | Role |
