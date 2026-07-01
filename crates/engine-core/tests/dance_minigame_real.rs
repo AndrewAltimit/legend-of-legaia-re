@@ -112,3 +112,80 @@ fn real_dance_chart_drives_a_scoring_run() {
         game.score()
     );
 }
+
+/// Mirror the **play-window K-key path** exactly: open the disc as a
+/// [`ProtIndex`], read the dance overlay through `entry_bytes_extended`, lift it
+/// to loaded form, parse the chart, then drive it through `World::enter_dance` +
+/// `World::tick`. This is the load path `start_dance_minigame` uses in the
+/// engine binary (which can't be unit-tested through its wgpu window), so this
+/// locks that the runtime entry point resolves a real, scoreable chart.
+#[test]
+fn playwindow_load_path_enters_and_scores_a_dance() {
+    use legaia_engine_core::input::PadButton;
+    use legaia_engine_core::scene::SceneHost;
+    use legaia_engine_core::world::{SceneMode, World};
+
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let host = match SceneHost::open_disc(&disc) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("[skip] open_disc failed: {e:#}");
+            return;
+        }
+    };
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+        .expect("dance overlay in static map");
+    let raw = host
+        .index
+        .entry_bytes_extended(rec.prot_index)
+        .expect("read PROT 0980 (extended)");
+    let loaded = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
+    let game = DanceGame::from_overlay(&loaded, false).expect("real chart loads via shell path");
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.enter_dance(game);
+    assert_eq!(world.mode, SceneMode::Dance);
+
+    // Drive several beats, pressing the arrow the chart calls for on each first
+    // in-window frame. Proves the wired tick judges real chart data into score.
+    let mut pressed_any = false;
+    for _ in 0..600 {
+        if world.mode != SceneMode::Dance {
+            break;
+        }
+        // Press what the hit judge matches against - the raw chart cell
+        // (`judged_symbol`), not the display path's held-sequence substitution.
+        // `tick_dance` advances the clock then judges this frame's press, so a
+        // press on any in-window frame carrying a note scores.
+        let want = world
+            .dance
+            .as_ref()
+            .filter(|g| !g.in_dead_zone())
+            .and_then(|g| g.judged_symbol())
+            .filter(|s| *s != 0);
+        let button = match want {
+            Some(1) => Some(PadButton::Left),
+            Some(2) => Some(PadButton::Right),
+            Some(3) => Some(PadButton::Up),
+            _ => None,
+        };
+        world.set_pad(0);
+        if let Some(b) = button {
+            world.set_pad(b.mask());
+            pressed_any = true;
+        }
+        let _ = world.tick();
+    }
+    assert!(pressed_any, "the real chart called for at least one arrow");
+    let final_game = world.exit_dance().expect("game still installed");
+    // A cooperating play-through banks a non-zero score off the real chart.
+    assert!(
+        final_game.score() > 0,
+        "expected a scoring run off the real dance chart"
+    );
+}

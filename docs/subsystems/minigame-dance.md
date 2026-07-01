@@ -159,6 +159,8 @@ Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) dec
 
 Engine port: [`legaia_engine_core::dance`](../../crates/engine-core/src/dance.rs) is the clean-room rules engine driven by that parsed chart - the beat clock (`FUN_801cf470`), the timing-window hit judge (`FUN_801d1960`), the chart lookup (`FUN_801d1820`), the symbol→pad-bit map (`FUN_801d4040`), and the score / groove-gauge award (`FUN_801d1af4`), all with the Confirmed constants above.
 
+Runtime wiring: the engine host installs the rules engine as a suspending scene mode (`SceneMode::Dance`; `World::enter_dance` / `tick_dance` / `exit_dance`). The `play-window` viewer starts it from the `K` key (loads the dance overlay PROT 0980, `DanceGame::from_overlay`), maps the three arrows to the retail pad bits (Left/Right/Up = symbols `1`/`2`/`3`), and draws the score / groove-gauge / active-lane HUD; the song timer ends the run and restores the interrupted scene.
+
 `DanceGame::judge_press` returns the three-way Miss/Hit/Sequence result and applies the score, gauge, and streak side effects; `DanceGame::from_overlay` starts a run straight off the disc chart (disc-gated `dance_minigame_real` auto-plays the real chart end to end). The sequence-bonus *magnitude* (the `DAT_801d41a4`-scaled award) is left to the caller since that value table is disc-resident and unmapped. The visible dance-floor / arrow rendering (the [floor cluster](#dance-floor-rendering)) is not part of the rules port - it is a separate host concern.
 
 ## Open

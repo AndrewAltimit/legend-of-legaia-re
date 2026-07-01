@@ -69,6 +69,14 @@ cargo build --release
 ./target/release/legaia-engine play-str MOV/MV1.STR --disc <bin>
 ```
 
+In `play-window`, two minigames run as suspending scene modes driven by their
+clean-room rules engines: the `K` key starts the Noa dance rhythm minigame
+(`legaia_engine_core::dance`, from the dance overlay PROT 0980 - Left/Right/Up
+are the three arrows), and the `L` key starts the fishing minigame
+(`legaia_engine_core::fishing`, from the fishing overlay PROT 0972 - Cross
+casts then reels, Circle is the second reel button). Each shows its own HUD and
+restores the interrupted scene when it ends; press the same key again to quit.
+
 In `play-window`, when the booted disc was randomized with `--seru-trade`,
 talking to a shop merchant (the field-VM op-`0x49` trigger) shows a top-level
 **Buy / Sell / Trade / Exit** menu; the **Trade** row opens that vendor's

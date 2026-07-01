@@ -2763,6 +2763,92 @@ impl PlayWindowApp {
         self.monster_archive.clone()
     }
 
+    /// Load the Noa dance overlay (PROT 0980), decode its baked step chart, and
+    /// start a dance run in the world (suspending the current scene). Returns
+    /// `false` (and logs) when no disc is attached or the chart can't decode.
+    ///
+    /// Mirrors the disc-gated `dance_minigame_real` test's overlay path: read
+    /// the raw PROT entry, lift it to its statically-recovered loaded form via
+    /// [`static_overlay::as_loaded`], then parse through
+    /// [`DanceGame::from_overlay`].
+    fn start_dance_minigame(&mut self, long_song: bool) -> bool {
+        use legaia_asset::static_overlay;
+        let Some(rec) = static_overlay::overlay_map()
+            .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+        else {
+            log::warn!("dance: overlay 0980 absent from the static-overlay map");
+            return false;
+        };
+        let raw = match self.session.host.index.entry_bytes_extended(rec.prot_index) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("dance: PROT {} read failed: {e:#}", rec.prot_index);
+                return false;
+            }
+        };
+        let loaded = match static_overlay::as_loaded(&raw, rec) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("dance: as_loaded failed: {e:#}");
+                return false;
+            }
+        };
+        match legaia_engine_core::dance::DanceGame::from_overlay(&loaded, long_song) {
+            Some(game) => {
+                self.session.host.world.enter_dance(game);
+                true
+            }
+            None => {
+                log::warn!("dance: step-chart parse failed");
+                false
+            }
+        }
+    }
+
+    /// Load the fishing overlay (PROT 0972), decode its per-species table, and
+    /// start a fishing session in the world (suspending the current scene).
+    /// Returns `false` (and logs) when no disc is attached or the table can't
+    /// decode. Mirrors [`Self::start_dance_minigame`]'s overlay path.
+    ///
+    /// The rod stat + persistent record start at defaults (the save-block
+    /// fishing record isn't loaded into this dev entry point).
+    fn start_fishing_minigame(&mut self) -> bool {
+        use legaia_asset::static_overlay;
+        let Some(rec) = static_overlay::overlay_map()
+            .by_prot_index(legaia_asset::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
+        else {
+            log::warn!("fishing: overlay 0972 absent from the static-overlay map");
+            return false;
+        };
+        let raw = match self.session.host.index.entry_bytes_extended(rec.prot_index) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("fishing: PROT {} read failed: {e:#}", rec.prot_index);
+                return false;
+            }
+        };
+        let loaded = match static_overlay::as_loaded(&raw, rec) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("fishing: as_loaded failed: {e:#}");
+                return false;
+            }
+        };
+        let Some(species) = legaia_asset::fishing_species::parse(&loaded) else {
+            log::warn!("fishing: species-table parse failed");
+            return false;
+        };
+        // Default rod stat + empty record for the dev entry point.
+        const DEV_ROD_STAT: i32 = 4;
+        let session = legaia_engine_core::fishing::FishingSession::new(
+            species,
+            DEV_ROD_STAT,
+            legaia_engine_core::fishing::FishingRecord::default(),
+        );
+        self.session.host.world.enter_fishing(session);
+        true
+    }
+
     /// React to a `Field <-> Battle` scene-mode change once per transition:
     /// on entering battle, decode each enemy's mesh and inject it; on leaving,
     /// restore the clean field VRAM and drop the battle meshes. Called each
@@ -4580,6 +4666,78 @@ impl PlayWindowApp {
             let layout3 = self.font.layout_ascii(&line3);
             out.extend(text_draws_for(&layout3, (8, 44), white));
         }
+        // Dance minigame HUD: the running score / groove gauge / active lane,
+        // the arrow the current beat calls for, and the last press judgement.
+        // The three arrows map to the retail pad bits (Left/Right/Up).
+        if self.session.host.world.mode == SceneMode::Dance
+            && let Some(g) = &self.session.host.world.dance
+        {
+            let arrow = match g.required_symbol() {
+                Some(1) => "< (Left)",
+                Some(2) => "> (Right)",
+                Some(3) => "^ (Up)",
+                _ => "- (rest)",
+            };
+            use legaia_engine_core::dance::Judge;
+            let judge = match self.session.host.world.dance_last_judge {
+                Some(Judge::Sequence { .. }) => "SEQUENCE!",
+                Some(Judge::Hit { .. }) => "HIT",
+                Some(Judge::Miss) => "miss",
+                None => "",
+            };
+            let dl1 = format!(
+                "DANCE  score {}  gauge {}  lane {}",
+                g.score(),
+                g.gauge(),
+                g.lane()
+            );
+            let ly1 = self.font.layout_ascii(&dl1);
+            out.extend(text_draws_for(&ly1, (8, 62), white));
+            let dl2 = format!("press {arrow}   {judge}   (K = quit)");
+            let ly2 = self.font.layout_ascii(&dl2);
+            out.extend(text_draws_for(&ly2, (8, 80), dim));
+        }
+        // Fishing minigame HUD: the phase-specific line (cast-power bar while
+        // casting; tension + strength while fighting; the catch result when
+        // done) plus the running point total.
+        if self.session.host.world.mode == SceneMode::Fishing
+            && let Some(s) = &self.session.host.world.fishing
+        {
+            use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
+            let line = match s.phase() {
+                FishingPhase::Casting => {
+                    format!("FISHING  cast power {}  (Cross = cast)", s.cast_power())
+                }
+                FishingPhase::Fighting => {
+                    let (tension, strength) = s
+                        .fight()
+                        .map(|f| (f.tension(), f.strength()))
+                        .unwrap_or((0, 0));
+                    format!(
+                        "FISHING  tension {tension}/{}  strength {strength}  (hold Cross/Circle to reel)",
+                        legaia_engine_core::fishing::TENSION_MAX
+                    )
+                }
+                FishingPhase::Done => match s.last_outcome() {
+                    Some(FightOutcome::Landed { points }) => {
+                        format!("FISHING  landed! +{points} points  (Cross = recast)")
+                    }
+                    Some(FightOutcome::Snapped) => {
+                        "FISHING  the line snapped!  (Cross = recast)".to_string()
+                    }
+                    _ => "FISHING  (Cross = recast)".to_string(),
+                },
+            };
+            let ly = self.font.layout_ascii(&line);
+            out.extend(text_draws_for(&ly, (8, 62), white));
+            let pts = format!(
+                "points {}   best {}   (L = quit)",
+                s.record().points,
+                s.record().best_points
+            );
+            let ly2 = self.font.layout_ascii(&pts);
+            out.extend(text_draws_for(&ly2, (8, 80), dim));
+        }
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
         // runtime is in any shop, inn, or confirmation state.
         if self.menu_runtime.is_open() {
@@ -5555,6 +5713,51 @@ impl ApplicationHandler for PlayWindowApp {
                     }
                     return;
                 }
+                // `K`: toggle the Noa dance (rhythm) minigame. Loads the dance
+                // overlay (PROT 0980), suspends the current scene, and runs the
+                // beat clock + hit judge; Left/Right/Up are the three arrows.
+                // Pressing K again aborts and logs the final score. The song
+                // also ends itself after its length limit (see below).
+                if matches!(code, KeyCode::KeyK)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    if self.session.host.world.mode == SceneMode::Dance {
+                        if let Some(g) = self.session.host.world.exit_dance() {
+                            log::info!(
+                                "dance: aborted at score {} (pass={})",
+                                g.score(),
+                                g.passed()
+                            );
+                        }
+                    } else if self.start_dance_minigame(false) {
+                        log::info!("dance: started - Left/Right/Up are the arrows, K to quit");
+                    }
+                    return;
+                }
+                // `L`: toggle the fishing minigame. Loads the fishing overlay
+                // (PROT 0972), suspends the current scene, and runs the cast /
+                // fight / score loop; Cross locks the cast and reels (reel A),
+                // Circle is reel B. Pressing L again leaves and logs the points.
+                if matches!(code, KeyCode::KeyL)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    if self.session.host.world.mode == SceneMode::Fishing {
+                        if let Some(s) = self.session.host.world.exit_fishing() {
+                            log::info!(
+                                "fishing: left with {} points (best {})",
+                                s.record().points,
+                                s.record().best_points
+                            );
+                        }
+                    } else if self.start_fishing_minigame() {
+                        log::info!(
+                            "fishing: started - Cross casts/reels(A), Circle reels(B), L to quit"
+                        );
+                    }
+                    return;
+                }
                 // `N`: open the name-entry overlay for the lead character. The
                 // NEW GAME flow now opens it automatically at the `opdeene` ->
                 // `town01` opening hand-off (see the prologue-handoff block
@@ -5750,6 +5953,20 @@ impl ApplicationHandler for PlayWindowApp {
                     self.session.host.world.set_pad(field_pad);
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
+                    }
+                    // Dance minigame auto-end: `tick_dance` restores the scene
+                    // mode when the song timer runs out but leaves the game
+                    // installed for one frame. Detect that (mode no longer
+                    // Dance while a game is still present), log the final grade,
+                    // and clear it.
+                    if self.session.host.world.mode != SceneMode::Dance
+                        && let Some(g) = self.session.host.world.exit_dance()
+                    {
+                        log::info!(
+                            "dance: song finished - score {} (pass={})",
+                            g.score(),
+                            g.passed()
+                        );
                     }
                     // A field-VM shop op (`0x49` sub-0 inline shop record) opened
                     // a priced gold shop this tick: hand the player into its buy
