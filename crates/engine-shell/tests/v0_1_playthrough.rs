@@ -613,16 +613,24 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         slots[0]
     };
 
-    // Drive the dialogue-accept auto-arm: a real field-interact on the carrier's
-    // slot opens its dialogue; accepting (just-pressed Cross) engages it.
+    // Drive the dialogue-accept: a real field-interact on the carrier's slot
+    // opens its dialogue with the faithful 4-option spar picker
+    // (`World::carrier_menu`); the index-2 "practice" option is the one that
+    // arms the fight, so navigate the cursor Down twice (releases between -
+    // the menu keys off just-pressed edges), then confirm with Cross.
     let mut modes: Vec<SceneMode> = vec![w.mode];
     w.load_field_script(vec![0x3E, 0x05, slot, 0x4C, 0x54]);
     w.set_pad(0);
     let _ = w.tick();
     modes.push(w.mode);
     let cross = PadButton::Cross.mask();
+    let down = PadButton::Down.mask();
     for i in 0..16u32 {
-        w.set_pad(if i == 0 { cross } else { 0 });
+        w.set_pad(match i {
+            0 | 2 => down,
+            4 => cross,
+            _ => 0,
+        });
         let _ = w.tick();
         modes.push(w.mode);
         if w.mode == SceneMode::Battle {
@@ -782,18 +790,30 @@ fn v0_1_battle_leg_walk_talk_accept() {
         "walking up + action button opens the sparring partner's dialogue"
     );
 
-    // Accept: release, press again -> dismiss -> engage -> Battle.
-    session.host.world.input.set_pad(0);
-    let _ = session.host.world.tick();
-    session.host.world.input.set_pad(PadButton::Cross.mask());
+    // Accept: the spar dialogue carries the faithful 4-option picker
+    // (`World::carrier_menu`); index 2 ("I want to practice with you.") is
+    // the option that arms the fight. Navigate the cursor Down twice
+    // (releases in between - the menu keys off just-pressed edges), then
+    // confirm -> dismiss -> engage -> Battle.
+    for pad in [
+        0,
+        PadButton::Down.mask(),
+        0,
+        PadButton::Down.mask(),
+        0,
+        PadButton::Cross.mask(),
+    ] {
+        session.host.world.input.set_pad(pad);
+        let _ = session.host.world.tick();
+    }
     let mut reached_battle = false;
     for _ in 0..8 {
-        let _ = session.host.world.tick();
         if session.host.world.mode == SceneMode::Battle {
             reached_battle = true;
             break;
         }
         session.host.world.input.set_pad(0);
+        let _ = session.host.world.tick();
     }
     assert!(
         reached_battle,

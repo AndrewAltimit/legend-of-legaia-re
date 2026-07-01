@@ -243,10 +243,19 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
         .world
         .load_field_script(vec![0x3E, 0x05, slot, 0x4C, 0x54]);
     let cross = PadButton::Cross.mask();
+    let down = PadButton::Down.mask();
     for i in 0..frames {
-        // Tick 1 opens the dialogue (pad 0); tick 2 confirms (just-pressed
-        // Cross); the transition resolves on the following frames at pad 0.
-        let pad = if i == 1 { cross } else { 0 };
+        // Tick 0 opens the dialogue (pad 0). The spar dialogue carries the
+        // faithful 4-option picker (`World::carrier_menu`), whose index-2
+        // "practice" option is the one that arms the fight - navigate the
+        // cursor Down twice (releases in between: the menu keys off
+        // just-pressed edges) before the Cross confirm. The transition
+        // resolves on the following frames at pad 0.
+        let pad = match i {
+            1 | 3 => down,
+            5 => cross,
+            _ => 0,
+        };
         session.host.world.set_pad(pad);
         let _ = session.tick()?;
         out.push(sample_engine_frame(&session));
