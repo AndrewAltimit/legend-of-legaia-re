@@ -491,6 +491,10 @@ struct PlayWindowApp {
     /// `self.scene_tmd_data`, and sets `actor.tmd_binding` to the new
     /// mesh index so the per-frame draws iteration picks it up.
     pending_dynamic_mesh_slots: Vec<u8>,
+    /// Spawn slots whose `tmd_ref` mesh has already been uploaded + bound
+    /// (idempotence for the drain above - the binding itself can't be the
+    /// marker because `upload_assets` pre-binds every actor slot).
+    drained_spawn_slots: std::collections::HashSet<u8>,
     /// Boot-UI state. `BootUiState::Inactive` means the legacy
     /// "go straight to the scene" path; `Title` / `SaveSelect` route
     /// player input through the boot sessions until the player picks
@@ -2589,6 +2593,88 @@ impl PlayWindowApp {
                 }
             }
         }
+        // Bind the PLAYER's real character mesh. Town scripts install the
+        // player engine-side (`install_field_player`), not via the field-VM
+        // `0x4C 0xD8` spawn, so no `tmd_ref` spawn event ever fires for it -
+        // and the naive pre-bind above points actor 0 at whatever scene TMD
+        // shares its slot index (usually an init_data UI mesh = invisible
+        // player). Resolve the lead's field mesh from the global TMD pool
+        // (PROT 0874 §0, retail `DAT_8007C018[0..4]`, seeded by
+        // `enter_field_scene`) and override the placeholder binding.
+        if world.mode == SceneMode::Field
+            && let Some(pslot) = world.player_actor_slot
+        {
+            let lead = world.active_party.first().copied().unwrap_or(0) as usize;
+            let gtmd = world
+                .global_tmd_pool
+                .get(lead)
+                .and_then(|s| s.as_ref())
+                .map(std::sync::Arc::clone);
+            if let Some(g) = gtmd {
+                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&g.tmd, &g.raw);
+                if !vmesh.indices.is_empty()
+                    && let Some(r) = self.win.renderer.as_ref()
+                {
+                    match r.upload_vram_mesh(
+                        &vmesh.positions,
+                        &vmesh.uvs,
+                        &vmesh.cba_tsb,
+                        &vmesh.normals,
+                        &vmesh.indices,
+                    ) {
+                        Ok(m) => {
+                            let new_idx = self.meshes.len();
+                            self.meshes.push(m);
+                            self.scene_tmd_data.push((g.tmd.clone(), g.raw.clone()));
+                            world.set_actor_tmd_binding(pslot as usize, new_idx);
+                            self.drained_spawn_slots.insert(pslot);
+                            // KNOWN GAP: the character TMD is per-bone
+                            // OBJECT-LOCAL, so the player draws with its bones
+                            // piled at the actor origin until the per-scene
+                            // player-ANM rest pose is wired. The scene's
+                            // player-ANM bundle (PROT 0004 type-0x05, 69
+                            // clips) records are 2..10-bone clips against this
+                            // 12-object mesh - the channel -> object mapping
+                            // and the idle-record selection are unresolved
+                            // (the records also use the player-ANM 8-byte
+                            // bone-frame layout, NOT the `KeyframeReader`
+                            // scene-actor layout `AnimPlayer` parses; feeding
+                            // them to `AnimPlayer` decodes garbage poses).
+                            // Same class of problem the battle-form assembly
+                            // solved via the player-file record[0] streams.
+                            log::info!(
+                                "play-window: player (roster {lead}) -> pool mesh slot {new_idx} \
+                                 (unposed: rest-pose assembly not wired)"
+                            );
+                        }
+                        Err(e) => log::warn!("play-window: player mesh upload: {e:#}"),
+                    }
+                }
+            } else {
+                log::warn!(
+                    "play-window: global TMD pool has no entry for roster slot {lead}; \
+                     player keeps the placeholder binding"
+                );
+            }
+        }
+        // Initial floor snap: locomotion only re-samples the floor height on a
+        // step, so an actor standing still since spawn keeps `world_y = 0`
+        // while the town ground sits at a LUT-elevated tier - it renders
+        // buried under (or floating over) the terrain until it first moves.
+        // Snap every bound actor that still has the flat default.
+        if world.follow_terrain_height && world.mode == SceneMode::Field {
+            for i in 0..world.actors.len() {
+                if world.actors[i].tmd_binding.is_none() {
+                    continue;
+                }
+                let ms = &world.actors[i].move_state;
+                if ms.world_y != 0 {
+                    continue;
+                }
+                let y = world.sample_field_floor_height(ms.world_x as i32, ms.world_z as i32);
+                world.actors[i].move_state.world_y = y as i16;
+            }
+        }
         log::info!(
             "play-window: {} meshes uploaded, VRAM {}",
             self.meshes.len(),
@@ -2689,9 +2775,12 @@ impl PlayWindowApp {
         // Anchor the look-at to the floor under the player, not the actor's
         // raw Y: `follow_terrain_height` is opt-in, so `world_y` is usually 0
         // while the town ground sits at a LUT-elevated tier - targeting y=0
-        // there points the camera under the ground.
+        // there points the camera under the ground. The sampler returns the
+        // retail-negated tier (up = negative, matching the placement world
+        // Y); the camera target is subtracted post-Y-flip (PSX space), so
+        // negate back.
         let floor_y = world.sample_field_floor_height(wx as i32, wz as i32);
-        let target = Vec3::new(wx as f32, floor_y as f32, wz as f32);
+        let target = Vec3::new(wx as f32, -floor_y as f32, wz as f32);
         let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
         Some(Self::psx_camera_mvp(
             to_rad(PITCH_UNITS),
@@ -6452,7 +6541,14 @@ impl ApplicationHandler for PlayWindowApp {
                             Some(a) => a,
                             None => continue,
                         };
-                        if actor.tmd_binding.is_some() {
+                        // Idempotence is tracked per-slot, NOT by "already has
+                        // a binding": `upload_assets` naively pre-binds every
+                        // actor K -> scene TMD slot K, and the player's spawn
+                        // (its `tmd_ref` = the real character mesh from the
+                        // global pool) must override that placeholder or the
+                        // player renders as whatever scene mesh happened to
+                        // share its slot index (usually invisible).
+                        if self.drained_spawn_slots.contains(&slot) {
                             continue;
                         }
                         let Some(gtmd) = actor.tmd_ref.as_ref().map(std::sync::Arc::clone) else {
@@ -6479,6 +6575,7 @@ impl ApplicationHandler for PlayWindowApp {
                                     .push((gtmd.tmd.clone(), gtmd.raw.clone()));
                                 self.session.host.world.actors[slot as usize].tmd_binding =
                                     Some(new_idx);
+                                self.drained_spawn_slots.insert(slot);
                                 log::info!("play-window: spawn slot {slot} -> mesh slot {new_idx}");
                             }
                             Err(e) => log::warn!("spawn mesh upload: {e:#}"),
@@ -6526,6 +6623,15 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                         if vmesh.indices.is_empty() {
                             continue;
+                        }
+                        if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
+                            let (lo, hi) = vmesh.aabb();
+                            log::info!(
+                                "DIAG pose: tmd {tmd_idx} verts {} aabb {lo:?}..{hi:?} \
+                                 bones[0..2]={:?}",
+                                vmesh.positions.len(),
+                                &pose.bone_outputs[..pose.bone_outputs.len().min(2)]
+                            );
                         }
                         match r.upload_vram_mesh(
                             &vmesh.positions,
@@ -7787,7 +7893,7 @@ fn cmd_play_window_with_record(
         } else {
             SceneLoadKind::Field
         };
-        let (res, _stats) = SceneResources::build_targeted_with_options(
+        let (mut res, _stats) = SceneResources::build_targeted_with_options(
             s,
             &shared_refs,
             BuildOptions {
@@ -7795,6 +7901,36 @@ fn cmd_play_window_with_record(
                 upload_all_tims: true,
             },
         )?;
+        // Field-character atlas upload (PROT 0874 §2, the `FUN_800198e0`
+        // chain): entries 1/2/3 are the Vahn/Noa/Gala atlas pages whose
+        // palettes live as **flat strips** on CLUT row 478. The generic TIM
+        // scan uploads the pages but places these CLUTs as declared rects
+        // (rows 478..481 col 0), so the meshes sample an unpopulated row and
+        // the VRAM filter drops them - the invisible-player symptom. Retail
+        // field load uploads the pack with strip semantics; replicate that.
+        // (NOT the etim effect pool - uploading that battle-resident pool
+        // into field VRAM clobbers pages the town meshes sample.)
+        match session
+            .host
+            .index
+            .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
+            .and_then(|b| legaia_asset::field_char_textures::parse(&b))
+        {
+            Ok(mut pack) => {
+                // Entries 1/2/3 only (the character atlas pages). The pack's
+                // other entries land on pages the town env meshes sample -
+                // uploading them here drops ~26 scene meshes to the filter.
+                pack.textures.retain(|t| (1..=3).contains(&t.index));
+                pack.upload_to_vram(&mut res.vram, false);
+                log::info!(
+                    "play-window: field char atlas uploaded ({} TIMs, strip CLUTs)",
+                    pack.textures.len()
+                );
+            }
+            Err(err) => {
+                log::warn!("play-window: field char atlas upload skipped: {err:#}");
+            }
+        }
         res
     };
     log::info!(
@@ -8025,6 +8161,7 @@ fn cmd_play_window_with_record(
         battle_event_log: std::collections::VecDeque::new(),
         battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
         pending_dynamic_mesh_slots: Vec::new(),
+        drained_spawn_slots: std::collections::HashSet::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),

@@ -679,12 +679,13 @@ pub(crate) enum Cmd {
         /// the plain panel with no branch execution.
         #[arg(long, default_value_t = false)]
         simple_dialogue: bool,
-        /// Make the player follow the per-scene terrain elevation: each field
-        /// locomotion step snaps the player's Y to the floor-height sample
-        /// (`FUN_80019278`) at the new tile. Off by default (flat Y); enable to
-        /// see slopes / steps. No effect on the world-map walk.
+        /// Disable terrain-following: keep the player's Y flat instead of
+        /// snapping each field locomotion step to the floor-height sample
+        /// (`FUN_80019278`) at the new tile. Floor-snap is the retail
+        /// behaviour and the default; pass this to get the old flat-Y walk.
+        /// No effect on the world-map walk.
         #[arg(long, default_value_t = false)]
-        terrain_y: bool,
+        flat_y: bool,
         /// Block field walking with retail's three-probe leading-edge wall
         /// footprint (`FUN_801cfe4c`'s `DAT_801f2214` table): the player rests
         /// ~47 units off a wall plane exactly like retail instead of walking
