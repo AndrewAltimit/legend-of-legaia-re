@@ -261,7 +261,7 @@ triaged).
 | S2 | opening prologue -> Rim Elm (`town01`) | S1 checkpoint | CAPTURED + CATALOGED (`s2_rimelm_town01`) | - | - |
 | S3 | first free walk (Rim Elm) | S2 checkpoint | CAPTURED + CATALOGED (`s3_rimelm_freeroam`); was [name entry](#s3-captured-the-town01-opening-is-the-name-entry-screen) | - | - |
 | S4 | first scene transition / house door | S3 checkpoint | CAPTURED + CATALOGED (`s4_rimelm_door_transition`); [grid-BFS door-nav out of Vahn's house](#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house) | - | - |
-| S5 | first battle (scripted Tetsu spar) | S4 end state | CAPTURED + CATALOGED (`s5_tetsu_battle`); [the scripted Tetsu spar, reached by record-then-replay of a human playthrough](#s5-the-first-battle-is-the-scripted-tetsu-spar-not-a-random-encounter) | 103 (11 SCUS + 92 overlay) | 19 (12 SCUS + 7 new 0898, incl. render-tail `FUN_801E0080`) - [details ↓](#s5-battle-trace-the-on-screen-element-family--new-0898-draw-functions) |
+| S5 | first battle (scripted Tetsu spar) | S4 end state | CAPTURED + CATALOGED (`s5_tetsu_battle`); [the scripted Tetsu spar, reached by record-then-replay of a human playthrough](#s5-the-first-battle-is-the-scripted-tetsu-spar-not-a-random-encounter) | 103 (11 SCUS + 92 overlay) | 20 (12 SCUS + 8 new 0898, incl. render-tail `FUN_801E0080` + `FUN_801F0450`) - [details ↓](#s5-battle-trace-the-on-screen-element-family--new-0898-draw-functions) |
 
 Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
 `backup_fingerprint`, resolvable via `run_probe.sh --scenario <label>`.
@@ -491,7 +491,7 @@ is printed) or `scripts/ci/port-catalog.py --dashboard`.
 | field-0897 deep-dive | 762 | 161 | 601 | No net burndown - the hot field matches resolve to the already-documented per-actor tick path (validation that the trace surfaces the central per-frame actor loop). Promoted the per-actor dispatcher `FUN_8003BC08` to the canonical `functions.md`; surfaced the `FUN_801D79E8` mesh-vs-glyph open thread. |
 | S1/S2 anchor SCUS trace | 739 | 138 | 601 | First trace against the **reproducible** cataloged anchors (`s1_newgame_field` + `s2_rimelm_town01`), not an ephemeral save. 43 SCUS gap-set functions hit (union). Resolved the 23 always-resident S1 hits: **18 -> ignore-set** (PsyQ libgte/libcd/libc + libgpu prim composers + dev-profiler HUD + a noop stub), **4 -> `functions.md`** (field footstep/ambient + timed audio-cue ticks, a guarded sub-dispatch), 1 already documented (`8005A5FC` = the `FUN_8005A4A0` flusher interior). -23 from the gap-set (all SCUS). |
 | S2 scene-load characterization | 719 | 118 | 601 | Characterized the 20 S2-only town scene-load callees (callees of the per-stage loader `FUN_8001E1B4` / boot mode-init `FUN_8001DCF8` / field init `FUN_801D6704`). **14 -> `functions.md`** (new "Scene / stage init" section: overlay-slot teardown, tile visibility/adjacency build, actor node-pool init/pop, field-camera reset, scene-script-ref binding, overlay-sprite pair, GTE projection-scale), **6 -> ignore-set** (2 retail-stripped noop tile emitters, libc InitHeap + coalescing-free, libgte SetTrans-vector + SetColorMatrix). -20, all SCUS. |
-| S5 battle (Tetsu spar) trace | 697 | 106 | 591 | First **battle** segment trace. 103 gap-set functions hit (11 SCUS + 92 overlay). SCUS 11/11 documented = the always-resident **on-screen-element family** (party status HUD, 2D floating-element animator, per-actor overlay markers); `0x800212C4` dropped as an interior label. Overlay: 74/92 attributed by containment to `0898` functions (aliased stems are VA mismatches), most already-documented; **7 new** documented incl. the render-tail `FUN_801E0080`. The remaining `0x801F` hits are a co-resident render overlay. Full breakdown: [S5 section ↓](#s5-battle-trace-the-on-screen-element-family--new-0898-draw-functions). |
+| S5 battle (Tetsu spar) trace | 697 | 106 | 591 | First **battle** segment trace. 103 gap-set functions hit (11 SCUS + 92 overlay). SCUS 11/11 documented = the always-resident **on-screen-element family** (party status HUD, 2D floating-element animator, per-actor overlay markers); `0x800212C4` dropped as an interior label. Overlay: 74/92 attributed by containment to `0898` functions (aliased stems are VA mismatches), most already-documented; **7 new** documented incl. the render-tail `FUN_801E0080`. The remaining `0x801F` hits are `0898`'s own render tail, cut off by a truncated Ghidra import (re-import to `0x801F8018` to dump). Full breakdown: [S5 section ↓](#s5-battle-trace-the-on-screen-element-family--new-0898-draw-functions). |
 
 Each documented function moves an address out of the gap-set on the next
 regenerate; the table above grows one row per triage pass.
@@ -687,11 +687,28 @@ they lie in the `0898` program (`overlay_battle_action.bin`, spanning
   not turned into a function. `dump_battle_rendertail.py` disassembles + creates +
   dumps it: a per-frame RNG/frame-counter-driven **arena procedural scatter** over
   the battle-scene buffer `_DAT_8007BD30`. Documented in `functions.md`.
-- **Out-of-`0898` (the `0x801F` cluster - a co-resident render overlay).**
+- **The `0x801F` cluster - `0898`'s own render tail, truncated from the import.**
   `0x801F71E0` (62×), `0x801F0740` (16×), the `0x801F0xxx`/`0x801F6xxx` set are
-  `inmem=False` in `overlay_battle_action.bin` - they belong to a **separate
-  battle-render overlay co-resident at `0x801F`** that the `0898` code calls
-  (their `ra` values land back in `0898`'s `0x801E2xxx`). Identifying that
-  overlay's PROT entry + base (per the static-overlay pipeline) and dumping it is
-  the remaining open step. Left as bare addresses in the capture CSV +
-  `gap_worklist.txt` per the classifier-trap note above.
+  `inmem=False` in `overlay_battle_action.bin` - but *not* because they are a
+  different overlay. The battle overlay `0898` loads at base `0x801CE818` and is
+  `~0x29800` bytes (`crates/asset/data/static-overlays.toml`), so it spans
+  `0x801CE818..0x801F8018` - every `0x801F` hit is inside it. The Ghidra program
+  was imported as the window `0x801C0000..0x801EFFFF`, which stops `0x8018` bytes
+  short of the overlay end, so the render tail simply isn't mapped (their `ra`
+  values landing in `0898`'s own `0x801E2xxx` confirm same-overlay calls). A
+  full-length re-import of the `0898` blob at base `0x801CE818` (spanning
+  `0x801CE818..0x801F8018`; `dump_battle_rendertail_0x801f.py` +
+  `import_overlay_battle_action.py`) maps the tail and resolves the
+  **`0x801F0xxx`** half cleanly: `0x801F0740`/`0x801F0ADC` are one new function
+  `FUN_801F0450` (the per-party-slot **Arts command-window builder**, now
+  documented), and other hits fall in already-documented tail functions
+  (`FUN_801EFE44` battle-camera-bounds `+0x48C` = `0x801F02D0`; `FUN_801F17F8`
+  the side-band streaming SM; `FUN_801F0348` battle-action). **But the hot
+  `0x801F6xxx`/`0x801F7xxx` sub-cluster** (`0x801F71E0` 62×, `0x801F7624` 8×,
+  `0x801F6C70`, `0x801F6D48`) **does not disassemble as clean MIPS** from the
+  static blob at this base - it decodes to garbage (`trap`, out-of-overlay jump
+  targets), so that region is either `rodata`/jump-table data or a runtime-
+  resident co-overlay the static image doesn't represent. Settling it needs a
+  resident-RAM capture of the `0x801F6xxx` bytes during a battle (compare the
+  live image vs the static blob). Left as bare addresses in the capture CSV +
+  `gap_worklist.txt` until then.

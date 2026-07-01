@@ -9,7 +9,7 @@
 # overlay addresses (0x801c..0x8020) are VA-aliased - attribute them with
 # the trace CSV's first_mode column + the dump_stem here.
 #
-# Counts: 694 total (106 scus, 588 overlay).
+# Counts: 688 total (106 scus, 582 overlay).
 #
 # Columns: <0x-addr>  <dump_stem>   # bucket=<b> refs=<n>
 0x80016e4c  80016e4c   # bucket=scus refs=1
@@ -431,7 +431,7 @@
 0x801dabb4  overlay_0896_801dabb4   # bucket=overlay refs=2
 0x801dac78  overlay_0896_801dac78   # bucket=overlay refs=2
 0x801dad6c  overlay_battle_action_801dad6c   # bucket=overlay refs=3
-0x801db124  overlay_battle_action_801db124   # bucket=overlay refs=12
+0x801db124  overlay_battle_action_801db124   # bucket=overlay refs=13
 0x801db2c0  overlay_0897_801db2c0   # bucket=overlay refs=2
 0x801db2fc  overlay_0896_801db2fc   # bucket=overlay refs=2
 0x801db49c  overlay_0896_801db49c   # bucket=overlay refs=3
@@ -600,13 +600,10 @@
 0x801ef9e4  overlay_magic_capture_801ef9e4   # bucket=overlay refs=13
 0x801efbfc  overlay_magic_level_up_801efbfc   # bucket=overlay refs=14
 0x801eff30  overlay_0896_801eff30   # bucket=overlay refs=2
-0x801f02d0  overlay_0896_801f02d0   # bucket=overlay refs=1
 0x801f03b0  overlay_0897_801f03b0   # bucket=overlay refs=16
 0x801f03c0  overlay_0896_801f03c0   # bucket=overlay refs=2
-0x801f0450  overlay_0897_801f0450   # bucket=overlay refs=6
 0x801f04b0  overlay_0896_801f04b0   # bucket=overlay refs=2
 0x801f07ac  overlay_0897_801f07ac   # bucket=overlay refs=4
-0x801f0adc  overlay_dance_801f0adc   # bucket=overlay refs=5
 0x801f1000  overlay_magic_level_up_data_0x801f1000   # bucket=overlay refs=0
 0x801f1118  overlay_0897_801f1118   # bucket=overlay refs=8
 0x801f1138  overlay_slot_machine_801f1138   # bucket=overlay refs=5
@@ -662,10 +659,7 @@
 0x801f6a58  overlay_muscle_dome_801f6a58   # bucket=overlay refs=3
 0x801f6a74  overlay_muscle_dome_801f6a74   # bucket=overlay refs=3
 0x801f6a84  overlay_muscle_dome_801f6a84   # bucket=overlay refs=2
-0x801f6c70  overlay_muscle_dome_801f6c70   # bucket=overlay refs=2
-0x801f6d48  overlay_dance_801f6d48   # bucket=overlay refs=14
 0x801f73e4  overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4   # bucket=overlay refs=2
-0x801f7624  overlay_muscle_dome_801f7624   # bucket=overlay refs=2
 0x801f76f4  overlay_muscle_dome_801f76f4   # bucket=overlay refs=2
 0x801f7a40  overlay_muscle_dome_801f7a40   # bucket=overlay refs=2
 0x801f7a54  overlay_muscle_dome_801f7a54   # bucket=overlay refs=2
