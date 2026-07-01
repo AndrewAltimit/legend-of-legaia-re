@@ -205,9 +205,27 @@ address window, so a hit at an overlay address only means "the currently-
 resident overlay executed that address." Attribute an overlay hit with two
 pieces the trace records: the `first_mode` column (the game mode at first hit)
 and the `.modes.txt` timeline (which overlay window was resident then), plus the
-`stem` (the dump's overlay identity). When in doubt, prefer the 167 SCUS gap-set
+`stem` (the dump's overlay identity). When in doubt, prefer the SCUS gap-set
 addresses as the clean signal and confirm overlay hits against the resident
 overlay before documenting.
+
+**Attribute by containment, not by stem.** The hit's `stem` is whichever overlay
+the static extractor dumped that VA from - usually *not* the overlay resident
+during the traced segment, so it is a mismatch to be ignored. The correct
+identity is the function of the **resident** overlay whose `[entry, entry+size)`
+range *contains* the hit address.
+[`attribute_overlay_hits.py`](../../scripts/pcsx-redux/attribute_overlay_hits.py)
+automates this: given a `union.csv` and a glob of the resident overlay's dumps
+(default = the battle overlay `0898`, i.e. `overlay_battle_action_*.txt`, correct
+for `game_mode 0x15`), it resolves each overlay hit to its enclosing resident
+function, aggregates to distinct functions with total hits, and flags each as
+already-documented or `** NEW **` (an undocumented resident function that ran =
+a documentation target). Hits with no containing range are above the dumped
+function set - the render tail / a re-dump target. (The doc-citation check greps
+the address across `docs/`, so a function that is genuinely shared across
+sibling entry-modes of the *same* overlay - e.g. the battle overlay's sprite
+animator `FUN_801D9BBC`, reused by the Muscle Dome minigame that runs on `0898` -
+correctly reads as documented.)
 
 ## The capture + triage loop
 
