@@ -9,7 +9,7 @@
 # overlay addresses (0x801c..0x8020) are VA-aliased - attribute them with
 # the trace CSV's first_mode column + the dump_stem here.
 #
-# Counts: 697 total (106 scus, 591 overlay).
+# Counts: 694 total (106 scus, 588 overlay).
 #
 # Columns: <0x-addr>  <dump_stem>   # bucket=<b> refs=<n>
 0x80016e4c  80016e4c   # bucket=scus refs=1
@@ -496,9 +496,6 @@
 0x801df570  overlay_battle_action_801df570   # bucket=overlay refs=12
 0x801dfef4  overlay_cutscene_dialogue_801dfef4   # bucket=overlay refs=2
 0x801dff48  overlay_battle_801dff48   # bucket=overlay refs=0
-0x801e02a4  overlay_shop_save_801e02a4   # bucket=overlay refs=10
-0x801e0418  overlay_menu_801e0418   # bucket=overlay refs=10
-0x801e0598  overlay_shop_save_801e0598   # bucket=overlay refs=5
 0x801e0b1c  overlay_0897_801e0b1c   # bucket=overlay refs=5
 0x801e0b40  overlay_0896_801e0b40   # bucket=overlay refs=3
 0x801e0be8  overlay_0897_xxx_dat_801e0be8   # bucket=overlay refs=2
