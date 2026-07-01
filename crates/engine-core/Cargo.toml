@@ -40,3 +40,7 @@ legaia-rando = { path = "../rando" }
 # main RAM and assert the engine reproduces the captured retail facts. pcsxr
 # depends only on mednafen (never engine-core), so this dev-only edge is acyclic.
 legaia-pcsxr = { path = "../pcsxr" }
+# Disc-gated dance-minigame oracle: re-extract the dance overlay (PROT 0980) and
+# drive the real parsed step chart through the dance rules engine. prot depends
+# only on iso/lzs (never engine-core), so this dev-only edge is acyclic.
+legaia-prot = { path = "../prot" }

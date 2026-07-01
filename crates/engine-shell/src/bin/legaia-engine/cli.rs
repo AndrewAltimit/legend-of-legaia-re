@@ -672,11 +672,13 @@ pub(crate) enum Cmd {
         /// composition (identity Vahn/Noa/Gala when none is recorded).
         #[arg(long)]
         party: Option<String>,
-        /// Route field NPC dialogue through the inline-script field-VM runner
-        /// (branch handlers execute their flag-sets / scene-changes) instead of
-        /// the simplified typewriter. Up/Down navigate a menu, Cross confirms.
+        /// Fall back to the simplified typewriter for field NPC dialogue. By
+        /// default dialogue runs through the inline-script field-VM runner so
+        /// branch handlers execute their flag-sets / scene-changes (Up/Down
+        /// navigate a menu, Cross confirms); pass this to disable that and use
+        /// the plain panel with no branch execution.
         #[arg(long, default_value_t = false)]
-        vm_dialogue: bool,
+        simple_dialogue: bool,
         /// Make the player follow the per-scene terrain elevation: each field
         /// locomotion step snaps the player's Y to the floor-height sample
         /// (`FUN_80019278`) at the new tile. Off by default (flat Y); enable to

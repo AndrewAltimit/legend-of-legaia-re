@@ -36,7 +36,9 @@ pub struct FieldLiveOpts {
     /// `player_battle` implies this.
     pub live_loop: bool,
     /// Make battles player-driven (command menu). Implies `live_loop` and
-    /// installs the item / spell / Seru catalogs a player-driven battle needs.
+    /// installs the Seru-learning registry a player-driven battle needs. (The
+    /// item / spell / equipment catalogs are installed unconditionally now -
+    /// the field pause-menu reads them regardless of these flags.)
     pub player_battle: bool,
     /// Optional Battle<->Field BGM swap id (resolved through the scene's BGM
     /// table by the live loop).
@@ -706,24 +708,29 @@ impl BootSession {
             world.install_encounter_for_scene(&registry, scene);
         }
 
+        // Install the equipment / spell / item catalogs unconditionally so
+        // every consumer - not just the battle loop - sees real data. The
+        // field pause-menu (Equip / Magic / Items screens) reads these off
+        // the world; before they were flag-gated and the menu fell back to
+        // throwaway vanilla()/new() placeholders that ignored disc data.
+        // Each prefers the disc-accurate real-id table and falls back to the
+        // fabricated-id vanilla catalog on disc-free builds.
+        world.set_equipment_table(self.equip_modifier_table.clone().unwrap_or_else(|| {
+            legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
+        }));
+        world.set_spell_catalog(
+            self.spell_catalog
+                .clone()
+                .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
+        );
+        world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+
         if opts.live_loop || opts.player_battle {
             world.live_gameplay_loop = true;
-            // Equipped-gear bonuses fold onto party attack/defense at battle
-            // entry. Prefer the disc-accurate real-id table; fall back to the
-            // fabricated-id vanilla catalog on disc-free builds.
-            world.set_equipment_table(self.equip_modifier_table.clone().unwrap_or_else(|| {
-                legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
-            }));
         }
         world.set_battle_bgm(opts.battle_bgm);
         if opts.player_battle {
             world.battle_player_driven = true;
-            world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
-            world.set_spell_catalog(
-                self.spell_catalog
-                    .clone()
-                    .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
-            );
             world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
         }
 

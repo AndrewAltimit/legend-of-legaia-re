@@ -152,3 +152,41 @@ fn new_game_seeds_vahn_straight_from_disc_image() {
     assert_eq!(world.party_count, 1);
     assert_eq!(world.roster.members[0].hp_mp_sp().hp_max, 180);
 }
+
+#[test]
+fn enter_field_live_installs_disc_catalogs_without_battle_flags() {
+    // The field pause-menu (Equip / Magic / Items screens) reads the spell
+    // and equipment tables straight off the world. They must be populated at
+    // boot even for a plain field session - i.e. WITHOUT `live_loop` /
+    // `player_battle` - or the menu falls back to empty/placeholder data.
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ (with SCUS_942.54) missing - run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: "town01".to_string(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
+
+    // Default opts: no live loop, no player-driven battle.
+    let opts = legaia_engine_shell::boot::FieldLiveOpts::default();
+    assert!(
+        !opts.live_loop && !opts.player_battle,
+        "default opts carry no battle flags"
+    );
+    session
+        .enter_field_live("town01", &opts)
+        .expect("enter town01 live");
+
+    let world = &session.host.world;
+    assert!(
+        !world.spell_catalog.is_empty(),
+        "spell catalog must be installed for the field Magic menu"
+    );
+    assert!(
+        !world.equipment_table.is_empty(),
+        "equipment table must be installed for the field Equip menu"
+    );
+}

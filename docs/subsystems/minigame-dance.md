@@ -157,6 +157,10 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 
 Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.
 
+Engine port: [`legaia_engine_core::dance`](../../crates/engine-core/src/dance.rs) is the clean-room rules engine driven by that parsed chart - the beat clock (`FUN_801cf470`), the timing-window hit judge (`FUN_801d1960`), the chart lookup (`FUN_801d1820`), the symbol→pad-bit map (`FUN_801d4040`), and the score / groove-gauge award (`FUN_801d1af4`), all with the Confirmed constants above.
+
+`DanceGame::judge_press` returns the three-way Miss/Hit/Sequence result and applies the score, gauge, and streak side effects; `DanceGame::from_overlay` starts a run straight off the disc chart (disc-gated `dance_minigame_real` auto-plays the real chart end to end). The sequence-bonus *magnitude* (the `DAT_801d41a4`-scaled award) is left to the caller since that value table is disc-resident and unmapped. The visible dance-floor / arrow rendering (the [floor cluster](#dance-floor-rendering)) is not part of the rules port - it is a separate host concern.
+
 ## Open
 
 - The visible Perfect/Good/Miss banner *strings* each tier spawns (the `× 0x22` / `DAT_801d538c` Perfect tier and the accuracy weight `DAT_801d6090`) - the score tiers are pinned (see [Scoring](#scoring)); only the on-screen label each spawns is unmapped (capture-leaning).
