@@ -484,9 +484,11 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    executing the control bytecode between text segments (story-flag tests,
    `SET`/`CLEAR`, scene changes) and pausing at each `0x1F` segment to show a
    box, applying a menu choice's relative jump (`FUN_80038050`) so the branch
-   handler's side effects run before its reply. Opt-in via `World::use_vm_dialogue`
-   (`play-window --vm-dialogue`); the default path stays the simplified
-   `OwnedDialogPanel` typewriter. See [`formats/mes.md`](../formats/mes.md#dialog-window-pager---fun_801d84d0).
+   handler's side effects run before its reply. Gated by `World::use_vm_dialogue`
+   (default `false` at the engine-core level so unit-test worlds keep the simple
+   path; the shell's `play-window` sets it **on by default**, with
+   `--simple-dialogue` opting back into the simplified `OwnedDialogPanel`
+   typewriter). See [`formats/mes.md`](../formats/mes.md#dialog-window-pager---fun_801d84d0).
 
 An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
 wrong twice over: `0x3F` is the named scene-change, and field dialogue is the

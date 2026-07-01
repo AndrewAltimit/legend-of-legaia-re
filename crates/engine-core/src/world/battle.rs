@@ -714,24 +714,31 @@ impl World {
         if is_party_summon_cast {
             self.accrue_summon_spell_xp(caster, def.id, summon_xp_gain);
         }
-        // Cast band (live-loop path): a player Seru-magic id resolves to a
-        // per-summon overlay. Request the spawn at the first real target's
-        // battle position so the host can seat the summon scene-graph. The
-        // engine equivalent of the retail cast band's `FUN_8003EC70` overlay
-        // load (see `crate::summon`).
+        // Cast band (live-loop path): seat the move's battle-FX at the first
+        // real target's battle position so the host can render it.
+        let fx_origin = targets
+            .iter()
+            .find_map(|&t| self.actors.get(t as usize))
+            .map(|a| {
+                [
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                ]
+            })
+            .unwrap_or([0, -300, -645]);
         if crate::summon::SERU_SUMMON_IDS.contains(&def.id) {
-            let origin = targets
-                .iter()
-                .find_map(|&t| self.actors.get(t as usize))
-                .map(|a| {
-                    [
-                        a.move_state.world_x,
-                        a.move_state.world_y,
-                        a.move_state.world_z,
-                    ]
-                })
-                .unwrap_or([0, -300, -645]);
-            self.request_summon_spawn(def.id, origin);
+            // A player Seru-magic id resolves to a per-summon overlay: request
+            // the summon-creature spawn (the retail cast band's `FUN_8003EC70`
+            // overlay load - see `crate::summon`).
+            self.request_summon_spawn(def.id, fx_origin);
+        } else {
+            // Every other move (enemy specials + non-summon spells) that carries
+            // a move-power effect list requests its move-FX scene-graph spawn -
+            // the `+0x12`/`+0x16` `0x801f6324` prototype records the retail
+            // strike setup (`FUN_801e09f8`) spawns on the launch / on-contact
+            // transitions. No-op when the move has no FX entries.
+            self.request_move_fx_spawn(def.id, fx_origin);
         }
         true
     }

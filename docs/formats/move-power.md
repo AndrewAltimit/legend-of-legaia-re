@@ -249,6 +249,17 @@ interpreted-transform boundary (the exact per-part transform composition is the
 shared open `FUN_801F811C`/PROT-0900 piece). The base 3 is the captured
 `gp[0x754]`:
 
+In the **live battle loop** this is triggered automatically, not just by the
+`H` debug key: the shared cast path (`World::cast_spell_on_slots`, used by both
+player spell casts and the monster-AI special-attack path) requests the spawn
+for any **non-summon** move whose record carries a spawnable effect entry
+(`MovePowerCatalog::move_has_spawn_fx`) via `World::request_move_fx_spawn`,
+seating it at the target actor's battle position. The host drains
+`World::take_pending_move_fx_spawn()` and calls `spawn_move_fx` - the move-FX
+sibling of the Seru-summon `pending_summon_spawn` request. (Player Seru-magic ids
+`0x81..=0x8b` route to the summon-creature path instead; plain physical attacks
+carry no move id and stay on the generic impact path.)
+
 A spawn also surfaces the move's two presentation fields for the render / audio
 layers: the **trail texpage** (`+0x0b` → `0x7700 + id`) on
 `World::active_move_fx_trail_texpage()` (the 2D afterimage streak draw

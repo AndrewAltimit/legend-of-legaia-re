@@ -797,12 +797,16 @@ impl PlayWindowApp {
                                 apply_spell_outcome(&s, &mut self.session.host.world);
                             }
                             FieldMenuSubsession::Arts(editor) => {
-                                // No persistent ChainLibrary on the world
-                                // yet - the editor's outcome is dropped
-                                // until engines wire one in.
-                                let mut throwaway =
-                                    legaia_engine_core::tactical_arts_editor::ChainLibrary::new();
-                                let _ = apply_arts_outcome(editor, &mut throwaway);
+                                // Persist the edit back into the world's saved
+                                // chains so the next battle's Arts rows reflect
+                                // it: lift the live library, apply the editor
+                                // outcome, store it back (World::chain_library
+                                // <-> store_chain_library bridge over
+                                // World::saved_chains).
+                                let mut library = self.session.host.world.chain_library();
+                                if apply_arts_outcome(editor, &mut library).is_ok() {
+                                    self.session.host.world.store_chain_library(&library);
+                                }
                             }
                             FieldMenuSubsession::Status(_) => {}
                             FieldMenuSubsession::Save(s) => {
@@ -858,14 +862,21 @@ impl PlayWindowApp {
                 };
                 if let Some(row) = suspended_row {
                     let snapshots = scan_save_dir(&self.save_dir);
+                    // Build sub-sessions from the DISC tables the boot path
+                    // already installed on the world (spell table, equipment
+                    // bonus table) plus the live saved-chain library - not
+                    // throwaway vanilla()/new() placeholders, which ignored
+                    // any randomizer/disc data and dropped Arts edits.
+                    let world = &self.session.host.world;
+                    let chain_library = world.chain_library();
                     *sub = Some(FieldMenuSubsession::build(
                         row,
-                        &self.session.host.world,
+                        world,
                         &self.options_state,
                         &snapshots,
-                        &legaia_engine_core::tactical_arts_editor::ChainLibrary::new(),
-                        &legaia_engine_core::spells::SpellCatalog::vanilla(),
-                        &legaia_engine_core::battle_stats::EquipmentTable::new(),
+                        &chain_library,
+                        &world.spell_catalog,
+                        &world.equipment_table,
                     ));
                 }
                 let outcome = self.session.field_menu.as_ref().and_then(|m| m.outcome());
@@ -5766,6 +5777,23 @@ impl ApplicationHandler for PlayWindowApp {
                     {
                         self.spawn_summon_creature(spell_id);
                     }
+                    // Production move-FX trigger: a non-summon spell cast or
+                    // enemy special whose move-power record carries a spawnable
+                    // effect list requests its `0x801f6324` scene-graph spawn at
+                    // the target's battle position. Seat it through the same
+                    // move-VM path the `H` debug key and field FX use.
+                    if let Some((move_id, origin)) =
+                        self.session.host.world.take_pending_move_fx_spawn()
+                        && self.session.host.world.spawn_move_fx(move_id, origin)
+                    {
+                        // Route the move's sound cue the same way the field-FX /
+                        // debug path does (classify only; move-FX cue playback is
+                        // not yet wired to the SFX ring).
+                        if let Some(cue) = self.session.host.world.take_pending_move_fx_cue() {
+                            let dispatch = legaia_engine_audio::classify_cue(cue as u32);
+                            log::debug!("battle move-FX cue {cue:#04x} -> {dispatch:?}");
+                        }
+                    }
                     // Advance an active Seru-magic summon scene-graph (the cast
                     // above, or the `G` debug spawn) through the move VM.
                     self.session.host.world.tick_summon(0x0400);
@@ -7099,8 +7127,9 @@ fn cmd_play_window_with_record(
         Some(disc_path) => BootSession::open_disc(disc_path, &cfg)?,
         None => BootSession::open(extracted_root, &cfg)?,
     };
-    // Opt-in: drive field dialogue through the inline-script field-VM runner
-    // (branch handlers execute). Off by default → identical to before.
+    // Drive field dialogue through the inline-script field-VM runner so branch
+    // handlers execute (flag-sets / scene-changes / GIVE_ITEM). On by default;
+    // `--simple-dialogue` clears it to fall back to the plain typewriter panel.
     session.host.world.use_vm_dialogue = vm_dialogue;
     // Opt-in: snap the player's Y to the per-scene floor height each
     // locomotion step. Off by default → flat-Y behaviour preserved.

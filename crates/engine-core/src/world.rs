@@ -1752,6 +1752,15 @@ pub struct World {
     /// as the capture-archive load).
     pub pending_summon_spawn: Option<(u8, [i16; 3])>,
 
+    /// Production battle-FX request for a **non-summon** move: a spell cast or
+    /// enemy special whose move-power record carries a spawnable effect list
+    /// sets `(move_id, target world pos)` here (see [`World::request_move_fx_spawn`]).
+    /// The host drains it via [`World::take_pending_move_fx_spawn`] and calls
+    /// [`World::spawn_move_fx`] (which reads the retained PROT 0898 overlay).
+    /// The sibling of [`pending_summon_spawn`](Self::pending_summon_spawn) for
+    /// the move-FX (rather than summon-creature) render path.
+    pub pending_move_fx_spawn: Option<(u8, [i16; 3])>,
+
     /// Active battle move-power effect-FX scene-graph, while one is playing. A
     /// move's `0x01..=0x63` on-contact / launch effect-list entries spawn the
     /// `0x801f6324` prototype records (summon-format move-VM parts) through the
@@ -2399,6 +2408,7 @@ impl World {
             rng_state: 0x1234_5678,
             active_summon: None,
             pending_summon_spawn: None,
+            pending_move_fx_spawn: None,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),
             spell_costs: Default::default(),
@@ -5339,6 +5349,28 @@ impl World {
             || crate::summon::EVOLVED_SUMMON_IDS.contains(&spell_id)
         {
             self.pending_summon_spawn = Some((spell_id, origin));
+        }
+    }
+
+    /// Drain a pending non-summon move-FX spawn request (the host calls
+    /// [`Self::spawn_move_fx`] with it). See [`Self::pending_move_fx_spawn`].
+    pub fn take_pending_move_fx_spawn(&mut self) -> Option<(u8, [i16; 3])> {
+        self.pending_move_fx_spawn.take()
+    }
+
+    /// Request a move-FX spawn for the non-summon move `move_id` at `origin`,
+    /// but only when the move-power table is installed and the move's record
+    /// carries a spawnable effect entry ([`crate::move_power::MovePowerCatalog::move_has_spawn_fx`]).
+    /// No-op otherwise (plain physical hits, disc-free battles with no table).
+    /// Idempotent within a step (last cast wins). The move-FX sibling of
+    /// [`Self::request_summon_spawn`]; Seru-summon ids go through that instead.
+    pub(crate) fn request_move_fx_spawn(&mut self, move_id: u8, origin: [i16; 3]) {
+        if self
+            .move_power
+            .as_ref()
+            .is_some_and(|cat| cat.move_has_spawn_fx(move_id))
+        {
+            self.pending_move_fx_spawn = Some((move_id, origin));
         }
     }
 

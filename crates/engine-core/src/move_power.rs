@@ -183,6 +183,29 @@ impl MovePowerCatalog {
         out
     }
 
+    /// `true` when `move_id`'s record carries at least one spawnable effect
+    /// entry (a `0x01..=0x63` [`EffectListEntry::Spawn`] scene-graph record or a
+    /// high-bit [`EffectListEntry::AltEffect`] 2D `efect.dat` id) in either its
+    /// on-contact (`+0x12`) or launch (`+0x16`) list. Unlike
+    /// [`Self::spawnable_move_ids`] this classifies the record's own list bytes
+    /// and does **not** require the auxiliary proto tables to be present, so the
+    /// live battle path can decide whether a cast should request a move-FX spawn
+    /// before the (disc-resident) proto records are consulted by
+    /// [`crate::world::World::spawn_move_fx`]. `false` for ids with no record.
+    pub fn move_has_spawn_fx(&self, move_id: u8) -> bool {
+        self.fx_for_move_id(move_id).is_some_and(|fx| {
+            fx.contact_effects
+                .iter()
+                .chain(fx.launch_effects.iter())
+                .any(|e| {
+                    matches!(
+                        e.entry,
+                        EffectListEntry::Spawn(_) | EffectListEntry::AltEffect(_)
+                    )
+                })
+        })
+    }
+
     /// Number of parsed records (including the unused slot 0).
     pub fn len(&self) -> usize {
         self.table.len()
@@ -240,8 +263,11 @@ pub struct ResolvedEffect {
 /// [`MovePowerCatalog::fx_for_move_id`].
 ///
 /// This is pure data: the render / audio layers consume it (trail texpage,
-/// impact config, effect spawns, sound cue). Effect-spawn wiring is blocked on
-/// the `0x801F6324` prototype-struct layout - see the module docs.
+/// impact config, effect spawns, sound cue). The `0x801F6324` prototype records
+/// are decoded and staged by [`crate::world::World::spawn_move_fx`]; the live
+/// battle cast path requests that spawn for any non-summon move carrying a
+/// spawnable entry (see [`MovePowerCatalog::move_has_spawn_fx`] and
+/// [`crate::world::World::request_move_fx_spawn`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoveFx {
     /// The battle move id this descriptor was resolved for.
