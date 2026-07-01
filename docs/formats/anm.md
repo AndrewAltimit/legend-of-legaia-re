@@ -346,8 +346,13 @@ Bank slot 1 is the standing **idle** clip (10 bones × 15 frames): in the
 town01 field anchor all three party actors' live record pointers sit at
 bank offset +1 (Vahn = record 1, Noa = 8, Gala = 15) and the savepoint's
 at record 21. Frame 0 of the idle clip is the character's field rest-pose
-assembly transform. The other bank slots (10 / 8 / 8 / 4 / 3-frame clips)
-are the locomotion / interaction family; their per-slot roles are not yet
+assembly transform. Bank slot 0 is the **walk** clip: a live pad-driven
+capture (`scripts/pcsx-redux/autorun_locomotion_clip_pin.lua` - hold a
+D-pad direction from town01 free-roam and sample `player+0x4C` per field
+tick) shows the pointer switch record 1 → record 0 while moving and back
+on stop, in both walk directions (no separate turn clip fires). The
+remaining bank slots (10 / 8 / 8 / 4 / 3-frame clips) are the
+run / interaction family; their per-slot roles are not yet
 capture-pinned.
 
 The consuming actor's object-pointer table at `actor[+0x44]`

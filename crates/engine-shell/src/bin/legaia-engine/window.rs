@@ -8029,6 +8029,20 @@ fn cmd_play_window_with_record(
                 log::warn!("play-window: field char atlas upload skipped: {err:#}");
             }
         }
+        // Shared interior page (texpage (960,256) + the flat 256-entry strip
+        // CLUT on row 510): resident in retail VRAM from the opening onward,
+        // sampled by town env meshes (23 town01 tile instances incl. the
+        // spawn plaza). It lives in PROT.DAT's unindexed head gap (before
+        // the first TOC entry's data), so no per-entry read can source it.
+        match legaia_asset::interior_page::read_from_prot_dat(&extracted_root.join("PROT.DAT")) {
+            Ok(tim) => {
+                legaia_asset::interior_page::upload_to_vram(&tim, &mut res.vram);
+                log::info!("play-window: shared interior page uploaded (row-510 strip CLUT)");
+            }
+            Err(err) => {
+                log::warn!("play-window: shared interior page skipped: {err:#}");
+            }
+        }
         res
     };
     log::info!(

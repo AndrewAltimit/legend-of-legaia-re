@@ -41,6 +41,7 @@ pub mod field_pack;
 pub mod fishing_species;
 pub mod fmv_dispatch;
 pub mod init_pak;
+pub mod interior_page;
 pub mod item_effect;
 pub mod item_names;
 pub mod kingdom_bundle;
