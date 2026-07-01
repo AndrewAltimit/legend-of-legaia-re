@@ -336,6 +336,37 @@ sub-state, `+0x07` action-type).
 | `801EC3E4` | Large capture helper (10 KB, 0 incoming - top-level from game-mode dispatch). Calls `FUN_801E91E8`. `overlay_magic_capture_801ec3e4.txt`. |
 | `801E9FD4` | Capture sub-system (8.5 KB, 1 incoming). Calls `FUN_801EC0DC`. `overlay_magic_capture_801e9fd4.txt`. |
 
+## Battle on-screen elements (HUD + 2D sprite/effect list)
+
+Surfaced by the [trace-driven-coverage](../tooling/playthrough-coverage.md) S5 (Tetsu spar) gap-set run - these SCUS functions are the always-resident on-screen-element helpers the battle HUD draws through (also used by the field/menu HUD; SCUS is shared). All confirmed live at `game_mode 0x15`.
+
+| Address | Role |
+|---|---|
+| `8002CDD0` | **Party status-HUD panel builder.** Loops the party rows, calling `FUN_8002C2E4` per member; the battle bottom-panel HP/status readout. |
+| `8002C2E4` | **Party HUD row.** `(party_slot, x, y)`. For a live, unafflicted member draws an HP bar (`FUN_8002C488`) + HP number (`FUN_80034B78`); otherwise selects one **status icon** by priority from the character-record status bitfield (`record + slot*0x414 + 0x12E`, `u16`): `HP==0 → 0x20`, then bits `0x004 → 0x1a`, `0x400 → 0x1d`, `0x800 → 0x1e`, `0x380 → 0x1c`, `0x078 → 0x1b`, `0x1000 → 0x1f`, `0x002 → 0x19`, `0x001 → 0x18` (first match wins). Pins the HUD's view of the status bitfield's bit layout. |
+| `8002C488` | **Icon / glyph sprite drawer.** `(x, y, icon_id) -> ...`. Emits a GP0 sprite into the OT `_DAT_1F8003A0` from a per-icon UV/tpage atlas table (`DAT_800732A8` stride 0xC). The shared status-icon / small-glyph renderer. |
+| `8002BDC4` | **Textured-image blit.** `(x, y, desc, clut, w, h)`. Draws a `desc`-described image (width/height default from `desc[2]/[3]`) at `(x,y)`; CLUT/tpage from `clut & 0x7F | 0x7FC0`. HUD/label image helper. |
+| `8002C0B0` | **Gauge-bar primitive.** `(x, y, value)`. Emits a filled GP0 quad (`0x39……` shaded-quad packet) whose width = `min(value>>1, 0xFF)` from `x+0x1B` - the HP/gauge bar the party HUD row draws. |
+| `80021248` | **2D effect/scene-node spawn.** Allocates an effect actor (`FUN_80020DE0(&DAT_8007071C, _DAT_8007C34C)`), seeds its screen position (`+0x14/+0x16/+0x18` from the source record's `[0xD]/[0xF]/[0x11]`), stores the source at `+0x4C`, copies its body into `+0x80`, and toggles the `_DAT_1F800394` `0x100`/`0x80` render flags + tracks it at `gp+0x750`. (`0x800212C4` in the gap-set is an **interior instruction** of this function - the Ghidra label-call artifact, not a separate entry.) |
+| `80031AE4` | **2D floating-element tween animator.** Walks the linked list at `gp+0x148`; per node advances a keyframe cursor by the scratchpad frame counter `DAT_1F800393`, linearly interpolating screen position (`node+0xA`/`node+0xC`) between the node's keyframe endpoints (`data[1..6]`), with a repeat/loop count at `node[8]` (`1`/`-1` = loop). Counts active nodes into `gp+0x868`. The animator behind rising damage numbers / transient battle captions. |
+| `800355F0` | **2D floating-element list teardown.** Drains the same `gp+0x148` list, freeing each node via `FUN_800319A8`. The free-all counterpart to `FUN_80031AE4`. |
+| `8004FE5C` | **Battle display-element enqueue.** `(id, category)`. Appends to the 4-slot pending-display ring `DAT_8007B6D8` (counter at `gp[+0xA0C]+9`, wraps at 3), staging the element's colour/type from the actor's element byte (`*(actor+0x22C)+0x80`) into the display list `_DAT_8007B990`; `id >= 0x100` uses the RNG (`FUN_8003DE7C`) + frame counter. Feeds the on-screen element draw. |
+| `800508DC` | **Battle voice/anim-cue select.** `(actor_id, param, key)`. Indexes the [8-slot actor table `DAT_801C9370`](#battle-subsystem) by `actor_id`, reads `actor+0x1F6`, range-tests the caller's `param+0x54` pair table, and for party slots keys into the live 0x414-stride character records (`DAT_8007BD10`-selected) to pick a battle voice cue (`FUN_8004FCC8(0x56/0x5C/0x62)`) or fall through to an anim id, with an RNG tiebreak (`FUN_80056798`). |
+| `80050E00` | **3-slot table scan.** `(ptr)`. Tiny helper: scans up to 3 records, stopping at the first whose `+1` byte is `0` - counts populated entries in a 3-slot (party) action/id table. |
+| `8005112C` | **Per-actor colour marker draw.** `(actor)`. Gated on `actor+0x68 != 0` and the render-class field `actor+0x5A < 3`; indexes `DAT_8007BD10[class]` and, matching the actor's element byte (`*(actor+0x4C)+0x77`) against specific ids, calls `FUN_80048310(actor, w, 3, rgb)` to draw a coloured element/affinity marker (RGB words `0x80FFC0` / `0x802040` / `0x204080` / `0x208040`). |
+
+## Battle per-frame draw (overlay 0898, trace-surfaced)
+
+New battle-overlay (`0898`) functions the S5 trace found live (`game_mode 0x15`), attributed by containment against the `overlay_battle_action_*` dumps (the aliased `overlay_0897`/`overlay_dance`/… stems the raw hit carried are VA-alias mismatches - the resident overlay at battle time is `0898`). Called each frame from the battle per-actor draw loop (`ra` in `0x80047EXX`/`0x80048130..48`).
+
+| Address | Role |
+|---|---|
+| `801E2524` / `801E2650` | **Battle full-screen flash / fade overlay.** `FUN_801E2524` reads a trigger byte `ctx[+0x28B]` (`_DAT_8007BD24`) and, while `1..4`, draws up to four stacked full-screen layers via `FUN_801E2650(x, brightness%, tpage_flag, level)` - each a grey GP0 quad whose brightness `= min((brightness<<8)/100, 0xFF)` - then ramps the fade-progress byte `ctx[+0x28C]` by `DAT_1F800393*8` (capped `0xF0`, which gates off the brighter layers as it climbs). The white-flash / screen-dim used on impacts and battle transitions. |
+| `801DF6B8` | **Per-actor battle draw/position loop** (1848 bytes). Iterates the 8 battle actors via the ctx order/select tables (`ctx+0x318` → `DAT_801C9370` slot, `ctx+idx*4+0x83C` liveness gate), reading each live actor's screen transform (`+0x3C`) and applying a `/10` scale (`0x66666667` magic). The builder that positions the on-screen per-actor elements (HP tags / markers) each frame; the top consumer of the SCUS on-screen-element helpers above. |
+| `801D829C` | **Camera-state per-actor transform builder** (548 bytes). Reads the battle camera-state registers `DAT_8007B790/2/4` and composes per-actor transforms over the actor table (`DAT_801C9370`) + `DAT_800840BC` - the billboard/rotation setup that orients battle 2D-in-3D elements toward the orbit camera. |
+| `801D71B8` | **Attack-phase actor sub-handler** (4.3 KB). Gated on the active actor (`ctx+0x13`) having a live target (`+0x14C != 0`), action category `+0x1DE == 3` (Attack), and `ctx+6 == 0xFF`; a major per-frame Attack-execution routine driving the swing arc (seeds `local = 0x400` angle). One of the hottest attack-chain bodies. |
+| `801E805C` | **Battle effect/summon-band orchestrator** (4.5 KB). Gated on `DAT_8007B64C` + the summon-overlay shared-buffer region `_DAT_801F697X`/`_DAT_8007BD14`; batches `FUN_801D8DE8(id, 0)` effect/anim requests off a count at `_DAT_801F6974`. Touches the `0x801F69xx` summon-overlay link-base window (not exercised by the Tetsu spar beyond its guard checks). |
+
 ## Script VMs
 
 | Address | Role |
