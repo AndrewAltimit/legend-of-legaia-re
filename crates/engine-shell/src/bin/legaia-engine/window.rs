@@ -362,6 +362,12 @@ struct PlayWindowApp {
     /// Drawn in `SceneMode::Field` UNDER the placed buildings so the town rests
     /// on its ground instead of floating over the bare clear colour.
     field_terrain_draws: Vec<(usize, Mat4)>,
+    /// Terrain tiles whose mesh is untextured (`F*`/`G*` vertex-colour prims
+    /// only): `(index into `color_meshes`, world model)`, resolved through the
+    /// colour-mesh bridge the same way `field_placement_color_draws` is. The
+    /// textured bridge drops these tiles entirely (their VRAM mesh is empty),
+    /// which rendered as holes in the town floor.
+    field_terrain_color_draws: Vec<(usize, Mat4)>,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
@@ -369,13 +375,15 @@ struct PlayWindowApp {
     /// shows its tiled ground / trees / mountains rather than a handful of
     /// landmark objects.
     world_map_terrain_draws: Vec<(usize, Mat4)>,
-    /// World-map continent **ground**: the heightfield surface built from the
-    /// walk `.MAP` floor grid (`Scene::walk_heightfield`). `None` off the world
-    /// map. Drawn in `SceneMode::WorldMap` as the continent ground (texturing
-    /// provisional - a uniform ground texel); `world_map_terrain_draws` carries
-    /// the sparse placed landmarks on top. Kept out of `meshes` (it has no
-    /// `Tmd` / actor binding); drawn directly with a constant Y-flip model.
-    world_map_heightfield: Option<UploadedVramMesh>,
+    /// Bulk **ground**: the heightfield surface built from the scene's
+    /// `.MAP` floor grid (`Scene::walk_heightfield`), textured per cell from
+    /// the terrain-type-keyed atlas (record `+0x14`/`+0x15`/`+0x16`). `None`
+    /// for scenes with no field map / no `0x1000` ground layer. Drawn as the
+    /// continent ground in `SceneMode::WorldMap` and as the town floor in
+    /// `SceneMode::Field` (under the `0x2000` decor tiles + placed objects).
+    /// Kept out of `meshes` (it has no `Tmd` / actor binding); drawn directly
+    /// with a constant Y-flip model.
+    ground_heightfield: Option<UploadedVramMesh>,
     /// Kingdom slot-4 vertex-pool inspection wireframe, as raw line geometry
     /// `(positions, colors, line-indices)` in world space. `Some` only on a
     /// world-map scene when `LEGAIA_WORLDMAP_SLOT4=1` is set; `None`
@@ -2114,15 +2122,41 @@ impl PlayWindowApp {
                 *slot = Some(mesh_idx);
             }
         }
+        let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
         let mut draws = Vec::new();
         for p in placements {
             let Some(pack_index) = p.pack_index else {
+                if diag {
+                    log::info!(
+                        "DIAG place drop: no pack_index at ({}, {})",
+                        p.world_x,
+                        p.world_z
+                    );
+                }
                 continue;
             };
             let Some(&res_idx) = env_tmds.get(pack_index as usize) else {
+                if diag {
+                    log::info!(
+                        "DIAG place drop: pack_index {} out of range ({} env tmds) at ({}, {})",
+                        pack_index,
+                        env_tmds.len(),
+                        p.world_x,
+                        p.world_z
+                    );
+                }
                 continue;
             };
             let Some(mesh_idx) = res_to_mesh[res_idx] else {
+                if diag {
+                    log::info!(
+                        "DIAG place drop: pack {} (res {}) not in this mesh bridge at ({}, {})",
+                        pack_index,
+                        res_idx,
+                        p.world_x,
+                        p.world_z
+                    );
+                }
                 continue;
             };
             // World Y from the floor-height LUT (`-lut[nibble] + y_off`), or
@@ -2232,6 +2266,42 @@ impl PlayWindowApp {
                 // that the unfiltered builder produces.
                 let vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
                 if vmesh.indices.is_empty() {
+                    if std::env::var_os("LEGAIA_DIAG_PLACE").is_some() {
+                        let (_, stats) = rtmd.build_filtered_vram_mesh_reasoned(&res.vram);
+                        let mut missing = std::collections::BTreeSet::new();
+                        let _ = legaia_tmd::mesh::tmd_to_vram_mesh_filtered(
+                            &rtmd.tmd,
+                            &rtmd.raw,
+                            |cba, tsb, uvs| {
+                                if !res.vram.prim_has_texture_data(cba, tsb, uvs) {
+                                    missing.insert((cba, tsb));
+                                }
+                                false
+                            },
+                        );
+                        let decoded: Vec<String> = missing
+                            .iter()
+                            .map(|&(cba, tsb)| {
+                                format!(
+                                    "cba={cba:#x} CLUT({},{}) tsb={tsb:#x} page({},{}) bpp{}",
+                                    (cba & 0x3f) * 16,
+                                    cba >> 6,
+                                    (tsb & 0xf) * 64,
+                                    ((tsb >> 4) & 1) * 256,
+                                    4 << ((tsb >> 7) & 3)
+                                )
+                            })
+                            .collect();
+                        log::info!(
+                            "DIAG mesh drop: res {} (entry {} off {:#x}): textured filter empty \
+                             ({stats:?}, color mesh empty: {}) wants: {}",
+                            src_i,
+                            rtmd.entry_idx,
+                            rtmd.offset,
+                            cmesh.is_empty(),
+                            decoded.join(" | ")
+                        );
+                    }
                     // No textured prims survived the VRAM filter; the colour prims
                     // (if any) were already uploaded above.
                     continue;
@@ -2260,23 +2330,23 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("TMD upload skipped: {e:#}"),
                 }
             }
-            // World-map continent ground: build the heightfield surface from
-            // the walk `.MAP` floor grid (the slot-1 pack meshes are only the
-            // landmarks, not a per-cell ground mesh) and texture each cell from
-            // the retail terrain-type-keyed multi-page atlas - the heightfield
+            // Bulk **ground** heightfield: the surface built from the `.MAP`
+            // floor grid (the pack meshes are only the placed objects /
+            // landmarks, not a per-cell ground mesh), textured per cell from
+            // the terrain-type-keyed multi-page atlas - the heightfield
             // bakes the per-cell tile UV (`+0x14`) and page+palette
             // (`+0x15`/`+0x16..+0x18`) so grass / mountain / water cells sample
             // their own VRAM page. See docs/subsystems/world-map.md
             // "Ground texturing".
+            //
+            // This is NOT world-map-only: town `.MAP`s carry the same
+            // `0x1000`-gated ground layer (town01: ~1.9k ground cells vs the
+            // 208 `0x2000` decor tiles, most with `record[+0x10] = 0` = no
+            // pack mesh), and the retail town VRAM has the terrain atlas
+            // pages resident. Without this surface the town floor renders
+            // as holes wherever no `0x2000` tile covers a cell.
             let mut world_map_hf: Option<UploadedVramMesh> = None;
-            let is_world_map = self
-                .session
-                .host
-                .scene
-                .as_ref()
-                .is_some_and(|s| legaia_engine_core::scene::is_world_map_scene(&s.name));
-            if is_world_map
-                && let Some(scene) = self.session.host.scene.as_ref()
+            if let Some(scene) = self.session.host.scene.as_ref()
                 && let Ok(Some(hf)) = scene.walk_heightfield(&self.session.host.index)
                 && !hf.indices.is_empty()
             {
@@ -2290,7 +2360,7 @@ impl PlayWindowApp {
                 ) {
                     Ok(m) => {
                         log::info!(
-                            "play-window: world-map heightfield {} quads ({} verts)",
+                            "play-window: ground heightfield {} quads ({} verts)",
                             hf.quad_count(),
                             hf.positions.len()
                         );
@@ -2342,9 +2412,14 @@ impl PlayWindowApp {
         let field_placement_color_draws =
             self.resolve_field_placement_draws(&res, &color_tmd_src_index);
         let field_terrain_draws = self.resolve_field_terrain_draws(&res, &tmd_src_index);
+        // Untextured ground tiles resolve through the colour-mesh bridge (the
+        // textured bridge has no entry for them - they'd render as floor holes).
+        let field_terrain_color_draws =
+            self.resolve_field_terrain_draws(&res, &color_tmd_src_index);
         log::info!(
-            "play-window: {} field terrain draws (ground layer)",
-            field_terrain_draws.len()
+            "play-window: {} field terrain draws (ground layer, +{} colour tiles)",
+            field_terrain_draws.len(),
+            field_terrain_color_draws.len()
         );
         let world_map_terrain_draws = self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
         // Field move-VM stager scene-pack TMD list: `env_tmds` (res.tmds @ the
@@ -2476,11 +2551,12 @@ impl PlayWindowApp {
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         self.field_terrain_draws = field_terrain_draws;
+        self.field_terrain_color_draws = field_terrain_color_draws;
         self.field_placement_draws = field_placement_draws;
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
         self.world_map_terrain_draws = world_map_terrain_draws;
-        self.world_map_heightfield = world_map_hf;
+        self.ground_heightfield = world_map_hf;
         self.world_map_slot4_lines = world_map_slot4_lines;
         // World-map ocean: recover the 13-frame CLUT animation for the kingdom
         // (the ocean texture + base CLUT are already uploaded by the slot-0 TIM
@@ -2571,7 +2647,14 @@ impl PlayWindowApp {
         const FIELD_ORBIT_ANGLE: f32 = 0.75;
         const FIELD_EYE_HEIGHT: f32 = 0.85;
         let fixed_time = FIELD_ORBIT_ANGLE / FIELD_ORBIT_SPEED;
-        orbit_camera_mvp(lo, hi, FIELD_ORBIT_SPEED, FIELD_EYE_HEIGHT, fixed_time, aspect)
+        orbit_camera_mvp(
+            lo,
+            hi,
+            FIELD_ORBIT_SPEED,
+            FIELD_EYE_HEIGHT,
+            fixed_time,
+            aspect,
+        )
     }
 
     /// Battle camera: frame the **monster** actors (the ones carrying a bound
@@ -6386,7 +6469,7 @@ impl ApplicationHandler for PlayWindowApp {
                         // player / entity-marker world frame:
                         //
                         // 1. The **ground** is a heightfield surface
-                        //    (`world_map_heightfield`) built from the walk
+                        //    (`ground_heightfield`) built from the walk
                         //    `.MAP` floor grid (`Scene::walk_heightfield`,
                         //    elevation per `FUN_80019278`). It draws with a
                         //    provisional uniform ground texel: per-tile
@@ -6403,7 +6486,7 @@ impl ApplicationHandler for PlayWindowApp {
                         // mesh on every `0x1000` cell was wrong (it flooded the
                         // map with pool-5; see docs/subsystems/world-map.md).
                         let yflip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
-                        if let Some(hf_mesh) = self.world_map_heightfield.as_ref() {
+                        if let Some(hf_mesh) = self.ground_heightfield.as_ref() {
                             draws.push(SceneDraw {
                                 mesh: hf_mesh,
                                 mvp: cam * yflip,
@@ -6420,7 +6503,7 @@ impl ApplicationHandler for PlayWindowApp {
                         // Last-resort fallback: nothing resolved at all -> draw
                         // the whole pack at pack-local coords so the map isn't
                         // blank.
-                        if self.world_map_heightfield.is_none()
+                        if self.ground_heightfield.is_none()
                             && self.world_map_terrain_draws.is_empty()
                         {
                             for mesh in &self.meshes {
@@ -6480,13 +6563,35 @@ impl ApplicationHandler for PlayWindowApp {
                                 });
                             }
                         } else {
-                            // Ground / terrain layer FIRST (drawn under the
-                            // buildings): the `CELL_VISIBLE` field-map tiles the
-                            // town's floor is made of. Without it the placed
-                            // buildings float over the bare clear colour.
+                            // Bulk ground FIRST: the `.MAP` floor-grid
+                            // heightfield (the `0x1000` ground layer - most
+                            // town floor cells have NO pack mesh, so without
+                            // this surface they render as holes).
+                            if let Some(hf_mesh) = self.ground_heightfield.as_ref() {
+                                let yflip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                draws.push(SceneDraw {
+                                    mesh: hf_mesh,
+                                    mvp: cam * yflip,
+                                });
+                            }
+                            // Then the terrain / decor tile layer (drawn under
+                            // the buildings): the `CELL_VISIBLE` field-map tiles
+                            // (stone plaza, paths, riverbank).
                             for (mesh_idx, model) in &self.field_terrain_draws {
                                 if let Some(mesh) = self.meshes.get(*mesh_idx) {
                                     draws.push(SceneDraw {
+                                        mesh,
+                                        mvp: cam * *model,
+                                    });
+                                }
+                            }
+                            // Untextured ground tiles (vertex-colour meshes the
+                            // textured bridge has no entry for) - without these
+                            // the floor shows holes where a tile's mesh carries
+                            // no textured prims.
+                            for (mesh_idx, model) in &self.field_terrain_color_draws {
+                                if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                    color_draws.push(ColorSceneDraw {
                                         mesh,
                                         mvp: cam * *model,
                                     });
@@ -7796,8 +7901,9 @@ fn cmd_play_window_with_record(
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
         field_terrain_draws: Vec::new(),
+        field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
-        world_map_heightfield: None,
+        ground_heightfield: None,
         world_map_slot4_lines: None,
         ocean_anim: None,
         cpu_vram_base: None,
