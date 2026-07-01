@@ -2522,7 +2522,22 @@ impl PlayWindowApp {
                 )
             })
             .unwrap_or((self.scene_aabb.0, self.scene_aabb.1));
-        orbit_camera_mvp(lo, hi, 0.25, 0.4, self.win.elapsed_secs(), aspect)
+        // Retail's field camera is a *fixed* per-scene 3/4 vantage that follows
+        // the player, NOT a spinning orbit. Passing `elapsed_secs` here made the
+        // camera rotate continuously (after ~15 s it points up at the sky with
+        // the town splayed at the edges). Freeze the orbit angle to a fixed
+        // diagonal and steepen the eye height to a town-like overhead pitch. The
+        // AABB is still the player-centred box, so the view tracks the player.
+        //
+        // `orbit_camera_mvp` derives its azimuth from `elapsed_secs *
+        // orbit_speed`; feed a constant "time" so the azimuth is fixed at
+        // `FIELD_ORBIT_ANGLE`. Height ratio `FIELD_EYE_HEIGHT` sets the pitch
+        // (`atan(height) ≈ 40deg`), matching Rim Elm's overhead framing.
+        const FIELD_ORBIT_SPEED: f32 = 0.25;
+        const FIELD_ORBIT_ANGLE: f32 = 0.75;
+        const FIELD_EYE_HEIGHT: f32 = 0.85;
+        let fixed_time = FIELD_ORBIT_ANGLE / FIELD_ORBIT_SPEED;
+        orbit_camera_mvp(lo, hi, FIELD_ORBIT_SPEED, FIELD_EYE_HEIGHT, fixed_time, aspect)
     }
 
     /// Battle camera: frame the **monster** actors (the ones carrying a bound
