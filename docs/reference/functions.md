@@ -391,6 +391,15 @@ The [S6 trace](../tooling/playthrough-coverage.md) (first non-tutorial battle, t
 | `801DA59C` | **Persist a party member's command block** (280 B). `FUN_801da59c(actor_index)`: guarded on `actor[+0x14C] != 0` and phase byte `actor[+0x1DE] == 3`, copies the actor's 16-byte `+0x1DF` block back out to `record+0x1B7`; a min/max compare on `+0x154`/`+0x156` picks which of two write banks. The save-side inverse of `FUN_801DA34C`. |
 | `801D9D3C` | **Enemy target-selection-menu builder** (1552 B). Walks the formation-id table `DAT_8007BD0C`, collapsing consecutive identical monster ids into one menu row, and for each distinct enemy copies its name (`func_0x8003ca78` string copy into `_DAT_8007BD24 + slot*0x20 + 0x29`) plus stats (`DAT_801C9370[i+3] + 0x34` / `+0x1BC`). Produces the "which enemy" list the command menu offers. |
 
+## Field->battle transition overlay (intro camera spin)
+
+The [S6 trace](../tooling/playthrough-coverage.md) captured the **field->battle transition** the mid-battle S5 anchor could not: the 3D camera spin that plays between the field and the battle load, when the **field overlay 0897 is still resident but the battle overlay 0898 has not yet loaded** (dumped from `overlay_field_battle_intro.bin`, a partial 0897 image). The trace's `0x801CFxxx` cluster lives here - it is *not* 0898 code (those VAs are a data table in the 0898 image; identity was settled by fingerprinting the live queen-bee RAM back to `overlay_field_0897.bin` at base `0x801CE818`). Aliased union stems (`str_fmv`, `save_ui`, `cutscene_dialogue`, `menu`) are VA mismatches.
+
+| Address | Role |
+|---|---|
+| `801CF5BC` | **Field->battle transition state machine** (752 B; the hot S6 hit, interior hits `+0x2C` `0x801CF5E8` / `+0x2D0` `0x801CF88C`). A phase counter at `arg+0x22` sequences the battle handoff: phase 1 runs the battle-mesh assembly (`FUN_80052770`), phase 2 loads the battle BGM (`func_0x800567a8("battle_bgm_%d", id)`) and the battle-scene bundle (`func_0x8001fc00(0x36F + id, ...)`). A parallel camera-spin timer `arg+0x1a` is compared against the total intro duration `DAT_801D2458`: near the end it raises the ready bits `arg+0x2a |= 1`/`2`, and at completion (`arg+0x2a == 3`) it writes the game-mode handoff **`_DAT_8007B83C = 0x14`** (enter battle). Ambush special-case: `DAT_8007BD0C == 0xA6` (first-monster id) forces `_DAT_8007B880 = 0`. |
+| `801CFBB4` | **Battle-intro swirl/shatter particle builder** (492 B). Allocates a `0xDC00`-byte primitive buffer (`func_0x80017888`) and fills a grid of `0x2C`-stride sprite records (color `0x808080`, `0x40`x`0x40`, positions stepped from `-0x1400`/`-0x500`), each rotated through the sin/cos tables `_DAT_8007B7F8`/`_DAT_8007B81C` via `func_0x80019B28` - the visual effect drawn over the camera spin. |
+
 ## Script VMs
 
 | Address | Role |

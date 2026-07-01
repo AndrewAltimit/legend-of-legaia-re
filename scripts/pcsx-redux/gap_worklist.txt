@@ -186,15 +186,15 @@
 0x801cf388  overlay_baka_fighter_801cf388   # bucket=overlay refs=9
 0x801cf408  overlay_0897_xxx_dat_801cf408   # bucket=overlay refs=1
 0x801cf56c  overlay_str_fmv_0x801CF56C   # bucket=overlay refs=4
-0x801cf5bc  overlay_field_battle_intro_801cf5bc   # bucket=overlay refs=1
 0x801cf678  overlay_0897_xxx_dat_801cf678   # bucket=overlay refs=1
 0x801cf740  overlay_str_fmv_0x801CF740   # bucket=overlay refs=2
 0x801cf760  overlay_menu_801cf760   # bucket=overlay refs=8
 0x801cf8ac  overlay_cutscene_dialogue_801cf8ac   # bucket=overlay refs=7
 0x801cf8b0  overlay_str_fmv_0x801CF8B0   # bucket=overlay refs=4
+0x801cf988  overlay_str_fmv_0x801CF988   # bucket=overlay refs=4
+0x801cfa14  overlay_str_fmv_0x801CFA14   # bucket=overlay refs=4
 0x801cfad4  overlay_str_fmv_0x801CFAD4   # bucket=overlay refs=4
-0x801cfb94  overlay_str_fmv_0x801CFB94   # bucket=overlay refs=5
-0x801cfbb4  overlay_field_battle_intro_801cfbb4   # bucket=overlay refs=1
+0x801cfb94  overlay_battle_action_801cfb94   # bucket=overlay refs=6
 0x801cfbe4  overlay_menu_801cfbe4   # bucket=overlay refs=1
 0x801cfc18  overlay_str_fmv_0x801CFC18   # bucket=overlay refs=2
 0x801cfccc  overlay_slot_machine_801cfccc   # bucket=overlay refs=0
@@ -217,7 +217,7 @@
 0x801d0198  overlay_debug_menu_801d0198   # bucket=overlay refs=5
 0x801d0230  overlay_debug_menu_801d0230   # bucket=overlay refs=6
 0x801d0248  overlay_str_fmv_0x801D0248   # bucket=overlay refs=3
-0x801d0290  overlay_0897_801d0290   # bucket=overlay refs=7
+0x801d0290  overlay_0897_801d0290   # bucket=overlay refs=9
 0x801d02a8  overlay_0897_801d02a8   # bucket=overlay refs=3
 0x801d030c  overlay_menu_801d030c   # bucket=overlay refs=3
 0x801d0338  overlay_0896_801d0338   # bucket=overlay refs=2
