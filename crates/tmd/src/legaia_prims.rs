@@ -244,20 +244,24 @@ impl Prim {
 /// renderer's VRAM lookup samples some random page+CLUT slot, and the
 /// resulting prim either renders as a single flat colour (the famous green
 /// tint when `CLUT[0]` is non-zero) or as a transparent hole. Returns
-/// `(Vec::new(), 0, 0)` when `vert_off < block_len` as a defensive guard
-/// in case a caller passes a stride that's too short for the textured
-/// block layout.
+/// `(Vec::new(), 0, 0)` when the block would run past the buffer.
+///
+/// `block_off` is the byte offset of the texture block within the prim
+/// payload, resolved from the per-mode descriptor
+/// ([`crate::descriptor::Descriptor::texture_block_offset`]) - the block
+/// starts after any leading per-vertex colour words. The earlier caller
+/// derived this as `vertex_offset - block_len`, which only held for the
+/// baked-colour rows (byte1 = 3); the lit rows (byte1 = 0) put the block at
+/// offset 0, ahead of the vertices, and the subtraction pointed into
+/// geometry bytes.
 fn extract_textures(
     buf: &[u8],
     prim_off: usize,
     n_verts: usize,
-    vert_off: usize,
+    block_off: usize,
 ) -> (Vec<(u8, u8)>, u16, u16) {
     let block_len = 4 + n_verts * 2; // CBA(2) + TSB(2) + UVs(n*2)
-    if vert_off < block_len {
-        return (Vec::new(), 0, 0);
-    }
-    let block_start = prim_off + vert_off - block_len;
+    let block_start = prim_off + block_off;
     if block_start + block_len > buf.len() {
         return (Vec::new(), 0, 0);
     }
@@ -363,6 +367,9 @@ pub fn iter_groups(buf: &[u8], section_start: usize, section_size: usize) -> Res
         let descriptor = Descriptor::for_flags(header.flags);
         let is_textured = descriptor.is_some_and(|d| d.packet_shape.is_textured());
         let is_gouraud = descriptor.is_some_and(|d| d.packet_shape.is_gouraud());
+        // Texture block starts after the prim's leading colour words (if any);
+        // the descriptor resolves the exact offset per row.
+        let texblock_off = descriptor.and_then(|d| d.texture_block_offset);
         let mut prims = Vec::with_capacity(header.count as usize);
         for i in 0..header.count as usize {
             let prim_off = prim_base + i * stride;
@@ -372,6 +379,7 @@ pub fn iter_groups(buf: &[u8], section_start: usize, section_size: usize) -> Res
                 stride,
                 n_verts,
                 vert_off,
+                texblock_off,
                 is_textured,
                 is_gouraud,
             ));
@@ -397,6 +405,7 @@ fn decode_prim(
     stride: usize,
     n_verts: usize,
     vert_off: Option<usize>,
+    texblock_off: Option<usize>,
     is_textured: bool,
     is_gouraud: bool,
 ) -> Prim {
@@ -410,7 +419,7 @@ fn decode_prim(
         }
     }
     let (uvs, cba, tsb, colors) = if is_textured {
-        let (uvs, cba, tsb) = match vert_off {
+        let (uvs, cba, tsb) = match texblock_off {
             Some(off) => extract_textures(buf, prim_off, n_verts, off),
             None => (Vec::new(), 0, 0),
         };
@@ -476,6 +485,9 @@ pub fn iter_groups_lenient(buf: &[u8], section_start: usize, section_size: usize
         let descriptor = Descriptor::for_flags(header.flags);
         let is_textured = descriptor.is_some_and(|d| d.packet_shape.is_textured());
         let is_gouraud = descriptor.is_some_and(|d| d.packet_shape.is_gouraud());
+        // Texture block starts after the prim's leading colour words (if any);
+        // the descriptor resolves the exact offset per row.
+        let texblock_off = descriptor.and_then(|d| d.texture_block_offset);
         let mut prims = Vec::with_capacity(header.count as usize);
         for i in 0..header.count as usize {
             let prim_off = prim_base + i * stride;
@@ -485,6 +497,7 @@ pub fn iter_groups_lenient(buf: &[u8], section_start: usize, section_size: usize
                 stride,
                 n_verts,
                 vert_off,
+                texblock_off,
                 is_textured,
                 is_gouraud,
             ));

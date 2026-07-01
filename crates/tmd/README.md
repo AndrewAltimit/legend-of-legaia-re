@@ -48,8 +48,12 @@ u8  olen, ilen, flag, mode
 
 Vertex-index byte offset within each prim is looked up from the
 6-entry descriptor table at `DAT_8007326c`, keyed on
-`((flags >> 1) - 8) >> 1`. The renderer is `FUN_8002735c` (60 GTE ops);
-see [`ghidra/scripts/funcs/8002735c.txt`](../../ghidra/scripts/funcs/8002735c.txt).
+`((flags >> 1) - 8) >> 1`. The same table entry's byte 1 gives the
+texture-block offset (`Descriptor::texture_block_offset`): `0` for the
+light-source-lit rows (block ahead of the vertices) and non-zero for the
+baked-colour rows (colours precede the block). The renderer is
+`FUN_8002735c` (60 GTE ops); see
+[`ghidra/scripts/funcs/8002735c.txt`](../../ghidra/scripts/funcs/8002735c.txt).
 
 The walker `legaia_prims::iter_groups` yields each group's metadata plus
 a slice over its prim records. `dump-obj` consumes that and emits OBJ
