@@ -369,6 +369,18 @@ New battle-overlay (`0898`) functions the S5 trace found live (`game_mode 0x15`)
 | `801E0080` | **Battle-arena procedural scatter/placement** (2.4 KB, spans `0x801E0080..09F8` - just below `FUN_801E09F8`; the hits `0x801E0080`/`+0x338`/`+0x398`/`+0x518` are all interior). Gated on `DAT_8007BD58 != 0` and `DAT_8007BD71 == -1`; each frame (`DAT_1F800393`-driven) it walks a `0x1C`-stride record table at `_DAT_8007BD30+0x1010`, scans the 128-wide grid at `_DAT_8007BD30+0x10` for empty cells, and places records at RNG-chosen (`func_0x80056798`) free cells. The per-frame arena-clutter / ambient-element scatter over the battle-scene buffer; the in-`0898` half of the S5 render-tail hits. |
 | `801F0450` | **Per-party-slot Arts command-window builder** (3.7 KB, in `0898`'s render tail `0x801F0000..8000`; hits `0x801F0740`/`0x801F0ADC` interior). For each party member acting in the Attack category (`actor[+0x1DE] == 3`, gated on char-record `& 0x2000` + actor `+0x16E & 0x404`) it reads the arts command table [`DAT_801C9360[char][cmd]`](../subsystems/arts-command-gauge.md) (cmd from `0xC`) + per-command AP cost `+0x74` + command-direction bytes to assemble that slot's Arts command display state. Sibling of the AP-gauge builder `FUN_801D388C`. (The tail also hosts already-documented `FUN_801EFE44` camera-bounds `+0x48C` = hit `0x801F02D0`, and `FUN_801F17F8` the side-band streaming SM.) |
 
+## Battle sparring-tutorial overlay (PROT 0967)
+
+A discrete overlay the [S5 trace](../tooling/playthrough-coverage.md) surfaced: it drives the **in-battle tutorial prompts** of the scripted Tetsu sparring fight (the how-to-fight tutorial - basic attacks, items, spirit, Hyper-Arts lessons + the practice combo). Extraction **PROT 0967** (a distinct 14 KB overlay), loaded **co-resident at base `0x801F69D8`** (the shared summon/move-FX buffer `*DAT_80010390`), so its `0x801F6xxx..0x801F7xxx` code physically overlaps overlay `0898`'s *rodata* tail - `0898`'s own bytes there are menu label strings, which is why that region disassembled to garbage from the `0898` image.
+
+Identity + base are pinned by a live-battle-RAM (`s5_tetsu_battle`) vs static-blob byte fingerprint (`overlay_effect_0967_*.txt`, imported at `0x801F69D8`). The overlay's tutorial-script strings are Sony text (not reproduced here).
+
+| Address | Role |
+|---|---|
+| `801F71E0` | **Per-frame tutorial-message pacing driver** (668 B; the hot S5 hit). Manages the message display timer at `ctx[+0x6B4]` (`_DAT_8007BD24`): decrements it by `DAT_1F800393 * DAT_1F80037D` (frame-count × rate) each frame; on underflow it advances the tutorial step (`ctx[+0x289]`/step index `ctx[+0x28A]`, loading the next line pointer from `ctx[+0x88C]` into `_DAT_8007B874`) and clears the pad latches (`0x8007B874`/`B938`/`B850`). A player confirm-press (`_DAT_8007B874 != 0`, with `ctx[+0x6B2]==0`) skips the current timer. Sets `ctx[+0x6AE]=0` (line counter) / `ctx[+0x6B0]=1` (active). |
+| `801F6C70` / `801F6D48` | **Tutorial-step text emitters.** Call the box helper `FUN_801F747C(str, mode)` with the step's message and run the same pacing tail as `FUN_801F71E0`. `FUN_801F6D48` dispatches on the step index (`0/1/2/3` → the attack-mode / item / spirit / Hyper-Arts lessons; step 2 also calls `FUN_801F7628`). |
+| `801F747C` | **Tutorial text-box display helper** `(str, mode)`. Emits the prompt through the SCUS text-actor register+draw `FUN_8003541C` (the switch case `0x801F74F4` calls `func_0x8003541C(1, 0xD)`). |
+
 ## Script VMs
 
 | Address | Role |
