@@ -171,3 +171,64 @@ fn equipment_swap_template_choice_matches_runtime() {
         );
     }
 }
+
+/// PROT 0874 §1 = the party field-locomotion ANM bundle. The decoded bytes
+/// are byte-identical to the live runtime container every field actor's
+/// `+0x4C` anim record pointer resolves into (pinned against the
+/// `v0_1_pre_battle_tetsu` town01 anchor: Vahn's standing record = index 1,
+/// Noa = 8, Gala = 15 - bank slot 1 of the three 7-record banks - and the
+/// savepoint's = record 21). Pins the bank layout the engine's field
+/// rest-pose assembly indexes with.
+#[test]
+fn locomotion_anm_banks_match_runtime_shape() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let entry = archive
+        .entries
+        .iter()
+        .find(|e| e.index == character_pack::PROT_ENTRY_INDEX)
+        .expect("PROT entry 874 present")
+        .clone();
+    let mut buf = Vec::new();
+    archive.read_entry(&entry, &mut buf).expect("read PROT 874");
+
+    let bundle =
+        character_pack::field_locomotion_anm(&buf).expect("decode PROT 874 §1 locomotion ANM");
+    assert_eq!(bundle.record_count, 23, "23-record locomotion container");
+    assert_eq!(bundle.decoded.len(), 16_864, "container byte size");
+
+    // The three 7-record character banks are all 10-bone clips (matching the
+    // runtime-capped nobj=10 party meshes); record 21 is the 3-bone savepoint
+    // loop and record 22 the 2-bone aux clip.
+    for c in 0..3usize {
+        for s in 0..character_pack::LOCOMOTION_BANK_STRIDE {
+            let idx = character_pack::locomotion_record_index(c, s);
+            let rec = bundle.record(idx).expect("bank record decodes");
+            assert_eq!(rec.bone_count, 10, "bank {c} slot {s} bone count");
+        }
+    }
+    let save = bundle
+        .record(character_pack::LOCOMOTION_SAVEPOINT_RECORD)
+        .expect("savepoint record");
+    assert_eq!(
+        (save.bone_count, save.frame_count),
+        (3, 30),
+        "savepoint clip"
+    );
+    assert_eq!(bundle.record(22).expect("aux record").bone_count, 2);
+
+    // The pinned standing-idle clips (bank slot 1): 10 bones x 15 frames.
+    for c in 0..3usize {
+        let idx = character_pack::locomotion_record_index(c, character_pack::LOCOMOTION_IDLE_SLOT);
+        let rec = bundle.record(idx).expect("idle record decodes");
+        assert_eq!(
+            (rec.bone_count, rec.frame_count),
+            (10, 15),
+            "bank {c} idle clip shape"
+        );
+    }
+}
