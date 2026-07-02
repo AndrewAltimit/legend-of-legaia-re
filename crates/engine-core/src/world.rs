@@ -6650,6 +6650,7 @@ impl World {
         // Roll the active region. Take the tracker out so the RNG closure can
         // borrow `self` (same pattern as the entity-SM borrow window).
         if let Some(mut tracker) = self.world_map_region_tracker.take() {
+            tracker.set_modifiers(self.encounter_rate_modifiers());
             let roll = tracker.on_step(wx, wz, || self.next_rng());
             self.world_map_region_tracker = Some(tracker);
             if let Some(roll) = roll {

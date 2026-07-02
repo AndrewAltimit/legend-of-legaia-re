@@ -10821,3 +10821,21 @@ fn shop_buy_refuses_past_the_98_held_cap() {
     assert_eq!(world.inventory.get(&0x77), Some(&98));
     assert_eq!(world.money, money);
 }
+
+#[test]
+fn encounter_rate_modifiers_resolve_from_passives_and_flags() {
+    // FUN_801D9E1C's four pre-roll tests: High/Low Encounter ability bits
+    // (0x3B/0x3C) + system flags 0x1D/0x1E, statically pinned shifts.
+    let mut world = World::new();
+    assert!(world.encounter_rate_modifiers().is_neutral());
+
+    // Ability bit 0x3B (High Encounter - Bad Luck Bell / Nemesis Gem).
+    world.party_ability_mask[(0x3B >> 5) as usize] |= 1 << (0x3B & 0x1F);
+    // System flag 0x1E (rate down).
+    world.system_flag_set(0x1E);
+    let m = world.encounter_rate_modifiers();
+    assert!(m.high_encounter && !m.low_encounter && !m.flag_high && m.flag_low);
+
+    // The shifts compose in retail order: (rate << 2) >> 1.
+    assert_eq!(m.apply(8), 16);
+}

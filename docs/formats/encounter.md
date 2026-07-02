@@ -327,9 +327,22 @@ supplies:
 
 The rate is then scaled by the user-config setting at `_DAT_8007B5F8`
 (`0` off, `1` low, `2` normal → `<< 2`, `3` high → `>> 2`; the world-map
-debug menu `ENCOUNT` row cycles this byte) and by accessory / status
-modifiers (`FUN_800431D0(0x3B)` / `(0x3C)` / `FUN_8003CE64(0x1D)` /
-`(0x1E)`), then subtracted from the step counter at `_DAT_8007B5FC`.
+debug menu `ENCOUNT` row cycles this byte) and by four sequential
+accessory / status modifiers whose magnitudes are statically pinned in
+the same dump (`overlay_world_map_801d9e1c.txt`, `0x801da1b8..0x801da200`):
+
+| Test | Source | Effect |
+|---|---|---|
+| `FUN_800431D0(0x3B)` | High Encounter passive (Bad Luck Bell / Nemesis Gem) | rate `<< 2` |
+| `FUN_800431D0(0x3C)` | Low Encounter passive (Good Luck Bell / Evil Talisman) | rate `>> 1` |
+| `FUN_8003CE64(0x1D)` | system flag `0x1D` (the `_DAT_80085758` bank) | rate `<< 1` |
+| `FUN_8003CE64(0x1E)` | system flag `0x1E` | rate `>> 1` |
+
+The scaled rate is subtracted from the step counter at `_DAT_8007B5FC`.
+Engine port: `region_encounter::EncounterRateModifiers` (applied on both
+the region tracker and the mean-rate session), refreshed each step from
+the party ability mask + system-flag bank by
+`World::encounter_rate_modifiers`.
 When the counter goes ≤ 0, two RNG draws pick a formation id in
 `[pbVar9[6], pbVar9[6] + pbVar9[7])` and the roll function installs:
 
