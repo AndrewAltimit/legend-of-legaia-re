@@ -1375,6 +1375,16 @@ pub struct World {
     /// a moving NPC.
     pub field_npc_positions: std::collections::HashMap<u8, (i16, i16)>,
 
+    /// Live per-NPC heading (PSX 12-bit angle, same `render_26` convention as
+    /// the player: `0` = travel Z+), keyed by placement slot. Written by
+    /// `Self::tick_field_npc_motions` from each walk step's direction, and
+    /// retained when the walker stops (an NPC keeps facing the way it last
+    /// moved). Absent for NPCs that have never walked - hosts render those
+    /// unrotated (the placement record carries no facing byte; scripted
+    /// initial facings are the per-actor field-VM channels, not yet
+    /// executed).
+    pub field_npc_headings: std::collections::HashMap<u8, i16>,
+
     /// Static prop collision-box centres `(world_x, world_z)`, one per placed
     /// object of the scene's field `.MAP` object grid - the engine's source
     /// for the **static-entity arm** of the actor-collision probe (retail
@@ -2598,6 +2608,7 @@ impl World {
             field_npc_dialog_prologue: std::collections::HashMap::new(),
             active_inline_prologue: None,
             field_npc_positions: std::collections::HashMap::new(),
+            field_npc_headings: std::collections::HashMap::new(),
             field_prop_colliders: Vec::new(),
             field_npc_routes: std::collections::BTreeMap::new(),
             field_npc_motions: std::collections::BTreeMap::new(),
@@ -6996,6 +7007,7 @@ impl World {
         self.field_npc_dialog.clear();
         self.field_npc_dialog_prologue.clear();
         self.field_npc_positions.clear();
+        self.field_npc_headings.clear();
         for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
             let Ok(slot) = u8::try_from(placement.index) else {
                 continue;
@@ -8573,6 +8585,17 @@ impl World {
             let result = vm::motion_vm::step(&mut motion.state, target, &FIELD_NPC_MOTION_PROGRAM);
             let pos = (motion.state.world_x, motion.state.world_z);
             let cursor = motion.route_cursor;
+            // Track the walker's heading from the step direction (12-bit,
+            // `0` = Z+ - the same convention the player's `render_26`
+            // carries); an unmoved step keeps the previous facing.
+            if let Some(&(px, pz)) = self.field_npc_positions.get(&slot) {
+                let (dx, dz) = ((pos.0 - px) as f32, (pos.1 - pz) as f32);
+                if dx != 0.0 || dz != 0.0 {
+                    let heading = ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32
+                        & 0x0FFF) as i16;
+                    self.field_npc_headings.insert(slot, heading);
+                }
+            }
             self.field_npc_positions.insert(slot, pos);
             if result == vm::motion_vm::StepResult::Done {
                 match cursor {

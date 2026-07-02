@@ -380,6 +380,15 @@ struct PlayWindowApp {
     /// falling back to the record's spawn tile. Built at scene load in
     /// `upload_assets`.
     field_npc_draws: Vec<FieldNpcDraw>,
+    /// Per-NPC looping ANM clip players (the scene-bundle record named by the
+    /// placement's anim byte), keyed by placement slot - drives live clip
+    /// playback for the placed NPCs (idle sway / walk cycles). Rebuilt with
+    /// `field_npc_draws`; `npc_anim_srcs` holds each animated NPC's truncated
+    /// TMD + raw bytes for the per-frame posed re-upload (the same rebuild
+    /// path the player's idle/walk pair uses).
+    npc_clip_players:
+        std::collections::HashMap<u8, legaia_engine_core::field_anim::FieldClipPlayer>,
+    npc_anim_srcs: std::collections::HashMap<u8, (legaia_tmd::Tmd, Vec<u8>)>,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
@@ -2842,6 +2851,8 @@ impl PlayWindowApp {
         // resolution). Actors parked at the (16320, 16320) off-map box are
         // conditional spawns retail hides until a script places them - skip.
         self.field_npc_draws.clear();
+        self.npc_clip_players.clear();
+        self.npc_anim_srcs.clear();
         if world.mode == SceneMode::Field
             && let Some(r) = self.win.renderer.as_ref()
         {
@@ -2905,6 +2916,14 @@ impl PlayWindowApp {
                     (0, _) | (_, None) => None,
                     (id, Some(b)) => {
                         let rec_idx = (id - 1) as usize;
+                        // Live playback: a looping clip player over the same
+                        // record poses this NPC per frame (the rest pose
+                        // below stays the frame-0 fallback / first frame).
+                        if let Some(player) =
+                            legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec_idx)
+                        {
+                            self.npc_clip_players.insert(p.index as u8, player);
+                        }
                         b.record(rec_idx).ok().map(|rec| {
                             let bones = rec.bone_count as usize;
                             tmd.objects.truncate(bones);
@@ -2976,6 +2995,10 @@ impl PlayWindowApp {
                 };
                 if mesh_idx.is_none() && color_idx.is_none() {
                     continue;
+                }
+                if self.npc_clip_players.contains_key(&(p.index as u8)) {
+                    self.npc_anim_srcs
+                        .insert(p.index as u8, (tmd.clone(), raw.clone()));
                 }
                 self.field_npc_draws.push(FieldNpcDraw {
                     slot: p.index as u8,
@@ -7686,6 +7709,60 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     }
 
+                    // Field-NPC clip playback: advance each placed NPC's
+                    // looping ANM clip and re-upload its posed mesh halves
+                    // (the same per-frame rebuild path the player's idle /
+                    // walk pair uses). The rest-pose meshes in
+                    // `field_npc_draws` stay as the fallback for NPCs whose
+                    // clip or upload is unavailable this frame.
+                    let mut npc_posed: std::collections::HashMap<
+                        u8,
+                        (Option<UploadedVramMesh>, Option<UploadedColorMesh>),
+                    > = std::collections::HashMap::new();
+                    if self.session.host.world.mode == SceneMode::Field {
+                        for (slot, player) in self.npc_clip_players.iter_mut() {
+                            let Some((tmd, raw)) = self.npc_anim_srcs.get(slot) else {
+                                continue;
+                            };
+                            let pose = player.tick();
+                            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                                tmd,
+                                raw,
+                                &pose.bone_outputs,
+                            );
+                            let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
+                                tmd,
+                                raw,
+                                &pose.bone_outputs,
+                            );
+                            let vm = if vmesh.indices.is_empty() {
+                                None
+                            } else {
+                                r.upload_vram_mesh(
+                                    &vmesh.positions,
+                                    &vmesh.uvs,
+                                    &vmesh.cba_tsb,
+                                    &vmesh.normals,
+                                    &vmesh.indices,
+                                )
+                                .ok()
+                            };
+                            let cm = if cmesh.is_empty() {
+                                None
+                            } else {
+                                r.upload_color_mesh_blended(
+                                    &cmesh.positions,
+                                    &cmesh.colors,
+                                    &cmesh.indices,
+                                    &cmesh.blend,
+                                )
+                                .ok()
+                            };
+                            if vm.is_some() || cm.is_some() {
+                                npc_posed.insert(*slot, (vm, cm));
+                            }
+                        }
+                    }
                     // Iterate every actor that has a `tmd_binding`. Scene-init
                     // actors (slots 0..N from `init_scene_animations`) have
                     // their bindings set but aren't necessarily `.active` -
@@ -7918,24 +7995,51 @@ impl ApplicationHandler for PlayWindowApp {
                                 let y = w.sample_field_floor_height(x as i32, z as i32) as f32;
                                 // Raw retail-convention transform (no model
                                 // flip): the field camera's FIELD_WORLD_FLIP
-                                // provides the single net Y negation.
+                                // provides the single net Y negation. Walkers
+                                // face their travel heading (12-bit, `0` =
+                                // Z+, same convention + half-turn compose as
+                                // the player's `render_26`); NPCs that never
+                                // walked stay unrotated (no facing byte in
+                                // the placement record).
+                                let rot = match w.field_npc_headings.get(&d.slot) {
+                                    Some(&h) => Mat4::from_rotation_y(
+                                        std::f32::consts::PI
+                                            + (h as f32) / 4096.0 * std::f32::consts::TAU,
+                                    ),
+                                    None => Mat4::IDENTITY,
+                                };
                                 let model =
-                                    Mat4::from_translation(Vec3::new(x as f32, y, z as f32));
-                                if let Some(mi) = d.mesh_idx
-                                    && let Some(mesh) = self.meshes.get(mi)
-                                {
-                                    draws.push(SceneDraw {
+                                    Mat4::from_translation(Vec3::new(x as f32, y, z as f32)) * rot;
+                                let posed = npc_posed.get(&d.slot);
+                                match (posed.and_then(|p| p.0.as_ref()), d.mesh_idx) {
+                                    (Some(mesh), _) => draws.push(SceneDraw {
                                         mesh,
                                         mvp: cam * model,
-                                    });
+                                    }),
+                                    (None, Some(mi)) => {
+                                        if let Some(mesh) = self.meshes.get(mi) {
+                                            draws.push(SceneDraw {
+                                                mesh,
+                                                mvp: cam * model,
+                                            });
+                                        }
+                                    }
+                                    (None, None) => {}
                                 }
-                                if let Some(ci) = d.color_idx
-                                    && let Some(mesh) = self.color_meshes.get(ci)
-                                {
-                                    color_draws.push(ColorSceneDraw {
+                                match (posed.and_then(|p| p.1.as_ref()), d.color_idx) {
+                                    (Some(mesh), _) => color_draws.push(ColorSceneDraw {
                                         mesh,
                                         mvp: cam * model,
-                                    });
+                                    }),
+                                    (None, Some(ci)) => {
+                                        if let Some(mesh) = self.color_meshes.get(ci) {
+                                            color_draws.push(ColorSceneDraw {
+                                                mesh,
+                                                mvp: cam * model,
+                                            });
+                                        }
+                                    }
+                                    (None, None) => {}
                                 }
                             }
                         }
@@ -9557,6 +9661,8 @@ fn cmd_play_window_with_record(
         drained_spawn_slots: std::collections::HashSet::new(),
         player_color_draw: None,
         field_npc_draws: Vec::new(),
+        npc_clip_players: std::collections::HashMap::new(),
+        npc_anim_srcs: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),

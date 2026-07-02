@@ -287,10 +287,17 @@ Across the transition the grid jumped 2093 → 6805 wall tiles while only **6** 
 
 **For the engine, base collision is a load step, not a script step**: slice bytes `0x4000..0x8000` of the per-scene `.MAP` file; no script execution is needed for the base walls. The nibble-7 ops ride the scene's field-VM scripts - which run multi-context at load (`FUN_8003aeb0` scene-entry init → `FUN_8003ab2c` MAN system-script runner, the `0xFB` system context being the conditional-delta painter) - and only matter for story-conditional terrain changes.
 
+NPC walkers carry a live heading (`World::field_npc_headings`, the player's
+12-bit `render_26` convention, derived from each motion-VM step's direction
+and retained on arrival); the `play-window` field renderer rotates each NPC
+model to it and plays the placement's scene-bundle ANM clip per frame
+(`FieldClipPlayer` over the `anim_id - 1` record, the same posed-rebuild path
+as the player's idle/walk pair).
+
 ## Open
 
 - The full `FUN_801d5b5c` post-kernel state (the touch-event handler beyond the decoded entry kernel).
-- Per-actor field-VM channel execution (the engine loops decoded waypoint lists instead).
+- Per-actor field-VM channel execution (the engine loops decoded waypoint lists instead) - this is also where scripted *initial* NPC facings live; until then, never-walked NPCs render unrotated (the placement record carries no facing byte).
 - The exact retail NPC glide speed (the engine paces NPCs at the player walking step).
 
 ## See also

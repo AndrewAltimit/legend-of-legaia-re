@@ -10839,3 +10839,35 @@ fn encounter_rate_modifiers_resolve_from_passives_and_flags() {
     // The shifts compose in retail order: (rate << 2) >> 1.
     assert_eq!(m.apply(8), 16);
 }
+
+#[test]
+fn npc_walk_steps_track_heading_and_keep_it_after_arrival() {
+    // Walkers record their travel heading (12-bit, 0 = Z+, the player's
+    // render_26 convention) and keep facing that way once the leg ends.
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.field_npc_positions.insert(1, (1000, 1000));
+    assert!(!world.field_npc_headings.contains_key(&1));
+
+    // Walk X+ : heading = quarter turn (0x400).
+    assert!(world.start_field_npc_motion(1, 1200, 1000));
+    for _ in 0..40 {
+        let _ = world.tick();
+    }
+    assert_eq!(world.field_npc_positions.get(&1), Some(&(1200, 1000)));
+    assert_eq!(world.field_npc_headings.get(&1), Some(&0x400));
+    assert!(world.field_npc_motions.is_empty(), "leg ended");
+
+    // Facing persists while standing.
+    for _ in 0..5 {
+        let _ = world.tick();
+    }
+    assert_eq!(world.field_npc_headings.get(&1), Some(&0x400));
+
+    // Walk Z- : heading = half turn (0x800).
+    assert!(world.start_field_npc_motion(1, 1200, 800));
+    for _ in 0..40 {
+        let _ = world.tick();
+    }
+    assert_eq!(world.field_npc_headings.get(&1), Some(&0x800));
+}
