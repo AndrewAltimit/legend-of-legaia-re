@@ -374,6 +374,12 @@ struct PlayWindowApp {
     /// so the posed player draws in two passes; this one follows the actor's
     /// live model matrix each frame (unlike the static colour draws above).
     player_color_draw: Option<(usize, usize)>,
+    /// Field NPC / animated-prop draws, one per visible MAN partition-1
+    /// placement (the retail per-scene actor pool). Positions are live: the
+    /// draw follows `World::field_npc_positions` (motion-VM walkers move),
+    /// falling back to the record's spawn tile. Built at scene load in
+    /// `upload_assets`.
+    field_npc_draws: Vec<FieldNpcDraw>,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
@@ -2772,6 +2778,161 @@ impl PlayWindowApp {
                 log::warn!(
                     "play-window: global TMD pool has no entry for roster slot {lead}; \
                      player keeps the placeholder binding"
+                );
+            }
+        }
+        // Field NPCs + animated props: one draw per visible MAN partition-1
+        // placement (see `FieldNpcDraw` for the runtime-pinned model/anim
+        // resolution). Actors parked at the (16320, 16320) off-map box are
+        // conditional spawns retail hides until a script places them - skip.
+        self.field_npc_draws.clear();
+        if world.mode == SceneMode::Field
+            && let Some(r) = self.win.renderer.as_ref()
+        {
+            // The per-scene ANM bundle in the player-ANM frame-stream layout
+            // (the pose source `FUN_8001B964` walks): the type-0x05 section
+            // of the scene's first PROT slot (`player_anm::find_in_entry`;
+            // field builds don't surface it through `res.anm_packs`).
+            let scene_bundle = self.session.host.scene.as_ref().and_then(|s| {
+                s.entries.iter().find_map(|e| {
+                    legaia_asset::player_anm::find_in_entry(&e.bytes, 3)
+                        .into_iter()
+                        .next()
+                })
+            });
+            let locomotion_bundle = self
+                .session
+                .host
+                .index
+                .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+                .ok()
+                .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+            let placements = self
+                .session
+                .host
+                .scene
+                .as_ref()
+                .and_then(|s| s.field_man_payload(&self.session.host.index).ok().flatten())
+                .and_then(|man| {
+                    legaia_asset::man_section::parse(&man).ok().map(|mf| {
+                        legaia_engine_core::man_field_scripts::classify_placements(&mf, &man)
+                    })
+                })
+                .unwrap_or_default();
+            for (p, _kind) in &placements {
+                if p.world_x == 16320 && p.world_z == 16320 {
+                    continue;
+                }
+                let src = if p.special_model {
+                    world
+                        .global_tmd_pool
+                        .get((p.model_index - 0xF0) as usize)
+                        .and_then(|s| s.as_ref())
+                        .map(|g| (g.tmd.clone(), g.raw.clone()))
+                } else {
+                    res.tmds
+                        .get(p.model_index as usize)
+                        .map(|t| (t.tmd.clone(), t.raw.clone()))
+                };
+                let Some((mut tmd, raw)) = src else {
+                    continue;
+                };
+                let bundle = if p.special_model {
+                    locomotion_bundle.as_ref()
+                } else {
+                    scene_bundle.as_ref()
+                };
+                // Rest pose: frame 0 of the record the placement's anim byte
+                // names; the object table truncates to the clip's bone count
+                // (the retail count-equality contract).
+                let pose: Option<Vec<([i16; 3], [i16; 3])>> = match (p.anim_id, bundle) {
+                    (0, _) | (_, None) => None,
+                    (id, Some(b)) => {
+                        let rec_idx = (id - 1) as usize;
+                        b.record(rec_idx).ok().map(|rec| {
+                            let bones = rec.bone_count as usize;
+                            tmd.objects.truncate(bones);
+                            (0..bones)
+                                .map(|bi| match b.bone_transform(rec_idx, 0, bi) {
+                                    Some(t) => (
+                                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                                    ),
+                                    None => ([0; 3], [0; 3]),
+                                })
+                                .collect()
+                        })
+                    }
+                };
+                let vmesh = match &pose {
+                    Some(offsets) => {
+                        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&tmd, &raw, offsets)
+                    }
+                    None => legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &raw),
+                };
+                let cmesh = match &pose {
+                    Some(offsets) => {
+                        legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&tmd, &raw, offsets)
+                    }
+                    None => legaia_tmd::mesh::tmd_to_color_mesh(&tmd, &raw),
+                };
+                let mesh_idx = if vmesh.indices.is_empty() {
+                    None
+                } else {
+                    match r.upload_vram_mesh(
+                        &vmesh.positions,
+                        &vmesh.uvs,
+                        &vmesh.cba_tsb,
+                        &vmesh.normals,
+                        &vmesh.indices,
+                    ) {
+                        Ok(m) => {
+                            let idx = self.meshes.len();
+                            self.meshes.push(m);
+                            self.scene_tmd_data.push((tmd.clone(), raw.clone()));
+                            Some(idx)
+                        }
+                        Err(e) => {
+                            log::warn!("play-window: NPC mesh upload (slot {}): {e:#}", p.index);
+                            None
+                        }
+                    }
+                };
+                let color_idx = if cmesh.is_empty() {
+                    None
+                } else {
+                    match r.upload_color_mesh_blended(
+                        &cmesh.positions,
+                        &cmesh.colors,
+                        &cmesh.indices,
+                        &cmesh.blend,
+                    ) {
+                        Ok(cm) => {
+                            let idx = self.color_meshes.len();
+                            self.color_meshes.push(cm);
+                            Some(idx)
+                        }
+                        Err(e) => {
+                            log::warn!("play-window: NPC colour upload (slot {}): {e:#}", p.index);
+                            None
+                        }
+                    }
+                };
+                if mesh_idx.is_none() && color_idx.is_none() {
+                    continue;
+                }
+                self.field_npc_draws.push(FieldNpcDraw {
+                    slot: p.index as u8,
+                    mesh_idx,
+                    color_idx,
+                    spawn: (p.world_x, p.world_z),
+                });
+            }
+            if !self.field_npc_draws.is_empty() {
+                log::info!(
+                    "play-window: {} field NPC/prop draws ({} placements)",
+                    self.field_npc_draws.len(),
+                    placements.len()
                 );
             }
         }
@@ -6993,6 +7154,38 @@ impl ApplicationHandler for PlayWindowApp {
                                     mvp: cam * self.actor_model(slot),
                                 });
                             }
+                            // Field NPCs + animated props at their live
+                            // positions (motion-VM walkers update
+                            // `field_npc_positions`; everyone else stands at
+                            // the spawn tile), floor-snapped like the player.
+                            let w = &self.session.host.world;
+                            for d in &self.field_npc_draws {
+                                let (x, z) = w
+                                    .field_npc_positions
+                                    .get(&d.slot)
+                                    .copied()
+                                    .unwrap_or(d.spawn);
+                                let y = w.sample_field_floor_height(x as i32, z as i32) as f32;
+                                let model =
+                                    Mat4::from_translation(Vec3::new(x as f32, y, z as f32))
+                                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                if let Some(mi) = d.mesh_idx
+                                    && let Some(mesh) = self.meshes.get(mi)
+                                {
+                                    draws.push(SceneDraw {
+                                        mesh,
+                                        mvp: cam * model,
+                                    });
+                                }
+                                if let Some(ci) = d.color_idx
+                                    && let Some(mesh) = self.color_meshes.get(ci)
+                                {
+                                    color_draws.push(ColorSceneDraw {
+                                        mesh,
+                                        mvp: cam * model,
+                                    });
+                                }
+                            }
                         }
                         // Single battle camera for the actors too (same `cam` as
                         // the dome + grid) so the whole scene shares one space.
@@ -7498,6 +7691,31 @@ fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntity
 /// each) decoded from the kingdom bundle and the current frame cursor + tick
 /// accumulator. Each step overwrites the first 16 CLUT entries at VRAM
 /// `(0, 506)` with the next frame, reproducing the retail rolling-wave DMA.
+/// One field NPC / animated-prop draw, resolved at scene load from a MAN
+/// partition-1 placement record (the retail per-scene actor pool, stride
+/// `0xD8`). Runtime-pinned resolution (anchor-C town01 census, 53/53 animated
+/// actors):
+///
+///  - model byte `< 0xF0` -> scene TMD index `model` (retail registers the
+///    scene TMD list into the `0x8007C018` pool at slot `model + 5`; the five
+///    head slots are the party + savepoint meshes);
+///  - model byte `>= 0xF0` -> global-pool head slot `model - 0xF0`;
+///  - the record's `anim_id` byte (installed into actor `+0x5C`) = ANM record
+///    index + 1 in the **scene bundle** (normal models) or the **PROT 0874 §1
+///    locomotion bundle** (special models); `0` = no clip (unposed prop).
+struct FieldNpcDraw {
+    /// Partition-1 record index - the key `World::field_npc_positions` tracks
+    /// live walker positions under.
+    slot: u8,
+    /// Textured mesh half (`self.meshes`), `None` when the model carries no
+    /// textured prims.
+    mesh_idx: Option<usize>,
+    /// Untextured F*/G* colour half (`self.color_meshes`).
+    color_idx: Option<usize>,
+    /// Spawn world position (fallback when the world has no live position).
+    spawn: (i16, i16),
+}
+
 struct OceanAnim {
     /// 13 frames × 32 bytes (16 BGR555 entries each), as decoded by
     /// [`legaia_asset::ocean::find_ocean_assets`].
@@ -8351,6 +8569,7 @@ fn cmd_play_window_with_record(
         pending_dynamic_mesh_slots: Vec::new(),
         drained_spawn_slots: std::collections::HashSet::new(),
         player_color_draw: None,
+        field_npc_draws: Vec::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),

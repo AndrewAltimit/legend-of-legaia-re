@@ -375,7 +375,10 @@ bundle** (not as a dedicated PROT entry). In the town01 field anchor,
 every NPC actor's `+0x4C` points into this bundle's runtime copy at
 `DAT_8007B7C8` (villager idles at records 14 / 17, children at 10 / 12,
 etc.), while the party actors point into the PROT 0874 §1 locomotion
-container above. The bundle is a
+container above. **Which record an NPC plays comes from its MAN placement
+header**: the record's `anim_id` byte = bundle record index + 1 (`0` = no
+clip), installed into the actor `+0x5C` halfword at spawn - see
+[`subsystems/script-vm.md`](../subsystems/script-vm.md#placement-header-model--animation-resolution). The bundle is a
 [`parse_player_lzs`](../../crates/asset/src/lib.rs)-shaped container; section
 2 (the third descriptor) is tagged **type byte `0x05`** in the dispatcher
 table (labeled "MOVE" in `AssetType`, see [`docs/formats/asset-type.md`

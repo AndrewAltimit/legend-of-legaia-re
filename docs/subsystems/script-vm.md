@@ -21,6 +21,30 @@ records `1..` are per-actor interaction scripts. The engine mirrors this:
 `World::load_field_script_at`. These MAN scripts disassemble cleanly as
 field-VM (~8% linear-walk error on the retail town MANs).
 
+### Placement header: model + animation resolution
+
+The 4-byte header after the locals block is `[model][anim_id][bx][bz]`
+(`legaia_asset::man_section::ActorPlacement`). Runtime-pinned against the
+town01 field anchor (live actor pool at stride `0xD8`, 53/53 animated actors
+byte-consistent):
+
+- **`model < 0xF0`** selects **scene TMD index `model`** - retail registers
+  the party/savepoint head into `0x8007C018` slots `0..5` and then the
+  scene's TMD list in scene order from slot 5, so the byte is pool slot
+  `model + 5`. **`model >= 0xF0`** selects global-pool head slot
+  `model - 0xF0` (`0xF0`..`0xF3` = Vahn / Noa / Gala / savepoint).
+- **`anim_id`** is installed into the actor's `+0x5C` halfword and names the
+  actor's clip: **scene-bundle ANM record index + 1** (`0` = no clip). Every
+  live animated actor's `+0x5C` equals its `+0x4C` anim-record pointer's
+  bundle index + 1; walkers drift ±1 as their scripts switch clips. Special
+  models resolve the id against the **PROT 0874 §1 locomotion bundle**
+  instead - the Noa/Gala placements carry ids 9/16 = locomotion records 8/15,
+  exactly their standing-idle bank slots ([`formats/anm.md`](../formats/anm.md)).
+- Placements parked at world `(16320, 16320)` (tile `(127, 127)` + half-tile
+  bits) are conditional spawns the scripts place later.
+
+Disc-gated pin: `engine-core/tests/field_npc_placements_disc.rs`.
+
 > **The `scene_event_scripts` / `scene_v12_table` prescript is a MOVE-VM stager
 > table, not field-VM bytecode.** The `[u16 count][u16 offsets[count]]` prescript
 > (offset 0, or `+0x800` behind the v12 header) was long assumed to carry
