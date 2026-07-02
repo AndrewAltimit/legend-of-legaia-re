@@ -64,3 +64,29 @@ fn muscle_dome_is_resident_in_battle_overlay() {
         "battle overlay should also carry the move-power table"
     );
 }
+
+#[test]
+fn hand_tables_decode_from_the_disc() {
+    let Some(overlay) = battle_overlay() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+
+    // The deck is the four direction-command ids 0xC..=0xF, one per hand
+    // slot (structural check inside the parser: distinct + in range).
+    let commands = muscle_dome::hand_command_ids(&overlay).expect("hand command ids decode");
+    let mut sorted = commands;
+    sorted.sort_unstable();
+    assert_eq!(sorted, [0x0C, 0x0D, 0x0E, 0x0F]);
+
+    // Sprite ids decode alongside.
+    assert!(muscle_dome::hand_sprite_ids(&overlay).is_some());
+
+    // The victory-message pointer table holds a small run of in-overlay
+    // string pointers.
+    let msgs = muscle_dome::victory_message_count(&overlay);
+    assert!(
+        (1..=8).contains(&msgs),
+        "victory-message table holds a small pointer run ({msgs})"
+    );
+}

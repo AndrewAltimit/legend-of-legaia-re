@@ -114,6 +114,7 @@ fn scene_mode_name(m: SceneMode) -> &'static str {
         SceneMode::Fishing => "Fishing",
         SceneMode::SlotMachine => "SlotMachine",
         SceneMode::BakaFighter => "BakaFighter",
+        SceneMode::MuscleDome => "MuscleDome",
         SceneMode::Menu => "Menu",
     }
 }

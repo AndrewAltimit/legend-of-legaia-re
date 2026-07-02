@@ -41,6 +41,7 @@ gauge_slot.icon_pos = bVar3 - 6;                             // visual width on 
 if (ctx[0x6DC] &lt; ctx[slot + 0x14]) return;                  // not enough AP
 ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the command</code></pre>
   <p>A higher <code>+0x74</code> widens the gauge slot (<code>bVar3 - 6</code>) <em>and</em> drains more of the AP pool, so an off-class arm both looks wider and lets fewer total commands fit.</p>
+  <p>The same case-<code>9</code>/<code>0xB</code> machinery also deals and spends the <strong>Muscle Dome hand</strong>: a dome card is one of the four direction commands (<code>0xC..=0xF</code>, the deck table <code>DAT_801f4b8c</code>), its cost is this same <code>+0x74</code> byte, and the commit debits the same <code>ctx+0x6DC</code> pool - see the <a href="../minigames.html">minigames page</a> and the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">Muscle Dome write-up</a>.</p>
   <aside class="notice"><p>A separate <code>+2</code> in the same case (<code>icon = DAT_801F4B94[i] + 2</code>, gated on an <em>empty</em> equip slot, <code>equip[cmd] == 0</code>) is an empty-slot icon tweak, <strong>not</strong> the class penalty - a fully-equipped off-class character still widens via the <code>+0x74</code> cost above.</p></aside>
 </section>
 

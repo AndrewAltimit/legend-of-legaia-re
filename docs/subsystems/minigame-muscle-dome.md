@@ -125,11 +125,52 @@ All offsets are relative to the context base `_DAT_8007bd24` unless noted otherw
 | `FUN_801d9bbc` | Advances active sprite handles toward target screen positions | `overlay_muscle_dome_801d9bbc.txt` |
 | `FUN_801f19ec` | Fighter model installer: relocates a TMD model bundle, uploads it, and binds it to a dome actor | `overlay_muscle_dome_801f19ec.txt` |
 
+## Hand deck decoded
+
+The deck tables are decoded from the battle-overlay rodata (parser
+[`legaia_asset::muscle_dome`]: `hand_command_ids` / `hand_sprite_ids` /
+`victory_message_count`; disc-gated `muscle_dome_real`):
+
+- `&DAT_801f4b8c[0..4]` - the four hand **command ids**, the
+  direction-command ids `0xC..=0xF` (the weapon-swing runtime slots the
+  Tactical-Arts queue stages). A card *is* one of the four basic strike
+  commands; the commit path appends this id verbatim into the fighter's
+  `+0x1df` action queue.
+- A card's **cost** is `DAT_801c9360[char][cmd]+0x74` - the same per-command
+  AP byte the Arts gauge reads as the arm width, copied at battle load from
+  the equipment sections' swing records (`FUN_800557B8`;
+  `legaia_asset::battle_char_assembly::SwingAnimation::cost`). Retail value
+  set: favored `0x1E` / off-class `0x2A` / far `0x36`, disc-validated.
+- `&DAT_801f4b94[0..4]` - per-slot card **sprite ids** (with a `+2`
+  "unlearned" face variant gated on the character record's per-move flag at
+  `record+0x18C+move_id`).
+- `&DAT_801f4b84[move_id]` - the per-move display lookup the sub-draw path
+  uses (presentation).
+
+## Engine port
+
+The card rules run clean-room as `legaia_engine_core::muscle_dome`
+(`MuscleDomeSession`): the four-slot hand (deck command ids + per-fighter
+costs), the budget-gated commit into the `+0x1df`-model queue (`FUN_801d388c`
+case `0xb` accounting: reject overspend, debit `ctx+0x6dc`, accrue
+`ctx+0x6d8`), the `hp * 0x6c / max` score readout (`FUN_801d0748` phase
+`0x6e`), win/lose on the HP fields, and the Seru reward id
+(`ctx+0x269 + 0x80`). The world hosts it as the suspending
+`SceneMode::MuscleDome` (play-window `M` key; Left/Right/Up/Down commit the
+four cards, Cross confirms/continues); a won contest credits the reward Seru
+through the engine's capture kernel. Documented host models: the opponent
+commits through the same selection logic greedily in hand order (retail has
+no dome-specific AI table), and per-card damage resolution is
+host-supplied - retail plays each queued command through the shared
+battle-action path. Disc-gated oracle:
+`engine-core/tests/muscle_dome_minigame_real.rs` (real deck + the lead's
+real swing costs drive a decided contest through the world tick).
+
 ## Open
 
 - The exact phase ordering and meaning of every `ctx+6` value (deal/select/confirm/resolve/win/lose) - partially confirmed; a live phase-byte capture would pin the full graph.
-- The byte layout of the deck tables `&DAT_801f4b8c`/`&DAT_801f4b94` and the per-step script table `&PTR_DAT_801f4d34` (now known to be **battle-overlay 0898 rodata** at file offsets `0x26374` / `0x2651c`, statically extractable; only their access patterns are reversed here, not their full contents). `&DAT_801f4b8c[slot]` is a 4-entry per-slot move-set index list; `&DAT_801f4b84[move_id]` is a per-move display/cost lookup the commit path uses.
-- Whether card resolution applies any dome-specific damage scaling or uses the shared `battle_formulas` unmodified.
+- The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`): its access pattern is reversed, its full record contents are presentation-layer and undecoded.
+- Whether card resolution applies any dome-specific damage scaling or uses the shared `battle_formulas` unmodified (the engine port keeps the damage function host-supplied for this reason).
 
 ## See also
 

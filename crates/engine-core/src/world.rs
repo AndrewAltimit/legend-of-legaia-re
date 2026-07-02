@@ -537,6 +537,13 @@ pub enum SceneMode {
     /// exit. Retail `game_mode 0x18` (`OTHER MODE`, the mode-24 minigame
     /// door-warp) for the Baka Fighter overlay (PROT 0976).
     BakaFighter,
+    /// Muscle Dome card-battle contest - the hand-select / commit / resolve
+    /// loop owns the frame ([`crate::muscle_dome::MuscleDomeSession`]); field
+    /// / battle dispatch is suspended and the interrupted mode restored on
+    /// exit. Retail: the arena runs *inside* the battle overlay (PROT 0898)
+    /// on the `_DAT_8007bd24` context, entered through the mode-24 sub-id-5
+    /// door (PROT 0977).
+    MuscleDome,
     /// In-field pause menu - the retail CARD mode pair (`game_mode 0x17`,
     /// `CARD MODE`, which hosts both the memory-card UI and the pause menu;
     /// every menu-open capture holds `_DAT_8007B83C = 0x17`). Field/battle
@@ -1602,6 +1609,16 @@ pub struct World {
     /// ([`World::enter_baka_fighter`] snapshots the interrupted mode).
     pub baka_return_mode: SceneMode,
 
+    /// Muscle Dome contest state. `Some` while `mode ==
+    /// SceneMode::MuscleDome`; the hand-select / commit / resolve loop runs
+    /// each tick. See [`crate::muscle_dome::MuscleDomeSession`] and
+    /// [`World::enter_muscle_dome`].
+    pub muscle_dome: Option<crate::muscle_dome::MuscleDomeSession>,
+
+    /// The scene mode to restore when the Muscle Dome contest ends
+    /// ([`World::enter_muscle_dome`] snapshots the interrupted mode).
+    pub muscle_return_mode: SceneMode,
+
     /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
     /// Coins" cell). Read to seed the slot machine's playing balance and
     /// **assigned** its final balance on cash-out (the retail state-100
@@ -2602,6 +2619,8 @@ impl World {
             slot_return_mode: SceneMode::Field,
             baka_fighter: None,
             baka_return_mode: SceneMode::Field,
+            muscle_dome: None,
+            muscle_return_mode: SceneMode::Field,
             casino_coins: 0,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
@@ -5733,6 +5752,10 @@ impl World {
                 self.tick_baka_fighter();
                 None
             }
+            SceneMode::MuscleDome => {
+                self.tick_muscle_dome();
+                None
+            }
             // The pause menu owns the frame (retail CARD mode 0x17): field /
             // battle dispatch is suspended; the hosting session drives the
             // menu state machine and restores the suspended mode on close.
@@ -6209,6 +6232,127 @@ impl World {
                 fight.choose(0, attack);
             }
             fight.tick(1);
+        }
+    }
+
+    /// Enter the Muscle Dome contest on `session`, suspending the current
+    /// scene mode (restored by [`World::exit_muscle_dome`]). Same suspend
+    /// contract as the other minigames / the pause menu.
+    pub fn enter_muscle_dome(&mut self, session: crate::muscle_dome::MuscleDomeSession) {
+        if self.mode != SceneMode::MuscleDome {
+            self.muscle_return_mode = self.mode;
+        }
+        self.muscle_dome = Some(session);
+        self.mode = SceneMode::MuscleDome;
+    }
+
+    /// Leave the Muscle Dome and restore the interrupted mode. On a won
+    /// contest, the reward Seru is credited through the capture kernel
+    /// ([`crate::seru_learning::record_capture`] against the installed
+    /// registry, resolved by the reward spell id) - the engine's stand-in
+    /// for the retail outright award message. Returns the session so the
+    /// host can read the final state.
+    pub fn exit_muscle_dome(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
+        if self.mode == SceneMode::MuscleDome {
+            self.mode = self.muscle_return_mode;
+        }
+        let session = self.muscle_dome.take();
+        if let Some(s) = session.as_ref()
+            && s.phase() == crate::muscle_dome::MusclePhase::Won
+            && let Some(seru) = self
+                .seru_registry
+                .seru_for_spell(s.reward_spell_id())
+                .map(|d| d.id)
+        {
+            let party: Vec<u8> = (0..self.roster.members.len() as u8).collect();
+            crate::seru_learning::record_capture(
+                &self.seru_registry,
+                &mut self.seru_log,
+                seru,
+                &party,
+            );
+        }
+        session
+    }
+
+    /// Advance the Muscle Dome one frame, reading this frame's pad:
+    ///
+    /// - **Select**: [`Left`](input::PadButton::Left) /
+    ///   [`Right`](input::PadButton::Right) / [`Up`](input::PadButton::Up) /
+    ///   [`Down`](input::PadButton::Down) commit hand cards 0..3 (the retail
+    ///   four card-selection direction bits, in the `ctx+0x1114..+0x1120`
+    ///   slot order); [`Cross`](input::PadButton::Cross) confirms the queue.
+    ///   The opponent commits through the shared selection logic when the
+    ///   player confirms.
+    /// - **Resolve**: the queues play out. Per-card damage here is a dev
+    ///   stand-in for the retail battle-action playback (see the constants) -
+    ///   the session's [`resolve_round`] is damage-model-agnostic.
+    /// - **RoundOver / decided**: [`Cross`] continues to the next round, or
+    ///   leaves a decided contest (via [`World::exit_muscle_dome`], crediting
+    ///   the reward Seru capture on a win).
+    ///
+    /// [`resolve_round`]: crate::muscle_dome::MuscleDomeSession::resolve_round
+    ///
+    /// PORT: FUN_801d0748 (match SM phase loop: pick / commit / resolve /
+    /// score), with the card playback simplified per above.
+    fn tick_muscle_dome(&mut self) {
+        use crate::muscle_dome::MusclePhase;
+        // Dev stand-in stats for the card playback (retail resolves each
+        // queued command through the battle-action path against the actor
+        // records).
+        const PLAYER_ATK: i32 = 60;
+        const OPPONENT_ATK: i32 = 50;
+        const PLAYER_DEF: i32 = 20;
+        const OPPONENT_DEF: i32 = 15;
+        let Some(phase) = self.muscle_dome.as_ref().map(|s| s.phase()) else {
+            self.mode = self.muscle_return_mode;
+            return;
+        };
+        let confirm = self.input.just_pressed(input::PadButton::Cross);
+        match phase {
+            MusclePhase::Select => {
+                let card = if self.input.just_pressed(input::PadButton::Left) {
+                    Some(0)
+                } else if self.input.just_pressed(input::PadButton::Right) {
+                    Some(1)
+                } else if self.input.just_pressed(input::PadButton::Up) {
+                    Some(2)
+                } else if self.input.just_pressed(input::PadButton::Down) {
+                    Some(3)
+                } else {
+                    None
+                };
+                if let Some(s) = self.muscle_dome.as_mut() {
+                    if let Some(card) = card {
+                        s.commit_card(0, card);
+                    }
+                    if confirm {
+                        s.ai_commit_all(1);
+                        s.end_selection();
+                    }
+                }
+            }
+            MusclePhase::Resolve => {
+                if let Some(s) = self.muscle_dome.as_mut() {
+                    s.resolve_round(|attacker, _cmd| {
+                        if attacker == 0 {
+                            (PLAYER_ATK - OPPONENT_DEF).max(1)
+                        } else {
+                            (OPPONENT_ATK - PLAYER_DEF).max(1)
+                        }
+                    });
+                }
+            }
+            MusclePhase::RoundOver => {
+                if confirm && let Some(s) = self.muscle_dome.as_mut() {
+                    s.next_round();
+                }
+            }
+            MusclePhase::Won | MusclePhase::Lost => {
+                if confirm {
+                    self.exit_muscle_dome();
+                }
+            }
         }
     }
 

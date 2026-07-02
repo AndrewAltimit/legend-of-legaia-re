@@ -3599,6 +3599,103 @@ impl PlayWindowApp {
         true
     }
 
+    /// Load the Muscle Dome hand tables from the battle overlay (PROT 0898)
+    /// and enter a contest. The player's card costs come from their own
+    /// player battle file's equipped-section swing records (`+0x74`, the
+    /// same bytes the Arts gauge reads); the opponent plays a flat
+    /// favored-cost hand, and HP / budgets are dev constants (retail seeds
+    /// them from the arena's battle-actor records). Returns `false` (with a
+    /// log line) when the tables don't resolve.
+    fn start_muscle_minigame(&mut self) -> bool {
+        use legaia_asset::muscle_dome as md;
+        use legaia_asset::static_overlay;
+        use legaia_engine_core::muscle_dome::{MuscleCard, MuscleDomeSession};
+        let Some(rec) =
+            static_overlay::overlay_map().by_prot_index(md::MUSCLE_OVERLAY_PROT_INDEX as u32)
+        else {
+            log::warn!("muscle: battle overlay 0898 absent from the static-overlay map");
+            return false;
+        };
+        let raw = match self.session.host.index.entry_bytes_extended(rec.prot_index) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("muscle: PROT {} read failed: {e:#}", rec.prot_index);
+                return false;
+            }
+        };
+        let loaded = match static_overlay::as_loaded(&raw, rec) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("muscle: as_loaded failed: {e:#}");
+                return false;
+            }
+        };
+        let Some(commands) = md::hand_command_ids(&loaded) else {
+            log::warn!("muscle: hand command-id table failed its structural check");
+            return false;
+        };
+        // Player card costs: the lead character's equipped-section swing
+        // records, keyed by runtime slot = the command id.
+        const FAVORED_COST: u16 = 0x1E;
+        let mut player_costs = [FAVORED_COST; 4];
+        if let Some(costs) = self.lead_swing_costs() {
+            for (i, &cmd) in commands.iter().enumerate() {
+                if let Some(&c) = costs.get((cmd - 0x0C) as usize)
+                    && c > 0
+                {
+                    player_costs[i] = c as u16;
+                }
+            }
+        } else {
+            log::info!("muscle: lead swing costs unavailable - flat favored costs");
+        }
+        let card = |cmd: u8, cost: u16| MuscleCard {
+            command_id: cmd,
+            cost,
+        };
+        let player_hand = std::array::from_fn(|i| card(commands[i], player_costs[i]));
+        let opp_hand = std::array::from_fn(|i| card(commands[i], FAVORED_COST));
+        // Dev stand-ins for the arena actor records (budget pool +0x154, HP
+        // +0x14c/+0x14e) and the awarded Seru (ctx+0x269 = 1 → spell 0x81).
+        let session = MuscleDomeSession::new(player_hand, opp_hand, [120, 120], [500, 400], 1);
+        log::info!(
+            "muscle: contest started - hand commands {commands:02x?}, player costs {player_costs:?}"
+        );
+        self.session.host.world.enter_muscle_dome(session);
+        true
+    }
+
+    /// The lead roster character's four weapon-swing AP costs (runtime slots
+    /// `0xC..=0xF` → indices 0..3), from their player battle file's equipped
+    /// sections. `None` when any stage of the decode fails.
+    fn lead_swing_costs(&self) -> Option<[u8; 4]> {
+        let raw = self.session.host.index.entry_bytes_extended(863).ok()?;
+        let pack = legaia_asset::battle_data_pack::parse(&raw).ok()?;
+        let equipped: [u8; 5] = self
+            .session
+            .host
+            .world
+            .roster
+            .members
+            .first()
+            .map(|rec| {
+                let slots = rec.equipment().slots;
+                [slots[0], slots[1], slots[2], slots[3], slots[4]]
+            })
+            .unwrap_or_default();
+        let swings =
+            legaia_asset::battle_char_assembly::swing_battle_animations(&raw, &pack, &equipped)
+                .ok()?;
+        let mut costs = [0u8; 4];
+        for s in &swings {
+            let i = s.slot.checked_sub(0xC)? as usize;
+            if i < 4 {
+                costs[i] = s.cost;
+            }
+        }
+        Some(costs)
+    }
+
     /// React to a `Field <-> Battle` scene-mode change once per transition:
     /// on entering battle, decode each enemy's mesh and inject it; on leaving,
     /// restore the clean field VRAM and drop the battle meshes. Called each
@@ -5574,6 +5671,50 @@ impl PlayWindowApp {
             let ly2 = self.font.layout_ascii(&bl2);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
         }
+        // Muscle Dome HUD: HP + score readouts, the hand with costs, the
+        // budget line, and the phase prompt.
+        if self.session.host.world.mode == SceneMode::MuscleDome
+            && let Some(s) = &self.session.host.world.muscle_dome
+        {
+            use legaia_engine_core::muscle_dome::MusclePhase;
+            let ml1 = format!(
+                "MUSCLE DOME  you {}hp ({}%)  vs  foe {}hp ({}%)  round {}",
+                s.hp(0),
+                s.score_percent(0),
+                s.hp(1),
+                s.score_percent(1),
+                s.round() + 1
+            );
+            let ly1 = self.font.layout_ascii(&ml1);
+            out.extend(text_draws_for(&ly1, (8, 62), white));
+            let status = match s.phase() {
+                MusclePhase::Select => {
+                    let h = s.hand(0);
+                    format!(
+                        "cards L:{} R:{} U:{} D:{}  budget {}  queued {}  (Cross = fight)",
+                        h[0].cost,
+                        h[1].cost,
+                        h[2].cost,
+                        h[3].cost,
+                        s.budget(0),
+                        s.queue(0).len()
+                    )
+                }
+                MusclePhase::Resolve => "resolving...".to_string(),
+                MusclePhase::RoundOver => {
+                    let [taken, dealt] = s.last_round_damage();
+                    format!("round: dealt {dealt}, took {taken}  (Cross = next round)")
+                }
+                MusclePhase::Won => format!(
+                    "YOU WIN! Seru spell {:#x} awarded  (Cross/M = leave)",
+                    s.reward_spell_id()
+                ),
+                MusclePhase::Lost => "you lose the contest  (Cross/M = leave)".to_string(),
+            };
+            let ml2 = format!("{status}   (M = quit)");
+            let ly2 = self.font.layout_ascii(&ml2);
+            out.extend(text_draws_for(&ly2, (8, 80), dim));
+        }
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
         // runtime is in any shop, inn, or confirmation state.
         if self.menu_runtime.is_open() {
@@ -6614,6 +6755,34 @@ impl ApplicationHandler for PlayWindowApp {
                     } else if self.start_slot_minigame() {
                         log::info!(
                             "slots: started - Cross spins/stops/collects, Left/Right bet lines, O to cash out"
+                        );
+                    }
+                    return;
+                }
+                // `M`: toggle the Muscle Dome card-battle contest. Loads the
+                // hand tables from the battle overlay (PROT 0898), suspends
+                // the current scene, and runs the select/commit/resolve loop;
+                // Left/Right/Up/Down commit the four cards, Cross confirms /
+                // continues. Pressing M again aborts (no reward on an abort).
+                if matches!(code, KeyCode::KeyM)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    if self.session.host.world.mode == SceneMode::MuscleDome {
+                        if let Some(s) = self.session.host.world.exit_muscle_dome() {
+                            use legaia_engine_core::muscle_dome::MusclePhase;
+                            match s.phase() {
+                                MusclePhase::Won => log::info!(
+                                    "muscle: contest WON - reward Seru spell id {:#x} credited",
+                                    s.reward_spell_id()
+                                ),
+                                MusclePhase::Lost => log::info!("muscle: contest lost"),
+                                _ => log::info!("muscle: contest aborted"),
+                            }
+                        }
+                    } else if self.start_muscle_minigame() {
+                        log::info!(
+                            "muscle: started - Left/Right/Up/Down commit cards, Cross confirms, M to leave"
                         );
                     }
                     return;

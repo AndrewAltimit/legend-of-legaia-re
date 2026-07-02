@@ -294,6 +294,7 @@ fn scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
         SceneMode::Fishing => "Fishing",
         SceneMode::SlotMachine => "SlotMachine",
         SceneMode::BakaFighter => "BakaFighter",
+        SceneMode::MuscleDome => "MuscleDome",
         SceneMode::Menu => "Menu",
     }
 }
