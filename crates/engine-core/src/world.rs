@@ -4665,6 +4665,13 @@ impl World {
     /// edits, so a patched shop id flows through here into the bag.
     pub fn buy_from_shop(&mut self, session: &crate::shop::ShopSession) -> Option<(u8, u8, i32)> {
         let (item_id, qty, delta) = session.try_buy(self.money)?;
+        // Retail dims buy attempts past 98 held of one item id
+        // ([`crate::shop::SHOP_HELD_CAP`]); refuse instead of silently
+        // clamping so the menu's confirm mirrors the retail gate.
+        let owned = *self.inventory.get(&item_id).unwrap_or(&0);
+        if owned.saturating_add(qty) > crate::shop::SHOP_HELD_CAP {
+            return None;
+        }
         self.money = (self.money + delta).clamp(0, 9_999_999);
         let count = self.inventory.entry(item_id).or_insert(0);
         *count = count.saturating_add(qty);

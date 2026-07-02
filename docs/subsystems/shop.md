@@ -180,10 +180,13 @@ carried the padding). Validated against the Rim Elm Variety Store's 10 pinned id
 > while talking to the counter attendant the game is still field mode 3 under
 > the field overlay (the dialog itself is not a menu session).
 
+Retail enforces a max held count of 98 per item before dimming additional buy
+attempts; the port mirrors the gate in the grant kernel
+(`World::buy_from_shop` refuses a buy that would push the held count past
+`shop::SHOP_HELD_CAP`).
+
 ## Open items
 
-- **Quantity cap.** Retail enforces a max held count of 98 per item before
-  dimming additional buy attempts; the current port allows unlimited stacking.
 - **Mode-select panel.** The Buy / Sell / Quit selector (`FUN_801d4868`) uses
   x+20 for text, 14 px line height - same constants as the item list.
 
