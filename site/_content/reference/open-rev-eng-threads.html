@@ -364,8 +364,8 @@
       </tr>
       <tr>
         <td><code>FUN_80047430</code> caller</td>
-        <td>open</td>
-        <td>The per-frame anim-node tick has no <code>jal</code> in the dump corpus (likely function-pointer dispatch). One exec-breakpoint capture reading <code>$ra</code> closes it.</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Live-captured: a single dispatch site, the <code>jalr</code> at <code>0x800252B4</code> inside <code>FUN_8002519C</code> (the per-frame actor-list tick iterator), which calls each node's <code>+0x0C</code> handler slot. The anim-node tick is an ordinary list-node tick handler.</td>
         <td><a href="functions.html">functions</a></td>
       </tr>
       <tr>
