@@ -145,7 +145,8 @@ searched because its *filename label* says `player_data`; the retail
 `FUN_8001E890` (the field player loader) loads `player.lzs` (disc index `0x36c`,
 the same 3-descriptor container the extractor labels PROT 0874) and LZS-decodes
 all three sections (`piVar2[2..7]`): §0 → the 5-TMD mesh pack
-([§ On-disc layout](#on-disc-layout)), §1 → effect / `vdf` models, and **§2 → a
+([§ On-disc layout](#on-disc-layout)), §1 → the party locomotion ANM bundle
+([§ Field rest pose](#field-rest-pose---the-locomotion-bundle-prot-0874-1)), and **§2 → a
 [`pack`](pack.md) of eight asset chunks, each uploaded to VRAM via
 `FUN_800198e0`.** The eight entries (byte-exact against a live field-scene VRAM
 dump):

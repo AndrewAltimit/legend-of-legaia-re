@@ -347,12 +347,15 @@ scene-init routine `FUN_8003AEB0` runs `FUN_8003A1E4` over partition-1 records
 [scene-entry system script](field-locomotion.md)). Each record is:
 
 ```
-[u8 local_count N][N × 2 bytes locals][u8 model][u8 action_count][u8 tile_x][u8 tile_z][field-VM script…]
+[u8 local_count N][N × 2 bytes locals][u8 model][u8 anim_id][u8 tile_x][u8 tile_z][field-VM script…]
 ```
 
 - **model** `< 0xF0` indexes the kingdom-TMD pool from `DAT_8007b6f8`; `>= 0xF0`
   selects a special model from `_DAT_8007b824` (the lead-actor / party slot, and
   sets the actor's `0x1000000` flag).
+- **anim_id** (installed into actor `+0x5C`) is the actor's clip: scene-bundle
+  ANM record index + 1, `0` = none - see the [placement-header resolution
+  ](script-vm.md#placement-header-model--animation-resolution).
 - **tile_x / tile_z**: bits 0–6 are the 128-unit tile column / row; bit 7 shifts
   the spawn a half-tile. World position is `(b & 0x7F)·128 + (bit7 ? 128 : 64)`.
 - the actor's field-VM **script** starts at `record + 1 + 2N + 4` with the
