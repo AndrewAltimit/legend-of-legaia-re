@@ -8820,6 +8820,32 @@ impl World {
         self.reset_field_collision_grid();
     }
 
+    /// Seat the player actor at a field tile centre (`world = tile*128 +
+    /// 0x40` - the same tile->world mapping the MAN placement spawns and the
+    /// op-`0x3E` region check use, whose inverse is `(world - 0x40) >> 7`).
+    ///
+    /// This is the warp-arrival placement: a door transition (field-VM op
+    /// `0x3F`) carries the destination entry tile in its trailing bytes, and
+    /// [`crate::scene::SceneHost::tick`] calls this after the destination
+    /// scene loads so the player stands at the door it arrived through
+    /// instead of the cold-boot spawn. The floor height is sampled so the
+    /// player lands on the destination's terrain tier rather than `y = 0`.
+    pub fn seat_player_at_tile(&mut self, tile_x: u8, tile_z: u8) {
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let (wx, wz) = (
+            i16::from(tile_x) * 128 + 0x40,
+            i16::from(tile_z) * 128 + 0x40,
+        );
+        let wy = self.sample_field_floor_height(wx as i32, wz as i32) as i16;
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.move_state.world_x = wx;
+            actor.move_state.world_y = wy;
+            actor.move_state.world_z = wz;
+        }
+    }
+
     /// One field-VM step. Drives `field_ctx` + `field_pc` from the loaded
     /// `field_bytecode`. No-op when no bytecode is loaded.
     pub fn step_field(&mut self) -> Option<FieldStepResult> {
