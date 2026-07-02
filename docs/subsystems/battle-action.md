@@ -530,7 +530,18 @@ The engine-side translator at `crates/engine-core/src/art_strike.rs` (`apply_art
 
 ### Spirit / Run in the live command menu
 
-The live player-driven command menu (`legaia_engine_core::battle_input::BattleCommand`) carries all six commands: Attack (target cursor + physical strike), Arts / Magic / Item (host-submenu hand-offs), **Spirit** and **Run**. Spirit resolves without a target: the live loop charges the caster's AP gauge (`ApGauge::charge_spirit`, the retail Square-press +5) and raises a per-slot guard stance - the engine model of the retail pending-action byte `+0x1DE == 4` the damage finisher's guard-halve stage reads (`DamageFinish::defender_guarding`, `over >>= 1`) - held until that actor's next turn starts. Run arms the ported run band (`Begin` -> category 5 -> `RunBegin`/`RunWait`/`RunEscape`) with the roll outcome staged on `multi_cast_gate`; a success tears the battle down `Escaped` (no loot, downed members floored alive at 1 HP), a failure consumes the turn through the Done band. The escape *probability* itself is an engine-side reconstruction (a 50% roll) - the retail roll that writes `_DAT_8007726C` is still unpinned (see Open work).
+The live player-driven command menu (`legaia_engine_core::battle_input::BattleCommand`) carries
+all six commands: Attack (target cursor + physical strike), Arts / Magic / Item (host-submenu
+hand-offs), **Spirit** and **Run**. Spirit resolves without a target: the live loop charges the
+caster's AP gauge (`ApGauge::charge_spirit`, the retail Square-press +5) and raises a per-slot
+guard stance - the engine model of the retail pending-action byte `+0x1DE == 4` the damage
+finisher's guard-halve stage reads (`DamageFinish::defender_guarding`, `over >>= 1`) - held
+until that actor's next turn starts. Run arms the ported run band (`Begin` -> category 5 ->
+`RunBegin`/`RunWait`/`RunEscape`) with the roll outcome staged on `multi_cast_gate`; a success
+tears the battle down `Escaped` (no loot, downed members floored alive at 1 HP), a failure
+consumes the turn through the Done band. The escape *probability* itself is an engine-side
+reconstruction (a 50% roll) - the retail roll that writes `_DAT_8007726C` is still unpinned (see
+Open work).
 
 ## Open work
 

@@ -171,6 +171,18 @@
     and data live inside the <em>battle-action</em> overlay (PROT 0898), because
     the arena reuses the battle engine wholesale.
   </div>
+  <p style="margin-top: 1rem;">
+    <strong>Three of these are playable in the clean-room engine.</strong> In
+    the engine's <code>play-window</code> viewer the dance (<code>K</code>),
+    fishing (<code>L</code>) and slot-machine (<code>O</code>) minigames run as
+    suspending scene modes driven by ported rules engines
+    (<code>engine-core::dance</code> / <code>fishing</code> /
+    <code>slot_machine</code>) - each decodes its tables from the user's disc
+    at runtime, shows its own HUD, and restores the interrupted scene on exit.
+    The slot machine seeds its playing balance from the casino coin bank
+    (<code>0x800845A4</code>) and commits the final balance back on cash-out,
+    exactly the retail assignment described above.
+  </p>
 </section>
 
 <section class="doc-section" id="related">
