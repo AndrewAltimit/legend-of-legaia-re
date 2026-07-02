@@ -10137,3 +10137,93 @@ fn fishing_tick_without_session_falls_back_to_return_mode() {
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Field);
 }
+
+fn slot_test_machine(balance: i32) -> crate::slot_machine::SlotMachine {
+    use legaia_asset::slot_payout::SlotPayoutTable;
+    // Synthetic payout table: symbol id i pays (i+1)*2 coins.
+    let mut payouts = [0u8; legaia_asset::slot_payout::SLOT_SYMBOL_COUNT];
+    for (i, p) in payouts.iter_mut().enumerate() {
+        *p = ((i + 1) * 2) as u8;
+    }
+    crate::slot_machine::SlotMachine::new(SlotPayoutTable { payouts }, 0xC0FFEE, balance)
+}
+
+#[test]
+fn enter_slot_machine_suspends_mode_and_exit_commits_the_bank() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.casino_coins = 7;
+    world.enter_slot_machine(slot_test_machine(50));
+    assert_eq!(world.mode, SceneMode::SlotMachine);
+    assert!(world.slot_machine.is_some());
+    let machine = world.exit_slot_machine();
+    assert!(machine.is_some());
+    assert_eq!(world.mode, SceneMode::Field);
+    assert!(world.slot_machine.is_none());
+    // Exit commits the playing balance INTO the bank (the retail state-100
+    // assignment `_DAT_800845A4 = DAT_801d4114`), replacing the old value.
+    assert_eq!(world.casino_coins, 50);
+}
+
+#[test]
+fn slot_machine_spins_stops_and_collects_through_the_pad() {
+    use crate::slot_machine::{SPIN_UP_FRAMES, SlotPhase};
+    let mut world = World::new();
+    world.enter_slot_machine(slot_test_machine(50));
+    // Confirm (Cross rising edge) charges the bet and starts the spin.
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Cross.mask());
+    let _ = world.tick();
+    let m = world.slot_machine.as_ref().unwrap();
+    assert_eq!(m.phase(), SlotPhase::Spinning);
+    assert_eq!(m.balance(), 50 - m.spin_cost());
+    // Run the spin-up timer down into Stopping.
+    for _ in 0..SPIN_UP_FRAMES {
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    assert_eq!(
+        world.slot_machine.as_ref().unwrap().phase(),
+        SlotPhase::Stopping
+    );
+    // Three fresh Cross edges stop the three reels -> Payout.
+    for _ in 0..3 {
+        world.set_pad(0);
+        let _ = world.tick();
+        world.set_pad(input::PadButton::Cross.mask());
+        let _ = world.tick();
+    }
+    let m = world.slot_machine.as_ref().unwrap();
+    assert_eq!(m.phase(), SlotPhase::Payout);
+    assert_eq!(m.reels_stopped(), crate::slot_machine::REEL_COUNT);
+    let result = m.last_result().expect("spin evaluated");
+    let before = m.balance();
+    // A fresh Cross edge collects the (possibly zero) payout back to Idle.
+    world.set_pad(0);
+    let _ = world.tick();
+    world.set_pad(input::PadButton::Cross.mask());
+    let _ = world.tick();
+    let m = world.slot_machine.as_ref().unwrap();
+    assert_eq!(m.phase(), SlotPhase::Idle);
+    assert_eq!(m.balance(), before + result.payout);
+}
+
+#[test]
+fn slot_machine_bet_lines_cycle_on_dpad() {
+    let mut world = World::new();
+    world.enter_slot_machine(slot_test_machine(50));
+    assert_eq!(world.slot_machine.as_ref().unwrap().bet_lines(), 3);
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Left.mask());
+    let _ = world.tick();
+    assert_eq!(world.slot_machine.as_ref().unwrap().bet_lines(), 1);
+}
+
+#[test]
+fn slot_machine_tick_without_session_falls_back_to_return_mode() {
+    let mut world = World::new();
+    world.slot_return_mode = SceneMode::Field;
+    world.mode = SceneMode::SlotMachine;
+    let _ = world.tick();
+    assert_eq!(world.mode, SceneMode::Field);
+}

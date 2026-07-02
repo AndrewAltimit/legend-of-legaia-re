@@ -78,6 +78,7 @@ pub mod seru_stats;
 pub mod seru_trade;
 pub mod shop;
 pub mod shop_catalog;
+pub mod slot_machine;
 pub mod spell_menu;
 pub mod spells;
 pub mod status_screen;

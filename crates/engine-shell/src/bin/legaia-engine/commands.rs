@@ -1460,6 +1460,7 @@ fn synthetic_replay_scene_mode_name(m: legaia_engine_core::world::SceneMode) -> 
         SceneMode::WorldMap => "WorldMap",
         SceneMode::Dance => "Dance",
         SceneMode::Fishing => "Fishing",
+        SceneMode::SlotMachine => "SlotMachine",
         SceneMode::Menu => "Menu",
     }
 }
