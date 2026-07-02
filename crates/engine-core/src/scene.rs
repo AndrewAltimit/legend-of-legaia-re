@@ -2273,7 +2273,9 @@ impl SceneHost {
         // so it loads directly without the map-id resolver. This is the live
         // consumer of the disc-sourced scene-destination data - the same names
         // [`crate::man_field_scripts::scene_destinations`] catalogs.
-        if let Some((name, entry_x, entry_z)) = self.world.pending_named_scene_transition.take() {
+        if let Some((name, entry_x, entry_z, dir)) =
+            self.world.pending_named_scene_transition.take()
+        {
             // Drop a stale map-id request from the same frame; the named target
             // is unambiguous.
             self.world.pending_scene_transition = None;
@@ -2288,6 +2290,10 @@ impl SceneHost {
             // the overworld arrives on the continent beside that town (e.g.
             // Rim Elm -> map01 tile (0x60, 0x19)), not at the map origin.
             self.world.seat_player_at_tile(entry_x, entry_z);
+            // ...facing the op's trailing `dir` compass sector (retail
+            // resolves it through the SCUS 0x80073F04 table into the
+            // arrival-facing global; the engine sets the heading directly).
+            self.world.face_player_sector(dir);
             return Ok(SceneTickEvent::SceneEntered { name });
         }
         if let Some(map_id) = self.world.pending_scene_transition.take() {

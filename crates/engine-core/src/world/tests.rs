@@ -2933,7 +2933,7 @@ fn field_op_3f_stages_named_scene_transition() {
     let _ = world.tick();
     assert_eq!(
         world.pending_named_scene_transition,
-        Some(("dolk".to_string(), 0x01, 0x02)),
+        Some(("dolk".to_string(), 0x01, 0x02, 0x03)),
         "0x3F must stage a named scene transition to the inline destination"
     );
     // It is NOT a dialog opener.

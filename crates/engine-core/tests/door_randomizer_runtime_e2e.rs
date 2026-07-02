@@ -62,7 +62,7 @@ fn warp_destination(decoded: &[u8], op_pc: usize) -> Option<String> {
     world
         .pending_named_scene_transition
         .as_ref()
-        .map(|(name, _, _)| name.clone())
+        .map(|(name, _, _, _)| name.clone())
 }
 
 #[test]

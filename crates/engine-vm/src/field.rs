@@ -362,8 +362,11 @@ pub trait FieldHost {
     /// the op. The VM only passes a name that cleared the clean-CDNAME-label gate
     /// ([`crate::field_disasm::clean_scene_name`]); a desync-phantom `0x3F` inside
     /// message text is skipped (no transition) but still advances the PC.
-    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8) {
-        let _ = (scene, entry_x, entry_z);
+    /// `dir & 7` is the arrival-facing selector: retail resolves it through
+    /// the 8-entry compass table at SCUS `0x80073F04` (`facing = (dir & 7) *
+    /// 0x200` in the 12-bit angle space) into `_DAT_80073EFC`.
+    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
+        let _ = (scene, entry_x, entry_z, dir);
     }
 
     /// Render-config write (op 0x46, long form `op0 == 0x24`). Original

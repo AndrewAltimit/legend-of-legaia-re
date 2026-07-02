@@ -631,12 +631,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.pending_scene_transition = Some(map_id);
     }
 
-    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8) {
+    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         // Named scene-change (op 0x3F): the destination name is inline, so no
         // map-id resolver is needed. Recorded for SceneHost::tick to drain,
         // the same deferral as the map-id path above (the bytecode swap can't
-        // run while we're stepping through it).
-        self.world.pending_named_scene_transition = Some((scene.to_string(), entry_x, entry_z));
+        // run while we're stepping through it). `dir` is the arrival-facing
+        // compass selector the seat applies on the far side.
+        self.world.pending_named_scene_transition =
+            Some((scene.to_string(), entry_x, entry_z, dir));
     }
 
     fn is_scripted_encounter_armed(&self) -> bool {

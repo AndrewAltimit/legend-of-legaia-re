@@ -1194,7 +1194,7 @@ pub struct World {
     /// drains it and loads that scene directly. Fields: `(scene, entry_x,
     /// entry_z)` - the entry-tile bytes are kept for future destination
     /// spawn-point wiring. `None` between transitions.
-    pub pending_named_scene_transition: Option<(String, u8, u8)>,
+    pub pending_named_scene_transition: Option<(String, u8, u8, u8)>,
 
     /// Pending FMV trigger (field-VM op `0x4C 0xE2`). When `Some(fmv_id)`,
     /// the field VM has signalled that the next-game-mode global should
@@ -9217,15 +9217,34 @@ impl World {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
-        let (wx, wz) = (
-            i16::from(tile_x) * 128 + 0x40,
-            i16::from(tile_z) * 128 + 0x40,
-        );
+        // Retail entry-byte decode (`FUN_801DE840` case 0x3F): the low 7
+        // bits are the tile, the high bit selects the far half of the tile
+        // (`(b & 0x7F) * 0x80 + 0x40`, `+0x80` when bit 7 is set).
+        let half =
+            |b: u8| -> i16 { i16::from(b & 0x7F) * 128 + if b & 0x80 != 0 { 0x80 } else { 0x40 } };
+        let (wx, wz) = (half(tile_x), half(tile_z));
         let wy = self.sample_field_floor_height(wx as i32, wz as i32) as i16;
         if let Some(actor) = self.actors.get_mut(slot as usize) {
             actor.move_state.world_x = wx;
             actor.move_state.world_y = wy;
             actor.move_state.world_z = wz;
+        }
+    }
+
+    /// Face the player along a warp-arrival compass sector - the op-`0x3F`
+    /// trailing `dir` byte. Retail resolves `dir & 7` through the 8-entry
+    /// i16 table at SCUS `0x80073F04` (`[0, 0x200, 0x400, .. 0xE00]` - the
+    /// eight 45-degree compass points of the 12-bit angle space) into the
+    /// arrival-facing global `_DAT_80073EFC`; the engine stores the same
+    /// angle on the player's heading (`move_state.render_26`, `0` = +Z).
+    ///
+    /// REF: FUN_801DE840 (case 0x3F facing write, table 0x80073F04)
+    pub fn face_player_sector(&mut self, dir: u8) {
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.move_state.render_26 = i16::from(dir & 7) * 0x200;
         }
     }
 

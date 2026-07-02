@@ -2369,7 +2369,8 @@ pub fn step<H: FieldHost>(
             if let Some(name) = crate::field_disasm::clean_scene_name(raw) {
                 let entry_x = bytecode[name_start + name_len];
                 let entry_z = bytecode[name_start + name_len + 1];
-                host.scene_transition_named(&name, entry_x, entry_z);
+                let dir = bytecode[name_start + name_len + 2];
+                host.scene_transition_named(&name, entry_x, entry_z, dir);
             }
             StepResult::Advance {
                 next_pc: pc + header_size + 6 + name_len,

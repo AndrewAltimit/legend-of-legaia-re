@@ -59,8 +59,9 @@ fn named_warp_seats_player_at_entry_tile() {
     // seat the arrival).
     const DEST: &str = "keikoku";
     const ENTRY_TILE: (u8, u8) = (10, 20);
+    const ENTRY_DIR: u8 = 6; // compass sector 6 -> facing 0xC00
     host.world.pending_named_scene_transition =
-        Some((DEST.to_string(), ENTRY_TILE.0, ENTRY_TILE.1));
+        Some((DEST.to_string(), ENTRY_TILE.0, ENTRY_TILE.1, ENTRY_DIR));
     let event = host.tick().expect("transition tick");
     match event {
         SceneTickEvent::SceneEntered { ref name } => assert_eq!(name, DEST),
@@ -79,13 +80,19 @@ fn named_warp_seats_player_at_entry_tile() {
         expect,
         "warp arrival must seat the player at the op-0x3F entry tile centre"
     );
+    assert_eq!(
+        ms.render_26,
+        i16::from(ENTRY_DIR) * 0x200,
+        "warp arrival must face the op-0x3F dir compass sector (SCUS 0x80073F04 table)"
+    );
 
     // --- a WORLD-MAP destination seats too (the town-exit-onto-overworld
     // case): Rim Elm's retail exit carries map01 entry tile (0x60, 0x19), so
     // the player must arrive on the Drake continent beside the town rather
     // than at the map origin (open, unwalkable ocean). ---
     const WM_ENTRY: (u8, u8) = (0x60, 0x19);
-    host.world.pending_named_scene_transition = Some(("map01".to_string(), WM_ENTRY.0, WM_ENTRY.1));
+    host.world.pending_named_scene_transition =
+        Some(("map01".to_string(), WM_ENTRY.0, WM_ENTRY.1, 0));
     let event = host.tick().expect("world-map transition tick");
     match event {
         SceneTickEvent::SceneEntered { ref name } => assert_eq!(name, "map01"),
@@ -102,4 +109,58 @@ fn named_warp_seats_player_at_entry_tile() {
         expect,
         "overworld warp arrival must seat the player at the destination entry tile"
     );
+}
+
+/// Cross-scene persistence: a door warp must not disturb the persistent
+/// state banks - the scratchpad story-flag word (`_DAT_1F800394`), the
+/// per-bit story bank, the system flag bank (`_DAT_80085758`), the bag and
+/// the purse all survive `enter_field_scene` on the far side. Only
+/// `begin_new_game` resets them in retail; a scene load never does.
+#[test]
+fn named_warp_preserves_story_flags_and_bag() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.enter_field_scene("town01", 0).expect("enter town01");
+
+    // Seed persistent state the opening scripts would have written.
+    host.world.story_flags |= 0x40; // scratchpad word bit (the 0x3F flag)
+    host.world.story_flag_bits = vec![1, 2, 3]; // per-bit story bank
+    host.world.system_flag_set(0x123); // _DAT_80085758 bank bit
+    host.world.inventory.insert(0x03, 5); // 5x Healing Flask
+    host.world.money = 777;
+
+    host.world.pending_named_scene_transition = Some(("keikoku".to_string(), 10, 20, 2));
+    match host.tick().expect("transition tick") {
+        SceneTickEvent::SceneEntered { ref name } => assert_eq!(name, "keikoku"),
+        other => panic!("expected SceneEntered, got {other:?}"),
+    }
+
+    assert_eq!(
+        host.world.story_flags & 0x40,
+        0x40,
+        "scratchpad story-flag word must survive the door warp"
+    );
+    assert_eq!(
+        host.world.story_flag_bits,
+        vec![1, 2, 3],
+        "story flag bank must survive the door warp"
+    );
+    assert!(
+        host.world.system_flag_test(0x123),
+        "system flag bank bit must survive the door warp"
+    );
+    assert_eq!(
+        host.world.inventory.get(&0x03).copied(),
+        Some(5),
+        "bag must survive the door warp"
+    );
+    assert_eq!(host.world.money, 777, "purse must survive the door warp");
 }

@@ -33,7 +33,7 @@ struct TestHost {
     party_removed: Vec<u8>,
     interacts: Vec<(u8, u8)>,
     scene_transitions: Vec<u8>,
-    named_scene_transitions: Vec<(String, u8, u8)>, // (scene, entry_x, entry_z)
+    named_scene_transitions: Vec<(String, u8, u8, u8)>, // (scene, entry_x, entry_z, dir)
     render_long: Vec<(u8, u8, u8, u8)>,
     render_short: Vec<(u8, u8, u8, u8)>,
     scene_regs: Vec<(u8, u8, u8)>,
@@ -281,9 +281,9 @@ impl FieldHost for TestHost {
     fn scene_transition(&mut self, map_id: u8) {
         self.scene_transitions.push(map_id);
     }
-    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8) {
+    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         self.named_scene_transitions
-            .push((scene.to_string(), entry_x, entry_z));
+            .push((scene.to_string(), entry_x, entry_z, dir));
     }
     fn render_cfg_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {
         self.render_long.push((b1, b2, b3, b4));
@@ -1355,7 +1355,7 @@ fn scene_change_decodes_name_and_entry() {
     assert_eq!(r, StepResult::Advance { next_pc: 11 });
     assert_eq!(
         host.named_scene_transitions,
-        vec![("dolk".to_string(), 0x01, 0x02)]
+        vec![("dolk".to_string(), 0x01, 0x02, 0x03)]
     );
     // It is not a dialog opener.
     assert!(host.dialogs.is_empty());
