@@ -461,6 +461,11 @@ struct PlayWindowApp {
     /// Whether the lazy `face_tables` load already ran (so a missing
     /// executable is only probed once).
     face_tables_attempted: bool,
+    /// The two fishing point-exchange venue pages (0 = Buma, 1 = Vidna),
+    /// decoded from the fishing overlay when the minigame starts
+    /// ([`legaia_asset::fishing_exchange`]) and named from the SCUS item
+    /// table when readable. `P` toggles the list while fishing.
+    fishing_prize_venues: Option<[legaia_engine_core::fishing::PrizeExchange; 2]>,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,
@@ -3481,13 +3486,42 @@ impl PlayWindowApp {
             log::warn!("fishing: species-table parse failed");
             return false;
         };
-        // Default rod stat + empty record for the dev entry point.
+        // Decode the two point-exchange venue pages alongside the species
+        // table, naming rows from the SCUS item table when it's readable
+        // (P toggles the prize list while fishing).
+        self.fishing_prize_venues = legaia_asset::fishing_exchange::parse(&loaded).map(|ex| {
+            use legaia_engine_core::Vfs;
+            let scus = if let Some(root) = self.extracted_root.as_deref() {
+                legaia_engine_core::DirVfs::new(root)
+                    .ok()
+                    .and_then(|v| v.read("SCUS_942.54").ok())
+            } else if let Some(disc) = self.disc_path.as_deref() {
+                legaia_engine_core::DiscVfs::open(disc)
+                    .ok()
+                    .and_then(|v| v.read("SCUS_942.54").ok())
+            } else {
+                None
+            };
+            let names = scus
+                .as_deref()
+                .and_then(legaia_asset::item_names::ItemNameTable::from_scus);
+            [0usize, 1].map(|venue| {
+                legaia_engine_core::fishing::PrizeExchange::from_asset(
+                    venue,
+                    &ex.venues[venue],
+                    names.as_ref(),
+                )
+            })
+        });
+        // Default rod stat for the dev entry point; the record resumes the
+        // world's persistent point pool (banked back on exit).
         const DEV_ROD_STAT: i32 = 4;
-        let session = legaia_engine_core::fishing::FishingSession::new(
-            species,
-            DEV_ROD_STAT,
-            legaia_engine_core::fishing::FishingRecord::default(),
-        );
+        let record = legaia_engine_core::fishing::FishingRecord {
+            points: self.session.host.world.fishing_points,
+            ..Default::default()
+        };
+        let session =
+            legaia_engine_core::fishing::FishingSession::new(species, DEV_ROD_STAT, record);
         self.session.host.world.enter_fishing(session);
         true
     }
@@ -5595,12 +5629,54 @@ impl PlayWindowApp {
             let ly = self.font.layout_ascii(&line);
             out.extend(text_draws_for(&ly, (8, 62), white));
             let pts = format!(
-                "points {}   best {}   (L = quit)",
+                "points {}   best {}   (L = quit, P = prizes)",
                 s.record().points,
                 s.record().best_points
             );
             let ly2 = self.font.layout_ascii(&pts);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
+        }
+        // Fishing point-exchange list: the venue's prize rows with the retail
+        // gating (row 0 hidden until affordable, greyed unavailable rows,
+        // one-time prizes latched after purchase).
+        if self.session.host.world.mode == SceneMode::Fishing
+            && let Some(ex) = &self.session.host.world.fishing_exchange
+        {
+            let world = &self.session.host.world;
+            let venue_name = if ex.venue == 0 { "Buma" } else { "Vidna" };
+            let head = format!(
+                "PRIZE EXCHANGE ({venue_name})  points {}   (Enter = trade, Left/Right = venue, P = close)",
+                world.fishing_points
+            );
+            let ly = self.font.layout_ascii(&head);
+            out.extend(text_draws_for(&ly, (8, 98), white));
+            let first = ex.first_visible(world.fishing_points);
+            for (i, r) in ex.rows.iter().enumerate().skip(first) {
+                let owned = *world.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                let avail = ex.is_available(
+                    i,
+                    world.fishing_points,
+                    owned,
+                    world.fishing_prizes_purchased,
+                );
+                let cursor = if i == ex.cursor { ">" } else { " " };
+                let name = r
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("item {:#04x}", r.item_id));
+                let tag = if r.is_one_time() {
+                    if avail { "one-time" } else { "sold" }
+                } else {
+                    "each"
+                };
+                let line = format!(
+                    "{cursor} {name:<18} {:>6} pts  {tag}  (own {owned})",
+                    r.price
+                );
+                let ly = self.font.layout_ascii(&line);
+                let y = 116 + 18 * (i - first) as i32;
+                out.extend(text_draws_for(&ly, (8, y), if avail { white } else { dim }));
+            }
         }
         // Slot-machine minigame HUD: the three payline symbols, the balance /
         // bet readout, and the phase-specific prompt.
@@ -6743,10 +6819,76 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     } else if self.start_fishing_minigame() {
                         log::info!(
-                            "fishing: started - Cross casts/reels(A), Circle reels(B), L to quit"
+                            "fishing: started - Cross casts/reels(A), Circle reels(B), L to quit, P = prize exchange"
                         );
                     }
                     return;
+                }
+                // `P` (while fishing): toggle the point-exchange prize list
+                // decoded from the fishing overlay's per-venue tables. While
+                // open: Up/Down move, Left/Right switch venue, Enter buys one.
+                if self.session.host.world.mode == SceneMode::Fishing
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    let world = &mut self.session.host.world;
+                    match code {
+                        KeyCode::KeyP => {
+                            if world.fishing_exchange.is_some() {
+                                world.close_fishing_exchange();
+                            } else if let Some(venues) = &self.fishing_prize_venues {
+                                world.open_fishing_exchange(venues[0].clone());
+                            } else {
+                                log::info!("fishing: no exchange tables decoded (disc-free run?)");
+                            }
+                            return;
+                        }
+                        KeyCode::ArrowUp | KeyCode::ArrowDown
+                            if world.fishing_exchange.is_some() =>
+                        {
+                            let points = world.fishing_points;
+                            if let Some(ex) = &mut world.fishing_exchange {
+                                let floor = ex.first_visible(points);
+                                let last = ex.rows.len().saturating_sub(1);
+                                ex.cursor = if matches!(code, KeyCode::ArrowUp) {
+                                    ex.cursor.saturating_sub(1).max(floor)
+                                } else {
+                                    (ex.cursor + 1).min(last)
+                                };
+                            }
+                            return;
+                        }
+                        KeyCode::ArrowLeft | KeyCode::ArrowRight
+                            if world.fishing_exchange.is_some() =>
+                        {
+                            if let (Some(open), Some(venues)) =
+                                (&world.fishing_exchange, &self.fishing_prize_venues)
+                            {
+                                let other = venues[1 - open.venue.min(1)].clone();
+                                world.open_fishing_exchange(other);
+                            }
+                            return;
+                        }
+                        KeyCode::Enter if world.fishing_exchange.is_some() => {
+                            let row = world.fishing_exchange.as_ref().map(|e| e.cursor);
+                            if let Some(row) = row {
+                                match world.fishing_exchange_buy(row, 1) {
+                                    Some(p) => log::info!(
+                                        "fishing exchange: bought item {:#04x} x{} for {} points ({} left)",
+                                        p.item_id,
+                                        p.qty,
+                                        p.cost,
+                                        world.fishing_points
+                                    ),
+                                    None => log::info!(
+                                        "fishing exchange: row {row} unavailable (points/limit/one-time)"
+                                    ),
+                                }
+                            }
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
                 // `O`: toggle the casino slot-machine minigame. Loads the slot
                 // overlay (PROT 0975), suspends the current scene, and runs
@@ -9397,6 +9539,7 @@ fn cmd_play_window_with_record(
         face_tables: None,
         art_mouth_tables: None,
         face_tables_attempted: false,
+        fishing_prize_venues: None,
         summon_actor_slot: None,
         battle_stage_mesh: None,
         battle_ground_mesh: None,

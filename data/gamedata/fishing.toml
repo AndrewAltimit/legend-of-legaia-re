@@ -27,6 +27,12 @@ item = "spikefish_flute"
 cost_points = 200
 
 [[fishing_prize]]
+location = "Vidna"
+item = "war_god_icon"
+cost_points = 50000
+notes = "Disc-verified hidden top prize (venue table row 0): the list hides row 0 until it is strictly affordable, so it only appears past 50,000 points. Absent from the walkthrough prize lists."
+
+[[fishing_prize]]
 location = "Buma"
 item = "water_egg"
 cost_points = 20000

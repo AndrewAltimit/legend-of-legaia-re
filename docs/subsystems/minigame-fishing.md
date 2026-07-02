@@ -10,7 +10,7 @@ The per-frame driver is `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`). It is d
 
 | State | Role |
 |---|---|
-| `0` | Rod / type select: queues a small menu, reads a select edge, and on confirm grants the inventory rod items (`func_0x800421d4` ids `0x9d`..`0xa2`) and advances to `1`. |
+| `0` | Rod / type select: queues a small menu, reads a select edge, and on confirm grants the inventory rod + lure items (`func_0x800421d4` ids `0x9d`..`0xa2` - the SCUS item table names them Light/Normal/Heavy Lure + Old/Deluxe/Legendary Rod) and advances to `1`. |
 | `1` | Scene / actor setup: spawns the fishing actors (`func_0x80020de0`), picks the location variant from `DAT_801d90d0`, initialises camera-tint bytes, then falls through to `0x32`. |
 | `0x32` | Sets state to `10` (the run-loop entry). |
 | `10` (`0xa`) | Run-loop init: zeroes the per-cast working set, including tension `DAT_801d9168`, depth/line `DAT_801d9298`, casting-power `DAT_801d9274` (seeded `0x40`) and its direction `DAT_801d9278`, then advances. |
@@ -110,11 +110,32 @@ Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species
 
 Engine port: [`legaia_engine_core::fishing`](../../crates/engine-core/src/fishing.rs) is the clean-room rules engine over that table. The **Confirmed** numeric kernels are ported directly: the casting-power oscillator (`CastPower`, bounds `0x20..=0x1000`, seed `0x40`; `FUN_801cf3bc` state `0x14`), the tension-gauge tug-of-war (`TensionGauge`, reel divisors `rod*9+0x23` / `rod*6+0x19`, release `(rod*0x40+0x4a)*frame_step`, clamp `[0, 0x1000]`; `FUN_801d4004`), and the catch award + persistent-record credit (`FishingRecord`, `value*(strength+0x9c0)/0x32000`, `999999` cap, best-catch; `FUN_801d5298`).
 
-The `FishingSession` composes those kernels into a cast → fight → score loop. The win/lose glue (line-snaps-at-max-tension, reel-progress land, the locked-cast species pick, and the steady per-frame fish pull) is an **engine-side reconstruction** of the two [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in.
+The `FishingSession` composes those kernels into a cast → fight → score loop. The win/lose glue (line-snaps-at-max-tension, reel-progress land, the locked-cast species pick, and the steady per-frame fish pull) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in.
 
-Runtime wiring: installed as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing` / `tick_fishing` / `exit_fishing`). The `play-window` viewer starts it from the `L` key (loads the fishing overlay PROT 0972, `fishing_species::parse`); Cross locks the cast and reels (reel A), Circle is reel B, and the HUD shows the cast-power / tension / catch-result line plus the running point total.
+Runtime wiring: installed as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing` / `tick_fishing` / `exit_fishing`). The `play-window` viewer starts it from the `L` key (loads the fishing overlay PROT 0972, `fishing_species::parse`); Cross locks the cast and reels (reel A), Circle is reel B, and the HUD shows the cast-power / tension / catch-result line plus the running point total. `P` opens the [point exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue, Enter trades).
+
+## Point exchange (prize shop)
+
+The shop branch of the mode SM (states `0x64`..`0x7a`) is a **point exchange**: it spends the persistent fishing-point pool `_DAT_8008444C` on in-game items. The screens are:
+
+- `FUN_801d0c3c` (state `0x64` family) - the 6-row prize list. Each row prints its item name through the MES `0xC2` item-name token fed with the record's item id, plus the per-unit price; the running point total renders capped at `999999`. **Row 0 is hidden until strictly affordable** (`price0 < points` - the cursor floor is `(price0 < points) ^ 1`), which is why each venue's top prize only "appears" once the pool is big enough. Row availability (white vs grey, `FUN_801d6f90`): affordable, inventory count `!= 99`, and - for a one-time row - its purchased bit not yet latched.
+- `FUN_801d092c` (state `0x7a`) - the "Trade how many?" quantity picker. Max quantity = `min(points / price, limit − owned)` where `owned` is the live inventory count (`func_0x80042f4c`) and a not-yet-purchased one-time row treats `owned` as 0.
+- `FUN_801d06c8` (state `0x79`) - the "Are you sure?" confirm. Yes grants `func_0x800421d4(item_id, qty)`, deducts `price * qty` from `_DAT_8008444C`, and for a `limit == 1` row latches bit `row + venue*8` of the persistent purchased bitmask `_DAT_8008446C`.
+
+**Record layout** (12-byte stride, 6 rows per venue, read through `PTR_DAT_801d90b8`):
+
+| Off | Field | Meaning |
+|---|---|---|
+| `+0x00` | `limit` | Max obtainable count: `1` = one-time prize (latched in `_DAT_8008446C`), `99` = repeatable |
+| `+0x04` | `price` | Fishing points per unit |
+| `+0x08` | `item_id` | Granted item id (SCUS item-name-table space) |
+
+**Venue pages.** Two consecutive 6-row tables live in the overlay rodata at VA `0x801D8088` / `0x801D80D0`; `FUN_801cf3bc` state `1` selects the page from the venue global `_DAT_8007BAC4` (`0x187` → page 0, the Buma pond; `0xF4` → page 1, the Vidna pond - the selector values equal the Karisto / Sebucus kingdom-bundle extraction indices). Both venues spend and latch against the same globals; venue 1's one-time bits occupy `8..`. Cross-validated row-for-row against the curated walkthrough prize lists ([`gamedata.md`](../reference/gamedata.md)) - including one entry the walkthroughs miss: **Vidna's row 0 is a 50,000-point one-time War God Icon**, invisible until the pool exceeds its price.
+
+The same state-1 page select also pages the venue's **species-spawn table** into `PTR_DAT_801d9114` (rodata `0x801D8334` / `0x801D8434`, directly after the species table): `8 × 8` u32 species ids read by the hooked-fish handler as `species = table[rod*8 + band]` (`FUN_801d26cc`), where `rod` is the equipped-rod index `_DAT_80084450` (rows 3..8 are zero padding - three rods exist) and `band` is the cast band `DAT_801d90e8` (0..4; band 4 is the venue's rare band, entered by a venue-specific roll - 1/16 at Buma with rod 1 + lure 2 after `0x32` even-count catches, 1/4 at Vidna with rod 2 + lure 2 - or directly on a deep cast).
+
+Parsers: [`legaia_asset::fishing_exchange`](../../crates/asset/src/fishing_exchange.rs) (exchange pages) and `fishing_species::parse_spawn_tables` (spawn pages); disc-gated `fishing_exchange_real` pins the structural invariants. Engine port: `legaia_engine_core::fishing::PrizeExchange` (list-floor / availability / quantity-cap / confirm kernels) with the grant committed by `World::fishing_exchange_buy` against the persistent `World::fishing_points` pool + `World::fishing_prizes_purchased` mask (the retail `_DAT_8008444C` / `_DAT_8008446C` pair); disc-free runtime oracle `fishing_exchange_runtime`.
 
 ## Open
 
 - The exact bit assignment of the reel buttons within `_DAT_8007b850` (which physical face/shoulder buttons `0x40` / `0x80` map to) is not pinned from these dumps.
-- Whether the point-exchange shop branch (states `0x64`..`0x7a`) spends fishing points for in-game items or rod upgrades - the helpers `FUN_801d06c8` / `FUN_801d092c` / `FUN_801d0c3c` read `PTR_DAT_801d90b8` price records, but the record layout is not yet documented.

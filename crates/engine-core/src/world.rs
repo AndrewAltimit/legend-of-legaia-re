@@ -1589,6 +1589,23 @@ pub struct World {
     /// ([`World::enter_fishing`] snapshots the interrupted mode).
     pub fishing_return_mode: SceneMode,
 
+    /// Persistent fishing-point pool, mirroring retail's `_DAT_8008444C`
+    /// counter: [`World::exit_fishing`] banks the session record's points
+    /// here, and the point exchange spends from it
+    /// ([`World::fishing_exchange_buy`]). Hosts seed a new session's
+    /// [`crate::fishing::FishingRecord`] from this cell.
+    pub fishing_points: i32,
+
+    /// Persistent one-time prize bitmask, mirroring retail's `_DAT_8008446C`:
+    /// bit `row + venue * 8` latches when a `limit == 1` exchange row is
+    /// bought (see [`legaia_asset::fishing_exchange`]).
+    pub fishing_prizes_purchased: u32,
+
+    /// Fishing point-exchange (prize shop) session. `Some` while the exchange
+    /// list is open on the host's fishing screen; purchases commit through
+    /// [`World::fishing_exchange_buy`].
+    pub fishing_exchange: Option<crate::fishing::PrizeExchange>,
+
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
     /// tick. See [`crate::slot_machine::SlotMachine`] and
@@ -2615,6 +2632,9 @@ impl World {
             dance_last_judge: None,
             fishing: None,
             fishing_return_mode: SceneMode::Field,
+            fishing_points: 0,
+            fishing_prizes_purchased: 0,
+            fishing_exchange: None,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
             baka_fighter: None,
@@ -6004,15 +6024,75 @@ impl World {
     }
 
     /// Leave the fishing minigame and restore the interrupted mode, returning
-    /// the session so the host can read the final [`FishingRecord`]. No-op when
-    /// fishing isn't active.
+    /// the session so the host can read the final [`FishingRecord`]. The
+    /// record's point total is banked into the persistent
+    /// [`World::fishing_points`] pool (retail credits `_DAT_8008444C`
+    /// directly; hosts seed the next session's record from the pool). No-op
+    /// when fishing isn't active.
     ///
     /// [`FishingRecord`]: crate::fishing::FishingRecord
     pub fn exit_fishing(&mut self) -> Option<crate::fishing::FishingSession> {
         if self.mode == SceneMode::Fishing {
             self.mode = self.fishing_return_mode;
         }
-        self.fishing.take()
+        let session = self.fishing.take();
+        self.fishing_exchange = None;
+        if let Some(s) = &session {
+            self.fishing_points = s.record().points;
+        }
+        session
+    }
+
+    /// Open the fishing point-exchange (prize shop) list on `exchange`.
+    /// The host renders [`World::fishing_exchange`] and commits buys through
+    /// [`World::fishing_exchange_buy`].
+    pub fn open_fishing_exchange(&mut self, mut exchange: crate::fishing::PrizeExchange) {
+        // Row 0 hides until strictly affordable - floor the cursor to the
+        // first visible row for the current point pool.
+        exchange.cursor = exchange
+            .cursor
+            .max(exchange.first_visible(self.fishing_points));
+        self.fishing_exchange = Some(exchange);
+    }
+
+    /// Close the point-exchange list.
+    pub fn close_fishing_exchange(&mut self) {
+        self.fishing_exchange = None;
+    }
+
+    /// Commit a point-exchange purchase of `qty` units of `row`
+    /// (`FUN_801d06c8`'s Yes arm): validates through
+    /// [`crate::fishing::PrizeExchange::buy`] against the persistent pool /
+    /// purchased mask / live inventory count, then deducts
+    /// [`World::fishing_points`], latches the one-time bit, and grants the
+    /// item into [`World::inventory`]. While a fishing session is live its
+    /// record is synced to the reduced pool so the on-screen point total
+    /// matches. `None` when no exchange is open or the buy doesn't validate.
+    pub fn fishing_exchange_buy(
+        &mut self,
+        row: usize,
+        qty: u32,
+    ) -> Option<crate::fishing::PrizePurchase> {
+        let ex = self.fishing_exchange.as_ref()?;
+        let item_id = ex.rows.get(row)?.item_id;
+        let owned = *self.inventory.get(&item_id).unwrap_or(&0) as u32;
+        let purchase = ex.buy(
+            row,
+            qty,
+            self.fishing_points,
+            owned,
+            self.fishing_prizes_purchased,
+        )?;
+        self.fishing_points -= purchase.cost as i32;
+        if let Some(bit) = purchase.latched_bit {
+            self.fishing_prizes_purchased |= 1 << bit;
+        }
+        let count = self.inventory.entry(purchase.item_id).or_insert(0);
+        *count = count.saturating_add(purchase.qty.min(255) as u8);
+        if let Some(s) = &mut self.fishing {
+            s.set_points(self.fishing_points);
+        }
+        Some(purchase)
     }
 
     /// Advance the fishing minigame one frame, reading this frame's pad:

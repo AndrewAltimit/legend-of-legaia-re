@@ -38,6 +38,7 @@ pub mod field_char_textures;
 pub mod field_disasm;
 pub mod field_objects;
 pub mod field_pack;
+pub mod fishing_exchange;
 pub mod fishing_species;
 pub mod fmv_dispatch;
 pub mod init_pak;

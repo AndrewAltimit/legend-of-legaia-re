@@ -170,6 +170,63 @@ pub fn parse_at(overlay: &[u8], off: usize, count: usize) -> Option<Vec<FishingS
     Some(out)
 }
 
+// --- Species-spawn tables -------------------------------------------------
+//
+// Directly after the species table sit two per-venue **spawn tables** paged
+// into `PTR_DAT_801d9114` by the same venue select that pages the exchange
+// tables (`FUN_801cf3bc` case 1; see [`crate::fishing_exchange`]). The
+// hooked-fish handler picks the hooked species as
+// `species = table[(rod * 8 + band) * 4]` (`FUN_801d26cc`,
+// `overlay_fishing_801d26cc.txt` line ~1856) where `rod` = the equipped-rod
+// index `_DAT_80084450` (0..3: Old / Deluxe / Legendary) and `band` = the
+// cast band `DAT_801d90e8` (0..4; band 4 is the rare band, entered by a
+// venue-specific roll - 1/16 at venue 0 with rod 1 + lure 2 after 0x32
+// even-count catches, 1/4 at venue 1 with rod 2 + lure 2 - or directly when
+// the deep-cast pad bit is held with the deep-water flag set).
+
+/// Runtime VA of the venue-0 spawn table (`&DAT_801d8334`).
+pub const SPAWN_TABLE_VA_PAGE0: u32 = 0x801D_8334;
+
+/// Runtime VA of the venue-1 spawn table (`&DAT_801d8434`).
+pub const SPAWN_TABLE_VA_PAGE1: u32 = 0x801D_8434;
+
+/// Rows per spawn table (indexed by the equipped-rod id; rows 3..8 are
+/// zero-filled padding - only 3 rods exist).
+pub const SPAWN_RODS: usize = 8;
+
+/// Slots per rod row (indexed by the cast band 0..4; slots 5..8 unused).
+pub const SPAWN_BANDS: usize = 8;
+
+/// Parse one venue's spawn table (`SPAWN_RODS x SPAWN_BANDS` u32 species
+/// ids) at overlay VA `table_va`.
+pub fn parse_spawn_table(overlay: &[u8], table_va: u32) -> Option<Vec<[u32; SPAWN_BANDS]>> {
+    let off = table_va.checked_sub(FISHING_OVERLAY_BASE_VA)? as usize;
+    let need = off + SPAWN_RODS * SPAWN_BANDS * 4;
+    if overlay.len() < need {
+        return None;
+    }
+    let mut rows = Vec::with_capacity(SPAWN_RODS);
+    for rod in 0..SPAWN_RODS {
+        let mut row = [0u32; SPAWN_BANDS];
+        for (band, slot) in row.iter_mut().enumerate() {
+            let p = off + (rod * SPAWN_BANDS + band) * 4;
+            *slot =
+                u32::from_le_bytes([overlay[p], overlay[p + 1], overlay[p + 2], overlay[p + 3]]);
+        }
+        rows.push(row);
+    }
+    Some(rows)
+}
+
+/// Parse both venue spawn tables (`[0]` = venue 0 / Buma page,
+/// `[1]` = venue 1 / Vidna page).
+pub fn parse_spawn_tables(overlay: &[u8]) -> Option<[Vec<[u32; SPAWN_BANDS]>; 2]> {
+    Some([
+        parse_spawn_table(overlay, SPAWN_TABLE_VA_PAGE0)?,
+        parse_spawn_table(overlay, SPAWN_TABLE_VA_PAGE1)?,
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
