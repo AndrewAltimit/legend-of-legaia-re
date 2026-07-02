@@ -7006,11 +7006,14 @@ impl ApplicationHandler for PlayWindowApp {
                         // The earlier per-cell pack-mesh sweep that stamped a
                         // mesh on every `0x1000` cell was wrong (it flooded the
                         // map with pool-5; see docs/subsystems/world-map.md).
-                        let yflip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                        // No Y-flip on the heightfield: its baked `-lut`
+                        // corner heights are already in the same frame as the
+                        // landmark placements' un-flipped translation (see the
+                        // field-branch note below).
                         if let Some(hf_mesh) = self.ground_heightfield.as_ref() {
                             draws.push(SceneDraw {
                                 mesh: hf_mesh,
-                                mvp: cam * yflip,
+                                mvp: cam,
                             });
                         }
                         for (mesh_idx, model) in self.world_map_terrain_draws.iter() {
@@ -7027,6 +7030,7 @@ impl ApplicationHandler for PlayWindowApp {
                         if self.ground_heightfield.is_none()
                             && self.world_map_terrain_draws.is_empty()
                         {
+                            let yflip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                             for mesh in &self.meshes {
                                 draws.push(SceneDraw {
                                     mesh,
@@ -7084,60 +7088,91 @@ impl ApplicationHandler for PlayWindowApp {
                                 });
                             }
                         } else {
+                            // Debug layer filter (`LEGAIA_DIAG_LAYERS=hf,tiles,
+                            // ctiles,place,cplace,npc`): when set, only the
+                            // named field layers draw - the render-side sibling
+                            // of `LEGAIA_DIAG_PLACE` for bisecting which layer
+                            // a visual defect lives in.
+                            let layer_filter = std::env::var("LEGAIA_DIAG_LAYERS").ok();
+                            let layer_on = |name: &str| {
+                                layer_filter
+                                    .as_deref()
+                                    .is_none_or(|f| f.split(',').any(|s| s == name))
+                            };
                             // Bulk ground FIRST: the `.MAP` floor-grid
                             // heightfield (the `0x1000` ground layer - most
                             // town floor cells have NO pack mesh, so without
                             // this surface they render as holes).
-                            if let Some(hf_mesh) = self.ground_heightfield.as_ref() {
-                                let yflip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                            //
+                            // NO Y-flip here: the heightfield bakes its corner
+                            // elevation as `-lut[nib]` (already the world
+                            // height placements/actors put in their UN-flipped
+                            // translation). Flipping the mesh negated it back
+                            // to `+lut`, sinking every elevated cell to twice
+                            // its elevation BELOW its buildings - the whole
+                            // cliff-top town core (tier -192, incl. the spawn
+                            // plaza) rendered out of sight while only sea-level
+                            // tier-0 cells (the beach) lined up. Pipelines
+                            // don't cull, so the winding change is harmless.
+                            if layer_on("hf")
+                                && let Some(hf_mesh) = self.ground_heightfield.as_ref()
+                            {
                                 draws.push(SceneDraw {
                                     mesh: hf_mesh,
-                                    mvp: cam * yflip,
+                                    mvp: cam,
                                 });
                             }
                             // Then the terrain / decor tile layer (drawn under
                             // the buildings): the `CELL_VISIBLE` field-map tiles
                             // (stone plaza, paths, riverbank).
-                            for (mesh_idx, model) in &self.field_terrain_draws {
-                                if let Some(mesh) = self.meshes.get(*mesh_idx) {
-                                    draws.push(SceneDraw {
-                                        mesh,
-                                        mvp: cam * *model,
-                                    });
+                            if layer_on("tiles") {
+                                for (mesh_idx, model) in &self.field_terrain_draws {
+                                    if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                        draws.push(SceneDraw {
+                                            mesh,
+                                            mvp: cam * *model,
+                                        });
+                                    }
                                 }
                             }
                             // Untextured ground tiles (vertex-colour meshes the
                             // textured bridge has no entry for) - without these
                             // the floor shows holes where a tile's mesh carries
                             // no textured prims.
-                            for (mesh_idx, model) in &self.field_terrain_color_draws {
-                                if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
-                                    color_draws.push(ColorSceneDraw {
-                                        mesh,
-                                        mvp: cam * *model,
-                                    });
+                            if layer_on("ctiles") {
+                                for (mesh_idx, model) in &self.field_terrain_color_draws {
+                                    if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                        color_draws.push(ColorSceneDraw {
+                                            mesh,
+                                            mvp: cam * *model,
+                                        });
+                                    }
                                 }
                             }
                             // Static environment geometry: draw each placed
                             // building / terrain mesh at its world transform
                             // (resolved at scene load in
                             // `resolve_field_placement_draws`).
-                            for (mesh_idx, model) in &self.field_placement_draws {
-                                if let Some(mesh) = self.meshes.get(*mesh_idx) {
-                                    draws.push(SceneDraw {
-                                        mesh,
-                                        mvp: cam * *model,
-                                    });
+                            if layer_on("place") {
+                                for (mesh_idx, model) in &self.field_placement_draws {
+                                    if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                        draws.push(SceneDraw {
+                                            mesh,
+                                            mvp: cam * *model,
+                                        });
+                                    }
                                 }
                             }
                             // Untextured props (the F*/G* meshes the VRAM path
                             // drops) on the colour pipeline, same transforms.
-                            for (mesh_idx, model) in &self.field_placement_color_draws {
-                                if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
-                                    color_draws.push(ColorSceneDraw {
-                                        mesh,
-                                        mvp: cam * *model,
-                                    });
+                            if layer_on("cplace") {
+                                for (mesh_idx, model) in &self.field_placement_color_draws {
+                                    if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                        color_draws.push(ColorSceneDraw {
+                                            mesh,
+                                            mvp: cam * *model,
+                                        });
+                                    }
                                 }
                             }
                             // The player's untextured mesh half (pants /
@@ -7159,7 +7194,7 @@ impl ApplicationHandler for PlayWindowApp {
                             // `field_npc_positions`; everyone else stands at
                             // the spawn tile), floor-snapped like the player.
                             let w = &self.session.host.world;
-                            for d in &self.field_npc_draws {
+                            for d in self.field_npc_draws.iter().filter(|_| layer_on("npc")) {
                                 let (x, z) = w
                                     .field_npc_positions
                                     .get(&d.slot)

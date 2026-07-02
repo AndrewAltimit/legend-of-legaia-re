@@ -600,7 +600,13 @@ code - the `0x801F76xx` range aliases across overlays.)
 surface**: [`Scene::walk_heightfield`] →
 [`legaia_asset::field_objects::build_walk_heightfield`] sweeps the `0x1000`
 cells and emits one quad per cell, each corner's Y taken from the `+0x4000`
-floor-nibble grid via the floor LUT (the `FUN_80019278` math). `play-window`
+floor-nibble grid via the floor LUT (the `FUN_80019278` math). The baked
+corner height is `-lut[nibble]` - **already the same world height the
+placement / actor transforms carry in their un-flipped translation** - so
+`play-window` draws the heightfield **without** the mesh Y-flip the pack
+meshes get (flipping it re-negates the elevation: every raised cell sinks to
+twice its elevation below its own buildings - in town scenes that hid the
+whole cliff-top core, including Rim Elm's spawn plaza). `play-window`
 uploads it and draws it as the ground, with the placed landmarks
 ([`Scene::walk_object_placements`], the `flags & 0x4` slot-1 pack meshes via
 `record[+0x10]+prefix`) on top. Verified against the real disc: map01/02/03
