@@ -7822,8 +7822,10 @@ impl World {
     /// pointer table with `party_count` party slots followed by
     /// `monster_count` monster slots, mirroring the layout
     /// `FUN_800520F0` produces (slots 0..2 = party, 3..7 = monsters; total
-    /// caps at 8). Each actor is positioned `radius` units left (party)
-    /// or right (monsters) of the origin, with a per-row z spread.
+    /// caps at 8). Actors are seated at the retail stage seats
+    /// ([`crate::battle_seats`]): the party at negative Z facing the
+    /// monsters at positive Z, both rows selected by combatant count
+    /// exactly like the setup `FUN_800513F0`.
     ///
     /// This is the engine-core analogue of the retail battle scene
     /// loader's "stamp the actor table from the scene record" pre-pass.
@@ -7834,26 +7836,30 @@ impl World {
     ///
     /// The battle-action state machine is seeded at
     /// [`legaia_engine_vm::battle_action::ActionState::Begin`].
-    pub fn enter_battle(&mut self, party_count: u8, monster_count: u8, radius: i16) {
+    // PORT: FUN_800513F0 (battle setup: seat stamping from the SCUS tables)
+    pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
         self.party_count = party_count.min(3);
-        let actor_count =
-            ((self.party_count as usize) + (monster_count.min(5) as usize)).min(MAX_ACTORS);
-        // Spread along z. Party left, monsters right, both staggered by 0.6 / 0.4.
+        let monster_count = monster_count.min(5);
+        let actor_count = ((self.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);
         for i in 0..(self.party_count as usize).min(actor_count) {
-            let z = (i as i16 - 1) * (radius * 6 / 10);
+            let s = crate::battle_seats::party_seat(self.party_count, i);
             let actor = self.spawn_actor(i);
-            actor.move_state.world_x = -radius;
-            actor.move_state.world_y = 0;
-            actor.move_state.world_z = z;
+            actor.move_state.world_x = s.x;
+            actor.move_state.world_y = s.y;
+            actor.move_state.world_z = s.z;
             actor.battle.liveness = 1;
         }
         for i in (self.party_count as usize)..actor_count {
-            let z = (i as i16 - 5) * (radius * 4 / 10);
+            let s = crate::battle_seats::monster_seat(
+                monster_count,
+                i - self.party_count as usize,
+                false,
+            );
             let actor = self.spawn_actor(i);
-            actor.move_state.world_x = radius;
-            actor.move_state.world_y = 0;
-            actor.move_state.world_z = z;
+            actor.move_state.world_x = s.x;
+            actor.move_state.world_y = s.y;
+            actor.move_state.world_z = s.z;
             actor.battle.liveness = 1;
         }
         // Reset the battle ctx and seed at Begin via the public byte API to
@@ -9089,9 +9095,9 @@ impl World {
     fn enter_battle_from_formation(&mut self, formation: &crate::monster_catalog::FormationDef) {
         let party_count = self.party_count.clamp(1, 3);
         let monster_count = formation.slots.len().min(5) as u8;
-        // Reuse the placement helper for actor spawn + spacing, then overlay
+        // Reuse the placement helper for actor spawn + seating, then overlay
         // per-slot stats.
-        self.enter_battle(party_count, monster_count, 600);
+        self.enter_battle(party_count, monster_count);
         let first_monster = party_count;
         for slot in 0..party_count as usize {
             let a = &mut self.actors[slot];

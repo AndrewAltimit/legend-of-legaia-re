@@ -784,20 +784,24 @@ fn load_field_script_resets_pc_and_ctx() {
 #[test]
 fn enter_battle_populates_party_and_monsters() {
     let mut world = World::default();
-    world.enter_battle(3, 5, 600);
+    world.enter_battle(3, 5);
     assert_eq!(world.mode, SceneMode::Battle);
     assert_eq!(world.party_count, 3);
     // 3 party + 5 monsters = 8 active.
     let active_count = world.actors.iter().filter(|a| a.active).count();
     assert_eq!(active_count, 8);
-    // Party slots are at -600 X.
+    // Party slots sit at the retail 3-member seats (negative Z, facing
+    // the monsters at positive Z).
     for i in 0..3 {
-        assert_eq!(world.actors[i].move_state.world_x, -600);
+        let s = crate::battle_seats::party_seat(3, i);
+        assert_eq!(world.actors[i].move_state.world_x, s.x);
+        assert_eq!(world.actors[i].move_state.world_z, s.z);
+        assert!(world.actors[i].move_state.world_z < 0);
         assert_eq!(world.actors[i].battle.liveness, 1);
     }
-    // Monster slots at +600 X.
+    // Monster slots at the retail seats on the positive-Z side.
     for i in 3..8 {
-        assert_eq!(world.actors[i].move_state.world_x, 600);
+        assert!(world.actors[i].move_state.world_z > 0);
         assert_eq!(world.actors[i].battle.liveness, 1);
     }
     // SM seeded at Begin.
@@ -811,7 +815,7 @@ fn enter_battle_populates_party_and_monsters() {
 fn enter_battle_caps_party_at_three() {
     let mut world = World::default();
     // Even if asked for more party than the cap, we clamp to 3.
-    world.enter_battle(8, 0, 100);
+    world.enter_battle(8, 0);
     assert_eq!(world.party_count, 3);
 }
 
@@ -1035,7 +1039,7 @@ fn stone_absorbs_a_damage_spell() {
     use legaia_engine_vm::status_effects::StatusKind;
 
     let mut world = World::new();
-    world.enter_battle(3, 1, 600);
+    world.enter_battle(3, 1);
     world.actors[0].battle.hp = 200;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.liveness = 1;
@@ -1074,7 +1078,7 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
     // full HP is if the monster never gets to act.
     fn party_took_damage(asleep: bool) -> bool {
         let mut world = World::new();
-        world.enter_battle(1, 1, 600); // slot 0 = party, slot 1 = monster
+        world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
         world.live_gameplay_loop = true; // route tick() through live_battle_tick
         world.battle_player_driven = false; // both sides auto-act
         // Big monster HP so it survives long enough to take many turns; the
@@ -1120,7 +1124,7 @@ fn dot_never_kills_actor_bottoms_out_at_one_hp() {
     use legaia_engine_vm::status_effects::StatusKind;
 
     let mut world = World::new();
-    world.enter_battle(1, 1, 600);
+    world.enter_battle(1, 1);
     // Toxic raw tick = max_hp/16 = 5, more than the monster's remaining 4 HP
     // → clamped to current_hp - 1 = 3.
     world.actors[1].battle.max_hp = 80;
@@ -1150,7 +1154,7 @@ fn live_loop_ticks_dot_at_the_round_boundary() {
 
     fn party_lost_hp(poisoned: bool) -> bool {
         let mut world = World::new();
-        world.enter_battle(1, 1, 600); // slot 0 = party, slot 1 = monster
+        world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
         world.live_gameplay_loop = true;
         world.battle_player_driven = false;
         // Both sides carry SPD so the initiative round boundary engages (the DoT
@@ -1203,7 +1207,7 @@ fn all_party_item_heals_every_living_party_actor_in_battle() {
 
     let mut world = World::default();
     world.set_item_catalog(crate::items::ItemCatalog::vanilla());
-    world.enter_battle(3, 1, 600);
+    world.enter_battle(3, 1);
     // Wound the whole party; down the third member.
     for i in 0..3 {
         world.actors[i].battle.max_hp = 500;
@@ -9410,7 +9414,7 @@ fn battle_xp_routes_to_composed_characters() {
     let mut world = World::new();
     world.load_party(composition_roster());
     world.set_active_party(vec![2, 3]);
-    world.enter_battle(2, 1, 600);
+    world.enter_battle(2, 1);
     world.apply_battle_xp(100);
     // The 3/4-scaled split lands on the OCCUPYING characters' XP wells
     // (roster slots 2 + 3), not on slots 0/1.

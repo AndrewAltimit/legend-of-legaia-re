@@ -1809,11 +1809,10 @@ fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Result<()> {
     log::info!("battle scene: {actor_count} actor TMDs loaded from battle bundle");
 
     let mut world = World::default();
-    let radius = 600.0_f32;
     // 3 party + however many monsters the bundle gave us, capped to 5.
     let party = 3.min(actor_count) as u8;
     let monsters = actor_count.saturating_sub(party as usize).min(5) as u8;
-    world.enter_battle(party, monsters, radius as i16);
+    world.enter_battle(party, monsters);
     let _ = SceneMode::Battle; // import kept stable for readers
     // Queue the requested action - enter_battle seeded action_state at Begin.
     world.battle_ctx.queued_action = queued_action;
@@ -1831,7 +1830,9 @@ fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Result<()> {
         tmd_paths,
         meshes: Vec::new(),
         world,
-        scene_aabb: ([-radius, -200.0, -radius], [radius, 600.0, radius]),
+        // Bound the retail seat extent (X to +-900, Z to +-1400 - see
+        // engine-core::battle_seats).
+        scene_aabb: ([-1000.0, -200.0, -1500.0], [1000.0, 600.0, 1500.0]),
         input: InputState::new(),
         last_dt_ms: 16,
         battle_stats: BattleSmStats::default(),

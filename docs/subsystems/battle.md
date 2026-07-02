@@ -14,6 +14,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
 - [Battle context struct](#battle-context-struct)
+- [Stage seats (`FUN_800513F0` placement tables)](#stage-seats-fun_800513f0-placement-tables)
 - [Range / line-of-sight (`FUN_8004E2F0`)](#range--line-of-sight-fun_8004e2f0)
 - [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
 - [Stat aggregator (`FUN_80042558`)](#stat-aggregator-fun_80042558)
@@ -308,8 +309,8 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x07` | u8 | Per-actor state byte. Drives `FUN_801E295C`. |
 | `+0x13` | u8 | Active-character index (read from `_DAT_8007BD24+0x13`). |
 | `+0x1F` | u8 | Hit-radius / size byte. Used by `FUN_8004E2F0` (range). |
-| `+0x34` / `+0x38` | i16 | Current world X / Z. |
-| `+0x3C` / `+0x40` | i16 | Previous-frame X / Z (for delta tracking). |
+| `+0x34` / `+0x38` | i16 | Current world X / Z (Y in the adjacent halfwords `+0x36`/`+0x3A`; `0` on the flat stage). |
+| `+0x3C` / `+0x40` | i16 | Stamped with the authored stage seat at setup (`FUN_800513F0` copies the seat here, then into `+0x34`/`+0x38`); read as the b-actor position by `FUN_8004E2F0`. Live captures show it diverging from the seat mid-battle, so its steady-state role (approach target / delta anchor) is not fully pinned. |
 | `+0x4A` | u8 | Magic-slot count. |
 | `+0x4C` | int* | Spell-entry pointer array (each entry: `[u8 spell/action id, …, u8 AGL (action) cost @ +0x74]`). |
 | `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max - three-way mirror layout. |
@@ -317,6 +318,33 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x1DF` | u8 | Monster size byte (read from a monster record at `+0x1F` and stored here at init). |
 | `+0x1EF..+0x1F3` | u8 | Per-element spell-slot index (from the spell ids `2,3,4,5,0xB`). |
 | `+0x230` | u32 | Attack-effect / animation data pointer (set from record `+0x04`; **not** XP/drop). |
+
+## Stage seats (`FUN_800513F0` placement tables)
+
+Every combatant's battle position is stamped at setup from two static `SCUS_942.54` tables of 8-byte seat entries `[i16 x, i16 y, i16 z, i16 pad]` (`y` is `0` on every row - the stage is flat). `FUN_800513F0` passes the entry to the spawn-node builder `FUN_80024c88` (which copies it verbatim to node `+0x14/+0x16/+0x18`), then writes node `+0x14`/`+0x18` to the actor seat pair `+0x3C`/`+0x40` and copies that into the live position `+0x34`/`+0x38`. The party faces `+Z`, the monsters `-Z`, and the battle camera orbits the origin between the rows.
+
+**Party table `0x800775C8`** - row = `ctx+0` (the party count), stride `0x18` (3 slots x 8 bytes):
+
+| Count | Slot seats (x, z) |
+|---|---|
+| 1 | `(0, -800)` |
+| 2 | `(300, -800)` `(-300, -800)` |
+| 3 | `(0, -825)` `(600, -775)` `(-600, -775)` |
+
+**Monster table `0x80077608`** - row = `ctx+1` (the monster count) `+ 4` for the alternate family, stride `0x20` (4 slots x 8 bytes; the placement loop seats at most 4 monsters):
+
+| Count | Normal family (x, z) | Alternate family |
+|---|---|---|
+| 1 | `(0, 800)` | same |
+| 2 | `(-300, 800)` `(300, 800)` | same |
+| 3 | `(-600, 825)` `(0, 750)` `(600, 825)` | `(0, 900)` `(-600, 700)` `(600, 700)` |
+| 4 | `(-900, 900)` `(-300, 800)` `(300, 800)` `(900, 900)` | `(0, 1000)` `(-600, 800)` `(600, 800)` `(0, 600)` |
+
+The alternate family is selected by `DAT_8007BD60` bit 7 - the same bit the setup stores to `ctx+0x287`, the no-escape flag the run/escape roll honours - or by formation ids `0x3D..0x3F` in modes `0xC`/`0x15` (the scripted / pincer fights).
+
+Save-state validation: seven battle library captures (the four camera-orbit angle saves, the three Tetsu tutorial anchors) read the count-1 seats byte-exactly at actor `+0x34`/`+0x38` (`(0, -800)` vs `(0, +800)`); the full-party capture reads the count-3 rows under a uniform `+13` Z scene offset (mid-battle drift on both sides equally, leaving the authored values unambiguous).
+
+Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle_seats.rs) (consumed by `World::enter_battle`).
 
 ## Range / line-of-sight (`FUN_8004E2F0`)
 

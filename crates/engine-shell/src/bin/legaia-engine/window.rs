@@ -3126,11 +3126,12 @@ impl PlayWindowApp {
 
     /// Battle camera: frame the **monster** actors (the ones carrying a bound
     /// mesh + idle animation) rather than the player vicinity. The live-loop
-    /// seats battle actors around the world origin (`enter_battle(.., 600)` -
-    /// party at `x=-600`, monsters at `x=+600`), far from the field player's
-    /// world coords, so `camera_mvp`'s player-centred box leaves the enemies
-    /// entirely off-screen. Framing the enemy cluster (gently orbiting) puts
-    /// the animated monsters centre-frame and at a useful size.
+    /// seats battle actors at the retail stage seats around the world origin
+    /// (`enter_battle` - party at negative Z, monsters at positive Z, from
+    /// the `battle_seats` tables), far from the field player's world coords,
+    /// so `camera_mvp`'s player-centred box leaves the enemies entirely
+    /// off-screen. Framing the enemy cluster (gently orbiting) puts the
+    /// animated monsters centre-frame and at a useful size.
     fn battle_camera_mvp(&self, aspect: f32) -> Mat4 {
         let world = &self.session.host.world;
         let pc = world.party_count as usize;
@@ -4563,9 +4564,9 @@ impl PlayWindowApp {
 
         // Seat the summon in a free high actor slot (>= 8) so it never collides
         // with the party/monster battle slots. Place it on the party side
-        // (`enter_battle` seats party at `x = -600`, enemies at `x = +600`), in
-        // front of the party and clearly clear of the enemy cluster, so the
-        // battle camera frames it distinct from the enemies it attacks.
+        // (`enter_battle` seats party at negative Z, enemies at positive Z),
+        // in front of the party and clearly clear of the enemy cluster, so
+        // the battle camera frames it distinct from the enemies it attacks.
         let slot = self
             .summon_actor_slot
             .unwrap_or_else(|| 8 + (self.session.host.world.party_count as usize));
@@ -4574,9 +4575,9 @@ impl PlayWindowApp {
             a.active = true;
             a.tmd_binding = Some(idx);
             a.battle_tex_slot = Some(tex_slot);
-            a.move_state.world_x = -350;
+            a.move_state.world_x = 0;
             a.move_state.world_y = 0;
-            a.move_state.world_z = 0;
+            a.move_state.world_z = -350;
         }
         if let Ok(Some(idle)) = legaia_asset::monster_archive::idle_animation(&archive, creature)
             && let Some(player) = legaia_engine_core::battle_anim::MonsterAnimPlayer::new(&idle)
