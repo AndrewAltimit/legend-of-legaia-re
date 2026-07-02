@@ -336,7 +336,17 @@ damage = atk - def;
 The finisher works on `over = atk - def` (the damage above the base) and rewrites
 it through six closed-form stages: (1) **party-defender elemental resistance** -
 if the defender's equipment sets the resist bit for the attacker's element,
-`over >>= 1` (the absorb bit `0x10` instead routes to a `over*3>>2` 3/4 scale);
+`over >>= 1` (the absorb bit `0x10` instead routes to a `over*3>>2` 3/4 scale).
+The resist words are the first two words of the character record's
+accessory-passive **ability bitfield** (`+0xF4`/`+0xF8`, aggregator
+`FUN_80042558`), and every flag is passive index `0x1D + element` read through
+the word boundary: the elemental-guard passives sit contiguously at
+`0x1D..=0x23` (Earth, Water, Fire, Wind, Thunder, Light, Dark - the element-id
+order), so elements 0..=2 test `+0xF4` bits 29..31 and elements 3..=6 test
+`+0xF8` bits 0..3; the absorb gate `+0xF8 & 0x10` is All Guard (`0x24`, Rainbow
+Jewel), and the two "spirit gain up" bits below are AP Boost 1/2
+(`0x28`/`0x29`). See
+[accessory-passive-table.md](../formats/accessory-passive-table.md);
 (2) **enemy-defender halve** (`_DAT_8007bd84`); (3) **guard halve** (defender
 `+0x1de == 4`); (4) the **no-damage floor** `over = rand()%9 + 8` when mitigation
 zeroed it; (5) the **summon power-% scale** (`attacker_slot == 7`): `over =
@@ -387,10 +397,15 @@ instructions) splits: its **closed-form finalisation arithmetic** now ports too 
 engine can route the live basic-attack damage through `damage_finish` behind the
 `World::use_damage_finish` gate (the `--damage-finish` play-window flag): the raw
 roll feeds the finisher so the 9999 cap and the `rand()%9+8` no-damage floor
-apply. Off by default - equipment resistance + guard state aren't modelled on the
-battle actor yet, so the resistance / guard / enemy-halve inputs default to "no
-mitigation" and only the cap + floor stages currently change a hit; the finisher
-draws its one RNG only when a hit zeroes out, so the default RNG call-count is
+apply. The **defender resist inputs are live**: `World::defender_resist` reads
+the two resist words off the occupying character's rebuilt ability bitfield
+(`refresh_party_ability_bits`), so an equipped elemental-guard accessory halves
+a matching-element monster special, All Guard applies the 3/4 scale, and the AP
+Boost bits accelerate the wearer's spirit-gauge fill - the monster
+special-attack path (`enemy_move_predamage`) runs the closed-form finisher
+stages (resist ladder vs the monster record element `+0x1D`, guard halve,
+floor, cap) on every hit. The finisher
+draws its one RNG only when a hit zeroes out, so the no-gear RNG call-count is
 unchanged. The
 finisher's remaining tail - the damage-popup accumulator (`_DAT_8007bd14`), the
 `DAT_801f6980` AI revenge table, the MP drain, and the per-element stat-debuff

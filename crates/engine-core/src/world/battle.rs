@@ -811,9 +811,20 @@ impl World {
     /// cursor advances by exactly three draws on the no-bonus path and five on
     /// the bonus path, matching `FUN_801dd0ac`'s call order.
     ///
+    /// The roll then runs the closed-form finisher stages (`FUN_801ddb30`):
+    /// the party defender's equipment elemental-resistance ladder (the
+    /// elemental-guard / All-Guard accessory bits via [`Self::defender_resist`],
+    /// tested against the attacking monster's record element `+0x1D`), the
+    /// Spirit guard halve, the `rand()%9 + 8` no-damage floor (drawn lazily,
+    /// exactly when mitigation zeroes the hit - retail's only finisher draw),
+    /// and the 9999 cap.
+    ///
     /// REF: FUN_801dd0ac (arts/physical branch)
+    /// REF: FUN_801ddb30 (finisher stages on the enemy-special path)
     fn enemy_move_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
-        use vm::battle_formulas::{SummonRollActor, arts_physical_predamage_lazy};
+        use vm::battle_formulas::{
+            DamageFinish, SummonRollActor, arts_physical_predamage_lazy, damage_finish_lazy,
+        };
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let a = self.actors.get(attacker as usize)?;
@@ -849,7 +860,38 @@ impl World {
                 ]
             },
         );
-        Some(atk.saturating_sub(def).clamp(1, 9999) as u16)
+        // Closed-form finisher stages (FUN_801ddb30). The attacker element is
+        // the monster record's `+0x1D` byte, read record-direct the way the
+        // finisher's resist ladder does; unresolved (synthetic catalogs) it
+        // falls back to 7 = non-elemental, which no resist bit matches, so
+        // disc-free battles keep magnitude and RNG stream unchanged (a >= 1
+        // roll never trips the floor draw without mitigation).
+        let attacker_element = self
+            .actors
+            .get(attacker as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.monster_catalog.get(id))
+            .map(|d| d.element)
+            .unwrap_or(7);
+        let target_is_party = target < self.party_count;
+        let finish = DamageFinish {
+            predamage: atk.saturating_sub(def).clamp(1, 9999),
+            attacker_slot: 3,
+            defender_slot: if target_is_party { 0 } else { 3 },
+            attacker_element,
+            defender_resist: self.defender_resist(target),
+            defender_guarding: self
+                .battle_guarding
+                .get(target as usize)
+                .copied()
+                .unwrap_or(false),
+            enemy_defender_halve: false,
+            bypass_party_resist: false,
+            summon_power_pct: 100,
+            floor_rand: 0,
+        };
+        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        Some(over.min(9999) as u16)
     }
 
     /// Build the defender-side [`SummonRollActor`] for an actor slot - the
@@ -1237,20 +1279,48 @@ impl World {
         }
     }
 
+    /// The defender's equipment-derived resist / spirit-gain flags for an
+    /// actor slot: the first two words of the occupying character's
+    /// accessory-passive ability bitfield (record `+0xF4`/`+0xF8`, rebuilt
+    /// from the eight equip slots by [`Self::refresh_party_ability_bits`]) -
+    /// exactly the two words retail's damage finisher `FUN_801ddb30` indexes
+    /// (elemental-guard passives `0x1D..=0x24`, AP Boost `0x28`/`0x29`).
+    /// Enemy slots (and unresolvable roster slots) carry no resistance.
+    ///
+    /// REF: FUN_801ddb30 (resist-word source)
+    pub(super) fn defender_resist(&self, slot: u8) -> vm::battle_formulas::DefenderResist {
+        if slot >= self.party_count {
+            return Default::default();
+        }
+        let Some(member) = self
+            .roster
+            .members
+            .get(self.party_roster_slot(slot as usize))
+        else {
+            return Default::default();
+        };
+        let bits = member.ability_bits();
+        vm::battle_formulas::DefenderResist::from_ability_words(
+            u32::from_le_bytes(bits[0..4].try_into().unwrap()),
+            u32::from_le_bytes(bits[4..8].try_into().unwrap()),
+        )
+    }
+
     /// Accrue the defender's spirit-art gauge (`actor+0x170`) from a hit that
     /// landed `over` damage, the spirit stage of the shared damage finisher
     /// `FUN_801ddb30`. Runs for *any* defender (the base `pct` term is
-    /// unconditional); the two equipment "spirit gain up" bits only apply to a
-    /// party defender, and the engine doesn't model the per-character
-    /// resistance words yet, so [`vm::battle_formulas::DefenderResist::default`]
-    /// (no gain-up, no resist) is passed - faithful for a character without
-    /// that gear and a no-op for an enemy. Draws no RNG, so the determinism
-    /// stream is untouched; `over` is the post-mitigation damage already
-    /// computed by the caller (the pre-nullify value retail accrues from).
+    /// unconditional); the two equipment "spirit gain up" bits (AP Boost 1/2,
+    /// ability-bitfield word 1 `0x100`/`0x200`) apply to a party defender via
+    /// [`Self::defender_resist`], so a Mettle Ring / Mettle Armband holder
+    /// charges faster - and an enemy resolves to the no-gain default. Draws
+    /// no RNG, so the determinism stream is untouched; `over` is the
+    /// post-mitigation damage already computed by the caller (the pre-nullify
+    /// value retail accrues from).
     ///
     /// PORT: FUN_801ddb30 (spirit-gauge stage)
     pub(super) fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
         let defender_is_party = defender_slot < self.party_count;
+        let resist = self.defender_resist(defender_slot);
         let Some(a) = self.actors.get_mut(defender_slot as usize) else {
             return;
         };
@@ -1258,7 +1328,7 @@ impl World {
             over as u32,
             a.battle.max_hp,
             a.battle.spirit_gauge,
-            vm::battle_formulas::DefenderResist::default(),
+            resist,
             defender_is_party,
         );
     }
@@ -2186,14 +2256,16 @@ impl World {
         let dmg = if self.use_damage_finish {
             // Raw roll BEFORE any floor (`min_floor = 0`), then run it through
             // the retail damage finisher so the universal post-stages apply.
-            // Equipment resistance + guard state aren't modelled yet, so those
-            // inputs are "no mitigation"; the finisher still contributes the
-            // 9999 cap and the rand-based no-damage floor. The finisher draws a
-            // rand ONLY when the hit zeroes out, so draw one only then to keep
-            // the RNG call-count identical to retail (and to the flat path when
-            // the gate is off). Slots are classified party (`< 3`) vs enemy
-            // (`>= 3`) the way the finisher expects, independent of the engine's
-            // variable monster-slot base.
+            // The defender's equipment resist words come from the real ability
+            // bitfield ([`Self::defender_resist`]) - a no-op for this path's
+            // non-elemental strike, but the All-Guard gate reads them the way
+            // retail does; the finisher still contributes the 9999 cap and the
+            // rand-based no-damage floor. The finisher draws a rand ONLY when
+            // the hit zeroes out, so draw one only then to keep the RNG
+            // call-count identical to retail (and to the flat path when the
+            // gate is off). Slots are classified party (`< 3`) vs enemy
+            // (`>= 3`) the way the finisher expects, independent of the
+            // engine's variable monster-slot base.
             let raw = vm::battle_formulas::art_strike_damage(attack, defense, 16, 16, 0);
             let floor_rand = if raw == 0 {
                 (self.next_rng() & 0x7FFF) as u16
@@ -2202,12 +2274,13 @@ impl World {
             };
             let attacker_is_party = (attacker as u8) < self.party_count;
             let target_is_party = (target as u8) < self.party_count;
+            let defender_resist = self.defender_resist(target as u8);
             vm::battle_formulas::damage_finish(&vm::battle_formulas::DamageFinish {
                 predamage: raw as u32,
                 attacker_slot: if attacker_is_party { 0 } else { 3 },
                 defender_slot: if target_is_party { 0 } else { 3 },
                 attacker_element: 7, // basic attack is non-elemental
-                defender_resist: vm::battle_formulas::DefenderResist::default(),
+                defender_resist,
                 defender_guarding: target_guarding,
                 enemy_defender_halve: false,
                 bypass_party_resist: false,

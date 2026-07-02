@@ -5174,6 +5174,128 @@ fn move_power_table_drives_monster_special_attack_damage() {
     assert_eq!(move_power, run(true), "move-power damage is deterministic");
 }
 
+/// A party member wearing an elemental-guard accessory takes HALF damage from
+/// a monster special of the matching element - the `FUN_801ddb30` finisher's
+/// party-resist ladder, reading the guard passive (`0x1D + element`) off the
+/// character's rebuilt ability bitfield. A non-matching element (or no
+/// accessory) passes through at full magnitude.
+#[test]
+fn elemental_guard_accessory_halves_matching_monster_special() {
+    use crate::accessory_passives::AccessoryPassives;
+    use crate::monster_catalog::vanilla_monster_catalog;
+    use crate::move_power::MovePowerCatalog;
+    use crate::spells::SpellCatalog;
+    use legaia_asset::move_power::{
+        MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
+        MOVE_POWER_TABLE_LEN,
+    };
+
+    fn overlay_with_flame_power() -> Vec<u8> {
+        let mut buf = vec![
+            0u8;
+            MOVE_POWER_TABLE_FILE_OFFSET
+                + MOVE_POWER_RECORD_STRIDE * MOVE_POWER_TABLE_LEN
+        ];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 0x20] = 1; // Flame -> power record 1
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE] = 0xB8;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE + 1] = 0x0B;
+        buf
+    }
+
+    // `guard_passive`: None = bare character; Some(idx) = an accessory whose
+    // passive index is `idx` equipped in the Goods slot.
+    fn run(guard_passive: Option<u8>) -> u16 {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.monster_catalog = vanilla_monster_catalog();
+        // Pin the attacking monster's element to 2 (Fire) so the resist
+        // ladder has a real element to test against.
+        world.monster_catalog.by_id.get_mut(&5).unwrap().element = 2;
+        world.actors[0].battle.max_hp = 4000;
+        world.actors[0].battle.hp = 4000;
+        world.actors[0].battle.liveness = 1;
+        world.battle_accuracy[0] = 30;
+        world.battle_defense[0] = 40;
+        world.actors[1].battle.max_hp = 120;
+        world.actors[1].battle.hp = 120;
+        world.actors[1].battle.mp = 10;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle_accuracy[1] = 25;
+        world.set_battle_magic(1, 40);
+        world.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
+
+        let mut party = legaia_save::Party::zeroed(1);
+        if let Some(idx) = guard_passive {
+            world.set_accessory_passives(AccessoryPassives::from_entries([(0x50, idx)], []));
+            let mut eq = party.members[0].equipment();
+            eq.slots[7] = 0x50;
+            party.members[0].set_equipment(eq);
+        }
+        world.roster = party;
+        world.refresh_party_ability_bits();
+        world.rng_state = 0;
+
+        let before = world.actors[0].battle.hp;
+        world.take_monster_turn(1);
+        before - world.actors[0].battle.hp
+    }
+
+    let bare = run(None);
+    let fire_guard = run(Some(0x1F)); // Fire Guard: matches element 2
+    let water_guard = run(Some(0x1E)); // Water Guard: element 1, no match
+    assert!(bare > 1, "baseline special deals real damage");
+    assert_eq!(
+        fire_guard,
+        bare >> 1,
+        "matching elemental guard halves the finished damage"
+    );
+    assert_eq!(
+        water_guard, bare,
+        "non-matching elemental guard leaves damage unchanged"
+    );
+}
+
+/// The two "spirit gain up" finisher bits are the AP Boost accessory passives
+/// (`0x28`/`0x29`): a wearer's spirit-art gauge charges faster from the same
+/// hit, read off the rebuilt ability bitfield via `World::defender_resist`.
+#[test]
+fn ap_boost_accessory_accelerates_spirit_gauge() {
+    use crate::accessory_passives::AccessoryPassives;
+
+    fn gauge_after_hit(ap_boost_passive: Option<u8>) -> u16 {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.max_hp = 500;
+        world.actors[0].battle.hp = 500;
+        world.actors[0].battle.liveness = 1;
+        let mut party = legaia_save::Party::zeroed(1);
+        if let Some(idx) = ap_boost_passive {
+            world.set_accessory_passives(AccessoryPassives::from_entries([(0x50, idx)], []));
+            let mut eq = party.members[0].equipment();
+            eq.slots[7] = 0x50;
+            party.members[0].set_equipment(eq);
+        }
+        world.roster = party;
+        world.refresh_party_ability_bits();
+        world.accrue_spirit_gauge(0, 200); // pct = 200*100/500 = 40
+        world.actors[0].battle.spirit_gauge
+    }
+
+    assert_eq!(gauge_after_hit(None), 40, "base accrual is pct");
+    // AP Boost 1 (0x28 -> word1 0x100): +pct/10 = +4.
+    assert_eq!(gauge_after_hit(Some(0x28)), 44);
+    // AP Boost 2 (0x29 -> word1 0x200): +pct>>2 = +10.
+    assert_eq!(gauge_after_hit(Some(0x29)), 50);
+}
+
 /// With both the move-power table AND the element-affinity tables installed, a
 /// monster special attack scales by `matrix[enemy_element][party_member_element]`
 /// (`FUN_801dd864`). Proven by running the same seeded cast through a neutral

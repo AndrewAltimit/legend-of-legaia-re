@@ -48,6 +48,19 @@ detail panel `FUN_801D0F1C` (`ghidra/scripts/funcs/overlay_menu_801d0f1c.txt`)
 and the static description resolver `FUN_80034250`
 (`ghidra/scripts/funcs/80034250.txt`) to fetch the display text below.
 
+The battle damage finisher `FUN_801ddb30`
+(`ghidra/scripts/funcs/overlay_battle_action_801ddb30.txt`) consumes the
+bitfield's first two words (`+0xF4`/`+0xF8`) directly as the party defender's
+**elemental-resist / spirit words**: its per-element ladder tests bit
+`0x1D + attacker_element` (the contiguous elemental-guard band below, so
+elements 0..=2 land in `+0xF4` bits 29..31 and elements 3..=6 in `+0xF8` bits
+0..3), `+0xF8 & 0x10` is the All-Guard (`0x24`) 3/4-scale gate, and
+`+0xF8 & 0x100`/`0x200` (AP Boost 1/2, `0x28`/`0x29`) accelerate the
+defender's spirit-gauge fill. Engine mirror:
+`engine-vm::battle_formulas::DefenderResist` +
+`engine-core World::defender_resist`. See
+[battle-formulas](../subsystems/battle-formulas.md).
+
 ## Passive name/description table (`0x8007625C`)
 
 A static 64-record table gives each index its menu name, effect description,

@@ -594,40 +594,60 @@ pub fn arts_physical_predamage_lazy(
 /// for member 0, `0x414` stride). Only a party defender (slot `< 3`) carries
 /// these; enemy defenders pass [`Default`] (no resistance).
 ///
-/// Bit layout (mirroring the disassembly's per-element `if` ladder):
+/// The two words are the first half of the accessory-passive **ability
+/// bitfield** (record `+0xF4..+0x103`, aggregator `FUN_80042558`), and every
+/// flag here is simply passive index `0x1D + element` read through the word
+/// boundary: the elemental-guard passives are contiguous at `0x1D..=0x23`
+/// (Earth, Water, Fire, Wind, Thunder, Light, Dark - the element-id order),
+/// All Guard is `0x24`, and the "spirit gain up" pair is AP Boost 1/2 at
+/// `0x28`/`0x29`. So the bit layout (mirroring the disassembly's per-element
+/// `if` ladder in `FUN_801ddb30`):
 ///
-/// | element | bit | word |
-/// |---|---|---|
-/// | 0 | `0x20000000` | `hi` |
-/// | 1 | `0x40000000` | `hi` |
-/// | 2 | `0x80000000` | `hi` |
-/// | 3 | `0x1` | `lo` |
-/// | 4 | `0x2` | `lo` |
-/// | 5 | `0x4` | `lo` |
-/// | 6 | `0x8` | `lo` |
+/// | element | guard passive | bit | word |
+/// |---|---|---|---|
+/// | 0 Earth | `0x1D` | `0x20000000` | `lo` (`+0xF4`) |
+/// | 1 Water | `0x1E` | `0x40000000` | `lo` |
+/// | 2 Fire | `0x1F` | `0x80000000` | `lo` |
+/// | 3 Wind | `0x20` | `0x1` | `hi` (`+0xF8`) |
+/// | 4 Thunder | `0x21` | `0x2` | `hi` |
+/// | 5 Light | `0x22` | `0x4` | `hi` |
+/// | 6 Dark | `0x23` | `0x8` | `hi` |
 ///
-/// `hi & 0x10` is the absorb/null gate; `hi & 0x200` / `hi & 0x100` are the two
+/// `hi & 0x10` is the All-Guard gate (passive `0x24`, Rainbow Jewel);
+/// `hi & 0x100` / `hi & 0x200` are AP Boost 1/2 (`0x28`/`0x29`), the two
 /// spirit-gain-up flags (see [`spirit_gauge_fill`]).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DefenderResist {
-    /// Record word `+0xF4`: elements 3..=6 in the low nibble.
+    /// Record word `+0xF4` (ability-bitfield word 0, passive indices
+    /// `0x00..=0x1F`): elements 0..=2 in the top three bits.
     pub lo: u32,
-    /// Record word `+0xF8`: elements 0..=2 in the high bits, plus the absorb
-    /// gate (`0x10`) and the spirit-gain-up bits (`0x100`/`0x200`).
+    /// Record word `+0xF8` (ability-bitfield word 1, passive indices
+    /// `0x20..=0x3F`): elements 3..=6 in the low nibble, the All-Guard gate
+    /// (`0x10`) and the spirit-gain-up bits (`0x100`/`0x200`).
     pub hi: u32,
 }
 
 impl DefenderResist {
+    /// Build from the first two words of a character's accessory-passive
+    /// ability bitfield (record `+0xF4` / `+0xF8`), the exact words retail's
+    /// finisher indexes.
+    pub fn from_ability_words(word0: u32, word1: u32) -> Self {
+        Self {
+            lo: word0,
+            hi: word1,
+        }
+    }
+
     /// `true` if the defender resists `element` (0..=6) - the per-element bit set.
     fn resists(&self, element: u8) -> bool {
         match element {
-            0 => self.hi & 0x2000_0000 != 0,
-            1 => self.hi & 0x4000_0000 != 0,
-            2 => self.hi & 0x8000_0000 != 0,
-            3 => self.lo & 0x1 != 0,
-            4 => self.lo & 0x2 != 0,
-            5 => self.lo & 0x4 != 0,
-            6 => self.lo & 0x8 != 0,
+            0 => self.lo & 0x2000_0000 != 0,
+            1 => self.lo & 0x4000_0000 != 0,
+            2 => self.lo & 0x8000_0000 != 0,
+            3 => self.hi & 0x1 != 0,
+            4 => self.hi & 0x2 != 0,
+            5 => self.hi & 0x4 != 0,
+            6 => self.hi & 0x8 != 0,
             _ => false,
         }
     }
@@ -1532,6 +1552,32 @@ mod tests {
     }
 
     #[test]
+    fn defender_resist_passive_index_layout() {
+        // The elemental-guard passives are contiguous at ability-bit index
+        // `0x1D + element` (Earth..Dark); words 0/1 of the bitfield split
+        // them across the +0xF4/+0xF8 boundary exactly as FUN_801ddb30's
+        // ladder reads them. All Guard (0x24) is the absorb gate.
+        for element in 0..=6u8 {
+            let index = 0x1D + element as u32;
+            let (w0, w1) = if index < 32 {
+                (1u32 << index, 0)
+            } else {
+                (0, 1u32 << (index - 32))
+            };
+            let r = DefenderResist::from_ability_words(w0, w1);
+            for probe in 0..=6u8 {
+                assert_eq!(
+                    r.resists(probe),
+                    probe == element,
+                    "guard passive 0x{index:02X} must resist element {element} only"
+                );
+            }
+        }
+        let all_guard = DefenderResist::from_ability_words(0, 1 << (0x24 - 32));
+        assert_eq!(all_guard.hi & 0x10, 0x10, "All Guard = the absorb gate bit");
+    }
+
+    #[test]
     fn damage_finish_passthrough_when_no_mitigation() {
         // No resistance, no guard, no cap: over passes through unchanged.
         assert_eq!(damage_finish(&finish(500)), 500);
@@ -1540,10 +1586,11 @@ mod tests {
     #[test]
     fn damage_finish_halves_on_matching_element_resist() {
         let mut i = finish(500);
-        // Defender resists element 0 (hi bit 0x20000000); attacker is element 0.
+        // Defender resists element 0 / Earth Guard (word-0 bit 0x20000000);
+        // attacker is element 0.
         i.defender_resist = DefenderResist {
-            lo: 0,
-            hi: 0x2000_0000,
+            lo: 0x2000_0000,
+            hi: 0,
         };
         i.attacker_element = 0;
         assert_eq!(damage_finish(&i), 250);
@@ -1555,13 +1602,16 @@ mod tests {
     #[test]
     fn damage_finish_low_word_elements_and_absorb_gate() {
         let mut i = finish(800);
-        // Element 3 lives in the low word bit 0x1.
-        i.defender_resist = DefenderResist { lo: 0x1, hi: 0 };
+        // Element 3 / Wind Guard lives in the +0xF8 word bit 0x1.
+        i.defender_resist = DefenderResist { lo: 0, hi: 0x1 };
         i.attacker_element = 3;
         assert_eq!(damage_finish(&i), 400);
-        // Absorb gate (hi & 0x10) set + elemental attacker -> 3/4 scale, ignoring
-        // the per-element ladder: 800 * 3 >> 2 = 600.
-        i.defender_resist = DefenderResist { lo: 0x1, hi: 0x10 };
+        // All-Guard gate (hi & 0x10) set + elemental attacker -> 3/4 scale,
+        // ignoring the per-element ladder: 800 * 3 >> 2 = 600.
+        i.defender_resist = DefenderResist {
+            lo: 0,
+            hi: 0x1 | 0x10,
+        };
         assert_eq!(damage_finish(&i), 600);
         // ...but a non-elemental attacker (7) bypasses the gate -> ladder runs,
         // and element 7 resists nothing -> full damage.
@@ -1573,8 +1623,8 @@ mod tests {
     fn damage_finish_guard_and_resist_stack() {
         let mut i = finish(800);
         i.defender_resist = DefenderResist {
-            lo: 0,
-            hi: 0x2000_0000,
+            lo: 0x2000_0000,
+            hi: 0,
         }; // element 0 resist -> /2
         i.defender_guarding = true; // -> /2 again
         // 800 -> 400 -> 200.
@@ -1599,8 +1649,8 @@ mod tests {
     fn damage_finish_bypass_party_resist() {
         let mut i = finish(500);
         i.defender_resist = DefenderResist {
-            lo: 0,
-            hi: 0x2000_0000,
+            lo: 0x2000_0000,
+            hi: 0,
         };
         i.attacker_element = 0;
         i.bypass_party_resist = true; // resistance block skipped entirely
@@ -1612,8 +1662,8 @@ mod tests {
         // Mitigation reduces over to 0 -> floor rand()%9 + 8.
         let mut i = finish(1);
         i.defender_resist = DefenderResist {
-            lo: 0,
-            hi: 0x2000_0000,
+            lo: 0x2000_0000,
+            hi: 0,
         };
         i.attacker_element = 0; // 1 >> 1 = 0 -> floor fires
         i.floor_rand = 0; // 0 % 9 + 8 = 8
