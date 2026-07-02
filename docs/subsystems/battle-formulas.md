@@ -6,7 +6,7 @@ Damage, MP-cost, and stat-cap math used by the [battle action state machine](bat
 
 - [Damage application primitive - `FUN_800402F4`](#damage-application-primitive---fun_800402f4)
 - [Actor stat block + monster record mapping](#actor-stat-block--monster-record-mapping) - [spell list](#spell-list-record-0x4c) · [physical attack damage](#physical-attack-damage---overlay_battle_action_801ec3e4) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9 (accuracy)](#selector-9---accuracy--evasion-roll) · [stat-buff selectors](#stat-buff-selectors-17)
-- [Victory spoils (rewards)](#victory-spoils-rewards) · [spirit damage formula](#spirit-damage-formula)
+- [Victory spoils (rewards)](#victory-spoils-rewards) · [spirit damage formula](#spirit-damage-formula) · [run / escape roll](#run--escape-roll---fun_801e791c)
 - [Per-round status DoT ticker - `FUN_801E752C`](#per-round-status-dot-ticker---fun_801e752c) · [status application byte map](#status-application-the-art--move-record-status-byte)
 - [Summon-magic damage roll - `FUN_801dd0ac`](#summon-magic-damage-roll---fun_801dd0ac) - [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8)
 - [Summon spell XP + magic level-up](#summon-spell-xp--magic-level-up)
@@ -226,6 +226,25 @@ damage = min(damage, 0x120);            // cap 1: 288 hit-points
 ```
 
 This is hard-coded per Spirit super-art and bypasses `FUN_800402F4`. The `_DAT_80076D7E` damage popup is written directly with the result before the state machine calls `func_0x800402F4` in state `0x3F`. The spirit pre-application formula is the one place the engine has to reproduce a non-obvious arithmetic; everything else is selector-dispatch driven.
+
+## Run / escape roll - `FUN_801E791C`
+
+The flee decision battle-action state `0x64` requests:
+
+```text
+party_score = Σ_party  (SPD*3)>>1 + (maxHP - curHP)>>4
+enemy_score = Σ_enemy   SPD      + (maxHP - curHP)>>5
+roll_p = rand() % party_score ;  roll_e = rand() % enemy_score
+Escape Boost (ability bit 52):  roll_p += roll_p >> 1
+Great Escape (bit 55):          roll_p = roll_e            // forced tie
+caught iff  roll_p < roll_e  or  ctx[+0x287] != 0          // strict <
+```
+
+Missing HP raises *both* sides' scores (a hurt party escapes more easily, a hurt
+enemy pursues harder) and the party's SPD is weighted 1.5x the enemies'. Full
+decode - the outcome pointer, the accessory-bit fold over living wearers, the
+forced-flee battle flag and the success-side flee staging - lives in
+[battle-action.md § the escape roll](battle-action.md#the-escape-roll-fun_801e791c).
 
 ## Per-round status DoT ticker - `FUN_801E752C`
 
@@ -653,6 +672,7 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `summon_spell_xp_gain` / `summon_magic_levels_up` (+ `summon_magic_level_threshold`) | this doc, [summon spell XP + magic level-up](#summon-spell-xp--magic-level-up) (`FUN_801ddb30` tail / `FUN_801E70BC`) |
 | `heal_summon_amount` | this doc, recovery-summon closed form |
 | `victory_gold_per_monster` / `victory_gold_finalize` / `victory_exp_per_member` | this doc, victory-spoils gold/EXP scaling (`FUN_8004E568`) |
+| `escape_roll` / `escape_party_score` / `escape_enemy_score` (+ `EscapeFlags`) | this doc, [run / escape roll](#run--escape-roll---fun_801e791c) (`FUN_801E791C`) |
 | `status_effects::toxic_tick_damage` / `venom_tick_damage` (module `engine-vm::status_effects`) | this doc, [per-round status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) (`FUN_801E752C`) |
 
 The unit tests there pin the documented formulas as fixtures - a future runtime trace can then add comparison cases without touching the formula bodies.

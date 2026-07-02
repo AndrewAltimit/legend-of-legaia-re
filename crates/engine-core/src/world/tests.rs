@@ -5296,6 +5296,108 @@ fn ap_boost_accessory_accelerates_spirit_gauge() {
     assert_eq!(gauge_after_hit(Some(0x29)), 50);
 }
 
+/// One-party-member battle world for the Run escape roll (`FUN_801E791C`):
+/// party SPD vs enemy SPD, both sides at full HP, optional accessory passive
+/// on the member's slot-7 equip.
+fn escape_world(party_speed: u16, enemy_speed: u16, passive: Option<u8>) -> World {
+    use crate::accessory_passives::AccessoryPassives;
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.actors[0].battle.max_hp = 200;
+    world.actors[0].battle.hp = 200;
+    world.actors[0].battle.liveness = 1;
+    world.actors[1].battle.max_hp = 300;
+    world.actors[1].battle.hp = 300;
+    world.actors[1].battle.liveness = 1;
+    world.battle_speed[0] = party_speed;
+    world.battle_speed[1] = enemy_speed;
+    let mut party = legaia_save::Party::zeroed(1);
+    if let Some(idx) = passive {
+        world.set_accessory_passives(AccessoryPassives::from_entries([(0x50, idx)], []));
+        let mut eq = party.members[0].equipment();
+        eq.slots[7] = 0x50;
+        party.members[0].set_equipment(eq);
+    }
+    world.roster = party;
+    world.refresh_party_ability_bits();
+    world
+}
+
+/// The Run command's escape roll follows the retail `FUN_801E791C` score
+/// compare: a fast party vs a slow enemy escapes on every seed (the enemy
+/// score of 1 makes `roll_e` always 0 and the fail compare is strict `<`),
+/// while a slow party vs a fast enemy is caught on essentially every seed
+/// (`roll_p` pinned at 0 by a party score of ~1).
+#[test]
+fn run_escape_roll_follows_speed_and_hp_scores() {
+    let mut always = 0;
+    let mut rarely = 0;
+    for seed in 0..50u32 {
+        let mut fast = escape_world(1000, 1, None);
+        fast.rng_state = seed;
+        always += u32::from(fast.roll_battle_escape());
+
+        let mut slow = escape_world(1, 1000, None);
+        slow.rng_state = seed;
+        rarely += u32::from(slow.roll_battle_escape());
+    }
+    assert_eq!(always, 50, "overwhelming speed advantage always escapes");
+    assert!(
+        rarely <= 2,
+        "pinned-at-0 party roll is caught on almost every seed (got {rarely}/50 escapes)"
+    );
+}
+
+/// Chicken King (Great Escape, passive `0x37` -> ability bit 55) forces the
+/// party roll equal to the enemy roll, so even the worst matchup escapes;
+/// Chicken Heart (Escape Boost, passive `0x34` -> bit 52) scales the party
+/// roll 1.5x, raising the escape rate over the unboosted baseline.
+#[test]
+fn escape_accessories_fold_from_the_ability_bitfield() {
+    for seed in 0..50u32 {
+        let mut w = escape_world(1, 1000, Some(0x37));
+        w.rng_state = seed;
+        assert!(w.roll_battle_escape(), "Great Escape wins every compare");
+    }
+
+    let mut base = 0;
+    let mut boosted = 0;
+    for seed in 0..200u32 {
+        let mut w = escape_world(30, 45, None);
+        w.rng_state = seed;
+        base += u32::from(w.roll_battle_escape());
+
+        let mut w = escape_world(30, 45, Some(0x34));
+        w.rng_state = seed;
+        boosted += u32::from(w.roll_battle_escape());
+    }
+    assert!(
+        boosted > base,
+        "Escape Boost raises the escape rate ({boosted} vs {base} of 200)"
+    );
+}
+
+/// Retail folds the escape accessories only over party members with live HP
+/// (`+0x14C != 0`): a downed Chicken King wearer contributes nothing.
+#[test]
+fn downed_wearer_does_not_fold_escape_accessories() {
+    let mut caught = 0;
+    for seed in 0..50u32 {
+        let mut w = escape_world(1, 1000, Some(0x37));
+        w.actors[0].battle.liveness = 0;
+        w.rng_state = seed;
+        caught += u32::from(!w.roll_battle_escape());
+    }
+    assert!(
+        caught >= 48,
+        "downed wearer's assured-escape bit is ignored (got {caught}/50 caught)"
+    );
+}
+
 /// With both the move-power table AND the element-affinity tables installed, a
 /// monster special attack scales by `matrix[enemy_element][party_member_element]`
 /// (`FUN_801dd864`). Proven by running the same seeded cast through a neutral

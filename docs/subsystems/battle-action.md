@@ -7,7 +7,7 @@ A two-level finite state machine that drives the per-actor execution of a chosen
 - [One-paragraph overview](#one-paragraph-overview)
 - [Outer dispatch - `ctx[7]` action-state cursor](#outer-dispatch---ctx7-action-state-cursor) · [state table](#state-table)
 - [Inner dispatch - actor action category](#inner-dispatch---actor-action-category) · [per-actor sub-state surface](#per-actor-sub-state-surface)
-- [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds)
+- [Cross-references with other battle helpers](#cross-references-with-other-battle-helpers) - [range/LOS](#fun_8004e2f0---battle-range--line-of-sight) · [stat aggregator](#fun_80042558---per-frame-stat-aggregator) · [effect spawn API](#fun_801dfdf8---effect-bundle-public-spawn-api) · [summon-overlay dispatch](#seru-magic-summon-overlay-dispatch) · [pose driver](#fun_801d5854---per-actor-pose-driver) · [party/monster setup](#fun_801eed1c--fun_801e7320---party--monster-setup-hooks) · [camera bounds](#fun_801efe44---battle-camera-bounds) · [escape roll](#the-escape-roll-fun_801e791c)
 - [Notes for the engine port](#notes-for-the-engine-port) · [decompile quirks](#decompile-quirks-worth-knowing) · [engine port](#engine-port)
 - [Action validator (`FUN_8003FB10`)](#action-validator-fun_8003fb10) · [action queue + Tactical Arts trigger ordering](#action-queue-and-tactical-arts-trigger-ordering) · [Miracle / Super in the live Arts submenu](#miracle--super-in-the-live-player-driven-arts-submenu) · [open work](#open-work)
 
@@ -83,7 +83,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (full brightness). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: if `ctx[+0x269] == 0` → `0x5A` (next-actor / end-of-action); else → `0x52` (continue queue). When timer < 0xC, calls `FUN_801D99BC` and unloads all UI elements: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `actor[+0x26]`, `+0xF/+0x52` (damage), `+0x44`, `+0x59` (queue marker), `+0x51`/`+0x50` (banner). For multi-cast (`_DAT_801F6974 != 0`), iterates queue at `((+0x6974)-1)*4 + -0x7FE097CC` firing every queued effect's terminate marker. | `0x52` or `0x5A`. |
 | `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and `actor[+0x17] != 0` (was running), unloads the queue marker. | `0x5A`. |
 | `0x5A` | **End-of-action gate** | Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side: if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps `actor[+0x1A]++`; if `+0x1A < (party_count + monster_count - +0x25)`, advances to `0x0A` (next action); else → `0xFF` (battle complete). | `0x0A` (next actor) / `0xFF` (battle ends). |
-| `0x64` (100) | **Run - flee anim begin** | Calls `FUN_801E791C` (?). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Iterates monster slots: if monster has rotation trigger (`+0x16C != 0`) and isn't immune (`(&DAT_8007BD10)[i] != 4`), bumps `actor[+0x1A]++`. If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - a downed or petrified member leaves the battle alive, the mechanism behind "escape restores a Stoned member". Ported: `engine-vm::battle_action` `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only. | `0x65`. |
+| `0x64` (100) | **Run - flee anim begin** | Calls `FUN_801E791C` ([the escape roll](#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Iterates monster slots: if monster has rotation trigger (`+0x16C != 0`) and isn't immune (`(&DAT_8007BD10)[i] != 4`), bumps `actor[+0x1A]++`. If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - a downed or petrified member leaves the battle alive, the mechanism behind "escape restores a Stoned member". Ported: `engine-vm::battle_action` `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only. | `0x65`. |
 | `0x65` | Run - wait | If the run failed (`_DAT_8007726C == ctx + 0x189`) → screen-shake `_DAT_8007B792` rotates. Decrements `ctx[+0x6D8]`. When < 0: **failed run** → `0x50` (Done band - the action is consumed, the battle continues); **successful escape** → `0x66`. | `0x50` (failed) or `0x66` (escaped). |
 | `0x66` | Run - **successful-escape teardown** | Writes the fade template at `DAT_801C9070` - kind 2, time `0x40`, start `(0,0,0)` → end `(0xFF,0xFF,0xFF)` (a black→white white-out, ramped by the `FUN_80020B00` fade-state loader) - and spawns it via `func_0x80024E80(&DAT_801C9070, 0)`. Sets `DAT_8007BD71 = 0xFE` - the **battle-end signal**, the same byte the `0x5A` wipe gate sets - so the party leaves the battle. (The earlier "run failed, battle continues" reading of this state is falsified by that signal byte; the failed-run path is `0x65 → 0x50`.) Engine: `ActionState::RunEscape` → `BattleEndCause::Escaped`; the fade is the `engine_core::fade` kernel. | `0x67` (terminal hold; no case body - falls through to default no-op). |
 | `0x68` | **Capture - start** | RNG via `func_0x80056798`. Adjusts `ctx[+0x6DA] += 0x780 + (rand%2)*0x80`. `FUN_801D5854(actor, 6)`, `FUN_801E7824(actor)` (?), `FUN_801DABA4`. Sets `ctx[+0x6D8] = 0x1E`. | `0x69`. |
@@ -433,6 +433,45 @@ Called from state `0x0C`:
 
 Called from state `0x0C` for non-flee actions. Walks the 8-slot actor table computing min/max X and Z to set the battle camera's frustum. Read-only with respect to the action state machine; pure rendering helper.
 
+### The escape roll (`FUN_801E791C`)
+
+Called by state `0x64` to decide a retail flee. It is the writer of `_DAT_8007726C` - the
+battle-message source pointer states `0x64`/`0x65` test: `ctx + 0x159` ("escaped" text) on
+success, `ctx + 0x189` ("couldn't escape") on failure. From the dump
+(`ghidra/scripts/funcs/overlay_battle_action_801e791c.txt`):
+
+```
+party_score = Σ_party  (SPD*3)>>1 + (maxHP - curHP)>>4    ; actor +0x164 / +0x14E / +0x14C
+enemy_score = Σ_enemy   SPD      + (maxHP - curHP)>>5
+roll_p = rand() % party_score ;  roll_e = rand() % enemy_score
+if Escape Boost (ability bit 52):                 roll_p += roll_p >> 1
+if Great Escape (bit 55) or ctx[+0x291] == 2
+   or (_DAT_8007BAC0 & 0x100):                    roll_p = roll_e
+FAIL iff  !(_DAT_8007BAC0 & 0x100)
+          && (roll_p < roll_e  ||  ctx[+0x287] != 0)
+```
+
+Both sides run faster the more hurt they are (missing HP raises the score) and the party's
+SPD is weighted 1.5x against the enemies' 1x; every slot contributes, downed members
+included. The two ability bits are read from the *living* party members' second
+accessory-passive word (character record `+0xF8`): bit 52 = passive `0x34` **Escape Boost**
+(Chicken Heart, roll x1.5), bit 55 = passive `0x37` **Great Escape** (Chicken King) - the
+assured bit forces the party roll equal to the enemy roll so the compare cannot fail, but
+the scripted no-escape flag `ctx[+0x287]` still blocks it, which is why Chicken King is
+"assured escape (non-boss)" (see the
+[accessory-passive table](../formats/accessory-passive-table.md)). The battle flag
+`_DAT_8007BAC0 & 0x100` forces the flee outright - it bypasses even `ctx[+0x287]` and skips
+the "No. of Escapes" Records counter (`_DAT_800846A8`) the normal success path increments.
+
+On success the routine also stages the flee scene: every party actor is marked fleeing
+(`+0x1DA`/`+0x1DC` = 1, facing `+0x46` = `0x800`, pose byte `+0x1DD` = 9), positions are
+pulled toward the camera and spread at least 200 units apart, live HP/MP are written back to
+the character records with downed members **floored at 1 HP** (the record-side half of the
+state-`0x64` floor), and the camera move fires via `FUN_801D829C`. Ported:
+`engine-vm::battle_formulas::escape_roll` (+ `escape_party_score` / `escape_enemy_score` /
+`EscapeFlags`), rolled live by `engine-core::World::roll_battle_escape` when the command
+menu resolves Run.
+
 ## Notes for the engine port
 
 - The state graph is **flat** within each band: `0x14 → 0x15 → 0x16 → 0x17 → 0x18 → 0x1E` is the attack-strike chain. There are no jumps backward except from `0x5A` (which restarts at `0x0A` for the next actor).
@@ -539,17 +578,18 @@ finisher's guard-halve stage reads (`DamageFinish::defender_guarding`, `over >>=
 until that actor's next turn starts. Run arms the ported run band (`Begin` -> category 5 ->
 `RunBegin`/`RunWait`/`RunEscape`) with the roll outcome staged on `multi_cast_gate`; a success
 tears the battle down `Escaped` (no loot, downed members floored alive at 1 HP), a failure
-consumes the turn through the Done band. The escape *probability* itself is an engine-side
-reconstruction (a 50% roll) - the retail roll that writes `_DAT_8007726C` is still unpinned (see
-Open work).
+consumes the turn through the Done band. The escape *probability* is the retail
+[`FUN_801E791C` roll](#the-escape-roll-fun_801e791c) - party vs enemy speed/missing-HP scores
+plus the two Chicken accessory bits - ported as `battle_formulas::escape_roll` and rolled by
+`World::roll_battle_escape`.
 
 ## Open work
 
 - The `0x07` and a handful of intermediate values (`0x21..0x27`, `0x39..0x3B`, `0x41..0x45`, `0x49..0x4F`, `0x53..0x59`, `0x5B..0x63`, `0x6C..0x6D`, `0x72..0xFC`) have no case bodies. Confirm they are reserved padding versus reachable-via-other-overlay.
 - States `0x32..0x38` (summon flow): the `func_0x801F1ED4` call inside `0x34`/`0x35`/`0x36` is opaque; its dump is needed to resolve the summon-creature spawn path.
 - State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch and its interaction with the HP-bar at `ctx[+0x1074]` needs cross-referencing with the spirit definitions table to identify exactly which spirit triggers it.
-- `FUN_801E791C` (`0x64`), `FUN_801F0348` (`0x0C`/`0x71`), `FUN_801F3990` (`0x3D`), `FUN_801F45A4` (`0xFF`) are opaque battle helpers - their semantics here are inferred from caller context, not their own decompile.
-- The **run-roll writer** - the routine that decides the escape and writes `_DAT_8007726C` (tested against `ctx + 0x189` by states `0x64`/`0x65`) - is unpinned; the engine's live Run command substitutes a 50% roll. A write-watchpoint on `0x8007726C` during a retail flee would close it.
+- `FUN_801F0348` (`0x0C`/`0x71`), `FUN_801F3990` (`0x3D`), `FUN_801F45A4` (`0xFF`) are opaque battle helpers - their semantics here are inferred from caller context, not their own decompile. (`FUN_801E791C` at `0x64` is decoded - [the escape roll](#the-escape-roll-fun_801e791c).)
+- The escape roll's two context inputs `ctx[+0x291] == 2` (forces the roll tie like Great Escape) and `ctx[+0x287]` (the scripted no-escape flag, also read by the state-`0x20` counter-attack gate) are consumed-site-pinned; which battle-setup path writes each byte is not.
 - `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
 
 ## See also

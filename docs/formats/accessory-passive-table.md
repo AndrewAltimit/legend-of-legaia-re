@@ -185,7 +185,13 @@ The remaining indices are point-of-use flags: each consumer tests the
 bitfield bit where the mechanic lives (MP cost at cast time - battle overlay
 `0x801E3D0C`; the [steal table](steal-table.md) for Steal Attack; status /
 elemental guards in the battle damage path; encounter rate in the field step
-roll; loot in the battle-end reward resolver `FUN_8004E568`).
+roll; loot in the battle-end reward resolver `FUN_8004E568`). The two escape
+bits are consumer-pinned in the run roll `FUN_801E791C` (battle-action state
+`0x64`): `0x34` Escape Boost scales the party's escape roll x1.5 and `0x37`
+Great Escape forces the roll compare to a tie (assured escape - still blocked
+by the scripted no-escape flag `ctx+0x287`, hence "non-boss"); both fold only
+from *living* wearers. See
+[battle-action](../subsystems/battle-action.md#the-escape-roll-fun_801e791c).
 
 ### Talisman spell grants (same function)
 

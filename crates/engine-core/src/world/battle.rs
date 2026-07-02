@@ -208,11 +208,13 @@ impl World {
                 // 0x64..0x66). The SM carries the roll outcome on
                 // `multi_cast_gate` (success floors downed party HP at 1 and
                 // tears the battle down `Escaped`; failure consumes the turn
-                // via the Done band). The retail roll global (`_DAT_8007726C`
-                // vs `ctx+0x189`) is unpinned - engine-side reconstruction:
-                // a 50% roll on the world PRNG.
+                // via the Done band). The roll is the retail `FUN_801E791C`
+                // formula (the writer of `_DAT_8007726C`): party SPD*1.5 +
+                // missing-HP/16 vs enemy SPD + missing-HP/32, two rand draws,
+                // Chicken Heart/King accessory bits folded from the living
+                // party members' second ability word.
                 let actor = session.actor;
-                let escaped = self.next_rng() & 1 == 0;
+                let escaped = self.roll_battle_escape();
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.action_category = 5; // Run band
                 }
@@ -1303,6 +1305,54 @@ impl World {
         vm::battle_formulas::DefenderResist::from_ability_words(
             u32::from_le_bytes(bits[0..4].try_into().unwrap()),
             u32::from_le_bytes(bits[4..8].try_into().unwrap()),
+        )
+    }
+
+    /// Roll the Run command's escape chance - the retail `FUN_801E791C`
+    /// formula (the routine battle-action state `0x64` calls, the writer of
+    /// the `_DAT_8007726C` outcome pointer). Party score = per-slot
+    /// `(SPD*3)>>1 + missingHP>>4` over every party slot (downed included);
+    /// enemy score = `SPD + missingHP>>5` over every enemy slot; two 15-bit
+    /// rand draws in retail order; the Chicken Heart (Escape Boost, ability
+    /// bit 52) and Chicken King (Great Escape, bit 55) accessory bits fold
+    /// from the *living* party members' second ability word (`record+0xF8`).
+    /// The engine has no scripted no-escape battles yet, so `ctx+0x287` /
+    /// `_DAT_8007bac0 & 0x100` pass as unset.
+    ///
+    /// PORT: FUN_801E791C (roll + compare via
+    /// `battle_formulas::escape_roll`; the success-side flee staging stays
+    /// with the run band in `battle_action`)
+    pub(super) fn roll_battle_escape(&mut self) -> bool {
+        use vm::battle_formulas::{
+            EscapeActor, EscapeFlags, escape_enemy_score, escape_party_score, escape_roll,
+        };
+        let party_n = (self.party_count as usize).min(self.actors.len());
+        let fold = |i: usize| EscapeActor {
+            speed: self.battle_speed.get(i).copied().unwrap_or(0),
+            hp: self.actors[i].battle.hp,
+            max_hp: self.actors[i].battle.max_hp,
+        };
+        let party: Vec<EscapeActor> = (0..party_n).map(fold).collect();
+        let enemies: Vec<EscapeActor> = (party_n..self.actors.len()).map(fold).collect();
+        let mut flags = EscapeFlags::default();
+        for slot in 0..party_n {
+            if self.actors[slot].battle.liveness == 0 {
+                continue;
+            }
+            if let Some(member) = self.roster.members.get(self.party_roster_slot(slot)) {
+                let bits = member.ability_bits();
+                flags.fold_ability_word1(u32::from_le_bytes(bits[4..8].try_into().unwrap()));
+            }
+        }
+        let rand = [
+            (self.next_rng() & 0x7fff) as u16,
+            (self.next_rng() & 0x7fff) as u16,
+        ];
+        escape_roll(
+            escape_party_score(&party),
+            escape_enemy_score(&enemies),
+            flags,
+            rand,
         )
     }
 
