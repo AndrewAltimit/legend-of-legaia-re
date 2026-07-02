@@ -424,8 +424,15 @@ impl World {
             && enemy_effect != legaia_art::EnemyEffect::None
             && self.actors[target].battle.liveness != 0
         {
-            self.status_effects
+            let applied = self
+                .status_effects
                 .apply_from_enemy_effect(target as u8, enemy_effect);
+            // Rot's applier rolls the disabled limb (`rand % 3`, the retail
+            // `1 << (rand%3 + 3)` bit pick).
+            if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
+                let limb = (self.next_rng() % 3) as u8;
+                self.status_effects.set_rot_limb(target as u8, limb);
+            }
         }
         if total > 0 {
             self.battle_hit_fx.push(BattleHitFx {

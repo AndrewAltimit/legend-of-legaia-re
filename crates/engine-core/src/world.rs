@@ -3689,14 +3689,23 @@ impl World {
                         // retail - the unit wakes when hit).
                         self.status_effects.on_damaged(*target_slot);
                     }
-                    if outcome.enemy_effect != legaia_art::record::EnemyEffect::None {
+                    let applied = if outcome.enemy_effect != legaia_art::record::EnemyEffect::None {
                         target.pending_status = Some(outcome.enemy_effect);
                         // Push the status into the tracker so it
                         // subsequently ticks per-turn.
                         self.status_effects
-                            .apply_from_enemy_effect(*target_slot, outcome.enemy_effect);
+                            .apply_from_enemy_effect(*target_slot, outcome.enemy_effect)
+                    } else {
+                        None
+                    };
+                    let hp = target.battle.hp;
+                    // Rot's applier rolls the disabled limb (`rand % 3`,
+                    // the retail `1 << (rand%3 + 3)` bit pick).
+                    if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
+                        let limb = (self.next_rng() % 3) as u8;
+                        self.status_effects.set_rot_limb(*target_slot, limb);
                     }
-                    return Some((*target_slot, target.battle.hp));
+                    return Some((*target_slot, hp));
                 }
                 None
             }

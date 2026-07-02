@@ -574,6 +574,16 @@ impl BattleSession {
     /// gauge can't cover the cost or the runner refused the input.
     pub fn push_command(&mut self, world: &mut World, cmd: Command) -> bool {
         let active = self.runner.active_party_slot();
+        // Rot refuses the rotted limb's attack command (limb roll 0 = Left
+        // arm, 1 = Right arm, 2 = Low attack) - the engine's reading of the
+        // retail `+0x16E` limb-disable bits (the retail consumer lives in the
+        // undumped command-menu controller; see engine-vm::status_effects).
+        if let Some(limb) = world.status_effects.rot_limb(active) {
+            let blocked = [1u8, 2, 3][limb.min(2) as usize];
+            if cmd.as_byte() == blocked {
+                return false;
+            }
+        }
         let mut ap = world.ap_gauges[active as usize];
         let admit = self.runner.push_command(&mut ap, cmd).is_ok();
         if admit {
@@ -1944,6 +1954,29 @@ mod tests {
         // 0-cost commands are directional, which always admit.
         // (This test just validates the API doesn't panic on empty
         // gauge for a 0-cost cmd.)
+    }
+
+    #[test]
+    fn rot_refuses_the_rotted_limbs_command_only() {
+        let mut s = fresh_session();
+        let mut w = fresh_world_with_actors();
+        s.begin_round(&mut w);
+        s.transition(BattlePhase::CommandInput);
+        // Rot the active slot's Right arm (limb roll 1).
+        let active = s.runner.active_party_slot();
+        w.status_effects
+            .apply(active, legaia_engine_vm::status_effects::StatusKind::Rot);
+        w.status_effects.set_rot_limb(active, 1);
+        assert!(
+            !s.push_command(&mut w, Command::Right),
+            "rotted limb blocked"
+        );
+        assert!(s.push_command(&mut w, Command::Left), "other limbs admit");
+        assert!(s.push_command(&mut w, Command::Down));
+        // Curing restores the command.
+        w.status_effects
+            .cure(active, legaia_engine_vm::status_effects::StatusKind::Rot);
+        assert!(s.push_command(&mut w, Command::Right));
     }
 
     #[test]

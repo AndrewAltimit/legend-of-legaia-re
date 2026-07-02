@@ -316,9 +316,12 @@ untouched; the victim's queued action category at `+0x1DE` clears, and the
 exactly the hole the applier byte map above leaves unassigned; the petrify
 applier itself (Glare's effect path) is not in the dumped corpus.
 
-Note this conflicts with the engine's inherited byte naming (`4` = Sleep, `5` =
-Confuse, from external notes - see `legaia_engine_vm::status_effects`); the
-remap is held open until a capture pins what bytes `1`/`2` do mechanically.
+The engine's `legaia_engine_vm::status_effects` byte map follows this table
+(`4` = Toxic, `5` = Rot with a rolled disabled limb refused at command input;
+the earlier external-notes reading `4` = Sleep / `5` = Confuse is replaced -
+those kinds remain host-drivable with no on-disc byte). Which retail limb
+bit grays which arrow is still a reconstruction, and what bytes `1`/`2` do
+mechanically stays open pending a capture.
 
 ## Summon-magic damage roll - `FUN_801dd0ac`
 

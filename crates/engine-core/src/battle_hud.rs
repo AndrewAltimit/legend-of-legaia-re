@@ -139,6 +139,7 @@ pub fn status_kind_letter(kind: StatusKind) -> u8 {
         StatusKind::Venom => b'V',
         StatusKind::Sleep => b'S',
         StatusKind::Confuse => b'C',
+        StatusKind::Rot => b'R',
         // The two first-letter collisions (Curse vs Confuse, Stone vs Sleep)
         // take the lowercase form of the rarer status.
         StatusKind::Curse => b'c',
@@ -154,9 +155,10 @@ fn status_kind_sort_key(k: StatusKind) -> u8 {
         StatusKind::Venom => 2,
         StatusKind::Sleep => 3,
         StatusKind::Confuse => 4,
-        StatusKind::Curse => 5,
-        StatusKind::Stone => 6,
-        StatusKind::Faint => 7,
+        StatusKind::Rot => 5,
+        StatusKind::Curse => 6,
+        StatusKind::Stone => 7,
+        StatusKind::Faint => 8,
     }
 }
 

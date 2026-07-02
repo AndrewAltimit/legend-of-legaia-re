@@ -198,10 +198,12 @@ mod tests {
     #[test]
     fn begin_round_marks_action_blocked_for_asleep_actor() {
         let mut world = world_with_party();
-        // Mark slot 1 as Sleep before begin (Other(4) = Sleep).
+        // Mark slot 1 as Sleep before begin. No on-disc byte maps to Sleep
+        // since the 4/5 remap (4 = Toxic, 5 = Rot per the pinned appliers),
+        // so apply the host-driven kind directly.
         world
             .status_effects
-            .apply_from_enemy_effect(1, EnemyEffect::Other(4));
+            .apply(1, legaia_engine_vm::status_effects::StatusKind::Sleep);
 
         let mut per_slot: [Option<StatRecord>; 8] = Default::default();
         per_slot[1] = Some(StatRecord {
