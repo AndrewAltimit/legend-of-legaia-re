@@ -54,6 +54,10 @@ end
 probe.run({
     sstate = SSTATE_PATH,
     capture_frames = FRAMES,
+    -- Hold UP from the state load - the proven drive for this save (the
+    -- door-dispatch trace triggered the same castle exit this way).
+    hold_button = probe.BTN.UP,
+    hold_frames = 240,
     on_arm = function()
         w("== world-map residue watch ==")
         for slot = SLOT_LO, SLOT_HI do
@@ -68,14 +72,10 @@ probe.run({
         return {}
     end,
     on_capture = function(c, elapsed)
-        -- Hold Up ~1.5s to walk into the Drake world-map exit, then release.
-        if elapsed >= 20 and elapsed <= 110 then
-            probe.pad_force(probe.BTN.UP)
-        elseif elapsed == 112 then
-            probe.pad_release(probe.BTN.UP)
-        -- Walk around on the world map afterwards so the freeze flag gets
-        -- every chance to be written during live overworld play.
-        elseif elapsed >= 600 and elapsed <= 1500 then
+        -- The harness holds UP for the first 240 vsyncs (the castle exit);
+        -- afterwards walk Right in bursts so the freeze flag sees live
+        -- overworld play on the far side of the warp.
+        if elapsed > 400 then
             if (elapsed % 120) < 50 then
                 probe.pad_force(probe.BTN.RIGHT)
             else
