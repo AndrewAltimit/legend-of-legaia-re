@@ -45,6 +45,40 @@ Confidence is **Inferred** unless a track has been matched to its OST entry, in
 which case the OST columns are **Confirmed** against the published listing. The
 last three rows (highlighted in the source as uncertain) are flagged inline.
 
+## The disc-side join: the `music_01` bank IS the sound-test order
+
+The sound-test index (`#` below) attaches structurally to the disc: the
+`music_01` CDNAME block (extraction entries `990..=1071`, raw TOC `992..`,
+82 slots) is the global BGM bank, and **bank slot `i` = sound-test index
+`i`**. A field-VM op-`0x35` BGM id `>= 2000` resolves through the global
+pool (`FUN_800243F0`, see [script-vm § BGM lookup](../subsystems/script-vm.md#bgm-lookup-table)),
+so **global id `2000 + i` plays sound-test track `i`**. Pinned by:
+
+- **Per-scene op-`0x35` census** (`engine-core/tests/scene_bgm_labels_disc.rs`):
+  walking every scene MAN's scripts and joining each started id to this
+  table lands the right label across the corpus - `town01` starts `2016` =
+  `M14B` "Rim Elm theme", the three kingdom maps start `2000`/`2001` =
+  `M01`/`M02` overworld pair, `bylon` starts `2019` = `M17` "Byron
+  Monastery", Sol's floors start `M16` casino / `M23` bar / `M100` Sol /
+  `M112` disco, `geremi` starts `2047` = `M102` "Jeremi", the Bio-Castle
+  interiors start `2013` = `M13`.
+- **Pochi alignment**: the bank's four placeholder-filled slots (extraction
+  `1066..=1069`) land exactly on the four dev-leftover rows (#76..=79 - the
+  M13 flute, `M117`, `MPIANO`, `LEVELUP`), removed from the retail NA disc
+  but still holding their sound-test slots.
+- **Bank copies**: the battle themes (#26..) and title theme (#65)
+  byte-match their `sound_data2` boot/battle-bank copies (extraction
+  879..884), the banks those cues actually stream from.
+
+Slot 81 (extraction `1071`) is a spare past the last sound-test row. Scenes
+carry **no local SEQ data** - every SEQ stream on the disc lives in this
+bank + the `sound_data2` banks (+ the `monster_test` dev bank and
+`teien`'s scene-local copy of `M01`) - so the scene-local id space
+(`< 2000`) is the rare exception. The engine's
+resolver is `legaia_engine_core::music_labels` (`label_for_bgm_id` /
+`label_for_prot_entry`); the play-window HUD names the playing track and
+the asset-viewer `seq` command names a bank slot's file.
+
 ## Notable entries
 
 - **Borrowed placeholder cues.** `ALNDRA` (#72) is *Alundra*'s Zazzan battle

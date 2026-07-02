@@ -1240,6 +1240,15 @@ impl ApplicationHandler for App {
     }
 }
 
+/// If a path's file stem opens with a PROT extraction index that falls in
+/// the `music_01` sound-test bank (`0990_music_01.BIN`, an extracted
+/// `1006_...` slice, ...), return the curated track label for that slot.
+fn music_bank_label_for_path(p: &Path) -> Option<String> {
+    let stem = p.file_stem()?.to_str()?;
+    let digits: String = stem.chars().take_while(|c| c.is_ascii_digit()).collect();
+    legaia_engine_core::music_labels::label_for_prot_entry(digits.parse().ok()?)
+}
+
 /// Headless SEQ playback. Opens AudioOut, builds a `Sequencer` over the
 /// parsed SEQ + uploaded VAB, attaches it, and prints progress until
 /// end-of-track (or forever if `--looped`). Ctrl-C to exit.
@@ -1264,6 +1273,15 @@ fn run_seq_playback(
         seq.header.bpm(),
         seq.header.ppqn
     );
+    // When the file comes from a music_01 bank slot (extraction entries
+    // 990..=1071 - the debug sound-test bank), surface the curated track
+    // label: the bank slot order is the sound-test order the
+    // `legaia_gamedata` music table is keyed on.
+    if let Some(label) =
+        music_bank_label_for_path(seq_path).or_else(|| music_bank_label_for_path(vab_path))
+    {
+        log::info!("track: {label}");
+    }
 
     let vab_bytes =
         std::fs::read(vab_path).with_context(|| format!("read {}", vab_path.display()))?;

@@ -448,8 +448,8 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;   // final PROT index
 - `_DAT_8007BAB8` - final PROT index, consumed downstream by the asset loader.
 
 So:
-- `bgm_id < 2000`: scene-local - lives at PROT `current_scene + 6 + bgm_id`. Different scenes have different BGM at the same script ID.
-- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. Shared across scenes (cutscene / title / event music).
+- `bgm_id < 2000`: scene-local - lives at PROT `current_scene + 6 + bgm_id`. Different scenes have different BGM at the same script ID. Rare in retail: scenes carry almost no local SEQ data (`teien` is the one scene with a local copy).
+- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. The global pool is the **`music_01` bank** (extraction `990..=1071`), whose slot order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"); see [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-is-the-sound-test-order). Engine resolver: `legaia_engine_core::music_labels`.
 
 The "table" *is* the [CDNAME.TXT name map](../formats/cdname.md)'s per-scene block layout. There's no separate BGM index in `SCUS_942.54`.
 

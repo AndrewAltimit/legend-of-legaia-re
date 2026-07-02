@@ -209,8 +209,8 @@ return ((&amp;DAT_80085758)[(int)idx &gt;&gt; 3] &amp; (0x80 &gt;&gt; (idx &amp;
 }
 _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></pre>
   <ul class="bullets">
-    <li><code>bgm_id &lt; 2000</code> - scene-local. Different scenes have different BGM at the same script ID.</li>
-    <li><code>bgm_id &ge; 2000</code> - global. Shared across scenes (cutscene / title / event music).</li>
+    <li><code>bgm_id &lt; 2000</code> - scene-local. Different scenes have different BGM at the same script ID. Rare in retail: scenes carry almost no local SEQ data (<code>teien</code> is the one scene with a local copy).</li>
+    <li><code>bgm_id &ge; 2000</code> - global. The global pool is the <strong><code>music_01</code> bank</strong> (extraction entries 990..=1071), whose slot order is the <strong>debug sound-test order</strong> - so <code>2000 + i</code> plays sound-test track <code>i</code> and every global id resolves to a curated human name (<a href="../reference/music-tracks.html">music-track table</a>). Pinned by a per-scene op-<code>0x35</code> census joining ids to their scenes' known music (<code>town01</code> starts <code>2016</code> = &ldquo;Rim Elm theme&rdquo;). Engine resolver: <code>legaia_engine_core::music_labels</code>.</li>
   </ul>
   <p>The "table" <em>is</em> the <a href="../formats/index.html">CDNAME.TXT name map</a>'s per-scene block layout. There's no separate BGM index in <code>SCUS_942.54</code>.</p>
 </section>

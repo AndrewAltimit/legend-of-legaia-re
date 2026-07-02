@@ -5493,10 +5493,26 @@ impl PlayWindowApp {
         } else {
             "no audio"
         };
+        // Human-readable name for the playing track: global-pool ids join
+        // the music_01 bank / debug sound-test order the curated
+        // `legaia_gamedata` music table is keyed on.
+        let bgm_str = self
+            .session
+            .bgm
+            .as_ref()
+            .and_then(|b| b.last_started)
+            .map(
+                |id| match legaia_engine_core::music_labels::label_for_bgm_id(id) {
+                    Some(label) => format!("  bgm {id}: {label}"),
+                    None => format!("  bgm {id}"),
+                },
+            )
+            .unwrap_or_default();
         let line2 = format!(
-            "t {:.1}s  {}  arrows=dpad Z=X",
+            "t {:.1}s  {}{}  arrows=dpad Z=X",
             self.win.elapsed_secs(),
-            audio_str
+            audio_str,
+            bgm_str
         );
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));

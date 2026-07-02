@@ -496,6 +496,72 @@ pub fn scene_fmv_triggers(man_file: &ManFile, man: &[u8]) -> Vec<SceneFmvTrigger
     out
 }
 
+/// One inline BGM start decoded from an op-`0x35` sub-`1` in a scene's scripts.
+///
+/// The field-VM BGM start carries its id as a literal `i16` operand
+/// (`[35, lo, hi, 01]` - it writes `_DAT_8007BAC8`, resolved asynchronously
+/// by `FUN_800243F0`: ids `< 2000` are scene-local PROT slots at
+/// `scene_base + 6 + id`, ids `>= 2000` index the global BGM pool). So the
+/// per-scene music assignment is disc-sourced script data - the same
+/// pattern as [`SceneFmvTrigger`]. See `docs/subsystems/script-vm.md`
+/// § BGM lookup table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneBgmStart {
+    /// Partition-1 record index whose script carries the op.
+    pub record: usize,
+    /// Bytecode pc of the op within that record's walk.
+    pub pc: usize,
+    /// The literal BGM id operand (the value written to `_DAT_8007BAC8`).
+    pub bgm_id: u16,
+}
+
+/// Recover every inline op-`0x35` sub-`1` BGM start from a scene's MAN by
+/// walking its partition-1 scripts - the same record walk (and the same
+/// over-approximation caveats) as [`scene_fmv_triggers`].
+///
+/// Phantom guard: a literal `0x35` inside message text can desync-decode a
+/// bogus start, so ids outside the two documented spaces (scene-local
+/// `0..2000` restricted to small slots `< 0x40`, or the global pool
+/// `2000..2082` = the `music_01` bank) are dropped, and `(record, bgm_id)`
+/// pairs re-seen from an earlier over-walk start are deduped. Returns
+/// first-seen order.
+pub fn scene_bgm_starts(man_file: &ManFile, man: &[u8]) -> Vec<SceneBgmStart> {
+    let n1 = man_file.header.partition_counts[1].max(0) as usize;
+    let mut starts: Vec<usize> = (0..n1)
+        .filter_map(|i| man_file.actor_placement_record_offset(i, man.len()))
+        .collect();
+    starts.sort_unstable();
+    let mut out: Vec<SceneBgmStart> = Vec::new();
+    for (k, &start) in starts.iter().enumerate() {
+        let end = starts.get(k + 1).copied().unwrap_or(man.len());
+        let pc0 = {
+            let locals = *man.get(start).unwrap_or(&0) as usize;
+            1 + locals * 2 + 4
+        };
+        if start + pc0 >= end {
+            continue;
+        }
+        let body = &man[start..end];
+        for insn in LinearWalker::new(body, pc0).flatten() {
+            let InsnInfo::Bgm { text_id, sub_op: 1 } = insn.info else {
+                continue;
+            };
+            if !(text_id < 0x40 || (2000..2082).contains(&text_id)) {
+                continue;
+            }
+            if out.iter().any(|t| t.record == k && t.bgm_id == text_id) {
+                continue;
+            }
+            out.push(SceneBgmStart {
+                record: k,
+                pc: insn.pc,
+                bgm_id: text_id,
+            });
+        }
+    }
+    out
+}
+
 /// Classify a single placement by scanning its script. See [`PlacementKind`].
 pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> PlacementKind {
     let start = p.record_offset;

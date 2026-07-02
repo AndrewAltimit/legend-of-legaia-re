@@ -1260,6 +1260,7 @@ dependencies = [
  "legaia-cheats",
  "legaia-engine-vm",
  "legaia-font",
+ "legaia-gamedata",
  "legaia-iso",
  "legaia-lzs",
  "legaia-mdt",
