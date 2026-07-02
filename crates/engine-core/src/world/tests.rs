@@ -8624,6 +8624,88 @@ fn tile_board_animated_cell_cycles_on_arrival() {
     );
 }
 
+// --- Screen-effect widgets via field-VM op-0x43 sub-ops (PROT-0900 family) ---
+
+#[test]
+fn field_vm_op43_widget_subops_drive_screen_fx_frame() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+
+    let mut ctx = FieldCtx::default();
+
+    // Sub-0x11: mask rect tween to a centre iris over 0 frames (snap).
+    // [43][11][l lo hi][t][r][b][dur]
+    let mut mask_op = vec![0x43, 0x11];
+    for w in [80i16, 60, 240, 180, 0] {
+        mask_op.extend_from_slice(&w.to_le_bytes());
+    }
+    // Sub-0x15: letterbox config [x_left][x_right][y0][y1][y2][y3].
+    let mut lb_op = vec![0x43, 0x15];
+    for w in [0i16, 0x140, 40, 56, 184, 200] {
+        lb_op.extend_from_slice(&w.to_le_bytes());
+    }
+    // Sub-0x13: panel spawn [x][y][w][h][tex_x][tex_y] past the sub-op byte.
+    let mut panel_op = vec![0x43, 0x13];
+    for w in [16i16, 32, 128, 96, 0, 0x100] {
+        panel_op.extend_from_slice(&w.to_le_bytes());
+    }
+    // Sub-0x10: sprite spawn, 19-byte record
+    // [x][y][w][h][tex_x][tex_y][clut_x][clut_y][rgb u24].
+    let mut sprite_op = vec![0x43, 0x10];
+    for w in [100i16, 50, 24, 24, 0x40, 0, 0, 480] {
+        sprite_op.extend_from_slice(&w.to_le_bytes());
+    }
+    sprite_op.extend_from_slice(&[0x80, 0x80, 0x80]);
+
+    for op in [&mask_op, &lb_op, &panel_op, &sprite_op] {
+        let mut host = FieldHostImpl { world: &mut world };
+        match vm::field::step(&mut host, &mut ctx, op, 0) {
+            FieldStepResult::Advance { .. } => {}
+            other => panic!("widget sub-op should advance, got {other:?}"),
+        }
+    }
+    assert!(world.screen_fx.mask.is_some(), "mask widget spawned");
+    assert!(world.screen_fx.letterbox.is_some(), "letterbox configured");
+    assert!(world.screen_fx.panel.is_some(), "panel spawned");
+    assert_eq!(world.screen_fx.sprites.len(), 1, "sprite widget spawned");
+
+    // One world tick publishes the frame: 4 mask border quads + 2 letterbox
+    // bands, 2 gradient strips, 1 panel quad (128px wide - no split), 1 sprite.
+    let _ = world.tick();
+    let frame = &world.screen_fx_frame;
+    assert_eq!(
+        frame.solid_quads.len(),
+        6,
+        "4 mask quads + 2 letterbox bands"
+    );
+    assert_eq!(frame.gradient_quads.len(), 2);
+    assert_eq!(frame.panels.len(), 1);
+    assert_eq!(frame.sprites.len(), 1);
+    // The dur=0 mask snapped to the requested iris rect: the top border quad
+    // ends at the rect's top edge.
+    assert!(
+        frame
+            .solid_quads
+            .iter()
+            .any(|q| q.bottom == 60 || q.top == 60),
+        "mask border reflects the snapped iris rect"
+    );
+
+    // Sub-0x14: panel move/scale to half size over 0 frames.
+    let mut move_op = vec![0x43, 0x14];
+    for w in [200i16, 100, 0x0800, 4] {
+        move_op.extend_from_slice(&w.to_le_bytes());
+    }
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let r = vm::field::step(&mut host, &mut ctx, &move_op, 0);
+        assert!(matches!(r, FieldStepResult::Advance { .. }));
+    }
+    let p = world.screen_fx.panel.as_ref().unwrap();
+    assert_eq!(p.target[0], 200);
+    assert_eq!(p.target[2], 64, "0x0800 (4.12) halves the 128px base width");
+}
+
 #[test]
 fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     // The op-0x49 shop arm captures a per-vendor id (from the shop's name +

@@ -1541,6 +1541,17 @@ pub struct World {
     /// board is installed.
     pub tile_board_header: Option<crate::tile_board::TileBoardHeader>,
 
+    /// Screen-effect widget host (the PROT-0900 mask / sprite / panel /
+    /// letterbox family), driven by the field-VM op `0x43` sub-ops
+    /// `0x10`/`0x11`/`0x13`/`0x14`/`0x15` - the ending-scene widget
+    /// path. See [`crate::screen_fx`].
+    pub screen_fx: crate::screen_fx::ScreenFxHost,
+
+    /// The current frame's widget draw list, refreshed by the Field /
+    /// Cutscene tick while any widget is live ([`Self::tick_screen_fx`]).
+    /// Renderers composite these 2D overlays above the scene.
+    pub screen_fx_frame: crate::screen_fx::ScreenFxFrame,
+
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
     /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
@@ -2564,6 +2575,8 @@ impl World {
             tile_board_target: None,
             tile_board_armed: false,
             tile_board_header: None,
+            screen_fx: Default::default(),
+            screen_fx_frame: Default::default(),
             dance: None,
             dance_return_mode: SceneMode::Field,
             dance_last_judge: None,
@@ -5659,6 +5672,10 @@ impl World {
                 // Faithful dialogue path (opt-in): drive a just-opened field
                 // dialogue through the field VM so branch handlers execute.
                 self.drive_inline_dialogue();
+                // Screen-effect widgets (mask / sprite / panel / letterbox,
+                // the ending-scene op-0x43 family) tick after the script step
+                // that may have spawned them this frame.
+                self.tick_screen_fx();
                 if self.live_gameplay_loop {
                     self.live_field_tick();
                 }
@@ -5674,6 +5691,7 @@ impl World {
                 if self.active_fmv.is_none() {
                     self.step_cutscene_timeline();
                     self.step_field();
+                    self.tick_screen_fx();
                 }
                 None
             }
@@ -5751,6 +5769,25 @@ impl World {
         if let Some((tx, tz)) = self.tile_board.as_mut().and_then(|b| b.try_step(dir)) {
             self.tile_board_target = Some((tx, tz));
         }
+    }
+
+    /// Advance the screen-effect widgets one frame and refresh
+    /// [`Self::screen_fx_frame`]. Runs in the Field / Cutscene tick after
+    /// the script step (so a sub-op spawned this frame draws this frame,
+    /// matching retail's actor-pool order). The engine ticks the widget
+    /// clocks by 1 per world tick (retail's per-frame byte
+    /// `DAT_1F800393`); the sprite scripts' flag waits probe the shared
+    /// system flag bank ([`Self::system_flag_test`], `FUN_8003CE64`).
+    fn tick_screen_fx(&mut self) {
+        if !self.screen_fx.is_active() {
+            if !self.screen_fx_frame.is_empty() {
+                self.screen_fx_frame = Default::default();
+            }
+            return;
+        }
+        let mut fx = std::mem::take(&mut self.screen_fx);
+        self.screen_fx_frame = fx.tick(1, |idx| self.system_flag_test(idx));
+        self.screen_fx = fx;
     }
 
     /// Walk-SM arrival pass (`overlay_0897_801ef2b0` case 3), run when the

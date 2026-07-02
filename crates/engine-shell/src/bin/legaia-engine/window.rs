@@ -7873,6 +7873,139 @@ impl ApplicationHandler for PlayWindowApp {
                             mvp: fx_cam * *model,
                         });
                     }
+                    // Screen-effect widget overlays (the PROT-0900 mask /
+                    // sprite / panel / letterbox family, field-VM op 0x43):
+                    // composite the world's published per-frame draw list
+                    // above the 3D scene under an orthographic screen-space
+                    // MVP (PSX 320x240 frame). Solid border/band quads ride
+                    // the untextured colour pipeline; panel + sprite quads
+                    // ride the VRAM pipeline (clut/texpage sampled like any
+                    // retail prim). Depth layers mirror the retail OT slots:
+                    // sprites (+0xc) in front, panels (+0x10), mask/bands
+                    // (+0x1c) behind. The letterbox gradient feather strips
+                    // are subtractive-blend draws the engine doesn't model
+                    // yet and are skipped.
+                    let mut screen_fx_solid = None;
+                    let mut screen_fx_tex = None;
+                    let fx_frame = &self.session.host.world.screen_fx_frame;
+                    if !fx_frame.is_empty() {
+                        let quad = |pos: &mut Vec<[f32; 3]>,
+                                    idx: &mut Vec<u32>,
+                                    l: f32,
+                                    t: f32,
+                                    rr: f32,
+                                    b: f32,
+                                    z: f32| {
+                            let base = pos.len() as u32;
+                            pos.push([l, t, z]);
+                            pos.push([rr, t, z]);
+                            pos.push([l, b, z]);
+                            pos.push([rr, b, z]);
+                            idx.extend_from_slice(&[
+                                base,
+                                base + 1,
+                                base + 2,
+                                base + 1,
+                                base + 3,
+                                base + 2,
+                            ]);
+                        };
+                        // Solid quads (mask borders + letterbox bands): flat black.
+                        let mut pos = Vec::new();
+                        let mut idx = Vec::new();
+                        for q in &fx_frame.solid_quads {
+                            if q.right <= q.left || q.bottom <= q.top {
+                                continue;
+                            }
+                            quad(
+                                &mut pos,
+                                &mut idx,
+                                q.left as f32,
+                                q.top as f32,
+                                q.right as f32,
+                                q.bottom as f32,
+                                -0.002,
+                            );
+                        }
+                        if !idx.is_empty() {
+                            let colors = vec![[0u8, 0, 0]; pos.len()];
+                            match r.upload_color_mesh(&pos, &colors, &idx) {
+                                Ok(m) => screen_fx_solid = Some(m),
+                                Err(e) => log::warn!("screen-fx solid mesh upload: {e:#}"),
+                            }
+                        }
+                        // Textured quads: panels (15bpp direct pages) + sprites
+                        // (clut-indexed), one shared mesh with per-kind depth.
+                        let mut pos = Vec::new();
+                        let mut uvs: Vec<[u8; 2]> = Vec::new();
+                        let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
+                        let mut idx = Vec::new();
+                        for p in &fx_frame.panels {
+                            if p.right <= p.left || p.bottom <= p.top {
+                                continue;
+                            }
+                            let base = pos.len();
+                            quad(
+                                &mut pos,
+                                &mut idx,
+                                p.left as f32,
+                                p.top as f32,
+                                p.right as f32,
+                                p.bottom as f32,
+                                -0.001,
+                            );
+                            uvs.extend_from_slice(&[
+                                [p.u0, p.v0],
+                                [p.u1, p.v0],
+                                [p.u0, p.v1],
+                                [p.u1, p.v1],
+                            ]);
+                            cba_tsb
+                                .extend(std::iter::repeat_n([0u16, p.texpage], pos.len() - base));
+                        }
+                        for s in &fx_frame.sprites {
+                            if s.w <= 0 || s.h <= 0 {
+                                continue;
+                            }
+                            let base = pos.len();
+                            quad(
+                                &mut pos,
+                                &mut idx,
+                                s.x as f32,
+                                s.y as f32,
+                                (s.x + s.w) as f32,
+                                (s.y + s.h) as f32,
+                                0.0,
+                            );
+                            let u1 = (s.u as i32 + s.w as i32 - 1).min(255) as u8;
+                            let v1 = (s.v as i32 + s.h as i32 - 1).min(255) as u8;
+                            uvs.extend_from_slice(&[[s.u, s.v], [u1, s.v], [s.u, v1], [u1, v1]]);
+                            cba_tsb.extend(std::iter::repeat_n(
+                                [s.clut as u16, s.texpage as u16],
+                                pos.len() - base,
+                            ));
+                        }
+                        if !idx.is_empty() {
+                            let normals = vec![[0.0f32; 3]; pos.len()];
+                            match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &idx) {
+                                Ok(m) => screen_fx_tex = Some(m),
+                                Err(e) => log::warn!("screen-fx textured mesh upload: {e:#}"),
+                            }
+                        }
+                    }
+                    let screen_fx_mvp = Mat4::orthographic_rh(0.0, 320.0, 240.0, 0.0, 0.0, 1.0);
+                    if let Some(m) = &screen_fx_tex {
+                        draws.push(SceneDraw {
+                            mesh: m,
+                            mvp: screen_fx_mvp,
+                        });
+                    }
+                    if let Some(m) = &screen_fx_solid {
+                        color_draws.push(ColorSceneDraw {
+                            mesh: m,
+                            mvp: screen_fx_mvp,
+                        });
+                    }
                     let scene = RenderScene {
                         vram,
                         draws: &draws,

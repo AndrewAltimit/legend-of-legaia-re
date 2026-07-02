@@ -265,6 +265,17 @@ four-kind family of 2D screen widgets - the cutscene-style presentation layer
 `crates/engine-core/src/screen_fx.rs`; layout pinned on disc bytes by the
 disc-gated `screen_fx_disc` test.
 
+The family is **live in the engine**: the field-VM op-0x43 sub-op handlers
+route to `engine-core`'s aggregate widget host (`screen_fx::ScreenFxHost` on
+`World::screen_fx` - spawn/control per sub-op, one `tick` per Field/Cutscene
+frame publishing `World::screen_fx_frame`), and `play-window` composites the
+frame above the 3D scene under an orthographic screen-space MVP (solid
+border/band quads on the colour pipeline; panel + sprite quads on the VRAM
+pipeline, depth-layered per the retail OT slots). Residue: the letterbox
+gradient feather strips need the subtractive blend mode and are skipped; the
+sprite modulation RGB and any trailing widget-script bytes past the VM's
+19-byte record slice are not yet fed through.
+
 Widgets are actors on the generic effect-actor list (`_DAT_8007C34C`).
 SCUS `FUN_80020DE0(descriptor, list)` allocates one and binds the per-frame
 handler from `descriptor+8` at `actor+0xc`; `FUN_8003CF04(list, handler)` finds

@@ -590,6 +590,28 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.screen_mode
     }
 
+    // Op-0x43 screen-effect widget sub-ops (the PROT-0900 mask / sprite /
+    // panel / letterbox family, exercised by the eight ending scenes).
+    // Each routes to the world's widget host; the Field / Cutscene tick
+    // advances the widgets and publishes `World::screen_fx_frame`.
+    // REF: FUN_801F8004 / FUN_801F8D4C / FUN_801F88FC / FUN_801F8E6C /
+    // FUN_801F8F28 (spawn + control APIs)
+    fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
+        self.world.screen_fx.sprite_spawn(payload);
+    }
+    fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
+        self.world.screen_fx.mask_rect(words);
+    }
+    fn op43_widget_letterbox(&mut self, payload: &[u8]) {
+        self.world.screen_fx.letterbox_config(payload);
+    }
+    fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
+        self.world.screen_fx.panel_spawn(payload);
+    }
+    fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
+        self.world.screen_fx.panel_move(words);
+    }
+
     // Shared system flag bank - same fourth-flag-bank at `_DAT_80085758`
     // that move-VM ext sub-ops 0x13 / 0x14 / 0x1C / 0x1D query, plus the
     // 0x5x / 0x6x / 0x7x default-route opcodes.
