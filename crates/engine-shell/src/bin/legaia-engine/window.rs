@@ -533,6 +533,13 @@ struct PlayWindowApp {
     /// `play` loop's `extracted_root.join(rel)`). `None` in disc-only runs,
     /// where the STR is read straight from the ISO via `disc_path`.
     extracted_root: Option<std::path::PathBuf>,
+    /// The startup extracted-root path, kept unconditionally (unlike
+    /// [`Self::extracted_root`], which is `None` in disc runs) so scene
+    /// rebuilds after a door transition source the shared interior page from
+    /// `PROT.DAT`'s unindexed head gap the same way the boot-time build did.
+    /// May point at a non-existent directory in pure-disc runs - the interior
+    /// page upload soft-fails there, matching the boot build.
+    scene_rebuild_extracted_root: std::path::PathBuf,
     /// Disc image, retained so the in-flow cutscene driver can read a movie's
     /// raw 2352-byte sectors off the ISO and play its interleaved XA audio in
     /// sync with the video. `None` when running from an extracted root (where
@@ -702,7 +709,11 @@ impl PlayWindowApp {
                                         "new game: seeded party_count={}, entered opening cutscene \
                                          '{cutscene}' (mode={mode:?})",
                                         self.session.host.world.party_count,
-                                    )
+                                    );
+                                    // The host swapped to the prologue scene:
+                                    // rebuild the render-side scene state so its
+                                    // geometry replaces the boot scene's.
+                                    self.rebuild_scene_render_state();
                                 }
                                 Err(e) => log::warn!(
                                     "new game: enter opening cutscene '{cutscene}' failed ({e:#}); \
@@ -1962,7 +1973,9 @@ impl PlayWindowApp {
             Ok(Some(p)) if !p.is_empty() => p,
             _ => return Vec::new(),
         };
-        self.resolve_placement_draws(res, tmd_src_index, &placements)
+        // Field frame: raw retail-convention transforms (the camera's
+        // FIELD_WORLD_FLIP provides the single net Y negation).
+        self.resolve_placement_draws(res, tmd_src_index, &placements, false)
     }
 
     /// Resolve the field scene's **terrain / ground** tiles (the `CELL_VISIBLE`
@@ -1982,7 +1995,8 @@ impl PlayWindowApp {
             Ok(Some(t)) if !t.is_empty() => t,
             _ => return Vec::new(),
         };
-        self.resolve_placement_draws(res, tmd_src_index, &tiles)
+        // Field frame: raw retail-convention transforms (see above).
+        self.resolve_placement_draws(res, tmd_src_index, &tiles, false)
     }
 
     /// World-map continent terrain draws: the dense visible-tile set
@@ -2019,7 +2033,10 @@ impl PlayWindowApp {
         if tiles.is_empty() {
             return Vec::new();
         }
-        self.resolve_placement_draws(res, tmd_src_index, &tiles)
+        // World-map frame: raw retail-convention transforms - both world-map
+        // cameras compose FIELD_WORLD_FLIP (the walk view through the pinned
+        // retail composition), so the draws are unflipped like the field's.
+        self.resolve_placement_draws(res, tmd_src_index, &tiles, false)
     }
 
     /// Resolve the world-map ocean CLUT animation for the active scene: scan the
@@ -2106,6 +2123,7 @@ impl PlayWindowApp {
         res: &SceneResources,
         tmd_src_index: &[usize],
         placements: &[legaia_asset::field_objects::Placement],
+        flip_y: bool,
     ) -> Vec<(usize, Mat4)> {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Vec::new();
@@ -2185,13 +2203,22 @@ impl PlayWindowApp {
                 (Some(lut), Some(nib)) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
                 _ => 0,
             };
-            // PSX field coords (same convention as actor positions), Y-flipped
-            // to match the geometry like `actor_model`.
-            let model = Mat4::from_translation(Vec3::new(
+            // PSX field coords (same retail Y-down convention as actor
+            // positions). `flip_y` selects the render-frame pairing: the
+            // world-map cameras carry no world negation, so their draws keep
+            // the per-model flip; the FIELD frame draws raw vertices and the
+            // camera's FIELD_WORLD_FLIP provides the single net negation
+            // (elevation renders retail-correct).
+            let t = Mat4::from_translation(Vec3::new(
                 p.world_x as f32,
                 world_y as f32,
                 p.world_z as f32,
-            )) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+            ));
+            let model = if flip_y {
+                t * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+            } else {
+                t
+            };
             draws.push((mesh_idx, model));
         }
         log::info!(
@@ -2201,6 +2228,30 @@ impl PlayWindowApp {
             env_tmds.len(),
         );
         draws
+    }
+
+    /// Rebuild the window's render-side scene state after the host swapped
+    /// scenes under it (a door transition: `SceneTickEvent::SceneEntered`).
+    /// Rebuilds [`SceneResources`] for the newly loaded scene and re-runs
+    /// [`Self::upload_assets`], which replaces the VRAM, mesh list, actor
+    /// bindings, player mesh + locomotion clips, NPC/prop draws, terrain and
+    /// placement draw lists wholesale. Soft-fails (logs, keeps the stale
+    /// scene render) so a bad destination never crashes the window loop.
+    fn rebuild_scene_render_state(&mut self) {
+        match build_window_scene_resources(
+            &self.session,
+            Some(self.scene_rebuild_extracted_root.as_path()),
+        ) {
+            Ok(res) => {
+                // Spawn-slot drain state is per-scene (the new scene's field
+                // VM re-issues its own actor spawns; `upload_assets` re-seats
+                // the player's slot).
+                self.drained_spawn_slots.clear();
+                self.scene_res = Some(res);
+                self.upload_assets();
+            }
+            Err(e) => log::warn!("play-window: scene-resource rebuild failed: {e:#}"),
+        }
     }
 
     fn upload_assets(&mut self) {
@@ -3055,11 +3106,13 @@ impl PlayWindowApp {
         // raw Y: `follow_terrain_height` is opt-in, so `world_y` is usually 0
         // while the town ground sits at a LUT-elevated tier - targeting y=0
         // there points the camera under the ground. The sampler returns the
-        // retail-negated tier (up = negative, matching the placement world
-        // Y); the camera target is subtracted post-Y-flip (PSX space), so
-        // negate back.
+        // retail-convention tier (up = negative, matching the placement world
+        // Y); the caller composes `FIELD_WORLD_FLIP` onto this camera, which
+        // cancels `psx_camera_mvp`'s internal pre-flip, so the whole
+        // composition (including this target) runs on RAW retail Y-down
+        // world coordinates - exactly the retail GTE model.
         let floor_y = world.sample_field_floor_height(wx as i32, wz as i32);
-        let target = Vec3::new(wx as f32, -floor_y as f32, wz as f32);
+        let target = Vec3::new(wx as f32, floor_y as f32, wz as f32);
         let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
         Some(Self::psx_camera_mvp(
             to_rad(PITCH_UNITS),
@@ -3209,29 +3262,26 @@ impl PlayWindowApp {
     }
 
     /// The single battle camera, used for **everything** in a stage-dome battle
-    /// (dome, ground grid, and actors) so the scene reads as one coherent space
-    /// rather than two overlapping layers. The retail dome projection wants
-    /// `tr.z = 7680`, but that shoves the foreground actors onto the same far
-    /// plane (tiny); driving a *separate* close camera for the actors instead
-    /// split the horizon (the grass grid and the dome no longer met). A single
-    /// middle depth keeps the dome's huge radius reading at the horizon while
-    /// the party/enemies near the origin read at roughly retail scale. `tr.y`
-    /// holds the dome's `1/6` down-shift ratio so the action sits just below
-    /// centre. (The exact `tr.z = 7680` projection is preserved in
-    /// [`retail_battle_mvp`] for the camera-RE reference + regression test.)
+    /// The RETAIL battle camera (dome + ground-grid pass): pinned from the
+    /// four `overworld_battle_bg_angle_{a..d}` savestates' RAM + the earlier
+    /// framebuffer verification. Rotation trio `0x8007B790` = `(32, yaw, 0)`,
+    /// GTE `H = 256`, translation trio `0x800840B8` = `(0, 1280, 7680)`,
+    /// identity base (`DAT_80010B84`) - the exact `retail_battle_mvp`
+    /// projection, verified to 0.0002 px against the savestate framebuffer.
+    ///
+    /// The ACTORS ride the same rotation but with the **4.0x uniform world
+    /// scale** base matrix `0x8007BF10` (`16384 * I`; GTE `4096` = 1.0)
+    /// composed under it (`FUN_80048A08` multiplies the camera matrix per
+    /// actor) - that scale is what makes the small battle meshes (130-370
+    /// units) read at retail size against the far 7680-deep translation
+    /// (`256 * 4*370 / 7680` = ~49 px). The draw branch composes
+    /// [`BATTLE_WORLD_SCALE`] onto this camera for the actor + battle-FX
+    /// draws only, superseding the old DEPTH=1500 single-camera compromise
+    /// (and its "separate close actor matrix" reading).
     fn battle_dome_camera_mvp(&self, aspect: f32) -> Mat4 {
-        // Unified close depth so the SMALL battle meshes (party + monsters are
-        // only ~130-370 units tall) read at a usable size while the dome's huge
-        // radius still sits on the horizon. The probe-confirmed exact dome
-        // projection is tr.z=7680, but at that true depth these small meshes are
-        // only a few pixels (retail draws the actors off a separate close
-        // matrix, not the backdrop's 7680 plane). Kept as the playable
-        // single-camera compromise; the exact projection lives in
-        // `retail_battle_mvp`.
-        const DEPTH: f32 = 1500.0;
         Self::battle_mvp_with_tr(
             self.battle_orbit_yaw_rad(),
-            Vec3::new(0.0, DEPTH / 6.0, DEPTH),
+            Vec3::new(0.0, 1280.0, 7680.0),
             aspect,
         )
     }
@@ -3310,16 +3360,28 @@ impl PlayWindowApp {
         // Field actors carry their heading in `render_26` (PSX 12-bit angle,
         // maintained by the locomotion controller); retail builds the actor
         // matrix from the rotation trio before the per-bone pose is composed
-        // onto it (`FUN_8001B964` -> `FUN_80026988`). Y-rotation commutes with
-        // the Y-flip, so the order against the scale is immaterial.
-        let yaw = if self.session.host.world.mode == SceneMode::Field {
-            (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU
+        // onto it (`FUN_8001B964` -> `FUN_80026988`).
+        //
+        // The engine heading convention is `0` = travel Z+ (atan2), while the
+        // rest-pose mesh faces Z- (retail's facing byte stores `0` = Z-: a Z+
+        // walk writes `0x800` to `+0x26`, and retail feeds that byte straight
+        // into the rotation trio). Compose the half-turn so the model faces
+        // its travel direction instead of rendering 180 deg opposite.
+        //
+        // Y handling is per render frame: BATTLE keeps the per-model
+        // `scale(1,-1,1)` (its cameras carry no world negation), while the
+        // field frame draws the raw PSX Y-down vertices and lets the camera's
+        // `FIELD_WORLD_FLIP` provide the single net negation - so field
+        // actor world Y (the retail-convention floor tier) renders at the
+        // correct elevation. Yaw is unaffected either way (a Y negation
+        // leaves X/Z, and thus the heading, untouched).
+        if self.session.host.world.mode == SceneMode::Battle {
+            Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
         } else {
-            0.0
-        };
-        Mat4::from_translation(pos)
-            * Mat4::from_rotation_y(yaw)
-            * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+            let yaw = std::f32::consts::PI
+                + (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU;
+            Mat4::from_translation(pos) * Mat4::from_rotation_y(yaw)
+        }
     }
 
     /// The monster stat archive (PROT 867) bytes, decoded + cached on first
@@ -6636,6 +6698,11 @@ impl ApplicationHandler for PlayWindowApp {
                                 // timeline reaches its pinned op-`0x49` STATE_RESUME
                                 // (P2[3] body `0x02c6`) - the faithful in-script
                                 // trigger, not a blind host call at the hand-off.
+                                //
+                                // The host swapped scenes (opdeene -> town01):
+                                // rebuild the render-side scene state so Rim Elm's
+                                // geometry replaces the prologue's.
+                                self.rebuild_scene_render_state();
                             }
                             Err(e) => {
                                 log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
@@ -6667,8 +6734,19 @@ impl ApplicationHandler for PlayWindowApp {
                         self.pad
                     };
                     self.session.host.world.set_pad(field_pad);
-                    if let Err(e) = self.session.tick() {
-                        log::error!("session tick: {e:#}");
+                    match self.session.tick() {
+                        // Door transition: the host loaded a new scene under
+                        // the window (field-VM op 0x3E/0x3F or a walk-touch
+                        // door). Rebuild the render-side scene state so the
+                        // new scene's geometry/VRAM replace the old one's -
+                        // without this the world model swaps under the OLD
+                        // scene's meshes.
+                        Ok(legaia_engine_core::scene::SceneTickEvent::SceneEntered { name }) => {
+                            log::info!("play-window: scene transition -> '{name}'");
+                            self.rebuild_scene_render_state();
+                        }
+                        Ok(_) => {}
+                        Err(e) => log::error!("session tick: {e:#}"),
                     }
                     // Dance minigame auto-end: `tick_dance` restores the scene
                     // mode when the song timer runs out but leaves the game
@@ -6897,24 +6975,89 @@ impl ApplicationHandler for PlayWindowApp {
                             (self.scene_aabb.0, self.scene_aabb.1)
                         };
                         if walk_mode {
-                            legaia_engine_render::window::walk_view_camera_mvp(
-                                cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
-                            )
+                            // The RETAIL walk-view camera, pinned from the two
+                            // overworld resident savestates' RAM (sebucus /
+                            // karisto): `screen = H * (R*(6*(v - player)) + TR)
+                            // / Ez` with `H = 368` (`0x8007B6F4`), a **6.0x
+                            // uniform world scale** (base matrix `0x8007BF10` =
+                            // `24576 * I`), R from the `0x8007B790` trio
+                            // (pitch-only at azimuth 0; the controller azimuth
+                            // feeds ry), focus = the player's world X/Z
+                            // (`0x80089118/20` hold its negation, Y = 0), and
+                            // TR from `0x800840B8`. The two saves pin two zoom
+                            // states - (pitch 360, TR (0,536,9139)) and
+                            // (pitch 476, TR (0,406,11041)); the controller
+                            // zoom slides along that pinned axis (negative =
+                            // pull back), anchored at the closer state.
+                            // `FIELD_WORLD_FLIP` cancels `psx_camera_mvp`'s
+                            // internal pre-flip, so the whole composition runs
+                            // on raw retail Y-down world coordinates and the
+                            // overworld elevation renders retail-correct.
+                            let world = &self.session.host.world;
+                            let player = world
+                                .player_actor_slot
+                                .and_then(|s| world.actors.get(s as usize))
+                                .map(|a| {
+                                    Vec3::new(
+                                        a.move_state.world_x as f32,
+                                        0.0,
+                                        a.move_state.world_z as f32,
+                                    )
+                                })
+                                .unwrap_or_else(|| {
+                                    Vec3::new(
+                                        (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                                        0.0,
+                                        (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+                                    )
+                                });
+                            // Zoom: t=0 -> the sebucus pin, t=1 -> the karisto
+                            // pin. Controller zoom is positive-in, so negative
+                            // values pull back along the pinned axis.
+                            let t = ((-zoom) as f32 / 64.0).clamp(0.0, 1.0);
+                            let pitch_units = 360.0 + t * (476.0 - 360.0);
+                            let tr = Vec3::new(
+                                0.0,
+                                536.0 + t * (406.0 - 536.0),
+                                9139.0 + t * (11041.0 - 9139.0),
+                            );
+                            let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+                            Self::psx_camera_mvp(
+                                to_rad(pitch_units),
+                                to_rad(az as f32),
+                                368.0,
+                                tr,
+                                Vec3::ZERO,
+                                aspect,
+                            ) * FIELD_WORLD_FLIP
+                                * Mat4::from_scale(Vec3::splat(WORLD_MAP_WORLD_SCALE))
+                                * Mat4::from_translation(-player)
                         } else {
+                            // Top-view debug camera keeps its synthetic framing
+                            // but composes the same single world Y-negation so
+                            // the (now unflipped) world-map draws render
+                            // upright under it.
                             legaia_engine_render::window::world_map_camera_mvp(
                                 cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
-                            )
+                            ) * FIELD_WORLD_FLIP
                         }
                     } else if let Some((look_at, pitch, yaw, fov)) = cutscene_cam {
+                        // Field world frame: retail Y-down coordinates go
+                        // through ONE world Y-negation in the camera (the
+                        // `FIELD_WORLD_FLIP` post-multiply) and the field
+                        // draws use UN-flipped model matrices, so elevation
+                        // renders retail-correct (up = retail-negative-Y =
+                        // screen-up). The look-at is a raw retail world point,
+                        // so negate its Y into the flipped frame.
                         legaia_engine_render::window::cutscene_camera_mvp(
-                            look_at,
+                            [look_at[0], -look_at[1], look_at[2]],
                             pitch,
                             yaw,
                             fov,
                             self.scene_aabb.0,
                             self.scene_aabb.1,
                             aspect,
-                        )
+                        ) * FIELD_WORLD_FLIP
                     } else if self.session.host.world.mode == SceneMode::Battle {
                         if self.battle_stage_mesh.is_some() {
                             // Stage-dome battle: low front-facing shot into the
@@ -6926,14 +7069,20 @@ impl ApplicationHandler for PlayWindowApp {
                             self.battle_camera_mvp(aspect)
                         }
                     } else if self.field_debug_camera {
-                        // Wide debug orbit vantage (`C` toggles).
-                        self.camera_mvp(aspect)
+                        // Wide debug orbit vantage (`C` toggles), in the same
+                        // one-world-negation field frame as the follow camera.
+                        self.camera_mvp(aspect) * FIELD_WORLD_FLIP
                     } else {
                         // Field: the retail follow camera (savestate-pinned
                         // pitch/yaw/H, player-anchored) when a player actor
                         // exists; the fixed debug orbit vantage otherwise.
+                        // `FIELD_WORLD_FLIP` cancels `psx_camera_mvp`'s
+                        // internal pre-flip, making the follow composition
+                        // exactly the retail GTE model on raw Y-down world
+                        // coordinates (elevation renders retail-correct).
                         self.field_follow_camera_mvp(aspect)
                             .unwrap_or_else(|| self.camera_mvp(aspect))
+                            * FIELD_WORLD_FLIP
                     };
                     // Drain queued spawn slots: build a VRAM mesh from each
                     // actor's `tmd_ref` (global-pool TMD that the field-VM
@@ -7147,12 +7296,8 @@ impl ApplicationHandler for PlayWindowApp {
                         if self.ground_heightfield.is_none()
                             && self.world_map_terrain_draws.is_empty()
                         {
-                            let yflip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                             for mesh in &self.meshes {
-                                draws.push(SceneDraw {
-                                    mesh,
-                                    mvp: cam * yflip,
-                                });
+                                draws.push(SceneDraw { mesh, mvp: cam });
                             }
                         }
                     } else {
@@ -7221,16 +7366,15 @@ impl ApplicationHandler for PlayWindowApp {
                             // town floor cells have NO pack mesh, so without
                             // this surface they render as holes).
                             //
-                            // NO Y-flip here: the heightfield bakes its corner
-                            // elevation as `-lut[nib]` (already the world
-                            // height placements/actors put in their UN-flipped
-                            // translation). Flipping the mesh negated it back
-                            // to `+lut`, sinking every elevated cell to twice
-                            // its elevation BELOW its buildings - the whole
-                            // cliff-top town core (tier -192, incl. the spawn
-                            // plaza) rendered out of sight while only sea-level
-                            // tier-0 cells (the beach) lined up. Pipelines
-                            // don't cull, so the winding change is harmless.
+                            // NO model flip: the heightfield bakes its corner
+                            // elevation as `-lut[nib]` - the same retail
+                            // Y-down world height the placements/actors put in
+                            // their translations - and the field camera's
+                            // FIELD_WORLD_FLIP provides the single net Y
+                            // negation, so elevated tiers (e.g. the tier -192
+                            // cliff-top town core) render ABOVE sea-level
+                            // tier-0 cells, matching retail. Pipelines don't
+                            // cull, so winding is immaterial.
                             if layer_on("hf")
                                 && let Some(hf_mesh) = self.ground_heightfield.as_ref()
                             {
@@ -7318,9 +7462,11 @@ impl ApplicationHandler for PlayWindowApp {
                                     .copied()
                                     .unwrap_or(d.spawn);
                                 let y = w.sample_field_floor_height(x as i32, z as i32) as f32;
+                                // Raw retail-convention transform (no model
+                                // flip): the field camera's FIELD_WORLD_FLIP
+                                // provides the single net Y negation.
                                 let model =
-                                    Mat4::from_translation(Vec3::new(x as f32, y, z as f32))
-                                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                    Mat4::from_translation(Vec3::new(x as f32, y, z as f32));
                                 if let Some(mi) = d.mesh_idx
                                     && let Some(mesh) = self.meshes.get(mi)
                                 {
@@ -7339,9 +7485,21 @@ impl ApplicationHandler for PlayWindowApp {
                                 }
                             }
                         }
-                        // Single battle camera for the actors too (same `cam` as
-                        // the dome + grid) so the whole scene shares one space.
-                        let actor_cam = cam;
+                        // Actors ride the same battle rotation as the dome +
+                        // grid but with the retail 4x world-scale base matrix
+                        // (`0x8007BF10 = 16384*I`) composed under it - the
+                        // `FUN_80048A08` per-actor camera composition. The
+                        // uniform scale commutes with the per-model Y-flip, so
+                        // composing it on the camera side scales both the mesh
+                        // and the actor's stage translation, exactly like
+                        // retail. Outside a stage-dome battle the synthetic
+                        // AABB-framing camera stays unscaled (it frames the
+                        // raw actor coordinates).
+                        let actor_cam = if in_battle && self.battle_stage_mesh.is_some() {
+                            cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE))
+                        } else {
+                            cam
+                        };
                         // Flat tiled ground grid (retail's func_0x801d02c0 grass)
                         // under the actors, on the same battle camera so the
                         // party stands on it and the foreground reads as grass
@@ -7545,9 +7703,28 @@ impl ApplicationHandler for PlayWindowApp {
                     // Fire are small Gouraud-shaded `etmd` meshes textured by
                     // the resident `etim` texels, not billboards. Build a
                     // per-frame VRAM mesh + transform for each live effect that
-                    // has a model assigned (same Y-flip model-matrix convention
-                    // as `actor_model`). Held in a local Vec so the meshes
-                    // outlive the render borrow.
+                    // has a model assigned (same per-frame model-matrix
+                    // convention as `actor_model`). Held in a local Vec so the
+                    // meshes outlive the render borrow.
+                    // FX model matrices pair with the active render frame:
+                    // battle cameras carry no world negation (keep the
+                    // per-model Y-flip); the field cameras compose
+                    // FIELD_WORLD_FLIP (draw raw PSX Y-down vertices).
+                    let fx_in_battle = self.session.host.world.mode == SceneMode::Battle;
+                    let fx_model_flip = if fx_in_battle {
+                        Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+                    } else {
+                        Mat4::IDENTITY
+                    };
+                    // Battle FX ride the actor camera composition (the retail
+                    // 4x world-scale base under the shared rotation) so
+                    // effects land on the scaled actor stage; field FX use
+                    // the field camera as-is.
+                    let fx_cam = if fx_in_battle && self.battle_stage_mesh.is_some() {
+                        cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE))
+                    } else {
+                        cam
+                    };
                     let mut effect_model_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
                     if !self.boot_ui.is_active() && !in_world_map {
                         for em in self.session.host.world.active_effect_models() {
@@ -7573,7 +7750,7 @@ impl ApplicationHandler for PlayWindowApp {
                             ) {
                                 Ok(m) => {
                                     let model = Mat4::from_translation(Vec3::from(em.world_pos))
-                                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                        * fx_model_flip;
                                     effect_model_draws.push((m, model));
                                 }
                                 Err(e) => log::warn!("effect model mesh upload: {e:#}"),
@@ -7583,7 +7760,7 @@ impl ApplicationHandler for PlayWindowApp {
                     for (mesh, model) in &effect_model_draws {
                         draws.push(SceneDraw {
                             mesh,
-                            mvp: cam * *model,
+                            mvp: fx_cam * *model,
                         });
                     }
 
@@ -7632,7 +7809,7 @@ impl ApplicationHandler for PlayWindowApp {
                                         * Mat4::from_rotation_y(sp.rot[1])
                                         * Mat4::from_rotation_x(sp.rot[0])
                                         * Mat4::from_rotation_z(sp.rot[2])
-                                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                        * fx_model_flip;
                                     summon_part_draws.push((m, model));
                                 }
                                 Err(e) => log::warn!("summon/move-FX part mesh upload: {e:#}"),
@@ -7642,7 +7819,7 @@ impl ApplicationHandler for PlayWindowApp {
                     for (mesh, model) in &summon_part_draws {
                         draws.push(SceneDraw {
                             mesh,
-                            mvp: cam * *model,
+                            mvp: fx_cam * *model,
                         });
                     }
                     // Field move-VM effect parts (op 0x34 sub-3 stagers): resolve
@@ -7683,7 +7860,7 @@ impl ApplicationHandler for PlayWindowApp {
                                         * Mat4::from_rotation_y(fp.rot[1])
                                         * Mat4::from_rotation_x(fp.rot[0])
                                         * Mat4::from_rotation_z(fp.rot[2])
-                                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                        * fx_model_flip;
                                     field_fx_draws.push((m, model));
                                 }
                                 Err(e) => log::warn!("field-FX part mesh upload: {e:#}"),
@@ -7693,7 +7870,7 @@ impl ApplicationHandler for PlayWindowApp {
                     for (mesh, model) in &field_fx_draws {
                         draws.push(SceneDraw {
                             mesh,
-                            mvp: cam * *model,
+                            mvp: fx_cam * *model,
                         });
                     }
                     let scene = RenderScene {
@@ -7719,6 +7896,33 @@ impl ApplicationHandler for PlayWindowApp {
         }
     }
 }
+
+/// The single world-space Y negation of the **field render frame**: field
+/// world state (actor positions, placement Y, the heightfield's baked
+/// `-lut` corner heights) is kept in the retail Y-down convention (up =
+/// negative Y), and each field camera post-multiplies this so the world
+/// passes through exactly ONE net Y negation on the way to NDC - retail-up
+/// renders screen-up. Field model matrices are therefore UN-flipped (their
+/// PSX Y-down local vertices ride the same world negation). Battle and
+/// world-map keep the older pairing (per-model `scale(1,-1,1)` + a camera
+/// with no world negation), so this must not leak into those arms.
+const FIELD_WORLD_FLIP: Mat4 = Mat4::from_cols_array(&[
+    1.0, 0.0, 0.0, 0.0, //
+    0.0, -1.0, 0.0, 0.0, //
+    0.0, 0.0, 1.0, 0.0, //
+    0.0, 0.0, 0.0, 1.0,
+]);
+
+/// The retail battle world scale: the battle base matrix `0x8007BF10` is
+/// `16384 * I` (GTE `4096` = 1.0) in every catalogued battle savestate - a
+/// **4.0x uniform scale** composed under the camera rotation. See
+/// [`PlayWindowApp::battle_dome_camera_mvp`].
+const BATTLE_WORLD_SCALE: f32 = 4.0;
+
+/// The retail overworld (walk-view) world scale: the same base matrix holds
+/// `24576 * I` = **6.0x** in the world-map resident savestates
+/// (`sebucus_overworld_resident` / `karisto_overworld_resident`).
+const WORLD_MAP_WORLD_SCALE: f32 = 6.0;
 
 /// World-unit size of one texel when drawing an effect billboard (the atlas
 /// stores sprite extents in texels; the renderer scales them to world units).
@@ -7991,8 +8195,8 @@ fn world_map_player_line_geometry(
 /// (`SceneResources::world_map_slot4`), as world-space `(positions, colors,
 /// indices)`. Each body's records are emitted at their raw object-local
 /// coordinates (no per-object placement transform - the cluster-A command
-/// stream that supplies those is unpinned), Y-negated to match the
-/// heightfield's `cam * yflip` frame. Colour is keyed by body `kind`
+/// stream that supplies those is unpinned), at raw retail Y-down
+/// coordinates (the world-map cameras compose the single world negation). Colour is keyed by body `kind`
 /// (`1` = the shared universal mesh set, `2` = kingdom-specific objects,
 /// `4` = wide-extent bodies) so the per-kingdom assembly structure reads
 /// at a glance. Returns empty geometry when no body yields a segment.
@@ -8018,7 +8222,9 @@ fn world_map_slot4_line_geometry(
         };
         let base = pos.len() as u32;
         for v in [s.a, s.b] {
-            pos.push([v[0] as f32, -(v[1] as f32), v[2] as f32]);
+            // Raw retail Y-down coordinates: the world-map cameras compose
+            // FIELD_WORLD_FLIP, so no per-vertex negation.
+            pos.push([v[0] as f32, v[1] as f32, v[2] as f32]);
             col.push(c);
         }
         idx.push(base);
@@ -8173,6 +8379,118 @@ pub(crate) fn cmd_play_window(
     )
 }
 
+/// Build the play-window's render-side [`SceneResources`] for the host's
+/// currently loaded scene: the shared blocks (`init_data` + `player_data`)
+/// stay resident, the load kind mirrors the host's `enter_field_scene`
+/// selection (WorldMap for `map\d\d`, Field otherwise), and the two
+/// always-resident VRAM extras (field character atlas + shared interior
+/// page) are layered on. Used both for the initial scene at window boot and
+/// to REBUILD the render state after a door transition
+/// (`SceneTickEvent::SceneEntered`) swaps the host's scene.
+///
+/// `extracted_root` sources the shared interior page (it lives in
+/// PROT.DAT's unindexed head gap, unreachable through per-entry reads);
+/// `None` soft-skips that upload.
+fn build_window_scene_resources(
+    session: &BootSession,
+    extracted_root: Option<&Path>,
+) -> Result<SceneResources> {
+    let s = session
+        .host
+        .scene
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("no scene loaded on the host"))?;
+    // Load the shared blocks (`init_data` + `player_data`) so the
+    // player TMD + shared UI atlas stay resident across field
+    // transitions, then build with the targeted VRAM-upload
+    // heuristic. Without this every prim sampled non-uploaded
+    // VRAM regions and the filter dropped 100% of the mesh.
+    let mut shared_scenes: Vec<Scene> = Vec::new();
+    for name in FIELD_SHARED_BLOCKS {
+        match Scene::load(&session.host.index, name) {
+            Ok(sc) => shared_scenes.push(sc),
+            Err(e) => log::warn!("play-window: shared block '{name}' not loaded: {e:#}"),
+        }
+    }
+    let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
+    // Field-load model (matches retail FUN_8001F7C0 + the engine's
+    // `enter_field_scene`): `SceneLoadKind::Field` skips the battle-
+    // character `scene_tmd_stream` meshes, and the TMD scan now pulls
+    // the town's environment geometry out of the scene_asset_table's
+    // LZS-packed mesh pack (previously invisible to the raw scanner,
+    // which left the field with a single stray battle mesh). Upload
+    // every TIM, as retail's field loader DMAs the whole atlas - the
+    // town meshes sample texture pages across all of VRAM, so a
+    // render-targeted upload drops most of their prims.
+    // World-map scenes (`map\d\d`) draw the kingdom-bundle slot-1
+    // landmark pack, not the generic field sweep. Mirror the host's
+    // `enter_field_scene` kind selection so the rendered meshes match the
+    // gameplay-side resources (otherwise the window draws the Field-mode
+    // 2-mesh fallback while the host loaded the full 40-TMD pack).
+    let load_kind = if legaia_engine_core::scene::is_world_map_scene(&s.name) {
+        SceneLoadKind::WorldMap
+    } else {
+        SceneLoadKind::Field
+    };
+    let (mut res, _stats) = SceneResources::build_targeted_with_options(
+        s,
+        &shared_refs,
+        BuildOptions {
+            kind: load_kind,
+            upload_all_tims: true,
+        },
+    )?;
+    // Field-character atlas upload (PROT 0874 §2, the `FUN_800198e0`
+    // chain): entries 1/2/3 are the Vahn/Noa/Gala atlas pages whose
+    // palettes live as **flat strips** on CLUT row 478. The generic TIM
+    // scan uploads the pages but places these CLUTs as declared rects
+    // (rows 478..481 col 0), so the meshes sample an unpopulated row and
+    // the VRAM filter drops them - the invisible-player symptom. Retail
+    // field load uploads the pack with strip semantics; replicate that.
+    // (NOT the etim effect pool - uploading that battle-resident pool
+    // into field VRAM clobbers pages the town meshes sample.)
+    match session
+        .host
+        .index
+        .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
+        .and_then(|b| legaia_asset::field_char_textures::parse(&b))
+    {
+        Ok(mut pack) => {
+            // Entries 1/2/3 only (the character atlas pages). The pack's
+            // other entries land on pages the town env meshes sample -
+            // uploading them here drops ~26 scene meshes to the filter.
+            pack.textures.retain(|t| (1..=3).contains(&t.index));
+            pack.upload_to_vram(&mut res.vram, false);
+            log::info!(
+                "play-window: field char atlas uploaded ({} TIMs, strip CLUTs)",
+                pack.textures.len()
+            );
+        }
+        Err(err) => {
+            log::warn!("play-window: field char atlas upload skipped: {err:#}");
+        }
+    }
+    // Shared interior page (texpage (960,256) + the flat 256-entry strip
+    // CLUT on row 510): resident in retail VRAM from the opening onward,
+    // sampled by town env meshes (23 town01 tile instances incl. the
+    // spawn plaza). It lives in PROT.DAT's unindexed head gap (before
+    // the first TOC entry's data), so no per-entry read can source it.
+    match extracted_root {
+        Some(root) => match legaia_asset::interior_page::read_from_prot_dat(&root.join("PROT.DAT"))
+        {
+            Ok(tim) => {
+                legaia_asset::interior_page::upload_to_vram(&tim, &mut res.vram);
+                log::info!("play-window: shared interior page uploaded (row-510 strip CLUT)");
+            }
+            Err(err) => {
+                log::warn!("play-window: shared interior page skipped: {err:#}");
+            }
+        },
+        None => log::warn!("play-window: shared interior page skipped: no extracted root"),
+    }
+    Ok(res)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_play_window_with_record(
     scene: &str,
@@ -8314,6 +8632,26 @@ fn cmd_play_window_with_record(
         }
     }
 
+    // Debug start-position override: `LEGAIA_START_TILE=X,Z` seats the player
+    // at that tile's centre after boot (tile*128+0x40, the op-0x3F entry-tile
+    // mapping). Useful for parking on the overworld continent - a direct
+    // `--world-map` boot has no door warp to seat the player, and the ocean
+    // is unwalkable, so the (0,0) default strands the marker at sea. E.g.
+    // Rim Elm's retail map01 arrival is `LEGAIA_START_TILE=96,25`.
+    if let Ok(spec) = std::env::var("LEGAIA_START_TILE") {
+        let parts: Vec<i32> = spec
+            .split(',')
+            .filter_map(|p| p.trim().parse().ok())
+            .collect();
+        if let [tx, tz] = parts[..] {
+            let (cx, cz) = (tx.clamp(0, 255) as u8, tz.clamp(0, 255) as u8);
+            session.host.world.seat_player_at_tile(cx, cz);
+            log::info!("play-window: LEGAIA_START_TILE seated player at tile ({cx},{cz})");
+        } else {
+            log::warn!("play-window: LEGAIA_START_TILE ignored (want \"X,Z\"): {spec:?}");
+        }
+    }
+
     // Play-window demo seeding (NOT part of the shared field-live core): when
     // a player-driven battle is requested but the boot save carries no items /
     // saved chains, seed a couple so the Item / Arts submenus are exercisable
@@ -8399,98 +8737,7 @@ fn cmd_play_window_with_record(
         );
     }
 
-    let scene_res = {
-        let s = session
-            .host
-            .scene
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("no scene loaded after BootSession::open"))?;
-        // Load the shared blocks (`init_data` + `player_data`) so the
-        // player TMD + shared UI atlas stay resident across field
-        // transitions, then build with the targeted VRAM-upload
-        // heuristic. Without this every prim sampled non-uploaded
-        // VRAM regions and the filter dropped 100% of the mesh.
-        let mut shared_scenes: Vec<Scene> = Vec::new();
-        for name in FIELD_SHARED_BLOCKS {
-            match Scene::load(&session.host.index, name) {
-                Ok(sc) => shared_scenes.push(sc),
-                Err(e) => log::warn!("play-window: shared block '{name}' not loaded: {e:#}"),
-            }
-        }
-        let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
-        // Field-load model (matches retail FUN_8001F7C0 + the engine's
-        // `enter_field_scene`): `SceneLoadKind::Field` skips the battle-
-        // character `scene_tmd_stream` meshes, and the TMD scan now pulls
-        // the town's environment geometry out of the scene_asset_table's
-        // LZS-packed mesh pack (previously invisible to the raw scanner,
-        // which left the field with a single stray battle mesh). Upload
-        // every TIM, as retail's field loader DMAs the whole atlas - the
-        // town meshes sample texture pages across all of VRAM, so a
-        // render-targeted upload drops most of their prims.
-        // World-map scenes (`map\d\d`) draw the kingdom-bundle slot-1
-        // landmark pack, not the generic field sweep. Mirror the host's
-        // `enter_field_scene` kind selection so the rendered meshes match the
-        // gameplay-side resources (otherwise the window draws the Field-mode
-        // 2-mesh fallback while the host loaded the full 40-TMD pack).
-        let load_kind = if legaia_engine_core::scene::is_world_map_scene(scene) {
-            SceneLoadKind::WorldMap
-        } else {
-            SceneLoadKind::Field
-        };
-        let (mut res, _stats) = SceneResources::build_targeted_with_options(
-            s,
-            &shared_refs,
-            BuildOptions {
-                kind: load_kind,
-                upload_all_tims: true,
-            },
-        )?;
-        // Field-character atlas upload (PROT 0874 §2, the `FUN_800198e0`
-        // chain): entries 1/2/3 are the Vahn/Noa/Gala atlas pages whose
-        // palettes live as **flat strips** on CLUT row 478. The generic TIM
-        // scan uploads the pages but places these CLUTs as declared rects
-        // (rows 478..481 col 0), so the meshes sample an unpopulated row and
-        // the VRAM filter drops them - the invisible-player symptom. Retail
-        // field load uploads the pack with strip semantics; replicate that.
-        // (NOT the etim effect pool - uploading that battle-resident pool
-        // into field VRAM clobbers pages the town meshes sample.)
-        match session
-            .host
-            .index
-            .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
-            .and_then(|b| legaia_asset::field_char_textures::parse(&b))
-        {
-            Ok(mut pack) => {
-                // Entries 1/2/3 only (the character atlas pages). The pack's
-                // other entries land on pages the town env meshes sample -
-                // uploading them here drops ~26 scene meshes to the filter.
-                pack.textures.retain(|t| (1..=3).contains(&t.index));
-                pack.upload_to_vram(&mut res.vram, false);
-                log::info!(
-                    "play-window: field char atlas uploaded ({} TIMs, strip CLUTs)",
-                    pack.textures.len()
-                );
-            }
-            Err(err) => {
-                log::warn!("play-window: field char atlas upload skipped: {err:#}");
-            }
-        }
-        // Shared interior page (texpage (960,256) + the flat 256-entry strip
-        // CLUT on row 510): resident in retail VRAM from the opening onward,
-        // sampled by town env meshes (23 town01 tile instances incl. the
-        // spawn plaza). It lives in PROT.DAT's unindexed head gap (before
-        // the first TOC entry's data), so no per-entry read can source it.
-        match legaia_asset::interior_page::read_from_prot_dat(&extracted_root.join("PROT.DAT")) {
-            Ok(tim) => {
-                legaia_asset::interior_page::upload_to_vram(&tim, &mut res.vram);
-                log::info!("play-window: shared interior page uploaded (row-510 strip CLUT)");
-            }
-            Err(err) => {
-                log::warn!("play-window: shared interior page skipped: {err:#}");
-            }
-        }
-        res
-    };
+    let scene_res = build_window_scene_resources(&session, Some(extracted_root))?;
     log::info!(
         "play-window: scene '{}', {} TMDs, {} TIMs",
         scene,
@@ -8731,6 +8978,7 @@ fn cmd_play_window_with_record(
         // or, when booting from a disc image, straight from the ISO with its
         // interleaved XA audio. Exactly one of these is set.
         extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
+        scene_rebuild_extracted_root: extracted_root.to_path_buf(),
         disc_path: disc.map(|d| d.to_path_buf()),
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
