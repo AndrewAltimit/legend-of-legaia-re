@@ -127,7 +127,7 @@
   </p>
   <ul class="bullets">
     <li><strong>Fishing</strong> - a reel tug-of-war against a tension gauge, with the 10 fish species driven by a per-species parameter table decoded from the disc.</li>
-    <li><strong>Slot machine</strong> - a reel state machine with two random-number generators (one for the reels, one for balance-bracketed feature odds) and a per-symbol payout table; your per-spin balance only commits to the shared casino coin bank when you cash out at the counter - which is why an "Infinite Coins" cheat reads full at the cage but doesn't make spins free.</li>
+    <li><strong>Slot machine</strong> - a reel state machine with two random-number generators (one for the reels, one for the feature odds, which bracket on a hidden net-take counter: the machine gets <em>more</em> generous the more it has taken from you, and big bonus wins knock the counter back down) and a per-symbol payout table; your per-spin balance only commits to the shared casino coin bank when you cash out at the counter - which is why an "Infinite Coins" cheat reads full at the cage but doesn't make spins free.</li>
     <li><strong>Baka Fighter</strong> - rock-paper-scissors, best of 3, against 17 scripted opponents each with their own prize and attack pattern.</li>
     <li><strong>Dance</strong> - a beat clock with an accuracy-weighted timing judge, a baked step chart selected by difficulty, and per-tier score multipliers.</li>
     <li><strong>Muscle Dome</strong> - a card battle: deal a hand, commit cards into the fighter's action queue under a point budget, and resolve through the game's regular battle engine (it lives inside the battle code, not its own minigame module).</li>

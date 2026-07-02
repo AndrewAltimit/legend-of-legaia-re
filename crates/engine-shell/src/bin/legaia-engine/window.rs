@@ -5618,15 +5618,11 @@ impl PlayWindowApp {
                 0 => String::new(),
                 mode => format!("  feature {mode}"),
             };
-            let sl1 = format!(
-                "SLOTS  {reels}  coins {}  lines {}{feature}",
-                m.balance(),
-                m.bet_lines()
-            );
+            let sl1 = format!("SLOTS  {reels}  coins {}{feature}", m.balance());
             let ly1 = self.font.layout_ascii(&sl1);
             out.extend(text_draws_for(&ly1, (8, 62), white));
             let prompt = match m.phase() {
-                SlotPhase::Idle => "Cross = spin, Left/Right = bet lines".to_string(),
+                SlotPhase::Idle => "Cross = spin (3 coins)".to_string(),
                 SlotPhase::Spinning => "spinning...".to_string(),
                 SlotPhase::Stopping => "Cross = stop reel".to_string(),
                 SlotPhase::Payout => match m.last_result() {
@@ -6753,9 +6749,10 @@ impl ApplicationHandler for PlayWindowApp {
                 }
                 // `O`: toggle the casino slot-machine minigame. Loads the slot
                 // overlay (PROT 0975), suspends the current scene, and runs
-                // the reel state machine; Cross spins / stops / collects,
-                // Left/Right set the bet lines. Pressing O again cashes the
-                // balance out into the casino coin bank and leaves.
+                // the reel state machine; Cross spins / stops / collects (a
+                // spin is a flat 3-coin bet across all three paylines).
+                // Pressing O again cashes the balance out into the casino
+                // coin bank and leaves.
                 if matches!(code, KeyCode::KeyO)
                     && state == ElementState::Pressed
                     && !self.boot_ui.is_active()
@@ -6770,7 +6767,7 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     } else if self.start_slot_minigame() {
                         log::info!(
-                            "slots: started - Cross spins/stops/collects, Left/Right bet lines, O to cash out"
+                            "slots: started - Cross spins/stops/collects (3 coins a spin), O to cash out"
                         );
                     }
                     return;

@@ -55,8 +55,8 @@ fn playwindow_load_path_spins_the_real_payout_table() {
             break;
         }
         let before = m.balance();
-        let free_spin = m.feature_mode() == 6 && m.bonus_spins() > 0;
-        let cost = if free_spin { 0 } else { m.spin_cost() };
+        // Every spin charges the flat cost (3 coins, 1 during a feature).
+        let cost = m.spin_cost();
         world.set_pad(0);
         world.set_pad(PadButton::Cross.mask());
         let _ = world.tick();

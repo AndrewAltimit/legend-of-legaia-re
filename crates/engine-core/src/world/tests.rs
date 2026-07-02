@@ -10622,14 +10622,18 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
 }
 
 #[test]
-fn slot_machine_bet_lines_cycle_on_dpad() {
+fn slot_machine_spin_accrues_the_net_take() {
+    use crate::slot_machine::NET_TAKE_NORMAL_SPIN;
     let mut world = World::new();
     world.enter_slot_machine(slot_test_machine(50));
-    assert_eq!(world.slot_machine.as_ref().unwrap().bet_lines(), 3);
+    assert_eq!(world.slot_machine.as_ref().unwrap().net_take(), 0);
     world.set_pad(0);
-    world.set_pad(input::PadButton::Left.mask());
+    world.set_pad(input::PadButton::Cross.mask());
     let _ = world.tick();
-    assert_eq!(world.slot_machine.as_ref().unwrap().bet_lines(), 1);
+    assert_eq!(
+        world.slot_machine.as_ref().unwrap().net_take(),
+        NET_TAKE_NORMAL_SPIN
+    );
 }
 
 #[test]

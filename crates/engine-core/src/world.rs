@@ -6102,9 +6102,9 @@ impl World {
 
     /// Advance the slot machine one frame, reading this frame's pad:
     ///
-    /// - **Idle**: [`Left`](input::PadButton::Left) /
-    ///   [`Right`](input::PadButton::Right) cycle the bet-line count; a
-    ///   [`Cross`](input::PadButton::Cross) press charges the bet and spins.
+    /// - **Idle**: a [`Cross`](input::PadButton::Cross) press charges the
+    ///   flat bet (3 coins, 1 in feature modes) and spins - all three
+    ///   paylines always play.
     /// - **Spinning**: the spin-up timer runs down on its own.
     /// - **Stopping**: a [`Cross`] press stops the leftmost live reel (host
     ///   simplification of the retail three stop buttons, pad bits
@@ -6129,11 +6129,6 @@ impl World {
         m.tick();
         match phase {
             SlotPhase::Idle => {
-                if self.input.just_pressed(input::PadButton::Left)
-                    || self.input.just_pressed(input::PadButton::Right)
-                {
-                    m.cycle_bet_lines();
-                }
                 if confirm {
                     m.spin();
                 }
