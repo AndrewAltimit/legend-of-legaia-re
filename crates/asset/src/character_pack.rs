@@ -257,6 +257,14 @@ pub const LOCOMOTION_BANK_STRIDE: usize = 7;
 /// the rest-pose assembly transform for the character's field mesh.
 pub const LOCOMOTION_IDLE_SLOT: usize = 1;
 
+/// Bank-relative record index of the **walk** clip. Pinned live: with the
+/// pad held (either direction) in the town01 field anchor, the player's
+/// `+0x4C` anim pointer flips from bank slot 1 to bank slot 0 and back to 1
+/// on release (`scripts/pcsx-redux/autorun_locomotion_clip_pin.lua`); one
+/// clip serves every heading (the actor yaw supplies the direction, there is
+/// no per-direction or turn clip).
+pub const LOCOMOTION_WALK_SLOT: usize = 0;
+
 /// Record index of the savepoint (save crystal) clip - a 3-bone / 30-frame
 /// loop matching pack slot 3's `nobj=3` mesh.
 pub const LOCOMOTION_SAVEPOINT_RECORD: usize = 21;

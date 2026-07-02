@@ -962,6 +962,13 @@ pub struct World {
     /// model - and it no-ops harmlessly (height `0`) until a scene supplies a
     /// floor LUT + collision grid.
     pub follow_terrain_height: bool,
+    /// The player's field idle/walk clip pair (PROT 0874 §1 locomotion
+    /// bundle). Installed per scene by the host
+    /// ([`World::set_field_player_anim`]); the field tick advances it after
+    /// the locomotion step and folds the output into the player actor's
+    /// `pose_frame`, so hosts rebuild the posed mesh exactly like the battle
+    /// animation path. `None` = static rest pose.
+    pub field_player_anim: Option<crate::field_anim::FieldPlayerAnim>,
     /// When set, pad locomotion blocks a direction with retail's
     /// **three-probe leading-edge footprint** (`FIELD_WALL_PROBES`, the
     /// `DAT_801f2214` table `FUN_801cfe4c` walks) instead of a single
@@ -2429,6 +2436,7 @@ impl World {
             field_zone_record: None,
             field_floor_height_lut: [0i16; 16],
             follow_terrain_height: false,
+            field_player_anim: None,
             leading_edge_wall_probes: false,
             solid_field_npcs: false,
             field_camera_azimuth: 0,
@@ -5580,6 +5588,10 @@ impl World {
                 self.tick_field_npc_motions();
                 self.tick_tile_board();
                 self.step_field_locomotion();
+                // Locomotion animation: idle vs walk off the movement flag
+                // the step above just set, folded into the player's
+                // `pose_frame` for the host's posed-mesh rebuild.
+                self.tick_field_player_anim();
                 // Interaction probe (retail FUN_801cf9f4): talk to an adjacent
                 // NPC / dismiss its box on the action button. Runs before the
                 // carrier tick so a dialogue-accept engage launches the battle
@@ -7186,6 +7198,33 @@ impl World {
         }
     }
 
+    /// Install the field player's idle/walk clip pair (built by the host from
+    /// the PROT 0874 §1 locomotion bundle -
+    /// [`crate::field_anim::FieldPlayerAnim`]). The field tick advances it
+    /// after the locomotion step; `None` (the default) leaves the player on
+    /// the static rest pose.
+    pub fn set_field_player_anim(&mut self, anim: Option<crate::field_anim::FieldPlayerAnim>) {
+        self.field_player_anim = anim;
+    }
+
+    /// One field-frame advance of the player's locomotion animation: pick
+    /// idle vs walk off the movement flag the locomotion step just set, emit
+    /// the active clip's frame into the player actor's `pose_frame`. Called
+    /// by [`World::tick`]'s field branch right after
+    /// [`World::step_field_locomotion`].
+    fn tick_field_player_anim(&mut self) {
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let Some(anim) = &mut self.field_player_anim else {
+            return;
+        };
+        let pose = anim.tick();
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.pose_frame = Some(pose);
+        }
+    }
+
     /// Run [`vm::move_vm::actor_tick`] for `slot` against the given `bytecode`
     /// with the supplied opcode `budget`. Returns the typed outcome -
     /// engines route `Halted` to their halt-handler, `EndOfBuffer` to "clear
@@ -8232,6 +8271,12 @@ impl World {
             return;
         }
 
+        // A held direction is a movement frame for the locomotion animation
+        // even when the step is wall-blocked (retail walks in place).
+        if let Some(anim) = &mut self.field_player_anim {
+            anim.moved_this_frame = true;
+        }
+
         self.advance_with_collision(slot, dir_bits, speed);
 
         // Walk-touch dispatch (retail: the per-sub-step touch check inside
@@ -8384,6 +8429,11 @@ impl World {
             self.actors[slot].move_state.render_26 =
                 (((wx as f32).atan2(wz as f32) / std::f32::consts::TAU * 4096.0).round() as i32
                     & 0x0FFF) as i16;
+            // A nav step is a movement frame for the locomotion animation,
+            // same as a held pad direction.
+            if let Some(anim) = &mut self.field_player_anim {
+                anim.moved_this_frame = true;
+            }
             self.advance_with_collision(slot, dir, FIELD_BASE_STEP);
         }
         false

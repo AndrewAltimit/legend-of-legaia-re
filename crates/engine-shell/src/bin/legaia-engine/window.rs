@@ -2608,6 +2608,7 @@ impl PlayWindowApp {
         // (PROT 0874 §0, retail `DAT_8007C018[0..4]`, seeded by
         // `enter_field_scene`) and override the placeholder binding.
         self.player_color_draw = None;
+        world.set_field_player_anim(None);
         if world.mode == SceneMode::Field
             && let Some(pslot) = world.player_actor_slot
         {
@@ -2618,9 +2619,19 @@ impl PlayWindowApp {
                 .and_then(|s| s.as_ref())
                 .map(std::sync::Arc::clone);
             if let Some(g) = gtmd {
-                // Rest pose: frame 0 of the character's standing-idle clip in
-                // the party locomotion ANM bundle (PROT 0874 §1, bank slot 1;
-                // pinned live - see `character_pack::LOCOMOTION_IDLE_SLOT`).
+                // The party locomotion ANM bundle (PROT 0874 §1; idle = bank
+                // slot 1, walk = bank slot 0, both pinned live - see
+                // `character_pack::LOCOMOTION_IDLE_SLOT` / `_WALK_SLOT`).
+                // Banks cover the Vahn/Noa/Gala trio only.
+                let locomotion = self
+                    .session
+                    .host
+                    .index
+                    .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+                    .ok()
+                    .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok())
+                    .filter(|_| lead <= 2);
+                // Rest pose: frame 0 of the character's standing-idle clip.
                 // Retail caps the live object count to the clip's bone count
                 // (10; groups 10/11 are equipment-swap templates, never drawn
                 // - `FUN_8001E890` / `FUN_80024d78`), so truncate the disc
@@ -2628,41 +2639,41 @@ impl PlayWindowApp {
                 // object i.
                 // (bone_count, per-bone (translation, rotation) pairs)
                 type IdlePose = (usize, Vec<([i16; 3], [i16; 3])>);
-                let idle_pose: Option<IdlePose> = self
-                    .session
-                    .host
-                    .index
-                    .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
-                    .ok()
-                    .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok())
-                    .and_then(|bundle| {
-                        if lead > 2 {
-                            return None; // banks cover the Vahn/Noa/Gala trio
-                        }
-                        let rec_idx = legaia_asset::character_pack::locomotion_record_index(
-                            lead,
-                            legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT,
-                        );
-                        let rec = bundle.record(rec_idx).ok()?;
-                        let bones = rec.bone_count as usize;
-                        let offsets: Vec<([i16; 3], [i16; 3])> = (0..bones)
-                            .map(|bidx| match bundle.bone_transform(rec_idx, 0, bidx) {
-                                Some(t) => (
-                                    [t.t_x as i16, t.t_y as i16, t.t_z as i16],
-                                    [t.r_x as i16, t.r_y as i16, t.r_z as i16],
-                                ),
-                                None => ([0; 3], [0; 3]),
-                            })
-                            .collect();
-                        Some((bones, offsets))
-                    });
-                let vmesh = match &idle_pose {
-                    Some((bones, offsets)) => {
-                        let mut tmd = g.tmd.clone();
-                        tmd.objects.truncate(*bones);
-                        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&tmd, &g.raw, offsets)
+                let idle_pose: Option<IdlePose> = locomotion.as_ref().and_then(|bundle| {
+                    let rec_idx = legaia_asset::character_pack::locomotion_record_index(
+                        lead,
+                        legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT,
+                    );
+                    let rec = bundle.record(rec_idx).ok()?;
+                    let bones = rec.bone_count as usize;
+                    let offsets: Vec<([i16; 3], [i16; 3])> = (0..bones)
+                        .map(|bidx| match bundle.bone_transform(rec_idx, 0, bidx) {
+                            Some(t) => (
+                                [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                                [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                            ),
+                            None => ([0; 3], [0; 3]),
+                        })
+                        .collect();
+                    Some((bones, offsets))
+                });
+                // The player's working TMD: object table truncated to the
+                // clip's bone count. This is also the copy pushed into
+                // `scene_tmd_data`, so the per-frame posed rebuild (driven by
+                // the actor's live `pose_frame`) poses the same 10 objects.
+                let player_tmd = match &idle_pose {
+                    Some((bones, _)) => {
+                        let mut t = g.tmd.clone();
+                        t.objects.truncate(*bones);
+                        t
                     }
-                    None => legaia_tmd::mesh::tmd_to_vram_mesh(&g.tmd, &g.raw),
+                    None => g.tmd.clone(),
+                };
+                let vmesh = match &idle_pose {
+                    Some((_, offsets)) => {
+                        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&player_tmd, &g.raw, offsets)
+                    }
+                    None => legaia_tmd::mesh::tmd_to_vram_mesh(&player_tmd, &g.raw),
                 };
                 if !vmesh.indices.is_empty()
                     && let Some(r) = self.win.renderer.as_ref()
@@ -2677,18 +2688,19 @@ impl PlayWindowApp {
                         Ok(m) => {
                             let new_idx = self.meshes.len();
                             self.meshes.push(m);
-                            self.scene_tmd_data.push((g.tmd.clone(), g.raw.clone()));
+                            self.scene_tmd_data
+                                .push((player_tmd.clone(), g.raw.clone()));
                             world.set_actor_tmd_binding(pslot as usize, new_idx);
                             self.drained_spawn_slots.insert(pslot);
                             // The untextured half (pants / sleeves are F*/G*
                             // colour prims the VRAM mesh can't carry) rides
                             // the colour pipeline, posed with the same bone
                             // set, drawn per-frame at the actor's live model.
-                            if let Some((bones, offsets)) = &idle_pose {
-                                let mut tmd = g.tmd.clone();
-                                tmd.objects.truncate(*bones);
+                            if let Some((_, offsets)) = &idle_pose {
                                 let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
-                                    &tmd, &g.raw, offsets,
+                                    &player_tmd,
+                                    &g.raw,
+                                    offsets,
                                 );
                                 if !cmesh.is_empty() {
                                     match r.upload_color_mesh_blended(
@@ -2708,9 +2720,34 @@ impl PlayWindowApp {
                                     }
                                 }
                             }
+                            // Live playback: the idle/walk clip pair, ticked
+                            // by the world's field step (locomotion picks the
+                            // clip, the posed rebuild consumes `pose_frame`).
+                            let anim = locomotion.as_ref().and_then(|bundle| {
+                                let rec = |slot| {
+                                    legaia_asset::character_pack::locomotion_record_index(
+                                        lead, slot,
+                                    )
+                                };
+                                let idle =
+                                    legaia_engine_core::field_anim::FieldClipPlayer::from_record(
+                                        bundle,
+                                        rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT),
+                                    )?;
+                                let walk =
+                                    legaia_engine_core::field_anim::FieldClipPlayer::from_record(
+                                        bundle,
+                                        rec(legaia_asset::character_pack::LOCOMOTION_WALK_SLOT),
+                                    )?;
+                                Some(legaia_engine_core::field_anim::FieldPlayerAnim::new(
+                                    idle, walk,
+                                ))
+                            });
+                            let animated = anim.is_some();
+                            world.set_field_player_anim(anim);
                             log::info!(
                                 "play-window: player (roster {lead}) -> pool mesh slot {new_idx} \
-                                 ({}{})",
+                                 ({}{}{})",
                                 if idle_pose.is_some() {
                                     "rest-posed from locomotion idle frame 0"
                                 } else {
@@ -2718,6 +2755,11 @@ impl PlayWindowApp {
                                 },
                                 if self.player_color_draw.is_some() {
                                     ", + colour half"
+                                } else {
+                                    ""
+                                },
+                                if animated {
+                                    ", + idle/walk playback"
                                 } else {
                                     ""
                                 }
@@ -6674,7 +6716,13 @@ impl ApplicationHandler for PlayWindowApp {
                     // posed_overrides[i] replaces meshes[i] when present.
                     let mut posed_overrides: Vec<Option<UploadedVramMesh>> =
                         (0..self.scene_tmd_data.len()).map(|_| None).collect();
-                    for actor in &self.session.host.world.actors {
+                    // The player's untextured colour half follows the same
+                    // per-frame pose - rebuilt below alongside the textured
+                    // override, drawn instead of the static rest-pose colour
+                    // mesh at the draw site.
+                    let mut player_color_posed: Option<UploadedColorMesh> = None;
+                    let player_slot = self.session.host.world.player_actor_slot;
+                    for (ai, actor) in self.session.host.world.actors.iter().enumerate() {
                         if !actor.active {
                             continue;
                         }
@@ -6685,11 +6733,15 @@ impl ApplicationHandler for PlayWindowApp {
                         let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
                             continue;
                         };
-                        // Battle actors carry a per-object rigid-transform clip
-                        // (rotation matters), so use the full `R·v + T` builder;
-                        // field actors keep the translation-only ANM path
-                        // unchanged.
-                        let mut vmesh = if actor.battle_animation.is_some() {
+                        // Battle actors and the field player carry per-object
+                        // rigid-transform clips (rotation matters), so use the
+                        // full `R·v + T` builder; other field actors keep the
+                        // translation-only ANM path unchanged.
+                        let is_field_player = player_slot == Some(ai as u8)
+                            && self.player_color_draw.map(|(_, s)| s) == Some(ai);
+                        let mut vmesh = if actor.battle_animation.is_some()
+                            || player_slot == Some(ai as u8)
+                        {
                             legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
                                 tmd,
                                 raw,
@@ -6698,6 +6750,26 @@ impl ApplicationHandler for PlayWindowApp {
                         } else {
                             legaia_tmd::mesh::tmd_to_vram_mesh_posed(tmd, raw, &pose.bone_outputs)
                         };
+                        if is_field_player {
+                            let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
+                                tmd,
+                                raw,
+                                &pose.bone_outputs,
+                            );
+                            if !cmesh.is_empty() {
+                                match r.upload_color_mesh_blended(
+                                    &cmesh.positions,
+                                    &cmesh.colors,
+                                    &cmesh.indices,
+                                    &cmesh.blend,
+                                ) {
+                                    Ok(m) => player_color_posed = Some(m),
+                                    Err(e) => {
+                                        log::warn!("posed player colour upload: {e:#}")
+                                    }
+                                }
+                            }
+                        }
                         // The posed mesh is rebuilt from the raw TMD, so its
                         // CBA/TSB are the nominal on-disc defaults. Re-apply the
                         // per-slot relocation `battle_render_mesh` did for the
@@ -6909,8 +6981,12 @@ impl ApplicationHandler for PlayWindowApp {
                             }
                             // The player's untextured mesh half (pants /
                             // sleeves), following the actor's live transform.
+                            // Prefer this frame's posed rebuild (idle/walk
+                            // playback); fall back to the static rest pose.
                             if let Some((cidx, slot)) = self.player_color_draw
-                                && let Some(mesh) = self.color_meshes.get(cidx)
+                                && let Some(mesh) = player_color_posed
+                                    .as_ref()
+                                    .or_else(|| self.color_meshes.get(cidx))
                             {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
