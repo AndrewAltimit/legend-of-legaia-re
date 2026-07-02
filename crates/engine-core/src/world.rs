@@ -1547,6 +1547,12 @@ pub struct World {
     /// ([`World::enter_fishing`] snapshots the interrupted mode).
     pub fishing_return_mode: SceneMode,
 
+    /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
+    /// Coins" cell). Read to seed the slot machine's playing balance and
+    /// **assigned** its final balance on cash-out (the retail state-100
+    /// commit is an assignment, not a delta).
+    pub casino_coins: u32,
+
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`World::fold_battle_event`] on `ApplyArtStrike` events whose
@@ -2526,6 +2532,7 @@ impl World {
             dance_last_judge: None,
             fishing: None,
             fishing_return_mode: SceneMode::Field,
+            casino_coins: 0,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             fury_boost: [None; 3],
