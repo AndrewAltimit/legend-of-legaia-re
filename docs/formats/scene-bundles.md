@@ -289,7 +289,10 @@ Strict structural detection:
 
 The frame-opener rate is what makes this detector zero-false-positive on its own. Random `[count][offsets]`-shaped data carries no `0xFFFF` opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).
 
-**These records are NOT field-VM (`FUN_801DE840`) bytecode** (the long-standing assumption). Running the field-VM disassembler over them yields a 65–88 % decode-error rate; the bytes are 16-bit **word-aligned** (low byte = opcode, high byte 0 on ~83 % of body words), framed records terminate with a `0x0008` word, and the opcodes sit mostly below the field VM's `0x22` opcode floor - a record like `FF FF 00 00 25 00 29 00 25 00 2A 00 08 00` reads cleanly word-aligned (`cmd(0x25,0x29) cmd(0x25,0x2A) term(0x08)`) but is garbage byte-by-byte. So `0xFFFF 0x0000` is a per-record header sentinel, not a field-VM frame divider, and record 0 is a fixed 768-byte dispatch table (96 × 8-byte slots), not a script. The records still encode per-scene structure (actor/NPC placement, event triggers,
+**These records are NOT field-VM (`FUN_801DE840`) bytecode** (the long-standing assumption). Running the field-VM disassembler over them yields a 65–88 % decode-error rate; the bytes are 16-bit **word-aligned** (low byte = opcode, high byte 0 on ~83 % of body words), framed records terminate with a `0x0008` word, and the opcodes sit mostly below the field VM's `0x22` opcode floor - a record like `FF FF 00 00 25 00 29 00 25 00 2A 00 08 00` reads cleanly word-aligned (`cmd(0x25,0x29) cmd(0x25,0x2A) term(0x08)`) but is garbage byte-by-byte. So `0xFFFF 0x0000` is a per-record header sentinel, not a field-VM frame divider.
+Record 0 on towns is a fixed 768-byte run of 8-byte spawn rows - the scene's
+master ambient stager (see the consumer census below).
+The records still encode per-scene structure (actor/NPC placement, event triggers,
 interaction hooks). The records are **move-VM (`FUN_80023070`) records in the
 summon-stager format** - `[i16 model_sel][u16 flags][move-VM bytecode]`,
 byte-identical in shape to the per-summon stagers (`legaia_asset::summon_overlay`):
@@ -305,6 +308,27 @@ prescript is the *per-scene* sibling of the summon stagers - same record format,
 same consumer. (Not field-VM, not a bespoke command VM, not vestigial; live
 kingdom-overworld RAM shows the records resident at `_DAT_8007b8d0` with actors
 executing them through the move VM.)
+
+**Which scripts install which records (the consumer census).** Walking every
+scene MAN's field-VM scripts for op-`0x34` sub-`3` (the literal-id install op)
+resolves the once-open "dual consumer" question: the bundle has **one**
+consumer - every record is a move-VM stager, installed by id from two script
+homes. Partition-1 carries dedicated **effect-actor** records (Shift-JIS-named
+"effect"; whole script = `install id N` + infinite loop) that stage the scene's
+ambient effects on entry - most scenes install **record 0** this way, the
+scene's *master ambient record* (on towns an 8-byte-periodic run of spawn rows,
+the "768-byte dispatch table" shape - it is a stager record like the rest, not
+a separate table). Partition-2 cutscene timelines install the per-shot effect
+ids (one timeline installs many ids, re-installing a multi-part effect's id per
+part). The id space is the record index directly - retail relocates the bundle
+to RAM as a compact `[u16 count][u16 offsets[count]]` table at `_DAT_8007b8d0`
+(what `FUN_800252EC` indexes: `base + 2 + id*2`), and a town01 field state
+shows count = the file bundle's record count with record 0's bytes at the
+first offset. There is **no field-VM consumer** of prescript bytes (the
+engine's historical record-0-as-field-VM fallback has no retail counterpart).
+Census + RAM pin: `engine-core/tests/scene_prescript_consumer_census_disc.rs`;
+the script-side scanner is
+`legaia_engine_core::man_field_scripts::scene_stager_installs`.
 
 Pinned by the disc-gated `scene_event_records_word_aligned_real` +
 `prescript_move_stager_records_real` tests (the latter: 78 entries / 1855 records,

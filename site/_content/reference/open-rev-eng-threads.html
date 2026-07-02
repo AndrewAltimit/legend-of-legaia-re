@@ -256,9 +256,9 @@
       </tr>
       <tr>
         <td>Scene prescript: field-VM scripts vs move-VM stagers</td>
-        <td>open</td>
-        <td>The prescript bundle has <strong>two</strong> consumers: the field VM runs a record as bytecode, and op <code>0x34</code> sub-3 &rarr; <code>FUN_800252EC</code> installs a record as a move-VM stager. Open: how the bundle splits. <a href="#d-prescript">details &darr;</a></td>
-        <td><a href="../formats/scene-v12-table.html">scene-v12-table</a></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><strong>Single consumer.</strong> The op-<code>0x34</code> sub-3 operand census across every scene MAN shows every prescript record is a move-VM stager: partition-1 effect-actor records install the ambience on entry (record 0 = the master ambient record in 62 scenes) and partition-2 cutscene timelines install the per-shot ids. Installer id = record index (RAM <code>[u16 count][u16 offsets]</code> relocation at <code>_DAT_8007B8D0</code>, live-pinned vs the file bundle). The "field-VM runs a record" premise was the engine's own fallback, not retail behaviour. <a href="#d-prescript">details &darr;</a></td>
+        <td><a href="../formats/scene-bundles.html">scene-bundles</a></td>
       </tr>
       <tr>
         <td>Engine VRAM byte-exactness for town01</td>
@@ -311,8 +311,8 @@
     </tbody>
   </table>
 
-  <h3 id="d-prescript">Scene prescript dual consumer - next step</h3>
-  <p>Both consumers skip the <code>0xFFFF 0x0000</code> header, so the same record body is read by either VM by role. Closes via a field-VM op-<code>0x34</code> operand census per scene versus the indices the scene's entry timeline runs as bytecode.</p>
+  <h3 id="d-prescript">Scene prescript dual consumer - resolution</h3>
+  <p>The op-<code>0x34</code> sub-3 census (scanner <code>man_field_scripts::scene_stager_installs</code>, oracle <code>scene_prescript_consumer_census_disc</code>) walked all three MAN partitions across the corpus: 78 scenes install stagers, from both the placement scripts and the cutscene timelines. The install carriers in partition 1 are dedicated effect-actor records - Shift-JIS-named "effect", whole script = <code>install id N</code> + infinite loop - and the town "768-byte dispatch table" at record 0 is those actors' target: the scene's master ambient stager (8-byte-periodic spawn rows), not a table. A town01 field state pins the id space: retail relocates the bundle to RAM as <code>[u16 count][u16 offsets[count]]</code> at <code>_DAT_8007B8D0</code> with count = the file record count and record 0 byte-identical at the first offset.</p>
 
   <h3 id="d-clut-cycle">World-map CLUT cycling - residual</h3>
   <p>Destination cells are kingdom-universal; no rect constant exists in any code image because the rows live in scene-script operands. Residual: the exact retail cadence (the scratchpad frame-delta byte <code>0x1F800393</code> feeds the fade SM); the engine animates only the row-506 ocean head.</p>

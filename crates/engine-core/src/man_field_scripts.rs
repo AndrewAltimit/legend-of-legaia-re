@@ -50,7 +50,7 @@
 
 use legaia_asset::man_section::{ActorPlacement, ManFile};
 use legaia_engine_vm::field_disasm::{
-    FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, YieldKind, scene_change_name,
+    EffectKind, FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, YieldKind, scene_change_name,
 };
 
 use crate::encounter_record::EncounterRecord;
@@ -557,6 +557,79 @@ pub fn scene_bgm_starts(man_file: &ManFile, man: &[u8]) -> Vec<SceneBgmStart> {
                 pc: insn.pc,
                 bgm_id: text_id,
             });
+        }
+    }
+    out
+}
+
+/// One inline move-VM stager install decoded from an op-`0x34` sub-`3` in a
+/// scene's scripts.
+///
+/// The field-VM "play 3D animation" op carries the prescript record id as a
+/// literal byte operand (`[34, 3x, id]` - retail chains through the
+/// installer `FUN_800252EC(id) = prescript_base + offsets[id]` into the
+/// move-VM part stager `FUN_80021B04`; engine
+/// `crate::world::World::spawn_field_stager`). So which prescript records
+/// are **move-VM stagers** is disc-sourced script data - the operand census
+/// that resolves the prescript bundle's dual-consumer split (see
+/// `docs/reference/open-rev-eng-threads.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneStagerInstall {
+    /// MAN partition the carrying script lives in (0 = house-door records,
+    /// 1 = actor placements / system script, 2 = cutscene timelines).
+    pub partition: usize,
+    /// Record index within that partition.
+    pub record: usize,
+    /// Bytecode pc of the op within that record's walk.
+    pub pc: usize,
+    /// The literal prescript-record id operand (the `FUN_800252EC` id).
+    pub stager_id: u8,
+}
+
+/// Recover every inline op-`0x34` sub-`3` stager install from a scene's MAN
+/// by walking all three partitions' scripts ([`partition_record_span`]
+/// bounds each record; partition 2's Shift-JIS-name header is handled
+/// there) - the same over-approximation caveats as [`scene_fmv_triggers`] /
+/// [`scene_bgm_starts`]. Ids are raw operands (bound them against the
+/// scene's prescript record count at the call site). Returns partition /
+/// record / pc order.
+pub fn scene_stager_installs(man_file: &ManFile, man: &[u8]) -> Vec<SceneStagerInstall> {
+    let mut out: Vec<SceneStagerInstall> = Vec::new();
+    for partition in 0..=2 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for record in 0..count {
+            let Some((start, pc0, len)) = partition_record_span(man_file, man, partition, record)
+            else {
+                continue;
+            };
+            let body = &man[start..start + len];
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                let InsnInfo::Effect {
+                    kind: EffectKind::AnimTrigger { arg },
+                    ..
+                } = insn.info
+                else {
+                    continue;
+                };
+                if out
+                    .iter()
+                    .any(|t| t.partition == partition && t.record == record && t.pc == insn.pc)
+                {
+                    continue;
+                }
+                out.push(SceneStagerInstall {
+                    partition,
+                    record,
+                    pc: insn.pc,
+                    stager_id: arg,
+                });
+            }
         }
     }
     out

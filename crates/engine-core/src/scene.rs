@@ -669,19 +669,21 @@ impl Scene {
     /// `SceneEventScripts` entry or the prescript prefix of a
     /// `SceneScriptedAssetTable` entry.
     ///
-    /// **The records have two consumers and which one a given record belongs to
-    /// is an open thread.** [`legaia_asset::scene_event_scripts::move_stager_records`]
-    /// parses the same `[count][offsets]`-indexed records as summon-format
-    /// **move-VM stager** records (100% valid stager leads across the corpus -
-    /// the field-resident sibling of the per-summon stagers, installed by field-VM
-    /// op `0x34` sub-3 → `FUN_800252EC`, ported as
-    /// [`crate::world::World::spawn_field_stager`]). The engine *also* runs an
-    /// individual record through the **field VM** (`load_field_record`) for the
-    /// scene-entry timeline. Both consumers skip the leading `0xFFFF 0x0000`
-    /// header (= `model_sel -1` to the move VM), so the body bytes are read by one
-    /// VM or the other depending on the record's role; how the bundle splits
-    /// between field-VM event scripts and move-VM stagers is unresolved (see
-    /// `docs/reference/open-rev-eng-threads.md`).
+    /// **The records have one consumer**: the move-VM stager installer.
+    /// [`legaia_asset::scene_event_scripts::move_stager_records`] parses the
+    /// `[count][offsets]`-indexed records as summon-format **move-VM stager**
+    /// records (100% valid stager leads across the corpus - the field-resident
+    /// sibling of the per-summon stagers, installed by field-VM op `0x34`
+    /// sub-3 → `FUN_800252EC`, ported as
+    /// [`crate::world::World::spawn_field_stager`]). The install ops live in
+    /// the scene MAN's own scripts (partition-1 effect-actor records +
+    /// partition-2 cutscene timelines); record 0 is typically the master
+    /// ambient record installed on entry. Installer id = record index,
+    /// live-pinned against the RAM `[u16 count][u16 offsets]` relocation at
+    /// `_DAT_8007B8D0` (census + pin:
+    /// `tests/scene_prescript_consumer_census_disc.rs`). The engine's
+    /// historical record-0-as-field-VM read (`load_field_record`) has no
+    /// retail counterpart and survives only as a MAN-less fallback.
     ///
     /// Returns the first match in CDNAME order; most scenes carry exactly one
     /// such entry. Returns `None` if the scene has no event scripts (some
@@ -1651,6 +1653,12 @@ impl SceneHost {
             (record.to_vec(), scripts.bytes.to_vec())
         };
         self.world.mode = crate::world::SceneMode::Field;
+        // Prescript-record-as-field-VM is a MAN-less fallback only: the
+        // consumer census resolved every prescript record as a move-VM
+        // stager (record 0 = the master ambient record), with no retail
+        // field-VM reader (`find_event_scripts` docs). Scenes with a bundle
+        // MAN get the real partition-1 system script loaded below, which
+        // replaces this buffer.
         self.world.load_field_record(&record_bytes);
         // Install the scene's move-VM stager table (the same prescript bundle,
         // read as `FUN_800252EC` stager records) so field-VM op 0x34 sub-3 can

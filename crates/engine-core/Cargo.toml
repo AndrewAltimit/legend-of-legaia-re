@@ -45,3 +45,7 @@ legaia-pcsxr = { path = "../pcsxr" }
 # drive the real parsed step chart through the dance rules engine. prot depends
 # only on iso/lzs (never engine-core), so this dev-only edge is acyclic.
 legaia-prot = { path = "../prot" }
+# Save-library-gated live pin for the prescript stager-table relocation
+# (u16-offset RAM form at _DAT_8007B8D0). mednafen depends on no engine
+# crate, so this dev-only edge is acyclic.
+legaia-mednafen = { path = "../mednafen" }
