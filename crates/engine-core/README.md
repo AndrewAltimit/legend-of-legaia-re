@@ -63,6 +63,10 @@ struct. `World::tick` runs:
      clears `ADVANCE_DONE` (the attack chain's strike-pacing gate) and
      idle resumes. See
      `docs/subsystems/battle-action.md#staged-anim-playback-the-attack-band-plays-in-engine`.
+     `World::enter_battle` seats combatants at the retail stage seats
+     (`battle_seats` - the SCUS placement tables `0x800775C8` /
+     `0x80077608` stamped by `FUN_800513F0`; party at negative Z facing
+     the monsters at positive Z).
    - `SceneMode::Field` / `SceneMode::Cutscene` → field-VM step, preceded by
      `step_cutscene_timeline` when a cutscene timeline is installed (the
      `opdeene` opening prologue): a *second* spawned `FieldCtx`
@@ -210,7 +214,11 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   record to its own bytes, runs the `legaia_engine_vm::field_disasm`
   linear walker from each record's `1 + N*2 + 4` first-opcode offset, and
   reports every `Yield` site with the inline encounter-record
-  (`[reserved×3][count][ids]`) decoded from its trailing window. This is
+  (`[reserved×3][count][ids]`) decoded from its trailing window.
+  `scene_bgm_starts` censuses the op-`0x35` sub-1 BGM starts (the global
+  `2000+i` ids behind `music_labels`), and `scene_stager_installs`
+  censuses the op-`0x34` sub-3 move-VM stager installs across all three
+  partitions (the prescript single-consumer oracle's scanner). This is
   the scripted-encounter hunt's faithful discriminator: it surfaces a real
   inline `[count][ids]` arm at a decoded opcode boundary instead of the
   byte-scan false positives (every `0x37`/`0x41` byte in dialog text). The

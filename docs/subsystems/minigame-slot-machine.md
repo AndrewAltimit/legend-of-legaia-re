@@ -168,7 +168,7 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 | `FUN_801cf0d8` | slot-machine per-frame state machine (the real reel dispatcher) - `overlay_slot_machine_801cf0d8.txt` |
 | `FUN_801cfff0` | per-frame HUD/balance + payout-digit renderer - `overlay_slot_machine_801cfff0.txt` |
 | `FUN_801d30cc` | slot LCG RNG (`x*5+1`, 16-bit fold) - `overlay_slot_machine_801d30cc.txt` |
-| `FUN_801d258c` | per-spin feature roll (BIOS-rand, balance-bracketed odds) - `overlay_slot_machine_801d258c.txt` |
+| `FUN_801d258c` | per-spin feature roll (BIOS-rand, net-take-bracketed odds) - `overlay_slot_machine_801d258c.txt` |
 | `FUN_801d2114` | per-reel stop: choose target symbol + depth by feature mode - `overlay_slot_machine_801d2114.txt` |
 | `FUN_801d2440` | reel landing search (find target symbol within depth, else next row) - `overlay_slot_machine_801d2440.txt` |
 | `FUN_801d13e8` | win evaluation + payout-table lookup + bonus trigger - `overlay_slot_machine_801d13e8.txt` |
