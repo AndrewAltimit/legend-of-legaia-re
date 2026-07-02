@@ -307,9 +307,10 @@ yaw the renderer uses). `World::world_map_camera_relative_bits(azimuth, sx, sy)`
 rotates the screen delta into world space against the same azimuth
 [`window::world_map_camera_mvp`](../../crates/engine-render/src/window.rs) frames
 the eye with (`eye = center + (d·cosθ, +0.7d, d·sinθ)`). The kingdom pack is
-drawn Y-flipped (`scale(1,-1,1)`, PSX Y-down → renderer Y-up), so the camera
-frames the **flipped** Y range and sits at *positive* Y looking down on the
-terrain. Because that overhead view inverts
+drawn at raw retail Y-down coordinates; the world-map cameras compose a single
+world Y-negation (the same one-negation frame the field render uses), so the
+top-view camera still frames the **negated** Y range and sits at *positive* Y
+looking down on the terrain. Because that overhead view inverts
 the on-screen vertical axis relative to the eye→centre direction, the
 world→screen axes are taken from the **real camera matrix, not a
 hand-derived guess**: a disc-free projection test
@@ -318,6 +319,35 @@ world direction back through `world_map_camera_mvp` and asserts it moves the
 right way on screen for every azimuth, keeping the remap in lock-step with the
 camera. The native `play-window` feeds the same controller azimuth to both the
 camera and the remap, so they cannot drift.
+
+### Walk-view camera (retail model, RAM-pinned)
+
+The walk-view (free-roam) camera follows the same GTE composition as the
+field and battle cameras, with its constants read directly out of the
+overworld resident savestates' RAM (`sebucus_overworld_resident` /
+`karisto_overworld_resident`):
+
+```
+screen = H * (R * (S*(v - focus)) + TR) / Ze     R = Rx(pitch) * Ry(azimuth)
+```
+
+- `H = _DAT_8007B6F4 = 368` (GTE projection register; both kingdoms).
+- `S`: the base matrix `DAT_8007BF10` holds `24576 * I` on the overworld -
+  a **6.0× uniform world scale** (the battle sibling holds `16384 * I` = 4×).
+- Rotation trio at `_DAT_8007B790`: pitch-only in both captures
+  (`(360, 0, 0)` / `(476, 0, 0)`); the azimuth global `_DAT_8007B794` feeds
+  `ry` when the player rotates the view.
+- `focus`: the player's world X/Z - `_DAT_80089118/20` hold its negation
+  (the same negated-focus convention the field follow-cam uses), focus Y
+  (`_DAT_8008911C`) = 0.
+- `TR` from the `_DAT_800840B8` trio: `(0, 536, 9139)` in the Sebucus
+  capture, `(0, 406, 11041)` in the Karisto capture - two pinned zoom
+  states along one axis (closer = shallower pitch).
+
+`play-window`'s walk view implements exactly this composition
+(`psx_camera_mvp` + the 6× scale + the player-focus translation), sliding
+between the two pinned zoom anchors on the controller's zoom input. The
+top-view debug camera keeps its synthetic framing.
 
 ### Boot-path seeding
 

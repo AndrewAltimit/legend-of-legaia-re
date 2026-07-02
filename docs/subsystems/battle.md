@@ -148,12 +148,12 @@ PROT 88 dome at raw coords plus a `Ry(180°)` mirror so the mountain ring + sky
 read as a full circle, a flat tiled grass grid under the actors (the
 `func_0x801d02c0` grid, `0x200` cell pitch, sampling the dome's grass tile), a
 sky-blue clear so the open horizon reads as sky, the real **assembled** battle
-party (see below), and animated monsters. One caveat: the live camera uses a
-*closer* unified depth than the exact `tr.z = 7680` - the battle meshes are small
-(party 134–284 units, monsters 77–368), so at the true depth they are a few
-pixels (retail draws actors off the rotation-only `DAT_8007bf10` + a per-actor
-position, not the backdrop's deep matrix). Cosmetic gaps remain (the ground-mist
-`obj1` is more prominent than retail; the mountain CLUT skews tan vs grey).
+party (see below), and animated monsters. The actors draw through the exact
+`tr.z = 7680` camera with the retail **4× actor world scale** composed under
+the rotation (see below) - the battle meshes are small (party 134–284 units,
+monsters 77–368), and the 4× base is what makes them read at retail size
+against the deep translation. Cosmetic gaps remain (the ground-mist `obj1` is
+more prominent than retail; the mountain CLUT skews tan vs grey).
 
 ### Battle camera (exact)
 
@@ -186,6 +186,22 @@ breakpoint, since at frame 0 the globals hold stale field state) it reports
 the battle actors at scale `+0x72 = 0x1000` (1.0, *not* scaled up - the
 on-screen size comes from the mesh, not a scale), and the dome registered at
 `DAT_8007C018[2]`.
+
+**Actor pass: the 4× world-scale base matrix.** The battle base matrix
+`DAT_8007BF10` holds `16384 * I` (GTE `4096` = 1.0 → a **4.0× uniform
+scale**), in RAM across every catalogued battle savestate and at every orbit
+angle (a pure diagonal at all four yaws, so it is a *base*, not the composed
+rotation - the composed view matrix lives in GTE scratch `0x1F8003C8`). The
+actor render `FUN_80048A08` multiplies that camera matrix per actor
+(`FUN_8005B3A8(&DAT_1f8003c8, ...)` with the actor's `+0x24` rotation trio,
+GTE TR from the actor's `+0x2C` view-translation trio), so the actors - and
+their stage translations - draw at 4× under the same `Rx(32)·Ry(yaw)` /
+`TR=(0,1280,7680)` / `H=256` camera the backdrop uses at 1×. The 4× is what
+makes the small battle meshes read at retail size against the deep
+translation (`256 * 4*370 / 7680` ≈ 49 px for a 370-unit monster). The
+engine mirrors the split in `play-window`: the dome + grid draw through the
+exact 1× `retail_battle_mvp` projection, and the actor + battle-FX draws
+compose `BATTLE_WORLD_SCALE = 4.0` under it.
 
 ### Battle party meshes (assembled)
 
