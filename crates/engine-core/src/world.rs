@@ -531,6 +531,12 @@ pub enum SceneMode {
     /// `game_mode 0x18` (`OTHER MODE`, the mode-24 minigame door-warp) for
     /// the slot overlay (PROT 0975).
     SlotMachine,
+    /// Baka Fighter duel minigame - the exchange / round / match state
+    /// machine owns the frame ([`crate::baka_fighter::BakaFight`]); field /
+    /// battle dispatch is suspended and the interrupted mode restored on
+    /// exit. Retail `game_mode 0x18` (`OTHER MODE`, the mode-24 minigame
+    /// door-warp) for the Baka Fighter overlay (PROT 0976).
+    BakaFighter,
     /// In-field pause menu - the retail CARD mode pair (`game_mode 0x17`,
     /// `CARD MODE`, which hosts both the memory-card UI and the pause menu;
     /// every menu-open capture holds `_DAT_8007B83C = 0x17`). Field/battle
@@ -1586,6 +1592,16 @@ pub struct World {
     /// ([`World::enter_slot_machine`] snapshots the interrupted mode).
     pub slot_return_mode: SceneMode,
 
+    /// Baka Fighter duel state. `Some` while `mode ==
+    /// SceneMode::BakaFighter`; the exchange / round / match state machine
+    /// runs each tick. See [`crate::baka_fighter::BakaFight`] and
+    /// [`World::enter_baka_fighter`].
+    pub baka_fighter: Option<crate::baka_fighter::BakaFight>,
+
+    /// The scene mode to restore when the Baka Fighter match ends
+    /// ([`World::enter_baka_fighter`] snapshots the interrupted mode).
+    pub baka_return_mode: SceneMode,
+
     /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
     /// Coins" cell). Read to seed the slot machine's playing balance and
     /// **assigned** its final balance on cash-out (the retail state-100
@@ -2584,6 +2600,8 @@ impl World {
             fishing_return_mode: SceneMode::Field,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
+            baka_fighter: None,
+            baka_return_mode: SceneMode::Field,
             casino_coins: 0,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
@@ -5711,6 +5729,10 @@ impl World {
                 self.tick_slot_machine();
                 None
             }
+            SceneMode::BakaFighter => {
+                self.tick_baka_fighter();
+                None
+            }
             // The pause menu owns the frame (retail CARD mode 0x17): field /
             // battle dispatch is suspended; the hosting session drives the
             // menu state machine and restores the suspended mode on close.
@@ -6109,6 +6131,84 @@ impl World {
                 // session out via [`World::exit_slot_machine`]).
                 self.mode = self.slot_return_mode;
             }
+        }
+    }
+
+    /// Enter the Baka Fighter duel on `fight`, suspending the current scene
+    /// mode (restored by [`World::exit_baka_fighter`]). Like the dance /
+    /// fishing / slot / pause-menu suspend contract, the interrupted field
+    /// state stays intact underneath.
+    pub fn enter_baka_fighter(&mut self, fight: crate::baka_fighter::BakaFight) {
+        if self.mode != SceneMode::BakaFighter {
+            self.baka_return_mode = self.mode;
+        }
+        self.baka_fighter = Some(fight);
+        self.mode = SceneMode::BakaFighter;
+    }
+
+    /// Leave the Baka Fighter duel and restore the interrupted mode. On a
+    /// decided match with a player win, the beaten opponent's gold prize is
+    /// credited into the party gold (the retail end-of-match tally drains
+    /// `DAT_801dbee8` into `_DAT_80084440`). Returns the fight so the host
+    /// can read the final state. No-op when no duel is active.
+    pub fn exit_baka_fighter(&mut self) -> Option<crate::baka_fighter::BakaFight> {
+        if self.mode == SceneMode::BakaFighter {
+            self.mode = self.baka_return_mode;
+        }
+        let fight = self.baka_fighter.take();
+        if let Some(f) = fight.as_ref()
+            && f.winner() == Some(0)
+        {
+            let new_money = (self.money as i64).saturating_add(f.gold_reward() as i64);
+            self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        }
+        fight
+    }
+
+    /// Advance the Baka Fighter duel one frame, reading this frame's pad:
+    ///
+    /// - [`Left`](input::PadButton::Left) / [`Right`](input::PadButton::Right)
+    ///   / [`Up`](input::PadButton::Up) commit attack types 1 / 2 / 3 for the
+    ///   player slot (retail folds the face/shoulder mask bits
+    ///   `0x80`/`0x20`/`0x40` into the same three types);
+    ///   [`Down`](input::PadButton::Down) commits the special (type 4).
+    /// - The CPU slot picks through the ported `FUN_801d487c` roll inside
+    ///   [`crate::baka_fighter::BakaFight::tick`].
+    /// - When the match is decided, a [`Cross`](input::PadButton::Cross)
+    ///   press leaves the duel (via [`World::exit_baka_fighter`], crediting
+    ///   the gold prize on a player win).
+    ///
+    /// PORT: the Baka Fighter per-frame drive (`FUN_801d3f44` player input →
+    /// type commit; `FUN_801d3468` resolution SM via `BakaFight::tick`).
+    fn tick_baka_fighter(&mut self) {
+        use crate::baka_fighter::BakaAttack;
+        let Some(fight) = self.baka_fighter.as_ref() else {
+            // Mode is BakaFighter but no fight installed - drop back.
+            self.mode = self.baka_return_mode;
+            return;
+        };
+        if fight.match_over() {
+            if self.input.just_pressed(input::PadButton::Cross) {
+                self.exit_baka_fighter();
+            }
+            return;
+        }
+        let attack = if self.input.just_pressed(input::PadButton::Left) {
+            Some(BakaAttack::A)
+        } else if self.input.just_pressed(input::PadButton::Right) {
+            Some(BakaAttack::B)
+        } else if self.input.just_pressed(input::PadButton::Up) {
+            Some(BakaAttack::C)
+        } else if self.input.just_pressed(input::PadButton::Down) {
+            Some(BakaAttack::Special)
+        } else {
+            None
+        };
+        if let Some(fight) = self.baka_fighter.as_mut() {
+            if let Some(attack) = attack {
+                fight.choose(0, attack);
+            }
+            fight.tick(1);
         }
     }
 

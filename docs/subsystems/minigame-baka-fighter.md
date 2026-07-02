@@ -106,8 +106,8 @@ chosen attack types: P1's type `DAT_801dbfe0` vs P2's type `DAT_801dc088`.
 | Type value | Meaning |
 |---|---|
 | `0` | no input this exchange (undecided) |
-| `1` / `2` / `3` | the three attacks, in a 1→2→3→1 beats-cycle (1 beats 2, 2 beats 3, 3 beats 1) |
-| `4` | special / guard-break (an immediate win for whoever throws it) |
+| `1` / `2` / `3` | the three attacks: **2 beats 1, 3 beats 2, 1 beats 3** (the pairwise ladder in the dump - all six ordered pairs are consistent with this relation; an earlier reading had the cycle reversed) |
+| `4` | special / guard-break (an immediate win for whoever throws it; P1 checked first when both do) |
 
 Return value: `0` = P1 wins the exchange, `1` = P2 wins, `3` = draw (both chose
 the same type), `-1` = still undecided (e.g. both `0`, or a per-exchange settle
@@ -121,23 +121,31 @@ visible in `overlay_baka_fighter_801d3a14.txt`).
 ### Damage (`FUN_801d3b18`)
 
 Damage to the loser is computed from the winning action's base power (action
-record `+0x18`), the attacker's ATK tier and the defender's DEF tier. ATK and
-DEF are read from the per-fighter stat block (`&DAT_801dc060[slot]`) at three
-HP-keyed thresholds (offsets `+0x28`/`+0x2c`/`+0x30` for ATK, `+0x38`/`+0x3c`/
-`+0x40` for DEF; the index is chosen by current HP vs `0x3c1` and `0x8c1`, i.e.
-fighters hit harder / softer as HP changes). The kernel is roughly
+record `+0x18`), the attacker's ATK tier and the defender's DEF tier. Both are
+read from the per-fighter stat pointer (`&DAT_801dc060[slot]`, which points at
+the fighter's roster record - see the record table below) at three HP-keyed
+thresholds: **ATK from the winner's `+0x38`/`+0x3c`/`+0x40`, DEF from the
+loser's `+0x28`/`+0x2c`/`+0x30`** (the `atk %d def %d` debug printf receives
+the `+0x38`-family value as `atk`, pinning the labels; an earlier reading had
+them swapped). Tier `[0]` applies at HP `>= 0x8c1`, `[1]` in
+`[0x3c1, 0x8c0]`, `[2]` below - fighters hit / guard differently as HP drops.
+The kernel is
 
 ```text
 hit  = power + power*ATK/100
 dmg  = (hit * (200 - (mod + mod*DEF/100)) * 0x20) / 100  +  (combo-1)*0x40
 ```
 
-where `combo` is the per-fighter combo counter and `mod` a per-fighter
-damage-modifier byte. A critical flag (`&DAT_801dc05c[slot]`, set by
-`FUN_801d6660`) replaces the formula with `power << 7`. HP
+where `combo` is the **loser's consecutive-hits-taken counter**
+(`&DAT_801dbfec[loser]`, incremented after each application and cleared when
+that fighter wins an exchange) and `mod` the loser's roster-record damage
+modifier (`+0x24`). A pending critical on the winner (`&DAT_801dc05c[winner]`,
+set by `FUN_801d6660`) replaces the formula with `power << 7`. HP
 (`&DAT_801dbfc4[slot]`) is decremented and floored at 0; the loser is pushed
-back 0x20 world units and switched to the knockdown action. The debug string is
-`atk %d def %d dm %d`.
+back 0x20 world units and switched to the knockdown action. A type-4 special
+landing on its **final sub-keyframe** (`DAT_801dc054[winner] ==
+record[+0x1c] - 1`) additionally credits the winner a round win outright.
+The debug string is `atk %d def %d dm %d`.
 
 `FUN_801d6660` is the **critical / lucky-hit roll**: `rand()%100 <`
 record-`+0x34` (a per-action critical-chance byte), only while HP is in a mid
@@ -191,14 +199,22 @@ advances a **per-opponent scripted pattern** - a null-terminated byte list at
 opponent mixes random throws with a canned sequence. The return is always
 reduced `% 3` into one of the three attack types.
 
-`DAT_801d76e8` is field `+0x2c` of a **per-opponent record table** based at
-`0x801d76bc` (`0x6c` stride, **17 records** = the same `0x11` count the action
-table walks). Each record carries the opponent's `+0x00` **gold reward** and
-`+0x2c` AI pattern; `FUN_801d0fe4` loads the gold prize on a player win as
-`DAT_801dbee8 = *(u32*)(opp*0x6c + 0x801d76bc)`. Parser
-[`legaia_asset::baka_opponents`] (`parse` → the 17 records; `BakaOpponent::attack_at`
-plays the pattern). The gold values + patterns decode from the disc
-(`baka_opponents_real`); they are not reproduced here.
+`DAT_801d76e8` is a field of the **per-fighter roster record table** based at
+`0x801d769c` (`0x6c` stride, **17 records** = the same `0x11` count the action
+table walks). The fighter-setup path installs the stat pointer as
+`DAT_801dc060[slot] = 0x801d769c + id*0x6c`, so the "stat block" IS the roster
+record; the historical `0x801d76bc` table view is the same records at `+0x20`.
+Record layout (base `0x801d769c`): `+0x20` **gold reward** (`FUN_801d0fe4`
+loads the prize on a player win as `DAT_801dbee8 = *(u32*)(opp*0x6c +
+0x801d76bc)`), `+0x24` damage modifier, `+0x28/+0x2c/+0x30` DEF tiers,
+`+0x34` critical chance, `+0x38/+0x3c/+0x40` ATK tiers, `+0x44` actor anchor,
+`+0x4c` AI pattern (= `DAT_801d76e8`). The picker consumes the pattern
+**backward**: an idle-cursor roll `>= 3` seeds the cursor to the pattern
+length and each pick steps it down, returning `pattern[cursor-1] - 1` (`% 3`).
+Parser [`legaia_asset::baka_opponents`] (`parse` → the 17 records with stats;
+`parse_actions` → the 17 action tables; `BakaOpponent::attack_at` is the
+forward convenience view). The gold values, stats + patterns decode from the
+disc (`baka_opponents_real`); they are not reproduced here.
 
 The **HUD** is rendered by `overlay_baka_fighter_801d2afc.txt`: two HP bars
 (per-fighter record `&DAT_801dbfbc[slot*0xa8]`, HP at `+0x08`, drawn left at X
@@ -241,7 +257,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `&DAT_801dbfc8[slot*0x2a]` | exchange phase per fighter (0 idle / 1 windup / 2 committed) |
 | `&DAT_801dbfe8[slot*0x2a]` | "already committed this exchange" flag |
 | `&DAT_801dc05c[slot*0x2a]` | critical-hit-pending flag (set by `FUN_801d6660`) |
-| `&DAT_801dc060[slot*0x2a]` | per-fighter stat block (ATK/DEF tiers, crit chance) |
+| `&DAT_801dc060[slot*0x2a]` | per-fighter stat POINTER → the fighter's roster record (`0x801d769c + id*0x6c`; ATK/DEF tiers, crit chance, damage mod live in the record) |
 | `&DAT_801dc050[slot*0x2a]` | opponent id (indexes the AI pattern table) |
 | `&DAT_801dc044[slot*0xa8]` | AI scripted-pattern cursor |
 | `&DAT_801dc048[slot*0x2a]` | per-fighter hold-timer for the chosen type |
@@ -253,7 +269,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `DAT_801dc134` / `DAT_801dc138` | round-start banner state / timer |
 | `DAT_801dbed0` | round-win **target = 2** (best of 3); also the drawn round-win-pip count (init `FUN_801cf00c`) |
 | `PTR_DAT_801db8b8[char]` | per-character action-table base |
-| `DAT_801d76bc` | per-opponent **record table** (`0x6c` stride, 17 records): `+0x00` gold reward, `+0x24` actor anchor, `+0x2c` AI pattern (= `DAT_801d76e8`). Parser `legaia_asset::baka_opponents`. |
+| `DAT_801d76bc` | the `+0x20` view into the **roster record table** at `0x801d769c` (`0x6c` stride, 17 records; gold, stats, anchor, AI pattern - see [Opponent + scoring](#opponent--scoring)). Parser `legaia_asset::baka_opponents`. |
 | `DAT_801d7684` | special-attack effect-actor template |
 | `_DAT_8007b8c2` | streaming-mode flag (selects LZS `other5` vs raw PROT load) |
 | `_DAT_8007ba2c` | actor-draw hook (set to `FUN_801d67f0`) |
@@ -281,12 +297,40 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 
 Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`.
 
+## Engine port
+
+The fight rules run clean-room as `legaia_engine_core::baka_fighter`
+(`BakaFight`): the exchange resolver (`FUN_801d3a14` - settle timer, special
+priority, the 2>1/3>2/1>3 relation), the damage kernel (`FUN_801d3b18` -
+HP-tiered ATK/DEF, combo bonus, crit override, the special's keyframe-gated
+round win), the comeback-crit roll (`FUN_801d6660`), the backward-pattern CPU
+picker (`FUN_801d487c`, BIOS-rand stream) and the best-of-3 bookkeeping,
+built from the parsed roster + action tables
+(`legaia_asset::baka_opponents::parse` / `parse_actions`). The world hosts it
+as the suspending `SceneMode::BakaFighter` (play-window `B` key;
+Left/Right/Up = the three attacks, Down charges the special); a player match
+win banks the opponent's parsed gold prize into the party money, mirroring
+the retail tally drain into `_DAT_80084440`. Disc-gated oracle:
+`engine-core/tests/baka_minigame_real.rs` (counter-play through the world
+tick beats a real ladder opponent and banks the parsed prize). Host
+simplifications, documented in the module: exchange recovery is immediate
+(cooldowns pace re-entry) and the special's final-keyframe gate is modelled
+as a held charge.
+
 ## Open
 
 - The physical pad-button → attack-type binding (the `0x80`/`0x20`/`0x40` mask
   bits are populated from `_DAT_8007b874` / `DAT_801dc124`, but the named button
   for each was not separated out).
-- No clean-room engine port exists; this minigame is documentation-only so far.
+- The settle timer `DAT_801dbf54` only ever decays in the dumped corpus; its
+  seeder (what paces exchanges beyond the cooldowns) is untraced.
+- Action-record vs display-anim indexing: the damage kernel indexes the
+  action table with the current-action id where records 1/2/3 = the attacks
+  and 4 = the special (positive powers / the keyframe gate decode there
+  corpus-wide); the `base + 2..+5` frames in the input table above are the
+  flat display-anim space (`actor+0x5c = char*9 + frame`). The per-fighter
+  `+0x10` current-action writer that maps type → record was not separately
+  dumped.
 
 ## See also
 

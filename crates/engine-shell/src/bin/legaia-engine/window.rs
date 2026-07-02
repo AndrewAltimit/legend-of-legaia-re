@@ -3544,6 +3544,61 @@ impl PlayWindowApp {
         true
     }
 
+    /// Load the Baka Fighter overlay (PROT 0976), parse the roster + action
+    /// tables, and enter a best-of-3 duel: the player fights as roster
+    /// fighter 0 against a ladder opponent picked from the roster (rotating
+    /// with the frame counter so repeat entries vary). Returns `false` (with
+    /// a log line) when the overlay or tables don't resolve.
+    fn start_baka_minigame(&mut self) -> bool {
+        use legaia_asset::static_overlay;
+        let Some(rec) = static_overlay::overlay_map()
+            .by_prot_index(legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32)
+        else {
+            log::warn!("baka: overlay 0976 absent from the static-overlay map");
+            return false;
+        };
+        let raw = match self.session.host.index.entry_bytes_extended(rec.prot_index) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("baka: PROT {} read failed: {e:#}", rec.prot_index);
+                return false;
+            }
+        };
+        let loaded = match static_overlay::as_loaded(&raw, rec) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("baka: as_loaded failed: {e:#}");
+                return false;
+            }
+        };
+        let Some(opponents) = legaia_asset::baka_opponents::parse(&loaded) else {
+            log::warn!("baka: roster-table parse failed");
+            return false;
+        };
+        let Some(actions) = legaia_asset::baka_opponents::parse_actions(&loaded) else {
+            log::warn!("baka: action-table parse failed");
+            return false;
+        };
+        // Rotate the ladder opponent with the frame counter (1..=16; roster 0
+        // is the player-side default). Seed like the slot machine: frame-
+        // derived, deterministic across a replayed pad stream.
+        let frame = self.session.host.world.frame as u32;
+        let opponent = 1 + (frame as usize % (opponents.len().saturating_sub(1).max(1)));
+        let seed = 0xBA4A_F19A ^ frame;
+        let Some(fight) = legaia_engine_core::baka_fighter::BakaFight::from_tables(
+            &opponents, &actions, 0, opponent, seed,
+        ) else {
+            log::warn!("baka: fight construction failed (roster 0 vs {opponent})");
+            return false;
+        };
+        log::info!(
+            "baka: round 1 vs roster fighter {opponent} (gold prize {})",
+            fight.gold_reward()
+        );
+        self.session.host.world.enter_baka_fighter(fight);
+        true
+    }
+
     /// React to a `Field <-> Battle` scene-mode change once per transition:
     /// on entering battle, decode each enemy's mesh and inject it; on leaving,
     /// restore the clean field VRAM and drop the battle meshes. Called each
@@ -5473,6 +5528,52 @@ impl PlayWindowApp {
             let ly2 = self.font.layout_ascii(&sl2);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
         }
+        // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
+        // last-exchange readout, and the input prompt.
+        if self.session.host.world.mode == SceneMode::BakaFighter
+            && let Some(f) = &self.session.host.world.baka_fighter
+        {
+            use legaia_engine_core::baka_fighter::MatchPhase;
+            let bl1 = format!(
+                "BAKA  you {}hp (wins {})  vs  foe {}hp (wins {})  round {}",
+                f.hp(0),
+                f.round_wins(0),
+                f.hp(1),
+                f.round_wins(1),
+                f.round() + 1
+            );
+            let ly1 = self.font.layout_ascii(&bl1);
+            out.extend(text_draws_for(&ly1, (8, 62), white));
+            let status = match f.phase() {
+                MatchPhase::MatchOver(0) => {
+                    format!(
+                        "YOU WIN the match! +{} gold  (Cross/B = leave)",
+                        f.gold_reward()
+                    )
+                }
+                MatchPhase::MatchOver(_) => "you lose the match  (Cross/B = leave)".to_string(),
+                MatchPhase::RoundOver(0) => "round won!".to_string(),
+                MatchPhase::RoundOver(_) => "round lost".to_string(),
+                MatchPhase::Fighting => match f.last_exchange() {
+                    Some(r) => {
+                        let who = if r.draw {
+                            "trade".to_string()
+                        } else if r.winner == 0 {
+                            "you hit".to_string()
+                        } else {
+                            "foe hits".to_string()
+                        };
+                        let crit = if r.critical { " CRIT" } else { "" };
+                        let sp = if r.special_round_win { " SPECIAL" } else { "" };
+                        format!("{who} {}{crit}{sp}", r.damage)
+                    }
+                    None => "choose your attack".to_string(),
+                },
+            };
+            let bl2 = format!("{status}   Left/Right/Up attack, Down special (B = quit)");
+            let ly2 = self.font.layout_ascii(&bl2);
+            out.extend(text_draws_for(&ly2, (8, 80), dim));
+        }
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
         // runtime is in any shop, inn, or confirmation state.
         if self.menu_runtime.is_open() {
@@ -6513,6 +6614,34 @@ impl ApplicationHandler for PlayWindowApp {
                     } else if self.start_slot_minigame() {
                         log::info!(
                             "slots: started - Cross spins/stops/collects, Left/Right bet lines, O to cash out"
+                        );
+                    }
+                    return;
+                }
+                // `B`: toggle the Baka Fighter duel minigame. Loads the Baka
+                // Fighter overlay (PROT 0976), suspends the current scene,
+                // and runs the best-of-3 duel; Left/Right/Up throw the three
+                // attacks, Down charges the special, Cross leaves a decided
+                // match. Pressing B again aborts (no gold on an abort).
+                if matches!(code, KeyCode::KeyB)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    if self.session.host.world.mode == SceneMode::BakaFighter {
+                        if let Some(f) = self.session.host.world.exit_baka_fighter() {
+                            match f.winner() {
+                                Some(0) => log::info!(
+                                    "baka: match WON - {} gold banked (money now {})",
+                                    f.gold_reward(),
+                                    self.session.host.world.money
+                                ),
+                                Some(_) => log::info!("baka: match lost"),
+                                None => log::info!("baka: match aborted"),
+                            }
+                        }
+                    } else if self.start_baka_minigame() {
+                        log::info!(
+                            "baka: started - Left/Right/Up attack, Down special, B to leave"
                         );
                     }
                     return;

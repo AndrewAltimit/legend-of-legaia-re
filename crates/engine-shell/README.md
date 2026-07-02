@@ -69,16 +69,20 @@ cargo build --release
 ./target/release/legaia-engine play-str MOV/MV1.STR --disc <bin>
 ```
 
-In `play-window`, three minigames run as suspending scene modes driven by their
+In `play-window`, four minigames run as suspending scene modes driven by their
 clean-room rules engines: the `K` key starts the Noa dance rhythm minigame
 (`legaia_engine_core::dance`, from the dance overlay PROT 0980 - Left/Right/Up
 are the three arrows), the `L` key starts the fishing minigame
 (`legaia_engine_core::fishing`, from the fishing overlay PROT 0972 - Cross
-casts then reels, Circle is the second reel button), and the `O` key starts the
+casts then reels, Circle is the second reel button), the `O` key starts the
 casino slot machine (`legaia_engine_core::slot_machine`, from the slot overlay
 PROT 0975 - Cross spins / stops each reel / collects, Left/Right set the bet
-lines; quitting cashes the balance out into the casino coin bank). Each shows
-its own HUD and restores the interrupted scene when it ends; press the same key
+lines; quitting cashes the balance out into the casino coin bank), and the `B`
+key starts a Baka Fighter duel (`legaia_engine_core::baka_fighter`, from the
+Baka Fighter overlay PROT 0976 - Left/Right/Up throw the three
+rock-paper-scissors attacks, Down charges the special; a best-of-3 match win
+banks the ladder opponent's gold prize into the party money). Each shows its
+own HUD and restores the interrupted scene when it ends; press the same key
 again to quit.
 
 In `play-window`, when the booted disc was randomized with `--seru-trade`,

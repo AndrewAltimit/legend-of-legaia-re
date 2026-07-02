@@ -9,6 +9,7 @@ pub mod accessory_passives;
 pub mod actor_alloc_host;
 pub mod ap_gauge;
 pub mod art_strike;
+pub mod baka_fighter;
 pub mod battle_anim;
 pub mod battle_arts;
 pub mod battle_events;
