@@ -8,7 +8,7 @@
 //! pad: the player picks a command from the battle command menu, then a target,
 //! before the strike commits.
 //!
-//! All four commands are wired into the live loop. **Attack** opens a target
+//! All six commands are wired into the live loop. **Attack** opens a target
 //! cursor and commits a physical strike. **Arts**, **Magic** and **Item**
 //! resolve to [`Resolution::OpenArtsMenu`] / [`Resolution::OpenSpellMenu`] /
 //! [`Resolution::OpenItemMenu`] hand-offs: the command session can't run those
@@ -16,9 +16,12 @@
 //! MP / inventory + party stats), so the live loop opens a host-owned
 //! [`crate::battle_arts::BattleArtsSession`] /
 //! [`crate::battle_magic::BattleSpellSession`] /
-//! [`crate::inventory_use::InventoryUseSession`] instead. Target selection
-//! reuses [`crate::target_picker`] so the cursor behaviour matches the rest of
-//! the battle UI.
+//! [`crate::inventory_use::InventoryUseSession`] instead. **Spirit** and
+//! **Run** resolve immediately (no target): Spirit charges the AP gauge and
+//! raises the guard stance ([`Resolution::SpiritGuard`]); Run rolls the escape
+//! and arms the action SM's run band ([`Resolution::RunAway`]). Target
+//! selection reuses [`crate::target_picker`] so the cursor behaviour matches
+//! the rest of the battle UI.
 //!
 //! The session is a small state machine - [`CommandPhase`] - driven one frame
 //! at a time by [`BattleCommandSession::input`] with an edge-triggered
@@ -44,20 +47,31 @@ pub enum BattleCommand {
     /// Use an item - hands off to the host inventory submenu (see
     /// [`crate::inventory_use`]).
     Item,
+    /// Spirit: guard for the turn (+5 AP via
+    /// [`crate::ap_gauge::ApGauge::charge_spirit`], guard-halved damage until
+    /// the next turn). Resolves immediately - no target.
+    Spirit,
+    /// Run: attempt to flee through the action SM's run band
+    /// (`RunBegin`/`RunWait`/`RunEscape`, retail states `0x64..0x66`).
+    /// Resolves immediately - no target.
+    Run,
 }
 
 impl BattleCommand {
     /// Menu entries in display order.
-    pub const MENU: [BattleCommand; 4] = [
+    pub const MENU: [BattleCommand; 6] = [
         BattleCommand::Attack,
         BattleCommand::Arts,
         BattleCommand::Magic,
         BattleCommand::Item,
+        BattleCommand::Spirit,
+        BattleCommand::Run,
     ];
 
     /// `true` when the command can actually be selected in the live loop.
-    /// All four commands are wired: Attack (physical strike), Arts (saved-chain
-    /// submenu), Magic (spell submenu) and Item (inventory submenu).
+    /// All six commands are wired: Attack (physical strike), Arts (saved-chain
+    /// submenu), Magic (spell submenu), Item (inventory submenu), Spirit
+    /// (guard + AP charge) and Run (the action SM's run band).
     pub fn enabled(self) -> bool {
         matches!(
             self,
@@ -65,6 +79,8 @@ impl BattleCommand {
                 | BattleCommand::Arts
                 | BattleCommand::Magic
                 | BattleCommand::Item
+                | BattleCommand::Spirit
+                | BattleCommand::Run
         )
     }
 
@@ -75,16 +91,20 @@ impl BattleCommand {
             BattleCommand::Arts => "Arts",
             BattleCommand::Magic => "Magic",
             BattleCommand::Item => "Item",
+            BattleCommand::Spirit => "Spirit",
+            BattleCommand::Run => "Run",
         }
     }
 
     /// The target the command applies to. v0.1 only resolves Attack
     /// (single enemy); the rest carry their natural kind for when they land.
+    /// Spirit / Run never open a picker (they resolve without a target) -
+    /// their kinds here are placeholders.
     pub fn target_kind(self) -> TargetKind {
         match self {
             BattleCommand::Attack | BattleCommand::Arts => TargetKind::SingleEnemy,
-            BattleCommand::Magic => TargetKind::SingleEnemy,
-            BattleCommand::Item => TargetKind::SingleAllyOrSelf,
+            BattleCommand::Magic | BattleCommand::Run => TargetKind::SingleEnemy,
+            BattleCommand::Item | BattleCommand::Spirit => TargetKind::SingleAllyOrSelf,
         }
     }
 }
@@ -136,6 +156,12 @@ pub enum CommandPhase {
     /// off: the live loop opens an [`crate::inventory_use::InventoryUseSession`]
     /// and applies the chosen item, then cycles the turn.
     OpenItemMenu,
+    /// The player picked Spirit: the live loop charges the AP gauge and sets
+    /// the guard stance, then consumes the turn. No target.
+    SpiritGuard,
+    /// The player picked Run: the live loop rolls the escape and arms the
+    /// action SM's run band. No target.
+    RunAway,
     /// No valid action was possible (e.g. nothing left to target). The live
     /// loop should fall back to a default strike so it never deadlocks.
     Aborted,
@@ -201,6 +227,8 @@ impl BattleCommandSession {
             CommandPhase::OpenArtsMenu => Some(Resolution::OpenArtsMenu),
             CommandPhase::OpenSpellMenu => Some(Resolution::OpenSpellMenu),
             CommandPhase::OpenItemMenu => Some(Resolution::OpenItemMenu),
+            CommandPhase::SpiritGuard => Some(Resolution::SpiritGuard),
+            CommandPhase::RunAway => Some(Resolution::RunAway),
             CommandPhase::Aborted => Some(Resolution::Aborted),
             _ => None,
         }
@@ -253,6 +281,8 @@ impl BattleCommandSession {
             | CommandPhase::OpenArtsMenu
             | CommandPhase::OpenSpellMenu
             | CommandPhase::OpenItemMenu
+            | CommandPhase::SpiritGuard
+            | CommandPhase::RunAway
             | CommandPhase::Aborted => {}
         }
     }
@@ -276,6 +306,12 @@ pub enum Resolution {
     /// The player picked Item; the live loop should open the inventory
     /// submenu (it owns the live inventory + party stats).
     OpenItemMenu,
+    /// The player picked Spirit; the live loop should charge the caster's AP
+    /// gauge, set its guard stance, and consume the turn.
+    SpiritGuard,
+    /// The player picked Run; the live loop should roll the escape and arm
+    /// the action SM's run band (category 5).
+    RunAway,
     /// No valid action existed; the live loop should fall back to a default
     /// strike on the first living enemy.
     Aborted,
@@ -321,6 +357,13 @@ fn step_menu(
         }
         if command == BattleCommand::Item {
             return CommandPhase::OpenItemMenu;
+        }
+        // Spirit / Run act on the caster / the whole party - no target cursor.
+        if command == BattleCommand::Spirit {
+            return CommandPhase::SpiritGuard;
+        }
+        if command == BattleCommand::Run {
+            return CommandPhase::RunAway;
         }
         if command.enabled() {
             let picker =
@@ -465,10 +508,47 @@ mod tests {
     }
 
     #[test]
-    fn all_four_commands_are_selectable() {
-        // Every command is now wired (Attack strike + Arts / Magic / Item
-        // hand-offs), so none should bounce in the menu.
+    fn all_commands_are_selectable() {
+        // Every command is now wired (Attack strike, Arts / Magic / Item
+        // hand-offs, Spirit guard, Run band), so none should bounce.
         assert!(BattleCommand::MENU.iter().all(|c| c.enabled()));
+    }
+
+    #[test]
+    fn spirit_command_resolves_to_spirit_guard() {
+        let mut s = BattleCommandSession::new(0, 0);
+        // Down four: Attack -> Arts -> Magic -> Item -> Spirit.
+        for _ in 0..4 {
+            s.input(
+                BattleCommandInput {
+                    down: true,
+                    ..Default::default()
+                },
+                party3(),
+                one_monster(),
+            );
+        }
+        assert_eq!(s.menu_command(), Some(BattleCommand::Spirit));
+        s.input(press_cross(), party3(), one_monster());
+        // Spirit needs no target - it resolves immediately.
+        assert_eq!(s.resolved(), Some(Resolution::SpiritGuard));
+    }
+
+    #[test]
+    fn run_command_resolves_to_run_away() {
+        let mut s = BattleCommandSession::new(0, 0);
+        // Up once wraps from Attack (0) to Run (last).
+        s.input(
+            BattleCommandInput {
+                up: true,
+                ..Default::default()
+            },
+            party3(),
+            one_monster(),
+        );
+        assert_eq!(s.menu_command(), Some(BattleCommand::Run));
+        s.input(press_cross(), party3(), one_monster());
+        assert_eq!(s.resolved(), Some(Resolution::RunAway));
     }
 
     #[test]

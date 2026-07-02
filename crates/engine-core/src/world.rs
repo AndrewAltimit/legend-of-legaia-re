@@ -1583,6 +1583,13 @@ pub struct World {
     /// presses Spirit during command input.
     pub ap_gauges: [crate::ap_gauge::ApGauge; 3],
 
+    /// Per-party-slot guard stance for the current battle: `true` after the
+    /// slot's **Spirit** command until its next turn starts. The retail state
+    /// is the actor's pending-action byte `+0x1DE == 4` (Spirit), consumed by
+    /// the damage finisher's guard-halve stage
+    /// ([`legaia_engine_vm::battle_formulas::DamageFinish::defender_guarding`]).
+    pub battle_guarding: [bool; 3],
+
     /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
     /// the AP added to that slot's gauge by the class-5 Fury Boost item (retail
     /// actor `+0x1F9` flag). Reverted wholesale at battle end (`finish_battle`),
@@ -2553,6 +2560,7 @@ impl World {
             casino_coins: 0,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
+            battle_guarding: [false; 3],
             fury_boost: [None; 3],
             item_catalog: crate::items::ItemCatalog::default(),
             item_effects: None,
@@ -3627,6 +3635,17 @@ impl World {
                 // slot's HP at 1 on a successful escape; the tracker-level
                 // Stone clear is the engine's model of that restore).
                 self.status_effects.cure_stone_on_escape();
+                // The run band's floor writes the VM-side liveness (`+0x14C`);
+                // mirror it onto the world HP so the live loop's hp==0 dead
+                // scan doesn't re-down the member - a downed member leaves
+                // the battle alive at 1 HP.
+                for slot in 0..self.party_count.min(3) as usize {
+                    let b = &mut self.actors[slot].battle;
+                    if b.max_hp > 0 && b.hp == 0 {
+                        b.hp = 1;
+                        b.liveness = 1;
+                    }
+                }
                 None
             }
             BattleEvent::SpellAnimTrigger {

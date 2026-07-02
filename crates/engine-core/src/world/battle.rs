@@ -93,7 +93,7 @@ impl World {
     /// (v0.1: a physical Attack) and clear the session so the SM resumes.
     /// On an abort (no valid target) it falls back to the first living monster
     /// so the loop never deadlocks.
-    fn tick_battle_command(&mut self) {
+    pub(super) fn tick_battle_command(&mut self) {
         use crate::battle_input::{BattleCommandInput, Resolution};
         use crate::input::PadButton;
         use crate::target_picker::{CursorRow, SlotState};
@@ -183,6 +183,43 @@ impl World {
                 // (the command menu reopens for the same actor).
                 self.battle_ctx.active_actor = session.actor;
                 self.battle_item_menu = Some(self.build_battle_item_session());
+            }
+            Some(Resolution::SpiritGuard) => {
+                // Player picked Spirit: charge the AP gauge (+5, idempotent
+                // per turn - the retail Square-press kernel) and raise the
+                // guard stance (retail pending-action byte +0x1DE = 4, the
+                // damage finisher's guard-halve input). The stance holds
+                // until this actor's next turn starts. Spirit is the whole
+                // turn: park at EndOfAction so the loop cycles.
+                let actor = session.actor;
+                if let Some(gauge) = self.ap_gauges.get_mut(actor as usize) {
+                    gauge.charge_spirit();
+                }
+                if let Some(guard) = self.battle_guarding.get_mut(actor as usize) {
+                    *guard = true;
+                }
+                self.battle_ctx.active_actor = actor;
+                self.battle_ctx.action_state =
+                    vm::battle_action::ActionState::EndOfAction.as_byte();
+            }
+            Some(Resolution::RunAway) => {
+                // Player picked Run: roll the escape and arm the action SM's
+                // run band (category 5 -> RunBegin/RunWait/RunEscape, retail
+                // 0x64..0x66). The SM carries the roll outcome on
+                // `multi_cast_gate` (success floors downed party HP at 1 and
+                // tears the battle down `Escaped`; failure consumes the turn
+                // via the Done band). The retail roll global (`_DAT_8007726C`
+                // vs `ctx+0x189`) is unpinned - engine-side reconstruction:
+                // a 50% roll on the world PRNG.
+                let actor = session.actor;
+                let escaped = self.next_rng() & 1 == 0;
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.action_category = 5; // Run band
+                }
+                self.battle_ctx.active_actor = actor;
+                self.battle_ctx.queued_action = 5;
+                self.battle_ctx.multi_cast_gate = u8::from(escaped);
+                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
             }
             Some(Resolution::Aborted) => {
                 // No valid target the player could pick - arm a default strike
@@ -2065,6 +2102,12 @@ impl World {
             // Start-of-turn: age this actor's buffs / debuffs, reverting any
             // that expire this turn.
             self.tick_battle_buffs_on_turn(next);
+            // A Spirit guard stance lasts until the guarding actor's next
+            // turn starts (the retail pending-action byte is overwritten by
+            // the new command).
+            if let Some(guard) = self.battle_guarding.get_mut(next as usize) {
+                *guard = false;
+            }
             let next_is_party = next < party_count;
             if self.actor_blocked_from_acting(next) {
                 // Sleep / Stone / Faint: the actor loses its turn. Its
@@ -2137,6 +2180,9 @@ impl World {
         if !hit {
             return;
         }
+        // Spirit guard stance on the defender (a party slot that picked
+        // Spirit and hasn't started its next turn).
+        let target_guarding = self.battle_guarding.get(target).copied().unwrap_or(false);
         let dmg = if self.use_damage_finish {
             // Raw roll BEFORE any floor (`min_floor = 0`), then run it through
             // the retail damage finisher so the universal post-stages apply.
@@ -2162,14 +2208,18 @@ impl World {
                 defender_slot: if target_is_party { 0 } else { 3 },
                 attacker_element: 7, // basic attack is non-elemental
                 defender_resist: vm::battle_formulas::DefenderResist::default(),
-                defender_guarding: false,
+                defender_guarding: target_guarding,
                 enemy_defender_halve: false,
                 bypass_party_resist: false,
                 summon_power_pct: 100,
                 floor_rand,
             }) as u16
         } else {
-            vm::battle_formulas::art_strike_damage_default(attack, defense, 16)
+            // The flat path skips the finisher, so apply its guard-halve
+            // stage (`over >>= 1` when the defender guards) here so Spirit
+            // still defends without `--damage-finish`.
+            let flat = vm::battle_formulas::art_strike_damage_default(attack, defense, 16);
+            if target_guarding { flat >> 1 } else { flat }
         };
         // Spirit accrues from the pre-nullify hit: retail's finisher fills the
         // gauge before the nullify/absorb stage zeroes the HP loss, so a Stone
@@ -2973,6 +3023,7 @@ impl World {
         self.active_formation = None;
         self.battle_end = None;
         self.battle_escaped = false;
+        self.battle_guarding = [false; 3];
         // Restore the field track stashed at encounter start (cross-fades
         // back from the battle music). No-op if no swap was active.
         self.restore_field_bgm();
