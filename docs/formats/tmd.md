@@ -101,8 +101,22 @@ are textured, `0` / `2` are flat / gouraud). [`legaia_tmd::descriptor`](../../cr
 resolves the shape and the `vertex_offset` per group.
 
 - **Textured** (`legaia_prims::extract_textures`): `[u0, v0, cba_lo, cba_hi, u1,
-  v1, tsb_lo, tsb_hi, u2, v2 (, u3, v3)]` - the block ends exactly at the
-  vertex-index offset.
+  v1, tsb_lo, tsb_hi, u2, v2 (, u3, v3)]`. The block's **start** is
+  `Descriptor::texture_block_offset`, resolved from the table entry's **byte 1**
+  (the renderer's per-vertex colour base at `sp+0xb9`):
+  - **byte1 = 0** (rows 0/1, flags `0x10`-`0x17`): the light-source-lit variant.
+    The texture block is at **offset 0** (ahead of the vertices); per-vertex data
+    trails the vertex indices. e.g. Rim Elm env-mesh pack 36 `FT4`/`GT3`/`GT4`
+    prims carry `cba = 0x7ac?` (CLUT row 491) at prim byte 2.
+  - **byte1 = 3** (rows 4/5, flags `0x20`-`0x27`): baked per-vertex colours
+    precede the block - **one** colour word for flat `FT*` (block at byte 4),
+    `n_vertices` words for gouraud `GT*` (block at byte 12 for `GT3`, byte 16 for
+    `GT4`). Here the block does end at the vertex-index offset.
+
+  The earlier walker assumed `block_start = vertex_offset - block_len`, which only
+  held for the byte1 = 3 rows; the byte1 = 0 rows then read `(cba, tsb)` from
+  geometry bytes and rendered as rainbow garbage (the Rim Elm decorative-plant
+  props). `texture_block_offset` fixes this while leaving rows 4/5 byte-identical.
 - **Untextured**: a per-vertex RGB colour block (PSX `[R, G, B, code]` word; the
   4th byte is the SDK GP0 command/code, not part of the colour). **Flat**
   (`F3`/`F4`) stores **one** colour word at prim offset 0, shared by all corners

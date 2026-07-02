@@ -503,7 +503,7 @@ impl ManFile {
         let local_count = *man.get(record_offset)? as usize;
         let header = record_offset.checked_add(1 + local_count * 2)?;
         let model_index = *man.get(header)?;
-        let action_count = *man.get(header + 1)?;
+        let anim_id = *man.get(header + 1)?;
         let bx = *man.get(header + 2)?;
         let bz = *man.get(header + 3)?;
         let pos = |b: u8| -> i16 {
@@ -516,7 +516,7 @@ impl ManFile {
             local_count,
             model_index,
             special_model: model_index >= 0xF0,
-            action_count,
+            anim_id,
             tile_x: bx & 0x7F,
             tile_z: bz & 0x7F,
             world_x: pos(bx),
@@ -543,8 +543,15 @@ pub struct ActorPlacement {
     /// `true` when `model_index >= 0xF0` (special-model base + `0x1000000`
     /// actor flag).
     pub special_model: bool,
-    /// Move / action-script count installed into actor `+0x5c`.
-    pub action_count: u8,
+    /// Animation id installed into actor `+0x5C`: **scene-bundle ANM record
+    /// index + 1** (`0` = no animation). Runtime-pinned: every animated town01
+    /// actor's `+0x5C` halfword equals its live anim-record pointer's bundle
+    /// index + 1, and the disc byte seeds it (walkers drift +/-1 as scripts
+    /// switch clips). For special models (`>= 0xF0`, the party/savepoint
+    /// global-pool head) the id indexes the PROT 0874 section-1 locomotion
+    /// bundle instead (Noa placement carries id 9 = locomotion record 8 =
+    /// Noa's idle; Gala id 16 = record 15).
+    pub anim_id: u8,
     /// Tile column (`world_x >> 7`).
     pub tile_x: u8,
     /// Tile row (`world_z >> 7`).
@@ -925,7 +932,7 @@ mod tests {
         assert_eq!(p.local_count, 1);
         assert_eq!(p.model_index, 5);
         assert!(!p.special_model);
-        assert_eq!(p.action_count, 2);
+        assert_eq!(p.anim_id, 2);
         assert_eq!(p.tile_x, 3);
         assert_eq!(p.tile_z, 4);
         assert_eq!(p.world_x, 3 * 128 + 128, "X bit-7 set shifts a half-tile");

@@ -354,6 +354,32 @@ struct PlayWindowApp {
     /// Field static-geometry colour draws: `(index into `color_meshes`, world
     /// model)` for the untextured props. Drawn alongside `field_placement_draws`.
     field_placement_color_draws: Vec<(usize, Mat4)>,
+    /// Field-scene **terrain / ground** draws: `(uploaded-mesh index, world
+    /// model)` per visible cell of the field `.MAP` object grid
+    /// (`Scene::field_terrain_tiles`, the `CELL_VISIBLE` sweep - the dense
+    /// ground / floor layer, as opposed to the placed-flag interactive objects
+    /// in `field_placement_draws`). Empty for scenes with no field-map terrain.
+    /// Drawn in `SceneMode::Field` UNDER the placed buildings so the town rests
+    /// on its ground instead of floating over the bare clear colour.
+    field_terrain_draws: Vec<(usize, Mat4)>,
+    /// Terrain tiles whose mesh is untextured (`F*`/`G*` vertex-colour prims
+    /// only): `(index into `color_meshes`, world model)`, resolved through the
+    /// colour-mesh bridge the same way `field_placement_color_draws` is. The
+    /// textured bridge drops these tiles entirely (their VRAM mesh is empty),
+    /// which rendered as holes in the town floor.
+    field_terrain_color_draws: Vec<(usize, Mat4)>,
+    /// The field player's **untextured** mesh half: `(index into
+    /// `color_meshes`, actor slot)`. The character field meshes are hybrids -
+    /// pants / sleeves are F*/G* colour prims the VRAM pipeline can't carry -
+    /// so the posed player draws in two passes; this one follows the actor's
+    /// live model matrix each frame (unlike the static colour draws above).
+    player_color_draw: Option<(usize, usize)>,
+    /// Field NPC / animated-prop draws, one per visible MAN partition-1
+    /// placement (the retail per-scene actor pool). Positions are live: the
+    /// draw follows `World::field_npc_positions` (motion-VM walkers move),
+    /// falling back to the record's spawn tile. Built at scene load in
+    /// `upload_assets`.
+    field_npc_draws: Vec<FieldNpcDraw>,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
@@ -361,13 +387,19 @@ struct PlayWindowApp {
     /// shows its tiled ground / trees / mountains rather than a handful of
     /// landmark objects.
     world_map_terrain_draws: Vec<(usize, Mat4)>,
-    /// World-map continent **ground**: the heightfield surface built from the
-    /// walk `.MAP` floor grid (`Scene::walk_heightfield`). `None` off the world
-    /// map. Drawn in `SceneMode::WorldMap` as the continent ground (texturing
-    /// provisional - a uniform ground texel); `world_map_terrain_draws` carries
-    /// the sparse placed landmarks on top. Kept out of `meshes` (it has no
-    /// `Tmd` / actor binding); drawn directly with a constant Y-flip model.
-    world_map_heightfield: Option<UploadedVramMesh>,
+    /// Bulk **ground**: the heightfield surface built from the scene's
+    /// `.MAP` floor grid (`Scene::walk_heightfield`), textured per cell from
+    /// the terrain-type-keyed atlas (record `+0x14`/`+0x15`/`+0x16`). `None`
+    /// for scenes with no field map / no `0x1000` ground layer. Drawn as the
+    /// continent ground in `SceneMode::WorldMap` and as the town floor in
+    /// `SceneMode::Field` (under the `0x2000` decor tiles + placed objects).
+    /// Kept out of `meshes` (it has no `Tmd` / actor binding); drawn directly
+    /// with a constant Y-flip model.
+    ground_heightfield: Option<UploadedVramMesh>,
+    /// `C`-key toggle: when `true`, the field render uses the wide debug
+    /// orbit vantage (`camera_mvp`) instead of the retail follow camera
+    /// (`field_follow_camera_mvp`). Defaults to the retail view.
+    field_debug_camera: bool,
     /// Kingdom slot-4 vertex-pool inspection wireframe, as raw line geometry
     /// `(positions, colors, line-indices)` in world space. `Some` only on a
     /// world-map scene when `LEGAIA_WORLDMAP_SLOT4=1` is set; `None`
@@ -471,6 +503,10 @@ struct PlayWindowApp {
     /// `self.scene_tmd_data`, and sets `actor.tmd_binding` to the new
     /// mesh index so the per-frame draws iteration picks it up.
     pending_dynamic_mesh_slots: Vec<u8>,
+    /// Spawn slots whose `tmd_ref` mesh has already been uploaded + bound
+    /// (idempotence for the drain above - the binding itself can't be the
+    /// marker because `upload_assets` pre-binds every actor slot).
+    drained_spawn_slots: std::collections::HashSet<u8>,
     /// Boot-UI state. `BootUiState::Inactive` means the legacy
     /// "go straight to the scene" path; `Title` / `SaveSelect` route
     /// player input through the boot sessions until the player picks
@@ -1929,6 +1965,26 @@ impl PlayWindowApp {
         self.resolve_placement_draws(res, tmd_src_index, &placements)
     }
 
+    /// Resolve the field scene's **terrain / ground** tiles (the `CELL_VISIBLE`
+    /// sweep in `Scene::field_terrain_tiles`) to `(mesh, model)` draws, the same
+    /// way `resolve_field_placement_draws` resolves the placed objects. This is
+    /// the town's floor / ground layer; without it a field scene renders its
+    /// buildings floating over the bare clear colour.
+    fn resolve_field_terrain_draws(
+        &self,
+        res: &SceneResources,
+        tmd_src_index: &[usize],
+    ) -> Vec<(usize, Mat4)> {
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Vec::new();
+        };
+        let tiles = match scene.field_terrain_tiles(&self.session.host.index) {
+            Ok(Some(t)) if !t.is_empty() => t,
+            _ => return Vec::new(),
+        };
+        self.resolve_placement_draws(res, tmd_src_index, &tiles)
+    }
+
     /// World-map continent terrain draws: the dense visible-tile set
     /// (`Scene::field_terrain_tiles`, the `FUN_801F69D8` overhead sweep) rather
     /// than the placed-flag interactive objects. Tiles whose pack index falls
@@ -2086,15 +2142,41 @@ impl PlayWindowApp {
                 *slot = Some(mesh_idx);
             }
         }
+        let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
         let mut draws = Vec::new();
         for p in placements {
             let Some(pack_index) = p.pack_index else {
+                if diag {
+                    log::info!(
+                        "DIAG place drop: no pack_index at ({}, {})",
+                        p.world_x,
+                        p.world_z
+                    );
+                }
                 continue;
             };
             let Some(&res_idx) = env_tmds.get(pack_index as usize) else {
+                if diag {
+                    log::info!(
+                        "DIAG place drop: pack_index {} out of range ({} env tmds) at ({}, {})",
+                        pack_index,
+                        env_tmds.len(),
+                        p.world_x,
+                        p.world_z
+                    );
+                }
                 continue;
             };
             let Some(mesh_idx) = res_to_mesh[res_idx] else {
+                if diag {
+                    log::info!(
+                        "DIAG place drop: pack {} (res {}) not in this mesh bridge at ({}, {})",
+                        pack_index,
+                        res_idx,
+                        p.world_x,
+                        p.world_z
+                    );
+                }
                 continue;
             };
             // World Y from the floor-height LUT (`-lut[nibble] + y_off`), or
@@ -2204,6 +2286,42 @@ impl PlayWindowApp {
                 // that the unfiltered builder produces.
                 let vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
                 if vmesh.indices.is_empty() {
+                    if std::env::var_os("LEGAIA_DIAG_PLACE").is_some() {
+                        let (_, stats) = rtmd.build_filtered_vram_mesh_reasoned(&res.vram);
+                        let mut missing = std::collections::BTreeSet::new();
+                        let _ = legaia_tmd::mesh::tmd_to_vram_mesh_filtered(
+                            &rtmd.tmd,
+                            &rtmd.raw,
+                            |cba, tsb, uvs| {
+                                if !res.vram.prim_has_texture_data(cba, tsb, uvs) {
+                                    missing.insert((cba, tsb));
+                                }
+                                false
+                            },
+                        );
+                        let decoded: Vec<String> = missing
+                            .iter()
+                            .map(|&(cba, tsb)| {
+                                format!(
+                                    "cba={cba:#x} CLUT({},{}) tsb={tsb:#x} page({},{}) bpp{}",
+                                    (cba & 0x3f) * 16,
+                                    cba >> 6,
+                                    (tsb & 0xf) * 64,
+                                    ((tsb >> 4) & 1) * 256,
+                                    4 << ((tsb >> 7) & 3)
+                                )
+                            })
+                            .collect();
+                        log::info!(
+                            "DIAG mesh drop: res {} (entry {} off {:#x}): textured filter empty \
+                             ({stats:?}, color mesh empty: {}) wants: {}",
+                            src_i,
+                            rtmd.entry_idx,
+                            rtmd.offset,
+                            cmesh.is_empty(),
+                            decoded.join(" | ")
+                        );
+                    }
                     // No textured prims survived the VRAM filter; the colour prims
                     // (if any) were already uploaded above.
                     continue;
@@ -2232,23 +2350,23 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("TMD upload skipped: {e:#}"),
                 }
             }
-            // World-map continent ground: build the heightfield surface from
-            // the walk `.MAP` floor grid (the slot-1 pack meshes are only the
-            // landmarks, not a per-cell ground mesh) and texture each cell from
-            // the retail terrain-type-keyed multi-page atlas - the heightfield
+            // Bulk **ground** heightfield: the surface built from the `.MAP`
+            // floor grid (the pack meshes are only the placed objects /
+            // landmarks, not a per-cell ground mesh), textured per cell from
+            // the terrain-type-keyed multi-page atlas - the heightfield
             // bakes the per-cell tile UV (`+0x14`) and page+palette
             // (`+0x15`/`+0x16..+0x18`) so grass / mountain / water cells sample
             // their own VRAM page. See docs/subsystems/world-map.md
             // "Ground texturing".
+            //
+            // This is NOT world-map-only: town `.MAP`s carry the same
+            // `0x1000`-gated ground layer (town01: ~1.9k ground cells vs the
+            // 208 `0x2000` decor tiles, most with `record[+0x10] = 0` = no
+            // pack mesh), and the retail town VRAM has the terrain atlas
+            // pages resident. Without this surface the town floor renders
+            // as holes wherever no `0x2000` tile covers a cell.
             let mut world_map_hf: Option<UploadedVramMesh> = None;
-            let is_world_map = self
-                .session
-                .host
-                .scene
-                .as_ref()
-                .is_some_and(|s| legaia_engine_core::scene::is_world_map_scene(&s.name));
-            if is_world_map
-                && let Some(scene) = self.session.host.scene.as_ref()
+            if let Some(scene) = self.session.host.scene.as_ref()
                 && let Ok(Some(hf)) = scene.walk_heightfield(&self.session.host.index)
                 && !hf.indices.is_empty()
             {
@@ -2262,7 +2380,7 @@ impl PlayWindowApp {
                 ) {
                     Ok(m) => {
                         log::info!(
-                            "play-window: world-map heightfield {} quads ({} verts)",
+                            "play-window: ground heightfield {} quads ({} verts)",
                             hf.quad_count(),
                             hf.positions.len()
                         );
@@ -2313,6 +2431,16 @@ impl PlayWindowApp {
         // props' placement transforms map to `color_meshes` indices.
         let field_placement_color_draws =
             self.resolve_field_placement_draws(&res, &color_tmd_src_index);
+        let field_terrain_draws = self.resolve_field_terrain_draws(&res, &tmd_src_index);
+        // Untextured ground tiles resolve through the colour-mesh bridge (the
+        // textured bridge has no entry for them - they'd render as floor holes).
+        let field_terrain_color_draws =
+            self.resolve_field_terrain_draws(&res, &color_tmd_src_index);
+        log::info!(
+            "play-window: {} field terrain draws (ground layer, +{} colour tiles)",
+            field_terrain_draws.len(),
+            field_terrain_color_draws.len()
+        );
         let world_map_terrain_draws = self.resolve_world_map_terrain_draws(&res, &tmd_src_index);
         // Field move-VM stager scene-pack TMD list: `env_tmds` (res.tmds @ the
         // scene_asset_table bundle entry, scan order) = retail `DAT_8007C018[5..]`,
@@ -2442,11 +2570,13 @@ impl PlayWindowApp {
         }
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
+        self.field_terrain_draws = field_terrain_draws;
+        self.field_terrain_color_draws = field_terrain_color_draws;
         self.field_placement_draws = field_placement_draws;
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
         self.world_map_terrain_draws = world_map_terrain_draws;
-        self.world_map_heightfield = world_map_hf;
+        self.ground_heightfield = world_map_hf;
         self.world_map_slot4_lines = world_map_slot4_lines;
         // World-map ocean: recover the 13-frame CLUT animation for the kingdom
         // (the ocean texture + base CLUT are already uploaded by the slot-0 TIM
@@ -2473,6 +2603,355 @@ impl PlayWindowApp {
                     }
                     Err(e) => log::warn!("play-window: actor {i} ANM init failed: {e:#}"),
                 }
+            }
+        }
+        // Bind the PLAYER's real character mesh. Town scripts install the
+        // player engine-side (`install_field_player`), not via the field-VM
+        // `0x4C 0xD8` spawn, so no `tmd_ref` spawn event ever fires for it -
+        // and the naive pre-bind above points actor 0 at whatever scene TMD
+        // shares its slot index (usually an init_data UI mesh = invisible
+        // player). Resolve the lead's field mesh from the global TMD pool
+        // (PROT 0874 §0, retail `DAT_8007C018[0..4]`, seeded by
+        // `enter_field_scene`) and override the placeholder binding.
+        self.player_color_draw = None;
+        world.set_field_player_anim(None);
+        if world.mode == SceneMode::Field
+            && let Some(pslot) = world.player_actor_slot
+        {
+            let lead = world.active_party.first().copied().unwrap_or(0) as usize;
+            let gtmd = world
+                .global_tmd_pool
+                .get(lead)
+                .and_then(|s| s.as_ref())
+                .map(std::sync::Arc::clone);
+            if let Some(g) = gtmd {
+                // The party locomotion ANM bundle (PROT 0874 §1; idle = bank
+                // slot 1, walk = bank slot 0, both pinned live - see
+                // `character_pack::LOCOMOTION_IDLE_SLOT` / `_WALK_SLOT`).
+                // Banks cover the Vahn/Noa/Gala trio only.
+                let locomotion = self
+                    .session
+                    .host
+                    .index
+                    .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+                    .ok()
+                    .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok())
+                    .filter(|_| lead <= 2);
+                // Rest pose: frame 0 of the character's standing-idle clip.
+                // Retail caps the live object count to the clip's bone count
+                // (10; groups 10/11 are equipment-swap templates, never drawn
+                // - `FUN_8001E890` / `FUN_80024d78`), so truncate the disc
+                // TMD's 12-object table to match before posing bone i ->
+                // object i.
+                // (bone_count, per-bone (translation, rotation) pairs)
+                type IdlePose = (usize, Vec<([i16; 3], [i16; 3])>);
+                let idle_pose: Option<IdlePose> = locomotion.as_ref().and_then(|bundle| {
+                    let rec_idx = legaia_asset::character_pack::locomotion_record_index(
+                        lead,
+                        legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT,
+                    );
+                    let rec = bundle.record(rec_idx).ok()?;
+                    let bones = rec.bone_count as usize;
+                    let offsets: Vec<([i16; 3], [i16; 3])> = (0..bones)
+                        .map(|bidx| match bundle.bone_transform(rec_idx, 0, bidx) {
+                            Some(t) => (
+                                [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                                [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                            ),
+                            None => ([0; 3], [0; 3]),
+                        })
+                        .collect();
+                    Some((bones, offsets))
+                });
+                // The player's working TMD: object table truncated to the
+                // clip's bone count. This is also the copy pushed into
+                // `scene_tmd_data`, so the per-frame posed rebuild (driven by
+                // the actor's live `pose_frame`) poses the same 10 objects.
+                let player_tmd = match &idle_pose {
+                    Some((bones, _)) => {
+                        let mut t = g.tmd.clone();
+                        t.objects.truncate(*bones);
+                        t
+                    }
+                    None => g.tmd.clone(),
+                };
+                let vmesh = match &idle_pose {
+                    Some((_, offsets)) => {
+                        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&player_tmd, &g.raw, offsets)
+                    }
+                    None => legaia_tmd::mesh::tmd_to_vram_mesh(&player_tmd, &g.raw),
+                };
+                if !vmesh.indices.is_empty()
+                    && let Some(r) = self.win.renderer.as_ref()
+                {
+                    match r.upload_vram_mesh(
+                        &vmesh.positions,
+                        &vmesh.uvs,
+                        &vmesh.cba_tsb,
+                        &vmesh.normals,
+                        &vmesh.indices,
+                    ) {
+                        Ok(m) => {
+                            let new_idx = self.meshes.len();
+                            self.meshes.push(m);
+                            self.scene_tmd_data
+                                .push((player_tmd.clone(), g.raw.clone()));
+                            world.set_actor_tmd_binding(pslot as usize, new_idx);
+                            self.drained_spawn_slots.insert(pslot);
+                            // The untextured half (pants / sleeves are F*/G*
+                            // colour prims the VRAM mesh can't carry) rides
+                            // the colour pipeline, posed with the same bone
+                            // set, drawn per-frame at the actor's live model.
+                            if let Some((_, offsets)) = &idle_pose {
+                                let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
+                                    &player_tmd,
+                                    &g.raw,
+                                    offsets,
+                                );
+                                if !cmesh.is_empty() {
+                                    match r.upload_color_mesh_blended(
+                                        &cmesh.positions,
+                                        &cmesh.colors,
+                                        &cmesh.indices,
+                                        &cmesh.blend,
+                                    ) {
+                                        Ok(cm) => {
+                                            let cidx = self.color_meshes.len();
+                                            self.color_meshes.push(cm);
+                                            self.player_color_draw = Some((cidx, pslot as usize));
+                                        }
+                                        Err(e) => log::warn!(
+                                            "play-window: player colour half upload: {e:#}"
+                                        ),
+                                    }
+                                }
+                            }
+                            // Live playback: the idle/walk clip pair, ticked
+                            // by the world's field step (locomotion picks the
+                            // clip, the posed rebuild consumes `pose_frame`).
+                            let anim = locomotion.as_ref().and_then(|bundle| {
+                                let rec = |slot| {
+                                    legaia_asset::character_pack::locomotion_record_index(
+                                        lead, slot,
+                                    )
+                                };
+                                let idle =
+                                    legaia_engine_core::field_anim::FieldClipPlayer::from_record(
+                                        bundle,
+                                        rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT),
+                                    )?;
+                                let walk =
+                                    legaia_engine_core::field_anim::FieldClipPlayer::from_record(
+                                        bundle,
+                                        rec(legaia_asset::character_pack::LOCOMOTION_WALK_SLOT),
+                                    )?;
+                                Some(legaia_engine_core::field_anim::FieldPlayerAnim::new(
+                                    idle, walk,
+                                ))
+                            });
+                            let animated = anim.is_some();
+                            world.set_field_player_anim(anim);
+                            log::info!(
+                                "play-window: player (roster {lead}) -> pool mesh slot {new_idx} \
+                                 ({}{}{})",
+                                if idle_pose.is_some() {
+                                    "rest-posed from locomotion idle frame 0"
+                                } else {
+                                    "unposed: locomotion bundle unavailable"
+                                },
+                                if self.player_color_draw.is_some() {
+                                    ", + colour half"
+                                } else {
+                                    ""
+                                },
+                                if animated {
+                                    ", + idle/walk playback"
+                                } else {
+                                    ""
+                                }
+                            );
+                        }
+                        Err(e) => log::warn!("play-window: player mesh upload: {e:#}"),
+                    }
+                }
+            } else {
+                log::warn!(
+                    "play-window: global TMD pool has no entry for roster slot {lead}; \
+                     player keeps the placeholder binding"
+                );
+            }
+        }
+        // Field NPCs + animated props: one draw per visible MAN partition-1
+        // placement (see `FieldNpcDraw` for the runtime-pinned model/anim
+        // resolution). Actors parked at the (16320, 16320) off-map box are
+        // conditional spawns retail hides until a script places them - skip.
+        self.field_npc_draws.clear();
+        if world.mode == SceneMode::Field
+            && let Some(r) = self.win.renderer.as_ref()
+        {
+            // The per-scene ANM bundle in the player-ANM frame-stream layout
+            // (the pose source `FUN_8001B964` walks): the type-0x05 section
+            // of the scene's first PROT slot (`player_anm::find_in_entry`;
+            // field builds don't surface it through `res.anm_packs`).
+            let scene_bundle = self.session.host.scene.as_ref().and_then(|s| {
+                s.entries.iter().find_map(|e| {
+                    legaia_asset::player_anm::find_in_entry(&e.bytes, 3)
+                        .into_iter()
+                        .next()
+                })
+            });
+            let locomotion_bundle = self
+                .session
+                .host
+                .index
+                .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+                .ok()
+                .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+            let placements = self
+                .session
+                .host
+                .scene
+                .as_ref()
+                .and_then(|s| s.field_man_payload(&self.session.host.index).ok().flatten())
+                .and_then(|man| {
+                    legaia_asset::man_section::parse(&man).ok().map(|mf| {
+                        legaia_engine_core::man_field_scripts::classify_placements(&mf, &man)
+                    })
+                })
+                .unwrap_or_default();
+            for (p, _kind) in &placements {
+                if p.world_x == 16320 && p.world_z == 16320 {
+                    continue;
+                }
+                let src = if p.special_model {
+                    world
+                        .global_tmd_pool
+                        .get((p.model_index - 0xF0) as usize)
+                        .and_then(|s| s.as_ref())
+                        .map(|g| (g.tmd.clone(), g.raw.clone()))
+                } else {
+                    res.tmds
+                        .get(p.model_index as usize)
+                        .map(|t| (t.tmd.clone(), t.raw.clone()))
+                };
+                let Some((mut tmd, raw)) = src else {
+                    continue;
+                };
+                let bundle = if p.special_model {
+                    locomotion_bundle.as_ref()
+                } else {
+                    scene_bundle.as_ref()
+                };
+                // Rest pose: frame 0 of the record the placement's anim byte
+                // names; the object table truncates to the clip's bone count
+                // (the retail count-equality contract).
+                let pose: Option<Vec<([i16; 3], [i16; 3])>> = match (p.anim_id, bundle) {
+                    (0, _) | (_, None) => None,
+                    (id, Some(b)) => {
+                        let rec_idx = (id - 1) as usize;
+                        b.record(rec_idx).ok().map(|rec| {
+                            let bones = rec.bone_count as usize;
+                            tmd.objects.truncate(bones);
+                            (0..bones)
+                                .map(|bi| match b.bone_transform(rec_idx, 0, bi) {
+                                    Some(t) => (
+                                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                                    ),
+                                    None => ([0; 3], [0; 3]),
+                                })
+                                .collect()
+                        })
+                    }
+                };
+                let vmesh = match &pose {
+                    Some(offsets) => {
+                        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&tmd, &raw, offsets)
+                    }
+                    None => legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &raw),
+                };
+                let cmesh = match &pose {
+                    Some(offsets) => {
+                        legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&tmd, &raw, offsets)
+                    }
+                    None => legaia_tmd::mesh::tmd_to_color_mesh(&tmd, &raw),
+                };
+                let mesh_idx = if vmesh.indices.is_empty() {
+                    None
+                } else {
+                    match r.upload_vram_mesh(
+                        &vmesh.positions,
+                        &vmesh.uvs,
+                        &vmesh.cba_tsb,
+                        &vmesh.normals,
+                        &vmesh.indices,
+                    ) {
+                        Ok(m) => {
+                            let idx = self.meshes.len();
+                            self.meshes.push(m);
+                            self.scene_tmd_data.push((tmd.clone(), raw.clone()));
+                            Some(idx)
+                        }
+                        Err(e) => {
+                            log::warn!("play-window: NPC mesh upload (slot {}): {e:#}", p.index);
+                            None
+                        }
+                    }
+                };
+                let color_idx = if cmesh.is_empty() {
+                    None
+                } else {
+                    match r.upload_color_mesh_blended(
+                        &cmesh.positions,
+                        &cmesh.colors,
+                        &cmesh.indices,
+                        &cmesh.blend,
+                    ) {
+                        Ok(cm) => {
+                            let idx = self.color_meshes.len();
+                            self.color_meshes.push(cm);
+                            Some(idx)
+                        }
+                        Err(e) => {
+                            log::warn!("play-window: NPC colour upload (slot {}): {e:#}", p.index);
+                            None
+                        }
+                    }
+                };
+                if mesh_idx.is_none() && color_idx.is_none() {
+                    continue;
+                }
+                self.field_npc_draws.push(FieldNpcDraw {
+                    slot: p.index as u8,
+                    mesh_idx,
+                    color_idx,
+                    spawn: (p.world_x, p.world_z),
+                });
+            }
+            if !self.field_npc_draws.is_empty() {
+                log::info!(
+                    "play-window: {} field NPC/prop draws ({} placements)",
+                    self.field_npc_draws.len(),
+                    placements.len()
+                );
+            }
+        }
+        // Initial floor snap: locomotion only re-samples the floor height on a
+        // step, so an actor standing still since spawn keeps `world_y = 0`
+        // while the town ground sits at a LUT-elevated tier - it renders
+        // buried under (or floating over) the terrain until it first moves.
+        // Snap every bound actor that still has the flat default.
+        if world.follow_terrain_height && world.mode == SceneMode::Field {
+            for i in 0..world.actors.len() {
+                if world.actors[i].tmd_binding.is_none() {
+                    continue;
+                }
+                let ms = &world.actors[i].move_state;
+                if ms.world_y != 0 {
+                    continue;
+                }
+                let y = world.sample_field_floor_height(ms.world_x as i32, ms.world_z as i32);
+                world.actors[i].move_state.world_y = y as i16;
             }
         }
         log::info!(
@@ -2522,7 +3001,74 @@ impl PlayWindowApp {
                 )
             })
             .unwrap_or((self.scene_aabb.0, self.scene_aabb.1));
-        orbit_camera_mvp(lo, hi, 0.25, 0.4, self.win.elapsed_secs(), aspect)
+        // Retail's field camera is a *fixed* per-scene 3/4 vantage that follows
+        // the player, NOT a spinning orbit. Passing `elapsed_secs` here made the
+        // camera rotate continuously (after ~15 s it points up at the sky with
+        // the town splayed at the edges). Freeze the orbit angle to a fixed
+        // diagonal and steepen the eye height to a town-like overhead pitch. The
+        // AABB is still the player-centred box, so the view tracks the player.
+        //
+        // `orbit_camera_mvp` derives its azimuth from `elapsed_secs *
+        // orbit_speed`; feed a constant "time" so the azimuth is fixed at
+        // `FIELD_ORBIT_ANGLE`. Height ratio `FIELD_EYE_HEIGHT` sets the pitch
+        // (`atan(height) ≈ 40deg`), matching Rim Elm's overhead framing.
+        const FIELD_ORBIT_SPEED: f32 = 0.25;
+        const FIELD_ORBIT_ANGLE: f32 = 0.75;
+        const FIELD_EYE_HEIGHT: f32 = 0.85;
+        let fixed_time = FIELD_ORBIT_ANGLE / FIELD_ORBIT_SPEED;
+        orbit_camera_mvp(
+            lo,
+            hi,
+            FIELD_ORBIT_SPEED,
+            FIELD_EYE_HEIGHT,
+            fixed_time,
+            aspect,
+        )
+    }
+
+    /// The retail **field follow camera**, parametrized from the town01
+    /// anchor savestate's camera globals (see docs/subsystems/cutscene.md for
+    /// the global map): pitch `_DAT_8007B790 = 450` (~39.6 deg down-tilt),
+    /// yaw `_DAT_8007B792 = -160`, roll 0, GTE `H = _DAT_8007B6F4 = 512`.
+    /// The look-at target is the player anchor - retail's follow-cam
+    /// (`FUN_801DBE9C`) folds `-(anchor X/Z)` into the focus globals each
+    /// frame. The eye-space depth is an engine calibration (retail's exact
+    /// field TR composition isn't pinned yet - the offset trio in the
+    /// savestate doesn't project to the observed framing); `FIELD_CAM_DEPTH`
+    /// is fitted so the player's on-screen height matches the retail frame
+    /// (~55 px of 240 for the ~130-unit mesh at H = 512).
+    ///
+    /// Falls back to the fixed orbit vantage (`camera_mvp`) when no player
+    /// actor exists to follow.
+    fn field_follow_camera_mvp(&self, aspect: f32) -> Option<Mat4> {
+        const PITCH_UNITS: f32 = 450.0;
+        const YAW_UNITS: f32 = -160.0;
+        const FIELD_H: f32 = 512.0;
+        const FIELD_CAM_DEPTH: f32 = 1200.0;
+        let world = &self.session.host.world;
+        let p = world
+            .actors
+            .first()
+            .filter(|p| p.active || p.tmd_binding.is_some())?;
+        let (wx, wz) = (p.move_state.world_x, p.move_state.world_z);
+        // Anchor the look-at to the floor under the player, not the actor's
+        // raw Y: `follow_terrain_height` is opt-in, so `world_y` is usually 0
+        // while the town ground sits at a LUT-elevated tier - targeting y=0
+        // there points the camera under the ground. The sampler returns the
+        // retail-negated tier (up = negative, matching the placement world
+        // Y); the camera target is subtracted post-Y-flip (PSX space), so
+        // negate back.
+        let floor_y = world.sample_field_floor_height(wx as i32, wz as i32);
+        let target = Vec3::new(wx as f32, -floor_y as f32, wz as f32);
+        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        Some(Self::psx_camera_mvp(
+            to_rad(PITCH_UNITS),
+            to_rad(YAW_UNITS),
+            FIELD_H,
+            Vec3::new(0.0, 0.0, FIELD_CAM_DEPTH),
+            target,
+            aspect,
+        ))
     }
 
     /// Battle camera: frame the **monster** actors (the ones carrying a bound
@@ -2617,10 +3163,32 @@ impl PlayWindowApp {
     /// foreground and backdrop orbiting in lock-step; the differing `tr.z`
     /// is what lets the party read large while the dome sits on the horizon.
     fn battle_mvp_with_tr(yaw_rad: f32, tr: Vec3, aspect: f32) -> Mat4 {
-        const H: f32 = 256.0;
         const PITCH_UNITS: f32 = 32.0;
         let pitch = PITCH_UNITS / 4096.0 * std::f32::consts::TAU;
-        let r = Mat4::from_rotation_x(pitch) * Mat4::from_rotation_y(yaw_rad);
+        Self::psx_camera_mvp(pitch, yaw_rad, 256.0, tr, Vec3::ZERO, aspect)
+    }
+
+    /// Shared PSX-projection camera: `screen = H * (R*(v - target) + tr) / Ze`
+    /// with `R = Rx(pitch)·Ry(yaw)` (the retail GTE camera-rotation build
+    /// `FUN_8001CF50`), `tr` the post-rotation eye-space translation, `target`
+    /// the world-space look-at (retail folds it into the GTE translation as
+    /// the negated focus trio `_DAT_80089118/1C/20`), and `H` the GTE
+    /// projection register (`_DAT_8007B6F4`). The battle camera is this with
+    /// `target = origin`, `H = 256`; the field camera drives `target` from
+    /// the player anchor with the savestate-pinned angle globals.
+    ///
+    /// The engine draws its meshes Y-flipped (`scale(1,-1,1)` = `F`, PSX
+    /// Y-down -> renderer Y-up); every draw's `model` carries an `F`, and
+    /// `F*F = I` recovers the raw PSX vertex the retail transform expects.
+    fn psx_camera_mvp(
+        pitch_rad: f32,
+        yaw_rad: f32,
+        h: f32,
+        tr: Vec3,
+        target: Vec3,
+        aspect: f32,
+    ) -> Mat4 {
+        let r = Mat4::from_rotation_x(pitch_rad) * Mat4::from_rotation_y(yaw_rad);
         let t = Mat4::from_translation(tr);
         let f = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
         // PSX perspective onto a 320x240 frame: ndc.x = H*Ex/(160*Ez),
@@ -2632,12 +3200,12 @@ impl PlayWindowApp {
         let b = -near * far / (far - near);
         let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
         let proj = Mat4::from_cols(
-            Vec4::new(H / 160.0 * aspect_fix, 0.0, 0.0, 0.0),
-            Vec4::new(0.0, -H / 120.0, 0.0, 0.0),
+            Vec4::new(h / 160.0 * aspect_fix, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, -h / 120.0, 0.0, 0.0),
             Vec4::new(0.0, 0.0, a, 1.0),
             Vec4::new(0.0, 0.0, b, 0.0),
         );
-        proj * t * r * f
+        proj * t * r * Mat4::from_translation(-target) * f
     }
 
     /// The single battle camera, used for **everything** in a stage-dome battle
@@ -2739,7 +3307,19 @@ impl PlayWindowApp {
             a.move_state.world_y as f32,
             a.move_state.world_z as f32,
         );
-        Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+        // Field actors carry their heading in `render_26` (PSX 12-bit angle,
+        // maintained by the locomotion controller); retail builds the actor
+        // matrix from the rotation trio before the per-bone pose is composed
+        // onto it (`FUN_8001B964` -> `FUN_80026988`). Y-rotation commutes with
+        // the Y-flip, so the order against the scale is immaterial.
+        let yaw = if self.session.host.world.mode == SceneMode::Field {
+            (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU
+        } else {
+            0.0
+        };
+        Mat4::from_translation(pos)
+            * Mat4::from_rotation_y(yaw)
+            * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
     }
 
     /// The monster stat archive (PROT 867) bytes, decoded + cached on first
@@ -5758,6 +6338,25 @@ impl ApplicationHandler for PlayWindowApp {
                     }
                     return;
                 }
+                // `C`: toggle the field camera between the retail follow view
+                // (savestate-pinned pitch/yaw/H, player-anchored - the
+                // faithful framing) and the wide debug orbit vantage (better
+                // for eyeballing scene completeness).
+                if matches!(code, KeyCode::KeyC)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    self.field_debug_camera = !self.field_debug_camera;
+                    log::info!(
+                        "camera: field vantage = {}",
+                        if self.field_debug_camera {
+                            "debug orbit"
+                        } else {
+                            "retail follow"
+                        }
+                    );
+                    return;
+                }
                 // `N`: open the name-entry overlay for the lead character. The
                 // NEW GAME flow now opens it automatically at the `opdeene` ->
                 // `town01` opening hand-off (see the prologue-handoff block
@@ -6209,8 +6808,15 @@ impl ApplicationHandler for PlayWindowApp {
                             // actors live at the world origin).
                             self.battle_camera_mvp(aspect)
                         }
-                    } else {
+                    } else if self.field_debug_camera {
+                        // Wide debug orbit vantage (`C` toggles).
                         self.camera_mvp(aspect)
+                    } else {
+                        // Field: the retail follow camera (savestate-pinned
+                        // pitch/yaw/H, player-anchored) when a player actor
+                        // exists; the fixed debug orbit vantage otherwise.
+                        self.field_follow_camera_mvp(aspect)
+                            .unwrap_or_else(|| self.camera_mvp(aspect))
                     };
                     // Drain queued spawn slots: build a VRAM mesh from each
                     // actor's `tmd_ref` (global-pool TMD that the field-VM
@@ -6226,7 +6832,14 @@ impl ApplicationHandler for PlayWindowApp {
                             Some(a) => a,
                             None => continue,
                         };
-                        if actor.tmd_binding.is_some() {
+                        // Idempotence is tracked per-slot, NOT by "already has
+                        // a binding": `upload_assets` naively pre-binds every
+                        // actor K -> scene TMD slot K, and the player's spawn
+                        // (its `tmd_ref` = the real character mesh from the
+                        // global pool) must override that placeholder or the
+                        // player renders as whatever scene mesh happened to
+                        // share its slot index (usually invisible).
+                        if self.drained_spawn_slots.contains(&slot) {
                             continue;
                         }
                         let Some(gtmd) = actor.tmd_ref.as_ref().map(std::sync::Arc::clone) else {
@@ -6253,6 +6866,7 @@ impl ApplicationHandler for PlayWindowApp {
                                     .push((gtmd.tmd.clone(), gtmd.raw.clone()));
                                 self.session.host.world.actors[slot as usize].tmd_binding =
                                     Some(new_idx);
+                                self.drained_spawn_slots.insert(slot);
                                 log::info!("play-window: spawn slot {slot} -> mesh slot {new_idx}");
                             }
                             Err(e) => log::warn!("spawn mesh upload: {e:#}"),
@@ -6263,7 +6877,13 @@ impl ApplicationHandler for PlayWindowApp {
                     // posed_overrides[i] replaces meshes[i] when present.
                     let mut posed_overrides: Vec<Option<UploadedVramMesh>> =
                         (0..self.scene_tmd_data.len()).map(|_| None).collect();
-                    for actor in &self.session.host.world.actors {
+                    // The player's untextured colour half follows the same
+                    // per-frame pose - rebuilt below alongside the textured
+                    // override, drawn instead of the static rest-pose colour
+                    // mesh at the draw site.
+                    let mut player_color_posed: Option<UploadedColorMesh> = None;
+                    let player_slot = self.session.host.world.player_actor_slot;
+                    for (ai, actor) in self.session.host.world.actors.iter().enumerate() {
                         if !actor.active {
                             continue;
                         }
@@ -6274,11 +6894,15 @@ impl ApplicationHandler for PlayWindowApp {
                         let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
                             continue;
                         };
-                        // Battle actors carry a per-object rigid-transform clip
-                        // (rotation matters), so use the full `R·v + T` builder;
-                        // field actors keep the translation-only ANM path
-                        // unchanged.
-                        let mut vmesh = if actor.battle_animation.is_some() {
+                        // Battle actors and the field player carry per-object
+                        // rigid-transform clips (rotation matters), so use the
+                        // full `R·v + T` builder; other field actors keep the
+                        // translation-only ANM path unchanged.
+                        let is_field_player = player_slot == Some(ai as u8)
+                            && self.player_color_draw.map(|(_, s)| s) == Some(ai);
+                        let mut vmesh = if actor.battle_animation.is_some()
+                            || player_slot == Some(ai as u8)
+                        {
                             legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
                                 tmd,
                                 raw,
@@ -6287,6 +6911,26 @@ impl ApplicationHandler for PlayWindowApp {
                         } else {
                             legaia_tmd::mesh::tmd_to_vram_mesh_posed(tmd, raw, &pose.bone_outputs)
                         };
+                        if is_field_player {
+                            let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
+                                tmd,
+                                raw,
+                                &pose.bone_outputs,
+                            );
+                            if !cmesh.is_empty() {
+                                match r.upload_color_mesh_blended(
+                                    &cmesh.positions,
+                                    &cmesh.colors,
+                                    &cmesh.indices,
+                                    &cmesh.blend,
+                                ) {
+                                    Ok(m) => player_color_posed = Some(m),
+                                    Err(e) => {
+                                        log::warn!("posed player colour upload: {e:#}")
+                                    }
+                                }
+                            }
+                        }
                         // The posed mesh is rebuilt from the raw TMD, so its
                         // CBA/TSB are the nominal on-disc defaults. Re-apply the
                         // per-slot relocation `battle_render_mesh` did for the
@@ -6300,6 +6944,15 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                         if vmesh.indices.is_empty() {
                             continue;
+                        }
+                        if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
+                            let (lo, hi) = vmesh.aabb();
+                            log::info!(
+                                "DIAG pose: tmd {tmd_idx} verts {} aabb {lo:?}..{hi:?} \
+                                 bones[0..2]={:?}",
+                                vmesh.positions.len(),
+                                &pose.bone_outputs[..pose.bone_outputs.len().min(2)]
+                            );
                         }
                         match r.upload_vram_mesh(
                             &vmesh.positions,
@@ -6337,7 +6990,7 @@ impl ApplicationHandler for PlayWindowApp {
                         // player / entity-marker world frame:
                         //
                         // 1. The **ground** is a heightfield surface
-                        //    (`world_map_heightfield`) built from the walk
+                        //    (`ground_heightfield`) built from the walk
                         //    `.MAP` floor grid (`Scene::walk_heightfield`,
                         //    elevation per `FUN_80019278`). It draws with a
                         //    provisional uniform ground texel: per-tile
@@ -6353,11 +7006,14 @@ impl ApplicationHandler for PlayWindowApp {
                         // The earlier per-cell pack-mesh sweep that stamped a
                         // mesh on every `0x1000` cell was wrong (it flooded the
                         // map with pool-5; see docs/subsystems/world-map.md).
-                        let yflip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
-                        if let Some(hf_mesh) = self.world_map_heightfield.as_ref() {
+                        // No Y-flip on the heightfield: its baked `-lut`
+                        // corner heights are already in the same frame as the
+                        // landmark placements' un-flipped translation (see the
+                        // field-branch note below).
+                        if let Some(hf_mesh) = self.ground_heightfield.as_ref() {
                             draws.push(SceneDraw {
                                 mesh: hf_mesh,
-                                mvp: cam * yflip,
+                                mvp: cam,
                             });
                         }
                         for (mesh_idx, model) in self.world_map_terrain_draws.iter() {
@@ -6371,9 +7027,10 @@ impl ApplicationHandler for PlayWindowApp {
                         // Last-resort fallback: nothing resolved at all -> draw
                         // the whole pack at pack-local coords so the map isn't
                         // blank.
-                        if self.world_map_heightfield.is_none()
+                        if self.ground_heightfield.is_none()
                             && self.world_map_terrain_draws.is_empty()
                         {
+                            let yflip = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                             for mesh in &self.meshes {
                                 draws.push(SceneDraw {
                                     mesh,
@@ -6431,25 +7088,136 @@ impl ApplicationHandler for PlayWindowApp {
                                 });
                             }
                         } else {
+                            // Debug layer filter (`LEGAIA_DIAG_LAYERS=hf,tiles,
+                            // ctiles,place,cplace,npc`): when set, only the
+                            // named field layers draw - the render-side sibling
+                            // of `LEGAIA_DIAG_PLACE` for bisecting which layer
+                            // a visual defect lives in.
+                            let layer_filter = std::env::var("LEGAIA_DIAG_LAYERS").ok();
+                            let layer_on = |name: &str| {
+                                layer_filter
+                                    .as_deref()
+                                    .is_none_or(|f| f.split(',').any(|s| s == name))
+                            };
+                            // Bulk ground FIRST: the `.MAP` floor-grid
+                            // heightfield (the `0x1000` ground layer - most
+                            // town floor cells have NO pack mesh, so without
+                            // this surface they render as holes).
+                            //
+                            // NO Y-flip here: the heightfield bakes its corner
+                            // elevation as `-lut[nib]` (already the world
+                            // height placements/actors put in their UN-flipped
+                            // translation). Flipping the mesh negated it back
+                            // to `+lut`, sinking every elevated cell to twice
+                            // its elevation BELOW its buildings - the whole
+                            // cliff-top town core (tier -192, incl. the spawn
+                            // plaza) rendered out of sight while only sea-level
+                            // tier-0 cells (the beach) lined up. Pipelines
+                            // don't cull, so the winding change is harmless.
+                            if layer_on("hf")
+                                && let Some(hf_mesh) = self.ground_heightfield.as_ref()
+                            {
+                                draws.push(SceneDraw {
+                                    mesh: hf_mesh,
+                                    mvp: cam,
+                                });
+                            }
+                            // Then the terrain / decor tile layer (drawn under
+                            // the buildings): the `CELL_VISIBLE` field-map tiles
+                            // (stone plaza, paths, riverbank).
+                            if layer_on("tiles") {
+                                for (mesh_idx, model) in &self.field_terrain_draws {
+                                    if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                        draws.push(SceneDraw {
+                                            mesh,
+                                            mvp: cam * *model,
+                                        });
+                                    }
+                                }
+                            }
+                            // Untextured ground tiles (vertex-colour meshes the
+                            // textured bridge has no entry for) - without these
+                            // the floor shows holes where a tile's mesh carries
+                            // no textured prims.
+                            if layer_on("ctiles") {
+                                for (mesh_idx, model) in &self.field_terrain_color_draws {
+                                    if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                        color_draws.push(ColorSceneDraw {
+                                            mesh,
+                                            mvp: cam * *model,
+                                        });
+                                    }
+                                }
+                            }
                             // Static environment geometry: draw each placed
                             // building / terrain mesh at its world transform
                             // (resolved at scene load in
                             // `resolve_field_placement_draws`).
-                            for (mesh_idx, model) in &self.field_placement_draws {
-                                if let Some(mesh) = self.meshes.get(*mesh_idx) {
-                                    draws.push(SceneDraw {
-                                        mesh,
-                                        mvp: cam * *model,
-                                    });
+                            if layer_on("place") {
+                                for (mesh_idx, model) in &self.field_placement_draws {
+                                    if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                        draws.push(SceneDraw {
+                                            mesh,
+                                            mvp: cam * *model,
+                                        });
+                                    }
                                 }
                             }
                             // Untextured props (the F*/G* meshes the VRAM path
                             // drops) on the colour pipeline, same transforms.
-                            for (mesh_idx, model) in &self.field_placement_color_draws {
-                                if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                            if layer_on("cplace") {
+                                for (mesh_idx, model) in &self.field_placement_color_draws {
+                                    if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                        color_draws.push(ColorSceneDraw {
+                                            mesh,
+                                            mvp: cam * *model,
+                                        });
+                                    }
+                                }
+                            }
+                            // The player's untextured mesh half (pants /
+                            // sleeves), following the actor's live transform.
+                            // Prefer this frame's posed rebuild (idle/walk
+                            // playback); fall back to the static rest pose.
+                            if let Some((cidx, slot)) = self.player_color_draw
+                                && let Some(mesh) = player_color_posed
+                                    .as_ref()
+                                    .or_else(|| self.color_meshes.get(cidx))
+                            {
+                                color_draws.push(ColorSceneDraw {
+                                    mesh,
+                                    mvp: cam * self.actor_model(slot),
+                                });
+                            }
+                            // Field NPCs + animated props at their live
+                            // positions (motion-VM walkers update
+                            // `field_npc_positions`; everyone else stands at
+                            // the spawn tile), floor-snapped like the player.
+                            let w = &self.session.host.world;
+                            for d in self.field_npc_draws.iter().filter(|_| layer_on("npc")) {
+                                let (x, z) = w
+                                    .field_npc_positions
+                                    .get(&d.slot)
+                                    .copied()
+                                    .unwrap_or(d.spawn);
+                                let y = w.sample_field_floor_height(x as i32, z as i32) as f32;
+                                let model =
+                                    Mat4::from_translation(Vec3::new(x as f32, y, z as f32))
+                                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                if let Some(mi) = d.mesh_idx
+                                    && let Some(mesh) = self.meshes.get(mi)
+                                {
+                                    draws.push(SceneDraw {
+                                        mesh,
+                                        mvp: cam * model,
+                                    });
+                                }
+                                if let Some(ci) = d.color_idx
+                                    && let Some(mesh) = self.color_meshes.get(ci)
+                                {
                                     color_draws.push(ColorSceneDraw {
                                         mesh,
-                                        mvp: cam * *model,
+                                        mvp: cam * model,
                                     });
                                 }
                             }
@@ -6958,6 +7726,31 @@ fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntity
 /// each) decoded from the kingdom bundle and the current frame cursor + tick
 /// accumulator. Each step overwrites the first 16 CLUT entries at VRAM
 /// `(0, 506)` with the next frame, reproducing the retail rolling-wave DMA.
+/// One field NPC / animated-prop draw, resolved at scene load from a MAN
+/// partition-1 placement record (the retail per-scene actor pool, stride
+/// `0xD8`). Runtime-pinned resolution (anchor-C town01 census, 53/53 animated
+/// actors):
+///
+///  - model byte `< 0xF0` -> scene TMD index `model` (retail registers the
+///    scene TMD list into the `0x8007C018` pool at slot `model + 5`; the five
+///    head slots are the party + savepoint meshes);
+///  - model byte `>= 0xF0` -> global-pool head slot `model - 0xF0`;
+///  - the record's `anim_id` byte (installed into actor `+0x5C`) = ANM record
+///    index + 1 in the **scene bundle** (normal models) or the **PROT 0874 §1
+///    locomotion bundle** (special models); `0` = no clip (unposed prop).
+struct FieldNpcDraw {
+    /// Partition-1 record index - the key `World::field_npc_positions` tracks
+    /// live walker positions under.
+    slot: u8,
+    /// Textured mesh half (`self.meshes`), `None` when the model carries no
+    /// textured prims.
+    mesh_idx: Option<usize>,
+    /// Untextured F*/G* colour half (`self.color_meshes`).
+    color_idx: Option<usize>,
+    /// Spawn world position (fallback when the world has no live position).
+    spawn: (i16, i16),
+}
+
 struct OceanAnim {
     /// 13 frames × 32 bytes (16 BGR555 entries each), as decoded by
     /// [`legaia_asset::ocean::find_ocean_assets`].
@@ -7527,7 +8320,7 @@ fn cmd_play_window_with_record(
         } else {
             SceneLoadKind::Field
         };
-        let (res, _stats) = SceneResources::build_targeted_with_options(
+        let (mut res, _stats) = SceneResources::build_targeted_with_options(
             s,
             &shared_refs,
             BuildOptions {
@@ -7535,6 +8328,50 @@ fn cmd_play_window_with_record(
                 upload_all_tims: true,
             },
         )?;
+        // Field-character atlas upload (PROT 0874 §2, the `FUN_800198e0`
+        // chain): entries 1/2/3 are the Vahn/Noa/Gala atlas pages whose
+        // palettes live as **flat strips** on CLUT row 478. The generic TIM
+        // scan uploads the pages but places these CLUTs as declared rects
+        // (rows 478..481 col 0), so the meshes sample an unpopulated row and
+        // the VRAM filter drops them - the invisible-player symptom. Retail
+        // field load uploads the pack with strip semantics; replicate that.
+        // (NOT the etim effect pool - uploading that battle-resident pool
+        // into field VRAM clobbers pages the town meshes sample.)
+        match session
+            .host
+            .index
+            .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
+            .and_then(|b| legaia_asset::field_char_textures::parse(&b))
+        {
+            Ok(mut pack) => {
+                // Entries 1/2/3 only (the character atlas pages). The pack's
+                // other entries land on pages the town env meshes sample -
+                // uploading them here drops ~26 scene meshes to the filter.
+                pack.textures.retain(|t| (1..=3).contains(&t.index));
+                pack.upload_to_vram(&mut res.vram, false);
+                log::info!(
+                    "play-window: field char atlas uploaded ({} TIMs, strip CLUTs)",
+                    pack.textures.len()
+                );
+            }
+            Err(err) => {
+                log::warn!("play-window: field char atlas upload skipped: {err:#}");
+            }
+        }
+        // Shared interior page (texpage (960,256) + the flat 256-entry strip
+        // CLUT on row 510): resident in retail VRAM from the opening onward,
+        // sampled by town env meshes (23 town01 tile instances incl. the
+        // spawn plaza). It lives in PROT.DAT's unindexed head gap (before
+        // the first TOC entry's data), so no per-entry read can source it.
+        match legaia_asset::interior_page::read_from_prot_dat(&extracted_root.join("PROT.DAT")) {
+            Ok(tim) => {
+                legaia_asset::interior_page::upload_to_vram(&tim, &mut res.vram);
+                log::info!("play-window: shared interior page uploaded (row-510 strip CLUT)");
+            }
+            Err(err) => {
+                log::warn!("play-window: shared interior page skipped: {err:#}");
+            }
+        }
         res
     };
     log::info!(
@@ -7734,8 +8571,13 @@ fn cmd_play_window_with_record(
         field_stager_tmds: Vec::new(),
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
+        field_terrain_draws: Vec::new(),
+        field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
-        world_map_heightfield: None,
+        ground_heightfield: None,
+        // Headless capture harnesses can't press `C`; let them start on the
+        // wide debug vantage via the env switch.
+        field_debug_camera: std::env::var_os("LEGAIA_FIELD_DEBUG_CAM").is_some(),
         world_map_slot4_lines: None,
         ocean_anim: None,
         cpu_vram_base: None,
@@ -7760,6 +8602,9 @@ fn cmd_play_window_with_record(
         battle_event_log: std::collections::VecDeque::new(),
         battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
         pending_dynamic_mesh_slots: Vec::new(),
+        drained_spawn_slots: std::collections::HashSet::new(),
+        player_color_draw: None,
+        field_npc_draws: Vec::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),

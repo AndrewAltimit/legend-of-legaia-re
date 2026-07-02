@@ -71,7 +71,12 @@ prim data (count × ilen*4 bytes):
 
 <section class="doc-section" id="per-prim-colour">
   <h2>Per-prim colour / texture block</h2>
-  <p>The bytes from the prim's start up to the vertex-index offset hold either a <strong>texture block</strong> (<code>FT*</code>/<code>GT*</code>) or a per-vertex <strong>colour block</strong> (<code>F*</code>/<code>G*</code>), selected by the byte3 shape. The colour word is PSX <code>[R, G, B, code]</code> (the 4th byte is the SDK GP0 code, dropped). Pinned byte-exact from the renderer + real town01 props:</p>
+  <p>The prim's leading bytes hold either a <strong>texture block</strong> (<code>FT*</code>/<code>GT*</code>: <code>[u0, v0, cba][u1, v1, tsb][u2, v2 (, u3, v3)]</code>) or a per-vertex <strong>colour block</strong> (<code>F*</code>/<code>G*</code>), selected by the byte3 shape. For textured prims the block's <strong>start</strong> comes from the table entry's <strong>byte 1</strong> (<code>Descriptor::texture_block_offset</code>):</p>
+  <ul class="bullets">
+    <li><strong>byte1 = 0</strong> (rows 0/1, flags <code>0x10..0x17</code>): the light-source-lit variant - the texture block sits at <strong>offset 0</strong>, ahead of the vertices, with per-vertex data trailing the vertex indices. An earlier walker assumed <code>block_start = vertex_offset - block_len</code> (true only for the baked-colour rows), so these prims read <code>(cba, tsb)</code> from geometry bytes and rendered as rainbow garbage - the Rim Elm decorative-plant props.</li>
+    <li><strong>byte1 = 3</strong> (rows 4/5, flags <code>0x20..0x27</code>): baked per-vertex colours precede the block - one colour word for flat <code>FT*</code>, <code>n_vertices</code> words for gouraud <code>GT*</code> - and the block ends at the vertex-index offset.</li>
+  </ul>
+  <p>The colour word is PSX <code>[R, G, B, code]</code> (the 4th byte is the SDK GP0 code, dropped). Pinned byte-exact from the renderer + real town01 props:</p>
   <ul class="bullets">
     <li><strong>F4</strong> (flags 0x1B, 12-byte record): one colour word at offset 0 broadcast to all 4 verts, then 4&times;u16 vertex byte-offsets; quad winding <code>[0,1,3,2]</code>.</li>
     <li><strong>G3</strong> (flags 0x1D, 20-byte record): 3 colour words at a 4-byte stride, then 3&times;u16 vertex offsets.</li>

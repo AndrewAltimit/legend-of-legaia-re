@@ -102,6 +102,22 @@ pub struct Descriptor {
     pub packet_shape: PacketShape,
     /// Resolved vertex-index byte offset within the prim payload.
     pub vertex_offset: usize,
+    /// Byte offset of the texture block (`[u0 v0 cba][u1 v1 tsb][u2 v2 …]`)
+    /// within the prim payload, for the `Ft*` / `Gt*` shapes. `None` for
+    /// untextured shapes.
+    ///
+    /// The block sits **after** the prim's leading colour words, when
+    /// present. Whether colours precede the texture block is encoded in the
+    /// table entry's byte 1 (`0` = no leading colours - a light-source-lit
+    /// prim carrying per-vertex normals *after* the vertex indices, so the
+    /// texture block is at offset 0; non-zero = per-vertex baked colours
+    /// precede it: one word for flat `Ft*`, `n_vertices` words for gouraud
+    /// `Gt*`). Rows 0/1 of `DAT_8007326C` are the lit variants (byte1 = 0),
+    /// rows 4/5 the baked-colour variants (byte1 = 3). The earlier
+    /// `vertex_offset - block_len` heuristic only matched the byte1 = 3 rows;
+    /// the byte1 = 0 rows read cba/tsb from geometry bytes and rendered as
+    /// rainbow garbage.
+    pub texture_block_offset: Option<usize>,
 }
 
 impl Descriptor {
@@ -115,7 +131,7 @@ impl Descriptor {
         let table_row = ((f_shifted - 8) >> 1) as u8;
         let is_quad = (f_shifted & 1) == 1;
 
-        let (byte3, byte4) = TABLE[table_row as usize];
+        let (byte1, byte3, byte4) = TABLE[table_row as usize];
         // vertex_offset replicates the same logic as
         // legaia_prims::vertex_offset_bytes - kept here so the descriptor
         // is self-contained.
@@ -151,6 +167,24 @@ impl Descriptor {
             (true, _) => PacketShape::Gt4,
         };
 
+        // Texture-block offset: after any leading per-vertex colour words.
+        // byte1 == 0 -> lit prim (normals trail the vertices), texture block
+        // at offset 0. byte1 != 0 -> baked colours precede it: 1 word for a
+        // flat `Ft*`, `n_vertices` words for a gouraud `Gt*`.
+        let n_verts = packet_shape.n_vertices();
+        let texture_block_offset = if packet_shape.is_textured() {
+            let color_words = if byte1 == 0 {
+                0
+            } else if packet_shape.is_gouraud() {
+                n_verts
+            } else {
+                1
+            };
+            Some(color_words * 4)
+        } else {
+            None
+        };
+
         Some(Self {
             table_row,
             raw_byte3: byte3,
@@ -158,6 +192,7 @@ impl Descriptor {
             is_quad,
             packet_shape,
             vertex_offset,
+            texture_block_offset,
         })
     }
 }
@@ -181,13 +216,20 @@ impl Descriptor {
 /// 4th column. The renderer treats the table as a packed
 /// `{i32 first; i32 second}` struct and reads `(first >> 24)` for byte 3
 /// and `(second & 0xFF)` for byte 4.)
-const TABLE: [(u8, u8); 6] = [
-    (0x05, 0x07),
-    (0x07, 0x06),
-    (0x00, 0x02),
-    (0x02, 0x06),
-    (0x01, 0x07),
-    (0x03, 0x0B),
+///
+/// `byte1` is `first`'s second byte - the renderer's per-vertex colour base
+/// (`FUN_8002735c` reads it at `sp+0xb9`). It is `0` for rows 0-3 (lit prims,
+/// no baked colours - the texture block starts at offset 0) and `3` for rows
+/// 4-5 (baked-colour prims - colours precede the texture block). Consumed by
+/// [`Descriptor::texture_block_offset`].
+const TABLE: [(u8, u8, u8); 6] = [
+    // (byte1, byte3, byte4)
+    (0x00, 0x05, 0x07),
+    (0x00, 0x07, 0x06),
+    (0x00, 0x00, 0x02),
+    (0x00, 0x02, 0x06),
+    (0x03, 0x01, 0x07),
+    (0x03, 0x03, 0x0B),
 ];
 
 /// Number of rows in the per-mode descriptor table.
@@ -205,6 +247,58 @@ pub fn known_flag_values() -> impl Iterator<Item = u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn texture_block_offset_lit_vs_baked_color_rows() {
+        // Rows 0/1 (byte1 == 0) are the light-source-lit textured variants:
+        // the texture block sits at offset 0, ahead of the vertices (normals
+        // trail them). Byte-pinned from Rim Elm env-mesh pack 36:
+        //   flags 0x13 (FT4) cba=0x7acd, 0x15 (GT3) cba=0x7ac0, 0x17 (GT4)
+        //   cba=0x7ac5 - all valid CLUT(_, 491) at prim byte 2.
+        assert_eq!(
+            Descriptor::for_flags(0x13).unwrap().texture_block_offset,
+            Some(0)
+        ); // Ft4
+        assert_eq!(
+            Descriptor::for_flags(0x15).unwrap().texture_block_offset,
+            Some(0)
+        ); // Gt3
+        assert_eq!(
+            Descriptor::for_flags(0x17).unwrap().texture_block_offset,
+            Some(0)
+        ); // Gt4
+
+        // Rows 4/5 (byte1 == 3) carry baked per-vertex colours before the
+        // block: one word for flat `Ft*`, `n_vertices` words for gouraud
+        // `Gt*`. These match the earlier `vertex_offset - block_len` result,
+        // so the common case is unchanged.
+        assert_eq!(
+            Descriptor::for_flags(0x20).unwrap().texture_block_offset,
+            Some(4)
+        ); // Ft3: 1 colour word
+        assert_eq!(
+            Descriptor::for_flags(0x22).unwrap().texture_block_offset,
+            Some(4)
+        ); // Ft4: 1 colour word
+        assert_eq!(
+            Descriptor::for_flags(0x24).unwrap().texture_block_offset,
+            Some(12)
+        ); // Gt3: 3 colour words
+        assert_eq!(
+            Descriptor::for_flags(0x26).unwrap().texture_block_offset,
+            Some(16)
+        ); // Gt4: 4 colour words
+
+        // Untextured shapes carry no texture block.
+        assert_eq!(
+            Descriptor::for_flags(0x1C).unwrap().texture_block_offset,
+            None
+        ); // G3
+        assert_eq!(
+            Descriptor::for_flags(0x1A).unwrap().texture_block_offset,
+            None
+        ); // F4
+    }
 
     #[test]
     fn descriptor_decodes_row4_triangle() {

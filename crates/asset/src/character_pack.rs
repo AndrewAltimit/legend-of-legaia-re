@@ -237,6 +237,68 @@ pub fn parse(prot_0874_bytes: &[u8]) -> Result<CharacterPack> {
     Ok(CharacterPack { slots })
 }
 
+/// Index of the LZS section inside the PROT 0874 container that carries the
+/// **party field-locomotion ANM bundle** - the shared walk/run/idle clip set
+/// every field scene animates the resident pool actors with. Byte-identical
+/// (post-LZS) to the live runtime container the party actors' `+0x4C` anim
+/// record pointers resolve into (pinned against the `v0_1_pre_battle_tetsu`
+/// town01 field save).
+pub const LOCOMOTION_SECTION: usize = 1;
+
+/// Records per active-party character bank inside the locomotion bundle.
+/// The 23-record container lays out as three 7-record banks (Vahn `0..=6`,
+/// Noa `7..=13`, Gala `14..=20`) followed by one record each for the
+/// savepoint ([`LOCOMOTION_SAVEPOINT_RECORD`]) and the aux slot-4 actor.
+pub const LOCOMOTION_BANK_STRIDE: usize = 7;
+
+/// Bank-relative record index of the standing **idle** clip. All three party
+/// actors' live anim pointers sit at bank slot 1 while standing in the town01
+/// field anchor (Vahn = record 1, Noa = 8, Gala = 15); frame 0 of this clip is
+/// the rest-pose assembly transform for the character's field mesh.
+pub const LOCOMOTION_IDLE_SLOT: usize = 1;
+
+/// Bank-relative record index of the **walk** clip. Pinned live: with the
+/// pad held (either direction) in the town01 field anchor, the player's
+/// `+0x4C` anim pointer flips from bank slot 1 to bank slot 0 and back to 1
+/// on release (`scripts/pcsx-redux/autorun_locomotion_clip_pin.lua`); one
+/// clip serves every heading (the actor yaw supplies the direction, there is
+/// no per-direction or turn clip).
+pub const LOCOMOTION_WALK_SLOT: usize = 0;
+
+/// Record index of the savepoint (save crystal) clip - a 3-bone / 30-frame
+/// loop matching pack slot 3's `nobj=3` mesh.
+pub const LOCOMOTION_SAVEPOINT_RECORD: usize = 21;
+
+/// Decode the party field-locomotion ANM bundle from the raw bytes of PROT
+/// entry 874 (`parse_player_lzs(buf, 3)` → section 1 → LZS →
+/// [`crate::player_anm::parse`]). The bundle's per-(bone, frame) entries
+/// decode with [`crate::player_anm::BoneTransform`]; bone `i` drives TMD
+/// object `i` of the character's pool mesh, whose live object count retail
+/// caps to the clip's 10 bones (groups 10/11 are the equipment-swap
+/// templates, never rendered).
+pub fn field_locomotion_anm(prot_0874_bytes: &[u8]) -> Result<crate::player_anm::PlayerAnmBundle> {
+    let container = parse_player_lzs(prot_0874_bytes, CONTAINER_DESCRIPTORS)
+        .context("parse PROT 0874 as a 3-descriptor player.lzs-shaped container")?;
+    let section = container
+        .descriptors
+        .get(LOCOMOTION_SECTION)
+        .ok_or_else(|| {
+            anyhow::anyhow!("PROT 0874 container has no section {}", LOCOMOTION_SECTION)
+        })?;
+    let decoded = decode(prot_0874_bytes, section, DecodeMode::Lzs)
+        .context("LZS-decode PROT 0874 section 1 (party locomotion ANM)")?;
+    crate::player_anm::parse(&decoded)
+        .context("parse PROT 0874 section 1 as a player-ANM container")
+}
+
+/// Bank-local record layout of one character's 7-clip locomotion bank.
+/// Absolute record index = `character_slot * LOCOMOTION_BANK_STRIDE + slot`.
+/// Slot 1 is pinned ([`LOCOMOTION_IDLE_SLOT`]); the others are inferred from
+/// frame counts + flag families and are labelled for orientation only.
+pub fn locomotion_record_index(character_slot: usize, bank_slot: usize) -> usize {
+    character_slot * LOCOMOTION_BANK_STRIDE + bank_slot
+}
+
 /// Equipment-swap descriptor patch - the [`FUN_8001EBEC`] runtime patch.
 ///
 /// At runtime, for each of the 3 active-party slots, retail picks one of the

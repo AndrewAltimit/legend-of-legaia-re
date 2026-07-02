@@ -68,6 +68,31 @@ NPC palettes at `fb_y` 510..511 (the [row-479 CLUT band](npc-palette.md)) with
 heights up to 16, so a legitimate CLUT block extends a few rows past the
 framebuffer's bottom edge.
 
+### Flat-strip CLUT uploads
+
+Two Legaia TIM families declare a **multi-row CLUT block** that the runtime
+uploads as a single flat horizontal strip of `w × h` entries at the block's
+origin, not the declared rect (which would overflow the framebuffer):
+
+- The **field-character atlas** palettes (PROT 0874 §2 entries 1/2/3): each
+  declared block lands as a strip on **row 478**
+  (`legaia_asset::field_char_textures::upload_to_vram`).
+- The **shared interior page** (the 256×256 4bpp TIM at image `(960,256)`):
+  its declared 16×16 CLUT block at `(0,510)` lands as a 256-entry strip on
+  **row 510** - byte-identical to VRAM row 510 in every captured field
+  save from the first post-New-Game scene onward. The TIM's only raw copy
+  lives in the **unindexed head gap** of `PROT.DAT` (byte offset
+  `0x11218`, after the 3-sector TOC but before the first entry's data -
+  the same unindexed region as the system-UI TIMs below), so no per-entry
+  read can source it. Town env meshes reference mid-strip CBAs (e.g.
+  town01's `(64,510)` = strip entry 64) with texpages inside the
+  `(960,256)` image. Parser + uploader: `legaia_asset::interior_page`.
+
+A renderer placing these blocks at their declared rects clips/wraps the
+rows past `y = 512` and leaves the strip cells unpopulated - the meshes
+that sample them then drop (or render black) even though every byte is on
+disc.
+
 Under this rule a flat scan of the retail NA `PROT.DAT` recovers the same TIM
 set an independent reference decoder reports, cross-checked item-for-item
 (identical offsets, dimensions, bit depths, and palette counts). The lenient

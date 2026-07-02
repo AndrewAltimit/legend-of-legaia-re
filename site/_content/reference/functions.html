@@ -56,6 +56,9 @@
       <h3>Renderer + GTE</h3>
       <ul class="fnref-list">
         <li><code>FUN_8002735C</code> - Legaia 60-GTE TMD renderer; the landmark emit leaf reached from <code>FUN_8001ADA4</code> case-5 for each landmark TMD in a kingdom pack</li>
+        <li><code>FUN_8001B964</code> - per-actor <strong>animated-mesh renderer</strong>: walks the actor's object table against its ANM record (<code>actor[+0x4C]</code>), posing TMD object <code>i</code> with bone <code>i</code>'s <code>R&middot;v + T</code>; skips the draw unless the object count equals the record's bone count</li>
+        <li><code>FUN_8001BE80</code> - per-(bone, frame) ANM entry decoder (3 nibble-packed signed-12-bit translations + 3 u8 rotations); ported at <code>legaia_asset::player_anm::BoneTransform</code></li>
+        <li><code>FUN_80024D78</code> - actor object-table fill: <code>actor[+0x44]</code> = <code>[count = *(tmd+8)][ptr to tmd+0xC+i*0x1C per object]</code>, straight off the pool TMD</li>
         <li><code>FUN_80043390</code> - Per-prim renderer dispatcher inside <code>FUN_8001ADA4</code> case-5 (default textured-TMD path). Selects an emit leaf from one of two function-pointer tables (SCUS <code>0x8007657C</code> vs world-map overlay <code>0x801F8968</code>) based on <code>_DAT_1F800394 &amp; 1</code> - the overlay variant routes every prim through fog-enabled leaves at <code>0x801F7644..0x801F8690</code>. This is the bulk world-map continent emit path.</li>
         <li><code>FUN_8001ADA4</code> - Per-actor RENDER dispatcher (switch on <code>actor[+0x56]</code>); case-5 walks the mesh chain at <code>actor[+0x44]</code> and dispatches each TMD to <code>FUN_80043390</code> (textured), <code>FUN_80029888</code> (env-mapped), or <code>FUN_8002735C</code> (landmark)</li>
         <li><code>FUN_8001D140</code> - Stack-swap wrapper around <code>FUN_8001ADA4</code>; called 6&times; per frame from <code>FUN_80016444</code> against <code>_DAT_8007C34C..0x36C</code> (render pass)</li>
@@ -92,6 +95,8 @@
         <li><code>FUN_80042558</code> - per-frame stat aggregator</li>
         <li><code>FUN_8003FB10</code> - action validator</li>
         <li><code>FUN_800431D0</code> - ability bitmask read</li>
+        <li><code>FUN_8002CDD0</code> / <code>FUN_8002C2E4</code> / <code>FUN_8002C488</code> - battle status-HUD panel / per-member row / icon sprite drawer (the SCUS on-screen-element cluster the S5 trace surfaced; <code>FUN_8002C2E4</code> pins the status-bitfield bit layout at char record <code>+0x12E</code>)</li>
+        <li>PROT <code>0967</code> - battle <strong>sparring-tutorial overlay</strong>, co-resident at <code>0x801F69D8</code> during the Tetsu fight (overlapping overlay 0898's rodata tail); drives the how-to-fight tutorial prompts</li>
         <li><code>0x801C9370</code> - 8-actor pointer table (party 0&ndash;2, monsters 3&ndash;7); actor HP at <code>+0x14C</code></li>
       </ul>
     </div>

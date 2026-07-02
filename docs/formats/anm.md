@@ -329,10 +329,56 @@ in-flight strike capture's pointer (`0x801621D0`) point at distinct
 records that share this struct shape - the loader pages a different
 ANM record into the heap when the action ID changes.
 
+## Disc source - the party locomotion bundle (PROT 0874 §1)
+
+The **party field-locomotion clip set** - the walk / run / idle animations
+every field scene poses the resident party meshes with - ships as section 1
+of the PROT `0874_befect_data` container (`parse_player_lzs(buf, 3)` →
+descriptor 1 → LZS). The decoded 16 864-byte container is **byte-identical**
+to the live runtime copy every party actor's `+0x4C` anim-record pointer
+resolves into (pinned against the `v0_1_pre_battle_tetsu` town01 field
+save). Layout: 23 records = three 7-record character banks (Vahn `0..=6`,
+Noa `7..=13`, Gala `14..=20`, all 10-bone - matching the runtime-capped
+`nobj = 10` party meshes) plus record 21 (3-bone × 30-frame savepoint
+loop, pack slot 3) and record 22 (2-bone aux clip, pack slot 4).
+
+Bank slot 1 is the standing **idle** clip (10 bones × 15 frames): in the
+town01 field anchor all three party actors' live record pointers sit at
+bank offset +1 (Vahn = record 1, Noa = 8, Gala = 15) and the savepoint's
+at record 21. Frame 0 of the idle clip is the character's field rest-pose
+assembly transform. Bank slot 0 is the **walk** clip: a live pad-driven
+capture (`scripts/pcsx-redux/autorun_locomotion_clip_pin.lua` - hold a
+D-pad direction from town01 free-roam and sample `player+0x4C` per field
+tick) shows the pointer switch record 1 → record 0 while moving and back
+on stop, in both walk directions (no separate turn clip fires). The
+remaining bank slots (10 / 8 / 8 / 4 / 3-frame clips) are the
+run / interaction family; their per-slot roles are not yet
+capture-pinned.
+
+The consuming actor's object-pointer table at `actor[+0x44]`
+(`[u32 count][ptr × count]`, built by `FUN_80024D78` straight off the pool
+TMD: `count = *(tmd+8)`, object `i` = `tmd + 0xC + i*0x1C`) must have
+`count` equal to the record's bone count (`FUN_8001B964` skips the draw
+otherwise), so bone `i` drives TMD object `i` one-to-one. For the party
+meshes that count is the **runtime-capped 10** (the disc pack ships
+`nobj = 12`; groups 10/11 are the equipment-swap templates and are never
+rendered - see [`character-mesh.md`](character-mesh.md)).
+
+Parser: `legaia_asset::character_pack::field_locomotion_anm` (+ the
+`LOCOMOTION_*` bank constants).
+
 ## Disc source - per-scene ANM bundle
 
-The player-character ANM data ships **inside each scene's first asset
-bundle** (not as a dedicated PROT entry). The bundle is a
+The scene-actor ANM pool - the clip set the town's **NPC actors** (and
+scripted scene animations) play - ships **inside each scene's first asset
+bundle** (not as a dedicated PROT entry). In the town01 field anchor,
+every NPC actor's `+0x4C` points into this bundle's runtime copy at
+`DAT_8007B7C8` (villager idles at records 14 / 17, children at 10 / 12,
+etc.), while the party actors point into the PROT 0874 §1 locomotion
+container above. **Which record an NPC plays comes from its MAN placement
+header**: the record's `anim_id` byte = bundle record index + 1 (`0` = no
+clip), installed into the actor `+0x5C` halfword at spawn - see
+[`subsystems/script-vm.md`](../subsystems/script-vm.md#placement-header-model--animation-resolution). The bundle is a
 [`parse_player_lzs`](../../crates/asset/src/lib.rs)-shaped container; section
 2 (the third descriptor) is tagged **type byte `0x05`** in the dispatcher
 table (labeled "MOVE" in `AssetType`, see [`docs/formats/asset-type.md`

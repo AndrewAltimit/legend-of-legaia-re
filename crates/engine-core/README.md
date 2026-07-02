@@ -82,7 +82,12 @@ struct. `World::tick` runs:
      routes + interaction-prologue runs, live positions feeding the
      collision / interact probes) and runs the prop walk-touch dispatch
      (`check_field_walk_touch`: door-warp / player-teleport placements post
-     on body contact through the interact path). See
+     on body contact through the interact path). After the locomotion step
+     the player's field animation advances (`field_anim::FieldPlayerAnim`,
+     installed via `set_field_player_anim`): the PROT 0874 §1 locomotion
+     bundle's idle / walk clip pair, switched on the movement edge and
+     folded into the player actor's `pose_frame` for the host's posed-mesh
+     rebuild. See
      [`docs/subsystems/field-locomotion.md`](../../docs/subsystems/field-locomotion.md).
    - `SceneMode::Title` → no further VM.
 

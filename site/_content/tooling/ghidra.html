@@ -165,6 +165,10 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 <td>Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Validates the result has <code>&gt;=8</code> instructions ending in <code>jr $ra</code> before committing the function.</td>
 </tr>
 <tr>
+<td><code>resolve_render_tail.py</code></td>
+<td>Companion to the trace-driven coverage program: for a list of overlay trace-hit addresses, reports <code>getFunctionContaining</code> + <code>memory.contains</code> per hit in the currently-open overlay program - separating "in-program but un-analyzed" (a create+dump target) from "out-of-program" (a different co-resident overlay). This containment check is how VA-aliased overlay hits get attributed to the right overlay.</td>
+</tr>
+<tr>
 <td><code>dump_terrain_trigger.py</code></td>
 <td>Per-overlay-aware dumper for the world-map render-pipeline chain (<code>FUN_801D7EA0</code> / <code>FUN_801D8258</code> / <code>FUN_801D1344</code> / <code>FUN_80016444</code> + SCUS callers and the 0897 relocation copy). Uses <code>prog.getMemory().contains(addr)</code> to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: <code>&lt;program_label&gt;_&lt;addr&gt;.txt</code>.</td>
 </tr>

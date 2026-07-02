@@ -145,7 +145,8 @@ searched because its *filename label* says `player_data`; the retail
 `FUN_8001E890` (the field player loader) loads `player.lzs` (disc index `0x36c`,
 the same 3-descriptor container the extractor labels PROT 0874) and LZS-decodes
 all three sections (`piVar2[2..7]`): §0 → the 5-TMD mesh pack
-([§ On-disc layout](#on-disc-layout)), §1 → effect / `vdf` models, and **§2 → a
+([§ On-disc layout](#on-disc-layout)), §1 → the party locomotion ANM bundle
+([§ Field rest pose](#field-rest-pose---the-locomotion-bundle-prot-0874-1)), and **§2 → a
 [`pack`](pack.md) of eight asset chunks, each uploaded to VRAM via
 `FUN_800198e0`.** The eight entries (byte-exact against a live field-scene VRAM
 dump):
@@ -213,8 +214,29 @@ untextured ones. The web viewer's [`/characters.html`](../../site/_content/chara
 Field form does exactly this (a `u_use_flat_colors`-gated branch in the shared
 `TmdRenderer` fragment shader); a software-rasterizer replica of that path
 renders all three party members in their real colours (blue-haired Vahn, auburn
-green-eyed Noa, orange-haired Gala). Field TMDs are model-space, so the pieces
-assemble without an ANM rest pose.
+green-eyed Noa, orange-haired Gala).
+
+## Field rest pose - the locomotion bundle (PROT 0874 §1)
+
+The field TMDs' vertices are **object-local** (each group models one body
+part about its own joint origin), so a drawn character needs a per-object
+rigid transform. The pose source is the **party locomotion ANM container**
+in PROT 0874 **section 1** (LZS; 23 records = three 7-record character
+banks + savepoint + aux - see [`anm.md` § party locomotion bundle
+](anm.md#disc-source---the-party-locomotion-bundle-prot-0874-1)). Bank
+slot 1 is the standing idle (capture-pinned: all three party actors' live
+`+0x4C` record pointers sit at bank offset +1 in the town01 field anchor);
+frame 0 of that clip is the rest-pose assembly transform.
+
+Bone `i` drives group `i` one-to-one: the consumer's object table at
+`actor[+0x44]` is filled straight off the pool TMD (`FUN_80024D78`:
+`count = *(tmd+8)`, object `i` at `tmd + 0xC + i*0x1C`) and `FUN_8001B964`
+requires `count == record_bone_count` before drawing - which is why the
+10-group runtime cap matters: the 12 disc groups minus the 2 equipment
+templates leave exactly the 10 objects the 10-bone locomotion clips
+animate. Each 8-byte (bone, frame) entry decodes via `FUN_8001BE80`
+(`legaia_asset::player_anm::BoneTransform`) to a flat `R·v + T` about the
+group's local origin, composed onto the actor's own facing matrix.
 
 ## Battle form - assembled from the player files
 

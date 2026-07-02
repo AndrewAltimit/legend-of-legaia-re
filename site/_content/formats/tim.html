@@ -46,6 +46,16 @@ asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 7   # system-UI curs
 asset-viewer tim extracted/PROT.DAT --offset 0x11218 --clut 13  # menu-glyph "Load" text CLUT</code></pre>
 </section>
 
+<section class="doc-section" id="flat-strip-cluts">
+  <h2>Flat-strip CLUT uploads</h2>
+  <p>Two Legaia TIM families declare a <strong>multi-row CLUT block</strong> that the runtime uploads as a single flat horizontal strip of <code>w &times; h</code> entries at the block's origin, not the declared rect (which would overflow the framebuffer):</p>
+  <ul class="bullets">
+    <li>The <strong>field-character atlas</strong> palettes (PROT 0874 &sect;2 entries 1/2/3): each declared block lands as a strip on <strong>row 478</strong> (<code>legaia_asset::field_char_textures::upload_to_vram</code>).</li>
+    <li>The <strong>shared interior page</strong> (the 256&times;256 4bpp TIM at image <code>(960, 256)</code>): its declared 16&times;16 CLUT block at <code>(0, 510)</code> lands as a 256-entry strip on <strong>row 510</strong> - byte-identical to VRAM row 510 in every captured field save from the first post-New-Game scene onward. The TIM's only raw copy lives in the <strong>unindexed head gap</strong> of <code>PROT.DAT</code> (byte offset <code>0x11218</code>, after the 3-sector TOC but before the first entry's data), so no per-entry read can source it. Town env meshes reference mid-strip CBAs (e.g. town01's <code>(64, 510)</code> = strip entry 64) with texpages inside the <code>(960, 256)</code> image. Parser + uploader: <code>legaia_asset::interior_page</code>.</li>
+  </ul>
+  <p>A renderer placing these blocks at their declared rects clips/wraps the rows past <code>y = 512</code> and leaves the strip cells unpopulated - the meshes that sample them then drop (or render black) even though every byte is on disc.</p>
+</section>
+
 <section class="doc-section" id="catalog">
   <h2>Cataloging every PROT.DAT TIM</h2>
   <p><code>PROT.DAT</code> is also indexable as one flat 2048-byte-sector stream. Scanning the whole image (rather than per-TOC-entry) catches every standard TIM regardless of which addressing layer hosts it - including the TIMs in the unindexed system-UI gap before the first entry (the menu-glyph atlas and load-screen chrome above). <code>legaia_asset::tim_catalog</code> does this and maps each hit back to its owning PROT entry + byte offset (or the gap), producing a per-TIM catalog keyed by a stable id.</p>

@@ -134,10 +134,14 @@ fn field_inline_pickers_decode_and_jump_in_bounds() {
     // confirm_menu's resume premise: the vast majority of real option branches
     // have downstream reply text the jump lands before (the rest are
     // conversation-end branches with nothing after). A high ratio confirms the
-    // relative-jump targets point into live script, not noise.
+    // relative-jump targets point into live script, not noise. The floor is
+    // 75%: widening the decoder to the immediate-labels picker form (the Rim
+    // Elm spar menu - `legaia_mes::picker`, `parses_immediate_labels_picker`)
+    // admits more menus whose branches are conversation-enders, so the corpus
+    // ratio sits at ~76% (919/1205); noise-level jump targets would read ~50%.
     assert!(
-        total_options > 0 && options_with_reply * 10 >= total_options * 8,
-        "expected >=80% of option branches to reach a reply, got {options_with_reply}/{total_options}"
+        total_options > 0 && options_with_reply * 4 >= total_options * 3,
+        "expected >=75% of option branches to reach a reply, got {options_with_reply}/{total_options}"
     );
 
     // Coverage floor: the corpus carries dozens of genuine menus (config

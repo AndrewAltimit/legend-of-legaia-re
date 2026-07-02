@@ -1740,16 +1740,25 @@ impl SceneHost {
             },
             None => Vec::new(),
         };
-        // The 16-entry floor-height LUT (MAN header, negated `s16` tiers) the
-        // collision grid's low nibble indexes - resident so the floor-height
-        // sampler (`World::sample_field_floor_height`, port of `FUN_80019278`)
-        // can resolve terrain elevation from the grid.
+        // The 16-entry floor-height LUT the collision grid's low nibble
+        // indexes - resident so the floor-height sampler
+        // (`World::sample_field_floor_height`, port of `FUN_80019278`) can
+        // resolve terrain elevation from the grid. The MAN header stores the
+        // tiers as POSITIVE elevations; retail's runtime copy is NEGATED
+        // (`FUN_8003AEB0`), and every consumer - the placement resolver's
+        // `-lut[nibble]` world Y, the sampler's callers - assumes the
+        // negated (PSX Y-down, up = negative) convention. Copying the raw
+        // MAN values here made the sampler return +192 where retail returns
+        // -192 (Vahn's house tier), sinking floor-snapped actors under the
+        // drawn terrain.
         match self
             .scene
             .as_ref()
             .map(|s| s.field_floor_height_lut(&self.index))
         {
-            Some(Ok(Some(lut))) => self.world.field_floor_height_lut = lut,
+            Some(Ok(Some(lut))) => {
+                self.world.field_floor_height_lut = lut.map(|v| v.wrapping_neg());
+            }
             Some(Err(err)) => eprintln!("[scene] field floor-height LUT load skipped: {err:#}"),
             _ => {}
         }
