@@ -534,6 +534,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 Op49State::Done
             };
         }
+        // A sub-5 tile-board install (`World::try_install_tile_board`): Armed
+        // while the board mode runs, Done once an event cell exits it, so the
+        // script suspends across the whole board segment.
+        if self.world.tile_board_armed {
+            return if self.world.tile_board.is_some() {
+                Op49State::Armed
+            } else {
+                Op49State::Done
+            };
+        }
         if self.world.in_cutscene_timeline && self.world.prologue_naming_armed {
             if self.world.name_entry_active() {
                 Op49State::Armed
@@ -548,12 +558,20 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // The shop op's resume ran: drop the arm so a later op-0x49 can open
         // the next merchant. (Name-entry clears via its own pending flags.)
         self.world.field_shop_armed = false;
+        // A finished tile-board segment resumes the same way.
+        self.world.tile_board_armed = false;
     }
     fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
         // Recognise + open an inline gold shop (sub-0); non-shop op-0x49 sub-0
         // payloads (inn / save prompts) fail the priced-record validation.
         if sub_op == 0 {
             self.world.try_arm_field_shop(instr);
+        }
+        // Sub-5 carries the inline 13-byte tile-board header: install the
+        // board (retail arms `_DAT_8007b450` at this window and the board
+        // consumer takes over the frame).
+        if sub_op == 5 {
+            self.world.try_install_tile_board(instr);
         }
     }
     fn op49_invoke_setup(&mut self) {

@@ -8517,6 +8517,113 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
     );
 }
 
+// --- Tile-board runtime install via field-VM op-0x49 sub-5 ---
+
+/// A field script carrying an op `0x49` sub-5 board install: 13-byte inline
+/// header `[5][ox=0][oz=0][w=4][h=4][radius=2][mode=0][flags×4][player_tpl]
+/// [tile_base]`, followed by a sentinel op the script resumes onto.
+#[cfg(test)]
+fn tile_board_op49_script() -> Vec<u8> {
+    vec![
+        0x49, 0x05, 0x00, 0x00, 0x04, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x30,
+    ]
+}
+
+#[test]
+fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
+    use vm::field::{FieldHost, Op49State};
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.rng_state = 7;
+
+    let code = tile_board_op49_script();
+    let mut ctx = FieldCtx::default();
+    let pc = 0usize;
+
+    // Frame 1: Idle -> the host parses the inline header, installs the
+    // board, and the VM suspends.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Idle);
+        let r = vm::field::step(&mut host, &mut ctx, &code, pc);
+        assert!(
+            matches!(r, FieldStepResult::Halt { .. }),
+            "op-0x49 sub-5 suspends the script while the board mode runs"
+        );
+    }
+    let board = world.tile_board.as_ref().expect("board installed");
+    assert_eq!((board.width, board.height), (4, 4));
+    assert_eq!(board.cells.len(), 16);
+    // The retail fill only produces cells in the known value classes.
+    assert!(board.cells.iter().all(|&c| (2..=0xE).contains(&c)));
+    let header = world.tile_board_header.expect("header kept");
+    assert_eq!(header.player_template, 0x21);
+    assert_eq!(header.tile_template_base, 0x30);
+    // The player actor was seated at the start-cell centre.
+    let (px, pz) = world.tile_board.as_ref().unwrap().player_world();
+    assert_eq!(world.actors[0].move_state.world_x as i32, px);
+    assert_eq!(world.actors[0].move_state.world_z as i32, pz);
+
+    // While the board is up the op stays Armed at the same pc.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Armed);
+        let r = vm::field::step(&mut host, &mut ctx, &code, pc);
+        assert!(matches!(r, FieldStepResult::Halt { .. }));
+    }
+
+    // Simulate the walk reaching an event/transition cell: plant one under
+    // the player and run the arrival pass (the interpolation-complete path).
+    {
+        let b = world.tile_board.as_mut().unwrap();
+        let idx = b.player_row as usize * b.width as usize + b.player_col as usize;
+        b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
+        let (tx, tz) = b.player_world();
+        world.tile_board_target = Some((tx, tz));
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    assert!(
+        world.tile_board.is_none(),
+        "landing on an event cell exits the board mode"
+    );
+
+    // Exit flips the op to Done; the script resumes past the 14-byte install.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Done);
+        match vm::field::step(&mut host, &mut ctx, &code, pc) {
+            FieldStepResult::Advance { next_pc } => {
+                assert_eq!(next_pc, 14, "sub-5 Done advances opcode + 13 header bytes")
+            }
+            other => panic!("expected Advance, got {other:?}"),
+        }
+    }
+    assert!(!world.tile_board_armed, "the arm clears on resume");
+}
+
+#[test]
+fn tile_board_animated_cell_cycles_on_arrival() {
+    let mut w = tile_board_world();
+    // Plant an animated tile at the player's cell and run the arrival pass
+    // via a completed interpolation.
+    {
+        let b = w.tile_board.as_mut().unwrap();
+        b.cells[0] = crate::tile_board::CELL_ANIM_LAST; // 0xE wraps to 0xB
+        let (tx, tz) = b.player_world();
+        w.tile_board_target = Some((tx, tz));
+    }
+    w.set_pad(0);
+    let _ = w.tick();
+    assert_eq!(
+        w.tile_board.as_ref().unwrap().cells[0],
+        crate::tile_board::CELL_ANIM_FIRST,
+        "0xE cycles back to 0xB on arrival"
+    );
+}
+
 #[test]
 fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     // The op-0x49 shop arm captures a per-vendor id (from the shop's name +

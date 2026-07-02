@@ -90,11 +90,27 @@ Provenance: `overlay_0897_801ef2b0.txt` case 4; a denser duplicate of this logic
 
 [`legaia_engine_core::tile_board::TileBoard`](../../crates/engine-core/src/tile_board.rs) holds the board (dims + origin + cell bytes + player cell). [`World::tick`](../../crates/engine-core/src/world.rs) drives a board step in the `SceneMode::Field` arm when a board is installed (`World.tile_board`), reading `World.input` (the [input contract](engine.md)): it decodes one direction, gates against `cell == 2`, commits the player cell, and interpolates the player actor to the destination tile centre. The board stays inert (no-op) until installed, so it does not affect ordinary field scenes.
 
+The install is wired to the field VM: op `0x49` **sub-op 5** hands the host the
+13-byte inline header (`TileBoardHeader::parse`, the window retail points
+`_DAT_8007b450` at - the sub-op byte plus the `+1..+0xC` fields above);
+`World::try_install_tile_board` fills the cells with the ported procedural
+fill (`tile_board::procedural_fill`, the `overlay_0897_801e0b1c` algorithm:
+every cell `rand()%6 + 2`, four animated tiles `0xB..0xE` at random cells,
+three event tiles `8..0xA` scattered into the bottom half-board), seats the
+player at the start-cell centre, and holds the script suspended through the
+op-49 tristate. The arrival pass mirrors the walk SM's case 3: an event /
+transition cell (`8..=0xA`) exits the board mode - the suspended script reads
+`Done` and resumes past the install op - and an animated cell cycles
+`0xB -> 0xE -> 0xB`. The header's actor-template ids are kept on
+`World::tile_board_header` for the render consumers.
+
 ## Open
 
 - Which specific minigames / puzzle rooms use this board, and whether any board is fixed (inline-script cells) vs. always procedural. The `dance` / `baka_fighter` / `slot_machine` overlays reference the same `_DAT_8007b450` globals.
-- The exact byte offset where the cell array begins in the inline script header (the header is variable-length; `+7`/`+9` are read through the field-VM operand reader `func_0x8003ce9c`). Needed to lift a fixed board from a scene's event script.
+- The exact byte offset where the cell array begins in the inline script header for a *fixed* board, if any exists (the header is variable-length; `+7`/`+9` are read through the field-VM operand reader `func_0x8003ce9c`). Needed to lift a fixed board from a scene's event script; the engine installs the procedural fill.
+- The event-cell arrival's header `+7`/`+9` flag-operand consumption (retail sets/tests field-VM flags on the transition; the engine currently surfaces the exit through the op-49 resume only).
 - Whether `func_0x800467e8`'s facing remap is a fixed 90° quadrant snap or a finer rotation.
+- Per-cell tile-actor rendering (header `+0xb`/`+0xc` template spawns) - the engine tracks the ids but draws nothing yet.
 
 ## See also
 

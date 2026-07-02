@@ -1529,6 +1529,18 @@ pub struct World {
     /// (`overlay_0897_801ef2b0` case 2).
     pub tile_board_target: Option<(i32, i32)>,
 
+    /// `true` while a field-VM op-0x49 sub-5 board install holds the
+    /// script suspended (the engine face of retail's `_DAT_8007b450`
+    /// arm for the board consumer). The op reads `Armed` while
+    /// [`Self::tile_board`] is installed and `Done` once the board
+    /// exits (an event cell landing), then clears this on resume.
+    pub tile_board_armed: bool,
+
+    /// The parsed op-49 board header (radius / mode flag / actor
+    /// template ids) kept for the render + event consumers while the
+    /// board is installed.
+    pub tile_board_header: Option<crate::tile_board::TileBoardHeader>,
+
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
     /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
@@ -2550,6 +2562,8 @@ impl World {
             world_map_ctrl: None,
             tile_board: None,
             tile_board_target: None,
+            tile_board_armed: false,
+            tile_board_header: None,
             dance: None,
             dance_return_mode: SceneMode::Field,
             dance_last_judge: None,
@@ -5725,6 +5739,7 @@ impl World {
             ms.world_z = nz as i16;
             if nx == tx && nz == tz {
                 self.tile_board_target = None;
+                self.tile_board_arrival();
             }
             return;
         }
@@ -5736,6 +5751,93 @@ impl World {
         if let Some((tx, tz)) = self.tile_board.as_mut().and_then(|b| b.try_step(dir)) {
             self.tile_board_target = Some((tx, tz));
         }
+    }
+
+    /// Walk-SM arrival pass (`overlay_0897_801ef2b0` case 3), run when the
+    /// player's interpolation reaches the committed tile centre:
+    ///
+    /// - an **event / transition cell** (`8..=0xA`) leaves the board mode -
+    ///   the board uninstalls, and the suspended op-0x49 script reads `Done`
+    ///   and resumes (retail reads the header `+7`/`+9` flag operands here;
+    ///   the engine surfaces the exit through the op-49 tristate);
+    /// - an **animated cell** (`0xB..=0xE`) cycles its value one step,
+    ///   wrapping `0xE -> 0xB` (the arrival sub-state's decay pass).
+    ///
+    /// PORT: overlay_0897_801ef2b0 (arrival sub-states)
+    fn tile_board_arrival(&mut self) {
+        use crate::tile_board::{
+            CELL_ANIM_FIRST, CELL_ANIM_LAST, CELL_EVENT_FIRST, CELL_EVENT_LAST,
+        };
+        let Some(board) = self.tile_board.as_mut() else {
+            return;
+        };
+        let (col, row) = (board.player_col as i32, board.player_row as i32);
+        let Some(cell) = board.cell(col, row) else {
+            return;
+        };
+        if (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(&cell) {
+            // Event / transition tile: exit the board. `tile_board_armed`
+            // stays set so the op-49 tristate reads Done and the field
+            // script resumes past the install op.
+            self.tile_board = None;
+            self.tile_board_header = None;
+        } else if (CELL_ANIM_FIRST..=CELL_ANIM_LAST).contains(&cell) {
+            let next = if cell == CELL_ANIM_LAST {
+                CELL_ANIM_FIRST
+            } else {
+                cell + 1
+            };
+            let idx = row as usize * board.width as usize + col as usize;
+            if let Some(c) = board.cells.get_mut(idx) {
+                *c = next;
+            }
+        }
+    }
+
+    /// Install a tile board from a field-VM op-0x49 **sub-op 5** instruction
+    /// (`instr` = the bytes from the opcode onward, as handed to
+    /// `FieldHost::op49_menu_request`). Parses the 13-byte inline header
+    /// (`instr[1..]`, the window retail points `_DAT_8007b450` at), fills the
+    /// cells with the retail procedural fill (`overlay_0897_801e0b1c`, seeded
+    /// from the world RNG the way retail seeds from BIOS `rand`), seats the
+    /// player actor at the board's start-cell centre, and holds the script
+    /// suspended (`tile_board_armed`) until the board exits.
+    ///
+    /// Returns `false` (leaving the op merely suspended, matching the other
+    /// op-49 consumers) when a board is already up or the header is
+    /// malformed.
+    ///
+    /// PORT: overlay_0897_801e0b1c (board alloc + fill; cells only - the
+    /// per-cell tile-actor spawns are a renderer concern)
+    /// REF: overlay_0897_801de840 (op 0x49 arm, `_DAT_8007b450 = pbVar47`)
+    pub fn try_install_tile_board(&mut self, instr: &[u8]) -> bool {
+        if self.tile_board_armed || self.tile_board.is_some() {
+            return false;
+        }
+        let Some(window) = instr.get(1..) else {
+            return false;
+        };
+        let Some(header) = crate::tile_board::TileBoardHeader::parse(window) else {
+            return false;
+        };
+        let cells = crate::tile_board::procedural_fill(header.width, header.height, || {
+            self.next_rng() & 0x7FFF
+        });
+        let board = crate::tile_board::TileBoard::from_header(&header, cells);
+        // Seat the player actor at the start cell's tile centre so the first
+        // step interpolates from the board frame, not the free-walk position.
+        if let Some(slot) = self.player_actor_slot
+            && let Some(a) = self.actors.get_mut(slot as usize)
+        {
+            let (x, z) = board.player_world();
+            a.move_state.world_x = x as i16;
+            a.move_state.world_z = z as i16;
+        }
+        self.tile_board_target = None;
+        self.tile_board = Some(board);
+        self.tile_board_header = Some(header);
+        self.tile_board_armed = true;
+        true
     }
 
     /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current
