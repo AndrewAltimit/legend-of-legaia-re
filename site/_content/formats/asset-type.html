@@ -51,12 +51,12 @@
 <tr>
 <td><code>0x05</code></td>
 <td><code>MOVE</code></td>
-<td>Raw load</td>
+<td>Raw load. Also carries the <strong>per-scene player ANM bundle</strong> despite the "MOVE" label - see <a href="anm.html">ANM</a>; content is a canonical ANM container with <code>marker_1 = 0x080C</code> records. The dispatcher's "ANM malloc-err" string at <code>FUN_8001F05C</code> case 6 indexes this type, not type <code>0x06</code>.</td>
 </tr>
 <tr>
 <td><code>0x06</code></td>
 <td><code>ANM</code></td>
-<td>Animation, raw load</td>
+<td>Reserved by the asset-type enum but <strong>not the player ANM source</strong> on disc - those are stored under type <code>0x05</code> (above). The type-<code>0x06</code> descriptors that appear in PROT entries are all small (4-172 bytes) placeholders.</td>
 </tr>
 <tr>
 <td><code>0x07</code></td>

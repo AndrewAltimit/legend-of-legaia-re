@@ -1,0 +1,92 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; item-effect table</div>
+  <h1>Item-effect descriptor table <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">A static <code>SCUS_942.54</code> table saying <strong>what kind of effect</strong> each consumable has - heal HP, restore MP, cure status, revive, raise a stat, escape a dungeon - plus its target shape (single ally vs. whole party) and where it can be used (field menu vs. battle). Sibling of the item-name table (<code>DAT_80074368</code>) and the spell table: the three are contiguous static data, and this table ends exactly where the spell table begins.</p>
+</header>
+
+<section class="doc-section" id="table-layout">
+  <h2>Table base + record layout</h2>
+  <table>
+  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Record base</td><td><code>DAT_800752C0</code> (file offset <code>0x65AC0</code> in <code>SCUS_942.54</code>)</td></tr>
+    <tr><td>Stride</td><td><code>0x4</code> bytes</td></tr>
+    <tr><td>Record count</td><td><strong>130</strong> (subtypes <code>0x00..=0x81</code>); ends at the spell table <code>0x800754C8</code></td></tr>
+  </tbody>
+  </table>
+  <table>
+  <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
+  <tbody>
+    <tr><td><code>+0</code></td><td>u8</td><td>effect <strong>class</strong> (action-validator arm)</td></tr>
+    <tr><td><code>+1</code></td><td>u8</td><td><strong>tier</strong> / sub-case (per-class selector; e.g. heal-HP <code>0/1/2</code> = <code>200/800/max</code>)</td></tr>
+    <tr><td><code>+2</code></td><td>u8</td><td><strong>flags</strong>: <code>0x80</code> populated, <code>0x20</code> whole-party target, <code>0x04</code> battle-usable, <code>0x02</code> field-usable</td></tr>
+    <tr><td><code>+3</code></td><td>u8</td><td><strong>passive-effect index</strong> (<code>0x00..=0x3F</code>) for accessory / quest-item rows; <code>0x41</code> = no-passive sentinel on consumable rows (see <a href="item-table.html">Item-name table</a>
+    <a href="accessory-passive-table.html">accessory-passive table</a>)</td></tr>
+  </tbody>
+  </table>
+  <p>Healers carry <code>0x04 | 0x02</code> (field + battle); permanent stat-ups and field-utility items carry <code>0x02</code> only; status-cures and revive carry <code>0x04</code> only. Key items resolve to a descriptor with <strong>neither</strong> usability bit set, which is how the item menu greys them out. The class byte is meaningful only together with the usability flags - many key items funnel to class <code>0</code> with no usability bit, so "class 0" alone is not "an HP potion".</p>
+</section>
+
+<section class="doc-section" id="indexing">
+  <h2>Indexing (double-indirected)</h2>
+  <p>The lookup goes item id &rarr; subtype &rarr; descriptor. From <code>FUN_8003043C</code>:</p>
+  <pre><code>subtype    = item_name_table[id].byte(+1)      ; DAT_80074369[id*0xC]
+descriptor = (&amp;DAT_800752C0)[subtype * 4]      ; stride-4 record
+arm        = descriptor[+0]                    ; effect class / validator arm
+tier       = descriptor[+1]
+flags      = descriptor[+2]</code></pre>
+  <p>The <code>&amp; 0x20</code> all-party test is read in <code>FUN_8003043C</code> itself; the <code>0x02</code>/<code>0x04</code> field-vs-battle bits are read by the field item-menu list builder <code>FUN_80030628</code>; the battle item path reads class + tier straight into the actor's action context (battle overlay <code>0x801E3BA4</code>).</p>
+</section>
+
+<section class="doc-section" id="class-map">
+  <h2>Class byte (<code>+0</code>)</h2>
+  <p>Class labels are validated against the on-disc item description strings (item record <code>+8</code> pointer):</p>
+  <table>
+  <thead><tr><th>Class</th><th>Effect</th><th>Example item</th></tr></thead>
+  <tbody>
+    <tr><td><code>0</code> / <code>1</code></td><td>heal HP, one ally / whole party</td><td>Healing Leaf / Healing Bloom</td></tr>
+    <tr><td><code>2</code></td><td>restore MP</td><td>Magic Leaf</td></tr>
+    <tr><td><code>3</code> / <code>8</code></td><td>cure all status / cure single status</td><td>Medicine / Antidote</td></tr>
+    <tr><td><code>4</code></td><td>revive</td><td>Phoenix</td></tr>
+    <tr><td><code>5</code></td><td>extend action gauge (one battle)</td><td>Fury Boost</td></tr>
+    <tr><td><code>6</code></td><td>permanent stat-up (tier = which stat)</td><td>Miracle Water, the Water line</td></tr>
+    <tr><td><code>7</code></td><td>temporary stat buff (one battle, &times;6/5)</td><td>Power Elixir</td></tr>
+    <tr><td><code>11</code>/<code>12</code>/<code>13</code></td><td>arts book (Fire/Wind/Thunder; tier = book level)</td><td>Fire Book I</td></tr>
+    <tr><td><code>126</code>/<code>127</code></td><td>summon flute</td><td>Lippian Flute</td></tr>
+    <tr><td><code>128</code> / <code>129</code></td><td>field escape (dungeon) / field warp (city)</td><td>Door of Light / Door of Wind</td></tr>
+    <tr><td><code>130</code></td><td>reduce encounter rate</td><td>Incense</td></tr>
+  </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="heal-amounts">
+  <h2>Heal-amount table (<code>0x8007655C</code>)</h2>
+  <p>This table holds class + tier + flags, <strong>not</strong> the literal restore amounts - those live in a separate, also-static pair of <code>u16[4]</code> sub-tables the apply handler <code>FUN_800402F4</code> reads, indexed by the descriptor tier (<code>base + tier*2</code>):</p>
+  <table>
+  <thead><tr><th>VA</th><th>Sub-table</th><th>Tier 0</th><th>Tier 1</th><th>Tier 2</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x8007655C</code> (file <code>0x66D5C</code>)</td><td>HP restore cap (classes <code>0</code>/<code>1</code>)</td><td><code>200</code></td><td><code>800</code></td><td><code>9999</code></td></tr>
+    <tr><td><code>0x80076564</code></td><td>MP restore cap (class <code>2</code>)</td><td><code>50</code></td><td><code>200</code></td><td><code>20</code></td></tr>
+  </tbody>
+  </table>
+  <p>Each restore is deficit-clamped (<code>applied = min(max - current, table[tier])</code>), so tier <code>2</code>'s <code>9999</code> is an effective full restore. Tier <code>3+</code> HP heals are character-relative (scaled off the per-character Seru-heal tables), and revive (class <code>4</code>) is <code>max_hp&times;0.4 + rand()%(max_hp/8)</code> at tier <code>0</code>, full at higher tiers. The class <code>5</code>/<code>6</code>/<code>7</code> stat magnitudes are inline immediates in the handler's switch, pinned per <code>(class, tier)</code>: the Water line adds a flat <code>+16</code> HP / <code>+8</code> MP / <code>+4</code> stat to the character record, the Elixirs multiply battle-actor stats by <code>6/5</code> for one battle.</p>
+</section>
+
+<section class="doc-section" id="parser">
+  <h2>Parser + provenance</h2>
+  <p><code>legaia_asset::item_effect::ItemEffectTable::from_scus</code> resolves both tables from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, the same resolver as the item-name table). <code>heal_amounts()</code> exposes the two <code>u16</code> arrays, <code>restore_amount(id)</code> resolves an item id through its <code>(class, tier)</code> to <code>Hp</code>/<code>Mp</code>/<code>CharRelative</code>, and <code>stat_effect(id)</code> decodes the class <code>5</code>/<code>6</code>/<code>7</code> items. Apply handler <code>FUN_800402F4</code> is reached through a 132-entry jump table at <code>0x80014FA0</code> indexed by the class byte; it handles both the field item menu and the battle item path (branching on <code>game_mode == 0x15</code>). The disc-gated <code>item_effect_real</code> test pins the descriptor bytes and cross-checks each against its on-disc description; the engine consumes the flags via <code>ItemCatalog::apply_effect_flags</code> and the amounts via the shared stat-raise / buff / gauge paths.</p>
+  <details class="disclosure">
+    <summary>Superseded readings</summary>
+    <p>An earlier reading held that the restore amounts were "a switch of immediates inside an overlay-resident apply handler, not in the dumped corpus". The HP / MP amounts are in fact on the disc in the static tier-indexed tables at <code>0x8007655C</code> / <code>0x80076564</code>, read by the <strong>static</strong> <code>FUN_800402F4</code>; only the class <code>5</code>/<code>6</code>/<code>7</code> stat magnitudes are inline immediates.</p>
+  </details>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="accessory-passive-table.html">Accessory passive-effect table</a>
+    <a href="save-record.html">Per-character save record</a>
+    <a href="../subsystems/battle-formulas.html">Battle formulas</a>
+  </div>
+</section>

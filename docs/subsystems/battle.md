@@ -983,9 +983,10 @@ victory-path applier; the "Seru struct +0x74" hypothesis stays falsified (those
 `+0x74` reads are a `0x80808080` battle-state flag the SCUS handler
 `FUN_800480D8` writes, not a stat grant).
 `legaia_asset::level_up_tables::growth_tables_from_scus` parses the curves +
-param block; turning their bytes into a per-character
-`StatGrowthCurve::PerLevel` vector is the remaining step (it needs a pre/post
-level-up capture to validate the byte->gain math before wiring).
+param block, and the engine applies them: `LevelUpTracker::with_growth_tables`
+installs per-character `StatGrowthCurve::PerLevel` (all 8 stats) at boot,
+byte-validated against the captured Noa L2->L3 single-level deltas
+(see [`level-up.md`](level-up.md#stat-gains)).
 
 Engines populate one captured observation at a time via:
 

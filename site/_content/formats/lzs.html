@@ -60,6 +60,17 @@ while !done {
   <p><code>crates/lzs::parse_container</code> handles the multi-section <code>player.lzs</code>-style wrapper used by some PROT entries - a length-prefixed array of independently-compressed sections concatenated together.</p>
 </section>
 
+<section class="doc-section" id="encoding-re-packing">
+  <h2>Encoding (re-packing)</h2>
+  <p>The retail game ships only the <em>decoder</em>; there is no Sony encoder to reverse. <code>crates/lzs::compress</code> is an encoder for re-packing edited assets (the <a href="../tooling/randomizer.html">randomizer / disc patcher</a> uses it):</p>
+  <ul class="bullets">
+    <li>An LZSS matcher with one-step lazy matching whose output the retail decoder accepts byte-for-byte - <strong>not</strong> a bit-exact clone of Sony's packer.</li>
+    <li>Correctness criterion: <code>decompress(compress(x)) == x</code>, validated by a disc-gated round-trip over the real PROT corpus.</li>
+    <li>The lazy step packs tightly enough that a re-packed asset fits its original footprint even where that footprint has no compressed slack (every scene MAN but one fits its exact original span).</li>
+  </ul>
+  <p>A linear-history match at distance <code>d</code> maps onto the ring-buffer back-reference base <code>(0xFEE + i - d) &amp; 0xFFF</code>; capping the emitted distance at <code>4096 - MAX_MATCH</code> keeps every in-copy read (including the self-overlapping RLE case where <code>d &lt; len</code>) unambiguous. It does real compression (not literal-only), so re-packed streams fit the slack in fixed-size slots like the monster archive's <code>0x14000</code>-byte records.</p>
+</section>
+
 <section class="doc-section" id="where-lzs-is-consumed">
   <h2>Where LZS is consumed</h2>
   <p>The asset-type dispatcher (<code>FUN_8001F05C</code>) calls the LZS path when its <code>copy_only</code> flag is zero. See <a href="asset-type.html">asset type dispatcher</a>. Standalone-shaped LZS containers (with the descriptor-pair walker in <a href="asset-descriptor.html"><code>asset-descriptor.md</code></a>) are also recognised by <code>crates/lzs</code>.</p>

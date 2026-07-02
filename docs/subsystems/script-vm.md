@@ -592,16 +592,17 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
 The library exposes `legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` for downstream tooling. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
 
 > **CAVEAT - `scene-event-scripts` / `scan-prot` walk a NON-field-VM
-> structure.** The `0xFFFF 0x0000` lead is a per-record header sentinel, and
-> the `scene-event-scripts` mode skips it before walking the record body - but
-> those records are the word-aligned actor/event structure, not field-VM
-> bytecode (see the "On-disc form" note above), so the disassembly is mostly
-> `decode error` with coincidental matches. Any `0x4C 0xE2` FMV trigger these
-> modes report inside a prescript record is a **false positive** (a word-table
-> byte that equals `0x4C` followed by one equal to `0xE2`). The genuine FMV
-> triggers are pinned structurally instead - see the exhaustive sweep below and
-> the disc-decoded `fmv_dispatch` table - and the per-scene FMV-id remains
-> capture-blocked.
+> structure.** The `0xFFFF 0x0000` lead is the stager-record header
+> (`model_sel = -1`), and the `scene-event-scripts` mode skips it before
+> walking the record body - but those records are **move-VM stager records**,
+> not field-VM bytecode (see the "On-disc form" note above), so the field-VM
+> disassembly is mostly `decode error` with coincidental matches. Any
+> `0x4C 0xE2` FMV trigger these modes report inside a prescript record is a
+> **false positive** (a stager-record byte that equals `0x4C` followed by one
+> equal to `0xE2`). The genuine FMV triggers are the literal `fmv_id` operands
+> in the scene MAN scripts, recovered statically for all eight trigger scenes
+> (`man_field_scripts::scene_fmv_triggers`; see
+> [`cutscene.md`](cutscene.md)), plus the disc-decoded `fmv_dispatch` table.
 
 ## FMV-trigger sites - exhaustive backward sweep
 
@@ -614,7 +615,7 @@ A grep across every Ghidra dump in the corpus for writes to the global game-mode
 
 **`FUN_801E30E4` has zero static callers.** It is a label inside `FUN_801DE840`, not a callable subroutine. Ghidra promotes it to a `FUN_` symbol because the JT entry at `0x801CF008[2]` resolves there; the actual control flow is the dispatch chain above. A direct `grep -rn 'jal 0x801e30e4' ghidra/scripts/funcs/` returns zero matches.
 
-The corollary for §2.7's seven mid-game scenes (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`): they **must** trigger via the same `0x4C 0xE2` op, but the byte sequence is not in their on-disc PROT entries (a bytewise scan of every PROT entry finds only `PROT[371] taiku, fmv_id=5`). The bytecode is therefore reconstructed at scene-load time from the field-pack preamble's runtime-projected slot - the lift is blocked on the same intra-transition byte-level capture that gates [`docs/formats/field-pack.md`](../formats/field-pack.md).
+The per-scene trigger assignment is **disc-sourced**: the `0x4C 0xE2` ops live LZS-compressed inside each scene's MAN (which is why a raw bytewise PROT scan misses them - it finds only `PROT[371] taiku, fmv_id=5` in a non-MAN structure). Walking the decompressed partition-1 scripts recovers the literal `fmv_id` operands for all eight trigger scenes (`town01`, `garmel`, `deroa`, `chitei2`, `dohaty`, `town0d`, `uru`, `jouine`); the FMV overlay's own seven-label scene list (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`) is the overlay's internal scene references, not the trigger-scene set. See [`cutscene.md`](cutscene.md) and [`../formats/str-fmv-table.md`](../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced).
 
 ## See also
 

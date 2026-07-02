@@ -6,7 +6,7 @@ A bytecode VM dedicated to per-actor animation, motion, and state. Distinct from
 
 | VM | Driver fn | Where | Opcode count | Operand width |
 |---|---|---|---|---|
-| Actor / sprite VM | `FUN_801D6628` | Title-screen overlay (0971) | 13 (`docs/subsystems/actor-vm.md`) | byte stream |
+| Actor / sprite VM | `FUN_801D6628` | Title-screen overlay (unindexed PROT.DAT gap after entry 899; PROT 0971 is the debug-menu overlay) | 13 (`docs/subsystems/actor-vm.md`) | byte stream |
 | **Move VM** | `FUN_80023070` | `SCUS_942.54` | 71 (`0x00..0x46`) | u16 stream |
 | Field / event VM | `FUN_801DE840` | Town overlay (0897) | 43 (`0x21..0x4F`, with gaps) + 0x5x/6x/7x default-route | byte stream |
 

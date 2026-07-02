@@ -106,7 +106,7 @@
 <section class="doc-section" id="related">
   <h2>Related</h2>
   <p>
-    How these connect to the on-disc bytes &middot; <a href="formats/art-data.html">Art-data format reference</a> for the per-record schema (<code>action_constant</code>, direction prefix, power bytes, AP cost). The <code>command</code> tokens shown here are the player-facing view; the in-battle matcher compares the input buffer against the <code>1=L,2=R,3=D,4=U</code> combo at each art record's <code>+0</code>, stored in the per-character player battle files (Vahn <code>PROT 0863</code> / Noa <code>0864</code> / Gala <code>0865</code>), while the arts menu shows the separate SCUS glyph-string copy.
+    How these connect to the on-disc bytes &middot; <a href="formats/art-data.html">Art-data format reference</a> for the per-record schema (<code>action_constant</code>, direction prefix, power bytes, AP cost). The <code>command</code> tokens shown here are the player-facing view; the in-battle matcher reads the same combo data from the per-character player battle files, while the arts menu shows a separate display copy.
   </p>
 </section>
 

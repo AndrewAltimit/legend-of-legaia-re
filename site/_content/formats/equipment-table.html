@@ -1,0 +1,84 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; equipment table</div>
+  <h1>Equipment stat-bonus table <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">A static <code>SCUS_942.54</code> table giving every equippable item (weapon / body armor / head gear / footwear) its passive stat bonuses, the characters that can equip it, and its slot type. It hangs off the shared <a href="item-table.html">item property table</a>: the item record's <code>+1</code> byte is the index into this stride-8 bonus table when the item's <code>kind</code> byte is <code>1</code> (equipment).</p>
+</header>
+
+<section class="doc-section" id="indexing">
+  <h2>Indexing (Ghidra-traced)</h2>
+  <p>From the equip-effect aggregator <code>FUN_801CF650</code> (menu overlay), which walks a character's five equipment slots and sums their bonuses into the equip-screen preview:</p>
+  <pre><code>kind        = item_table[id].byte(+0)            ; DAT_80074368[id*0xC]; 1 = equipment
+bonus_index = item_table[id].byte(+1)            ; DAT_80074369[id*0xC]
+record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record
+; applied only when kind == 1; record[+0..+4] sum into five stat accumulators</code></pre>
+</section>
+
+<section class="doc-section" id="record-layout">
+  <h2>Record layout (8 bytes, stride <code>0x8</code>)</h2>
+  <table>
+  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Record base</td><td><code>DAT_80074F68</code> (file offset <code>0x64F68</code> in <code>SCUS_942.54</code>)</td></tr>
+    <tr><td>Stride</td><td><code>0x8</code> bytes</td></tr>
+    <tr><td>Index</td><td>item property <code>+1</code> byte (per equippable id)</td></tr>
+  </tbody>
+  </table>
+  <table>
+  <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
+  <tbody>
+    <tr><td><code>+0</code></td><td>u8</td><td><strong>intelligence</strong> (INT) bonus - head gear sets it</td></tr>
+    <tr><td><code>+1</code></td><td>u8</td><td><strong>attack</strong> (ATK) bonus - weapons' only field; boots also add a small amount</td></tr>
+    <tr><td><code>+2</code></td><td>u8</td><td><strong>defense-up</strong> (UDF) bonus - body armor + head gear</td></tr>
+    <tr><td><code>+3</code></td><td>u8</td><td><strong>defense-down</strong> (LDF) bonus - body armor + boots</td></tr>
+    <tr><td><code>+4</code></td><td>u8</td><td><strong>speed</strong> (SPD) bonus - only footwear sets it</td></tr>
+    <tr><td><code>+5</code></td><td>u8</td><td>passive-effect index slot - <code>0x40</code> (the no-passive sentinel) on every retail row; read by the <code>kind == 1</code> arm of the passive aggregator <code>FUN_80042558</code></td></tr>
+    <tr><td><code>+6</code></td><td>u8</td><td><strong>equip character mask</strong>: bit <code>1</code> Vahn/Meta, <code>2</code> Noa/Terra, <code>4</code> Gala/Ozma; <code>7</code> = any</td></tr>
+    <tr><td><code>+7</code></td><td>u8</td><td><strong>slot type</strong> (<code>&amp; 0x60</code>: <code>0x00</code> body, <code>0x20</code> head, <code>0x40</code> weapon, <code>0x60</code> footwear) + bit <code>0x01</code> = Ra-Seru</td></tr>
+  </tbody>
+  </table>
+  <p>Each byte's stat target is pinned by tracing the aggregator's five accumulators back to the live character-record stat block (AGL, ATK, UDF, LDF, SPD, INT at record <code>+0x110..+0x11B</code>): <code>+0</code> &rarr; INT, <code>+1</code> &rarr; ATK, <code>+2</code> &rarr; UDF, <code>+3</code> &rarr; LDF, <code>+4</code> &rarr; SPD. Equipment never modifies AGL - the AGL accumulator takes no equipment add. The <code>+1</code>/<code>+2</code>/<code>+3</code> magnitudes are additionally byte-exact against the curated gamedata; the <code>+0</code>/<code>+4</code> magnitudes have no external cross-check, but the disc-gated test asserts the slot invariant (INT only on head gear, SPD only on footwear).</p>
+</section>
+
+<section class="doc-section" id="slot-model">
+  <h2>Slot model</h2>
+  <p>The four <code>+7</code> categories <em>are</em> Legaia's four armour/weapon equip slots - there is no missing "8-slot" disambiguation. Cross-referencing against the curated gamedata by item name pins it exactly:</p>
+  <table>
+  <thead><tr><th><code>+7</code> category</th><th>Slot</th><th>Count (disc = gamedata)</th><th>Examples</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x40</code></td><td>weapon</td><td>50 (incl. Ra-Seru tiers) &ge; 27 curated</td><td>Survival Knife, Mace</td></tr>
+    <tr><td><code>0x00</code></td><td>body armor</td><td>20 = 20</td><td>every body armour</td></tr>
+    <tr><td><code>0x20</code></td><td>head</td><td>15 = 15</td><td>Warrior Seal, Royal Crown, Ra-Seru Helmet</td></tr>
+    <tr><td><code>0x60</code></td><td>footwear</td><td>16 = 16</td><td>every greave / shoe</td></tr>
+  </tbody>
+  </table>
+  <p>The disc "head" bucket is exactly the gamedata helmet set - no helmet-vs-ring-vs-accessory collision. None of the accessories ("Goods") appear in this table at all: accessories are <code>kind == 2</code> items whose descriptor byte indexes the separate 64-slot passive-effect space (see <code>legaia_asset::accessory_passive</code>). Weapon is the only non-1:1 category because the disc enumerates the upgradeable Ra-Seru weapon as per-tier entries the curated table collapses.</p>
+</section>
+
+<section class="doc-section" id="parser">
+  <h2>Parser + engine consumption</h2>
+  <p><code>legaia_asset::equip_stats::EquipStatTable::from_scus</code> resolves the property + bonus tables from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map). <code>EquipBonus::equips_party_slot(party_slot)</code> maps a party slot (<code>0</code> Vahn, <code>1</code> Noa, <code>2</code> Gala) to the mask bit <code>1 &lt;&lt; party_slot</code>, matching the retail equip-screen gate. The disc-gated <code>equip_stats_real</code> test pins attack / defense bytes, equip masks, and slot types against the real executable and curated gamedata.</p>
+  <p>In the engine, <code>legaia_engine_core::equipment::DiscEquipInfo</code> lifts the <code>+6</code> mask and <code>+7</code> category keyed by real item ids; the equip session filters each character's per-slot item list on it, so a Vahn-only weapon never appears in Noa's weapon picker. The disc-gated <code>equip_modifiers_disc</code> test drives the whole chain on the real executable.</p>
+</section>
+
+<section class="doc-section" id="superseded">
+  <h2>Superseded readings</h2>
+  <details class="disclosure"><summary>Superseded readings</summary>
+    <ul class="bullets">
+      <li>The earlier "agility / speed pair" reading of <code>+0</code>/<code>+4</code> is falsified: <code>+0</code> is the INT bonus (head gear), <code>+4</code> is the SPD bonus (footwear), and no equipment byte touches AGL.</li>
+      <li>Boots/shoes spread bonuses across <code>+1</code> (small attack bump), <code>+3</code> (LDF), and <code>+4</code> (SPD) - a walkthrough listing only "two defense numbers" for a boot is reading <code>+1</code> and <code>+3</code>, not <code>+2</code>/<code>+3</code>.</li>
+    </ul>
+  </details>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="item-table.html">Item property / name table</a>
+    <a href="steal-table.html">Steal-item table</a>
+    <a href="accessory-passive-table.html">Accessory passives</a>
+    <a href="battle-data-pack.html">Player battle files</a>
+    <a href="save-record.html">Character save record</a>
+    <a href="../reference/gamedata.html">Curated gamedata</a>
+  </div>
+</section>

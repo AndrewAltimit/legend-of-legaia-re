@@ -15,7 +15,7 @@ The detector tries offset 0x000 first, then 0x800, accepting whichever yields pl
 
 ## TOC (immediately after header)
 
-The TOC is a sequence of `u32` words. Each on-disc entry occupies multiple TOC slots. For entry index `p`:
+The TOC is a flat array of `u32` words (`toc[]` below - word 0 is the first u32 after the 8-byte header). `p` is the 0-based **entry index** (the extraction index); each entry contributes one start-LBA word at `toc[p+2]`, so the formulas below reach into neighbouring entries' words (`toc[p+3]` is both entry `p`'s footprint end and entry `p+1`'s start). For entry index `p`:
 
 ```
 start_lba             = toc[p + 2]                       // absolute LBA into PROT.DAT

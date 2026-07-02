@@ -80,7 +80,7 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
   +0x04  u32 swing_rec_a   ; offset (within the section) to the swing/arm command record
   ...
   swing_rec_a + 0x74       ; u8 arm cost  &larr; the weapon-specialty byte</code></pre>
-  <p>The descriptor table keys sections by equippable item id, so each weapon has its own section and swing record. Decoding the three player files (<code>asset battle-data-pack &lt;file&gt; --out</code>) and reading <code>section[+0x04] + 0x74</code> per weapon gives a byte-exact picture - favored-class weapons carry <code>0x1E</code> (30), off-class weapons higher costs that scale with class distance:</p>
+  <p>The descriptor table keys sections by equippable item id, so each weapon has its own section and swing record. Decoding the four player files (863..866; <code>asset battle-data-pack &lt;file&gt; --out</code>) and reading <code>section[+0x04] + 0x74</code> per weapon gives a byte-exact picture - favored-class weapons carry <code>0x1E</code> (30), off-class weapons higher costs that scale with class distance:</p>
   <table class="data-table">
     <thead><tr><th>character (file)</th><th>favored &rarr; <code>0x1E</code></th><th>off-class &rarr; <code>0x2A</code></th><th>far off-class &rarr; <code>0x36</code></th></tr></thead>
     <tbody>

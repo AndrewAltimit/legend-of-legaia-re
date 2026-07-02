@@ -126,13 +126,9 @@ u16 marker_2       // = 0x0002 (78%) or 0x0004 (22%)</code></pre>
     <li>Guard: reads <code>actor[+0x5C]</code>; skips the whole handler if ≤ 0.</li>
     <li>Calls <code>FUN_800204f8</code> (<code>a0 = actor</code>) - actor advance / move tick.</li>
     <li>Loads <code>s6 = actor[+0x4C]</code> - the ANM record pointer.</li>
-    <li>Calls <code>FUN_80056798</code> (BIOS vector <code>0xa0/0x2F</code>) while advancing the</li>
+    <li>Calls <code>FUN_80056798</code> (BIOS vector <code>0xa0/0x2F</code>) while advancing the field VM PC by 2 in the delay slot.</li>
+    <li>The 40-byte body at <code>801e2630..801e2670</code> uses <code>s6</code> and the return value to complete the frame-selection logic; this segment is in the overlay dump but not extracted in the current function-coverage pass.</li>
   </ol>
-  <p>field VM PC by 2 in the delay slot.</p>
-  <ol class="bullets">
-    <li>The 40-byte body at <code>801e2630..801e2670</code> uses <code>s6</code> and the return value</li>
-  </ol>
-  <p>to complete the frame-selection logic; this segment is in the overlay dump but not extracted in the current function-coverage pass.</p>
   <p>This path is gated on <code>actor[+0x5C]</code> and is distinct from the opcode-6 keyframe path in <code>FUN_80021DF4</code> (which gates on <code>actor[+0x5A] == 6</code>).</p>
   <p>See <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code> line ~3389 for the disassembly. The full handler body requires a targeted dump of <code>0x801e2630..0x801e2670</code> within <code>overlay_0897.bin</code>.</p>
 </section>
@@ -253,6 +249,7 @@ byte[7] | (byte[8] &amp; 0xF0) &lt;&lt; 4   &rarr; vec_b.z</code></pre>
     <li><strong>Per-scene bundle - the scene's first asset-table slot, type-0x05 section.</strong> The <strong>NPC / scene-actor</strong> clip pool (town01: 69 records at runtime <code>DAT_8007B7C8</code>; villager idles at records 14/17, children at 10/12). Which record an NPC plays comes from its MAN placement header: the record's <code>anim_id</code> byte = bundle record index + 1 (<code>0</code> = none), installed into the actor <code>+0x5C</code> halfword at spawn - see the <a href="../subsystems/script-vm.html#placement-header-model-animation-resolution">placement-header resolution</a>.</li>
   </ul>
   <p>Each 8-byte (bone, frame) entry decodes - <code>FUN_8001BE80</code>, ported at <code>player_anm::BoneTransform</code> - into three nibble-packed signed 12-bit translations + three <code>u8</code> rotation angles (<code>&lt;&lt; 4</code> to PSX 12-bit); the renderer (<code>FUN_8001B964</code>) poses TMD object <code>i</code> with bone <code>i</code>'s flat <code>R&middot;v + T</code>, requiring the actor's object-table count (<code>FUN_80024D78</code>, filled straight off the pool TMD) to equal the record's bone count.</p>
+  <p>A battle-form ANM bank also exists at PROT 1203 (<code>other5</code>), but it matches the PROT 1204 pack's own object order (the Baka Fighter / viewer configuration) - real battles pose the assembled meshes from the player files' <code>record[0]</code> TRS streams instead (see <a href="battle-data-pack.html#battle-animations">battle-data-pack &sect; battle animations</a>).</p>
 </section>
 
 <section class="doc-section" id="see-also">

@@ -954,7 +954,7 @@ old combo - see [art-data.md](../formats/art-data.md)):
 - **The matcher** (what fires the art) reads the per-character art records at RAM
   `0x80160EFC`/`0x80176998`/`0x8018BA54`, where the combo is the `1=L,2=R,3=D,4=U`
   byte run at record `+0`, on a fixed `0xD0` stride. They load from each
-  character's player-data file `record0` - Vahn `PROT 0861`, Noa `0864`, Gala
+  character's player-data file `record0` - Vahn `PROT 0863`, Noa `0864`, Gala
   `0865`. `randomize_arts` decompresses `record0`, rewrites each art's combo
   bytes in place (located by clean-start search filtered to the `0xD0` grid;
   multi-record arts like Noa's 3-level Hurricane Kick get all their records),

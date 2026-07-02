@@ -1,20 +1,20 @@
-# Slot-4 records (record semantic open; consumer pinned)
+# Slot-4 records (per-record semantic decoded)
 
-> **Status: container confirmed; consumer pinned to two SCUS reader
-> clusters; per-record semantic still open.** The container layout
-> below is byte-verified against live RAM, and a transition-time Read-
-> breakpoint capture (kingdom-bundle scene-load, not dev-menu top-view)
-> surfaces explicit reader sites - see
-> [Consumer call sites](#consumer-call-sites). The historical "world-
-> map wireframe / coastline" reading was falsified; the data is
-> heterogeneous and the working interpretation is **a runtime library
-> of small object-local 3D meshes** the world-map renderer transforms
-> via the GTE and emits as GP0 primitive packets into the active scene
-> primitive pool. A Drake warp capture pins this concretely: the slot-4
-> records are read **in place, per-frame**, by the world-map renderer
-> (`0x801F78D4`) + the SCUS cluster-A GTE prim path - there is **no
-> record → working-buffer transcode** (see
+> Slot 4 of each kingdom bundle is **a per-kingdom library of small
+> object-local 3D meshes** the world-map renderer transforms via the
+> GTE and emits as GP0 primitive packets into the active scene
+> primitive pool. Container confirmed (byte-verified against live
+> RAM); consumer pinned to two SCUS reader clusters via a
+> transition-time Read-breakpoint capture - see
+> [Consumer call sites](#consumer-call-sites); per-record semantic
+> decoded (each 8-byte record is a GTE vertex - see
+> [Per-record semantic](#per-record-semantic---each-record-is-a-gte-vertex-decoded)).
+> The slot-4 records are read **in place, per-frame**, by the
+> world-map renderer (`0x801F78D4`) + the SCUS cluster-A GTE prim path
+> - there is **no record → working-buffer transcode** (see
 > [Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture)).
+> The historical "world-map wireframe / coastline" reading is
+> falsified.
 >
 > The bulk continent terrain itself - the ~4300 POLY_FT4 prims that
 > tile the kingdom continent in the dev-menu top-view - is *not*
@@ -459,23 +459,22 @@ Two parallel call paths funnel into the same dispatcher:
    from `DAT_8007C018[actor[+0x64].i16]` - same table, different
    actor-allocator path.
 
-Slot 4 of the kingdom bundle (`type = 0x05` = MOVE) is the largest
-data slot but **is not directly consumed by cluster A**. The MOVE
-buffer at the kingdom-load destination (a mid-warp Drake dump pinned
-it to `0x8011A624`, but the address varies per build / save state)
-gets overwritten by later
-TMD-pack installs whose TMDs occupy the same physical RAM by the time
-the world-map enters steady state. The Read-bp probe that captured
-"slot-4 bytes being read by cluster A" was sampling that buffer
-*after* the TMD overwrite - cluster A was reading TMDs at addresses
-that had once held slot-4 bytes, not the slot-4 bytes themselves.
+This `DAT_8007C018` table serves the *character-mesh* and per-tile
+world-map TMD objects. It is a **separate** path from the slot-4
+render: the kingdom slot-4 body (`type = 0x05` = MOVE) is read **in
+place** at its per-kingdom resident base by the world-map renderer
+(`ra 0x801F78D4`), not routed through `DAT_8007C018` - see
+[Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture).
+(An earlier reading held that the slot-4 buffer was overwritten by
+later TMD-pack installs and that cluster A read TMDs at addresses that
+had once held slot-4 bytes; that was a wrong-base sampling artifact
+the in-place Read-watchpoint capture corrected.)
 
-The slot-4 body header `kind ∈ {1, 2, 4}` therefore has **no link** to
-the cluster-A bank selector (see
-[Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play)).
-Whatever slot 4 encodes, it's consumed during the warp's first asset
-pass and converted into TMD blobs by an as-yet-unpinned step before
-the world map runs.
+The slot-4 body header `kind ∈ {1, 2, 4}` has **no link** to the
+cluster-A bank selector (see
+[Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play));
+the bank is chosen by the per-call `fade_flags` / `cmd_flags` args,
+not by any slot-4 field.
 
 See [reference/memory-map](../reference/memory-map.md#world-map-tmd-and-actor-tables)
 for the `DAT_8007C018` snapshot breakdown and the kingdom-TMD prefix
@@ -628,20 +627,21 @@ geometry, or animation rigs. This is consistent with:
   user identified body-9 features that resemble specific game props
 
 **Consumer pinned to two SCUS-resident reader functions, byte-
-identical across all three kingdoms; per-record semantic still open.**
+identical across all three kingdoms; per-record semantic decoded
+(GTE vertex - see
+[Per-record semantic](#per-record-semantic---each-record-is-a-gte-vertex-decoded)).**
 The reader accesses the buffer via a runtime pointer, not a static
 `LUI+ADDIU` reference - which is why the static sweep returned empty.
-Dynamic memory-watchpoint capture against the **world-map dev-menu
-top-view** in steady state registered **zero reads** during
-300 vsyncs, but Exec-breakpoint capture at the identified reader PCs
-during the **kingdom-bundle scene-load transition** (warp into each of
-Drake / Sebucus / Karisto, from one save state per kingdom) hits all
-three with the same PCs and the same caller RAs - see
-[consumer call sites](#consumer-call-sites)
-above. Slot 4 is *not* re-read every frame; it's walked during the
-kingdom-entry transition, transformed via the GTE, and emitted as GP0
-primitive packets into the scene's primitive pool. The dev-menu top-
-view sees the GP0 packets, never re-reading slot 4 directly.
+Exec-breakpoint capture at the identified reader PCs during the
+kingdom-bundle scene-load transition (warp into each of Drake /
+Sebucus / Karisto, from one save state per kingdom) hits all three
+with the same PCs and the same caller RAs - see
+[consumer call sites](#consumer-call-sites) above. Slot 4 is not
+re-read from a cache: the warp Read-watchpoint shows the renderer
+reading the records in place, every frame, transforming each through
+the GTE and emitting GP0 primitive packets into the scene's primitive
+pool (see
+[Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture)).
 
 ## Tooling
 
@@ -706,7 +706,7 @@ transcoder; the asset is just LZS-decoded verbatim into RAM, matching
 the byte-verified `disc → RAM` finding documented in
 [RAM layout](#ram-layout-confirmed) above.
 
-### Working-buffer writers (transcoder-hunt probe, 2026-05-14)
+### Working-buffer writers (transcoder-hunt probe)
 
 Running `autorun_slot4_transcoder_hunt.lua` (now archived under
 `archive/pcsx-redux-probes/` - investigation resolved) against Drake
@@ -734,24 +734,12 @@ and routes each chunk to one of memcpy (case 0/2), LZS decode (case
 `0x801C0000` are scene-load chunk copies that land deeper into the
 buffer than cluster A's per-frame inputs at `+0x7F8` / `+0x8E4`.
 
-**Revised model**: slot 4 is not transcoded into a single working-
-buffer region. Instead:
-
-1. At scene load, `FUN_8001E54C` (or a sibling streaming-chunk processor)
-   reads the kingdom bundle's chunks and **distributes their bytes
-   across multiple destinations** - actor structs, working buffer at
-   different offsets, etc.
-2. Some destinations are read by cluster A during the same scene-load
-   pass (Drake Read-bp captures show this - slot-4 RAM is touched once
-   during the warp transition).
-3. Per-frame, cluster A reads the working buffer (now populated with
-   scene-load data plus per-frame procedural patches from
-   `FUN_80028158`).
-
-The cross-kingdom Exec-bp captures sample **per-frame steady state**,
-where cluster A reads the working buffer - NOT slot 4 directly. The
-high per-frame cluster-A hit counts (~2000 in 1800 frames) are
-procedural rendering volume, not slot-4 walks.
+**Neither writer is a slot-4 transcoder.** `FUN_80028158` populates
+the working buffer procedurally and `FUN_8001E54C` copies *other*
+scene-load chunk streams; neither ever carries slot-4 pointers. The
+slot-4 records themselves are read in place by the renderer - see the
+next section. (An intermediate "distribute-then-read-working-buffer"
+model built on these writers is superseded by the in-place capture.)
 
 ### Slot-4 is read IN PLACE - there is no transcode (Drake capture)
 
@@ -851,14 +839,14 @@ if (*puVar5 != 0) {
 The Exec-bp register snapshots from `autorun_slot4_consumer_pcs.lua`
 captured `a1 = 0x801BA8E4` and `a2 = 0x801BA7F8` at the cluster-A LW
 PCs - both in the **`0x801BA000`-ish working buffer**, not in slot 4's
-documented RAM base (`0x8011A624..0x80122454` for Drake). Combined
-with the `actor+0x44 → mesh_ptr_array → mesh_struct` chain, this
-**confirms the transcoder pattern**: slot 4 is read once at scene
-load, decoded into TMD-style mesh structs in the working buffer at
-`0x801BA000`-ish, and the actor's mesh-table is populated with
-pointers to those decoded structs. Per-frame, `FUN_8001ada4` walks the
-mesh-table and FUN_80043390 walks each mesh's vertex pool + command
-stream - never touching slot 4 directly after the scene-load pass.
+documented RAM base (`0x8011A624..0x80122454` for Drake). Those hits
+belong to the *per-actor* renderer path (`FUN_8001ada4` walking
+`actor+0x44` mesh tables over the procedurally-built working buffer) -
+a **separate, non-slot-4 stream**. The slot-4 records themselves are
+read in place at their resident base (see
+[Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture));
+the "slot 4 is transcoded into working-buffer mesh structs" reading
+these snapshots once supported is superseded.
 
 ## DAT_8007C018 - global TMD pointer table (the *actual* cluster-A source)
 
@@ -970,12 +958,14 @@ Entry contents (per
 
 **Every populated entry is a valid Legaia TMD** (magic
 `0x80000002`, flags = 1, group_count > 0). The table is homogeneous in
-the steady state. The kingdom-derived 138 TMDs include the slot-4
-body-aligned addresses previously described (e.g. `[94..113]` land in
-`0x8011A7B0..0x8012202C` - all inside the slot-4 RAM window - but the
-bytes there have already been overwritten with TMD blobs by the time
-the snapshot is taken; the slot-4 outer-pack signature is *absent*
-from steady-state RAM).
+the steady state. This is a *field-scene* (`dolk`) snapshot, not a
+world-map one: its `0x8011Axxx`-range TMDs (e.g. `[94..113]` at
+`0x8011A7B0..0x8012202C`) are this scene's field-file TMD pack, not
+the kingdom slot-4 buffer. An earlier reading treated those
+body-aligned entries as "slot-4 bytes overwritten by TMD blobs" -
+that conflated this field-scene table with the world-map slot-4
+render; on a world-map warp the slot-4 records are read in place at
+their resident base, not overwritten.
 
 ### Disc-side source of `[0..4]`
 
@@ -1095,39 +1085,27 @@ table content - producing the previously-reported "[45..53] FFFAFFFA",
 `DAT_8007BB38` as the authoritative bound, those characterisations are
 **out-of-bounds reads, not table contents**.
 
-### Implication for slot 4 - partly resolved
+### Implication for slot 4 - resolved
 
-The Read-bp probe that originally captured cluster-A reads against
-slot-4 RAM observed reads to addresses that, in steady-state world-
-map RAM, hold *real TMD blobs* (Legaia magic, post-fixup) **placed by
-the kingdom asset chain into RAM that was the slot-4 load destination
-during the warp**. Slot 4 of the kingdom bundle (type `0x05` = MOVE)
-*is* decoded into that RAM region by the warp's first pass, but the
-same physical RAM is then reused by later TMD-pack installs whose TMDs
-replace the slot-4 bytes byte-by-byte before the world-map enters
-steady-state. The slot-4 outer-pack signature is therefore absent from
-the post-warp dump even though the buffer base RAM address is still
-populated.
-
-In other words: cluster A reads TMDs (via `DAT_8007C018` indirection
-or actor mesh tables), and those TMDs *happen* to occupy what was once
-the slot-4 buffer. Slot 4's MOVE bytes are gone by the time cluster A
-runs; the geometry being rendered came from a different (later-loaded)
-TMD-pack.
+The `DAT_8007C018` table serves the character-mesh and per-tile
+world-map TMD objects; it is a **separate path** from the slot-4
+render. The kingdom slot-4 body is read **in place** at its
+per-kingdom resident base by the world-map renderer (`ra
+0x801F78D4`), never routed through `DAT_8007C018` and never
+overwritten by TMD-pack installs (the "overwritten slot-4 buffer"
+reading was the field-scene-snapshot conflation noted above plus a
+wrong-base sampling artifact). See
+[Slot-4 is read in place](#slot-4-is-read-in-place--there-is-no-transcode-drake-capture).
 
 ## Open work
 
-1. **Slot-4 → TMD converter.** Slot 4 *is* loaded into RAM as MOVE
-   bytes during the warp's first pass, but the same physical RAM gets
-   overwritten by TMD blobs from a later-loaded TMD-pack before the
-   world-map settles. The intermediate converter that walks the slot-4
-   15/16-body outer pack and emits TMDs at the right RAM offsets has
-   not been pinned. Candidates: a chunk-handler case in `FUN_8001E54C`
-   that turns slot-4 sub-bodies into TMD-shaped blobs in-place, or an
-   asset-load-chain step that doesn't lower through `FUN_8001F05C` at
-   all. A Read-bp probe watching `DAT_8007C018[*]` entry addresses
-   (not slot-4 RAM) during the install pass would identify which
-   loader call populates the kingdom-derived entries `[5..N]`.
+1. **~~Slot-4 → TMD converter~~ - dissolved.** There is no converter:
+   the slot-4 records are read in place by the world-map renderer, and
+   the kingdom-derived `DAT_8007C018` entries come from the scene's
+   TMD packs, not from slot 4. What remains open on the loader side is
+   which call populates the kingdom-derived entries `[5..N]` - a
+   Read-bp probe watching `DAT_8007C018[*]` entry addresses during the
+   install pass would identify it.
 
    **Static-side evidence narrowing the hunt** (sweep via
    [`scripts/ghidra-analysis/scan_funcs_for_addr_range.py`](../../scripts/ghidra-analysis/scan_funcs_for_addr_range.py)

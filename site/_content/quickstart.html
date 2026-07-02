@@ -4,6 +4,11 @@
   <p class="lede">Build the workspace, run the extraction pipeline, browse the assets, and bring up Ghidra in Docker. Follow these in order - each step depends on the one before it.</p>
 </header>
 
+<section class="doc-section" id="no-install">
+  <h2>0 · No install required</h2>
+  <p>You don't need to build anything to explore the game: the in-browser <a href="viewer.html">asset viewer</a>, <a href="media.html">media browser</a>, and <a href="tooling/rom-patcher.html">ROM patcher</a> run entirely client-side - just bring a disc image. The steps below are for working with the native toolchain.</p>
+</section>
+
 <section class="doc-section" id="build">
   <h2>1 · Build the workspace</h2>
   <p>The repo is a Cargo workspace with edition 2024. One library + binary per crate.</p>
@@ -26,7 +31,7 @@ cargo test --workspace --release</code></pre>
 
 <section class="doc-section" id="browse">
   <h2>3 · Browse the extracted assets</h2>
-  <p>The <code>asset-viewer</code> binary is a winit + wgpu app with five modes. <a href="viewer.html">A WASM build of the viewer also runs in this browser</a>.</p>
+  <p>The <code>asset-viewer</code> binary is a winit + wgpu app with subcommands for each asset class - <code>prot</code> (archive browser), <code>tim</code>, <code>tmd</code>, <code>stage</code>, <code>vab</code>, <code>seq</code>, <code>field</code> (field-VM scene runner), <code>dialog</code>, <code>battle-scene</code>, and <code>world</code>. <a href="viewer.html">A WASM build of the viewer also runs in this browser</a>.</p>
 <pre><code>./target/release/asset-viewer prot extracted/PROT.DAT
 ./target/release/asset-viewer tmd extracted/.../foo.tmd
 ./target/release/asset-viewer tim extracted/.../bar.tim
@@ -38,7 +43,8 @@ cargo test --workspace --release</code></pre>
 <section class="doc-section" id="ghidra">
   <h2>4 · Stand up Ghidra in Docker</h2>
   <p>All static analysis runs through the <code>blacktop/ghidra</code> container. The compose file mounts the extracted disc as read-only data and the project + scripts directories as read-write so dumps land back on the host.</p>
-<pre><code>docker compose up -d ghidra
+<pre><code>docker compose build ghidra        # one-time, sets UID/GID matching the host user
+docker compose up -d ghidra
 
 # import SCUS_942.54 (one-time)
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
@@ -48,7 +54,7 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process SCUS_942.54 \
     -postScript dump_funcs.py -noanalysis -scriptPath /scripts</code></pre>
-  <p class="hint">The container runs as root; chown your output back to your user after each script: <code>chown -R $(id -u):$(id -g) ghidra/scripts/funcs/</code>.</p>
+  <p class="hint">The one-time <code>docker compose build ghidra</code> wraps the base image with a user matching your host UID/GID, so script output lands in <code>ghidra/scripts/</code> owned by you - no chown needed.</p>
   <p>For runtime overlay capture (RAM at <code>0x801C0000+</code> while the game runs), see the <a href="tooling/index.html">overlay capture pipeline</a>.</p>
 </section>
 
@@ -56,6 +62,7 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
   <h2>What to read next</h2>
   <ul class="next-list">
     <li><a href="architecture.html">How the layers stack</a> - the conceptual map of the project.</li>
+    <li><a href="writeups/index.html">Technical write-ups</a> - the narrative track: how the disc-patching techniques were built, in reading order.</li>
     <li><a href="subsystems/index.html">Subsystems</a> - pick a subsystem and dive into how it works.</li>
     <li><a href="formats/index.html">Formats</a> - byte-level specs for everything on the disc.</li>
     <li><a href="reference/functions.html">Key functions</a> - Ghidra-traced anchor functions across the codebase.</li>

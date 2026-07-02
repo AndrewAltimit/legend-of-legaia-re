@@ -40,16 +40,17 @@ mes          ← (none)
 anm          ← (none)
 extract      → all of the above
 
-engine-core  ← (none)
-engine-render → engine-core
-engine-audio → engine-core
-engine-vm    → engine-core
-asset-viewer → engine-*, all parser crates
+engine-vm     → asset, prot, art, anm    (VM layer; no GPU / audio deps)
+engine-core   → engine-vm + the parser crates
+engine-render → asset, tim, font         (wgpu; no engine-core dep)
+engine-audio  → xa, vab, seq, prot       (cpal + SPU model; no engine-core dep)
+engine-shell  → engine-core, engine-vm, engine-render, engine-audio
+asset-viewer  → engine-*, all parser crates
 ```
 
-Asset crates (`tim`, `tmd`, `vab`, etc.) stay engine-agnostic - they produce typed in-memory representations. The engine layer turns those into GPU resources / audio buffers.
+Asset crates (`tim`, `tmd`, `vab`, etc.) stay engine-agnostic - they produce typed in-memory representations. The engine layer turns those into GPU resources / audio buffers. `engine-core` sits *above* `engine-vm` (it implements the per-VM `Host` traits on `World`), while `engine-render` / `engine-audio` are leaf presentation crates the shell composes with the core - they do not depend on `engine-core`.
 
-A future `sound` crate (sequencer playback for `.spk` sequences and the `.dpk / .MAP / .PCH` family) would depend on `vab`. A future battle / menu module belongs inside `engine-vm` next to the actor + field VMs rather than as a separate crate.
+Sequenced music is covered by `crates/seq` (the SEQ parser) plus the `engine-audio` `Sequencer`; the `.dpk / .MAP / .PCH` family decodes through `legaia_asset::sound_pack`. Battle / menu modules live inside `engine-vm` / `engine-core` next to the actor + field VMs rather than as separate crates.
 
 ## Runtime architecture
 

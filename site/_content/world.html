@@ -2,7 +2,7 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; game world</div>
   <h1>Game world</h1>
   <p class="lede">
-    Every town, dungeon, and battlefield ties back to a CDNAME scene label and a slice of the PROT.DAT archive. This page joins the curated walkthrough data (towns, enemy roster, bosses, shop counts) with the disc-side <a href="formats/cdname.html">CDNAME map</a> so you can jump from any location into the asset viewer pre-filtered to that scene.
+    Browse every town, dungeon, and battlefield in the game - each card shows its enemy roster, bosses, and shops, and deep-links into the asset viewer pre-filtered to that location. Under the hood, every location ties back to a scene label on the disc via the <a href="formats/cdname.html">CDNAME map</a>.
   </p>
 </header>
 
@@ -25,7 +25,7 @@
 <section class="doc-section" id="related">
   <h2>Related</h2>
   <p>
-    Cards pull from <code>data/gamedata/*.toml</code> (curated enemy / boss / shop tables - see <a href="reference/gamedata.html">game-data reference</a>) joined against the <a href="formats/cdname.html">CDNAME map</a>. Walkthrough name &harr; CDNAME label isn't always 1:1 (<code>balden</code> = Vidna, <code>geremi</code> = Jeremi); a handful of field-pack labels (<code>town0b</code>, <code>doman</code>, <code>retock</code>, <code>kor*</code>, <code>juui*</code>, <code>rugi</code>) still have no walkthrough mapping - if you pin one, the source of truth is <code>CDNAME_SCENES</code> + <code>TOWN_TO_SCENE</code> in <code>site/_gen.py</code>.
+    Cards pull from <code>data/gamedata/*.toml</code> (curated enemy / boss / shop tables - see <a href="reference/gamedata.html">game-data reference</a>) joined against the <a href="formats/cdname.html">CDNAME map</a>. Walkthrough name &harr; CDNAME label isn't always 1:1 (<code>balden</code> = Vidna, <code>geremi</code> = Jeremi), and a handful of field-pack labels still have no walkthrough mapping.
   </p>
 </section>
 

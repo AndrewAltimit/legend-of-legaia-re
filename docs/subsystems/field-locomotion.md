@@ -289,7 +289,9 @@ Across the transition the grid jumped 2093 → 6805 wall tiles while only **6** 
 
 ## Open
 
-- `FUN_801cfc40` (the finer actor/edge collision probe contributing bits `1`/`4`) is not fully decoded.
+- The full `FUN_801d5b5c` post-kernel state (the touch-event handler beyond the decoded entry kernel).
+- Per-actor field-VM channel execution (the engine loops decoded waypoint lists instead).
+- The exact retail NPC glide speed (the engine paces NPCs at the player walking step).
 
 ## See also
 

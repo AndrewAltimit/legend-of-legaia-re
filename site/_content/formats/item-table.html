@@ -1,0 +1,54 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; item table</div>
+  <h1>Item-name table <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">The single source of truth for every item's display name and shop price is a static 256-entry table in <code>SCUS_942.54</code>. The MES interpreter's item-substitution opcodes (<code>0xC2 XX</code> / <code>0xC4 XX</code>) print names by indexing it, and the same id space is what a monster record's <code>drop_item</code> byte and the <a href="steal-table.html">steal table</a>'s item byte index - one shared space for weapons, armor, accessories, consumables, and key items.</p>
+</header>
+
+<section class="doc-section" id="table-layout">
+  <h2>Table base + record layout</h2>
+  <table>
+  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Record base</td><td><code>DAT_80074368</code></td></tr>
+    <tr><td>Name-pointer view</td><td><code>PTR_DAT_8007436C</code> (= record base <code>+4</code>); the MES dispatch reads <code>PTR_DAT_8007436C[id*3]</code> (three u32 words per record)</td></tr>
+    <tr><td>Stride</td><td><code>0xC</code> bytes</td></tr>
+    <tr><td>Id range</td><td><code>0x00..=0xFF</code> (256 ids; <code>id 0</code> = "no item")</td></tr>
+  </tbody>
+  </table>
+  <table>
+  <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
+  <tbody>
+    <tr><td><code>+0</code></td><td>u8</td><td>kind (<code>1</code> = equipment, <code>2</code> = item / consumable / key)</td></tr>
+    <tr><td><code>+1</code></td><td>u8</td><td>per-kind index byte - equipment: index into the <a href="item-effect-table.html">Item-effect table</a>
+    <a href="accessory-passive-table.html">Accessory passives</a>
+    <a href="equipment-table.html">stat-bonus table</a>; consumables: effect subtype</td></tr>
+    <tr><td><code>+2</code></td><td>u16</td><td><strong>shop price</strong> in gold - what the buy/sell UI charges; <code>0</code> = quest / found-only item the shop never prices</td></tr>
+    <tr><td><code>+4</code></td><td>u32</td><td><code>name_ptr</code> - pointer to the NUL-terminated display name</td></tr>
+    <tr><td><code>+8</code></td><td>u32</td><td>secondary pointer (a shared "type" / description string for some classes)</td></tr>
+  </tbody>
+  </table>
+  <p>The shop price at <code>+2</code> is verified live (War God Band = 21000, Healing Leaf = 100, Ra-Seru / quest items = 0). The table's extent is found by reading until the <code>name_ptr</code> words leave the PSX-EXE data segment.</p>
+</section>
+
+<section class="doc-section" id="name-strings">
+  <h2>Name strings</h2>
+  <p>The display strings carry the same MES control prefixes as every other in-game string: a leading <code>0x01</code> icon escape and <code>0xCE XX</code> colour-control bytes. The parser strips control bytes (keeping printable ASCII) and trims whitespace. A handful of ids (<code>0x00</code>, <code>0x12</code>, <code>0x1A</code>, <code>0x52</code>, <code>0xB9</code>, <code>0xFD</code>) have empty names - reserved / gap slots.</p>
+</section>
+
+<section class="doc-section" id="parser">
+  <h2>Provenance + parser</h2>
+  <p><code>PTR_DAT_8007436C</code> and the <code>*3</code>-word index form are read straight from the MES <code>0xC2</code>/<code>0xC4</code> substitution dispatch. <code>legaia_asset::item_names::ItemNameTable</code> resolves the table from a <code>SCUS_942.54</code> image at runtime (PSX-EXE <code>t_addr</code> &rarr; file-offset map); the disc-gated <code>item_names_real</code> test pins a span of ids against the real executable. Consumers: the web viewer's enemy table joins drop ids to names through it; the shop randomizer reads <code>price_slot</code> (<code>legaia_asset::item_names</code> / <code>legaia_rando::item_price</code>) to drop quest items from the for-sale pool and price chest-found equipment.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="equipment-table.html">Equipment stat-bonus table</a>
+    <a href="steal-table.html">Steal-item table</a>
+    <a href="spell-table.html">Spell table</a>
+    <a href="mes.html">MES dialog format</a>
+    <a href="art-data.html">Art records</a>
+    <a href="../reference/gamedata.html">Curated gamedata</a>
+  </div>
+</section>

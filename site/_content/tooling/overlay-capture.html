@@ -13,8 +13,9 @@
   <h2>What's in the overlay window</h2>
   <p>The overlay window spans <code>0x801C0000-0x80200000</code> (256 KB). Several overlays share this window - only one is loaded at any moment.</p>
   <p>The base address depends on which overlay; battle and town both load at <code>0x801CE818</code>, but smaller overlays like fishing load at different offsets. The <code>find-overlay</code> heuristic ranks PROT entries by likelihood-of-being-overlay-code via <code>addiu sp, sp, -X</code> prologue density (see <a href="../formats/mips-overlay.html"><code>mips_overlay</code></a> and <a href="../formats/overlay-ptr-table.html"><code>overlay_ptr_table</code></a>).</p>
+  <p>Two terms recur below. Overlays that load at the same virtual address <strong>VA-alias</strong>: one address names <em>different</em> code depending on which overlay is resident, so a bare <code>FUN_801xxxxx</code> is ambiguous until you say which overlay you mean - always read the overlay-qualified dump. <strong>Slot A</strong> is the primary shared overlay slot the runtime streams the active overlay into - field (PROT 0897), battle (0898) and menu (0899) are VA-alias siblings there at base <code>0x801CE818</code>, and the mode-24 minigame overlays stream into the same slot.</p>
   <h3>Capture status</h3>
-  <p>The dump count column reflects committed function dumps under <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/funcs/"><code>ghidra/scripts/funcs/</code></a> at the time of writing - see <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code> per overlay.</p>
+  <p>Committed function dumps land under <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/funcs/"><code>ghidra/scripts/funcs/</code></a> as <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code> per overlay; per-capture dump counts are collected in the disclosure below the table.</p>
 <table>
 <thead><tr>
 <th>Overlay</th>
@@ -33,49 +34,49 @@
 <td>Town / field / dialog / inventory (<code>0897</code>)</td>
 <td>✓</td>
 <td><code>overlay_dialog_mc4.bin</code> (= walk) / <code>overlay_dialog_typing.bin</code></td>
-<td>Field/event VM (<code>FUN_801DE840</code>), MES renderer (<code>FUN_801ED710</code>), inventory hub (<code>FUN_801F5748</code>), MAIN INIT (<code>FUN_801D6704</code>); top-20 dumped per program</td>
+<td>Field/event VM (<code>FUN_801DE840</code>), MES renderer (<code>FUN_801ED710</code>), inventory hub (<code>FUN_801F5748</code>), MAIN INIT (<code>FUN_801D6704</code>)</td>
 </tr>
 <tr>
 <td>Field overlay - battle-start transition</td>
 <td>✓</td>
 <td><code>overlay_field_battle_intro.bin</code></td>
-<td>Partial 0897 image captured mid-camera-spin; 29 functions dumped including 13 unique to this capture (<code>FUN_801D081C</code>, <code>FUN_801D0370</code>, <code>FUN_801CFDA0</code>, <code>FUN_801D11D0</code>, and 9 more)</td>
+<td>Partial 0897 image captured mid-camera-spin; surfaces functions unique to this capture (<code>FUN_801D081C</code>, <code>FUN_801D0370</code>, <code>FUN_801CFDA0</code>, <code>FUN_801D11D0</code>, …)</td>
 </tr>
 <tr>
 <td>Battle / battle-action (<code>0898</code>)</td>
 <td>✓</td>
 <td><code>overlay_battle_action.bin</code> / <code>overlay_magic_capture.bin</code></td>
-<td>Per-actor state machine (<code>FUN_801E295C</code>), battle main dispatcher (<code>FUN_801D0748</code>), effect VM cluster (<code>FUN_801DE914 / 801DFDF8 / 801E0088</code>); all 78 functions dumped</td>
+<td>Per-actor state machine (<code>FUN_801E295C</code>), battle main dispatcher (<code>FUN_801D0748</code>), effect VM cluster (<code>FUN_801DE914 / 801DFDF8 / 801E0088</code>)</td>
 </tr>
 <tr>
 <td>Options / config / all pause-menus (<code>0899</code>)</td>
 <td>✓</td>
 <td><code>overlay_menu.bin</code></td>
-<td>Items / magic / equipment / status / options UI; equipment stat aggregator (<code>FUN_801CF650</code> at base+0x0e38); all 129 functions dumped. <strong>Source pinned: PROT 0899 @ base <code>0x801CE818</code></strong> (RAM-byte-matched clean copy; see <a href="static-overlay-pipeline.html">static overlay pipeline</a>). VA-alias sibling of the town/field overlay (PROT 0897) in slot A - the menu overlay <em>replaces</em> the field overlay at <code>0x801CE818</code>. The earlier <code>0896</code> attribution was wrong (<code>0896</code>/<code>bat_back_dat</code> is not an overlay that loads here at all - its once-recovered <code>0x801C5818</code> base was an over-read artifact; see the static-overlay pipeline's cautionary tale).</td>
+<td>Items / magic / equipment / status / options UI; equipment stat aggregator (<code>FUN_801CF650</code> at base+0x0e38). <strong>Source pinned: PROT 0899 @ base <code>0x801CE818</code></strong> (RAM-byte-matched clean copy; see <a href="static-overlay-pipeline.html">static overlay pipeline</a>). VA-alias sibling of the town/field overlay (PROT 0897) in slot A - the menu overlay <em>replaces</em> the field overlay at <code>0x801CE818</code>. The earlier <code>0896</code> attribution was wrong (<code>0896</code>/<code>bat_back_dat</code> is not an overlay that loads here at all - its once-recovered <code>0x801C5818</code> base was an over-read artifact; see the static-overlay pipeline's cautionary tale).</td>
 </tr>
 <tr>
 <td>Save / load screen</td>
 <td>✓</td>
 <td><code>overlay_save_ui_select.bin</code> / <code>overlay_save_ui_saving.bin</code></td>
-<td>Save-screen SM (<code>FUN_801DC6B4</code>); 33 sub-state handlers at <code>PTR_FUN_801E4F40</code> dumped; top-20 per program dumped; select and saving layouts are identical. <strong>Source: the save UI lives IN the menu overlay PROT 0899</strong> (<code>FUN_801DC6B4</code> at base+0xDE9C; signature byte-matches only 0899 via <code>asset overlay find-sig</code>), not a separate entry.</td>
+<td>Save-screen SM (<code>FUN_801DC6B4</code>); 33 sub-state handlers at <code>PTR_FUN_801E4F40</code>; select and saving layouts are identical. <strong>Source: the save UI lives IN the menu overlay PROT 0899</strong> (<code>FUN_801DC6B4</code> at base+0xDE9C; signature byte-matches only 0899 via <code>asset overlay find-sig</code>), not a separate entry.</td>
 </tr>
 <tr>
 <td>Shop / merchant</td>
 <td>✓</td>
 <td><code>overlay_shop_save.bin</code></td>
-<td>Item buy / sell, gold ledger; 130 functions dumped. <strong>Source: also IN the menu overlay PROT 0899</strong> (shares <code>FUN_801CF650</code>) - <code>overlay_shop_save.bin</code> is a menu-overlay capture taken during a shop session, not a separate entry.</td>
+<td>Item buy / sell, gold ledger. <strong>Source: also IN the menu overlay PROT 0899</strong> (shares <code>FUN_801CF650</code>) - <code>overlay_shop_save.bin</code> is a menu-overlay capture taken during a shop session, not a separate entry.</td>
 </tr>
 <tr>
 <td>Level-up (<code>0891</code>)</td>
 <td>✓</td>
 <td><code>overlay_magic_level_up.bin</code> / <code>overlay_magic_level_up_full.bin</code></td>
-<td>XP / stat gain UI; 78 functions dumped; full 256 KB re-capture for data section analysis</td>
+<td>XP / stat gain UI; full 256 KB re-capture for data-section analysis</td>
 </tr>
 <tr>
 <td>World map</td>
 <td>✓</td>
 <td><code>overlay_world_map.bin</code> / <code>overlay_world_map_top.bin</code> / <code>overlay_world_map_walk.bin</code></td>
-<td>World map controller (<code>FUN_801E76D4</code>), dev menu renderer (<code>FUN_801EAD98</code>); top-20 dumped per program; <code>world_map_top</code> lacks <code>FUN_801DE840</code> and <code>FUN_801EAD98</code> (top-view capture, no movement). <strong>Source: the overworld controller lives IN the field overlay PROT 0897</strong> (<code>FUN_801E76D4</code> at base+0x18EBC; byte-matches 0897 via <code>asset overlay find-sig</code>) - these captures are the field overlay resident during overworld, not a separate "world-map overlay".</td>
+<td>World map controller (<code>FUN_801E76D4</code>), dev menu renderer (<code>FUN_801EAD98</code>); <code>world_map_top</code> lacks <code>FUN_801DE840</code> and <code>FUN_801EAD98</code> (top-view capture, no movement). <strong>Source: the overworld controller lives IN the field overlay PROT 0897</strong> (<code>FUN_801E76D4</code> at base+0x18EBC; byte-matches 0897 via <code>asset overlay find-sig</code>) - these captures are the field overlay resident during overworld, not a separate "world-map overlay".</td>
 </tr>
 <tr>
 <td>Cutscene / dialogue</td>
@@ -87,16 +88,51 @@
 <td>Minigame hub - fishing, slot, Baka Fighter, dance, debug menu</td>
 <td>✓</td>
 <td><code>overlay_fishing.bin</code> / <code>overlay_slot_machine.bin</code> / <code>overlay_baka_fighter.bin</code> / <code>overlay_dance.bin</code> / <code>overlay_debug_menu.bin</code></td>
-<td>These are DISTINCT slot-A overlays that VA-alias the same window (resident at different times), not one binary - which is why a capture sees ~101&ndash;154 shared prologues. <strong>Static sources pinned: fishing PROT 0972, slot machine 0975, baka fighter 0976, dance 0980</strong> (each anchored by a documented function; see <a href="static-overlay-pipeline.html">static overlay pipeline</a>). <code>overlay_debug_menu.bin</code> is a superset capture (189 functions). Fishing: <code>FUN_801D63B0</code> (main entry, 1036 bytes, 28 callers). Slot machine: <code>FUN_801D2CC0</code> (reel dispatcher, 1036 bytes). Baka Fighter: <code>FUN_801D5ED0</code> (round dispatcher, 1072 bytes, 49 callers). Dance: <code>FUN_801D2F38</code> (step-input handler, 960 bytes, 18 callers). All functions dumped.</td>
+<td>Five DISTINCT slot-A overlays that VA-alias the same window (resident at different times), not one binary. <strong>Static sources pinned: fishing PROT 0972, slot machine 0975, Baka Fighter 0976, dance 0980</strong> - mode-24 door-warp sub-ids 0/3/4/6 (field-VM op <code>0x3E</code>; each anchored by a documented function prologue; see <a href="static-overlay-pipeline.html">static overlay pipeline</a> and <a href="../subsystems/script-vm.html#opcode-summary">script-vm - op <code>0x3E</code> WARP</a>). Per-frame controllers in the <a href="#minigame-hub-overlay-controllers">detail below</a>.</td>
 </tr>
 <tr>
 <td>Muscle Dome / Baka card battle</td>
 <td>✓</td>
 <td><code>overlay_muscle_dome.bin</code></td>
-<td>Completely distinct from the minigame-hub family (only 17 shared prologues). <code>FUN_801D8DE8</code> (round dispatcher, 3028 bytes, 77 callers), <code>FUN_801D5854</code> (game SM, 6500 bytes, 47 callers), <code>FUN_801D388C</code> (card resolution, 7820 bytes, 39 callers). 148 functions dumped.</td>
+<td>Completely distinct from the minigame-hub family (only 17 shared prologues); per-frame match controller <code>FUN_801D0748</code>. Roles in the <a href="#muscle-dome-overlay-controllers">detail below</a>.</td>
 </tr>
 </tbody>
 </table>
+  <details class="disclosure">
+    <summary>Per-capture dump counts</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>Town/field, world map, save/load: top-20 functions dumped per program.</li>
+        <li>Field battle-start transition: 29 functions dumped, 13 unique to the capture.</li>
+        <li>Battle (0898): all 78 functions dumped.</li>
+        <li>Menu (0899): all 129 functions dumped; the shop-session capture adds 130.</li>
+        <li>Level-up (0891): 78 functions dumped.</li>
+        <li>Minigame hub: all functions dumped across the five variants; <code>overlay_debug_menu.bin</code> is the 189-function superset capture.</li>
+        <li>Muscle Dome: 148 functions dumped.</li>
+      </ul>
+    </div>
+  </details>
+  <h3 id="minigame-hub-overlay-controllers">Minigame-hub overlay controllers</h3>
+  <p>All five hub minigames are variants of the same overlay binary (101&ndash;154 shared prologues), but they VA-alias - distinct files sharing a library core, so a given address hosts a <em>different</em> function per minigame; always read the overlay-qualified dump. Per-frame controllers (each a switch-on-state-byte state machine, documented in the per-minigame pages under <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/tree/main/docs/subsystems"><code>docs/subsystems/</code></a>):</p>
+  <ul class="bullets">
+    <li>Fishing <code>FUN_801CF3BC</code> (<code>DAT_801d926c</code> SM)</li>
+    <li>Slot machine <code>FUN_801CF0D8</code></li>
+    <li>Baka Fighter <code>FUN_801D3468</code></li>
+    <li>Dance <code>FUN_801CF470</code> (<code>DAT_801d5334</code> SM)</li>
+  </ul>
+  <p>The addresses <code>FUN_801D63B0</code> / <code>FUN_801D2CC0</code> / <code>FUN_801D5ED0</code> / <code>FUN_801D2F38</code> are the shared <strong>textured-quad sprite/HUD emitter</strong> the minigames reuse for every draw (the same library function VA-aliased across the variants) - their high caller counts reflect that, not control flow.</p>
+  <h3 id="muscle-dome-overlay-controllers">Muscle Dome overlay controllers</h3>
+  <p>The per-frame match controller is <code>FUN_801D0748</code> (pad read, phase dispatch on <code>ctx+6</code>, pick/commit/resolve/score loop); <code>FUN_801D5854</code> is the camera/view director, <code>FUN_801D8DE8</code> the HUD/element renderer, <code>FUN_801D388C</code> the card/presentation driver (4-slot deal &rarr; commit into the actor <code>+0x1df</code> action queue under a point budget). See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md"><code>subsystems/minigame-muscle-dome.md</code></a>.</p>
+  <details class="disclosure">
+    <summary>Superseded readings (do not re-walk)</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>The minigame "main entry" addresses <code>FUN_801D63B0</code> / <code>FUN_801D2CC0</code> / <code>FUN_801D5ED0</code> / <code>FUN_801D2F38</code> are the shared HUD emitter above, not per-game controllers - the real controllers are the fishing/slot/Baka/dance functions listed above.</li>
+        <li>Muscle Dome: <code>FUN_801D8DE8</code> once read as "round dispatcher" and <code>FUN_801D5854</code> as "game SM" - <code>FUN_801D0748</code> is the match controller; the other two are the camera/view director and the HUD renderer.</li>
+        <li>An old PROT 0973 attribution for a hub minigame was its image in 0973's over-read tail; the pinned static sources are 0972 / 0975 / 0976 / 0980.</li>
+      </ul>
+    </div>
+  </details>
   <h3>Level-up overlay data section (resolved)</h3>
   <p>A level-up save state was re-extracted at the full 256 KB window (<code>0x801C0000–0x801FFFFF</code>) and imported as <code>overlay_magic_level_up_full.bin</code>. The data section (<code>ghidra/scripts/dump_levelup_data_section.py</code>) was dumped in ten 4 KB blocks. Key findings:</p>
 <table>

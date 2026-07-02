@@ -106,82 +106,42 @@
   <div id="baka-fighter-rounds"></div>
 
   <h3 id="baka-fighter-meshes">The fighters (3D meshes)</h3>
-  <p>The minigame's fighters <strong>reuse the party's battle character pack</strong> - <strong>PROT 1204</strong> (CDNAME <code>other5</code>; the <code>1203-1206</code> family), loaded here by <code>overlay_baka_fighter</code> via <code>func_0x8003e6bc("data\field\other5.lzs", …)</code> + <code>func_0x8003eb98(0x4B5/0x4B6, …)</code> (debug string <code>"OTHER5 %d %d"</code>). Baka Fighter lets you play <em>as</em> Vahn/Noa/Gala, so it borrows the same higher-detail meshes the engine installs for turn-based battles. The container is flat streaming-format: five <a href="formats/tmd.html">TMD2</a> meshes (asset type <code>0x09</code>) plus seven 256×256 4bpp character TIM atlases (CLUTs at VRAM rows <code>490..495, 497</code>). The PLAYER SELECT roster - the red-gi fighter, the red-haired fighter in the blue/orange vest, the green-trousered fighter - is exactly these meshes.</p>
+  <p>The minigame's fighters <strong>reuse the party's battle character models</strong>: Baka Fighter lets you play <em>as</em> Vahn/Noa/Gala, so it loads the same higher-detail meshes and texture atlases the engine uses for turn-based battles (the pre-assembled default-gear pack). The PLAYER SELECT roster - the red-gi fighter, the red-haired fighter in the blue/orange vest, the green-trousered fighter - is exactly these models.</p>
   <div class="notice">
-    <strong>View them in 3D.</strong> These meshes render textured + animated (per-frame per-bone <a href="formats/anm.html">ANM</a> from PROT 1203) in the interactive viewer on the <a href="characters.html#baka-fighter-meshes">characters page</a> - open your disc image, pick a slot, and toggle <em>battle form</em> to orbit and play each fighter's animation. They are the party's <strong>main-battle</strong> appearance (the minigame reuses the same pack); see the provenance note there.
+    <strong>View them in 3D.</strong> These models render textured + animated in the interactive viewer on the <a href="characters.html#baka-fighter-meshes">characters page</a> - open your disc image, pick a slot, and toggle <em>battle form</em> or <em>Baka Fighter</em> to orbit and play each fighter's animation.
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/character-mesh.html">Character mesh format</a>
+    <a href="formats/anm.html">ANM animation</a>
   </div>
 </section>
 
 <section class="doc-section" id="internals">
   <h2>Internals (reverse-engineered)</h2>
   <p>
-    The tables above are the player-facing prize / roster data. Each minigame
-    also has a reverse-engineered <strong>runtime</strong> write-up - its
-    per-frame state machine, scoring math, and RAM-state globals, traced from
-    the captured overlay code. Each is its own page under
-    <code>docs/subsystems/</code> in the repo.
+    The tables above are the player-facing prize / roster data. Each minigame's
+    <strong>runtime</strong> is reverse-engineered too - its per-frame state
+    machine, scoring math, and data tables, traced from the captured overlay
+    code:
   </p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Minigame</th><th>Per-frame controller</th><th>Core mechanic</th><th>Write-up</th></tr></thead>
-      <tbody>
-        <tr>
-          <td>Fishing</td>
-          <td><code>FUN_801cf3bc</code></td>
-          <td>Tension-gauge (<code>0x801d9168</code>) reel tug-of-war; catch score into the persistent counter <code>0x8008444c</code>. The 10 fish are a per-species parameter table (pull / behaviour-roll cutoffs / score value), decoded from the disc.</td>
-          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md">minigame-fishing.md</a></td>
-        </tr>
-        <tr>
-          <td>Slot machine</td>
-          <td><code>FUN_801cf0d8</code></td>
-          <td>Reel SM + dual RNG (an in-overlay LCG for reels, BIOS <code>rand</code> for balance-bracketed feature odds); payout via a 10-entry per-symbol payout table (<code>0x801d3598</code>), bonus rounds via a 3-factor product.</td>
-          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-slot-machine.md">minigame-slot-machine.md</a></td>
-        </tr>
-        <tr>
-          <td>Baka Fighter</td>
-          <td><code>FUN_801d3468</code></td>
-          <td>Rock-paper-scissors attack-type exchange, <strong>best of 3</strong> (first to 2 round wins); 17 opponents in a per-opponent table (<code>0x801d76bc</code>) carrying each one's gold prize + scripted attack pattern. Loads the PROT 1204 party meshes.</td>
-          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-baka-fighter.md">minigame-baka-fighter.md</a></td>
-        </tr>
-        <tr>
-          <td>Dance</td>
-          <td><code>FUN_801cf470</code></td>
-          <td>Beat-clock SM with an accuracy-weighted timing-window judge; a baked 3-row direction-symbol step chart (<code>0x801d509c</code>) the groove gauge selects by difficulty; per-tier score multipliers (ordinary / combo / Perfect). The scrolling dance floor reuses the field engine's scene buffer (<code>_DAT_1f8003ec</code>) and actor list to draw a tile grid + two step-marker layers.</td>
-          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-dance.md">minigame-dance.md</a></td>
-        </tr>
-        <tr>
-          <td>Muscle Dome</td>
-          <td><code>FUN_801d0748</code></td>
-          <td>Card-battle: deal a hand, commit cards into the fighter's action queue under a point budget, resolve via the shared battle-action path. Runs <em>inside</em> the battle-action overlay (PROT 0898), not its own overlay.</td>
-          <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">minigame-muscle-dome.md</a></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  <div class="hint">
-    The slot machine's <strong>per-spin balance is overlay-local</strong>; the
-    shared casino coin bank (<code>0x800845A4</code>) is only written when you
-    cash out at the counter - which is why an "Infinite Coins" code reads
-    full at the cage but doesn't make individual spins free. The four hub
-    minigames (fishing / slot / Baka Fighter / dance) are distinct overlay
-    files that share a library core, so the <em>same</em> code address hosts a
-    <em>different</em> function in each (VA aliasing) - the controllers
-    above are each read from their own overlay's dump. <strong>Muscle Dome is
-    the exception</strong>: it is not a separate overlay at all - its controller
-    and data live inside the <em>battle-action</em> overlay (PROT 0898), because
-    the arena reuses the battle engine wholesale.
+  <ul class="bullets">
+    <li><strong>Fishing</strong> - a reel tug-of-war against a tension gauge, with the 10 fish species driven by a per-species parameter table decoded from the disc.</li>
+    <li><strong>Slot machine</strong> - a reel state machine with two random-number generators (one for the reels, one for balance-bracketed feature odds) and a per-symbol payout table; your per-spin balance only commits to the shared casino coin bank when you cash out at the counter - which is why an "Infinite Coins" cheat reads full at the cage but doesn't make spins free.</li>
+    <li><strong>Baka Fighter</strong> - rock-paper-scissors, best of 3, against 17 scripted opponents each with their own prize and attack pattern.</li>
+    <li><strong>Dance</strong> - a beat clock with an accuracy-weighted timing judge, a baked step chart selected by difficulty, and per-tier score multipliers.</li>
+    <li><strong>Muscle Dome</strong> - a card battle: deal a hand, commit cards into the fighter's action queue under a point budget, and resolve through the game's regular battle engine (it lives inside the battle code, not its own minigame module).</li>
+  </ul>
+  <div class="see-also">
+    <span class="see-also-label">Runtime write-ups (repo docs)</span>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md">Fishing</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-slot-machine.md">Slot machine</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-baka-fighter.md">Baka Fighter</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-dance.md">Dance</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">Muscle Dome</a>
   </div>
   <p style="margin-top: 1rem;">
-    <strong>Three of these are playable in the clean-room engine.</strong> In
-    the engine's <code>play-window</code> viewer the dance (<code>K</code>),
-    fishing (<code>L</code>) and slot-machine (<code>O</code>) minigames run as
-    suspending scene modes driven by ported rules engines
-    (<code>engine-core::dance</code> / <code>fishing</code> /
-    <code>slot_machine</code>) - each decodes its tables from the user's disc
-    at runtime, shows its own HUD, and restores the interrupted scene on exit.
-    The slot machine seeds its playing balance from the casino coin bank
-    (<code>0x800845A4</code>) and commits the final balance back on cash-out,
-    exactly the retail assignment described above.
+    <strong>Three of these are playable in the clean-room engine:</strong> in the engine's <code>play-window</code>, dance (<code>K</code>), fishing (<code>L</code>), and the slot machine (<code>O</code>) run as suspending scene modes driven by ported rules engines that decode their tables from your disc at runtime.
   </p>
 </section>
 

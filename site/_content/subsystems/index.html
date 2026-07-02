@@ -31,7 +31,7 @@
       <line x1="20" y1="320" x2="860" y2="320" class="ov-rail"/>
 
       <rect x="40" y="92" width="180" height="68" class="ov-card"/>
-      <text x="56" y="114" class="ov-title">Title (0971)</text>
+      <text x="56" y="114" class="ov-title">Title (0899 gap)</text>
       <text x="56" y="132" class="ov-sub">Actor / sprite VM</text>
       <text x="56" y="146" class="ov-sub">FUN_801D6628</text>
 
@@ -43,7 +43,7 @@
       <rect x="440" y="92" width="180" height="68" class="ov-card"/>
       <text x="456" y="114" class="ov-title">Battle (0898)</text>
       <text x="456" y="132" class="ov-sub">Action SM + effect VM</text>
-      <text x="456" y="146" class="ov-sub">FUN_801E295C / E0088</text>
+      <text x="456" y="146" class="ov-sub">FUN_801E295C / FUN_801E0088</text>
 
       <rect x="640" y="92" width="200" height="68" class="ov-card"/>
       <text x="656" y="114" class="ov-title">Menu (0899)</text>
@@ -64,7 +64,7 @@
       <rect x="40" y="290" width="800" height="22" class="ov-card" style="stroke:#2a323e"/>
       <text x="56" y="306" class="ov-sub">SCUS_942.54: boot path, asset dispatcher, move VM, motion VM, libsnd / libspu / libcd / libapi</text>
     </svg>
-    <figcaption>These overlays share one RAM window (the slot-A family loads at <code>0x801CE818</code>): battle loads on top of town's slot, never coexisting. Several &ldquo;subsystems&rdquo; are <strong>not</strong> separate overlays - the <strong>world map</strong> is a mode of the field overlay (0897), and <strong>save / shop / level-up / options</strong> all live inside the menu overlay (0899). The randomizer injects a whole new vendor screen into 0899's dead space - see the <a href="../writeups/disc-patching/f-overlay-dead-region.html">overlay dead-region write-up</a> for a zoom into that overlay.</figcaption>
+    <figcaption>These overlays share one RAM window (the slot-A family loads at <code>0x801CE818</code>): battle loads on top of town's slot, never coexisting. The <strong>title overlay</strong> has no TOC entry of its own - it lives in the unindexed PROT.DAT gap between entries 899 and 900 (PROT 0971 is the dev <em>debug-menu</em> overlay; see <a href="boot.html#title-overlay-source">boot</a>). Several &ldquo;subsystems&rdquo; are <strong>not</strong> separate overlays - the <strong>world map</strong> is a mode of the field overlay (0897), and <strong>save / shop / level-up / options</strong> all live inside the menu overlay (0899). The <strong>minigames</strong> (fishing / slot machine / Baka Fighter / dance) have their own <a href="../minigames.html">top-level page</a>. The randomizer injects a whole new vendor screen into 0899's dead space - see the <a href="../writeups/disc-patching/f-overlay-dead-region.html">overlay dead-region write-up</a> for a zoom into that overlay.</figcaption>
   </figure>
 
   <p>The list below groups subsystems by what layer of the engine they sit at.</p>
@@ -90,23 +90,23 @@
   <div class="card-grid">
     <a class="card" href="actor-vm.html">
       <div class="card-title">Actor / sprite VM</div>
-      <div class="card-body">A small fixed-width VM (13 opcodes) driving the title screen's animated sprites. Lives in the title-screen overlay. <span class="status-done">Fully ported.</span></div>
+      <div class="card-body">A small fixed-width VM (13 opcodes) driving the title screen's animated sprites. Lives in the title-screen overlay.</div>
     </a>
     <a class="card" href="move-vm.html">
       <div class="card-title">Move-table VM</div>
-      <div class="card-body">Per-actor animation, motion, and state. 71 opcodes in the main exe plus 61 sub-opcodes in the town overlay extension. Drives Tactical Arts. <span class="status-done">Fully ported.</span></div>
+      <div class="card-body">Per-actor animation, motion, and state. 71 opcodes in the main exe plus 61 sub-opcodes in the town overlay extension. Drives Tactical Arts.</div>
     </a>
     <a class="card" href="motion-vm.html">
       <div class="card-title">Motion VM</div>
-      <div class="card-body">Per-actor pursue / patrol / face-target VM at <code>FUN_8003774C</code>. Drives NPC pathing + camera follow + "face the speaker" dialog poses. <span class="status-done">Fully ported.</span></div>
+      <div class="card-body">Per-actor pursue / patrol / face-target VM at <code>FUN_8003774C</code>. Drives NPC pathing + camera follow + "face the speaker" dialog poses.</div>
     </a>
     <a class="card" href="script-vm.html">
       <div class="card-title">Field / event script VM</div>
-      <div class="card-body">The big one: NPC movement, dialog triggers, cutscene sequencing, story flags. 43 opcodes plus a default-route fourth flag bank. <span class="status-done">Fully ported.</span></div>
+      <div class="card-body">The big one: NPC movement, dialog triggers, cutscene sequencing, story flags. 43 opcodes plus a default-route fourth flag bank.</div>
     </a>
     <a class="card" href="effect-vm.html">
       <div class="card-title">Effect VM</div>
-      <div class="card-body">Per-slot state machine driving battle effect spawns (spell casts, hit sparks, item-use anims). 32 master / 128 child slot pool fed by the effect-script bundle. <span class="status-done">Fully ported.</span></div>
+      <div class="card-body">Per-slot state machine driving battle effect spawns (spell casts, hit sparks, item-use anims). 32 master / 128 child slot pool fed by the effect-script bundle.</div>
     </a>
   </div>
 </section>
@@ -118,21 +118,29 @@
       <div class="card-title">World map</div>
       <div class="card-body">Overworld traversal mode. Controller <code>FUN_801E76D4</code> handles the debug top-view toggle, top-view camera scroll/azimuth/zoom, and normal-walk per-frame update. Entity tick SM (<code>FUN_801DA51C</code>, 5 states) drives encounter and location-entry sequences.</div>
     </a>
+    <a class="card" href="field-locomotion.html">
+      <div class="card-title">Field locomotion</div>
+      <div class="card-body">Player free movement in towns and fields. Controller <code>FUN_801d01b0</code> remaps the held pad through the camera into direction + facing, steps 2 units at a time, and collides per-axis against the per-scene walkability grid (4 wall bits per 128-unit tile).</div>
+    </a>
+    <a class="card" href="world-overview-viewer.html">
+      <div class="card-title">World-overview viewer</div>
+      <div class="card-body">The static-site WebGL viewer for the three kingdom maps: AABB layout, the distance-cue fog pass, MAN bulk-terrain resolution, ocean tile + 13-frame CLUT animation, and camera anchors.</div>
+    </a>
     <a class="card" href="save-screen.html">
       <div class="card-title">Save screen</div>
       <div class="card-body">Save-slot selection and write flow. Lives in the menu overlay (not a separate overlay). Outer dispatcher <code>FUN_801DC6B4</code>: 9-state machine, entry-context pointer table at <code>0x801E4F40</code>, slot-select via actor VM, save-block existence scan at <code>DAT_80084140</code>.</div>
     </a>
     <a class="card" href="shop.html">
       <div class="card-title">Shop</div>
-      <div class="card-body">Buy / sell / quantity / confirm flow. Lives in the menu overlay. <code>ShopSession</code> tracks pending item, quantity, and buy/sell direction. Sell price = half buy price (min 1). Per-scene item tables pending overlay trace.</div>
+      <div class="card-body">Buy / sell / quantity / confirm flow. Lives in the menu overlay. <code>ShopSession</code> tracks pending item, quantity, and buy/sell direction. Sell price = half buy price (min 1). Per-scene stock comes from the scene MAN's op-<code>0x49</code> shop records; prices from the static SCUS item table.</div>
     </a>
     <a class="card" href="inn.html">
       <div class="card-title">Inn</div>
-      <div class="card-body">HP / MP restore flow. <code>InnSession { cost }</code> gates the stay on affordability, then restores all active party members to full HP/MP. Per-scene costs pending overlay trace.</div>
+      <div class="card-body">HP / MP restore flow. <code>InnSession { cost }</code> gates the stay on affordability, then restores all active party members to full HP/MP.</div>
     </a>
     <a class="card" href="level-up.html">
       <div class="card-title">Level-up</div>
-      <div class="card-body">Post-battle XP distribution and stat gain. XP curve = static-SCUS table <code>DAT_80076AF4</code> + formula, and per-character stat growth = <code>DAT_800769CC</code> / <code>DAT_80076918</code>, both applied by the overlay level-up function <code>FUN_801E9504</code>. <code>LevelUpBanner</code> renders for 180 frames via <code>level_up_draws_for()</code>. The engine extracts the real XP curve from the user&rsquo;s SCUS at boot; the stat-growth tables are parsed but not yet applied.</div>
+      <div class="card-body">Post-battle XP distribution and stat gain. XP curve = static-SCUS table <code>DAT_80076AF4</code> + formula, and per-character stat growth = <code>DAT_800769CC</code> / <code>DAT_80076918</code>, both applied by the overlay level-up function <code>FUN_801E9504</code>. <code>LevelUpBanner</code> renders for 180 frames via <code>level_up_draws_for()</code>.</div>
     </a>
     <a class="card" href="cutscene.html">
       <div class="card-title">Cutscene (STR mode)</div>

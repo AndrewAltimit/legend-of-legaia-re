@@ -97,7 +97,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
     <div class="enemy-table-toolbar" id="enemy-table-toolbar" style="display: none;">
       <input type="search" id="enemy-table-filter" placeholder="Filter by name or id…">
-      <label class="enemy-table-statmode" title="The international (US/PAL) release boosts enemy combat stats at battle-load (FUN_80054cb0): ATK ×5/4, UDF/LDF ×2, AGL ×9/8 over the raw on-disc record. Toggle off to see the raw record bytes.">
+      <label class="enemy-table-statmode" title="The international (US/PAL) release boosts enemy combat stats when a battle loads: ATK ×5/4, UDF/LDF ×2, AGL ×9/8 over the raw on-disc record. Toggle off to see the raw record bytes.">
         <input type="checkbox" id="enemy-table-inbattle" checked>
         Show international release stats
       </label>
@@ -133,18 +133,40 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     </div>
   </div>
 
-  <p>Reading the columns: <strong>ATK</strong> is the enemy's offense; <strong>UDF / LDF</strong> are the upper and lower defense (two facets - which one applies depends on the attack); <strong>INT</strong> governs magical damage and defense against magic (and also seeds the hit / evade roll) - it is the column fan bestiaries call INT; <strong>SPD</strong> sets turn order; <strong>AGL</strong> is the agility / action gauge the AI spends to act each round (the in-game "Power Up" buff raises it - "agility increased!"). <strong>Elem</strong> is the monster's element (record <code>+0x1D</code>) - the affinity scale multiplies an attacker's damage by <code>matrix[attacker element][defender element]</code>, a small ±4% nudge in retail (same-element 96% / opposite-element 104% / otherwise 100%). <strong>EXP / Gold / Drop</strong> are the victory spoils - base values the game scales and splits at the end of a fight. <strong>Steal</strong> is what the player takes with the Evil God Icon equipped (item + chance), read from the static <code>SCUS_942.54</code> steal table (<code>DAT_80077828</code>) - a separate table from the drop, which is why a monster's steal and drop usually differ. <strong>Magic attacks</strong> lists the enemy's named spells and their MP cost. Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table needs the SCUS executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
+  <h3>Reading the columns</h3>
+  <dl class="kv">
+    <dt><strong>ATK</strong></dt>
+    <dd>The enemy's physical offense.</dd>
+    <dt><strong>UDF / LDF</strong></dt>
+    <dd>Upper and lower defense - two facets; which one applies depends on the attack.</dd>
+    <dt><strong>INT</strong></dt>
+    <dd>Governs magical damage and defense against magic, and also seeds the hit / evade roll - the column fan bestiaries call INT.</dd>
+    <dt><strong>SPD</strong></dt>
+    <dd>Sets battle turn order.</dd>
+    <dt><strong>AGL</strong></dt>
+    <dd>The agility / action gauge the AI spends to act each round (the in-game "Power Up" buff raises it - "agility increased!").</dd>
+    <dt><strong>Elem</strong></dt>
+    <dd>The monster's element. The affinity scale nudges an attacker's damage by the (attacker element, defender element) pair - a small ±4% effect in retail: same-element 96%, opposite-element 104%, otherwise 100%.</dd>
+    <dt><strong>EXP / Gold / Drop</strong></dt>
+    <dd>The victory spoils - base values the game scales and splits at the end of a fight.</dd>
+    <dt><strong>Steal</strong></dt>
+    <dd>What the player takes with the Evil God Icon equipped (item + chance). Steals come from a separate table in the executable, not from the monster record - which is why a monster's steal and drop usually differ.</dd>
+    <dt><strong>Magic attacks</strong></dt>
+    <dd>The enemy's named spells and their MP cost.</dd>
+  </dl>
+  <p class="hint">Names for spells, drops, and steals resolve from a full disc image; load only a raw <code>PROT.DAT</code> and the raw id shows instead (the steal table lives in the executable, so a raw <code>PROT.DAT</code> shows no steal).</p>
 
   <div class="notice">
     <div class="notice-title">International release stats vs. the raw record</div>
-    <p>The four combat columns (<strong>ATK</strong>, <strong>UDF</strong>, <strong>LDF</strong>, <strong>INT</strong>) default to the <em>in-battle</em> values - what the player actually fights - because the raw on-disc record is <em>not</em> what gets installed into the enemy. When the battle loader (<code>FUN_80054cb0</code>) copies a record into the live actor it boosts those four stats: <code>ATK += ATK&gt;&gt;2</code> (×5/4), <code>UDF ×2</code>, <code>LDF ×2</code>, <code>INT += INT&gt;&gt;3</code> (×9/8). HP, MP, AGL and SPD are copied unchanged. Untick <strong>Show international release stats</strong> in the toolbar to see the raw record bytes instead.</p>
-    <p>This boost is why retail enemies hit harder than the raw record (or older bestiaries built from it) suggest - a difference across regions first surfaced by <strong>Zetopheonix</strong>. The loader carries two boost profiles, picked by a per-battle flag (<code>_DAT_8007bd24 + 0x287</code>); the table shows the gate-set profile that a live international-retail capture reproduces byte-for-byte. EXP and gold are a separate story: the record holds a <em>pre-reduction</em> base that the victory-spoils routine (<code>FUN_8004e568</code>) scales down (EXP ×¾ then split among the party; gold roughly ×¼-⅓) at the end of a fight - the <strong>EXP / Gold</strong> columns show those base values.</p>
+    <p>The four combat columns (<strong>ATK</strong>, <strong>UDF</strong>, <strong>LDF</strong>, <strong>INT</strong>) default to the <em>in-battle</em> values - what the player actually fights - because the raw on-disc record is <em>not</em> what gets installed into the enemy. When the battle loader copies a record into the live actor it boosts those four stats: ATK ×5/4, UDF ×2, LDF ×2, INT ×9/8. HP, MP, AGL and SPD are copied unchanged. Untick <strong>Show international release stats</strong> in the toolbar to see the raw record bytes instead.</p>
+    <p>This boost is why retail enemies hit harder than the raw record (or older bestiaries built from it) suggest - a difference across regions first surfaced by <strong>Zetopheonix</strong>. The loader carries two boost profiles picked by a per-battle flag; the table shows the profile that a live international-retail capture reproduces byte-for-byte. EXP and gold are a separate story: the record holds a <em>pre-reduction</em> base that the victory-spoils routine scales down (EXP ×¾ then split among the party; gold roughly ×¼-⅓) at the end of a fight - the <strong>EXP / Gold</strong> columns show those base values.</p>
   </div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="subsystems/battle-formulas.html">Battle formulas</a>
+    <a href="subsystems/battle-formulas.html">Battle formulas (stat boost + spoils)</a>
     <a href="subsystems/battle.html">Battle</a>
     <a href="formats/battle-data-pack.html">Battle-data pack</a>
+    <a href="formats/steal-table.html">Steal table</a>
   </div>
 </section>
 

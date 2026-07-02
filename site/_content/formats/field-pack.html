@@ -176,7 +176,7 @@ _clear a3</code></pre>
 
 <section class="doc-section" id="loader-chain">
   <h2>Loader chain</h2>
-  <p>Tracing the <code>town01</code> save <code>mc2</code> (CDNAME <code>town01</code>, scene <code>0x03</code>) through the captured overlays + <code>SCUS_942.54</code> pins the runtime path that brings a field-pack file into RAM:</p>
+  <p>Tracing a <code>town01</code> field capture (CDNAME <code>town01</code>, scene <code>0x03</code>) through the captured overlays + <code>SCUS_942.54</code> pins the runtime path that brings a field-pack file into RAM:</p>
 <pre><code>FUN_801D6704  (overlay 0897, scene-transition orchestrator)
   └── FUN_8001F7C0(buffer_ptr, scene_name_table=0x80084548,
                    scene_index=0x80084540, 0)         ; scene asset loader (SCUS)
@@ -205,14 +205,14 @@ _clear a3</code></pre>
 </tr></thead>
 <tbody>
 <tr>
-<td><code>mc2</code></td>
+<td>town capture</td>
 <td><code>town01</code></td>
 <td><code>0x03</code></td>
 <td><code>0x8014BD30</code></td>
 <td><code>0x80139530</code></td>
 </tr>
 <tr>
-<td><code>mc0</code></td>
+<td>second capture</td>
 <td><code>town0c</code></td>
 <td><code>0x15</code></td>
 <td><code>0x800B4DF0</code></td>
@@ -226,10 +226,10 @@ _clear a3</code></pre>
 <section class="doc-section" id="runtime-vs-on-disc">
   <h2>Runtime layout differs from on-disc schema</h2>
   <div class="callout"><strong>Re-check needed (see <a href="#corrected">Corrected structure</a>).</strong> This section concluded the loader <em>transforms</em> per-scene preamble bytes into the runtime slots. That premise is doubtful: the schema-indexed region is a <strong>disc-side global constant</strong>, so there is nothing per-scene to project into it. Also <code>base</code> here is <code>_DAT_8007B8D0 − 0x12800</code> = the <strong>field-file buffer base</strong>, but the loader places the field-asset region at <code>buffer + 0x12000</code> (efect.dat at <code>+0x12800</code>), so <code>base + 0x60</code> is the field file's <code>+0x0000</code> object/primitive region, <strong>not</strong> field-pack schema slot 0. Treat the runtime-projection claim as open.</div>
-  <p>Reading the <code>mc2</code> save at <code>base + 0x60</code> (where slot 0 was <em>assumed</em> to sit) yields <strong>post-processed GP0 GPU primitive packets</strong>, not the raw NPC / event-trigger / collision records the disc bytes encode. The 91 KB schema describes a fixed <strong>on-disc</strong> logical layout; the observed runtime structure mixes:</p>
+  <p>Reading the town capture at <code>base + 0x60</code> (where slot 0 was <em>assumed</em> to sit) yields <strong>post-processed GP0 GPU primitive packets</strong>, not the raw NPC / event-trigger / collision records the disc bytes encode. The 91 KB schema describes a fixed <strong>on-disc</strong> logical layout; the observed runtime structure mixes:</p>
 <ul>
 <li>GP0-shaped primitive packets (visible at <code>base + 0x60</code>)</li>
-<li>The 400 KB shared scene-asset pool at <code>0x800C505C..0x80139527</code> (mc2 vs mc0 diff) the loader fills before / alongside the field-pack region - sibling buffers for TIM atlases, primitive scratch, descriptor-driven data</li>
+<li>The 400 KB shared scene-asset pool at <code>0x800C505C..0x80139527</code> (town01-vs-town0c diff) the loader fills before / alongside the field-pack region - sibling buffers for TIM atlases, primitive scratch, descriptor-driven data</li>
 <li>The static asset descriptor table at <code>0x8015CBD0</code> whose entries point into the per-scene region</li>
 </ul>
   <p>A direct preamble-byte → runtime-RAM-cell mapping requires capturing the loader <strong>during</strong> a scene transition (a frame between "scene change requested" and "field-pack region populated"). The current single-save snapshot is post-load, so only the FINAL runtime layout is observable, not the disc-byte-to-RAM-cell projection.</p>
@@ -261,7 +261,7 @@ if let Some((label, stale_base)) =
 <section class="doc-section" id="mednafen-state-diff-observations">
   <h2>Mednafen-state diff observations</h2>
   <p>A prior diff over the engine RAM range <code>0x801C0000..0x80200000</code> lit up a 9 KB region at <code>0x801F69D8..0x801F8F02</code> that toggled between two different MIPS-code overlays - different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (<code>addiu sp,sp,-N</code>, <code>sw s1,N(sp)</code>, <code>lui s1,0x801F</code>, <code>ori s1,s1,...</code>), confirming the slot is an MIPS overlay rather than a data buffer.</p>
-  <h3>Town01 vs town0c diff (mc2 ↔ mc0, full main RAM)</h3>
+  <h3>Town01 vs town0c diff (two field captures, full main RAM)</h3>
 <table>
 <thead><tr>
 <th>Region</th>
@@ -269,7 +269,7 @@ if let Some((label, stale_base)) =
 <th>Interpretation</th>
 </tr></thead>
 <tbody>
-<tr><td><code>0x800C505C..0x80139527</code></td><td>~402 KB</td><td>Shared scene-asset pool; ends just before mc2's field-pack base</td></tr>
+<tr><td><code>0x800C505C..0x80139527</code></td><td>~402 KB</td><td>Shared scene-asset pool; ends just before town01's field-pack base</td></tr>
 <tr><td><code>0x801853F5..0x801B93D0</code></td><td>~205 KB</td><td>Heap-resident sibling region (<code>0x80185000..0x801B9000</code>)</td></tr>
 <tr><td><code>0x8015CBD0..0x80184C89</code></td><td>~152 KB</td><td>Asset descriptor table contents (base = <code>0x8015CBD0</code>)</td></tr>
 <tr><td><code>0x80098900..0x800BE5FC</code></td><td>~132 KB</td><td>Other heap-resident scene buffers</td></tr>
@@ -277,7 +277,7 @@ if let Some((label, stale_base)) =
 <tr><td><code>0x801F3488..0x801F69D8</code></td><td>7.6 KB</td><td>Just-before the 9 KB MIPS-overlay slot - post-overlay scratch</td></tr>
 </tbody>
 </table>
-  <p>The pinned residency window (9 KB MIPS overlay at <code>0x801F69D8..0x801F8F02</code>) does NOT change between mc2 and mc0 - both are town-resident saves and share a town overlay there. Engine-relevant residency differences live in the ~933 KB of heap-pool deltas above.</p>
+  <p>The pinned residency window (9 KB MIPS overlay at <code>0x801F69D8..0x801F8F02</code>) does NOT change between the two captures - both are town-resident saves and share a town overlay there. Engine-relevant residency differences live in the ~933 KB of heap-pool deltas above.</p>
   <p>The disc-gated tests <code>town01_field_pack_save_documents_active_scene_and_ram_base</code> and <code>town01_vs_town0c_diff_lights_up_field_pack_pool</code> (in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mednafen/tests/real_saves.rs"><code>crates/mednafen/tests/real_saves.rs</code></a>) exercise both the static-scene-label assertion and the empirical heap-pool diff against the user's actual saves.</p>
 </section>
 

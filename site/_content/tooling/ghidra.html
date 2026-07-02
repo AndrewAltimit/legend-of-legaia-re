@@ -149,7 +149,18 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 <section class="doc-section" id="script-catalogue">
   <h2>Script catalogue</h2>
   <p>The Ghidra-side scripts (Jython, run inside the container) live in <code>ghidra/scripts/</code>. Edit the <code>TARGETS</code> / <code>LO</code> / <code>HI</code> constants at the top of any script to point at the addresses you want to trace.</p>
-  <p><strong>Per-function dumps</strong></p>
+  <aside class="notice warn">
+    <div class="notice-title">Every script needs the <code># @runtime Jython</code> header line</div>
+    (with <code># @category Legaia</code>); without it the headless analyzer routes <code>.py</code> to the PyGhidra (Python 3) provider, which the image doesn't enable, and the load fails with <em>"Ghidra was not started with PyGhidra"</em>.
+  </aside>
+
+  <h3 id="apply-known-symbols">Symbol re-application (<code>apply_known_symbols.py</code>)</h3>
+  <p>Re-applies this project's pinned function names to a fresh import of <code>SCUS_942.54</code>. A raw-blob import names every function <code>FUN_&lt;addr&gt;</code>; the script reads the curated <code>(address, name, role-comment)</code> table in <code>known_symbols.py</code> and names each function + sets a one-line PLATE comment, so the asset/loader/CD/dispatch cluster is readable immediately. The clean-room counterpart to a PsyQ FidDB pass (replays our own RE labels, no external SDK). SCUS-resident (<code>0x80010000..0x8007C000</code>) only - RAM overlays alias by address, so naming them blind would mislabel.</p>
+  <div class="cli"><code>docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia -process SCUS_942.54 -noanalysis -postScript /scripts/apply_known_symbols.py</code></div>
+
+  <details class="disclosure">
+    <summary><strong>Per-function dumps</strong> - the core dumpers that write disassembly + decompiled C per entry point.</summary>
+    <div class="disclosure-body">
 <table>
 <thead><tr>
 <th>Script</th>
@@ -165,16 +176,311 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 <td>Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Validates the result has <code>&gt;=8</code> instructions ending in <code>jr $ra</code> before committing the function.</td>
 </tr>
 <tr>
+<td><code>dump_pending_helpers.py</code></td>
+<td>Catch-all dumper for helpers / dispatcher leaves under active investigation; the <code>TARGETS</code> list rotates as RE threads come and go. The template every per-overlay dump script follows (<code>in_program()</code> guard + <code>out_path_for()</code> prefixing).</td>
+</tr>
+<tr>
+<td><code>dump_globals.py</code></td>
+<td>Dump the program's defined data-symbol table to <code>funcs/globals_&lt;program&gt;.txt</code>, in the header format <code>scripts/pcsx-redux/build-symbols.py</code> parses.</td>
+</tr>
+<tr>
 <td><code>resolve_render_tail.py</code></td>
 <td>Companion to the trace-driven coverage program: for a list of overlay trace-hit addresses, reports <code>getFunctionContaining</code> + <code>memory.contains</code> per hit in the currently-open overlay program - separating "in-program but un-analyzed" (a create+dump target) from "out-of-program" (a different co-resident overlay). This containment check is how VA-aliased overlay hits get attributed to the right overlay.</td>
+</tr>
+<tr>
+<td><code>dump_battle_rendertail.py</code></td>
+<td>Disassemble + create-function + dump the in-<code>0898</code> battle render-tail functions the trace found un-analyzed (e.g. <code>FUN_801E0080</code>). Output naming matches the overlay dumps; run against <code>overlay_battle_action.bin</code>.</td>
+</tr>
+<tr>
+<td><code>dump_battle_rendertail_0x801f.py</code></td>
+<td>Dump the <code>0x801F</code> render tail the windowed <code>overlay_battle_action.bin</code> import stops short of. Run against a <strong>full-length</strong> re-import of the <code>0898</code> blob at base <code>0x801CE818</code> (span <code>0x801CE818..0x801F8018</code>); resolves the <code>0x801F0xxx</code> hits cleanly. The <code>0x801F6xxx</code>/<code>0x801F7xxx</code> sub-cluster is <em>not</em> <code>0898</code> - it is the co-resident sparring-tutorial overlay PROT 0967 (next row).</td>
+</tr>
+<tr>
+<td><code>dump_effect_overlay_0967.py</code></td>
+<td>Dump the battle <strong>sparring-tutorial overlay PROT 0967</strong>, co-resident at base <code>0x801F69D8</code> during the Tetsu tutorial fight (overlapping <code>0898</code>'s rodata tail). Run against a fresh import of the 0967 entry at <code>-loader-baseAddr 0x801F69D8</code>; create+dumps the <code>0x801F6xxx</code>/<code>0x801F7xxx</code> hit functions (message-pacing driver <code>FUN_801F71E0</code> + the step text emitters) as <code>overlay_effect_0967_&lt;addr&gt;.txt</code>.</td>
+</tr>
+<tr>
+<td><code>dump_menu_inventory_refs.py</code></td>
+<td>Content-grep dumper: decompiles every function in the current program and dumps the C for any whose body mentions a configurable needle list (default: the inventory array <code>0x80085958</code> + the SCUS accessor family + the <code>gp+0x2D2/0x2D4/0x2D6</code> window registers). Robust against the LUI+ADDIU xref gap (matches decompiled text, not the reference manager). Audits <code>overlay_menu.bin</code> for raw-index inventory writes - every mutation goes through the bounds-checked helpers.</td>
 </tr>
 <tr>
 <td><code>dump_terrain_trigger.py</code></td>
 <td>Per-overlay-aware dumper for the world-map render-pipeline chain (<code>FUN_801D7EA0</code> / <code>FUN_801D8258</code> / <code>FUN_801D1344</code> / <code>FUN_80016444</code> + SCUS callers and the 0897 relocation copy). Uses <code>prog.getMemory().contains(addr)</code> to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: <code>&lt;program_label&gt;_&lt;addr&gt;.txt</code>.</td>
 </tr>
+<tr>
+<td><code>trace_field_loader.py</code></td>
+<td>Targeted trace of the per-scene field-file loader <code>FUN_8001f7c0</code>; pins the loader's <strong>dual-mode</strong> dispatch - retail resolves the <code>.MAP</code> by PROT index (<code>FUN_8003e8a8</code>), while the <code>break 0x103</code> path is the dev-host <code>fopen</code> of <code>DATA\FIELD\&lt;scene&gt;.MAP</code> (never taken on retail).</td>
+</tr>
+<tr>
+<td><code>dump_port_catalog_worklist.py</code></td>
+<td>Dumps the "cited but not dumped" worklist surfaced by <code>scripts/ci/port-catalog.py</code> - each address is referenced from at least one existing dump but has no dump of its own; filling them in closes the BFS frontier on the citation graph.</td>
+</tr>
 </tbody>
 </table>
-  <p><strong>LUI+ADDIU and address-resolution helpers</strong></p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary><strong>Per-overlay capture dumps</strong> - one script per captured overlay image, following the <code>dump_pending_helpers.py</code> pattern.</summary>
+    <div class="disclosure-body">
+<table>
+<thead><tr>
+<th>Script</th>
+<th>Purpose</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>dump_shop_overlay.py</code></td>
+<td>Menu-overlay capture: shop, save-screen, status, inn and related UI subsystems (all functions).</td>
+</tr>
+<tr>
+<td><code>dump_levelup_overlay.py</code></td>
+<td>Battle-overlay capture hosting the level-up sequencer + XP/stat-gain calculations (all functions).</td>
+</tr>
+<tr>
+<td><code>dump_levelup_data_section.py</code></td>
+<td>Data section of the level-up capture - the key data addresses above the code (gauge tables read by <code>FUN_801d388c</code> and siblings).</td>
+</tr>
+<tr>
+<td><code>dump_magic_capture_overlay.py</code></td>
+<td>Ra-Seru capture-mechanic overlay (grabbing Gimard and other Seru).</td>
+</tr>
+<tr>
+<td><code>dump_cutscene_overlay.py</code></td>
+<td>Actor-scripted cutscene captures of the field overlay (which also hosts the field VM <code>FUN_801DE840</code>, world-map controller <code>FUN_801E76D4</code>, dev-menu renderer <code>FUN_801EAD98</code>).</td>
+</tr>
+<tr>
+<td><code>dump_str_fmv_overlay.py</code></td>
+<td>STR/MDEC FMV overlay (game modes 26/27) - distinct from the actor-scripted cutscene captures.</td>
+</tr>
+<tr>
+<td><code>dump_dialog_overlay.py</code></td>
+<td>Top dialog-overlay candidates for the MES bytecode dispatcher search.</td>
+</tr>
+<tr>
+<td><code>dump_dialog_mc4_overlay.py</code></td>
+<td>Top functions of the <code>dialog_mc4</code> capture (taken during a world-map walk; same function layout as the walk capture).</td>
+</tr>
+<tr>
+<td><code>dump_dialog_typing_overlay.py</code></td>
+<td>Top functions of the capture taken while a dialog box was actively open and advancing text.</td>
+</tr>
+<tr>
+<td><code>dump_field_battle_intro_overlay.py</code></td>
+<td>Field→battle transition capture - the 3D camera spin between the field and the battle load.</td>
+</tr>
+<tr>
+<td><code>dump_fishing_overlay.py</code></td>
+<td>Fishing-minigame capture of the minigame-hub overlay family (the debug-menu capture is its superset).</td>
+</tr>
+<tr>
+<td><code>dump_slot_machine_overlay.py</code></td>
+<td>Slot-machine minigame capture: coin input, reel-stop, bonus-game logic.</td>
+</tr>
+<tr>
+<td><code>dump_baka_fighter_overlay.py</code></td>
+<td>Baka Fighter duel-minigame capture: round dispatcher, AI, player input.</td>
+</tr>
+<tr>
+<td><code>dump_dance_overlay.py</code></td>
+<td>Dance-minigame capture: main step-input handler + siblings.</td>
+</tr>
+<tr>
+<td><code>dump_muscle_dome_overlay.py</code></td>
+<td>Muscle Dome card-battle capture: round dispatcher, main game state machine, card resolution.</td>
+</tr>
+<tr>
+<td><code>dump_debug_menu_overlay.py</code></td>
+<td>Debug/dev-menu capture - the fullest superset of the minigame-hub overlay family ("DEBUG MODE" dispatcher, minigame selector, FOG/MAP/TMD/POLY debug readouts).</td>
+</tr>
+<tr>
+<td><code>dump_save_ui_select_overlay.py</code></td>
+<td>Save-slot-selection screen capture (before a slot is chosen).</td>
+</tr>
+<tr>
+<td><code>dump_save_ui_saving_overlay.py</code></td>
+<td>Mid-save capture (after slot selection, while writing).</td>
+</tr>
+<tr>
+<td><code>dump_summon_overlay.py</code></td>
+<td>Every function of an imported summon-stager overlay; flags functions referencing the record table or calling the part-stager <code>FUN_80021B04</code>, so the staging logic is easy to find.</td>
+</tr>
+<tr>
+<td><code>dump_state_resume_overlay.py</code></td>
+<td>The 0897 STATE_RESUME effect-actor handler that field-VM op <code>0x49</code> spawns and that signals completion via <code>_DAT_8007B450 = 1</code>.</td>
+</tr>
+<tr>
+<td><code>dump_title_overlay.py</code></td>
+<td>Title-overlay tick function + its caller (pinned by the countdown watchpoint capture).</td>
+</tr>
+<tr>
+<td><code>dump_world_map_overlay.py</code></td>
+<td>Top functions of the world-map overlay capture.</td>
+</tr>
+<tr>
+<td><code>dump_world_map_walk_overlay.py</code></td>
+<td>Top functions of the full walking world-map capture (includes the main dispatcher + dev menu).</td>
+</tr>
+<tr>
+<td><code>dump_world_map_top_overlay.py</code></td>
+<td>Top functions of the top-view / aerial-camera world-map capture.</td>
+</tr>
+</tbody>
+</table>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary><strong>Targeted cluster dumpers</strong> - one-shot dumpers aimed at a specific function cluster or dispatch table.</summary>
+    <div class="disclosure-body">
+<table>
+<thead><tr>
+<th>Script</th>
+<th>Purpose</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>dump_arm_width.py</code></td>
+<td>The two functions that read the equipped weapon during arts INPUT (<code>0x801D3AD0</code> width writer + <code>0x801ECC00</code> jump-table dispatch), pinned by a live read-watch.</td>
+</tr>
+<tr>
+<td><code>dump_arts_input.py</code></td>
+<td>Battle-overlay (0898) arts-combo execution cluster: the Arms resolver <code>FUN_801EC3E4</code> (with its caller list) plus every function referencing the move-power tables (<code>0x801F4F5C</code> / <code>0x801F64E4</code> / <code>0x801F4E63</code>). Confirms the resolver is dispatched by a runtime function pointer and the move-power referrers are damage/action-step builders.</td>
+</tr>
+<tr>
+<td><code>dump_battle_backdrop_draw.py</code></td>
+<td>The battle-overlay backdrop draw <code>func_0x801d02c0</code> (called by <code>FUN_80026f50</code> for game mode <code>0x15</code>) plus one level of callees, for the dome-instancing / back-fill trace.</td>
+</tr>
+<tr>
+<td><code>dump_dat_8007c018_helpers.py</code></td>
+<td>Overlay-side functions referencing the head of the <code>DAT_8007C018</code> pool table (the dual-ref <code>lw</code> + 4-byte-stride pattern).</td>
+</tr>
+<tr>
+<td><code>dump_gp148_candidates.py</code></td>
+<td>The three SCUS functions that write <code>gp[0x148]</code> - the drawable-list head consumed by <code>FUN_80031D00</code>'s walker → the continent-terrain emitter <code>FUN_8002C69C</code>.</td>
+</tr>
+<tr>
+<td><code>dump_house_door_cluster.py</code> / <code>dump_house_door2.py</code></td>
+<td>The intra-town (house / interior) door cluster in the 0897 field overlay: the locomotion + look-ahead callers of the reposition helper <code>FUN_801d2404</code>, plus follow-up functions.</td>
+</tr>
+<tr>
+<td><code>dump_slot4_handler_table.py</code></td>
+<td>The slot-4 record-kind handler jump tables used by <code>FUN_80043390</code> (SCUS table <code>0x8007657C</code> + overlay table <code>0x801F8968</code>; index = <code>(record_word_0 &gt;&gt; 0x11) * 4</code>).</td>
+</tr>
+<tr>
+<td><code>dump_slot4_handlers.py</code></td>
+<td>Force-create + dump the per-kind slot-4 record handlers tail-called from <code>FUN_80043390</code>.</td>
+</tr>
+<tr>
+<td><code>dump_save_screen_table.py</code></td>
+<td>The save-screen dispatch-table base <code>PTR_FUN_801e4f40</code> used by the save-screen state machine <code>FUN_801DC6B4</code> (indexed by <code>DAT_801e46a4</code>).</td>
+</tr>
+<tr>
+<td><code>dump_save_ui_handlers.py</code></td>
+<td>Every unique sub-state handler body in the <code>PTR_FUN_801e4f40</code> save-screen dispatch table.</td>
+</tr>
+<tr>
+<td><code>dump_save_ui_handler_0x15.py</code></td>
+<td>The save-screen sub-state <code>0x15</code> handler at <code>0x801DA2A0</code> (the one table entry without a prior dump).</td>
+</tr>
+<tr>
+<td><code>dump_world_map_emitter_callers.py</code></td>
+<td>The six world-map functions that <code>jal</code> the POLY_FT4/SPRT emitter <code>FUN_8002C69C</code> inline (bypassing the <code>gp[0x148]</code> drawable-list walker).</td>
+</tr>
+<tr>
+<td><code>dump_world_map_top_ext_caller.py</code></td>
+<td>The overlay function that calls <code>FUN_80043390</code> (slot-4 / cluster-A display-list dispatcher) during the warp-into-world-map transition.</td>
+</tr>
+<tr>
+<td><code>dump_world_map_top_installers.py</code></td>
+<td>Every world-map-top function calling <code>FUN_80034B78</code> (the top-view drawable installer), plus the installer itself from SCUS.</td>
+</tr>
+<tr>
+<td><code>dump_world_map_top_prim_leaves.py</code></td>
+<td>The eight overlay-resident high-mode renderers the world-map top view swaps in via <code>FUN_80043390</code>'s overlay path.</td>
+</tr>
+<tr>
+<td><code>dump_world_map_vm_jt.py</code></td>
+<td>The <code>FUN_801D362C</code> world-map drawing-script VM jump table at <code>0x801D1E94</code> (<code>0x3D</code> cases), walking each case-start's prelude to identify opcode args + side effects.</td>
+</tr>
+<tr>
+<td><code>dump_field_overlay_terrain_emitter.py</code></td>
+<td>Field-overlay (0897) functions caught writing the world-map prim pool by the LZS/bundle Lua write-probe.</td>
+</tr>
+<tr>
+<td><code>dump_field_locomotion_cluster.py</code></td>
+<td>Re-decompile the 0897 field camera / region cluster (<code>801db81c</code> / <code>801dbec4</code> / <code>801f5748</code>) + raw-disassemble the surrounding window. Read-only; surfaces the data holes that corrupt the decompiles.</td>
+</tr>
+<tr>
+<td><code>fix_field_locomotion_flow.py</code></td>
+<td>DB-modifying repair for the same cluster: force-disassemble the <code>jal 0x8003ce9c</code> (non-returning operand reader) data holes, drop mid-block fake <code>FUN_</code> entries, re-create functions at real <code>addiu sp,sp,-N</code> prologues, then re-decompile. General pattern for any overlay region split into bogus mid-block functions by a non-returning-call hole.</td>
+</tr>
+<tr>
+<td><code>dump_player_locomotion_integrator.py</code></td>
+<td>Dumps the player free-movement controller <code>FUN_801d01b0</code> + collision <code>FUN_801cfe4c</code> / <code>FUN_801cf9f4</code> + pad-remap <code>func_0x800467e8</code> / <code>FUN_80046494</code>, pinned by the <code>autorun_player_pos_watch.lua</code> write-watchpoint. <code>in_program</code> guards run it across SCUS + overlay_0897. See <a href="../subsystems/field-locomotion.html"><code>subsystems/field-locomotion.md</code></a>.</td>
+</tr>
+<tr>
+<td><code>dump_4c_jumptables.py</code></td>
+<td>Dumps the field-VM main dispatcher JT (<code>0x801E00F4</code>) + the <code>0x4C</code> outer-nibble JT (<code>0x801CEE60</code>, 16 entries) with each target's containing function. Use to pin a <code>0x4C</code> sub-opcode's exact nibble when the decompiler's reconstructed <code>case</code> numbering is ambiguous - e.g. confirmed the collision-grid paint is nibble-7 (<code>0x801e1c64</code>), not the decompile's misleading "case 5".</td>
+</tr>
+<tr>
+<td><code>find_mesh_chain_writer.py</code></td>
+<td>Finds the writer of the field/world-map actor's mesh-chain pointer <code>actor+0x44</code> (the chain <code>FUN_8001ADA4</code> case 5 draws). Scans for non-stack <code>sw/sh …,0x44(reg)</code>, scores each containing function by pool-table refs / TMD object-stride math / actor-field reads, dumps the top candidates. Pins the resolver chain: <code>FUN_80024d78</code> builds <code>actor+0x44</code> from <code>DAT_8007C018[*(u16*)(actor+0x64)]</code>, and <code>FUN_80020f88</code> sets <code>actor+0x64 = .MAP_record[+0x10] + prefix</code>.</td>
+</tr>
+<tr>
+<td><code>analyze_addprim_candidates.py</code></td>
+<td>Companion to <code>find_addprim_emitters.py</code>: dumps each candidate emitter's disassembly + decompiled C and lists its direct callers (run against SCUS, where the high-hit POLY_FT4 emitter lives).</td>
+</tr>
+<tr>
+<td><code>analyze_continent_emitter.py</code></td>
+<td>Walks the continent-terrain emitter chain rooted at <code>FUN_8002C69C</code>: the function + callers + direct callees, plus the static tile-atlas table at <code>DAT_80073A00</code> and the byte-indexed <code>(tile_id, flag)</code> tables.</td>
+</tr>
+</tbody>
+</table>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary><strong>Coverage-batch dumpers</strong> - batches that close out the function-coverage tracker's missing-helper lists.</summary>
+    <div class="disclosure-body">
+<table>
+<thead><tr>
+<th>Script</th>
+<th>Purpose</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>dump_remaining_battle_action.py</code></td>
+<td>Batch-dump the battle-action-overlay functions not yet represented under <code>funcs/overlay_battle_action_&lt;addr&gt;.txt</code>.</td>
+</tr>
+<tr>
+<td><code>dump_remaining_menu.py</code></td>
+<td>Batch-dump the menu-overlay functions not yet represented under <code>funcs/overlay_menu_&lt;addr&gt;.txt</code>.</td>
+</tr>
+<tr>
+<td><code>dump_remaining_misses.py</code></td>
+<td>Dump the remaining "missing helper" entry points the function-coverage tracker reports.</td>
+</tr>
+<tr>
+<td><code>dump_round8.py</code></td>
+<td>Citation-graph closer: 0897 tail-called helpers cited from the second-pass tracker, plus two BIOS B-vector thunks in SCUS.</td>
+</tr>
+<tr>
+<td><code>dump_round_28_helpers.py</code></td>
+<td>Dialog-overlay missing helpers (one SCUS target + six in <code>overlay_dialog_mc4</code>; run twice with each <code>-process</code>).</td>
+</tr>
+<tr>
+<td><code>dump_final_8_helpers.py</code></td>
+<td>The last SCUS-range functions in the coverage tracker's missing list (world-map sprite batcher and siblings).</td>
+</tr>
+</tbody>
+</table>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary><strong>LUI+ADDIU and address-resolution helpers</strong> - find the references Ghidra's reference manager misses.</summary>
+    <div class="disclosure-body">
 <table>
 <thead><tr>
 <th>Script</th>
@@ -190,8 +496,36 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 <td>Per-address LUI+ADDIU materializer finder. Reports every <code>addiu</code> whose combined value lands on one of the targets, plus the next 6 instructions for use-classification. Accepts addresses via <code>getScriptArgs()</code> or the <code>GHIDRA_FIND_ADDRS</code> env var - no source edit needed per invocation. See the LUI+ADDIU + ADDU+SW investigation pattern above.</td>
 </tr>
 <tr>
+<td><code>find_addr_materializer_dat_8007c018.py</code></td>
+<td>Fixed-target shim from the original <code>DAT_8007C018</code> / <code>DAT_8007BB38</code> / <code>DAT_8007B7DC</code> materializer hunt; the generic tool is <code>find_addr_materializers.py</code>.</td>
+</tr>
+<tr>
 <td><code>find_addr_data.py</code></td>
 <td>Search the program memory for any 4-byte LE word equal to a target address - catches function-pointer tables.</td>
+</tr>
+<tr>
+<td><code>find_addr_data_xref.py</code></td>
+<td>One-program search for an address as a stored data word OR as the combined target of a <code>lui+addiu</code>/<code>lui+ori</code> pair.</td>
+</tr>
+<tr>
+<td><code>find_addr_const_allprogs.py</code></td>
+<td>Sweep <em>every</em> program in the project for a target address as (a) a stored 32-bit LE word (pointer / jump-table entry) and (b) a LUI+ADDIU materialization.</td>
+</tr>
+<tr>
+<td><code>find_jal_target.py</code></td>
+<td>Every <code>jal</code> instruction whose encoded 26-bit target equals TARGET in the currently-loaded program.</td>
+</tr>
+<tr>
+<td><code>find_jal_allprogs.py</code></td>
+<td>Project-wide <code>jal</code> (and jump/branch) sweep to TARGET - walks the project's domain files and opens each program read-only from a single headless invocation.</td>
+</tr>
+<tr>
+<td><code>find_jal_rawbytes_allprogs.py</code></td>
+<td>Raw-byte project-wide sweep for the encoded <code>jal TARGET</code> word in initialized memory - catches call sites in bytes Ghidra never disassembled.</td>
+</tr>
+<tr>
+<td><code>find_refs_allprogs.py</code></td>
+<td>For every program, ask the reference manager for ALL references to each TARGET (data refs, computed-call refs) and report whether a function/symbol is defined there.</td>
 </tr>
 <tr>
 <td><code>find_data_word.py</code></td>
@@ -205,9 +539,30 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 <td><code>find_string_xrefs.py</code></td>
 <td>Resolve dev-path string literals (<code>h:\\prot\\...</code>) to RAM addresses and dump every code site that references them.</td>
 </tr>
+<tr>
+<td><code>find_dat_8007c018_writers.py</code></td>
+<td>LUI+ADDIU writers/readers/addressors of <code>DAT_8007C018</code> - the per-kingdom-per-kind data pointer table.</td>
+</tr>
+<tr>
+<td><code>write_only_dat_8007c018.py</code></td>
+<td>Tight writes-only filter for the <code>DAT_8007C018</code> / <code>DAT_8007BB38</code> globals, so the output stays manageable across every overlay.</td>
+</tr>
+<tr>
+<td><code>xref_dat_8007c018.py</code></td>
+<td>Reference-manager query over the <code>DAT_8007C018</code> table window - catches refs the lui+addiu pattern-matchers miss.</td>
+</tr>
+<tr>
+<td><code>xref_world_map_globals.py</code></td>
+<td>Reference-manager probe for a configurable set of world-map subsystem globals (the <code>DAT_8007C018</code> installer + companions).</td>
+</tr>
 </tbody>
 </table>
-  <p><strong>Caller / xref helpers</strong></p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary><strong>Caller / xref helpers</strong> - answer "who calls this?" for direct and indirect call sites.</summary>
+    <div class="disclosure-body">
 <table>
 <thead><tr>
 <th>Script</th>
@@ -232,7 +587,12 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 </tr>
 </tbody>
 </table>
-  <p><strong>Subsystem-targeted scanners</strong></p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary><strong>Subsystem-targeted scanners</strong> - pre-aimed hunts for a specific format or subsystem's consumers.</summary>
+    <div class="disclosure-body">
 <table>
 <thead><tr>
 <th>Script</th>
@@ -256,6 +616,10 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 <td>Readers/writers of the ANM buffer pointer (<code>_DAT_8007b7c8</code>).</td>
 </tr>
 <tr>
+<td><code>find_anm_tick_walker.py</code></td>
+<td>Candidate ANM per-frame walkers: functions reading <code>+0x4C</code> (anm_pc), <code>+0x56</code> (anm_state) and <code>+0x68</code> (anm_timer) off the same base register.</td>
+</tr>
+<tr>
 <td><code>find_mes_buffer_users.py</code></td>
 <td>Readers/writers of the MES dialog buffer pointer (<code>_DAT_8007b8a8</code>).</td>
 </tr>
@@ -268,16 +632,44 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 <td>Count COP2 / GTE instructions per function - surfaces renderer + transform candidates.</td>
 </tr>
 <tr>
+<td><code>find_addprim_emitters.py</code></td>
+<td>Sweep for PSX-GPU POLY_FT4 / POLY_GT4 emitter sites (the textured-quad code bytes <code>0x2C..0x2F</code> written at <code>packet+7</code>).</td>
+</tr>
+<tr>
+<td><code>find_gp_drawable_list_writers.py</code></td>
+<td>Every write into the <code>$gp</code>-relative window around the drawable-list head at <code>gp[0x148]</code>.</td>
+</tr>
+<tr>
 <td><code>find_streaming_consumers.py</code></td>
 <td>DATA_FIELD streaming buffer trail: callers of <code>FUN_8002541c</code> plus direct readers of <code>0x8007b85c</code>.</td>
 </tr>
 <tr>
+<td><code>find_field_pack_consumers.py</code></td>
+<td>Runtime consumers of the field-pack 97-slot schema: any function loading from one of the schema's interior slot offsets.</td>
+</tr>
+<tr>
+<td><code>find_field_pack_magic.py</code></td>
+<td>Code that materialises the field-pack magic word <code>0x01059B84</code> - as a 32-bit immediate pair or byte-by-byte loads.</td>
+</tr>
+<tr>
+<td><code>find_scene_v12_consumers.py</code></td>
+<td>Runtime consumers of the scene-v12 cluster (the PROT entries with the strict 16-byte header signature).</td>
+</tr>
+<tr>
+<td><code>find_npc_clut_writers.py</code></td>
+<td>Every function in every program that reads/writes/computes an address in the NPC-CLUT staging buffer at <code>0x800F19B0</code>.</td>
+</tr>
+<tr>
+<td><code>find_row_479_dma.py</code></td>
+<td>Functions that build a <code>(y &lt;&lt; 16) | x</code> PSX GPU DMA destination for row 479 - the row holding the runtime-generated NPC CLUT slots.</td>
+</tr>
+<tr>
 <td><code>find_xp_table_readers.py</code></td>
-<td>LUI+ADDIU resolver originally aimed at <code>0x8007123C</code>. <strong>Superseded:</strong> the real XP curve is <code>DAT_80076AF4</code>, read by the overlay applier <code>FUN_801E9504</code> (the old target is an off-by-<code>0x800</code> artefact over a sin-LUT slice). Kept for the generic resolver pattern.</td>
+<td>LUI+ADDIU resolver kept for its generic pattern; its default target range is <em>not</em> the XP table - the retail XP curve is <code>DAT_80076AF4</code>, read by the overlay applier <code>FUN_801E9504</code>. Retarget <code>LO</code>/<code>HI</code> before running.</td>
 </tr>
 <tr>
 <td><code>find_xp_table_all_overlays.py</code></td>
-<td>Same scan, intended for <code>-process -recursive</code> over every imported program (SCUS + overlays). Used to confirm no static reader for the XP table surfaces in the current overlay set.</td>
+<td>Same scan, run recursively across every imported program (SCUS + overlays).</td>
 </tr>
 <tr>
 <td><code>find_prot_consumers.py</code></td>
@@ -299,25 +691,14 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 <td><code>find_effect_bundle_consumers.py</code></td>
 <td>Effect-bundle init / spawn / walker (run on an imported battle overlay).</td>
 </tr>
-<tr>
-<td><code>dump_field_locomotion_cluster.py</code></td>
-<td>Re-decompile the 0897 field camera / region cluster (<code>801db81c</code> / <code>801dbec4</code> / <code>801f5748</code>) + raw-disassemble the surrounding window. Read-only; surfaces the data holes that corrupt the decompiles.</td>
-</tr>
-<tr>
-<td><code>fix_field_locomotion_flow.py</code></td>
-<td>DB-modifying repair for the same cluster: force-disassemble the <code>jal 0x8003ce9c</code> (non-returning operand reader) data holes, drop mid-block fake <code>FUN_</code> entries, re-create functions at real <code>addiu sp,sp,-N</code> prologues, then re-decompile. General pattern for any overlay region split into bogus mid-block functions by a non-returning-call hole.</td>
-</tr>
-<tr>
-<td><code>dump_player_locomotion_integrator.py</code></td>
-<td>Dumps the player free-movement controller <code>FUN_801d01b0</code> + collision <code>FUN_801cfe4c</code> / <code>FUN_801cf9f4</code> + pad-remap <code>func_0x800467e8</code> / <code>FUN_80046494</code>, pinned by the <code>autorun_player_pos_watch.lua</code> write-watchpoint. <code>in_program</code> guards run it across SCUS + overlay_0897. See <a href="../subsystems/field-locomotion.html"><code>subsystems/field-locomotion.md</code></a>.</td>
-</tr>
-<tr>
-<td><code>dump_4c_jumptables.py</code></td>
-<td>Dumps the field-VM main dispatcher JT (<code>0x801E00F4</code>) + the <code>0x4C</code> outer-nibble JT (<code>0x801CEE60</code>, 16 entries) with each target's containing function. Use to pin a <code>0x4C</code> sub-opcode's exact nibble when the decompiler's reconstructed <code>case</code> numbering is ambiguous - e.g. confirmed the collision-grid paint is nibble-7 (<code>0x801e1c64</code>), not the decompile's misleading "case 5".</td>
-</tr>
 </tbody>
 </table>
-  <p><strong>Game-mode state-machine recon</strong></p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary><strong>Game-mode state-machine recon</strong> - the hunts that pinned the 28-mode dispatcher.</summary>
+    <div class="disclosure-body">
 <table>
 <thead><tr>
 <th>Script</th>
@@ -346,7 +727,12 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 </tr>
 </tbody>
 </table>
-  <p><strong>Overlay capture and analysis</strong></p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary><strong>Overlay capture and analysis</strong> - import + inventory the RAM-resident overlay images.</summary>
+    <div class="disclosure-body">
 <table>
 <thead><tr>
 <th>Script</th>
@@ -382,12 +768,29 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 <td>List functions in the active overlay program sorted by size, with outgoing-call counts.</td>
 </tr>
 <tr>
+<td><code>list_overlay_memory.py</code></td>
+<td>List every memory block in the current program - confirms the address layout of an import.</td>
+</tr>
+<tr>
 <td><code>list_programs.py</code></td>
 <td>List every program currently in the Ghidra project.</td>
 </tr>
+<tr>
+<td><code>list_all_programs.py</code></td>
+<td>List every program in the open project including overlays (recursive) - confirms what exists before a multi-program sweep.</td>
+</tr>
+<tr>
+<td><code>list_programs_quiet.py</code></td>
+<td>Print every program name as <code>name [size]</code> - for discovering <code>-process</code> argument names.</td>
+</tr>
 </tbody>
 </table>
-  <p><strong>Static-analysis utilities</strong></p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary><strong>Static-analysis utilities</strong> - whole-program reports.</summary>
+    <div class="disclosure-body">
 <table>
 <thead><tr>
 <th>Script</th>
@@ -400,6 +803,9 @@ sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></p
 </tr>
 </tbody>
 </table>
+    </div>
+  </details>
+
   <p>Cross-cutting helpers under <code>scripts/</code> (host-side, not Ghidra):</p>
 <table>
 <thead><tr>

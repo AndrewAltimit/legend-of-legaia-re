@@ -67,8 +67,8 @@
       <span class="memmap-label">SCUS code (.text + libsnd / libspu / libcd / libapi)</span>
     </div>
     <div class="memmap-row" data-key="scus-data">
-      <span class="memmap-addr">0x80060000 - 0x8007FFFF</span>
-      <span class="memmap-label">SCUS .rodata + .data (jump tables, global state)</span>
+      <span class="memmap-addr">0x80060000 - 0x800FFFFF</span>
+      <span class="memmap-label">SCUS .rodata + .data + .bss (jump tables, global state, character records, story flags)</span>
     </div>
 
     <div class="memmap-section-head">Game state globals (in SCUS .bss)</div>
@@ -100,15 +100,15 @@
       <span class="memmap-addr">0x8007C34C..0x36C</span>
       <span class="memmap-label">Actor-list slot table (7 linked-list heads consumed by FUN_8002519c)</span>
     </div>
-
-    <div class="memmap-section-head">Heap + scratch</div>
-    <div class="memmap-row" data-key="heap">
-      <span class="memmap-addr">0x80080000 - 0x801BFFFF</span>
-      <span class="memmap-label">Game heap (asset buffers, runtime state, dialog buffer)</span>
-    </div>
     <div class="memmap-row" data-key="battle-ctx">
       <span class="memmap-addr">0x800EB654</span>
       <span class="memmap-label">Active battle context struct (pointed to by 0x8007BD24)</span>
+    </div>
+
+    <div class="memmap-section-head">Runtime data buffers</div>
+    <div class="memmap-row" data-key="heap">
+      <span class="memmap-addr">0x80100000 - 0x801BFFFF</span>
+      <span class="memmap-label">Runtime data buffers (asset slabs, per-scene state, dialog buffer)</span>
     </div>
 
     <div class="memmap-section-head">Runtime overlay window</div>
@@ -140,10 +140,18 @@
 <section class="doc-section">
   <h2>Notes</h2>
   <ul>
-    <li>The overlay window holds <em>different code</em> depending on which game mode is active. Static analysis only sees what's loaded at the time of capture. The repo has separate overlay imports for: title screen, town (PROT 0897), battle (PROT 0898), and the menu/options overlay (PROT 0899; the historical &ldquo;PROT 0896 @ 0x801C5818&rdquo; attribution is refuted - that base was an over-read artifact).</li>
-    <li>Several globals that look like data ("DAT_xxxxx" in Ghidra) are actually pointers to in-heap structs. The battle context at <code>0x8007BD24</code> is the canonical example - Ghidra types it as <code>int*</code>, code accesses it as <code>(*ptr)[N]</code>.</li>
-    <li>The PROT TOC at <code>0x801C70F0</code> is loaded from disc at boot. Sam's earlier TOC math used a wrong offset (<code>toc[p+5]-toc[p+2]</code> instead of <code>toc[p+5]-toc[p+3]+4</code>); fixing it shifted classification of hundreds of entries.</li>
+    <li>The overlay window holds <em>different code</em> depending on which game mode is active. Static analysis only sees what's loaded at the time of capture. The repo has separate overlay imports for: title screen, town (PROT 0897), battle (PROT 0898), and the menu/options overlay (PROT 0899).</li>
+    <li>Several globals that look like data ("DAT_xxxxx" in Ghidra) are actually pointers to runtime structs. The battle context at <code>0x8007BD24</code> is the canonical example - Ghidra types it as <code>int*</code>, code accesses it as <code>(*ptr)[N]</code>.</li>
+    <li>The PROT TOC at <code>0x801C70F0</code> is loaded from disc at boot. The entry size formula is <code>size = toc[p+5] - toc[p+3] + 4</code>, where <code>p</code> is the entry's word offset in the raw TOC. See the <a href="../formats/prot.html">PROT.DAT format page</a>.</li>
   </ul>
+  <details class="disclosure">
+    <summary>Superseded readings (do not re-walk)</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>"PROT 0896 @ <code>0x801C5818</code>" as a menu-overlay base is refuted - that base was an over-read artifact; the menu overlay is PROT 0899 at <code>0x801CE818</code>, and live field captures hold an ISO9660 directory cache at <code>0x801C5818</code>.</li>
+      </ul>
+    </div>
+  </details>
 </section>
 
 <script>
@@ -158,7 +166,7 @@ const DETAILS = {
   },
   'scus-data': {
     title: 'SCUS data',
-    body: `<p>Initialized data: jump tables (move-VM JT at <code>0x80010778</code>, opcode dispatch tables, GTE descriptor tables), string literals, baked-in tables (font glyph metadata at <code>0x80074050</code>, BGM IDs).</p>`
+    body: `<p>Initialized data + BSS. Jump tables (move-VM JT at <code>0x80010778</code>, opcode dispatch tables, GTE descriptor tables), string literals, baked-in tables (font glyph metadata at <code>0x80074050</code>, BGM IDs), then the game-state block: character records at <code>0x80084708</code>, story-flag bitmap at <code>0x80085600</code>, inventory at <code>0x80085958</code>, and the battle context at <code>0x800EB654</code>.</p>`
   },
   'actor-table': {
     title: 'Battle actor table',
@@ -195,8 +203,8 @@ const DETAILS = {
     body: `<p>Seven linked-list heads at strides of 4 bytes (<code>+0x00/+0x04/+0x08/+0x0C/+0x10/+0x14/+0x20</code>). <code>FUN_80016444</code> walks five of them per frame as separate render passes; the iterator <code>FUN_8002519c</code> dispatches each node via <code>jalr node[+0x0C]</code>. <code>_DAT_8007C354</code> and <code>_DAT_8007C364</code> are also read by <code>func_0x8003C83C</code> for motion-VM <code>0xF8</code>/<code>0xFB</code> channel lookups (same list, two consumers).</p>`
   },
   'heap': {
-    title: 'Game heap',
-    body: `<p>Asset buffers (TIMs, TMDs, sound banks), runtime state (the active battle context, dialog text buffer, scene-asset table at <code>0x80084540</code>), per-actor scratch.</p>`
+    title: 'Runtime data buffers',
+    body: `<p>Asset slabs (TIMs, TMDs, sound banks), per-scene runtime state, the dialog text buffer, per-actor scratch.</p>`
   },
   'battle-ctx': {
     title: 'Active battle context',
@@ -204,7 +212,7 @@ const DETAILS = {
   },
   'overlay-low': {
     title: 'Overlay header region',
-    body: `<p>The first 60 KB of the overlay window holds shared dispatch code, jump tables, and per-overlay global state. (A historical capture labeled &ldquo;0896 options menu&rdquo; was really this window with the field/menu overlays resident - the 0896 attribution is refuted.)</p>`
+    body: `<p>The first 60 KB of the overlay window holds shared dispatch code, jump tables, and per-overlay global state. Live field captures hold an ISO9660 directory cache at <code>0x801C5818</code>.</p>`
   },
   'overlay-mid': {
     title: 'Overlay code',

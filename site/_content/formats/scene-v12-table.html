@@ -29,9 +29,10 @@
 +end_records .. 0x800            ; zero padding
 +0x800   u16  script_count       ; scene event-scripts prescript
 +0x802   script_count × u16      ;   offset table (relative to +0x800)
-+0x800 + offsets[i]              ;   per-record word-aligned command bytes
-                                 ;   (records typically open with the
-                                 ;   `0xFFFF 0x0000` header sentinel; NOT
++0x800 + offsets[i]              ;   per-record move-VM stager records
+                                 ;   `[i16 model_sel][u16 flags][bytecode]`
+                                 ;   (records typically open `0xFFFF 0x0000`
+                                 ;   = model_sel -1 transform node; NOT
                                  ;   field-VM bytecode - see below).</code></pre>
 </section>
 
@@ -82,7 +83,7 @@
 
 <section class="doc-section" id="event-script-prescript">
   <h2>Event-script prescript at +0x800</h2>
-  <p>Identical shape to the standalone <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene_event_scripts</a> format: <code>[u16 count][u16 offsets[count]]</code> followed by per-record <strong>word-aligned (16-bit) command records</strong> - <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode (it disassembles as field-VM with a 65–88% error rate; see the scene_event_scripts section for the falsification). The per-record <code>0xFFFF 0x0000</code> lead is a record header sentinel, not a frame-divider opcode. The genuine per-scene field-VM scripts live in the scene MAN sub-asset (see <a href="../subsystems/script-vm.html">script VM</a>).</p>
+  <p>Identical shape to the standalone <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene_event_scripts</a> format: a <code>[u16 count][u16 offsets[count]]</code> table indexing <strong>move-VM (<code>FUN_80023070</code>) records in the summon-stager format</strong> (<code>[i16 model_sel][u16 flags][move-VM bytecode]</code>) - <strong>not</strong> field-VM (<code>FUN_801DE840</code>) bytecode (it disassembles as field-VM with a 65&ndash;88% error rate). The per-record <code>0xFFFF 0x0000</code> lead is <code>model_sel = -1</code> (a transform/pivot node) + <code>flags = 0</code>, and the <code>0x0008</code> terminator is move-VM opcode <code>0x08</code> (Halt). The field VM installs a record by id via <code>FUN_800252EC</code> (&rarr; part-stager <code>FUN_80021B04</code> &rarr; move VM). Parser: <code>legaia_asset::scene_event_scripts::move_stager_records</code>. The genuine per-scene field-VM <em>scripts</em> live in the scene MAN sub-asset (see <a href="../subsystems/script-vm.html">script VM</a>); this prescript is the move-VM <em>stager</em> table they spawn from.</p>
   <p>Across the 97 v12 entries:</p>
   <table>
     <thead><tr><th>Metric</th><th>Value</th></tr></thead>
@@ -118,7 +119,7 @@ PROT 0093_map01  scene_v12_table (this format)         ┘
 PROT 0244_map02  scene_event_scripts                   ┐ Sebucus
 PROT 0253_map02  scene_v12_table                       ┘
 …</code></pre>
-  <p>The two scripts likely serve different scopes (scene-enter triggers vs. per-actor / per-region triggers), or they're "early-load" and "late-load" splits of a single logical script set. The exact runtime split isn't pinned down yet; both are walked by the same field VM.</p>
+  <p>The two tables likely serve different scopes (scene-enter effects vs. per-actor / per-region effects), or they're "early-load" and "late-load" splits of a single logical stager set. The exact runtime split isn't pinned down yet; both carry the same move-VM stager records, installed via <code>FUN_800252EC</code> and run by the move VM <code>FUN_80023070</code>.</p>
 </section>
 
 <section class="doc-section" id="reading-parsed-structure">
@@ -145,7 +146,7 @@ for (i, s) in t.scripts.iter().enumerate() {
   <ul class="bullets">
     <li><strong>Where does the loader stage the file?</strong> The <code>FUN_8001F7C0</code> / <code>FUN_800255B8</code> field-loader chain (see <a href="../subsystems/asset-loader.html">asset loader</a>) is the canonical scene-asset path, but the static call graph for v12 entries hasn't been pinned. Earlier overlay captures put the file at RAM <code>0x8014B530</code> for one scene; that address is heap-allocated and varies per load.</li>
     <li><strong>What does <code>b0</code> index into?</strong> For Drake the <code>b0</code> values fit inside the scene's TMD pack count (40 slots), but for other scenes they exceed it, ruling out "global TMD-slot index". They probably index a scene-local resource table the loader builds from the v12 header.</li>
-    <li><strong>Two scripts per scene</strong> - the offset-0 script and the offset-0x800 script - likely encode different runtime phases (boot vs. live). The field-VM opcode stream from each would tell us, once the VM opcode table is exhaustively walked.</li>
+    <li><strong>Two prescript tables per scene</strong> - the sister offset-0 <code>scene_event_scripts</code> entry and this offset-0x800 table - carry the same move-VM stager records, both consumed via <code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code>. The exact per-record decode follows the move VM's control flow (a linear disassembly desyncs at its jump ops <code>0x18/0x19/0x1A/0x1B</code>).</li>
   </ul>
 </section>
 

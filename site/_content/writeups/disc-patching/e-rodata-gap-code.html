@@ -14,7 +14,14 @@
   <dl class="kv">
     <dt>Why code</dt><dd>the change can't be a data edit: a second drop the one slot can't hold; an XP grant the flee teardown never reaches; a charmed enemy no static table can flag; a persistent per-Seru bonus retail saves have no field for</dd>
     <dt>Host</dt><dd>a reclaimed all-zero run of <code>SCUS_942.54</code> rodata (always resident), holding the hand-assembled routine - and, when the gaps fill up, additional reference-free SCUS runs. Each candidate must be verified all-zero <em>and</em> constant across runtime states <em>and</em> outside every live table, <em>and</em> - the part a static check can't prove - read-watch-verified unreferenced (shiny Seru spreads across four such regions)</dd>
-    <dt>Hooks</dt><dd>bonus drop - reward routine <code>0x8004F610</code> &rarr; gap <code>0x8007AB80</code>; flee-EXP - escape teardown <code>0x801E5A10</code> (battle overlay) &rarr; gap <code>0x8007AD00</code>; enemy ally - battle setup <code>0x80051990</code> &rarr; gap <code>0x8007ACA0</code> (+ a one-word victory-check widen in the battle overlay); shiny Seru - nine detours across the battle / menu / capture paths &rarr; four read-watch-verified-dead SCUS regions, with the persistent flag in a spare byte array in the character record (<em>not</em> the spell-level byte)</dd>
+    <dt>Hooks</dt><dd>
+      <ul class="bullets" style="margin: 0;">
+        <li><strong>bonus drop</strong> - reward routine <code>0x8004F610</code> &rarr; gap <code>0x8007AB80</code></li>
+        <li><strong>flee-EXP</strong> - escape teardown <code>0x801E5A10</code> (battle overlay) &rarr; gap <code>0x8007AD00</code></li>
+        <li><strong>enemy ally</strong> - battle setup <code>0x80051990</code> &rarr; gap <code>0x8007ACA0</code>, plus a one-word victory-check widen in the battle overlay</li>
+        <li><strong>shiny Seru</strong> - nine detours across the battle / menu / capture paths &rarr; four read-watch-verified-dead SCUS regions, with the persistent flag in a spare byte array in the character record (<em>not</em> the spell-level byte)</li>
+      </ul>
+    </dd>
     <dt>Detour shape</dt><dd>overwrite two instructions with <code>j routine</code> + <code>nop</code>; the routine runs the work, replays the displaced instructions, jumps back to the return address</dd>
     <dt>Edit class</dt><dd>in-place / same-size; <strong>consumes reclaimed rodata / table padding</strong></dd>
     <dt>Oracles</dt><dd><code>equipment_drops_real.rs</code> &middot; <code>flee_exp_real.rs</code> &middot; <code>enemy_ally_real.rs</code> &middot; <code>shiny_seru_real.rs</code></dd>
