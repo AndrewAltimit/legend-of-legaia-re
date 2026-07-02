@@ -152,6 +152,14 @@ handler" note carried the loader-math off-by-2 *and* matched this overlay's imag
 over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`script-vm.md §
 0x3E WARP`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).
 
+## Engine port
+
+[`legaia_engine_core::slot_machine`](../../crates/engine-core/src/slot_machine.rs) is the clean-room rules engine over this page. The **Confirmed** kernels are ported directly: the slot LCG (`SlotRng`, `x*5+1` + 16-bit fold; `FUN_801d30cc`), the 20-slot strip permutation (`build_strip`, mod-`0x14` draw + `+0xd`/`+1` probe, symbol `slot/2`; `FUN_801cf0d8` case 0), the balance-bracketed feature roll (`feature_roll`; `FUN_801d258c`), the per-mode stop plan + landing search (`stop_plan` / `land_row`; `FUN_801d2114` / `FUN_801d2440`), the payline / payout / bonus-round evaluation (`SlotMachine::evaluate_spin`, payout via [`legaia_asset::slot_payout`]; `FUN_801d13e8`), and the coin economy (overlay-local balance, `9999999` tally cap, cash-out **assignment** into the bank).
+
+The engine-side reconstructions (each marked at its site): the 1-coin-per-line bet constant, the bracket→denominator pairing inside the feature roll, the spin-up pacing constants, the BIOS-`rand` stream substituted with a deterministic LCG, and feature modes 3/5 folded to the normal landing plan.
+
+Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::casino_coins` = `_DAT_800845A4`). The `play-window` viewer starts it from the `O` key (loads PROT 0975, `slot_payout::parse`); Cross spins / stops / collects, Left/Right cycle the bet lines. Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
+
 ## Open
 
 - The **symbol-descriptor table** at `DAT_801d347c` (sprite UVs / colour per symbol) is read by `FUN_801d2cc0` but its layout/values are not lifted - the head records look `0x14`-stride but the region transitions into a pointer array a few entries in, so the exact extent needs more tracing. (The sibling **payout-byte table** at `DAT_801d3598` is now decoded - see [RAM state](#ram-state) / `legaia_asset::slot_payout`.)

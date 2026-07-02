@@ -182,13 +182,17 @@ fn apply_world(world: &mut World, field: WorldField, code: CheatCode) {
                 world.play_time_seconds = code.value as u32;
             }
         }
+        WorldField::Coins => {
+            // The casino coin bank (`0x800845A4`) - the slot machine seeds
+            // its playing balance from this and assigns it back on cash-out.
+            world.casino_coins = code.value as u32;
+        }
         WorldField::EncounterStepCounter
         | WorldField::SaveAnywhereFlag
         | WorldField::CameraMode
         | WorldField::NextGameMode
         | WorldField::BgmId
         | WorldField::SceneNamePool
-        | WorldField::Coins
         | WorldField::PartyMemberCount => {
             // These map to engine cells that aren't yet exposed as
             // typed `World` fields. We record the apply for telemetry

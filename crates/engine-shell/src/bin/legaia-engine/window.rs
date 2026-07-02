@@ -3429,6 +3429,59 @@ impl PlayWindowApp {
         true
     }
 
+    /// Load the slot-machine overlay (PROT 0975), decode its payout table, and
+    /// start a slot session in the world (suspending the current scene).
+    /// Returns `false` (and logs) when no disc is attached or the table can't
+    /// decode. Mirrors [`Self::start_dance_minigame`]'s overlay path.
+    ///
+    /// The playing balance seeds from the world's casino coin bank
+    /// (`World::casino_coins`, the retail `_DAT_800845A4`); a thin bank is
+    /// fronted a dev stake so the dev entry point is playable. The final
+    /// balance commits back to the bank on exit (`World::exit_slot_machine`).
+    fn start_slot_minigame(&mut self) -> bool {
+        use legaia_asset::static_overlay;
+        let Some(rec) = static_overlay::overlay_map()
+            .by_prot_index(legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32)
+        else {
+            log::warn!("slots: overlay 0975 absent from the static-overlay map");
+            return false;
+        };
+        let raw = match self.session.host.index.entry_bytes_extended(rec.prot_index) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("slots: PROT {} read failed: {e:#}", rec.prot_index);
+                return false;
+            }
+        };
+        let loaded = match static_overlay::as_loaded(&raw, rec) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("slots: as_loaded failed: {e:#}");
+                return false;
+            }
+        };
+        let Some(payouts) = legaia_asset::slot_payout::parse(&loaded) else {
+            log::warn!("slots: payout-table parse failed");
+            return false;
+        };
+        // Dev stake when the bank can't cover a spin (the retail entry path
+        // arrives through the casino with coins already banked).
+        const DEV_STAKE: i32 = 100;
+        let bank = self.session.host.world.casino_coins as i32;
+        let balance = if bank >= legaia_engine_core::slot_machine::MIN_SPIN_BALANCE {
+            bank
+        } else {
+            log::info!("slots: coin bank {bank} too thin - fronting a {DEV_STAKE}-coin dev stake");
+            DEV_STAKE
+        };
+        // Seed from the frame counter: deterministic across a replayed pad
+        // stream (retail reseeds from BIOS rand at machine init).
+        let seed = 0x5107_5EED ^ self.session.host.world.frame as u32;
+        let machine = legaia_engine_core::slot_machine::SlotMachine::new(payouts, seed, balance);
+        self.session.host.world.enter_slot_machine(machine);
+        true
+    }
+
     /// React to a `Field <-> Battle` scene-mode change once per transition:
     /// on entering battle, decode each enemy's mesh and inject it; on leaving,
     /// restore the clean field VRAM and drop the battle meshes. Called each
@@ -5318,6 +5371,46 @@ impl PlayWindowApp {
             let ly2 = self.font.layout_ascii(&pts);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
         }
+        // Slot-machine minigame HUD: the three payline symbols, the balance /
+        // bet readout, and the phase-specific prompt.
+        if self.session.host.world.mode == SceneMode::SlotMachine
+            && let Some(m) = &self.session.host.world.slot_machine
+        {
+            use legaia_engine_core::slot_machine::SlotPhase;
+            let reels = format!(
+                "[{}] [{}] [{}]",
+                m.payline_symbol(0),
+                m.payline_symbol(1),
+                m.payline_symbol(2)
+            );
+            let feature = match m.feature_mode() {
+                6 => format!("  BONUS x{}", m.bonus_spins()),
+                0 => String::new(),
+                mode => format!("  feature {mode}"),
+            };
+            let sl1 = format!(
+                "SLOTS  {reels}  coins {}  lines {}{feature}",
+                m.balance(),
+                m.bet_lines()
+            );
+            let ly1 = self.font.layout_ascii(&sl1);
+            out.extend(text_draws_for(&ly1, (8, 62), white));
+            let prompt = match m.phase() {
+                SlotPhase::Idle => "Cross = spin, Left/Right = bet lines".to_string(),
+                SlotPhase::Spinning => "spinning...".to_string(),
+                SlotPhase::Stopping => "Cross = stop reel".to_string(),
+                SlotPhase::Payout => match m.last_result() {
+                    Some(r) if r.payout > 0 => {
+                        format!("WIN +{} coins!  (Cross = collect)", r.payout)
+                    }
+                    _ => "no win  (Cross = continue)".to_string(),
+                },
+                SlotPhase::CashedOut => "cashed out".to_string(),
+            };
+            let sl2 = format!("{prompt}   (O = cash out + quit)");
+            let ly2 = self.font.layout_ascii(&sl2);
+            out.extend(text_draws_for(&ly2, (8, 80), dim));
+        }
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
         // runtime is in any shop, inn, or confirmation state.
         if self.menu_runtime.is_open() {
@@ -6334,6 +6427,30 @@ impl ApplicationHandler for PlayWindowApp {
                     } else if self.start_fishing_minigame() {
                         log::info!(
                             "fishing: started - Cross casts/reels(A), Circle reels(B), L to quit"
+                        );
+                    }
+                    return;
+                }
+                // `O`: toggle the casino slot-machine minigame. Loads the slot
+                // overlay (PROT 0975), suspends the current scene, and runs
+                // the reel state machine; Cross spins / stops / collects,
+                // Left/Right set the bet lines. Pressing O again cashes the
+                // balance out into the casino coin bank and leaves.
+                if matches!(code, KeyCode::KeyO)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    if self.session.host.world.mode == SceneMode::SlotMachine {
+                        if let Some(m) = self.session.host.world.exit_slot_machine() {
+                            log::info!(
+                                "slots: cashed out {} coins into the bank (now {})",
+                                m.balance(),
+                                self.session.host.world.casino_coins
+                            );
+                        }
+                    } else if self.start_slot_minigame() {
+                        log::info!(
+                            "slots: started - Cross spins/stops/collects, Left/Right bet lines, O to cash out"
                         );
                     }
                     return;

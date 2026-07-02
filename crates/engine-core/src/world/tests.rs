@@ -10137,3 +10137,236 @@ fn fishing_tick_without_session_falls_back_to_return_mode() {
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Field);
 }
+
+fn slot_test_machine(balance: i32) -> crate::slot_machine::SlotMachine {
+    use legaia_asset::slot_payout::SlotPayoutTable;
+    // Synthetic payout table: symbol id i pays (i+1)*2 coins.
+    let mut payouts = [0u8; legaia_asset::slot_payout::SLOT_SYMBOL_COUNT];
+    for (i, p) in payouts.iter_mut().enumerate() {
+        *p = ((i + 1) * 2) as u8;
+    }
+    crate::slot_machine::SlotMachine::new(SlotPayoutTable { payouts }, 0xC0FFEE, balance)
+}
+
+#[test]
+fn enter_slot_machine_suspends_mode_and_exit_commits_the_bank() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.casino_coins = 7;
+    world.enter_slot_machine(slot_test_machine(50));
+    assert_eq!(world.mode, SceneMode::SlotMachine);
+    assert!(world.slot_machine.is_some());
+    let machine = world.exit_slot_machine();
+    assert!(machine.is_some());
+    assert_eq!(world.mode, SceneMode::Field);
+    assert!(world.slot_machine.is_none());
+    // Exit commits the playing balance INTO the bank (the retail state-100
+    // assignment `_DAT_800845A4 = DAT_801d4114`), replacing the old value.
+    assert_eq!(world.casino_coins, 50);
+}
+
+#[test]
+fn slot_machine_spins_stops_and_collects_through_the_pad() {
+    use crate::slot_machine::{SPIN_UP_FRAMES, SlotPhase};
+    let mut world = World::new();
+    world.enter_slot_machine(slot_test_machine(50));
+    // Confirm (Cross rising edge) charges the bet and starts the spin.
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Cross.mask());
+    let _ = world.tick();
+    let m = world.slot_machine.as_ref().unwrap();
+    assert_eq!(m.phase(), SlotPhase::Spinning);
+    assert_eq!(m.balance(), 50 - m.spin_cost());
+    // Run the spin-up timer down into Stopping.
+    for _ in 0..SPIN_UP_FRAMES {
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    assert_eq!(
+        world.slot_machine.as_ref().unwrap().phase(),
+        SlotPhase::Stopping
+    );
+    // Three fresh Cross edges stop the three reels -> Payout.
+    for _ in 0..3 {
+        world.set_pad(0);
+        let _ = world.tick();
+        world.set_pad(input::PadButton::Cross.mask());
+        let _ = world.tick();
+    }
+    let m = world.slot_machine.as_ref().unwrap();
+    assert_eq!(m.phase(), SlotPhase::Payout);
+    assert_eq!(m.reels_stopped(), crate::slot_machine::REEL_COUNT);
+    let result = m.last_result().expect("spin evaluated");
+    let before = m.balance();
+    // A fresh Cross edge collects the (possibly zero) payout back to Idle.
+    world.set_pad(0);
+    let _ = world.tick();
+    world.set_pad(input::PadButton::Cross.mask());
+    let _ = world.tick();
+    let m = world.slot_machine.as_ref().unwrap();
+    assert_eq!(m.phase(), SlotPhase::Idle);
+    assert_eq!(m.balance(), before + result.payout);
+}
+
+#[test]
+fn slot_machine_bet_lines_cycle_on_dpad() {
+    let mut world = World::new();
+    world.enter_slot_machine(slot_test_machine(50));
+    assert_eq!(world.slot_machine.as_ref().unwrap().bet_lines(), 3);
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Left.mask());
+    let _ = world.tick();
+    assert_eq!(world.slot_machine.as_ref().unwrap().bet_lines(), 1);
+}
+
+#[test]
+fn slot_machine_tick_without_session_falls_back_to_return_mode() {
+    let mut world = World::new();
+    world.slot_return_mode = SceneMode::Field;
+    world.mode = SceneMode::SlotMachine;
+    let _ = world.tick();
+    assert_eq!(world.mode, SceneMode::Field);
+}
+
+fn live_battle_world_3v2() -> World {
+    let mut world = World::new();
+    world.party_count = 3;
+    world.battle_player_driven = true;
+    world.live_gameplay_loop = true;
+    world.mode = SceneMode::Battle;
+    for i in 0..5 {
+        world.actors[i].active = true;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    world
+}
+
+#[test]
+fn spirit_command_charges_ap_and_raises_the_guard_stance() {
+    use crate::battle_input::{BattleCommandSession, CommandPhase};
+    let mut world = live_battle_world_3v2();
+    world.battle_command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        phase: CommandPhase::SpiritGuard,
+    });
+    world.tick_battle_command();
+    assert!(world.battle_command.is_none(), "session resolved");
+    assert!(world.ap_gauges[0].spirit_charged, "+5 AP spirit charge");
+    assert!(world.battle_guarding[0], "guard stance raised");
+    assert_eq!(
+        world.battle_ctx.action_state,
+        legaia_engine_vm::battle_action::ActionState::EndOfAction.as_byte(),
+        "spirit consumes the turn"
+    );
+}
+
+#[test]
+fn guard_stance_halves_basic_attack_damage() {
+    let mut world = live_battle_world_3v2();
+    // Monster slot 3 strikes party slot 0 (attack 50 vs defense 10).
+    world.battle_attack[3] = 50;
+    world.battle_defense[0] = 10;
+    world.actors[3].battle.active_target = 0;
+    world.battle_ctx.active_actor = 3;
+    world.apply_basic_attack();
+    let unguarded_dmg = 100 - world.actors[0].battle.hp;
+    assert!(unguarded_dmg > 1, "the strike lands for real damage");
+
+    // Same strike against a guarding defender: the guard-halve stage applies.
+    let mut world = live_battle_world_3v2();
+    world.battle_attack[3] = 50;
+    world.battle_defense[0] = 10;
+    world.actors[3].battle.active_target = 0;
+    world.battle_ctx.active_actor = 3;
+    world.battle_guarding[0] = true;
+    world.apply_basic_attack();
+    let guarded_dmg = 100 - world.actors[0].battle.hp;
+    assert_eq!(
+        guarded_dmg,
+        unguarded_dmg >> 1,
+        "guard halves the strike (finisher stage 3)"
+    );
+}
+
+#[test]
+fn run_command_arms_the_run_band() {
+    use crate::battle_input::{BattleCommandSession, CommandPhase};
+    let mut world = live_battle_world_3v2();
+    world.battle_command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        phase: CommandPhase::RunAway,
+    });
+    world.tick_battle_command();
+    assert!(world.battle_command.is_none(), "session resolved");
+    assert_eq!(world.actors[0].battle.action_category, 5, "Run category");
+    assert_eq!(world.battle_ctx.queued_action, 5);
+    assert_eq!(
+        world.battle_ctx.action_state,
+        legaia_engine_vm::battle_action::ActionState::Begin.as_byte()
+    );
+    assert!(world.battle_ctx.multi_cast_gate <= 1, "roll outcome staged");
+}
+
+#[test]
+fn successful_run_escapes_the_battle_without_loot() {
+    use legaia_engine_vm::battle_action::ActionState;
+    let mut world = live_battle_world_3v2();
+    // A downed member (slot 1) is floored at 1 HP by the successful escape.
+    world.actors[1].battle.hp = 0;
+    world.actors[1].battle.liveness = 0;
+    // Arm the run band directly with a forced successful roll.
+    world.actors[0].battle.action_category = 5;
+    world.battle_ctx.active_actor = 0;
+    world.battle_ctx.queued_action = 5;
+    world.battle_ctx.multi_cast_gate = 1;
+    world.battle_ctx.action_state = ActionState::Begin.as_byte();
+    // Drive the live loop through Begin -> RunBegin -> RunWait (0x3C-frame
+    // timer) -> RunEscape (battle_end Escaped -> finish_battle).
+    let mut completed = false;
+    for _ in 0..0x100 {
+        if matches!(
+            world.live_battle_tick(),
+            Some(legaia_engine_vm::battle_action::StepOutcome::BattleComplete)
+        ) {
+            completed = true;
+            break;
+        }
+    }
+    assert!(completed, "the run band tears the battle down");
+    assert!(
+        world.actors[1].battle.liveness != 0,
+        "escape floors a downed member's liveness at 1"
+    );
+    assert!(
+        world.last_battle_rewards.is_none(),
+        "an escape grants no loot"
+    );
+    assert!(!world.game_over, "an escape is not a wipe");
+}
+
+#[test]
+fn failed_run_consumes_the_turn_and_the_battle_continues() {
+    use legaia_engine_vm::battle_action::ActionState;
+    let mut world = live_battle_world_3v2();
+    world.actors[0].battle.action_category = 5;
+    world.battle_ctx.active_actor = 0;
+    world.battle_ctx.queued_action = 5;
+    world.battle_ctx.multi_cast_gate = 0; // roll failed
+    world.battle_ctx.action_state = ActionState::Begin.as_byte();
+    for _ in 0..0x100 {
+        if matches!(
+            world.live_battle_tick(),
+            Some(legaia_engine_vm::battle_action::StepOutcome::BattleComplete)
+        ) {
+            panic!("a failed run must not end the battle");
+        }
+        if world.battle_command.is_some() {
+            break; // the loop cycled to the next party turn - battle continues
+        }
+    }
+    assert!(world.battle_end.is_none(), "no battle-end cause staged");
+}

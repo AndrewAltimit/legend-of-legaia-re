@@ -525,6 +525,12 @@ pub enum SceneMode {
     /// `game_mode 0x18` (`OTHER MODE`) overlay pair for the fishing overlay
     /// (PROT 0972).
     Fishing,
+    /// Casino slot-machine minigame - the reel state machine owns the frame
+    /// ([`crate::slot_machine::SlotMachine`]); field / battle dispatch is
+    /// suspended and the interrupted mode restored on exit. Retail
+    /// `game_mode 0x18` (`OTHER MODE`, the mode-24 minigame door-warp) for
+    /// the slot overlay (PROT 0975).
+    SlotMachine,
     /// In-field pause menu - the retail CARD mode pair (`game_mode 0x17`,
     /// `CARD MODE`, which hosts both the memory-card UI and the pause menu;
     /// every menu-open capture holds `_DAT_8007B83C = 0x17`). Field/battle
@@ -1547,6 +1553,22 @@ pub struct World {
     /// ([`World::enter_fishing`] snapshots the interrupted mode).
     pub fishing_return_mode: SceneMode,
 
+    /// Slot-machine minigame session. `Some` while
+    /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
+    /// tick. See [`crate::slot_machine::SlotMachine`] and
+    /// [`World::enter_slot_machine`].
+    pub slot_machine: Option<crate::slot_machine::SlotMachine>,
+
+    /// The scene mode to restore when the slot-machine minigame ends
+    /// ([`World::enter_slot_machine`] snapshots the interrupted mode).
+    pub slot_return_mode: SceneMode,
+
+    /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
+    /// Coins" cell). Read to seed the slot machine's playing balance and
+    /// **assigned** its final balance on cash-out (the retail state-100
+    /// commit is an assignment, not a delta).
+    pub casino_coins: u32,
+
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`World::fold_battle_event`] on `ApplyArtStrike` events whose
@@ -1560,6 +1582,13 @@ pub struct World {
     /// [`crate::ap_gauge::ApGauge::charge_spirit`] when the player
     /// presses Spirit during command input.
     pub ap_gauges: [crate::ap_gauge::ApGauge; 3],
+
+    /// Per-party-slot guard stance for the current battle: `true` after the
+    /// slot's **Spirit** command until its next turn starts. The retail state
+    /// is the actor's pending-action byte `+0x1DE == 4` (Spirit), consumed by
+    /// the damage finisher's guard-halve stage
+    /// ([`legaia_engine_vm::battle_formulas::DamageFinish::defender_guarding`]).
+    pub battle_guarding: [bool; 3],
 
     /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
     /// the AP added to that slot's gauge by the class-5 Fury Boost item (retail
@@ -2526,8 +2555,12 @@ impl World {
             dance_last_judge: None,
             fishing: None,
             fishing_return_mode: SceneMode::Field,
+            slot_machine: None,
+            slot_return_mode: SceneMode::Field,
+            casino_coins: 0,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
+            battle_guarding: [false; 3],
             fury_boost: [None; 3],
             item_catalog: crate::items::ItemCatalog::default(),
             item_effects: None,
@@ -3602,6 +3635,17 @@ impl World {
                 // slot's HP at 1 on a successful escape; the tracker-level
                 // Stone clear is the engine's model of that restore).
                 self.status_effects.cure_stone_on_escape();
+                // The run band's floor writes the VM-side liveness (`+0x14C`);
+                // mirror it onto the world HP so the live loop's hp==0 dead
+                // scan doesn't re-down the member - a downed member leaves
+                // the battle alive at 1 HP.
+                for slot in 0..self.party_count.min(3) as usize {
+                    let b = &mut self.actors[slot].battle;
+                    if b.max_hp > 0 && b.hp == 0 {
+                        b.hp = 1;
+                        b.liveness = 1;
+                    }
+                }
                 None
             }
             BattleEvent::SpellAnimTrigger {
@@ -5631,6 +5675,10 @@ impl World {
                 self.tick_fishing();
                 None
             }
+            SceneMode::SlotMachine => {
+                self.tick_slot_machine();
+                None
+            }
             // The pause menu owns the frame (retail CARD mode 0x17): field /
             // battle dispatch is suspended; the hosting session drives the
             // menu state machine and restores the suspended mode on close.
@@ -5836,6 +5884,91 @@ impl World {
                 {
                     s.recast();
                 }
+            }
+        }
+    }
+
+    /// Enter the casino slot-machine minigame on `machine`, suspending the
+    /// current scene mode (restored by [`World::exit_slot_machine`]). Like
+    /// the dance / fishing / pause-menu suspend contract, the interrupted
+    /// field state stays intact underneath.
+    pub fn enter_slot_machine(&mut self, machine: crate::slot_machine::SlotMachine) {
+        if self.mode != SceneMode::SlotMachine {
+            self.slot_return_mode = self.mode;
+        }
+        self.slot_machine = Some(machine);
+        self.mode = SceneMode::SlotMachine;
+    }
+
+    /// Leave the slot machine and restore the interrupted mode, committing
+    /// the session's final balance into the casino coin bank
+    /// ([`World::casino_coins`] - the retail state-100 assignment
+    /// `_DAT_800845A4 = DAT_801d4114`). Returns the session so the host can
+    /// read the final state. No-op when the machine isn't active.
+    pub fn exit_slot_machine(&mut self) -> Option<crate::slot_machine::SlotMachine> {
+        if self.mode == SceneMode::SlotMachine {
+            self.mode = self.slot_return_mode;
+        }
+        let mut machine = self.slot_machine.take();
+        if let Some(m) = machine.as_mut() {
+            self.casino_coins = m.cash_out().max(0) as u32;
+        }
+        machine
+    }
+
+    /// Advance the slot machine one frame, reading this frame's pad:
+    ///
+    /// - **Idle**: [`Left`](input::PadButton::Left) /
+    ///   [`Right`](input::PadButton::Right) cycle the bet-line count; a
+    ///   [`Cross`](input::PadButton::Cross) press charges the bet and spins.
+    /// - **Spinning**: the spin-up timer runs down on its own.
+    /// - **Stopping**: a [`Cross`] press stops the leftmost live reel (host
+    ///   simplification of the retail three stop buttons, pad bits
+    ///   `0x80`/`0x40`/`0x20` → reels 0/1/2).
+    /// - **Payout**: a [`Cross`] press collects the win into the balance.
+    ///
+    /// [`Cross`]: input::PadButton::Cross
+    ///
+    /// PORT: the slot overlay's per-frame driver (`FUN_801cf0d8` reel SM;
+    /// the confirmed kernels live in [`crate::slot_machine`]).
+    fn tick_slot_machine(&mut self) {
+        use crate::slot_machine::SlotPhase;
+        let Some(phase) = self.slot_machine.as_ref().map(|m| m.phase()) else {
+            // Mode is SlotMachine but no session installed - drop back.
+            self.mode = self.slot_return_mode;
+            return;
+        };
+        let confirm = self.input.just_pressed(input::PadButton::Cross);
+        let Some(m) = self.slot_machine.as_mut() else {
+            return;
+        };
+        m.tick();
+        match phase {
+            SlotPhase::Idle => {
+                if self.input.just_pressed(input::PadButton::Left)
+                    || self.input.just_pressed(input::PadButton::Right)
+                {
+                    m.cycle_bet_lines();
+                }
+                if confirm {
+                    m.spin();
+                }
+            }
+            SlotPhase::Spinning => {}
+            SlotPhase::Stopping => {
+                if confirm {
+                    m.stop_next_reel();
+                }
+            }
+            SlotPhase::Payout => {
+                if confirm {
+                    m.collect();
+                }
+            }
+            SlotPhase::CashedOut => {
+                // Committed: restore the interrupted mode (the host reads the
+                // session out via [`World::exit_slot_machine`]).
+                self.mode = self.slot_return_mode;
             }
         }
     }
