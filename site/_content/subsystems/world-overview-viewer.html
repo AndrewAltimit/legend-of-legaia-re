@@ -27,18 +27,38 @@
   <p>The <em>normalize unplaced</em> toggle disables both transforms (falls back to the legacy constant scale + TMD-local-origin pivot) so the user can ground-truth against retail.</p>
 </section>
 
+<section class="doc-section" id="walk-heightfield">
+  <h2>Continent ground heightfield</h2>
+  <p>The viewer draws the kingdom's full continent terrain the same way the native engine's world-map render does: a procedural <strong>heightfield surface</strong> built from the walk <code>.MAP</code> floor grid, per-cell-textured from a terrain-type-keyed multi-page atlas - the bulk ground (grass / mountain / water / forest), distinct from the sparse slot-1 landmark meshes layered on top. The surface math is <code>legaia_asset::field_objects::build_walk_heightfield</code> (the <code>FUN_80019278</code> bilinear floor sampler); the model and per-cell texturing are pinned on the <a href="world-map.html">world-map page</a>.</p>
+  <p>The WASM viewer builds the same surface from the raw <code>PROT.DAT</code> it already holds (<code>legaia_web_viewer::build_walk_ground</code>): the walk <code>.MAP</code> is the entry two slots before the kingdom block start (<code>prot_base - 2</code>, identified by its <code>0x12000</code> extended footprint - the universal field-map resolution), and the floor-height LUT is <code>man[+0x02..+0x22]</code> (16 <code>s16</code> LE) from the kingdom bundle's MAN slot.</p>
+</section>
+
+<section class="doc-section" id="walk-placements">
+  <h2>Walk-frame placed landmarks</h2>
+  <p>The sparse <strong>placed landmarks</strong> (the <code>flags &amp; 0x4</code> slot-1 pack objects <code>FUN_8003A55C</code> stamps on occupied tiles - towers, castles, bridges) draw on top of the heightfield in the same <code>col*128</code> world frame as the ground. <code>legaia_web_viewer::build_walk_placements</code> resolves them from the raw <code>PROT.DAT</code>: <code>legaia_asset::field_objects::parse_placements</code> on the walk <code>.MAP</code>, mesh = the record's <code>+0x10</code> field (a slot into the kingdom's slot-1 TMD pack), world Y = <code>-lut[floor_nibble] + y_off</code> so the landmark sits on the heightfield. The disc-gated <code>walk_placements_parity.rs</code> asserts the viewer's resolved placements equal the engine's <code>Scene::walk_object_placements</code> for all three kingdoms (6 / 33 / 25 landmarks for Drake / Sebucus / Karisto).</p>
+</section>
+
 <section class="doc-section" id="fog-pass">
   <h2>Distance-cue fog pass</h2>
   <p>The viewer's <em>fog</em> toggle approximates the retail world-map fog: the diffuse term fades toward a per-kingdom haze colour with distance. The math splits into two pieces the runtime keeps separate, and the WebGL port mirrors that split:</p>
   <ul class="bullets">
     <li>The <strong>LUT</strong> at <code>gp-0x2BC</code> (2048 u16 entries that climb from <code>0x0000</code> at near-Z to <code>~0x01FF</code> at far-Z) is a <em>per-Z scalar</em>, not a colour ramp. The retail overlay leaves at <code>0x801F7644..0x801F8690</code> <code>lh</code> the LUT entry, shift it left by 16, and add it to the high half of vertex SXY+offset words via <code>sw s1, 0x8(t1)</code> / <code>0xC(t1)</code> / <code>0x10(t1)</code>. The visible effect on flat triangles is a per-vertex screen-Y nudge proportional to <code>Z &gt;&gt; 5</code>.</li>
-    <li>The <strong>haze colour</strong> is set per-kingdom via the GTE <code>FAR_COLOR</code> control register (loaded via <code>ctc2</code> during world-map enter, not surfaced by the <code>lwc2 t0, -0x2dc(t2)</code> load - that field is the <code>IR0</code> depth-cue factor, despite earlier doc tables labelling it &ldquo;fog color&rdquo;).</li>
+    <li>The <strong>haze colour</strong> is set per-kingdom via the GTE <code>FAR_COLOR</code> control register (loaded via <code>ctc2</code> during world-map enter, not surfaced by the <code>lwc2 t0, -0x2dc(t2)</code> load - that field is the <code>IR0</code> depth-cue factor).</li>
   </ul>
   <p>The WebGL port runs this in a vertex + fragment shader:</p>
   <ul class="bullets">
     <li>Per-vertex: <code>Z_far = exp2(-zShift) * dist(world, camera_origin)</code>, clamped to <code>[0, far_ref]</code> and normalised to <code>v_fog_t in [0..1]</code>. Approximates the runtime's <code>Z_far = Z &gt;&gt; shift</code> against the top-down camera origin.</li>
-    <li>Per-fragment: sample <code>lut[clamp(v_fog_t * 2047, 0, 2047)]</code> as a scalar u16; normalise to <code>factor = lut_word / 511</code>; then <code>mix(lit, u_fog_color, factor)</code> with <code>u_fog_color</code> = the per-kingdom haze tint from <code>KINGDOM_FOG_TINT</code>. This produces the fade-toward-haze visual instead of treating the LUT entries as RGB tints (an earlier port did the latter and produced &ldquo;richer textures&rdquo; rather than fog).</li>
+    <li>Per-fragment: sample <code>lut[clamp(v_fog_t * 2047, 0, 2047)]</code> as a scalar u16; normalise to <code>factor = lut_word / 511</code>; then <code>mix(lit, u_fog_color, factor)</code> with <code>u_fog_color</code> = the per-kingdom haze tint from <code>KINGDOM_FOG_TINT</code>. This produces the fade-toward-haze visual.</li>
   </ul>
+  <details class="disclosure">
+    <summary>Superseded readings</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>Earlier doc tables labelled the <code>lwc2 t0, -0x2dc(t2)</code> field "fog color"; it is the <code>IR0</code> depth-cue factor - the haze colour arrives via <code>ctc2</code> into <code>FAR_COLOR</code>.</li>
+        <li>An earlier shader port treated the LUT entries as RGB tints; that produced "richer textures" rather than fog. The LUT is a per-Z scalar mixed toward the haze tint.</li>
+      </ul>
+    </div>
+  </details>
   <p>The shader supports two LUT sources, in priority order:</p>
   <ol>
     <li><strong>Disc-extracted LUT (default)</strong> - the WASM viewer locates the 4 KiB (2048 u16) LUT inside <code>SCUS_942.54</code> via the <code>fog_lut::find</code> content-scan (monotone non-decreasing ramp with leading zero entries + saturating tail) and auto-uploads it on disc load. No file picker; one disc upload = full functionality. On the retail USA build the LUT sits at SCUS offset <code>0x05FCC0</code> (vaddr <code>0x8006FCC0</code>); the content scan handles regional variants without hardcoding.</li>
@@ -58,6 +78,11 @@
   </ul>
 </section>
 
+<section class="doc-section" id="global-pool-placeholders">
+  <h2>Global-pool placement placeholders</h2>
+  <p>MAN-record placements with <code>tmd_slot &ge; 0xF0</code> reference the global TMD pool (<code>DAT_8007C018</code>) rather than the kingdom-local slot-1 pack. The disc-side global mesh pool is not yet bundled into <code>site/world-overview.json</code>; until that pipeline lands, the viewer stamps the kingdom pack's slot 0 mesh (typically a ground tile) at the decoded world coordinates and tags the draw record <code>kind: 'global_pool'</code>. The snapshot panel surfaces both the underlying <code>global TMD refs</code> count and the <code>+ N global-pool placeholders</code> rendered count, so the gap stays visible without dropping the placements silently.</p>
+</section>
+
 <section class="doc-section" id="fog-color">
   <h2>Per-kingdom fog colour</h2>
   <p>The atmospheric-tick actor (<code>actor[+0x0C] == FUN_801E3E00</code> at <code>0x801E3E00</code>) interpolates the per-kingdom haze RGB into its <code>+0x74</code> field per frame. That u32 is the input to <code>FUN_80043390</code>'s three <code>ctc2</code> writers to the GTE <code>FAR_COLOR</code> control regs (<code>$21 / $22 / $23</code>): <code>FUN_8001ADA4</code> case 5 calls <code>FUN_80043390(prim_ptr, actor[+0x74], actor[+0x78])</code>; inside the dispatcher each RGB byte is extracted with <code>andi/srl</code>, shifted left by 4 to scale 8-bit &rarr; 12-bit, and <code>ctc2</code>'d to the GTE control register.</p>
@@ -75,6 +100,12 @@
   </ul>
   <p>The runtime copies one frame at a time onto VRAM <code>(0, 506)</code> (a script-driven 16&times;1 CLUT-cell <code>MoveImage</code> from the frame strip parked elsewhere in VRAM - see the <a href="world-map.html">world-map page</a>), overwriting the first 16 CLUT entries; the wave peak (<code>0x3D05</code> bright blue) propagates through indices 0..7 over the 13-frame cycle, creating the horizontal rolling-wave appearance visible in retail.</p>
   <p><code>crates/web-viewer::ocean::find_ocean_assets</code> decompresses the kingdom bundle's slot 0, locates the ocean TIM by VRAM coords, and signature-scans the slot for the animation table. The disc-gated test <code>crates/web-viewer/tests/ocean_assets.rs</code> verifies extraction across all three kingdoms. The WebGL ocean shader (<code>site/js/webgl-tmd.js</code>) samples the 4bpp texture + animated 16-entry CLUT, advancing the frame counter on a wall-clock timer. Before the disc is loaded the renderer falls back to a solid ocean tint sourced from <code>world-overview.json[kingdom].ocean_color</code> (CLUT-sampled from save state via <code>scripts/mednafen/resolve_bulk_terrain.py::pick_ocean_color</code>).</p>
+</section>
+
+<section class="doc-section" id="shader-plumbing">
+  <h2>Web-overview shader plumbing</h2>
+  <p>The ocean shader draws a flat quad at <code>y=0</code> covering the world extent, samples the 4bpp texture + animated 16-entry CLUT, and advances the frame counter on a wall-clock timer (frame duration tunable; default ~8 Hz so the visible cadence matches retail at roughly normal playback speed). The plane is drawn before the bulk-terrain meshes so depth-test handles occlusion.</p>
+  <p>The procedural-tint fallback pipeline: <code>pick_ocean_color</code> walks every POLY_FT4 cluster reported by <code>mednafen-state prim-trace</code>, samples each cluster's representative tile via its CLUT + tpage out of the save's VRAM, and ranks blue-dominant clusters by <code>hits &times; blue_dominance</code>; the winner's average RGB lands as <code>site/world-overview.json[kingdom].ocean_color</code> and drives the viewer's fallback colour before the textured pipeline loads.</p>
 </section>
 
 <section class="doc-section" id="camera-anchors">

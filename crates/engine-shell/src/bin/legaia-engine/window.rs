@@ -3126,11 +3126,12 @@ impl PlayWindowApp {
 
     /// Battle camera: frame the **monster** actors (the ones carrying a bound
     /// mesh + idle animation) rather than the player vicinity. The live-loop
-    /// seats battle actors around the world origin (`enter_battle(.., 600)` -
-    /// party at `x=-600`, monsters at `x=+600`), far from the field player's
-    /// world coords, so `camera_mvp`'s player-centred box leaves the enemies
-    /// entirely off-screen. Framing the enemy cluster (gently orbiting) puts
-    /// the animated monsters centre-frame and at a useful size.
+    /// seats battle actors at the retail stage seats around the world origin
+    /// (`enter_battle` - party at negative Z, monsters at positive Z, from
+    /// the `battle_seats` tables), far from the field player's world coords,
+    /// so `camera_mvp`'s player-centred box leaves the enemies entirely
+    /// off-screen. Framing the enemy cluster (gently orbiting) puts the
+    /// animated monsters centre-frame and at a useful size.
     fn battle_camera_mvp(&self, aspect: f32) -> Mat4 {
         let world = &self.session.host.world;
         let pc = world.party_count as usize;
@@ -3542,6 +3543,158 @@ impl PlayWindowApp {
         let machine = legaia_engine_core::slot_machine::SlotMachine::new(payouts, seed, balance);
         self.session.host.world.enter_slot_machine(machine);
         true
+    }
+
+    /// Load the Baka Fighter overlay (PROT 0976), parse the roster + action
+    /// tables, and enter a best-of-3 duel: the player fights as roster
+    /// fighter 0 against a ladder opponent picked from the roster (rotating
+    /// with the frame counter so repeat entries vary). Returns `false` (with
+    /// a log line) when the overlay or tables don't resolve.
+    fn start_baka_minigame(&mut self) -> bool {
+        use legaia_asset::static_overlay;
+        let Some(rec) = static_overlay::overlay_map()
+            .by_prot_index(legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32)
+        else {
+            log::warn!("baka: overlay 0976 absent from the static-overlay map");
+            return false;
+        };
+        let raw = match self.session.host.index.entry_bytes_extended(rec.prot_index) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("baka: PROT {} read failed: {e:#}", rec.prot_index);
+                return false;
+            }
+        };
+        let loaded = match static_overlay::as_loaded(&raw, rec) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("baka: as_loaded failed: {e:#}");
+                return false;
+            }
+        };
+        let Some(opponents) = legaia_asset::baka_opponents::parse(&loaded) else {
+            log::warn!("baka: roster-table parse failed");
+            return false;
+        };
+        let Some(actions) = legaia_asset::baka_opponents::parse_actions(&loaded) else {
+            log::warn!("baka: action-table parse failed");
+            return false;
+        };
+        // Rotate the ladder opponent with the frame counter (1..=16; roster 0
+        // is the player-side default). Seed like the slot machine: frame-
+        // derived, deterministic across a replayed pad stream.
+        let frame = self.session.host.world.frame as u32;
+        let opponent = 1 + (frame as usize % (opponents.len().saturating_sub(1).max(1)));
+        let seed = 0xBA4A_F19A ^ frame;
+        let Some(fight) = legaia_engine_core::baka_fighter::BakaFight::from_tables(
+            &opponents, &actions, 0, opponent, seed,
+        ) else {
+            log::warn!("baka: fight construction failed (roster 0 vs {opponent})");
+            return false;
+        };
+        log::info!(
+            "baka: round 1 vs roster fighter {opponent} (gold prize {})",
+            fight.gold_reward()
+        );
+        self.session.host.world.enter_baka_fighter(fight);
+        true
+    }
+
+    /// Load the Muscle Dome hand tables from the battle overlay (PROT 0898)
+    /// and enter a contest. The player's card costs come from their own
+    /// player battle file's equipped-section swing records (`+0x74`, the
+    /// same bytes the Arts gauge reads); the opponent plays a flat
+    /// favored-cost hand, and HP / budgets are dev constants (retail seeds
+    /// them from the arena's battle-actor records). Returns `false` (with a
+    /// log line) when the tables don't resolve.
+    fn start_muscle_minigame(&mut self) -> bool {
+        use legaia_asset::muscle_dome as md;
+        use legaia_asset::static_overlay;
+        use legaia_engine_core::muscle_dome::{MuscleCard, MuscleDomeSession};
+        let Some(rec) =
+            static_overlay::overlay_map().by_prot_index(md::MUSCLE_OVERLAY_PROT_INDEX as u32)
+        else {
+            log::warn!("muscle: battle overlay 0898 absent from the static-overlay map");
+            return false;
+        };
+        let raw = match self.session.host.index.entry_bytes_extended(rec.prot_index) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("muscle: PROT {} read failed: {e:#}", rec.prot_index);
+                return false;
+            }
+        };
+        let loaded = match static_overlay::as_loaded(&raw, rec) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("muscle: as_loaded failed: {e:#}");
+                return false;
+            }
+        };
+        let Some(commands) = md::hand_command_ids(&loaded) else {
+            log::warn!("muscle: hand command-id table failed its structural check");
+            return false;
+        };
+        // Player card costs: the lead character's equipped-section swing
+        // records, keyed by runtime slot = the command id.
+        const FAVORED_COST: u16 = 0x1E;
+        let mut player_costs = [FAVORED_COST; 4];
+        if let Some(costs) = self.lead_swing_costs() {
+            for (i, &cmd) in commands.iter().enumerate() {
+                if let Some(&c) = costs.get((cmd - 0x0C) as usize)
+                    && c > 0
+                {
+                    player_costs[i] = c as u16;
+                }
+            }
+        } else {
+            log::info!("muscle: lead swing costs unavailable - flat favored costs");
+        }
+        let card = |cmd: u8, cost: u16| MuscleCard {
+            command_id: cmd,
+            cost,
+        };
+        let player_hand = std::array::from_fn(|i| card(commands[i], player_costs[i]));
+        let opp_hand = std::array::from_fn(|i| card(commands[i], FAVORED_COST));
+        // Dev stand-ins for the arena actor records (budget pool +0x154, HP
+        // +0x14c/+0x14e) and the awarded Seru (ctx+0x269 = 1 → spell 0x81).
+        let session = MuscleDomeSession::new(player_hand, opp_hand, [120, 120], [500, 400], 1);
+        log::info!(
+            "muscle: contest started - hand commands {commands:02x?}, player costs {player_costs:?}"
+        );
+        self.session.host.world.enter_muscle_dome(session);
+        true
+    }
+
+    /// The lead roster character's four weapon-swing AP costs (runtime slots
+    /// `0xC..=0xF` → indices 0..3), from their player battle file's equipped
+    /// sections. `None` when any stage of the decode fails.
+    fn lead_swing_costs(&self) -> Option<[u8; 4]> {
+        let raw = self.session.host.index.entry_bytes_extended(863).ok()?;
+        let pack = legaia_asset::battle_data_pack::parse(&raw).ok()?;
+        let equipped: [u8; 5] = self
+            .session
+            .host
+            .world
+            .roster
+            .members
+            .first()
+            .map(|rec| {
+                let slots = rec.equipment().slots;
+                [slots[0], slots[1], slots[2], slots[3], slots[4]]
+            })
+            .unwrap_or_default();
+        let swings =
+            legaia_asset::battle_char_assembly::swing_battle_animations(&raw, &pack, &equipped)
+                .ok()?;
+        let mut costs = [0u8; 4];
+        for s in &swings {
+            let i = s.slot.checked_sub(0xC)? as usize;
+            if i < 4 {
+                costs[i] = s.cost;
+            }
+        }
+        Some(costs)
     }
 
     /// React to a `Field <-> Battle` scene-mode change once per transition:
@@ -4411,9 +4564,9 @@ impl PlayWindowApp {
 
         // Seat the summon in a free high actor slot (>= 8) so it never collides
         // with the party/monster battle slots. Place it on the party side
-        // (`enter_battle` seats party at `x = -600`, enemies at `x = +600`), in
-        // front of the party and clearly clear of the enemy cluster, so the
-        // battle camera frames it distinct from the enemies it attacks.
+        // (`enter_battle` seats party at negative Z, enemies at positive Z),
+        // in front of the party and clearly clear of the enemy cluster, so
+        // the battle camera frames it distinct from the enemies it attacks.
         let slot = self
             .summon_actor_slot
             .unwrap_or_else(|| 8 + (self.session.host.world.party_count as usize));
@@ -4422,9 +4575,9 @@ impl PlayWindowApp {
             a.active = true;
             a.tmd_binding = Some(idx);
             a.battle_tex_slot = Some(tex_slot);
-            a.move_state.world_x = -350;
+            a.move_state.world_x = 0;
             a.move_state.world_y = 0;
-            a.move_state.world_z = 0;
+            a.move_state.world_z = -350;
         }
         if let Ok(Some(idle)) = legaia_asset::monster_archive::idle_animation(&archive, creature)
             && let Some(player) = legaia_engine_core::battle_anim::MonsterAnimPlayer::new(&idle)
@@ -5341,10 +5494,26 @@ impl PlayWindowApp {
         } else {
             "no audio"
         };
+        // Human-readable name for the playing track: global-pool ids join
+        // the music_01 bank / debug sound-test order the curated
+        // `legaia_gamedata` music table is keyed on.
+        let bgm_str = self
+            .session
+            .bgm
+            .as_ref()
+            .and_then(|b| b.last_started)
+            .map(
+                |id| match legaia_engine_core::music_labels::label_for_bgm_id(id) {
+                    Some(label) => format!("  bgm {id}: {label}"),
+                    None => format!("  bgm {id}"),
+                },
+            )
+            .unwrap_or_default();
         let line2 = format!(
-            "t {:.1}s  {}  arrows=dpad Z=X",
+            "t {:.1}s  {}{}  arrows=dpad Z=X",
             self.win.elapsed_secs(),
-            audio_str
+            audio_str,
+            bgm_str
         );
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));
@@ -5450,15 +5619,11 @@ impl PlayWindowApp {
                 0 => String::new(),
                 mode => format!("  feature {mode}"),
             };
-            let sl1 = format!(
-                "SLOTS  {reels}  coins {}  lines {}{feature}",
-                m.balance(),
-                m.bet_lines()
-            );
+            let sl1 = format!("SLOTS  {reels}  coins {}{feature}", m.balance());
             let ly1 = self.font.layout_ascii(&sl1);
             out.extend(text_draws_for(&ly1, (8, 62), white));
             let prompt = match m.phase() {
-                SlotPhase::Idle => "Cross = spin, Left/Right = bet lines".to_string(),
+                SlotPhase::Idle => "Cross = spin (3 coins)".to_string(),
                 SlotPhase::Spinning => "spinning...".to_string(),
                 SlotPhase::Stopping => "Cross = stop reel".to_string(),
                 SlotPhase::Payout => match m.last_result() {
@@ -5471,6 +5636,96 @@ impl PlayWindowApp {
             };
             let sl2 = format!("{prompt}   (O = cash out + quit)");
             let ly2 = self.font.layout_ascii(&sl2);
+            out.extend(text_draws_for(&ly2, (8, 80), dim));
+        }
+        // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
+        // last-exchange readout, and the input prompt.
+        if self.session.host.world.mode == SceneMode::BakaFighter
+            && let Some(f) = &self.session.host.world.baka_fighter
+        {
+            use legaia_engine_core::baka_fighter::MatchPhase;
+            let bl1 = format!(
+                "BAKA  you {}hp (wins {})  vs  foe {}hp (wins {})  round {}",
+                f.hp(0),
+                f.round_wins(0),
+                f.hp(1),
+                f.round_wins(1),
+                f.round() + 1
+            );
+            let ly1 = self.font.layout_ascii(&bl1);
+            out.extend(text_draws_for(&ly1, (8, 62), white));
+            let status = match f.phase() {
+                MatchPhase::MatchOver(0) => {
+                    format!(
+                        "YOU WIN the match! +{} gold  (Cross/B = leave)",
+                        f.gold_reward()
+                    )
+                }
+                MatchPhase::MatchOver(_) => "you lose the match  (Cross/B = leave)".to_string(),
+                MatchPhase::RoundOver(0) => "round won!".to_string(),
+                MatchPhase::RoundOver(_) => "round lost".to_string(),
+                MatchPhase::Fighting => match f.last_exchange() {
+                    Some(r) => {
+                        let who = if r.draw {
+                            "trade".to_string()
+                        } else if r.winner == 0 {
+                            "you hit".to_string()
+                        } else {
+                            "foe hits".to_string()
+                        };
+                        let crit = if r.critical { " CRIT" } else { "" };
+                        let sp = if r.special_round_win { " SPECIAL" } else { "" };
+                        format!("{who} {}{crit}{sp}", r.damage)
+                    }
+                    None => "choose your attack".to_string(),
+                },
+            };
+            let bl2 = format!("{status}   Left/Right/Up attack, Down special (B = quit)");
+            let ly2 = self.font.layout_ascii(&bl2);
+            out.extend(text_draws_for(&ly2, (8, 80), dim));
+        }
+        // Muscle Dome HUD: HP + score readouts, the hand with costs, the
+        // budget line, and the phase prompt.
+        if self.session.host.world.mode == SceneMode::MuscleDome
+            && let Some(s) = &self.session.host.world.muscle_dome
+        {
+            use legaia_engine_core::muscle_dome::MusclePhase;
+            let ml1 = format!(
+                "MUSCLE DOME  you {}hp ({}%)  vs  foe {}hp ({}%)  round {}",
+                s.hp(0),
+                s.score_percent(0),
+                s.hp(1),
+                s.score_percent(1),
+                s.round() + 1
+            );
+            let ly1 = self.font.layout_ascii(&ml1);
+            out.extend(text_draws_for(&ly1, (8, 62), white));
+            let status = match s.phase() {
+                MusclePhase::Select => {
+                    let h = s.hand(0);
+                    format!(
+                        "cards L:{} R:{} U:{} D:{}  budget {}  queued {}  (Cross = fight)",
+                        h[0].cost,
+                        h[1].cost,
+                        h[2].cost,
+                        h[3].cost,
+                        s.budget(0),
+                        s.queue(0).len()
+                    )
+                }
+                MusclePhase::Resolve => "resolving...".to_string(),
+                MusclePhase::RoundOver => {
+                    let [taken, dealt] = s.last_round_damage();
+                    format!("round: dealt {dealt}, took {taken}  (Cross = next round)")
+                }
+                MusclePhase::Won => format!(
+                    "YOU WIN! Seru spell {:#x} awarded  (Cross/M = leave)",
+                    s.reward_spell_id()
+                ),
+                MusclePhase::Lost => "you lose the contest  (Cross/M = leave)".to_string(),
+            };
+            let ml2 = format!("{status}   (M = quit)");
+            let ly2 = self.font.layout_ascii(&ml2);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
         }
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
@@ -6495,9 +6750,10 @@ impl ApplicationHandler for PlayWindowApp {
                 }
                 // `O`: toggle the casino slot-machine minigame. Loads the slot
                 // overlay (PROT 0975), suspends the current scene, and runs
-                // the reel state machine; Cross spins / stops / collects,
-                // Left/Right set the bet lines. Pressing O again cashes the
-                // balance out into the casino coin bank and leaves.
+                // the reel state machine; Cross spins / stops / collects (a
+                // spin is a flat 3-coin bet across all three paylines).
+                // Pressing O again cashes the balance out into the casino
+                // coin bank and leaves.
                 if matches!(code, KeyCode::KeyO)
                     && state == ElementState::Pressed
                     && !self.boot_ui.is_active()
@@ -6512,7 +6768,63 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     } else if self.start_slot_minigame() {
                         log::info!(
-                            "slots: started - Cross spins/stops/collects, Left/Right bet lines, O to cash out"
+                            "slots: started - Cross spins/stops/collects (3 coins a spin), O to cash out"
+                        );
+                    }
+                    return;
+                }
+                // `M`: toggle the Muscle Dome card-battle contest. Loads the
+                // hand tables from the battle overlay (PROT 0898), suspends
+                // the current scene, and runs the select/commit/resolve loop;
+                // Left/Right/Up/Down commit the four cards, Cross confirms /
+                // continues. Pressing M again aborts (no reward on an abort).
+                if matches!(code, KeyCode::KeyM)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    if self.session.host.world.mode == SceneMode::MuscleDome {
+                        if let Some(s) = self.session.host.world.exit_muscle_dome() {
+                            use legaia_engine_core::muscle_dome::MusclePhase;
+                            match s.phase() {
+                                MusclePhase::Won => log::info!(
+                                    "muscle: contest WON - reward Seru spell id {:#x} credited",
+                                    s.reward_spell_id()
+                                ),
+                                MusclePhase::Lost => log::info!("muscle: contest lost"),
+                                _ => log::info!("muscle: contest aborted"),
+                            }
+                        }
+                    } else if self.start_muscle_minigame() {
+                        log::info!(
+                            "muscle: started - Left/Right/Up/Down commit cards, Cross confirms, M to leave"
+                        );
+                    }
+                    return;
+                }
+                // `B`: toggle the Baka Fighter duel minigame. Loads the Baka
+                // Fighter overlay (PROT 0976), suspends the current scene,
+                // and runs the best-of-3 duel; Left/Right/Up throw the three
+                // attacks, Down charges the special, Cross leaves a decided
+                // match. Pressing B again aborts (no gold on an abort).
+                if matches!(code, KeyCode::KeyB)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    if self.session.host.world.mode == SceneMode::BakaFighter {
+                        if let Some(f) = self.session.host.world.exit_baka_fighter() {
+                            match f.winner() {
+                                Some(0) => log::info!(
+                                    "baka: match WON - {} gold banked (money now {})",
+                                    f.gold_reward(),
+                                    self.session.host.world.money
+                                ),
+                                Some(_) => log::info!("baka: match lost"),
+                                None => log::info!("baka: match aborted"),
+                            }
+                        }
+                    } else if self.start_baka_minigame() {
+                        log::info!(
+                            "baka: started - Left/Right/Up attack, Down special, B to leave"
                         );
                     }
                     return;
@@ -7871,6 +8183,139 @@ impl ApplicationHandler for PlayWindowApp {
                         draws.push(SceneDraw {
                             mesh,
                             mvp: fx_cam * *model,
+                        });
+                    }
+                    // Screen-effect widget overlays (the PROT-0900 mask /
+                    // sprite / panel / letterbox family, field-VM op 0x43):
+                    // composite the world's published per-frame draw list
+                    // above the 3D scene under an orthographic screen-space
+                    // MVP (PSX 320x240 frame). Solid border/band quads ride
+                    // the untextured colour pipeline; panel + sprite quads
+                    // ride the VRAM pipeline (clut/texpage sampled like any
+                    // retail prim). Depth layers mirror the retail OT slots:
+                    // sprites (+0xc) in front, panels (+0x10), mask/bands
+                    // (+0x1c) behind. The letterbox gradient feather strips
+                    // are subtractive-blend draws the engine doesn't model
+                    // yet and are skipped.
+                    let mut screen_fx_solid = None;
+                    let mut screen_fx_tex = None;
+                    let fx_frame = &self.session.host.world.screen_fx_frame;
+                    if !fx_frame.is_empty() {
+                        let quad = |pos: &mut Vec<[f32; 3]>,
+                                    idx: &mut Vec<u32>,
+                                    l: f32,
+                                    t: f32,
+                                    rr: f32,
+                                    b: f32,
+                                    z: f32| {
+                            let base = pos.len() as u32;
+                            pos.push([l, t, z]);
+                            pos.push([rr, t, z]);
+                            pos.push([l, b, z]);
+                            pos.push([rr, b, z]);
+                            idx.extend_from_slice(&[
+                                base,
+                                base + 1,
+                                base + 2,
+                                base + 1,
+                                base + 3,
+                                base + 2,
+                            ]);
+                        };
+                        // Solid quads (mask borders + letterbox bands): flat black.
+                        let mut pos = Vec::new();
+                        let mut idx = Vec::new();
+                        for q in &fx_frame.solid_quads {
+                            if q.right <= q.left || q.bottom <= q.top {
+                                continue;
+                            }
+                            quad(
+                                &mut pos,
+                                &mut idx,
+                                q.left as f32,
+                                q.top as f32,
+                                q.right as f32,
+                                q.bottom as f32,
+                                -0.002,
+                            );
+                        }
+                        if !idx.is_empty() {
+                            let colors = vec![[0u8, 0, 0]; pos.len()];
+                            match r.upload_color_mesh(&pos, &colors, &idx) {
+                                Ok(m) => screen_fx_solid = Some(m),
+                                Err(e) => log::warn!("screen-fx solid mesh upload: {e:#}"),
+                            }
+                        }
+                        // Textured quads: panels (15bpp direct pages) + sprites
+                        // (clut-indexed), one shared mesh with per-kind depth.
+                        let mut pos = Vec::new();
+                        let mut uvs: Vec<[u8; 2]> = Vec::new();
+                        let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
+                        let mut idx = Vec::new();
+                        for p in &fx_frame.panels {
+                            if p.right <= p.left || p.bottom <= p.top {
+                                continue;
+                            }
+                            let base = pos.len();
+                            quad(
+                                &mut pos,
+                                &mut idx,
+                                p.left as f32,
+                                p.top as f32,
+                                p.right as f32,
+                                p.bottom as f32,
+                                -0.001,
+                            );
+                            uvs.extend_from_slice(&[
+                                [p.u0, p.v0],
+                                [p.u1, p.v0],
+                                [p.u0, p.v1],
+                                [p.u1, p.v1],
+                            ]);
+                            cba_tsb
+                                .extend(std::iter::repeat_n([0u16, p.texpage], pos.len() - base));
+                        }
+                        for s in &fx_frame.sprites {
+                            if s.w <= 0 || s.h <= 0 {
+                                continue;
+                            }
+                            let base = pos.len();
+                            quad(
+                                &mut pos,
+                                &mut idx,
+                                s.x as f32,
+                                s.y as f32,
+                                (s.x + s.w) as f32,
+                                (s.y + s.h) as f32,
+                                0.0,
+                            );
+                            let u1 = (s.u as i32 + s.w as i32 - 1).min(255) as u8;
+                            let v1 = (s.v as i32 + s.h as i32 - 1).min(255) as u8;
+                            uvs.extend_from_slice(&[[s.u, s.v], [u1, s.v], [s.u, v1], [u1, v1]]);
+                            cba_tsb.extend(std::iter::repeat_n(
+                                [s.clut as u16, s.texpage as u16],
+                                pos.len() - base,
+                            ));
+                        }
+                        if !idx.is_empty() {
+                            let normals = vec![[0.0f32; 3]; pos.len()];
+                            match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &idx) {
+                                Ok(m) => screen_fx_tex = Some(m),
+                                Err(e) => log::warn!("screen-fx textured mesh upload: {e:#}"),
+                            }
+                        }
+                    }
+                    let screen_fx_mvp = Mat4::orthographic_rh(0.0, 320.0, 240.0, 0.0, 0.0, 1.0);
+                    if let Some(m) = &screen_fx_tex {
+                        draws.push(SceneDraw {
+                            mesh: m,
+                            mvp: screen_fx_mvp,
+                        });
+                    }
+                    if let Some(m) = &screen_fx_solid {
+                        color_draws.push(ColorSceneDraw {
+                            mesh: m,
+                            mvp: screen_fx_mvp,
                         });
                     }
                     let scene = RenderScene {

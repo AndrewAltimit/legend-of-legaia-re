@@ -784,20 +784,24 @@ fn load_field_script_resets_pc_and_ctx() {
 #[test]
 fn enter_battle_populates_party_and_monsters() {
     let mut world = World::default();
-    world.enter_battle(3, 5, 600);
+    world.enter_battle(3, 5);
     assert_eq!(world.mode, SceneMode::Battle);
     assert_eq!(world.party_count, 3);
     // 3 party + 5 monsters = 8 active.
     let active_count = world.actors.iter().filter(|a| a.active).count();
     assert_eq!(active_count, 8);
-    // Party slots are at -600 X.
+    // Party slots sit at the retail 3-member seats (negative Z, facing
+    // the monsters at positive Z).
     for i in 0..3 {
-        assert_eq!(world.actors[i].move_state.world_x, -600);
+        let s = crate::battle_seats::party_seat(3, i);
+        assert_eq!(world.actors[i].move_state.world_x, s.x);
+        assert_eq!(world.actors[i].move_state.world_z, s.z);
+        assert!(world.actors[i].move_state.world_z < 0);
         assert_eq!(world.actors[i].battle.liveness, 1);
     }
-    // Monster slots at +600 X.
+    // Monster slots at the retail seats on the positive-Z side.
     for i in 3..8 {
-        assert_eq!(world.actors[i].move_state.world_x, 600);
+        assert!(world.actors[i].move_state.world_z > 0);
         assert_eq!(world.actors[i].battle.liveness, 1);
     }
     // SM seeded at Begin.
@@ -811,7 +815,7 @@ fn enter_battle_populates_party_and_monsters() {
 fn enter_battle_caps_party_at_three() {
     let mut world = World::default();
     // Even if asked for more party than the cap, we clamp to 3.
-    world.enter_battle(8, 0, 100);
+    world.enter_battle(8, 0);
     assert_eq!(world.party_count, 3);
 }
 
@@ -1035,7 +1039,7 @@ fn stone_absorbs_a_damage_spell() {
     use legaia_engine_vm::status_effects::StatusKind;
 
     let mut world = World::new();
-    world.enter_battle(3, 1, 600);
+    world.enter_battle(3, 1);
     world.actors[0].battle.hp = 200;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.liveness = 1;
@@ -1074,7 +1078,7 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
     // full HP is if the monster never gets to act.
     fn party_took_damage(asleep: bool) -> bool {
         let mut world = World::new();
-        world.enter_battle(1, 1, 600); // slot 0 = party, slot 1 = monster
+        world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
         world.live_gameplay_loop = true; // route tick() through live_battle_tick
         world.battle_player_driven = false; // both sides auto-act
         // Big monster HP so it survives long enough to take many turns; the
@@ -1120,7 +1124,7 @@ fn dot_never_kills_actor_bottoms_out_at_one_hp() {
     use legaia_engine_vm::status_effects::StatusKind;
 
     let mut world = World::new();
-    world.enter_battle(1, 1, 600);
+    world.enter_battle(1, 1);
     // Toxic raw tick = max_hp/16 = 5, more than the monster's remaining 4 HP
     // → clamped to current_hp - 1 = 3.
     world.actors[1].battle.max_hp = 80;
@@ -1150,7 +1154,7 @@ fn live_loop_ticks_dot_at_the_round_boundary() {
 
     fn party_lost_hp(poisoned: bool) -> bool {
         let mut world = World::new();
-        world.enter_battle(1, 1, 600); // slot 0 = party, slot 1 = monster
+        world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
         world.live_gameplay_loop = true;
         world.battle_player_driven = false;
         // Both sides carry SPD so the initiative round boundary engages (the DoT
@@ -1203,7 +1207,7 @@ fn all_party_item_heals_every_living_party_actor_in_battle() {
 
     let mut world = World::default();
     world.set_item_catalog(crate::items::ItemCatalog::vanilla());
-    world.enter_battle(3, 1, 600);
+    world.enter_battle(3, 1);
     // Wound the whole party; down the third member.
     for i in 0..3 {
         world.actors[i].battle.max_hp = 500;
@@ -2933,7 +2937,7 @@ fn field_op_3f_stages_named_scene_transition() {
     let _ = world.tick();
     assert_eq!(
         world.pending_named_scene_transition,
-        Some(("dolk".to_string(), 0x01, 0x02)),
+        Some(("dolk".to_string(), 0x01, 0x02, 0x03)),
         "0x3F must stage a named scene transition to the inline destination"
     );
     // It is NOT a dialog opener.
@@ -5172,6 +5176,230 @@ fn move_power_table_drives_monster_special_attack_damage() {
     );
     // Deterministic: same seed + table -> identical damage.
     assert_eq!(move_power, run(true), "move-power damage is deterministic");
+}
+
+/// A party member wearing an elemental-guard accessory takes HALF damage from
+/// a monster special of the matching element - the `FUN_801ddb30` finisher's
+/// party-resist ladder, reading the guard passive (`0x1D + element`) off the
+/// character's rebuilt ability bitfield. A non-matching element (or no
+/// accessory) passes through at full magnitude.
+#[test]
+fn elemental_guard_accessory_halves_matching_monster_special() {
+    use crate::accessory_passives::AccessoryPassives;
+    use crate::monster_catalog::vanilla_monster_catalog;
+    use crate::move_power::MovePowerCatalog;
+    use crate::spells::SpellCatalog;
+    use legaia_asset::move_power::{
+        MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
+        MOVE_POWER_TABLE_LEN,
+    };
+
+    fn overlay_with_flame_power() -> Vec<u8> {
+        let mut buf = vec![
+            0u8;
+            MOVE_POWER_TABLE_FILE_OFFSET
+                + MOVE_POWER_RECORD_STRIDE * MOVE_POWER_TABLE_LEN
+        ];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 0x20] = 1; // Flame -> power record 1
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE] = 0xB8;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE + 1] = 0x0B;
+        buf
+    }
+
+    // `guard_passive`: None = bare character; Some(idx) = an accessory whose
+    // passive index is `idx` equipped in the Goods slot.
+    fn run(guard_passive: Option<u8>) -> u16 {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.monster_catalog = vanilla_monster_catalog();
+        // Pin the attacking monster's element to 2 (Fire) so the resist
+        // ladder has a real element to test against.
+        world.monster_catalog.by_id.get_mut(&5).unwrap().element = 2;
+        world.actors[0].battle.max_hp = 4000;
+        world.actors[0].battle.hp = 4000;
+        world.actors[0].battle.liveness = 1;
+        world.battle_accuracy[0] = 30;
+        world.battle_defense[0] = 40;
+        world.actors[1].battle.max_hp = 120;
+        world.actors[1].battle.hp = 120;
+        world.actors[1].battle.mp = 10;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle_accuracy[1] = 25;
+        world.set_battle_magic(1, 40);
+        world.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
+
+        let mut party = legaia_save::Party::zeroed(1);
+        if let Some(idx) = guard_passive {
+            world.set_accessory_passives(AccessoryPassives::from_entries([(0x50, idx)], []));
+            let mut eq = party.members[0].equipment();
+            eq.slots[7] = 0x50;
+            party.members[0].set_equipment(eq);
+        }
+        world.roster = party;
+        world.refresh_party_ability_bits();
+        world.rng_state = 0;
+
+        let before = world.actors[0].battle.hp;
+        world.take_monster_turn(1);
+        before - world.actors[0].battle.hp
+    }
+
+    let bare = run(None);
+    let fire_guard = run(Some(0x1F)); // Fire Guard: matches element 2
+    let water_guard = run(Some(0x1E)); // Water Guard: element 1, no match
+    assert!(bare > 1, "baseline special deals real damage");
+    assert_eq!(
+        fire_guard,
+        bare >> 1,
+        "matching elemental guard halves the finished damage"
+    );
+    assert_eq!(
+        water_guard, bare,
+        "non-matching elemental guard leaves damage unchanged"
+    );
+}
+
+/// The two "spirit gain up" finisher bits are the AP Boost accessory passives
+/// (`0x28`/`0x29`): a wearer's spirit-art gauge charges faster from the same
+/// hit, read off the rebuilt ability bitfield via `World::defender_resist`.
+#[test]
+fn ap_boost_accessory_accelerates_spirit_gauge() {
+    use crate::accessory_passives::AccessoryPassives;
+
+    fn gauge_after_hit(ap_boost_passive: Option<u8>) -> u16 {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.max_hp = 500;
+        world.actors[0].battle.hp = 500;
+        world.actors[0].battle.liveness = 1;
+        let mut party = legaia_save::Party::zeroed(1);
+        if let Some(idx) = ap_boost_passive {
+            world.set_accessory_passives(AccessoryPassives::from_entries([(0x50, idx)], []));
+            let mut eq = party.members[0].equipment();
+            eq.slots[7] = 0x50;
+            party.members[0].set_equipment(eq);
+        }
+        world.roster = party;
+        world.refresh_party_ability_bits();
+        world.accrue_spirit_gauge(0, 200); // pct = 200*100/500 = 40
+        world.actors[0].battle.spirit_gauge
+    }
+
+    assert_eq!(gauge_after_hit(None), 40, "base accrual is pct");
+    // AP Boost 1 (0x28 -> word1 0x100): +pct/10 = +4.
+    assert_eq!(gauge_after_hit(Some(0x28)), 44);
+    // AP Boost 2 (0x29 -> word1 0x200): +pct>>2 = +10.
+    assert_eq!(gauge_after_hit(Some(0x29)), 50);
+}
+
+/// One-party-member battle world for the Run escape roll (`FUN_801E791C`):
+/// party SPD vs enemy SPD, both sides at full HP, optional accessory passive
+/// on the member's slot-7 equip.
+fn escape_world(party_speed: u16, enemy_speed: u16, passive: Option<u8>) -> World {
+    use crate::accessory_passives::AccessoryPassives;
+
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.actors[0].battle.max_hp = 200;
+    world.actors[0].battle.hp = 200;
+    world.actors[0].battle.liveness = 1;
+    world.actors[1].battle.max_hp = 300;
+    world.actors[1].battle.hp = 300;
+    world.actors[1].battle.liveness = 1;
+    world.battle_speed[0] = party_speed;
+    world.battle_speed[1] = enemy_speed;
+    let mut party = legaia_save::Party::zeroed(1);
+    if let Some(idx) = passive {
+        world.set_accessory_passives(AccessoryPassives::from_entries([(0x50, idx)], []));
+        let mut eq = party.members[0].equipment();
+        eq.slots[7] = 0x50;
+        party.members[0].set_equipment(eq);
+    }
+    world.roster = party;
+    world.refresh_party_ability_bits();
+    world
+}
+
+/// The Run command's escape roll follows the retail `FUN_801E791C` score
+/// compare: a fast party vs a slow enemy escapes on every seed (the enemy
+/// score of 1 makes `roll_e` always 0 and the fail compare is strict `<`),
+/// while a slow party vs a fast enemy is caught on essentially every seed
+/// (`roll_p` pinned at 0 by a party score of ~1).
+#[test]
+fn run_escape_roll_follows_speed_and_hp_scores() {
+    let mut always = 0;
+    let mut rarely = 0;
+    for seed in 0..50u32 {
+        let mut fast = escape_world(1000, 1, None);
+        fast.rng_state = seed;
+        always += u32::from(fast.roll_battle_escape());
+
+        let mut slow = escape_world(1, 1000, None);
+        slow.rng_state = seed;
+        rarely += u32::from(slow.roll_battle_escape());
+    }
+    assert_eq!(always, 50, "overwhelming speed advantage always escapes");
+    assert!(
+        rarely <= 2,
+        "pinned-at-0 party roll is caught on almost every seed (got {rarely}/50 escapes)"
+    );
+}
+
+/// Chicken King (Great Escape, passive `0x37` -> ability bit 55) forces the
+/// party roll equal to the enemy roll, so even the worst matchup escapes;
+/// Chicken Heart (Escape Boost, passive `0x34` -> bit 52) scales the party
+/// roll 1.5x, raising the escape rate over the unboosted baseline.
+#[test]
+fn escape_accessories_fold_from_the_ability_bitfield() {
+    for seed in 0..50u32 {
+        let mut w = escape_world(1, 1000, Some(0x37));
+        w.rng_state = seed;
+        assert!(w.roll_battle_escape(), "Great Escape wins every compare");
+    }
+
+    let mut base = 0;
+    let mut boosted = 0;
+    for seed in 0..200u32 {
+        let mut w = escape_world(30, 45, None);
+        w.rng_state = seed;
+        base += u32::from(w.roll_battle_escape());
+
+        let mut w = escape_world(30, 45, Some(0x34));
+        w.rng_state = seed;
+        boosted += u32::from(w.roll_battle_escape());
+    }
+    assert!(
+        boosted > base,
+        "Escape Boost raises the escape rate ({boosted} vs {base} of 200)"
+    );
+}
+
+/// Retail folds the escape accessories only over party members with live HP
+/// (`+0x14C != 0`): a downed Chicken King wearer contributes nothing.
+#[test]
+fn downed_wearer_does_not_fold_escape_accessories() {
+    let mut caught = 0;
+    for seed in 0..50u32 {
+        let mut w = escape_world(1, 1000, Some(0x37));
+        w.actors[0].battle.liveness = 0;
+        w.rng_state = seed;
+        caught += u32::from(!w.roll_battle_escape());
+    }
+    assert!(
+        caught >= 48,
+        "downed wearer's assured-escape bit is ignored (got {caught}/50 caught)"
+    );
 }
 
 /// With both the move-power table AND the element-affinity tables installed, a
@@ -8395,6 +8623,195 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
     );
 }
 
+// --- Tile-board runtime install via field-VM op-0x49 sub-5 ---
+
+/// A field script carrying an op `0x49` sub-5 board install: 13-byte inline
+/// header `[5][ox=0][oz=0][w=4][h=4][radius=2][mode=0][flags×4][player_tpl]
+/// [tile_base]`, followed by a sentinel op the script resumes onto.
+#[cfg(test)]
+fn tile_board_op49_script() -> Vec<u8> {
+    vec![
+        0x49, 0x05, 0x00, 0x00, 0x04, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x30,
+    ]
+}
+
+#[test]
+fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
+    use vm::field::{FieldHost, Op49State};
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.rng_state = 7;
+
+    let code = tile_board_op49_script();
+    let mut ctx = FieldCtx::default();
+    let pc = 0usize;
+
+    // Frame 1: Idle -> the host parses the inline header, installs the
+    // board, and the VM suspends.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Idle);
+        let r = vm::field::step(&mut host, &mut ctx, &code, pc);
+        assert!(
+            matches!(r, FieldStepResult::Halt { .. }),
+            "op-0x49 sub-5 suspends the script while the board mode runs"
+        );
+    }
+    let board = world.tile_board.as_ref().expect("board installed");
+    assert_eq!((board.width, board.height), (4, 4));
+    assert_eq!(board.cells.len(), 16);
+    // The retail fill only produces cells in the known value classes.
+    assert!(board.cells.iter().all(|&c| (2..=0xE).contains(&c)));
+    let header = world.tile_board_header.expect("header kept");
+    assert_eq!(header.player_template, 0x21);
+    assert_eq!(header.tile_template_base, 0x30);
+    // The player actor was seated at the start-cell centre.
+    let (px, pz) = world.tile_board.as_ref().unwrap().player_world();
+    assert_eq!(world.actors[0].move_state.world_x as i32, px);
+    assert_eq!(world.actors[0].move_state.world_z as i32, pz);
+
+    // While the board is up the op stays Armed at the same pc.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Armed);
+        let r = vm::field::step(&mut host, &mut ctx, &code, pc);
+        assert!(matches!(r, FieldStepResult::Halt { .. }));
+    }
+
+    // Simulate the walk reaching an event/transition cell: plant one under
+    // the player and run the arrival pass (the interpolation-complete path).
+    {
+        let b = world.tile_board.as_mut().unwrap();
+        let idx = b.player_row as usize * b.width as usize + b.player_col as usize;
+        b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
+        let (tx, tz) = b.player_world();
+        world.tile_board_target = Some((tx, tz));
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    assert!(
+        world.tile_board.is_none(),
+        "landing on an event cell exits the board mode"
+    );
+
+    // Exit flips the op to Done; the script resumes past the 14-byte install.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        assert_eq!(host.op49_state(), Op49State::Done);
+        match vm::field::step(&mut host, &mut ctx, &code, pc) {
+            FieldStepResult::Advance { next_pc } => {
+                assert_eq!(next_pc, 14, "sub-5 Done advances opcode + 13 header bytes")
+            }
+            other => panic!("expected Advance, got {other:?}"),
+        }
+    }
+    assert!(!world.tile_board_armed, "the arm clears on resume");
+}
+
+#[test]
+fn tile_board_animated_cell_cycles_on_arrival() {
+    let mut w = tile_board_world();
+    // Plant an animated tile at the player's cell and run the arrival pass
+    // via a completed interpolation.
+    {
+        let b = w.tile_board.as_mut().unwrap();
+        b.cells[0] = crate::tile_board::CELL_ANIM_LAST; // 0xE wraps to 0xB
+        let (tx, tz) = b.player_world();
+        w.tile_board_target = Some((tx, tz));
+    }
+    w.set_pad(0);
+    let _ = w.tick();
+    assert_eq!(
+        w.tile_board.as_ref().unwrap().cells[0],
+        crate::tile_board::CELL_ANIM_FIRST,
+        "0xE cycles back to 0xB on arrival"
+    );
+}
+
+// --- Screen-effect widgets via field-VM op-0x43 sub-ops (PROT-0900 family) ---
+
+#[test]
+fn field_vm_op43_widget_subops_drive_screen_fx_frame() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+
+    let mut ctx = FieldCtx::default();
+
+    // Sub-0x11: mask rect tween to a centre iris over 0 frames (snap).
+    // [43][11][l lo hi][t][r][b][dur]
+    let mut mask_op = vec![0x43, 0x11];
+    for w in [80i16, 60, 240, 180, 0] {
+        mask_op.extend_from_slice(&w.to_le_bytes());
+    }
+    // Sub-0x15: letterbox config [x_left][x_right][y0][y1][y2][y3].
+    let mut lb_op = vec![0x43, 0x15];
+    for w in [0i16, 0x140, 40, 56, 184, 200] {
+        lb_op.extend_from_slice(&w.to_le_bytes());
+    }
+    // Sub-0x13: panel spawn [x][y][w][h][tex_x][tex_y] past the sub-op byte.
+    let mut panel_op = vec![0x43, 0x13];
+    for w in [16i16, 32, 128, 96, 0, 0x100] {
+        panel_op.extend_from_slice(&w.to_le_bytes());
+    }
+    // Sub-0x10: sprite spawn, 19-byte record
+    // [x][y][w][h][tex_x][tex_y][clut_x][clut_y][rgb u24].
+    let mut sprite_op = vec![0x43, 0x10];
+    for w in [100i16, 50, 24, 24, 0x40, 0, 0, 480] {
+        sprite_op.extend_from_slice(&w.to_le_bytes());
+    }
+    sprite_op.extend_from_slice(&[0x80, 0x80, 0x80]);
+
+    for op in [&mask_op, &lb_op, &panel_op, &sprite_op] {
+        let mut host = FieldHostImpl { world: &mut world };
+        match vm::field::step(&mut host, &mut ctx, op, 0) {
+            FieldStepResult::Advance { .. } => {}
+            other => panic!("widget sub-op should advance, got {other:?}"),
+        }
+    }
+    assert!(world.screen_fx.mask.is_some(), "mask widget spawned");
+    assert!(world.screen_fx.letterbox.is_some(), "letterbox configured");
+    assert!(world.screen_fx.panel.is_some(), "panel spawned");
+    assert_eq!(world.screen_fx.sprites.len(), 1, "sprite widget spawned");
+
+    // One world tick publishes the frame: 4 mask border quads + 2 letterbox
+    // bands, 2 gradient strips, 1 panel quad (128px wide - no split), 1 sprite.
+    let _ = world.tick();
+    let frame = &world.screen_fx_frame;
+    assert_eq!(
+        frame.solid_quads.len(),
+        6,
+        "4 mask quads + 2 letterbox bands"
+    );
+    assert_eq!(frame.gradient_quads.len(), 2);
+    assert_eq!(frame.panels.len(), 1);
+    assert_eq!(frame.sprites.len(), 1);
+    // The dur=0 mask snapped to the requested iris rect: the top border quad
+    // ends at the rect's top edge.
+    assert!(
+        frame
+            .solid_quads
+            .iter()
+            .any(|q| q.bottom == 60 || q.top == 60),
+        "mask border reflects the snapped iris rect"
+    );
+
+    // Sub-0x14: panel move/scale to half size over 0 frames.
+    let mut move_op = vec![0x43, 0x14];
+    for w in [200i16, 100, 0x0800, 4] {
+        move_op.extend_from_slice(&w.to_le_bytes());
+    }
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let r = vm::field::step(&mut host, &mut ctx, &move_op, 0);
+        assert!(matches!(r, FieldStepResult::Advance { .. }));
+    }
+    let p = world.screen_fx.panel.as_ref().unwrap();
+    assert_eq!(p.target[0], 200);
+    assert_eq!(p.target[2], 64, "0x0800 (4.12) halves the 128px base width");
+}
+
 #[test]
 fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     // The op-0x49 shop arm captures a per-vendor id (from the shop's name +
@@ -8997,7 +9414,7 @@ fn battle_xp_routes_to_composed_characters() {
     let mut world = World::new();
     world.load_party(composition_roster());
     world.set_active_party(vec![2, 3]);
-    world.enter_battle(2, 1, 600);
+    world.enter_battle(2, 1);
     world.apply_battle_xp(100);
     // The 3/4-scaled split lands on the OCCUPYING characters' XP wells
     // (roster slots 2 + 3), not on slots 0/1.
@@ -10209,14 +10626,18 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
 }
 
 #[test]
-fn slot_machine_bet_lines_cycle_on_dpad() {
+fn slot_machine_spin_accrues_the_net_take() {
+    use crate::slot_machine::NET_TAKE_NORMAL_SPIN;
     let mut world = World::new();
     world.enter_slot_machine(slot_test_machine(50));
-    assert_eq!(world.slot_machine.as_ref().unwrap().bet_lines(), 3);
+    assert_eq!(world.slot_machine.as_ref().unwrap().net_take(), 0);
     world.set_pad(0);
-    world.set_pad(input::PadButton::Left.mask());
+    world.set_pad(input::PadButton::Cross.mask());
     let _ = world.tick();
-    assert_eq!(world.slot_machine.as_ref().unwrap().bet_lines(), 1);
+    assert_eq!(
+        world.slot_machine.as_ref().unwrap().net_take(),
+        NET_TAKE_NORMAL_SPIN
+    );
 }
 
 #[test]

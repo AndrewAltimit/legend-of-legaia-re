@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; actor / sprite VM</div>
   <h1>Actor / sprite VM</h1>
-  <p class="lede">A small fixed-width bytecode VM driving the title screen's animated sprite cluster. The simplest of Legaia's runtime VMs - 13 opcodes, byte-stream operands, no cross-context targeting. <span class="status-done">Fully ported.</span></p>
+  <p class="lede">A small fixed-width bytecode VM driving the title screen's animated sprite cluster. The simplest of Legaia's runtime VMs - 13 opcodes, byte-stream operands, no cross-context targeting. <span class="tag tag-done">Fully ported</span></p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -18,7 +18,7 @@
   <dl class="kv">
     <dt>Driver</dt><dd><code>FUN_801D6628</code></dd>
     <dt>Dispatch table</dt><dd><code>0x801CED70</code> (13 entries)</dd>
-    <dt>Lives in</dt><dd>Title-screen overlay (PROT entry <code>0971</code>)</dd>
+    <dt>Lives in</dt><dd>Title-screen overlay. The title overlay has no PROT id of its own - it rides the unindexed <code>PROT.DAT</code> gap after entry 0899 (see <code>crates/asset/data/static-overlays.toml</code>); PROT <code>0971</code> is the <em>debug-menu</em> overlay.</dd>
     <dt>Operand format</dt><dd>Byte stream (1 byte opcode + zero-or-more operand bytes per instruction)</dd>
   </dl>
 </section>
@@ -86,8 +86,13 @@
   <p><b><code>+0xB4</code> aliases two arms.</b> The 4-byte slot at <code>+0xB4</code> is read as <code>i32</code> by the SFX emitter (the "key-on done, release pending" flag) and as two <code>i16</code>s by the keyframe arms (<code>kf_shake[0]</code> and <code>kf_shake[1]</code>). The retail layout aliases these uses; the same actor record never runs the SFX emitter and the keyframe arms in the same frame, so the alias is benign. The Rust port keeps both views as named fields (<code>release_pending: i32</code>, <code>kf_shake: [i16; 4]</code>) and documents the alias inline.</p>
   <p>The legacy <code>anim_vm.rs</code> module continues to wrap <code>AnimPlayer</code> for the keyframe pose decoder and surfaces a <code>Host::on_opaque_record</code> hook for record-level side-effects (sprite swaps, voice cues). The new <code>actor_tick</code> module covers the per-arm physics that's the same for every record kind.</p>
 
-  <h3>Mednafen-state diff signature</h3>
-  <p>Diffing the actor pool (<code>0x801C9594..0x801C9F7F</code>, <code>0x60</code>-byte stride per anim slot) between a battle-intro idle save and an active-art-strike save shows the dispatch byte and the per-record pointer flipping in lockstep - the dispatch byte's lane (record <code>+0x0F</code>/<code>+0x10</code>) carries values like <code>0x04</code> (idle) and <code>0x06</code> (playing) across the same slot. The per-record pointer (<code>+0x00</code> of each anim slot, mirroring <code>actor[+0x4C]</code>) similarly flips between a self-reference (idle / sentinel pose) and a real RAM address that points into the scene-loaded ANM payload.</p>
+  <details class="disclosure">
+    <summary>Provenance: capture signature + superseded framings</summary>
+    <div class="disclosure-body">
+      <p><strong>Mednafen-state diff signature.</strong> Diffing the actor pool (<code>0x801C9594..0x801C9F7F</code>, <code>0x60</code>-byte stride per anim slot) between a battle-intro idle save and an active-art-strike save shows the dispatch byte and the per-record pointer flipping in lockstep - the dispatch byte's lane (record <code>+0x0F</code>/<code>+0x10</code>) carries values like <code>0x04</code> (idle) and <code>0x06</code> (playing) across the same slot. The per-record pointer (<code>+0x00</code> of each anim slot, mirroring <code>actor[+0x4C]</code>) similarly flips between a self-reference (idle / sentinel pose) and a real RAM address that points into the scene-loaded ANM payload.</p>
+      <p><strong>Superseded framings.</strong> An earlier reading held that "the actor VM starts by resetting PC to 0 of the spawn record" - it doesn't: VDF-spawned actors are driven by the vertex-pool render pipeline (<code>actor[+0x90]</code>), never by ticking their <code>+0x4C</code> body bytes as actor-VM opcodes. A companion "16-byte VDF body header" framing was off-by-12: the first u32 is the record count and the 12-byte records start 4 bytes in.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="spawn-record-overload">
@@ -118,13 +123,13 @@
   <h3>Implications for the clean-room port</h3>
   <ul class="bullets">
     <li><strong>The actor VM at <code>FUN_801D6628</code> is <em>not</em> a consumer of <code>actor[+0x4C]</code>.</strong> That function walks an <em>external</em> 4-byte-stride bytecode stream (passed in as <code>param_1</code>), dispatching each command through the 13-entry jump table and routing side-effects to actor records <em>looked up by the slot byte</em> (<code>param_1[+1]</code>), not by following <code>actor[+0x4C]</code>.</li>
-    <li><strong>No PC-bootstrap entry is needed.</strong> The earlier framing - "the actor VM starts by resetting PC to 0 of the spawn record" - doesn't apply: VDF-spawned actors are driven by the vertex-pool render pipeline (<code>actor[+0x90]</code>), not by ticking their <code>+0x4C</code> body bytes as actor-VM opcodes.</li>
+    <li><strong>No PC-bootstrap entry is needed.</strong> VDF-spawned actors are driven by the vertex-pool render pipeline (<code>actor[+0x90]</code>), not by ticking their <code>+0x4C</code> body bytes as actor-VM opcodes.</li>
     <li><strong><code>Actor::spawn_record</code> in <code>legaia_engine_core</code> is a retention / observation slot.</strong> Mirroring the retail <code>actor[+0x4C] = VDF_body_ptr</code> write keeps the bytes alive for diagnostic inspection but doesn't need to be fed back into any clean-room VM tick. The downstream consumer that <em>would</em> matter is the per-actor vertex-pool allocator (mirror of <code>FUN_801D77F4</code>'s second pass) - already wired in the host hook.</li>
     <li><strong><code>legaia_engine_vm::actor</code> does <em>not</em> need an <code>entry_with_spawn_record</code> constructor.</strong> The 13-opcode dispatcher consumes an external command list, not the VDF body; the host hook already mirrors the retail spawn-time writes.</li>
   </ul>
 
   <h3>VDF body header</h3>
-  <p>Read against <code>FUN_801D77F4</code>'s walker - <code>*puVar11 = record_count</code>, then <code>*puVar10 = group_idx</code> advancing <code>+12</code> bytes per record - the first u32 is the record count and the records start 4 bytes in. An earlier "16-byte header" framing was off-by-12. The actor VM does <strong>not</strong> skip any metadata header before dispatch, because the actor VM never dispatches on this buffer at all (per the first implication above).</p>
+  <p>Read against <code>FUN_801D77F4</code>'s walker - <code>*puVar11 = record_count</code>, then <code>*puVar10 = group_idx</code> advancing <code>+12</code> bytes per record - the first u32 is the record count and the records start 4 bytes in. The actor VM does <strong>not</strong> skip any metadata header before dispatch, because the actor VM never dispatches on this buffer at all (per the first implication above).</p>
 </section>
 
 <section class="doc-section" id="see-also">

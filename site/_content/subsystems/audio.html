@@ -73,10 +73,11 @@
 </section>
 
 <section class="doc-section" id="ssapi">
-  <h2>SsAPI sequencer (<code>0x80061-0x80067</code> cluster)</h2>
-  <p>Legaia statically links Sony's PsyQ <strong>libsnd / SsAPI</strong> sequencer for <code>.SEQ</code>-driven music. The cluster lives in SCUS at <code>0x80061B18..0x800681D8</code> and uses the standard SsAPI globals.</p>
+  <h2>SsAPI sequencer - the MIDI-style music player (<code>0x80061-0x80067</code> cluster)</h2>
+  <p>Legaia statically links Sony's PsyQ <strong>libsnd / SsAPI</strong> sequencer for <code>.SEQ</code>-driven music - the layer that walks the sequence bytes, tracks per-channel state, and turns note events into SPU voice key-ons. The cluster lives in SCUS at <code>0x80061B18..0x800681D8</code> and uses the standard SsAPI globals: a 16-slot allocation bitmap, per-slot <code>0xB0</code>-byte sequence-state structs, and two Legaia-installed function-pointer hooks (<code>_DAT_801CE564</code>/<code>_574</code>) that wire the script VM's seq context in. The full symbol catalogs are in the disclosures below.</p>
 
-  <h3>Globals</h3>
+  <details class="disclosure">
+  <summary>Globals</summary>
   <table>
     <thead><tr><th>Global</th><th>Role</th></tr></thead>
     <tbody>
@@ -91,8 +92,10 @@
       <tr><td><code>_DAT_801CE564 / _DAT_801CE574</code></td><td><strong>Function-pointer hooks installed by Legaia.</strong> <code>_564</code> resolves the active script-VM seq context; <code>_574</code> is a worker-availability check. Distinct from the standard PsyQ in-line slot lookup - the actor / field VM is wiring callbacks here.</td></tr>
     </tbody>
   </table>
+  </details>
 
-  <h3>Public SEQ API</h3>
+  <details class="disclosure">
+  <summary>Public SEQ API</summary>
   <table>
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
@@ -103,8 +106,10 @@
       <tr><td><code>FUN_800641EC(slot, channel)</code></td><td><code>SsSeqRewind</code> / <code>SsSeqReplay</code> - clears flags <code>0x1/0x2/0x8/0x400</code>, sets <code>0x4</code>, full slot reset.</td></tr>
     </tbody>
   </table>
+  </details>
 
-  <h3>SEQ internals</h3>
+  <details class="disclosure">
+  <summary>SEQ internals</summary>
   <table>
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
@@ -114,8 +119,10 @@
       <tr><td><code>FUN_8006206C(&hellip;)</code></td><td><code>_SsSetSlideVolume</code> - ramp from&rarr;to over N ticks. Signed-divide per-tick delta; gated by flags <code>4 &amp; 0x100</code> in <code>+0x98</code>.</td></tr>
     </tbody>
   </table>
+  </details>
 
-  <h3>Voice / mixer (audible-output critical path)</h3>
+  <details class="disclosure">
+  <summary>Voice / mixer (audible-output critical path)</summary>
   <table>
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
@@ -126,8 +133,10 @@
       <tr><td><code>FUN_80065B88</code></td><td><code>SsResetTranspose</code> - single-store stub: zeros <code>_DAT_801CE2E8</code> (a base-note offset shifted in by <code>FUN_80065978</code>).</td></tr>
     </tbody>
   </table>
+  </details>
 
-  <h3>SPU command shims (<code>*0x81</code> scaling = 0..127 &rarr; 0..16383)</h3>
+  <details class="disclosure">
+  <summary>SPU command shims (<code>*0x81</code> scaling = 0..127 &rarr; 0..16383)</summary>
   <table>
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
@@ -135,6 +144,7 @@
       <tr><td><code>FUN_80065440(p1, p2)</code></td><td>Single-shot SPU command (likely <code>SsUtKeyOn</code> / <code>SsUtPitchBend</code>) - <code>[cmd=6, p1*0x81, p2*0x81]</code>, calls <code>FUN_8006ACBC</code> (sister of <code>FUN_8006BCB4</code>).</td></tr>
     </tbody>
   </table>
+  </details>
 
   <p class="hint">The cluster previously appeared in the renderer / GPU primitives inventory; that was a citation artefact (battle / field code triggers SFX cues during render passes). None of these functions is libgpu / libgs - they're all libsnd. The "renderer / GPU primitives" inventory in <code>functions.md</code> previously listed <code>FUN_80061EDC / FUN_80067E9C / FUN_80066E50 / FUN_80067550</code> under the renderer; they belong here.</p>
 
@@ -145,9 +155,10 @@
 
 <section class="doc-section" id="libspu">
   <h2>libspu / SPU control (<code>0x80068-0x8006D</code> cluster)</h2>
-  <p>Sits underneath the SsAPI sequencer and drives the SPU hardware directly. PsyQ <code>libspu</code> is statically linked here.</p>
+  <p>Sits underneath the SsAPI sequencer and drives the SPU hardware directly - PsyQ <code>libspu</code>, statically linked. It owns the SPU MMIO register base, the SPU-RAM block allocator, and the mask-driven attribute setters that write per-voice and common registers. Symbol catalogs below.</p>
 
-  <h3>SPU globals</h3>
+  <details class="disclosure">
+  <summary>SPU globals</summary>
   <table>
     <thead><tr><th>Global</th><th>Role</th></tr></thead>
     <tbody>
@@ -160,8 +171,10 @@
       <tr><td><code>_DAT_8007AFF8</code></td><td>Master attribute struct - 10 modes &times; <code>0x44</code> bytes = <code>0x2A8</code> bytes total.</td></tr>
     </tbody>
   </table>
+  </details>
 
-  <h3>libspu primitives</h3>
+  <details class="disclosure">
+  <summary>libspu primitives</summary>
   <table>
     <thead><tr><th>Function</th><th>PsyQ name</th><th>Notes</th></tr></thead>
     <tbody>
@@ -173,11 +186,14 @@
       <tr><td><code>FUN_8006C6E4</code></td><td><code>_SsKey2Pitch</code></td><td>Two-octave-table pitch math; returns 14-bit SPU PITCH (clamps <code>0x3FFF</code>).</td></tr>
     </tbody>
   </table>
+  </details>
 </section>
 
 <section class="doc-section" id="dma">
   <h2>SPU DMA transfer engine</h2>
-  <p>Sits between the SsApi seq layer and the libspu register primitives. This is the path SEQ/VAG bytes take when moving from PSX RAM into SPU RAM.</p>
+  <p>Sits between the SsApi seq layer and the libspu register primitives. This is the path SEQ/VAG bytes take when moving from PSX RAM into SPU RAM: a 4-mode transfer state machine, a top-level <code>SpuWrite</code> that picks DMA vs CPU copies, and the block allocator/compactor pair behind <code>SsSpuMalloc</code>/<code>SpuFree</code>.</p>
+  <details class="disclosure">
+  <summary>Transfer-engine functions</summary>
   <table>
     <thead><tr><th>Function</th><th>PsyQ name</th><th>Notes</th></tr></thead>
     <tbody>
@@ -189,10 +205,14 @@
       <tr><td><code>FUN_8006A420</code></td><td><code>SpuFree</code> compactor</td><td>Coalesces adjacent free entries.</td></tr>
     </tbody>
   </table>
+  </details>
 </section>
 
 <section class="doc-section" id="seq-management">
   <h2>SsApi seq-management layer (above libspu)</h2>
+  <p>The bank/track bookkeeping layer: VAB open/close by id, the SEP multi-track loader, and the status/callback accessors the game polls. Chain: slot bitmap @ <code>_DAT_801CD2B8</code> &rarr; ptr table @ <code>0x801CD2C0</code> &rarr; per-slot record (stride <code>0x36</code>) at <code>0x801CDB60</code> &rarr; VAB program-attr (stride <code>0xB0</code>).</p>
+  <details class="disclosure">
+  <summary>Function catalog</summary>
   <table>
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
     <tbody>
@@ -203,7 +223,7 @@
       <tr><td><code>FUN_8006DDC8</code></td><td><code>SsSeqSetMarkCallback</code> - installs trampolines at ctx <code>+0x14/+0x18</code>, sets active-flag at <code>+0x46</code>.</td></tr>
     </tbody>
   </table>
-  <p>Slot bitmap @ <code>_DAT_801CD2B8</code> &rarr; ptr table @ <code>0x801CD2C0</code> &rarr; per-slot record (stride <code>0x36</code>) at <code>0x801CDB60</code> &rarr; VAB program-attr (stride <code>0xB0</code>) at <code>0x801CD2C0[i] + prog*0xB0</code>.</p>
+  </details>
 </section>
 
 <section class="doc-section" id="file-api">
@@ -239,16 +259,20 @@
   <h2>Reverb model (engine-audio)</h2>
   <p>The retail SPU implements reverb as a same-side / different-side IIR reflection pair feeding a 4-tap comb early-echo and two all-pass stages, run at 22050 Hz over a work buffer at the top of SPU RAM (<code>mBASE = 0x80000 - work_size</code>). The 9 standard libspu modes (<code>Room</code> / <code>StudioA-C</code> / <code>Hall</code> / <code>Space</code> / <code>Echo</code> / <code>Delay</code> / <code>Pipe</code>) plus <code>Off</code> each select a 32-register set (work-area size + IIR/comb/all-pass coefficients + tap addresses).</p>
   <p>The <code>engine-audio</code> clean-room port reproduces that network register-for-register in <code>spu::reverb</code>: each <code>ReverbMode</code> loads the standard libspu preset (public PSX hardware-reference constants - the same tables every open SPU emulator ships, not Sony game data) into a recirculating <code>i16</code> work buffer sized to that mode's work area. Address registers are in 8-byte units, taps wrap within the work area, and the reverb multiply is <code>(sample &times; coeff) / 0x8000</code> (signed Q15, so a <code>0x8000</code> coefficient inverts phase exactly as the hardware does). So the wet tail carries the real comb/all-pass colouration the retail modes produce, not a flat slap-back.</p>
-  <p>Per-voice routing is per-voice: <code>Voice::reverb_send = true</code> (libspu <code>SpuSetVoiceReverb</code> analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in <code>Spu::tick</code>.</p>
+  <p>Per-voice routing is opt-in: <code>Voice::reverb_send = true</code> (libspu <code>SpuSetVoiceReverb</code> analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in <code>Spu::tick</code>.</p>
 
   <h3>Retail reverb routing - Studio C, always on</h3>
-  <p>A pure-Rust sweep of the save-state corpus (reading the SPU register shadow via <code>PsxSpu::reverb_registers</code> / <code>voice_reverb_mask</code> / <code>reverb_master_enabled</code>; CLI <code>mednafen-state spu</code>) pins what retail actually runs - and it falsifies the earlier &ldquo;Spirit-Arts / echo cues selectively opt in, everything else dry&rdquo; reading:</p>
+  <p>Retail runs one global reverb configuration everywhere:</p>
   <ul>
     <li><strong>The reverb network is master-enabled in every captured state</strong> (<code>SPUCNT</code> bit 7) - field, town, battle, summon, title, minigames. No scene toggles it.</li>
     <li><strong>The mode is <code>Studio C</code> everywhere.</strong> The 32 reverb registers (<code>0x1F801DC0..</code>) are byte-identical across all captured states and match the <code>StudioC</code> libspu preset exactly (<code>dAPF1=0x00E3</code>, work area <code>0x6FE0</code>); <code>ReverbMode::identify</code> resolves the captured block to <code>StudioC</code>.</li>
     <li><strong>Per-voice reverb-send (<code>EON</code>) is broad</strong> - typically 15&ndash;22 of 24 voices, BGM + SFX alike. Reverb is the default routing, not a per-cue effect.</li>
   </ul>
-  <p>So there is no per-cue reverb-enable source: the live engine matches retail by calling <code>Spu::set_retail_reverb()</code> once at SPU init (the live mixer does this) - <code>ReverbMode::StudioC</code> + every voice routed.</p>
+  <p>There is no per-cue reverb-enable source: the live engine matches retail by calling <code>Spu::set_retail_reverb()</code> once at SPU init - <code>ReverbMode::StudioC</code> + every voice routed. Pinned by a pure-Rust sweep of the save-state corpus (SPU register shadow via <code>PsxSpu::reverb_registers</code> / <code>voice_reverb_mask</code> / <code>reverb_master_enabled</code>; CLI <code>mednafen-state spu</code>).</p>
+  <details class="disclosure">
+    <summary>Superseded reading</summary>
+    <p>An earlier reading held that Spirit-Arts / echo cues selectively opted into reverb while everything else played dry, implying a per-cue reverb-enable source to trace. The corpus sweep falsifies it: reverb is master-on with the Studio C preset in every captured state, and the EON mask covers most voices. Relatedly, the SEQ controller census finds no CC91 (reverb depth) events - the stream encodes no per-cue reverb at all.</p>
+  </details>
 
   <p>Boundaries: mode selection via <code>Spu::write_reverb_mode_byte(raw)</code> matches the libspu byte API (1=Room, 2=StudioA, &hellip;, 9=Pipe; out-of-range falls back to <code>Off</code>) - the engine half of <code>SpuSetReverbModeParam</code> (<code>FUN_8006B1B4</code>). The hardware's 39-tap FIR input/output resampler (44.1 kHz &harr; 22.05 kHz) is approximated by decimation + zero-order hold, and output volume (<code>vLOUT</code>/<code>vROUT</code>, not part of the mode preset) uses a fixed depth overridable via <code>Reverb::set_output_volume</code>.</p>
 </section>
@@ -268,7 +292,10 @@
       <tr><td><code>Sequencer::rewind_to(idx, spu)</code></td><td><code>SsSeqRewind</code>.</td></tr>
     </tbody>
   </table>
-  <p>Voice allocation is round-robin over the 24 SPU voices, with the sequencer tracking <code>(channel, key) &rarr; voice</code> so the matching key-off can shut down the right slot. Tempo events from the SEQ override the running tempo at the event's absolute tick (matching libsnd's mid-stream <code>0xFF 0x51</code>). PitchBend / Aftertouch are accepted by the parser and ignored by the playback path until the engine wires per-voice modulation.</p>
+  <p>Voice allocation is round-robin over the 24 SPU voices, with the sequencer tracking <code>(channel, key) &rarr; voice</code> so the matching key-off can shut down the right slot. Tempo events from the SEQ override the running tempo at the event's absolute tick (matching libsnd's mid-stream <code>0xFF 0x51</code>).</p>
+  <p><strong>Pitch bend</strong> (<code>0xEn</code>) is acted on: a bend sets the channel's 14-bit wheel, re-pitches sounding voices, and folds into subsequent NoteOns; the bend range is a <em>per-tone disc value</em> (each VAB tone's <code>pbmin</code>/<code>pbmax</code> semitones, applied exactly as libsnd does - a <code>(0, 0)</code> tone ignores the wheel). Aftertouch (<code>0xDn</code>/<code>0xAn</code>) is parsed, but the retail score never emits it.</p>
+  <p><strong>Controller census.</strong> A disc-wide sweep of every SEQ-bearing PROT entry fixes what the retail score emits: CC7 (volume) and CC10 (pan) carry the bulk; CC99 carries only the two loop-marker values; CC11 (expression) and CC91 (reverb depth) are absent - consistent with reverb being a fixed global.</p>
+  <p><strong>WASM output.</strong> The <code>audio-webaudio</code> feature adds <code>WebAudioOut</code> (<code>ScriptProcessorNode</code>-based) so the same SPU + sequencer stack drives browser targets.</p>
   <p><strong>Loop points</strong> are read from the stream: the NRPN-style control changes on <code>0xB0</code> (controller 99 value 20 = Loop Start, value 30 = Loop Forever). A Loop Start records the position immediately after the marker; a later Loop Forever - or an end-of-track that follows a Loop Start - rewinds there rather than to event 0, so looped BGM repeats from the correct bar instead of restarting the whole track. The rewind resets the integer sample-clock, so the looped body re-fires on the same sample offset every pass. <code>set_loop_to</code> is the fallback for the four retail tracks with no markers.</p>
   <p class="callout"><strong>Timebase.</strong> The production playback path ticks the sequencer once per SPU sample (<code>tick_sample</code>), so the music clock is locked to the audio clock. Timing is computed with an <strong>exact integer accumulator</strong> (units of <code>sample &times; ppqn &times; 1_000_000</code>; an event of delta <code>d</code> fires when the accumulator reaches <code>d &times; tempo_us &times; 44100</code>) - no per-tick float, no long-track drift, and bit-deterministic for the replay oracle. Note the SEQ tempo gotcha: the header tempo is a 240 BPM placeholder, immediately overridden by the first body <code>0xFF 0x51</code> (which, in PSX SEQ, carries its 3 tempo bytes with <strong>no</strong> MIDI length prefix). Mis-parsing that override pinned playback at the placeholder rate (~3x too fast).</p>
 </section>
@@ -290,8 +317,8 @@
 </section>
 
 <section class="doc-section" id="xa">
-  <h2>XA-ADPCM (in-progress)</h2>
-  <p><code>crates/xa</code> decodes the format spec correctly on synthetic inputs. The on-disc <code>.XA</code> files use a non-standard interleave - ~90% of groups don't pass standard validation. Likely a custom event-trigger scheme rather than streamed audio. Pinning down the actual format needs runtime tracing.</p>
+  <h2>XA-ADPCM <span class="tag tag-done">Confirmed</span></h2>
+  <p><code>crates/xa</code> decodes CD-XA 4-bit ADPCM <strong>bit-exactly</strong>: on a real cutscene track its per-channel PCM matches an external lossless reference decode sample-for-sample. The on-disc <code>.XA</code> / <code>.STR</code> audio is standard CD-XA Mode 2 Form 2 - the earlier &ldquo;non-standard interleave / ~90% of groups fail validation&rdquo; reading was Form-1 truncation damage in the old extractor, not a bespoke format. The demuxer (<code>legaia_xa::demux</code>) splits raw 2352-byte sectors by <code>(file_no, ch_no)</code> and the group decoder reconstructs each channel. See <a href="../formats/xa.html">formats/xa</a> and <a href="cutscene.html">cutscene / STR</a> for the interleaved A/V path.</p>
 </section>
 
 <section class="doc-section" id="audio-trace-oracle">

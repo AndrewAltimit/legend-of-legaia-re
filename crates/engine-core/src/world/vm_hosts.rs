@@ -534,6 +534,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 Op49State::Done
             };
         }
+        // A sub-5 tile-board install (`World::try_install_tile_board`): Armed
+        // while the board mode runs, Done once an event cell exits it, so the
+        // script suspends across the whole board segment.
+        if self.world.tile_board_armed {
+            return if self.world.tile_board.is_some() {
+                Op49State::Armed
+            } else {
+                Op49State::Done
+            };
+        }
         if self.world.in_cutscene_timeline && self.world.prologue_naming_armed {
             if self.world.name_entry_active() {
                 Op49State::Armed
@@ -548,12 +558,20 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // The shop op's resume ran: drop the arm so a later op-0x49 can open
         // the next merchant. (Name-entry clears via its own pending flags.)
         self.world.field_shop_armed = false;
+        // A finished tile-board segment resumes the same way.
+        self.world.tile_board_armed = false;
     }
     fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
         // Recognise + open an inline gold shop (sub-0); non-shop op-0x49 sub-0
         // payloads (inn / save prompts) fail the priced-record validation.
         if sub_op == 0 {
             self.world.try_arm_field_shop(instr);
+        }
+        // Sub-5 carries the inline 13-byte tile-board header: install the
+        // board (retail arms `_DAT_8007b450` at this window and the board
+        // consumer takes over the frame).
+        if sub_op == 5 {
+            self.world.try_install_tile_board(instr);
         }
     }
     fn op49_invoke_setup(&mut self) {
@@ -570,6 +588,28 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
     fn screen_mode(&self) -> u32 {
         self.world.screen_mode
+    }
+
+    // Op-0x43 screen-effect widget sub-ops (the PROT-0900 mask / sprite /
+    // panel / letterbox family, exercised by the eight ending scenes).
+    // Each routes to the world's widget host; the Field / Cutscene tick
+    // advances the widgets and publishes `World::screen_fx_frame`.
+    // REF: FUN_801F8004 / FUN_801F8D4C / FUN_801F88FC / FUN_801F8E6C /
+    // FUN_801F8F28 (spawn + control APIs)
+    fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
+        self.world.screen_fx.sprite_spawn(payload);
+    }
+    fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
+        self.world.screen_fx.mask_rect(words);
+    }
+    fn op43_widget_letterbox(&mut self, payload: &[u8]) {
+        self.world.screen_fx.letterbox_config(payload);
+    }
+    fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
+        self.world.screen_fx.panel_spawn(payload);
+    }
+    fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
+        self.world.screen_fx.panel_move(words);
     }
 
     // Shared system flag bank - same fourth-flag-bank at `_DAT_80085758`
@@ -591,12 +631,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.pending_scene_transition = Some(map_id);
     }
 
-    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8) {
+    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         // Named scene-change (op 0x3F): the destination name is inline, so no
         // map-id resolver is needed. Recorded for SceneHost::tick to drain,
         // the same deferral as the map-id path above (the bytecode swap can't
-        // run while we're stepping through it).
-        self.world.pending_named_scene_transition = Some((scene.to_string(), entry_x, entry_z));
+        // run while we're stepping through it). `dir` is the arrival-facing
+        // compass selector the seat applies on the far side.
+        self.world.pending_named_scene_transition =
+            Some((scene.to_string(), entry_x, entry_z, dir));
     }
 
     fn is_scripted_encounter_armed(&self) -> bool {

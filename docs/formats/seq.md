@@ -82,8 +82,8 @@ music banks) and is acted on by the sequencer; channel/poly aftertouch
 
 A VLQ is a big-endian sequence of 7-bit groups; the high bit of each
 byte is `1` for "more bytes follow", `0` for the final group. Maximum
-4 bytes per delta. SEQ uses VLQ both for delta-times and meta-event
-length fields. See `legaia_seq::read_vlq`.
+4 bytes per delta. SEQ uses VLQ for delta-times only - meta events
+carry **no** length field (see below). See `legaia_seq::read_vlq`.
 
 ### Meta events
 

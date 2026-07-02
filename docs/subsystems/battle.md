@@ -14,6 +14,7 @@ clean-room engine systems. Use the contents below to jump to a section.
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
 - [Battle context struct](#battle-context-struct)
+- [Stage seats (`FUN_800513F0` placement tables)](#stage-seats-fun_800513f0-placement-tables)
 - [Range / line-of-sight (`FUN_8004E2F0`)](#range--line-of-sight-fun_8004e2f0)
 - [Monster init (`FUN_80054CB0`)](#monster-init-fun_80054cb0) - [record layout](#monster-record-source-layout) · [archive (PROT 867)](#monster-archive-prot-entry-867) · [mesh](#monster-mesh-record-0x04) · [native bridge](#native-renderer-bridge-clean-room-engine) · [AI](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
 - [Stat aggregator (`FUN_80042558`)](#stat-aggregator-fun_80042558)
@@ -64,7 +65,7 @@ loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
 - **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
 - **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.DAT` (extraction PROT 893 / 894; format + verification in [`formats/summon-readef.md`](../formats/summon-readef.md)).
 
-A paired stage pack loads at PROT `0x367`/`0x36d` (871/877) in states 2/4/6.
+A paired stage pack loads at raw TOC `0x367`/`0x36d` (= extraction entries 0869/0875) in states 2/4/6.
 The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 set so character meshes have the right CLUT bindings.
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
@@ -308,8 +309,8 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x07` | u8 | Per-actor state byte. Drives `FUN_801E295C`. |
 | `+0x13` | u8 | Active-character index (read from `_DAT_8007BD24+0x13`). |
 | `+0x1F` | u8 | Hit-radius / size byte. Used by `FUN_8004E2F0` (range). |
-| `+0x34` / `+0x38` | i16 | Current world X / Z. |
-| `+0x3C` / `+0x40` | i16 | Previous-frame X / Z (for delta tracking). |
+| `+0x34` / `+0x38` | i16 | Current world X / Z (Y in the adjacent halfwords `+0x36`/`+0x3A`; `0` on the flat stage). |
+| `+0x3C` / `+0x40` | i16 | Stamped with the authored stage seat at setup (`FUN_800513F0` copies the seat here, then into `+0x34`/`+0x38`); read as the b-actor position by `FUN_8004E2F0`. Live captures show it diverging from the seat mid-battle, so its steady-state role (approach target / delta anchor) is not fully pinned. |
 | `+0x4A` | u8 | Magic-slot count. |
 | `+0x4C` | int* | Spell-entry pointer array (each entry: `[u8 spell/action id, …, u8 AGL (action) cost @ +0x74]`). |
 | `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max - three-way mirror layout. |
@@ -317,6 +318,33 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x1DF` | u8 | Monster size byte (read from a monster record at `+0x1F` and stored here at init). |
 | `+0x1EF..+0x1F3` | u8 | Per-element spell-slot index (from the spell ids `2,3,4,5,0xB`). |
 | `+0x230` | u32 | Attack-effect / animation data pointer (set from record `+0x04`; **not** XP/drop). |
+
+## Stage seats (`FUN_800513F0` placement tables)
+
+Every combatant's battle position is stamped at setup from two static `SCUS_942.54` tables of 8-byte seat entries `[i16 x, i16 y, i16 z, i16 pad]` (`y` is `0` on every row - the stage is flat). `FUN_800513F0` passes the entry to the spawn-node builder `FUN_80024c88` (which copies it verbatim to node `+0x14/+0x16/+0x18`), then writes node `+0x14`/`+0x18` to the actor seat pair `+0x3C`/`+0x40` and copies that into the live position `+0x34`/`+0x38`. The party faces `+Z`, the monsters `-Z`, and the battle camera orbits the origin between the rows.
+
+**Party table `0x800775C8`** - row = `ctx+0` (the party count), stride `0x18` (3 slots x 8 bytes):
+
+| Count | Slot seats (x, z) |
+|---|---|
+| 1 | `(0, -800)` |
+| 2 | `(300, -800)` `(-300, -800)` |
+| 3 | `(0, -825)` `(600, -775)` `(-600, -775)` |
+
+**Monster table `0x80077608`** - row = `ctx+1` (the monster count) `+ 4` for the alternate family, stride `0x20` (4 slots x 8 bytes; the placement loop seats at most 4 monsters):
+
+| Count | Normal family (x, z) | Alternate family |
+|---|---|---|
+| 1 | `(0, 800)` | same |
+| 2 | `(-300, 800)` `(300, 800)` | same |
+| 3 | `(-600, 825)` `(0, 750)` `(600, 825)` | `(0, 900)` `(-600, 700)` `(600, 700)` |
+| 4 | `(-900, 900)` `(-300, 800)` `(300, 800)` `(900, 900)` | `(0, 1000)` `(-600, 800)` `(600, 800)` `(0, 600)` |
+
+The alternate family is selected by `DAT_8007BD60` bit 7 - the same bit the setup stores to `ctx+0x287`, the no-escape flag the run/escape roll honours - or by formation ids `0x3D..0x3F` in modes `0xC`/`0x15` (the scripted / pincer fights).
+
+Save-state validation: seven battle library captures (the four camera-orbit angle saves, the three Tetsu tutorial anchors) read the count-1 seats byte-exactly at actor `+0x34`/`+0x38` (`(0, -800)` vs `(0, +800)`); the full-party capture reads the count-3 rows under a uniform `+13` Z scene offset (mid-battle drift on both sides equally, leaving the authored values unambiguous).
+
+Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle_seats.rs) (consumed by `World::enter_battle`).
 
 ## Range / line-of-sight (`FUN_8004E2F0`)
 
@@ -983,9 +1011,10 @@ victory-path applier; the "Seru struct +0x74" hypothesis stays falsified (those
 `+0x74` reads are a `0x80808080` battle-state flag the SCUS handler
 `FUN_800480D8` writes, not a stat grant).
 `legaia_asset::level_up_tables::growth_tables_from_scus` parses the curves +
-param block; turning their bytes into a per-character
-`StatGrowthCurve::PerLevel` vector is the remaining step (it needs a pre/post
-level-up capture to validate the byte->gain math before wiring).
+param block, and the engine applies them: `LevelUpTracker::with_growth_tables`
+installs per-character `StatGrowthCurve::PerLevel` (all 8 stats) at boot,
+byte-validated against the captured Noa L2->L3 single-level deltas
+(see [`level-up.md`](level-up.md#stat-gains)).
 
 Engines populate one captured observation at a time via:
 
@@ -1094,7 +1123,7 @@ The battle tick has two modes.
 All six commands - **Attack**, **Arts**, **Magic**, **Item**, **Spirit**, **Run** - are wired into the live loop. Attack opens a target cursor and commits a physical strike through the action SM. Arts / Magic / Item resolve to `Resolution::OpenArtsMenu` / `OpenSpellMenu` / `OpenItemMenu` - the command session can't run those pickers itself (they need the caster's saved chains / learned spells / live MP / inventory + party stats), so it hands off to a host-owned submenu. Spirit and Run resolve immediately (no target):
 
 - **Spirit** charges the caster's AP gauge (`ApGauge::charge_spirit`, the retail Square-press +5) and raises a per-slot guard stance (`World::battle_guarding`, the engine model of the retail pending-action byte `+0x1DE == 4`) that halves incoming damage through the finisher's guard stage until the actor's next turn starts; the turn is consumed (SM parked at `EndOfAction`).
-- **Run** rolls the escape and arms the ported run band (category 5 → `RunBegin`/`RunWait`/`RunEscape`): success tears the battle down `Escaped` (no loot, no game over, downed members floored alive at 1 HP), failure consumes the turn. The retail escape-probability writer is unpinned - the 50% roll is a documented reconstruction (see [battle-action.md](battle-action.md#spirit--run-in-the-live-command-menu)).
+- **Run** rolls the escape and arms the ported run band (category 5 → `RunBegin`/`RunWait`/`RunEscape`): success tears the battle down `Escaped` (no loot, no game over, downed members floored alive at 1 HP), failure consumes the turn. The roll is the decoded `FUN_801E791C` formula - party `(SPD*3)>>1 + missingHP>>4` vs enemy `SPD + missingHP>>5`, two rand draws, Chicken Heart / Chicken King passives honoured (`battle_formulas::escape_roll`; see [battle-action.md](battle-action.md#spirit--run-in-the-live-command-menu)).
 
 The submenu hand-offs:
 

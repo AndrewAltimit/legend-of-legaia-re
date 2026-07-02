@@ -35,7 +35,7 @@
 </tr>
 <tr>
 <td>On-disc source</td>
-<td>PROT entry <code>0x05C4</code></td>
+<td>PROT entry <code>0x05C4</code> (historical label - see the note below)</td>
 </tr>
 <tr>
 <td>Miracle Art trigger entries (RAM <code>801F</code> segment)</td>
@@ -48,6 +48,7 @@
 </tbody>
 </table>
   <p>Confidence: <strong>Inferred</strong> - citation chain comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.</p>
+  <p><strong>Where the records actually live.</strong> The "PROT <code>0x05C4</code>" label is historical and cannot be a PROT index (<code>0x05C4</code> = 1476; the TOC has 1234 entries) - it is kept here only because the schema and the <code>legaia_art::parse_record</code> parser were named for it. The <strong>runtime matcher's</strong> combo records (the <code>1=L,2=R,3=D,4=U</code> run at record <code>+0</code>, fixed <code>0xD0</code> stride) load from each character's player-data file <code>record0</code> - canonical extraction entries Vahn <code>0863</code> / Noa <code>0864</code> / Gala <code>0865</code> (the historical "Vahn <code>0861</code>" attribution matched the same bytes through 0861's over-read window) - and byte-match the live RAM tables above. The <em>display</em> copy of each combo is the SCUS arts-name table (<code>DAT_80075EC4</code>) <code>+8</code> glyph string.</p>
 </section>
 
 <section class="doc-section" id="action-constants">

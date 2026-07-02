@@ -2,7 +2,7 @@
 //!
 //! A port of the confirmed numeric kernels of the slot-machine overlay (PROT
 //! 0975, `data\OTHER4`) - the reel-strip permutation builder, the slot LCG,
-//! the balance-bracketed feature roll, the reel-landing search, and the
+//! the net-take-bracketed feature roll, the reel-landing search, and the
 //! payline / payout / bonus-round evaluation - composed into an interactive
 //! session. It consumes spin / stop input and produces reel outcomes and a
 //! running coin balance the host commits back to the casino coin bank
@@ -15,9 +15,23 @@
 //! - the 20-slot reel-strip build: per slot draw RNG mod `0x14`, probe forward
 //!   (`+0xd` / `+1`) to the first unused position, place symbol id `slot/2`
 //!   (`FUN_801cf0d8` case 0, [`build_strip`]);
-//! - the per-spin feature roll's structure: jitter `rand%5`, normal-mode
-//!   target `rand%6 + 2`, and `rand % N == 0` feature-entry rolls with
-//!   balance-bracketed denominators (`FUN_801d258c`, [`feature_roll`]);
+//! - the per-spin feature roll: jitter `rand%5`, normal-mode target
+//!   `rand%6 + 2`, one optional widen roll (`rand%100 + 200` when
+//!   `DAT_801d3790` is set), and `rand % N == 0` feature-entry rolls whose
+//!   denominators are bracketed on the **net-take counter** `DAT_801d3d40` -
+//!   `< 1000` → `700`/`500`, `1001..=1999` → `350`/`250`, `> 2000` →
+//!   `175`/`125`, plus a flat `widen+600` mode-3 roll (`FUN_801d258c`,
+//!   [`feature_roll`]);
+//! - the spin charge: a flat [`SPIN_COST_NORMAL`] = 3 coins (the overlay's
+//!   "insert 3 coins" help text), [`SPIN_COST_FEATURE`] = 1 coin in feature
+//!   modes 4..=6, accruing `+6` / `+1` into the net-take counter;
+//! - the net-take counter itself: `+6`/`+1` per spin, **minus** each
+//!   bonus-round payout, never reset during a session - the machine gets
+//!   *more* generous as its net take rises;
+//! - the entry init (`FUN_801cec94`): balance seeded by assignment from the
+//!   casino coin bank (default [`ENTRY_DEFAULT_BALANCE`] = 70 when the
+//!   battle-return flag `_DAT_8007B8B8` is clear - a dev-launch fallback),
+//!   slot LCG seeded with the literal [`ENTRY_LCG_SEED`];
 //! - the per-reel stop plan: depth `rand%3 + 2` targeting the normal-mode
 //!   symbol in mode 0, depth `(rand&3) + 6` targeting the jackpot symbols
 //!   `9` / `8` in the reach modes 1 / 2 (`FUN_801d2114`, [`stop_plan`]);
@@ -34,15 +48,13 @@
 //!   cash-out (state `100`), not debited per spin.
 //!
 //! What is an **engine-side reconstruction** (marked at each site): the
-//! exact coins-per-line bet constant (the overlay's `"insert 3 coins"` help
-//! string + the state-1 `balance < 3` gate pin the 3-line spin at 3 coins,
-//! so 1 coin/line), the feature-mode → denominator pairing inside the
-//! balance brackets, the spin-up velocity/timer magnitudes (visual pacing,
-//! not pinned), and the BIOS-`rand` feature stream substituted with a second
-//! deterministic [`BiosRand`] LCG so replays stay bit-identical.
+//! spin-up velocity/timer magnitudes (visual pacing, not pinned), and the
+//! BIOS-`rand` feature stream substituted with a second deterministic
+//! [`BiosRand`] LCG so replays stay bit-identical.
 //! Feature modes 3 (hot) and 5 (hold) are documented but folded to the
 //! normal landing plan here - their bonus-strip value targeting is not
-//! modeled (the engine models the normal strip only).
+//! modeled (the engine models the normal strip only; the bonus product
+//! payout uses `symbol + 1` in place of the bonus strip's `value - 0xf`).
 //!
 //! Chain: retail `FUN_801cf0d8` (reel SM) -> `FUN_801d258c` (feature roll) ->
 //! `FUN_801d2114` / `FUN_801d2440` (stop) -> `FUN_801d13e8` (win eval).
@@ -61,12 +73,28 @@ pub const REEL_WRAP: i32 = (STRIP_LEN as i32) << 8;
 /// Balance cap applied in the payout tally path (`9999999`).
 pub const BALANCE_CAP: i32 = 9_999_999;
 /// The state-1 "not enough coins" gate: a spin needs at least 3 coins banked
-/// (`DAT_801d4114 < 3` routes to the state-`0x5a` prompt).
+/// (`DAT_801d4114 < 3` routes to the state-`0x5a` prompt) - applied in every
+/// feature mode, even though a feature spin only costs 1.
 pub const MIN_SPIN_BALANCE: i32 = 3;
-/// Coins bet per active payline. Reconstruction: the overlay's
-/// `"insert 3 coins"` string + the `< 3` gate pin a full 3-line spin at 3
-/// coins; the literal per-line constant is not pinned.
-pub const COINS_PER_LINE: i32 = 1;
+/// Flat coin cost of a normal spin (feature modes 0..=3): `DAT_801d4114 -= 3`
+/// in state `1`. All three paylines always play - there is no bet-line
+/// selection ("insert 3 coins" is the whole bet).
+pub const SPIN_COST_NORMAL: i32 = 3;
+/// Coin cost of a spin during feature modes 4..=6 (`DAT_801d4114 -= 1`).
+pub const SPIN_COST_FEATURE: i32 = 1;
+/// Net-take accrual per normal spin (`DAT_801d3d40 += 6` - twice the coins
+/// charged).
+pub const NET_TAKE_NORMAL_SPIN: i32 = 6;
+/// Net-take accrual per feature-mode spin (`DAT_801d3d40 += 1`).
+pub const NET_TAKE_FEATURE_SPIN: i32 = 1;
+/// Entry-init balance fallback (`FUN_801cec94`): when the battle-return flag
+/// `_DAT_8007B8B8` is clear (the overlay launched outside the casino door
+/// path), the balance defaults to `0x46` = 70 coins instead of the coin-bank
+/// copy.
+pub const ENTRY_DEFAULT_BALANCE: i32 = 70;
+/// The literal seed `FUN_801cec94` writes into the slot LCG (`DAT_801d3c80`)
+/// on every machine entry.
+pub const ENTRY_LCG_SEED: u32 = 0x6C0A_2AF0;
 /// Free spins granted when the jackpot symbol `9` matches (`FUN_801d13e8`).
 pub const BONUS_SPINS_JACKPOT: i32 = 3;
 /// Free spins granted when the bonus symbol `8` matches.
@@ -135,59 +163,60 @@ pub struct SpinRoll {
     pub entered_mode: Option<u8>,
 }
 
-/// The balance-bracketed feature-entry denominators (`FUN_801d258c`).
+/// The net-take-bracketed feature-entry denominators (`FUN_801d258c`).
 ///
-/// Confirmed: the roll structure (`rand % N == 0`), the `< 1000` /
-/// `1001..1999` / `> 2000` balance brackets, the denominator constants
-/// (`700`/`500`, `0x15e`/`0xfa`, `0xaf`/`0x7d`), the `+600` mode-3 roll, and
-/// the tuning direction ("tighter odds for a fat balance, looser for a thin
-/// one" - the house makes the player feel lucky when poor). Reconstruction:
-/// which pair sits in which bracket follows that stated direction (thin →
-/// the small pair), and the mode-3 denominator adds 600 to the bracket's
-/// first constant.
-fn feature_denominators(balance: i32) -> (u32, u32) {
-    if balance > 2000 {
-        (700, 500)
-    } else if balance > 1000 {
-        (0x15e, 0xfa) // 350, 250
+/// Bracketed on the net-take counter `DAT_801d3d40`, and the direction is
+/// the opposite of a house-edge squeeze: a *low* net take gets the large
+/// denominators (features rare), a *high* one gets the small (features
+/// roughly 4x more likely once 2000+ has accrued). The machine pays back
+/// what it has taken. The exact values `1000` and `2000` fall in no bracket
+/// (`< 1000` / `1001..=1999` / `> 2000` in the dump) - those spins roll only
+/// the mode-3 denominator.
+fn feature_denominators(net_take: i32) -> Option<(u32, u32)> {
+    if net_take < 1000 {
+        Some((700, 500))
+    } else if (1001..=1999).contains(&net_take) {
+        Some((0x15e, 0xfa)) // 350, 250
+    } else if net_take > 2000 {
+        Some((0xaf, 0x7d)) // 175, 125
     } else {
-        (0xaf, 0x7d) // 175, 125
+        None
     }
 }
 
 /// Run the per-spin feature roll (`FUN_801d258c`): seed the landing jitter
-/// (`rand%5`) and normal-mode target (`rand%6 + 2`), then - only when no
-/// feature is active (`feature_mode == 0`) - roll the balance-bracketed
-/// `rand % N == 0` probabilities to enter a feature mode. When
-/// `richer_odds` (`DAT_801d3790`) is set every denominator is widened by
-/// `rand%100 + 200` (features get rarer).
-// PORT: FUN_801d258c (per-spin feature roll, balance-bracketed odds)
+/// (`rand%5`) and normal-mode target (`rand%6 + 2`), roll the widen amount
+/// once (`rand%100 + 200`) when `richer_odds` (`DAT_801d3790`) is set, then -
+/// only when no feature is active (`feature_mode == 0`) - roll the net-take
+/// bracket's two `rand % (widen + N) == 0` probabilities (mode 1 then mode
+/// 2) and finally the flat `rand % (widen + 600) == 0` mode-3 roll. Draw
+/// order matches the dump exactly.
+// PORT: FUN_801d258c (per-spin feature roll, net-take-bracketed odds)
 pub fn feature_roll(
     rand: &mut BiosRand,
-    balance: i32,
+    net_take: i32,
     feature_mode: u8,
     richer_odds: bool,
 ) -> SpinRoll {
     let jitter = (rand.next_u15() % 5) as i32;
     let normal_target = (rand.next_u15() % 6 + 2) as u8;
+    let widen: u32 = if richer_odds {
+        (rand.next_u15() % 100 + 200) as u32
+    } else {
+        0
+    };
     let mut entered_mode = None;
     if feature_mode == 0 {
-        let (d1, d2) = feature_denominators(balance);
-        let widen = |rand: &mut BiosRand, d: u32, richer: bool| -> u32 {
-            if richer {
-                d + (rand.next_u15() % 100 + 200) as u32
-            } else {
-                d
+        if let Some((d1, d2)) = feature_denominators(net_take) {
+            if (rand.next_u15() as u32).is_multiple_of(widen + d1) {
+                entered_mode = Some(1); // reach / jackpot tease (target symbol 9)
             }
-        };
-        let d1 = widen(rand, d1, richer_odds);
-        let d2 = widen(rand, d2, richer_odds);
-        let d3 = widen(rand, d1 + 600, richer_odds);
-        if (rand.next_u15() as u32).is_multiple_of(d1) {
-            entered_mode = Some(1); // reach / jackpot tease (target symbol 9)
-        } else if (rand.next_u15() as u32).is_multiple_of(d2) {
-            entered_mode = Some(2); // reach / bonus tease (target symbol 8)
-        } else if (rand.next_u15() as u32).is_multiple_of(d3) {
+            // The mode-2 roll draws even when mode 1 already hit.
+            if (rand.next_u15() as u32).is_multiple_of(widen + d2) && entered_mode.is_none() {
+                entered_mode = Some(2); // reach / bonus tease (target symbol 8)
+            }
+        }
+        if (rand.next_u15() as u32).is_multiple_of(widen + 600) && entered_mode.is_none() {
             entered_mode = Some(3); // hot mode
         }
     }
@@ -308,16 +337,16 @@ pub struct SlotMachine {
     feature_mode: u8,
     /// Bonus free-spin / multiplier counter (`DAT_801d3cb0`).
     bonus_spins: i32,
-    /// Bonus-round running total (`DAT_801d3d40`).
-    round_total: i32,
+    /// Net-take heat counter (`DAT_801d3d40`): `+6` per normal spin, `+1` per
+    /// feature spin, minus each bonus-round payout. The feature-odds bracket
+    /// input; never reset during a session.
+    net_take: i32,
     /// Normal-mode target symbol for this spin (`DAT_801d3cb8`).
     normal_target: u8,
     /// Per-spin landing jitter (`DAT_801d4134`). Carried for fidelity of the
     /// roll stream; the engine's landing keeps rows exact (the retail `*0x10`
     /// nudge is sub-row presentation).
     jitter: i32,
-    /// Active paylines (`DAT_801d4110 % 3` + 1 → 1..=3 lines).
-    bet_lines: u8,
     /// Overlay-local playing balance (`DAT_801d4114`).
     balance: i32,
     /// Richer-odds flag (`DAT_801d3790`).
@@ -358,10 +387,9 @@ impl SlotMachine {
             phase: SlotPhase::Idle,
             feature_mode: 0,
             bonus_spins: 0,
-            round_total: 0,
+            net_take: 0,
             normal_target: 2,
             jitter: 0,
-            bet_lines: 3,
             balance: balance.clamp(0, BALANCE_CAP),
             richer_odds: false,
             last_result: None,
@@ -388,14 +416,10 @@ impl SlotMachine {
         self.bonus_spins
     }
 
-    /// Bonus-round running total (`DAT_801d3d40`).
-    pub fn round_total(&self) -> i32 {
-        self.round_total
-    }
-
-    /// Active payline count (1..=3).
-    pub fn bet_lines(&self) -> u8 {
-        self.bet_lines
+    /// Net-take heat counter (`DAT_801d3d40`; the feature-odds bracket
+    /// input).
+    pub fn net_take(&self) -> i32 {
+        self.net_take
     }
 
     /// The display strips (win eval + render source).
@@ -430,25 +454,23 @@ impl SlotMachine {
         self.phase == SlotPhase::Stopping
     }
 
-    /// Cycle the payline count 1 → 2 → 3 → 1 (the bet-line selector
-    /// `DAT_801d4110 % 3`). Only meaningful while idle.
-    pub fn cycle_bet_lines(&mut self) {
-        if self.phase == SlotPhase::Idle {
-            self.bet_lines = self.bet_lines % 3 + 1;
+    /// The coin cost of the next spin: flat [`SPIN_COST_NORMAL`] in modes
+    /// 0..=3, [`SPIN_COST_FEATURE`] in feature modes 4..=6 (there is no
+    /// bet-line selection - all three paylines always play).
+    pub fn spin_cost(&self) -> i32 {
+        if (4..=6).contains(&self.feature_mode) {
+            SPIN_COST_FEATURE
+        } else {
+            SPIN_COST_NORMAL
         }
     }
 
-    /// The coin cost of a spin at the current line count.
-    pub fn spin_cost(&self) -> i32 {
-        COINS_PER_LINE * self.bet_lines as i32
-    }
-
-    /// `true` when a spin is accepted: idle and either the balance clears the
-    /// state-1 "not enough coins" gate or a bonus free spin is owed.
+    /// `true` when a spin is accepted: idle and the balance clears the
+    /// state-1 "not enough coins" gate (applied in every mode - retail
+    /// checks `< 3` before looking at the feature mode, so even a 1-coin
+    /// feature spin needs 3 banked).
     pub fn can_spin(&self) -> bool {
-        self.phase == SlotPhase::Idle
-            && (self.balance >= MIN_SPIN_BALANCE
-                || (self.feature_mode == 6 && self.bonus_spins > 0))
+        self.phase == SlotPhase::Idle && self.balance >= MIN_SPIN_BALANCE
     }
 
     /// This spin's landing jitter (`DAT_801d4134`; sub-row presentation
@@ -457,22 +479,27 @@ impl SlotMachine {
         self.jitter
     }
 
-    /// Charge the bet and start a spin (state `1` → `2`): run the per-spin
-    /// feature roll, ramp the reels, and arm the spin timer. A bonus-round
-    /// free spin (`feature_mode == 6`) charges nothing. Returns `false`
-    /// (no-op) when not idle or the balance can't cover the bet.
+    /// Charge the bet and start a spin (state `1` → `2`): subtract the flat
+    /// spin cost (3 coins, or 1 during feature modes 4..=6 - a bonus "free
+    /// spin" still costs 1), accrue the net take (`+6` / `+1`), run the
+    /// per-spin feature roll, ramp the reels, and arm the spin timer.
+    /// Returns `false` (no-op) when not idle or the balance is under the
+    /// 3-coin gate.
     // PORT: FUN_801cf0d8 states 1-2 (bet charge + spin-up)
     pub fn spin(&mut self) -> bool {
         if !self.can_spin() {
             return false;
         }
-        let bonus_spin = self.feature_mode == 6 && self.bonus_spins > 0;
-        if !bonus_spin {
-            self.balance -= self.spin_cost();
-        }
+        let feature_spin = (4..=6).contains(&self.feature_mode);
+        self.balance = (self.balance - self.spin_cost()).max(0);
+        self.net_take += if feature_spin {
+            NET_TAKE_FEATURE_SPIN
+        } else {
+            NET_TAKE_NORMAL_SPIN
+        };
         let roll = feature_roll(
             &mut self.rand,
-            self.balance,
+            self.net_take,
             self.feature_mode,
             self.richer_odds,
         );
@@ -551,41 +578,53 @@ impl SlotMachine {
         (0..REEL_COUNT).any(|r| self.stopped[r].is_none() && self.stop_reel(r))
     }
 
-    /// Evaluate the stopped spin (`FUN_801d13e8`): check the active paylines
-    /// all-three-equal on the display strips, keep the highest-value line,
-    /// pay `payout_table[symbol]` on a normal win or the product of the
-    /// matched `(value - 0xf)` factors during a bonus round, and trigger the
-    /// bonus round on the jackpot symbols.
+    /// Evaluate the stopped spin (`FUN_801d13e8`): outside a bonus round,
+    /// check all three paylines all-three-equal on the display strips, keep
+    /// the highest-value line, pay `payout_table[symbol]`, and trigger the
+    /// bonus round on the jackpot symbols. During a bonus round every spin
+    /// pays the *product* of the three payline factors unconditionally (no
+    /// equality check - the mode-6 stop plan drives the line together) and
+    /// the payout is subtracted from the net-take counter.
     // PORT: FUN_801d13e8 (win evaluation + payout lookup + bonus trigger)
     fn evaluate_spin(&mut self) -> SpinResult {
         let rows: [usize; REEL_COUNT] = core::array::from_fn(|r| self.stopped[r].unwrap_or(0));
         let bonus_spin = self.feature_mode == 6 && self.bonus_spins > 0;
+        if bonus_spin {
+            // Bonus round: the product of the three payline `(value - 0xf)`
+            // factors, no equality gate. The bonus strip carries values
+            // `0x10..=0x19`, i.e. symbol id + 0x10, so each factor is
+            // `symbol + 1` (1..=10).
+            let payout = (0..REEL_COUNT)
+                .map(|r| self.strips[r][rows[r]] as i32 + 1)
+                .product::<i32>();
+            let all_equal =
+                (1..REEL_COUNT).all(|r| self.strips[r][rows[r]] == self.strips[0][rows[0]]);
+            self.net_take -= payout;
+            self.bonus_spins -= 1;
+            if self.bonus_spins <= 0 {
+                self.feature_mode = 0;
+            }
+            return SpinResult {
+                line: Some(0),
+                symbol: all_equal.then(|| self.strips[0][rows[0]]),
+                payout,
+                bonus_triggered: false,
+                bonus_spin: true,
+            };
+        }
         // Payline row offsets: 0 = middle (the payline row itself), 1 = top
-        // (-1), 2 = bottom (+1) - the ±1 row reads in the dump. The bet-line
-        // count activates them in that order.
+        // (-1), 2 = bottom (+1) - the ±1 row reads in the dump. All three
+        // lines always play.
         const LINE_OFFSETS: [isize; 3] = [0, -1, 1];
         let mut best: Option<(usize, u8, i32)> = None;
-        for (line, &off) in LINE_OFFSETS
-            .iter()
-            .enumerate()
-            .take(self.bet_lines as usize)
-        {
+        for (line, &off) in LINE_OFFSETS.iter().enumerate() {
             let sym = |r: usize| {
                 let row = (rows[r] as isize + off).rem_euclid(STRIP_LEN as isize) as usize;
                 self.strips[r][row]
             };
             let (a, b, c) = (sym(0), sym(1), sym(2));
             if a == b && b == c {
-                let value = if bonus_spin {
-                    // Bonus round: the product of the three matched
-                    // `(value - 0xf)` factors. The bonus strip carries values
-                    // `0x10..=0x19`, i.e. symbol id + 0x10, so each factor is
-                    // `symbol + 1` (1..=10).
-                    let f = a as i32 + 1;
-                    f * f * f
-                } else {
-                    self.payouts.payout(a).unwrap_or(0) as i32
-                };
+                let value = self.payouts.payout(a).unwrap_or(0) as i32;
                 if best.map(|(_, _, v)| value > v).unwrap_or(true) {
                     best = Some((line, a, value));
                 }
@@ -598,16 +637,7 @@ impl SlotMachine {
             bonus_triggered: false,
             bonus_spin,
         };
-        if bonus_spin {
-            // A free spin always burns the counter; wins bank into the round
-            // total. Feature ends when the counter runs dry.
-            self.round_total = self.round_total.saturating_add(result.payout);
-            self.bonus_spins -= 1;
-            if self.bonus_spins <= 0 {
-                self.feature_mode = 0;
-                self.round_total = 0;
-            }
-        } else if let Some((_, sym, _)) = best {
+        if let Some((_, sym, _)) = best {
             if legaia_asset::slot_payout::BONUS_SYMBOL_IDS.contains(&sym) {
                 // Jackpot symbols kick off the bonus round: 3 free spins for
                 // id 9, 1 for id 8.
@@ -738,9 +768,9 @@ mod tests {
     fn spin_charges_the_bet_and_sequences_phases() {
         let mut m = SlotMachine::new(payouts(), 42, 50);
         assert_eq!(m.phase(), SlotPhase::Idle);
-        assert_eq!(m.bet_lines(), 3);
         assert!(m.spin());
-        assert_eq!(m.balance(), 50 - 3);
+        assert_eq!(m.balance(), 50 - SPIN_COST_NORMAL);
+        assert_eq!(m.net_take(), NET_TAKE_NORMAL_SPIN);
         assert_eq!(m.phase(), SlotPhase::Spinning);
         // Reels advance while spinning; timer runs down into Stopping.
         for _ in 0..SPIN_UP_FRAMES {
@@ -812,10 +842,16 @@ mod tests {
         assert_eq!(m.feature_mode(), 6);
         assert_eq!(m.bonus_spins(), BONUS_SPINS_JACKPOT);
         m.collect();
-        // The bonus free spin charges nothing and pays the (sym+1)^3 product.
+        // A bonus "free" spin still costs 1 coin (the mode-4..6 charge) and
+        // pays the (sym+1)^3 product, which is subtracted from the net take.
         let before = m.balance();
+        let take_before = m.net_take();
         assert!(m.spin());
-        assert_eq!(m.balance(), before, "free spin charges no bet");
+        assert_eq!(
+            m.balance(),
+            before - SPIN_COST_FEATURE,
+            "feature spin costs 1 coin"
+        );
         for _ in 0..SPIN_UP_FRAMES {
             m.tick();
         }
@@ -826,6 +862,11 @@ mod tests {
         assert!(r.bonus_spin);
         assert_eq!(r.payout, 10 * 10 * 10, "(9 + 1)^3 product payout");
         assert_eq!(m.bonus_spins(), BONUS_SPINS_JACKPOT - 1);
+        assert_eq!(
+            m.net_take(),
+            take_before + NET_TAKE_FEATURE_SPIN - r.payout,
+            "bonus payout is subtracted from the net take"
+        );
     }
 
     #[test]
@@ -849,18 +890,10 @@ mod tests {
     }
 
     #[test]
-    fn bet_line_selector_cycles_and_gates_paylines() {
+    fn all_three_paylines_always_play() {
+        // There is no bet-line selection: a top-row-only match pays.
         let mut m = SlotMachine::new(payouts(), 9, 100);
-        assert_eq!(m.bet_lines(), 3);
-        m.cycle_bet_lines();
-        assert_eq!(m.bet_lines(), 1);
-        assert_eq!(m.spin_cost(), COINS_PER_LINE);
-        m.cycle_bet_lines();
-        assert_eq!(m.bet_lines(), 2);
-        // With one line bet, a top-row-only match pays nothing.
-        m.cycle_bet_lines();
-        m.cycle_bet_lines();
-        assert_eq!(m.bet_lines(), 1);
+        assert_eq!(m.spin_cost(), SPIN_COST_NORMAL);
         assert!(m.spin());
         for _ in 0..SPIN_UP_FRAMES {
             m.tick();
@@ -879,6 +912,37 @@ mod tests {
             m.stopped[reel] = Some(0);
         }
         let r = m.evaluate_spin();
-        assert_eq!(r.payout, 0, "top-line match ignored at 1 bet line");
+        assert_eq!(r.symbol, Some(6), "top-line match pays");
+        assert_eq!(r.payout, (6 + 1) * 2);
+        assert_eq!(r.line, Some(1), "line 1 = the top payline");
+    }
+
+    #[test]
+    fn feature_odds_bracket_on_the_net_take() {
+        // Low net take -> large denominators (rare); high -> small
+        // (frequent). The exact edges 1000 / 2000 fall in no bracket.
+        assert_eq!(feature_denominators(0), Some((700, 500)));
+        assert_eq!(feature_denominators(999), Some((700, 500)));
+        assert_eq!(feature_denominators(1000), None);
+        assert_eq!(feature_denominators(1001), Some((350, 250)));
+        assert_eq!(feature_denominators(1999), Some((350, 250)));
+        assert_eq!(feature_denominators(2000), None);
+        assert_eq!(feature_denominators(2001), Some((175, 125)));
+        // Empirically the high bracket enters features far more often than
+        // the low one over the same stream length.
+        let hits = |take: i32| -> usize {
+            let mut rand = BiosRand::new(0x1234_5678);
+            (0..4000)
+                .filter(|_| {
+                    feature_roll(&mut rand, take, 0, false)
+                        .entered_mode
+                        .is_some()
+                })
+                .count()
+        };
+        assert!(
+            hits(2500) > hits(500) * 2,
+            "high net take is far more generous"
+        );
     }
 }

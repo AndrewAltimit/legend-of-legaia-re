@@ -191,7 +191,7 @@ carried the padding). Validated against the Rim Elm Variety Store's 10 pinned id
 
 Gold is stored at `_DAT_8008459C` in retail RAM and in `World::money` in the
 engine. Inventory is a `HashMap<u8, u8>` (`item_id → count`) in `World::inventory`.
-`SaveFile` / `SaveExt` round-trips both through the `LGSF v1` format.
+`SaveFile` / `SaveExt` round-trips both through the `LGSF v2` format.
 
 ## See also
 

@@ -44,7 +44,7 @@
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/prot → <code>prot-extract</code></div>
-        <div class="layer-desc">1234 entries indexed by a 16-byte TOC walked at boot by <code>FUN_8003E4E8</code>. Names from CDNAME.TXT (block-start <code>#define</code> markers; names inherit forward).</div>
+        <div class="layer-desc">1232 entries indexed by a 16-byte TOC walked at boot. Names from CDNAME.TXT (block-start <code>#define</code> markers; names inherit forward).</div>
       </div>
     </a>
 
@@ -82,7 +82,7 @@
       </div>
       <div class="layer-body">
         <div class="layer-crate">engine-core / engine-render / engine-audio / engine-vm</div>
-        <div class="layer-desc">Clean-room Rust port. Phase 1 (asset viewer) ships. Phase 2 (runtime) wires the script VMs and asset loader chain. Phase 3 (gameplay) assembles field/battle/menus.</div>
+        <div class="layer-desc">Clean-room Rust port. The asset viewer, the runtime (script VMs + asset loader chain), and the gameplay layer (field, battle, and menus in <code>play-window</code>) are all in place; native binary + WASM build.</div>
       </div>
     </a>
   </div>
@@ -93,64 +93,59 @@
   <p>Legaia's runtime is driven by five independent VMs that talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine - different shape, same architectural role. Click each card to read the dedicated subsystem page.</p>
 
   <div class="vm-grid">
-    <a class="vm-card" href="subsystems/actor-vm.html">
+    <a class="vm-card" href="subsystems/actor-vm.html" title="Driver: FUN_801D6628 - details on the actor-VM subsystem page">
       <div class="vm-card-num">VM 1</div>
       <div class="vm-card-title">Actor / sprite VM</div>
       <dl>
-        <dt>Driver</dt>      <dd><code>FUN_801D6628</code></dd>
         <dt>Where</dt>       <dd>Title-screen overlay (0971)</dd>
         <dt>Opcodes</dt>     <dd>13</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
-        <dt>Status</dt>      <dd class="status-done">Fully ported</dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
       </dl>
     </a>
-    <a class="vm-card" href="subsystems/move-vm.html">
+    <a class="vm-card" href="subsystems/move-vm.html" title="Driver: FUN_80023070 - details on the move-VM subsystem page">
       <div class="vm-card-num">VM 2</div>
       <div class="vm-card-title">Move-table VM</div>
       <dl>
-        <dt>Driver</dt>      <dd><code>FUN_80023070</code></dd>
         <dt>Where</dt>       <dd>SCUS_942.54 + town overlay</dd>
         <dt>Opcodes</dt>     <dd>71 + 61 sub-ops</dd>
         <dt>Operands</dt>    <dd>u16 stream</dd>
-        <dt>Status</dt>      <dd class="status-done">Fully ported</dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
       </dl>
     </a>
-    <a class="vm-card" href="subsystems/motion-vm.html">
+    <a class="vm-card" href="subsystems/motion-vm.html" title="Driver: FUN_8003774C - details on the motion-VM subsystem page">
       <div class="vm-card-num">VM 3</div>
       <div class="vm-card-title">Motion VM</div>
       <dl>
-        <dt>Driver</dt>      <dd><code>FUN_8003774C</code></dd>
         <dt>Where</dt>       <dd>SCUS_942.54</dd>
         <dt>Opcodes</dt>     <dd>6</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
-        <dt>Status</dt>      <dd class="status-partial">Partially ported (4/6)</dd>
+        <dt>Status</dt>      <dd><span class="tag tag-partial">partial</span></dd>
       </dl>
     </a>
-    <a class="vm-card" href="subsystems/script-vm.html">
+    <a class="vm-card" href="subsystems/script-vm.html" title="Driver: FUN_801DE840 - details on the field/event-VM subsystem page">
       <div class="vm-card-num">VM 4</div>
       <div class="vm-card-title">Field / event script VM</div>
       <dl>
-        <dt>Driver</dt>      <dd><code>FUN_801DE840</code></dd>
         <dt>Where</dt>       <dd>Town overlay (0897)</dd>
         <dt>Opcodes</dt>     <dd>43 + default-route extensions</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
-        <dt>Status</dt>      <dd class="status-done">Fully ported (43/43)</dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
       </dl>
     </a>
-    <a class="vm-card" href="subsystems/effect-vm.html">
+    <a class="vm-card" href="subsystems/effect-vm.html" title="Driver: FUN_801E0088 (per-frame walker) - details on the effect-VM subsystem page">
       <div class="vm-card-num">VM 5</div>
       <div class="vm-card-title">Effect VM</div>
       <dl>
-        <dt>Driver</dt>      <dd><code>FUN_801E0088</code> (per-frame walker)</dd>
         <dt>Where</dt>       <dd>Battle overlay (0898)</dd>
         <dt>Shape</dt>       <dd>per-slot state machine (no central opcode table)</dd>
         <dt>Pool</dt>        <dd>32 master + 128 child slots</dd>
-        <dt>Status</dt>      <dd class="status-partial">Init / spawn / walker scaffold ported; per-state transitions delegate to host</dd>
+        <dt>Status</dt>      <dd><span class="tag tag-partial">partial</span></dd>
       </dl>
     </a>
   </div>
 
-  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to <code>FUN_801D362C</code>, an overlay-resident extension dispatcher (the same 61-sub-opcode dispatcher is loaded by town, world-map, dialog, and cutscene overlays; each supplies its own JT contents). The motion VM (<code>FUN_8003774C</code>) runs independently per actor for NPC pathing and camera-follow paths. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference.</p>
+  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> stages a move record into the actor; the per-frame actor tick steps the move VM; move-VM opcode <code>0x2F</code> escapes to an overlay-resident extension dispatcher (the same 61-sub-opcode dispatcher is loaded by town, world-map, dialog, and cutscene overlays; each supplies its own jump-table contents). The motion VM runs independently per actor for NPC pathing and camera-follow paths. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference. The linked subsystem pages carry the driver function addresses and traces.</p>
 
   <figure class="vm-graph">
     <svg viewBox="0 0 880 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vm-graph-title">

@@ -19,6 +19,7 @@ from ghidra.app.decompiler import DecompInterface, DecompileOptions
 from ghidra.util.task import ConsoleTaskMonitor
 
 TARGETS = [
+    "801cec94",  # FUN_801cec94 overlay init entry: LCG seed + balance from coin bank
     "801de4c8",  # FUN_801de4c8, inc=16, sz=384
     "801de648",  # FUN_801de648, inc=16, sz=80
     "801d63b0",  # FUN_801d63b0, inc=14, sz=1036

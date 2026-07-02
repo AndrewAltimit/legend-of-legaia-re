@@ -20,7 +20,7 @@
   <table>
     <thead><tr><th>VM</th><th>Driver</th><th>Where</th><th>Opcodes</th><th>Operand width</th></tr></thead>
     <tbody>
-      <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>Title-screen overlay (0971)</td><td>13</td><td>byte stream</td></tr>
+      <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>Title-screen overlay (unindexed <code>PROT.DAT</code> gap after entry 0899; PROT 0971 is the debug-menu overlay)</td><td>13</td><td>byte stream</td></tr>
       <tr><td><strong>Move VM</strong></td><td><code>FUN_80023070</code></td><td><code>SCUS_942.54</code></td><td>71 (<code>0x00..0x46</code>) + 61 sub-ops via <code>0x2F</code></td><td>u16 stream</td></tr>
       <tr><td><a href="motion-vm.html">Motion VM</a></td><td><code>FUN_8003774C</code></td><td><code>SCUS_942.54</code></td><td>per-actor pursue / patrol / face-target</td><td>byte stream w/ high-bit target</td></tr>
       <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>Town overlay (0897)</td><td>43 (<code>0x21..0x4F</code> with gaps) + <code>0x5x/6x/7x</code> default-route</td><td>byte stream</td></tr>
@@ -172,14 +172,36 @@ goto v0;                                                  // computed jump</code
 </section>
 
 <section class="doc-section" id="summon-interpolation">
-  <h2>Summon part position interpolation</h2>
-  <p>The per-part world position during a Seru-magic summon is driven by <code>FUN_801F811C</code> (the per-frame summon-part position update in the render overlay). It is a keyframe interpolation that is now <strong>ported in full</strong> as <code>summon::apply_translation_update</code> in <code>engine-core</code> - the completion latch is its terminal case, not the whole behaviour.</p>
+  <h2>Summon part position glide (engine-interpreted tween)</h2>
+  <p>The engine's summon scene-graph driver (<code>engine-core::summon</code>) applies a render-side <strong>translation glide</strong> to each move-VM part-actor: an interpreted per-part tween, <em>not</em> a port of a retail summon function. The retail function once cited here, <code>FUN_801F811C</code>, is the <strong>2D screen-mask (iris) widget handler</strong> - kind 1 of the PROT 0900 <a href="#screen-fx-widgets">screen-effect widget family</a> below; its faithful port is <code>engine-core::screen_fx::MaskWidget</code>. <code>summon::apply_translation_update</code> keeps the tween <em>shape</em> only (documented as interpreted in <code>summon.rs</code>):</p>
   <ul class="bullets">
-    <li>Each frame the part's keyframe time (<code>actor+0x9C</code>) advances toward its duration (<code>actor+0x9E</code>) by the per-frame delta <code>_DAT_1F800393</code>.</li>
-    <li>The world position (<code>+0x14/16/18</code>) interpolates toward the move-VM anim-bank target (<code>anim_3c/3e/40</code>, set by op <code>0x00 ANIM_BANK_SET</code> as <code>v &lt;&lt; 3</code>) each frame via the <code>FUN_801DE4C8</code> mode-1 fixed-point lerp (<code>(target - cur) * t / dur + cur</code>, truncating integer divide) plus the sized-store helper <code>FUN_801DE648</code>.</li>
-    <li>On the frame the keyframe time reaches the duration, the position latches exactly to the target and <code>+0x9E</code> is cleared. The anim banks are summon-local, so the engine adds the cast origin to seat the part in world space.</li>
+    <li>Each frame the part's tween time (<code>actor+0x9C</code>) advances toward its duration (<code>actor+0x9E</code>) by the per-frame delta (<code>_DAT_1F800393</code> in retail terms).</li>
+    <li>The world position (<code>+0x14/16/18</code>) interpolates toward the move-VM anim-bank target (<code>anim_3c/3e/40</code>, set by op <code>0x00 ANIM_BANK_SET</code> as <code>v &lt;&lt; 3</code>) via the <code>FUN_801DE4C8</code> mode-1 fixed-point lerp (<code>(target - cur) * t / dur + cur</code>, truncating integer divide) plus the sized-store helper <code>FUN_801DE648</code>.</li>
+    <li>On the frame the tween time reaches the duration, the position latches exactly to the target and <code>+0x9E</code> is cleared. The anim banks are summon-local, so the engine adds the cast origin to seat the part in world space.</li>
   </ul>
-  <p>A live PCSX-Redux trace of a player Gimard <strong>Burning Attack</strong> cast resolves the part-mesh <strong>orientation</strong>: the summon is drawn by the battle per-actor draw <code>FUN_80048A08</code> &rarr; the per-object rigid-TRS keyframe decoder <code>FUN_8004998C</code> &rarr; cluster-A <code>FUN_80043390</code> (each object's Euler via <code>RotMatrixX/Y/Z</code>), exactly like an enemy monster body. The earlier candidate <code>FUN_801F7088</code> fires <strong>0 times</strong> during the cast (its only static dumps are the world-map top-view tile renderer aliasing the same address). So the move VM stages the part-actors and the battle draw renders + orients them per-object; the position lerp above is the one piece still driven from the summon overlay. See <a href="../reference/open-rev-eng-threads.html">open reverse-engineering threads</a>.</p>
+  <p>The retail <strong>player</strong> summon render is a different path entirely: the summon is drawn as an ordinary battle actor through the per-object rigid-TRS keyframe pipeline (<code>FUN_80048A08</code> &rarr; decoder <code>FUN_8004998C</code> &rarr; the per-prim TMD dispatcher <code>FUN_80043390</code>), exactly like an enemy monster body - see <a href="battle-action.html#summon-overlay">battle action &sect; summon-overlay dispatch</a>.</p>
+  <details class="disclosure">
+    <summary>How the provenance was pinned (live captures)</summary>
+    <div class="disclosure-body">
+      <p>A live PCSX-Redux trace of a player Gimard <em>Burning Attack</em> cast resolved the render path: the battle per-actor draw <code>FUN_80048A08</code> fires 35-64&times;/frame into the TRS-keyframe decoder <code>FUN_8004998C</code>, while the earlier render candidate <code>FUN_801F7088</code> fires 0 times (its only static dumps are the world-map top-view tile renderer aliasing the same address). A full static decode of PROT 0900 at the slot-B link base <code>0x801F69D8</code> then resolved <code>FUN_801F811C</code> as the screen-mask widget handler: its four tweened channels (<code>+0x3c/3e/40/42</code> targets vs <code>+0x14/16/18/1a</code> current) are the left / top / right / bottom edges of a screen rectangle, and its "4 render quads" are the black border bands framing that rectangle - not summon-part positions.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="screen-fx-widgets">
+  <h2>Screen-effect widget family (PROT 0900)</h2>
+  <p>The resident slot-B overlay PROT 0900 (link base <code>0x801F69D8</code>) hosts a four-kind family of 2D screen widgets - the cutscene-style presentation layer. Widgets are actors on the generic effect-actor list (<code>_DAT_8007C34C</code>): SCUS <code>FUN_80020DE0(descriptor, list)</code> allocates one and binds the per-frame handler at <code>actor+0xc</code>. Engine port: <code>engine-core::screen_fx</code>.</p>
+  <table>
+    <thead><tr><th>kind</th><th>handler</th><th>per-frame behaviour</th><th>spawn / control API</th></tr></thead>
+    <tbody>
+      <tr><td>sprite</td><td><code>FUN_801F7A9C</code></td><td>widget-script-driven tweened 2D sprite (GP0 <code>0x64</code> SPRT)</td><td><code>FUN_801F8004(record)</code></td></tr>
+      <tr><td>mask</td><td><code>FUN_801F811C</code></td><td>4-edge rect tween + 4 black border quads (the iris)</td><td><code>FUN_801F8D4C(l,t,r,b,dur)</code></td></tr>
+      <tr><td>panel</td><td><code>FUN_801F849C</code></td><td>five-channel tween + 1-2 textured 15bpp quads</td><td><code>FUN_801F88FC(rec)</code> / <code>FUN_801F8E6C(x,y,scale,dur)</code></td></tr>
+      <tr><td>letterbox</td><td><code>FUN_801F8A34</code></td><td>two solid black bands + two gradient feather strips</td><td><code>FUN_801F8F28(block)</code></td></tr>
+    </tbody>
+  </table>
+  <p>Consumers: field-VM op <code>0x43</code> sub-ops <code>0x10</code>/<code>0x11</code>/<code>0x13</code>/<code>0x14</code>/<code>0x15</code> - on disc, only the eight ending-sequence scenes' cutscene-timeline scripts invoke them; battle casts (including the enemy Fire Tail) leave the family dormant. All tweens share the <code>FUN_801DE4C8</code> interpolator (four easing modes, ported as <code>screen_fx::interp</code>). Full tables in <code>docs/subsystems/move-vm.md</code>.</p>
+  <p>The family is live in the engine: the op-0x43 handlers route to the aggregate widget host (<code>screen_fx::ScreenFxHost</code> on <code>World::screen_fx</code>), one tick per Field/Cutscene frame publishes <code>World::screen_fx_frame</code>, and <code>play-window</code> composites the frame above the 3D scene (solid border/band quads on the colour pipeline; panel + sprite quads VRAM-sampled, depth-layered per the retail OT slots). The letterbox gradient feather strips need the subtractive blend mode and are skipped for now.</p>
 </section>
 
 <section class="doc-section" id="see-also">

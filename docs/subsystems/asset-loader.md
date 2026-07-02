@@ -39,20 +39,20 @@ See [scene-bundles.md](../formats/scene-bundles.md#scene_asset_table---count-pre
 
 The asset chain for any given scene is "load the scene asset table, walk each descriptor, then load each typed sub-asset via the dispatcher." The slot-to-asset mapping itself is **positional + offset-based** and fully pinned (see the walker section below); what remains partial is the runtime *cross-reference stitching* between already-loaded sub-assets (e.g. a placed actor in the MAN naming a TMD-pack index), which the loader resolves from live pointers.
 
-### WARP opcode → scene transition flow (map_id)
+### WARP opcode → minigame door-warp flow (sub_id)
 
-The field VM opcode `0x3E` with `op0 >= 100` triggers a scene warp: `map_id = op0 - 100`. This is stored in `_DAT_8007ba34` and the game mode switches to `0xe` (SCENE_TRANSITION), which calls `FUN_80025980`. Because only 7 destinations exist, a genuine warp's `op0` is always `100..=106`; this range (plus the absence of the `0x80` cross-context prefix) is what the placement classifier uses to reject text-desync phantoms - see [`world-map.md` → classifying the entity kind](world-map.md#classifying-the-entity-kind-from-its-script).
+The field VM opcode `0x3E` with `op0 >= 100` triggers the minigame door-warp: `sub_id = op0 - 100`. This is stored in `_DAT_8007ba34` and the game mode switches to `0x18` (24, OTHER INIT), whose handler is `FUN_80025980`. Because only 7 destinations exist, a genuine warp's `op0` is always `100..=106`; this range (plus the absence of the `0x80` cross-context prefix) is what the placement classifier uses to reject text-desync phantoms - see [`world-map.md` → classifying the entity kind](world-map.md#classifying-the-entity-kind-from-its-script).
 
-`FUN_80025980` loads a **code overlay** at PROT index `map_id + 0x4d` (or `map_id + 0x4f` when `map_id >= 6`). Only 7 distinct warp destinations exist (map_id 0–6), each loading a different scene-type overlay at PROT 0x4D–0x55. These overlays contain scene-specific entry functions at overlay-resident addresses (`0x801CF070`, `0x801CE8A0`, etc.).
+`FUN_80025980` loads a **minigame code overlay** via `FUN_8003EBE4(sub_id + 0x4D)` (`sub_id >= 6` adds 2 first). Only 7 distinct warp destinations exist (sub_id 0–6). The loader values `0x4D..0x55` are raw loader parameters, not extraction PROT indices - they resolve to **extraction entries 0972..0980** (`prot_index = param + 0x37F`; fishing 0972, slot machine 0975, Baka Fighter 0976, dance 0980, plus dev modules). Each overlay's init entry sits at an overlay-resident address (`0x801CF070`, `0x801CE8A0`, etc.). Full chain + sub-id table: [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp).
 
-The **scene name** (stored at `DAT_80084548`) is pre-set before `FUN_80025980` executes. The overlay entry function reads this buffer and passes it to `FUN_8001F7C0` and `FUN_80020118`. `FUN_80025980` does not set the name itself - it backs the active name up into `0x8007BAE8` and only selects the scene-*type* overlay by `map_id`.
+The op carries **no destination scene name**. The **scene name** (stored at `DAT_80084548`) is pre-set before `FUN_80025980` executes (by the `0x3F` named scene-change below); `FUN_80025980` backs the active name up into `0x8007BAE8`, and the return handler `FUN_80026018` restores it on minigame exit, so the door-warp round-trips back to the departure scene. The overlay entry function reads the name buffer and passes it to `FUN_8001F7C0` and `FUN_80020118`.
 
 Key globals:
 - `DAT_80084548` - scene name string (max 8 chars; e.g. `"izumi"`, `"town01"`)  
 - `DAT_8007050C` - mirror of the scene name; the executable's static default is `"town01"` (loaded from the dev file `initmap.txt` by `FUN_8001D424`)  
 - `DAT_80084540` - current scene's PROT base index (short)  
 - `DAT_8007b768` - pending destination PROT index; `0xffff` = none  
-- `DAT_8007ba34` - pending warp map_id (0–6); read by `FUN_80025980`  
+- `DAT_8007ba34` - pending warp sub_id (0–6); read by `FUN_80025980`  
 - `DAT_8007bae8` - WARP handler's backup of the previous scene name (8 bytes)  
 
 The `DefaultMapIdResolver` in `engine-core::scene` uses CDNAME blocks in ascending PROT-index order as a positional approximation. The actual retail warp only supports 7 destinations, not the full CDNAME scene list.

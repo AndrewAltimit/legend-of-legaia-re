@@ -23,7 +23,7 @@
     </a>
     <a class="card" id="prot" href="prot.html">
       <div class="card-title"><span>PROT.DAT TOC</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The project archive. 1234 entries indexed by a 16-byte TOC. <code>start_lba = toc[p+2]</code>, <code>size = toc[p+5] - toc[p+3] + 4</code>. Walked at boot by <code>FUN_8003E4E8</code>.</div>
+      <div class="card-body">The project archive. 1232 entries indexed by a 16-byte TOC. <code>start_lba = toc[p+2]</code>, <code>size = toc[p+5] - toc[p+3] + 4</code>. Walked at boot by <code>FUN_8003E4E8</code>.</div>
     </a>
     <a class="card" id="cdname" href="cdname.html">
       <div class="card-title"><span>CDNAME.TXT name map</span> <span class="tag tag-done">Confirmed</span></div>
@@ -109,9 +109,13 @@
       <div class="card-title"><span>ANM animation</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. Keyframe pose decoder ported in <code>legaia_anm::AnimPlayer</code>.</div>
     </a>
+    <a class="card" id="character-mesh" href="character-mesh.html">
+      <div class="card-title"><span>Player-character meshes</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Field form = PROT 0874 &sect;0 (low-poly pack, parser <code>legaia_asset::character_pack</code>); battle form = assembled per character from the player battle files' equipment-id sections (<code>battle_char_assembly</code>), with PROT 1204 <code>other5</code> as the Baka Fighter / default-equipment sibling pack. Object-local vertices; rest poses come from the ANM / record[0] idle streams.</div>
+    </a>
     <a class="card" id="monster-animation" href="monster-animation.html">
       <div class="card-title"><span>Monster animation</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Enemy battle animation inside the monster archive (PROT 867). Per-action transform-keyframe stream at entry <code>+0x8c</code>: <code>[u8 parts][u8 frames]</code> + nine-byte TRS records (one part per TMD object). Action 0 is the idle loop; decoder <code>FUN_8004998c</code>.</div>
+      <div class="card-body">Enemy battle animation inside the monster archive (extraction entry 0867). Per-action transform-keyframe stream at entry <code>+0x8c</code>: <code>[u8 parts][u8 frames]</code> + nine-byte TRS records (one part per TMD object). Action 0 is the idle loop; decoder <code>FUN_8004998c</code>.</div>
     </a>
     <a class="card" id="mdt" href="mdt.html">
       <div class="card-title"><span>MDT - move tables</span> <span class="tag tag-done">Confirmed</span></div>
@@ -132,6 +136,45 @@
   </div>
 </section>
 
+<section class="doc-section" id="battle-stat-tables">
+  <h2>Battle / stat tables</h2>
+  <p>Static <code>SCUS_942.54</code> rodata tables (plus the battle side-band streaming file) that drive stats, items, and magic - each byte-pinned against the executable.</p>
+  <div class="card-grid">
+    <a class="card" href="spell-table.html">
+      <div class="card-title"><span>Spell table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Static spell stats (<code>DAT_800754C8</code>) + name pointers (<code>DAT_800754D0</code>), 12-byte stride. Player Seru-magic block <code>0x81..=0x8B</code>; named monster attacks at <code>0x25..</code>. Parser <code>legaia_asset::spell_names</code>.</div>
+    </a>
+    <a class="card" href="item-table.html">
+      <div class="card-title"><span>Item-name table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Static item-name table <code>PTR_DAT_8007436C[id*3]</code> (256 ids, 12-byte stride). The id space monster drops, steals, and equipment all index. Parser <code>legaia_asset::item_names</code>.</div>
+    </a>
+    <a class="card" href="item-effect-table.html">
+      <div class="card-title"><span>Item-effect table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">130 4-byte effect descriptors at <code>DAT_800752C0</code>: effect class, tier, all-party / field / battle usability flags. Parser <code>legaia_asset::item_effect</code>.</div>
+    </a>
+    <a class="card" href="equipment-table.html">
+      <div class="card-title"><span>Equipment stat-bonus table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">8-byte records at <code>DAT_80074F68</code> per equippable item: attack / defense / agility / speed bonuses, equip-character mask, slot type, Ra-Seru flag. Parser <code>legaia_asset::equip_stats</code>.</div>
+    </a>
+    <a class="card" href="accessory-passive-table.html">
+      <div class="card-title"><span>Accessory passive table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">64-slot passive-index space mapping accessories ("Goods") to per-character ability bits (<code>char+0xF4</code>, aggregator <code>FUN_80042558</code>), with stat-% magnitudes inline. Parser <code>legaia_asset::accessory_passive</code>.</div>
+    </a>
+    <a class="card" href="steal-table.html">
+      <div class="card-title"><span>Steal table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Per-monster <code>[steal_chance_pct, steal_item_id]</code> pairs at <code>DAT_80077828</code> (chance FIRST - the reverse of the drop field order). What the Evil God Icon steals. Parser <code>legaia_asset::steal_table</code>.</div>
+    </a>
+    <a class="card" href="new-game-table.html">
+      <div class="card-title"><span>New-game starting party</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">4-record template at <code>0x80078C4C</code> (Vahn / Noa / Gala / Terra; 26-byte stride) that seeds the live <code>0x80084708</code> character records; opening scene <code>town01</code>. Parser <code>legaia_asset::new_game</code>.</div>
+    </a>
+    <a class="card" href="summon-readef.html">
+      <div class="card-title"><span>summon.dat / readef.DAT</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Battle side-band streaming slots (extraction 893/894 = raw TOC <code>0x37F</code>/<code>0x380</code>), <code>0x10800</code> bytes each: per-special-attack CLUTs, texture pages, summon-creature actor records, and the player art-anim "ME" archives. Parser <code>legaia_asset::summon_readef</code>.</div>
+    </a>
+  </div>
+</section>
+
 <section class="doc-section" id="streaming-scene">
   <h2>Streaming + scene containers</h2>
   <div class="card-grid">
@@ -145,11 +188,11 @@
     </a>
     <a class="card" href="scene-v12-table.html">
       <div class="card-title"><span>scene_v12_table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Per-scene container: runtime-fixup header + inline record table + event-script prescript at sector offset <code>0x800</code>. 97 PROT entries (one per scene); strict header algebra <code>N = 4*param + 22</code>; field VM (<code>FUN_801DE840</code>) walks the prescript.</div>
+      <div class="card-body">Per-scene container: runtime-fixup header + inline record table + move-VM stager prescript at sector offset <code>0x800</code>. 97 PROT entries (one per scene); strict header algebra <code>N = 4*param + 22</code>; the field VM installs prescript records via <code>FUN_800252EC</code>, the move VM (<code>FUN_80023070</code>) runs them.</div>
     </a>
     <a class="card" href="world-map-overlay.html">
       <div class="card-title"><span>World-map slot-4 records</span> <span class="tag tag-partial">Inferred</span></div>
-      <div class="card-body">Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte <code>0x05</code>). Outer pack of 15 sub-bodies; per-body header <code>[u8 count_a, u8 flag_a, u8 count_b, u8 flag_b, u16 0x080C, u16 kind]</code> + <code>count_a*count_b</code> 8-byte records. Container byte-verified vs live RAM; record interpretation <strong>open</strong> (wireframe / coastline hypothesis falsified). Most likely a runtime library of small object-local 3D meshes. <strong>Not</strong> the bulk continent terrain source.</div>
+      <div class="card-body">Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte <code>0x05</code>): a per-kingdom runtime library of small object-local 3D meshes. Each 8-byte record is a GTE vertex <code>(i16 x, y, z, attr)</code>; the renderer reads the pool in place. Container byte-verified vs live RAM. <strong>Not</strong> the bulk continent terrain source.</div>
     </a>
     <a class="card" href="effect.html">
       <div class="card-title"><span>Effect bundles</span> <span class="tag tag-done">Confirmed</span></div>
@@ -168,8 +211,8 @@
       <div class="card-body">Variable-length editing of a decompressed MAN. Scene-transition (<code>0x3F</code> door) destinations are partition-2 records reached via the partition-2 record-offset table (runtime-pinned); resizing a destination name fixes the partition tables, section-0 offset, intra-record jump deltas, and the external descriptor size. Powers the door randomizer.</div>
     </a>
     <a class="card" href="str-fmv-table.html">
-      <div class="card-title"><span>STR FMV table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">In-RAM compact table the cutscene / MDEC overlay uses to look up MV*.STR files. Six 24-byte entries at <code>0x801CAE40</code>: filename + libcd BCD MSF + size. Pinned via mc1 capture during FMV playback.</div>
+      <div class="card-title"><span>STR FMV table</span> <span class="tag tag-partial">Inferred</span></div>
+      <div class="card-body">The cutscene / MDEC overlay's STR lookup tables: the 6-entry compact dev table at <code>0x801CAE40</code> and the 12-slot FMV dispatch table at <code>0x801D0A6C</code> the play loop reads; per-scene <code>fmv_id</code> triggers are disc-pinned as literal operands in the scene MAN scripts.</div>
     </a>
   </div>
 </section>

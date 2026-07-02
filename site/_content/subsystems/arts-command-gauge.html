@@ -41,6 +41,7 @@ gauge_slot.icon_pos = bVar3 - 6;                             // visual width on 
 if (ctx[0x6DC] &lt; ctx[slot + 0x14]) return;                  // not enough AP
 ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the command</code></pre>
   <p>A higher <code>+0x74</code> widens the gauge slot (<code>bVar3 - 6</code>) <em>and</em> drains more of the AP pool, so an off-class arm both looks wider and lets fewer total commands fit.</p>
+  <p>The same case-<code>9</code>/<code>0xB</code> machinery also deals and spends the <strong>Muscle Dome hand</strong>: a dome card is one of the four direction commands (<code>0xC..=0xF</code>, the deck table <code>DAT_801f4b8c</code>), its cost is this same <code>+0x74</code> byte, and the commit debits the same <code>ctx+0x6DC</code> pool - see the <a href="../minigames.html">minigames page</a> and the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">Muscle Dome write-up</a>.</p>
   <aside class="notice"><p>A separate <code>+2</code> in the same case (<code>icon = DAT_801F4B94[i] + 2</code>, gated on an <em>empty</em> equip slot, <code>equip[cmd] == 0</code>) is an empty-slot icon tweak, <strong>not</strong> the class penalty - a fully-equipped off-class character still widens via the <code>+0x74</code> cost above.</p></aside>
 </section>
 
@@ -80,7 +81,7 @@ ctx[0x6DC] -= ctx[slot + 0x14];                             // consume the comma
   +0x04  u32 swing_rec_a   ; offset (within the section) to the swing/arm command record
   ...
   swing_rec_a + 0x74       ; u8 arm cost  &larr; the weapon-specialty byte</code></pre>
-  <p>The descriptor table keys sections by equippable item id, so each weapon has its own section and swing record. Decoding the three player files (<code>asset battle-data-pack &lt;file&gt; --out</code>) and reading <code>section[+0x04] + 0x74</code> per weapon gives a byte-exact picture - favored-class weapons carry <code>0x1E</code> (30), off-class weapons higher costs that scale with class distance:</p>
+  <p>The descriptor table keys sections by equippable item id, so each weapon has its own section and swing record. Decoding the four player files (863..866; <code>asset battle-data-pack &lt;file&gt; --out</code>) and reading <code>section[+0x04] + 0x74</code> per weapon gives a byte-exact picture - favored-class weapons carry <code>0x1E</code> (30), off-class weapons higher costs that scale with class distance:</p>
   <table class="data-table">
     <thead><tr><th>character (file)</th><th>favored &rarr; <code>0x1E</code></th><th>off-class &rarr; <code>0x2A</code></th><th>far off-class &rarr; <code>0x36</code></th></tr></thead>
     <tbody>

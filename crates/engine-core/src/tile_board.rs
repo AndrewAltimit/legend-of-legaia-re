@@ -30,6 +30,108 @@ pub const TILE_CENTER: i32 = 0x40;
 /// destination cell equals this (`overlay_0897_801ef2b0` case 4).
 pub const CELL_WALL: u8 = 2;
 
+/// Trigger cell - the arrival sub-state routes to the event handler.
+pub const CELL_TRIGGER: u8 = 7;
+
+/// First event / transition cell value (`8..=0xA`); arrival reads the
+/// header `+7`/`+9` flag operands and leaves the board mode.
+pub const CELL_EVENT_FIRST: u8 = 8;
+
+/// Last event / transition cell value.
+pub const CELL_EVENT_LAST: u8 = 0xA;
+
+/// First animated-tile value; arrival cycles `0xB -> 0xE -> 0xB`.
+pub const CELL_ANIM_FIRST: u8 = 0x0B;
+
+/// Last animated-tile value.
+pub const CELL_ANIM_LAST: u8 = 0x0E;
+
+/// The inline board header a field-VM op `0x49` sub-op `5` points
+/// `_DAT_8007b450` at. The window starts at the sub-op byte (`+0`); the
+/// confirmed fields follow at `+1..+0xC` (13 bytes total - the Done arm
+/// advances the script `sub-op + 13` bytes past the header). See
+/// [`docs/subsystems/tile-board.md`](../../../docs/subsystems/tile-board.md).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TileBoardHeader {
+    /// World tile origin X (`+1`).
+    pub origin_x: u8,
+    /// World tile origin Z (`+2`).
+    pub origin_z: u8,
+    /// Board width in columns (`+3`).
+    pub width: u8,
+    /// Board height in rows (`+4`).
+    pub height: u8,
+    /// Draw/scan radius around the player (`+5`).
+    pub radius: u8,
+    /// Mode flag: full-board draw vs. windowed draw (`+6`).
+    pub mode_flag: u8,
+    /// Player actor template id (`+0xb`).
+    pub player_template: u8,
+    /// Tile-actor template base id (`+0xc`), one per drawable cell value.
+    pub tile_template_base: u8,
+}
+
+/// Byte length of the header window (`sub-op + 12 field bytes`); the op-49
+/// Done arm advances `header_size + 13` past it.
+pub const HEADER_LEN: usize = 13;
+
+impl TileBoardHeader {
+    /// Parse the header from the op-49 operand window (`window[0]` is the
+    /// sub-op byte the retail pointer lands on). `None` when the window is
+    /// short or the board dimensions are degenerate (`width * height == 0`).
+    pub fn parse(window: &[u8]) -> Option<Self> {
+        if window.len() < HEADER_LEN {
+            return None;
+        }
+        let h = Self {
+            origin_x: window[1],
+            origin_z: window[2],
+            width: window[3],
+            height: window[4],
+            radius: window[5],
+            mode_flag: window[6],
+            player_template: window[0xb],
+            tile_template_base: window[0xc],
+        };
+        if h.width == 0 || h.height == 0 {
+            return None;
+        }
+        Some(h)
+    }
+}
+
+/// The retail procedural board fill (`overlay_0897_801e0b1c`), cells only
+/// (the tile-actor spawns from the header template ids are host concerns).
+/// `rand` supplies the BIOS `rand` draws (`func_0x80056798`, non-negative
+/// 15-bit) in retail call order:
+///
+/// 1. every cell seeds `rand() % 6 + 2` (wall `2` + terrain `3..=6` +
+///    trigger `7`),
+/// 2. four animated tiles: `board[rand() % (w*h)] = 0xB + i`,
+/// 3. three event tiles `8..=0xA` at `col = rand() % w`,
+///    `row = rand() % ((h+1)>>1) + (h>>1)` (the bottom half-board).
+///
+/// Later scatters may land on earlier ones, exactly as retail's do.
+pub fn procedural_fill(width: u8, height: u8, mut rand: impl FnMut() -> u32) -> Vec<u8> {
+    let w = width as u32;
+    let n = w * height as u32;
+    let mut cells: Vec<u8> = (0..n).map(|_| (rand() % 6 + 2) as u8).collect();
+    if n == 0 {
+        return cells;
+    }
+    for i in 0..4u32 {
+        let at = (rand() % n) as usize;
+        cells[at] = (CELL_ANIM_FIRST as u32 + i) as u8;
+    }
+    let half = (height as u32 + 1) >> 1;
+    for v in CELL_EVENT_FIRST..=CELL_EVENT_LAST {
+        let col = rand() % w;
+        let row = rand() % half + (height as u32 >> 1);
+        cells[(row * w + col) as usize] = v;
+    }
+    cells
+}
+
 /// One of the four grid-step directions. The retail walk SM decodes
 /// these from the camera-facing-remapped pad
 /// (`func_0x800467e8` then mask bits `0x1000`/`0x2000`/`0x4000`/`0x8000`);
@@ -82,6 +184,18 @@ impl TileBoard {
             player_col: 0,
             player_row: 0,
         }
+    }
+
+    /// Build the runtime board a parsed op-49 header describes, with the
+    /// given cell fill (see [`procedural_fill`]).
+    pub fn from_header(header: &TileBoardHeader, cells: Vec<u8>) -> Self {
+        Self::new(
+            header.width,
+            header.height,
+            header.origin_x,
+            header.origin_z,
+            cells,
+        )
     }
 
     /// Cell value at `(col, row)`, or `None` when out of bounds or past
@@ -209,6 +323,55 @@ mod tests {
         assert_eq!(blocked, None);
         // stayed put
         assert_eq!((b.player_col, b.player_row), (1, 0));
+    }
+
+    #[test]
+    fn header_parse_reads_confirmed_fields() {
+        // [sub_op=5][ox][oz][w][h][radius][mode][flag lo][flag hi][flag lo]
+        // [flag hi][player_tpl][tile_base]
+        let window = [5u8, 3, 7, 6, 4, 2, 1, 0, 0, 0, 0, 0x21, 0x30];
+        let h = TileBoardHeader::parse(&window).expect("13-byte header parses");
+        assert_eq!((h.origin_x, h.origin_z), (3, 7));
+        assert_eq!((h.width, h.height), (6, 4));
+        assert_eq!((h.radius, h.mode_flag), (2, 1));
+        assert_eq!((h.player_template, h.tile_template_base), (0x21, 0x30));
+        // Short window / zero dims reject.
+        assert_eq!(TileBoardHeader::parse(&window[..12]), None);
+        let mut degenerate = window;
+        degenerate[3] = 0;
+        assert_eq!(TileBoardHeader::parse(&degenerate), None);
+    }
+
+    #[test]
+    fn procedural_fill_matches_retail_value_classes() {
+        // Deterministic 15-bit LCG standing in for BIOS rand.
+        let mut seed = 0x1234u32;
+        let mut rand = move || {
+            seed = seed.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+            (seed >> 16) & 0x7FFF
+        };
+        let (w, h) = (8u8, 6u8);
+        let cells = procedural_fill(w, h, &mut rand);
+        assert_eq!(cells.len(), 48);
+        // Every cell is a retail value class: base seed 2..=7, animated
+        // 0xB..=0xE, or event 8..=0xA.
+        assert!(cells.iter().all(|&c| (2..=0xE).contains(&c)));
+        // The three event tiles land in the bottom half-board unless a later
+        // event scatter collides; at least one always survives (they are the
+        // final writes).
+        let bottom_rows = (h as usize >> 1)..h as usize;
+        let event_in_bottom = cells
+            .iter()
+            .enumerate()
+            .filter(|&(_, &c)| (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(&c))
+            .all(|(i, _)| bottom_rows.contains(&(i / w as usize)));
+        assert!(event_in_bottom, "event tiles scatter into the bottom half");
+        assert!(
+            cells
+                .iter()
+                .any(|&c| (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(&c)),
+            "at least the last event tile survives"
+        );
     }
 
     #[test]

@@ -137,8 +137,10 @@ Across the 97 v12 entries:
 The 22 entries with frame-opener rate below 50 % carry "init"-style first
 records that open differently, then transition into the standard
 header-sentinel stream. Those entries carry the same word-aligned command
-structure; the first record is just shaped differently (record 0 is a fixed
-768-byte dispatch table on the town scenes).
+structure; the first record is just shaped differently (record 0 on the town
+scenes is a fixed 768-byte master ambient stager - the record the entry
+effect-actor installs; see
+[scene-bundles](scene-bundles.md)).
 
 ## Detection
 

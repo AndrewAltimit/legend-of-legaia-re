@@ -1,6 +1,6 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
-  <h1>World overview <span class="badge-wip">work in progress</span></h1>
+  <h1>World overview</h1>
   <p class="lede">
     Each kingdom's overworld in real-time WebGL 3D, straight from your disc image - no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately. Your disc is cached locally in the browser (shared with the viewer, audio, and monster pages), so it auto-loads on reload - use <em>Forget</em> on the chip to clear.
   </p>
@@ -42,10 +42,10 @@
         <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference, laid out by class.">
           <input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs
         </label>
-        <label style="margin-left:0.5rem" id="wo-normalize-unplaced-wrap" title="Normalize each unplaced slot-1 TMD to a class-conditional target footprint and pivot on its AABB centroid.">
+        <label style="margin-left:0.5rem" id="wo-normalize-unplaced-wrap" title="Scale and centre each unplaced mesh to a sensible size for the layout grid.">
           <input type="checkbox" id="wo-normalize-unplaced" checked> normalize unplaced
         </label>
-        <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the world-map distance-cue fog post-process. Mirrors the retail overlay leaves' dpcs/dpct tint.">
+        <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the distance-cue fog post-process - the same far-haze tint the retail world map draws.">
           <input type="checkbox" id="wo-fog-enable"> fog
         </label>
         <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render the disc-side ocean tile + 13-frame CLUT animation from slot 0 of the kingdom bundle.">
@@ -54,7 +54,7 @@
         <label style="margin-left:0.5rem" id="wo-show-terrain-wrap" title="Render the walk-view continent ground as a procedural heightfield, per-cell textured from the terrain-type atlas - the same terrain the native engine draws.">
           <input type="checkbox" id="wo-show-terrain" checked> terrain
         </label>
-        <label style="margin-left:0.5rem" id="wo-show-landmarks-wrap" title="Draw the slot-1 pack landmark meshes (the flags&amp;0x4 placed objects FUN_8003A55C stamps) on top of the continent terrain, in the same walk-view world frame.">
+        <label style="margin-left:0.5rem" id="wo-show-landmarks-wrap" title="Draw the placed landmark meshes (towns, gates, towers) on top of the continent terrain, at the world positions the game places them.">
           <input type="checkbox" id="wo-show-landmarks" checked> landmarks
         </label>
         <button id="wo-lock-topview" type="button" hidden title="Recenter the camera on the kingdom's captured top-view spawn. Same anchor the retail dev menu enters with.">lock to retail top-view</button>
@@ -81,8 +81,12 @@
 <section class="doc-section" id="quick-travel">
   <h2>World-map quick-travel menu (whole Legaia)</h2>
   <p>
-    The PSX retail build ships a 16-entry landmark name table at <code>DAT_80073B18</code> + a 20-record placement table at <code>DAT_80073A98</code> in <code>SCUS_942.54</code> - the data the in-game world-map menu uses to draw labelled markers when the player presses the &quot;visit&quot; button.
+    The retail executable ships a 16-entry landmark name table plus a placement table - the data the in-game world-map menu uses to draw labelled markers when the player presses the &quot;visit&quot; button. Both are decoded straight from your disc here.
   </p>
+  <div class="see-also" style="margin-bottom: 0.6rem;">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/world-map-overlay.html">World-map overlay format</a>
+  </div>
   <p class="hint" style="margin: 0 0 0.6rem 0;">Coordinates are the in-game menu screen-space. Hover a dot for the name and the destination scene id. Load a disc above to populate.</p>
   <div class="wo-layout">
     <div>
@@ -99,7 +103,7 @@
 <section class="doc-section" id="about-this-view">
   <h2>About this view</h2>
   <p>
-    The <strong>assembled scene</strong> mode loads a kingdom's 7-asset bundle from PROT (0085 / 0244 / 0391) and walks the landmark TMD pack (slot 1, <strong>40 / 36 / 56 meshes</strong> for Drake / Sebucus / Karisto). Each placement from the type-3 &ldquo;Man&rdquo; asset draws at its world coordinate. The MAN table only pins a handful of slots per kingdom; the <em>show unplaced slot-1 TMDs</em> toggle drops the rest onto a layout grid, classified into landmark / decoration / ground_tile / npc_token / unknown.
+    Each kingdom's overworld ships as one <strong>bundle</strong> on the disc, made of a few numbered <strong>slots</strong> - the ocean texture, the landmark mesh pack, the placement data, and so on; &ldquo;slot 1&rdquo; is the bundle's landmark mesh pack. The <strong>assembled scene</strong> mode loads a kingdom's bundle and walks that pack (<strong>40 / 36 / 56 meshes</strong> for Drake / Sebucus / Karisto), drawing each placement from the bundle's &ldquo;MAN&rdquo; placement slot at its world coordinate. The MAN table only pins a handful of slots per kingdom; the <em>show unplaced slot-1 TMDs</em> toggle drops the rest onto a layout grid, classified into landmark / decoration / ground_tile / npc_token / unknown.
   </p>
   <p>
     The <strong>mesh inspector</strong> browses the kingdom TMD pack one mesh at a time. The <strong>top-down placement map</strong> visualises the parsed MAN actor positions; Drake additionally surfaces 12 live-RAM-resolved actor placements (gates, bridge towers, the small castle) overlaid on the MAN entities.
@@ -121,14 +125,6 @@
 </section>
 
 <style>
-.badge-wip {
-  font-size: 0.55em; vertical-align: middle;
-  padding: 0.2em 0.6em; border-radius: 3px;
-  background: rgba(244, 180, 26, 0.15);
-  color: #F4B41A;
-  font-family: var(--font-mono);
-  border: 1px solid rgba(244, 180, 26, 0.4);
-}
 .wo-tabs {
   display: flex; gap: 0.4rem;
   margin-bottom: 0.75rem;

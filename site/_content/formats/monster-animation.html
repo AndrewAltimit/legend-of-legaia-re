@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; monster animation</div>
   <h1>Monster (enemy) battle animation <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">Per-object rigid-transform keyframe animation for battle monsters, stored inside the monster's archive block (PROT entry 867). Distinct from the <a href="anm.html">ANM container</a>, which drives player / field actors. Implementation: <code>legaia_asset::monster_archive</code> (<code>MonsterAnimation</code>, <code>PartPose</code>, <code>animations</code>, <code>idle_animation</code>). Seen live on the <a href="../monsters.html">enemy table</a>, which plays each monster's idle loop.</p>
+  <p class="lede">Per-object rigid-transform keyframe animation for battle monsters, stored inside the monster's archive block (extraction entry 0867 = raw TOC index 869; retail-space CDNAME block <code>monster_data</code>). Distinct from the <a href="anm.html">ANM container</a>, which drives player / field actors. Implementation: <code>legaia_asset::monster_archive</code> (<code>MonsterAnimation</code>, <code>PartPose</code>, <code>animations</code>, <code>idle_animation</code>). Seen live on the <a href="../monsters.html">enemy table</a>, which plays each monster's idle loop.</p>
 </header>
 
 <section class="doc-section" id="where-it-lives">
@@ -34,11 +34,12 @@ v5 = b7 | (b8 &amp; 0xf0) &lt;&lt; 4     rz</code></pre>
     <li><code>rx, ry, rz</code> are <strong>unsigned</strong> 12-bit Euler angles (<code>0..4095</code>, where <code>4096</code> = a full turn); values near <code>4095</code> are small negative rotations.</li>
   </ul>
   <p>One part maps to one <a href="tmd.html">TMD</a> object (a rigid body part). Across the retail roster the part count equals the TMD object count for &gt;98% of actions (one model carries an extra non-animated object).</p>
+  <p>The transform is <strong>absolute model-space, not a delta from a rest pose</strong>: each TMD object is modelled at its own local origin, and the per-part <code>[tx, ty, tz]</code> places that object at its socket while <code>[rx, ry, rz]</code> orients it about its local origin (<code>world = Rz&middot;Ry&middot;Rx &middot; v_local + t</code>). Frame 0 is therefore the assembled rest pose - assembling it spreads the collapsed model into its full silhouette.</p>
 </section>
 
 <section class="doc-section" id="playback">
   <h2>Playback</h2>
-  <p>The renderer (<code>FUN_80048a08</code>) keeps a 12.4 fixed-point phase in the per-actor draw struct (<code>+0x68</code>): integer frame index = <code>phase &gt;&gt; 4</code>, sub-frame fraction = <code>phase &amp; 0xf</code>. The decoder (<code>FUN_8004998c</code>) interpolates between frame <code>i</code> and <code>i+1</code>: <strong>linear</strong> for translation, <strong>shortest-path angle-wrap</strong> for rotation. The result is written to a pose buffer (6 shorts per object) and applied per object via the GTE in the draw loop, then <code>FUN_800495c8</code> / <code>FUN_8005b038</code> blend it onto the object vertices. The enemy-table viewer mirrors this: it plays each action and poses every part relative to its rest frame, so frame 0 is exactly the static model.</p>
+  <p>The renderer (<code>FUN_80048a08</code>) keeps a 12.4 fixed-point phase in the per-actor draw struct (<code>+0x68</code>): integer frame index = <code>phase &gt;&gt; 4</code>, sub-frame fraction = <code>phase &amp; 0xf</code>. The decoder (<code>FUN_8004998c</code>) interpolates between frame <code>i</code> and <code>i+1</code>: <strong>linear</strong> for translation, <strong>shortest-path angle-wrap</strong> for rotation. The result is written to a pose buffer (6 shorts per object) and applied per object via the GTE in the draw loop, then <code>FUN_800495c8</code> / <code>FUN_8005b038</code> blend it onto the object vertices. The per-frame cursor advance lives in the anim-node tick <code>FUN_80047430</code>: <code>phase += (frame_dt * actor[+0x21D] * record[+0x78]) &gt;&gt; 1</code>, where <code>+0x21D</code> is the actor's speed scale (normally 4) and the entry's <code>+0x78</code> byte is its <strong>playback rate</strong> (1 or 2 across the retail corpus). The enemy-table viewer mirrors this: it plays each action applying each part's keyframe transform as the absolute model-space pose, so frame 0 is exactly the assembled rest pose.</p>
 </section>
 
 <section class="doc-section" id="export">

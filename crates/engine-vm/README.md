@@ -128,12 +128,17 @@ bytes through `StatusKind::from_enemy_effect`. Damage-over-time formulas
 
 ## `battle_formulas`
 
-Damage / MP-cost / accuracy / RNG arithmetic kernels.
+Damage / MP-cost / accuracy / RNG / escape arithmetic kernels.
 `art_strike_damage(attack, defense, multiplier, divisor, floor)`
 applies the per-strike Tactical Art damage formula; `accuracy_roll`
 mirrors selector 9 of `FUN_800402F4`; `mp_cost_after_ability_bits`
 mirrors the MP-half/quarter shift-subtract in `FUN_801E295C` state
-`0x28` (MP-half `0x20` wins over MP-quarter `0x10`).
+`0x28` (MP-half `0x20` wins over MP-quarter `0x10`); `escape_roll`
+(with `escape_party_score` / `escape_enemy_score` over
+`EscapeActor` + `EscapeFlags`) mirrors the Run-command escape check
+`FUN_801E791C` - party `(SPD*3)>>1 + missingHP>>4` vs enemy
+`SPD + missingHP>>5`, two rand draws, Chicken Heart / Chicken King
+ability bits honoured.
 
 ## `action_validator`
 

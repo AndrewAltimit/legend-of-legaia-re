@@ -416,6 +416,14 @@ pub fn idle_battle_animation(
 /// as anim ids.
 pub const SWING_SLOT_BASE: u8 = 0xC;
 
+/// Byte offset of the per-command **AP cost** inside a swing action entry
+/// (`record + 0x74`). Copied verbatim into the runtime command-cost record
+/// (`DAT_801C9360[char][cmd] + 0x74`) at battle load (`FUN_800557B8`); read
+/// as the Arts-gauge arm width and as the Muscle Dome card cost
+/// (`FUN_801d388c` case 9). Retail value set per weapon class: favored
+/// `0x1E`, off-class `0x2A`, far `0x36`.
+pub const SWING_COST_OFFSET: usize = 0x74;
+
 /// One weapon-swing animation spliced from an equipment section's payload
 /// into the runtime action table (see [`swing_battle_animations`]).
 #[derive(Debug, Clone)]
@@ -431,6 +439,10 @@ pub struct SwingAnimation {
     /// The record's first byte - a presentation-class tag in the same id
     /// space as the art entries' (`0x0E..0x1F` observed), **not** the slot.
     pub entry_tag: u8,
+    /// `+0x74` - the command's AP cost (the Arts-gauge arm width for slot
+    /// `0xC`; the Muscle Dome card cost for every slot). See
+    /// [`SWING_COST_OFFSET`].
+    pub cost: u8,
     /// The decoded keyframe animation. `action_id` is the runtime slot.
     pub anim: crate::monster_archive::MonsterAnimation,
     /// The entry's facial keyframe tracks (`+0x8C` eyes / `+0x98` mouth),
@@ -499,6 +511,7 @@ pub fn swing_battle_animations(
                 bail!("section {section} swing record offset {off:#x} out of range");
             }
             let entry_tag = d[off];
+            let cost = d.get(off + SWING_COST_OFFSET).copied().unwrap_or(0);
             let anim = parse_action_entry(d, off, slot).ok_or_else(|| {
                 anyhow::anyhow!("section {section} swing record at {off:#x} has no valid stream")
             })?;
@@ -507,6 +520,7 @@ pub fn swing_battle_animations(
                 section,
                 item_id: rec.id,
                 entry_tag,
+                cost,
                 anim,
                 face: crate::face_anim::FaceTracks::from_entry(d, off),
             });

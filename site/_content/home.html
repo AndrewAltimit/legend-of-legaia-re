@@ -2,13 +2,13 @@
   <div class="breadcrumb">project &middot; NA SCUS-94254 &middot; 1998 &middot; sony psx</div>
   <h1>Legend of Legaia <span class="hero-sub">reverse engineering &amp; clean-room engine port</span></h1>
   <p class="lede">
-    Two coordinated tracks under one repo. <strong>Track 1:</strong> extract every asset on the disc, document every format with provenance back to a Ghidra function, build round-trip parsers. <strong>Track 2:</strong> a clean-room Rust engine port that consumes the extracted data, in the same legal pattern as <a href="https://www.scummvm.org/" target="_blank" rel="noopener">ScummVM</a>, <a href="https://github.com/openrct2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, <a href="https://github.com/OpenMW/openmw" target="_blank" rel="noopener">OpenMW</a>, and <a href="https://github.com/XProger/OpenLara" target="_blank" rel="noopener">OpenLara</a>. Bring your own disc image; the toolkit handles the rest.
+    <em>Legend of Legaia</em> is a 1998 PlayStation RPG, and this project has taken it apart end to end: browse its assets, hear its music, watch its cutscenes, patch its disc with a randomizer, and run a clean-room engine - right in this browser, from your own disc image. <strong>Bring your own disc; this site and repo ship zero Sony bytes.</strong> The engine port follows the same legal pattern as <a href="https://www.scummvm.org/" target="_blank" rel="noopener">ScummVM</a>, <a href="https://github.com/openrct2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, <a href="https://github.com/OpenMW/openmw" target="_blank" rel="noopener">OpenMW</a>, and <a href="https://github.com/XProger/OpenLara" target="_blank" rel="noopener">OpenLara</a>.
   </p>
 </header>
 
 <section class="doc-section" id="demo">
   <h2>Demo</h2>
-  <p>The clean-room engine booting a real scene, plus the asset viewers running off a disc image.</p>
+  <p>The clean-room engine running real scenes, plus the asset viewers running off a disc image.</p>
   <video controls preload="metadata" playsinline style="width: 100%; max-width: 960px; border-radius: 6px; background: #000;">
     <source src="assets/legend-of-legaia-re-demo.mp4" type="video/mp4">
     Your browser does not support embedded video.
@@ -17,32 +17,58 @@
 </section>
 
 <section class="doc-section" id="explore">
-  <h2>Explore</h2>
-  <p>Interactive surfaces that run client-side in this browser. No install; provide a disc image and the WASM build does the rest locally.</p>
+  <h2>Try it now</h2>
+  <p>Everything below runs client-side in this browser. No install; pick a disc image once and it's cached locally for every page.</p>
   <div class="card-grid">
-    <a class="card" href="world.html">
-      <div class="card-title">Game world</div>
-      <div class="card-body">Every town and field area, joined with enemy rosters, bosses, and shop counts. Each card deep-links into the viewer pre-filtered to that scene.</div>
-    </a>
-    <a class="card" href="shops.html">
-      <div class="card-title">Shops &amp; vendors</div>
-      <div class="card-body">Three-pane interactive browser: town &rarr; vendor &rarr; priced inventory &rarr; item detail. Items resolve through items / weapons / armor / accessories.</div>
-    </a>
-    <a class="card" href="minigames.html">
-      <div class="card-title">Minigames &amp; Sol Tower</div>
-      <div class="card-body">Sol Tower floor map, slot prize tables, Muscle Dome courses with element-tagged enemies, Baka Fighter rounds, plus side-quest chains.</div>
-    </a>
-    <a class="card" href="arts.html">
-      <div class="card-title">Tactical Arts</div>
-      <div class="card-body">Per-character Regular / Hyper / Super / Miracle art lists with direction-token inputs and AP costs. Tabs per character; URL hash deep-links.</div>
-    </a>
-    <a class="card" href="world-overview.html">
-      <div class="card-title">World overview (3D)</div>
-      <div class="card-body">Each kingdom's overworld in real-time WebGL 3D, straight from your disc. Distance-cue fog, ocean CLUT animation, retail top-view camera anchors.</div>
+    <a class="card" href="tooling/rom-patcher.html">
+      <div class="card-title">ROM patcher (randomizer)</div>
+      <div class="card-body">Randomize your disc in the browser: drops, encounters, chests, shops, doors, arts combos, and code-injected extras like the in-shop Seru-trading vendor. Outputs a patched image; nothing is uploaded.</div>
     </a>
     <a class="card" href="viewer.html">
       <div class="card-title">Asset viewer</div>
-      <div class="card-body">Drop in your disc image; browse 1232 PROT entries grouped by scene category. WebGL2 3D, paletted TIMs, software VRAM emulation.</div>
+      <div class="card-body">Browse every 3D mesh and 2D texture on the disc, grouped by scene - plus a live engine panel that ticks the runtime VMs.</div>
+    </a>
+    <a class="card" href="media.html">
+      <div class="card-title">Media browser</div>
+      <div class="card-body">Play every music track and sound bank, and watch every FMV cutscene with synced video and audio.</div>
+    </a>
+    <a class="card" href="monsters.html">
+      <div class="card-title">Enemy table</div>
+      <div class="card-body">Every enemy's stats, drops, steals, and spells - click a row to spin its animated 3D battle model, or export it as glTF.</div>
+    </a>
+    <a class="card" href="characters.html">
+      <div class="card-title">Characters</div>
+      <div class="card-body">Vahn, Noa, and Gala in 3D - field and battle forms, equipment swaps, and real in-game animation playback.</div>
+    </a>
+    <a class="card" href="world.html">
+      <div class="card-title">Game world</div>
+      <div class="card-body">Every town and dungeon, joined with enemy rosters, bosses, and shops. Each card deep-links into the viewer.</div>
+    </a>
+    <a class="card" href="world-overview.html">
+      <div class="card-title">World overview (3D)</div>
+      <div class="card-body">Each kingdom's overworld assembled in real-time WebGL 3D - terrain, landmarks, ocean animation, fog.</div>
+    </a>
+    <a class="card" href="shops.html">
+      <div class="card-title">Shops &amp; vendors</div>
+      <div class="card-body">Town &rarr; vendor &rarr; priced inventory &rarr; item detail, across every shop in the game.</div>
+    </a>
+    <a class="card" href="minigames.html">
+      <div class="card-title">Minigames &amp; Sol Tower</div>
+      <div class="card-body">Sol Tower floor map, slot prize ladders, Muscle Dome courses, Baka Fighter rounds, and side-quest chains.</div>
+    </a>
+    <a class="card" href="arts.html">
+      <div class="card-title">Tactical Arts</div>
+      <div class="card-body">Per-character art lists with direction-token inputs and AP costs, rendered as in-game arrow cards.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="writeups">
+  <h2>Read the story</h2>
+  <div class="card-grid">
+    <a class="card" href="writeups/index.html">
+      <div class="card-title">Technical write-ups</div>
+      <div class="card-body">The narrative track: how a sealed retail disc gets modded with no source and no SDK, told as a ladder of injection techniques - from same-size byte edits up to hand-assembled MIPS hosted in an overlay's dead space.</div>
     </a>
   </div>
 </section>
@@ -90,27 +116,12 @@
 </section>
 
 <section class="doc-section" id="status">
-  <h2>Where we are</h2>
-  <p class="lede" style="font-size: 1.02rem;">
-    Disc is fully readable, every major subsystem is traced, all five runtime VMs plus the battle action state machine are ported, and the engine boots a real scene in a window or in the browser.
-  </p>
-
+  <h2>Status</h2>
   <div class="status-strip">
-    <div class="status-pill status-done">Asset preservation</div>
-    <div class="status-pill status-done">Static analysis</div>
-    <div class="status-pill status-done">Engine runtime</div>
-    <div class="status-pill status-done">WASM viewer</div>
-    <div class="status-pill status-open">Open work</div>
+    <a class="status-pill status-done" href="formats/index.html">Asset preservation</a>
+    <a class="status-pill status-done" href="reference/functions.html">Static analysis</a>
+    <a class="status-pill status-done" href="subsystems/engine.html">Engine runtime</a>
+    <a class="status-pill status-done" href="viewer.html">WASM viewer</a>
+    <a class="status-pill status-open" href="reference/open-rev-eng-threads.html">Open threads</a>
   </div>
-
-  <details class="home-status-details">
-    <summary>Open work in detail (click to expand)</summary>
-    <ul style="margin: 0.6rem 0 0 1rem; padding: 0;">
-      <li>Shop overlay carries the per-scene item costs (still needs overlay capture). Per-character level-up triplets pin the multi-frame write split and per-character SP-grant divergence; the per-Seru stat-grant source table still lives in an uncaptured battle-data init overlay.</li>
-      <li>STR/MDEC FMV cutscene overlay (game modes 26/27) not yet captured; <code>play-str</code> already plays standalone STR files.</li>
-      <li>Retail save block: money + inventory RAM addresses confirmed, but the serialisation path into the staging buffer hasn't been traced to byte offsets within the block.</li>
-      <li>Field-VM WARP <code>map_id &rarr; scene-name</code> handler; the engine currently uses CDNAME order as an approximation.</li>
-      <li>Per-slot semantics inside the 97-entry <code>field-pack</code> schema (structurally understood; per-scene consumer trace pending).</li>
-    </ul>
-  </details>
 </section>

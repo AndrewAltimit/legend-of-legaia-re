@@ -243,7 +243,7 @@
     }
   </style>
   <h2>PROT.DAT TIM catalog</h2>
-  <p class="lede">Every standard PSX TIM in <code>PROT.DAT</code>, flat-scanned with strict validation and keyed by a stable id. This set matches an independent reference decoder's TIM index exactly - same offsets, dimensions, and palette counts - and includes TIMs in the unindexed system-UI gap (e.g. the menu-glyph atlas) that the 3D browser above can't reach. Click a thumbnail to load it full-size and switch CLUT variants.</p>
+  <p class="lede">Every standard PSX TIM in <code>PROT.DAT</code>, flat-scanned with strict validation and keyed by a stable id. This set matches <a href="https://github.com/m35/jpsxdec" target="_blank" rel="noopener">jPSXdec</a>'s TIM index exactly - same offsets, dimensions, and palette counts - and includes TIMs in the unindexed system-UI gap (e.g. the menu-glyph atlas) that the 3D browser above can't reach. Click a thumbnail to load it full-size and switch CLUT variants.</p>
   <div id="catalog-pane" style="display: none;">
     <div id="catalog-grid"></div>
     <div id="catalog-detail" style="display: none; margin-top: 0.75rem;">
@@ -266,7 +266,7 @@
 
 <section class="doc-section" id="compressed-textures">
   <h2>Compressed textures (LZS-embedded)</h2>
-  <p class="lede">Most character and scene textures aren't stored as raw bytes - they live inside <strong>LZS-compressed</strong> <code>PROT.DAT</code> sections, invisible to the flat scan above (which, like the reference decoder, reads only raw bytes). This grid is the <em>deep</em> tier: every entry is LZS-decompressed and the standard PSX TIMs inside each decoded section are recovered, keyed by <code>(entry, section, offset)</code>. A hit is admitted only when the decompressed bytes strict-parse <em>and</em> decode to RGBA - &ldquo;decompresses without error&rdquo; is never a validity signal, since the LZS ring buffer initialises to zeros. Click a thumbnail to load it full-size and switch CLUT variants.</p>
+  <p class="lede">Most character and scene textures aren't stored as raw bytes - they live inside <strong>LZS-compressed</strong> <code>PROT.DAT</code> sections, invisible to the flat scan above (which reads only raw bytes). This grid is the <em>deep</em> tier: every entry is LZS-decompressed and the standard PSX TIMs inside each decoded section are recovered, keyed by <code>(entry, section, offset)</code>. Every decode is validated by checking the <em>output</em> - a hit is admitted only when the decompressed bytes strict-parse and decode to RGBA (see <a href="formats/lzs.html">Legaia LZS</a> for why &ldquo;decompresses without error&rdquo; alone proves nothing). Click a thumbnail to load it full-size and switch CLUT variants.</p>
   <div id="deep-catalog-pane" style="display: none;">
     <div id="deep-catalog-grid"></div>
     <div id="deep-catalog-detail" style="display: none; margin-top: 0.75rem;">
@@ -947,6 +947,7 @@
 <section class="doc-section">
   <h2>Run engine</h2>
   <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) and <code>CDNAME.TXT</code> is extracted automatically via ISO9660 walk. Files are read locally via <code>FileReader</code>; nothing is uploaded. The shared browser-cached disc (from any of these pages) is reused here - just hit <strong>Load engine</strong>, no need to re-pick.</p>
+  <p>Once loaded, type a scene name (e.g. <code>town01</code>, Rim Elm) and step or auto-tick frames: the readout below shows the live frame counter, the engine's game mode, and how many script-driven actors the scene has spawned - the same state the native window renders.</p>
   <p class="hint">The same disc image you use in the asset browser above works here.</p>
 
   <div class="engine-panel" id="engine-panel">

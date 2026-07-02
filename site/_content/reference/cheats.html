@@ -56,8 +56,9 @@ cargo run -p legaia-cheats --bin cheat-tool -- offset-table data/cheats/legaia-n
   <pre><code>Cheat report (49 entries, 96 writes; 71 applied, 25 unmapped, 0 unknown):
   ok    Infinite HP (Vahn)............... 4/4 writes
   ok    Infinite Gold (Never Glitchy).... 1/1 writes
-  skip  Walk Thru Walls.................. 0/4 writes (FieldVmCollision unmapped)
+  skip  Walk Thru Walls.................. 0/4 writes
   ...</code></pre>
+  <p>A <code>skip</code> line means every write in the entry landed in a RAM region the <code>ram_map</code> registry does not map onto engine state (for Walk Thru Walls that region is <code>FieldVmCollision</code>); <code>part</code> marks a mixed entry.</p>
   <p>Conditional codes are treated as always-true by default. Pass <code>--cheat-strict</code> to honour them, which will skip every cheat that gates on a button press the engine doesn't emulate.</p>
 </section>
 

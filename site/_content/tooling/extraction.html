@@ -8,7 +8,7 @@
   <h2>Top-level pipeline</h2>
   <p><code>legaia-extract</code> (in <code>crates/extract</code>) drives the full pipeline:</p>
 <pre><code>./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
-  <p>The pipeline runs verify → disc → PROT → categorize → streaming-format extract → TIM → PNG → CD-XA demux → WAV. Use <code>--skip-png</code> to skip the slowest step; <code>--skip-xa</code> to skip the CD-XA audio demux; <code>--skip-verify</code> to skip the SHA verification.</p>
+  <p>The pipeline runs verify → disc → PROT → categorize → streaming-format extract → TIM → PNG → CD-XA demux → WAV → TIM-catalog TSV. Use <code>--skip-png</code> to skip the slowest step; <code>--skip-xa</code> to skip the CD-XA audio demux; <code>--skip-catalog</code> to skip writing the texture-inventory TSVs (<code>prot_tim_catalog.tsv</code> + <code>prot_tim_deep_catalog.tsv</code>); <code>--skip-verify</code> to skip the SHA verification.</p>
   <p>Output lands in <code>./extracted/</code> (gitignored):</p>
 <pre><code>extracted/
 ├── PROT.DAT                       - raw archive copy
@@ -66,7 +66,11 @@ asset stream         &lt;file&gt;                           # walk DATA_FIELD ch
 asset describe       &lt;file&gt;                           # asset-descriptor walk
 asset effect-bundle  &lt;file&gt;
 asset tmd-scan       &lt;DIR&gt;                            # bulk byte-search for TMD magic
-asset tim-scan       &lt;DIR&gt;                            # bulk byte-search for TIM magic</code></pre>
+asset tim-scan       &lt;DIR&gt;                            # bulk byte-search for TIM magic (per-entry, lenient)
+asset tim-catalog    &lt;PROT.DAT&gt; [--out f.tsv|f.json]  # flat strict-validated TIM catalog
+asset tim-deep-catalog &lt;PROT.DAT&gt; [--out f.tsv|f.json] # TIMs inside LZS-compressed sections</code></pre>
+  <p><code>tim-catalog</code> scans the whole <code>PROT.DAT</code> image (not per-entry), strict-validates each TIM, and maps each hit to its owning PROT entry + offset (or the unindexed system-UI gap). It recovers the same set an independent reference decoder reports; the committed catalog + a disc-gated regression pin the result. <code>--rollup</code> prints the count + digest the test pins.</p>
+  <p><code>tim-deep-catalog</code> covers what the flat catalog can't see: it LZS-decompresses every entry and catalogs the TIMs inside each decoded section (most character / scene textures are compressed). Each row is keyed by <code>(entry, LZS section, offset-in-section)</code>. A hit is admitted only when the decompressed bytes strict-parse <strong>and</strong> decode to RGBA - LZS "decodes without error" is never a validity signal (the ring buffer inits to zeros). It has its own committed reference + disc-gated regression. See <a href="../formats/tim.html">TIM</a>.</p>
   <h3>MES dialog (<code>mes</code>)</h3>
 <pre><code>mes info     &lt;file&gt;
 mes disasm   &lt;file&gt;

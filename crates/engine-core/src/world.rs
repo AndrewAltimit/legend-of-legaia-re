@@ -531,6 +531,19 @@ pub enum SceneMode {
     /// `game_mode 0x18` (`OTHER MODE`, the mode-24 minigame door-warp) for
     /// the slot overlay (PROT 0975).
     SlotMachine,
+    /// Baka Fighter duel minigame - the exchange / round / match state
+    /// machine owns the frame ([`crate::baka_fighter::BakaFight`]); field /
+    /// battle dispatch is suspended and the interrupted mode restored on
+    /// exit. Retail `game_mode 0x18` (`OTHER MODE`, the mode-24 minigame
+    /// door-warp) for the Baka Fighter overlay (PROT 0976).
+    BakaFighter,
+    /// Muscle Dome card-battle contest - the hand-select / commit / resolve
+    /// loop owns the frame ([`crate::muscle_dome::MuscleDomeSession`]); field
+    /// / battle dispatch is suspended and the interrupted mode restored on
+    /// exit. Retail: the arena runs *inside* the battle overlay (PROT 0898)
+    /// on the `_DAT_8007bd24` context, entered through the mode-24 sub-id-5
+    /// door (PROT 0977).
+    MuscleDome,
     /// In-field pause menu - the retail CARD mode pair (`game_mode 0x17`,
     /// `CARD MODE`, which hosts both the memory-card UI and the pause menu;
     /// every menu-open capture holds `_DAT_8007B83C = 0x17`). Field/battle
@@ -1181,7 +1194,7 @@ pub struct World {
     /// drains it and loads that scene directly. Fields: `(scene, entry_x,
     /// entry_z)` - the entry-tile bytes are kept for future destination
     /// spawn-point wiring. `None` between transitions.
-    pub pending_named_scene_transition: Option<(String, u8, u8)>,
+    pub pending_named_scene_transition: Option<(String, u8, u8, u8)>,
 
     /// Pending FMV trigger (field-VM op `0x4C 0xE2`). When `Some(fmv_id)`,
     /// the field VM has signalled that the next-game-mode global should
@@ -1529,6 +1542,29 @@ pub struct World {
     /// (`overlay_0897_801ef2b0` case 2).
     pub tile_board_target: Option<(i32, i32)>,
 
+    /// `true` while a field-VM op-0x49 sub-5 board install holds the
+    /// script suspended (the engine face of retail's `_DAT_8007b450`
+    /// arm for the board consumer). The op reads `Armed` while
+    /// [`Self::tile_board`] is installed and `Done` once the board
+    /// exits (an event cell landing), then clears this on resume.
+    pub tile_board_armed: bool,
+
+    /// The parsed op-49 board header (radius / mode flag / actor
+    /// template ids) kept for the render + event consumers while the
+    /// board is installed.
+    pub tile_board_header: Option<crate::tile_board::TileBoardHeader>,
+
+    /// Screen-effect widget host (the PROT-0900 mask / sprite / panel /
+    /// letterbox family), driven by the field-VM op `0x43` sub-ops
+    /// `0x10`/`0x11`/`0x13`/`0x14`/`0x15` - the ending-scene widget
+    /// path. See [`crate::screen_fx`].
+    pub screen_fx: crate::screen_fx::ScreenFxHost,
+
+    /// The current frame's widget draw list, refreshed by the Field /
+    /// Cutscene tick while any widget is live ([`Self::tick_screen_fx`]).
+    /// Renderers composite these 2D overlays above the scene.
+    pub screen_fx_frame: crate::screen_fx::ScreenFxFrame,
+
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
     /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
@@ -1562,6 +1598,26 @@ pub struct World {
     /// The scene mode to restore when the slot-machine minigame ends
     /// ([`World::enter_slot_machine`] snapshots the interrupted mode).
     pub slot_return_mode: SceneMode,
+
+    /// Baka Fighter duel state. `Some` while `mode ==
+    /// SceneMode::BakaFighter`; the exchange / round / match state machine
+    /// runs each tick. See [`crate::baka_fighter::BakaFight`] and
+    /// [`World::enter_baka_fighter`].
+    pub baka_fighter: Option<crate::baka_fighter::BakaFight>,
+
+    /// The scene mode to restore when the Baka Fighter match ends
+    /// ([`World::enter_baka_fighter`] snapshots the interrupted mode).
+    pub baka_return_mode: SceneMode,
+
+    /// Muscle Dome contest state. `Some` while `mode ==
+    /// SceneMode::MuscleDome`; the hand-select / commit / resolve loop runs
+    /// each tick. See [`crate::muscle_dome::MuscleDomeSession`] and
+    /// [`World::enter_muscle_dome`].
+    pub muscle_dome: Option<crate::muscle_dome::MuscleDomeSession>,
+
+    /// The scene mode to restore when the Muscle Dome contest ends
+    /// ([`World::enter_muscle_dome`] snapshots the interrupted mode).
+    pub muscle_return_mode: SceneMode,
 
     /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
     /// Coins" cell). Read to seed the slot machine's playing balance and
@@ -2550,6 +2606,10 @@ impl World {
             world_map_ctrl: None,
             tile_board: None,
             tile_board_target: None,
+            tile_board_armed: false,
+            tile_board_header: None,
+            screen_fx: Default::default(),
+            screen_fx_frame: Default::default(),
             dance: None,
             dance_return_mode: SceneMode::Field,
             dance_last_judge: None,
@@ -2557,6 +2617,10 @@ impl World {
             fishing_return_mode: SceneMode::Field,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
+            baka_fighter: None,
+            baka_return_mode: SceneMode::Field,
+            muscle_dome: None,
+            muscle_return_mode: SceneMode::Field,
             casino_coins: 0,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
@@ -5645,6 +5709,10 @@ impl World {
                 // Faithful dialogue path (opt-in): drive a just-opened field
                 // dialogue through the field VM so branch handlers execute.
                 self.drive_inline_dialogue();
+                // Screen-effect widgets (mask / sprite / panel / letterbox,
+                // the ending-scene op-0x43 family) tick after the script step
+                // that may have spawned them this frame.
+                self.tick_screen_fx();
                 if self.live_gameplay_loop {
                     self.live_field_tick();
                 }
@@ -5660,6 +5728,7 @@ impl World {
                 if self.active_fmv.is_none() {
                     self.step_cutscene_timeline();
                     self.step_field();
+                    self.tick_screen_fx();
                 }
                 None
             }
@@ -5677,6 +5746,14 @@ impl World {
             }
             SceneMode::SlotMachine => {
                 self.tick_slot_machine();
+                None
+            }
+            SceneMode::BakaFighter => {
+                self.tick_baka_fighter();
+                None
+            }
+            SceneMode::MuscleDome => {
+                self.tick_muscle_dome();
                 None
             }
             // The pause menu owns the frame (retail CARD mode 0x17): field /
@@ -5725,6 +5802,7 @@ impl World {
             ms.world_z = nz as i16;
             if nx == tx && nz == tz {
                 self.tile_board_target = None;
+                self.tile_board_arrival();
             }
             return;
         }
@@ -5736,6 +5814,112 @@ impl World {
         if let Some((tx, tz)) = self.tile_board.as_mut().and_then(|b| b.try_step(dir)) {
             self.tile_board_target = Some((tx, tz));
         }
+    }
+
+    /// Advance the screen-effect widgets one frame and refresh
+    /// [`Self::screen_fx_frame`]. Runs in the Field / Cutscene tick after
+    /// the script step (so a sub-op spawned this frame draws this frame,
+    /// matching retail's actor-pool order). The engine ticks the widget
+    /// clocks by 1 per world tick (retail's per-frame byte
+    /// `DAT_1F800393`); the sprite scripts' flag waits probe the shared
+    /// system flag bank ([`Self::system_flag_test`], `FUN_8003CE64`).
+    fn tick_screen_fx(&mut self) {
+        if !self.screen_fx.is_active() {
+            if !self.screen_fx_frame.is_empty() {
+                self.screen_fx_frame = Default::default();
+            }
+            return;
+        }
+        let mut fx = std::mem::take(&mut self.screen_fx);
+        self.screen_fx_frame = fx.tick(1, |idx| self.system_flag_test(idx));
+        self.screen_fx = fx;
+    }
+
+    /// Walk-SM arrival pass (`overlay_0897_801ef2b0` case 3), run when the
+    /// player's interpolation reaches the committed tile centre:
+    ///
+    /// - an **event / transition cell** (`8..=0xA`) leaves the board mode -
+    ///   the board uninstalls, and the suspended op-0x49 script reads `Done`
+    ///   and resumes (retail reads the header `+7`/`+9` flag operands here;
+    ///   the engine surfaces the exit through the op-49 tristate);
+    /// - an **animated cell** (`0xB..=0xE`) cycles its value one step,
+    ///   wrapping `0xE -> 0xB` (the arrival sub-state's decay pass).
+    ///
+    /// PORT: overlay_0897_801ef2b0 (arrival sub-states)
+    fn tile_board_arrival(&mut self) {
+        use crate::tile_board::{
+            CELL_ANIM_FIRST, CELL_ANIM_LAST, CELL_EVENT_FIRST, CELL_EVENT_LAST,
+        };
+        let Some(board) = self.tile_board.as_mut() else {
+            return;
+        };
+        let (col, row) = (board.player_col as i32, board.player_row as i32);
+        let Some(cell) = board.cell(col, row) else {
+            return;
+        };
+        if (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(&cell) {
+            // Event / transition tile: exit the board. `tile_board_armed`
+            // stays set so the op-49 tristate reads Done and the field
+            // script resumes past the install op.
+            self.tile_board = None;
+            self.tile_board_header = None;
+        } else if (CELL_ANIM_FIRST..=CELL_ANIM_LAST).contains(&cell) {
+            let next = if cell == CELL_ANIM_LAST {
+                CELL_ANIM_FIRST
+            } else {
+                cell + 1
+            };
+            let idx = row as usize * board.width as usize + col as usize;
+            if let Some(c) = board.cells.get_mut(idx) {
+                *c = next;
+            }
+        }
+    }
+
+    /// Install a tile board from a field-VM op-0x49 **sub-op 5** instruction
+    /// (`instr` = the bytes from the opcode onward, as handed to
+    /// `FieldHost::op49_menu_request`). Parses the 13-byte inline header
+    /// (`instr[1..]`, the window retail points `_DAT_8007b450` at), fills the
+    /// cells with the retail procedural fill (`overlay_0897_801e0b1c`, seeded
+    /// from the world RNG the way retail seeds from BIOS `rand`), seats the
+    /// player actor at the board's start-cell centre, and holds the script
+    /// suspended (`tile_board_armed`) until the board exits.
+    ///
+    /// Returns `false` (leaving the op merely suspended, matching the other
+    /// op-49 consumers) when a board is already up or the header is
+    /// malformed.
+    ///
+    /// PORT: overlay_0897_801e0b1c (board alloc + fill; cells only - the
+    /// per-cell tile-actor spawns are a renderer concern)
+    /// REF: overlay_0897_801de840 (op 0x49 arm, `_DAT_8007b450 = pbVar47`)
+    pub fn try_install_tile_board(&mut self, instr: &[u8]) -> bool {
+        if self.tile_board_armed || self.tile_board.is_some() {
+            return false;
+        }
+        let Some(window) = instr.get(1..) else {
+            return false;
+        };
+        let Some(header) = crate::tile_board::TileBoardHeader::parse(window) else {
+            return false;
+        };
+        let cells = crate::tile_board::procedural_fill(header.width, header.height, || {
+            self.next_rng() & 0x7FFF
+        });
+        let board = crate::tile_board::TileBoard::from_header(&header, cells);
+        // Seat the player actor at the start cell's tile centre so the first
+        // step interpolates from the board frame, not the free-walk position.
+        if let Some(slot) = self.player_actor_slot
+            && let Some(a) = self.actors.get_mut(slot as usize)
+        {
+            let (x, z) = board.player_world();
+            a.move_state.world_x = x as i16;
+            a.move_state.world_z = z as i16;
+        }
+        self.tile_board_target = None;
+        self.tile_board = Some(board);
+        self.tile_board_header = Some(header);
+        self.tile_board_armed = true;
+        true
     }
 
     /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current
@@ -5918,9 +6102,9 @@ impl World {
 
     /// Advance the slot machine one frame, reading this frame's pad:
     ///
-    /// - **Idle**: [`Left`](input::PadButton::Left) /
-    ///   [`Right`](input::PadButton::Right) cycle the bet-line count; a
-    ///   [`Cross`](input::PadButton::Cross) press charges the bet and spins.
+    /// - **Idle**: a [`Cross`](input::PadButton::Cross) press charges the
+    ///   flat bet (3 coins, 1 in feature modes) and spins - all three
+    ///   paylines always play.
     /// - **Spinning**: the spin-up timer runs down on its own.
     /// - **Stopping**: a [`Cross`] press stops the leftmost live reel (host
     ///   simplification of the retail three stop buttons, pad bits
@@ -5945,11 +6129,6 @@ impl World {
         m.tick();
         match phase {
             SlotPhase::Idle => {
-                if self.input.just_pressed(input::PadButton::Left)
-                    || self.input.just_pressed(input::PadButton::Right)
-                {
-                    m.cycle_bet_lines();
-                }
                 if confirm {
                     m.spin();
                 }
@@ -5969,6 +6148,205 @@ impl World {
                 // Committed: restore the interrupted mode (the host reads the
                 // session out via [`World::exit_slot_machine`]).
                 self.mode = self.slot_return_mode;
+            }
+        }
+    }
+
+    /// Enter the Baka Fighter duel on `fight`, suspending the current scene
+    /// mode (restored by [`World::exit_baka_fighter`]). Like the dance /
+    /// fishing / slot / pause-menu suspend contract, the interrupted field
+    /// state stays intact underneath.
+    pub fn enter_baka_fighter(&mut self, fight: crate::baka_fighter::BakaFight) {
+        if self.mode != SceneMode::BakaFighter {
+            self.baka_return_mode = self.mode;
+        }
+        self.baka_fighter = Some(fight);
+        self.mode = SceneMode::BakaFighter;
+    }
+
+    /// Leave the Baka Fighter duel and restore the interrupted mode. On a
+    /// decided match with a player win, the beaten opponent's gold prize is
+    /// credited into the party gold (the retail end-of-match tally drains
+    /// `DAT_801dbee8` into `_DAT_80084440`). Returns the fight so the host
+    /// can read the final state. No-op when no duel is active.
+    pub fn exit_baka_fighter(&mut self) -> Option<crate::baka_fighter::BakaFight> {
+        if self.mode == SceneMode::BakaFighter {
+            self.mode = self.baka_return_mode;
+        }
+        let fight = self.baka_fighter.take();
+        if let Some(f) = fight.as_ref()
+            && f.winner() == Some(0)
+        {
+            let new_money = (self.money as i64).saturating_add(f.gold_reward() as i64);
+            self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        }
+        fight
+    }
+
+    /// Advance the Baka Fighter duel one frame, reading this frame's pad:
+    ///
+    /// - [`Left`](input::PadButton::Left) / [`Right`](input::PadButton::Right)
+    ///   / [`Up`](input::PadButton::Up) commit attack types 1 / 2 / 3 for the
+    ///   player slot (retail folds the face/shoulder mask bits
+    ///   `0x80`/`0x20`/`0x40` into the same three types);
+    ///   [`Down`](input::PadButton::Down) commits the special (type 4).
+    /// - The CPU slot picks through the ported `FUN_801d487c` roll inside
+    ///   [`crate::baka_fighter::BakaFight::tick`].
+    /// - When the match is decided, a [`Cross`](input::PadButton::Cross)
+    ///   press leaves the duel (via [`World::exit_baka_fighter`], crediting
+    ///   the gold prize on a player win).
+    ///
+    /// PORT: the Baka Fighter per-frame drive (`FUN_801d3f44` player input →
+    /// type commit; `FUN_801d3468` resolution SM via `BakaFight::tick`).
+    fn tick_baka_fighter(&mut self) {
+        use crate::baka_fighter::BakaAttack;
+        let Some(fight) = self.baka_fighter.as_ref() else {
+            // Mode is BakaFighter but no fight installed - drop back.
+            self.mode = self.baka_return_mode;
+            return;
+        };
+        if fight.match_over() {
+            if self.input.just_pressed(input::PadButton::Cross) {
+                self.exit_baka_fighter();
+            }
+            return;
+        }
+        let attack = if self.input.just_pressed(input::PadButton::Left) {
+            Some(BakaAttack::A)
+        } else if self.input.just_pressed(input::PadButton::Right) {
+            Some(BakaAttack::B)
+        } else if self.input.just_pressed(input::PadButton::Up) {
+            Some(BakaAttack::C)
+        } else if self.input.just_pressed(input::PadButton::Down) {
+            Some(BakaAttack::Special)
+        } else {
+            None
+        };
+        if let Some(fight) = self.baka_fighter.as_mut() {
+            if let Some(attack) = attack {
+                fight.choose(0, attack);
+            }
+            fight.tick(1);
+        }
+    }
+
+    /// Enter the Muscle Dome contest on `session`, suspending the current
+    /// scene mode (restored by [`World::exit_muscle_dome`]). Same suspend
+    /// contract as the other minigames / the pause menu.
+    pub fn enter_muscle_dome(&mut self, session: crate::muscle_dome::MuscleDomeSession) {
+        if self.mode != SceneMode::MuscleDome {
+            self.muscle_return_mode = self.mode;
+        }
+        self.muscle_dome = Some(session);
+        self.mode = SceneMode::MuscleDome;
+    }
+
+    /// Leave the Muscle Dome and restore the interrupted mode. On a won
+    /// contest, the reward Seru is credited through the capture kernel
+    /// ([`crate::seru_learning::record_capture`] against the installed
+    /// registry, resolved by the reward spell id) - the engine's stand-in
+    /// for the retail outright award message. Returns the session so the
+    /// host can read the final state.
+    pub fn exit_muscle_dome(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
+        if self.mode == SceneMode::MuscleDome {
+            self.mode = self.muscle_return_mode;
+        }
+        let session = self.muscle_dome.take();
+        if let Some(s) = session.as_ref()
+            && s.phase() == crate::muscle_dome::MusclePhase::Won
+            && let Some(seru) = self
+                .seru_registry
+                .seru_for_spell(s.reward_spell_id())
+                .map(|d| d.id)
+        {
+            let party: Vec<u8> = (0..self.roster.members.len() as u8).collect();
+            crate::seru_learning::record_capture(
+                &self.seru_registry,
+                &mut self.seru_log,
+                seru,
+                &party,
+            );
+        }
+        session
+    }
+
+    /// Advance the Muscle Dome one frame, reading this frame's pad:
+    ///
+    /// - **Select**: [`Left`](input::PadButton::Left) /
+    ///   [`Right`](input::PadButton::Right) / [`Up`](input::PadButton::Up) /
+    ///   [`Down`](input::PadButton::Down) commit hand cards 0..3 (the retail
+    ///   four card-selection direction bits, in the `ctx+0x1114..+0x1120`
+    ///   slot order); [`Cross`](input::PadButton::Cross) confirms the queue.
+    ///   The opponent commits through the shared selection logic when the
+    ///   player confirms.
+    /// - **Resolve**: the queues play out. Per-card damage here is a dev
+    ///   stand-in for the retail battle-action playback (see the constants) -
+    ///   the session's [`resolve_round`] is damage-model-agnostic.
+    /// - **RoundOver / decided**: [`Cross`] continues to the next round, or
+    ///   leaves a decided contest (via [`World::exit_muscle_dome`], crediting
+    ///   the reward Seru capture on a win).
+    ///
+    /// [`resolve_round`]: crate::muscle_dome::MuscleDomeSession::resolve_round
+    ///
+    /// PORT: FUN_801d0748 (match SM phase loop: pick / commit / resolve /
+    /// score), with the card playback simplified per above.
+    fn tick_muscle_dome(&mut self) {
+        use crate::muscle_dome::MusclePhase;
+        // Dev stand-in stats for the card playback (retail resolves each
+        // queued command through the battle-action path against the actor
+        // records).
+        const PLAYER_ATK: i32 = 60;
+        const OPPONENT_ATK: i32 = 50;
+        const PLAYER_DEF: i32 = 20;
+        const OPPONENT_DEF: i32 = 15;
+        let Some(phase) = self.muscle_dome.as_ref().map(|s| s.phase()) else {
+            self.mode = self.muscle_return_mode;
+            return;
+        };
+        let confirm = self.input.just_pressed(input::PadButton::Cross);
+        match phase {
+            MusclePhase::Select => {
+                let card = if self.input.just_pressed(input::PadButton::Left) {
+                    Some(0)
+                } else if self.input.just_pressed(input::PadButton::Right) {
+                    Some(1)
+                } else if self.input.just_pressed(input::PadButton::Up) {
+                    Some(2)
+                } else if self.input.just_pressed(input::PadButton::Down) {
+                    Some(3)
+                } else {
+                    None
+                };
+                if let Some(s) = self.muscle_dome.as_mut() {
+                    if let Some(card) = card {
+                        s.commit_card(0, card);
+                    }
+                    if confirm {
+                        s.ai_commit_all(1);
+                        s.end_selection();
+                    }
+                }
+            }
+            MusclePhase::Resolve => {
+                if let Some(s) = self.muscle_dome.as_mut() {
+                    s.resolve_round(|attacker, _cmd| {
+                        if attacker == 0 {
+                            (PLAYER_ATK - OPPONENT_DEF).max(1)
+                        } else {
+                            (OPPONENT_ATK - PLAYER_DEF).max(1)
+                        }
+                    });
+                }
+            }
+            MusclePhase::RoundOver => {
+                if confirm && let Some(s) = self.muscle_dome.as_mut() {
+                    s.next_round();
+                }
+            }
+            MusclePhase::Won | MusclePhase::Lost => {
+                if confirm {
+                    self.exit_muscle_dome();
+                }
             }
         }
     }
@@ -7444,8 +7822,10 @@ impl World {
     /// pointer table with `party_count` party slots followed by
     /// `monster_count` monster slots, mirroring the layout
     /// `FUN_800520F0` produces (slots 0..2 = party, 3..7 = monsters; total
-    /// caps at 8). Each actor is positioned `radius` units left (party)
-    /// or right (monsters) of the origin, with a per-row z spread.
+    /// caps at 8). Actors are seated at the retail stage seats
+    /// ([`crate::battle_seats`]): the party at negative Z facing the
+    /// monsters at positive Z, both rows selected by combatant count
+    /// exactly like the setup `FUN_800513F0`.
     ///
     /// This is the engine-core analogue of the retail battle scene
     /// loader's "stamp the actor table from the scene record" pre-pass.
@@ -7456,26 +7836,30 @@ impl World {
     ///
     /// The battle-action state machine is seeded at
     /// [`legaia_engine_vm::battle_action::ActionState::Begin`].
-    pub fn enter_battle(&mut self, party_count: u8, monster_count: u8, radius: i16) {
+    // PORT: FUN_800513F0 (battle setup: seat stamping from the SCUS tables)
+    pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
         self.party_count = party_count.min(3);
-        let actor_count =
-            ((self.party_count as usize) + (monster_count.min(5) as usize)).min(MAX_ACTORS);
-        // Spread along z. Party left, monsters right, both staggered by 0.6 / 0.4.
+        let monster_count = monster_count.min(5);
+        let actor_count = ((self.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);
         for i in 0..(self.party_count as usize).min(actor_count) {
-            let z = (i as i16 - 1) * (radius * 6 / 10);
+            let s = crate::battle_seats::party_seat(self.party_count, i);
             let actor = self.spawn_actor(i);
-            actor.move_state.world_x = -radius;
-            actor.move_state.world_y = 0;
-            actor.move_state.world_z = z;
+            actor.move_state.world_x = s.x;
+            actor.move_state.world_y = s.y;
+            actor.move_state.world_z = s.z;
             actor.battle.liveness = 1;
         }
         for i in (self.party_count as usize)..actor_count {
-            let z = (i as i16 - 5) * (radius * 4 / 10);
+            let s = crate::battle_seats::monster_seat(
+                monster_count,
+                i - self.party_count as usize,
+                false,
+            );
             let actor = self.spawn_actor(i);
-            actor.move_state.world_x = radius;
-            actor.move_state.world_y = 0;
-            actor.move_state.world_z = z;
+            actor.move_state.world_x = s.x;
+            actor.move_state.world_y = s.y;
+            actor.move_state.world_z = s.z;
             actor.battle.liveness = 1;
         }
         // Reset the battle ctx and seed at Begin via the public byte API to
@@ -8711,9 +9095,9 @@ impl World {
     fn enter_battle_from_formation(&mut self, formation: &crate::monster_catalog::FormationDef) {
         let party_count = self.party_count.clamp(1, 3);
         let monster_count = formation.slots.len().min(5) as u8;
-        // Reuse the placement helper for actor spawn + spacing, then overlay
+        // Reuse the placement helper for actor spawn + seating, then overlay
         // per-slot stats.
-        self.enter_battle(party_count, monster_count, 600);
+        self.enter_battle(party_count, monster_count);
         let first_monster = party_count;
         for slot in 0..party_count as usize {
             let a = &mut self.actors[slot];
@@ -8834,15 +9218,34 @@ impl World {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
-        let (wx, wz) = (
-            i16::from(tile_x) * 128 + 0x40,
-            i16::from(tile_z) * 128 + 0x40,
-        );
+        // Retail entry-byte decode (`FUN_801DE840` case 0x3F): the low 7
+        // bits are the tile, the high bit selects the far half of the tile
+        // (`(b & 0x7F) * 0x80 + 0x40`, `+0x80` when bit 7 is set).
+        let half =
+            |b: u8| -> i16 { i16::from(b & 0x7F) * 128 + if b & 0x80 != 0 { 0x80 } else { 0x40 } };
+        let (wx, wz) = (half(tile_x), half(tile_z));
         let wy = self.sample_field_floor_height(wx as i32, wz as i32) as i16;
         if let Some(actor) = self.actors.get_mut(slot as usize) {
             actor.move_state.world_x = wx;
             actor.move_state.world_y = wy;
             actor.move_state.world_z = wz;
+        }
+    }
+
+    /// Face the player along a warp-arrival compass sector - the op-`0x3F`
+    /// trailing `dir` byte. Retail resolves `dir & 7` through the 8-entry
+    /// i16 table at SCUS `0x80073F04` (`[0, 0x200, 0x400, .. 0xE00]` - the
+    /// eight 45-degree compass points of the 12-bit angle space) into the
+    /// arrival-facing global `_DAT_80073EFC`; the engine stores the same
+    /// angle on the player's heading (`move_state.render_26`, `0` = +Z).
+    ///
+    /// REF: FUN_801DE840 (case 0x3F facing write, table 0x80073F04)
+    pub fn face_player_sector(&mut self, dir: u8) {
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.move_state.render_26 = i16::from(dir & 7) * 0x200;
         }
     }
 

@@ -261,7 +261,7 @@ written by the script-VM bit ops. No retail code path copies between
 
 In `legaia_save::SaveExt`, `story_flag_bits` mirrors the wide bitmap and
 round-trips through the LGSF v3 extension block; `story_flags` mirrors the
-scratchpad word and round-trips through the LGSF v1 prelude. The two fields
+scratchpad word and round-trips through the LGSF prelude. The two fields
 are independently populated - that matches retail.
 
 ## Retail SC block layout
@@ -318,11 +318,12 @@ N blue SLOT pills on top of the dimmed title art. Asset sources:
 |---|---|---|
 | Title art behind (wordmark, NEW GAME / CONTINUE, copyright) | `PROT 0888` title TIM | Same atlas the title menu samples; rendered dimmed during SaveSelect. |
 | **`Load` panel TIM + CLUT** | **`PROT.DAT[0x018E0]` system-UI sprite sheet, CLUT row 2** | 4bpp 256x192 TIM in the unindexed pre-`init_data` PROT.DAT gap. CLUT block uploads to VRAM `(fb_x=0, fb_y=511)`; the panel-specific row (row 2 of the 16x16 CLUT block) uploads to VRAM `(32, 511)`. Byte-confirmed: the 32-byte CLUT signature appears at exactly one place in the disc corpus (PROT.DAT offset 0x1934). Constants exported by `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. |
-| `Load` panel **9-slice tile geometry** | **PINNED - engine renders byte-perfect** | Retail composes the 81x29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. Per-tile rects below; all exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and rendered by `legaia_engine_render::save_select_chrome_draws_for`. No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the 9-slice frame. |
+| `Load` panel **9-slice tile geometry** | **PINNED - engine renders byte-perfect** | Retail composes the 81x29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. Per-tile rects below; all exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and rendered by `legaia_engine_render::save_select_chrome_draws_for`. |
+| `Load` panel **interior fill** | **PINNED** | Retail fills the 9-slice interior with 3 gouraud-shaded textured quads (GP0 cmd `0x3C`) sampling the same TIM's 32x29 marbled region at `(128, 0)` with a vertical gray gradient `rgb(64,64,64) -> rgb(136,136,136)` (2 full 32-wide copies + 1 17-wide remainder). Constants `OVERLAY_SYSTEM_UI_PANEL_INTERIOR` / `_TOP_RGB` / `_BOT_RGB`; the engine bakes the gradient into the composed atlas (`save_menu_atlas::bake_panel_interior_gradient`). |
 | **"Load" text glyphs** | **PINNED to the dialog font (`legaia_font`)** | Drawn from the dialog font, not a menu-glyph atlas. Details in [Load-text glyph decode](#load-text-glyph-decode) below. |
 | `SLOT 1` pill | `PROT 0899 + 0x16908 (33, 97, 45, 15)` decoded with CLUT 7 | Saturated blue baked label; byte-equal to retail. |
 | `SLOT 2` pill | `PROT 0899 + 0x16908 (33, 113, 45, 15)` decoded with CLUT 7 | Stacked directly below the SLOT 1 pill in the source atlas. |
-| Hand cursor | **OPEN** | Neither the save-menu TIM nor the menu-glyph atlas carries it. Likely lives in another pre-`init_data` gap TIM. |
+| Hand cursor | **PINNED** | The pointing-finger cursor lives in the same system-UI TIM as the panel chrome, source `(152, 64, 16, 16)`, CLUT row 7 (white-ink; VRAM `(112, 511)`), dispatched as a single textured sprite at dst `(114, 100)`. Constants `OVERLAY_SYSTEM_UI_CURSOR` / `_CLUT_ROW` / `OVERLAY_SAVE_CURSOR_RETAIL_DST` in `legaia_asset::title_pak`; composed into the engine's save-menu atlas (`save_menu_atlas::band_cursor`). |
 
 #### Load-text glyph decode
 

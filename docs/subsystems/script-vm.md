@@ -259,7 +259,7 @@ the live give-item is inlined in the dispatcher here.) NB the chest's announceme
 
 - Copies the `name_len`-byte destination scene NAME from operand+3 into a local buffer (null-terminated) and calls `func_0x8001FD44(name, idx)` - the **scene-change packet** (writes the name into the active scene-name buffers `0x8007050C` / `0x80084548`; sets the transition flag `_DAT_1F800394 |= 0x40`).
 - `idx` is the sign-extended `i16` at operand[0..2] (a story/entry id; distinct from the `0x3E` 7-id `map_id`).
-- Writes the destination entry tile via `_DAT_80073EF4`/`_DAT_80073EF8` (formula `(b & 0x7F) * 0x80 + 0x40`, +0x40 if high bit) and facing from `dir & 7`.
+- Writes the destination entry tile via `_DAT_80073EF4`/`_DAT_80073EF8` (formula `(b & 0x7F) * 0x80 + 0x40`, `+0x80` if the high bit is set - the far half of the tile) and the arrival facing into `_DAT_80073EFC` from `dir & 7` through the 8-entry i16 compass table at SCUS `0x80073F04` (`[0, 0x200, .. 0xE00]` - facing = `(dir & 7) * 0x200` in the 12-bit angle space). Engine: `World::seat_player_at_tile` + `World::face_player_sector` apply both on warp arrival.
 - PC += 7 + name_len.
 
 A scene's controller script lists every reachable destination as one of these ops - see [world-map § scene destinations](world-map.md). (This op only *looks* like dialog when the over-approximating walk desyncs on a literal `?` = `0x3F` inside message text. Field **dialogue** has no dedicated opcode - see [§ Field dialogue](#field-dialogue-has-no-opcode).)
@@ -448,8 +448,8 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;   // final PROT index
 - `_DAT_8007BAB8` - final PROT index, consumed downstream by the asset loader.
 
 So:
-- `bgm_id < 2000`: scene-local - lives at PROT `current_scene + 6 + bgm_id`. Different scenes have different BGM at the same script ID.
-- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. Shared across scenes (cutscene / title / event music).
+- `bgm_id < 2000`: scene-local - lives at PROT `current_scene + 6 + bgm_id`. Different scenes have different BGM at the same script ID. Rare in retail: scenes carry almost no local SEQ data (`teien` is the one scene with a local copy).
+- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. The global pool is the **`music_01` bank** (extraction `990..=1071`), whose slot order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"); see [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-is-the-sound-test-order). Engine resolver: `legaia_engine_core::music_labels`.
 
 The "table" *is* the [CDNAME.TXT name map](../formats/cdname.md)'s per-scene block layout. There's no separate BGM index in `SCUS_942.54`.
 
@@ -592,16 +592,17 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
 The library exposes `legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` for downstream tooling. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
 
 > **CAVEAT - `scene-event-scripts` / `scan-prot` walk a NON-field-VM
-> structure.** The `0xFFFF 0x0000` lead is a per-record header sentinel, and
-> the `scene-event-scripts` mode skips it before walking the record body - but
-> those records are the word-aligned actor/event structure, not field-VM
-> bytecode (see the "On-disc form" note above), so the disassembly is mostly
-> `decode error` with coincidental matches. Any `0x4C 0xE2` FMV trigger these
-> modes report inside a prescript record is a **false positive** (a word-table
-> byte that equals `0x4C` followed by one equal to `0xE2`). The genuine FMV
-> triggers are pinned structurally instead - see the exhaustive sweep below and
-> the disc-decoded `fmv_dispatch` table - and the per-scene FMV-id remains
-> capture-blocked.
+> structure.** The `0xFFFF 0x0000` lead is the stager-record header
+> (`model_sel = -1`), and the `scene-event-scripts` mode skips it before
+> walking the record body - but those records are **move-VM stager records**,
+> not field-VM bytecode (see the "On-disc form" note above), so the field-VM
+> disassembly is mostly `decode error` with coincidental matches. Any
+> `0x4C 0xE2` FMV trigger these modes report inside a prescript record is a
+> **false positive** (a stager-record byte that equals `0x4C` followed by one
+> equal to `0xE2`). The genuine FMV triggers are the literal `fmv_id` operands
+> in the scene MAN scripts, recovered statically for all eight trigger scenes
+> (`man_field_scripts::scene_fmv_triggers`; see
+> [`cutscene.md`](cutscene.md)), plus the disc-decoded `fmv_dispatch` table.
 
 ## FMV-trigger sites - exhaustive backward sweep
 
@@ -614,7 +615,7 @@ A grep across every Ghidra dump in the corpus for writes to the global game-mode
 
 **`FUN_801E30E4` has zero static callers.** It is a label inside `FUN_801DE840`, not a callable subroutine. Ghidra promotes it to a `FUN_` symbol because the JT entry at `0x801CF008[2]` resolves there; the actual control flow is the dispatch chain above. A direct `grep -rn 'jal 0x801e30e4' ghidra/scripts/funcs/` returns zero matches.
 
-The corollary for §2.7's seven mid-game scenes (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`): they **must** trigger via the same `0x4C 0xE2` op, but the byte sequence is not in their on-disc PROT entries (a bytewise scan of every PROT entry finds only `PROT[371] taiku, fmv_id=5`). The bytecode is therefore reconstructed at scene-load time from the field-pack preamble's runtime-projected slot - the lift is blocked on the same intra-transition byte-level capture that gates [`docs/formats/field-pack.md`](../formats/field-pack.md).
+The per-scene trigger assignment is **disc-sourced**: the `0x4C 0xE2` ops live LZS-compressed inside each scene's MAN (which is why a raw bytewise PROT scan misses them - it finds only `PROT[371] taiku, fmv_id=5` in a non-MAN structure). Walking the decompressed partition-1 scripts recovers the literal `fmv_id` operands for all eight trigger scenes (`town01`, `garmel`, `deroa`, `chitei2`, `dohaty`, `town0d`, `uru`, `jouine`); the FMV overlay's own seven-label scene list (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`) is the overlay's internal scene references, not the trigger-scene set. See [`cutscene.md`](cutscene.md) and [`../formats/str-fmv-table.md`](../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced).
 
 ## See also
 

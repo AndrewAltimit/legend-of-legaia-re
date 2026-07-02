@@ -47,9 +47,11 @@ Confidence: **Inferred** - the per-record damage / animation / effect schema bel
 >    describes**. (So that schema was right about the format; only the "PROT
 >    `0x05C4`" label was wrong - `0x05C4` = 1476 isn't a valid PROT index.) These
 >    records are *not* resident until the Arts menu is opened; they load from each
->    character's player-data file `record0` (Vahn `PROT 0861` / Noa `0864` / Gala
->    `0865` - the `edstati3`/PLAYERn files), whose decoded `record0` byte-matches
->    the live RAM.
+>    character's player-data file `record0` (canonical extraction entries: Vahn
+>    `0863` / Noa `0864` / Gala `0865` - the `edstati3`/PLAYERn files; the
+>    historical "Vahn `0861`" attribution matched the same bytes through 0861's
+>    extended over-read window), whose decoded `record0` byte-matches the live
+>    RAM.
 > 2. **The display** is the SCUS `DAT_80075EC4` arts-name table `+8` glyph string
 >    (see [Arts-name table](#arts-name-table-dat_80075ec4)) - only the arrows
 >    shown in the menu.
@@ -111,8 +113,9 @@ The layout is **schema-then-walk**: each record begins with a fixed prefix (comm
 > The `+0x00` command-sequence field below is the form the **runtime matcher**
 > reads (the `1=L,2=R,3=D,4=U` run at record `+0`, 0-terminated; records are a
 > fixed `0xD0` stride - see the warning at the top of this page). It lives in the
-> per-character player-data `record0` (Vahn `PROT 0861` / Noa `0864` / Gala
-> `0865`), not at PROT `0x05C4`. The SCUS [arts-name table](#arts-name-table-dat_80075ec4)
+> per-character player-data `record0` (canonical extraction entries: Vahn
+> `0863` / Noa `0864` / Gala `0865`; `0861` was the historical over-read
+> window), not at PROT `0x05C4`. The SCUS [arts-name table](#arts-name-table-dat_80075ec4)
 > `+8` glyph string is the *display* copy of the same combo.
 
 ### Fixed prefix

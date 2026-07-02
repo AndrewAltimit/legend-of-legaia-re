@@ -1,12 +1,14 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; MAN relocation</div>
-  <h1>MAN relocation <span class="tag tag-done">Runtime-pinned indexing + variable-length editor</span></h1>
+  <h1>MAN relocation <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">How to <strong>resize</strong> a field-VM <code>0x3F</code> named-scene-change ("door / exit") destination in a decompressed scene MAN and rebuild the buffer so every internal offset stays valid - what lets the <a href="../tooling/randomizer.html">randomizer</a> re-point a door at a scene with a differently-sized name. Engine: <code>legaia_asset::man_edit</code>.</p>
 </header>
 
 <section class="doc-section" id="indexing">
   <h2>The destination table is the partition-2 record-offset table</h2>
-  <p>A <code>0x3F</code> op carries its destination inline: <code>0x3F [i16 index][u8 name_len][name bytes][entry_x][entry_z][dir]</code>. The ops are <strong>partition-2 MAN records</strong> (the named records - see <a href="encounter.html">the MAN layout</a>). They are reached at runtime through the <strong>partition-2 record-offset table</strong>: on a transition the field controller sets the VM bytecode base to <code>man_base + data_region + partition2[slot]</code> and runs that record's small script by fall-through (<code>SysFlag.Set; CFlag.Set; EFFECT; yield; 0x3F; entry-trailer; JmpRel-1 self-loop</code>), whose <code>0x3F</code> op warps by the inline name. Selection is by stable <strong>slot index</strong>, so the op's <code>index</code> field is only the destination-scene id passed to the warp packet (<code>FUN_8001FD44</code>), not a record selector.</p>
+  <p>A <code>0x3F</code> op carries its destination inline:</p>
+<pre><code>0x3F  [i16 index]  [u8 name_len]  [name bytes]  [entry_x]  [entry_z]  [dir]</code></pre>
+  <p>The ops are <strong>partition-2 MAN records</strong> (the named records - see <a href="encounter.html">the MAN layout</a>). They are reached at runtime through the <strong>partition-2 record-offset table</strong>: on a transition the field controller sets the VM bytecode base to <code>man_base + data_region + partition2[slot]</code> and runs that record's small script by fall-through (<code>SysFlag.Set; CFlag.Set; EFFECT; yield; 0x3F; entry-trailer; JmpRel-1 self-loop</code>), whose <code>0x3F</code> op warps by the inline name. Selection is by stable <strong>slot index</strong>, so the op's <code>index</code> field is only the destination-scene id passed to the warp packet (<code>FUN_8001FD44</code>), not a record selector.</p>
   <p>Pinned by a live PCSX-Redux dispatch trace (<code>autorun_door_dispatch_trace.lua</code> on the <code>drake_castle_to_worldmap</code> capture): the executing op's bytecode base minus the MAN base equalled <code>data_region + partition2[0]</code> exactly. Corpus census (clean partition walk, disc-wide): 160 destination ops across 48 scenes, 153 in partition 2; <strong>zero absolute-reference ops</strong> at/after any destination op. The consequence: the destination "index" <em>is</em> a structural offset table the MAN parser already exposes, so resizing a record is safe - fix the table and every door stays addressable.</p>
 </section>
 

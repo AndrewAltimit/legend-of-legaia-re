@@ -1,243 +1,378 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; open RE threads</div>
   <h1>Open reverse-engineering threads</h1>
-  <p class="lede">An index of still-open hunts and the negative findings worth not re-walking. Rows are <em>questions</em>, not progress markers - each entry describes what is settled, what remains, and what would close it. Closing a thread removes or rewrites the row; nothing here counts ports, tests, or coverage.</p>
+  <p class="lede">An index of still-open hunts and the negative findings worth not re-walking. Rows are <em>questions</em>, not progress markers - each states the current answer and links to the format or subsystem page holding the detail.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>How to use this page</h2>
-  <p>Use this page to find what's worth digging into next. The detailed write-ups, captures, and decompiler dumps live in the per-topic memory files (<code>~/.claude/projects/.../memory/project_&lt;slug&gt;.md</code>) and in the linked docs.</p>
-  <p>Status conventions:</p>
+  <p>Use this page to find what's worth digging into next. Each row carries a one-line <em>current answer</em>; byte-level detail lives on the linked page, and the full working notes live in <code>docs/reference/open-rev-eng-threads.md</code>.</p>
+  <p>Status badges:</p>
   <ul class="bullets">
-    <li><strong>open</strong> - active hunt; concrete next step exists.</li>
-    <li><strong>partial</strong> - main result pinned; a residual sub-question remains.</li>
-    <li><strong>falsified</strong> - hypothesis disproved; row kept so the path isn't re-walked.</li>
+    <li><strong>open</strong> (plain text) - active hunt; a concrete next step exists.</li>
+    <li><span class="tag tag-partial">partial</span> - main result pinned; a residual sub-question remains (see the details block below each table).</li>
+    <li><span class="tag tag-done">resolved</span> / <span class="tag tag-done">falsified</span> - answered or disproved; the row is kept so the path isn't re-walked. Instructive dead ends are collected in the <a href="#do-not-re-walk">do-not-re-walk register</a>.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="world-map">
   <h2>World map / kingdom bundles</h2>
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
         <td>Kingdom slot 4 - per-record semantic</td>
-        <td><code>resolved</code></td>
-        <td>The <strong>consumer is fully decoded</strong>: <code>FUN_80043390</code> walks an 8-byte-header <strong>command stream</strong> (<code>kind</code> = bits 17&ndash;31, <code>count</code> = bits 0&ndash;15), tail-calling per-<code>kind</code> GTE primitive emitters (kinds 8&ndash;19 across 4 banks via the <code>0x8007657C</code> table; each reads packed vertex indices <code>&amp; 0x7FF8</code> into a vertex pool and emits a <code>POLY_F3/G3/G4/GT3/GT4</code> packet). <strong>The handlers read the slot-4 RAM payload IN PLACE - there is no record &rarr; working-buffer transcode.</strong> A Drake warp capture shows the cluster-A GTE prim path (<code>lw …,0x10(a1); andi …,0x7FF8</code>, the exact packed-vertex-index extraction) holding slot-4 pointers under return addresses <code>0x801F78D4</code> (the world-map top-view overlay renderer) and <code>0x8001BC8C</code> (SCUS render); the slot-4 sub-body payloads <em>are</em> the command stream + vertex pool, walked directly. The earlier &ldquo;<code>FUN_8001E54C</code> distributes the records into a working buffer the handlers walk&rdquo; reading is <strong>falsified</strong> (it fired only twice, on a non-slot-4 buffer). <strong>Cross-kingdom:</strong> the slot-4 resident base is byte-pinned per kingdom (Drake <code>0x8011A624</code>, Sebucus <code>0x80119CE4</code>, Karisto <code>0x80108D84</code>). <strong>Per-record semantic:</strong> each 8-byte record is a <strong>GTE vertex</strong> - the handler <code>FUN_80044c14</code> loads its two words into the GTE vertex registers (<code>VXY = x | y&lt;&lt;16</code>, <code>VZ = z</code>) and <code>RTPT</code>-transforms them, so <code>x/y/z</code> are model-space coordinates and <code>attr</code> (the 4th i16) is <strong>not</strong> a coordinate. A full sweep of the cluster-A handler family confirms <code>attr</code> is <strong>render-unused</strong> (reserved/authoring data or a non-render consumer; nothing in the render path reads it). <code>kind</code> (1/2/4) is a body <strong>class/scope tag</strong>: <code>kind 1</code> bodies (the three leading bodies) are <strong>byte-identical across all three kingdoms</strong> (a shared universal mesh set); <code>kind 2</code> = full-3D kingdom objects; <code>kind 4</code> = widest-extent meshes. A Read-watchpoint on body 0's header during the Drake warp catches the cluster-A handler chain (<code>ra = 0x801F78D4</code>, the world-map renderer) reading <code>count</code>/<code>kind</code> <strong>in place</strong> - there is <strong>no separate command-stream / mesh builder</strong>; each slot-4 body is a self-contained render packet (header + indexed vertex records) consumed in place by the cluster-A handler chain. So slot 4 is a per-kingdom assembly from a shared mesh library plus kingdom-specific bodies.</td>
-        <td><code>project_slot4_is_wireframe_not_terrain.md</code></td>
+        <td>open</td>
+        <td>Each 8-byte record is a GTE vertex (<code>FUN_80044c14</code> <code>RTPT</code>-transforms it) read <strong>in place</strong> by the cluster-A handlers; <code>kind</code> tags body class/scope, <code>attr</code> is per-vertex data the render path never reads. <a href="#d-slot4-attr">details &darr;</a></td>
+        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
       </tr>
       <tr>
         <td>Slot-4 &rarr; cluster-A converter site</td>
-        <td><code>open</code></td>
-        <td>Find the function that walks the slot-4 outer pack and feeds cluster A. The converter does not run as a direct overlay read of <code>_DAT_8007B888</code>; the populating site is either an SCUS function-pointer table or an unscanned overlay.</td>
-        <td><code>project_open_work_slot4_cluster_a.md</code></td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>No converter exists. The cluster-A pool <code>DAT_8007C018</code> is filled exclusively by <code>FUN_80026B4C</code>, reached only from <code>FUN_8001f05c</code> case <code>0x02</code> (TMD pack) and <code>0x09</code> (bare TMD); slot-4's type-<code>0x05</code> case never calls it.</td>
+        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
+      </tr>
+      <tr>
+        <td>World-map walk-view continent ground render</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>A procedural heightfield (<code>FUN_80019278</code> bilinearly samples the <code>+0x4000</code> nibbles) with per-cell texturing from the object record <code>+0x14..+0x16</code>; slot-1 pack meshes are only sparse landmarks. Shipped in the engine.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
         <td><code>DAT_8007C018[45..53]</code> mid-load vertex-pool pointers</td>
-        <td><code>open</code></td>
-        <td>Single Lua write-watchpoint capture on <code>0x8007C018 + 45*4</code> during scene load to disambiguate stale-pointer vs. live-data. Steady-state model says reads past <code>DAT_8007BB38</code> are stale and never consumed; the mid-load snapshot deserves direct confirmation.</td>
-        <td><code>project_dat_8007c018_global_tmd_table.md</code></td>
+        <td>open</td>
+        <td>Steady-state model says reads past <code>DAT_8007BB38</code> are stale. Next step: one write-watchpoint on <code>0x8007C018 + 45*4</code> during scene load to split stale-pointer vs live-data.</td>
+        <td><a href="memory-map.html">memory-map</a></td>
       </tr>
       <tr>
         <td>PROT 0874 section-0 outer producer</td>
-        <td><code>partial</code></td>
-        <td>Find the dispatch site that funnels PROT 0874 section 0 through the 3-section <code>parse_player_lzs</code> shape into <code>FUN_80020224</code> &rarr; <code>FUN_8001F05C</code> case 2 &rarr; <code>FUN_80026B4C</code>. Inner dispatch is pinned; outer producer is not. Likely lives in an overlay-resident scene loader (e.g. <code>FUN_801D6704</code> family).</td>
-        <td><code>project_global_tmd_pool_source.md</code> + <code>project_next_session_backlog.md</code> &sect; D</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Pinned: the per-scene field initializer <code>FUN_801D6704</code> drives the pool fill - <code>FUN_80020118</code> loads the party meshes (<code>FUN_8001E890</code>), then <code>FUN_80020224</code> walks the scene's main field file through <code>FUN_8001F05C</code>; both feed <code>FUN_80026B4C</code>.</td>
+        <td><a href="../formats/character-mesh.html">character-mesh</a></td>
       </tr>
       <tr>
         <td>Drake uncapped cluster-A totals</td>
-        <td><code>open</code></td>
-        <td>Re-run <code>autorun_slot4_dispatcher_args.lua</code> with <code>LEGAIA_PC_CAP=50000</code> and a <code>timeout --kill-after=30s 1500s</code> wrapper. Drake saturated 7 of 9 PCs at PC_CAP=5000; raising the cap closes the cross-kingdom delta table.</td>
-        <td><code>project_open_work_slot4_cluster_a.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The <code>LEGAIA_PC_CAP=50000</code> re-run landed: no PC saturates the cap, so the per-kingdom totals are exact and the cross-kingdom delta table is closed - see <a href="../formats/world-map-overlay.html">world-map-overlay</a> (kind 18 = the workhorse; Sebucus dispatches ~20.6k instances).</td>
+        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
       </tr>
       <tr>
         <td>Slot-4 freeze flag <code>_DAT_8007B824</code></td>
-        <td><code>open</code></td>
-        <td>Write-breakpoint probe on <code>_DAT_8007B824</code> during retail play. Either an undumped overlay sets the freeze flag, or the BSS-init zero holds through retail and the "persistent slots" semantic is vestigial.</td>
-        <td><code>project_open_work_slot4_cluster_a.md</code></td>
+        <td>open</td>
+        <td>Either an undumped overlay sets the freeze flag, or the BSS-init zero holds through retail and the "persistent slots" semantic is vestigial. Next step: a write-breakpoint probe during retail play.</td>
+        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
       </tr>
       <tr>
         <td>World-map outline / coastline reading</td>
-        <td><code>falsified</code></td>
-        <td>Visual inspection plus the slot-4 record-semantic work refuted the "world-map overlay outlines / coastline wireframe" interpretation. Bodies are most likely small object-local 3D meshes; treat any future "kingdom border lines" claim with suspicion.</td>
-        <td><code>project_slot4_is_wireframe_not_terrain.md</code></td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>The slot-4 bodies are small object-local 3D meshes, not kingdom border / coastline wireframe. Treat any future "kingdom border lines" claim with suspicion.</td>
+        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
       </tr>
     </tbody>
   </table>
+
+  <h3 id="d-slot4-attr">Kingdom slot 4 - residual: the <code>attr</code> consumer</h3>
+  <p>Settled: the records are an object-local GTE vertex pool walked in place; <code>kind 1</code> bodies are byte-identical across all three kingdoms (a shared mesh library). Residual: <code>attr</code> is genuinely per-vertex yet the full handler-family sweep finds no reader - authoring data or a non-render consumer. Next step: a read-watchpoint on a pool word's high half outside the render path, or accept it as reserved.</p>
 </section>
 
 <section class="doc-section" id="battle">
   <h2>Battle / arts / level-up</h2>
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
-        <td>MP-cost ability-bit priority (half vs quarter)</td>
-        <td><code>resolved (dump-confirmed)</code></td>
-        <td>Reading the state-<code>0x28</code> block of <code>FUN_801E295C</code> (<code>0x801E3D0C</code>; the same block recurs in state <code>0x3C</code> at <code>0x801E4568</code>) settles both open points. <strong>(1) Priority - MP-half (<code>0x20</code>) wins.</strong> The code is <code>andi 0x20; bne &lt;half&gt;</code> then <code>andi 0x10; beq &lt;none&gt;</code>, i.e. <code>if (bits &amp; 0x20) {half} else if (bits &amp; 0x10) {quarter}</code> - the <code>0x20</code> test short-circuits <code>0x10</code>. This matches the docs / <code>MpCostModifier::from_ability_flags</code>; the engine SM port + live cast path that applied quarter first were a guess and are now flipped. <strong>(2) Formula - it subtracts a right-shifted copy, not a floor-divide.</strong> Half = <code>cost - (cost&gt;&gt;1)</code> (rounds up on odd costs); "MP-quarter" = <code>cost - (cost&gt;&gt;2)</code> = pay 3/4 (shave 25%), NOT <code>cost/4</code>. The engine's <code>base/2</code> / <code>base/4</code> were both corrected (<code>battle_formulas::mp_cost_after_ability_bits</code>); all three cast paths route through the shared helper. MP cost consumes no RNG, so determinism oracles are unaffected.</td>
-        <td><code>project_re_and_engine_batch_day_branch.md</code></td>
-      </tr>
-      <tr>
         <td>Encounter record carrier</td>
-        <td><code>resolved (no array)</code></td>
-        <td>Decompile of <code>FUN_801DE840</code> shows install handlers all use <code>pbVar43 = param_1 + param_2</code> (the current opcode pointer in the field-VM script bytecode); each scripted encounter is its own dispatcher-op site (cases <code>0x37</code>/<code>0x41</code>, <code>0x38</code>, <code>0x43</code>, <code>0x47</code>, <code>0x4C</code>), with monster count/ids inline as the trailing operand bytes. There is no separate encounter-record table on disc. See the <a href="../formats/encounter.html">encounter format</a> writer table.</td>
-        <td><code>project_encounter_record_format.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>No encounter-record table on disc: each scripted encounter is its own field-VM dispatcher-op site (cases <code>0x37</code>/<code>0x41</code>, <code>0x38</code>, <code>0x43</code>, <code>0x47</code>, <code>0x4C</code>) with monster count/ids inline as operand bytes.</td>
+        <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
       <tr>
         <td>Random-encounter trigger path</td>
-        <td><code>resolved</code></td>
-        <td><code>FUN_801D9E1C</code> is the per-step roll function (rate counter <code>_DAT_8007B5FC</code>, scaled by config <code>_DAT_8007B5F8</code>). On counter underflow it picks a formation from the matching region's RNG range and installs <code>actor[+0x94] = formation_table_base + 1 + id * stride</code>, raising bit <code>0x80000</code>. The per-scene control block at <code>_DAT_801C6EA4 + 0x20/0x24/0x28</code> is populated by <code>FUN_8003A110</code> ("Mesworks set encount group table") from the MAN asset (type 0x03) buffered at <code>_DAT_8007B898</code>.</td>
-        <td><code>project_random_encounter_trigger_path.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><code>FUN_801D9E1C</code> rolls per step (rate counter <code>_DAT_8007B5FC</code>); on underflow it picks a formation from the region's RNG range and installs <code>actor[+0x94]</code>. The per-scene control block comes from the MAN via <code>FUN_8003A110</code>.</td>
+        <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
       <tr>
         <td>Encounter MAN sub-section layout</td>
-        <td><code>resolved</code></td>
-        <td><code>FUN_8003AEB0</code> is fully decoded: it walks the MAN multi-section header (sections at MAN offsets <code>+0x22, +0x24, +0x26, +0x28</code>, signed 16-bit LE) and <code>legaia_engine_core::encounter_man::scene_encounter_from_man</code> reads the encounter section straight from disc bytes, wiring per-scene <code>EncounterTable</code>s for the standalone towns + kingdom-bundle scenes. The region-table section is the per-scene control block <code>_DAT_801c6ea4 + 0x4</code> count-prefixed array of 18-byte records: <code>byte[0]</code> kind selector, <code>bytes[1..4]</code> tile-space bounding box <code>[minX, minZ, maxX, maxZ]</code> queried by <code>FUN_801dba20(tileX, tileZ)</code> (<code>tile = (player_pos - 0x40) &gt;&gt; 7</code>), <code>bytes[5..17]</code> payload (sub-split still open), consumed by the field camera arrival handler <code>FUN_801dbec4</code> + camera-config <code>FUN_801dbc20</code>. Residual: the world-overview actor-placement section <code>FUN_8003A1E4</code> consumes is decoded separately.</td>
-        <td><code>project_man_section_decoded.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><code>FUN_8003AEB0</code> walks the MAN multi-section header; the region table is a count-prefixed array of 18-byte records (kind + tile-space bounding box + payload) consumed by the field camera handlers. Residual: the payload's camera-parameter sub-split.</td>
+        <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
       <tr>
         <td>Super / Miracle Arts trigger logic</td>
-        <td><code>open</code></td>
-        <td>Port the find/replace trigger matcher into <code>engine-vm</code> battle action. Tables and constants are in <code>legaia-art</code>; the trigger SM driving "find string in queue &rarr; replace" is not yet ported.</td>
-        <td><code>project_arts_system.md</code></td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>Ported <strong>and live-wired</strong>: <code>engine-vm</code>'s <code>battle_action</code> applies <code>MiracleMatcher</code>/<code>SuperMatcher</code> and the Arts submenu flags Miracle/Super chains; Miracle + Tri-Somersault queues capture-validated byte-exact. Residue: byte-exact queue connectors for the remaining Supers. <a href="#d-super-miracle">details &darr;</a></td>
+        <td><a href="../subsystems/battle-action.html">battle-action</a></td>
       </tr>
       <tr>
-        <td>Seru-magic summon visual (e.g. Tail Fire)</td>
-        <td><code>dispatch + overlay structure + flame-mesh index + PROT 870 atlas resolved; position fully ported (<code>FUN_801F811C</code> per-frame lerp); library + atlas loaded in engine; PLAYER summon render path resolved by live trace (battle draw <code>FUN_80048A08</code>, per-object TRS keyframes - NOT <code>FUN_801F7088</code>); model-library base <code>gp[0x754]</code> RESOLVED (<code>party_count + 2</code>, not per-summon); enemy "Fire Tail" path RESOLVED (a move-VM part-actor on the SCUS render-tail <code>FUN_80021DF4</code> over a record in the battle overlay 0898; the PROT 0900 screen-widget path is dormant)</code></td>
-        <td>The 3D summon visual is a <strong>per-summon code overlay</strong>, not an opcode and not <code>befect_data</code>. Battle SM <code>FUN_801E295C</code> state <code>0x29</code>: for a spell id <code>actor[+0x1df]</code> in <code>0x81..0x8b</code> it sets <code>_DAT_8007ba2c = PTR_801f6734[id-0x81]</code> and calls <code>FUN_8003EC70(id-0x79)</code> (overlay loader B &rarr; raw TOC <code>id-0x79+0x381</code> = extraction <code>id-0x79+0x37F</code>), i.e. <strong>extraction PROT 903..913</strong> (Gimard <em>Burning Attack</em> <code>0x81</code> &rarr; PROT 903; the deep-dived stager file analysed below is extraction 0905 - the spell-<code>0x83</code> slot under the corrected loader math; the historical &ldquo;0905 = Gimard&rdquo; was the <code>+0x381</code> off-by-2). The overlay embeds <strong>no TMD geometry</strong>; <strong>decompiled</strong> (PROT 905 imported raw at base <code>0x801F0000</code>, <code>ghidra/scripts/dump_summon_overlay.py</code>) it spawns part-actors via the SCUS part-stager <code>FUN_80021B04</code> (<code>param_1</code> = world pos, <code>param_3</code> = a part record; <code>model_sel &lt; 0</code> / <code>0x4000</code> / <code>0x4001</code> = transform node else mesh <code>DAT_8007C018[model_sel + gp[0x754]]</code>, allocated from effect pool <code>DAT_8007062c</code>). Three staging functions drive it: <code>FUN_801F16A0</code> (phase 0 = a <code>do { stage } while(&lt; 8)</code> loop spawning <strong>8</strong> flame parts with <code>rand()</code>-seeded actor params <code>+0x84</code>/<code>+0xb4</code>=<code>rng%15+16</code>/<code>+0xb6</code>=<code>rng%255+512</code>; phase 1 = 1 more), <code>FUN_801F36A0</code>, <code>FUN_801F4DD0</code>. <strong>CORRECTED (do not re-walk):</strong> (a) the parts ARE move-VM bytecode - PROT 905 has zero <em>direct</em> <code>jal 0x80023070</code> only because the move VM runs inside the SCUS spawn helper <code>FUN_80021B04</code> (which seats the move-buffer at <code>record+4</code> and ticks <code>FUN_80023070</code>); the earlier &ldquo;no move VM here / not move-VM bytecode&rdquo; reading was a wrong-link-base artifact (and the live trace below separately shows the player summon renders via the battle TRS-keyframe draw, not this scene-graph). (b) <strong>CORRECTED:</strong> an earlier note called the <code>0x180C</code> records &ldquo;coincidentally record-shaped&rdquo; and &ldquo;beyond the <code>0x5800</code> file&rdquo; - that was the <strong>wrong link base</strong> (<code>0x801F0000</code>). The shared summon-overlay buffer (<code>*DAT_80010390</code>) links at <strong><code>0x801F69D8</code></strong> (pinned by byte-matching the resident overlay in the <code>battle_gimard_tail_fire_a/_b</code> captures: RAM <code>0x801F8000</code> == file <code>0x1628</code>), so the runtime record pointers (<code>lui 0x8020 / addiu</code>) resolve to PROT 0905 <strong>file <code>0x180C..0x1E00</code></strong> - in-file. Also CORRECTED: <strong>two overlays timeshare that buffer</strong> - PROT <strong>0905</strong> is the <em>spawn stager</em> (38 <code>FUN_80021B04</code> calls), PROT <strong>0900</strong> is a resident <em>transform/GTE-render</em> overlay; <strong>0900</strong> is the one byte-resident in the mid-cast captures (after 0905 ran), which is why a 905-head RAM search finds nothing. Parser <code>legaia_asset::summon_overlay</code> (CLI <code>asset summon-overlay</code>, disc-gated <code>summon_overlay_real</code>): 38 sites &rarr; 23 part records (17 transform nodes, <code>model_sel == -1</code>), each <code>[i16 model_sel][u16 flags][move-VM bytecode @+4]</code>. <strong>Generalizes across the whole player-summon block:</strong> every overlay in extraction PROT 0903..=0913 (<code>spell_id 0x81..=0x8b</code>, <code>summon_overlay::PLAYER_SUMMON_STAGER_PROT</code>) recovers a move-VM scene-graph (disc-gated <code>summon_overlay_block</code> sweep - 20..73 spawn sites, 10..43 contiguous in-file records each). 0905 reads cleanest (transform-node-dominated + small library indices); the larger stagers carry many <code>SummonPartKind::Sentinel</code> first-words - node-mode <code>0x1000</code>/<code>0x4000</code>/<code>0x8000</code>-class markers, <strong>not</strong> library indices - so the CLI labels those <code>sentinel 0xNNNN</code>. The model-library additive base (<code>gp[0x754]</code>, global <code>0x8007BA6C</code>) is <strong>RESOLVED</strong>: it is <strong>not per-summon</strong> and <strong>not a constant 3</strong> - it is <code>party_count + 2</code> in battle (<code>3</code> for the 1-member training party, <code>5</code> for the 3-member party), read across the save corpus; there is one per-battle value and <code>model_sel</code> is library-relative. Still open across the block: the precise sentinel semantics. The parts ARE move-VM-driven - <code>FUN_80021B04</code> sets the actor&rsquo;s move-buffer to <code>record+4</code> and ticks <code>FUN_80023070</code>; PROT 0905 has no <em>direct</em> <code>jal 0x80023070</code> because the move VM runs inside the spawn helper. The meshes are the separately-loaded <code>DAT_8007C018</code> library; the flame draws as <code>POLY_GT3/GT4</code> from the <code>etim</code> page (832,256) 4bpp, row 478 (cols 0/16/32 used simultaneously across parts - a static multi-shade look, not a temporal cycle). The fire mesh-set is the 10 etim-baking models <code>DAT_8007C018[23..32]</code>; the active flame at the captured frame is <code>DAT_8007C018[26]</code>. The TMD library is <strong>extraction PROT 871</strong> (<code>etmd.dat</code>, a 30-TMD <code>asset::pack</code>; the <code>sound_data</code> filename label is the +2 shift), loaded at battle init by <code>FUN_800520F0</code> - the real <code>etmd.dat</code> is 871, not 874 &sect;0. The flame animation is <strong>geometric</strong> (PROT 905 move-VM part transforms), NOT CLUT cycling - falsified by the <code>battle_gimard_tail_fire_a/_b</code> capture pair (whole CLUT band byte-identical across two animation-distinct frames). <strong>Engine: PROT 871 is now loaded</strong> - <code>engine-core::scene::seed_effect_model_library_from_etmd</code> walks the uncompressed 30-TMD pack (from the entry's <em>extended</em> footprint) into <code>World::global_tmd_pool[3..=32]</code> at scene entry, and the effect-model render path / <code>F</code>-key dev spawn draw <code>GIMARD_TAIL_FIRE_MODEL_INDEX = 26</code> from it (the 874 &sect;0 mesh is now only a fallback). <strong>PROT 870 flame-texture atlas resolved:</strong> three 64&times;256 4bpp TIMs &rarr; battle VRAM <code>(320,0)</code>/<code>(384,0)</code>/<code>(448,0)</code>, CLUTs rows 474..476 - byte-verified pixel-exact in every stable Rim Elm battle capture, <strong>battle-only</strong> (the field uses those columns for town textures), now uploaded on battle entry by <code>engine-core::scene::upload_flame_atlas_into_vram</code>. It is NOT the 2D-billboard page-(0,0) source (it's at <code>fb_x&ge;320</code>). <strong>The flame-atlas loader site is now pinned: <code>FUN_80020050</code></strong> (SCUS <code>0x80020050</code>) uploads PROT entry <code>0x366</code> into VRAM twice via <code>FUN_8001fc00</code> (&rarr; <code>FUN_8003e8a8</code>, the PROT-index loader), with the VRAM region set up by <code>FUN_80017888</code> / <code>FUN_8001e54c</code> (param <code>0xf000</code>); it is gated on <code>_DAT_8007b868 == 0</code> and is independent of the <code>FUN_800520F0</code> battle-bundle path (which pulls <code>0x367..0x36d</code>). <strong>2D-billboard texel source resolved</strong> (page-(0,0) was an atlas field-order misread): the entry's <code>+4</code>/<code>+6</code> are CLUT (u16) / tpage (byte), so <code>0x7680</code> is the CLUT (CBA fb <code>(0,474)</code>) and the real tpage is the byte at <code>+6</code> (e.g. <code>0x25</code> = page <code>(320,0)</code> 4bpp). A melee hit-spark capture confirms it: no prim samples page (0,0)/8bpp, the spark draws as textured quads on the PROT 870 flame atlas <code>(320,0)</code>/<code>(448,0)</code>. Engine <code>SpriteAtlasEntry</code> fixed (CLUT u16 <code>+4</code>, tpage byte <code>+6</code>); <code>active_effect_sprites</code> now samples the resident PROT 870 / <code>etim</code> texels. <strong>Animation driver LANDED.</strong> <code>engine_core::summon::SummonScene</code> seeds one move-VM <code>ActorState</code> per parsed part (PC=2 &rarr; <code>record+4</code>, mirroring <code>FUN_80021B04</code>) and ticks every part through the already-ported move VM each frame (<code>World::spawn_summon</code> / <code>tick_summon</code> / <code>active_summon_part_draws</code>; <code>play-window</code> <code>G</code> debug-spawns the Gimard summon and draws one textured TMD per mesh part). The per-part animation <em>computation</em> is faithful (every Gimard part runs the move VM without an unimplemented opcode; disc-gated <code>summon_scene_real</code>). <strong>Production cast-band trigger WIRED.</strong> A player Seru-magic cast (<code>spell_id</code> in <code>0x81..=0x8b</code>) requests the summon at the cast point in both engine cast paths - the action-SM <code>spell_anim_trigger</code> (<code>World::fold_battle_event</code> on <code>SpellAnimTrigger</code>) and the live-loop <code>cast_spell_on_slots</code> - via <code>World::request_summon_spawn</code>; the host drains <code>take_pending_summon_spawn</code>, maps the id to its overlay PROT entry (engine mirror <code>0x81..=0x8b &rarr; 905..=915</code> - still the raw <code>+0x381</code> arithmetic; the corrected extraction range is <code>903..=913</code>; retail <code>FUN_8003EC70(id-0x79)</code>), loads + parses it, and seats the scene-graph. A real Gimard <em>Burning Attack</em> cast spawns the animated summon, no debug key. <strong>PROT 0900 transform partially decoded.</strong> The resident render overlay (base <code>0x801F69D8</code>) composes each part's transform. <em>Translation pinned + ported:</em> phase A at <code>0x801F82A0</code> - when the keyframe gate <code>*(i16)(actor+0x9C) == *(i16)(actor+0x9E)</code> holds, the world position is <strong>overwritten</strong> by the move-VM anim-bank slots (<code>anim_3c/3e/40</code>, op <code>0x00</code>, <code>v&lt;&lt;3</code>) and <code>+0x9E</code> cleared; the anim banks are summon-local so the engine adds the cast origin (<code>summon::apply_translation_update</code> in <code>SummonScene::tick</code>) - this is why a part animates with no <code>WORLD_ADD</code> op. <em>Rotation:</em> the overlay builds a per-part render node (rot at <code>+0x8/0xa/0xc</code>, mesh <code>+0x10</code>, flags <code>+0x12</code>), applies the camera angles <code>_DAT_8007B790/2/4</code> gated by flags <code>+0x12</code> bits <code>0x80/0x100/0x200</code>, then the local rotation - composed via <code>RotMatrixX/Y/Z</code>. <strong>Two distinct PROT 0900 render paths, separated (correcting earlier mis-attributions).</strong> <strong>(1) Position - <code>FUN_801F811C</code> (keyframe interpolation, decoded):</strong> advances the part's world pos toward the anim-bank target - when <code>actor+0x9E</code> (duration) is non-zero it adds the per-frame delta <code>_DAT_1F800393</code> to <code>actor+0x9C</code> (time, clamped), interpolates world (<code>+0x14/16/18</code>) toward anim banks (<code>+0x3c/3e/40</code>) via the <code>FUN_801DE4C8</code> mode-1 fixed-point lerp + <code>FUN_801DE648</code> store, and latches <code>world = anim banks</code> exactly on completion. This whole per-frame update is now <strong>ported in full</strong> as <code>summon::apply_translation_update</code> - the latch is its terminal case, not the whole behaviour. It <em>also</em> emits 2D GP0 sprite packets linked to the OT by <strong><code>FUN_8003D2C4</code> = the PSX OT-linker <code>addPrim</code></strong> (not a mesh renderer); those packet fields <code>+0x8/0xa/0xc</code> are GP0 params, <strong>not Euler rotation</strong> - an earlier reading of them as a rotation "render node" was a mis-attribution of this 2D layer. <strong>(2) 3D mesh rotation - resolved by live trace for the PLAYER summon: NOT <code>FUN_801F7088</code>.</strong> A PCSX-Redux capture of a player Gimard <em>Burning Attack</em> cast (Vahn solo; states <code>gimard_summon_start</code> / <code>_visible</code> / <code>_burning_attack</code>) shows, across all three phases: <code>FUN_801F7088</code> = <strong>0 calls</strong>, move VM <code>FUN_80023070</code> = 2-3 (noise, not a per-part driver), part-stager <code>FUN_80021B04</code> = 1, and the <strong>battle per-actor draw <code>FUN_80048A08</code> = 35-64&times;/frame</strong>. The summon is an ordinary battle actor (mesh-table at <code>+0x44</code>, monster-anim archive at <code>*(actor+0x4C)+0x88</code>) drawn by <code>FUN_80048A08</code> &rarr; the per-object rigid-TRS keyframe decoder <code>FUN_8004998C</code> &rarr; cluster-A <code>FUN_80043390</code>, each object's Euler composed by <code>RotMatrixX/Y/Z</code> - posed exactly like an enemy monster body, with the orientation coming from the per-object TRS keyframes, not <code>FUN_801F7088</code> (whose only static dumps are the world-map top-view tile renderer aliasing the same <code>0x801Fxxxx</code> band) and not a move-VM scene-graph. So the move VM stages the part-actors and the battle draw renders + orients them; only the position lerp (1) rides the summon overlay. <strong>NAMING:</strong> the PLAYER Gimard summon move is <em>Burning Attack</em>; the ENEMY Gimard boss move is <em>Fire Tail</em> - distinct moves with distinct animations. SCOPE: the capture is the PLAYER move only. The ENEMY <em>Fire Tail</em> is now resolved separately (disc + library gated <code>firetail_movefx_liveness</code>): its mid-cast holds PROT 0900 resident but the screen-widget family is <strong>dormant</strong> (zero live widgets), and the live effect is a single move-VM part-actor ticked by the SCUS render-tail <code>FUN_80021DF4</code> over a <code>[model_sel][flags][bytecode]</code> record in the battle overlay (0898) data - not a 0900 record - so Fire Tail does not drive the widget path. Those enemy-special move-FX records are the effect-prototype table <code>0x801F6324</code> entries (61 pointers &rarr; 54 unique records, all validated through the move VM by <code>move_fx_records_vm_exec_disc</code>). Probes <code>autorun_summon_rotation.lua</code> + <code>autorun_summon_path_reconcile.lua</code>. There is no faithful CLUT cycle to wire (falsified above); the engine renders the flame with the correct row-478 CLUT. <strong>Animated battle-actor rendering is now WIRED.</strong> Enemy monsters animate in <code>play-window</code>: <code>monster_archive::idle_animation</code> (action 0, the <code>+0x8c</code> 9-byte TRS stream) &rarr; <code>engine_core::battle_anim::MonsterAnimPlayer</code> (8.8 fixed-point loop cursor &rarr; <code>legaia_anm::PoseFrame</code>, the same per-object <code>(translation, rotation)</code> shape the field player produces) &rarr; the rigid <code>tmd_to_vram_mesh_posed_rot</code> deform (<code>R&middot;v + T</code>, <code>Rz&middot;Ry&middot;Rx</code>, the validated <code>monsters.html</code> <code>_assemble</code> math). <code>enter_battle_render</code> attaches the clip per actor, <code>World::tick_battle_animations</code> advances it each battle frame, the posed-override path deforms the mesh (field translation-only path unchanged). Proven on real disc data by <code>battle_anim_real</code> (monster 1 = 28 frames &times; 15 parts). <strong>Player summon source - RESOLVED: the summon reuses the namesake <code>battle_data</code> enemy creature.</strong> The actor <code>0x8008350C</code> earlier called "the summon" is actually a <strong>Gobu Gobu monster</strong> (its 13&times;18 idle byte-matches <code>battle_data</code> id 4). The fix was <strong>fingerprint discipline</strong>: the <code>state6</code> RAM dump is advanced N frames, so analysing the fingerprint-verified frame-0 RAM of <code>gimard_summon_visible</code> (<code>8aa0&hellip;</code>, sha256-matched to catalog + live slot) instead, the actor table <code>DAT_801C9370</code> shows Vahn casting <code>0x81</code>, a Gobu Gobu enemy, and a distinct <strong>11-part / 2-action</strong> entity whose idle (<code>0x800BBB20</code>, 11&times;40) <strong>byte-matches <code>battle_data</code> id 10 = "Gimard"</strong>. So the player Gimard summon spawns the namesake "Gimard" creature (id 10), reusing its monster-archive mesh + TRS animation - exactly the now-wired enemy pipeline's format. Disc-verified spell&rarr;creature map (by name): Gimard&rarr;10, Theeder&rarr;25, Vera&rarr;28, Gizam&rarr;55, Nighto&rarr;49, Zenoir&rarr;64, Viguro&rarr;74, Swordie&rarr;86, Orb&rarr;83, Freed&rarr;92, Nova&rarr;95 (<code>summon::summon_creature_id</code>, disc-gated <code>summon_creature_map_real</code>). <strong>The map is now extended through the evolved-Seru block <code>0x8C..=0x95</code> by mesh identity, not name</strong>: each <code>summon.dat</code> group's actor-record Legaia TMD is <strong>byte-identical</strong> (8&ndash;17&nbsp;KB) to its <code>battle_data</code> creature mesh, recovering all of <code>0x81..=0x95</code> - including the two evolved legs no capture state covered, <strong>Kemaro <code>0x90</code>&rarr;144</strong> and <strong>Spoon <code>0x91</code>&rarr;147</strong> (also Gola Gola <code>0x8c</code>&rarr;98, Mushura <code>0x8d</code>&rarr;101, Aluru <code>0x8e</code>&rarr;80, Barra <code>0x8f</code>&rarr;141, Slippery <code>0x92</code>&rarr;150, Iota <code>0x93</code>&rarr;153, Puera <code>0x94</code>&rarr;156, Gilium <code>0x95</code>&rarr;159). Map <code>legaia_asset::summon_creatures</code>, byte-validated by disc-gated <code>summon_creature_tmd_map_real</code>; the engine resolves + spawns evolved summons through it. The <strong>high block <code>0x99..=0xA0</code></strong> (Juggernaut / Palma / Mule / Horn / Jedo / Meta / Terra / Ozma) does <strong>not</strong> byte-match any archive record - those summons carry a <strong>bespoke mesh</strong> in the group's raw part-pool slot, not a reused enemy body. This supersedes the move-VM <code>SummonScene</code> model for the <em>visual</em>: the faithful render is the battle creature drawn through <code>battle_render_mesh</code> + <code>MonsterAnimPlayer</code> + <code>posed_rot</code> (PROT 867), not the stager scene-graph. (PROT 905 remains the magnitude/effect stager.)</td>
-        <td><code>project_effect_pool_draw_bridge.md</code></td>
+        <td>Seru-magic summon visual (e.g. Burning Attack)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The player summon renders as its namesake <code>battle_data</code> creature (Gimard <code>0x81</code> &rarr; monster 10; disc-pinned through <code>0x95</code>) via the ordinary rigid TRS-keyframe battle draw - not the move-VM stager scene-graph, and not PROT 0900.</td>
+        <td><a href="../subsystems/move-vm.html">move-vm</a></td>
+      </tr>
+      <tr>
+        <td><code>summon.dat</code> / <code>readef.DAT</code> side-band streaming</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Extraction PROT 893/894, <code>0x10800</code>-byte slots: per-special CLUT rows + texture pages + summon-creature actor records + the player art-anim "ME" archives. Action id &rarr; slot <code>3*(id-1)</code> (<code>id &lt; 0x9A</code>) else <code>4*id + 0x63</code>; bit 7 selects the file.</td>
+        <td><a href="../formats/summon-readef.html">summon-readef</a></td>
+      </tr>
+      <tr>
+        <td>Monster steal item (Evil God Icon)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Static SCUS table <code>DAT_80077828 + id*2</code> (1-based monster id): <code>[steal_chance_pct, steal_item_id]</code> - chance first. Not in the PROT 867 record. Byte-exact vs the published steal table.</td>
+        <td><a href="../formats/steal-table.html">steal-table</a></td>
+      </tr>
+      <tr>
+        <td>Battle face-stamp issuing site</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The per-frame facial animator <code>FUN_8004C7B4</code> stamps eye/mouth frames every frame (action-entry tracks <code>+0x8C</code>/<code>+0x98</code>, static per-character SCUS tables, via <code>MoveImage</code>; Terra skipped). Residue: the sibling pass <code>FUN_8004CCD4</code>'s trigger states.</td>
+        <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
       </tr>
       <tr>
         <td>Per-spell magic power / multiplier</td>
-        <td><code>roll ported</code></td>
-        <td><strong>Mechanism RESOLVED by static dump.</strong> The jump-table reads (<code>jr *(0x801F69D8 + state*4)</code>) resolve to PROT <strong>0900</strong> file offset 0 - the <strong>render</strong> overlay. Those five entries are staggered entry points into one per-frame routine that lerps move-VM anim banks and emits GP0 display-list packets into scratchpad <code>0x1F800314</code>: <strong>zero <code>mult</code>/<code>div</code>, zero <code>actor+0x14c</code> write, no power read</strong> &rarr; the &ldquo;magnitude is in this jump table&rdquo; hypothesis is <strong>falsified</strong> (it is animation/GPU only). The magnitude is applied by the paired <strong>stager</strong> overlay (PROT 0903..0915, the file with the <code>jal FUN_80021B04</code> part-spawns), in the same function that spawns the body parts - each has exactly one <code>actor+0x14c</code> writer: <strong>damage</strong> summons (0904/0912/0914 + 0915&rsquo;s 2nd arm; <code>subu</code>) call the shared battle kernel <strong><code>FUN_801dd0ac</code></strong> (<code>a0</code> = a per-summon move-type const <code>0x10..0x12</code>, <code>a1=7</code>, <code>a2</code> = target), clamp to current HP, then <code>HP -= amount</code>; <strong>heal</strong> summons (0903/0905/0910/0911/0913 + 0915&rsquo;s 1st arm; <code>addu</code>) apply <code>(power_byte&lt;&lt;5)+0xe0</code> inline (<code>power_byte</code> from a <code>0x80084140</code>-based table searched by the cast spell-id <code>actor+0x1df</code>: ids at <code>+0x705</code>, powers at <code>+0x729</code>). <code>FUN_801dd0ac</code>&rsquo;s <strong>summon path</strong> (<code>attacker_slot == 7</code>): roll = <code>rand % (INT@+0x168 + 1) + HP@+0x14c + DAT_801C9370[ctx+0x13]_INT * 2</code>, returns <code>roll &minus; defender_mitigation</code> - so summon &ldquo;power&rdquo; is <strong>caster/summon battle-state-derived, not a static per-spell scalar</strong> (hence the zero SCUS <code>+5..+8</code> and no gamedata power column). Its <strong>non-summon</strong> branch reads a real 26-byte-stride per-move power table at <strong><code>0x801F4F5C</code></strong> (the arts/physical path, <strong>not</strong> magic) - now located + parsed + labeled off the disc (<code>legaia_asset::move_power</code>, static battle-overlay data in PROT 0898 file <code>0x26744</code>). <code>param_1</code> is a <em>mapped</em> index: a 128-byte id&rarr;index map at <code>0x801F4E63</code> gives <code>param_1 = map[actor[+0x1df]]</code> (setup <code>FUN_801DEA50</code> caches the record at <code>ctx+0x1014</code>; the per-frame tick <code>FUN_801E09F8</code> reads the residual fields off the held pointer). <strong>The full 26-byte record is now decoded</strong> (see <a href="../formats/move-power.html">move-power</a>): <code>+0</code> power, <code>+0x02</code> strike-Y offset, <code>+0x04</code>/<code>+0x06</code> move/phase counters, <code>+0x08</code>/<code>+0x09</code> homing speed + tracking flag, <code>+0x0a</code> impact-effect selector, <code>+0x0b</code> trail texpage, <code>+0x0d</code> sound cue, <code>+0x0e</code> list-mode flag, <code>+0x12</code>/<code>+0x16</code> on-contact / launch effect-id lists; <code>+0x0c</code> is an unused <code>C</code>/<code>E</code>/<code>G</code> designer tag with no runtime reader. Joining the move-id space to the spell table labels every record: ids <code>0x25..0x74</code> = the named monster special-attacks (Tail Fire <code>0x27</code>, &hellip;), ids <code>0x04..0x1f</code> = the unnamed internal enemy-attack tiers (disc-gated <code>move_power_real</code> pins the boundary, no Sony strings). The scale stage <code>FUN_801dd864</code> (8&times;8 element-affinity matrix <code>0x801F53E8</code> + status bits + the summon magic-power tail) and the finisher <code>FUN_801ddb30</code> (resistance bits, <code>rand%9+8</code> floor, 9999 cap, spirit gauge, MP drain, stat debuffs) are now fully traced. <strong>PORTED:</strong> the closed-form roll + scale arithmetic is now pure kernels in <code>legaia_engine_vm::battle_formulas</code> (<code>summon_attacker_roll</code> / <code>summon_defender_roll</code> / <code>summon_predamage</code> / the <code>apply_*</code> helpers / <code>heal_summon_amount</code>), hand-tested against the disassembly. <strong>Residual:</strong> the arts/physical kernel is now <strong>wired into the live loop for monster special-attacks</strong> - the move-power table loads onto <code>World::move_power</code> (PROT 0898) and <code>cast_spell_on_slots</code> overrides a damaging monster cast's magnitude via <code>World::enemy_move_predamage</code> &rarr; <code>arts_physical_predamage</code> seeded by the move's <code>+0</code> power (INT from <code>battle_accuracy</code>, defense from <code>battle_defense_split</code>, five <code>rand()</code> in retail order; gated on the table being installed so disc-free battles keep the placeholder + RNG stream). The <strong>element-affinity</strong> scale is now engine-side too: the 8&times;8 matrix <code>0x801F53E8</code> + per-character element table <code>0x801F5480</code> parse off the disc (<code>legaia_asset::element_affinity</code>), the enemy element source is pinned <strong>from the <code>FUN_801dd864</code> disasm</strong> - read <strong>record-direct</strong> (<code>lbu …,0x1d(record)</code> where <code>record = 0x801C9348[slot-3]</code>, the per-enemy record-pointer table, <strong>not</strong> a copied live-actor field), so it is <code>MonsterRecord::element</code> (<code>+0x1D</code>) consumed exactly as parsed (the same record the spoils path reads <code>+0x44/+0x46/+0x48</code> from); the curated-element correlation now only corroborates the id labelling, and a monster special attack now scales by <code>matrix[enemy_element][party_member_element]</code> (applied inside the roll, before the conditional bonus-arm threshold - matching retail's scale&rarr;bonus order, so a non-neutral value can shift the lazy bonus draw). The <strong>player&rarr;enemy</strong> direction is now wired too: a player Seru-magic cast scales by <code>matrix[summon-creature element][target element]</code> (<code>World::cast_affinity_pct</code> in <code>cast_spell_on_slots</code>) - the attacker element resolved off the summon <em>creature</em> (its namesake <code>battle_data</code> record, the engine-side slot-7 <code>+0x1d</code>), the defender by slot; this multiply is post-roll on the deterministic cast output. Both are gated so an uninstalled / neutral table reproduces the no-affinity baseline bit-identically (magnitude + RNG stream), keeping disc-free battles deterministic. The record's auxiliary tables are now parsed too: the <code>+0x12</code>/<code>+0x16</code> effect-id lists' <code>0x801F6324</code> prototype-pointer + <code>0x801F6418</code> SFX tables (<code>EffectAuxTables</code>) and the <code>+0x0a</code> <code>0x801F53D4</code> config words (<code>parse_impact_effect_table</code> - packed <code>u32</code> config words, correcting an earlier &ldquo;pointer table&rdquo; mislabel). <strong>The <code>0x801F4F5C</code> table is special-attack-only:</strong> its id&rarr;index map covers 44 ids (internal tiers <code>0x04..07</code>/<code>0x12..1F</code> + named attacks <code>0x25..74</code>); the basic-attack / art bands <code>0x08..11</code> and <code>0x16..18</code> are unmapped - pinned by a live capture (a party member's Tactical Art carries an unmapped id, e.g. Vahn's Somersault <code>0x0F</code>, so it would roll against the zero-power record 0). So a party member's arts do <strong>not</strong> use this table; they take their damage from the per-strike art-record power byte (the engine's <code>art_strike.rs</code> already does this faithfully), leaving only <code>apply_basic_attack</code>'s flat <code>art_strike_damage_default</code> (no-art generic hit) as a stand-in. Still open: the player-driven <strong>summon</strong> roll (needs the slot-7 summon-body battle-actor context). The <code>FUN_801ddb30</code> finisher's <strong>closed-form finalisation arithmetic is now ported</strong> (<code>battle_formulas::damage_finish</code> - equipment elemental-resistance halving / guard halve / <code>rand%9+8</code> floor / summon power-% scale / 9999 cap - plus <code>spirit_gauge_fill</code>, both unit-tested); only its state-mutating tail (damage-popup accumulator, AI revenge table, MP drain, per-element stat-debuff switch) stays in the live battle context. Dumps: <code>overlay_battle_action_801dd0ac.txt</code> / <code>_801dd864.txt</code> / <code>_801ddb30.txt</code>.</td>
-        <td><code>project_spell_table_pinned.md</code></td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>Summon power is battle-state-derived, not a static scalar: roll <code>FUN_801dd0ac</code> &rarr; affinity scale <code>FUN_801dd864</code> &rarr; finisher <code>FUN_801ddb30</code>, all ported. Arts/specials read the 26-byte move-power table at <code>0x801F4F5C</code> (PROT 0898). <a href="#d-move-power">details &darr;</a></td>
+        <td><a href="../formats/move-power.html">move-power</a></td>
       </tr>
       <tr>
         <td>Arts command sequence - independent source</td>
-        <td><code>resolved</code></td>
-        <td>The SCUS arts-name table (<code>DAT_80075EC4</code>) glyph string is byte-exact ground truth for every art's directional command; <code>legaia_art::ArtsOracle</code> exposes it, and disc-gated contract tests validate both the best-effort PROT <code>0x05C4</code> <code>parse_record</code> command-decode and the curated gamedata <code>directions</code>/<code>ap</code> columns against it (one documented walkthrough error: Hyper Elbow).</td>
-        <td><code>project_arts_name_table_pinned.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The SCUS arts-name table (<code>DAT_80075EC4</code>) glyph string is byte-exact ground truth for every art's directional command; contract tests validate the PROT <code>0x05C4</code> record decode and the curated gamedata against it.</td>
+        <td><a href="../formats/art-data.html">art-data</a></td>
+      </tr>
+      <tr>
+        <td>Weapon-specialty arm width</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Not a runtime comparison: the Arms AP cost is a per-(character, weapon) disc byte at the weapon section's swing record <code>+0x74</code> (favored <code>0x1E</code> / off-class <code>0x2A</code> / far <code>0x36</code>), copied verbatim at battle load by <code>FUN_800557B8</code>.</td>
+        <td><a href="../subsystems/arts-command-gauge.html">arts-command-gauge</a></td>
       </tr>
       <tr>
         <td>Stat growth-rate source</td>
-        <td><code>resolved (port pending)</code></td>
-        <td>The per-character per-level stat-grant source is <strong>static <code>SCUS_942.54</code> tables read by the level-up applier <code>FUN_801E9504</code></strong>: per-stat 98-entry curves at <code>DAT_800769CC</code> (stride <code>0x62</code>, indexed by level) + a per-stat parameter block at <code>DAT_80076918</code>. The &ldquo;Seru struct <code>+0x74</code>&rdquo; reading stays <strong>falsified</strong> (a <code>0x80808080</code> battle-state flag). Earlier searches scanned the <code>magic_level_up</code> <em>display</em> overlay, not the victory-path applier. Remaining: an engine port extracting the tables at runtime. See <a href="../subsystems/level-up.html#stat-gains">level-up</a>.</td>
-        <td><code>project_shop_ui_and_levelup.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Resolved + wired: static SCUS tables read by <code>FUN_801E9504</code> - <code>DAT_80076918</code> per-character <code>{start, max, jitter, row}</code> sub-records + three curves; gain = <code>(max-start)*curve/0x24C0</code> &plusmn; jitter. Byte-validated; wired in <code>engine-core/src/levelup.rs</code>.</td>
+        <td><a href="../subsystems/level-up.html">level-up</a></td>
       </tr>
       <tr>
         <td>Monster stat-record archive source</td>
-        <td><code>resolved</code></td>
-        <td>The monster archive is <strong>PROT entry <code>0867_battle_data</code></strong> (extended footprint; the 15.9 MB archive lives in the entry's trailing-gap sectors). <code>FUN_800542C8</code> streams per-monster <code>0x14000</code> LZS slots at <code>(id-1)*0x14000</code>, each <code>[u32 dec_size][LZS]</code> decoding to a block whose head is the <code>FUN_80054CB0</code> stat record (name <code>@0x00</code>, HP <code>@0x0C</code>, MP <code>@0x10</code>, stat u16s <code>@0x0E/0x12/0x14/0x16/0x18/0x1A</code>, magic count <code>@0x4A</code>, spell-ptr array <code>@0x4C</code>). Pinned by a live-battle PCSX-Redux watchpoint (<code>autorun_monster_record_source.lua</code>) - relative seek <code>(id-1)*40</code> sectors + <code>disc_read</code> CdlLOC &rarr; PROT.DAT <code>0x38AF000</code> = entry 867; three records match live actor stats byte-for-byte. The <code>monster_data</code> label (PROT 869) is a stub. Parser <code>legaia_asset::monster_archive</code>; bridge <code>catalog_from_monster_archive</code> wired into <code>enter_field_scene</code>. The record is now fully decoded: all six stats are named (ATK/DEF&uarr;/DEF&darr;/INT/SPD/AGL), rewards are inline at <code>+0x44..0x49</code>, and <code>+0x04</code> is the monster's <strong>battle-model TMD</strong> offset (not XP/drop - see the mesh thread below).</td>
-        <td><code>project_monster_stat_archive.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>PROT 0867 (the <code>monster_data</code> block): <code>FUN_800542C8</code> streams per-monster <code>0x14000</code> LZS slots; each head is the <code>FUN_80054CB0</code> stat record (name, battle-TMD offset, HP/MP, six stats, rewards at <code>+0x44..0x49</code>).</td>
+        <td><a href="../formats/monster-animation.html">monster-animation</a></td>
       </tr>
       <tr>
         <td>Monster mesh + texture pool</td>
-        <td><code>resolved</code></td>
-        <td>The monster's 3D battle model is a <a href="../formats/tmd.html">Legaia TMD</a> embedded in each PROT 867 archive block at the offset in stat record <code>+0x04</code> (installed at battle-actor <code>+0x230</code>; the <code>0x1C</code>-stride records <code>FUN_80049858</code>/<code>FUN_800495C8</code> walk are its object table). <strong>186/194 slots parse cleanly.</strong> The texture/CLUT pool at record <code>+0x08</code> is decoded from the battle loader <code>FUN_80055468</code>: a <code>0x1E0</code>-byte region of fifteen 16-colour CLUTs followed by a 4bpp page (always 256 rows tall, 128 or 256 texels wide; palette = <code>cba &amp; 0x3F</code>). Byte-exact vs pool sizes; renders to recognizable atlases. The on-disc CBA/TSB are nominal defaults the loader relocates per slot, so the raw pool does not appear verbatim in a battle VRAM dump - the loader layout is the ground truth. Parser <code>legaia_asset::monster_archive::{mesh, MonsterMesh::texture}</code>; CLI <code>--obj</code> + <code>--texture-png</code>; WASM accessors drive the enemy-table page's per-row WebGL viewer (textured + directional-lit).</td>
-        <td><code>project_monster_mesh_source.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>A Legaia TMD at stat record <code>+0x04</code> in each PROT 867 block; the pool at <code>+0x08</code> is fifteen 16-colour CLUTs + a 4bpp page (the loader relocates CBA/TSB per slot; disc values are nominal).</td>
+        <td><a href="../formats/monster-animation.html">monster-animation</a></td>
       </tr>
       <tr>
         <td>Terra slot-3 / story-flag overlap</td>
-        <td><code>resolved</code></td>
-        <td>The <strong>header-size constant drifted</strong>: <code>RETAIL_CHAR_RECORD_HEADER_SIZE</code> was <code>0x66F</code> (the <em>name</em> field) but the true record base is <code>game+0x3C8</code> (live RAM <code>0x80084708</code>), with the display name at internal offset <code>+0x2A7</code>. Confirmed across six in-game RAM captures: mid-game stats at <code>record+0x104</code>/<code>+0x11C</code> read back the expected per-character HP/MP for all four slots. The four-slot array runs into the global region, so slot 3 (Terra)'s tail (record offset &ge; <code>+0x2BC</code> = <code>game+0x12C0</code>) aliases the story-flag bitmap and inventory; Terra's meaningful fields (name, live stats, RecordStats) sit before that boundary. There is <strong>no special case</strong> - Terra is the New Game template's fourth roster entry (HP 400) but never a savable battle-party member, so the tail aliasing is benign. The constant is now <code>0x3C8</code>, <code>legaia_save::CharacterRecord</code> gains a <code>name()</code>/<code>set_name()</code> accessor at <code>NAME_OFFSET</code> (<code>+0x2A7</code>), and the off-by-<code>0x2A7</code> that made <code>Party::from_retail_sc_block</code> read stats from the wrong fields on a populated save is fixed.</td>
-        <td><code>project_char_record_name_offset.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>A header-size drift: the record base is <code>game+0x3C8</code> (name at <code>+0x2A7</code>). Terra's tail benignly aliases the story-flag bitmap - she is never a savable battle-party member. No special case.</td>
+        <td><a href="../formats/save-record.html">save-record</a></td>
       </tr>
       <tr>
         <td>Navmesh / per-scene navigation data</td>
-        <td><code>falsified</code></td>
-        <td><code>0x80108EA4..0x80109550</code> is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in field-pack schema slots; the encounter-record path lives at <code>actor[+0x94]</code>.</td>
-        <td><code>project_navmesh_negative_finding.md</code></td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td><code>0x80108EA4..0x80109550</code> is per-scene GPU primitive scratch. Real region / event data lives in the field-file preamble (count + <code>u16</code> offset table + records - <strong>not</strong> the field-pack schema slots, a global-constant template); collision is the <code>+0x4000</code> MAP grid.</td>
+        <td><a href="../formats/navmesh.html">navmesh</a></td>
       </tr>
       <tr>
-        <td>Scripted Tetsu encounter &rarr; Battle (v0.1 oracle Battle leg)</td>
-        <td><code>mostly</code></td>
-        <td>The v0.1 oracle now reaches <strong>Battle</strong> from a NEW GAME cold boot: <code>BootSession::begin_new_game</code> seeds the opening party (Vahn, 180 HP) - the Tetsu fight is the game's first battle, so the new-game state <em>is</em> retail's pre-fight story state (there is no earlier save to seed from, and you cannot save before the tutorial fight) - the cold boot installs town01's sparring carrier from its MAN, and the field-VM dialogue-accept engages it (<code>v0_1_playthrough.rs::v0_1_battle_leg_reaches_battle_from_new_game</code>, converging with the cataloged retail Field/Battle anchors). The earlier framing below assumed a save-seed was required; it is not, for the opening fight. The <strong>install seam exists</strong>: the field VM's bare arm-encounter op (<code>0x37</code>/<code>0x41</code>) forwards the record window overlaying the opcode to the host via <code>FieldHost::install_scripted_encounter</code> when <code>is_scripted_encounter_armed</code> is true; <code>World::arm_scripted_encounter</code> + <code>install_scripted_encounter</code> parse it, register the formation, and arm the next field-step roll (fire-once: a successful install disarms), emitting <code>FieldEvent::ScriptedEncounter</code>. <strong>The formation is now pinned</strong>: the training fight is a lone monster, archive id <code>0x4F</code> ("Tetsu"), built clean-room by <code>EncounterRecord::rim_elm_training()</code> and verified reachable end-to-end (a disc-gated test cold-boots town01, installs it via the arm API, and reaches Battle with id <code>0x4F</code>). The arm is also confirmed <strong>dialogue-driven, not scene-entry-driven</strong>: the global formation cell <code>0x8007BD0C</code> is empty in the pre-battle field capture and only carries <code>4F</code> from battle-load onward. The <strong>install/launch mechanism is now pinned</strong> (corpus RAM + <code>FUN_801DA51C</code> decomp): the carrier reaches SM <strong>state 1</strong>, which copies its <code>entity[+0x94]</code> formation into the cell and - in the same tick, via the <code>case 2/3</code> fall-through - writes <code>_DAT_8007B83C = 8</code> (the battle game-mode handoff). The carrier is a <strong>dedicated field entity, not the player context</strong> (<code>_DAT_8007C364</code> = corpus-stable <code>0x80083794</code>, which carries no clean <code>+0x8A</code>/<code>+0x94</code> SM); the entity-update loop reaches it via per-entity function-pointer dispatch (no direct <code>jal</code>), so it is one of the scene's MAN-placed entities. Three threads remain: (1) the <strong>carrier identity + scripted state-0&rarr;1 advance</strong> - which MAN-placed town01 entity it is and what bytecode advances its <code>FUN_801DA51C</code> SM (no mid-armed <code>+0x94</code> capture exists: the pre-battle save has the cell clear and battle ctx unset, every battle save has the cell <code>4F</code> but <code>+0x94</code> already cleared); (2) <strong>seeding mc7's RAM</strong> (story flags + field record) into the clean-room <code>World</code> so a cold boot reaches the dialogue at all; (3) the <strong>engine interaction gap</strong> - <code>town01</code>'s real MAN scene-entry script <em>does</em> load (it is a <code>SceneAssetTable</code> bundle, PROT entry 4; its MAN entry script is at MAN offset 3075, <code>pc0 = 11</code>, and <code>enter_field_scene</code> runs it, overriding the record-0 fallback - the earlier "standalone scene / unpinned <code>_DAT_8007B898</code> / halting record 0" framing was wrong), but the Tetsu arm is <strong>not a script-borne inline literal</strong>. An <strong>opcode-aware walk</strong> of town01's MAN partition-1 field-VM scripts (<code>man_field_scripts::walk_partition1_scripts</code>, driven by the <code>field_disasm</code> linear walker) lands on every <code>0x37</code>/<code>0x41</code> yield byte and decodes the trailing <code>[count][ids]</code> window at each: across 53 records and 71 yield sites, <strong>zero</strong> carry the <code>[1][0x4F]</code> Tetsu signature - every decode is a <code>count=0</code> artifact from the walker stepping into embedded MES dialog text (the earlier P1[32] <code>0x41</code> "candidate" is the ASCII of a dialogue line, not an arm). This corroborates the <strong>indexed formation-table</strong> path from a second, independent region (the earlier byte-scan of the event-scripts prescript at PROT entry 3 reached the same negative): the lone-<code>0x4F</code> formation is <strong>town01 MAN formation index 4</strong>, installed by the carrier pointing <code>actor[+0x94]</code> at that row, not by an inline operand. So auto-arming the Battle leg does <strong>not</strong> need a script arm op. The <strong>field-resident carrier SM tick now exists</strong>: <code>World</code> ticks the ported <code>FUN_801DA51C</code> SM in <code>SceneMode::Field</code> (<code>tick_field_carriers</code>), <code>install_field_carriers</code> places a scripted-encounter carrier, and the engage is now <strong>driven by the field-VM dialogue-accept</strong> rather than a manual API: a field-interact op (<code>0x3E</code>, <code>op0 &lt; 100</code>) on the carrier's placement arms the engage (<code>World::field_carrier_slots</code> &rarr; <code>pending_carrier_engage</code>) and accepting its prompt (the <code>0x4C</code> n5 sub-4 dialog dismiss) engages it Idle &rarr; Activating, so the next tick runs the state-1 formation copy + <code>case 2/3</code> battle handoff, resolving MAN formation index 4 and flipping Field &rarr; Battle. <code>training_battle.rs</code> drives this end-to-end on disc data, reaching Battle with Tetsu without <code>engage_field_carrier</code> (alongside the direct-API and by-index paths). The residual gap is <strong>the trigger wiring</strong>, not the mechanism: (a) the carrier placement is now <strong>pinned to a specific MAN actor</strong> - town01 partition-1's single placement at tile (76, 65) / model <code>0x6A</code>, the sparring partner, identified by its long multi-page inline dialog block (<code>RIM_ELM_SPARRING_CARRIER_TILE</code>/<code>_MODEL</code>, <code>rim_elm_sparring_carrier.rs</code>); the field-carrier config <strong>derives from that MAN actor</strong> (<code>man_field_scripts::derive_field_carriers</code> + <code>World::install_field_carriers_from_man</code>); (b) the field-VM dialogue-accept now drives the engage (above) and the v0.1 oracle reaches Battle from a new-game cold boot. The <strong>interaction probe is now ported faithfully</strong>: <code>World::tick_field_interaction_probe</code> (clean-room <code>FUN_801cf9f4</code>) runs retail's <code>DAT_801f2254</code> facing probe - a radius-64 compass point ahead of the player's facing, box-tested at &plusmn;72 against the talkable NPCs' placement positions (<code>World::field_npc_positions</code>) - and on the action button talks to the matched NPC and turns the player toward it, so facing the sparring partner and pressing X starts the fight with no script injection. This relies on the <strong>runtime actor frame == MAN placement frame</strong> finding: <code>FUN_8003A1E4</code> spawns at <code>tile*128 + 0x40</code> via <code>FUN_80024C88</code> with no anchor, and the player cold-spawn <code>0xA40</code> is <code>tile 20*128 + 0x40</code> in that same frame (the apparent mismatch in the mc6 capture was a <em>patrolling</em> NPC that had walked from its spawn tile). Auto-navigation now closes the emergent path: <code>World::nav_step_toward</code> drives the player along a BFS route over the real collision grid, so the v0.1 oracle's emergent Battle leg walks the player from the cold-boot spawn to the partner, talks via the probe, and accepts &rarr; Battle, with no teleport. Carrier-reposition finding: the carrier's MAN placement tile (76,65) is its <em>post-tutorial</em> village spot, in a town01 sub-area NOT walk-reachable from spawn (town01's MAN spans several door-connected sub-areas); the opening repositions the partner next to Vahn for the tutorial (<code>RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS</code> &asymp; tile (21,14), a reachable hop, pinned from the capture whose <code>actor[+0x90]</code> resolves to the (76,65)/<code>0x6A</code> record - same carrier). The cold boot skips that reposition, so the emergent test places the carrier at its tutorial position first. What remains: deriving that opening reposition from the opening sequence itself (vs the pinned constant); and the dialogue box's Yes/No selection logic, still undecoded (the engine treats accept as dismiss - faithful for the forced tutorial, which has no decline path). Disc-gated regression: <code>town01_p1_arm_sites.rs</code>, <code>training_battle.rs</code>, <code>v0_1_playthrough.rs</code>; survey CLI: <code>legaia-engine man-scripts</code>.</td>
-        <td><code>project_v0_1_oracle_phase1.md</code></td>
+        <td>Battle party meshes (PROT 1204 / <code>other5</code>)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Battles assemble each character's mesh at setup from the player battle files' equipment-id sections (<code>FUN_80052770</code> case 4 &rarr; <code>FUN_80052FA0</code> &rarr; <code>FUN_800536BC</code> splice), with load-time TSB/CBA relocation to rows 481-483. PROT 1204 is the Baka Fighter / default-equipment sibling.</td>
+        <td><a href="../formats/character-mesh.html">character-mesh</a></td>
+      </tr>
+      <tr>
+        <td>MP-cost ability-bit priority (half vs quarter)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Half (<code>0x20</code>) wins over Quarter (<code>0x10</code>); the formula subtracts a shifted copy: half = <code>cost-(cost&gt;&gt;1)</code>, quarter = <code>cost-(cost&gt;&gt;2)</code> (pay 3/4). All engine cast paths share one helper.</td>
+        <td><a href="../subsystems/battle-formulas.html">battle-formulas</a></td>
+      </tr>
+      <tr>
+        <td>Scripted Tetsu encounter &rarr; Battle</td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>Reaches Battle from a NEW GAME cold boot: the MAN-derived sparring carrier (town01 formation index 4, monster <code>0x4F</code>) is engaged by walking to it, the interaction probe, and the dialogue-accept - no teleport, no injection. <a href="#d-tetsu">details &darr;</a></td>
+        <td><a href="../subsystems/battle.html">battle</a></td>
+      </tr>
+      <tr>
+        <td>Item-effect table - class/targeting + amounts</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Class/tier/targeting/usability is the static <code>DAT_800752C0</code> table; the restore <em>amounts</em> are also static (apply handler <code>FUN_800402F4</code>, tier-indexed heal tables) - not overlay-resident. Parser <code>legaia_asset::item_effect</code>.</td>
+        <td><a href="../formats/item-effect-table.html">item-effect-table</a></td>
+      </tr>
+      <tr>
+        <td>Equipment stat-bonus table - slot model</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><code>DAT_80074F68</code> (8-byte stride) decoded from <code>FUN_801CF650</code>: <code>+0</code> INT, <code>+1</code> ATK, <code>+2</code> UDF, <code>+3</code> LDF, <code>+4</code> SPD. The four <code>+7</code> categories are the weapon/armour slots; accessories are absent.</td>
+        <td><a href="../formats/equipment-table.html">equipment-table</a></td>
+      </tr>
+      <tr>
+        <td>Accessory ("Goods") passive-effect data</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The descriptor <code>+3</code> byte is a 64-slot passive-effect index - a bit in the per-character ability bitfield <code>char+0xF4</code> (aggregator <code>FUN_80042558</code>); magnitudes inline, name/scope table at <code>0x8007625C</code>. Byte-validated vs gamedata.</td>
+        <td><a href="../formats/accessory-passive-table.html">accessory-passive-table</a></td>
       </tr>
     </tbody>
   </table>
+
+  <h3 id="d-super-miracle">Super / Miracle Arts - residual</h3>
+  <p>The queue is the per-actor <code>actor[+0x1DF..+0x1F2]</code> action-parameter byte stream; captures validate Noa's Miracle queue and Vahn's Tri-Somersault Super byte-exact against the modeled replace strings. Residual: the connector direction after each art is combo-specific, so the remaining Supers' replace strings each need one capture through <code>autorun_super_art_action_queue.lua</code>.</p>
+
+  <h3 id="d-move-power">Per-spell magic power - residual</h3>
+  <p>The <code>0x801F4F5C</code> table is special-attack-only (party arts take per-strike art-record power); the aux effect tables are parsed, move-FX scene-graphs render through the ported move VM, and both affinity directions are wired. Residual: live note-on wiring of the resolved sound cue; the retail draw transform of a move-VM part (the <code>FUN_80021DF4</code> render tail); the live slot-7 summon's HP at roll time (modelled as spawn HP).</p>
+
+  <h3 id="d-tetsu">Scripted Tetsu encounter - residual</h3>
+  <p>Launch mechanism, carrier identity/placement, picker, and the emergent walk-talk-accept leg are pinned and engine-driven. Residual: deriving the opening carrier reposition from the opening sequence itself (the engine uses the pinned tutorial position), and the dialogue Yes/No selection logic (accept is treated as dismiss - faithful for the forced tutorial).</p>
 </section>
 
-<section class="doc-section" id="field-locomotion">
+<section class="doc-section" id="field">
   <h2>Field / locomotion</h2>
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
         <td>Town/field free-movement locomotion</td>
-        <td><code>resolved</code></td>
-        <td>The player free-movement controller is <code>FUN_801d01b0</code> (field overlay 0897), pinned by a runtime write-watchpoint on <code>*(0x8007c364) + 0x14/0x18</code> (<code>autorun_player_pos_watch.lua</code>). It camera-remaps the held pad (<code>func_0x800467e8</code> + <code>FUN_80046494</code> &rarr; direction bits <code>&amp; 0xf000</code>), computes a per-frame speed (<code>base_step * player[+0x72] &gt;&gt; 12 * DAT_1f800393</code>, with terrain-slow + diagonal modifiers), then steps the player position 2 units at a time with per-axis collision via <code>FUN_801cfe4c</code>. Sets facing <code>player[+0x26]</code>. Full write-up in <a href="../subsystems/field-locomotion.html">field locomotion</a>. The <code>801db81c..801dbf9c</code> cluster previously suspected here is the field <em>camera</em> system, not movement.</td>
-        <td><code>project_field_locomotion_integrator.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><code>FUN_801d01b0</code> (field overlay 0897): camera-remapped pad, per-frame speed, 2-unit steps gated by per-axis wall collision <code>FUN_801cfe4c</code> and the actor probe. Footprint probes, NPC boxes, and the interact probe are byte-reproduced in the engine.</td>
+        <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
       </tr>
       <tr>
         <td>Field collision-map source</td>
-        <td><code>resolved</code></td>
-        <td>The collision grid at <code>*(_DAT_1f8003ec) + 0x4000</code> (1 byte/128-unit tile, high nibble = 4 sub-cell wall bits) is <strong>painted by the field-VM <code>0x4C</code> opcode, outer-nibble 7</strong> (<code>op0</code> &isin; <code>0x70..0x7F</code>, handler <code>0x801e1c64</code>): a rectangular wall-paint with inline operands <code>[4C, 0x7s, col0, row0, col1, row1, mask]</code>, sub-op = clear-walkable / block-all / clear-mask / set-mask. So collision walls are authored in the scene event script, not a separate disc blob - same inline-operand pattern as encounters / tile-board. The <code>+0x4000</code> byte's <strong>low nibble is a floor-elevation tier</strong> - a 4-bit index into a 16-entry <code>short</code> height LUT at scratchpad <code>0x1f80035c</code>, filled at scene entry by <code>FUN_8003aeb0</code> from the MAN header and consumed by the object spawn iterator <code>FUN_8003a55c</code> to offset each placed object's Y. The <code>+0x8000</code> region is <strong>not</strong> a terrain-flag grid (corrected) - it is a per-tile <code>u16</code> object/attribute map (low 9 bits = object-record index; bit <code>0x400</code> = footprint flag). See <a href="../subsystems/field-locomotion.html#collision">field locomotion</a>. Residual: the <code>+0x4000</code> zero-init site (likely a wholesale memset by the scene-boot allocator).</td>
-        <td><code>project_field_locomotion_integrator.md</code></td>
-      </tr>
-      <tr>
-        <td>Field <code>.MAP</code> PROT resolution - <code>define &minus; 2</code>, universal</td>
-        <td><code>resolved</code></td>
-        <td>A scene's field <code>.MAP</code> PROT entry is the one <strong>two slots before its CDNAME block start</strong> (<code>define &minus; 2</code>), identified by its <code>0x12000</code> extended footprint - for <strong>every</strong> field scene, not just the kingdom walk views where the rule was first pinned. The scene PROT clusters overlap by two entries, so the per-entry extractor attributes each scene's <code>.MAP</code> to the <em>previous</em> block's tail; the first <code>0x12000</code> entry <em>inside</em> a block is the <strong>next</strong> scene's map. Pinned by a save-library census (<code>field_grid_census</code> example): the live <code>keikoku</code> field buffer matches PROT 0109 (<code>define 111 &minus; 2</code>) with <strong>zero</strong> collision-grid diffs (in-block 0118 differs by 3855 bytes); <code>koin3</code> matches 0559 exactly (in-block 0568: 531). The <strong>object-index grid</strong> (<code>+0x8000</code>, the <code>Scene::field_object_placements</code> source) is live-validated the same way: residuals of 0..96 bytes against the resolved entry across town01 / town0c / keikoku / koin3 sessions (story-conditional cell mutations), thousands against every other candidate (regression-guarded by <code>field_map_object_grid_live</code>). Consequences: <code>Scene::field_map_index</code> resolves <code>define &minus; 2</code> (it previously picked the in-block entry - the next scene's map - masked only on town01 where the Rim Elm variants byte-copy); the town0c &ldquo;cold <code>.MAP</code>&rdquo; question dissolves (town0c's <code>.MAP</code> = PROT 0019, byte-identical to town01's; PROT 0028 is <code>izumi</code>'s).</td>
-        <td><code>project_field_locomotion_integrator.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Walls are painted by the field-VM <code>0x4C</code> outer-nibble-7 wall-paint ops in the scene event script; the <code>+0x4000</code> byte's low nibble is a floor-elevation tier; <code>+0x8000</code> is a per-tile object/attribute map.</td>
+        <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
       </tr>
       <tr>
         <td>Tile-board grid mode</td>
-        <td><code>resolved (re-scoped)</code></td>
-        <td>The <code>_DAT_8007b450</code>/<code>DAT_801f35c0</code>/<code>801ef2b0</code> tile-grid walk is a puzzle / board minigame (procedural <code>rand</code>-filled board, per-cell drawn tiles), not town locomotion. Documented in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/tile-board.md">tile-board</a>. Open sub-questions: which minigames use it; whether any board is fixed (inline-script cells) vs. always procedural; the inline cell-array offset.</td>
-        <td><code>project_tile_board_grid.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Re-scoped: a puzzle / board minigame (procedural <code>rand</code>-filled board, per-cell tile actors) installed by field-VM op <code>0x49</code> - not town locomotion. Open sub-questions: which minigames use it; fixed vs procedural boards.</td>
+        <td><code>docs/subsystems/tile-board.md</code></td>
       </tr>
       <tr>
-        <td>game_mode 0x03 = field/town gameplay</td>
-        <td><code>resolved (mapping); model open</code></td>
-        <td><code>_DAT_8007B83C</code> = 0x03 is the in-town / on-field gameplay mode. Pinned empirically by two independent retail captures (the <code>v0_1_pre_battle_tetsu</code> save and the runtime-pinned free-movement controller on <code>map03</code>), both at 0x03. <code>engine_core::mode::GameMode::scene_mode()</code> maps <code>MainMode (3) &rarr; SceneMode::Field</code> accordingly, and the <code>mode_trace_e3</code> + <code>v0_1_playthrough</code> oracles drive the engine into the field. <strong>Handler map RECOVERED:</strong> the index &rarr; handler/param/name map is now read off the disc by <code>legaia_asset::mode_table</code> (<code>asset mode-table</code>; disc-gated <code>mode_table_real</code>), confirming the saves - field/town is modes 2/3 MAIN, and <code>MAPDSIP</code> (12/13) is the <strong>world-map display</strong> mode, not the field (corrected <code>MapdispMode &rarr; SceneMode::WorldMap</code>). 12 of the 14 per-frame modes share the generic handler <code>0x80025EEC</code>; only Mode 13 (world-map) and Mode 23 (memory card) carry their own. <strong>Residual (code):</strong> the <code>engine_core::mode</code> model still runs <code>MainMode</code> via <code>TitleHandler</code> / labels index 3 "options menu"; reconciling the engine's <code>ModeHandler</code> wiring to this map is the remaining work.</td>
-        <td><code>project_mode_table_structure.md</code></td>
+        <td><code>game_mode 0x03</code> = field/town gameplay</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Modes 2/3 are field init/run (<code>0x03</code> = in-town/on-field gameplay); the handler map is read off the disc, <code>MAPDSIP</code> 12/13 is world-map display, and the pause menu runs under mode 23 (CARD).</td>
+        <td><a href="../subsystems/boot.html">boot</a></td>
+      </tr>
+      <tr>
+        <td>Scene prescript: field-VM scripts vs move-VM stagers</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><strong>Single consumer.</strong> The op-<code>0x34</code> sub-3 operand census across every scene MAN shows every prescript record is a move-VM stager: partition-1 effect-actor records install the ambience on entry (record 0 = the master ambient record in 62 scenes) and partition-2 cutscene timelines install the per-shot ids. Installer id = record index (RAM <code>[u16 count][u16 offsets]</code> relocation at <code>_DAT_8007B8D0</code>, live-pinned vs the file bundle). The "field-VM runs a record" premise was the engine's own fallback, not retail behaviour. <a href="#d-prescript">details &darr;</a></td>
+        <td><a href="../formats/scene-bundles.html">scene-bundles</a></td>
       </tr>
       <tr>
         <td>Engine VRAM byte-exactness for town01</td>
-        <td><code>resolved (major source); minor residue</code></td>
-        <td>Single-snapshot byte-exact is <strong>physically unachievable</strong>: a save state's VRAM is a live snapshot and ~40% of the texpage band is dynamic/residual state (proven by diffing two town01 captures pre/post battle - they disagree on ~40% of the band). The pre-pass also only uploaded the render-targeted TIM subset (17/181). Fix: the parity pre-pass now does field-mode <strong>DMA-every-TIM</strong> (<code>BuildOptions.upload_all_tims</code>), lifting town01 oracle coverage 4%&rarr;38% with engine-only (wrong) texels dropping 11.5k&rarr;~250. <code>vram_oracle_e1</code> was reframed to the <strong>static mask</strong> (words stable across same-scene captures), excluding the runtime-managed NPC/character CLUT band; town01 now passes byte-exact on every static pixel the engine uploads. <strong>Source resolved - <code>etim.dat</code> effect textures.</strong> The dominant missing block (texpage columns <code>x=320..448</code> and most of <code>x=832..896</code>, <code>y=256..512</code>, ~27k texels) is the <code>befect_data</code> (PROT 0874) section-2 effect-texture TIMs (<code>etim.dat</code>): 4bpp PSX TIMs whose headers target <code>fb(320,256)</code>/<code>fb(384,256)</code> (64&times;256) etc., matched <strong>256 rows byte-exact</strong> against a town01 field VRAM rect. This <strong>falsifies</strong> the earlier "those effect pages are battle-loaded, not static" reading - they are field-resident from field through battle. They evade <code>asset clut-finder</code> because the per-entry <code>tim_scan</code> mis-slices the overlapping <code>befect_data</code> cluster; the cluster-aware <code>befect_cluster::scan_tims</code> resolves all eight. The live engine already uploads them at field entry (<code>scene::upload_effect_textures_into_vram</code>); the gap was an <strong>oracle artifact</strong> - the lightweight pre-pass skipped that step. Fixed: the oracle pre-pass now applies the same upload <strong>image-pages-only</strong> (<code>upload_clut = false</code>; retail uploads the effect CLUTs, rows 473..478, at battle entry, so writing them in the field oracle is a wrong static upload), dropping the town01 static gap ~45k&rarr;~18k. <strong>Minor residue (open):</strong> <code>x=896..1024, y=256</code> (~12k) is the character/party-texture region (<code>fb_x&ge;864</code>, the battle/character CLUT pass the field pre-pass excludes by design = CLUT-scattering thread), plus ~2.5k small framebuffer/UI residue in <code>x=0..320</code>. <strong>Per-scene mask premise refined (map01 false red resolved):</strong> two capture-pinned failure modes of &ldquo;stable across same-scene captures = static&rdquo; - (1) the <code>befect_data</code> band is global, history-dependent state (a few pixels boot with a variant that differs from the disc copy until a battle re-uploads the disc bytes; pinned at <code>(853,271)</code>), so the oracle now demands cross-scene staticity inside <code>scene::effect_texture_image_rects</code>; (2) the world-map walk view palette-cycles the kingdom terrain CLUT rows 506/508/509 in place, excluded via <code>vram_oracle::WORLD_MAP_CLUT_CYCLE_ROWS</code> (see the two threads below).</td>
-        <td><code>project_town01_targeted_upload_fix.md</code></td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>Single-snapshot byte-exactness is unachievable (much of the texpage band is dynamic/residual); the oracle asserts the static mask and passes on every static pixel uploaded. Residue: the <code>x=896..1024</code> character-texture region + small UI residue.</td>
+        <td></td>
       </tr>
       <tr>
-        <td>World-map CLUT cycling beyond the ocean head - rows 508/509 + generated row-506 tail</td>
-        <td><code>writer located (script-driven CLUT-cell effects); cadence open</code></td>
-        <td>The row-506 <strong>head</strong> (entries 0..15) is the documented 13-frame ocean CLUT animation (<code>legaia_asset::ocean</code>, engine-implemented); a capture holds an arbitrary phase, never the disc base CLUT. Capture evidence (map01 overworld vs field-menu states) shows the runtime rewrites <strong>more</strong> than that head: rows 508 and 509 each cycle a few entries in place (shoreline shimmer inside the mountain/forest terrain palettes), and row 508's entries 32..47 mirror the live frame of its own 0..15 head. Row 506's tail (entries ~40..47) additionally holds a <strong>runtime-generated palette</strong> - pure-channel BGR555 combos (B/G/BG/R/BR/GR at intensity <code>0x11</code>) present in <strong>no</strong> disc bundle (all 7 kingdom-bundle slots of PROT 0085 + the PROT 0093 overview pack swept). <strong>The writer is located</strong> (from an existing capture's RAM alone): the cells are rewritten by the field overlay's script-driven CLUT-cell effects - <code>FUN_801E4C58</code> (field-VM <code>0x4C</code> n6 sub-<code>0x61</code>, one-shot 16&times;1 <code>MoveImage</code> cell copy / flat fill, coordinates = script operands) and <code>FUN_801E4794</code> (multi-frame cross-fade SM) - sourcing 13-frame strips at VRAM rows 498/501..505; the lockstep coupling is sibling ops sharing the frame counter, not one wider rect. Remaining open: the exact retail cadence (the scratchpad frame-delta byte feeds the fade SM); <code>play-window</code> animates the row-506 ocean head only; map02/map03 unverified (no resident capture).</td>
-        <td>-</td>
+        <td>Field <code>.MAP</code> PROT resolution</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>A scene's <code>.MAP</code> is the entry two slots before its CDNAME block start (<code>define &minus; 2</code>), identified by its <code>0x12000</code> footprint - universal; the first in-block hit is the <em>next</em> scene's map. Census-pinned; engine resolver corrected.</td>
+        <td><a href="../formats/cdname.html">cdname</a></td>
       </tr>
       <tr>
-        <td><code>befect_data</code> boot-variant pixels - who uploads the <code>0xFFFF</code> row?</td>
-        <td><code>open</code></td>
-        <td>A freshly booted game holds a variant of the <code>befect_data</code> effect-texture band whose row-271 pixels (fb_x 852 page) read <code>0xFFFF</code> where the disc TIM (PROT 0874 &sect;2) carries <code>0x3333</code>; the first battle re-uploads the disc bytes and the disc value then persists (town01 pre- vs post-battle captures discriminate; town0c post-battle-lineage captures all hold the disc value). The disc TIM's row 273 holds the <code>F</code>-variant of the same row, so the boot-time source may be a sibling copy or a one-row blit. Open: which boot/new-game path uploads the <code>F</code>-variant (a different disc copy? an effect rendering into the page?).</td>
-        <td>-</td>
+        <td>World-map CLUT cycling beyond the ocean head</td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>A per-column census pins the runtime-touched CLUT cells (rows 500/506/508/509); the writers are the field overlay's script-driven CLUT-cell effects (<code>FUN_801E4C58</code> / <code>FUN_801E4794</code>) copying from strips parked at rows 498/501..505. <a href="#d-clut-cycle">details &darr;</a></td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td><code>init_data</code> UI-tile pages / map03 texture column</td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>The <code>(704, 0)</code>/<code>(704, 256)</code> UI-tile rects are journey-dependent residency (overworld transit leaves kingdom-bundle content behind). Open: a map03-only engine-vs-retail divergence at <code>x=576..640</code> needs a second map03-resident capture to decide.</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>Extraction-0874 &sect;2 F-variant pixels</td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>Pause-menu-lineage, not boot: the intro chain holds the disc bytes, every pause-menu capture holds the 3-word row-271 F-variant, and the first battle effect use restores the disc value. Residue: the exact writer PC (low value).</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>Scene-transition (<code>0x3F</code> door) destination indexing</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><code>0x3F</code> ops are partition-2 MAN records reached through the partition-2 record-offset table, making variable-length door editing safe (<code>man_edit</code>). The <code>0x3E</code> warp is the SCUS-resident mode-24 minigame door (scene-name backup/restore).</td>
+        <td><a href="../formats/man-relocation.html">man-relocation</a></td>
+      </tr>
+      <tr>
+        <td>Intra-town (house / interior) door mechanism</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Not a scene change: the cross-context form <code>0xA3 0xF8</code> (opcode <code>0x23 | 0x80</code> into the player channel) teleports within the same scene; the partition-0 records pair fullwidth IN/OUT names. The randomizer shuffles class-preserving.</td>
+        <td><a href="../subsystems/script-vm.html">script-vm</a></td>
       </tr>
       <tr>
         <td>Field/town environment-geometry placement</td>
-        <td><code>resolved (renders)</code></td>
-        <td>The town's environment meshes (terrain + buildings + props) are Legaia TMDs packed inside <strong>LZS streams of the scene_asset_table</strong> PROT entry (<code>town01</code> = entry 4: 114 meshes, &asymp;8041 verts), object-local (each centred near origin), so each needs a world transform. <strong>Placement source</strong> (<code>FUN_8003a55c</code>): the field map file's object-index grid at <code>+0x8000</code> (<code>0x80 x 0x80</code> <code>u16</code>, <code>cell &amp; 0x1FF</code> = object id) selects a <code>0x20</code>-byte record in the <code>+0x0000</code> object-record table; placed tiles (record <code>+0x12</code> bit <code>0x4</code>) give <code>world_x = col*128 + x_off + 0x40</code>, <code>world_z = row*128 - (z_off - 0x40)</code>, <code>world_y = floorHeightLUT[nibble] + y_off</code>. <strong>Mesh source</strong> (byte-verified): every object draws from the scene_asset_table pack - <code>pack_index = obj_idx - 5</code> for the field-actor band <code>93..=118</code>, else the record's <code>+0x10</code> <code>u16</code> (ids <code>1/2/3</code> are protagonist/NPC meshes from the shared pool). <code>anim_id</code> (from the MAN script via <code>func_0x801d5630</code>) only animates. Validated against a live <code>town01</code> save: 46 placed objects, Vahn's house id <code>137</code> &rarr; <code>(4864,_,3208)</code> &rarr; mesh 36; windmill id <code>96</code> &rarr; mesh 91. Parser <code>legaia_asset::field_objects</code>; <code>Scene::field_object_placements</code>; disc-gated <code>field_object_placement_disc.rs</code>. Per-tile <strong>world Y</strong> = <code>-floorHeightLUT[tile_nibble] + y_off</code> (16 <code>s16</code> at MAN header <code>+0x02</code>; <code>Scene::field_floor_height_lut</code>; Vahn's-house nibble 6, <code>lut[6]=192</code> &rarr; Y <code>-192</code>). <strong><code>play-window</code> now renders the town</strong> (<code>resolve_field_placement_draws</code>, <strong>40/46</strong> placements draw). This <strong>corrects</strong> the prior "NPC/event spawns, not building transforms, buildings are not actors" reading. <strong>Open (minor):</strong> the historical <strong>8 of 46</strong> non-drawing placements are pinned by cause (disc-gated <code>town01_dropped_placements_split_untextured_vs_missing_clut</code>) - correcting the prior "all 8 are untextured props" reading. They split across <strong>3 distinct meshes</strong>: <strong>2</strong> placements (pack <code>31</code>/obj <code>315</code>, pack <code>109</code>/obj <code>114</code>) are <strong>untextured (per-vertex-RGB) props</strong>, and <strong>6</strong> placements (one mesh, pack <code>74</code>/obj <code>347</code>) are <strong>textured</strong> but dropped for <code>MissingClut</code> - the field VRAM pre-pass didn't upload their CLUT row. They need <strong>different</strong> fixes: (a) <strong>now done</strong> - the untextured props render through the engine's vertex-colour path (<code>tmd_to_color_mesh</code> + <code>upload_color_mesh</code> + <code>Scene::color_draws</code>; the 2 props are the <code>+2</code> that lifts the count to 40/46, live-window confirmed); (b) still open - uploading the missing CLUT row (a VRAM-coverage question; a shading fallback would render it <em>wrong</em>, so it stays dropped). Known limit: a mixed textured+untextured mesh renders only its textured half (the colour path fires only when the textured build is empty).</td>
-        <td><code>project_town_geometry_render_gap.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Object-local TMDs in the scene_asset_table LZS streams, placed by <code>FUN_8003a55c</code> from the <code>+0x8000</code> object-index grid. The engine renders the town, including per-vertex-RGB props; the only residue is one missing-CLUT mesh.</td>
+        <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 id="d-prescript">Scene prescript dual consumer - resolution</h3>
+  <p>The op-<code>0x34</code> sub-3 census (scanner <code>man_field_scripts::scene_stager_installs</code>, oracle <code>scene_prescript_consumer_census_disc</code>) walked all three MAN partitions across the corpus: 78 scenes install stagers, from both the placement scripts and the cutscene timelines. The install carriers in partition 1 are dedicated effect-actor records - Shift-JIS-named "effect", whole script = <code>install id N</code> + infinite loop - and the town "768-byte dispatch table" at record 0 is those actors' target: the scene's master ambient stager (8-byte-periodic spawn rows), not a table. A town01 field state pins the id space: retail relocates the bundle to RAM as <code>[u16 count][u16 offsets[count]]</code> at <code>_DAT_8007B8D0</code> with count = the file record count and record 0 byte-identical at the first offset.</p>
+
+  <h3 id="d-clut-cycle">World-map CLUT cycling - residual</h3>
+  <p>Destination cells are kingdom-universal; no rect constant exists in any code image because the rows live in scene-script operands. Residual: the exact retail cadence (the scratchpad frame-delta byte <code>0x1F800393</code> feeds the fade SM); the engine animates only the row-506 ocean head.</p>
+</section>
+
+<section class="doc-section" id="text-dialog">
+  <h2>Text / fonts / dialog</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Dialog font extraction</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The glyph tile page lives at VRAM <code>(896, 0)..(960, 256)</code>; <code>legaia-font</code> extracts widths + atlas from the SCUS plus any in-game save state. Kept so the older "blocked on runtime trace" framing isn't re-opened.</td>
+        <td><a href="../formats/dialog-font.html">dialog-font</a></td>
+      </tr>
+      <tr>
+        <td>Inline dialog-box format (<code>0x1F</code>-lead segments)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>NPC dialogue is an inline <code>0x1F</code>-lead segment pool (the NPC's full line set, not prompt + options); the pre-segment bytes are ordinary field-VM prologue bytecode. Pager dispatch, picker jump tables, and 3-row box packing are decoded and ported.</td>
+        <td><a href="../formats/mes.html">mes</a></td>
+      </tr>
+      <tr>
+        <td>Tetsu 4-option spar menu mechanism</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>A standard <code>0x29</code> 4-option MES inline picker in the partner's dialogue (immediate-labels form); confirming index 2 starts the spar, driven by the dialog SM. The engine engages the carrier only on the fight option.</td>
+        <td><a href="../formats/mes.html">mes</a></td>
       </tr>
     </tbody>
   </table>
 </section>
 
-<section class="doc-section" id="text-fonts">
-  <h2>Text / fonts / dialog</h2>
+<section class="doc-section" id="animation">
+  <h2>Animation</h2>
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
-        <td>Dialog font extraction</td>
-        <td><code>done - kept for reference</code></td>
-        <td>Earlier "blocked on runtime trace" framing was wrong; tile-page lives at VRAM <code>(896, 0)..(960, 256)</code>, extracted by <code>legaia-font::font-extract</code> from any in-game save state. Listed here only so the older "open" framing doesn't get re-opened.</td>
-        <td><code>project_dialog_font_hunt.md</code></td>
+        <td>Player ANM per-record layout</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>8-byte header + prologue + <code>frames &times; bones</code> 8-byte entries; each is a nibble-packed signed-12-bit translation triple + three <code>u8</code> rotations (interpreter <code>FUN_8001BE80</code>), posing <code>R&middot;v + T</code> about the object origin. Decodes byte-exact corpus-wide.</td>
+        <td><a href="../formats/anm.html">anm</a></td>
       </tr>
       <tr>
-        <td>Inline dialog-box format (<code>0x1F</code>-lead segments)</td>
-        <td><code>resolved - prologue (decode + execution), pager dispatch, option-list inner format, and multi-segment box packing all pinned</code></td>
-        <td>Placement-NPC / event dialogue text is <strong>inline</strong> in the field-VM interaction record, <strong>not</strong> the scene MES - the opcode-decoded <code>text_id</code> is a box-config id that never resolves through <code>SceneMes::message_offset</code> (0/13 town01 placement-NPC ids resolve). The text is a run of <code>0x1F</code>-lead / <code>0x00</code>-terminated segments of MES glyph bytecode. It is recovered <strong>structurally</strong>, not from the <code>0x3F</code> op's <code>len</code> field: a text-heavy field interaction record desyncs under linear disassembly (a literal <code>&gt;</code> is <code>0x3E</code>, the warp/interact opcode; ASCII punctuation hits the <code>0x37</code>/<code>0x41</code> yield bytes), so the decoded <code>0x3F</code> op and its <code>len</code> are unreliable on field scenes and the byte-<code>len</code> capture returned <strong>empty for every town01 NPC</strong>. <code>man_field_scripts::first_inline_dialog_offset</code> finds the first printable <code>0x1F</code> segment (printable-ratio gated), <code>classify_placement</code> carries the record bytes from there as <code>PlacementKind::Npc::dialog_inline</code>, and <code>OwnedDialogPanel::from_inline_dialog</code> types the prompt segment; the native <code>play-window</code> renders the box. With this, <strong>36 town01 placements recover renderable dialogue</strong> (the sparring partner, Meta the dog, villagers, leftover "dummy" dev placeholders, and the <code>0x1F</code>-segment developer story-flag toggle menu at placement P1[1]). <strong>Segment-pool structure pinned:</strong> the segments are <strong>not</strong> "prompt + option labels" of one box; each record holds the NPC's <em>entire</em> dialogue line set - every line across every story-state branch, with <code>"Yes"</code>/<code>"No"</code> labels interspersed (e.g. the Village Elder decodes to 80 segments, Val to 59). So a <code>0x1F</code> segment is one line; multi-page speech is multiple segments. <strong>The "box-geometry header" framing is falsified:</strong> the bytes between the placement's <code>script_pc0</code> and the first <code>0x1F</code> are normal field-VM bytecode - <code>CFlag</code> / <code>SysFlag.Test</code> / <code>JmpRel</code> / <code>Nop</code> / <code>0x4C 0x51</code> NPC-move-to-tile / <code>0x4C 0x52</code> menu-activation poll - that the field-VM dispatcher runs as the NPC's interaction prologue (face the player, set conversation flags, walk to the talk position, branch on story flags). The retail SM <code>FUN_80039B7C</code> state 0 calls <code>FUN_801DE840</code> directly on this stream and transitions into the pager only when the dispatcher leaves the actor's PC on a byte where <code>&amp; 0x7F &lt; 0x20</code> (a <code>0x1F</code> lead or <code>0x21</code> terminator); the "select which segment to start at" mechanism is the prologue's own story-flag-gated <code>SysFlag.Test</code> branches - the script <code>JmpRel</code>s past unwanted segments to the desired one. <strong>Pager-side dispatch now decoded:</strong> the box geometry is fixed at <code>_DAT_801F2740 = 3</code> lines per box at both init arms (<code>case 6</code> / <code>case 9</code>), and the post-page state <code>0x19</code> reads the <strong>next control byte past the box</strong> to pick the follow-on state - <code>0x25</code> &rarr; end, <code>0x24</code> &rarr; next-line same-box, <code>0x48</code> &rarr; new box, <code>0x4C 0xFF</code> &rarr; terminate, <code>0x2A</code> &rarr; resize, <strong><code>0x27</code> &rarr; 2-option picker</strong> (state <code>0x13</code> &rarr; <code>0x12</code>), <strong><code>0x28</code> &rarr; 3-option picker</strong> (<code>0x15</code> &rarr; <code>0x14</code>), <strong><code>0x29</code> &rarr; 4-option picker</strong> (<code>0x17</code> &rarr; <code>0x16</code>). High-bit raw bytes in the bytecode (<code>0xA7</code> / <code>0xA8</code> / <code>0xA9</code>). Each picker arm sets the box dimensions from a per-N table and clamps the choice cursor at <code>*(DAT_801c6ea4 + 0xc)</code>; on confirm it reads the continuation byte at <code>pbVar14[N*2 + 1]</code> (same dispatch table) and advances. Captured in <a href="../formats/mes.html#dialog-window-pager-fun-801d84d0">formats/mes.md &sect; Dialog window pager</a>. <strong><code>FUN_8001ebec</code> is NOT the renderer</strong> - disassembly shows it's a per-character TMD-pose copier (party slots 0..2, indexed by the slot-4 freeze flag <code>_DAT_8007B824</code>); the real per-actor dialog SM is <code>FUN_80039b7c</code>, pager is <code>FUN_801D84D0</code>. <strong>Option-list inner format RESOLVED:</strong> the 2-byte per-option entries are <strong>not</strong> <code>(label_index, post_action)</code> and are not the labels - they are a signed <code>i16</code> LE relative-jump table the inline-script handler <code>FUN_80038050</code> applies on confirm (<code>new_pc = (open + 1 + index*2) + i16_LE(entry[index])</code>); the on-screen labels are standard <code>0x1F</code>-lead glyph segments after the continuation byte. Parser <code>legaia_mes::picker</code>; disc-gated <code>field_dialog_pickers_disc</code>. <strong>Prologue now EXECUTES (opt-in path):</strong> the field-VM dialogue runner (<code>World::use_vm_dialogue</code>) runs the interaction prologue before the first segment, so its <code>SysFlag.Test</code>/<code>JmpRel</code> chain selects which segment the box opens at per story state; the engine stores the untruncated record alongside the truncated buffer (<code>field_npc_dialog_prologue</code>, started via <code>InlineDialogue::with_prologue</code>) and falls back to the first segment if the prologue can't reach one. <code>engine_core::inline_dialogue</code> / <code>World::step_inline_dialogue</code> drive the whole script through the real field VM so a chosen option's branch handler runs its flag-sets / scene-changes before the reply. <strong>Multi-segment box packing RESOLVED:</strong> the SM packs <strong>consecutive</strong> <code>0x1F</code> lines into one window of <code>_DAT_801F2740 = 3</code> rows (a line's <code>0x00</code> terminator immediately followed by another <code>0x1F</code> = "same box, next row"), ending after at most three rows at the post-page control byte. <code>FUN_80039B7C</code>'s state-<code>0x2</code> advance masks <code>(byte &amp; 0xF0) == 0xC0</code> and consumes the escape's data byte, so a <code>0xC?</code> escape whose argument lands in <code>0x00..=0x1E</code> (e.g. <code>0xC1 0x00</code>) doesn't terminate the line early. Decoded by <code>legaia_mes::dialog_box</code> (<code>pack_box</code> / <code>pack_boxes</code>, <code>LINES_PER_BOX = 3</code>, <code>Dispatch</code> for the terminating control byte); disc-gated <code>field_dialog_boxpack_disc</code> pins it on real town01 bytes (561 packed boxes all &le; 3 lines; the Tetsu sparring opening packs as three <code>0x24</code>-chained 3-row pages &rarr; a 4-option <code>Picker</code>; the <code>Mist appeared, .., but</code> line survives its <code>0xC1 0x00</code>). The contiguous box run stops where the pool hands control back to the field VM (a non-pager byte &rarr; <code>Dispatch::Unknown</code>), which the faithful path runs as bytecode. Nothing further open on this thread.</td>
-        <td>-</td>
+        <td>Battle anim-id space + record[0] strike family</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Anim ids are entry indices (commit <code>FUN_8004AD80</code>; idle = 0); tags <code>2..5</code>/<code>0xB</code> form the hit-reaction family; weapon swings are the equipment-section splice (slots <code>0xC..0xF</code>) plus dynamic art slots <code>0x10</code>/<code>0x11</code>.</td>
+        <td><a href="../formats/monster-animation.html">monster-animation</a></td>
+      </tr>
+      <tr>
+        <td><code>FUN_80047430</code> caller</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Live-captured: a single dispatch site, the <code>jalr</code> at <code>0x800252B4</code> inside <code>FUN_8002519C</code> (the per-frame actor-list tick iterator), which calls each node's <code>+0x0C</code> handler slot. The anim-node tick is an ordinary list-node tick handler.</td>
+        <td><a href="functions.html">functions</a></td>
+      </tr>
+      <tr>
+        <td>Record[0] <code>+0x5C</code> pointer + art-anim stream source</td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>The art keyframe streams are "ME" archives in <code>readef.DAT</code> slots <code>3*char+1</code>/<code>+2</code> (ported, disc-validated). Residue: <code>+0x5C</code> is a zero word with no traced reader, and the art-path caller of staging arm <code>FUN_80055B4C</code> is untraced.</td>
+        <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
       </tr>
     </tbody>
   </table>
@@ -246,67 +381,162 @@
 <section class="doc-section" id="audio">
   <h2>Audio</h2>
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
-        <td>SPU reverb live routing</td>
-        <td><code>resolved + wired (Studio C, global)</code></td>
-        <td>A pure-Rust read of the save-state corpus (no live probe) settled it. <code>legaia_mednafen::PsxSpu</code> reads the SPU register shadow - <code>reverb_master_enabled</code> (<code>SPUCNT</code> bit 7), <code>reverb_registers</code> (the 32 reverb registers at <code>0x1F801DC0..</code>), and <code>voice_reverb_mask</code> (the per-voice <code>EON</code> enable; CLI <code>mednafen-state spu</code>). Across all captured states (field / town / battle / summon / title / minigames): reverb is <strong>master-enabled everywhere</strong>, the 32-register block is byte-identical and is the <strong>Studio C</strong> preset (<code>dAPF1=0x00E3</code>, work area <code>0x6FE0</code>; <code>engine_audio::ReverbMode::identify</code> resolves it), and the <code>EON</code> mask routes <strong>most voices by default</strong> (BGM + SFX alike). So there is <em>no</em> per-cue reverb-enable source - reverb is a fixed global. <strong>Wired:</strong> the live mixer calls <code>Spu::set_retail_reverb()</code> (Studio C + every voice routed) at SPU init; the PCM oracle's retail-side reverb is also fixed (it had mis-read the <code>EON</code> mask as a mode byte and run <code>Off</code>). Falsifies the earlier &ldquo;Spirit-Arts / echo cues opt in, everything else dry&rdquo; reading.</td>
-        <td><code>project_reverb_studio_c_global.md</code></td>
+        <td>SPU reverb live routing (C7-REVERB)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Retail runs the <code>Studio C</code> preset, master-enabled, globally; per-voice <code>EON</code> send is broad (BGM + SFX alike). No per-cue enable source exists. Wired at SPU init; residual: output-depth tuning only.</td>
+        <td><a href="../subsystems/audio.html">audio</a></td>
       </tr>
     </tbody>
   </table>
 </section>
 
-<section class="doc-section" id="title-boot">
+<section class="doc-section" id="title-boot-overlays">
   <h2>Title / boot / overlays</h2>
   <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
       <tr>
         <td><code>title.pak</code> PROT entry</td>
-        <td><code>resolved</code></td>
-        <td>There is no single <code>title.pak</code> bundle entry - the dev-tree <code>title.pak</code> content is split across two PROT entries, both confirmed by the init.pak fingerprint method now that a title-phase RAM snapshot exists (<code>title_screen_new_game</code> save state): the <strong>title wordmark TIM</strong> is <strong>PROT 888/890</strong> (<code>sound_data2</code>; already parsed by <code>legaia_asset::title_pak</code>, the big-logo RAM TIM at <code>0x80170DF8</code> fingerprint-matches it), and the <strong>options/config-menu bundle</strong> is <strong>PROT 899</strong> (<code>xxx_dat</code>) - its indexed payload opens with the config-menu string pool ("Display Off / Gradual / Immediate / Field HP Display / Encounters / Vibration / Dual Shock / Voices / Battle Camera / Monaural / Stereo …") followed by the small config TIMs (CLUTs byte-matched at 899 offsets <code>0x169DC</code> / <code>0x1F91C</code>+), with the title-overlay <em>code</em> in the trailing unindexed gap after entry 899. (The <code>0895_bat_back_dat</code> filename label is the <a href="../formats/cdname.html#numbering-space">+2 numbering shift</a>, not dev mislabeling.)</td>
-        <td><code>project_prot_0895_init_pak.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>No single bundle: the title wordmark TIM is PROT 888/890, the options/config-menu bundle is PROT 899, and the title-overlay code sits in the unindexed gap after entry 899.</td>
+        <td><a href="../subsystems/boot.html">boot</a></td>
       </tr>
       <tr>
         <td>Title screen mode-table PROT</td>
-        <td><code>resolved (no such entry)</code></td>
-        <td><strong>The premise is wrong</strong>: there is no title-screen entry in the 28-entry mode table at <code>0x8007078C</code>. Per <a href="../subsystems/boot.html#game-mode">boot.md</a> the title overlay is loaded by a <strong>pre-mode-dispatch boot routine</strong> ahead of the mode table being consulted at all - its tick <code>FUN_801DD35C</code> lives in the unindexed 60-sector PROT.DAT gap between TOC entries 899 and 900. <code>legaia_asset::title_pak</code> reads the wordmark TIM out of PROT 888/890; PROT 899 carries the options-menu config bundle. NEW GAME is how control crosses from the title overlay into the mode table at mode 2. Row kept so the &ldquo;title entry is unresolved&rdquo; framing isn&rsquo;t re-opened.</td>
-        <td><code>project_mode_table_structure.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>No such entry: a pre-mode-dispatch boot routine loads the title overlay (tick <code>FUN_801DD35C</code>, in the unindexed PROT.DAT gap between TOC entries 899 and 900); NEW GAME crosses into mode 2.</td>
+        <td><a href="../subsystems/boot.html">boot</a></td>
       </tr>
       <tr>
         <td>Load-screen panel 9-slice geometry</td>
-        <td><code>resolved (engine renders byte-perfect)</code></td>
-        <td>Pinned in <a href="../subsystems/save-screen.html#info-panel-renderer">save-screen.md</a>: retail composes the 81&times;29 panel at dst <code>(6, 4)</code> from 14 textured-sprite primitives (GP0 cmd <code>0x64</code>) sampling the system-UI sheet with CLUT <code>(32, 511)</code>. The exact per-tile rects are exported as <code>legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*</code> and emitted by <code>legaia_engine_render::save_select_chrome_draws_for</code> (covered by <code>save_select_chrome_emits_9slice_panel_and_pills</code> test). No interior fill sprite is drawn - the &ldquo;marbled blue&rdquo; look is the dimmed title art bleeding through the empty middle of the frame.</td>
-        <td><code>project_load_screen_panel_source_pinned.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Retail composes the 81&times;29 panel from 14 textured sprites sampling the system-UI sheet with CLUT <code>(32, 511)</code>; no interior fill - the "marbled blue" is dimmed title art through the empty frame middle. Engine renders it byte-perfect.</td>
+        <td><a href="../subsystems/save-screen.html">save-screen</a></td>
       </tr>
       <tr>
         <td>Debug flags <code>0x8007B8C2</code> / <code>0x8007B98F</code></td>
-        <td><code>partial - <code>0x8007B98F</code> live-confirmed; consumer in uncaptured overlay</code></td>
-        <td>Both addresses are in the SBSS/BSS region (zero-initialised at boot). The corpus sweep (2661 files) returns <strong>zero writes</strong> to <code>_DAT_8007B8C2</code> and <strong>zero references</strong> (read or write) to <code>_DAT_8007B98F</code>. <code>_DAT_8007B8C2</code> is confirmed read-only at runtime: <code>FUN_8003E360</code>'s dual-mode loader routes through ISO9660 when the byte is zero (retail) and through PROT-index when non-zero (dev); same pattern at <code>FUN_8001FA88</code> / <code>FUN_8001FC00</code> (sound) and <code>FUN_8001F7C0</code> (field-asset loader). <code>_DAT_8007B98F</code> is <strong>live-confirmed active</strong>: a RAM-poke probe (<code>autorun_debug_bit_poke.lua</code>) writing <code>0x8007B98F = 1</code> in a stable field scene brings up the debug menu on SELECT+&Delta; in the NA retail build - the consumer is overlay-resident and outside the 2661-file captured corpus. The earlier &ldquo;stripped at link time / inert&rdquo; conclusion is <strong>falsified</strong>. <code>_DAT_8007B8C2</code> is fully resolved; <code>_DAT_8007B98F</code> remains partial (consumer not located).</td>
-        <td><code>project_debug_flags.md</code></td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td><code>0x8007B8C2</code> is the dev/retail asset-load selector, read-only at runtime. Poking <code>0x8007B98F = 1</code> brings up the debug menu on SELECT+&#9651; in retail, so its consumer is real but in an uncaptured overlay. <a href="#d-debug-flags">details &darr;</a></td>
+        <td><a href="../subsystems/boot.html">boot</a></td>
       </tr>
       <tr>
-        <td>Key-item area consumers (<code>0x800859E8&ndash;0x80085A40</code>)</td>
-        <td><code>open - read-BP scan pending</code></td>
-        <td>The full-bag add helper (<code>FUN_800421D4</code>, id store at <code>0x800422BC</code>) writes an item id byte to the key-item area (<code>0x800859E8</code>, then <code>0x800859EA</code>, &hellip;) when the 72-slot consumable window is full. Reachability is <strong>live-confirmed</strong> via two independent caller paths: casino prize-exchange CROSS (id=<code>0x9C</code>) and equip-unequip via START menu (id=<code>0xD0</code>). The question is whether any native code subsequently <em>reads</em> those bytes and uses the value as an index or pointer without a bound check - which would turn the OOB write primitive into a usable chain. Probe: <code>scripts/pcsx-redux/autorun_key_item_consumer_hunt.lua</code> arms Read BPs on the first 24 bytes of the key-item area and logs every hit (pc, ra, mode); a heartbeat prints unique-PC summaries. Run pending on a koin1 or stable-field save state. See <code>project_ace_oob_confirmed.md</code>.</td>
-        <td><code>project_ace_oob_confirmed.md</code></td>
+        <td>Key-item area consumers (<code>0x800859E8..0x80085A40</code>)</td>
+        <td>open</td>
+        <td>Identify which native code reads the key-item id bytes the full-bag OOB add helper writes; an unguarded indexed consumer is a potential ACE chain. Probe: <code>autorun_key_item_consumer_hunt.lua</code>.</td>
+        <td></td>
       </tr>
       <tr>
         <td>XP-table source + reader</td>
-        <td><code>resolved + ported</code></td>
-        <td>The retail XP curve is the static-SCUS per-level delta table <code>DAT_80076AF4</code> (u16), read by the level-up applier <code>FUN_801E9504</code> (overlay; called from the reward resolver <code>FUN_8004E568</code> at <code>0x8004F34C</code>): the running sum to the current level is scaled <code>(sum &times; 9999999) / 0x140FE</code> for <code>level &lt; 0x11</code> (else <code>sum &times; 0x79</code>) and compared <code>&le; record cumulative XP</code> in a multi-level <code>do&hellip;while</code> loop. The earlier <code>0x8007123C</code> / <code>0x80070A3C</code> framing was doubly wrong (an off-by-<code>0x800</code> confusion, then a sin-LUT slice). The engine now extracts the table at boot (<code>legaia_asset::level_up_tables::xp_thresholds_from_scus</code> &rarr; <code>BootSession</code>), byte-validated L2 = 365 / L3 = 730 against a captured retail level-up; the <code>retail_xp_table()</code> slice is the disc-less fallback. See <a href="../subsystems/level-up.html#xp-table">level-up</a>.</td>
-        <td><code>project_xp_split_static_negative.md</code></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The static SCUS per-level delta table <code>DAT_80076AF4</code>, read by the level-up applier <code>FUN_801E9504</code>. Extracted at boot; byte-validated L2 = 365 / L3 = 730 against a captured retail level-up.</td>
+        <td><a href="../subsystems/level-up.html">level-up</a></td>
       </tr>
       <tr>
         <td>Opening-prologue tail (<code>opdeene</code>)</td>
-        <td><code>partial</code></td>
-        <td>The <code>opdeene</code> &rarr; <code>town01</code> hand-off arm is now <strong>data-driven</strong>: <code>enter_field_scene</code> walks the cutscene-timeline partition (partition 2) for the real <code>GFLAG_SET 26</code> write and arms only when present (<code>World::arm_prologue_handoff_from_man</code>; the write is partition-2 record-18 offset <code>0xA5E</code>, also confirmed via <code>man-scripts --gflag-partition</code>). The intro cutscene's <strong>content</strong> is partly mapped: partition-2 record 18 is the closing timeline script, interleaving op <code>0x45</code> <code>Camera Configure</code> (23-byte payload), op <code>0x46</code> <code>RenderCfg</code>, op <code>0x23</code> <code>MoveTo</code>, op <code>0x34</code> <code>Effect</code>, the <code>GFLAG_SET 26</code> arm, and <strong>inline narration text</strong> - <code>0x1F</code>/<code>0x00</code>-framed ASCII pages introduced by a <code>0x4C</code> op whose operand declares the page count (two blocks, 14 + 8 pages; parser <code>legaia_asset::cutscene_text</code>). The decoded subtitle pages now <strong>play in-engine</strong>: entering <code>opdeene</code> installs them on the world (<code>World::open_cutscene_narration</code>), the <code>CutsceneNarration</code> presenter auto-advances them on a per-page timer (skippable with confirm), the host renders the active page, and the narration <strong>gates</strong> the Rim Elm hand-off (<code>take_prologue_handoff</code> is suppressed until it finishes). Threads remaining: (1) the <strong>field-VM op that auto-opens the name-entry overlay</strong> during the town01 opening is now <strong>pinned</strong>: op <code>0x49</code> <strong>STATE_RESUME sub-op 3 at <code>town01</code> partition-2 record 3 (P2[3]) body offset <code>0x02c6</code> (<code>49 03 00</code>)</strong>. Pinned by executing P2[3] through the engine's authoritative field VM (<code>crates/engine-core/tests/town01_opening_timeline_trace.rs</code>: install the record as a <code>CutsceneTimeline</code>, linear-decode via <code>legaia_engine_vm::field::step</code> - the only complete decoder; the <code>field_disasm</code> linear decoder bails on unported <code>0x4C</code> sub-ops and a naive disassembler mis-strides the variable-width <code>0x4C</code>) and correlating against the <code>name_input_ui</code> save oracle: while name entry is open, <code>_DAT_8007B450</code> (the op-<code>0x49</code> state slot) holds <code>0x800EB297</code>, and the record loads with body <code>0x02b0</code> at RAM <code>0x800EB280</code> (byte-identical), so <code>0x800EB297</code> = (the <code>0x49</code> op's RAM address) + 1 - the field script is parked <strong>exactly at this STATE_RESUME</strong> while name entry is up. The op's <code>op49_invoke_setup</code> hook (<code>func_0x80020de0(0x8007065c, _DAT_8007c34c)</code>) is the suspend-and-hand-off to the name-entry overlay. The sequence around it: <code>4A 03 00</code> WAIT &rarr; <code>45 13 7B &hellip;</code> camera move &rarr; <strong><code>49 03 00</code> STATE_RESUME (name entry)</strong> &rarr; <code>45 13 7B &hellip;</code> &rarr; <code>4C CD</code> script-alloc. (P2[3] carries two further STATE_RESUMEs deeper for later beats; the <code>0x02c6</code> one is the name-entry handoff, fixed by the save correlation.) Ruled out earlier: op <code>0x4C</code> nibble-E sub-8 (<code>4C E8</code>) is camera-zoom; the active state also shows <code>_DAT_8007BB88</code> = grid cursor + the name prompt in the dialog buffer at <code>0x800740EC</code>. <strong>WIRED:</strong> the engine runs P2[3] in-engine on the new-game hand-off (<code>World::install_town01_opening_timeline</code>, gated on <code>entering_town01_opening</code> set by <code>take_prologue_handoff</code>). <code>step_cutscene_timeline</code> steps past the conditional-wait parks the engine doesn't model (<code>0x4C</code> nibble-C <code>script_alloc</code>/globals-gate, <code>0x2D</code>/<code>0x30</code> flag-tests - handshakes a spawned sub-context would satisfy) while keeping <code>0x4A</code> WAIT (timed, plays out) and <code>0x49</code> parking; the establishing camera + Vahn walk-out play over ~490 frames, then op <code>0x49</code> opens name entry via the op-49 host hooks (<code>op49_invoke_setup</code> &rarr; <code>open_name_entry(0)</code>; <code>op49_state</code> Armed while open, Done after commit) and the timeline freezes until the player names the lead, then resumes and drops (reverting the cutscene camera). The opdeene hand-off arming is scoped to that timeline (<code>CutsceneTimeline::arms_prologue_handoff</code>) so town01's opening never falsely arms a scene change. Disc-gated <code>town01_opening_name_entry_wiring.rs</code> + synthetic <code>cutscene_timeline_synthetic.rs</code>. (2) opdeene's partition-2 cutscene timeline now <strong>executes</strong> in-engine as a second spawned field-VM context (<code>cutscene_timeline::CutsceneTimeline</code>): <code>World::load_cutscene_timeline_from_man</code> resolves the partition-2 named record (<code>[name_len][SJIS name][3 story-flag gates]&lt;script&gt;</code>, entry PC <code>0x10</code> for record 18; dispatched by <code>FUN_8003BDE0</code>, ext-target <code>0xF8</code> = the player/camera actor <code>_DAT_8007C364</code>) and <code>World::step_cutscene_timeline</code> runs it through the same field VM each frame, so the camera Configure (<code>0x45</code>) + actor <code>MoveTo</code> (<code>0x23</code>) ops emit camera/move <code>FieldEvent</code>s and the closing <code>GFLAG_SET 26</code> fires the hand-off <strong>by execution</strong> (static arm kept as fallback; a frame-cap safety net guarantees the prologue can't stall). The inline narration spans are NOP-filled in the timeline's bytecode copy (<code>cutscene_text::NarrationBlock::byte_span</code>) so the single shared VM walks past them while the <code>CutsceneNarration</code> presenter shows the text. The op-<code>0x45</code> param&rarr;global map is now fully pinned (<code>FUN_801DE084</code>): params 6/7/8 = the camera focus stored as the negated GTE translation (<code>-X, +Y, -Z</code>; world focus <code>(-param6, param7, -param8)</code>, confirmed by the follow-cam <code>FUN_801DBE9C</code> and the culling test <code>FUN_80021DF4</code>), param 1 = yaw, param 9 = the GTE H projection register (FOV/zoom). The native <code>play-window</code> renders the cutscene with <code>window::cutscene_camera_mvp</code>, framing that focus rotated by the yaw with the FOV from H. <strong>One approximation left:</strong> retail has <strong>no explicit eye-distance param</strong> (the camera is parametrized as focus + yaw + param 0 "rot/zoom" + H), so the engine uses a scene-sized orbit radius rather than the (still-undecoded) mode-keyed GTE rotation/translation build, and the shot snaps between Camera Configure beats rather than interpolating; param 0 + the <code>_DAT_800840b8/bc/c0</code> shake/offset trio and the commit's snap-vs-interpolate timing are also still open.</td>
-        <td><code>project_cold_boot_prologue.md</code></td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>The <code>opdeene</code> &rarr; <code>town01</code> hand-off is data-driven (partition-2 <code>GFLAG_SET 26</code>); the intro cutscene runs in-engine, the camera op <code>0x45</code> map and name-entry auto-open are pinned. Remaining: only the camera eye distance.</td>
+        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
+      </tr>
+      <tr>
+        <td>Overlay identity from the disc (static extraction)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Overlays are clean fixed-VA copies, so each extracts statically from its PROT entry at a jal-recovered (or anchor / pointer-resolution) base; the committed map spans the slot-A family + pinned slot-B entries. Complements runtime captures.</td>
+        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
+      </tr>
+      <tr>
+        <td>Options/menu overlay PROT entry</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><strong>PROT 0899</strong> at <code>0x801CE818</code>: <code>FUN_801CF650</code>'s signature byte-matches file <code>0xe38</code>; the prefix is byte-identical across menu-open saves. The earlier "0896 = menu" label is falsified.</td>
+        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
+      </tr>
+      <tr>
+        <td>PROT 0896 (<code>bat_back_dat</code>) identity</td>
+        <td>open</td>
+        <td>The mode-24-overlay hypothesis is refuted and the <code>0x801C5818</code> base was an over-read artifact; the unique head is a self-contained code+data blob (<code>"FWIN ERR %d"</code>) with no reachable loader call. <a href="#d-prot0896">details &darr;</a></td>
+        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
+      </tr>
+      <tr>
+        <td>Slot-A scene-overlay family beyond field/battle/menu</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Pinned from the disc: 0970 cutscene/STR plus minigame overlays 0972 fishing / 0975 slot machine / 0976 Baka Fighter / 0980 dance, each anchored at <code>0x801CE818</code>. Minigame entries over-read each other (phantom-base risk).</td>
+        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
+      </tr>
+      <tr>
+        <td>"World-map / save / shop" overlay PROT entries</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Not separate entries: the world-map controller <code>FUN_801E76D4</code> lives in field overlay 0897, the save dispatcher <code>FUN_801DC6B4</code> + shop session in menu overlay 0899 (signature-matched). They are subsystems of existing slot-A overlays.</td>
+        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
+      </tr>
+      <tr>
+        <td>Slot-B overlay cluster (<code>0900..0969</code>) identity</td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>0900/0901 = the default move-FX pair, 0902 = GAME OVER, 0903..0913 = player summon stagers (capture-pinned per spell id), 0957 = summon-effect strings. Open: action-id assignment for the attack-titled 0924/0925. <a href="#d-slot-b">details &darr;</a></td>
+        <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
+      </tr>
+      <tr>
+        <td>Overlay-loader index off-by-2 - remaining ripple</td>
+        <td><span class="tag tag-partial">partial</span></td>
+        <td>The loaded entry is extraction <code>param + 0x37F</code> (the in-RAM TOC is raw PROT.DAT), so every historical <code>+ 0x381</code> attribution was 2 high. Slot A reconciled; the spell, high, and Cort enemy stager blocks are capture-pinned; engine mirrors corrected. <a href="#d-off-by-2">details &darr;</a></td>
+        <td><a href="../formats/prot.html">prot</a></td>
       </tr>
     </tbody>
   </table>
+
+  <h3 id="d-debug-flags">Debug flags - residual</h3>
+  <p>An exhaustive corpus sweep finds zero writers of <code>0x8007B8C2</code> and zero references to <code>0x8007B98F</code>, yet the live poke proves the latter's consumer exists. Next step: capture the overlay hosting the SELECT+&#9651; debug-menu reader.</p>
+
+  <h3 id="d-prot0896">PROT 0896 - what would close it</h3>
+  <p>A full SCUS loader-callsite census rules out every constant-param path (0896 would need <code>param == 1</code>, which no site produces), and the head bytes appear in no captured RAM state. Closes via a consumer: any retail moment where the head bytes are resident (<code>overlay_residency.py</code> against new captures), or an overlay-resident loader call whose computed param reaches 1.</p>
+
+  <h3 id="d-slot-b">Slot-B cluster - residual</h3>
+  <ul class="bullets">
+    <li>0924 "Ultimate Rave" / 0925 are stager-shaped (arithmetic ids place them as other enemies' specials); one mid-cast capture each pins the binding. 0926 is a single-sector non-stager.</li>
+    <li>The <code>0x4000</code>/<code>0x4001</code> render-mode nodes are statically decoded (moving particle / 3D positional <em>sound</em> emitter) and the classification is ported, but no catalogued capture seats one live - an <em>enemy</em> cast of a Sim-Seru creature (Palma / Mule / Jedo) would.</li>
+  </ul>
+
+  <h3 id="d-off-by-2">Off-by-2 ripple - residual</h3>
+  <p>Only the evolved-Seru legs <code>0x90 &rarr; 918</code> and <code>0x91 &rarr; 919</code> stay arithmetic-predicted (no mid-cast capture); every other leg of the player, evolved, high, and enemy stager blocks is capture-pinned on the linear <code>spell &minus; 0x79</code> arithmetic.</p>
+</section>
+
+<section class="doc-section" id="do-not-re-walk">
+  <h2>Do-not-re-walk register</h2>
+  <p>Falsified hypotheses and dead ends worth not re-deriving. Each line is the negative finding only; the positive answer lives in the row above and its linked page.</p>
+  <details class="disclosure">
+    <summary>Do-not-re-walk register</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>Slot-4 &rarr; cluster-A converter: none exists; the pool is filled only by <code>FUN_80026B4C</code> via type-2/9 packs.</li>
+        <li>"<code>FUN_8001E54C</code> distributes slot-4 records into a working buffer": falsified - the handlers read the payload in place.</li>
+        <li>World-map "coastline wireframe" / kingdom-border reading: falsified - the bodies are object-local 3D meshes.</li>
+        <li>Walk-view continent as per-cell instanced meshes, and the "single grass page, <code>+0x14</code> unused" reading: both falsified - it is a heightfield and <code>+0x14</code> IS the tile selector.</li>
+        <li>Navmesh at <code>0x80108EA4</code>: GPU primitive scratch; region data is in the field-file preamble, not the field-pack schema slots.</li>
+        <li>"Summon magnitude in the <code>FUN_801f2d68</code> jump table": falsified - that code is animation/GPU only; the magnitude is applied by the paired stager overlay.</li>
+        <li><code>FUN_801F7088</code> as the player-summon rotation path: falsified by live trace - the summon draws through the ordinary battle actor path (<code>FUN_80048A08</code>, TRS keyframes).</li>
+        <li><code>FUN_801F811C</code> as a summon part transform: it is the 2D screen-mask (iris) widget of PROT 0900's widget family, exclusive to the ending scenes.</li>
+        <li>"PROT 1204 is the battle party mesh/palette source": falsified - battles assemble from the player files; 1204 is the Baka Fighter / default-equipment sibling.</li>
+        <li>Battle-palette hunts with the bit-15-<em>set</em> runtime needle: the disc source is bit-15-clear (the uploader ORs STP on) - why every raw brute missed.</li>
+        <li>"Rows 490..497 are the party palette band" / character CLUTs routed through <code>0x8007BEC0</code>: falsified - scene-environment palettes; battle relocates TSB/CBA to rows 481-483.</li>
+        <li>Stat growth from a "Seru struct <code>+0x74</code>": falsified - it is the static <code>DAT_80076918</code> parameter block.</li>
+        <li>Steal data in the PROT 867 monster record: not there - it is the separate static SCUS table <code>DAT_80077828</code>.</li>
+        <li>A per-scene encounter-record table on disc: none - encounters are inline dispatcher-op operands.</li>
+        <li>Placement-NPC <code>text_id</code> resolving through the scene MES: it never does - dialogue is inline <code>0x1F</code> segments; the "prompt + options" and "box-geometry header" readings are falsified.</li>
+        <li>"Picker labels are the 2-byte entries": falsified - the entries are signed relative jumps; labels are ordinary <code>0x1F</code> segments.</li>
+        <li><code>FUN_8001ebec</code> as the dialog-box renderer: it is a per-character TMD pose copier; the dialog SM is <code>FUN_80039b7c</code>, the pager <code>FUN_801D84D0</code>.</li>
+        <li>Per-cue reverb opt-in ("Spirit/echo cues only"): falsified - Studio C is master-on globally with broad EON routing.</li>
+        <li>A title-screen entry in the mode table: no such entry - the title overlay loads pre-mode-dispatch.</li>
+        <li>Debug flag <code>0x8007B98F</code> "stripped at link time / inert": falsified - a live poke enables the debug menu; the consumer is in an uncaptured overlay.</li>
+        <li>PROT 0896 as the menu overlay, or as the mode-24 overlay at <code>0x801C5818</code>: both refuted (menu = 0899; the base was an over-read artifact).</li>
+        <li>"PROT 0905 = Gimard": the <code>+ 0x381</code> off-by-2 - Gimard <code>0x81</code> arithmetics to extraction 0903; the Nighto "Hell's Music" dance-song reading is refuted (it is the attack's display name).</li>
+        <li>XP table at <code>0x8007123C</code> / <code>0x80070A3C</code>: both wrong; the real table is <code>DAT_80076AF4</code>.</li>
+        <li>Menu-glyph atlas as boot-resident field VRAM: it is menu-time-resident; uploading it at field entry flags a wrong static texel.</li>
+        <li>Equipment table <code>+4</code> as AGL/evasion: falsified - it is SPD.</li>
+        <li>"PROT 0028 = town0c's <code>.MAP</code>": misattribution - 0028 is <code>izumi</code>'s; town0c's map (PROT 0019) is byte-identical to town01's.</li>
+      </ul>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="adding-rows">
@@ -315,26 +545,18 @@
   <ol class="bullets">
     <li>There is something <em>specific</em> that would close it - a probe to run, a dump to read, a function to port. "Generally understand X better" is not closable; skip.</li>
     <li>The next step is non-obvious from the code or git log. If <code>grep</code> would surface it, no row needed.</li>
-    <li>The detail lives elsewhere (a memory entry, a docs page, a Ghidra dump). The row is the pointer, not the analysis.</li>
+    <li>The detail lives elsewhere (a docs page, a Ghidra dump). The row is the pointer, not the analysis.</li>
   </ol>
-  <p>When the thread closes, rewrite the row to a <code>falsified</code> or <code>done - kept for reference</code> line if the path was instructive enough to warrant a "do not re-walk" marker; otherwise delete the row. Rotating the page is part of using it.</p>
-</section>
-
-<section class="doc-section" id="related">
-  <h2>Related pages</h2>
-  <ul class="bullets">
-    <li><a href="../tooling/port-catalog.html"><code>tooling/port-catalog.html</code></a> - per-function dumped &times; documented &times; ported &times; ignored axes. <code>port-catalog.py --missing-ports</code> is the function-level companion to this page's question-level index.</li>
-    <li><a href="functions.html"><code>reference/functions.html</code></a> - canonical function directory; the place to learn what a <code>FUN_&lt;addr&gt;</code> mentioned in a row actually does.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/port-catalog-ignore.toml"><code>scripts/ci/port-catalog-ignore.toml</code></a> - addresses explicitly <em>not</em> worth investigating (statically-linked PsyQ infra). Disjoint from this page.</li>
-  </ul>
+  <p>When a thread closes, rewrite the row to a <span class="tag tag-done">resolved</span> / <span class="tag tag-done">falsified</span> line if the path was instructive enough to warrant a do-not-re-walk marker; otherwise delete the row. Rotating the page is part of using it.</p>
 </section>
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="functions.html">Functions</a>
     <a href="../tooling/port-catalog.html">Port catalog</a>
-    <a href="../tooling/ghidra.html">Ghidra tooling</a>
+    <a href="functions.html">Functions</a>
+    <a href="memory-map.html">Memory map</a>
   </div>
+  <p>Full working notes (every address, capture, and falsification trail): <code>docs/reference/open-rev-eng-threads.md</code> in the repository.</p>
 </section>

@@ -260,9 +260,10 @@ fall through to `cutscene_str_for`. API:
 [`CutsceneMap::from_toml_path`](../../crates/engine-core/src/scene.rs) /
 `from_toml_str` / `to_toml_string`.
 
-The retail mapping table itself still requires the STR/MDEC overlay
-capture; the TOML interface lets engines distribute the recovered map
-once that lands without a code change.
+The retail mapping is decoded straight from the disc - the `fmv_dispatch`
+table (`legaia_asset::fmv_dispatch`) plus the MAN-carried per-scene
+triggers (`man_field_scripts::scene_fmv_triggers`); the TOML layer
+remains as an engine-side override surface.
 
 ## STR/MDEC FMV overlay residency
 

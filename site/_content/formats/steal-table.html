@@ -1,0 +1,52 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; steal table</div>
+  <h1>Steal-item table <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">What the player steals from an enemy with the <strong>Evil God Icon</strong> equipped is a static per-monster lookup in <code>SCUS_942.54</code> rodata - two bytes per monster id: steal chance (percent) and stolen item id. It lives in the executable, <em>not</em> in the monster archive's battle record, whose reward block carries only gold / exp / drop.</p>
+</header>
+
+<section class="doc-section" id="table-layout">
+  <h2>Table base + record layout</h2>
+  <table>
+  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Base address</td><td><code>DAT_80077828</code> (file offset <code>0x68028</code> in <code>SCUS_942.54</code>)</td></tr>
+    <tr><td>Index form</td><td><code>DAT_80077828 + monster_id*2</code> (1-based monster id, same id space as the monster archive)</td></tr>
+    <tr><td>Stride</td><td><code>0x2</code> bytes</td></tr>
+    <tr><td>Id range</td><td>monster ids <code>1..</code> (entry <code>0</code> is a reserved sentinel)</td></tr>
+  </tbody>
+  </table>
+  <table>
+  <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
+  <tbody>
+    <tr><td><code>+0</code></td><td>u8</td><td><code>steal_chance_pct</code> - steal success chance, percent</td></tr>
+    <tr><td><code>+1</code></td><td>u8</td><td><code>steal_item_id</code> - stolen item id in the <a href="item-table.html">item-name table</a>'s id space; <code>0</code> = none</td></tr>
+  </tbody>
+  </table>
+  <p><strong>Field order is chance-then-item</strong> - the reverse of the drop fields in the monster record (<code>+0x48</code> item / <code>+0x49</code> chance). Reading the table with the record's item-first order shifts every chance by one monster. A chance of <code>0</code> (or item <code>0</code>) means the enemy can't be stolen from; a raw steal id resolves to a name the same way a drop id does (<code>0x8A</code> &rarr; Incense).</p>
+</section>
+
+<section class="doc-section" id="provenance">
+  <h2>Provenance</h2>
+  <p>Pinned from a live player-steal RAM capture (Evil God Icon equipped): the Skeleton (monster id <code>13</code>) entry at <code>0x80077842</code> is <code>1e 8a</code> = <strong>30% Incense</strong>, exactly the steal the in-battle banner shows. Base, stride, and the <code>[chance, item]</code> order are confirmed byte-exact against the complete published steal table - item <em>and</em> chance columns - across every resolvable monster id, zero mismatches. The table is static rodata, resident in RAM identical to the file bytes.</p>
+  <details class="disclosure"><summary>Why the monster record has no steal field</summary>
+    <p>An exhaustive offset scan of the decoded monster record (extraction entry 0867 / raw TOC index <code>0x365</code>, the <code>battle_data</code> monster archive), correlated against ground-truth steal data, finds no steal field there: the reward block at <code>+0x44..+0x49</code> holds only gold / exp / drop. Every record-only search for the steal item was structurally doomed - the data was never in the archive.</p>
+  </details>
+</section>
+
+<section class="doc-section" id="parser">
+  <h2>Parser</h2>
+  <p><code>legaia_asset::steal_table::StealTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="item-table.html">item-name table</a> resolver). <code>entry(monster_id)</code> returns the <code>[chance, item]</code> pair; <code>steal_item(monster_id)</code> returns the item only when the entry is stealable. The disc-gated <code>steal_table_real</code> test pins the Skeleton&rarr;Incense anchor plus a span of ids against the real executable. CLI: <code>asset steal-table &lt;SCUS&gt; [--all] [--json]</code>, with the item id joined to its name.</p>
+  <p>The randomizer (<code>legaia_rando::steal</code>) edits this table on a user-supplied disc to reassign steal items.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="item-table.html">Item-name table</a>
+    <a href="spell-table.html">Spell table</a>
+    <a href="monster-animation.html">Monster archive / animation</a>
+    <a href="../subsystems/battle.html">Battle subsystem</a>
+    <a href="../reference/gamedata.html">Curated gamedata</a>
+  </div>
+</section>

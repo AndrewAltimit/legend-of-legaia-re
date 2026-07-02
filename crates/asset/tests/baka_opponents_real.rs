@@ -87,3 +87,84 @@ fn opponent_table_reproduces_and_is_bounded() {
         "opponent {OPPONENT_COUNT} is past the table (no valid pattern)"
     );
 }
+
+#[test]
+fn stat_fields_and_action_tables_decode_sane() {
+    let Some(overlay) = baka_overlay() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+
+    let opponents = baka::parse(&overlay).expect("opponent table parses");
+    let mut nonzero_stats = 0usize;
+    for o in &opponents {
+        // Percent-scale stat fields: loose sanity bounds, no Sony values
+        // pinned. Tiers can be negative (an HP-band stat penalty).
+        assert!(
+            (0..=1000).contains(&o.damage_mod),
+            "fighter {} damage_mod in range ({})",
+            o.index,
+            o.damage_mod
+        );
+        assert!(
+            (0..=100).contains(&o.crit_chance),
+            "fighter {} crit chance is a percent ({})",
+            o.index,
+            o.crit_chance
+        );
+        for t in 0..3 {
+            assert!(
+                (-100..=200).contains(&o.atk_tiers[t]),
+                "fighter {} atk tier {t} sane ({})",
+                o.index,
+                o.atk_tiers[t]
+            );
+            assert!(
+                (-100..=200).contains(&o.def_tiers[t]),
+                "fighter {} def tier {t} sane ({})",
+                o.index,
+                o.def_tiers[t]
+            );
+        }
+        if o.atk_tiers.iter().any(|&v| v != 0) || o.def_tiers.iter().any(|&v| v != 0) {
+            nonzero_stats += 1;
+        }
+    }
+    assert!(
+        nonzero_stats >= 10,
+        "most fighters carry HP-keyed stat tiers"
+    );
+
+    // Action tables through PTR_DAT_801db8b8: 17 sets; the three attack
+    // records carry positive base power, and the special record's payoff is
+    // its keyframe count (its power is the zero the damage kernel reads).
+    let actions = baka::parse_actions(&overlay).expect("action tables parse");
+    assert_eq!(actions.len(), OPPONENT_COUNT);
+    let mut powered = 0usize;
+    let mut charged = 0usize;
+    for a in &actions {
+        for t in 1..=4u8 {
+            let p = a.attack_power(t).unwrap();
+            assert!(
+                (-10_000..=10_000).contains(&p),
+                "fighter {} attack {t} power sane ({p})",
+                a.index
+            );
+        }
+        if (1..=3u8).all(|t| a.attack_power(t).unwrap() > 0) {
+            powered += 1;
+        }
+        // The special's keyframe count gates the full-hit round win.
+        let kf = a.keyframes[baka::ACTION_SPECIAL];
+        assert!(
+            (0..=256).contains(&kf),
+            "fighter {} special keyframes ({kf})",
+            a.index
+        );
+        if kf >= 1 {
+            charged += 1;
+        }
+    }
+    assert!(powered >= 10, "most fighters have positive attack powers");
+    assert!(charged >= 10, "most fighters have a charged special");
+}

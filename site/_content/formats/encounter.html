@@ -87,7 +87,7 @@
     <thead><tr><th>Address</th><th>Size</th><th>Role</th></tr></thead>
     <tbody>
       <tr><td><code>0x8007BD0C</code></td><td><code>u8[4]</code></td><td>Active formation: monster ids per slot, populated by the reader above.</td></tr>
-      <tr><td><code>0x8007BD11</code></td><td><code>u8</code></td><td>Battle-data PROT-id selector. <code>FUN_800520F0</code> case-4 path reads this byte and chooses PROT entry <strong><code>0x367</code></strong> when it equals the case-1 character index, otherwise <strong><code>0x36D</code></strong>. The selected entry is loaded as a kind-2 streaming asset for the battle scene.</td></tr>
+      <tr><td><code>0x8007BD11</code></td><td><code>u8</code></td><td>Battle-data PROT-id selector. <code>FUN_800520F0</code> case-4 path reads this byte and chooses PROT entry <strong><code>0x367</code></strong> (raw TOC index; = extraction entry 0869) when it equals the case-1 character index, otherwise <strong><code>0x36D</code></strong> (raw TOC index; = extraction entry 0875). The selected entry is loaded as a kind-2 streaming asset for the battle scene.</td></tr>
     </tbody>
   </table>
   <p>Snapshots of the formation cell across captures (see the <a href="../tooling/mednafen-automation.html"><code>scripts/scenarios.toml</code></a> manifest):</p>

@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; inn</div>
   <h1>Inn</h1>
-  <p class="lede">HP / MP restore flow at in-game inns. Lives inside the <strong>menu overlay</strong> (same 129-function binary as shop, save screen, and status screens). Clean-room session state: <code>engine-core::inn::InnSession</code>. Per-scene costs are pending a full trace of <code>overlay_shop_save</code>.</p>
+  <p class="lede">HP / MP restore flow at in-game inns. Lives inside the <strong>menu overlay</strong> (same 129-function binary as shop, save screen, and status screens). Clean-room session state: <code>engine-core::inn::InnSession</code>.</p>
 </header>
 
 <section class="doc-section" id="flow">
@@ -27,7 +27,7 @@
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><strong>Per-scene costs.</strong> Retail inn prices are in the menu overlay DATA segment. Locating them requires tracing the <code>InnConfirm</code> entry sub-screen. Pending <code>overlay_shop_save</code> capture.</li>
+    <li><span class="tag tag-partial">Open</span> <strong>Per-scene costs.</strong> Retail inn prices are in the menu overlay DATA segment. Locating them requires tracing the <code>InnConfirm</code> entry sub-screen. Pending <code>overlay_shop_save</code> capture.</li>
     <li><strong>Render layout.</strong> Cost prompt pixel offsets and layout pending overlay trace.</li>
     <li><strong>Party filtering.</strong> Retail may only restore active-roster members (not reserve bench). The current port iterates all <code>World::roster.members</code> without a slot-active gate.</li>
   </ul>

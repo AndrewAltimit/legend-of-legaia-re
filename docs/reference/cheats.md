@@ -221,12 +221,16 @@ doesn't emulate).
 The applier reports per-entry status:
 
 ```text
-Cheat report (49 entries, 96 writes; 71 applied, 25 skipped):
-  ok    Infinite HP (Vahn)               4/4 writes applied
-  ok    Infinite Gold (Never Glitchy)    1/1 writes applied
-  skip  Walk Thru Walls                  0/4 writes applied (FieldVmCollision unmapped)
+Cheat report (49 entries, 96 writes; 71 applied, 25 unmapped, 0 unknown):
+  ok    Infinite HP (Vahn)............................................ 4/4 writes
+  ok    Infinite Gold (Never Glitchy)................................. 1/1 writes
+  skip  Walk Thru Walls............................................... 0/4 writes
   ...
 ```
+
+A `skip` line means every write in the entry landed in a RAM region
+the `ram_map` registry does not map onto engine state (for Walk Thru
+Walls that region is `FieldVmCollision`); `part` marks a mixed entry.
 
 Use this to validate that a code change keeps the same set of
 cheats applying. If a previously-applying cheat starts failing,

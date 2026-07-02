@@ -7,6 +7,7 @@
 /arts.html
 /arts.json
 /characters.html
+/formats/accessory-passive-table.html
 /formats/anm.html
 /formats/art-data.html
 /formats/asset-descriptor.html
@@ -20,8 +21,11 @@
 /formats/dmy.html
 /formats/effect.html
 /formats/encounter.html
+/formats/equipment-table.html
 /formats/field-pack.html
 /formats/index.html
+/formats/item-effect-table.html
+/formats/item-table.html
 /formats/lzs.html
 /formats/man-relocation.html
 /formats/mdt.html
@@ -30,6 +34,7 @@
 /formats/monster-animation.html
 /formats/move-power.html
 /formats/navmesh.html
+/formats/new-game-table.html
 /formats/npc-palette.html
 /formats/overlay-ptr-table.html
 /formats/pack.html
@@ -41,7 +46,10 @@
 /formats/seq.html
 /formats/sfx-table.html
 /formats/sound-driver.html
+/formats/spell-table.html
+/formats/steal-table.html
 /formats/str-fmv-table.html
+/formats/summon-readef.html
 /formats/tim-pack.html
 /formats/tim.html
 /formats/tmd.html
