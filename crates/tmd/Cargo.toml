@@ -18,4 +18,3 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 legaia-tim = { path = "../tim" }
-png = "0.17"

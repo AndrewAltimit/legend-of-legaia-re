@@ -1527,7 +1527,6 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-tim",
- "png",
  "serde",
  "serde_json",
 ]
