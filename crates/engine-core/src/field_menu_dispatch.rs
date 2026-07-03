@@ -324,6 +324,20 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
         let xp = member.cumulative_xp() as u32;
         let level = legaia_save::level_for_cumulative_xp(xp);
         let xp_to_next = xp_to_next_level(xp, level);
+        // The retail 3x2 derived-stat grid: live values from the `+0x110`
+        // window, growth values (the parenthesised number) from the
+        // `+0x122..+0x12D` record window, ordered ATK/UDF/LDF | SPD/INT/AGL
+        // (docs/subsystems/field-menu.md).
+        let live = member.live_stats();
+        let growth = member.record_stats();
+        let stat_pairs: [(u16, u16); 6] = [
+            (live.atk, growth.atk),
+            (live.udf, growth.udf),
+            (live.ldf, growth.ldf),
+            (live.spd, growth.spd),
+            (live.int, growth.int),
+            (live.agl, growth.agl),
+        ];
         let equip_slots = member.equipment();
         let equip_views: Vec<EquipSlotView> = (0..equip_slots.slots.len())
             .map(|s| EquipSlotView {
@@ -345,8 +359,8 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             ap_max: 100,
             attack: world.battle_attack.get(i).copied().unwrap_or(0),
             defense: world.battle_defense.get(i).copied().unwrap_or(0),
-            stats: [0; 6],
-            stat_labels: ["STR", "DEF", "SPI", "AGI", "MAG", "RES"],
+            stats: stat_pairs,
+            stat_labels: crate::status_screen::RETAIL_STAT_LABELS,
             equip: equip_views,
             elements: default_element_views(),
         });

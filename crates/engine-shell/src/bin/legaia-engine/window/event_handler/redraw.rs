@@ -388,6 +388,40 @@ impl PlayWindowApp {
                 (Option<UploadedVramMesh>, Option<UploadedColorMesh>),
             > = std::collections::HashMap::new();
             if self.session.host.world.mode == SceneMode::Field {
+                // Channel op-0x4B ANIMATE cues re-target the NPC's clip
+                // player before this frame's tick: the cue's anim id names
+                // a bundle record the same way the placement anim byte does
+                // (`record = id - 1`), against whichever bundle the
+                // placement originally resolved through. This is what makes
+                // the prologue-vignette actors *perform* their scripted
+                // beats instead of looping the placement clip.
+                let cues: Vec<_> = self
+                    .session
+                    .host
+                    .world
+                    .field_npc_anim_cues
+                    .drain()
+                    .collect();
+                for (slot, (_count, base_id, _frames)) in cues {
+                    if !self.npc_anim_srcs.contains_key(&slot) {
+                        continue;
+                    }
+                    let special = self.npc_bundle_special.get(&slot).copied().unwrap_or(false);
+                    let bundle = if special {
+                        self.npc_anim_bundles.1.as_ref()
+                    } else {
+                        self.npc_anim_bundles.0.as_ref()
+                    };
+                    let (Some(b), Some(rec_idx)) = (bundle, (base_id as usize).checked_sub(1))
+                    else {
+                        continue;
+                    };
+                    if let Some(player) =
+                        legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec_idx)
+                    {
+                        self.npc_clip_players.insert(slot, player);
+                    }
+                }
                 for (slot, player) in self.npc_clip_players.iter_mut() {
                     let Some((tmd, raw)) = self.npc_anim_srcs.get(slot) else {
                         continue;

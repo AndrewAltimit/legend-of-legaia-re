@@ -181,6 +181,12 @@ struct PlayWindowApp {
     /// CPU-side save-menu atlas waiting for renderer upload. Moved
     /// into `save_menu` on the first frame the renderer is available.
     pending_save_menu_atlas: Option<legaia_engine_core::save_menu_atlas::SaveMenuAtlas>,
+    /// The menu overlay's window-descriptor table (PROT 0899 @0x15F24,
+    /// `legaia_asset::menu_windows`), parsed once at boot: the retail
+    /// window rect + content-renderer dispatch behind every pause-menu
+    /// screen. `None` when the disc isn't loaded (pinned fallback rects
+    /// in [`MENU_WINDOW_FALLBACK`] apply).
+    menu_window_table: Option<legaia_asset::menu_windows::MenuWindowTable>,
     uploaded_vram: Option<UploadedVram>,
     meshes: Vec<UploadedVramMesh>,
     /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
@@ -243,6 +249,19 @@ struct PlayWindowApp {
     npc_clip_players:
         std::collections::HashMap<u8, legaia_engine_core::field_anim::FieldClipPlayer>,
     npc_anim_srcs: std::collections::HashMap<u8, (legaia_tmd::Tmd, Vec<u8>)>,
+    /// The ANM bundles the placements resolved their clips through,
+    /// retained past scene load so channel op-`0x4B` ANIMATE cues
+    /// (`World::field_npc_anim_cues`) can re-target an NPC's clip player
+    /// mid-scene (the prologue-vignette "characters doing things" beats).
+    /// `.0` = the per-scene bundle, `.1` = the party locomotion bundle
+    /// (PROT 0874 §1); `npc_bundle_special[slot]` records which of the two
+    /// a placement poses from (`special_model` placements use the
+    /// locomotion bundle).
+    npc_anim_bundles: (
+        Option<legaia_asset::player_anm::PlayerAnmBundle>,
+        Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    ),
+    npc_bundle_special: std::collections::HashMap<u8, bool>,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
@@ -530,25 +549,74 @@ impl PlayWindowApp {
 
 // --- Field pause-menu window geometry (320x240 boot-UI stage pixels) ---
 //
-// The field-menu text builders lay glyphs out in stage pixels; these pens
-// and window rects place them on the shared boot-UI stage, framed by
-// `menu_window_chrome_draws_for`. Position/size are placement-approximate:
-// the retail caller-supplied rect (`a0+0xa..+0x10` in `FUN_801D33D8`, see
-// docs/subsystems/field-menu.md) is not yet pinned, so these are chosen to
-// frame each screen's known content extent. The content offsets *within*
-// the frame are the engine's existing per-menu layout.
+// The field-menu text builders lay glyphs out in stage pixels; the window
+// rects come from the menu overlay's **window-descriptor table** (PROT
+// 0899 @0x15F24, VA 0x801E473C - `legaia_asset::menu_windows`), parsed
+// from the user's disc at boot into `PlayWindowApp::menu_window_table`.
+// Each descriptor rect is the window's *content* origin/extent (the
+// `a0+0xa..+0x10` rect the retail content renderers receive, e.g.
+// `FUN_801D33D8`'s `WX`/`WY`); the caller-drawn 9-slice frame extends
+// past it (`MenuWindowDescriptor::frame_rect`). The pinned fallback below
+// mirrors the disc table for the ids the engine draws (the disc-gated
+// `menu_windows_real` test asserts the mirror), so geometry stays retail
+// even without a disc table.
 
-/// Stage pen for the main field-menu list (title + rows + money/time).
-const FIELD_MENU_TEXT_PEN: (i32, i32) = (32, 64);
-/// 9-slice frame rect for the main field-menu list (x, y, w, h). Sized to
-/// contain the whole engine text block (title + command rows + the
-/// money/play-time footer). Retail splits the money and play-time into
-/// their own small corner boxes; a single frame is the first faithful
-/// pass until those satellite windows are pinned.
-const FIELD_MENU_WINDOW: (i32, i32, i32, i32) = (16, 52, 224, 176);
-/// 9-slice frame rect for the wide sub-screens (status / spells / items /
-/// equip / arts) - a near-fullscreen window on the 320x240 stage.
-const MENU_SUBWINDOW: (i32, i32, i32, i32) = (12, 16, 296, 212);
+/// Pinned content rects mirroring the disc descriptor table:
+/// `(descriptor id, (x, y, w, h))`.
+#[rustfmt::skip]
+const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 14] = {
+    use legaia_asset::menu_windows::window_ids as w;
+    [
+        (w::TAB_EQUIP, (16, 12, 60, 12)),
+        (w::TAB_STATUS, (12, 12, 60, 12)),
+        (w::TAB_OPTIONS, (16, 12, 60, 12)),
+        (w::EQUIP_PARTY, (14, 42, 80, 38)),
+        (w::EQUIP_MAIN, (14, 96, 292, 108)),
+        (w::EQUIP_LIST, (174, 22, 132, 182)),
+        (w::STATUS_PARTY_LIST, (14, 38, 60, 38)),
+        (w::STATUS_CONDITION, (14, 92, 60, 10)),
+        (w::STATUS_MAIN, (90, 16, 218, 188)),
+        (w::STATUS_SUMMARY, (14, 134, 60, 70)),
+        (w::OPTIONS_MAIN, (24, 40, 256, 148)),
+        (w::TOP_MONEY_TIME, (24, 178, 104, 24)),
+        (w::TOP_COMMAND_LIST, (24, 24, 104, 94)),
+        (w::TOP_INFO_PANEL, (144, 24, 152, 180)),
+    ]
+};
+
+/// Content rect used for the sub-screens whose retail window sets are not
+/// yet capture-pinned (Items / Spells / Arts and the Equip picker overlay) -
+/// a near-fullscreen window on the 320x240 stage.
+const MENU_SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
+
+impl PlayWindowApp {
+    /// Content rect for a menu window id: the disc-parsed descriptor when
+    /// available, else the pinned mirror in [`MENU_WINDOW_FALLBACK`].
+    fn menu_window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
+        if let Some(d) = self.menu_window_table.as_ref().and_then(|t| t.window(id)) {
+            return d.rect();
+        }
+        MENU_WINDOW_FALLBACK
+            .iter()
+            .find(|(i, _)| *i == id)
+            .map(|(_, r)| *r)
+            .unwrap_or(MENU_SUBWINDOW_CONTENT)
+    }
+
+    /// Content-origin pen for a menu window id.
+    fn menu_window_pen(&self, id: usize) -> (i32, i32) {
+        let (x, y, _, _) = self.menu_window_rect(id);
+        (x, y)
+    }
+
+    /// Frame rect (the 9-slice chrome box) for a menu window id: the
+    /// retail border art extends 6 px left/right, 2 px above and 10 px
+    /// below the content rect.
+    fn menu_window_frame_rect(&self, id: usize) -> (i32, i32, i32, i32) {
+        let (x, y, w, h) = self.menu_window_rect(id);
+        (x - 6, y - 2, w + 12, h + 12)
+    }
+}
 
 /// The single world-space Y negation of the **field render frame**: field
 /// world state (actor positions, placement Y, the heightfield's baked

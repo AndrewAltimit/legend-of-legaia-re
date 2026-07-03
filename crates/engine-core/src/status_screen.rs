@@ -47,11 +47,20 @@ pub struct StatusSnapshot {
     pub ap_max: u8,
     pub attack: u16,
     pub defense: u16,
-    pub stats: [u8; 6],
+    /// The six derived stats of the retail status grid, as `(live, growth)`
+    /// pairs: live from the record's `+0x110` window, growth from the
+    /// `+0x122..+0x12D` record window (the parenthesised second number of
+    /// the retail 3x2 grid). Order matches [`RETAIL_STAT_LABELS`].
+    pub stats: [(u16, u16); 6],
     pub stat_labels: [&'static str; 6],
     pub equip: Vec<EquipSlotView>,
     pub elements: Vec<ElementRankView>,
 }
+
+/// The retail derived-stat grid labels, in the panel's draw order (left
+/// column top-to-bottom, then right column): the same six stats the
+/// `FUN_801D33D8` status page prints (docs/subsystems/field-menu.md).
+pub const RETAIL_STAT_LABELS: [&str; 6] = ["ATK", "UDF", "LDF", "SPD", "INT", "AGL"];
 
 impl StatusSnapshot {
     /// Convenience constructor for a freshly-rolled record. Engines that
@@ -61,7 +70,7 @@ impl StatusSnapshot {
         Self {
             slot,
             name: name.into(),
-            stat_labels: ["STR", "DEF", "SPI", "AGI", "MAG", "RES"],
+            stat_labels: RETAIL_STAT_LABELS,
             ..Default::default()
         }
     }
@@ -279,7 +288,7 @@ mod tests {
     #[test]
     fn placeholder_default_stat_labels() {
         let s = StatusSnapshot::placeholder(0, "Vahn");
-        assert_eq!(s.stat_labels[0], "STR");
-        assert_eq!(s.stat_labels[5], "RES");
+        assert_eq!(s.stat_labels[0], "ATK");
+        assert_eq!(s.stat_labels[5], "AGL");
     }
 }

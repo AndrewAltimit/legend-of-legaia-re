@@ -52,37 +52,39 @@ pub fn options_draws_for(
     cursor: u8,
     pen: (i32, i32),
 ) -> Vec<TextDraw> {
-    const LINE_H: i32 = 16;
+    // Retail options window (menu-overlay window id 48, content rect
+    // (24,40,256,148)): setting rows at a 14-px pitch, white labels at
+    // the content-left inset, gold values in a column at +140 (both
+    // measured against the `menu_options_field` VRAM capture). The row
+    // set / grouping gaps are engine-styled - the retail options
+    // renderer `FUN_801DCEF0` is untraced.
+    const LINE_H: i32 = 14;
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let sel: [f32; 4] = [1.0, 1.0, 0.6, 1.0];
     let dim: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
 
     let mut out = Vec::new();
-    out.extend(text_draws_for(&font.layout_ascii("CONFIG"), pen, gold));
-
     for (i, row) in rows.iter().enumerate() {
-        let y = pen.1 + LINE_H * 2 + i as i32 * LINE_H;
-        let color = if i as u8 == cursor { gold } else { white };
-        if i as u8 == cursor {
-            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+        let y = pen.1 + i as i32 * LINE_H;
+        let selected = i as u8 == cursor;
+        if selected {
+            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0 - 2, y), sel));
         }
         out.extend(text_draws_for(
             &font.layout_ascii(row.label),
-            (pen.0 + 14, y),
-            color,
+            (pen.0 + 8, y),
+            if selected { sel } else { white },
         ));
         out.extend(text_draws_for(
             &font.layout_ascii(row.value),
-            (pen.0 + 180, y),
-            color,
+            (pen.0 + 140, y),
+            if selected { sel } else { gold },
         ));
     }
     out.extend(text_draws_for(
         &font.layout_ascii("Cross/Start: Save  Circle: Cancel"),
-        (
-            pen.0,
-            pen.1 + LINE_H * 2 + rows.len() as i32 * LINE_H + LINE_H,
-        ),
+        (pen.0, pen.1 + rows.len() as i32 * LINE_H + LINE_H),
         dim,
     ));
     out

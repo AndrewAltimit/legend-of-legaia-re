@@ -3,10 +3,16 @@
 //! For a world-map scene (`map\d\d`) the standalone oracle build must use
 //! [`SceneLoadKind::WorldMap`] so the kingdom bundle's slot-0 terrain atlas (a
 //! tim-pack the generic TIM scanner can't see through the descriptor table)
-//! lands in VRAM. A field-kind build of the same scene misses those pages, so
-//! the texpage region is materially emptier. This pins that the world-map
-//! alignment (`oracle_load_kind`) genuinely lifts terrain-page residency rather
-//! than silently reporting a phantom gap.
+//! lands in VRAM. This pins the world-map alignment (`oracle_load_kind`) and
+//! that the terrain-atlas pages are actually resident.
+//!
+//! Historical note: this guard originally compared against a Field-kind build
+//! of the same scene, which missed those pages. Since `Scene::load` fetches
+//! `SceneAssetTable` entries at their extended footprint, the atlas pages are
+//! reachable through the bundle's own LZS streams in either kind, so the two
+//! builds converge - the pin is now the world-map build's ABSOLUTE texpage
+//! residency (retail-observed ~104k non-zero words; the pre-fix field build
+//! sat at ~51k without the atlas).
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
@@ -59,26 +65,20 @@ fn world_map_kind_lifts_terrain_residency() {
     // The oracle auto-selects the world-map kind for `map\d\d`.
     assert_eq!(oracle_load_kind(SCENE), SceneLoadKind::WorldMap);
 
-    let field =
-        build_engine_vram_bytes_prepass_with_kind(SCENE, &extracted, None, SceneLoadKind::Field)
-            .expect("field-kind build");
     let world =
         build_engine_vram_bytes_prepass_with_kind(SCENE, &extracted, None, SceneLoadKind::WorldMap)
             .expect("world-map-kind build");
 
-    let field_n = texpage_nonzero_words(&field);
     let world_n = texpage_nonzero_words(&world);
-    eprintln!("[align] {SCENE} texpage non-zero words: field={field_n} world_map={world_n}",);
+    eprintln!("[align] {SCENE} texpage non-zero words: world_map={world_n}");
 
-    // The world-map build must add a substantial run of terrain-atlas pages the
-    // field build never loads - well beyond noise.
-    // Retail observed: field ~51k, world_map ~104k (the terrain atlas roughly
-    // doubles residency). Require a generous fraction of that delta so the
-    // guard is robust to incidental atlas-packing changes but still fails if the
-    // world-map slot-0 decode regresses.
+    // The terrain atlas roughly doubles texpage residency over an atlas-less
+    // build (~51k -> ~104k non-zero words). Require a generous absolute floor
+    // so the guard is robust to incidental atlas-packing changes but still
+    // fails if the terrain-atlas decode regresses.
     assert!(
-        world_n > field_n + 30_000,
-        "world-map kind should add a large terrain-atlas run to VRAM \
-         (field={field_n}, world_map={world_n})"
+        world_n > 80_000,
+        "world-map build should hold the terrain-atlas texpage run in VRAM \
+         (world_map={world_n})"
     );
 }

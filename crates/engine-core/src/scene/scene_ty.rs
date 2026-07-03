@@ -89,8 +89,22 @@ impl Scene {
             if (idx as usize) >= index.entry_count() {
                 break;
             }
-            let bytes = index.entry_bytes(idx)?;
+            let mut bytes = index.entry_bytes(idx)?;
             let class = index.class_of(idx)?;
+            // `scene_asset_table` descriptor offsets are FILE-relative
+            // against the entry's **extended** on-disc footprint (indexed
+            // payload + trailing-overlay sectors) - the retail loader
+            // streams by LBA, so a bundle's LZS mesh/texture streams
+            // routinely start past the TOC-indexed end (e.g. the opdeene
+            // prologue's whole vignette geometry pack; see
+            // docs/formats/scene-bundles.md). Load those entries at their
+            // full footprint so the resource sweep can reach every stream.
+            if class == Class::SceneAssetTable
+                && let Ok(ext) = index.entry_bytes_extended(idx)
+                && ext.len() > bytes.len()
+            {
+                bytes = Arc::new(ext);
+            }
             entries.push(SceneEntry { idx, class, bytes });
         }
         Ok(Self {

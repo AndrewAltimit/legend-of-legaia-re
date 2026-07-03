@@ -29,7 +29,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
   - [World map](#world-map) - `kingdom_bundle`, `world_map_overlay`, `ocean`, `worldmap_menu`
-  - [Boot / title / menu UI](#boot--title--menu-ui) - `init_pak`, `title_pak`, `menu_glyph_atlas`
+  - [Boot / title / menu UI](#boot--title--menu-ui) - `init_pak`, `title_pak`, `menu_glyph_atlas`, `menu_windows`
   - [SCUS static tables](#scus-static-tables) - `item_names`, `item_effect`, `equip_stats`, `accessory_passive`, `spell_names`, `steal_table`, `sfx_table`, `level_up_tables`, `mode_table`, `new_game`
   - [Cutscene / FMV / summon](#cutscene--fmv--summon) - `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`, `summon_creatures`
   - [Scene + MAN](#scene--man) - `man_section`, `man_edit`, scene tables
@@ -302,6 +302,7 @@ See [`character-mesh.md`](../../docs/formats/character-mesh.md) and
 | `init_pak` | The four publisher-logo TIMs from PROT 0895 (CDNAME says `bat_back_dat`; actually init.pak). |
 | `title_pak` | The "Legend of Legaia" title-screen TIM + the system-UI sheet (load-screen panel / slot pills). |
 | `menu_glyph_atlas` | The small-caps menu font atlas (title menu rows + shared menu UI). |
+| `menu_windows` | The menu overlay's 52-entry **window descriptor table** (PROT 0899 file `0x15F24`, VA `0x801E473C`): per-window content rect + content-renderer VA + style/class - the caller-supplied rects behind every pause-menu screen (status main panel = id 28 -> `FUN_801D33D8`), plus the per-screen window-id sets pinned from the menu-open captures. See [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#window-descriptor-table). |
 
 ### SCUS static tables
 
