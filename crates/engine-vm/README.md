@@ -118,13 +118,17 @@ them into their own audio mixer / scene graph / move-VM driver.
 
 ## `status_effects`
 
-Per-actor status-effect tracker. `StatusKind` covers the eight retail
+Per-actor status-effect tracker. `StatusKind` covers the retail
 condition kinds, named with the game's in-game ailment terms (Toxic /
-Numb / Venom / Sleep / Confuse / Curse / Stone / Faint). The tracker
-maintains per-instance turn counters, drains queued `StatusEvent`s into
-the engine's HUD pipeline, and bridges from art-record `EnemyEffect`
-bytes through `StatusKind::from_enemy_effect`. Damage-over-time formulas
-(Toxic = `max_hp / 16`, Venom = `current_hp / 8`) live alongside.
+Numb / Venom / Rot / Curse / Stone / Faint, plus host-driven Sleep /
+Confuse). The tracker maintains per-instance turn counters, drains
+queued `StatusEvent`s into the engine's HUD pipeline, and bridges from
+art-record `EnemyEffect` bytes through `StatusKind::from_enemy_effect` -
+the byte map follows the pinned appliers (3 = Venom, 4 = Toxic, 5 = Rot,
+6 = Curse). Rot carries a per-instance rolled limb (`set_rot_limb` /
+`rot_limb`) whose attack command the battle session refuses.
+Damage-over-time formulas (Toxic = `max_hp / 16`, Venom = `current_hp /
+8`) live alongside.
 
 ## `battle_formulas`
 

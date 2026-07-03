@@ -19,6 +19,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`static_overlay`](#static_overlay)
   - [`monster_archive`](#monster_archive)
   - [`move_power`](#move_power)
+  - [`fishing_exchange`](#fishing_exchange)
   - [`fishing_species`](#fishing_species)
   - [`dance_chart`](#dance_chart)
   - [`slot_payout`](#slot_payout)
@@ -148,6 +149,21 @@ Static battle-overlay data, pinned in PROT 0898 at fixed raw-entry offsets
 CLI `asset move-power <PROT 0898 .BIN>` (`--json` for the machine-readable table). See
 [`spell-table.md`](../../docs/formats/spell-table.md).
 
+### `fishing_exchange`
+
+Fishing-minigame **point-exchange (prize shop) tables**: two per-venue 6-row
+`0xC`-stride tables (`[limit, price, item_id]`; Buma page VA `0x801D8088`,
+Vidna `0x801D80D0`) the exchange sub-screens read through `PTR_DAT_801d90b8`
+(list `FUN_801d0c3c`, quantity `FUN_801d092c`, confirm `FUN_801d06c8`,
+availability `FUN_801d6f90`). Prices spend the persistent point pool
+`_DAT_8008444C`; a `limit == 1` row latches bit `row + venue*8` of
+`_DAT_8008446C`; row 0 hides until strictly affordable.
+
+- `parse` → both venue pages of `ExchangeRow`s;
+  `FishingExchange::purchase_bit(page, row)` maps the one-time bit index.
+  No Sony bytes committed (disc-gated `fishing_exchange_real`). See
+  [`minigame-fishing.md`](../../docs/subsystems/minigame-fishing.md#point-exchange-prize-shop).
+
 ### `fishing_species`
 
 Fishing-minigame **per-species parameter table** (overlay VA `0x801D81A4`), the
@@ -163,6 +179,9 @@ pointer into the same overlay.
   (`value * (strength + 0x9c0) / 0x32000`); `name(overlay)` resolves the `+0x00`
   pointer. No Sony bytes committed (disc-gated `fishing_species_real`). See
   [`minigame-fishing.md`](../../docs/subsystems/minigame-fishing.md#per-species-parameter-table).
+- `parse_spawn_tables` → the two per-venue species-spawn tables directly after
+  the species table (`0x801D8334` / `0x801D8434`): `8 × 8` u32 species ids the
+  hooked-fish handler picks as `table[rod*8 + cast_band]` (`FUN_801d26cc`).
 
 ### `dance_chart`
 

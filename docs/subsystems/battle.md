@@ -883,7 +883,7 @@ Per-scene random-encounter trigger. Engines own one `EncounterSession` per activ
 | `Battling` | Battle is running; tracker is suspended. |
 | `Grace` | Post-battle "no immediate re-encounter" window (`grace_frames`, default 30). |
 
-`EncounterTable` holds the per-scene rows + 1/256 trigger rate + safe-zone rectangles. `EncounterTracker::add_rate_bias` lets accessory effects (Goblin Foot = -32, Encounter Up = +32) tune the effective rate per-roll.
+`EncounterTable` holds the per-scene rows + 1/256 trigger rate + safe-zone rectangles. The accessory / status modifiers scale the effective rate multiplicatively via `EncounterTracker::set_rate_modifiers` - the statically pinned `FUN_801D9E1C` shifts (High Encounter passive `0x3B` = `<<2`, Low Encounter `0x3C` = `>>1`, system flags `0x1D`/`0x1E` = `<<1`/`>>1`; see [encounter.md](../formats/encounter.md#random-encounter-trigger-path)), refreshed from the party ability mask + flag bank each step. (An earlier additive `add_rate_bias` knob modeled accessories that don't exist in retail; it is removed.)
 
 Implementation: [`crates/engine-core::encounter`](../../crates/engine-core/src/encounter.rs).
 
