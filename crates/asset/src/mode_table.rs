@@ -113,11 +113,6 @@ impl ExeMap {
     }
 }
 
-fn read_u32(scus: &[u8], off: usize) -> Option<u32> {
-    scus.get(off..off + 4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
-}
-
 fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> String {
     let Some(start) = map.off(va) else {
         return String::new();
@@ -146,10 +141,10 @@ impl ModeTable {
         let mut entries = Vec::with_capacity(MODE_COUNT);
         for index in 0..MODE_COUNT {
             let e = base + index * ENTRY_STRIDE;
-            let name_ptr = read_u32(scus, e)?;
-            let next_word = read_u32(scus, e + 0x08)?;
-            let handler = read_u32(scus, e + 0x10)?;
-            let param = read_u32(scus, e + 0x14)?;
+            let name_ptr = legaia_bytes::u32_le(scus, e)?;
+            let next_word = legaia_bytes::u32_le(scus, e + 0x08)?;
+            let handler = legaia_bytes::u32_le(scus, e + 0x10)?;
+            let param = legaia_bytes::u32_le(scus, e + 0x14)?;
             entries.push(ModeEntry {
                 index,
                 name: read_name(scus, &map, name_ptr),

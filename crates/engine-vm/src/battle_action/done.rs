@@ -1,3 +1,5 @@
+//! Action-teardown ("done") band of the battle-action state machine (recoil reset, exit pose, fade-down timer).
+
 use super::*;
 
 // --- done band --------------------------------------------------------------

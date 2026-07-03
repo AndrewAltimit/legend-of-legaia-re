@@ -1,3 +1,5 @@
+//! Battle-action state-machine `step` dispatcher, command-queue resolution, and shared transition/timer helpers.
+
 use super::*;
 
 /// Resolve a player's directional command sequence into an action queue,

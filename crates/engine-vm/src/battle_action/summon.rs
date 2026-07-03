@@ -1,3 +1,5 @@
+//! Summon (Seru-creature) invocation band of the battle-action state machine.
+
 use super::*;
 
 // --- summon band ------------------------------------------------------------

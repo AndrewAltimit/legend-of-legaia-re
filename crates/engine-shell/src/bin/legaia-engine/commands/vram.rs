@@ -4,6 +4,13 @@
 
 use super::*;
 
+/// PSX VRAM dimensions (BGR555, 16-bit words). The engine mirrors the
+/// full 1024x512 framebuffer, so a serialized VRAM blob is exactly
+/// `VRAM_BYTES` long.
+const VRAM_W: usize = 1024;
+const VRAM_H: usize = 512;
+const VRAM_BYTES: usize = VRAM_W * VRAM_H * 2;
+
 /// Walk a scene's TMD pool, locate every primitive that drops as
 /// `MissingClut`, and report which PROT entries on the disc carry a TIM
 /// whose CLUT block lands at the missing row. Optional runtime VRAM
@@ -25,12 +32,7 @@ pub(crate) fn cmd_clut_trace(
     let scene =
         Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
 
-    let mut shared_scenes: Vec<Scene> = Vec::new();
-    for name in FIELD_SHARED_BLOCKS {
-        if let Ok(s) = Scene::load(&index, name) {
-            shared_scenes.push(s);
-        }
-    }
+    let shared_scenes = crate::shared::load_shared_scenes(&index, |_, _| {});
     let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
     let (resources, _upload_stats) = SceneResources::build_targeted(&scene, &shared_refs)?;
 
@@ -94,7 +96,7 @@ pub(crate) fn cmd_clut_trace(
         None => None,
     };
     if let Some(b) = &runtime_bytes
-        && b.len() != 1024 * 512 * 2
+        && b.len() != VRAM_BYTES
     {
         anyhow::bail!("runtime VRAM size {} != 1 MiB (1024*512*2)", b.len());
     }
@@ -253,13 +255,11 @@ struct TimSupplier {
 /// the 1 MiB BGR555 LE blob are non-zero. Used by `cmd_clut_trace` to
 /// decide whether the runtime captured this CLUT row.
 fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
-    const VW: usize = 1024;
-    const VH: usize = 512;
-    if y >= VH {
+    if y >= VRAM_H {
         return false;
     }
-    let row_start = (y * VW + x) * 2;
-    let end = ((x + w).min(VW) * 2) + y * VW * 2;
+    let row_start = (y * VRAM_W + x) * 2;
+    let end = ((x + w).min(VRAM_W) * 2) + y * VRAM_W * 2;
     let end = end.min(blob.len());
     if row_start >= end {
         return false;
@@ -280,7 +280,7 @@ fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
 /// no temp file is needed.
 ///
 /// In scenario mode with `frames > 0`, additionally boots a
-/// [`BootSession`] on the resolved scene and ticks it `frames` times
+/// `BootSession` on the resolved scene and ticks it `frames` times
 /// before returning the sampled engine VRAM. This catches dynamic
 /// uploads (NPC palette swaps, fog ramps, per-frame CLUT mutations)
 /// that the pure pre-pass doesn't see.
@@ -367,10 +367,8 @@ pub(crate) fn cmd_vram_oracle(args: VramOracleArgs<'_>) -> Result<()> {
 
     if tiles {
         println!("  per-64x64-tile coverage (runtime non-zero / engine non-zero / overlap):");
-        const W: usize = 1024;
-        const H: usize = 512;
-        for ty in 0..(H / 64) {
-            for tx in 0..(W / 64) {
+        for ty in 0..(VRAM_H / 64) {
+            for tx in 0..(VRAM_W / 64) {
                 let mut rt = 0u32;
                 let mut en = 0u32;
                 let mut ov = 0u32;
@@ -378,7 +376,7 @@ pub(crate) fn cmd_vram_oracle(args: VramOracleArgs<'_>) -> Result<()> {
                     let y = ty * 64 + dy;
                     for dx in 0..64 {
                         let x = tx * 64 + dx;
-                        let off = (y * W + x) * 2;
+                        let off = (y * VRAM_W + x) * 2;
                         let rw = u16::from_le_bytes([runtime_bytes[off], runtime_bytes[off + 1]]);
                         let ew = u16::from_le_bytes([engine_bytes[off], engine_bytes[off + 1]]);
                         if rw != 0 {
@@ -466,18 +464,16 @@ const VRAM_CLUT_BANDS: &[(&str, usize, usize, usize)] = &[
 ];
 
 fn write_vram_rows_csv(path: &Path, engine: &[u8], runtime: &[u8]) -> Result<()> {
-    const W: usize = 1024;
-    const H: usize = 512;
     let mut s = String::new();
     s.push_str("y,runtime_nz,engine_nz,overlap,runtime_only,engine_only\n");
-    for y in 0..H {
+    for y in 0..VRAM_H {
         let mut rt = 0u32;
         let mut en = 0u32;
         let mut ov = 0u32;
         let mut rt_only = 0u32;
         let mut en_only = 0u32;
-        let row_base = y * W * 2;
-        for x in 0..W {
+        let row_base = y * VRAM_W * 2;
+        for x in 0..VRAM_W {
             let off = row_base + x * 2;
             let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
             let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
@@ -503,8 +499,6 @@ fn write_vram_rows_csv(path: &Path, engine: &[u8], runtime: &[u8]) -> Result<()>
 }
 
 fn print_vram_clut_region_report(engine: &[u8], runtime: &[u8]) {
-    const W: usize = 1024;
-    const H: usize = 512;
     println!();
     println!("VRAM CLUT-region health (engine vs runtime):");
     println!(
@@ -512,16 +506,16 @@ fn print_vram_clut_region_report(engine: &[u8], runtime: &[u8]) {
         "band", "rt", "en", "ov", "rt-only", "en-only"
     );
     for &(label, y, x0, w) in VRAM_CLUT_BANDS {
-        if y >= H {
+        if y >= VRAM_H {
             continue;
         }
-        let row_base = y * W * 2;
+        let row_base = y * VRAM_W * 2;
         let mut rt = 0u32;
         let mut en = 0u32;
         let mut ov = 0u32;
         let mut rt_only = 0u32;
         let mut en_only = 0u32;
-        let x_end = (x0 + w).min(W);
+        let x_end = (x0 + w).min(VRAM_W);
         for x in x0..x_end {
             let off = row_base + x * 2;
             let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
@@ -558,13 +552,11 @@ fn print_vram_clut_region_report(engine: &[u8], runtime: &[u8]) {
 }
 
 pub(crate) fn write_vram_png(path: &Path, bgr555_le: &[u8]) -> Result<()> {
-    const W: u32 = 1024;
-    const H: u32 = 512;
     let rgba = legaia_mednafen::vram_to_rgba8(bgr555_le);
     let f = std::fs::File::create(path)
         .with_context(|| format!("create VRAM PNG {}", path.display()))?;
     let bw = std::io::BufWriter::new(f);
-    let mut enc = png::Encoder::new(bw, W, H);
+    let mut enc = png::Encoder::new(bw, VRAM_W as u32, VRAM_H as u32);
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
     enc.write_header()?.write_image_data(&rgba)?;
@@ -585,14 +577,12 @@ pub(crate) struct VramCoverage {
 }
 
 pub(crate) fn vram_coverage_report(engine: &[u8], runtime: &[u8]) -> VramCoverage {
-    const W: usize = 1024;
-    const H: usize = 512;
     let mut runtime_nz = 0u64;
     let mut engine_nz = 0u64;
     let mut overlap = 0u64;
     let mut runtime_only = 0u64;
     let mut engine_only = 0u64;
-    for i in 0..(W * H) {
+    for i in 0..(VRAM_W * VRAM_H) {
         let off = i * 2;
         let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
         let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
@@ -620,8 +610,8 @@ pub(crate) fn vram_coverage_report(engine: &[u8], runtime: &[u8]) -> VramCoverag
         let mut en = 0u64;
         let mut ov = 0u64;
         for y in y0..y1 {
-            for x in 0..W {
-                let off = (y * W + x) * 2;
+            for x in 0..VRAM_W {
+                let off = (y * VRAM_W + x) * 2;
                 let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
                 let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
                 let rnz = rw != 0;
@@ -687,10 +677,8 @@ pub(crate) fn print_vram_coverage(c: &VramCoverage) {
 }
 
 pub(crate) fn write_vram_diff_png(path: &Path, engine: &[u8], runtime: &[u8]) -> Result<()> {
-    const W: u32 = 1024;
-    const H: u32 = 512;
-    let mut rgba = Vec::with_capacity((W * H * 4) as usize);
-    for i in 0..(W as usize * H as usize) {
+    let mut rgba = Vec::with_capacity(VRAM_W * VRAM_H * 4);
+    for i in 0..(VRAM_W * VRAM_H) {
         let off = i * 2;
         let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
         let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
@@ -712,7 +700,7 @@ pub(crate) fn write_vram_diff_png(path: &Path, engine: &[u8], runtime: &[u8]) ->
     let f = std::fs::File::create(path)
         .with_context(|| format!("create diff PNG {}", path.display()))?;
     let bw = std::io::BufWriter::new(f);
-    let mut enc = png::Encoder::new(bw, W, H);
+    let mut enc = png::Encoder::new(bw, VRAM_W as u32, VRAM_H as u32);
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
     enc.write_header()?.write_image_data(&rgba)?;

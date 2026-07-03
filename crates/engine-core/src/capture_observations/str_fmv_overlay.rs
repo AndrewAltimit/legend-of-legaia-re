@@ -1,3 +1,5 @@
+//! Capture observation: STR-FMV overlay file/path-table residency windows.
+
 /// Overlay residency window (inclusive lower, exclusive upper).
 pub const OVERLAY_WINDOW: (u32, u32) = (0x801C0000, 0x80200000);
 

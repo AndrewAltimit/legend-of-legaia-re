@@ -16,8 +16,8 @@ use legaia_engine_render::{
     level_up_draws_for, shop_draws_for, text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
+use legaia_engine_shell::BootSession;
 use legaia_engine_shell::replay::{PadEvent, ReplayFile, ReplayMeta};
-use legaia_engine_shell::{BootConfig, BootSession};
 use legaia_font::Font;
 use std::path::Path;
 use winit::application::ApplicationHandler;

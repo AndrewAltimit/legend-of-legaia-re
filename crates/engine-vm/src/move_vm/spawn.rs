@@ -1,3 +1,5 @@
+//! Move-VM spawn entry point (`FUN_80021B04`): allocate an actor and kick it running a move buffer.
+
 // ---------------------------------------------------------------------------
 // Move-VM spawn entry point: FUN_80021B04.
 //

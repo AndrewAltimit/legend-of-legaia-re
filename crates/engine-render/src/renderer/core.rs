@@ -3,6 +3,50 @@
 //! `renderer.rs`.
 
 use super::*;
+
+/// Builds a static-offset uniform bind group: a one-entry `BindGroupLayout`,
+/// a `create_buffer_init` buffer, and the matching one-entry bind group.
+/// Shared by the quad (`uniforms_*`) and mesh (`mesh_uniforms_*`) setups,
+/// which are identical apart from the label, shader `visibility`, and the
+/// buffer `contents`. Labels reproduce the original `"{base} bgl"` /
+/// `"{base}"` / `"{base} bg"` naming exactly. The dynamic-offset
+/// `scene_uniforms` bind group is deliberately NOT built here (different BGL:
+/// `has_dynamic_offset: true` + a non-None `min_binding_size`).
+fn make_uniform_bind_group(
+    device: &wgpu::Device,
+    label: &str,
+    contents: &[u8],
+    visibility: wgpu::ShaderStages,
+) -> (wgpu::BindGroupLayout, wgpu::Buffer, wgpu::BindGroup) {
+    let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some(&format!("{label} bgl")),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+    let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(&format!("{label} bg")),
+        layout: &bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buf.as_entire_binding(),
+        }],
+    });
+    (bgl, buf, bg)
+}
+
 impl Renderer {
     /// Constructs a renderer attached to a winit-style window. Caller passes
     /// an `Arc<Window>` so the Surface can outlive the borrow.
@@ -90,36 +134,14 @@ impl Renderer {
             ],
         });
 
-        let uniforms_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("uniforms bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let uniforms_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("uniforms"),
-            contents: bytemuck::cast_slice(&[Uniforms {
+        let (uniforms_bgl, uniforms_buf, uniforms_bg) = make_uniform_bind_group(
+            &device,
+            "uniforms",
+            bytemuck::cast_slice(&[Uniforms {
                 scale: [1.0, 1.0, 0.0, 0.0],
             }]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let uniforms_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("uniforms bg"),
-            layout: &uniforms_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniforms_buf.as_entire_binding(),
-            }],
-        });
+            wgpu::ShaderStages::VERTEX,
+        );
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("legaia pipeline layout"),
@@ -168,37 +190,17 @@ impl Renderer {
             label: Some("legaia mesh shader"),
             source: wgpu::ShaderSource::Wgsl(compose_psx_shader(MESH_SHADER_SRC).into()),
         });
-        let mesh_uniforms_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("mesh uniforms bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let mesh_uniforms_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("mesh uniforms"),
-            contents: bytemuck::cast_slice(&[MeshUniforms {
+        let (mesh_uniforms_bgl, mesh_uniforms_buf, mesh_uniforms_bg) = make_uniform_bind_group(
+            &device,
+            "mesh uniforms",
+            bytemuck::cast_slice(&[MeshUniforms {
                 mvp: Mat4::IDENTITY.to_cols_array_2d(),
                 light_dir: [0.4, -0.8, 0.4, 0.0],
                 psx_params: [width as f32, height as f32, 0.0, 0.0],
                 tex_window: [0; 4],
             }]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let mesh_uniforms_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("mesh uniforms bg"),
-            layout: &mesh_uniforms_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: mesh_uniforms_buf.as_entire_binding(),
-            }],
-        });
+            wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+        );
         let mesh_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("legaia mesh pipeline layout"),
             bind_group_layouts: &[&mesh_uniforms_bgl],
@@ -595,6 +597,8 @@ impl Renderer {
         // geometry aren't z-rejected.
         let make_blend_pipeline = |label: &'static str,
                                    layout: &wgpu::PipelineLayout,
+                                   module: &wgpu::ShaderModule,
+                                   vertex_layout: &wgpu::VertexBufferLayout,
                                    mode: u8|
          -> wgpu::RenderPipeline {
             let entry = if psx_blend::src_shader_scale(mode) == 1.0 {
@@ -606,13 +610,13 @@ impl Renderer {
                 label: Some(label),
                 layout: Some(layout),
                 vertex: wgpu::VertexState {
-                    module: &vram_mesh_shader,
+                    module,
                     entry_point: Some("vs_main"),
-                    buffers: std::slice::from_ref(&vram_vertex_layout),
+                    buffers: std::slice::from_ref(vertex_layout),
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &vram_mesh_shader,
+                    module,
                     entry_point: Some(entry),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
@@ -642,6 +646,8 @@ impl Renderer {
             make_blend_pipeline(
                 "legaia vram mesh blend pipeline",
                 &vram_mesh_layout,
+                &vram_mesh_shader,
+                &vram_vertex_layout,
                 m as u8,
             )
         });
@@ -649,6 +655,8 @@ impl Renderer {
             make_blend_pipeline(
                 "legaia scene vram mesh blend pipeline",
                 &scene_vram_mesh_layout,
+                &vram_mesh_shader,
+                &vram_vertex_layout,
                 m as u8,
             )
         });
@@ -790,47 +798,13 @@ impl Renderer {
         // the textured blend pass.
         let scene_color_mesh_blend_pipelines: [wgpu::RenderPipeline; 4] =
             std::array::from_fn(|m| {
-                let mode = m as u8;
-                let entry = if psx_blend::src_shader_scale(mode) == 1.0 {
-                    "fs_blend"
-                } else {
-                    "fs_blend_quarter"
-                };
-                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("legaia scene color mesh blend pipeline"),
-                    layout: Some(&scene_color_mesh_layout),
-                    vertex: wgpu::VertexState {
-                        module: &color_mesh_shader,
-                        entry_point: Some("vs_main"),
-                        buffers: std::slice::from_ref(&color_mesh_vertex_layout),
-                        compilation_options: Default::default(),
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &color_mesh_shader,
-                        entry_point: Some(entry),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: config.format,
-                            blend: Some(psx_blend::blend_state(mode)),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                        compilation_options: Default::default(),
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        topology: wgpu::PrimitiveTopology::TriangleList,
-                        cull_mode: None,
-                        ..Default::default()
-                    },
-                    depth_stencil: Some(wgpu::DepthStencilState {
-                        format: DEPTH_FORMAT,
-                        depth_write_enabled: false,
-                        depth_compare: wgpu::CompareFunction::LessEqual,
-                        stencil: wgpu::StencilState::default(),
-                        bias: wgpu::DepthBiasState::default(),
-                    }),
-                    multisample: wgpu::MultisampleState::default(),
-                    multiview: None,
-                    cache: None,
-                })
+                make_blend_pipeline(
+                    "legaia scene color mesh blend pipeline",
+                    &scene_color_mesh_layout,
+                    &color_mesh_shader,
+                    &color_mesh_vertex_layout,
+                    m as u8,
+                )
             });
 
         // Text pipeline: 2D textured quads in NDC, alpha blended, no depth.

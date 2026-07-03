@@ -194,16 +194,6 @@ pub const SLOT_STRIDE: usize = 0x14000;
 /// Minimum decoded-block size that can hold the stat record head.
 const MIN_RECORD_BYTES: usize = 0x4C;
 
-fn read_u32(b: &[u8], off: usize) -> Option<u32> {
-    b.get(off..off + 4)
-        .map(|s| u32::from_le_bytes(s.try_into().unwrap()))
-}
-
-fn read_u16(b: &[u8], off: usize) -> Option<u16> {
-    b.get(off..off + 2)
-        .map(|s| u16::from_le_bytes(s.try_into().unwrap()))
-}
-
 /// LZS-decode monster id `id`'s archive slot into its raw block bytes.
 ///
 /// Returns `Ok(None)` for an out-of-range id or an empty / filler slot (one
@@ -215,7 +205,7 @@ fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
         return Ok(None);
     }
     let slot = (id as usize - 1) * SLOT_STRIDE;
-    let Some(dec_size) = read_u32(entry, slot) else {
+    let Some(dec_size) = legaia_bytes::u32_le(entry, slot) else {
         return Ok(None);
     };
     let dec_size = dec_size as usize;

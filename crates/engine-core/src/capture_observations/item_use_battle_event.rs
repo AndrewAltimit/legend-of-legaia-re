@@ -1,3 +1,5 @@
+//! Capture observation: in-battle item-use event (field-pack base + actor-pool shifts).
+
 /// Field-pack base pointer cell. Flips between pre / post saves
 /// when the item-use sub-mode reseats the active scene buffer.
 pub const FIELD_PACK_BASE_PTR_ADDR: u32 = 0x8007B8D0;

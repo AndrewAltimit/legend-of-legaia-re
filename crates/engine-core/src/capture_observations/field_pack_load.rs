@@ -1,3 +1,5 @@
+//! Capture observation: field-pack loader destination pointer and asset-descriptor table.
+
 /// `_DAT_8007B8D0` - the loader writes `field_pack_base + 0x12800`
 /// to this cell after asset load completes. Read this value and
 /// subtract `0x12800` to recover the active per-scene base.

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use super::{decode_block, read_u16, read_u32};
+use super::decode_block;
 
 /// TMD magic of the Legaia variant the monster meshes use (custom PSX TMD).
 const TMD_MAGIC: u32 = 0x8000_0002;
@@ -67,7 +67,7 @@ impl MonsterMesh {
             .map(|c| {
                 let mut pal = [[0u8; 4]; 16];
                 for (i, slot) in pal.iter_mut().enumerate() {
-                    let raw = read_u16(pool, c * 32 + i * 2).unwrap_or(0);
+                    let raw = legaia_bytes::u16_le(pool, c * 32 + i * 2).unwrap_or(0);
                     *slot = bgr555_to_rgba(raw);
                 }
                 pal
@@ -288,13 +288,13 @@ pub fn mesh(entry: &[u8], id: u16) -> Result<Option<MonsterMesh>> {
     // The stat record's +0x04 holds the block-relative TMD offset (and +0x08
     // the texture pool). Validate the TMD magic before trusting the pointer so
     // filler / non-mesh slots return None rather than a bogus offset.
-    let Some(tmd_offset) = read_u32(&block, 0x04).map(|v| v as usize) else {
+    let Some(tmd_offset) = legaia_bytes::u32_le(&block, 0x04).map(|v| v as usize) else {
         return Ok(None);
     };
-    if tmd_offset + 4 > block.len() || read_u32(&block, tmd_offset) != Some(TMD_MAGIC) {
+    if tmd_offset + 4 > block.len() || legaia_bytes::u32_le(&block, tmd_offset) != Some(TMD_MAGIC) {
         return Ok(None);
     }
-    let texture_pool_offset = read_u32(&block, 0x08).unwrap_or(0) as usize;
+    let texture_pool_offset = legaia_bytes::u32_le(&block, 0x08).unwrap_or(0) as usize;
     Ok(Some(MonsterMesh {
         id,
         block,

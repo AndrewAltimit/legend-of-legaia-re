@@ -9,6 +9,7 @@ use legaia_asset::item_names;
 use super::encode::{j, nop};
 use super::layout::*;
 use super::routines::*;
+use crate::mips::read_word;
 
 /// One same-size write into a target file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,13 +27,6 @@ pub struct Edit {
 pub struct ShinySeruInjection {
     pub edits: Vec<Edit>,
     pub pct: u8,
-}
-
-fn read_word(buf: &[u8], off: usize) -> Result<u32> {
-    let b = buf
-        .get(off..off + 4)
-        .ok_or_else(|| anyhow::anyhow!("buffer too short at {off:#x}"))?;
-    Ok(u32::from_le_bytes(b.try_into().unwrap()))
 }
 
 fn words_to_bytes(w: &[u32]) -> Vec<u8> {

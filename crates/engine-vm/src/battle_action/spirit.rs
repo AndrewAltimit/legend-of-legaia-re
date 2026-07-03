@@ -1,3 +1,5 @@
+//! Spirit / Originals band of the battle-action state machine (MP-cost + ability-bit application).
+
 use super::*;
 
 // --- spirit band ------------------------------------------------------------

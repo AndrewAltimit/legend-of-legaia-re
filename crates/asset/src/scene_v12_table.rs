@@ -227,14 +227,14 @@ pub fn detect(buf: &[u8]) -> Option<SceneV12Table> {
     if buf.len() < 16 {
         return None;
     }
-    let n_plus_4 = read_u16_le(buf, 0)?;
-    let w1 = read_u16_le(buf, 2)?;
-    let w2 = read_u16_le(buf, 4)?;
-    let w3 = read_u16_le(buf, 6)?;
-    let param = read_u16_le(buf, 8)?;
-    let n = read_u16_le(buf, 10)?;
-    let w6 = read_u16_le(buf, 12)?;
-    let n_plus_2 = read_u16_le(buf, 14)?;
+    let n_plus_4 = legaia_bytes::u16_le(buf, 0)?;
+    let w1 = legaia_bytes::u16_le(buf, 2)?;
+    let w2 = legaia_bytes::u16_le(buf, 4)?;
+    let w3 = legaia_bytes::u16_le(buf, 6)?;
+    let param = legaia_bytes::u16_le(buf, 8)?;
+    let n = legaia_bytes::u16_le(buf, 10)?;
+    let w6 = legaia_bytes::u16_le(buf, 12)?;
+    let n_plus_2 = legaia_bytes::u16_le(buf, 14)?;
 
     if w1 != W1_MAGIC || w2 != 0 || w3 != W3_MAGIC || w6 != 0 {
         return None;
@@ -341,11 +341,6 @@ fn parse_prescript(buf: &[u8]) -> (Vec<ScriptRecord>, u16) {
         });
     }
     (out, openers)
-}
-
-fn read_u16_le(buf: &[u8], at: usize) -> Option<u16> {
-    let bytes = buf.get(at..at + 2)?;
-    Some(u16::from_le_bytes(bytes.try_into().unwrap()))
 }
 
 #[cfg(test)]

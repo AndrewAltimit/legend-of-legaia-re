@@ -1,3 +1,5 @@
+//! Map-id -> CDNAME scene-name resolvers for the field-VM `scene_transition`.
+
 use super::*;
 
 /// Resolver from a field-VM `scene_transition(map_id)` byte to a CDNAME

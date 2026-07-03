@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use super::{MIN_RECORD_BYTES, decode_block, read_u32};
+use super::{MIN_RECORD_BYTES, decode_block};
 
 /// One animated object's transform for a single keyframe.
 ///
@@ -173,7 +173,7 @@ pub fn animations(entry: &[u8], id: u16) -> Result<Option<Vec<MonsterAnimation>>
     let magic_count = block[0x4a] as usize;
     let mut out = Vec::with_capacity(magic_count);
     for i in 0..magic_count {
-        let Some(entry_off) = read_u32(&block, 0x4c + i * 4).map(|v| v as usize) else {
+        let Some(entry_off) = legaia_bytes::u32_le(&block, 0x4c + i * 4).map(|v| v as usize) else {
             break;
         };
         let Some(&action_id) = block.get(entry_off) else {

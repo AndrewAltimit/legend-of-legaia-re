@@ -55,14 +55,7 @@ pub(crate) fn parse_cdname_text(text: &str) -> std::collections::HashMap<u32, St
 
 /// Encode an RGBA8 buffer (`width * height * 4` bytes) to a PNG file.
 pub(crate) fn write_rgba_png(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<()> {
-    let f = std::fs::File::create(path)?;
-    let mut enc = png::Encoder::new(std::io::BufWriter::new(f), width, height);
-    enc.set_color(png::ColorType::Rgba);
-    enc.set_depth(png::BitDepth::Eight);
-    enc.write_header()
-        .and_then(|mut w| w.write_image_data(rgba))
-        .map_err(|e| anyhow::anyhow!("write PNG: {e}"))?;
-    Ok(())
+    legaia_tim::write_png(path, width as usize, height as usize, rgba)
 }
 
 /// Build a display label for a PROT entry: `<index>_<cdname-block>` if we

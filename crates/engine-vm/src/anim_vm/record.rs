@@ -1,3 +1,5 @@
+//! Opaque battle-anim record-kind classification (`FUN_8004AD80` kind-byte side-effect ladder).
+
 /// Per-record consumer-struct kind byte at offset `+0x00` of the
 /// runtime ANM record pointed at by `actor[+0x234]`.
 ///

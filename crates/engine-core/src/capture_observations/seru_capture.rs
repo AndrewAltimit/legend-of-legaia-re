@@ -1,3 +1,5 @@
+//! Capture observation: a story-Seru capture granting a spell into the character record.
+
 /// Vahn's character-record base in retail RAM (the capturer here).
 pub const VAHN_RECORD_BASE: u32 = 0x80084708;
 

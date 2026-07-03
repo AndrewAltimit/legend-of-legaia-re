@@ -18,6 +18,7 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 legaia-anm = { path = "../anm" }
+legaia-bytes.workspace = true
 legaia-lzs = { path = "../lzs" }
 legaia-prot = { path = "../prot" }
 legaia-tim = { path = "../tim" }

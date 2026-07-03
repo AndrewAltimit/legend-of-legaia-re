@@ -120,7 +120,7 @@ pub fn detect(buf: &[u8]) -> Option<OverlayPtrTable> {
     let mut last_ptr = 0;
 
     while count < MAX_PTRS && (count + 1) * 4 <= buf.len() {
-        let v = read_u32_le(buf, count * 4)?;
+        let v = legaia_bytes::u32_le(buf, count * 4)?;
         if !(OVERLAY_LO..OVERLAY_HI).contains(&v) {
             break;
         }
@@ -148,11 +148,6 @@ pub fn detect(buf: &[u8]) -> Option<OverlayPtrTable> {
         min_ptr,
         max_ptr,
     })
-}
-
-fn read_u32_le(buf: &[u8], at: usize) -> Option<u32> {
-    let bytes = buf.get(at..at + 4)?;
-    Some(u32::from_le_bytes(bytes.try_into().unwrap()))
 }
 
 #[cfg(test)]

@@ -78,6 +78,8 @@ use anyhow::{Result, bail};
 
 use legaia_asset::item_names;
 
+use crate::mips::*;
+
 /// PROT entry index of the battle-action overlay that hosts the victory check.
 /// (Same overlay the flee-EXP / move-power / element-affinity randomizers edit.)
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
@@ -137,67 +139,7 @@ pub const VICTORY_PATCHED: u32 = 0x3042_0384;
 /// Default per-battle probability (percent) that an enemy is charmed.
 pub const DEFAULT_PCT: u8 = 20;
 
-// --- MIPS R3000 instruction encoders (little-endian words) ------------------
-
-const ZERO: u32 = 0;
-const V0: u32 = 2;
-const T0: u32 = 8;
-const T1: u32 = 9;
-const T5: u32 = 13;
-const T6: u32 = 14;
-
-const fn j(target: u32) -> u32 {
-    (0x02 << 26) | ((target >> 2) & 0x03ff_ffff)
-}
-const fn jal(target: u32) -> u32 {
-    (0x03 << 26) | ((target >> 2) & 0x03ff_ffff)
-}
-const fn nop() -> u32 {
-    0
-}
-const fn lui(rt: u32, imm: u16) -> u32 {
-    (0x0f << 26) | (rt << 16) | imm as u32
-}
-const fn ori(rt: u32, rs: u32, imm: u16) -> u32 {
-    (0x0d << 26) | (rs << 21) | (rt << 16) | imm as u32
-}
-const fn addiu(rt: u32, rs: u32, imm: u16) -> u32 {
-    (0x09 << 26) | (rs << 21) | (rt << 16) | imm as u32
-}
-const fn lhu(rt: u32, rs: u32, off: u16) -> u32 {
-    (0x25 << 26) | (rs << 21) | (rt << 16) | off as u32
-}
-const fn lw(rt: u32, rs: u32, off: u16) -> u32 {
-    (0x23 << 26) | (rs << 21) | (rt << 16) | off as u32
-}
-const fn lbu(rt: u32, rs: u32, off: u16) -> u32 {
-    (0x24 << 26) | (rs << 21) | (rt << 16) | off as u32
-}
-const fn sh(rt: u32, rs: u32, off: u16) -> u32 {
-    (0x29 << 26) | (rs << 21) | (rt << 16) | off as u32
-}
-const fn divu(rs: u32, rt: u32) -> u32 {
-    (rs << 21) | (rt << 16) | 0x1b
-}
-const fn mfhi(rd: u32) -> u32 {
-    (rd << 11) | 0x10
-}
-const fn sltiu(rt: u32, rs: u32, imm: u16) -> u32 {
-    (0x0b << 26) | (rs << 21) | (rt << 16) | imm as u32
-}
-const fn beq(rs: u32, rt: u32, off: i16) -> u32 {
-    (0x04 << 26) | (rs << 21) | (rt << 16) | (off as u16 as u32)
-}
-
-/// The low 16 bits of a VA (for `lw`/`lhu`/`sh` offsets off a `lui` high half).
-const fn lo(va: u32) -> u16 {
-    (va & 0xffff) as u16
-}
-/// The high 16 bits a `lui` must load so a following signed-`lo` access reaches
-/// `va` (the `+0x8000` corrects for the low half's sign extension).
-const fn hi(va: u32) -> u16 {
-    (va.wrapping_add(0x8000) >> 16) as u16
-}
+// MIPS R3000 encoders + register aliases are shared in `crate::mips`.
 
 /// Assemble the charm routine for a `pct`-percent per-battle chance. Rolls the
 /// BIOS RNG; on a hit AND only when the fight has a 2nd enemy (so single-enemy
@@ -345,13 +287,6 @@ impl EnemyAllyInjection {
             pct,
         })
     }
-}
-
-fn read_word(buf: &[u8], off: usize) -> Result<u32> {
-    let b = buf
-        .get(off..off + 4)
-        .ok_or_else(|| anyhow::anyhow!("buffer too short at {off:#x}"))?;
-    Ok(u32::from_le_bytes(b.try_into().unwrap()))
 }
 
 #[cfg(test)]

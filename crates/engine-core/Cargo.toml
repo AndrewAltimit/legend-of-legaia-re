@@ -30,6 +30,7 @@ legaia-art = { path = "../art" }
 legaia-save = { path = "../save" }
 legaia-cheats = { path = "../cheats" }
 legaia-gamedata = { path = "../gamedata" }
+legaia-bytes.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

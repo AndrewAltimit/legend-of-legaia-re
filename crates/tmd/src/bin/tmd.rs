@@ -478,7 +478,7 @@ fn vram_dump(tmd_path: &Path, out: &Path, vram_dirs: &[PathBuf], annotate: bool)
     if annotate {
         annotate_vram_png(&mut rgba, &needs);
     }
-    write_png(out, &rgba, VRAM_WIDTH as u32, VRAM_HEIGHT as u32)
+    legaia_tim::write_png(out, VRAM_WIDTH, VRAM_HEIGHT, &rgba)
         .with_context(|| format!("write PNG to {}", out.display()))?;
     eprintln!(
         "wrote {} ({}x{} BGR555 + STP-as-alpha)",
@@ -551,16 +551,6 @@ fn annotate_vram_png(rgba: &mut [u8], needs: &[vram_targeted::PrimTarget]) {
         stamp(rgba, n.page, [0x00, 0xFF, 0x00, 0xFF]);
         stamp(rgba, n.clut, [0xFF, 0x00, 0x00, 0xFF]);
     }
-}
-
-fn write_png(out: &Path, rgba: &[u8], w: u32, h: u32) -> Result<()> {
-    let f = std::fs::File::create(out)?;
-    let bw = std::io::BufWriter::new(f);
-    let mut enc = png::Encoder::new(bw, w, h);
-    enc.set_color(png::ColorType::Rgba);
-    enc.set_depth(png::BitDepth::Eight);
-    enc.write_header()?.write_image_data(rgba)?;
-    Ok(())
 }
 
 /// Find the TIM directory that holds every TIM from the same PROT entry

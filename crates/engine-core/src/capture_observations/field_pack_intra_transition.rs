@@ -1,3 +1,5 @@
+//! Capture observation: scene-bundle name-pool state across an intra-field-pack transition.
+
 /// Scene-bundle pool base. Each pool slot is 16 bytes:
 /// `[u32 scene_id][u32 reserved][char name[8]]`. Slots 0 and 1 both
 /// carry the active / pending scene name.

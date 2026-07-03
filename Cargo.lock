@@ -1187,6 +1187,7 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-anm",
+ "legaia-bytes",
  "legaia-lzs",
  "legaia-prot",
  "legaia-seq",
@@ -1222,6 +1223,10 @@ dependencies = [
  "log",
  "winit",
 ]
+
+[[package]]
+name = "legaia-bytes"
+version = "0.1.0"
 
 [[package]]
 name = "legaia-cheats"
@@ -1523,7 +1528,6 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-tim",
- "png",
  "serde",
  "serde_json",
 ]
