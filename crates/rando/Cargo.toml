@@ -10,7 +10,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "legaia-rando"
-path = "src/bin/legaia-rando.rs"
+path = "src/bin/legaia-rando/main.rs"
 
 [dependencies]
 anyhow.workspace = true
