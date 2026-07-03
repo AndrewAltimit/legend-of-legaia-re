@@ -1,0 +1,9 @@
+[package]
+name = "legaia-bytes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_bytes"
+path = "src/lib.rs"
