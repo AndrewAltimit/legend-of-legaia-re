@@ -49,35 +49,8 @@ pub const SHOP_DISPLACED: [u32; 2] = [0xAE16_B450, 0x92C2_0000];
 /// The value the slice overlay writes to [`SENTINEL_ADDR`] ("SERU" trade slice).
 pub const SENTINEL: u32 = 0x5E_2D_7A_DE;
 
-// --- MIPS R3000 encoders (little-endian words) ------------------------------
-
-pub(crate) const ZERO: u32 = 0;
-pub(crate) const AT: u32 = 1;
-pub(crate) const A0: u32 = 4;
-pub(crate) const A1: u32 = 5;
-pub(crate) const A2: u32 = 6;
-pub(crate) const A3: u32 = 7;
-pub(crate) const V0: u32 = 2;
-pub(crate) const V1: u32 = 3;
-pub(crate) const T0: u32 = 8;
-pub(crate) const T1: u32 = 9;
-pub(crate) const T2: u32 = 10;
-pub(crate) const T3: u32 = 11;
-pub(crate) const T4: u32 = 12;
-pub(crate) const T5: u32 = 13;
-pub(crate) const T6: u32 = 14;
-pub(crate) const T7: u32 = 15;
-pub(crate) const S0: u32 = 16;
-pub(crate) const S1: u32 = 17;
-pub(crate) const S2: u32 = 18;
-pub(crate) const S3: u32 = 19;
-pub(crate) const S4: u32 = 20;
-pub(crate) const S5: u32 = 21;
-pub(crate) const S6: u32 = 22;
-pub(crate) const S7: u32 = 23;
-pub(crate) const GP: u32 = 28;
-pub(crate) const SP: u32 = 29;
-pub(crate) const RA: u32 = 31;
+// MIPS R3000 encoders + register aliases live in `crate::mips` (re-exported by
+// this module's sibling `encode`).
 
 /// BIOS A-table dispatcher entry. Calling it with the function number in `$t1`
 /// invokes that A-function (the game's own FlushCache wrapper at `0x8005BBE8`

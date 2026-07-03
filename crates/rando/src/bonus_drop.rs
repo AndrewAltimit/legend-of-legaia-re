@@ -65,6 +65,8 @@ use anyhow::{Result, bail};
 
 use legaia_asset::item_names;
 
+use crate::mips::*;
+
 /// Detour site: the first of the two instructions we replace with `j routine`
 /// + `nop` (the reward-routine join right after the normal drop grant).
 pub const HOOK_VA: u32 = 0x8004_F610;
@@ -95,50 +97,15 @@ pub const DEFAULT_CHANCE_PCT: u8 = 5;
 /// preserved gap with margin (the real equipment pool is ~150 ids).
 pub const MAX_TABLE_LEN: usize = 200;
 
-// --- MIPS R3000 instruction encoders (little-endian words) ------------------
-//
-// Only the handful of forms the routine needs. Register numbers are the MIPS
-// ABI indices; `imm`/`off` are the raw 16-bit fields (already two's-complement
-// for negative offsets).
+// MIPS R3000 encoders + register aliases are shared in `crate::mips`, except the
+// two below, kept local so their exact emitted bytes / call sites never change.
 
-const ZERO: u32 = 0;
-const V0: u32 = 2;
-const A0: u32 = 4;
-const A1: u32 = 5;
-const T0: u32 = 8;
-
-const fn j(target: u32) -> u32 {
-    (0x02 << 26) | ((target >> 2) & 0x03ff_ffff)
-}
-const fn jal(target: u32) -> u32 {
-    (0x03 << 26) | ((target >> 2) & 0x03ff_ffff)
-}
-const fn nop() -> u32 {
-    0
-}
-const fn addiu(rt: u32, rs: u32, imm: u16) -> u32 {
-    (0x09 << 26) | (rs << 21) | (rt << 16) | imm as u32
-}
+/// `slti rt,rs,imm` with an **unsigned `u16`** immediate. Divergent from
+/// [`crate::mips::slti`] (which takes the ABI-correct signed `i16`): this local
+/// copy keeps the sole call site (`slti(V0, V0, chance_pct as u16)`) unchanged.
+/// The emitted word is identical for the small positive `chance_pct` used here.
 const fn slti(rt: u32, rs: u32, imm: u16) -> u32 {
     (0x0a << 26) | (rs << 21) | (rt << 16) | imm as u32
-}
-const fn beq(rs: u32, rt: u32, off: i16) -> u32 {
-    (0x04 << 26) | (rs << 21) | (rt << 16) | (off as u16 as u32)
-}
-const fn lui(rt: u32, imm: u16) -> u32 {
-    (0x0f << 26) | (rt << 16) | imm as u32
-}
-const fn lbu(rt: u32, rs: u32, off: u16) -> u32 {
-    (0x24 << 26) | (rs << 21) | (rt << 16) | off as u32
-}
-const fn addu(rd: u32, rs: u32, rt: u32) -> u32 {
-    (rs << 21) | (rt << 16) | (rd << 11) | 0x21
-}
-const fn divu(rs: u32, rt: u32) -> u32 {
-    (rs << 21) | (rt << 16) | 0x1b
-}
-const fn mfhi(rd: u32) -> u32 {
-    (rd << 11) | 0x10
 }
 
 /// Split a VA into the `lui` high half + signed `lbu`/`lw` low half so

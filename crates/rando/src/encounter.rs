@@ -170,11 +170,18 @@ fn mask_out_protected_formations(
             continue;
         }
         let rec = formation_array_off + i * stride;
-        let cnt = (decoded[rec + 3] as usize).min(4);
-        if decoded[rec + 4..rec + 4 + cnt]
-            .iter()
-            .any(|&id| is_protected_formation_id(id))
-        {
+        // Bounds-guard the record read: a MAN truncated near the buffer end can
+        // leave a formation record short. Skip such a record rather than panic;
+        // for well-formed records (the count byte + all `cnt` ids present) the
+        // behaviour is unchanged.
+        let Some(&cnt_byte) = decoded.get(rec + 3) else {
+            continue;
+        };
+        let cnt = (cnt_byte as usize).min(4);
+        let Some(ids) = decoded.get(rec + 4..rec + 4 + cnt) else {
+            continue;
+        };
+        if ids.iter().any(|&id| is_protected_formation_id(id)) {
             *m = false;
         }
     }

@@ -76,6 +76,8 @@ use anyhow::{Result, bail};
 
 use legaia_asset::item_names;
 
+use crate::mips::*;
+
 /// PROT entry index of the battle-action overlay that hosts the escape teardown.
 /// (Same overlay the move-power / element-affinity randomizers edit.)
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
@@ -128,86 +130,12 @@ pub const XP_CAP: u32 = 0x0098_967F;
 /// Default percentage of the formation's experience banked on a successful flee.
 pub const DEFAULT_PCT: u8 = 5;
 
-// --- MIPS R3000 instruction encoders (little-endian words) ------------------
-//
-// Register numbers are the MIPS ABI indices; `imm`/`off` are the raw 16-bit
-// fields (already two's-complement for negative offsets).
+// MIPS R3000 encoders + register aliases are shared in `crate::mips`, except the
+// `mv` pseudo-op below (a single-module convenience, not a duplicated encoder).
 
-const ZERO: u32 = 0;
-const V0: u32 = 2;
-const V1: u32 = 3;
-const A0: u32 = 4;
-const A1: u32 = 5;
-const A2: u32 = 6;
-const A3: u32 = 7;
-const T0: u32 = 8;
-const T1: u32 = 9;
-const T2: u32 = 10;
-
-const fn j(target: u32) -> u32 {
-    (0x02 << 26) | ((target >> 2) & 0x03ff_ffff)
-}
-const fn nop() -> u32 {
-    0
-}
-const fn lui(rt: u32, imm: u16) -> u32 {
-    (0x0f << 26) | (rt << 16) | imm as u32
-}
-const fn ori(rt: u32, rs: u32, imm: u16) -> u32 {
-    (0x0d << 26) | (rs << 21) | (rt << 16) | imm as u32
-}
-const fn addiu(rt: u32, rs: u32, imm: u16) -> u32 {
-    (0x09 << 26) | (rs << 21) | (rt << 16) | imm as u32
-}
-const fn lbu(rt: u32, rs: u32, off: u16) -> u32 {
-    (0x24 << 26) | (rs << 21) | (rt << 16) | off as u32
-}
-const fn lhu(rt: u32, rs: u32, off: u16) -> u32 {
-    (0x25 << 26) | (rs << 21) | (rt << 16) | off as u32
-}
-const fn lw(rt: u32, rs: u32, off: u16) -> u32 {
-    (0x23 << 26) | (rs << 21) | (rt << 16) | off as u32
-}
-const fn sw(rt: u32, rs: u32, off: u16) -> u32 {
-    (0x2b << 26) | (rs << 21) | (rt << 16) | off as u32
-}
-const fn addu(rd: u32, rs: u32, rt: u32) -> u32 {
-    (rs << 21) | (rt << 16) | (rd << 11) | 0x21
-}
-const fn sll(rd: u32, rt: u32, sa: u32) -> u32 {
-    (rt << 16) | (rd << 11) | (sa << 6)
-}
-const fn slt(rd: u32, rs: u32, rt: u32) -> u32 {
-    (rs << 21) | (rt << 16) | (rd << 11) | 0x2a
-}
-const fn sltu(rd: u32, rs: u32, rt: u32) -> u32 {
-    (rs << 21) | (rt << 16) | (rd << 11) | 0x2b
-}
-const fn beq(rs: u32, rt: u32, off: i16) -> u32 {
-    (0x04 << 26) | (rs << 21) | (rt << 16) | (off as u16 as u32)
-}
-const fn multu(rs: u32, rt: u32) -> u32 {
-    (rs << 21) | (rt << 16) | 0x19
-}
-const fn divu(rs: u32, rt: u32) -> u32 {
-    (rs << 21) | (rt << 16) | 0x1b
-}
-const fn mflo(rd: u32) -> u32 {
-    (rd << 11) | 0x12
-}
 /// `move rd, rs` (an `addu rd, rs, zero`).
 const fn mv(rd: u32, rs: u32) -> u32 {
     addu(rd, rs, ZERO)
-}
-
-/// The low 16 bits of a VA (for `addiu`/`lw`/`sw` offsets off a `lui` high half).
-const fn lo(va: u32) -> u16 {
-    (va & 0xffff) as u16
-}
-/// The high 16 bits a `lui` must load so a following signed-`lo` access reaches
-/// `va` (the `+0x8000` corrects for the low half's sign extension).
-const fn hi(va: u32) -> u16 {
-    (va.wrapping_add(0x8000) >> 16) as u16
 }
 
 /// Assemble the EXP-grant routine for a `pct` gate. The routine sums the
@@ -394,13 +322,6 @@ impl FleeExpInjection {
             pct,
         })
     }
-}
-
-fn read_word(buf: &[u8], off: usize) -> Result<u32> {
-    let b = buf
-        .get(off..off + 4)
-        .ok_or_else(|| anyhow::anyhow!("buffer too short at {off:#x}"))?;
-    Ok(u32::from_le_bytes(b.try_into().unwrap()))
 }
 
 #[cfg(test)]
