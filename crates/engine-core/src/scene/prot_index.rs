@@ -1,3 +1,5 @@
+//! `ProtIndex`: the shared PROT.DAT + CDNAME index and per-scene field-map constants.
+
 use super::*;
 
 /// Size of the per-scene field map file (retail `DATA\FIELD\<scene>.MAP`):

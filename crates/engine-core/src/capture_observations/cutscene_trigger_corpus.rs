@@ -1,3 +1,5 @@
+//! Capture observation: the per-STR FMV-trigger save corpus (fmv_id / game-mode / BGM globals).
+
 /// PSX-virtual address of the FMV-id global written by the
 /// field-VM op `0x4C 0xE2` handler at `0x801E30E4`. The runtime
 /// FMV-state selector at `0x801CECA0` reads this as a `s16`.
@@ -89,8 +91,7 @@ pub const CORPUS: [CorpusEntry; 9] = [
 /// Read the FMV-id global from main RAM (signed 16-bit LE).
 pub fn read_fmv_id(main_ram: &[u8]) -> Option<i16> {
     let off = (FMV_ID_ADDR - 0x80000000) as usize;
-    let bytes = main_ram.get(off..off + 2)?;
-    Some(i16::from_le_bytes([bytes[0], bytes[1]]))
+    legaia_bytes::i16_le(main_ram, off)
 }
 
 /// Read the game-mode byte from main RAM.
@@ -102,8 +103,7 @@ pub fn read_game_mode(main_ram: &[u8]) -> Option<u8> {
 /// Read the BGM-id global from main RAM (unsigned 16-bit LE).
 pub fn read_bgm_id(main_ram: &[u8]) -> Option<u16> {
     let off = (BGM_ID_ADDR - 0x80000000) as usize;
-    let bytes = main_ram.get(off..off + 2)?;
-    Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+    legaia_bytes::u16_le(main_ram, off)
 }
 
 /// Search the field-pack region following `field_pack_base` for

@@ -1,3 +1,5 @@
+//! `SceneEntry`: one classified PROT entry with bytes ready, plus scene-asset accessors.
+
 use super::*;
 
 /// One PROT entry classified, with bytes ready. The format-typed parsers

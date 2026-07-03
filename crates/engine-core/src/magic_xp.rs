@@ -93,10 +93,7 @@ pub fn spell_slot(record: &CharacterRecord, spell_id: u8) -> Option<usize> {
 /// Accrued XP for the spell at `slot` - the u32 at record `+0x8 + slot * 4`.
 pub fn spell_xp(record: &CharacterRecord, slot: usize) -> u32 {
     let off = SPELL_XP_OFFSET + slot * 4;
-    match record.raw.get(off..off + 4) {
-        Some(b) => u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
-        None => 0,
-    }
+    legaia_bytes::u32_le(&record.raw, off).unwrap_or(0)
 }
 
 /// Add `gain` (saturating) to the spell-XP slot. No-op when the offset is out

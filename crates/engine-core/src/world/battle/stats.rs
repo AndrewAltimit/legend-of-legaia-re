@@ -30,8 +30,8 @@ impl World {
         };
         let bits = member.ability_bits();
         vm::battle_formulas::DefenderResist::from_ability_words(
-            u32::from_le_bytes(bits[0..4].try_into().unwrap()),
-            u32::from_le_bytes(bits[4..8].try_into().unwrap()),
+            u32::from_le_bytes([bits[0], bits[1], bits[2], bits[3]]),
+            u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]),
         )
     }
 
@@ -68,7 +68,7 @@ impl World {
             }
             if let Some(member) = self.roster.members.get(self.party_roster_slot(slot)) {
                 let bits = member.ability_bits();
-                flags.fold_ability_word1(u32::from_le_bytes(bits[4..8].try_into().unwrap()));
+                flags.fold_ability_word1(u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]));
             }
         }
         let rand = [

@@ -1,3 +1,5 @@
+//! Capture observation: the per-actor battle-animation dispatch-pointer table.
+
 /// Actor record stride.
 pub const ACTOR_RECORD_STRIDE: u32 = 0x2D4;
 

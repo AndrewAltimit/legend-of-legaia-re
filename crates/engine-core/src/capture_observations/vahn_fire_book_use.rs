@@ -1,3 +1,5 @@
+//! Capture observation: Fire Book field-item use mutating the character skills cluster.
+
 /// Vahn's character-record base in retail RAM.
 pub const VAHN_RECORD_BASE: u32 = 0x80084708;
 

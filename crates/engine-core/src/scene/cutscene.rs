@@ -1,3 +1,5 @@
+//! Cutscene-scene helpers: CDNAME label detection and FMV (`MVn.STR`) mapping.
+
 use super::*;
 
 /// Return `true` if a CDNAME scene label is an in-engine cutscene scene

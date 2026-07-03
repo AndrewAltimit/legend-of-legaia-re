@@ -1,3 +1,5 @@
+//! Scene host: drives the world per tick and routes scene transitions + BGM.
+
 use super::*;
 
 /// Per-tick outcome from [`SceneHost::tick`]. Engines route this back into

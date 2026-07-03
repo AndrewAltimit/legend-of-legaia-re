@@ -375,6 +375,149 @@ impl MenuRuntimeHost<'_> {
     fn shop_menu_rows(&self) -> &'static [MenuState] {
         shop_menu_rows(self.world.seru_trade_enabled())
     }
+
+    /// `StatusEquipment` commit: unequip the picked slot, credit the item back
+    /// to the bag, and rebuild the party ability bitfields.
+    fn commit_status_equipment(&mut self, slot: u8) {
+        let idx = *self.selected_char;
+        let mut removed = 0u8;
+        if let Some(record) = self.world.roster.members.get_mut(idx) {
+            let mut equip = record.equipment();
+            if (slot as usize) < equip.slots.len() {
+                removed = equip.slots[slot as usize];
+                equip.slots[slot as usize] = 0;
+                record.set_equipment(equip);
+            }
+        }
+        // Return the unequipped item to the bag (retail puts it back);
+        // zeroing the slot without crediting it destroyed the item.
+        if removed != 0 {
+            *self.world.inventory.entry(removed).or_insert(0) += 1;
+        }
+        // Unequipping can remove an accessory passive; rebuild the
+        // ability bitfields so the bit (and any party-wide grant)
+        // disappears immediately.
+        self.world.refresh_party_ability_bits();
+    }
+
+    /// `StatusInventory` commit: decrement (or remove) the picked bag item.
+    fn commit_status_inventory(&mut self, slot: u8) {
+        let mut items: Vec<(u8, u8)> = self
+            .world
+            .inventory
+            .iter()
+            .filter(|(_, c)| **c > 0)
+            .map(|(id, c)| (*id, *c))
+            .collect();
+        items.sort_by_key(|&(id, _)| id);
+        if let Some(&(item_id, count)) = items.get(slot as usize) {
+            if count > 1 {
+                self.world.inventory.insert(item_id, count - 1);
+            } else {
+                self.world.inventory.remove(&item_id);
+            }
+        }
+    }
+
+    /// `ShopSell` commit: select the picked bag item for sale against the
+    /// id-sorted inventory snapshot.
+    fn commit_shop_sell(&mut self, slot: u8) {
+        let sell_items: Vec<(u8, u8)> = {
+            let mut v: Vec<(u8, u8)> = self
+                .world
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, c)| (*id, *c))
+                .collect();
+            v.sort_by_key(|&(id, _)| id);
+            v
+        };
+        if let Some(session) = self.shop_session.as_mut() {
+            session.select_sell_item(slot as usize, &sell_items);
+        }
+    }
+
+    /// `ShopConfirm` (Yes) commit: run the buy grant kernel or apply a sell
+    /// against the live inventory.
+    fn commit_shop_confirm(&mut self) {
+        if let Some(session) = self.shop_session.as_ref() {
+            if session.pending_is_buying {
+                // Shared grant kernel (also driven by the shop / casino
+                // randomizer runtime oracles).
+                self.world.buy_from_shop(session);
+            } else if let Some(item_id) = session.pending_item_id {
+                let held = self.world.inventory.get(&item_id).copied().unwrap_or(0);
+                if let Some((item_id, qty, delta)) = session.try_sell(held) {
+                    self.world.money = (self.world.money + delta).clamp(0, 9_999_999);
+                    let entry = self.world.inventory.entry(item_id).or_insert(0);
+                    *entry = entry.saturating_sub(qty);
+                    if *entry == 0 {
+                        self.world.inventory.remove(&item_id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `ShopTradeConfirm` (Yes) commit: apply the stashed seru-trade offer to
+    /// the owner's spell list, then refresh the offer list.
+    fn commit_shop_trade_confirm(&mut self) {
+        let offer = self
+            .trade_session
+            .as_ref()
+            .and_then(|t| t.offers.get(*self.trade_pending_offer).copied());
+        if let Some(offer) = offer {
+            self.world.apply_seru_trade(&offer);
+            let pt = self.world.play_time_seconds;
+            if let Some(t) = self.trade_session.as_mut() {
+                t.refresh(pt, &self.world.roster.members);
+            }
+        }
+    }
+
+    /// `InnConfirm` commit: on Yes (slot 0) charge the fee and restore the
+    /// active party's HP/MP; clear the session regardless.
+    fn commit_inn_confirm(&mut self, slot: u8) {
+        if slot == 0 {
+            // slot 0 = yes; slot 1 = no
+            let can = self
+                .inn_session
+                .as_ref()
+                .is_some_and(|s| s.can_afford(self.world.money));
+            if can {
+                let cost = self.inn_session.as_ref().unwrap().cost as i32;
+                self.world.money -= cost;
+                // Restore HP/MP for all active party members.
+                let party_count = self.world.party_count as usize;
+                for i in 0..party_count {
+                    let max_hp = self
+                        .world
+                        .actors
+                        .get(i)
+                        .map(|a| a.battle.max_hp)
+                        .unwrap_or(0);
+                    let mp_max = self
+                        .world
+                        .roster
+                        .members
+                        .get(i)
+                        .map(|r| r.hp_mp_sp().mp_max)
+                        .unwrap_or(0);
+                    if let Some(actor) = self.world.actors.get_mut(i)
+                        && actor.active
+                    {
+                        actor.battle.hp = max_hp;
+                        actor.battle.mp = mp_max;
+                    }
+                }
+                // Sync restored values back to roster records.
+                self.world.save_party();
+            }
+        }
+        // Clear session regardless of yes/no.
+        *self.inn_session = None;
+    }
 }
 
 impl<'a> MenuHost for MenuRuntimeHost<'a> {
@@ -439,44 +582,8 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             MenuState::StatusCharacter => {
                 *self.selected_char = slot as usize;
             }
-            MenuState::StatusEquipment => {
-                let idx = *self.selected_char;
-                let mut removed = 0u8;
-                if let Some(record) = self.world.roster.members.get_mut(idx) {
-                    let mut equip = record.equipment();
-                    if (slot as usize) < equip.slots.len() {
-                        removed = equip.slots[slot as usize];
-                        equip.slots[slot as usize] = 0;
-                        record.set_equipment(equip);
-                    }
-                }
-                // Return the unequipped item to the bag (retail puts it back);
-                // zeroing the slot without crediting it destroyed the item.
-                if removed != 0 {
-                    *self.world.inventory.entry(removed).or_insert(0) += 1;
-                }
-                // Unequipping can remove an accessory passive; rebuild the
-                // ability bitfields so the bit (and any party-wide grant)
-                // disappears immediately.
-                self.world.refresh_party_ability_bits();
-            }
-            MenuState::StatusInventory => {
-                let mut items: Vec<(u8, u8)> = self
-                    .world
-                    .inventory
-                    .iter()
-                    .filter(|(_, c)| **c > 0)
-                    .map(|(id, c)| (*id, *c))
-                    .collect();
-                items.sort_by_key(|&(id, _)| id);
-                if let Some(&(item_id, count)) = items.get(slot as usize) {
-                    if count > 1 {
-                        self.world.inventory.insert(item_id, count - 1);
-                    } else {
-                        self.world.inventory.remove(&item_id);
-                    }
-                }
-            }
+            MenuState::StatusEquipment => self.commit_status_equipment(slot),
+            MenuState::StatusInventory => self.commit_status_inventory(slot),
             // --- Shop states ---
             // Top picker: picking Trade opens this vendor's seru-trade session
             // (keyed to the shop's vendor id) for the current play-time window.
@@ -492,47 +599,14 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                     session.select_buy_item(slot as usize);
                 }
             }
-            MenuState::ShopSell => {
-                let sell_items: Vec<(u8, u8)> = {
-                    let mut v: Vec<(u8, u8)> = self
-                        .world
-                        .inventory
-                        .iter()
-                        .filter(|(_, c)| **c > 0)
-                        .map(|(id, c)| (*id, *c))
-                        .collect();
-                    v.sort_by_key(|&(id, _)| id);
-                    v
-                };
-                if let Some(session) = self.shop_session.as_mut() {
-                    session.select_sell_item(slot as usize, &sell_items);
-                }
-            }
+            MenuState::ShopSell => self.commit_shop_sell(slot),
             MenuState::ShopQuantity => {
                 if let Some(session) = self.shop_session.as_mut() {
                     session.set_quantity(slot);
                 }
             }
             // slot 0 = confirm; slot 1 = cancel (falls through to _ => {})
-            MenuState::ShopConfirm if slot == 0 => {
-                if let Some(session) = self.shop_session.as_ref() {
-                    if session.pending_is_buying {
-                        // Shared grant kernel (also driven by the shop / casino
-                        // randomizer runtime oracles).
-                        self.world.buy_from_shop(session);
-                    } else if let Some(item_id) = session.pending_item_id {
-                        let held = self.world.inventory.get(&item_id).copied().unwrap_or(0);
-                        if let Some((item_id, qty, delta)) = session.try_sell(held) {
-                            self.world.money = (self.world.money + delta).clamp(0, 9_999_999);
-                            let entry = self.world.inventory.entry(item_id).or_insert(0);
-                            *entry = entry.saturating_sub(qty);
-                            if *entry == 0 {
-                                self.world.inventory.remove(&item_id);
-                            }
-                        }
-                    }
-                }
-            }
+            MenuState::ShopConfirm if slot == 0 => self.commit_shop_confirm(),
             // Seru trade: pick an offer (stash its index for the confirm).
             MenuState::ShopTrade => {
                 let has_offer = self
@@ -546,19 +620,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             // Seru trade confirm: slot 0 = Yes applies the stashed offer to the
             // owner's spell list, then refreshes the offer list (which may shrink
             // and reseeds when the play-time bucket has advanced); slot 1 = No.
-            MenuState::ShopTradeConfirm if slot == 0 => {
-                let offer = self
-                    .trade_session
-                    .as_ref()
-                    .and_then(|t| t.offers.get(*self.trade_pending_offer).copied());
-                if let Some(offer) = offer {
-                    self.world.apply_seru_trade(&offer);
-                    let pt = self.world.play_time_seconds;
-                    if let Some(t) = self.trade_session.as_mut() {
-                        t.refresh(pt, &self.world.roster.members);
-                    }
-                }
-            }
+            MenuState::ShopTradeConfirm if slot == 0 => self.commit_shop_trade_confirm(),
             // Transient teardown screen reached by routing out of the shop
             // menu (Triangle) - clears the sessions as the menu closes.
             MenuState::ShopExit => {
@@ -566,46 +628,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 *self.trade_session = None;
             }
             // --- Inn states ---
-            MenuState::InnConfirm => {
-                if slot == 0 {
-                    // slot 0 = yes; slot 1 = no
-                    let can = self
-                        .inn_session
-                        .as_ref()
-                        .is_some_and(|s| s.can_afford(self.world.money));
-                    if can {
-                        let cost = self.inn_session.as_ref().unwrap().cost as i32;
-                        self.world.money -= cost;
-                        // Restore HP/MP for all active party members.
-                        let party_count = self.world.party_count as usize;
-                        for i in 0..party_count {
-                            let max_hp = self
-                                .world
-                                .actors
-                                .get(i)
-                                .map(|a| a.battle.max_hp)
-                                .unwrap_or(0);
-                            let mp_max = self
-                                .world
-                                .roster
-                                .members
-                                .get(i)
-                                .map(|r| r.hp_mp_sp().mp_max)
-                                .unwrap_or(0);
-                            if let Some(actor) = self.world.actors.get_mut(i)
-                                && actor.active
-                            {
-                                actor.battle.hp = max_hp;
-                                actor.battle.mp = mp_max;
-                            }
-                        }
-                        // Sync restored values back to roster records.
-                        self.world.save_party();
-                    }
-                }
-                // Clear session regardless of yes/no.
-                *self.inn_session = None;
-            }
+            MenuState::InnConfirm => self.commit_inn_confirm(slot),
             _ => {}
         }
     }

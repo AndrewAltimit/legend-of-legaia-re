@@ -1,3 +1,5 @@
+//! Capture observation: battle scene-init overlay and bundle residency windows.
+
 use super::ByteDelta;
 
 /// 168 KB battle-bundle residency window: the field-scene payload

@@ -1,3 +1,5 @@
+//! Capture observation: random-encounter trigger overlay and actor-pool residency.
+
 /// Battle overlay residency window (post-trigger). The pre/post diff
 /// surfaces 133 KB of changed bytes inside this range, with no changes
 /// outside it (within the wider `0x801C0000..0x80200000` overlay
