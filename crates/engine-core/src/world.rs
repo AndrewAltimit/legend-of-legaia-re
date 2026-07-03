@@ -1375,6 +1375,16 @@ pub struct World {
     /// a moving NPC.
     pub field_npc_positions: std::collections::HashMap<u8, (i16, i16)>,
 
+    /// Live per-NPC heading (PSX 12-bit angle, same `render_26` convention as
+    /// the player: `0` = travel Z+), keyed by placement slot. Written by
+    /// `Self::tick_field_npc_motions` from each walk step's direction, and
+    /// retained when the walker stops (an NPC keeps facing the way it last
+    /// moved). Absent for NPCs that have never walked - hosts render those
+    /// unrotated (the placement record carries no facing byte; scripted
+    /// initial facings are the per-actor field-VM channels, not yet
+    /// executed).
+    pub field_npc_headings: std::collections::HashMap<u8, i16>,
+
     /// Static prop collision-box centres `(world_x, world_z)`, one per placed
     /// object of the scene's field `.MAP` object grid - the engine's source
     /// for the **static-entity arm** of the actor-collision probe (retail
@@ -1588,6 +1598,23 @@ pub struct World {
     /// The scene mode to restore when the fishing minigame ends
     /// ([`World::enter_fishing`] snapshots the interrupted mode).
     pub fishing_return_mode: SceneMode,
+
+    /// Persistent fishing-point pool, mirroring retail's `_DAT_8008444C`
+    /// counter: [`World::exit_fishing`] banks the session record's points
+    /// here, and the point exchange spends from it
+    /// ([`World::fishing_exchange_buy`]). Hosts seed a new session's
+    /// [`crate::fishing::FishingRecord`] from this cell.
+    pub fishing_points: i32,
+
+    /// Persistent one-time prize bitmask, mirroring retail's `_DAT_8008446C`:
+    /// bit `row + venue * 8` latches when a `limit == 1` exchange row is
+    /// bought (see [`legaia_asset::fishing_exchange`]).
+    pub fishing_prizes_purchased: u32,
+
+    /// Fishing point-exchange (prize shop) session. `Some` while the exchange
+    /// list is open on the host's fishing screen; purchases commit through
+    /// [`World::fishing_exchange_buy`].
+    pub fishing_exchange: Option<crate::fishing::PrizeExchange>,
 
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
@@ -2581,6 +2608,7 @@ impl World {
             field_npc_dialog_prologue: std::collections::HashMap::new(),
             active_inline_prologue: None,
             field_npc_positions: std::collections::HashMap::new(),
+            field_npc_headings: std::collections::HashMap::new(),
             field_prop_colliders: Vec::new(),
             field_npc_routes: std::collections::BTreeMap::new(),
             field_npc_motions: std::collections::BTreeMap::new(),
@@ -2615,6 +2643,9 @@ impl World {
             dance_last_judge: None,
             fishing: None,
             fishing_return_mode: SceneMode::Field,
+            fishing_points: 0,
+            fishing_prizes_purchased: 0,
+            fishing_exchange: None,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
             baka_fighter: None,
@@ -3669,14 +3700,23 @@ impl World {
                         // retail - the unit wakes when hit).
                         self.status_effects.on_damaged(*target_slot);
                     }
-                    if outcome.enemy_effect != legaia_art::record::EnemyEffect::None {
+                    let applied = if outcome.enemy_effect != legaia_art::record::EnemyEffect::None {
                         target.pending_status = Some(outcome.enemy_effect);
                         // Push the status into the tracker so it
                         // subsequently ticks per-turn.
                         self.status_effects
-                            .apply_from_enemy_effect(*target_slot, outcome.enemy_effect);
+                            .apply_from_enemy_effect(*target_slot, outcome.enemy_effect)
+                    } else {
+                        None
+                    };
+                    let hp = target.battle.hp;
+                    // Rot's applier rolls the disabled limb (`rand % 3`,
+                    // the retail `1 << (rand%3 + 3)` bit pick).
+                    if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
+                        let limb = (self.next_rng() % 3) as u8;
+                        self.status_effects.set_rot_limb(*target_slot, limb);
                     }
-                    return Some((*target_slot, target.battle.hp));
+                    return Some((*target_slot, hp));
                 }
                 None
             }
@@ -4645,6 +4685,13 @@ impl World {
     /// edits, so a patched shop id flows through here into the bag.
     pub fn buy_from_shop(&mut self, session: &crate::shop::ShopSession) -> Option<(u8, u8, i32)> {
         let (item_id, qty, delta) = session.try_buy(self.money)?;
+        // Retail dims buy attempts past 98 held of one item id
+        // ([`crate::shop::SHOP_HELD_CAP`]); refuse instead of silently
+        // clamping so the menu's confirm mirrors the retail gate.
+        let owned = *self.inventory.get(&item_id).unwrap_or(&0);
+        if owned.saturating_add(qty) > crate::shop::SHOP_HELD_CAP {
+            return None;
+        }
         self.money = (self.money + delta).clamp(0, 9_999_999);
         let count = self.inventory.entry(item_id).or_insert(0);
         *count = count.saturating_add(qty);
@@ -6004,15 +6051,75 @@ impl World {
     }
 
     /// Leave the fishing minigame and restore the interrupted mode, returning
-    /// the session so the host can read the final [`FishingRecord`]. No-op when
-    /// fishing isn't active.
+    /// the session so the host can read the final [`FishingRecord`]. The
+    /// record's point total is banked into the persistent
+    /// [`World::fishing_points`] pool (retail credits `_DAT_8008444C`
+    /// directly; hosts seed the next session's record from the pool). No-op
+    /// when fishing isn't active.
     ///
     /// [`FishingRecord`]: crate::fishing::FishingRecord
     pub fn exit_fishing(&mut self) -> Option<crate::fishing::FishingSession> {
         if self.mode == SceneMode::Fishing {
             self.mode = self.fishing_return_mode;
         }
-        self.fishing.take()
+        let session = self.fishing.take();
+        self.fishing_exchange = None;
+        if let Some(s) = &session {
+            self.fishing_points = s.record().points;
+        }
+        session
+    }
+
+    /// Open the fishing point-exchange (prize shop) list on `exchange`.
+    /// The host renders [`World::fishing_exchange`] and commits buys through
+    /// [`World::fishing_exchange_buy`].
+    pub fn open_fishing_exchange(&mut self, mut exchange: crate::fishing::PrizeExchange) {
+        // Row 0 hides until strictly affordable - floor the cursor to the
+        // first visible row for the current point pool.
+        exchange.cursor = exchange
+            .cursor
+            .max(exchange.first_visible(self.fishing_points));
+        self.fishing_exchange = Some(exchange);
+    }
+
+    /// Close the point-exchange list.
+    pub fn close_fishing_exchange(&mut self) {
+        self.fishing_exchange = None;
+    }
+
+    /// Commit a point-exchange purchase of `qty` units of `row`
+    /// (`FUN_801d06c8`'s Yes arm): validates through
+    /// [`crate::fishing::PrizeExchange::buy`] against the persistent pool /
+    /// purchased mask / live inventory count, then deducts
+    /// [`World::fishing_points`], latches the one-time bit, and grants the
+    /// item into [`World::inventory`]. While a fishing session is live its
+    /// record is synced to the reduced pool so the on-screen point total
+    /// matches. `None` when no exchange is open or the buy doesn't validate.
+    pub fn fishing_exchange_buy(
+        &mut self,
+        row: usize,
+        qty: u32,
+    ) -> Option<crate::fishing::PrizePurchase> {
+        let ex = self.fishing_exchange.as_ref()?;
+        let item_id = ex.rows.get(row)?.item_id;
+        let owned = *self.inventory.get(&item_id).unwrap_or(&0) as u32;
+        let purchase = ex.buy(
+            row,
+            qty,
+            self.fishing_points,
+            owned,
+            self.fishing_prizes_purchased,
+        )?;
+        self.fishing_points -= purchase.cost as i32;
+        if let Some(bit) = purchase.latched_bit {
+            self.fishing_prizes_purchased |= 1 << bit;
+        }
+        let count = self.inventory.entry(purchase.item_id).or_insert(0);
+        *count = count.saturating_add(purchase.qty.min(255) as u8);
+        if let Some(s) = &mut self.fishing {
+            s.set_points(self.fishing_points);
+        }
+        Some(purchase)
     }
 
     /// Advance the fishing minigame one frame, reading this frame's pad:
@@ -6563,6 +6670,7 @@ impl World {
         // Roll the active region. Take the tracker out so the RNG closure can
         // borrow `self` (same pattern as the entity-SM borrow window).
         if let Some(mut tracker) = self.world_map_region_tracker.take() {
+            tracker.set_modifiers(self.encounter_rate_modifiers());
             let roll = tracker.on_step(wx, wz, || self.next_rng());
             self.world_map_region_tracker = Some(tracker);
             if let Some(roll) = roll {
@@ -6899,6 +7007,7 @@ impl World {
         self.field_npc_dialog.clear();
         self.field_npc_dialog_prologue.clear();
         self.field_npc_positions.clear();
+        self.field_npc_headings.clear();
         for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
             let Ok(slot) = u8::try_from(placement.index) else {
                 continue;
@@ -8476,6 +8585,17 @@ impl World {
             let result = vm::motion_vm::step(&mut motion.state, target, &FIELD_NPC_MOTION_PROGRAM);
             let pos = (motion.state.world_x, motion.state.world_z);
             let cursor = motion.route_cursor;
+            // Track the walker's heading from the step direction (12-bit,
+            // `0` = Z+ - the same convention the player's `render_26`
+            // carries); an unmoved step keeps the previous facing.
+            if let Some(&(px, pz)) = self.field_npc_positions.get(&slot) {
+                let (dx, dz) = ((pos.0 - px) as f32, (pos.1 - pz) as f32);
+                if dx != 0.0 || dz != 0.0 {
+                    let heading = ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32
+                        & 0x0FFF) as i16;
+                    self.field_npc_headings.insert(slot, heading);
+                }
+            }
             self.field_npc_positions.insert(slot, pos);
             if result == vm::motion_vm::StepResult::Done {
                 match cursor {

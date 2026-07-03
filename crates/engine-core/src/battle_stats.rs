@@ -406,6 +406,8 @@ fn compute_battle_stats_inner(
                 stats.udf = mul_clamp(stats.udf, modifiers.venom_def_mult);
                 stats.ldf = mul_clamp(stats.ldf, modifiers.venom_def_mult);
             }
+            // Rot disables a limb's attack command; it carries no stat fold.
+            StatusKind::Rot => {}
             StatusKind::Confuse => {
                 stats.acc = mul_clamp(stats.acc, modifiers.confuse_acc_mult);
             }

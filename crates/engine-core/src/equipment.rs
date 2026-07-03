@@ -636,8 +636,9 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
         name: "Goblin Foot",
         slot: EquipSlot::Accessory,
         restriction: CharRestriction::Any,
-        // Ability bit 4 = "encounter rate down" (engine reads this in
-        // EncounterTracker::add_rate_bias).
+        // Ability bit 4 = "encounter rate down" (a synthetic catalog bit;
+        // the retail encounter modifiers are the High/Low Encounter passives
+        // 0x3B/0x3C consumed by World::encounter_rate_modifiers).
         modifier: mk_modifier_with_ability(0, 0, 0, 0, 0, 4),
         buy_price: 1500,
         sell_price: 750,

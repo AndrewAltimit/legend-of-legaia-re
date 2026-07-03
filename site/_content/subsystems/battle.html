@@ -304,8 +304,10 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
       <tr><td>Toxic</td><td><code>1</code></td><td>4 turns</td><td>"Deadly Poison": HP drains faster than Venom and attack/defense drop (<code>min(max_hp/16, 256)</code> tick, never kills; rolls ×7/10)</td></tr>
       <tr><td>Numb</td><td><code>2</code></td><td>3 turns</td><td>Paralysis: cannot act; clears on being hit or after some turns (a full block, not a chance roll)</td></tr>
       <tr><td>Venom</td><td><code>3</code> (Other)</td><td>6 turns</td><td>"Poison": HP drains, lesser than Toxic (<code>min(max_hp/32, 128)</code> tick, never kills; rolls ×9/10)</td></tr>
-      <tr><td>Sleep</td><td><code>4</code></td><td>3 turns</td><td>Asleep; wakes when hit</td></tr>
-      <tr><td>Confuse</td><td><code>5</code></td><td>3 turns</td><td>Acts uncontrollably / random target</td></tr>
+      <tr><td>Toxic (strong DoT)</td><td><code>4</code></td><td>4 turns</td><td>The pinned appliers install byte <code>4</code> as the strong-DoT bit (<code>+0x16E |= 2</code>, 1/8 chance) - the same Toxic ailment</td></tr>
+      <tr><td>Rot</td><td><code>5</code></td><td>6 turns</td><td>A random body part becomes unusable: <code>+0x16E |= 1 &lt;&lt; (rand%3 + 3)</code>; the rolled limb's attack command grays out (Rot Guard / Master Guard passives nullify)</td></tr>
+      <tr><td>Sleep</td><td>-</td><td>3 turns</td><td>Asleep; wakes when hit (host-driven kind; no on-disc byte maps here since the 4/5 remap)</td></tr>
+      <tr><td>Confuse</td><td>-</td><td>3 turns</td><td>Acts uncontrollably / random target (host-driven kind)</td></tr>
       <tr><td>Curse</td><td><code>6</code></td><td>4 turns</td><td>Blocks Magic</td></tr>
       <tr><td>Stone</td><td><code>7</code></td><td>whole battle</td><td>Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores)</td></tr>
       <tr><td>Faint</td><td><code>8</code></td><td>until cured</td><td>KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic</td></tr>

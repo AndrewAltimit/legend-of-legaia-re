@@ -142,7 +142,11 @@ pub struct EncounterTracker {
     /// Bias applied to the trigger roll. Items / accessories that suppress
     /// or boost encounter rate land here. Negative values reduce the
     /// effective rate; positive values boost it. Clamped per-roll.
-    rate_bias_q8: i16,
+    /// Accessory / status multiplicative rate modifiers (the pinned
+    /// `FUN_801D9E1C` shifts; see
+    /// [`crate::region_encounter::EncounterRateModifiers`]). Refreshed by the
+    /// host before each step roll.
+    modifiers: crate::region_encounter::EncounterRateModifiers,
     /// Master "no encounters" override - set during cutscenes, scripted
     /// transitions, and post-battle grace windows.
     suppressed: bool,
@@ -181,19 +185,20 @@ impl EncounterTracker {
         self.total_steps
     }
 
-    pub fn rate_bias(&self) -> i16 {
-        self.rate_bias_q8
+    pub fn rate_modifiers(&self) -> crate::region_encounter::EncounterRateModifiers {
+        self.modifiers
     }
 
-    /// Add to the per-roll rate bias. Engines apply equipment effects
-    /// (Goblin Foot accessory: -32; Encounter Up trinket: +32).
-    pub fn add_rate_bias(&mut self, delta: i16) {
-        self.rate_bias_q8 = self.rate_bias_q8.saturating_add(delta);
-    }
-
-    /// Reset the rate bias.
-    pub fn clear_rate_bias(&mut self) {
-        self.rate_bias_q8 = 0;
+    /// Install the current accessory / status rate modifiers - the pinned
+    /// multiplicative `FUN_801D9E1C` shifts (High/Low Encounter passives
+    /// `0x3B`/`0x3C`, system flags `0x1D`/`0x1E`). Replaces the earlier
+    /// engine-invented additive `rate_bias` knob, which modeled accessories
+    /// that don't exist in retail.
+    pub fn set_rate_modifiers(
+        &mut self,
+        modifiers: crate::region_encounter::EncounterRateModifiers,
+    ) {
+        self.modifiers = modifiers;
     }
 
     /// Suppress all rolls until [`Self::clear_suppression`] is called.
@@ -211,15 +216,16 @@ impl EncounterTracker {
 
     /// Resolve the effective trigger rate for the next step.
     ///
-    /// Returns `0` when suppressed or when the table is empty. Bias is
-    /// added, clamped to `0..=255`.
+    /// Returns `0` when suppressed or when the table is empty. The
+    /// accessory / status modifiers scale the mean rate multiplicatively
+    /// (the same `FUN_801D9E1C` shifts the region path applies to its
+    /// per-step increment), clamped to `0..=255`.
     pub fn effective_rate_q8(&self) -> u8 {
         if self.suppressed || self.table.is_empty() {
             return 0;
         }
-        let base = self.table.trigger_rate_q8 as i32;
-        let v = (base + self.rate_bias_q8 as i32).clamp(0, 255);
-        v as u8
+        let base = self.table.trigger_rate_q8 as u32;
+        self.modifiers.apply(base).min(255) as u8
     }
 
     /// Mark that a step happened. Returns `Some(EncounterRoll)` when the
@@ -515,14 +521,34 @@ mod tests {
     }
 
     #[test]
-    fn rate_bias_clamps() {
+    fn rate_modifiers_shift_and_clamp() {
         let mut t = small_table();
         t.set_trigger_rate(8);
         let mut tracker = EncounterTracker::new(t);
-        tracker.add_rate_bias(-100);
-        assert_eq!(tracker.effective_rate_q8(), 0);
-        tracker.clear_rate_bias();
-        tracker.add_rate_bias(300);
+        // Neutral: base rate unchanged.
+        assert_eq!(tracker.effective_rate_q8(), 8);
+        // High Encounter passive: << 2.
+        tracker.set_rate_modifiers(crate::region_encounter::EncounterRateModifiers {
+            high_encounter: true,
+            ..Default::default()
+        });
+        assert_eq!(tracker.effective_rate_q8(), 32);
+        // Low Encounter passive stacks: << 2 then >> 1.
+        tracker.set_rate_modifiers(crate::region_encounter::EncounterRateModifiers {
+            high_encounter: true,
+            low_encounter: true,
+            ..Default::default()
+        });
+        assert_eq!(tracker.effective_rate_q8(), 16);
+        // Shifted past the byte range clamps at 255.
+        let mut t = small_table();
+        t.set_trigger_rate(200);
+        let mut tracker = EncounterTracker::new(t);
+        tracker.set_rate_modifiers(crate::region_encounter::EncounterRateModifiers {
+            high_encounter: true,
+            flag_high: true,
+            ..Default::default()
+        });
         assert_eq!(tracker.effective_rate_q8(), 255);
     }
 

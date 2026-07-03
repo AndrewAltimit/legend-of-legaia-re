@@ -13,6 +13,11 @@
 //! This module owns only the buy/sell session state. (Disc-free builds leave the
 //! stock host-supplied.)
 
+/// Max held count of one item id before further buys refuse (retail dims buy
+/// attempts past 98 held; enforced by
+/// [`crate::world::World::buy_from_shop`], which knows the live inventory).
+pub const SHOP_HELD_CAP: u8 = 98;
+
 /// One item a shop stocks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShopItem {

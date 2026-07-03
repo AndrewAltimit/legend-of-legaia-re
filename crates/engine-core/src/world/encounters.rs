@@ -186,6 +186,21 @@ impl World {
             .is_some_and(|w| w & (1u32 << (index & 0x1F)) != 0)
     }
 
+    /// Resolve the current accessory / status encounter-rate modifiers
+    /// (`FUN_801D9E1C`'s four pre-roll tests): the High/Low Encounter
+    /// passives (ability bits `0x3B` / `0x3C`, via
+    /// [`Self::party_has_ability`] = `FUN_800431D0`) and system flags
+    /// `0x1D` / `0x1E` (via [`Self::system_flag_test`] = `FUN_8003CE64`).
+    /// Refreshed onto the active region tracker before each step roll.
+    pub fn encounter_rate_modifiers(&self) -> crate::region_encounter::EncounterRateModifiers {
+        crate::region_encounter::EncounterRateModifiers {
+            high_encounter: self.party_has_ability(0x3B),
+            low_encounter: self.party_has_ability(0x3C),
+            flag_high: self.system_flag_test(0x1D),
+            flag_low: self.system_flag_test(0x1E),
+        }
+    }
+
     /// Seed each party combatant's battle attack / defense from the roster's
     /// live stats plus equipped-gear bonuses.
     ///
@@ -477,7 +492,13 @@ impl World {
             self.scripted_formation_pending = false;
             let rng = self.next_rng();
             return match self.encounter.as_mut() {
-                Some(session) => session.on_step(rng),
+                Some(session) => {
+                    // Retail's scripted path bypasses the rate math entirely;
+                    // keep the forced 0xFF-rate roll free of the accessory /
+                    // status modifiers (a >>1 would halve a forced trigger).
+                    session.tracker_mut().set_rate_modifiers(Default::default());
+                    session.on_step(rng)
+                }
                 None => false,
             };
         }
@@ -507,6 +528,7 @@ impl World {
             // Take the tracker out so the RNG closure can borrow `self`
             // (same borrow-window pattern as `live_world_map_tick`).
             let mut tracker = self.field_region_tracker.take().expect("is_some checked");
+            tracker.set_modifiers(self.encounter_rate_modifiers());
             let roll = tracker.on_step(wx, wz, || self.next_rng());
             self.field_region_tracker = Some(tracker);
             return match roll {
@@ -525,8 +547,12 @@ impl World {
             };
         }
         let rng = self.next_rng();
+        let modifiers = self.encounter_rate_modifiers();
         match self.encounter.as_mut() {
-            Some(session) => session.on_step(rng),
+            Some(session) => {
+                session.tracker_mut().set_rate_modifiers(modifiers);
+                session.on_step(rng)
+            }
             None => false,
         }
     }

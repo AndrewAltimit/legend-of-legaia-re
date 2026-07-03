@@ -161,9 +161,10 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
 
 <section class="doc-section" id="open">
   <h2>Open</h2>
+  <p>NPC walkers carry a live heading (<code>World::field_npc_headings</code>, the player's 12-bit <code>render_26</code> convention, derived from each motion-VM step's direction and retained on arrival); the <code>play-window</code> field renderer rotates each NPC model to it and plays the placement's scene-bundle ANM clip per frame (the same posed-rebuild path as the player's idle/walk pair).</p>
   <ul>
     <li>The full <code>FUN_801d5b5c</code> post-kernel state (the touch-event handler beyond the decoded entry kernel).</li>
-    <li>Per-actor field-VM channel execution (the engine loops decoded waypoint lists instead).</li>
+    <li>Per-actor field-VM channel execution (the engine loops decoded waypoint lists instead) - this is also where scripted <em>initial</em> NPC facings live; until then, never-walked NPCs render unrotated (the placement record carries no facing byte).</li>
     <li>The exact retail NPC glide speed (the engine paces NPCs at the player walking step).</li>
   </ul>
 </section>

@@ -126,7 +126,7 @@
     code:
   </p>
   <ul class="bullets">
-    <li><strong>Fishing</strong> - a reel tug-of-war against a tension gauge, with the 10 fish species driven by a per-species parameter table decoded from the disc.</li>
+    <li><strong>Fishing</strong> - a reel tug-of-war against a tension gauge, with the 10 fish species driven by a per-species parameter table decoded from the disc. The point-exchange counter is decoded too: two per-venue 6-row prize tables (<code>[limit, price, item id]</code>) whose row 0 hides until strictly affordable - which is how Buma's 20,000-point Water Egg "appears", and how a <strong>hidden 50,000-point War God Icon at Vidna</strong> stayed off the walkthrough prize lists. One-time prizes latch a persistent bitmask; the same venue select pages the rod-by-cast-band species-spawn table.</li>
     <li><strong>Slot machine</strong> - a reel state machine with two random-number generators (one for the reels, one for the feature odds, which bracket on a hidden net-take counter: the machine gets <em>more</em> generous the more it has taken from you, and big bonus wins knock the counter back down) and a per-symbol payout table; your per-spin balance only commits to the shared casino coin bank when you cash out at the counter - which is why an "Infinite Coins" cheat reads full at the cage but doesn't make spins free.</li>
     <li><strong>Baka Fighter</strong> - rock-paper-scissors, best of 3, against 17 scripted opponents each with their own prize and attack pattern.</li>
     <li><strong>Dance</strong> - a beat clock with an accuracy-weighted timing judge, a baked step chart selected by difficulty, and per-tier score multipliers.</li>
@@ -141,7 +141,7 @@
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md">Muscle Dome</a>
   </div>
   <p style="margin-top: 1rem;">
-    <strong>All five are playable in the clean-room engine:</strong> in the engine's <code>play-window</code>, dance (<code>K</code>), fishing (<code>L</code>), the slot machine (<code>O</code>), Baka Fighter (<code>B</code>), and the Muscle Dome (<code>M</code>) run as suspending scene modes driven by ported rules engines that decode their tables from your disc at runtime. In Baka Fighter you counter the opponent's scripted pattern in a best-of-3 duel (a match win banks the ladder opponent's gold prize); in the Muscle Dome you commit strike-command cards under a point budget - the cards' costs are the same per-weapon bytes that size the battle Arts gauge.
+    <strong>All five are playable in the clean-room engine:</strong> in the engine's <code>play-window</code>, dance (<code>K</code>), fishing (<code>L</code>), the slot machine (<code>O</code>), Baka Fighter (<code>B</code>), and the Muscle Dome (<code>M</code>) run as suspending scene modes driven by ported rules engines that decode their tables from your disc at runtime. In Baka Fighter you counter the opponent's scripted pattern in a best-of-3 duel (a match win banks the ladder opponent's gold prize); in the Muscle Dome you commit strike-command cards under a point budget - the cards' costs are the same per-weapon bytes that size the battle Arts gauge. While fishing, <code>P</code> opens the decoded point-exchange counter: caught-fish points bank into a persistent pool and trade for the real per-venue prize rows.
   </p>
 </section>
 

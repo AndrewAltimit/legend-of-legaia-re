@@ -31,27 +31,30 @@
 //!
 //! | Status    | byte | Retail effect                                               | Engine |
 //! |-----------|------|-------------------------------------------------------------|--------|
-//! | `Toxic`   | `1`  | DoT `min(max_hp/16, 256)` per round, never lethal (clamps to `current_hp - 1`); suppresses Venom's tick; outgoing damage and guard rolls scale x7/10 (`FUN_801E752C` + `FUN_801DD864`) | exact (`toxic_tick_damage`); the roll scaling is `battle_formulas::apply_status_weaken` bit 2 (engine-core's stat resolver mirrors the same x7/10 at the stat line) |
+//! | `Toxic`   | `4` (also art-record byte `1` naming) | DoT `min(max_hp/16, 256)` per round, never lethal (clamps to `current_hp - 1`); suppresses Venom's tick; outgoing damage and guard rolls scale x7/10 (`FUN_801E752C` + `FUN_801DD864`) | exact (`toxic_tick_damage`); the roll scaling is `battle_formulas::apply_status_weaken` bit 2 (engine-core's stat resolver mirrors the same x7/10 at the stat line) |
 //! | `Numb`    | `2`  | Paralysis: cannot act; clears on being hit OR after some turns (wiki; the enforcement site is not in the dumped corpus) | full block + clear-on-hit (same shape as Sleep) |
 //! | `Venom`   | `3`  | DoT `min(max_hp/32, 128)` per round, never lethal; skipped while Toxic is active; rolls scale x9/10 (`FUN_801E752C` + `FUN_801DD864`) | exact (`venom_tick_damage`) |
-//! | `Sleep`   | `4`  | Asleep; wakes when hit (wiki)                               | block + clear-on-hit |
-//! | `Confuse` | `5`  | Acts uncontrollably. Pinned for monsters: the AI keeps its *rolled* action - including Magic casts - but every per-monster scripted-cast override is suppressed (`overlay_battle_action_801e9fd4` gates on `+0x16E & 0x380`), and the target re-rolls to the opposite side at ActionSeed (`FUN_801E7320`). For party members only the delegation flag is pinned (`FUN_80047430`, from the Rage accessory passive); the retail auto-pick for a delegated party member is not in the dumped corpus | monster: physical + casts retarget via the `FUN_801E7320` port; party: auto-physical stand-in (see `engine-core::world::battle`) until the retail party-side pick is captured |
+//! | `Sleep`   | -    | Asleep; wakes when hit (wiki; no on-disc byte maps here since the 4/5 remap - kept for host-driven effects) | block + clear-on-hit |
+//! | `Rot`     | `5`  | A random body part becomes unusable: the appliers install `1 << (rand%3 + 3)` in `actor+0x16E`, blocked by the Rot Guard / Master Guard passives | the rolled limb's attack command (Left / Right / Low) is refused while active |
+//! | `Confuse` | -    | Acts uncontrollably. Pinned for monsters: the AI keeps its *rolled* action - including Magic casts - but every per-monster scripted-cast override is suppressed (`overlay_battle_action_801e9fd4` gates on `+0x16E & 0x380`), and the target re-rolls to the opposite side at ActionSeed (`FUN_801E7320`). For party members only the delegation flag is pinned (`FUN_80047430`, from the Rage accessory passive); the retail auto-pick for a delegated party member is not in the dumped corpus | monster: physical + casts retarget via the `FUN_801E7320` port; party: auto-physical stand-in (see `engine-core::world::battle`) until the retail party-side pick is captured |
 //! | `Curse`   | `6`  | Blocks Magic; battle-actor bit `0x1000` (Magic Amulet protects) | blocks Magic (matches) |
 //! | `Stone`   | `7`  | Petrification: cannot act, cannot be damaged, counts as defeated; no in-battle cure. Runtime representation capture-pinned: `+0x16E` bit `0x04` (a Glare before/after pair shows `0 -> 4` with HP untouched + the queued action category at `+0x1DE` cleared). On a successful party escape retail floors every party actor's `+0x14C` at 1 (`FUN_801E295C` case `0x64`), which un-defeats a petrified/KO'd member | block + whole-battle duration + invulnerability (core strikes) + counts-as-defeated + [`StatusEffectTracker::cure_stone_on_escape`] for the escape restore |
 //! | `Faint`   | `8`  | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
 //!
-//! **Byte-map caveat.** The two pinned status appliers
-//! (`overlay_battle_action_801ec3e4` ~line 3099, `overlay_battle_action_801e09f8`
-//! ~line 1416 - the physical-strike and special-attack hit resolvers reading the
-//! record's status byte) wire byte `3` -> the weak-DoT bit (`+0x16E |= 1`, 1/8
-//! chance), byte `4` -> the strong-DoT bit (`|= 2`, 1/8), byte `5` -> a random
+//! **Byte map.** [`StatusKind::from_enemy_effect`] follows the two pinned
+//! status appliers (`overlay_battle_action_801ec3e4` ~line 3099,
+//! `overlay_battle_action_801e09f8` ~line 1416 - the physical-strike and
+//! special-attack hit resolvers reading the record's status byte): byte `3`
+//! -> the weak-DoT bit (`+0x16E |= 1`, 1/8 chance) = **Venom**, byte `4` ->
+//! the strong-DoT bit (`|= 2`, 1/8) = **Toxic**, byte `5` -> the random
 //! limb-disable bit (`1 << (rand%3 + 3)`, blocked by the Rot Guard / Master
-//! Guard passives - i.e. retail byte `5` is **Rot**, not Confuse), and byte `6`
-//! -> Curse (`|= 0x1000`, 1/4). Bytes `1`/`2` only install the lingering
-//! status *visual* (`actor+0x21F` + tint) in these paths. That conflicts with
-//! the engine's inherited byte naming above (`4` = Sleep, `5` = Confuse, from
-//! external notes); the remap is left open until a runtime capture pins what
-//! bytes `1`/`2` do mechanically - see `docs/subsystems/battle-formulas.md`.
+//! Guard passives) = **Rot**, byte `6` -> Curse (`|= 0x1000`, 1/4). The
+//! earlier external-notes reading (`4` = Sleep / `5` = Confuse) is replaced;
+//! `Sleep` / `Confuse` stay as host-driven kinds with no on-disc byte. Bytes
+//! `1`/`2` only install the lingering status *visual* (`actor+0x21F` + tint)
+//! in these two paths - their art-record naming (`1` = Toxic, `2` = Numb)
+//! is kept until a capture pins what they do mechanically - see
+//! `docs/subsystems/battle-formulas.md`.
 //!
 //! Engines drain pending [`StatusEvent`]s from [`StatusEffectTracker::tick_actor`]
 //! and feed them back into their HUD / battle event log.
@@ -106,6 +109,16 @@ pub enum StatusKind {
     /// `[0x22,0x26,0x25,0x22,0x21]` (an Arts combo, not a plain multi-strike) -
     /// a single sample, so the stand-in stays a stand-in.
     Confuse,
+    /// Rot: a random body part becomes unusable. The pinned appliers
+    /// (`overlay_battle_action_801ec3e4` / `801e09f8`) install byte `5` as a
+    /// random limb-disable bit `1 << (rand % 3 + 3)` in `actor+0x16E`
+    /// (blocked by the Rot Guard / Master Guard passives). The engine models
+    /// the three limb bits as the Left-arm / Right-arm / Low attack commands:
+    /// the rolled limb's directional input is refused while Rot is active
+    /// (which limb each retail bit maps to is a reconstruction - the bit
+    /// consumer lives in the undumped command-menu controller). Tracked per
+    /// instance via [`StatusInstance::rot_limb`].
+    Rot,
     /// Blocks Magic actions (the Magic Amulet protects against Curse attacks).
     Curse,
     /// Petrification: cannot act and cannot be damaged; petrified members count
@@ -133,8 +146,12 @@ impl StatusKind {
             EnemyEffect::Toxic => Some(StatusKind::Toxic),
             EnemyEffect::Numb => Some(StatusKind::Numb),
             EnemyEffect::Other(3) => Some(StatusKind::Venom),
-            EnemyEffect::Other(4) => Some(StatusKind::Sleep),
-            EnemyEffect::Other(5) => Some(StatusKind::Confuse),
+            // Bytes 4/5 follow the pinned retail appliers
+            // (`overlay_battle_action_801ec3e4` / `801e09f8`): 4 = the
+            // strong-DoT bit (Toxic), 5 = the random limb-disable (Rot) -
+            // NOT the inherited external-notes Sleep/Confuse reading.
+            EnemyEffect::Other(4) => Some(StatusKind::Toxic),
+            EnemyEffect::Other(5) => Some(StatusKind::Rot),
             EnemyEffect::Other(6) => Some(StatusKind::Curse),
             EnemyEffect::Other(7) => Some(StatusKind::Stone),
             EnemyEffect::Other(8) => Some(StatusKind::Faint),
@@ -152,6 +169,8 @@ impl StatusKind {
             StatusKind::Venom => 6,
             StatusKind::Sleep => 3,
             StatusKind::Confuse => 3,
+            // Rot persists like the DoT ailments (cured by item / battle end).
+            StatusKind::Rot => 6,
             StatusKind::Curse => 4,
             // Stone has no in-battle cure - it lasts the whole battle. 255 is
             // effectively "until battle end" (no battle runs that many turns).
@@ -190,6 +209,11 @@ pub struct StatusInstance {
     /// Remaining turns before this instance expires. Zero means the
     /// instance ticks one more time and is then cleared.
     pub remaining_turns: u8,
+    /// For [`StatusKind::Rot`]: the disabled limb (0 = Left arm, 1 = Right
+    /// arm, 2 = Low attack), the engine's reading of the retail
+    /// `1 << (rand % 3 + 3)` bit roll. Zero / meaningless for other kinds;
+    /// the applier rolls it via [`StatusEffectTracker::set_rot_limb`].
+    pub rot_limb: u8,
 }
 
 impl StatusInstance {
@@ -197,6 +221,7 @@ impl StatusInstance {
         Self {
             kind,
             remaining_turns: kind.default_duration(),
+            rot_limb: 0,
         }
     }
 
@@ -204,6 +229,7 @@ impl StatusInstance {
         Self {
             kind,
             remaining_turns: duration,
+            rot_limb: 0,
         }
     }
 }
@@ -310,6 +336,29 @@ impl StatusEffectTracker {
 
     /// Manually clear a single status kind (for cure spells / items).
     /// Returns `true` if the status was present.
+    /// Record the rolled Rot limb on the slot's active Rot instance
+    /// (0 = Left arm, 1 = Right arm, 2 = Low attack) - the applier's
+    /// `rand % 3` roll. No-op when the slot has no Rot.
+    pub fn set_rot_limb(&mut self, slot: u8, limb: u8) {
+        if let Some(list) = self.per_actor.get_mut(slot as usize) {
+            for inst in list.iter_mut() {
+                if inst.kind == StatusKind::Rot {
+                    inst.rot_limb = limb % 3;
+                }
+            }
+        }
+    }
+
+    /// The slot's disabled Rot limb (0 = Left arm, 1 = Right arm, 2 = Low
+    /// attack), or `None` when the slot isn't rotted.
+    pub fn rot_limb(&self, slot: u8) -> Option<u8> {
+        self.per_actor
+            .get(slot as usize)?
+            .iter()
+            .find(|i| i.kind == StatusKind::Rot)
+            .map(|i| i.rot_limb)
+    }
+
     pub fn cure(&mut self, slot: u8, kind: StatusKind) -> bool {
         let v = self.slots_mut(slot);
         let before = v.len();
@@ -543,12 +592,45 @@ mod tests {
             StatusKind::from_enemy_effect(EnemyEffect::Other(3)),
             Some(StatusKind::Venom)
         );
+        // Bytes 4/5 follow the pinned appliers: strong DoT (Toxic) and the
+        // random limb-disable (Rot) - not the old Sleep/Confuse reading.
+        assert_eq!(
+            StatusKind::from_enemy_effect(EnemyEffect::Other(4)),
+            Some(StatusKind::Toxic)
+        );
+        assert_eq!(
+            StatusKind::from_enemy_effect(EnemyEffect::Other(5)),
+            Some(StatusKind::Rot)
+        );
+        assert_eq!(
+            StatusKind::from_enemy_effect(EnemyEffect::Other(6)),
+            Some(StatusKind::Curse)
+        );
         assert_eq!(
             StatusKind::from_enemy_effect(EnemyEffect::Other(8)),
             Some(StatusKind::Faint)
         );
         assert_eq!(StatusKind::from_enemy_effect(EnemyEffect::None), None);
         assert_eq!(StatusKind::from_enemy_effect(EnemyEffect::Other(99)), None);
+    }
+
+    #[test]
+    fn rot_limb_roll_round_trips() {
+        let mut t = StatusEffectTracker::new();
+        assert_eq!(t.rot_limb(3), None);
+        t.apply_from_enemy_effect(3, EnemyEffect::Other(5));
+        // Applied with a default limb until the applier rolls one.
+        assert_eq!(t.rot_limb(3), Some(0));
+        t.set_rot_limb(3, 2);
+        assert_eq!(t.rot_limb(3), Some(2));
+        // The roll is mod-3.
+        t.set_rot_limb(3, 7);
+        assert_eq!(t.rot_limb(3), Some(1));
+        // Rot doesn't block the whole turn (a limb, not the actor).
+        assert!(!StatusKind::Rot.blocks_actions());
+        // Curing clears the limb.
+        t.cure(3, StatusKind::Rot);
+        assert_eq!(t.rot_limb(3), None);
     }
 
     #[test]

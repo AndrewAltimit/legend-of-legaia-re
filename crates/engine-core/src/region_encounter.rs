@@ -34,9 +34,10 @@
 //! the world's shared deterministic RNG keeps replays bit-identical.
 //!
 //! The accessory / status multiplicative modifiers retail layers on top of the
-//! setting scale (`FUN_800431D0(0x3b/0x3c)`, `FUN_8003CE64(0x1d/0x1e)`) have no
-//! engine consumer yet and are deliberately not ported here (the additive
-//! equipment bias lives on [`crate::encounter::EncounterTracker`]).
+//! setting scale are ported as [`EncounterRateModifiers`] (`FUN_800431D0`
+//! ability bits `0x3B`/`0x3C` and `FUN_8003CE64` system flags `0x1D`/`0x1E`,
+//! shifts `<<2`/`>>1`/`<<1`/`>>1` in retail order) and refreshed from the
+//! party ability mask + flag bank each step.
 //!
 //! ## Consumers
 //!
@@ -150,6 +151,59 @@ impl EncounterRateSetting {
     }
 }
 
+/// Accessory / status encounter-rate modifiers, applied to the setting-scaled
+/// per-step rate increment in retail order (`FUN_801D9E1C`
+/// `0x801da1b8..0x801da200` - four sequential shifts on the same value):
+///
+/// | Source | Retail test | Effect |
+/// |---|---|---|
+/// | High Encounter passive (Bad Luck Bell / Nemesis Gem) | `FUN_800431D0(0x3B)` | `<< 2` |
+/// | Low Encounter passive (Good Luck Bell / Evil Talisman) | `FUN_800431D0(0x3C)` | `>> 1` |
+/// | System flag `0x1D` | `FUN_8003CE64(0x1D)` | `<< 1` |
+/// | System flag `0x1E` | `FUN_8003CE64(0x1E)` | `>> 1` |
+///
+/// The magnitudes are statically pinned in `overlay_world_map_801d9e1c.txt`
+/// (no capture needed). The engine refreshes these from the party ability
+/// mask + system-flag bank each step
+/// ([`crate::world::World::encounter_rate_modifiers`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EncounterRateModifiers {
+    /// Ability bit `0x3B` set on any member - rate `<< 2`.
+    pub high_encounter: bool,
+    /// Ability bit `0x3C` set on any member - rate `>> 1`.
+    pub low_encounter: bool,
+    /// System flag `0x1D` set - rate `<< 1`.
+    pub flag_high: bool,
+    /// System flag `0x1E` set - rate `>> 1`.
+    pub flag_low: bool,
+}
+
+impl EncounterRateModifiers {
+    /// Apply the four shifts in retail order to a setting-scaled rate.
+    // PORT: FUN_801D9E1C (accessory/status rate shifts, 0x801da1b8..0x801da200)
+    pub fn apply(self, rate: u32) -> u32 {
+        let mut r = rate;
+        if self.high_encounter {
+            r <<= 2;
+        }
+        if self.low_encounter {
+            r >>= 1;
+        }
+        if self.flag_high {
+            r <<= 1;
+        }
+        if self.flag_low {
+            r >>= 1;
+        }
+        r
+    }
+
+    /// `true` when no modifier is active (the default state).
+    pub fn is_neutral(self) -> bool {
+        self == Self::default()
+    }
+}
+
 /// Per-scene region-keyed encounter table.
 #[derive(Clone, Debug, Default)]
 pub struct RegionEncounterTable {
@@ -249,6 +303,8 @@ pub struct RegionEncounterTracker {
     /// Master suppression (post-battle grace / cutscene). When set, steps never
     /// advance the counter.
     suppressed: bool,
+    /// Accessory / status rate modifiers, refreshed by the host each step.
+    modifiers: EncounterRateModifiers,
 }
 
 impl RegionEncounterTracker {
@@ -259,6 +315,7 @@ impl RegionEncounterTracker {
             setting: EncounterRateSetting::default(),
             last_formation: None,
             suppressed: false,
+            modifiers: EncounterRateModifiers::default(),
         }
     }
 
@@ -272,6 +329,17 @@ impl RegionEncounterTracker {
 
     pub fn set_setting(&mut self, setting: EncounterRateSetting) {
         self.setting = setting;
+    }
+
+    pub fn modifiers(&self) -> EncounterRateModifiers {
+        self.modifiers
+    }
+
+    /// Install the current accessory / status rate modifiers (see
+    /// [`EncounterRateModifiers`]); the host refreshes these before each
+    /// step roll.
+    pub fn set_modifiers(&mut self, modifiers: EncounterRateModifiers) {
+        self.modifiers = modifiers;
     }
 
     pub fn suppress(&mut self) {
@@ -317,7 +385,9 @@ impl RegionEncounterTracker {
         if region.formation_count == 0 {
             return None;
         }
-        let inc = self.setting.scale(region.rate_increment) as i32;
+        let inc = self
+            .modifiers
+            .apply(self.setting.scale(region.rate_increment)) as i32;
         // While the counter stays positive, the step does not fire and no RNG
         // is consumed (retail `bgtz v1, ...; sw v1, _DAT_8007B5FC`).
         if self.counter - inc > 0 {

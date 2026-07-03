@@ -380,6 +380,15 @@ struct PlayWindowApp {
     /// falling back to the record's spawn tile. Built at scene load in
     /// `upload_assets`.
     field_npc_draws: Vec<FieldNpcDraw>,
+    /// Per-NPC looping ANM clip players (the scene-bundle record named by the
+    /// placement's anim byte), keyed by placement slot - drives live clip
+    /// playback for the placed NPCs (idle sway / walk cycles). Rebuilt with
+    /// `field_npc_draws`; `npc_anim_srcs` holds each animated NPC's truncated
+    /// TMD + raw bytes for the per-frame posed re-upload (the same rebuild
+    /// path the player's idle/walk pair uses).
+    npc_clip_players:
+        std::collections::HashMap<u8, legaia_engine_core::field_anim::FieldClipPlayer>,
+    npc_anim_srcs: std::collections::HashMap<u8, (legaia_tmd::Tmd, Vec<u8>)>,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
@@ -461,6 +470,11 @@ struct PlayWindowApp {
     /// Whether the lazy `face_tables` load already ran (so a missing
     /// executable is only probed once).
     face_tables_attempted: bool,
+    /// The two fishing point-exchange venue pages (0 = Buma, 1 = Vidna),
+    /// decoded from the fishing overlay when the minigame starts
+    /// ([`legaia_asset::fishing_exchange`]) and named from the SCUS item
+    /// table when readable. `P` toggles the list while fishing.
+    fishing_prize_venues: Option<[legaia_engine_core::fishing::PrizeExchange; 2]>,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,
@@ -2837,6 +2851,8 @@ impl PlayWindowApp {
         // resolution). Actors parked at the (16320, 16320) off-map box are
         // conditional spawns retail hides until a script places them - skip.
         self.field_npc_draws.clear();
+        self.npc_clip_players.clear();
+        self.npc_anim_srcs.clear();
         if world.mode == SceneMode::Field
             && let Some(r) = self.win.renderer.as_ref()
         {
@@ -2900,6 +2916,14 @@ impl PlayWindowApp {
                     (0, _) | (_, None) => None,
                     (id, Some(b)) => {
                         let rec_idx = (id - 1) as usize;
+                        // Live playback: a looping clip player over the same
+                        // record poses this NPC per frame (the rest pose
+                        // below stays the frame-0 fallback / first frame).
+                        if let Some(player) =
+                            legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec_idx)
+                        {
+                            self.npc_clip_players.insert(p.index as u8, player);
+                        }
                         b.record(rec_idx).ok().map(|rec| {
                             let bones = rec.bone_count as usize;
                             tmd.objects.truncate(bones);
@@ -2971,6 +2995,10 @@ impl PlayWindowApp {
                 };
                 if mesh_idx.is_none() && color_idx.is_none() {
                     continue;
+                }
+                if self.npc_clip_players.contains_key(&(p.index as u8)) {
+                    self.npc_anim_srcs
+                        .insert(p.index as u8, (tmd.clone(), raw.clone()));
                 }
                 self.field_npc_draws.push(FieldNpcDraw {
                     slot: p.index as u8,
@@ -3481,13 +3509,42 @@ impl PlayWindowApp {
             log::warn!("fishing: species-table parse failed");
             return false;
         };
-        // Default rod stat + empty record for the dev entry point.
+        // Decode the two point-exchange venue pages alongside the species
+        // table, naming rows from the SCUS item table when it's readable
+        // (P toggles the prize list while fishing).
+        self.fishing_prize_venues = legaia_asset::fishing_exchange::parse(&loaded).map(|ex| {
+            use legaia_engine_core::Vfs;
+            let scus = if let Some(root) = self.extracted_root.as_deref() {
+                legaia_engine_core::DirVfs::new(root)
+                    .ok()
+                    .and_then(|v| v.read("SCUS_942.54").ok())
+            } else if let Some(disc) = self.disc_path.as_deref() {
+                legaia_engine_core::DiscVfs::open(disc)
+                    .ok()
+                    .and_then(|v| v.read("SCUS_942.54").ok())
+            } else {
+                None
+            };
+            let names = scus
+                .as_deref()
+                .and_then(legaia_asset::item_names::ItemNameTable::from_scus);
+            [0usize, 1].map(|venue| {
+                legaia_engine_core::fishing::PrizeExchange::from_asset(
+                    venue,
+                    &ex.venues[venue],
+                    names.as_ref(),
+                )
+            })
+        });
+        // Default rod stat for the dev entry point; the record resumes the
+        // world's persistent point pool (banked back on exit).
         const DEV_ROD_STAT: i32 = 4;
-        let session = legaia_engine_core::fishing::FishingSession::new(
-            species,
-            DEV_ROD_STAT,
-            legaia_engine_core::fishing::FishingRecord::default(),
-        );
+        let record = legaia_engine_core::fishing::FishingRecord {
+            points: self.session.host.world.fishing_points,
+            ..Default::default()
+        };
+        let session =
+            legaia_engine_core::fishing::FishingSession::new(species, DEV_ROD_STAT, record);
         self.session.host.world.enter_fishing(session);
         true
     }
@@ -5595,12 +5652,54 @@ impl PlayWindowApp {
             let ly = self.font.layout_ascii(&line);
             out.extend(text_draws_for(&ly, (8, 62), white));
             let pts = format!(
-                "points {}   best {}   (L = quit)",
+                "points {}   best {}   (L = quit, P = prizes)",
                 s.record().points,
                 s.record().best_points
             );
             let ly2 = self.font.layout_ascii(&pts);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
+        }
+        // Fishing point-exchange list: the venue's prize rows with the retail
+        // gating (row 0 hidden until affordable, greyed unavailable rows,
+        // one-time prizes latched after purchase).
+        if self.session.host.world.mode == SceneMode::Fishing
+            && let Some(ex) = &self.session.host.world.fishing_exchange
+        {
+            let world = &self.session.host.world;
+            let venue_name = if ex.venue == 0 { "Buma" } else { "Vidna" };
+            let head = format!(
+                "PRIZE EXCHANGE ({venue_name})  points {}   (Enter = trade, Left/Right = venue, P = close)",
+                world.fishing_points
+            );
+            let ly = self.font.layout_ascii(&head);
+            out.extend(text_draws_for(&ly, (8, 98), white));
+            let first = ex.first_visible(world.fishing_points);
+            for (i, r) in ex.rows.iter().enumerate().skip(first) {
+                let owned = *world.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                let avail = ex.is_available(
+                    i,
+                    world.fishing_points,
+                    owned,
+                    world.fishing_prizes_purchased,
+                );
+                let cursor = if i == ex.cursor { ">" } else { " " };
+                let name = r
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("item {:#04x}", r.item_id));
+                let tag = if r.is_one_time() {
+                    if avail { "one-time" } else { "sold" }
+                } else {
+                    "each"
+                };
+                let line = format!(
+                    "{cursor} {name:<18} {:>6} pts  {tag}  (own {owned})",
+                    r.price
+                );
+                let ly = self.font.layout_ascii(&line);
+                let y = 116 + 18 * (i - first) as i32;
+                out.extend(text_draws_for(&ly, (8, y), if avail { white } else { dim }));
+            }
         }
         // Slot-machine minigame HUD: the three payline symbols, the balance /
         // bet readout, and the phase-specific prompt.
@@ -6743,10 +6842,76 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     } else if self.start_fishing_minigame() {
                         log::info!(
-                            "fishing: started - Cross casts/reels(A), Circle reels(B), L to quit"
+                            "fishing: started - Cross casts/reels(A), Circle reels(B), L to quit, P = prize exchange"
                         );
                     }
                     return;
+                }
+                // `P` (while fishing): toggle the point-exchange prize list
+                // decoded from the fishing overlay's per-venue tables. While
+                // open: Up/Down move, Left/Right switch venue, Enter buys one.
+                if self.session.host.world.mode == SceneMode::Fishing
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    let world = &mut self.session.host.world;
+                    match code {
+                        KeyCode::KeyP => {
+                            if world.fishing_exchange.is_some() {
+                                world.close_fishing_exchange();
+                            } else if let Some(venues) = &self.fishing_prize_venues {
+                                world.open_fishing_exchange(venues[0].clone());
+                            } else {
+                                log::info!("fishing: no exchange tables decoded (disc-free run?)");
+                            }
+                            return;
+                        }
+                        KeyCode::ArrowUp | KeyCode::ArrowDown
+                            if world.fishing_exchange.is_some() =>
+                        {
+                            let points = world.fishing_points;
+                            if let Some(ex) = &mut world.fishing_exchange {
+                                let floor = ex.first_visible(points);
+                                let last = ex.rows.len().saturating_sub(1);
+                                ex.cursor = if matches!(code, KeyCode::ArrowUp) {
+                                    ex.cursor.saturating_sub(1).max(floor)
+                                } else {
+                                    (ex.cursor + 1).min(last)
+                                };
+                            }
+                            return;
+                        }
+                        KeyCode::ArrowLeft | KeyCode::ArrowRight
+                            if world.fishing_exchange.is_some() =>
+                        {
+                            if let (Some(open), Some(venues)) =
+                                (&world.fishing_exchange, &self.fishing_prize_venues)
+                            {
+                                let other = venues[1 - open.venue.min(1)].clone();
+                                world.open_fishing_exchange(other);
+                            }
+                            return;
+                        }
+                        KeyCode::Enter if world.fishing_exchange.is_some() => {
+                            let row = world.fishing_exchange.as_ref().map(|e| e.cursor);
+                            if let Some(row) = row {
+                                match world.fishing_exchange_buy(row, 1) {
+                                    Some(p) => log::info!(
+                                        "fishing exchange: bought item {:#04x} x{} for {} points ({} left)",
+                                        p.item_id,
+                                        p.qty,
+                                        p.cost,
+                                        world.fishing_points
+                                    ),
+                                    None => log::info!(
+                                        "fishing exchange: row {row} unavailable (points/limit/one-time)"
+                                    ),
+                                }
+                            }
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
                 // `O`: toggle the casino slot-machine minigame. Loads the slot
                 // overlay (PROT 0975), suspends the current scene, and runs
@@ -7544,6 +7709,60 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     }
 
+                    // Field-NPC clip playback: advance each placed NPC's
+                    // looping ANM clip and re-upload its posed mesh halves
+                    // (the same per-frame rebuild path the player's idle /
+                    // walk pair uses). The rest-pose meshes in
+                    // `field_npc_draws` stay as the fallback for NPCs whose
+                    // clip or upload is unavailable this frame.
+                    let mut npc_posed: std::collections::HashMap<
+                        u8,
+                        (Option<UploadedVramMesh>, Option<UploadedColorMesh>),
+                    > = std::collections::HashMap::new();
+                    if self.session.host.world.mode == SceneMode::Field {
+                        for (slot, player) in self.npc_clip_players.iter_mut() {
+                            let Some((tmd, raw)) = self.npc_anim_srcs.get(slot) else {
+                                continue;
+                            };
+                            let pose = player.tick();
+                            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                                tmd,
+                                raw,
+                                &pose.bone_outputs,
+                            );
+                            let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
+                                tmd,
+                                raw,
+                                &pose.bone_outputs,
+                            );
+                            let vm = if vmesh.indices.is_empty() {
+                                None
+                            } else {
+                                r.upload_vram_mesh(
+                                    &vmesh.positions,
+                                    &vmesh.uvs,
+                                    &vmesh.cba_tsb,
+                                    &vmesh.normals,
+                                    &vmesh.indices,
+                                )
+                                .ok()
+                            };
+                            let cm = if cmesh.is_empty() {
+                                None
+                            } else {
+                                r.upload_color_mesh_blended(
+                                    &cmesh.positions,
+                                    &cmesh.colors,
+                                    &cmesh.indices,
+                                    &cmesh.blend,
+                                )
+                                .ok()
+                            };
+                            if vm.is_some() || cm.is_some() {
+                                npc_posed.insert(*slot, (vm, cm));
+                            }
+                        }
+                    }
                     // Iterate every actor that has a `tmd_binding`. Scene-init
                     // actors (slots 0..N from `init_scene_animations`) have
                     // their bindings set but aren't necessarily `.active` -
@@ -7776,24 +7995,51 @@ impl ApplicationHandler for PlayWindowApp {
                                 let y = w.sample_field_floor_height(x as i32, z as i32) as f32;
                                 // Raw retail-convention transform (no model
                                 // flip): the field camera's FIELD_WORLD_FLIP
-                                // provides the single net Y negation.
+                                // provides the single net Y negation. Walkers
+                                // face their travel heading (12-bit, `0` =
+                                // Z+, same convention + half-turn compose as
+                                // the player's `render_26`); NPCs that never
+                                // walked stay unrotated (no facing byte in
+                                // the placement record).
+                                let rot = match w.field_npc_headings.get(&d.slot) {
+                                    Some(&h) => Mat4::from_rotation_y(
+                                        std::f32::consts::PI
+                                            + (h as f32) / 4096.0 * std::f32::consts::TAU,
+                                    ),
+                                    None => Mat4::IDENTITY,
+                                };
                                 let model =
-                                    Mat4::from_translation(Vec3::new(x as f32, y, z as f32));
-                                if let Some(mi) = d.mesh_idx
-                                    && let Some(mesh) = self.meshes.get(mi)
-                                {
-                                    draws.push(SceneDraw {
+                                    Mat4::from_translation(Vec3::new(x as f32, y, z as f32)) * rot;
+                                let posed = npc_posed.get(&d.slot);
+                                match (posed.and_then(|p| p.0.as_ref()), d.mesh_idx) {
+                                    (Some(mesh), _) => draws.push(SceneDraw {
                                         mesh,
                                         mvp: cam * model,
-                                    });
+                                    }),
+                                    (None, Some(mi)) => {
+                                        if let Some(mesh) = self.meshes.get(mi) {
+                                            draws.push(SceneDraw {
+                                                mesh,
+                                                mvp: cam * model,
+                                            });
+                                        }
+                                    }
+                                    (None, None) => {}
                                 }
-                                if let Some(ci) = d.color_idx
-                                    && let Some(mesh) = self.color_meshes.get(ci)
-                                {
-                                    color_draws.push(ColorSceneDraw {
+                                match (posed.and_then(|p| p.1.as_ref()), d.color_idx) {
+                                    (Some(mesh), _) => color_draws.push(ColorSceneDraw {
                                         mesh,
                                         mvp: cam * model,
-                                    });
+                                    }),
+                                    (None, Some(ci)) => {
+                                        if let Some(mesh) = self.color_meshes.get(ci) {
+                                            color_draws.push(ColorSceneDraw {
+                                                mesh,
+                                                mvp: cam * model,
+                                            });
+                                        }
+                                    }
+                                    (None, None) => {}
                                 }
                             }
                         }
@@ -9397,6 +9643,7 @@ fn cmd_play_window_with_record(
         face_tables: None,
         art_mouth_tables: None,
         face_tables_attempted: false,
+        fishing_prize_venues: None,
         summon_actor_slot: None,
         battle_stage_mesh: None,
         battle_ground_mesh: None,
@@ -9414,6 +9661,8 @@ fn cmd_play_window_with_record(
         drained_spawn_slots: std::collections::HashSet::new(),
         player_color_draw: None,
         field_npc_draws: Vec::new(),
+        npc_clip_players: std::collections::HashMap::new(),
+        npc_anim_srcs: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),
