@@ -1311,15 +1311,29 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 3,
                         }
                     }
-                    // Sub-5/E/F all share the halt-acquire body. The host
-                    // hook applies the standard ctx mutation; the dispatch
-                    // halts at PC regardless of acquire success/failure
-                    // (both paths in the dump halt - success via
-                    // `switchD_801e00f4::default()`, failure via
-                    // `LAB_801dee50`).
+                    // Sub-5/E/F all share the halt-acquire body: acquire the
+                    // (possibly cross-context) target - write its `+0x94`
+                    // payload pointer, clear its wait accumulator, set its
+                    // HALT bit - then ADVANCE the caller past the 5-byte op
+                    // (`[4C, op0, p0, p1, p2]`); on predicate failure the
+                    // caller parks at PC. Pinned from BOTH dispatcher dumps:
+                    // `overlay_world_map_801de840.txt:7179` (`uVar31 = 5;
+                    // iVar47 += uVar31`) and `overlay_0897_801de840.txt:6550`
+                    // (`iVar24 = 5` then the standard advance exit
+                    // `switchD_801e00f4::default()` - previously misread as a
+                    // halt; only the `iVar24 == 0` failure path halts via
+                    // `LAB_801dee50`). Predicate:
+                    // `(saved_pc != 0 || target is player) && (!halted ||
+                    // scene busy)` - the standard halt-acquire gate.
                     5 | 0xE | 0xF => {
-                        host.op4c_n8_halt_acquire(ctx, pc as u32);
-                        StepResult::Halt { final_pc: pc }
+                        if host.field_halt_acquire_predicate(ctx, op0) {
+                            host.op4c_n8_halt_acquire(ctx, pc as u32);
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 4,
+                            }
+                        } else {
+                            StepResult::Halt { final_pc: pc }
+                        }
                     }
                     // Sub-B: 5-byte `[4C, 0x8B, type_byte, target_lo,
                     // target_hi]`. Conditional jump if any actor of

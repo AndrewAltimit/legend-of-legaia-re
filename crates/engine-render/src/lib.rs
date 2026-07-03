@@ -354,6 +354,30 @@ pub fn text_draws_for(
         .collect()
 }
 
+/// Map a slice of [`TextDraw`]s whose `dst` coordinates are expressed in
+/// **stage pixels** (a virtual 320×240 PSX framebuffer) into surface
+/// coordinates: `dst = stage_origin + dst * stage_scale`, with the glyph
+/// size scaled to match.
+///
+/// The menu text builders ([`field_menu_draws_for`],
+/// [`status_screen_draws_for`], [`spell_menu_draws_for`], …) lay glyphs
+/// out at retail-pinned stage-pixel pens. This is the single transform
+/// that upscales + centers them into the surface, matching the chrome
+/// emitted by [`menu_window_chrome_draws_for`] so text and window frame
+/// stay locked together at any window size. Apply it in place after the
+/// builder returns, then composite the result.
+pub fn scale_stage_text_draws(draws: &mut [TextDraw], stage_origin: (i32, i32), stage_scale: u32) {
+    let scale = stage_scale.max(1);
+    for d in draws.iter_mut() {
+        d.dst = (
+            stage_origin.0 + d.dst.0 * scale as i32,
+            stage_origin.1 + d.dst.1 * scale as i32,
+            d.dst.2 * scale,
+            d.dst.3 * scale,
+        );
+    }
+}
+
 /// One row in a shop or confirmation panel drawn by [`shop_draws_for`].
 pub struct ShopRow<'a> {
     /// Display name for this row (item name, "Yes", "No", quantity digit, …).
@@ -1623,6 +1647,34 @@ fn nine_slice_panel_into(
         push(out, left_rem, px, y, cw, v_rem);
         push(out, right_rem, px + pw - cw, y, cw, v_rem);
     }
+}
+
+/// Compose the retail 9-slice window chrome (interior fill + border) for
+/// **any** menu window at an arbitrary `(x, y, w, h)` stage rect.
+///
+/// This is the reusable primitive shared by every faithful menu panel.
+/// All of Legaia's pause-menu windows (field menu, item list, status,
+/// equipment, spell list) are framed by the same bordered-window sprite:
+/// the 9-slice tiles of the system-UI sprite sheet at `PROT.DAT[0x018E0]`
+/// (CLUT row 2). They all pull chrome from the same [`SaveMenuAtlasRects`]
+/// the save screen already builds; the tile composition (4 corners +
+/// tiled edges + tiled interior) is identical and only the destination
+/// rect changes per window.
+///
+/// `dst_stage` is `(x, y, w, h)` in stage pixels; `stage_origin` +
+/// `stage_scale` place and upscale the stage into the surface exactly as
+/// [`save_select_chrome_draws_for`] does. Returns the border/interior
+/// [`SpriteDraw`]s only - text, cursors, and portraits are layered on top
+/// by the caller.
+pub fn menu_window_chrome_draws_for(
+    rects: &SaveMenuAtlasRects,
+    dst_stage: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let mut out = Vec::with_capacity(24);
+    nine_slice_panel_into(&mut out, rects, dst_stage, stage_origin, stage_scale);
+    out
 }
 
 /// Retail PSX framebuffer placement of the "Now checking" dialog panel.
@@ -7601,6 +7653,74 @@ mod tests {
             17,
             "must produce 17 panel chrome+interior tiles"
         );
+    }
+
+    #[test]
+    fn menu_window_chrome_frames_arbitrary_rect() {
+        // The reusable primitive must emit the 4 corners + tiled edges +
+        // tiled interior for any rect, and stay inside the requested box.
+        let rects = pinned_save_menu_rects();
+        let (px, py, pw, ph) = (40, 30, 120, 96);
+        let draws = menu_window_chrome_draws_for(&rects, (px, py, pw, ph), (0, 0), 1);
+        assert!(draws.len() >= 8, "at least interior + 4 corners + edges");
+        // Every tile must land within the requested window box.
+        for d in &draws {
+            let (dx, dy, dw, dh) = d.dst;
+            assert!(dx >= px && dy >= py, "tile before window origin");
+            assert!(
+                dx + dw as i32 <= px + pw && dy + dh as i32 <= py + ph,
+                "tile past window extent"
+            );
+        }
+        // The four corner source rects must all be present.
+        for corner in [
+            rects.panel_tl,
+            rects.panel_tr,
+            rects.panel_bl,
+            rects.panel_br,
+        ] {
+            assert!(
+                draws.iter().any(|d| d.src == corner),
+                "missing a corner tile"
+            );
+        }
+    }
+
+    #[test]
+    fn menu_window_chrome_honors_stage_origin_and_scale() {
+        let rects = pinned_save_menu_rects();
+        let base = menu_window_chrome_draws_for(&rects, (10, 10, 80, 40), (0, 0), 1);
+        let moved = menu_window_chrome_draws_for(&rects, (10, 10, 80, 40), (5, 7), 2);
+        assert_eq!(base.len(), moved.len());
+        // Top-left corner (first tile after the interior fill) must scale
+        // and translate: dst = origin + stage*scale, size = src*scale.
+        let tl_base = base.iter().find(|d| d.src == rects.panel_tl).unwrap();
+        let tl_moved = moved.iter().find(|d| d.src == rects.panel_tl).unwrap();
+        assert_eq!(tl_moved.dst.0, 5 + tl_base.dst.0 * 2);
+        assert_eq!(tl_moved.dst.1, 7 + tl_base.dst.1 * 2);
+        assert_eq!(tl_moved.dst.2, tl_base.dst.2 * 2);
+    }
+
+    #[test]
+    fn scale_stage_text_maps_stage_px_to_surface() {
+        let mut draws = vec![
+            TextDraw {
+                dst: (10, 20, 6, 12),
+                src: (0, 0, 6, 12),
+                color: [1.0; 4],
+            },
+            TextDraw {
+                dst: (0, 0, 8, 8),
+                src: (0, 0, 8, 8),
+                color: [1.0; 4],
+            },
+        ];
+        scale_stage_text_draws(&mut draws, (100, 50), 3);
+        // dst = origin + stage*scale; size = src*scale.
+        assert_eq!(draws[0].dst, (100 + 30, 50 + 60, 18, 36));
+        assert_eq!(draws[1].dst, (100, 50, 24, 24));
+        // src is untouched.
+        assert_eq!(draws[0].src, (0, 0, 6, 12));
     }
 
     #[test]

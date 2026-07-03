@@ -458,6 +458,61 @@ The same machinery drives the **`town01` opening** (a sibling partition-2 record
 
 Disc-gated coverage: `crates/engine-core/tests/opdeene_timeline_execution.rs` cold-boots `opdeene`, asserts the timeline installs with the hand-off bit clear, ticks until it sets the bit by execution, and reports the frame it armed; `crates/engine-core/tests/town01_opening_name_entry_wiring.rs` drives the `town01` opening end to end (install → camera/wait beats → name entry opens at op `0x49` → freeze → commit → resume → drop); `crates/engine-core/tests/town01_opening_timeline_trace.rs` pins the op-`0x49` site. The CI synthetic `crates/engine-core/tests/cutscene_timeline_synthetic.rs` exercises both paths (GFLAG-by-execution + safety net + idempotent completion for the hand-off timeline; op-`0x49` name-entry open / freeze / resume for the opening timeline) without disc data.
 
+### Per-actor channels - the vignette actors
+
+The "characters doing things" during the narration are **per-actor script channels**.
+Retail spawns one script context per MAN partition-1 placement record at scene entry
+(`FUN_8003A1E4`, called per record `1..N1` by the scene setup `FUN_8003AEB0`): the record
+base becomes the context's bytecode buffer (`actor[+0x90]`), its first opcode the entry PC
+(`actor[+0x9E]`), and its script id (`actor[+0x50]`) is `partition-0 count + placement index` -
+the id space the cross-context (`0x80`-bit) ops resolve through `FUN_8003C83C`.
+The opdeene timeline drives them: after the camera-configure opening it **halt-acquires**
+channels `0x05..0x0F` (a sweep of `4C 85` freezes = op `0x4C` n8 sub-5 against each target),
+then pokes them beat by beat - a `4C 45` (n4 sub-5) parameter write, a `4B` ANIMATE cue, an
+`A3`/`23` MoveTo. Each poked channel's own placement script responds by playing its animation /
+walking to its mark, then signalling completion via a context flag the timeline waits on
+(`B3 <id> <bit>` = cross-context `CFLAG_TST`).
+
+The engine mirrors this in
+[`legaia_engine_core::field_channels`](../../crates/engine-core/src/field_channels.rs):
+[`spawn_channels`](../../crates/engine-core/src/field_channels.rs) builds one
+[`FieldChannel`](../../crates/engine-core/src/field_channels.rs) per placement (with the retail
+script-id rule), spawned alongside a cutscene timeline in
+[`World::install_cutscene_timeline_record`](../../crates/engine-core/src/world.rs).
+[`World::step_field_channels`](../../crates/engine-core/src/world.rs) runs each live channel one
+frame-slice per tick (mirroring `FUN_80039B7C`'s per-actor loop: ops until a yield, a park, or a
+`0x21` NOP - the retail frame-pacing point, which is why placement idle loops are
+`21 21 26 FE FF`), and the timeline's cross-context pokes run against the resolved channel context
+(the acquirer clears the target's halt bit - the poke from the owner is the resume signal).
+Scripted moves write through to `World::field_npc_positions` so the field render + interact probes
+follow, and `0x4B` ANIMATE cues land in `World::field_npc_anim_cues` keyed by placement.
+Channels are cutscene-scoped: they drop when the timeline completes, so normal field NPC behaviour
+(the decoded-waypoint motion substitute) is untouched outside cutscenes.
+Disc-gated `crates/engine-core/tests/opdeene_field_channels.rs` cold-boots `opdeene`, asserts 13
+channels spawn with the right ids, and observes them execute + raise animate cues + take timeline
+pokes.
+
+**Approximate by design:** the channel-completion handshake (`CFLAG_TST` / the halt-acquire
+state-resume protocol) is not fully modelled - the simplified channels don't always raise the
+exact sync flag the timeline waits on, so `step_cutscene_timeline` steps past a cross-context
+flag-test wait (`0x2D`/`0x30`/`0x33`, all 2-byte / 3-byte extended, correct-width for a fixed
+step-past) rather than parking on it, keeping the timeline flowing through all its camera beats.
+Real timed `0x4A` WAIT_FRAMES and the `0x49` STATE_RESUME name-entry suspend are still honoured.
+
+### Colour fade (op `0x34` sub-0)
+
+The prologue opens on a white flash: the timeline's first op is `34 05 FF FF FF 00 00` = op
+`0x34` sub-0 (effect-global colour + intensity, `FUN_801E1FB0`). Retail clears the active fade
+when the colour is all-zero, else schedules a fade of that colour with a direction from `op0 & 1`.
+The engine ports the *setup* to [`fade::ColorFade`](../../crates/engine-core/src/fade.rs) (a
+colour + a coverage ramp; `op0 & 1` selects a reveal / fade-from-colour vs a fade-to-colour),
+driven by
+[`FieldHostImpl::op34_sub0_color_intensity_setup`](../../crates/engine-core/src/world/vm_hosts.rs)
+into `World::color_fade`, stepped per `World::tick` and drawn by `play-window` as a full-screen
+semi-transparent wash while active. **Approximate by design:** the retail fade actor's per-frame
+*draw* handler is not dumped, so the coverage curve + PSX blend mode aren't pinned - the render is
+a 50%-average (ABR 0) wash that lifts as the ramp completes, pending that dump.
+
 ## Open items
 
 - **FMV dispatch table - decoded from disc.** The play loop `FUN_801CF098` (1236 B) is reached from the selector at `0x801CECA0` (`_DAT_8007BA78 << 6 + 0x801D0A6C`), and that dispatch table is **static overlay data** now decoded straight from the disc (`legaia_asset::fmv_dispatch`): each `fmv_id`'s movie + frame range, used to seek to the right segment (`cutscene_av::fmv_segment_window`). The STR overlay (PROT 0970) is Ghidra-importable at its base, so the master-dispatch is a static decompile, no capture. Still finer-grained: the XA channel selector + the MDEC frame-demux state machine.

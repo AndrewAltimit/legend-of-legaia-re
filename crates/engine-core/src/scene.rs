@@ -1633,8 +1633,12 @@ impl SceneHost {
         self.load_scene(name)?;
         // Drop any cutscene timeline from a previous scene; only `opdeene`
         // re-installs one below, so it must not leak into the scene we hand off
-        // to (Rim Elm).
+        // to (Rim Elm). The per-actor channels are timeline-scoped and drop
+        // with it.
         self.world.cutscene_timeline = None;
+        self.world.field_channels.clear();
+        self.world.field_channels_man = None;
+        self.world.field_npc_anim_cues.clear();
         let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self
                 .scene

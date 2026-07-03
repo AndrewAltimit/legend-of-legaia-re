@@ -4306,15 +4306,22 @@ fn op_4c_n_c_sub_2_writes_field_42() {
 }
 
 #[test]
-fn op_4c_n8_sub_5_halt_acquire_writes_ctx_and_halts() {
-    let bytecode = [0x4Cu8, 0x85];
-    let mut host = TestHost::default();
+fn op_4c_n8_sub_5_halt_acquire_writes_ctx_and_advances() {
+    // Success path (default predicate = acquire): the 5-byte op
+    // `[4C, 0x85, p0, p1, p2]` halts the TARGET context and advances the
+    // CALLER past the payload (retail `iVar24 = 5` then the standard advance
+    // exit - overlay_0897_801de840.txt:6550 / overlay_world_map:7179).
+    let bytecode = [0x4Cu8, 0x85, 0x00, 0x00, 0x10];
+    let mut host = TestHost {
+        halt_acquire_predicate: true,
+        ..TestHost::default()
+    };
     let mut ctx = FieldCtx {
         wait_accum: 7,
         ..FieldCtx::default()
     };
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 5 });
     assert_eq!(ctx.saved_pc, 0);
     assert_eq!(ctx.wait_accum, 0);
     assert_eq!(ctx.flags & 0x400, 0x400);
@@ -4322,13 +4329,29 @@ fn op_4c_n8_sub_5_halt_acquire_writes_ctx_and_halts() {
 }
 
 #[test]
+fn op_4c_n8_sub_5_halt_acquire_parks_on_predicate_failure() {
+    // TestHost's predicate defaults to false → refuse: park at PC, no ctx
+    // mutation (retail `iVar24 = 0` → `LAB_801dee50`).
+    let bytecode = [0x4Cu8, 0x85, 0x00, 0x00, 0x10];
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(ctx.flags & 0x400, 0);
+    assert!(host.n8_halt_acquires.is_empty());
+}
+
+#[test]
 fn op_4c_n8_sub_e_and_f_share_halt_acquire_body() {
     for sub in [0x8Eu8, 0x8F] {
-        let bytecode = [0x4Cu8, sub];
-        let mut host = TestHost::default();
+        let bytecode = [0x4Cu8, sub, 0x00, 0x00, 0x00];
+        let mut host = TestHost {
+            halt_acquire_predicate: true,
+            ..TestHost::default()
+        };
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
         assert_eq!(host.n8_halt_acquires, vec![0u32]);
     }
 }

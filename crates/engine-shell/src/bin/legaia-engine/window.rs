@@ -1151,34 +1151,51 @@ impl PlayWindowApp {
                 )
             }
             BootUiState::FieldMenu { sub } => {
-                if let Some(active_sub) = sub {
+                use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+                // The field pause menu and its sub-screens lay glyphs out
+                // in 320x240 stage pixels. Route them through the shared
+                // boot-UI stage so they upscale + center exactly like the
+                // title art and save chrome (and stay locked to the
+                // `menu_window_chrome_draws_for` frame). The Save
+                // sub-session is the exception: it pre-scales to surface
+                // coords (it reuses the load-screen chrome stage), so it
+                // must not be scaled twice.
+                let is_save_sub = matches!(sub, Some(FieldMenuSubsession::Save(_)));
+                let mut draws = if let Some(active_sub) = sub {
                     // Render the active sub-session's overlay. Each branch
                     // builds the matching plain-data view + calls the
                     // shipped `*_draws_for` helper.
-                    return self.field_menu_sub_draws(active_sub);
-                }
-                // The menu session lives on the BootSession (the headless
-                // host of the CARD/menu mode); the window only renders it.
-                let Some(menu) = self.session.field_menu.as_ref() else {
-                    return Vec::new();
+                    self.field_menu_sub_draws(active_sub)
+                } else {
+                    // The menu session lives on the BootSession (the
+                    // headless host of the CARD/menu mode); the window
+                    // only renders it.
+                    let Some(menu) = self.session.field_menu.as_ref() else {
+                        return Vec::new();
+                    };
+                    let view = menu.view();
+                    let row_views: Vec<legaia_engine_render::FieldMenuRowView<'_>> = view
+                        .rows
+                        .iter()
+                        .map(|r| legaia_engine_render::FieldMenuRowView {
+                            label: r.label,
+                            enabled: r.enabled,
+                        })
+                        .collect();
+                    legaia_engine_render::field_menu_draws_for(
+                        &self.font,
+                        &row_views,
+                        view.cursor,
+                        view.money,
+                        view.play_time_seconds,
+                        FIELD_MENU_TEXT_PEN,
+                    )
                 };
-                let view = menu.view();
-                let row_views: Vec<legaia_engine_render::FieldMenuRowView<'_>> = view
-                    .rows
-                    .iter()
-                    .map(|r| legaia_engine_render::FieldMenuRowView {
-                        label: r.label,
-                        enabled: r.enabled,
-                    })
-                    .collect();
-                legaia_engine_render::field_menu_draws_for(
-                    &self.font,
-                    &row_views,
-                    view.cursor,
-                    view.money,
-                    view.play_time_seconds,
-                    (32, 64),
-                )
+                if !is_save_sub {
+                    let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+                    legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
+                }
+                draws
             }
             BootUiState::GameOver(s) => legaia_engine_render::game_over_draws_for(
                 &self.font,
@@ -5242,6 +5259,45 @@ impl PlayWindowApp {
         draws
     }
 
+    /// Build the 9-slice window-frame [`legaia_engine_render::SpriteDraw`]s
+    /// for the field pause menu and its sub-screens, sampling the same
+    /// resident system-UI atlas the save chrome uses.
+    ///
+    /// Retail draws each menu's bordered window as a separate pass before
+    /// the content (`FUN_801D33D8` renders content only). This reproduces
+    /// the frame via [`legaia_engine_render::menu_window_chrome_draws_for`]
+    /// at the placement-approximate stage rects in [`FIELD_MENU_WINDOW`] /
+    /// [`MENU_SUBWINDOW`]. Returns empty unless boot-UI is in a
+    /// FieldMenu state (and not the Save sub-session, which owns its own
+    /// load-screen chrome) and the atlas has been uploaded.
+    fn field_menu_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        let BootUiState::FieldMenu { sub } = &self.boot_ui else {
+            return Vec::new();
+        };
+        // The Save sub-session renders through the save-select chrome
+        // (`save_select_chrome_sprite_draws`); don't double-frame it.
+        let rect = match sub {
+            None => FIELD_MENU_WINDOW,
+            Some(FieldMenuSubsession::Save(_)) => return Vec::new(),
+            Some(_) => MENU_SUBWINDOW,
+        };
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        legaia_engine_render::menu_window_chrome_draws_for(
+            &assets.rects,
+            rect,
+            stage_origin,
+            stage_scale,
+        )
+    }
+
     /// Build the [`legaia_engine_render::SpriteDraw`] list for the
     /// title-screen quad. Composes the retail title screen by drawing
     /// per-band sub-rects of the PROT 0888 title TIM: orb + wordmark
@@ -8110,7 +8166,13 @@ impl ApplicationHandler for PlayWindowApp {
                     let logo_draw_vec = self.publisher_logo_sprite_draws(w, h);
                     let title_draw_vec = self.title_screen_sprite_draws(w, h);
                     let menu_glyph_draw_vec = self.title_menu_glyph_sprite_draws(w, h);
-                    let save_chrome_draw_vec = self.save_select_chrome_sprite_draws(w, h);
+                    // Slot-2 chrome samples the resident system-UI atlas.
+                    // Save-select pills/panel and the field-menu window
+                    // frame are mutually-exclusive boot states, so both
+                    // share this one vec (the field-menu frame draws
+                    // behind its text, which is emitted in the text layer).
+                    let mut save_chrome_draw_vec = self.save_select_chrome_sprite_draws(w, h);
+                    save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
                     let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                         atlas: &p.atlas,
                         draws: &logo_draw_vec,
@@ -8564,6 +8626,40 @@ impl ApplicationHandler for PlayWindowApp {
                             mvp: screen_fx_mvp,
                         });
                     }
+                    // Field colour fade (op 0x34 sub-0, e.g. the opening white
+                    // flash): a full-screen wash of the fade colour. The PSX
+                    // pipeline blends per-ABR-mode (no free alpha) and the
+                    // retail fade-actor draw handler isn't dumped, so this is
+                    // an approximation - a 50%-average (ABR 0) wash drawn while
+                    // the ramp still has coverage; it lifts when the fade
+                    // completes (`World::color_fade` drops). Held here so it
+                    // outlives `screen_fx_solid`'s borrow.
+                    let mut color_fade_mesh = None;
+                    if let Some(cf) = &self.session.host.world.color_fade
+                        && cf.coverage() > 0.15
+                    {
+                        let rgb = cf.rgb();
+                        let pos = vec![
+                            [0.0f32, 0.0, -0.003],
+                            [320.0, 0.0, -0.003],
+                            [0.0, 240.0, -0.003],
+                            [320.0, 240.0, -0.003],
+                        ];
+                        let colors = vec![rgb; 4];
+                        let idx = [0u32, 1, 2, 1, 3, 2];
+                        let blend =
+                            vec![legaia_engine_render::psx_blend::pack_blend_word(true, 0); 4];
+                        match r.upload_color_mesh_blended(&pos, &colors, &idx, &blend) {
+                            Ok(m) => color_fade_mesh = Some(m),
+                            Err(e) => log::warn!("color-fade wash upload: {e:#}"),
+                        }
+                    }
+                    if let Some(m) = &color_fade_mesh {
+                        color_draws.push(ColorSceneDraw {
+                            mesh: m,
+                            mvp: screen_fx_mvp,
+                        });
+                    }
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
@@ -8587,6 +8683,28 @@ impl ApplicationHandler for PlayWindowApp {
         }
     }
 }
+
+// --- Field pause-menu window geometry (320x240 boot-UI stage pixels) ---
+//
+// The field-menu text builders lay glyphs out in stage pixels; these pens
+// and window rects place them on the shared boot-UI stage, framed by
+// `menu_window_chrome_draws_for`. Position/size are placement-approximate:
+// the retail caller-supplied rect (`a0+0xa..+0x10` in `FUN_801D33D8`, see
+// docs/subsystems/field-menu.md) is not yet pinned, so these are chosen to
+// frame each screen's known content extent. The content offsets *within*
+// the frame are the engine's existing per-menu layout.
+
+/// Stage pen for the main field-menu list (title + rows + money/time).
+const FIELD_MENU_TEXT_PEN: (i32, i32) = (32, 64);
+/// 9-slice frame rect for the main field-menu list (x, y, w, h). Sized to
+/// contain the whole engine text block (title + command rows + the
+/// money/play-time footer). Retail splits the money and play-time into
+/// their own small corner boxes; a single frame is the first faithful
+/// pass until those satellite windows are pinned.
+const FIELD_MENU_WINDOW: (i32, i32, i32, i32) = (16, 52, 224, 176);
+/// 9-slice frame rect for the wide sub-screens (status / spells / items /
+/// equip / arts) - a near-fullscreen window on the 320x240 stage.
+const MENU_SUBWINDOW: (i32, i32, i32, i32) = (12, 16, 296, 212);
 
 /// The single world-space Y negation of the **field render frame**: field
 /// world state (actor positions, placement Y, the heightfield's baked

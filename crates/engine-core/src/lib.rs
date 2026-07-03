@@ -38,6 +38,7 @@ pub mod equip_session;
 pub mod equipment;
 pub mod fade;
 pub mod field_anim;
+pub mod field_channels;
 pub mod field_events;
 pub mod field_menu;
 pub mod field_menu_dispatch;
