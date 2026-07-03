@@ -2253,6 +2253,7 @@ fn field_event_tag(e: &legaia_engine_core::field_events::FieldEvent) -> &'static
         E::CounterUpdate { .. } => "CounterUpdate",
         E::EffectAnimTrigger { .. } => "EffectAnimTrigger",
         E::SceneFade { .. } => "SceneFade",
+        E::ColorFade { .. } => "ColorFade",
         E::MenuCtrl { .. } => "MenuCtrl",
         E::MenuRefresh => "MenuRefresh",
         E::MoveTo { .. } => "MoveTo",

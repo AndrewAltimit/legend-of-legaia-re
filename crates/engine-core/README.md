@@ -73,6 +73,13 @@ struct. `World::tick` runs:
      (`cutscene_timeline::CutsceneTimeline`) runs the scene MAN's partition-2
      cutscene record through the same field VM, so its camera path + actor
      moves play and the Rim Elm hand-off `GFLAG_SET 26` fires by execution.
+     Alongside the timeline, `step_field_channels` runs the scene's per-actor
+     script channels (`field_channels::FieldChannel`, one per MAN partition-1
+     placement, port of `FUN_8003A1E4`/`FUN_8003AEB0`): the vignette actors the
+     timeline halt-acquires and pokes beat by beat (animate cues into
+     `field_npc_anim_cues`, scripted moves into `field_npc_positions`). The
+     opening white flash (op `0x34` sub-0) drives `fade::ColorFade` on
+     `World::color_fade`, drawn as a full-screen wash.
      See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md).
      In `Field` the field-VM step is followed by `step_field_locomotion` - the free-movement
      player controller (port of `FUN_801d01b0`): the held d-pad becomes a

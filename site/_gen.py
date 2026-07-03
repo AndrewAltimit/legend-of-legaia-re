@@ -205,6 +205,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/world-map.html",  "World map",                     "subsystems/world-map",       "subsystems/world-map.html"),
     ("subsystems/world-overview-viewer.html","World-overview viewer", "subsystems/world-overview-viewer","subsystems/world-overview-viewer.html"),
     ("subsystems/save-screen.html","Save screen",                   "subsystems/save-screen",     "subsystems/save-screen.html"),
+    ("subsystems/field-menu.html", "Field menu (status panel)",     "subsystems/field-menu",      "subsystems/field-menu.html"),
     ("subsystems/shop.html",       "Shop",                          "subsystems/shop",            "subsystems/shop.html"),
     ("subsystems/inn.html",        "Inn",                           "subsystems/inn",             "subsystems/inn.html"),
     ("subsystems/level-up.html",   "Level-up",                      "subsystems/level-up",        "subsystems/level-up.html"),

@@ -185,6 +185,7 @@ fn first_town_drives_scene_to_field_event_emission() {
             FieldEvent::CounterUpdate { .. } => "CounterUpdate",
             FieldEvent::EffectAnimTrigger { .. } => "EffectAnimTrigger",
             FieldEvent::SceneFade { .. } => "SceneFade",
+            FieldEvent::ColorFade { .. } => "ColorFade",
             FieldEvent::MenuCtrl { .. } => "MenuCtrl",
             FieldEvent::MenuRefresh => "MenuRefresh",
             FieldEvent::MoveTo { .. } => "MoveTo",

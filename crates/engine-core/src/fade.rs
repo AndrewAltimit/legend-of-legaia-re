@@ -139,9 +139,115 @@ impl FadeState {
     }
 }
 
+/// Field-VM colour-fade overlay (op `0x34` sub-0, `FUN_801E1FB0`).
+///
+/// The field/cutscene fade path: a full-screen wash of one colour whose
+/// *coverage* ramps over a short window. Unlike [`FadeState`] (which ramps the
+/// RGB channels for the battle escape white-out), this holds a fixed colour
+/// and ramps how much of the screen it covers - the shape the opening
+/// prologue's white flash needs (`34 05 FF FF FF 00 00` = a white overlay that
+/// fades to reveal the scene).
+///
+/// ## Approximate by design
+///
+/// The retail fade actor's per-frame draw handler is not dumped, so the exact
+/// coverage curve + PSX blend mode are not pinned. This models the documented
+/// setup (`FUN_801E1FB0`: colour = operand RGB, direction from `op0 & 1`,
+/// zero-colour = clear) as a linear coverage ramp; the host draws it with a
+/// semi-transparent wash. When the draw handler is dumped this can be made
+/// byte-exact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColorFade {
+    /// Overlay colour (operand RGB).
+    pub rgb: [u8; 3],
+    /// Ramp length in frames.
+    pub frames: u16,
+    /// Frames stepped so far.
+    elapsed: u16,
+    /// When `true`, coverage ramps 1.0 → 0.0 (a fade-*from*-colour reveal, the
+    /// opening white flash); when `false`, 0.0 → 1.0 (a fade-*to*-colour).
+    pub reveal: bool,
+}
+
+impl ColorFade {
+    /// Default ramp length for a field colour fade (frames). Retail flashes
+    /// are brief; the exact count is per-op and not pinned, so this is a
+    /// reasonable opening-flash duration (~0.5 s at 60 fps).
+    pub const DEFAULT_FRAMES: u16 = 32;
+
+    /// Build a colour fade from an op-`0x34` sub-0 setup: `op0`'s low bit
+    /// selects direction (`& 1` = reveal / fade-from-colour, the opening
+    /// flash form), the RGB is the wash colour. A zero colour is *not* a fade;
+    /// callers clear the overlay instead (mirrors retail's "all colour bytes
+    /// zero → clear `_DAT_8007B62C`").
+    ///
+    /// REF: FUN_801E1FB0
+    pub fn from_op34(op0: u8, rgb: [u8; 3]) -> ColorFade {
+        ColorFade {
+            rgb,
+            frames: Self::DEFAULT_FRAMES,
+            elapsed: 0,
+            reveal: op0 & 1 != 0,
+        }
+    }
+
+    /// Advance one frame. Returns `true` while still running, `false` once the
+    /// ramp completes (the host then drops the overlay).
+    pub fn step(&mut self) -> bool {
+        if self.elapsed >= self.frames {
+            return false;
+        }
+        self.elapsed += 1;
+        self.elapsed < self.frames
+    }
+
+    /// Screen coverage in `0.0..=1.0` this frame: `reveal` ramps down from
+    /// full, otherwise up from empty.
+    pub fn coverage(&self) -> f32 {
+        let p = self.elapsed as f32 / self.frames.max(1) as f32;
+        if self.reveal { 1.0 - p } else { p }
+    }
+
+    /// The wash colour.
+    pub fn rgb(&self) -> [u8; 3] {
+        self.rgb
+    }
+
+    /// `true` once the ramp has completed.
+    pub fn finished(&self) -> bool {
+        self.elapsed >= self.frames
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn color_fade_reveal_ramps_coverage_down() {
+        // op0 = 5 (low bit set) = reveal: coverage starts full, ends empty.
+        let mut f = ColorFade::from_op34(0x05, [0xFF, 0xFF, 0xFF]);
+        assert!(f.reveal);
+        assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF]);
+        assert_eq!(f.coverage(), 1.0);
+        let mut frames = 0;
+        while f.step() {
+            frames += 1;
+        }
+        assert_eq!(frames + 1, ColorFade::DEFAULT_FRAMES as i32);
+        assert!(f.finished());
+        assert_eq!(f.coverage(), 0.0, "reveal lands fully transparent");
+    }
+
+    #[test]
+    fn color_fade_cover_ramps_coverage_up() {
+        // op0 = 4 (low bit clear) = fade-to-colour.
+        let mut f = ColorFade::from_op34(0x04, [0, 0, 0]);
+        assert!(!f.reveal);
+        assert_eq!(f.coverage(), 0.0);
+        while f.step() {}
+        assert_eq!(f.coverage(), 1.0, "cover lands fully opaque");
+    }
 
     #[test]
     fn loader_matches_the_retail_fixed_point_layout() {

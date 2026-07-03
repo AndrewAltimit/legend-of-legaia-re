@@ -10,17 +10,20 @@
 use legaia_engine_core::cutscene_timeline::CutsceneTimeline;
 use legaia_engine_core::world::{PROLOGUE_HANDOFF_FLAG, SceneMode, World};
 
-/// A timeline ending in `GFLAG_SET 26` sets the hand-off bit by execution in a
-/// single tick, then reports complete.
+/// A timeline executing `GFLAG_SET 26` sets the hand-off bit by execution but
+/// KEEPS RUNNING - the real `opdeene` record arms the bit near its top
+/// (`+0x17`) and then stages the vignette choreography, so "bit armed" must
+/// not complete the timeline. It completes when the record reaches a terminal
+/// state (here: running off the end).
 #[test]
 fn timeline_fires_handoff_bit_by_execution() {
     let mut w = World {
         mode: SceneMode::Field,
         ..World::default()
     };
-    // `[GFLAG_SET 26]` = op 0x2E operand 0x1A (bit 26), then a YIELD so the
-    // run-until-yield loop ends cleanly on the same frame. `arming_prologue_handoff`
-    // marks this an opdeene-style timeline whose terminal is `GFLAG_SET 26`.
+    // `[GFLAG_SET 26][YIELD]` = op 0x2E operand 0x1A (bit 26), then a YIELD
+    // ending the first frame slice. `arming_prologue_handoff` marks this an
+    // opdeene-style timeline.
     w.cutscene_timeline =
         Some(CutsceneTimeline::new(vec![0x2E, 0x1A, 0x37], 0).arming_prologue_handoff());
     assert!(w.cutscene_timeline_active());
@@ -33,11 +36,20 @@ fn timeline_fires_handoff_bit_by_execution() {
         "executing GFLAG_SET 26 arms the hand-off bit"
     );
     assert!(
-        !w.cutscene_timeline_active(),
-        "the timeline completes once it sets the hand-off bit"
+        w.cutscene_timeline_active(),
+        "the timeline KEEPS RUNNING after arming the bit (the record stages \
+         the vignettes after its top-of-record GFLAG_SET)"
     );
     // The actor-allocator guard is inactive once stepping has finished.
     assert!(!w.in_cutscene_timeline);
+
+    // The next tick resumes past the YIELD, runs off the record end, and
+    // completes.
+    let _ = w.tick();
+    assert!(
+        !w.cutscene_timeline_active(),
+        "the timeline completes when the record reaches a terminal state"
+    );
 }
 
 /// A timeline that can never reach its closing op (it holds on an
@@ -81,6 +93,9 @@ fn completed_timeline_is_idempotent() {
     };
     w.cutscene_timeline =
         Some(CutsceneTimeline::new(vec![0x2E, 0x1A, 0x37], 0).arming_prologue_handoff());
+    // Tick 1 arms the bit + yields; tick 2 runs off the record end and
+    // completes.
+    let _ = w.tick();
     let _ = w.tick();
     assert!(!w.cutscene_timeline_active());
 

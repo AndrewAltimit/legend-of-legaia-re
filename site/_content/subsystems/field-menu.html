@@ -1,0 +1,46 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field menu</div>
+  <h1>Field Menu - Status Panel</h1>
+  <p class="lede"><code>FUN_801D33D8</code> renders one party member's <strong>status / party panel</strong> - the page the field pause menu opens for its Status, Magic, Moves, and Skills tabs. It draws window <em>contents</em> only; the bordered 9-slice frame is emitted by the caller. Every position is an offset from the caller-supplied window origin (<code>WX = *(i16*)(a0+0xa)</code>, <code>WY = *(i16*)(a0+0xc)</code>). It lives in the menu overlay (base <code>0x801CE818</code>).</p>
+</header>
+
+<section class="doc-section" id="plumbing">
+  <h2>Plumbing</h2>
+  <p>The highlighted member index is <code>uVar1 = *(u8*)(0x80084598 + (DAT_801e46c4 &amp; 0xfff))</code>; its live record is <code>0x80084708 + uVar1*0x414</code> (the <code>0x414</code>-stride party record array). <code>s8</code> is a running Y cursor advanced down the page (<code>+0x13</code> after the header, then <code>+0x2f / +0x2b / +0x38</code> between status sub-blocks); <code>s7</code> resets to <code>WX</code> or <code>WX+0x10</code> per block.</p>
+</section>
+
+<section class="doc-section" id="submenu-dispatch">
+  <h2>Submenu dispatch</h2>
+  <p>The page is chosen by <code>id = DAT_801e46c0 &amp; 0xfff</code>, folded <code>if id&ge;6 { id-=5 }</code> to 0..5 (raw ids 6..10 alias onto 1..5).</p>
+  <table>
+    <thead><tr><th>id</th><th>page</th></tr></thead>
+    <tbody>
+      <tr><td>0 or 5</td><td>full status (name + LV + HP/MP + 6 stats + 7 equip slots + XP)</td></tr>
+      <tr><td>1</td><td>skills / accessory-passive list</td></tr>
+      <tr><td>2</td><td>magic list</td></tr>
+      <tr><td>3</td><td>moves / arts list</td></tr>
+      <tr><td>4</td><td>header only</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="status-layout">
+  <h2>Status page layout</h2>
+  <p>Offsets relative to <code>(WX, WY)</code>. Header row at <code>Y=0</code>: name (<code>+8</code>), "LV" label (<code>+0x50</code>), LV value (<code>+0x60</code>) from record <code>+0x130</code>. HP row at <code>Y+0x13</code> and MP row at <code>Y+0x20</code> each place current / max / base at <code>X+0x30 / +0x58 / +0x84</code> (HP = record <code>+0x106/+0x104/+0x11c</code>, MP = <code>+0x10a/+0x108/+0x11e</code>). HP gauge at <code>(X+0x40, Y+0x2d)</code>. Six growth stats in a 3x2 grid at rows <code>Y+0x42 / +0x4f / +0x5c</code> (left col label <code>X+0</code>, right col label <code>X+0x74</code>). Seven equipment slots start at <code>Y+0x6d</code> (icon <code>X+0</code>, name <code>X+0x10</code>; slots 4..6 in a right column at <code>X+0x6a/+0x7a</code>). Experience at <code>Y+0xa5</code>, Next Level at <code>Y+0xb2</code> (values at <code>X+0x78</code>).</p>
+</section>
+
+<section class="doc-section" id="primitives">
+  <h2>Draw primitives + CLUT staging</h2>
+  <p>Three shared primitives render everything: <code>FUN_80036888</code> (proportional string; MES control tokens <code>0x7c/0xce/0xcf</code>), <code>FUN_8002c488</code> (one UI-icon sprite, UV/CLUT from a 12-byte-stride table at <code>0x800732a4</code>), and <code>FUN_80034b78</code> (decimal digits vs the powers-of-ten table at <code>0x80073dcc</code>). The palette-staging global <code>DAT_8007b454</code> (in-primitive CLUT = <code>index + 0x7f86</code>) is read <strong>only</strong> by the string primitive; icon and number primitives carry their own CLUT, so a write before an icon/number draw is really staging the next string's palette. Values seen: 7 (text), 5 (separators), 6 (magic header / skill labels), 9 (moves header), 4 (skill passives), 1 (command label), 0 (unselected rows).</p>
+</section>
+
+<section class="doc-section" id="record-fields">
+  <h2>Record fields consumed</h2>
+  <p>Into the <code>0x414</code>-stride live record: experience <code>+0x0</code>, next-level threshold <code>+0x4</code>, HP <code>+0x104/+0x106/+0x11c</code>, MP <code>+0x108/+0x10a/+0x11e</code>, HP-bar <code>+0x10e</code>, growth stats <code>+0x122..+0x12c</code>, displayed level <code>+0x130</code>, spells <code>+0x13c/+0x13d/+0x161</code>, equipped ids <code>+0x196..</code>, name <code>+0x2A7</code>. External tables: item names <code>0x8007436c</code>, spell names <code>0x800754d0</code>, equipment stats <code>0x80074f68</code>, accessory passives <code>0x8007625c</code>, arts <code>0x80075ec4</code>.</p>
+</section>
+
+<section class="doc-section" id="engine-port">
+  <h2>Engine port</h2>
+  <p>The clean-room engine renders this panel through <code>engine-render::status_screen_draws_for</code>, framed by the reusable 9-slice primitive <code>engine-render::menu_window_chrome_draws_for</code> and placed on the shared 320x240 boot-UI stage via <code>engine-render::scale_stage_text_draws</code>.</p>
+  <p class="see-also">See also: <a href="save-screen.html">save screen</a> &middot; <a href="../formats/new-game-table.html">new-game table</a> &middot; <a href="../formats/spell-table.html">spell table</a> &middot; <a href="../formats/item-table.html">item table</a></p>
+</section>

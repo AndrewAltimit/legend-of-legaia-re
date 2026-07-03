@@ -187,10 +187,25 @@ with 8 px stride; popups sit at slot_y - 16 (heal = green, crit =
 yellow, plain damage = cyan); fade alpha multiplies into the text
 colour's alpha channel.
 
+## Menu chrome
+
+`menu_window_chrome_draws_for(rects, dst_rect, origin, scale)` is the
+reusable 9-slice bordered-window primitive shared by every faithful menu
+panel. It composes the interior fill + border of an arbitrary
+`(x, y, w, h)` stage rect from the resident system-UI atlas tiles
+(`SaveMenuAtlasRects`, the same `PROT.DAT[0x018E0]` sprite sheet the save
+screen builds). `scale_stage_text_draws(draws, origin, scale)` is its text
+companion: it maps a menu's glyphs, laid out in 320×240 stage pixels, into
+surface coordinates so text and frame stay locked at any window size. The
+field pause menu and its sub-screens (status / spells / items / equip /
+arts) route through both, framed by the play-window at the placement rects
+documented in [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md).
+
 ## Future phases
 
 Batched draws and reverse-engineered TSB / CBA per-mode descriptor
-overrides are deferred.
+overrides are deferred. The per-menu content offsets can be tightened to
+the byte-pinned `FUN_801D33D8` layout (see field-menu.md) as a refinement.
 
 ## See also
 

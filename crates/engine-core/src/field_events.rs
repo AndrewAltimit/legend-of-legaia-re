@@ -88,6 +88,10 @@ pub enum FieldEvent {
     /// applied. `op0_word` / `op1_word` are the raw 16-bit operands so
     /// engines can re-decode mode bits.
     SceneFade { op0_word: u16, op1_word: u16 },
+    /// Field-VM op 0x34 sub-0 (effect-global colour fade, `FUN_801E1FB0`).
+    /// `op0`'s low bit selects direction; `rgb` is the wash colour (all-zero
+    /// clears the active fade).
+    ColorFade { op0: u8, rgb: [u8; 3] },
     /// Menu-control op 0x4C sub-1.
     MenuCtrl { op0: u8, payload: [u8; 5] },
     /// Menu-refresh op (any sub-op that requested a reload).
@@ -252,6 +256,9 @@ impl FieldEvent {
             FieldEvent::SceneFade { op0_word, op1_word } => {
                 format!("SceneFade(op0={op0_word:#x}, op1={op1_word:#x})")
             }
+            FieldEvent::ColorFade { op0, rgb } => {
+                format!("ColorFade(op0={op0:#x}, rgb={rgb:?})")
+            }
             FieldEvent::MenuCtrl { op0, payload } => {
                 format!("MenuCtrl(op0={op0}, payload={:?})", payload)
             }
@@ -360,6 +367,10 @@ mod tests {
             FieldEvent::SceneFade {
                 op0_word: 0,
                 op1_word: 0,
+            },
+            FieldEvent::ColorFade {
+                op0: 0,
+                rgb: [0, 0, 0],
             },
             FieldEvent::MenuCtrl {
                 op0: 0,

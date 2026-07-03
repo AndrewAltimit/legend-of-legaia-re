@@ -878,6 +878,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn setup_animation(&mut self, _ctx: &mut FieldCtx, count: u8, base_id: u8, frames: &[u8]) {
+        // A per-actor channel script animating its own NPC (op `0x4B`
+        // ANIMATE): retail installs the sequence `base_id + k` into the
+        // actor's anim-slot array (`+0xB0`, `FUN_801DE840` case 0x4B) with two
+        // u16 params per entry. Raise a cue keyed by the placement so the
+        // windowed host re-targets that NPC's clip player.
+        if let Some(placement) = self.world.executing_channel {
+            self.world
+                .field_npc_anim_cues
+                .insert(placement, (count, base_id, frames.to_vec()));
+        }
         self.world
             .pending_field_events
             .push(FieldEvent::SetupAnimation {
@@ -935,6 +945,22 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .pending_field_events
             .push(FieldEvent::SceneFade { op0_word, op1_word });
         SceneFadeResult::Done
+    }
+
+    fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], _intensity: i16) {
+        // Op 0x34 sub-0 = the effect-global colour fade (`FUN_801E1FB0`). Retail
+        // clears the active fade when all three colour bytes are zero, else
+        // schedules a fade of that colour. The opening prologue's white flash
+        // (`34 05 FF FF FF 00 00`) reaches here; drive the field colour-fade
+        // overlay so the host can draw it.
+        if rgb == [0, 0, 0] {
+            self.world.color_fade = None;
+        } else {
+            self.world.color_fade = Some(crate::fade::ColorFade::from_op34(op0, rgb));
+        }
+        self.world
+            .pending_field_events
+            .push(FieldEvent::ColorFade { op0, rgb });
     }
 
     fn effect_anim_trigger(&mut self, _ctx: &mut FieldCtx, arg: u8) {

@@ -321,11 +321,24 @@ pub const PROLOGUE_HANDOFF_BIT: u32 = 26;
 /// waits well within this.
 const CUTSCENE_TIMELINE_STEP_BUDGET: u32 = 256;
 
-/// Frame cap for the opening-cutscene timeline. If the spawned context never
-/// reaches its closing `GFLAG_SET 26` within this many frames (≈20 s at 60 fps,
-/// generous for the opening's camera path), the engine forces it complete and
-/// arms the hand-off statically so the prologue can't stall.
+/// Frame cap for a cutscene timeline that must return control (the `town01`
+/// opening). If the spawned context never reaches its terminal within this
+/// many frames (≈20 s at 60 fps), the engine forces it complete.
 const CUTSCENE_TIMELINE_MAX_FRAMES: u32 = 1200;
+
+/// Frame cap for the `opdeene` prologue timeline. The record arms the
+/// hand-off bit near its TOP (`GFLAG_SET 26` at body `+0x17`) and then plays
+/// the whole vignette choreography - camera beats, actor-channel pokes,
+/// waits - for the narration's duration, so it must NOT complete on the bit;
+/// it runs until the record reaches a terminal state, the player confirms the
+/// hand-off (the scene change drops it), or this generous cap (≈60 s).
+const PROLOGUE_TIMELINE_MAX_FRAMES: u32 = 3600;
+
+/// Per-frame, per-channel field-VM step budget for the spawned per-actor
+/// channels ([`World::step_field_channels`]). Retail slices end at a yield /
+/// park / `0x21` NOP, normally within a handful of ops; the budget bounds a
+/// malformed non-yielding stretch.
+const FIELD_CHANNEL_STEP_BUDGET: u32 = 128;
 
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
@@ -1173,6 +1186,15 @@ pub struct World {
     /// [`World::tick`]; dropped when the ramp completes. Hosts draw an
     /// overlay from [`crate::fade::FadeState::rgb`] while this is `Some`.
     pub screen_fade: Option<crate::fade::FadeState>,
+
+    /// Active field-VM colour-fade overlay (op `0x34` sub-0, the effect-global
+    /// colour + intensity setup `FUN_801E1FB0`). The opening prologue's white
+    /// flash (`34 05 FF FF FF 00 00`) sets this; hosts draw a full-screen wash
+    /// of [`crate::fade::ColorFade::rgb`] at [`crate::fade::ColorFade::coverage`]
+    /// while it is `Some`. Stepped once per [`World::tick`]; dropped when the
+    /// ramp completes. Distinct from [`Self::screen_fade`] (the battle escape
+    /// RGB ramp) - this is the field/cutscene fade path.
+    pub color_fade: Option<crate::fade::ColorFade>,
 
     /// Persistent per-character roster - populated by [`World::load_party`]
     /// and written back by [`World::save_party`]. Each record is the
@@ -2318,6 +2340,31 @@ pub struct World {
     /// [`Self::cutscene_narration`] presenter owns - not an actor spawn.
     pub in_cutscene_timeline: bool,
 
+    /// Per-actor field-VM channels: one spawned context per MAN partition-1
+    /// placement record, mirroring the retail per-record spawn
+    /// (`FUN_8003A1E4`). Spawned alongside a cutscene timeline
+    /// ([`Self::install_cutscene_timeline_record`]) so the timeline's
+    /// cross-context pokes (flag writes, animate cues, moves) land on real
+    /// per-actor contexts - the opening prologue's vignette mechanism.
+    /// Stepped run-until-yield per frame by [`Self::step_field_channels`].
+    pub field_channels: Vec<crate::field_channels::FieldChannel>,
+
+    /// The MAN payload the channels' bytecode slices from (each channel's
+    /// buffer base is its `record_offset` into this).
+    pub field_channels_man: Option<std::sync::Arc<Vec<u8>>>,
+
+    /// Placement index of the channel context currently executing (its own
+    /// slice in [`Self::step_field_channels`], or the target of a
+    /// cross-context poke from the cutscene timeline), so field-VM host hooks
+    /// (animate, move) can attribute the side-effect to that placement's NPC.
+    /// `None` outside a channel-targeted step.
+    pub executing_channel: Option<u8>,
+
+    /// Animation cues raised by channel scripts (op `0x4B` ANIMATE):
+    /// `placement_index -> (count, base_id, keyframe bytes)`. The windowed
+    /// host drains these each frame and re-targets the NPC's clip player.
+    pub field_npc_anim_cues: std::collections::HashMap<u8, (u8, u8, Vec<u8>)>,
+
     /// Set when the `town01` opening cutscene timeline is installed via the
     /// new-game prologue hand-off. While set, the timeline's first op-`0x49`
     /// STATE_RESUME (the pinned name-entry handoff at P2[3] body `0x02c6`) opens
@@ -2584,6 +2631,7 @@ impl World {
             active_party: Vec::new(),
             battle_end: None,
             screen_fade: None,
+            color_fade: None,
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_named_scene_transition: None,
@@ -2738,6 +2786,10 @@ impl World {
             cutscene_timeline: None,
             inline_dialogue: None,
             in_cutscene_timeline: false,
+            field_channels: Vec::new(),
+            field_channels_man: None,
+            executing_channel: None,
+            field_npc_anim_cues: std::collections::HashMap::new(),
             prologue_naming_pending: false,
             prologue_naming_armed: false,
             entering_town01_opening: false,
@@ -3117,6 +3169,12 @@ impl World {
             tl = tl.with_trace();
         }
         self.cutscene_timeline = Some(tl);
+        // Spawn the per-actor channels (one per partition-1 placement,
+        // retail `FUN_8003AEB0`'s spawn loop) so the timeline's cross-context
+        // pokes land on real per-actor contexts - the vignette mechanism.
+        self.field_channels = crate::field_channels::spawn_channels(man_file, man);
+        self.field_channels_man = Some(std::sync::Arc::new(man.to_vec()));
+        self.field_npc_anim_cues.clear();
         true
     }
 
@@ -3171,6 +3229,11 @@ impl World {
         }
         tl.frames = tl.frames.saturating_add(1);
         self.in_cutscene_timeline = true;
+        let mut channels = std::mem::take(&mut self.field_channels);
+        let channel_pre_pos: Vec<(u16, u16)> = channels
+            .iter()
+            .map(|c| (c.ctx.world_x, c.ctx.world_z))
+            .collect();
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
@@ -3178,7 +3241,38 @@ impl World {
                 budget -= 1;
                 let pc = tl.pc;
                 let opcode_byte = tl.bytecode.get(pc).copied().unwrap_or(0);
-                let result = vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, pc);
+                // Cross-context dispatch (`0x80`-bit ops): resolve the target
+                // byte to a spawned per-actor channel (`ctx[+0x50] == target`,
+                // retail `FUN_8003C83C`) and run the op against THAT context -
+                // this is how the timeline cues the vignette actors. `0xF8`
+                // (player anchor) / `0xFB` (system) / unmatched ids keep the
+                // timeline's own context, the prior approximation.
+                let target = vm::field::peek_extended(&tl.bytecode, pc).and_then(|t| {
+                    crate::field_channels::resolve_target(&channels, t).map(|ci| (t, ci))
+                });
+                let result = if let Some((_, ci)) = target {
+                    host.world.executing_channel = Some(channels[ci].placement_index as u8);
+                    // The timeline is the acquirer: it halt-acquired these
+                    // channels earlier (the `4C 85` freeze sweep) and now
+                    // drives them beat by beat. A poke from the owner is the
+                    // resume signal, so clear the target's halt bit before the
+                    // op runs - otherwise the dispatcher prelude parks the
+                    // caller on its own frozen actor and the camera beats
+                    // after the sweep never play.
+                    channels[ci].ctx.flags &= !0x400;
+                    let r = vm::field::step_with_caller(
+                        &mut host,
+                        &mut channels[ci].ctx,
+                        &mut tl.ctx,
+                        false,
+                        &tl.bytecode,
+                        pc,
+                    );
+                    host.world.executing_channel = None;
+                    r
+                } else {
+                    vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, pc)
+                };
                 let (mut next_pc, kind, mut stop) = match result {
                     FieldStepResult::Advance { next_pc } => (
                         next_pc,
@@ -3205,20 +3299,30 @@ impl World {
                     }
                 };
                 // Step past the timeline's conditional-wait parks. Retail Halts
-                // at PC on a handshake the engine doesn't model - a flag a
-                // spawned sub-context sets (`0x2D`/`0x30` flag-test, `0x4C`
-                // nibble-C `script_alloc` / globals-gate) - so advancing by the
-                // op's encoded width (these read one operand byte,
+                // at PC on a handshake the engine doesn't fully model - a flag
+                // a spawned sub-context sets - so advancing by the op's encoded
+                // width (these flag-tests read one operand byte,
                 // `header_size + 1`) keeps the timeline flowing toward its
-                // camera / move / STATE_RESUME ops. Two parks are kept:
-                // `0x4A` WAIT_FRAMES (a real timed wait that plays out over
-                // frames via the wait accumulator) and `0x49` STATE_RESUME (the
-                // name-entry suspend, driven by the op-49 host hooks).
+                // camera / move / STATE_RESUME ops. The handshake ops are the
+                // flag-tests `0x2D` (LFLAG), `0x30` (GFLAG), `0x33` (CFLAG) and
+                // the `0x4C` nibble-C `script_alloc` / globals-gate - all
+                // 2-byte (3 extended), so a fixed step-past is correct-width
+                // for them, INCLUDING their cross-context (`0x80`-bit) forms
+                // (e.g. `B3 <id> <bit>` = the timeline waiting on a vignette
+                // channel's completion flag). Other cross-context ops (the
+                // `4C`/`23` action pokes) are NOT stepped past - they run
+                // against the target and advance by their real width. Two
+                // parks are kept: `0x4A` WAIT_FRAMES (a real timed wait that
+                // plays out via the wait accumulator) and `0x49` STATE_RESUME
+                // (the name-entry suspend, driven by the op-49 host hooks).
                 let op = opcode_byte & 0x7F;
+                let is_flag_test_handshake =
+                    matches!(op, 0x2D | 0x30 | 0x33) || (op == 0x4C && target.is_none());
                 if matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
                     && next_pc == pc
                     && op != 0x4A
                     && op != 0x49
+                    && (target.is_none() || is_flag_test_handshake)
                 {
                     let header_size = if opcode_byte & 0x80 != 0 { 2 } else { 1 };
                     next_pc = pc + header_size + 1;
@@ -3246,18 +3350,36 @@ impl World {
                 }
             }
         }
+        // Timeline pokes that moved a channel context (cross-context MoveTo)
+        // write through to the field NPC render/probe state.
+        for (c, pre) in channels.iter().zip(channel_pre_pos) {
+            if (c.ctx.world_x, c.ctx.world_z) != pre {
+                self.field_npc_positions.insert(
+                    c.placement_index as u8,
+                    (c.ctx.world_x as i16, c.ctx.world_z as i16),
+                );
+            }
+        }
+        self.field_channels = channels;
         self.in_cutscene_timeline = false;
-        // Frame cap: real disc bytecode must never hang the tick.
-        if tl.frames >= CUTSCENE_TIMELINE_MAX_FRAMES {
+        // Frame cap: real disc bytecode must never hang the tick. The opdeene
+        // prologue gets the generous cap - its record arms the hand-off bit
+        // at its TOP (`GFLAG_SET 26` at body `+0x17`) and then STAGES the
+        // vignettes for the narration's duration, so "bit armed" must not
+        // complete it (that early-out silently dropped the whole vignette
+        // choreography - camera beats, actor-channel pokes - after two ops).
+        let cap = if tl.arms_prologue_handoff {
+            PROLOGUE_TIMELINE_MAX_FRAMES
+        } else {
+            CUTSCENE_TIMELINE_MAX_FRAMES
+        };
+        if tl.frames >= cap {
             tl.done = true;
         }
         if tl.arms_prologue_handoff {
-            // opdeene prologue: the record ends with `GFLAG_SET 26`. Complete on
-            // that bit; if execution can't reach it within the cap, arm the
-            // hand-off statically as a safety net so the prologue can't stall.
-            if self.story_flags & PROLOGUE_HANDOFF_FLAG != 0 {
-                tl.done = true;
-            }
+            // Safety net: if the record terminated without executing its
+            // `GFLAG_SET 26`, arm the hand-off statically so the prologue
+            // can't stall.
             if tl.done && self.story_flags & PROLOGUE_HANDOFF_FLAG == 0 {
                 self.arm_prologue_handoff();
             }
@@ -3269,6 +3391,152 @@ impl World {
         } else {
             self.cutscene_timeline = Some(tl);
         }
+    }
+
+    /// Step every live per-actor field-VM channel one frame slice.
+    ///
+    /// Mirrors the retail per-actor script ticker (`FUN_80039B7C`, the
+    /// `+0x9C == 0` branch): each context runs ops until it yields, parks on
+    /// a conditional hold, **or executes a `0x21` NOP** - the NOP is the
+    /// per-frame pacing point in retail (`if (bVar1 == 0x21) break`), which is
+    /// why placement idle loops are written `21 21 26 FE FF`. A parked channel
+    /// (flag-test `Halt`) retries the same PC next frame; a cross-context poke
+    /// (an extended op naming another channel's script id) resolves the target
+    /// context and runs against it, parking the caller if the target is
+    /// halted - the retail synchronisation primitive between the cutscene
+    /// timeline and its vignette actors.
+    ///
+    /// Channels are cutscene-scoped: they spawn with a cutscene timeline
+    /// ([`Self::install_cutscene_timeline_record`]) and drop when it
+    /// completes, so normal field NPC behaviour (waypoint motion) is
+    /// untouched outside cutscenes.
+    ///
+    /// After stepping, each channel whose context position changed writes
+    /// through to [`Self::field_npc_positions`] so the field render / probes
+    /// follow the scripted move.
+    // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
+    // REF: FUN_8003C83C (cross-context target resolve)
+    pub fn step_field_channels(&mut self) {
+        if self.field_channels.is_empty() {
+            return;
+        }
+        if !self.cutscene_timeline_active() {
+            self.field_channels.clear();
+            self.field_channels_man = None;
+            return;
+        }
+        let Some(man) = self.field_channels_man.clone() else {
+            return;
+        };
+        let mut channels = std::mem::take(&mut self.field_channels);
+        let pre_pos: Vec<(u16, u16)> = channels
+            .iter()
+            .map(|c| (c.ctx.world_x, c.ctx.world_z))
+            .collect();
+        for i in 0..channels.len() {
+            if channels[i].done {
+                continue;
+            }
+            if man.len() <= channels[i].record_offset {
+                channels[i].done = true;
+                continue;
+            }
+            // A halted channel is SUSPENDED - the halt bit persists until an
+            // explicit un-halt (the op-0x32 CFLAG_CLR bit-10 carve-out, the
+            // one cross-context op allowed against a halted target). This is
+            // the timeline's freeze/unfreeze choreography primitive: a
+            // `4C 85` halt-acquire suspends the actor, `B3 <id> 0A` verifies
+            // the suspension, `B2 <id> 0A` resumes it for its next beat.
+            // (Autonomous frame pacing uses the `0x21` NOP break instead of
+            // yields, so suspension never races normal idling.)
+            if channels[i].ctx.is_halted() {
+                continue;
+            }
+            let mut budget = FIELD_CHANNEL_STEP_BUDGET;
+            while budget > 0 {
+                budget -= 1;
+                let pc = channels[i].pc;
+                let record_offset = channels[i].record_offset;
+                let bc = &man[record_offset..];
+                let Some(&opcode_byte) = bc.get(pc) else {
+                    channels[i].done = true;
+                    break;
+                };
+                // Cross-context poke: resolve the extended target to another
+                // channel and run the op against that context.
+                let target = vm::field::peek_extended(bc, pc).and_then(|t| {
+                    let ci = crate::field_channels::resolve_target(&channels, t)?;
+                    (ci != i).then_some(ci)
+                });
+                self.executing_channel = Some(match target {
+                    Some(ci) => channels[ci].placement_index as u8,
+                    None => channels[i].placement_index as u8,
+                });
+                let result = {
+                    let mut host = FieldHostImpl { world: self };
+                    match target {
+                        Some(ci) => {
+                            // Two disjoint &mut contexts out of the vec.
+                            let (lo, hi) = channels.split_at_mut(i.max(ci));
+                            let (target_ctx, caller_ctx) = if ci < i {
+                                (&mut lo[ci].ctx, &mut hi[0].ctx)
+                            } else {
+                                (&mut hi[0].ctx, &mut lo[i].ctx)
+                            };
+                            let bc = &man[record_offset..];
+                            vm::field::step_with_caller(
+                                &mut host, target_ctx, caller_ctx, false, bc, pc,
+                            )
+                        }
+                        None => {
+                            let bc = &man[record_offset..];
+                            vm::field::step(&mut host, &mut channels[i].ctx, bc, pc)
+                        }
+                    }
+                };
+                self.executing_channel = None;
+                match result {
+                    FieldStepResult::Advance { next_pc } => {
+                        let stalled = next_pc == pc;
+                        channels[i].pc = next_pc;
+                        // Retail frame-slice pacing: a NOP ends the slice
+                        // after executing (FUN_80039B7C `bVar1 == 0x21`), and
+                        // a non-advancing PC ends it defensively.
+                        if opcode_byte & 0x7F == 0x21 || stalled {
+                            break;
+                        }
+                    }
+                    FieldStepResult::Yield { resume_pc } => {
+                        channels[i].pc = resume_pc;
+                        break;
+                    }
+                    FieldStepResult::Halt { final_pc } => {
+                        // Parked (conditional hold / halted cross-target):
+                        // retry the same PC next frame.
+                        channels[i].pc = final_pc;
+                        break;
+                    }
+                    FieldStepResult::Pending { pc, .. } | FieldStepResult::Unknown { pc, .. } => {
+                        // An op this port can't advance past inside a channel
+                        // script: retire the channel (it stays resolvable as a
+                        // cross-context target).
+                        channels[i].pc = pc;
+                        channels[i].done = true;
+                        break;
+                    }
+                }
+            }
+        }
+        // Write scripted moves through to the field NPC render/probe state.
+        for (c, pre) in channels.iter().zip(pre_pos) {
+            if (c.ctx.world_x, c.ctx.world_z) != pre {
+                self.field_npc_positions.insert(
+                    c.placement_index as u8,
+                    (c.ctx.world_x as i16, c.ctx.world_z as i16),
+                );
+            }
+        }
+        self.field_channels = channels;
     }
 
     /// Begin running an inline interaction script through the field VM (the
@@ -5668,6 +5936,13 @@ impl World {
         {
             self.screen_fade = None;
         }
+        // Step the field-VM colour fade (op 0x34 sub-0, e.g. the opening white
+        // flash); drop it when the ramp completes.
+        if let Some(fade) = &mut self.color_fade
+            && !fade.step()
+        {
+            self.color_fade = None;
+        }
         // Consume a pending FMV transition the field VM signalled last frame
         // (op `0x4C 0xE2`). Retail's main mode dispatcher reads the
         // next-game-mode global one frame after the op writes it, so the flip
@@ -5735,6 +6010,11 @@ impl World {
                 // script's 0x4C dialog poll or the interaction probe.
                 self.dialog_input_consumed = false;
                 self.step_cutscene_timeline();
+                // Per-actor script channels (spawned with a cutscene
+                // timeline): each vignette actor's own placement script runs
+                // its frame slice - animate cues, scripted moves, flag
+                // handshakes with the timeline.
+                self.step_field_channels();
                 self.step_field();
                 // Field-NPC walk legs (autonomous patrol routes + scripted
                 // interaction-prologue runs) - one motion-VM step per frame,
@@ -5774,6 +6054,7 @@ impl World {
                 // drives playback, calling [`finish_cutscene`] when it ends.
                 if self.active_fmv.is_none() {
                     self.step_cutscene_timeline();
+                    self.step_field_channels();
                     self.step_field();
                     self.tick_screen_fx();
                 }
@@ -8542,6 +8823,13 @@ impl World {
     ///
     /// REF: FUN_8003774C, FUN_8003c9ac
     fn tick_field_npc_motions(&mut self) {
+        // A running cutscene timeline owns the stage: its per-actor channels
+        // ([`Self::step_field_channels`]) drive NPC moves, so the engine's
+        // autonomous waypoint substitute stands down (it would overwrite the
+        // scripted positions each frame).
+        if self.cutscene_timeline_active() {
+            return;
+        }
         let dialogue_up = self.current_dialog.is_some() || self.inline_dialogue.is_some();
         // Kick autonomous legs for routed NPCs with no in-flight motion.
         if self.animate_field_npcs && !dialogue_up {
