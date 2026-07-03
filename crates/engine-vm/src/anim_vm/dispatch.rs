@@ -1,3 +1,5 @@
+//! Actor-record anim field offsets and the per-actor anim-driver dispatch-byte enum (`FUN_80021DF4` opcode ladder).
+
 use legaia_anm::RecordHeader;
 
 /// Maximum actor pool size - matches the retail per-scene actor count

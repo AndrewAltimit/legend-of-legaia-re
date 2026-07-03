@@ -1,3 +1,5 @@
+//! Magic / item cast band of the battle-action state machine.
+
 use super::*;
 
 // --- magic / item band ------------------------------------------------------

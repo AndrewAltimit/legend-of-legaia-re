@@ -1,3 +1,5 @@
+//! Per-actor animation slot pool: keyframe playback via `AnimPlayer` plus opaque-record frame stepping.
+
 use super::*;
 use legaia_anm::{AnimPlayer, PoseFrame};
 

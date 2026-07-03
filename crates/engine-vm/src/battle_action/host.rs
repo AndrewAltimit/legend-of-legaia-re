@@ -1,3 +1,5 @@
+//! `BattleActionHost` trait: the engine-side callbacks the battle-action state machine dispatches into.
+
 use super::*;
 
 /// Engine-side callbacks the battle action state machine dispatches into.

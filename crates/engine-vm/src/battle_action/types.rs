@@ -1,3 +1,5 @@
+//! Core battle-action types: actor slots, action categories/states, poses, and the per-actor `BattleActor` / `BattleActionCtx` state structs.
+
 /// Number of battle actor pointer-table slots (`0x801C9370` in retail).
 /// Slots `0..3` are party members, `3..8` are monsters.
 pub const ACTOR_SLOTS: usize = 8;

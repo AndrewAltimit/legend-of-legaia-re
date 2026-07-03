@@ -1,3 +1,5 @@
+//! Physical-attack band of the battle-action state machine (face / short-step / windup / chain).
+
 use super::*;
 
 // --- attack band ------------------------------------------------------------

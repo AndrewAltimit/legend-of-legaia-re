@@ -1,3 +1,5 @@
+//! Per-bone keyframe decode: 9-byte packed signed-12-bit triplet pairs into `BoneFrame`.
+
 /// One bone's keyframe within a nested per-frame data block: 6
 /// sign-extended 12-bit values laid out as two `[i16; 3]` vectors.
 ///

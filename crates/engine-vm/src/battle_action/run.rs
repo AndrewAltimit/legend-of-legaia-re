@@ -1,3 +1,5 @@
+//! Run/escape and capture band of the battle-action state machine.
+
 use super::*;
 
 // --- run / capture band -----------------------------------------------------
