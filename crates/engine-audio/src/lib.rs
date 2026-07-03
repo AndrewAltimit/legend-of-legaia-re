@@ -423,7 +423,10 @@ impl AudioOut {
         let stream = device.build_output_stream::<S, _, _>(
             config,
             move |out: &mut [S], _: &cpal::OutputCallbackInfo| {
-                let mut s = state.lock().unwrap();
+                // Recover from a poisoned lock rather than panicking on the
+                // audio thread (matches `AudioOut::lock`); a poisoned guard
+                // still yields a usable resampler, just with stale state.
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 let chans = channels as usize;
                 let frames = out.len() / chans;
                 for f in 0..frames {
