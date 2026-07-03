@@ -1262,6 +1262,7 @@ dependencies = [
  "legaia-anm",
  "legaia-art",
  "legaia-asset",
+ "legaia-bytes",
  "legaia-cheats",
  "legaia-engine-vm",
  "legaia-font",
