@@ -1,0 +1,1143 @@
+use super::*;
+
+#[test]
+fn identity_passes_vector_through() {
+    let v = GteVec3::new(123, -456, 789);
+    let r = GteMat3::IDENTITY.mul_vec(v);
+    assert_eq!(r, v);
+}
+
+#[test]
+fn rot_y_180_negates_x_and_z() {
+    let rot = GteMat3::rot_y(std::f32::consts::PI);
+    let v = GteVec3::new(1000, 0, 0);
+    let r = rot.mul_vec(v);
+    // 180° about Y flips X (and Z when non-zero). Allow rounding error
+    // up to a few units (q12 quantization → ~0.024% error per element).
+    assert!((r.x - (-1000)).abs() <= 2, "x={}", r.x);
+    assert_eq!(r.y, 0);
+    assert!(r.z.abs() <= 2, "z={}", r.z);
+}
+
+#[test]
+fn rot_trans_applies_rotation_then_translation() {
+    let rot = GteMat3::IDENTITY;
+    let trans = GteVec3::new(10, 20, 30);
+    let v = GteVec3::new(1, 2, 3);
+    assert_eq!(rot_trans(&rot, v, trans), GteVec3::new(11, 22, 33));
+}
+
+#[test]
+fn fixed_point_round_trip() {
+    let original = (1.5f32, -3.25, 0.125);
+    let v = GteVec3::from_f32_q12(original.0, original.1, original.2);
+    let back = v.to_f32_q12();
+    // q12 fixed-point gives ~1/4096 resolution. Each example here is
+    // exactly representable.
+    assert!((back.0 - original.0).abs() < 1.0 / ROT_ONE as f32 + 1e-6);
+    assert!((back.1 - original.1).abs() < 1.0 / ROT_ONE as f32 + 1e-6);
+    assert!((back.2 - original.2).abs() < 1.0 / ROT_ONE as f32 + 1e-6);
+}
+
+#[test]
+fn mul_vec_does_not_overflow_on_max_inputs() {
+    // Worst case: rotation with max elements (32767) applied to a
+    // vector with max coordinates (i32::MAX / 4 to keep headroom).
+    // i64 accumulator must absorb 3 × i32×i16 without panicking.
+    let m = GteMat3 {
+        m: [[32767, 32767, 32767], [0, 0, 0], [0, 0, 0]],
+    };
+    let v = GteVec3::new(i32::MAX / 4, i32::MAX / 4, i32::MAX / 4);
+    let r = m.mul_vec(v);
+    assert_eq!(r.x, i32::MAX);
+}
+
+#[test]
+fn rot_x_90_y_to_z() {
+    // 90° pitch around +X axis sends +Y to +Z.
+    let rot = GteMat3::rot_x(std::f32::consts::FRAC_PI_2);
+    let v = GteVec3::new(0, 1000, 0);
+    let r = rot.mul_vec(v);
+    assert!(r.y.abs() <= 2, "y={}", r.y);
+    assert!((r.z - 1000).abs() <= 2, "z={}", r.z);
+}
+
+#[test]
+fn rot_z_90_x_to_y() {
+    // 90° roll around +Z axis sends +X to +Y.
+    let rot = GteMat3::rot_z(std::f32::consts::FRAC_PI_2);
+    let v = GteVec3::new(1000, 0, 0);
+    let r = rot.mul_vec(v);
+    assert!(r.x.abs() <= 2, "x={}", r.x);
+    assert!((r.y - 1000).abs() <= 2, "y={}", r.y);
+}
+
+#[test]
+fn mat3_mul_identity_is_noop() {
+    let r = GteMat3::rot_y(0.7);
+    let combined = r.mul(&GteMat3::IDENTITY);
+    // Identity composition should be lossless within q3.12 rounding.
+    for i in 0..3 {
+        for j in 0..3 {
+            assert!(
+                (combined.m[i][j] as i32 - r.m[i][j] as i32).abs() <= 1,
+                "[{i}][{j}] mismatch: combined={} vs r={}",
+                combined.m[i][j],
+                r.m[i][j],
+            );
+        }
+    }
+}
+
+#[test]
+fn mat3_mul_compose_two_y_rotations() {
+    // rot_y(a) * rot_y(b) ≈ rot_y(a + b) - verify within q3.12 rounding.
+    let a = std::f32::consts::FRAC_PI_4;
+    let b = std::f32::consts::FRAC_PI_3;
+    let composed = GteMat3::rot_y(a).mul(&GteMat3::rot_y(b));
+    let direct = GteMat3::rot_y(a + b);
+    for i in 0..3 {
+        for j in 0..3 {
+            assert!(
+                (composed.m[i][j] as i32 - direct.m[i][j] as i32).abs() <= 4,
+                "[{i}][{j}] composed={} direct={}",
+                composed.m[i][j],
+                direct.m[i][j],
+            );
+        }
+    }
+}
+
+#[test]
+fn camera_identity_keeps_origin_at_screen_center() {
+    let cam = Camera::for_viewport(320, 240);
+    let mut cam = cam;
+    cam.trans = GteVec3::new(0, 0, ROT_ONE * 1024); // 1024 units forward
+    // A vertex at world origin sits 1024 in front of the camera.
+    let p = cam.transform(GteVec3::new(0, 0, 0));
+    assert_eq!(p.clip, Clip::SafeFront);
+    assert_eq!(p.screen_xy.x, 160);
+    assert_eq!(p.screen_xy.y, 120);
+}
+
+#[test]
+fn camera_projects_x_to_right_of_screen() {
+    let mut cam = Camera::for_viewport(320, 240);
+    cam.trans = GteVec3::new(0, 0, ROT_ONE * 1024);
+    // Vertex at +X (right of camera): screen.x > 160.
+    let p = cam.transform(GteVec3::from_f32_q12(100.0, 0.0, 0.0));
+    assert_eq!(p.clip, Clip::SafeFront);
+    assert!(
+        p.screen_xy.x > 160,
+        "expected right of center: {}",
+        p.screen_xy.x
+    );
+}
+
+#[test]
+fn camera_marks_behind_camera_vertex() {
+    let cam = Camera::for_viewport(320, 240);
+    // No translation; vertex with view.z = 0 is on camera plane.
+    let p = cam.transform(GteVec3::new(0, 0, 0));
+    assert_eq!(p.clip, Clip::Behind);
+}
+
+#[test]
+fn camera_projection_is_pixel_exact_for_unit_z() {
+    // Pin one specific projection so we catch regressions: with H=320,
+    // a vertex at (1024, 0, 1024) (in q19.12 = 0.25 world units in X,
+    // 0.25 in Z) projects to screen.x = 320 * 1024 / 1024 = 320,
+    // i.e. one full focal-length offset to the right of the screen
+    // origin. (No center offset here.)
+    let cam = Camera {
+        rot: GteMat3::IDENTITY,
+        trans: GteVec3::new(0, 0, 0),
+        h: 320,
+        ofx: 0,
+        ofy: 0,
+    };
+    let p = cam.transform(GteVec3::new(1024, 0, 1024));
+    assert_eq!(p.clip, Clip::SafeFront);
+    assert_eq!(p.screen_xy.x, 320);
+    assert_eq!(p.screen_xy.y, 0);
+}
+
+#[test]
+fn nclip_signs_back_vs_front() {
+    // CCW triangle: (0,0), (10,0), (0,10). Under PSX winding
+    // (y-down), this is back-facing - nclip > 0. CW is front (negative).
+    let a = ScreenXY::new(0, 0);
+    let b = ScreenXY::new(10, 0);
+    let c = ScreenXY::new(0, 10);
+    // (b-a)x = 10, y = 0; (c-a)x = 0, y = 10. cross = 10*10 - 0*0 = 100.
+    assert_eq!(nclip(a, b, c), 100);
+    // Reversed triangle is front-facing (negative).
+    assert_eq!(nclip(a, c, b), -100);
+}
+
+#[test]
+fn nclip_zero_area_is_degenerate() {
+    let a = ScreenXY::new(5, 5);
+    let b = ScreenXY::new(15, 5);
+    let c = ScreenXY::new(25, 5); // colinear
+    assert_eq!(nclip(a, b, c), 0);
+}
+
+#[test]
+fn avsz3_zsf_default_averages_q12() {
+    // With ZSF3 = ROT_ONE, the formula is (z0+z1+z2)*ROT_ONE / ROT_ONE
+    // = z0+z1+z2 (the q12 cancels). So the function returns the *sum*,
+    // not a true 1/3 average - that matches a retail capture where ZSF3
+    // was loaded with 4096 (the "sum" bucket scale).
+    assert_eq!(avsz3(100, 200, 300), 600);
+}
+
+#[test]
+fn avsz3_with_one_third_scale() {
+    // ZSF3 = ROT_ONE / 3 ≈ 1365 gives true average. Allow rounding.
+    let r = avsz3_with_scale(100, 200, 300, ROT_ONE / 3);
+    assert!((r - 200).abs() <= 1, "expected ~200, got {r}");
+}
+
+#[test]
+fn avsz4_sums_four_zs() {
+    assert_eq!(avsz4(100, 200, 300, 400), 1000);
+}
+
+#[test]
+fn screen_to_pixel_clamps_off_screen() {
+    let off_left = ScreenXY::new(-100, 50);
+    let (px, py) = screen_to_pixel(off_left, 320, 240);
+    assert_eq!(px, 0);
+    assert_eq!(py, 50);
+
+    let off_right = ScreenXY::new(500, 300);
+    let (px, py) = screen_to_pixel(off_right, 320, 240);
+    assert_eq!(px, 319);
+    assert_eq!(py, 239);
+}
+
+#[test]
+fn saturate_sxy_clamps_to_i16() {
+    let big = ScreenXY::new(i32::MAX, i32::MIN).saturate_sxy();
+    assert_eq!(big.x, SXY_MAX);
+    assert_eq!(big.y, SXY_MIN);
+}
+
+#[test]
+fn raster_bbox_from_triangle() {
+    let bbox = raster::BBox::from_triangle(
+        ScreenXY::new(10, 20),
+        ScreenXY::new(40, 5),
+        ScreenXY::new(25, 50),
+    );
+    assert_eq!(bbox.min_x, 10);
+    assert_eq!(bbox.min_y, 5);
+    assert_eq!(bbox.max_x, 40);
+    assert_eq!(bbox.max_y, 50);
+}
+
+#[test]
+fn raster_bbox_clamp_off_screen_returns_none() {
+    let bbox = raster::BBox::from_triangle(
+        ScreenXY::new(-100, -100),
+        ScreenXY::new(-50, -100),
+        ScreenXY::new(-100, -50),
+    );
+    assert!(bbox.clamp(320, 240).is_none());
+}
+
+#[test]
+fn raster_contains_inside_point() {
+    // CW triangle (front-facing under PSX winding).
+    let a = ScreenXY::new(0, 0);
+    let b = ScreenXY::new(0, 10);
+    let c = ScreenXY::new(10, 0);
+    assert!(
+        raster::contains(a, b, c, 2, 2),
+        "(2,2) should be inside CW triangle"
+    );
+}
+
+#[test]
+fn raster_contains_outside_point() {
+    let a = ScreenXY::new(0, 0);
+    let b = ScreenXY::new(0, 10);
+    let c = ScreenXY::new(10, 0);
+    assert!(
+        !raster::contains(a, b, c, 20, 20),
+        "(20,20) outside triangle"
+    );
+}
+
+// ----- Gte register-state emulator tests -----
+
+#[test]
+fn gte_default_state_is_identity_with_no_translation() {
+    let g = Gte::new();
+    assert_eq!(g.rot, GteMat3::IDENTITY);
+    assert_eq!(g.trans, GteVec3::default());
+    assert_eq!(g.h, DEFAULT_H);
+    assert_eq!(g.flag, 0);
+    assert_eq!(g.zsf3, ROT_ONE);
+    assert_eq!(g.zsf4, ROT_ONE);
+}
+
+#[test]
+fn gte_rtps_pushes_one_sxy_per_call() {
+    let mut g = Gte::new();
+    g.set_viewport(320, 240);
+    g.trans = GteVec3::new(0, 0, ROT_ONE * 1024);
+    g.v[0] = GteVec3::new(0, 0, 0);
+    let xy = g.rtps();
+    assert_eq!(xy.x, 160);
+    assert_eq!(xy.y, 120);
+    // SXY FIFO: latest in slot 2, slot 1 = previous (default), slot 0 = older.
+    assert_eq!(g.sxy_fifo[2], xy);
+}
+
+#[test]
+fn gte_rtpt_pushes_three_vertices_in_fifo_order() {
+    let mut g = Gte::new();
+    g.set_viewport(320, 240);
+    g.trans = GteVec3::new(0, 0, ROT_ONE * 1024);
+    g.v[0] = GteVec3::new(0, 0, 0);
+    // V1 to the right.
+    g.v[1] = GteVec3::from_f32_q12(100.0, 0.0, 0.0);
+    // V2 up.
+    g.v[2] = GteVec3::from_f32_q12(0.0, -100.0, 0.0);
+    let [s0, s1, s2] = g.rtpt();
+    // After 3 RTPS calls, FIFO holds [s0, s1, s2] in order.
+    assert_eq!(g.sxy_fifo[0], s0);
+    assert_eq!(g.sxy_fifo[1], s1);
+    assert_eq!(g.sxy_fifo[2], s2);
+    assert_eq!(s0.x, 160);
+    assert_eq!(s0.y, 120);
+    assert!(s1.x > 160, "V1 right of center: {}", s1.x);
+    assert!(s2.y < 120, "V2 above center: {}", s2.y);
+}
+
+#[test]
+fn gte_rtps_sets_mac_and_ir_registers() {
+    let mut g = Gte::new();
+    g.set_viewport(320, 240);
+    g.trans = GteVec3::new(10, 20, ROT_ONE * 100);
+    g.v[0] = GteVec3::new(0, 0, 0);
+    let _ = g.rtps();
+    // MAC = post-rotation view (rot=identity, so view = trans).
+    assert_eq!(g.mac1, 10);
+    assert_eq!(g.mac2, 20);
+    assert_eq!(g.mac3, ROT_ONE as i64 * 100);
+    // IR1 / IR2 fit in i16 (10, 20).
+    assert_eq!(g.ir1, 10);
+    assert_eq!(g.ir2, 20);
+    // IR3 saturates to i16::MAX (mac3 = 409_600 > 32767).
+    assert_eq!(g.ir3, i16::MAX as i32);
+    assert_ne!(g.flag & flag_bits::IR3_SATURATED, 0);
+    assert_ne!(g.flag & flag_bits::ANY_ERROR, 0);
+}
+
+#[test]
+fn gte_rtps_behind_camera_sets_mac3_overflow_neg_flag() {
+    let mut g = Gte::new();
+    g.set_viewport(320, 240);
+    // No translation; vertex with view.z = 0 ⇒ behind-camera path.
+    g.v[0] = GteVec3::new(0, 0, 0);
+    g.rtps();
+    assert_ne!(g.flag & flag_bits::MAC3_OVERFLOW_NEG, 0);
+}
+
+#[test]
+fn gte_nclip_writes_mac0_and_returns_signed_area() {
+    let mut g = Gte::new();
+    // Manually populate SXY FIFO.
+    g.sxy_fifo = [
+        ScreenXY::new(0, 0),
+        ScreenXY::new(10, 0),
+        ScreenXY::new(0, 10),
+    ];
+    let r = g.nclip();
+    assert_eq!(r, 100);
+    assert_eq!(g.mac0, 100);
+}
+
+#[test]
+fn gte_avsz3_writes_otz_and_mac0() {
+    let mut g = Gte::new();
+    g.zsf3 = ROT_ONE; // sum-bucket scale (default)
+    g.sz_fifo = [0, 100, 200, 300];
+    let otz = g.avsz3();
+    // (100 + 200 + 300) = 600. With zsf3=4096 ⇒ 600*4096 = 2_457_600.
+    // OTZ = 2_457_600 >> 12 = 600. MAC0 = 2_457_600.
+    assert_eq!(otz, 600);
+    assert_eq!(g.otz, 600);
+    assert_eq!(g.mac0, 2_457_600);
+}
+
+#[test]
+fn gte_avsz4_uses_all_four_sz_entries() {
+    let mut g = Gte::new();
+    g.zsf4 = ROT_ONE;
+    g.sz_fifo = [50, 100, 150, 200];
+    let otz = g.avsz4();
+    assert_eq!(otz, 500);
+}
+
+#[test]
+fn gte_otz_saturates_high_to_u16_max() {
+    let mut g = Gte::new();
+    g.zsf3 = ROT_ONE;
+    // 3 * 0xFFFF = 196_605, * 4096 = 805_273_600, >> 12 = 196_605.
+    // 196_605 > 65_535 ⇒ clamp + flag.
+    g.sz_fifo = [0, u16::MAX, u16::MAX, u16::MAX];
+    let otz = g.avsz3();
+    assert_eq!(otz, u16::MAX);
+    assert_ne!(g.flag & flag_bits::SZ3_OTZ_SATURATED, 0);
+}
+
+#[test]
+fn gte_mvmva_with_identity_passes_vector_through() {
+    let mut g = Gte::new();
+    g.mvmva(
+        &GteMat3::IDENTITY,
+        GteVec3::new(100, 200, 300),
+        GteVec3::default(),
+        true, // shift by ROT_FRAC_BITS
+        false,
+    );
+    // identity (q3.12) * (100, 200, 300) gives (100*4096, 200*4096,
+    // 300*4096) before the shift; shifted by 12 returns the original
+    // vector. IR1/2/3 then take the same values (within i16 range).
+    assert_eq!(g.mac1, 100);
+    assert_eq!(g.mac2, 200);
+    assert_eq!(g.mac3, 300);
+    assert_eq!(g.ir1, 100);
+    assert_eq!(g.ir2, 200);
+    assert_eq!(g.ir3, 300);
+}
+
+#[test]
+fn gte_mvmva_no_shift_keeps_full_precision() {
+    let mut g = Gte::new();
+    g.mvmva(
+        &GteMat3::IDENTITY,
+        GteVec3::new(100, 200, 300),
+        GteVec3::default(),
+        false,
+        false,
+    );
+    // identity * v = q12 view. Without shift MAC keeps the full
+    // q12 product (each element scaled by ROT_ONE).
+    assert_eq!(g.mac1, 100 * ROT_ONE as i64);
+    assert_eq!(g.mac2, 200 * ROT_ONE as i64);
+    assert_eq!(g.mac3, 300 * ROT_ONE as i64);
+    // IR clamps to i16::MAX.
+    assert_eq!(g.ir1, i16::MAX as i32);
+    assert_ne!(g.flag & flag_bits::IR1_SATURATED, 0);
+}
+
+#[test]
+fn gte_mvmva_lm_clamps_to_zero_minimum() {
+    let mut g = Gte::new();
+    // Negative input + LM=true ⇒ IR clamps to 0, FLAG sets sat bit.
+    g.mvmva(
+        &GteMat3::IDENTITY,
+        GteVec3::new(-50, -100, -200),
+        GteVec3::default(),
+        true,
+        true, // LM
+    );
+    assert_eq!(g.ir1, 0);
+    assert_eq!(g.ir2, 0);
+    assert_eq!(g.ir3, 0);
+    assert_ne!(g.flag & flag_bits::IR1_SATURATED, 0);
+}
+
+#[test]
+fn gte_clear_flag_resets() {
+    let mut g = Gte::new();
+    g.flag = 0xFFFF_FFFF;
+    g.clear_flag();
+    assert_eq!(g.flag, 0);
+}
+
+#[test]
+fn gte_rtpt_matches_camera_transform() {
+    // Verify the register-state RTPT produces the same SXY as the
+    // higher-level Camera::transform shim.
+    let mut g = Gte::new();
+    g.set_viewport(320, 240);
+    g.trans = GteVec3::new(0, 0, ROT_ONE * 512);
+    g.rot = GteMat3::rot_y(0.3);
+    let v = [
+        GteVec3::from_f32_q12(50.0, 0.0, 0.0),
+        GteVec3::from_f32_q12(-50.0, 0.0, 0.0),
+        GteVec3::from_f32_q12(0.0, 50.0, 0.0),
+    ];
+    g.v = v;
+    let [s0, s1, s2] = g.rtpt();
+
+    let cam = Camera {
+        rot: g.rot,
+        trans: g.trans,
+        h: g.h,
+        ofx: g.ofx,
+        ofy: g.ofy,
+    };
+    let p0 = cam.transform(v[0]).screen_xy.saturate_sxy();
+    let p1 = cam.transform(v[1]).screen_xy.saturate_sxy();
+    let p2 = cam.transform(v[2]).screen_xy.saturate_sxy();
+    assert_eq!(s0, p0);
+    assert_eq!(s1, p1);
+    assert_eq!(s2, p2);
+}
+
+#[test]
+fn raster_iterates_inside_pixels() {
+    // Simple CW right-triangle covering pixels (1,1)..(8,1), etc.
+    // We just count to make sure the iterator covers a believable set.
+    let a = ScreenXY::new(0, 0);
+    let b = ScreenXY::new(0, 10);
+    let c = ScreenXY::new(10, 0);
+    let mut count = 0;
+    raster::rasterize_triangle(a, b, c, 320, 240, |_, _, _| count += 1);
+    // Triangle area = 50 px²; rasterizer hits ~50 inside pixels.
+    // Allow a small fudge for top-left fill-rule edge inclusion.
+    assert!((30..=60).contains(&count), "got {count} pixels");
+}
+
+// ---------------------------------------------------------------------
+// Lighting / colour ops (NCDS / NCDT / DCPL / DPCS / DPCT / INTPL /
+// SQR / OP / GPF / GPL).
+// ---------------------------------------------------------------------
+
+#[test]
+fn rgb_fifo_starts_empty() {
+    let g = Gte::new();
+    for entry in g.rgb_fifo {
+        assert_eq!(entry, [0; 4]);
+    }
+}
+
+#[test]
+fn ncds_pushes_rgb_fifo_entry() {
+    let mut g = Gte::new();
+    g.rgbc = [0xFF, 0xFF, 0xFF, 0x00];
+    g.ir0 = 0; // disable far-color blend so we get pure light pass.
+    // Configure light so a unit normal becomes a small intensity.
+    g.light = GteMat3::IDENTITY;
+    g.light_color = GteMat3::IDENTITY;
+    g.v[0] = GteVec3::new(ROT_ONE, 0, 0);
+    let _ = g.ncds();
+    // The newest RGB should be in slot 2.
+    let r = g.rgb_fifo[2];
+    // alpha (CODE byte) preserved
+    assert_eq!(r[3], 0x00);
+}
+
+#[test]
+fn ncdt_writes_three_fifo_entries() {
+    let mut g = Gte::new();
+    g.rgbc = [0x80, 0x80, 0x80, 0x10];
+    g.ir0 = 0;
+    g.light = GteMat3::IDENTITY;
+    g.light_color = GteMat3::IDENTITY;
+    g.v[0] = GteVec3::new(ROT_ONE, 0, 0);
+    g.v[1] = GteVec3::new(0, ROT_ONE, 0);
+    g.v[2] = GteVec3::new(0, 0, ROT_ONE);
+    let _ = g.ncdt();
+    // Each FIFO entry should preserve the alpha byte.
+    for entry in g.rgb_fifo {
+        assert_eq!(entry[3], 0x10);
+    }
+}
+
+#[test]
+fn dcpl_modulates_rgbc_through_ir() {
+    let mut g = Gte::new();
+    g.rgbc = [0xFF, 0x00, 0x00, 0x00];
+    g.ir1 = 0x10;
+    g.ir2 = 0x10;
+    g.ir3 = 0x10;
+    g.ir0 = 0; // no far-color blend
+    let out = g.dcpl();
+    // R = (IR1 * 0xFF) >> 4 = (16 * 255) >> 4 = 255; G/B = 0
+    assert_eq!(out[0], 0xFF);
+    assert_eq!(out[1], 0);
+    assert_eq!(out[2], 0);
+}
+
+#[test]
+fn dpcs_blends_rgbc_toward_far_color_at_ir0_max() {
+    let mut g = Gte::new();
+    g.rgbc = [0x00, 0x00, 0x00, 0x00];
+    // Far color full white in q3.12.
+    g.far_color = GteVec3::new(0xFF, 0xFF, 0xFF);
+    // IR0 at full-blend. Conventional GTE max for IR0 is 4096 (1.0 in q12).
+    g.ir0 = ROT_ONE;
+    let out = g.dpcs();
+    // Full blend toward far_color should deliver close to (255, 255, 255).
+    // Allow ±1 for rounding.
+    assert!(out[0] >= 254);
+    assert!(out[1] >= 254);
+    assert!(out[2] >= 254);
+}
+
+#[test]
+fn dpcs_zero_blend_preserves_rgbc() {
+    let mut g = Gte::new();
+    g.rgbc = [0x80, 0x40, 0x20, 0x10];
+    g.far_color = GteVec3::new(0xFF, 0xFF, 0xFF);
+    g.ir0 = 0; // no blend
+    let out = g.dpcs();
+    assert_eq!(out[0], 0x80);
+    assert_eq!(out[1], 0x40);
+    assert_eq!(out[2], 0x20);
+    assert_eq!(out[3], 0x10);
+}
+
+#[test]
+fn intpl_writes_macs_from_ir_and_far_color() {
+    let mut g = Gte::new();
+    g.ir1 = 100;
+    g.ir2 = 200;
+    g.ir3 = 50;
+    g.far_color = GteVec3::new(500, 100, -50);
+    g.ir0 = ROT_ONE; // full blend
+    g.intpl();
+    // MAC1 = IR1 + ((FC.x - IR1) * IR0 / 4096) = 100 + (400 * 1) = 500
+    assert_eq!(g.mac1, 500);
+    assert_eq!(g.mac2, 100);
+    assert_eq!(g.mac3, -50);
+    assert_eq!(g.ir1, 500);
+    assert_eq!(g.ir2, 100);
+    assert_eq!(g.ir3, -50);
+}
+
+#[test]
+fn intpl_zero_blend_is_noop() {
+    let mut g = Gte::new();
+    g.ir1 = 100;
+    g.ir2 = 200;
+    g.ir3 = 50;
+    g.far_color = GteVec3::new(500, 100, -50);
+    g.ir0 = 0;
+    g.intpl();
+    assert_eq!(g.mac1, 100);
+    assert_eq!(g.mac2, 200);
+    assert_eq!(g.mac3, 50);
+}
+
+#[test]
+fn sqr_squares_ir_and_writes_macs() {
+    let mut g = Gte::new();
+    g.ir1 = 30;
+    g.ir2 = -40;
+    g.ir3 = 50;
+    g.sqr(false);
+    assert_eq!(g.mac1, 900);
+    assert_eq!(g.mac2, 1600);
+    assert_eq!(g.mac3, 2500);
+}
+
+#[test]
+fn op_cross_product_with_unit_diagonal() {
+    let mut g = Gte::new();
+    // D = (1,1,1) in q3.12; IR = (a, b, c).
+    g.rot = GteMat3::IDENTITY;
+    g.ir1 = 100;
+    g.ir2 = 200;
+    g.ir3 = 300;
+    // Pre-shift so we don't have to undo q12 scaling for the unit test.
+    g.op(true);
+    // mac1 = D2 * IR3 - D3 * IR2 = 4096 * 300 - 4096 * 200 = 4096 * 100
+    // After shift_frac: mac1 = 100, mac2 = D3*IR1 - D1*IR3 = 100-300 = -200,
+    // mac3 = D1*IR2 - D2*IR1 = 200 - 100 = 100.
+    assert_eq!(g.mac1, 100);
+    assert_eq!(g.mac2, -200);
+    assert_eq!(g.mac3, 100);
+}
+
+#[test]
+fn gpf_multiplies_ir_by_ir0_and_writes_mac() {
+    let mut g = Gte::new();
+    g.ir0 = 2;
+    g.ir1 = 5;
+    g.ir2 = 10;
+    g.ir3 = 15;
+    g.gpf(false);
+    assert_eq!(g.mac1, 10);
+    assert_eq!(g.mac2, 20);
+    assert_eq!(g.mac3, 30);
+}
+
+#[test]
+fn gpl_accumulates_ir_times_ir0() {
+    let mut g = Gte::new();
+    g.mac1 = 100;
+    g.mac2 = 200;
+    g.mac3 = 300;
+    g.ir0 = 3;
+    g.ir1 = 4;
+    g.ir2 = 5;
+    g.ir3 = 6;
+    g.gpl(false);
+    assert_eq!(g.mac1, 100 + 12);
+    assert_eq!(g.mac2, 200 + 15);
+    assert_eq!(g.mac3, 300 + 18);
+}
+
+#[test]
+fn intpl_chains_into_dpcs_pipeline() {
+    // INTPL writes MAC/IR; DPCS reads IR0 + RGBC + FC. Verify the
+    // composition makes sense.
+    let mut g = Gte::new();
+    g.ir1 = 100;
+    g.ir2 = 100;
+    g.ir3 = 100;
+    g.far_color = GteVec3::new(200, 200, 200);
+    g.ir0 = ROT_ONE / 2; // half blend
+    g.intpl();
+    assert_eq!(g.ir1, 150); // 100 + 50%*100
+}
+
+#[test]
+fn rgb_fifo_advances_oldest_first() {
+    let mut g = Gte::new();
+    g.rgbc = [0x10, 0x20, 0x30, 0x40];
+    g.far_color = GteVec3::default();
+    g.ir0 = 0;
+    let _ = g.dpcs();
+    assert_eq!(g.rgb_fifo[2], [0x10, 0x20, 0x30, 0x40]);
+    g.rgbc = [0x50, 0x60, 0x70, 0x80];
+    let _ = g.dpcs();
+    assert_eq!(g.rgb_fifo[2], [0x50, 0x60, 0x70, 0x80]);
+    assert_eq!(g.rgb_fifo[1], [0x10, 0x20, 0x30, 0x40]);
+}
+
+#[test]
+fn copop_cycle_counts_match_hardware_table() {
+    // Spot-check the canonical Nocash entries.
+    assert_eq!(CopOp::Rtps.cycles(), 15);
+    assert_eq!(CopOp::Rtpt.cycles(), 23);
+    assert_eq!(CopOp::Nclip.cycles(), 8);
+    assert_eq!(CopOp::Avsz3.cycles(), 5);
+    assert_eq!(CopOp::Avsz4.cycles(), 6);
+    assert_eq!(CopOp::Mvmva.cycles(), 8);
+    assert_eq!(CopOp::Ncds.cycles(), 19);
+    assert_eq!(CopOp::Ncdt.cycles(), 44);
+    assert_eq!(CopOp::Nccs.cycles(), 17);
+    assert_eq!(CopOp::Ncct.cycles(), 39);
+    assert_eq!(CopOp::Cc.cycles(), 11);
+    assert_eq!(CopOp::Cdp.cycles(), 13);
+    assert_eq!(CopOp::Ncs.cycles(), 14);
+    assert_eq!(CopOp::Nct.cycles(), 30);
+    assert_eq!(CopOp::Sqr.cycles(), 5);
+    assert_eq!(CopOp::Op.cycles(), 6);
+    assert_eq!(CopOp::Gpf.cycles(), 5);
+    assert_eq!(CopOp::Gpl.cycles(), 5);
+    assert_eq!(CopOp::Dcpl.cycles(), 8);
+    assert_eq!(CopOp::Dpcs.cycles(), 8);
+    assert_eq!(CopOp::Dpct.cycles(), 17);
+    assert_eq!(CopOp::Intpl.cycles(), 8);
+}
+
+#[test]
+fn cycle_accumulator_charges_per_op() {
+    let mut g = Gte::new();
+    assert_eq!(g.cycles, 0);
+    let _ = g.rtps();
+    assert_eq!(g.cycles, CopOp::Rtps.cycles() as u64);
+    let _ = g.rtpt();
+    assert_eq!(
+        g.cycles,
+        (CopOp::Rtps.cycles() + CopOp::Rtpt.cycles()) as u64
+    );
+    g.reset_cycles();
+    assert_eq!(g.cycles, 0);
+}
+
+#[test]
+fn cycle_accumulator_works_for_lighting_ops() {
+    let mut g = Gte::new();
+    g.rgbc = [0x80, 0x80, 0x80, 0];
+    g.v[0] = GteVec3::new(0, 0, 0);
+    let _ = g.ncds();
+    assert_eq!(g.cycles, CopOp::Ncds.cycles() as u64);
+    let _ = g.cdp();
+    assert_eq!(
+        g.cycles,
+        (CopOp::Ncds.cycles() + CopOp::Cdp.cycles()) as u64
+    );
+}
+
+#[test]
+fn ncs_pushes_modulated_rgb() {
+    let mut g = Gte::new();
+    g.rgbc = [0xFF, 0x80, 0x40, 0x12];
+    g.light = GteMat3::IDENTITY;
+    g.light_color = GteMat3::IDENTITY;
+    g.v[0] = GteVec3::new(ROT_ONE, ROT_ONE, ROT_ONE);
+    let out = g.ncs();
+    // Code byte should round-trip through the alpha channel.
+    assert_eq!(out[3], 0x12);
+    // RGB FIFO advanced.
+    assert_eq!(g.rgb_fifo[2], out);
+}
+
+#[test]
+fn nct_runs_three_pass_lighting() {
+    let mut g = Gte::new();
+    g.rgbc = [0x80, 0x80, 0x80, 0];
+    g.light = GteMat3::IDENTITY;
+    g.light_color = GteMat3::IDENTITY;
+    g.v[0] = GteVec3::new(ROT_ONE, 0, 0);
+    g.v[1] = GteVec3::new(0, ROT_ONE, 0);
+    g.v[2] = GteVec3::new(0, 0, ROT_ONE);
+    let outs = g.nct();
+    assert_eq!(outs.len(), 3);
+    // Three different normals → three different RGB outputs.
+    assert!(outs[0] != outs[1] || outs[1] != outs[2]);
+}
+
+#[test]
+fn nccs_runs_double_light_pass_relative_to_ncs() {
+    // light_color matrix that scales by 0.5 per channel - the second
+    // pass in NCCS should darken the result vs NCS.
+    let mut lc = GteMat3::IDENTITY;
+    lc.m[0][0] = (ROT_ONE / 2) as i16;
+    lc.m[1][1] = (ROT_ONE / 2) as i16;
+    lc.m[2][2] = (ROT_ONE / 2) as i16;
+
+    // NCS reference run.
+    let mut g = Gte::new();
+    g.rgbc = [0xFF, 0xFF, 0xFF, 0];
+    g.light = GteMat3::IDENTITY;
+    g.light_color = lc;
+    g.v[0] = GteVec3::new(ROT_ONE, ROT_ONE, ROT_ONE);
+    let ncs_rgb = g.ncs();
+
+    // NCCS - same inputs.
+    let mut g2 = Gte::new();
+    g2.rgbc = g.rgbc;
+    g2.light = g.light;
+    g2.light_color = g.light_color;
+    g2.v[0] = g.v[0];
+    let nccs_rgb = g2.nccs();
+    assert!(nccs_rgb[0] <= ncs_rgb[0]);
+    assert!(nccs_rgb[1] <= ncs_rgb[1]);
+    assert!(nccs_rgb[2] <= ncs_rgb[2]);
+}
+
+#[test]
+fn cdp_pushes_rgb_with_code_byte_preserved() {
+    let mut g = Gte::new();
+    g.rgbc = [0xFF, 0xFF, 0xFF, 0x42];
+    g.ir1 = 0;
+    g.ir2 = 0;
+    g.ir3 = 0;
+    g.light_color = GteMat3::IDENTITY;
+    g.far_color = GteVec3::new(0x100, 0x200, 0x300);
+    g.ir0 = ROT_ONE; // full blend toward far_color
+    let _ = g.cdp();
+    // RGB FIFO advanced and code byte preserved.
+    assert_eq!(g.rgb_fifo[2][3], 0x42);
+}
+
+#[test]
+fn cc_does_not_blend_against_far_color() {
+    // CC should NOT touch far_color. Set IR very low so the post-modulate
+    // result is well below saturation, then run CC with a large
+    // far_color. If the implementation accidentally blended toward
+    // far_color, the result would saturate to 0xFF; if it doesn't,
+    // the modulated value stays small.
+    let mut g = Gte::new();
+    g.rgbc = [0x40, 0x40, 0x40, 0x12];
+    g.ir1 = 0x10;
+    g.ir2 = 0x10;
+    g.ir3 = 0x10;
+    g.light_color = GteMat3::IDENTITY;
+    g.far_color = GteVec3::new(0xFFFF, 0xFFFF, 0xFFFF);
+    g.ir0 = ROT_ONE;
+    let out = g.cc();
+    assert_eq!(out[3], 0x12);
+    // Without far-color blending, the result should be small.
+    assert!(
+        out[0] < 0x80,
+        "cc unexpectedly blended toward far_color (got {})",
+        out[0]
+    );
+}
+
+#[test]
+fn ncds_saturates_overflow_to_ff() {
+    let mut g = Gte::new();
+    // Drive a big intensity through to force saturation.
+    g.rgbc = [0xFF, 0xFF, 0xFF, 0x00];
+    // Light matrix that amplifies aggressively.
+    let mut amp = GteMat3::IDENTITY;
+    amp.m[0][0] = i16::MAX; // 32767 - large q3.12 -> after >>12 stays positive.
+    amp.m[1][1] = i16::MAX;
+    amp.m[2][2] = i16::MAX;
+    g.light = amp;
+    g.light_color = amp;
+    g.v[0] = GteVec3::new(ROT_ONE, ROT_ONE, ROT_ONE);
+    g.ir0 = 0;
+    let out = g.ncds();
+    assert_eq!(out, [0xFF, 0xFF, 0xFF, 0x00]);
+    assert!(g.flag & flag_bits::ANY_ERROR != 0);
+}
+
+// ---------------- GTE Phase 6: register-transfer + memory ops ---------
+
+#[test]
+fn pack_unpack_round_trips_signed_pair() {
+    let pairs: &[(i16, i16)] = &[
+        (0, 0),
+        (-1, -1),
+        (i16::MIN, i16::MAX),
+        (1234, -5678),
+        (i16::MAX, i16::MIN),
+    ];
+    for (lo, hi) in pairs {
+        let packed = pack_i16_lo_hi(*lo, *hi);
+        let (l2, h2) = unpack_i16_lo_hi(packed);
+        assert_eq!(*lo, l2);
+        assert_eq!(*hi, h2);
+    }
+}
+
+#[test]
+fn mtc2_then_mfc2_round_trips_v0_xy() {
+    let mut g = Gte::new();
+    // V0.x = 0x1234, V0.y = -2 (0xFFFE) packed as low/high i16 in cop2cr0.
+    let val = pack_i16_lo_hi(0x1234, -2);
+    g.mtc2(0, val);
+    assert_eq!(g.v[0].x, 0x1234);
+    assert_eq!(g.v[0].y, -2);
+    let read = g.mfc2(0);
+    assert_eq!(read, val);
+}
+
+#[test]
+fn mtc2_v0_z_sign_extends_low_half() {
+    let mut g = Gte::new();
+    g.mtc2(1, 0xFFFFu32); // -1 as i16 in low half
+    assert_eq!(g.v[0].z, -1);
+    // mfc2 sign-extends back to a 32-bit -1.
+    assert_eq!(g.mfc2(1), 0xFFFFFFFFu32);
+}
+
+#[test]
+fn mtc2_rgbc_writes_byte_lane_layout() {
+    let mut g = Gte::new();
+    g.mtc2(6, 0xCC_BB_AA_99); // [0x99, 0xAA, 0xBB, 0xCC] little-endian
+    assert_eq!(g.rgbc, [0x99, 0xAA, 0xBB, 0xCC]);
+    assert_eq!(g.mfc2(6), 0xCC_BB_AA_99);
+}
+
+#[test]
+fn mtc2_sxyp_pushes_through_fifo() {
+    let mut g = Gte::new();
+    // Write three values via SXYP (cop2cr15) - older entries shift down.
+    let a = pack_i16_lo_hi(10, 20);
+    let b = pack_i16_lo_hi(30, 40);
+    let c = pack_i16_lo_hi(50, 60);
+    g.mtc2(15, a);
+    g.mtc2(15, b);
+    g.mtc2(15, c);
+    // After three pushes, FIFO is [a, b, c] in slot 0..2.
+    assert_eq!(g.sxy_fifo[0], ScreenXY::new(10, 20));
+    assert_eq!(g.sxy_fifo[1], ScreenXY::new(30, 40));
+    assert_eq!(g.sxy_fifo[2], ScreenXY::new(50, 60));
+}
+
+#[test]
+fn ctc2_then_cfc2_round_trips_rotation_row() {
+    let mut g = Gte::new();
+    let val = pack_i16_lo_hi(2048, -1024);
+    g.ctc2(0, val); // RT11RT12
+    assert_eq!(g.rot.m[0][0], 2048);
+    assert_eq!(g.rot.m[0][1], -1024);
+    assert_eq!(g.cfc2(0), val);
+}
+
+#[test]
+fn ctc2_then_cfc2_round_trips_translation_z() {
+    let mut g = Gte::new();
+    g.ctc2(7, 0x1234_5678); // TRZ
+    assert_eq!(g.trans.z, 0x1234_5678u32 as i32);
+    assert_eq!(g.cfc2(7), 0x1234_5678);
+}
+
+#[test]
+fn ctc2_h_writes_low_16_bits() {
+    let mut g = Gte::new();
+    g.ctc2(26, 0xDEAD_0140); // H is 16-bit; only 0x0140 lands.
+    assert_eq!(g.h, 0x0140);
+    assert_eq!(g.cfc2(26), 0x0140);
+}
+
+#[test]
+fn ctc2_zsf3_sign_extends_to_i32() {
+    let mut g = Gte::new();
+    g.ctc2(29, 0xFFFFu32); // -1 in low half
+    assert_eq!(g.zsf3, -1);
+    // cfc2 returns the low 16 bits.
+    assert_eq!(g.cfc2(29), 0xFFFF);
+}
+
+#[test]
+fn lwc2_loads_packed_vertex_xy_through_memory() {
+    let mut g = Gte::new();
+    let mut mem = VecMem::new(1024);
+    // Stage V0.x=100, V0.y=-50 at addr 0x40.
+    mem.write_u32_at(0x40, pack_i16_lo_hi(100, -50));
+    g.lwc2(&mut mem, 0, 0x40);
+    assert_eq!(g.v[0].x, 100);
+    assert_eq!(g.v[0].y, -50);
+}
+
+#[test]
+fn swc2_stores_data_register_to_memory() {
+    let mut g = Gte::new();
+    let mut mem = VecMem::new(1024);
+    g.write_data(6, 0x11_22_33_44); // RGBC bytes
+    g.swc2(&mut mem, 6, 0x80);
+    assert_eq!(&mem.bytes[0x80..0x84], &[0x44, 0x33, 0x22, 0x11]);
+}
+
+#[test]
+fn lwc2_swc2_round_trips_one_vertex() {
+    let mut g = Gte::new();
+    let mut mem = VecMem::new(1024);
+    g.write_data(0, pack_i16_lo_hi(7, -8));
+    g.write_data(1, sign_extend_i16(9));
+    g.swc2(&mut mem, 0, 0x10);
+    g.swc2(&mut mem, 1, 0x14);
+    // Reset GTE then load back.
+    let mut g2 = Gte::new();
+    g2.lwc2(&mut mem, 0, 0x10);
+    g2.lwc2(&mut mem, 1, 0x14);
+    assert_eq!(g2.v[0].x, 7);
+    assert_eq!(g2.v[0].y, -8);
+    assert_eq!(g2.v[0].z, 9);
+}
+
+#[test]
+fn load_vertices_pulls_three_packed_pairs() {
+    let mut g = Gte::new();
+    let mut mem = VecMem::new(64);
+    // 8 bytes per vertex: u32 xy pair, u32 z (sign-extended low half).
+    mem.write_u32_at(0, pack_i16_lo_hi(1, 2));
+    mem.write_u32_at(4, sign_extend_i16(3));
+    mem.write_u32_at(8, pack_i16_lo_hi(4, 5));
+    mem.write_u32_at(12, sign_extend_i16(6));
+    mem.write_u32_at(16, pack_i16_lo_hi(7, 8));
+    mem.write_u32_at(20, sign_extend_i16(9));
+    g.load_vertices(&mut mem, 0);
+    assert_eq!(g.v[0], GteVec3::new(1, 2, 3));
+    assert_eq!(g.v[1], GteVec3::new(4, 5, 6));
+    assert_eq!(g.v[2], GteVec3::new(7, 8, 9));
+}
+
+#[test]
+fn cycles_charge_per_register_op() {
+    let mut g = Gte::new();
+    g.reset_cycles();
+    g.mtc2(0, 0);
+    g.mfc2(0);
+    g.ctc2(5, 0);
+    g.cfc2(5);
+    // 4 transfers at 1 cycle each.
+    assert_eq!(g.cycles, 4);
+}
+
+#[test]
+fn cycles_charge_per_memory_op() {
+    let mut g = Gte::new();
+    let mut mem = NullMem;
+    g.reset_cycles();
+    g.lwc2(&mut mem, 0, 0);
+    g.swc2(&mut mem, 0, 0);
+    // 2 memory transfers at 1 cycle each.
+    assert_eq!(g.cycles, 2);
+}
+
+#[test]
+fn read_data_irgb_packs_5bit_per_channel() {
+    let mut g = Gte::new();
+    // IR1 = 0x1F << 7 = 0x0F80 (clamps to 0x1F when shifted >>7).
+    g.ir1 = 0x0F80;
+    g.ir2 = 0x0F80;
+    g.ir3 = 0x0F80;
+    let v = g.read_data(28); // IRGB
+    assert_eq!(v, 0x1F | (0x1F << 5) | (0x1F << 10));
+}
+
+#[test]
+fn read_data_lzcr_counts_leading_zeros_for_positive_lzcs() {
+    let mut g = Gte::new();
+    g.lzcs = 1; // 0x00000001 has 31 leading zeros.
+    assert_eq!(g.read_data(31), 31);
+}
+
+#[test]
+fn read_data_lzcr_counts_leading_ones_for_negative_lzcs() {
+    let mut g = Gte::new();
+    g.lzcs = -1i32; // 0xFFFFFFFF has 32 leading ones.
+    assert_eq!(g.read_data(31), 32);
+}
+
+#[test]
+fn write_data_lzcs_caches_source_for_lzcr_read() {
+    let mut g = Gte::new();
+    // Round-trip via MTC2: writing 0x4000_0000 to LZCS gives LZCR = 1.
+    g.mtc2(30, 0x4000_0000);
+    assert_eq!(g.read_data(31), 1);
+}
+
+#[test]
+fn ctc2_flag_is_writeable_for_capture_replay() {
+    let mut g = Gte::new();
+    // Flag is normally set by the GTE itself, but engines replaying a
+    // captured trace need to write the FLAG through CTC2 to reproduce
+    // the post-instruction state.
+    g.ctc2(31, flag_bits::IR1_SATURATED | flag_bits::ANY_ERROR);
+    assert_eq!(g.flag, flag_bits::IR1_SATURATED | flag_bits::ANY_ERROR);
+    assert_eq!(g.cfc2(31), flag_bits::IR1_SATURATED | flag_bits::ANY_ERROR);
+}
+
+#[test]
+fn lwc2_into_v0_then_rtps_matches_direct_setup() {
+    // Set up two GTEs identically - one via direct `g.v[0] = ...`, one
+    // via LWC2 from memory - and verify RTPS produces the same SXY.
+    let mut g_direct = Gte::new();
+    g_direct.set_viewport(320, 240);
+    g_direct.trans = GteVec3::new(0, 0, ROT_ONE * 1024);
+    g_direct.v[0] = GteVec3::new(0, 0, 0);
+    let xy_direct = g_direct.rtps();
+
+    let mut g_mem = Gte::new();
+    g_mem.set_viewport(320, 240);
+    g_mem.trans = GteVec3::new(0, 0, ROT_ONE * 1024);
+    let mut mem = VecMem::new(64);
+    mem.write_u32_at(0, pack_i16_lo_hi(0, 0));
+    mem.write_u32_at(4, sign_extend_i16(0));
+    g_mem.lwc2(&mut mem, 0, 0); // V0.xy
+    g_mem.lwc2(&mut mem, 1, 4); // V0.z
+    let xy_mem = g_mem.rtps();
+
+    assert_eq!(xy_direct, xy_mem);
+}
+
+#[test]
+fn null_mem_returns_zero_loads_and_drops_stores() {
+    let mut g = Gte::new();
+    let mut mem = NullMem;
+    g.lwc2(&mut mem, 6, 0x100);
+    assert_eq!(g.rgbc, [0; 4]);
+    // Stores are silently dropped.
+    g.write_data(6, 0xDEAD_BEEF);
+    g.swc2(&mut mem, 6, 0x100); // no panic
+}
