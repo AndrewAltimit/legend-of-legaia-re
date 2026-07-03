@@ -15,33 +15,17 @@ pub(crate) fn cmd_play(
     str_file: Option<&Path>,
     cutscene_map_path: Option<&Path>,
 ) -> Result<()> {
-    // If the user supplied a `--cutscene-map` TOML doc, install it as the
-    // explicit override layer; otherwise fall back to the heuristic.
-    let cutscene_map = if let Some(p) = cutscene_map_path {
-        legaia_engine_core::scene::CutsceneMap::from_toml_path(p)
-            .with_context(|| format!("load cutscene map {}", p.display()))?
-    } else {
-        legaia_engine_core::scene::CutsceneMap::default()
-    };
-    if cutscene_map_path.is_some() {
-        eprintln!(
-            "info: cutscene-map loaded with {} explicit entry/entries",
-            cutscene_map.len()
-        );
-    }
-    // Auto-resolve a `--scene op*` / `--scene edteien` request to its
-    // paired FMV via the cutscene map (which falls through to the
-    // hard-coded heuristic) when the user didn't explicitly pass
-    // `--str-file` and the extracted root has the file on disk.
-    let auto_str = match (str_file, disc) {
-        (Some(_), _) => None,
-        (None, None) => cutscene_map
-            .resolve(scene)
-            .map(|rel| extracted_root.join(rel))
-            .filter(|p| p.exists()),
-        // Disc-mode resolution would need an ISO9660 read; punt.
-        (None, Some(_)) => None,
-    };
+    // Resolve the cutscene map (explicit `--cutscene-map` override or the
+    // heuristic default) and, when neither `--str-file` nor `--disc` was
+    // given, auto-resolve a `--scene op*` / `--scene edteien` request to its
+    // paired FMV on disk. Shared with the windowed `play` path.
+    let (_cutscene_map, auto_str) = crate::shared::resolve_cutscene_map_and_str(
+        cutscene_map_path,
+        scene,
+        extracted_root,
+        str_file,
+        disc,
+    )?;
     let resolved_str: Option<&Path> = str_file.or(auto_str.as_deref());
 
     // If a STR file was supplied (explicitly or auto-resolved), pre-decode
@@ -59,14 +43,7 @@ pub(crate) fn cmd_play(
         );
     }
 
-    let cfg = BootConfig {
-        scene: scene.to_string(),
-        enable_audio,
-    };
-    let mut session = match disc {
-        Some(disc_path) => BootSession::open_disc(disc_path, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
-    };
+    let mut session = crate::shared::open_boot_session(scene, enable_audio, extracted_root, disc)?;
     println!(
         "play: scene='{}' frames={} audio={} (entries={}, MES={}, VAB={}, SEQ={})",
         scene,

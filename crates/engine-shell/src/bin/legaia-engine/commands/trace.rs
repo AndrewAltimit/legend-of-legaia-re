@@ -292,7 +292,9 @@ pub(crate) fn cmd_mode_trace(args: ModeTraceArgs<'_>) -> Result<()> {
     );
 
     if let Some(retail) = resolved.retail.as_ref() {
-        let last = trace.last().unwrap();
+        let Some(last) = trace.last() else {
+            anyhow::bail!("engine trace is empty (need at least one frame)");
+        };
         eprintln!(
             "  engine[last] scene_mode={:<10} active_scene={:?}",
             last.scene_mode, last.active_scene
@@ -459,7 +461,9 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
     let divergence = match resolved.retail.as_ref() {
         None => return Ok(()),
         Some(ResolvedRetail::Snapshot(retail)) => {
-            let last = trace.last().unwrap();
+            let Some(last) = trace.last() else {
+                anyhow::bail!("engine trace is empty (need at least one frame)");
+            };
             eprintln!(
                 "  engine[last] mask=0b{:024b} master={:?} reverb_mode={:?}",
                 last.active_voice_mask, last.master_volume, last.reverb_mode,

@@ -14,7 +14,7 @@ use crate::{AudioTraceArgs, ModeTraceArgs, PcmTraceArgs, VramOracleArgs, decode_
 use anyhow::{Context, Result};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
-use legaia_engine_core::scene_resources::{FIELD_SHARED_BLOCKS, SceneResources};
+use legaia_engine_core::scene_resources::SceneResources;
 use legaia_engine_shell::audio_trace_oracle::{
     AudioTraceFrame, audio_trace_to_jsonl, engine_trace_from_paths, first_audio_trace_divergence,
     first_audio_trace_divergence_multi, load_runtime_audio_trace_from_save,
@@ -33,7 +33,6 @@ use legaia_engine_shell::vram_oracle::{
     TexpageDivergence, build_engine_vram_bytes_with_frames, first_texpage_divergence,
     load_runtime_vram_from_save, vram_to_le_bytes,
 };
-use legaia_engine_shell::{BootConfig, BootSession};
 use legaia_prot::cdname;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

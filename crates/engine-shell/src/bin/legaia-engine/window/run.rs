@@ -155,13 +155,9 @@ pub(super) fn build_window_scene_resources(
     // transitions, then build with the targeted VRAM-upload
     // heuristic. Without this every prim sampled non-uploaded
     // VRAM regions and the filter dropped 100% of the mesh.
-    let mut shared_scenes: Vec<Scene> = Vec::new();
-    for name in FIELD_SHARED_BLOCKS {
-        match Scene::load(&session.host.index, name) {
-            Ok(sc) => shared_scenes.push(sc),
-            Err(e) => log::warn!("play-window: shared block '{name}' not loaded: {e:#}"),
-        }
-    }
+    let shared_scenes = crate::shared::load_shared_scenes(&session.host.index, |name, e| {
+        log::warn!("play-window: shared block '{name}' not loaded: {e:#}");
+    });
     let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
     // Field-load model (matches retail FUN_8001F7C0 + the engine's
     // `enter_field_scene`): `SceneLoadKind::Field` skips the battle-
@@ -266,30 +262,17 @@ pub(super) fn cmd_play_window_with_record(
     battle_bgm: Option<u16>,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
-    // Optional cutscene-map override layered on top of the heuristic.
-    let cutscene_map = if let Some(p) = cutscene_map_path {
-        legaia_engine_core::scene::CutsceneMap::from_toml_path(p)
-            .with_context(|| format!("load cutscene map {}", p.display()))?
-    } else {
-        legaia_engine_core::scene::CutsceneMap::default()
-    };
-    if cutscene_map_path.is_some() {
-        eprintln!(
-            "info: cutscene-map loaded with {} explicit entry/entries",
-            cutscene_map.len()
-        );
-    }
-    // Auto-resolve op*/ed* cutscene scenes to their MV*.STR file when
-    // the user didn't pass --str-file but the extracted root has the
-    // file on disk. Mirrors the same convenience path in cmd_play.
-    let auto_str = match (str_file, disc) {
-        (Some(_), _) => None,
-        (None, None) => cutscene_map
-            .resolve(scene)
-            .map(|rel| extracted_root.join(rel))
-            .filter(|p| p.exists()),
-        (None, Some(_)) => None,
-    };
+    // Resolve the cutscene map (explicit `--cutscene-map` override or the
+    // heuristic default) and, when neither `--str-file` nor `--disc` was
+    // given, the auto-resolved `op*` / `ed*` MV*.STR on disk. `cutscene_map`
+    // is reused below for disc-mode STR lookup. Shared with `cmd_play`.
+    let (cutscene_map, auto_str) = crate::shared::resolve_cutscene_map_and_str(
+        cutscene_map_path,
+        scene,
+        extracted_root,
+        str_file,
+        disc,
+    )?;
     let resolved_str: Option<&Path> = str_file.or(auto_str.as_deref());
     // Phase 1: if a STR file is provided (or auto-resolved), play the
     // video in a window first. The user closes (or ESC) the STR window,
@@ -314,14 +297,7 @@ pub(super) fn cmd_play_window_with_record(
         }
     }
 
-    let cfg = BootConfig {
-        scene: scene.to_string(),
-        enable_audio,
-    };
-    let mut session = match disc {
-        Some(disc_path) => BootSession::open_disc(disc_path, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
-    };
+    let mut session = crate::shared::open_boot_session(scene, enable_audio, extracted_root, disc)?;
     // Drive field dialogue through the inline-script field-VM runner so branch
     // handlers execute (flag-sets / scene-changes / GIVE_ITEM). On by default;
     // `--simple-dialogue` clears it to fall back to the plain typewriter panel.

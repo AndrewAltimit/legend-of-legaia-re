@@ -96,13 +96,9 @@ pub(crate) fn cmd_info(
     // Missing blocks (e.g. when running against a region whose CDNAME
     // doesn't carry one of the names) skip with a warning rather than
     // failing - the comparison still works against the rest.
-    let mut shared_scenes: Vec<Scene> = Vec::new();
-    for name in FIELD_SHARED_BLOCKS {
-        match Scene::load(&index, name) {
-            Ok(s) => shared_scenes.push(s),
-            Err(e) => eprintln!("warning: shared block '{name}' not loaded: {e}"),
-        }
-    }
+    let shared_scenes = crate::shared::load_shared_scenes(&index, |name, e| {
+        eprintln!("warning: shared block '{name}' not loaded: {e}");
+    });
     let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
     let (resources, targeted_stats) = if targeted {
         let (r, s) = SceneResources::build_targeted(&scene, &shared_refs)?;

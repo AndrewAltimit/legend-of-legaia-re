@@ -14,6 +14,8 @@
 mod cli;
 #[path = "legaia-engine/commands.rs"]
 mod commands;
+#[path = "legaia-engine/shared.rs"]
+mod shared;
 #[path = "legaia-engine/window.rs"]
 mod window;
 
