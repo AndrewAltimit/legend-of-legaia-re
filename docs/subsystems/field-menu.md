@@ -1,29 +1,82 @@
-# Field Menu - Status Panel Renderer
+# Field Menu - Windows + Status Panel Renderer
 
-Covers `FUN_801D33D8`, the per-character **status / party panel** renderer.
-The field pause menu (game mode `0x17`, the CARD-mode pair) opens this panel
-for the Status, Magic, Moves, and Skills tabs; it draws one party member's page
-into a caller-supplied window rect. It lives in the **menu overlay** (the same
+Covers the field pause menu's **window system** (the window-descriptor table
+that places every menu screen's bordered windows) and `FUN_801D33D8`, the
+per-character **status / party panel** renderer. The field pause menu (game
+mode `0x17`, the CARD-mode pair) opens the panel for the Status, Magic,
+Moves, and Skills tabs; it draws one party member's page into a
+caller-supplied window rect. Both live in the **menu overlay** (the same
 binary as shop / inn / save; base `0x801CE818`). Source:
 `ghidra/scripts/funcs/overlay_menu_801d33d8.txt` plus the shared draw
 primitives `ghidra/scripts/funcs/80036888.txt` (string), `8002c488.txt`
-(UI-icon sprite), `80034b78.txt` (decimal number).
+(UI-icon sprite), `80034b78.txt` (decimal number); window-table pins from
+the catalogued menu-open save states (RAM + VRAM, see below).
 
 The panel draws **content only**. The bordered 9-slice window frame is emitted
 by the caller, not here (this function never draws a box). Every position below
 is an offset from the window origin, which the caller passes in the rect struct
 `a0`: `WX = *(i16*)(a0+0xa)`, `WY = *(i16*)(a0+0xc)`. The rect also carries a
 width-ish field at `a0+0xe` (scroll-arrow X and scrollbar length) and a height
-field at `a0+0x10` (bottom-anchored scrollbar Y). The absolute window
-placement is caller data and is not recoverable from this function.
+field at `a0+0x10` (bottom-anchored scrollbar Y). The rect is caller data -
+resolved through the window-descriptor table below.
 
 ## Contents
 
+- [Window descriptor table](#window-descriptor-table) · [Live window structs](#live-window-structs)
 - [Plumbing](#plumbing) · [Submenu dispatch](#submenu-dispatch)
 - [Header row](#header-row-always-drawn) · [Status page](#status-page-submenu-0-or-5)
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed)
+
+## Window descriptor table
+
+Every pause-menu window (rect + content renderer) comes from a 52-entry
+table in the menu overlay's data segment at VA `0x801E473C` (PROT 0899 file
+offset `0x15F24`; parser `legaia_asset::menu_windows`). Records are 0x10
+bytes, indexed by window id:
+
+| off | type | field |
+|---|---|---|
+| `+0x0..+0x7` | 4 × i16 | `x, y, w, h` - the **content** rect (the `a0+0xa..+0x10` rect the content renderer receives) |
+| `+0x8` | u32 | content-renderer VA (menu-overlay function), 0 = frame-only window |
+| `+0xc` | u16 | style/param word (low bits are per-renderer params; runtime-mutated on some windows) |
+| `+0xe` | u16 | window class: 2 = title tab, 3 = standard, 4 = list page |
+
+The table extent is structural: record 52 fails the rect/renderer validity
+envelope. Provenance: byte-matched between the disc entry and the resident
+overlay across the six catalogued menu-open mednafen states
+(`menu_{status,equipment,options}_{field,town}`); only id 22's style low
+bits and id 49's `y` (178 -> 180) differ at runtime. The drawn window frame
+extends past the content rect by 6 px left/right, 2 px above and 10 px
+below (pixel-measured against the captures' VRAM framebuffers).
+
+Screen window sets, read from the live window lists of the captures (each
+live window carries its descriptor id):
+
+| screen | windows (draw order) |
+|---|---|
+| top-level pause menu | 50 command list `(24,24,104,94)` -> `FUN_801CFD68`; 49 money/play-time box `(24,178,104,24)` -> `FUN_801D0148`; 51 right party panel `(144,24,152,180)` -> `FUN_801D030C` |
+| Status | tab 3 -> `FUN_801DCAD8`; 26 party list `(14,38,60,38)` -> `FUN_801D2094`; 27 "Condition" pager `(14,92,60,10)` -> `FUN_801D30A4`; 30 summary `(14,134,60,70)` -> `FUN_801D31EC`; 28 **main panel** `(90,16,218,188)` -> `FUN_801D33D8` |
+| Equip | tab 2 -> `FUN_801DCA94`; 21 party `(14,42,80,38)` -> `FUN_801D2094`; 23 item list `(174,22,132,182)` (renderer-less container; its lower span is occluded by 22); 22 main `(14,96,292,108)` -> `FUN_801D21C0` |
+| Options | tab 4 -> `FUN_801DCB1C`; 48 settings `(24,40,256,148)` -> `FUN_801DCEF0` |
+
+The id-28 rect origin `(90, 16)` is the `(WX, WY)` every offset in the
+status-page sections below hangs off - cross-checked against the captured
+framebuffer (HP row ink at `WY+0x13`, stat grid at `WY+0x42/+0x4f/+0x5c`,
+right stat column at `WX+0x74`).
+
+## Live window structs
+
+The engine spawns windows as a doubly-linked list of 0x5C-stride structs
+(seen at `0x800AB7BC..` in the captures): `+0x0`/`+0x4` = next/prev,
+`+0x8` = descriptor id, `+0xa..+0x11` = the **live** rect. The live rect is
+the window's animated position: windows slide to the nearest screen edge on
+screen exit and park offscreen (x = 332 right, x = -124 left, y = 240
+bottom in the captures - the `menu_options_field` state caught three
+status-screen windows mid-slide). The top-level windows 49/50/51 stay
+parked in every sub-screen capture, which is how the top-level set was
+pinned without a top-level capture.
 
 ## Plumbing
 
@@ -196,9 +249,21 @@ the per-format pages.
 
 ## Engine port
 
-The clean-room engine renders this panel through
-`engine-render::status_screen_draws_for`, framed by the reusable 9-slice
-primitive `engine-render::menu_window_chrome_draws_for` (the caller-drawn
-window frame) and placed on the shared 320x240 boot-UI stage via
-`engine-render::scale_stage_text_draws`. The HP/MP/level/equipment values come
-from the typed character record in `legaia_save`.
+The clean-room engine parses the window-descriptor table from the user's
+disc at boot (`legaia_asset::menu_windows`; the play-window falls back to a
+pinned mirror of the same rects) and frames each screen's window set with
+the reusable 9-slice primitive `engine-render::menu_window_chrome_draws_for`
+(the caller-drawn window frame), placed on the shared 320x240 boot-UI stage
+via `engine-render::scale_stage_text_draws`. The status main panel renders
+through `engine-render::status_screen_draws_for` at the byte-pinned offsets
+above, hung off the id-28 content origin; the satellite windows through
+`status_satellite_draws_for`; the top-level list / money box / party panel
+through `field_menu_draws_for` + `field_menu_info_draws_for`. The
+HP/MP/level/equipment values come from the typed character record in
+`legaia_save` (derived-stat grid = live `+0x110` window + growth
+`+0x122..+0x12D` window pairs). Still engine-styled: the icon primitives
+(HP/MP tags, equipment icons, gauge bar - text glyphs at the icon
+positions until the `0x800732a4` UI-icon atlas is ported), the tab banner
+art, the top-level row content (renderer `FUN_801CFD68` untraced), and the
+Items / Spells / Arts / Equip-picker screens (their content layouts do not
+fill the pinned windows yet, so they keep a generic frame).

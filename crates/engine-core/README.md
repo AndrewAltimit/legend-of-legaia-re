@@ -77,7 +77,8 @@ struct. `World::tick` runs:
      script channels (`field_channels::FieldChannel`, one per MAN partition-1
      placement, port of `FUN_8003A1E4`/`FUN_8003AEB0`): the vignette actors the
      timeline halt-acquires and pokes beat by beat (animate cues into
-     `field_npc_anim_cues`, scripted moves into `field_npc_positions`). The
+     `field_npc_anim_cues` - drained by the windowed render to re-target
+     each NPC's clip player - scripted moves into `field_npc_positions`). The
      opening white flash (op `0x34` sub-0) drives `fade::ColorFade` on
      `World::color_fade`, drawn as a full-screen wash.
      See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md).

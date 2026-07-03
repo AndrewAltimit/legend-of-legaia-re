@@ -176,6 +176,7 @@ Each descriptor is `(type_size, data_offset)`:
 The **`Tmd` descriptor (type 2)** carries the scene's **environment geometry** - an `asset::pack` of Legaia TMDs (terrain, buildings, props) inside that descriptor's LZS stream (`town01` = 121 meshes, ≈8041 verts).
 
 - Because the meshes are LZS-packed, a raw-only TMD scan misses them; the engine's `SceneResources` walks each entry's LZS-decompressed sections (`tmd_scan::scan_entry`) to load them, then renders the field with every TIM uploaded (`upload_all_tims`, matching the retail field loader).
+- `Scene::load` fetches `SceneAssetTable` entries at their **extended footprint** (`ProtIndex::entry_bytes_extended`) so the sweep reaches the streams past the TOC-indexed end - the `opdeene` prologue's entire vignette geometry pack (72 TMDs + 51 TIMs, entry 0749) sits there, invisible to the indexed view.
 - The per-mesh world placement + mesh selection for this static geometry come from the field map file's object table (`FUN_8003a55c`; parser `legaia_asset::field_objects`, which resolves each object's `pack_index` into this pack) - see [`field-locomotion.md`](../subsystems/field-locomotion.md#object-record-format-0x0000-0x20-byte-stride); `legaia-engine play-window` renders the town from it.
 
 Type-sequence variants (count=7 unless noted):

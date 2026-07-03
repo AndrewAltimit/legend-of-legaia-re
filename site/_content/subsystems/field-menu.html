@@ -1,8 +1,23 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field menu</div>
-  <h1>Field Menu - Status Panel</h1>
-  <p class="lede"><code>FUN_801D33D8</code> renders one party member's <strong>status / party panel</strong> - the page the field pause menu opens for its Status, Magic, Moves, and Skills tabs. It draws window <em>contents</em> only; the bordered 9-slice frame is emitted by the caller. Every position is an offset from the caller-supplied window origin (<code>WX = *(i16*)(a0+0xa)</code>, <code>WY = *(i16*)(a0+0xc)</code>). It lives in the menu overlay (base <code>0x801CE818</code>).</p>
+  <h1>Field Menu - Windows + Status Panel</h1>
+  <p class="lede">The pause menu's window system: a 52-entry <strong>window-descriptor table</strong> in the menu overlay places every screen's bordered windows and dispatches their content renderers, and <code>FUN_801D33D8</code> renders one party member's <strong>status / party panel</strong> - the page the Status, Magic, Moves, and Skills tabs open. The panel draws window <em>contents</em> only; the bordered 9-slice frame is emitted by the caller. Every position is an offset from the caller-supplied window origin (<code>WX = *(i16*)(a0+0xa)</code>, <code>WY = *(i16*)(a0+0xc)</code>) - resolved through the descriptor table. Both live in the menu overlay (base <code>0x801CE818</code>).</p>
 </header>
+
+<section class="doc-section" id="window-table">
+  <h2>Window descriptor table</h2>
+  <p>Every pause-menu window comes from a 52-entry table in the menu overlay's data segment at VA <code>0x801E473C</code> (PROT 0899 file offset <code>0x15F24</code>; parser <code>legaia_asset::menu_windows</code>). Each 0x10-byte record holds the <strong>content</strong> rect <code>x, y, w, h</code> (4 &times; i16 - the <code>a0+0xa..+0x10</code> rect the content renderer receives), a content-renderer VA (u32; 0 = frame-only window), a style/param word, and a window class (2 = title tab, 3 = standard, 4 = list page). The drawn frame extends past the content rect by 6&nbsp;px left/right, 2&nbsp;px above and 10&nbsp;px below (pixel-measured against the menu-open captures' VRAM framebuffers). Byte-matched between the disc entry and the resident overlay across the six catalogued menu-open save states; only two fields differ at runtime.</p>
+  <table>
+    <thead><tr><th>screen</th><th>windows (draw order)</th></tr></thead>
+    <tbody>
+      <tr><td>top-level pause menu</td><td>50 command list <code>(24,24,104,94)</code> &rarr; <code>FUN_801CFD68</code>; 49 money/play-time box <code>(24,178,104,24)</code> &rarr; <code>FUN_801D0148</code>; 51 right party panel <code>(144,24,152,180)</code> &rarr; <code>FUN_801D030C</code></td></tr>
+      <tr><td>Status</td><td>tab 3; 26 party list <code>(14,38,60,38)</code> &rarr; <code>FUN_801D2094</code>; 27 "Condition" pager <code>(14,92,60,10)</code> &rarr; <code>FUN_801D30A4</code>; 30 summary <code>(14,134,60,70)</code> &rarr; <code>FUN_801D31EC</code>; 28 <strong>main panel</strong> <code>(90,16,218,188)</code> &rarr; <code>FUN_801D33D8</code></td></tr>
+      <tr><td>Equip</td><td>tab 2; 21 party <code>(14,42,80,38)</code> &rarr; <code>FUN_801D2094</code>; 23 item list <code>(174,22,132,182)</code> (renderer-less; lower span occluded by 22); 22 main <code>(14,96,292,108)</code> &rarr; <code>FUN_801D21C0</code></td></tr>
+      <tr><td>Options</td><td>tab 4; 48 settings <code>(24,40,256,148)</code> &rarr; <code>FUN_801DCEF0</code></td></tr>
+    </tbody>
+  </table>
+  <p>Live windows are 0x5C-stride doubly-linked structs (descriptor id at <code>+0x8</code>, <em>animated</em> rect at <code>+0xa</code>): on screen exit a window slides to the nearest screen edge and parks offscreen. The top-level windows 49/50/51 stay parked in every sub-screen capture - which is how the top-level set (including the money/play-time corner box) was pinned without a top-level capture.</p>
+</section>
 
 <section class="doc-section" id="plumbing">
   <h2>Plumbing</h2>
@@ -41,6 +56,6 @@
 
 <section class="doc-section" id="engine-port">
   <h2>Engine port</h2>
-  <p>The clean-room engine renders this panel through <code>engine-render::status_screen_draws_for</code>, framed by the reusable 9-slice primitive <code>engine-render::menu_window_chrome_draws_for</code> and placed on the shared 320x240 boot-UI stage via <code>engine-render::scale_stage_text_draws</code>.</p>
+  <p>The clean-room engine parses the window-descriptor table from the user's disc at boot (<code>legaia_asset::menu_windows</code>) and frames each screen's window set with the reusable 9-slice primitive <code>engine-render::menu_window_chrome_draws_for</code>, placed on the shared 320x240 boot-UI stage via <code>engine-render::scale_stage_text_draws</code>. The status main panel renders through <code>engine-render::status_screen_draws_for</code> at the byte-pinned offsets, hung off the id-28 content origin; satellites through <code>status_satellite_draws_for</code>; the top-level list / money box / party panel through <code>field_menu_draws_for</code> + <code>field_menu_info_draws_for</code>. Still engine-styled: the icon primitives (text glyphs at the icon positions until the <code>0x800732a4</code> UI-icon atlas is ported), the tab banner art, the top-level row content, and the Items / Spells / Arts / Equip-picker screens.</p>
   <p class="see-also">See also: <a href="save-screen.html">save screen</a> &middot; <a href="../formats/new-game-table.html">new-game table</a> &middot; <a href="../formats/spell-table.html">spell table</a> &middot; <a href="../formats/item-table.html">item table</a></p>
 </section>

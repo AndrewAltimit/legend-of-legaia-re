@@ -254,11 +254,16 @@ impl PlayWindowApp {
     /// for the field pause menu and its sub-screens, sampling the same
     /// resident system-UI atlas the save chrome uses.
     ///
-    /// Retail draws each menu's bordered window as a separate pass before
-    /// the content (`FUN_801D33D8` renders content only). This reproduces
-    /// the frame via [`legaia_engine_render::menu_window_chrome_draws_for`]
-    /// at the placement-approximate stage rects in [`FIELD_MENU_WINDOW`] /
-    /// [`MENU_SUBWINDOW`]. Returns empty unless boot-UI is in a
+    /// Retail draws each menu's bordered windows as a separate pass before
+    /// the content (`FUN_801D33D8` renders content only). Each screen's
+    /// window set + rects come from the menu overlay's window-descriptor
+    /// table (`legaia_asset::menu_windows`, RAM-matched against the
+    /// catalogued menu-open captures); frames are emitted in retail draw
+    /// order, so a later window's opaque interior occludes earlier ones
+    /// (the equip main window covers the item-list window's lower span).
+    /// Screens whose retail window sets are not capture-pinned (Items /
+    /// Spells / Arts / the Equip picker) frame with
+    /// [`MENU_SUBWINDOW_CONTENT`]. Returns empty unless boot-UI is in a
     /// FieldMenu state (and not the Save sub-session, which owns its own
     /// load-screen chrome) and the atlas has been uploaded.
     pub(super) fn field_menu_chrome_sprite_draws(
@@ -266,6 +271,9 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
+        use legaia_asset::menu_windows::{
+            OPTIONS_SCREEN_WINDOWS, STATUS_SCREEN_WINDOWS, TOP_LEVEL_WINDOWS,
+        };
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
@@ -275,18 +283,38 @@ impl PlayWindowApp {
         };
         // The Save sub-session renders through the save-select chrome
         // (`save_select_chrome_sprite_draws`); don't double-frame it.
-        let rect = match sub {
-            None => FIELD_MENU_WINDOW,
+        // Items / Spells / Arts and the Equip picker keep the generic
+        // near-fullscreen frame: their retail window sets exist in the
+        // descriptor table (equip = tab 2 + ids 21/22/23) but the engine
+        // content layouts don't fill those windows yet.
+        let ids: &[usize] = match sub {
+            None => &TOP_LEVEL_WINDOWS,
             Some(FieldMenuSubsession::Save(_)) => return Vec::new(),
-            Some(_) => MENU_SUBWINDOW,
+            Some(FieldMenuSubsession::Status(_)) => &STATUS_SCREEN_WINDOWS,
+            Some(FieldMenuSubsession::Config(_)) => &OPTIONS_SCREEN_WINDOWS,
+            Some(_) => &[],
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        legaia_engine_render::menu_window_chrome_draws_for(
-            &assets.rects,
-            rect,
-            stage_origin,
-            stage_scale,
-        )
+        let mut out = Vec::new();
+        if ids.is_empty() {
+            // Unpinned screen: one near-fullscreen frame.
+            let (x, y, w, h) = MENU_SUBWINDOW_CONTENT;
+            out.extend(legaia_engine_render::menu_window_chrome_draws_for(
+                &assets.rects,
+                (x - 6, y - 2, w + 12, h + 12),
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        for &id in ids {
+            out.extend(legaia_engine_render::menu_window_chrome_draws_for(
+                &assets.rects,
+                self.menu_window_frame_rect(id),
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        out
     }
 
     /// Build the [`legaia_engine_render::SpriteDraw`] list for the

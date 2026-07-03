@@ -124,11 +124,14 @@ fn field_menu_draws_emit_rows_and_footer() {
             enabled: false,
         },
     ];
-    let draws = field_menu_draws_for(&font, &rows, 0, 1234, 90, (16, 32));
+    let draws = field_menu_draws_for(&font, &rows, 0, 1234, 90, (24, 24), (24, 178));
     assert!(!draws.is_empty());
     // Selected row should produce ">" cursor glyph at the row x.
     let any_gold = draws.iter().any(|d| d.color[1] > 0.7 && d.color[2] < 0.5);
     assert!(any_gold);
+    // Money + play-time land in the corner-box window (below the list).
+    let any_in_money_box = draws.iter().any(|d| d.dst.1 >= 178);
+    assert!(any_in_money_box);
 }
 
 #[test]
@@ -136,12 +139,14 @@ fn status_screen_draws_pack_panel() {
     let font = legaia_font::synthetic_for_tests();
     let stat_rows = [
         StatusStatRow {
-            label: "STR",
+            label: "ATK",
             value: 12,
+            growth: 12,
         },
         StatusStatRow {
-            label: "DEF",
+            label: "UDF",
             value: 9,
+            growth: 9,
         },
     ];
     let equip_rows = [("Weapon", "Bronze Sword"), ("Helmet", "(none)")];

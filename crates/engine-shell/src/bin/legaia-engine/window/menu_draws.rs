@@ -3,6 +3,19 @@
 use super::*;
 
 impl PlayWindowApp {
+    /// Title-tab label for a sub-screen's small banner window (descriptor
+    /// ids 0..=4). Text-only: the retail tab draws a brown banner sprite
+    /// with the label; until that art is ported, the label lands at the
+    /// tab window's pinned content origin.
+    fn menu_tab_title_draws(&self, tab_id: usize, label: &str) -> Vec<TextDraw> {
+        let pen = self.menu_window_pen(tab_id);
+        legaia_engine_render::text_draws_for(
+            &self.font.layout_ascii(label),
+            pen,
+            [1.0, 0.95, 0.75, 1.0],
+        )
+    }
+
     /// Build [`TextDraw`]s for an active field-menu sub-session. Each
     /// variant maps to the matching `*_draws_for` helper in
     /// `legaia-engine-render`. Renderer-side state stays in this method
@@ -15,6 +28,7 @@ impl PlayWindowApp {
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
         match sub {
             FieldMenuSubsession::Status(s) => {
+                use legaia_asset::menu_windows::window_ids;
                 let Some(snap) = s.current() else {
                     return Vec::new();
                 };
@@ -22,9 +36,10 @@ impl PlayWindowApp {
                     .stats
                     .iter()
                     .zip(snap.stat_labels.iter())
-                    .map(|(v, l)| legaia_engine_render::StatusStatRow {
+                    .map(|((live, growth), l)| legaia_engine_render::StatusStatRow {
                         label: l,
-                        value: *v as u32,
+                        value: *live as u32,
+                        growth: *growth as u32,
                     })
                     .collect();
                 let equip_rows: Vec<(&str, &str)> = snap
@@ -46,14 +61,35 @@ impl PlayWindowApp {
                     stat_rows: &stat_rows,
                     equip_rows: &equip_rows,
                 };
-                legaia_engine_render::status_screen_draws_for(
+                // Main panel content at the pinned FUN_801D33D8 offsets,
+                // hung off the id-28 window's content origin; satellites
+                // (party list / Condition pager / summary) + the screen
+                // tab fill their own pinned windows.
+                let mut d = legaia_engine_render::status_screen_draws_for(
                     &self.font,
                     &view,
                     Some("L1/R1: Switch  Circle: Back"),
-                    (32, 32),
-                )
+                    self.menu_window_pen(window_ids::STATUS_MAIN),
+                );
+                let names: Vec<&str> = s.snapshots().iter().map(|m| m.name.as_str()).collect();
+                let sat = legaia_engine_render::StatusSatelliteView {
+                    party_names: &names,
+                    cursor: s.cursor() as usize,
+                    name: &snap.name,
+                    level: snap.level,
+                };
+                d.extend(legaia_engine_render::status_satellite_draws_for(
+                    &self.font,
+                    &sat,
+                    self.menu_window_pen(window_ids::STATUS_PARTY_LIST),
+                    self.menu_window_pen(window_ids::STATUS_CONDITION),
+                    self.menu_window_pen(window_ids::STATUS_SUMMARY),
+                ));
+                d.extend(self.menu_tab_title_draws(window_ids::TAB_STATUS, "Status"));
+                d
             }
             FieldMenuSubsession::Config(s) => {
+                use legaia_asset::menu_windows::window_ids;
                 let rows = s.state().rows();
                 let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
                     .iter()
@@ -62,12 +98,14 @@ impl PlayWindowApp {
                         value: &r.value,
                     })
                     .collect();
-                legaia_engine_render::options_draws_for(
+                let mut d = legaia_engine_render::options_draws_for(
                     &self.font,
                     &row_views,
                     s.cursor(),
-                    (96, 80),
-                )
+                    self.menu_window_pen(window_ids::OPTIONS_MAIN),
+                );
+                d.extend(self.menu_tab_title_draws(window_ids::TAB_OPTIONS, "Options"));
+                d
             }
             FieldMenuSubsession::Save(s) => {
                 use legaia_engine_core::save_select::SelectPhase;

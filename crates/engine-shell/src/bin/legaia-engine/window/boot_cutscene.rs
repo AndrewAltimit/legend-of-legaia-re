@@ -544,10 +544,14 @@ impl PlayWindowApp {
                 } else {
                     // The menu session lives on the BootSession (the
                     // headless host of the CARD/menu mode); the window
-                    // only renders it.
+                    // only renders it. Command rows fill the id-50 list
+                    // window, money/play-time the id-49 corner box, and
+                    // the party overview the id-51 right panel (the
+                    // pinned top-level window set).
                     let Some(menu) = self.session.field_menu.as_ref() else {
                         return Vec::new();
                     };
+                    use legaia_asset::menu_windows::window_ids;
                     let view = menu.view();
                     let row_views: Vec<legaia_engine_render::FieldMenuRowView<'_>> = view
                         .rows
@@ -557,14 +561,35 @@ impl PlayWindowApp {
                             enabled: r.enabled,
                         })
                         .collect();
-                    legaia_engine_render::field_menu_draws_for(
+                    let mut d = legaia_engine_render::field_menu_draws_for(
                         &self.font,
                         &row_views,
                         view.cursor,
                         view.money,
                         view.play_time_seconds,
-                        FIELD_MENU_TEXT_PEN,
-                    )
+                        self.menu_window_pen(window_ids::TOP_COMMAND_LIST),
+                        self.menu_window_pen(window_ids::TOP_MONEY_TIME),
+                    );
+                    let snaps = legaia_engine_core::field_menu_dispatch::status_snapshots(
+                        &self.session.host.world,
+                    );
+                    let party: Vec<legaia_engine_render::FieldMenuPartyView<'_>> = snaps
+                        .iter()
+                        .map(|s| legaia_engine_render::FieldMenuPartyView {
+                            name: &s.name,
+                            level: s.level,
+                            hp: s.hp,
+                            hp_max: s.hp_max,
+                            mp: s.mp,
+                            mp_max: s.mp_max,
+                        })
+                        .collect();
+                    d.extend(legaia_engine_render::field_menu_info_draws_for(
+                        &self.font,
+                        &party,
+                        self.menu_window_pen(window_ids::TOP_INFO_PANEL),
+                    ));
+                    d
                 };
                 if !is_save_sub {
                     let (origin, scale) = self.save_select_stage(surface_w, surface_h);

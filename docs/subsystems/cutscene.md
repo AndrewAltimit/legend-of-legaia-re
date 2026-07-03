@@ -447,7 +447,17 @@ Two single-shared-VM accommodations, **approximate by design**:
 
 - **Narration pages are neutralized.** In retail's cutscene context the `CC F8 80 N` op routes to `FUN_8003C764` (text draw) and consumes its `N` inline pages; the engine's single field VM decodes `0x4C` n8 sub-0 as the actor allocator, whose PC-advance would land on the page bytes. Because the engine presents the narration through the separate `CutsceneNarration` presenter, the loader overwrites each narration span (located by [`cutscene_text::NarrationBlock::byte_span`](../../crates/asset/src/cutscene_text.rs)) with field-VM NOPs (`0x21`) - an offset-preserving fill, so relative jumps still resolve and the camera/move/`GFLAG` ops at their original offsets still execute. The actor-allocator host hook is also suppressed while the timeline steps (`World::in_cutscene_timeline`).
 - **Camera params.** The op-`0x45` events flow to the `Camera` controller and the host writes the param set to `World::camera_state`. The native `play-window` renders the cutscene with [`window::cutscene_camera_mvp`](../../crates/engine-render/src/window.rs) whenever a cutscene timeline is installed, decoding the pinned params (see the op-`0x45` table above) via `SceneHost`'s `cutscene_view`: it frames the **focus** `(-param6, param7, -param8)` - sign-corrected back to world space from the negated GTE-translation globals - tilted by the **pitch** (param 0) and rotated by the **yaw** (param 1, PSX `4096` = full turn), with the **FOV** derived from param 9 (the GTE H register). The eye **distance** is the one approximation left:
-  retail has no explicit eye-distance param (the eye sits at the GTE translation and projects through H - see the op-`0x45` table above), so the engine orbits the focus at a scene-sized radius, but the orbit *angles* (pitch + yaw) are now the decoded `RotMatrixX`/`RotMatrixY` angles rather than a fixed tilt. A beat that omits the pitch slot falls back to the prior fixed ~24° downward framing. The shot re-targets each time the timeline executes a new Camera Configure op; rather than cutting, `play-window` eases the rendered `(focus, pitch, yaw, FOV)` toward each new beat through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) (per-frame ease, angles along the shortest arc;
+  retail has no explicit eye-distance param (the eye sits at the GTE translation and projects
+  through H - see the op-`0x45` table above), so the engine frames a fixed world half-extent
+  around the focus through the decoded FOV (a narrow retail H pulls the shot in close, a wide
+  one backs off; the scene AABB only caps the distance - a scene-radius orbit mis-framed multi-
+  area cutscene scenes like `opdeene`, whose vignette islands span the whole map), but the orbit
+  *angles* (pitch + yaw) are now the decoded `RotMatrixX`/`RotMatrixY` angles rather than a
+  fixed tilt. A beat that omits the pitch slot falls back to the prior fixed ~24° downward
+  framing. The shot re-targets each time the timeline executes a new Camera Configure op; rather
+  than cutting, `play-window` eases the rendered `(focus, pitch, yaw, FOV)` toward each new beat
+  through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) (per-frame
+  ease, angles along the shortest arc;
   reset to snap when the timeline first installs) - mirroring retail's own per-frame `FUN_801DB510` exponential ease - so beats blend the way retail's GTE camera does.
 
 The same machinery drives the **`town01` opening** (a sibling partition-2 record, `P2[3]`). On the new-game prologue hand-off, [`World::take_prologue_handoff`](../../crates/engine-core/src/world.rs) sets `entering_town01_opening`, and the `town01` field entry installs that record via [`World::install_town01_opening_timeline`](../../crates/engine-core/src/world.rs). Two differences from the opdeene prologue:
@@ -486,6 +496,11 @@ frame-slice per tick (mirroring `FUN_80039B7C`'s per-actor loop: ops until a yie
 (the acquirer clears the target's halt bit - the poke from the owner is the resume signal).
 Scripted moves write through to `World::field_npc_positions` so the field render + interact probes
 follow, and `0x4B` ANIMATE cues land in `World::field_npc_anim_cues` keyed by placement.
+The play-window render drains those cues each frame and **re-targets the NPC's clip player** to
+the cued bundle record (`record = anim id - 1`, the same rule as the placement anim byte), so the
+vignette actors perform their scripted beats instead of looping the placement clip. Simplified:
+the cue's per-keyframe parameter words are not modelled - the cued record plays as a loop until
+the next cue.
 Channels are cutscene-scoped: they drop when the timeline completes, so normal field NPC behaviour
 (the decoded-waypoint motion substitute) is untouched outside cutscenes.
 Disc-gated `crates/engine-core/tests/opdeene_field_channels.rs` cold-boots `opdeene`, asserts 13

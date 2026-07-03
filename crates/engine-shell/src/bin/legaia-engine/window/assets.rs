@@ -588,6 +588,8 @@ impl PlayWindowApp {
         self.field_npc_draws.clear();
         self.npc_clip_players.clear();
         self.npc_anim_srcs.clear();
+        self.npc_anim_bundles = (None, None);
+        self.npc_bundle_special.clear();
         if world.mode == SceneMode::Field
             && let Some(r) = self.win.renderer.as_ref()
         {
@@ -734,6 +736,8 @@ impl PlayWindowApp {
                 if self.npc_clip_players.contains_key(&(p.index as u8)) {
                     self.npc_anim_srcs
                         .insert(p.index as u8, (tmd.clone(), raw.clone()));
+                    self.npc_bundle_special
+                        .insert(p.index as u8, p.special_model);
                 }
                 self.field_npc_draws.push(FieldNpcDraw {
                     slot: p.index as u8,
@@ -742,6 +746,9 @@ impl PlayWindowApp {
                     spawn: (p.world_x, p.world_z),
                 });
             }
+            // Retain the bundles for runtime clip re-targeting (op-0x4B
+            // ANIMATE cues from channel scripts).
+            self.npc_anim_bundles = (scene_bundle, locomotion_bundle);
             if !self.field_npc_draws.is_empty() {
                 log::info!(
                     "play-window: {} field NPC/prop draws ({} placements)",

@@ -623,6 +623,24 @@ pub(super) fn cmd_play_window_with_record(
         }
     };
 
+    // Parse the menu overlay's window-descriptor table (PROT 0899
+    // @0x15F24): the retail window rects behind every pause-menu screen.
+    // Falls back to the pinned mirror consts when unavailable.
+    let menu_window_table = session
+        .host
+        .index
+        // The table sits at file 0x15F24, past the entry's TOC size - read
+        // the extended footprint (the same read the save-menu pill TIM uses).
+        .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .ok()
+        .and_then(|b| match legaia_asset::menu_windows::parse(&b) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                log::warn!("play-window: menu window table parse failed: {e:#}");
+                None
+            }
+        });
+
     let initial_boot_ui = if boot_ui {
         if publisher_logos_atlas_data.is_some() {
             BootUiState::PublisherLogos(
@@ -654,6 +672,7 @@ pub(super) fn cmd_play_window_with_record(
         pending_menu_glyph_atlas: menu_glyph_atlas_data,
         save_menu: None,
         pending_save_menu_atlas: save_menu_atlas_data,
+        menu_window_table,
         uploaded_vram: None,
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
@@ -698,6 +717,8 @@ pub(super) fn cmd_play_window_with_record(
         field_npc_draws: Vec::new(),
         npc_clip_players: std::collections::HashMap::new(),
         npc_anim_srcs: std::collections::HashMap::new(),
+        npc_anim_bundles: (None, None),
+        npc_bundle_special: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),

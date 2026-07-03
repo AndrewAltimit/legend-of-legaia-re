@@ -402,10 +402,22 @@ pub fn cutscene_camera_mvp(
     let center = Vec3::from(look_at);
     let lo = Vec3::from(aabb_lo);
     let hi = Vec3::from(aabb_hi);
+    // Eye distance is the one un-pinned retail quantity (the GTE camera
+    // carries no distance scalar - docs/subsystems/cutscene.md). Frame a
+    // fixed world half-extent around the focus through the DECODED FOV:
+    // retail's narrow GTE-H projections (H 792 -> ~17 degrees) then pull
+    // the shot in to the close vignette framing the captured intro shots
+    // show, and wider H values naturally back the eye off. The previous
+    // scene-AABB radius model broke on multi-area cutscene scenes
+    // (opdeene stages its vignette islands across the whole map, so the
+    // AABB radius pushed the shot out to a satellite view). The AABB now
+    // only caps the distance so a small scene can't be over-shot.
+    const FRAME_HALF_EXTENT: f32 = 600.0;
     let radius = ((hi - lo).length() * 0.5).max(1.0);
-    // Slightly tighter than the orbit framing so the cinematic shot fills more
-    // of the screen.
-    let distance = radius / 30f32.to_radians().tan() * 1.2;
+    let fov = fov_radians.clamp(10f32.to_radians(), 120f32.to_radians());
+    let distance = (FRAME_HALF_EXTENT / (fov * 0.5).tan())
+        .min(radius / 30f32.to_radians().tan() * 1.2)
+        .max(64.0);
     // Spherical orbit of the focus by the decoded heading + pitch. At yaw 0 the
     // eye sits in front (`+Z`); positive pitch raises it above the focus (`-Y`
     // under Y-down) so the shot looks down. Pitch is clamped shy of straight
@@ -416,8 +428,7 @@ pub fn cutscene_camera_mvp(
     let eye = center + Vec3::new(distance * pc * ys, -distance * ps, distance * pc * yc);
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
     let near = (distance * 0.05).max(0.1);
-    let far = distance * 4.0 + 1000.0;
-    let fov = fov_radians.clamp(10f32.to_radians(), 120f32.to_radians());
+    let far = distance * 8.0 + 1000.0;
     let proj = Mat4::perspective_rh(fov, aspect.max(0.01), near, far);
     proj * view
 }
