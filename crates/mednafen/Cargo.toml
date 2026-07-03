@@ -10,7 +10,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "mednafen-state"
-path = "src/bin/mednafen-state.rs"
+path = "src/bin/mednafen-state/main.rs"
 
 [dependencies]
 anyhow.workspace = true

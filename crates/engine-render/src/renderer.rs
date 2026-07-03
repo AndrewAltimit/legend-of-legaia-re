@@ -13,9 +13,10 @@ use wgpu::util::DeviceExt;
 mod core;
 mod helpers;
 mod render;
+mod state;
 mod upload;
 mod uploaded;
 
-pub use core::*;
 pub(crate) use helpers::*;
+pub use state::*;
 pub use uploaded::*;

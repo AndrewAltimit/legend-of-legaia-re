@@ -51,6 +51,13 @@ pub use camera::*;
 mod gte_core;
 pub use gte_core::*;
 
+mod lighting;
+mod registers;
+mod transform;
+
+mod mem;
+pub use mem::*;
+
 pub mod raster;
 
 #[cfg(test)]

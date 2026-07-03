@@ -6,6 +6,8 @@ use super::*;
 mod keyboard;
 #[path = "event_handler/redraw.rs"]
 mod redraw;
+#[path = "event_handler/redraw_passes.rs"]
+mod redraw_passes;
 
 impl ApplicationHandler for PlayWindowApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {
