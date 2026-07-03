@@ -449,6 +449,15 @@ impl AudioOut {
         Ok(stream)
     }
 
+    /// Lock the shared state, recovering from poisoning instead of panicking.
+    /// The `state` mutex is also held inside the real-time cpal callback, so a
+    /// panic while it is held would poison it; recovering keeps a single fault
+    /// from cascading into every subsequent lock. On the unpoisoned path this
+    /// is identical to `self.state.lock().unwrap()`.
+    fn lock(&self) -> std::sync::MutexGuard<'_, StreamResampler> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Run a closure with mutable access to the underlying SPU model. This
     /// is how the engine pushes voice attributes, key-on/off masks, and
     /// sample uploads. Locks for the duration of the closure.
@@ -456,7 +465,7 @@ impl AudioOut {
     where
         F: FnOnce(&mut Spu) -> R,
     {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock();
         f(&mut s.spu)
     }
 
@@ -468,7 +477,7 @@ impl AudioOut {
     /// without re-encoding" use case. The full SPU mixer is the production
     /// path; see [`Self::with_spu`] for that.
     pub fn play_pcm_mono(&self, pcm: Vec<i16>, input_rate: u32) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock();
         // Use voice 0 as the dedicated preview slot. Park the PCM at a
         // fixed SPU-RAM region by re-encoding into ADPCM blocks first.
         let blocks = pcm_to_silence_padded_adpcm(&pcm);
@@ -498,7 +507,7 @@ impl AudioOut {
 
     /// Stop the preview voice immediately (voice 0).
     pub fn stop(&self) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock();
         s.spu.voices[0].key_off();
     }
 
@@ -517,7 +526,7 @@ impl AudioOut {
         looping: bool,
         gain: u16,
     ) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock();
         s.xa = Some(XaPlayback {
             pcm,
             sample_rate,
@@ -563,13 +572,13 @@ impl AudioOut {
     /// Detach the active XA stream (if any). Subsequent frames mix only
     /// the SPU output.
     pub fn stop_xa(&self) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock();
         s.xa = None;
     }
 
     /// `true` if an XA stream is currently attached and not yet exhausted.
     pub fn xa_active(&self) -> bool {
-        let s = self.state.lock().unwrap();
+        let s = self.lock();
         s.xa.as_ref().is_some_and(|x| !x.is_done())
     }
 
@@ -582,7 +591,7 @@ impl AudioOut {
     /// monotonic until the one-shot stream runs off the end (where it pins at
     /// the stream duration).
     pub fn xa_cursor_secs(&self) -> Option<f64> {
-        let s = self.state.lock().unwrap();
+        let s = self.lock();
         s.xa.as_ref().map(|x| {
             if x.sample_rate == 0 {
                 0.0
@@ -597,7 +606,7 @@ impl AudioOut {
     /// Replacing an existing sequencer silences any active notes from the
     /// prior one (use [`Self::crossfade_to`] for a smooth transition).
     pub fn attach_sequencer(&self, seq: Sequencer) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock();
         if let Some(mut prev) = s.sequencer.take() {
             prev.stop(&mut s.spu);
         }
@@ -612,7 +621,7 @@ impl AudioOut {
     /// Detach the active sequencer (if any) and key-off whatever it had
     /// running. Cancels any in-progress crossfade.
     pub fn detach_sequencer(&self) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock();
         if let Some(mut seq) = s.sequencer.take() {
             seq.stop(&mut s.spu);
         }
@@ -627,7 +636,7 @@ impl AudioOut {
     /// continue to decay via their ADSR envelopes). Call with `false` to
     /// resume from where the sequencer left off.
     pub fn set_sequencer_paused(&self, paused: bool) {
-        self.state.lock().unwrap().sequencer_paused = paused;
+        self.lock().sequencer_paused = paused;
     }
 
     /// Cross-fade from the currently-playing sequencer to `new_seq` over
@@ -641,7 +650,7 @@ impl AudioOut {
     /// `fade_samples = 0` attaches immediately (same as
     /// [`Self::attach_sequencer`]).
     pub fn crossfade_to(&self, new_seq: Sequencer, fade_samples: u32) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock();
         if fade_samples == 0 || s.sequencer.is_none() {
             // No current sequencer or immediate switch requested.
             if let Some(mut prev) = s.sequencer.take() {
@@ -663,7 +672,7 @@ impl AudioOut {
     /// Snapshot of the sequencer's progress, returned `None` if no sequencer
     /// is currently attached. Caller-side polling for UI / progress bars.
     pub fn sequencer_progress(&self) -> Option<SequencerProgress> {
-        let s = self.state.lock().unwrap();
+        let s = self.lock();
         s.sequencer.as_ref().map(|seq| SequencerProgress {
             tick: seq.playhead_ticks(),
             bpm: seq.bpm(),
