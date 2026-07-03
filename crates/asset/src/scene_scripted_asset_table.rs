@@ -101,19 +101,19 @@ pub fn detect(buf: &[u8]) -> Option<SceneScriptedAssetTable> {
 
     // Validate the inner asset table - same checks as
     // `crate::scene_asset_table::detect` but at a non-zero base offset.
-    let lead = read_u32_le(buf, table_off)?;
+    let lead = legaia_bytes::u32_le(buf, table_off)?;
     if lead != ASSET_TABLE_COUNT {
         return None;
     }
     // First descriptor's offset must be the literal 0x40 (= 8 + 7*8).
-    let first_data_off = read_u32_le(buf, table_off + 12)?;
+    let first_data_off = legaia_bytes::u32_le(buf, table_off + 12)?;
     if first_data_off != ASSET_TABLE_HEADER_END {
         return None;
     }
     // All 7 type bytes must be legal asset-type values.
     for i in 0..(ASSET_TABLE_COUNT as usize) {
         let p = table_off + 8 + i * 8;
-        let type_size = read_u32_le(buf, p)?;
+        let type_size = legaia_bytes::u32_le(buf, p)?;
         let type_byte = ((type_size >> 24) & 0xFF) as u8;
         if matches!(AssetType::from_byte(type_byte), AssetType::Unknown(_)) {
             return None;
@@ -149,7 +149,7 @@ pub fn record_ranges(buf: &[u8]) -> Option<Vec<(usize, usize)>> {
     let table_end = 2 + (count as usize) * 2;
     let mut offsets = Vec::with_capacity(count as usize);
     for i in 0..(count as usize) {
-        offsets.push(read_u16_le(buf, 2 + i * 2)? as usize);
+        offsets.push(legaia_bytes::u16_le(buf, 2 + i * 2)? as usize);
     }
     debug_assert_eq!(offsets[0], table_end);
     for (i, &start) in offsets.iter().enumerate() {
@@ -172,7 +172,7 @@ fn detect_prescript(buf: &[u8]) -> Option<(u16, u16)> {
     if buf.len() < 4 {
         return None;
     }
-    let count = read_u16_le(buf, 0)?;
+    let count = legaia_bytes::u16_le(buf, 0)?;
     if count == 0 || count > MAX_PRESCRIPT_COUNT {
         return None;
     }
@@ -182,7 +182,7 @@ fn detect_prescript(buf: &[u8]) -> Option<(u16, u16)> {
     }
     // First record offset must equal `2 + count * 2` (= `table_end`). This
     // is the algebraic invariant that gives the detector its precision.
-    let first = read_u16_le(buf, 2)?;
+    let first = legaia_bytes::u16_le(buf, 2)?;
     if first as usize != table_end {
         return None;
     }
@@ -190,7 +190,7 @@ fn detect_prescript(buf: &[u8]) -> Option<(u16, u16)> {
     let mut prev = 0u16;
     let mut last = 0u16;
     for i in 0..(count as usize) {
-        let o = read_u16_le(buf, 2 + i * 2)?;
+        let o = legaia_bytes::u16_le(buf, 2 + i * 2)?;
         if (o as usize) > buf.len() || o < prev {
             return None;
         }
@@ -198,14 +198,6 @@ fn detect_prescript(buf: &[u8]) -> Option<(u16, u16)> {
         last = o;
     }
     Some((count, last))
-}
-
-fn read_u16_le(buf: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(buf.get(at..at + 2)?.try_into().ok()?))
-}
-
-fn read_u32_le(buf: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(buf.get(at..at + 4)?.try_into().ok()?))
 }
 
 #[cfg(test)]

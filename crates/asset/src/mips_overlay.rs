@@ -111,8 +111,8 @@ pub fn detect(buf: &[u8]) -> Option<MipsOverlay> {
     if buf.len() < 8 {
         return None;
     }
-    let u32_0 = read_u32_le(buf, 0)?;
-    let u32_1 = read_u32_le(buf, 4)?;
+    let u32_0 = legaia_bytes::u32_le(buf, 0)?;
+    let u32_1 = legaia_bytes::u32_le(buf, 4)?;
 
     // (1) addiu sp, sp, -X - high 24 bits must match the prologue pattern.
     if u32_0 & ADDIU_SP_SP_NEG_MASK != ADDIU_SP_SP_NEG {
@@ -139,11 +139,6 @@ pub fn detect(buf: &[u8]) -> Option<MipsOverlay> {
         second_instruction: u32_1,
         second_op: second_op as u8,
     })
-}
-
-fn read_u32_le(buf: &[u8], at: usize) -> Option<u32> {
-    let bytes = buf.get(at..at + 4)?;
-    Some(u32::from_le_bytes(bytes.try_into().unwrap()))
 }
 
 #[cfg(test)]

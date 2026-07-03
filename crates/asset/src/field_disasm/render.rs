@@ -1,3 +1,6 @@
+//! Text rendering of a decoded instruction into a single human-readable
+//! disassembly line.
+
 use super::*;
 
 /// Render an instruction as a single text line.

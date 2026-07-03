@@ -1187,6 +1187,7 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-anm",
+ "legaia-bytes",
  "legaia-lzs",
  "legaia-prot",
  "legaia-seq",

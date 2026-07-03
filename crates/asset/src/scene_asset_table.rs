@@ -327,7 +327,7 @@ impl DescriptorRecord {
 /// Try to detect a scene asset table. Returns `None` when the buffer doesn't
 /// match the strict 7-asset header.
 pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
-    let count_u32 = read_u32_le(buf, 0)?;
+    let count_u32 = legaia_bytes::u32_le(buf, 0)?;
     // Two header shapes in the retail corpus: kingdom bundles use `count = 7`
     // (canonical), early standalone-town scenes use `count = 6`. Constrain to
     // the observed values - the anchor check below is the strong signal, but
@@ -340,7 +340,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
     if buf.len() < table_end {
         return None;
     }
-    let meta1 = read_u32_le(buf, 4)?;
+    let meta1 = legaia_bytes::u32_le(buf, 4)?;
 
     let mut descriptors = [DescriptorRecord {
         type_byte: 0,
@@ -349,8 +349,8 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
     }; MAX_DESCRIPTORS];
     for (i, slot) in descriptors.iter_mut().take(count).enumerate() {
         let p = 8 + i * 8;
-        let type_size = read_u32_le(buf, p)?;
-        let data_offset = read_u32_le(buf, p + 4)?;
+        let type_size = legaia_bytes::u32_le(buf, p)?;
+        let data_offset = legaia_bytes::u32_le(buf, p + 4)?;
         let type_byte = ((type_size >> 24) & 0xFF) as u8;
         let size = type_size & 0x00FF_FFFF;
 
@@ -391,11 +391,6 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
 /// dispatcher table at `FUN_8001f05c` (cases 0x00..=0x14, with a few gaps).
 fn is_known_type(b: u8) -> bool {
     !matches!(AssetType::from_byte(b), AssetType::Unknown(_))
-}
-
-fn read_u32_le(buf: &[u8], at: usize) -> Option<u32> {
-    let bytes = buf.get(at..at + 4)?;
-    Some(u32::from_le_bytes(bytes.try_into().unwrap()))
 }
 
 #[cfg(test)]

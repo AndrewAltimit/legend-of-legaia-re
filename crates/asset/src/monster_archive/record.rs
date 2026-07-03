@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use super::{MIN_RECORD_BYTES, SLOT_STRIDE, decode_block, read_u16, read_u32};
+use super::{MIN_RECORD_BYTES, SLOT_STRIDE, decode_block};
 
 /// One spell entry referenced by a monster record's `+0x4C` offset array.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,7 +196,7 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     if block.len() < MIN_RECORD_BYTES {
         return None;
     }
-    let name_offset = read_u32(block, 0)? as usize;
+    let name_offset = legaia_bytes::u32_le(block, 0)? as usize;
     // A real record's name offset points inside the block at a printable,
     // NUL-terminated string. Reject slots that don't.
     if name_offset == 0 || name_offset >= block.len() {
@@ -206,19 +206,19 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     if name.is_empty() {
         return None;
     }
-    let hp = read_u16(block, 0x0C)?;
-    let mp = read_u16(block, 0x10)?;
+    let hp = legaia_bytes::u16_le(block, 0x0C)?;
+    let mp = legaia_bytes::u16_le(block, 0x10)?;
     let stats = [
-        read_u16(block, 0x0E)?,
-        read_u16(block, 0x12)?,
-        read_u16(block, 0x14)?,
-        read_u16(block, 0x16)?,
-        read_u16(block, 0x18)?,
-        read_u16(block, 0x1A)?,
+        legaia_bytes::u16_le(block, 0x0E)?,
+        legaia_bytes::u16_le(block, 0x12)?,
+        legaia_bytes::u16_le(block, 0x14)?,
+        legaia_bytes::u16_le(block, 0x16)?,
+        legaia_bytes::u16_le(block, 0x18)?,
+        legaia_bytes::u16_le(block, 0x1A)?,
     ];
     let element = *block.get(0x1D)?;
-    let gold = read_u16(block, 0x44)?;
-    let exp = read_u16(block, 0x46)?;
+    let gold = legaia_bytes::u16_le(block, 0x44)?;
+    let exp = legaia_bytes::u16_le(block, 0x46)?;
     let drop_item = *block.get(0x48)?;
     let drop_chance_pct = *block.get(0x49)?;
     let magic_count = *block.get(0x4A)?;
@@ -253,7 +253,7 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
 fn parse_spells(block: &[u8], magic_count: u8) -> Vec<MonsterSpell> {
     let mut out = Vec::with_capacity(magic_count as usize);
     for i in 0..magic_count as usize {
-        let Some(offset) = read_u32(block, 0x4C + i * 4) else {
+        let Some(offset) = legaia_bytes::u32_le(block, 0x4C + i * 4) else {
             break;
         };
         let entry = offset as usize;
@@ -264,8 +264,16 @@ fn parse_spells(block: &[u8], magic_count: u8) -> Vec<MonsterSpell> {
             id,
             agl_cost,
             offset,
-            effect_offset: resolve_effect_offset(block, magic_count, read_u32(block, entry + 4)),
-            aux_offset: resolve_effect_offset(block, magic_count, read_u32(block, entry + 8)),
+            effect_offset: resolve_effect_offset(
+                block,
+                magic_count,
+                legaia_bytes::u32_le(block, entry + 4),
+            ),
+            aux_offset: resolve_effect_offset(
+                block,
+                magic_count,
+                legaia_bytes::u32_le(block, entry + 8),
+            ),
         });
     }
     out
@@ -286,7 +294,7 @@ fn resolve_effect_offset(block: &[u8], magic_count: u8, index: Option<u32>) -> O
         return None;
     }
     let word = index + magic_count as usize + 0x12;
-    let off = read_u32(block, word * 4)?;
+    let off = legaia_bytes::u32_le(block, word * 4)?;
     if off == 0 || off as usize >= block.len() {
         return None;
     }
@@ -475,25 +483,25 @@ mod tests {
         block[0x54..0x58].copy_from_slice(&0x1C0u32.to_le_bytes());
         // table[1] @ 0x58: 0 -> would resolve to None if referenced.
         assert_eq!(
-            resolve_effect_offset(&block, mc, read_u32(&block, 0x100 + 4)),
+            resolve_effect_offset(&block, mc, legaia_bytes::u32_le(&block, 0x100 + 4)),
             Some(0x1C0)
         );
         assert_eq!(
-            resolve_effect_offset(&block, mc, read_u32(&block, 0x100 + 8)),
+            resolve_effect_offset(&block, mc, legaia_bytes::u32_le(&block, 0x100 + 8)),
             None,
             "index 0 -> none"
         );
         // An index whose table slot is zero resolves to None.
         block[0x100 + 4] = 2;
         assert_eq!(
-            resolve_effect_offset(&block, mc, read_u32(&block, 0x100 + 4)),
+            resolve_effect_offset(&block, mc, legaia_bytes::u32_le(&block, 0x100 + 4)),
             None,
             "zero table slot -> none"
         );
         // An out-of-range resolved offset is rejected.
         block[0x58..0x5C].copy_from_slice(&0x9999u32.to_le_bytes());
         assert_eq!(
-            resolve_effect_offset(&block, mc, read_u32(&block, 0x100 + 4)),
+            resolve_effect_offset(&block, mc, legaia_bytes::u32_le(&block, 0x100 + 4)),
             None,
             "offset past block end -> none"
         );

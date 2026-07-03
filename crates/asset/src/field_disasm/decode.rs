@@ -1,3 +1,6 @@
+//! Single-instruction decoder: turns the bytes at a program counter into one
+//! decoded instruction plus the offset of the next instruction.
+
 use super::*;
 
 /// Decode a single instruction starting at `pc`. Returns the instruction

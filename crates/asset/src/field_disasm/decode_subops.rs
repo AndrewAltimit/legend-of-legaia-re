@@ -1,3 +1,7 @@
+//! Decoders for the multi-byte sub-opcode groups (actor-control, camera,
+//! state-resume, inventory-compare, menu-control) dispatched out of the main
+//! instruction decoder.
+
 use super::*;
 
 pub(super) fn decode_actor_ctrl(

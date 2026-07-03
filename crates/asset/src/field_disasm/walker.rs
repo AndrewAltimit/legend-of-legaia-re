@@ -1,3 +1,6 @@
+//! `LinearWalker`: the iterator that linearly decodes a field-VM bytecode
+//! stream, yielding one decoded instruction (or error) per step.
+
 use super::*;
 
 /// Iterator that linearly walks `bytecode` starting at `start_pc`, yielding

@@ -91,7 +91,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneVabStream> {
 
     // (1) chunk0 header: type byte must be 0 (high byte of LE u32 == 0),
     //     size must be reasonable.
-    let chunk0_header = read_u32_le(buf, 0)?;
+    let chunk0_header = legaia_bytes::u32_le(buf, 0)?;
     let type_byte = (chunk0_header >> 24) & 0xFF;
     let size = (chunk0_header & 0x00FF_FFFF) as usize;
     if type_byte != 0 {
@@ -104,21 +104,21 @@ pub fn detect(buf: &[u8]) -> Option<SceneVabStream> {
     }
 
     // (2) VAB magic at offset 4.
-    let magic = read_u32_le(buf, 4)?;
+    let magic = legaia_bytes::u32_le(buf, 4)?;
     if magic != VAB_MAGIC {
         return None;
     }
 
     // (3) VAB version sanity-check.
-    let version = read_u32_le(buf, 8)?;
+    let version = legaia_bytes::u32_le(buf, 8)?;
     if version == 0 || version > MAX_VAB_VERSION {
         return None;
     }
 
     // (4) Programs / tones counts at +0x12 / +0x14 (post-fsize at +0x0C, ps
     //     at +0x12). PS <= 128, TS <= 128. (PsyQ docs cap both at 128.)
-    let ps = read_u16_le(buf, 4 + 0x12)?;
-    let ts = read_u16_le(buf, 4 + 0x14)?;
+    let ps = legaia_bytes::u16_le(buf, 4 + 0x12)?;
+    let ts = legaia_bytes::u16_le(buf, 4 + 0x14)?;
     if ps > 128 || ts > 128 {
         return None;
     }
@@ -146,7 +146,7 @@ fn walk_tail(buf: &[u8], mut offset: usize) -> (usize, bool) {
     let walk_limit = offset.saturating_add(MAX_TAIL_WALK).min(buf.len());
 
     while offset + 4 <= walk_limit {
-        let Some(header) = read_u32_le(buf, offset) else {
+        let Some(header) = legaia_bytes::u32_le(buf, offset) else {
             return (chunks, false);
         };
         let chunk_size = (header & 0x00FF_FFFF) as usize;
@@ -167,16 +167,6 @@ fn walk_tail(buf: &[u8], mut offset: usize) -> (usize, bool) {
 
     // Reached EOF or walk limit. Treat EOF-aligned as terminated.
     (chunks, offset == buf.len())
-}
-
-fn read_u32_le(buf: &[u8], at: usize) -> Option<u32> {
-    let bytes = buf.get(at..at + 4)?;
-    Some(u32::from_le_bytes(bytes.try_into().unwrap()))
-}
-
-fn read_u16_le(buf: &[u8], at: usize) -> Option<u16> {
-    let bytes = buf.get(at..at + 2)?;
-    Some(u16::from_le_bytes(bytes.try_into().unwrap()))
 }
 
 #[cfg(test)]

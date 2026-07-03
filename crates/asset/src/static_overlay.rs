@@ -304,7 +304,7 @@ pub fn pointer_resolution(as_loaded: &[u8], base_va: u32) -> (u32, u32) {
     let mut resolved = 0u32;
     let words = as_loaded.len() / 4;
     for i in 0..words {
-        let w1 = read_u32_le(as_loaded, i * 4).unwrap();
+        let w1 = legaia_bytes::u32_le(as_loaded, i * 4).unwrap();
         if w1 >> 26 != 0x0F {
             continue; // not lui
         }
@@ -315,7 +315,7 @@ pub fn pointer_resolution(as_loaded: &[u8], base_va: u32) -> (u32, u32) {
         }
         // Look for the paired `addiu rt, rt, lo` within a short window.
         for j in (i + 1)..(i + 7).min(words) {
-            let w2 = read_u32_le(as_loaded, j * 4).unwrap();
+            let w2 = legaia_bytes::u32_le(as_loaded, j * 4).unwrap();
             if w2 >> 26 == 0x09 && (w2 >> 21) & 0x1F == rt {
                 let lo = (w2 & 0xFFFF) as i16 as i32;
                 let addr = ((hi << 16) as i32).wrapping_add(lo) as u32;
@@ -348,12 +348,6 @@ const MIPS_JAL_OP: u32 = 0x03;
 const ADDIU_SP_NEG: u32 = 0x27BD_FF00;
 const ADDIU_SP_NEG_MASK: u32 = 0xFFFF_FF00;
 
-#[inline]
-fn read_u32_le(buf: &[u8], at: usize) -> Option<u32> {
-    buf.get(at..at + 4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
-}
-
 /// Is this word a function-prologue `addiu sp, sp, -X` with a plausible stack
 /// adjust (8..=128 bytes)? Mirrors [`crate::mips_overlay`]'s first check.
 #[inline]
@@ -372,7 +366,7 @@ pub fn anchor_lands_on_prologue(as_loaded: &[u8], anchor_va: u32, base_va: u32) 
         Some(o) => o as usize,
         None => return false,
     };
-    match read_u32_le(as_loaded, off) {
+    match legaia_bytes::u32_le(as_loaded, off) {
         Some(word) => is_prologue(word),
         None => false,
     }
@@ -391,7 +385,7 @@ pub fn recover_base(code: &[u8], min_votes: u32) -> Option<BaseRecovery> {
     // Prologue offsets (4-aligned file offsets that begin a function), as a set.
     let mut prologue_offsets: Vec<u32> = Vec::new();
     for w in 0..words {
-        let word = read_u32_le(code, w * 4).unwrap();
+        let word = legaia_bytes::u32_le(code, w * 4).unwrap();
         if is_prologue(word) {
             prologue_offsets.push((w * 4) as u32);
         }
@@ -408,7 +402,7 @@ pub fn recover_base(code: &[u8], min_votes: u32) -> Option<BaseRecovery> {
     {
         let mut seen = std::collections::HashSet::new();
         for w in 0..words {
-            let word = read_u32_le(code, w * 4).unwrap();
+            let word = legaia_bytes::u32_le(code, w * 4).unwrap();
             if word >> 26 == MIPS_JAL_OP {
                 // jal target = (PC & 0xF000_0000) | (imm26 << 2); overlay PC top
                 // nibble is 0x8, so the target high nibble is forced to 0x8.
