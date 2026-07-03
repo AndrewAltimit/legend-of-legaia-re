@@ -412,10 +412,13 @@ impl SaveFile {
         let ext_total_size =
             u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
         cursor += 4;
-        let ext_end = cursor + ext_total_size;
-        if buf.len() < ext_end {
-            bail!("LGSF v2: ext block truncated");
-        }
+        // `ext_total_size` is a raw u32 from the file; on a 32-bit target
+        // (wasm) `cursor + ext_total_size` could wrap and slip past the
+        // length check into a reversed slice range. Add checked.
+        let ext_end = cursor
+            .checked_add(ext_total_size)
+            .filter(|&e| e <= buf.len())
+            .ok_or_else(|| anyhow::anyhow!("LGSF v2: ext block truncated"))?;
         let ext_buf = &buf[cursor..ext_end];
         let mut ext_v2 = parse_ext_v2(ext_buf).context("parse LGSF v2 ext block")?;
         cursor = ext_end;
@@ -433,10 +436,10 @@ impl SaveFile {
             let ext3_total_size =
                 u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
             cursor += 4;
-            let ext3_end = cursor + ext3_total_size;
-            if buf.len() < ext3_end {
-                bail!("LGSF v3: LGX3 ext block truncated");
-            }
+            let ext3_end = cursor
+                .checked_add(ext3_total_size)
+                .filter(|&e| e <= buf.len())
+                .ok_or_else(|| anyhow::anyhow!("LGSF v3: LGX3 ext block truncated"))?;
             ext.story_flag_bits =
                 parse_ext_v3(&buf[cursor..ext3_end]).context("parse LGSF v3 ext block")?;
             cursor = ext3_end;
@@ -455,10 +458,10 @@ impl SaveFile {
             let ext4_total_size =
                 u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
             cursor += 4;
-            let ext4_end = cursor + ext4_total_size;
-            if buf.len() < ext4_end {
-                bail!("LGSF v4: LGX4 ext block truncated");
-            }
+            let ext4_end = cursor
+                .checked_add(ext4_total_size)
+                .filter(|&e| e <= buf.len())
+                .ok_or_else(|| anyhow::anyhow!("LGSF v4: LGX4 ext block truncated"))?;
             apply_ext_v4(&buf[cursor..ext4_end], &mut ext_v2).context("parse LGSF v4 ext block")?;
         }
 

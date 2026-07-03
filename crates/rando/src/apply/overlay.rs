@@ -595,7 +595,13 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
         anyhow::bail!("picker clamp site mismatch; refusing to patch");
     }
     let box_off = (ov::BOX_H_VA - base) as usize;
-    if u16::from_le_bytes(menu[box_off..box_off + 2].try_into().unwrap()) != ov::BOX_H_OLD {
+    // Guarded like every other overlay-0899 probe in this function: a
+    // shorter-than-expected PROT 0899 (foreign build / bad dump) must bail
+    // with "refusing to patch", not index-panic.
+    let box_h = menu
+        .get(box_off..box_off + 2)
+        .ok_or_else(|| anyhow::anyhow!("picker box-height VA past end of menu overlay"))?;
+    if u16::from_le_bytes([box_h[0], box_h[1]]) != ov::BOX_H_OLD {
         anyhow::bail!("picker box-height site mismatch; refusing to patch");
     }
     if words2(ov::ROW2_STR_LOAD_VA)? != ov::ROW2_STR_LOAD_OLD {

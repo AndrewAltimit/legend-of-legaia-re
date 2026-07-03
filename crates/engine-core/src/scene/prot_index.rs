@@ -139,7 +139,10 @@ impl ProtIndex {
     /// Callers that want the full on-disc footprint should use
     /// [`Self::entry_bytes_extended`].
     pub fn entry_bytes(&self, idx: u32) -> Result<Arc<Vec<u8>>> {
-        if let Some(b) = self.entry_cache.lock().unwrap().get(&idx).cloned() {
+        if let Some(b) = crate::lock_poison_tolerant(&self.entry_cache)
+            .get(&idx)
+            .cloned()
+        {
             return Ok(b);
         }
         let entry = self
@@ -148,13 +151,11 @@ impl ProtIndex {
             .ok_or_else(|| anyhow::anyhow!("PROT index {} out of range", idx))?
             .clone();
         let mut bytes = Vec::new();
-        self.archive
-            .lock()
-            .unwrap()
+        crate::lock_poison_tolerant(&self.archive)
             .read_entry_indexed(&entry, &mut bytes)
             .with_context(|| format!("read PROT entry {}", idx))?;
         let arc = Arc::new(bytes);
-        self.entry_cache.lock().unwrap().insert(idx, arc.clone());
+        crate::lock_poison_tolerant(&self.entry_cache).insert(idx, arc.clone());
         Ok(arc)
     }
 
@@ -171,9 +172,7 @@ impl ProtIndex {
             .ok_or_else(|| anyhow::anyhow!("PROT index {} out of range", idx))?
             .clone();
         let mut bytes = Vec::new();
-        self.archive
-            .lock()
-            .unwrap()
+        crate::lock_poison_tolerant(&self.archive)
             .read_entry(&entry, &mut bytes)
             .with_context(|| format!("read PROT entry {} (extended)", idx))?;
         Ok(bytes)
@@ -216,9 +215,7 @@ impl ProtIndex {
     /// boot-time UI TIMs (see [`docs/subsystems/boot.md`]).
     pub fn prot_dat_raw_bytes(&self, byte_offset: u64, len: usize) -> Result<Vec<u8>> {
         let mut bytes = Vec::new();
-        self.archive
-            .lock()
-            .unwrap()
+        crate::lock_poison_tolerant(&self.archive)
             .read_raw(byte_offset, len, &mut bytes)
             .with_context(|| format!("read PROT.DAT raw at 0x{:X} +{}", byte_offset, len))?;
         Ok(bytes)
@@ -226,13 +223,16 @@ impl ProtIndex {
 
     /// Detected class of an entry (lazy + cached).
     pub fn class_of(&self, idx: u32) -> Result<Class> {
-        if let Some(c) = self.class_cache.lock().unwrap().get(&idx).copied() {
+        if let Some(c) = crate::lock_poison_tolerant(&self.class_cache)
+            .get(&idx)
+            .copied()
+        {
             return Ok(c);
         }
         let bytes = self.entry_bytes(idx)?;
         let report = classify(&bytes);
         let class = report.class;
-        self.class_cache.lock().unwrap().insert(idx, class);
+        crate::lock_poison_tolerant(&self.class_cache).insert(idx, class);
         Ok(class)
     }
 

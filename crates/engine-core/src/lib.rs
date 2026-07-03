@@ -105,6 +105,40 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
+/// Lock a mutex, tolerating poison. A poisoned mutex means some thread
+/// panicked while holding the lock; every mutex in this crate guards either a
+/// read-through cache (a partially-populated map is still correct - the
+/// missing entries are simply recomputed) or a read-only disc / archive
+/// reader (byte reads are idempotent). In all those cases the guarded data is
+/// still usable, so recover the guard via [`std::sync::PoisonError::into_inner`]
+/// rather than cascading a second panic into an unrelated caller. Used by the
+/// asset caches here and the PROT index caches in [`scene::prot_index`].
+pub(crate) fn lock_poison_tolerant<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+mod lock_poison_tolerant_tests {
+    use super::lock_poison_tolerant;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn recovers_a_poisoned_mutex_instead_of_panicking() {
+        let m = Arc::new(Mutex::new(vec![1u8, 2, 3]));
+        // Poison the mutex: panic while holding the lock on another thread.
+        let m2 = Arc::clone(&m);
+        let _ = std::thread::spawn(move || {
+            let _g = m2.lock().unwrap();
+            panic!("intentional poison");
+        })
+        .join();
+        assert!(m.lock().is_err(), "mutex should be poisoned for this test");
+        // The tolerant lock recovers the guard and the data is intact.
+        let g = lock_poison_tolerant(&m);
+        assert_eq!(&*g, &[1u8, 2, 3]);
+    }
+}
+
 /// Source of asset bytes.
 ///
 /// Two backends planned: an extracted-directory backend (for development -
@@ -219,9 +253,7 @@ impl DiscVfs {
     fn read_record(&self, rec: &legaia_iso::iso9660::DirectoryRecord) -> Result<Vec<u8>> {
         let sector_count = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
         let mut buf = Vec::with_capacity(rec.size as usize);
-        self.raw
-            .lock()
-            .unwrap()
+        lock_poison_tolerant(&self.raw)
             .read_user_data(rec.lba, sector_count, &mut buf)
             .with_context(|| format!("read disc file {}", rec.name))?;
         buf.truncate(rec.size as usize);
@@ -338,14 +370,11 @@ impl AssetCache {
     }
 
     pub fn get_or_load(&self, vfs: &dyn Vfs, name: &str) -> Result<Arc<Vec<u8>>> {
-        if let Some(b) = self.inner.lock().unwrap().get(name).cloned() {
+        if let Some(b) = lock_poison_tolerant(&self.inner).get(name).cloned() {
             return Ok(b);
         }
         let bytes = Arc::new(vfs.read(name)?);
-        self.inner
-            .lock()
-            .unwrap()
-            .insert(name.to_string(), bytes.clone());
+        lock_poison_tolerant(&self.inner).insert(name.to_string(), bytes.clone());
         Ok(bytes)
     }
 }
