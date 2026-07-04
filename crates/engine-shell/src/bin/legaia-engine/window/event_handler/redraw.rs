@@ -308,11 +308,11 @@ impl PlayWindowApp {
         let cutscene_cam = if self.session.host.world.mode != SceneMode::WorldMap
             && self.session.host.world.cutscene_timeline_active()
         {
-            let (look_at, pitch, yaw, fov) = self.cutscene_view();
+            let (focus, pitch, yaw, h, tr_eye) = self.cutscene_view();
             // ~0.15/frame ease => a few-frame blend at the redraw cadence.
             Some(
                 self.cutscene_cam_interp
-                    .approach(look_at, pitch, yaw, fov, 0.15),
+                    .approach(focus, pitch, yaw, h, tr_eye, 0.15),
             )
         } else {
             self.cutscene_cam_interp.reset();
@@ -786,6 +786,21 @@ impl PlayWindowApp {
                     // otherwise pile their meshes at world (0,0,0) - the
                     // "duplicate Vahn" + scattered scene geometry.
                     if in_battle && self.battle_stage_mesh.is_some() && !actor.active {
+                        continue;
+                    }
+                    // The `opdeene` prologue cutscene is an abstract vignette
+                    // sequence (the "It was the Seru" Genesis-tree imagery)
+                    // driven by the per-actor field channels, NOT by a
+                    // controllable lead. `enter_field_scene` still installs the
+                    // free-roam player (slot 0) at the generic field cold-spawn,
+                    // so without this it stands in the shot as a stray mesh.
+                    // Scene-gated on `opdeene` so `town01`'s opening cutscene -
+                    // where the timeline scripts the lead actor (Vahn walking
+                    // out of his house) - keeps drawing him.
+                    if i == 0
+                        && self.session.host.world.active_scene_label
+                            == legaia_asset::new_game::OPENING_CUTSCENE_SCENE
+                    {
                         continue;
                     }
                     let mesh = posed_overrides

@@ -129,16 +129,25 @@ impl Camera {
                     if let Some(v) = slot(1) {
                         self.yaw = ang(v);
                     }
-                    // A full focus trio (slots 6/7/8) re-targets the cinematic
-                    // look-at. The focus globals are the negated GTE
-                    // translation, so X/Z are negated back to a world point
-                    // (matching the shell's `cutscene_view`).
-                    if let (Some(fx), Some(fy), Some(fz)) = (slot(6), slot(7), slot(8)) {
-                        self.look_at = [
-                            -((fx as i16) as f32),
-                            (fy as i16) as f32,
-                            -((fz as i16) as f32),
-                        ];
+                    // Focus slots 6/7/8 re-target the cinematic look-at, each
+                    // applied INDEPENDENTLY on its own presence - the retail
+                    // apply handler `FUN_801DE084` writes each camera focus
+                    // global only when its slot bit is set, leaving the others
+                    // at their prior value. A beat that supplies only focus X/Z
+                    // (opdeene's opening beats omit slot 7 entirely) must still
+                    // pan the look-at horizontally rather than freeze it; the
+                    // all-or-nothing gate used before never retargeted such
+                    // beats, pinning the shot on one angle. The focus globals
+                    // are the negated GTE translation, so X/Z are negated back
+                    // to a world point (matching the shell's `cutscene_view`).
+                    if let Some(fx) = slot(6) {
+                        self.look_at[0] = -((fx as i16) as f32);
+                    }
+                    if let Some(fy) = slot(7) {
+                        self.look_at[1] = (fy as i16) as f32;
+                    }
+                    if let Some(fz) = slot(8) {
+                        self.look_at[2] = -((fz as i16) as f32);
                     }
                     let _ = (apply_trigger, mode);
                     if std::env::var_os("LEGAIA_DIAG_CAMERA").is_some() {
@@ -349,6 +358,44 @@ mod tests {
             FieldEvent::Bgm { sub_op, .. } => assert_eq!(*sub_op, 1),
             other => panic!("expected Bgm, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn camera_configure_focus_slots_apply_per_axis() {
+        use legaia_engine_vm::field::CameraParam;
+        let mut w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        // A beat that supplies focus X (slot 6) and Z (slot 8) but NOT Y
+        // (slot 7) - opdeene's opening beats omit slot 7 entirely. The look-at
+        // must pan X/Z while keeping the prior Y, not stay frozen.
+        w.pending_field_events = vec![FieldEvent::CameraConfigure {
+            params: vec![
+                CameraParam {
+                    slot: 6,
+                    value: (-100i16) as u16,
+                },
+                CameraParam {
+                    slot: 8,
+                    value: (-200i16) as u16,
+                },
+            ],
+            apply_trigger: 0,
+            mode: 0,
+        }];
+        // Prior look-at (e.g. the scene-centre Y a shell falls back to).
+        let mut c = Camera {
+            look_at: [1.0, 55.0, 2.0],
+            ..Default::default()
+        };
+        let n = c.route_camera_events(&mut w);
+        assert_eq!(n, 1);
+        assert_eq!(
+            c.look_at,
+            [100.0, 55.0, 200.0],
+            "X/Z retarget from slots 6/8; Y kept from the prior look-at (slot 7 absent)"
+        );
     }
 
     #[test]

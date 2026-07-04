@@ -277,22 +277,35 @@ impl PlayWindowApp {
     /// Camera parameters for the cutscene shot, decoded from the cutscene
     /// timeline's executed op-`0x45` Camera Configure params (read from
     /// `World::camera_state`, committed by `FUN_801DE084`). Returns
-    /// `(look_at, yaw_radians, fov_radians)`:
+    /// `(focus, pitch_radians, yaw_radians, h, tr_eye)` - the inputs to the
+    /// retail PSX GTE camera `screen = H * (R*(v - focus) + tr_eye) / Ze`
+    /// (see [`Self::psx_camera_mvp`]), the SAME model the field follow camera
+    /// uses. Provenance (`FUN_800172c0` view builder + `FUN_801DE084` apply):
     ///
-    /// - **look_at**: the camera focus. Retail stores the *negated* focus X / Z
-    ///   in params 6 / 8 (`_DAT_80089118` / `_DAT_80089120` = the GTE
-    ///   translation `-focus`; the follow-cam `FUN_801DBE9C` sets them to
-    ///   `-(anchor X/Z)`), so X / Z are negated back to world space here; Y
-    ///   (param 7) is stored un-negated. Any axis the cutscene hasn't staged
-    ///   yet falls back to the lead actor (the cutscene anchor), then the
-    ///   scene-AABB centre.
-    /// - **yaw**: param 1 (`_DAT_8007b792`, camera yaw), PSX `4096` = full turn.
-    /// - **fov**: derived from param 9 (`_DAT_8007b6f4`), which retail writes to
-    ///   the GTE H projection register - the focal length. PSX projects onto a
-    ///   ~240-tall frame, so the vertical FOV is `2*atan(120 / H)`. Inferred;
-    ///   falls back to 60 deg when the param is absent or degenerate.
-    pub(super) fn cutscene_view(&self) -> ([f32; 3], f32, f32, f32) {
+    /// - **focus**: the world look target. Retail stores the *negated* focus
+    ///   X / Z in params 6 / 8 (`_DAT_80089118` / `_DAT_80089120`; the
+    ///   follow-cam `FUN_801DBE9C` writes `-(anchor X/Z)`), so X / Z are
+    ///   negated back to world space; Y (param 7) is un-negated and defaults
+    ///   to `0` (retail never writes `_DAT_8008911C`, and the eye-space Y
+    ///   offset below - not the focus Y - is what frames the shot vertically).
+    /// - **pitch / yaw**: params 0 / 1 (`_DAT_8007B790/92`), PSX `4096` = turn.
+    /// - **h**: param 9 (`_DAT_8007B6F4`), written straight to the GTE H
+    ///   projection register - the focal length. Passed through unchanged.
+    /// - **tr_eye**: the eye-space translation trio, params 3 / 4 / 5
+    ///   (`0x800840B8/BC/C0`; the analog of the battle camera's
+    ///   `(0, 1280, 7680)`). Retail builds `R` with a 6x world scale folded in
+    ///   (base matrix `DAT_8007BF10` = `24576*I`); the engine renders the
+    ///   scene geometry at native 1x, so the trio is divided by that scale to
+    ///   frame identically (the perspective divide makes 6x-geometry-at-`z`
+    ///   and 1x-geometry-at-`z/6` project to the same pixels - the same trick
+    ///   `field_follow_camera_mvp`'s `FIELD_CAM_DEPTH = 1200 = 7200/6` uses).
+    ///   opdeene supplies all three per beat; the Z component is the eye-back
+    ///   depth (raw ~16k-21k across beats).
+    pub(super) fn cutscene_view(&self) -> ([f32; 3], f32, f32, f32, [f32; 3]) {
         use std::f32::consts::TAU;
+        // Retail folds a 6x uniform world scale into the camera rotation
+        // (base matrix `DAT_8007BF10` = `24576*I`); the engine renders at 1x.
+        const CUTSCENE_WORLD_SCALE: f32 = 6.0;
         let world = &self.session.host.world;
         let params = &world.camera_state.params;
         let param = |slot: u8| {
@@ -301,27 +314,22 @@ impl PlayWindowApp {
                 .find(|p| p.slot == slot)
                 .map(|p| p.value as i16 as f32)
         };
-        let (px, py, pz) = world
+        let scene_center = [
+            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+        ];
+        let (px, pz) = world
             .actors
             .first()
             .filter(|a| a.active || a.tmd_binding.is_some())
-            .map(|a| {
-                (
-                    a.move_state.world_x as f32,
-                    a.move_state.world_y as f32,
-                    a.move_state.world_z as f32,
-                )
-            })
-            .unwrap_or_else(|| {
-                (
-                    (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-                    (self.scene_aabb.0[1] + self.scene_aabb.1[1]) * 0.5,
-                    (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-                )
-            });
-        let look_at = [
+            .map(|a| (a.move_state.world_x as f32, a.move_state.world_z as f32))
+            .unwrap_or((scene_center[0], scene_center[1]));
+        // Focus X/Z fall back to the lead actor (the cutscene anchor) if a beat
+        // hasn't staged them; focus Y follows retail's `0` (the vertical framing
+        // rides the eye-space Y offset in `tr_eye`, not the focus).
+        let focus = [
             param(6).map(|v| -v).unwrap_or(px),
-            param(7).unwrap_or(py),
+            param(7).unwrap_or(0.0),
             param(8).map(|v| -v).unwrap_or(pz),
         ];
         let yaw = param(1).map(|v| v / 4096.0 * TAU).unwrap_or(0.0);
@@ -331,11 +339,18 @@ impl PlayWindowApp {
         let pitch = param(0)
             .map(|v| v / 4096.0 * TAU)
             .unwrap_or_else(|| 0.45f32.atan());
-        let fov = param(9)
-            .filter(|&h| h > 1.0)
-            .map(|h| 2.0 * (120.0 / h).atan())
-            .unwrap_or(60f32.to_radians());
-        (look_at, pitch, yaw, fov)
+        // H (focal length) passed straight through; fall back to the field H.
+        let h = param(9).filter(|&h| h > 1.0).unwrap_or(512.0);
+        // Eye-space translation trio (offset slots 3/4/5), reduced into the
+        // engine's 1x frame. Fall back to a mid cutscene depth if a beat omits
+        // it (opdeene always supplies all three).
+        let s = CUTSCENE_WORLD_SCALE;
+        let tr_eye = [
+            param(3).unwrap_or(0.0) / s,
+            param(4).unwrap_or(1200.0) / s,
+            param(5).filter(|&z| z.abs() > 1.0).unwrap_or(17000.0) / s,
+        ];
+        (focus, pitch, yaw, h, tr_eye)
     }
 
     pub(super) fn actor_model(&self, slot: usize) -> Mat4 {
@@ -370,5 +385,77 @@ impl PlayWindowApp {
                 + (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU;
             Mat4::from_translation(pos) * Mat4::from_rotation_y(yaw)
         }
+    }
+}
+
+#[cfg(test)]
+mod cutscene_framing_tests {
+    use super::*;
+    use std::f32::consts::TAU;
+
+    /// Project a raw retail (Y-down) world point through the full cutscene
+    /// camera composition (`psx_camera_mvp(..) * FIELD_WORLD_FLIP`, exactly as
+    /// `compute_scene_camera`'s cutscene branch builds it) to 320x240 screen
+    /// pixels (PSX frame; wgpu NDC, framebuffer origin top-left).
+    fn project_cutscene(v: Vec3, tr_eye: Vec3, focus: Vec3) -> (f32, f32) {
+        // Intro-beat globals, pinned live from the `new_game_cutscene_intro_a`
+        // save state (`0x8007B790`/`0x8007B6F4`/`0x800840B8`/`0x80089118`).
+        let pitch = 180.0 / 4096.0 * TAU;
+        let yaw = -2967.0 / 4096.0 * TAU;
+        let h = 792.0;
+        let mvp = PlayWindowApp::psx_camera_mvp(pitch, yaw, h, tr_eye, focus, 4.0 / 3.0)
+            * FIELD_WORLD_FLIP;
+        let clip = mvp * v.extend(1.0);
+        let ndc = clip.truncate() / clip.w;
+        let px = (ndc.x * 0.5 + 0.5) * 320.0;
+        let py = (0.5 - ndc.y * 0.5) * 240.0;
+        (px, py)
+    }
+
+    /// The retail intro shot ("It was the Seru.") frames the party at screen
+    /// ~(172, 180) in the 320x240 PSX frame (measured from the intro save
+    /// state's framebuffer). The camera's focus tracks the party anchor, so the
+    /// focus point itself must land there - regardless of the 6x world scale
+    /// (the perspective divide cancels it) - which is exactly what pins the
+    /// eye-back depth. This guards against the old heuristic that framed the
+    /// shot too close.
+    #[test]
+    fn intro_focus_projects_to_retail_party_position() {
+        // Eye-space translation trio `0x800840B8 = (260, 1293, 17145)`, reduced
+        // into the engine's native-1x frame by the 6x world scale.
+        let tr_eye = Vec3::new(260.0, 1293.0, 17145.0) / 6.0;
+        let focus = Vec3::new(8640.0, 0.0, 10304.0);
+        let (px, py) = project_cutscene(focus, tr_eye, focus);
+        assert!(
+            (px - 172.0).abs() < 3.0,
+            "focus X projects to retail ~172, got {px}"
+        );
+        assert!(
+            (py - 180.0).abs() < 3.0,
+            "focus Y projects to retail ~180 (lower-centre), got {py}"
+        );
+    }
+
+    /// A ~133-unit-tall field character standing at the focus (retail-Y-down,
+    /// up = negative Y) subtends the retail ~1/6-frame height and renders
+    /// upright (head above feet). Confirms the world scale + orientation, not
+    /// just the focus position.
+    #[test]
+    fn intro_character_subtends_retail_height_upright() {
+        let tr_eye = Vec3::new(260.0, 1293.0, 17145.0) / 6.0;
+        let focus = Vec3::new(8640.0, 0.0, 10304.0);
+        let (_, feet_y) = project_cutscene(focus, tr_eye, focus);
+        // Head is 133 units UP = negative Y in the retail convention.
+        let head = focus + Vec3::new(0.0, -133.0, 0.0);
+        let (_, head_y) = project_cutscene(head, tr_eye, focus);
+        let height_px = feet_y - head_y;
+        assert!(
+            head_y < feet_y,
+            "head renders above feet (upright): head {head_y} < feet {feet_y}"
+        );
+        assert!(
+            (20.0..48.0).contains(&height_px),
+            "character subtends ~retail height (~37 px of 240), got {height_px}"
+        );
     }
 }

@@ -5,12 +5,17 @@
 
 use super::super::*;
 
+/// Decoded cutscene camera inputs to the retail PSX GTE model:
+/// `(focus, pitch_radians, yaw_radians, h, tr_eye)`. See
+/// [`PlayWindowApp::cutscene_view`].
+pub(in crate::window) type CutsceneCam = ([f32; 3], f32, f32, f32, [f32; 3]);
+
 impl PlayWindowApp {
     pub(super) fn compute_scene_camera(
         &self,
         aspect: f32,
         in_world_map: bool,
-        cutscene_cam: Option<([f32; 3], f32, f32, f32)>,
+        cutscene_cam: Option<CutsceneCam>,
     ) -> Mat4 {
         if in_world_map {
             let world = &self.session.host.world;
@@ -132,23 +137,22 @@ impl PlayWindowApp {
                     cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
                 ) * FIELD_WORLD_FLIP
             }
-        } else if let Some((look_at, pitch, yaw, fov)) = cutscene_cam {
-            // Field world frame: retail Y-down coordinates go
-            // through ONE world Y-negation in the camera (the
-            // `FIELD_WORLD_FLIP` post-multiply) and the field
-            // draws use UN-flipped model matrices, so elevation
-            // renders retail-correct (up = retail-negative-Y =
-            // screen-up). The look-at is a raw retail world point,
-            // so negate its Y into the flipped frame.
-            legaia_engine_render::window::cutscene_camera_mvp(
-                [look_at[0], -look_at[1], look_at[2]],
-                pitch,
-                yaw,
-                fov,
-                self.scene_aabb.0,
-                self.scene_aabb.1,
-                aspect,
-            ) * FIELD_WORLD_FLIP
+        } else if let Some((focus, pitch, yaw, h, tr_eye)) = cutscene_cam {
+            // The cutscene camera is the EXACT retail PSX GTE model
+            // `screen = H*(R*(v - focus) + tr_eye)/Ze` (`FUN_800172c0`
+            // view build; `psx_camera_mvp`), driven by the decoded
+            // op-0x45 params - the same builder the field follow
+            // camera uses, so elevation and framing render
+            // retail-correct. The field world frame runs on raw
+            // retail Y-down coordinates: `psx_camera_mvp`'s internal
+            // `F` (Y-flip) and this `FIELD_WORLD_FLIP` post-multiply
+            // cancel (`F*F = I`), and the field draws use UN-flipped
+            // model matrices - so `focus` is passed as the raw retail
+            // world point, exactly like `field_follow_camera_mvp`'s
+            // target. Eye distance is no longer a heuristic: `tr_eye.z`
+            // is the pinned eye-back depth (op-0x45 offset slot 5).
+            Self::psx_camera_mvp(pitch, yaw, h, Vec3::from(tr_eye), Vec3::from(focus), aspect)
+                * FIELD_WORLD_FLIP
         } else if self.session.host.world.mode == SceneMode::Battle {
             if self.battle_stage_mesh.is_some() {
                 // Stage-dome battle: low front-facing shot into the

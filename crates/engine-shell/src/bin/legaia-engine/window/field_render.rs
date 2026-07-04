@@ -192,10 +192,43 @@ impl PlayWindowApp {
             .field_floor_height_lut(&self.session.host.index)
             .ok()
             .flatten();
-        // The environment meshes are the scene_asset_table bundle entry's TMD
-        // pack, in scan order; `pack_index` indexes that subset of `res.tmds`.
-        let Some(bundle_entry) =
-            legaia_engine_core::scene_bundle::find_bundle(scene).map(|b| b.entry_idx())
+        // The environment meshes are the scene's geometry-pack TMDs, in scan
+        // order; `pack_index` indexes that subset of `res.tmds`.
+        //
+        // The geometry pack is the scene-owned PROT entry that actually
+        // produced the most environment TMDs - NOT necessarily
+        // `find_bundle`'s entry. For a single-entry town both agree (town01:
+        // MAN + 114 TMDs in entry 4). But two scene shapes split them, in
+        // opposite directions, so neither "the bundle entry" nor "the first
+        // SceneAssetTable" is universally right:
+        //   - the opening cutscene `opdeene` keeps its MAN in a
+        //     `SceneScriptedAssetTable` (entry 748, what `find_bundle` returns)
+        //     and its 72-TMD vignette geometry in a *separate* `SceneAssetTable`
+        //     sibling (entry 749) - so keying on `find_bundle` found zero env
+        //     meshes and the prologue rendered as a blank screen;
+        //   - a world-map kingdom bundle keeps its geometry in the
+        //     `SceneScriptedAssetTable` (`find_bundle`, entry 85) while a
+        //     sibling `SceneAssetTable` (entry 86) holds an unrelated sub-area -
+        //     so "prefer the SceneAssetTable" would break the overworld.
+        // Selecting the scene-owned entry with the most parsed TMDs resolves
+        // the geometry pack the placements index in every case (opdeene 749,
+        // town01 4, map01 85), and the `scene_entry_ids` filter keeps shared
+        // blocks (the player mesh) out of the vote.
+        let scene_entry_ids: std::collections::HashSet<u32> =
+            scene.entries.iter().map(|e| e.idx).collect();
+        let mut entry_tmd_counts: std::collections::HashMap<u32, usize> =
+            std::collections::HashMap::new();
+        for t in &res.tmds {
+            if scene_entry_ids.contains(&t.entry_idx) {
+                *entry_tmd_counts.entry(t.entry_idx).or_default() += 1;
+            }
+        }
+        // Highest TMD count wins; ties break to the lowest entry index so the
+        // choice is deterministic (HashMap iteration order is not).
+        let Some(env_entry) = entry_tmd_counts
+            .into_iter()
+            .max_by_key(|&(idx, n)| (n, std::cmp::Reverse(idx)))
+            .map(|(idx, _)| idx)
         else {
             return Vec::new();
         };
@@ -203,7 +236,7 @@ impl PlayWindowApp {
             .tmds
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.entry_idx == bundle_entry)
+            .filter(|(_, t)| t.entry_idx == env_entry)
             .map(|(i, _)| i)
             .collect();
         // res.tmds index -> uploaded-mesh index (None where the mesh was
