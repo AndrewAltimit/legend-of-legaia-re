@@ -509,7 +509,21 @@ Two single-shared-VM accommodations, **approximate by design**:
 - **Camera model.** The native `play-window` renders the cutscene with the **exact retail GTE model** whenever a cutscene timeline is installed: the shell's `compute_scene_camera` cutscene branch builds `psx_camera_mvp(pitch, yaw, H, tr_eye, focus)` (the same `screen = H·(R·(v − focus) + tr_eye)/Ze` builder the field follow camera uses; `FUN_800172c0`), composed with `FIELD_WORLD_FLIP` exactly like `field_follow_camera_mvp` (the internal Y-flip and the world flip cancel, so the raw retail Y-down `focus` and native-`1×` geometry pass through unchanged).
   `SceneHost`'s `cutscene_view` decodes the pinned params: **focus** `(-param6, param7, -param8)` (Y defaults to retail's `0`), **pitch/yaw** from params 0/1 (`4096` = full turn), **H** straight from param 9, and **tr_eye** = the eye-space translation trio (params 3/4/5, `0x800840B8`) - the eye-back depth is `param5`. There is **no eye-distance heuristic**: the depth is a real decoded param.
   Because retail folds a `6×` world scale into `R` (base matrix `DAT_8007BF10`) while the engine renders geometry at native `1×`, `tr_eye` is divided by `6` - the perspective divide makes `6×`-geometry-at-`z` and `1×`-geometry-at-`z/6` project to identical pixels (the same `depth/6` trick `field_follow_camera_mvp`'s `FIELD_CAM_DEPTH = 1200 = 7200/6` uses). `opdeene` supplies all three offset slots per beat.
-  The shot re-targets each time the timeline executes a new Camera Configure op; rather than cutting, `play-window` eases the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) (per-frame ease, angles along the shortest arc, reset to snap when the timeline first installs) - mirroring retail's own per-frame `FUN_801DB510` exponential ease.
+  The shot re-targets each time the timeline executes a new Camera Configure op; rather than
+  cutting, `play-window` eases the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat
+  through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) (per-frame
+  ease, angles along the shortest arc, reset to snap when the timeline first installs) - mirroring
+  retail's own per-frame `FUN_801DB510` exponential ease. The ease **rate is the beat's
+  `apply_trigger`**: a Configure with `apply == 0` commits the camera targets immediately (a hard
+  cut), while `apply > 0` stages them and lets the ease glide the eye toward them over roughly
+  `apply` frames (`t ≈ 4/apply`, clamped) - the same snap-vs-tween split `FUN_801DE084`'s
+  `apply_trigger` selects. opdeene mixes both: the entry shot snaps (`apply 0`), but the
+  mid-prologue forest dolly is `apply 840`, paired with a `760`-frame `WaitFrames`, so the camera
+  glides continuously *while the narration crawl scrolls* rather than snapping to a still hold. The
+  ease is stepped in **sim-tick time** (once per world tick that elapsed, not once per rendered
+  frame), so an `apply`-paced glide spans its authored sim-frame count even across a long
+  `WaitFrames` where few ticks advance but many redraws fire - without that, the dolly converged in
+  a fraction of a wall-clock second and then froze into a dead static hold.
   The framing is pinned by the disc-free regression tests `cutscene_framing_tests` (focus → `(172, 180)`; a `133`-unit character subtends the retail ~1/6-frame height, upright). The legacy orbit-radius framing [`window::cutscene_camera_mvp`](../../crates/engine-render/src/window.rs) is retained only as a unit-tested reference, no longer wired into a render path.
 
 The same machinery drives the **`town01` opening** (a sibling partition-2 record, `P2[3]`). It installs two ways: the **natural chain arrival** from the `map01` fly-in fires the walk-on tile trigger at the entry tile `(0x1D, 0x5B)` (C1 gate `0x225` makes it one-shot), and the **intro skip** ([`World::take_prologue_handoff`](../../crates/engine-core/src/world/narration.rs)) sets `entering_town01_opening` so the `town01` field entry installs the record via [`World::install_town01_opening_timeline`](../../crates/engine-core/src/world/narration.rs). Two differences from the opdeene prologue:
@@ -561,6 +575,23 @@ Channels are cutscene-scoped: they drop when the timeline completes, so normal f
 Disc-gated `crates/engine-core/tests/opdeene_field_channels.rs` cold-boots `opdeene`, asserts 13
 channels spawn with the right ids, and observes them execute + raise animate cues + take timeline
 pokes.
+
+**Placement-default idle clips (the vignette-liveness source).** Even a halt-acquired channel keeps
+playing its clip: retail's per-actor animation tick (`FUN_8003BC08 → FUN_80021DF4`) advances each
+actor's keyframe interpolation every frame *independent of the parked script PC*, so a vignette actor
+cued with its placement anim byte animates through the whole narration crawl. The play-window render
+mirrors this - it builds a looping [`FieldClipPlayer`](../../crates/engine-core/src/field_anim.rs)
+from each on-screen placement's default anim id (`record = anim id - 1`) and ticks it every frame,
+gated only on Field mode, not on the channel's halt state or the timeline park. The clip source is
+the **per-scene ANM bundle** (`player_anm::find_in_entry`, the type-`0x05` section of the scene's
+first PROT slot). That lookup is seeded with a descriptor count and the count is **not uniform**:
+`town01`'s bundle surfaces at count `3`, but the opening prologue scenes stash theirs deeper -
+`opdeene` (PROT entry 749), `opstati` (754), and `opurud` (764) only surface at count `≥ 5`. The
+render path searches counts `[3, 5, 6, 7]` and takes the first bundle any entry yields; hardcoding
+`3` resolved *no* bundle for the three prologue scenes, so their vignette actors got no clip player
+and rendered as a **frozen tableau** under the crawl (the "3D isn't playing while the text scrolls"
+gap). Disc-gated `opening_scene_anm_bundle.rs` pins the invariant (`town01` at 3, prologue scenes
+need `≥ 5`).
 
 **Approximate by design:** the channel-completion handshake (`CFLAG_TST` / the halt-acquire
 state-resume protocol) is not fully modelled - the simplified channels don't always raise the

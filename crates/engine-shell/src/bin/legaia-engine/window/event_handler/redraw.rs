@@ -309,11 +309,45 @@ impl PlayWindowApp {
             && self.session.host.world.cutscene_timeline_active()
         {
             let (focus, pitch, yaw, h, tr_eye) = self.cutscene_view();
-            // ~0.15/frame ease => a few-frame blend at the redraw cadence.
-            Some(
-                self.cutscene_cam_interp
-                    .approach(focus, pitch, yaw, h, tr_eye, 0.15),
-            )
+            // Ease rate from the op-`0x45` `apply_trigger` (retail `FUN_801DE084`
+            // → `FUN_801DB510`): a Configure with `apply == 0` commits the camera
+            // targets IMMEDIATELY (snap), while `apply > 0` stages them and lets
+            // the per-frame ease glide the eye toward them over roughly `apply`
+            // frames. opdeene's beats mix both: the entry shot snaps (`apply 0`),
+            // but the mid-prologue dolly (`apply 840`, paired with a 760-frame
+            // WaitFrames) glides continuously WHILE the narration text scrolls -
+            // exactly the "3D keeps playing under the crawl" retail behaviour.
+            // The old fixed `0.15` snapped every beat to a near-still hold in a
+            // few frames, which read as scene-then-text rather than concurrent.
+            let apply = self.session.host.world.camera_state.apply_trigger;
+            let t = if apply == 0 {
+                1.0
+            } else {
+                // Exponential ease: `t ≈ 4/apply` reaches ~63% of the travel in
+                // `apply/4` frames, ~95% in `apply` frames - a slow, continuous
+                // dolly for the big `apply` values and a quick settle for small
+                // ones. Clamped so no beat crawls forever or hard-snaps.
+                (4.0 / apply as f32).clamp(0.008, 0.5)
+            };
+            // Advance the ease in SIM-TICK time, not render-frame time: step it
+            // once per world tick that elapsed this redraw (`run_ticks`). Retail
+            // eases the camera one step per sim frame (`FUN_801DB510` runs in the
+            // 100 Hz field loop), so an `apply`-paced glide must span `apply` SIM
+            // frames. Stepping per-render instead let the ease converge in a
+            // fraction of a wall-clock second whenever the sim sat on a long
+            // WaitFrames (few ticks, many redraws) - the dolly finished early and
+            // the shot then froze into a dead static hold. Min 1 step so an idle
+            // frame still refreshes the held pose (e.g. right after a reset).
+            let steps = run_ticks.max(1);
+            let mut out = self
+                .cutscene_cam_interp
+                .approach(focus, pitch, yaw, h, tr_eye, t);
+            for _ in 1..steps {
+                out = self
+                    .cutscene_cam_interp
+                    .approach(focus, pitch, yaw, h, tr_eye, t);
+            }
+            Some(out)
         } else {
             self.cutscene_cam_interp.reset();
             None
