@@ -372,6 +372,12 @@ impl PlayWindowApp {
                         icon_armor: atlas_data.band_icon_armor(),
                         icon_boot: atlas_data.band_icon_boot(),
                         icon_goods: atlas_data.band_icon_goods(),
+                        pager_left: atlas_data.band_pager_left(),
+                        pager_right: atlas_data.band_pager_right(),
+                        tab_cap_l: atlas_data.band_tab_cap_l(),
+                        tab_body: atlas_data.band_tab_body(),
+                        tab_cap_r: atlas_data.band_tab_cap_r(),
+                        atr_icons: atlas_data.band_atr_icons(),
                         load_empty_frame: Some(atlas_data.band_load_empty_frame()),
                         load_portrait_by_char: [
                             atlas_data.band_load_portrait(0),

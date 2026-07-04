@@ -4,15 +4,20 @@ use super::*;
 
 impl PlayWindowApp {
     /// Title-tab label for a sub-screen's small banner window (descriptor
-    /// ids 0..=4). Text-only: the retail tab draws a brown banner sprite
-    /// with the label; until that art is ported, the label lands at the
-    /// tab window's pinned content origin.
+    /// ids 0..=4). Text-only: the carved plaque behind it is chrome,
+    /// drawn from the UI-icon atlas by `field_menu_chrome_sprite_draws`
+    /// (`legaia_engine_render::tab_banner_draws`). The label lands at the
+    /// tab window's pinned content origin in the retail CLUT-7 text
+    /// white.
+    ///
+    /// REF: FUN_801DCAD8 - the Status tab's content renderer (label
+    /// string at `(a0+0xa, a0+0xc)`, staged text CLUT 7).
     fn menu_tab_title_draws(&self, tab_id: usize, label: &str) -> Vec<TextDraw> {
         let pen = self.menu_window_pen(tab_id);
         legaia_engine_render::text_draws_for(
             &self.font.layout_ascii(label),
             pen,
-            [1.0, 0.95, 0.75, 1.0],
+            legaia_engine_render::MENU_TEXT_WHITE,
         )
     }
 
@@ -65,10 +70,12 @@ impl PlayWindowApp {
                 // hung off the id-28 window's content origin; satellites
                 // (party list / Condition pager / summary) + the screen
                 // tab fill their own pinned windows.
+                // Retail's status screen carries no footer hint line -
+                // navigation is implicit (L1/R1 pages, Circle backs out).
                 let mut d = legaia_engine_render::status_screen_draws_for(
                     &self.font,
                     &view,
-                    Some("L1/R1: Switch  Circle: Back"),
+                    None,
                     self.menu_window_pen(window_ids::STATUS_MAIN),
                     // LV / HP / MP drawn as sprites from the UI-icon atlas
                     // (see `field_menu_chrome_sprite_draws`); skip the text.
@@ -87,6 +94,9 @@ impl PlayWindowApp {
                     self.menu_window_pen(window_ids::STATUS_PARTY_LIST),
                     self.menu_window_pen(window_ids::STATUS_CONDITION),
                     self.menu_window_pen(window_ids::STATUS_SUMMARY),
+                    // Hand cursor / pager triangles / LV + ATR icons drawn
+                    // as sprites (`status_satellite_icon_sprites_for`).
+                    self.save_menu.is_some(),
                 ));
                 d.extend(self.menu_tab_title_draws(window_ids::TAB_STATUS, "Status"));
                 d

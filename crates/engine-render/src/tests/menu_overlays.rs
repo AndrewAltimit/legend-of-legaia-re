@@ -868,3 +868,166 @@ fn spell_menu_draws_in_each_phase() {
     );
     assert!(draws2.len() > draws.len());
 }
+
+/// The tab-banner plaque composes exactly like the retail RAM prim
+/// scan of the `menu_status_town` capture: left cap at `(WX-8, WY-4)`,
+/// the 16-wide body tile repeated across the 60-px content width with a
+/// 12-px remainder, and the right cap at `(WX+w, WY-4)` - for the
+/// window-3 content origin `(12, 12)` that is sprites at x
+/// 4/12/28/44/60/72 on y=8.
+#[test]
+fn tab_banner_composes_retail_plaque_pieces() {
+    let rects = super::title_save_screen::pinned_save_menu_rects();
+    let draws = tab_banner_draws(&rects, (12, 12), 60, (0, 0), 1);
+    assert_eq!(draws.len(), 6);
+    // Left cap.
+    assert_eq!(draws[0].src, rects.tab_cap_l);
+    assert_eq!((draws[0].dst.0, draws[0].dst.1), (4, 8));
+    // Body tiles: three full 16-wide + one 12-wide remainder.
+    let (bx, by, _, bh) = rects.tab_body;
+    for (i, (x, w)) in [(12, 16u32), (28, 16), (44, 16), (60, 12)]
+        .iter()
+        .enumerate()
+    {
+        let d = &draws[1 + i];
+        assert_eq!(d.src, (bx, by, *w, bh));
+        assert_eq!((d.dst.0, d.dst.1, d.dst.2), (*x, 8, *w));
+    }
+    // Right cap closes the plaque at WX + content_w.
+    assert_eq!(draws[5].src, rects.tab_cap_r);
+    assert_eq!((draws[5].dst.0, draws[5].dst.1), (72, 8));
+    // Every piece is 20 tall.
+    assert!(draws.iter().all(|d| d.dst.3 == 20));
+}
+
+/// The status satellite sprites land at the traced renderer offsets:
+/// the party-list hand at `(WX-0xc, WY + cursor*0xe)` (FUN_801D2094),
+/// the pager triangles at `WX-0x10` / `WX+0x3A` on `WY-2`
+/// (FUN_801D30A4), and the summary LV icon + ATR element icon at
+/// `(+0x1c, +0xf)` / `(+0x20, +0x1a)` (FUN_801D31EC). Retail window
+/// pens: list (14,38), pager (14,92), summary (14,134).
+#[test]
+fn status_satellite_icons_pin_retail_positions() {
+    let rects = super::title_save_screen::pinned_save_menu_rects();
+    let draws =
+        status_satellite_icon_sprites_for(&rects, 1, 0, (14, 38), (14, 92), (14, 134), (0, 0), 1);
+    let at = |src: (u32, u32, u32, u32)| {
+        draws
+            .iter()
+            .find(|d| d.src == src)
+            .unwrap_or_else(|| panic!("no sprite with src {src:?}"))
+    };
+    // Hand cursor on row 1 (pitch 14).
+    let hand = at(rects.cursor);
+    assert_eq!((hand.dst.0, hand.dst.1), (14 - 0x0c, 38 + 14));
+    // Pager triangles flank the Condition window, 2 px above its pen.
+    let l = at(rects.pager_left);
+    assert_eq!((l.dst.0, l.dst.1), (14 - 0x10, 90));
+    let r = at(rects.pager_right);
+    assert_eq!((r.dst.0, r.dst.1), (14 + 0x3a, 90));
+    // Summary LV label + Vahn's ATR element icon.
+    let lv = at(rects.label_lv);
+    assert_eq!((lv.dst.0, lv.dst.1), (14 + 0x1c, 134 + 0x0f));
+    let atr = at(rects.atr_icons[0]);
+    assert_eq!((atr.dst.0, atr.dst.1), (14 + 0x20, 134 + 0x1a));
+    // A Gala pick (char id 2) swaps only the ATR source rect.
+    let draws2 =
+        status_satellite_icon_sprites_for(&rects, 0, 2, (14, 38), (14, 92), (14, 134), (0, 0), 1);
+    assert!(draws2.iter().any(|d| d.src == rects.atr_icons[2]));
+    assert!(!draws2.iter().any(|d| d.src == rects.atr_icons[0]));
+}
+
+/// Satellite text: names at `WX+6` on the retail `0x0e` pitch; with
+/// `label_icons` the ASCII cursor / pager-arrow stand-ins disappear
+/// (the sprites replace them).
+#[test]
+fn status_satellite_text_uses_retail_pitch_and_suppresses_stand_ins() {
+    let font = legaia_font::synthetic_for_tests();
+    let view = StatusSatelliteView {
+        party_names: &["Vahn", "Noa"],
+        cursor: 0,
+        name: "Vahn",
+        level: 1,
+    };
+    let with_icons = status_satellite_draws_for(&font, &view, (14, 38), (14, 92), (14, 134), true);
+    let without = status_satellite_draws_for(&font, &view, (14, 38), (14, 92), (14, 134), false);
+    // Names land at x=20 (WX+6) on rows 38 and 52 (pitch 14).
+    assert!(with_icons.iter().any(|d| d.dst.0 == 20 && d.dst.1 == 38));
+    assert!(with_icons.iter().any(|d| d.dst.0 == 20 && d.dst.1 == 52));
+    // The icons variant drops the ">" cursor, the two pager arrows and
+    // the "LV" tag (4 glyph draws).
+    assert!(with_icons.len() < without.len());
+    // Nothing to the left of the party-list pen remains as text.
+    assert!(with_icons.iter().all(|d| d.dst.0 >= 14));
+}
+
+/// The status panel's number fields sit on the retail fixed 8-px digit
+/// cells: HP 180 in a 4-digit field at `+0x30` puts its glyphs at cells
+/// `+0x38/+0x40/+0x48`, ending flush against the `/` at `+0x50` - and
+/// the parenthesised base group renders in the retail teal ink.
+#[test]
+fn status_screen_hp_row_uses_retail_digit_cells_and_teal_parens() {
+    let font = legaia_font::synthetic_for_tests();
+    let panel = StatusPanelView {
+        name: "Vahn",
+        level: 1,
+        xp: 0,
+        xp_to_next: 121,
+        hp: 180,
+        hp_max: 180,
+        mp: 20,
+        mp_max: 20,
+        ap: 0,
+        ap_max: 100,
+        stat_rows: &[StatusStatRow {
+            label: "ATK",
+            value: 24,
+            growth: 24,
+        }],
+        equip_rows: &[],
+    };
+    let draws = status_screen_draws_for(&font, &panel, None, (90, 16), true);
+    let hp_y = 16 + 0x13;
+    let hp_row: Vec<i32> = draws
+        .iter()
+        .filter(|d| d.dst.1 == hp_y)
+        .map(|d| d.dst.0)
+        .collect();
+    // Current-value digits at the 8-px cells of the +0x30 field.
+    for x in [90 + 0x38, 90 + 0x40, 90 + 0x48] {
+        assert!(hp_row.contains(&x), "no HP glyph at x={x} ({hp_row:?})");
+    }
+    // "/" at +0x50, "(" at +0x7c, ")" at +0xa4.
+    for x in [90 + 0x50, 90 + 0x7c, 90 + 0xa4] {
+        assert!(hp_row.contains(&x), "no separator at x={x}");
+    }
+    // The base group (paren + digits from +0x8c) is teal; the current
+    // value is the retail text white.
+    let teal = MENU_TEXT_TEAL;
+    assert!(
+        draws
+            .iter()
+            .filter(|d| d.dst.1 == hp_y)
+            .any(|d| d.color == teal)
+    );
+    let paren = draws
+        .iter()
+        .find(|d| d.dst.1 == hp_y && d.dst.0 == 90 + 0x7c)
+        .unwrap();
+    assert_eq!(paren.color, teal);
+    let slash = draws
+        .iter()
+        .find(|d| d.dst.1 == hp_y && d.dst.0 == 90 + 0x50)
+        .unwrap();
+    assert_eq!(slash.color, MENU_TEXT_WHITE);
+    // Stat grid: "(" at +0x40, growth digits in the +0x48 field
+    // (24 -> cells +0x50/+0x58), ")" at +0x60 - all teal.
+    let stat_y = 16 + 0x42;
+    for x in [90 + 0x40, 90 + 0x50, 90 + 0x58, 90 + 0x60] {
+        let d = draws
+            .iter()
+            .find(|d| d.dst.1 == stat_y && d.dst.0 == x)
+            .unwrap_or_else(|| panic!("no stat-grid glyph at x={x}"));
+        assert_eq!(d.color, teal, "stat-grid glyph at x={x} not teal");
+    }
+}

@@ -88,6 +88,27 @@ pub const ATLAS_RECT_ICON_ARMOR: (u32, u32, u32, u32) = (68, 216, 12, 12);
 pub const ATLAS_RECT_ICON_BOOT: (u32, u32, u32, u32) = (82, 216, 12, 12);
 pub const ATLAS_RECT_ICON_GOODS: (u32, u32, u32, u32) = (96, 216, 12, 12);
 
+/// Atlas placement of the "Condition" pager **arrow sprites** (16x16
+/// solid triangles), copied from CLUT row 7 of the system-UI TIM (the
+/// pointing-hand cursor row; sources
+/// `title_pak::OVERLAY_SYSTEM_UI_PAGER_LEFT/RIGHT`).
+pub const ATLAS_RECT_PAGER_LEFT: (u32, u32, u32, u32) = (104, 232, 16, 16);
+pub const ATLAS_RECT_PAGER_RIGHT: (u32, u32, u32, u32) = (124, 232, 16, 16);
+
+/// Atlas placement of the field-menu **tab-banner plaque** pieces (left
+/// cap 8x20, 16x20 body tile, right cap 8x20), copied from CLUT row 12 of
+/// the system-UI TIM (`title_pak::OVERLAY_SYSTEM_UI_TAB_*`).
+pub const ATLAS_RECT_TAB_CAP_L: (u32, u32, u32, u32) = (144, 232, 8, 20);
+pub const ATLAS_RECT_TAB_BODY: (u32, u32, u32, u32) = (154, 232, 16, 20);
+pub const ATLAS_RECT_TAB_CAP_R: (u32, u32, u32, u32) = (172, 232, 8, 20);
+
+/// Atlas placement of the status summary window's per-character **ATR
+/// element icons** (28x12), decoded from the system-UI extension-strip
+/// TIM (`title_pak::OVERLAY_SYSTEM_UI_EXT_TIM_OFFSET`) with the sibling
+/// CLUT-variant TIM's palettes. Character order Vahn / Noa / Gala.
+pub const ATLAS_RECT_ATR_ICONS: [(u32, u32, u32, u32); 3] =
+    [(184, 232, 28, 12), (212, 232, 28, 12), (184, 244, 28, 12)];
+
 /// Atlas placement of the 3 character portrait TIMs (16x16 each).
 /// Stacked horizontally just below the empty-frame rect; each portrait
 /// occupies a 16x16 sub-region.
@@ -240,6 +261,30 @@ impl SaveMenuAtlas {
     pub fn band_icon_goods(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_ICON_GOODS
     }
+    /// "Condition" pager left triangle (16x16, CLUT row 7).
+    pub fn band_pager_left(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_PAGER_LEFT
+    }
+    /// "Condition" pager right triangle (16x16, CLUT row 7).
+    pub fn band_pager_right(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_PAGER_RIGHT
+    }
+    /// Tab-banner plaque left cap (8x20, CLUT row 12).
+    pub fn band_tab_cap_l(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_TAB_CAP_L
+    }
+    /// Tab-banner plaque body tile (16x20, CLUT row 12).
+    pub fn band_tab_body(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_TAB_BODY
+    }
+    /// Tab-banner plaque right cap (8x20, CLUT row 12).
+    pub fn band_tab_cap_r(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_TAB_CAP_R
+    }
+    /// ATR element icons (28x12), character order Vahn / Noa / Gala.
+    pub fn band_atr_icons(&self) -> [(u32, u32, u32, u32); 3] {
+        ATLAS_RECT_ATR_ICONS
+    }
     /// Empty-cell frame sprite for the load-screen slot grid (32x32,
     /// 20x20 hollow blue border centred in the sprite - outer 6 px
     /// margin is transparent).
@@ -359,6 +404,40 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         title_pak::OVERLAY_SYSTEM_UI_CURSOR,
         title_pak::OVERLAY_SYSTEM_UI_CURSOR,
     );
+
+    // "Condition" pager triangles - same CLUT row 7 plane as the cursor
+    // (the FUN_8002b994 sprite-table kinds 2/3, frame-0 UVs).
+    for (src, dst) in [
+        (
+            title_pak::OVERLAY_SYSTEM_UI_PAGER_LEFT,
+            ATLAS_RECT_PAGER_LEFT,
+        ),
+        (
+            title_pak::OVERLAY_SYSTEM_UI_PAGER_RIGHT,
+            ATLAS_RECT_PAGER_RIGHT,
+        ),
+    ] {
+        copy_rect(&mut out, ATLAS_WIDTH, &cursor_rgba, panel_src_w, src, dst);
+    }
+
+    // Tab-banner plaque pieces - CLUT row 12 (carved brown ramp; the
+    // scan_panel_prims pin over the menu_status_town capture).
+    let tab_rgba = legaia_tim::decode_rgba8(
+        &panel_parsed,
+        title_pak::OVERLAY_SYSTEM_UI_TAB_CLUT_ROW as usize,
+    )?;
+    for (src, dst) in [
+        (title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L, ATLAS_RECT_TAB_CAP_L),
+        (title_pak::OVERLAY_SYSTEM_UI_TAB_BODY, ATLAS_RECT_TAB_BODY),
+        (title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_R, ATLAS_RECT_TAB_CAP_R),
+    ] {
+        copy_rect(&mut out, ATLAS_WIDTH, &tab_rgba, panel_src_w, src, dst);
+    }
+
+    // ATR element icons from the extension-strip TIM (best-effort: skip
+    // silently when the caller's slice doesn't reach it, mirroring the
+    // portrait handling below).
+    add_atr_icon_sprites(&mut out, prot_dat_bytes)?;
 
     // Panel interior tile - pre-baked with the gouraud gray gradient
     // retail applies via the 0x3C textured-quad primitives. The
@@ -490,6 +569,58 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         width: ATLAS_WIDTH,
         height: ATLAS_HEIGHT,
     })
+}
+
+/// Decode the three ATR element icons out of the system-UI **extension
+/// strip** TIM (`PROT.DAT[0x10178]`, 256x32 4bpp at VRAM `(896, 448)` =
+/// sheet V rows 192..224) and stamp them into the atlas at
+/// [`ATLAS_RECT_ATR_ICONS`]. The icons' ICO records select the VRAM
+/// row-500 CLUT, which is the CLUT block of the sibling palette-variant
+/// TIM at `PROT.DAT[0x10028]` - so the strip's pixels decode with that
+/// TIM's palettes (per-character index
+/// `title_pak::OVERLAY_SYSTEM_UI_ATR_PALETTES`).
+///
+/// `prot_dat_bytes` handling mirrors [`add_load_slot_grid_sprites`]:
+/// full PROT.DAT or the system-UI-rooted slice both work; a slice too
+/// short to reach the strip skips silently.
+fn add_atr_icon_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> anyhow::Result<()> {
+    let abs = title_pak::OVERLAY_SYSTEM_UI_EXT_TIM_OFFSET;
+    let abs_clut = title_pak::OVERLAY_SYSTEM_UI_EXT_CLUT_TIM_OFFSET;
+    let size = title_pak::OVERLAY_SYSTEM_UI_EXT_TIM_SIZE;
+    // Disambiguate full-PROT.DAT vs system-UI-rooted slice by looking for
+    // the TIM magic at the candidate offset (a length check alone can't
+    // tell them apart: the disc-mode slice is longer than `abs + size`).
+    let has_tim_magic = |off: usize| {
+        prot_dat_bytes.len() >= off + size && prot_dat_bytes[off..off + 4] == [0x10, 0, 0, 0]
+    };
+    let base = title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET;
+    let rel = abs - base;
+    let (ext_off, clut_off) = if has_tim_magic(rel) {
+        (rel, abs_clut - base)
+    } else if has_tim_magic(abs) {
+        (abs, abs_clut)
+    } else {
+        return Ok(()); // slice too short; atlas-without-ATR is OK
+    };
+    let mut strip = legaia_tim::parse(&prot_dat_bytes[ext_off..ext_off + size])
+        .map_err(|e| anyhow::anyhow!("ext-strip TIM parse failed: {e:?}"))?;
+    let clut_tim = legaia_tim::parse(&prot_dat_bytes[clut_off..clut_off + size])
+        .map_err(|e| anyhow::anyhow!("ext-strip CLUT TIM parse failed: {e:?}"))?;
+    // Swap in the row-500 CLUT block: the strip's own CLUT uploads to
+    // row 498; the ATR ICO records point one TIM over.
+    strip.clut = clut_tim.clut;
+    let strip_w = strip.pixel_width() as u32;
+    for (i, (src, dst_rect)) in title_pak::OVERLAY_SYSTEM_UI_ATR_ICONS
+        .iter()
+        .zip(ATLAS_RECT_ATR_ICONS.iter())
+        .enumerate()
+    {
+        let pal = title_pak::OVERLAY_SYSTEM_UI_ATR_PALETTES[i];
+        let rgba = legaia_tim::decode_rgba8(&strip, pal)
+            .map_err(|e| anyhow::anyhow!("ATR icon {i} decode failed: {e:?}"))?;
+        copy_rect(dst, ATLAS_WIDTH, &rgba, strip_w, *src, *dst_rect);
+    }
+    Ok(())
 }
 
 /// Decode the 3 portrait TIMs + the 32x32 empty-cell frame from
@@ -732,11 +863,13 @@ mod tests {
             }
         };
         // build_atlas now expects a slice that already starts at the
-        // system-UI TIM header (the disc-mode caller pulls just that
-        // region via `prot_dat_raw_bytes(OVERLAY_SYSTEM_UI_TIM_OFFSET, …)`).
+        // system-UI TIM header. Mirror the disc-mode caller's window,
+        // which extends through the extension-strip TIMs (ATR icons) and
+        // the load-screen portrait / empty-frame TIMs.
         let tim_off = legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET;
-        let tim_size = legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_SIZE;
-        let system_ui_slice = &prot_dat[tim_off..tim_off + tim_size];
+        let end = legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+            + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
+        let system_ui_slice = &prot_dat[tim_off..end];
         let atlas = build_atlas(system_ui_slice, &prot_899).expect("build save-menu atlas");
         assert_eq!(atlas.width, ATLAS_WIDTH);
         assert_eq!(atlas.height, ATLAS_HEIGHT);
@@ -838,6 +971,92 @@ mod tests {
             assert!(
                 icon_gold >= 30,
                 "{name} pictogram has too few gold pixels ({icon_gold}) - CLUT row 8 may be off"
+            );
+        }
+
+        // Tab-banner plaque pieces (CLUT row 12) carry the carved brown
+        // ramp (r > g > b), like the pictograms.
+        for (name, rect) in [
+            ("tab cap L", atlas.band_tab_cap_l()),
+            ("tab body", atlas.band_tab_body()),
+            ("tab cap R", atlas.band_tab_cap_r()),
+        ] {
+            let (ix, iy, iw, ih) = rect;
+            let mut brown = 0u32;
+            for row in 0..ih {
+                for col in 0..iw {
+                    let off = ((iy + row) as usize) * stride + ((ix + col) as usize) * 4;
+                    let (r, g, b, a) = (
+                        atlas.rgba[off],
+                        atlas.rgba[off + 1],
+                        atlas.rgba[off + 2],
+                        atlas.rgba[off + 3],
+                    );
+                    if a == 255 && r >= 40 && r >= g && g >= b {
+                        brown += 1;
+                    }
+                }
+            }
+            assert!(
+                brown >= 40,
+                "{name} has too few brown pixels ({brown}) - CLUT row 12 may be off"
+            );
+        }
+
+        // Pager triangles (CLUT row 7) are light-gray solids with
+        // transparent surroundings.
+        for (name, rect) in [
+            ("pager left", atlas.band_pager_left()),
+            ("pager right", atlas.band_pager_right()),
+        ] {
+            let (ix, iy, iw, ih) = rect;
+            let (mut bright, mut clear) = (0u32, 0u32);
+            for row in 0..ih {
+                for col in 0..iw {
+                    let off = ((iy + row) as usize) * stride + ((ix + col) as usize) * 4;
+                    if atlas.rgba[off + 3] == 0 {
+                        clear += 1;
+                    } else if atlas.rgba[off] > 150 {
+                        bright += 1;
+                    }
+                }
+            }
+            assert!(
+                bright >= 40 && clear >= 40,
+                "{name} triangle looks wrong (bright={bright}, clear={clear})"
+            );
+        }
+
+        // ATR element icons: Vahn's flame carries saturated orange
+        // (r > g > b with high r), and all three have transparent
+        // corners (28x12 winged shapes).
+        let atr = atlas.band_atr_icons();
+        let (vx, vy, vw, vh) = atr[0];
+        let mut orange = 0u32;
+        for row in 0..vh {
+            for col in 0..vw {
+                let off = ((vy + row) as usize) * stride + ((vx + col) as usize) * 4;
+                let (r, g, b, a) = (
+                    atlas.rgba[off],
+                    atlas.rgba[off + 1],
+                    atlas.rgba[off + 2],
+                    atlas.rgba[off + 3],
+                );
+                if a == 255 && r > 180 && r > g && g > b {
+                    orange += 1;
+                }
+            }
+        }
+        assert!(
+            orange >= 20,
+            "Vahn ATR flame has too few orange pixels ({orange}) - ext-strip CLUT may be off"
+        );
+        for (i, (ix, iy, _, _)) in atr.iter().enumerate() {
+            let off = (*iy as usize) * stride + (*ix as usize) * 4;
+            assert_eq!(
+                atlas.rgba[off + 3],
+                0,
+                "ATR icon {i} top-left corner should be transparent"
             );
         }
     }

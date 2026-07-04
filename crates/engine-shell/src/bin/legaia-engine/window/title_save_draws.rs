@@ -300,12 +300,27 @@ impl PlayWindowApp {
             let (x, y, w, h) = MENU_SUBWINDOW_CONTENT;
             out.extend(legaia_engine_render::menu_window_chrome_draws_for(
                 &assets.rects,
-                (x - 6, y - 2, w + 12, h + 12),
+                (x - 8, y - 8, w + 16, h + 16),
                 stage_origin,
                 stage_scale,
             ));
         }
         for &id in ids {
+            // The title-tab windows (descriptor ids 0..=4) wear the carved
+            // plaque instead of the gold 9-slice + filigree frame - retail
+            // draws no window chrome for them beyond the plaque sprites
+            // (RAM prim scan over the menu_status_town capture).
+            if id <= legaia_asset::menu_windows::window_ids::TAB_OPTIONS {
+                let (_, _, w, _) = self.menu_window_rect(id);
+                out.extend(legaia_engine_render::tab_banner_draws(
+                    &assets.rects,
+                    self.menu_window_pen(id),
+                    w,
+                    stage_origin,
+                    stage_scale,
+                ));
+                continue;
+            }
             out.extend(legaia_engine_render::menu_window_chrome_draws_for(
                 &assets.rects,
                 self.menu_window_frame_rect(id),
@@ -332,7 +347,9 @@ impl PlayWindowApp {
         // value digits) and the 7-slot equipment pictogram grid are UI-icon
         // sprites from the system-UI atlas (the text stand-ins are
         // suppressed in `status_screen_draws_for`), positioned off the
-        // id-28 content origin.
+        // id-28 content origin. The satellite windows add the party-list
+        // hand cursor, the "Condition" pager triangles and the summary
+        // LV + ATR element icons.
         if let Some(FieldMenuSubsession::Status(s)) = sub {
             use legaia_asset::menu_windows::window_ids;
             let ap = s.current().map(|snap| snap.ap as u16).unwrap_or(0);
@@ -340,6 +357,19 @@ impl PlayWindowApp {
                 &assets.rects,
                 self.menu_window_pen(window_ids::STATUS_MAIN),
                 ap,
+                stage_origin,
+                stage_scale,
+            ));
+            // ATR icon by roster character id (slot) of the highlighted
+            // member; the icon set is Vahn/Noa/Gala in character order.
+            let atr_char = s.current().map(|snap| snap.slot as usize).unwrap_or(0);
+            out.extend(legaia_engine_render::status_satellite_icon_sprites_for(
+                &assets.rects,
+                s.cursor() as usize,
+                atr_char,
+                self.menu_window_pen(window_ids::STATUS_PARTY_LIST),
+                self.menu_window_pen(window_ids::STATUS_CONDITION),
+                self.menu_window_pen(window_ids::STATUS_SUMMARY),
                 stage_origin,
                 stage_scale,
             ));

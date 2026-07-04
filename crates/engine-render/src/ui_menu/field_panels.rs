@@ -161,10 +161,33 @@ pub struct StatusPanelView<'a> {
     pub equip_rows: &'a [(&'a str, &'a str)],
 }
 
-/// Right-align a numeric string so its last glyph ends at
-/// `x + digits * 6` - the shape of the retail decimal primitive
-/// `FUN_80034b78(value, x, y, digits)`, which fills a `digits`-wide cell
-/// field from the left edge `x`.
+/// Retail body-text white: every CLUT-7 staged glyph reads back as RGB
+/// `(206, 206, 206)` in the golden `menu_status_town` capture. The
+/// component values here are the **linear-space** equivalents of that
+/// sRGB byte value: [`TextDraw`] colours multiply the whitewashed font
+/// atlas in linear space and the surface encodes to sRGB on present, so
+/// `srgb_to_linear(206/255) = 0.6172066` is what makes the presented
+/// pixel read back exactly 206.
+pub const MENU_TEXT_WHITE: [f32; 4] = [0.617_206_6, 0.617_206_6, 0.617_206_6, 1.0];
+/// Retail teal ink for the parenthesised base/growth values on the
+/// status page (the HP/MP `( base)` group and the stat grid's
+/// `( growth)` group, parens included): sRGB `(66, 222, 222)` in the
+/// golden capture - the CLUT row the separator-staging value 5 selects.
+/// Linear-space components, like [`MENU_TEXT_WHITE`].
+pub const MENU_TEXT_TEAL: [f32; 4] = [0.054_480_3, 0.730_460_7, 0.730_460_7, 1.0];
+
+/// Fixed decimal-cell pitch of the retail number primitive
+/// `FUN_80034b78`: one glyph cell per digit, 8 px apart (pinned against
+/// the golden capture - the HP row's current-value field at `+0x30` puts
+/// "180" in cells `+0x38/+0x40/+0x48`, ending flush at the `/` at
+/// `+0x50`).
+const NUM_CELL_W: i32 = 8;
+
+/// Lay a decimal value into a `digits`-wide fixed-cell field starting at
+/// `x` - the shape of the retail decimal primitive
+/// `FUN_80034b78(value, digits, x, y)`: digit `i` (of the value's
+/// decimal form, right-aligned in the field) draws at its own 8-px cell
+/// origin, leading cells stay blank.
 pub(crate) fn num_field_draws(
     font: &legaia_font::Font,
     value: u64,
@@ -174,9 +197,14 @@ pub(crate) fn num_field_draws(
     color: [f32; 4],
 ) -> Vec<TextDraw> {
     let s = value.to_string();
-    let l = font.layout_ascii(&s);
-    let w = l.advance_x as i32;
-    text_draws_for(&l, (x + digits * 6 - w, y), color)
+    let len = s.len() as i32;
+    let mut out = Vec::new();
+    for (i, ch) in s.chars().enumerate() {
+        let cell = (digits - len + i as i32).max(0);
+        let l = font.layout_ascii(&ch.to_string());
+        out.extend(text_draws_for(&l, (x + cell * NUM_CELL_W, y), color));
+    }
+    out
 }
 
 /// Build [`TextDraw`]s for the status panel of one character, at the
@@ -200,9 +228,9 @@ pub fn status_screen_draws_for(
     label_icons: bool,
 ) -> Vec<TextDraw> {
     let (wx, wy) = pen;
-    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let white: [f32; 4] = MENU_TEXT_WHITE;
     let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
-    let teal: [f32; 4] = [0.5, 1.0, 0.85, 1.0];
+    let teal: [f32; 4] = MENU_TEXT_TEAL;
     let dim: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
 
     let mut out = Vec::new();
@@ -224,9 +252,11 @@ pub fn status_screen_draws_for(
         white,
     ));
 
-    // HP / MP rows: label tag at +0x20, current at +0x30, "/" at +0x50,
-    // max at +0x58, "(" at +0x7c, base at +0x84, ")" at +0xa4 (all
-    // 4-digit fields).
+    // HP / MP rows: label tag at +0x20, current at +0x30, "/" at +0x50
+    // (white - the field's last cell ends flush against it, retail's
+    // "180/ 180" spacing), max at +0x58, then the teal parenthesised
+    // base group: "(" at +0x7c, base at +0x84, ")" at +0xa4 (all 4-digit
+    // fields; parens + base value share the teal separator ink).
     for (row_y, tag, cur, max, base) in [
         (
             wy + 0x13,
@@ -247,11 +277,11 @@ pub fn status_screen_draws_for(
             str_at(&mut out, tag, wx + 0x20, row_y, gold);
         }
         out.extend(num_field_draws(font, cur, wx + 0x30, row_y, 4, white));
-        str_at(&mut out, "/", wx + 0x50, row_y, dim);
+        str_at(&mut out, "/", wx + 0x50, row_y, white);
         out.extend(num_field_draws(font, max, wx + 0x58, row_y, 4, white));
-        str_at(&mut out, "(", wx + 0x7c, row_y, dim);
+        str_at(&mut out, "(", wx + 0x7c, row_y, teal);
         out.extend(num_field_draws(font, base, wx + 0x84, row_y, 4, teal));
-        str_at(&mut out, ")", wx + 0xa4, row_y, dim);
+        str_at(&mut out, ")", wx + 0xa4, row_y, teal);
     }
 
     // AP gauge line. With `label_icons` the caller draws the retail bar
@@ -264,28 +294,31 @@ pub fn status_screen_draws_for(
     }
 
     // Derived-stat 3x2 grid: rows at WY+0x42/+0x4f/+0x5c. Left column
-    // label +0 / live +0x28 / growth +0x48; right column label +0x74 /
-    // live +0x9c / growth +0xbc. `stat_rows` order: left column rows
-    // 0..3, right column rows 3..6 (ATK/UDF/LDF | SPD/INT/AGL).
+    // label +0 / live value (3-digit field) +0x28 / "(" +0x40 / growth
+    // (3-digit field) +0x48 / ")" +0x60; right column shifts the same
+    // shape to +0x74 / +0x9c / +0xb4 / +0xbc / +0xd4. Parens + growth
+    // value in the teal separator ink (golden-capture pinned).
+    // `stat_rows` order: left column rows 0..3, right column rows 3..6
+    // (ATK/UDF/LDF | SPD/INT/AGL).
     for (i, sr) in panel.stat_rows.iter().take(6).enumerate() {
         let row_y = wy + 0x42 + (i % 3) as i32 * 0x0d;
-        let (lx, vx, gx) = if i < 3 {
-            (wx, wx + 0x28, wx + 0x48)
+        let (lx, vx, px) = if i < 3 {
+            (wx, wx + 0x28, wx + 0x40)
         } else {
-            (wx + 0x74, wx + 0x9c, wx + 0xbc)
+            (wx + 0x74, wx + 0x9c, wx + 0xb4)
         };
         str_at(&mut out, sr.label, lx, row_y, white);
         out.extend(num_field_draws(font, sr.value as u64, vx, row_y, 3, white));
-        str_at(&mut out, "(", gx, row_y, dim);
+        str_at(&mut out, "(", px, row_y, teal);
         out.extend(num_field_draws(
             font,
             sr.growth as u64,
-            gx + 4,
+            px + 8,
             row_y,
             3,
             teal,
         ));
-        str_at(&mut out, ")", gx + 4 + 20, row_y, dim);
+        str_at(&mut out, ")", px + 0x20, row_y, teal);
     }
 
     // Equipment grid: slots 0..3 stack at +0/+0x10 on rows WY+0x6d/+0x7a/
@@ -471,15 +504,31 @@ pub struct StatusSatelliteView<'a> {
 /// Build [`TextDraw`]s for the status screen's three satellite windows
 /// (party list id 26, "Condition" pager id 27, character summary id 30),
 /// at their pinned descriptor-rect content origins.
+///
+/// With `label_icons` the sprite stand-ins (hand cursor, pager
+/// triangles, LV label, ATR element icon) are omitted here because the
+/// caller draws them from the UI-icon atlas
+/// ([`status_satellite_icon_sprites_for`]); `false` keeps ASCII text
+/// stand-ins.
+///
+/// PORT: FUN_801D2094 - party list (name at `WX+6`, row pitch `0x0e`,
+/// hand cursor at `WX-0xc`).
+/// PORT: FUN_801D30A4 - "Condition" pager (label at `WX+6`, arrow
+/// sprites at `WX-0x10` / `WX+0x3A`, `WY-2`).
+/// PORT: FUN_801D31EC - summary window (name at `+0`, LV icon at
+/// `(+0x1c, +0xf)`, 2-digit level field at `(+0x2c, +0xd)`, "ATR:" at
+/// `(+0, +0x1a)` with the element icon at `+0x20`).
 pub fn status_satellite_draws_for(
     font: &legaia_font::Font,
     view: &StatusSatelliteView<'_>,
     list_pen: (i32, i32),
     condition_pen: (i32, i32),
     summary_pen: (i32, i32),
+    label_icons: bool,
 ) -> Vec<TextDraw> {
-    const LIST_PITCH: i32 = 13;
-    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    /// Retail party-list row pitch (`FUN_801D2094` steps Y by `0x0e`).
+    const LIST_PITCH: i32 = 14;
+    let white: [f32; 4] = MENU_TEXT_WHITE;
     let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
 
     let mut out = Vec::new();
@@ -487,42 +536,173 @@ pub fn status_satellite_draws_for(
         out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
     };
 
-    // Party list: one name per row, the highlighted row cursor-marked
-    // (retail draws a pointing-hand icon overhanging the window's left
-    // edge).
+    // Party list: one name per row at WX+6, every row plain white (the
+    // selection is the pointing-hand sprite overhanging the window's
+    // left frame at WX-0xc, not an ink change).
     for (i, name) in view.party_names.iter().enumerate() {
         let y = list_pen.1 + i as i32 * LIST_PITCH;
-        let color = if i == view.cursor { gold } else { white };
-        if i == view.cursor {
-            str_at(&mut out, ">", list_pen.0 - 8, y, color);
+        if !label_icons && i == view.cursor {
+            str_at(&mut out, ">", list_pen.0 - 8, y, white);
         }
-        str_at(&mut out, name, list_pen.0, y, color);
+        str_at(&mut out, name, list_pen.0 + 6, y, white);
     }
 
-    // "Condition" pager (retail: left/right arrow icons flank the label).
-    str_at(&mut out, "<", condition_pen.0 - 8, condition_pen.1, white);
+    // "Condition" pager: label at WX+6; the flanking solid-triangle
+    // sprites are atlas draws (text fallbacks when un-iconed).
+    if !label_icons {
+        str_at(&mut out, "<", condition_pen.0 - 8, condition_pen.1, white);
+        str_at(&mut out, ">", condition_pen.0 + 58, condition_pen.1, white);
+    }
     str_at(
         &mut out,
         "Condition",
-        condition_pen.0 + 2,
+        condition_pen.0 + 6,
         condition_pen.1,
         white,
     );
-    str_at(&mut out, ">", condition_pen.0 + 56, condition_pen.1, white);
 
-    // Character summary: name, LV, ATR rows (the ATR element icon is
-    // unported; label only).
+    // Character summary: name at the content origin, the LV icon +
+    // 2-digit level field on the next line, "ATR:" + element icon below.
     str_at(&mut out, view.name, summary_pen.0, summary_pen.1, white);
-    str_at(&mut out, "LV", summary_pen.0 + 12, summary_pen.1 + 14, gold);
+    if !label_icons {
+        str_at(
+            &mut out,
+            "LV",
+            summary_pen.0 + 0x1c,
+            summary_pen.1 + 0x0f,
+            gold,
+        );
+    }
     out.extend(num_field_draws(
         font,
         view.level as u64,
-        summary_pen.0 + 28,
-        summary_pen.1 + 14,
+        summary_pen.0 + 0x2c,
+        summary_pen.1 + 0x0d,
         2,
         white,
     ));
-    str_at(&mut out, "ATR:", summary_pen.0, summary_pen.1 + 28, white);
+    str_at(&mut out, "ATR:", summary_pen.0, summary_pen.1 + 0x1a, white);
 
+    out
+}
+
+/// Build the status-screen satellite-window UI-icon [`SpriteDraw`]s from
+/// the system-UI atlas: the party-list pointing-hand cursor, the
+/// "Condition" pager triangles, the summary window's LV label and the
+/// per-character ATR element icon. Positions are the traced renderer
+/// offsets (see [`status_satellite_draws_for`]); the stage mapping
+/// matches [`crate::menu_window_chrome_draws_for`]. Pair with
+/// `status_satellite_draws_for(.., label_icons = true)`.
+///
+/// `cursor` is the highlighted party-list row; `atr_char` indexes
+/// [`SaveMenuAtlasRects::atr_icons`] (roster character id 0=Vahn,
+/// 1=Noa, 2=Gala; out-of-range draws no element icon).
+///
+/// REF: FUN_8002b994 - the animated-cursor sprite primitive behind the
+/// hand + pager triangles (frame-0 statics here; the 2-px idle bob is
+/// not reproduced).
+#[allow(clippy::too_many_arguments)]
+pub fn status_satellite_icon_sprites_for(
+    rects: &SaveMenuAtlasRects,
+    cursor: usize,
+    atr_char: usize,
+    list_pen: (i32, i32),
+    condition_pen: (i32, i32),
+    summary_pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    const LIST_PITCH: i32 = 14;
+    let scale = stage_scale.max(1) as i32;
+    let mut out = Vec::with_capacity(5);
+    let mut push = |src: (u32, u32, u32, u32), sx: i32, sy: i32| {
+        let (_, _, w, h) = src;
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + sx * scale,
+                stage_origin.1 + sy * scale,
+                w * stage_scale,
+                h * stage_scale,
+            ),
+            src,
+            color: [1.0, 1.0, 1.0, 1.0],
+        });
+    };
+    // Party-list hand cursor (FUN_801D2094: sprite-table kind 0 at
+    // (WX-0xc, row_y)).
+    push(
+        rects.cursor,
+        list_pen.0 - 0x0c,
+        list_pen.1 + cursor as i32 * LIST_PITCH,
+    );
+    // Pager triangles (FUN_801D30A4: kinds 2/3 at WX-0x10 / WX+0x3A,
+    // both at WY-2).
+    push(
+        rects.pager_left,
+        condition_pen.0 - 0x10,
+        condition_pen.1 - 2,
+    );
+    push(
+        rects.pager_right,
+        condition_pen.0 + 0x3a,
+        condition_pen.1 - 2,
+    );
+    // Summary LV label icon (ICO code 0x0a at (+0x1c, +0xf)).
+    push(rects.label_lv, summary_pen.0 + 0x1c, summary_pen.1 + 0x0f);
+    // Summary ATR element icon (the 0xCE-token ICO at (+0x20, +0x1a)).
+    if let Some(src) = rects.atr_icons.get(atr_char) {
+        push(*src, summary_pen.0 + 0x20, summary_pen.1 + 0x1a);
+    }
+    out
+}
+
+/// Compose the retail **tab-banner plaque** for a field-menu title tab
+/// (the carved brown plaque behind "Status" / "Equip" / "Options") as
+/// atlas [`SpriteDraw`]s.
+///
+/// Retail draws the class-2 tab window's entire chrome as six sprites
+/// (RAM prim scan over the `menu_status_town` capture): a left cap at
+/// `(WX-8, WY-4)`, the 16x20 body tile repeated across the tab's content
+/// width `w` (with a partial remainder), and a right cap at `(WX+w,
+/// WY-4)`. No gold 9-slice frame or filigree interior is drawn for tab
+/// windows - the label text lands directly on the plaque at the content
+/// origin. `pen` is the tab window's content origin and `content_w` its
+/// descriptor width (60 in the retail table).
+///
+/// REF: FUN_801DCAD8 / FUN_801DCA94 / FUN_801DCB1C - the tab content
+/// renderers (label string only; the plaque is caller-drawn chrome).
+pub fn tab_banner_draws(
+    rects: &SaveMenuAtlasRects,
+    pen: (i32, i32),
+    content_w: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (wx, wy) = pen;
+    let y = wy - 4;
+    let scale = stage_scale.max(1) as i32;
+    let mut out = Vec::with_capacity(6);
+    let mut push = |src: (u32, u32, u32, u32), sx: i32, sy: i32| {
+        let (_, _, w, h) = src;
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + sx * scale,
+                stage_origin.1 + sy * scale,
+                w * stage_scale,
+                h * stage_scale,
+            ),
+            src,
+            color: [1.0, 1.0, 1.0, 1.0],
+        });
+    };
+    push(rects.tab_cap_l, wx - 8, y);
+    let (bx, by, bw, bh) = rects.tab_body;
+    let mut x = wx;
+    while x < wx + content_w {
+        let this_w = (wx + content_w - x).min(bw as i32);
+        push((bx, by, this_w as u32, bh), x, y);
+        x += this_w;
+    }
+    push(rects.tab_cap_r, wx + content_w, y);
     out
 }

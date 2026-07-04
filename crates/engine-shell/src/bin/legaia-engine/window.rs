@@ -689,11 +689,11 @@ impl PlayWindowApp {
     }
 
     /// Frame rect (the 9-slice chrome box) for a menu window id: the
-    /// retail border art extends 6 px left/right, 2 px above and 10 px
-    /// below the content rect.
+    /// retail border art extends 8 px past the content rect on every
+    /// side (prim-scan pinned; `MenuWindowDescriptor::frame_rect`).
     fn menu_window_frame_rect(&self, id: usize) -> (i32, i32, i32, i32) {
         let (x, y, w, h) = self.menu_window_rect(id);
-        (x - 6, y - 2, w + 12, h + 12)
+        (x - 8, y - 8, w + 16, h + 16)
     }
 
     /// Apply the live side-effects of [`Self::options_state`] (currently
