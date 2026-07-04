@@ -406,9 +406,11 @@ The disc-gated test `crates/engine-core/tests/opdeene_narration.rs` ground-truth
 
 ### Narration playback
 
-Entering `opdeene` live installs the decoded pages on the world ([`World::open_cutscene_narration`](../../crates/engine-core/src/world.rs); the host gathers them via [`man_field_scripts::collect_partition_narration`](../../crates/engine-core/src/man_field_scripts.rs) over partition 2). The presenter [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs) walks them one page at a time: `World::tick` advances a per-page timer (auto-advancing the subtitle, default `DEFAULT_PAGE_FRAMES` ≈ 2.5 s/page), and a confirm press skips to the next page. The host renders the active page centered near the bottom of the screen ([`cutscene_narration_draws_for`](../../crates/engine-render/src/lib.rs)).
+Entering `opdeene` live installs the decoded pages on the world ([`World::open_cutscene_narration`](../../crates/engine-core/src/world.rs); the host gathers them via [`man_field_scripts::collect_partition_narration`](../../crates/engine-core/src/man_field_scripts.rs) over partition 2). The presenter [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs) walks them one page at a time: `World::tick` advances a per-page timer (auto-advancing the subtitle, default `DEFAULT_PAGE_FRAMES` ≈ 2.5 s/page), and a confirm press skips to the next page.
 
-The narration **gates the Rim Elm hand-off**: [`World::take_prologue_handoff`](../../crates/engine-core/src/world.rs) returns nothing while the narration is on screen, so the opening order matches retail - narration plays, *then* a confirm press triggers the `town01` transition. The presenter's per-page dwell (`DEFAULT_PAGE_FRAMES = 120` ≈ 2.0 s) and the renderer's ¾-down placement are pinned to retail (below). The disc-gated test `crates/engine-core/tests/opdeene_narration_playback.rs` cold-boots `opdeene`, asserts the narration installs (22 pages) and gates the hand-off, ticks it to completion on the timer, and confirms the hand-off then releases to `town01`.
+The host renders the active page centered **at mid-screen** ([`cutscene_narration_draws_for`](../../crates/engine-render/src/lib.rs)) - measured off the `new_game_cutscene_intro_a` retail framebuffer, the caption "It was the Seru." sits at ~50% down (just below centre, over the vignette actors), not near the bottom.
+
+The narration **gates the Rim Elm hand-off**: [`World::take_prologue_handoff`](../../crates/engine-core/src/world.rs) returns nothing while the narration is on screen, so the opening order matches retail - narration plays, *then* a confirm press triggers the `town01` transition. The presenter's per-page dwell (`DEFAULT_PAGE_FRAMES = 120` ≈ 2.0 s) and the renderer's mid-screen placement (~50% down, above) are pinned to retail. The disc-gated test `crates/engine-core/tests/opdeene_narration_playback.rs` cold-boots `opdeene`, asserts the narration installs (22 pages) and gates the hand-off, ticks it to completion on the timer, and confirms the hand-off then releases to `town01`.
 
 ### Timeline execution model (Ghidra-traced)
 
@@ -452,7 +454,11 @@ The static arm ([`World::arm_prologue_handoff_from_man`](../../crates/engine-cor
 Two single-shared-VM accommodations, **approximate by design**:
 
 - **Narration pages are neutralized.** In retail's cutscene context the `CC F8 80 N` op routes to `FUN_8003C764` (text draw) and consumes its `N` inline pages; the engine's single field VM decodes `0x4C` n8 sub-0 as the actor allocator, whose PC-advance would land on the page bytes. Because the engine presents the narration through the separate `CutsceneNarration` presenter, the loader overwrites each narration span (located by [`cutscene_text::NarrationBlock::byte_span`](../../crates/asset/src/cutscene_text.rs)) with field-VM NOPs (`0x21`) - an offset-preserving fill, so relative jumps still resolve and the camera/move/`GFLAG` ops at their original offsets still execute. The actor-allocator host hook is also suppressed while the timeline steps (`World::in_cutscene_timeline`).
-- **Camera params.** The op-`0x45` events flow to the `Camera` controller and the host writes the param set to `World::camera_state`. The native `play-window` renders the cutscene with the **exact retail GTE model** whenever a cutscene timeline is installed: the shell's `compute_scene_camera` cutscene branch builds `psx_camera_mvp(pitch, yaw, H, tr_eye, focus)` (the same `screen = H·(R·(v − focus) + tr_eye)/Ze` builder the field follow camera uses; `FUN_800172c0`), composed with `FIELD_WORLD_FLIP` exactly like `field_follow_camera_mvp` (the internal Y-flip and the world flip cancel, so the raw retail Y-down `focus` and native-`1×` geometry pass through unchanged).
+- **Camera params (per-slot merge).** The op-`0x45` events flow to the `Camera` controller and the host **merges** each beat's masked slots into a persistent `World::camera_state.params` set.
+  This mirrors retail's `FUN_801DE084`, which writes each masked param into a persistent camera struct slot (`0x801C6EA8 + 0x02 + i*4`) - a beat that omits a slot keeps its prior value.
+  It matters: one of opdeene's nine op-`0x45` beats sets **only slot 9 (H)** (`[(9, 792)]`), so a wholesale replace would drop that shot's focus / pitch / eye-depth and snap the camera to `cutscene_view`'s fall-back framing (lead-actor focus + default depth); the per-slot merge keeps the staged shot and only tweaks the focal length.
+  The set is cleared on scene entry so cutscene shots don't leak across scenes.
+- **Camera model.** The native `play-window` renders the cutscene with the **exact retail GTE model** whenever a cutscene timeline is installed: the shell's `compute_scene_camera` cutscene branch builds `psx_camera_mvp(pitch, yaw, H, tr_eye, focus)` (the same `screen = H·(R·(v − focus) + tr_eye)/Ze` builder the field follow camera uses; `FUN_800172c0`), composed with `FIELD_WORLD_FLIP` exactly like `field_follow_camera_mvp` (the internal Y-flip and the world flip cancel, so the raw retail Y-down `focus` and native-`1×` geometry pass through unchanged).
   `SceneHost`'s `cutscene_view` decodes the pinned params: **focus** `(-param6, param7, -param8)` (Y defaults to retail's `0`), **pitch/yaw** from params 0/1 (`4096` = full turn), **H** straight from param 9, and **tr_eye** = the eye-space translation trio (params 3/4/5, `0x800840B8`) - the eye-back depth is `param5`. There is **no eye-distance heuristic**: the depth is a real decoded param.
   Because retail folds a `6×` world scale into `R` (base matrix `DAT_8007BF10`) while the engine renders geometry at native `1×`, `tr_eye` is divided by `6` - the perspective divide makes `6×`-geometry-at-`z` and `1×`-geometry-at-`z/6` project to identical pixels (the same `depth/6` trick `field_follow_camera_mvp`'s `FIELD_CAM_DEPTH = 1200 = 7200/6` uses). `opdeene` supplies all three offset slots per beat.
   The shot re-targets each time the timeline executes a new Camera Configure op; rather than cutting, `play-window` eases the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) (per-frame ease, angles along the shortest arc, reset to snap when the timeline first installs) - mirroring retail's own per-frame `FUN_801DB510` exponential ease.
@@ -525,6 +531,43 @@ into `World::color_fade`, stepped per `World::tick` and drawn by `play-window` a
 semi-transparent wash while active. **Approximate by design:** the retail fade actor's per-frame
 *draw* handler is not dumped, so the coverage curve + PSX blend mode aren't pinned - the render is
 a 50%-average (ABR 0) wash that lifts as the ramp completes, pending that dump.
+
+### Full-scene sepia grade (the gold prologue look)
+
+The whole `opdeene` prologue renders in a **persistent warm gold/amber monochrome** - every 3D
+surface (terrain, foliage, the vignette actors) is tinted gold while the white narration text
+stays white. It is distinct from the transient colour fade above, and it is gone by the time the
+interactive Rim Elm (`town01`) loads (full colour).
+
+**Retail mechanism (traced two ways).** The grade is a GTE render-time effect, not baked
+geometry and not a `MES`/texture change:
+- The TMD renderer `FUN_8002735C` runs the GTE **DPCS** depth-cue per primitive:
+  `out = base + IR0·(far − base)`, where the **far colour** (GTE control regs 21/22/23 = RFC/GFC/BFC)
+  comes from each render node's `+0x74` and `IR0` from `+0x78`. Setting a gold far colour with a
+  non-zero IR0 pulls every object uniformly toward gold - the exact tool for a scene-wide grade.
+- The GTE **back/ambient colour** `DAT_8007B788` ("light_back_color") is `0x00202020` (dim,
+  R=G=B=32) in `opdeene` vs `0x00FFFFFF` (white) in `town01`, staged into GTE cr13-15 by
+  `FUN_80043390` - the darkening half of the look. (Byte-exact across save states.)
+
+The `opdeene` MAN itself carries **no** colour op (no op `0x4C 0x8A` ambient, no `0x4C 0x81` far
+colour); it drives op `0x46` depth-fog and op `0x4C 0x12` fade-to-black only. So the gold is set by
+the **cutscene-host overlay during the narration beats**, not the field script. Measured off the
+retail cutscene framebuffer, the grade collapses all hues to amber: average RGB `(61, 55, 15)`,
+`G/R ≈ 0.90`, `B/R ≈ 0.24`, zero surviving green/blue.
+
+**Engine port.** Rather than replicate the per-object GTE far-colour plumbing, the engine
+reproduces the measured *look* with a single luminance→gold tone-map:
+[`fade::ColorGrade`](../../crates/engine-core/src/fade.rs) holds the gold direction + strength
+([`ColorGrade::PROLOGUE_SEPIA`](../../crates/engine-core/src/fade.rs)), and
+[`World::scene_color_grade`](../../crates/engine-core/src/world.rs) returns it while the active
+scene is the prologue cutscene (`opdeene`) and `None` for every other scene. `play-window` stages
+it into the renderer each frame ([`Renderer::set_color_grade`](../../crates/engine-render/src/renderer.rs));
+the field mesh shaders' `apply_grade` maps each shaded pixel to `luminance · gold` cross-faded by
+`strength` (the text/UI overlays use separate shaders, so the narration stays white). The gold
+coefficients are stored in **linear** space (the shader multiplies before the sRGB framebuffer
+encode, gamma ≈ 2.0), i.e. the display targets squared: `(1.0, 0.90², 0.24²)`. Verified
+pixel-aligned against a pure-diagnostic grade - the encoded output lands `G/R ≈ 0.90`, `B/R ≈ 0.24`.
+`scene_color_grade_only_on_the_prologue_cutscene` (engine-core) guards the scene gate.
 
 ## Open items
 

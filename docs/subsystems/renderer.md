@@ -103,6 +103,19 @@ These work without any pre-extracted `tim_scan/` tree - they operate straight of
 
 `Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to GP0(0xE2) "Texture Window setting": four 5-bit values in 8-pixel steps that clamp / wrap texture-coordinate sampling to a smaller window inside the texture page. Default is all-zero (no-op). Retail Legaia leaves the register at zero almost everywhere; the API is wired primarily so future runtime LoadImage / DMA-to-VRAM trace work can replay the register state faithfully. The fragment shader applies the per-pixel `coord = (coord & ~(mask*8)) | ((offset & mask)*8)` transformation before texture-page lookup.
 
+### Full-scene colour grade
+
+`Renderer::set_color_grade(gold, strength)` stages a per-frame `(gold_rgb, strength)` into every
+field `MeshUniforms`; the textured / VRAM / colour mesh shaders' `apply_grade` tone-maps each shaded
+pixel to `luminance · gold` and cross-fades to it by `strength` (`strength = 0`, the default, is a
+no-op; text/UI overlays use separate shaders and are never graded). This reproduces the opening
+prologue's warm gold sepia - the `opdeene` "It was the Seru." cutscene renders its whole 3D scene in
+amber monochrome. Retail achieves it with a GTE far-colour DPCS depth-cue + dim ambient (see
+[`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); the engine mirrors the
+measured display ratios (`G/R ≈ 0.90`, `B/R ≈ 0.24`). Gold coefficients are stored in linear space
+(the multiply precedes the sRGB framebuffer encode). Driven by
+[`World::scene_color_grade`](../../crates/engine-core/src/world.rs) (only the prologue scene grades).
+
 ### Asset-viewer flat-shaded fallback
 
 `asset-viewer tmd <PATH> --no-textures` (alias `--flat-shaded`) suppresses the VRAM path entirely and renders unlit flat geometry. Useful for inspecting mesh silhouettes without battling palette guesses (the runtime LoadImage trace for field / town scenes is not yet captured, so some palette rows always render as garbage in textured mode).

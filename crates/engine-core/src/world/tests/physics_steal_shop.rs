@@ -556,3 +556,57 @@ fn field_vm_op49_without_item_data_never_opens_a_shop() {
     assert!(!world.field_shop_armed);
     assert!(world.take_pending_field_shop().is_none());
 }
+
+/// op-0x45 camera params MERGE per slot across beats (retail `FUN_801DE084`
+/// writes each masked slot into a persistent camera struct). A later beat that
+/// sets only slot 9 (H) - opdeene has exactly such a beat - must keep the
+/// focus / pitch / eye-depth staged by the previous beat, not drop them.
+#[test]
+fn camera_configure_merges_params_across_beats() {
+    use legaia_engine_vm::field::{CameraParam, FieldHost};
+    let mut world = World::new();
+    let val = |slots: &[u8], v: u16| -> Vec<CameraParam> {
+        slots
+            .iter()
+            .map(|&slot| CameraParam { slot, value: v })
+            .collect()
+    };
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        // Beat 1: a fully-staged shot (all slots but focus-Y / slot 7).
+        host.camera_configure(&val(&[0, 1, 2, 3, 4, 5, 6, 8, 9], 111), 0, 0);
+    }
+    let get = |w: &World, slot: u8| {
+        w.camera_state
+            .params
+            .iter()
+            .find(|p| p.slot == slot)
+            .map(|p| p.value)
+    };
+    assert_eq!(get(&world, 6), Some(111), "beat 1 stages focus X");
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        // Beat 2: a H-only tweak, like opdeene's `[(9, 792)]`.
+        host.camera_configure(
+            &[CameraParam {
+                slot: 9,
+                value: 792,
+            }],
+            0,
+            0,
+        );
+    }
+    assert_eq!(get(&world, 9), Some(792), "beat 2 updates H");
+    assert_eq!(
+        get(&world, 6),
+        Some(111),
+        "focus X survives the H-only beat"
+    );
+    assert_eq!(get(&world, 0), Some(111), "pitch survives the H-only beat");
+    assert_eq!(
+        get(&world, 5),
+        Some(111),
+        "eye-depth survives the H-only beat"
+    );
+    assert_eq!(world.camera_state.params.len(), 9, "no slot dropped");
+}

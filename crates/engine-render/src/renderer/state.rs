@@ -109,6 +109,11 @@ pub struct Renderer {
     /// retail Legaia's typical state - the register only gets non-zero
     /// values from a handful of effect / scene-init scripts.
     pub(super) tex_window: std::cell::Cell<[u32; 4]>,
+    /// Full-scene colour grade `(gold_r, gold_g, gold_b, strength)` staged
+    /// into every field `MeshUniforms` (see [`super::uploaded::MeshUniforms`]).
+    /// Defaults to `(1, 1, 1, 0)` = identity (no grade). Set with
+    /// [`Renderer::set_color_grade`]; drives the opening prologue sepia.
+    pub(super) color_grade: std::cell::Cell<[f32; 4]>,
 }
 
 impl Renderer {
@@ -153,6 +158,27 @@ impl Renderer {
     /// register state, in 8-pixel steps (0..=31). All zero means no-op.
     pub fn texture_window(&self) -> [u32; 4] {
         self.tex_window.get()
+    }
+
+    /// Set the full-scene colour grade applied by the field mesh shaders:
+    /// each shaded pixel is tone-mapped to `luminance * (gold_r, gold_g,
+    /// gold_b)` and cross-faded to that by `strength`. `strength = 0.0`
+    /// (the default) leaves the scene untouched; `1.0` is a full sepia
+    /// collapse. Reproduces the opening prologue's gold/amber grade
+    /// (the `opdeene` "It was the Seru." cutscene), which renders the whole
+    /// 3D scene in warm monochrome while the narration text stays white.
+    ///
+    /// The retail grade measured off a VRAM capture averages RGB
+    /// `(69, 62, 23)` with hue ≈ 50° and no surviving green/blue, i.e. a
+    /// gold direction of `≈(1.0, 0.90, 0.33)` at near-full strength.
+    pub fn set_color_grade(&self, gold: [f32; 3], strength: f32) {
+        self.color_grade
+            .set([gold[0], gold[1], gold[2], strength.clamp(0.0, 1.0)]);
+    }
+
+    /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.
+    pub fn color_grade(&self) -> [f32; 4] {
+        self.color_grade.get()
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {

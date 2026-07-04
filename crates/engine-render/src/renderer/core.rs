@@ -198,6 +198,7 @@ impl Renderer {
                 light_dir: [0.4, -0.8, 0.4, 0.0],
                 psx_params: [width as f32, height as f32, 0.0, 0.0],
                 tex_window: [0; 4],
+                grade: [1.0, 1.0, 1.0, 0.0],
             }]),
             wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
         );
@@ -962,6 +963,7 @@ impl Renderer {
             psx_mode: std::cell::Cell::new(false),
             vram_upload_counter: std::cell::Cell::new(0),
             tex_window: std::cell::Cell::new([0; 4]),
+            color_grade: std::cell::Cell::new([1.0, 1.0, 1.0, 0.0]),
         })
     }
 }

@@ -139,6 +139,55 @@ impl FadeState {
     }
 }
 
+/// A persistent full-scene colour grade - the warm gold/sepia the opening
+/// prologue cutscene (`opdeene`, "It was the Seru.") renders its whole 3D
+/// scene through, distinct from the transient [`ColorFade`] flashes.
+///
+/// ## Retail mechanism
+///
+/// The grade is two GTE-lighting halves set for the cutscene scene and reset
+/// for the interactive field:
+/// - a **dim neutral ambient/back colour** (`0x8007B788` = `0x00202020`, i.e.
+///   R=G=B=32/255 ≈ ⅛, vs `0x00FFFFFF` white in `town01`), staged into GTE
+///   `RBK/GBK/BBK` (cr13-15) by `FUN_80043390`; and
+/// - a **gold far-colour depth-cue tint** applied per render-node
+///   (`+0x74` → GTE far colour cr21-23 in the TMD renderer `FUN_8002735C`,
+///   written by the actor-VM colour opcode `0x0C`), which crushes the blue
+///   channel to ~40% with R≈G.
+///
+/// Framebuffer measurement of the retail cutscene averages RGB `(61, 55, 15)`
+/// (blue/​red ≈ 0.24, R≈G) over a full-spectrum source, i.e. every hue
+/// collapsed toward amber. The engine reproduces the *look* with a single
+/// luminance→gold tone-map (see `engine-render` `apply_grade`): each shaded
+/// pixel becomes `luminance * gold` cross-faded by `strength`.
+///
+/// REF: FUN_80043390 (ambient → GTE cr13-15)
+/// REF: FUN_8002735C (far colour → GTE cr21-23)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ColorGrade {
+    /// Gold/sepia direction the pixel luminance is tinted toward, linear
+    /// `0.0..=1.0` per channel.
+    pub gold: [f32; 3],
+    /// Cross-fade strength `0.0..=1.0` (`0` = untouched, `1` = full collapse).
+    pub strength: f32,
+}
+
+impl ColorGrade {
+    /// The `opdeene` opening-prologue grade, matching the retail cutscene's
+    /// measured warm amber. The retail *display* direction is `(1.0, 0.90,
+    /// 0.24)` (R≈G, blue crushed to ¼ - the traced far-colour ratio
+    /// 255:230:62). These coefficients are stored in **linear** space because
+    /// the mesh shader multiplies before the sRGB framebuffer encode (gamma
+    /// ≈ 2.0), so each value is the display target squared:
+    /// `(1.0, 0.90², 0.24²) = (1.0, 0.81, 0.058)`. Verified pixel-aligned:
+    /// the encoded output lands `G/R ≈ 0.90`, `B/R ≈ 0.24`, all green/blue
+    /// gone. Full strength (`1.0`).
+    pub const PROLOGUE_SEPIA: ColorGrade = ColorGrade {
+        gold: [1.0, 0.81, 0.058],
+        strength: 1.0,
+    };
+}
+
 /// Field-VM colour-fade overlay (op `0x34` sub-0, `FUN_801E1FB0`).
 ///
 /// The field/cutscene fade path: a full-screen wash of one colour whose
@@ -222,6 +271,28 @@ impl ColorFade {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prologue_sepia_is_a_warm_gold_collapse() {
+        let g = ColorGrade::PROLOGUE_SEPIA;
+        assert_eq!(g.strength, 1.0, "full collapse");
+        assert_eq!(g.gold[0], 1.0, "red is the anchor channel");
+        assert!(g.gold[1] < g.gold[0], "green below red");
+        assert!(g.gold[2] < g.gold[1], "blue crushed below green");
+        // Stored linear; the sRGB framebuffer encode (~gamma 2.0) raises each
+        // channel's *display* ratio to sqrt(linear). Retail's measured display
+        // direction is G/R ≈ 0.90, B/R ≈ 0.24.
+        let disp_g = g.gold[1].sqrt();
+        let disp_b = g.gold[2].sqrt();
+        assert!(
+            (disp_g - 0.90).abs() < 0.02,
+            "display G/R ~= 0.90, got {disp_g:.3}"
+        );
+        assert!(
+            (disp_b - 0.24).abs() < 0.02,
+            "display B/R ~= 0.24, got {disp_b:.3}"
+        );
+    }
 
     #[test]
     fn color_fade_reveal_ramps_coverage_down() {
