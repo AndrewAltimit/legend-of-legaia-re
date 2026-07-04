@@ -38,6 +38,14 @@ pub(super) struct MeshUniforms {
     /// Set with [`Renderer::set_texture_window`]. Defaults to all-zero so
     /// existing callers aren't affected.
     pub(super) tex_window: [u32; 4],
+    /// Full-scene colour grade - `(gold_r, gold_g, gold_b, strength)`. The
+    /// textured / VRAM / colour fragment shaders tone-map the shaded pixel to
+    /// `luminance * gold` and cross-fade to it by `strength` (`0.0` = no grade,
+    /// the default; `1.0` = full sepia). Drives the opening prologue's
+    /// gold/amber sepia grade (`opdeene` cutscene) without touching the text /
+    /// UI overlays (they use separate shaders). Set with
+    /// [`Renderer::set_color_grade`]. Defaults to `(1, 1, 1, 0)` = identity.
+    pub(super) grade: [f32; 4],
 }
 
 pub struct UploadedTexture {

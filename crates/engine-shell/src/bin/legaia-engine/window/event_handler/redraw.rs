@@ -325,6 +325,15 @@ impl PlayWindowApp {
         ) {
             let (w, h) = r.surface_size();
             let aspect = w as f32 / h.max(1) as f32;
+            // Full-scene colour grade: the opening prologue cutscene
+            // (`opdeene`, "It was the Seru.") renders its whole 3D scene in
+            // warm gold sepia (dim ambient + gold far-colour depth cue in
+            // retail); every other scene, incl. the Rim Elm hand-off, is
+            // natural colour. Staged every frame so it clears on transition.
+            match self.session.host.world.scene_color_grade() {
+                Some(g) => r.set_color_grade(g.gold, g.strength),
+                None => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
+            }
             // World-map mode frames the loaded map with the
             // controller-driven camera (azimuth / zoom / pan); an active
             // in-engine cutscene (opdeene opening prologue) frames the

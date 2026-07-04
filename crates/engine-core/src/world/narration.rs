@@ -82,6 +82,25 @@ impl World {
             .is_some_and(|n| !n.is_complete())
     }
 
+    /// The full-scene colour grade the current scene renders through, or
+    /// `None` for the natural-colour default. The opening prologue cutscene
+    /// (`opdeene`, "It was the Seru.") returns
+    /// [`crate::fade::ColorGrade::PROLOGUE_SEPIA`] so the whole 3D scene draws
+    /// in warm gold monochrome while the narration text stays white; every
+    /// other scene (incl. the Rim Elm hand-off `town01`) is ungraded. Hosts
+    /// stage this into the renderer each frame (e.g. `set_color_grade`).
+    ///
+    /// This mirrors retail keying the dim-ambient + gold far-colour grade on
+    /// the cutscene scene and clearing it for the interactive field - see
+    /// [`crate::fade::ColorGrade`] for the traced GTE mechanism.
+    pub fn scene_color_grade(&self) -> Option<crate::fade::ColorGrade> {
+        if self.active_scene_label == legaia_asset::new_game::OPENING_CUTSCENE_SCENE {
+            Some(crate::fade::ColorGrade::PROLOGUE_SEPIA)
+        } else {
+            None
+        }
+    }
+
     /// Skip the active narration to its next page (a confirm press). Clears
     /// the presenter once it advances past the last page. Returns `true` while
     /// narration is still on screen, `false` once it completes (so the host
@@ -947,5 +966,23 @@ mod tests {
         w.field_npc_positions.insert(5, (1000, 2000));
         w.restore_hidden_field_npcs();
         assert_eq!(w.field_npc_positions.get(&5), Some(&(1000, 2000)));
+    }
+
+    #[test]
+    fn scene_color_grade_only_on_the_prologue_cutscene() {
+        let mut w = World::new();
+        // No scene / arbitrary field scene -> ungraded natural colour.
+        assert!(w.scene_color_grade().is_none());
+        w.set_active_scene_label("town01");
+        assert!(
+            w.scene_color_grade().is_none(),
+            "the Rim Elm hand-off renders in full colour"
+        );
+        // The opdeene prologue cutscene renders through the warm sepia grade.
+        w.set_active_scene_label(legaia_asset::new_game::OPENING_CUTSCENE_SCENE);
+        assert_eq!(
+            w.scene_color_grade(),
+            Some(crate::fade::ColorGrade::PROLOGUE_SEPIA)
+        );
     }
 }

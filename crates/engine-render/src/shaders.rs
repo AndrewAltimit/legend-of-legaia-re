@@ -72,6 +72,21 @@ fn psx_dither(rgb: vec3<f32>, frag: vec2<f32>, dither_on: f32) -> vec3<f32> {
     }
     return outc;
 }
+
+// Full-scene colour grade. `grade.rgb` is the gold/sepia direction and
+// `grade.a` the strength: the shaded pixel is tone-mapped to
+// `luminance(rgb) * grade.rgb` and cross-faded to that by the strength.
+// strength 0 (the identity default) passes the colour through unchanged.
+// Drives the opening prologue's warm gold grade (the `opdeene` cutscene):
+// green/blue collapse toward amber while the narration text - drawn by a
+// separate shader - stays white. Rec.601 luma weights.
+fn apply_grade(rgb: vec3<f32>, grade: vec4<f32>) -> vec3<f32> {
+    if (grade.a <= 0.0) {
+        return rgb;
+    }
+    let lum = dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
+    return mix(rgb, lum * grade.rgb, grade.a);
+}
 "#;
 
 /// Prepend [`PSX_DITHER_WGSL`] to a shaded 3D shader source so its fragment
@@ -102,6 +117,8 @@ struct MeshUniforms {
     // No-op when all four are zero (Legaia's default; the register only
     // gets written by some effect / scene-init scripts in retail).
     tex_window: vec4<u32>,
+    // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
+    grade: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -156,6 +173,8 @@ struct MeshUniforms {
     // No-op when all four are zero (Legaia's default; the register only
     // gets written by some effect / scene-init scripts in retail).
     tex_window: vec4<u32>,
+    // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
+    grade: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_color: texture_2d<f32>;
@@ -192,7 +211,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // ambient-biased shade.
     let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
     let texel = textureSample(t_color, s_color, in.uv);
-    let rgb = psx_dither(texel.rgb * shade, in.clip_pos.xy, u.psx_params.w);
+    let graded = apply_grade(texel.rgb * shade, u.grade);
+    let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, texel.a);
 }
 "#;
@@ -225,6 +245,8 @@ struct MeshUniforms {
     // No-op when all four are zero (Legaia's default; the register only
     // gets written by some effect / scene-init scripts in retail).
     tex_window: vec4<u32>,
+    // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
+    grade: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_vram: texture_2d<u32>;
@@ -391,7 +413,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // faithful mode shows the source data unlit. Default keeps the readable
     // ambient-biased shade.
     let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
-    let rgb = psx_dither(color.rgb * shade, in.clip_pos.xy, u.psx_params.w);
+    let graded = apply_grade(color.rgb * shade, u.grade);
+    let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, color.a);
 }
 
@@ -415,7 +438,7 @@ fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
         discard;
     }
     let color = bgr555_to_rgba(word);
-    return vec4<f32>(color.rgb * f_scale, 1.0);
+    return vec4<f32>(apply_grade(color.rgb, u.grade) * f_scale, 1.0);
 }
 
 @fragment
@@ -447,6 +470,8 @@ struct MeshUniforms {
     light_dir: vec4<f32>,
     psx_params: vec4<f32>,
     tex_window: vec4<u32>,
+    // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
+    grade: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -491,7 +516,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // faithful mode shows the source data unlit. Default keeps the readable
     // ambient-biased shade.
     let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
-    let rgb = psx_dither(in.color.rgb * shade, in.clip_pos.xy, u.psx_params.w);
+    let graded = apply_grade(in.color.rgb * shade, u.grade);
+    let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, 1.0);
 }
 
@@ -504,7 +530,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 // math - so the dither stage applies to F here, before mode 3's 0.25
 // pre-scale (retail folds that scale into the blend itself).
 fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
-    let rgb = psx_dither(in.color.rgb, in.clip_pos.xy, u.psx_params.w);
+    let graded = apply_grade(in.color.rgb, u.grade);
+    let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb * f_scale, 1.0);
 }
 
@@ -537,6 +564,8 @@ struct MeshUniforms {
     // No-op when all four are zero (Legaia's default; the register only
     // gets written by some effect / scene-init scripts in retail).
     tex_window: vec4<u32>,
+    // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
+    grade: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 

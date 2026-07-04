@@ -526,6 +526,43 @@ semi-transparent wash while active. **Approximate by design:** the retail fade a
 *draw* handler is not dumped, so the coverage curve + PSX blend mode aren't pinned - the render is
 a 50%-average (ABR 0) wash that lifts as the ramp completes, pending that dump.
 
+### Full-scene sepia grade (the gold prologue look)
+
+The whole `opdeene` prologue renders in a **persistent warm gold/amber monochrome** - every 3D
+surface (terrain, foliage, the vignette actors) is tinted gold while the white narration text
+stays white. It is distinct from the transient colour fade above, and it is gone by the time the
+interactive Rim Elm (`town01`) loads (full colour).
+
+**Retail mechanism (traced two ways).** The grade is a GTE render-time effect, not baked
+geometry and not a `MES`/texture change:
+- The TMD renderer `FUN_8002735C` runs the GTE **DPCS** depth-cue per primitive:
+  `out = base + IR0·(far − base)`, where the **far colour** (GTE control regs 21/22/23 = RFC/GFC/BFC)
+  comes from each render node's `+0x74` and `IR0` from `+0x78`. Setting a gold far colour with a
+  non-zero IR0 pulls every object uniformly toward gold - the exact tool for a scene-wide grade.
+- The GTE **back/ambient colour** `DAT_8007B788` ("light_back_color") is `0x00202020` (dim,
+  R=G=B=32) in `opdeene` vs `0x00FFFFFF` (white) in `town01`, staged into GTE cr13-15 by
+  `FUN_80043390` - the darkening half of the look. (Byte-exact across save states.)
+
+The `opdeene` MAN itself carries **no** colour op (no op `0x4C 0x8A` ambient, no `0x4C 0x81` far
+colour); it drives op `0x46` depth-fog and op `0x4C 0x12` fade-to-black only. So the gold is set by
+the **cutscene-host overlay during the narration beats**, not the field script. Measured off the
+retail cutscene framebuffer, the grade collapses all hues to amber: average RGB `(61, 55, 15)`,
+`G/R ≈ 0.90`, `B/R ≈ 0.24`, zero surviving green/blue.
+
+**Engine port.** Rather than replicate the per-object GTE far-colour plumbing, the engine
+reproduces the measured *look* with a single luminance→gold tone-map:
+[`fade::ColorGrade`](../../crates/engine-core/src/fade.rs) holds the gold direction + strength
+([`ColorGrade::PROLOGUE_SEPIA`](../../crates/engine-core/src/fade.rs)), and
+[`World::scene_color_grade`](../../crates/engine-core/src/world.rs) returns it while the active
+scene is the prologue cutscene (`opdeene`) and `None` for every other scene. `play-window` stages
+it into the renderer each frame ([`Renderer::set_color_grade`](../../crates/engine-render/src/renderer.rs));
+the field mesh shaders' `apply_grade` maps each shaded pixel to `luminance · gold` cross-faded by
+`strength` (the text/UI overlays use separate shaders, so the narration stays white). The gold
+coefficients are stored in **linear** space (the shader multiplies before the sRGB framebuffer
+encode, gamma ≈ 2.0), i.e. the display targets squared: `(1.0, 0.90², 0.24²)`. Verified
+pixel-aligned against a pure-diagnostic grade - the encoded output lands `G/R ≈ 0.90`, `B/R ≈ 0.24`.
+`scene_color_grade_only_on_the_prologue_cutscene` (engine-core) guards the scene gate.
+
 ## Open items
 
 - **FMV dispatch table - decoded from disc.** The play loop `FUN_801CF098` (1236 B) is reached from the selector at `0x801CECA0` (`_DAT_8007BA78 << 6 + 0x801D0A6C`), and that dispatch table is **static overlay data** now decoded straight from the disc (`legaia_asset::fmv_dispatch`): each `fmv_id`'s movie + frame range, used to seek to the right segment (`cutscene_av::fmv_segment_window`). The STR overlay (PROT 0970) is Ghidra-importable at its base, so the master-dispatch is a static decompile, no capture. Still finer-grained: the XA channel selector + the MDEC frame-demux state machine.
