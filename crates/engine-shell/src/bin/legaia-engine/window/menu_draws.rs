@@ -98,15 +98,25 @@ impl PlayWindowApp {
                     .iter()
                     .map(|r| legaia_engine_render::OptionsRowView {
                         label: r.label,
-                        value: &r.value,
+                        value: r.value,
+                        teal: r.teal,
+                        advance: r.advance,
                     })
                     .collect();
+                let popup = s.popup().map(|p| legaia_engine_render::OptionsPopupDraw {
+                    rect: self.options_popup_rect(&p),
+                    choices: p.choices,
+                    cursor: p.cursor,
+                });
                 let mut d = legaia_engine_render::options_draws_for(
                     &self.font,
                     &row_views,
                     s.cursor(),
+                    popup.as_ref(),
                     self.menu_window_pen(window_ids::OPTIONS_MAIN),
                 );
+                // TODO(tab-banner): swap for the shared carved-plaque
+                // tab-banner primitive once it lands.
                 d.extend(self.menu_tab_title_draws(window_ids::TAB_OPTIONS, "Options"));
                 d
             }

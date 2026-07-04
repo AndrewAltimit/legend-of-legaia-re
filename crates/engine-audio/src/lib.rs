@@ -213,6 +213,9 @@ struct StreamResampler {
     /// Optional active XA streaming voice. Mixed into the SPU output at
     /// SPU rate (44.1 kHz) before the host-rate resample.
     xa: Option<XaPlayback>,
+    /// Monaural downmix (the retail options screen's "Sound: Monaural"):
+    /// when set, L/R are averaged into both channels at output time.
+    mono: bool,
     /// Cached previous sample (one frame, stereo).
     prev: (i16, i16),
     /// Cached current sample (the SPU output we'll interpolate against).
@@ -239,6 +242,7 @@ impl StreamResampler {
             fade_target: 1.0,
             fade_step: 0.0,
             xa: None,
+            mono: false,
             prev: (0, 0),
             cur: (0, 0),
             phase: 0.0,
@@ -430,7 +434,13 @@ impl AudioOut {
                 let chans = channels as usize;
                 let frames = out.len() / chans;
                 for f in 0..frames {
-                    let (l, r) = s.next_frame();
+                    let (mut l, mut r) = s.next_frame();
+                    // Monaural downmix (options "Sound: Monaural").
+                    if s.mono {
+                        let m = ((l as i32 + r as i32) / 2) as i16;
+                        l = m;
+                        r = m;
+                    }
                     // Mono device: average. Stereo+: feed L/R, dup any
                     // surround channels with the dominant side.
                     if chans == 1 {
@@ -459,6 +469,13 @@ impl AudioOut {
     /// is identical to `self.state.lock().unwrap()`.
     fn lock(&self) -> std::sync::MutexGuard<'_, StreamResampler> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Toggle the monaural downmix (the retail options screen's
+    /// "Sound: Stereo / Monaural" row). When on, the output callback
+    /// averages L/R into both channels.
+    pub fn set_mono(&self, mono: bool) {
+        self.lock().mono = mono;
     }
 
     /// Run a closure with mutable access to the underlying SPU model. This

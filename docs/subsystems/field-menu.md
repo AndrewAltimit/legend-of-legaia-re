@@ -26,7 +26,7 @@ resolved through the window-descriptor table below.
 - [Plumbing](#plumbing) · [Submenu dispatch](#submenu-dispatch)
 - [Header row](#header-row-always-drawn) · [Status page](#status-page-submenu-0-or-5)
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
-- [Equip screen](#equip-screen)
+- [Equip screen](#equip-screen) · [Options screen](#options-screen)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed)
 
@@ -60,7 +60,7 @@ live window carries its descriptor id):
 | top-level pause menu | 50 command list `(24,24,104,94)` -> `FUN_801CFD68`; 49 money/play-time box `(24,178,104,24)` -> `FUN_801D0148`; 51 right party panel `(144,24,152,180)` -> `FUN_801D030C` |
 | Status | tab 3 -> `FUN_801DCAD8`; 26 party list `(14,38,60,38)` -> `FUN_801D2094`; 27 "Condition" pager `(14,92,60,10)` -> `FUN_801D30A4`; 30 summary `(14,134,60,70)` -> `FUN_801D31EC`; 28 **main panel** `(90,16,218,188)` -> `FUN_801D33D8` |
 | Equip | tab 2 -> `FUN_801DCA94`; 21 party `(14,42,80,38)` -> `FUN_801D2094`; 23 item list `(174,22,132,182)` (renderer-less container; its lower span is occluded by 22); 22 main `(14,96,292,108)` -> `FUN_801D21C0` |
-| Options | tab 4 -> `FUN_801DCB1C`; 48 settings `(24,40,256,148)` -> `FUN_801DCEF0` |
+| Options | tab 4 -> `FUN_801DCB1C`; 48 settings `(24,40,256,148)` -> `FUN_801DCEF0`; 47 value popup `(170, *, 128, *)` -> `FUN_801D2B44` (y/h stamped per open - see [Options screen](#options-screen)) |
 
 The id-28 rect origin `(90, 16)` is the `(WX, WY)` every offset in the
 status-page sections below hangs off - cross-checked against the captured
@@ -307,6 +307,71 @@ Up arrow (icon `0x67`) when `_DAT_8007bb90 > 0` and down arrow (icon `0x68`)
 when more rows follow, both at `X = WX + (a0+0xe >> 1) - 4`. Scrollbar thumb
 (bar primitive) at `(WX, WY + (a0+0x10) - 0x28)`, length from `a0+0xe`,
 `FUN_80034b6c(3)`. Instr `801d477c`..`801d4838`.
+
+## Options screen
+
+Three functions in the menu overlay (PROT 0899, base `0x801CE818`):
+
+- **Row renderer** `FUN_801D2910`, called by the window-id-48 content
+  renderer `FUN_801DCEF0` (a thin `FUN_801d2910(win, 0, 9)` wrapper) - see
+  `ghidra/scripts/funcs/overlay_menu_801d2910.txt`. Per display row it
+  draws the cursor arrow at content `x-10`, the label string at `x+8` and
+  (on value rows) the value string at `x+140`, then advances y by the
+  row's layout pitch.
+- **Input SM** `FUN_801DA9F8` (browse cursor `DAT_801E46C0`, low 12 bits =
+  row, bit `0x1000` = editing, bit `0x4000` = cursor hidden).
+- **Value-popup renderer** `FUN_801D2B44` (window id 47).
+
+Three data tables drive the rows:
+
+| VA | contents |
+|---|---|
+| `0x801E4404` | display layout: 10 × `[u16 row_id, u16 advance]` - row ids `0,1,2,3,6,4,7,9,8,10`, advance 14 px (20 px on the two group-separator rows, Battle Command + Field HP Display) |
+| `0x801E44B8` | row descriptors: 8-byte nodes `[config_word_ptr: u32][value_count: u8][label_ink: u8][row_id: u8][string_index: u8]`, walked as a linked list keyed on `row_id` |
+| `0x801E442C` | shared string pointer table; a row's value string = `strings[string_index + value + 1]` |
+
+The row set (label / choices / config word - the words live in the saved
+`0x800845xx/0x800846xx` config block):
+
+| row | choices | config word |
+|---|---|---|
+| Battle Camera | Close / Normal / Far | `0x800846C0` |
+| Battle Select Attack | Select / Automatic / Command | `0x800846C4` |
+| Battle Command | Directional Buttons / ✕-glyph " button" | `0x800846C8` |
+| Field Move | Walk / Run | `0x800846CC` |
+| Field HP Display | Immediate / Gradual / Display Off | `0x800845C4` |
+| Sound | Stereo / Monaural | `0x800846BC` |
+| Dual Shock (header, no value) | - | - |
+| "  Battles" | Vibration On / Off | `0x800845C8` |
+| "  Events" | Vibration On / Off | `0x800845A8` |
+| "  Encounters" | Vibration On / Off | `0x800845CC` |
+
+Inks (staged via `DAT_8007B454`): labels ink 7 (white), values ink 6
+(gold), the indented Dual Shock sub-row labels ink 5 (teal) - the per-row
+label ink is the descriptor node's `+5` byte. While the value popup is
+open every non-cursor row drops to ink 0, except a header row above the
+cursor which keeps its ink. A hidden row exists in the descriptor list
+but not in the layout table: "Battle Voices" (Voices On / Off,
+`0x800845AC`) - present strings, never displayed in the US build.
+
+Interaction (`FUN_801DA9F8`): Up/Down move the browse cursor, skipping
+valueless rows (the SM re-navigates off the header); Cross opens the
+value popup seeded with the current value; Cross inside commits the popup
+cursor **directly into the config word** (committing "Events" to
+Vibration Off also zeroes the live rumble state `0x8007B92C/0x8007B930`);
+Circle backs out of the popup, and out of the screen - there is no
+revert, edits are already live. The popup is window descriptor id 47: its
+x/w `(170, 128)` are static, y/h are stamped per open
+(`y = id-48 y + 0x16 + Σ advances above the cursor row`,
+`h = choices × 13 - 4`, flipped up by `choices × 13 + 0x1C` when the
+bottom would pass y = `0xB0`). `FUN_801D2B44` lists the choices at a
+13-px pitch, text inset `+0x14`, cursor at the content origin.
+
+Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
+`OptionsSession` Browsing→Editing SM, `options_popup_content_rect`) +
+`engine-render::options_draws_for`; the Sound row drives the audio
+mixer's monaural downmix (`engine-audio AudioOut::set_mono`), the other
+settings persist in the engine's options config file.
 
 ## Draw primitives + CLUT staging
 

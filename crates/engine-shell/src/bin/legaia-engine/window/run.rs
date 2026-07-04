@@ -740,7 +740,9 @@ pub(super) fn cmd_play_window_with_record(
         npc_bundle_special: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
-        options_state: legaia_engine_core::options::OptionsState::default(),
+        options_state: legaia_engine_core::options::OptionsState::load_or_default(
+            &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
+        ),
         record_log: record_to.map(RecordLog::from_target),
         field_live_opts,
         // In-flow cutscene STR resolves from the extracted root (video only)
@@ -754,6 +756,10 @@ pub(super) fn cmd_play_window_with_record(
         active_dialog: None,
         seru_names: None,
     };
+
+    // Push the loaded options into their live consumers (audio downmix)
+    // before the loop starts.
+    app.apply_options_side_effects();
 
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;

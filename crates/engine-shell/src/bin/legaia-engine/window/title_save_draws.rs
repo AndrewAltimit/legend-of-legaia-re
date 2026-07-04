@@ -313,6 +313,21 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
+        // The options value popup (window id 47) frames on top of the
+        // settings window while a row is being edited; its y/h are
+        // per-open (retail stamps the descriptor - see
+        // `options_popup_rect`).
+        if let Some(FieldMenuSubsession::Config(s)) = sub
+            && let Some(p) = s.popup()
+        {
+            let (x, y, w, h) = self.options_popup_rect(&p);
+            out.extend(legaia_engine_render::menu_window_chrome_draws_for(
+                &assets.rects,
+                (x - 6, y - 2, w + 12, h + 12),
+                stage_origin,
+                stage_scale,
+            ));
+        }
         // Status page: the LV / HP / MP labels, the AP gauge (pieces + red
         // value digits) and the 7-slot equipment pictogram grid are UI-icon
         // sprites from the system-UI atlas (the text stand-ins are

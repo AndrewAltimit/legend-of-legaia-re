@@ -183,15 +183,12 @@ impl PlayWindowApp {
                     start,
                 };
                 let _ = session.tick(input);
-                if let Some(outcome) = session.outcome() {
-                    match outcome {
-                        OptionsOutcome::Confirmed => {
-                            self.options_state = session.state().clone();
-                        }
-                        OptionsOutcome::Cancelled => {
-                            session.revert_if_cancelled();
-                        }
-                    }
+                if let Some(OptionsOutcome::Closed) = session.outcome() {
+                    // Value edits commit inside the session's popup (retail
+                    // writes the config word at popup confirm and never
+                    // reverts); lift + persist the final state.
+                    self.options_state = session.state().clone();
+                    self.persist_and_apply_options();
                     // After options, route back to Title so the player can
                     // pick New Game / Continue (matches retail flow).
                     self.boot_ui =
@@ -264,9 +261,11 @@ impl PlayWindowApp {
                                     }
                                 }
                             }
-                            FieldMenuSubsession::Config(mut o) => {
-                                o.revert_if_cancelled();
+                            FieldMenuSubsession::Config(o) => {
+                                // Edits committed inside the session's value
+                                // popup (retail semantics); lift + persist.
                                 self.options_state = o.state().clone();
+                                self.persist_and_apply_options();
                             }
                         }
                         if let Some(menu) = self.session.field_menu.as_mut() {
@@ -515,13 +514,30 @@ impl PlayWindowApp {
                     .iter()
                     .map(|r| legaia_engine_render::OptionsRowView {
                         label: r.label,
-                        value: &r.value,
+                        value: r.value,
+                        teal: r.teal,
+                        advance: r.advance,
                     })
                     .collect();
+                // The boot-UI options panel draws at a fixed pen rather
+                // than the menu-overlay window rects; anchor the value
+                // popup off the same pen (value column + 6).
+                let popup = s.popup().map(|p| legaia_engine_render::OptionsPopupDraw {
+                    rect: legaia_engine_core::options::options_popup_content_rect(
+                        80,
+                        96 + 146,
+                        128,
+                        p.row,
+                        p.choices.len(),
+                    ),
+                    choices: p.choices,
+                    cursor: p.cursor,
+                });
                 legaia_engine_render::options_draws_for(
                     &self.font,
                     &row_views,
                     s.cursor(),
+                    popup.as_ref(),
                     (96, 80),
                 )
             }

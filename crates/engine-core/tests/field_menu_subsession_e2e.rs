@@ -105,9 +105,9 @@ fn field_menu_config_row_round_trips_options_state() {
     };
     let mut menu = open_field_menu_at(FieldMenuRow::Config);
     let mut sub = build(FieldMenuRow::Config, &world, &options);
-    // Confirm with Cross so the session lands on Confirmed (mirrors the
-    // retail "Save & Exit" path).
-    sub.tick_pad_edge(PadButton::Cross.mask());
+    // Circle leaves the options screen (retail commits value edits inside
+    // the popup; exit is a plain close that keeps the state).
+    sub.tick_pad_edge(PadButton::Circle.mask());
     assert!(sub.is_done());
     if let FieldMenuSubsession::Config(s) = &sub {
         assert_eq!(s.state().bgm_volume, 4);

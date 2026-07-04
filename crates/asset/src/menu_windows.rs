@@ -117,6 +117,13 @@ pub mod window_ids {
     pub const STATUS_MAIN: usize = 28;
     /// Status screen: lower-left character summary window (name/LV/ATR).
     pub const STATUS_SUMMARY: usize = 30;
+    /// Options screen: the value-choice popup (renderer `FUN_801D2B44`).
+    /// Its descriptor x/w are the home position; the options input SM
+    /// (`FUN_801DA9F8`) stamps y (`+0x2`) and h (`+0x6`) per open -
+    /// `y = id-48 y + 0x16 + the cursor row's layout offset`,
+    /// `h = choices*13 - 4`, flipped above the anchor when the bottom
+    /// would pass y = 0xB0.
+    pub const OPTIONS_POPUP: usize = 47;
     /// Options screen: the single settings window.
     pub const OPTIONS_MAIN: usize = 48;
     /// Top-level pause menu: money + play-time corner box.

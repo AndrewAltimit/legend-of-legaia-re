@@ -301,16 +301,70 @@ fn options_draws_render_rows() {
     let font = legaia_font::synthetic_for_tests();
     let rows = [
         OptionsRowView {
-            label: "BGM",
-            value: "8/10",
+            label: "Battle Camera",
+            value: Some("Close"),
+            teal: false,
+            advance: 14,
         },
         OptionsRowView {
-            label: "SFX",
-            value: "8/10",
+            label: "Dual Shock",
+            value: None,
+            teal: false,
+            advance: 14,
+        },
+        OptionsRowView {
+            label: "  Battles",
+            value: Some("Vibration On"),
+            teal: true,
+            advance: 14,
         },
     ];
-    let draws = options_draws_for(&font, &rows, 0, (16, 32));
+    let draws = options_draws_for(&font, &rows, 0, None, (24, 40));
     assert!(!draws.is_empty());
+    // Teal ink present (the Dual Shock sub-row label), gold value column,
+    // and nothing below the last row (no footer hint).
+    assert!(draws.iter().any(|d| d.color == OPTIONS_INK_TEAL));
+    assert!(draws.iter().any(|d| d.color == OPTIONS_INK_GOLD));
+    // Value column at the retail +140 inset.
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.color == OPTIONS_INK_GOLD && d.dst.0 >= 24 + 140)
+    );
+    let max_y = draws.iter().map(|d| d.dst.1).max().unwrap();
+    assert!(
+        max_y < 40 + 3 * 14 + 14,
+        "no footer below the rows: {max_y}"
+    );
+}
+
+#[test]
+fn options_draws_popup_lists_choices() {
+    let font = legaia_font::synthetic_for_tests();
+    let rows = [OptionsRowView {
+        label: "Battle Camera",
+        value: Some("Close"),
+        teal: false,
+        advance: 14,
+    }];
+    let popup = OptionsPopupDraw {
+        rect: (170, 62, 128, 35),
+        choices: &["Close", "Normal", "Far"],
+        cursor: 1,
+    };
+    let draws = options_draws_for(&font, &rows, 0, Some(&popup), (24, 40));
+    // Popup choice text starts at the retail +0x14 inset with a 13-px
+    // pitch (three choices: rows at y = 62 / 75 / 88).
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 >= 170 + 0x14 && (62..75).contains(&d.dst.1))
+    );
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 >= 170 + 0x14 && d.dst.1 >= 62 + 26)
+    );
 }
 
 #[test]
