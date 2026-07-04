@@ -539,8 +539,39 @@ impl World {
             // town01 opening timeline finished (or capped): drop it so the view
             // reverts from the cutscene camera to normal field gameplay.
             self.cutscene_timeline = None;
+            // The opening choreography `MoveTo`s the townsfolk to the off-map
+            // hide box to clear the establishing shot. Nothing reloads the
+            // scene between the cutscene and free-roam, so those position
+            // overrides must be dropped here or the field render draws each
+            // hidden NPC off-screen (the "town NPCs vanish after New Game"
+            // symptom, only on the prologue path that installs this timeline).
+            self.restore_hidden_field_npcs();
         } else {
             self.cutscene_timeline = Some(tl);
+        }
+    }
+
+    /// Un-park every field NPC a cutscene left at the off-map hide box
+    /// ([`crate::world::FIELD_OFFMAP_HIDE_XZ`]), dropping its
+    /// [`Self::field_npc_positions`] / [`Self::field_npc_headings`] overrides so
+    /// the field render falls back to the NPC's MAN spawn tile.
+    ///
+    /// The `town01` opening cutscene hides the townsfolk at that box for its
+    /// establishing shot; since no scene reload sits between the cutscene and
+    /// free-roam, the overrides have to be cleared explicitly when the timeline
+    /// completes (retail restores the town when control returns). No-op when
+    /// nothing is parked there.
+    fn restore_hidden_field_npcs(&mut self) {
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        let restored: Vec<u8> = self
+            .field_npc_positions
+            .iter()
+            .filter(|&(_, &(x, z))| x == hide && z == hide)
+            .map(|(&slot, _)| slot)
+            .collect();
+        for slot in restored {
+            self.field_npc_positions.remove(&slot);
+            self.field_npc_headings.remove(&slot);
         }
     }
 
@@ -878,5 +909,43 @@ impl World {
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::DialogDismissed);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::{FIELD_OFFMAP_HIDE_XZ, World};
+
+    #[test]
+    fn restore_hidden_field_npcs_unparks_only_the_hide_box() {
+        let mut w = World::default();
+        // Two townsfolk parked off-map by the opening cutscene, one NPC left at
+        // a real tile (e.g. a mid-scene walker), plus stale headings for all.
+        let hide = FIELD_OFFMAP_HIDE_XZ;
+        w.field_npc_positions.insert(1, (hide, hide));
+        w.field_npc_positions.insert(2, (hide, hide));
+        w.field_npc_positions.insert(3, (2880, 5440));
+        w.field_npc_headings.insert(1, 0x800);
+        w.field_npc_headings.insert(2, 0x000);
+        w.field_npc_headings.insert(3, 0x400);
+
+        w.restore_hidden_field_npcs();
+
+        // The hide-box NPCs lose their overrides (render falls back to the MAN
+        // spawn); the on-tile NPC and its heading are untouched.
+        assert!(!w.field_npc_positions.contains_key(&1));
+        assert!(!w.field_npc_positions.contains_key(&2));
+        assert!(!w.field_npc_headings.contains_key(&1));
+        assert!(!w.field_npc_headings.contains_key(&2));
+        assert_eq!(w.field_npc_positions.get(&3), Some(&(2880, 5440)));
+        assert_eq!(w.field_npc_headings.get(&3), Some(&0x400));
+    }
+
+    #[test]
+    fn restore_hidden_field_npcs_noop_when_none_parked() {
+        let mut w = World::default();
+        w.field_npc_positions.insert(5, (1000, 2000));
+        w.restore_hidden_field_npcs();
+        assert_eq!(w.field_npc_positions.get(&5), Some(&(1000, 2000)));
     }
 }

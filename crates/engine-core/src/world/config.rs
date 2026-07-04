@@ -187,6 +187,19 @@ pub struct FieldNpcMotion {
 /// `func_0x80024c88` call) and `docs/subsystems/field-locomotion.md`.
 pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 
+/// The off-map "hide box" world X/Z (`16320` = `0x3FC0`) a field script parks
+/// an actor at to remove it from the scene.
+///
+/// Two uses share it: a MAN placement whose spawn is already this box is a
+/// conditional actor retail hides until a script places it (skipped at NPC
+/// build time), and the `town01` opening cutscene `MoveTo`s the townsfolk here
+/// to clear the establishing shot, restoring them (via
+/// [`crate::world::World::field_npc_positions`] fallback to the MAN spawn) when
+/// the opening timeline completes. Both the build-time skip
+/// (`legaia_engine_shell` NPC upload) and the completion restore key off this
+/// value.
+pub const FIELD_OFFMAP_HIDE_XZ: i16 = 16320;
+
 /// Remap a screen-space d-pad delta into overworld direction bits using the
 /// world-map camera azimuth, so "screen up" always walks away from the camera
 /// and "screen right" walks screen-right regardless of how the map is framed.

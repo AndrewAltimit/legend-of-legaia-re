@@ -227,6 +227,34 @@ impl Camera {
     pub fn tick_script(&mut self, bytecode: &[u8]) -> StepResult {
         step(&mut self.motion_state, self.motion_target, bytecode)
     }
+
+    /// Snap the camera back to the follow default when the field is in
+    /// free-roam (a plain [`SceneMode::Field`] with no cutscene timeline owning
+    /// the scene).
+    ///
+    /// An opening / scripted cutscene folds op-`0x45` Camera Configure yaw into
+    /// [`Self::yaw`] and flips [`Self::mode`] to [`CameraMode::Cinematic`] (see
+    /// [`Self::route_camera_events`]). That stale cinematic yaw must not leak
+    /// into free-roam: a renderer frames free-roam field with a fixed follow
+    /// camera, and hosts feed [`Self::yaw`] into
+    /// [`World::field_camera_azimuth`](crate::world::World::field_camera_azimuth)
+    /// to remap the d-pad camera-relative - so a non-zero leaked yaw rotates
+    /// the controls off the on-screen camera (the New Game prologue → Rim Elm
+    /// hand-off left the d-pad ~180deg inverted). Retail returns control on the
+    /// follow camera; this restores it.
+    ///
+    /// Gated on `!cutscene_timeline_active()` (the same gate that unlocks
+    /// [`World::step_field_locomotion`](crate::world::World::step_field_locomotion)),
+    /// so an active cutscene's own beats keep their configured yaw. No-op
+    /// outside free-roam field (world map / battle / menu / cutscene).
+    pub fn reset_for_free_roam(&mut self, world: &World) {
+        if matches!(world.mode, crate::world::SceneMode::Field) && !world.cutscene_timeline_active()
+        {
+            self.mode = CameraMode::Follow;
+            self.yaw = 0.0;
+            self.pitch = 0.0;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -415,6 +443,49 @@ mod tests {
         assert_eq!(c.eye, [10.0, 20.0, 30.0]);
         assert_eq!(c.look_at, [40.0, 50.0, 60.0]);
         assert_eq!(c.mode, CameraMode::Cinematic);
+    }
+
+    #[test]
+    fn reset_for_free_roam_clears_leaked_cinematic_yaw() {
+        // A cutscene left the camera Cinematic at a ~180deg yaw (the state that
+        // inverts the field d-pad remap). Free-roam field (no active timeline)
+        // must snap it back to the follow default so `field_camera_azimuth`
+        // quantises to quadrant 0.
+        let w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        assert!(!w.cutscene_timeline_active(), "no timeline installed");
+        let mut c = Camera {
+            mode: CameraMode::Cinematic,
+            yaw: std::f32::consts::PI,
+            pitch: 0.5,
+            ..Default::default()
+        };
+        c.reset_for_free_roam(&w);
+        assert_eq!(c.mode, CameraMode::Follow);
+        assert_eq!(c.yaw, 0.0);
+        assert_eq!(c.pitch, 0.0);
+    }
+
+    #[test]
+    fn reset_for_free_roam_noop_outside_field() {
+        // Only free-roam field resets; other modes keep whatever the scene
+        // configured (e.g. a menu / battle / world-map camera).
+        for mode in [SceneMode::Menu, SceneMode::Battle, SceneMode::WorldMap] {
+            let w = World {
+                mode,
+                ..World::default()
+            };
+            let mut c = Camera {
+                mode: CameraMode::Cinematic,
+                yaw: std::f32::consts::PI,
+                ..Default::default()
+            };
+            c.reset_for_free_roam(&w);
+            assert_eq!(c.mode, CameraMode::Cinematic, "mode {mode:?} untouched");
+            assert_eq!(c.yaw, std::f32::consts::PI, "mode {mode:?} yaw kept");
+        }
     }
 
     #[test]

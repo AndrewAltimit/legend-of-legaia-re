@@ -641,6 +641,15 @@ impl BootSession {
                 self.close_field_menu();
             }
         }
+        // Snap the camera controller back to the follow default whenever the
+        // field is in free-roam. A cutscene's op-0x45 Camera Configure events
+        // leave `self.camera` in Cinematic mode at the shot's yaw, but the
+        // renderer frames free-roam field with the FIXED follow camera (which
+        // never reads `self.camera`), so the stale cinematic yaw would feed
+        // `field_camera_azimuth` below and rotate the d-pad → direction remap
+        // ~180deg off the on-screen camera (the New Game prologue → Rim Elm
+        // hand-off left the controls inverted). See `Camera::reset_for_free_roam`.
+        self.camera.reset_for_free_roam(&self.host.world);
         // Feed the previous frame's camera azimuth into the world so the
         // field free-movement controller remaps the d-pad camera-relative
         // ("screen up" walks away from the camera). The follow camera's
