@@ -37,12 +37,18 @@ mednafen-state write-taxonomy LEFT RIGHT [--start ADDR --end ADDR --samples N]
 mednafen-state bisect --addr ADDR SAVE...
 mednafen-state trace  --addr ADDR SAVE...
 mednafen-state watch LABEL [--manifest PATH]
-mednafen-state vram-dump SAVE [--out PNG --out-bin BIN --regs]
+mednafen-state vram-dump SAVE [--out PNG --out-bin BIN --regs --display-crop]
 mednafen-state spu SAVE [--all]      # reverb routing: master enable, mode, EON mask, per-voice
 mednafen-state clut-trace --pack PROT_ENTRY SAVE... [--json PATH --include-tmd-body]
 mednafen-state prim-dispatch-table SAVE [--overlay-targets-only]
 mednafen-state scenarios [--manifest PATH]
 ```
+
+`vram-dump --display-crop` writes only the **on-screen framebuffer** (the
+display-area sub-rect: `display_fb` origin sized by the resolution decoded from
+the `DisplayMode` bits, e.g. 320×240) instead of the full 1024×512 VRAM - the
+right crop for comparing menu / HUD pixels against the engine renderer. Without
+the flag you get whole VRAM (all texpages + CLUTs + both display buffers).
 
 `prim-dispatch-table` decodes `FUN_80043390`'s SCUS-resident per-prim
 renderer table (`0x8007657C`, 4 alpha rows × 20 slots) and the overlay

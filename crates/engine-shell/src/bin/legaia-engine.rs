@@ -251,6 +251,10 @@ fn main() -> Result<()> {
             live_npcs,
             damage_finish,
             battle_bgm,
+            screenshot,
+            screenshot_tick,
+            pad_script,
+            seed_party,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -273,6 +277,12 @@ fn main() -> Result<()> {
             live_npcs,
             damage_finish,
             battle_bgm,
+            window::ScreenshotConfig::from_args(
+                screenshot,
+                screenshot_tick,
+                pad_script.as_deref(),
+            )?,
+            seed_party,
         ),
         Cmd::Save {
             extracted_root,

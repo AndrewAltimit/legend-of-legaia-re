@@ -41,6 +41,8 @@ pub(crate) fn cmd_record(
         false,
         false,
         None,
+        None,
+        false,
         Some(RecordTarget {
             out: out.to_path_buf(),
             scenario: scenario.map(str::to_string),

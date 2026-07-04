@@ -40,6 +40,54 @@ const PILL_CLUT: usize = 7;
 /// columns at the bottom-right corner.
 pub const ATLAS_RECT_EMPTY_FRAME: (u32, u32, u32, u32) = (200, 64, 32, 32);
 
+/// Atlas placement of the status-panel **stat labels** (LV / HP / MP),
+/// copied from CLUT row 1 of the system-UI TIM (the `0x800732a4` icon
+/// records' palette - green/red ink). Packed in a free strip below the
+/// filigree tile. Each is 16x10.
+pub const ATLAS_RECT_LABEL_LV: (u32, u32, u32, u32) = (40, 232, 16, 10);
+pub const ATLAS_RECT_LABEL_HP: (u32, u32, u32, u32) = (60, 232, 16, 10);
+pub const ATLAS_RECT_LABEL_MP: (u32, u32, u32, u32) = (80, 232, 16, 10);
+
+/// Atlas placement of the **raw** (un-gradient-baked) marbled-blue
+/// filigree interior tile (32x29). Copied verbatim from CLUT row 2 of
+/// the system-UI TIM so the field-menu chrome can tile it in 2D as the
+/// window interior (the pause menu fills every window with this navy
+/// damask, darkened by a per-draw colour, rather than the save screen's
+/// gouraud-gradient variant at [`ATLAS_RECT_FILIGREE`]'s baked sibling).
+/// Sits in a free atlas region below the portraits.
+pub const ATLAS_RECT_FILIGREE: (u32, u32, u32, u32) = (0, 200, 32, 29);
+
+/// Atlas placement of the status-page **AP gauge** pieces, copied from
+/// CLUT row 4 of the system-UI TIM (the status gauge palette - purple
+/// frame + red "AP" chip). Packed in the free strip right of the
+/// filigree tile. Sizes mirror the `OVERLAY_SYSTEM_UI_GAUGE_*` source
+/// rects.
+pub const ATLAS_RECT_GAUGE_CAP: (u32, u32, u32, u32) = (40, 200, 24, 16);
+pub const ATLAS_RECT_GAUGE_TROUGH: (u32, u32, u32, u32) = (66, 200, 56, 16);
+pub const ATLAS_RECT_GAUGE_BOX: (u32, u32, u32, u32) = (124, 200, 16, 16);
+pub const ATLAS_RECT_GAUGE_TIP: (u32, u32, u32, u32) = (142, 200, 8, 16);
+/// Red value-digit strip ("0".."9", ten 6x6 cells at 6-px pitch - the
+/// ICO records for codes `0x6C..=0x75`).
+pub const ATLAS_RECT_GAUGE_DIGITS: (u32, u32, u32, u32) = (152, 200, 60, 6);
+/// The "100" glyph shown at a full 100 AP (ICO record `0x6B`, CLUT
+/// row 1).
+pub const ATLAS_RECT_GAUGE_100: (u32, u32, u32, u32) = (214, 200, 16, 6);
+/// AP-gauge meter-fill gradient column (2x6). Not TIM-sourced: baked
+/// procedurally from the `FUN_8002c0b0` gouraud-quad endpoint colours
+/// (dark-red -> gold -> dark-red vertical diamond gradient, linear
+/// per-row interpolation of the 3-row quad pair). Engines stretch it
+/// horizontally to `value/2` px.
+pub const ATLAS_RECT_GAUGE_FILL: (u32, u32, u32, u32) = (232, 200, 2, 6);
+
+/// Atlas placement of the status-page **equipment pictograms** (12x12
+/// gold slot icons), copied from CLUT row 8 of the system-UI TIM.
+/// Packed in a row between the gauge strip and the LV/HP/MP labels.
+pub const ATLAS_RECT_ICON_WEAPON: (u32, u32, u32, u32) = (40, 216, 12, 12);
+pub const ATLAS_RECT_ICON_HELMET: (u32, u32, u32, u32) = (54, 216, 12, 12);
+pub const ATLAS_RECT_ICON_ARMOR: (u32, u32, u32, u32) = (68, 216, 12, 12);
+pub const ATLAS_RECT_ICON_BOOT: (u32, u32, u32, u32) = (82, 216, 12, 12);
+pub const ATLAS_RECT_ICON_GOODS: (u32, u32, u32, u32) = (96, 216, 12, 12);
+
 /// Atlas placement of the 3 character portrait TIMs (16x16 each).
 /// Stacked horizontally just below the empty-frame rect; each portrait
 /// occupies a 16x16 sub-region.
@@ -119,9 +167,78 @@ impl SaveMenuAtlas {
     pub fn band_cursor(&self) -> (u32, u32, u32, u32) {
         title_pak::OVERLAY_SYSTEM_UI_CURSOR
     }
-    /// Panel interior fill tile (32x29, gradient-baked).
+    /// Panel interior fill tile (32x29, gradient-baked). Used by the
+    /// save/load screen, whose interior retail draws with a gouraud
+    /// gradient.
     pub fn band_panel_interior(&self) -> (u32, u32, u32, u32) {
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR
+    }
+    /// Raw marbled-blue filigree interior tile (32x29), un-baked. The
+    /// pause-menu windows tile this in 2D as their navy damask interior.
+    pub fn band_panel_filigree(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_FILIGREE
+    }
+    /// Status-panel "LV" label sprite (16x12).
+    pub fn band_label_lv(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_LV
+    }
+    /// Status-panel "HP" label sprite (16x12).
+    pub fn band_label_hp(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_HP
+    }
+    /// Status-panel "MP" label sprite (16x12).
+    pub fn band_label_mp(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_MP
+    }
+    /// AP-gauge left cap (arrow tip + red "AP" chip, 24x16).
+    pub fn band_gauge_cap(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_GAUGE_CAP
+    }
+    /// AP-gauge trough body (56x16).
+    pub fn band_gauge_trough(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_GAUGE_TROUGH
+    }
+    /// AP-gauge value box (16x16).
+    pub fn band_gauge_box(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_GAUGE_BOX
+    }
+    /// AP-gauge right arrow tip (8x16, ICO record `0x6A`).
+    pub fn band_gauge_tip(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_GAUGE_TIP
+    }
+    /// AP-gauge red value-digit strip ("0".."9", 6x6 cells, ICO records
+    /// `0x6C..=0x75`).
+    pub fn band_gauge_digits(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_GAUGE_DIGITS
+    }
+    /// AP-gauge "100" glyph (16x6, ICO record `0x6B`).
+    pub fn band_gauge_100(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_GAUGE_100
+    }
+    /// AP-gauge meter-fill gradient column (2x6, procedurally baked
+    /// from the `FUN_8002c0b0` gouraud endpoints).
+    pub fn band_gauge_fill(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_GAUGE_FILL
+    }
+    /// Equipment pictogram: weapon (fist, 12x12).
+    pub fn band_icon_weapon(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_ICON_WEAPON
+    }
+    /// Equipment pictogram: helmet (12x12).
+    pub fn band_icon_helmet(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_ICON_HELMET
+    }
+    /// Equipment pictogram: body armor (12x12).
+    pub fn band_icon_armor(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_ICON_ARMOR
+    }
+    /// Equipment pictogram: boot (12x12).
+    pub fn band_icon_boot(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_ICON_BOOT
+    }
+    /// Equipment pictogram: accessory / "Goods" ring (12x12).
+    pub fn band_icon_goods(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_ICON_GOODS
     }
     /// Empty-cell frame sprite for the load-screen slot grid (32x32,
     /// 20x20 hollow blue border centred in the sprite - outer 6 px
@@ -259,6 +376,107 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR_TOP_RGB,
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR_BOT_RGB,
     );
+
+    // Raw (un-baked) copy of the same marbled-filigree region into a
+    // free atlas slot, so the pause-menu chrome can tile it in 2D and
+    // apply its own darkening colour (the save screen keeps the
+    // gouraud-baked variant above; the field menu wants the plain
+    // repeating damask).
+    copy_rect(
+        &mut out,
+        ATLAS_WIDTH,
+        &panel_rgba,
+        panel_src_w,
+        title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR,
+        ATLAS_RECT_FILIGREE,
+    );
+
+    // Status-panel stat labels (LV / HP / MP) - same sheet, CLUT row 1
+    // (the `0x800732a4` icon-record palette; pixel-exact vs the golden
+    // menu_status_town capture). The status page draws these as sprites
+    // in place of ASCII glyphs.
+    let label_rgba = legaia_tim::decode_rgba8(
+        &panel_parsed,
+        title_pak::OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW as usize,
+    )?;
+    for (src, dst) in [
+        (title_pak::OVERLAY_SYSTEM_UI_LABEL_LV, ATLAS_RECT_LABEL_LV),
+        (title_pak::OVERLAY_SYSTEM_UI_LABEL_HP, ATLAS_RECT_LABEL_HP),
+        (title_pak::OVERLAY_SYSTEM_UI_LABEL_MP, ATLAS_RECT_LABEL_MP),
+    ] {
+        copy_rect(&mut out, ATLAS_WIDTH, &label_rgba, panel_src_w, src, dst);
+    }
+
+    // Status-page AP gauge pieces + red value digits - same sheet, CLUT
+    // row 4 (the status gauge palette; pixel-exact vs the golden
+    // menu_status_town capture at the FUN_801D33D8 bar anchor).
+    let gauge_rgba = legaia_tim::decode_rgba8(
+        &panel_parsed,
+        title_pak::OVERLAY_SYSTEM_UI_GAUGE_CLUT_ROW as usize,
+    )?;
+    for (src, dst) in [
+        (title_pak::OVERLAY_SYSTEM_UI_GAUGE_CAP, ATLAS_RECT_GAUGE_CAP),
+        (
+            title_pak::OVERLAY_SYSTEM_UI_GAUGE_TROUGH,
+            ATLAS_RECT_GAUGE_TROUGH,
+        ),
+        (title_pak::OVERLAY_SYSTEM_UI_GAUGE_BOX, ATLAS_RECT_GAUGE_BOX),
+        (title_pak::OVERLAY_SYSTEM_UI_GAUGE_TIP, ATLAS_RECT_GAUGE_TIP),
+        (
+            title_pak::OVERLAY_SYSTEM_UI_GAUGE_DIGITS,
+            ATLAS_RECT_GAUGE_DIGITS,
+        ),
+    ] {
+        copy_rect(&mut out, ATLAS_WIDTH, &gauge_rgba, panel_src_w, src, dst);
+    }
+
+    // The "100" full-gauge glyph (ICO record 0x6B) decodes with the
+    // label CLUT row, not the gauge row.
+    copy_rect(
+        &mut out,
+        ATLAS_WIDTH,
+        &label_rgba,
+        panel_src_w,
+        title_pak::OVERLAY_SYSTEM_UI_GAUGE_100,
+        ATLAS_RECT_GAUGE_100,
+    );
+
+    // AP-gauge meter-fill gradient column - synthesized, not
+    // TIM-sourced: retail's `FUN_8002c0b0` draws the fill as two
+    // untextured gouraud quads (dark-red -> gold over rows 0..2, gold
+    // -> dark-red over rows 3..5). Bake the per-row linear
+    // interpolation of those endpoints so the engine can stretch one
+    // sprite to the fill width.
+    bake_gauge_fill_gradient(&mut out, ATLAS_RECT_GAUGE_FILL);
+
+    // Equipment pictograms - same sheet, CLUT row 8 (the gold icon
+    // ramp; the `0x800732a4` UV/CLUT table records for icon codes
+    // 0x24/0x22/0x23/0x25/0x46).
+    let icon_rgba = legaia_tim::decode_rgba8(
+        &panel_parsed,
+        title_pak::OVERLAY_SYSTEM_UI_ICON_CLUT_ROW as usize,
+    )?;
+    for (src, dst) in [
+        (
+            title_pak::OVERLAY_SYSTEM_UI_ICON_WEAPON,
+            ATLAS_RECT_ICON_WEAPON,
+        ),
+        (
+            title_pak::OVERLAY_SYSTEM_UI_ICON_HELMET,
+            ATLAS_RECT_ICON_HELMET,
+        ),
+        (
+            title_pak::OVERLAY_SYSTEM_UI_ICON_ARMOR,
+            ATLAS_RECT_ICON_ARMOR,
+        ),
+        (title_pak::OVERLAY_SYSTEM_UI_ICON_BOOT, ATLAS_RECT_ICON_BOOT),
+        (
+            title_pak::OVERLAY_SYSTEM_UI_ICON_GOODS,
+            ATLAS_RECT_ICON_GOODS,
+        ),
+    ] {
+        copy_rect(&mut out, ATLAS_WIDTH, &icon_rgba, panel_src_w, src, dst);
+    }
 
     // Load-screen slot-grid: empty-cell frame + 3 character portrait
     // TIMs. These live just past the system-UI sheet in the unindexed
@@ -427,6 +645,42 @@ fn bake_panel_interior_gradient(
     }
 }
 
+/// Bake the AP-gauge meter-fill gradient column into the atlas.
+///
+/// Retail (`FUN_8002c0b0`) draws the fill as two 3-row untextured
+/// gouraud quads: dark-red `(0x80,0x20,0x10)` at the top edge fading
+/// to gold `(0xC0,0xA0,0x40)` at the shared middle edge, then back to
+/// dark-red at the (exclusive) bottom edge - so the visible rows are
+/// `[dark, 1/3, 2/3, gold, 2/3, 1/3]`. Per-row linear interpolation
+/// approximates the GPU's per-pixel DDA (sub-pixel truncation may
+/// differ by at most 1/255 until an AP>0 retail capture pins it).
+fn bake_gauge_fill_gradient(dst: &mut [u8], rect: (u32, u32, u32, u32)) {
+    let (dark, gold) = (
+        title_pak::OVERLAY_SYSTEM_UI_GAUGE_FILL_DARK_RGB,
+        title_pak::OVERLAY_SYSTEM_UI_GAUGE_FILL_GOLD_RGB,
+    );
+    let lerp3 = |a: u8, b: u8, i: u32| -> u8 { ((a as u32 * (3 - i) + b as u32 * i) / 3) as u8 };
+    let (x0, y0, w, h) = rect;
+    let stride = (ATLAS_WIDTH * 4) as usize;
+    for row in 0..h {
+        // Rows 0..2 climb dark->gold; rows 3..5 descend gold->dark
+        // (row 3 is the quad-2 top edge = full gold).
+        let i = if row < 3 { row } else { 6 - row };
+        let (r, g, b) = (
+            lerp3(dark.0, gold.0, i),
+            lerp3(dark.1, gold.1, i),
+            lerp3(dark.2, gold.2, i),
+        );
+        for col in 0..w {
+            let off = ((y0 + row) as usize) * stride + ((x0 + col) as usize) * 4;
+            dst[off] = r;
+            dst[off + 1] = g;
+            dst[off + 2] = b;
+            dst[off + 3] = 255;
+        }
+    }
+}
+
 /// Copy a `(x, y, w, h)` rect from `src` (sized `src_w x src_h`,
 /// implicit from the slice length) into `dst` (sized `dst_w x ?`).
 /// `src_rect` and `dst_rect` may use different `(x, y)` origins - the
@@ -534,5 +788,57 @@ mod tests {
             blue_hits > 30,
             "slot 1 pill has too few blue pixels ({blue_hits}) - CLUT may be off"
         );
+
+        // The AP-gauge digit strip (CLUT row 4) must decode to the red
+        // value-digit ink: the retail glyph stroke is (231, 74, 74).
+        let (gx, gy, gw, gh) = atlas.band_gauge_digits();
+        let mut red_hits = 0u32;
+        for row in 0..gh {
+            for col in 0..gw {
+                let off = ((gy + row) as usize) * stride + ((gx + col) as usize) * 4;
+                if atlas.rgba[off + 3] == 255
+                    && atlas.rgba[off] == 231
+                    && atlas.rgba[off + 1] == 74
+                    && atlas.rgba[off + 2] == 74
+                {
+                    red_hits += 1;
+                }
+            }
+        }
+        assert!(
+            red_hits > 100,
+            "gauge digit strip has too few red stroke pixels ({red_hits}) - CLUT row 4 may be off"
+        );
+
+        // Every equipment pictogram (CLUT row 8) must carry opaque gold
+        // pixels (r > g > b ramp), like the panel chrome check above.
+        for (name, rect) in [
+            ("weapon", atlas.band_icon_weapon()),
+            ("helmet", atlas.band_icon_helmet()),
+            ("armor", atlas.band_icon_armor()),
+            ("boot", atlas.band_icon_boot()),
+            ("goods", atlas.band_icon_goods()),
+        ] {
+            let (ix, iy, iw, ih) = rect;
+            let mut icon_gold = 0u32;
+            for row in 0..ih {
+                for col in 0..iw {
+                    let off = ((iy + row) as usize) * stride + ((ix + col) as usize) * 4;
+                    let (r, g, b, a) = (
+                        atlas.rgba[off],
+                        atlas.rgba[off + 1],
+                        atlas.rgba[off + 2],
+                        atlas.rgba[off + 3],
+                    );
+                    if a == 255 && r >= 60 && r > g && g > b {
+                        icon_gold += 1;
+                    }
+                }
+            }
+            assert!(
+                icon_gold >= 30,
+                "{name} pictogram has too few gold pixels ({icon_gold}) - CLUT row 8 may be off"
+            );
+        }
     }
 }

@@ -194,6 +194,10 @@ pub fn status_screen_draws_for(
     panel: &StatusPanelView<'_>,
     nav_hint: Option<&str>,
     pen: (i32, i32),
+    // When `true`, the LV / HP / MP labels are omitted here because the
+    // caller draws them as sprites from the UI-icon atlas
+    // ([`status_icon_sprites_for`]). `false` keeps the ASCII text stand-ins.
+    label_icons: bool,
 ) -> Vec<TextDraw> {
     let (wx, wy) = pen;
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
@@ -208,7 +212,9 @@ pub fn status_screen_draws_for(
 
     // Header: name at +8, "LV" icon at +0x50, level (2-digit) at +0x60.
     str_at(&mut out, panel.name, wx + 8, wy, white);
-    str_at(&mut out, "LV", wx + 0x50, wy + 2, gold);
+    if !label_icons {
+        str_at(&mut out, "LV", wx + 0x50, wy + 2, gold);
+    }
     out.extend(num_field_draws(
         font,
         panel.level as u64,
@@ -237,7 +243,9 @@ pub fn status_screen_draws_for(
             panel.mp_max as u64,
         ),
     ] {
-        str_at(&mut out, tag, wx + 0x20, row_y, gold);
+        if !label_icons {
+            str_at(&mut out, tag, wx + 0x20, row_y, gold);
+        }
         out.extend(num_field_draws(font, cur, wx + 0x30, row_y, 4, white));
         str_at(&mut out, "/", wx + 0x50, row_y, dim);
         out.extend(num_field_draws(font, max, wx + 0x58, row_y, 4, white));
@@ -246,10 +254,14 @@ pub fn status_screen_draws_for(
         str_at(&mut out, ")", wx + 0xa4, row_y, dim);
     }
 
-    // AP gauge line (retail draws a bar primitive at (+0x40, WY+0x2d);
-    // approximated as a numeric readout until the bar prim is ported).
-    let ap = format!("AP {:>2}/{:<2}", panel.ap, panel.ap_max);
-    str_at(&mut out, &ap, wx + 0x40, wy + 0x2d, dim);
+    // AP gauge line. With `label_icons` the caller draws the retail bar
+    // (four gauge sprites + red value digits from the UI-icon atlas via
+    // [`status_icon_sprites_for`]); otherwise fall back to the numeric
+    // text readout.
+    if !label_icons {
+        let ap = format!("AP {:>2}/{:<2}", panel.ap, panel.ap_max);
+        str_at(&mut out, &ap, wx + 0x40, wy + 0x2d, dim);
+    }
 
     // Derived-stat 3x2 grid: rows at WY+0x42/+0x4f/+0x5c. Left column
     // label +0 / live +0x28 / growth +0x48; right column label +0x74 /
@@ -278,16 +290,25 @@ pub fn status_screen_draws_for(
 
     // Equipment grid: slots 0..3 stack at +0/+0x10 on rows WY+0x6d/+0x7a/
     // +0x87/+0x94; slots 4..6 in a right column at +0x6a/+0x7a on rows
-    // WY+0x7a/+0x87/+0x94. Retail draws item ICONS here; until the icon
-    // atlas is ported, draw the item tag text at the icon position.
+    // WY+0x7a/+0x87/+0x94. With `label_icons` the caller draws the slot
+    // pictograms as sprites and the item name lands at the retail name
+    // offset (+0x10 past the icon); empty slots stay icon-only, matching
+    // retail. Without icons, the item tag text stands in at the icon
+    // position.
     for (slot, (label, item)) in panel.equip_rows.iter().take(7).enumerate() {
-        let (x, y) = if slot < 4 {
+        let (icon_x, y) = if slot < 4 {
             (wx, wy + 0x6d + slot as i32 * 0x0d)
         } else {
             (wx + 0x6a, wy + 0x7a + (slot as i32 - 4) * 0x0d)
         };
         let _ = label;
-        str_at(&mut out, item, x, y, dim);
+        if label_icons {
+            if !item.is_empty() {
+                str_at(&mut out, item, icon_x + 0x10, y, white);
+            }
+        } else {
+            str_at(&mut out, item, icon_x, y, dim);
+        }
     }
 
     // Experience / Next Level rows.
@@ -312,6 +333,125 @@ pub fn status_screen_draws_for(
 
     if let Some(hint) = nav_hint {
         str_at(&mut out, hint, wx - 40, wy + 0xd0, dim);
+    }
+    out
+}
+
+/// Build the status-page UI-icon [`SpriteDraw`]s from the system-UI atlas:
+/// the LV / HP / MP labels, the AP gauge (four 1:1 pieces + meter fill +
+/// value) and the 7-slot equipment pictogram grid. Everything is positioned
+/// at the byte-pinned `FUN_801D33D8` offsets and mapped from the 320x240
+/// menu stage into surface pixels (`stage_origin` + `stage_scale`, matching
+/// [`crate::menu_window_chrome_draws_for`]). Pair with
+/// `status_screen_draws_for(.., label_icons = true)` so the labels / AP
+/// value aren't double-drawn as text. `pen` is the id-28 window's content
+/// origin in stage pixels (the same value passed to
+/// `status_screen_draws_for`); `ap` is the character's current AP (meter
+/// width + numeric readout).
+///
+/// PORT: FUN_8002c0b0 - the gauge content (gouraud meter fill + tens/ones
+/// digit / "100"-glyph layout).
+/// REF: FUN_8002c488 / FUN_8002c69c - the UI-icon + bar-widget primitives
+/// whose `0x800732a4` records supply every source rect and placement.
+pub fn status_icon_sprites_for(
+    rects: &SaveMenuAtlasRects,
+    pen: (i32, i32),
+    ap: u16,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (wx, wy) = pen;
+    let scale = stage_scale.max(1) as i32;
+    let mut out = Vec::with_capacity(17);
+    let mut push = |src: (u32, u32, u32, u32), sx: i32, sy: i32| {
+        let (_, _, w, h) = src;
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + sx * scale,
+                stage_origin.1 + sy * scale,
+                w * stage_scale,
+                h * stage_scale,
+            ),
+            src,
+            color: [1.0, 1.0, 1.0, 1.0],
+        });
+    };
+    // LV label in the header row; HP / MP labels at the left of the HP and
+    // MP rows, each 2 px below its row's text baseline - the pixel-exact
+    // retail placements (golden menu_status_town capture: LV at
+    // `(+0x50, +2)`, HP at `(+0x20, +0x15)`, MP at `(+0x20, +0x22)`).
+    push(rects.label_lv, wx + 0x50, wy + 2);
+    push(rects.label_hp, wx + 0x20, wy + 0x15);
+    push(rects.label_mp, wx + 0x20, wy + 0x22);
+
+    // AP gauge at the retail bar anchor (+0x40, +0x2d): cap, trough,
+    // value box, right tip - four 1:1 sprites, laid out edge-to-edge
+    // (cap 24 wide, trough 56 wide; the box = ICO record 0x69 at
+    // anchor+0x50, the tip = ICO record 0x6A at anchor+0x60). Pixel-exact
+    // vs the golden menu_status_town capture.
+    let gauge_x = wx + 0x40;
+    let gauge_y = wy + 0x2d;
+    push(rects.gauge_cap, gauge_x, gauge_y);
+    push(rects.gauge_trough, gauge_x + 0x18, gauge_y);
+    push(rects.gauge_box, gauge_x + 0x50, gauge_y);
+    push(rects.gauge_tip, gauge_x + 0x60, gauge_y);
+
+    // AP value (FUN_8002c0b0): a full 100 draws the dedicated "100"
+    // glyph at anchor+0x50; below 100, the tens digit (when non-zero)
+    // lands at anchor+0x50 and the ones digit at anchor+0x56 - 6x6
+    // cells from the digit strip (ICO codes 0x6C..=0x75), 5 px below
+    // the gauge top.
+    let ap = ap.min(100);
+    let (dgx, dgy, _, _) = rects.gauge_digits;
+    let digit_y = gauge_y + 5;
+    if ap == 100 {
+        push(rects.gauge_100, gauge_x + 0x50, digit_y);
+    } else {
+        let (tens, ones) = (u32::from(ap) / 10, u32::from(ap) % 10);
+        if tens > 0 {
+            push((dgx + tens * 6, dgy, 6, 6), gauge_x + 0x50, digit_y);
+        }
+        push((dgx + ones * 6, dgy, 6, 6), gauge_x + 0x56, digit_y);
+    }
+
+    // Equipment pictograms: slots 0..3 stack at +0 on rows +0x6d/+0x7a/
+    // +0x87/+0x94; slots 4..6 (the Goods ring) sit in a right column at
+    // +0x6a on the last three rows. Icon-per-slot is fixed (the menu
+    // overlay's DAT_801e43f4 code array), independent of what's equipped.
+    for (i, src) in [
+        rects.icon_weapon,
+        rects.icon_helmet,
+        rects.icon_armor,
+        rects.icon_boot,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        push(src, wx, wy + 0x6d + 0x0d * i as i32);
+    }
+    for k in 0..3 {
+        push(rects.icon_goods, wx + 0x6a, wy + 0x7a + 0x0d * k);
+    }
+
+    // Meter fill (FUN_8002c0b0): `value/2` px wide (max 50 at AP 100)
+    // from anchor+0x1B, 6 rows starting 5 below the gauge top - the
+    // baked gradient column stretched horizontally. Retail prepends the
+    // fill quads into the frame's OT bucket so they render on top of
+    // the trough; appending here (list order = draw order) stacks the
+    // same way, and the fill overlaps no other status sprite.
+    let fill_w = u32::from(ap) / 2;
+    if fill_w > 0 {
+        let (fx, fy, fw, fh) = rects.gauge_fill;
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + (gauge_x + 0x1b) * scale,
+                stage_origin.1 + (gauge_y + 5) * scale,
+                fill_w * stage_scale,
+                fh * stage_scale,
+            ),
+            src: (fx, fy, fw, fh),
+            color: [1.0, 1.0, 1.0, 1.0],
+        });
     }
     out
 }

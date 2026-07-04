@@ -102,6 +102,8 @@ pub(crate) fn cmd_play_window(
     live_npcs: bool,
     damage_finish: bool,
     battle_bgm: Option<u16>,
+    screenshot: Option<super::ScreenshotConfig>,
+    seed_party: bool,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -125,6 +127,8 @@ pub(crate) fn cmd_play_window(
         live_npcs,
         damage_finish,
         battle_bgm,
+        screenshot,
+        seed_party,
         None,
     )
 }
@@ -260,6 +264,8 @@ pub(super) fn cmd_play_window_with_record(
     live_npcs: bool,
     damage_finish: bool,
     battle_bgm: Option<u16>,
+    screenshot: Option<super::ScreenshotConfig>,
+    seed_party: bool,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Resolve the cutscene map (explicit `--cutscene-map` override or the
@@ -356,6 +362,17 @@ pub(super) fn cmd_play_window_with_record(
             Ok(mode) => log::info!("play-window: entered field scene '{scene}' (mode={mode:?})"),
             Err(e) => log::warn!("play-window: enter_field_live('{scene}') failed: {e:#}"),
         }
+    }
+
+    // `--seed-party`: seed the New Game starting party (Vahn from the SCUS
+    // template) so the pause menu's Status / party screens render real content
+    // rather than an empty roster. Runs after field entry; `begin_new_game`
+    // only resets story/money/inventory + sets mode=Field, leaving the loaded
+    // scene intact.
+    if seed_party {
+        session.begin_new_game();
+        let seeded = session.host.world.roster.members.len();
+        log::info!("play-window: --seed-party seeded {seeded} roster member(s)");
     }
 
     // Debug start-position override: `LEGAIA_START_TILE=X,Z` seats the player
@@ -709,6 +726,8 @@ pub(super) fn cmd_play_window_with_record(
         mapping,
         menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
         prev_pad: 0,
+        tick_no: 0,
+        screenshot,
         battle_event_log: std::collections::VecDeque::new(),
         battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
         pending_dynamic_mesh_slots: Vec::new(),

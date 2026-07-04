@@ -720,6 +720,32 @@ pub(crate) enum Cmd {
         /// across the Battle transition.
         #[arg(long)]
         battle_bgm: Option<u16>,
+        /// Headless-ish screenshot: render offscreen and write a PNG of the
+        /// framebuffer at `--screenshot-tick`, then exit. Deterministic - no
+        /// `scrot` screen-scrape. Combine with `--pad-script` to auto-open a
+        /// menu first. The window still opens (a real wgpu surface is needed)
+        /// but the captured pixels come from an offscreen readback.
+        #[arg(long)]
+        screenshot: Option<PathBuf>,
+        /// World-tick at which `--screenshot` captures (default 120). Ticks
+        /// advance at the fixed 100 Hz sim rate, so the same script + tick
+        /// reproduces the same frame run-to-run.
+        #[arg(long, default_value_t = 120)]
+        screenshot_tick: u64,
+        /// Scripted pad input for a screenshot run: `TICK:BUTTON` pairs,
+        /// comma-separated, e.g. `--pad-script "30:Start,50:Down,50:Down,70:Cross"`.
+        /// Each entry presses BUTTON for exactly the named tick (a one-tick
+        /// edge). BUTTON names match the pad buttons (Start/Cross/Circle/Up/
+        /// Down/Left/Right/...). Replaces `xdotool` for menu navigation.
+        #[arg(long)]
+        pad_script: Option<String>,
+        /// Seed the New Game starting party (Vahn from the SCUS template) at
+        /// boot so the pause menu's Status / party screens show real content -
+        /// name / LV / HP·MP / stat grid / XP - instead of an empty roster.
+        /// This resets story flags / money / inventory to a fresh New Game.
+        /// Matches the retail early-game single-Vahn party.
+        #[arg(long, default_value_t = false)]
+        seed_party: bool,
     },
     /// Open a window and play back a PSX STR movie using the MDEC decoder,
     /// paced at the stream's real ~15 fps.

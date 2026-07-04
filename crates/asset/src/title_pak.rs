@@ -232,6 +232,95 @@ pub const OVERLAY_SYSTEM_UI_PANEL_INTERIOR_TOP_RGB: (u8, u8, u8) = (64, 64, 64);
 /// Gouraud gradient applied to the interior: bottom vertex RGB.
 pub const OVERLAY_SYSTEM_UI_PANEL_INTERIOR_BOT_RGB: (u8, u8, u8) = (136, 136, 136);
 
+/// Status-panel stat **labels** (LV / HP / MP tags) - UI-icon codes
+/// `0x0A` / `0x07` / `0x08` of the `0x800732a4` UV/CLUT table in
+/// `SCUS_942.54` (consumed by the icon primitive `FUN_8002c488`). The
+/// rects are the table records' `(U, V, W, H)` fields verbatim; all
+/// three decode with CLUT row [`OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW`] and
+/// are pixel-exact against the golden `menu_status_town` capture at
+/// window-relative `(+0x50, +2)` / `(+0x20, +0x15)` / `(+0x20, +0x22)`.
+pub const OVERLAY_SYSTEM_UI_LABEL_LV: (u32, u32, u32, u32) = (192, 86, 16, 10);
+pub const OVERLAY_SYSTEM_UI_LABEL_HP: (u32, u32, u32, u32) = (208, 86, 16, 10);
+pub const OVERLAY_SYSTEM_UI_LABEL_MP: (u32, u32, u32, u32) = (224, 86, 16, 10);
+
+/// CLUT block row that decodes the LV / HP / MP labels (the table
+/// records' CLUT byte `0x01` - green/red ink; row 2 renders the same
+/// pixels chrome-brown).
+pub const OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW: u16 = 1;
+
+/// Status-page **AP gauge** pieces, decoded from CLUT row
+/// [`OVERLAY_SYSTEM_UI_GAUGE_CLUT_ROW`] of the same system-UI sheet.
+/// Retail composes the gauge from four 1:1 sprites (no stretching) at
+/// the `FUN_801D33D8` bar anchor `(WX+0x40, WY+0x2d)` (the widget
+/// dispatcher `FUN_8002c69c`, staged kind `0x31`); every rect below is
+/// pixel-exact against the on-screen gauge in the golden
+/// `menu_status_town` capture (zero mismatching opaque pixels):
+///
+/// - cap: the left arrow tip + red "AP" chip, drawn at the anchor;
+/// - trough: the empty bar body (rounded left end), drawn at cap+24;
+/// - box: the bordered value box (= ICO record `0x69`, whose baked
+///   `dx = 0x50` places it at anchor+0x50);
+/// - tip: the pointed right end (= ICO record `0x6A`, `dx = 0x60`),
+///   closing the lozenge at anchor+0x60.
+pub const OVERLAY_SYSTEM_UI_GAUGE_CAP: (u32, u32, u32, u32) = (128, 64, 24, 16);
+pub const OVERLAY_SYSTEM_UI_GAUGE_TROUGH: (u32, u32, u32, u32) = (128, 80, 56, 16);
+pub const OVERLAY_SYSTEM_UI_GAUGE_BOX: (u32, u32, u32, u32) = (176, 64, 16, 16);
+pub const OVERLAY_SYSTEM_UI_GAUGE_TIP: (u32, u32, u32, u32) = (184, 80, 8, 16);
+
+/// Small red **value digit strip** ("0".."9") the gauge's numeric
+/// readout uses: the `0x800732a4` icon records for codes
+/// `0x6C..=0x75`, ten 6x6 cells starting at `(64, 128)` (digit `d` at
+/// `u = 64 + 6*d`), same CLUT row as the gauge. The gauge content
+/// renderer `FUN_8002c0b0` draws the tens digit (`ICO 0x6C+tens`,
+/// only when non-zero) at anchor+0x50 and the ones digit
+/// (`ICO 0x6C+ones`) at anchor+0x56, both 5 px below the gauge top.
+pub const OVERLAY_SYSTEM_UI_GAUGE_DIGITS: (u32, u32, u32, u32) = (64, 128, 60, 6);
+/// Width of one value-digit cell in the strip.
+pub const OVERLAY_SYSTEM_UI_GAUGE_DIGIT_W: u32 = 6;
+/// Horizontal pitch between digit cells in the strip (and on screen).
+pub const OVERLAY_SYSTEM_UI_GAUGE_DIGIT_PITCH: u32 = 6;
+
+/// The dedicated **"100" glyph** the gauge shows at a full 100 AP in
+/// place of digits (ICO record `0x6B`; CLUT row
+/// [`OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW`], drawn at anchor+0x50).
+pub const OVERLAY_SYSTEM_UI_GAUGE_100: (u32, u32, u32, u32) = (64, 136, 16, 6);
+
+/// CLUT block row that decodes the AP gauge + value digits (purple
+/// frame, red "AP" chip / digits). The status page's gauge palette;
+/// row 2 (the chrome gold) renders the same pixels brown.
+pub const OVERLAY_SYSTEM_UI_GAUGE_CLUT_ROW: u16 = 4;
+
+/// AP-gauge **meter fill** gradient endpoints. The fill is not a
+/// texture: `FUN_8002c0b0` emits two untextured gouraud quads spanning
+/// `x+0x1B .. x+0x1B + value/2` (6 rows at `y+5..y+10`), fading
+/// dark-red -> gold over the top 3 rows and gold -> dark-red over the
+/// bottom 3 (a vertical diamond gradient). Queued in the same OT
+/// bucket as the frame sprites but prepended, so the fill renders on
+/// top of the trough.
+pub const OVERLAY_SYSTEM_UI_GAUGE_FILL_DARK_RGB: (u8, u8, u8) = (0x80, 0x20, 0x10);
+/// Middle-row (peak) colour of the AP-gauge fill gradient.
+pub const OVERLAY_SYSTEM_UI_GAUGE_FILL_GOLD_RGB: (u8, u8, u8) = (0xC0, 0xA0, 0x40);
+/// Height of the AP-gauge fill band in rows (`y+5..y+10`).
+pub const OVERLAY_SYSTEM_UI_GAUGE_FILL_H: u32 = 6;
+
+/// Status-page **equipment pictograms** - the gold slot icons of the
+/// 7-slot equipment grid. Retail resolves them through the UI-icon
+/// primitive `FUN_8002c488`: the menu overlay's fixed slot array
+/// `DAT_801e43f4` = icon codes `[0x24, 0x22, 0x23, 0x25, 0x46, 0x46,
+/// 0x46]`, each code indexing the 12-byte-stride UV/CLUT table at
+/// `0x800732a4` in `SCUS_942.54`. The rects below are those table
+/// records' `(U, V, W, H)` fields verbatim; all seven placements are
+/// pixel-exact against the golden `menu_status_town` capture.
+pub const OVERLAY_SYSTEM_UI_ICON_WEAPON: (u32, u32, u32, u32) = (244, 36, 12, 12);
+pub const OVERLAY_SYSTEM_UI_ICON_HELMET: (u32, u32, u32, u32) = (244, 24, 12, 12);
+pub const OVERLAY_SYSTEM_UI_ICON_ARMOR: (u32, u32, u32, u32) = (232, 36, 12, 12);
+pub const OVERLAY_SYSTEM_UI_ICON_BOOT: (u32, u32, u32, u32) = (232, 48, 12, 12);
+pub const OVERLAY_SYSTEM_UI_ICON_GOODS: (u32, u32, u32, u32) = (0, 128, 12, 12);
+
+/// CLUT block row the equipment pictograms decode with (gold ramp) -
+/// the `0x800732a4` records' CLUT byte `0x08` for all five icons.
+pub const OVERLAY_SYSTEM_UI_ICON_CLUT_ROW: u16 = 8;
+
 /// **Pointing-finger cursor** sprite - the small white hand retail
 /// renders to the left of the highlighted slot pill. Lives in the
 /// same system-UI TIM as the panel chrome but uses a different CLUT

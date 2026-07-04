@@ -142,8 +142,33 @@ MP triplet = record `+0x10a / +0x108 / +0x11e`. Number colour comes from
 `FUN_800349ec` (HP) / `FUN_80035ea8` (MP), not the string CLUT. Instr
 `801d35e8`..`801d374c`.
 
-**HP gauge**: bar primitive at `(X+0x40, WY+0x2d)`, value record `+0x10e`,
-length set by `FUN_80034b6c(0x31)`. Then `s8 += 0x2f`.
+**AP gauge**: bar widget at `(X+0x40, WY+0x2d)`, value record `+0x10e`.
+`FUN_80034b6c(0x31)` stages the widget kind into `gp+0x14c`; the widget
+dispatcher `FUN_8002c69c(x, y, 1, value)` sees kind `0x31` and first calls
+the gauge-content renderer **`FUN_8002c0b0(x, y, value)`**, then falls
+through to the generic table-driven frame path. Then `s8 += 0x2f`.
+
+The frame is four 1:1 sprites from the system-UI sheet (CLUT row 4; every
+rect pixel-verified against the golden `menu_status_town` capture): the
+left arrow cap with the red "AP" chip `(128,64,24,16)` at the anchor, the
+trough body `(128,80,56,16)` at `+0x18`, the bordered value box
+`(176,64,16,16)` (= ICO record `0x69`, baked `dx = 0x50`) and the pointed
+right end `(184,80,8,16)` (= ICO record `0x6A`, `dx = 0x60`).
+
+`FUN_8002c0b0` draws the gauge content (see `ghidra/scripts/funcs/8002c0b0.txt`):
+
+- **Meter fill** (`value > 0`): two untextured gouraud quads spanning
+  `x+0x1B .. x+0x1B + value/2` (50 px at the 100-AP cap; `value > 100`
+  clamps the width to `0xFF` for the wider field-HUD variants), 6 rows at
+  `y+5..y+10`: dark-red `rgb(0x80,0x20,0x10)` fading to gold
+  `rgb(0xC0,0xA0,0x40)` at the shared middle edge and back - a vertical
+  diamond gradient. The fill prims are prepended into the same OT bucket
+  as the frame, so they render **on top of** the trough.
+- **Value**: `== 100` draws the dedicated "100" glyph, ICO code `0x6B`
+  (`(64,136,16,6)`, CLUT row 1) at `x+0x50`; `< 100` draws the tens digit
+  ICO `0x6C+tens` at `x+0x50` (only when non-zero) and the ones digit ICO
+  `0x6C+ones` at `x+0x56`. The digit records are ten 6x6 cells at
+  `(64 + 6*digit, 128)`, CLUT row 4; all at `y+5`.
 
 **Derived-stat grid** (`FUN_801cf650` computes the values first). 3 rows at
 `WY+0x42 / +0x4f / +0x5c`, two columns. Left column: label `X+0`, live value
@@ -153,12 +178,19 @@ length set by `FUN_80034b6c(0x31)`. Then `s8 += 0x2f`.
 `s8 += 0x2b`. Instr `801d3780`..`801d3b48`.
 
 **Equipment grid** (7 slots): icon + item name. Icon codes from the fixed
-array `DAT_801e43f4..4400`; item name via the item-name table
+array `DAT_801e43f4..4400` = `[0x24, 0x22, 0x23, 0x25, 0x46, 0x46, 0x46]`
+(u16 entries); item name via the item-name table
 `*(u32*)(0x8007436c + id*0xc)` where `id = *(u8*)(record + 0x196 + slot_off)`.
 Slots 0..3 stack at `X+0/+0x10` on rows `WY+0x6d / +0x7a / +0x87 / +0x94`;
 slots 4..6 sit in a right column at `X+0x6a/+0x7a` on rows `WY+0x7a / +0x87 /
 +0x94`. Then `s8 += 0x38`. Instr `801d3b4c`..`801d3dd8`. Item ids resolve
-through [`item-table.md`](../formats/item-table.md).
+through [`item-table.md`](../formats/item-table.md). The codes resolve
+through the `0x800732a4` UV/CLUT table (below) to 12x12 pictograms in the
+system-UI sheet, all CLUT row 8 (gold ramp, pixel-verified vs the golden
+capture): weapon fist `(244,36)`, helmet `(244,24)`, body armor `(232,36)`,
+boot `(232,48)`, and the shared Goods ring `(0,128)` for slots 4..6. The
+icon per slot position is fixed - retail draws all seven pictograms whether
+or not the slot is equipped.
 
 **Experience / Next Level** (`Yrun = WY+0xa5`): "Experience" STR at `X+0x18`,
 value (8-digit NUM) at `X+0x78` from record `+0x0`; "Next Level" STR at
@@ -254,16 +286,41 @@ disc at boot (`legaia_asset::menu_windows`; the play-window falls back to a
 pinned mirror of the same rects) and frames each screen's window set with
 the reusable 9-slice primitive `engine-render::menu_window_chrome_draws_for`
 (the caller-drawn window frame), placed on the shared 320x240 boot-UI stage
-via `engine-render::scale_stage_text_draws`. The status main panel renders
+via `engine-render::scale_stage_text_draws`. The frame chrome and the navy
+**filigree interior** both come from the system-UI TIM at `PROT.DAT[0x018E0]`
+CLUT row 2 (the same sheet as the save-screen chrome and the UI-icon atlas):
+the gold-bronze 9-slice tiles plus the marbled-blue interior region
+(`OVERLAY_SYSTEM_UI_PANEL_INTERIOR`, `(128,0,32,29)`). The pause menu tiles
+the raw interior tile in **both axes** (`SaveMenuAtlasRects::panel_filigree`,
+an un-gradient-baked copy of that region) under a flat darkening tint - retail
+modulates it with a per-window gouraud gradient; the flat multiply is a close,
+non-streaking approximation. (The save/load screen keeps the gradient-baked
+`panel_interior` variant stretched to its panel height; only the pause-menu
+windows pass `tile_filigree = true` to `nine_slice_panel_into`.) The status
+main panel renders
 through `engine-render::status_screen_draws_for` at the byte-pinned offsets
 above, hung off the id-28 content origin; the satellite windows through
 `status_satellite_draws_for`; the top-level list / money box / party panel
 through `field_menu_draws_for` + `field_menu_info_draws_for`. The
 HP/MP/level/equipment values come from the typed character record in
 `legaia_save` (derived-stat grid = live `+0x110` window + growth
-`+0x122..+0x12D` window pairs). Still engine-styled: the icon primitives
-(HP/MP tags, equipment icons, gauge bar - text glyphs at the icon
-positions until the `0x800732a4` UI-icon atlas is ported), the tab banner
+`+0x122..+0x12D` window pairs). The **LV / HP / MP labels, the AP gauge and
+the equipment pictograms are ported UI-icon sprites** - their source rects
+are the `0x800732a4` icon-table records verbatim (labels = codes
+`0x0A/0x07/0x08` at `(192/208/224, 86, 16, 10)` CLUT row 1; pictograms =
+the `DAT_801e43f4` slot codes, CLUT row 8; gauge pieces + red digit strip,
+CLUT row 4 - every rect and placement pixel-verified against the golden
+`menu_status_town` capture), staged into the atlas and emitted by
+`engine-render::status_icon_sprites_for` at the pinned status offsets while
+`status_screen_draws_for(.., label_icons = true)` suppresses the ASCII
+stand-ins (the AP text readout and empty-slot equipment text included; an
+occupied slot's item name lands at the retail `+0x10` name offset).
+The AP gauge's **meter fill** and value digits follow the traced
+`FUN_8002c0b0` layout (gradient fill = a procedurally-baked column of the
+gouraud endpoint colours stretched to `value/2` px; per-row linear
+interpolation approximates the GPU DDA until an AP>0 retail capture pins
+the sub-pixel truncation - both golden captures hold AP 0).
+Still engine-styled: the Condition-pager arrows and element diamonds, the tab banner
 art, the top-level row content (renderer `FUN_801CFD68` untraced), and the
 Items / Spells / Arts / Equip-picker screens (their content layouts do not
 fill the pinned windows yet, so they keep a generic frame).

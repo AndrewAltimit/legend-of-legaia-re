@@ -54,6 +54,66 @@ pub struct GpuRegs {
     pub display_mode_raw: Option<u32>,
 }
 
+impl GpuRegs {
+    /// Decode the on-screen display resolution `(width, height)` in pixels
+    /// from the `GP1(0x08)` display-mode bits (`display_mode_raw`).
+    ///
+    /// Horizontal: bit6 (HR2) forces 368; otherwise bits0-1 (HR1) select
+    /// `256 / 320 / 512 / 640`. Vertical: 480 only when both the interlace
+    /// bit (5) and the vertical-resolution bit (2) are set, else 240. This
+    /// is the standard PSX GPU decode; Legaia runs 320x240.
+    pub fn display_resolution(&self) -> Option<(u32, u32)> {
+        let m = self.display_mode_raw?;
+        let width = if m & 0x40 != 0 {
+            368
+        } else {
+            [256u32, 320, 512, 640][(m & 0x3) as usize]
+        };
+        let height = if (m & 0x20 != 0) && (m & 0x04 != 0) {
+            480
+        } else {
+            240
+        };
+        Some((width, height))
+    }
+
+    /// The VRAM sub-rectangle `(x, y, w, h)` the runtime is scanning out to
+    /// the TV: the display framebuffer origin (`GP1(0x05)`) sized by the
+    /// decoded resolution, clamped to the VRAM bounds. `None` when either
+    /// the framebuffer origin or the display mode is absent.
+    pub fn display_crop_rect(&self) -> Option<(u32, u32, u32, u32)> {
+        let (fx, fy) = self.display_fb?;
+        let (mut w, mut h) = self.display_resolution()?;
+        w = w.min(VRAM_WIDTH as u32 - fx.min(VRAM_WIDTH as u32));
+        h = h.min(VRAM_HEIGHT as u32 - fy.min(VRAM_HEIGHT as u32));
+        Some((fx, fy, w, h))
+    }
+}
+
+/// Extract an `(x, y, w, h)` sub-rectangle from a full-VRAM RGBA8 buffer
+/// (`VRAM_WIDTH x VRAM_HEIGHT`, 4 bytes/pixel) into a tightly-packed
+/// `w * h * 4` RGBA8 buffer. Rows are copied verbatim; the rect must lie
+/// within the VRAM bounds.
+pub fn crop_rgba(rgba: &[u8], rect: (u32, u32, u32, u32)) -> Vec<u8> {
+    let (x, y, w, h) = rect;
+    let (x, y, w, h) = (x as usize, y as usize, w as usize, h as usize);
+    assert_eq!(
+        rgba.len(),
+        VRAM_WIDTH * VRAM_HEIGHT * 4,
+        "crop_rgba: not full VRAM"
+    );
+    assert!(
+        x + w <= VRAM_WIDTH && y + h <= VRAM_HEIGHT,
+        "crop_rgba: rect out of bounds"
+    );
+    let mut out = Vec::with_capacity(w * h * 4);
+    for row in 0..h {
+        let start = ((y + row) * VRAM_WIDTH + x) * 4;
+        out.extend_from_slice(&rgba[start..start + w * 4]);
+    }
+    out
+}
+
 /// Top-level helper over the `GPU` section.
 #[derive(Debug, Clone, Copy)]
 pub struct PsxGpu<'a> {
@@ -276,6 +336,55 @@ mod tests {
         assert_eq!(regs.tex_mode, Some(2));
         assert_eq!(regs.display_fb, Some((0, 0)));
         assert_eq!(regs.display_off, Some(false));
+    }
+
+    #[test]
+    fn display_resolution_decodes_modes() {
+        let mk = |mode: u32| GpuRegs {
+            display_mode_raw: Some(mode),
+            display_fb: Some((0, 4)),
+            ..Default::default()
+        };
+        // HR1=1 (320), no interlace → 320x240 (Legaia).
+        assert_eq!(mk(0x01).display_resolution(), Some((320, 240)));
+        assert_eq!(mk(0x00).display_resolution(), Some((256, 240)));
+        assert_eq!(mk(0x02).display_resolution(), Some((512, 240)));
+        assert_eq!(mk(0x03).display_resolution(), Some((640, 240)));
+        // HR2 (bit6) forces 368 regardless of HR1.
+        assert_eq!(mk(0x43).display_resolution(), Some((368, 240)));
+        // interlace (bit5) + vres480 (bit2) → 480 tall.
+        assert_eq!(mk(0x25).display_resolution(), Some((320, 480)));
+        // No display_mode → None.
+        assert_eq!(GpuRegs::default().display_resolution(), None);
+    }
+
+    #[test]
+    fn display_crop_rect_uses_fb_origin() {
+        let mut r = GpuRegs {
+            display_mode_raw: Some(0x01), // 320x240
+            display_fb: Some((0, 244)),
+            ..Default::default()
+        };
+        assert_eq!(r.display_crop_rect(), Some((0, 244, 320, 240)));
+        // Origin near the VRAM edge clamps the height.
+        r.display_fb = Some((0, 400));
+        assert_eq!(r.display_crop_rect(), Some((0, 400, 320, 112)));
+    }
+
+    #[test]
+    fn crop_rgba_extracts_subrect() {
+        let mut rgba = vec![0u8; VRAM_WIDTH * VRAM_HEIGHT * 4];
+        // Mark pixel (5, 7) red.
+        let off = (7 * VRAM_WIDTH + 5) * 4;
+        rgba[off] = 0xFF;
+        rgba[off + 3] = 0xFF;
+        let cropped = crop_rgba(&rgba, (4, 6, 3, 3));
+        assert_eq!(cropped.len(), 3 * 3 * 4);
+        // (5,7) maps to local (col 1, row 1) in a 3-wide crop → pixel index
+        // row*width + col, byte index *4.
+        let (row, col, w) = (1usize, 1usize, 3usize);
+        let local = (row * w + col) * 4;
+        assert_eq!(&cropped[local..local + 4], &[0xFF, 0, 0, 0xFF]);
     }
 
     #[test]

@@ -4,12 +4,38 @@
 
 use super::*;
 
+/// A CPU-side RGBA8 readback of one rendered frame, produced by
+/// [`Renderer::capture_rgba`]. `rgba` is exactly `width * height * 4`
+/// bytes, row-major, top-to-bottom, no row padding.
+#[derive(Debug, Clone)]
+pub struct CaptureImage {
+    pub rgba: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
 impl Renderer {
     /// Render the scene. Dispatches by [`RenderTarget`]:
     /// * `Clear` - clear to dark gray, no draws.
     /// * `Texture(t)` - letterboxed quad (Phase 1 TIM viewer).
     /// * `Mesh { mesh, mvp }` - depth-tested 3D mesh draw (Phase 1 TMD viewer).
     pub fn render(&self, target: RenderTarget<'_>) -> Result<()> {
+        let frame = self
+            .surface
+            .get_current_texture()
+            .context("get current swapchain texture")?;
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.encode_frame(target, &view)?;
+        frame.present();
+        Ok(())
+    }
+
+    /// Render one frame into `color_view` and submit it - the shared body of
+    /// the on-screen [`Self::render`] (swapchain view) and the offscreen
+    /// [`Self::capture_rgba`] (readback texture view). Does not present.
+    fn encode_frame(&self, target: RenderTarget<'_>, color_view: &wgpu::TextureView) -> Result<()> {
         // Stage uniform writes before begin_render_pass.
         match &target {
             RenderTarget::Texture(t) => {
@@ -73,13 +99,7 @@ impl Renderer {
             RenderTarget::Clear => {}
         }
 
-        let frame = self
-            .surface
-            .get_current_texture()
-            .context("get current swapchain texture")?;
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = color_view;
         let mut enc = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -131,7 +151,7 @@ impl Renderer {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("legaia frame pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -392,8 +412,109 @@ impl Renderer {
             }
         }
         self.queue.submit(std::iter::once(enc.finish()));
-        frame.present();
         Ok(())
+    }
+
+    /// Render one frame into an offscreen texture at the current surface
+    /// size and read it back to a CPU RGBA8 buffer (no window / no present).
+    /// This is the headless screenshot path - the deterministic replacement
+    /// for scrapping the on-screen window with `scrot`. The returned image
+    /// is exactly `width * height * 4` bytes, row-major, no padding.
+    pub fn capture_rgba(&self, target: RenderTarget<'_>) -> Result<CaptureImage> {
+        let (width, height) = (self.config.width, self.config.height);
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("capture target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        self.encode_frame(target, &view)?;
+
+        // copy_texture_to_buffer requires bytes_per_row aligned to 256.
+        let bpp = 4u32;
+        let unpadded = width * bpp;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded = unpadded.div_ceil(align) * align;
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("capture readback"),
+            size: (padded as u64) * (height as u64),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("capture encoder"),
+            });
+        enc.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buf,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(std::iter::once(enc.finish()));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.device
+            .poll(wgpu::PollType::wait())
+            .context("poll device for capture readback")?;
+        rx.recv()
+            .context("capture readback channel closed")?
+            .context("map capture readback buffer")?;
+
+        let data = buf.slice(..).get_mapped_range();
+        // Swizzle BGRA->RGBA when the surface uses a Bgra format (typical on
+        // desktop swapchains); Rgba formats pass through unchanged.
+        let bgra = matches!(
+            self.config.format,
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+        );
+        let mut rgba = Vec::with_capacity((unpadded as usize) * (height as usize));
+        for row in 0..height as usize {
+            let start = row * padded as usize;
+            let line = &data[start..start + unpadded as usize];
+            if bgra {
+                for px in line.chunks_exact(4) {
+                    rgba.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
+                }
+            } else {
+                rgba.extend_from_slice(line);
+            }
+        }
+        drop(data);
+        buf.unmap();
+        Ok(CaptureImage {
+            rgba,
+            width,
+            height,
+        })
     }
 
     /// Resize the scene-uniforms buffer (and its bind group) to hold at

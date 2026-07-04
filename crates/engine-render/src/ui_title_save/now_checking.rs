@@ -68,6 +68,7 @@ pub fn now_checking_panel_draws_for(
         ),
         stage_origin,
         stage_scale,
+        false,
     );
     out
 }

@@ -87,6 +87,7 @@ pub fn slot_info_panel_draws_for(
         (px, py, pw as i32, ph as i32),
         stage_origin,
         stage_scale,
+        false,
     );
 
     // Leader portrait (16x16) inside the info panel - drawn only

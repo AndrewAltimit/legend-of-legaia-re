@@ -342,7 +342,13 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
         let equip_views: Vec<EquipSlotView> = (0..equip_slots.slots.len())
             .map(|s| EquipSlotView {
                 label: equip_slot_label(s as u8),
-                item_name: format!("#{:02X}", equip_slots.slots[s]),
+                // Empty slots stay blank (retail draws only the slot
+                // pictogram); occupied slots show the raw id until the
+                // item-name table is wired through here.
+                item_name: match equip_slots.slots[s] {
+                    0 => String::new(),
+                    id => format!("#{id:02X}"),
+                },
             })
             .collect();
         out.push(StatusSnapshot {

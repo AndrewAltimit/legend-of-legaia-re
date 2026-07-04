@@ -148,6 +148,47 @@ pub struct SaveMenuAtlasRects {
     /// can draw the tile as a regular SpriteDraw, tiled horizontally
     /// 2× full-width + 1× 17-wide-remainder.
     pub panel_interior: (u32, u32, u32, u32),
+    /// Raw (un-gradient-baked) marbled filigree interior tile (32x29).
+    /// The pause-menu chrome tiles this in 2D as the window interior,
+    /// darkened by a per-draw colour, matching retail's navy damask.
+    /// Distinct from `panel_interior`, which is the save screen's
+    /// gouraud-baked variant.
+    pub panel_filigree: (u32, u32, u32, u32),
+    /// Status-panel stat labels (LV / HP / MP), 16x10 each, from CLUT
+    /// row 1 of the system-UI TIM (the `0x800732a4` icon-record
+    /// palette). Drawn as sprites in place of ASCII glyphs on the
+    /// status page.
+    pub label_lv: (u32, u32, u32, u32),
+    pub label_hp: (u32, u32, u32, u32),
+    pub label_mp: (u32, u32, u32, u32),
+    /// Status-page AP gauge pieces (CLUT row 4 of the system-UI TIM):
+    /// left cap w/ red "AP" chip (24x16), trough body (56x16), value
+    /// box (16x16) and right arrow tip (7x16). Retail composes the
+    /// gauge from these four 1:1 sprites at the `FUN_801D33D8` bar
+    /// anchor `(WX+0x40, WY+0x2d)`.
+    pub gauge_cap: (u32, u32, u32, u32),
+    pub gauge_trough: (u32, u32, u32, u32),
+    pub gauge_box: (u32, u32, u32, u32),
+    pub gauge_tip: (u32, u32, u32, u32),
+    /// Red value-digit strip ("0".."9"): ten 6x6 cells at a 6-px
+    /// pitch (ICO records `0x6C..=0x75`). Digit `d` is the sub-rect
+    /// at `x + 6*d`.
+    pub gauge_digits: (u32, u32, u32, u32),
+    /// The "100" glyph shown at a full 100 AP (16x6, ICO record
+    /// `0x6B`).
+    pub gauge_100: (u32, u32, u32, u32),
+    /// Meter-fill gradient column (2x6), stretched horizontally to
+    /// `value/2` px inside the trough (the `FUN_8002c0b0` gouraud
+    /// fill).
+    pub gauge_fill: (u32, u32, u32, u32),
+    /// Status-page equipment pictograms (12x12, CLUT row 8): the
+    /// UV/CLUT-table records for the menu overlay's fixed slot icon
+    /// codes (weapon fist / helmet / body armor / boot / Goods ring).
+    pub icon_weapon: (u32, u32, u32, u32),
+    pub icon_helmet: (u32, u32, u32, u32),
+    pub icon_armor: (u32, u32, u32, u32),
+    pub icon_boot: (u32, u32, u32, u32),
+    pub icon_goods: (u32, u32, u32, u32),
     /// Load-screen empty-cell frame sprite (32x32, 20x20 blue hollow
     /// frame centered with 6px transparent margin). Used by the slot-
     /// preview screen to draw the 5x3 grid of save-slot boxes. When
