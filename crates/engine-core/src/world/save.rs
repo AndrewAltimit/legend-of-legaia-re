@@ -40,6 +40,19 @@ impl World {
         }
         self.party_count = n as u8;
         self.roster = party;
+        // Hydrate the level-up tracker's per-slot cumulative XP and level
+        // from the installed records. Without this the tracker keeps its
+        // default 0-XP / level-1 state even when the record has the party
+        // deep into the game, and the next grant would re-run the whole
+        // curve from L1. Level prefers the engine cell (+0x100), falling
+        // back to the retail displayed-level byte (+0x130) for records
+        // lifted from retail saves.
+        for (slot, rec) in self.roster.members.iter().enumerate() {
+            if slot < self.level_up_tracker.level.len() {
+                self.level_up_tracker.xp[slot] = rec.cumulative_xp();
+                self.level_up_tracker.level[slot] = rec.level().max(rec.magic_rank()).max(1);
+            }
+        }
     }
 
     /// Capture the world's current actor state back into a `Party`. The
@@ -179,16 +192,8 @@ impl World {
                 self.inventory.insert(id, count);
             }
         }
-        // Hydrate the level-up tracker's per-slot level from the loaded
-        // character records. Without this, the tracker keeps its default
-        // 1-per-slot level even when the saved record has the party at
-        // level 30 - the next level-up grant would silently roll the
-        // party back to level 1 + N.
-        for (slot, rec) in self.roster.members.iter().enumerate() {
-            if slot < self.level_up_tracker.level.len() {
-                self.level_up_tracker.level[slot] = rec.level().max(1);
-            }
-        }
+        // (The level-up tracker's per-slot XP + level are hydrated from the
+        // records inside `load_party`.)
         // V2 ext block - repopulate engine-side trackers.
         self.play_time_seconds = sf.ext_v2.play_time_seconds;
         self.saved_chains = sf.ext_v2.saved_chains.clone();

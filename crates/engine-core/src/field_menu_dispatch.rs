@@ -321,9 +321,14 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
         if hms.hp_max == 0 {
             continue;
         }
-        let xp = member.cumulative_xp() as u32;
-        let level = legaia_save::level_for_cumulative_xp(xp);
-        let xp_to_next = xp_to_next_level(xp, level);
+        let xp = member.cumulative_xp();
+        // Retail LV is the record's own +0x130 byte (FUN_801D33D8); fall back
+        // to base-curve inference for records that never had it stamped.
+        let level = match member.magic_rank() {
+            l @ 1..=99 => l,
+            _ => legaia_save::level_for_cumulative_xp(xp),
+        };
+        let xp_to_next = xp_to_next_level(member, level);
         // The retail 3x2 derived-stat grid: live values from the `+0x110`
         // window, growth values (the parenthesised number) from the
         // `+0x122..+0x12D` record window, ordered ATK/UDF/LDF | SPD/INT/AGL
@@ -374,11 +379,17 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
     out
 }
 
-/// Best-effort XP-to-next-level hint. Engines that have a per-character
-/// XP curve can replace; default uses the global retail XP table.
-fn xp_to_next_level(current_xp: u32, level: u8) -> u32 {
-    let next = legaia_save::xp_for_level(level + 1);
-    next.saturating_sub(current_xp)
+/// The Status-menu "Next Level" number. Retail (`FUN_801D33D8`) draws the
+/// record's next-level-threshold word (`+0x4`) **verbatim** - the cumulative
+/// XP total at which the next level lands, NOT the remaining difference.
+/// Records that never had `+0x4` stamped (engine-synthesized rosters) fall
+/// back to the base-curve threshold; at L99 retail carries 0 there.
+// REF: FUN_801D33D8 (Next Level draw), FUN_801E9504 (threshold writer)
+fn xp_to_next_level(member: &legaia_save::CharacterRecord, level: u8) -> u32 {
+    match member.next_level_xp() {
+        0 if level < 99 => legaia_save::xp_for_level(level + 1),
+        threshold => threshold,
+    }
 }
 
 fn equip_slot_label(slot: u8) -> &'static str {

@@ -56,7 +56,13 @@ pub fn starting_record(c: &StartingChar) -> CharacterRecord {
         int: c.intel,
     });
     // Seru magic rank starts at 1 (Vahn, validated); gates the first spell tier.
+    // (+0x130 doubles as the retail displayed level - LV 1 at a New Game.)
     rec.set_magic_rank(1);
+    // Retail New Game records carry cumulative XP 0 (+0x0) and the L2
+    // threshold in +0x4 - the Status menu's "Next Level 121" (base curve;
+    // slots 1/2 hold the ± sin-divisor-corrected value: Noa 102 / Gala 140).
+    rec.set_cumulative_xp(0);
+    rec.set_next_level_xp(legaia_save::xp_for_level(2));
     rec
 }
 
@@ -136,6 +142,9 @@ mod tests {
         assert_eq!(rs.hp_max, 180);
         assert_eq!(rs.cap_constant, RECORD_CAP_CONSTANT);
         assert_eq!(rec.magic_rank(), 1);
+        // Retail New Game: Experience 0, Next Level 121 (Status-menu capture).
+        assert_eq!(rec.cumulative_xp(), 0);
+        assert_eq!(rec.next_level_xp(), 121);
     }
 
     #[test]

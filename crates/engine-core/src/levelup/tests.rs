@@ -210,18 +210,20 @@ fn level_up_jitter_multilevel_matches_per_level_draw_order() {
 
 #[test]
 fn retail_xp_table_level2_threshold() {
-    // Retail: 50 XP to reach L2; 49 is not enough.
+    // Retail: 121 XP to reach L2 (the New Game "Next Level 121"); 120 is
+    // not enough.
     let mut t = LevelUpTracker::new();
-    assert!(t.grant_xp(0, 49).is_none());
-    let r = t.grant_xp(0, 1).expect("50 total = level 2");
+    assert!(t.grant_xp(0, 120).is_none());
+    let r = t.grant_xp(0, 1).expect("121 total = level 2");
     assert_eq!(r.new_level, 2);
 }
 
 #[test]
 fn retail_xp_table_cumulative_check() {
-    // Table[1] = 50+56 = 106: granting 106 XP at once should reach level 3.
+    // Table[1] = 365 (the L3 threshold): granting 365 XP at once should
+    // reach level 3.
     let mut t = LevelUpTracker::new();
-    let r = t.grant_xp(0, 106).expect("106 XP reaches L3");
+    let r = t.grant_xp(0, 365).expect("365 XP reaches L3");
     assert_eq!(r.new_level, 3);
 }
 

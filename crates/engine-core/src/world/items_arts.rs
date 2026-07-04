@@ -730,7 +730,27 @@ impl World {
             // XP / level state belongs to the CHARACTER (roster slot), while
             // the live HP/MP resync targets the battle ordinal's actor mirror.
             let char_id = self.party_roster_slot(member as usize) as u8;
-            let Some(result) = self.level_up_tracker.grant_xp(char_id, per_member_xp) else {
+            let result = self.level_up_tracker.grant_xp(char_id, per_member_xp);
+            // Retail (`FUN_801E9504`) maintains the record's cumulative XP
+            // (+0x0), next-level threshold (+0x4, slots-1/2 corrected), and
+            // displayed-level byte (+0x130) on every grant; the Status menu
+            // (`FUN_801D33D8`) draws those words verbatim. Mirror them so the
+            // engine's status screen stays truthful even when no threshold
+            // was crossed.
+            let slot = char_id as usize;
+            if slot < self.level_up_tracker.level.len() {
+                let cur_level = self.level_up_tracker.level[slot];
+                let next = self
+                    .level_up_tracker
+                    .threshold_for(slot, cur_level)
+                    .unwrap_or(0);
+                if let Some(rec) = self.roster.members.get_mut(slot) {
+                    rec.set_cumulative_xp(self.level_up_tracker.xp[slot]);
+                    rec.set_next_level_xp(next);
+                    rec.set_magic_rank(cur_level);
+                }
+            }
+            let Some(result) = result else {
                 continue;
             };
             if let Some(rec) = self.roster.members.get_mut(char_id as usize) {

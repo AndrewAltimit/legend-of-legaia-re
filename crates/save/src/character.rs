@@ -420,23 +420,40 @@ impl CharacterRecord {
         true
     }
 
-    /// Cumulative XP at `+0x04..+0x06` (u16 LE).
+    /// Cumulative XP at `+0x00..+0x04` (u32 LE).
     ///
-    /// Pinned by the captured magic-rank-up + character-level-up save
-    /// triplet: the level-up event at L9 → L10 grew the value at this
-    /// offset by `+365` (an empirical per-level XP delta from the real save;
-    /// the actual retail curve is the static-SCUS table `DAT_80076AF4` read by
-    /// `FUN_801E9504` - see `docs/subsystems/level-up.md` § XP table - not the
-    /// falsified `0x8007123C` slice the engine still ships as a placeholder).
-    /// Returns the cumulative XP value the engine can feed into
-    /// [`crate::level_for_cumulative_xp`] to derive the character level.
-    pub fn cumulative_xp(&self) -> u16 {
-        u16::from_le_bytes([self.raw[0x04], self.raw[0x05]])
+    /// The status renderer `FUN_801D33D8` draws the "Experience" line from
+    /// this word verbatim (`0x80084708 + slot*0x414 + 0x0`), and the level-up
+    /// applier `FUN_801E9504` compares it against the per-level thresholds.
+    /// Validated across the save-state library (New Game 0 → L37 `518_462` →
+    /// L99 `9_664_511`). An earlier reading placed a u16 XP field at `+0x04` -
+    /// that offset is actually the low half of [`Self::next_level_xp`].
+    /// Feed into [`crate::level_for_cumulative_xp`] to derive the (base-curve)
+    /// character level.
+    pub fn cumulative_xp(&self) -> u32 {
+        u32::from_le_bytes(self.raw[0x00..0x04].try_into().unwrap())
     }
 
     /// Replace the cumulative-XP field.
-    pub fn set_cumulative_xp(&mut self, xp: u16) {
-        self.raw[0x04..0x06].copy_from_slice(&xp.to_le_bytes());
+    pub fn set_cumulative_xp(&mut self, xp: u32) {
+        self.raw[0x00..0x04].copy_from_slice(&xp.to_le_bytes());
+    }
+
+    /// Next-level XP threshold at `+0x04..+0x08` (u32 LE) - the cumulative XP
+    /// total at which the character reaches the next level.
+    ///
+    /// Written by the level-up applier `FUN_801E9504` (base curve for slots
+    /// 0/3, ± sin-divisor correction for Noa/Gala) and drawn **verbatim** as
+    /// the Status-menu "Next Level" number by `FUN_801D33D8`
+    /// (`0x80084708 + slot*0x414 + 0x4`; New Game Vahn = 121, Noa = 102,
+    /// Gala = 140). Zero at L99 (no next level).
+    pub fn next_level_xp(&self) -> u32 {
+        u32::from_le_bytes(self.raw[0x04..0x08].try_into().unwrap())
+    }
+
+    /// Replace the next-level XP threshold field.
+    pub fn set_next_level_xp(&mut self, threshold: u32) {
+        self.raw[0x04..0x08].copy_from_slice(&threshold.to_le_bytes());
     }
 
     /// Byte at `+0x100` (u8). **Not the retail displayed level** - `+0x100` is zero
@@ -740,11 +757,25 @@ mod tests {
     #[test]
     fn cumulative_xp_round_trip() {
         let mut r = CharacterRecord::zeroed();
-        r.set_cumulative_xp(365);
-        assert_eq!(r.cumulative_xp(), 365);
-        // Verify the bytes land at +0x04..+0x06 in LE.
-        assert_eq!(r.raw[0x04], 0x6D);
-        assert_eq!(r.raw[0x05], 0x01);
+        r.set_cumulative_xp(518_462);
+        assert_eq!(r.cumulative_xp(), 518_462);
+        // Verify the bytes land at +0x00..+0x04 in LE (0x7E93E).
+        assert_eq!(r.raw[0x00], 0x3E);
+        assert_eq!(r.raw[0x01], 0xE9);
+        assert_eq!(r.raw[0x02], 0x07);
+        assert_eq!(r.raw[0x03], 0x00);
+    }
+
+    #[test]
+    fn next_level_xp_round_trip() {
+        let mut r = CharacterRecord::zeroed();
+        r.set_next_level_xp(121);
+        assert_eq!(r.next_level_xp(), 121);
+        // Verify the bytes land at +0x04..+0x08 in LE.
+        assert_eq!(r.raw[0x04], 121);
+        assert_eq!(r.raw[0x05], 0);
+        // Disjoint from cumulative XP at +0x00.
+        assert_eq!(r.cumulative_xp(), 0);
     }
 
     #[test]

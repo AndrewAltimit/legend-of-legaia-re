@@ -38,6 +38,9 @@ pub struct StatusSnapshot {
     pub name: String,
     pub level: u8,
     pub xp: u32,
+    /// The retail "Next Level" number: the cumulative XP total at which the
+    /// next level lands (record `+0x4`, drawn verbatim by `FUN_801D33D8`),
+    /// not the remaining difference. 0 at L99.
     pub xp_to_next: u32,
     pub hp: u16,
     pub hp_max: u16,

@@ -10,11 +10,11 @@ fn apply_battle_xp_sets_level_up_banner() {
     };
     // Slot 0 must be alive for the split to credit XP.
     world.actors[0].battle.hp = 100;
-    // Placeholder XP table: 50 XP to reach level 2 (entry[0]; the placeholder
-    // is a sin-LUT slice, not retail - real curve is DAT_80076AF4 via FUN_801E9504).
-    // The reward is scaled 3/4 + ceil-split (FUN_8004E568): feed 68 so the lone
-    // member receives ceil((68 - 68>>2)/1) = 51 >= the 50 threshold.
-    world.apply_battle_xp(68);
+    // Retail XP table: 121 XP to reach level 2 (DAT_80076AF4 via FUN_801E9504;
+    // the New Game "Next Level 121"). The reward is scaled 3/4 + ceil-split
+    // (FUN_8004E568): feed 161 so the lone member receives
+    // 161 - (161 >> 2) = 121 >= the 121 threshold.
+    world.apply_battle_xp(161);
     let banner = world
         .current_level_up_banner
         .as_ref()
@@ -39,9 +39,9 @@ fn apply_battle_xp_skips_dead_members() {
     world.actors[0].battle.hp = 100;
     world.actors[1].battle.hp = 0;
     world.actors[2].battle.hp = 100;
-    // Scaled 3/4 + ceil-split over 2 alive: ceil((140 - 140>>2)/2) = ceil(105/2)
-    // = 53 each; both reach L2 (50 threshold).
-    let results = world.apply_battle_xp(140);
+    // Scaled 3/4 + ceil-split over 2 alive: ceil((324 - 324>>2)/2) = ceil(243/2)
+    // = 122 each; both reach L2 (121 threshold).
+    let results = world.apply_battle_xp(324);
     let slot_ids: Vec<u8> = results.iter().map(|r| r.char_id).collect();
     assert!(slot_ids.contains(&0));
     assert!(slot_ids.contains(&2));

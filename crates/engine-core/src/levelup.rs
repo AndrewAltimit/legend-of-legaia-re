@@ -7,20 +7,22 @@
 //!
 //! ## XP table provenance
 //!
-//! [`retail_xp_table`] ships a 98-entry placeholder slice (`50, 56, 62, …`) that
-//! an earlier pass mis-extracted from `0x8007123C` - that address is doubly
-//! wrong (an off-by-`0x800` file/virtual confusion, then a slice of the GTE sin
-//! LUT at `0x80070A2C`), so these numbers are **fabricated XP**, not retail.
-//!
-//! The real retail curve is the static-SCUS per-level u16 delta table
-//! `DAT_80076AF4`, read by the overlay level-up applier `FUN_801E9504` (called
-//! from the reward resolver `FUN_8004E568` at `0x8004F34C`): the running sum to
-//! the current level is scaled `(sum × 9_999_999) / 0x140FE` for `level < 0x11`
-//! (else `sum × 0x79`) and compared `≤ record cumulative XP`. That curve is
-//! parsed by `legaia_asset::level_up_tables::xp_thresholds_from_scus` and
-//! **installed at boot** by `legaia_engine_shell::BootSession` (which reads the
-//! user's `SCUS_942.54`) over [`LevelUpTracker::xp_table`]. The placeholder
-//! below is only used when no executable is reachable (disc-less tests). See
+//! [`retail_xp_table`] ships the **derived retail base curve** (`121, 365,
+//! 730, …, 9_646_483`): the static-SCUS per-level u16 delta table
+//! `DAT_80076AF4` is the closed form `delta(n) = n²/4 + 1`, read by the
+//! overlay level-up applier `FUN_801E9504` (called from the reward resolver
+//! `FUN_8004E568` at `0x8004F34C`) - the running sum to the current level is
+//! scaled `(sum × 9_999_999) / 0x140FE` for `level < 0x11` (else `sum × 0x79`)
+//! and compared `≤ record cumulative XP` (`+0x0`). The same curve is parsed
+//! off the disc by `legaia_asset::level_up_tables::xp_thresholds_from_scus`
+//! and **installed at boot** by `legaia_engine_shell::BootSession` (which
+//! reads the user's `SCUS_942.54`) over [`LevelUpTracker::xp_table`] - a
+//! byte-identical live cross-validation of the derived constants. Slots 1/2
+//! (Noa/Gala) shift each threshold by the ± sin-divisor correction
+//! ([`LevelUpTracker::with_xp_corrections`]). An earlier pass shipped a GTE
+//! sin-LUT slice (`50, 56, 62, …`) mis-extracted from "`0x8007123C`" as the
+//! curve - refuted by the retail Status-menu capture (New Game "Next Level
+//! 121") and library-wide record `+0x4` sampling. See
 //! `docs/subsystems/level-up.md` § XP table.
 //!
 //! Per-character HP/MP growth is wired from the same static-SCUS tables:
