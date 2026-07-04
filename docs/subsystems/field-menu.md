@@ -23,9 +23,11 @@ resolved through the window-descriptor table below.
 ## Contents
 
 - [Window descriptor table](#window-descriptor-table) · [Live window structs](#live-window-structs)
+- [Tab banner](#tab-banner) · [Status satellite windows](#status-satellite-windows)
 - [Plumbing](#plumbing) · [Submenu dispatch](#submenu-dispatch)
 - [Header row](#header-row-always-drawn) · [Status page](#status-page-submenu-0-or-5)
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
+- [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed)
 
@@ -48,8 +50,10 @@ envelope. Provenance: byte-matched between the disc entry and the resident
 overlay across the six catalogued menu-open mednafen states
 (`menu_{status,equipment,options}_{field,town}`); only id 22's style low
 bits and id 49's `y` (178 -> 180) differ at runtime. The drawn window frame
-extends past the content rect by 6 px left/right, 2 px above and 10 px
-below (pixel-measured against the captures' VRAM framebuffers).
+extends past the content rect by 8 px on every side (the RAM GPU-prim scan
+of the `menu_status_town` capture places each window's 4x4 corner tiles at
+`content - 8` - window 26's content `(14, 38)` frames from `(6, 30)` -
+cross-checked against the captures' VRAM framebuffer edge pixels).
 
 Screen window sets, read from the live window lists of the captures (each
 live window carries its descriptor id):
@@ -59,7 +63,7 @@ live window carries its descriptor id):
 | top-level pause menu | 50 command list `(24,24,104,94)` -> `FUN_801CFD68`; 49 money/play-time box `(24,178,104,24)` -> `FUN_801D0148`; 51 right party panel `(144,24,152,180)` -> `FUN_801D030C` |
 | Status | tab 3 -> `FUN_801DCAD8`; 26 party list `(14,38,60,38)` -> `FUN_801D2094`; 27 "Condition" pager `(14,92,60,10)` -> `FUN_801D30A4`; 30 summary `(14,134,60,70)` -> `FUN_801D31EC`; 28 **main panel** `(90,16,218,188)` -> `FUN_801D33D8` |
 | Equip | tab 2 -> `FUN_801DCA94`; 21 party `(14,42,80,38)` -> `FUN_801D2094`; 23 item list `(174,22,132,182)` (renderer-less container; its lower span is occluded by 22); 22 main `(14,96,292,108)` -> `FUN_801D21C0` |
-| Options | tab 4 -> `FUN_801DCB1C`; 48 settings `(24,40,256,148)` -> `FUN_801DCEF0` |
+| Options | tab 4 -> `FUN_801DCB1C`; 48 settings `(24,40,256,148)` -> `FUN_801DCEF0`; 47 value popup `(170, *, 128, *)` -> `FUN_801D2B44` (y/h stamped per open - see [Options screen](#options-screen)) |
 
 The id-28 rect origin `(90, 16)` is the `(WX, WY)` every offset in the
 status-page sections below hangs off - cross-checked against the captured
@@ -77,6 +81,65 @@ bottom in the captures - the `menu_options_field` state caught three
 status-screen windows mid-slide). The top-level windows 49/50/51 stay
 parked in every sub-screen capture, which is how the top-level set was
 pinned without a top-level capture.
+
+## Tab banner
+
+The class-2 title-tab windows (descriptor ids 0..=4 - "Status" / "Equip" /
+"Options") draw **no gold 9-slice frame or filigree interior**. Their
+entire chrome is the carved brown **plaque**, composed of six textured
+sprites (RAM prim scan over the `menu_status_town` capture, all CLUT row
+12 of the system-UI sheet at `PROT.DAT[0x018E0]`):
+
+| piece | src rect | placement |
+|---|---|---|
+| left cap | `(208, 64, 8, 20)` | `(WX-8, WY-4)` |
+| body tile | `(192, 64, 16, 20)` | tiled from `WX` across the content width `w` (partial remainder) |
+| right cap | `(216, 64, 8, 20)` | `(WX+w, WY-4)` |
+
+The tab's content renderer (`FUN_801DCAD8` for Status; siblings
+`FUN_801DCA94` / `FUN_801DCB1C`) draws only the label string at the
+content origin `(WX, WY)` with staged text CLUT 7. Engine primitive:
+`engine-render::tab_banner_draws`.
+
+## Status satellite windows
+
+The three left-column windows of the Status screen, each a content-only
+renderer inside the standard gold frame:
+
+**Party list (id 26, `FUN_801D2094`)**: one row per roster slot at pitch
+`0x0e`; name string at `(WX+6, Yrow)` from record `+0x2A7`, always CLUT 7
+(no selected-row ink change). The highlighted row draws the 16x16
+**pointing-hand cursor** at `(WX-0xc, Yrow)` via the animated-cursor
+primitive `FUN_8002b994` - sprite-table kind 0 of the 4-record
+0x18-stride table at `0x80073d18` (`[frames u8, clut u8, period i16,
+last_xy 2×i16, frame UVs 4 bytes each]`; hand = 1 frame, UV `(152,64)`,
+CLUT row 7, plus a 0..2-px idle bob from the offset table at
+`0x80073d78`).
+
+**"Condition" pager (id 27, `FUN_801D30A4`)**: the folded submenu id
+picks the label ("Condition" for the status page; Skills / Magic / Moves
+strings for ids 1..3) drawn at `(WX+6, WY)` CLUT 7, flanked by the solid
+**triangle sprites**: `FUN_8002b994` kind 2 (left, UV `(168,8)`) at
+`(WX-0x10, WY-2)` and kind 3 (right, UV `(168,40)`) at `(WX+0x3A,
+WY-2)`, both 16x16 CLUT row 7.
+
+**Summary (id 30, `FUN_801D31EC`)**: name at `(WX, WY)`; "LV" icon (ICO
+`0x0a`) at `(WX+0x1c, WY+0xf)` with the 2-digit level field (record
+`+0x130`) at `(WX+0x2c, WY+0xd)`; "ATR:" at `(WX, WY+0x1a)` followed by
+the **element icon** drawn through the per-character 2-byte string at
+menu-overlay VA `0x801E4720 + char*4` (`0xCE 0x1D/0x1F/0x1E`). The
+string primitive's `0xCE` token resolves the argument through the
+glyph-metadata aux table at `0x80074050` (4-byte records `[i16 ico_code,
+u8 x_advance, i8 dy]`): records `0x1D/0x1F/0x1E` → ICO codes
+`0x94/0x96/0x95` (Vahn/Noa/Gala), 28x12 sprites at sheet V 208 with the
+**alternate CLUT encoding** (record CLUT byte bit `0x40`: CLUT at VRAM
+`(896 + (b&3)*16, 500)`). The pixels live in the system-UI **extension
+strip** TIM at `PROT.DAT[0x10178]` (256x32 4bpp, VRAM `(896,448)` =
+sheet V 192..224); the row-500 palettes are the CLUT block of the
+sibling TIM at `PROT.DAT[0x10028]` (rows 498/499/501 come from
+`0x10178`/`0x100D0`/`0xFF80`). If the character carries a Seru, a
+second block draws the class icon (ICO `0x45`) + Seru name at `WY+0x2f`
+and its level at `WY+0x3c`.
 
 ## Plumbing
 
@@ -140,7 +203,11 @@ max at `X+0x58`, base at `X+0x84` (all 4-digit NUM); separators (UI-glyph) at
 `X+0x50`, `X+0x7c`, `X+0xa4`. HP triplet = record `+0x106 / +0x104 / +0x11c`;
 MP triplet = record `+0x10a / +0x108 / +0x11e`. Number colour comes from
 `FUN_800349ec` (HP) / `FUN_80035ea8` (MP), not the string CLUT. Instr
-`801d35e8`..`801d374c`.
+`801d35e8`..`801d374c`. Ink (golden-capture pixel-pinned): the `/` and the
+current/max values in the CLUT-7 text white `(206,206,206)`; the whole
+parenthesised base group - `(`, value, `)` - in the separator **teal**
+`(66,222,222)`. The 4-digit fields end flush against their separators
+(`180/ 180 ( 180)`).
 
 **AP gauge**: bar widget at `(X+0x40, WY+0x2d)`, value record `+0x10e`.
 `FUN_80034b6c(0x31)` stages the widget kind into `gp+0x14c`; the widget
@@ -172,9 +239,11 @@ right end `(184,80,8,16)` (= ICO record `0x6A`, `dx = 0x60`).
 
 **Derived-stat grid** (`FUN_801cf650` computes the values first). 3 rows at
 `WY+0x42 / +0x4f / +0x5c`, two columns. Left column: label `X+0`, live value
-`X+0x28`, growth value `X+0x48`. Right column: label `X+0x74`, live value
-`X+0x9c`, growth value `X+0xbc`. Live values clamp at 999 and come from
-`DAT_801ef088..09c`; growth values from record `+0x122..+0x12c`. Then
+`X+0x28`, `(` at `X+0x40`, growth value `X+0x48`, `)` at `X+0x60`. Right
+column: label `X+0x74`, live value `X+0x9c`, `(` at `X+0xb4`, growth value
+`X+0xbc`, `)` at `X+0xd4`. Live values (3-digit fields) clamp at 999 and
+come from `DAT_801ef088..09c` in text white; growth values from record
+`+0x122..+0x12c`, parens + growth in the separator teal. Then
 `s8 += 0x2b`. Instr `801d3780`..`801d3b48`.
 
 **Equipment grid** (7 slots): icon + item name. Icon codes from the fixed
@@ -230,6 +299,124 @@ accessory-passive table `0x8007625c` at `(X+0x30, Yrun+0xe)` (CLUT 4) and
 any skills." Instr `801d3e64`..`801d4098`. See
 [`accessory-passive-table.md`](../formats/accessory-passive-table.md).
 
+## Top-level pause menu
+
+Three descriptor-table windows (see the window table above): 50 command
+list, 49 money/play-time box, 51 party info panel. Sources
+`ghidra/scripts/funcs/overlay_menu_801cfd68.txt` / `_801d0148.txt` /
+`_801d030c.txt`.
+
+**Command list (id 50, `FUN_801CFD68`)**: seven rows at `(WX+0x14,
+WY + n*0xe)`, in draw order **Items, Magic, Equip, Status, Options,
+Load, Save** - all staged CLUT 7. The selected row draws the
+pointing-hand cursor at `(WX, row_y)` via the animated-cursor primitive
+`FUN_8002b994` (skipped entirely when state word `DAT_801e46bc` bit
+`0x4000` is set; bit `0x2000` selects the dimmed cursor variant). Rows
+gray to CLUT 0 when blocked: Load when the dialog-context pointer
+`DAT_8007b450` targets an `0x0D` byte, Save when the save-enabled flag
+`DAT_8007b6a8` is clear.
+
+**Money / play-time box (id 49, `FUN_801D0148`)**: money pictogram (ICO
+`0x62`) at `(WX, WY+2)` with the amount as an 8-digit field
+(`FUN_80034b78`) at `(WX+0x28, WY)`. When the casino-coin flag
+(`FUN_8003ce64(8)`) is set, a coin row follows: ICO `0x66` at
+`(WX, y+0x10)`, coin bank `0x800845A4` 8-wide at `(WX+0x28, y+0xe)`.
+The play-time row draws ICO `0x63` at `(WX, y+0x10)` and the clock from
+the 60 Hz tick counter `0x80084570`: hours 3-wide (clamped 99, then
+minutes/seconds pin 59) at `+0x20`, colon glyphs (`FUN_8003c1f8` code 9)
+at `+0x38`/`+0x50`, zero-padded 2-wide minutes/seconds (`FUN_80034e4c`)
+at `+0x40`/`+0x58`.
+
+**Party info panel (id 51, `FUN_801D030C`)**: one block per roster
+member (ids `u8[3]` at `0x80084598`, count `0x80084594`; live record
+`0x80084708 + id*0x414`) at stride `0x3e`. Per block: name (`+0x2A7`)
+at `(WX+0x10, Y)`; LV icon (ICO `0x0a`) at `(WX+0x70, Y+2)` with the
+2-digit level (`+0x130`) at `WX+0x80`; HP label (ICO `0x3f` - the same
+`(208,86,16,10)` sheet rect as status code `0x07`) at `(WX+0x28,
+Y+0x11)` with current/max 4-digit fields at `WX+0x38`/`WX+0x60` and the
+slash at `WX+0x58` on row `Y+0xf`; MP likewise (ICO `0x40`) on rows
+`Y+0x1e`/`Y+0x1c`; and the kind-`0x31` AP gauge widget at `(WX+0x28,
+Y+0x29)` fed from the persistent AP `+0x10E`. HP / MP value ink comes
+from per-member health-tier color fns (`FUN_800349EC` /
+`FUN_80035EA8`); the full-health tier is the plain CLUT-7 white.
+
+Engine port: `engine-render::field_menu_draws_for` +
+`field_menu_info_draws_for` (text) and `field_menu_icon_sprites_for`
+(hand cursor, money/time pictograms, LV/HP/MP labels, per-member AP
+gauges via the shared `ap_gauge_sprites` widget). The engine shows the
+coin row only when the casino bank is nonzero; the health-tier ink
+thresholds stay untraced.
+
+## Equip screen
+
+The Equip screen composes four descriptor-table windows (draw order: tab 2,
+party 21, item-list 23, main 22 - the main window's opaque interior occludes
+the item-list window's lower span). Content renderers, all in the menu
+overlay:
+
+**Tab (id 2)** - `FUN_801DCA94` stages CLUT 7 and draws the "Equip" STR at
+the tab window's content origin; the carved banner behind it is caller art
+(see `ghidra/scripts/funcs/overlay_menu_801dca94.txt`).
+
+**Party window (id 21, rect `(14,42,80,38)`)** - `FUN_801D2094` (shared with
+the status screen's id-26 party list; see
+`ghidra/scripts/funcs/overlay_menu_801d2094.txt`). For each present party
+member (count `DAT_80084594`, roster order bytes at `0x80084598`; only
+roster slots `< 3` draw): the name STR (record `+0x2A7`) at `(X+6,
+Y + 0xE*i)`, CLUT 7. The pointing-hand cursor (`FUN_8002B994`) draws at
+`X-0xC` on the focused row, gated by the focus word `DAT_801E46C4`
+(bit `0x4000` hides, `0x2000` selects the blink variant, low 12 bits =
+row).
+
+**Main window (id 22, rect `(14,96,292,108)`)** - `FUN_801D21C0` (see
+`ghidra/scripts/funcs/overlay_menu_801d21c0.txt`). Early-outs unless the
+shown character's roster byte is `< 3`. First pass:
+
+- "Best Equipment" STR at `(X+0x10, Y)` - cursor row 0 of the window's
+  cursor space (`DAT_801E46C0`), hand at `(X, Y)`.
+- 7 slot rows at `Y + 0xE*(i+1)`: hand cursor at `X`, 12x12 slot pictogram
+  (ICO `FUN_8002C488`, code `DAT_801E43F4[i]` - the same fixed 7-code
+  array as the status equipment grid: weapon fist / helmet / armor / boot /
+  3x Goods ring) at `X+0x10`, the equipped item's name STR at `X+0x20`.
+  Item id: row 0 reads `record[0x196 + *(i16*)(DAT_8007B42C + char*2)]`
+  (per-character weapon-slot offset), rows 1..6 read
+  `record[0x196 + DAT_801E43E8[row]]`; names via the item-name table
+  `0x8007436C + id*0xC`.
+
+Second pass only when the submenu id is settled on the equip screen
+(`DAT_801E46A4 == DAT_801E46A8 == 0x13`) and no transition is pending
+(`_DAT_8007BB80 == 0`):
+
+- **Cursor row 0 ("Best Equipment")**: for each armament row 0..3 whose
+  best-candidate id (`DAT_801EF0C0[i]`) differs from the equipped id: a
+  change-arrow glyph `FUN_8003C310(2)` at `X+0x8E` (CLUT 0), then - for
+  class-1 (equipment) items - a weapon-class pictogram at `X+0xA8` (class
+  from the equip-stat record `+7` bits `0x60`, remapped `{2->2, 1->1,
+  0->3}` into `DAT_801E43F4`) with the candidate name at `X+0xB8`
+  (non-equipment names land at `X+0xA8`). Below, the **stat-compare
+  block**: 3 rows at `Y+0x48/+0x55/+0x62`; 3-char stat label STR
+  (`0x801CE9A0/A4/A8`) at `X+0xA0`, current value (3-digit NUM, 999-clamp,
+  `DAT_801EF08C/90/94`) at `X+0xC8`; when the preview value
+  (`DAT_801EF0AC/B0/B4`) differs, an up/down arrow `FUN_8003C1F8(4|5)` at
+  `X+0xE4` (CLUT 6 raised / CLUT 1 lowered) and the preview value at
+  `X+0xF0`.
+- **Cursor row 1..7**: the selected slot's equipped item id lands in
+  `DAT_801E46B0` and, when non-zero, an item info panel draws at
+  `(X+0x94, Y+0xC)`: `FUN_801D0F1C` (description text) over two
+  `0x90 x 0x28` shade boxes (`FUN_8002C69C`) at `Y+0xC` and `Y+0x44`.
+
+**Item-list window (id 23, rect `(174,22,132,182)`)** is renderer-less in
+the descriptor table (frame-only container); its picker content is drawn by
+the equip flow outside these window renderers.
+
+Engine port: `engine-render::equip_screen_draws_for` (window contents at
+the offsets above; the candidate list fills the id-23 rect at the shared
+`0xD` list pitch) + `equip_screen_sprites_for` (pictogram column + hand
+cursors from the system-UI atlas), pens disc-parsed from the descriptor
+table. The engine's 8th slot row (its equip-array over-model) stays
+navigable but icon-less; the stat-compare block previews the hovered
+candidate rather than the best-equipment pick.
+
 ## Scroll widgets (submenu 2 or 3)
 
 Up arrow (icon `0x67`) when `_DAT_8007bb90 > 0` and down arrow (icon `0x68`)
@@ -237,15 +424,81 @@ when more rows follow, both at `X = WX + (a0+0xe >> 1) - 4`. Scrollbar thumb
 (bar primitive) at `(WX, WY + (a0+0x10) - 0x28)`, length from `a0+0xe`,
 `FUN_80034b6c(3)`. Instr `801d477c`..`801d4838`.
 
+## Options screen
+
+Three functions in the menu overlay (PROT 0899, base `0x801CE818`):
+
+- **Row renderer** `FUN_801D2910`, called by the window-id-48 content
+  renderer `FUN_801DCEF0` (a thin `FUN_801d2910(win, 0, 9)` wrapper) - see
+  `ghidra/scripts/funcs/overlay_menu_801d2910.txt`. Per display row it
+  draws the cursor arrow at content `x-10`, the label string at `x+8` and
+  (on value rows) the value string at `x+140`, then advances y by the
+  row's layout pitch.
+- **Input SM** `FUN_801DA9F8` (browse cursor `DAT_801E46C0`, low 12 bits =
+  row, bit `0x1000` = editing, bit `0x4000` = cursor hidden).
+- **Value-popup renderer** `FUN_801D2B44` (window id 47).
+
+Three data tables drive the rows:
+
+| VA | contents |
+|---|---|
+| `0x801E4404` | display layout: 10 × `[u16 row_id, u16 advance]` - row ids `0,1,2,3,6,4,7,9,8,10`, advance 14 px (20 px on the two group-separator rows, Battle Command + Field HP Display) |
+| `0x801E44B8` | row descriptors: 8-byte nodes `[config_word_ptr: u32][value_count: u8][label_ink: u8][row_id: u8][string_index: u8]`, walked as a linked list keyed on `row_id` |
+| `0x801E442C` | shared string pointer table; a row's value string = `strings[string_index + value + 1]` |
+
+The row set (label / choices / config word - the words live in the saved
+`0x800845xx/0x800846xx` config block):
+
+| row | choices | config word |
+|---|---|---|
+| Battle Camera | Close / Normal / Far | `0x800846C0` |
+| Battle Select Attack | Select / Automatic / Command | `0x800846C4` |
+| Battle Command | Directional Buttons / ✕-glyph " button" | `0x800846C8` |
+| Field Move | Walk / Run | `0x800846CC` |
+| Field HP Display | Immediate / Gradual / Display Off | `0x800845C4` |
+| Sound | Stereo / Monaural | `0x800846BC` |
+| Dual Shock (header, no value) | - | - |
+| "  Battles" | Vibration On / Off | `0x800845C8` |
+| "  Events" | Vibration On / Off | `0x800845A8` |
+| "  Encounters" | Vibration On / Off | `0x800845CC` |
+
+Inks (staged via `DAT_8007B454`): labels ink 7 (white), values ink 6
+(gold), the indented Dual Shock sub-row labels ink 5 (teal) - the per-row
+label ink is the descriptor node's `+5` byte. While the value popup is
+open every non-cursor row drops to ink 0, except a header row above the
+cursor which keeps its ink. A hidden row exists in the descriptor list
+but not in the layout table: "Battle Voices" (Voices On / Off,
+`0x800845AC`) - present strings, never displayed in the US build.
+
+Interaction (`FUN_801DA9F8`): Up/Down move the browse cursor, skipping
+valueless rows (the SM re-navigates off the header); Cross opens the
+value popup seeded with the current value; Cross inside commits the popup
+cursor **directly into the config word** (committing "Events" to
+Vibration Off also zeroes the live rumble state `0x8007B92C/0x8007B930`);
+Circle backs out of the popup, and out of the screen - there is no
+revert, edits are already live. The popup is window descriptor id 47: its
+x/w `(170, 128)` are static, y/h are stamped per open
+(`y = id-48 y + 0x16 + Σ advances above the cursor row`,
+`h = choices × 13 - 4`, flipped up by `choices × 13 + 0x1C` when the
+bottom would pass y = `0xB0`). `FUN_801D2B44` lists the choices at a
+13-px pitch, text inset `+0x14`, cursor at the content origin.
+
+Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
+`OptionsSession` Browsing→Editing SM, `options_popup_content_rect`) +
+`engine-render::options_draws_for`; the Sound row drives the audio
+mixer's monaural downmix (`engine-audio AudioOut::set_mono`), the other
+settings persist in the engine's options config file.
+
 ## Draw primitives + CLUT staging
 
 Three shared primitives render everything:
 
 | tag | function | signature | notes |
 |---|---|---|---|
-| STR | `FUN_80036888` | `(str, x, count, y)` | proportional string; MES control tokens `0x7c` (advance x by `0xe`), `0xce`/`0xcf` |
-| ICO | `FUN_8002c488` | `(x, y, code)` | one UI-icon sprite; UV/CLUT from a 12-byte-stride table at `0x800732a4`, codes `0x86..0x8a` from `0x80073db8` |
-| NUM | `FUN_80034b78` | `(value, x, y, digits)` | decimal digits vs the powers-of-ten table at `0x80073dcc` |
+| STR | `FUN_80036888` | `(str, count, 0, x, y)` | proportional string; MES control tokens: `0x7c` = line break (`y += 0xe`, x resets), `0xcf b` = set text CLUT inline, `0xce b` = inline icon/number via the `0x80074050` aux record `b` (`[i16 ico_code, u8 x_advance, i8 dy]`; a zero code draws a number variable instead) |
+| ICO | `FUN_8002c488` | `(x, y, code)` | one UI-icon sprite; 12-byte-stride table at `0x800732a4`: `+3` CLUT byte (`&0x7f` → row at VRAM y 511; bit `0x40` = alternate encoding `(896+(b&3)*16, 0x1F2+((b&0x3f)>>2))`; bit `0x80` = blend), `+4..+7` = U/V/W/H, `+8/+0xa` = baked dx/dy (codes `0x86..0x8a`, texpage from `0x80073db8`) |
+| NUM | `FUN_80034b78` | `(value, digits, x, y)` | decimal digits vs the powers-of-ten table at `0x80073dcc`; one glyph cell per digit at a fixed 8-px pitch, right-aligned in the `digits`-wide field (leading cells blank) |
+| CUR | `FUN_8002b994` | `(kind, mode, x, y)` | 16x16 animated cursor sprite; 4-record 0x18-stride table at `0x80073d18` (kind 0 = pointing hand `(152,64)`, 1 = 2-frame `(224/240,64)`, 2 = left triangle `(168,8)`, 3 = right triangle `(168,40)`; all CLUT row 7). Mode 1 animates (idle bob from the `0x80073d78` offset table), 0 draws static |
 
 The palette-staging global is **`DAT_8007b454`** (`0x80080000 - 0x4bac`);
 the in-primitive CLUT halfword is `index + 0x7f86`. It is **read only by the
@@ -253,9 +506,11 @@ string primitive** `FUN_80036888` (at `80036b74`). Icon and number primitives
 carry their own CLUT (icon from the `0x800732a4` table, number from
 `gp+0x13c`), so a `DAT_8007b454` write immediately before an ICO/NUM draw is
 inert for that draw and is really staging the palette for the next string.
-Distinct values seen: 7 (default text), 5 (status separators), 6 (magic
-header + skill labels), 9 (moves header), 4 (skill passives), 1 (command
-label + arrows), 0 (non-selected magic rows).
+Distinct values seen: 7 (default text - reads back as RGB `(206,206,206)`
+in the framebuffer), 5 (status separators - the teal `(66,222,222)`
+parenthesised-value ink), 6 (magic header + skill labels), 9 (moves
+header), 4 (skill passives), 1 (command label + arrows), 0 (non-selected
+magic rows).
 
 ## Record fields consumed
 
@@ -267,7 +522,7 @@ Field offsets into the `0x414`-stride live record emitted by this panel:
 | `+0x4` | next-level threshold |
 | `+0x104 / +0x106 / +0x11c` | HP max / current / base |
 | `+0x108 / +0x10a / +0x11e` | MP max / current / base |
-| `+0x10e` | HP-bar value |
+| `+0x10e` | AP-gauge value (the persistent out-of-battle AP; 0 on a fresh party - the new-game template zeroes it) |
 | `+0x122..+0x12c` | six growth-stat values |
 | `+0x130` | displayed level (matches the starting-level randomizer target) |
 | `+0x13c / +0x13d / +0x161` | spell count / spell ids / spell levels |
@@ -319,8 +574,25 @@ The AP gauge's **meter fill** and value digits follow the traced
 `FUN_8002c0b0` layout (gradient fill = a procedurally-baked column of the
 gouraud endpoint colours stretched to `value/2` px; per-row linear
 interpolation approximates the GPU DDA until an AP>0 retail capture pins
-the sub-pixel truncation - both golden captures hold AP 0).
-Still engine-styled: the Condition-pager arrows and element diamonds, the tab banner
-art, the top-level row content (renderer `FUN_801CFD68` untraced), and the
-Items / Spells / Arts / Equip-picker screens (their content layouts do not
-fill the pinned windows yet, so they keep a generic frame).
+the sub-pixel truncation - both golden captures hold AP 0); the gauge
+value feeds from the persistent record `+0x10E` AP, not the battle
+gauge. The satellite windows are sprite-ported at the traced offsets:
+the party-list pointing hand + Condition-pager triangles
+(`status_satellite_icon_sprites_for`, frame-0 statics of the
+`0x80073d18` cursor table), the summary LV label and the per-character
+ATR element icons (extension-strip TIM `PROT.DAT[0x10178]` decoded with
+the `PROT.DAT[0x10028]` row-500 palettes). The title tabs wear the
+carved plaque via the shared `engine-render::tab_banner_draws` (cap /
+tiled body / cap, CLUT row 12) with the label in CLUT-7 white; tab
+windows draw no 9-slice frame. Number fields lay out on the retail
+fixed 8-px digit cells (`num_field_draws`), and the parenthesised
+base/growth groups use the retail teal ink. The Equip screen renders its
+retail four-window set (tab 2 + party 21 + item-list 23 + main 22)
+through `equip_screen_draws_for` + `equip_screen_sprites_for` at the
+traced `FUN_801D21C0` / `FUN_801D2094` offsets (see
+[Equip screen](#equip-screen)). The top-level menu renders the traced
+row / money-box / party-panel content (see
+[Top-level pause menu](#top-level-pause-menu)). Still engine-styled:
+the Items / Magic / Equip-picker screens (their content layouts do not
+fill the pinned windows yet, so they keep a generic frame) and the
+HP / MP health-tier inks.

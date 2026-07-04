@@ -73,6 +73,11 @@ impl FieldMenuSubsession {
         spell_catalog: &SpellCatalog,
         equipment_table: &EquipmentTable,
     ) -> Self {
+        // `chain_library` remains a build input so engines can construct
+        // the Arts editor variant directly (no retail pause-menu row
+        // opens it - retail's list is Items / Magic / Equip / Status /
+        // Options / Load / Save).
+        let _ = chain_library;
         match row {
             FieldMenuRow::Items => Self::Items(build_inventory_session(world)),
             FieldMenuRow::Equip => {
@@ -83,16 +88,17 @@ impl FieldMenuSubsession {
                     char_slot: leader,
                 }
             }
-            FieldMenuRow::Spells => Self::Spells(build_spell_session(world, spell_catalog)),
-            FieldMenuRow::Arts => {
-                Self::Arts(ChainEditor::new(active_leader_slot(world), chain_library))
-            }
+            FieldMenuRow::Magic => Self::Spells(build_spell_session(world, spell_catalog)),
             FieldMenuRow::Status => Self::Status(StatusScreenSession::new(status_snapshots(world))),
+            FieldMenuRow::Load => Self::Save(SaveSelectSession::new(
+                SaveSelectMode::Load,
+                save_slots.to_vec(),
+            )),
             FieldMenuRow::Save => Self::Save(SaveSelectSession::new(
                 SaveSelectMode::Save,
                 save_slots.to_vec(),
             )),
-            FieldMenuRow::Config => Self::Config(OptionsSession::new(options.clone())),
+            FieldMenuRow::Options => Self::Config(OptionsSession::new(options.clone())),
         }
     }
 
@@ -101,11 +107,17 @@ impl FieldMenuSubsession {
         match self {
             Self::Items(_) => FieldMenuRow::Items,
             Self::Equip { .. } => FieldMenuRow::Equip,
-            Self::Spells(_) => FieldMenuRow::Spells,
-            Self::Arts(_) => FieldMenuRow::Arts,
+            Self::Spells(_) => FieldMenuRow::Magic,
+            // The Arts chain editor is an engine extension with no
+            // retail pause-menu row; park the resume cursor on Status
+            // (the retail surface that lists a character's arts).
+            Self::Arts(_) => FieldMenuRow::Status,
             Self::Status(_) => FieldMenuRow::Status,
-            Self::Save(_) => FieldMenuRow::Save,
-            Self::Config(_) => FieldMenuRow::Config,
+            Self::Save(s) => match s.mode() {
+                SaveSelectMode::Load => FieldMenuRow::Load,
+                _ => FieldMenuRow::Save,
+            },
+            Self::Config(_) => FieldMenuRow::Options,
         }
     }
 
@@ -321,9 +333,14 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
         if hms.hp_max == 0 {
             continue;
         }
-        let xp = member.cumulative_xp() as u32;
-        let level = legaia_save::level_for_cumulative_xp(xp);
-        let xp_to_next = xp_to_next_level(xp, level);
+        let xp = member.cumulative_xp();
+        // Retail LV is the record's own +0x130 byte (FUN_801D33D8); fall back
+        // to base-curve inference for records that never had it stamped.
+        let level = match member.magic_rank() {
+            l @ 1..=99 => l,
+            _ => legaia_save::level_for_cumulative_xp(xp),
+        };
+        let xp_to_next = xp_to_next_level(member, level);
         // The retail 3x2 derived-stat grid: live values from the `+0x110`
         // window, growth values (the parenthesised number) from the
         // `+0x122..+0x12D` record window, ordered ATK/UDF/LDF | SPD/INT/AGL
@@ -361,7 +378,11 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             hp_max: hms.hp_max,
             mp: hms.mp_cur,
             mp_max: hms.mp_max,
-            ap: world.ap_gauges.get(i).map(|g| g.current_ap).unwrap_or(0),
+            // The status page's AP gauge reads the persistent char-record
+            // AP at `+0x10E` (`hp_mp_sp().sp_max` - 0 on a fresh party;
+            // the new-game seed zeroes it), NOT the battle ApGauge's base
+            // AP. REF: FUN_801D33D8 (docs/subsystems/field-menu.md).
+            ap: hms.sp_max.min(u8::MAX as u16) as u8,
             ap_max: 100,
             attack: world.battle_attack.get(i).copied().unwrap_or(0),
             defense: world.battle_defense.get(i).copied().unwrap_or(0),
@@ -374,11 +395,17 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
     out
 }
 
-/// Best-effort XP-to-next-level hint. Engines that have a per-character
-/// XP curve can replace; default uses the global retail XP table.
-fn xp_to_next_level(current_xp: u32, level: u8) -> u32 {
-    let next = legaia_save::xp_for_level(level + 1);
-    next.saturating_sub(current_xp)
+/// The Status-menu "Next Level" number. Retail (`FUN_801D33D8`) draws the
+/// record's next-level-threshold word (`+0x4`) **verbatim** - the cumulative
+/// XP total at which the next level lands, NOT the remaining difference.
+/// Records that never had `+0x4` stamped (engine-synthesized rosters) fall
+/// back to the base-curve threshold; at L99 retail carries 0 there.
+// REF: FUN_801D33D8 (Next Level draw), FUN_801E9504 (threshold writer)
+fn xp_to_next_level(member: &legaia_save::CharacterRecord, level: u8) -> u32 {
+    match member.next_level_xp() {
+        0 if level < 99 => legaia_save::xp_for_level(level + 1),
+        threshold => threshold,
+    }
 }
 
 fn equip_slot_label(slot: u8) -> &'static str {
@@ -596,7 +623,7 @@ mod tests {
     #[test]
     fn build_spells_session_population() {
         let w = fresh_world();
-        let s = build(FieldMenuRow::Spells, &w);
+        let s = build(FieldMenuRow::Magic, &w);
         match s {
             FieldMenuSubsession::Spells(sm) => {
                 assert_eq!(sm.party().len(), 3);
@@ -638,7 +665,7 @@ mod tests {
             ..OptionsState::default()
         };
         let s = FieldMenuSubsession::build(
-            FieldMenuRow::Config,
+            FieldMenuRow::Options,
             &w,
             &opts,
             &fresh_save_slots(),
@@ -664,7 +691,7 @@ mod tests {
     #[test]
     fn tick_pad_edge_options_circle_cancels() {
         let w = fresh_world();
-        let mut s = build(FieldMenuRow::Config, &w);
+        let mut s = build(FieldMenuRow::Options, &w);
         s.tick_pad_edge(PadButton::Circle.mask());
         assert!(s.is_done());
     }
@@ -696,7 +723,7 @@ mod tests {
     #[test]
     fn tick_pad_edge_spells_circle_cancels() {
         let w = fresh_world();
-        let mut s = build(FieldMenuRow::Spells, &w);
+        let mut s = build(FieldMenuRow::Magic, &w);
         s.tick_pad_edge(PadButton::Circle.mask());
         assert!(s.is_done());
     }

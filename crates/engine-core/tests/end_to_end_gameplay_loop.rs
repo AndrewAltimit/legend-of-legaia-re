@@ -92,7 +92,7 @@ fn synthetic_party() -> Party {
             sp_max,
         });
         rec.set_level(level);
-        rec.set_cumulative_xp(xp as u16);
+        rec.set_cumulative_xp(xp);
         rec.set_stat_cap(0x3E7);
     }
     p

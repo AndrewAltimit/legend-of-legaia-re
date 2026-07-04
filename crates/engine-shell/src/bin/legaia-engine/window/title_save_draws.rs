@@ -262,17 +262,17 @@ impl PlayWindowApp {
     /// order, so a later window's opaque interior occludes earlier ones
     /// (the equip main window covers the item-list window's lower span).
     /// Screens whose retail window sets are not capture-pinned (Items /
-    /// Spells / Arts / the Equip picker) frame with
-    /// [`MENU_SUBWINDOW_CONTENT`]. Returns empty unless boot-UI is in a
-    /// FieldMenu state (and not the Save sub-session, which owns its own
-    /// load-screen chrome) and the atlas has been uploaded.
+    /// Spells / Arts) frame with [`MENU_SUBWINDOW_CONTENT`]. Returns
+    /// empty unless boot-UI is in a FieldMenu state (and not the Save
+    /// sub-session, which owns its own load-screen chrome) and the atlas
+    /// has been uploaded.
     pub(super) fn field_menu_chrome_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
         use legaia_asset::menu_windows::{
-            OPTIONS_SCREEN_WINDOWS, STATUS_SCREEN_WINDOWS, TOP_LEVEL_WINDOWS,
+            EQUIP_SCREEN_WINDOWS, OPTIONS_SCREEN_WINDOWS, STATUS_SCREEN_WINDOWS, TOP_LEVEL_WINDOWS,
         };
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
         let Some(assets) = self.save_menu.as_ref() else {
@@ -283,15 +283,14 @@ impl PlayWindowApp {
         };
         // The Save sub-session renders through the save-select chrome
         // (`save_select_chrome_sprite_draws`); don't double-frame it.
-        // Items / Spells / Arts and the Equip picker keep the generic
-        // near-fullscreen frame: their retail window sets exist in the
-        // descriptor table (equip = tab 2 + ids 21/22/23) but the engine
-        // content layouts don't fill those windows yet.
+        // Items / Spells / Arts keep the generic near-fullscreen frame:
+        // their retail window sets are not capture-pinned yet.
         let ids: &[usize] = match sub {
             None => &TOP_LEVEL_WINDOWS,
             Some(FieldMenuSubsession::Save(_)) => return Vec::new(),
             Some(FieldMenuSubsession::Status(_)) => &STATUS_SCREEN_WINDOWS,
             Some(FieldMenuSubsession::Config(_)) => &OPTIONS_SCREEN_WINDOWS,
+            Some(FieldMenuSubsession::Equip { .. }) => &EQUIP_SCREEN_WINDOWS,
             Some(_) => &[],
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
@@ -301,15 +300,62 @@ impl PlayWindowApp {
             let (x, y, w, h) = MENU_SUBWINDOW_CONTENT;
             out.extend(legaia_engine_render::menu_window_chrome_draws_for(
                 &assets.rects,
-                (x - 6, y - 2, w + 12, h + 12),
+                (x - 8, y - 8, w + 16, h + 16),
                 stage_origin,
                 stage_scale,
             ));
         }
         for &id in ids {
+            // The title-tab windows (descriptor ids 0..=4) wear the carved
+            // plaque instead of the gold 9-slice + filigree frame - retail
+            // draws no window chrome for them beyond the plaque sprites
+            // (RAM prim scan over the menu_status_town capture).
+            if id <= legaia_asset::menu_windows::window_ids::TAB_OPTIONS {
+                let (_, _, w, _) = self.menu_window_rect(id);
+                out.extend(legaia_engine_render::tab_banner_draws(
+                    &assets.rects,
+                    self.menu_window_pen(id),
+                    w,
+                    stage_origin,
+                    stage_scale,
+                ));
+                continue;
+            }
             out.extend(legaia_engine_render::menu_window_chrome_draws_for(
                 &assets.rects,
                 self.menu_window_frame_rect(id),
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        // The options value popup (window id 47) frames on top of the
+        // settings window while a row is being edited; its y/h are
+        // per-open (retail stamps the descriptor - see
+        // `options_popup_rect`).
+        if let Some(FieldMenuSubsession::Config(s)) = sub {
+            if let Some(p) = s.popup() {
+                let (x, y, w, h) = self.options_popup_rect(&p);
+                out.extend(legaia_engine_render::menu_window_chrome_draws_for(
+                    &assets.rects,
+                    (x - 6, y - 2, w + 12, h + 12),
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
+            // Selected-row pointing hand at `x-10` on the cursor row
+            // (retail's FUN_8002b994 kind-0 cursor, shared with the
+            // status party list).
+            let row_y_off: i32 = s
+                .state()
+                .rows()
+                .iter()
+                .take(s.cursor() as usize)
+                .map(|r| r.advance)
+                .sum();
+            out.push(legaia_engine_render::options_hand_cursor_sprite(
+                &assets.rects,
+                self.menu_window_pen(legaia_asset::menu_windows::window_ids::OPTIONS_MAIN),
+                row_y_off,
                 stage_origin,
                 stage_scale,
             ));
@@ -318,7 +364,9 @@ impl PlayWindowApp {
         // value digits) and the 7-slot equipment pictogram grid are UI-icon
         // sprites from the system-UI atlas (the text stand-ins are
         // suppressed in `status_screen_draws_for`), positioned off the
-        // id-28 content origin.
+        // id-28 content origin. The satellite windows add the party-list
+        // hand cursor, the "Condition" pager triangles and the summary
+        // LV + ATR element icons.
         if let Some(FieldMenuSubsession::Status(s)) = sub {
             use legaia_asset::menu_windows::window_ids;
             let ap = s.current().map(|snap| snap.ap as u16).unwrap_or(0);
@@ -326,6 +374,68 @@ impl PlayWindowApp {
                 &assets.rects,
                 self.menu_window_pen(window_ids::STATUS_MAIN),
                 ap,
+                stage_origin,
+                stage_scale,
+            ));
+            // ATR icon by roster character id (slot) of the highlighted
+            // member; the icon set is Vahn/Noa/Gala in character order.
+            let atr_char = s.current().map(|snap| snap.slot as usize).unwrap_or(0);
+            out.extend(legaia_engine_render::status_satellite_icon_sprites_for(
+                &assets.rects,
+                s.cursor() as usize,
+                atr_char,
+                self.menu_window_pen(window_ids::STATUS_PARTY_LIST),
+                self.menu_window_pen(window_ids::STATUS_CONDITION),
+                self.menu_window_pen(window_ids::STATUS_SUMMARY),
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        // Equip screen: the main window's slot pictogram column + the
+        // pointing-hand cursors (party row always, slot row while in the
+        // slot picker), at the traced FUN_801D21C0 / FUN_801D2094
+        // offsets off the pinned window origins.
+        if let Some(FieldMenuSubsession::Equip { session, char_slot }) = sub {
+            use legaia_asset::menu_windows::window_ids;
+            use legaia_engine_core::equip_session::EquipState;
+            let slot_cursor = match session.state() {
+                EquipState::SlotPicker { cursor } => Some(cursor as u16),
+                _ => None,
+            };
+            // Retail draws exactly 7 pictogram rows; the engine's 8th
+            // slot row (Accessory) stays navigable but icon-less so the
+            // column matches the retail capture and nothing lands on the
+            // window's bottom border.
+            let n_rows = session.record().equip.len().min(7);
+            out.extend(legaia_engine_render::equip_screen_sprites_for(
+                &assets.rects,
+                n_rows,
+                self.menu_window_pen(window_ids::EQUIP_MAIN),
+                self.menu_window_pen(window_ids::EQUIP_PARTY),
+                *char_slot as usize,
+                slot_cursor,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        // Top-level pause menu: command-list hand cursor, money /
+        // play-time box pictograms, and the party panel's LV / HP / MP
+        // label sprites + per-member AP gauges (FUN_801CFD68 /
+        // FUN_801D0148 / FUN_801D030C).
+        if sub.is_none()
+            && let Some(menu) = self.session.field_menu.as_ref()
+        {
+            use legaia_asset::menu_windows::window_ids;
+            let snaps =
+                legaia_engine_core::field_menu_dispatch::status_snapshots(&self.session.host.world);
+            let party_ap: Vec<u16> = snaps.iter().map(|s| s.ap as u16).collect();
+            out.extend(legaia_engine_render::field_menu_icon_sprites_for(
+                &assets.rects,
+                menu.cursor(),
+                &party_ap,
+                self.menu_window_pen(window_ids::TOP_COMMAND_LIST),
+                self.menu_window_pen(window_ids::TOP_MONEY_TIME),
+                self.menu_window_pen(window_ids::TOP_INFO_PANEL),
                 stage_origin,
                 stage_scale,
             ));

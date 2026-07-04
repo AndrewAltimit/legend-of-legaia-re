@@ -116,7 +116,7 @@ fn field_menu_draws_emit_rows_and_footer() {
             enabled: true,
         },
         FieldMenuRowView {
-            label: "Equip",
+            label: "Magic",
             enabled: true,
         },
         FieldMenuRowView {
@@ -126,9 +126,25 @@ fn field_menu_draws_emit_rows_and_footer() {
     ];
     let draws = field_menu_draws_for(&font, &rows, 0, 1234, 90, (24, 24), (24, 178));
     assert!(!draws.is_empty());
-    // Selected row should produce ">" cursor glyph at the row x.
-    let any_gold = draws.iter().any(|d| d.color[1] > 0.7 && d.color[2] < 0.5);
-    assert!(any_gold);
+    // Retail rows are all-white ink (selection = the hand sprite, drawn
+    // by the sprite pass); a disabled row grays out (the CLUT-0 stand-in
+    // is strictly darker than the CLUT-7 white).
+    let any_white = draws
+        .iter()
+        .any(|d| (d.color[0] - MENU_TEXT_WHITE[0]).abs() < 1e-5);
+    assert!(any_white);
+    let any_dim = draws
+        .iter()
+        .any(|d| d.color[0] < 0.5 && d.color[0] > 0.05 && d.dst.1 < 178);
+    assert!(any_dim);
+    // Row text starts at the retail label inset (WX + 0x14) and rows sit
+    // on the 14-px pitch.
+    assert!(draws.iter().any(|d| d.dst.0 >= 24 + 0x14 && d.dst.1 == 24));
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 >= 24 + 0x14 && d.dst.1 == 24 + 14)
+    );
     // Money + play-time land in the corner-box window (below the list).
     let any_in_money_box = draws.iter().any(|d| d.dst.1 >= 178);
     assert!(any_in_money_box);
@@ -301,16 +317,70 @@ fn options_draws_render_rows() {
     let font = legaia_font::synthetic_for_tests();
     let rows = [
         OptionsRowView {
-            label: "BGM",
-            value: "8/10",
+            label: "Battle Camera",
+            value: Some("Close"),
+            teal: false,
+            advance: 14,
         },
         OptionsRowView {
-            label: "SFX",
-            value: "8/10",
+            label: "Dual Shock",
+            value: None,
+            teal: false,
+            advance: 14,
+        },
+        OptionsRowView {
+            label: "  Battles",
+            value: Some("Vibration On"),
+            teal: true,
+            advance: 14,
         },
     ];
-    let draws = options_draws_for(&font, &rows, 0, (16, 32));
+    let draws = options_draws_for(&font, &rows, 0, None, (24, 40));
     assert!(!draws.is_empty());
+    // Teal ink present (the Dual Shock sub-row label), gold value column,
+    // and nothing below the last row (no footer hint).
+    assert!(draws.iter().any(|d| d.color == OPTIONS_INK_TEAL));
+    assert!(draws.iter().any(|d| d.color == OPTIONS_INK_GOLD));
+    // Value column at the retail +140 inset.
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.color == OPTIONS_INK_GOLD && d.dst.0 >= 24 + 140)
+    );
+    let max_y = draws.iter().map(|d| d.dst.1).max().unwrap();
+    assert!(
+        max_y < 40 + 3 * 14 + 14,
+        "no footer below the rows: {max_y}"
+    );
+}
+
+#[test]
+fn options_draws_popup_lists_choices() {
+    let font = legaia_font::synthetic_for_tests();
+    let rows = [OptionsRowView {
+        label: "Battle Camera",
+        value: Some("Close"),
+        teal: false,
+        advance: 14,
+    }];
+    let popup = OptionsPopupDraw {
+        rect: (170, 62, 128, 35),
+        choices: &["Close", "Normal", "Far"],
+        cursor: 1,
+    };
+    let draws = options_draws_for(&font, &rows, 0, Some(&popup), (24, 40));
+    // Popup choice text starts at the retail +0x14 inset with a 13-px
+    // pitch (three choices: rows at y = 62 / 75 / 88).
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 >= 170 + 0x14 && (62..75).contains(&d.dst.1))
+    );
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 >= 170 + 0x14 && d.dst.1 >= 62 + 26)
+    );
 }
 
 #[test]
@@ -409,8 +479,36 @@ fn inventory_use_draws_target_phase_renders_target_column() {
     assert!(with_target.len() > no_target.len());
 }
 
+/// The retail equip-screen window pens (descriptor ids 21 / 23 / 22).
+const EQUIP_PARTY_PEN: (i32, i32) = (14, 42);
+const EQUIP_LIST_PEN: (i32, i32) = (174, 22);
+const EQUIP_MAIN_PEN: (i32, i32) = (14, 96);
+
+fn equip_view<'a>(
+    slots: &'a [EquipSlotRow<'a>],
+    candidates: &'a [EquipCandidateRow<'a>],
+    stat_compare: &'a [EquipStatRow<'a>],
+    phase: EquipDrawPhase,
+) -> EquipScreenView<'a> {
+    EquipScreenView {
+        party_names: &["Vahn"][..1],
+        party_cursor: 0,
+        slots,
+        candidates,
+        stat_compare,
+        phase,
+        cursor: 0,
+        active_slot: 0,
+        confirm_label: None,
+        text_cursor: true,
+    }
+}
+
+/// Slot-picker phase: the "Best Equipment" header sits at main+0x10 and
+/// equipped names at main+0x20 on the 0xE-pitch rows (FUN_801D21C0);
+/// party names land at party+6 (FUN_801D2094); empty slots draw nothing.
 #[test]
-fn equipment_session_draws_render_slot_grid_in_picker_phase() {
+fn equip_screen_draws_slot_rows_at_retail_offsets() {
     let font = legaia_font::synthetic_for_tests();
     let slots = vec![
         EquipSlotRow {
@@ -419,74 +517,118 @@ fn equipment_session_draws_render_slot_grid_in_picker_phase() {
         },
         EquipSlotRow {
             label: "Helmet",
-            current_name: "(empty)",
+            current_name: "",
         },
     ];
-    let args = EquipDrawArgs {
-        character_name: "Vahn",
-        slots: &slots,
-        candidates: &[],
-        phase: EquipDrawPhase::SlotPicker,
-        cursor: 0,
-        active_slot: 0,
-        confirm_label: None,
-    };
-    let draws = equipment_session_draws_for(&font, args, (16, 32));
-    assert!(!draws.is_empty());
+    let view = equip_view(&slots, &[], &[], EquipDrawPhase::SlotPicker);
+    let draws = equip_screen_draws_for(
+        &font,
+        &view,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
+    );
+    let (mx, my) = EQUIP_MAIN_PEN;
+    // Header glyphs start at (mx+0x10, my).
+    assert!(draws.iter().any(|d| d.dst.0 == mx + 0x10 && d.dst.1 == my));
+    // Slot 0's item name at (mx+0x20, my+0xE).
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == mx + 0x20 && d.dst.1 == my + 0x0e)
+    );
+    // Empty slot 1 draws no name glyphs on its row.
+    assert!(
+        !draws
+            .iter()
+            .any(|d| d.dst.0 >= mx + 0x20 && d.dst.1 == my + 0x1c)
+    );
+    // Party name at (px+6, py).
+    let (px, py) = EQUIP_PARTY_PEN;
+    assert!(draws.iter().any(|d| d.dst.0 == px + 6 && d.dst.1 == py));
 }
 
+/// Item-picker phase: candidates fill the id-23 list window at the 0xD
+/// list pitch and the stat-compare block lands at the traced main-window
+/// offsets (label +0xA0, current +0xC8, preview +0xF0 only on change).
 #[test]
-fn equipment_session_draws_item_picker_renders_candidate_column() {
+fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
     let font = legaia_font::synthetic_for_tests();
     let slots = vec![EquipSlotRow {
         label: "Weapon",
-        current_name: "(empty)",
+        current_name: "",
     }];
     let candidates = vec![
         EquipCandidateRow {
             name: "Iron Sword",
             count: 1,
-            atk_delta: 5,
-            udf_delta: 0,
         },
         EquipCandidateRow {
             name: "Wood Sword",
-            count: 1,
-            atk_delta: -2,
-            udf_delta: 0,
+            count: 2,
         },
     ];
-    let picker_only = equipment_session_draws_for(
-        &font,
-        EquipDrawArgs {
-            character_name: "Vahn",
-            slots: &slots,
-            candidates: &candidates,
-            phase: EquipDrawPhase::ItemPicker,
-            cursor: 0,
-            active_slot: 0,
-            confirm_label: None,
+    let stat_compare = vec![
+        EquipStatRow {
+            label: "ATK",
+            current: 40,
+            preview: 45,
         },
-        (16, 32),
-    );
-    let no_picker = equipment_session_draws_for(
-        &font,
-        EquipDrawArgs {
-            character_name: "Vahn",
-            slots: &slots,
-            candidates: &[],
-            phase: EquipDrawPhase::SlotPicker,
-            cursor: 0,
-            active_slot: 0,
-            confirm_label: None,
+        EquipStatRow {
+            label: "UDF",
+            current: 30,
+            preview: 30,
         },
-        (16, 32),
+    ];
+    let view = equip_view(
+        &slots,
+        &candidates,
+        &stat_compare,
+        EquipDrawPhase::ItemPicker,
     );
-    assert!(picker_only.len() > no_picker.len());
+    let draws = equip_screen_draws_for(
+        &font,
+        &view,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
+    );
+    let (lx, ly) = EQUIP_LIST_PEN;
+    // Candidate rows at (lx+10, ly + 0xD*i).
+    assert!(draws.iter().any(|d| d.dst.0 == lx + 10 && d.dst.1 == ly));
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == lx + 10 && d.dst.1 == ly + 0x0d)
+    );
+    let (mx, my) = EQUIP_MAIN_PEN;
+    // Stat labels at mx+0xA0 on rows my+0x48 / my+0x55.
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == mx + 0xa0 && d.dst.1 == my + 0x48)
+    );
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == mx + 0xa0 && d.dst.1 == my + 0x55)
+    );
+    // ATK changed: a preview glyph in the +0xF0 3-digit field on row 0.
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 >= mx + 0xf0 && d.dst.1 == my + 0x48)
+    );
+    // UDF unchanged: nothing at/right of the arrow column on row 1.
+    assert!(
+        !draws
+            .iter()
+            .any(|d| d.dst.0 >= mx + 0xe4 && d.dst.1 == my + 0x55)
+    );
 }
 
 #[test]
-fn equipment_session_draws_confirm_phase_shows_yes_no_prompt() {
+fn equip_screen_draws_confirm_phase_shows_yes_no_prompt() {
     let font = legaia_font::synthetic_for_tests();
     let slots = vec![EquipSlotRow {
         label: "Weapon",
@@ -495,24 +637,80 @@ fn equipment_session_draws_confirm_phase_shows_yes_no_prompt() {
     let candidates = vec![EquipCandidateRow {
         name: "Steel Sword",
         count: 1,
-        atk_delta: 3,
-        udf_delta: 0,
     }];
-    let draws = equipment_session_draws_for(
+    let mut view = equip_view(&slots, &candidates, &[], EquipDrawPhase::Confirm);
+    view.confirm_label = Some("Equip Steel Sword?");
+    let with_confirm = equip_screen_draws_for(
         &font,
-        EquipDrawArgs {
-            character_name: "Vahn",
-            slots: &slots,
-            candidates: &candidates,
-            phase: EquipDrawPhase::Confirm,
-            cursor: 0,
-            active_slot: 0,
-            confirm_label: Some("Equip Steel Sword?"),
-        },
-        (16, 32),
+        &view,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
     );
-    // Confirm draws should include candidate column glyphs.
-    assert!(!draws.is_empty());
+    let picker = equip_view(&slots, &candidates, &[], EquipDrawPhase::ItemPicker);
+    let without = equip_screen_draws_for(
+        &font,
+        &picker,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
+    );
+    // The confirm phase layers the label + Yes/No prompt on top of the
+    // candidate list.
+    assert!(with_confirm.len() > without.len());
+}
+
+/// The equip-screen sprites pin the retail placements: pictograms at
+/// main+(0x10, 0xE*(i+1)), the party hand cursor at party+(-0xC,
+/// 0xE*row), and the slot hand cursor on the hovered row.
+#[test]
+fn equip_screen_sprites_pin_pictogram_and_cursor_positions() {
+    let rects = super::title_save_screen::pinned_save_menu_rects();
+    let draws = equip_screen_sprites_for(
+        &rects,
+        8,
+        EQUIP_MAIN_PEN,
+        EQUIP_PARTY_PEN,
+        0,
+        Some(1),
+        (0, 0),
+        1,
+    );
+    let (mx, my) = EQUIP_MAIN_PEN;
+    let at = |x: i32, y: i32| {
+        draws
+            .iter()
+            .find(|d| d.dst.0 == x && d.dst.1 == y)
+            .unwrap_or_else(|| panic!("no sprite at ({x},{y})"))
+    };
+    // Pictogram column: weapon fist / helmet / armor / (hand-guard fist)
+    // / boot / 3x Goods ring, rows my+0xE onward.
+    assert_eq!(at(mx + 0x10, my + 0x0e).src, rects.icon_weapon);
+    assert_eq!(at(mx + 0x10, my + 0x1c).src, rects.icon_helmet);
+    assert_eq!(at(mx + 0x10, my + 0x2a).src, rects.icon_armor);
+    assert_eq!(at(mx + 0x10, my + 0x38).src, rects.icon_weapon);
+    assert_eq!(at(mx + 0x10, my + 0x46).src, rects.icon_boot);
+    for dy in [0x54, 0x62, 0x70] {
+        assert_eq!(at(mx + 0x10, my + dy).src, rects.icon_goods);
+    }
+    // Party hand cursor overhangs the window's left edge (X-0xC).
+    let (px, py) = EQUIP_PARTY_PEN;
+    assert_eq!(at(px - 0x0c, py).src, rects.cursor);
+    // Slot-picker hand cursor on row 1 at the main window's left edge.
+    assert_eq!(at(mx, my + 0x1c).src, rects.cursor);
+
+    // Outside the slot picker no main-window hand is drawn.
+    let no_slot_hand = equip_screen_sprites_for(
+        &rects,
+        8,
+        EQUIP_MAIN_PEN,
+        EQUIP_PARTY_PEN,
+        0,
+        None,
+        (0, 0),
+        1,
+    );
+    assert_eq!(no_slot_hand.len(), draws.len() - 1);
 }
 
 #[test]
@@ -685,4 +883,167 @@ fn spell_menu_draws_in_each_phase() {
         (16, 32),
     );
     assert!(draws2.len() > draws.len());
+}
+
+/// The tab-banner plaque composes exactly like the retail RAM prim
+/// scan of the `menu_status_town` capture: left cap at `(WX-8, WY-4)`,
+/// the 16-wide body tile repeated across the 60-px content width with a
+/// 12-px remainder, and the right cap at `(WX+w, WY-4)` - for the
+/// window-3 content origin `(12, 12)` that is sprites at x
+/// 4/12/28/44/60/72 on y=8.
+#[test]
+fn tab_banner_composes_retail_plaque_pieces() {
+    let rects = super::title_save_screen::pinned_save_menu_rects();
+    let draws = tab_banner_draws(&rects, (12, 12), 60, (0, 0), 1);
+    assert_eq!(draws.len(), 6);
+    // Left cap.
+    assert_eq!(draws[0].src, rects.tab_cap_l);
+    assert_eq!((draws[0].dst.0, draws[0].dst.1), (4, 8));
+    // Body tiles: three full 16-wide + one 12-wide remainder.
+    let (bx, by, _, bh) = rects.tab_body;
+    for (i, (x, w)) in [(12, 16u32), (28, 16), (44, 16), (60, 12)]
+        .iter()
+        .enumerate()
+    {
+        let d = &draws[1 + i];
+        assert_eq!(d.src, (bx, by, *w, bh));
+        assert_eq!((d.dst.0, d.dst.1, d.dst.2), (*x, 8, *w));
+    }
+    // Right cap closes the plaque at WX + content_w.
+    assert_eq!(draws[5].src, rects.tab_cap_r);
+    assert_eq!((draws[5].dst.0, draws[5].dst.1), (72, 8));
+    // Every piece is 20 tall.
+    assert!(draws.iter().all(|d| d.dst.3 == 20));
+}
+
+/// The status satellite sprites land at the traced renderer offsets:
+/// the party-list hand at `(WX-0xc, WY + cursor*0xe)` (FUN_801D2094),
+/// the pager triangles at `WX-0x10` / `WX+0x3A` on `WY-2`
+/// (FUN_801D30A4), and the summary LV icon + ATR element icon at
+/// `(+0x1c, +0xf)` / `(+0x20, +0x1a)` (FUN_801D31EC). Retail window
+/// pens: list (14,38), pager (14,92), summary (14,134).
+#[test]
+fn status_satellite_icons_pin_retail_positions() {
+    let rects = super::title_save_screen::pinned_save_menu_rects();
+    let draws =
+        status_satellite_icon_sprites_for(&rects, 1, 0, (14, 38), (14, 92), (14, 134), (0, 0), 1);
+    let at = |src: (u32, u32, u32, u32)| {
+        draws
+            .iter()
+            .find(|d| d.src == src)
+            .unwrap_or_else(|| panic!("no sprite with src {src:?}"))
+    };
+    // Hand cursor on row 1 (pitch 14).
+    let hand = at(rects.cursor);
+    assert_eq!((hand.dst.0, hand.dst.1), (14 - 0x0c, 38 + 14));
+    // Pager triangles flank the Condition window, 2 px above its pen.
+    let l = at(rects.pager_left);
+    assert_eq!((l.dst.0, l.dst.1), (14 - 0x10, 90));
+    let r = at(rects.pager_right);
+    assert_eq!((r.dst.0, r.dst.1), (14 + 0x3a, 90));
+    // Summary LV label + Vahn's ATR element icon.
+    let lv = at(rects.label_lv);
+    assert_eq!((lv.dst.0, lv.dst.1), (14 + 0x1c, 134 + 0x0f));
+    let atr = at(rects.atr_icons[0]);
+    assert_eq!((atr.dst.0, atr.dst.1), (14 + 0x20, 134 + 0x1a));
+    // A Gala pick (char id 2) swaps only the ATR source rect.
+    let draws2 =
+        status_satellite_icon_sprites_for(&rects, 0, 2, (14, 38), (14, 92), (14, 134), (0, 0), 1);
+    assert!(draws2.iter().any(|d| d.src == rects.atr_icons[2]));
+    assert!(!draws2.iter().any(|d| d.src == rects.atr_icons[0]));
+}
+
+/// Satellite text: names at `WX+6` on the retail `0x0e` pitch; with
+/// `label_icons` the ASCII cursor / pager-arrow stand-ins disappear
+/// (the sprites replace them).
+#[test]
+fn status_satellite_text_uses_retail_pitch_and_suppresses_stand_ins() {
+    let font = legaia_font::synthetic_for_tests();
+    let view = StatusSatelliteView {
+        party_names: &["Vahn", "Noa"],
+        cursor: 0,
+        name: "Vahn",
+        level: 1,
+    };
+    let with_icons = status_satellite_draws_for(&font, &view, (14, 38), (14, 92), (14, 134), true);
+    let without = status_satellite_draws_for(&font, &view, (14, 38), (14, 92), (14, 134), false);
+    // Names land at x=20 (WX+6) on rows 38 and 52 (pitch 14).
+    assert!(with_icons.iter().any(|d| d.dst.0 == 20 && d.dst.1 == 38));
+    assert!(with_icons.iter().any(|d| d.dst.0 == 20 && d.dst.1 == 52));
+    // The icons variant drops the ">" cursor, the two pager arrows and
+    // the "LV" tag (4 glyph draws).
+    assert!(with_icons.len() < without.len());
+    // Nothing to the left of the party-list pen remains as text.
+    assert!(with_icons.iter().all(|d| d.dst.0 >= 14));
+}
+
+/// The status panel's number fields sit on the retail fixed 8-px digit
+/// cells: HP 180 in a 4-digit field at `+0x30` puts its glyphs at cells
+/// `+0x38/+0x40/+0x48`, ending flush against the `/` at `+0x50` - and
+/// the parenthesised base group renders in the retail teal ink.
+#[test]
+fn status_screen_hp_row_uses_retail_digit_cells_and_teal_parens() {
+    let font = legaia_font::synthetic_for_tests();
+    let panel = StatusPanelView {
+        name: "Vahn",
+        level: 1,
+        xp: 0,
+        xp_to_next: 121,
+        hp: 180,
+        hp_max: 180,
+        mp: 20,
+        mp_max: 20,
+        ap: 0,
+        ap_max: 100,
+        stat_rows: &[StatusStatRow {
+            label: "ATK",
+            value: 24,
+            growth: 24,
+        }],
+        equip_rows: &[],
+    };
+    let draws = status_screen_draws_for(&font, &panel, None, (90, 16), true);
+    let hp_y = 16 + 0x13;
+    let hp_row: Vec<i32> = draws
+        .iter()
+        .filter(|d| d.dst.1 == hp_y)
+        .map(|d| d.dst.0)
+        .collect();
+    // Current-value digits at the 8-px cells of the +0x30 field.
+    for x in [90 + 0x38, 90 + 0x40, 90 + 0x48] {
+        assert!(hp_row.contains(&x), "no HP glyph at x={x} ({hp_row:?})");
+    }
+    // "/" at +0x50, "(" at +0x7c, ")" at +0xa4.
+    for x in [90 + 0x50, 90 + 0x7c, 90 + 0xa4] {
+        assert!(hp_row.contains(&x), "no separator at x={x}");
+    }
+    // The base group (paren + digits from +0x8c) is teal; the current
+    // value is the retail text white.
+    let teal = MENU_TEXT_TEAL;
+    assert!(
+        draws
+            .iter()
+            .filter(|d| d.dst.1 == hp_y)
+            .any(|d| d.color == teal)
+    );
+    let paren = draws
+        .iter()
+        .find(|d| d.dst.1 == hp_y && d.dst.0 == 90 + 0x7c)
+        .unwrap();
+    assert_eq!(paren.color, teal);
+    let slash = draws
+        .iter()
+        .find(|d| d.dst.1 == hp_y && d.dst.0 == 90 + 0x50)
+        .unwrap();
+    assert_eq!(slash.color, MENU_TEXT_WHITE);
+    // Stat grid: "(" at +0x40, growth digits in the +0x48 field
+    // (24 -> cells +0x50/+0x58), ")" at +0x60 - all teal.
+    let stat_y = 16 + 0x42;
+    for x in [90 + 0x40, 90 + 0x50, 90 + 0x58, 90 + 0x60] {
+        let d = draws
+            .iter()
+            .find(|d| d.dst.1 == stat_y && d.dst.0 == x)
+            .unwrap_or_else(|| panic!("no stat-grid glyph at x={x}"));
+        assert_eq!(d.color, teal, "stat-grid glyph at x={x} not teal");
+    }
 }

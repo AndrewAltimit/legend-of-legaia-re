@@ -24,9 +24,10 @@
 //! bottom in the captured states). The descriptor holds the home position.
 //!
 //! The rect is the **content/pen** rect: the caller-drawn 9-slice frame art
-//! extends past it by 6 px left/right, 2 px above and 10 px below (measured
-//! against the VRAM framebuffers of the six catalogued menu-open save
-//! states; [`MenuWindowDescriptor::frame_rect`]).
+//! extends past it by 8 px on every side (pinned by the RAM GPU-prim scan of
+//! the `menu_status_town` capture - the frame corner tiles sit at
+//! `content - 8` - and cross-checked against the captures' VRAM
+//! framebuffers; [`MenuWindowDescriptor::frame_rect`]).
 //!
 //! Provenance: rect + renderer values byte-matched between the disc image
 //! and the resident menu overlay across the `menu_status_field` /
@@ -77,15 +78,17 @@ impl MenuWindowDescriptor {
     }
 
     /// The 9-slice **frame** rect enclosing the content rect: the retail
-    /// border art extends 6 px left/right, 2 px above and 10 px below the
-    /// content rect (pixel-measured against the menu-open VRAM captures;
-    /// the thicker bottom band is the frame's drop-shadow edge).
+    /// border art extends 8 px past the content rect on every side (the
+    /// RAM prim scan of the `menu_status_town` capture places each
+    /// window's 4x4 corner tiles at `content - 8`, e.g. window 26's
+    /// content `(14, 38)` frames from `(6, 30)`; edge pixels
+    /// cross-checked against the menu-open VRAM captures).
     pub fn frame_rect(&self) -> (i32, i32, i32, i32) {
         (
-            self.x as i32 - 6,
-            self.y as i32 - 2,
-            self.w as i32 + 12,
-            self.h as i32 + 12,
+            self.x as i32 - 8,
+            self.y as i32 - 8,
+            self.w as i32 + 16,
+            self.h as i32 + 16,
         )
     }
 }
@@ -117,6 +120,13 @@ pub mod window_ids {
     pub const STATUS_MAIN: usize = 28;
     /// Status screen: lower-left character summary window (name/LV/ATR).
     pub const STATUS_SUMMARY: usize = 30;
+    /// Options screen: the value-choice popup (renderer `FUN_801D2B44`).
+    /// Its descriptor x/w are the home position; the options input SM
+    /// (`FUN_801DA9F8`) stamps y (`+0x2`) and h (`+0x6`) per open -
+    /// `y = id-48 y + 0x16 + the cursor row's layout offset`,
+    /// `h = choices*13 - 4`, flipped above the anchor when the bottom
+    /// would pass y = 0xB0.
+    pub const OPTIONS_POPUP: usize = 47;
     /// Options screen: the single settings window.
     pub const OPTIONS_MAIN: usize = 48;
     /// Top-level pause menu: money + play-time corner box.
@@ -241,7 +251,7 @@ mod tests {
         assert_eq!(table.windows.len(), MENU_WINDOW_COUNT);
         let d = table.window(3).unwrap();
         assert_eq!(d.rect(), (19, 12, 60, 12));
-        assert_eq!(d.frame_rect(), (13, 10, 72, 24));
+        assert_eq!(d.frame_rect(), (11, 4, 76, 28));
         assert_eq!(d.kind, 2);
     }
 

@@ -112,14 +112,15 @@ pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_sel
                 .map(|sf| (b.len(), sf))
         }) {
             Some((_, sf)) => {
-                // Read the cumulative XP value from the active-party
-                // leader's record (`+0x04..+0x06`, pinned by the captured
-                // level-up observation triplet) and infer the level from
-                // the retail XP table.
-                // Engines that capture the actual level byte can override.
+                // Prefer the record's retail displayed-level byte (+0x130);
+                // fall back to inferring from the cumulative XP word (+0x0)
+                // against the retail base curve.
                 let leader = sf.party.members.first();
                 let lv = leader
-                    .map(|r| legaia_save::level_for_cumulative_xp(r.cumulative_xp() as u32))
+                    .map(|r| match r.magic_rank() {
+                        l @ 1..=99 => l,
+                        _ => legaia_save::level_for_cumulative_xp(r.cumulative_xp()),
+                    })
                     .unwrap_or(1);
                 let leader_hp = leader
                     .map(|r| {

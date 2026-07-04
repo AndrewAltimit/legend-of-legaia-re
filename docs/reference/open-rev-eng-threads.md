@@ -890,7 +890,23 @@ Both addresses are in the SBSS/BSS region (zero-initialised at boot). `_DAT_8007
 
 *Status:* resolved + ported
 
-The retail XP curve is the static-SCUS per-level delta table `DAT_80076AF4` (u16), read by the level-up applier `FUN_801E9504` (overlay-resident, called from the reward resolver `FUN_8004E568` at `0x8004F34C`): the running sum to the current level is scaled `(sum × 9999999) / 0x140FE` for `level < 0x11` (else `sum × 0x79`) and compared `≤ record cumulative XP` in a multi-level `do…while` loop. The earlier `0x8007123C` / `0x80070A3C` framing was doubly wrong (an off-by-`0x800` file/virtual confusion, then a sin-LUT slice). The engine now extracts the table at boot (`legaia_asset::level_up_tables::xp_thresholds_from_scus` → `BootSession`); byte-validated L2 = 365 / L3 = 730 against a captured retail level-up. The `retail_xp_table()` sin-LUT slice is the disc-less fallback.
+The retail XP curve is the static-SCUS per-level delta table `DAT_80076AF4` (u16), read by
+the level-up applier `FUN_801E9504` (overlay-resident, called from the reward resolver
+`FUN_8004E568` at `0x8004F34C`): the running sum to the current level is scaled
+`(sum × 9999999) / 0x140FE` for `level < 0x11` (else `sum × 0x79`) and compared `≤ record
+cumulative XP` in a multi-level `do…while` loop.
+
+The earlier `0x8007123C` / `0x80070A3C` framing was doubly wrong (an off-by-`0x800`
+file/virtual confusion, then a sin-LUT slice); the sin-LUT slice is additionally
+**refuted by retail display** - a New Game Status capture shows "Next Level 121" (the
+real L2 threshold), not 50. The delta table is the closed form `delta(n) = ⌊n²/4⌋ + 1`,
+so the curve is derivable arithmetic: `legaia_save::RETAIL_XP_CUMULATIVE` /
+`retail_xp_table()` ship the derived base curve (`121, 365, 730, …, 9_646_483`), the
+boot-time disc parse (`legaia_asset::level_up_tables::xp_thresholds_from_scus` →
+`BootSession`) cross-validates byte-identically, and library-wide record sampling
+(`+0x0` XP / `+0x4` next threshold / `+0x130` level at `0x80084708 + slot×0x414`)
+matches through L37 including the Noa/Gala ± corrections (New Game 121/102/140; L99
+carries 0). The Status menu (`FUN_801D33D8`) draws `+0x0`/`+0x4` verbatim.
 
 See [`subsystems/level-up.md`](../subsystems/level-up.md#xp-table).
 

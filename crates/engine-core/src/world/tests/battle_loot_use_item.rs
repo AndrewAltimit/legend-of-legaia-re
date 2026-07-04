@@ -81,7 +81,7 @@ fn level_up_banner_countdown_clears() {
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.apply_battle_xp(68); // 3/4-scaled ceil to 51 >= the 50 L2 threshold
+    world.apply_battle_xp(161); // 3/4-scaled to 121 >= the 121 L2 threshold
     assert!(world.current_level_up_banner.is_some());
     for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
         world.tick();
@@ -99,7 +99,7 @@ fn no_level_up_banner_when_xp_insufficient() {
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.apply_battle_xp(49); // retail table: 49 < 50 (L2 threshold)
+    world.apply_battle_xp(160); // 3/4-scaled to 120 < 121 (L2 threshold)
     assert!(world.current_level_up_banner.is_none());
 }
 

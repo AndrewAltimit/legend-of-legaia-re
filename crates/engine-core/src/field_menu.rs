@@ -1,17 +1,24 @@
 //! Field menu (pause menu) state machine.
 //!
 //! The retail "Start in field" pause menu: a vertical list of seven rows
-//! (Items / Equip / Spells / Arts / Status / Save / Config) plus a return-to-game
-//! cancel path. Each row hands off to a sub-session already shipped in this
-//! crate (or via the boot-UI dispatch in the shell):
+//! in the retail order **Items / Magic / Equip / Status / Options / Load /
+//! Save** (the id-50 command-list renderer `FUN_801CFD68` draws exactly
+//! these labels at `WY + n*0xe`) plus a return-to-game cancel path. Each
+//! row hands off to a sub-session already shipped in this crate (or via
+//! the boot-UI dispatch in the shell):
 //!
 //! - **Items** → [`crate::inventory_use::InventoryUseSession`] in field context.
+//! - **Magic** → [`crate::spell_menu::SpellMenuSession`].
 //! - **Equip** → [`crate::equip_session::EquipSession`].
-//! - **Spells** → [`crate::spell_menu::SpellMenuSession`].
-//! - **Arts** → [`crate::tactical_arts_editor::ChainEditor`].
 //! - **Status** → [`crate::status_screen::StatusScreenSession`].
+//! - **Options** → [`crate::options::OptionsSession`].
+//! - **Load** → [`crate::save_select::SaveSelectSession`] in Load mode.
 //! - **Save** → [`crate::save_select::SaveSelectSession`] in Save mode.
-//! - **Config** → [`crate::options::OptionsSession`].
+//!
+//! The engine's Tactical Arts chain editor
+//! ([`crate::tactical_arts_editor::ChainEditor`]) is an engine extension
+//! with no retail pause-menu row; it stays reachable through the
+//! dedicated arts session commands.
 //!
 //! Renderer-agnostic. Engines drive [`FieldMenuSession::tick`] each frame
 //! with a [`FieldMenuInput`] bundle and consume the returned
@@ -23,34 +30,35 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldMenuRow {
     Items,
+    Magic,
     Equip,
-    Spells,
-    Arts,
     Status,
+    Options,
+    Load,
     Save,
-    Config,
 }
 
 impl FieldMenuRow {
+    /// Retail row order (`FUN_801CFD68` draw order, top to bottom).
     pub const ALL: [Self; 7] = [
         Self::Items,
+        Self::Magic,
         Self::Equip,
-        Self::Spells,
-        Self::Arts,
         Self::Status,
+        Self::Options,
+        Self::Load,
         Self::Save,
-        Self::Config,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Items => "Items",
+            Self::Magic => "Magic",
             Self::Equip => "Equip",
-            Self::Spells => "Spells",
-            Self::Arts => "Arts",
             Self::Status => "Status",
+            Self::Options => "Options",
+            Self::Load => "Load",
             Self::Save => "Save",
-            Self::Config => "Config",
         }
     }
 
@@ -405,13 +413,13 @@ mod tests {
     #[test]
     fn disabled_row_skipped_on_cursor_move() {
         let mut mask = FieldMenuRowMask::ALL_ENABLED;
-        mask.disable(FieldMenuRow::Equip);
+        mask.disable(FieldMenuRow::Magic);
         let mut s = FieldMenuSession::with_mask(mask);
         let _ = s.tick(FieldMenuInput {
             down: true,
             ..input()
         });
-        assert_eq!(s.cursor(), FieldMenuRow::Spells.index());
+        assert_eq!(s.cursor(), FieldMenuRow::Equip.index());
     }
 
     #[test]
@@ -481,7 +489,7 @@ mod tests {
         let mut mask = FieldMenuRowMask::ALL_ENABLED;
         mask.disable(FieldMenuRow::Items);
         let s = FieldMenuSession::with_mask(mask);
-        assert_eq!(s.cursor(), FieldMenuRow::Equip.index());
+        assert_eq!(s.cursor(), FieldMenuRow::Magic.index());
     }
 
     #[test]

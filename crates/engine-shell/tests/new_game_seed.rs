@@ -79,15 +79,22 @@ fn boot_installs_the_real_retail_xp_curve_from_disc() {
     };
     let session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
 
-    // The boot replaces the tracker's fabricated sin-LUT placeholder with the
-    // real SCUS curve (DAT_80076AF4 + FUN_801E9504's formula). The first
-    // thresholds are byte-validated against a captured retail level-up.
+    // The boot installs the disc-parsed SCUS curve (DAT_80076AF4 +
+    // FUN_801E9504's formula). The first thresholds are byte-validated
+    // against a captured retail level-up.
     let xp = &session.host.world.level_up_tracker.xp_table;
     assert_eq!(xp.len(), 98, "98 per-level thresholds (MAX_LEVEL - 1)");
     assert_eq!(&xp[0..3], &[121, 365, 730], "real retail XP thresholds");
 
-    // It differs from the placeholder the tracker ships by default (50, 106, …).
-    assert_ne!(xp[0], 50, "not the placeholder sin-LUT slice");
+    // The derived constants the engine ships disc-less
+    // (legaia_save::RETAIL_XP_CUMULATIVE, built from the DAT_80076AF4 closed
+    // form delta(n) = n²/4 + 1 plus the applier arithmetic) are byte-identical
+    // to the disc parse - the live cross-validation of the committed curve.
+    assert_eq!(
+        xp.as_slice(),
+        legaia_save::RETAIL_XP_CUMULATIVE.as_slice(),
+        "derived curve == disc-parsed curve"
+    );
 }
 
 #[test]

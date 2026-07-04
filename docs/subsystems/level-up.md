@@ -20,7 +20,10 @@ The curve source:
 - **Per-level XP-delta table `DAT_80076AF4`** (u16 entries, referenced literally
   as `&DAT_80076AF4` at `0x801E9588`/`0x801E9594`). It is static `SCUS_942.54`
   data - below the `0x801C0000` overlay boundary and clear of the sin LUT range
-  (`0x80070A2C..0x80072A2C`). The threshold for the current level is the running
+  (`0x80070A2C..0x80072A2C`). The 98 entries are exactly the closed form
+  `delta(n) = ⌊n²/4⌋ + 1` (`1, 2, 3, 5, 7, 10, …, 2402`; the pattern continues
+  through the two trailing entries past the L99 window), so the whole curve is
+  derivable arithmetic. The threshold for the current level is the running
   sum `sum = Σ DAT_80076AF4[0 .. level]`.
 - **Scaling formula** (`0x801E95D0`–`0x801E9624`): for `level < 0x11` (17),
   `threshold = (sum × 9_999_999) / 0x140FE` (≈ `sum × 121.69`); for
@@ -41,12 +44,37 @@ mistook a 98-entry slice of the shared 4096-entry sin LUT at `0x80070A2C`
 off-by-`0x800` file/virtual-address confusion (`0x6123C` vs `0x80070A3C`). That
 slice is genuinely sin-LUT data consumed by the GTE rotation builders
 `RotMatrixX/Y/Z` (`0x800461A4` / `0x8004629C` / `0x8004638C`) and the cutscene
-camera (`FUN_8001CF50`), not XP. The engine now extracts the real curve at boot:
-`legaia_asset::level_up_tables::xp_thresholds_from_scus` reads `DAT_80076AF4` +
-the formula from the user's `SCUS_942.54` (no Sony bytes committed) and
-`legaia_engine_shell::BootSession` installs it over `LevelUpTracker::xp_table`
-(byte-validated: L2 = 365, L3 = 730 against a captured retail level-up). The
-`retail_xp_table()` sin-LUT slice is retained only as the disc-less fallback.
+camera (`FUN_8001CF50`), not XP. The sin-LUT reading is directly **refuted by
+retail display**: a New Game Status-menu capture shows Vahn L1 "Next Level 121"
+(the real L2 threshold), where the sin-LUT slice would give 50.
+
+The engine ships the real curve twice, cross-validating itself:
+
+- `legaia_save::RETAIL_XP_CUMULATIVE` / `engine_core::levelup::retail_xp_table()`
+  carry the **derived** base curve (`121, 365, 730, 1338, 2190, …, 9_646_483`) -
+  computed from the `delta(n) = ⌊n²/4⌋ + 1` closed form plus the `FUN_801E9504`
+  scaling arithmetic, no table bytes copied.
+- `legaia_asset::level_up_tables::xp_thresholds_from_scus` reads `DAT_80076AF4`
+  + the formula from the user's `SCUS_942.54` at boot and
+  `legaia_engine_shell::BootSession` installs it over `LevelUpTracker::xp_table`
+  - byte-identical to the derived constants.
+
+Empirically validated against the character records across the save-state
+library (`0x80084708 + slot×0x414`): every sampled `(level, next-threshold)`
+pair from L1 through L37 matches the formula exactly, including the slots-1/2
+corrections (New Game: Vahn/Terra 121, Noa 102, Gala 140); at L99 the record
+carries 0 (no next level).
+
+### Record fields + status display
+
+The applier maintains three record fields the Status menu draws **verbatim**
+(`FUN_801D33D8`, menu overlay): cumulative XP at `+0x0` (u32, the "Experience"
+line), the next-level cumulative threshold at `+0x4` (u32, the "Next Level"
+line - the total XP at which the next level lands, *not* the remaining
+difference), and the displayed-level byte at `+0x130`. Engine mirrors:
+`CharacterRecord::{cumulative_xp, next_level_xp, magic_rank}`;
+`World::apply_battle_xp` re-stamps all three after every grant and
+`World::seed_starting_party` seeds `+0x4 = 121` at a New Game.
 
 Provenance: `FUN_801E9504` in
 `ghidra/scripts/funcs/overlay_battle_action_801e9504.txt`; caller `FUN_8004E568`
@@ -311,17 +339,24 @@ After a battle win with `BattleEndCause::MonsterWipe`:
    `hp_max` and `mp_max`, restores `hp_cur` and `mp_cur` to the new maxima
    (retail restores full HP/MP on level-up), and writes `result.new_level`
    back to the record's `+0x100` byte via `CharacterRecord::set_level`.
+   Independent of whether a threshold was crossed, `apply_battle_xp` re-stamps
+   the record's cumulative XP (`+0x0`), next-level threshold (`+0x4`, slots-1/2
+   corrected via `threshold_for`), and displayed-level byte (`+0x130`) - the
+   three fields the retail applier maintains and the Status menu draws.
 6. `BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }` is pushed
    to `World::battle_events`.
 7. `World::current_level_up_banner` is set to the last character who levelled up.
 
 ### Hydration on load
 
-`World::load_full` syncs `LevelUpTracker::level[]` from each loaded
-character record's `+0x100` byte. Without this, a reloaded party would
-keep the tracker's default `1` per slot even when the saved records hold
-the party at level 30; the next XP grant would then roll the party back
-to level 1 + N.
+`World::load_party` (the party-install primitive `load_full` and the New Game
+seeder go through) syncs `LevelUpTracker::xp[]` from each record's cumulative
+XP word (`+0x0`) and `LevelUpTracker::level[]` from the engine level cell
+(`+0x100`), falling back to the retail displayed-level byte (`+0x130`) for
+records lifted from retail saves. Without this, a reloaded party would keep
+the tracker's default 0-XP / level-1 state even when the saved records hold
+the party at level 30; the next XP grant would then roll the party back to
+level 1 + N.
 
 ## Level-up banner
 

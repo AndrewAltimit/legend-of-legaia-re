@@ -40,7 +40,7 @@ fn build_synthetic_save() -> SaveFile {
         // SC reader (which stops at the first all-zero slot).
         rec.raw[0] = (i + 1) * 0x11;
         rec.set_level(10 + i);
-        rec.set_cumulative_xp(500 + u16::from(i) * 50);
+        rec.set_cumulative_xp(500 + u32::from(i) * 50);
         rec.set_hp_mp_sp(HpMpSp {
             hp_cur: 100 + u16::from(i) * 10,
             hp_max: 100 + u16::from(i) * 10,

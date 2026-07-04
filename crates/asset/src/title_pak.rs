@@ -248,6 +248,19 @@ pub const OVERLAY_SYSTEM_UI_LABEL_MP: (u32, u32, u32, u32) = (224, 86, 16, 10);
 /// pixels chrome-brown).
 pub const OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW: u16 = 1;
 
+/// Top-level pause-menu money/play-time box icons - UI-icon codes
+/// `0x62` (money pictogram) / `0x63` (play-time tag) / `0x66` (casino
+/// coin tag) of the `0x800732a4` table (drawn by `FUN_801D0148` at the
+/// id-49 window's content origin). Table-record `(U, V, W, H)` fields
+/// verbatim; all three decode with CLUT row
+/// [`OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW`]. The top-level party info panel
+/// (`FUN_801D030C`) reuses the status HP / MP label rects through its
+/// own icon codes `0x3F` / `0x40` (identical `(U, V, W, H)` to codes
+/// `0x07` / `0x08`).
+pub const OVERLAY_SYSTEM_UI_ICON_MONEY: (u32, u32, u32, u32) = (28, 128, 12, 12);
+pub const OVERLAY_SYSTEM_UI_LABEL_TIME: (u32, u32, u32, u32) = (40, 176, 24, 10);
+pub const OVERLAY_SYSTEM_UI_LABEL_COIN: (u32, u32, u32, u32) = (0, 150, 24, 10);
+
 /// Status-page **AP gauge** pieces, decoded from CLUT row
 /// [`OVERLAY_SYSTEM_UI_GAUGE_CLUT_ROW`] of the same system-UI sheet.
 /// Retail composes the gauge from four 1:1 sprites (no stretching) at
@@ -320,6 +333,79 @@ pub const OVERLAY_SYSTEM_UI_ICON_GOODS: (u32, u32, u32, u32) = (0, 128, 12, 12);
 /// CLUT block row the equipment pictograms decode with (gold ramp) -
 /// the `0x800732a4` records' CLUT byte `0x08` for all five icons.
 pub const OVERLAY_SYSTEM_UI_ICON_CLUT_ROW: u16 = 8;
+
+/// Field-menu **tab-banner plaque** pieces - the carved brown plaque every
+/// pause-menu screen draws behind its title tab ("Status" / "Equip" /
+/// "Options"). Pinned via `scripts/pcsx-redux/scan_panel_prims.py` over the
+/// `menu_status_town` RAM capture: retail composes the plaque from a left
+/// cap, a 16-wide body tile repeated across the tab window's content width
+/// (partial remainder), and a right cap - six `GP0 0x64` sprites at
+/// `(WX-8, WY-4)` for the window-3 content origin, all CLUT row
+/// [`OVERLAY_SYSTEM_UI_TAB_CLUT_ROW`]. The class-2 tab window draws NO
+/// gold 9-slice frame or filigree interior - the plaque is its entire
+/// chrome (the "Status" label lands at the content origin over it,
+/// staged text CLUT 7).
+pub const OVERLAY_SYSTEM_UI_TAB_CAP_L: (u32, u32, u32, u32) = (208, 64, 8, 20);
+/// Tab-banner plaque body tile (see [`OVERLAY_SYSTEM_UI_TAB_CAP_L`]).
+pub const OVERLAY_SYSTEM_UI_TAB_BODY: (u32, u32, u32, u32) = (192, 64, 16, 20);
+/// Tab-banner plaque right cap (see [`OVERLAY_SYSTEM_UI_TAB_CAP_L`]).
+pub const OVERLAY_SYSTEM_UI_TAB_CAP_R: (u32, u32, u32, u32) = (216, 64, 8, 20);
+/// CLUT block row that decodes the tab-banner plaque (carved brown ramp;
+/// the retail prims' CLUT halfword decodes to VRAM `(192, 511)` = row 12).
+pub const OVERLAY_SYSTEM_UI_TAB_CLUT_ROW: u16 = 12;
+
+/// Status-screen "Condition" pager **arrow sprites** - the solid
+/// triangles flanking the window-27 label. Retail draws them through the
+/// animated-cursor primitive `FUN_8002b994` (the 4-record 0x18-stride
+/// sprite table at `SCUS 0x80073d18`: 16x16 frames, CLUT byte at record
+/// `+1`): kind 2 = left triangle, frame 0 UV `(168, 8)`; kind 3 = right
+/// triangle, UV `(168, 40)`; both CLUT row 7 (the pointing-hand cursor's
+/// white-ink row). The window-27 renderer `FUN_801D30A4` places them at
+/// `(WX-0x10, WY-2)` and `(WX+0x3A, WY-2)`.
+pub const OVERLAY_SYSTEM_UI_PAGER_LEFT: (u32, u32, u32, u32) = (168, 8, 16, 16);
+/// Right pager triangle (see [`OVERLAY_SYSTEM_UI_PAGER_LEFT`]).
+pub const OVERLAY_SYSTEM_UI_PAGER_RIGHT: (u32, u32, u32, u32) = (168, 40, 16, 16);
+
+// -----------------------------------------------------------------------
+// System-UI sheet extension strip (sheet rows V 192..224)
+//
+// The system-UI TIM at `OVERLAY_SYSTEM_UI_TIM_OFFSET` is 256x192; a second
+// 256x32 4bpp TIM in the same pre-`init_data` gap of `PROT.DAT` extends
+// the texture page below it (VRAM `(896, 448)` = sheet V rows 192..224).
+// It carries the status summary window's per-character **ATR element
+// icons** (winged flame / bolt / gust): the summary renderer
+// `FUN_801D31EC` draws the per-character 2-byte string at menu-overlay VA
+// `0x801E4720 + char*4` (`0xCE 0x1D/0x1F/0x1E`), whose `0xCE` token
+// resolves through the `0x80074050` aux table (records `0x1D..0x1F` ->
+// ICO codes `0x94/0x96/0x95`, x-advance 28) into `0x800732a4` records
+// with UV `(2/66/34, 208)`, size 28x12 and the alternate CLUT encoding
+// (bit `0x40`): CLUT row = VRAM `(896 + (b&3)*16, 500)` - byte-equal to
+// palette `b&3` of the CLUT-variant TIM at
+// [`OVERLAY_SYSTEM_UI_EXT_CLUT_TIM_OFFSET`].
+// -----------------------------------------------------------------------
+
+/// File offset within `PROT.DAT` of the 256x32 extension-strip TIM
+/// (image org VRAM `(896, 448)`, own CLUT block at `(896, 498)`).
+pub const OVERLAY_SYSTEM_UI_EXT_TIM_OFFSET: usize = 0x10178;
+/// File offset within `PROT.DAT` of the sibling palette-variant TIM whose
+/// CLUT block uploads to VRAM row 500 - the row the ATR-icon ICO records
+/// select. (Rows 498/499/501 come from the TIMs at `0x10178` / `0x100D0`
+/// / `0xFF80` respectively.)
+pub const OVERLAY_SYSTEM_UI_EXT_CLUT_TIM_OFFSET: usize = 0x10028;
+/// Generous upper bound on either ext TIM's byte extent (header + 16x4
+/// CLUT block + 64x32 image block).
+pub const OVERLAY_SYSTEM_UI_EXT_TIM_SIZE: usize = 0x1200;
+
+/// ATR element-icon source rects **local to the extension strip** (strip
+/// v = sheet V - 192), in character order Vahn / Noa / Gala (ICO codes
+/// `0x94` / `0x96` / `0x95` - the menu overlay's per-character `0xCE`
+/// strings map char 1 = Noa to aux record `0x1F`).
+pub const OVERLAY_SYSTEM_UI_ATR_ICONS: [(u32, u32, u32, u32); 3] =
+    [(2, 16, 28, 12), (66, 16, 28, 12), (34, 16, 28, 12)];
+/// Palette index (into the CLUT-variant TIM at
+/// [`OVERLAY_SYSTEM_UI_EXT_CLUT_TIM_OFFSET`]) per character: the ICO CLUT
+/// byte's `b & 3` for codes `0x94` / `0x96` / `0x95`.
+pub const OVERLAY_SYSTEM_UI_ATR_PALETTES: [usize; 3] = [0, 2, 1];
 
 /// **Pointing-finger cursor** sprite - the small white hand retail
 /// renders to the left of the highlighted slot pill. Lives in the

@@ -67,34 +67,48 @@ pub use retail_inventory::{
     AddOutcome, ITEM_WINDOW_BASE, ITEM_WINDOW_SLOTS, RetailInventory, STACK_CAP,
 };
 
-/// Cumulative XP thresholds for levels 2..=99, prefix-summed from a 98-entry
-/// **placeholder** increment table. NOTE: these numbers are a sin-LUT slice an
-/// earlier pass mis-read as XP, not the retail curve - the real source is the
-/// static-SCUS table `DAT_80076AF4` + formula read by `FUN_801E9504` (see
-/// `engine_core::levelup::retail_xp_table` and `docs/subsystems/level-up.md`).
-/// Kept as a plausible-shape fallback until the SCUS curve is wired in.
+/// Retail cumulative XP thresholds for levels 2..=99 (the **base / slot-0
+/// curve**: Vahn and the 4th roster slot; slots 1/2 apply a ± correction, see
+/// below). `RETAIL_XP_CUMULATIVE[i]` = total XP required to reach level `i + 2`
+/// - `121, 365, 730, 1338, 2190, …, 9_646_483`.
+///
+/// Fully **derived**, no table bytes copied: the retail level-up applier
+/// `FUN_801E9504` (called from the battle reward resolver `FUN_8004E568`)
+/// sums the static-SCUS per-level u16 delta table `DAT_80076AF4` - whose 98
+/// entries are exactly the closed form `delta(n) = n²/4 + 1` (integer
+/// division) - and scales the running sum: `(sum × 9_999_999) / 0x140FE` for
+/// `level < 0x11`, else `sum × 0x79`. Validated byte-exact against the record
+/// `+0x4` next-level-threshold field across the save-state library (New Game
+/// Vahn L1 shows "Next Level 121") and identical to the boot-time disc parse
+/// (`legaia_asset::level_up_tables::xp_thresholds_from_scus`).
+///
+/// Slots 1 (Noa) and 2 (Gala) shift each threshold by `threshold × 0x14 /
+/// divisor[level]` (Noa earlier, Gala later; sin-LUT divisor table at
+/// `0x80070A2C`, stride `0x28`) - that correction is disc data, handled by
+/// `legaia_asset::level_up_tables` + `engine_core::levelup::LevelUpTracker`.
 ///
 /// Engines that don't already pull this from
 /// `engine_core::levelup::retail_xp_table` can use this constant directly.
+// PORT: FUN_801E9504 (XP-threshold derivation, base curve)
 pub const RETAIL_XP_CUMULATIVE: [u32; 98] = build_retail_cumulative();
 
 const fn build_retail_cumulative() -> [u32; 98] {
-    // Mirrors engine_core::levelup::retail_xp_table - kept here so the
-    // legaia-save crate doesn't need to depend on engine-core.
-    const INCREMENTS: [u16; 98] = [
-        50, 56, 62, 69, 75, 81, 87, 94, 100, 106, 113, 119, 125, 131, 138, 144, 150, 157, 163, 169,
-        175, 182, 188, 194, 200, 207, 213, 219, 226, 232, 238, 244, 251, 257, 263, 269, 276, 282,
-        288, 295, 301, 307, 313, 320, 326, 332, 338, 345, 351, 357, 363, 370, 376, 382, 388, 395,
-        401, 407, 413, 420, 426, 432, 438, 445, 451, 457, 463, 470, 476, 482, 488, 495, 501, 507,
-        513, 520, 526, 532, 538, 545, 551, 557, 563, 569, 576, 582, 588, 594, 601, 607, 613, 619,
-        625, 632, 638, 644, 650, 656,
-    ];
+    // The literal FUN_801E9504 arithmetic over the DAT_80076AF4 closed form
+    // (delta(n) = n²/4 + 1). Single source of truth for the workspace -
+    // engine_core::levelup::retail_xp_table re-exposes this constant.
     let mut out = [0u32; 98];
-    let mut total: u32 = 0;
+    let mut cum: u64 = 0;
     let mut i = 0;
     while i < 98 {
-        total += INCREMENTS[i] as u32;
-        out[i] = total;
+        let n = (i + 1) as u64; // delta index n = 1..=98
+        cum += n * n / 4 + 1; // DAT_80076AF4[n - 1]
+        // out[i] = XP to reach level i + 2 = threshold at current level i + 1.
+        let level = i + 1;
+        out[i] = if level < 0x11 {
+            (cum * 9_999_999 / 0x140FE) as u32
+        } else {
+            (cum * 0x79) as u32
+        };
         i += 1;
     }
     out
@@ -111,12 +125,14 @@ pub fn xp_for_level(level: u8) -> u32 {
     RETAIL_XP_CUMULATIVE[idx]
 }
 
-/// Infer the character level (1..=99) from a cumulative-XP value.
+/// Infer the character level (1..=99) from a cumulative-XP value against the
+/// base (slot-0) curve.
 ///
-/// Returns `1` for any `xp < 50` (the L2 threshold), and `99` once `xp`
-/// exceeds the L99 threshold. Engines that need finer granularity should
-/// override the inference with an authoritative level field once the
-/// retail layout is captured.
+/// Returns `1` for any `xp < 121` (the L2 threshold), and `99` once `xp`
+/// reaches the L99 threshold. Slots 1/2 (Noa/Gala) level slightly earlier /
+/// later than this base-curve inference (the ± sin-divisor correction);
+/// engines that track the authoritative level byte (record `+0x130`) should
+/// prefer it over this inference.
 pub fn level_for_cumulative_xp(xp: u32) -> u8 {
     let mut level: u8 = 1;
     for (i, &thr) in RETAIL_XP_CUMULATIVE.iter().enumerate() {
@@ -136,10 +152,10 @@ mod xp_tests {
     #[test]
     fn level_inference_thresholds() {
         assert_eq!(level_for_cumulative_xp(0), 1);
-        assert_eq!(level_for_cumulative_xp(49), 1);
-        assert_eq!(level_for_cumulative_xp(50), 2);
-        assert_eq!(level_for_cumulative_xp(106), 3); // 50 + 56
-        assert_eq!(level_for_cumulative_xp(105), 2);
+        assert_eq!(level_for_cumulative_xp(120), 1);
+        assert_eq!(level_for_cumulative_xp(121), 2);
+        assert_eq!(level_for_cumulative_xp(365), 3);
+        assert_eq!(level_for_cumulative_xp(364), 2);
     }
 
     #[test]
@@ -148,25 +164,36 @@ mod xp_tests {
     }
 
     #[test]
-    fn cumulative_table_first_and_last() {
-        assert_eq!(RETAIL_XP_CUMULATIVE[0], 50);
-        // Last entry is the L99 threshold (sum of the 98 increments).
-        // The placeholder slice sums to ≈ 34_663 (it is sin-LUT data, not the
-        // retail curve; see RETAIL_XP_CUMULATIVE docs). Verify the table sums
-        // into a sensible range.
-        assert!(*RETAIL_XP_CUMULATIVE.last().unwrap() >= 30_000);
-        assert!(*RETAIL_XP_CUMULATIVE.last().unwrap() <= 40_000);
+    fn cumulative_table_matches_retail_captures() {
+        // Live record +0x4 across the save-state library: New Game Vahn L1
+        // "Next Level 121", L2 -> 365, L3 -> 730 (Status-menu capture +
+        // mednafen RAM reads); L37 -> 535_546 (uncorrected slot 0).
+        assert_eq!(RETAIL_XP_CUMULATIVE[0], 121);
+        assert_eq!(RETAIL_XP_CUMULATIVE[1], 365);
+        assert_eq!(RETAIL_XP_CUMULATIVE[2], 730);
+        assert_eq!(RETAIL_XP_CUMULATIVE[3], 1338);
+        assert_eq!(RETAIL_XP_CUMULATIVE[4], 2190);
+        assert_eq!(RETAIL_XP_CUMULATIVE[36], 535_546);
+        // L99 total (base curve). A maxed retail Vahn save carries
+        // cumulative XP just above this.
+        assert_eq!(*RETAIL_XP_CUMULATIVE.last().unwrap(), 9_646_483);
     }
 
     #[test]
-    fn vahn_legacy_4_level_jump_xp_pin_matches_table() {
-        // Pre-grant cumulative 365 reaches level… check.
-        let pre = level_for_cumulative_xp(365);
-        // 50, 106, 168, 237, 312, 393… so 365 is between L6 (312) and L7 (393).
-        assert_eq!(pre, 6);
-        // Post-grant cumulative 730 reaches level… check.
-        let post = level_for_cumulative_xp(730);
-        // 730 should be between L9 and L10.
-        assert!((9..=10).contains(&post));
+    fn formula_switch_at_level_0x11() {
+        // level < 0x11 uses (sum × 9_999_999) / 0x140FE; level >= 0x11 uses
+        // sum × 0x79. Both scale factors are ≈ 121.7 vs 121, so the curve is
+        // continuous but not identical - pin the boundary values.
+        assert_eq!(RETAIL_XP_CUMULATIVE[15], 47_216); // L17 threshold (level 16, scaled form)
+        assert_eq!(RETAIL_XP_CUMULATIVE[16], 55_781); // L18 threshold (level 0x11, × 0x79)
+    }
+
+    #[test]
+    fn xp_for_level_semantics() {
+        assert_eq!(xp_for_level(1), 0);
+        assert_eq!(xp_for_level(2), 121);
+        assert_eq!(xp_for_level(99), 9_646_483);
+        // Saturates at the L99 threshold.
+        assert_eq!(xp_for_level(200), 9_646_483);
     }
 }

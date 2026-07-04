@@ -161,6 +161,13 @@ pub struct SaveMenuAtlasRects {
     pub label_lv: (u32, u32, u32, u32),
     pub label_hp: (u32, u32, u32, u32),
     pub label_mp: (u32, u32, u32, u32),
+    /// Top-level pause menu money/play-time box icons (label CLUT row):
+    /// money pictogram 12x12 (ICO code `0x62`), play-time tag 24x10
+    /// (`0x63`), casino-coin tag 24x10 (`0x66`). Drawn by the id-49
+    /// window renderer `FUN_801D0148`.
+    pub icon_money: (u32, u32, u32, u32),
+    pub label_time: (u32, u32, u32, u32),
+    pub label_coin: (u32, u32, u32, u32),
     /// Status-page AP gauge pieces (CLUT row 4 of the system-UI TIM):
     /// left cap w/ red "AP" chip (24x16), trough body (56x16), value
     /// box (16x16) and right arrow tip (7x16). Retail composes the
@@ -189,6 +196,21 @@ pub struct SaveMenuAtlasRects {
     pub icon_armor: (u32, u32, u32, u32),
     pub icon_boot: (u32, u32, u32, u32),
     pub icon_goods: (u32, u32, u32, u32),
+    /// "Condition" pager arrows (16x16 solid triangles, CLUT row 7 of
+    /// the system-UI TIM - the `FUN_8002b994` sprite-table kinds 2/3).
+    /// Drawn flanking the status screen's window-27 label.
+    pub pager_left: (u32, u32, u32, u32),
+    pub pager_right: (u32, u32, u32, u32),
+    /// Field-menu tab-banner plaque pieces (CLUT row 12 of the system-UI
+    /// TIM): left cap (8x20), 16x20 body tile (repeated across the tab
+    /// window's content width) and right cap (8x20). Consumed by
+    /// [`crate::tab_banner_draws`].
+    pub tab_cap_l: (u32, u32, u32, u32),
+    pub tab_body: (u32, u32, u32, u32),
+    pub tab_cap_r: (u32, u32, u32, u32),
+    /// Status summary window ATR element icons (28x12), character order
+    /// Vahn / Noa / Gala (system-UI extension strip, VRAM-row-500 CLUT).
+    pub atr_icons: [(u32, u32, u32, u32); 3],
     /// Load-screen empty-cell frame sprite (32x32, 20x20 blue hollow
     /// frame centered with 6px transparent margin). Used by the slot-
     /// preview screen to draw the 5x3 grid of save-slot boxes. When

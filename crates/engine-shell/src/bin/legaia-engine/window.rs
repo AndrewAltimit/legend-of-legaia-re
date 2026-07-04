@@ -635,7 +635,7 @@ impl PlayWindowApp {
 /// Pinned content rects mirroring the disc descriptor table:
 /// `(descriptor id, (x, y, w, h))`.
 #[rustfmt::skip]
-const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 14] = {
+const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 15] = {
     use legaia_asset::menu_windows::window_ids as w;
     [
         (w::TAB_EQUIP, (16, 12, 60, 12)),
@@ -649,6 +649,9 @@ const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 14] = {
         (w::STATUS_MAIN, (90, 16, 218, 188)),
         (w::STATUS_SUMMARY, (14, 134, 60, 70)),
         (w::OPTIONS_MAIN, (24, 40, 256, 148)),
+        // The options value popup's descriptor x/w (y/h are stamped per
+        // open - see `options_popup_rect`).
+        (w::OPTIONS_POPUP, (170, 132, 128, 36)),
         (w::TOP_MONEY_TIME, (24, 178, 104, 24)),
         (w::TOP_COMMAND_LIST, (24, 24, 104, 94)),
         (w::TOP_INFO_PANEL, (144, 24, 152, 180)),
@@ -656,9 +659,14 @@ const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 14] = {
 };
 
 /// Content rect used for the sub-screens whose retail window sets are not
-/// yet capture-pinned (Items / Spells / Arts and the Equip picker overlay) -
-/// a near-fullscreen window on the 320x240 stage.
+/// yet capture-pinned (Items / Spells / Arts) - a near-fullscreen window
+/// on the 320x240 stage.
 const MENU_SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
+
+/// Options round-trip file (sibling of `legaia-input.toml`). Holds the
+/// retail settings plus the engine-only knobs (BGM / SFX volume, message
+/// speed) that the pause-menu options screen doesn't show.
+const OPTIONS_CONFIG_FILE: &str = "legaia-options.toml";
 
 impl PlayWindowApp {
     /// Content rect for a menu window id: the disc-parsed descriptor when
@@ -681,11 +689,54 @@ impl PlayWindowApp {
     }
 
     /// Frame rect (the 9-slice chrome box) for a menu window id: the
-    /// retail border art extends 6 px left/right, 2 px above and 10 px
-    /// below the content rect.
+    /// retail border art extends 8 px past the content rect on every
+    /// side (prim-scan pinned; `MenuWindowDescriptor::frame_rect`).
     fn menu_window_frame_rect(&self, id: usize) -> (i32, i32, i32, i32) {
         let (x, y, w, h) = self.menu_window_rect(id);
-        (x - 6, y - 2, w + 12, h + 12)
+        (x - 8, y - 8, w + 16, h + 16)
+    }
+
+    /// Apply the live side-effects of [`Self::options_state`] (currently
+    /// the Sound Stereo/Monaural downmix on the audio output) and persist
+    /// the state to [`OPTIONS_CONFIG_FILE`]. Called when an options
+    /// session closes.
+    pub(super) fn persist_and_apply_options(&self) {
+        self.apply_options_side_effects();
+        let path = std::path::PathBuf::from(OPTIONS_CONFIG_FILE);
+        if let Err(e) = self.options_state.save(&path) {
+            log::warn!("options: save to {} failed: {e:#}", path.display());
+        }
+    }
+
+    /// Push the current options into their live consumers without touching
+    /// disk (also called once at startup after the config file loads).
+    pub(super) fn apply_options_side_effects(&self) {
+        if let Some(audio) = self.session.audio.as_ref() {
+            audio.set_mono(matches!(
+                self.options_state.audio,
+                legaia_engine_core::options::AudioMode::Mono
+            ));
+        }
+    }
+
+    /// Content rect for the options value popup (window descriptor id 47:
+    /// x/w from the table, y/h stamped per-open by the retail SM
+    /// `FUN_801da9f8` off the id-48 settings window's y + the cursor
+    /// row's layout offset).
+    fn options_popup_rect(
+        &self,
+        popup: &legaia_engine_core::options::OptionsPopup,
+    ) -> (i32, i32, i32, i32) {
+        use legaia_asset::menu_windows::window_ids;
+        let (px, _, pw, _) = self.menu_window_rect(window_ids::OPTIONS_POPUP);
+        let (_, sy, _, _) = self.menu_window_rect(window_ids::OPTIONS_MAIN);
+        legaia_engine_core::options::options_popup_content_rect(
+            sy,
+            px,
+            pw,
+            popup.row,
+            popup.choices.len(),
+        )
     }
 }
 

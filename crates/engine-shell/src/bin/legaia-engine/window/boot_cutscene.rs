@@ -183,15 +183,12 @@ impl PlayWindowApp {
                     start,
                 };
                 let _ = session.tick(input);
-                if let Some(outcome) = session.outcome() {
-                    match outcome {
-                        OptionsOutcome::Confirmed => {
-                            self.options_state = session.state().clone();
-                        }
-                        OptionsOutcome::Cancelled => {
-                            session.revert_if_cancelled();
-                        }
-                    }
+                if let Some(OptionsOutcome::Closed) = session.outcome() {
+                    // Value edits commit inside the session's popup (retail
+                    // writes the config word at popup confirm and never
+                    // reverts); lift + persist the final state.
+                    self.options_state = session.state().clone();
+                    self.persist_and_apply_options();
                     // After options, route back to Title so the player can
                     // pick New Game / Continue (matches retail flow).
                     self.boot_ui =
@@ -247,26 +244,49 @@ impl PlayWindowApp {
                             FieldMenuSubsession::Status(_) => {}
                             FieldMenuSubsession::Save(s) => {
                                 use legaia_engine_core::save_select::SelectOutcome;
-                                if let Some(SelectOutcome::Saved(slot)) = s.outcome() {
-                                    let runtime =
-                                        legaia_engine_core::menu_runtime::MenuRuntime::new(
-                                            self.save_dir.clone(),
-                                        );
-                                    match runtime.save_to_slot(&mut self.session.host.world, slot) {
-                                        Ok(p) => log::info!(
-                                            "field menu: saved slot {} to {}",
-                                            slot,
-                                            p.display()
-                                        ),
-                                        Err(e) => {
-                                            log::warn!("field menu: save slot {slot} failed: {e:#}")
+                                let runtime = legaia_engine_core::menu_runtime::MenuRuntime::new(
+                                    self.save_dir.clone(),
+                                );
+                                match s.outcome() {
+                                    Some(SelectOutcome::Saved(slot)) => {
+                                        match runtime
+                                            .save_to_slot(&mut self.session.host.world, slot)
+                                        {
+                                            Ok(p) => log::info!(
+                                                "field menu: saved slot {} to {}",
+                                                slot,
+                                                p.display()
+                                            ),
+                                            Err(e) => log::warn!(
+                                                "field menu: save slot {slot} failed: {e:#}"
+                                            ),
                                         }
                                     }
+                                    // The retail Load row: picking a slot
+                                    // replaces the running world with the
+                                    // saved one.
+                                    Some(SelectOutcome::Loaded(slot)) => {
+                                        match runtime
+                                            .load_from_slot(&mut self.session.host.world, slot)
+                                        {
+                                            Ok(p) => log::info!(
+                                                "field menu: loaded slot {} from {}",
+                                                slot,
+                                                p.display()
+                                            ),
+                                            Err(e) => log::warn!(
+                                                "field menu: load slot {slot} failed: {e:#}"
+                                            ),
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
-                            FieldMenuSubsession::Config(mut o) => {
-                                o.revert_if_cancelled();
+                            FieldMenuSubsession::Config(o) => {
+                                // Edits committed inside the session's value
+                                // popup (retail semantics); lift + persist.
                                 self.options_state = o.state().clone();
+                                self.persist_and_apply_options();
                             }
                         }
                         if let Some(menu) = self.session.field_menu.as_mut() {
@@ -515,13 +535,30 @@ impl PlayWindowApp {
                     .iter()
                     .map(|r| legaia_engine_render::OptionsRowView {
                         label: r.label,
-                        value: &r.value,
+                        value: r.value,
+                        teal: r.teal,
+                        advance: r.advance,
                     })
                     .collect();
+                // The boot-UI options panel draws at a fixed pen rather
+                // than the menu-overlay window rects; anchor the value
+                // popup off the same pen (value column + 6).
+                let popup = s.popup().map(|p| legaia_engine_render::OptionsPopupDraw {
+                    rect: legaia_engine_core::options::options_popup_content_rect(
+                        80,
+                        96 + 146,
+                        128,
+                        p.row,
+                        p.choices.len(),
+                    ),
+                    choices: p.choices,
+                    cursor: p.cursor,
+                });
                 legaia_engine_render::options_draws_for(
                     &self.font,
                     &row_views,
                     s.cursor(),
+                    popup.as_ref(),
                     (96, 80),
                 )
             }
@@ -582,6 +619,7 @@ impl PlayWindowApp {
                             hp_max: s.hp_max,
                             mp: s.mp,
                             mp_max: s.mp_max,
+                            ap: s.ap as u16,
                         })
                         .collect();
                     d.extend(legaia_engine_render::field_menu_info_draws_for(

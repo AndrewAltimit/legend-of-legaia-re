@@ -132,3 +132,4 @@ Thumbs.db
 
 # stray mednafen-state vram-dump default output (Sony VRAM bytes)
 /vram.png
+legaia-options.toml

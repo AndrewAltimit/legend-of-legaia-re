@@ -42,8 +42,9 @@ fn field_menu_pick_save_routes_through_resume() {
     let mut mask = FieldMenuRowMask::ALL_ENABLED;
     mask.disable(FieldMenuRow::Items);
     let mut s = FieldMenuSession::with_mask(mask);
-    // Cursor lands on Equip (idx 1). Move down to Save (idx 5 in retail order).
-    for _ in 0..(FieldMenuRow::Save.index() - FieldMenuRow::Equip.index()) as usize {
+    // Cursor lands on Magic (idx 1, the first enabled row). Move down to
+    // Save (idx 6 in retail order).
+    for _ in 0..(FieldMenuRow::Save.index() - FieldMenuRow::Magic.index()) as usize {
         let _ = s.tick(FieldMenuInput {
             down: true,
             ..empty_input()
@@ -142,33 +143,60 @@ fn spell_menu_completes_heal_cast() {
 
 #[test]
 fn options_session_round_trip_persists_changes() {
+    // Retail flow: Cross opens the value popup on Battle Camera, Down
+    // picks "Normal", Cross commits, Circle leaves the screen. The
+    // committed value survives the close (retail writes the config word
+    // at popup confirm and never reverts).
     let mut s = OptionsSession::new(OptionsState::default());
-    // Decrement BGM volume once (8 → 7) and confirm.
-    let _ = s.tick(OptionsInput {
-        left: true,
-        ..Default::default()
-    });
+    for input in [
+        OptionsInput {
+            cross: true,
+            ..Default::default()
+        },
+        OptionsInput {
+            down: true,
+            ..Default::default()
+        },
+        OptionsInput {
+            cross: true,
+            ..Default::default()
+        },
+        OptionsInput {
+            circle: true,
+            ..Default::default()
+        },
+    ] {
+        let _ = s.tick(input);
+    }
+    assert_eq!(s.outcome(), Some(OptionsOutcome::Closed));
+    assert_eq!(
+        s.state().battle_camera,
+        legaia_engine_core::options::BattleCameraOpt::Normal
+    );
+}
+
+#[test]
+fn options_session_popup_cancel_leaves_value() {
+    let mut s = OptionsSession::new(OptionsState::default());
+    // Open the popup, move the popup cursor, back out with Circle -
+    // nothing commits.
     let _ = s.tick(OptionsInput {
         cross: true,
         ..Default::default()
     });
-    assert_eq!(s.outcome(), Some(OptionsOutcome::Confirmed));
-    assert_eq!(s.state().bgm_volume, 7);
-}
-
-#[test]
-fn options_session_cancel_reverts() {
-    let mut s = OptionsSession::new(OptionsState::default());
     let _ = s.tick(OptionsInput {
-        right: true,
+        down: true,
         ..Default::default()
     });
     let _ = s.tick(OptionsInput {
         circle: true,
         ..Default::default()
     });
-    s.revert_if_cancelled();
-    assert_eq!(s.state().bgm_volume, 8);
+    assert!(!s.is_done());
+    assert_eq!(
+        s.state().battle_camera,
+        legaia_engine_core::options::BattleCameraOpt::Close
+    );
 }
 
 #[test]
@@ -238,7 +266,7 @@ fn full_menu_loop_field_menu_to_options_to_save_back_to_scene() {
     // Sim sub-session finished, return to browsing.
     let _ = fm.resume(false);
     // Move to Config (last row).
-    for _ in 0..(FieldMenuRow::Config.index() as usize) {
+    for _ in 0..(FieldMenuRow::Options.index() as usize) {
         let _ = fm.tick(FieldMenuInput {
             down: true,
             ..Default::default()
@@ -248,17 +276,18 @@ fn full_menu_loop_field_menu_to_options_to_save_back_to_scene() {
         cross: true,
         ..Default::default()
     });
-    // Drop into options.
+    // Drop into options; Circle leaves the screen (retail commits value
+    // edits inside the popup, so exit is a plain close).
     let mut opt = OptionsSession::new(OptionsState::default());
     let _ = opt.tick(OptionsInput {
-        cross: true,
+        circle: true,
         ..Default::default()
     });
-    assert_eq!(opt.outcome(), Some(OptionsOutcome::Confirmed));
+    assert_eq!(opt.outcome(), Some(OptionsOutcome::Closed));
     // Return; shell would call resume(true) to close menu.
     let _ = fm.resume(true);
     assert_eq!(
         fm.outcome(),
-        Some(FieldMenuOutcome::Confirmed(FieldMenuRow::Config))
+        Some(FieldMenuOutcome::Confirmed(FieldMenuRow::Options))
     );
 }
