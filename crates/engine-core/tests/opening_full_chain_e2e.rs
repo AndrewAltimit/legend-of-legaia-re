@@ -141,14 +141,37 @@ fn new_game_opening_runs_opdeene_narration_then_town01_name_entry() {
         "the committed lead name persists into the party"
     );
 
+    // The opening choreography `MoveTo`s the townsfolk to the off-map hide box
+    // while it plays; track that it engages so the restore assertion below is
+    // non-vacuous.
+    let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+    let parked_at_hide = |w: &legaia_engine_core::world::World| {
+        w.field_npc_positions
+            .values()
+            .any(|&(x, z)| x == hide && z == hide)
+    };
     let mut more = 0u32;
+    let mut saw_hidden_during_sweep = false;
     while host.world.cutscene_timeline.is_some() && more < 4000 {
         host.world.tick();
+        saw_hidden_during_sweep |= parked_at_hide(&host.world);
         more += 1;
     }
     assert!(
         host.world.cutscene_timeline.is_none(),
         "the opening timeline completes after naming and reverts to free-roam (ticked {more})"
+    );
+    assert!(
+        saw_hidden_during_sweep,
+        "the opening cutscene parks townsfolk at the off-map hide box while it plays"
+    );
+    // Regression (the "town NPCs vanish after New Game" bug): the timeline
+    // completion must un-park every villager the opening hid, or the field
+    // render draws them off-screen. Their `field_npc_positions` overrides are
+    // dropped so each reverts to its MAN spawn tile.
+    assert!(
+        !parked_at_hide(&host.world),
+        "no field NPC is left at the off-map hide box once free-roam resumes"
     );
     eprintln!("[opening] full chain opdeene->town01 name entry completed");
 }

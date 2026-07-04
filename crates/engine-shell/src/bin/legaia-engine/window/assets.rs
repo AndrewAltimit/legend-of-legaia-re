@@ -649,7 +649,8 @@ impl PlayWindowApp {
                 })
                 .unwrap_or_default();
             for (p, _kind) in &placements {
-                if p.world_x == 16320 && p.world_z == 16320 {
+                let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+                if p.world_x == hide && p.world_z == hide {
                     continue;
                 }
                 let src = if p.special_model {
