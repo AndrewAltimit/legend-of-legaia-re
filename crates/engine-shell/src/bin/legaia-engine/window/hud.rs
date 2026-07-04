@@ -841,9 +841,13 @@ impl PlayWindowApp {
         {
             let gold = [1.0f32, 0.92, 0.6, 1.0];
             let center_x = (w / 2) as i32;
-            // Retail draws the subtitle at Y=180 on a 240px-tall virtual
-            // screen (FUN_8003C764) - 3/4 down; scale to the real surface.
-            let top_y = (h as i32 * 3 / 4).min(h as i32 - 16).max(0);
+            // Retail draws the opdeene narration at mid-screen, not near the
+            // bottom: measured off the `new_game_cutscene_intro_a` framebuffer
+            // the caption "It was the Seru." sits at rows 113..121 of a
+            // ~228px-tall visible frame = ~50% down (just below centre, over
+            // the vignette actors). This supersedes the earlier 3/4-down
+            // (Y=180) placement, which the captured frame falsifies.
+            let top_y = (h as i32 / 2).min(h as i32 - 16).max(0);
             out.extend(legaia_engine_render::cutscene_narration_draws_for(
                 &self.font, text, center_x, top_y, gold,
             ));
