@@ -148,6 +148,18 @@ pub struct SaveMenuAtlasRects {
     /// can draw the tile as a regular SpriteDraw, tiled horizontally
     /// 2× full-width + 1× 17-wide-remainder.
     pub panel_interior: (u32, u32, u32, u32),
+    /// Raw (un-gradient-baked) marbled filigree interior tile (32x29).
+    /// The pause-menu chrome tiles this in 2D as the window interior,
+    /// darkened by a per-draw colour, matching retail's navy damask.
+    /// Distinct from `panel_interior`, which is the save screen's
+    /// gouraud-baked variant.
+    pub panel_filigree: (u32, u32, u32, u32),
+    /// Status-panel stat labels (LV / HP / MP), 16x12 each, from CLUT
+    /// row 2 of the system-UI TIM. Drawn as sprites in place of ASCII
+    /// glyphs on the status page.
+    pub label_lv: (u32, u32, u32, u32),
+    pub label_hp: (u32, u32, u32, u32),
+    pub label_mp: (u32, u32, u32, u32),
     /// Load-screen empty-cell frame sprite (32x32, 20x20 blue hollow
     /// frame centered with 6px transparent margin). Used by the slot-
     /// preview screen to draw the 5x3 grid of save-slot boxes. When

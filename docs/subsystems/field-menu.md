@@ -254,16 +254,34 @@ disc at boot (`legaia_asset::menu_windows`; the play-window falls back to a
 pinned mirror of the same rects) and frames each screen's window set with
 the reusable 9-slice primitive `engine-render::menu_window_chrome_draws_for`
 (the caller-drawn window frame), placed on the shared 320x240 boot-UI stage
-via `engine-render::scale_stage_text_draws`. The status main panel renders
+via `engine-render::scale_stage_text_draws`. The frame chrome and the navy
+**filigree interior** both come from the system-UI TIM at `PROT.DAT[0x018E0]`
+CLUT row 2 (the same sheet as the save-screen chrome and the UI-icon atlas):
+the gold-bronze 9-slice tiles plus the marbled-blue interior region
+(`OVERLAY_SYSTEM_UI_PANEL_INTERIOR`, `(128,0,32,29)`). The pause menu tiles
+the raw interior tile in **both axes** (`SaveMenuAtlasRects::panel_filigree`,
+an un-gradient-baked copy of that region) under a flat darkening tint - retail
+modulates it with a per-window gouraud gradient; the flat multiply is a close,
+non-streaking approximation. (The save/load screen keeps the gradient-baked
+`panel_interior` variant stretched to its panel height; only the pause-menu
+windows pass `tile_filigree = true` to `nine_slice_panel_into`.) The status
+main panel renders
 through `engine-render::status_screen_draws_for` at the byte-pinned offsets
 above, hung off the id-28 content origin; the satellite windows through
 `status_satellite_draws_for`; the top-level list / money box / party panel
 through `field_menu_draws_for` + `field_menu_info_draws_for`. The
 HP/MP/level/equipment values come from the typed character record in
 `legaia_save` (derived-stat grid = live `+0x110` window + growth
-`+0x122..+0x12D` window pairs). Still engine-styled: the icon primitives
-(HP/MP tags, equipment icons, gauge bar - text glyphs at the icon
-positions until the `0x800732a4` UI-icon atlas is ported), the tab banner
+`+0x122..+0x12D` window pairs). The **LV / HP / MP labels are ported UI-icon
+sprites** decoded from CLUT row 2 of the system-UI TIM (the same sheet as the
+window chrome; source rects `OVERLAY_SYSTEM_UI_LABEL_LV/HP/MP` at
+`(190/208/226, 86, 16, 12)`), staged into the atlas and emitted by
+`engine-render::status_icon_sprites_for` at the pinned status offsets while
+`status_screen_draws_for(.., label_icons = true)` suppresses the ASCII stand-ins.
+Still engine-styled: the remaining icon primitives
+(equipment-slot pictograms, the AP gauge bar, the Condition-pager arrows and
+element diamonds - all present in the same TIM, decodable via
+`tim convert sysui.tim --clut 2`), the tab banner
 art, the top-level row content (renderer `FUN_801CFD68` untraced), and the
 Items / Spells / Arts / Equip-picker screens (their content layouts do not
 fill the pinned windows yet, so they keep a generic frame).

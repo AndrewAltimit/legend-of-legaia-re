@@ -194,6 +194,10 @@ pub fn status_screen_draws_for(
     panel: &StatusPanelView<'_>,
     nav_hint: Option<&str>,
     pen: (i32, i32),
+    // When `true`, the LV / HP / MP labels are omitted here because the
+    // caller draws them as sprites from the UI-icon atlas
+    // ([`status_icon_sprites_for`]). `false` keeps the ASCII text stand-ins.
+    label_icons: bool,
 ) -> Vec<TextDraw> {
     let (wx, wy) = pen;
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
@@ -208,7 +212,9 @@ pub fn status_screen_draws_for(
 
     // Header: name at +8, "LV" icon at +0x50, level (2-digit) at +0x60.
     str_at(&mut out, panel.name, wx + 8, wy, white);
-    str_at(&mut out, "LV", wx + 0x50, wy + 2, gold);
+    if !label_icons {
+        str_at(&mut out, "LV", wx + 0x50, wy + 2, gold);
+    }
     out.extend(num_field_draws(
         font,
         panel.level as u64,
@@ -237,7 +243,9 @@ pub fn status_screen_draws_for(
             panel.mp_max as u64,
         ),
     ] {
-        str_at(&mut out, tag, wx + 0x20, row_y, gold);
+        if !label_icons {
+            str_at(&mut out, tag, wx + 0x20, row_y, gold);
+        }
         out.extend(num_field_draws(font, cur, wx + 0x30, row_y, 4, white));
         str_at(&mut out, "/", wx + 0x50, row_y, dim);
         out.extend(num_field_draws(font, max, wx + 0x58, row_y, 4, white));
@@ -313,6 +321,44 @@ pub fn status_screen_draws_for(
     if let Some(hint) = nav_hint {
         str_at(&mut out, hint, wx - 40, wy + 0xd0, dim);
     }
+    out
+}
+
+/// Build the status-page UI-icon [`SpriteDraw`]s (the LV / HP / MP labels)
+/// from the system-UI atlas, positioned at the same pinned offsets the text
+/// stand-ins used, and mapped from the 320x240 menu stage into surface
+/// pixels (`stage_origin` + `stage_scale`, matching
+/// [`crate::menu_window_chrome_draws_for`]). Pair with
+/// `status_screen_draws_for(.., label_icons = true)` so the labels aren't
+/// double-drawn as text. `pen` is the id-28 window's content origin in stage
+/// pixels (the same value passed to `status_screen_draws_for`).
+pub fn status_icon_sprites_for(
+    rects: &SaveMenuAtlasRects,
+    pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (wx, wy) = pen;
+    let scale = stage_scale.max(1) as i32;
+    let mut out = Vec::with_capacity(3);
+    let mut push = |src: (u32, u32, u32, u32), sx: i32, sy: i32| {
+        let (_, _, w, h) = src;
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + sx * scale,
+                stage_origin.1 + sy * scale,
+                w * stage_scale,
+                h * stage_scale,
+            ),
+            src,
+            color: [1.0, 1.0, 1.0, 1.0],
+        });
+    };
+    // LV label in the header row (+0x50); HP / MP labels at the left of the
+    // HP (+0x13) and MP (+0x20) rows. Offsets mirror the text stand-ins.
+    push(rects.label_lv, wx + 0x50, wy);
+    push(rects.label_hp, wx + 0x20, wy + 0x13);
+    push(rects.label_mp, wx + 0x20, wy + 0x20);
     out
 }
 

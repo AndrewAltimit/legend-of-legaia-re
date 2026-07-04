@@ -4,27 +4,51 @@
 use anyhow::{Context, Result};
 use legaia_mednafen::{
     PsxGpu, PsxSpu, SaveState, VRAM_HEIGHT, VRAM_WIDTH,
-    gpu::{nonzero_rows, vram_to_rgba8},
+    gpu::{crop_rgba, nonzero_rows, vram_to_rgba8},
 };
 use std::path::{Path, PathBuf};
 
-pub fn cmd_vram_dump(save: &Path, out: &Path, out_bin: Option<&Path>, regs: bool) -> Result<()> {
+pub fn cmd_vram_dump(
+    save: &Path,
+    out: &Path,
+    out_bin: Option<&Path>,
+    regs: bool,
+    display_crop: bool,
+) -> Result<()> {
     let s = SaveState::from_path(save)?;
     let gpu = PsxGpu::new(&s);
     let bytes = gpu
         .vram_bytes()
         .ok_or_else(|| anyhow::anyhow!("save state has no GPU.&GPURAM[0][0] entry"))?;
     let rgba = vram_to_rgba8(bytes);
-    write_png(out, &rgba, VRAM_WIDTH as u32, VRAM_HEIGHT as u32)
-        .with_context(|| format!("writing PNG to {}", out.display()))?;
-    println!(
-        "[ok] wrote {} ({}x{} BGR555 + STP-as-alpha, {} non-zero rows of {})",
-        out.display(),
-        VRAM_WIDTH,
-        VRAM_HEIGHT,
-        nonzero_rows(bytes),
-        VRAM_HEIGHT,
-    );
+    if display_crop {
+        let rect = gpu.regs().display_crop_rect().ok_or_else(|| {
+            anyhow::anyhow!("save state lacks the display registers needed to crop the framebuffer")
+        })?;
+        let (x, y, w, h) = rect;
+        let cropped = crop_rgba(&rgba, rect);
+        write_png(out, &cropped, w, h)
+            .with_context(|| format!("writing cropped PNG to {}", out.display()))?;
+        println!(
+            "[ok] wrote {} (on-screen framebuffer {}x{} at VRAM ({},{}))",
+            out.display(),
+            w,
+            h,
+            x,
+            y,
+        );
+    } else {
+        write_png(out, &rgba, VRAM_WIDTH as u32, VRAM_HEIGHT as u32)
+            .with_context(|| format!("writing PNG to {}", out.display()))?;
+        println!(
+            "[ok] wrote {} ({}x{} BGR555 + STP-as-alpha, {} non-zero rows of {})",
+            out.display(),
+            VRAM_WIDTH,
+            VRAM_HEIGHT,
+            nonzero_rows(bytes),
+            VRAM_HEIGHT,
+        );
+    }
     if let Some(bin) = out_bin {
         std::fs::write(bin, bytes)
             .with_context(|| format!("writing raw VRAM to {}", bin.display()))?;

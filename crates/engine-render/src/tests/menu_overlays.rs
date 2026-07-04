@@ -164,7 +164,7 @@ fn status_screen_draws_pack_panel() {
         stat_rows: &stat_rows,
         equip_rows: &equip_rows,
     };
-    let draws = status_screen_draws_for(&font, &panel, Some("L1/R1: Switch"), (16, 32));
+    let draws = status_screen_draws_for(&font, &panel, Some("L1/R1: Switch"), (16, 32), false);
     assert!(!draws.is_empty());
 }
 

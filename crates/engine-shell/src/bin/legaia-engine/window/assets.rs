@@ -356,6 +356,10 @@ impl PlayWindowApp {
                         slot2: atlas_data.band_slot2(),
                         cursor: atlas_data.band_cursor(),
                         panel_interior: atlas_data.band_panel_interior(),
+                        panel_filigree: atlas_data.band_panel_filigree(),
+                        label_lv: atlas_data.band_label_lv(),
+                        label_hp: atlas_data.band_label_hp(),
+                        label_mp: atlas_data.band_label_mp(),
                         load_empty_frame: Some(atlas_data.band_load_empty_frame()),
                         load_portrait_by_char: [
                             atlas_data.band_load_portrait(0),

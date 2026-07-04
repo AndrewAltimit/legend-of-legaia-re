@@ -165,6 +165,10 @@ fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
         slot2: (33, 113, 45, 15),
         cursor: (152, 64, 16, 16),
         panel_interior: (128, 0, 32, 29),
+        panel_filigree: (0, 200, 32, 29),
+        label_lv: (40, 232, 16, 12),
+        label_hp: (60, 232, 16, 12),
+        label_mp: (80, 232, 16, 12),
         load_empty_frame: Some((200, 64, 32, 32)),
         load_portrait_by_char: [
             Some((200, 96, 16, 16)),

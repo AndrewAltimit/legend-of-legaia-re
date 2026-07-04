@@ -11,9 +11,9 @@ use legaia_engine_core::scene_resources::{
 };
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_render::{
-    ColorSceneDraw, RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay,
-    UploadedColorMesh, UploadedFontAtlas, UploadedVram, UploadedVramMesh, capture_banner_draws_for,
-    level_up_draws_for, shop_draws_for, text_draws_for,
+    CaptureImage, ColorSceneDraw, RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw,
+    TextOverlay, UploadedColorMesh, UploadedFontAtlas, UploadedVram, UploadedVramMesh,
+    capture_banner_draws_for, level_up_draws_for, shop_draws_for, text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_shell::BootSession;
@@ -25,6 +25,70 @@ use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::WindowId;
+
+/// Deterministic screenshot harness for `play-window`: render one frame
+/// offscreen at [`Self::capture_tick`] and write it to [`Self::path`], then
+/// exit. [`Self::pad_script`] maps a world-tick to a one-tick pad edge so a
+/// capture run can auto-open + navigate a menu without `xdotool`.
+pub(crate) struct ScreenshotConfig {
+    pub path: std::path::PathBuf,
+    pub capture_tick: u64,
+    /// tick -> pad button mask pressed for exactly that tick.
+    pub pad_script: std::collections::HashMap<u64, u16>,
+}
+
+impl ScreenshotConfig {
+    /// Parse the CLI flags into a config. `None` when `--screenshot` is
+    /// absent. Errors on an unparseable `--pad-script` entry.
+    pub(crate) fn from_args(
+        path: Option<std::path::PathBuf>,
+        capture_tick: u64,
+        pad_script: Option<&str>,
+    ) -> Result<Option<Self>> {
+        let Some(path) = path else {
+            return Ok(None);
+        };
+        let mut script = std::collections::HashMap::new();
+        if let Some(spec) = pad_script {
+            for entry in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                let (tick, btn) = entry
+                    .split_once(':')
+                    .with_context(|| format!("pad-script entry '{entry}' is not TICK:BUTTON"))?;
+                let tick: u64 = tick
+                    .trim()
+                    .parse()
+                    .with_context(|| format!("pad-script tick '{tick}' is not a number"))?;
+                let button = legaia_engine_core::input::PadButton::from_name(btn.trim())
+                    .with_context(|| format!("pad-script button '{btn}' is not a pad button"))?;
+                *script.entry(tick).or_insert(0) |= button.mask();
+            }
+        }
+        Ok(Some(Self {
+            path,
+            capture_tick,
+            pad_script: script,
+        }))
+    }
+}
+
+/// Write a [`CaptureImage`] (RGBA8, row-major) to a PNG file. Used by the
+/// `--screenshot` harness in the redraw path.
+pub(crate) fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("creating screenshot dir {}", dir.display()))?;
+    }
+    let file = std::fs::File::create(path)
+        .with_context(|| format!("creating screenshot {}", path.display()))?;
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), img.width, img.height);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()
+        .context("png header")?
+        .write_image_data(&img.rgba)
+        .context("png data")?;
+    Ok(())
+}
 
 /// One assembled party member ready for the battle render:
 /// `(assembled character, texture uploads, idle clip, per-slot action clips,
@@ -371,6 +435,13 @@ struct PlayWindowApp {
     /// Pad state from the previous frame - used to compute newly-pressed bits
     /// for boot-UI edge detection.
     prev_pad: u16,
+    /// Monotonic world-tick counter (drives the `--screenshot` pad script and
+    /// capture timing). Incremented once per simulated tick.
+    tick_no: u64,
+    /// Deterministic screenshot harness (`--screenshot`). When set, the pad
+    /// script injects one-tick edges and the render path captures an offscreen
+    /// PNG at `capture_tick`, then exits. `None` in normal interactive runs.
+    screenshot: Option<ScreenshotConfig>,
     /// Rolling battle-event log surfaced in the HUD. Each tick drains
     /// `World::pending_battle_events` and folds the most recent N entries
     /// into this ring buffer (`ApplyArtStrike` events also get applied to

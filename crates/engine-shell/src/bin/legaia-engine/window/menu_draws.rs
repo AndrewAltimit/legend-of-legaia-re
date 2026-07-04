@@ -70,6 +70,9 @@ impl PlayWindowApp {
                     &view,
                     Some("L1/R1: Switch  Circle: Back"),
                     self.menu_window_pen(window_ids::STATUS_MAIN),
+                    // LV / HP / MP drawn as sprites from the UI-icon atlas
+                    // (see `field_menu_chrome_sprite_draws`); skip the text.
+                    self.save_menu.is_some(),
                 );
                 let names: Vec<&str> = s.snapshots().iter().map(|m| m.name.as_str()).collect();
                 let sat = legaia_engine_render::StatusSatelliteView {

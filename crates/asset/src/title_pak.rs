@@ -232,6 +232,14 @@ pub const OVERLAY_SYSTEM_UI_PANEL_INTERIOR_TOP_RGB: (u8, u8, u8) = (64, 64, 64);
 /// Gouraud gradient applied to the interior: bottom vertex RGB.
 pub const OVERLAY_SYSTEM_UI_PANEL_INTERIOR_BOT_RGB: (u8, u8, u8) = (136, 136, 136);
 
+/// Status-panel stat **labels** decoded from CLUT row 2 of the system-UI
+/// TIM (the same sheet as the panel chrome + the whole menu icon set). The
+/// retail status page draws these small pixel labels as textured sprites in
+/// place of ASCII glyphs. `(u, v, w, h)` in the 256x192 source page.
+pub const OVERLAY_SYSTEM_UI_LABEL_LV: (u32, u32, u32, u32) = (190, 86, 16, 12);
+pub const OVERLAY_SYSTEM_UI_LABEL_HP: (u32, u32, u32, u32) = (208, 86, 16, 12);
+pub const OVERLAY_SYSTEM_UI_LABEL_MP: (u32, u32, u32, u32) = (226, 86, 16, 12);
+
 /// **Pointing-finger cursor** sprite - the small white hand retail
 /// renders to the left of the highlighted slot pill. Lives in the
 /// same system-UI TIM as the panel chrome but uses a different CLUT

@@ -29,6 +29,17 @@ impl PlayWindowApp {
         }
         let run_ticks = if self.cutscene.is_some() { 0 } else { ticks };
         for _ in 0..run_ticks {
+            self.tick_no += 1;
+            // Screenshot harness: inject the scripted one-tick pad edge for
+            // this tick (overriding keyboard). Ticks with no script entry get
+            // a neutral pad so the previous press releases (edge resets).
+            let scripted_pad = self
+                .screenshot
+                .as_ref()
+                .map(|sc| sc.pad_script.get(&self.tick_no).copied().unwrap_or(0));
+            if let Some(pad) = scripted_pad {
+                self.pad = pad;
+            }
             // When the boot UI is active, route input there and skip
             // the scene tick - the player hasn't entered the world
             // yet (or has paused into save-select).
@@ -1004,6 +1015,37 @@ impl PlayWindowApp {
                 overlay_text: Some(&overlay),
                 clear_color: scene_clear,
             };
+            // Screenshot harness: at the target tick, read the frame back
+            // offscreen and exit instead of presenting to the window.
+            let capture_due = self
+                .screenshot
+                .as_ref()
+                .is_some_and(|sc| self.tick_no >= sc.capture_tick);
+            if capture_due {
+                let path = self.screenshot.as_ref().unwrap().path.clone();
+                match r.capture_rgba(RenderTarget::Scene(&scene)) {
+                    Ok(img) => match write_capture_png(&path, &img) {
+                        Ok(()) => {
+                            println!(
+                                "[ok] screenshot {} ({}x{}) at tick {}",
+                                path.display(),
+                                img.width,
+                                img.height,
+                                self.tick_no
+                            );
+                            std::process::exit(0);
+                        }
+                        Err(e) => {
+                            eprintln!("screenshot write failed: {e:#}");
+                            std::process::exit(1);
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("screenshot capture failed: {e:#}");
+                        std::process::exit(1);
+                    }
+                }
+            }
             if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
                 log::error!("render: {e:#}");
             }

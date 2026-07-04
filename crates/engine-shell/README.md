@@ -67,7 +67,19 @@ cargo build --release
 ./target/release/legaia-engine play --scene town01 --disc <bin> --frames 600
 # Play a cutscene movie with synced audio:
 ./target/release/legaia-engine play-str MOV/MV1.STR --disc <bin>
+# Deterministic headless-ish screenshot (offscreen readback, no scrot/xdotool):
+# open the pause menu, walk down to Status, capture at tick 140.
+./target/release/legaia-engine play-window --disc <bin> --scene town01 \
+  --screenshot status.png --screenshot-tick 140 \
+  --pad-script "40:Start,60:Down,64:Down,68:Down,72:Down,80:Cross"
 ```
+
+`--screenshot PATH` renders one frame into an offscreen `COPY_SRC` texture
+(`Renderer::capture_rgba`) at `--screenshot-tick N` and writes a PNG, then exits -
+no `scrot` screen-scrape. `--pad-script "TICK:BUTTON,..."` injects one-tick pad
+edges keyed on the world-tick counter, replacing `xdotool` for menu navigation.
+Pair with `mednafen-state vram-dump --display-crop` to diff engine output against
+retail framebuffers.
 
 In `play-window`, five minigames run as suspending scene modes driven by their
 clean-room rules engines: the `K` key starts the Noa dance rhythm minigame

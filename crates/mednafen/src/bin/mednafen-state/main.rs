@@ -147,6 +147,13 @@ enum Cmd {
         /// offset, texture window, texture page) alongside the dump.
         #[arg(long)]
         regs: bool,
+        /// Instead of the full 1024x512 VRAM, write only the on-screen
+        /// framebuffer: the display-area sub-rectangle (`display_fb` origin
+        /// sized by the decoded resolution, e.g. 320x240 for Legaia). This
+        /// is what the player actually sees - the right crop for comparing
+        /// menu / HUD pixels against the engine renderer.
+        #[arg(long)]
+        display_crop: bool,
     },
     /// Dump the SPU reverb-routing snapshot: master reverb enable (SPUCNT
     /// bit 7), reverb mode, and the per-voice reverb-send mask (EON), plus a
@@ -354,7 +361,8 @@ fn main() -> Result<()> {
             out,
             out_bin,
             regs,
-        } => cmd_vram_dump(&save, &out, out_bin.as_deref(), regs),
+            display_crop,
+        } => cmd_vram_dump(&save, &out, out_bin.as_deref(), regs, display_crop),
         Cmd::Spu { save, all } => cmd_spu(&save, all),
         Cmd::Scenarios { manifest } => cmd_scenarios(&manifest),
         Cmd::ClutTrace {

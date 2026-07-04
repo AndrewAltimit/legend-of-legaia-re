@@ -18,5 +18,6 @@ mod upload;
 mod uploaded;
 
 pub(crate) use helpers::*;
+pub use render::CaptureImage;
 pub use state::*;
 pub use uploaded::*;

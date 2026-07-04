@@ -40,6 +40,22 @@ const PILL_CLUT: usize = 7;
 /// columns at the bottom-right corner.
 pub const ATLAS_RECT_EMPTY_FRAME: (u32, u32, u32, u32) = (200, 64, 32, 32);
 
+/// Atlas placement of the status-panel **stat labels** (LV / HP / MP),
+/// copied from CLUT row 2 of the system-UI TIM. Packed in a free strip
+/// below the filigree tile. Each is 16x12.
+pub const ATLAS_RECT_LABEL_LV: (u32, u32, u32, u32) = (40, 232, 16, 12);
+pub const ATLAS_RECT_LABEL_HP: (u32, u32, u32, u32) = (60, 232, 16, 12);
+pub const ATLAS_RECT_LABEL_MP: (u32, u32, u32, u32) = (80, 232, 16, 12);
+
+/// Atlas placement of the **raw** (un-gradient-baked) marbled-blue
+/// filigree interior tile (32x29). Copied verbatim from CLUT row 2 of
+/// the system-UI TIM so the field-menu chrome can tile it in 2D as the
+/// window interior (the pause menu fills every window with this navy
+/// damask, darkened by a per-draw colour, rather than the save screen's
+/// gouraud-gradient variant at [`ATLAS_RECT_FILIGREE`]'s baked sibling).
+/// Sits in a free atlas region below the portraits.
+pub const ATLAS_RECT_FILIGREE: (u32, u32, u32, u32) = (0, 200, 32, 29);
+
 /// Atlas placement of the 3 character portrait TIMs (16x16 each).
 /// Stacked horizontally just below the empty-frame rect; each portrait
 /// occupies a 16x16 sub-region.
@@ -119,9 +135,28 @@ impl SaveMenuAtlas {
     pub fn band_cursor(&self) -> (u32, u32, u32, u32) {
         title_pak::OVERLAY_SYSTEM_UI_CURSOR
     }
-    /// Panel interior fill tile (32x29, gradient-baked).
+    /// Panel interior fill tile (32x29, gradient-baked). Used by the
+    /// save/load screen, whose interior retail draws with a gouraud
+    /// gradient.
     pub fn band_panel_interior(&self) -> (u32, u32, u32, u32) {
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR
+    }
+    /// Raw marbled-blue filigree interior tile (32x29), un-baked. The
+    /// pause-menu windows tile this in 2D as their navy damask interior.
+    pub fn band_panel_filigree(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_FILIGREE
+    }
+    /// Status-panel "LV" label sprite (16x12).
+    pub fn band_label_lv(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_LV
+    }
+    /// Status-panel "HP" label sprite (16x12).
+    pub fn band_label_hp(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_HP
+    }
+    /// Status-panel "MP" label sprite (16x12).
+    pub fn band_label_mp(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_MP
     }
     /// Empty-cell frame sprite for the load-screen slot grid (32x32,
     /// 20x20 hollow blue border centred in the sprite - outer 6 px
@@ -259,6 +294,30 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR_TOP_RGB,
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR_BOT_RGB,
     );
+
+    // Raw (un-baked) copy of the same marbled-filigree region into a
+    // free atlas slot, so the pause-menu chrome can tile it in 2D and
+    // apply its own darkening colour (the save screen keeps the
+    // gouraud-baked variant above; the field menu wants the plain
+    // repeating damask).
+    copy_rect(
+        &mut out,
+        ATLAS_WIDTH,
+        &panel_rgba,
+        panel_src_w,
+        title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR,
+        ATLAS_RECT_FILIGREE,
+    );
+
+    // Status-panel stat labels (LV / HP / MP) from the same CLUT-row-2 sheet
+    // - the status page draws these as sprites in place of ASCII glyphs.
+    for (src, dst) in [
+        (title_pak::OVERLAY_SYSTEM_UI_LABEL_LV, ATLAS_RECT_LABEL_LV),
+        (title_pak::OVERLAY_SYSTEM_UI_LABEL_HP, ATLAS_RECT_LABEL_HP),
+        (title_pak::OVERLAY_SYSTEM_UI_LABEL_MP, ATLAS_RECT_LABEL_MP),
+    ] {
+        copy_rect(&mut out, ATLAS_WIDTH, &panel_rgba, panel_src_w, src, dst);
+    }
 
     // Load-screen slot-grid: empty-cell frame + 3 character portrait
     // TIMs. These live just past the system-UI sheet in the unindexed

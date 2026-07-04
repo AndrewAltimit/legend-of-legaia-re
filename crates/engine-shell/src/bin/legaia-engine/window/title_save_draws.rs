@@ -314,6 +314,18 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
+        // Status page: the LV / HP / MP labels are UI-icon sprites from the
+        // system-UI atlas (the text stand-ins are suppressed in
+        // `status_screen_draws_for`), positioned off the id-28 content origin.
+        if matches!(sub, Some(FieldMenuSubsession::Status(_))) {
+            use legaia_asset::menu_windows::window_ids;
+            out.extend(legaia_engine_render::status_icon_sprites_for(
+                &assets.rects,
+                self.menu_window_pen(window_ids::STATUS_MAIN),
+                stage_origin,
+                stage_scale,
+            ));
+        }
         out
     }
 
