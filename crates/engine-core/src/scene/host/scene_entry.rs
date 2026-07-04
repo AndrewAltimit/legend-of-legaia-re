@@ -75,6 +75,7 @@ impl SceneHost {
         // to (Rim Elm). The per-actor channels are timeline-scoped and drop
         // with it.
         self.world.cutscene_timeline = None;
+        self.world.cutscene_card = None;
         self.world.field_channels.clear();
         self.world.field_channels_man = None;
         self.world.field_npc_anim_cues.clear();
@@ -474,6 +475,11 @@ impl SceneHost {
         // write never produces a false hand-off. See
         // [`crate::world::World::arm_prologue_handoff_from_man`].
         if name == legaia_asset::new_game::OPENING_CUTSCENE_SCENE {
+            // The New-Game opening chain starts here: while it plays (through
+            // the `opstati` / `opurud` legs the timelines chain into), a
+            // confirm press with the hand-off bit armed skips the whole
+            // remaining opening to `town01` (retail `FUN_801D1344`).
+            self.world.opening_chain_active = true;
             match self
                 .scene
                 .as_ref()
@@ -508,19 +514,17 @@ impl SceneHost {
                                 crate::world::PROLOGUE_HANDOFF_BIT,
                             );
                         }
-                        // Install the inline narration the cutscene-timeline
-                        // partition (partition 2) carries, so the opening plays
-                        // its subtitle pages before the Rim Elm hand-off.
-                        let pages = crate::man_field_scripts::collect_partition_narration(
-                            &man_file, &man_bytes, 2,
-                        );
-                        if !pages.is_empty() {
+                        // The inline narration is script-driven: the timeline
+                        // stepper installs each block's pages on the roller
+                        // presenter when its PC reaches the block's op and
+                        // suspends the timeline until the crawl completes
+                        // (retail `FUN_80037174`). Nothing to install here.
+                        if let Some(tl) = self.world.cutscene_timeline.as_ref() {
                             log::info!(
-                                "prologue: '{}' carries {} inline narration page(s)",
+                                "prologue: '{}' timeline carries {} narration block(s)",
                                 legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
-                                pages.len(),
+                                tl.narration_blocks.len(),
                             );
-                            self.world.open_cutscene_narration(pages);
                         }
                     }
                     Err(err) => eprintln!("[scene] prologue MAN parse skipped: {err:#}"),
@@ -535,8 +539,15 @@ impl SceneHost {
         // op-`0x49` STATE_RESUME opens the name-entry overlay at the right beat
         // (rather than the host opening it blindly at the hand-off). One-shot:
         // consume the flag so re-entering `town01` later never re-runs it.
-        if name == legaia_asset::new_game::OPENING_SCENE && self.world.entering_town01_opening {
+        if name == legaia_asset::new_game::OPENING_SCENE
+            && (self.world.entering_town01_opening || self.world.opening_chain_active)
+        {
             self.world.entering_town01_opening = false;
+            // Arriving at Rim Elm ends the opening cutscene chain, whether via
+            // the skip packet or the natural scene-change chain.
+            self.world.opening_chain_active = false;
+            self.world.cutscene_narration = None;
+            self.world.cutscene_card = None;
             match self
                 .scene
                 .as_ref()
@@ -702,6 +713,56 @@ impl SceneHost {
         Ok(())
     }
 
+    /// Spawn the partition-2 record referenced by a gate-1 kind-1 tile
+    /// trigger at the arrival tile - the retail walk-on dispatch
+    /// (`FUN_801D1EC4` -> `FUN_801D5630` -> `FUN_8003BDE0`), which fires on
+    /// the first post-arrival frame because the last-tile globals are stale.
+    ///
+    /// Scoped to the opening chain for now (the engine models a spawned
+    /// record as THE cutscene timeline; door records resolve through the
+    /// dedicated warp path instead). Live-probe-pinned: retail's `map01` and
+    /// `town01` opening records spawn exactly this way - the entry seat
+    /// lands on the trigger tile and the stale-tile compare fires the same
+    /// tick; `opstati` / `opurud` spawn via op-`0x44` in their entry scripts
+    /// instead and never reach this path.
+    // REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
+    fn spawn_arrival_trigger_record(&mut self, tile_x: u8, tile_z: u8) {
+        if !self.world.opening_chain_active || self.world.cutscene_timeline_active() {
+            return;
+        }
+        let Some(scene) = self.scene.as_ref() else {
+            return;
+        };
+        let Ok((primary, fallback)) = scene.field_tile_triggers(&self.index) else {
+            return;
+        };
+        let Some(Ok(Some(man_bytes))) = self
+            .scene
+            .as_ref()
+            .map(|s| s.field_man_payload(&self.index))
+        else {
+            return;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
+            return;
+        };
+        let Some(trigger) =
+            crate::field_regions::lookup_tile_trigger(&primary, &fallback, tile_x, tile_z)
+                .filter(|t| t.gate == 1)
+        else {
+            return;
+        };
+        if self
+            .world
+            .install_gated_p2_record(&man_file, &man_bytes, trigger.record as usize)
+        {
+            log::info!(
+                "opening: walk-on trigger at ({tile_x:#x},{tile_z:#x}) spawned P2[{}]",
+                trigger.record,
+            );
+        }
+    }
+
     /// One frame: tick the world, materialize any actor-spawn requests
     /// queued by the field VM's `0x4C 0x80` opcode, then process any
     /// pending `scene_transition(map_id)` request. Returns the
@@ -716,6 +777,30 @@ impl SceneHost {
         let _ = self.world.tick();
         self.world
             .materialize_actor_spawns(crate::world::FIELD_SPAWN_START_SLOT);
+        // Field-VM op-0x44 SPAWN_RECORD: resolve the request against the
+        // current scene MAN and install the partition-2 record as a cutscene
+        // timeline (retail FUN_8003BDE0). This is how the opening chain's
+        // opstati / opurud entry scripts launch their prologue records.
+        // Scoped to the opening chain for now - the engine models a spawned
+        // record as THE cutscene timeline (single context + cutscene camera +
+        // locomotion lock), which is right for the opening cutscenes but too
+        // strong for an ordinary scene's helper spawns.
+        if let Some(global_index) = self.world.pending_record_spawn.take()
+            && self.world.opening_chain_active
+            && !self.world.cutscene_timeline_active()
+            && let Some(Ok(Some(man_bytes))) = self
+                .scene
+                .as_ref()
+                .map(|s| s.field_man_payload(&self.index))
+            && let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes)
+            && self
+                .world
+                .install_spawned_record(&man_file, &man_bytes, global_index)
+        {
+            log::info!(
+                "opening: op-0x44 spawned P2 record (global index {global_index}) as the cutscene timeline",
+            );
+        }
         // Named scene-change (field-VM op 0x3F) takes precedence over the
         // map-id door-warp: its destination name is carried inline by the op,
         // so it loads directly without the map-id resolver. This is the live
@@ -742,6 +827,13 @@ impl SceneHost {
             // resolves it through the SCUS 0x80073F04 table into the
             // arrival-facing global; the engine sets the heading directly).
             self.world.face_player_sector(dir);
+            // Walk-on tile trigger at the arrival tile: retail's per-frame
+            // tile compare fires immediately on the first post-arrival frame
+            // (the last-tile globals are stale from the previous scene), so
+            // an arrival onto a gate-1 kind-1 trigger spawns its partition-2
+            // record - this is how the opening chain's `map01` fly-in and the
+            // natural `town01` opening launch.
+            self.spawn_arrival_trigger_record(entry_x, entry_z);
             return Ok(SceneTickEvent::SceneEntered { name });
         }
         if let Some(map_id) = self.world.pending_scene_transition.take() {

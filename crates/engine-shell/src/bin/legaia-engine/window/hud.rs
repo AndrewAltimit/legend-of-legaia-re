@@ -834,23 +834,40 @@ impl PlayWindowApp {
         {
             out.extend(capture_banner_draws_for(&self.font, &text, (8, 40)));
         }
-        // Opening-cutscene narration: the `opdeene` prologue subtitle pages,
-        // centered near the bottom of the screen one page at a time.
-        if let Some(narration) = &self.session.host.world.cutscene_narration
-            && let Some(text) = narration.current_text()
-        {
-            let gold = [1.0f32, 0.92, 0.6, 1.0];
+        // Opening-cutscene narration: the retail bottom-up subtitle CRAWL
+        // (`FUN_80037174`) - every visible line drawn centered at its
+        // current window Y, scrolling upward. Line Ys are PSX-framebuffer
+        // space (240 lines); scale into the surface. Pixel-pinned from the
+        // cold-boot retail capture (multi-line, 0.5 px/frame; the earlier
+        // one-caption-at-a-time reading measured the separate `4C E1`
+        // balloon, not this crawl).
+        if let Some(narration) = &self.session.host.world.cutscene_narration {
+            let white = [1.0f32, 1.0, 1.0, 1.0];
             let center_x = (w / 2) as i32;
-            // Retail draws the opdeene narration at mid-screen, not near the
-            // bottom: measured off the `new_game_cutscene_intro_a` framebuffer
-            // the caption "It was the Seru." sits at rows 113..121 of a
-            // ~228px-tall visible frame = ~50% down (just below centre, over
-            // the vignette actors). This supersedes the earlier 3/4-down
-            // (Y=180) placement, which the captured frame falsifies.
-            let top_y = (h as i32 / 2).min(h as i32 - 16).max(0);
-            out.extend(legaia_engine_render::cutscene_narration_draws_for(
-                &self.font, text, center_x, top_y, gold,
-            ));
+            let scale = h as f32 / 240.0;
+            for line in narration.visible_lines() {
+                let y = (line.y as f32 * scale) as i32;
+                if y < 0 || y > h as i32 - 8 {
+                    continue;
+                }
+                out.extend(legaia_engine_render::cutscene_narration_draws_for(
+                    &self.font, line.text, center_x, y, white,
+                ));
+            }
+        }
+        // Opening-cutscene static title card (`map01`'s "twilight of
+        // humanity" beat): the pages shown together, centered, at the
+        // capture-pinned band y=92..130.
+        if let Some(card) = &self.session.host.world.cutscene_card {
+            let white = [1.0f32, 1.0, 1.0, 1.0];
+            let center_x = (w / 2) as i32;
+            let scale = h as f32 / 240.0;
+            for (i, text) in card.iter().enumerate() {
+                let y = ((92 + 16 * i as i32) as f32 * scale) as i32;
+                out.extend(legaia_engine_render::cutscene_narration_draws_for(
+                    &self.font, text, center_x, y, white,
+                ));
+            }
         }
         // Name-entry overlay: the opening `town01` lead-character naming prompt.
         if let Some(entry) = &self.session.host.world.name_entry {

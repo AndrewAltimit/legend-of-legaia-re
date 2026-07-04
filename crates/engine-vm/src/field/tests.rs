@@ -294,8 +294,8 @@ impl FieldHost for TestHost {
     fn scene_register_write(&mut self, slot_10: u8, slot_12: u8, slot_14: u8) {
         self.scene_regs.push((slot_10, slot_12, slot_14));
     }
-    fn counter_update(&mut self, op0: u8) {
-        self.counter_calls.push(op0);
+    fn op44_spawn_scene_record(&mut self, global_index: u8) {
+        self.counter_calls.push(global_index);
     }
     fn setup_animation(&mut self, ctx: &mut FieldCtx, count: u8, base_id: u8, frames: &[u8]) {
         self.animations
@@ -588,8 +588,9 @@ impl FieldHost for TestHost {
     fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
         self.n9_table_copies.push(words);
     }
-    fn op4c_n9_sub_f_register_callback(&mut self) {
+    fn op4c_n9_sub_f_register_callback(&mut self) -> bool {
         self.n9_callback_regs += 1;
+        false
     }
     fn op4e_sub4_bios_rand(&mut self) -> i32 {
         self.op4e_sub4_bios_rand_calls += 1;

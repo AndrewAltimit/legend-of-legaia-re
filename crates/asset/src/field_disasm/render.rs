@@ -69,7 +69,9 @@ fn render_mnemonic(insn: &Insn) -> String {
         SceneRegisterWrite { b0, b1, b2 } => {
             format!("SceneRegisterWrite [{b0}, {b1}, {b2}]")
         }
-        Counter { op0 } => format!("Counter op=0x{op0:02X}"),
+        SpawnRecord { global_index } => {
+            format!("SpawnRecord global_index=0x{global_index:02X}")
+        }
         Animate { count, base_id } => format!("Animate count={count} base_id={base_id}"),
         SceneFade { word0, word1 } => {
             format!("SceneFade word0=0x{word0:04X} word1=0x{word1:04X}")

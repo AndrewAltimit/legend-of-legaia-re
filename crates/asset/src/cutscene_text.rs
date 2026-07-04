@@ -54,16 +54,33 @@ pub struct NarrationPage {
     pub text: String,
 }
 
+/// How a narration block presents on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NarrationKind {
+    /// The scrolling subtitle crawl (`op0 = 0x80`): lines enter at the bottom
+    /// of a clipped window and roll upward; the parent script suspends until
+    /// every page has scrolled off (retail roller `FUN_80037174`).
+    Crawl,
+    /// A static title card (`op0 = 0x89`): the pages show simultaneously,
+    /// centered mid-screen, while the parent script continues; a later card
+    /// block whose pages are blank clears it (the `map01` fly-in's
+    /// "twilight of humanity" card).
+    Card,
+}
+
 /// A narration block: the page count declared by the introducing op plus the
 /// pages that follow it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NarrationBlock {
     /// Byte offset of the introducing `0x4C` op, relative to the record body.
     pub op_offset: usize,
-    /// Page count declared in the introducing op (`N`).
+    /// Page count declared in the introducing op (`N`). Card blocks carry no
+    /// declared count; theirs is set to the decoded page count.
     pub declared_pages: u8,
     /// The decoded pages that follow the op.
     pub pages: Vec<NarrationPage>,
+    /// Presentation form (crawl vs static card).
+    pub kind: NarrationKind,
 }
 
 impl NarrationBlock {
@@ -75,8 +92,8 @@ impl NarrationBlock {
 
     /// Byte span `[start, end)` (relative to the parsed body) this block
     /// occupies: the introducing op through the last page's `0x00`
-    /// terminator. A block whose pages did not frame cleanly spans just the
-    /// 4-byte introducing op `[0xCC 0xF8 0x80 N]`.
+    /// terminator. A block whose pages did not frame cleanly spans just its
+    /// introducing op (4 bytes crawl / 5 bytes card).
     ///
     /// A consumer that drives the cutscene timeline through a field-VM
     /// (rather than rendering the narration itself) uses this to skip the
@@ -89,7 +106,13 @@ impl NarrationBlock {
             // its byte length equals its `char` length. End is one past the
             // `0x00`: offset + 1 (start marker) + text + 1 (terminator).
             Some(last) => last.offset + 2 + last.text.len(),
-            None => self.op_offset + 4,
+            None => {
+                self.op_offset
+                    + match self.kind {
+                        NarrationKind::Crawl => 4,
+                        NarrationKind::Card => 5,
+                    }
+            }
         };
         (self.op_offset, end)
     }
@@ -99,8 +122,13 @@ impl NarrationBlock {
 const OP_MENU_CTRL_EXT: u8 = 0xCC;
 /// Cross-context extended target byte used by the narration op.
 const EXT_TARGET_CUTSCENE: u8 = 0xF8;
-/// Outer-nibble-8 selector for the narration display op.
+/// Outer-nibble-8 selector for the narration crawl op.
 const OP0_NARRATION: u8 = 0x80;
+/// Outer-nibble-8 selector for the static title-card op.
+const OP0_TITLE_CARD: u8 = 0x89;
+/// Bytes a title-card op may interpose between itself and its first page
+/// (position/params, e.g. the `map01` card's `4F`-shaped placement word).
+const CARD_PAGE_SCAN: usize = 8;
 /// Page start marker (ASCII Unit Separator).
 const PAGE_START: u8 = 0x1F;
 /// Page terminator.
@@ -151,34 +179,63 @@ pub fn parse_narration(body: &[u8]) -> Vec<NarrationBlock> {
     let mut blocks = Vec::new();
     let mut i = 0usize;
     while i + 4 < body.len() {
-        let is_op = body[i] == OP_MENU_CTRL_EXT
-            && body[i + 1] == EXT_TARGET_CUTSCENE
-            && body[i + 2] == OP0_NARRATION
-            && body[i + 4] == PAGE_START;
-        if !is_op {
+        if body[i] != OP_MENU_CTRL_EXT || body[i + 1] != EXT_TARGET_CUTSCENE {
             i += 1;
             continue;
         }
-        let declared_pages = body[i + 3];
-        let op_offset = i;
-        let mut cursor = i + 4;
-        let mut pages = Vec::new();
-        while pages.len() < usize::from(declared_pages) {
-            match read_page(body, cursor) {
-                Some((page, next)) => {
-                    pages.push(page);
-                    cursor = next;
+        // Crawl block: `[CC F8 80 N]` immediately followed by a page.
+        if body[i + 2] == OP0_NARRATION && body[i + 4] == PAGE_START {
+            let declared_pages = body[i + 3];
+            let op_offset = i;
+            let mut cursor = i + 4;
+            let mut pages = Vec::new();
+            while pages.len() < usize::from(declared_pages) {
+                match read_page(body, cursor) {
+                    Some((page, next)) => {
+                        pages.push(page);
+                        cursor = next;
+                    }
+                    None => break,
                 }
-                None => break,
+            }
+            // Advance past the bytes this block consumed before scanning on.
+            i = cursor.max(op_offset + 4);
+            blocks.push(NarrationBlock {
+                op_offset,
+                declared_pages,
+                pages,
+                kind: NarrationKind::Crawl,
+            });
+            continue;
+        }
+        // Title-card block: `[CC F8 89 b1 b2]`, pages within a short scan
+        // window (the op may interpose a placement word), read greedily (no
+        // declared count).
+        if body[i + 2] == OP0_TITLE_CARD {
+            let op_offset = i;
+            let mut cursor = i + 5;
+            let scan_end = (cursor + CARD_PAGE_SCAN).min(body.len());
+            while cursor < scan_end && body.get(cursor) != Some(&PAGE_START) {
+                cursor += 1;
+            }
+            let mut pages = Vec::new();
+            while let Some((page, next)) = read_page(body, cursor) {
+                pages.push(page);
+                cursor = next;
+            }
+            if !pages.is_empty() {
+                let declared_pages = pages.len() as u8;
+                i = cursor;
+                blocks.push(NarrationBlock {
+                    op_offset,
+                    declared_pages,
+                    pages,
+                    kind: NarrationKind::Card,
+                });
+                continue;
             }
         }
-        // Advance past the bytes this block consumed before scanning on.
-        i = cursor.max(op_offset + 4);
-        blocks.push(NarrationBlock {
-            op_offset,
-            declared_pages,
-            pages,
-        });
+        i += 1;
     }
     blocks
 }

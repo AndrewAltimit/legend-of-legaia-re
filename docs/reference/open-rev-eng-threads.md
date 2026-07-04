@@ -827,7 +827,7 @@ So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace.
 | Debug flags `0x8007B8C2` / `0x8007B98F` | partial - `0x8007B98F` live-confirmed; consumer in uncaptured overlay | [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) | `project_debug_flags.md` |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | open - read-BP scan pending | Identify which native code reads the key-item id bytes that the full-bag OOB add helper writes. A consumer that uses the attacker-controlled id byte as an unguarded index is a potential chain toward the debug bytes. Probe: `scripts/pcsx-redux/autorun_key_item_consumer_hunt.lua`. | `project_ace_oob_confirmed.md` |
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) | `project_xp_split_static_negative.md` |
-| Opening-prologue tail (`opdeene`) | partial | [details ↓](#opening-prologue-tail-opdeene) | `project_cold_boot_prologue.md` |
+| New-Game opening chain + narration roller | resolved (two data-source sub-threads open) | [details ↓](#new-game-opening-chain--narration-roller) | `project_cold_boot_prologue.md` |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) | `project_static_overlay_pipeline.md` |
 | Options/menu overlay PROT entry | resolved + RAM-verified (**PROT 0899** @ `0x801CE818`) | The options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896: `FUN_801CF650`'s signature byte-matches PROT 0899 file `0xe38`, and the `.text`+`.rodata` prefix is byte-identical across six menu-open saves. VA-alias sibling of the field overlay 0897 in slot A - the menu overlay replaces the field overlay at the base. The earlier "0896 = menu" label is falsified. | `project_static_overlay_pipeline.md` |
 | PROT 0896 (`bat_back_dat`) identity | open (mode-24-overlay hypothesis refuted; base was an over-read artifact) | [details ↓](#prot-0896-bat_back_dat-identity) | `project_static_overlay_pipeline.md` |
@@ -911,17 +911,20 @@ carries 0). The Status menu (`FUN_801D33D8`) draws `+0x0`/`+0x4` verbatim.
 See [`subsystems/level-up.md`](../subsystems/level-up.md#xp-table).
 
 
-### Opening-prologue tail (`opdeene`)
+### New-Game opening chain + narration roller
 
-*Status:* partial
+*Status:* resolved (two data-source sub-threads open)
 
-The `opdeene` → `town01` hand-off is **data-driven**: `enter_field_scene` arms it only when partition-2's real `GFLAG_SET 26` write is present (P2 record 18, offset `0xA5E`). The intro cutscene executes in-engine as a spawned field-VM context (`CutsceneTimeline`; `load_cutscene_timeline_from_man` / `step_cutscene_timeline`): op `0x45` Camera Configure + `0x23` MoveTo emit camera/move events, the closing `GFLAG_SET 26` fires the hand-off by execution, and the inline `0x1F`-page narration (parser `legaia_asset::cutscene_text`) plays via the `CutsceneNarration` presenter and gates the hand-off.
+**The opening is a five-scene chain, live-probe + pixel-capture pinned** - `opdeene` → `opstati` → `opurud` → `map01` → `town01`, all master mode 3, zero input; the `FUN_801D1344` `town01` packet is the **intro SKIP** (its earlier reading as the required hand-off gate is superseded). Each leg's record spawn is pinned (exec-BP on `FUN_8003BDE0`, exactly 5 hits): op `0x44` SPAWN_RECORD in the first three legs' entry scripts (the old op-`0x44` "COUNTER" reading is superseded), the walk-on tile trigger (`FUN_801D1EC4` → `FUN_801D5630`) for `map01`/`town01`. Full mechanics: [`cutscene.md`](../subsystems/cutscene.md#in-engine-3d-opening-the-five-scene-new-game-chain).
 
-The **name-entry auto-open is pinned**: op `0x49` STATE_RESUME sub-op 3 at town01 P2[3] body offset `0x02c6`, pinned by executing P2[3] through the field VM and correlating against the `name_input_ui` save (`_DAT_8007B450` parks at the op while name entry is up); the engine runs P2[3] on the new-game hand-off and op `0x49` opens name entry then resumes (`install_town01_opening_timeline`). The op-`0x45` param→global map is fully pinned (`FUN_801DE084`):
+**The narration is a bottom-up scrolling crawl** (roller actor `FUN_80037174`, parent-halt-suspend, per-scene capture-pinned geometry/speed), not a one-caption-at-a-time presenter - the prior one-line model described the separate `4C E1` balloon op (`FUN_8003C764` / `FUN_801DA7F0`) and is superseded.
+The name-entry auto-open stays pinned: op `0x49` STATE_RESUME sub-op 3 at town01 P2[3] body offset `0x02c6` (`_DAT_8007B450` parks there while name entry is up); the retail town01 order is establishing pan → name entry → Vahn's walk-out.
+The op-`0x45` camera param→global map, the GTE rotation build (`FUN_8001CF50`), the per-frame ease (`FUN_801DB510`), and the eye-back depth (the offset-trio slot 5, `0x800840B8` - no separate eye-distance scalar) are all pinned; `play-window` renders through `psx_camera_mvp`.
 
-**param 0 = pitch, param 1 = yaw, param 2 = roll** (the three GTE Euler angles), params 3/4/5 = shake/offset trio, params 6/7/8 = camera focus (negated GTE translation), param 9 = GTE H (FOV/zoom). The GTE rotation build is decoded (`FUN_8001CF50` rotates by `RotMatrixX/Y/Z` at `0x800461A4/629C/638C`, sin/cos LUT `0x80070A2C`, 12-bit angles), and the per-frame ease is decoded (`FUN_801DB510` exponential `srav` lerp toward control-block targets). `play-window` wires pitch + yaw + focus + H into `cutscene_camera_mvp` + `CutsceneCameraInterp`.
+**Open sub-threads (data sources, not mechanisms):**
 
-**What's left:** only the eye **distance** is unmapped - retail has no explicit eye-distance scalar (the eye sits at the GTE translation and projects through H), so the engine still orbits the focus at a scene-sized radius rather than placing the eye at the translation. The snap-vs-interpolate timing is resolved (it eases).
+1. **The *"It was the Seru."* static caption's data source.** The balloon-style beat between `opdeene`'s two crawls is NOT in the `opdeene` MAN (no matching inline page outside the crawl blocks) - likely a MES id or a channel-script emission. Closing it = finding the bytes the balloon spawner (`FUN_8003C764` path) is handed during that beat.
+2. **The retail roller config op's parameter decode.** The crawl geometry/speed differ per scene (`opdeene` tall window / `opurud` double speed), so a config op (`4C 88` / `CC F8 E8`-shaped) presumably carries the window/step/rate parameters the engine currently pins per scene as `RollerParams::for_scene` (from the pixel capture). Closing it = decoding those operands and deriving the params from the scene bytecode instead of the capture table.
 
 
 ### Overlay identity from the disc (static extraction)

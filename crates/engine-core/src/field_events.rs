@@ -80,8 +80,8 @@ pub enum FieldEvent {
     RenderCfgLong { b1: u8, b2: u8, b3: u8, b4: u8 },
     /// Field-VM op 0x46 short-form render config.
     RenderCfgShort { r: u8, g: u8, b: u8, packed: u8 },
-    /// Field-VM op 0x44 (counter / score / hit-counter update).
-    CounterUpdate { op0: u8 },
+    /// Field-VM op 0x44 (spawn a MAN partition-2 record as a new context).
+    SpawnRecord { global_index: u8 },
     /// Effect-anim trigger (op cluster around 0x32 / 0x4E).
     EffectAnimTrigger { arg: u8 },
     /// Field-VM op 0x36 (scene fade) - the host returned this fade was
@@ -251,7 +251,7 @@ impl FieldEvent {
             FieldEvent::RenderCfgShort { r, g, b, packed } => {
                 format!("RenderCfgShort(r={r}, g={g}, b={b}, packed={packed})")
             }
-            FieldEvent::CounterUpdate { op0 } => format!("CounterUpdate({op0})"),
+            FieldEvent::SpawnRecord { global_index } => format!("SpawnRecord({global_index})"),
             FieldEvent::EffectAnimTrigger { arg } => format!("EffectAnimTrigger({arg})"),
             FieldEvent::SceneFade { op0_word, op1_word } => {
                 format!("SceneFade(op0={op0_word:#x}, op1={op1_word:#x})")
@@ -362,7 +362,7 @@ mod tests {
                 b: 0,
                 packed: 0,
             },
-            FieldEvent::CounterUpdate { op0: 0 },
+            FieldEvent::SpawnRecord { global_index: 0 },
             FieldEvent::EffectAnimTrigger { arg: 0 },
             FieldEvent::SceneFade {
                 op0_word: 0,

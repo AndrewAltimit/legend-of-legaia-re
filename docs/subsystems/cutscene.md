@@ -371,16 +371,45 @@ The `0x4C 0xE2 lo hi` byte sequence does NOT appear in the field-pack RAM region
 
 The corpus is codified at `legaia_engine_core::capture_observations::cutscene_trigger_corpus` and exercised by the disc-gated test `crates/mednafen/tests/real_saves.rs::cutscene_trigger_corpus_pins_fmv_id_across_nine_saves`.
 
-## In-engine 3D cutscene (`opdeene` opening prologue)
+## In-engine 3D opening (the five-scene New-Game chain)
 
-Not every cutscene is an STR FMV. The New Game opening - the "Genesis tree" prologue with the *"…the Seru."* narration - is an **in-engine 3D cutscene scene** (`opdeene`, CDNAME/PROT #748), a field scene running in master game-mode `0x03` (field RUN), not a `MOV/MVn.STR` video. (`MV1.STR` is the title-attract movie; the opening 3D sequence is engine-rendered - see [`boot.md`](boot.md#opdeene--town01-handoff-scene-change-packet).)
+Not every cutscene is an STR FMV. The New Game opening - the "Genesis tree" prologue with the *"…the Seru."* narration - is an **in-engine 3D cutscene chain**, field scenes running in master game-mode `0x03` (field RUN), not a `MOV/MVn.STR` video. (`MV1.STR` is the title-attract movie; the opening 3D sequence is engine-rendered - see [`boot.md`](boot.md#the-opening-scene-chain--the-fun_801d1344-intro-skip).)
 
-The cutscene plays out of the scene MAN's **cutscene-timeline partition** (partition 2). Its closing record (record 18; record start at MAN offset `0xA47`) is a field-VM script that interleaves:
+### The five-scene chain
+
+NEW GAME boots **`opdeene`** (CDNAME/PROT #748, the creation-myth crawl) and the opening then chains through **five scenes with ZERO input** (pinned by a PCSX-Redux cold-boot pixel capture; disc-gated end-to-end oracle `crates/engine-core/tests/opening_full_chain_e2e.rs`):
+
+| Scene | Content | Opening record + how it spawns |
+|---|---|---|
+| `opdeene` | Creation-myth crawl (14 + 8 pages) over the Genesis-tree vignettes | timeline P2[18], spawned by op `0x44` (`44 23`) in the P1[0] entry system script; ends with a `0x3F` SceneChange to `opstati` |
+| `opstati` | Seru-intro crawls (3 + 6 pages) | P2[0], op `0x44` (`44 21`); chains to `opurud` |
+| `opurud` | Mist-story crawls (4 + 3 + 5 pages) | P2[9], op `0x44` (`44 32`); chains to `map01` |
+| `map01` | World-map fly-in: static "twilight of humanity" title card + a 5-page crawl over an aerial approach of Rim Elm | P2[38], spawned by the **walk-on tile trigger** at the arrival tile; scene-changes into `town01` at tile `(0x1D, 0x5B)` |
+| `town01` | Establishing pan → **name entry** → Vahn's walk-out (the walk-out is post-confirm) | P2[3], walk-on tile trigger; C1 gate lists flag `0x225` (one-shot) |
+
+A confirm press at any time after `opdeene`'s timeline arms `GFLAG 26` (near the record's top) fires the `FUN_801D1344` `town01` scene-change packet - that packet is the **intro SKIP**, not a required hand-off gate (the earlier "confirm-to-continue after the prologue" reading is superseded; the natural chain needs no input). See [`boot.md`](boot.md#the-opening-scene-chain--the-fun_801d1344-intro-skip).
+
+### Record spawn mechanisms (live-probe-pinned)
+
+An exec-breakpoint on the record dispatcher `FUN_8003BDE0` across the whole opening fires **exactly five times** - one opening record per scene, via two mechanisms:
+
+- **Field-VM op `0x44` SPAWN_RECORD** (`opdeene` / `opstati` / `opurud`). The scene's P1[0] entry system script runs `[44, global_index]`; the dispatcher (`FUN_801DE840` case `0x44`, call site ra `0x801DF098`) hands it to `FUN_8003BDE0` with the gate forced to 1. The operand is a **GLOBAL** record index, re-based into partition 2 by subtracting the partition-0/1 record counts (`- N0 - N1`).
+  The old "COUNTER" reading of op `0x44` is superseded - see [`script-vm.md`](script-vm.md#0x44-0x4f-record-spawn--camera--render--state--move-block). Engine: `legaia_engine_vm` decodes it as `SpawnRecord` and the host installs the record ([`FieldHost::op44_spawn_scene_record`](../../crates/engine-vm/src/field/host.rs) → [`World::install_spawned_record`](../../crates/engine-core/src/world/narration.rs)).
+- **Walk-on tile trigger** (`map01` / `town01`). The per-frame tile trigger `FUN_801D1EC4` → `FUN_801D5630(1, x, z)` → `FUN_8003BDE0(x, z, rec[2], rec[3])` (ra `0x801D218C`): kind-1 records `[tile_x][tile_z][p2_record][gate]` in the scene `.MAP`'s `+0x10000` trigger block (and its `+0x12000` fallback window - see [`field-locomotion.md`](field-locomotion.md#trigger-block-0x10000---four-kind-sub-tables)).
+  The scene-entry SEAT lands *on* the trigger tile, and the stale last-tile compare fires the same tick - so an arrival spawns the opening record immediately. `gate = 1` spawns the P2 record; `gate = 0` records are object-binds consumed at scene init (`FUN_8003A55C`) and never spawn.
+  Engine: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-core/src/field_regions.rs), [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs), `SceneHost`'s `spawn_arrival_trigger_record`.
+
+Before spawning, `FUN_8003BDE0` checks the P2 record's **C1/C2 story-flag gates** against the bitmap at `DAT_80085758` (`bit = byte[flag >> 3] & (0x80 >> (flag & 7))`): **C1 blocks the spawn if ANY listed flag is set** - the one-shot mechanism (`town01` P2[3] lists `0x225`, set once the opening has played) - and **C2 requires ALL listed flags set**. Engine mirror: [`World::p2_record_gates_pass`](../../crates/engine-core/src/world/narration.rs) over [`man_field_scripts::partition2_record_gates`](../../crates/engine-core/src/man_field_scripts/partitions.rs).
+
+### The `opdeene` timeline record
+
+`opdeene`'s timeline record (partition 2, record 18; record start at MAN offset `0xA47`) is a field-VM script that interleaves:
 
 - camera staging - op `0x45` `Camera Configure` (a 23-byte payload block) and op `0x46` `RenderCfg`;
 - actors - op `0x23` `MoveTo` and op `0x34` `Effect` spawns;
-- the `town01` hand-off arm - op `0x2E` `GFLAG_SET 26` (`2E 1A` at `0xA5E`);
-- **inline narration text** (below).
+- the intro-skip arm - op `0x2E` `GFLAG_SET 26` (`2E 1A` at `0xA5E`);
+- **inline narration text** (below);
+- the terminal `0x3F` SceneChange to `opstati` (the natural chain hand-off).
 
 ### Inline narration format
 
@@ -395,7 +424,9 @@ The on-screen narration is carried as **inline ASCII text pages embedded in the 
 
 Each page is framed `0x1F <printable ASCII> 0x00` - `0x1F` (ASCII Unit Separator) starts a page, `0x00` terminates it, the body is plain 7-bit ASCII. The page count `N` in the introducing op equals the number of `0x1F`-framed pages that follow, which both validates the parse and gives a consumer the cadence for revealing subtitles.
 
-`opdeene`'s timeline carries two blocks: a 14-page creation prologue and an 8-page Seru-history block (22 pages total). The clean-room parser is [`legaia_asset::cutscene_text`](../../crates/asset/src/cutscene_text.rs) (`parse_narration` / `narration_pages`); it locates the introducing op and the page framing structurally and decodes the runtime disc bytes (no narration text is baked into the repo). Inspect it with:
+A sibling **static title-card op** `[0xCC 0xF8 0x89 b1 b2]` carries the same `0x1F`/`0x00` page framing (after an optional short placement word) but presents differently: the pages show **simultaneously**, centered, while the parent script **continues**; a later card block whose pages are blank clears the card. `map01`'s fly-in uses it for the "twilight of humanity" title card + its blank-page clear. The parser distinguishes the two as [`NarrationKind::Crawl`](../../crates/asset/src/cutscene_text.rs) (`op0 = 0x80`) vs [`NarrationKind::Card`](../../crates/asset/src/cutscene_text.rs) (`op0 = 0x89`); the engine surfaces the card via `World::cutscene_card`.
+
+`opdeene`'s timeline carries two crawl blocks: a 14-page creation prologue and an 8-page Seru-history block (22 pages total). The clean-room parser is [`legaia_asset::cutscene_text`](../../crates/asset/src/cutscene_text.rs) (`parse_narration` / `narration_pages`); it locates the introducing op and the page framing structurally and decodes the runtime disc bytes (no narration text is baked into the repo). Inspect it with:
 
 ```bash
 legaia-engine man-scripts --scene opdeene --disc "<disc>.bin" \
@@ -404,13 +435,22 @@ legaia-engine man-scripts --scene opdeene --disc "<disc>.bin" \
 
 The disc-gated test `crates/engine-core/tests/opdeene_narration.rs` ground-truths the structure (two blocks, 14 + 8 pages, every page non-empty ASCII, declared count matches decoded) without committing the text.
 
-### Narration playback
+### Narration playback - the crawl roller (`FUN_80037174`)
 
-Entering `opdeene` live installs the decoded pages on the world ([`World::open_cutscene_narration`](../../crates/engine-core/src/world.rs); the host gathers them via [`man_field_scripts::collect_partition_narration`](../../crates/engine-core/src/man_field_scripts.rs) over partition 2). The presenter [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs) walks them one page at a time: `World::tick` advances a per-page timer (auto-advancing the subtitle, default `DEFAULT_PAGE_FRAMES` ≈ 2.5 s/page), and a confirm press skips to the next page.
+The opening narration is a **bottom-up scrolling crawl**, not a one-caption-at-a-time presenter. The `[CC F8 80 N]` op routes to an on-screen-text actor whose handler is `FUN_80037174` (SCUS-static):
 
-The host renders the active page centered **at mid-screen** ([`cutscene_narration_draws_for`](../../crates/engine-render/src/lib.rs)) - measured off the `new_game_cutscene_intro_a` retail framebuffer, the caption "It was the Seru." sits at ~50% down (just below centre, over the vignette actors), not near the bottom.
+- one roller actor owns all `N` pages of a block, and it **halt-suspends the PARENT timeline context** at the op until every page has scrolled out (it clears the parent's halt bit at completion);
+- each line is drawn centered with **all glyphs at once** (no typewriter), scrolling upward inside a clipped window; several lines are visible concurrently.
 
-The narration **gates the Rim Elm hand-off**: [`World::take_prologue_handoff`](../../crates/engine-core/src/world.rs) returns nothing while the narration is on screen, so the opening order matches retail - narration plays, *then* a confirm press triggers the `town01` transition. The presenter's per-page dwell (`DEFAULT_PAGE_FRAMES = 120` ≈ 2.0 s) and the renderer's mid-screen placement (~50% down, above) are pinned to retail. The disc-gated test `crates/engine-core/tests/opdeene_narration_playback.rs` cold-boots `opdeene`, asserts the narration installs (22 pages) and gates the hand-off, ticks it to completion on the timer, and confirms the hand-off then releases to `town01`.
+The geometry and speed are **pixel-capture-pinned** (PCSX-Redux cold boot, per-frame text-band tracking): 0.5 px/frame everywhere except `opurud` (1.0 px/frame); `opdeene` runs the tall window (enter ~y188, exit ~y64, 18 px line spacing, up to 8 lines visible); `opstati` / `map01` enter ~y203 and exit at y128 with 16 px spacing; `opurud` enters ~y187 and exits at y128.
+
+The engine's [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs) is that roller as a state machine, with per-scene [`RollerParams::for_scene`](../../crates/engine-core/src/cutscene_narration.rs) carrying the capture-pinned values; the timeline stepper installs each block's pages when its PC reaches the block's op and **suspends at the block** ([`NarrationSite`](../../crates/engine-core/src/cutscene_timeline.rs)) until the roller completes - the retail parent-suspend, mirrored exactly. The host renders from `visible_lines()`.
+
+A prior model - "one caption per page, 120 frames each, killing its predecessor, drawn at `Y = 180` / mid-screen" - described the separate **`4C E1` single-balloon op** (spawner `FUN_8003C764`, handler `FUN_801DA7F0`, dispatcher case at `0x801E30B8`/`C8`). That op is real but it is **not the crawl**.
+The *"It was the Seru."* static caption between `opdeene`'s two crawls is a balloon-style beat whose data source is still unpinned (it is not in the `opdeene` MAN - an open thread, see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#new-game-opening-chain--narration-roller)).
+Note also that `FUN_8003CF04` is a list **finder** (walks `0x8007C34C` matching `node[+0xC] == handler && !(node[+0x10] & 8)`), not a kill function; the balloon's predecessor-kill lives in `FUN_801DA7F0`'s own first lines.
+
+The narration does **not** gate the `town01` hand-off: the roller is timer-driven, and the `FUN_801D1344` packet is the intro **skip** - it fires mid-narration too, once `GFLAG 26` is armed ([`World::take_prologue_handoff`](../../crates/engine-core/src/world/narration.rs) tears down the playing narration / card / timeline wholesale). The disc-gated test `crates/engine-core/tests/opdeene_narration_playback.rs` cold-boots `opdeene` and drives the crawl blocks to completion; `opening_full_chain_e2e.rs` asserts the block cadence across all five scenes.
 
 ### Timeline execution model (Ghidra-traced)
 
@@ -418,9 +458,9 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
 
 - **Record header.** Partition-2 records are **named records**, *not* the partition-1 `[u8 N][N*2 locals][4-byte header]` shape. Layout: `[u8 name_len][name_len*2 SJIS name][u8 C0][C0 bytes][u8 C1][C1*u16][u8 C2][C2*u16]<script>`. The name length is in characters; the three condition-list gates are story-flag predicates the dispatcher tests before running the record (block 1 = OR gate, block 2 = AND gate; block 0 is skipped here). The script entry offset is `1 + name_len*2 + (1+C0) + (1+C1*2) + (1+C2*2)`. For `opdeene`'s record 18 (`name_len=6` "Opening", all blocks empty) that is `0x10` - the `0x34` EFFECT op (white fade-in) that opens the prologue, immediately followed by `GFLAG_SET 26` at `+0x17`. Decoder:
   [`man_field_scripts::partition_record_span`](../../crates/engine-core/src/man_field_scripts.rs) (`FUN_8003BDE0`).
-- **Dispatch.** `FUN_8003BDE0` resolves a partition record by index, walks the header, and **spawns a VM context** (`ctx[+0x90]` = record base, `ctx[+0x9e]` = entry PC, `ctx[+0x10] |= 0x100` "run me"); the per-frame runner `FUN_80039B7C` then loops `FUN_801DE840` on it until a yield. The index is keyed by scene-entry / tile-trigger position (`FUN_801D27E0` / `FUN_801D1EC4`), not a sequential partition walk.
+- **Dispatch.** `FUN_8003BDE0` resolves a partition record by index, walks the header, and **spawns a VM context** (`ctx[+0x90]` = record base, `ctx[+0x9e]` = entry PC, `ctx[+0x10] |= 0x100` "run me"); the per-frame runner `FUN_80039B7C` then loops `FUN_801DE840` on it until a yield. The index comes from the two caller families [above](#record-spawn-mechanisms-live-probe-pinned) - an entry-script op `0x44` or a walk-on tile trigger (`FUN_801D1EC4`) - not a sequential partition walk.
 - **Cross-context target `0xF8`.** Nearly every op in the timeline carries the extended-target byte `0xF8` (`A3 F8 …` = MoveTo, `CC F8 …` = MenuCtrl). `FUN_8003C83C(0xF8)` resolves to `_DAT_8007C364` - the **player / camera-anchor actor** - so the timeline drives the camera/lead actor.
-- **Narration op.** `CC F8 80 N` (op `0x4C`, outer-nibble 8, sub-0) **spawns a child text context** from the on-screen-text pool with the `N` inline pages as its bytecode (parent PC advances by 3; the pages stay embedded). Each page is drawn by `FUN_8003C764`: horizontally centered (`X = (320 − text_width)/2`), fixed `Y = 180` on the 240-px virtual screen, with the per-page display timer seeded to `0x78` = 120 frames.
+- **Narration op.** `CC F8 80 N` (op `0x4C`, outer-nibble 8, sub-0) **spawns the roller child** - the on-screen-text actor whose handler is `FUN_80037174` - over the `N` inline pages, and halt-suspends the parent timeline until the whole block has scrolled out (the roller clears the parent's halt bit at completion). See [Narration playback](#narration-playback---the-crawl-roller-fun_80037174). The single-line balloon path (`4C E1`, spawner `FUN_8003C764` → handler `FUN_801DA7F0`: centered `X = (320 − width)/2`, `Y = 180`, 120-frame timer, kills its predecessor) is a **different op** - not the opening crawl.
 - **Camera Configure op `0x45`.** The CONFIGURE sub-path (`op0 & 0xC0 == 0`) reads a big-endian 10-bit field mask `(op0<<8)|op1`; bit `(9−i)` selects param `i`, each a signed-16 LE word written into the camera staging struct at `0x801C6EA8 + 0x02 + i*4`, followed by the commit `FUN_801DE084(struct, apply_trigger)`. The commit (`overlay_cutscene_dialogue_801de084.txt`) maps every param to a camera global:
 
   | param | struct off | global | role |
@@ -446,14 +486,22 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
 
 ### Timeline execution (engine port)
 
-The engine **executes** this timeline as a spawned field-VM context. On entering `opdeene` live, [`World::load_cutscene_timeline_from_man`](../../crates/engine-core/src/world.rs) locates the partition-2 record that issues `GFLAG_SET 26` (via [`man_field_scripts::walk_partition_gflag_sites`](../../crates/engine-core/src/man_field_scripts.rs)), resolves its named-record span, and installs a [`CutsceneTimeline`](../../crates/engine-core/src/cutscene_timeline.rs) - a second `FieldCtx` separate from the scene-entry system script on `World::field_ctx`, seeded on the system channel (`script_id = 0xFB`) so cross-context (`0x80`-bit) ops keep running after the record's first yield sets the context halt bit.
+The engine **executes** this timeline as a spawned field-VM context. On entering `opdeene` live, [`World::load_cutscene_timeline_from_man`](../../crates/engine-core/src/world/narration.rs) locates the partition-2 record that issues `GFLAG_SET 26` (via [`man_field_scripts::walk_partition_gflag_sites`](../../crates/engine-core/src/man_field_scripts.rs)), resolves its named-record span, and installs a [`CutsceneTimeline`](../../crates/engine-core/src/cutscene_timeline.rs) - a second `FieldCtx` separate from the scene-entry system script on `World::field_ctx`, seeded on the system channel (`script_id = 0xFB`) so cross-context (`0x80`-bit) ops keep running after the record's first yield sets the context halt bit.
+The `opstati` / `opurud` legs install theirs through the faithful op-`0x44` spawn instead ([`World::install_spawned_record`](../../crates/engine-core/src/world/narration.rs)); `map01` / `town01` through the walk-on tile trigger ([above](#record-spawn-mechanisms-live-probe-pinned)).
 
-[`World::step_cutscene_timeline`](../../crates/engine-core/src/world.rs) runs that context through the same `legaia_engine_vm::field::step` each frame, run-until-yield (mirroring retail's per-frame dispatch), bounded by a per-frame step budget and a frame cap. The Camera Configure (`0x45`) and `MoveTo` (`0x23`) ops emit the same [`FieldEvent`](../../crates/engine-core/src/field_events.rs)s the runtime [`Camera`](../../crates/engine-core/src/camera.rs) folds in, and the closing `GFLAG_SET 26` writes the hand-off bit through the same host path the main field VM uses - so the `town01` hand-off **fires by execution**, not by a static MAN-walk derivation.
-The static arm ([`World::arm_prologue_handoff_from_man`](../../crates/engine-core/src/world.rs)) remains as a fallback for a scene whose timeline record can't be resolved, and a safety net arms it if execution can't reach the closing op within the frame cap, so the prologue can never stall.
+[`World::step_cutscene_timeline`](../../crates/engine-core/src/world/narration.rs) runs that context through the same `legaia_engine_vm::field::step` each frame, run-until-yield (mirroring retail's per-frame dispatch), bounded by a per-frame step budget and a frame cap. The Camera Configure (`0x45`) and `MoveTo` (`0x23`) ops emit the same [`FieldEvent`](../../crates/engine-core/src/field_events.rs)s the runtime [`Camera`](../../crates/engine-core/src/camera.rs) folds in; the `GFLAG_SET 26` near the record's top arms the **intro skip** through the same host path the main field VM uses; and the record's terminal `0x3F` SceneChange chains the next opening leg - all **by execution**, not by a static MAN-walk derivation.
+The static arm ([`World::arm_prologue_handoff_from_man`](../../crates/engine-core/src/world/narration.rs)) remains as a fallback for a scene whose timeline record can't be resolved, and a safety net arms it if execution can't reach the arming op within the frame cap, so the prologue can never stall.
+
+Two overlay-variant pins from the live opening run:
+
+- **Op `0x4C` nibble-4 sub-9 (`4C 49`) never jumps in the cutscene-dialogue overlay.** Its case 9 (`overlay_cutscene_dialogue_801de840.txt`, around the `_DAT_1f800394 & 0x1000000` test) selects a **write variant**: bit 25 → Delta (write/ramp target slot + the delta global), bit 24 → **player-relative write** (`+0x4A = value + player_anchor[+0x16]`), else Default - always advancing 6 bytes. The field-overlay-0897 dump's absolute-jump arm does **not** apply to the opening path (live probe: `opurud`'s entry script reaches its `44 32` at `+0x7A` with bit 24 set, which an abs-jump arm would have made unreachable). Engine: [`Sub9State::PlayerRelative`](../../crates/engine-vm/src/field/types.rs) replaces the earlier `AbsJump`.
+- **`4C 9F` (nibble-9 sub-F register-callback, `LAB_801DA930` via `0x8003CF40`) never fires during the opening** (live probe: zero exec hits on the callback). `FUN_8003CF40` only sets `node[+0x10] |= 8` on an already-live actor whose entry equals the callback - inert when none is live. The engine's host hook ([`FieldHost::op4c_n9_sub_f_register_callback`](../../crates/engine-vm/src/field/host.rs)) reports "already satisfied" during the opening chain so the entry script proceeds to its op-`0x44` spawn.
 
 Two single-shared-VM accommodations, **approximate by design**:
 
-- **Narration pages are neutralized.** In retail's cutscene context the `CC F8 80 N` op routes to `FUN_8003C764` (text draw) and consumes its `N` inline pages; the engine's single field VM decodes `0x4C` n8 sub-0 as the actor allocator, whose PC-advance would land on the page bytes. Because the engine presents the narration through the separate `CutsceneNarration` presenter, the loader overwrites each narration span (located by [`cutscene_text::NarrationBlock::byte_span`](../../crates/asset/src/cutscene_text.rs)) with field-VM NOPs (`0x21`) - an offset-preserving fill, so relative jumps still resolve and the camera/move/`GFLAG` ops at their original offsets still execute. The actor-allocator host hook is also suppressed while the timeline steps (`World::in_cutscene_timeline`).
+- **Narration blocks suspend the timeline at the block.** The inline page bytes are data, not opcodes, so the stepper never walks the VM into them: [`World::install_cutscene_timeline_record`](../../crates/engine-core/src/world/narration.rs) parses each block into a [`NarrationSite`](../../crates/engine-core/src/cutscene_timeline.rs) (`op_offset` + [`byte_span`](../../crates/asset/src/cutscene_text.rs) end + pages + kind).
+  When the PC reaches a crawl site, the stepper installs the pages on the roller presenter and **parks the timeline at the op** until the roller completes, then resumes just past the block - the same parent-halt-suspend retail's `FUN_80037174` child performs. A card site installs `World::cutscene_card` (blank pages clear it) and the parent continues, per the retail card semantics.
+  (The earlier NOP-fill of the narration span, the scene-entry page install, and the per-page confirm-skip are gone - superseded by this script-driven suspend.)
 - **Camera params (per-slot merge).** The op-`0x45` events flow to the `Camera` controller and the host **merges** each beat's masked slots into a persistent `World::camera_state.params` set.
   This mirrors retail's `FUN_801DE084`, which writes each masked param into a persistent camera struct slot (`0x801C6EA8 + 0x02 + i*4`) - a beat that omits a slot keeps its prior value.
   It matters: one of opdeene's nine op-`0x45` beats sets **only slot 9 (H)** (`[(9, 792)]`), so a wholesale replace would drop that shot's focus / pitch / eye-depth and snap the camera to `cutscene_view`'s fall-back framing (lead-actor focus + default depth); the per-slot merge keeps the staged shot and only tweaks the focal length.
@@ -464,13 +512,16 @@ Two single-shared-VM accommodations, **approximate by design**:
   The shot re-targets each time the timeline executes a new Camera Configure op; rather than cutting, `play-window` eases the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs) (per-frame ease, angles along the shortest arc, reset to snap when the timeline first installs) - mirroring retail's own per-frame `FUN_801DB510` exponential ease.
   The framing is pinned by the disc-free regression tests `cutscene_framing_tests` (focus → `(172, 180)`; a `133`-unit character subtends the retail ~1/6-frame height, upright). The legacy orbit-radius framing [`window::cutscene_camera_mvp`](../../crates/engine-render/src/window.rs) is retained only as a unit-tested reference, no longer wired into a render path.
 
-The same machinery drives the **`town01` opening** (a sibling partition-2 record, `P2[3]`). On the new-game prologue hand-off, [`World::take_prologue_handoff`](../../crates/engine-core/src/world.rs) sets `entering_town01_opening`, and the `town01` field entry installs that record via [`World::install_town01_opening_timeline`](../../crates/engine-core/src/world.rs). Two differences from the opdeene prologue:
+The same machinery drives the **`town01` opening** (a sibling partition-2 record, `P2[3]`). It installs two ways: the **natural chain arrival** from the `map01` fly-in fires the walk-on tile trigger at the entry tile `(0x1D, 0x5B)` (C1 gate `0x225` makes it one-shot), and the **intro skip** ([`World::take_prologue_handoff`](../../crates/engine-core/src/world/narration.rs)) sets `entering_town01_opening` so the `town01` field entry installs the record via [`World::install_town01_opening_timeline`](../../crates/engine-core/src/world/narration.rs). Two differences from the opdeene prologue:
 
-- **It does not arm a scene hand-off.** opdeene's timeline carries `arms_prologue_handoff` (its terminal `GFLAG_SET 26` / the frame-cap safety net arms the `town01` change); `town01`'s opening sets it `false` - `town01` is the destination, so its completion just drops the timeline (reverting the cutscene camera to normal field gameplay).
-- **It opens name entry at op `0x49`.** `step_cutscene_timeline` steps past the conditional-wait parks the engine doesn't model - `0x4C` nibble-C `script_alloc` / globals-gate and `0x2D` / `0x30` flag-tests, all handshakes a spawned sub-context would satisfy - by their encoded width, while keeping `0x4A` WAIT_FRAMES (a timed wait that plays out over frames) and `0x49` STATE_RESUME parking. So the establishing camera + Vahn's walk-out beats play over ~490 frames, then the pinned op `0x49` at body `0x02c6` opens the *"Select your name."* overlay through the op-49 host hooks (`op49_invoke_setup` → [`World::open_name_entry`](../../crates/engine-core/src/world.rs); `op49_state` reports Armed while the overlay is up, Done once a name commits).
-  The timeline is frozen while name entry is open (the STATE_RESUME suspend) and resumes when the player names the lead. See [`boot.md`](boot.md#name-entry-overlay).
+- **It does not chain onward.** opdeene's timeline carries `arms_prologue_handoff` (its `GFLAG_SET 26` / the frame-cap safety net arms the skip) and ends in a `0x3F` SceneChange; `town01` is the destination, so its opening's completion just drops the timeline (reverting the cutscene camera to normal field gameplay) and un-parks the townsfolk the establishing shot hid.
+- **It opens name entry at op `0x49`.** `step_cutscene_timeline` steps past the conditional-wait parks the engine doesn't model - `0x4C` nibble-C `script_alloc` / globals-gate and `0x2D` / `0x30` flag-tests, all handshakes a spawned sub-context would satisfy - by their encoded width, while keeping `0x4A` WAIT_FRAMES (a timed wait that plays out over frames) and `0x49` STATE_RESUME parking. The retail order is establishing pan → **name entry** → **Vahn's walk-out** (the walk-out is post-confirm): the pinned op `0x49` at body `0x02c6` opens the *"Select your name."* overlay through the op-49 host hooks (`op49_invoke_setup` → [`World::open_name_entry`](../../crates/engine-core/src/world/narration.rs); `op49_state` reports Armed while the overlay is up, Done once a name commits).
+  The timeline is frozen while name entry is open (the STATE_RESUME suspend) and resumes - playing the walk-out - when the player names the lead. See [`boot.md`](boot.md#name-entry-overlay).
 
-Disc-gated coverage: `crates/engine-core/tests/opdeene_timeline_execution.rs` cold-boots `opdeene`, asserts the timeline installs with the hand-off bit clear, ticks until it sets the bit by execution, and reports the frame it armed; `crates/engine-core/tests/town01_opening_name_entry_wiring.rs` drives the `town01` opening end to end (install → camera/wait beats → name entry opens at op `0x49` → freeze → commit → resume → drop); `crates/engine-core/tests/town01_opening_timeline_trace.rs` pins the op-`0x49` site. The CI synthetic `crates/engine-core/tests/cutscene_timeline_synthetic.rs` exercises both paths (GFLAG-by-execution + safety net + idempotent completion for the hand-off timeline; op-`0x49` name-entry open / freeze / resume for the opening timeline) without disc data.
+Disc-gated coverage: `crates/engine-core/tests/opening_full_chain_e2e.rs` drives the whole zero-input chain (`opdeene` → `opstati` → `opurud` → `map01` → `town01` name entry, asserting each hand-off + the narration-block cadence) and the confirm-skip path;
+`opdeene_timeline_execution.rs` cold-boots `opdeene`, asserts the timeline installs with the skip bit clear, ticks until it arms by execution, and follows the terminal SceneChange;
+`town01_opening_name_entry_wiring.rs` drives the `town01` opening end to end (install → camera/wait beats → name entry opens at op `0x49` → freeze → commit → resume → drop); `town01_opening_timeline_trace.rs` pins the op-`0x49` site.
+The CI synthetic `cutscene_timeline_synthetic.rs` exercises both paths (GFLAG-by-execution + safety net + idempotent completion; op-`0x49` name-entry open / freeze / resume) without disc data.
 
 ### Per-actor channels - the vignette actors
 
@@ -534,10 +585,11 @@ a 50%-average (ABR 0) wash that lifts as the ramp completes, pending that dump.
 
 ### Full-scene sepia grade (the gold prologue look)
 
-The whole `opdeene` prologue renders in a **persistent warm gold/amber monochrome** - every 3D
-surface (terrain, foliage, the vignette actors) is tinted gold while the white narration text
-stays white. It is distinct from the transient colour fade above, and it is gone by the time the
-interactive Rim Elm (`town01`) loads (full colour).
+The whole prologue-cutscene leg of the opening renders in a **persistent warm gold/amber
+monochrome** - every 3D surface (terrain, foliage, the vignette actors) is tinted gold while the
+white narration text stays white. It is distinct from the transient colour fade above. The
+cold-boot pixel capture pins its scope: the grade **persists across `opdeene` / `opstati` /
+`opurud`** and drops for the full-colour `map01` fly-in and `town01`.
 
 **Retail mechanism (traced two ways).** The grade is a GTE render-time effect, not baked
 geometry and not a `MES`/texture change:
@@ -559,8 +611,9 @@ retail cutscene framebuffer, the grade collapses all hues to amber: average RGB 
 reproduces the measured *look* with a single luminance→gold tone-map:
 [`fade::ColorGrade`](../../crates/engine-core/src/fade.rs) holds the gold direction + strength
 ([`ColorGrade::PROLOGUE_SEPIA`](../../crates/engine-core/src/fade.rs)), and
-[`World::scene_color_grade`](../../crates/engine-core/src/world.rs) returns it while the active
-scene is the prologue cutscene (`opdeene`) and `None` for every other scene. `play-window` stages
+[`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) returns it while
+the active scene is one of the prologue cutscene legs (`opdeene` / `opstati` / `opurud`) and
+`None` for every other scene (including `map01` / `town01`). `play-window` stages
 it into the renderer each frame ([`Renderer::set_color_grade`](../../crates/engine-render/src/renderer.rs));
 the field mesh shaders' `apply_grade` maps each shaded pixel to `luminance · gold` cross-faded by
 `strength` (the text/UI overlays use separate shaders, so the narration stays white). The gold

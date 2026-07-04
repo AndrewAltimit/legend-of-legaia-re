@@ -76,6 +76,33 @@ pub enum TraceResult {
     Unknown,
 }
 
+/// An inline narration block inside a timeline record: the byte offset of its
+/// introducing op (`0xCC 0xF8 0x80 N`), the offset just past its last page's
+/// terminator, and the decoded pages.
+///
+/// Retail routes the introducing op to the on-screen-text spawner
+/// (`FUN_8003C764`): a caption child context is spawned over the inline pages
+/// and the *parent* timeline halt-suspends at the op until the child exhausts
+/// them - so the choreography around a block runs between blocks, never under
+/// them. [`crate::world::World::step_cutscene_timeline`] mirrors that: when the
+/// timeline PC reaches `op_offset` it installs the pages on the
+/// [`crate::cutscene_narration::CutsceneNarration`] presenter and parks until
+/// the presenter completes, then resumes at `end`.
+// REF: FUN_8003C764
+#[derive(Debug, Clone)]
+pub struct NarrationSite {
+    /// Byte offset of the introducing `0x4C` narration op in the record body.
+    pub op_offset: usize,
+    /// Byte offset just past the block (the next opcode after the pages).
+    pub end: usize,
+    /// The decoded subtitle pages, in display order.
+    pub pages: Vec<String>,
+    /// Presentation form: a crawl suspends the timeline while the roller
+    /// plays; a static title card installs (or, when its pages are blank,
+    /// clears) the card overlay and the timeline continues.
+    pub kind: legaia_asset::cutscene_text::NarrationKind,
+}
+
 /// A spawned field-VM context running the `opdeene` cutscene-timeline record.
 ///
 /// Built by [`crate::world::World::load_cutscene_timeline_from_man`] from the
@@ -114,6 +141,15 @@ pub struct CutsceneTimeline {
     /// so it must never arm a prologue hand-off. See
     /// [`crate::world::World::step_cutscene_timeline`].
     pub arms_prologue_handoff: bool,
+    /// The record's inline narration blocks, in script order (parsed once at
+    /// install). The stepper suspends the timeline at each block's op until
+    /// the narration presenter finishes its pages - the retail caption-child
+    /// suspend - then resumes past the block.
+    pub narration_blocks: Vec<NarrationSite>,
+    /// `Some(op_offset)` while the timeline is suspended at that narration
+    /// block (its pages are on the presenter). Cleared when the block
+    /// completes and the PC advances past it.
+    pub narration_pc: Option<usize>,
 }
 
 impl CutsceneTimeline {
@@ -137,6 +173,8 @@ impl CutsceneTimeline {
             trace_enabled: false,
             trace: Vec::new(),
             arms_prologue_handoff: false,
+            narration_blocks: Vec::new(),
+            narration_pc: None,
         }
     }
 

@@ -49,6 +49,85 @@
 /// Byte offset of the region-table block inside the `.MAP` file.
 pub const MAP_REGION_BLOCK_OFFSET: usize = 0x10000;
 
+/// Byte offset of the **fallback** trigger-table block: the retail loader
+/// reads `0x28` sectors contiguously from the `.MAP` LBA (`FUN_8001F7C0`),
+/// so `+0x12000..` holds the first sectors of the *next* PROT entry (the
+/// dev-build `DATA_FIELD<scene>` sibling). Its header has the same shape as
+/// the `+0x10000` block; the per-tile trigger lookup (`FUN_801d5630` /
+/// `FUN_801d5ae0`) scans the primary table first and falls back here.
+pub const MAP_TRIGGER_FALLBACK_OFFSET: usize = 0x12000;
+
+/// One kind-1 tile-trigger record: `[tile_x, tile_z, record_index, gate]`.
+///
+/// The `.MAP` `+0x10000` (and `+0x12000` fallback) block's kind-1 sub-table.
+/// When the player enters tile `(x, z)`, the per-frame tile trigger
+/// (`FUN_801D1EC4`) resolves the record and calls
+/// `FUN_8003BDE0(x, z, record, gate)`: `gate == 1` spawns MAN partition-2
+/// record `record_index` as a new field-VM context (door / cutscene records);
+/// `gate == 0` records are object-bind entries consumed at scene init
+/// (`FUN_8003A55C`) and never spawn.
+// REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TileTrigger {
+    /// Trigger tile X (exact-match against the player tile).
+    pub tile_x: u8,
+    /// Trigger tile Z.
+    pub tile_z: u8,
+    /// Partition-2 record index to spawn (gate 1) or partition-0 object
+    /// script to bind (gate 0).
+    pub record: u8,
+    /// Dispatch gate: `1` = spawn the P2 record on walk-on; `0` = init-time
+    /// object bind.
+    pub gate: u8,
+}
+
+/// Parse the kind-1 tile-trigger sub-table out of a `.MAP` trigger block
+/// (either the `+0x10000` primary or the `+0x12000` fallback). Header shape
+/// (shared across kinds `k`): sub-table offset `s16` at `+4k+2`, count `s16`
+/// at `+4k+4`; kind-1 records are 4 bytes. Returns an empty vec on a short /
+/// negative header.
+// REF: FUN_801D5AE0
+pub fn parse_tile_triggers(block: &[u8]) -> Vec<TileTrigger> {
+    let read_s16 = |off: usize| -> Option<i16> {
+        Some(i16::from_le_bytes([*block.get(off)?, *block.get(off + 1)?]))
+    };
+    let (Some(off), Some(count)) = (read_s16(6), read_s16(8)) else {
+        return Vec::new();
+    };
+    if off < 0 || count <= 0 {
+        return Vec::new();
+    }
+    let (off, count) = (off as usize, count as usize);
+    (0..count)
+        .map_while(|i| {
+            let r = block.get(off + i * 4..off + i * 4 + 4)?;
+            Some(TileTrigger {
+                tile_x: r[0],
+                tile_z: r[1],
+                record: r[2],
+                gate: r[3],
+            })
+        })
+        .collect()
+}
+
+/// Exact-match lookup of a kind-1 trigger at `(tile_x, tile_z)`: primary
+/// table first, then the fallback - first hit wins, mirroring
+/// `FUN_801d5630`'s scan order.
+// REF: FUN_801D5630
+pub fn lookup_tile_trigger(
+    primary: &[TileTrigger],
+    fallback: &[TileTrigger],
+    tile_x: u8,
+    tile_z: u8,
+) -> Option<TileTrigger> {
+    primary
+        .iter()
+        .chain(fallback.iter())
+        .copied()
+        .find(|t| t.tile_x == tile_x && t.tile_z == tile_z)
+}
+
 /// Region-record stride. Retail reads it from the resident byte
 /// `DAT_8007B31B`; in the disc corpus the table body is 8-byte records
 /// (`[x0, z0, x1, z1, type, 0, 0, 0]` - see the disc-gated structural test).

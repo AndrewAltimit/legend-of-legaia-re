@@ -253,6 +253,9 @@ fn main() -> Result<()> {
             battle_bgm,
             screenshot,
             screenshot_tick,
+            screenshot_every,
+            screenshot_dir,
+            screenshot_last_tick,
             pad_script,
             seed_party,
         } => cmd_play_window(
@@ -280,6 +283,9 @@ fn main() -> Result<()> {
             window::ScreenshotConfig::from_args(
                 screenshot,
                 screenshot_tick,
+                screenshot_every,
+                screenshot_dir,
+                screenshot_last_tick,
                 pad_script.as_deref(),
             )?,
             seed_party,

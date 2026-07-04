@@ -91,6 +91,9 @@ fn opdeene_partition2_carries_the_gflag_set_26_handoff_arm() {
     // End-to-end: the engine's data-driven arm raises the bit from this MAN.
     let mut world = World::new();
     world.set_active_scene_label(cutscene);
+    // The scene entry marks the opening chain as playing (the skip gate's
+    // scope); mirror it here since this test drives World directly.
+    world.opening_chain_active = true;
     assert_eq!(
         world.story_flags & PROLOGUE_HANDOFF_FLAG,
         0,

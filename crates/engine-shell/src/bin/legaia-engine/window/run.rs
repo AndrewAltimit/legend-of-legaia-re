@@ -728,6 +728,7 @@ pub(super) fn cmd_play_window_with_record(
         prev_pad: 0,
         tick_no: 0,
         screenshot,
+        sweep_next_tick: 0,
         battle_event_log: std::collections::VecDeque::new(),
         battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
         pending_dynamic_mesh_slots: Vec::new(),

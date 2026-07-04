@@ -153,11 +153,11 @@ switch (*pc & 0x7f) {
   <h3>ACTOR_CTRL family - <code>0x43</code></h3>
   <p>22+ sub-ops, keyed on operand byte 0. Includes a halt-acquire dispatcher (sub-0/1/A/B), actor / sound / face / position cluster (sub-2 through sub-F), and an emitter setup family (sub-0x10 through sub-0x15) that dispatches into the <code>FUN_801F8xxx</code> particle/emitter cluster.</p>
 
-  <h3>Counter / camera / render / state / move-block - <code>0x44</code>&ndash;<code>0x4F</code></h3>
+  <h3>Record-spawn / camera / render / state / move-block - <code>0x44</code>&ndash;<code>0x4F</code></h3>
   <table>
     <thead><tr><th>Op</th><th>Mnemonic</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td><code>0x44</code></td><td>COUNTER</td><td>Per-frame counter / score / hit-counter tick.</td></tr>
+      <tr><td><code>0x44</code></td><td>SPAWN_RECORD</td><td><code>[44, global_index]</code>: spawns a MAN partition-2 record as a new field-VM context via <code>FUN_8003BDE0</code> (ra <code>0x801DF098</code>, gate forced to 1); the operand is a GLOBAL record index re-based <code>- N0 - N1</code> into partition 2. Live-probe-pinned on the New-Game opening (<code>opdeene</code>/<code>opstati</code>/<code>opurud</code> entry scripts); the earlier COUNTER reading is superseded.</td></tr>
       <tr><td><code>0x45</code></td><td>CAMERA</td><td>Sub-dispatch on <code>op0 &amp; 0xC0</code>: configure / LOAD / SAVE / APPLY.</td></tr>
       <tr><td><code>0x46</code></td><td>RENDER_CFG</td><td>Fog/render params.</td></tr>
       <tr><td><code>0x49</code></td><td>STATE_RESUME</td><td>Multi-frame state machine: tristate (Idle / Armed / Done). Done-state sub-0 walks an inline MES-shape payload (counts bytes <code>&gt; 0x1E</code> with one-byte peek-extension for <code>0xCx</code> prefix bytes) and advances PC by <code>5 + length + walked</code>.</td></tr>

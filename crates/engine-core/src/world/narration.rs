@@ -70,7 +70,12 @@ impl World {
         if pages.is_empty() {
             return;
         }
-        self.cutscene_narration = Some(crate::cutscene_narration::CutsceneNarration::new(pages));
+        // Per-scene crawl geometry / speed (capture-pinned; see
+        // `RollerParams::for_scene`).
+        let params = crate::cutscene_narration::RollerParams::for_scene(&self.active_scene_label);
+        self.cutscene_narration = Some(crate::cutscene_narration::CutsceneNarration::with_params(
+            pages, params,
+        ));
     }
 
     /// `true` while the opening-cutscene narration is on screen (not yet
@@ -84,17 +89,21 @@ impl World {
 
     /// The full-scene colour grade the current scene renders through, or
     /// `None` for the natural-colour default. The opening prologue cutscene
-    /// (`opdeene`, "It was the Seru.") returns
+    /// scenes (`opdeene` / `opstati` / `opurud`) return
     /// [`crate::fade::ColorGrade::PROLOGUE_SEPIA`] so the whole 3D scene draws
-    /// in warm gold monochrome while the narration text stays white; every
-    /// other scene (incl. the Rim Elm hand-off `town01`) is ungraded. Hosts
+    /// in warm gold monochrome while the narration text stays white - the
+    /// retail cold-boot capture shows the grade persisting across all three
+    /// legs and dropping for the full-colour `map01` fly-in + `town01`. Hosts
     /// stage this into the renderer each frame (e.g. `set_color_grade`).
     ///
     /// This mirrors retail keying the dim-ambient + gold far-colour grade on
-    /// the cutscene scene and clearing it for the interactive field - see
+    /// the cutscene scenes and clearing it for the interactive field - see
     /// [`crate::fade::ColorGrade`] for the traced GTE mechanism.
     pub fn scene_color_grade(&self) -> Option<crate::fade::ColorGrade> {
-        if self.active_scene_label == legaia_asset::new_game::OPENING_CUTSCENE_SCENE {
+        if matches!(
+            self.active_scene_label.as_str(),
+            "opdeene" | "opstati" | "opurud"
+        ) {
             Some(crate::fade::ColorGrade::PROLOGUE_SEPIA)
         } else {
             None
@@ -181,27 +190,31 @@ impl World {
     /// }
     /// ```
     ///
-    /// Returns the handoff target scene ([`legaia_asset::new_game::OPENING_SCENE`]
-    /// = `town01`) once - when the active scene is the prologue cutscene
-    /// ([`legaia_asset::new_game::OPENING_CUTSCENE_SCENE`] = `opdeene`),
-    /// the trigger bit is set ([`Self::arm_prologue_handoff`]), and the
-    /// caller reports a confirm-button press this frame. Clears the bit so
-    /// it fires once, exactly as retail clears `0x4000000`. Returns `None`
-    /// otherwise. The host issues the actual scene change (the engine's
-    /// equivalent of the scene-change packet) on a `Some`.
+    /// Returns the skip target scene ([`legaia_asset::new_game::OPENING_SCENE`]
+    /// = `town01`) once - when the opening cutscene chain is playing
+    /// ([`Self::opening_chain_active`], set at the `opdeene` entry and carried
+    /// through its `opstati` / `opurud` legs), the trigger bit is set
+    /// ([`Self::arm_prologue_handoff`] - `opdeene`'s timeline raises it near
+    /// its top, so the skip is available almost immediately), and the caller
+    /// reports a confirm-button press this frame. This is the retail
+    /// intro-SKIP: the packet fires mid-narration too (the roller is
+    /// timer-driven, not confirm-paced). Clears the bit so it fires once,
+    /// exactly as retail clears `0x4000000`, and tears down the playing
+    /// narration / timeline. Returns `None` otherwise. The host issues the
+    /// actual scene change (the engine's equivalent of the scene-change
+    /// packet) on a `Some`.
     // REF: FUN_801D1344
     // REF: FUN_8001FD44
     pub fn take_prologue_handoff(&mut self, confirm: bool) -> Option<&'static str> {
-        // The opening narration plays first: while its subtitle pages are on
-        // screen the confirm press skips pages (see
-        // [`Self::skip_cutscene_narration`]) and never reaches this gate, so
-        // the hand-off can only fire once the narration has finished.
-        if confirm
-            && !self.cutscene_narration_active()
-            && self.story_flags & PROLOGUE_HANDOFF_FLAG != 0
-            && self.active_scene_label == legaia_asset::new_game::OPENING_CUTSCENE_SCENE
-        {
+        if confirm && self.story_flags & PROLOGUE_HANDOFF_FLAG != 0 && self.opening_chain_active {
             self.story_flags &= !PROLOGUE_HANDOFF_FLAG;
+            // Tear down whatever leg of the opening is mid-flight - the skip
+            // abandons the remaining narration + choreography wholesale.
+            self.cutscene_narration = None;
+            self.cutscene_card = None;
+            self.cutscene_timeline = None;
+            self.pending_named_scene_transition = None;
+            self.opening_chain_active = false;
             // Mark the upcoming `town01` entry as the new-game opening so it
             // installs the opening cutscene timeline (which opens name entry at
             // its pinned op-`0x49`); a normal `town01` visit never sets this.
@@ -255,6 +268,72 @@ impl World {
         true
     }
 
+    /// `true` when story flag `flag` is set in the partition-2 gate bitmap
+    /// (retail `DAT_80085758`, which sits at offset `0x158` of the
+    /// `0x80085600..0x80085800` bitmap [`Self::story_flag_bits`] mirrors).
+    /// `bit = byte[flag >> 3] & (0x80 >> (flag & 7))` - `FUN_8003BDE0`'s test.
+    // REF: FUN_8003BDE0
+    pub fn p2_gate_flag_set(&self, flag: u16) -> bool {
+        let byte = 0x158 + (flag >> 3) as usize;
+        self.story_flag_bits
+            .get(byte)
+            .is_some_and(|b| b & (0x80u8 >> (flag & 7)) != 0)
+    }
+
+    /// Evaluate a partition-2 record's C1 / C2 story-flag gates: C1 blocks
+    /// the spawn if ANY listed flag is set (the one-shot mechanism); C2
+    /// requires ALL listed flags set. Empty lists pass.
+    // REF: FUN_8003BDE0
+    pub fn p2_record_gates_pass(&self, c1: &[u16], c2: &[u16]) -> bool {
+        !c1.iter().any(|&f| self.p2_gate_flag_set(f))
+            && c2.iter().all(|&f| self.p2_gate_flag_set(f))
+    }
+
+    /// Install a field-VM op-`0x44` SPAWN_RECORD request: re-base the GLOBAL
+    /// record index into partition 2 (`global - N0 - N1`, retail
+    /// `FUN_8003BDE0`), check the record's C1/C2 story-flag gates, and install
+    /// it as a cutscene timeline. Returns `true` when a timeline installed.
+    ///
+    /// This is how the opening chain's `opstati` / `opurud` legs launch their
+    /// prologue records (`44 21` / `44 32` in their P1[0] entry scripts).
+    // REF: FUN_8003BDE0
+    pub fn install_spawned_record(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        global_index: u8,
+    ) -> bool {
+        let n0 = man_file.header.partition_counts[0].max(0) as usize;
+        let n1 = man_file.header.partition_counts[1].max(0) as usize;
+        let Some(record_idx) = (global_index as usize).checked_sub(n0 + n1) else {
+            return false;
+        };
+        self.install_gated_p2_record(man_file, man, record_idx)
+    }
+
+    /// Install partition-2 record `record_idx` as a cutscene timeline after
+    /// checking its C1/C2 story-flag gates (the `FUN_8003BDE0` dispatch
+    /// body). Returns `true` when a timeline installed. Shared by the
+    /// op-`0x44` spawn ([`Self::install_spawned_record`]) and the walk-on
+    /// tile trigger.
+    // REF: FUN_8003BDE0
+    pub fn install_gated_p2_record(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        record_idx: usize,
+    ) -> bool {
+        match crate::man_field_scripts::partition2_record_gates(man_file, man, record_idx) {
+            Some((c1, c2)) => {
+                if !self.p2_record_gates_pass(&c1, &c2) {
+                    return false;
+                }
+            }
+            None => return false,
+        }
+        self.install_cutscene_timeline_record(man_file, man, 2, record_idx, false)
+    }
+
     /// Partition-2 record index of `town01`'s opening cutscene timeline (the
     /// establishing camera sweep + Vahn's walk-out + the name-entry handoff).
     /// A stable disc invariant; the record carries the name-entry STATE_RESUME
@@ -299,15 +378,17 @@ impl World {
     ///
     /// Resolves the record's `(script_start, pc0, body_len)` span, slices the
     /// body from `script_start` (so relative jumps wrap against the record
-    /// base), NOP-fills the inline narration spans (they are data the separate
-    /// [`crate::cutscene_narration::CutsceneNarration`] presenter consumes, not
-    /// field-VM opcodes - overwriting each with the 1-byte NOP `0x21` is
-    /// offset-preserving so the camera / move / flag ops keep their offsets),
-    /// and installs the timeline with `trace` controlling op-stream recording.
+    /// base), parses the inline narration blocks into
+    /// [`crate::cutscene_timeline::NarrationSite`]s (the stepper suspends the
+    /// timeline at each block while the
+    /// [`crate::cutscene_narration::CutsceneNarration`] presenter plays its
+    /// pages - the retail caption-child suspend), and installs the timeline
+    /// with `trace` controlling op-stream recording.
     ///
     /// Returns `true` when a timeline was installed; `false` when the span can't
     /// be resolved.
     // REF: FUN_8003BDE0
+    // REF: FUN_8003C764
     pub fn install_cutscene_timeline_record(
         &mut self,
         man_file: &legaia_asset::man_section::ManFile,
@@ -324,17 +405,24 @@ impl World {
         let Some(body) = man.get(script_start..script_start + body_len) else {
             return false;
         };
-        let mut body = body.to_vec();
-        for block in legaia_asset::cutscene_text::parse_narration(&body) {
-            let (start, end) = block.byte_span();
-            let end = end.min(body.len());
-            if start < end {
-                for b in &mut body[start..end] {
-                    *b = 0x21;
-                }
-            }
-        }
+        let body = body.to_vec();
+        let narration_blocks: Vec<crate::cutscene_timeline::NarrationSite> =
+            legaia_asset::cutscene_text::parse_narration(&body)
+                .into_iter()
+                .filter(|b| b.count_matches() && !b.pages.is_empty())
+                .map(|b| {
+                    let (start, end) = b.byte_span();
+                    debug_assert_eq!(start, b.op_offset);
+                    crate::cutscene_timeline::NarrationSite {
+                        op_offset: b.op_offset,
+                        end: end.min(body.len()),
+                        pages: b.pages.into_iter().map(|p| p.text).collect(),
+                        kind: b.kind,
+                    }
+                })
+                .collect();
         let mut tl = crate::cutscene_timeline::CutsceneTimeline::new(body, pc0);
+        tl.narration_blocks = narration_blocks;
         if trace {
             tl = tl.with_trace();
         }
@@ -397,6 +485,21 @@ impl World {
             self.cutscene_timeline = Some(tl);
             return;
         }
+        // Suspended at an inline narration block: retail halt-suspends the
+        // parent timeline while the roller child plays the block's pages
+        // (`FUN_80037174` clears the parent's halt bit when every page has
+        // scrolled off). While the presenter is active neither the VM nor the
+        // frame cap advances; once it completes, resume just past the block.
+        if let Some(block_pc) = tl.narration_pc {
+            if self.cutscene_narration_active() {
+                self.cutscene_timeline = Some(tl);
+                return;
+            }
+            if let Some(site) = tl.narration_blocks.iter().find(|b| b.op_offset == block_pc) {
+                tl.pc = site.end;
+            }
+            tl.narration_pc = None;
+        }
         tl.frames = tl.frames.saturating_add(1);
         self.in_cutscene_timeline = true;
         let mut channels = std::mem::take(&mut self.field_channels);
@@ -410,6 +513,37 @@ impl World {
             while budget > 0 {
                 budget -= 1;
                 let pc = tl.pc;
+                // Arrived at an inline narration block.
+                //
+                // Crawl (`op0 0x80`): retail spawns the roller child
+                // (`FUN_80037174`) over the block's pages and halt-suspends
+                // this parent context at the op. Mirror that: install the
+                // pages on the roller presenter and park the timeline here;
+                // the pre-step gate above resumes it just past the block once
+                // the presenter completes.
+                //
+                // Title card (`op0 0x89`): the pages show simultaneously
+                // while the parent CONTINUES; a card whose pages are blank
+                // clears the overlay. Skip past the block either way.
+                if let Some(site) = tl.narration_blocks.iter().find(|b| b.op_offset == pc) {
+                    match site.kind {
+                        legaia_asset::cutscene_text::NarrationKind::Crawl => {
+                            host.world.open_cutscene_narration(site.pages.clone());
+                            tl.narration_pc = Some(pc);
+                            break;
+                        }
+                        legaia_asset::cutscene_text::NarrationKind::Card => {
+                            let blank = site.pages.iter().all(|p| p.trim().is_empty());
+                            host.world.cutscene_card = if blank {
+                                None
+                            } else {
+                                Some(site.pages.clone())
+                            };
+                            tl.pc = site.end;
+                            continue;
+                        }
+                    }
+                }
                 let opcode_byte = tl.bytecode.get(pc).copied().unwrap_or(0);
                 // Cross-context dispatch (`0x80`-bit ops): resolve the target
                 // byte to a spawned per-actor channel (`ctx[+0x50] == target`,
@@ -538,7 +672,13 @@ impl World {
         // vignettes for the narration's duration, so "bit armed" must not
         // complete it (that early-out silently dropped the whole vignette
         // choreography - camera beats, actor-channel pokes - after two ops).
-        let cap = if tl.arms_prologue_handoff {
+        // Every opening-chain leg gets the generous cap: the `opstati` /
+        // `opurud` records stage their Mist vignettes with multi-hundred-frame
+        // `WaitFrames` between narration crawls (opurud alone waits ~2000
+        // frames of choreography), so the tight anti-hang cap would cut the
+        // chain mid-scene. `town01`'s opening (chain flag already cleared)
+        // keeps the tight cap.
+        let cap = if tl.arms_prologue_handoff || self.opening_chain_active {
             PROLOGUE_TIMELINE_MAX_FRAMES
         } else {
             CUTSCENE_TIMELINE_MAX_FRAMES

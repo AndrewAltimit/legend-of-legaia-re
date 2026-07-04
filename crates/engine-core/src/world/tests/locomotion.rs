@@ -145,37 +145,43 @@ fn locomotion_deterministic_across_identical_pad_stream() {
 }
 
 #[test]
-fn cutscene_narration_confirm_press_skips_page() {
+fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
+    use crate::cutscene_narration::{DEFAULT_FRAMES_PER_PIXEL, RollerParams};
     let mut world = World::new();
     world.mode = SceneMode::Title; // isolate the top-of-tick narration advance
     world.open_cutscene_narration(vec!["Page 1".into(), "Page 2".into()]);
-    let idx = |w: &World| w.cutscene_narration.as_ref().map(|n| n.current_index());
-    assert_eq!(idx(&world), Some(0));
+    let entered = |w: &World| {
+        w.cutscene_narration
+            .as_ref()
+            .map(|n| n.current_index())
+            .unwrap_or(usize::MAX)
+    };
+    assert_eq!(entered(&world), 0, "no line has entered yet");
 
-    // No press: a single tick does not advance (the dwell is 120 frames).
-    world.set_pad(0);
-    let _ = world.tick();
-    assert_eq!(idx(&world), Some(0));
-
-    // A just-pressed confirm (Cross) skips to the next page.
+    // A confirm press does NOT advance the crawl (retail `FUN_80037174` is
+    // timer-driven; the intro skip goes through the hand-off packet).
     world.set_pad(input::PadButton::Cross.mask());
     let _ = world.tick();
-    assert_eq!(idx(&world), Some(1));
+    assert_eq!(entered(&world), 0);
 
-    // Holding the same button is not a new edge - it must not skip again.
-    world.set_pad(input::PadButton::Cross.mask());
-    let _ = world.tick();
-    assert_eq!(idx(&world), Some(1));
-
-    // Release, then a fresh press past the last page completes the narration
-    // (so the prologue hand-off gate releases).
+    // The timer does: after one pixel step the first line enters.
     world.set_pad(0);
-    let _ = world.tick();
-    world.set_pad(input::PadButton::Circle.mask());
-    let _ = world.tick();
+    for _ in 0..DEFAULT_FRAMES_PER_PIXEL {
+        let _ = world.tick();
+    }
+    assert_eq!(entered(&world), 1, "line 0 entered on the first pixel step");
+
+    // Ticking through the whole crawl (2 entries + a full window traversal)
+    // completes the block and clears the presenter, releasing the suspended
+    // timeline.
+    let p = RollerParams::DEFAULT;
+    let budget = (2 * p.line_step as u32 + (p.enter_y - p.exit_y) as u32 + 4) * p.frames_per_pixel;
+    for _ in 0..budget {
+        let _ = world.tick();
+    }
     assert!(
         world.cutscene_narration.is_none(),
-        "confirm past the last page completes the narration"
+        "the crawl completes on its own timer"
     );
 }
 

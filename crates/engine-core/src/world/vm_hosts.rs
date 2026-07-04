@@ -871,10 +871,27 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
     }
 
-    fn counter_update(&mut self, op0: u8) {
+    fn op4c_n9_sub_f_register_callback(&mut self) -> bool {
+        // During the New-Game opening chain the registered completion
+        // callback (`LAB_801DA930`) fires within a frame in retail - the
+        // whole opening auto-advances with zero input - so model it as
+        // already satisfied and let the entry script proceed to its op-0x44
+        // record spawn. Outside the opening the faithful halt-until-callback
+        // park is kept (returning `false`).
+        self.world.opening_chain_active
+    }
+
+    fn op44_spawn_scene_record(&mut self, global_index: u8) {
+        // Record the spawn request for SceneHost::tick to resolve against the
+        // current scene MAN (the partition math needs the MAN header, which
+        // the VM borrow precludes touching here). Retail spawns the record as
+        // a sibling context immediately; the one-frame deferral is invisible
+        // because a fresh context first runs on the NEXT frame slice anyway.
+        // REF: FUN_8003BDE0
+        self.world.pending_record_spawn = Some(global_index);
         self.world
             .pending_field_events
-            .push(FieldEvent::CounterUpdate { op0 });
+            .push(FieldEvent::SpawnRecord { global_index });
     }
 
     fn setup_animation(&mut self, _ctx: &mut FieldCtx, count: u8, base_id: u8, frames: &[u8]) {

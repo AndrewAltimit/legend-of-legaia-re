@@ -1,14 +1,18 @@
-//! Disc-gated end-to-end oracle for the whole new-game opening chain:
-//! `opdeene` prologue cutscene → narration → confirm hand-off → `town01`
-//! opening timeline → name entry → free-roam.
+//! Disc-gated end-to-end oracle for the whole new-game opening chain.
 //!
-//! Every other opening test exercises one leg in isolation (`opdeene_narration_playback`
-//! stops at the narration; `town01_opening_name_entry_wiring` jump-starts at
-//! `town01` by setting `entering_town01_opening` directly). This test cold-boots
-//! the prologue and drives the *complete* chain the windowed host drives, so a
-//! regression in the seam between legs (the hand-off returning the wrong scene,
-//! the `town01` timeline not installing off the real hand-off flag, name entry
-//! never opening) is caught here rather than only in the live window.
+//! Retail (pinned by a PCSX-Redux cold-boot pixel capture) plays the opening
+//! with ZERO input: `opdeene` (creation-myth crawl, 14+8 lines) chains by its
+//! timeline's terminal `SceneChange` into `opstati` (Seru crawl, 3+6 lines,
+//! spawned by op-`0x44` in its entry script), then `opurud` (Mist crawl,
+//! 12 lines, op-`0x44`), then the `map01` world-map fly-in, then `town01`
+//! (establishing pan -> name entry -> Vahn's walk-out). A confirm press at
+//! any point after `opdeene` arms `GFLAG 26` skips the rest of the opening
+//! straight to `town01` (retail `FUN_801D1344`).
+//!
+//! This test cold-boots NEW GAME and drives the natural (no-input) chain
+//! through `SceneHost::tick`, asserting each scene hand-off and the narration
+//! blocks along the way; a second test asserts the skip path into `town01`
+//! name entry.
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
@@ -26,83 +30,196 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
-#[test]
-fn new_game_opening_runs_opdeene_narration_then_town01_name_entry() {
+fn skip_or_host() -> Option<SceneHost> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
-        return;
+        return None;
     }
     let Some(extracted) = extracted_dir() else {
         eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return None;
+    };
+    Some(SceneHost::open_extracted(&extracted).expect("open SceneHost"))
+}
+
+#[test]
+fn new_game_opening_chains_naturally_with_zero_input() {
+    let Some(mut host) = skip_or_host() else {
         return;
     };
-
     let opdeene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
-    let town01 = legaia_asset::new_game::OPENING_SCENE;
 
-    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
-
-    // --- Beat 1: NEW GAME seeds the party and enters the prologue cutscene ---
+    // --- NEW GAME: seed and enter the prologue cutscene ---
     host.world.begin_new_game();
     host.enter_field_scene(opdeene, 0).expect("enter opdeene");
+    assert!(host.world.cutscene_timeline_active());
+    assert!(host.world.opening_chain_active);
     assert!(
-        host.world.cutscene_narration_active(),
-        "entering opdeene installs the inline narration"
+        !host.world.cutscene_narration_active(),
+        "narration is script-driven, not a scene-entry install"
+    );
+
+    // --- opdeene: two crawls (14 + 8) play, then the timeline chains ---
+    let mut seen_block_pages: Vec<usize> = Vec::new();
+    let mut last_active = false;
+    let mut ticks = 0u32;
+    while host.world.active_scene_label == opdeene && ticks < 30_000 {
+        let _ = host.tick();
+        ticks += 1;
+        let active = host.world.cutscene_narration_active();
+        if active && !last_active {
+            seen_block_pages.push(
+                host.world
+                    .cutscene_narration
+                    .as_ref()
+                    .map(|n| n.page_count())
+                    .unwrap_or(0),
+            );
+        }
+        last_active = active;
+    }
+    assert_eq!(
+        host.world.active_scene_label, "opstati",
+        "opdeene chains to opstati by its terminal SceneChange (ticked {ticks})"
+    );
+    assert_eq!(
+        seen_block_pages,
+        vec![14, 8],
+        "opdeene played its two narration crawls in script order"
+    );
+
+    // --- opstati: its entry script op-0x44 spawns P2[0]; crawls 3 + 6 ---
+    let mut seen: Vec<usize> = Vec::new();
+    last_active = host.world.cutscene_narration_active();
+    ticks = 0;
+    while host.world.active_scene_label == "opstati" && ticks < 30_000 {
+        let _ = host.tick();
+        ticks += 1;
+        let active = host.world.cutscene_narration_active();
+        if active && !last_active {
+            seen.push(
+                host.world
+                    .cutscene_narration
+                    .as_ref()
+                    .map(|n| n.page_count())
+                    .unwrap_or(0),
+            );
+        }
+        last_active = active;
+    }
+    assert_eq!(
+        host.world.active_scene_label, "opurud",
+        "opstati chains to opurud (ticked {ticks})"
+    );
+    assert_eq!(seen, vec![3, 6], "opstati played its two Seru crawls");
+
+    // --- opurud: op-0x44 spawns P2[9]; three Mist crawls; chains to map01 ---
+    let mut blocks = 0usize;
+    last_active = host.world.cutscene_narration_active();
+    ticks = 0;
+    while host.world.active_scene_label == "opurud" && ticks < 30_000 {
+        let _ = host.tick();
+        ticks += 1;
+        let active = host.world.cutscene_narration_active();
+        if active && !last_active {
+            blocks += 1;
+        }
+        last_active = active;
+    }
+    assert_eq!(
+        host.world.active_scene_label, "map01",
+        "opurud chains to the world-map fly-in (ticked {ticks})"
+    );
+    assert_eq!(blocks, 3, "opurud played its three Mist crawls");
+
+    // --- map01: the fly-in record (P2[38], walk-on trigger at the arrival
+    //     tile) plays its Mist title card + crawl, then scene-changes into
+    //     Rim Elm at the town01 opening trigger tile (0x1D,0x5B). ---
+    assert!(
+        host.world.cutscene_timeline_active(),
+        "map01's opening record installs off the arrival tile trigger"
+    );
+    let mut fly_blocks = 0usize;
+    last_active = host.world.cutscene_narration_active();
+    ticks = 0;
+    while host.world.active_scene_label == "map01" && ticks < 30_000 {
+        let _ = host.tick();
+        ticks += 1;
+        let active = host.world.cutscene_narration_active();
+        if active && !last_active {
+            fly_blocks += 1;
+        }
+        last_active = active;
+    }
+    assert_eq!(
+        host.world.active_scene_label,
+        legaia_asset::new_game::OPENING_SCENE,
+        "the fly-in chains into Rim Elm (ticked {ticks})"
+    );
+    assert!(
+        fly_blocks >= 1,
+        "the fly-in played its Mist narration (saw {fly_blocks} blocks)"
+    );
+
+    // --- town01: arriving through the natural chain ends the opening chain
+    //     and installs the opening timeline; name entry opens at op-0x49. ---
+    assert!(
+        !host.world.opening_chain_active,
+        "the chain ends at Rim Elm"
     );
     assert!(
         host.world.cutscene_timeline_active(),
-        "entering opdeene installs the cutscene timeline"
+        "town01's opening timeline installs off the natural arrival"
     );
-
-    // --- Beat 2/3: the narration plays; the hand-off is gated until it ends ---
-    // A confirm mid-narration must NOT jump to town01.
-    assert!(
-        host.world.take_prologue_handoff(true).is_none(),
-        "the hand-off is gated closed while the narration is on screen"
-    );
-    // Tick to narration completion (the host freezes input during narration, so
-    // the per-page dwell timer advances). Generous cap over 22 pages * 120.
-    let mut ticks = 0u32;
-    while host.world.cutscene_narration_active() && ticks < 22 * 120 + 600 {
-        host.world.tick();
-        ticks += 1;
+    let mut sweep = 0u32;
+    while !host.world.name_entry_active() && sweep < 8000 {
+        let _ = host.tick();
+        sweep += 1;
     }
     assert!(
-        !host.world.cutscene_narration_active(),
-        "the narration finishes within its dwell budget (ticked {ticks})"
+        host.world.name_entry_active(),
+        "the town01 opening opens name entry (swept {sweep})"
     );
+    eprintln!("[opening] natural zero-input chain reached town01 name entry");
+}
 
-    // Still in opdeene, the hand-off flag is armed (the timeline executed its
-    // GFLAG_SET 26 - or the safety net set it), so a confirm now hands off.
+#[test]
+fn confirm_skips_the_opening_to_town01_name_entry() {
+    let Some(mut host) = skip_or_host() else {
+        return;
+    };
+    let opdeene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let town01 = legaia_asset::new_game::OPENING_SCENE;
+
+    host.world.begin_new_game();
+    host.enter_field_scene(opdeene, 0).expect("enter opdeene");
+
+    // Let the timeline arm the skip bit (GFLAG_SET 26 near the record top).
+    let mut armed = false;
+    for _ in 0..600 {
+        let _ = host.tick();
+        if host.world.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG != 0 {
+            armed = true;
+            break;
+        }
+    }
+    assert!(armed, "opdeene arms the intro-skip bit by execution");
+
+    // The skip fires mid-opening (mid-narration included).
     let target = host.world.take_prologue_handoff(true);
-    assert_eq!(
-        target,
-        Some(town01),
-        "completing the narration + a confirm hands off to town01"
-    );
-    assert!(
-        host.world.entering_town01_opening,
-        "the hand-off marks the town01 entry as the new-game opening"
-    );
+    assert_eq!(target, Some(town01), "confirm skips the opening to Rim Elm");
+    assert!(host.world.entering_town01_opening);
 
-    // --- Beat 4: entering town01 installs the opening timeline + name entry ---
+    // --- town01: opening timeline installs, name entry opens at op-0x49 ---
     host.enter_field_scene(town01, 0).expect("enter town01");
     assert!(
         host.world.cutscene_timeline_active(),
         "town01's opening timeline installs off the hand-off flag"
     );
-    assert!(
-        !host.world.entering_town01_opening,
-        "the one-shot opening flag is consumed by the town01 entry"
-    );
-    // The opdeene narration did not leak into town01.
-    assert!(
-        !host.world.cutscene_narration_active(),
-        "town01 carries no prologue narration"
-    );
+    assert!(!host.world.entering_town01_opening);
+    assert!(!host.world.opening_chain_active);
+    assert!(!host.world.cutscene_narration_active());
 
-    // Tick the establishing sweep until the timeline parks on op-0x49 and opens
-    // the name-entry overlay.
     let mut sweep = 0u32;
     while !host.world.name_entry_active() && sweep < 4000 {
         host.world.tick();
@@ -113,8 +230,8 @@ fn new_game_opening_runs_opdeene_narration_then_town01_name_entry() {
         "the town01 opening timeline opens name entry (swept {sweep})"
     );
 
-    // --- Beat 5: commit a name -> the timeline resumes and completes ---
-    // Type one glyph ('A'), then End -> Yes.
+    // Commit a name -> the timeline resumes, completes, and un-parks the
+    // townsfolk the establishing shot hid.
     host.world.name_entry.as_mut().unwrap().cursor = 0;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
@@ -136,14 +253,8 @@ fn new_game_opening_runs_opdeene_narration_then_town01_name_entry() {
         ..Default::default()
     });
     assert!(committed, "Yes commits and closes name entry");
-    assert!(
-        !host.world.party_name(0).is_empty(),
-        "the committed lead name persists into the party"
-    );
+    assert!(!host.world.party_name(0).is_empty());
 
-    // The opening choreography `MoveTo`s the townsfolk to the off-map hide box
-    // while it plays; track that it engages so the restore assertion below is
-    // non-vacuous.
     let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
     let parked_at_hide = |w: &legaia_engine_core::world::World| {
         w.field_npc_positions
@@ -151,27 +262,20 @@ fn new_game_opening_runs_opdeene_narration_then_town01_name_entry() {
             .any(|&(x, z)| x == hide && z == hide)
     };
     let mut more = 0u32;
-    let mut saw_hidden_during_sweep = false;
+    let mut saw_hidden = false;
     while host.world.cutscene_timeline.is_some() && more < 4000 {
         host.world.tick();
-        saw_hidden_during_sweep |= parked_at_hide(&host.world);
+        saw_hidden |= parked_at_hide(&host.world);
         more += 1;
     }
     assert!(
         host.world.cutscene_timeline.is_none(),
-        "the opening timeline completes after naming and reverts to free-roam (ticked {more})"
+        "the opening timeline completes after naming (ticked {more})"
     );
-    assert!(
-        saw_hidden_during_sweep,
-        "the opening cutscene parks townsfolk at the off-map hide box while it plays"
-    );
-    // Regression (the "town NPCs vanish after New Game" bug): the timeline
-    // completion must un-park every villager the opening hid, or the field
-    // render draws them off-screen. Their `field_npc_positions` overrides are
-    // dropped so each reverts to its MAN spawn tile.
+    assert!(saw_hidden, "the establishing shot parks townsfolk off-map");
     assert!(
         !parked_at_hide(&host.world),
-        "no field NPC is left at the off-map hide box once free-roam resumes"
+        "free-roam restores every hidden villager"
     );
-    eprintln!("[opening] full chain opdeene->town01 name entry completed");
+    eprintln!("[opening] skip path reached town01 name entry + free-roam");
 }

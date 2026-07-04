@@ -71,30 +71,11 @@ impl PlayWindowApp {
                 self.prev_pad = self.pad;
                 continue;
             }
-            // Opening-cutscene narration plays first. While its
-            // subtitle pages are on screen the field is held and a
-            // confirm press (Cross) skips to the next page; the
-            // per-page timer (World::tick) auto-advances otherwise.
-            // Only once the narration completes does a confirm reach
-            // the hand-off gate below - so the prologue narration
-            // precedes the Rim Elm transition, mirroring retail order.
-            if self.session.host.world.cutscene_narration_active() {
-                if pressed_edge & 0x4000 != 0 {
-                    self.session.host.world.skip_cutscene_narration();
-                }
-                // Freeze player movement (pad held at 0) but keep the
-                // world ticking so the narration's per-page timer
-                // advances and the scene still renders.
-                self.session.host.world.set_pad(0);
-                if let Err(e) = self.session.tick() {
-                    log::error!("session tick (narration): {e:#}");
-                }
-                self.prev_pad = self.pad;
-                continue;
-            }
-            // Prologue cutscene -> Rim Elm handoff. While in `opdeene`
-            // with the trigger armed, a confirm press (Cross) hands off
-            // to `town01`, mirroring FUN_801D1344's flag + pad gate.
+            // Prologue intro-skip (retail FUN_801D1344): while the opening
+            // chain plays with the trigger bit armed, a confirm press
+            // (Cross) skips the WHOLE remaining opening to `town01` -
+            // available mid-narration too (the crawl is timer-driven; retail
+            // has no per-line skip).
             if let Some(target) = self
                 .session
                 .host
@@ -120,6 +101,25 @@ impl PlayWindowApp {
                     Err(e) => {
                         log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
                     }
+                }
+                self.prev_pad = self.pad;
+                continue;
+            }
+            // While the opening narration crawl / title card is on screen the
+            // pad is frozen (the timeline owns the scene) but the world keeps
+            // ticking so the crawl advances and the timeline's terminal
+            // SceneChange can fire (rebuilding render state on a swap).
+            if self.session.host.world.cutscene_narration_active()
+                || self.session.host.world.cutscene_card.is_some()
+            {
+                self.session.host.world.set_pad(0);
+                match self.session.tick() {
+                    Ok(legaia_engine_core::scene::SceneTickEvent::SceneEntered { name }) => {
+                        log::info!("opening chain: entered '{name}'");
+                        self.rebuild_scene_render_state();
+                    }
+                    Ok(_) => {}
+                    Err(e) => log::error!("session tick (narration): {e:#}"),
                 }
                 self.prev_pad = self.pad;
                 continue;
@@ -1039,14 +1039,54 @@ impl PlayWindowApp {
                 overlay_text: Some(&overlay),
                 clear_color: scene_clear,
             };
+            // Periodic sweep (`--screenshot-every`): capture a frame every N
+            // ticks into the sweep dir (named for the tick), keep running,
+            // and exit after the capture at/past `--screenshot-last-tick`.
+            // Redraws can drain up to 4 ticks, so the cadence is tracked via
+            // `sweep_next_tick` rather than a modulo on the tick counter.
+            if let Some(sw) = self.screenshot.as_ref().and_then(|sc| sc.sweep.as_ref())
+                && self.tick_no >= self.sweep_next_tick
+            {
+                let path = sw.dir.join(format!("tick_{:05}.png", self.tick_no));
+                let last_tick = sw.last_tick;
+                self.sweep_next_tick = self.tick_no + sw.every;
+                match r.capture_rgba(RenderTarget::Scene(&scene)) {
+                    Ok(img) => match write_capture_png(&path, &img) {
+                        Ok(()) => {
+                            println!(
+                                "[ok] screenshot {} ({}x{}) at tick {}",
+                                path.display(),
+                                img.width,
+                                img.height,
+                                self.tick_no
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("screenshot write failed: {e:#}");
+                            std::process::exit(1);
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("screenshot capture failed: {e:#}");
+                        std::process::exit(1);
+                    }
+                }
+                if last_tick.is_some_and(|lt| self.tick_no >= lt) {
+                    std::process::exit(0);
+                }
+            }
             // Screenshot harness: at the target tick, read the frame back
             // offscreen and exit instead of presenting to the window.
             let capture_due = self
                 .screenshot
                 .as_ref()
-                .is_some_and(|sc| self.tick_no >= sc.capture_tick);
+                .is_some_and(|sc| sc.path.is_some() && self.tick_no >= sc.capture_tick);
             if capture_due {
-                let path = self.screenshot.as_ref().unwrap().path.clone();
+                let path = self
+                    .screenshot
+                    .as_ref()
+                    .and_then(|sc| sc.path.clone())
+                    .unwrap();
                 match r.capture_rgba(RenderTarget::Scene(&scene)) {
                     Ok(img) => match write_capture_png(&path, &img) {
                         Ok(()) => {

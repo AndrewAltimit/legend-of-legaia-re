@@ -429,9 +429,10 @@ fn begin_new_game_clears_state_and_enters_field() {
 }
 
 #[test]
-fn prologue_handoff_fires_once_on_confirm_in_opdeene() {
+fn prologue_handoff_fires_once_on_confirm_in_the_opening_chain() {
     let mut world = World::new();
     world.set_active_scene_label(legaia_asset::new_game::OPENING_CUTSCENE_SCENE);
+    world.opening_chain_active = true;
 
     // Not armed yet: confirm does nothing.
     assert_eq!(world.take_prologue_handoff(true), None);
@@ -443,24 +444,33 @@ fn prologue_handoff_fires_once_on_confirm_in_opdeene() {
     assert_eq!(world.take_prologue_handoff(false), None);
     assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 
-    // Armed + confirm: hands off to town01 and clears the bit (fire-once).
+    // Armed + confirm: skips to town01 and clears the bit (fire-once). This
+    // is the retail intro-skip - it fires mid-narration too.
+    world.open_cutscene_narration(vec!["Page".into()]);
     assert_eq!(
         world.take_prologue_handoff(true),
         Some(legaia_asset::new_game::OPENING_SCENE)
     );
     assert_eq!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert!(
+        world.cutscene_narration.is_none(),
+        "the skip tears down the playing narration"
+    );
+    assert!(world.entering_town01_opening);
+    assert!(!world.opening_chain_active);
 
     // A second confirm does not re-fire.
     assert_eq!(world.take_prologue_handoff(true), None);
 }
 
 #[test]
-fn prologue_handoff_only_fires_in_the_cutscene_scene() {
+fn prologue_handoff_only_fires_while_the_opening_chain_plays() {
     let mut world = World::new();
-    // Armed, confirm pressed, but the active scene is not `opdeene`.
+    // Armed, confirm pressed, but no opening chain is playing (e.g. a normal
+    // field visit) - the skip gate stays closed.
     world.set_active_scene_label(legaia_asset::new_game::OPENING_SCENE);
     world.arm_prologue_handoff();
     assert_eq!(world.take_prologue_handoff(true), None);
-    // Bit is left intact for the gate to fire only in `opdeene`.
+    // Bit is left intact for the gate to fire only during the opening.
     assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 }

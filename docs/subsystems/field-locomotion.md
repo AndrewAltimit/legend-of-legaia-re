@@ -159,7 +159,8 @@ Capture note: both wall-press captures park in the **`town0c`** Rim Elm variant.
 | `+0x0000` | object / actor records (0x20-byte stride; up to 512) | scene loader / field VM |
 | `+0x4000` | **collision + floor grid** - 1 byte/tile, `0x80`-byte rows: **high nibble** = 4 sub-cell wall bits, **low nibble** = floor-elevation tier | **base**: the `+0x4000..+0x8000` region of the per-scene `.MAP` file (`FUN_8001f7c0`); **deltas**: field-VM `0x4C` opcode, outer-nibble 7 |
 | `+0x8000` | **per-tile object/attribute map** - `u16`/tile, `0x80`-byte rows: low 9 bits = object-record index into the `+0x0000` table, high bits = per-tile flags (bit `0x400` = object footprint) | object placement at scene load; bit `0x400` ORed in by `FUN_8003aeb0` from field-pack records |
-| `+0x12000` | field-pack region; `_DAT_8007b8d0 = base + 0x12800` | `FUN_8001f7c0` (scene asset loader) |
+| `+0x10000` | **trigger block** - shared header + four kind sub-tables (teleports / P2-record triggers / elevation overrides / region AABBs; see below) | the `+0x10000..+0x12000` region of the `.MAP` file (`FUN_8001f7c0`) |
+| `+0x12000` | field-pack region; `_DAT_8007b8d0 = base + 0x12800`; also the trigger lookup's **fallback window** (same header shape - see below) | `FUN_8001f7c0` (scene asset loader) |
 
 ### Collision byte: walls + floor height
 
@@ -172,7 +173,20 @@ Each `+0x4000` byte packs two nibbles for its 128-unit tile:
 The **base wall + floor data is an on-disc blob**: it is the `+0x4000..+0x8000` region of the per-scene field map file (`DATA\FIELD\<scene>.MAP`), streamed into the field buffer at scene load by `FUN_8001f7c0` (see [Field-buffer load chain](#field-buffer-load-chain)). On top of that base, the field VM's `0x4C` (MENU_CTRL) opcode with outer-nibble 7 (`op0` ∈ `0x70..0x7F`, 7-byte op `[4C, 0x7s, b1, b2, b3, b4, mask]`) applies **story-conditional deltas** - a rectangular paint that sets/clears the high-nibble wall bits over a tile range (`col ∈ [b1, b3+1)`, `row ∈ [b2+1, b4+2)`; sub-op `s` = clear-walkable / block-all / clear-mask / set-mask), gated behind system-flag tests in the prescript.
 The nibble-7 op is the same dispatch row in [`script-vm.md`](script-vm.md#0x4c-menu_ctrl---outer-nibble-dispatch).
 
-The `+0x8000` map is a per-tile object/attribute word, not a terrain-flag grid: its low 9 bits index the `+0x0000` object-record table, which `FUN_8003a55c` walks at scene entry to spawn the NPCs/objects occupying each tile. `FUN_8003aeb0` (the field/town scene-entry map-init - note its `town_mode` / `baria_mode` debug strings) ORs the `0x400` footprint flag into these cells from the field-pack region records (`+0x12000`, offset/count at `+0x12006` / `+0x12008`, 4-byte records).
+The `+0x8000` map is a per-tile object/attribute word, not a terrain-flag grid: its low 9 bits index the `+0x0000` object-record table, which `FUN_8003a55c` walks at scene entry to spawn the NPCs/objects occupying each tile. `FUN_8003aeb0` (the field/town scene-entry map-init - note its `town_mode` / `baria_mode` debug strings) ORs the `0x400` footprint flag into these cells from the fallback trigger window's kind-1 records (`+0x12000`, offset/count at `+0x12006` / `+0x12008`, 4-byte records - the gate-0 object-bind entries of the trigger block below).
+
+### Trigger block (`+0x10000`) - four kind sub-tables
+
+The `.MAP` file's `+0x10000..+0x12000` region is a **per-tile trigger block**: a shared header dispatching four kind sub-tables. For kind `k`, the sub-table body offset is the `s16` at `+4k+2` and the record count the `s16` at `+4k+4` (both relative to the block start):
+
+| Kind | Records | Content |
+|---|---|---|
+| 0 | `[x][z][dest_half_x][dest_half_z]` | **Intra-scene teleports** - stepping on `(x, z)` relocates the player to the destination half-tile pair. |
+| 1 | `[tile_x][tile_z][p2_record][gate]` | **Partition-2 record triggers.** `gate = 1`: walking onto the tile spawns MAN partition-2 record `p2_record` as a new field-VM context (`FUN_801D1EC4` → `FUN_801D5630(1, x, z)` → `FUN_8003BDE0(x, z, rec[2], rec[3])`, ra `0x801D218C`) - doors and the opening-cutscene records (`map01` / `town01`; the entry SEAT lands on the trigger tile and fires the same tick). `gate = 0`: object-bind entries consumed at scene init (`FUN_8003A55C`), never spawned. The record's own C1/C2 story-flag gates still apply (`FUN_8003BDE0` vs the bitmap at `DAT_80085758`; C1 = block if ANY set, the one-shot mechanism). |
+| 2 | per-tile | **Elevation overrides** - the ramp-tile fast path `FUN_80019278` consults via `FUN_801D5630(2, …)` before the bilinear floor-nibble interpolation. |
+| 3 | `[x0, z0, x1, z1, type, 0, 0, 0]` (8-byte stride) | **Region AABB table** - the resumable point-in-AABB scan `FUN_80017FBC` (body at `+0x1000E`, count at `+0x10010` = the kind-3 header slots). Region types feed the region-type bitmask `_DAT_8007B8F4` + the camera zone query `FUN_801DBA20`. Engine `legaia_engine_core::field_regions::RegionTable`. |
+
+The per-tile lookup (`FUN_801D5630`) scans the `+0x10000` primary block first and **falls back to the `+0x12000` window** - the first sectors of the *next* PROT entry (the dev-build `DATA_FIELD<scene>` sibling), which the contiguous `0x28`-sector read from the `.MAP` LBA (`FUN_8001F7C0`) pulls in with the same header shape. Engine: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-core/src/field_regions.rs) + [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned) for the opening-chain use.
 
 ### Object-record format (`+0x0000`, 0x20-byte stride)
 
