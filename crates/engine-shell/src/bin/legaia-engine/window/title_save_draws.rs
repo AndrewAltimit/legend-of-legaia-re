@@ -314,14 +314,18 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
-        // Status page: the LV / HP / MP labels are UI-icon sprites from the
-        // system-UI atlas (the text stand-ins are suppressed in
-        // `status_screen_draws_for`), positioned off the id-28 content origin.
-        if matches!(sub, Some(FieldMenuSubsession::Status(_))) {
+        // Status page: the LV / HP / MP labels, the AP gauge (pieces + red
+        // value digits) and the 7-slot equipment pictogram grid are UI-icon
+        // sprites from the system-UI atlas (the text stand-ins are
+        // suppressed in `status_screen_draws_for`), positioned off the
+        // id-28 content origin.
+        if let Some(FieldMenuSubsession::Status(s)) = sub {
             use legaia_asset::menu_windows::window_ids;
+            let ap = s.current().map(|snap| snap.ap as u16).unwrap_or(0);
             out.extend(legaia_engine_render::status_icon_sprites_for(
                 &assets.rects,
                 self.menu_window_pen(window_ids::STATUS_MAIN),
+                ap,
                 stage_origin,
                 stage_scale,
             ));

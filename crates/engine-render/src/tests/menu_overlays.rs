@@ -168,6 +168,126 @@ fn status_screen_draws_pack_panel() {
     assert!(!draws.is_empty());
 }
 
+/// The status-page UI-icon sprites land at the byte-pinned retail
+/// positions: for the retail id-28 window origin `(90, 16)` the AP gauge
+/// pieces sit at x 154/178/234/250 on y=61, a single-digit AP value at
+/// `(241, 66)`, the left pictogram column at x=90 on rows
+/// 125/138/151/164 and the Goods column at x=196 on rows 138/151/164
+/// (all pixel-verified against the golden `menu_status_town` capture).
+#[test]
+fn status_icon_sprites_pin_gauge_and_pictogram_positions() {
+    let rects = super::title_save_screen::pinned_save_menu_rects();
+    let draws = status_icon_sprites_for(&rects, (90, 16), 0, (0, 0), 1);
+    let at = |x: i32, y: i32| {
+        draws
+            .iter()
+            .find(|d| d.dst.0 == x && d.dst.1 == y)
+            .unwrap_or_else(|| panic!("no sprite at ({x},{y})"))
+    };
+    // Gauge pieces (cap / trough / value box / right tip) on the bar row.
+    assert_eq!(at(154, 61).src, rects.gauge_cap);
+    assert_eq!(at(178, 61).src, rects.gauge_trough);
+    assert_eq!(at(234, 61).src, rects.gauge_box);
+    assert_eq!(at(250, 61).src, rects.gauge_tip);
+    // AP value 0: no tens digit, the ones "0" cell at the anchor+0x56
+    // position (FUN_8002c0b0), and no meter fill.
+    let (dgx, dgy, _, _) = rects.gauge_digits;
+    assert_eq!(at(240, 66).src, (dgx, dgy, 6, 6));
+    assert!(!draws.iter().any(|d| d.src == rects.gauge_fill));
+    // Equipment pictograms: left column (weapon/helmet/armor/boot) and
+    // the 3-row Goods column.
+    assert_eq!(at(90, 125).src, rects.icon_weapon);
+    assert_eq!(at(90, 138).src, rects.icon_helmet);
+    assert_eq!(at(90, 151).src, rects.icon_armor);
+    assert_eq!(at(90, 164).src, rects.icon_boot);
+    for y in [138, 151, 164] {
+        assert_eq!(at(196, y).src, rects.icon_goods);
+    }
+}
+
+/// The FUN_8002c0b0 value layout: tens digit at anchor+0x50, ones at
+/// anchor+0x56 (6x6 cells), the meter fill stretched to `value/2` px
+/// from anchor+0x1B - and a full 100 swaps the digits for the
+/// dedicated "100" glyph with a 50-px fill.
+#[test]
+fn status_icon_sprites_gauge_value_and_fill_layout() {
+    let rects = super::title_save_screen::pinned_save_menu_rects();
+    let (dgx, dgy, _, _) = rects.gauge_digits;
+
+    // AP 42: tens '4' at 234, ones '2' at 240, fill 21 px at (181, 66).
+    let draws = status_icon_sprites_for(&rects, (90, 16), 42, (0, 0), 1);
+    let digits: Vec<_> = draws
+        .iter()
+        .filter(|d| d.dst.1 == 66 && d.src.1 == dgy && d.src.2 == 6)
+        .collect();
+    assert_eq!(digits.len(), 2);
+    assert_eq!(digits[0].dst.0, 234);
+    assert_eq!(digits[0].src, (dgx + 4 * 6, dgy, 6, 6)); // '4'
+    assert_eq!(digits[1].dst.0, 240);
+    assert_eq!(digits[1].src, (dgx + 2 * 6, dgy, 6, 6)); // '2'
+    let fill = draws
+        .iter()
+        .find(|d| d.src == rects.gauge_fill)
+        .expect("AP 42 must draw a meter fill");
+    assert_eq!(fill.dst, (181, 66, 21, 6));
+
+    // AP 7: no tens digit, ones '7' only, 3-px fill (7 >> 1).
+    let draws = status_icon_sprites_for(&rects, (90, 16), 7, (0, 0), 1);
+    let digits: Vec<_> = draws
+        .iter()
+        .filter(|d| d.dst.1 == 66 && d.src.1 == dgy && d.src.2 == 6)
+        .collect();
+    assert_eq!(digits.len(), 1);
+    assert_eq!(digits[0].dst.0, 240);
+    assert_eq!(digits[0].src, (dgx + 7 * 6, dgy, 6, 6));
+    let fill = draws.iter().find(|d| d.src == rects.gauge_fill).unwrap();
+    assert_eq!(fill.dst, (181, 66, 3, 6));
+
+    // AP 100: the "100" glyph at anchor+0x50, no digit cells, 50-px fill.
+    let draws = status_icon_sprites_for(&rects, (90, 16), 100, (0, 0), 1);
+    let glyph = draws
+        .iter()
+        .find(|d| d.src == rects.gauge_100)
+        .expect("AP 100 must draw the dedicated glyph");
+    assert_eq!((glyph.dst.0, glyph.dst.1), (234, 66));
+    assert!(!draws.iter().any(|d| d.src.1 == dgy && d.src.2 == 6));
+    let fill = draws.iter().find(|d| d.src == rects.gauge_fill).unwrap();
+    assert_eq!(fill.dst, (181, 66, 50, 6));
+}
+
+/// With `label_icons` set, the AP text stand-in disappears (the sprite
+/// gauge replaces it) and empty equipment names draw nothing at the
+/// pictogram positions; occupied slots move to the +0x10 name offset.
+#[test]
+fn status_screen_label_icons_suppresses_ap_text_and_empty_equips() {
+    let font = legaia_font::synthetic_for_tests();
+    let equip_rows = [("Weapon", "#05"), ("Helmet", "")];
+    let panel = StatusPanelView {
+        name: "Vahn",
+        level: 1,
+        xp: 0,
+        xp_to_next: 121,
+        hp: 180,
+        hp_max: 180,
+        mp: 20,
+        mp_max: 20,
+        ap: 4,
+        ap_max: 100,
+        stat_rows: &[],
+        equip_rows: &equip_rows,
+    };
+    let with_icons = status_screen_draws_for(&font, &panel, None, (90, 16), true);
+    let without = status_screen_draws_for(&font, &panel, None, (90, 16), false);
+    // The icons variant emits strictly fewer glyphs: no LV/HP/MP tags,
+    // no "AP  4/100" readout, no empty-slot text.
+    assert!(with_icons.len() < without.len());
+    // The occupied slot's name lands at the +0x10 name offset
+    // (icon x 90 -> text x 106) on the slot-0 row (y = 16 + 0x6d).
+    assert!(with_icons.iter().any(|d| d.dst.0 >= 106 && d.dst.1 == 125));
+    // No icon-position text on the empty slot-1 row.
+    assert!(!with_icons.iter().any(|d| d.dst.1 == 138));
+}
+
 #[test]
 fn game_over_dim_continue_when_disabled() {
     let font = legaia_font::synthetic_for_tests();

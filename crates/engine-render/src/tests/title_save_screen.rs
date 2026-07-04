@@ -150,8 +150,9 @@ fn save_select_with_confirm_prompt() {
 
 /// Helper: build a [`SaveMenuAtlasRects`] populated with the
 /// byte-pinned retail tile coords. The unit tests use these to
-/// verify the 9-slice composition math.
-fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
+/// verify the 9-slice composition math (the menu-overlay tests reuse
+/// it for the status-page icon sprites).
+pub(super) fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
     SaveMenuAtlasRects {
         panel_tl: (160, 0, 4, 4),
         panel_tr: (188, 0, 4, 4),
@@ -166,9 +167,21 @@ fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
         cursor: (152, 64, 16, 16),
         panel_interior: (128, 0, 32, 29),
         panel_filigree: (0, 200, 32, 29),
-        label_lv: (40, 232, 16, 12),
-        label_hp: (60, 232, 16, 12),
-        label_mp: (80, 232, 16, 12),
+        label_lv: (40, 232, 16, 10),
+        label_hp: (60, 232, 16, 10),
+        label_mp: (80, 232, 16, 10),
+        gauge_cap: (40, 200, 24, 16),
+        gauge_trough: (66, 200, 56, 16),
+        gauge_box: (124, 200, 16, 16),
+        gauge_tip: (142, 200, 8, 16),
+        gauge_digits: (152, 200, 60, 6),
+        gauge_100: (214, 200, 16, 6),
+        gauge_fill: (232, 200, 2, 6),
+        icon_weapon: (40, 216, 12, 12),
+        icon_helmet: (54, 216, 12, 12),
+        icon_armor: (68, 216, 12, 12),
+        icon_boot: (82, 216, 12, 12),
+        icon_goods: (96, 216, 12, 12),
         load_empty_frame: Some((200, 64, 32, 32)),
         load_portrait_by_char: [
             Some((200, 96, 16, 16)),
