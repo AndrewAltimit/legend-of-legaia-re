@@ -165,7 +165,7 @@ pub struct StatusPanelView<'a> {
 /// `x + digits * 6` - the shape of the retail decimal primitive
 /// `FUN_80034b78(value, x, y, digits)`, which fills a `digits`-wide cell
 /// field from the left edge `x`.
-fn num_field_draws(
+pub(crate) fn num_field_draws(
     font: &legaia_font::Font,
     value: u64,
     x: i32,

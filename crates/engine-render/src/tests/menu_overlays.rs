@@ -409,8 +409,36 @@ fn inventory_use_draws_target_phase_renders_target_column() {
     assert!(with_target.len() > no_target.len());
 }
 
+/// The retail equip-screen window pens (descriptor ids 21 / 23 / 22).
+const EQUIP_PARTY_PEN: (i32, i32) = (14, 42);
+const EQUIP_LIST_PEN: (i32, i32) = (174, 22);
+const EQUIP_MAIN_PEN: (i32, i32) = (14, 96);
+
+fn equip_view<'a>(
+    slots: &'a [EquipSlotRow<'a>],
+    candidates: &'a [EquipCandidateRow<'a>],
+    stat_compare: &'a [EquipStatRow<'a>],
+    phase: EquipDrawPhase,
+) -> EquipScreenView<'a> {
+    EquipScreenView {
+        party_names: &["Vahn"][..1],
+        party_cursor: 0,
+        slots,
+        candidates,
+        stat_compare,
+        phase,
+        cursor: 0,
+        active_slot: 0,
+        confirm_label: None,
+        text_cursor: true,
+    }
+}
+
+/// Slot-picker phase: the "Best Equipment" header sits at main+0x10 and
+/// equipped names at main+0x20 on the 0xE-pitch rows (FUN_801D21C0);
+/// party names land at party+6 (FUN_801D2094); empty slots draw nothing.
 #[test]
-fn equipment_session_draws_render_slot_grid_in_picker_phase() {
+fn equip_screen_draws_slot_rows_at_retail_offsets() {
     let font = legaia_font::synthetic_for_tests();
     let slots = vec![
         EquipSlotRow {
@@ -419,74 +447,118 @@ fn equipment_session_draws_render_slot_grid_in_picker_phase() {
         },
         EquipSlotRow {
             label: "Helmet",
-            current_name: "(empty)",
+            current_name: "",
         },
     ];
-    let args = EquipDrawArgs {
-        character_name: "Vahn",
-        slots: &slots,
-        candidates: &[],
-        phase: EquipDrawPhase::SlotPicker,
-        cursor: 0,
-        active_slot: 0,
-        confirm_label: None,
-    };
-    let draws = equipment_session_draws_for(&font, args, (16, 32));
-    assert!(!draws.is_empty());
+    let view = equip_view(&slots, &[], &[], EquipDrawPhase::SlotPicker);
+    let draws = equip_screen_draws_for(
+        &font,
+        &view,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
+    );
+    let (mx, my) = EQUIP_MAIN_PEN;
+    // Header glyphs start at (mx+0x10, my).
+    assert!(draws.iter().any(|d| d.dst.0 == mx + 0x10 && d.dst.1 == my));
+    // Slot 0's item name at (mx+0x20, my+0xE).
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == mx + 0x20 && d.dst.1 == my + 0x0e)
+    );
+    // Empty slot 1 draws no name glyphs on its row.
+    assert!(
+        !draws
+            .iter()
+            .any(|d| d.dst.0 >= mx + 0x20 && d.dst.1 == my + 0x1c)
+    );
+    // Party name at (px+6, py).
+    let (px, py) = EQUIP_PARTY_PEN;
+    assert!(draws.iter().any(|d| d.dst.0 == px + 6 && d.dst.1 == py));
 }
 
+/// Item-picker phase: candidates fill the id-23 list window at the 0xD
+/// list pitch and the stat-compare block lands at the traced main-window
+/// offsets (label +0xA0, current +0xC8, preview +0xF0 only on change).
 #[test]
-fn equipment_session_draws_item_picker_renders_candidate_column() {
+fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
     let font = legaia_font::synthetic_for_tests();
     let slots = vec![EquipSlotRow {
         label: "Weapon",
-        current_name: "(empty)",
+        current_name: "",
     }];
     let candidates = vec![
         EquipCandidateRow {
             name: "Iron Sword",
             count: 1,
-            atk_delta: 5,
-            udf_delta: 0,
         },
         EquipCandidateRow {
             name: "Wood Sword",
-            count: 1,
-            atk_delta: -2,
-            udf_delta: 0,
+            count: 2,
         },
     ];
-    let picker_only = equipment_session_draws_for(
-        &font,
-        EquipDrawArgs {
-            character_name: "Vahn",
-            slots: &slots,
-            candidates: &candidates,
-            phase: EquipDrawPhase::ItemPicker,
-            cursor: 0,
-            active_slot: 0,
-            confirm_label: None,
+    let stat_compare = vec![
+        EquipStatRow {
+            label: "ATK",
+            current: 40,
+            preview: 45,
         },
-        (16, 32),
-    );
-    let no_picker = equipment_session_draws_for(
-        &font,
-        EquipDrawArgs {
-            character_name: "Vahn",
-            slots: &slots,
-            candidates: &[],
-            phase: EquipDrawPhase::SlotPicker,
-            cursor: 0,
-            active_slot: 0,
-            confirm_label: None,
+        EquipStatRow {
+            label: "UDF",
+            current: 30,
+            preview: 30,
         },
-        (16, 32),
+    ];
+    let view = equip_view(
+        &slots,
+        &candidates,
+        &stat_compare,
+        EquipDrawPhase::ItemPicker,
     );
-    assert!(picker_only.len() > no_picker.len());
+    let draws = equip_screen_draws_for(
+        &font,
+        &view,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
+    );
+    let (lx, ly) = EQUIP_LIST_PEN;
+    // Candidate rows at (lx+10, ly + 0xD*i).
+    assert!(draws.iter().any(|d| d.dst.0 == lx + 10 && d.dst.1 == ly));
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == lx + 10 && d.dst.1 == ly + 0x0d)
+    );
+    let (mx, my) = EQUIP_MAIN_PEN;
+    // Stat labels at mx+0xA0 on rows my+0x48 / my+0x55.
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == mx + 0xa0 && d.dst.1 == my + 0x48)
+    );
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == mx + 0xa0 && d.dst.1 == my + 0x55)
+    );
+    // ATK changed: a preview glyph in the +0xF0 3-digit field on row 0.
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 >= mx + 0xf0 && d.dst.1 == my + 0x48)
+    );
+    // UDF unchanged: nothing at/right of the arrow column on row 1.
+    assert!(
+        !draws
+            .iter()
+            .any(|d| d.dst.0 >= mx + 0xe4 && d.dst.1 == my + 0x55)
+    );
 }
 
 #[test]
-fn equipment_session_draws_confirm_phase_shows_yes_no_prompt() {
+fn equip_screen_draws_confirm_phase_shows_yes_no_prompt() {
     let font = legaia_font::synthetic_for_tests();
     let slots = vec![EquipSlotRow {
         label: "Weapon",
@@ -495,24 +567,80 @@ fn equipment_session_draws_confirm_phase_shows_yes_no_prompt() {
     let candidates = vec![EquipCandidateRow {
         name: "Steel Sword",
         count: 1,
-        atk_delta: 3,
-        udf_delta: 0,
     }];
-    let draws = equipment_session_draws_for(
+    let mut view = equip_view(&slots, &candidates, &[], EquipDrawPhase::Confirm);
+    view.confirm_label = Some("Equip Steel Sword?");
+    let with_confirm = equip_screen_draws_for(
         &font,
-        EquipDrawArgs {
-            character_name: "Vahn",
-            slots: &slots,
-            candidates: &candidates,
-            phase: EquipDrawPhase::Confirm,
-            cursor: 0,
-            active_slot: 0,
-            confirm_label: Some("Equip Steel Sword?"),
-        },
-        (16, 32),
+        &view,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
     );
-    // Confirm draws should include candidate column glyphs.
-    assert!(!draws.is_empty());
+    let picker = equip_view(&slots, &candidates, &[], EquipDrawPhase::ItemPicker);
+    let without = equip_screen_draws_for(
+        &font,
+        &picker,
+        EQUIP_PARTY_PEN,
+        EQUIP_LIST_PEN,
+        EQUIP_MAIN_PEN,
+    );
+    // The confirm phase layers the label + Yes/No prompt on top of the
+    // candidate list.
+    assert!(with_confirm.len() > without.len());
+}
+
+/// The equip-screen sprites pin the retail placements: pictograms at
+/// main+(0x10, 0xE*(i+1)), the party hand cursor at party+(-0xC,
+/// 0xE*row), and the slot hand cursor on the hovered row.
+#[test]
+fn equip_screen_sprites_pin_pictogram_and_cursor_positions() {
+    let rects = super::title_save_screen::pinned_save_menu_rects();
+    let draws = equip_screen_sprites_for(
+        &rects,
+        8,
+        EQUIP_MAIN_PEN,
+        EQUIP_PARTY_PEN,
+        0,
+        Some(1),
+        (0, 0),
+        1,
+    );
+    let (mx, my) = EQUIP_MAIN_PEN;
+    let at = |x: i32, y: i32| {
+        draws
+            .iter()
+            .find(|d| d.dst.0 == x && d.dst.1 == y)
+            .unwrap_or_else(|| panic!("no sprite at ({x},{y})"))
+    };
+    // Pictogram column: weapon fist / helmet / armor / (hand-guard fist)
+    // / boot / 3x Goods ring, rows my+0xE onward.
+    assert_eq!(at(mx + 0x10, my + 0x0e).src, rects.icon_weapon);
+    assert_eq!(at(mx + 0x10, my + 0x1c).src, rects.icon_helmet);
+    assert_eq!(at(mx + 0x10, my + 0x2a).src, rects.icon_armor);
+    assert_eq!(at(mx + 0x10, my + 0x38).src, rects.icon_weapon);
+    assert_eq!(at(mx + 0x10, my + 0x46).src, rects.icon_boot);
+    for dy in [0x54, 0x62, 0x70] {
+        assert_eq!(at(mx + 0x10, my + dy).src, rects.icon_goods);
+    }
+    // Party hand cursor overhangs the window's left edge (X-0xC).
+    let (px, py) = EQUIP_PARTY_PEN;
+    assert_eq!(at(px - 0x0c, py).src, rects.cursor);
+    // Slot-picker hand cursor on row 1 at the main window's left edge.
+    assert_eq!(at(mx, my + 0x1c).src, rects.cursor);
+
+    // Outside the slot picker no main-window hand is drawn.
+    let no_slot_hand = equip_screen_sprites_for(
+        &rects,
+        8,
+        EQUIP_MAIN_PEN,
+        EQUIP_PARTY_PEN,
+        0,
+        None,
+        (0, 0),
+        1,
+    );
+    assert_eq!(no_slot_hand.len(), draws.len() - 1);
 }
 
 #[test]

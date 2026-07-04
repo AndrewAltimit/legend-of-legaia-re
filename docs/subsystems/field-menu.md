@@ -26,6 +26,7 @@ resolved through the window-descriptor table below.
 - [Plumbing](#plumbing) · [Submenu dispatch](#submenu-dispatch)
 - [Header row](#header-row-always-drawn) · [Status page](#status-page-submenu-0-or-5)
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
+- [Equip screen](#equip-screen)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed)
 
@@ -230,6 +231,76 @@ accessory-passive table `0x8007625c` at `(X+0x30, Yrun+0xe)` (CLUT 4) and
 any skills." Instr `801d3e64`..`801d4098`. See
 [`accessory-passive-table.md`](../formats/accessory-passive-table.md).
 
+## Equip screen
+
+The Equip screen composes four descriptor-table windows (draw order: tab 2,
+party 21, item-list 23, main 22 - the main window's opaque interior occludes
+the item-list window's lower span). Content renderers, all in the menu
+overlay:
+
+**Tab (id 2)** - `FUN_801DCA94` stages CLUT 7 and draws the "Equip" STR at
+the tab window's content origin; the carved banner behind it is caller art
+(see `ghidra/scripts/funcs/overlay_menu_801dca94.txt`).
+
+**Party window (id 21, rect `(14,42,80,38)`)** - `FUN_801D2094` (shared with
+the status screen's id-26 party list; see
+`ghidra/scripts/funcs/overlay_menu_801d2094.txt`). For each present party
+member (count `DAT_80084594`, roster order bytes at `0x80084598`; only
+roster slots `< 3` draw): the name STR (record `+0x2A7`) at `(X+6,
+Y + 0xE*i)`, CLUT 7. The pointing-hand cursor (`FUN_8002B994`) draws at
+`X-0xC` on the focused row, gated by the focus word `DAT_801E46C4`
+(bit `0x4000` hides, `0x2000` selects the blink variant, low 12 bits =
+row).
+
+**Main window (id 22, rect `(14,96,292,108)`)** - `FUN_801D21C0` (see
+`ghidra/scripts/funcs/overlay_menu_801d21c0.txt`). Early-outs unless the
+shown character's roster byte is `< 3`. First pass:
+
+- "Best Equipment" STR at `(X+0x10, Y)` - cursor row 0 of the window's
+  cursor space (`DAT_801E46C0`), hand at `(X, Y)`.
+- 7 slot rows at `Y + 0xE*(i+1)`: hand cursor at `X`, 12x12 slot pictogram
+  (ICO `FUN_8002C488`, code `DAT_801E43F4[i]` - the same fixed 7-code
+  array as the status equipment grid: weapon fist / helmet / armor / boot /
+  3x Goods ring) at `X+0x10`, the equipped item's name STR at `X+0x20`.
+  Item id: row 0 reads `record[0x196 + *(i16*)(DAT_8007B42C + char*2)]`
+  (per-character weapon-slot offset), rows 1..6 read
+  `record[0x196 + DAT_801E43E8[row]]`; names via the item-name table
+  `0x8007436C + id*0xC`.
+
+Second pass only when the submenu id is settled on the equip screen
+(`DAT_801E46A4 == DAT_801E46A8 == 0x13`) and no transition is pending
+(`_DAT_8007BB80 == 0`):
+
+- **Cursor row 0 ("Best Equipment")**: for each armament row 0..3 whose
+  best-candidate id (`DAT_801EF0C0[i]`) differs from the equipped id: a
+  change-arrow glyph `FUN_8003C310(2)` at `X+0x8E` (CLUT 0), then - for
+  class-1 (equipment) items - a weapon-class pictogram at `X+0xA8` (class
+  from the equip-stat record `+7` bits `0x60`, remapped `{2->2, 1->1,
+  0->3}` into `DAT_801E43F4`) with the candidate name at `X+0xB8`
+  (non-equipment names land at `X+0xA8`). Below, the **stat-compare
+  block**: 3 rows at `Y+0x48/+0x55/+0x62`; 3-char stat label STR
+  (`0x801CE9A0/A4/A8`) at `X+0xA0`, current value (3-digit NUM, 999-clamp,
+  `DAT_801EF08C/90/94`) at `X+0xC8`; when the preview value
+  (`DAT_801EF0AC/B0/B4`) differs, an up/down arrow `FUN_8003C1F8(4|5)` at
+  `X+0xE4` (CLUT 6 raised / CLUT 1 lowered) and the preview value at
+  `X+0xF0`.
+- **Cursor row 1..7**: the selected slot's equipped item id lands in
+  `DAT_801E46B0` and, when non-zero, an item info panel draws at
+  `(X+0x94, Y+0xC)`: `FUN_801D0F1C` (description text) over two
+  `0x90 x 0x28` shade boxes (`FUN_8002C69C`) at `Y+0xC` and `Y+0x44`.
+
+**Item-list window (id 23, rect `(174,22,132,182)`)** is renderer-less in
+the descriptor table (frame-only container); its picker content is drawn by
+the equip flow outside these window renderers.
+
+Engine port: `engine-render::equip_screen_draws_for` (window contents at
+the offsets above; the candidate list fills the id-23 rect at the shared
+`0xD` list pitch) + `equip_screen_sprites_for` (pictogram column + hand
+cursors from the system-UI atlas), pens disc-parsed from the descriptor
+table. The engine's 8th slot row (its equip-array over-model) stays
+navigable but icon-less; the stat-compare block previews the hovered
+candidate rather than the best-equipment pick.
+
 ## Scroll widgets (submenu 2 or 3)
 
 Up arrow (icon `0x67`) when `_DAT_8007bb90 > 0` and down arrow (icon `0x68`)
@@ -320,7 +391,11 @@ The AP gauge's **meter fill** and value digits follow the traced
 gouraud endpoint colours stretched to `value/2` px; per-row linear
 interpolation approximates the GPU DDA until an AP>0 retail capture pins
 the sub-pixel truncation - both golden captures hold AP 0).
+The Equip screen renders its retail four-window set (tab 2 + party 21 +
+item-list 23 + main 22) through `equip_screen_draws_for` +
+`equip_screen_sprites_for` at the traced `FUN_801D21C0` / `FUN_801D2094`
+offsets (see [Equip screen](#equip-screen)).
 Still engine-styled: the Condition-pager arrows and element diamonds, the tab banner
 art, the top-level row content (renderer `FUN_801CFD68` untraced), and the
-Items / Spells / Arts / Equip-picker screens (their content layouts do not
-fill the pinned windows yet, so they keep a generic frame).
+Items / Spells / Arts screens (their content layouts do not fill pinned
+windows yet, so they keep a generic frame).

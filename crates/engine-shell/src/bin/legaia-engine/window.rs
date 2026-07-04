@@ -656,8 +656,8 @@ const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 14] = {
 };
 
 /// Content rect used for the sub-screens whose retail window sets are not
-/// yet capture-pinned (Items / Spells / Arts and the Equip picker overlay) -
-/// a near-fullscreen window on the 320x240 stage.
+/// yet capture-pinned (Items / Spells / Arts) - a near-fullscreen window
+/// on the 320x240 stage.
 const MENU_SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
 
 impl PlayWindowApp {

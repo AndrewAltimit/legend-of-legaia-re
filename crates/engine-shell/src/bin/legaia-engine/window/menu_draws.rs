@@ -298,25 +298,24 @@ impl PlayWindowApp {
         legaia_engine_render::inventory_use_draws_for(&self.font, args, (16, 32))
     }
 
-    /// Build draws for the equipment overlay. Resolves slot labels
-    /// through `EquipSlot::label`, candidate names from the engine's
-    /// equipment catalog, and per-candidate stat deltas by diffing the
-    /// active modifier against the slot's current occupant.
+    /// Build draws for the equip screen in the retail multi-window
+    /// layout: party window (id 21), item-list window (id 23), main
+    /// window (id 22) and the "Equip" tab (id 2), each at its
+    /// disc-parsed descriptor rect. Slot labels resolve through
+    /// `EquipSlot::label`; the stat-compare block diffs
+    /// `compute_battle_stats` with the hovered candidate installed.
     pub(super) fn equip_session_draws(
         &self,
         session: &legaia_engine_core::equip_session::EquipSession,
         char_slot: u8,
     ) -> Vec<TextDraw> {
+        use legaia_asset::menu_windows::window_ids;
         use legaia_engine_core::equip_session::EquipState;
         use legaia_engine_core::equipment::EquipSlot;
 
-        // Display name comes from the world's roster snapshot; fall back
-        // to "Slot N" if the world doesn't have a record for the slot.
+        // Party-window rows come from the world's roster snapshot.
         let names = legaia_engine_core::field_menu_dispatch::roster_names(&self.session.host.world);
-        let character_name = names
-            .get(char_slot as usize)
-            .cloned()
-            .unwrap_or_else(|| format!("Slot {}", char_slot + 1));
+        let party_names: Vec<&str> = names.iter().map(String::as_str).collect();
 
         let record = session.record();
         let mut slot_label_buf: Vec<String> = Vec::with_capacity(8);
@@ -329,7 +328,7 @@ impl PlayWindowApp {
         let mut slot_item_buf: Vec<String> = Vec::with_capacity(8);
         for &id in record.equip.iter() {
             slot_item_buf.push(if id == 0 {
-                "(empty)".to_string()
+                String::new()
             } else {
                 format!("Item {id:02X}")
             });
@@ -370,59 +369,105 @@ impl PlayWindowApp {
             EquipState::Done(_) => (legaia_engine_render::EquipDrawPhase::SlotPicker, 0, 0, None),
         };
 
-        // Candidates only matter when we're past the slot picker.
-        let (candidate_names, candidate_meta): (Vec<String>, Vec<(u8, i16, i16)>) =
+        // Candidates + stat compare only matter past the slot picker.
+        let (candidate_names, candidate_counts, considered_id): (Vec<String>, Vec<u8>, Option<u8>) =
             if phase == legaia_engine_render::EquipDrawPhase::SlotPicker {
-                (Vec::new(), Vec::new())
+                (Vec::new(), Vec::new(), None)
             } else {
                 let items = session.items_for_slot(active_slot);
-                let current_id = record.equip[active_slot as usize];
-                let current_mod = session
-                    .equipment()
-                    .get(current_id)
-                    .copied()
-                    .unwrap_or_default();
                 let names: Vec<String> = items
                     .iter()
                     .map(|it| format!("Item {:02X}", it.id))
                     .collect();
-                let meta: Vec<(u8, i16, i16)> = items
+                let counts: Vec<u8> = items
                     .iter()
-                    .map(|it| {
-                        let cand_mod = session.equipment().get(it.id).copied().unwrap_or_default();
-                        let count = session.inventory().get(&it.id).copied().unwrap_or(0);
-                        (
-                            count,
-                            cand_mod.atk - current_mod.atk,
-                            cand_mod.udf - current_mod.udf,
-                        )
-                    })
+                    .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
                     .collect();
-                (names, meta)
+                // The item the compare block previews: the hovered row in
+                // the picker, the pending item in the confirm phase.
+                let considered = match session.state() {
+                    EquipState::Confirm { item_id, .. } => Some(item_id),
+                    _ => items.get(cursor as usize).map(|it| it.id),
+                };
+                (names, counts, considered)
             };
-        let candidate_rows: Vec<legaia_engine_render::EquipCandidateRow<'_>> = candidate_meta
+        let candidate_rows: Vec<legaia_engine_render::EquipCandidateRow<'_>> = candidate_names
             .iter()
-            .enumerate()
-            .map(
-                |(i, (count, da, du))| legaia_engine_render::EquipCandidateRow {
-                    name: &candidate_names[i],
-                    count: *count,
-                    atk_delta: *da,
-                    udf_delta: *du,
-                },
-            )
+            .zip(candidate_counts.iter())
+            .map(|(name, count)| legaia_engine_render::EquipCandidateRow {
+                name,
+                count: *count,
+            })
             .collect();
 
-        let args = legaia_engine_render::EquipDrawArgs {
-            character_name: &character_name,
+        // Stat-compare block: current vs candidate-installed stats. The
+        // session recomputes with live status modifiers on commit; the
+        // menu preview uses the neutral status set (field-menu context).
+        let stat_compare: Vec<legaia_engine_render::EquipStatRow<'_>> = match considered_id {
+            Some(id) => {
+                let neutral = legaia_engine_core::battle_stats::StatusModifiers::default();
+                let cur = legaia_engine_core::battle_stats::compute_battle_stats(
+                    record,
+                    session.equipment(),
+                    &[],
+                    &neutral,
+                );
+                let mut copy = *record;
+                copy.equip[active_slot as usize] = id;
+                let new = legaia_engine_core::battle_stats::compute_battle_stats(
+                    &copy,
+                    session.equipment(),
+                    &[],
+                    &neutral,
+                );
+                // The three retail compare rows (FUN_801D21C0 stat block).
+                vec![
+                    legaia_engine_render::EquipStatRow {
+                        label: "ATK",
+                        current: cur.atk,
+                        preview: new.atk,
+                    },
+                    legaia_engine_render::EquipStatRow {
+                        label: "UDF",
+                        current: cur.udf,
+                        preview: new.udf,
+                    },
+                    legaia_engine_render::EquipStatRow {
+                        label: "LDF",
+                        current: cur.ldf,
+                        preview: new.ldf,
+                    },
+                ]
+            }
+            None => Vec::new(),
+        };
+
+        let view = legaia_engine_render::EquipScreenView {
+            party_names: &party_names,
+            party_cursor: char_slot as usize,
             slots: &slot_rows,
             candidates: &candidate_rows,
+            stat_compare: &stat_compare,
             phase,
             cursor,
             active_slot,
             confirm_label: confirm_label_owned.as_deref(),
+            // Hand-cursor sprites come from the system-UI atlas when it's
+            // resident (see `field_menu_chrome_sprite_draws`).
+            text_cursor: self.save_menu.is_none(),
         };
-        legaia_engine_render::equipment_session_draws_for(&self.font, args, (16, 32))
+        let mut d = legaia_engine_render::equip_screen_draws_for(
+            &self.font,
+            &view,
+            self.menu_window_pen(window_ids::EQUIP_PARTY),
+            self.menu_window_pen(window_ids::EQUIP_LIST),
+            self.menu_window_pen(window_ids::EQUIP_MAIN),
+        );
+        // TODO(tab-banner): swap to the shared carved-plaque tab-banner
+        // primitive when it lands in field_panels; until then the label
+        // renders at the tab window's pinned content origin.
+        d.extend(self.menu_tab_title_draws(window_ids::TAB_EQUIP, "Equip"));
+        d
     }
 
     /// Build draws for the Tactical Arts editor overlay. Pulls the

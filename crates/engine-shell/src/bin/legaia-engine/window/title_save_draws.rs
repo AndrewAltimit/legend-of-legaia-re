@@ -262,17 +262,17 @@ impl PlayWindowApp {
     /// order, so a later window's opaque interior occludes earlier ones
     /// (the equip main window covers the item-list window's lower span).
     /// Screens whose retail window sets are not capture-pinned (Items /
-    /// Spells / Arts / the Equip picker) frame with
-    /// [`MENU_SUBWINDOW_CONTENT`]. Returns empty unless boot-UI is in a
-    /// FieldMenu state (and not the Save sub-session, which owns its own
-    /// load-screen chrome) and the atlas has been uploaded.
+    /// Spells / Arts) frame with [`MENU_SUBWINDOW_CONTENT`]. Returns
+    /// empty unless boot-UI is in a FieldMenu state (and not the Save
+    /// sub-session, which owns its own load-screen chrome) and the atlas
+    /// has been uploaded.
     pub(super) fn field_menu_chrome_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
         use legaia_asset::menu_windows::{
-            OPTIONS_SCREEN_WINDOWS, STATUS_SCREEN_WINDOWS, TOP_LEVEL_WINDOWS,
+            EQUIP_SCREEN_WINDOWS, OPTIONS_SCREEN_WINDOWS, STATUS_SCREEN_WINDOWS, TOP_LEVEL_WINDOWS,
         };
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
         let Some(assets) = self.save_menu.as_ref() else {
@@ -283,15 +283,14 @@ impl PlayWindowApp {
         };
         // The Save sub-session renders through the save-select chrome
         // (`save_select_chrome_sprite_draws`); don't double-frame it.
-        // Items / Spells / Arts and the Equip picker keep the generic
-        // near-fullscreen frame: their retail window sets exist in the
-        // descriptor table (equip = tab 2 + ids 21/22/23) but the engine
-        // content layouts don't fill those windows yet.
+        // Items / Spells / Arts keep the generic near-fullscreen frame:
+        // their retail window sets are not capture-pinned yet.
         let ids: &[usize] = match sub {
             None => &TOP_LEVEL_WINDOWS,
             Some(FieldMenuSubsession::Save(_)) => return Vec::new(),
             Some(FieldMenuSubsession::Status(_)) => &STATUS_SCREEN_WINDOWS,
             Some(FieldMenuSubsession::Config(_)) => &OPTIONS_SCREEN_WINDOWS,
+            Some(FieldMenuSubsession::Equip { .. }) => &EQUIP_SCREEN_WINDOWS,
             Some(_) => &[],
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
@@ -326,6 +325,33 @@ impl PlayWindowApp {
                 &assets.rects,
                 self.menu_window_pen(window_ids::STATUS_MAIN),
                 ap,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        // Equip screen: the main window's slot pictogram column + the
+        // pointing-hand cursors (party row always, slot row while in the
+        // slot picker), at the traced FUN_801D21C0 / FUN_801D2094
+        // offsets off the pinned window origins.
+        if let Some(FieldMenuSubsession::Equip { session, char_slot }) = sub {
+            use legaia_asset::menu_windows::window_ids;
+            use legaia_engine_core::equip_session::EquipState;
+            let slot_cursor = match session.state() {
+                EquipState::SlotPicker { cursor } => Some(cursor as u16),
+                _ => None,
+            };
+            // Retail draws exactly 7 pictogram rows; the engine's 8th
+            // slot row (Accessory) stays navigable but icon-less so the
+            // column matches the retail capture and nothing lands on the
+            // window's bottom border.
+            let n_rows = session.record().equip.len().min(7);
+            out.extend(legaia_engine_render::equip_screen_sprites_for(
+                &assets.rects,
+                n_rows,
+                self.menu_window_pen(window_ids::EQUIP_MAIN),
+                self.menu_window_pen(window_ids::EQUIP_PARTY),
+                *char_slot as usize,
+                slot_cursor,
                 stage_origin,
                 stage_scale,
             ));
