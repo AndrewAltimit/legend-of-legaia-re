@@ -78,6 +78,11 @@ impl SceneHost {
         self.world.field_channels.clear();
         self.world.field_channels_man = None;
         self.world.field_npc_anim_cues.clear();
+        // Reset the persistent op-0x45 camera-param set so a new scene's
+        // cutscene shots start clean (the params now MERGE per-slot across beats
+        // in `camera_configure`, so a stale set would leak the prior scene's
+        // focus / depth into a beat that omits those slots).
+        self.world.camera_state.params.clear();
         let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self
                 .scene

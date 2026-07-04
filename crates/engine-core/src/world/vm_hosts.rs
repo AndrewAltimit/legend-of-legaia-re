@@ -905,9 +905,33 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn camera_configure(&mut self, params: &[CameraParam], apply_trigger: u16, mode: u8) {
-        self.world.camera_state.params = params.to_vec();
+        // Retail op-0x45 (`FUN_801DE084`) writes each masked param into a
+        // PERSISTENT camera struct slot (`0x801C6EA8 + 0x02 + i*4`); a beat that
+        // omits a slot keeps its prior value. So MERGE per-slot rather than
+        // replacing the set: an opdeene beat that sets only slot 9 (H) - one of
+        // its nine beats is exactly `[(9, 792)]` - must keep the focus / pitch /
+        // eye-depth staged by the previous beat, not reset the shot to the
+        // `cutscene_view` fall-back framing (lead-actor focus + default depth).
+        // The persistent set is cleared on scene entry so cutscene shots don't
+        // leak across scenes (see `enter_field_scene`).
+        for p in params {
+            if let Some(existing) = self
+                .world
+                .camera_state
+                .params
+                .iter_mut()
+                .find(|e| e.slot == p.slot)
+            {
+                existing.value = p.value;
+            } else {
+                self.world.camera_state.params.push(*p);
+            }
+        }
         self.world.camera_state.apply_trigger = apply_trigger;
         self.world.camera_state.mode = mode;
+        // The event still carries only THIS beat's params (the per-beat delta):
+        // the `Camera` controller's `route_camera_events` applies them per-axis
+        // onto its own persistent eye/look-at, matching the same retail model.
         self.world
             .pending_field_events
             .push(FieldEvent::CameraConfigure {
