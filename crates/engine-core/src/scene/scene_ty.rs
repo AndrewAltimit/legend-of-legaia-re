@@ -280,6 +280,46 @@ impl Scene {
             .map(<[u8]>::to_vec))
     }
 
+    /// The scene's kind-1 **tile-trigger** tables: `(primary, fallback)`
+    /// record lists parsed from the `.MAP` `+0x10000` block and the
+    /// `+0x12000` fallback window (the first sectors of the next PROT entry;
+    /// retail reads `0x28` sectors contiguously from the `.MAP` LBA -
+    /// `FUN_8001F7C0` - so both live in the entry's extended footprint).
+    /// When the player enters a listed tile, retail spawns the referenced
+    /// MAN partition-2 record (`gate == 1`) - the door / opening-cutscene
+    /// walk-on dispatch. Returns empty lists when the scene has no field map.
+    ///
+    /// REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
+    pub fn field_tile_triggers(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<(
+        Vec<crate::field_regions::TileTrigger>,
+        Vec<crate::field_regions::TileTrigger>,
+    )> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        let primary = bytes
+            .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..)
+            .map(crate::field_regions::parse_tile_triggers)
+            .unwrap_or_default();
+        // The fallback table = the first sectors past the `.MAP`'s 0x12000
+        // footprint (the next PROT entry on disc). Some maps' extended reads
+        // include that window; otherwise read the sibling entry directly.
+        let mut fallback = bytes
+            .get(crate::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
+            .map(crate::field_regions::parse_tile_triggers)
+            .unwrap_or_default();
+        if fallback.is_empty()
+            && let Ok(sibling) = index.entry_bytes_extended(idx + 1)
+        {
+            fallback = crate::field_regions::parse_tile_triggers(&sibling);
+        }
+        Ok((primary, fallback))
+    }
+
     /// The scene's static-object placements: one entry per placed tile of the
     /// field map file's object-index grid (`+0x8000`), positioned in world
     /// space from the `+0x0000` object-record table. This is the source for

@@ -350,8 +350,8 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
             need(1)?;
             mk(
                 header_size + 1,
-                InsnInfo::Counter {
-                    op0: bytecode[operand],
+                InsnInfo::SpawnRecord {
+                    global_index: bytecode[operand],
                 },
             )
         }

@@ -466,21 +466,22 @@ fn op_4c_n4_sub_9_default_ramp_yields_at_pc() {
 }
 
 #[test]
-fn op_4c_n4_sub_9_abs_jump_uses_signed_target() {
+fn op_4c_n4_sub_9_player_relative_never_jumps() {
     let mut host = TestHost {
-        n4_sub9_state: Sub9State::AbsJump,
+        n4_sub9_state: Sub9State::PlayerRelative,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
-    // target = 0x0080 → absolute jump regardless of ticks.
+    // Bit 24 set selects the player-relative WRITE arm (the cutscene-dialogue
+    // overlay's case 9; live-probe-pinned over the retail opening) - the op
+    // always advances its 6 bytes, never jumps.
     let r = step(
         &mut host,
         &mut ctx,
-        &[0x4C, 0x49, 0x80, 0x00, 0x10, 0x00],
+        &[0x4C, 0x49, 0x80, 0x00, 0x00, 0x00],
         0,
     );
-    assert_eq!(r, StepResult::Advance { next_pc: 0x80 });
-    // No host writes happen on the abs-jump path.
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
     assert!(host.n4_sub9_default_writes.is_empty());
     assert!(host.n4_sub9_default_ramps.is_empty());
     assert!(host.n4_sub9_delta_calls.is_empty());

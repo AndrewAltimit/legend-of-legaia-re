@@ -42,10 +42,14 @@ pub enum Sub9State {
     /// ramp `_DAT_801C6EA4 + 0x4A` only.
     #[default]
     Default,
-    /// Bits `0x02000000` clear, `0x01000000` set - absolute jump. The VM
-    /// returns the signed-16 operand as the new PC and bypasses the
-    /// per-tick logic entirely.
-    AbsJump,
+    /// Bits `0x02000000` clear, `0x01000000` set - player-relative write.
+    /// The target slot receives `value + player_anchor[+0x16]` (the
+    /// cutscene-dialogue overlay's `case 9` arm; live-probe-pinned across
+    /// the New-Game opening - `4C 49` never jumps there). A `4C 49` decoded
+    /// against the field-overlay-0897 dump was previously read as an
+    /// absolute jump; the live retail run through `opurud` (`44 32` reached
+    /// at `+0x7A` with bit 24 set) falsifies that for the opening path.
+    PlayerRelative,
     /// Bit `0x02000000` set - delta path. The host writes/ramps both the
     /// target slot AND a delta-accumulator at `_DAT_8007BCAC`.
     Delta,

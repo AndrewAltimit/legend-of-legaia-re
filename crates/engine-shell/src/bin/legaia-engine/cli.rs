@@ -732,6 +732,21 @@ pub(crate) enum Cmd {
         /// reproduces the same frame run-to-run.
         #[arg(long, default_value_t = 120)]
         screenshot_tick: u64,
+        /// Periodic screenshot sweep: capture a PNG every N ticks into
+        /// `--screenshot-dir` (named `tick_%05d.png`). Composable with
+        /// `--pad-script`; the run exits after the capture at
+        /// `--screenshot-last-tick` (or when the window closes). Independent
+        /// of the single-shot `--screenshot`.
+        #[arg(long)]
+        screenshot_every: Option<u64>,
+        /// Output directory for `--screenshot-every` captures (required with
+        /// it; created if missing).
+        #[arg(long)]
+        screenshot_dir: Option<PathBuf>,
+        /// Last world-tick of a `--screenshot-every` sweep: exit after the
+        /// capture at/past this tick. Omit to run until the window closes.
+        #[arg(long)]
+        screenshot_last_tick: Option<u64>,
         /// Scripted pad input for a screenshot run: `TICK:BUTTON` pairs,
         /// comma-separated, e.g. `--pad-script "30:Start,50:Down,50:Down,70:Cross"`.
         /// Each entry presses BUTTON for exactly the named tick (a one-tick

@@ -293,10 +293,17 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 // sub-9: dispatch on two bits of the global story
                 // flag word. See `FieldHost::op4c_n4_sub9_state`.
                 match host.op4c_n4_sub9_state() {
-                    Sub9State::AbsJump => {
-                        // Absolute jump to signed_16(operand[0..2]).
-                        StepResult::Advance {
-                            next_pc: target as i32 as usize,
+                    Sub9State::PlayerRelative => {
+                        // Player-relative write: `+0x4A = target +
+                        // player_anchor[+0x16]` (ramped when ticks != 0).
+                        // Same advance/yield shape as the default path -
+                        // this arm NEVER jumps (cutscene-dialogue overlay
+                        // `case 9`, live-probe-pinned over the opening).
+                        host.op4c_n4_sub9_player_relative_write(target, ticks);
+                        if ticks == 0 {
+                            advance
+                        } else {
+                            StepResult::Yield { resume_pc: pc }
                         }
                     }
                     Sub9State::Default => {

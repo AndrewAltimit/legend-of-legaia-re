@@ -182,7 +182,7 @@ fn first_town_drives_scene_to_field_event_emission() {
             FieldEvent::SetupAnimation { .. } => "SetupAnimation",
             FieldEvent::RenderCfgLong { .. } => "RenderCfgLong",
             FieldEvent::RenderCfgShort { .. } => "RenderCfgShort",
-            FieldEvent::CounterUpdate { .. } => "CounterUpdate",
+            FieldEvent::SpawnRecord { .. } => "SpawnRecord",
             FieldEvent::EffectAnimTrigger { .. } => "EffectAnimTrigger",
             FieldEvent::SceneFade { .. } => "SceneFade",
             FieldEvent::ColorFade { .. } => "ColorFade",

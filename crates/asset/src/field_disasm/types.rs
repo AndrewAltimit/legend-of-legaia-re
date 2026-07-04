@@ -75,8 +75,9 @@ pub enum InsnInfo {
     },
     /// `0x4F SCENE_REGISTER_WRITE`.
     SceneRegisterWrite { b0: u8, b1: u8, b2: u8 },
-    /// `0x44 COUNTER`.
-    Counter { op0: u8 },
+    /// `0x44 SPAWN_RECORD` - spawn a MAN partition-2 record as a new
+    /// field-VM context (`FUN_8003BDE0(0, 0, global_index - N0 - N1, 1)`).
+    SpawnRecord { global_index: u8 },
     /// `0x4B ANIMATE` - variable-length keyframe block.
     Animate { count: u8, base_id: u8 },
     /// `0x36 SCENE_FADE`.

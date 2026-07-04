@@ -99,24 +99,15 @@ impl World {
                 self.current_capture_banner = None;
             }
         }
-        // Advance the opening-cutscene narration. A confirm press (Cross /
-        // Circle) skips to the next page early, mirroring the retail text
-        // balloon (which advances on confirm or its dwell timer, whichever is
-        // first); otherwise the per-page dwell timer auto-advances it so the
-        // cutscene plays unattended. Clear it once the last page finishes so
-        // the prologue hand-off gate releases. (Edge-triggered: the same press
-        // can't run through multiple pages in one frame.)
-        let narration_confirm = self.input.just_pressed(input::PadButton::Cross)
-            || self.input.just_pressed(input::PadButton::Circle);
-        if let Some(narration) = &mut self.cutscene_narration {
-            let still_on_screen = if narration_confirm {
-                narration.skip_page()
-            } else {
-                narration.tick(1)
-            };
-            if !still_on_screen {
-                self.cutscene_narration = None;
-            }
+        // Advance the opening-cutscene narration roller. The crawl is
+        // timer-driven only (retail `FUN_80037174` has no per-line confirm
+        // skip; the player skips the WHOLE opening through the hand-off
+        // packet instead - see `take_prologue_handoff`). Clear it once every
+        // page has scrolled off so the suspended cutscene timeline resumes.
+        if let Some(narration) = &mut self.cutscene_narration
+            && !narration.tick(1)
+        {
+            self.cutscene_narration = None;
         }
         match self.mode {
             SceneMode::Battle => {
@@ -182,6 +173,13 @@ impl World {
                 None
             }
             SceneMode::WorldMap => {
+                // The opening chain's `map01` fly-in leg runs its cutscene
+                // record over the world map (Mist title card + crawl + the
+                // terminal SceneChange into Rim Elm), so the timeline steps
+                // here too. Outside the opening no world-map timeline exists.
+                if self.opening_chain_active {
+                    self.step_cutscene_timeline();
+                }
                 self.tick_world_map();
                 None
             }

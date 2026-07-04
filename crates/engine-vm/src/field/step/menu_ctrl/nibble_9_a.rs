@@ -59,10 +59,16 @@ pub(super) fn op_4c_n9<H: FieldHost>(
             // `switchD_801e00f4::default()`, which for opcode 0x4C
             // (`& 0x70 = 0x40`) returns `param_2` - halt at PC.
             // The script resumes when the registered callback
-            // fires.
+            // fires; a host that models the callback as already
+            // satisfied advances past the 2-byte op instead.
             0xF => {
-                host.op4c_n9_sub_f_register_callback();
-                StepResult::Halt { final_pc: pc }
+                if host.op4c_n9_sub_f_register_callback() {
+                    StepResult::Advance {
+                        next_pc: pc + header_size + 1,
+                    }
+                } else {
+                    StepResult::Halt { final_pc: pc }
+                }
             }
             _ => StepResult::Halt { final_pc: pc },
         }

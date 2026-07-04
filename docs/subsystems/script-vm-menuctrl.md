@@ -162,7 +162,7 @@ When `ticks == 0` the value is written directly to the slot; when `ticks != 0` t
 | 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. |
 | 7 | `_DAT_8007B930` | Sister of sub-6. |
 | 8 | `ctx[+0x26]` | Plain s16 write or ramp. |
-| 9 | `_DAT_801C6EA4 + 0x4A` *or* delta-bank *or* abs-jump | Branched on two bits of `_DAT_1F800394`. |
+| 9 | `_DAT_801C6EA4 + 0x4A` *or* player-relative *or* delta-bank | Branched on two bits of `_DAT_1F800394`. |
 | A | `_DAT_8007BCD0` | Plain global write or ramp. |
 | B | `_DAT_8007BCD4` | Sister of A. |
 | C | `_DAT_8007BCD8` | Sister of A. |
@@ -174,8 +174,10 @@ Sub-9's tristate dispatch:
 | Bit `0x02000000` | Bit `0x01000000` | Path |
 |---|---|---|
 | clear | clear | `Default` - write/ramp `_DAT_801C6EA4 + 0x4A` |
-| clear | set | `AbsJump` - return `signed_16(operand)` as new PC |
+| clear | set | `PlayerRelative` - write/ramp `value + player_anchor[+0x16]` into `+0x4A` |
 | set | (ignored) | `Delta` - write/ramp both target slot **and** delta global at `_DAT_8007BCAC` |
+
+**Sub-9 never jumps in the cutscene-dialogue overlay.** Its case 9 (`overlay_cutscene_dialogue_801de840.txt`, around the `_DAT_1f800394 & 0x1000000` test) selects a **write variant** and always advances 6 bytes; the bit-24 arm is the player-relative write above. The absolute-jump arm read from the field-overlay-0897 dump does not apply to the New-Game opening path (live probe: `opurud`'s entry script reaches its op-`0x44` at `+0x7A` with bit 24 set, unreachable under a jump arm). Engine: `legaia_engine_vm::field::Sub9State::PlayerRelative` replaces the earlier `AbsJump`.
 
 ### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
 

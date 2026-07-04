@@ -377,11 +377,11 @@ func_0x800468a4(6, signed16(operand[1..3]), signed16(operand[3..5]),
                    signed16(operand[9..11]), signed16(operand[11..13]));
 ```
 
-### 0x44-0x4F (counter / camera / render / state / move-block)
+### 0x44-0x4F (record-spawn / camera / render / state / move-block)
 
 | Op | Mnemonic | Notes |
 |---|---|---|
-| 0x44 | `COUNTER` | `func_0x8003D064` 3-int return + `func_0x8003BDE0` - likely a per-frame counter / score / hit-counter tick. |
+| 0x44 | `SPAWN_RECORD` | `[44, global_index]`, 2 bytes. Spawns a MAN partition-2 record as a new field-VM context: unpacks a packed triple via `func_0x8003D064` then calls `func_0x8003BDE0` (ra `0x801DF098`) with the gate forced to 1; the operand is a **GLOBAL** record index, re-based into partition 2 (`- N0 - N1`). Live-probe-pinned: the opening chain's `opdeene`/`opstati`/`opurud` entry scripts launch their prologue timelines this way (`44 23` / `44 21` / `44 32`). The record's own C1/C2 story-flag gates still apply. The earlier `COUNTER` reading is superseded. See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned). |
 | 0x45 | `CAMERA` | Sub-dispatch on `op0 & 0xC0`: `0x00` = configure 10 sub-words, `0x40` = LOAD (`FUN_801DBC20`), `0x80` = SAVE (`FUN_801DE004`), `0xC0` = APPLY (`FUN_801DAB90` + `FUN_801DAA50` then absolute jump). |
 | 0x46 | `RENDER_CFG` | Fog/render params. `op0 == 0x24` writes 4 bytes (DAT_1F8003E8-EB); else short 2-byte form. |
 | 0x49 | `STATE_RESUME` | Tristate state machine on `_DAT_8007B450`, sub-cases 0..0xD. **Idle** (`==0`): arms it - spawns an effect-actor `func_0x80020DE0(0x8007065C,…)` + sets `_DAT_8007B450 = operand_ptr`. **Armed** (`!=0,!=1`): `return param_2` - re-enters the SAME PC each frame until the actor writes `_DAT_8007B450 = 1` (Done writer = field-overlay `FUN_801F159C`-class). **Done** (`==1`): clears it + advances PC. Done sub-6/8/9/C/D jump through `LAB_801df898` (PC += 5); Done sub-0 walks an inline MES-shape payload via `func_0x8003CA38` (`length = pbVar47[2]`, PC += `5 + length + walked`). The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see [`playthrough-coverage.md`](../tooling/playthrough-coverage.md#s3-captured-the-town01-opening-is-the-name-entry-screen). |

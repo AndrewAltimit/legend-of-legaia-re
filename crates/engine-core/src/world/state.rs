@@ -1522,6 +1522,32 @@ pub struct World {
     /// (establishing shot + Vahn walk-out + name-entry handoff). Cleared when
     /// the entry consumes it, so only the prologue path runs the opening.
     pub entering_town01_opening: bool,
+
+    /// The active opening-cutscene static title card (narration `0x89`
+    /// blocks): pages shown simultaneously, centered mid-screen, until a
+    /// blank card block clears it (the `map01` fly-in's "twilight of
+    /// humanity" card). Rendered by the host; independent of the crawl
+    /// roller [`Self::cutscene_narration`].
+    pub cutscene_card: Option<Vec<String>>,
+
+    /// Pending field-VM op-`0x44` SPAWN_RECORD request: the GLOBAL record
+    /// index whose partition-2 record should spawn as a new context.
+    /// Recorded by the host hook (the VM borrow precludes resolving the MAN
+    /// there); drained by `SceneHost::tick`, which re-bases it into
+    /// partition 2 (`global - N0 - N1`, retail `FUN_8003BDE0`) and installs
+    /// the record as a cutscene timeline when its C1/C2 story-flag gates
+    /// pass.
+    pub pending_record_spawn: Option<u8>,
+
+    /// `true` while the New-Game opening cutscene chain is playing (from the
+    /// `opdeene` entry through its `opstati` / `opurud` / world-map fly-in
+    /// legs, until `town01` is entered). While set, a confirm press with the
+    /// hand-off bit armed skips the WHOLE remaining opening to `town01` -
+    /// retail's `FUN_801D1344` packet is a skip available any time after
+    /// `opdeene` arms `GFLAG 26`, not a post-narration gate. Set when the
+    /// prologue cutscene scene is entered; cleared by the skip or by the
+    /// `town01` opening entry.
+    pub opening_chain_active: bool,
 }
 
 impl Default for World {
@@ -1759,6 +1785,9 @@ impl World {
             prologue_naming_pending: false,
             prologue_naming_armed: false,
             entering_town01_opening: false,
+            cutscene_card: None,
+            pending_record_spawn: None,
+            opening_chain_active: false,
         }
     }
 
@@ -1815,9 +1844,13 @@ impl World {
         self.game_over = false;
         self.play_time_seconds = 0;
         self.cutscene_timeline = None;
+        self.cutscene_narration = None;
+        self.cutscene_card = None;
         self.prologue_naming_pending = false;
         self.prologue_naming_armed = false;
         self.entering_town01_opening = false;
+        self.pending_record_spawn = None;
+        self.opening_chain_active = false;
         self.mode = SceneMode::Field;
     }
 }

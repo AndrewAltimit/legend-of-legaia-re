@@ -109,12 +109,14 @@ These work without any pre-extracted `tim_scan/` tree - they operate straight of
 field `MeshUniforms`; the textured / VRAM / colour mesh shaders' `apply_grade` tone-maps each shaded
 pixel to `luminance · gold` and cross-fades to it by `strength` (`strength = 0`, the default, is a
 no-op; text/UI overlays use separate shaders and are never graded). This reproduces the opening
-prologue's warm gold sepia - the `opdeene` "It was the Seru." cutscene renders its whole 3D scene in
-amber monochrome. Retail achieves it with a GTE far-colour DPCS depth-cue + dim ambient (see
+prologue's warm gold sepia - the `opdeene` / `opstati` / `opurud` cutscene legs render their whole
+3D scenes in amber monochrome (the grade drops for the `map01` fly-in + `town01`). Retail achieves
+it with a GTE far-colour DPCS depth-cue + dim ambient (see
 [`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); the engine mirrors the
 measured display ratios (`G/R ≈ 0.90`, `B/R ≈ 0.24`). Gold coefficients are stored in linear space
 (the multiply precedes the sRGB framebuffer encode). Driven by
-[`World::scene_color_grade`](../../crates/engine-core/src/world.rs) (only the prologue scene grades).
+[`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) (only the prologue
+cutscene legs grade).
 
 ### Asset-viewer flat-shaded fallback
 

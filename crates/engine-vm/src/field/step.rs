@@ -570,12 +570,22 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x44 - COUNTER. `[44, op0]`, PC += 2.
+        // 0x44 - SPAWN_RECORD. `[44, global_index]`, PC += 2. Spawns a MAN
+        // partition-2 record as a new field-VM context: the dispatcher calls
+        // `FUN_8003BDE0(0, 0, global_index - N0 - N1, 1)` where N0/N1 are the
+        // partition-0/1 record counts (so the operand is a GLOBAL record
+        // index; the callee re-bases it into partition 2) and the gate is
+        // forced to 1 (spawn unconditionally, subject to the record's own
+        // C1/C2 story-flag gates). This is how scene-entry system scripts
+        // launch cutscene records - e.g. the opening chain's `opstati` P1[0]
+        // runs `44 21` to spawn its prologue timeline P2[0]. The host owns
+        // the partition math + record install.
+        // REF: FUN_8003BDE0
         0x44 => {
-            let Some(&op0) = bytecode.get(operand) else {
+            let Some(&global_index) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.counter_update(op0);
+            host.op44_spawn_scene_record(global_index);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }

@@ -251,7 +251,7 @@ fn field_event_tag(e: &legaia_engine_core::field_events::FieldEvent) -> &'static
         E::SetupAnimation { .. } => "SetupAnimation",
         E::RenderCfgLong { .. } => "RenderCfgLong",
         E::RenderCfgShort { .. } => "RenderCfgShort",
-        E::CounterUpdate { .. } => "CounterUpdate",
+        E::SpawnRecord { .. } => "SpawnRecord",
         E::EffectAnimTrigger { .. } => "EffectAnimTrigger",
         E::SceneFade { .. } => "SceneFade",
         E::ColorFade { .. } => "ColorFade",

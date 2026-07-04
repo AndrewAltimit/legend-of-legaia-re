@@ -28,26 +28,57 @@ use winit::window::WindowId;
 
 /// Deterministic screenshot harness for `play-window`: render one frame
 /// offscreen at [`Self::capture_tick`] and write it to [`Self::path`], then
-/// exit. [`Self::pad_script`] maps a world-tick to a one-tick pad edge so a
-/// capture run can auto-open + navigate a menu without `xdotool`.
+/// exit - and/or a periodic sweep ([`Self::sweep`]) that captures every N
+/// ticks into a directory. [`Self::pad_script`] maps a world-tick to a
+/// one-tick pad edge so a capture run can auto-open + navigate a menu
+/// without `xdotool`.
 pub(crate) struct ScreenshotConfig {
-    pub path: std::path::PathBuf,
+    /// Single-shot output (`--screenshot`). `None` when only the periodic
+    /// sweep is requested.
+    pub path: Option<std::path::PathBuf>,
     pub capture_tick: u64,
+    /// Periodic capture sweep (`--screenshot-every` + `--screenshot-dir`).
+    pub sweep: Option<ScreenshotSweep>,
     /// tick -> pad button mask pressed for exactly that tick.
     pub pad_script: std::collections::HashMap<u64, u16>,
 }
 
+/// Periodic capture sweep for `play-window`: one PNG (`tick_%05d.png`) into
+/// [`Self::dir`] every [`Self::every`] ticks; the run exits after the
+/// capture at/past [`Self::last_tick`] (or when the window closes).
+pub(crate) struct ScreenshotSweep {
+    pub dir: std::path::PathBuf,
+    pub every: u64,
+    pub last_tick: Option<u64>,
+}
+
 impl ScreenshotConfig {
-    /// Parse the CLI flags into a config. `None` when `--screenshot` is
-    /// absent. Errors on an unparseable `--pad-script` entry.
+    /// Parse the CLI flags into a config. `None` when neither `--screenshot`
+    /// nor `--screenshot-every` is present. Errors on an unparseable
+    /// `--pad-script` entry or a half-specified sweep.
     pub(crate) fn from_args(
         path: Option<std::path::PathBuf>,
         capture_tick: u64,
+        every: Option<u64>,
+        dir: Option<std::path::PathBuf>,
+        last_tick: Option<u64>,
         pad_script: Option<&str>,
     ) -> Result<Option<Self>> {
-        let Some(path) = path else {
-            return Ok(None);
+        let sweep = match (every, dir) {
+            (Some(every), Some(dir)) => {
+                anyhow::ensure!(every > 0, "--screenshot-every must be > 0");
+                Some(ScreenshotSweep {
+                    dir,
+                    every,
+                    last_tick,
+                })
+            }
+            (None, None) => None,
+            _ => anyhow::bail!("--screenshot-every and --screenshot-dir must be set together"),
         };
+        if path.is_none() && sweep.is_none() {
+            return Ok(None);
+        }
         let mut script = std::collections::HashMap::new();
         if let Some(spec) = pad_script {
             for entry in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
@@ -66,6 +97,7 @@ impl ScreenshotConfig {
         Ok(Some(Self {
             path,
             capture_tick,
+            sweep,
             pad_script: script,
         }))
     }
@@ -442,6 +474,10 @@ struct PlayWindowApp {
     /// script injects one-tick edges and the render path captures an offscreen
     /// PNG at `capture_tick`, then exits. `None` in normal interactive runs.
     screenshot: Option<ScreenshotConfig>,
+    /// Next world-tick at which the periodic screenshot sweep
+    /// (`--screenshot-every`) captures. Advanced by `every` on each capture;
+    /// unused when no sweep is configured.
+    sweep_next_tick: u64,
     /// Rolling battle-event log surfaced in the HUD. Each tick drains
     /// `World::pending_battle_events` and folds the most recent N entries
     /// into this ring buffer (`ApplyArtStrike` events also get applied to

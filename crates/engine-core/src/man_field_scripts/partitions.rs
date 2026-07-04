@@ -79,6 +79,45 @@ pub(crate) fn partition2_record_script_offset(body: &[u8]) -> Option<usize> {
     Some(cur)
 }
 
+/// The C1 / C2 story-flag gate lists of a **partition-2 named-record**
+/// (see [`partition2_record_script_offset`] for the header shape).
+///
+/// Retail's record dispatcher `FUN_8003BDE0` tests each listed flag against
+/// the story-flag bitmap at `DAT_80085758` (`bit = byte[flag >> 3] &
+/// (0x80 >> (flag & 7))`): **C1 blocks the spawn if ANY listed flag is set**
+/// (the one-shot mechanism - e.g. `town01`'s opening record lists `0x225`,
+/// set once the opening has played); **C2 requires ALL listed flags set**.
+/// Returns `None` when the header overruns the record body.
+// REF: FUN_8003BDE0
+pub fn partition2_record_gates(
+    man_file: &ManFile,
+    man: &[u8],
+    index: usize,
+) -> Option<(Vec<u16>, Vec<u16>)> {
+    let script_start = partition_record_offset(man_file, man.len(), 2, index)?;
+    let end = record_end_bound(man_file, man.len(), script_start);
+    let body = man.get(script_start..end)?;
+    let name_len = *body.first()? as usize;
+    let mut cur = 1 + name_len * 2;
+    let c0 = *body.get(cur)? as usize;
+    cur += 1 + c0;
+    let read_u16_list = |body: &[u8], cur: &mut usize| -> Option<Vec<u16>> {
+        let n = *body.get(*cur)? as usize;
+        *cur += 1;
+        let mut out = Vec::with_capacity(n);
+        for _ in 0..n {
+            let lo = *body.get(*cur)?;
+            let hi = *body.get(*cur + 1)?;
+            *cur += 2;
+            out.push(u16::from_le_bytes([lo, hi]));
+        }
+        Some(out)
+    };
+    let c1 = read_u16_list(body, &mut cur)?;
+    let c2 = read_u16_list(body, &mut cur)?;
+    Some((c1, c2))
+}
+
 /// The byte span of `partition`'s record `index` as a field-VM script:
 /// `(script_start, pc0, body_len)`, where `script_start` is the absolute
 /// MAN offset of the record, `pc0` the first-opcode offset relative to it,

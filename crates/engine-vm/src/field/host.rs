@@ -214,12 +214,17 @@ pub trait FieldHost {
         let _ = (slot_10, slot_12, slot_14);
     }
 
-    /// Counter / score / hit-counter update (op 0x44). The original calls
-    /// `func_0x8003d064(_DAT_8007b898 + 0x22, ...)` to fetch a 3-int return,
-    /// then `func_0x8003bde0(0, 0, op0 - a - b, 1)` to apply the difference.
-    /// We surface just the operand byte; the host owns the actual counter.
-    fn counter_update(&mut self, op0: u8) {
-        let _ = op0;
+    /// Spawn a MAN partition-2 record as a new field-VM context (op 0x44).
+    /// The original calls `func_0x8003bde0(0, 0, global_index - N0 - N1, 1)`
+    /// where N0/N1 are the scene MAN's partition-0/1 record counts - so the
+    /// operand is a GLOBAL record index that the dispatcher re-bases into
+    /// partition 2, gate forced 1 (spawn subject only to the record's own
+    /// C1/C2 story-flag gates). Scene-entry system scripts use this to launch
+    /// cutscene records (e.g. the opening chain's `opstati` / `opurud` legs).
+    /// The host owns the partition math + the record install.
+    // REF: FUN_8003BDE0
+    fn op44_spawn_scene_record(&mut self, global_index: u8) {
+        let _ = global_index;
     }
 
     /// Set up multi-keyframe animation (op 0x4B). The VM has already populated
@@ -1075,7 +1080,7 @@ pub trait FieldHost {
     /// | Bit `0x02000000` | Bit `0x01000000` | Path |
     /// |------------------|------------------|------|
     /// | clear            | clear            | `Default` - write/ramp `_DAT_801C6EA4 + 0x4A` |
-    /// | clear            | set              | `AbsJump` - return `signed_16(operand)` as new PC |
+    /// | clear            | set              | `PlayerRelative` - write/ramp `value + player[+0x16]` |
     /// | set              | (ignored)        | `Delta`   - write/ramp both target slot + delta global |
     ///
     /// The default impl reads the global flag word via [`global_flags`] and
@@ -1088,10 +1093,22 @@ pub trait FieldHost {
         if f & 0x0200_0000 != 0 {
             Sub9State::Delta
         } else if f & 0x0100_0000 != 0 {
-            Sub9State::AbsJump
+            Sub9State::PlayerRelative
         } else {
             Sub9State::Default
         }
+    }
+
+    /// Op 0x4C outer-nibble-4 sub-9 - player-relative write (bit 24 set).
+    ///
+    /// Fires when [`op4c_n4_sub9_state`] returns `PlayerRelative`: the
+    /// original writes `target + *(player_anchor + 0x16)` into
+    /// `*(_DAT_801C6EA4 + 0x4A)` (ramped via `func_0x8003C5F0` when
+    /// `ticks != 0`). Default impl is a no-op.
+    ///
+    /// [`op4c_n4_sub9_state`]: FieldHost::op4c_n4_sub9_state
+    fn op4c_n4_sub9_player_relative_write(&mut self, target: i16, ticks: u16) {
+        let _ = (target, ticks);
     }
 
     /// Op 0x4C outer-nibble-4 sub-9 - default-path immediate write.
@@ -1371,10 +1388,15 @@ pub trait FieldHost {
     /// 2-byte instruction `[4C, 0x9F]`. The original calls
     /// `func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` (same as nibble-8 sub-7,
     /// but with a different callback target), then exits via
-    /// `switchD_801e00f4::default()` - halts at PC for opcode 0x4C. The
-    /// dispatch wrapper applies the halt; the host hook only needs to
-    /// register the callback.
-    fn op4c_n9_sub_f_register_callback(&mut self) {}
+    /// `switchD_801e00f4::default()` - halts at PC for opcode 0x4C; the script
+    /// resumes when the registered callback fires. Return `true` when the
+    /// host models the callback as already satisfied - the VM then advances
+    /// past the 2-byte op instead of parking (used by the opening-chain
+    /// scripts, whose registered completion fires within a frame in retail).
+    /// Default `false` keeps the faithful halt-until-callback park.
+    fn op4c_n9_sub_f_register_callback(&mut self) -> bool {
+        false
+    }
 
     /// Op 0x4C outer-nibble-A - conditional jump on a flag bit.
     ///
