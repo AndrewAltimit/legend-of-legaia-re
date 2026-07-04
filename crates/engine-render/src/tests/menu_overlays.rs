@@ -116,7 +116,7 @@ fn field_menu_draws_emit_rows_and_footer() {
             enabled: true,
         },
         FieldMenuRowView {
-            label: "Equip",
+            label: "Magic",
             enabled: true,
         },
         FieldMenuRowView {
@@ -126,9 +126,25 @@ fn field_menu_draws_emit_rows_and_footer() {
     ];
     let draws = field_menu_draws_for(&font, &rows, 0, 1234, 90, (24, 24), (24, 178));
     assert!(!draws.is_empty());
-    // Selected row should produce ">" cursor glyph at the row x.
-    let any_gold = draws.iter().any(|d| d.color[1] > 0.7 && d.color[2] < 0.5);
-    assert!(any_gold);
+    // Retail rows are all-white ink (selection = the hand sprite, drawn
+    // by the sprite pass); a disabled row grays out (the CLUT-0 stand-in
+    // is strictly darker than the CLUT-7 white).
+    let any_white = draws
+        .iter()
+        .any(|d| (d.color[0] - MENU_TEXT_WHITE[0]).abs() < 1e-5);
+    assert!(any_white);
+    let any_dim = draws
+        .iter()
+        .any(|d| d.color[0] < 0.5 && d.color[0] > 0.05 && d.dst.1 < 178);
+    assert!(any_dim);
+    // Row text starts at the retail label inset (WX + 0x14) and rows sit
+    // on the 14-px pitch.
+    assert!(draws.iter().any(|d| d.dst.0 >= 24 + 0x14 && d.dst.1 == 24));
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 >= 24 + 0x14 && d.dst.1 == 24 + 14)
+    );
     // Money + play-time land in the corner-box window (below the list).
     let any_in_money_box = draws.iter().any(|d| d.dst.1 >= 178);
     assert!(any_in_money_box);

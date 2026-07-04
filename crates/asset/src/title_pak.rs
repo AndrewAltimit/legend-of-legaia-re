@@ -248,6 +248,19 @@ pub const OVERLAY_SYSTEM_UI_LABEL_MP: (u32, u32, u32, u32) = (224, 86, 16, 10);
 /// pixels chrome-brown).
 pub const OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW: u16 = 1;
 
+/// Top-level pause-menu money/play-time box icons - UI-icon codes
+/// `0x62` (money pictogram) / `0x63` (play-time tag) / `0x66` (casino
+/// coin tag) of the `0x800732a4` table (drawn by `FUN_801D0148` at the
+/// id-49 window's content origin). Table-record `(U, V, W, H)` fields
+/// verbatim; all three decode with CLUT row
+/// [`OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW`]. The top-level party info panel
+/// (`FUN_801D030C`) reuses the status HP / MP label rects through its
+/// own icon codes `0x3F` / `0x40` (identical `(U, V, W, H)` to codes
+/// `0x07` / `0x08`).
+pub const OVERLAY_SYSTEM_UI_ICON_MONEY: (u32, u32, u32, u32) = (28, 128, 12, 12);
+pub const OVERLAY_SYSTEM_UI_LABEL_TIME: (u32, u32, u32, u32) = (40, 176, 24, 10);
+pub const OVERLAY_SYSTEM_UI_LABEL_COIN: (u32, u32, u32, u32) = (0, 150, 24, 10);
+
 /// Status-page **AP gauge** pieces, decoded from CLUT row
 /// [`OVERLAY_SYSTEM_UI_GAUGE_CLUT_ROW`] of the same system-UI sheet.
 /// Retail composes the gauge from four 1:1 sprites (no stretching) at

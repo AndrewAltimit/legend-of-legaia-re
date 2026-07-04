@@ -53,42 +53,109 @@ pub fn field_menu_draws_for(
     list_pen: (i32, i32),
     money_pen: (i32, i32),
 ) -> Vec<TextDraw> {
-    /// Retail list pitch (the `0x0d` row step of the menu-overlay list pages).
-    const LIST_PITCH: i32 = 13;
-    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-    let dim: [f32; 4] = [0.45, 0.45, 0.45, 1.0];
-    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    /// Retail command-list row pitch (`FUN_801CFD68` steps each row's Y
+    /// by `0x0e`).
+    const LIST_PITCH: i32 = 14;
+    let white: [f32; 4] = MENU_TEXT_WHITE;
+    // Disabled rows stage string CLUT 0 (the grayed row ink retail uses
+    // for a blocked Save / Load).
+    let dim: [f32; 4] = [0.28, 0.28, 0.28, 1.0];
 
     let mut out = Vec::new();
+    // Command rows at (WX+0x14, WY + n*0xe), all CLUT-7 white - the
+    // selection is the pointing-hand sprite at WX (FUN_8002b994, drawn
+    // by the sprite chrome pass), not an ink change.
+    let _ = cursor;
     for (i, row) in rows.iter().enumerate() {
         let y = list_pen.1 + i as i32 * LIST_PITCH;
-        let selected = i as u8 == cursor;
-        let color = if !row.enabled {
-            dim
-        } else if selected {
-            gold
-        } else {
-            white
-        };
-        if selected && row.enabled {
-            let cur = font.layout_ascii(">");
-            out.extend(text_draws_for(&cur, (list_pen.0, y), color));
-        }
         let l = font.layout_ascii(row.label);
-        out.extend(text_draws_for(&l, (list_pen.0 + 14, y), color));
+        out.extend(text_draws_for(
+            &l,
+            (list_pen.0 + 0x14, y),
+            if row.enabled { white } else { dim },
+        ));
     }
 
-    // Money + play-time corner box (two 12-px lines in the 104x24 window).
-    let g = format!("{}G", money);
-    let g_l = font.layout_ascii(&g);
-    out.extend(text_draws_for(&g_l, money_pen, white));
-    let h = play_time_seconds / 3600;
-    let m = (play_time_seconds % 3600) / 60;
-    let s = play_time_seconds % 60;
-    let t = format!("{h:02}:{m:02}:{s:02}");
-    let t_l = font.layout_ascii(&t);
-    out.extend(text_draws_for(&t_l, (money_pen.0, money_pen.1 + 12), white));
+    // Money / play-time corner box (FUN_801D0148, id-49 window): the
+    // money amount as an 8-digit field at (WX+0x28, WY) beside the money
+    // pictogram, and the play time as H:MM:SS on the row below the time
+    // tag - hours 3-wide (clamped 99, minutes/seconds then pin 59),
+    // colons at +0x38/+0x50, zero-padded minutes at +0x40, seconds at
+    // +0x58. The icons are sprite-pass draws
+    // ([`field_menu_icon_sprites_for`]).
+    out.extend(num_field_draws(
+        font,
+        money as u64,
+        money_pen.0 + 0x28,
+        money_pen.1,
+        8,
+        white,
+    ));
+    let time_y = money_pen.1 + 0x0e;
+    let mut h = play_time_seconds / 3600;
+    let mut m = (play_time_seconds % 3600) / 60;
+    let mut s = play_time_seconds % 60;
+    if h > 99 {
+        h = 99;
+        m = 59;
+        s = 59;
+    }
+    out.extend(num_field_draws(
+        font,
+        h as u64,
+        money_pen.0 + 0x20,
+        time_y,
+        3,
+        white,
+    ));
+    let colon = |out: &mut Vec<TextDraw>, x: i32| {
+        out.extend(text_draws_for(
+            &font.layout_ascii(":"),
+            (money_pen.0 + x, time_y),
+            white,
+        ));
+    };
+    colon(&mut out, 0x38);
+    out.extend(zero_padded_field_draws(
+        font,
+        m as u64,
+        money_pen.0 + 0x40,
+        time_y,
+        2,
+        white,
+    ));
+    colon(&mut out, 0x50);
+    out.extend(zero_padded_field_draws(
+        font,
+        s as u64,
+        money_pen.0 + 0x58,
+        time_y,
+        2,
+        white,
+    ));
 
+    out
+}
+
+/// Lay a decimal value into a `digits`-wide fixed-cell field with
+/// leading zeros - the retail zero-padded number primitive
+/// `FUN_80034e4c` (minutes / seconds of the play-time clock). Same 8-px
+/// cell pitch as [`num_field_draws`].
+fn zero_padded_field_draws(
+    font: &legaia_font::Font,
+    value: u64,
+    x: i32,
+    y: i32,
+    digits: usize,
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    let s = format!("{value:0digits$}");
+    let mut out = Vec::new();
+    for (i, ch) in s.chars().enumerate() {
+        let cell_x = x + i as i32 * 8;
+        let l = font.layout_ascii(&ch.to_string());
+        out.extend(text_draws_for(&l, (cell_x, y), color));
+    }
     out
 }
 
@@ -100,6 +167,8 @@ pub struct FieldMenuPartyView<'a> {
     pub hp_max: u16,
     pub mp: u16,
     pub mp_max: u16,
+    /// Persistent AP (char record `+0x10E`) for the per-member gauge.
+    pub ap: u16,
 }
 
 /// Build [`TextDraw`]s for the top-level pause menu's right party-overview
@@ -111,27 +180,118 @@ pub fn field_menu_info_draws_for(
     party: &[FieldMenuPartyView<'_>],
     pen: (i32, i32),
 ) -> Vec<TextDraw> {
-    /// Per-member block pitch: 152x180 window / up to 4 members.
-    const BLOCK_PITCH: i32 = 44;
-    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    /// Retail per-member block pitch (`FUN_801D030C` steps each roster
+    /// row's Y by `0x3e`).
+    const BLOCK_PITCH: i32 = 0x3e;
+    let white: [f32; 4] = MENU_TEXT_WHITE;
 
     let mut out = Vec::new();
-    for (i, m) in party.iter().take(4).enumerate() {
+    for (i, m) in party.iter().take(3).enumerate() {
         let y = pen.1 + i as i32 * BLOCK_PITCH;
-        let head = format!("{}  LV {}", m.name, m.level);
-        out.extend(text_draws_for(&font.layout_ascii(&head), (pen.0, y), gold));
-        let hp = format!("HP {:>4}/{:<4}", m.hp, m.hp_max);
+        // Name at +0x10; level as a 2-digit field at +0x80 beside the
+        // LV label sprite; HP / MP current/max as 4-digit fields at
+        // +0x38 / +0x60 with the slash at +0x58, on rows +0xf / +0x1c
+        // (the label sprites at +0x28 sit 2 px lower - sprite pass).
+        // Retail inks the HP / MP values through per-member health-tier
+        // color fns (FUN_800349EC / FUN_80035EA8); the full-health tier
+        // is the plain CLUT-7 white drawn here (low-HP tiers untraced).
         out.extend(text_draws_for(
-            &font.layout_ascii(&hp),
-            (pen.0 + 8, y + 13),
+            &font.layout_ascii(m.name),
+            (pen.0 + 0x10, y),
             white,
         ));
-        let mp = format!("MP {:>3}/{:<3}", m.mp, m.mp_max);
-        out.extend(text_draws_for(
-            &font.layout_ascii(&mp),
-            (pen.0 + 8, y + 26),
+        out.extend(num_field_draws(
+            font,
+            m.level as u64,
+            pen.0 + 0x80,
+            y,
+            2,
             white,
+        ));
+        for (row_y, cur, max) in [
+            (y + 0x0f, m.hp as u64, m.hp_max as u64),
+            (y + 0x1c, m.mp as u64, m.mp_max as u64),
+        ] {
+            out.extend(num_field_draws(font, cur, pen.0 + 0x38, row_y, 4, white));
+            out.extend(text_draws_for(
+                &font.layout_ascii("/"),
+                (pen.0 + 0x58, row_y),
+                white,
+            ));
+            out.extend(num_field_draws(font, max, pen.0 + 0x60, row_y, 4, white));
+        }
+    }
+    out
+}
+
+/// UI-icon sprites for the top-level pause menu (the sprite-pass
+/// complement of [`field_menu_draws_for`] + [`field_menu_info_draws_for`]):
+/// the command-list pointing-hand cursor, the money / play-time box
+/// pictograms, and per party member the LV / HP / MP label sprites plus
+/// the AP gauge.
+///
+/// PORT: FUN_801CFD68 - command list (rows at `WY + n*0xe`, hand cursor
+/// at `WX` on the selected row).
+/// PORT: FUN_801D0148 - money / play-time box (money icon `0x62` at
+/// `(WX, WY+2)`, time tag `0x63` at `(WX, WY+0x10)` when no coin row is
+/// shown).
+/// PORT: FUN_801D030C - party info panel (LV `0x0a` at `(+0x70, +2)`,
+/// HP `0x3f` at `(+0x28, +0x11)`, MP `0x40` at `(+0x28, +0x1e)`, AP
+/// gauge at `(+0x28, +0x29)`, member stride `0x3e`).
+#[allow(clippy::too_many_arguments)]
+pub fn field_menu_icon_sprites_for(
+    rects: &SaveMenuAtlasRects,
+    cursor: u8,
+    party_ap: &[u16],
+    list_pen: (i32, i32),
+    money_pen: (i32, i32),
+    info_pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    const LIST_PITCH: i32 = 14;
+    const BLOCK_PITCH: i32 = 0x3e;
+    let scale = stage_scale.max(1) as i32;
+    let mut out = Vec::new();
+    {
+        let mut push = |src: (u32, u32, u32, u32), sx: i32, sy: i32| {
+            let (_, _, w, h) = src;
+            out.push(SpriteDraw {
+                dst: (
+                    stage_origin.0 + sx * scale,
+                    stage_origin.1 + sy * scale,
+                    w * stage_scale,
+                    h * stage_scale,
+                ),
+                src,
+                color: [1.0, 1.0, 1.0, 1.0],
+            });
+        };
+        // Command-list hand cursor at (WX, row_y).
+        push(
+            rects.cursor,
+            list_pen.0,
+            list_pen.1 + cursor as i32 * LIST_PITCH,
+        );
+        // Money icon + play-time tag in the corner box.
+        push(rects.icon_money, money_pen.0, money_pen.1 + 2);
+        push(rects.label_time, money_pen.0, money_pen.1 + 0x10);
+        // Party rows: LV / HP / MP label sprites per member.
+        for i in 0..party_ap.len().min(3) {
+            let y = info_pen.1 + i as i32 * BLOCK_PITCH;
+            push(rects.label_lv, info_pen.0 + 0x70, y + 2);
+            push(rects.label_hp, info_pen.0 + 0x28, y + 0x11);
+            push(rects.label_mp, info_pen.0 + 0x28, y + 0x1e);
+        }
+    }
+    for (i, &ap) in party_ap.iter().take(3).enumerate() {
+        let y = info_pen.1 + i as i32 * BLOCK_PITCH;
+        out.extend(ap_gauge_sprites(
+            rects,
+            (info_pen.0 + 0x28, y + 0x29),
+            ap,
+            stage_origin,
+            stage_scale,
         ));
     }
     out
@@ -417,36 +577,6 @@ pub fn status_icon_sprites_for(
     push(rects.label_hp, wx + 0x20, wy + 0x15);
     push(rects.label_mp, wx + 0x20, wy + 0x22);
 
-    // AP gauge at the retail bar anchor (+0x40, +0x2d): cap, trough,
-    // value box, right tip - four 1:1 sprites, laid out edge-to-edge
-    // (cap 24 wide, trough 56 wide; the box = ICO record 0x69 at
-    // anchor+0x50, the tip = ICO record 0x6A at anchor+0x60). Pixel-exact
-    // vs the golden menu_status_town capture.
-    let gauge_x = wx + 0x40;
-    let gauge_y = wy + 0x2d;
-    push(rects.gauge_cap, gauge_x, gauge_y);
-    push(rects.gauge_trough, gauge_x + 0x18, gauge_y);
-    push(rects.gauge_box, gauge_x + 0x50, gauge_y);
-    push(rects.gauge_tip, gauge_x + 0x60, gauge_y);
-
-    // AP value (FUN_8002c0b0): a full 100 draws the dedicated "100"
-    // glyph at anchor+0x50; below 100, the tens digit (when non-zero)
-    // lands at anchor+0x50 and the ones digit at anchor+0x56 - 6x6
-    // cells from the digit strip (ICO codes 0x6C..=0x75), 5 px below
-    // the gauge top.
-    let ap = ap.min(100);
-    let (dgx, dgy, _, _) = rects.gauge_digits;
-    let digit_y = gauge_y + 5;
-    if ap == 100 {
-        push(rects.gauge_100, gauge_x + 0x50, digit_y);
-    } else {
-        let (tens, ones) = (u32::from(ap) / 10, u32::from(ap) % 10);
-        if tens > 0 {
-            push((dgx + tens * 6, dgy, 6, 6), gauge_x + 0x50, digit_y);
-        }
-        push((dgx + ones * 6, dgy, 6, 6), gauge_x + 0x56, digit_y);
-    }
-
     // Equipment pictograms: slots 0..3 stack at +0 on rows +0x6d/+0x7a/
     // +0x87/+0x94; slots 4..6 (the Goods ring) sit in a right column at
     // +0x6a on the last three rows. Icon-per-slot is fixed (the menu
@@ -466,12 +596,82 @@ pub fn status_icon_sprites_for(
         push(rects.icon_goods, wx + 0x6a, wy + 0x7a + 0x0d * k);
     }
 
+    // AP gauge at the retail bar anchor (+0x40, +0x2d): frame pieces,
+    // value digits and meter fill (shared widget - see
+    // [`ap_gauge_sprites`]).
+    out.extend(ap_gauge_sprites(
+        rects,
+        (wx + 0x40, wy + 0x2d),
+        ap,
+        stage_origin,
+        stage_scale,
+    ));
+    out
+}
+
+/// The retail **AP gauge widget** (staged kind `0x31` of the bar-widget
+/// dispatcher `FUN_8002c69c`) as atlas [`SpriteDraw`]s at an arbitrary
+/// bar anchor: cap, trough, value box, right tip - four 1:1 sprites laid
+/// edge-to-edge (cap 24 wide, trough 56 wide; box = ICO record 0x69 at
+/// anchor+0x50, tip = ICO 0x6A at anchor+0x60) - plus the value digits
+/// and the gouraud meter fill. The status main panel draws it at
+/// `(WX+0x40, WY+0x2d)` (`FUN_801D33D8`) and the top-level party info
+/// panel per member at `(WX+0x28, row+0x29)` (`FUN_801D030C`); both are
+/// the same widget instance in retail.
+///
+/// PORT: FUN_8002c0b0 - the gauge content (gouraud meter fill +
+/// tens/ones digit / "100"-glyph layout).
+pub fn ap_gauge_sprites(
+    rects: &SaveMenuAtlasRects,
+    anchor: (i32, i32),
+    ap: u16,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (gauge_x, gauge_y) = anchor;
+    let scale = stage_scale.max(1) as i32;
+    let mut out = Vec::with_capacity(8);
+    let mut push = |src: (u32, u32, u32, u32), sx: i32, sy: i32| {
+        let (_, _, w, h) = src;
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + sx * scale,
+                stage_origin.1 + sy * scale,
+                w * stage_scale,
+                h * stage_scale,
+            ),
+            src,
+            color: [1.0, 1.0, 1.0, 1.0],
+        });
+    };
+    push(rects.gauge_cap, gauge_x, gauge_y);
+    push(rects.gauge_trough, gauge_x + 0x18, gauge_y);
+    push(rects.gauge_box, gauge_x + 0x50, gauge_y);
+    push(rects.gauge_tip, gauge_x + 0x60, gauge_y);
+
+    // Value (FUN_8002c0b0): a full 100 draws the dedicated "100" glyph
+    // at anchor+0x50; below 100, the tens digit (when non-zero) lands
+    // at anchor+0x50 and the ones digit at anchor+0x56 - 6x6 cells from
+    // the digit strip (ICO codes 0x6C..=0x75), 5 px below the gauge top.
+    let ap = ap.min(100);
+    let (dgx, dgy, _, _) = rects.gauge_digits;
+    let digit_y = gauge_y + 5;
+    if ap == 100 {
+        push(rects.gauge_100, gauge_x + 0x50, digit_y);
+    } else {
+        let (tens, ones) = (u32::from(ap) / 10, u32::from(ap) % 10);
+        if tens > 0 {
+            push((dgx + tens * 6, dgy, 6, 6), gauge_x + 0x50, digit_y);
+        }
+        push((dgx + ones * 6, dgy, 6, 6), gauge_x + 0x56, digit_y);
+    }
+
     // Meter fill (FUN_8002c0b0): `value/2` px wide (max 50 at AP 100)
     // from anchor+0x1B, 6 rows starting 5 below the gauge top - the
     // baked gradient column stretched horizontally. Retail prepends the
     // fill quads into the frame's OT bucket so they render on top of
     // the trough; appending here (list order = draw order) stacks the
-    // same way, and the fill overlaps no other status sprite.
+    // same way.
     let fill_w = u32::from(ap) / 2;
     if fill_w > 0 {
         let (fx, fy, fw, fh) = rects.gauge_fill;

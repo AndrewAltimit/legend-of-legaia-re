@@ -125,8 +125,6 @@ impl PlayWindowApp {
                     popup.as_ref(),
                     self.menu_window_pen(window_ids::OPTIONS_MAIN),
                 );
-                // TODO(tab-banner): swap for the shared carved-plaque
-                // tab-banner primitive once it lands.
                 d.extend(self.menu_tab_title_draws(window_ids::TAB_OPTIONS, "Options"));
                 d
             }
@@ -483,9 +481,6 @@ impl PlayWindowApp {
             self.menu_window_pen(window_ids::EQUIP_LIST),
             self.menu_window_pen(window_ids::EQUIP_MAIN),
         );
-        // TODO(tab-banner): swap to the shared carved-plaque tab-banner
-        // primitive when it lands in field_panels; until then the label
-        // renders at the tab window's pinned content origin.
         d.extend(self.menu_tab_title_draws(window_ids::TAB_EQUIP, "Equip"));
         d
     }

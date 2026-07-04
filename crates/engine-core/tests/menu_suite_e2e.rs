@@ -42,8 +42,9 @@ fn field_menu_pick_save_routes_through_resume() {
     let mut mask = FieldMenuRowMask::ALL_ENABLED;
     mask.disable(FieldMenuRow::Items);
     let mut s = FieldMenuSession::with_mask(mask);
-    // Cursor lands on Equip (idx 1). Move down to Save (idx 5 in retail order).
-    for _ in 0..(FieldMenuRow::Save.index() - FieldMenuRow::Equip.index()) as usize {
+    // Cursor lands on Magic (idx 1, the first enabled row). Move down to
+    // Save (idx 6 in retail order).
+    for _ in 0..(FieldMenuRow::Save.index() - FieldMenuRow::Magic.index()) as usize {
         let _ = s.tick(FieldMenuInput {
             down: true,
             ..empty_input()
@@ -265,7 +266,7 @@ fn full_menu_loop_field_menu_to_options_to_save_back_to_scene() {
     // Sim sub-session finished, return to browsing.
     let _ = fm.resume(false);
     // Move to Config (last row).
-    for _ in 0..(FieldMenuRow::Config.index() as usize) {
+    for _ in 0..(FieldMenuRow::Options.index() as usize) {
         let _ = fm.tick(FieldMenuInput {
             down: true,
             ..Default::default()
@@ -287,6 +288,6 @@ fn full_menu_loop_field_menu_to_options_to_save_back_to_scene() {
     let _ = fm.resume(true);
     assert_eq!(
         fm.outcome(),
-        Some(FieldMenuOutcome::Confirmed(FieldMenuRow::Config))
+        Some(FieldMenuOutcome::Confirmed(FieldMenuRow::Options))
     );
 }

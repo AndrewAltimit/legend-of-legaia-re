@@ -27,7 +27,7 @@ resolved through the window-descriptor table below.
 - [Plumbing](#plumbing) · [Submenu dispatch](#submenu-dispatch)
 - [Header row](#header-row-always-drawn) · [Status page](#status-page-submenu-0-or-5)
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
-- [Equip screen](#equip-screen) · [Options screen](#options-screen)
+- [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
 - [Record fields consumed](#record-fields-consumed)
 
@@ -299,6 +299,54 @@ accessory-passive table `0x8007625c` at `(X+0x30, Yrun+0xe)` (CLUT 4) and
 any skills." Instr `801d3e64`..`801d4098`. See
 [`accessory-passive-table.md`](../formats/accessory-passive-table.md).
 
+## Top-level pause menu
+
+Three descriptor-table windows (see the window table above): 50 command
+list, 49 money/play-time box, 51 party info panel. Sources
+`ghidra/scripts/funcs/overlay_menu_801cfd68.txt` / `_801d0148.txt` /
+`_801d030c.txt`.
+
+**Command list (id 50, `FUN_801CFD68`)**: seven rows at `(WX+0x14,
+WY + n*0xe)`, in draw order **Items, Magic, Equip, Status, Options,
+Load, Save** - all staged CLUT 7. The selected row draws the
+pointing-hand cursor at `(WX, row_y)` via the animated-cursor primitive
+`FUN_8002b994` (skipped entirely when state word `DAT_801e46bc` bit
+`0x4000` is set; bit `0x2000` selects the dimmed cursor variant). Rows
+gray to CLUT 0 when blocked: Load when the dialog-context pointer
+`DAT_8007b450` targets an `0x0D` byte, Save when the save-enabled flag
+`DAT_8007b6a8` is clear.
+
+**Money / play-time box (id 49, `FUN_801D0148`)**: money pictogram (ICO
+`0x62`) at `(WX, WY+2)` with the amount as an 8-digit field
+(`FUN_80034b78`) at `(WX+0x28, WY)`. When the casino-coin flag
+(`FUN_8003ce64(8)`) is set, a coin row follows: ICO `0x66` at
+`(WX, y+0x10)`, coin bank `0x800845A4` 8-wide at `(WX+0x28, y+0xe)`.
+The play-time row draws ICO `0x63` at `(WX, y+0x10)` and the clock from
+the 60 Hz tick counter `0x80084570`: hours 3-wide (clamped 99, then
+minutes/seconds pin 59) at `+0x20`, colon glyphs (`FUN_8003c1f8` code 9)
+at `+0x38`/`+0x50`, zero-padded 2-wide minutes/seconds (`FUN_80034e4c`)
+at `+0x40`/`+0x58`.
+
+**Party info panel (id 51, `FUN_801D030C`)**: one block per roster
+member (ids `u8[3]` at `0x80084598`, count `0x80084594`; live record
+`0x80084708 + id*0x414`) at stride `0x3e`. Per block: name (`+0x2A7`)
+at `(WX+0x10, Y)`; LV icon (ICO `0x0a`) at `(WX+0x70, Y+2)` with the
+2-digit level (`+0x130`) at `WX+0x80`; HP label (ICO `0x3f` - the same
+`(208,86,16,10)` sheet rect as status code `0x07`) at `(WX+0x28,
+Y+0x11)` with current/max 4-digit fields at `WX+0x38`/`WX+0x60` and the
+slash at `WX+0x58` on row `Y+0xf`; MP likewise (ICO `0x40`) on rows
+`Y+0x1e`/`Y+0x1c`; and the kind-`0x31` AP gauge widget at `(WX+0x28,
+Y+0x29)` fed from the persistent AP `+0x10E`. HP / MP value ink comes
+from per-member health-tier color fns (`FUN_800349EC` /
+`FUN_80035EA8`); the full-health tier is the plain CLUT-7 white.
+
+Engine port: `engine-render::field_menu_draws_for` +
+`field_menu_info_draws_for` (text) and `field_menu_icon_sprites_for`
+(hand cursor, money/time pictograms, LV/HP/MP labels, per-member AP
+gauges via the shared `ap_gauge_sprites` widget). The engine shows the
+coin row only when the casino bank is nonzero; the health-tier ink
+thresholds stay untraced.
+
 ## Equip screen
 
 The Equip screen composes four descriptor-table windows (draw order: tab 2,
@@ -542,7 +590,9 @@ base/growth groups use the retail teal ink. The Equip screen renders its
 retail four-window set (tab 2 + party 21 + item-list 23 + main 22)
 through `equip_screen_draws_for` + `equip_screen_sprites_for` at the
 traced `FUN_801D21C0` / `FUN_801D2094` offsets (see
-[Equip screen](#equip-screen)). Still engine-styled: the top-level row
-content (renderer `FUN_801CFD68` untraced) and the Items / Spells /
-Arts / Equip-picker screens (their content layouts do not fill the
-pinned windows yet, so they keep a generic frame).
+[Equip screen](#equip-screen)). The top-level menu renders the traced
+row / money-box / party-panel content (see
+[Top-level pause menu](#top-level-pause-menu)). Still engine-styled:
+the Items / Magic / Equip-picker screens (their content layouts do not
+fill the pinned windows yet, so they keep a generic frame) and the
+HP / MP health-tier inks.

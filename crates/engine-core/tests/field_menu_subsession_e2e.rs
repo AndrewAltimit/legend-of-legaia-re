@@ -25,7 +25,7 @@ use legaia_engine_core::items::ItemCatalog;
 use legaia_engine_core::options::OptionsState;
 use legaia_engine_core::save_select::{SaveSelectMode, SlotSnapshot};
 use legaia_engine_core::spells::SpellCatalog;
-use legaia_engine_core::tactical_arts_editor::ChainLibrary;
+use legaia_engine_core::tactical_arts_editor::{ChainEditor, ChainLibrary};
 use legaia_engine_core::world::World;
 
 fn fresh_world() -> World {
@@ -103,8 +103,8 @@ fn field_menu_config_row_round_trips_options_state() {
         bgm_volume: 4,
         ..OptionsState::default()
     };
-    let mut menu = open_field_menu_at(FieldMenuRow::Config);
-    let mut sub = build(FieldMenuRow::Config, &world, &options);
+    let mut menu = open_field_menu_at(FieldMenuRow::Options);
+    let mut sub = build(FieldMenuRow::Options, &world, &options);
     // Circle leaves the options screen (retail commits value edits inside
     // the popup; exit is a plain close that keeps the state).
     sub.tick_pad_edge(PadButton::Circle.mask());
@@ -163,8 +163,8 @@ fn field_menu_equip_row_uses_active_leader() {
 #[test]
 fn field_menu_spells_row_populates_party_and_targets() {
     let world = fresh_world();
-    let _menu = open_field_menu_at(FieldMenuRow::Spells);
-    let sub = build(FieldMenuRow::Spells, &world, &OptionsState::default());
+    let _menu = open_field_menu_at(FieldMenuRow::Magic);
+    let sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
     if let FieldMenuSubsession::Spells(s) = &sub {
         assert_eq!(s.party().len(), 3);
         assert_eq!(s.targets().len(), 3);
@@ -174,16 +174,19 @@ fn field_menu_spells_row_populates_party_and_targets() {
 }
 
 #[test]
-fn field_menu_arts_row_returns_chain_editor_for_leader() {
-    let mut world = fresh_world();
-    world.party_leader_slot = Some(2);
-    let _menu = open_field_menu_at(FieldMenuRow::Arts);
-    let sub = build(FieldMenuRow::Arts, &world, &OptionsState::default());
+fn arts_chain_editor_variant_builds_directly_for_leader() {
+    // The Arts chain editor has no retail pause-menu row (retail's list
+    // is Items / Magic / Equip / Status / Options / Load / Save);
+    // engines construct the sub-session variant directly.
+    let editor = ChainEditor::new(2, &ChainLibrary::new());
+    let sub = FieldMenuSubsession::Arts(editor);
     if let FieldMenuSubsession::Arts(editor) = &sub {
         assert_eq!(editor.char_slot(), 2);
     } else {
         panic!("expected Arts sub");
     }
+    // The extension session parks the resume cursor on Status.
+    assert_eq!(sub.row(), FieldMenuRow::Status);
 }
 
 #[test]
@@ -249,7 +252,7 @@ fn apply_spell_outcome_zeroes_caster_mp_after_heal() {
     spells.count = 1;
     spells.ids[0] = 0x09;
     world.roster.members[0].set_spell_list(spells);
-    let mut sub = build(FieldMenuRow::Spells, &world, &OptionsState::default());
+    let mut sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
     // Cross on caster → spell select; Cross on spell → target select; Down to
     // pick member 1; Cross to cast.
     sub.tick_pad_edge(PadButton::Cross.mask()); // pick caster 0
@@ -273,9 +276,9 @@ fn apply_spell_outcome_zeroes_caster_mp_after_heal() {
 
 #[test]
 fn apply_arts_outcome_writes_through_chain_library() {
-    let world = fresh_world();
+    let _world = fresh_world();
     let mut library = ChainLibrary::new();
-    let sub = build(FieldMenuRow::Arts, &world, &OptionsState::default());
+    let sub = FieldMenuSubsession::Arts(ChainEditor::new(0, &ChainLibrary::new()));
     if let FieldMenuSubsession::Arts(editor) = sub {
         // Cancelled path - `apply_outcome` returns Ok with no mutation.
         let _ = apply_arts_outcome(editor, &mut library);

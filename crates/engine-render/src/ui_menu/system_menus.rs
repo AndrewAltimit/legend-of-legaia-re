@@ -107,13 +107,10 @@ pub fn options_draws_for(
         } else {
             OPTIONS_INK_WHITE
         };
-        if selected {
-            out.extend(text_draws_for(
-                &font.layout_ascii(">"),
-                (pen.0 - 10, y),
-                OPTIONS_INK_WHITE,
-            ));
-        }
+        // The selected row is marked by the pointing-hand sprite at
+        // `x-10` (`FUN_8002b994` kind 0, emitted by the sprite chrome
+        // pass through `options_hand_cursor_sprite`), not by an ink
+        // change or a text glyph.
         out.extend(text_draws_for(
             &font.layout_ascii(row.label),
             (pen.0 + 8, y),
@@ -152,6 +149,37 @@ pub fn options_draws_for(
         }
     }
     out
+}
+
+/// The options settings window's selected-row marker: the 16x16
+/// pointing-hand sprite at `(x-10, row_y)`. Retail marks the cursor row
+/// through the shared animated-cursor primitive `FUN_8002b994` kind 0 -
+/// the same hand as the status party list, 18 px left of the label ink
+/// in both windows (party list: name `WX+6`, hand `WX-0xc`; options:
+/// label `x+8`, cursor anchor `x-10`). `row_y_off` is the running sum of
+/// the row advances above the cursor row (the same walk
+/// [`options_draws_for`] does).
+///
+/// REF: FUN_801D2910 - the options row renderer.
+pub fn options_hand_cursor_sprite(
+    rects: &SaveMenuAtlasRects,
+    pen: (i32, i32),
+    row_y_off: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1) as i32;
+    let (_, _, w, h) = rects.cursor;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + (pen.0 - 10) * scale,
+            stage_origin.1 + (pen.1 + row_y_off) * scale,
+            w * stage_scale,
+            h * stage_scale,
+        ),
+        src: rects.cursor,
+        color: [1.0, 1.0, 1.0, 1.0],
+    }
 }
 
 /// Build [`TextDraw`]s for the key-rebind panel. Each row shows a button

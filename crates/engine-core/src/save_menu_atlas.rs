@@ -88,6 +88,15 @@ pub const ATLAS_RECT_ICON_ARMOR: (u32, u32, u32, u32) = (68, 216, 12, 12);
 pub const ATLAS_RECT_ICON_BOOT: (u32, u32, u32, u32) = (82, 216, 12, 12);
 pub const ATLAS_RECT_ICON_GOODS: (u32, u32, u32, u32) = (96, 216, 12, 12);
 
+/// Atlas placement of the top-level pause menu's money/play-time box
+/// icons (UI-icon codes `0x62` / `0x63` / `0x66` - money pictogram,
+/// play-time tag, casino coin tag), copied from the label CLUT row of
+/// the system-UI TIM (`title_pak::OVERLAY_SYSTEM_UI_ICON_MONEY` /
+/// `_LABEL_TIME` / `_LABEL_COIN`).
+pub const ATLAS_RECT_ICON_MONEY: (u32, u32, u32, u32) = (110, 216, 12, 12);
+pub const ATLAS_RECT_LABEL_TIME: (u32, u32, u32, u32) = (124, 216, 24, 10);
+pub const ATLAS_RECT_LABEL_COIN: (u32, u32, u32, u32) = (150, 216, 24, 10);
+
 /// Atlas placement of the "Condition" pager **arrow sprites** (16x16
 /// solid triangles), copied from CLUT row 7 of the system-UI TIM (the
 /// pointing-hand cursor row; sources
@@ -210,6 +219,18 @@ impl SaveMenuAtlas {
     /// Status-panel "MP" label sprite (16x12).
     pub fn band_label_mp(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_LABEL_MP
+    }
+    /// Top-level menu money pictogram (12x12, UI-icon code 0x62).
+    pub fn band_icon_money(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_ICON_MONEY
+    }
+    /// Top-level menu play-time tag (24x10, UI-icon code 0x63).
+    pub fn band_label_time(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_TIME
+    }
+    /// Top-level menu casino-coin tag (24x10, UI-icon code 0x66).
+    pub fn band_label_coin(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_LABEL_COIN
     }
     /// AP-gauge left cap (arrow tip + red "AP" chip, 24x16).
     pub fn band_gauge_cap(&self) -> (u32, u32, u32, u32) {
@@ -482,6 +503,20 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         (title_pak::OVERLAY_SYSTEM_UI_LABEL_LV, ATLAS_RECT_LABEL_LV),
         (title_pak::OVERLAY_SYSTEM_UI_LABEL_HP, ATLAS_RECT_LABEL_HP),
         (title_pak::OVERLAY_SYSTEM_UI_LABEL_MP, ATLAS_RECT_LABEL_MP),
+        // Top-level pause menu money/time/coin box icons (UI-icon
+        // codes 0x62 / 0x63 / 0x66) - same label CLUT row.
+        (
+            title_pak::OVERLAY_SYSTEM_UI_ICON_MONEY,
+            ATLAS_RECT_ICON_MONEY,
+        ),
+        (
+            title_pak::OVERLAY_SYSTEM_UI_LABEL_TIME,
+            ATLAS_RECT_LABEL_TIME,
+        ),
+        (
+            title_pak::OVERLAY_SYSTEM_UI_LABEL_COIN,
+            ATLAS_RECT_LABEL_COIN,
+        ),
     ] {
         copy_rect(&mut out, ATLAS_WIDTH, &label_rgba, panel_src_w, src, dst);
     }

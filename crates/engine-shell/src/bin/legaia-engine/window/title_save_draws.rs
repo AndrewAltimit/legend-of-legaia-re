@@ -332,13 +332,30 @@ impl PlayWindowApp {
         // settings window while a row is being edited; its y/h are
         // per-open (retail stamps the descriptor - see
         // `options_popup_rect`).
-        if let Some(FieldMenuSubsession::Config(s)) = sub
-            && let Some(p) = s.popup()
-        {
-            let (x, y, w, h) = self.options_popup_rect(&p);
-            out.extend(legaia_engine_render::menu_window_chrome_draws_for(
+        if let Some(FieldMenuSubsession::Config(s)) = sub {
+            if let Some(p) = s.popup() {
+                let (x, y, w, h) = self.options_popup_rect(&p);
+                out.extend(legaia_engine_render::menu_window_chrome_draws_for(
+                    &assets.rects,
+                    (x - 6, y - 2, w + 12, h + 12),
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
+            // Selected-row pointing hand at `x-10` on the cursor row
+            // (retail's FUN_8002b994 kind-0 cursor, shared with the
+            // status party list).
+            let row_y_off: i32 = s
+                .state()
+                .rows()
+                .iter()
+                .take(s.cursor() as usize)
+                .map(|r| r.advance)
+                .sum();
+            out.push(legaia_engine_render::options_hand_cursor_sprite(
                 &assets.rects,
-                (x - 6, y - 2, w + 12, h + 12),
+                self.menu_window_pen(legaia_asset::menu_windows::window_ids::OPTIONS_MAIN),
+                row_y_off,
                 stage_origin,
                 stage_scale,
             ));
@@ -397,6 +414,28 @@ impl PlayWindowApp {
                 self.menu_window_pen(window_ids::EQUIP_PARTY),
                 *char_slot as usize,
                 slot_cursor,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        // Top-level pause menu: command-list hand cursor, money /
+        // play-time box pictograms, and the party panel's LV / HP / MP
+        // label sprites + per-member AP gauges (FUN_801CFD68 /
+        // FUN_801D0148 / FUN_801D030C).
+        if sub.is_none()
+            && let Some(menu) = self.session.field_menu.as_ref()
+        {
+            use legaia_asset::menu_windows::window_ids;
+            let snaps =
+                legaia_engine_core::field_menu_dispatch::status_snapshots(&self.session.host.world);
+            let party_ap: Vec<u16> = snaps.iter().map(|s| s.ap as u16).collect();
+            out.extend(legaia_engine_render::field_menu_icon_sprites_for(
+                &assets.rects,
+                menu.cursor(),
+                &party_ap,
+                self.menu_window_pen(window_ids::TOP_COMMAND_LIST),
+                self.menu_window_pen(window_ids::TOP_MONEY_TIME),
+                self.menu_window_pen(window_ids::TOP_INFO_PANEL),
                 stage_origin,
                 stage_scale,
             ));

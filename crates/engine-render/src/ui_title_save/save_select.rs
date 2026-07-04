@@ -161,6 +161,13 @@ pub struct SaveMenuAtlasRects {
     pub label_lv: (u32, u32, u32, u32),
     pub label_hp: (u32, u32, u32, u32),
     pub label_mp: (u32, u32, u32, u32),
+    /// Top-level pause menu money/play-time box icons (label CLUT row):
+    /// money pictogram 12x12 (ICO code `0x62`), play-time tag 24x10
+    /// (`0x63`), casino-coin tag 24x10 (`0x66`). Drawn by the id-49
+    /// window renderer `FUN_801D0148`.
+    pub icon_money: (u32, u32, u32, u32),
+    pub label_time: (u32, u32, u32, u32),
+    pub label_coin: (u32, u32, u32, u32),
     /// Status-page AP gauge pieces (CLUT row 4 of the system-UI TIM):
     /// left cap w/ red "AP" chip (24x16), trough body (56x16), value
     /// box (16x16) and right arrow tip (7x16). Retail composes the

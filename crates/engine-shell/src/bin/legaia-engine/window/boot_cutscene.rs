@@ -244,21 +244,42 @@ impl PlayWindowApp {
                             FieldMenuSubsession::Status(_) => {}
                             FieldMenuSubsession::Save(s) => {
                                 use legaia_engine_core::save_select::SelectOutcome;
-                                if let Some(SelectOutcome::Saved(slot)) = s.outcome() {
-                                    let runtime =
-                                        legaia_engine_core::menu_runtime::MenuRuntime::new(
-                                            self.save_dir.clone(),
-                                        );
-                                    match runtime.save_to_slot(&mut self.session.host.world, slot) {
-                                        Ok(p) => log::info!(
-                                            "field menu: saved slot {} to {}",
-                                            slot,
-                                            p.display()
-                                        ),
-                                        Err(e) => {
-                                            log::warn!("field menu: save slot {slot} failed: {e:#}")
+                                let runtime = legaia_engine_core::menu_runtime::MenuRuntime::new(
+                                    self.save_dir.clone(),
+                                );
+                                match s.outcome() {
+                                    Some(SelectOutcome::Saved(slot)) => {
+                                        match runtime
+                                            .save_to_slot(&mut self.session.host.world, slot)
+                                        {
+                                            Ok(p) => log::info!(
+                                                "field menu: saved slot {} to {}",
+                                                slot,
+                                                p.display()
+                                            ),
+                                            Err(e) => log::warn!(
+                                                "field menu: save slot {slot} failed: {e:#}"
+                                            ),
                                         }
                                     }
+                                    // The retail Load row: picking a slot
+                                    // replaces the running world with the
+                                    // saved one.
+                                    Some(SelectOutcome::Loaded(slot)) => {
+                                        match runtime
+                                            .load_from_slot(&mut self.session.host.world, slot)
+                                        {
+                                            Ok(p) => log::info!(
+                                                "field menu: loaded slot {} from {}",
+                                                slot,
+                                                p.display()
+                                            ),
+                                            Err(e) => log::warn!(
+                                                "field menu: load slot {slot} failed: {e:#}"
+                                            ),
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
                             FieldMenuSubsession::Config(o) => {
@@ -598,6 +619,7 @@ impl PlayWindowApp {
                             hp_max: s.hp_max,
                             mp: s.mp,
                             mp_max: s.mp_max,
+                            ap: s.ap as u16,
                         })
                         .collect();
                     d.extend(legaia_engine_render::field_menu_info_draws_for(
