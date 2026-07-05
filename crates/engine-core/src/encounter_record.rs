@@ -114,14 +114,18 @@ pub const RIM_ELM_SPARRING_CARRIER_MODEL: u8 = 0x6A;
 ///
 /// The placement tile is the partner's *post-tutorial* village spot, in a
 /// town01 sub-area not walk-reachable from the cold-boot spawn (tile 20). For
-/// the opening tutorial fight the engine's opening sequence repositions the
-/// partner next to Vahn - pinned here from a retail capture at the dialogue-
-/// accept frame (the live actor's `+0x14/+0x18`), tile `(21, 14)`, a short
-/// walk-reachable hop from the spawn. The clean-room cold boot enters town01
-/// free-roam without replaying that reposition, so a driver that needs the
-/// partner where retail's tutorial puts it uses this position. Confirmed: the
-/// live actor at this position resolves (via `actor[+0x90]`) to the
-/// `(76, 65)` / model `0x6A` placement record - same carrier, repositioned.
+/// the opening tutorial fight the opening sequence repositions the partner next
+/// to Vahn. This value is **derived from the scene bytecode**: town01 MAN
+/// partition-1 record `P1[10]` (`start 0x01370`) carries, at record offsets
+/// `+0x1D` and `+0x28`, the field-VM op `4C 51 15 0E 07 22` = NpcRun (run-to-
+/// tile) with `x_enc=21, z_enc=14`, i.e. tile `(21, 14)` → world
+/// `(21*128+64, 14*128+64)` = `(2752, 1856)`. The two consecutive identical ops
+/// are the story-flag two-branch scene-entry prologue that hops the carrier
+/// next to the spawn. The clean-room cold boot enters town01 free-roam without
+/// replaying that reposition, so a driver that needs the partner where retail's
+/// tutorial puts it uses this position. Cross-check: the live actor at this
+/// position resolves (via `actor[+0x90]`) to the `(76, 65)` / model `0x6A`
+/// placement record - same carrier, repositioned.
 pub const RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS: (i16, i16) = (2752, 1856);
 
 /// Decoded encounter record.

@@ -21,10 +21,10 @@ Threads whose write-up is too long for a table cell keep a one-line row in the s
 | Kingdom slot 4 - per-record semantic | open (next step = the transcode, not the handlers) | [details ↓](#kingdom-slot-4--per-record-semantic) | `project_slot4_is_wireframe_not_terrain.md` |
 | Slot-4 → cluster-A converter site | falsified | There is no slot-4 → cluster-A converter. The cluster-A pool (`DAT_8007C018`) is filled exclusively by `FUN_80026B4C`, reached only from `FUN_8001f05c` **case `0x02`** (TMD pack) and **case `0x09`** (bare TMD). Slot-4's type byte is **`0x05`**, whose `FUN_8001f05c` case merely allocates the MOVE buffer `_DAT_8007B888` and never calls `FUN_80026B4C`. So slot-4 bytes never become cluster-A TMDs; the `DAT_8007C018` kingdom entries are the scene's own type-`0x02` field-file TMD pack(s), installed by the single `FUN_80020224` descriptor-walk. | `project_world_map_native_render.md` |
 | World-map walk-view continent ground render | resolved | [details ↓](#world-map-walk-view-continent-ground-render) | `project_overworld_walk_pool_pinned.md` |
-| `DAT_8007C018[45..53]` mid-load vertex-pool pointers | open | Single Lua write-watchpoint capture on `0x8007C018 + 45*4` during scene load to disambiguate stale-pointer vs. live-data. Steady-state model says reads past `DAT_8007BB38` are stale and never consumed; the mid-load snapshot deserves direct confirmation. | `project_dat_8007c018_global_tmd_table.md` |
+| `DAT_8007C018[45..53]` mid-load vertex-pool pointers | resolved (structural) | The liveness rule settles it without a snapshot: `DAT_8007C018[i]` is meaningful only for `i <= DAT_8007BB38` (the walker/install counter). Entries above the counter - which includes `45..53` in small field scenes like town01 - are stale carryover from prior game state, never dereferenced; there is no per-index "vertex-pool pointer" semantic. The historical "`[45..53]` = `(-6,-6)` vertex data" reading was a Drake mid-warp snapshot taken *past* the counter. The `field_load_first_town` state the probe would use was never actually captured (no file in the catalogue), so the structural rule supersedes it. | `project_dat_8007c018_global_tmd_table.md` |
 | PROT 0874 section-0 outer producer | pinned | The per-scene field initializer `FUN_801D6704` drives the pool fill: `FUN_80020118` (resets `DAT_8007B6F8`=0, loads the party/character meshes via `FUN_8001E890` → `DAT_8007C018[0..4]`) then `FUN_80020224` (walks the scene's main field file - streamed into `_DAT_8007b85c` by `FUN_8001eef0` - dispatching every descriptor through `FUN_8001F05C`; the type-`0x02` packs install into `DAT_8007C018[5..]`). The char-mesh path is `FUN_8001E890` (the PROT 874 §0 producer), the scene-pack path is `FUN_80020224`; both feed `FUN_80026B4C`. | `project_world_map_native_render.md` + `project_global_tmd_pool_source.md` |
 | Drake uncapped cluster-A totals | resolved | The `LEGAIA_PC_CAP=50000` re-run landed: no PC saturates the cap, so the per-kingdom totals are exact and the cross-kingdom delta table is closed - see [world-map-overlay](../formats/world-map-overlay.md) (kind 18 = the workhorse; Sebucus dispatches ~20.6k instances). | `project_slot4_is_wireframe_not_terrain.md` |
-| Slot-4 freeze flag `_DAT_8007B824` | open | Write-breakpoint probe on `_DAT_8007B824` during retail play. Either an undumped overlay sets the freeze flag, or the BSS-init zero holds through retail and the "persistent slots" semantic is vestigial. | `project_open_work_slot4_cluster_a.md` |
+| Slot-4 freeze flag `_DAT_8007B824` | resolved (static; vestigial) | The corpus has exactly one store to `0x8007B824`: the `FUN_8001F05C` case-2 freeze sub-path (`sw` at PC `0x8001F2F8`, `8001f05c.txt:505`), gated `param_3 == 1`. Every static + overlay caller passes `param_3 != 1` (`FUN_80020224` forwards `s6`, `FUN_8002541C` passes `0`, `overlay_baka_fighter_801d4c50` passes `0`; no dumped `FUN_80020224` caller passes `1`), so the flag stays at its BSS-init zero and the "persistent slots" semantic is vestigial (matches the `world-map-overlay.md` analysis; a static-overlay sweep of any not-yet-dumped overlay would be the only way to find a `param_3==1` caller, but none is expected). Not capture-blocked. | `project_open_work_slot4_cluster_a.md` |
 | World-map outline / coastline reading | falsified | Visual inspection plus the slot-4 record-semantic work refuted the "world-map overlay outlines / coastline wireframe" interpretation. Bodies are most likely small object-local 3D meshes; treat any future "kingdom border lines" claim with suspicion. | `project_slot4_is_wireframe_not_terrain.md` |
 
 
@@ -86,7 +86,7 @@ Engine bakes per-cell UV + `[clut,tpage]` in `build_walk_heightfield` (`WalkHeig
 | Navmesh / per-scene navigation data | falsified | `0x80108EA4..0x80109550` is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in the field-file preamble (a count + `u16` offset table + records - **not** the field-pack schema slots, which are a global-constant template; see [field-pack](../formats/field-pack.md)); the collision grid is the `+0x4000` MAP region; the encounter-record path lives at `actor[+0x94]`. | `project_navmesh_negative_finding.md` |
 | Battle party mesh pack `other5` = **PROT 1204** (battle form; Baka Fighter reuses it) | resolved (empirical) | [details ↓](#battle-party-mesh-pack-other5--prot-1204-battle-form-baka-fighter-reuses-it) | `project_battle_char_pack_is_prot1204.md` (+ archived `project_prot1204_atlases_are_real.md`) |
 | MP-cost ability-bit priority (half vs quarter) | resolved (dump-confirmed) | [details ↓](#mp-cost-ability-bit-priority-half-vs-quarter) | `project_re_and_engine_batch_day_branch.md` |
-| Scripted Tetsu encounter → Battle (v0.1 oracle Battle leg) | mostly | [details ↓](#scripted-tetsu-encounter--battle-v01-oracle-battle-leg) | `project_v0_1_oracle_phase1.md` |
+| Scripted Tetsu encounter → Battle (v0.1 oracle Battle leg) | resolved | The two residuals are now derived from disc bytes: the sparring-partner reposition is town01 MAN partition-1 record `P1[10]`'s `4C 51 15 0E 07 22` NpcRun→tile `(21,14)` = world `(2752,1856)` = `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS` exactly (not a capture-pinned constant), and the spar Yes/No is a MES-embedded option picker (`0x29` open + N×2 signed relative-jump table, handler `FUN_80038050`; port `legaia_mes::Picker::jump_target` + `InlineDialogueRunner::last_choice`), not a field-VM opcode. [details ↓](#scripted-tetsu-encounter--battle-v01-oracle-battle-leg) | `project_v0_1_oracle_phase1.md` |
 | Item-effect table - class/targeting + literal amounts | resolved (descriptor table AND amounts are static disc data) | Class/tier/targeting/usability is the static `DAT_800752C0` table; the restore *amounts* are **also static** (apply handler `FUN_800402F4`, tier-indexed HP/MP heal tables, character-relative Seru-heal + `max_hp*0.4 + rand` revive) - not overlay-resident. Parser `legaia_asset::item_effect`; disc-gated `item_effect_real` + `item_catalog_disc` pin it; usability + all-party flags wired (`ItemCatalog::apply_effect_flags`). Full byte-level write-up in [`item-effect-table.md`](../formats/item-effect-table.md). | `project_item_effect_table.md` |
 | Equipment stat-bonus table - slot model | **slot model resolved**; accessory/Goods passives also **resolved** | The stat-bonus table (`DAT_80074F68`, 8-byte stride) is decoded from `FUN_801CF650`/`FUN_801CF5D0` (`legaia_asset::equip_stats`): `+0`=INT, `+1`=ATK, `+2`=UDF, `+3`=LDF, `+4`=SPD (the earlier AGL/evasion reading is falsified). Slot model resolved - the four `+7` categories are Legaia's four weapon/armour slots (body/head/footwear exact by name; none of the 77 accessories appear in this table). WIRED: `DiscEquipInfo` gates `EquipSession`'s per-character list. | `project_equipment_table.md` |
 | Accessory ("Goods") passive-effect data | resolved (static, byte-validated vs gamedata) | No per-accessory record - the descriptor `+3` byte (ex-"constant `0x41` marker") is a **64-slot passive-effect index** = a bit in the per-character ability bitfield `char+0xF4` (aggregator `FUN_80042558`; global OR `DAT_80074358`); equip `+5` (ex-"constant `0x40`") is the equipment-side slot, sentinel-only in retail. Stat-% magnitudes inline (`/10`, `>>2`, `/5`); name/description/scope table at `0x8007625C`. Quest items alias their purchasable twins. Parser `legaia_asset::accessory_passive`; pinned by `accessory_passive_real` + `accessory_passives_vs_disc`. See [`accessory-passive-table.md`](../formats/accessory-passive-table.md). | `project_equipment_table.md` |
@@ -547,7 +547,21 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 
 **Carrier-reposition finding:** the carrier's MAN placement tile `(76, 65)` is its *post-tutorial* village spot - in a town01 sub-area NOT walk-reachable from the spawn (BFS: 2855 reachable sub-cells, carrier not among them; town01's MAN spans several door-connected sub-areas). The opening sequence repositions the partner next to Vahn for the tutorial (`RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS` = world `(2752, 1856)` ≈ tile `(21, 14)`, a ~6-tile reachable hop, pinned from the dialogue-accept capture whose `actor[+0x90]` resolves to the `(76,65)`/`0x6A` record - same carrier). The cold boot skips that reposition, so the emergent test places the carrier at its tutorial position first.
 
-**What remains:** deriving that opening reposition from the opening sequence itself (vs the pinned tutorial constant); and the dialogue box's Yes/No selection logic, still undecoded (the engine treats accept as dismiss - faithful for the forced tutorial, which has no decline path).
+**Both former residuals now derived from disc bytes:**
+
+- *Opening reposition (bytecode-derived, no longer a bare constant):* town01
+  MAN partition-1 record `P1[10]` (`start 0x01370`) carries, twice, at record
+  offsets `+0x1D`/`+0x28` (MAN-body `0x0138D`/`0x01398`), the field-VM op
+  `4C 51 15 0E 07 22` = `MenuCtrl` nibble-5
+  `NpcRun { x_enc: 21, z_enc: 14, depth: 7, move_id: 0x22 }` (`field_disasm`
+  `MenuCtrlKind::Nibble5NpcRun`; the dialog-NPC walk-to-tile-with-run path).
+  Tile `(21,14)` → world `(21*128+64, 14*128+64)` = `(2752, 1856)` =
+  `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS` exactly, and `P1[10]` is the unique
+  record NpcRun-ing to `(21,14)`. The two consecutive identical ops are the
+  standard story-flag two-branch scene-entry prologue that hops the carrier next
+  to Vahn's spawn tile 20. (Op `0x23 MOVE_TO` is *not* the mechanism - its only
+  hits are false decodes in the desyncing dialog region.)
+- *Yes/No selection (not a field-VM opcode):* the spar Yes/No is an MES-embedded option picker inside the NPC's inline `0x1F` dialog segment - a `0x29` menu-open followed by an `N*2`-byte signed relative-jump table (handler `FUN_80038050`, the `FUN_80039B7C` dialog-SM family). The commit branch is computed directly: `new_pc = (open + 1 + index*2) + i16_LE(entry[index])`. Ported as `legaia_mes::Picker::jump_target` + `InlineDialogueRunner::last_choice` (`crates/engine-core/src/inline_dialogue.rs`). There is no separate read-and-compare opcode - which is why these interaction records desync under linear disasm (the picker/text bytes alias opcodes).
 
 ## Field / locomotion
 
@@ -666,13 +680,25 @@ No rect constant exists in any code image because the rows live in scene-script 
 Remaining residue: the exact retail cadence (the scratchpad frame-delta byte `0x1F800393` feeds the fade SM) is still unpinned, and `play-window` animates the row-506 ocean head only.
 
 
-### `init_data` UI-tile pages - journey-dependent residency (resolved); map03 texture column (open)
+### `init_data` UI-tile pages - journey-dependent residency (resolved); map03 texture column (resolved - engine bug)
 
-*Status:* the keikoku oracle drift is resolved (residency class pinned); a map03-only engine-vs-retail texture divergence is capture-blocked
+*Status:* the keikoku oracle drift is resolved (residency class pinned); the map03 texture divergence is resolved - it is an engine `map03` pre-pass upload bug, not a residency artifact
 
 `init_data` (PROT 0) carries two 64-word × 256 UI-tile TIMs at fb `(704, 0)` / `(704, 256)`. The capture corpus proves the rects are **journey-dependent residency**, not stable shared texture: overworld transit leaves kingdom-bundle content over parts of the rect (every Drake-stage capture - keikoku, the field-menu states - holds the *same* kingdom bytes at `(704, 256)` where the boot-fresh town01 states hold the disc tiles). Town scenes mask this only because their own scene TIM overwrites the slot; keikoku carries none, exposing the engine's `init_data` upload against retail's resident kingdom content. The parity oracle pools captures across all scenes against `scene::block_image_rects(index, "init_data")` - the same cross-scene dynamism treatment as the befect band.
 
-**Open:** the engine's map03 pre-pass diverges from the Karisto resident capture in the 64-wide page column `x=576..640, y≈320..448` (~2.2k cells; engine `0x3332`-family texels, retail `0x4444 4411 ffff...`), while map01 and map02 match the engine at the same cells. One capture cannot split the two readings - Sol-town residency overwriting the kingdom upload (the player exited Sol) vs the engine uploading a wrong map03 TIM. A second map03-resident capture reached by a different route decides it.
+**Resolved (disc-only decisive test; Sol-residency falsified).** The engine's
+map03 pre-pass diverges from the Karisto resident capture in the 64-wide page
+column `x=576..640, y≈320..448` (~2.2k cells; engine `0x3332`-family texels,
+retail `0x4444 4411 ffff...`), while map01/map02 match. A second capture is not
+needed: `asset tim-scan` shows **PROT 0392 uploads 8 real 4bpp TIMs into fb
+`x=576..640, y=320..448`** (map03 owns the rect - it is not foreign residency),
+and the `fbx=576 fby=320` 96×96 4bpp TIM (PROT 0392, `lzs0_off 0x03BDEC`)
+**byte-matches the retail resident VRAM at (576,320) 2304/2304 halfwords =
+100%**. So the resident retail bytes are map03's own PROT 0392 terrain texture,
+NOT Sol residency. The divergence is therefore an **engine bug**: the map03
+targeted-upload pre-pass fails to upload PROT 0392's LZS-compressed 4bpp terrain
+tiles into the `(576, 320..448)` column. Reclassified from a capture-blocked RE
+question to an engine `map03` pre-pass coverage bug (Track B / render).
 
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels - pause-menu-lineage, not boot
@@ -824,13 +850,13 @@ So the blocker (the per-cue enable SOURCE) dissolves: there is nothing to trace.
 | `title.pak` PROT entry | resolved | [details ↓](#titlepak-prot-entry) | `project_prot_0895_init_pak.md` |
 | Title screen mode-table PROT | resolved (no such entry) | [details ↓](#title-screen-mode-table-prot) | `project_mode_table_structure.md` |
 | Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | Pinned in [`subsystems/save-screen.md`](../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2): retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. The exact per-tile rects are exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (covered by `save_select_chrome_emits_9slice_panel_and_pills` test). No interior fill sprite is drawn - the "marbled blue" look is the dimmed title art bleeding through the empty middle of the frame. | `project_load_screen_panel_source_pinned.md` |
-| Debug flags `0x8007B8C2` / `0x8007B98F` | partial - `0x8007B98F` live-confirmed; consumer in uncaptured overlay | [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) | `project_debug_flags.md` |
-| Key-item area consumers (`0x800859E8..0x80085A40`) | open - read-BP scan pending | Identify which native code reads the key-item id bytes that the full-bag OOB add helper writes. A consumer that uses the attacker-controlled id byte as an unguarded index is a potential chain toward the debug bytes. Probe: `scripts/pcsx-redux/autorun_key_item_consumer_hunt.lua`. | `project_ace_oob_confirmed.md` |
+| Debug flags `0x8007B8C2` / `0x8007B98F` | resolved (static) | `0x8007B98F` has no byte-granular reader: it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`, and *that word* is the consumer surface (grep of `funcs/` for `8007b98f` = 0 hits; `8007b98c` gate-read at `8001822c.txt:500/533` + ~14 field-overlay-0897 gates, sole `sw` writer in the menu/title/save-init routine). Writing `0x8007B98F = 1` sets the MSB so every `_DAT_8007B98C != 0` gate reads active. [details ↓](#debug-flags-0x8007b8c2--0x8007b98f) | `project_debug_flags.md` |
+| Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (static; no OOB amplifier) | The range is inventory slots `>= 72` of `&DAT_80085958`; its readers are the indexed item-menu functions (`FUN_8002ff8c`/`800302e4`/`80032a44`/`80030628`/`80034250`), each masking the slot `& 0x3ff` and using the id byte as an index into 256-entry item tables - inherently bounded; add/find/consume helpers bound their scan by the live item count. No consumer treats a key-item byte as an unguarded index, so the range amplifies to game-state corruption (item possession + displayed ids), not a native index-OOB chain step. The `lb $reg,0x5aXX($zero)` overlay "hits" were mis-decoded data tables. Read-BP probe deprioritized. | `project_ace_oob_confirmed.md` |
 | XP-table source + reader | resolved + ported | [details ↓](#xp-table-source--reader) | `project_xp_split_static_negative.md` |
 | New-Game opening chain + narration roller | resolved (caption = baked TIM; one roller-config sub-thread open) | [details ↓](#new-game-opening-chain--narration-roller) | `project_cold_boot_prologue.md` |
 | Overlay identity from the disc (static extraction) | resolved (pipeline landed) | [details ↓](#overlay-identity-from-the-disc-static-extraction) | `project_static_overlay_pipeline.md` |
 | Options/menu overlay PROT entry | resolved + RAM-verified (**PROT 0899** @ `0x801CE818`) | The options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896: `FUN_801CF650`'s signature byte-matches PROT 0899 file `0xe38`, and the `.text`+`.rodata` prefix is byte-identical across six menu-open saves. VA-alias sibling of the field overlay 0897 in slot A - the menu overlay replaces the field overlay at the base. The earlier "0896 = menu" label is falsified. | `project_static_overlay_pipeline.md` |
-| PROT 0896 (`bat_back_dat`) identity | open (mode-24-overlay hypothesis refuted; base was an over-read artifact) | [details ↓](#prot-0896-bat_back_dat-identity) | `project_static_overlay_pipeline.md` |
+| PROT 0896 (`bat_back_dat`) identity | resolved | The unique ~`0x9000`-byte head is the **vestigial Japanese-build field-menu / config / status overlay** - the debug-string sibling of the English retail menu overlay PROT 0899 (same `~0x801D0000` window-renderer VA family, a `"FWIN ERR %d"` printf at file `0x3D4`, `0x414`-byte char-record indexing). 0899 ships the English label set with zero `FWIN`; a signature scan finds 0896 resident in **0** of 140 states (control: English "Battle Voices" resident in 10), so the USA build never loads it. [details ↓](#prot-0896-bat_back_dat-identity) | `project_static_overlay_pipeline.md` |
 | Slot-A scene-overlay family beyond field/battle/menu | resolved (in the static map) | The rest of the slot-A (`0x801CE818`) VA-alias family is pinned from the disc: **0970 cutscene_str** (STR/MDEC FMV, modes 26/27) and the minigame overlays **0972 fishing / 0975 slot_machine / 0976 baka_fighter / 0980 dance** (the mode-24 `0x3E` door-warp sub-id slots 0/3/4/6), each cross-checked by a documented function landing on a prologue at the base. Minigame entries over-read each other (phantom-base risk); the canonical entry recovers `0x801CE818` and is the entry the warp streams (the historical "slot_machine = 0973 @ `0x801CA818`" was the phantom - the image inside 0973's over-read tail). Found via `asset overlay scan` + the leading dev string. | `project_static_overlay_pipeline.md` |
 | "world-map / save / shop" overlay PROT entries | resolved (they are NOT separate entries) | The world-map / overworld controller `FUN_801E76D4` lives in the **field overlay 0897** (base+0x18EBC), and the save-slot dispatcher `FUN_801DC6B4` + the shop/buy session live in the **menu overlay 0899** (save at base+0xDE9C) - each function's instruction signature byte-matches only that one entry (`asset overlay find-sig`). So "world-map", "save", and "shop" are *subsystems* of existing slot-A overlays, not separate PROT entries; recorded in the 0897 / 0899 map notes. | `project_static_overlay_pipeline.md` |
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | mostly resolved | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) | `project_static_overlay_pipeline.md` |
@@ -883,7 +909,25 @@ Both addresses are in the SBSS/BSS region (zero-initialised at boot). `_DAT_8007
 
 **Exhaustive corpus sweep (2661 dump files across SCUS + every captured overlay) confirms zero writes to `_DAT_8007B8C2` and zero references - read or write - to `_DAT_8007B98F`.** `_DAT_8007B8C2` is read-only at runtime (10+ `== 0` retail-mode tests, no writers anywhere).
 
-`_DAT_8007B98F` has zero references in the captured corpus - the earlier conclusion "stripped at link time / inert" is **falsified**: writing `0x8007B98F = 1` via external RAM poke brings up the debug menu on SELECT+△ in the NA retail build, proving the consumer is overlay-resident but outside the captured 2661-file set. See [`subsystems/boot.md` § Debug flags](../subsystems/boot.md#debug-flags) and [`reference/builds.md` § Debug input bindings](builds.md#debug-input-bindings) for the full combo table. Row kept so the "stripped / inert" framing isn't re-opened - the correct framing is "consumer in an uncaptured overlay".
+`_DAT_8007B98F` has zero references in the captured corpus because it is **not
+read byte-granularly at all**: it is byte +3 (the MSB, little-endian) of the
+32-bit debug-mode word `_DAT_8007B98C`, and that word is the real consumer
+surface. Grep of `ghidra/scripts/funcs/` for `8007b98f` returns 0 hits;
+`_DAT_8007B98C` is read as the debug gate in SCUS (`FUN_8001822c` at
+`8001822c.txt:500/533`, plus `80016230`/`80016444`/`800173bc`/`800188c8`/
+`8003cbf8`/`8004ad80`/`80025cb4`) and across the field/dialog/world-map overlays
+(an aligned word-search of the 23 static overlays finds 14 genuine
+`lw ...,-0x4674(reg)` reads of `0x8007B98C` in the field overlay 0897, base reg
+= `0x80080000`), with the sole `sw` writer in the shared menu/title/save-init
+routine (`overlay_menu_801de234`/`overlay_title_801ddccc` internal offset
+`0x4158`). So `SELECT+START` / GameShark writing `0x8007B98F = 1` sets the MSB
+of the word, and every `_DAT_8007B98C != 0` gate then reads the debug mode
+active. The earlier "stripped at link time / inert" AND "consumer in an
+uncaptured overlay" framings are both superseded: the consumer is `FUN_8001822c`
++ the resident field-overlay gates, statically pinned, no capture required. See
+[`subsystems/boot.md` § Debug flags](../subsystems/boot.md#debug-flags) and
+[`reference/builds.md` § Debug input bindings](builds.md#debug-input-bindings)
+for the combo table.
 
 
 ### XP-table source + reader
@@ -947,10 +991,34 @@ committed map `crates/asset/data/static-overlays.toml`; see [`tooling/static-ove
 
 ### PROT 0896 (`bat_back_dat`) identity
 
-*Status:* open - but the "mode-24 OTHER overlay @ `0x801C5818`" hypothesis is
-**refuted**, and the recovered base is an **alias artifact**
+*Status:* **resolved** - the head is the vestigial Japanese-build field-menu /
+config / status overlay (the debug-string sibling of the English retail menu
+overlay PROT 0899); the "mode-24 OTHER overlay @ `0x801C5818`" hypothesis is
+**refuted** and the recovered base was an **alias artifact**.
 
-PROT 0896 is NOT the menu overlay (that is 0899). Three findings reframe it:
+**Identity (host-capstone decode of the head off the disc entry - extraction
+index `896`, verified by locating the `"FWIN ERR"` bytes directly, not by an
+index-shift rule).** The head is a self-contained menu/config/status overlay:
+a Shift-JIS label pool (config toggles, the Item/Summon/Equip/Status/Config/Save
+top menu, the ATK/UDF/LDF/SPD/INT/AGL + EXP status labels), the `"FWIN ERR %d"`
+window-manager debug printf at file offset `0x3D4` (`FWIN` = Field WINdow), and
+real MIPS at link base `~0x801D0000` - a status/name-draw routine indexing the
+`0x414`-byte character records, with head function-pointer tables holding ~61
+addresses across `0x801D81C0..0x801DC700` (the window/screen renderers). This is
+the same VA family as the live retail menu overlay PROT 0899 (`0x801D33D8`
+status renderer, `0x801DC6B4` save SM). **0899 carries the English versions of
+the identical label set and zero `FWIN`**, so 0896 is the Japanese,
+debug-string-bearing sibling of the same subsystem; the USA localisation dropped
+the `FWIN` debug string when it shipped 0899. A distinctive-signature scan across
+**140 catalogued RAM states** (37 PCSX `.sstate` + 98 gzipped mednafen states,
+all phases) finds 0896 resident in **none**, while the English "Battle Voices"
+(live 0899 config) is resident in 10 menu-phase states (the scan's positive
+control) - so the `scenarios.toml` `save_select_idle` "overlay 0896 paged in"
+note is a mislabel using the extraction-index name; the resident menu code is
+the English 0899. 0896 is a vestigial JP-build overlay carried on the USA disc,
+never loaded by the USA build (consistent with "no static loader reaches it").
+
+Superseding findings (kept so the reframing isn't re-walked):
 
 1. **The mode-24 entry does not load it.** A live capture of the Baka Fighter
    entry (probe
