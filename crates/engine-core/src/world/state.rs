@@ -1089,11 +1089,10 @@ pub struct World {
     /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
     /// move-FX scene, set by [`World::spawn_move_fx`] from the move record's
     /// `+0x0b` field and cleared when the scene drains. Surfaced via
-    /// [`World::active_move_fx_trail_texpage`] - the retail streak pass
-    /// (`FUN_801e1ab0`) turns this trail id into a jittered semi-transparent
-    /// screen-space quad. The engine's wgpu renderer draws move-FX as 3D
-    /// billboard meshes rather than 2D ordering-table primitives, so the id is
-    /// carried for presentation/tracing without a screen-space streak emitter.
+    /// [`World::active_move_fx_trail_texpage`] for the render layer's streak
+    /// pass - the trail id this carries is what
+    /// `legaia_engine_render::afterimage::build_afterimage_quad` (the ported
+    /// `FUN_801e1ab0`) turns into the jittered semi-transparent quad.
     pub active_move_fx_trail_texpage: Option<u16>,
 
     /// The current scene's **field move-VM stager table** - the prescript

@@ -474,14 +474,14 @@ fn filter_items(
 /// is greyed out (omitted) when every living ally is at full HP, an Antidote
 /// when nobody is poisoned, a Phoenix when nobody has fallen. The retail check
 /// walks the party (`+0x458` class byte) calling the shared per-target
-/// relevance/validity predicate `FUN_8003fb10(class, tier, target)` (already
-/// ported as `legaia_engine_vm::action_validator`; its item-relevance arms are
-/// mirrored here by [`effect_benefits_target`]). The all-party descriptor flag
+/// relevance/validity predicate `FUN_8003fb10(class, tier, target)`; its
+/// item-relevance arms are re-implemented here by [`effect_benefits_target`]
+/// (the liveness/kind arms live in `target_picker`). The all-party descriptor flag
 /// (`& 0x20`) collapses the per-member loop into a single check, which falls
 /// out naturally from the `targets.iter().any(...)` below.
 ///
 /// PORT: FUN_8003043c
-/// REF: FUN_8003fb10 (action_validator)
+/// REF: FUN_8003fb10 (16-arm target-relevance validator)
 fn item_has_valid_target(entry: &ItemEntry, targets: &[TargetRow]) -> bool {
     // Effects with no per-target relevance notion (Escape, permanent stat-up /
     // spirit) are always offered. Key items are gated and their benefit

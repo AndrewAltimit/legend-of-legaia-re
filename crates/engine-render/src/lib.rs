@@ -22,6 +22,7 @@
 //! REF: FUN_801D0148, FUN_801D5DE0, FUN_801D84D0, FUN_801E08D8, FUN_801E1C1C, FUN_801E36C4
 //! REF: FUN_801E3EE0, FUN_801E3FF0
 
+pub mod afterimage;
 pub mod billboard;
 pub mod gte;
 pub mod gte_trace;

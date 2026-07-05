@@ -600,7 +600,7 @@ Monsters install no bank, so their staged ids stay plain archive entry indices a
 
 The 16-arm gate the menu / battle UI runs against a candidate slot before committing the player's action. Selects which validation rule fires from the outer `param_1` arm and (for arm 6) a sub-case `param_2`. Reads HP / MP / status / item-count / stat caps from the active record (battle-actor pointer table when `_DAT_8007B83C == 0x15`, character record array otherwise) and writes a per-slot validity bit at `gp + 0x9A8`. Source: [`ghidra/scripts/funcs/8003fb10.txt`](../../ghidra/scripts/funcs/8003fb10.txt).
 
-Arms (clean-room port at [`crates/engine-vm/src/action_validator.rs`](../../crates/engine-vm/src/action_validator.rs)):
+Arms (the target-relevance arms are re-implemented where they are consumed - liveness/kind gating in `legaia-engine-core`'s `target_picker`, item-benefit arms in `inventory_use::effect_benefits_target`; there is no standalone validator module):
 
 | arm | meaning |
 |---|---|
@@ -620,7 +620,7 @@ Arms (clean-room port at [`crates/engine-vm/src/action_validator.rs`](../../crat
 | `0x82` | Out-of-battle; calls the external item-count validator (`FUN_80046898`). |
 | `0x83` | Always valid. |
 
-The retail dispatcher's `gp + 0x9A8` byte is exposed via [`ActionValidatorHost::target_valid_bits`](../../crates/engine-vm/src/action_validator.rs); engines wire it to whatever cursor / slot-grey state the menu reads.
+The retail dispatcher writes a per-slot validity bit at `gp + 0x9A8`; the engine surfaces the same signal through the consuming paths (`target_picker` for battle-target cursors, `inventory_use` for item-menu greying) rather than a single exported byte.
 
 ## Action queue and Tactical Arts trigger ordering
 

@@ -940,6 +940,16 @@ impl World {
         if self.field_channels.is_empty() {
             return;
         }
+        // Free-roam channels only STEP when the engine's NPC-animation switch is
+        // on - the same master gate the waypoint patroller
+        // ([`Self::tick_field_npc_motions`]) honours. With it off, the seeded
+        // channels stay resident but idle, so ordinary free-roam behaves exactly
+        // as it did before per-actor channels existed (no scripted repositioning,
+        // no MoveTo `FieldEvent`s) until liveliness is enabled. A cutscene
+        // timeline always drives its channels regardless of the switch.
+        if !self.cutscene_timeline_active() && !self.animate_field_npcs {
+            return;
+        }
         let Some(man) = self.field_channels_man.clone() else {
             return;
         };

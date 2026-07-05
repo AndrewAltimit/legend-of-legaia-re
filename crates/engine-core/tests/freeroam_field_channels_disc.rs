@@ -97,7 +97,11 @@ fn freeroam_channels_seed_and_execute() {
             .collect::<Vec<_>>()
     );
 
-    // 3. Tick in Field mode and observe channel execution.
+    // 3. Tick in Field mode and observe channel execution. Channel stepping is
+    //    gated behind the engine's NPC-animation switch (the same master gate
+    //    the waypoint patroller honours), so enable it to exercise execution -
+    //    seeding (parts 1-2) is unconditional and already asserted above.
+    host.world.animate_field_npcs = true;
     let headings_before = host.world.field_npc_headings.len();
     let mut any_advanced = false;
     let mut any_state_changed = false;

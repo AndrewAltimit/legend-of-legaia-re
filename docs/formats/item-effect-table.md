@@ -200,8 +200,9 @@ member - returning "usable" if any member's current state makes the effect do
 something. The clean-room equivalent (`inventory_use::item_has_valid_target` ->
 `effect_benefits_target`) greys a heal when every living ally is at full HP, a
 cure when nobody carries the matching status, and a revive when nobody has
-fallen, mirroring the item-relevance arms of the already-ported validator
-(`legaia_engine_vm::action_validator`, the clean-room port of `FUN_8003fb10`).
+fallen, re-implementing the item-relevance arms of the retail predicate
+`FUN_8003fb10` (the 16-arm menu/UI validator documented in
+[`battle-action.md`](../subsystems/battle-action.md#action-validator-fun_8003fb10)).
 
 The **permanent stat-up *Water* line** (class 6) is seeded into the catalog
 from the installed table by `ItemCatalog::apply_stat_items` (so it appears only
