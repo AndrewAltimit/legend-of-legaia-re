@@ -1456,6 +1456,12 @@ pub struct World {
     /// confirm reach [`Self::take_prologue_handoff`].
     pub cutscene_narration: Option<crate::cutscene_narration::CutsceneNarration>,
 
+    /// Monotonic counter incremented each time [`Self::open_cutscene_narration`]
+    /// installs a crawl block. Lets observers distinguish back-to-back crawl
+    /// blocks (a non-blocking crawl opens the next block the same tick the prior
+    /// scrolls out) that a rising-edge `active`-watch would merge into one.
+    pub cutscene_narration_seq: u32,
+
     /// Active opening-cutscene timeline executor, or `None` when no cutscene
     /// timeline is running. Installed by
     /// [`Self::load_cutscene_timeline_from_man`] (the `opdeene` opening
@@ -1478,6 +1484,23 @@ pub struct World {
     /// (target `0xF8`) is the inline-narration text-draw the separate
     /// [`Self::cutscene_narration`] presenter owns - not an actor spawn.
     pub in_cutscene_timeline: bool,
+
+    /// Retail-frame sub-clock accumulator (fixed-point, `RETAIL_FPS` added per
+    /// tick, wrapping at `SIM_HZ`). The sim ticks at 100 Hz, but the narration
+    /// crawl roller's scroll speed is authored in retail's ~60 fps field frames;
+    /// scrolling it once per 100 Hz tick drains the crawl ~1.7x too fast (the
+    /// creation crawl finishes ~5 s early, then the caption + between-crawl
+    /// camera choreography leave a long dead-air gap). [`Self::tick`] advances
+    /// this and derives [`Self::field_frame_step`] so the roller runs at 60 fps.
+    /// NB the cutscene *timeline*'s WAIT_FRAMES stay on the 100 Hz sim clock -
+    /// their frame-count vs rate errors happen to cancel so block 2 lands at
+    /// retail wall-time; pacing them too would push block 2 far too late.
+    pub field_frame_accum: u32,
+
+    /// `1` on the ~60 % of sim ticks that map to a retail field frame, else `0`
+    /// (derived from [`Self::field_frame_accum`] each [`Self::tick`]). Fed to
+    /// the narration roller so the crawl scrolls at retail's 60 fps wall-speed.
+    pub field_frame_step: u16,
 
     /// Per-actor field-VM channels: one spawned context per MAN partition-1
     /// placement record, mirroring the retail per-record spawn
@@ -1529,6 +1552,29 @@ pub struct World {
     /// humanity" card). Rendered by the host; independent of the crawl
     /// roller [`Self::cutscene_narration`].
     pub cutscene_card: Option<Vec<String>>,
+
+    /// The `opdeene` "It was the Seru." caption, decoded to RGBA at scene
+    /// entry ([`crate::cutscene_caption::decode_opdeene_caption`]). `Some`
+    /// only while `opdeene` is loaded; the host uploads it once as a sprite
+    /// atlas and blits it, faded by [`Self::cutscene_caption_alpha`]. Unlike
+    /// the crawl / card this is a pre-rendered image, not font text - retail
+    /// draws it as a scene textured quad, so the engine blits the scene
+    /// texture rather than rendering a string. See [`crate::cutscene_caption`].
+    pub cutscene_caption: Option<crate::cutscene_caption::CaptionImage>,
+
+    /// Fade level (0..=1) of [`Self::cutscene_caption`], ramped each
+    /// [`Self::tick`]. Target-visible in the gap after the first narration
+    /// crawl block scrolls out and before the second opens (retail shows the
+    /// caption once, between `opdeene`'s two crawls).
+    pub cutscene_caption_alpha: f32,
+
+    /// Frames [`Self::cutscene_caption`] has been fully faded in. Used to bound
+    /// the caption to a retail-like ~2 s beat and fade it back out, since the
+    /// engine's inter-crawl timeline gap currently runs much longer than
+    /// retail's - so the caption reads as a deliberate pause, not a freeze,
+    /// even when the second crawl block is still frames away. Reset on scene
+    /// entry; never re-shows once the hold elapses (the gap continues hidden).
+    pub cutscene_caption_shown_frames: u32,
 
     /// Pending field-VM op-`0x44` SPAWN_RECORD request: the GLOBAL record
     /// index whose partition-2 record should spawn as a new context.
@@ -1775,9 +1821,12 @@ impl World {
             party_names: Vec::new(),
             name_entry: None,
             cutscene_narration: None,
+            cutscene_narration_seq: 0,
             cutscene_timeline: None,
             inline_dialogue: None,
             in_cutscene_timeline: false,
+            field_frame_accum: 0,
+            field_frame_step: 0,
             field_channels: Vec::new(),
             field_channels_man: None,
             executing_channel: None,
@@ -1786,6 +1835,9 @@ impl World {
             prologue_naming_armed: false,
             entering_town01_opening: false,
             cutscene_card: None,
+            cutscene_caption: None,
+            cutscene_caption_alpha: 0.0,
+            cutscene_caption_shown_frames: 0,
             pending_record_spawn: None,
             opening_chain_active: false,
         }

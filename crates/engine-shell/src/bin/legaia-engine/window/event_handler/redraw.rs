@@ -309,11 +309,45 @@ impl PlayWindowApp {
             && self.session.host.world.cutscene_timeline_active()
         {
             let (focus, pitch, yaw, h, tr_eye) = self.cutscene_view();
-            // ~0.15/frame ease => a few-frame blend at the redraw cadence.
-            Some(
-                self.cutscene_cam_interp
-                    .approach(focus, pitch, yaw, h, tr_eye, 0.15),
-            )
+            // Ease rate from the op-`0x45` `apply_trigger` (retail `FUN_801DE084`
+            // → `FUN_801DB510`): a Configure with `apply == 0` commits the camera
+            // targets IMMEDIATELY (snap), while `apply > 0` stages them and lets
+            // the per-frame ease glide the eye toward them over roughly `apply`
+            // frames. opdeene's beats mix both: the entry shot snaps (`apply 0`),
+            // but the mid-prologue dolly (`apply 840`, paired with a 760-frame
+            // WaitFrames) glides continuously WHILE the narration text scrolls -
+            // exactly the "3D keeps playing under the crawl" retail behaviour.
+            // The old fixed `0.15` snapped every beat to a near-still hold in a
+            // few frames, which read as scene-then-text rather than concurrent.
+            let apply = self.session.host.world.camera_state.apply_trigger;
+            let t = if apply == 0 {
+                1.0
+            } else {
+                // Exponential ease: `t ≈ 4/apply` reaches ~63% of the travel in
+                // `apply/4` frames, ~95% in `apply` frames - a slow, continuous
+                // dolly for the big `apply` values and a quick settle for small
+                // ones. Clamped so no beat crawls forever or hard-snaps.
+                (4.0 / apply as f32).clamp(0.008, 0.5)
+            };
+            // Advance the ease in SIM-TICK time, not render-frame time: step it
+            // once per world tick that elapsed this redraw (`run_ticks`). Retail
+            // eases the camera one step per sim frame (`FUN_801DB510` runs in the
+            // 100 Hz field loop), so an `apply`-paced glide must span `apply` SIM
+            // frames. Stepping per-render instead let the ease converge in a
+            // fraction of a wall-clock second whenever the sim sat on a long
+            // WaitFrames (few ticks, many redraws) - the dolly finished early and
+            // the shot then froze into a dead static hold. Min 1 step so an idle
+            // frame still refreshes the held pose (e.g. right after a reset).
+            let steps = run_ticks.max(1);
+            let mut out = self
+                .cutscene_cam_interp
+                .approach(focus, pitch, yaw, h, tr_eye, t);
+            for _ in 1..steps {
+                out = self
+                    .cutscene_cam_interp
+                    .approach(focus, pitch, yaw, h, tr_eye, t);
+            }
+            Some(out)
         } else {
             self.cutscene_cam_interp.reset();
             None
@@ -325,6 +359,24 @@ impl PlayWindowApp {
         ) {
             let (w, h) = r.surface_size();
             let aspect = w as f32 / h.max(1) as f32;
+            // Upload (or drop) the opdeene "It was the Seru." caption sprite
+            // atlas to track World state. The caption image is present only
+            // while opdeene is loaded and never changes, so upload it once on
+            // first sight and drop it when the scene clears it (scene change).
+            // Disjoint fields: `r` borrows `win.renderer`, the image lives under
+            // `session`, the cache is `caption_atlas`.
+            if self.caption_atlas.is_none()
+                && let Some(cap) = self.session.host.world.cutscene_caption.as_ref()
+            {
+                match r.upload_sprite_atlas(&cap.rgba, cap.width, cap.height) {
+                    Ok(atlas) => self.caption_atlas = Some((atlas, cap.width, cap.height)),
+                    Err(e) => log::warn!("caption atlas upload: {e:#}"),
+                }
+            } else if self.caption_atlas.is_some()
+                && self.session.host.world.cutscene_caption.is_none()
+            {
+                self.caption_atlas = None;
+            }
             // Full-scene colour grade: the opening prologue cutscene
             // (`opdeene`, "It was the Seru.") renders its whole 3D scene in
             // warm gold sepia (dim ambient + gold far-colour depth cue in
@@ -860,6 +912,39 @@ impl PlayWindowApp {
                 atlas: &sm.atlas,
                 draws: &save_chrome_draw_vec,
             });
+            // Opening-cutscene "It was the Seru." caption: the opdeene baked TIM
+            // (`World::cutscene_caption`) blitted centered and faded
+            // (`cutscene_caption_alpha`) over the gap between the two narration
+            // crawls. One textured quad sampling the caption atlas - the
+            // background palette entry is transparent, so only the white text
+            // draws over the scene; alpha 0 emits nothing. Scaled by `h/240` to
+            // preserve the PSX 320x240 framing (retail centers it horizontally,
+            // mid-screen ~y110 over the villager tableau).
+            let caption_draw_vec: Vec<legaia_engine_render::SpriteDraw> = {
+                let alpha = self.session.host.world.cutscene_caption_alpha;
+                match self.caption_atlas.as_ref() {
+                    Some((_, cw, ch)) if alpha > 0.001 => {
+                        let scale = h as f32 / 240.0;
+                        let dw = (*cw as f32 * scale).round().max(0.0) as u32;
+                        let dh = (*ch as f32 * scale).round().max(0.0) as u32;
+                        let dx = (w as i32 - dw as i32) / 2;
+                        let dy = ((110.0 / 240.0) * h as f32).round() as i32 - dh as i32 / 2;
+                        vec![legaia_engine_render::SpriteDraw {
+                            dst: (dx, dy, dw, dh),
+                            src: (0, 0, *cw, *ch),
+                            color: [1.0, 1.0, 1.0, alpha.clamp(0.0, 1.0)],
+                        }]
+                    }
+                    _ => Vec::new(),
+                }
+            };
+            let caption_overlay = self
+                .caption_atlas
+                .as_ref()
+                .map(|(atlas, _, _)| TextOverlay {
+                    atlas,
+                    draws: &caption_draw_vec,
+                });
 
             // Force a pure-black background during boot UI so the
             // logos / title / save-select panels read on PSX-style
@@ -882,7 +967,12 @@ impl PlayWindowApp {
             // the save-menu chrome (panel + slot pills) when
             // SaveSelect is active, or the menu-glyph atlas
             // (deprecated no-disc title-menu fallback) otherwise.
-            let sprites_slot_1 = if !logo_draw_vec.is_empty() {
+            // The opdeene caption takes slot 1 when active: during the opening
+            // cutscene the boot-UI logo / title overlays are inactive (their
+            // draw vecs empty), so there is no contention.
+            let sprites_slot_1 = if !caption_draw_vec.is_empty() {
+                caption_overlay.as_ref()
+            } else if !logo_draw_vec.is_empty() {
                 logo_overlay.as_ref()
             } else if !title_draw_vec.is_empty() {
                 title_overlay.as_ref()

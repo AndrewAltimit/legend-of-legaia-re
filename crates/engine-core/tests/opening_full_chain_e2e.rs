@@ -60,14 +60,19 @@ fn new_game_opening_chains_naturally_with_zero_input() {
     );
 
     // --- opdeene: two crawls (14 + 8) play, then the timeline chains ---
+    //
+    // Blocks are observed via `cutscene_narration_seq` (incremented per crawl
+    // open), NOT a rising-edge `active` watch: a non-blocking crawl lets the
+    // next block open the same tick the prior scrolls out (continuous crawl,
+    // no blank frame), which a rising-edge watch would merge into one block.
     let mut seen_block_pages: Vec<usize> = Vec::new();
-    let mut last_active = false;
+    let mut last_seq = host.world.cutscene_narration_seq;
     let mut ticks = 0u32;
     while host.world.active_scene_label == opdeene && ticks < 30_000 {
         let _ = host.tick();
         ticks += 1;
-        let active = host.world.cutscene_narration_active();
-        if active && !last_active {
+        let seq = host.world.cutscene_narration_seq;
+        if seq != last_seq {
             seen_block_pages.push(
                 host.world
                     .cutscene_narration
@@ -75,8 +80,8 @@ fn new_game_opening_chains_naturally_with_zero_input() {
                     .map(|n| n.page_count())
                     .unwrap_or(0),
             );
+            last_seq = seq;
         }
-        last_active = active;
     }
     assert_eq!(
         host.world.active_scene_label, "opstati",
@@ -90,13 +95,13 @@ fn new_game_opening_chains_naturally_with_zero_input() {
 
     // --- opstati: its entry script op-0x44 spawns P2[0]; crawls 3 + 6 ---
     let mut seen: Vec<usize> = Vec::new();
-    last_active = host.world.cutscene_narration_active();
+    last_seq = host.world.cutscene_narration_seq;
     ticks = 0;
     while host.world.active_scene_label == "opstati" && ticks < 30_000 {
         let _ = host.tick();
         ticks += 1;
-        let active = host.world.cutscene_narration_active();
-        if active && !last_active {
+        let seq = host.world.cutscene_narration_seq;
+        if seq != last_seq {
             seen.push(
                 host.world
                     .cutscene_narration
@@ -104,8 +109,8 @@ fn new_game_opening_chains_naturally_with_zero_input() {
                     .map(|n| n.page_count())
                     .unwrap_or(0),
             );
+            last_seq = seq;
         }
-        last_active = active;
     }
     assert_eq!(
         host.world.active_scene_label, "opurud",
@@ -115,16 +120,16 @@ fn new_game_opening_chains_naturally_with_zero_input() {
 
     // --- opurud: op-0x44 spawns P2[9]; three Mist crawls; chains to map01 ---
     let mut blocks = 0usize;
-    last_active = host.world.cutscene_narration_active();
+    last_seq = host.world.cutscene_narration_seq;
     ticks = 0;
     while host.world.active_scene_label == "opurud" && ticks < 30_000 {
         let _ = host.tick();
         ticks += 1;
-        let active = host.world.cutscene_narration_active();
-        if active && !last_active {
+        let seq = host.world.cutscene_narration_seq;
+        if seq != last_seq {
             blocks += 1;
+            last_seq = seq;
         }
-        last_active = active;
     }
     assert_eq!(
         host.world.active_scene_label, "map01",
@@ -140,16 +145,16 @@ fn new_game_opening_chains_naturally_with_zero_input() {
         "map01's opening record installs off the arrival tile trigger"
     );
     let mut fly_blocks = 0usize;
-    last_active = host.world.cutscene_narration_active();
+    last_seq = host.world.cutscene_narration_seq;
     ticks = 0;
     while host.world.active_scene_label == "map01" && ticks < 30_000 {
         let _ = host.tick();
         ticks += 1;
-        let active = host.world.cutscene_narration_active();
-        if active && !last_active {
+        let seq = host.world.cutscene_narration_seq;
+        if seq != last_seq {
             fly_blocks += 1;
+            last_seq = seq;
         }
-        last_active = active;
     }
     assert_eq!(
         host.world.active_scene_label,

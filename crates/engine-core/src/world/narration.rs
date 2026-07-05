@@ -76,6 +76,12 @@ impl World {
         self.cutscene_narration = Some(crate::cutscene_narration::CutsceneNarration::with_params(
             pages, params,
         ));
+        // Monotonic "which crawl block is showing" counter. Because a
+        // non-blocking crawl lets the next block open the very tick the prior
+        // one scrolls out (continuous crawl, no blank frame), a rising-edge
+        // `active && !was_active` observer can miss a block; observers count
+        // this instead. Never reset within a scene's opening.
+        self.cutscene_narration_seq = self.cutscene_narration_seq.wrapping_add(1);
     }
 
     /// `true` while the opening-cutscene narration is on screen (not yet
@@ -485,20 +491,33 @@ impl World {
             self.cutscene_timeline = Some(tl);
             return;
         }
-        // Suspended at an inline narration block: retail halt-suspends the
-        // parent timeline while the roller child plays the block's pages
-        // (`FUN_80037174` clears the parent's halt bit when every page has
-        // scrolled off). While the presenter is active neither the VM nor the
-        // frame cap advances; once it completes, resume just past the block.
+        // Held at an inline narration block. Two hold shapes share
+        // `narration_pc` (see [`crate::cutscene_timeline::CutsceneTimeline`]):
+        // the LAST crawl block (blocking) waiting for its own roller to scroll
+        // out before advancing, and any block reached while a PRIOR roller is
+        // still scrolling (`narration_pending_open`) held so a second roller
+        // does not stack. In both cases we wait for the active roller to
+        // drain; retail's `FUN_80037174` clears the parent's halt bit when
+        // every page has scrolled off.
         if let Some(block_pc) = tl.narration_pc {
             if self.cutscene_narration_active() {
                 self.cutscene_timeline = Some(tl);
                 return;
             }
-            if let Some(site) = tl.narration_blocks.iter().find(|b| b.op_offset == block_pc) {
-                tl.pc = site.end;
+            if tl.narration_pending_open {
+                // Was waiting for a prior roller to drain before opening this
+                // block: clear the hold and leave the PC AT the block op so the
+                // loop below re-enters and opens it now that nothing stacks.
+                tl.narration_pc = None;
+                tl.narration_pending_open = false;
+            } else {
+                // This (last, blocking) block's own roller finished: advance
+                // the PC past the block into the timeline's terminal ops.
+                if let Some(site) = tl.narration_blocks.iter().find(|b| b.op_offset == block_pc) {
+                    tl.pc = site.end;
+                }
+                tl.narration_pc = None;
             }
-            tl.narration_pc = None;
         }
         tl.frames = tl.frames.saturating_add(1);
         self.in_cutscene_timeline = true;
@@ -515,12 +534,16 @@ impl World {
                 let pc = tl.pc;
                 // Arrived at an inline narration block.
                 //
-                // Crawl (`op0 0x80`): retail spawns the roller child
-                // (`FUN_80037174`) over the block's pages and halt-suspends
-                // this parent context at the op. Mirror that: install the
-                // pages on the roller presenter and park the timeline here;
-                // the pre-step gate above resumes it just past the block once
-                // the presenter completes.
+                // Crawl (`op0 0x80`): retail spawns the roller as a CHILD
+                // context (`FUN_80037174`) and keeps executing THIS parent
+                // timeline, so the camera cuts / fades / waits authored between
+                // the crawl blocks play UNDER the scrolling text. Mirror that:
+                // open the roller and let the PC continue (non-blocking) for
+                // every block except the LAST, which blocks so the timeline
+                // does not reach its terminal scene-transition / hand-off
+                // before the final pages scroll out. If a prior roller is still
+                // scrolling when a block is reached, hold (don't stack rollers)
+                // until it drains, then re-enter to open this one.
                 //
                 // Title card (`op0 0x89`): the pages show simultaneously
                 // while the parent CONTINUES; a card whose pages are blank
@@ -528,9 +551,27 @@ impl World {
                 if let Some(site) = tl.narration_blocks.iter().find(|b| b.op_offset == pc) {
                     match site.kind {
                         legaia_asset::cutscene_text::NarrationKind::Crawl => {
-                            host.world.open_cutscene_narration(site.pages.clone());
-                            tl.narration_pc = Some(pc);
-                            break;
+                            if host.world.cutscene_narration_active() {
+                                tl.narration_pc = Some(pc);
+                                tl.narration_pending_open = true;
+                                break;
+                            }
+                            let site_end = site.end;
+                            let site_off = site.op_offset;
+                            let pages = site.pages.clone();
+                            let is_last_block =
+                                tl.narration_blocks.iter().all(|b| b.op_offset <= site_off);
+                            host.world.open_cutscene_narration(pages);
+                            if is_last_block {
+                                // Blocking: park until these pages scroll out.
+                                tl.narration_pc = Some(pc);
+                                tl.narration_pending_open = false;
+                                break;
+                            }
+                            // Non-blocking: the roller scrolls on its own
+                            // (`World::tick`); continue into the camera cuts.
+                            tl.pc = site_end;
+                            continue;
                         }
                         legaia_asset::cutscene_text::NarrationKind::Card => {
                             let blank = site.pages.iter().all(|p| p.trim().is_empty());

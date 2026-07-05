@@ -76,6 +76,11 @@ impl SceneHost {
         // with it.
         self.world.cutscene_timeline = None;
         self.world.cutscene_card = None;
+        // Drop the previous scene's caption image (only `opdeene` re-decodes one
+        // below); reset its fade + hold so a re-entry starts hidden.
+        self.world.cutscene_caption = None;
+        self.world.cutscene_caption_alpha = 0.0;
+        self.world.cutscene_caption_shown_frames = 0;
         self.world.field_channels.clear();
         self.world.field_channels_man = None;
         self.world.field_npc_anim_cues.clear();
@@ -480,6 +485,17 @@ impl SceneHost {
             // confirm press with the hand-off bit armed skips the whole
             // remaining opening to `town01` (retail `FUN_801D1344`).
             self.world.opening_chain_active = true;
+            // Decode the "It was the Seru." caption image from the scene's
+            // geometry pack (PROT 0749). It is a baked TIM, not text - the host
+            // blits it, faded, in the gap between the two narration crawls (see
+            // `crate::cutscene_caption`). `None` when the disc / entry is absent.
+            if let Some(scene) = self.scene.as_ref() {
+                self.world.cutscene_caption =
+                    crate::cutscene_caption::decode_opdeene_caption(scene);
+                if self.world.cutscene_caption.is_some() {
+                    log::info!("prologue: decoded 'It was the Seru.' caption image (PROT 0749)");
+                }
+            }
             match self
                 .scene
                 .as_ref()

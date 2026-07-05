@@ -146,10 +146,26 @@ pub struct CutsceneTimeline {
     /// the narration presenter finishes its pages - the retail caption-child
     /// suspend - then resumes past the block.
     pub narration_blocks: Vec<NarrationSite>,
-    /// `Some(op_offset)` while the timeline is suspended at that narration
-    /// block (its pages are on the presenter). Cleared when the block
-    /// completes and the PC advances past it.
+    /// `Some(op_offset)` while the timeline is held at that narration block.
+    /// Two hold shapes share this field, disambiguated by
+    /// [`Self::narration_pending_open`]:
+    /// - a **blocking** block (the last crawl before the scene transition) that
+    ///   has opened its roller and is waiting for it to scroll out before the
+    ///   PC advances past it (`narration_pending_open == false`); and
+    /// - a block reached while a PRIOR roller is still scrolling, held until
+    ///   that roller drains so a second roller doesn't stack over it
+    ///   (`narration_pending_open == true` - the pre-step gate then re-enters
+    ///   the block's op to open it).
+    ///
+    /// A **non-blocking** crawl (any block that is not the last) opens its
+    /// roller and lets the PC continue into the camera-cut / fade / wait ops
+    /// that play UNDER the scrolling text (retail spawns the roller as a child
+    /// context and keeps executing the parent timeline), so it never sets this.
     pub narration_pc: Option<usize>,
+    /// See [`Self::narration_pc`]: distinguishes "held, waiting to OPEN this
+    /// block once a prior roller drains" (`true`) from "opened, waiting for
+    /// THIS block's roller to scroll out" (`false`).
+    pub narration_pending_open: bool,
 }
 
 impl CutsceneTimeline {
@@ -175,6 +191,7 @@ impl CutsceneTimeline {
             arms_prologue_handoff: false,
             narration_blocks: Vec::new(),
             narration_pc: None,
+            narration_pending_open: false,
         }
     }
 

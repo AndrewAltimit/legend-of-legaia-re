@@ -622,11 +622,25 @@ impl PlayWindowApp {
             // (the pose source `FUN_8001B964` walks): the type-0x05 section
             // of the scene's first PROT slot (`player_anm::find_in_entry`;
             // field builds don't surface it through `res.anm_packs`).
+            //
+            // `find_in_entry`'s descriptor-count seed varies per scene: town01's
+            // bundle resolves at 3, but the opening prologue scenes stash theirs
+            // deeper - opdeene (PROT entry 749), opstati (754), opurud (764) only
+            // surface it at descriptor count >= 5. Hardcoding 3 returned `None`
+            // for all three, so their vignette actors got no clip player and
+            // rendered as a FROZEN tableau under the narration crawl (the "3D
+            // isn't playing while the text scrolls" gap). Try the counts each
+            // scene needs and take the first bundle any entry yields, so the
+            // creation-myth actors animate through the halt-suspended crawl -
+            // exactly retail's per-actor anim tick, which runs independent of the
+            // parked timeline script (see docs/subsystems/cutscene.md).
             let scene_bundle = self.session.host.scene.as_ref().and_then(|s| {
                 s.entries.iter().find_map(|e| {
-                    legaia_asset::player_anm::find_in_entry(&e.bytes, 3)
-                        .into_iter()
-                        .next()
+                    [3usize, 5, 6, 7].into_iter().find_map(|desc| {
+                        legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
+                            .into_iter()
+                            .next()
+                    })
                 })
             });
             let locomotion_bundle = self

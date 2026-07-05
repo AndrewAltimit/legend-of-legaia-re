@@ -50,6 +50,22 @@ impl World {
     ///     - `Title`      → no further VM.
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
+        // Retail-frame sub-clock for the narration crawl roller. The sim ticks
+        // at 100 Hz, but the roller's scroll is authored in retail's ~60 fps
+        // field frames; advance a fixed-point accumulator by RETAIL_FPS each
+        // tick and emit a whole retail frame on the ~60 % of ticks that cross
+        // SIM_HZ, so the crawl scrolls at retail wall-speed (otherwise it drains
+        // ~1.7x too fast, opening a long between-crawl gap). See
+        // `field_frame_accum`.
+        const SIM_HZ: u32 = 100;
+        const RETAIL_FPS: u32 = 60;
+        self.field_frame_accum += RETAIL_FPS;
+        if self.field_frame_accum >= SIM_HZ {
+            self.field_frame_accum -= SIM_HZ;
+            self.field_frame_step = 1;
+        } else {
+            self.field_frame_step = 0;
+        }
         // Step the active full-screen fade (escape teardown ramp); drop it
         // once the ramp lands on its target so hosts stop drawing the overlay.
         if let Some(fade) = &mut self.screen_fade
@@ -104,10 +120,44 @@ impl World {
         // skip; the player skips the WHOLE opening through the hand-off
         // packet instead - see `take_prologue_handoff`). Clear it once every
         // page has scrolled off so the suspended cutscene timeline resumes.
+        // Scroll the roller on the 60 fps sub-clock (0 or 1 retail frame per
+        // sim tick) so the crawl reads at retail wall-speed, not 100 Hz.
         if let Some(narration) = &mut self.cutscene_narration
-            && !narration.tick(1)
+            && !narration.tick(self.field_frame_step as u32)
         {
             self.cutscene_narration = None;
+        }
+        // Fade the "It was the Seru." caption image (opdeene's baked-TIM
+        // caption, `Self::cutscene_caption`). It is target-visible in the gap
+        // after the FIRST narration crawl block has shown (`seq == 1`) and has
+        // since scrolled out (narration inactive), and fades out once the SECOND
+        // block opens (`seq` advances) or the scene ends (the image is cleared
+        // on scene entry). This mirrors retail showing the caption once, between
+        // opdeene's two crawls; the smooth alpha ramp stands in for the TIM's
+        // two-CLUT fade steps.
+        //
+        // The engine's inter-crawl timeline gap currently runs much longer than
+        // retail's, so `in_gap` alone would hold the caption on screen for many
+        // seconds. Bound it to a retail-like ~2 s beat: once it has been fully
+        // shown for `CAPTION_HOLD_FRAMES`, fade it back out and keep it hidden
+        // for the rest of the gap (the counter never resets within the scene).
+        if self.cutscene_caption.is_some() {
+            const CAPTION_FADE_STEP: f32 = 0.06;
+            const CAPTION_HOLD_FRAMES: u32 = 180;
+            let in_gap = self.cutscene_narration_seq == 1 && !self.cutscene_narration_active();
+            if in_gap && self.cutscene_caption_alpha >= 1.0 {
+                self.cutscene_caption_shown_frames =
+                    self.cutscene_caption_shown_frames.saturating_add(1);
+            }
+            let hold_elapsed = self.cutscene_caption_shown_frames >= CAPTION_HOLD_FRAMES;
+            let target = if in_gap && !hold_elapsed { 1.0 } else { 0.0 };
+            if self.cutscene_caption_alpha < target {
+                self.cutscene_caption_alpha =
+                    (self.cutscene_caption_alpha + CAPTION_FADE_STEP).min(target);
+            } else if self.cutscene_caption_alpha > target {
+                self.cutscene_caption_alpha =
+                    (self.cutscene_caption_alpha - CAPTION_FADE_STEP).max(target);
+            }
         }
         match self.mode {
             SceneMode::Battle => {
