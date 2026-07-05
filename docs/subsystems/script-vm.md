@@ -514,6 +514,16 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    `--simple-dialogue` opting back into the simplified `OwnedDialogPanel`
    typewriter). See [`formats/mes.md`](../formats/mes.md#dialog-window-pager---fun_801d84d0).
 
+   Interaction records are **resident conversation drivers**: each story-state
+   branch exits by jumping to a shared tail that loops back to the top selector
+   (town01's Val record - "hands are full" sets its own one-shot SysFlag, the
+   next talks give "(Silence)", then the permanent line), and retail parks the
+   context there until the next talk. The runner ends one conversation pass at
+   that loop-back - a VM `Advance` jumping backward onto an already-executed PC
+   (`InlineDialogue::visited`) - rather than replaying the branch forever; the
+   map is cleared on every picker commit so menu records that re-emit their
+   menu by jumping back after a branch reply still cycle.
+
 An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
 wrong twice over: `0x3F` is the named scene-change, and field dialogue is the
 interaction-driven actor-text pipeline above, not an inline-text opcode. (The

@@ -136,6 +136,109 @@ fn inline_dialogue_prologue_falls_back_when_it_cannot_reach_a_segment() {
     assert_eq!(run_inline_until_box(&mut world), b"XX");
 }
 
+#[test]
+fn inline_dialogue_resident_loop_ends_after_one_pass() {
+    // Interaction records are resident conversation drivers: every branch
+    // exits by jumping to a shared tail that loops back to the top selector
+    // (town01's Val record: each talk plays ONE branch, then the context
+    // parks until the next interaction). The runner must end the
+    // conversation at that loop-back instead of replaying the branch
+    // forever - the "infinite Val dialog" play-test regression.
+    //
+    //   pc 0: 50 09          SET system flag 9 (top selector body)
+    //   pc 2: 1F 'V' 00      the branch box
+    //   pc 5: 26 FA FF       JmpRel back to pc 0 (base = pc+1, delta -6)
+    let body = vec![0x50, 0x09, 0x1F, b'V', 0x00, 0x26, 0xFA, 0xFF];
+    let mut world = World::new();
+    world.start_inline_dialogue_with_prologue(body, 0, 2);
+    assert_eq!(run_inline_until_box(&mut world), b"V");
+    // Dismiss the box: the VM resumes, takes the loop-back, and the wrap
+    // rule ends the conversation (one pass, like retail's park).
+    world.step_inline_dialogue(true, false, false);
+    let mut guard = 0;
+    while !world.inline_dialogue.as_ref().unwrap().is_done() {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(
+            guard < 50,
+            "the resident loop-back must end the conversation"
+        );
+    }
+    assert!(world.system_flag_test(9), "the pass body executed");
+}
+
+#[test]
+fn inline_dialogue_menu_reemission_survives_wrap_rule() {
+    // A menu record that re-emits its menu by jumping BACK after a branch
+    // reply (the izumi book-menu shape). The picker commit clears the wrap
+    // map, so the backward jump re-opens the menu instead of ending the
+    // conversation.
+    let mut b = vec![0x1F, b'M', 0x00]; // menu prompt @ 0
+    let open = b.len(); // 3
+    b.push(0x27); // 2-option picker
+    let entries_at = b.len();
+    b.extend_from_slice(&[0, 0, 0, 0]);
+    b.push(0x24); // continuation
+    b.extend_from_slice(&[0x1F, b'A', 0x00]); // label 0
+    b.extend_from_slice(&[0x1F, b'Q', 0x00]); // label 1 (quit)
+    let branch0 = b.len();
+    // Option A: reply "a", then jump back to the menu prompt (re-emit).
+    b.extend_from_slice(&[0x1F, b'a', 0x00]);
+    b.push(0x26);
+    let back_at = b.len();
+    b.extend_from_slice(&[0, 0]);
+    // JmpRel target = (pc + 1) + delta; the op byte sits at back_at - 1, so
+    // jumping to the menu prompt at pc 0 needs delta = -back_at.
+    let delta0 = 0u16.wrapping_sub(back_at as u16);
+    b[back_at..back_at + 2].copy_from_slice(&delta0.to_le_bytes());
+    let branch1 = b.len();
+    // Option Q: reply "q", then end.
+    b.extend_from_slice(&[0x1F, b'q', 0x00, 0x00]);
+    let j0 = (branch0 as i32 - (open as i32 + 1)) as i16;
+    let j1 = (branch1 as i32 - (open as i32 + 1 + 2)) as i16;
+    b[entries_at..entries_at + 2].copy_from_slice(&j0.to_le_bytes());
+    b[entries_at + 2..entries_at + 4].copy_from_slice(&j1.to_le_bytes());
+
+    let mut world = World::new();
+    world.start_inline_dialogue(b);
+    let mut guard = 0;
+    while !world.inline_dialogue.as_ref().unwrap().menu_active() {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(guard < 50, "menu never became active");
+    }
+    // Pick option A: reply "a" plays, then the record jumps back to the menu.
+    world.step_inline_dialogue(true, false, false);
+    let mut guard = 0;
+    while world.inline_dialogue.as_ref().unwrap().page_bytes() != b"a" {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        if guard >= 80 {
+            let id = world.inline_dialogue.as_ref().unwrap();
+            panic!(
+                "branch reply never typed: pc={} done={} page={:?} menu={}",
+                id.pc,
+                id.is_done(),
+                String::from_utf8_lossy(&id.page_bytes()),
+                id.menu_active()
+            );
+        }
+    }
+    // Dismiss the reply: the backward jump must RE-OPEN the menu (the wrap
+    // map was cleared by the picker commit), not end the conversation.
+    world.step_inline_dialogue(true, false, false);
+    let mut guard = 0;
+    while !world.inline_dialogue.as_ref().unwrap().menu_active() {
+        assert!(
+            !world.inline_dialogue.as_ref().unwrap().is_done(),
+            "menu re-emission must survive the wrap rule"
+        );
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(guard < 80, "menu never re-emitted");
+    }
+}
+
 /// Build the A/B menu script used by the inline-dialogue tests: prompt "Hi",
 /// a 2-option picker whose option A branch SETs system flag 5 and option B SETs
 /// flag 6, each followed by a reply + conversation-end terminator.

@@ -514,6 +514,13 @@ impl World {
             panel.tick();
             if confirm {
                 if panel.menu_active() {
+                    // NB: unlike the inline runner's picker commit, the wrap
+                    // map is NOT cleared here. A cutscene record's picker
+                    // picks a branch of one linear scene (the Mei beat's
+                    // mid-conversation choice); clearing the map let the
+                    // record replay already-played choreography before
+                    // re-wrapping. Re-emission menus live in interaction
+                    // records (the inline runner), not timeline records.
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                     match target {
@@ -1108,10 +1115,13 @@ impl World {
                 if panel.menu_active() {
                     // Commit the choice: apply the option's relative jump and
                     // resume the VM at the branch handler (its flag-sets /
-                    // scene-change run before the reply box).
+                    // scene-change run before the reply box). A user choice is
+                    // progress - clear the wrap map so menu records that
+                    // re-emit their menu by jumping back still cycle.
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                     id.last_choice = Some(choice);
+                    id.visited.iter_mut().for_each(|v| *v = false);
                     match target {
                         Some(t) => id.pc = t,
                         None => id.done = true,
@@ -1159,7 +1169,25 @@ impl World {
                 id.done = true;
                 break;
             }
+            if id.pc < id.visited.len() {
+                id.visited[id.pc] = true;
+            }
             match vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc) {
+                // A backward Advance onto an already-executed PC is the
+                // record's resident loop-back to its top selector - the end
+                // of ONE conversation pass (retail parks there until the next
+                // talk). End the conversation like a Halt would; the wrap map
+                // is cleared on picker commits so menu re-emission survives.
+                FieldStepResult::Advance { next_pc }
+                    if next_pc <= id.pc && id.visited.get(next_pc).copied().unwrap_or(false) =>
+                {
+                    if let Some(fb) = id.fallback_segment_pc.take() {
+                        id.pc = fb;
+                        continue;
+                    }
+                    id.done = true;
+                    break;
+                }
                 FieldStepResult::Advance { next_pc } => id.pc = next_pc,
                 FieldStepResult::Yield { resume_pc } => id.pc = resume_pc,
                 // A wait/hold, an unhandled op, or an end: stop. (Unlike the

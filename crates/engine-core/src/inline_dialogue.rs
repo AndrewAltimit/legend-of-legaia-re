@@ -60,12 +60,23 @@ pub struct InlineDialogue {
     /// to the field-VM host so the prologue's `0x4C 0x51` NPC-run ops can
     /// walk the right actor. `None` for hand-started scripts.
     pub npc_slot: Option<u8>,
+    /// Per-byte "an instruction was executed here" map over
+    /// [`Self::bytecode`]. Interaction records are **resident conversation
+    /// drivers**: every story-state branch exits by jumping to a shared tail
+    /// that loops back to the top selector, and retail parks there until the
+    /// next talk. A VM `Advance` jumping backward onto an already-executed PC
+    /// is that loop-back - the end of ONE conversation pass - so the runner
+    /// ends there instead of replaying the branch forever. Cleared on every
+    /// picker commit so menu records (which re-emit their menu by jumping
+    /// back after a branch reply) still cycle - a user choice is progress.
+    pub visited: Vec<bool>,
 }
 
 impl InlineDialogue {
     /// Start running `bytecode` from `pc`. The stored `DialogRequest.inline`
     /// begins at the first `0x1F` segment, so callers pass `pc = 0`.
     pub fn new(bytecode: Arc<Vec<u8>>, pc: usize) -> Self {
+        let visited = vec![false; bytecode.len()];
         Self {
             bytecode,
             ctx: FieldCtx::default(),
@@ -75,6 +86,7 @@ impl InlineDialogue {
             last_choice: None,
             fallback_segment_pc: None,
             npc_slot: None,
+            visited,
         }
     }
 
@@ -92,6 +104,7 @@ impl InlineDialogue {
     /// `FUN_80039B7C` state 0 calling the dispatcher on the record from
     /// `actor[+0x9E]` rather than from the first segment.
     pub fn with_prologue(bytecode: Arc<Vec<u8>>, entry_pc: usize, first_segment: usize) -> Self {
+        let visited = vec![false; bytecode.len()];
         Self {
             bytecode,
             ctx: FieldCtx::default(),
@@ -101,6 +114,7 @@ impl InlineDialogue {
             last_choice: None,
             fallback_segment_pc: Some(first_segment),
             npc_slot: None,
+            visited,
         }
     }
 
