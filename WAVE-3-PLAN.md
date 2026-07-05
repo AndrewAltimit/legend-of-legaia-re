@@ -6,6 +6,46 @@ progress trackers). Companion to `~/Downloads/legaia-backlog.txt`, the
 question-level index (`docs/reference/open-rev-eng-threads.md`), and the
 port-catalog dashboard.
 
+## LANDED (this session — parallel-subagent execution)
+
+A 13-agent parallel wave ran against this plan (9 read-only RE investigations +
+3 worktree code arcs + 2 worktree doc-application agents). Committed to
+`re-wave-3`, local only. Headline outcomes:
+
+- **Track A largely de-blocked statically (the mislabeled-static pattern held).**
+  - **A7** is now ~fully static: complete status table, guard-passive
+    auto-clear map, and the pinned `+0x16E`→command-arrow map (`0x08`=Left,
+    `0x10`=Right, `0x20`=Up+Down, `0x38`=Attack-off, `0x1000`=Curse→Magic) that
+    replaces the engine's reconstruction. Bytes 1/2 are cosmetic-only. The ONLY
+    true remaining capture is the `+0x16E` bit `0x400` (Sleep/Numb-like
+    guard-disable) applier. Corrections: Curse writes no `+0x21F`; Venom/Toxic
+    are 9/10·7/10 roll debuffs, not DoT.
+  - **record[0]+0x5C** — static negative close (rebased-at-load vestigial
+    paired-relocation field, `FUN_80052FA0:561`, no reader). Off Track A.
+  - **scene-v12** — staging hypothesis falsified (`FUN_8001F05C`/`FUN_8002541C`
+    hold no v12 handler); b0 stays capture-blocked with a sharper target.
+- **Static closes landed:** fishing reel buttons (Cross/Square, not Circle),
+  Baka Fighter bindings + vestigial settle-timer, tile-board (always
+  procedural + header/flag/render model), `DAT_8007C018[5..N]` populate +
+  `attr` render-unused, effect-id→move join design, C1 straggler `801E1FB0`
+  (false positive — intra-function label). Port-worklist honesty pass: worklist
+  486→479 (7 host-emission helpers ignore-listed); only 2 genuine gaps
+  (`801d688c` menu cursor-nav, `80024e08` set-model stub).
+- **Engine arcs:** Arc 3 screen-space POLY_FT4/OT overlay pass in engine-render
+  (GPU-verified, afterimage/billboard wired); B6 halt-acquire handshake +
+  faithful per-leg NPC glide (22/25 town01 placements now disc-derived);
+  level-up battle-actor `+0x14C..+0x176` field map + growth-port disc test.
+- **Arc 1 (chapter spine)** — recon/blueprint only (deferred implementation to
+  avoid clobbering the in-flight engine-core worktrees): chain is
+  `town01 → [garmel] → map01 hub → {rikuroa|keikoku} → dolk` (boss Zeto); the
+  one hard wall is GAP 1 (unconsumed `WorldMapTransition` + no
+  `target_map→CDNAME` resolver). This is the next arc to implement.
+
+Still genuinely capture-blocked (real Track-A residue): the `+0x16E 0x400`
+applier, scene-v12 b0, the 13 Super connectors (low value), summon render-mode
+live seat (no exerciser). Effect-index CLI/test = documented, ready to
+implement.
+
 ## Ground truth as of main @ a32d6749 (#303)
 
 Recon verified against the tree (two independent sweeps, 2026-07-05):
