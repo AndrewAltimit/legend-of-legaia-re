@@ -175,6 +175,23 @@ The prototype table is exactly `(0x6418 - 0x6324) / 4 = 61` entries; the same
 safety check). Parsed by `legaia_asset::move_power::EffectAuxTables`; the
 per-entry dispatch is `EffectListEntry::classify`.
 
+### Effect-id → triggering-move inverse index (disc-derivable, no capture)
+
+The join from a spawned effect back to the move(s) that trigger it is **fully
+disc-derivable** from the parsed table plus the id→index map - no runtime
+capture is needed. Walk every mapped move record, read its `+0x12` and `+0x16`
+effect-id lists, classify each byte with `EffectListEntry::classify`, and invert:
+each effect id gains the set of move ids whose lists cite it. The index is keyed
+on `(space, id)`, because `+0x12`/`+0x16` **multiplex two id spaces**: the
+Proto3D space (`0x01..=0x63` → `0x801f6324[id]` scene-graph prototype) and the
+Efect2D space (bit 7 set → `efect.dat` pool id `& 0x7F`), plus the `0x64`
+FixedFlash singleton. Note that `+0x0a` `impact_effect` is a **separate** `1..5`
+config selector into `0x801f53d4` (`(value-1)*4`), **not** part of the effect-pool
+id space - keep it out of the inverse index. There is **no symbolic
+effect-name table**, so `id → move` is the achievable join (an effect is named
+only by its `(space, id)`). A future `asset move-power --effect-index`
+subcommand would emit this inverse table directly from the disc.
+
 ### `+0x00` at full / half / quarter
 
 `FUN_801dd0ac` / `801f3990` read `+0x00` three ways for the same move: `>>0x10`

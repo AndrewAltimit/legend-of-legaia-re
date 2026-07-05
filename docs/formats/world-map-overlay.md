@@ -167,9 +167,14 @@ coordinate. It varies smoothly across the `count_b` groups (consecutive groups'
 `attr` at the same slot track closely - e.g. Drake body 0 group 0 vs 1:
 `29953→30465`, `1286→1286`). It rides in the high half of the `VZn` word, which
 the GTE vertex load discards, so its consumer is **not** the prim renderer
-(`FUN_80044c14`). Its meaning stays open - a real per-vertex attribute (135
-distinct values in one Sebucus body) read by some path other than the vertex
-transform.
+(`FUN_80044c14`). **Resolved (render-unused).** A full sweep of the cluster-A
+handler family finds **no reader** of the pool word's high half anywhere in the
+corpus: the 43 `>> 0x10` hits in the family are all **command-word index
+extraction** (forming pool pointers), and every place a record's `word1` is
+loaded, it goes **whole** into the GTE `VZn` register and the high half is
+discarded (`grep puVar[1] >> 0x10` = zero). So `attr` is real per-vertex data
+(135 distinct values in one Sebucus body) that the engine never reads -
+reserved / authoring data, render-unused.
 
 **`kind`/`count` consumer - pinned.** A Read-watchpoint on body 0's header
 (`0x8011A664`, the `count`/`kind` words) during the Drake warp catches the
@@ -285,6 +290,13 @@ kingdom overlay code.
 |---|---|---|---|
 | **Cluster A - TMD-style primitive renderer (`FUN_80043390` + handlers)** | dispatcher entry `0x80043390`; per-kind handler bodies at `0x80043658..0x80045988` | `0x8001B47C` (inside `FUN_8001ada4`), `0x801F78D4` (world-map overlay) - both present in every kingdom; Drake additionally captured `0x8001BC8C` | the outer count, body word offsets, and per-body record bytes - see [Cluster A internals](#cluster-a-internals) below |
 | **Cluster B - secondary mid-body reader** | `0x80059DE4` | `0x80059C00` (SCUS) - identical across all three kingdoms | body 4 records start, body 4 mid (+0x800), body 9 region, body 12 later (+0x2800) |
+
+> **Cluster-B provenance caveat.** The dump file `ghidra/scripts/funcs/80059de4.txt`
+> is **mislabeled**: its function entry is `FUN_80059BD4`, which is a **generic
+> VRAM `LoadImage` DMA**, not a slot-4-specific reader. The Exec-bp hits at
+> `0x80059DE4` fall inside that DMA routine, so "cluster B" is the generic
+> image-upload path incidentally touching the slot-4 RAM window, not a dedicated
+> slot-4 consumer. The real slot-4 render path is cluster A.
 
 Cluster A's code window contains GTE opcodes (`4A280030` = MVMVA,
 `4B400006` = NCLIP, `4812C000` = SWC2/load) interleaved with `LW` reads
@@ -1037,7 +1049,16 @@ swap (weapon variant, etc.) - see the
 section's `FUN_8001EBEC` row in the readers table for the matching
 asm trace.
 
-### Loader chain - partly open
+### Loader chain - resolved
+
+The retail loader is the overlay-resident scene loader **`FUN_801D6704`**
+(`ghidra/scripts/funcs/overlay_world_map_801d6704.txt`): it calls
+`FUN_80020118` to install PROT 0874 section 0 into `DAT_8007C018[0..4]`, then
+`FUN_80020224(0)` (line ~1022 of the dump) to install the kingdom-derived
+`[5..N]` via the generic `FUN_8001F05C case 2` → `FUN_80026B4C` TMD-pack chain
+- the **same** descriptor walk every field scene runs; there is no
+kingdom-specific installer. The static-SCUS dead ends below are retained for
+provenance:
 
 `FUN_8001E890`'s retail-PROT branch (`DAT_8007B8C2 != 0`) calls
 `FUN_8003eb98(0x36C, piVar2, 1)`, which loads PROT 876's raw bytes
@@ -1050,15 +1071,16 @@ and either (a) is gated off by `DAT_8007B8C2 == 0` in retail or (b)
 is dead code. The `data\field\player.lzs` string and PROT-876 fast
 path both fall over the same shape mismatch.
 
-The retail loader that actually installs PROT 0874's section 0 into
-`DAT_8007C018[0..4]` is not yet pinned. `FUN_800520F0` (the battle
-scene loader) loads PROT 873+874 contiguously, but its two install
-loops walk both buffers as flat `[count, offsets[], data]` packs and
+Among the **static SCUS** sites, `FUN_800520F0` (the battle scene
+loader) loads PROT 873+874 contiguously, but its two install loops
+walk both buffers as flat `[count, offsets[], data]` packs and
 process PROT 874's `count = 3` entries via `FUN_8001fbcc` (VDF
 install). PROT 874 section 0 is gated on the type byte (`0x01`), so
-a different dispatch site must funnel section 0 through the TMD-pack
-handler (`FUN_8001F05C case 2` → `FUN_80026B4C`) rather than VDF.
-Tracing that site is in [Open work](#open-work) below.
+no static SCUS site funnels section 0 through the TMD-pack handler -
+that dispatch lives in the overlay loader `FUN_801D6704` above
+(`FUN_80020118` → `FUN_8001F05C case 2` → `FUN_80026B4C`). The one
+residual is the exact CDNAME indirection handing `FUN_80020118` its
+PROT-0874 bytes; see [Open work](#open-work) below.
 
 ### Live snapshot (Sebucus mid-warp)
 
@@ -1099,15 +1121,24 @@ wrong-base sampling artifact). See
 
 ## Open work
 
-1. **~~Slot-4 → TMD converter~~ - dissolved.** There is no converter:
-   the slot-4 records are read in place by the world-map renderer, and
-   the kingdom-derived `DAT_8007C018` entries come from the scene's
-   TMD packs, not from slot 4. What remains open on the loader side is
-   which call populates the kingdom-derived entries `[5..N]` - a
-   Read-bp probe watching `DAT_8007C018[*]` entry addresses during the
-   install pass would identify it.
+1. **~~Slot-4 → TMD converter~~ - dissolved; ~~kingdom `[5..N]` populate~~ - resolved.**
+   There is no converter: the slot-4 records are read in place by the
+   world-map renderer, and the kingdom-derived `DAT_8007C018` entries come
+   from the scene's TMD packs, not from slot 4. **The `[5..N]` populate is the
+   same generic descriptor walk every town uses - there is no kingdom-specific
+   installer.** The world-map loader `FUN_801D6704`
+   (`ghidra/scripts/funcs/overlay_world_map_801d6704.txt`) calls
+   `FUN_80020118` (party / character meshes → `DAT_8007C018[0..4]`) and then a
+   single `FUN_80020224(0)` (the call at line ~1022 in the dump) that fills
+   `[5..N]`. `FUN_80020224` walks the descriptor pack into `FUN_8001F05C case 2`
+   (the LZS TMD-pack installer), which calls `FUN_80026B4C` per TMD, storing at
+   `DAT_8007C018[DAT_8007B774]`. `FUN_80026B4C` mirrors the install cursor to
+   `gp+0x820` (= `DAT_8007BB38`) **before** incrementing `DAT_8007B774`, so
+   `DAT_8007BB38 = DAT_8007B774 - 1` is the **inclusive** upper bound the table
+   walkers loop on (`i < DAT_8007BB38 + 1`). Same chain, same counters as any
+   field-scene load.
 
-   **Static-side evidence narrowing the hunt** (sweep via
+   **Static-side evidence narrowing the earlier MOVE-buffer hunt** (sweep via
    [`scripts/ghidra-analysis/scan_funcs_for_addr_range.py`](../../scripts/ghidra-analysis/scan_funcs_for_addr_range.py)
    across SCUS + every captured overlay dump under
    `ghidra/scripts/funcs/`):
@@ -1137,16 +1168,21 @@ wrong-base sampling artifact). See
      only through the generic table walkers that iterate
      `[0..DAT_8007BB38]`.
 
-2. **Per-record 4th `i16` (`attr`).** 0 for body 4, 22 distinct values
-   in body 5, 214 distinct in body 12. Body-12 attr-values cluster at
-   `±1280, ±1792, 1793, ±1281, ±1025` - look like packed (high-byte,
-   low-byte) tags rather than indices. There is **no** body-kind ↔
-   cmd_flags bank link: Drake's dispatcher-entry probe shows neither `0x04000000` nor
-   `0x20000000` is ever set in retail world-map play; only banks
-   `0x00` and `0x50` (the fade-flag distinction) are exercised. See
-   [Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play).
-   So body `kind ∈ {1, 2, 4}` is slot-4-internal data with no link to
-   cluster-A bank dispatch.
+2. **~~Per-record 4th `i16` (`attr`)~~ - resolved (render-unused).** `attr`
+   is the high half of the record's `VZn` word (0 for body 4, 22 distinct
+   values in body 5, 214 distinct in body 12; body-12 values cluster at
+   `±1280, ±1792, 1793, ±1281, ±1025`, like packed tags). A full sweep of the
+   cluster-A handler family finds **no reader** of the pool word's high half:
+   the 43 `>> 0x10` hits in the family are all command-word index extraction,
+   and each record `word1` is loaded whole into the GTE `VZn` register with the
+   high 16 bits discarded (`grep puVar[1] >> 0x10` = zero). So `attr` is
+   **render-unused reserved per-vertex data** - real per-vertex authoring data
+   the engine never reads on any render path. (Separately, there is **no** body
+   `kind ↔ cmd_flags` bank link: Drake's dispatcher probe never sets
+   `0x04000000` / `0x20000000`, so only banks `0x00` and `0x50` are exercised -
+   see [Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play).
+   Body `kind ∈ {1, 2, 4}` is slot-4-internal, unlinked to cluster-A bank
+   dispatch.)
 
 3. **Banks 2 (`0xA0`) and 3 (`0xF0`).** Banks reachable in the
    dispatcher but never observed during retail world-map play.
@@ -1197,15 +1233,17 @@ wrong-base sampling artifact). See
 
    **Conclusion**: the dispatch goes through the generic
    `FUN_80020224` → `FUN_8001F05C case 2` → `FUN_80026B4C` chain
-   from an overlay-resident scene loader (`FUN_801D6704` family
-   - present in many scene/menu overlay dumps), not from any
-   static `SCUS_942.54` site. The overlay populates
-   `_DAT_8007B85C` from PROT 874 before invoking the asset-pack
-   walker, but the exact CDNAME indirection (which overlay, on
-   which path) needs a write-bp probe on `DAT_8007C018[0]` to
-   isolate. The Lua-probe approach described in
-   [`docs/tooling/pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)
-   is the appropriate next step.
+   from the **overlay-resident scene loader `FUN_801D6704`**
+   (`ghidra/scripts/funcs/overlay_world_map_801d6704.txt`), not from
+   any static `SCUS_942.54` site. `FUN_801D6704` calls `FUN_80020118`
+   to fill the party / character meshes `DAT_8007C018[0..4]` (PROT
+   0874 section 0), then `FUN_80020224(0)` to fill the kingdom-derived
+   `[5..N]` - the same generic descriptor walk every field scene runs,
+   with **no** kingdom-specific installer. So the outer producer is
+   pinned; what remains is only the exact CDNAME indirection that hands
+   `FUN_80020118` its PROT-0874 bytes (a write-bp probe on
+   `DAT_8007C018[0]` would settle it, per
+   [`docs/tooling/pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)).
 
    A further static narrowing: the `FUN_8001F05C` case-2
    "freeze" sub-path (`if (param_3 == 1) { _DAT_8007B704 =

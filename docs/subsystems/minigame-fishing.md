@@ -36,9 +36,12 @@ The reeling / fish-AI tick `FUN_801d4004` and the per-fish actor handler `FUN_80
 
 The hooked-fight is a tug-of-war between the player's reel input and the fish's pull, mediated by the tension gauge `DAT_801d9168` (range `0`..`0x1000`). The whole update lives in `FUN_801d4004` (`overlay_fishing_801d4004.txt`); the gauge math at its tail is:
 
-- **Reel held** (`_DAT_8007b850 & 0x40` or `& 0x80`, the held-pad reel buttons): tension *increases* by a per-frame step derived from a base pull, divided by a rod-dependent divisor (`_DAT_80084454 * 9 + 0x23` for one button, `* 6 + 0x19` for the other) and scaled by the frame-step `DAT_1f800393`. Holding reel also nudges the line / depth value `DAT_801d9298` down by a small per-state amount.
-- **Reel released** (`(_DAT_8007b850 & 0xc0) == 0`): tension *decreases* by `(_DAT_80084454 * 0x40 + 0x4a) * DAT_1f800393`.
+- **Reel held** (`_DAT_8007b850 & 0x40` = **Cross** = reel A, or `& 0x80` = **Square** = reel B): tension *increases* by a per-frame step derived from a base pull, divided by a rod-dependent divisor (`_DAT_80084454 * 9 + 0x23` for reel A / Cross, `* 6 + 0x19` for reel B / Square) and scaled by the frame-step `DAT_1f800393`. Holding reel also nudges the line / depth value `DAT_801d9298` down by a small per-state amount.
+- **Reel released** (`(_DAT_8007b850 & 0xc0) == 0`, neither Cross nor Square held): tension *decreases* by `(_DAT_80084454 * 0x40 + 0x4a) * DAT_1f800393`.
+- **Mirror mode** (`_DAT_8007b850 & 0x2` = **R2**): the reel-direction mirror toggle read alongside the two reel buttons.
 - The gauge is then clamped to `[0, 0x1000]`. (Confirmed: clamp at `0x1000` high, `0` low.)
+
+The reel buttons are pinned from the pad-mask packer `FUN_8001822C` (both its digital and analog paths cross-confirm the map), which builds `_DAT_8007b850` from pad-1's low 16 bits: `0x10` Triangle, `0x20` Circle, `0x40` Cross, `0x80` Square, `0x1000` Up, `0x2000` Right, `0x4000` Down, `0x8000` Left, `0x0001` L2, `0x0002` R2, `0x0004` L1, `0x0008` R1, `0x0100` Select, `0x0200` L3, `0x0400` R3, `0x0800` Start. So reel A = Cross and reel B = **Square** (not Circle); Circle (`0x20`) is instead the cast / hook-state input.
 
 `_DAT_80084454` is a persistent rod / upgrade stat read from the save block; a higher value softens the per-frame tension change. The fish's own behaviour is a sub-state machine on `DAT_801d910c` (run / dart-left / dart-right / dive, selected pseudo-randomly via the BIOS `rand` `func_0x80056798`), which moves the fish actor and modulates the pull; the timer `DAT_801d9110` counts down each behaviour and re-rolls the next. Per-fish parameters (pull magnitudes, dart push, behaviour-selection cutoffs, scoring value) come from the per-species table documented in [Per-species parameter table](#per-species-parameter-table) below, indexed by `DAT_801d91cc * 0x28` based at `&DAT_801d81a4`.
 
@@ -112,7 +115,7 @@ Engine port: [`legaia_engine_core::fishing`](../../crates/engine-core/src/fishin
 
 The `FishingSession` composes those kernels into a cast → fight → score loop. The win/lose glue (line-snaps-at-max-tension, reel-progress land, the locked-cast species pick, and the steady per-frame fish pull) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in.
 
-Runtime wiring: installed as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing` / `tick_fishing` / `exit_fishing`). The `play-window` viewer starts it from the `L` key (loads the fishing overlay PROT 0972, `fishing_species::parse`); Cross locks the cast and reels (reel A), Circle is reel B, and the HUD shows the cast-power / tension / catch-result line plus the running point total. `P` opens the [point exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue, Enter trades).
+Runtime wiring: installed as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing` / `tick_fishing` / `exit_fishing`). The `play-window` viewer starts it from the `L` key (loads the fishing overlay PROT 0972, `fishing_species::parse`); Cross locks the cast and reels (reel A), Square is reel B (retail: `0x80`), and the HUD shows the cast-power / tension / catch-result line plus the running point total. `P` opens the [point exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue, Enter trades).
 
 ## Point exchange (prize shop)
 
@@ -138,4 +141,4 @@ Parsers: [`legaia_asset::fishing_exchange`](../../crates/asset/src/fishing_excha
 
 ## Open
 
-- The exact bit assignment of the reel buttons within `_DAT_8007b850` (which physical face/shoulder buttons `0x40` / `0x80` map to) is not pinned from these dumps.
+No open items. The reel-button bit assignment within `_DAT_8007b850` - the last remaining question - is now pinned from `FUN_8001822C`: reel A = `0x40` = Cross, reel B = `0x80` = Square, mirror = `0x2` = R2 (see [Tension / reeling mechanic](#tension--reeling-mechanic)).
