@@ -954,6 +954,57 @@ impl PlayWindowApp {
             }
         }
 
+        // Cutscene-timeline dialog box: a `0x1F` conversation segment inside a
+        // spawned partition-2 record (e.g. the town01 Mei walk-on beat). The
+        // world's timeline stepper owns ticking + input; same layout as the
+        // other panels.
+        if let Some(panel) = self
+            .session
+            .host
+            .world
+            .cutscene_timeline
+            .as_ref()
+            .and_then(|tl| tl.dialog.as_ref())
+        {
+            let to_ascii = |bytes: &[u8]| -> String {
+                bytes
+                    .iter()
+                    .map(|&b| {
+                        if (0x20..=0x7E).contains(&b) {
+                            b as char
+                        } else {
+                            '?'
+                        }
+                    })
+                    .collect()
+            };
+            let page = to_ascii(&panel.page_bytes());
+            if !page.is_empty() {
+                let layout = self.font.layout_ascii(&page);
+                let pen = ((w as i32) / 8, (h as i32) * 7 / 10);
+                out.extend(text_draws_for(&layout, pen, [1.0, 1.0, 1.0, 1.0]));
+                if panel.menu_active()
+                    && let Some(picker) = panel.picker()
+                {
+                    let line_h = 16i32;
+                    let cursor = panel.picker_cursor();
+                    for (i, opt) in picker.options.iter().enumerate() {
+                        let selected = i == cursor;
+                        let marker = if selected { "> " } else { "  " };
+                        let label = format!("{marker}{}", to_ascii(&opt.label));
+                        let row_layout = self.font.layout_ascii(&label);
+                        let row_pen = (pen.0 + (w as i32) / 16, pen.1 + line_h * (i as i32 + 1));
+                        let color = if selected {
+                            [1.0, 1.0, 0.6, 1.0]
+                        } else {
+                            [0.8, 0.85, 1.0, 1.0]
+                        };
+                        out.extend(text_draws_for(&row_layout, row_pen, color));
+                    }
+                }
+            }
+        }
+
         // Inline-script field-VM runner box (the `--vm-dialogue` faithful path).
         // Same layout as the simplified panel, but the source is
         // `world.inline_dialogue`, which the world ticks itself.

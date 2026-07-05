@@ -493,6 +493,49 @@ impl World {
             self.cutscene_timeline = Some(tl);
             return;
         }
+        // Parked at an inline dialog box (a `0x1F` glyph segment the record's
+        // own flow reached - e.g. the Mei walk-on beat's conversation). Tick
+        // the typewriter and route pad input exactly as the inline-script
+        // runner does ([`Self::step_inline_dialogue`]): Up/Down move a picker
+        // cursor, confirm commits a choice (applying its relative jump) or
+        // dismisses a finished box, resuming the timeline past the segment.
+        // The park freezes the frame cap - a dialog waits on the player.
+        if let Some(panel) = tl.dialog.as_mut() {
+            let confirm = self.input.just_pressed(crate::input::PadButton::Cross)
+                || self.input.just_pressed(crate::input::PadButton::Circle);
+            if panel.menu_active() {
+                if self.input.just_pressed(crate::input::PadButton::Up) {
+                    panel.move_picker_cursor(-1);
+                }
+                if self.input.just_pressed(crate::input::PadButton::Down) {
+                    panel.move_picker_cursor(1);
+                }
+            }
+            panel.tick();
+            if confirm {
+                if panel.menu_active() {
+                    let choice = panel.picker_cursor();
+                    let target = panel.picker().and_then(|pk| pk.jump_target(choice));
+                    match target {
+                        Some(t) => tl.pc = t,
+                        None => tl.done = true,
+                    }
+                    tl.dialog = None;
+                } else if panel.is_waiting_for_input() || panel.is_done() {
+                    tl.pc = panel.pc;
+                    tl.dialog = None;
+                }
+            }
+            if tl.dialog.is_some() && !tl.done {
+                self.cutscene_timeline = Some(tl);
+                return;
+            }
+            if tl.done {
+                self.cutscene_timeline = None;
+                self.restore_hidden_field_npcs();
+                return;
+            }
+        }
         // Held at an inline narration block. Two hold shapes share
         // `narration_pc` (see [`crate::cutscene_timeline::CutsceneTimeline`]):
         // the LAST crawl block (blocking) waiting for its own roller to scroll
@@ -587,16 +630,59 @@ impl World {
                         }
                     }
                 }
+                // Retail dialog-SM transition test (`FUN_80039B7C`): an
+                // in-bounds byte with `& 0x7F < 0x20` is a text-segment lead
+                // (`0x1F`) or a terminator (`0x00..0x1E`), not an opcode. A
+                // `0x1F` opens an inline dialog box over the record bytes and
+                // parks the timeline at the segment (resumed by the pre-step
+                // gate when the player dismisses it). A stray terminator the
+                // flow lands on is consumed (skipped) - timeline records
+                // continue with choreography ops after their conversation, so
+                // ending here would drop the record's closing flag-sets.
+                // Running OFF the record end falls through to the VM step
+                // instead (its `Unknown` completes the timeline).
+                if let Some(&text_byte) = tl.bytecode.get(pc)
+                    && text_byte & 0x7F < 0x20
+                {
+                    if text_byte == 0x1F {
+                        tl.dialog = Some(crate::dialog::OwnedDialogPanel::at_segment(
+                            std::sync::Arc::clone(&tl.bytecode),
+                            pc,
+                        ));
+                        break;
+                    }
+                    tl.pc = pc + 1;
+                    continue;
+                }
                 let opcode_byte = tl.bytecode.get(pc).copied().unwrap_or(0);
                 // Cross-context dispatch (`0x80`-bit ops): resolve the target
                 // byte to a spawned per-actor channel (`ctx[+0x50] == target`,
                 // retail `FUN_8003C83C`) and run the op against THAT context -
                 // this is how the timeline cues the vignette actors. `0xF8`
-                // (player anchor) / `0xFB` (system) / unmatched ids keep the
-                // timeline's own context, the prior approximation.
+                // (player anchor) / `0xFB` (system) keep the timeline's own
+                // context (the player pokes route through host hooks).
+                //
+                // An UNRESOLVED id (a context the engine does not spawn -
+                // partition-0 object contexts, e.g. the Mei beat's `0x01`) is
+                // skipped by its decoded width instead: running it against the
+                // timeline's own ctx corrupted the timeline (a `B1 01 00` set
+                // the timeline's OWN busy bit, and the `CC 01 A0` busy-wait
+                // then hijacked the caller PC into the record header).
                 let target = vm::field::peek_extended(&tl.bytecode, pc).and_then(|t| {
                     crate::field_channels::resolve_target(&channels, t).map(|ci| (t, ci))
                 });
+                if target.is_none()
+                    && let Some(t) = vm::field::peek_extended(&tl.bytecode, pc)
+                    && t != 0xF8
+                    && t != 0xFB
+                    && let Ok(insn) = legaia_asset::field_disasm::decode(&tl.bytecode, pc)
+                {
+                    if pc < tl.visited.len() {
+                        tl.visited[pc] = true;
+                    }
+                    tl.pc = pc + insn.size;
+                    continue;
+                }
                 let result = if let Some((_, ci)) = target {
                     host.world.executing_channel = Some(channels[ci].placement_index as u8);
                     // The timeline is the acquirer: it halt-acquired these
@@ -663,6 +749,21 @@ impl World {
                 // plays out via the wait accumulator) and `0x49` STATE_RESUME
                 // (the name-entry suspend, driven by the op-49 host hooks).
                 let op = opcode_byte & 0x7F;
+                // Cross-context `4C A0` busy-wait (`CC <ch> A0 <bit> <s16>`):
+                // "while the poked channel's ctx-flag bit is still set, jump".
+                // Retail's channel clears its own busy bit as its move plays
+                // out frame by frame; the timeline's channel pokes complete
+                // synchronously, so the busy branch must always fall through -
+                // and the s16 target is meaningless in the caller record's pc
+                // space (taking it here derailed the Mei beat into its own
+                // header + dialog text). Force the skip path (6-byte width).
+                if op == 0x4C
+                    && target.is_some()
+                    && tl.bytecode.get(pc + 2).is_some_and(|b| b >> 4 == 0xA)
+                {
+                    next_pc = pc + 2 + 4;
+                    stop = false;
+                }
                 let is_flag_test_handshake =
                     matches!(op, 0x2D | 0x30 | 0x33) || (op == 0x4C && target.is_none());
                 if matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
@@ -674,6 +775,26 @@ impl World {
                     let header_size = if opcode_byte & 0x80 != 0 { 2 } else { 1 };
                     next_pc = pc + header_size + 1;
                     stop = false;
+                }
+                // Natural termination: the record's choreography **wrapped**.
+                // On-disc partition-2 records have no end opcode - they finish
+                // by parking in a tight `Nop`+`JmpRel`-to-self spin (the fog /
+                // flag-reset ambients) or by looping back to their top as a
+                // resident actor-driver (the Mei beat's op-`0x45` APPLY jump
+                // back to its conversation loop). Retail leaves both spinning
+                // as *parallel* contexts, invisible to the player; the modal
+                // timeline completes instead so control returns. The signal is
+                // an `Advance` jumping backward onto an already-executed PC -
+                // real waits `Halt` at their own PC and never trip this.
+                if pc < tl.visited.len() {
+                    tl.visited[pc] = true;
+                }
+                if matches!(kind, crate::cutscene_timeline::TraceResult::Advance)
+                    && next_pc <= pc
+                    && tl.visited.get(next_pc).copied().unwrap_or(false)
+                {
+                    tl.done = true;
+                    stop = true;
                 }
                 if tl.trace_enabled {
                     tl.trace.push(crate::cutscene_timeline::TraceEntry {

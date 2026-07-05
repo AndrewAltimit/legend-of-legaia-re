@@ -135,11 +135,27 @@ fn post_naming_story_beat_spawns_on_walk_on() {
         host.world.cutscene_timeline_active(),
         "walking onto the trigger band spawns the post-naming beat"
     );
+    // The beat is the Mei conversation: its inline `0x1F` dialog boxes park
+    // the timeline until the player confirms, so mash confirm on alternate
+    // ticks (edge-triggered input) while it plays out. The timeline completes
+    // at the record's resident loop-back (choreography wrapped), well under
+    // the anti-hang frame cap.
     let mut n = 0u32;
     while host.world.cutscene_timeline_active() && n < 20000 {
+        let pad = if n.is_multiple_of(2) {
+            legaia_engine_core::input::PadButton::Cross.mask()
+        } else {
+            0
+        };
+        host.world.set_pad(pad);
         host.tick().expect("tick");
         n += 1;
     }
+    host.world.set_pad(0);
+    assert!(
+        n < 3000,
+        "the beat completes naturally (ticked {n}, cap would be ~1200 frames of lock)"
+    );
     assert!(
         host.world.p2_gate_flag_set(550),
         "the beat set its one-shot flag by execution (no re-fire)"
@@ -261,6 +277,37 @@ fn house_door_binds_teleport_on_contact() {
     }
     host.world.set_pad(0);
     assert!(landed, "walking into the door lands at the interior tile");
+}
+
+/// Ambient walk-on records - fog-config / flag-reset parks with empty gates
+/// (town01 P2[21]/P2[22] at the north-path tiles, P2[16] at the well row) -
+/// complete within a tick: the record does its writes and parks in a
+/// `Nop`+`JmpRel`-to-self spin that retail leaves spinning as a parallel
+/// context. They must never lock the player (the pre-fix symptom: ~20 s of
+/// frozen controls + camera grab on every crossing, read in play-testing as
+/// "the opening scene fired again in odd places near doors").
+#[test]
+fn ambient_records_never_lock_the_player() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_field_scene("town01", 0).expect("enter town01");
+    for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    for (tx, tz) in [(14i16, 8i16), (97, 11), (14, 11)] {
+        seat_at_tile(&mut host.world, tx, tz);
+        for _ in 0..3 {
+            host.tick().expect("tick");
+        }
+        assert!(
+            !host.world.cutscene_timeline_active(),
+            "ambient record at ({tx},{tz}) must complete without locking the player"
+        );
+        // Step off so the next crossing re-arms the tile compare.
+        seat_at_tile(&mut host.world, 20, 20);
+        host.tick().expect("tick");
+    }
 }
 
 /// Gate/progression flags survive a full save/load round trip: `save_full`
