@@ -374,9 +374,19 @@ pub(crate) fn num_field_draws(
 /// retail table. `nav_hint` renders below the panel (an engine addition;
 /// pass `None` to omit).
 ///
-/// Icon primitives (the "HP"/"MP" tags, LV label, equipment icons and the
-/// HP gauge bar) are approximated with text glyphs at the icon positions -
-/// the retail UI-icon atlas (`0x800732a4` table) is not yet ported.
+/// The retail UI-icon primitives on this page - the "LV"/"HP"/"MP" label
+/// tags, the AP gauge bar and the 7-slot equipment pictograms - are ported
+/// UI-icon-atlas sprites: pass `label_icons = true` so this function
+/// suppresses their ASCII stand-ins and the caller emits the sprites from
+/// the `0x800732a4` icon table via [`status_icon_sprites_for`] (which draws
+/// the labels + equipment pictograms and folds in [`ap_gauge_sprites`]).
+/// `false` keeps the text stand-ins for callers with no atlas.
+///
+/// The derived-stat abbreviations (ATK/UDF/LDF/SPD/INT/AGL) and the
+/// number-field separators (`/`, `(`, `)`) are always drawn here as
+/// proportional text - retail renders them through the string primitive
+/// `FUN_80036888`, not the icon atlas (no `0x800732a4` record exists for
+/// them), so there is no icon sprite to stand in for.
 pub fn status_screen_draws_for(
     font: &legaia_font::Font,
     panel: &StatusPanelView<'_>,
