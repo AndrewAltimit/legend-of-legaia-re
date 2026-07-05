@@ -154,11 +154,42 @@ pub(crate) const FIELD_PROP_BOX_HALF: i32 = 0x40 + 0x10;
 ///
 /// The engine drives NPC legs through a synthetic single-op `0x47` program
 /// (see [`FIELD_NPC_MOTION_PROGRAM`]) whose operand bytes are zero, so the
-/// operand-derived base step is not carried; this constant stands in with the
-/// player's walking step magnitude (base step 8 × the default `0x1000`
-/// multiplier), pacing an NPC like a walking player. Faithful retail glide
-/// would carry each leg's real motion-op operand base step instead.
+/// motion VM cannot decode the base step from the program itself; instead the
+/// engine derives each placement's glide speed from the real `0x4C 0x51`
+/// motion-op operand off the disc ([`field_npc_glide_speed`]) and writes it
+/// into the leg's [`vm::motion_vm::MotionState::speed`]. This constant is the
+/// **fallback** used when a placement carries no decodable motion leg (and for
+/// the actor-VM sprite glide, which has no MAN motion operand): base step 8 =
+/// `field_npc_glide_speed(2)`, so a placement with the default base-step
+/// selector paces exactly as this stand-in did.
 pub(crate) const FIELD_NPC_MOTION_SPEED: u16 = 8;
+
+/// Derive a field-NPC per-frame glide speed from a motion-op base-step selector
+/// (the low 3 bits of the `0x4C 0x51` leg's `depth` operand - the MAN carrier
+/// of the motion VM's `4 << bits` base step; see [`FIELD_NPC_MOTION_SPEED`] and
+/// `docs/subsystems/field-locomotion.md`).
+///
+/// Retail `FUN_8003774C` (ops 0x37/0x41/0x47) glides at
+/// `_DAT_1f800393 × 0x80 / (4 << bits)` units per frame, i.e. per-frame
+/// magnitude `0x80 >> (2 + bits)` with the per-frame delta scalar
+/// `_DAT_1f800393 = 1` (its cold-field value). The `+0x72` player speed
+/// multiplier does NOT participate - `FUN_8003774C` never reads it - so this is
+/// purely operand-derived, unlike the player's `FUN_801d01b0` walk step:
+///
+/// | `bits` | `4 << bits` | glide speed (`0x80 >> (2+bits)`) |
+/// |--------|-------------|----------------------------------|
+/// | 0 | 4 | 32 |
+/// | 1 | 8 | 16 |
+/// | 2 | 16 | 8 (= [`FIELD_NPC_MOTION_SPEED`]) |
+/// | 3 | 32 | 4 |
+/// | 4 | 64 | 2 |
+/// | 5..=7 | 128..512 | 1 (floored) |
+///
+/// Clamped to a minimum of 1 so a leg always makes progress (retail never
+/// stalls a glide at 0).
+pub(crate) fn field_npc_glide_speed(base_step_bits: u8) -> u16 {
+    (0x80u16 >> (2 + (base_step_bits & 0x7) as u32)).max(1)
+}
 
 /// Motion-VM bytecode for one field-NPC walk leg: a single `0x47`
 /// `MoveTowardTarget` op (the pursue/glide opcode of `FUN_8003774C`). The
@@ -321,6 +352,22 @@ pub(crate) const PROLOGUE_TIMELINE_MAX_FRAMES: u32 = 3600;
 /// malformed non-yielding stretch.
 pub(crate) const FIELD_CHANNEL_STEP_BUDGET: u32 = 128;
 
+/// Frame budget for a cutscene-timeline channel-completion PARK (the
+/// cross-context `CFLAG_TST` handshake, `B3 <id> <bit>`; see
+/// [`World::step_cutscene_timeline`] and
+/// [`crate::cutscene_timeline::ChannelWait`]).
+///
+/// Retail's halt-acquire / state-resume protocol parks the timeline at the
+/// flag-test until the poked channel raises the completion bit - normally a
+/// handful of frames while the channel's own script plays its beat and sets the
+/// flag (`0x31 CFLAG_SET`). This bound caps that wait so a channel our port
+/// cannot advance to its flag-set can't stall the timeline: on expiry the
+/// timeline falls back to the by-width step-past (the pre-handshake behaviour),
+/// keeping the prologue flowing. Sized to a couple of beat-lengths, well under
+/// the [`CUTSCENE_TIMELINE_MAX_FRAMES`] / [`PROLOGUE_TIMELINE_MAX_FRAMES`] caps
+/// so many parks in one record still complete comfortably.
+pub(crate) const CHANNEL_WAIT_PARK_TIMEOUT: u32 = 30;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 pub(crate) fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
@@ -352,5 +399,30 @@ pub(crate) fn tile_step_from_input(
         Some(TileStep::Right)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn field_npc_glide_speed_derives_the_retail_base_step_ladder() {
+        // `0x80 >> (2 + (bits & 7))`, floored at 1. bits==2 reproduces the
+        // FIELD_NPC_MOTION_SPEED stand-in exactly, so the default path is
+        // behaviourally unchanged.
+        assert_eq!(field_npc_glide_speed(0), 32);
+        assert_eq!(field_npc_glide_speed(1), 16);
+        assert_eq!(field_npc_glide_speed(2), 8);
+        assert_eq!(field_npc_glide_speed(2), FIELD_NPC_MOTION_SPEED);
+        assert_eq!(field_npc_glide_speed(3), 4);
+        assert_eq!(field_npc_glide_speed(4), 2);
+        // 5..=7 floor at 1 (retail never stalls a glide at 0).
+        assert_eq!(field_npc_glide_speed(5), 1);
+        assert_eq!(field_npc_glide_speed(6), 1);
+        assert_eq!(field_npc_glide_speed(7), 1);
+        // Only the low 3 bits select the base step (matches `op[2] & 7`).
+        assert_eq!(field_npc_glide_speed(0xF8), field_npc_glide_speed(0));
+        assert_eq!(field_npc_glide_speed(0x82), field_npc_glide_speed(2));
     }
 }

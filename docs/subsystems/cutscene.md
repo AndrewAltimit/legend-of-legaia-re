@@ -605,12 +605,24 @@ and rendered as a **frozen tableau** under the crawl (the "3D isn't playing whil
 gap). Disc-gated `opening_scene_anm_bundle.rs` pins the invariant (`town01` at 3, prologue scenes
 need `≥ 5`).
 
-**Approximate by design:** the channel-completion handshake (`CFLAG_TST` / the halt-acquire
-state-resume protocol) is not fully modelled - the simplified channels don't always raise the
-exact sync flag the timeline waits on, so `step_cutscene_timeline` steps past a cross-context
-flag-test wait (`0x2D`/`0x30`/`0x33`, all 2-byte / 3-byte extended, correct-width for a fixed
-step-past) rather than parking on it, keeping the timeline flowing through all its camera beats.
-Real timed `0x4A` WAIT_FRAMES and the `0x49` STATE_RESUME name-entry suspend are still honoured.
+**Channel-completion handshake (`CFLAG_TST` / halt-acquire state-resume).** A cross-context
+`CFLAG_TST` (`B3 <id> <bit>` = op `0x33` with the `0x80` bit, targeting a spawned channel's
+`ctx[+0x50]` id and testing `ctx.flags & (1 << bit)`) is the beat-completion wait: retail's
+`4C 85` acquire freezes the channel, a poke drives its beat, `B2 <id> 0A` resumes it, and the
+timeline **halts** at the `B3` until the channel raises its completion bit (its own placement
+script runs `0x31 CFLAG_SET` when the move/anim finishes). `step_cutscene_timeline` models that
+handshake: on a failing cross-context `0x33` it **PARKS** ([`CutsceneTimeline::channel_wait`]) -
+holding the PC on the flag-test op and, each subsequent tick, re-testing the awaited channel's
+bit, resuming past the op only once it is set (`step_field_channels` steps the real channel scripts
+each tick, so a channel whose beat completes raises the bit and the park clears). The park is
+bounded by `CHANNEL_WAIT_PARK_TIMEOUT`: a channel our port cannot advance to its flag-set falls
+back to the by-width step-past (the prior behaviour) so the prologue never stalls. Bit 10 (`0x400`,
+the halt/busy bit the acquire sweep toggles) is a suspension *verify* (`B3 <id> 0A`), not a
+completion wait, so it keeps the width step-past; the local/global flag-tests `0x2D`/`0x30` and a
+bare (non-cross-context) `0x33` step past too. Real timed `0x4A` WAIT_FRAMES and the `0x49`
+STATE_RESUME name-entry suspend are still honoured. Unit-covered by
+`cutscene_timeline_parks_on_channel_wait_until_flag_set` (parks while the flag is clear, resumes
+the tick it is set) + the timeout fallback.
 
 ### Colour fade (op `0x34` sub-0)
 

@@ -423,6 +423,15 @@ impl World {
         let Some(&(cx, cz)) = self.field_npc_positions.get(&slot) else {
             return false;
         };
+        // Faithful glide speed: the placement's own `0x4C 0x51` motion-op
+        // base step (retail `FUN_8003774C` `4 << bits`), derived at scene load
+        // into `field_npc_glide_speeds`; the stand-in `FIELD_NPC_MOTION_SPEED`
+        // is the fallback for a placement with no decodable motion leg.
+        let speed = self
+            .field_npc_glide_speeds
+            .get(&slot)
+            .copied()
+            .unwrap_or(FIELD_NPC_MOTION_SPEED);
         self.field_npc_motions.insert(
             slot,
             FieldNpcMotion {
@@ -430,7 +439,7 @@ impl World {
                     world_x: cx,
                     world_y: 0,
                     world_z: cz,
-                    speed: FIELD_NPC_MOTION_SPEED,
+                    speed,
                     yaw: 0,
                     op_accum: 0,
                     pc: 0,

@@ -100,6 +100,60 @@ pub fn placement_motion_route(
     out
 }
 
+/// The per-frame glide speed placement `p`'s motion legs run at, derived from
+/// the base-step operand of its **first local** `0x4C 0x51` motion op (the
+/// `depth` byte - the MAN carrier of the motion VM's `4 << bits` base step;
+/// retail `FUN_8003774C` ops 0x37/0x41/0x47). Returns `None` when the placement
+/// carries no decodable local motion leg, so the caller falls back to the
+/// stand-in [`crate::world::FIELD_NPC_MOTION_SPEED`].
+///
+/// This reads the **same first kept leg** [`placement_motion_route`]'s first
+/// waypoint comes from (identical extended / parked-sentinel / locality
+/// filtering), so the derived speed pairs with that route. The operand ->
+/// per-frame-speed mapping is [`crate::world::field_npc_glide_speed`]
+/// (`0x80 >> (2 + (depth & 7))`). See `docs/subsystems/field-locomotion.md`.
+///
+/// Modelling note: retail synthesises the motion op from the field-VM
+/// `0x4C 0x51` operands; the base step is `(op0>>5 & 4)|(op1>>6)` of the
+/// *synthesised* motion bytecode. The engine models that selector from the
+/// `0x4C 0x51` leg's `depth` operand low 3 bits (the field-VM carrier of the
+/// glide granularity), pending an exact trace of the `0x4C 0x51` -> motion
+/// script write.
+pub fn placement_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> Option<u16> {
+    let (region, pc0) = placement_pretext_region(man_file, man, p)?;
+    for insn in LinearWalker::new(region, pc0).flatten() {
+        let InsnInfo::MenuCtrl {
+            kind:
+                MenuCtrlKind::Nibble5NpcRun {
+                    x_enc,
+                    z_enc,
+                    depth,
+                    ..
+                },
+            ..
+        } = insn.info
+        else {
+            continue;
+        };
+        if insn.extended.is_some() {
+            continue; // cross-context: drives another channel, not this actor
+        }
+        if (x_enc & 0x7F, z_enc & 0x7F) == PARKED_SENTINEL_TILE {
+            continue; // park/despawn, not a walk target
+        }
+        let (wx, wz) = (grid_byte_to_world(x_enc), grid_byte_to_world(z_enc));
+        let (dx, dz) = (
+            (wx as i32 - p.world_x as i32).abs(),
+            (wz as i32 - p.world_z as i32).abs(),
+        );
+        if dx.max(dz) > NPC_ROUTE_LOCALITY {
+            continue; // story-gated relocation, not a local patrol leg
+        }
+        return Some(crate::world::field_npc_glide_speed(depth));
+    }
+    None
+}
+
 /// The field-VM **player system channel** id (`0xF8`): a cross-context op
 /// prefixed `op | 0x80, 0xF8` targets the player actor (retail resolves it to
 /// `_DAT_8007c364`). See `docs/subsystems/script-vm.md`.
