@@ -201,24 +201,37 @@ for (i, s) in t.scripts.iter().enumerate() {
 
 ## Open questions
 
-- **Where does the loader stage the file?** (open, capture-blocked). One
-  wrong lead is now ruled out: the RAM relocation at `_DAT_8007b8d0` reached
-  via `FUN_800252EC` is the **`efect.dat` / prescript stager**, *not* the v12
-  record-table - the two share the move-VM prescript format, which caused the
-  conflation. The v12 record-table is staged instead by a **malloc'd,
-  heap-based type handler** reached through the `FUN_8001F05C` descriptor
-  dispatch (jump table `0x80010638 + type*4`), which is not in the dumped
-  corpus. Earlier overlay captures put the file at RAM `0x8014B530` for one
-  scene; that address is heap-allocated and varies per load. Closing it needs
-  a scene-load write-watchpoint on the v12 malloc buffer plus a dump of the
-  v12 descriptor-type handler; next dump lead = `FUN_8002541C` (the other
-  `FUN_8001F05C` caller).
+- **Where does the loader stage the file?** (open, capture-blocked). Two
+  earlier leads are now **falsified**:
+  - The `_DAT_8007b8d0` relocation reached via `FUN_800252EC` is the
+    **`efect.dat` / prescript stager**, *not* the v12 record-table - the two
+    share the move-VM prescript format, which caused the conflation.
+  - The "**malloc'd heap type handler via `FUN_8001F05C` dispatch**" hypothesis
+    is falsified. `FUN_8001F05C` is fully dumped (`ghidra/scripts/funcs/8001f05c.txt`);
+    its jump table `0x80010638 + type*4` has 15 cases (type `0` TIM, `1` TIM_LIST,
+    `2` TMD, `3` MAN, `4` MES, `5` MOVE, `6` ANM, `7` VDF, `8` SIN, `9` TMD2,
+    `0xA` FLAG, `0xB` MOVE2, `0xF` FLAG, `0x14` FLAG) and **none** parses a v12
+    header or a 4-byte record table. The "next dump lead" `FUN_8002541C` is also
+    ruled out: it is a generic 3-mode streaming driver (param `0x0A` = `tim.dat`
+    upload, `0x0F` = `move.mdt` memcpy, `0x14` = DATA_FIELD pack-walk into
+    `FUN_8001F05C`), not a v12 stager.
+  - **Why f05c can't be it:** the v12 file is a **standalone top-level PROT entry**
+    (its offset-0 word is `N + 4` with high byte `0x00`), not a `type << 24`
+    self-describing chunk, so it is never dispatched through `FUN_8001F05C` at all.
+  - **Reframe:** the v12 record-table consumer is a **scene-specific reader**, not
+    a generic asset-dispatch handler. The sharper target is the world-map / kingdom
+    placement path plus an un-analyzed reader near `~0x800219xx` that reads
+    `_DAT_8007b85c` (consistent with the `(b0, b1)` pair mapping to actor
+    placements on world-map kingdom scenes). Closing it still needs a scene-load
+    write-watchpoint capture; earlier captures put the file at heap RAM
+    `0x8014B530` for one scene (varies per load).
 - **What does `b0` index into?** (open). For Drake the `b0` values fit inside
   the scene's TMD pack count (40 slots), but for other scenes they exceed it,
   so "global TMD-slot index" is **falsified**. The plausible reading is a
   **scene-local** resource / placement index into a loader-built table (built
   from the v12 header), not a global slot id - unconfirmed pending the
-  staging-site capture above.
+  staging-site capture above (the narrowed lead is the `~0x800219xx` /
+  `_DAT_8007b85c` reader on the world-map kingdom path).
 - **Two prescript tables per scene** - the sister offset-0 `scene_event_scripts`
   entry and this offset-0x800 table - carry the same move-VM stager records. Both
   are consumed by the move VM via `FUN_800252EC` → `FUN_80021B04`

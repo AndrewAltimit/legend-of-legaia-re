@@ -186,6 +186,130 @@ pub(crate) fn move_power_cmd(input: &Path, json: bool) -> Result<()> {
     Ok(())
 }
 
+/// `asset move-power <PROT 0898> --effect-index` - emit the effect-id ->
+/// triggering-move inverse index: one row per `(space, id)` effect key, each
+/// with the set of moves whose `+0x12` / `+0x16` lists cite it and (for the
+/// Proto3D space) the resolved prototype VA + SFX cue from the aux tables.
+pub(crate) fn move_power_effect_index_cmd(input: &Path, json: bool) -> Result<()> {
+    use legaia_asset::move_power::{self, EffectFired, EffectKey};
+
+    let bytes = std::fs::read(input)?;
+    let Some(table) = move_power::parse(&bytes) else {
+        anyhow::bail!(
+            "no move-power table at the pinned offset {:#x} in {} ({} bytes) - \
+             is this the raw PROT 0898 battle-action overlay entry?",
+            move_power::MOVE_POWER_TABLE_FILE_OFFSET,
+            input.display(),
+            bytes.len(),
+        );
+    };
+    let Some(map) = move_power::parse_id_index_map(&bytes) else {
+        anyhow::bail!(
+            "no id->index map in {} - the effect inverse index needs the map to \
+             attribute effects to move ids",
+            input.display(),
+        );
+    };
+    // Aux tables resolve Proto3D keys to their prototype VA + SFX cue (optional:
+    // an overlay missing them still yields the move-id inverse).
+    let aux = move_power::EffectAuxTables::parse(&bytes);
+    let index = move_power::effect_trigger_index(&table, &map);
+
+    // Describe a key's (space, id) and, for Proto3D, its resolved aux fields.
+    let space_of = |k: &EffectKey| -> &'static str {
+        match k {
+            EffectKey::Proto3D(_) => "proto3d",
+            EffectKey::Efect2D(_) => "efect2d",
+            EffectKey::Flash => "flash",
+        }
+    };
+    let id_of = |k: &EffectKey| -> Option<u8> {
+        match k {
+            EffectKey::Proto3D(id) | EffectKey::Efect2D(id) => Some(*id),
+            EffectKey::Flash => None,
+        }
+    };
+    let proto_of = |k: &EffectKey| -> Option<u32> {
+        match k {
+            EffectKey::Proto3D(id) => aux.as_ref().and_then(|a| a.effect_proto(*id)),
+            _ => None,
+        }
+    };
+    let sfx_of = |k: &EffectKey| -> Option<u8> {
+        match k {
+            EffectKey::Proto3D(id) => aux.as_ref().and_then(|a| a.effect_sfx(*id)),
+            _ => None,
+        }
+    };
+    let fired_str = |f: EffectFired| match f {
+        EffectFired::Contact => "contact",
+        EffectFired::Launch => "launch",
+    };
+
+    if json {
+        let rows: Vec<_> = index
+            .iter()
+            .map(|(key, triggers)| {
+                let trigs: Vec<_> = triggers
+                    .iter()
+                    .map(|t| {
+                        serde_json::json!({
+                            "move_id": t.move_id,
+                            "record_idx": t.record_idx,
+                            "fired": fired_str(t.fired),
+                        })
+                    })
+                    .collect();
+                serde_json::json!({
+                    "space": space_of(key),
+                    "id": id_of(key),
+                    "proto_va": proto_of(key).map(|v| format!("{v:#010x}")),
+                    "sfx": sfx_of(key),
+                    "no_triggering_move_id": triggers.iter().all(|t| t.move_id.is_none()),
+                    "triggers": trigs,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+
+    println!(
+        "effect-id -> triggering-move inverse index ({} effect keys), from PROT 0898 \
+         move-power records' +0x12 (contact) / +0x16 (launch) lists; keyed on (space, id)",
+        index.len()
+    );
+    for (key, triggers) in &index {
+        let id = id_of(key)
+            .map(|i| format!("{i:#04x}"))
+            .unwrap_or_else(|| "-".to_string());
+        let mut extra = String::new();
+        if let Some(va) = proto_of(key) {
+            extra.push_str(&format!(" proto={va:#010x}"));
+        }
+        if let Some(sfx) = sfx_of(key) {
+            extra.push_str(&format!(" sfx={sfx:#04x}"));
+        }
+        let trigs: Vec<String> = triggers
+            .iter()
+            .map(|t| {
+                let who = t
+                    .move_id
+                    .map(|m| format!("move {m:#04x}"))
+                    .unwrap_or_else(|| "no-move".to_string());
+                format!("{who}@rec{}({})", t.record_idx, fired_str(t.fired))
+            })
+            .collect();
+        println!(
+            "  {:<8} {:<5}{extra}  <- [{}]",
+            space_of(key),
+            id,
+            trigs.join(", ")
+        );
+    }
+    Ok(())
+}
+
 /// Parse + print the battle element-affinity matrix and per-character table.
 pub(crate) fn element_affinity_cmd(input: &Path, json: bool) -> Result<()> {
     use legaia_asset::element_affinity::{self, Element};

@@ -582,6 +582,18 @@ pub struct World {
     /// order is deterministic (the replay oracle requires bit-stable traces).
     pub field_npc_routes: std::collections::BTreeMap<u8, Vec<(i16, i16)>>,
 
+    /// Per-NPC glide speed, keyed by the same placement `slot` as
+    /// [`Self::field_npc_routes`]: the per-frame world-unit step
+    /// `Self::start_field_npc_motion` writes into a leg's motion-VM
+    /// [`legaia_engine_vm::motion_vm::MotionState::speed`], derived from the
+    /// placement's real `0x4C 0x51` motion-op base-step operand
+    /// ([`crate::man_field_scripts::placement_glide_speed`] ->
+    /// [`crate::world::field_npc_glide_speed`]). A slot with no decodable
+    /// motion leg is absent and the leg falls back to the stand-in
+    /// [`crate::world::FIELD_NPC_MOTION_SPEED`]. See
+    /// `docs/subsystems/field-locomotion.md`.
+    pub field_npc_glide_speeds: std::collections::BTreeMap<u8, u16>,
+
     /// In-flight field-NPC walk legs, keyed by placement `slot`. Stepped once
     /// per field tick through the ported motion VM; each step writes the new
     /// position back into [`Self::field_npc_positions`], so the moving NPC
@@ -1712,6 +1724,7 @@ impl World {
             field_npc_headings: std::collections::HashMap::new(),
             field_prop_colliders: Vec::new(),
             field_npc_routes: std::collections::BTreeMap::new(),
+            field_npc_glide_speeds: std::collections::BTreeMap::new(),
             field_npc_motions: std::collections::BTreeMap::new(),
             animate_field_npcs: false,
             field_walk_touch: std::collections::BTreeMap::new(),

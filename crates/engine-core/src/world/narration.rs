@@ -578,6 +578,41 @@ impl World {
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
             .collect();
+        // Cross-context channel-completion handshake (`B3 <id> <bit>` =
+        // CFLAG_TST against a spawned per-actor channel): the timeline PARKED
+        // here on a prior tick. Retail's halt-acquire / state-resume protocol
+        // resumes past the flag-test only once the poked channel raises the
+        // completion bit, so re-test it before stepping - rather than the
+        // pre-handshake behaviour of advancing past the wait by instruction
+        // width.
+        if let Some(mut wait) = tl.channel_wait.take() {
+            let flag_set = crate::field_channels::resolve_target(&channels, wait.target_id)
+                .map(|ci| channels[ci].ctx.flags & (1u32 << (wait.bit & 0x1F)) != 0);
+            match flag_set {
+                // Still waiting (the channel has not signalled) and within the
+                // park budget: hold the PC on the flag-test op another tick.
+                Some(false) if wait.frames < CHANNEL_WAIT_PARK_TIMEOUT => {
+                    wait.frames += 1;
+                    tl.channel_wait = Some(wait);
+                    self.field_channels = channels;
+                    self.in_cutscene_timeline = false;
+                    self.cutscene_timeline = Some(tl);
+                    return;
+                }
+                // The channel raised the flag (resume), the target is gone, or
+                // the park timed out: step past the flag-test op by its encoded
+                // width and let the timeline flow. (An extended flag-test is
+                // `header 2 + 1 operand` = 3 bytes.)
+                _ => {
+                    let header_size = if tl.bytecode.get(tl.pc).copied().unwrap_or(0) & 0x80 != 0 {
+                        2
+                    } else {
+                        1
+                    };
+                    tl.pc += header_size + 1;
+                }
+            }
+        }
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
@@ -738,23 +773,27 @@ impl World {
                         (pc, crate::cutscene_timeline::TraceResult::Unknown, true)
                     }
                 };
-                // Step past the timeline's conditional-wait parks. Retail Halts
-                // at PC on a handshake the engine doesn't fully model - a flag
-                // a spawned sub-context sets - so advancing by the op's encoded
-                // width (these flag-tests read one operand byte,
+                // Step past the timeline's conditional-wait parks that are NOT
+                // the modelled channel handshake. Retail Halts at PC on these -
+                // a flag a spawned sub-context sets - so advancing by the op's
+                // encoded width (these flag-tests read one operand byte,
                 // `header_size + 1`) keeps the timeline flowing toward its
-                // camera / move / STATE_RESUME ops. The handshake ops are the
-                // flag-tests `0x2D` (LFLAG), `0x30` (GFLAG), `0x33` (CFLAG) and
-                // the `0x4C` nibble-C `script_alloc` / globals-gate - all
-                // 2-byte (3 extended), so a fixed step-past is correct-width
-                // for them, INCLUDING their cross-context (`0x80`-bit) forms
-                // (e.g. `B3 <id> <bit>` = the timeline waiting on a vignette
-                // channel's completion flag). Other cross-context ops (the
-                // `4C`/`23` action pokes) are NOT stepped past - they run
-                // against the target and advance by their real width. Two
-                // parks are kept: `0x4A` WAIT_FRAMES (a real timed wait that
-                // plays out via the wait accumulator) and `0x49` STATE_RESUME
-                // (the name-entry suspend, driven by the op-49 host hooks).
+                // camera / move / STATE_RESUME ops. The step-past ops are the
+                // flag-tests `0x2D` (LFLAG), `0x30` (GFLAG) and the `0x4C`
+                // nibble-C `script_alloc` / globals-gate - all 2-byte (3
+                // extended), so a fixed step-past is correct-width for them.
+                // The cross-context CFLAG_TST `0x33` (`B3 <id> <bit>` = the
+                // timeline waiting on a vignette channel's completion flag) is
+                // now PARKED instead (handled just above): it holds the PC until
+                // the channel raises the bit - the halt-acquire / state-resume
+                // handshake - and only the `B3 <id> 0A` halt-bit *verify* form
+                // (bit 10) still steps past here. A bare (non-cross-context)
+                // `0x33` also steps past. Other cross-context ops (the `4C`/`23`
+                // action pokes) are NOT stepped past - they run against the
+                // target and advance by their real width. Two parks are kept:
+                // `0x4A` WAIT_FRAMES (a real timed wait that plays out via the
+                // wait accumulator) and `0x49` STATE_RESUME (the name-entry
+                // suspend, driven by the op-49 host hooks).
                 let op = opcode_byte & 0x7F;
                 // Cross-context `4C A0` busy-wait (`CC <ch> A0 <bit> <s16>`):
                 // "while the poked channel's ctx-flag bit is still set, jump".
@@ -770,6 +809,30 @@ impl World {
                 {
                     next_pc = pc + 2 + 4;
                     stop = false;
+                }
+                // Cross-context channel-completion wait (`B3 <id> <bit>`,
+                // CFLAG_TST against a spawned channel): PARK the timeline until
+                // the awaited channel raises the completion bit, rather than
+                // stepping past by width. The park persists across ticks and is
+                // resolved by the pre-step gate above. Bit 10 (0x400, the
+                // halt/busy bit the acquire sweep toggles) is a suspension
+                // *verify*, not a completion wait, so it falls through to the
+                // width step-past below.
+                if op == 0x33
+                    && matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
+                    && next_pc == pc
+                    && let Some((tid, _)) = target
+                {
+                    let bit = tl.bytecode.get(pc + 2).copied().unwrap_or(0) & 0x1F;
+                    if bit != 10 {
+                        tl.channel_wait = Some(crate::cutscene_timeline::ChannelWait {
+                            target_id: tid,
+                            bit,
+                            frames: 0,
+                        });
+                        // Leave PC on the op; the pre-step gate resolves the park.
+                        break;
+                    }
                 }
                 let is_flag_test_handshake =
                     matches!(op, 0x2D | 0x30 | 0x33) || (op == 0x4C && target.is_none());
@@ -1379,6 +1442,109 @@ mod tests {
         assert_eq!(
             w.scene_color_grade(),
             Some(crate::fade::ColorGrade::PROLOGUE_SEPIA)
+        );
+    }
+
+    /// Build a minimal timeline that reaches a cross-context CFLAG_TST
+    /// (`B3 05 03` = op 0x33 extended, target channel id 5, completion bit 3),
+    /// then a WAIT_FRAMES so the timeline stays installed once it resumes past
+    /// the flag-test. A single spawned channel (script id 5) provides the
+    /// cross-context target whose flag the timeline waits on.
+    fn timeline_with_channel_wait(channel_flag_bit3: bool) -> World {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+
+        let mut w = World::new();
+        // `B3 05 03` (3 bytes) then `4A FF 7F` (WAIT_FRAMES target 0x7FFF).
+        let bc = vec![0xB3, 0x05, 0x03, 0x4A, 0xFF, 0x7F];
+        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        let mut ctx = FieldCtx {
+            script_id: 5,
+            ..FieldCtx::default()
+        };
+        if channel_flag_bit3 {
+            ctx.flags |= 1 << 3;
+        }
+        w.field_channels = vec![FieldChannel {
+            placement_index: 5,
+            ctx,
+            record_offset: 0,
+            pc: 0,
+            done: false,
+        }];
+        w
+    }
+
+    #[test]
+    fn cutscene_timeline_parks_on_channel_wait_until_flag_set() {
+        // The timeline reaches `B3 05 03` with the channel's bit 3 clear: it
+        // PARKS on the cross-context CFLAG_TST rather than stepping past.
+        let mut w = timeline_with_channel_wait(false);
+        w.step_cutscene_timeline();
+        {
+            let tl = w
+                .cutscene_timeline
+                .as_ref()
+                .expect("timeline still installed");
+            assert!(tl.channel_wait.is_some(), "parks on the channel handshake");
+            assert_eq!(tl.pc, 0, "PC held on the flag-test op while parked");
+            assert!(!tl.is_done());
+        }
+        // Repeated ticks with the flag still clear keep it parked (well within
+        // the park timeout).
+        for _ in 0..5 {
+            w.step_cutscene_timeline();
+        }
+        {
+            let tl = w.cutscene_timeline.as_ref().unwrap();
+            assert!(
+                tl.channel_wait.is_some(),
+                "stays parked while the flag is clear"
+            );
+            assert_eq!(tl.pc, 0);
+        }
+        // The awaited channel raises the completion flag: the very next step
+        // resolves the park and resumes PAST the 3-byte flag-test op.
+        w.field_channels[0].ctx.flags |= 1 << 3;
+        w.step_cutscene_timeline();
+        let tl = w
+            .cutscene_timeline
+            .as_ref()
+            .expect("timeline still installed");
+        assert!(
+            tl.channel_wait.is_none(),
+            "resumes only after the completion flag is set"
+        );
+        assert_eq!(
+            tl.pc, 3,
+            "PC advanced past the CFLAG_TST op onto WAIT_FRAMES"
+        );
+    }
+
+    #[test]
+    fn cutscene_timeline_channel_wait_times_out_to_step_past() {
+        // Safety net: a channel that never raises the flag must not stall the
+        // timeline forever - after the park timeout it falls back to the
+        // by-width step-past (the pre-handshake behaviour).
+        let mut w = timeline_with_channel_wait(false);
+        // First step parks; then it stays parked for CHANNEL_WAIT_PARK_TIMEOUT
+        // frames, then steps past on the frame the budget is exhausted.
+        let cap = crate::world::CHANNEL_WAIT_PARK_TIMEOUT;
+        let mut resumed = false;
+        for _ in 0..(cap + 4) {
+            w.step_cutscene_timeline();
+            if w.cutscene_timeline
+                .as_ref()
+                .is_some_and(|tl| tl.channel_wait.is_none() && tl.pc == 3)
+            {
+                resumed = true;
+                break;
+            }
+        }
+        assert!(
+            resumed,
+            "the park times out and the timeline steps past the flag-test"
         );
     }
 }

@@ -103,6 +103,43 @@ pub struct NarrationSite {
     pub kind: legaia_asset::cutscene_text::NarrationKind,
 }
 
+/// A cross-context channel-completion wait the timeline is PARKED on.
+///
+/// The retail opdeene timeline halt-acquires its vignette channels (a `4C 85`
+/// freeze sweep), pokes each beat by beat, then waits on a per-channel
+/// completion flag via `B3 <id> <bit>` = op `0x33` (CFLAG_TST) with the
+/// cross-context (`0x80`) bit set, targeting the channel's `ctx[+0x50]` id and
+/// testing `ctx.flags & (1 << bit)`. When that bit is clear the caller HALTS at
+/// the flag-test PC - the halt-acquire / state-resume handshake - and only
+/// resumes once the poked channel raises the bit (its own placement script
+/// runs `0x31 CFLAG_SET` when its move/anim beat completes).
+///
+/// [`crate::world::World::step_cutscene_timeline`] models that park with this
+/// record instead of stepping past the flag-test by instruction width: it
+/// leaves the PC on the op and, each subsequent tick, re-tests the awaited
+/// channel's flag, resuming past the op only once the completion bit is set
+/// (bounded by [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`] so a channel our
+/// port can't advance to its flag-set falls back to the by-width step-past).
+///
+/// Bit 10 (`0x400`, the halt/busy bit the acquire sweep toggles) is excluded -
+/// a `B3 <id> 0A` is a suspension *verify*, not a completion wait, and keeps
+/// the width step-past.
+// REF: FUN_8003BDE0 (timeline dispatch)
+// REF: FUN_8003C83C (cross-context target resolve)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelWait {
+    /// Cross-context target id (`ctx[+0x50]`) the timeline is waiting on - the
+    /// raw operand byte resolved through
+    /// [`crate::field_channels::resolve_target`].
+    pub target_id: u8,
+    /// Context-flag bit index (`ctx.flags & (1 << bit)`) that signals the
+    /// awaited channel's beat completed.
+    pub bit: u8,
+    /// Frames the timeline has been parked here, bounded by
+    /// [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`].
+    pub frames: u32,
+}
+
 /// A spawned field-VM context running the `opdeene` cutscene-timeline record.
 ///
 /// Built by [`crate::world::World::load_cutscene_timeline_from_man`] from the
@@ -186,6 +223,11 @@ pub struct CutsceneTimeline {
     /// looping as a *parallel* context; the engine's modal timeline
     /// completes there instead so control returns to the player.
     pub visited: Vec<bool>,
+    /// `Some` while the timeline is PARKED on a cross-context channel-completion
+    /// handshake (`B3 <id> <bit>` CFLAG_TST); see [`ChannelWait`]. The stepper
+    /// leaves the PC on the flag-test op and resumes past it only once the
+    /// awaited channel raises the completion bit (or the park times out).
+    pub channel_wait: Option<ChannelWait>,
 }
 
 impl CutsceneTimeline {
@@ -215,6 +257,7 @@ impl CutsceneTimeline {
             narration_pending_open: false,
             dialog: None,
             visited,
+            channel_wait: None,
         }
     }
 

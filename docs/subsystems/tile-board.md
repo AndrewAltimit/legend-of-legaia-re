@@ -6,23 +6,30 @@ A discrete tile-board mode used by puzzle rooms / board minigames inside the fie
 
 ## Where the board comes from
 
-A field-VM opcode points the global `_DAT_8007b450` at a board header. The header lives **inline in the field-VM event script** (the "data is an operand of the install op" pattern, same as encounter records - see [`formats/encounter.md`](../formats/encounter.md)). Confirmed header byte fields:
+Field-VM op `0x49` **sub-op `0x05`** points the global `_DAT_8007b450` at a board header. The header lives **inline in the field-VM event script** (the "data is an operand of the install op" pattern, same as encounter records - see [`formats/encounter.md`](../formats/encounter.md)). It is a **fixed 14-byte structure** - the install op advances the script cursor by a **constant `+0xe`** regardless of `width × height`, so the cells are never carried inline (see [always-procedural](#always-procedural-no-inline-cell-boards)). Byte layout from the opcode (`_DAT_8007b450` points at byte `[1]`, the sub-op, so the doc `+N` offsets below are opcode byte `[N+1]`):
 
-| Offset | Meaning |
-|---|---|
-| `+1` | world tile origin X (added to `col`) |
-| `+2` | world tile origin Z (added to `row`) |
-| `+3` | board width (columns), `u8` |
-| `+4` | board height (rows), `u8` |
-| `+5` | draw/scan radius around the player |
-| `+6` | mode flag (full-board draw vs. windowed draw around the player) |
-| `+7`, `+9` | event-flag operands consumed when the player lands on a trigger cell |
-| `+0xb` | player actor template id |
-| `+0xc` | tile-actor template base id (one per drawable cell value) |
+| From opcode | `_DAT_8007b450` offset | Meaning |
+|---|---|---|
+| `[0]` | - | opcode `0x49` |
+| `[1]` | `+0` | sub-op `0x05` |
+| `[2]` | `+1` | world tile origin X (added to `col`) |
+| `[3]` | `+2` | world tile origin Z (added to `row`) |
+| `[4]` | `+3` | board width (columns), `u8` |
+| `[5]` | `+4` | board height (rows), `u8` |
+| `[6]` | `+5` | draw/scan radius around the player |
+| `[7]` | `+6` | mode flag (`0` = full-board draw, else windowed draw around the player) |
+| `[8]`..`[9]` | `+7`..`+8` | event-flag **base A** (`u16` LE) - event-SET base |
+| `[10]`..`[11]` | `+9`..`+0xa` | event-flag **base B** (`u16` LE) - TEST / already-done gate base |
+| `[12]` | `+0xb` | player actor template id |
+| `[13]` | `+0xc` | tile-actor template base id (one per drawable cell value) |
+
+To scan a disc for boards, search the decompressed field scripts for the two-byte prefix `49 05`.
 
 The mutable runtime board is a separate `width × height` byte buffer at `DAT_801f35c0`; the player's live cell is `DAT_801f35c8` (col) / `DAT_801f35cc` (row); the per-cell-value tile-actor table is `DAT_801f35bc` (0x3c bytes, ~15 entries).
 
-At least one board instance is **procedurally generated**: the filler `overlay_0897_801e0b1c` seeds every cell with BIOS `rand` (`func_0x80056798` = A0(0x2F)) as `rand()%6 + 2`, then scatters animated and feature tiles. A fixed board would instead be carried by the inline script header; the exact byte offset of the cell array within the (variable-length) header is not yet pinned.
+### Always procedural (no inline-cell boards)
+
+Sub-op-5 boards are **always procedurally generated** - there is no fixed inline-cell board variant. The proof is structural: the op `0x49` case in `overlay_0897_801de840.txt` advances the script cursor by a **constant `+0xe` (14 bytes)** independent of `width * height`, so the cell array can never be part of the operand stream. The cells are instead `malloc`'d at install and rand-filled by `overlay_0897_801e0b1c`: every cell `rand()%6 + 2` (BIOS `rand`, `func_0x80056798` = A0(0x2F)), then **4 animated tiles** (value `0xB`) and **3 event tiles** (values `8` / `9` / `0xA`) scattered into the bottom half-board.
 
 Provenance:
 - Install: field-VM op `0x49` in `overlay_0897_801de840.txt` (a multi-subtype map-command opcode; `_DAT_8007b450 = pbVar47` arms the header pointer).
@@ -43,9 +50,11 @@ Cells are indexed `board[row * width + col]`. Confirmed value classes:
 | `2` | **wall** - destination cell `== 2` rejects the move |
 | `3`..`6` | walkable terrain types; sets `_DAT_8007b5f0 = (v - 3) * 2` (step variant) |
 | `7` | trigger; routes the walk SM to its event sub-state |
-| `8`..`10` | event / transition tile; reads header `+7`/`+9` as flag operands via the field-VM flag helpers (`func_0x8003ce08` set / `func_0x8003ce64` test), and applies a half-tile world offset |
+| `8`..`10` | event / transition tile; consumes header `+7`/`+9` as flag **bases** into the system-flag bank `DAT_80085758` (reader `func_0x8003ce9c`; SET `func_0x8003ce08` / TEST `func_0x8003ce64`), and applies a half-tile world offset. Handled in walk SM `overlay_0897_801ef2b0.txt` case 8. |
 | `0xb`..`0xe` | animated tiles; the arrival sub-state cycles the value `0xb → 0xe → 0xb` each visit |
 | other | plain walkable floor |
+
+**Event-flag bases.** For an event cell whose event index is `evt`, base **A** (header `+7`, `u16` LE) is the **SET** base and base **B** (header `+9`, `u16` LE) is the **TEST/gate** base, both into the system-flag bank `DAT_80085758`: landing sets slot `A + evt + 1` (with `A` itself the first-visit master flag), while `B + evt` is the already-done guard tested before re-firing the event. (`overlay_0897_801ef2b0.txt` case 8.)
 
 ## Tile ↔ world coordinates
 
@@ -57,6 +66,10 @@ world_z = (header[+2] + row) * 0x80 + 0x40
 ```
 
 (`overlay_0897_801ef2b0.txt` case 4, target-position setup.)
+
+## Rendering
+
+The board carries **no geometry or texture data** - only ids and dimensions. It draws real field **actors** keyed by cell value: the per-cell-value tile-actor table `DAT_801f35bc[cell]` selects the actor for each cell. Slot `0` is the player, spawned from the header `+0xb` template id; slots `2`..`14` are the tile actors, spawned from the header `+0xc` base id as `header[+0xc] + (slot - 2)`. Each frame the renderer repositions the selected actor to the cell centre (`X = (originX + col) * 0x80 + 0x40`, `Z = (originZ + row) * 0x80 + 0x40`) and draws it. The header `+6` mode flag selects between the two draw passes (full-board vs. windowed around the player). (`overlay_0897_801e0f3c.txt`.)
 
 ## Walk state machine
 
@@ -110,9 +123,9 @@ transition cell (`8..=0xA`) exits the board mode - the suspended script reads
 
 ## Open
 
-- Whether any board is *fixed* (inline-script cells) rather than procedurally filled, and if so the exact byte offset where the cell array begins in the (variable-length) inline script header. The install op can point `_DAT_8007b450` at an inline header (a fixed board is representable), but no fixed-board instance is pinned; `+7`/`+9` are read through the field-VM operand reader `func_0x8003ce9c`. Needed to lift a fixed board from a scene's event script; the engine installs the procedural fill.
-- The event-cell arrival's header `+7`/`+9` flag-operand consumption (retail sets/tests field-VM flags on the transition; the engine currently surfaces the exit through the op-49 resume only).
-- Per-cell tile-actor rendering (header `+0xb`/`+0xc` template spawns) - the engine tracks the ids but draws nothing yet.
+- ~~Whether any board is *fixed* (inline-script cells) rather than procedurally filled.~~ **Resolved (negative):** sub-op-5 boards are **always procedural**. The install op advances the script cursor a constant `+0xe` regardless of `width × height`, so a cell array cannot ride the operand stream, and the cells are `malloc`'d + rand-filled by `overlay_0897_801e0b1c`. There is no fixed-board variant to lift. See [always procedural](#always-procedural-no-inline-cell-boards).
+- ~~The event-cell arrival's header `+7`/`+9` flag-operand consumption.~~ **Resolved:** `+7` (base A) is the event-SET base and `+9` (base B) the TEST/gate base, both into the system-flag bank `DAT_80085758` (SET `func_0x8003ce08` / TEST `func_0x8003ce64`, reader `func_0x8003ce9c`), consumed in walk SM case 8. See [event-flag bases](#cell-value-semantics). The engine still surfaces only the exit through the op-49 resume.
+- Per-cell tile-actor **rendering** - the retail mechanism is now pinned (field actors keyed by cell value from `DAT_801f35bc[cell]`; see [Rendering](#rendering)), but the clean-room engine still only tracks the header `+0xb`/`+0xc` template ids and draws nothing yet.
 
 ## See also
 

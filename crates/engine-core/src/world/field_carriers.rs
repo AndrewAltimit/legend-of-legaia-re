@@ -36,6 +36,7 @@ impl World {
         // NPC motion + walk-touch state is placement-keyed too: never let a
         // previous scene's routes / in-flight legs / door events leak.
         self.field_npc_routes.clear();
+        self.field_npc_glide_speeds.clear();
         self.field_npc_motions.clear();
         self.field_walk_touch.clear();
         self.active_walk_touch = None;
@@ -119,6 +120,15 @@ impl World {
                     crate::man_field_scripts::placement_motion_route(man_file, man, &placement);
                 if !route.is_empty() {
                     self.field_npc_routes.insert(slot, route);
+                    // Faithful per-leg glide speed from the placement's real
+                    // `0x4C 0x51` motion-op base-step operand (retail
+                    // `FUN_8003774C` `4 << bits`), replacing the flat stand-in;
+                    // absent = the leg falls back to `FIELD_NPC_MOTION_SPEED`.
+                    if let Some(speed) =
+                        crate::man_field_scripts::placement_glide_speed(man_file, man, &placement)
+                    {
+                        self.field_npc_glide_speeds.insert(slot, speed);
+                    }
                 }
             }
             // Walk-touch events ride any non-parked placement (door warps are

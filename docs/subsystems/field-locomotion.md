@@ -327,7 +327,16 @@ as the player's idle/walk pair).
 
 - The full `FUN_801d5b5c` post-kernel state (the touch-event handler beyond the decoded entry kernel).
 - Per-actor field-VM channel execution (the engine loops decoded waypoint lists instead) - this is also where scripted *initial* NPC facings live; until then, never-walked NPCs render unrotated (the placement record carries no facing byte).
-- The exact retail NPC glide speed (the engine paces NPCs at the player walking step).
+
+## NPC glide speed
+
+An NPC's per-frame glide is NOT the player's `+0x72` walk step (that premise is falsified: `FUN_8003774C` never reads `+0x72`). Retail's motion VM (ops 0x37/0x41/0x47) glides at `_DAT_1f800393 × 0x80 / (4 << bits)` units per frame, where `bits` is a base-step selector encoded **in the motion op's own operand** (`(op0>>5 & 4)|(op1>>6)` of the synthesised motion bytecode). With the cold-field delta scalar `_DAT_1f800393 = 1` that is `0x80 >> (2 + bits)`: base steps 32 / 16 / 8 / 4 / 2 / 1 for `bits` 0..5, floored at 1.
+
+The engine derives each placement's glide speed off the disc rather than pacing every NPC at the flat player step: [`man_field_scripts::placement_glide_speed`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs) reads the placement's first local `0x4C 0x51` motion op (the field-VM carrier of the motion script), maps its `depth` operand's low 3 bits through [`World::field_npc_glide_speed`](../../crates/engine-core/src/world/config.rs) (`0x80 >> (2 + (depth & 7))`), and stashes it in `World::field_npc_glide_speeds`. `World::start_field_npc_motion` writes that into the leg's motion-VM `speed`, so each placement glides at its authored cadence.
+
+A placement with no decodable motion leg (and the actor-VM sprite glide, which has no MAN motion operand) falls back to the `FIELD_NPC_MOTION_SPEED` stand-in (base step 8 = `field_npc_glide_speed(2)`), so the default path is unchanged. Disc-gated `field_npc_glide_speed_disc.rs` confirms town01's placements span the whole base-step ladder (most differ from the stand-in) and the engine's motion state carries the derived value.
+
+Modelling note: the exact `0x4C 0x51` → synthesised-motion-bytecode write is not yet traced, so the engine reads the base-step selector from the `0x4C 0x51` leg's `depth` operand (the field-VM operand that carries the glide granularity) rather than the two synthesised motion-op operand bytes directly; and `_DAT_1f800393` is taken at its cold-field value 1.
 
 ## See also
 

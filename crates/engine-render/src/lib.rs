@@ -36,6 +36,7 @@ pub use wgpu;
 pub mod psx_blend;
 pub mod psx_dither;
 mod renderer;
+pub mod screen_overlay;
 mod shaders;
 mod ui_menu;
 mod ui_overlay;

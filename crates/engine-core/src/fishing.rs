@@ -63,15 +63,16 @@ pub const REEL_RELEASE_MUL: i32 = 0x40;
 pub const REEL_RELEASE_ADD: i32 = 0x4a;
 
 /// The reel-input state this frame. The retail held mask is `_DAT_8007b850`
-/// bits `0x40` / `0x80`; which physical buttons those are is not pinned (see the
-/// minigame doc's Open list), so this stays at the two-reel-button level.
+/// bits `0x40` / `0x80`, which are now pinned to physical buttons via the pad
+/// packer `FUN_8001822C`: `0x40` = Cross, `0x80` = Square (reel B is Square,
+/// NOT Circle; Circle `0x20` is the cast/hook input). See the fishing doc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReelInput {
     /// Neither reel button held - tension bleeds off.
     Idle,
-    /// The `0x40` reel button (the `rod*9 + 0x23`-divisor path).
+    /// The `0x40` reel button (Cross; the `rod*9 + 0x23`-divisor path).
     ReelA,
-    /// The `0x80` reel button (the `rod*6 + 0x19`-divisor path).
+    /// The `0x80` reel button (Square; the `rod*6 + 0x19`-divisor path).
     ReelB,
 }
 

@@ -110,8 +110,9 @@ chosen attack types: P1's type `DAT_801dbfe0` vs P2's type `DAT_801dc088`.
 | `4` | special / guard-break (an immediate win for whoever throws it; P1 checked first when both do) |
 
 Return value: `0` = P1 wins the exchange, `1` = P2 wins, `3` = draw (both chose
-the same type), `-1` = still undecided (e.g. both `0`, or a per-exchange settle
-timer `DAT_801dbf54` has not elapsed). The function also short-circuits on the
+the same type), `-1` = still undecided (e.g. both `0`, or the per-exchange settle
+timer `DAT_801dbf54` has not elapsed - see below; in retail it is always `0`, so
+this guard never actually stalls an exchange). The function also short-circuits on the
 state flags `DAT_801dbfe8` / `DAT_801dc090` (one side already committed) and on
 both sides idle.
 
@@ -161,33 +162,45 @@ per actor with the fighter's actor pointer. The fighter's slot is `*(actor +
 0x50)` (0 = player, 1 = opponent). Each frame it picks at most one of the three
 attack types into a local mask:
 
-| mask bit | attack type written to `DAT_801dbfe0[slot]` | action frame |
-|---|---|---|
-| `0x80` | `1` | base + 2 |
-| `0x20` | `2` | base + 3 |
-| `0x40` | `3` | base + 4 |
-| (special) | `4` | base + 5 (spawns the special-effect actor) |
+| mask bit | button | attack type written to `DAT_801dbfe0[slot]` | action frame |
+|---|---|---|---|
+| `0x80` | **Square** | `1` | base + 2 |
+| `0x20` | **Circle** | `2` | base + 3 |
+| `0x40` | **Cross** | `3` | base + 4 |
+| (none - auto) | - | `4` | base + 5 (spawns the special-effect actor) |
 
 For the **player** (slot 0) the mask comes from the edge-triggered pad word
-`_DAT_8007b874` combined with the queued/last directional input `DAT_801dc124`;
-the three face/shoulder buttons map onto the three attack types. A "mirror /
-reaction" sub-mode (gated by `_DAT_8007b9b0`, the held pad `_DAT_8007b850 & 2`,
-and the difficulty/mode global `DAT_801dbf94 == 2`) remaps the same input
-through `DAT_801dc124` to a different type so the player counters rather than
-leads. Choosing type `4` (the special) sets `DAT_801dbf50 = 1`, spawns a
+`_DAT_8007b874`: Square (`0x80`) → type 1, Circle (`0x20`) → type 2, Cross
+(`0x40`) → type 3 (`overlay_baka_fighter_801d3f44.txt`, slot-0 branch). Type 4
+(the **special**) is **not a button**: it is an auto-finisher gated on
+own-HP `!= 0` / opponent-HP `== 0` / the round not already decided; when that
+gate fires it sets `DAT_801dbf50 = 1`, plays action frame base + 5, spawns a
 dedicated effect actor (template `DAT_801d7684`), and copies the fighter's
-transform onto it.
+transform onto it. The "mirror / reaction" remap (gated by `_DAT_8007b9b0`,
+the held pad `_DAT_8007b850 & 2`, and the difficulty/mode global
+`DAT_801dbf94 == 2`) lives in the **slot != 0 opponent** branch, not the
+player branch - it re-derives the *opponent's* type through `DAT_801dc124` so
+the CPU counters the player's committed input rather than leads.
 
 When an attack commits, the controller seeds the fighter's action id
 (`actor + 0x5c`), zeroes the frame counter (`actor + 0x68`), seeds motion speed
-from the action record, and records the combo step. Debug strings emitted under
+from the action record, and records the combo step. The action-record vs
+display-anim split is pinned: the display anim id `actor + 0x5c` = fighter_base
++ `{idle 1, t1 = 2, t2 = 3, t3 = 4, special = 5}` (the `base + N` frames in the
+table above), while the damage kernel's record index is derived back as
+`anim - (fighter_base + 1)` = `{idle 0, t1..t3 = 1..3, special = 4}` = the
+attack type, and stored to the fighter record `+0x10` (disasm at
+`overlay_baka_fighter_801d3f44.txt` `0x801d4534`). So record `+0x10` =
+`anim - base - 1` = attack type - the record index and the attack type are the
+same value. Debug strings emitted under
 `DAT_801dbf94`: `%d %d`, `stat no %d %d %d`, `hit frame %d fo %d fn %d`,
 `mot speed %d`. The knockdown / launch playback (after a lost exchange) is
 `FUN_801d4df8`, and `FUN_801d49e8` drives the multi-frame launch arc.
 
-Confidence: **Confirmed** the button-bit → type mapping and the special-attack
-spawn; **Inferred** the precise physical buttons (the pad bits are read but not
-mapped to named buttons here).
+Confidence: **Confirmed** the button-bit → type mapping, the named physical
+buttons (Square/Circle/Cross from the slot-0 branch of
+`overlay_baka_fighter_801d3f44.txt`), and the special-attack auto-finisher
+gate.
 
 ## Opponent + scoring
 
@@ -197,7 +210,9 @@ advances a **per-opponent scripted pattern** - a null-terminated byte list at
 `DAT_801d76e8` indexed `opponent_id * 0x6c` (opponent id from
 `DAT_801dc050[slot]`), stepping a cursor in `&DAT_801dc044[slot]`. So each
 opponent mixes random throws with a canned sequence. The return is always
-reduced `% 3` into one of the three attack types.
+reduced `% 3` into one of the three attack types; the picker's result index
+`0`/`1`/`2` maps to the same mask bits the player uses (`0` → `0x80` → type 1,
+`1` → `0x20` → type 2, `2` → `0x40` → type 3).
 
 `DAT_801d76e8` is a field of the **per-fighter roster record table** based at
 `0x801d769c` (`0x6c` stride, **17 records** = the same `0x11` count the action
@@ -245,7 +260,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `DAT_801dbf44` | match-active gate (`== 100` while a round runs) |
 | `DAT_801dbf94` | difficulty / debug-verbosity mode (enables `func_0x8001a068` traces; `== 2` = mirror input mode) |
 | `DAT_801dbf50` | special-attack-in-progress latch |
-| `DAT_801dbf54` | per-exchange settle timer (gates `FUN_801d3a14`) |
+| `DAT_801dbf54` | per-exchange settle timer (guards `FUN_801d3a14`); **vestigial** - only ever decremented / zeroed in `FUN_801d3a14`, never positively stored anywhere in the overlay, so it stays `0` and the guard is a no-op. Exchange pacing comes from the cooldown timers `DAT_801dbea0` / `DAT_801dbea4` instead. |
 | `DAT_801dbf20` | round index |
 | `DAT_801dbf84` | round-end banner sub-state |
 | `DAT_801dbfa0` / `DAT_801dbfa4` | player / opponent actor pointers |
@@ -319,18 +334,20 @@ as a held charge.
 
 ## Open
 
-- The physical pad-button → attack-type binding (the `0x80`/`0x20`/`0x40` mask
-  bits are populated from `_DAT_8007b874` / `DAT_801dc124`, but the named button
-  for each was not separated out).
-- The settle timer `DAT_801dbf54` only ever decays in the dumped corpus; its
-  seeder (what paces exchanges beyond the cooldowns) is untraced.
-- Action-record vs display-anim indexing: the damage kernel indexes the
-  action table with the current-action id where records 1/2/3 = the attacks
-  and 4 = the special (positive powers / the keyframe gate decode there
-  corpus-wide); the `base + 2..+5` frames in the input table above are the
-  flat display-anim space (`actor+0x5c = char*9 + frame`). The per-fighter
-  `+0x10` current-action writer that maps type → record was not separately
-  dumped.
+No open items.
+
+- The physical pad-button → attack-type binding is pinned: Square (`0x80`) →
+  type 1, Circle (`0x20`) → type 2, Cross (`0x40`) → type 3, from the slot-0
+  branch of `overlay_baka_fighter_801d3f44.txt`; type 4 (special) is an
+  auto-finisher, not a button. See [Player input + actions](#player-input--actions).
+- The settle timer `DAT_801dbf54` has no seeder because it has no *use*: it is
+  only ever decremented / zeroed in `FUN_801d3a14` and never positively stored
+  anywhere in the ~180-function overlay, so it is vestigial (always `0`) and
+  exchange pacing comes from the cooldowns `DAT_801dbea0` / `DAT_801dbea4`.
+- Action-record vs display-anim indexing is resolved: record index
+  = `anim - fighter_base - 1` = the attack type, written to the fighter record
+  `+0x10` at `overlay_baka_fighter_801d3f44.txt` `0x801d4534`. See
+  [Player input + actions](#player-input--actions).
 
 ## See also
 

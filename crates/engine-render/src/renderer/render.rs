@@ -97,6 +97,9 @@ impl Renderer {
                     .borrow_mut()
                     .clone_from(&self.stage_quad_overlays(&[overlay]));
             }
+            RenderTarget::ScreenOverlay { prims, .. } => {
+                self.stage_screen_overlay(prims);
+            }
             RenderTarget::Clear => {}
         }
 
@@ -118,6 +121,7 @@ impl Renderer {
                     | RenderTarget::Lines { .. }
                     | RenderTarget::Scene(_)
                     | RenderTarget::TextOnly(_)
+                    | RenderTarget::ScreenOverlay { .. }
             )
             .then(|| wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
@@ -409,6 +413,9 @@ impl Renderer {
                         let end = (base_quad + count) * 6;
                         rp.draw_indexed(start..end, 0, 0..1);
                     }
+                }
+                RenderTarget::ScreenOverlay { vram, .. } => {
+                    self.draw_screen_overlay(&mut rp, vram);
                 }
             }
         }
@@ -713,5 +720,87 @@ impl Renderer {
         self.queue
             .write_buffer(&ibuf_borrow, 0, bytemuck::cast_slice(&idxs));
         ranges
+    }
+
+    /// Build one frame's screen-overlay geometry from `prims` (see
+    /// [`crate::screen_overlay::build_geometry`]), grow the dynamic
+    /// vertex/index buffers if needed, upload the geometry, and cache the
+    /// per-run draw list for [`Self::draw_screen_overlay`]. The staging pass
+    /// of [`RenderTarget::ScreenOverlay`].
+    fn stage_screen_overlay(&self, prims: &[crate::screen_overlay::ScreenPrim]) {
+        let (w, h) = (self.config.width, self.config.height);
+        let geo = crate::screen_overlay::build_geometry(prims, w, h);
+        self.screen_overlay_runs.borrow_mut().clone_from(&geo.runs);
+        if geo.is_empty() {
+            return;
+        }
+        let needed_v = geo.vertices.len() as u32;
+        let needed_i = geo.indices.len() as u32;
+        if needed_v > self.screen_overlay_vcap.get() {
+            let cap = needed_v.next_power_of_two().max(needed_v);
+            *self.screen_overlay_vbuf.borrow_mut() =
+                self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("screen overlay vertex buffer (resized)"),
+                    size: (cap as u64) * crate::screen_overlay::SCREEN_VERTEX_STRIDE,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            self.screen_overlay_vcap.set(cap);
+        }
+        if needed_i > self.screen_overlay_icap.get() {
+            let cap = needed_i.next_power_of_two().max(needed_i);
+            *self.screen_overlay_ibuf.borrow_mut() =
+                self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("screen overlay index buffer (resized)"),
+                    size: (cap as u64) * 4,
+                    usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            self.screen_overlay_icap.set(cap);
+        }
+        let vbuf_borrow = self.screen_overlay_vbuf.borrow();
+        let ibuf_borrow = self.screen_overlay_ibuf.borrow();
+        self.queue
+            .write_buffer(&vbuf_borrow, 0, bytemuck::cast_slice(&geo.vertices));
+        self.queue
+            .write_buffer(&ibuf_borrow, 0, bytemuck::cast_slice(&geo.indices));
+    }
+
+    /// Draw the runs staged by [`Self::stage_screen_overlay`]: one indexed
+    /// draw per [`crate::screen_overlay::DrawRun`], binding the opaque
+    /// pipeline or the matching per-ABR blend pipeline. Groups 0 = the shared
+    /// PSX VRAM texture.
+    fn draw_screen_overlay(&self, rp: &mut wgpu::RenderPass<'_>, vram: &UploadedVram) {
+        use crate::screen_overlay::BlendClass;
+        let runs = self.screen_overlay_runs.borrow();
+        if runs.is_empty() {
+            return;
+        }
+        // Mode-0 (`0.5*B + 0.5*F`) uses BlendFactor::Constant on both sides.
+        let c = psx_blend::MODE0_BLEND_CONSTANT;
+        rp.set_blend_constant(wgpu::Color {
+            r: c,
+            g: c,
+            b: c,
+            a: c,
+        });
+        rp.set_bind_group(0, &vram.bind_group, &[]);
+        let vbuf_borrow = self.screen_overlay_vbuf.borrow();
+        let ibuf_borrow = self.screen_overlay_ibuf.borrow();
+        rp.set_vertex_buffer(0, vbuf_borrow.slice(..));
+        rp.set_index_buffer(ibuf_borrow.slice(..), wgpu::IndexFormat::Uint32);
+        let mut bound: Option<BlendClass> = None;
+        for run in runs.iter() {
+            if bound != Some(run.class) {
+                match run.class {
+                    BlendClass::Opaque => rp.set_pipeline(&self.screen_overlay_pipeline),
+                    BlendClass::Semi(mode) => {
+                        rp.set_pipeline(&self.screen_overlay_blend_pipelines[(mode & 0x3) as usize])
+                    }
+                }
+                bound = Some(run.class);
+            }
+            rp.draw_indexed(run.index_start..run.index_start + run.index_count, 0, 0..1);
+        }
     }
 }

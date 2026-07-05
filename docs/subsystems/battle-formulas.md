@@ -298,30 +298,70 @@ actor's outgoing roll *and* its guard roll by `9/10` for bit 1 (Venom) and
 
 The two pinned hit resolvers - `overlay_battle_action_801ec3e4` (~line 3099,
 physical strike, art record `+0x7A`) and `overlay_battle_action_801e09f8`
-(~line 1416, monster special attack, effect-block `+0x0A`) - apply the same
-byte map onto the target's `+0x16E`:
+(~line 1416, monster special attack, effect-block `+0x0A`) - read the same
+applier byte (value `1..6`) and touch **two independent fields**:
+
+- the **mechanical status bitfield** `+0x16E` (what the command menu, the AI
+  picker, the [per-round DoT ticker](#per-round-status-dot-ticker---fun_801e752c)
+  and the damage-roll scale read); and
+- a **lingering-visual marker** at `actor+0x21F` (+ a tint word), written only
+  for applier values `1..5` - byte `6` (Curse) is guarded out by the
+  `if (param_2[0x7a] < 6)` test at `801ec3e4:3099`, so a cursed actor gets its
+  `+0x16E` bit but **no** `+0x21F` marker or tint. The tint is indexed
+  `(value-1)*4` into the 5-entry table at `0x801F53D4`.
+
+The `+0x16E` writes:
 
 | byte | `+0x16E` effect | chance | guard |
 |---|---|---|---|
-| `1`, `2` | visual only here (`actor+0x21F` marker + tint word `+4`); the mechanical arm for these bytes is not in the dumped corpus | - | - |
+| `1`, `2` | **no `+0x16E` bit** - purely cosmetic lingering-visual states, each its own `+0x21F` marker + tint (`0x801F53D4`/`0x801F53D8`). `FUN_801D0748` never reads `+0x21F`, so they gate no command and consume no mechanical arm; not a status. | - | - |
 | `3` | `\|= 1` (**Venom**) | `rand & 7 == 0` (1/8) | - |
 | `4` | `\|= 2` (**Toxic**) | `rand & 7 == 0` (1/8) | - |
-| `5` | `\|= 1 << (rand%3 + 3)` (**Rot** - disables one random strike command; bits `8`/`0x10`/`0x20` gray the matching arrow in the command menu, `== 0x38` blocks Attack entirely) | always (party target) | char `+0xF4` bit 24 (passive `0x18` Rot Guard) or bit 28 (`0x1C` Master Guard) nullifies |
-| `6` | `\|= 0x1000` (**Curse** - the magic block the menu + AI affordability checks read) | `rand & 3 == 0` (1/4) | - |
+| `5` | `\|= 1 << (rand%3 + 3)` (**Rot** - disables one random strike command: bit `8` grays the LEFT arrow, `0x10` the RIGHT, `0x20` UP **and** DOWN; `== 0x38` blocks Attack entirely - the pinned map in [arts-command-gauge.md § status limb gating](arts-command-gauge.md#status-limb-gating)) | always (party target) | char `+0xF4` bit 24 (passive `0x18` Rot Guard) or bit 28 (`0x1C` Master Guard) nullifies |
+| `6` | `\|= 0x1000` (**Curse** - grays the whole Magic command; the block the menu + AI affordability checks read) | `rand & 3 == 0` (1/4) | - |
+
+**Venom / Toxic each carry two mechanical effects** (both dump-pinned, and not
+mutually exclusive - the same two `+0x16E` bits drive both): the
+[per-round HP drain](#per-round-status-dot-ticker---fun_801e752c) (`FUN_801E752C`,
+Toxic `maxHP>>4` / Venom `maxHP>>5`) **and** the outgoing-roll and guard-roll
+scale `×9/10` (Venom) / `×7/10` (Toxic) in `FUN_801dd864`.
 
 **Stone = `+0x16E` bit `0x04`** - capture-pinned from a before/after pair
 around an enemy Glare cast (the petrify lands as `+0x16E: 0 → 4` with HP
 untouched; the victim's queued action category at `+0x1DE` clears, and the
 `+0x220` flag near the lingering-status visual marker drops). Bit `0x04` is
 exactly the hole the applier byte map above leaves unassigned; the petrify
-applier itself (Glare's effect path) is not in the dumped corpus.
+applier itself (Glare's effect path) is not in the dumped corpus. While the bit
+is set the render/update pass `FUN_8004ce2c` (`8004ce2c.txt:1011-1042`) grays
+the afflicted actor's **full sprite** - each texel recoloured to its luminance
+`(r+g+b) >> 2` (5-bit channels) and re-stamped via `MoveImage`.
+
+**Guard-passive auto-clear.** The same pass `FUN_8004ce2c`
+(`8004ce2c.txt:802-849`) strips `+0x16E` status bits at frame time when the
+afflicted **party** actor's character-record ability bitfield (`+0xF4`, base
+`0x80084708 + (id-1)*0x414`) carries the matching guard bit:
+
+| `+0xF4` bit | Clears `+0x16E` bits | Passive |
+|---|---|---|
+| 22 | `0x1` | Poison Guard (Venom) |
+| 23 | `0x3` | Venom + Toxic |
+| 24 | `0x78` | Rot Guard (`0x18`) |
+| 25 | `0x1000` | Curse Guard |
+| 26 | `0x4` | Stone Guard |
+| 27 | `0x400` | (the guard-disable status) |
+| 28 | `0x1C7F` | Master Guard (`0x1C`, all bits) |
 
 The engine's `legaia_engine_vm::status_effects` byte map follows this table
 (`4` = Toxic, `5` = Rot with a rolled disabled limb refused at command input;
 the earlier external-notes reading `4` = Sleep / `5` = Confuse is replaced -
-those kinds remain host-drivable with no on-disc byte). Which retail limb
-bit grays which arrow is still a reconstruction, and what bytes `1`/`2` do
-mechanically stays open pending a capture.
+those kinds remain host-drivable with no on-disc byte). The retail limb-bit →
+command-arrow map is now pinned (see
+[arts-command-gauge.md § status limb gating](arts-command-gauge.md#status-limb-gating)),
+and bytes `1`/`2` are resolved as purely cosmetic lingering visuals. The **one**
+remaining status-applier gap is the setter for `+0x16E` bit `0x400` - a
+guard-disabling status (read at `801ec3e4:2640` and the AI picker
+`801e9fd4:3035`: a victim carrying it auto-fails its guard roll) whose applier
+is neither the byte map above nor anywhere in the dumped corpus.
 
 ## Summon-magic damage roll - `FUN_801dd0ac`
 
