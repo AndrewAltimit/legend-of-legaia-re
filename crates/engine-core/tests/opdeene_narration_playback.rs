@@ -9,9 +9,13 @@
 //!    narration blocks (14 + 8 pages) parsed as suspend sites - and does NOT
 //!    pre-install any narration;
 //! 2. ticking the world executes the timeline up to the first block, which
-//!    installs the roller presenter (14 pages) and suspends the timeline;
-//! 3. the roller crawls on its own timer; when the block completes the
-//!    timeline resumes and later reaches the second block (8 pages);
+//!    installs the roller presenter (14 pages) and - because it is not the
+//!    LAST block - lets the timeline CONTINUE (non-blocking) so the camera
+//!    cuts authored between the blocks play under the crawl (`narration_pc`
+//!    stays clear);
+//! 3. the roller crawls on its own timer; the timeline reaches the second,
+//!    LAST block (8 pages), which blocks (`narration_pc` set) so the timeline
+//!    can't run into its terminal SceneChange before the pages scroll out;
 //! 4. at any point after the timeline arms `GFLAG 26` (near its top), a
 //!    confirm press skips the WHOLE remaining opening to `town01` - the
 //!    retail `FUN_801D1344` intro-skip packet, available mid-narration.
@@ -70,8 +74,10 @@ fn opdeene_narration_is_script_driven_and_skippable() {
     );
     assert!(host.world.opening_chain_active, "the opening chain started");
 
-    // 2. Ticking reaches the first block: the roller installs (14 pages) and
-    //    the timeline suspends at the block op.
+    // 2. Ticking reaches the first block: the roller installs (14 pages). It is
+    //    NOT the last block, so the timeline stays NON-BLOCKING (`narration_pc`
+    //    clear) and continues into the between-block camera cuts while the
+    //    crawl scrolls.
     let mut ticked = 0u32;
     while !host.world.cutscene_narration_active() && ticked < 600 {
         let _ = host.world.tick();
@@ -88,51 +94,46 @@ fn opdeene_narration_is_script_driven_and_skippable() {
         .map(|n| n.page_count())
         .unwrap_or(0);
     assert_eq!(pages, 14, "block 1 is the 14-page creation prologue");
-    let suspended_at = host
-        .world
-        .cutscene_timeline
-        .as_ref()
-        .and_then(|tl| tl.narration_pc);
+    let block1_seq = host.world.cutscene_narration_seq;
+    assert_eq!(
+        block1_seq, 1,
+        "the creation crawl is the first block opened"
+    );
     assert!(
-        suspended_at.is_some(),
-        "the timeline is suspended at the block op"
+        host.world
+            .cutscene_timeline
+            .as_ref()
+            .is_some_and(|tl| tl.narration_pc.is_none()),
+        "block 1 is non-blocking - the timeline plays the camera cuts under it"
     );
     eprintln!("[opdeene] block 1 (14 pages) installed after {ticked} ticks");
 
-    // 3. The crawl completes on its own timer and the timeline resumes toward
-    //    block 2. Budget: (pages + ring + slack) line steps at 64 frames each,
-    //    plus generous slack for the choreography between blocks.
-    let mut resumed = false;
-    for _ in 0..12_000 {
+    // 3. The crawl scrolls on its own timer; the timeline reaches the second,
+    //    LAST block (8 pages), which BLOCKS (`narration_pc` set) so the
+    //    terminal SceneChange waits for the final pages. Detect the block via
+    //    the monotonic open counter (back-to-back blocks share no blank frame).
+    let mut saw_block_2 = false;
+    for _ in 0..24_000 {
         let _ = host.world.tick();
-        if !host.world.cutscene_narration_active()
+        if host.world.cutscene_narration_seq != block1_seq
             && host
                 .world
-                .cutscene_timeline
+                .cutscene_narration
                 .as_ref()
-                .is_some_and(|tl| tl.narration_pc.is_none())
-        {
-            resumed = true;
-            break;
-        }
-    }
-    assert!(resumed, "block 1 completes and the timeline resumes");
-
-    // Reach block 2 (8 pages).
-    let mut saw_block_2 = false;
-    for _ in 0..12_000 {
-        let _ = host.world.tick();
-        if host
-            .world
-            .cutscene_narration
-            .as_ref()
-            .is_some_and(|n| n.page_count() == 8)
+                .is_some_and(|n| n.page_count() == 8)
         {
             saw_block_2 = true;
             break;
         }
     }
     assert!(saw_block_2, "the timeline reaches the 8-page Seru block");
+    assert!(
+        host.world
+            .cutscene_timeline
+            .as_ref()
+            .is_some_and(|tl| tl.narration_pc.is_some()),
+        "the last (8-page) block blocks until its pages scroll out"
+    );
 
     // 4. Mid-narration intro skip: the hand-off bit was armed near the record
     //    top, so a confirm press now skips straight to town01.

@@ -1456,6 +1456,12 @@ pub struct World {
     /// confirm reach [`Self::take_prologue_handoff`].
     pub cutscene_narration: Option<crate::cutscene_narration::CutsceneNarration>,
 
+    /// Monotonic counter incremented each time [`Self::open_cutscene_narration`]
+    /// installs a crawl block. Lets observers distinguish back-to-back crawl
+    /// blocks (a non-blocking crawl opens the next block the same tick the prior
+    /// scrolls out) that a rising-edge `active`-watch would merge into one.
+    pub cutscene_narration_seq: u32,
+
     /// Active opening-cutscene timeline executor, or `None` when no cutscene
     /// timeline is running. Installed by
     /// [`Self::load_cutscene_timeline_from_man`] (the `opdeene` opening
@@ -1775,6 +1781,7 @@ impl World {
             party_names: Vec::new(),
             name_entry: None,
             cutscene_narration: None,
+            cutscene_narration_seq: 0,
             cutscene_timeline: None,
             inline_dialogue: None,
             in_cutscene_timeline: false,
