@@ -19,7 +19,10 @@ A 13-agent parallel wave ran against this plan (9 read-only RE investigations +
     replaces the engine's reconstruction. Bytes 1/2 are cosmetic-only. The ONLY
     true remaining capture is the `+0x16E` bit `0x400` (Sleep/Numb-like
     guard-disable) applier. Corrections: Curse writes no `+0x21F`; Venom/Toxic
-    are 9/10·7/10 roll debuffs, not DoT.
+    carry BOTH a per-round HP drain (`FUN_801E752C`: Toxic maxHP>>4, Venom
+    maxHP>>5) AND the `FUN_801dd864` 9/10·7/10 roll debuff (the investigation
+    agent's "not DoT" claim was falsified by the doc agent's independent
+    re-verify — a good over-claim catch).
   - **record[0]+0x5C** — static negative close (rebased-at-load vestigial
     paired-relocation field, `FUN_80052FA0:561`, no reader). Off Track A.
   - **scene-v12** — staging hypothesis falsified (`FUN_8001F05C`/`FUN_8002541C`
