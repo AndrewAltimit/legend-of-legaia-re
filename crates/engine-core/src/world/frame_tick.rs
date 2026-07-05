@@ -109,6 +109,38 @@ impl World {
         {
             self.cutscene_narration = None;
         }
+        // Fade the "It was the Seru." caption image (opdeene's baked-TIM
+        // caption, `Self::cutscene_caption`). It is target-visible in the gap
+        // after the FIRST narration crawl block has shown (`seq == 1`) and has
+        // since scrolled out (narration inactive), and fades out once the SECOND
+        // block opens (`seq` advances) or the scene ends (the image is cleared
+        // on scene entry). This mirrors retail showing the caption once, between
+        // opdeene's two crawls; the smooth alpha ramp stands in for the TIM's
+        // two-CLUT fade steps.
+        //
+        // The engine's inter-crawl timeline gap currently runs much longer than
+        // retail's, so `in_gap` alone would hold the caption on screen for many
+        // seconds. Bound it to a retail-like ~2 s beat: once it has been fully
+        // shown for `CAPTION_HOLD_FRAMES`, fade it back out and keep it hidden
+        // for the rest of the gap (the counter never resets within the scene).
+        if self.cutscene_caption.is_some() {
+            const CAPTION_FADE_STEP: f32 = 0.06;
+            const CAPTION_HOLD_FRAMES: u32 = 180;
+            let in_gap = self.cutscene_narration_seq == 1 && !self.cutscene_narration_active();
+            if in_gap && self.cutscene_caption_alpha >= 1.0 {
+                self.cutscene_caption_shown_frames =
+                    self.cutscene_caption_shown_frames.saturating_add(1);
+            }
+            let hold_elapsed = self.cutscene_caption_shown_frames >= CAPTION_HOLD_FRAMES;
+            let target = if in_gap && !hold_elapsed { 1.0 } else { 0.0 };
+            if self.cutscene_caption_alpha < target {
+                self.cutscene_caption_alpha =
+                    (self.cutscene_caption_alpha + CAPTION_FADE_STEP).min(target);
+            } else if self.cutscene_caption_alpha > target {
+                self.cutscene_caption_alpha =
+                    (self.cutscene_caption_alpha - CAPTION_FADE_STEP).max(target);
+            }
+        }
         match self.mode {
             SceneMode::Battle => {
                 if self.live_gameplay_loop {

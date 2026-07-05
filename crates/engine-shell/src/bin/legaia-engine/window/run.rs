@@ -690,6 +690,7 @@ pub(super) fn cmd_play_window_with_record(
         save_menu: None,
         pending_save_menu_atlas: save_menu_atlas_data,
         menu_window_table,
+        caption_atlas: None,
         uploaded_vram: None,
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),

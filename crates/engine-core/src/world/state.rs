@@ -1536,6 +1536,29 @@ pub struct World {
     /// roller [`Self::cutscene_narration`].
     pub cutscene_card: Option<Vec<String>>,
 
+    /// The `opdeene` "It was the Seru." caption, decoded to RGBA at scene
+    /// entry ([`crate::cutscene_caption::decode_opdeene_caption`]). `Some`
+    /// only while `opdeene` is loaded; the host uploads it once as a sprite
+    /// atlas and blits it, faded by [`Self::cutscene_caption_alpha`]. Unlike
+    /// the crawl / card this is a pre-rendered image, not font text - retail
+    /// draws it as a scene textured quad, so the engine blits the scene
+    /// texture rather than rendering a string. See [`crate::cutscene_caption`].
+    pub cutscene_caption: Option<crate::cutscene_caption::CaptionImage>,
+
+    /// Fade level (0..=1) of [`Self::cutscene_caption`], ramped each
+    /// [`Self::tick`]. Target-visible in the gap after the first narration
+    /// crawl block scrolls out and before the second opens (retail shows the
+    /// caption once, between `opdeene`'s two crawls).
+    pub cutscene_caption_alpha: f32,
+
+    /// Frames [`Self::cutscene_caption`] has been fully faded in. Used to bound
+    /// the caption to a retail-like ~2 s beat and fade it back out, since the
+    /// engine's inter-crawl timeline gap currently runs much longer than
+    /// retail's - so the caption reads as a deliberate pause, not a freeze,
+    /// even when the second crawl block is still frames away. Reset on scene
+    /// entry; never re-shows once the hold elapses (the gap continues hidden).
+    pub cutscene_caption_shown_frames: u32,
+
     /// Pending field-VM op-`0x44` SPAWN_RECORD request: the GLOBAL record
     /// index whose partition-2 record should spawn as a new context.
     /// Recorded by the host hook (the VM borrow precludes resolving the MAN
@@ -1793,6 +1816,9 @@ impl World {
             prologue_naming_armed: false,
             entering_town01_opening: false,
             cutscene_card: None,
+            cutscene_caption: None,
+            cutscene_caption_alpha: 0.0,
+            cutscene_caption_shown_frames: 0,
             pending_record_spawn: None,
             opening_chain_active: false,
         }

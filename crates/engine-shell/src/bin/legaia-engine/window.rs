@@ -283,6 +283,12 @@ struct PlayWindowApp {
     /// screen. `None` when the disc isn't loaded (pinned fallback rects
     /// in [`MENU_WINDOW_FALLBACK`] apply).
     menu_window_table: Option<legaia_asset::menu_windows::MenuWindowTable>,
+    /// Uploaded "It was the Seru." caption sprite atlas (opdeene's baked TIM,
+    /// `World::cutscene_caption`). Uploaded lazily the first frame the caption
+    /// image is present and dropped when it clears on scene change; holds
+    /// `(atlas, width, height)`. The caption is a pre-rendered scene texture,
+    /// not font text - see [`legaia_engine_core::cutscene_caption`].
+    caption_atlas: Option<(legaia_engine_render::UploadedSpriteAtlas, u32, u32)>,
     uploaded_vram: Option<UploadedVram>,
     meshes: Vec<UploadedVramMesh>,
     /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
