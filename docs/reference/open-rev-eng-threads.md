@@ -579,6 +579,7 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | Scene-transition (`0x3F` door) destination indexing | resolved | [details ↓](#scene-transition-0x3f-door-destination-indexing) | `project_scene_destination_table_indexing.md` |
 | Intra-town (house / interior) door mechanism | resolved | [details ↓](#intra-town-house--interior-door-mechanism) | `project_intra_town_door_mechanism.md` |
 | Field/town environment-geometry placement | resolved (renders) | [details ↓](#fieldtown-environment-geometry-placement) | `project_town_geometry_render_gap.md` |
+| Overworld / town entrance story-flag gating | resolved | An entrance's unlock is its own partition-2 record's C1/C2 gate (`FUN_8003BDE0`; C1 = one-shot latch, C2 = requires-all) against the system-flag bank `_DAT_80085758`. Ops `0x50/0x60/0x70` (SET/CLEAR/TEST) carry `idx = ((opcode & 0x8F) << 8) \| operand` (raw flag number). Disc-pinned via `man-scripts --system-flag-census`: map01 keikoku portals `C1=[0x193]` (setter `vozz` P1[7]), mist walls `P2[34..36] C1=[0x482]`, town01 dinner chain `P2[4]`→550→`P2[5]`→551. The dinner "re-fire" is falsified (the stepper already applies SET ops; `P2[5]` has no walk-on trigger). Full write-up in [world-map.md](../subsystems/world-map.md) + [field-locomotion.md](../subsystems/field-locomotion.md). | `project_walk_on_trigger_dispatch.md` |
 
 
 ### Town/field free-movement locomotion

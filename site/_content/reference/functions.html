@@ -84,7 +84,7 @@
         <li><code>FUN_801D0748</code> - battle / level-up main tick; sub-states 0x1E/0x32/0x6E/0xFE</li>
         <li><code>FUN_801D388C</code> - battle animation dispatcher; switch on animation_type (0..0x31+)</li>
         <li><code>FUN_801D5854</code> - battle per-pose camera/presentation driver (never writes the anim-id fields; the anim system is <code>FUN_80047430</code> &rarr; <code>FUN_8004AD80</code> &rarr; <code>FUN_8004998C</code>)</li>
-        <li><code>FUN_801D8DE8</code> - UI element ID mapper (3 KB, 75 callers)</li>
+        <li><code>FUN_801D8DE8</code> - HUD element renderer; switches on <code>elem_id</code> (80-entry table) to draw each on-screen element (HP bars, Spirit names, hand-card portraits, victory banner). Shared by the battle HUD and Muscle Dome.</li>
         <li><code>FUN_801DA6B4</code> - battle actor display-state controller; opacity + pose flags for alive actors</li>
         <li><code>FUN_801DB81C</code> - next-valid-target scan; <code>actor[+0x14C] != 0</code> &amp; no death/stone</li>
         <li><code>FUN_801ED710</code> - records / stats screen renderer (battles, escapes, play-time, max-hits)</li>
