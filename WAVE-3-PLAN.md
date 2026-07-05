@@ -38,16 +38,26 @@ A 13-agent parallel wave ran against this plan (9 read-only RE investigations +
   (GPU-verified, afterimage/billboard wired); B6 halt-acquire handshake +
   faithful per-leg NPC glide (22/25 town01 placements now disc-derived);
   level-up battle-actor `+0x14C..+0x176` field map + growth-port disc test.
-- **Arc 1 (chapter spine)** — recon/blueprint only (deferred implementation to
-  avoid clobbering the in-flight engine-core worktrees): chain is
-  `town01 → [garmel] → map01 hub → {rikuroa|keikoku} → dolk` (boss Zeto); the
-  one hard wall is GAP 1 (unconsumed `WorldMapTransition` + no
-  `target_map→CDNAME` resolver). This is the next arc to implement.
+- **Arc 1 (chapter spine) — LANDED.** GAP 1 closed: the overworld→dungeon hop
+  now works end-to-end. Reframe found in implementation: map01 has ZERO
+  partition-1 Portal placements, so nothing emitted `WorldMapTransition` there;
+  the real overworld entrances are gate-1 walk-on tile triggers →
+  partition-2 record → `0x3F` named-scene-change. Built the bridge
+  (`overworld_portal_sites` → `WorldMapEntityConfig::OverworldPortal` → producer
+  / install / drain-arm consumer at `scene_entry.rs:977`), byte-verified against
+  24 map01 portals. Oracle `chapter1_spine_oracle.rs` (6 tests, none
+  ignore-gated): `town01 → map01 → keikoku` closes. Still UNKNOWN (flagged in
+  `world-map.md`): the post-map01 story-gated entrance order + flag 551 (all
+  portals currently install unconditionally); GAP 2/3/6 untouched.
+- **Effect-index — LANDED.** `move_power::effect_trigger_index` +
+  `asset move-power --effect-index` CLI + disc-gated test (keyed on `(space,id)`;
+  Proto3D/Efect2D/Flash). Recon's example move-id was its spell-table name
+  (0x29); the real `id→index` owner is 0x06 — test pinned to the true owner.
 
-Still genuinely capture-blocked (real Track-A residue): the `+0x16E 0x400`
-applier, scene-v12 b0, the 13 Super connectors (low value), summon render-mode
-live seat (no exerciser). Effect-index CLI/test = documented, ready to
-implement.
+Still genuinely capture-blocked (real Track-A residue, unchanged): the
+`+0x16E 0x400` (Sleep/Numb) applier, scene-v12 b0, the 13 Super connectors
+(low value), summon render-mode live seat (no exerciser). The post-map01
+story-gated order is a fresh RE thread (needs the overworld progress-flag map).
 
 ## Ground truth as of main @ a32d6749 (#303)
 
