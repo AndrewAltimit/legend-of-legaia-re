@@ -40,8 +40,8 @@
       </tr>
       <tr>
         <td><code>DAT_8007C018[45..53]</code> mid-load vertex-pool pointers</td>
-        <td>open</td>
-        <td>Steady-state model says reads past <code>DAT_8007BB38</code> are stale. Next step: one write-watchpoint on <code>0x8007C018 + 45*4</code> during scene load to split stale-pointer vs live-data.</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Structural: <code>DAT_8007C018[i]</code> is meaningful only for <code>i &lt;= DAT_8007BB38</code> (the walker counter); entries above it - including <code>45..53</code> in small field scenes - are stale carryover, never dereferenced. No per-index "vertex-pool" semantic. The <code>field_load_first_town</code> probe-state was never captured, so the rule supersedes the snapshot.</td>
         <td><a href="memory-map.html">memory-map</a></td>
       </tr>
       <tr>
@@ -58,8 +58,8 @@
       </tr>
       <tr>
         <td>Slot-4 freeze flag <code>_DAT_8007B824</code></td>
-        <td>open</td>
-        <td>Either an undumped overlay sets the freeze flag, or the BSS-init zero holds through retail and the "persistent slots" semantic is vestigial. Next step: a write-breakpoint probe during retail play.</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The corpus has one store to <code>0x8007B824</code>: the <code>FUN_8001F05C</code> case-2 freeze sub-path (PC <code>0x8001F2F8</code>), gated <code>param_3 == 1</code>. Every static + overlay caller passes <code>param_3 != 1</code>, so the flag stays BSS-zero and the "persistent slots" semantic is vestigial. Not capture-blocked.</td>
         <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
       </tr>
       <tr>
@@ -190,8 +190,8 @@
       </tr>
       <tr>
         <td>Scripted Tetsu encounter &rarr; Battle</td>
-        <td><span class="tag tag-partial">partial</span></td>
-        <td>Reaches Battle from a NEW GAME cold boot: the MAN-derived sparring carrier (town01 formation index 4, monster <code>0x4F</code>) is engaged by walking to it, the interaction probe, and the dialogue-accept - no teleport, no injection. <a href="#d-tetsu">details &darr;</a></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Reaches Battle from a NEW GAME cold boot: the MAN-derived sparring carrier (town01 formation index 4, monster <code>0x4F</code>) is engaged by walking to it, the interaction probe, and the dialogue-accept - no teleport, no injection. Both former residuals are now derived from disc bytes. <a href="#d-tetsu">details &darr;</a></td>
         <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
       <tr>
@@ -221,8 +221,8 @@
   <h3 id="d-move-power">Per-spell magic power - residual</h3>
   <p>The <code>0x801F4F5C</code> table is special-attack-only (party arts take per-strike art-record power); the aux effect tables are parsed, move-FX scene-graphs render through the ported move VM, and both affinity directions are wired. Residual: live note-on wiring of the resolved sound cue; the retail draw transform of a move-VM part (the <code>FUN_80021DF4</code> render tail); the live slot-7 summon's HP at roll time (modelled as spawn HP).</p>
 
-  <h3 id="d-tetsu">Scripted Tetsu encounter - residual</h3>
-  <p>Launch mechanism, carrier identity/placement, picker, and the emergent walk-talk-accept leg are pinned and engine-driven. Residual: deriving the opening carrier reposition from the opening sequence itself (the engine uses the pinned tutorial position), and the dialogue Yes/No selection logic (accept is treated as dismiss - faithful for the forced tutorial).</p>
+  <h3 id="d-tetsu">Scripted Tetsu encounter - resolved</h3>
+  <p>Launch mechanism, carrier identity/placement, picker, and the emergent walk-talk-accept leg are pinned and engine-driven. Both former residuals are now derived from disc bytes: the opening carrier reposition is town01 MAN partition-1 record <code>P1[10]</code>'s <code>4C 51 15 0E 07 22</code> NpcRun &rarr; tile <code>(21,14)</code> = world <code>(2752,1856)</code> = <code>RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS</code> exactly (bytecode-derived, not a bare constant); and the spar Yes/No is a MES option picker (<code>0x29</code> open + relative-jump table, handler <code>FUN_80038050</code>, ported as <code>legaia_mes::Picker::jump_target</code>), not a field-VM opcode.</p>
 </section>
 
 <section class="doc-section" id="field">
@@ -418,14 +418,14 @@
       </tr>
       <tr>
         <td>Debug flags <code>0x8007B8C2</code> / <code>0x8007B98F</code></td>
-        <td><span class="tag tag-partial">partial</span></td>
-        <td><code>0x8007B8C2</code> is the dev/retail asset-load selector, read-only at runtime. Poking <code>0x8007B98F = 1</code> brings up the debug menu on SELECT+&#9651; in retail, so its consumer is real but in an uncaptured overlay. <a href="#d-debug-flags">details &darr;</a></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td><code>0x8007B8C2</code> is the dev/retail asset-load selector, read-only at runtime. <code>0x8007B98F</code> has no byte-granular reader: it is byte +3 (MSB) of the 32-bit debug word <code>0x8007B98C</code>, whose gate readers (<code>FUN_8001822c</code> + ~14 field-overlay 0897 gates) and writer are statically pinned; poking it to 1 sets the MSB so every <code>!= 0</code> gate reads debug active. <a href="#d-debug-flags">details &darr;</a></td>
         <td><a href="../subsystems/boot.html">boot</a></td>
       </tr>
       <tr>
         <td>Key-item area consumers (<code>0x800859E8..0x80085A40</code>)</td>
-        <td>open</td>
-        <td>Identify which native code reads the key-item id bytes the full-bag OOB add helper writes; an unguarded indexed consumer is a potential ACE chain. Probe: <code>autorun_key_item_consumer_hunt.lua</code>.</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>No unguarded-index consumer: the range is inventory slots <code>&gt;= 72</code> of <code>&amp;DAT_80085958</code>, read by the item-menu functions via <code>&amp; 0x3ff</code> masks into 256-entry item tables (bounded). It amplifies to game-state corruption (item possession / displayed ids), not a native index-OOB chain step; the OOB <em>write</em> at <code>0x800422BC</code> remains the only primitive.</td>
         <td></td>
       </tr>
       <tr>
@@ -454,8 +454,8 @@
       </tr>
       <tr>
         <td>PROT 0896 (<code>bat_back_dat</code>) identity</td>
-        <td>open</td>
-        <td>The mode-24-overlay hypothesis is refuted and the <code>0x801C5818</code> base was an over-read artifact; the unique head is a self-contained code+data blob (<code>"FWIN ERR %d"</code>) with no reachable loader call. <a href="#d-prot0896">details &darr;</a></td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The unique ~<code>0x9000</code>-byte head is the vestigial Japanese-build field-menu / config / status overlay - the debug-string sibling of the English retail menu overlay PROT 0899 (same <code>~0x801D0000</code> window-renderer VA family, <code>"FWIN ERR %d"</code> at file <code>0x3D4</code>). 0899 ships the English label set with zero <code>FWIN</code>; a signature scan finds 0896 resident in 0 of 140 states, so the USA build never loads it. <a href="#d-prot0896">details &darr;</a></td>
         <td><a href="../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td>
       </tr>
       <tr>
@@ -485,11 +485,11 @@
     </tbody>
   </table>
 
-  <h3 id="d-debug-flags">Debug flags - residual</h3>
-  <p>An exhaustive corpus sweep finds zero writers of <code>0x8007B8C2</code> and zero references to <code>0x8007B98F</code>, yet the live poke proves the latter's consumer exists. Next step: capture the overlay hosting the SELECT+&#9651; debug-menu reader.</p>
+  <h3 id="d-debug-flags">Debug flags - resolved</h3>
+  <p>An exhaustive corpus sweep finds zero writers of <code>0x8007B8C2</code> and zero <em>byte</em>-granular references to <code>0x8007B98F</code> - the latter because it is the most-significant byte (offset +3, little-endian) of the 32-bit debug-mode word <code>0x8007B98C</code>, and code reads the word. <code>_DAT_8007B98C</code> is the debug gate tested by the input dispatcher <code>FUN_8001822c</code> plus ~14 resident field-overlay (0897) gates, written by the shared menu/title/save-init routine. Poking <code>0x8007B98F = 1</code> sets the MSB, so every <code>_DAT_8007B98C != 0</code> gate reads debug active and SELECT+&#9651; opens the debug menu. Statically pinned; no uncaptured-overlay reader needed.</p>
 
-  <h3 id="d-prot0896">PROT 0896 - what would close it</h3>
-  <p>A full SCUS loader-callsite census rules out every constant-param path (0896 would need <code>param == 1</code>, which no site produces), and the head bytes appear in no captured RAM state. Closes via a consumer: any retail moment where the head bytes are resident (<code>overlay_residency.py</code> against new captures), or an overlay-resident loader call whose computed param reaches 1.</p>
+  <h3 id="d-prot0896">PROT 0896 - resolved</h3>
+  <p>Host-capstone decode of the head (extraction entry 896, located by the <code>"FWIN ERR"</code> bytes) identifies it as the vestigial Japanese-build field-menu / config / status overlay: a Shift-JIS config/menu/status label pool, the <code>"FWIN ERR %d"</code> (Field WINdow) debug printf at file offset <code>0x3D4</code>, real MIPS at link base <code>~0x801D0000</code> indexing the <code>0x414</code>-byte character records, and head function-pointer tables across <code>0x801D81C0..0x801DC700</code> - the same window-renderer VA family as the live English menu overlay PROT 0899, which ships the English equivalents of the identical label set with zero <code>FWIN</code>. A distinctive-signature scan across 140 catalogued RAM states finds 0896 resident in none (positive control: the English "Battle Voices" is resident in 10 menu-phase states), so the USA build never loads it - a vestigial JP-build overlay carried on the disc.</p>
 
   <h3 id="d-slot-b">Slot-B cluster - residual</h3>
   <ul class="bullets">
@@ -527,8 +527,8 @@
         <li><code>FUN_8001ebec</code> as the dialog-box renderer: it is a per-character TMD pose copier; the dialog SM is <code>FUN_80039b7c</code>, the pager <code>FUN_801D84D0</code>.</li>
         <li>Per-cue reverb opt-in ("Spirit/echo cues only"): falsified - Studio C is master-on globally with broad EON routing.</li>
         <li>A title-screen entry in the mode table: no such entry - the title overlay loads pre-mode-dispatch.</li>
-        <li>Debug flag <code>0x8007B98F</code> "stripped at link time / inert": falsified - a live poke enables the debug menu; the consumer is in an uncaptured overlay.</li>
-        <li>PROT 0896 as the menu overlay, or as the mode-24 overlay at <code>0x801C5818</code>: both refuted (menu = 0899; the base was an over-read artifact).</li>
+        <li>Debug flag <code>0x8007B98F</code> "stripped at link time / inert" AND "consumer in an uncaptured overlay": both falsified - it is the MSB of the debug word <code>0x8007B98C</code>, whose readers (<code>FUN_8001822c</code> + field-overlay gates) are statically pinned.</li>
+        <li>PROT 0896 as the menu overlay, or as the mode-24 overlay at <code>0x801C5818</code>: both refuted (menu = 0899; the base was an over-read artifact). It is the vestigial Japanese-build sibling of 0899, never loaded by the USA build.</li>
         <li>"PROT 0905 = Gimard": the <code>+ 0x381</code> off-by-2 - Gimard <code>0x81</code> arithmetics to extraction 0903; the Nighto "Hell's Music" dance-song reading is refuted (it is the attack's display name).</li>
         <li>XP table at <code>0x8007123C</code> / <code>0x80070A3C</code>: both wrong; the real table is <code>DAT_80076AF4</code>.</li>
         <li>Menu-glyph atlas as boot-resident field VRAM: it is menu-time-resident; uploading it at field entry flags a wrong static texel.</li>

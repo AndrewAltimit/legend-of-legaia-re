@@ -297,6 +297,19 @@ fn status_screen_label_icons_suppresses_ap_text_and_empty_equips() {
     // The icons variant emits strictly fewer glyphs: no LV/HP/MP tags,
     // no "AP  4/100" readout, no empty-slot text.
     assert!(with_icons.len() < without.len());
+    // The LV / HP / MP tag labels are UI-icon sprites in the icons variant
+    // (drawn by `status_icon_sprites_for`), so their text stand-ins vanish.
+    // Those three tags are the panel's only gold-inked glyphs, so gold text
+    // present in the fallback and absent under icons pins the swap.
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    assert!(
+        without.iter().any(|d| d.color == gold),
+        "text fallback should draw the gold LV/HP/MP tags"
+    );
+    assert!(
+        !with_icons.iter().any(|d| d.color == gold),
+        "icons variant must not draw the LV/HP/MP tags as gold text"
+    );
     // The occupied slot's name lands at the +0x10 name offset
     // (icon x 90 -> text x 106) on the slot-0 row (y = 16 + 0x6d).
     assert!(with_icons.iter().any(|d| d.dst.0 >= 106 && d.dst.1 == 125));

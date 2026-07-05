@@ -30,6 +30,10 @@ Provenance:
 - Procedural fill: `overlay_0897_801e0b1c.txt`.
 - Board renderer: `overlay_0897_801e0f3c.txt` (draws each cell value > 1 as `DAT_801f35bc[cell]` at the cell's world position).
 
+**Roster: the tile board is a field-overlay (`0897`) construct only.** Every install / walk-SM / fill / render site lives in `0897` and is reached from the field/event VM (op `0x49`). So the board is used by field/puzzle scenes, not by the hub minigames. **Confirmed** (`overlay_0897_801de840.txt` / `..._801ef2b0.txt`).
+
+The `_DAT_8007b450` references in the dedicated minigame overlays (`dance` / `slot_machine` / `baka_fighter` / `fishing`) are all inside one shared library function `FUN_801e5b4c` - the equipment/stat **comparison-panel renderer** (2228 bytes, byte-identical across the `dance`/`cutscene`/`world_map`/`slot_machine` overlay dumps, i.e. resident in every overlay), which reads `_DAT_8007b450` only as a boolean *layout hint* (`== 0` → row pitch `0xe`, else `0xd`). It neither installs nor drives a board. The dance-core functions (`FUN_801cf470` / `FUN_801d1af4` / `FUN_801d231c`) do not touch `_DAT_8007b450` at all. **Confirmed** (`overlay_dance_801e5b4c.txt`).
+
 ## Cell value semantics
 
 Cells are indexed `board[row * width + col]`. Confirmed value classes:
@@ -70,7 +74,7 @@ The board controller is a small state machine keyed on the controller actor's `+
 ### State 4 - input, collision, commit
 
 1. If the menu-button edge (`_DAT_8007b874 & 0x10`) is set, go to state `5`.
-2. Read the pad `_DAT_8007b850` and remap it by camera facing via `func_0x800467e8` (so "screen up" maps to the correct world direction regardless of camera azimuth).
+2. Read the pad `_DAT_8007b850` and remap it by camera facing via `func_0x800467e8` (so "screen up" maps to the correct world direction regardless of camera azimuth). The remap is a **quantized 45° (1/8-turn) rotation**, not a fixed 90° snap and not a continuous rotation: `FUN_800467e8` isolates the direction bits (`mask & 0xf000`), finds their index in the 8-entry ring `DAT_800766fc` (the 8 compass octants incl. diagonals), and re-emits `ring[(index + gp[0x2d8]) & 7]`, where `gp[0x2d8]` is the camera-facing octant. So the rotation amount is one of eight octants. (`800467e8.txt`.)
 3. Decode one direction from the remapped mask into a candidate `(col, row)`:
 
    | mask bit | delta |
@@ -106,10 +110,8 @@ transition cell (`8..=0xA`) exits the board mode - the suspended script reads
 
 ## Open
 
-- Which specific minigames / puzzle rooms use this board, and whether any board is fixed (inline-script cells) vs. always procedural. The `dance` / `baka_fighter` / `slot_machine` overlays reference the same `_DAT_8007b450` globals.
-- The exact byte offset where the cell array begins in the inline script header for a *fixed* board, if any exists (the header is variable-length; `+7`/`+9` are read through the field-VM operand reader `func_0x8003ce9c`). Needed to lift a fixed board from a scene's event script; the engine installs the procedural fill.
+- Whether any board is *fixed* (inline-script cells) rather than procedurally filled, and if so the exact byte offset where the cell array begins in the (variable-length) inline script header. The install op can point `_DAT_8007b450` at an inline header (a fixed board is representable), but no fixed-board instance is pinned; `+7`/`+9` are read through the field-VM operand reader `func_0x8003ce9c`. Needed to lift a fixed board from a scene's event script; the engine installs the procedural fill.
 - The event-cell arrival's header `+7`/`+9` flag-operand consumption (retail sets/tests field-VM flags on the transition; the engine currently surfaces the exit through the op-49 resume only).
-- Whether `func_0x800467e8`'s facing remap is a fixed 90° quadrant snap or a finer rotation.
 - Per-cell tile-actor rendering (header `+0xb`/`+0xc` template spawns) - the engine tracks the ids but draws nothing yet.
 
 ## See also

@@ -31,7 +31,18 @@ Song end (state 10 only): when `DAT_801d5820` reaches the song-length limit - `0
 
 ### Mode global `DAT_801d514c`
 
-Selected in state 0 and used throughout for layout. It distinguishes a single-dancer mode from multi-dancer / versus layouts (the HUD draws one vs. three score panels off it, and `FUN_801d1af4`'s player-index remap depends on it). The exact label per value (solo / 2P / vs-CPU / practice) is **Inferred**; what is **Confirmed** is that value `3` suppresses the extra score/target panels and that the grading branch in state `0x14` keys off it.
+Four modes, `0..3`. The on-screen state-0 menu prints four labels top-to-bottom at y `0x50`/`0x58`/`0x60`/`0x68` (`s_yosenn`/`s_hosenn`/`s_setumei`/`s_asobi`) with the cursor at y `= value*8 + 0x54`, so value 0 = `yosenn` (予選, qualifier), 1 = `hosenn` (本選, finals), 2 = `setumei` (説明, how-to/demo), 3 = `asobi` (遊び, free play). In normal play the mode is chosen by the *caller* (a field script sets a story flag before entering): state 1 maps flag `0x134 → 0`, `0x135 → 1`, `0x133 → 2`, `0x428 → 3` then clears them. The state-0 cursor menu is the debug/test selector. **Confirmed** (value↔label from the state-0 layout + state-1 flag map; the English glosses of the romaji labels are **Inferred**). See `overlay_dance_801cf470.txt`.
+
+Per-mode behaviour, all read directly from `FUN_801cf470`:
+
+| Value | Behaviour |
+|---|---|
+| `0` yosenn | Versus. Grading compares the human score `DAT_801d53cc` against score slot 2 `DAT_801d53d4`; a lower score clears the win flag. |
+| `1` hosenn | Versus. Grading compares `DAT_801d53cc` against score slot 1 `DAT_801d53d0`; a lower score clears the win flag. |
+| `2` setumei | Short how-to/demo: shorter song limit (`0x41dc` vs `0x64fc`), the per-beat dancer-position interpolation at the head of `FUN_801cf470` is suppressed (guarded `DAT_801d514c != 2`), and state 1 routes through the load-wait state 2. Grading clears the win flag when the score exceeds `300`. |
+| `3` asobi | Free play: draws the personal-best panel (`FUN_801d2f38` + `FUN_801d32f8` over `_DAT_80084464`) and cycles a start voice via `_DAT_80084468`; the grading switch has **no** branch, so free play sets no win/lose flag. |
+
+The win/lose story flag is `0x50a` (a bit in the `DAT_80085758` flag bank). It is **set** on entry (state 1, `func_0x8003ce08(0x50a)`; `ce08` = set, `ce34` = clear, `ce64` = test - see `8003ce08.txt`/`8003ce34.txt`/`8003ce64.txt`) and **cleared on a loss** in grading (modes 0/1 when the human loses the score comparison; mode 2 when the score tops `300`). Downstream field script tests `0x50a`: set = passed, clear = failed. **Confirmed.**
 
 ## Input judging + timing windows
 
@@ -74,16 +85,18 @@ Key accumulators (all per-player, `player * 4` stride from the listed base):
 
   The combo / Perfect tiers also bump the gauge `+1000`, so they self-promote the dancer to a higher (denser, higher-multiplier) lane.
 - **Groove gauge** `DAT_801d544c[player]`: stepped up `+1000` on success and clamped to `[0, 2999]`. Because the chart row is `gauge / 1000`, the gauge crossing 1000 / 2000 promotes the dancer to the next (harder, higher-scoring) chart row. On a miss the gauge floors to 0 / drops a row. So the gauge is simultaneously the combo/excitement meter, the difficulty selector, and the score multiplier. **Confirmed.**
-- **Remaining-step / life counters** `DAT_801d534c[player]` (3 at reset): a press is only judged while this is non-zero, and it is decremented as steps are consumed. **Confirmed**; whether running out ends the player's run early vs. just gating input is **Inferred.**
+- **Step-stock counter** `DAT_801d534c[player]` (3 at run start, `FUN_801cf470` state 3; also re-armed to 3 by `FUN_801d0750`): the per-player stock of timing-button (`pad & 0x10`) scoring presses. `FUN_801d1af4` decrements it *only* inside the `& 0x10` branch and only while non-zero; at 0 that branch is skipped. It is **not** replenished during play, and the HUD reads it to draw the remaining markers (`FUN_801d2524`).
+
+  Running to 0 **gates the `0x10`-button scoring path only - it does not end the run**: no path writes the state global `DAT_801d5334` off it, and the run ends solely on the song timer (`DAT_801d5820` → state `0xb`; see [state machine](#step--rhythm-state-machine)). The judged direction presses (`& 0x80` / `& 0x20`) are independent of this counter. **Confirmed** (`overlay_dance_801d1af4.txt`, `overlay_dance_801cf470.txt`).
 - **Per-player hit-tier state** `DAT_801d548c[player]` (0/1/2/3) and timer `DAT_801d54cc[player]`: latch which direction/animation is active for the current step so a held button isn't re-judged every frame. **Confirmed.**
 
 Player 0 additionally drives feedback: a sound cue (`_DAT_8007b6de`/`_DAT_8007b6d8` write a sequence id), a hit/combo banner via the sprite emitter `FUN_801d3fd0`, and the dancer pose switch `FUN_801d03c4`. **Confirmed.**
 
 ### Win / lose threshold
 
-In results state `0x14`, `FUN_801cf470` copies the three player scores into display halfwords (`DAT_801c6460..`) and then, by mode, decides the outcome:
-- It compares the human player's score `DAT_801d53cc` against an opponent score or a fixed threshold (`300` / `0x12d` in the solo-style branch). **Confirmed.**
-- A win calls the story-flag clear/set helper on flag id `0x50a` (`func_0x8003ce34(0x50a)`), which is how the rest of the game learns the dance was passed. **Confirmed**; the precise win/loss flag semantics for every mode are **Inferred.**
+In results state `0x14`, `FUN_801cf470` copies the three player scores into display halfwords (`DAT_801c6460..`) and then, by mode, decides the outcome (see the [per-mode table](#mode-global-dat_801d514c) for the exact comparison each mode runs):
+- Modes 0/1 compare the human score `DAT_801d53cc` against the opponent slot (`DAT_801d53d4` / `DAT_801d53d0`); mode 2 tests it against the fixed threshold `300` (`0x12d`); mode 3 grades nothing. **Confirmed.**
+- Flag `0x50a` is **set** at entry (state 1) and **cleared on a loss** here via `func_0x8003ce34(0x50a)` (`ce34` = clear). Set = passed, clear = failed; free play (mode 3) leaves it untouched. **Confirmed.**
 
 The high score is tracked in the save block (`_DAT_80084464` is updated when `DAT_801d53cc` exceeds it). **Confirmed.**
 
@@ -109,7 +122,7 @@ All globals live in the overlay's data region around `0x801d5xxx`/`0x801d6xxx`. 
 | Global | Width | Role | Confidence |
 |---|---|---|---|
 | `DAT_801d5334` | u32 | Game-state selector for `FUN_801cf470` (states 0..0x14) | Confirmed |
-| `DAT_801d514c` | u32 | Mode / layout (solo vs. multi; value 3 = no extra panels) | Confirmed |
+| `DAT_801d514c` | u32 | Mode `0..3`: 0 yosenn / 1 hosenn (versus) · 2 setumei (how-to) · 3 asobi (free play). Set from a story flag in state 1 | Confirmed |
 | `DAT_801d5130` | u32 | Pause / suppress-input flag (judging skipped when set) | Confirmed |
 | `DAT_801d5830` | u32 | "Loading / pre-roll" gate (state 2 waits on it clearing) | Confirmed |
 | `DAT_801d513c` | u32 | Lead-in countdown (state 7) | Confirmed |
@@ -120,7 +133,7 @@ All globals live in the overlay's data region around `0x801d5xxx`/`0x801d6xxx`. 
 | `DAT_801d5138` | u32 | Beat-clock hold flag (freezes `DAT_801d5820` advance when set) | Inferred |
 | `DAT_801d53cc[]` | u32×3 | **Per-player score**, clamped to `999` | Confirmed |
 | `DAT_801d544c[]` | u32×3 | **Groove gauge**, clamped `[0,2999]`; `/1000` selects chart row | Confirmed |
-| `DAT_801d534c[]` | u32×3 | Per-player remaining-step / life count (reset to 3) | Confirmed |
+| `DAT_801d534c[]` | u32×3 | Per-player step-stock (reset to 3); gates the `0x10`-button scoring path, does not end the run | Confirmed |
 | `DAT_801d548c[]` | u32×3 | Current-step hit-tier latch (0/1/2/3) | Confirmed |
 | `DAT_801d54cc[]` | u32×3 | Hit-tier latch timer | Confirmed |
 | `DAT_801d550c[]` | u32×3 | Per-player chart cursor (advanced on each matched note) | Confirmed |
@@ -166,8 +179,6 @@ Runtime wiring: the engine host installs the rules engine as a suspending scene 
 ## Open
 
 - The visible Perfect/Good/Miss banner *strings* each tier spawns (the `× 0x22` / `DAT_801d538c` Perfect tier and the accuracy weight `DAT_801d6090`) - the score tiers are pinned (see [Scoring](#scoring)); only the on-screen label each spawns is unmapped (capture-leaning).
-- The precise meaning of each `DAT_801d514c` mode value (solo / multi / vs-CPU / practice), and the per-mode win/lose flag set.
-- Whether the per-player step counter `DAT_801d534c` running to 0 ends a dancer's run or only gates input.
 
 ## See also
 

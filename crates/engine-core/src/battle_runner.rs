@@ -20,10 +20,13 @@
 //!    turn start and [`BattleRunner::end_round`] at turn end; the runner
 //!    delegates to [`crate::battle_round::BattleRound`] which resets AP,
 //!    recomputes per-slot stats, and drains tick damage.
-//! 4. **Action validation.** Resolved arts are filtered through
-//!    [`legaia_engine_vm::action_validator`] (the 16-arm validator) so
-//!    arts with insufficient AP / blocked by status / unknown to the
-//!    character are rejected before they reach the SM.
+//!
+//! Target-relevance validation (the retail `FUN_8003fb10` menu-greying
+//! validator - "can this heal / revive / status action apply to slot N?")
+//! is not a runner concern: liveness / kind constraints live in
+//! [`crate::target_picker`] and per-item benefit relevance in
+//! [`crate::inventory_use`], each a purpose-built clean-room port of the
+//! arms it needs.
 //!
 //! No SM ticking happens here - engines tick the SM through their existing
 //! `step_battle` loop. The runner is the **input → queue** half of the

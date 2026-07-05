@@ -29,6 +29,16 @@
 //! into the ordering table (`FUN_8003d2c4` at depth `FUN_800195a8`'s return)
 //! is the retail software OT, which engine-render replaces with its own draw
 //! ordering.
+//!
+//! **Authored but not yet wired.** This is a faithful, unit-tested port of a
+//! real retail draw, kept for that fidelity, but nothing calls it in-engine
+//! yet: the wgpu renderer has no screen-space `POLY_FT4`/ordering-table
+//! primitive path, and battle move-FX currently draw as 3D billboard meshes in
+//! the shell. The trail texpage this consumes is already surfaced by
+//! [`legaia_engine_core::World::active_move_fx_trail_texpage`]. Wire this into
+//! a screen-space overlay pass when one exists; until then it is an
+//! authored-but-unexercised path (like the other documented no-live-exerciser
+//! render modes), retained rather than deleted.
 
 /// Units the source point is pushed down (+Y) before projection
 /// (retail adds `0x120` to the Y of `*(_DAT_8007bd24 + 0x1144)`). Applied

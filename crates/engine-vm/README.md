@@ -17,7 +17,6 @@ original executable.
 - [`actor_tick` - `FUN_80021DF4`](#actor_tick---fun_80021df4)
 - [`status_effects`](#status_effects)
 - [`battle_formulas`](#battle_formulas)
-- [`action_validator`](#action_validator)
 - [See also](#see-also)
 
 ## `actor_vm` - `FUN_801D6628`
@@ -144,11 +143,12 @@ mirrors the MP-half/quarter shift-subtract in `FUN_801E295C` state
 `SPD + missingHP>>5`, two rand draws, Chicken Heart / Chicken King
 ability bits honoured.
 
-## `action_validator`
-
-16-arm action validator (`FUN_8003fb10`) - clean-room port of the
-per-slot "target valid" predicate the menu / UI consults before
-committing a player choice.
+The retail per-slot "target valid" predicate `FUN_8003fb10` (the 16-arm
+menu/UI gate documented in
+[`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md#action-validator-fun_8003fb10))
+is not a standalone module here: its target-relevance arms are re-implemented
+where they are consumed - liveness/kind gating in `legaia-engine-core`'s
+`target_picker`, and the item-benefit arms in `inventory_use::effect_benefits_target`.
 
 ## See also
 
