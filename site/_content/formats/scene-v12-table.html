@@ -141,6 +141,21 @@ for (i, s) in t.scripts.iter().enumerate() {
 }</code></pre>
 </section>
 
+<section class="doc-section" id="embedded-man-asset-table">
+  <h2>Embedded MAN-bearing asset table (v12-family dungeon bundles)</h2>
+  <p>Some dungeon scenes ship their <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">scene_asset_table</a> <strong>inside</strong> their <code>scene_v12_table</code> entry rather than as a first-class sibling PROT entry. The canonical 7-asset table is embedded at file offset <strong><code>0x1000</code></strong> (the second 0x800-aligned window, past the header + inline records + the offset-<code>0x800</code> prescript). Its descriptor <code>data_offset</code>s are file-relative against the entry's <strong>extended footprint</strong>, so <code>table_offset (0x1000) + data_offset</code> addresses the MAN's LZS stream.</p>
+  <p>Two scenes carry the MAN <em>only</em> this way (no <code>scene_asset_table</code> / <code>scene_scripted_asset_table</code> sibling in their CDNAME block):</p>
+  <table>
+    <thead><tr><th>Scene</th><th>v12 PROT</th><th>Table</th><th>MAN desc size</th><th>MAN data_off</th><th>MAN abs</th><th>Decoded</th><th>Partitions</th></tr></thead>
+    <tbody>
+      <tr><td><code>dolk2</code></td><td>76</td><td>0x1000</td><td>0x929</td><td>0x1a89e</td><td>0x1b89e</td><td>2345&nbsp;B</td><td>[10,&nbsp;7,&nbsp;3]</td></tr>
+      <tr><td><code>rikuroa</code></td><td>164</td><td>0x1000</td><td>0x9a54</td><td>0x40927</td><td>0x41927</td><td>39508&nbsp;B</td><td>[18,&nbsp;70,&nbsp;20]</td></tr>
+    </tbody>
+  </table>
+  <p>The v12 header wins the classifier at offset 0, so the standalone <code>scene_asset_table</code> detector never probes <code>0x1000</code>. By contrast <code>dolk</code> / <code>keikoku</code> have a first-class scripted + bare table pair and don't need this path. The engine loader (<code>legaia_engine_core::scene_bundle::find_bundle</code>) adds a fallback that scans a <code>SceneV12Table</code> entry's 0x800-aligned offsets for the first <code>scene_asset_table</code> whose descriptors include a type-3 (MAN) slot (the count-gate also rejects the MAN-less count=4 sibling table) and reports it as <code>BundleSource::V12Embedded { table_offset: 0x1000 }</code>. This lets <code>rikuroa</code> / <code>dolk2</code> resolve their scene-entry system script, collision grid, encounter table, and scene-destination table. Disc-gated coverage: <code>crates/engine-core/tests/v12_bundle_man_disc.rs</code>.</p>
+  <p><code>rikuroa</code>'s MAN carries <strong>no named <code>0x3F</code> warp</strong> - the Ravine's exit and its first-boss (Zeto) trigger are gated by the partition-2 cutscene timeline, not a scene-change op - so its scene-destination table decodes to an empty list. <code>dolk2</code>'s MAN lists <code>map01</code> (its overworld return).</p>
+</section>
+
 <section class="doc-section" id="open-questions">
   <h2>Open questions</h2>
   <ul class="bullets">

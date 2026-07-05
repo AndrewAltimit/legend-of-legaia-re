@@ -32,6 +32,16 @@ use crate::scene::{Scene, SceneEntry};
 /// `Scripted` = a `Class::SceneScriptedAssetTable` entry whose file starts
 /// with the prescript and the table sits at a 0x800-aligned offset past
 /// the records.
+///
+/// `V12Embedded` = a `Class::SceneV12Table` entry whose v12 runtime-fixup
+/// header wins the classifier at offset 0, but which carries a MAN-bearing
+/// `scene_asset_table` embedded at a 0x800-aligned offset (canonically
+/// `0x1000`) inside the same entry. This is how the v12-family dungeon
+/// bundles (`rikuroa`, `dolk2`) ship their MAN - they have no first-class
+/// `SceneAssetTable` / `SceneScriptedAssetTable` sibling. Descriptor
+/// offsets remain file-relative against the entry's EXTENDED footprint, so
+/// `table_offset` + `data_offset` addresses the payload the same way the
+/// scripted variant does. See [`docs/formats/scene-v12-table.md`].
 #[derive(Debug, Clone)]
 pub enum BundleSource<'a> {
     Plain {
@@ -43,6 +53,12 @@ pub enum BundleSource<'a> {
         info: SceneScriptedAssetTable,
         table: SceneAssetTable,
     },
+    V12Embedded {
+        entry: &'a SceneEntry,
+        table: SceneAssetTable,
+        /// 0x800-aligned byte offset where the embedded table starts.
+        table_offset: usize,
+    },
 }
 
 impl<'a> BundleSource<'a> {
@@ -51,6 +67,7 @@ impl<'a> BundleSource<'a> {
         match self {
             BundleSource::Plain { entry, .. } => entry.idx,
             BundleSource::Scripted { entry, .. } => entry.idx,
+            BundleSource::V12Embedded { entry, .. } => entry.idx,
         }
     }
 
@@ -59,6 +76,7 @@ impl<'a> BundleSource<'a> {
         let table = match self {
             BundleSource::Plain { table, .. } => table,
             BundleSource::Scripted { table, .. } => table,
+            BundleSource::V12Embedded { table, .. } => table,
         };
         let mut out = [Descriptor {
             type_byte: 0,
@@ -81,6 +99,7 @@ impl<'a> BundleSource<'a> {
         match self {
             BundleSource::Plain { .. } => 0,
             BundleSource::Scripted { info, .. } => info.asset_table_offset,
+            BundleSource::V12Embedded { table_offset, .. } => *table_offset,
         }
     }
 
@@ -89,6 +108,7 @@ impl<'a> BundleSource<'a> {
         match self {
             BundleSource::Plain { entry, .. } => &entry.bytes,
             BundleSource::Scripted { entry, .. } => &entry.bytes,
+            BundleSource::V12Embedded { entry, .. } => &entry.bytes,
         }
     }
 }
@@ -100,6 +120,18 @@ impl<'a> BundleSource<'a> {
 /// returns a valid table. Returns `None` for scenes that don't carry an
 /// asset bundle (e.g. title-screen scenes that are pure asset bundles
 /// without a per-scene descriptor table).
+///
+/// Fallback for the v12-family dungeon bundles: when no first-class
+/// `SceneAssetTable` / `SceneScriptedAssetTable` sibling matches, scan every
+/// `Class::SceneV12Table` entry at 0x800-aligned offsets for a MAN-bearing
+/// `scene_asset_table` embedded inside it (canonically at `0x1000`). The v12
+/// runtime-fixup header wins the classifier at offset 0, so `rikuroa` /
+/// `dolk2` carry their only MAN inside the v12 entry - the detector only
+/// probes `0x1000` because these scenes have no separate bare + scripted
+/// table pair the way `dolk` / `keikoku` do. Detection runs on the indexed
+/// `entry.bytes`; extraction (`extract_man_payload` / `field_man_payload`)
+/// resolves the same `table_offset` + `data_offset` against the extended
+/// footprint.
 pub fn find_bundle<'a>(scene: &'a Scene) -> Option<BundleSource<'a>> {
     for entry in &scene.entries {
         match entry.class {
@@ -119,6 +151,49 @@ pub fn find_bundle<'a>(scene: &'a Scene) -> Option<BundleSource<'a>> {
             }
             _ => {}
         }
+    }
+
+    // v12-family fallback: probe the SceneV12Table entries for an embedded
+    // MAN-bearing scene_asset_table at a 0x800-aligned offset.
+    for entry in &scene.entries {
+        if entry.class != Class::SceneV12Table {
+            continue;
+        }
+        if let Some((table, table_offset)) = find_embedded_asset_table(&entry.bytes) {
+            return Some(BundleSource::V12Embedded {
+                entry,
+                table,
+                table_offset,
+            });
+        }
+    }
+    None
+}
+
+/// Scan `bytes` at 0x800-aligned offsets (starting past offset 0, which the
+/// v12 header claims) for the first `scene_asset_table` whose descriptors
+/// include a type-3 (MAN) slot. Returns `(table, offset)` on the first hit.
+///
+/// The MAN gate rejects the count=4 MAN-less sibling table some v12 bundles
+/// also embed - only the count=7 table carrying the type-3 descriptor is a
+/// loadable scene bundle.
+///
+/// REF: FUN_8001F7C0 (the retail loader streams the v12 entry by LBA and the
+/// embedded table's descriptor offsets address the extended footprint).
+fn find_embedded_asset_table(bytes: &[u8]) -> Option<(SceneAssetTable, usize)> {
+    const ALIGN: usize = 0x800;
+    let mut off = ALIGN;
+    while off + 0x40 <= bytes.len() {
+        if let Some(table) = legaia_asset::scene_asset_table::detect(&bytes[off..])
+            && table
+                .descriptors
+                .iter()
+                .take(table.count)
+                .any(|d| d.type_byte == 0x03)
+        {
+            return Some((table, off));
+        }
+        off += ALIGN;
     }
     None
 }
