@@ -281,7 +281,7 @@
       <tr>
         <td><code>init_data</code> UI-tile pages / map03 texture column</td>
         <td><span class="tag tag-partial">partial</span></td>
-        <td>The <code>(704, 0)</code>/<code>(704, 256)</code> UI-tile rects are journey-dependent residency (overworld transit leaves kingdom-bundle content behind). Open: a map03-only engine-vs-retail divergence at <code>x=576..640</code> needs a second map03-resident capture to decide.</td>
+        <td>The <code>(704, 0)</code>/<code>(704, 256)</code> UI-tile rects are journey-dependent residency (overworld transit leaves kingdom-bundle content behind). The map03 column at <code>x=576..640</code> is resolved: the "engine fails to upload PROT 0392" premise is <strong>falsified</strong> - a direct prepass measurement shows real terrain (only 37 stray <code>0x3332</code> cells, an old-build artifact), and PROT 0392 slot-0 is byte-identical to 0391 slot-0 which the engine already uploads. Residual (low): a map03-resident capture would fully close it.</td>
         <td></td>
       </tr>
       <tr>
@@ -371,7 +371,7 @@
       <tr>
         <td>Record[0] <code>+0x5C</code> pointer + art-anim stream source</td>
         <td><span class="tag tag-partial">partial</span></td>
-        <td>The art keyframe streams are "ME" archives in <code>readef.DAT</code> slots <code>3*char+1</code>/<code>+2</code> (ported, disc-validated). Residue: <code>+0x5C</code> is a zero word with no traced reader, and the art-path caller of staging arm <code>FUN_80055B4C</code> is untraced.</td>
+        <td>The art keyframe streams are "ME" archives in <code>readef.DAT</code> slots <code>3*char+1</code>/<code>+2</code> (ported, disc-validated). The staging arm <code>FUN_80055B4C</code> is now traced - it is driven by the side-band streamer <code>FUN_801F12D0</code>, which stages the <code>3*char+{0..3}</code> readef group. Residue: <code>+0x5C</code> is a zero word with no traced reader (needs a runtime read-watchpoint).</td>
         <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
       </tr>
     </tbody>

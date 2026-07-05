@@ -61,6 +61,8 @@ Because a higher `+0x74` widens the gauge slot (`bVar3 - 6`) **and** drains more
 
 The same case-`9`/`0xB` machinery also deals and spends the **Muscle Dome hand**: a dome card is one of the four direction commands (`0xC..=0xF`, the deck table `DAT_801f4b8c`), its cost is this same `+0x74` byte, and the commit debits the same `ctx+0x6DC` pool - see [`minigame-muscle-dome.md`](minigame-muscle-dome.md#hand-deck-decoded).
 
+The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fills its per-turn action queue by rolling candidate moves and paying each move's `+0x74` cost out of the per-round AGL gauge (`actor[+0x154]`), the same "wider cost = fewer commands" mechanic on the AI side - see [`battle-action.md` § Enemy AGL action-budget](battle-action.md#enemy-agl-action-budget-fun_801e9fd4).
+
 > A separate `+2` in the same case (`icon = DAT_801F4B94[i] + 2`, gated on an *empty* equip slot, `equip[cmd] == 0`) is an empty-slot icon tweak, **not** the class penalty - a fully-equipped off-class character still shows the widened arm via the `+0x74` cost above.
 
 ## Weapon classes and favored mapping

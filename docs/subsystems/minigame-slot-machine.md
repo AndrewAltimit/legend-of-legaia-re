@@ -207,7 +207,14 @@ Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter
 
 ## Open
 
-- The **reel-art texture source**: which scene-pack TIM fills texpages `0x0C`/`0x0D` and the per-symbol CLUT rows 490/491 that `FUN_801d0fa8` samples is not traced (needed only if the engine ever draws the real reel art instead of symbol-id placeholders).
+- The **reel-art texture source** is traced: the slot overlay init `FUN_801CEC94`
+  loads it from **extraction PROT entry 1200** (raw TOC index `0x4B2`, the `other4`
+  dev family), which supplies texpages `0x0C`/`0x0D` and the per-symbol CLUT rows
+  490/491 that `FUN_801d0fa8` samples; its siblings PROT 1198 / 1199 (raw
+  `0x4B0`/`0x4B1`) are the backdrop / HUD art. The only residual is the per-page
+  fb-coordinate split (`0x0C` = `(768,0)` vs `0x0D` = `(832,0)`), which stays
+  disc-gated - needed only if the engine ever draws the real reel art instead of
+  symbol-id placeholders.
 
 ## See also
 
