@@ -69,6 +69,24 @@ The **resolution of queued cards** happens when the match controller advances in
 
 The `func_0x80035f04` calls throughout are the shared screen-projection helper (project a world position to screen), used to anchor card and label sprites over the 3D fighters.
 
+### HUD elements (`FUN_801d8de8`)
+
+`FUN_801d8de8(elem_id, mode)` is the **HUD element renderer** the sub-draw script calls per `(elem_id, mode)` pair. It switches on `elem_id` through an 80-entry `jr` table at `0x801CEB68` (`sltiu v0,elem_id,0x50`; `overlay_muscle_dome_801d8de8.txt`, dispatch ~`0x801d8ec0`). The `mode` byte (the pair's second value) is consumed by the shared post-switch layout tail - it selects the sprite/anchor variant and, for `0x59`, gates the reward branch. The active fighter's character-record id is `charid = (&DAT_8007bd10)[ctx+0x13]`; the opponent uses `ctx+0x21`. The labelled cases:
+
+| `elem_id` | HUD element |
+|---|---|
+| `0x0A` | Current fighter Spirit / move name → `_DAT_80076d14`; blank-gated on the per-fighter flag `ctx[fighter+0x25F]` (blank = `&DAT_801f4bc6`, else name string `s_Spirit_801f4b98 + charid*0xA + 6`). |
+| `0x0B` | "Spirit" heading string (`_DAT_80076d2c = s_Spirit_801f4b98`). |
+| `0x0E` | Spirit-name second panel → `_DAT_80076d74` (same blank-gate as `0x0A`). |
+| `0x16`–`0x19` | The four hand card portraits; sets `_DAT_8007bb8c = charid-1`, frame = `elem_id-0x13`. |
+| `0x1A` | Formatted number (score / count) - `func_0x80035f04` on actor `+0x1BC` → `_DAT_80076e86`/`_DAT_80076e94`. |
+| `0x52` | Player HP-bar value: copies actor `+0x170` into the char record, sets `DAT_8007bd00 = charid-1` and `_DAT_800773c8`. |
+| `0x53` | Opponent HP-bar value (opponent actor `+0x170` → `_DAT_800773e0`). |
+| `0x58` | Opponent Spirit name → `_DAT_80077464` (blank-gated, keyed on the opponent id). |
+| `0x59` (`mode`/`param_2 == 0`) | Victory banner assembly: `func_0x8003ca78(ctx+0x1F9, "…acquired the power of…")` + reward spell name (`DAT_800754d0[(ctx+0x269)+0x80]`) + suffix `DAT_801f4c28`. |
+
+Every other `elem_id` falls to the shared layout tail (sprite emit + optional bar draw) without a case-specific label.
+
 ## Opponent + scoring
 
 - The fighters are battle actors in `&DAT_801c9370`; the active fighter index is `ctx+0x13`, the player party member id is `ctx+0x20`, and the opponent id is `ctx+0x21` (clamped to ≤ 2 in `FUN_801d8de8`). The character→record mapping uses `&DAT_8007bd10` (per-actor character id) to index the 0x414-byte party records.
@@ -178,7 +196,7 @@ real swing costs drive a decided contest through the world tick).
 ## Open
 
 - The exact phase ordering and meaning of every `ctx+6` value (deal/select/confirm/resolve/win/lose) - partially confirmed; a live phase-byte capture would pin the full graph.
-- The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`): the record shape is decoded (`[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)`, see [Round resolution](#round-resolution)); the residual is the presentation meaning of individual `elem_id`/`mode` sub-draws (a `FUN_801d8de8` HUD-element census would label them).
+- The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
 - ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves through `actor+0x1df` → `FUN_801e09f8` → the shared `FUN_801dd0ac` kernel with no dome-local scaling (see [Round resolution](#round-resolution)).
 
 ## See also
