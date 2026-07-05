@@ -2,6 +2,18 @@
 //!
 //! PORT: FUN_800195a8
 //!
+//! **Wiring status.** [`psx_sin`] / [`psx_cos`] (the clean-room trig LUT) are
+//! live: the disc-gated oracle `crates/engine-shell/tests/gte_sin_lut_real.rs`
+//! pins them entry-for-entry against the retail table, and other GTE matrix
+//! builders reuse them. [`project_billboard`] itself is an authored-but-unwired
+//! faithful port: its only in-engine caller is
+//! [`crate::afterimage::project_streak_corners`], which is likewise an
+//! authored-but-unwired port (there is no screen-space `POLY_FT4` /
+//! ordering-table draw pass in the wgpu renderer yet; live effect billboards
+//! draw as 3D meshes via engine-shell's `effect_billboard_mesh`). Retained for
+//! fidelity, exercised by unit tests; wire it in when a screen-space overlay
+//! pass exists. Do not delete.
+//!
 //! The retail SCUS helper `FUN_800195a8` projects a sprite quad about a 3D
 //! center point and hands the four screen-space corners back through caller
 //! out-pointers. Every quad emitter that draws a camera-facing rectangle
