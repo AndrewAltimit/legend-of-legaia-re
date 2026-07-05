@@ -201,17 +201,24 @@ for (i, s) in t.scripts.iter().enumerate() {
 
 ## Open questions
 
-- **Where does the loader stage the file?** The `FUN_8001F7C0` /
-  `FUN_800255B8` field-loader chain (see
-  [`subsystems/asset-loader.md`](../subsystems/asset-loader.md)) is the
-  canonical scene-asset path, but the static call graph for v12 entries
-  hasn't been pinned. Earlier overlay captures put the file at RAM
-  `0x8014B530` for one scene; that address is heap-allocated and varies
-  per load.
-- **What does `b0` index into?** For Drake the `b0` values fit inside the
-  scene's TMD pack count (40 slots), but for other scenes they exceed it,
-  ruling out "global TMD-slot index". They probably index a scene-local
-  resource table the loader builds from the v12 header.
+- **Where does the loader stage the file?** (open, capture-blocked). One
+  wrong lead is now ruled out: the RAM relocation at `_DAT_8007b8d0` reached
+  via `FUN_800252EC` is the **`efect.dat` / prescript stager**, *not* the v12
+  record-table - the two share the move-VM prescript format, which caused the
+  conflation. The v12 record-table is staged instead by a **malloc'd,
+  heap-based type handler** reached through the `FUN_8001F05C` descriptor
+  dispatch (jump table `0x80010638 + type*4`), which is not in the dumped
+  corpus. Earlier overlay captures put the file at RAM `0x8014B530` for one
+  scene; that address is heap-allocated and varies per load. Closing it needs
+  a scene-load write-watchpoint on the v12 malloc buffer plus a dump of the
+  v12 descriptor-type handler; next dump lead = `FUN_8002541C` (the other
+  `FUN_8001F05C` caller).
+- **What does `b0` index into?** (open). For Drake the `b0` values fit inside
+  the scene's TMD pack count (40 slots), but for other scenes they exceed it,
+  so "global TMD-slot index" is **falsified**. The plausible reading is a
+  **scene-local** resource / placement index into a loader-built table (built
+  from the v12 header), not a global slot id - unconfirmed pending the
+  staging-site capture above.
 - **Two prescript tables per scene** - the sister offset-0 `scene_event_scripts`
   entry and this offset-0x800 table - carry the same move-VM stager records. Both
   are consumed by the move VM via `FUN_800252EC` → `FUN_80021B04`

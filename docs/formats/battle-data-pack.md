@@ -142,9 +142,13 @@ Measured per file:
 | 0866 Terra | `0x6CAC` | `0x83E0` | `0xA5C4` | `0xC7A8` |  5 | `0x17800` |
 
 `data_base = 0x8000` in all four retail files (the gap between the table end
-and `0x8000` is zero-padded). The exact derivation of `data_base` from the
-header is not pinned; `legaia_asset::battle_data_pack` self-corrects it by
-probing sector boundaries until every slot's `dec_size` prefix reads sane.
+and `0x8000` is zero-padded). It is **not** header-derived: `FUN_80052770`
+opens each file with a fixed 16-sector prologue read - `FUN_800559EC(…, 0x8000)`
+→ `FUN_8003E800(dst, 0x10, 1)` loads the first `0x10` sectors (`0x8000` bytes,
+the header + `record[0]` + descriptor table) before the slot region is streamed,
+so `0x8000` is a hardcoded loader constant. `legaia_asset::battle_data_pack`
+reaches the same base by probing sector boundaries until every slot's `dec_size`
+prefix reads sane.
 
 ## Descriptor table
 
@@ -401,11 +405,13 @@ the head of the **`readef.DAT`** (extraction PROT 894) slots
 | Terra | slot 10 (1) | slot 11 (8) |
 
 i.e. slots `3*char + 1` / `3*char + 2` (slot `3*char` is the group's
-non-ME texture slot). The per-record archive choice is **disc-pinned by
-exact cover** (the request arm `FUN_80055B4C` writes the staging byte
-`ctx+0x26B = slot + 1`, but its art-path caller - the code that computes
-`3*char + 1/2` for a queued art - is not in the dumped corpus): each
-file's eight `rate_alt == 0xFF` records carry `stream_source` `0..=7` =
+non-ME texture slot). The staging path is traced: the request arm
+`FUN_80055B4C` writes the staging byte `ctx+0x26B = slot + 1`, and its
+caller is the side-band streamer `FUN_801F12D0`, which stages slots
+`ctx+0x277+{0,1,2,3}` = the `3*char+{0..3}` group (the `+1` main / `+2` base
+readef ME archives). The **per-record** main-vs-base pick (which queued art
+selects the `+1` vs the `+2` slot) is the residual - it is pinned by exact
+cover: each file's eight `rate_alt == 0xFF` records carry `stream_source` `0..=7` =
 the base archive's exact entry range, and the remaining records' max
 `stream_source` equals the main archive's `count − 1` exactly, in all
 four files.
@@ -778,8 +784,10 @@ on the player files.)
   [Descriptor table](#descriptor-table)). The battle `nobj +2` weapon
   objects source from these sections too - byte-verified, see
   [`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files).
-- **`data_base` derivation**: observed `0x8000` in all four files; the
-  header/table → `0x8000` rule is unconfirmed.
+- ~~**`data_base` derivation**~~ **resolved**: `0x8000` is not header-derived -
+  `FUN_80052770`'s fixed 16-sector prologue read (`FUN_800559EC(…, 0x8000)` →
+  `FUN_8003E800(dst, 0x10, 1)`) hardcodes it. See
+  [File layout](#file-layout).
 - ~~**Sub-object end offsets** (`u32[1]`, `u32[2]`)~~ **resolved**: they are
   the section's **swing action records** (the earlier "multi-mesh slot"
   reading of a Gala slot with `u32[1] = 0x3310` was this swing record -
@@ -788,11 +796,12 @@ on the player files.)
 - **record[0] `+0x5C` consumer**: the word's target is pinned
   (`clut_a_off − 4`, zero on disc) but no reader has been traced; the art
   `"ME"`-archive hypothesis is refuted (the archives are in `readef.DAT`).
-- **Art-archive slot staging**: the request arm `FUN_80055B4C` writes the
-  staging byte (`battle ctx +0x26B = slot + 1`, consumed by
-  `FUN_801F17F8`), but its art-path caller - the code computing
-  `3*char + 1/2` for a queued art - is untraced; the record → archive
-  mapping is pinned by exact cover instead (see
+- **Art-archive slot staging**: the request arm `FUN_80055B4C` (staging byte
+  `battle ctx +0x26B = slot + 1`, consumed by `FUN_801F17F8`) is driven by the
+  side-band streamer `FUN_801F12D0`, which stages the `3*char+{0..3}` group at
+  `ctx+0x277+{0,1,2,3}` (the `+1` main / `+2` base readef ME archives). The
+  residual is the **per-record** main-vs-base choice for a queued art, still
+  pinned by exact cover rather than a traced picker (see
   ["ME" stream archives](#me-stream-archives-readefdat)).
 
 ## See also

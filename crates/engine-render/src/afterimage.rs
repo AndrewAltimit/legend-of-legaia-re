@@ -2,6 +2,10 @@
 //!
 //! PORT: FUN_801e1ab0 (battle move-FX afterimage streak draw)
 //!
+//! **Authored-but-unwired faithful port** (see the full note at the end of this
+//! module doc): a unit-tested reproduction of a real retail draw with no live
+//! in-engine caller yet, retained for fidelity - do not delete.
+//!
 //! Each call to the retail `FUN_801e1ab0` emits **one** semi-transparent
 //! textured quad (a PSX `POLY_FT4`) into the depth-sorted primitive buffer;
 //! the per-frame streak is built by calling it repeatedly. The quad is a

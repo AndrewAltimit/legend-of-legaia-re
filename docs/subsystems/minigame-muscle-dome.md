@@ -46,17 +46,26 @@ So selection = repeatedly pick a hand slot (a direction), which appends that slo
 
 `FUN_801d388c` (`overlay_muscle_dome_801d388c.txt`, the 7820-byte card driver) is a large `switch(param_1)` over **presentation/animation step ids** (0..0x31). It does *not* itself compute damage; it lays out card and label sprites, runs the deal/commit loops above, and at its tail walks a **per-step script-record table** `PTR_DAT_801f4d34[param_1]`:
 
+The record is variable-stride - `[u8 count][u8 anim_sel][u8 panel_id/bind_count]`
+followed by `count` `(u8 elem_id, u8 mode)` pairs (reader `FUN_801d388c`):
+
 ```
 record = PTR_DAT_801f4d34[step]
 record[0] = sub-draw count
 record[1] = side/animation selector (1/2/3 → FUN_801d99bc / FUN_801d9ae8 panel slides)
-record[2] = active-panel id (compared against ctx+0x275; record[2]+ctx+0x275 == 6 triggers a panel-swap reset of ctx+0x880..0x883)
+record[2] = DUAL ROLE:
+              (a) active-panel id - compared against ctx+0x275; record[2]+ctx+0x275 == 6
+                  triggers a panel-swap reset of ctx+0x880..0x883, AND
+              (b) count of the leading sub-draw handles bound back to the four input
+                  card slots (ctx+0x1114[]); the first record[2] sub-draws are the
+                  directional selection cards, flagged +0x1d = 2
 record[3+2k], record[4+2k] = (element id, mode) pairs fed to FUN_801d8de8 for each sub-draw
 ```
 
 Each sub-draw calls the HUD/element renderer `FUN_801d8de8(id, mode)` (see below). When the global `_DAT_800846c8` is set, the returned sprite handles are also stashed into `ctx+0x1114[]` and some are flagged `+0x1d = 2` (the four directional selection cards), tying the drawn cards back to the input slots.
 
-The **resolution of queued cards** happens when the match controller advances into the commit phases (`0x3c`/`0x46`/`0x50` in `FUN_801d0748`): it walks the actor's `+0x1df` action queue, sets the actor's `+0x1dd`/`+0x1de` (action / action-state), and lets the shared battle-action path play each queued action and apply its effect to the opponent actor record (HP at actor `+0x14c`, max-HP at `+0x14e`). The `+0x1df` queue is re-zeroed at the start of each round (`FUN_801d388c` case `3` clears `+0x1e7`/`+0x1de`; case `0xb` re-seeds the budget and re-walks the queue). **(Confirmed: queue lives at actor+0x1df, budget gating; Inferred: precise per-card damage uses the standard battle formulas via the action ids, not a dome-local damage table.)**
+The **resolution of queued cards** happens when the match controller advances into the commit phases (`0x3c`/`0x46`/`0x50` in `FUN_801d0748`): it walks the actor's `+0x1df` action queue, sets the actor's `+0x1dd`/`+0x1de` (action / action-state), and lets the shared battle-action path play each queued action and apply its effect to the opponent actor record (HP at actor `+0x14c`, max-HP at `+0x14e`). The `+0x1df` queue is re-zeroed at the start of each round (`FUN_801d388c` case `3` clears `+0x1e7`/`+0x1de`; case `0xb` re-seeds the budget and re-walks the queue).
+**(Confirmed: queue lives at actor+0x1df, budget gating.) (Confirmed: per-card damage uses the shared `battle_formulas` *unmodified* - there is no dome-local scaling.** The match controller `FUN_801d0748` is byte-identical to the main battle round driver, and a card id `0xC..0xF` reaches damage exactly as an ordinary battle action does: `actor+0x1df` → `FUN_801e09f8` → the shared damage kernel `FUN_801dd0ac`, with no dome-specific arithmetic on the way.)**
 
 The `func_0x80035f04` calls throughout are the shared screen-projection helper (project a world position to screen), used to anchor card and label sprites over the 3D fighters.
 
@@ -87,7 +96,7 @@ All offsets are relative to the context base `_DAT_8007bd24` unless noted otherw
 | `ctx+0x20` | u8 | player party member id | Confirmed |
 | `ctx+0x21` | u8 | opponent id (clamped ≤ 2) | Confirmed |
 | `ctx+0x269` | u8 | awarded spell/seru id (offset into spell-name table at `+0x80`) | Confirmed |
-| `ctx+0x275` | u8 | active panel id (vs `PTR_DAT_801f4d34` record `[2]`) | Confirmed |
+| `ctx+0x275` | u8 | active panel id (vs `PTR_DAT_801f4d34` record `[2]`, whose byte doubles as the count of leading sub-draw handles bound to the input card slots) | Confirmed |
 | `ctx+0x6b2` | u16 | per-frame tick counter (bumped each `FUN_801d388c` call) | Confirmed |
 | `ctx+0x6d6` | - | scratch sub-block used for HUD layout (`pbVar10` base) | Inferred |
 | `ctx+0x6d8` | u16 | **points spent this round** | Confirmed |
@@ -169,8 +178,8 @@ real swing costs drive a decided contest through the world tick).
 ## Open
 
 - The exact phase ordering and meaning of every `ctx+6` value (deal/select/confirm/resolve/win/lose) - partially confirmed; a live phase-byte capture would pin the full graph.
-- The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`): its access pattern is reversed, its full record contents are presentation-layer and undecoded.
-- Whether card resolution applies any dome-specific damage scaling or uses the shared `battle_formulas` unmodified (the engine port keeps the damage function host-supplied for this reason).
+- The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`): the record shape is decoded (`[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)`, see [Round resolution](#round-resolution)); the residual is the presentation meaning of individual `elem_id`/`mode` sub-draws (a `FUN_801d8de8` HUD-element census would label them).
+- ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves through `actor+0x1df` → `FUN_801e09f8` → the shared `FUN_801dd0ac` kernel with no dome-local scaling (see [Round resolution](#round-resolution)).
 
 ## See also
 

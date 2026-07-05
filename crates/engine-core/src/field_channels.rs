@@ -23,6 +23,35 @@
 //! No Sony bytes live here: channel bytecode is sliced from the user's disc
 //! MAN at runtime; this module holds only the per-context cursor and the
 //! spawn rule.
+//!
+//! ## Scripted initial facing (op 0x43 sub-7) is NOT surfaced - and why
+//!
+//! A channel can set an actor's facing without moving via field-VM op 0x43
+//! sub-7 (the VM writes `ctx.face_rotation = face_id`, mirror of `actor+0x6D`).
+//! The engine does not convert that to a renderer heading
+//! ([`crate::world::World::field_npc_headings`], the 12-bit `render_26`
+//! convention), so a never-walked-but-turned NPC stays at its default facing.
+//!
+//! There is **no static `face_id -> heading` table to pin**. Op 0x43 sub-7
+//! does not select a heading from ROM: it *writes* a per-face rotation-config
+//! struct (four `u16` + one `u32`, 12-byte stride) into the RAM scratch array
+//! at `0x8007BE60 + face_id*12` directly from the op's own 17-byte operand
+//! stream, then registers a ramp of `actor+0x7A` (`0 -> 0x1000`, the lerp
+//! fraction) over the op's `target` frames via `FUN_8003C5F0`. The facing is
+//! *applied* by the per-actor transform builder `FUN_8001B47C` (arm at
+//! `0x8001B484`): it fetches the struct via `actor+0x6D`, copies its four
+//! `u16` fields into the render packet at `+0x40..+0x46`, and calls the GTE
+//! rotation-matrix builder `FUN_80029888` with `a3 = (struct[+8] << 16) |
+//! actor[+0x7A]` - a full 3-axis rotation matrix interpolated by the ramp
+//! fraction, not a scalar 12-bit heading.
+//!
+//! Verdict: **blocked, structural** (not capture-blocked). Surfacing scripted
+//! initial facings requires porting the matrix-rotation actor-transform path
+//! (`FUN_8001B47C` -> `FUN_80029888`, both render-side), which cannot be
+//! reduced to the engine's `render_26` scalar heading; a face_id->heading LUT
+//! does not exist. Provenance: `overlay_0897_801de840.txt` (op 0x43 sub-7,
+//! `iVar24 + -0x7ff841a0` = struct base `0x8007BE60`), `8001b47c.txt`,
+//! `80029888.txt`, `8003c5f0.txt`.
 
 use legaia_asset::man_section::ManFile;
 use legaia_engine_vm::field::FieldCtx;

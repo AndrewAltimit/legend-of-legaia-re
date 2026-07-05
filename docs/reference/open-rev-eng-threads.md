@@ -680,25 +680,30 @@ No rect constant exists in any code image because the rows live in scene-script 
 Remaining residue: the exact retail cadence (the scratchpad frame-delta byte `0x1F800393` feeds the fade SM) is still unpinned, and `play-window` animates the row-506 ocean head only.
 
 
-### `init_data` UI-tile pages - journey-dependent residency (resolved); map03 texture column (resolved - engine bug)
+### `init_data` UI-tile pages - journey-dependent residency (resolved); map03 texture column (resolved - "not uploaded" premise falsified)
 
-*Status:* the keikoku oracle drift is resolved (residency class pinned); the map03 texture divergence is resolved - it is an engine `map03` pre-pass upload bug, not a residency artifact
+*Status:* the keikoku oracle drift is resolved (residency class pinned); the map03 texture divergence is resolved - the "engine fails to upload PROT 0392" premise is **falsified**, the current pre-pass does write the real terrain
 
 `init_data` (PROT 0) carries two 64-word × 256 UI-tile TIMs at fb `(704, 0)` / `(704, 256)`. The capture corpus proves the rects are **journey-dependent residency**, not stable shared texture: overworld transit leaves kingdom-bundle content over parts of the rect (every Drake-stage capture - keikoku, the field-menu states - holds the *same* kingdom bytes at `(704, 256)` where the boot-fresh town01 states hold the disc tiles). Town scenes mask this only because their own scene TIM overwrites the slot; keikoku carries none, exposing the engine's `init_data` upload against retail's resident kingdom content. The parity oracle pools captures across all scenes against `scene::block_image_rects(index, "init_data")` - the same cross-scene dynamism treatment as the befect band.
 
-**Resolved (disc-only decisive test; Sol-residency falsified).** The engine's
-map03 pre-pass diverges from the Karisto resident capture in the 64-wide page
-column `x=576..640, y≈320..448` (~2.2k cells; engine `0x3332`-family texels,
-retail `0x4444 4411 ffff...`), while map01/map02 match. A second capture is not
-needed: `asset tim-scan` shows **PROT 0392 uploads 8 real 4bpp TIMs into fb
-`x=576..640, y=320..448`** (map03 owns the rect - it is not foreign residency),
-and the `fbx=576 fby=320` 96×96 4bpp TIM (PROT 0392, `lzs0_off 0x03BDEC`)
+**Resolved (Sol-residency falsified; "not uploaded" premise also falsified).**
+The terrain rect is map03's own: `asset tim-scan` shows **PROT 0392 uploads 8
+real 4bpp TIMs into fb `x=576..640, y=320..448`** (not foreign residency), and
+the `fbx=576 fby=320` 96×96 4bpp TIM (PROT 0392, `lzs0_off 0x03BDEC`)
 **byte-matches the retail resident VRAM at (576,320) 2304/2304 halfwords =
-100%**. So the resident retail bytes are map03's own PROT 0392 terrain texture,
-NOT Sol residency. The divergence is therefore an **engine bug**: the map03
-targeted-upload pre-pass fails to upload PROT 0392's LZS-compressed 4bpp terrain
-tiles into the `(576, 320..448)` column. Reclassified from a capture-blocked RE
-question to an engine `map03` pre-pass coverage bug (Track B / render).
+100%**. The earlier reading - that the engine `map03` pre-pass **fails** to
+upload PROT 0392's LZS terrain (the `0x3332`-family column) - is **falsified**:
+a direct prepass measurement shows map03 uploads 58 TIMs and the `576..640 ×
+320..448` region holds 7945 real terrain texels with only 37 stray `0x3332`
+cells (scattered in-tile, not a 2.2k hole) - the current prepass writes real
+terrain. The `0x3332` gap belonged to an **old build**. Structurally this also
+holds for the WorldMap kingdom path: PROT 0392 slot-0 is **byte-identical** to
+0391 slot-0, which the engine already uploads (the kingdom sibling-skip at
+`crates/engine-core/src/scene_resources.rs:645-668`), so uploading 0392 would
+write identical bytes to identical cells - a no-op. **Residual (low):** the
+decisive comparison used a direct prepass measurement, not a full VRAM oracle
+(no map03-WorldMap-resident save exists in the corpus); a map03-resident
+mednafen capture would close it fully.
 
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels - pause-menu-lineage, not boot
@@ -807,7 +812,7 @@ Decoded by `legaia_mes::dialog_box` (`pack_box` / `pack_boxes`, `LINES_PER_BOX =
 | Player ANM per-record layout | resolved (container + per-`(bone, frame)` semantic) | [details ↓](#player-anm-per-record-layout) | `project_player_anm_source_pinned.md` |
 | Battle anim-id space + record[0] "strike family" | resolved | Anim ids ARE entry indices (commit `FUN_8004AD80`; idle id = `0`; `FUN_801D5854` ids 6..9 = a camera program space). Tags `2/3/4/5/0xB` = the hit-reaction family (`+0x1EF..+0x1F3` map; `FUN_800402F4` stages flinch/knockdown). Swings = the equipment-section splice (slots `0xC..0xF`) + dynamic art slots `0x10`/`0x11` from the `+0x58` art bank. Capture-pinned + disc census. See [monster-animation.md](../formats/monster-animation.md) / [battle-data-pack.md](../formats/battle-data-pack.md). | `project_battle_anim_id_space_resolved.md` |
 | `FUN_80047430` caller | resolved | Live-captured (`autorun_anim_node_tick_caller.lua`, mid-battle save): a single dispatch site — `jalr v0` at `0x800252B4` inside `FUN_8002519C`, the per-frame actor-list tick iterator, calling the node's `+0x0C` handler slot with the node pointer in `a0`. The anim-node tick is an ordinary list-node tick handler; no other caller fired. See [functions.md](functions.md). | `project_battle_anim_id_space_resolved.md` |
-| Record[0] `+0x5C` pointer + art-anim bank stream source | stream source RESOLVED; `+0x5C` consumer open | Art streams = `"ME"` archives (`FUN_8002B28C` walk + `FUN_8002A9CC` codec, ported as `legaia_asset::me_archive`) in `readef.DAT` slots `3*char+1`/`3*char+2` via the `_DAT_8007BD74` streaming buffer; disc-validated (`parts` == bones, length-exact; `swing_anim_real`). `+0x5C` = `clut_a_off − 4` (zero word; in-record ME hypothesis refuted) but no traced reader; the art-path caller of the staging arm `FUN_80055B4C` (`ctx+0x26B`) is untraced (mapping pinned by exact cover). See [battle-data-pack.md](../formats/battle-data-pack.md#me-stream-archives-readefdat). | `project_battle_anim_id_space_resolved.md` |
+| Record[0] `+0x5C` pointer + art-anim bank stream source | stream source + staging caller RESOLVED; `+0x5C` consumer open | Art streams = `"ME"` archives (`FUN_8002B28C` + `FUN_8002A9CC` codec, ported `legaia_asset::me_archive`) in `readef.DAT` slots `3*char+1`/`3*char+2`; disc-validated (`swing_anim_real`). The staging arm `FUN_80055B4C` (`ctx+0x26B`) is driven by the side-band streamer **`FUN_801F12D0`**, staging the `3*char+{0..3}` group (`+1` main / `+2` base ME archives); only the per-record main-vs-base pick stays pinned by exact cover. **Still open:** `+0x5C` = `clut_a_off − 4` (zero word) has no traced reader - needs a read-watchpoint (Track A). See [battle-data-pack.md](../formats/battle-data-pack.md#me-stream-archives-readefdat). | `project_battle_anim_id_space_resolved.md` |
 
 
 ### Player ANM per-record layout

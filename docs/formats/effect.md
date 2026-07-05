@@ -236,6 +236,24 @@ The runtime consumer lives in the battle overlay (`0898_xxx_dat`):
 
 Decompiled output: `ghidra/scripts/funcs/overlay_battle_*.txt`.
 
+#### How a move reaches this 2D pool - the bit-7 multiplex
+
+A battle move's effect-id lists ([move-power.md](move-power.md) record `+0x12` /
+`+0x16`) are the main producers of `FUN_801DFDF8` spawns. Each list byte
+**multiplexes two id spaces by bit 7** in the dispatch loop `FUN_801e09f8`:
+
+- **bit 7 clear** (`0x01..=0x63`) → the **3D move-FX** path: prototype
+  `0x801F6324[id]` staged through `FUN_80050ED4` → `FUN_80021B04` (the move-VM
+  scene-graph, *not* this pool); `0x64` (`100`) is a hardcoded screen-flash.
+- **bit 7 set** (`0x80..=0xFE`) → **this 2D pool**: `FUN_801DFDF0(id & 0x7F)`
+  spawns the `efect.dat` `pack1[id & 0x7F]` billboard through the public API
+  above, whose two special-cased ids (`0x04` → `0x801F5D90`, `0x13` →
+  `0x801F5CF8`) apply here.
+
+So only the bit-7-set half of a move's effect list reaches `pack1` / this pool;
+the bit-7-clear half is the move-VM effect-model path. The engine models the
+split at `engine-core::move_power::EffectListEntry` (`Spawn` vs `AltEffect`).
+
 ### Runtime pool layout (`_DAT_8007BD30`, 5008 bytes total)
 
 ```
@@ -271,7 +289,12 @@ compared against the extraction numbering - the two index spaces differ by 2.
 
 ### Open questions
 
-- **Effect-ID → human effect name.** Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal". Reachable by tracing call sites of `FUN_801DFDF8` in damage / battle-action code.
+- **Effect-ID → human effect name.** Effect IDs are anonymous and there is **no
+  string table** that maps id → "fireball / thunder / heal" - the ids are pure
+  disc data. The call sites are now traced (the move-power `+0x12`/`+0x16` effect
+  lists' bit-7-set entries route here via `FUN_801e09f8` → `FUN_801DFDF0`; see the
+  bit-7 multiplex above), so the only "name" available is an id → triggering-move
+  join off the move-power table (disc-gated), not a symbolic effect name.
 - **2D billboard texel source - RESOLVED (page-(0,0) was a field-order misread).**
   - The atlas entry's `+4`/`+6` fields are CLUT/tpage, not tpage/CLUT (see the Field order note): `0x7680` is the CLUT (CBA → fb `(0,474)`), and the real tpage is the byte at `+6`.
   - A melee hit-spark capture confirms it - the spark draws as textured quads sampling the **PROT 870 flame atlas at `(320,0)`/`(448,0)`** (effect-band CLUTs), with no prim anywhere sampling page (0,0)/8bpp.

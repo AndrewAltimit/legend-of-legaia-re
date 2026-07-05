@@ -166,7 +166,7 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x1DE` | u8 | **Action category** (the inner-dispatch key - see above). |
 | `+0x1DF..+0x1F2` | u8 × N | Per-action parameter byte stream (item ID / spell ID / strike-anim list). The **attack band terminates on `0x00`**, the magic band on `0xFF` (`-1`). Read sequentially via `actor[+0x1DF + actor[+0x15]]`. For a party attack the bytes are direction-command swings `0x0C..0x0F`, art starters `0x19`/`0x1A`, and art action constants `0x1B+` (seeded by `FUN_801EED1C`); for a monster they are entry indices from the AI picker. |
 | `+0x1F5` | u8 | Anim-cue flag (read at state `0x33` for fade-in trigger). |
-| `+0x1F9` | u8 | "Spirit shield" flag - gates spirit-arts variant path. |
+| `+0x1F9` | u8 | "Spirit shield" flag - gates spirit-arts variant path. Written by `FUN_800402F4` case 5 (set) / case 4 (cleanse clears), selected by `actor[+0x1E8]` seeded from the spell-table class byte (`DAT_800754C8 +0`, `5` = shield / `4` = cleanse). |
 | `+0x1FA` | u8 | Spell-cast iteration counter. |
 | `+0x21B` | u8 | Hit-count bound (script-defined; loop exits at `ctx[+0x24C] >= +0x21B`). |
 | `+0x21C` | u8 | Per-actor render flag - `0xFF` while hidden by summon fade, `0x02` while captured, `0` otherwise. |
@@ -288,6 +288,24 @@ per-actor delegation discriminator - `+0x16E & 0x380` is (the
 `FUN_80047430`/`+0xF8 & 0x2000` relation above is on the **character record**,
 a different struct); (b) this is a single sample, so the engine's auto-physical
 stand-in stays a stand-in - the writer and the pick variability are still open.
+
+### Enemy AGL action-budget (`FUN_801E9FD4`)
+
+The monster AI picker `FUN_801E9FD4` (fully dumped + ported as
+`engine-core::monster_ai`) queues **more than one action per turn** out of an
+AGL-scaled budget - the enemy analogue of the party's [Arts command
+gauge](arts-command-gauge.md). Its physical branch fills the actor's
+action-parameter byte stream at `actor[+0x1DF..]` by repeatedly rolling
+candidate moves (each candidate's tag byte at `+0x00` in the `0x0C..0x1F`
+command band, its cost the same `+0x74` swing-record byte the party gauge
+reads) and appending them while the budget holds. The budget is the per-round
+**AGL gauge** at `actor[+0x154]`, seeded from the monster record's AGL
+(`+0x0E`) and reset to base at the start of each round by `FUN_801D88CC`; each
+appended action debits the move's cost. The fill is bounded at 15 queued
+actions and 16 failed candidate rolls so a low-cost roster can't loop forever.
+So an agile enemy takes several strikes per turn, the same "wide gauge = more
+commands" mechanic the party's arm width drives ([arts-command-gauge.md
+§ How the gauge consumes it](arts-command-gauge.md#how-the-gauge-consumes-it)).
 
 ### `FUN_801DFDF8` - effect-bundle public spawn API
 
@@ -671,7 +689,7 @@ plus the two Chicken accessory bits - ported as `battle_formulas::escape_roll` a
 ## Open work
 
 - The `0x07` and a handful of intermediate values (`0x21..0x27`, `0x39..0x3B`, `0x41..0x45`, `0x49..0x4F`, `0x53..0x59`, `0x5B..0x63`, `0x6C..0x6D`, `0x72..0xFC`) have no case bodies. Confirm they are reserved padding versus reachable-via-other-overlay.
-- State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch and its interaction with the HP-bar at `ctx[+0x1074]` needs cross-referencing with the spirit definitions table to identify exactly which spirit triggers it.
+- State `0x47` (spirit-arts sustain): the `actor[+0x1F9] != 0` "spirit shield" branch is **resolved**. `+0x1F9` is set by the damage-application primitive `FUN_800402F4` case 5 (spirit-shield spirit → `+0x1F9 = 1`, gated on a non-zero target roll) and cleared by case 4 (cleanse → `+0x1F9 = 0`). Which case runs is selected by `actor[+0x1E8]`, seeded at [state `0x3C`](#state-table) from the spell table's class byte (`DAT_800754C8 + spell_id*0xC + 0`): class `== 5` routes to the shield write, class `== 4` to the cleanse. So the specific spirit that raises the shield is disc-side spell-table data, not a runtime constant. See [`spell-table.md`](../formats/spell-table.md).
 - `FUN_801E7250` (`0x51`) and `FUN_801E7824` (`0x68`) are decoded from their `overlay_battle_action_*` dumps: the former is the **HP-bar drain settle check** (the `0x51` arm freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its bar display value `+0x172`), the latter the **captured-monster takedown** (queued anim from the monster record, HP pair + facing zeroed, retarget to `8`, run-UI banner opened). Both ported in `crates/engine-vm/src/battle_action.rs`; see [`reference/functions.md`](../reference/functions.md).
 
 ## See also

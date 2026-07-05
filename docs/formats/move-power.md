@@ -136,18 +136,24 @@ it loads are exactly `+0x02,+0x06,+0x08,+0x09,+0x0a,+0x0b,+0x0d,+0x0e,+0x12,
 
 ### Effect-id list semantics (`+0x12` / `+0x16`)
 
-Both lists are up to 4 ids, walked until a terminator. `0x00` ends the list scan;
-each remaining byte is dispatched per `FUN_801e09f8` (`overlay_battle_action_801e09f8.txt:1182..1225`
-for `+0x16`, `:1285..1312` for `+0x12` - identical dispatch, the only difference
-is *when* they fire):
+Both lists are up to 4 ids, walked until a terminator. `0x00` ends the list scan.
+Each remaining byte **multiplexes two distinct id spaces by its bit 7**, dispatched
+per `FUN_801e09f8` (`overlay_battle_action_801e09f8.txt:1182..1225` for `+0x16`,
+`:1285..1312` for `+0x12` - identical dispatch, the only difference is *when* they
+fire):
 
 | entry | meaning |
 |---|---|
 | `0x00` | terminator (ends the scan) |
-| `0x01..=0x63` | spawn effect prototype `0x801f6324[id]` + play SFX `0x801f6418[id]` (when non-zero) |
+| `0x01..=0x63` | **move-FX space** (bit 7 clear): spawn the 3D effect prototype `0x801f6324[id]` via `FUN_80050ED4` → `FUN_80021B04` + play SFX `0x801f6418[id]` (when non-zero) |
 | `0x64` (`100`) | fixed screen-flash effect (no table lookup) |
-| `0x80`-bit set, `!= 0xFF` | route to `FUN_801dfdf0(id & 0x7F)` |
+| `0x80`-bit set, `!= 0xFF` | **2D-sprite space** (bit 7 set): route id `& 0x7F` to `FUN_801dfdf0` → the `efect.dat` `pack1[id & 0x7F]` billboard (see [effect.md](effect.md)); `FUN_801DFDF8` special-cases pack1 `0x04` → `0x801F5D90` and `0x13` → `0x801F5CF8` (effect names unknown) |
 | `0xFF` (and unused `0x65..=0x7F`) | no effect, scan continues |
+
+The engine already models this split at
+`engine-core::move_power::EffectListEntry` (`EffectListEntry::classify`): the
+`0x01..=0x63` band as `Spawn` (3D scene-graph), `0x80`-bit ids as `AltEffect`
+(2D `efect.dat` pool), `0x64` as the screen-flash.
 
 Both effect-id lists index the **same** two tables (the doc's earlier "+0x12 →
 `0x801f6324` / +0x16 → `0x801f6418`" pairing was imprecise - each list uses

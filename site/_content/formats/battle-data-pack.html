@@ -86,7 +86,7 @@
       <tr><td>0866 Terra</td><td><code>0x6CAC</code></td><td><code>0x83E0</code></td><td><code>0xA5C4</code></td><td><code>0xC7A8</code></td><td>5</td><td><code>0x17800</code></td></tr>
     </tbody>
   </table>
-  <p><code>data_base = 0x8000</code> in all four retail files (the gap between the table end and <code>0x8000</code> is zero-padded). The exact derivation of <code>data_base</code> from the header is not pinned; <code>legaia_asset::battle_data_pack</code> self-corrects it by probing sector boundaries until every slot's <code>dec_size</code> prefix reads sane.</p>
+  <p><code>data_base = 0x8000</code> in all four retail files (the gap between the table end and <code>0x8000</code> is zero-padded). It is <strong>not</strong> header-derived: <code>FUN_80052770</code> opens each file with a fixed 16-sector prologue read - <code>FUN_800559EC(&hellip;, 0x8000)</code> &rarr; <code>FUN_8003E800(dst, 0x10, 1)</code> - so <code>0x8000</code> is a hardcoded loader constant. <code>legaia_asset::battle_data_pack</code> reaches the same base by probing sector boundaries until every slot's <code>dec_size</code> prefix reads sane.</p>
 </section>
 
 <section class="doc-section" id="descriptor-table">
@@ -185,8 +185,8 @@ mednafen-state clut-trace \
 <section class="doc-section" id="open-layout-questions">
   <h2>Open questions</h2>
   <ul>
-    <li><strong><code>data_base</code> derivation</strong>: observed <code>0x8000</code> in all four files; the header/table &rarr; <code>0x8000</code> rule is unconfirmed.</li>
-    <li><strong><code>record[0] +0x5C</code> consumer</strong>: the word's target is pinned (<code>clut_a_off &minus; 4</code>, zero on disc) but no reader has been traced.</li>
+    <li><strong><code>data_base</code> derivation</strong> <em>(resolved)</em>: <code>0x8000</code> is not header-derived - <code>FUN_80052770</code>'s fixed 16-sector prologue read (<code>FUN_800559EC(&hellip;, 0x8000)</code> &rarr; <code>FUN_8003E800(dst, 0x10, 1)</code>) hardcodes it.</li>
+    <li><strong><code>record[0] +0x5C</code> consumer</strong>: the word's target is pinned (<code>clut_a_off &minus; 4</code>, zero on disc) but no reader has been traced (needs a runtime read-watchpoint). The art-archive staging caller is resolved (<code>FUN_80055B4C</code> is driven by the side-band streamer <code>FUN_801F12D0</code>, which stages the <code>3*char+{0..3}</code> readef group).</li>
     <li><strong>Parser realignment</strong>: move <code>legaia_asset::battle_data_pack</code> onto the <code>[id, offset, size]</code> frame (see Parser status).</li>
   </ul>
   <p>Resolved elsewhere on this page: the texture-pool placement (static rect table <code>0x800775B8</code> + party-ordinal band), the slot-id &harr; equipment-id mapping (<code>FUN_80052770</code> case-4 picker), and the <code>+0x04</code>/<code>+0x08</code> words (swing action records, not sub-object end offsets).</p>

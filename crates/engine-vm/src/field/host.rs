@@ -505,8 +505,10 @@ pub trait FieldHost {
     ///
     /// 17-byte instruction `[43, 7, face_id, b0..b3, lo0..hi0, lo1..hi1,
     /// lo2..hi2, lo3..hi3, target_lo, target_hi]`. The original writes a
-    /// 12-byte struct at `&DAT_80087E68 + face_id * 12` populated from the
-    /// operand stream, then schedules a ramp to `ctx + 0x7A` via
+    /// 12-byte rotation-config struct at `&DAT_8007BE60 + face_id * 12`
+    /// populated from the operand stream (applied by `FUN_8001B47C` ->
+    /// `FUN_80029888` as a full 3-axis GTE rotation matrix lerped by
+    /// `actor + 0x7A`), then schedules a ramp to `ctx + 0x7A` via
     /// `func_0x8003C5F0`. The VM also writes `ctx.face_rotation = face_id`
     /// before the host call.
     ///

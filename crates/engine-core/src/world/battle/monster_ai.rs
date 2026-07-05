@@ -34,6 +34,9 @@ impl World {
                 self.arm_monster_physical(slot);
             }
             MonsterAction::Physical { target } => {
+                // AGL-driven multi-action budget: how many swings this monster
+                // lands this turn (single swing when it has no AGL / swing data).
+                self.arm_monster_strike_budget(slot);
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
                 if let Some(a) = self.actors.get_mut(slot as usize) {
@@ -138,6 +141,7 @@ impl World {
     /// living party member (fallback when a picked cast can't fold).
     fn arm_monster_physical(&mut self, slot: u8) {
         use vm::battle_action::ActionState;
+        self.arm_monster_strike_budget(slot);
         let target = self.first_living_opponent_of(slot).unwrap_or(slot);
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = ActionState::Begin.as_byte();
@@ -146,6 +150,38 @@ impl World {
             a.battle.action_category = 3;
         }
         self.maybe_confuse_retarget(slot);
+    }
+
+    /// Compute + store the AGL-driven multi-action budget for the physical swing
+    /// monster `slot` is about to make - the enemy analogue of the party Arts AP
+    /// gauge. Clean-room port of the AGL-gauge spending loop in the picker
+    /// `FUN_801E9FD4`: the monster gets one swing per action its per-round AGL
+    /// gauge ([`crate::monster_catalog::MonsterDef::agl`]) can afford from its
+    /// physical swing costs (`action_costs`), capped at 15, via
+    /// [`vm::battle_action::enemy_action_budget`]. Draws battle RNG (one roll per
+    /// candidate pick) exactly as retail's picker does.
+    ///
+    /// Falls back to a single swing - drawing **no** RNG - when the monster has
+    /// no AGL gauge or no costed swing actions (the disc-free / synthetic
+    /// catalog), so unbudgeted battles keep their RNG stream and behaviour
+    /// bit-identical. The result is consumed by [`Self::apply_basic_attack`].
+    ///
+    /// PORT: FUN_801E9FD4
+    pub(in crate::world) fn arm_monster_strike_budget(&mut self, slot: u8) {
+        let (agl, costs) = self
+            .actors
+            .get(slot as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.monster_catalog.get(id))
+            .map(|d| (d.agl, d.action_costs.clone()))
+            .unwrap_or((0, Vec::new()));
+        self.monster_strike_budget = if agl > 0 && !costs.is_empty() {
+            let stream =
+                vm::battle_action::enemy_action_budget(agl, &costs, &mut || self.next_rng());
+            (stream.len() as u8).max(1)
+        } else {
+            1
+        };
     }
 
     /// Monster-AI action picker - clean-room port of the **generic decision
