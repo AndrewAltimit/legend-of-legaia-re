@@ -761,6 +761,22 @@ impl SceneHost {
             let mut triggers = primary;
             triggers.extend(fallback);
             for site in crate::man_field_scripts::overworld_portal_sites(&mf, man, &triggers) {
+                // Story-gate the entrance by its partition-2 record's C1/C2
+                // gates (retail `FUN_8003BDE0`): C1 blocks the spawn if ANY
+                // listed flag is set, C2 requires ALL set. Most overworld
+                // entrances carry empty gates and install unconditionally; the
+                // Ravine (`keikoku`) portals carry `C1=[0x193]` so they drop
+                // out of the installed set once that story flag latches. A fresh
+                // Drake arrival (flag clear) keeps them reachable. See
+                // [`docs/subsystems/world-map.md`].
+                if let Some((c1, c2)) = crate::man_field_scripts::partition2_record_gates(
+                    &mf,
+                    man,
+                    site.record as usize,
+                ) && !self.world.p2_record_gates_pass(&c1, &c2)
+                {
+                    continue;
+                }
                 let world = (
                     i16::from(site.overworld_x) * 128 + 0x40,
                     i16::from(site.overworld_z) * 128 + 0x40,
@@ -865,14 +881,60 @@ impl SceneHost {
     ///
     /// Skipped while another spawned record / overlay owns the frame (the
     /// engine models a spawned record as THE cutscene timeline), while any
-    /// dialog or name entry is up, and outside plain field mode (the world
-    /// map routes walk-on interaction through the world-map entity SM
-    /// instead).
+    /// dialog or name entry is up.
+    ///
+    /// Runs in both plain field mode **and** the overworld (world-map) mode.
+    /// On the overworld a gate-1 trigger whose record is a **portal** (carries
+    /// a `0x3F` named scene-change) is left to the world-map entity SM (the
+    /// `OverworldPortal` walk-onto path); only gate-1 **beat** records - the
+    /// Drake mist-wall force-walk bands (`map01` partition-2 records gated on
+    /// `C1=[0x482]`) and their kin - are spawned here as a cutscene timeline,
+    /// exactly as a town walk-on beat is. This is what makes those bands honor
+    /// their C1 one-shot latch on the overworld instead of never firing.
+    /// `true` when partition-2 record `record` carries a `0x3F` named
+    /// scene-change op (a portal / door record) - the same test
+    /// [`crate::man_field_scripts::overworld_portal_sites`] uses to select
+    /// entrance records. Used by the overworld walk-on dispatch to leave portal
+    /// records to the entity SM and spawn only beat records. A clean
+    /// fall-through walk from the record's true `pc0`; `false` on a bad span.
+    // REF: FUN_8003BDE0
+    fn p2_record_is_portal(
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        record: usize,
+    ) -> bool {
+        let Some((start, pc0, len)) =
+            crate::man_field_scripts::partition_record_span(man_file, man, 2, record)
+        else {
+            return false;
+        };
+        let body = &man[start..start + len];
+        let mut pc = pc0;
+        while pc < body.len() {
+            let Ok(insn) = legaia_asset::field_disasm::decode(body, pc) else {
+                return false;
+            };
+            if insn.size == 0 {
+                return false;
+            }
+            if matches!(
+                insn.info,
+                legaia_asset::field_disasm::InsnInfo::SceneChange { .. }
+            ) {
+                return true;
+            }
+            pc += insn.size;
+        }
+        false
+    }
+
     // REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
     fn dispatch_walk_on_trigger(&mut self) {
-        if self.world.mode != crate::world::SceneMode::Field {
-            return;
-        }
+        let on_world_map = match self.world.mode {
+            crate::world::SceneMode::Field => false,
+            crate::world::SceneMode::WorldMap => true,
+            _ => return,
+        };
         if self.world.cutscene_timeline_active()
             || self.world.name_entry_active()
             || self.world.current_dialog.is_some()
@@ -916,12 +978,24 @@ impl SceneHost {
         let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
             return;
         };
+        // On the overworld, a gate-1 trigger whose record is a **portal**
+        // (carries a `0x3F` named scene-change) belongs to the world-map entity
+        // SM (`OverworldPortal`), which already gates + engages it on walk-onto.
+        // Dispatching it here too would double-handle the hop (and would let a
+        // story-gated-out entrance fall through to a raw timeline scene-change).
+        // Only spawn gate-1 **beat** records - the mist-wall force-walk bands -
+        // as a cutscene timeline on the overworld.
+        if on_world_map && Self::p2_record_is_portal(&man_file, &man_bytes, trigger.record as usize)
+        {
+            return;
+        }
         if self
             .world
             .install_gated_p2_record(&man_file, &man_bytes, trigger.record as usize)
         {
             log::info!(
-                "field: walk-on trigger at ({},{}) spawned P2[{}]",
+                "{}: walk-on trigger at ({},{}) spawned P2[{}]",
+                if on_world_map { "world-map" } else { "field" },
                 tile.0,
                 tile.1,
                 trigger.record,

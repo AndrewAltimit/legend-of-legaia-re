@@ -232,10 +232,32 @@ The producer/consumer seam: `WorldMapTransition` is emitted by the entity SM's
 named-`0x3F` drain). For an `OverworldPortal` the drain loads `scene_name`
 (field or world-map) and seats the player at the entry tile - the same arrival
 semantics as the named warp; for a door `Portal` it resolves `target_map`
-through the `MapIdResolver`. The still-**UNKNOWN** piece is the story-gated
-*order* the overworld unlocks these entrances (e.g. flag `551`, the post-arrival
-gate) - the engine installs every bridge portal unconditionally; retail gates
-some behind progress flags.
+through the `MapIdResolver`. The story-gating is **the entrance record's own
+C1/C2 gate**: `SceneHost::enter_world_map_scene` runs each bridge site's
+partition-2 record through `partition2_record_gates` + `World::p2_record_gates_pass`
+(retail `FUN_8003BDE0` - C1 blocks the spawn if ANY listed flag is set, C2
+requires ALL set) and installs an `OverworldPortal` only when the gate passes.
+Most Drake entrances carry empty gates and stay unconditional; the Ravine
+(`keikoku`) portals carry `C1=[0x193]`, so a fresh continent arrival (flag clear)
+keeps them reachable and setting `0x193` drops them from the installed set. This
+is per-visit install-time gating - the portal set is rebuilt each time the
+overworld loads, so a flag that latched during a dungeon run re-gates the
+entrance on the next arrival.
+
+Overworld walk-on **beat** records are the other half. Not every gate-1 kind-1
+tile trigger on a hub is a portal: the Drake mist-wall force-walk bands (`map01`
+partition-2 records `P2[34..36]`, `C1=[0x482]`) carry no `0x3F` - they shove the
+player back off a not-yet-unlocked path while their flag is clear.
+`SceneHost::dispatch_walk_on_trigger` runs in **both** field and world-map mode:
+on the overworld a gate-1 trigger whose record IS a portal (has a `0x3F`, tested
+by `p2_record_is_portal`) is left to the entity SM above, and only non-portal
+beat records spawn - through the same `install_gated_p2_record` cutscene-timeline
+path a town walk-on beat uses, so the `C1` one-shot latch is honored (the band
+force-walks while `0x482` is clear, stops once it sets). While such a timeline
+runs, `step_world_map_locomotion` stands the overworld player down (the force-walk
+lock) and `World::tick`'s world-map arm steps the timeline whenever one is active
+(not just during the opening `map01` fly-in).
+
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
   with that id. `inline` is the record's structural inline dialog-text block (see
   [dialog text source](#npc-dialogue-text-source)); `tick_world_map` opens it

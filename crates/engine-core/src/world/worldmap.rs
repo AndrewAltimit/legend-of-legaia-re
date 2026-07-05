@@ -113,6 +113,15 @@ impl World {
         if self.current_dialog.is_some() {
             return;
         }
+        // A spawned overworld cutscene timeline owns the player - the opening
+        // `map01` fly-in and, in free-roam, a gate-1 walk-on **beat** record
+        // (the Drake mist-wall force-walk band, dispatched by
+        // `SceneHost::dispatch_walk_on_trigger`). The timeline drives the
+        // player's MoveTo choreography, so free locomotion stands down while it
+        // plays - the force-walk lock, matching the field walk-on beat.
+        if self.cutscene_timeline_active() {
+            return;
+        }
         // In the top-view debug camera the d-pad scrolls the camera
         // ([`WorldMapController::tick`]); only walk the player in walk mode.
         if self

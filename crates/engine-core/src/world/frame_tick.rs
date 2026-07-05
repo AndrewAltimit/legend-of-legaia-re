@@ -225,9 +225,14 @@ impl World {
             SceneMode::WorldMap => {
                 // The opening chain's `map01` fly-in leg runs its cutscene
                 // record over the world map (Mist title card + crawl + the
-                // terminal SceneChange into Rim Elm), so the timeline steps
-                // here too. Outside the opening no world-map timeline exists.
-                if self.opening_chain_active {
+                // terminal SceneChange into Rim Elm), and a free-roam overworld
+                // walk-on **beat** record (a Drake mist-wall force-walk band, a
+                // gate-1 non-portal partition-2 record spawned by
+                // `SceneHost::dispatch_walk_on_trigger` in WorldMap mode) is the
+                // same single-context cutscene timeline. Step whichever is
+                // installed; `step_world_map_locomotion` stands the overworld
+                // player down while it plays (the force-walk lock).
+                if self.opening_chain_active || self.cutscene_timeline_active() {
                     self.step_cutscene_timeline();
                 }
                 self.tick_world_map();

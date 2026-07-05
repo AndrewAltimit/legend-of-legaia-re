@@ -160,6 +160,15 @@ fn post_naming_story_beat_spawns_on_walk_on() {
         host.world.p2_gate_flag_set(550),
         "the beat set its one-shot flag by execution (no re-fire)"
     );
+    // Dinner-chain coherence: P2[4] latches 550, but 551 (the dinner beat-2
+    // latch, set by P2[5]) stays clear here - P2[5] is a later story beat with
+    // no walk-on trigger of its own, so this is the pre-dinner state. The point
+    // is that the timeline's `0x50` SET ops DO land in the system bank (550
+    // proves it); 551 is simply a beat that has not run yet.
+    assert!(
+        !host.world.p2_gate_flag_set(551),
+        "551 is a later dinner beat (P2[5]); it stays unset in the pre-dinner state"
+    );
     // Standing on the band again does not re-spawn: the C1 gate blocks.
     seat_at_tile(&mut host.world, 20, 20);
     for _ in 0..2 {
@@ -313,15 +322,30 @@ fn ambient_records_never_lock_the_player() {
 /// Gate/progression flags survive a full save/load round trip: `save_full`
 /// mirrors the system bank into the story-flag window at `+0x158` (the
 /// retail RAM overlap) and `load_full` seeds it back. Disc-free.
+///
+/// The three town01 dinner-latch flags are the fixture: 549 (opening one-shot),
+/// 550 (dinner beat 1 latch, set by P2[4]'s `0x50` op), and 551 (dinner beat 2
+/// latch, set by P2[5]). Each is a one-shot latch that, once a completed
+/// timeline sets it, must persist so the beat never re-fires - including across
+/// a save. 552 is an unset control (the chain's next slot is not latched here),
+/// keeping the negative assertion non-vacuous.
 #[test]
 fn gate_flags_survive_save_roundtrip() {
     let mut world = World::new();
     world.system_flag_set(549);
     world.system_flag_set(550);
+    world.system_flag_set(551);
     let sf = world.save_full();
     let mut reloaded = World::new();
     reloaded.load_full(sf);
     assert!(reloaded.p2_gate_flag_set(549));
     assert!(reloaded.p2_gate_flag_set(550));
-    assert!(!reloaded.p2_gate_flag_set(551));
+    assert!(
+        reloaded.p2_gate_flag_set(551),
+        "the dinner beat-2 latch (551) survives a save so the beat stays played"
+    );
+    assert!(
+        !reloaded.p2_gate_flag_set(552),
+        "an unset chain flag stays clear across the round trip (control)"
+    );
 }
