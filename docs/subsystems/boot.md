@@ -532,7 +532,18 @@ The TIM-upload helper for these (and for the title overlay's per-frame sprites) 
 ## Debug flags
 
 - `_DAT_8007B8C2` - dev/retail build toggle. Several subsystems (sound init, field loader, save-card path, scene-change packet, title overlay) carry an "if dev" branch keyed on this byte. **Read-only at runtime**: every captured caller (`FUN_8001D424`, `FUN_8001D8FC`, `FUN_8001FA88`, `FUN_8001FC00`, `FUN_80020118`, `FUN_8003DE7C`, `overlay_menu_801DE234`, `overlay_field_battle_intro_801CF5BC`, `overlay_save_ui_*_801DD35C`, `overlay_title_801DD6B8/CCC`, ...) does a `_DAT_8007B8C2 == 0` retail-mode test; a sweep across the entire dump corpus (`SCUS_942.54` + 2660 overlay function dumps) returns **zero writes**. So the flag is BSS-resident (initialised to 0 = retail at boot) and is only mutated via external POKE - the TCRF GameShark codes that flip it to dev mode are the only known writers.
-- `_DAT_8007B98F` - separate debug-mode flag (NA build offset; JP retail uses `0x07D51F`, an `0x1B90` build-shift). The dump-corpus sweep returns zero reads and zero writes in `SCUS_942.54` + the 2660 captured overlay functions - the consumer is in an uncaptured overlay. **Live-confirmed:** writing `0x8007B98F = 1` via external RAM poke in a stable field scene brings up the debug menu on SELECT+△ in the NA retail build. The consumers are overlay-resident, outside the captured corpus. See `docs/reference/builds.md` "Debug input bindings" for the full combo table.
+- `_DAT_8007B98F` - the most-significant byte (offset +3, little-endian) of the
+  32-bit debug-mode word `_DAT_8007B98C` (NA build offset; JP retail uses
+  `0x07D51F`, an `0x1B90` build-shift). The dump-corpus sweep returns zero reads
+  of the *byte* `0x8007B98F` precisely because the consumer reads the *word*:
+  `_DAT_8007B98C` is tested as the debug gate by `FUN_8001822c`
+  (`8001822c.txt:500/533`, the input dispatcher) plus ~14 resident field-overlay
+  (0897) gates, and written by the shared menu/title/save-init routine. Writing
+  `0x8007B98F = 1` via external RAM poke sets the word's MSB, so every
+  `_DAT_8007B98C != 0` gate reads debug mode active - SELECT+△ then brings up the
+  debug menu in the NA retail build. The consumer is statically pinned (no
+  uncaptured overlay needed). See `docs/reference/builds.md` "Debug input
+  bindings" for the full combo table.
 
 The input dispatcher `FUN_8001822C` reads `_DAT_8007B8C2` but doesn't write it; both flags' writers, if they ever existed, are outside any captured overlay.
 
