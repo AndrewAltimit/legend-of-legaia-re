@@ -296,12 +296,22 @@ built by `FUN_80052FA0`) is wider than the 12 disc words:
   [Art-animation bank](#art-animation-bank-record0-0x58)), loading its
   keyframe stream into a scratch buffer and rewriting the queued id to the
   slot number;
-- the `+0x5C` word is a rebased sibling pointer. Its target is pinned:
-  in all four retail files `+0x5C == clut_a_off − 4`, the **zero word
-  immediately before record[0]'s first image block** (the art bank at
-  `+0x58`'s target ends at or before it). The consumer is still untraced;
-  the "it points at the art `"ME"` stream archive" hypothesis is
-  **disc-refuted** - those archives live in `readef.DAT`
+- the `+0x5C` word is a rebased sibling pointer, **paired with the `+0x58`
+  art-bank pointer**: `FUN_80052FA0` self-relative→absolute rebases both at
+  load, back to back - `*(base+0x58) += base; *(base+0x5c) += base;`
+  (`80052fa0.txt:558-561`, with the record[0] base stored at
+  `0x801C9360 + char*4`). Its target is pinned: in all four retail files
+  `+0x5C == clut_a_off − 4`, the **zero word immediately before record[0]'s
+  first image block**. But the paired field is **vestigial**: `+0x58` has a
+  reader (`FUN_8004AD80`, `8004ad80.txt:1492`, `base+0x58+4` = the art-bank
+  skip count), whereas an exhaustive sweep of the dumped corpus finds **no
+  reader of a fixed `+0x5C`** - every action-table consumer indexes
+  `base + index*4` for its slots or reads `+0x58`/`+0xAC`, and the word
+  `+0x5C` (= slot `0x17`) falls outside every consumer's range. The CLUT
+  upload uses the file-header fields `file+0x04`/`+0x08`, not `+0x5C`. So it
+  is a rebased-at-load paired-relocation field with no traced reader. The
+  earlier "it points at the art `"ME"` stream archive" hypothesis is
+  separately **disc-refuted** - those archives live in `readef.DAT`
   ([below](#me-stream-archives-readefdat)), and no `"ME"` archive exists
   anywhere in a player file's footprint or its decoded record[0].
 
@@ -793,9 +803,16 @@ on the player files.)
   reading of a Gala slot with `u32[1] = 0x3310` was this swing record -
   sec-2 id `0x21`'s entry at `0x3310` parses as a 15-part/17-frame stream).
   See [Swing records](#swing-records-equipment-sections--slots-0xc0xf).
-- **record[0] `+0x5C` consumer**: the word's target is pinned
-  (`clut_a_off − 4`, zero on disc) but no reader has been traced; the art
-  `"ME"`-archive hypothesis is refuted (the archives are in `readef.DAT`).
+- ~~**record[0] `+0x5C` consumer**~~ **reframed - vestigial**: the word is
+  rebased self-relative→absolute at load by `FUN_80052FA0` (`:561`)
+  **alongside** the `+0x58` art-bank pointer (`:558`), but unlike `+0x58` (read
+  by `FUN_8004AD80`) it has **no traced reader** - an exhaustive corpus sweep
+  finds none, and the word (slot `0x17`) sits outside every action-table
+  consumer's range. Target is `clut_a_off − 4` (zero on disc), and the CLUT
+  upload uses `file+0x04`/`+0x08`, not this field. So it is a rebased-at-load
+  paired-relocation field, not untraced-dead; a read-watchpoint would only
+  confirm the deadness (low-yield). The art `"ME"`-archive hypothesis is
+  separately refuted (the archives are in `readef.DAT`).
 - **Art-archive slot staging**: the request arm `FUN_80055B4C` (staging byte
   `battle ctx +0x26B = slot + 1`, consumed by `FUN_801F17F8`) is driven by the
   side-band streamer `FUN_801F12D0`, which stages the `3*char+{0..3}` group at

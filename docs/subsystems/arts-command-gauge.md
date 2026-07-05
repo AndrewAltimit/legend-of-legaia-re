@@ -9,6 +9,7 @@ The popular description is "an off-class weapon **doubles** the arm command." Th
 - [Where the cost lives](#where-the-cost-lives)
 - [Measured arm cost](#measured-arm-cost)
 - [How the gauge consumes it](#how-the-gauge-consumes-it)
+- [Status limb gating](#status-limb-gating)
 - [Weapon classes and favored mapping](#weapon-classes-and-favored-mapping)
 - [Execution path](#execution-path)
 - [Confidence and open threads](#confidence-and-open-threads)
@@ -64,6 +65,29 @@ The same case-`9`/`0xB` machinery also deals and spends the **Muscle Dome hand**
 The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fills its per-turn action queue by rolling candidate moves and paying each move's `+0x74` cost out of the per-round AGL gauge (`actor[+0x154]`), the same "wider cost = fewer commands" mechanic on the AI side - see [`battle-action.md` § Enemy AGL action-budget](battle-action.md#enemy-agl-action-budget-fun_801e9fd4).
 
 > A separate `+2` in the same case (`icon = DAT_801F4B94[i] + 2`, gated on an *empty* equip slot, `equip[cmd] == 0`) is an empty-slot icon tweak, **not** the class penalty - a fully-equipped off-class character still shows the widened arm via the `+0x74` cost above.
+
+## Status limb gating
+
+A **Rot** (or similar limb-disable) status grays individual command arrows and
+refuses their input. The gauge-input arm `FUN_801D0748` state `0x50`
+(`overlay_battle_action_801d0748.txt:3311-3360`) reads the active actor's
+`+0x16E` status halfword; the gray-draw pass and the input gate agree
+bit-for-bit:
+
+| `+0x16E` bit | Arrow grayed (draw pos) | Blocks command |
+|---|---|---|
+| `0x08` (limb 0) | LEFT (`0xb3 - w/2, 0x42`) | Square `0x8000` / dir 0 |
+| `0x10` (limb 1) | RIGHT (`0xe5 + w/2, 0x42`) | Circle `0x2000` / dir 3 |
+| `0x20` (limb 2) | UP (`0xcc, 0x22`) **and** DOWN (`0xcc, 0x62`) | Triangle `0x1000` / dir 1 **and** Cross `0x4000` / dir 2 |
+| `0x1000` (**Curse**) | the whole MAGIC command (`FUN_801dbec4(0xf8, 0x42)`, `:3229-3230`) | Magic |
+
+With all three limb bits set (`0x38`) the whole Arm command is skipped and
+Attack is unusable (`801d0748:3226-3227,3277`; `801e295c:5452`). This pinned
+map **replaces** the engine's earlier reconstructed Left/Right/Down arrow-gray:
+the retail assignment is Left = `0x08`, Right = `0x10`, and Up + Down together =
+`0x20` (a single bit grays two arrows), not one bit per arrow. Rot rolls exactly
+one of these three bits (`1 << (rand%3 + 3)`); see
+[battle-formulas.md § status application](battle-formulas.md#status-application-the-art--move-record-status-byte).
 
 ## Weapon classes and favored mapping
 
