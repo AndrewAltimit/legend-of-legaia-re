@@ -34,7 +34,7 @@ pub struct GFlagSite {
 /// the partition's u24 record-offset table against the MAN data region.
 /// `None` when the partition or index is out of range or the offset lands
 /// past the buffer.
-fn partition_record_offset(
+pub(crate) fn partition_record_offset(
     man_file: &ManFile,
     man_len: usize,
     partition: usize,

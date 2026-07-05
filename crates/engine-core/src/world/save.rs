@@ -148,11 +148,27 @@ impl World {
             per_char.push((slot, ce));
         }
 
+        // The system-flag bank (retail `DAT_80085758`, the partition-2 gate
+        // bitmap the field VM's 0x50/0x60/0x70 ops write) overlaps the saved
+        // story-flag window at byte offset `0x158` (`0x80085758 - 0x80085600`).
+        // Mirror the live bank into that window so gate/progression state
+        // survives a save (the LGX3 block stores a u16-length bitmap, so a
+        // bank longer than the retail 512-byte window still fits).
+        let mut story_flag_bits = self.story_flag_bits.clone();
+        if !self.system_flags.is_empty() {
+            let need = 0x158 + self.system_flags.len();
+            if story_flag_bits.len() < need {
+                story_flag_bits.resize(need, 0);
+            }
+            for (k, b) in self.system_flags.iter().enumerate() {
+                story_flag_bits[0x158 + k] |= b;
+            }
+        }
         legaia_save::SaveFile {
             party,
             ext: legaia_save::SaveExt {
                 story_flags: self.story_flags,
-                story_flag_bits: self.story_flag_bits.clone(),
+                story_flag_bits,
                 money: self.money,
                 inventory,
             },
@@ -185,6 +201,16 @@ impl World {
         }
         self.story_flags = sf.ext.story_flags;
         self.story_flag_bits = sf.ext.story_flag_bits;
+        // Seed the live system-flag bank from the saved bitmap's `+0x158`
+        // window (the retail overlap `save_full` mirrors into) so partition-2
+        // record gates - story-progression one-shots, door cutscene beats -
+        // resolve the same after a reload. OR-merge: a retail SC import that
+        // populated `story_flag_bits` alone seeds the bank the same way.
+        self.system_flags.clear();
+        if self.story_flag_bits.len() > 0x158 {
+            let window = self.story_flag_bits[0x158..].to_vec();
+            self.system_flags = window;
+        }
         self.money = sf.ext.money;
         self.inventory.clear();
         for (id, count) in sf.ext.inventory {

@@ -118,7 +118,9 @@ pub struct CutsceneTimeline {
     pub ctx: FieldCtx,
     /// The partition-2 record body, sliced from its `script_start` so relative
     /// jumps wrap against the record base (retail `buffer_base = script_start`).
-    pub bytecode: Vec<u8>,
+    /// Shared (`Arc`) so an inline dialog panel can page over the same bytes
+    /// while the timeline is parked at the segment.
+    pub bytecode: std::sync::Arc<Vec<u8>>,
     /// Current byte offset into [`Self::bytecode`]. Starts at the record's
     /// first-opcode offset (`pc0`, the named-record header end).
     pub pc: usize,
@@ -166,6 +168,24 @@ pub struct CutsceneTimeline {
     /// block once a prior roller drains" (`true`) from "opened, waiting for
     /// THIS block's roller to scroll out" (`false`).
     pub narration_pending_open: bool,
+    /// An open inline dialog box (`0x1F`-lead glyph segment reached by the
+    /// record's own flow, e.g. the Mei walk-on beat's conversation). While
+    /// `Some`, the timeline is parked at the segment lead - the retail dialog
+    /// state machine's `pc byte & 0x7F < 0x20` transition - and the stepper
+    /// routes pad input to the panel (confirm advances / dismisses, Up/Down
+    /// move a picker cursor). On dismissal the timeline resumes at the
+    /// panel's final PC (past the consumed segment).
+    pub dialog: Option<crate::dialog::OwnedDialogPanel>,
+    /// Per-byte "an instruction was executed here" map over
+    /// [`Self::bytecode`], kept for the timeline's whole life. A backward
+    /// jump into an already-executed PC means the record's linear
+    /// choreography has wrapped - the on-disc records have no end opcode;
+    /// they either park in a tight `Nop`+`JmpRel`-to-self spin or loop as a
+    /// **resident** actor-driver context (e.g. the town01 Mei beat re-enters
+    /// its conversation loop from the top). Retail leaves that context
+    /// looping as a *parallel* context; the engine's modal timeline
+    /// completes there instead so control returns to the player.
+    pub visited: Vec<bool>,
 }
 
 impl CutsceneTimeline {
@@ -180,9 +200,10 @@ impl CutsceneTimeline {
             script_id: Self::SYSTEM_SCRIPT_ID,
             ..FieldCtx::default()
         };
+        let visited = vec![false; bytecode.len()];
         Self {
             ctx,
-            bytecode,
+            bytecode: std::sync::Arc::new(bytecode),
             pc,
             done: false,
             frames: 0,
@@ -192,6 +213,8 @@ impl CutsceneTimeline {
             narration_blocks: Vec::new(),
             narration_pc: None,
             narration_pending_open: false,
+            dialog: None,
+            visited,
         }
     }
 

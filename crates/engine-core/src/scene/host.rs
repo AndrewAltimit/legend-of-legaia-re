@@ -85,6 +85,24 @@ pub struct SceneHost {
     /// [`crate::man_field_scripts::scene_destinations`]. Empty for scenes with
     /// no MAN / no destination table. Drives [`Self::destination_resolver`].
     scene_destinations: Vec<crate::man_field_scripts::SceneDestination>,
+    /// The current scene's `.MAP` kind-1 tile-trigger tables
+    /// (`(primary, fallback)` - see
+    /// [`crate::field_regions::parse_tile_triggers`]), cached at scene load
+    /// for the per-frame walk-on dispatch. Empty for scenes without a field
+    /// map.
+    field_triggers: (
+        Vec<crate::field_regions::TileTrigger>,
+        Vec<crate::field_regions::TileTrigger>,
+    ),
+    /// The current scene's MAN payload, cached at scene load so a walk-on
+    /// trigger hit can resolve its partition-2 record without a disc re-read.
+    field_man_cache: Option<Arc<Vec<u8>>>,
+    /// Player collision tile at the previous tick - the engine mirror of the
+    /// retail last-tile globals `FUN_801D1EC4` compares to fire the walk-on
+    /// tile trigger only on a tile **crossing**. `None` = stale (scene entry
+    /// / warp arrival), which fires the trigger at the current tile, matching
+    /// retail's stale-globals first-frame dispatch.
+    last_trigger_tile: Option<(u8, u8)>,
 }
 
 mod audio_dialog;

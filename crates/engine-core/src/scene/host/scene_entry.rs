@@ -333,6 +333,40 @@ impl SceneHost {
                 Ok(man_file) => {
                     self.world
                         .install_field_carriers_from_man(&man_file, &man_bytes);
+                    // Gate-0 tile-trigger object binds (retail scene-init
+                    // `FUN_8003A55C`): each gate-0 kind-1 trigger binds its
+                    // partition-0 record as a touch object at the trigger
+                    // tile. House doors are these - the record's script
+                    // cross-context-teleports the player (ＩＮ/ＯＵＴ
+                    // pairs), decoded here into walk-touch entries so
+                    // walking into a door works. Installed after the carrier
+                    // install above (which clears `field_walk_touch`).
+                    let binds: Vec<((i16, i16), crate::man_field_scripts::WalkTouchEvent)> = self
+                        .field_triggers
+                        .0
+                        .iter()
+                        .chain(self.field_triggers.1.iter())
+                        .filter(|t| t.gate == 0)
+                        .filter_map(|t| {
+                            let event = crate::man_field_scripts::p0_record_walk_touch_event(
+                                &man_file,
+                                &man_bytes,
+                                t.record as usize,
+                            )?;
+                            let pos = (
+                                i16::from(t.tile_x) * 128 + 0x40,
+                                i16::from(t.tile_z) * 128 + 0x40,
+                            );
+                            Some((pos, event))
+                        })
+                        .collect();
+                    if !binds.is_empty() {
+                        log::info!(
+                            "field: installed {} gate-0 door bind(s) from tile triggers",
+                            binds.len()
+                        );
+                    }
+                    self.world.install_trigger_walk_touch(&binds);
                 }
                 Err(err) => eprintln!("[scene] field-carrier MAN parse skipped: {err:#}"),
             },
@@ -779,6 +813,88 @@ impl SceneHost {
         }
     }
 
+    /// Per-frame walk-on tile-trigger dispatch - the retail field loop's
+    /// tile compare (`FUN_801D1EC4`): when the player crosses into a new
+    /// 128-unit collision tile during free-roam field play, the `.MAP`
+    /// kind-1 trigger table is consulted (`FUN_801D5630`) and a gate-1 hit
+    /// spawns MAN partition-2 record `record` as a field-VM context
+    /// (`FUN_8003BDE0`, C1/C2 story-flag gates checked inside
+    /// [`crate::world::World::install_gated_p2_record`]).
+    ///
+    /// This is how town exits work: e.g. Rim Elm's south-gate tiles carry a
+    /// gate-1 trigger for the partition-2 record whose script runs the
+    /// `0x3F` named scene-change to `map01` - and how walk-on story beats
+    /// (the post-naming Vahn's-house scenes) launch. A `None` last tile
+    /// (scene entry / warp arrival) fires the trigger at the *current* tile,
+    /// mirroring retail's stale last-tile globals on the first post-arrival
+    /// frame.
+    ///
+    /// Skipped while another spawned record / overlay owns the frame (the
+    /// engine models a spawned record as THE cutscene timeline), while any
+    /// dialog or name entry is up, and outside plain field mode (the world
+    /// map routes walk-on interaction through the world-map entity SM
+    /// instead).
+    // REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
+    fn dispatch_walk_on_trigger(&mut self) {
+        if self.world.mode != crate::world::SceneMode::Field {
+            return;
+        }
+        if self.world.cutscene_timeline_active()
+            || self.world.name_entry_active()
+            || self.world.current_dialog.is_some()
+            || self.world.tile_board.is_some()
+            || self.world.active_fmv().is_some()
+        {
+            return;
+        }
+        let Some(slot) = self.world.player_actor_slot else {
+            return;
+        };
+        let Some(actor) = self.world.actors.get(slot as usize) else {
+            return;
+        };
+        // Retail tile quantisation: `tile = (world - 0x40) >> 7` (the
+        // locomotion-cluster form; the inverse of the `tile*128 + 0x40`
+        // placement mapping).
+        let quant = |w: i16| -> i32 { (i32::from(w) - 0x40) >> 7 };
+        let (tx, tz) = (
+            quant(actor.move_state.world_x),
+            quant(actor.move_state.world_z),
+        );
+        if !(0..=0x7F).contains(&tx) || !(0..=0x7F).contains(&tz) {
+            return;
+        }
+        let tile = (tx as u8, tz as u8);
+        if self.last_trigger_tile == Some(tile) {
+            return; // same tile as last tick - triggers fire on crossings
+        }
+        self.last_trigger_tile = Some(tile);
+        let (primary, fallback) = &self.field_triggers;
+        let Some(trigger) =
+            crate::field_regions::lookup_tile_trigger(primary, fallback, tile.0, tile.1)
+                .filter(|t| t.gate == 1)
+        else {
+            return;
+        };
+        let Some(man_bytes) = self.field_man_cache.clone() else {
+            return;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
+            return;
+        };
+        if self
+            .world
+            .install_gated_p2_record(&man_file, &man_bytes, trigger.record as usize)
+        {
+            log::info!(
+                "field: walk-on trigger at ({},{}) spawned P2[{}]",
+                tile.0,
+                tile.1,
+                trigger.record,
+            );
+        }
+    }
+
     /// One frame: tick the world, materialize any actor-spawn requests
     /// queued by the field VM's `0x4C 0x80` opcode, then process any
     /// pending `scene_transition(map_id)` request. Returns the
@@ -817,6 +933,12 @@ impl SceneHost {
                 "opening: op-0x44 spawned P2 record (global index {global_index}) as the cutscene timeline",
             );
         }
+        // Walk-on tile trigger: the per-frame tile compare that spawns a
+        // gate-1 trigger's partition-2 record when the player crosses onto
+        // its tile - town exits + walk-on story beats. Runs after the world
+        // stepped (player position is current) and before the transition
+        // drains (a record installed this frame steps from the next tick).
+        self.dispatch_walk_on_trigger();
         // Named scene-change (field-VM op 0x3F) takes precedence over the
         // map-id door-warp: its destination name is carried inline by the op,
         // so it loads directly without the map-id resolver. This is the live

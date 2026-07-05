@@ -6,6 +6,12 @@
 use super::*;
 
 impl World {
+    /// First synthetic [`Self::field_walk_touch`] slot for gate-0
+    /// tile-trigger binds ([`Self::install_trigger_walk_touch`]). Partition-1
+    /// placement indices (the natural walk-touch keys) stay well below this
+    /// in the retail corpus, so the two key spaces never collide.
+    pub const TRIGGER_WALK_TOUCH_SLOT_BASE: u8 = 0xC0;
+
     /// Place the scene's field entity SMs (all Idle). One
     /// [`vm::world_map::WorldMapEntityCtx`] per [`FieldCarrierConfig`], so a
     /// scripted-encounter carrier can be advanced via
@@ -127,6 +133,33 @@ impl World {
         }
 
         sparring_idx
+    }
+
+    /// Install walk-touch entries for the scene's **gate-0 tile-trigger
+    /// object binds** (house doors): each bind sits at its trigger tile's
+    /// world centre and fires the partition-0 record's decoded effect
+    /// (see [`crate::man_field_scripts::p0_record_walk_touch_event`]) on
+    /// player contact, through the same [`Self::check_field_walk_touch`]
+    /// dispatch as placement contacts.
+    ///
+    /// Keyed from [`Self::TRIGGER_WALK_TOUCH_SLOT_BASE`] so the synthetic
+    /// slots never collide with partition-1 placement indices. Call after
+    /// [`Self::install_field_carriers_from_man`] (whose inner install clears
+    /// `field_walk_touch`); idempotent per scene - re-installing replaces the
+    /// previous bind set.
+    // REF: FUN_8003A55C, FUN_801d5b5c
+    pub fn install_trigger_walk_touch(
+        &mut self,
+        binds: &[((i16, i16), crate::man_field_scripts::WalkTouchEvent)],
+    ) {
+        self.field_walk_touch
+            .retain(|slot, _| *slot < Self::TRIGGER_WALK_TOUCH_SLOT_BASE);
+        for (i, (pos, event)) in binds.iter().enumerate() {
+            let Some(slot) = Self::TRIGGER_WALK_TOUCH_SLOT_BASE.checked_add(i as u8) else {
+                break;
+            };
+            self.field_walk_touch.insert(slot, (*pos, *event));
+        }
     }
 
     /// Trigger a field interaction on placement `slot` (retail's field-interact
