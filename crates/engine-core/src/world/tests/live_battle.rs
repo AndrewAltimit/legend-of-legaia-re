@@ -64,6 +64,63 @@ fn guard_stance_halves_basic_attack_damage() {
 }
 
 #[test]
+fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
+    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+
+    // A monster whose per-round AGL gauge (60) affords three 20-cost swings.
+    let mut cat = MonsterCatalog::new();
+    let mut def = MonsterDef::new(42, "Multi", 500, 30);
+    def.agl = 60;
+    def.action_costs = vec![20];
+    cat.insert(def);
+
+    let mut world = live_battle_world_3v2();
+    world.monster_catalog = cat;
+    world.actors[3].battle_monster_id = Some(42);
+    world.battle_attack[3] = 50;
+    world.battle_defense[0] = 10;
+    world.actors[3].battle.active_target = 0;
+    world.actors[0].battle.max_hp = 9999;
+    world.actors[0].battle.hp = 9999;
+
+    // The picker's budget loop lands 3 swings (60 / 20).
+    world.arm_monster_strike_budget(3);
+    assert_eq!(
+        world.monster_strike_budget, 3,
+        "AGL gauge 60 / swing cost 20 = 3 swings"
+    );
+    world.battle_ctx.active_actor = 3;
+    world.apply_basic_attack();
+    let one_swing = legaia_engine_vm::battle_formulas::art_strike_damage_default(50, 10, 16);
+    let total = 9999 - world.actors[0].battle.hp;
+    assert_eq!(
+        total,
+        one_swing * 3,
+        "a monster with an AGL budget of 3 lands three swings in one turn"
+    );
+
+    // A monster with no AGL / swing data falls back to a single swing (the
+    // disc-free / synthetic catalog case) - one strike, RNG-free budget.
+    let mut world = live_battle_world_3v2();
+    world.actors[3].battle_monster_id = Some(1); // no catalog entry installed
+    world.battle_attack[3] = 50;
+    world.battle_defense[0] = 10;
+    world.actors[3].battle.active_target = 0;
+    world.arm_monster_strike_budget(3);
+    assert_eq!(
+        world.monster_strike_budget, 1,
+        "no AGL data -> single swing"
+    );
+    world.battle_ctx.active_actor = 3;
+    world.apply_basic_attack();
+    assert_eq!(
+        100 - world.actors[0].battle.hp,
+        one_swing,
+        "unbudgeted monster lands exactly one swing"
+    );
+}
+
+#[test]
 fn run_command_arms_the_run_band() {
     use crate::battle_input::{BattleCommandSession, CommandPhase};
     let mut world = live_battle_world_3v2();

@@ -52,13 +52,31 @@ pub struct MonsterDef {
     /// `docs/subsystems/battle-formulas.md`). `0` leaves the battle on the
     /// round-robin turn-order fallback.
     pub speed: u16,
+    /// **AGL** - the per-round action gauge (record `stats[0]` / `+0x0E`, actor
+    /// `+0x154` current / `+0x156` base). Reset to base each round; every swing
+    /// spends [`MonsterDef::action_costs`] from it. This is the enemy analogue
+    /// of the party-side Arts AP gauge: how many physical swings a monster lands
+    /// on its turn is `agl / swing_cost` (capped at 15), computed by
+    /// [`legaia_engine_vm::battle_action::enemy_action_budget`]. `0` (the
+    /// disc-free / synthetic catalog default) leaves the monster on a single
+    /// swing per turn, drawing no budget RNG.
+    pub agl: u16,
+    /// Per-action **AGL costs** of this monster's candidate physical swing
+    /// actions (the swing-record `+0x74` bytes for records whose tag `+0x0` is
+    /// in `0x0C..=0x1F` and whose cost is not the `0xFF` "not-an-attack"
+    /// sentinel). Populated from the monster archive in
+    /// [`monster_def_from_record`]; the multi-action budget loop
+    /// ([`legaia_engine_vm::battle_action::enemy_action_budget`]) rolls a random
+    /// candidate each pass and spends its cost from the [`MonsterDef::agl`]
+    /// gauge. Empty (the synthetic default) means the monster falls back to one
+    /// swing per turn.
+    pub action_costs: Vec<u8>,
     /// Intelligence (record `stats[4]` / `+0x18`, actor `+0x168`), unclamped -
     /// the bestiary **INT** stat. Seeds the summon-damage roll when this
     /// creature is the spell's summon body (`FUN_801dd0ac` summon branch reads
     /// the slot-7 actor's `+0x168`); [`MonsterDef::accuracy`] /
     /// [`MonsterDef::evasion`] carry the same stat clamped to a byte for the
-    /// hit/evade paths. (The enemy's AGL action gauge - record `+0x0E` - has no
-    /// `MonsterDef` field yet; nothing in the engine consumes it.)
+    /// hit/evade paths.
     pub intel: u16,
     pub accuracy: u8,
     pub evasion: u8,
@@ -99,6 +117,8 @@ impl MonsterDef {
             udf: attack / 2,
             ldf: attack / 2,
             speed: 0,
+            agl: 0,
+            action_costs: Vec::new(),
             intel: 70,
             accuracy: 70,
             evasion: 10,
@@ -172,8 +192,19 @@ impl MonsterCatalog {
 ///   initiative seed (actor `+0x164`). The battle's next-actor selector seeds
 ///   each living actor's per-turn key from it.
 ///
-/// `stats[0]` (AGL / agility-action gauge, record `+0x0E`) is identified but
-/// has no `MonsterDef` field yet, so it's not consumed here. `exp` / `gold` /
+/// - `agl` <- `rec.agility()` (`stats[0]`, record `+0x0E`) - the per-round
+///   action gauge (actor `+0x154`). Together with `action_costs` it drives the
+///   enemy multi-action budget (how many swings the monster lands per turn; see
+///   [`legaia_engine_vm::battle_action::enemy_action_budget`]).
+/// - `action_costs` <- the `+0x74` AGL cost of each of the monster's candidate
+///   physical swing actions. The archive parses **every** action record into
+///   [`legaia_asset::monster_archive::MonsterRecord::spells`]
+///   (`MonsterSpell { id = tag `+0x0`, agl_cost = `+0x74`, .. }`); the retail
+///   picker's physical branch selects records whose tag is in `0x0C..=0x1F`
+///   (the swing / short-approach family) with a non-`0xFF` cost, which is what
+///   we collect here.
+///
+/// `exp` / `gold` /
 /// `drop_item` /
 /// `drop_rate_q8` come from the
 /// record's reward fields (`+0x44..+0x49`) - these are the **base** values;
@@ -186,6 +217,16 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     def.udf = rec.defense_high();
     def.ldf = rec.defense_low();
     def.speed = rec.speed();
+    def.agl = rec.agility();
+    // The picker's physical branch counts a record as a candidate swing when its
+    // tag byte (`+0x0`, parsed as `MonsterSpell::id`) is in `0x0C..=0x1F` and
+    // its `+0x74` AGL cost is not the `0xFF` "not-an-attack" sentinel.
+    def.action_costs = rec
+        .spells
+        .iter()
+        .filter(|s| (0x0C..=0x1F).contains(&s.id) && s.agl_cost != 0xFF)
+        .map(|s| s.agl_cost)
+        .collect();
     def.intel = rec.intelligence();
     let int_byte = rec.intelligence().min(u8::MAX as u16) as u8;
     def.accuracy = int_byte;
@@ -346,6 +387,12 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             // Real per-monster SPD comes from the disc archive via
             // `monster_def_from_record`.
             speed: 0,
+            // Synthetic catalog keeps AGL at 0 / no swing costs so disc-free
+            // battles stay on a single swing per turn (no budget RNG drawn),
+            // deterministic for tests. Real per-monster AGL + swing costs come
+            // from the disc archive via `monster_def_from_record`.
+            agl: 0,
+            action_costs: Vec::new(),
             intel: acc as u16,
             accuracy: acc,
             evasion: eva,

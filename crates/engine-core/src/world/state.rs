@@ -293,6 +293,20 @@ pub struct World {
     /// alongside accuracy.
     pub battle_evasion: [u16; 8],
 
+    /// Number of physical swings the active monster attacker lands on its
+    /// current turn - the enemy multi-action budget. Computed at monster-turn
+    /// arm ([`World::arm_monster_strike_budget`]) from the monster's AGL gauge
+    /// ([`crate::monster_catalog::MonsterDef::agl`]) + its swing costs
+    /// (`action_costs`) via the port of `FUN_801E9FD4`'s budget loop
+    /// ([`legaia_engine_vm::battle_action::enemy_action_budget`]), then consumed
+    /// by [`World::apply_basic_attack`]. Always `1` for a party attacker (its
+    /// multi-hit is the AP/arts system) and for a monster with no AGL / swing
+    /// data (the disc-free / synthetic catalog), so unbudgeted battles stay
+    /// bit-identical. Defaults to `1`.
+    ///
+    /// REF: FUN_801E9FD4
+    pub monster_strike_budget: u8,
+
     /// "Previous action cleared" gate - toggled by the engine when an
     /// animation transition completes.
     pub prev_action_cleared: bool,
@@ -1663,6 +1677,7 @@ impl World {
             battle_speed: [0; 8],
             battle_accuracy: [0; 8],
             battle_evasion: [0; 8],
+            monster_strike_budget: 1,
             prev_action_cleared: true,
             sound_bank_ready: true,
             party_count: 3,

@@ -58,5 +58,8 @@ use done::*;
 mod run;
 use run::*;
 
+mod enemy_budget;
+pub use enemy_budget::*;
+
 #[cfg(test)]
 mod tests;

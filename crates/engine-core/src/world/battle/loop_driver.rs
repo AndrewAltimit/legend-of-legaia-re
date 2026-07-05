@@ -322,8 +322,33 @@ impl World {
     /// (`< party_count`) strike monsters; monster slots strike the party.
     pub(in crate::world) fn apply_basic_attack(&mut self) {
         let attacker = self.battle_ctx.active_actor as usize;
+        let party_count = self.party_count.max(1) as usize;
+        // Enemy multi-action budget (AGL-driven): a monster attacker lands the
+        // number of swings its per-round AGL gauge affords this turn (computed at
+        // turn arm by `arm_monster_strike_budget` / `enemy_action_budget`, the
+        // port of `FUN_801E9FD4`'s budget loop). A party attacker always swings
+        // once here - its multi-hit is the AP / arts system. A miss doesn't end
+        // the turn (the loop continues); an emptied opposing side does.
+        let strikes = if attacker >= party_count {
+            self.monster_strike_budget.max(1)
+        } else {
+            1
+        };
+        for _ in 0..strikes {
+            if !self.apply_one_basic_strike() {
+                break;
+            }
+        }
+    }
+
+    /// Apply a single generic physical strike from the active attacker. Returns
+    /// `false` when there is no living opposing target (the caller stops the
+    /// multi-swing loop); a plain accuracy miss returns `true` (the turn's
+    /// remaining swings still happen). See [`Self::apply_basic_attack`].
+    fn apply_one_basic_strike(&mut self) -> bool {
+        let attacker = self.battle_ctx.active_actor as usize;
         let Some(target) = self.resolve_attack_target(attacker as u8) else {
-            return;
+            return false;
         };
         let target = target as usize;
         let attack = self.battle_attack.get(attacker).copied().unwrap_or(0);
@@ -339,7 +364,7 @@ impl World {
             vm::battle_formulas::accuracy_roll(acc, eva, &mut seed)
         };
         if !hit {
-            return;
+            return true;
         }
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
@@ -411,6 +436,7 @@ impl World {
             let survives = self.actors[target].battle.hp > 0;
             self.queue_battle_reaction(target, survives);
         }
+        true
     }
 
     /// Resolve the slot a strike from `attacker` should land on. Honors a
