@@ -18,6 +18,9 @@ impl SceneHost {
             monster_archive_cache: None,
             move_power_loaded: false,
             scene_destinations: Vec::new(),
+            field_triggers: (Vec::new(), Vec::new()),
+            field_man_cache: None,
+            last_trigger_tile: None,
         }
     }
 
@@ -80,6 +83,21 @@ impl SceneHost {
         self.scene = Some(scene);
         self.assets = Some(assets);
         self.refresh_scene_destinations();
+        // Cache the `.MAP` kind-1 tile-trigger tables + the MAN payload for
+        // the per-frame walk-on dispatch, and mark the last-tile compare
+        // stale (retail's scene-init state - the first tick fires the
+        // trigger at the spawn/arrival tile).
+        self.field_triggers = self
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_tile_triggers(&self.index).ok())
+            .unwrap_or_default();
+        self.field_man_cache = self
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
+            .map(Arc::new);
+        self.last_trigger_tile = None;
         Ok(self.scene.as_ref().unwrap())
     }
 

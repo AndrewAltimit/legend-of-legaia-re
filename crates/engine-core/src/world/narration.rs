@@ -275,15 +275,17 @@ impl World {
     }
 
     /// `true` when story flag `flag` is set in the partition-2 gate bitmap
-    /// (retail `DAT_80085758`, which sits at offset `0x158` of the
-    /// `0x80085600..0x80085800` bitmap [`Self::story_flag_bits`] mirrors).
-    /// `bit = byte[flag >> 3] & (0x80 >> (flag & 7))` - `FUN_8003BDE0`'s test.
+    /// (retail `DAT_80085758`). That base is the **system-flag bank** the
+    /// field VM's `0x50`/`0x60`/`0x70` SET/CLEAR/TEST opcodes operate on
+    /// ([`Self::system_flags`], same `byte = flag >> 3`,
+    /// `bit = 0x80 >> (flag & 7)` addressing - `FUN_8003BDE0`'s test), so the
+    /// gate check and the VM writes share one store. It also sits at offset
+    /// `0x158` of the `0x80085600..0x80085800` save-bitmap window
+    /// ([`Self::story_flag_bits`]); the save/load paths sync that overlap so
+    /// gate state persists (see [`Self::save_full`] / [`Self::load_full`]).
     // REF: FUN_8003BDE0
     pub fn p2_gate_flag_set(&self, flag: u16) -> bool {
-        let byte = 0x158 + (flag >> 3) as usize;
-        self.story_flag_bits
-            .get(byte)
-            .is_some_and(|b| b & (0x80u8 >> (flag & 7)) != 0)
+        self.system_flag_test(flag)
     }
 
     /// Evaluate a partition-2 record's C1 / C2 story-flag gates: C1 blocks

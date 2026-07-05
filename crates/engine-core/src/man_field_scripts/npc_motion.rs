@@ -121,6 +121,57 @@ pub enum WalkTouchEvent {
     PlayerMoveTo { world_x: i16, world_z: i16 },
 }
 
+/// Decode a **partition-0 object record**'s walk-touch effect, if any.
+///
+/// Gate-0 kind-1 tile triggers ([`crate::field_regions::TileTrigger`],
+/// `gate == 0`) are consumed at scene init (`FUN_8003A55C`): the referenced
+/// partition-0 record is bound as a touch object at the trigger tile, and
+/// walking into it runs the record's script through the same touch dispatch
+/// as a placement contact (`FUN_801d5b5c`). For house doors the script's
+/// effect is a cross-context `0x23 | 0x80` MOVE_TO into the
+/// [`PLAYER_CHANNEL`] - the ＩＮ/ＯＵＴ record-pair mechanism that
+/// teleports the player between a doorstep and its interior.
+///
+/// Partition-0 records carry their **own header form**
+/// `[u8 n][n*2 SJIS name][u8 attr]` (`pc0 = 1 + n*2 + 1`) - NOT the
+/// partition-1 `[N][N*2 locals][4-byte header]` shape, whose formula desyncs
+/// three bytes into a partition-0 script.
+///
+/// Returns `None` for records whose script carries no player-channel
+/// teleport in its walked region (gate-0 binds also cover non-door objects).
+// REF: FUN_8003A55C, FUN_801d5b5c
+pub fn p0_record_walk_touch_event(
+    man_file: &ManFile,
+    man: &[u8],
+    record_idx: usize,
+) -> Option<WalkTouchEvent> {
+    let start =
+        crate::man_field_scripts::partition_record_offset(man_file, man.len(), 0, record_idx)?;
+    let n = *man.get(start)? as usize;
+    let pc0 = 1 + n * 2 + 1;
+    let end = crate::man_field_scripts::record_end_bound(man_file, man.len(), start);
+    if start + pc0 >= end {
+        return None;
+    }
+    let body = man.get(start..end)?;
+    for insn in LinearWalker::new(body, pc0).flatten() {
+        let InsnInfo::MoveTo { xb, zb } = insn.info else {
+            continue;
+        };
+        if insn.extended != Some(PLAYER_CHANNEL) {
+            continue; // own-context positioning (the door prop itself)
+        }
+        if (xb & 0x7F, zb & 0x7F) == PARKED_SENTINEL_TILE {
+            continue;
+        }
+        return Some(WalkTouchEvent::PlayerMoveTo {
+            world_x: grid_byte_to_world(xb),
+            world_z: grid_byte_to_world(zb),
+        });
+    }
+    None
+}
+
 /// Classify placement `p`'s walk-touch behaviour, if any. `None` for parked
 /// placements (no touchable body until a script un-parks them - not modelled)
 /// and for placements whose script carries neither a genuine door-warp nor a
