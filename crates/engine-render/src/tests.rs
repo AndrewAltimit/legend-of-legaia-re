@@ -7,5 +7,6 @@ use glam::Mat4;
 mod battle_hud;
 mod blend;
 mod menu_overlays;
+mod screen_overlay_gpu;
 mod text_dialog;
 mod title_save_screen;

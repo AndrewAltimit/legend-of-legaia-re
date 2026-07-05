@@ -19,6 +19,14 @@ same surface and depth attachment:
   additionally takes per-vertex blend words (ABE bit 15 + ABR bits 5..=6,
   `psx_blend::pack_blend_word`) so untextured semi-transparent prims
   blend in PSX mode.
+- **Screen-space 2D overlay** - `render(RenderTarget::ScreenOverlay)`. PSX
+  `POLY_FT4` textured quads + flat quads in surface pixels, drawn in
+  ordering-table order (back-to-front by OT index, LIFO within a bucket)
+  with per-ABR semi-transparency. Textured quads sample the shared PSX VRAM
+  through the same CBA/TSB CLUT decode as the 3D VRAM-mesh path. Built from
+  a `screen_overlay::ScreenPrim` list (see below); this is the draw path the
+  afterimage streak rides and the clean public API a `screen_fx`
+  (iris / letterbox / panel / sprite) consumer calls.
 
 ## Software PSX VRAM model
 
@@ -142,7 +150,25 @@ screen corners + the move's trail-texture id, reproducing the per-corner
 `rand` wobble, the random brightness band that picks a texture sub-column,
 and the exact UV / CLUT / texpage layout. It takes an injected rng (the
 retail source is the BIOS `rand`) so the construction is pure and
-unit-tested.
+unit-tested. The finished quad is no longer parked: `screen_overlay::
+afterimage_screen_quad` lifts it into a `ScreenPrim` that the
+[`screen_overlay`](src/screen_overlay.rs) pass links into the screen-space
+ordering table and the wgpu renderer draws via `RenderTarget::ScreenOverlay`.
+
+## Screen-space overlay pass
+
+[`screen_overlay`](src/screen_overlay.rs) is the render capability behind
+`RenderTarget::ScreenOverlay`: a `ScreenPrim` is either a textured
+`POLY_FT4` (`ScreenQuad` - four screen corners + UV/CLUT/texpage + a 24-bit
+modulation colour) or a solid/blended `FlatQuad`, each carrying an OT
+`ot_index`. `order_primitives` reproduces the retail `AddPrim`/`DrawOTag`
+walk - farthest bucket first, later-submitted-first within a bucket (the
+same convention as `psx_blend::sort_blend_list`). `build_geometry` emits a
+flat NDC vertex/index buffer plus a run list coalesced by blend class, which
+the renderer uploads once per frame and draws one indexed run at a time
+(opaque pipeline or the matching per-ABR blend pipeline). A semi-transparent
+prim is treated as fully blended (no per-texel STP split yet - faithful for
+the additive afterimage trail and flat quads; documented in the module).
 
 The corner projection itself is ported in [`billboard`](src/billboard.rs)
 (`FUN_800195a8`): `project_billboard` transforms a center point to view

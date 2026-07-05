@@ -299,6 +299,17 @@ pub enum RenderTarget<'a> {
     /// [`TextOverlay`]. Used by the dialog viewer / any UI mode that
     /// has no 3D scene to render.
     TextOnly(&'a TextOverlay<'a>),
+    /// Screen-space 2D overlay frame (see [`crate::screen_overlay`]): clear
+    /// to background, then draw a list of PSX `POLY_FT4` textured quads +
+    /// flat quads in ordering-table order (back-to-front by OT index) with
+    /// per-ABR semi-transparency, sampling `vram`. This is the draw path the
+    /// afterimage streak ([`crate::afterimage`]) and future engine-core
+    /// `screen_fx` widgets ride; `prims` are typically produced by
+    /// [`crate::screen_overlay::afterimage_screen_quad`] et al.
+    ScreenOverlay {
+        vram: &'a UploadedVram,
+        prims: &'a [crate::screen_overlay::ScreenPrim],
+    },
 }
 
 /// Per-actor draw inside a [`Scene`].

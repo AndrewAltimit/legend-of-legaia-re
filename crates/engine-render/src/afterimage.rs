@@ -2,9 +2,12 @@
 //!
 //! PORT: FUN_801e1ab0 (battle move-FX afterimage streak draw)
 //!
-//! **Authored-but-unwired faithful port** (see the full note at the end of this
-//! module doc): a unit-tested reproduction of a real retail draw with no live
-//! in-engine caller yet, retained for fidelity - do not delete.
+//! **Wired through the screen-space overlay pass.** The quad this builds is
+//! consumed by [`crate::screen_overlay::afterimage_screen_quad`], which links
+//! it into the screen-space ordering table
+//! ([`crate::screen_overlay::build_geometry`]) that the wgpu renderer draws
+//! via [`crate::RenderTarget::ScreenOverlay`]. See the note at the end of this
+//! module doc.
 //!
 //! Each call to the retail `FUN_801e1ab0` emits **one** semi-transparent
 //! textured quad (a PSX `POLY_FT4`) into the depth-sorted primitive buffer;
@@ -34,15 +37,17 @@
 //! is the retail software OT, which engine-render replaces with its own draw
 //! ordering.
 //!
-//! **Authored but not yet wired.** This is a faithful, unit-tested port of a
-//! real retail draw, kept for that fidelity, but nothing calls it in-engine
-//! yet: the wgpu renderer has no screen-space `POLY_FT4`/ordering-table
-//! primitive path, and battle move-FX currently draw as 3D billboard meshes in
-//! the shell. The trail texpage this consumes is already surfaced by
-//! [`legaia_engine_core::World::active_move_fx_trail_texpage`]. Wire this into
-//! a screen-space overlay pass when one exists; until then it is an
-//! authored-but-unexercised path (like the other documented no-live-exerciser
-//! render modes), retained rather than deleted.
+//! **Wiring.** The screen-space `POLY_FT4` / ordering-table primitive path
+//! the retail streak needs now exists as [`crate::screen_overlay`]: an
+//! [`AfterimageQuad`] converts to a
+//! [`crate::screen_overlay::ScreenQuad`] via
+//! [`crate::screen_overlay::afterimage_screen_quad`], is ordered back-to-front
+//! with the rest of the frame's screen primitives, and drawn through
+//! [`crate::RenderTarget::ScreenOverlay`] against the shared PSX VRAM. The
+//! trail texpage this consumes is surfaced by
+//! [`legaia_engine_core::World::active_move_fx_trail_texpage`]; the engine
+//! shell chooses per frame whether to push the streak (3D billboard mesh) or
+//! this 2D overlay path.
 
 /// Units the source point is pushed down (+Y) before projection
 /// (retail adds `0x120` to the Y of `*(_DAT_8007bd24 + 0x1144)`). Applied

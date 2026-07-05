@@ -72,6 +72,9 @@ fn psx_shaders_parse_and_validate() {
         ),
         ("vram_mesh", compose_psx_shader(VRAM_MESH_SHADER_SRC)),
         ("color_mesh", compose_psx_shader(COLOR_MESH_SHADER_SRC)),
+        // Screen-space 2D overlay pass (POLY_FT4 + flat quads). No dither
+        // helper - it samples raw VRAM texels and modulates in NDC.
+        ("screen_overlay", SCREEN_OVERLAY_SHADER_SRC.to_string()),
     ];
     for (name, src) in sources {
         let module = naga::front::wgsl::parse_str(&src)

@@ -920,6 +920,117 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
+        // Screen-space 2D overlay pass (see `crate::screen_overlay`): PSX
+        // POLY_FT4 textured quads + flat quads in NDC, sampling the shared
+        // VRAM (group 0 = `vram_bgl`) through the same CBA/TSB CLUT decode as
+        // the 3D VRAM-mesh path. Opaque pipeline (replace) + four per-ABR
+        // blend pipelines. Depth: LessEqual, no write - clip z is fixed at
+        // 0.0 so every overlay quad passes the test and composites on top,
+        // without occluding later draws (matches the text overlay's role).
+        let screen_overlay_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("legaia screen overlay shader"),
+            source: wgpu::ShaderSource::Wgsl(SCREEN_OVERLAY_SHADER_SRC.into()),
+        });
+        let screen_overlay_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("legaia screen overlay pipeline layout"),
+                bind_group_layouts: &[&vram_bgl],
+                push_constant_ranges: &[],
+            });
+        // pos(Float32x2)@0 + uv(Float32x2)@8 + cba_tsb(Uint32x2)@16 +
+        // color(Float32x4)@24 + flags(Uint32)@40 = 44 bytes (matches
+        // `screen_overlay::ScreenVertex`).
+        let screen_overlay_attributes = [
+            wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                offset: 8,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                offset: 16,
+                shader_location: 2,
+                format: wgpu::VertexFormat::Uint32x2,
+            },
+            wgpu::VertexAttribute {
+                offset: 24,
+                shader_location: 3,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                offset: 40,
+                shader_location: 4,
+                format: wgpu::VertexFormat::Uint32,
+            },
+        ];
+        let screen_overlay_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: crate::screen_overlay::SCREEN_VERTEX_STRIDE,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &screen_overlay_attributes,
+        };
+        let screen_overlay_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("legaia screen overlay pipeline"),
+                layout: Some(&screen_overlay_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &screen_overlay_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: std::slice::from_ref(&screen_overlay_vertex_layout),
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &screen_overlay_shader,
+                    entry_point: Some("fs_opaque"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+        let screen_overlay_blend_pipelines: [wgpu::RenderPipeline; 4] = std::array::from_fn(|m| {
+            make_blend_pipeline(
+                "legaia screen overlay blend pipeline",
+                &screen_overlay_pipeline_layout,
+                &screen_overlay_shader,
+                &screen_overlay_vertex_layout,
+                m as u8,
+            )
+        });
+        let initial_overlay_quads: u32 = 32;
+        let screen_overlay_vbuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("screen overlay vertex buffer"),
+            size: (initial_overlay_quads as u64) * 4 * crate::screen_overlay::SCREEN_VERTEX_STRIDE,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let screen_overlay_ibuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("screen overlay index buffer"),
+            size: (initial_overlay_quads as u64) * 6 * 4,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let depth_view = create_depth_view(&device, config.width, config.height);
 
         Ok(Self {
@@ -964,6 +1075,13 @@ impl Renderer {
             vram_upload_counter: std::cell::Cell::new(0),
             tex_window: std::cell::Cell::new([0; 4]),
             color_grade: std::cell::Cell::new([1.0, 1.0, 1.0, 0.0]),
+            screen_overlay_pipeline,
+            screen_overlay_blend_pipelines,
+            screen_overlay_vbuf: std::cell::RefCell::new(screen_overlay_vbuf),
+            screen_overlay_ibuf: std::cell::RefCell::new(screen_overlay_ibuf),
+            screen_overlay_vcap: std::cell::Cell::new(initial_overlay_quads * 4),
+            screen_overlay_icap: std::cell::Cell::new(initial_overlay_quads * 6),
+            screen_overlay_runs: std::cell::RefCell::new(Vec::new()),
         })
     }
 }

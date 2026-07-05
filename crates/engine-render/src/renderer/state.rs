@@ -114,6 +114,24 @@ pub struct Renderer {
     /// Defaults to `(1, 1, 1, 0)` = identity (no grade). Set with
     /// [`Renderer::set_color_grade`]; drives the opening prologue sepia.
     pub(super) color_grade: std::cell::Cell<[f32; 4]>,
+    /// Screen-space 2D overlay pass (see [`crate::screen_overlay`]): PSX
+    /// `POLY_FT4` textured quads + flat quads in NDC, ordering-table order,
+    /// per-ABR semi-transparency. Opaque pipeline (replace).
+    pub(super) screen_overlay_pipeline: wgpu::RenderPipeline,
+    /// Per-ABR-mode blend pipelines for the screen-overlay pass (mode 0..=3).
+    pub(super) screen_overlay_blend_pipelines: [wgpu::RenderPipeline; 4],
+    /// Per-frame screen-overlay vertex/index buffers, grown geometrically on
+    /// demand (RefCell-borrowed from the non-mut `render` API, like the text
+    /// path).
+    pub(super) screen_overlay_vbuf: std::cell::RefCell<wgpu::Buffer>,
+    pub(super) screen_overlay_ibuf: std::cell::RefCell<wgpu::Buffer>,
+    /// Capacity of [`Self::screen_overlay_vbuf`] in vertices and
+    /// [`Self::screen_overlay_ibuf`] in indices.
+    pub(super) screen_overlay_vcap: std::cell::Cell<u32>,
+    pub(super) screen_overlay_icap: std::cell::Cell<u32>,
+    /// Draw runs staged for the current frame's screen overlay (one indexed
+    /// draw per run; see [`crate::screen_overlay::DrawRun`]).
+    pub(super) screen_overlay_runs: std::cell::RefCell<Vec<crate::screen_overlay::DrawRun>>,
 }
 
 impl Renderer {
