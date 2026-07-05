@@ -565,7 +565,43 @@ pub enum WorldMapEntityConfig {
     /// A town / dungeon portal: engaging it (via
     /// [`World::engage_world_map_entity`]) transitions to `target_map`,
     /// surfaced as [`crate::field_events::FieldEvent::WorldMapTransition`].
+    ///
+    /// This is the **door-warp** `map_id` (the `0x3E`, `op0 >= 100` selector,
+    /// `0..=6`) the placement classifier reads off a partition-1 actor's
+    /// script. Its name resolution goes through a
+    /// [`crate::scene::MapIdResolver`] (a 7-id scene-*type* space). The
+    /// overworld's town/dungeon entrances are **not** this - they are
+    /// [`Self::OverworldPortal`], sourced from the `0x3F` named-scene-change
+    /// bridge below.
     Portal { target_map: u16 },
+    /// An overworld town / dungeon entrance sourced from the disc's `.MAP`
+    /// walk-on tile-trigger → MAN partition-2 record → `0x3F`
+    /// named-scene-change bridge (pinned on the `map01` hub: each gate-1
+    /// kind-1 tile trigger references a partition-2 record whose script's
+    /// `0x3F` op carries the destination scene name + arrival entry tile).
+    ///
+    /// Unlike the door-warp [`Self::Portal`] (a 7-id scene-*type* selector
+    /// whose name resolution lives in an uncaptured overlay), this carries
+    /// the **exact CDNAME destination** + arrival tile straight from the
+    /// controller's bytecode, so engaging it warps to a real scene. Engaging
+    /// it surfaces a [`crate::field_events::FieldEvent::WorldMapTransition`]
+    /// (whose `slot` points back at this config); the host's transition drain
+    /// reads the destination from here.
+    OverworldPortal {
+        /// Destination CDNAME scene label (e.g. `"keikoku"`, `"rikuroa"`).
+        scene_name: String,
+        /// The `0x3F` op's `i16` destination index (story/entry id; the
+        /// wider [`crate::scene::SceneDestinationResolver`] key, not the
+        /// door-warp `map_id`).
+        index: i16,
+        /// Arrival entry-tile X byte at the destination (`& 0x7F` tile).
+        entry_x: u8,
+        /// Arrival entry-tile Z byte at the destination.
+        entry_z: u8,
+        /// Arrival facing/depth selector (`& 7` indexes the entry-direction
+        /// table).
+        dir: u8,
+    },
     /// A plain interactable (NPC / signpost). Surfaces a
     /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.
     ///

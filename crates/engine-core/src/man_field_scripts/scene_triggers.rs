@@ -93,6 +93,123 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
     out
 }
 
+/// One overworld town/dungeon entrance recovered from the `.MAP` walk-on
+/// tile-trigger → MAN partition-2 record → `0x3F` named-scene-change bridge.
+///
+/// On the kingdom overworld hub (`map01`) the town/dungeon entrances are **not**
+/// partition-1 actor warps (the placement classifier finds zero `Portal`s
+/// there); they are gate-1 kind-1 `.MAP` tile triggers, each referencing a
+/// partition-2 record whose field-VM script runs a `0x3F` op to a specific
+/// destination scene + arrival entry tile. This joins the two disc structures:
+/// the trigger supplies the **overworld tile** the player walks onto, the
+/// referenced partition-2 record supplies the **destination**. Both are
+/// byte-exact disc data (verified against `map01`'s trailing `0x3F` table).
+///
+/// See [`crate::world::WorldMapEntityConfig::OverworldPortal`] (the runtime
+/// entity this seeds) and the drain in
+/// [`crate::scene::SceneHost::tick`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverworldPortalSite {
+    /// Overworld trigger tile X the player walks onto (the `.MAP` kind-1
+    /// trigger's `tile_x`).
+    pub overworld_x: u8,
+    /// Overworld trigger tile Z (the trigger's `tile_z`).
+    pub overworld_z: u8,
+    /// Partition-2 record index the gate-1 trigger spawns.
+    pub record: u8,
+    /// Destination CDNAME scene label from the record's `0x3F` op.
+    pub scene_name: String,
+    /// The `0x3F` op's `i16` destination index.
+    pub index: i16,
+    /// Arrival entry-tile X at the destination.
+    pub entry_x: u8,
+    /// Arrival entry-tile Z at the destination.
+    pub entry_z: u8,
+    /// Arrival facing/depth selector.
+    pub dir: u8,
+}
+
+/// The first `0x3F` named-scene-change destination in partition-2 record
+/// `record`, decoded with a clean fall-through walk from the record's true
+/// `pc0`. `None` when the record is out of range or carries no gated `0x3F`.
+fn partition2_first_scene_change(
+    man_file: &ManFile,
+    man: &[u8],
+    record: usize,
+) -> Option<(i16, String, u8, u8, u8)> {
+    let (start, pc0, len) = partition_record_span(man_file, man, 2, record)?;
+    let body = &man[start..start + len];
+    let mut pc = pc0;
+    while pc < body.len() {
+        let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
+        if insn.size == 0 {
+            break;
+        }
+        if let InsnInfo::SceneChange {
+            index,
+            entry_x,
+            entry_z,
+            dir,
+            ..
+        } = insn.info
+            && let Some(name) = scene_change_name(body, &insn)
+        {
+            return Some((index, name, entry_x, entry_z, dir));
+        }
+        pc += insn.size;
+    }
+    None
+}
+
+/// Recover every overworld portal (town/dungeon entrance) from a scene's `.MAP`
+/// kind-1 tile-trigger tables joined to its MAN partition-2 records.
+///
+/// For each **gate-1** trigger in `triggers` (primary + fallback concatenated
+/// by the caller), the referenced partition-2 record is walked for its first
+/// `0x3F` named-scene-change op; a hit yields one [`OverworldPortalSite`] at the
+/// trigger tile. Triggers whose record carries no `0x3F` (object-bind /
+/// non-warp records) are skipped. Sites are unique by `(overworld_x,
+/// overworld_z)` (first trigger wins), so a tile that fires only once produces
+/// one portal.
+///
+/// This is the disc-sourced seed for the overworld entity SM's portal path -
+/// the faithful mechanism for the `map01` → dungeon hop, since `map01` has no
+/// partition-1 `Portal` placements.
+pub fn overworld_portal_sites(
+    man_file: &ManFile,
+    man: &[u8],
+    triggers: &[crate::field_regions::TileTrigger],
+) -> Vec<OverworldPortalSite> {
+    let mut out: Vec<OverworldPortalSite> = Vec::new();
+    for t in triggers {
+        if t.gate != 1 {
+            continue;
+        }
+        if out
+            .iter()
+            .any(|s| s.overworld_x == t.tile_x && s.overworld_z == t.tile_z)
+        {
+            continue;
+        }
+        let Some((index, scene_name, entry_x, entry_z, dir)) =
+            partition2_first_scene_change(man_file, man, t.record as usize)
+        else {
+            continue;
+        };
+        out.push(OverworldPortalSite {
+            overworld_x: t.tile_x,
+            overworld_z: t.tile_z,
+            record: t.record,
+            scene_name,
+            index,
+            entry_x,
+            entry_z,
+            dir,
+        });
+    }
+    out
+}
+
 /// One inline FMV trigger decoded from a `0x4C 0xE2` op in a scene's scripts.
 ///
 /// The field-VM FMV trigger carries its `fmv_id` as a literal `i16` operand

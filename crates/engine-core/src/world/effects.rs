@@ -385,7 +385,10 @@ impl World {
                     Some(WorldMapEntityConfig::EncounterZone { .. }) => {
                         WorldMapEntityKind::EncounterZone
                     }
-                    Some(WorldMapEntityConfig::Portal { .. }) => WorldMapEntityKind::Portal,
+                    Some(WorldMapEntityConfig::Portal { .. })
+                    | Some(WorldMapEntityConfig::OverworldPortal { .. }) => {
+                        WorldMapEntityKind::Portal
+                    }
                     // An NPC config or no config at all (a plain interaction)
                     // both render as the NPC marker.
                     Some(WorldMapEntityConfig::Npc { .. }) | None => WorldMapEntityKind::Npc,

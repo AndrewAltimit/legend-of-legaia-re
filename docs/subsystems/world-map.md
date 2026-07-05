@@ -212,7 +212,30 @@ via `install_world_map_entities_with_configs`):
   (`World::engage_world_map_entity`, the clean-room stand-in for retail's
   player-position-in-zone trigger) drives the SM to its transition state and
   surfaces a `FieldEvent::WorldMapTransition { target_map, slot }` for the host
-  to load the target scene.
+  to load the target scene. `target_map` is the 7-id door-warp `map_id` the
+  placement classifier reads off a partition-1 actor's `0x3E` warp.
+- `OverworldPortal { scene_name, index, entry_x, entry_z, dir }` - an overworld
+  town/dungeon entrance sourced from the disc's `.MAP` walk-on tile-trigger ->
+  MAN partition-2 record -> `0x3F` named-scene-change bridge
+  (`man_field_scripts::overworld_portal_sites`). This is the **real** overworld
+  hop: the kingdom hubs (`map01`) have **no** partition-1 `Portal` placements -
+  each gate-1 kind-1 tile trigger references a partition-2 record whose script's
+  `0x3F` carries the destination scene name + arrival tile straight from
+  bytecode. Engaging it surfaces the same `WorldMapTransition` (the `slot` points
+  back at the config); unlike `Portal`, it needs no `MapIdResolver` - the CDNAME
+  destination is in the data. `SceneHost::enter_world_map_scene` seeds one per
+  bridge site at its trigger-tile centre, and the auto-engage-on-walkover trigger
+  fires it when the player steps onto that tile.
+
+The producer/consumer seam: `WorldMapTransition` is emitted by the entity SM's
+`on_scene_transition` and **drained by `SceneHost::tick`** (the sibling of the
+named-`0x3F` drain). For an `OverworldPortal` the drain loads `scene_name`
+(field or world-map) and seats the player at the entry tile - the same arrival
+semantics as the named warp; for a door `Portal` it resolves `target_map`
+through the `MapIdResolver`. The still-**UNKNOWN** piece is the story-gated
+*order* the overworld unlocks these entrances (e.g. flag `551`, the post-arrival
+gate) - the engine installs every bridge portal unconditionally; retail gates
+some behind progress flags.
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
   with that id. `inline` is the record's structural inline dialog-text block (see
   [dialog text source](#npc-dialogue-text-source)); `tick_world_map` opens it

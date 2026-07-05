@@ -1,0 +1,66 @@
+# Arc 1 "Chapter 1 spine" replay fixture (j-replay-v1).
+#
+# Pins the opening overworld traversal: Rim Elm (town01, field) -> the Drake
+# overworld (map01, world map) -> the Ravine dungeon (keikoku, field). Consumed
+# by crates/engine-shell/tests/chapter1_spine_oracle.rs:
+#
+#   - replay_fixture_matches_engine_chain (disc-gated) builds the real
+#     full-chain engine trace via a live SceneHost and diffs the [[expected]]
+#     rows below against it. The chain is frame-stable (walk-on trigger + P2
+#     record run + overworld-portal engage are deterministic), so the frames
+#     are pinned exactly.
+#   - replay_determinism_two_runs_byte_identical (disc-free) drives a synthetic
+#     world through the expanded pad stream twice and asserts identical traces.
+#
+# The [[event]] rows record the player intent that walks the spine on a live
+# host ("hold Up" toward the south gate, then toward the keikoku portal);
+# pad 0x0010 = D-pad Up (crates/engine-core/src/input.rs PadButton::Up). The
+# disc-gated diff drives the transitions by seating the player on the trigger
+# tiles (the walk-on dispatch keys off the tile crossing, not the pad), so these
+# events document the traversal; the determinism gate expands them.
+[meta]
+schema = "j-replay-v1"
+scenario = "door_warp_town01_to_map01"
+rng_seed = 3735929054
+frames = 23
+
+[[event]]
+frame = 1
+pad = 16          # Up: walk toward Rim Elm's south gate
+
+[[event]]
+frame = 6
+pad = 0           # released after crossing onto the overworld
+
+[[event]]
+frame = 12
+pad = 16          # Up: walk onto the keikoku (Ravine) overworld portal
+
+[[event]]
+frame = 18
+pad = 0
+
+# --- spine expectations (frames pinned against the real engine chain) ---
+
+# Frame 0: fresh Rim Elm free-roam.
+[[expected]]
+frame = 0
+scene_mode = "Field"
+active_scene = "town01"
+
+# Frame 11: on the Drake overworld after the south-gate exit (the gate-1
+# walk-on trigger's partition-2 0x3F record leaves town01 for map01, entered as
+# a world map).
+[[expected]]
+frame = 11
+scene_mode = "WorldMap"
+active_scene = "map01"
+
+# Frame 23: inside the Ravine after walking onto its overworld portal (the
+# GAP-1 close: the world-map entity SM emits WorldMapTransition and the host
+# drain loads keikoku in field mode). The .MAP tile-trigger -> partition-2 ->
+# 0x3F bridge sources the portal's destination + arrival tile from disc bytes.
+[[expected]]
+frame = 23
+scene_mode = "Field"
+active_scene = "keikoku"

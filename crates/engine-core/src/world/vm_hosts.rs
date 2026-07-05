@@ -377,6 +377,20 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
                         slot: entity_idx as u8,
                     });
             }
+            // An overworld town/dungeon entrance (the `0x3F`-bridge portal).
+            // The event only carries `slot`; the host's transition drain reads
+            // the real CDNAME destination from `world_map_entity_configs[slot]`.
+            // `target_map` echoes the `0x3F` index so a host without config
+            // access still has the destination id.
+            Some(WorldMapEntityConfig::OverworldPortal { index, .. }) => {
+                let index = *index;
+                self.world
+                    .pending_field_events
+                    .push(FieldEvent::WorldMapTransition {
+                        target_map: index as u16,
+                        slot: entity_idx as u8,
+                    });
+            }
             _ => {
                 self.world
                     .pending_field_events

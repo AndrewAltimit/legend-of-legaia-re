@@ -335,6 +335,7 @@ impl World {
             if !matches!(
                 self.world_map_entity_configs.get(idx),
                 Some(WorldMapEntityConfig::Portal { .. })
+                    | Some(WorldMapEntityConfig::OverworldPortal { .. })
             ) {
                 continue;
             }
@@ -455,6 +456,28 @@ impl World {
             // State 2 = Transitioning: the SM fires `on_scene_transition` and
             // retires the entity on the next tick.
             ctx.state = vm::world_map::EntityState::Transitioning as u16;
+        }
+    }
+
+    /// Remove and return the first pending
+    /// [`crate::field_events::FieldEvent::WorldMapTransition`] as
+    /// `(target_map, slot)`.
+    ///
+    /// The host's scene-transition drain calls this each tick to consume the
+    /// overworld-portal engage the entity SM emitted (walk-onto a portal tile),
+    /// leaving every other queued field event in place. `None` when no
+    /// world-map transition is queued. The returned `slot` indexes
+    /// [`Self::world_map_entity_configs`], where an
+    /// [`WorldMapEntityConfig::OverworldPortal`] carries the real CDNAME
+    /// destination.
+    pub fn take_world_map_transition(&mut self) -> Option<(u16, u8)> {
+        let pos = self
+            .pending_field_events
+            .iter()
+            .position(|e| matches!(e, FieldEvent::WorldMapTransition { .. }))?;
+        match self.pending_field_events.remove(pos) {
+            FieldEvent::WorldMapTransition { target_map, slot } => Some((target_map, slot)),
+            _ => unreachable!("position matched WorldMapTransition"),
         }
     }
 

@@ -706,7 +706,7 @@ impl SceneHost {
         // Each interactive placement → (config, spawn world position). The
         // positions drive the auto-engage-on-walkover trigger; Plain
         // (decorative / model-only) placements are skipped.
-        let entities: Vec<(crate::world::WorldMapEntityConfig, (i16, i16))> = man_bytes
+        let mut entities: Vec<(crate::world::WorldMapEntityConfig, (i16, i16))> = man_bytes
             .as_ref()
             .and_then(|man| {
                 legaia_asset::man_section::parse(man)
@@ -743,6 +743,40 @@ impl SceneHost {
                     .collect()
             })
             .unwrap_or_default();
+        // Overworld town/dungeon entrances: the `.MAP` walk-on kind-1 tile
+        // triggers joined to their partition-2 records' `0x3F`
+        // named-scene-change ops (see
+        // [`crate::man_field_scripts::overworld_portal_sites`]). This is the
+        // real overworld hop mechanism - `map01` has NO partition-1 `Portal`
+        // placements (the classifier finds zero there); its town/dungeon
+        // entrances are these gate-1 triggers. Each site becomes an
+        // `OverworldPortal` entity at its trigger tile centre
+        // (`world = tile*128 + 0x40`, the same tile->world mapping the placement
+        // spawns and the arrival seat use), and the auto-engage-on-walkover
+        // trigger fires it when the player steps onto that tile.
+        if let (Some(man), Some(scene)) = (man_bytes.as_ref(), self.scene.as_ref())
+            && let Ok(mf) = legaia_asset::man_section::parse(man)
+            && let Ok((primary, fallback)) = scene.field_tile_triggers(&self.index)
+        {
+            let mut triggers = primary;
+            triggers.extend(fallback);
+            for site in crate::man_field_scripts::overworld_portal_sites(&mf, man, &triggers) {
+                let world = (
+                    i16::from(site.overworld_x) * 128 + 0x40,
+                    i16::from(site.overworld_z) * 128 + 0x40,
+                );
+                entities.push((
+                    crate::world::WorldMapEntityConfig::OverworldPortal {
+                        scene_name: site.scene_name,
+                        index: site.index,
+                        entry_x: site.entry_x,
+                        entry_z: site.entry_z,
+                        dir: site.dir,
+                    },
+                    world,
+                ));
+            }
+        }
         if let Some(table) = table {
             log::info!(
                 "world-map '{name}': routed {} encounter region(s)",
@@ -973,6 +1007,65 @@ impl SceneHost {
             // natural `town01` opening launch.
             self.spawn_arrival_trigger_record(entry_x, entry_z);
             return Ok(SceneTickEvent::SceneEntered { name });
+        }
+        // GAP-1: overworld-portal scene transition. The world-map entity SM
+        // emits [`crate::field_events::FieldEvent::WorldMapTransition`] when the
+        // player walks onto a portal tile
+        // ([`crate::world::World::auto_engage_world_map_portals`] ->
+        // `on_scene_transition`); without a consumer it was dropped to the
+        // BGM-router `leftover`. Drain it here (the overworld->dungeon hop) and
+        // load the destination.
+        //
+        // The `slot` points back at the engaged entity's config:
+        // - an [`crate::world::WorldMapEntityConfig::OverworldPortal`] carries
+        //   the exact CDNAME destination + arrival tile (the `map01` `0x3F`
+        //   bridge), so it loads that scene and seats the player at the entry
+        //   tile - the same arrival semantics as the named `0x3F` warp above;
+        // - a door-warp [`crate::world::WorldMapEntityConfig::Portal`] carries
+        //   only the 7-id door `map_id`, resolved through the [`MapIdResolver`]
+        //   (the same `0..=6` scene-*type* space the field-VM `0x3E` warp uses).
+        if let Some((target_map, slot)) = self.world.take_world_map_transition() {
+            self.world.pending_scene_transition = None;
+            match self.world.world_map_entity_configs.get(slot as usize) {
+                Some(crate::world::WorldMapEntityConfig::OverworldPortal {
+                    scene_name,
+                    entry_x,
+                    entry_z,
+                    dir,
+                    ..
+                }) => {
+                    let name = scene_name.clone();
+                    let (entry_x, entry_z, dir) = (*entry_x, *entry_z, *dir);
+                    if is_world_map_scene(&name) {
+                        self.enter_world_map_scene(&name)?;
+                    } else {
+                        self.enter_field_scene(&name, 0)?;
+                    }
+                    self.world.seat_player_at_tile(entry_x, entry_z);
+                    self.world.face_player_sector(dir);
+                    self.spawn_arrival_trigger_record(entry_x, entry_z);
+                    return Ok(SceneTickEvent::SceneEntered { name });
+                }
+                _ => {
+                    // Door-warp portal (or a portal whose config row is gone):
+                    // resolve the 7-id door `map_id` through the resolver.
+                    match self.map_resolver.resolve(target_map as u8) {
+                        Some(name) => {
+                            if is_world_map_scene(&name) {
+                                self.enter_world_map_scene(&name)?;
+                            } else {
+                                self.enter_field_scene(&name, 0)?;
+                            }
+                            return Ok(SceneTickEvent::SceneEntered { name });
+                        }
+                        None => {
+                            return Ok(SceneTickEvent::UnknownMapId {
+                                map_id: target_map as u8,
+                            });
+                        }
+                    }
+                }
+            }
         }
         if let Some(map_id) = self.world.pending_scene_transition.take() {
             match self.map_resolver.resolve(map_id) {
