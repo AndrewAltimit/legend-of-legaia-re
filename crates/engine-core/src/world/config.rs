@@ -138,11 +138,26 @@ pub(crate) const FIELD_INTERACT_BOX_HALF: i32 = 0x40 + 0x20 - 0x18;
 /// moving-actor box) - ±80 units around the record-derived footprint centre.
 pub(crate) const FIELD_PROP_BOX_HALF: i32 = 0x40 + 0x10;
 
-/// Per-frame world-unit budget for one field-NPC motion-VM step. The exact
-/// retail per-NPC glide speed (the `+0x72` multiplier path the NPC run
-/// dispatch feeds) is not capture-pinned; the engine uses the player's
-/// walking step magnitude (base step 8 × the default `0x1000` multiplier),
-/// which paces an NPC like a walking player.
+/// Per-frame world-unit budget for one field-NPC motion-VM step.
+///
+/// Retail derivation (static, `FUN_8003774C` in `overlay_0897`, cases 0x37 /
+/// 0x41 / 0x47 - the NPC glide/pursue path): the per-frame glide magnitude is
+/// the global per-frame delta `_DAT_1f800393` scaled by a base step encoded
+/// **in the motion op's own operand** (`4 << (operand bits)`; the 0x47 case
+/// steps `0x80 / (4 << (op[2] & 7))` units per inner iteration, iterated
+/// `_DAT_1f800393` times). The actor `+0x72` speed multiplier does **not**
+/// participate: `FUN_8003774C` never reads `+0x72`. The `+0x72` multiplier
+/// path (`speed = ((base_step * actor[+0x72]) >> 12) * _DAT_1f800393`) is
+/// exclusive to the player free-movement controller `FUN_801d01b0`
+/// (`overlay_0897_801d0684`) - the sole `>> 0xc` speed-scale in the corpus.
+/// The task-B6 "+0x72 NPC glide path" premise is falsified by the dumps.
+///
+/// The engine drives NPC legs through a synthetic single-op `0x47` program
+/// (see [`FIELD_NPC_MOTION_PROGRAM`]) whose operand bytes are zero, so the
+/// operand-derived base step is not carried; this constant stands in with the
+/// player's walking step magnitude (base step 8 × the default `0x1000`
+/// multiplier), pacing an NPC like a walking player. Faithful retail glide
+/// would carry each leg's real motion-op operand base step instead.
 pub(crate) const FIELD_NPC_MOTION_SPEED: u16 = 8;
 
 /// Motion-VM bytecode for one field-NPC walk leg: a single `0x47`
