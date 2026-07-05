@@ -429,6 +429,15 @@ return ((&DAT_80085758)[(int)idx >> 3] & (0x80 >> (idx & 7))) ? 0xFF : 0;
 
 Effective opcode space therefore includes the explicit 0x21-0x4F range *and* any byte whose high nibble is 0x5/0x6/0x7 (potentially 192 more "wide" opcodes routed to three SCUS dispatchers).
 
+### Disc-wide SYSTEM-flag census tooling
+
+An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_core::man_field_scripts` walks the flag ops out of the decoded MAN:
+
+- `walk_partition_gflag_sites` reports every flag site in a MAN partition at real opcode boundaries, tagging each with its bank (`FlagBank::Scratchpad` for the `0x2E`/`0x2F` global ops, `FlagBank::System` for the `0x50..=0x7F` ops), the full flag number (`(lead & 0x8F) << 8 | operand` for system flags), and the SET/CLEAR/TEST kind.
+- `system_flag_census` runs that walk over **every** CDNAME scene's MAN across all three partitions and returns `flag -> [(scene, partition, record, op, kind)]`, sorted by flag number - the setter-vs-gate map the progress-gate RE consumes.
+
+CLI: `legaia-engine man-scripts --scene <name> --gflag-partition <N>` lists both banks for one scene; `legaia-engine man-scripts --system-flag-census` runs the disc-wide census. The flag-index arithmetic mirrors the dispatchers above, and the engine's own bit helpers are `World::system_flag_set`/`_clear`/`_test`.
+
 ## BGM lookup table
 
 There isn't really a "BGM → file" lookup table - the BGM ID is a PROT-relative offset. From `FUN_800243F0` (the per-frame BGM/asset poller):
