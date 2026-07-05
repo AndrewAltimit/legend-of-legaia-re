@@ -19,9 +19,11 @@
 //! selecting one of three growth curves at `DAT_800769CC`, with the per-level
 //! gain `(max - start) × curve[row][level-1] / 0x24C0`. The engine drives
 //! level-ups from it via [`crate::levelup::LevelUpTracker::with_growth_tables`]
-//! (installed at boot from the user's disc); see
-//! [`docs/subsystems/level-up.md`](../../../docs/subsystems/level-up.md). **This
-//! module is the legacy flat-curve convenience path** ([`with_seru_roster`]),
+//! (installed at boot from the user's disc) - a completed engine port,
+//! validated disc-gated in `crates/engine-core/tests/growth_curve_disc.rs`
+//! (curve `start` values vs the new-game seed, Noa L2->L3 core vs a capture);
+//! see [`docs/subsystems/level-up.md`](../../../docs/subsystems/level-up.md).
+//! **This module is the legacy flat-curve convenience path** ([`with_seru_roster`]),
 //! kept for callers that want a single averaged grant per Seru rather than the
 //! per-level curve.
 //!

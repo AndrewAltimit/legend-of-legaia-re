@@ -203,6 +203,57 @@ surface a 32-bit battle-state flag the SCUS handler `FUN_800480D8` stamps with
 `0x80808080`.) Battle actor base for reference: `DAT_801C9370[slot]`, 8 slots -
 party 0..2, monsters 3..7; current HP at `+0x14C`.
 
+### Battle-actor stat struct (`DAT_801C9370` pool)
+
+The in-battle actor is a **runtime struct distinct from the character record**:
+`DAT_801C9370[slot]` (`slot * 4`) is a *pointer* to it, 8 slots (party 0..2,
+monsters 3..7). It is not the char-record `+0xF4..+0x13D` window that the
+per-character ability aggregator `FUN_80042558` builds. Party actors are
+stat-initialised by `FUN_80053cb8` (copies the char-record **live**-stat window
+`+0x104..+0x11A`), monster actors by `FUN_80054cb0` (copies the monster-archive
+record); both write the identical `+0x14C..+0x176` layout. The block uses
+**working / base pairs**: an even-offset working copy that in-battle buffs and
+damage mutate, plus a `+2` base copy the applier seeds from the source and keeps
+for un-buff / percentage math. The AI picker `FUN_801E9FD4` and the battle
+action SM `FUN_801E295C` read this struct each turn.
+
+| Offset | Field | Party source (`FUN_80053cb8`) | Monster source (`FUN_80054cb0`) |
+|---|---|---|---|
+| `+0x14C` | HP current | char live HP_cur (`+0x106`) | monster HP (`+0x0C`) |
+| `+0x14E` | HP max | char live HP_max (`+0x104`) | monster HP (`+0x0C`) |
+| `+0x150` | MP current | char live MP_cur (`+0x10A`) | monster MP (`+0x10`) |
+| `+0x152` | MP max | char live MP_max (`+0x108`) | monster MP (`+0x10`) |
+| `+0x154` | AGL working | copy of `+0x156` | copy of `+0x156` |
+| `+0x156` | AGL base | char live AGL (`+0x110`) | monster AGL (`+0x0E`) |
+| `+0x158` | ATK working | copy of `+0x15A` | copy of `+0x15A` |
+| `+0x15A` | ATK base | char live ATK (`+0x112`) | monster ATK (`+0x12`) |
+| `+0x15C` | UDF working (physical def) | copy of `+0x15E` | copy of `+0x15E` |
+| `+0x15E` | UDF base | char live UDF (`+0x114`) + equip-def bonus | monster record |
+| `+0x160` | LDF working (magical def) | copy of `+0x162` | copy of `+0x162` |
+| `+0x162` | LDF base | char live LDF (`+0x116`) + equip bonus | monster record |
+| `+0x164` | SPD working | copy of `+0x166` | copy of `+0x166` |
+| `+0x166` | SPD base | char live SPD (`+0x118`) + equip bonus | monster record |
+| `+0x168` | INT working | copy of `+0x16A` | copy of `+0x16A` |
+| `+0x16A` | INT base | char live INT (`+0x11A`) | monster record |
+| `+0x16C` | AI turn-eligibility gate | set later; `FUN_801E9FD4` skips actor when 0 | same |
+| `+0x16E` | side / element bit-field | char `+0x12E` (`FUN_800513F0`); charm sets `\| 0x380` | monster |
+| `+0x170` | Spirit gauge (SP) | char live SP_max (`+0x10E`) | const `100` |
+| `+0x172` | HP snapshot (battle-start current) | copy of `+0x14C` | copy of `+0x14C` |
+| `+0x174` | MP snapshot | copy of `+0x150` | copy of `+0x150` |
+| `+0x176` | per-action transient | cleared to 0 on action-state entry (`0x801E490C`) | same |
+
+Notes: the char-record source offsets are the **live**-stat window the aggregator
+`FUN_80042558` writes (`+0x104` HP_max, `+0x106` HP_cur, `+0x108` MP_max, `+0x10A`
+MP_cur, `+0x10E` SP, `+0x110..+0x11A` = AGL/ATK/UDF/LDF/SPD/INT). Equipment
+defense / accessory bonuses are folded into the `+0x15E/+0x162/+0x166` base copies
+by `FUN_80053cb8`'s 5-slot equip loop on the party side (monster actors take the
+archive value directly). `+0x16E` is the same word the enemy-ally **charm**
+randomizer hook flips (`\| 0x380`) and the shiny-Seru summon bits ride; the AI
+retarget `FUN_801E7320` reads it. Provenance:
+`ghidra/scripts/funcs/80053cb8.txt` (party init), `.../80054cb0.txt` (monster
+init), `.../overlay_0898_801e9fd4.txt` (AI reads),
+`.../overlay_0898_801e295c.txt` (action SM).
+
 The level-up overlay data section (`overlay_magic_level_up_full.bin`,
 `0x801C0000–0x801FFFFF`, full 256 KB) contains:
 
@@ -443,29 +494,37 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
 
 ## Open items
 
-- **Per-character stat grants - source RESOLVED.** Vahn / Noa / Gala have
-  distinct HP/MP/stat growth. The growth source is the static SCUS pair
-  `DAT_800769CC` (per-stat 98-entry curves, stride `0x62`, indexed by level) +
-  `DAT_80076918` (per-stat parameter block selecting curve rows), read and
-  applied by `FUN_801E9504` (see *Stat gains* above). The earlier negative
-  results came from searching the wrong code: the `magic_level_up` overlay is
-  the display path, not the writer; the `+0x74` reads are a `0x80808080`
-  battle-state flag (`FUN_800480D8`), not a grant; and the PROT.DAT
-  `0x033E9000` cluster is animation-curve data. Remaining work is an **engine
-  port**: extract the two tables from the user's `SCUS_942.54` at runtime and
-  drive the per-level growth, replacing the placeholder flat curve in
-  [`crates/engine-core/src/seru_stats.rs`] (`SeruStatGrant` / `SeruStatTable` /
-  `LevelUpTracker::with_seru_roster`) with `StatGrowthCurve::PerLevel`.
+- **Per-character stat grants - RESOLVED + PORTED.** Vahn / Noa / Gala have
+  distinct HP/MP/stat growth from the static SCUS pair `DAT_800769CC` (per-stat
+  98-entry curves, stride `0x62`, indexed by level) + `DAT_80076918` (per-stat
+  parameter block selecting curve rows), read and applied by `FUN_801E9504` (see
+  *Stat gains* above). The earlier negative results came from searching the wrong
+  code: the `magic_level_up` overlay is the display path, not the writer; the
+  `+0x74` reads are a `0x80808080` battle-state flag (`FUN_800480D8`), not a
+  grant; and the PROT.DAT `0x033E9000` cluster is animation-curve data. The
+  **engine port is done**: the two tables are parsed by
+  `legaia_asset::level_up_tables::growth_tables_from_scus`,
+  `LevelUpTracker::with_growth_tables` installs them as
+  `StatGrowthCurve::PerLevel` for all eight stats, and `BootSession` calls it
+  from the user's `SCUS_942.54` at boot. The flat placeholder in
+  [`crates/engine-core/src/seru_stats.rs`] survives only as the legacy
+  Seru-roster convenience path (`with_seru_roster`). Disc-gated coverage:
+  `crates/asset/tests/level_up_tables_real.rs` (parser + `start` vs new-game
+  seed), `crates/engine-core/tests/growth_curve_disc.rs` (engine install vs seed
+  + Noa L2->L3 capture), `crates/engine-shell/tests/new_game_seed.rs` (full
+  boot). No per-level character stat table exists in `crates/gamedata`, so the
+  ground truth is the new-game seed plus the single-level capture, not gamedata.
 - **`+0x120` u16 LE field renaming.** The captured triplets pin
   `record[+0x120]` as a constant 100 across every save / character. The
   existing `legaia_save::character::CharacterRecord::stat_cap` accessor reads
   `+0x11A` instead, which is a live stat byte (mutated by level-up). The
   accessor needs renaming or relocation. Tracked separately to keep this
   level-up doc focused.
-- **Battle actor struct fields `+0x14C`–`+0x176`.** The battle actor (pointed
-  to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
-  additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping
-  has not been traced from the stat aggregator.
+- **Battle actor struct fields `+0x14C`–`+0x176` - RESOLVED.** The full field
+  map (HP/MP + the six working/base stat pairs + Spirit + the side/element
+  bit-field + snapshots) is documented above (*Battle-actor stat struct*), traced
+  from the party init `FUN_80053cb8`, the monster init `FUN_80054cb0`, and the
+  battle-turn readers `FUN_801E9FD4` / `FUN_801E295C`.
 - **Real retail XP table source - RESOLVED + PORTED.** The curve is the static
   SCUS table `DAT_80076AF4` + the scaling formula, read by `FUN_801E9504` (see
   *XP table* above). The prior sweeps targeting `0x8007123C` / `0x80070A3C`

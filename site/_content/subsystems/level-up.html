@@ -29,7 +29,7 @@
 
 <section class="doc-section" id="engine-wiring">
   <h2>Engine wiring <span class="tag tag-done">Confirmed</span></h2>
-  <p>The deterministic core is <strong>wired, all 8 stats</strong>: <code>StatGain</code> carries HP/MP plus the six battle stats, <code>LevelUpTracker::with_growth_tables</code> builds per-character <code>StatGrowthCurve::PerLevel</code> from the parsed SCUS tables, and <code>BootSession</code> installs it from the user's <code>SCUS_942.54</code> at boot alongside the XP curve. <code>apply_to_record</code> grows the record-side stat window then mirrors it into the live window, matching the applier's write-then-mirror. A disc-gated boot test pins Noa's L2&rarr;L3 core (HP 37, MP 6). <code>StatGain::default()</code> (flat +10 HP / +5 MP) survives only as the disc-less fallback.</p>
+  <p>The deterministic core is <strong>wired, all 8 stats</strong>: <code>StatGain</code> carries HP/MP plus the six battle stats, <code>LevelUpTracker::with_growth_tables</code> builds per-character <code>StatGrowthCurve::PerLevel</code> from the parsed SCUS tables, and <code>BootSession</code> installs it from the user's <code>SCUS_942.54</code> at boot alongside the XP curve. <code>apply_to_record</code> grows the record-side stat window then mirrors it into the live window, matching the applier's write-then-mirror. Disc-gated tests pin the port: a boot test and <code>crates/engine-core/tests/growth_curve_disc.rs</code> (installed curve <code>start</code> values vs the new-game seed + Noa's L2&rarr;L3 core, HP 37 / MP 6). <code>StatGain::default()</code> (flat +10 HP / +5 MP) survives only as the disc-less fallback; <code>seru_stats.rs</code> is the legacy Seru-roster convenience path. No per-level character stat table exists in <code>crates/gamedata</code>, so the ground truth is the new-game seed plus the single-level capture.</p>
   <p><strong>Jitter is modeled as an opt-in layer.</strong> <code>LevelUpTracker::with_level_up_jitter(seed)</code> seeds a faithful PSX BIOS-rand LCG (<code>BiosRand</code>: <code>seed = seed&times;0x41C6_4E6D + 0x3039; (seed&gt;&gt;16)&amp;0x7FFF</code>) and draws one <code>rand()</code> per stat per level in the applier's stat order - including the draw when <code>jitter == 0</code> - applying the spread to the unfloored core before the <code>max(1,&hellip;)</code> floor, exactly as <code>FUN_801E9504</code>. It is off by default so every replay / determinism oracle stays bit-identical; a bit-exact reproduction of a specific retail roll would additionally need the BIOS-rand state at that moment (runtime, not on disc).</p>
 </section>
 
@@ -45,6 +45,30 @@
     </tbody>
   </table>
   <p>The engine port tracks its own level at <code>+0x100</code> (always zero in retail, where the live byte is <code>+0x130</code>) - self-consistent for the port's own LGSF saves, a deliberate divergence from the retail byte rather than a mirror of it.</p>
+</section>
+
+<section class="doc-section" id="battle-actor-struct">
+  <h2>Battle-actor stat struct <span class="tag tag-done">Confirmed</span></h2>
+  <p>The in-battle actor is a runtime struct <strong>distinct from the character record</strong>: <code>DAT_801C9370[slot]</code> (<code>slot*4</code>) is a pointer to it, 8 slots (party 0..2, monsters 3..7). It is not the char-record <code>+0xF4..+0x13D</code> window the ability aggregator <code>FUN_80042558</code> builds. Party actors are stat-initialised by <code>FUN_80053cb8</code> (copies the char-record <em>live</em>-stat window <code>+0x104..+0x11A</code>), monsters by <code>FUN_80054cb0</code> (copies the monster-archive record); both write the identical <code>+0x14C..+0x176</code> layout. Stats use <strong>working / base pairs</strong> - an even-offset working copy that buffs and damage mutate, plus a <code>+2</code> base copy the applier keeps for un-buff / percentage math.</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x14C / +0x14E</code></td><td>HP current / HP max (party: char live <code>+0x106 / +0x104</code>; monster HP)</td></tr>
+      <tr><td><code>+0x150 / +0x152</code></td><td>MP current / MP max (party: char live <code>+0x10A / +0x108</code>; monster MP)</td></tr>
+      <tr><td><code>+0x154 / +0x156</code></td><td>AGL working / base (char live <code>+0x110</code>)</td></tr>
+      <tr><td><code>+0x158 / +0x15A</code></td><td>ATK working / base (char live <code>+0x112</code>)</td></tr>
+      <tr><td><code>+0x15C / +0x15E</code></td><td>UDF (physical def) working / base (char live <code>+0x114</code> + equip-def bonus)</td></tr>
+      <tr><td><code>+0x160 / +0x162</code></td><td>LDF (magical def) working / base (char live <code>+0x116</code> + equip bonus)</td></tr>
+      <tr><td><code>+0x164 / +0x166</code></td><td>SPD working / base (char live <code>+0x118</code> + equip bonus)</td></tr>
+      <tr><td><code>+0x168 / +0x16A</code></td><td>INT working / base (char live <code>+0x11A</code>)</td></tr>
+      <tr><td><code>+0x16C</code></td><td>AI turn-eligibility gate (<code>FUN_801E9FD4</code> skips actor when 0)</td></tr>
+      <tr><td><code>+0x16E</code></td><td>Side / element bit-field (char <code>+0x12E</code>; the charm hook sets <code>| 0x380</code>; <code>FUN_801E7320</code> retarget reads it)</td></tr>
+      <tr><td><code>+0x170</code></td><td>Spirit gauge / SP (party: char live <code>+0x10E</code>; monster: const 100)</td></tr>
+      <tr><td><code>+0x172 / +0x174</code></td><td>HP / MP battle-start snapshots (copies of <code>+0x14C / +0x150</code>)</td></tr>
+      <tr><td><code>+0x176</code></td><td>Per-action transient, cleared to 0 on action-state entry (<code>0x801E490C</code>)</td></tr>
+    </tbody>
+  </table>
+  <p>Provenance: <code>ghidra/scripts/funcs/80053cb8.txt</code> (party init), <code>.../80054cb0.txt</code> (monster init), <code>.../overlay_0898_801e9fd4.txt</code> (AI reads), <code>.../overlay_0898_801e295c.txt</code> (action SM).</p>
 </section>
 
 <section class="doc-section" id="flow">
@@ -104,7 +128,6 @@
   <h2>Open items</h2>
   <ul>
     <li><strong><code>+0x120</code> stat-cap accessor renaming.</strong> Captures pin the per-stat cap constant 100 at <code>+0x120</code> (u16 LE); the existing <code>CharacterRecord::stat_cap</code> accessor reads <code>+0x11A</code>, which is a live stat slot. Tracked separately.</li>
-    <li><strong>Battle actor field map <code>+0x14C&ndash;+0x176</code>.</strong> Current HP at <code>+0x14C</code>, max HP at <code>+0x14E</code>; <code>+0x150/152/154/156</code> semantics not fully traced.</li>
     <li><strong>Overlay display.</strong> Retail shows per-stat increments (STR, INT, VIT, &hellip;) with animated counters; the port renders only the HP/MP banner lines.</li>
   </ul>
 </section>
