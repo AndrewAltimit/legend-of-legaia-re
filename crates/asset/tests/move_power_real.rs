@@ -360,6 +360,144 @@ fn impact_effect_table_parses_from_disc() {
     );
 }
 
+/// The effect-id -> triggering-move inverse index builds off the real PROT 0898
+/// records and is non-vacuous: record 3 (owned by move id 0x06 in the id->index
+/// map) contributes its contact and launch effects keyed on `(space, id)`, every
+/// Proto3D key resolves to a non-None prototype, and each trigger's record
+/// re-reads a list containing the citing byte (round-trip).
+#[test]
+fn effect_trigger_index_builds_from_disc() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(prot) = extracted_prot() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let entry = archive
+        .entries
+        .get(BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .cloned()
+        .expect("PROT 0898 entry exists");
+    let mut bytes = Vec::new();
+    archive
+        .read_entry(&entry, &mut bytes)
+        .expect("read PROT 0898");
+
+    let table = move_power::parse(&bytes).expect("move-power table parses");
+    let map = move_power::parse_id_index_map(&bytes).expect("id->index map parses");
+    let aux = move_power::EffectAuxTables::parse(&bytes).expect("aux tables parse");
+    let index = move_power::effect_trigger_index(&table, &map);
+
+    use move_power::{EffectFired, EffectKey, Trigger};
+
+    // Baseline: the index is non-empty (keeps this non-vacuous when the disc is
+    // present) and record 3 is owned by move id 0x06 (the id->index map pins
+    // 0x06 -> record 3; the record's "move 0x29" label is its spell-table name,
+    // not its map id).
+    assert!(!index.is_empty(), "inverse index should not be empty");
+    assert_eq!(
+        move_power::index_for_move_id(&map, 0x06),
+        Some(3),
+        "move id 0x06 maps to record 3 (the pinned record)"
+    );
+    assert_eq!(
+        move_power::move_ids_of(&map, 3),
+        vec![0x06],
+        "record 3 is owned only by move id 0x06"
+    );
+
+    // Record 3: contact [0x27, 0x8e, 0x8d], launch [0x28, 0x64, 0x9d]. Pin each
+    // classified key back to owning move 0x06 with the right firing phase.
+    let want_move3 = Trigger {
+        move_id: Some(0x06),
+        record_idx: 3,
+        fired: EffectFired::Contact,
+    };
+    let want_move3_launch = Trigger {
+        move_id: Some(0x06),
+        record_idx: 3,
+        fired: EffectFired::Launch,
+    };
+    assert!(
+        index
+            .get(&EffectKey::Proto3D(0x27))
+            .is_some_and(|t| t.contains(&want_move3)),
+        "(proto3d,0x27) <- move 0x06 contact"
+    );
+    assert!(
+        index
+            .get(&EffectKey::Efect2D(0x0e))
+            .is_some_and(|t| t.contains(&want_move3)),
+        "(efect2d,0x0e) <- move 0x06 contact"
+    );
+    assert!(
+        index
+            .get(&EffectKey::Proto3D(0x28))
+            .is_some_and(|t| t.contains(&want_move3_launch)),
+        "(proto3d,0x28) <- move 0x29 launch"
+    );
+    assert!(
+        index
+            .get(&EffectKey::Flash)
+            .is_some_and(|t| t.contains(&want_move3_launch)),
+        "(flash) <- move 0x29 launch"
+    );
+    assert!(
+        index
+            .get(&EffectKey::Efect2D(0x1d))
+            .is_some_and(|t| t.contains(&want_move3_launch)),
+        "(efect2d,0x1d) <- move 0x29 launch"
+    );
+
+    // Every Proto3D key in the whole index resolves to a non-None prototype VA
+    // (the aux table is the authoritative resolver for that space).
+    for key in index.keys() {
+        if let EffectKey::Proto3D(id) = key {
+            assert!(
+                aux.effect_proto(*id).is_some(),
+                "proto3d key {id:#04x} resolves to no prototype"
+            );
+        }
+    }
+
+    // Round-trip: every trigger's record, re-read from the parsed table, carries
+    // a list (contact or launch, per `fired`) whose classified bytes include the
+    // key it was filed under.
+    for (key, triggers) in &index {
+        for t in triggers {
+            let rec = &table[t.record_idx];
+            let raw = match t.fired {
+                EffectFired::Contact => rec.contact_effects_raw(),
+                EffectFired::Launch => rec.launch_effects_raw(),
+            };
+            let mut found = false;
+            for &b in &raw {
+                match move_power::EffectListEntry::classify(b) {
+                    move_power::EffectListEntry::Terminator => break,
+                    other => {
+                        if move_power::EffectKey::from_entry(other) == Some(*key) {
+                            found = true;
+                        }
+                    }
+                }
+            }
+            assert!(
+                found,
+                "round-trip: {key:?} not found in record {} {:?} list",
+                t.record_idx, t.fired
+            );
+        }
+    }
+
+    // Impact-effect (`+0x0a`), a separate 1..5 selector, must NOT leak into the
+    // index: record 3's impact selector is 1, and no effect key was minted from
+    // it (the index only mints keys from the +0x12 / +0x16 lists).
+    assert_eq!(table[3].impact_effect(), 1);
+}
+
 /// Read `SCUS_942.54` from `extracted/` if present.
 fn read_scus() -> Option<Vec<u8>> {
     for base in ["extracted", "../../extracted"] {

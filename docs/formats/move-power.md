@@ -189,8 +189,10 @@ FixedFlash singleton. Note that `+0x0a` `impact_effect` is a **separate** `1..5`
 config selector into `0x801f53d4` (`(value-1)*4`), **not** part of the effect-pool
 id space - keep it out of the inverse index. There is **no symbolic
 effect-name table**, so `id → move` is the achievable join (an effect is named
-only by its `(space, id)`). A future `asset move-power --effect-index`
-subcommand would emit this inverse table directly from the disc.
+only by its `(space, id)`). `legaia_asset::move_power::effect_trigger_index`
+builds this inverse map (`EffectKey` = `Proto3D(id)` / `Efect2D(id)` / `Flash`,
+each key carrying the triggering `Trigger`s), and `asset move-power
+--effect-index` emits it directly from the disc.
 
 ### `+0x00` at full / half / quarter
 

@@ -494,6 +494,147 @@ impl EffectListEntry {
     }
 }
 
+/// The battle move id(s) that resolve to a given power-table **record index**
+/// via the id → index map - the inverse of [`index_for_move_id`]. Empty when no
+/// move id points at the record (the internal-tier records past the mapped id
+/// range have no owning move id). The list is sorted ascending.
+pub fn move_ids_of(map: &[u8; MOVE_ID_INDEX_MAP_LEN], record_idx: usize) -> Vec<u8> {
+    if record_idx > u8::MAX as usize {
+        return Vec::new();
+    }
+    (0..map.len())
+        .filter(|&mid| index_for_move_id(map, mid as u8) == Some(record_idx as u8))
+        .map(|mid| mid as u8)
+        .collect()
+}
+
+/// The **effect-pool identity** an effect-list byte resolves to, keyed on
+/// `(space, id)` - never the raw byte, because a record's `+0x12` / `+0x16`
+/// lists multiplex two disjoint id spaces via bit 7 (see
+/// [`EffectListEntry::classify`]). This is the stable name of a spawned effect
+/// (there is no symbolic effect-name table on disc).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EffectKey {
+    /// The 3D move-FX prototype space: [`EFFECT_PROTO_TABLE_VA`]`[id]`
+    /// (`0x801f6324`) scene-graph prototype, spawn ids `0x01..=0x63`.
+    Proto3D(u8),
+    /// The `efect.dat` 2D-effect pool space, id `= byte & 0x7F` (bit-7 bytes,
+    /// routed to `FUN_801dfdf0`).
+    Efect2D(u8),
+    /// The fixed screen-flash singleton (`0x64`, [`EFFECT_LIST_FIXED_FLASH`]); it
+    /// carries no id.
+    Flash,
+}
+
+impl EffectKey {
+    /// Resolve a classified effect-list entry to its `(space, id)` key, or
+    /// `None` for the non-spawning entries ([`EffectListEntry::Terminator`] /
+    /// [`EffectListEntry::Skip`]).
+    pub fn from_entry(entry: EffectListEntry) -> Option<EffectKey> {
+        match entry {
+            EffectListEntry::Spawn(id) => Some(EffectKey::Proto3D(id)),
+            EffectListEntry::AltEffect(id) => Some(EffectKey::Efect2D(id)),
+            EffectListEntry::FixedFlash => Some(EffectKey::Flash),
+            EffectListEntry::Terminator | EffectListEntry::Skip => None,
+        }
+    }
+}
+
+/// Which of a move record's two effect lists fired a trigger.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EffectFired {
+    /// The `+0x12` on-contact list.
+    Contact,
+    /// The `+0x16` launch-strike list.
+    Launch,
+}
+
+/// One triggering-move reference in the effect → move inverse index: the move
+/// record (and, when a move id resolves to it, that id) whose effect list cites
+/// an [`EffectKey`], plus which list ([`EffectFired`]) it fired from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Trigger {
+    /// The battle move id that owns this record, or `None` when no move id maps
+    /// to the record (an internal-tier record with no owning move id).
+    pub move_id: Option<u8>,
+    /// The power-table record index whose effect list cited the key.
+    pub record_idx: usize,
+    /// Whether the byte came from the contact (`+0x12`) or launch (`+0x16`) list.
+    pub fired: EffectFired,
+}
+
+/// Walk one 4-byte effect-id list, classifying each byte with
+/// [`EffectListEntry::classify`] and yielding its [`EffectKey`]. Stops at the
+/// [`EffectListEntry::Terminator`] (`0x00`); [`EffectListEntry::Skip`] bytes
+/// (`0xFF` / the unused `0x65..=0x7F`) produce no key but do not stop the walk.
+fn keys_in_list(raw: &[u8; 4]) -> Vec<EffectKey> {
+    let mut keys = Vec::new();
+    for &b in raw {
+        match EffectListEntry::classify(b) {
+            EffectListEntry::Terminator => break,
+            other => {
+                if let Some(k) = EffectKey::from_entry(other) {
+                    keys.push(k);
+                }
+            }
+        }
+    }
+    keys
+}
+
+/// Build the **effect-id → triggering-move inverse index**: a pure re-pivot of
+/// the parsed move-power table. For every populated record, its `+0x12`
+/// (contact) and `+0x16` (launch) effect-id lists are classified into
+/// `(space, id)` [`EffectKey`]s, and each key gains a [`Trigger`] for the
+/// record - one per owning move id ([`move_ids_of`]), or a single `move_id =
+/// None` trigger when no move id maps to the record. The two id spaces the lists
+/// multiplex are kept separate (Proto3D vs Efect2D); the `0x64` flash is a keyed
+/// singleton. Impact-effect (`+0x0a`), trail (`+0x0b`) and sound (`+0x0d`) are a
+/// **different id space** and never enter this index. Each key's trigger list is
+/// sorted and de-duplicated. No capture, no runtime state - disc-derivable only.
+pub fn effect_trigger_index(
+    table: &[MoveRecord],
+    id_index_map: &[u8; MOVE_ID_INDEX_MAP_LEN],
+) -> std::collections::BTreeMap<EffectKey, Vec<Trigger>> {
+    let mut index: std::collections::BTreeMap<EffectKey, Vec<Trigger>> =
+        std::collections::BTreeMap::new();
+    for record in table {
+        if record.is_empty() {
+            continue;
+        }
+        let move_ids = move_ids_of(id_index_map, record.index);
+        let lists = [
+            (record.contact_effects_raw(), EffectFired::Contact),
+            (record.launch_effects_raw(), EffectFired::Launch),
+        ];
+        for (raw, fired) in lists {
+            for key in keys_in_list(&raw) {
+                let bucket = index.entry(key).or_default();
+                if move_ids.is_empty() {
+                    bucket.push(Trigger {
+                        move_id: None,
+                        record_idx: record.index,
+                        fired,
+                    });
+                } else {
+                    for &mid in &move_ids {
+                        bucket.push(Trigger {
+                            move_id: Some(mid),
+                            record_idx: record.index,
+                            fired,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    for triggers in index.values_mut() {
+        triggers.sort();
+        triggers.dedup();
+    }
+    index
+}
+
 /// The two auxiliary effect tables a move-power record's `+0x12` / `+0x16`
 /// effect-id lists index. Each [`EffectListEntry::Spawn`] index `e` yields the
 /// spawn parameter [`Self::effect_proto`]`(e)` (`0x801F6324`, `u32`) and the SFX
@@ -801,6 +942,97 @@ mod tests {
         // Guard: a bad map -> no table.
         buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 0;
         assert!(parse_impact_effect_table(&buf).is_none());
+    }
+
+    #[test]
+    fn effect_key_from_each_dispatch_arm() {
+        assert_eq!(
+            EffectKey::from_entry(EffectListEntry::Spawn(0x27)),
+            Some(EffectKey::Proto3D(0x27))
+        );
+        assert_eq!(
+            EffectKey::from_entry(EffectListEntry::AltEffect(0x1d)),
+            Some(EffectKey::Efect2D(0x1d))
+        );
+        assert_eq!(
+            EffectKey::from_entry(EffectListEntry::FixedFlash),
+            Some(EffectKey::Flash)
+        );
+        assert_eq!(EffectKey::from_entry(EffectListEntry::Terminator), None);
+        assert_eq!(EffectKey::from_entry(EffectListEntry::Skip), None);
+    }
+
+    #[test]
+    fn effect_trigger_index_inverts_lists() {
+        // Two 0898-shaped records: record 1 (mapped by move id 4) with a contact
+        // list [0x27, 0x8e, 0x8d, 0x00] and a launch list [0x28, 0x64, 0x9d, 0x00];
+        // record 2 (NO owning move id) with a contact list [0x27, 0x00, ..].
+        let mut buf = vec![
+            0u8;
+            MOVE_POWER_TABLE_FILE_OFFSET
+                + MOVE_POWER_RECORD_STRIDE * MOVE_POWER_TABLE_LEN
+        ];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1; // map guard + move id 4 -> record 1
+        let r1 = MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE;
+        buf[r1] = 0x10; // non-empty (power low byte)
+        buf[r1 + 0x12..r1 + 0x16].copy_from_slice(&[0x27, 0x8e, 0x8d, 0x00]);
+        buf[r1 + 0x16..r1 + 0x1a].copy_from_slice(&[0x28, 0x64, 0x9d, 0x00]);
+        let r2 = MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE * 2;
+        buf[r2] = 0x20; // non-empty, but no move id maps to record 2
+        buf[r2 + 0x12..r2 + 0x16].copy_from_slice(&[0x27, 0x00, 0x00, 0x00]);
+
+        let table = parse(&buf).expect("table parses");
+        let map = parse_id_index_map(&buf).expect("map parses");
+        let index = effect_trigger_index(&table, &map);
+
+        // Proto3D 0x27 fires from record 1's contact (move 4) AND record 2's
+        // contact (no move id -> None), keyed on (space, id).
+        let p27 = index.get(&EffectKey::Proto3D(0x27)).expect("proto3d 0x27");
+        assert!(p27.contains(&Trigger {
+            move_id: Some(4),
+            record_idx: 1,
+            fired: EffectFired::Contact,
+        }));
+        assert!(p27.contains(&Trigger {
+            move_id: None,
+            record_idx: 2,
+            fired: EffectFired::Contact,
+        }));
+        // Efect2D 0x0e (0x8e & 0x7f) from record 1 contact.
+        assert_eq!(
+            index.get(&EffectKey::Efect2D(0x0e)).map(|v| v.as_slice()),
+            Some(
+                [Trigger {
+                    move_id: Some(4),
+                    record_idx: 1,
+                    fired: EffectFired::Contact,
+                }]
+                .as_slice()
+            )
+        );
+        // Launch list: Proto3D 0x28, Flash singleton, Efect2D 0x1d.
+        for key in [
+            EffectKey::Proto3D(0x28),
+            EffectKey::Flash,
+            EffectKey::Efect2D(0x1d),
+        ] {
+            let triggers = index.get(&key).unwrap_or_else(|| panic!("{key:?}"));
+            assert!(triggers.contains(&Trigger {
+                move_id: Some(4),
+                record_idx: 1,
+                fired: EffectFired::Launch,
+            }));
+        }
+        // The impact-effect id space is NOT in the index: a Proto3D key for the
+        // impact selector value would be wrong. Record 1's +0x0a is untouched (0),
+        // so no spurious key. Flash never appears for contact here.
+        assert!(
+            !index
+                .get(&EffectKey::Flash)
+                .unwrap()
+                .iter()
+                .any(|t| t.fired == EffectFired::Contact)
+        );
     }
 
     #[test]

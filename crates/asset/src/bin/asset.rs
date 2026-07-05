@@ -203,6 +203,10 @@ enum Cmd {
         /// Emit the table as JSON instead of the text listing.
         #[arg(long)]
         json: bool,
+        /// Emit the effect-id -> triggering-move inverse index (one row per
+        /// `(space, id)` effect key) instead of the per-record listing.
+        #[arg(long)]
+        effect_index: bool,
     },
     /// Parse the 28-entry game-mode dispatch table (runtime VA `0x8007078C`)
     /// out of `SCUS_942.54`. Prints each mode's dev name, handler function
@@ -1166,7 +1170,17 @@ fn main() -> Result<()> {
             clut_sub,
             action_id,
         } => summon_readef_cmd(&input, texture_png_dir.as_deref(), clut_sub, action_id),
-        Cmd::MovePower { input, json } => move_power_cmd(&input, json),
+        Cmd::MovePower {
+            input,
+            json,
+            effect_index,
+        } => {
+            if effect_index {
+                move_power_effect_index_cmd(&input, json)
+            } else {
+                move_power_cmd(&input, json)
+            }
+        }
         Cmd::ModeTable { input, json } => mode_table_cmd(&input, json),
         Cmd::ElementAffinity { input, json } => element_affinity_cmd(&input, json),
         Cmd::SummonCreatures { scus, json } => summon_creatures_cmd(scus.as_deref(), json),
