@@ -158,6 +158,12 @@ fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
     };
     assert_eq!(entered(&world), 0, "no line has entered yet");
 
+    // The roller advances on the 60fps field sub-clock, not once per
+    // `World::tick` (the sim runs at 100Hz): roughly `floor(3*ticks/5)`
+    // roller-frames elapse per `ticks` World::ticks. Scale each crawl budget
+    // by 100/60 (plus a small margin) to cover the same number of pixel steps.
+    let ticks_for = |roller_frames: u32| roller_frames * 100 / 60 + 4;
+
     // A confirm press does NOT advance the crawl (retail `FUN_80037174` is
     // timer-driven; the intro skip goes through the hand-off packet).
     world.set_pad(input::PadButton::Cross.mask());
@@ -166,7 +172,7 @@ fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
 
     // The timer does: after one pixel step the first line enters.
     world.set_pad(0);
-    for _ in 0..DEFAULT_FRAMES_PER_PIXEL {
+    for _ in 0..ticks_for(DEFAULT_FRAMES_PER_PIXEL) {
         let _ = world.tick();
     }
     assert_eq!(entered(&world), 1, "line 0 entered on the first pixel step");
@@ -175,8 +181,9 @@ fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
     // completes the block and clears the presenter, releasing the suspended
     // timeline.
     let p = RollerParams::DEFAULT;
-    let budget = (2 * p.line_step as u32 + (p.enter_y - p.exit_y) as u32 + 4) * p.frames_per_pixel;
-    for _ in 0..budget {
+    let roller_budget =
+        (2 * p.line_step as u32 + (p.enter_y - p.exit_y) as u32 + 4) * p.frames_per_pixel;
+    for _ in 0..ticks_for(roller_budget) {
         let _ = world.tick();
     }
     assert!(

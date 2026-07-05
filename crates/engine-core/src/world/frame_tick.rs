@@ -50,6 +50,22 @@ impl World {
     ///     - `Title`      → no further VM.
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
+        // Retail-frame sub-clock for the narration crawl roller. The sim ticks
+        // at 100 Hz, but the roller's scroll is authored in retail's ~60 fps
+        // field frames; advance a fixed-point accumulator by RETAIL_FPS each
+        // tick and emit a whole retail frame on the ~60 % of ticks that cross
+        // SIM_HZ, so the crawl scrolls at retail wall-speed (otherwise it drains
+        // ~1.7x too fast, opening a long between-crawl gap). See
+        // `field_frame_accum`.
+        const SIM_HZ: u32 = 100;
+        const RETAIL_FPS: u32 = 60;
+        self.field_frame_accum += RETAIL_FPS;
+        if self.field_frame_accum >= SIM_HZ {
+            self.field_frame_accum -= SIM_HZ;
+            self.field_frame_step = 1;
+        } else {
+            self.field_frame_step = 0;
+        }
         // Step the active full-screen fade (escape teardown ramp); drop it
         // once the ramp lands on its target so hosts stop drawing the overlay.
         if let Some(fade) = &mut self.screen_fade
@@ -104,8 +120,10 @@ impl World {
         // skip; the player skips the WHOLE opening through the hand-off
         // packet instead - see `take_prologue_handoff`). Clear it once every
         // page has scrolled off so the suspended cutscene timeline resumes.
+        // Scroll the roller on the 60 fps sub-clock (0 or 1 retail frame per
+        // sim tick) so the crawl reads at retail wall-speed, not 100 Hz.
         if let Some(narration) = &mut self.cutscene_narration
-            && !narration.tick(1)
+            && !narration.tick(self.field_frame_step as u32)
         {
             self.cutscene_narration = None;
         }

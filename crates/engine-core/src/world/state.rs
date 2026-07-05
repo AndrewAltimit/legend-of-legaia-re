@@ -1485,6 +1485,23 @@ pub struct World {
     /// [`Self::cutscene_narration`] presenter owns - not an actor spawn.
     pub in_cutscene_timeline: bool,
 
+    /// Retail-frame sub-clock accumulator (fixed-point, `RETAIL_FPS` added per
+    /// tick, wrapping at `SIM_HZ`). The sim ticks at 100 Hz, but the narration
+    /// crawl roller's scroll speed is authored in retail's ~60 fps field frames;
+    /// scrolling it once per 100 Hz tick drains the crawl ~1.7x too fast (the
+    /// creation crawl finishes ~5 s early, then the caption + between-crawl
+    /// camera choreography leave a long dead-air gap). [`Self::tick`] advances
+    /// this and derives [`Self::field_frame_step`] so the roller runs at 60 fps.
+    /// NB the cutscene *timeline*'s WAIT_FRAMES stay on the 100 Hz sim clock -
+    /// their frame-count vs rate errors happen to cancel so block 2 lands at
+    /// retail wall-time; pacing them too would push block 2 far too late.
+    pub field_frame_accum: u32,
+
+    /// `1` on the ~60 % of sim ticks that map to a retail field frame, else `0`
+    /// (derived from [`Self::field_frame_accum`] each [`Self::tick`]). Fed to
+    /// the narration roller so the crawl scrolls at retail's 60 fps wall-speed.
+    pub field_frame_step: u16,
+
     /// Per-actor field-VM channels: one spawned context per MAN partition-1
     /// placement record, mirroring the retail per-record spawn
     /// (`FUN_8003A1E4`). Spawned alongside a cutscene timeline
@@ -1808,6 +1825,8 @@ impl World {
             cutscene_timeline: None,
             inline_dialogue: None,
             in_cutscene_timeline: false,
+            field_frame_accum: 0,
+            field_frame_step: 0,
             field_channels: Vec::new(),
             field_channels_man: None,
             executing_channel: None,
