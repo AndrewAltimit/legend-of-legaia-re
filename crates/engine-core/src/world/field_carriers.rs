@@ -132,6 +132,14 @@ impl World {
             }
         }
 
+        // Seed the per-actor field-VM channels from the same placement partition
+        // (retail spawns one script context per placement at scene load, cutscene
+        // or not - the free-roam half of `FUN_8003AEB0`). Each channel's own init
+        // opcodes then run through `step_field_channels`: scripted facings,
+        // idle/`WAIT`-loop cadence, local-flag setup. A cutscene scene re-seeds
+        // this set through `install_cutscene_timeline_record` afterwards.
+        self.seed_field_channels(man_file, man);
+
         sparring_idx
     }
 

@@ -918,23 +918,26 @@ impl World {
     /// halted - the retail synchronisation primitive between the cutscene
     /// timeline and its vignette actors.
     ///
-    /// Channels are cutscene-scoped: they spawn with a cutscene timeline
-    /// ([`Self::install_cutscene_timeline_record`]) and drop when it
-    /// completes, so normal field NPC behaviour (waypoint motion) is
-    /// untouched outside cutscenes.
+    /// Channels are seeded two ways. A cutscene timeline spawns the full set
+    /// ([`Self::install_cutscene_timeline_record`]) so its cross-context pokes
+    /// land on real per-actor contexts (the opening prologue's vignettes). On
+    /// **ordinary free-roam scene entry** the scene loader seeds the same set
+    /// ([`Self::seed_field_channels`], the non-cutscene half of retail's
+    /// `FUN_8003AEB0` spawn loop) so each placement's own init opcodes run -
+    /// scripted initial facings, idle/`WAIT`-loop cadence, local-flag setup.
     ///
     /// After stepping, each channel whose context position changed writes
     /// through to [`Self::field_npc_positions`] so the field render / probes
-    /// follow the scripted move.
+    /// follow the scripted move. On free-roam the engine's waypoint patroller
+    /// ([`Self::tick_field_npc_motions`]) owns any placement carrying a route,
+    /// so a channel's move (and the heading derived from it) is only surfaced
+    /// for placements the patroller does NOT drive - the two never fight over a
+    /// slot's position. During a cutscene the patroller stands down, so the
+    /// channel owns every slot's write-through exactly as before.
     // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
     // REF: FUN_8003C83C (cross-context target resolve)
     pub fn step_field_channels(&mut self) {
         if self.field_channels.is_empty() {
-            return;
-        }
-        if !self.cutscene_timeline_active() {
-            self.field_channels.clear();
-            self.field_channels_man = None;
             return;
         }
         let Some(man) = self.field_channels_man.clone() else {
@@ -1040,15 +1043,66 @@ impl World {
             }
         }
         // Write scripted moves through to the field NPC render/probe state.
+        // On free-roam the waypoint patroller owns routed placements (it runs
+        // right after this and would overwrite the slot anyway), so a channel's
+        // move is surfaced only for placements it does not drive - "keep the
+        // existing locomotion where the channel doesn't override it". During a
+        // cutscene the patroller stands down, so the channel owns every slot.
+        let patroller_active = !self.cutscene_timeline_active();
         for (c, pre) in channels.iter().zip(pre_pos) {
-            if (c.ctx.world_x, c.ctx.world_z) != pre {
-                self.field_npc_positions.insert(
-                    c.placement_index as u8,
-                    (c.ctx.world_x as i16, c.ctx.world_z as i16),
-                );
+            let (nx, nz) = (c.ctx.world_x, c.ctx.world_z);
+            if (nx, nz) == pre {
+                continue;
             }
+            let slot = c.placement_index as u8;
+            if patroller_active {
+                if self.field_npc_routes.contains_key(&slot) {
+                    continue;
+                }
+                // Surface a facing from the scripted move so a never-walked NPC
+                // its placement script repositions no longer renders unrotated:
+                // the same 12-bit atan2 heading (`0` = Z+) the patroller writes
+                // from its own step deltas (see `tick_field_npc_motions`).
+                let (dx, dz) = (nx as f32 - pre.0 as f32, nz as f32 - pre.1 as f32);
+                if dx != 0.0 || dz != 0.0 {
+                    let heading = ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32
+                        & 0x0FFF) as i16;
+                    self.field_npc_headings.insert(slot, heading);
+                }
+            }
+            self.field_npc_positions
+                .insert(slot, (nx as i16, nz as i16));
         }
         self.field_channels = channels;
+    }
+
+    /// Seed the per-actor field-VM channels for **ordinary free-roam** scene
+    /// entry: one context per MAN partition-1 placement, exactly as a cutscene
+    /// install seeds them, but without a timeline driving cross-context pokes.
+    /// The scene loader calls this after the placement-derived carrier / NPC
+    /// install so each placement's own init opcodes run through
+    /// [`Self::step_field_channels`] - scripted facings, idle/`WAIT` cadence,
+    /// local-flag setup - the non-cutscene half of retail's `FUN_8003AEB0`
+    /// spawn loop.
+    ///
+    /// Cutscene scenes (`opdeene` and friends) re-seed the set through
+    /// [`Self::install_cutscene_timeline_record`] afterwards, which simply
+    /// replaces this set, so the two paths compose. A scene with no placements
+    /// seeds an empty set and [`Self::step_field_channels`] no-ops.
+    // PORT: FUN_8003AEB0 (the per-record spawn loop, free-roam entry)
+    // REF: FUN_8003A1E4 (per-record context spawn)
+    pub fn seed_field_channels(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+    ) {
+        self.field_channels = crate::field_channels::spawn_channels(man_file, man);
+        self.field_channels_man = if self.field_channels.is_empty() {
+            None
+        } else {
+            Some(std::sync::Arc::new(man.to_vec()))
+        };
+        self.field_npc_anim_cues.clear();
     }
 
     /// Begin running an inline interaction script through the field VM (the
