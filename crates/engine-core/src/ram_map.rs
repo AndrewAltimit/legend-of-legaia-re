@@ -198,7 +198,7 @@ pub fn build_registry() -> Vec<RamCell> {
         (0x114, 2, "live UDF"),
         (0x116, 2, "live LDF"),
         (0x118, 2, "live SPD"),
-        (0x11A, 2, "live INT (also stat_cap accessor in legacy code)"),
+        (0x11A, 2, "live INT"),
         (0x11C, 2, "record HP_max"),
         (0x11E, 2, "record MP_max"),
         (0x120, 2, "per-stat cap constant 100"),

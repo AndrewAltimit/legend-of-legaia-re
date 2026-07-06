@@ -792,9 +792,11 @@ impl PlayWindowApp {
                         // provides the single net Y negation. Walkers
                         // face their travel heading (12-bit, `0` =
                         // Z+, same convention + half-turn compose as
-                        // the player's `render_26`); NPCs that never
-                        // walked stay unrotated (no facing byte in
-                        // the placement record).
+                        // the player's `render_26`); never-walked
+                        // NPCs read their spawn-prologue heading
+                        // seeded into `field_npc_headings` (facing-0
+                        // / prologue-less records render at
+                        // identity).
                         let rot = match w.field_npc_headings.get(&d.slot) {
                             Some(&h) => Mat4::from_rotation_y(
                                 std::f32::consts::PI + (h as f32) / 4096.0 * std::f32::consts::TAU,
