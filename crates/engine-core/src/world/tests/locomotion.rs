@@ -193,6 +193,34 @@ fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
 }
 
 #[test]
+fn locomotion_free_while_helper_context_active() {
+    // A concurrent helper context (a mid-play op-0x44 spawned record) is NOT
+    // cutscene-class: it must not lock pad locomotion or read as an active
+    // modal timeline (the camera-seize / NPC-motion stand-down gate).
+    use crate::cutscene_timeline::CutsceneTimeline;
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.actors[0].move_state.world_z = 200;
+    // A long WAIT_FRAMES so the context stays live across the step.
+    world
+        .helper_contexts
+        .push(CutsceneTimeline::new(vec![0x4A, 0xFF, 0x7F], 0));
+    world.step_helper_contexts();
+    assert_eq!(world.helper_contexts.len(), 1, "the context stays live");
+    assert!(
+        !world.cutscene_timeline_active(),
+        "a helper context never reads as the modal timeline"
+    );
+    world.set_pad(input::PadButton::Up.mask());
+    world.step_field_locomotion();
+    assert_eq!(
+        world.actors[0].move_state.world_z, 208,
+        "pad-driven walk keeps running while a helper context executes"
+    );
+}
+
+#[test]
 fn locomotion_gated_while_cutscene_timeline_active() {
     use crate::cutscene_timeline::CutsceneTimeline;
     let mut world = World::new();

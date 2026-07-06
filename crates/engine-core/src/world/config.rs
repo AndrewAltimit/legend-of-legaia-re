@@ -352,6 +352,14 @@ pub(crate) const PROLOGUE_TIMELINE_MAX_FRAMES: u32 = 3600;
 /// malformed non-yielding stretch.
 pub(crate) const FIELD_CHANNEL_STEP_BUDGET: u32 = 128;
 
+/// Bound on the concurrent spawned-record contexts
+/// ([`World::helper_contexts`]) and the pending op-`0x44` spawn queue
+/// ([`World::pending_record_spawns`]). Retail's context table is a small
+/// fixed actor-slot pool (`FUN_8003BDE0` allocates from the actor list), so
+/// the container is bounded rather than open-ended; a scene never
+/// legitimately runs this many helper records at once.
+pub const SPAWNED_CONTEXT_SLOTS: usize = 8;
+
 /// Frame budget for a cutscene-timeline channel-completion PARK (the
 /// cross-context `CFLAG_TST` handshake, `B3 <id> <bit>`; see
 /// [`World::step_cutscene_timeline`] and

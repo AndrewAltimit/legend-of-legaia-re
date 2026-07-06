@@ -112,6 +112,11 @@ impl SceneHost {
         // to (Rim Elm). The per-actor channels are timeline-scoped and drop
         // with it.
         self.world.cutscene_timeline = None;
+        // Concurrent spawned-record contexts (and any not-yet-drained op-0x44
+        // requests) are scene-scoped like the timeline: their bytecode slices
+        // came from the previous scene's MAN.
+        self.world.helper_contexts.clear();
+        self.world.pending_record_spawns.clear();
         self.world.cutscene_card = None;
         // Drop the previous scene's caption image (only `opdeene` re-decodes one
         // below); reset its fade + hold so a re-entry starts hidden.
@@ -881,9 +886,11 @@ impl SceneHost {
     /// (`FUN_801D1EC4` -> `FUN_801D5630` -> `FUN_8003BDE0`), which fires on
     /// the first post-arrival frame because the last-tile globals are stale.
     ///
-    /// Scoped to the opening chain for now (the engine models a spawned
-    /// record as THE cutscene timeline; door records resolve through the
-    /// dedicated warp path instead). Live-probe-pinned: retail's `map01` and
+    /// Scoped to the opening chain (this immediate same-tick spawn is the
+    /// chain's fly-in / arrival mechanism; door records resolve through the
+    /// dedicated warp path, and an ordinary scene's arrival tile is covered by
+    /// the per-frame [`Self::dispatch_walk_on_trigger`] stale-tile compare on
+    /// the first post-entry tick). Live-probe-pinned: retail's `map01` and
     /// `town01` opening records spawn exactly this way - the entry seat
     /// lands on the trigger tile and the stale-tile compare fires the same
     /// tick; `opstati` / `opurud` spawn via op-`0x44` in their entry scripts
@@ -942,9 +949,11 @@ impl SceneHost {
     /// mirroring retail's stale last-tile globals on the first post-arrival
     /// frame.
     ///
-    /// Skipped while another spawned record / overlay owns the frame (the
-    /// engine models a spawned record as THE cutscene timeline), while any
-    /// dialog or name entry is up.
+    /// Skipped while a modal cutscene timeline owns the frame (a walk-on beat
+    /// record is cutscene-class: it seizes the camera and locks locomotion,
+    /// one at a time) and while any dialog or name entry is up. Concurrent
+    /// helper contexts ([`crate::world::World::helper_contexts`]) do NOT
+    /// block the dispatch.
     ///
     /// Runs in both plain field mode **and** the overworld (world-map) mode.
     /// On the overworld a gate-1 trigger whose record is a **portal** (carries
@@ -1080,29 +1089,48 @@ impl SceneHost {
         let _ = self.world.tick();
         self.world
             .materialize_actor_spawns(crate::world::FIELD_SPAWN_START_SLOT);
-        // Field-VM op-0x44 SPAWN_RECORD: resolve the request against the
-        // current scene MAN and install the partition-2 record as a cutscene
-        // timeline (retail FUN_8003BDE0). This is how the opening chain's
-        // opstati / opurud entry scripts launch their prologue records.
-        // Scoped to the opening chain for now - the engine models a spawned
-        // record as THE cutscene timeline (single context + cutscene camera +
-        // locomotion lock), which is right for the opening cutscenes but too
-        // strong for an ordinary scene's helper spawns.
-        if let Some(global_index) = self.world.pending_record_spawn.take()
-            && self.world.opening_chain_active
-            && !self.world.cutscene_timeline_active()
+        // Field-VM op-0x44 SPAWN_RECORD: resolve each queued request against
+        // the current scene MAN and install the partition-2 record as a
+        // spawned context (retail FUN_8003BDE0 runs every spawned record as
+        // an independent field-VM context). Cutscene-class spawns - the
+        // opening chain's opstati / opurud entry scripts launching their
+        // prologue records - install as THE modal cutscene timeline (cutscene
+        // camera + locomotion lock + the chain's beat sequencing); an
+        // ordinary scene's mid-play helper spawn installs as a concurrent
+        // helper context that executes without seizing either.
+        let pending_spawns = std::mem::take(&mut self.world.pending_record_spawns);
+        if !pending_spawns.is_empty()
             && let Some(Ok(Some(man_bytes))) = self
                 .scene
                 .as_ref()
                 .map(|s| s.field_man_payload(&self.index))
             && let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes)
-            && self
-                .world
-                .install_spawned_record(&man_file, &man_bytes, global_index)
         {
-            log::info!(
-                "opening: op-0x44 spawned P2 record (global index {global_index}) as the cutscene timeline",
-            );
+            for global_index in pending_spawns {
+                if self.world.opening_chain_active {
+                    // Opening-chain sequencing: one modal beat at a time. A
+                    // request issued while a beat still plays is dropped -
+                    // the retail opening never issues one - preserving the
+                    // chain's install-at-scene-entry cadence.
+                    if !self.world.cutscene_timeline_active()
+                        && self
+                            .world
+                            .install_spawned_record(&man_file, &man_bytes, global_index)
+                    {
+                        log::info!(
+                            "opening: op-0x44 spawned P2 record (global index {global_index}) as the cutscene timeline",
+                        );
+                    }
+                } else if self.world.install_spawned_helper_record(
+                    &man_file,
+                    &man_bytes,
+                    global_index,
+                ) {
+                    log::info!(
+                        "field: op-0x44 spawned P2 record (global index {global_index}) as a concurrent helper context",
+                    );
+                }
+            }
         }
         // Walk-on tile trigger: the per-frame tile compare that spawns a
         // gate-1 trigger's partition-2 record when the player crosses onto
