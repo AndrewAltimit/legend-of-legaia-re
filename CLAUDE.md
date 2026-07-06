@@ -103,7 +103,7 @@ How the runtime engine works.
 | [`actor-vm.md`](docs/subsystems/actor-vm.md) | Actor / sprite VM at `FUN_801D6628` (13 opcodes). |
 | [`effect-vm.md`](docs/subsystems/effect-vm.md) | Effect-bundle pool; spawn API. |
 | [`move-vm.md`](docs/subsystems/move-vm.md) | Move-table opcode VM at `FUN_80023070` (71 ops, JT `0x80010778`); op `0x2F` escapes to overlay extension. |
-| [`motion-vm.md`](docs/subsystems/motion-vm.md) | Per-actor motion VM at `FUN_8003774C` - pursue / patrol / face-target. Used by NPC pathing + camera follow scripts. |
+| [`motion-vm.md`](docs/subsystems/motion-vm.md) | The two per-actor motion VMs. `FUN_8003774C` - pursue / patrol / face-target (NPC pathing + camera follow). `FUN_80038158` - scripted motion + story-flag writes (op-7 SET / op-8 CLEAR into `DAT_80085758`); bytecode = MAN tail-section 1 (`legaia_asset::man_motion`, installer `FUN_8003A9D4`), swept disc-wide by `man-scripts --motion-flag-census`. |
 | [`cutscene.md`](docs/subsystems/cutscene.md) | STR game modes 26/27; MDEC decoder algorithm (VLC → IDCT → BT.601 YCbCr→RGBA); XA audio sync; `play-str` loop. |
 | [`battle.md`](docs/subsystems/battle.md) | Battle scene loader; actor pointer table. |
 | [`battle-action.md`](docs/subsystems/battle-action.md) | Battle action state machine at `FUN_801E295C`. |

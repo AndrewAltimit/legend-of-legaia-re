@@ -161,6 +161,16 @@ pub(crate) enum Cmd {
         /// them. Ignores the per-scene `--scene` argument (it is disc-wide).
         #[arg(long)]
         system_flag_census: bool,
+        /// Run a disc-wide **motion-VM** flag census: decode every scene
+        /// MAN's tail-section-1 motion scripts (the `FUN_80038158` bytecode
+        /// `FUN_8003A9D4` installs on actors at scene entry) and print every
+        /// op-`0x07` SET / op-`0x08` CLEAR of the `DAT_80085758` system-flag
+        /// bank, plus the per-stream variant gate flags. This is the second
+        /// bytecode VM writing the same bank - `--system-flag-census` (field
+        /// VM ops `0x50/0x60/0x70`) is structurally blind to it. Disc-wide;
+        /// ignores the per-scene `--scene` argument.
+        #[arg(long)]
+        motion_flag_census: bool,
         /// Dump the inline cutscene-narration text pages embedded in a
         /// cutscene-timeline record (the `0x1F`/`0x00`-framed subtitle pages
         /// after a `0x4C` narration op). Pair with `--disasm-record N

@@ -244,6 +244,11 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></p
   <p>The 6-byte <code>[4C, 0xD4|0xD5, x_lo, x_hi, y_lo, y_hi]</code> operand is a <code>(vram_x, vram_y)</code> pair; the rect is hard-coded to <code>w = 0x10, h = 1</code>. The original runs the PsyQ libgs <code>StoreImage</code> &rarr; per-pixel STP-bit edit &rarr; <code>LoadImage</code> read-modify-write over 16 u16 pixels: sub-4 (op <code>0xD4</code>) sets STP on non-zero pixels, sub-5 (op <code>0xD5</code>) clears STP unless the pixel is already STP-only. The 16-element buffer lives on the dispatcher stack, <em>not</em> in the bytecode - it's pixels read from VRAM at runtime. The host hooks <code>op4c_n_d_sub_4_vram_stp_set(x, y)</code> / <code>op4c_n_d_sub_5_vram_stp_clear(x, y)</code> receive only the rect origin; a clean-room renderer that maintains its own framebuffer can emulate the read-modify-write itself.</p>
 </section>
 
+<section class="doc-section" id="op4c-d3-timed-flags">
+  <h2>0x4C nibble-D sub-3 - SCHEDULE_TIMED_FLAGS</h2>
+  <p>A 14-byte timed-flag scheduler: <code>[4C, 0xD3, expiry_flag: u16, below_flag: u16, duration: u32, threshold: u32]</code> writes the flag pair into <code>_DAT_800845C0</code>, the duration into <code>_DAT_800845B8</code>/<code>_DAT_800845A0</code>, the threshold into <code>_DAT_800845BC</code>, and snapshots the clock. The per-tick consumer <code>FUN_801d2ebc</code> (field overlay 0897) decrements by the clock delta, SETs the expiry flag + disarms on expiry, and SETs the below-threshold flag while under it. Retail use: <code>chitei2</code>'s collapsing-dungeon escape timer (flag <code>0x4C7</code>, duration 2400, threshold 910), with disarm records in <code>chitei2</code>/<code>map03</code>. The flag slots live in the <code>0x80084140</code> save-scratch block, so a mid-timer save persists it.</p>
+</section>
+
 <section class="doc-section" id="cross-refs">
   <h2>Connection to other crates</h2>
   <ul class="bullets">

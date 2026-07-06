@@ -84,6 +84,7 @@ fn main() -> Result<()> {
             gflag_partition,
             narration,
             system_flag_census,
+            motion_flag_census,
         } => cmd_man_scripts(
             &scene,
             &extracted_root,
@@ -95,6 +96,7 @@ fn main() -> Result<()> {
             gflag_partition,
             narration,
             system_flag_census,
+            motion_flag_census,
         ),
         Cmd::VramOracle {
             scene,

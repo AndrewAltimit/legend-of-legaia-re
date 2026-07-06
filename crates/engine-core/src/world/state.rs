@@ -1524,7 +1524,28 @@ pub struct World {
     /// stepped each frame by [`Self::step_cutscene_timeline`] so the cutscene's
     /// camera path + actor moves play and the hand-off bit fires by execution.
     /// See [`crate::cutscene_timeline::CutsceneTimeline`].
+    ///
+    /// This is the single **modal** context slot: while it is active the
+    /// cutscene camera owns the frame and pad locomotion is locked
+    /// ([`Self::cutscene_timeline_active`] gates). Ordinary mid-play spawned
+    /// records execute concurrently in [`Self::helper_contexts`] instead and
+    /// never seize either.
     pub cutscene_timeline: Option<crate::cutscene_timeline::CutsceneTimeline>,
+
+    /// Concurrent spawned-record contexts: partition-2 records spawned
+    /// mid-play (field-VM op-`0x44` outside the opening chain) that execute
+    /// as independent field-VM contexts, mirroring retail's per-record spawn
+    /// (`FUN_8003BDE0` installs `ctx[+0x90]`/`ctx[+0x9E]` and lets the
+    /// per-frame context sweep run it as a sibling). Unlike
+    /// [`Self::cutscene_timeline`] these never seize the camera or lock
+    /// player locomotion ([`Self::cutscene_timeline_active`] does not cover
+    /// them); only cutscene-class records - the opening chain and gated
+    /// walk-on beat records - install as the modal timeline. Installed by
+    /// [`Self::install_spawned_helper_record`], stepped per frame by
+    /// [`Self::step_helper_contexts`], bounded by
+    /// [`SPAWNED_CONTEXT_SLOTS`] (retail's context table is a small fixed
+    /// actor-slot pool). A completed context is dropped the frame it ends.
+    pub helper_contexts: Vec<crate::cutscene_timeline::CutsceneTimeline>,
 
     /// A running inline interaction script driven through the field VM (the
     /// faithful dialogue path). Opt-in alternative to the simplified
@@ -1631,14 +1652,17 @@ pub struct World {
     /// entry; never re-shows once the hold elapses (the gap continues hidden).
     pub cutscene_caption_shown_frames: u32,
 
-    /// Pending field-VM op-`0x44` SPAWN_RECORD request: the GLOBAL record
-    /// index whose partition-2 record should spawn as a new context.
+    /// Pending field-VM op-`0x44` SPAWN_RECORD requests: the GLOBAL record
+    /// indices whose partition-2 records should spawn as new contexts.
     /// Recorded by the host hook (the VM borrow precludes resolving the MAN
-    /// there); drained by `SceneHost::tick`, which re-bases it into
+    /// there); drained FIFO by `SceneHost::tick`, which re-bases each into
     /// partition 2 (`global - N0 - N1`, retail `FUN_8003BDE0`) and installs
-    /// the record as a cutscene timeline when its C1/C2 story-flag gates
-    /// pass.
-    pub pending_record_spawn: Option<u8>,
+    /// the record - as the modal cutscene timeline during the opening chain,
+    /// as a concurrent [`Self::helper_contexts`] entry otherwise - when its
+    /// C1/C2 story-flag gates pass. A queue (bounded by
+    /// [`SPAWNED_CONTEXT_SLOTS`]) so a second spawn issued while another
+    /// record executes is not dropped.
+    pub pending_record_spawns: Vec<u8>,
 
     /// `true` while the New-Game opening cutscene chain is playing (from the
     /// `opdeene` entry through its `opstati` / `opurud` / world-map fly-in
@@ -1884,6 +1908,7 @@ impl World {
             cutscene_narration: None,
             cutscene_narration_seq: 0,
             cutscene_timeline: None,
+            helper_contexts: Vec::new(),
             inline_dialogue: None,
             in_cutscene_timeline: false,
             field_frame_accum: 0,
@@ -1899,7 +1924,7 @@ impl World {
             cutscene_caption: None,
             cutscene_caption_alpha: 0.0,
             cutscene_caption_shown_frames: 0,
-            pending_record_spawn: None,
+            pending_record_spawns: Vec::new(),
             opening_chain_active: false,
         }
     }
@@ -1957,12 +1982,13 @@ impl World {
         self.game_over = false;
         self.play_time_seconds = 0;
         self.cutscene_timeline = None;
+        self.helper_contexts.clear();
         self.cutscene_narration = None;
         self.cutscene_card = None;
         self.prologue_naming_pending = false;
         self.prologue_naming_armed = false;
         self.entering_town01_opening = false;
-        self.pending_record_spawn = None;
+        self.pending_record_spawns.clear();
         self.opening_chain_active = false;
         self.mode = SceneMode::Field;
     }

@@ -367,3 +367,65 @@ where
     }
     out
 }
+
+/// One motion-VM system-flag site recovered by [`motion_flag_census`]:
+/// the scene plus the [`legaia_asset::man_motion::MotionFlagSite`] the
+/// scene's MAN tail-section 1 carries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MotionCensusSite {
+    /// CDNAME scene name whose MAN motion section carries the op.
+    pub scene_name: String,
+    /// The section-1 record / variant / gate / offset / kind detail.
+    pub site: legaia_asset::man_motion::MotionFlagSite,
+    /// The record's actor bindings (who the stream runs on).
+    pub bindings: Vec<legaia_asset::man_motion::MotionBinding>,
+}
+
+/// Disc-wide **motion-VM** flag census - the sibling of
+/// [`system_flag_census`] for the *second* bytecode VM that writes the
+/// `DAT_80085758` system story-flag bank: `FUN_80038158` op `0x07` (SET) /
+/// `0x08` (CLEAR), whose scripts live in each scene MAN's tail **section 1**
+/// (installed on actors by `FUN_8003A9D4` at scene entry; see
+/// [`legaia_asset::man_motion`]). The MAN field-VM census is structurally
+/// blind to these writes - they are a different opcode space in a different
+/// carrier section.
+///
+/// Same contract as [`system_flag_census`]: scenes without a resolvable MAN
+/// (or with a terminator section 1) are skipped, the map is sorted by flag
+/// id, and site order preserves scene / record discovery order.
+pub fn motion_flag_census<I, S>(
+    index: &ProtIndex,
+    scenes: I,
+) -> BTreeMap<u16, Vec<MotionCensusSite>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    use legaia_asset::man_motion;
+    let mut out: BTreeMap<u16, Vec<MotionCensusSite>> = BTreeMap::new();
+    for name in scenes {
+        let name = name.as_ref();
+        let Ok(scene) = Scene::load(index, name) else {
+            continue;
+        };
+        let Ok(Some(man)) = scene.field_man_payload(index) else {
+            continue;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            continue;
+        };
+        let records = man_motion::motion_records(&man, &man_file);
+        for site in man_motion::motion_flag_sites(&man, &man_file) {
+            let bindings = records
+                .get(site.record)
+                .map(|r| r.bindings.clone())
+                .unwrap_or_default();
+            out.entry(site.flag).or_default().push(MotionCensusSite {
+                scene_name: name.to_string(),
+                site,
+                bindings,
+            });
+        }
+    }
+    out
+}

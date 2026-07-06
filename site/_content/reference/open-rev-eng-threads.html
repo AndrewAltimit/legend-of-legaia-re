@@ -197,19 +197,37 @@
       <tr>
         <td>First boss (Zeto) trigger &rarr; Battle</td>
         <td><span class="tag tag-done">formation + port resolved</span>; trigger writer capture-gated</td>
-        <td>Zeto (id <code>0x4B</code>, in <code>rikuroa</code>) has <strong>no</strong> on-disc formation record; it uses the <strong>battle-id path</strong> (<code>DAT_8007b7fc = 0x4B</code> &rarr; <code>FUN_8005567c</code> lone-monster cell <code>[0x4B,0,0,0]</code>, byte-exact with both <code>zeto_*_mid_cast</code> captures). Port: <code>World::install_boss_encounter</code> + a <code>rikuroa</code> first-visit latch on flag <code>0x1BE</code>, victory-latched. <strong>Open:</strong> the <code>DAT_8007b7fc</code> writer is in no loaded program (four Ghidra sweeps over 47 programs find only readers); needs a Mt. Rikuroa write-watchpoint. Spine-writer #1 of 3; capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>Zeto (id <code>0x4B</code>, in <code>rikuroa</code>) has <strong>no</strong> on-disc formation record; it uses the <strong>battle-id path</strong> (<code>DAT_8007b7fc = 0x4B</code> &rarr; <code>FUN_8005567c</code> lone-monster cell <code>[0x4B,0,0,0]</code>, byte-exact with both <code>zeto_*_mid_cast</code> captures). Port: <code>World::install_boss_encounter</code> + a <code>rikuroa</code> first-visit latch on flag <code>0x1BE</code>, victory-latched. <strong>Open:</strong> the <code>DAT_8007b7fc</code> writer is not statically formed anywhere in the PROT corpus (all-programs Ghidra sweep + raw-byte scan of all 1235 entries, every addressing form - <code>find_spine_flag_writers.py</code>); the write is runtime-computed. Needs a Mt. Rikuroa write-watchpoint. Spine-writer #1 of 3; capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
         <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
       <tr>
         <td>Spine flag <code>0x142</code> (dolk-dungeon-clear) writer</td>
-        <td>open (capture-gated)</td>
-        <td>Spine-writer #2 of 3. Flag <code>0x142</code> clear routes <code>map01</code>'s dungeon entrance to <code>dolk</code> (pre-boss), set routes to <code>dolk2</code> (post-boss); the branch mechanism + engine port are resolved but the <em>writer</em> that sets <code>0x142</code> at the dolk-clear beat is in no loaded program - readers only. Closes with a fresh PCSX-Redux write-watchpoint capture at the dolk-clear story beat. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>open (capture-gated; ALL static channels exhausted corpus-wide)</td>
+        <td>Spine-writer #2 of 3. Flag <code>0x142</code> clear routes <code>map01</code>'s dungeon entrance to <code>dolk</code> (pre-boss), set routes to <code>dolk2</code> (post-boss); the branch mechanism + engine port are resolved. No writer exists by ANY static channel: readers only in all loaded programs, motion-VM census negative, and the corpus-wide sweep (all-programs Ghidra + raw-byte scan of all 1235 PROT entries: setter jals, materializers, ori-formed, derived-base stores, data words - <code>find_spine_flag_writers.py</code>) is clean; the write is runtime-computed. Closes with a fresh PCSX-Redux write-watchpoint capture at the dolk-clear story beat. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
         <td>Spine flag <code>0x482</code> (Drake mist-wall) writer</td>
-        <td>open (capture-gated)</td>
-        <td>Spine-writer #3 of 3. Flag <code>0x482</code> gates <code>map01</code>'s mist walls (<code>P2[34..36]</code> C1); it reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, and <code>rikuroa</code> sets it nowhere, so the writer is unobserved. Closes with a fresh PCSX-Redux write-watchpoint capture at the post-mist story event. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>open (capture-gated; ALL static channels exhausted corpus-wide)</td>
+        <td>Spine-writer #3 of 3. Flag <code>0x482</code> gates <code>map01</code>'s mist walls (<code>P2[34..36]</code> C1); it reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, <code>rikuroa</code> sets it nowhere, the motion-VM census is negative, and the corpus-wide static sweep (see the <code>0x142</code> row) is clean. Closes with a fresh PCSX-Redux write-watchpoint capture at the post-mist story event. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>Motion-VM (<code>FUN_80038158</code>) bytecode carrier + flag census</td>
+        <td><span class="tag tag-done">resolved</span> (carrier pinned; spine flags negative)</td>
+        <td>The second motion VM's bytecode source is <strong>MAN tail-section 1</strong> (<code>FUN_8003AEB0</code> installs it; <code>FUN_8003A9D4</code> binds records to actors; parser <code>legaia_asset::man_motion</code>). Disc-wide op-7/op-8 census (<code>man-scripts --motion-flag-census</code>): overworld walking-band choreography (<code>map02</code>/<code>map03</code>) + one <code>town0b</code> clear; <code>0x142</code>/<code>0x482</code>/<code>0x1BE</code> and <code>549</code> appear in NO stream - the earlier "549 set by op-7 from its own script bytecode" carrier claim is <strong>falsified</strong>. Anchor test <code>motion_flag_census_disc.rs</code>.</td>
+        <td><a href="../subsystems/motion-vm.html">motion-vm</a></td>
+      </tr>
+      <tr>
+        <td>Debug-menu "STR trigger teleports + sets flags" mechanism</td>
+        <td><span class="tag tag-done">resolved</span> (no per-FMV event table; dev-menu tools explain it)</td>
+        <td>The FMV dispatch record is playback-only (<code>legaia_asset::fmv_dispatch</code> - no scene/position/flag fields) and the two direct <code>_DAT_8007BA78</code> store sites are <strong>corpus-exhaustive</strong> (raw scan of all 1235 PROT entries, every addressing form). The observed teleport+flag application is the field-overlay 0897 dev-menu toolset: warp appliers <code>FUN_801EE094</code> ("ON RIREMITO,") / <code>FUN_801EE328</code> ("ON RULA,") for MAP CHANGE, and the EVENT FLAG editor (<code>FUN_801DBD04</code>, cursor over flags <code>0..0xFFF</code>, SET/CLEAR at cursor). The FMV corpus states were produced by dev-menu pointer-mediated global editing (invisible to static addressing-form scans). Do not re-walk the "per-FMV event table" shape.</td>
+        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
+      </tr>
+      <tr>
+        <td>Spawned-record player-channel (<code>0xF8</code>) ExecMove/HaltAcquire handshake</td>
+        <td>open (engine gap)</td>
+        <td>A door-cutscene P2 record that drives the PLAYER channel (<code>A2 F8 06</code> ExecMove + <code>C3 F8 ...</code> HaltAcquire) never completes in the engine: <code>field_channels::resolve_target</code> returns <code>None</code> for the special <code>0xF8</code> target, so no completion bit is signalled and the frame cap force-completes the timeline WITHOUT its trailing <code>0x3F</code> - blocking driven hops like <code>jou</code>&rarr;<code>jouina</code> (pinned by <code>chapter1_hub_depth_oracle.rs</code>). Closes with a player-channel completion model in the timeline stepper.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
@@ -335,7 +353,7 @@
       <tr>
         <td>Overworld / town entrance story-flag gating</td>
         <td><span class="tag tag-done">resolved</span></td>
-        <td>An entrance's unlock is its own partition-2 record's C1/C2 gate (<code>FUN_8003BDE0</code>; C1 = one-shot latch, C2 = requires-all) against the system-flag bank <code>_DAT_80085758</code>. Ops <code>0x50/0x60/0x70</code> carry <code>idx = ((op &amp; 0x8F) &lt;&lt; 8) | operand</code> (raw flag number). Disc-pinned via <code>man-scripts --system-flag-census</code>: map01 keikoku portals <code>C1=[0x193]</code> (setter <code>vozz</code> P1[7]), mist walls <code>P2[34..36] C1=[0x482]</code>, town01 dinner chain P2[4]&rarr;550&rarr;P2[5]&rarr;551. The dinner "re-fire" is falsified: the timeline stepper already applies SET ops, and P2[5] has no walk-on trigger.</td>
+        <td>An entrance's unlock is its own partition-2 record's C1/C2 gate (<code>FUN_8003BDE0</code>; C1 = one-shot latch, C2 = requires-all) against the system-flag bank <code>_DAT_80085758</code>. Ops <code>0x50/0x60/0x70</code> carry <code>idx = ((op &amp; 0x8F) &lt;&lt; 8) | operand</code> (raw flag number). Disc-pinned via <code>man-scripts --system-flag-census</code>: map01 keikoku portals <code>C1=[0x193]</code> (setter <code>vozz</code> P1[7], the only <code>0x193</code> SET disc-wide - <code>51 93</code> at <code>vozz</code> MAN <code>0xDA6</code>, one-shot-guarded on <code>0x2AC</code>; byte-pinned by <code>chapter1_hub_depth_oracle.rs</code>), mist walls <code>P2[34..36] C1=[0x482]</code>, town01 dinner chain P2[4]&rarr;550&rarr;P2[5]&rarr;551. The dinner "re-fire" is falsified: the timeline stepper already applies SET ops, and P2[5] has no walk-on trigger.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
@@ -346,8 +364,8 @@
       </tr>
       <tr>
         <td>Gate-flag setters outside the MAN field VM (<code>549</code>, <code>0x482</code>)</td>
-        <td><code>549</code> resolved; <code>0x482</code> capture-gated</td>
-        <td><code>549</code> (<code>0x225</code>, town01 opening) is written by <code>FUN_80038158</code> op-<code>7</code>, a per-actor bytecode VM that sets <code>DAT_80085758</code> inline from its own script bytecode - a different bytecode than the MAN field VM, so <code>--system-flag-census</code> cannot see it; pinned by a bank RAM-diff over the town01 opening. <code>0x482</code> (mist walls) reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, and <code>rikuroa</code> sets it nowhere - needs a fresh post-beat capture. Engine leaves both gated (faithful).</td>
+        <td>both open (capture-gated; <code>549</code> op-7 carrier falsified)</td>
+        <td><code>549</code> (<code>0x225</code>, town01 opening): the bank RAM-diff pin stands (the bit flips across the opening) and <code>FUN_80038158</code> op-<code>7</code> CAN write the bank - but the disc-wide <code>--motion-flag-census</code> finds <strong>no</strong> stream carrying <code>549</code>, falsifying the "written by op-7 from its own script bytecode" reading; the setter is a direct code path (<code>FUN_8003CE08</code>-class, overlay-resident). <code>0x482</code> (mist walls) reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, <code>rikuroa</code> sets it nowhere, and both bytecode censuses are negative - needs a fresh post-beat capture. Engine leaves both gated (faithful).</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
     </tbody>

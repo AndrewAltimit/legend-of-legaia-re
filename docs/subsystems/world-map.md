@@ -274,26 +274,38 @@ runs, `step_world_map_locomotion` stands the overworld player down (the force-wa
 lock) and `World::tick`'s world-map arm steps the timeline whenever one is active
 (not just during the opening `map01` fly-in).
 
-**Gate-flag setters that are NOT MAN field-VM ops.** Two progress flags read by
-these gates have no MAN `0x50`-op setter, so `man-scripts --system-flag-census`
-(which walks only MAN field-VM ops `0x50/0x60/0x70`) cannot see them:
+**Gate-flag setters that are NOT MAN field-VM ops.** Progress flags read by
+these gates can have no MAN `0x50`-op setter - `man-scripts
+--system-flag-census` walks only MAN field-VM ops `0x50/0x60/0x70`. The other
+disc-resident bytecode that writes the same bank is the second motion VM
+`FUN_80038158` (op-`7` sets, op-`8` clears, flag = `operand[1] |
+operand[2] << 8`; carrier = MAN tail-section 1, see
+[`motion-vm.md`](motion-vm.md)); `man-scripts --motion-flag-census` sweeps
+that op family disc-wide. A flag absent from BOTH censuses is set by a direct
+code path (`FUN_8003CE08`-class call in an overlay), not by scene bytecode:
 
-- **`549` (`0x225`)**, the `town01` opening one-shot: its writer is
-  `FUN_80038158` **op-`7`** - a per-actor motion / bytecode VM (dispatched by
-  `FUN_8003BC08` when actor `+0x10 & 0x80`) that sets the `DAT_80085758` bank
-  inline with the flag index taken from its *own* script bytecode
-  (`operand[1] | operand[2] << 8`; op-`8` clears). This is a distinct bytecode
-  from the MAN field VM, which is why the census is structurally blind to it.
-  Pinned from a bank RAM-diff across the `town01` opening (byte `+0x44` bit
-  `0x04` flips pre- vs post-opening) plus the dump; see
+- **`549` (`0x225`)**, the `town01` opening one-shot: writer still
+  unrecovered. The bank RAM-diff pin stands (byte `+0x44` bit `0x04` flips
+  pre- vs post-opening), but the disc-wide motion-flag census finds **no**
+  op-7 site carrying `549` - the earlier "`FUN_80038158` op-`7` from its own
+  script bytecode" carrier reading is falsified (the op-7 *mechanism* exists;
+  no disc stream uses it for `549`). The setter is a direct code path; the
+  spine flag-writer capture harness is the closer. See
   [`functions.md`](../reference/functions.md).
 - **`0x482`** (Drake mist walls) and **`0x142`** (the dolk/dolk2 dungeon
   variant): still unrecovered writers. `0x482` reads `0` across the whole
-  mednafen save library (including both pre-victory Zeto captures), and
-  `rikuroa`'s MAN sets it nowhere - so the setter is a battle/overlay path that
-  needs a fresh post-story-beat capture to bracket. The engine leaves both
-  gated, which is faithful (the walls / the dolk2 variant *should* stay closed
-  pre-beat).
+  mednafen save library (including both pre-victory Zeto captures),
+  `rikuroa`'s MAN sets it nowhere, and the motion-flag census finds no
+  op-7/op-8 site for either (nor for `0x1BE`). The static channels are now
+  exhausted **corpus-wide**: an all-programs Ghidra sweep plus a raw-byte
+  scan of all 1235 PROT entries (setter `jal`s, address materializers,
+  `ori`-formed targets, derived-base stores, setter data words - all
+  alignment phases; `ghidra/scripts/find_spine_flag_writers.py`) finds no
+  statically-formed write of either flag or of `DAT_8007B7FC` anywhere on
+  the disc - the writes go through runtime-computed pointers/indices. A
+  fresh post-story-beat write-watchpoint capture is the closer. The engine
+  leaves both gated, which is faithful (the walls / the dolk2 variant
+  *should* stay closed pre-beat).
 
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
   with that id. `inline` is the record's structural inline dialog-text block (see
@@ -607,6 +619,43 @@ gate and the `dolk`/`dolk2` `0x142` switch.
 payload - both `[10,7,3]`, 2345 bytes, single `0x3F` back to `map01`. The oracle
 pins the identity so a future de-dup / mis-resolve of either bundle trips it; it
 is an observed disc-byte identity, not a claim about why the payload is reused.
+
+#### Chapter-1 hub depth: vozz + jou -> jouina
+
+One level deeper on the two story-load-bearing legs, decoded + driven by the
+disc-gated
+[`chapter1_hub_depth_oracle.rs`](../../crates/engine-shell/tests/chapter1_hub_depth_oracle.rs):
+
+- **`vozz` is the Ravine unlock.** Its `0x3F` set is `{map01}` only (exit
+  `P2[10]`, gate-1 tiles `(60..62, 2)`), but its P1 scripts own flag `0x193`
+  outright: the ONLY `0x193` SET on the disc is `vozz` `P1[7]` (`51 93` at MAN
+  offset `0xDA6`, one-shot-guarded by an op-`0x72` test on `0x2AC` with a
+  companion `52 AC` SET), alongside three tests and one `P1[12]` clear. `P2`
+  gate census: seven records share `C1=[0x7]`; `P2[11..=13]` are
+  **self-latching one-shots** (each record's C1 is the very flag its own
+  script SETs: `0x2B2`/`0x2B3`/`0x2B4` - the canonical one-shot beat idiom);
+  `P2[18]` `C1=[0x2AC]` `C2=[0x2B3]`. The `town01 -> map01 -> vozz -> map01`
+  round trip drives clean in-engine.
+- **`jou`'s castle door is chapter-gated.** The `jouina` warp is `P2[5]`
+  (`0x3F` index 655, gate-1 tiles `(93..95, 97)`) behind `C2=[0x44D]`; the
+  opener chain is `P2[2]` (C1=[0x3E7], sets `0x3E7`) -> `P2[3]`
+  (C1=[0x44C], C2=[0x44B], sets `0x44C`) -> `P2[4]` (C1=[0x44D],
+  C2=[0x44B], sets `0x44D` - the only `0x44D` setter on the disc). `0x44B`'s
+  setters are `izumi` P1[15] / `noaru` P2[31] (the Noa beat), so the door
+  opens only after the Noa chain. In-engine the gate behaves: a fresh walk-on
+  installs nothing; with `0x44D` set the same walk-on spawns `P2[5]`.
+- **`jouina` is not terminal**: destinations `{jou, jouinb}` (both ungated;
+  `P2[0..=19]` all carry the `C1=[0xF]` busy-latch pattern), so the castle
+  chains one more interior deep.
+- **Engine gap (pinned, open):** `jou` `P2[5]`'s door cutscene drives the
+  PLAYER channel (`A2 F8 06` ExecMove + `C3 F8 ...` HaltAcquire); the
+  engine's `field_channels::resolve_target` returns `None` for the special
+  `0xF8` target, so the handshake never completes and the frame cap
+  force-completes the timeline WITHOUT its trailing `0x3F` - the driven
+  `jou -> jouina` hop is blocked until a player-channel completion model
+  lands (see
+  [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md)). The
+  oracle asserts the decode + a direct `jouina` load instead.
 
 #### Loading the kingdom geometry (engine port)
 

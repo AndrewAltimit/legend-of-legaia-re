@@ -342,6 +342,79 @@ impl World {
         self.install_cutscene_timeline_record(man_file, man, 2, record_idx, false)
     }
 
+    /// Install a field-VM op-`0x44` SPAWN_RECORD request as a **concurrent
+    /// helper context** ([`Self::helper_contexts`]): re-base the GLOBAL record
+    /// index into partition 2 (`global - N0 - N1`, retail `FUN_8003BDE0`),
+    /// check the record's C1/C2 story-flag gates, and push the record as an
+    /// independent spawned context. Returns `true` when a context installed.
+    ///
+    /// The non-cutscene-class counterpart to [`Self::install_spawned_record`]:
+    /// retail runs every spawned record as an independent field-VM context and
+    /// only cutscene-class records seize the camera / lock locomotion, so an
+    /// ordinary scene's mid-play helper spawn goes here - it executes its
+    /// script (flag writes, channel pokes, moves) without the modal-timeline
+    /// attributes.
+    // REF: FUN_8003BDE0
+    pub fn install_spawned_helper_record(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        global_index: u8,
+    ) -> bool {
+        let n0 = man_file.header.partition_counts[0].max(0) as usize;
+        let n1 = man_file.header.partition_counts[1].max(0) as usize;
+        let Some(record_idx) = (global_index as usize).checked_sub(n0 + n1) else {
+            return false;
+        };
+        self.install_helper_record(man_file, man, record_idx)
+    }
+
+    /// Install partition-2 record `record_idx` as a concurrent helper context
+    /// after checking its C1/C2 story-flag gates (the `FUN_8003BDE0` dispatch
+    /// body - the same gate walk as [`Self::install_gated_p2_record`]).
+    /// Returns `true` when a context installed; `false` on a failed gate, an
+    /// unresolvable span, or a full context table
+    /// ([`crate::world::SPAWNED_CONTEXT_SLOTS`]).
+    ///
+    /// Unlike [`Self::install_cutscene_timeline_record`] this does NOT
+    /// re-spawn the per-actor channels (an ordinary scene's channels are
+    /// seeded at entry by [`Self::seed_field_channels`] and must keep their
+    /// state) and does not parse inline narration blocks (the crawl roller is
+    /// a modal-timeline presentation).
+    // REF: FUN_8003BDE0
+    pub fn install_helper_record(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        record_idx: usize,
+    ) -> bool {
+        if self.helper_contexts.len() >= crate::world::SPAWNED_CONTEXT_SLOTS {
+            return false;
+        }
+        match crate::man_field_scripts::partition2_record_gates(man_file, man, record_idx) {
+            Some((c1, c2)) => {
+                if !self.p2_record_gates_pass(&c1, &c2) {
+                    return false;
+                }
+            }
+            None => return false,
+        }
+        let Some((script_start, pc0, body_len)) =
+            crate::man_field_scripts::partition_record_span(man_file, man, 2, record_idx)
+        else {
+            return false;
+        };
+        let Some(body) = man.get(script_start..script_start + body_len) else {
+            return false;
+        };
+        self.helper_contexts
+            .push(crate::cutscene_timeline::CutsceneTimeline::new(
+                body.to_vec(),
+                pc0,
+            ));
+        true
+    }
+
     /// Partition-2 record index of `town01`'s opening cutscene timeline (the
     /// establishing camera sweep + Vahn's walk-out + the name-entry handoff).
     /// A stable disc invariant; the record carries the name-entry STATE_RESUME
@@ -571,8 +644,46 @@ impl World {
                 tl.narration_pc = None;
             }
         }
+        if self.run_spawned_record_slice(&mut tl, true) {
+            self.finish_cutscene_timeline_frame(tl);
+        } else {
+            // Still parked on the channel-completion handshake: keep the
+            // timeline installed and re-test next tick.
+            self.cutscene_timeline = Some(tl);
+        }
+    }
+
+    /// Run one frame slice of a spawned partition-2 record context through
+    /// the field VM - the shared core behind the modal cutscene timeline
+    /// ([`Self::step_cutscene_timeline`], `modal = true`) and the concurrent
+    /// helper contexts ([`Self::step_helper_contexts`], `modal = false`).
+    ///
+    /// Both shapes get the full retail context semantics: run-until-yield
+    /// under a step budget, cross-context (`0x80`-bit) pokes resolved onto
+    /// the spawned per-actor channels, the channel-completion handshake park
+    /// (`B3 <id> <bit>`), the flag-test step-past rules, and the
+    /// backward-wrap completion detection. Only `modal` differences apply:
+    /// - `modal` sets [`Self::in_cutscene_timeline`] while the VM steps (the
+    ///   op-49 name-entry / narration-draw host-hook scoping); a helper
+    ///   context runs with ordinary field-VM host semantics.
+    /// - a `0x1F` inline-dialog segment parks a modal timeline on an owned
+    ///   dialog panel (input-routed by the caller); a helper context has no
+    ///   modal input routing, so it completes at the segment instead.
+    /// - inline narration blocks only exist on modal timelines (helper
+    ///   installs don't parse them), so those branches are modal-only in
+    ///   practice.
+    ///
+    /// Returns `false` when the context is still PARKED on the
+    /// channel-completion handshake (nothing else ran this frame); `true`
+    /// when a slice ran (the caller then applies its frame cap / teardown).
+    // REF: FUN_8003BDE0
+    fn run_spawned_record_slice(
+        &mut self,
+        tl: &mut crate::cutscene_timeline::CutsceneTimeline,
+        modal: bool,
+    ) -> bool {
         tl.frames = tl.frames.saturating_add(1);
-        self.in_cutscene_timeline = true;
+        self.in_cutscene_timeline = modal;
         let mut channels = std::mem::take(&mut self.field_channels);
         let channel_pre_pos: Vec<(u16, u16)> = channels
             .iter()
@@ -596,8 +707,7 @@ impl World {
                     tl.channel_wait = Some(wait);
                     self.field_channels = channels;
                     self.in_cutscene_timeline = false;
-                    self.cutscene_timeline = Some(tl);
-                    return;
+                    return false;
                 }
                 // The channel raised the flag (resume), the target is gone, or
                 // the park timed out: step past the flag-test op by its encoded
@@ -687,10 +797,18 @@ impl World {
                     && text_byte & 0x7F < 0x20
                 {
                     if text_byte == 0x1F {
-                        tl.dialog = Some(crate::dialog::OwnedDialogPanel::at_segment(
-                            std::sync::Arc::clone(&tl.bytecode),
-                            pc,
-                        ));
+                        if modal {
+                            tl.dialog = Some(crate::dialog::OwnedDialogPanel::at_segment(
+                                std::sync::Arc::clone(&tl.bytecode),
+                                pc,
+                            ));
+                        } else {
+                            // A concurrent helper context has no modal input
+                            // routing to page an inline dialog; complete the
+                            // context at the segment instead of parking on it
+                            // forever.
+                            tl.done = true;
+                        }
                         break;
                     }
                     tl.pc = pc + 1;
@@ -900,6 +1018,19 @@ impl World {
         }
         self.field_channels = channels;
         self.in_cutscene_timeline = false;
+        true
+    }
+
+    /// Post-slice bookkeeping for the **modal** cutscene timeline: apply the
+    /// frame cap, arm the prologue hand-off safety net, and drop or
+    /// re-install the timeline. Split from [`Self::step_cutscene_timeline`]
+    /// so the frame slice itself ([`Self::run_spawned_record_slice`]) is
+    /// shared with the concurrent helper contexts, which apply their own
+    /// (plain) cap in [`Self::step_helper_contexts`] instead.
+    fn finish_cutscene_timeline_frame(
+        &mut self,
+        mut tl: crate::cutscene_timeline::CutsceneTimeline,
+    ) {
         // Frame cap: real disc bytecode must never hang the tick. The opdeene
         // prologue gets the generous cap - its record arms the hand-off bit
         // at its TOP (`GFLAG_SET 26` at body `+0x17`) and then STAGES the
@@ -942,6 +1073,33 @@ impl World {
         } else {
             self.cutscene_timeline = Some(tl);
         }
+    }
+
+    /// Step every concurrent helper context ([`Self::helper_contexts`]) one
+    /// frame slice - the per-frame sweep over the mid-play spawned records,
+    /// running each through the shared [`Self::run_spawned_record_slice`]
+    /// core (`modal = false`). Helper contexts execute alongside the modal
+    /// cutscene timeline and the per-actor channels without seizing the
+    /// camera or locking locomotion; a context that completes (wrapped its
+    /// choreography, ran off its bytecode, or hit the plain
+    /// [`CUTSCENE_TIMELINE_MAX_FRAMES`] cap) is dropped from the table.
+    // REF: FUN_8003BDE0
+    pub fn step_helper_contexts(&mut self) {
+        if self.helper_contexts.is_empty() {
+            return;
+        }
+        let mut contexts = std::mem::take(&mut self.helper_contexts);
+        for tl in contexts.iter_mut() {
+            if tl.done {
+                continue;
+            }
+            if self.run_spawned_record_slice(tl, false) && tl.frames >= CUTSCENE_TIMELINE_MAX_FRAMES
+            {
+                tl.done = true;
+            }
+        }
+        contexts.retain(|tl| !tl.done);
+        self.helper_contexts = contexts;
     }
 
     /// Un-park every field NPC a cutscene left at the off-map hide box
@@ -1546,5 +1704,155 @@ mod tests {
             resumed,
             "the park times out and the timeline steps past the flag-test"
         );
+    }
+
+    /// Build a minimal MAN whose partition 2 carries the given record
+    /// bodies (each already in the named-record shape from [`p2_record`]).
+    /// `n0` / `n1` fill the partition-0/1 counts so the op-`0x44` global
+    /// re-base (`global - N0 - N1`) is exercised.
+    fn man_with_p2_records(
+        records: &[Vec<u8>],
+        n0: i16,
+        n1: i16,
+    ) -> (legaia_asset::man_section::ManFile, Vec<u8>) {
+        use legaia_asset::man_section::{ManFile, ManHeader, SectionRef};
+        let data_region_offset = 0x40usize;
+        let mut man = vec![0u8; data_region_offset];
+        let mut offsets = Vec::new();
+        for body in records {
+            offsets.push((man.len() - data_region_offset) as u32);
+            man.extend_from_slice(body);
+        }
+        let header = ManHeader {
+            status_flags: 0,
+            low_flag: false,
+            depth_lut: [0; 16],
+            partition_counts: [n0, n1, records.len() as i16],
+            u24_at_28: 0,
+        };
+        let man_file = ManFile {
+            header,
+            partitions: [vec![], vec![], offsets],
+            data_region_offset,
+            sections: std::array::from_fn(|_| SectionRef {
+                offset: man.len(),
+                length: 0,
+            }),
+        };
+        (man_file, man)
+    }
+
+    /// A partition-2 named-record body: 1-char name, empty C0, the given C1
+    /// story-flag OR-gate, empty C2, then `script`.
+    fn p2_record(c1: &[u16], script: &[u8]) -> Vec<u8> {
+        let mut r = vec![1u8, 0x41, 0x00]; // name_len=1 + 2 SJIS name bytes
+        r.push(0); // C0 empty
+        r.push(c1.len() as u8);
+        for f in c1 {
+            r.extend_from_slice(&f.to_le_bytes());
+        }
+        r.push(0); // C2 empty
+        r.extend_from_slice(script);
+        r
+    }
+
+    #[test]
+    fn helper_record_installs_and_executes_without_modal_attributes() {
+        // A mid-play spawned record (GFLAG_SET 26 then run-off-end) installs
+        // as a concurrent helper context: it executes its script by the next
+        // frame slice and never touches the modal timeline slot.
+        let (mf, man) = man_with_p2_records(&[p2_record(&[], &[0x2E, 0x1A])], 0, 0);
+        let mut w = World::new();
+        assert!(w.install_helper_record(&mf, &man, 0));
+        assert_eq!(w.helper_contexts.len(), 1);
+        assert!(
+            !w.cutscene_timeline_active(),
+            "a helper spawn never installs the modal cutscene timeline"
+        );
+        w.step_helper_contexts();
+        assert_ne!(
+            w.story_flags & crate::world::PROLOGUE_HANDOFF_FLAG,
+            0,
+            "the helper record's GFLAG_SET executed"
+        );
+        assert!(
+            w.helper_contexts.is_empty(),
+            "a completed helper context is dropped from the table"
+        );
+    }
+
+    #[test]
+    fn helper_record_honors_c1_one_shot_gate() {
+        // C1 blocks the spawn when ANY listed flag is set (the one-shot
+        // latch) - the same FUN_8003BDE0 gate walk as the modal install.
+        let (mf, man) = man_with_p2_records(&[p2_record(&[0x0193], &[0x21])], 0, 0);
+        let mut w = World::new();
+        assert!(w.install_helper_record(&mf, &man, 0), "clear flag: spawns");
+        w.helper_contexts.clear();
+        w.system_flag_set(0x0193);
+        assert!(
+            !w.install_helper_record(&mf, &man, 0),
+            "latched C1 flag blocks the spawn"
+        );
+        assert!(w.helper_contexts.is_empty());
+    }
+
+    #[test]
+    fn helper_spawn_while_timeline_active_is_not_dropped() {
+        // A second spawned record while a modal timeline (or another helper)
+        // executes must not be dropped: both helper contexts coexist with the
+        // active timeline in the bounded context table.
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let long_wait = &[0x4A, 0xFF, 0x7F]; // WAIT_FRAMES 0x7FFF: stays live
+        let (mf, man) = man_with_p2_records(
+            &[p2_record(&[], long_wait), p2_record(&[], long_wait)],
+            0,
+            0,
+        );
+        let mut w = World::new();
+        w.cutscene_timeline = Some(CutsceneTimeline::new(long_wait.to_vec(), 0));
+        assert!(w.cutscene_timeline_active());
+        assert!(w.install_helper_record(&mf, &man, 0));
+        assert!(w.install_helper_record(&mf, &man, 1));
+        assert_eq!(
+            w.helper_contexts.len(),
+            2,
+            "concurrent spawns coexist with the modal timeline"
+        );
+        w.step_helper_contexts();
+        assert_eq!(
+            w.helper_contexts.len(),
+            2,
+            "waiting helper contexts stay installed across a frame"
+        );
+        assert!(w.cutscene_timeline_active(), "the modal slot is untouched");
+    }
+
+    #[test]
+    fn helper_context_table_is_bounded() {
+        let (mf, man) = man_with_p2_records(&[p2_record(&[], &[0x4A, 0xFF, 0x7F])], 0, 0);
+        let mut w = World::new();
+        for _ in 0..crate::world::SPAWNED_CONTEXT_SLOTS {
+            assert!(w.install_helper_record(&mf, &man, 0));
+        }
+        assert!(
+            !w.install_helper_record(&mf, &man, 0),
+            "a full context table refuses further spawns"
+        );
+        assert_eq!(w.helper_contexts.len(), crate::world::SPAWNED_CONTEXT_SLOTS);
+    }
+
+    #[test]
+    fn spawned_helper_record_rebases_global_index() {
+        // op-0x44 carries a GLOBAL record index; the install re-bases it into
+        // partition 2 (`global - N0 - N1`, retail FUN_8003BDE0).
+        let (mf, man) = man_with_p2_records(&[p2_record(&[], &[0x2E, 0x1A])], 3, 4);
+        let mut w = World::new();
+        assert!(
+            !w.install_spawned_helper_record(&mf, &man, 2),
+            "a global index below N0+N1 cannot re-base"
+        );
+        assert!(w.install_spawned_helper_record(&mf, &man, 7));
+        assert_eq!(w.helper_contexts.len(), 1);
     }
 }

@@ -901,8 +901,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // the VM borrow precludes touching here). Retail spawns the record as
         // a sibling context immediately; the one-frame deferral is invisible
         // because a fresh context first runs on the NEXT frame slice anyway.
+        // A bounded queue (not a single slot) so a second spawn issued while
+        // another record executes is not dropped - retail's context table
+        // holds several concurrent spawned records.
         // REF: FUN_8003BDE0
-        self.world.pending_record_spawn = Some(global_index);
+        if self.world.pending_record_spawns.len() < crate::world::SPAWNED_CONTEXT_SLOTS {
+            self.world.pending_record_spawns.push(global_index);
+        }
         self.world
             .pending_field_events
             .push(FieldEvent::SpawnRecord { global_index });

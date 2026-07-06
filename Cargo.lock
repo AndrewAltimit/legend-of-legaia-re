@@ -1321,6 +1321,7 @@ dependencies = [
  "legaia-engine-vm",
  "legaia-font",
  "legaia-iso",
+ "legaia-lzs",
  "legaia-mdec",
  "legaia-mednafen",
  "legaia-mes",
