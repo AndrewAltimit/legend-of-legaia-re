@@ -16,6 +16,7 @@ pub(crate) fn cmd_man_scripts(
     gflag_partition: Option<usize>,
     narration: bool,
     system_flag_census: bool,
+    motion_flag_census: bool,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::{
         FlagBank, partition_record_span, system_flag_census as run_system_flag_census,
@@ -180,6 +181,46 @@ pub(crate) fn cmd_man_scripts(
                 println!(
                     "    {kind} scene={:<10} P{}[{}] (op 0x{:02X})",
                     h.scene_name, h.partition, h.record, h.opcode,
+                );
+            }
+        }
+    }
+
+    if motion_flag_census {
+        use legaia_engine_core::man_field_scripts::motion_flag_census as run_motion_flag_census;
+        let scenes = index.cdname_scene_names();
+        let census = run_motion_flag_census(&index, &scenes);
+        let total: usize = census.values().map(Vec::len).sum();
+        println!(
+            "\n--- disc-wide MOTION-VM flag census ({} scenes scanned, {} flags, {} sites) ---",
+            scenes.len(),
+            census.len(),
+            total,
+        );
+        for (flag, hits) in &census {
+            println!("flag 0x{flag:04X} ({flag:>5}): {} site(s)", hits.len());
+            for h in hits {
+                use legaia_asset::man_motion::MotionFlagKind;
+                let kind = match h.site.kind {
+                    MotionFlagKind::Set => "Set  ",
+                    MotionFlagKind::Clear => "Clear",
+                };
+                let gate = match h.site.gate {
+                    Some(g) => format!("gate=0x{g:03X}"),
+                    None => "default".to_string(),
+                };
+                let binds: Vec<String> = h
+                    .bindings
+                    .iter()
+                    .map(|b| format!("0x{:02X}", b.actor_id))
+                    .collect();
+                println!(
+                    "    {kind} scene={:<10} rec{} var{} ({gate}) actors=[{}] @0x{:05X}",
+                    h.scene_name,
+                    h.site.record,
+                    h.site.variant,
+                    binds.join(","),
+                    h.site.offset,
                 );
             }
         }
