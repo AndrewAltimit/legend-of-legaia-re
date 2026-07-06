@@ -52,6 +52,15 @@ Engine state + draw list exist (`tile_board_draw_list`, rebuilt by `refresh_tile
 - Gates: `cargo fmt --all -- --check`; `cargo clippy --all-targets --workspace -- -D warnings`; full disc-gated suite (`cargo test --workspace --release`, LEGAIA_DISC_BIN from ~/.bashrc), re-run after each fix; never pipe test output through `tail`.
 - Ghidra scripts ASCII-only, `# @runtime Jython`; new dumps registered in `dump_funcs.py`; notable entries into `docs/reference/functions.md`.
 
+## Outcome (wave wrap)
+
+- Arc 1a: motion-VM carrier pinned (MAN tail-section 1) + disc-wide census; spine flags NEGATIVE; 549 op-7 carrier FALSIFIED.
+- Arc 1b: corpus-wide static negative for all three spine writers (runtime-computed); debug-menu teleport+flags mechanism = 0897 warp appliers + EVENT FLAG editor; new op 0x4C 0xD3 timed-flag scheduler; no new overlay row needed. Capture harness remains the closer.
+- Arc 1c NOT triggered (no static writer hit - by design contingent).
+- Arc 2: helper contexts landed. Arc 3: vozz/jou depth oracles landed (player-channel 0xF8 gap pinned as a new open thread). Arc 4: tile-board draw landed (retail-unused census).
+- Arc 5: 0/14 captured (arts-input save states physically too short for any Super; pad-override segfault); replay/observer probe + 14 derived input strings + human-batch manifest delivered.
+- Full disc-gated suite: 4596 passed / 0 failed (baseline 4574).
+
 ## Verification
 
 - Full disc-gated suite green (baseline 4574 pass / 0 fail).
