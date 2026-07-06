@@ -20,7 +20,7 @@ below to jump within this page.
 
 **Overworld player + scenes**
 - [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [camera-relative movement remap](#camera-relative-movement-remap) · [boot-path seeding](#boot-path-seeding)
-- [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations)
+- [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep)
 
 **Terrain + geometry**
 - [Loading the kingdom geometry](#loading-the-kingdom-geometry-engine-port) · [placing the continent terrain](#placing-the-continent-terrain-engine-port) · [ground texturing](#ground-texturing) · [rendering the placed entities](#rendering-the-placed-entities) · [auto-engage on walk-over](#auto-engage-on-walk-over)
@@ -565,6 +565,48 @@ ahead of the `0x3E` map-id path. Field **dialogue** was re-grounded off `0x3F`
 onto its real trigger - the field-interact op (`0x3E` with `op0 < 100`) opens the
 interacted actor's inline interaction-script text (see
 [`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode)).
+
+#### Chapter-1 Drake hub sweep
+
+The Drake overworld (`map01`) is a hub: its controller's `0x3F` table lists a
+dozen destinations and its `.MAP` walk-on triggers install one `OverworldPortal`
+per town/dungeon entrance. Past the covered spine (`town01 -> map01 -> keikoku`
+and the boss leg `map01 -> rikuroa / dolk -> dolk2`) the remaining interior legs
+are `cave01`, `vell`, `vozz`, `suimon`, `jou`. Each is decoded + driven straight
+from disc bytes (no capture) by the disc-gated
+[`chapter1_hub_sweep_oracle.rs`](../../crates/engine-shell/tests/chapter1_hub_sweep_oracle.rs):
+driving `town01 -> map01` and stepping onto the leg's portal tile loads the scene
+in `SceneMode::Field` with its MAN present.
+
+| leg | map01 portal tile | entrance record | bundle | MAN partitions | onward `0x3F` |
+|---|---|---|---|---|---|
+| `cave01` | `(37,110)` | `P2[5]` | Scripted (PROT 38) | `[1,13,18]` | `map01` |
+| `vell` | `(77,97)` | `P2[6]` | Scripted (PROT 45) | `[8,17,13]` | `map01` |
+| `vozz` | `(107,91)` | `P2[8]` | Scripted (PROT 103) | `[4,24,20]` | `map01` |
+| `suimon` | `(57,61)` | `P2[19]` | Scripted (PROT 77) | `[10,7,3]` | `map01` |
+| `jou` | `(95,23)` | `P2[37]` | Scripted (PROT 630) | `[15,8,7]` | `map01`, `jouina` |
+
+**`dolk2` onward destination.** `dolk2` (post-boss `dolk` variant, PROT 76,
+v12-embedded MAN, partitions `[10,7,3]`) lists a single `0x3F`: back to `map01`.
+It is a terminal interior - the boss chain returns the player to the overworld,
+no deeper leg. (`jou` is the one swept leg with an interior onward warp of its
+own, to its interior variant `jouina`, alongside the `map01` exit.)
+
+**Gate census.** Every one of the five swept entrance records installs
+**unconditionally** - empty `C1`/`C2`. On `map01` the only C1-gated overworld
+entrance is the Ravine (`keikoku`, `C1=[0x193]`); the only op-`0x70` branch among
+the entrances is the `dolk`/`dolk2` destination switch on flag `0x142` (a
+destination selector inside the ungated `dolk` record, not a spawn gate); and the
+`0x482` mist-wall pattern is a separate no-`0x3F` band record. So **no C1/C2
+progression gate stands between a fresh Drake arrival and any of the five legs** -
+the chapter-1 story order on this hub is carried only by the `keikoku` `0x193`
+gate and the `dolk`/`dolk2` `0x142` switch.
+
+**`suimon` and `dolk2` share a MAN.** `suimon`'s Scripted bundle (PROT 77) and
+`dolk2`'s v12-embedded bundle (PROT 76) resolve to a **byte-identical** MAN
+payload - both `[10,7,3]`, 2345 bytes, single `0x3F` back to `map01`. The oracle
+pins the identity so a future de-dup / mis-resolve of either bundle trips it; it
+is an observed disc-byte identity, not a claim about why the payload is reused.
 
 #### Loading the kingdom geometry (engine port)
 
