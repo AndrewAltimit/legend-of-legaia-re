@@ -271,6 +271,13 @@ TARGETS = [
     "8005a4a0",  # cited by 8005a1c0 (GPU command-queue / CLUT-upload cluster)
     "80025358",  # cited by 8004f0e8 (battle-victory reward writer)
     "8004e568",  # cited by 8004f0e8 (battle-victory reward writer)
+
+    # Opening-narration crawl roller (SCUS-static). Handler installed on the
+    # child actor spawned by the field-VM op 0x4C nibble-8 sub-0 (CC F8 80 N);
+    # consumes the N inline ASCII pages and reads the four crawl-geometry seeds
+    # at _DAT_801C6EA4 +0x4C/+0x4E/+0x50/+0x52 written by the op 0x4C nibble-E
+    # sub-8 config op (CC F8 E8 ...). See docs/subsystems/cutscene.md.
+    "80037174",  # crawl-roller tick FUN_80037174
 ]
 
 OUT_DIR = "/scripts/funcs"
