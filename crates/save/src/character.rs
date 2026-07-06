@@ -315,15 +315,21 @@ impl CharacterRecord {
         w(0x10E, hms.sp_max);
     }
 
-    /// Stat-cap field at `+0x11A` (u16). The runtime clamps several
-    /// computed stats to this value.
+    /// Stat-cap field at `+0x120` (u16 LE) - the record-side per-stat cap
+    /// constant, the same field [`RecordStats::cap_constant`] exposes.
+    /// Retail holds [`RECORD_CAP_CONSTANT`] (`100`) here in every captured
+    /// save; the cheat classifier pins the offset as
+    /// `stat_cap_constant_100(+0x120)`. The `999` clamp the runtime applies
+    /// per frame is the *code* constant [`STAT_CAP`] in `FUN_80042558`, not
+    /// this field. (An earlier revision of this accessor read `+0x11A`,
+    /// which is the live INT stat - see [`LiveStats::int`].)
     pub fn stat_cap(&self) -> u16 {
-        u16::from_le_bytes([self.raw[0x11A], self.raw[0x11B]])
+        u16::from_le_bytes([self.raw[0x120], self.raw[0x121]])
     }
 
-    /// Replace the stat-cap field.
+    /// Replace the stat-cap field at `+0x120`.
     pub fn set_stat_cap(&mut self, value: u16) {
-        self.raw[0x11A..0x11C].copy_from_slice(&value.to_le_bytes());
+        self.raw[0x120..0x122].copy_from_slice(&value.to_le_bytes());
     }
 
     /// Display name, decoded from the NUL-padded ASCII field at
@@ -647,8 +653,8 @@ pub struct Snapshot {
     pub ability_bits: Vec<u8>,
     /// HP / MP / SP triplet at `+0x104`.
     pub hp_mp_sp: HpMpSp,
-    /// Stat cap at `+0x11A`. NB: this offset overlaps the live INT
-    /// stat in the cheat-derived layout; treat with care.
+    /// Stat-cap constant at `+0x120` (the same field as
+    /// `record_stats.cap_constant`; retail value 100).
     pub stat_cap: u16,
     /// Live stats at `+0x110..+0x11B` (AGL, ATK, UDF, LDF, SPD, INT).
     pub live_stats: LiveStats,
@@ -860,19 +866,35 @@ mod tests {
         // typed field - every other byte must survive unchanged.
         let mut buf = vec![0xCC; CHARACTER_RECORD_SIZE];
         // Pre-zero the byte we'll write through so the comparison is clean.
-        buf[0x11A] = 0;
-        buf[0x11B] = 0;
+        buf[0x120] = 0;
+        buf[0x121] = 0;
         let mut r = CharacterRecord::parse(&buf).unwrap();
         r.set_stat_cap(STAT_CAP);
         let out = r.write();
         // stat_cap bytes should reflect the new value.
-        assert_eq!(&out[0x11A..0x11C], &STAT_CAP.to_le_bytes());
+        assert_eq!(&out[0x120..0x122], &STAT_CAP.to_le_bytes());
         // Every other byte should be the original 0xCC.
         for (i, &b) in out.iter().enumerate() {
-            if !(0x11A..0x11C).contains(&i) {
+            if !(0x120..0x122).contains(&i) {
                 assert_eq!(b, 0xCC, "byte at offset 0x{i:X} corrupted by set_stat_cap");
             }
         }
+    }
+
+    /// `stat_cap` aliases the same `+0x120` field as
+    /// `record_stats().cap_constant` - name and offset agree with the
+    /// cheat-derived layout (`stat_cap_constant_100(+0x120)`), and the
+    /// live INT stat at `+0x11A` is untouched by the setter.
+    #[test]
+    fn stat_cap_aliases_record_cap_constant() {
+        let mut r = CharacterRecord::zeroed();
+        r.set_stat_cap(RECORD_CAP_CONSTANT);
+        assert_eq!(r.record_stats().cap_constant, RECORD_CAP_CONSTANT);
+        assert_eq!(r.live_stats().int, 0, "live INT (+0x11A) must not move");
+        let mut s = r.record_stats();
+        s.cap_constant = 123;
+        r.set_record_stats(s);
+        assert_eq!(r.stat_cap(), 123);
     }
 
     /// The Fire Book I capture pair (battle command menu parked on Fire

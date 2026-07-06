@@ -69,8 +69,7 @@ Field offsets are pinned by a fusion of three sources:
 +0x114  u16 LE   udf_live                 ; "Max UDF"
 +0x116  u16 LE   ldf_live                 ; "Max LDF"
 +0x118  u16 LE   spd_live                 ; "Max SPD"
-+0x11A  u16 LE   int_live                 ; "Max INT" (also legacy
-                                           ; `stat_cap()` accessor target)
++0x11A  u16 LE   int_live                 ; "Max INT" (`LiveStats::int`)
 +0x11C  u16 LE   hp_max_record            ; "Max HP" target (record copy)
 +0x11E  u16 LE   mp_max_record            ; "Max MP" target (record copy)
 +0x120  u16 LE   stat_cap_constant        ; per-stat record cap, value `100`
@@ -182,11 +181,11 @@ threshold the applier reads with the cumulative XP it reads it against). The
 starting-level randomizer therefore seeds `+0x0`, not `+0x4`.
 
 The runtime accessor in [`legaia_save::CharacterRecord`] is
-`magic_rank()` / `set_magic_rank()`. The legacy `stat_cap()` call
-sites (which read `+0x11A`) are preserved for back-compat - that
-field is now understood to be the live INT stat (`int_live`),
-which the engine clamps at `0x3E7` and the cheat database calls
-`Max INT`.
+`magic_rank()` / `set_magic_rank()`. The `stat_cap()` /
+`set_stat_cap()` accessors read/write the `+0x120` cap constant
+(the same field as `RecordStats::cap_constant`); `+0x11A` is the
+live INT stat (`int_live`, typed as `LiveStats::int`), which the
+engine clamps at `0x3E7` and the cheat database calls `Max INT`.
 
 ### `+0x161..+0x178` is the summon-level array, not spell levels.
 

@@ -2,18 +2,19 @@
 
 Covers the buy / sell / quantity / confirm flow used whenever the player enters a
 town shop. The shop UI lives inside the **menu overlay** - the same 129-function
-binary that hosts the save screen, inn, and status screens. No separate shop
-overlay exists.
+binary that hosts the save screen and status screens. No separate shop overlay
+exists. (The inn is *not* a menu-overlay session - see [inn.md](inn.md).)
 
-Per-scene item lists and prices are encoded in the menu overlay DATA segment
-(see [Open items](#open-items) below). The buy-list render layout is traced from
-`FUN_801d5de0` in `overlay_shop_save.bin`.
+Per-scene stock lives inline in the scene MAN's field-VM script and prices in
+the static `SCUS_942.54` item table (see [Gold-shop stock
+source](#gold-shop-stock-source) below); the menu overlay supplies the UI. The
+buy-list render layout is traced from `FUN_801d5de0` in `overlay_shop_save.bin`.
 
 ## Flow overview
 
 The retail engine enters the shop from the field-VM WARP / shop-trigger opcode.
 The menu overlay dispatches on a sub-screen ID (pointer table at `0x801E4F40`,
-same table used by the save screen and inn). The shop sub-screens handle:
+same table used by the save screen). The shop sub-screens handle:
 
 | Phase | Sub-screen | Description |
 |---|---|---|
@@ -119,6 +120,63 @@ and sell price (buy price ÷ 2) at y+43 (`0x2b`) with an icon at x+84.
 confirmed constants. The cost prompt and Yes/No cursor are rendered in
 `legaia-engine play-window` whenever `MenuState::ShopConfirm` is active.
 
+## Mode-select panel (Buy / Sell / Quit)
+
+The mode selector is menu-overlay **window 0x2A** in the window-descriptor
+table at `0x801E473C` (see [field-menu.md](field-menu.md)): content rect
+`(x 42, y 46, w 80, h 38)`, renderer VA `0x801D4868`. Like every window
+content renderer it receives the live window struct and reads its content
+origin from `+0xa` / `+0xc` (`WX` / `WY`); the 9-slice frame is caller-drawn.
+
+`FUN_801d4868` (see `ghidra/scripts/funcs/overlay_shop_save_801d4868.txt`)
+draws three rows through the shared string primitive
+`func_0x80036888(str, 0, 0, x, y)`:
+
+| Row | String (overlay rodata) | X | Y |
+|---|---|---|---|
+| Buy | `0x801CEB94` | WX + 20 (`0x14`) | WY |
+| Sell | `0x801CEB9C` | WX + 20 | WY + 14 (`0x0E`) |
+| Quit | `0x801CEBA4` | WX + 20 | WY + 28 (`0x1C`) |
+
+Same 20 px text indent and 14 px line height as the buy list; the strings sit
+at an 8-byte stride with a leading control byte. The CLUT-staging global
+`_DAT_8007B454` (read only by the string primitive - see
+[field-menu.md](field-menu.md)) is set to `7` (normal white) on entry; before
+the Sell row the function scans the inventory id/count pair array at
+`0x80085958` (`DAT_80084140 + 0x1818`, slot bounds `_DAT_8007B5EA` ..
+`_DAT_8007B5EC` - the array pinned in [cheats.md](../reference/cheats.md))
+and, when no slot has both a non-zero id **and** a non-zero count, clears the
+global to `0` so **Sell renders dim when the bag is empty**.
+
+After each row the cursor sprite `func_0x8002b994(0, mode, WX, rowY)` (the
+16x16 bobbing menu cursor, drawn at the window origin X - the same "+0"
+cursor column as the buy list) is gated on the picker cursor word
+`DAT_801E46BC`:
+
+- low 12 bits - selected row index (0 Buy / 1 Sell / 2 Quit); the cursor
+  draws only on the matching row;
+- bit `0x1000` - blink phase; the sprite mode argument is the inverted bit
+  (1 = animated frame, 0 = static);
+- bit `0x2000` - parked/unfocused presentation: the row-index gate is
+  bypassed and every row gets a mode-4/0 draw keyed to the blink bit;
+- bit `0x4000` - cursor suppressed entirely.
+
+Input lives in the picker dispatcher `FUN_801dafd4` (its sub-state var is
+`DAT_801E46AC`): the cursor clamp is a literal `li a1,0x3` at `0x801DB098`
+(rows 0..2); on confirm, row 2 runs the Quit action at `0x801DB0D0`
+(sound cue + session exit) and rows 0/1 fall through to the buy/sell check
+at `0x801DB0E8`. The shop's window choreography is actor-VM widget scripts
+interpreted by `FUN_801d6628` over the window table: the open script
+`DAT_801E4E38` slides in windows `0x21` (vendor name) / `0x2A` (this picker)
+/ `0x20` (gold) / `0x28` / `0x22`, and the Sell transition's close script
+`DAT_801E4E54` slides away `0x28` / `0x2A` / `0x22` while keeping the gold +
+vendor-name plates. (These instruction/descriptor words are byte-verified by
+the randomizer's seru-trading vendor, which patches exactly these seams -
+cursor clamp, a detour after the Quit text draw, and the window record's
+height field - to grow the panel to four rows; see
+`crates/rando/src/seru_overlay/consts.rs` and
+[randomizer.md](../tooling/randomizer.md).)
+
 ## Gold-shop stock source
 
 A gold town merchant's stock is **not** an overlay data table - it lives **inline
@@ -187,8 +245,9 @@ attempts; the port mirrors the gate in the grant kernel
 
 ## Open items
 
-- **Mode-select panel.** The Buy / Sell / Quit selector (`FUN_801d4868`) uses
-  x+20 for text, 14 px line height - same constants as the item list.
+- **Mode-select panel - RESOLVED.** Full layout (window 0x2A rect, row
+  geometry, empty-bag Sell dim, cursor-word bits, input dispatcher seams) is
+  documented above (*Mode-select panel*).
 
 ## Relationship to `legaia_save`
 
