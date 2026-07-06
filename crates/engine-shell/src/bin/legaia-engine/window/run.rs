@@ -734,6 +734,7 @@ pub(super) fn cmd_play_window_with_record(
         battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
         pending_dynamic_mesh_slots: Vec::new(),
         drained_spawn_slots: std::collections::HashSet::new(),
+        tile_slots_queued: std::collections::HashSet::new(),
         player_color_draw: None,
         field_npc_draws: Vec::new(),
         npc_clip_players: std::collections::HashMap::new(),

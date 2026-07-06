@@ -317,6 +317,53 @@ impl PlayWindowApp {
         draws
     }
 
+    /// Debug-install a synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`) so
+    /// the per-cell tile-actor draw pass can be exercised visually: no
+    /// retail scene MAN carries an op-0x49 sub-5 install (the census in
+    /// `tests/tile_board_draw_live.rs` pins that), so without this the
+    /// board renderer has no reachable on-screen trigger. Builds the same
+    /// 14-byte `[0x49, sub-op 5, header]` window the field VM would hand
+    /// `op49_menu_request`, centred a few tiles off the player so the
+    /// follow camera frames it, with the tile templates pointed at the
+    /// resident global-pool head (the effect-model library at `3..`).
+    /// One-shot per scene: a no-op while a board is up or armed.
+    pub(super) fn maybe_install_demo_tile_board(&mut self) {
+        if std::env::var_os("LEGAIA_TILE_BOARD_DEMO").is_none() {
+            return;
+        }
+        let world = &mut self.session.host.world;
+        if world.mode != SceneMode::Field || world.tile_board.is_some() || world.tile_board_armed {
+            return;
+        }
+        let Some(pslot) = world.player_actor_slot else {
+            return;
+        };
+        let (px, pz) = {
+            let a = &world.actors[pslot as usize];
+            (a.move_state.world_x as i32, a.move_state.world_z as i32)
+        };
+        // 7x7 board with the player's tile at its centre.
+        let origin_x = ((px >> 7) - 3).clamp(0, 255) as u8;
+        let origin_z = ((pz >> 7) - 3).clamp(0, 255) as u8;
+        let instr: [u8; 14] = [
+            0x49, 0x05, // op, sub-op
+            origin_x, origin_z, // +1/+2 tile origin
+            7, 7, // +3/+4 width x height
+            5, // +5 draw radius
+            0, // +6 mode flag (full-board draw)
+            0, 0, 0, 0, // +7/+9 event-flag bases (unused by the demo)
+            0, // +0xb player template (character-mesh head)
+            3, // +0xc tile template base (effect-model library)
+        ];
+        if world.try_install_tile_board(&instr) {
+            log::info!(
+                "play-window: demo tile board installed at tile ({origin_x},{origin_z}) \
+                 ({} draw-list cells)",
+                world.tile_board_draw_list.len()
+            );
+        }
+    }
+
     /// Rebuild the window's render-side scene state after the host swapped
     /// scenes under it (a door transition: `SceneTickEvent::SceneEntered`).
     /// Rebuilds [`SceneResources`] for the newly loaded scene and re-runs

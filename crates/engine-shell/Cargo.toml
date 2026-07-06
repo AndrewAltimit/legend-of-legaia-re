@@ -41,6 +41,9 @@ sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"
+# tile_board_draw_live decodes each scene's MAN (LZS in the scene bundle) for
+# the op-0x49 sub-5 board census.
+legaia-lzs = { path = "../lzs" }
 legaia-mes = { path = "../mes" }
 # chapter1_spine_oracle Part A reads pcsx-redux .sstate anchors (scene / mode /
 # player position) off the save library.

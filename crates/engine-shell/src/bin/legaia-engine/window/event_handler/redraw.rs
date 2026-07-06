@@ -161,6 +161,10 @@ impl PlayWindowApp {
                 Ok(_) => {}
                 Err(e) => log::error!("session tick: {e:#}"),
             }
+            // Opt-in synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`): no
+            // retail scene script installs one, so this is the visual
+            // trigger for the per-cell tile-actor draw pass.
+            self.maybe_install_demo_tile_board();
             // Dance minigame auto-end: `tick_dance` restores the scene
             // mode when the song timer runs out but leaves the game
             // installed for one frame. Detect that (mode no longer
@@ -401,6 +405,30 @@ impl PlayWindowApp {
             // draws iteration below picks it up. Idempotent: if
             // the actor already has a binding (e.g. an earlier
             // pass already uploaded), the spawn is skipped.
+            // Tile-board tile actors: the board install spawns them through
+            // `World::spawn_field_actor` directly (no `ActorSpawned` event),
+            // so no drain entry ever queues their template meshes. Scan the
+            // board draw list and queue each resolved-template slot once per
+            // install; an earlier board in the same scene may have left the
+            // slot in `drained_spawn_slots` with its binding since cleared by
+            // the despawn, so drop it from the drained set to let the drain
+            // below re-upload. Cleared on teardown (empty draw list) so a
+            // later board's re-used slots re-queue.
+            {
+                let world = &self.session.host.world;
+                if world.tile_board_draw_list.is_empty() {
+                    self.tile_slots_queued.clear();
+                } else {
+                    for slot in
+                        legaia_engine_shell::tile_board_draws::tile_actor_slots_needing_mesh(world)
+                    {
+                        if self.tile_slots_queued.insert(slot) {
+                            self.drained_spawn_slots.remove(&slot);
+                            self.pending_dynamic_mesh_slots.push(slot);
+                        }
+                    }
+                }
+            }
             let pending = std::mem::take(&mut self.pending_dynamic_mesh_slots);
             for slot in pending {
                 let actor = match self.session.host.world.actors.get(slot as usize) {
@@ -806,6 +834,38 @@ impl PlayWindowApp {
                             (None, None) => {}
                         }
                     }
+                    // Tile-board tile actors: one mesh instance per drawable
+                    // cell in this frame's deferred draw list (retail
+                    // `overlay_0897_801e0f3c` - a cell value's shared actor
+                    // draws at EVERY cell holding that value, not just its
+                    // own last-repositioned transform). Only slots the spawn
+                    // drain above uploaded draw (`drained_spawn_slots`): a
+                    // slot still wearing `upload_assets`' naive pre-bind
+                    // would render an unrelated scene mesh, and unresolved
+                    // templates (no `tmd_ref`) never upload - both degrade
+                    // to "no draw".
+                    for d in legaia_engine_shell::tile_board_draws::tile_board_actor_draws(w) {
+                        if !self.drained_spawn_slots.contains(&d.slot) {
+                            continue;
+                        }
+                        let Some(tmd_idx) =
+                            w.actors.get(d.slot as usize).and_then(|a| a.tmd_binding)
+                        else {
+                            continue;
+                        };
+                        if let Some(mesh) = self.meshes.get(tmd_idx) {
+                            // Raw retail-convention transform, like the NPC
+                            // draws: the field camera's FIELD_WORLD_FLIP
+                            // provides the single net Y negation.
+                            let model = Mat4::from_translation(Vec3::new(
+                                d.world[0], d.world[1], d.world[2],
+                            ));
+                            draws.push(SceneDraw {
+                                mesh,
+                                mvp: cam * model,
+                            });
+                        }
+                    }
                 }
                 // Actors ride the same battle rotation as the dome +
                 // grid but with the retail 4x world-scale base matrix
@@ -847,6 +907,17 @@ impl PlayWindowApp {
                     // otherwise pile their meshes at world (0,0,0) - the
                     // "duplicate Vahn" + scattered scene geometry.
                     if in_battle && self.battle_stage_mesh.is_some() && !actor.active {
+                        continue;
+                    }
+                    // Board-owned tile actors draw once per cell through the
+                    // deferred tile-board pass above; their own transform
+                    // only holds the LAST repositioned cell (and a slot the
+                    // drain hasn't uploaded still wears the naive pre-bind).
+                    // The player (tile table slot 0) stays on this path.
+                    if legaia_engine_shell::tile_board_draws::is_tile_actor_slot(
+                        &self.session.host.world,
+                        i,
+                    ) {
                         continue;
                     }
                     // The `opdeene` prologue cutscene is an abstract vignette

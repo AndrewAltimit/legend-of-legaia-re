@@ -507,6 +507,13 @@ struct PlayWindowApp {
     /// (idempotence for the drain above - the binding itself can't be the
     /// marker because `upload_assets` pre-binds every actor slot).
     drained_spawn_slots: std::collections::HashSet<u8>,
+    /// Tile-board tile-actor slots already queued for the mesh-upload drain.
+    /// A board install spawns its actors through `World::spawn_field_actor`
+    /// directly (no `ActorSpawned` event fires), so the redraw pass scans
+    /// the board draw list and queues each slot once per install; cleared
+    /// when the board tears down (draw list empties) so a later board's
+    /// re-used slots re-upload their new templates.
+    tile_slots_queued: std::collections::HashSet<u8>,
     /// Boot-UI state. `BootUiState::Inactive` means the legacy
     /// "go straight to the scene" path; `Title` / `SaveSelect` route
     /// player input through the boot sessions until the player picks
