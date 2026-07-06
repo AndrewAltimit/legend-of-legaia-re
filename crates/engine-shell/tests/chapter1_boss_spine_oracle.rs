@@ -21,13 +21,25 @@
 //! `SceneMode::Field`, seats the player at the portal's `0x3F` entry tile, and
 //! the scene's MAN is present + parses with the pinned partition counts.
 //!
-//! **Next leg (documented, not faked).** The first boss (Zeto, fought in
-//! `rikuroa`) is a *scripted* battle gated by the dungeon MAN's partition-2
-//! cutscene timeline, not a random encounter - `rikuroa`'s MAN carries no named
-//! `0x3F` warp and the `encounter_registry` only models the random-encounter
-//! fallback. Wiring the scripted-boss trigger (partition-2 timeline -> battle
-//! stack) is the next spine leg; this oracle stops at "player stands inside the
-//! boss dungeon with its MAN loaded".
+//! **Part C - the scripted first-boss (Zeto) fight.** Zeto (monster id 75 =
+//! `0x4B`) has no on-disc formation record: not in `rikuroa`'s MAN encounter
+//! section and not as an inline armed-YIELD window. Retail arms it through the
+//! *battle-id path* (`DAT_8007b7fc = 0x4B` -> `FUN_8005567c` collapses ids
+//! `0x49..0x4D` to a lone-monster cell), gated by a first-visit story flag. The
+//! engine models this as a `rikuroa` scene-entry latch on flag `0x1BE`
+//! (`rikuroa` cutscene record P2[0] "Meta's warning" C1) plus the battle-id
+//! port [`World::install_boss_encounter`]; the gate flag latches on victory
+//! ([`World::apply_battle_loot`]). Part C drives entry -> armed boss -> Field ->
+//! Battle seated with Zeto's real archive HP -> victory latches `0x1BE`, and a
+//! separate leg proves a post-victory revisit does not re-arm the fight.
+//!
+//! **Residual (documented, not faked).** The field-side op that writes the
+//! battle-id global in retail is not yet recovered from the corpus - it sits in
+//! the `rikuroa` scene prescript / event-VM (a different bytecode than the
+//! field VM) or a LUI+ADDIU-aliased store in an undumped overlay. The
+//! scene-entry flag-`0x1BE` latch is the faithful interim until that writer op
+//! is pinned. Past the boss, `dolk2` is reached from a dungeon interior (not a
+//! `map01` portal); wiring that interior `0x3F` is the following leg.
 //!
 //! Skip-pass (CLAUDE.md disc-gated convention): `LEGAIA_DISC_BIN` unset /
 //! `extracted/` missing.
@@ -227,4 +239,131 @@ fn part_b_map01_portal_into_dolk() {
         "dolk lists its interior destination rikuroa; got {dests:?}"
     );
     eprintln!("[ok] Leg (Arc-2): map01 -> dolk overworld portal -> dolk (Field), MAN present");
+}
+
+// ---------------------------------------------------------------------
+// Part C: the scripted first-boss (Zeto) fight, end to end
+// ---------------------------------------------------------------------
+//
+// Zeto (monster id 75 = 0x4B) has NO on-disc formation record - not in
+// rikuroa's MAN encounter section and not as an inline armed-YIELD window.
+// Retail arms it through the battle-id path (`DAT_8007b7fc = 0x4B` ->
+// `FUN_8005567c` collapses ids 0x49..0x4D to a lone-monster cell), gated by a
+// first-visit story flag. The engine models this as a rikuroa scene-entry latch
+// on flag `0x1BE` (rikuroa cutscene P2[0] "Meta's warning" C1) + the battle-id
+// port `World::install_boss_encounter`; the gate flag latches on victory. The
+// field-side op that writes the battle-id global in retail is not yet recovered
+// (it sits in the scene prescript / an undumped overlay) - this leg exercises
+// the faithful interim.
+
+/// Zeto = monster id 75 (0x4B); rikuroa boss gate flag 0x1BE. Mirrors
+/// `legaia_engine_core::world::SCRIPTED_SCENE_BOSSES`.
+const ZETO_MONSTER_ID: u16 = 75;
+const RIKUROA_BOSS_GATE_FLAG: u16 = 0x1BE;
+
+#[test]
+fn part_c_rikuroa_arms_and_fights_the_zeto_scripted_boss() {
+    use legaia_engine_core::world::BOSS_FORMATION_ID_BASE;
+
+    let Some(mut host) = drive_map01_portal_into("rikuroa") else {
+        return;
+    };
+
+    // (1) Entering rikuroa (first visit, gate flag clear) armed the boss.
+    assert!(
+        !host.world.system_flag_test(RIKUROA_BOSS_GATE_FLAG),
+        "first visit: the Zeto gate flag starts clear"
+    );
+    assert_eq!(
+        host.world.boss_formation_id,
+        Some(BOSS_FORMATION_ID_BASE | ZETO_MONSTER_ID),
+        "rikuroa entry arms the Zeto boss formation"
+    );
+    assert_eq!(
+        host.world.pending_boss_victory_flag,
+        Some(RIKUROA_BOSS_GATE_FLAG),
+        "the victory latch is pending on the gate flag"
+    );
+    assert!(
+        host.world.scripted_formation_pending,
+        "the boss fires on the next field step"
+    );
+    // Real Zeto stats were seeded from the PROT 867 archive.
+    let zeto = host
+        .world
+        .monster_catalog
+        .get(ZETO_MONSTER_ID)
+        .expect("Zeto stats seeded from the monster archive");
+    assert!(zeto.hp > 0, "Zeto carries real archive HP");
+
+    // (2) Step -> the scripted boss flips Field -> Battle.
+    host.world.live_gameplay_loop = true;
+    assert!(
+        host.world.on_field_step(),
+        "the forced boss formation triggers on the field step"
+    );
+    let mut reached_battle = false;
+    for _ in 0..240 {
+        let _ = host.tick().expect("tick");
+        if host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+    }
+    assert!(reached_battle, "the Zeto cue flips Field -> Battle");
+    let monster_slot = host.world.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        host.world.actors[monster_slot].battle_monster_id,
+        Some(ZETO_MONSTER_ID),
+        "the lone enemy slot is Zeto"
+    );
+    assert!(
+        host.world.actors[monster_slot].battle.max_hp > 0,
+        "the Zeto slot is seeded with its real HP"
+    );
+
+    // (3) Winning latches the first-visit gate flag so the boss does not
+    // re-arm. Resolving the boss formation's loot IS the victory in the engine
+    // model (it grants XP/gold); drive it directly.
+    let boss_formation = host
+        .world
+        .active_formation
+        .clone()
+        .expect("boss formation captured at the Field -> Battle transition");
+    assert_eq!(
+        boss_formation.formation_id,
+        BOSS_FORMATION_ID_BASE | ZETO_MONSTER_ID
+    );
+    let catalog = host.world.monster_catalog.clone();
+    let _ = host.world.apply_battle_loot(&boss_formation, &catalog);
+    assert!(
+        host.world.system_flag_test(RIKUROA_BOSS_GATE_FLAG),
+        "beating Zeto latches the rikuroa first-visit gate flag 0x1BE"
+    );
+    assert_eq!(
+        host.world.boss_formation_id, None,
+        "the boss latch is consumed on victory"
+    );
+
+    eprintln!(
+        "[ok] Part C: rikuroa -> armed Zeto (id 75, battle-id path) -> Battle \
+         seated with real HP -> victory latches gate flag 0x1BE"
+    );
+}
+
+#[test]
+fn part_c_rikuroa_does_not_rearm_zeto_once_the_gate_flag_is_set() {
+    let Some(mut host) = drive_map01_portal_into("rikuroa") else {
+        return;
+    };
+    // Simulate the post-victory world state: the gate flag is already latched.
+    host.world.system_flag_set(RIKUROA_BOSS_GATE_FLAG);
+    // Re-enter rikuroa from scratch - the latch must see the set flag and skip.
+    host.enter_field_scene("rikuroa", 0)
+        .expect("re-enter rikuroa");
+    assert_eq!(
+        host.world.boss_formation_id, None,
+        "with the gate flag set, re-entering rikuroa does not re-arm Zeto"
+    );
+    eprintln!("[ok] Part C: post-victory rikuroa revisit does not re-arm the boss");
 }
