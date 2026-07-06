@@ -330,7 +330,24 @@ as the player's idle/walk pair).
 ## Open
 
 - The full `FUN_801d5b5c` post-kernel state (the touch-event handler beyond the decoded entry kernel).
-- Per-actor field-VM channel execution (the engine loops decoded waypoint lists instead) - this is also where scripted *initial* NPC facings live; until then, never-walked NPCs render unrotated (the placement record carries no facing byte).
+- Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists, and the initial-facing decode takes the fall-through branch - see [NPC initial facing](#npc-initial-facing) - rather than evaluating the prologue's `0x7x` flag-TEST chain against live flags, so a later-chapter branch's facing/position is not selected).
+
+## NPC initial facing
+
+The placement record carries **no facing byte** - its 4-byte header is `[model, anim, tile_x, tile_z]` only. A never-walked NPC's heading comes from a **spawn-time prologue pre-run**: the placement installer `FUN_8003A1E4` ends by executing the record's leading field-VM ops one at a time through `FUN_801DE840` when the first opcode is the `0x24`/`0x25` spawn-prologue marker, stopping at a `0x21` NOP terminator or any below-`0x20` byte (body `0x8003A474..0x8003A4F8`; see `ghidra/scripts/funcs/8003a1e4.txt`).
+
+Two prologue ops write the actor's `+0x26` render heading from the 8-direction LUT at SCUS `0x80073F04` (entry `i` = `i * 0x200`; the LUT has 16 addressable slots but only 0..=7 are direction entries):
+
+- `0x4C 0x51` (nibble-5 sub-1, the NPC move-to-tile op): the dispatcher writes `+0x14/+0x18` from the tile bytes **and** `+0x26 = table[b3 & 0xF]` - operand byte +3's low nibble is the facing index (`overlay_0897_801de840.txt`, case 5 sub 1);
+- `0x38` CAM_CFG **simple path** (`op1 & 0x7F == 0`): `+0x26 = table[op0 & 0xF]`.
+
+The heading space itself is pinned from the locomotion's pad→facing writes (`FUN_801d01b0` body `0x801d04b8..0x801d0548`): retail `0` = Z-, `0x400` = X-, `0x800` = Z+, `0xC00` = X+ - the engine's `render_26` convention (`0` = Z+) rotated a half-turn, `engine = (retail + 0x800) & 0xFFF`, no axis mirror.
+
+Town prologues route the facing leg through a story-flag `0x7x`-TEST branch chain (jump when the flag is **set**), so the fall-through branch - the first leg in linear record order - is the fresh-game state.
+
+The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::field_npc_headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's per-step facing writes overwrite `+0x26`. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
+
+Note the facing pin also fixes what `0x4C 0x51` operand byte +3 **is**: bit 7 toggles the special-model flag, the low nibble is the facing-LUT index. The glide-speed model below reads the same byte's low 3 bits as the base-step selector pending the synthesised-motion-bytecode trace - that interim reading overlaps the facing nibble and should be revisited when the `0x4C 0x51` → motion-script write is traced.
 
 ## NPC glide speed
 

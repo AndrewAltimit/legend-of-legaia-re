@@ -402,6 +402,49 @@ impl World {
             ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF) as i16;
     }
 
+    /// Seed each placed field NPC's **initial facing** from its MAN spawn
+    /// prologue, so a never-walked NPC stands with its retail heading instead
+    /// of the unrotated default.
+    ///
+    /// Retail applies these at scene load: the placement installer
+    /// `FUN_8003A1E4` pre-runs the record's `0x24`/`0x25`-marked prologue
+    /// through the field VM, and the prologue's `0x4C 0x51` / `0x38`
+    /// (simple-path) ops write the actor's `+0x26` heading from the
+    /// 8-direction LUT at SCUS `0x80073F04`
+    /// ([`crate::man_field_scripts::placement_initial_facing`]). The engine
+    /// derives the same LUT index statically per placement and stores the
+    /// converted 12-bit engine heading (`0` = Z+;
+    /// [`crate::man_field_scripts::facing_index_to_engine_heading`]) in
+    /// [`Self::field_npc_headings`] - the map every NPC draw reads. A later
+    /// walk overwrites the slot exactly as retail's per-step facing writes
+    /// overwrite `+0x26`, and an already-present heading (a scripted channel
+    /// move that ran first) is kept.
+    ///
+    /// Call after [`Self::install_field_carriers_from_man`] (whose inner
+    /// install clears `field_npc_headings`).
+    // PORT: FUN_8003A1E4 (spawn prologue pre-run -> +0x26 facing writes)
+    // REF: FUN_801DE840, FUN_801d01b0 (heading-space convention)
+    pub fn seed_field_npc_facings(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+    ) {
+        for p in man_file.actor_placements(man) {
+            let Ok(slot) = u8::try_from(p.index) else {
+                continue;
+            };
+            let Some(idx) = crate::man_field_scripts::placement_initial_facing(man_file, man, &p)
+            else {
+                continue;
+            };
+            let Some(heading) = crate::man_field_scripts::facing_index_to_engine_heading(idx)
+            else {
+                continue;
+            };
+            self.field_npc_headings.entry(slot).or_insert(heading);
+        }
+    }
+
     /// Start a field NPC walking to world `(tx, tz)` through the motion VM -
     /// the engine's start-motion kernel for the MAN-placed actor set. Mirrors
     /// the retail start shape: write the walk target onto the actor and reset
