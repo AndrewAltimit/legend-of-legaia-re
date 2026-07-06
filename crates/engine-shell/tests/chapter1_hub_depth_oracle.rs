@@ -28,10 +28,11 @@
 //! gate after `keikoku`'s `0x193`. The drive proves the gate both ways
 //! in-engine: the fresh walk-on installs nothing, and with `0x44D` set (the
 //! disc-decoded requirement) the same walk-on spawns `P2[5]` as the door
-//! cutscene. The hop itself stops at a **pinned engine gap** - the record's
-//! player-channel (`0xF8`) ExecMove/HaltAcquire handshake never completes
-//! (see `part_j_drive_jou_castle_door_gate`) - so `jouina` is pinned by a
-//! direct Field-mode load instead. `jouina` (`[18, 5, 23]`) then chains
+//! cutscene, whose player-channel (`0xF8`) ExecMove/HaltAcquire beats now
+//! complete through the engine's completion model, so the drive follows the
+//! record's trailing `0x3F` all the way to `SceneEntered("jouina")` (see
+//! `part_j_drive_jou_castle_door_gate`). `jouina` is additionally pinned by
+//! a direct Field-mode load. `jouina` (`[18, 5, 23]`) then chains
 //! **deeper**: its `0x3F` set is `{jou, jouinb}` (`P2[20]` -> `jouinb`,
 //! `P2[21]` -> back to `jou`, both ungated) - the castle interior is not
 //! terminal.
@@ -535,21 +536,23 @@ fn part_j_jou_jouina_door_decode() {
 /// Drive the castle door's **gate** both ways in-engine: fresh (flag clear)
 /// the walk-on refuses to spawn `P2[5]`; with `0x44D` set - the disc-decoded
 /// requirement - the same walk-on installs the door-cutscene record as the
-/// timeline. Then pin `jouina` itself (direct Field-mode load + MAN shape +
-/// its own deeper destination chain).
+/// timeline and the drive follows it through to `SceneEntered("jouina")`.
+/// A sibling test then pins `jouina` itself (direct Field-mode load + MAN
+/// shape + its own deeper destination chain).
 ///
-/// **Pinned engine gap (why the hop is not driven to `SceneEntered`):** the
+/// **Player-channel completion model (the driven hop's mechanism):** the
 /// `P2[5]` record is a real door cutscene - after its fade / camera / waits
 /// it runs the retail halt-acquire handshake against the **player anchor
 /// channel** `0xF8` (`A2 F8 06` ExecMove + `C3 F8 00 5E E2 50` HaltAcquire at
-/// +0x60). The engine's timeline stepper loops `pc 0x50 -> 0x60` forever
-/// (trace: `C3` yields with `next_pc = 0x50`) because
-/// [`legaia_engine_core::field_channels::resolve_target`] returns `None` for
-/// the special `0xF8` target, so no completion bit can ever be signalled;
-/// after `CUTSCENE_TIMELINE_MAX_FRAMES` (1200) the frame cap force-completes
-/// the timeline WITHOUT executing the trailing `0x3F` at +0xD0. Closing the
-/// gap needs a player-channel ExecMove/halt-acquire model, out of scope for
-/// this oracle (which must not patch the engine).
+/// +0x60, whose operand s16 state-resumes BACKWARD at +0x50).
+/// [`legaia_engine_core::field_channels::resolve_target`] keeps its `None`
+/// contract for the special `0xF8` target (retail resolves it to the live
+/// player object, `FUN_8003C83C`); the timeline stepper instead models the
+/// two ops directly: the ExecMove arms a short in-flight countdown
+/// (`CutsceneTimeline::player_move_frames`) and the HaltAcquire PARKS at the
+/// op until it drains, then steps PAST by encoded width - so the record
+/// reaches its trailing `0x3F` at +0xD0 and the driven hop fires the scene
+/// change instead of spinning `pc 0x50 -> 0x60` into the frame cap.
 #[test]
 fn part_j_drive_jou_castle_door_gate() {
     let Some(mut host) = drive_to_leg("jou") else {
@@ -602,7 +605,29 @@ fn part_j_drive_jou_castle_door_gate() {
         installed,
         "with 0x44D set, the door walk-on spawns P2[5] as the cutscene timeline"
     );
-    eprintln!("[ok] Part J: jou castle door honors C2=[0x44D] both ways in-engine");
+
+    // (3) Drive the installed door cutscene to completion: the record's
+    // fades / camera beats / waits play out, the player-channel (0xF8)
+    // ExecMove/HaltAcquire beats complete through the engine's completion
+    // model, and the trailing 0x3F at +0xD0 fires the driven hop.
+    let mut entered = None;
+    for _ in 0..900 {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            entered = Some(name);
+            break;
+        }
+    }
+    assert_eq!(
+        entered.as_deref(),
+        Some("jouina"),
+        "the door cutscene drives the jou -> jouina hop to SceneEntered"
+    );
+    assert_eq!(
+        host.world.mode,
+        SceneMode::Field,
+        "jouina arrives in Field mode"
+    );
+    eprintln!("[ok] Part J: jou castle door honors C2=[0x44D] both ways and drives the jouina hop");
 }
 
 /// `jouina` itself: loads in Field mode, and its decode shows the castle
