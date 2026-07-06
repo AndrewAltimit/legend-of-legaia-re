@@ -39,13 +39,14 @@
   <h2>Which card slot for which beat</h2>
   <p>The chapter-1 ladder card <code>saves/library/cards/playthrough-ladder-pro00-14.mcr</code> holds 15 active slots (PRO-00..14, blocks 1..15). Story-flag state was read directly from each SC block's bitmap (block offset <code>0x14C0</code>, mirroring RAM <code>0x80085600</code>). Load the slot nearest the beat you want, then play forward:</p>
   <table>
-    <thead><tr><th>Beat / write</th><th>Load slot</th><th>Why</th><th>Fallback</th></tr></thead>
+    <thead><tr><th>Beat / write</th><th>Load save</th><th>Why</th><th>Fallback</th></tr></thead>
     <tbody>
-      <tr><td>Zeto write (<code>0x8007b7fc=0x4B</code>)</td><td><strong>PRO-01</strong> (block 2)</td><td>keikoku + dolk done, Zeto not beaten; tightest pre-trigger</td><td>PRO-05 (block 6)</td></tr>
-      <tr><td>flag <code>0x142</code> (dolk clear)</td><td><strong>PRO-00</strong> (block 1)</td><td>everything unset; play through the dolk dungeon to its clear beat</td><td>&mdash;</td></tr>
+      <tr><td>Zeto write (<code>0x8007b7fc=0x4B</code>)</td><td><strong>PRO-01</strong></td><td>keikoku + dolk done, Zeto not beaten; tightest pre-trigger</td><td>PRO-05</td></tr>
+      <tr><td>flag <code>0x142</code> (dolk clear)</td><td><strong>PRO-00</strong></td><td>everything unset; play through the dolk dungeon to its clear beat</td><td>&mdash;</td></tr>
       <tr><td>flag <code>0x482</code> (mist walls)</td><td>(not on this card)</td><td><code>0x482</code> is unset in all 15 slots; no catalogued save reaches it</td><td>see note</td></tr>
     </tbody>
   </table>
+  <p>Load saves <strong>by name</strong> on the in-game load screen, never by block position: the card's physical block order does not follow the PRO numbering (verify with <code>save-tool saves &lt;card&gt;</code>; e.g. PRO-01 sits mid-card, after PRO-03/04/05).</p>
   <p>PRO-00 is also a viable single start to catch <strong>both</strong> <code>0x142</code> and the Zeto beat's <code>0x1BE</code> in one forward run.</p>
   <p><strong>Mist-wall caveat.</strong> Flag <code>0x482</code> is unset across every slot of this card (it matches the library-wide zero the backlog notes). It is <strong>not bracketable</strong> from this card: the operator must keep the watch armed and play forward <em>past</em> the Zeto beat to the Drake mist-wall story event, or source a different card that sits nearer it. Treat this as the one leg that needs fresh forward play - the other two are one short walk from their load slot.</p>
 </section>

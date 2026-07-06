@@ -168,8 +168,44 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   <p>NPC walkers carry a live heading (<code>World::field_npc_headings</code>, the player's 12-bit <code>render_26</code> convention, derived from each motion-VM step's direction and retained on arrival); the <code>play-window</code> field renderer rotates each NPC model to it and plays the placement's scene-bundle ANM clip per frame (the same posed-rebuild path as the player's idle/walk pair).</p>
   <ul>
     <li>The full <code>FUN_801d5b5c</code> post-kernel state (the touch-event handler beyond the decoded entry kernel).</li>
-    <li>Per-actor field-VM channel execution (the engine loops decoded waypoint lists instead) - this is also where scripted <em>initial</em> NPC facings live; until then, never-walked NPCs render unrotated (the placement record carries no facing byte).</li>
+    <li>Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists,
+    and the initial-facing decode takes the fall-through branch - see <a href="#npc-initial-facing">NPC initial facing</a> -
+    rather than evaluating the prologue's <code>0x7x</code> flag-TEST chain against live flags, so a later-chapter branch's
+    facing/position is not selected).</li>
   </ul>
+</section>
+
+<section class="doc-section" id="npc-initial-facing">
+  <h2>NPC initial facing</h2>
+  <p>The placement record carries <strong>no facing byte</strong> - its 4-byte header is <code>[model, anim, tile_x, tile_z]</code> only.
+  A never-walked NPC's heading comes from a <strong>spawn-time prologue pre-run</strong>: the placement installer <code>FUN_8003A1E4</code>
+  ends by executing the record's leading field-VM ops one at a time through <code>FUN_801DE840</code> when the first opcode is the
+  <code>0x24</code>/<code>0x25</code> spawn-prologue marker, stopping at a <code>0x21</code> NOP terminator or any below-<code>0x20</code> byte
+  (body <code>0x8003A474..0x8003A4F8</code>; see <code>ghidra/scripts/funcs/8003a1e4.txt</code>).</p>
+  <p>Two prologue ops write the actor's <code>+0x26</code> render heading from the 8-direction LUT at SCUS <code>0x80073F04</code>
+  (entry <code>i</code> = <code>i * 0x200</code>; the LUT has 16 addressable slots but only 0..=7 are direction entries):</p>
+  <ul>
+    <li><code>0x4C 0x51</code> (nibble-5 sub-1, the NPC move-to-tile op): the dispatcher writes <code>+0x14/+0x18</code> from the tile
+    bytes <strong>and</strong> <code>+0x26 = table[b3 &amp; 0xF]</code> - operand byte +3's low nibble is the facing index
+    (<code>overlay_0897_801de840.txt</code>, case 5 sub 1);</li>
+    <li><code>0x38</code> CAM_CFG <strong>simple path</strong> (<code>op1 &amp; 0x7F == 0</code>): <code>+0x26 = table[op0 &amp; 0xF]</code>.</li>
+  </ul>
+  <p>The heading space itself is pinned from the locomotion's pad&rarr;facing writes (<code>FUN_801d01b0</code> body
+  <code>0x801d04b8..0x801d0548</code>): retail <code>0</code> = Z&minus;, <code>0x400</code> = X&minus;, <code>0x800</code> = Z+,
+  <code>0xC00</code> = X+ - the engine's <code>render_26</code> convention (<code>0</code> = Z+) rotated a half-turn,
+  <code>engine = (retail + 0x800) &amp; 0xFFF</code>, no axis mirror.</p>
+  <p>Town prologues route the facing leg through a story-flag <code>0x7x</code>-TEST branch chain (jump when the flag is
+  <strong>set</strong>), so the fall-through branch - the first leg in linear record order - is the fresh-game state.</p>
+  <p>The engine decodes that leg statically per placement (<code>man_field_scripts::placement_initial_facing</code>, skipping
+  cross-context and park-sentinel legs), converts through <code>facing_index_to_engine_heading</code>, and seeds
+  <code>World::field_npc_headings</code> at scene entry (<code>World::seed_field_npc_facings</code>) - a later walk overwrites the slot
+  exactly as retail's per-step facing writes overwrite <code>+0x26</code>. Semantic pin: town01's side-by-side villager pair at tiles
+  <code>(29,22)</code>/<code>(30,22)</code> derives LUT indices 6 (X+) and 2 (X&minus;) - they face each other; disc-gated coverage in
+  <code>field_npc_initial_facing_disc.rs</code>.</p>
+  <p>Note the facing pin also fixes what <code>0x4C 0x51</code> operand byte +3 <strong>is</strong>: bit 7 toggles the special-model
+  flag, the low nibble is the facing-LUT index. The glide-speed model below reads the same byte's low 3 bits as the base-step
+  selector pending the synthesised-motion-bytecode trace - that interim reading overlaps the facing nibble and should be revisited
+  when the <code>0x4C 0x51</code> &rarr; motion-script write is traced.</p>
 </section>
 
 <section class="doc-section" id="npc-glide-speed">

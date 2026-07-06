@@ -165,7 +165,7 @@ switch (*pc & 0x7f) {
       <tr><td><code>0x4B</code></td><td>ANIMATE</td><td>Multi-keyframe setup. Sets <code>+0x10</code> bit <code>0x1000</code> (animation flag).</td></tr>
       <tr><td><code>0x4C</code></td><td>MENU_CTRL</td><td>Outer-nibble-dispatched (16 sub-dispatchers). The biggest single opcode.</td></tr>
       <tr><td><code>0x4D</code></td><td>BBOX_TEST</td><td>Inside-box advances PC by 7; outside-box jumps via <code>FUN_801E3614</code>.</td></tr>
-      <tr><td><code>0x4E</code></td><td>INVENTORY_CMP</td><td>Compare-and-jump across page-banked inventory state and party-money/XP banks.</td></tr>
+      <tr><td><code>0x4E</code></td><td>INVENTORY_CMP</td><td>Compare-and-jump across page-banked inventory state and party-money/XP banks. Sub-ops 0/1 (inventory), 2 (character level byte <code>+0x130</code>), 3 (party gold <code>_DAT_8008459C</code> vs u16 - the inn/ticket gold gate, <code>legaia_asset::inn_costs</code>) and 9 (coin bank <code>0x800845A4</code> vs u16) all share the 7-byte compare-and-skip shape (jump table <code>0x801CEE30</code>, per-sub value loaders). Only sub-ops 5..8 are absolute jumps; 10/11 are gold/coin u32 compares (9 bytes); 12..=15 fall through.</td></tr>
       <tr><td><code>0x4F</code></td><td>SCENE_REGISTER_WRITE</td><td>Writes three <code>u16</code> values to <code>_DAT_801C6EA4 + 0x10/0x12/0x14</code>.</td></tr>
     </tbody>
   </table>

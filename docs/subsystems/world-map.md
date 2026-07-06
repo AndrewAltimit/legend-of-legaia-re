@@ -614,11 +614,19 @@ progression gate stands between a fresh Drake arrival and any of the five legs**
 the chapter-1 story order on this hub is carried only by the `keikoku` `0x193`
 gate and the `dolk`/`dolk2` `0x142` switch.
 
-**`suimon` and `dolk2` share a MAN.** `suimon`'s Scripted bundle (PROT 77) and
-`dolk2`'s v12-embedded bundle (PROT 76) resolve to a **byte-identical** MAN
-payload - both `[10,7,3]`, 2345 bytes, single `0x3F` back to `map01`. The oracle
-pins the identity so a future de-dup / mis-resolve of either bundle trips it; it
-is an observed disc-byte identity, not a claim about why the payload is reused.
+**`suimon` and `dolk2` share a MAN - explained.** `suimon`'s Scripted bundle
+(PROT 77) and `dolk2`'s "v12-embedded" bundle (PROT 76) resolve to a
+**byte-identical** MAN payload - both `[10,7,3]`, 2345 bytes, single `0x3F`
+back to `map01`. The identity is an **extended-footprint over-read**, not an
+embedding: the "MAN at 0x1000" window inside the v12-family entry reads into
+the following TOC entries, landing on suimon's ordinary `base+3` bundle
+(byte comparison + position law in
+[scene-v12-table.md](../formats/scene-v12-table.md#the-embedded-man-at-0x1000-is-an-extended-footprint-over-read);
+`rikuroa`/`geremi` alias the same way). `dolk2`/`rikuroa`'s own `base+3`
+bundles are the MAN-less `count=4` form, so where retail sources their
+partition scripts is a reopened thread; the engine's `V12Embedded` fallback
+follows the over-read window, which yields a valid MAN but naive scene
+attribution.
 
 #### Chapter-1 hub depth: vozz + jou -> jouina
 
@@ -647,15 +655,48 @@ disc-gated
 - **`jouina` is not terminal**: destinations `{jou, jouinb}` (both ungated;
   `P2[0..=19]` all carry the `C1=[0xF]` busy-latch pattern), so the castle
   chains one more interior deep.
-- **Engine gap (pinned, open):** `jou` `P2[5]`'s door cutscene drives the
-  PLAYER channel (`A2 F8 06` ExecMove + `C3 F8 ...` HaltAcquire); the
-  engine's `field_channels::resolve_target` returns `None` for the special
-  `0xF8` target, so the handshake never completes and the frame cap
-  force-completes the timeline WITHOUT its trailing `0x3F` - the driven
-  `jou -> jouina` hop is blocked until a player-channel completion model
-  lands (see
-  [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md)). The
-  oracle asserts the decode + a direct `jouina` load instead.
+- **Player-channel handshake (resolved):** `jou` `P2[5]`'s door cutscene
+  drives the PLAYER channel (`A2 F8 06` ExecMove + `C3 F8 ...` HaltAcquire).
+  The timeline stepper models the handshake (ExecMove arms an in-flight
+  countdown, HaltAcquire parks then steps past by encoded width; see
+  [cutscene.md](cutscene.md)), so the record reaches its trailing `0x3F`
+  and the oracle drives the `jou -> jouina` hop to `SceneEntered`.
+
+#### Chapter-1 hub breadth: cave01 / vell / suimon + the Drake Castle chain
+
+The remaining hub legs, one level deep, decoded + driven by the disc-gated
+[`chapter1_hub_breadth_oracle.rs`](../../crates/engine-shell/tests/chapter1_hub_breadth_oracle.rs):
+
+- **`cave01` is a two-mouth pass-through** - one named `0x3F` destination
+  (`map01`) carried by TWO exit records (`P2[0]` gate-0 trigger `(8,89)`,
+  `P2[1]` gate-1 band `(93..94,96)`). Nine of 18 `P2` records are gated: six
+  self-latch one-shots plus the longest ordered beat chain decoded on a hub
+  leg - `P2[13]` (C1 `0x15E` / C2 `0x15D`) -> `P2[14]` (C1 `0x169` / C2
+  `0x15E`) -> `P2[15]` (C1 `[0x13, 0x142]` / C2 `0x169`; the final beat stops
+  replaying once the Zeto flag sets). Ungated `P2[16]` SETs the `0x15D` entry
+  key. The `0x15E` beat is read cross-scene by `urudre1` `P2[0]` (the Uru
+  Mais dream tests the cave beat).
+- **`vell`** - single exit `P2[10]` (band `(88..92,7)`). `P2[11]` self-latch
+  C1=[`0x2AF`] (strictly vell-local Set/Test pair); `P2[7]` carries
+  `C1=[0x63A, 0x7]` **byte-identical to vozz `P2[7]`'s gate**, and `0x63A`
+  has ZERO script sites disc-wide (no writer anywhere in the MAN corpus -
+  open thread). Also carries a gate-4 trigger family (record 53, five
+  scattered tiles) not seen on the other legs.
+- **`suimon` is a pure corridor** - all three `P2` records are ungated `0x3F`
+  exits to `map01`; story variation only via the shared controller `P1[0]`
+  testing `0x142`.
+- **The Drake Castle interior is FOUR scenes deep**: `jou -> jouina ->
+  jouinb -> jouinc -> jouind`. `jouinb` (`[19,7,13]`) is fully ungated (no
+  jouina-style `C1=[0xF]` busy-latch): `P2[9]` back to `jouina`, `P2[10]`
+  deeper to `jouinc` (`[43,18,60]`, lists `{jouinb, jouind}`). Once `jou`'s
+  `0x44D` door is passed the deep castle is open. The oracle's part F drives
+  `jou -> jouina -> jouinb -> jouinc` end-to-end in one session (the door
+  cutscene completes through the player-channel model) - the deepest driven
+  interior chain in the engine. `jouinc`/`jouind` decode is an open thread.
+- **Decoder asymmetry (pinned):** the partition-1 destination-table scan
+  under-reports doors carried only by `P2` records (`jouinb`'s `jouina`
+  return door) - the reverse of the `jou` `P2[5]` blind spot; the `P2`
+  walker and the strict portal-site join both see them.
 
 #### Loading the kingdom geometry (engine port)
 

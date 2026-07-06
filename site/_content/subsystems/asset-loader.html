@@ -67,7 +67,11 @@
     <dt>Path roots</dt><dd><code>DATA\FIELD\</code> and <code>h:\PROT\FIELD\&lt;scene&gt;\</code></dd>
   </dl>
 
-  <p>Each scene reserves <strong>six file types</strong> in CDNAME's per-scene block, and the loader walks the scene asset table at the leading PROT entry to pull each file in turn. The on-disc form is the canonical 7-typed-asset bundle (<code>07 00 00 00</code> lead).</p>
+  <p>The loader builds paths under <code>DATA\FIELD\</code> and <code>h:\PROT\FIELD\&lt;scene&gt;\</code> (per-scene extension family:
+  <code>.MAP</code> collision/trigger file at raw block base <code>+0</code>, <code>.PCH</code> trigger patch at <code>+1</code>,
+  event-scripts sister at <code>+2</code>, <code>.LZS</code> asset bundle at <code>+3</code>, BGM base at <code>+6</code> - raw
+  CDNAME-define index space) and walks the scene asset table at the <code>.LZS</code> slot to pull each typed file in turn. The
+  on-disc form is the canonical 7-typed-asset bundle (<code>07 00 00 00</code> lead).</p>
 
   <p>The descriptor offsets past the first are <strong>file-relative against the loaded raw footprint</strong> (= the bundle entry's extended on-disc footprint, <code>Archive::read_entry</code>), not relative to a decompressed working buffer: the walker hands <code>base + data_offset</code> to the dispatcher as the <em>source</em> of an independent LZS stream, which it then decompresses into a separate target. The offsets routinely run past the TOC-indexed end into the trailing-overlay sectors the per-PROT TOC crops off - e.g. <code>0588_juui1.BIN</code>'s indexed view is 67584&nbsp;B but <code>desc[4].data_offset</code> is 177413, valid against the 186368&nbsp;B extended footprint.</p>
 
@@ -100,8 +104,43 @@
 
   <p class="hint">Full chain, sub-id &rarr; overlay table, and provenance: <a href="script-vm.html">field VM</a> and <code>docs/subsystems/script-vm.md</code> &sect; 0x3E WARP. The <code>DefaultMapIdResolver</code> in <code>engine-core::scene</code> uses CDNAME blocks in ascending PROT-index order as a positional approximation; the retail warp only supports the 7 minigame destinations, not the full CDNAME scene list.</p>
 
-  <h3>Name-based scene change (<code>FUN_8001FD44</code>)</h3>
-  <p>Distinct from the door-warp above, the engine has a <strong>name-based scene-change packet</strong>: <code>FUN_8001FD44(name_ptr)</code> copies the target CDNAME string into <code>0x8007050C</code>, syncs it to the active buffer <code>0x80084548</code> (<code>FUN_8001D7F8</code>), and stages the load; <code>s_ERR_CHANGE_PACKET</code> guards re-entry while a packet is pending (<code>_DAT_8007BA3C</code>). The field VM reaches it through <strong>opcode <code>0x3F</code></strong>, which carries the destination name <em>inline in the bytecode</em> (<code>[0x3F][i16 index][u8 name_len][name][entry_x][entry_z][dir]</code>) - so most in-game scene transitions, including overworld town/dungeon entry, carry a recoverable destination name. This path is not constrained to the 7 door-warp sub_ids; it is also the opening <code>opdeene</code> &rarr; <code>town01</code> hand-off path (see <a href="boot.html">boot</a>).</p>
+  <h3>Name-based scene change (<code>FUN_8001FD44</code>) + the transition streamer (<code>FUN_80021934</code>)</h3>
+  <p>Distinct from the door-warp above, the engine has a <strong>name-based scene-change packet</strong>: <code>FUN_8001FD44(name_ptr)</code>
+    copies the target CDNAME string into <code>0x8007050C</code>, syncs it to the active buffer <code>0x80084548</code>
+    (<code>FUN_8001D7F8</code>), and stages the destination index (retail: <code>_DAT_8007B9A0</code> at <code>gp+0x688</code>; dev flag
+    <code>_DAT_8007B8C2</code> set: directly into <code>DAT_8007B768</code>), both from the resolved halfword at <code>0x80084540</code>;
+    <code>s_ERR_CHANGE_PACKET</code> guards re-entry while a packet is pending (<code>_DAT_8007BA3C</code>). The field VM reaches it through
+    <strong>opcode <code>0x3F</code></strong>, which carries the destination name <em>inline in the bytecode</em> (<code>[0x3F][i16 index][u8
+    name_len][name][entry_x][entry_z][dir]</code>) - so most in-game scene transitions, including overworld town/dungeon entry, carry a
+    recoverable destination name. This path is not constrained to the 7 door-warp sub_ids; it is also the opening <code>opdeene</code> &rarr;
+    <code>town01</code> hand-off path (see <a href="boot.html">boot</a>). See <code>ghidra/scripts/funcs/8001fd44.txt</code>.</p>
+  <p>It then spawns the <strong>scene-transition streaming actor</strong> into the system pool at <code>_DAT_8007C34C</code> via
+  <code>FUN_80020DE0(&amp;DAT_80070734, _DAT_8007C34C)</code> - descriptor <code>0x80070734</code> of the 24-byte spawn-descriptor
+  family at <code>0x800705FC..0x80070763</code> (just below, and phase-misaligned with, the mode table at <code>0x8007078C</code>;
+  layout <code>[+4 0xFFFF0000][+8 handler][+0xC flags]</code>; the spawner copies <code>+8</code> into <code>actor+0x0C</code> and
+  zeroes the state counter <code>actor+0x1A</code> - see <code>ghidra/scripts/funcs/80020de0.txt</code>). The handler is
+  <strong><code>FUN_80021934</code></strong> (real entry 3 instructions before the <code>0x80021940</code> prologue; see
+  <code>ghidra/scripts/funcs/80021940.txt</code>), a 5-state SM over <code>actor+0x1A</code> (jump table <code>0x80010760</code>):</p>
+  <ul>
+    <li><strong>State 0</strong>: <code>DAT_8007B648 = 0x80</code>, seed the 70-frame countdown <code>gp+0x710 = 0x46</code>.</li>
+    <li><strong>States 1/3</strong>: poll stream progress via <code>FUN_8003DE7C(1)</code>.</li>
+    <li><strong>State 2</strong> (dev): stream <strong>raw TOC entry <code>DAT_8007B768 + 3</code></strong> - the destination
+    block's <code>.LZS</code> / <a href="../formats/scene-bundles.html">scene_asset_table</a> slot - into
+    <code>_DAT_8007B85C</code> by index (<code>FUN_8001EEF0</code> &rarr; <code>FUN_8003EB98</code> &rarr;
+    <code>FUN_8003E8A8</code>); byte size cached at <code>gp+0x73C</code>.</li>
+    <li><strong>State 4</strong> (retail, once the countdown lapses): rotate the name buffers (<code>0x80084558</code> &larr;
+    <code>0x80084548</code> &larr; <code>0x800915C8</code>), set <code>DAT_8007B768 = _DAT_8007B9A0</code>, build the literal path
+    <code>DATA_FIELD\&lt;scene&gt;.LZS</code> (base string <code>0x800106C4</code>, suffix <code>0x8007B3CC</code>) and stream it
+    into <code>_DAT_8007B85C</code> by name, then hand off with <code>_DAT_8007B9EC = 1</code> and
+    <strong><code>_DAT_8007B83C = 2</code></strong> (mode 2 MAIN INIT).</li>
+  </ul>
+  <p>So the descriptor table <code>FUN_80020224</code> walks at <code>_DAT_8007B85C</code> is the <strong>raw <code>.LZS</code>
+  bundle streamed there at transition time</strong> - the count word lands at the buffer base because the whole file starts with
+  it; there is no relocation step. Dev and retail converge on the same content: raw <code>scene_base + 3</code>
+  <strong>is</strong> the <code>.LZS</code> entry (extraction index <code>define + 1</code>, e.g. <code>map01</code> &rarr;
+  extraction <code>0086</code>, verified descriptor heads across the corpus). Sibling descriptors in the same family include
+  <code>0x800705FC</code> (handler <code>FUN_801D1344</code>, the intro-skip dialog actor) and <code>0x8007065C</code> (the
+  op-<code>0x49</code> name-entry setup record, see <a href="boot.html">boot</a>).</p>
 </section>
 
 <section class="doc-section" id="descriptor-walker">
@@ -116,11 +155,25 @@
   <p>The mapping is <strong>positional</strong> - there is no separate slot&rarr;asset indirection table; the descriptor's <code>data_offset</code> field <em>is</em> the indirection. The chain, traced from the field init at <code>FUN_801D6704</code>:</p>
   <ol>
     <li><strong><code>FUN_8001E1B4</code></strong> allocates a single 0x62C00-byte asset buffer once at boot and stores its base at <code>_DAT_8007b85c</code>.</li>
-    <li><strong><code>FUN_8001F7C0</code></strong> reads the per-scene field FILE into a 0x14000-byte scratch (<code>_DAT_1f8003ec</code>); the decoded table is relocated so its count word lands at the asset-buffer base.</li>
+    <li><strong>The transition streamer <code>FUN_80021934</code></strong> (spawned by <code>FUN_8001FD44</code> - see the
+    scene-change section above) has already streamed the destination's raw <code>.LZS</code> bundle (raw TOC entry
+    <code>scene_base + 3</code>) <strong>wholesale into <code>_DAT_8007b85c</code></strong> during the transition fade, so the
+    count word sits at the buffer base with no relocation step. <strong><code>FUN_8001F7C0</code></strong> separately stages the
+    scene's three sidecars into the per-scene buffer <code>*(0x1F8003EC)</code>: <code>DATA\FIELD\&lt;scene&gt;.MAP</code> at
+    <code>+0</code>, <code>DATA\FIELD\&lt;scene&gt;.PCH</code> (the <a href="../formats/scene-v12-table.html">scene_v12_table</a>
+    walk-on trigger patch; zero-fill <code>0x800</code> when absent) at <code>+0x12000</code>, and <code>efect.dat</code> at
+    <code>+0x12800</code> (<code>= _DAT_8007B8D0</code>). See <code>ghidra/scripts/funcs/8001f7c0.txt</code>.</li>
     <li><strong><code>FUN_80020224</code></strong> reads <code>count = *base</code>, then for <code>slot in 0..count</code> calls <code>dispatch(base + descriptor[slot].data_offset, type_size, …)</code>, descriptors at <code>base + 8 + slot*8</code>, OR-ing the per-slot return codes into a status word.</li>
     <li><strong><code>FUN_8001F05C</code></strong> splits <code>type = type_size &gt;&gt; 24</code> and <code>size = type_size &amp; 0x00FF_FFFF</code>, then jumps via the table at <code>0x80010638 + type*4</code> (type bound <code>&lt; 0x15</code>).</li>
   </ol>
-  <p>So <strong>slot <code>i</code> &rArr; the <code>i</code>-th 8-byte descriptor; payload at <code>base + data_offset</code>; handler keyed by <code>type_size &gt;&gt; 24</code>.</strong> <code>scene_asset_table::resolve</code> returns the table plus the base it is relative to for both the bare variant (base 0) and the prescript-prefixed scripted variant (base at a 0x800-aligned offset past the event prescript); <code>SceneAssetTable::slots</code> reproduces the walk and <code>payload_range(slot, base)</code> resolves a slot's payload span. A disc-gated corpus test (<code>scene_asset_table_walk_real</code>) verifies the walk against every classified entry (88 bare + 79 scripted). The file relocation into <code>_DAT_8007b85c</code> and the exact base the walker receives for the scripted variant are runtime values (capture-blocked); the static resolver reconstructs the base structurally.</p>
+  <p>So <strong>slot <code>i</code> &rArr; the <code>i</code>-th 8-byte descriptor; payload at <code>base + data_offset</code>; handler keyed
+    by <code>type_size &gt;&gt; 24</code>.</strong> <code>scene_asset_table::resolve</code> returns the table plus the base it is relative to
+    for both the bare variant (base 0) and the prescript-prefixed scripted variant (base at a 0x800-aligned offset past the event prescript);
+    <code>SceneAssetTable::slots</code> reproduces the walk and <code>payload_range(slot, base)</code> resolves a slot's payload span. A
+    disc-gated corpus test (<code>scene_asset_table_walk_real</code>) verifies the walk against every classified entry (88 bare + 79 scripted).
+    The base the walker receives is <code>_DAT_8007b85c</code> because the transition streamer put the raw bundle there (statically pinned - the
+    former &ldquo;relocation is capture-blocked&rdquo; note is closed); for the scripted variant the count word sits at its 0x800-aligned
+    in-file offset past the prescript, which the static resolver reconstructs structurally.</p>
 </section>
 
 <section class="doc-section" id="clut-scattering">

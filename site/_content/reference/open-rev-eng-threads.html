@@ -203,13 +203,20 @@
       <tr>
         <td>Spine flag <code>0x142</code> (dolk-dungeon-clear) writer</td>
         <td>open (capture-gated; ALL static channels exhausted corpus-wide)</td>
-        <td>Spine-writer #2 of 3. Flag <code>0x142</code> clear routes <code>map01</code>'s dungeon entrance to <code>dolk</code> (pre-boss), set routes to <code>dolk2</code> (post-boss); the branch mechanism + engine port are resolved. No writer exists by ANY static channel: readers only in all loaded programs, motion-VM census negative, and the corpus-wide sweep (all-programs Ghidra + raw-byte scan of all 1235 PROT entries: setter jals, materializers, ori-formed, derived-base stores, data words - <code>find_spine_flag_writers.py</code>) is clean; the write is runtime-computed. Closes with a fresh PCSX-Redux write-watchpoint capture at the dolk-clear story beat. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>Spine-writer #2 of 3. Flag <code>0x142</code> clear routes <code>map01</code>'s dungeon entrance to <code>dolk</code> (pre-boss), set
+        routes to <code>dolk2</code> (post-boss); the branch mechanism + engine port are resolved. No writer exists by ANY static channel: readers
+        only in all loaded programs, motion-VM census negative, the corpus-wide sweep (all-programs Ghidra + raw-byte scan of all 1235 PROT entries:
+        setter jals, materializers, ori-formed, derived-base stores, data words - <code>find_spine_flag_writers.py</code>) is clean, and the framed
+        op-<code>0x49</code> flag-window census (<code>man-scripts --op49-window-census</code>, 209 sites; the only disc window family tops out 3
+        BELOW <code>0x142</code>) contains it nowhere - the write is runtime-computed. The <code>chapter1_hub_breadth_oracle</code> census also pins
+        that <code>0x142</code> has NO MAN SET site disc-wide (sole non-test site: <code>dolk P1[26]</code> Clear). Closes with a fresh PCSX-Redux
+        write-watchpoint capture at the dolk-clear story beat. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
         <td>Spine flag <code>0x482</code> (Drake mist-wall) writer</td>
         <td>open (capture-gated; ALL static channels exhausted corpus-wide)</td>
-        <td>Spine-writer #3 of 3. Flag <code>0x482</code> gates <code>map01</code>'s mist walls (<code>P2[34..36]</code> C1); it reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, <code>rikuroa</code> sets it nowhere, the motion-VM census is negative, and the corpus-wide static sweep (see the <code>0x142</code> row) is clean. Closes with a fresh PCSX-Redux write-watchpoint capture at the post-mist story event. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>Spine-writer #3 of 3. Flag <code>0x482</code> gates <code>map01</code>'s mist walls (<code>P2[34..36]</code> C1); it reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, <code>rikuroa</code> sets it nowhere, the motion-VM census is negative, and the corpus-wide static sweep + framed op-<code>0x49</code> window census (see the <code>0x142</code> row; <code>0x482</code> has zero near-misses) are clean. Closes with a fresh PCSX-Redux write-watchpoint capture at the post-mist story event (the one leg needing fresh forward play past Zeto - no card slot brackets it). Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
@@ -226,9 +233,9 @@
       </tr>
       <tr>
         <td>Spawned-record player-channel (<code>0xF8</code>) ExecMove/HaltAcquire handshake</td>
-        <td>open (engine gap)</td>
-        <td>A door-cutscene P2 record that drives the PLAYER channel (<code>A2 F8 06</code> ExecMove + <code>C3 F8 ...</code> HaltAcquire) never completes in the engine: <code>field_channels::resolve_target</code> returns <code>None</code> for the special <code>0xF8</code> target, so no completion bit is signalled and the frame cap force-completes the timeline WITHOUT its trailing <code>0x3F</code> - blocking driven hops like <code>jou</code>&rarr;<code>jouina</code> (pinned by <code>chapter1_hub_depth_oracle.rs</code>). Closes with a player-channel completion model in the timeline stepper.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
+        <td><span class="tag tag-done">resolved</span> (engine completion model)</td>
+        <td>The timeline stepper models the handshake directly: <code>A2 F8</code> ExecMove arms an in-flight countdown (<code>CutsceneTimeline::player_move_frames</code>) and <code>C3 F8</code> HaltAcquire PARKS at the op until it drains, then steps past by encoded width (<code>resolve_target</code> keeps its <code>None</code> contract for <code>0xF8</code>) - so door-cutscene records reach their trailing <code>0x3F</code> and driven hops land (<code>jou</code>&rarr;<code>jouina</code>, and the full castle chain to <code>jouinc</code>, in <code>chapter1_hub_depth_oracle.rs</code> part J + <code>chapter1_hub_breadth_oracle.rs</code> part F). See <a href="../subsystems/cutscene.html">cutscene</a> &sect; player-channel completion.</td>
+        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
       </tr>
       <tr>
         <td>Item-effect table - class/targeting + amounts</td>
@@ -253,6 +260,54 @@
         <td>open (low value)</td>
         <td>Bit <code>0x400</code> of the battle-actor flags word <code>+0x16E</code> reads as a guard-disabling Sleep/Numb-like status. The sibling AI-delegated bits <code>0x380</code> in the same word are pinned (the enemy-ally charm hook sets them via <code>FUN_801E7320</code> retarget), but the <em>setter</em> that raises <code>0x400</code> is not in the decompiled corpus - readers only. Low value. Closes with a before/after RAM capture around a battle turn that inflicts the status, diffing the <code>+0x16E</code> word to catch the byte that raises <code>0x400</code>.</td>
         <td></td>
+      </tr>
+      <tr>
+        <td>Flag <code>0x63A</code> - the vell/vozz <code>P2[7]</code> gate with NO script writer</td>
+        <td>open (small)</td>
+        <td>vell <code>P2[7]</code> and vozz <code>P2[7]</code> carry byte-identical <code>C1=[0x63A, 0x7]</code> gates, but <code>0x63A</code> has ZERO script sites disc-wide (no Set/Clear/Test anywhere else; <code>chapter1_hub_breadth_oracle</code> part E). Either an engine/SCUS-side writer exists (runtime-computed, like the spine writers) or the flag is never set and the requires-clear condition always passes. A write-watchpoint on bank byte <code>0x800858C7</code> during the vell/vozz beats would settle it; low stakes since the gate passes either way on a fresh game.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>cave01 <code>P2[16]</code> (the <code>0x15D</code> entry-key setter) - what spawns it</td>
+        <td>open (small)</td>
+        <td>The ungated record that SETs <code>0x15D</code> (the entry key of cave01's <code>0x15D</code>&rarr;<code>0x15E</code>&rarr;<code>0x169</code> ordered beat chain) has no tile trigger; likely spawned by a P1 interact (NPC dialogue). Pin the spawner record + interaction.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>Drake Castle deep interiors (<code>jouinc</code>/<code>jouind</code>) depth decode</td>
+        <td>open</td>
+        <td>The castle chain is driven to <code>jouinc</code> (<code>chapter1_hub_breadth_oracle</code> part F); <code>jouinc</code> (<code>[43,18,60]</code>) lists <code>{jouinb, jouind}</code> and is otherwise undecoded; <code>jouind</code> is untouched. Next depth push: gate census + beat chains for both.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td><code>scene_destinations</code> P1-table scan misses P2-only door names</td>
+        <td>open (engine hygiene)</td>
+        <td>The partition-1 destination-table scan under-reports doors carried only by P2 records (jouinb&rarr;jouina return door; reverse of the jou <code>P2[5]</code> blind spot). The P2 walker + strict portal-site join see them. Fold the P2 pass into <code>scene_destinations</code> (the breadth oracle pins the asymmetry and will trip when fixed).</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td><code>0x4C 0x51</code> byte <code>+3</code> = <code>[bit7 special-model | facing nibble]</code> vs the glide-speed interim <code>depth &amp; 7</code> reading</td>
+        <td>open (reconcile)</td>
+        <td>The spawn-prologue facing decode (see <a href="../subsystems/field-locomotion.html#npc-initial-facing">field-locomotion &sect; NPC initial facing</a>) pins retail <code>4C 51</code> case-1 as a TELEPORT+move-start whose byte <code>+3</code> low nibble indexes the heading LUT <code>0x80073F04</code> - which overlaps the route/glide decoder's interim <code>depth &amp; 7</code> reading of the same byte. Reconcile the two models when the motion-bytecode synthesis is traced.</td>
+        <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
+      </tr>
+      <tr>
+        <td>dolk2/rikuroa MAN source - REOPENED (the "v12-embedded MAN" was an over-read)</td>
+        <td>open</td>
+        <td>Their own <code>base+3</code> bundles are the MAN-less count=4 form <code>[1,2,6,0x14]</code>; the "embedded MAN at 0x1000" inside their SceneV12Table entries is the extended-footprint over-read onto the NEXT scene's <code>base+3</code> bundle (byte-identical to suimon/geremi's - see <a href="../formats/scene-v12-table.html#embedded-man-over-read">scene-v12-table &sect; over-read</a>). Where retail sources their partition scripts is unknown; the engine's <code>BundleSource::V12Embedded</code> follows the naive block and needs the raw-law fix (<code>Scene::field_map_index</code> already uses it).</td>
+        <td><a href="../formats/scene-v12-table.html">scene-v12-table</a></td>
+      </tr>
+      <tr>
+        <td>kor-family op-<code>0x49</code> flag window <code>[0x138..0x13F]</code> - what the 8 flags gate</td>
+        <td>open (small)</td>
+        <td>The only genuine op-<code>0x49</code> flag-window family on the disc (24 sites, kor/kor3/kor4, <code>base=0x138 count=8</code>, paired <code>default=0 rows=8</code> / <code>default=4 rows=4</code>). An 8-way picker window - likely a puzzle/selection state block in the Uru Mais dream scenes. Decode what each flag drives.</td>
+        <td><a href="functions.html">functions</a></td>
+      </tr>
+      <tr>
+        <td><code>801d58f0</code> / <code>801d63b0</code> as single shared port blockers</td>
+        <td><span class="tag tag-done">falsified</span> (VA-aliasing artifact)</td>
+        <td>The two addresses host DIFFERENT code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via <code>overlay_&lt;label&gt;_&lt;addr&gt;</code> identities; catalog ignore category <code>va_aliased_overlay_local</code>.</td>
+        <td><a href="../tooling/port-catalog.html">port-catalog</a></td>
       </tr>
     </tbody>
   </table>
