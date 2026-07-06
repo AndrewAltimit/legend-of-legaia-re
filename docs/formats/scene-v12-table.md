@@ -1,30 +1,52 @@
-# scene_v12_table - scene header + event-script bundle
+# scene_v12_table - the per-scene `.PCH` walk-on trigger sidecar
 
-A per-scene container that bundles a small "runtime fixup" header with a full
+The scene's **walk-on tile-trigger patch file**: dev filename
+`DATA\FIELD\<scene>.PCH` (suffix pool `0x8007B3BC/.MAP`, `0x8007B3C4/.PCH`,
+`0x8007B3CC/.LZS` in `SCUS_942.54`). The first `0x800` bytes are a
+four-kind sub-table directory + the kind-1 trigger records - the same
+header shape as the `.MAP` file's `+0x10000` trigger block
+([`field-locomotion.md` § trigger block](../subsystems/field-locomotion.md#trigger-block-0x10000---four-kind-sub-tables)) -
+followed by a full
 [scene event-scripts](scene-bundles.md#scene_event_scripts---prescript-only)
 prescript at a sector-aligned offset.
 
 Implementation: [`crates/asset/src/scene_v12_table.rs`](../../crates/asset/src/scene_v12_table.rs).
 CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk).
-97 PROT entries match - one per game scene.
+97 PROT entries match. Position law: a scene with CDNAME `#define <scene> n`
+carries its `.PCH` at **raw TOC index `n + 1`** = extraction entry `n − 1`
+(defines are raw indices - see [`cdname.md` § numbering space](cdname.md#numbering-space);
+disc-gated `scene_v12_position_law_and_lzs_sibling` in
+`crates/asset/tests/scene_v12_corpus.rs`).
+Scenes without one (`opurud`, `opkorout`, `edson` - op-`0x44`-driven cutscene
+scenes with no trigger tiles) hit the loader's zero-fill branch below.
+
+**Naming caveat.** The extraction *filename* labels apply defines as
+extraction indices and are shifted +2, so per-file attributions inherited
+from those labels are off by one block: `0093_map01.BIN` is **garmel**'s
+table (raw `95 = 94 + 1`), Drake `map01`'s is `0084_suimon.BIN` (raw
+`86 = 85 + 1`, and it alone carries `b2 = 0x26` = the `P2[38]` fly-in
+record [`cutscene.md`](../subsystems/cutscene.md#record-spawn-mechanisms-live-probe-pinned)
+pins to `map01`), and `town01`'s is `0002_gameover_data.BIN` (raw `4`,
+carrying the opening trigger record `(0x1D, 0x5B, 0x03)` = P2[3] at the
+documented arrival tile).
 
 ## On-disc layout
 
 ```text
-+0x000   u16  N + 4              ; runtime fixup-slot offset; header field
-+0x002   u16  0x0012             ; constant magic
-+0x004   u16  0x0000             ; constant
-+0x006   u16  0x0014             ; constant magic (= byte offset of records)
-+0x008   u16  param              ; count of inline records (0..=192 in retail)
-+0x00A   u16  N                  ; runtime fixup-slot offset; header field
-+0x00C   u16  0x0000             ; constant
-+0x00E   u16  N + 2              ; runtime fixup-slot offset; header field
-+0x010   u32  0                  ; padding to 0x14
-+0x014   param × 4 bytes         ; inline record table
-+end_records (= 0x14 + 4*param)  ; runtime fills three fixup pointers
-                                 ; immediately past here, at offsets
++0x000   u16  N + 4              ; directory end-of-table offset
++0x002   u16  0x0012             ; kind-0 sub-table offset (empty in retail)
++0x004   u16  0x0000             ; kind-0 count
++0x006   u16  0x0014             ; kind-1 sub-table offset (= the records)
++0x008   u16  param              ; kind-1 count (0..=192 in retail)
++0x00A   u16  N                  ; kind-2 sub-table offset (empty)
++0x00C   u16  0x0000             ; kind-2 count
++0x00E   u16  N + 2              ; kind-3 sub-table offset (empty)
++0x010   u32  0                  ; kind-3 count + pad to 0x14
++0x014   param × 4 bytes         ; kind-1 trigger records
++end_records (= 0x14 + 4*param)  ; empty kind-2/3 sub-table bodies at
                                  ; +N (= +end_records+2), +N+2, +N+4.
-                                 ; These bytes are zero on disc.
+                                 ; Zero on disc (see Open questions on
+                                 ; the old "runtime fixup" reading).
 +end_records .. 0x800            ; zero padding
 +0x800   u16  script_count       ; scene event-scripts prescript
 +0x802   script_count × u16      ;   offset table (relative to +0x800)
@@ -40,9 +62,11 @@ CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk
 layout verified across all 97 corpus entries by the disc-gated
 `scene_v12_corpus` test.
 
-The semantics of the inline records (`b0`, `b1`, `b2` bytes) is **inferred**
-- grouping by `b2` correlates with scene region kind, but the exact lookup
-the runtime performs hasn't been pinned to a specific function.
+The inline-record semantics is also **confirmed**: the records are kind-1
+walk-on tile triggers `[tile_x][tile_z][p2_record][gate]`, read by the same
+consumers as the `.MAP` `+0x10000` trigger block (see
+[Runtime staging](#runtime-staging---the-pch-sidecar) below). The earlier
+"`b0` = scene-local resource index" reading is superseded.
 
 ## Header algebra
 
@@ -58,57 +82,69 @@ sit in the tightest algebraic family the corpus exhibits:
 
 `N` is the byte distance from the start of the file to the **first runtime
 fixup slot**, which sits immediately past the inline records:
-`N = (0x14 + 4*param) + 2 = 4*param + 22`. The slots at `+N`, `+N+2`,
-`+N+4` are zero on disc; the loader writes computed pointers into them at
-scene init. The three u16 fields at the header front therefore double as
-slot-offset hints for the loader (`"write the first pointer at +N+4"`,
-etc.) and as a strict validation signature.
+`N = (0x14 + 4*param) + 2 = 4*param + 22`.
 
-The constants `0x0012` at `u16[1]` and `0x0014` at `u16[3]` are stable
-across the whole corpus; `u16[3]` also happens to equal the byte offset
-of the inline records table (`+0x14`), which is unlikely to be a
-coincidence - the loader probably re-reads it as the records pointer.
+**The header is a four-kind sub-table directory** - the same shape the
+per-tile lookup helper reads for the `.MAP` `+0x10000` trigger block: for
+kind `k`, the sub-table body offset is the `s16` at `+4k+2` and its record
+count the `s16` at `+4k+4` (overlay 0897 `FUN_801D5AE0`, called by the
+two-window wrapper `FUN_801D5630`). Under that reading the algebra
+dissolves:
 
-## Inline records at `+0x14`
+| Kind | Offset field | Count field | Retail `.PCH` value |
+|---|---|---|---|
+| 0 | `u16[1] = 0x0012` | `u16[2] = 0` | empty (teleports live in the `.MAP` block) |
+| 1 | `u16[3] = 0x0014` | `u16[4] = param` | **the inline trigger records** |
+| 2 | `u16[5] = N` | `u16[6] = 0` | empty (elevation overrides) |
+| 3 | `u16[7] = N + 2` | `u16[8] = 0` | empty (region AABBs) |
 
-`param` records, each 4 bytes:
+`u16[0] = N + 4` is the directory's end-of-table offset. Every retail
+`.PCH` populates **kind 1 only**; the empty kinds' offsets pack
+consecutively past the records, which is exactly the `N = 4*param + 22`
+tie the detector checks. The zero "fixup slots" at `+N`, `+N+2`, `+N+4`
+are the empty kind-2/3 sub-table bodies.
+
+## Inline records at `+0x14` - kind-1 walk-on tile triggers
+
+`param` records, each 4 bytes, in the trigger-block kind-1 form:
 
 | Byte | Field | Notes |
 |------|-------|-------|
-| `+0` | `b0`  | Scene-local identifier (sub-index / region-id). |
-| `+1` | `b1`  | Scene-local identifier (region-id / target-id). |
-| `+2` | `b2`  | Categorises records into 1..N groups within the scene. |
-| `+3` | `flag` | Always `0x01` across all 97 entries - probably "live" bit. |
+| `+0` | `tile_x` (`b0`) | Trigger tile column (128-unit field tiles). |
+| `+1` | `tile_z` (`b1`) | Trigger tile row. |
+| `+2` | `p2_record` (`b2`) | MAN **partition-2 record index** spawned on step-on. |
+| `+3` | `gate` (`flag`) | Always `0x01` across all 97 entries = gate-1 "spawn on walk-on" (the `.MAP` block's gate-0 object-bind class never appears in a `.PCH`). |
 
-`b2` partitions records into per-scene groups. Drake (`map01`) has 8 distinct
-`b2` values across 12 records (one group of 3, one of 3, then singletons);
-Karisto (`map03`) groups 12 of its 23 records under a single
-`(b1=0x2F, b2=0x05)` triple, plus several smaller groups. This "many records
-share a `b2`, a few singletons" pattern matches a scene-region
-transition table: rooms / sub-areas of the scene each get a `b2` group, and
-sub-records inside each group correspond to interactive objects, NPCs, or
-exits.
+Records sharing a `b2` are **multi-tile strips of one trigger** - adjacent
+tiles that all fire the same partition-2 record (a gate several tiles wide
+gets one record per tile). The record's own C1/C2 story-flag gates still
+apply at spawn time (`FUN_8003BDE0` vs `DAT_80085758` - see
+[`cutscene.md`](../subsystems/cutscene.md#record-spawn-mechanisms-live-probe-pinned)).
 
-Concrete shape for `0093_map01.BIN` (Drake's kingdom map, `param=12`):
+Concrete shape for `0093_map01.BIN` (**garmel**'s table under the position
+law - the filename label is the +2-shifted naive attribution, see the
+naming caveat above; `param=12`):
 
 ```
-[0] b0=15 b1=08 b2=02  ┐
-[1] b0=14 b1=08 b2=02  │ group b2=0x02, 3 records
-[2] b0=13 b1=08 b2=02  ┘
-[3] b0=17 b1=2A b2=0C
-[4] b0=17 b1=68 b2=0B  ┐
-[5] b0=17 b1=69 b2=0B  │ group b2=0x0B, 3 records
-[6] b0=17 b1=6A b2=0B  ┘
-[7] b0=14 b1=09 b2=0A
-[8] b0=06 b1=5F b2=09
-[9] b0=14 b1=5E b2=08
-[10] b0=77 b1=12 b2=01
-[11] b0=72 b1=3E b2=00
+[0] x=15 z=08 p2=02  ┐
+[1] x=14 z=08 p2=02  │ one trigger spanning 3 adjacent tiles
+[2] x=13 z=08 p2=02  ┘
+[3] x=17 z=2A p2=0C
+[4] x=17 z=68 p2=0B  ┐
+[5] x=17 z=69 p2=0B  │ 3-tile strip
+[6] x=17 z=6A p2=0B  ┘
+[7] x=14 z=09 p2=0A
+[8] x=06 z=5F p2=09
+[9] x=14 z=5E p2=08
+[10] x=77 z=12 p2=01
+[11] x=72 z=3E p2=00
 ```
 
-The full semantic decoding of the `(b0, b1)` pair depends on the consumer.
-It maps to scene-actor placements **only on world-map kingdom scenes**;
-on towns and dungeons the pair selects different runtime resources.
+The earlier "maps to actor placements only on world-map kingdom scenes"
+reading is superseded: `(b0, b1)` are tile coordinates on every scene
+class; on kingdom overworlds the referenced P2 records happen to be the
+town/dungeon-entrance and story-beat records, which produced the
+placement correlation.
 
 ## Event-script prescript at `+0x800`
 
@@ -142,6 +178,85 @@ scenes is a fixed 768-byte master ambient stager - the record the entry
 effect-actor installs; see
 [scene-bundles](scene-bundles.md)).
 
+## Runtime staging - the `.PCH` sidecar
+
+The field-asset loader `FUN_8001F7C0` (called per scene entry from the
+mode-2 initializer `FUN_801D6704`) stages the file **statically** - no
+capture needed (`see ghidra/scripts/funcs/8001f7c0.txt`). Retail branch,
+in order:
+
+1. `DATA\FIELD\<scene>.MAP` → the per-scene buffer `*(0x1F8003EC)`
+   (collision grid `+0x4000`, event-cell grid `+0x8000`, trigger block
+   `+0x10000`).
+2. `DATA\FIELD\<scene>.PCH` → **`*(0x1F8003EC) + 0x12000`**. If the open
+   (`FUN_800608F0`) misses, the loader **zero-fills `0x800` bytes** there
+   instead - the empty-directory fallback for trigger-less scenes.
+3. `h:\PROT\FIELD\<scene>\efect.dat` → `*(0x1F8003EC) + 0x12800`
+   (`= _DAT_8007B8D0`), which **overwrites every `.PCH` byte past the
+   first `0x800`** - so the runtime-live window is exactly the directory +
+   kind-1 records; the on-disc prescript at `+0x800` is not reachable
+   through this path.
+
+This closes the format's long-open "where does the loader stage the file"
+question and matches the live capture that found the table at heap
+`0x8014B530` (= the `town01` scene buffer `0x80139530 + 0x12000`).
+
+Consumers of the staged window:
+
+- **Scene init** - `FUN_8003AEB0` (the field/town map-init, body
+  `0x8003AFA8..0x8003B018`) walks the kind-1 records (`count` at
+  `+0x12008`, cursor from `+0x12006`) and ORs the footprint bit `0x400`
+  into the u16 event-cell word at
+  `*(0x1F8003EC) + 0x8000 + (tile_z << 8) + (tile_x << 1)`.
+- **Per step** - the tile lookup `FUN_801D5630` (overlay 0897) scans the
+  `.MAP`'s `+0x10000` block first and **falls back to the `+0x12000`
+  `.PCH` window** (helper `FUN_801D5AE0`, same directory shape); a kind-1
+  hit reaches `FUN_8003BDE0(x, z, rec[2], rec[3])` and spawns the
+  partition-2 record. Full runtime contract:
+  [`field-locomotion.md` § trigger block](../subsystems/field-locomotion.md#trigger-block-0x10000---four-kind-sub-tables).
+
+So the `.PCH` is a **patch/extension layer over the `.MAP` trigger block**:
+same directory, same record forms, second lookup window.
+
+## The `~0x800219xx` lead resolved - `FUN_80021934` stages the `.LZS`, not the `.PCH`
+
+The formerly un-analyzed `_DAT_8007B85C` reader near `~0x800219xx` is
+**`FUN_80021934`** (real entry 3 instructions before the `0x80021940`
+prologue; `see ghidra/scripts/funcs/80021940.txt`): the **scene-transition
+streaming actor**, a 5-state SM (state at `actor+0x1A`, jump table
+`0x80010760`) that pre-streams the *next* scene's
+[`scene_asset_table`](scene-bundles.md#scene_asset_table---the-canonical-7-asset-bundle)
+bundle during the transition fade:
+
+- It is **not** a game-mode handler: its only corpus reference is the
+  handler word of the 24-byte spawn descriptor at `0x80070734` (the
+  system-actor descriptor family at `0x800705FC..0x80070763`, just below
+  the mode table at `0x8007078C` - phase-misaligned with it, layout
+  `[+4 0xFFFF0000][+8 handler][+0xC flags]`). `FUN_8001FD44` (the named
+  scene-change packet) spawns it via the pool spawner `FUN_80020DE0`
+  (`actor+0x0C` = handler, `actor+0x1A` zeroed;
+  `see ghidra/scripts/funcs/8001fd44.txt`, `80020de0.txt`); the five
+  `FUN_8001FD44` call sites all live in the field overlay 0897 (field-VM
+  op `0x3F` at `0x801DEB14` plus four controller sites).
+- **Case 0** seeds a 70-frame countdown (`gp+0x710 = 0x46`); cases 1/3
+  poll stream progress (`FUN_8003DE7C(1)`).
+- **Case 2** (dev flag `_DAT_8007B8C2` set): streams **raw TOC entry
+  `DAT_8007B768 + 3`** - the destination scene's block base + 3, the
+  `.LZS`/`scene_asset_table` slot - into `_DAT_8007B85C` by index
+  (`FUN_8001EEF0` → `FUN_8003EB98`; `see ghidra/scripts/funcs/8001eef0.txt`,
+  `8003eb98.txt`).
+- **Case 4** (retail): builds the literal path `DATA_FIELD\<scene>.LZS`
+  (suffix `0x8007B3CC`) and streams it into `_DAT_8007B85C` by name, then
+  hands off with `_DAT_8007B83C = 2` (mode 2 MAIN INIT, whose
+  `FUN_801D6704` → `FUN_8001F7C0` chain then stages `.MAP`/`.PCH`/efect
+  as above).
+
+So the raw scene block layout is `n+0` `.MAP` (`0x12000` footprint),
+`n+1` `.PCH` (this format), `n+2` event-scripts sister, `n+3` `.LZS`
+bundle head, `n+6` BGM base - and the transition actor touches only
+`n+3`. The v12 record-table staging + consumer chain is the `.PCH` path
+above; `_DAT_8007B85C` never holds this file.
+
 ## Detection
 
 The strict gate combines six checks:
@@ -162,22 +277,25 @@ relies on `end_records = N - 2`.
 
 ## Sister formats
 
-The v12 file is the **second** scene-event-scripts table in each scene
-block. Every scene block also has a sister `scene_event_scripts` entry
-(prescript at offset 0, no v12 header):
+Every scene block carries a sister `scene_event_scripts` entry (prescript
+at offset 0, no directory header) at raw `n + 2` - **directly after** the
+`.PCH` at raw `n + 1`:
 
 ```
-PROT 0085_map01  scene_event_scripts (no v12 header)   ┐ Drake
-PROT 0093_map01  scene_v12_table (this format)         ┘
-PROT 0244_map02  scene_event_scripts                   ┐ Sebucus
-PROT 0253_map02  scene_v12_table                       ┘
-…
+raw n+1  (extraction n−1)  scene_v12_table / .PCH (this format)  ┐ same
+raw n+2  (extraction n)    scene_event_scripts (no header)       ┘ scene
 ```
 
-The two scripts likely serve different scopes (scene-enter triggers vs.
-per-actor / per-region triggers), or they're "early-load" and "late-load"
-splits of a single logical script set. The exact runtime split isn't
-pinned down yet; both are walked by the same field VM.
+For Drake `map01` (`n = 85`) that is extraction `0084` + `0085`; the
+historical pairing of `0085` with `0093` crossed a block boundary
+(`0093` is garmel's `.PCH` - see the naming caveat above).
+
+The two prescript tables likely serve different scopes (scene-enter
+triggers vs. per-actor / per-region triggers), or they're "early-load"
+and "late-load" splits of one logical script set. The exact runtime split
+isn't pinned down; note the `.PCH`-resident copy at `+0x800` is dead via
+the retail staging path (efect.dat overwrites it - see
+[Runtime staging](#runtime-staging---the-pch-sidecar)).
 
 ## Reading the parsed structure
 
@@ -199,89 +317,80 @@ for (i, s) in t.scripts.iter().enumerate() {
 }
 ```
 
-## Embedded MAN-bearing asset table (v12-family dungeon bundles)
+## The "embedded MAN at `0x1000`" is an extended-footprint over-read
 
-Some dungeon scenes ship their [`scene_asset_table`](scene-bundles.md#scene_asset_table---the-canonical-7-asset-bundle)
-**inside** their `scene_v12_table` entry rather than as a first-class sibling
-PROT entry. The canonical 7-asset table is embedded at file offset **`0x1000`**
-(the second 0x800-aligned window, past the header + inline records + the
-offset-`0x800` prescript). Its descriptor `data_offset`s are file-relative
-against the entry's **extended footprint**, exactly as for the standalone
-bundle - so `table_offset (0x1000) + data_offset` addresses the MAN's
-LZS stream.
+Extraction entries `0076` and `0164` show a canonical 7-asset
+[`scene_asset_table`](scene-bundles.md#scene_asset_table---the-canonical-7-asset-bundle)
+at file offset `0x1000`, which was read as the v12 "embedding" its scene's
+bundle. Byte comparison falsifies the embedding: `0076 + 0x1000` onward is
+**byte-identical to extraction `0078`** (suimon's ordinary base+3 bundle)
+and `0164 + 0x1000` to extraction `0166` (geremi's) - the extraction slice
+of the `.PCH` slot simply **over-reads into the following TOC entries**
+(the same extended-window trap as the historical "16 MB container at
+0865"). Under the position law those two windows are suimon's and
+geremi's `.PCH` files, not dolk2's / rikuroa's.
 
-Two scenes carry the MAN *only* this way (they have no `scene_asset_table` /
-`scene_scripted_asset_table` sibling in their CDNAME block):
-
-| Scene   | v12 PROT | Table | MAN desc size | MAN data_off | MAN abs | Decoded | Partitions |
-|---------|----------|-------|---------------|--------------|---------|---------|------------|
-| `dolk2` | 76       | 0x1000| 0x929         | 0x1a89e      | 0x1b89e | 2345 B  | [10, 7, 3] |
-| `rikuroa`| 164     | 0x1000| 0x9a54        | 0x40927      | 0x41927 | 39508 B | [18, 70, 20]|
-
-The v12 header wins the classifier at offset 0, so the standalone
-`scene_asset_table` detector never probes `0x1000`. By contrast `dolk` /
-`keikoku` have a first-class scripted + bare table pair and don't need this
-path. The engine loader
-([`legaia_engine_core::scene_bundle::find_bundle`](../../crates/engine-core/src/scene_bundle.rs))
-adds a fallback that scans a `SceneV12Table` entry's 0x800-aligned offsets for
-the first `scene_asset_table` whose descriptors include a type-3 (MAN) slot
-(the count-gate also rejects the MAN-less count=4 sibling table), and reports it
-as `BundleSource::V12Embedded { table_offset: 0x1000 }`. This is what lets
-`rikuroa` / `dolk2` resolve their scene-entry system script, collision grid,
-encounter table, and scene-destination table. Disc-gated coverage:
-`crates/engine-core/tests/v12_bundle_man_disc.rs`.
-
-`rikuroa`'s MAN carries **no named `0x3F` warp** - the Ravine's exit and its
-first-boss (Zeto) trigger are gated by the partition-2 cutscene timeline, not a
-scene-change op - so its scene-destination table decodes to an empty list.
-`dolk2`'s MAN lists `map01` (its overworld return).
+What stays true: `dolk2` and `rikuroa` are the two scenes whose **own**
+base+3 bundle is the MAN-less `count=4` form (types `[1, 2, 6, 0x14]`;
+the type-`0x14` slot is a small LZS filler, not a MAN carrier), so where
+retail sources their partition scripts / doors is a **reopened** question.
+The engine loader's `BundleSource::V12Embedded { table_offset: 0x1000 }`
+fallback ([`legaia_engine_core::scene_bundle::find_bundle`](../../crates/engine-core/src/scene_bundle.rs),
+disc-gated `crates/engine-core/tests/v12_bundle_man_disc.rs`) reads
+through these over-read windows - behaviorally it resolves a valid MAN
+(suimon's: 2345 B, partitions `[10, 7, 3]`, lists `map01`; geremi's:
+39508 B, partitions `[18, 70, 20]`, no named `0x3F` warp), but the
+scene attribution of that MAN follows the naive labels and needs
+re-verification against dolk2/rikuroa gameplay.
 
 ## Open questions
 
-- **Where does the loader stage the file?** (open, capture-blocked). Two
-  earlier leads are now **falsified**:
-  - The `_DAT_8007b8d0` relocation reached via `FUN_800252EC` is the
-    **`efect.dat` / prescript stager**, *not* the v12 record-table - the two
-    share the move-VM prescript format, which caused the conflation.
-  - The "**malloc'd heap type handler via `FUN_8001F05C` dispatch**" hypothesis
-    is falsified. `FUN_8001F05C` is fully dumped (`ghidra/scripts/funcs/8001f05c.txt`);
-    its jump table `0x80010638 + type*4` has 15 cases (type `0` TIM, `1` TIM_LIST,
-    `2` TMD, `3` MAN, `4` MES, `5` MOVE, `6` ANM, `7` VDF, `8` SIN, `9` TMD2,
-    `0xA` FLAG, `0xB` MOVE2, `0xF` FLAG, `0x14` FLAG) and **none** parses a v12
-    header or a 4-byte record table. The "next dump lead" `FUN_8002541C` is also
-    ruled out: it is a generic 3-mode streaming driver (param `0x0A` = `tim.dat`
-    upload, `0x0F` = `move.mdt` memcpy, `0x14` = DATA_FIELD pack-walk into
-    `FUN_8001F05C`), not a v12 stager.
-  - **Why f05c can't be it:** the v12 file is a **standalone top-level PROT entry**
-    (its offset-0 word is `N + 4` with high byte `0x00`), not a `type << 24`
-    self-describing chunk, so it is never dispatched through `FUN_8001F05C` at all.
-  - **Reframe:** the v12 record-table consumer is a **scene-specific reader**, not
-    a generic asset-dispatch handler. The sharper target is the world-map / kingdom
-    placement path plus an un-analyzed reader near `~0x800219xx` that reads
-    `_DAT_8007b85c` (consistent with the `(b0, b1)` pair mapping to actor
-    placements on world-map kingdom scenes). Closing it still needs a scene-load
-    write-watchpoint capture; earlier captures put the file at heap RAM
-    `0x8014B530` for one scene (varies per load).
-- **What does `b0` index into?** (open). For Drake the `b0` values fit inside
-  the scene's TMD pack count (40 slots), but for other scenes they exceed it,
-  so "global TMD-slot index" is **falsified**. The plausible reading is a
-  **scene-local** resource / placement index into a loader-built table (built
-  from the v12 header), not a global slot id - unconfirmed pending the
-  staging-site capture above (the narrowed lead is the `~0x800219xx` /
-  `_DAT_8007b85c` reader on the world-map kingdom path).
-- **Two prescript tables per scene** - the sister offset-0 `scene_event_scripts`
-  entry and this offset-0x800 table - carry the same move-VM stager records. Both
-  are consumed by the move VM via `FUN_800252EC` → `FUN_80021B04`
+The two long-standing opens are **closed statically**: the loader stages
+the file at `*(0x1F8003EC) + 0x12000` (`FUN_8001F7C0` `.PCH` load, zero-fill
+when absent), and `b0`/`b1` are trigger tile coordinates consumed by
+`FUN_8003AEB0` (footprint-bit `0x400` marking) and the `FUN_801D5630`
+fallback lookup - see [Runtime staging](#runtime-staging---the-pch-sidecar).
+The `~0x800219xx` / `_DAT_8007B85C` lead resolved to the *sibling* `.LZS`
+transition streamer `FUN_80021934`, not this file. Earlier falsified leads,
+kept so they aren't re-walked: the `_DAT_8007B8D0` relocation via
+`FUN_800252EC` is the `efect.dat` prescript stager; the `FUN_8001F05C`
+dispatch hypothesis fails because the `.PCH` is a standalone top-level PROT
+entry, never a `type << 24` chunk; `FUN_8002541C` is a generic 3-mode
+streaming driver.
+
+Still open:
+
+- **The `+N` "fixup slot" writes.** Under the directory reading the zero
+  words at `+N`, `+N+2`, `+N+4` are the empty kind-2/3 sub-table bodies;
+  whether any runtime writer fills them (the old "loader writes computed
+  pointers" observation) needs a targeted re-capture of the `+0x12000`
+  window.
+- **Empty kinds 0/2/3.** No retail `.PCH` populates teleports, elevation
+  overrides, or region AABBs (those live only in the `.MAP` `+0x10000`
+  block). Whether the engine-side patch mechanism was ever used for them
+  is a dev-history question, not a runtime one.
+- **dolk2 / rikuroa MAN source.** Their own base+3 bundles are the
+  MAN-less `count=4` form and their `.PCH` windows carry no bundle -
+  where retail sources their partition scripts is reopened (see the
+  over-read section above).
+- **Two prescript tables per scene** - the sister offset-0
+  `scene_event_scripts` entry (raw `n + 2`) and this file's offset-`0x800`
+  copy carry the same move-VM stager records, both consumed via
+  `FUN_800252EC` → `FUN_80021B04`
   (see [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only)).
-  The exact per-record decode follows the move VM's control flow (a linear
-  disassembly desyncs at its jump ops `0x18/0x19/0x1A/0x1B`).
+  The runtime split is unpinned; the `.PCH` copy is unreachable via the
+  retail staging path (efect.dat overwrites `+0x800..`), pointing at the
+  sister entry / the `.LZS` scripted-table prefix as the live copies.
 
 ## Related
 
 - [Scene bundles overview](scene-bundles.md) - the four other scene-prefixed
   asset layouts.
 - [Field/event script VM](../subsystems/script-vm.md) - `FUN_801DE840`,
-  the runtime that walks the prescript records.
-- [World-map subsystem](../subsystems/world-map.md) - the kingdom-map
-  renderer that consumes parts of the v12 inline-record table for actor
-  placements.
+  the runtime that executes the spawned partition-2 records.
+- [Field locomotion](../subsystems/field-locomotion.md#trigger-block-0x10000---four-kind-sub-tables) -
+  the `.MAP` `+0x10000` trigger block this file extends, and the engine's
+  `field_regions` port of the lookup.
+- [Cutscene routing](../subsystems/cutscene.md#record-spawn-mechanisms-live-probe-pinned) -
+  the walk-on trigger → `FUN_8003BDE0` record-spawn chain (the `map01` /
+  `town01` opening legs fire from these records).
