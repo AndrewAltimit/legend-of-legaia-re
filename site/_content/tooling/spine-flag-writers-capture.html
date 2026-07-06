@@ -1,0 +1,102 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; spine flag-writers capture</div>
+  <h1>Capturing the chapter-1 spine story-flag writers</h1>
+  <p class="lede">Three chapter-1 story-progression writes live in un-imported RAM overlays, so static analysis can't name the code that performs them. This runbook drives one interactive play-forward session that arms all three watches at once and logs the writer PC (<code>ra</code>) of each.</p>
+</header>
+
+<section class="doc-section" id="targets">
+  <h2>What gets watched</h2>
+  <table>
+    <thead><tr><th>Target</th><th>What it gates</th><th>Watch method</th></tr></thead>
+    <tbody>
+      <tr><td><code>DAT_8007b7fc = 0x4B</code></td><td>Zeto battle-id (Mt. Rikuroa trigger)</td><td>Write-watch <code>0x8007b7fc</code>, width 1</td></tr>
+      <tr><td>system flag <code>0x142</code></td><td>dolk-dungeon clear</td><td>Exec-bp <code>0x8003CE08</code>, <code>a0 == 322</code></td></tr>
+      <tr><td>system flag <code>0x482</code></td><td>Drake mist walls</td><td>Exec-bp <code>0x8003CE08</code>, <code>a0 == 1154</code></td></tr>
+    </tbody>
+  </table>
+  <p>The probe is <code>autorun_spine_flag_writers.lua</code>. It installs a bare Vsync listener with <strong>no self-quit</strong> (this is a human-at-the-controls session), arms the watches once the game settles into field mode, and streams every hit to a CSV.</p>
+</section>
+
+<section class="doc-section" id="watch-addresses">
+  <h2>Derived watch addresses</h2>
+  <p>Flag-bank geometry (SCUS-resident): base <code>0x80085758</code>, <code>byte = base + (idx &gt;&gt; 3)</code>, <code>mask = 0x80 &gt;&gt; (idx &amp; 7)</code>.</p>
+  <table>
+    <thead><tr><th>Flag</th><th>idx (dec)</th><th>Bank byte</th><th>Mask</th><th>Fallback Write-watch</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x142</code> (dolk clear)</td><td>322</td><td><code>0x80085780</code></td><td><code>0x20</code></td><td>byte <code>0x80085780</code> bit <code>0x20</code></td></tr>
+      <tr><td><code>0x482</code> (mist walls)</td><td>1154</td><td><code>0x800857E8</code></td><td><code>0x20</code></td><td>byte <code>0x800857E8</code> bit <code>0x20</code></td></tr>
+    </tbody>
+  </table>
+  <p>The Exec-bp path is preferred: it isolates the exact flag AND names the writer <code>ra</code> directly, which a raw byte watch can't (eight flags share one bank byte). Set <code>LEGAIA_FLAG_FALLBACK=1</code> to additionally arm the raw byte watches if a flag write is somehow missed by the setter breakpoint (then decode the <code>ra</code> by hand). The Zeto byte watch is width 1; if it never fires, set <code>LEGAIA_ZETO_WIDTH=4</code> to widen it to the full word.</p>
+</section>
+
+<section class="doc-section" id="which-emulator">
+  <h2>Which emulator</h2>
+  <p><strong>PCSX-Redux</strong>, not mednafen. These are live watchpoints, which need the interpreter + debugger. <code>run_probe.sh</code> sets <code>-interpreter -debugger</code> by default; <strong>do not</strong> pass <code>--fast</code> - Lua breakpoints do not fire under the recompiler.</p>
+</section>
+
+<section class="doc-section" id="card-slots">
+  <h2>Which card slot for which beat</h2>
+  <p>The chapter-1 ladder card <code>saves/library/cards/playthrough-ladder-pro00-14.mcr</code> holds 15 active slots (PRO-00..14, blocks 1..15). Story-flag state was read directly from each SC block's bitmap (block offset <code>0x14C0</code>, mirroring RAM <code>0x80085600</code>). Load the slot nearest the beat you want, then play forward:</p>
+  <table>
+    <thead><tr><th>Beat / write</th><th>Load slot</th><th>Why</th><th>Fallback</th></tr></thead>
+    <tbody>
+      <tr><td>Zeto write (<code>0x8007b7fc=0x4B</code>)</td><td><strong>PRO-01</strong> (block 2)</td><td>keikoku + dolk done, Zeto not beaten; tightest pre-trigger</td><td>PRO-05 (block 6)</td></tr>
+      <tr><td>flag <code>0x142</code> (dolk clear)</td><td><strong>PRO-00</strong> (block 1)</td><td>everything unset; play through the dolk dungeon to its clear beat</td><td>&mdash;</td></tr>
+      <tr><td>flag <code>0x482</code> (mist walls)</td><td>(not on this card)</td><td><code>0x482</code> is unset in all 15 slots; no catalogued save reaches it</td><td>see note</td></tr>
+    </tbody>
+  </table>
+  <p>PRO-00 is also a viable single start to catch <strong>both</strong> <code>0x142</code> and the Zeto beat's <code>0x1BE</code> in one forward run.</p>
+  <p><strong>Mist-wall caveat.</strong> Flag <code>0x482</code> is unset across every slot of this card (it matches the library-wide zero the backlog notes). It is <strong>not bracketable</strong> from this card: the operator must keep the watch armed and play forward <em>past</em> the Zeto beat to the Drake mist-wall story event, or source a different card that sits nearer it. Treat this as the one leg that needs fresh forward play - the other two are one short walk from their load slot.</p>
+</section>
+
+<section class="doc-section" id="running">
+  <h2>Running the probe</h2>
+  <p>Wrap the launch in <code>timeout --kill-after</code> - the probe never exits on its own, so an unwrapped run would hang the emulator open indefinitely.</p>
+  <p>Card-save play (the primary mode). Configure PCSX-Redux to use the ladder <code>.mcr</code> as memory card 1 (persisted in its GUI settings, or copied into the emulator's memcards dir before launch), then cold-boot and load the slot from the in-game load screen:</p>
+<pre><code>LEGAIA_NO_SSTATE=1 \
+xvfb-run -a timeout --kill-after=15s 1800s \
+bash scripts/pcsx-redux/run_probe.sh \
+    --lua scripts/pcsx-redux/autorun_spine_flag_writers.lua</code></pre>
+  <p>(Drop <code>xvfb-run -a</code> if you want to see the window and drive it yourself; raise the <code>1800s</code> budget for a long forward run.)</p>
+  <p>Save-state seed (alternative). If you already hold a <code>.sstate</code> near a beat, skip <code>LEGAIA_NO_SSTATE</code> and point <code>LEGAIA_SSTATE</code> at it:</p>
+<pre><code>LEGAIA_SSTATE=/path/to/pre-zeto.sstate \
+xvfb-run -a timeout --kill-after=15s 900s \
+bash scripts/pcsx-redux/run_probe.sh \
+    --lua scripts/pcsx-redux/autorun_spine_flag_writers.lua</code></pre>
+</section>
+
+<section class="doc-section" id="beat-order">
+  <h2>Beat order for one full session</h2>
+  <p>With PRO-00 loaded (or the tightest slot per beat), the flags fall in story order, so a single armed session can sweep several:</p>
+  <ol>
+    <li><strong>keikoku</strong> - walk the Kikoku Cliff leg (sets <code>0x193</code>; not watched, but the marker that you're on the spine).</li>
+    <li><strong>rikuroa (Zeto trigger)</strong> - enter Mt. Rikuroa; the encounter trigger writes <code>DAT_8007b7fc = 0x4B</code>. The <code>zeto_battle_id</code> row fires here.</li>
+    <li><strong>Zeto victory</strong> - win the fight (sets <code>0x1BE</code>; possibly <code>0x142</code> depending on route).</li>
+    <li><strong>dolk clear</strong> - clear the dolk dungeon to its clear beat; the <code>flag_0x142_dolk_clear</code> row fires.</li>
+    <li><strong>mist-wall event</strong> - continue to the Drake mist-wall story event; the <code>flag_0x482_mist_walls</code> row fires (this leg needs fresh forward play; see the caveat above).</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="caught">
+  <h2>What a &ldquo;caught&rdquo; hit looks like</h2>
+  <p>Output lands under <code>captures/spine_flag_writers/&lt;run-ts&gt;/</code>:</p>
+  <ul class="bullets">
+    <li><code>spine_flag_writers.csv</code> - one row per hit: <code>tick,label,addr,pc,ra,value</code>.</li>
+    <li><code>spine_flag_writers.detail.txt</code> - call-context (GPRs + code + stack) for the first N hits of each label (<code>LEGAIA_MAX_DETAIL</code>, default 8).</li>
+  </ul>
+  <p>A <strong>caught</strong> write is a CSV row whose <code>ra</code> column is <strong>non-zero</strong> - that is the writer's return address, the whole point of the hunt. Concretely:</p>
+  <ul class="bullets">
+    <li><code>zeto_battle_id</code> - <code>value</code> should read <code>75</code> (<code>0x4B</code>); <code>pc</code> is the store site and <code>ra</code> its caller.</li>
+    <li><code>flag_0x142_dolk_clear</code> / <code>flag_0x482_mist_walls</code> - <code>pc</code> is the setter <code>0x8003CE08</code>, <code>value</code> is the flag index (<code>322</code> / <code>1154</code>), and <code>ra</code> is the game-logic caller that requested the set. That <code>ra</code> is what to attribute by containment (<code>attribute_overlay_hits.py</code>) to find the owning overlay.</li>
+  </ul>
+  <p>The <code>[spine] HIT ...</code> lines in <code>pcsx.log</code> mirror each CSV row live, so you can watch the hunt land without opening the CSV.</p>
+</section>
+
+<section class="doc-section" id="catalogue-states">
+  <h2>Catalogue the missing pre-write states</h2>
+  <p>Each beat boundary is also a chance to close a gap in the state library: no catalogued state brackets any of these three writes. At each boundary (pre-Zeto rikuroa, pre-dolk-clear, pre/post-mist), save a PCSX-Redux state, then fingerprint and catalogue it so the library gains the missing brackets:</p>
+<pre><code>scripts/manage-states.py fingerprint     # compute the RAM fingerprint
+scripts/manage-states.py library         # confirm it's backed up + catalogued</code></pre>
+  <p>Load states by <strong>fingerprint</strong>, not slot number (slot indices are ephemeral and get overwritten). These additions are valuable regardless of what the watches catch this run.</p>
+</section>
