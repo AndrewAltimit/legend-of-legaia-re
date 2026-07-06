@@ -1303,6 +1303,19 @@ pub struct World {
     /// outside battle.
     pub active_formation: Option<crate::monster_catalog::FormationDef>,
 
+    /// Synthetic formation id installed by [`World::install_boss_encounter`]
+    /// for a scripted single-boss fight (the battle-id path, retail
+    /// `FUN_8005567c`). Recognised in [`World::apply_battle_loot`] to latch
+    /// [`Self::pending_boss_victory_flag`] on victory. `None` when no boss
+    /// encounter is armed.
+    pub boss_formation_id: Option<u16>,
+
+    /// System-flag index a scripted boss encounter latches once the party
+    /// wins it (the first-visit one-shot the retail cutscene sets so the
+    /// fight does not re-arm - e.g. rikuroa's Zeto gate `0x1BE`). Consumed by
+    /// [`World::apply_battle_loot`]. `None` when no boss encounter is armed.
+    pub pending_boss_victory_flag: Option<u16>,
+
     /// Aggregated rewards from the most recent victory - surfaced for the
     /// post-battle banner / HUD. `None` until the first battle resolves.
     pub last_battle_rewards: Option<BattleRewards>,
@@ -1825,6 +1838,8 @@ impl World {
             battle_spell_menu: None,
             battle_arts_menu: None,
             active_formation: None,
+            boss_formation_id: None,
+            pending_boss_victory_flag: None,
             last_battle_rewards: None,
             game_over: false,
             field_return: None,

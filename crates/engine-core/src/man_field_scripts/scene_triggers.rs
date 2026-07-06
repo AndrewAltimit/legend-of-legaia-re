@@ -127,19 +127,48 @@ pub struct OverworldPortalSite {
     pub entry_z: u8,
     /// Arrival facing/depth selector.
     pub dir: u8,
+    /// The flag-SET alternative destination when the record selects its target
+    /// by an op-`0x70` story-flag branch (an overworld entrance whose scene
+    /// changes after a story beat). The primary fields above hold the flag-CLEAR
+    /// (fall-through) destination; the seeder swaps to this alternative when
+    /// [`crate::world::World::system_flag_test`] of [`ConditionalDest::flag`] is
+    /// true. `None` for the common unconditional single-`0x3F` entrance.
+    ///
+    /// The chapter-1 case is `map01`'s dungeon entrance: flag `0x142` clear ->
+    /// `dolk` (pre-boss), set -> `dolk2` (post-boss); see
+    /// [`docs/subsystems/world-map.md`].
+    pub conditional: Option<ConditionalDest>,
 }
 
-/// The first `0x3F` named-scene-change destination in partition-2 record
-/// `record`, decoded with a clean fall-through walk from the record's true
-/// `pc0`. `None` when the record is out of range or carries no gated `0x3F`.
-fn partition2_first_scene_change(
-    man_file: &ManFile,
-    man: &[u8],
-    record: usize,
-) -> Option<(i16, String, u8, u8, u8)> {
-    let (start, pc0, len) = partition_record_span(man_file, man, 2, record)?;
-    let body = &man[start..start + len];
-    let mut pc = pc0;
+/// The flag-SET alternative destination of a conditional overworld entrance
+/// (an op-`0x70` story-flag branch inside the partition-2 record). See
+/// [`OverworldPortalSite::conditional`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConditionalDest {
+    /// System story-flag index tested by the record's op-`0x70`. When set, the
+    /// entrance resolves to this destination instead of the primary.
+    pub flag: u16,
+    /// Destination CDNAME scene label from the taken arm's `0x3F` op.
+    pub scene_name: String,
+    /// The taken `0x3F` op's `i16` destination index.
+    pub index: i16,
+    /// Arrival entry-tile X at the alternative destination.
+    pub entry_x: u8,
+    /// Arrival entry-tile Z at the alternative destination.
+    pub entry_z: u8,
+    /// Arrival facing/depth selector at the alternative destination.
+    pub dir: u8,
+}
+
+/// A decoded `0x3F` named-scene-change destination:
+/// `(index, scene_name, entry_x, entry_z, dir)`.
+type SceneChangeDest = (i16, String, u8, u8, u8);
+
+/// The first `0x3F` named-scene-change destination reached by a clean
+/// fall-through walk of partition-2 record `body` starting at `from_pc`.
+/// `None` when no `0x3F` is reached before the record ends.
+fn first_scene_change_from(body: &[u8], from_pc: usize) -> Option<SceneChangeDest> {
+    let mut pc = from_pc;
     while pc < body.len() {
         let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
         if insn.size == 0 {
@@ -155,6 +184,65 @@ fn partition2_first_scene_change(
             && let Some(name) = scene_change_name(body, &insn)
         {
             return Some((index, name, entry_x, entry_z, dir));
+        }
+        pc += insn.size;
+    }
+    None
+}
+
+/// Decode partition-2 record `record`'s scene-change destination(s): the
+/// primary (fall-through) `0x3F`, plus - when the record branches to a *second*
+/// `0x3F` on an op-`0x70` story-flag test - the flag id and the flag-SET
+/// alternative. Returns `None` when the record is out of range or carries no
+/// `0x3F` at all.
+///
+/// The conditional shape is retail's story-progression entrance: an op-`0x70`
+/// `SysFlag.Test` whose taken arm is a different `0x3F` than the linear
+/// fall-through (e.g. `map01`'s dolk/dolk2 dungeon entrance on flag `0x142`).
+fn partition2_scene_changes(
+    man_file: &ManFile,
+    man: &[u8],
+    record: usize,
+) -> Option<(SceneChangeDest, Option<(u16, SceneChangeDest)>)> {
+    let (start, pc0, len) = partition_record_span(man_file, man, 2, record)?;
+    let body = &man[start..start + len];
+    let mut pc = pc0;
+    // Remember the FIRST op-0x70 flag-test's (flag, taken-target) seen before
+    // the primary scene change, so a post-beat alternative can be resolved.
+    let mut pending_test: Option<(u16, usize)> = None;
+    while pc < body.len() {
+        let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
+        if insn.size == 0 {
+            break;
+        }
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: legaia_asset::field_disasm::FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } if pending_test.is_none() => {
+                pending_test = Some((idx, target));
+            }
+            InsnInfo::SceneChange {
+                index,
+                entry_x,
+                entry_z,
+                dir,
+                ..
+            } => {
+                if let Some(name) = scene_change_name(body, &insn) {
+                    let primary = (index, name, entry_x, entry_z, dir);
+                    // A conditional entrance: a preceding flag-test branches to
+                    // a *different* second `0x3F` (the flag-SET destination).
+                    let alt = pending_test.and_then(|(flag, target)| {
+                        let dest = first_scene_change_from(body, target)?;
+                        (dest.1 != primary.1).then_some((flag, dest))
+                    });
+                    return Some((primary, alt));
+                }
+            }
+            _ => {}
         }
         pc += insn.size;
     }
@@ -191,11 +279,22 @@ pub fn overworld_portal_sites(
         {
             continue;
         }
-        let Some((index, scene_name, entry_x, entry_z, dir)) =
-            partition2_first_scene_change(man_file, man, t.record as usize)
+        let Some(((index, scene_name, entry_x, entry_z, dir), alt)) =
+            partition2_scene_changes(man_file, man, t.record as usize)
         else {
             continue;
         };
+        let conditional =
+            alt.map(
+                |(flag, (a_index, a_name, a_entry_x, a_entry_z, a_dir))| ConditionalDest {
+                    flag,
+                    scene_name: a_name,
+                    index: a_index,
+                    entry_x: a_entry_x,
+                    entry_z: a_entry_z,
+                    dir: a_dir,
+                },
+            );
         out.push(OverworldPortalSite {
             overworld_x: t.tile_x,
             overworld_z: t.tile_z,
@@ -205,6 +304,7 @@ pub fn overworld_portal_sites(
             entry_x,
             entry_z,
             dir,
+            conditional,
         });
     }
     out

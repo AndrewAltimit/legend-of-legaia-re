@@ -855,6 +855,19 @@ impl World {
         };
         let new_money = (self.money as i64).saturating_add(gold_credited as i64);
         self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        // Scripted-boss victory latch: winning the boss formation installed by
+        // [`Self::install_boss_encounter`] sets its first-visit one-shot system
+        // flag (rikuroa Zeto = `0x1BE`) so the fight does not re-arm on
+        // re-entry - the engine-side stand-in for the retail cutscene that sets
+        // the gate flag after the boss is beaten. `apply_battle_loot` runs only
+        // on a win (it grants XP/gold), so reaching here IS the victory.
+        if let Some(flag) = self.pending_boss_victory_flag
+            && self.boss_formation_id == Some(formation.formation_id)
+        {
+            self.system_flag_set(flag);
+            self.pending_boss_victory_flag = None;
+            self.boss_formation_id = None;
+        }
         BattleRewards {
             xp: xp_total,
             gold: gold_credited,

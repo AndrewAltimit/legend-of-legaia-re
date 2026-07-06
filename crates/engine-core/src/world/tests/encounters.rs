@@ -474,3 +474,62 @@ fn prologue_handoff_only_fires_while_the_opening_chain_plays() {
     // Bit is left intact for the gate to fire only during the opening.
     assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 }
+
+// ---- scripted single-boss encounter (battle-id path, FUN_8005567c) ----
+
+#[test]
+fn install_boss_encounter_arms_a_lone_monster_formation() {
+    let mut world = World::new();
+    world.set_active_scene_label("rikuroa");
+    let fid = world
+        .install_boss_encounter(75, Some(0x1BE))
+        .expect("boss install returns a formation id");
+    // Synthetic boss-namespace id, disjoint from MAN row ids.
+    assert_eq!(fid, crate::world::BOSS_FORMATION_ID_BASE | 75);
+    let def = world
+        .formation_table
+        .formation(fid)
+        .expect("boss formation registered");
+    assert_eq!(def.slots.len(), 1, "boss is a lone monster");
+    assert_eq!(def.slots[0].monster_id, 75);
+    // Armed to fire on the next field step, with the victory latch pending.
+    assert!(world.scripted_formation_pending);
+    assert_eq!(world.boss_formation_id, Some(fid));
+    assert_eq!(world.pending_boss_victory_flag, Some(0x1BE));
+    // The gate flag is NOT set yet - only a win latches it.
+    assert!(!world.system_flag_test(0x1BE));
+}
+
+#[test]
+fn boss_victory_latches_the_gate_flag_via_apply_battle_loot() {
+    use crate::monster_catalog::MonsterCatalog;
+    let mut world = World::new();
+    world.set_active_scene_label("rikuroa");
+    let fid = world.install_boss_encounter(75, Some(0x1BE)).unwrap();
+    let boss_formation = world.formation_table.formation(fid).cloned().unwrap();
+    // Resolving loot for the boss formation (the win path) latches the gate.
+    let cat = MonsterCatalog::new();
+    let _ = world.apply_battle_loot(&boss_formation, &cat);
+    assert!(
+        world.system_flag_test(0x1BE),
+        "beating the boss sets its first-visit one-shot gate flag"
+    );
+    // Pending state cleared so a re-fought formation doesn't re-latch.
+    assert_eq!(world.pending_boss_victory_flag, None);
+    assert_eq!(world.boss_formation_id, None);
+}
+
+#[test]
+fn non_boss_victory_does_not_latch_a_gate_flag() {
+    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog};
+    let mut world = World::new();
+    world.set_active_scene_label("rikuroa");
+    world.install_boss_encounter(75, Some(0x1BE)).unwrap();
+    // Win a DIFFERENT (random) formation while the boss is armed: the latch
+    // is keyed on the boss formation id, so the gate flag stays clear.
+    let other = FormationDef::new(3, vec![FormationSlot::new(10)]);
+    let cat = MonsterCatalog::new();
+    let _ = world.apply_battle_loot(&other, &cat);
+    assert!(!world.system_flag_test(0x1BE));
+    assert_eq!(world.pending_boss_victory_flag, Some(0x1BE));
+}

@@ -232,6 +232,7 @@ TARGETS = [
     "8003774c",  # motion VM (already dumped, included for cross-ref)
     "801d79e8",  # overlay helper cited by FUN_8003BC08 tick path
     "80038158",  # bit-0x80 path from FUN_8003BC08 (actor[+0x80] != 0) - actor motion VM
+    "80046a20",  # post-battle mode gate; reads battle-id DAT_8007b7fc (encounter.md)
     "80019278",  # heading helper called twice from FUN_8003BC08
     "80046978",  # UNCONDITIONAL call right before horizon emitter in FUN_80016444
     "8001d140",  # per-actor render-pass iterator, called 6x against same lists as FUN_8002519c
@@ -271,6 +272,13 @@ TARGETS = [
     "8005a4a0",  # cited by 8005a1c0 (GPU command-queue / CLUT-upload cluster)
     "80025358",  # cited by 8004f0e8 (battle-victory reward writer)
     "8004e568",  # cited by 8004f0e8 (battle-victory reward writer)
+
+    # Opening-narration crawl roller (SCUS-static). Handler installed on the
+    # child actor spawned by the field-VM op 0x4C nibble-8 sub-0 (CC F8 80 N);
+    # consumes the N inline ASCII pages and reads the four crawl-geometry seeds
+    # at _DAT_801C6EA4 +0x4C/+0x4E/+0x50/+0x52 written by the op 0x4C nibble-E
+    # sub-8 config op (CC F8 E8 ...). See docs/subsystems/cutscene.md.
+    "80037174",  # crawl-roller tick FUN_80037174
 ]
 
 OUT_DIR = "/scripts/funcs"

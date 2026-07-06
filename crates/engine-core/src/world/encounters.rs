@@ -4,6 +4,26 @@
 
 use super::*;
 
+/// High bits of the synthetic formation id [`World::install_boss_encounter`]
+/// registers for a scripted single-boss fight. Sits above the MAN
+/// formation-table row indices (small) and outside the range record-hash
+/// ids ([`crate::encounter_record::EncounterRecord::synthetic_formation_id`])
+/// realistically fold to, so a boss formation never aliases a random one.
+pub const BOSS_FORMATION_ID_BASE: u16 = 0xB000;
+
+/// Scripted single-boss fights keyed by scene label: the first-visit fight a
+/// dungeon arms on entry while its gate flag is still clear. Each row is
+/// `(scene_label, monster_id, gate_flag)`.
+///
+/// The chapter-1 entry is Mt. Rikuroa's Zeto (monster id 75, gate flag
+/// `0x1BE` = the C1 story-flag of rikuroa cutscene record P2[0] "Meta's
+/// warning", the first-visit one-shot). Zeto has no on-disc formation record;
+/// retail arms it through the battle-id path
+/// ([`World::install_boss_encounter`]). The host scene-entry latch
+/// ([`crate::scene::SceneHost::enter_field_scene`]) consumes this table; the
+/// gate flag latches on victory in [`World::apply_battle_loot`].
+pub const SCRIPTED_SCENE_BOSSES: &[(&str, u16, u16)] = &[("rikuroa", 75, 0x1BE)];
+
 impl World {
     /// Install an [`crate::encounter::EncounterSession`] for the current
     /// scene. Engines call this on scene-enter once the per-scene encounter
@@ -467,6 +487,75 @@ impl World {
             self.scripted_encounter_armed = false;
         }
         id
+    }
+
+    /// Install a scripted single-monster **boss** encounter via the retail
+    /// battle-id path, so the next [`Self::on_field_step`] flips Field ->
+    /// Battle against that lone monster.
+    ///
+    /// This is a distinct mechanism from the MAN-formation scripted encounters
+    /// ([`Self::install_man_formation`] / [`Self::install_scripted_encounter`]).
+    /// The chapter-1 boss (Zeto, monster id 75, fought in `rikuroa`) has **no**
+    /// on-disc formation record - not in the scene's MAN encounter section and
+    /// not as an inline armed-YIELD window. Instead the retail trigger writes a
+    /// battle-id global (`DAT_8007b7fc`) which battle-init `FUN_8005567c`
+    /// expands: for ids in `0x49..=0x4D` it stores `(u8)id` into the formation
+    /// cell `DAT_8007bd0c` and clears the higher monster slots, yielding a lone
+    /// enemy. This models that expansion directly - a one-slot
+    /// [`crate::monster_catalog::FormationDef`] registered under a synthetic
+    /// boss-namespace id and forced as the next encounter.
+    ///
+    /// Real per-monster stats are the caller's responsibility: seed
+    /// [`Self::monster_catalog`] with `monster_id` from the PROT 867 archive
+    /// before calling (the host scene-entry latch does this) so
+    /// [`Self::enter_battle_from_formation`] overlays genuine HP/attack; absent
+    /// a catalog entry the slot still spawns (tagged with its id) with default
+    /// stats.
+    ///
+    /// `victory_flag` is the first-visit one-shot system flag the fight latches
+    /// on a win (rikuroa's Zeto gate `0x1BE`, mirroring cutscene record P2[0]'s
+    /// C1 self-disable) so the boss does not re-arm on re-entry;
+    /// [`Self::apply_battle_loot`] sets it. Returns the synthetic formation id.
+    ///
+    /// NOTE: the field-side op that writes `DAT_8007b7fc` in retail is not yet
+    /// recovered from the corpus (it sits in the rikuroa scene prescript /
+    /// event-VM, a different bytecode than the field VM, or a LUI+ADDIU-aliased
+    /// store in an undumped overlay). This method + the host's flag-`0x1BE`
+    /// gate are the faithful interim until that writer op is pinned.
+    ///
+    /// REF: FUN_8005567c (battle-id -> lone-monster cell expansion)
+    pub fn install_boss_encounter(
+        &mut self,
+        monster_id: u16,
+        victory_flag: Option<u16>,
+    ) -> Option<u16> {
+        // Synthetic boss-namespace formation id, disjoint from the MAN
+        // formation-table row ids (small indices) and the record-hash ids
+        // `install_encounter_from_record` synthesizes.
+        let formation_id = BOSS_FORMATION_ID_BASE | monster_id;
+        let label = format!("Boss {monster_id}");
+        let formation = crate::monster_catalog::FormationDef::new(
+            formation_id,
+            vec![crate::monster_catalog::FormationSlot::new(monster_id)],
+        )
+        .with_label(label);
+        self.formation_table.insert(formation);
+
+        use crate::encounter::{
+            EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
+        };
+        let mut table = EncounterTable::new(&self.active_scene_label);
+        // Force the next step roll: the boss cue installs this lone formation.
+        table.set_trigger_rate(0xFF);
+        table.push(EncounterEntry::new(formation_id, 1));
+        let tracker = EncounterTracker::new(table);
+        self.encounter = Some(EncounterSession::new(tracker));
+        // One-shot override: fire on the next field step regardless of any
+        // per-region random tracker installed for the dungeon.
+        self.scripted_formation_pending = true;
+        self.boss_formation_id = Some(formation_id);
+        self.pending_boss_victory_flag = victory_flag;
+        Some(formation_id)
     }
 
     /// Field-step trigger. Engines call this once per "the player walked

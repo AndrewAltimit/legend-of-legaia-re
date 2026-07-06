@@ -24,6 +24,43 @@ impl SceneHost {
         self.monster_archive_cache.clone()
     }
 
+    /// First-visit scripted-boss latch. When `name` is a scripted-boss scene
+    /// ([`crate::world::SCRIPTED_SCENE_BOSSES`]) whose gate flag is still clear,
+    /// seed the boss monster's real stats from the PROT 867 archive and arm the
+    /// lone-monster fight ([`crate::world::World::install_boss_encounter`]) so
+    /// the next field step enters it. No-op for every non-boss scene and for a
+    /// boss already beaten (its gate flag latched by
+    /// [`crate::world::World::apply_battle_loot`]).
+    fn arm_scripted_scene_boss(&mut self, name: &str) {
+        // A boss arm belongs to one dungeon visit; clear any left from a prior
+        // visit so a revisit (or a non-boss scene) reflects this entry's
+        // decision. Re-set below only when this scene arms a boss.
+        self.world.boss_formation_id = None;
+        self.world.pending_boss_victory_flag = None;
+        let Some(&(_, monster_id, gate_flag)) = crate::world::SCRIPTED_SCENE_BOSSES
+            .iter()
+            .find(|&&(scene, _, _)| scene == name)
+        else {
+            return;
+        };
+        if self.world.system_flag_test(gate_flag) {
+            return; // first-visit one-shot already fired
+        }
+        // Seed genuine boss stats (HP/attack/EXP/gold) from the disc archive so
+        // the fight + its loot resolve against real values; a read failure
+        // leaves the catalog default in place (the fight still spawns).
+        if let Some(archive) = self.monster_archive_bytes() {
+            let cat = crate::monster_catalog::catalog_from_monster_archive(&archive, &[monster_id]);
+            for def in cat.by_id.into_values() {
+                self.world.monster_catalog.insert(def);
+            }
+            self.ensure_move_power_table();
+        }
+        self.world
+            .install_boss_encounter(monster_id, Some(gate_flag));
+        log::info!("field: armed scripted boss (monster {monster_id}) for scene {name}");
+    }
+
     /// Install the battle-action move-power table onto the world from PROT
     /// entry 0898 (the battle-action overlay), once per host. The monster
     /// special-attack damage path reads it to roll faithful per-move damage;
@@ -373,6 +410,14 @@ impl SceneHost {
             Some(Err(err)) => eprintln!("[scene] field-carrier MAN payload skipped: {err:#}"),
             _ => {}
         }
+        // Scripted-boss first-visit latch (chapter-1: Mt. Rikuroa's Zeto).
+        // Some dungeon bosses have no on-disc encounter formation - retail
+        // arms them through a battle-id global write in the scene prescript,
+        // gated by a first-visit story flag. When the active scene is a
+        // scripted-boss scene whose gate flag is still clear, seed the boss
+        // stats from the archive and install the lone-monster fight so the
+        // next field step enters it. See `crate::world::SCRIPTED_SCENE_BOSSES`.
+        self.arm_scripted_scene_boss(name);
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only
         // a handful of scenes carry VDF data (8/124 in the retail
@@ -781,13 +826,31 @@ impl SceneHost {
                     i16::from(site.overworld_x) * 128 + 0x40,
                     i16::from(site.overworld_z) * 128 + 0x40,
                 );
+                // Story-conditional entrance: when the record selects its
+                // destination by an op-0x70 flag branch (retail's post-beat
+                // dungeon-variant entrance, e.g. `map01`'s dolk -> dolk2 on flag
+                // `0x142`), resolve to the flag-SET alternative once that story
+                // flag latches; otherwise the primary (flag-CLEAR) destination
+                // stands. Mirrors the op-0x70 semantics in the field VM.
+                let (scene_name, index, entry_x, entry_z, dir) = match site.conditional {
+                    Some(cd) if self.world.system_flag_test(cd.flag) => {
+                        (cd.scene_name, cd.index, cd.entry_x, cd.entry_z, cd.dir)
+                    }
+                    _ => (
+                        site.scene_name,
+                        site.index,
+                        site.entry_x,
+                        site.entry_z,
+                        site.dir,
+                    ),
+                };
                 entities.push((
                     crate::world::WorldMapEntityConfig::OverworldPortal {
-                        scene_name: site.scene_name,
-                        index: site.index,
-                        entry_x: site.entry_x,
-                        entry_z: site.entry_z,
-                        dir: site.dir,
+                        scene_name,
+                        index,
+                        entry_x,
+                        entry_z,
+                        dir,
                     },
                     world,
                 ));

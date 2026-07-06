@@ -21,13 +21,36 @@
 //! `SceneMode::Field`, seats the player at the portal's `0x3F` entry tile, and
 //! the scene's MAN is present + parses with the pinned partition counts.
 //!
-//! **Next leg (documented, not faked).** The first boss (Zeto, fought in
-//! `rikuroa`) is a *scripted* battle gated by the dungeon MAN's partition-2
-//! cutscene timeline, not a random encounter - `rikuroa`'s MAN carries no named
-//! `0x3F` warp and the `encounter_registry` only models the random-encounter
-//! fallback. Wiring the scripted-boss trigger (partition-2 timeline -> battle
-//! stack) is the next spine leg; this oracle stops at "player stands inside the
-//! boss dungeon with its MAN loaded".
+//! **Part C - the scripted first-boss (Zeto) fight.** Zeto (monster id 75 =
+//! `0x4B`) has no on-disc formation record: not in `rikuroa`'s MAN encounter
+//! section and not as an inline armed-YIELD window. Retail arms it through the
+//! *battle-id path* (`DAT_8007b7fc = 0x4B` -> `FUN_8005567c` collapses ids
+//! `0x49..0x4D` to a lone-monster cell), gated by a first-visit story flag. The
+//! engine models this as a `rikuroa` scene-entry latch on flag `0x1BE`
+//! (`rikuroa` cutscene record P2[0] "Meta's warning" C1) plus the battle-id
+//! port [`World::install_boss_encounter`]; the gate flag latches on victory
+//! ([`World::apply_battle_loot`]). Part C drives entry -> armed boss -> Field ->
+//! Battle seated with Zeto's real archive HP -> victory latches `0x1BE`, and a
+//! separate leg proves a post-victory revisit does not re-arm the fight.
+//!
+//! **Residual (documented, not faked).** The field-side op that writes the
+//! battle-id global in retail is not yet recovered from the corpus - it sits in
+//! the `rikuroa` scene prescript / event-VM (a different bytecode than the
+//! field VM) or a LUI+ADDIU-aliased store in an undumped overlay. The
+//! scene-entry flag-`0x1BE` latch is the faithful interim until that writer op
+//! is pinned.
+//!
+//! **Part D - the story-conditional dungeon entrance (`dolk` -> `dolk2`).**
+//! `dolk2` is NOT reached from a dungeon interior (that earlier reading is
+//! falsified - no interior scene lists `dolk2`; only `map01` does). It is the
+//! post-boss variant of the *same* `map01` dungeon entrance as `dolk`, selected
+//! inside the entrance record (`map01` P2[1]/P2[2]) by an op-`0x70` story-flag
+//! branch on system flag `0x142`: clear -> `dolk`, set -> `dolk2` (same trigger
+//! tile + arrival tile). The engine resolves the branch in the world-map portal
+//! seeder via `World::system_flag_test`; Part D asserts both arms + walks into
+//! `dolk2` with the flag set. (Residual RE: where retail *sets* flag `0x142` -
+//! the dolk-dungeon-clear writer - is unrecovered, like the Zeto trigger; the
+//! oracle seeds it directly.)
 //!
 //! Skip-pass (CLAUDE.md disc-gated convention): `LEGAIA_DISC_BIN` unset /
 //! `extracted/` missing.
@@ -64,9 +87,21 @@ fn open_host() -> Option<SceneHost> {
 /// Drive `town01` free-roam onto the Drake overworld (`map01`, WorldMap) via the
 /// south-gate walk-on trigger. `None` when the disc gate skips.
 fn drive_town01_to_map01() -> Option<SceneHost> {
+    drive_town01_to_map01_with_flags(&[])
+}
+
+/// Like [`drive_town01_to_map01`], but latches each system story flag in `flags`
+/// while still in `town01` - before the `map01` seeder runs - so the overworld's
+/// story-conditional entrances (e.g. the dolk/dolk2 dungeon variant on flag
+/// `0x142`) resolve against a post-beat flag state. The flags survive the
+/// scene transition (they are world story state, not per-scene).
+fn drive_town01_to_map01_with_flags(flags: &[u16]) -> Option<SceneHost> {
     let mut host = open_host()?;
     host.enter_field_scene("town01", 0).expect("enter town01");
     assert_eq!(host.world.mode, SceneMode::Field, "town01 is a field scene");
+    for &f in flags {
+        host.world.system_flag_set(f);
+    }
     for _ in 0..3 {
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
             panic!("unexpected early transition to {name}");
@@ -159,7 +194,14 @@ fn part_a_map01_lists_the_first_boss_dungeon_chain() {
 /// Drive `map01 -> <dest>` through the overworld portal and assert the dungeon
 /// loads in Field mode with the player seated at the portal's entry tile.
 fn drive_map01_portal_into(dest: &str) -> Option<SceneHost> {
-    let mut host = drive_town01_to_map01()?;
+    drive_map01_portal_into_with_flags(dest, &[])
+}
+
+/// Like [`drive_map01_portal_into`], but latches `flags` before the `map01`
+/// seeder runs (see [`drive_town01_to_map01_with_flags`]) so a story-conditional
+/// entrance resolves to its post-beat destination.
+fn drive_map01_portal_into_with_flags(dest: &str, flags: &[u16]) -> Option<SceneHost> {
+    let mut host = drive_town01_to_map01_with_flags(flags)?;
     let tile = find_portal_tile(&host, dest)
         .unwrap_or_else(|| panic!("map01 installs a {dest} overworld portal"));
     host.world.seat_player_at_tile(tile.0, tile.1);
@@ -227,4 +269,197 @@ fn part_b_map01_portal_into_dolk() {
         "dolk lists its interior destination rikuroa; got {dests:?}"
     );
     eprintln!("[ok] Leg (Arc-2): map01 -> dolk overworld portal -> dolk (Field), MAN present");
+}
+
+// ---------------------------------------------------------------------
+// Part C: the scripted first-boss (Zeto) fight, end to end
+// ---------------------------------------------------------------------
+//
+// Zeto (monster id 75 = 0x4B) has NO on-disc formation record - not in
+// rikuroa's MAN encounter section and not as an inline armed-YIELD window.
+// Retail arms it through the battle-id path (`DAT_8007b7fc = 0x4B` ->
+// `FUN_8005567c` collapses ids 0x49..0x4D to a lone-monster cell), gated by a
+// first-visit story flag. The engine models this as a rikuroa scene-entry latch
+// on flag `0x1BE` (rikuroa cutscene P2[0] "Meta's warning" C1) + the battle-id
+// port `World::install_boss_encounter`; the gate flag latches on victory. The
+// field-side op that writes the battle-id global in retail is not yet recovered
+// (it sits in the scene prescript / an undumped overlay) - this leg exercises
+// the faithful interim.
+
+/// Zeto = monster id 75 (0x4B); rikuroa boss gate flag 0x1BE. Mirrors
+/// `legaia_engine_core::world::SCRIPTED_SCENE_BOSSES`.
+const ZETO_MONSTER_ID: u16 = 75;
+const RIKUROA_BOSS_GATE_FLAG: u16 = 0x1BE;
+
+#[test]
+fn part_c_rikuroa_arms_and_fights_the_zeto_scripted_boss() {
+    use legaia_engine_core::world::BOSS_FORMATION_ID_BASE;
+
+    let Some(mut host) = drive_map01_portal_into("rikuroa") else {
+        return;
+    };
+
+    // (1) Entering rikuroa (first visit, gate flag clear) armed the boss.
+    assert!(
+        !host.world.system_flag_test(RIKUROA_BOSS_GATE_FLAG),
+        "first visit: the Zeto gate flag starts clear"
+    );
+    assert_eq!(
+        host.world.boss_formation_id,
+        Some(BOSS_FORMATION_ID_BASE | ZETO_MONSTER_ID),
+        "rikuroa entry arms the Zeto boss formation"
+    );
+    assert_eq!(
+        host.world.pending_boss_victory_flag,
+        Some(RIKUROA_BOSS_GATE_FLAG),
+        "the victory latch is pending on the gate flag"
+    );
+    assert!(
+        host.world.scripted_formation_pending,
+        "the boss fires on the next field step"
+    );
+    // Real Zeto stats were seeded from the PROT 867 archive.
+    let zeto = host
+        .world
+        .monster_catalog
+        .get(ZETO_MONSTER_ID)
+        .expect("Zeto stats seeded from the monster archive");
+    assert!(zeto.hp > 0, "Zeto carries real archive HP");
+
+    // (2) Step -> the scripted boss flips Field -> Battle.
+    host.world.live_gameplay_loop = true;
+    assert!(
+        host.world.on_field_step(),
+        "the forced boss formation triggers on the field step"
+    );
+    let mut reached_battle = false;
+    for _ in 0..240 {
+        let _ = host.tick().expect("tick");
+        if host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+    }
+    assert!(reached_battle, "the Zeto cue flips Field -> Battle");
+    let monster_slot = host.world.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        host.world.actors[monster_slot].battle_monster_id,
+        Some(ZETO_MONSTER_ID),
+        "the lone enemy slot is Zeto"
+    );
+    assert!(
+        host.world.actors[monster_slot].battle.max_hp > 0,
+        "the Zeto slot is seeded with its real HP"
+    );
+
+    // (3) Winning latches the first-visit gate flag so the boss does not
+    // re-arm. Resolving the boss formation's loot IS the victory in the engine
+    // model (it grants XP/gold); drive it directly.
+    let boss_formation = host
+        .world
+        .active_formation
+        .clone()
+        .expect("boss formation captured at the Field -> Battle transition");
+    assert_eq!(
+        boss_formation.formation_id,
+        BOSS_FORMATION_ID_BASE | ZETO_MONSTER_ID
+    );
+    let catalog = host.world.monster_catalog.clone();
+    let _ = host.world.apply_battle_loot(&boss_formation, &catalog);
+    assert!(
+        host.world.system_flag_test(RIKUROA_BOSS_GATE_FLAG),
+        "beating Zeto latches the rikuroa first-visit gate flag 0x1BE"
+    );
+    assert_eq!(
+        host.world.boss_formation_id, None,
+        "the boss latch is consumed on victory"
+    );
+
+    eprintln!(
+        "[ok] Part C: rikuroa -> armed Zeto (id 75, battle-id path) -> Battle \
+         seated with real HP -> victory latches gate flag 0x1BE"
+    );
+}
+
+#[test]
+fn part_c_rikuroa_does_not_rearm_zeto_once_the_gate_flag_is_set() {
+    let Some(mut host) = drive_map01_portal_into("rikuroa") else {
+        return;
+    };
+    // Simulate the post-victory world state: the gate flag is already latched.
+    host.world.system_flag_set(RIKUROA_BOSS_GATE_FLAG);
+    // Re-enter rikuroa from scratch - the latch must see the set flag and skip.
+    host.enter_field_scene("rikuroa", 0)
+        .expect("re-enter rikuroa");
+    assert_eq!(
+        host.world.boss_formation_id, None,
+        "with the gate flag set, re-entering rikuroa does not re-arm Zeto"
+    );
+    eprintln!("[ok] Part C: post-victory rikuroa revisit does not re-arm the boss");
+}
+
+// ---------------------------------------------------------------------
+// Part D: the story-conditional dungeon entrance (dolk -> dolk2)
+// ---------------------------------------------------------------------
+//
+// `map01`'s dungeon-entrance records (P2[1]/P2[2]) select their `0x3F`
+// destination by an op-0x70 story-flag branch on system flag 0x142: flag CLEAR
+// -> `dolk` (pre-boss), flag SET -> `dolk2` (post-boss). The two arms share the
+// same overworld trigger tile + arrival tile - it is the same entrance, gated by
+// story progress. (This falsifies the earlier "dolk2 is reached from a dungeon
+// interior" reading: no interior scene lists dolk2; only `map01` does.) The
+// engine resolves the branch in the world-map portal seeder via
+// `World::system_flag_test`.
+
+const DOLK_VARIANT_FLAG: u16 = 0x142;
+
+#[test]
+fn part_d_dungeon_entrance_is_dolk_before_the_flag_and_dolk2_after() {
+    // Baseline (flag CLEAR): the entrance is `dolk`; no `dolk2` portal exists.
+    let Some(host) = drive_town01_to_map01() else {
+        return;
+    };
+    assert!(
+        find_portal_tile(&host, "dolk").is_some(),
+        "flag clear: the map01 dungeon entrance resolves to dolk"
+    );
+    assert!(
+        find_portal_tile(&host, "dolk2").is_none(),
+        "flag clear: no dolk2 portal is installed"
+    );
+    let dolk_tile = find_portal_tile(&host, "dolk").unwrap();
+
+    // Post-beat (flag 0x142 SET): the SAME entrance tile now resolves to `dolk2`.
+    let Some(host2) = drive_town01_to_map01_with_flags(&[DOLK_VARIANT_FLAG]) else {
+        return;
+    };
+    let dolk2_tile = find_portal_tile(&host2, "dolk2")
+        .expect("flag 0x142 set: the map01 dungeon entrance resolves to dolk2");
+    assert!(
+        find_portal_tile(&host2, "dolk").is_none(),
+        "flag set: the pre-boss dolk portal is replaced by dolk2"
+    );
+    assert_eq!(
+        dolk2_tile, dolk_tile,
+        "dolk and dolk2 are the same entrance tile, chosen by flag 0x142"
+    );
+    eprintln!(
+        "[ok] Part D: map01 dungeon entrance at {dolk_tile:?} = dolk (flag clear) \
+         / dolk2 (flag 0x142 set)"
+    );
+}
+
+#[test]
+fn part_d_engine_walks_into_dolk2_after_the_story_flag() {
+    // With flag 0x142 latched, walking the dungeon entrance loads dolk2 (Field).
+    let Some(host) = drive_map01_portal_into_with_flags("dolk2", &[DOLK_VARIANT_FLAG]) else {
+        return;
+    };
+    assert_eq!(host.world.mode, SceneMode::Field, "dolk2 is a field scene");
+    let index = host.index.clone();
+    // dolk2 ships its MAN inside the v12-embedded scene_asset_table.
+    assert_scene_man(&index, "dolk2", [10, 7, 3]);
+    eprintln!(
+        "[ok] Part D: map01 (flag 0x142) -> dolk2 overworld portal -> dolk2 (Field), MAN present"
+    );
 }

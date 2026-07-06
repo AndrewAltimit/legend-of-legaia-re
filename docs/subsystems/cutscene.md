@@ -450,6 +450,28 @@ The `RollerParams` px/frame values are pinned against retail's **~60 Hz** field 
 
 The residual dead-air between the two crawls (engine ~5 s vs retail ~3 s) is the ~800-frame small-`WaitFrames` camera choreography (`pc 0x2d9..0x88f`) that the engine runs **sequentially** before block 2 - a field-VM step-parallelism thread, not a roller-speed one.
 
+#### Roller op operands (Ghidra-traced)
+
+The spawner and the crawl-geometry config are two distinct sub-ops of field-VM op `0x4C` (`MENU_CTRL`), dispatched by `switch(op0 >> 4)` then `switch(op0 & 0xF)` inside `FUN_801DE840` (`see ghidra/scripts/funcs/overlay_0897_801e0c3c.txt`, cases `0x4C` nibble-8 sub-0 and nibble-E sub-8). Both take the cross-context target `0xF8` (the player / camera-anchor actor).
+
+- **Spawn - `CC F8 80 N`** (op `0x4C`, op0 `0x80`: outer nibble `8`, sub `0`). Operand `N` is the **page count**. The op allocates a child actor from the template `DAT_801F28A0` (via `FUN_80020DE0`, which copies template `+0x8 = FUN_80037174` into the actor's handler word `+0xC`), points the child's script pointer `+0x90` at the operand's `N` byte, and leaves the following bytes framed `[N][page0][page1]…[page(N-1)]` (each page `0x1F <ascii> 0x00`). The parent then measures each of the `N` pages (`FUN_8003CA38`) to advance its own PC past the whole block and **continues** (non-blocking). The roller reads `N` back as the first byte at `+0x90`.
+
+- **Geometry config - `CC F8 E8 …`** (op `0x4C`, op0 `0xE8`: outer nibble `0xE`, sub `8`; 10-byte op). It fetches four signed-16 LE words at operand `+1/+3/+5/+7` (`word0..word3`); `word3` selects the sub-mode:
+  - `word3 == 0` seeds the three crawl-geometry globals at `_DAT_801C6EA4` (each word defaults if written as `0`): `+0x4C = word0` (default `0x40`), `+0x4E = word1` (default `0x08`), `+0x50 = word2` (default `0x04`).
+  - `word3 == 1` finds the live roller by handler `FUN_80037174` (`FUN_8003CF04`) and either **pauses** it (`word0 == 0` sets actor `+0x10 |= 0x80000`) or writes the stop trigger `_DAT_801C6EA4 +0x52 = word0`.
+  - `word3 == 2` **resumes** the roller (clears `+0x10 & ~0x80000`); `word3 == 3` unlinks the child and raises the terminal-kill flag (`+0x10 |= 8`).
+
+  The task-name "`4C 88`" is a **different** op (op0 `0x88`, nibble-8 sub-8): it writes `_DAT_80084628/80084624/8008462C`, not the crawl geometry. The crawl-geometry seed op is specifically the nibble-E sub-8 (`0xE8`) form.
+
+**Seed meaning** (from the roller's reads, `see ghidra/scripts/funcs/80037174.txt`):
+
+| offset | role | default |
+|---|---|---|
+| `+0x4C` | window **top Y** (line base). Line `i` draws at `Y = (+0x4C) - subscroll + 16*i`. | `0x40` (64) |
+| `+0x4E` | **visible line count** (window height in 16 px lines). Bottom clip `Y = (+0x4C) + 16*(+0x4E)`, clamped `<= 232`; also the length of the roller's per-line state array `actor+0x80…`. | `0x08` (8) |
+| `+0x50` | scroll-cadence **divisor**. A per-actor accumulator advances by the scratchpad speed byte `DAT_1F800393`/frame; on reaching `+0x50` the 1 px sub-scroll `actor+0x9E` (0..15) steps and the accumulator resets, so `px/frame = DAT_1F800393 / (+0x50)`. | `0x04` (4) |
+| `+0x52` | **stop-after-N-lines** trigger. When the lines-scrolled counter `actor+0x6A` reaches `+0x52`, the roller pauses (`actor+0x10 |= 0x80000`) and `+0x52` is cleared. Written only by the `word3 == 1` sub-mode. | (unset) |
+
 A prior model - "one caption per page, 120 frames each, killing its predecessor, drawn at `Y = 180` / mid-screen" - described the separate **`4C E1` single-balloon op** (spawner `FUN_8003C764`, handler `FUN_801DA7F0`, dispatcher case at `0x801E30B8`/`C8`). That op is real but it is **not the crawl**.
 The *"It was the Seru."* caption appears between `opdeene`'s two crawls, as a centered line over the villager-tableau shot (between the creation crawl's last page and the Seru-history crawl's first). It is **not a text balloon at all** and **not any live-rendered font string**: it is a **pre-rendered image**. The caption is a baked **112×32 4bpp TIM** (two CLUT palettes - the fade steps) in the `opdeene` geometry pack **PROT entry 0749** at LZS-decoded offset `0x01EC30`, VRAM `fb=(384,0)`, sitting among that pack's scene textures (the cloth grades, the Genesis-tree flame, the foliage; `tim-scan extracted/PROT/0749_opdeene.BIN`). The scene renderer draws it as a screen-space textured quad; there is no font string to source.
 
