@@ -826,13 +826,31 @@ impl SceneHost {
                     i16::from(site.overworld_x) * 128 + 0x40,
                     i16::from(site.overworld_z) * 128 + 0x40,
                 );
+                // Story-conditional entrance: when the record selects its
+                // destination by an op-0x70 flag branch (retail's post-beat
+                // dungeon-variant entrance, e.g. `map01`'s dolk -> dolk2 on flag
+                // `0x142`), resolve to the flag-SET alternative once that story
+                // flag latches; otherwise the primary (flag-CLEAR) destination
+                // stands. Mirrors the op-0x70 semantics in the field VM.
+                let (scene_name, index, entry_x, entry_z, dir) = match site.conditional {
+                    Some(cd) if self.world.system_flag_test(cd.flag) => {
+                        (cd.scene_name, cd.index, cd.entry_x, cd.entry_z, cd.dir)
+                    }
+                    _ => (
+                        site.scene_name,
+                        site.index,
+                        site.entry_x,
+                        site.entry_z,
+                        site.dir,
+                    ),
+                };
                 entities.push((
                     crate::world::WorldMapEntityConfig::OverworldPortal {
-                        scene_name: site.scene_name,
-                        index: site.index,
-                        entry_x: site.entry_x,
-                        entry_z: site.entry_z,
-                        dir: site.dir,
+                        scene_name,
+                        index,
+                        entry_x,
+                        entry_z,
+                        dir,
                     },
                     world,
                 ));

@@ -38,8 +38,19 @@
 //! the `rikuroa` scene prescript / event-VM (a different bytecode than the
 //! field VM) or a LUI+ADDIU-aliased store in an undumped overlay. The
 //! scene-entry flag-`0x1BE` latch is the faithful interim until that writer op
-//! is pinned. Past the boss, `dolk2` is reached from a dungeon interior (not a
-//! `map01` portal); wiring that interior `0x3F` is the following leg.
+//! is pinned.
+//!
+//! **Part D - the story-conditional dungeon entrance (`dolk` -> `dolk2`).**
+//! `dolk2` is NOT reached from a dungeon interior (that earlier reading is
+//! falsified - no interior scene lists `dolk2`; only `map01` does). It is the
+//! post-boss variant of the *same* `map01` dungeon entrance as `dolk`, selected
+//! inside the entrance record (`map01` P2[1]/P2[2]) by an op-`0x70` story-flag
+//! branch on system flag `0x142`: clear -> `dolk`, set -> `dolk2` (same trigger
+//! tile + arrival tile). The engine resolves the branch in the world-map portal
+//! seeder via `World::system_flag_test`; Part D asserts both arms + walks into
+//! `dolk2` with the flag set. (Residual RE: where retail *sets* flag `0x142` -
+//! the dolk-dungeon-clear writer - is unrecovered, like the Zeto trigger; the
+//! oracle seeds it directly.)
 //!
 //! Skip-pass (CLAUDE.md disc-gated convention): `LEGAIA_DISC_BIN` unset /
 //! `extracted/` missing.
@@ -76,9 +87,21 @@ fn open_host() -> Option<SceneHost> {
 /// Drive `town01` free-roam onto the Drake overworld (`map01`, WorldMap) via the
 /// south-gate walk-on trigger. `None` when the disc gate skips.
 fn drive_town01_to_map01() -> Option<SceneHost> {
+    drive_town01_to_map01_with_flags(&[])
+}
+
+/// Like [`drive_town01_to_map01`], but latches each system story flag in `flags`
+/// while still in `town01` - before the `map01` seeder runs - so the overworld's
+/// story-conditional entrances (e.g. the dolk/dolk2 dungeon variant on flag
+/// `0x142`) resolve against a post-beat flag state. The flags survive the
+/// scene transition (they are world story state, not per-scene).
+fn drive_town01_to_map01_with_flags(flags: &[u16]) -> Option<SceneHost> {
     let mut host = open_host()?;
     host.enter_field_scene("town01", 0).expect("enter town01");
     assert_eq!(host.world.mode, SceneMode::Field, "town01 is a field scene");
+    for &f in flags {
+        host.world.system_flag_set(f);
+    }
     for _ in 0..3 {
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
             panic!("unexpected early transition to {name}");
@@ -171,7 +194,14 @@ fn part_a_map01_lists_the_first_boss_dungeon_chain() {
 /// Drive `map01 -> <dest>` through the overworld portal and assert the dungeon
 /// loads in Field mode with the player seated at the portal's entry tile.
 fn drive_map01_portal_into(dest: &str) -> Option<SceneHost> {
-    let mut host = drive_town01_to_map01()?;
+    drive_map01_portal_into_with_flags(dest, &[])
+}
+
+/// Like [`drive_map01_portal_into`], but latches `flags` before the `map01`
+/// seeder runs (see [`drive_town01_to_map01_with_flags`]) so a story-conditional
+/// entrance resolves to its post-beat destination.
+fn drive_map01_portal_into_with_flags(dest: &str, flags: &[u16]) -> Option<SceneHost> {
+    let mut host = drive_town01_to_map01_with_flags(flags)?;
     let tile = find_portal_tile(&host, dest)
         .unwrap_or_else(|| panic!("map01 installs a {dest} overworld portal"));
     host.world.seat_player_at_tile(tile.0, tile.1);
@@ -366,4 +396,70 @@ fn part_c_rikuroa_does_not_rearm_zeto_once_the_gate_flag_is_set() {
         "with the gate flag set, re-entering rikuroa does not re-arm Zeto"
     );
     eprintln!("[ok] Part C: post-victory rikuroa revisit does not re-arm the boss");
+}
+
+// ---------------------------------------------------------------------
+// Part D: the story-conditional dungeon entrance (dolk -> dolk2)
+// ---------------------------------------------------------------------
+//
+// `map01`'s dungeon-entrance records (P2[1]/P2[2]) select their `0x3F`
+// destination by an op-0x70 story-flag branch on system flag 0x142: flag CLEAR
+// -> `dolk` (pre-boss), flag SET -> `dolk2` (post-boss). The two arms share the
+// same overworld trigger tile + arrival tile - it is the same entrance, gated by
+// story progress. (This falsifies the earlier "dolk2 is reached from a dungeon
+// interior" reading: no interior scene lists dolk2; only `map01` does.) The
+// engine resolves the branch in the world-map portal seeder via
+// `World::system_flag_test`.
+
+const DOLK_VARIANT_FLAG: u16 = 0x142;
+
+#[test]
+fn part_d_dungeon_entrance_is_dolk_before_the_flag_and_dolk2_after() {
+    // Baseline (flag CLEAR): the entrance is `dolk`; no `dolk2` portal exists.
+    let Some(host) = drive_town01_to_map01() else {
+        return;
+    };
+    assert!(
+        find_portal_tile(&host, "dolk").is_some(),
+        "flag clear: the map01 dungeon entrance resolves to dolk"
+    );
+    assert!(
+        find_portal_tile(&host, "dolk2").is_none(),
+        "flag clear: no dolk2 portal is installed"
+    );
+    let dolk_tile = find_portal_tile(&host, "dolk").unwrap();
+
+    // Post-beat (flag 0x142 SET): the SAME entrance tile now resolves to `dolk2`.
+    let Some(host2) = drive_town01_to_map01_with_flags(&[DOLK_VARIANT_FLAG]) else {
+        return;
+    };
+    let dolk2_tile = find_portal_tile(&host2, "dolk2")
+        .expect("flag 0x142 set: the map01 dungeon entrance resolves to dolk2");
+    assert!(
+        find_portal_tile(&host2, "dolk").is_none(),
+        "flag set: the pre-boss dolk portal is replaced by dolk2"
+    );
+    assert_eq!(
+        dolk2_tile, dolk_tile,
+        "dolk and dolk2 are the same entrance tile, chosen by flag 0x142"
+    );
+    eprintln!(
+        "[ok] Part D: map01 dungeon entrance at {dolk_tile:?} = dolk (flag clear) \
+         / dolk2 (flag 0x142 set)"
+    );
+}
+
+#[test]
+fn part_d_engine_walks_into_dolk2_after_the_story_flag() {
+    // With flag 0x142 latched, walking the dungeon entrance loads dolk2 (Field).
+    let Some(host) = drive_map01_portal_into_with_flags("dolk2", &[DOLK_VARIANT_FLAG]) else {
+        return;
+    };
+    assert_eq!(host.world.mode, SceneMode::Field, "dolk2 is a field scene");
+    let index = host.index.clone();
+    // dolk2 ships its MAN inside the v12-embedded scene_asset_table.
+    assert_scene_man(&index, "dolk2", [10, 7, 3]);
+    eprintln!(
+        "[ok] Part D: map01 (flag 0x142) -> dolk2 overworld portal -> dolk2 (Field), MAN present"
+    );
 }
