@@ -751,6 +751,22 @@ pub struct World {
     /// board is installed.
     pub tile_board_header: Option<crate::tile_board::TileBoardHeader>,
 
+    /// Per-cell-value tile-actor table (retail `DAT_801f35bc`, 15 entries).
+    /// Index = cell value: slot `0` = the player actor, `2..=14` = the
+    /// per-value tile actors spawned at board install from
+    /// `tile_template_base + (value - 2)`. Each entry is the actor-pool
+    /// slot holding that value's instance, or `None` when the value is not
+    /// present on the board / the pool was exhausted. Cleared on teardown.
+    pub tile_actor_slots: [Option<u8>; crate::tile_board::TILE_ACTOR_TABLE_LEN],
+
+    /// Per-frame tile-board draw list: one entry per drawn cell, naming the
+    /// tile actor to draw and the world-centre position to draw it at
+    /// (`overlay_0897_801e0f3c`). Refreshed every field tick while a board
+    /// is installed (honouring the header `+6` full-vs-windowed mode and
+    /// `+5` radius); empty otherwise. The deferred renderer consumes this
+    /// to draw each tile actor's mesh at every listed cell.
+    pub tile_board_draw_list: Vec<crate::tile_board::TileDraw>,
+
     /// Screen-effect widget host (the PROT-0900 mask / sprite / panel /
     /// letterbox family), driven by the field-VM op `0x43` sub-ops
     /// `0x10`/`0x11`/`0x13`/`0x14`/`0x15` - the ending-scene widget
@@ -1763,6 +1779,8 @@ impl World {
             tile_board_target: None,
             tile_board_armed: false,
             tile_board_header: None,
+            tile_actor_slots: [None; crate::tile_board::TILE_ACTOR_TABLE_LEN],
+            tile_board_draw_list: Vec::new(),
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
             dance: None,

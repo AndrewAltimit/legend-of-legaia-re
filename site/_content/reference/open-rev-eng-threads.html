@@ -22,7 +22,7 @@
     <tbody>
       <tr>
         <td>Kingdom slot 4 - per-record semantic</td>
-        <td>open</td>
+        <td><span class="tag tag-partial">partial</span></td>
         <td>Each 8-byte record is a GTE vertex (<code>FUN_80044c14</code> <code>RTPT</code>-transforms it) read <strong>in place</strong> by the cluster-A handlers; <code>kind</code> tags body class/scope, <code>attr</code> is per-vertex data the render path never reads. <a href="#d-slot4-attr">details &darr;</a></td>
         <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
       </tr>
@@ -197,8 +197,20 @@
       <tr>
         <td>First boss (Zeto) trigger &rarr; Battle</td>
         <td><span class="tag tag-done">formation + port resolved</span>; trigger writer capture-gated</td>
-        <td>Zeto (id <code>0x4B</code>, in <code>rikuroa</code>) has <strong>no</strong> on-disc formation record; it uses the <strong>battle-id path</strong> (<code>DAT_8007b7fc = 0x4B</code> &rarr; <code>FUN_8005567c</code> lone-monster cell <code>[0x4B,0,0,0]</code>, byte-exact with both <code>zeto_*_mid_cast</code> captures). Port: <code>World::install_boss_encounter</code> + a <code>rikuroa</code> first-visit latch on flag <code>0x1BE</code>, victory-latched. <strong>Open:</strong> the <code>DAT_8007b7fc</code> writer is in no loaded program (four Ghidra sweeps over 47 programs find only readers); needs a Mt. Rikuroa write-watchpoint.</td>
+        <td>Zeto (id <code>0x4B</code>, in <code>rikuroa</code>) has <strong>no</strong> on-disc formation record; it uses the <strong>battle-id path</strong> (<code>DAT_8007b7fc = 0x4B</code> &rarr; <code>FUN_8005567c</code> lone-monster cell <code>[0x4B,0,0,0]</code>, byte-exact with both <code>zeto_*_mid_cast</code> captures). Port: <code>World::install_boss_encounter</code> + a <code>rikuroa</code> first-visit latch on flag <code>0x1BE</code>, victory-latched. <strong>Open:</strong> the <code>DAT_8007b7fc</code> writer is in no loaded program (four Ghidra sweeps over 47 programs find only readers); needs a Mt. Rikuroa write-watchpoint. Spine-writer #1 of 3; capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
         <td><a href="../formats/encounter.html">encounter</a></td>
+      </tr>
+      <tr>
+        <td>Spine flag <code>0x142</code> (dolk-dungeon-clear) writer</td>
+        <td>open (capture-gated)</td>
+        <td>Spine-writer #2 of 3. Flag <code>0x142</code> clear routes <code>map01</code>'s dungeon entrance to <code>dolk</code> (pre-boss), set routes to <code>dolk2</code> (post-boss); the branch mechanism + engine port are resolved but the <em>writer</em> that sets <code>0x142</code> at the dolk-clear beat is in no loaded program - readers only. Closes with a fresh PCSX-Redux write-watchpoint capture at the dolk-clear story beat. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>Spine flag <code>0x482</code> (Drake mist-wall) writer</td>
+        <td>open (capture-gated)</td>
+        <td>Spine-writer #3 of 3. Flag <code>0x482</code> gates <code>map01</code>'s mist walls (<code>P2[34..36]</code> C1); it reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, and <code>rikuroa</code> sets it nowhere, so the writer is unobserved. Closes with a fresh PCSX-Redux write-watchpoint capture at the post-mist story event. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
         <td>Item-effect table - class/targeting + amounts</td>
@@ -217,6 +229,12 @@
         <td><span class="tag tag-done">resolved</span></td>
         <td>The descriptor <code>+3</code> byte is a 64-slot passive-effect index - a bit in the per-character ability bitfield <code>char+0xF4</code> (aggregator <code>FUN_80042558</code>); magnitudes inline, name/scope table at <code>0x8007625C</code>. Byte-validated vs gamedata.</td>
         <td><a href="../formats/accessory-passive-table.html">accessory-passive-table</a></td>
+      </tr>
+      <tr>
+        <td>Battle-actor <code>+0x16E</code> bit <code>0x400</code> applier (guard-disabling status)</td>
+        <td>open (low value)</td>
+        <td>Bit <code>0x400</code> of the battle-actor flags word <code>+0x16E</code> reads as a guard-disabling Sleep/Numb-like status. The sibling AI-delegated bits <code>0x380</code> in the same word are pinned (the enemy-ally charm hook sets them via <code>FUN_801E7320</code> retarget), but the <em>setter</em> that raises <code>0x400</code> is not in the decompiled corpus - readers only. Low value. Closes with a before/after RAM capture around a battle turn that inflicts the status, diffing the <code>+0x16E</code> word to catch the byte that raises <code>0x400</code>.</td>
+        <td></td>
       </tr>
     </tbody>
   </table>

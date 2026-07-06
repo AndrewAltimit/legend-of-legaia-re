@@ -184,6 +184,9 @@ impl World {
                 // interact probes follow the live NPC.
                 self.tick_field_npc_motions();
                 self.tick_tile_board();
+                // Rebuild the tile-actor draw list from the current board +
+                // player cell (retail's per-frame board render pass).
+                self.refresh_tile_board_draw_list();
                 self.step_field_locomotion();
                 // Locomotion animation: idle vs walk off the movement flag
                 // the step above just set, folded into the player's
@@ -362,9 +365,11 @@ impl World {
         if (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(&cell) {
             // Event / transition tile: exit the board. `tile_board_armed`
             // stays set so the op-49 tristate reads Done and the field
-            // script resumes past the install op.
+            // script resumes past the install op. Despawn the tile actors
+            // so they don't leak into the next scene.
             self.tile_board = None;
             self.tile_board_header = None;
+            self.despawn_tile_actors();
         } else if (CELL_ANIM_FIRST..=CELL_ANIM_LAST).contains(&cell) {
             let next = if cell == CELL_ANIM_LAST {
                 CELL_ANIM_FIRST
@@ -408,20 +413,122 @@ impl World {
             self.next_rng() & 0x7FFF
         });
         let board = crate::tile_board::TileBoard::from_header(&header, cells);
-        // Seat the player actor at the start cell's tile centre so the first
-        // step interpolates from the board frame, not the free-walk position.
-        if let Some(slot) = self.player_actor_slot
-            && let Some(a) = self.actors.get_mut(slot as usize)
-        {
-            let (x, z) = board.player_world();
-            a.move_state.world_x = x as i16;
-            a.move_state.world_z = z as i16;
+
+        // Spawn one tile actor per distinct drawn cell value present on the
+        // board (retail `DAT_801f35bc[value]`, slots `2..=14`): resolve the
+        // template `tile_template_base + (value - 2)` through the same
+        // global-TMD + VDF-buffer path the `0x4C 0xD8` field allocator uses
+        // (`spawn_field_actor`). The renderer repositions + draws these each
+        // frame; unresolved templates still allocate a slot (empty mesh).
+        let mut present = [false; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        for &c in &board.cells {
+            if crate::tile_board::is_drawable_cell(c) {
+                present[c as usize] = true;
+            }
         }
+        let mut tile_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        for value in crate::tile_board::CELL_DRAW_FIRST..=crate::tile_board::CELL_DRAW_LAST {
+            if !present[value as usize] {
+                continue;
+            }
+            let tpl = crate::tile_board::tile_template_for(header.tile_template_base, value);
+            if let Some(slot) = self.spawn_field_actor(tpl as i16, tpl, value as u16, 0) {
+                tile_slots[value as usize] = Some(slot as u8);
+            }
+        }
+        // Table slot 0 = the player actor (retail spawns it from header
+        // `+0xb`). The engine reuses the existing player actor: seat it at
+        // the start cell's tile centre so the first step interpolates from
+        // the board frame, and bind its mesh from `player_template` when the
+        // global TMD pool carries it (else keep the field mesh).
+        if let Some(slot) = self.player_actor_slot {
+            tile_slots[0] = Some(slot);
+            let (x, z) = board.player_world();
+            let player_tmd = self.global_tmd(header.player_template as i16).cloned();
+            if let Some(a) = self.actors.get_mut(slot as usize) {
+                a.move_state.world_x = x as i16;
+                a.move_state.world_z = z as i16;
+                if let Some(tmd) = player_tmd {
+                    a.tmd_ref = Some(tmd);
+                }
+            }
+        }
+
+        self.tile_actor_slots = tile_slots;
         self.tile_board_target = None;
         self.tile_board = Some(board);
         self.tile_board_header = Some(header);
         self.tile_board_armed = true;
         true
+    }
+
+    /// Despawn the tile-board tile actors (the `2..=14` entries of the
+    /// tile-actor table) and clear the table + draw list. The player actor
+    /// (table slot 0) outlives the board and is left in place. Called on
+    /// board teardown so tile actors don't leak into the next scene.
+    ///
+    /// PORT: the walk-SM board-exit teardown (`overlay_0897_801ef2b0`
+    /// case 8 -> board free).
+    fn despawn_tile_actors(&mut self) {
+        for value in crate::tile_board::CELL_DRAW_FIRST..=crate::tile_board::CELL_DRAW_LAST {
+            if let Some(slot) = self.tile_actor_slots[value as usize]
+                && let Some(a) = self.actors.get_mut(slot as usize)
+            {
+                *a = Actor::new();
+            }
+        }
+        self.tile_actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        self.tile_board_draw_list.clear();
+    }
+
+    /// Rebuild the per-frame tile-board draw list (retail
+    /// `overlay_0897_801e0f3c`): for every drawable cell in the active draw
+    /// set (full board or the windowed radius around the player, per header
+    /// `+6`/`+5`), select the cell value's tile actor from the tile-actor
+    /// table and record it at the cell's world centre, then reposition that
+    /// actor there (retail moves the selected actor before drawing). When a
+    /// value repeats across cells the shared actor ends at the last drawn
+    /// cell; the draw list still carries the full per-cell set the deferred
+    /// renderer needs. Clears the list when no board is installed. The
+    /// player actor is drawn by the normal field path, so it is not seated
+    /// here (that would fight the step interpolation).
+    fn refresh_tile_board_draw_list(&mut self) {
+        let Some(header) = self.tile_board_header else {
+            self.tile_board_draw_list.clear();
+            return;
+        };
+        let Some(board) = self.tile_board.as_ref() else {
+            self.tile_board_draw_list.clear();
+            return;
+        };
+        let mut list = Vec::new();
+        for (col, row) in board.draw_cells(header.mode_flag, header.radius) {
+            let Some(cell) = board.cell(col, row) else {
+                continue;
+            };
+            if !crate::tile_board::is_drawable_cell(cell) {
+                continue;
+            }
+            let Some(slot) = self.tile_actor_slots[cell as usize] else {
+                continue;
+            };
+            let (world_x, world_z) = board.tile_world(col, row);
+            list.push(crate::tile_board::TileDraw {
+                col: col as u8,
+                row: row as u8,
+                cell_value: cell,
+                slot,
+                world_x,
+                world_z,
+            });
+        }
+        for d in &list {
+            if let Some(a) = self.actors.get_mut(d.slot as usize) {
+                a.move_state.world_x = d.world_x as i16;
+                a.move_state.world_z = d.world_z as i16;
+            }
+        }
+        self.tile_board_draw_list = list;
     }
 
     /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current

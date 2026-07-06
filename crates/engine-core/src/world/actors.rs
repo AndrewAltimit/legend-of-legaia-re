@@ -788,4 +788,51 @@ impl World {
             actor.sprite_frame = frame;
         }
     }
+
+    /// Allocate a field actor in the auto-spawn slot range
+    /// ([`FIELD_SPAWN_START_SLOT`]..), resolving its mesh from the global
+    /// TMD pool (`tmd_idx`) and its spawn record from the VDF buffer
+    /// (`vdf_idx`), and stamping the `kind`/`variant` classifier. Returns
+    /// the allocated slot index, or `None` when the pool is exhausted.
+    ///
+    /// Shared by the field-VM synchronous actor allocator (the `0x4C 0xD8`
+    /// path, retail `FUN_801D77F4`) and the tile-board install
+    /// ([`World::try_install_tile_board`]); both resolve a template id
+    /// through the same global-TMD + VDF-buffer path. Slots below
+    /// [`FIELD_SPAWN_START_SLOT`] are skipped so party / scripted actors
+    /// stay out of the auto-allocation range. Unresolved indices leave the
+    /// actor with an empty `tmd_ref` / `spawn_record` (the synchronous
+    /// spawn still succeeds), matching the retail bail-through.
+    pub(crate) fn spawn_field_actor(
+        &mut self,
+        tmd_idx: i16,
+        vdf_idx: u8,
+        kind: u16,
+        variant: u16,
+    ) -> Option<usize> {
+        let tmd_ref = self.global_tmd(tmd_idx).cloned();
+        let record_bytes: Vec<u8> = self
+            .vdf_record_bytes(vdf_idx)
+            .map(|s| s.to_vec())
+            .unwrap_or_default();
+        let start = FIELD_SPAWN_START_SLOT as usize;
+        let slot_idx = self
+            .actors
+            .iter()
+            .enumerate()
+            .skip(start)
+            .find(|(_, a)| !a.active)
+            .map(|(i, _)| i)?;
+        let actor = &mut self.actors[slot_idx];
+        actor.active = true;
+        actor.kind = kind;
+        actor.variant = variant;
+        actor.tmd_ref = tmd_ref;
+        actor.spawn_record = if record_bytes.is_empty() {
+            None
+        } else {
+            Some(record_bytes)
+        };
+        Some(slot_idx)
+    }
 }

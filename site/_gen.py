@@ -270,6 +270,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/static-overlay-pipeline.html","Static overlay pipeline","tooling/static-overlay-pipeline","tooling/static-overlay-pipeline.html"),
     ("tooling/mednafen-automation.html","Mednafen automation",      "tooling/mednafen-automation","tooling/mednafen-automation.html"),
     ("tooling/pcsx-redux-automation.html","PCSX-Redux automation",  "tooling/pcsx-redux-automation","tooling/pcsx-redux-automation.html"),
+    ("tooling/spine-flag-writers-capture.html","Spine flag-writers capture","tooling/spine-flag-writers-capture","tooling/spine-flag-writers-capture.html"),
     ("tooling/determinism-replay.html","Determinism + replay",      "tooling/determinism-replay", "tooling/determinism-replay.html"),
     ("tooling/randomizer.html",    "Randomizer / disc patcher",     "tooling/randomizer",         "tooling/randomizer.html"),
     ("tooling/port-catalog.html",  "Port catalog",                  "tooling/port-catalog",       "tooling/port-catalog.html"),
