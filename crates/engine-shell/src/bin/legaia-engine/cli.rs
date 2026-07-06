@@ -146,11 +146,21 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dump_man: Option<PathBuf>,
         /// Walk a partition's records as field-VM scripts and report their
-        /// global-flag writes (`GFLAG_SET`/`GFLAG_CLEAR`). Partition 2 holds
-        /// the cutscene-timeline records (e.g. opdeene's `GFLAG_SET 26`
-        /// town01 hand-off arm). Reported at real opcode boundaries.
+        /// flag write/test sites - both the scratchpad global-flag ops
+        /// (`GFLAG_SET`/`GFLAG_CLEAR`) and the wide SYSTEM-flag ops
+        /// (`0x50..=0x7F`, SET/CLEAR/TEST). Partition 2 holds the
+        /// cutscene-timeline records (e.g. opdeene's `GFLAG_SET 26` town01
+        /// hand-off arm). Reported at real opcode boundaries.
         #[arg(long)]
         gflag_partition: Option<usize>,
+        /// Run a disc-wide SYSTEM-flag census across *every* CDNAME scene's
+        /// MAN (all partitions) and print `flag -> [(scene, partition, record,
+        /// op, kind)]` sorted by flag number. Surfaces the setters for the
+        /// overworld progress gates (e.g. `0x193`/`0x482`/`0x2FC`), which
+        /// usually live in a different scene's MAN than the one that gates on
+        /// them. Ignores the per-scene `--scene` argument (it is disc-wide).
+        #[arg(long)]
+        system_flag_census: bool,
         /// Dump the inline cutscene-narration text pages embedded in a
         /// cutscene-timeline record (the `0x1F`/`0x00`-framed subtitle pages
         /// after a `0x4C` narration op). Pair with `--disasm-record N

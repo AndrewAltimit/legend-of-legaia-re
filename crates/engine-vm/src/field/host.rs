@@ -1169,8 +1169,53 @@ pub trait FieldHost {
     /// and hands the host the raw value + the high/low selection. PC += 4.
     /// (Earlier mislabelled as a "directional sound emitter" - `FUN_80024E08`
     /// is a model-set, not an audio call.)
+    ///
+    /// This default body ports the observable state writes of `FUN_80024e08`:
+    /// - `ctx.model_id` (actor `+0x64`) = the model index.
+    /// - `ctx.move_id` (actor `+0x5c`) = 0.
+    /// - `ctx.flags` (actor `+0x10`) clears draw-flag bit `0x1000`.
+    /// - when the world-map model pool is active ([`model_pool_is_world_map`],
+    ///   retail game-mode global `_DAT_8007B83C == 0xF`) the index is mirrored
+    ///   into `ctx.model_id_high` (actor `+0x60`).
+    ///
+    /// Note `high` (the wrapper's value-pool selection, `value >= 0xF0`) is a
+    /// concern of the dispatch and of pool-base resolution, **not** of this
+    /// primitive: retail `FUN_80024e08` takes only `(actor, model)`. The
+    /// dispatch already toggled the pool-record flag bit from `high`; a host
+    /// that owns model-pool bases overrides this method to add the correct
+    /// base before storing the index.
+    ///
+    /// The retail non-world-map branch also clears `+0x10` bits `0x00108000`
+    /// *transiently* around the re-stage call `FUN_80020F88(actor)` and then
+    /// restores `+0x10` to the `0x1000`-cleared value, so that masking has no
+    /// persistent effect. The re-stage itself (`FUN_80020F88` - resolves the
+    /// `+0x64` model index against the global TMD pool and recomputes the
+    /// actor mesh + `+0x56` move-substate) has no callable engine equivalent
+    /// yet; it is left as a follow-up. Hosts that own actor meshes override
+    /// this method to re-stage after the state writes land.
+    ///
+    /// [`model_pool_is_world_map`]: FieldHost::model_pool_is_world_map
+    ///
+    /// PORT: FUN_80024e08
     fn op4c_n5_sub0_set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, high: bool) {
-        let _ = (ctx, value, high);
+        let _ = high; // wrapper/dispatch concern; the primitive ignores it.
+        ctx.model_id = value as u16; // actor +0x64
+        ctx.move_id = 0; // actor +0x5c
+        ctx.flags &= 0xffff_efff; // actor +0x10, clear draw-flag bit 0x1000
+        if self.model_pool_is_world_map() {
+            // Retail branch `_DAT_8007B83C == 0xF`: mirror the id into +0x60.
+            ctx.model_id_high = value as u16;
+        }
+    }
+
+    /// Is the world-map model pool active? Mirrors the retail game-mode global
+    /// `_DAT_8007B83C == 0xF` that gates the `+0x60` model-index mirror in the
+    /// set-actor-model primitive ([`op4c_n5_sub0_set_actor_model`]). Default is
+    /// `false` (general field mode); the world-map host overrides it to `true`.
+    ///
+    /// [`op4c_n5_sub0_set_actor_model`]: FieldHost::op4c_n5_sub0_set_actor_model
+    fn model_pool_is_world_map(&self) -> bool {
+        false
     }
 
     /// Op 0x4C outer-nibble-6 op0 == 0x60 - 6-word emitter call.

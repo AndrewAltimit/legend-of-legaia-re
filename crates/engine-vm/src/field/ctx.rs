@@ -28,10 +28,19 @@ pub struct FieldCtx {
     pub move_substate: u16,
     /// `+0x5A` - saved counterpart of [`field_26`] (op 0x31 bit-8 path).
     pub saved_26: u16,
-    /// `+0x5C` - move-table index (op 0x22).
+    /// `+0x5C` - move-table index (op 0x22). Zeroed by the set-actor-model
+    /// primitive (op 0x4C outer-nibble-5 sub-0, `FUN_80024e08`).
     pub move_id: u16,
     /// `+0x5E` - set to `0xFFFE` by op 0x22.
     pub field_5e: u16,
+    /// `+0x60` - high-pool model-index mirror. Written by the set-actor-model
+    /// primitive (op 0x4C outer-nibble-5 sub-0, `FUN_80024e08`) only when the
+    /// high model pool is selected; read by the re-stage `FUN_80020F88`.
+    pub model_id_high: u16,
+    /// `+0x64` - active model index (into the global TMD pool). Written by the
+    /// set-actor-model primitive (op 0x4C outer-nibble-5 sub-0, `FUN_80024e08`);
+    /// consumed by the re-stage `FUN_80020F88` to resolve the actor's mesh.
+    pub model_id: u16,
     /// `+0x62` - local flag bank (16 bits). Manipulated by 0x2B/0x2C/0x2D.
     pub local_flags: u16,
     /// `+0x6D` - face/body rotation index (op 0x43 sub-7).

@@ -301,6 +301,79 @@ fn walks_partition2_and_finds_gflag_set_26() {
     assert!(walk_partition_gflag_sites(&man_file, &man, 1).is_empty());
 }
 
+/// Build a one-partition-1-record MAN whose script is a SYSTEM-flag SET of
+/// flag `0x193` (op `0x51`, operand `0x93` - `idx = (0x51 & 0x8F) << 8 | 0x93`)
+/// followed by a SYSTEM-flag TEST of the same flag (op `0x71`), to exercise
+/// the `0x50..=0x7F` walker arm + census tagging without disc data.
+fn synthetic_man_with_system_flag_0x193() -> (ManFile, Vec<u8>) {
+    let data_region_offset = 0x40usize;
+    let p1_0 = 0u32;
+    let script_start = data_region_offset + p1_0 as usize;
+
+    let mut man = vec![0u8; script_start];
+    man.push(0x00); // N = 0 -> pc0 = 5
+    man.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]); // 4-byte header
+    man.push(0x51); // SYSTEM SET, high nibble 0x01
+    man.push(0x93); // operand -> idx 0x0193
+    // TEST op is 3 operand bytes wide (`[flag][i16 delta]`); give it a delta.
+    man.push(0x71); // SYSTEM TEST, high nibble 0x01
+    man.push(0x93); // operand -> idx 0x0193
+    man.extend_from_slice(&[0x02, 0x00]); // i16 jump delta
+    man.push(0x48); // trailing no-op for a clean boundary
+
+    let header = ManHeader {
+        status_flags: 0,
+        low_flag: false,
+        depth_lut: [0; 16],
+        partition_counts: [0, 1, 0],
+        u24_at_28: 0,
+    };
+    let man_file = ManFile {
+        header,
+        partitions: [vec![], vec![p1_0], vec![]],
+        data_region_offset,
+        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+            offset: man.len(),
+            length: 0,
+        }),
+    };
+    (man_file, man)
+}
+
+#[test]
+fn walk_surfaces_system_flag_set_and_test_sites() {
+    let (man_file, man) = synthetic_man_with_system_flag_0x193();
+    let sites = walk_partition_gflag_sites(&man_file, &man, 1);
+    assert_eq!(sites.len(), 2, "one SET + one TEST system-flag site");
+
+    let set = sites[0];
+    assert_eq!(set.bank, FlagBank::System);
+    assert_eq!(set.opcode, 0x51);
+    assert_eq!(set.flag, 0x0193);
+    assert_eq!(set.bit, 0x93, "low byte of the flag number");
+    assert!(set.set);
+    assert_eq!(set.kind, FlagKind::Set);
+
+    let test = sites[1];
+    assert_eq!(test.bank, FlagBank::System);
+    assert_eq!(test.opcode, 0x71);
+    assert_eq!(test.flag, 0x0193);
+    assert!(!test.set, "TEST is not a SET");
+    assert_eq!(test.kind, FlagKind::Test);
+}
+
+#[test]
+fn scratchpad_gflag_site_is_tagged_scratchpad_bank() {
+    // The existing prologue hand-off arm still reports as a scratchpad SET.
+    let (man_file, man) = synthetic_man_with_gflag_set_26();
+    let sites = walk_partition_gflag_sites(&man_file, &man, 2);
+    assert_eq!(sites.len(), 1);
+    assert_eq!(sites[0].bank, FlagBank::Scratchpad);
+    assert_eq!(sites[0].flag, 26);
+    assert_eq!(sites[0].bit, 26);
+    assert!(sites[0].set);
+}
+
 #[test]
 fn partition2_named_record_script_offset_matches_the_formula() {
     // name_len=6 (12 SJIS bytes), all three cond-blocks empty -> 0x10,

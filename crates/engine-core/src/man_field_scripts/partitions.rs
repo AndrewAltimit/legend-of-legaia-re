@@ -2,32 +2,66 @@
 //!
 //! Extracted verbatim from `man_field_scripts.rs`.
 
+use std::collections::BTreeMap;
+
+use crate::scene::{ProtIndex, Scene};
+
 use super::*;
 
-/// One field-VM **global-flag write** (`GFLAG_SET` / `GFLAG_CLEAR`, opcodes
-/// `0x2E` / `0x2F`) found while walking a MAN partition's records as
-/// field-VM scripts, annotated with the scratchpad flag bit it touches.
+/// Which flag bank a [`GFlagSite`] touches.
 ///
-/// The global-flag bank is `_DAT_1F800394` (the engine's
-/// [`crate::world::World::story_flags`]); op `0x2E` sets `1 << bit`, op
-/// `0x2F` clears it. The opening prologue's `opdeene` cutscene-timeline
-/// record ends with `GFLAG_SET 26`, the write the `town01` hand-off gate
-/// (`FUN_801D1344`) waits on - see
-/// [`crate::world::PROLOGUE_HANDOFF_FLAG`].
+/// The two banks are distinct id spaces, so census consumers must not merge
+/// them: a scratchpad bit `26` and a system flag `26` are unrelated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlagBank {
+    /// The 32-bit scratchpad story-flag word `_DAT_1F800394` (the engine's
+    /// [`crate::world::World::story_flags`]); reached by opcodes `0x2E`
+    /// (`SET`) / `0x2F` (`CLEAR`). Flag numbers are bit indices `0..31`.
+    Scratchpad,
+    /// The wide SYSTEM-flag bitmap reached by the `0x50..=0x7F` op family
+    /// (`0x5x` SET, `0x6x` CLEAR, `0x7x` TEST). The flag number is a `u16`
+    /// (`(lead & 0x8F) << 8 | operand`); the engine's bit helpers live at
+    /// [`crate::world::World::system_flag_set`] /
+    /// [`crate::world::World::system_flag_test`]. This is the id space of the
+    /// overworld progress gates (e.g. `0x193` / `0x482` / `0x2FC`).
+    System,
+}
+
+/// One field-VM **flag write / test** found while walking a MAN partition's
+/// records as field-VM scripts. Covers both the scratchpad global-flag ops
+/// (`GFLAG_SET` `0x2E` / `GFLAG_CLEAR` `0x2F`) and the wide SYSTEM-flag ops
+/// (`0x50..=0x7F`), annotated with the bank + flag number it touches.
+///
+/// The opening prologue's `opdeene` cutscene-timeline record ends with a
+/// scratchpad `GFLAG_SET 26`, the write the `town01` hand-off gate
+/// (`FUN_801D1344`) waits on - see [`crate::world::PROLOGUE_HANDOFF_FLAG`].
+/// SYSTEM-flag setters (the overworld progress gates) typically live in a
+/// *different* scene's MAN than the one that gates on them, which is what the
+/// disc-wide [`system_flag_census`] surfaces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GFlagSite {
-    /// Absolute byte offset of the `GFLAG` opcode in the MAN buffer.
+    /// Absolute byte offset of the flag opcode in the MAN buffer.
     pub abs_pc: usize,
     /// Partition the carrying record lives in (`0..3`).
     pub partition: usize,
     /// Record index within the partition.
     pub record: usize,
-    /// The opcode byte (`0x2E` set, `0x2F` clear).
+    /// The opcode byte (scratchpad `0x2E`/`0x2F`, or a `0x50..=0x7F` system op).
     pub opcode: u8,
-    /// `true` for `GFLAG_SET` (`0x2E`), `false` for `GFLAG_CLEAR` (`0x2F`).
+    /// `true` iff this is a SET op (scratchpad `0x2E` or system `0x5x`).
+    /// `false` for CLEAR **and** TEST - use [`GFlagSite::kind`] to tell those
+    /// apart. Kept for the prologue-arm consumers that only care about SET.
     pub set: bool,
-    /// Scratchpad flag bit the op touches (`0..31`).
+    /// SET / CLEAR / TEST discriminator (carries TEST, which `set` cannot).
+    pub kind: FlagKind,
+    /// Which bank the op targets.
+    pub bank: FlagBank,
+    /// Low byte of the flag number. For [`FlagBank::Scratchpad`] this is the
+    /// full bit index (`0..31`); for [`FlagBank::System`] it is truncated -
+    /// use [`GFlagSite::flag`] for the full number.
     pub bit: u8,
+    /// The full flag number: scratchpad bit index, or the `u16` system flag id.
+    pub flag: u16,
 }
 
 /// The script `script_start` of `partition`'s record `index`, computed from
@@ -189,15 +223,24 @@ pub fn collect_partition_narration(
 }
 
 /// Walk every record of `partition` (`0..3`) as a field-VM script and
-/// collect its global-flag write sites (`GFLAG_SET` / `GFLAG_CLEAR`).
+/// collect its flag write/test sites: the scratchpad global-flag ops
+/// (`GFLAG_SET` `0x2E` / `GFLAG_CLEAR` `0x2F`) **and** the wide SYSTEM-flag
+/// ops (`0x50..=0x7F`, SET/CLEAR/TEST). Each site is tagged with its
+/// [`FlagBank`] and full flag number, so callers can tell a scratchpad bit
+/// from a system flag that share a low byte.
 ///
 /// This is the partition-agnostic companion to [`walk_partition1_scripts`]:
 /// the encounter hunt cares about partition 1's yield sites, the opening
-/// prologue cares about partition 2's cutscene-timeline `GFLAG_SET`. Both
-/// share the same `[u8 N][N*2 locals][4-byte header]` record prefix and the
-/// same opcode-aware [`LinearWalker`] decode, so a `GFLAG` site is reported
-/// only at a real instruction boundary - not at an operand / SJIS byte that
-/// happens to equal `0x2E`.
+/// prologue cares about partition 2's cutscene-timeline `GFLAG_SET`, and the
+/// overworld progress-gate hunt cares about SYSTEM-flag setters across every
+/// partition. All share the same `[u8 N][N*2 locals][4-byte header]` record
+/// prefix and the same opcode-aware [`LinearWalker`] decode, so a site is
+/// reported only at a real instruction boundary - not at an operand / SJIS
+/// byte that happens to equal a flag opcode.
+///
+/// Prologue-arm consumers filter on `s.set && s.bit == 26` over the scratchpad
+/// bank; TEST sites (`set == false`) and system-bank sites are ignored by that
+/// filter, so the extra sites are additive.
 pub fn walk_partition_gflag_sites(
     man_file: &ManFile,
     man: &[u8],
@@ -224,16 +267,100 @@ pub fn walk_partition_gflag_sites(
         }
         let body = &man[script_start..end];
         for insn in LinearWalker::new(body, pc0).flatten() {
-            if let InsnInfo::GFlag { kind, bit } = insn.info
-                && kind != FlagKind::Test
-            {
-                out.push(GFlagSite {
+            match insn.info {
+                // Scratchpad global flag (`0x2E` set / `0x2F` clear). The VM
+                // has no scratchpad TEST op reaching this variant, but guard
+                // anyway so `set`/`kind` stay coherent.
+                InsnInfo::GFlag { kind, bit } => out.push(GFlagSite {
                     abs_pc: script_start + insn.pc,
                     partition,
                     record: index,
                     opcode: insn.opcode,
                     set: kind == FlagKind::Set,
+                    kind,
+                    bank: FlagBank::Scratchpad,
                     bit,
+                    flag: u16::from(bit),
+                }),
+                // Wide SYSTEM-flag bank (`0x5x` set / `0x6x` clear / `0x7x`
+                // test). `idx` is the full `u16` flag number; `bit` keeps the
+                // low byte for the scratchpad-shaped consumers.
+                InsnInfo::SystemFlag { kind, idx, .. } => out.push(GFlagSite {
+                    abs_pc: script_start + insn.pc,
+                    partition,
+                    record: index,
+                    opcode: insn.opcode,
+                    set: kind == FlagKind::Set,
+                    kind,
+                    bank: FlagBank::System,
+                    bit: (idx & 0xFF) as u8,
+                    flag: idx,
+                }),
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// One SYSTEM-flag site recovered by [`system_flag_census`], carrying the
+/// scene it lives in plus the partition/record/op that touches the flag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlagCensusSite {
+    /// CDNAME scene name whose MAN carries the op.
+    pub scene_name: String,
+    /// Partition the carrying record lives in (`0..3`).
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// The opcode byte (a `0x50..=0x7F` system op).
+    pub opcode: u8,
+    /// SET / CLEAR / TEST discriminator.
+    pub kind: FlagKind,
+}
+
+/// Disc-wide SYSTEM-flag census: walk every scene's MAN across all three
+/// partitions and map each SYSTEM flag number to the list of sites (scene +
+/// partition + record + op + kind) that set / clear / test it.
+///
+/// This is the tool the overworld progress-gate RE needs: a gate like
+/// `system_flag_test(0x193)` lives in one scene, but the *setter* that opens
+/// it almost always lives in a different scene's MAN. Only the SYSTEM bank
+/// (`0x50..=0x7F` ops) is reported - the scratchpad bank is a separate 32-bit
+/// id space with its own tooling ([`walk_partition_gflag_sites`]).
+///
+/// Scenes that fail to load or have no MAN are skipped silently (the census is
+/// best-effort over the whole CDNAME scene set). The returned map is sorted by
+/// flag number; each flag's site list preserves scene / partition / record
+/// discovery order.
+pub fn system_flag_census<I, S>(index: &ProtIndex, scenes: I) -> BTreeMap<u16, Vec<FlagCensusSite>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut out: BTreeMap<u16, Vec<FlagCensusSite>> = BTreeMap::new();
+    for name in scenes {
+        let name = name.as_ref();
+        let Ok(scene) = Scene::load(index, name) else {
+            continue;
+        };
+        let Ok(Some(man)) = scene.field_man_payload(index) else {
+            continue;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            continue;
+        };
+        for partition in 0..3 {
+            for site in walk_partition_gflag_sites(&man_file, &man, partition) {
+                if site.bank != FlagBank::System {
+                    continue;
+                }
+                out.entry(site.flag).or_default().push(FlagCensusSite {
+                    scene_name: name.to_string(),
+                    partition: site.partition,
+                    record: site.record,
+                    opcode: site.opcode,
+                    kind: site.kind,
                 });
             }
         }

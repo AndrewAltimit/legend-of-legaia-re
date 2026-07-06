@@ -199,6 +199,43 @@ for (i, s) in t.scripts.iter().enumerate() {
 }
 ```
 
+## Embedded MAN-bearing asset table (v12-family dungeon bundles)
+
+Some dungeon scenes ship their [`scene_asset_table`](scene-bundles.md#scene_asset_table---the-canonical-7-asset-bundle)
+**inside** their `scene_v12_table` entry rather than as a first-class sibling
+PROT entry. The canonical 7-asset table is embedded at file offset **`0x1000`**
+(the second 0x800-aligned window, past the header + inline records + the
+offset-`0x800` prescript). Its descriptor `data_offset`s are file-relative
+against the entry's **extended footprint**, exactly as for the standalone
+bundle - so `table_offset (0x1000) + data_offset` addresses the MAN's
+LZS stream.
+
+Two scenes carry the MAN *only* this way (they have no `scene_asset_table` /
+`scene_scripted_asset_table` sibling in their CDNAME block):
+
+| Scene   | v12 PROT | Table | MAN desc size | MAN data_off | MAN abs | Decoded | Partitions |
+|---------|----------|-------|---------------|--------------|---------|---------|------------|
+| `dolk2` | 76       | 0x1000| 0x929         | 0x1a89e      | 0x1b89e | 2345 B  | [10, 7, 3] |
+| `rikuroa`| 164     | 0x1000| 0x9a54        | 0x40927      | 0x41927 | 39508 B | [18, 70, 20]|
+
+The v12 header wins the classifier at offset 0, so the standalone
+`scene_asset_table` detector never probes `0x1000`. By contrast `dolk` /
+`keikoku` have a first-class scripted + bare table pair and don't need this
+path. The engine loader
+([`legaia_engine_core::scene_bundle::find_bundle`](../../crates/engine-core/src/scene_bundle.rs))
+adds a fallback that scans a `SceneV12Table` entry's 0x800-aligned offsets for
+the first `scene_asset_table` whose descriptors include a type-3 (MAN) slot
+(the count-gate also rejects the MAN-less count=4 sibling table), and reports it
+as `BundleSource::V12Embedded { table_offset: 0x1000 }`. This is what lets
+`rikuroa` / `dolk2` resolve their scene-entry system script, collision grid,
+encounter table, and scene-destination table. Disc-gated coverage:
+`crates/engine-core/tests/v12_bundle_man_disc.rs`.
+
+`rikuroa`'s MAN carries **no named `0x3F` warp** - the Ravine's exit and its
+first-boss (Zeto) trigger are gated by the partition-2 cutscene timeline, not a
+scene-change op - so its scene-destination table decodes to an empty list.
+`dolk2`'s MAN lists `map01` (its overworld return).
+
 ## Open questions
 
 - **Where does the loader stage the file?** (open, capture-blocked). Two

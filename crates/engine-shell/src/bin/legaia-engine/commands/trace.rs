@@ -15,11 +15,14 @@ pub(crate) fn cmd_man_scripts(
     dump_man: Option<&Path>,
     gflag_partition: Option<usize>,
     narration: bool,
+    system_flag_census: bool,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::{
-        partition_record_span, walk_partition_gflag_sites, walk_partition1_scripts,
+        FlagBank, partition_record_span, system_flag_census as run_system_flag_census,
+        walk_partition_gflag_sites, walk_partition1_scripts,
     };
     use legaia_engine_core::scene_bundle;
+    use legaia_engine_vm::field_disasm::FlagKind;
 
     let index = open_index_from_args(extracted_root, disc)?;
     let scene =
@@ -138,19 +141,47 @@ pub(crate) fn cmd_man_scripts(
     if let Some(partition) = gflag_partition {
         let sites = walk_partition_gflag_sites(&man_file, &man, partition);
         println!(
-            "\n--- GFLAG writes in partition {partition} ({} sites) ---",
+            "\n--- flag writes/tests in partition {partition} ({} sites) ---",
             sites.len(),
         );
         for s in &sites {
+            let bank = match s.bank {
+                FlagBank::Scratchpad => "SCRATCH",
+                FlagBank::System => "SYSTEM ",
+            };
+            let kind = match s.kind {
+                FlagKind::Set => "Set  ",
+                FlagKind::Clear => "Clear",
+                FlagKind::Test => "Test ",
+            };
             println!(
-                "  P{}[{}] GFLAG.{} bit={:<2} @ 0x{:05X} (op 0x{:02X})",
-                s.partition,
-                s.record,
-                if s.set { "Set  " } else { "Clear" },
-                s.bit,
-                s.abs_pc,
-                s.opcode,
+                "  P{}[{}] {bank} {kind} flag=0x{:04X} ({:>5}) @ 0x{:05X} (op 0x{:02X})",
+                s.partition, s.record, s.flag, s.flag, s.abs_pc, s.opcode,
             );
+        }
+    }
+
+    if system_flag_census {
+        let scenes = index.cdname_scene_names();
+        let census = run_system_flag_census(&index, &scenes);
+        println!(
+            "\n--- disc-wide SYSTEM-flag census ({} scenes scanned, {} flags with sites) ---",
+            scenes.len(),
+            census.len(),
+        );
+        for (flag, hits) in &census {
+            println!("flag 0x{flag:04X} ({flag:>5}): {} site(s)", hits.len());
+            for h in hits {
+                let kind = match h.kind {
+                    FlagKind::Set => "Set  ",
+                    FlagKind::Clear => "Clear",
+                    FlagKind::Test => "Test ",
+                };
+                println!(
+                    "    {kind} scene={:<10} P{}[{}] (op 0x{:02X})",
+                    h.scene_name, h.partition, h.record, h.opcode,
+                );
+            }
         }
     }
 

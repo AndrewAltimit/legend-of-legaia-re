@@ -423,6 +423,104 @@ fn part_b_leg2_map01_portal_to_keikoku() {
     );
 }
 
+/// Overworld story-flag gating (the Arc-1 close): on a fresh Drake arrival the
+/// Ravine (`keikoku`) entrance is open (`0x193`/403 clear) and the mist-wall
+/// force-walk bands fire (`0x482`/1154 clear); flipping each flag flips
+/// reachability. Direct `map01` entry is a valid fresh arrival (the portal set
+/// + collision grid load the same way the town-exit transition seeds them).
+#[test]
+fn part_b_leg3_overworld_story_gating() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(_) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+
+    // -- Keikoku portal gate (0x193 / 403). --------------------------------
+    // Fresh arrival: flag clear -> the Ravine entrance is installed + reachable.
+    let mut fresh = open_host().expect("open host");
+    fresh.enter_world_map_scene("map01").expect("enter map01");
+    assert_eq!(fresh.world.mode, SceneMode::WorldMap, "map01 is WorldMap");
+    let keikoku_fresh = find_portal_tile(&fresh, "keikoku");
+    assert!(
+        keikoku_fresh.is_some(),
+        "keikoku entrance is reachable on a fresh Drake arrival (0x193 clear)"
+    );
+
+    // Flag set -> the entrance drops out of the installed portal set.
+    let mut gated = open_host().expect("open host");
+    gated.world.system_flag_set(403); // 0x193
+    gated.enter_world_map_scene("map01").expect("enter map01");
+    assert!(
+        find_portal_tile(&gated, "keikoku").is_none(),
+        "setting 0x193 gates the keikoku entrance out of the overworld portal set"
+    );
+
+    // -- Mist-wall beat band gate (0x482 / 1154). --------------------------
+    // The Drake mist-wall force-walk bands are gate-1 partition-2 records
+    // (`map01` P2[34..36], C1=[0x482]) with no `0x3F` - beat records the
+    // overworld walk-on dispatch spawns as a cutscene timeline while 0x482 is
+    // clear, and stops spawning once it latches.
+    let band_tile = {
+        let scene = fresh.scene.as_ref().expect("scene");
+        let (primary, fallback) = scene
+            .field_tile_triggers(&fresh.index)
+            .expect("map01 tile triggers");
+        primary
+            .iter()
+            .chain(fallback.iter())
+            .find(|t| t.gate == 1 && matches!(t.record, 34..=36))
+            .map(|t| (t.tile_x, t.tile_z))
+    };
+    let Some((bx, bz)) = band_tile else {
+        // No mist-band trigger present in this build's map01 - skip that half
+        // rather than fail; the portal-gate half above stays authoritative.
+        eprintln!("[skip] no mist-wall band trigger on map01");
+        return;
+    };
+
+    // 0x482 clear: crossing onto the band tile spawns the beat timeline.
+    let mut open = open_host().expect("open host");
+    open.enter_world_map_scene("map01").expect("enter map01");
+    walk_onto_tile(&mut open, bx, bz);
+    assert!(
+        open.world.cutscene_timeline_active(),
+        "with 0x482 clear the mist-wall band installs (force-walk) on walk-on"
+    );
+
+    // 0x482 set: the C1 one-shot blocks the band - crossing the same tile spawns
+    // nothing.
+    let mut walled = open_host().expect("open host");
+    walled.world.system_flag_set(1154); // 0x482
+    walled.enter_world_map_scene("map01").expect("enter map01");
+    walk_onto_tile(&mut walled, bx, bz);
+    assert!(
+        !walled.world.cutscene_timeline_active(),
+        "setting 0x482 blocks the mist-wall band (its C1 one-shot latch)"
+    );
+
+    eprintln!("[ok] Leg 3: overworld story gating (keikoku 0x193, mist-wall 0x482)");
+}
+
+/// Seat the player one tile away then onto `(tx, tz)`, ticking between so the
+/// walk-on dispatch sees a genuine tile crossing.
+fn walk_onto_tile(host: &mut SceneHost, tx: u8, tz: u8) {
+    let seat = |h: &mut SceneHost, x: i16, z: i16| {
+        let s = h.world.player_actor_slot.expect("player") as usize;
+        h.world.actors[s].move_state.world_x = x * 128 + 0x40;
+        h.world.actors[s].move_state.world_z = z * 128 + 0x40;
+    };
+    host.world.set_pad(0);
+    let off = if tx > 0 { tx as i16 - 1 } else { tx as i16 + 1 };
+    seat(host, off, tz as i16);
+    let _ = host.tick();
+    seat(host, tx as i16, tz as i16);
+    let _ = host.tick();
+}
+
 // ---------------------------------------------------------------------
 // Replay fixture: full-chain trace + determinism
 // ---------------------------------------------------------------------

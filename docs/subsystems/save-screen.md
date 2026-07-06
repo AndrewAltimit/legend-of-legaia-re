@@ -84,6 +84,45 @@ table at `&DAT_80084140 + slot * 2 + 0x1818` (byte 0 = slot present,
 byte 1 = slot valid) over the range `_DAT_8007B5EA.._DAT_8007B5EC`. A fully
 absent table yields error SFX (`func_0x80035bd0(0x23)`).
 
+### `FUN_801D688C` - shared list-cursor navigator
+
+The menu / shop / save-slot state-handlers funnel their list-cursor navigation
+through one overlay helper, `FUN_801D688C(cursor: *u32, count, mode)` (see
+`ghidra/scripts/funcs/overlay_save_ui_select_801d688c.txt`). It reads the
+overlay confirm / cancel pad masks (`_DAT_8007B874 & DAT_801EF0F0` /
+`DAT_801EF0F4`) and the held-pad word `_DAT_8007BB84`, mutates the caller's
+cursor cell in place, enqueues a UI SFX cue through `FUN_80035B50`, and returns
+a small result enum:
+
+| Result | Meaning | SFX cue | Condition |
+|---|---|---|---|
+| `1` | Confirm | `0x36` | confirm mask held (tested first, even when `count == 0`) |
+| `2` | Cancel | `0x37` | cancel mask held |
+| `3` | Moved | `0x21` | `count != 0` and a direction moved the cursor |
+| `0` | None | - | otherwise |
+
+The cursor cell is packed: the **low 12 bits** are the list index and the
+**high nibble** (`0xF000`) carries caller-private flags the navigator preserves
+across a move. Held-pad `0x1000` decrements (move-left) and `0x4000` increments
+(move-right). `mode == 0` clamps at the ends; `mode != 0` wraps (every ported
+call site passes `1`) - a right move whose new index equals `count` snaps the
+index back to `0`, a left move from index `0` wraps to `count - 1`. Call sites
+in this overlay: the 3-item slot list `FUN_801D688C(&DAT_801E46BC, 3, 1)`
+(`FUN_801DAFD4`), the 2-item Yes/No confirm `FUN_801D688C(&DAT_801E46D0, 2, 1)`
+(sub-screen `0x03`), and the party-count picker
+`FUN_801D688C(&DAT_801E46C4, DAT_80084594, 1)` (sub-screen `0x12`).
+
+**Engine port:** `legaia_engine_core::menu_input::menu_cursor_nav(cursor,
+count, wrap, NavButtons)` reproduces the primitive as a plain function over a
+caller-owned cursor cell and a `NavButtons` snapshot (host derives the four
+booleans from `input::InputState`), returning a `CursorNav` enum whose
+`sfx_cue()` surfaces the retail cue id for the host to play through its
+`SfxBank` (engine-core surfaces sound cues as return values, not a global
+enqueue). The `CURSOR_INDEX_MASK` / `CURSOR_FLAGS_MASK` constants expose the
+same low-12 / high-nibble split. `SaveSelectSession::tick_confirm` consumes it
+for the Yes/No confirm cursor (the retail `FUN_801D688C(&DAT_801E46D0, 2, 1)`
+call site).
+
 ## Globals used
 
 | Address | Role |

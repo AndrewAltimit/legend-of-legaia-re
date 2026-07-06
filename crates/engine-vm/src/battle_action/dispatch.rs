@@ -68,6 +68,10 @@ pub fn resolve_action_queue(
 /// Returns a [`StepOutcome`] describing what happened.
 pub fn step<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) -> StepOutcome {
     let from = ctx.action_state;
+    // REF: FUN_801E295C - retail dispatches `ctx[7]` through a 256-entry `jr`
+    // table at 0x801CED44 with no default; unmapped bytes index a slot that
+    // falls to the shared post-switch epilogue (an inert no-op), so surfacing
+    // them here as UnknownState is a safe superset of retail's behaviour.
     let Some(state) = ActionState::from_byte(from) else {
         return StepOutcome::UnknownState { state: from };
     };

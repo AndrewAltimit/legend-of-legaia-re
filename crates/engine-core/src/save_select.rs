@@ -22,6 +22,8 @@
 //! itself - engines pre-load slot metadata into [`SlotSnapshot`] entries
 //! and feed them through `set_slots`.
 
+use crate::menu_input::{CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_nav};
+
 /// Per-slot metadata. Engines build these from disc/disk save scans
 /// (the `legaia-save` crate provides the parsers). Pure data - the
 /// session never touches the filesystem.
@@ -525,6 +527,12 @@ impl SaveSelectSession {
         }
     }
 
+    // PORT: FUN_801d688c (the Yes/No confirm cursor - retail sub-screen 0x03
+    // drives it with `FUN_801D688C(&DAT_801E46D0, 2, 1)`). The shared
+    // navigator lives in `crate::menu_input`; here it advances the 2-item
+    // horizontal cursor and reports confirm / cancel / move, and the Yes/No
+    // branch is decided from the resulting cursor (retail return `1` = the
+    // caller inspects the cursor to pick Yes vs No).
     fn tick_confirm(
         &mut self,
         kind: ConfirmKind,
@@ -533,44 +541,51 @@ impl SaveSelectSession {
         input: SelectInput,
         events: &mut Vec<SelectEvent>,
     ) {
-        if input.circle {
-            self.phase = SelectPhase::Browsing { cursor: slot };
-            events.push(SelectEvent::ConfirmCancelled { slot, kind });
-            return;
-        }
-        let new_cursor = if input.up || input.down || input.left || input.right {
-            cursor ^ 1
-        } else {
-            cursor
+        let mut cell = cursor as u32;
+        let buttons = NavButtons {
+            confirm: input.cross,
+            cancel: input.circle,
+            // The Yes/No prompt is horizontal; accept the vertical d-pad too
+            // so the toggle works with either axis (equivalent to a 2-item
+            // wrap either way).
+            left: input.left || input.up,
+            right: input.right || input.down,
         };
-        if new_cursor != cursor {
-            self.phase = match kind {
-                ConfirmKind::Overwrite => SelectPhase::ConfirmOverwrite {
-                    slot,
-                    cursor: new_cursor,
-                },
-                ConfirmKind::Delete => SelectPhase::ConfirmDelete {
-                    slot,
-                    cursor: new_cursor,
-                },
-            };
-            events.push(SelectEvent::CursorMoved { slot });
-            return;
-        }
-        if input.cross {
-            if cursor == 0 {
-                // Yes
-                let outcome = match kind {
-                    ConfirmKind::Overwrite => SelectOutcome::Saved(slot),
-                    ConfirmKind::Delete => SelectOutcome::Deleted(slot),
-                };
-                self.phase = SelectPhase::Done(outcome);
-                events.push(SelectEvent::Confirmed { slot, kind });
-            } else {
-                // No → back to browsing.
+        match menu_cursor_nav(&mut cell, 2, true, buttons) {
+            CursorNav::Cancel => {
                 self.phase = SelectPhase::Browsing { cursor: slot };
                 events.push(SelectEvent::ConfirmCancelled { slot, kind });
             }
+            CursorNav::Moved => {
+                let new_cursor = (cell & CURSOR_INDEX_MASK) as u8;
+                self.phase = match kind {
+                    ConfirmKind::Overwrite => SelectPhase::ConfirmOverwrite {
+                        slot,
+                        cursor: new_cursor,
+                    },
+                    ConfirmKind::Delete => SelectPhase::ConfirmDelete {
+                        slot,
+                        cursor: new_cursor,
+                    },
+                };
+                events.push(SelectEvent::CursorMoved { slot });
+            }
+            CursorNav::Confirm => {
+                if cursor == 0 {
+                    // Yes
+                    let outcome = match kind {
+                        ConfirmKind::Overwrite => SelectOutcome::Saved(slot),
+                        ConfirmKind::Delete => SelectOutcome::Deleted(slot),
+                    };
+                    self.phase = SelectPhase::Done(outcome);
+                    events.push(SelectEvent::Confirmed { slot, kind });
+                } else {
+                    // No → back to browsing.
+                    self.phase = SelectPhase::Browsing { cursor: slot };
+                    events.push(SelectEvent::ConfirmCancelled { slot, kind });
+                }
+            }
+            CursorNav::None => {}
         }
     }
 
