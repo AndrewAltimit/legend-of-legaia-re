@@ -195,6 +195,12 @@
         <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
       <tr>
+        <td>First boss (Zeto) trigger &rarr; Battle</td>
+        <td><span class="tag tag-done">formation + port resolved</span>; trigger writer capture-gated</td>
+        <td>Zeto (id <code>0x4B</code>, in <code>rikuroa</code>) has <strong>no</strong> on-disc formation record; it uses the <strong>battle-id path</strong> (<code>DAT_8007b7fc = 0x4B</code> &rarr; <code>FUN_8005567c</code> lone-monster cell <code>[0x4B,0,0,0]</code>, byte-exact with both <code>zeto_*_mid_cast</code> captures). Port: <code>World::install_boss_encounter</code> + a <code>rikuroa</code> first-visit latch on flag <code>0x1BE</code>, victory-latched. <strong>Open:</strong> the <code>DAT_8007b7fc</code> writer is in no loaded program (four Ghidra sweeps over 47 programs find only readers); needs a Mt. Rikuroa write-watchpoint.</td>
+        <td><a href="../formats/encounter.html">encounter</a></td>
+      </tr>
+      <tr>
         <td>Item-effect table - class/targeting + amounts</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td>Class/tier/targeting/usability is the static <code>DAT_800752C0</code> table; the restore <em>amounts</em> are also static (apply handler <code>FUN_800402F4</code>, tier-indexed heal tables) - not overlay-resident. Parser <code>legaia_asset::item_effect</code>.</td>
@@ -312,6 +318,18 @@
         <td>Overworld / town entrance story-flag gating</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td>An entrance's unlock is its own partition-2 record's C1/C2 gate (<code>FUN_8003BDE0</code>; C1 = one-shot latch, C2 = requires-all) against the system-flag bank <code>_DAT_80085758</code>. Ops <code>0x50/0x60/0x70</code> carry <code>idx = ((op &amp; 0x8F) &lt;&lt; 8) | operand</code> (raw flag number). Disc-pinned via <code>man-scripts --system-flag-census</code>: map01 keikoku portals <code>C1=[0x193]</code> (setter <code>vozz</code> P1[7]), mist walls <code>P2[34..36] C1=[0x482]</code>, town01 dinner chain P2[4]&rarr;550&rarr;P2[5]&rarr;551. The dinner "re-fire" is falsified: the timeline stepper already applies SET ops, and P2[5] has no walk-on trigger.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>Overworld story-conditional destination (<code>dolk</code>&rarr;<code>dolk2</code>)</td>
+        <td><span class="tag tag-done">resolved</span> (mechanism + port)</td>
+        <td>Beyond the record-level C1/C2 gate, an entrance record can switch its <code>0x3F</code> target by an in-record op-<code>0x70</code> <code>SysFlag.Test</code>. <code>map01</code>'s dungeon entrance (<code>P2[1]</code>/<code>P2[2]</code>) branches on flag <code>0x142</code>: clear &rarr; <code>dolk</code> (pre-boss), set &rarr; <code>dolk2</code> (post-boss), same trigger + arrival tile. <code>overworld_portal_sites</code> decodes the conditional pair (<code>ConditionalDest</code>); the seeder resolves via <code>World::system_flag_test</code>. <strong>Falsifies</strong> "dolk2 is reached from a dungeon interior" (no interior lists dolk2). <strong>Open:</strong> who <em>sets</em> <code>0x142</code> - capture-gated.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>Gate-flag setters outside the MAN field VM (<code>549</code>, <code>0x482</code>)</td>
+        <td><code>549</code> resolved; <code>0x482</code> capture-gated</td>
+        <td><code>549</code> (<code>0x225</code>, town01 opening) is written by <code>FUN_80038158</code> op-<code>7</code>, a per-actor bytecode VM that sets <code>DAT_80085758</code> inline from its own script bytecode - a different bytecode than the MAN field VM, so <code>--system-flag-census</code> cannot see it; pinned by a bank RAM-diff over the town01 opening. <code>0x482</code> (mist walls) reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, and <code>rikuroa</code> sets it nowhere - needs a fresh post-beat capture. Engine leaves both gated (faithful).</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
     </tbody>
