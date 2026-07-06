@@ -121,11 +121,32 @@ transition cell (`8..=0xA`) exits the board mode - the suspended script reads
 `0xB -> 0xE -> 0xB`. The header's actor-template ids are kept on
 `World::tile_board_header` for the render consumers.
 
+**Tile-actor spawn + reposition.** At install `World::try_install_tile_board`
+spawns one field actor per distinct drawable cell value present on the board
+(`2..=14`): each resolves its template `tile_template_base + (value - 2)`
+through the same global-TMD + VDF-buffer path the `0x4C 0xD8` field allocator
+uses (the shared `World::spawn_field_actor` helper), and the resulting
+actor-pool slots are recorded in the per-cell-value tile-actor table
+`World::tile_actor_slots` (retail `DAT_801f35bc`; slot `0` = the reused player
+actor, `2..=14` = the tile actors). Each field tick
+`World::refresh_tile_board_draw_list` rebuilds `World::tile_board_draw_list`:
+for every drawable cell in the active draw set - the full board when the header
+`+6` mode flag is `0`, else the windowed square of Chebyshev `+5` radius around
+the player cell (`TileBoard::draw_cells`) - it selects the cell value's tile
+actor and records it at the tile world-centre
+(`(origin + idx) * 0x80 + 0x40`), repositioning the actor there (retail moves
+the selected actor before drawing it). Because one actor backs each cell value,
+a repeated value's actor ends at the last drawn cell while the draw list still
+carries the full per-cell set the deferred renderer consumes. Board teardown
+(`tile_board_arrival` on an event cell) despawns the tile actors and clears the
+table + draw list so they don't leak into the next scene; the player actor
+(drawn by the normal field path) survives.
+
 ## Open
 
 - ~~Whether any board is *fixed* (inline-script cells) rather than procedurally filled.~~ **Resolved (negative):** sub-op-5 boards are **always procedural**. The install op advances the script cursor a constant `+0xe` regardless of `width × height`, so a cell array cannot ride the operand stream, and the cells are `malloc`'d + rand-filled by `overlay_0897_801e0b1c`. There is no fixed-board variant to lift. See [always procedural](#always-procedural-no-inline-cell-boards).
 - ~~The event-cell arrival's header `+7`/`+9` flag-operand consumption.~~ **Resolved:** `+7` (base A) is the event-SET base and `+9` (base B) the TEST/gate base, both into the system-flag bank `DAT_80085758` (SET `func_0x8003ce08` / TEST `func_0x8003ce64`, reader `func_0x8003ce9c`), consumed in walk SM case 8. See [event-flag bases](#cell-value-semantics). The engine still surfaces only the exit through the op-49 resume.
-- Per-cell tile-actor **rendering** - the retail mechanism is now pinned (field actors keyed by cell value from `DAT_801f35bc[cell]`; see [Rendering](#rendering)), but the clean-room engine still only tracks the header `+0xb`/`+0xc` template ids and draws nothing yet.
+- Per-cell tile-actor **rendering** - the retail mechanism is pinned (field actors keyed by cell value from `DAT_801f35bc[cell]`; see [Rendering](#rendering)) and the engine now performs the spawn + per-frame reposition wiring (see [clean-room port](#clean-room-port)); only the on-screen visual draw of the tile meshes remains to be confirmed (a renderer pass over the per-frame draw list, verified by eye).
 
 ## See also
 

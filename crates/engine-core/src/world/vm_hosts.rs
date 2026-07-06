@@ -1161,39 +1161,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // all four writes here.
         let kind = words[1] as u16;
         let variant = words[2] as u16;
-        let tmd_ref = self.world.global_tmd(words[0]).cloned();
         // Mirror retail's `actor[+0x4C] = VDF_body_ptr`: look up the
-        // VDF record body bytes and store them on the allocated actor.
-        // `None` when no VDF buffer is installed or the index is OOR;
-        // engines that drive the host without setting one still get the
-        // kind/variant writes (synchronous spawn semantics) plus an
-        // empty `record` in the event payload.
+        // VDF record body bytes for the emitted event payload. `None` when
+        // no VDF buffer is installed or the index is OOR; the shared
+        // allocator handles the empty-record case (synchronous spawn
+        // semantics). `spawn_field_actor` performs the identical resolve
+        // and stores the record on the actor.
         let record_bytes: Vec<u8> = self
             .world
             .vdf_record_bytes(b1)
             .map(|s| s.to_vec())
             .unwrap_or_default();
-        let start = FIELD_SPAWN_START_SLOT as usize;
-        match self
-            .world
-            .actors
-            .iter()
-            .enumerate()
-            .skip(start)
-            .find(|(_, a)| !a.active)
-            .map(|(i, _)| i)
-        {
+        match self.world.spawn_field_actor(words[0], b1, kind, variant) {
             Some(slot_idx) => {
-                let actor = &mut self.world.actors[slot_idx];
-                actor.active = true;
-                actor.kind = kind;
-                actor.variant = variant;
-                actor.tmd_ref = tmd_ref;
-                actor.spawn_record = if record_bytes.is_empty() {
-                    None
-                } else {
-                    Some(record_bytes.clone())
-                };
                 self.world
                     .pending_field_events
                     .push(FieldEvent::ActorSpawned {

@@ -46,6 +46,55 @@ pub const CELL_ANIM_FIRST: u8 = 0x0B;
 /// Last animated-tile value.
 pub const CELL_ANIM_LAST: u8 = 0x0E;
 
+/// First cell value that draws a tile actor. Retail draws every cell whose
+/// value indexes the tile-actor table above the player/floor slots
+/// (`overlay_0897_801e0f3c` draws each cell `> 1`); the wall value `2` is
+/// itself a drawn tile.
+pub const CELL_DRAW_FIRST: u8 = 2;
+
+/// Last cell value that draws a tile actor (top of the tile-actor table).
+pub const CELL_DRAW_LAST: u8 = 0x0E;
+
+/// Entry count of the per-cell-value tile-actor table (`DAT_801f35bc`,
+/// `0x3c` bytes = 15 word-sized pointers). Index `0` is the player actor,
+/// `2..=14` the per-value tile actors; index `1` (plain floor) is unused.
+pub const TILE_ACTOR_TABLE_LEN: usize = 15;
+
+/// Whether a cell value is drawn as a tile actor (`CELL_DRAW_FIRST..=CELL_DRAW_LAST`).
+pub fn is_drawable_cell(value: u8) -> bool {
+    (CELL_DRAW_FIRST..=CELL_DRAW_LAST).contains(&value)
+}
+
+/// The tile-actor template id for a drawable cell `value`: the header
+/// `+0xc` base plus `value - 2` (`overlay_0897_801e0f3c`). Only meaningful
+/// for [`is_drawable_cell`] values.
+pub fn tile_template_for(base: u8, value: u8) -> u8 {
+    base.wrapping_add(value - CELL_DRAW_FIRST)
+}
+
+/// One entry in the per-frame tile-board draw list: the tile actor to draw
+/// and the world-centre coordinate to draw it at. The reposition pass
+/// ([`crate::World::tick`]'s field arm) produces one per drawn cell from
+/// the [`TileBoard::draw_cells`] set and the tile-actor table; the deferred
+/// renderer draws the actor's mesh at each listed cell (retail's
+/// `overlay_0897_801e0f3c` repositions the selected actor to each cell
+/// centre and draws it in place).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileDraw {
+    /// Board column of this drawn cell.
+    pub col: u8,
+    /// Board row of this drawn cell.
+    pub row: u8,
+    /// Cell value (`2..=14`) selecting the tile actor from the table.
+    pub cell_value: u8,
+    /// Actor-pool slot of the selected tile actor.
+    pub slot: u8,
+    /// World X of the tile centre (`(origin_x + col) * 0x80 + 0x40`).
+    pub world_x: i32,
+    /// World Z of the tile centre (`(origin_z + row) * 0x80 + 0x40`).
+    pub world_z: i32,
+}
+
 /// The inline board header a field-VM op `0x49` sub-op `5` points
 /// `_DAT_8007b450` at. The window starts at the sub-op byte (`+0`); the
 /// confirmed fields follow at `+1..+0xC` (13 bytes total - the Done arm
@@ -231,6 +280,39 @@ impl TileBoard {
         self.tile_world(self.player_col as i32, self.player_row as i32)
     }
 
+    /// The `(col, row)` cells the board scans/draws this frame, in
+    /// row-major order (`overlay_0897_801e0f3c`; header `+6` picks the pass,
+    /// `+5` the radius):
+    ///
+    /// - `mode_flag == 0` (**full-board**): every in-bounds cell.
+    /// - `mode_flag != 0` (**windowed**): the square window of Chebyshev
+    ///   `radius` cells around the player, clamped to the board edges.
+    ///
+    /// Purely geometric - the caller filters each cell by
+    /// [`is_drawable_cell`] and looks up its tile actor.
+    pub fn draw_cells(&self, mode_flag: u8, radius: u8) -> Vec<(i32, i32)> {
+        let (w, h) = (self.width as i32, self.height as i32);
+        let (c0, c1, r0, r1) = if mode_flag == 0 {
+            (0, w - 1, 0, h - 1)
+        } else {
+            let rad = radius as i32;
+            let (pc, pr) = (self.player_col as i32, self.player_row as i32);
+            (
+                (pc - rad).max(0),
+                (pc + rad).min(w - 1),
+                (pr - rad).max(0),
+                (pr + rad).min(h - 1),
+            )
+        };
+        let mut out = Vec::new();
+        for row in r0..=r1 {
+            for col in c0..=c1 {
+                out.push((col, row));
+            }
+        }
+        out
+    }
+
     /// Candidate `(col, row)` one step from the player in `dir`. May be
     /// out of bounds (negative or past the edge); callers gate it
     /// through [`Self::is_blocked`].
@@ -372,6 +454,47 @@ mod tests {
                 .any(|&c| (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(&c)),
             "at least the last event tile survives"
         );
+    }
+
+    #[test]
+    fn drawable_cells_and_template_mapping() {
+        // Only 2..=14 draw a tile actor; floor (0/1) and out-of-table (>14) don't.
+        assert!(!is_drawable_cell(0));
+        assert!(!is_drawable_cell(1));
+        assert!(is_drawable_cell(2));
+        assert!(is_drawable_cell(0x0E));
+        assert!(!is_drawable_cell(0x0F));
+        // Template id = base + (value - 2).
+        assert_eq!(tile_template_for(0x30, 2), 0x30);
+        assert_eq!(tile_template_for(0x30, 3), 0x31);
+        assert_eq!(tile_template_for(0x30, 0x0E), 0x30 + 12);
+    }
+
+    #[test]
+    fn full_board_draw_set_covers_every_cell() {
+        let b = TileBoard::new(3, 2, 0, 0, vec![1; 6]);
+        let cells = b.draw_cells(0, 5);
+        assert_eq!(cells.len(), 6);
+        assert_eq!(cells[0], (0, 0));
+        assert_eq!(cells[5], (2, 1));
+    }
+
+    #[test]
+    fn windowed_draw_set_restricts_to_radius() {
+        // 5x5 board, player at centre (2,2), radius 1 -> a 3x3 window.
+        let mut b = TileBoard::new(5, 5, 0, 0, vec![1; 25]);
+        b.player_col = 2;
+        b.player_row = 2;
+        let cells = b.draw_cells(1, 1);
+        assert_eq!(cells.len(), 9);
+        assert!(cells.contains(&(1, 1)));
+        assert!(cells.contains(&(3, 3)));
+        assert!(!cells.contains(&(0, 2)));
+        assert!(!cells.contains(&(4, 2)));
+        // The window clamps at the edge: player in the corner -> 2x2.
+        b.player_col = 0;
+        b.player_row = 0;
+        assert_eq!(b.draw_cells(1, 1).len(), 4);
     }
 
     #[test]
