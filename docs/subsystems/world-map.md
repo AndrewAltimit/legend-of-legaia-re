@@ -296,10 +296,16 @@ code path (`FUN_8003CE08`-class call in an overlay), not by scene bytecode:
   variant): still unrecovered writers. `0x482` reads `0` across the whole
   mednafen save library (including both pre-victory Zeto captures),
   `rikuroa`'s MAN sets it nowhere, and the motion-flag census finds no
-  op-7/op-8 site for either (nor for `0x1BE`) - so the setter is a
-  battle/overlay code path that needs a fresh post-story-beat capture to
-  bracket. The engine leaves both gated, which is faithful (the walls / the
-  dolk2 variant *should* stay closed pre-beat).
+  op-7/op-8 site for either (nor for `0x1BE`). The static channels are now
+  exhausted **corpus-wide**: an all-programs Ghidra sweep plus a raw-byte
+  scan of all 1235 PROT entries (setter `jal`s, address materializers,
+  `ori`-formed targets, derived-base stores, setter data words - all
+  alignment phases; `ghidra/scripts/find_spine_flag_writers.py`) finds no
+  statically-formed write of either flag or of `DAT_8007B7FC` anywhere on
+  the disc - the writes go through runtime-computed pointers/indices. A
+  fresh post-story-beat write-watchpoint capture is the closer. The engine
+  leaves both gated, which is faithful (the walls / the dolk2 variant
+  *should* stay closed pre-beat).
 
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
   with that id. `inline` is the record's structural inline dialog-text block (see

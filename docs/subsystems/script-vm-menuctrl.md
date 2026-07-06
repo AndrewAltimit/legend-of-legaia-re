@@ -74,6 +74,19 @@ Party state + inverted-Y mirror cluster.
 - **Sub-0** (round 18, 6-byte) is a field SE trigger with a conditional u16 pair: `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]` decodes both via [`load_u16_le`](script-vm.md#helper-functions); the original gates `func_0x8002B994(a, b)` on three flag globals (`_DAT_8007B874`, `_DAT_800846D0`, `_DAT_800846D4`); PC always += 6.
 - **Sub-1** (1-byte) is a linked-list lookup gate via `FUN_8003CF04(_DAT_8007C34C, FUN_801DC0BC)` - host returns `Some(new_pc)` for the `LAB_801E360C` ce9c-jump path or `None` for PC += 4 on miss.
 - **Sub-2** (2-byte) calls the channel resolver `func_0x8003C83C` and conditionally spawns a script context, then halts at PC.
+- **Sub-3** (14-byte) is `SCHEDULE_TIMED_FLAGS` - a timed-flag scheduler:
+  `[4C, 0xD3, expiry_flag: u16, below_flag: u16, duration: u32, threshold: u32]`
+  writes `_DAT_800845C0 = (expiry << 16) | below`, duration into
+  `_DAT_800845B8`/`_DAT_800845A0`, threshold into `_DAT_800845BC`, snapshots
+  the clock (`_DAT_80073ED4 = _DAT_80084570`); PC += 0xE. The per-tick
+  consumer `FUN_801d2ebc` decrements by the clock delta, calls
+  `FUN_8003CE08(expiry & 0xFFF)` + disarms on expiry, `FUN_8003CE08(below &
+  0xFFF)` when under threshold (`0x88888889` magic divide for the seconds
+  display). Retail use: `chitei2`'s collapsing-dungeon escape timer (flag
+  `0x4C7`, duration 2400, threshold 910) + disarm records in
+  `chitei2`/`map03`. The flag slots live in the `0x80084140` save-scratch
+  block (persisted). Installer at `FUN_801DE840` case 0xD sub 3
+  (`~0x801E2C08`, 0897 file `+0x143F0`).
 - **Sub-6** mutates `ctx.field_74`: 3-byte `[4C, 0xD6, b1]`, if `b1 == 4` clears top bit only, else sets bit 0x80000000 + shifts `b1` into the top byte; halts at PC.
 - **Sub-7** (1-byte) registers a `FUN_801DC0BC` list-walk callback then halts at PC.
 - **Sub-8** (9-byte) is a synchronous-spawn actor allocator: `[4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]` decodes to `(vdf_idx: u8, tmd_idx: i16, kind: u16, variant: u16)` and routes through host hook [`FieldHost::op4c_n_d_sub8_call_d77f4`] (overlay-resident `FUN_801D77F4`, see `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`); host writes `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the allocated slot. Unlike the queue-based `0x4C 0x80` halt-acquire path, the spawn is synchronous - the host emits `FieldEvent::ActorSpawned` directly, with no intervening `pending_actor_spawns` queueing. PC always += 9.

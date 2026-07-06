@@ -197,19 +197,19 @@
       <tr>
         <td>First boss (Zeto) trigger &rarr; Battle</td>
         <td><span class="tag tag-done">formation + port resolved</span>; trigger writer capture-gated</td>
-        <td>Zeto (id <code>0x4B</code>, in <code>rikuroa</code>) has <strong>no</strong> on-disc formation record; it uses the <strong>battle-id path</strong> (<code>DAT_8007b7fc = 0x4B</code> &rarr; <code>FUN_8005567c</code> lone-monster cell <code>[0x4B,0,0,0]</code>, byte-exact with both <code>zeto_*_mid_cast</code> captures). Port: <code>World::install_boss_encounter</code> + a <code>rikuroa</code> first-visit latch on flag <code>0x1BE</code>, victory-latched. <strong>Open:</strong> the <code>DAT_8007b7fc</code> writer is in no loaded program (four Ghidra sweeps over 47 programs find only readers); needs a Mt. Rikuroa write-watchpoint. Spine-writer #1 of 3; capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>Zeto (id <code>0x4B</code>, in <code>rikuroa</code>) has <strong>no</strong> on-disc formation record; it uses the <strong>battle-id path</strong> (<code>DAT_8007b7fc = 0x4B</code> &rarr; <code>FUN_8005567c</code> lone-monster cell <code>[0x4B,0,0,0]</code>, byte-exact with both <code>zeto_*_mid_cast</code> captures). Port: <code>World::install_boss_encounter</code> + a <code>rikuroa</code> first-visit latch on flag <code>0x1BE</code>, victory-latched. <strong>Open:</strong> the <code>DAT_8007b7fc</code> writer is not statically formed anywhere in the PROT corpus (all-programs Ghidra sweep + raw-byte scan of all 1235 entries, every addressing form - <code>find_spine_flag_writers.py</code>); the write is runtime-computed. Needs a Mt. Rikuroa write-watchpoint. Spine-writer #1 of 3; capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
         <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
       <tr>
         <td>Spine flag <code>0x142</code> (dolk-dungeon-clear) writer</td>
-        <td>open (capture-gated; both bytecode censuses negative)</td>
-        <td>Spine-writer #2 of 3. Flag <code>0x142</code> clear routes <code>map01</code>'s dungeon entrance to <code>dolk</code> (pre-boss), set routes to <code>dolk2</code> (post-boss); the branch mechanism + engine port are resolved but the <em>writer</em> that sets <code>0x142</code> at the dolk-clear beat is in no loaded program - readers only. The disc-wide motion-VM flag census (<code>--motion-flag-census</code>, the second bytecode able to write the bank) is also negative, so the writer is a direct code path, not scene bytecode. Closes with a fresh PCSX-Redux write-watchpoint capture at the dolk-clear story beat. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>open (capture-gated; ALL static channels exhausted corpus-wide)</td>
+        <td>Spine-writer #2 of 3. Flag <code>0x142</code> clear routes <code>map01</code>'s dungeon entrance to <code>dolk</code> (pre-boss), set routes to <code>dolk2</code> (post-boss); the branch mechanism + engine port are resolved. No writer exists by ANY static channel: readers only in all loaded programs, motion-VM census negative, and the corpus-wide sweep (all-programs Ghidra + raw-byte scan of all 1235 PROT entries: setter jals, materializers, ori-formed, derived-base stores, data words - <code>find_spine_flag_writers.py</code>) is clean; the write is runtime-computed. Closes with a fresh PCSX-Redux write-watchpoint capture at the dolk-clear story beat. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
         <td>Spine flag <code>0x482</code> (Drake mist-wall) writer</td>
-        <td>open (capture-gated; both bytecode censuses negative)</td>
-        <td>Spine-writer #3 of 3. Flag <code>0x482</code> gates <code>map01</code>'s mist walls (<code>P2[34..36]</code> C1); it reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, <code>rikuroa</code> sets it nowhere, and the motion-VM census finds no op-7/op-8 site either - a direct code path. Closes with a fresh PCSX-Redux write-watchpoint capture at the post-mist story event. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>open (capture-gated; ALL static channels exhausted corpus-wide)</td>
+        <td>Spine-writer #3 of 3. Flag <code>0x482</code> gates <code>map01</code>'s mist walls (<code>P2[34..36]</code> C1); it reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, <code>rikuroa</code> sets it nowhere, the motion-VM census is negative, and the corpus-wide static sweep (see the <code>0x142</code> row) is clean. Closes with a fresh PCSX-Redux write-watchpoint capture at the post-mist story event. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
@@ -219,9 +219,9 @@
         <td><a href="../subsystems/motion-vm.html">motion-vm</a></td>
       </tr>
       <tr>
-        <td>Post-FMV "per-FMV event record" (teleport + flags)</td>
-        <td><span class="tag tag-warn">falsified</span> (as a table)</td>
-        <td>The debug-menu STR path observably restores a scene and beat flags change, but the FMV dispatch record is playback-only (<code>legaia_asset::fmv_dispatch</code> - no scene/position/flag fields), the dev-menu renderer <code>FUN_801EAD98</code> is display-only, and no dumped code writes <code>_DAT_8007BA78</code> outside the three known field-VM/title sites. Whatever applies the post-STR teleport+flags is un-dumped code; do not re-walk the "per-FMV event table" shape.</td>
+        <td>Debug-menu "STR trigger teleports + sets flags" mechanism</td>
+        <td><span class="tag tag-done">resolved</span> (no per-FMV event table; dev-menu tools explain it)</td>
+        <td>The FMV dispatch record is playback-only (<code>legaia_asset::fmv_dispatch</code> - no scene/position/flag fields) and the two direct <code>_DAT_8007BA78</code> store sites are <strong>corpus-exhaustive</strong> (raw scan of all 1235 PROT entries, every addressing form). The observed teleport+flag application is the field-overlay 0897 dev-menu toolset: warp appliers <code>FUN_801EE094</code> ("ON RIREMITO,") / <code>FUN_801EE328</code> ("ON RULA,") for MAP CHANGE, and the EVENT FLAG editor (<code>FUN_801DBD04</code>, cursor over flags <code>0..0xFFF</code>, SET/CLEAR at cursor). The FMV corpus states were produced by dev-menu pointer-mediated global editing (invisible to static addressing-form scans). Do not re-walk the "per-FMV event table" shape.</td>
         <td><a href="../subsystems/cutscene.html">cutscene</a></td>
       </tr>
       <tr>
