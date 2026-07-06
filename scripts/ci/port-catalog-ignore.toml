@@ -421,3 +421,20 @@
 "8002657c" = "Directional-pan helper: on a changed actor pan byte (+0x6) re-applies master volume (800643c4) + CD/reverb (80062a0c) + voice vol/pan (80064890). Pure libspu/libsnd glue, no game logic."
 "8002614c" = "Audio-context volume re-apply on state change (gp+0x800 edge): master volume + CD/reverb reset, then per-sequence volume re-apply across up to 4 sequencer slots (80064890 x4). Pure libsnd/libspu glue."
 "80035bd0" = "SFX cue overwrite-slot variant (the 'overwrite current head' path). Cue-play is ported as engine-audio SfxScheduler::enqueue (// PORT: FUN_80035B50) + classify_cue (// PORT: FUN_8004FCC8); the ring overwrite-vs-advance distinction is deliberately not modelled, so this variant is subsumed by the FUN_80035B50 port. see ghidra/scripts/funcs/80035bd0.txt"
+
+
+# Overlay VA-aliased pseudo-addresses. The catalog keys functions by bare VA,
+# but the runtime overlays share the 0x801C0000+ window: the SAME VA holds
+# DIFFERENT code in different overlays, and the dump evidence proves it
+# (multiple `funcs/overlay_<label>_<addr>.txt` files with divergent sizes /
+# bodies). For these addresses the bare-VA row is a phantom: its `refs` count
+# aggregates citations from unrelated overlays, so it floats to the top of
+# every feature view as a fake "shared blocker" that no single port could ever
+# clear. The real functions are tracked per-overlay - port tags cite the
+# per-overlay dump stem (`overlay_<label>_<addr>`), which the PORT-tag scanner
+# accepts. Only addresses with verified multi-overlay divergence belong here;
+# a VA that happens to have several dumps of the SAME function (one overlay
+# captured under different scenario labels) does not qualify.
+[va_aliased_overlay_local]
+"801d58f0" = "VA-aliased across overlays, not one function: overlay_0897 copy is an 80-byte mid-function division fragment (not an entry), baka_fighter 228 B, cutscene_dialogue 124 B, debug_menu/fishing/slot_machine 308 B, dance 1 B. The 41-ref count sums unrelated per-overlay callees; no single port site exists for the bare VA."
+"801d63b0" = "VA-aliased across overlays, not one function: overlay_dance copy is 208 B vs debug_menu/fishing/slot_machine 1036 B - different code at the same VA. The 43-ref count sums unrelated per-overlay callees; no single port site exists for the bare VA."
