@@ -304,9 +304,29 @@ distinguishing signature is the cell *shape* - `FUN_8005567c` writes slots 0/1/2
 for a plain id (`[0x4F,0x4F,0x4F,0]`), whereas the Tetsu cell is `[0x4F,0,0,0]`
 (slot 0 only, slots 1-3 cleared), which is the `FUN_801DA51C` count-1 record path.
 So the Rim Elm fight uses the indexed-record path; `FUN_8005567c` is the
-formation source for battles cued by a battle-id rather than an entity record
-(no writer of `DAT_8007b7fc` is present in `SCUS_942.54`, so the id is set from a
-field overlay).
+formation source for battles cued by a battle-id rather than an entity record.
+
+**This is the chapter-1 first-boss path.** Zeto (fought in `rikuroa`) is monster
+id `0x4B`, in the bespoke `0x49..=0x4d` range, so `FUN_8005567c` expands it to the
+lone cell `[0x4B,0,0,0]` - byte-exact with the two `zeto_*_mid_cast` capture
+states (`0x8007BD0C = 4B 00 00 00`). Zeto has **no** on-disc formation record
+(not in `rikuroa`'s MAN encounter section, not as an inline armed-YIELD window),
+so the battle-id path is its only formation source. The clean-room engine ports
+this as `World::install_boss_encounter` (a lone-monster `FormationDef` under a
+synthetic boss-namespace id), armed by a `rikuroa` first-visit scene-entry latch
+on story flag `0x1BE` (see [`world::SCRIPTED_SCENE_BOSSES`]).
+
+**Open - the writer of `DAT_8007b7fc` is not in the static corpus.** Four
+exhaustive Ghidra sweeps across all 47 loaded programs (SCUS + 46 overlays) -
+`lui`+`addiu` absolute stores, `lui`+`ori`, gp-relative (`gp = 0x8007B318`,
+validated), and pointer-table occurrences - find only **readers**
+(`FUN_8005567c` ×4, battle-init `FUN_80055b6c`, and the per-frame post-battle
+mode gate `FUN_80046a20`), **zero writers** by any addressing mode. The
+"LUI+ADDIU trap" is falsified for this address. The writer therefore sits in an
+overlay not imported into Ghidra (or an un-disassembled data-classified region
+of field overlay `0897`); a write-watchpoint on `0x8007B7FC` captured as it flips
+to `0x4B` at Mt. Rikuroa yields the writer PC directly (no catalogued save
+brackets the write - both Zeto captures are mid-battle, post-write).
 
 ## Random-encounter trigger path
 

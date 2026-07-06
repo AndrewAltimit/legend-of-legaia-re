@@ -244,6 +244,22 @@ is per-visit install-time gating - the portal set is rebuilt each time the
 overworld loads, so a flag that latched during a dungeon run re-gates the
 entrance on the next arrival.
 
+**Story-conditional destination (in-record `0x70` branch).** A second, finer
+mechanism lives *inside* an entrance record: the destination scene can change
+after a story beat while the trigger tile stays the same. The Drake dungeon
+entrance (`map01` records `P2[1]`/`P2[2]`) selects its `0x3F` target by an
+op-`0x70` `SysFlag.Test` on system flag `0x142` - clear falls through to
+`3F -> dolk` (pre-boss), set jumps to a second `3F -> dolk2` (post-boss); both
+arms share the trigger tile and arrival tile `(49,45)`. This is **not** a
+record-level C1/C2 gate (those are empty here) - it is a bytecode branch, so
+`man_field_scripts::overworld_portal_sites` decodes the conditional `0x3F` pair
+(`OverworldPortalSite::conditional` / `ConditionalDest`) and the seeder resolves
+primary vs alternative through `World::system_flag_test`, mirroring the field
+VM's op-`0x70` semantics. (This falsifies the earlier "dolk2 is reached from a
+dungeon interior" reading - no interior scene lists `dolk2`; it is the same hub
+entrance as `dolk`, chosen by flag `0x142`. Where retail *sets* `0x142` - the
+dolk-dungeon-clear writer - is unrecovered, like the Zeto battle-id writer.)
+
 Overworld walk-on **beat** records are the other half. Not every gate-1 kind-1
 tile trigger on a hub is a portal: the Drake mist-wall force-walk bands (`map01`
 partition-2 records `P2[34..36]`, `C1=[0x482]`) carry no `0x3F` - they shove the
@@ -257,6 +273,27 @@ force-walks while `0x482` is clear, stops once it sets). While such a timeline
 runs, `step_world_map_locomotion` stands the overworld player down (the force-walk
 lock) and `World::tick`'s world-map arm steps the timeline whenever one is active
 (not just during the opening `map01` fly-in).
+
+**Gate-flag setters that are NOT MAN field-VM ops.** Two progress flags read by
+these gates have no MAN `0x50`-op setter, so `man-scripts --system-flag-census`
+(which walks only MAN field-VM ops `0x50/0x60/0x70`) cannot see them:
+
+- **`549` (`0x225`)**, the `town01` opening one-shot: its writer is
+  `FUN_80038158` **op-`7`** - a per-actor motion / bytecode VM (dispatched by
+  `FUN_8003BC08` when actor `+0x10 & 0x80`) that sets the `DAT_80085758` bank
+  inline with the flag index taken from its *own* script bytecode
+  (`operand[1] | operand[2] << 8`; op-`8` clears). This is a distinct bytecode
+  from the MAN field VM, which is why the census is structurally blind to it.
+  Pinned from a bank RAM-diff across the `town01` opening (byte `+0x44` bit
+  `0x04` flips pre- vs post-opening) plus the dump; see
+  [`functions.md`](../reference/functions.md).
+- **`0x482`** (Drake mist walls) and **`0x142`** (the dolk/dolk2 dungeon
+  variant): still unrecovered writers. `0x482` reads `0` across the whole
+  mednafen save library (including both pre-victory Zeto captures), and
+  `rikuroa`'s MAN sets it nowhere - so the setter is a battle/overlay path that
+  needs a fresh post-story-beat capture to bracket. The engine leaves both
+  gated, which is faithful (the walls / the dolk2 variant *should* stay closed
+  pre-beat).
 
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
   with that id. `inline` is the record's structural inline dialog-text block (see

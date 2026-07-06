@@ -232,6 +232,7 @@ TARGETS = [
     "8003774c",  # motion VM (already dumped, included for cross-ref)
     "801d79e8",  # overlay helper cited by FUN_8003BC08 tick path
     "80038158",  # bit-0x80 path from FUN_8003BC08 (actor[+0x80] != 0) - actor motion VM
+    "80046a20",  # post-battle mode gate; reads battle-id DAT_8007b7fc (encounter.md)
     "80019278",  # heading helper called twice from FUN_8003BC08
     "80046978",  # UNCONDITIONAL call right before horizon emitter in FUN_80016444
     "8001d140",  # per-actor render-pass iterator, called 6x against same lists as FUN_8002519c
