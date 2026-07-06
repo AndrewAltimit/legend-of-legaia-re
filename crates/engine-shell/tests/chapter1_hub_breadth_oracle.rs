@@ -788,3 +788,74 @@ fn part_e_flag_census_setters_disc_wide() {
          (0x15E read by urudre1); 0x142 has no MAN setter (battle-path write)"
     );
 }
+
+/// Part F - the full Drake Castle interior chain, driven end-to-end in one
+/// session: `jou -> jouina -> jouinb -> jouinc`. The first hop is the
+/// C2=[0x44D] door cutscene (its player-channel `0xF8` ExecMove/HaltAcquire
+/// beats complete through the timeline stepper's completion model); the
+/// deeper hops are the ungated castle doors pinned by parts D/J. This is the
+/// deepest driven interior chain in the engine.
+#[test]
+fn part_f_castle_chain_e2e() {
+    let Some(mut host) = drive_to_leg("jou") else {
+        return;
+    };
+    let index = host.index.clone();
+    for _ in 0..3 {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            panic!("unexpected early transition to {name}");
+        }
+    }
+
+    // Hop 1: jou -> jouina through the story-gated door cutscene.
+    host.world.system_flag_set(0x44D);
+    host.world.seat_player_at_tile(94, 97);
+    let mut entered = None;
+    for _ in 0..900 {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            entered = Some(name);
+            break;
+        }
+    }
+    assert_eq!(entered.as_deref(), Some("jouina"), "castle door hop");
+    assert_eq!(host.world.mode, SceneMode::Field);
+
+    // Hop 2: jouina -> jouinb (ungated exit record P2[20]; band discovered
+    // from the live trigger table rather than hardcoded).
+    for _ in 0..3 {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            panic!("arrival spawn bounced straight to {name}");
+        }
+    }
+    let band = gate1_tiles_of(&index, "jouina", 20);
+    let &(bx, bz) = band.iter().next().expect("jouina P2[20] has a door band");
+    host.world.seat_player_at_tile(bx, bz);
+    let mut entered = None;
+    for _ in 0..900 {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            entered = Some(name);
+            break;
+        }
+    }
+    assert_eq!(entered.as_deref(), Some("jouinb"), "jouina onward door");
+    assert_eq!(host.world.mode, SceneMode::Field);
+
+    // Hop 3: jouinb -> jouinc (ungated onward band pinned in part D).
+    for _ in 0..3 {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            panic!("arrival spawn bounced straight to {name}");
+        }
+    }
+    host.world.seat_player_at_tile(18, 102);
+    let mut entered = None;
+    for _ in 0..900 {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            entered = Some(name);
+            break;
+        }
+    }
+    assert_eq!(entered.as_deref(), Some("jouinc"), "jouinb onward door");
+    assert_eq!(host.world.mode, SceneMode::Field);
+
+    eprintln!("[ok] Part F: drove jou -> jouina -> jouinb -> jouinc end-to-end");
+}
