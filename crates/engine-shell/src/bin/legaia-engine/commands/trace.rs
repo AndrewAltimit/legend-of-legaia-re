@@ -17,6 +17,7 @@ pub(crate) fn cmd_man_scripts(
     narration: bool,
     system_flag_census: bool,
     motion_flag_census: bool,
+    op49_window_census: bool,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::{
         FlagBank, partition_record_span, system_flag_census as run_system_flag_census,
@@ -221,6 +222,69 @@ pub(crate) fn cmd_man_scripts(
                     h.site.variant,
                     binds.join(","),
                     h.site.offset,
+                );
+            }
+        }
+    }
+
+    if op49_window_census {
+        use legaia_engine_core::man_field_scripts::op49_window_census as run_op49_window_census;
+        let scenes = index.cdname_scene_names();
+        let sites = run_op49_window_census(&index, &scenes);
+        println!(
+            "\n--- disc-wide op-0x49 flag-WINDOW census ({} scenes scanned, {} sites) ---",
+            scenes.len(),
+            sites.len(),
+        );
+        for s in &sites {
+            let window = match s.window() {
+                Some((lo, hi)) => format!("[0x{lo:04X}..0x{hi:04X}]"),
+                None => "(empty)".to_string(),
+            };
+            println!(
+                "  scene={:<10} P{}[{:3}] @0x{:05X} sub=0x{:02X} base=0x{:04X} count={:3} default={:3} rows={:3} window={window}{}",
+                s.scene_name,
+                s.partition,
+                s.record,
+                s.abs_pc,
+                s.sub_op,
+                s.base_flag,
+                s.count,
+                s.default_index,
+                s.rows,
+                if s.in_footprint {
+                    ""
+                } else {
+                    "  [past-footprint]"
+                },
+            );
+        }
+        // Spine-flag verdicts: containment + near-miss (+/-8) per target.
+        const TARGETS: [u16; 4] = [0x142, 0x482, 0x1BE, 0x225];
+        const MARGIN: u32 = 8;
+        for target in TARGETS {
+            let contained = sites.iter().filter(|s| s.covers(target)).count();
+            let near: Vec<&legaia_engine_core::man_field_scripts::Op49WindowSite> = sites
+                .iter()
+                .filter(|s| !s.covers(target) && s.min_distance(target) <= MARGIN)
+                .collect();
+            let nearest = sites.iter().map(|s| s.min_distance(target)).min();
+            println!(
+                "target 0x{target:04X} ({target:>4}): contained by {contained} site(s), {} near-miss(es) within +/-{MARGIN}, nearest distance {:?}",
+                near.len(),
+                nearest,
+            );
+            for s in near {
+                println!(
+                    "    near-miss scene={} P{}[{}] @0x{:05X} sub=0x{:02X} base=0x{:04X} count={} (distance {})",
+                    s.scene_name,
+                    s.partition,
+                    s.record,
+                    s.abs_pc,
+                    s.sub_op,
+                    s.base_flag,
+                    s.count,
+                    s.min_distance(target),
                 );
             }
         }

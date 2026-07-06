@@ -171,6 +171,17 @@ pub(crate) enum Cmd {
         /// ignores the per-scene `--scene` argument.
         #[arg(long)]
         motion_flag_census: bool,
+        /// Run a disc-wide **op-0x49 flag-WINDOW census**: decode every scene
+        /// MAN's partition records with the field-VM disassembler and print
+        /// every op-`0x49` (`STATE_RESUME`) site with its operand bytes
+        /// interpreted under the `FUN_801EF014` flag-window descriptor
+        /// (`+1` count, `+2` default, `+3` rows, `+4..5` u16 base flag), plus
+        /// containment / near-miss verdicts for the spine flags
+        /// `0x142`/`0x482`/`0x1BE`/`0x225`. This closes the "a window's
+        /// base+offset arithmetic lands on a spine flag with no literal in
+        /// the corpus" hypothesis. Disc-wide; ignores `--scene`.
+        #[arg(long)]
+        op49_window_census: bool,
         /// Dump the inline cutscene-narration text pages embedded in a
         /// cutscene-timeline record (the `0x1F`/`0x00`-framed subtitle pages
         /// after a `0x4C` narration op). Pair with `--disasm-record N

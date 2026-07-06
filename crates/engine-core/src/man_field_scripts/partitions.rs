@@ -368,6 +368,188 @@ where
     out
 }
 
+/// One field-VM op-`0x49` (`STATE_RESUME`) site recovered by
+/// [`op49_window_census`], with its operand bytes interpreted under the
+/// **flag-window descriptor** layout the field-overlay picker widget
+/// `FUN_801EF014` consumes through `_DAT_8007B450` (system-actor handler id
+/// `0x23` in the `PTR_FUN_801f33b4` table, dispatcher `FUN_801F159C`):
+///
+/// ```text
+/// [0]    opcode 0x49          (descriptor pointer targets byte [1])
+/// [1]    sub-op
+/// [2]    count               ; window width in flags (`+1` from _DAT_8007B450)
+/// [3]    default_index       ; state-0 fallback selection (`+2`)
+/// [4]    rows                ; widget row geometry (`+3`)
+/// [5..6] base_flag (u16 LE)  ; first flag of the window (`+4..5`, read via
+///                            ; the u16 loader FUN_8003CE9C)
+/// ```
+///
+/// The picker's writes land on `DAT_80085758` system flags
+/// `base_flag + i` for `i` in `0..count` (state-0 window CLEAR loop via
+/// `FUN_8003CE34`) plus `base_flag + default_index` (the state-0 fallback
+/// `_DAT_8007BB88` seed the state-1 confirm SET `FUN_8003CE08` can land on) -
+/// so a site's covered flag set is `[base, base+count) ∪ {base+default}`.
+///
+/// Every op-`0x49` site is reported regardless of sub-op: which sub-op arms
+/// handler `0x23` is runtime state (`actor+0x50`), so the census interprets
+/// the descriptor window at **all** sub-ops as the conservative superset.
+/// `in_footprint` records whether the 6 descriptor bytes lie inside the
+/// instruction's own decoded operand footprint (sub-ops narrower than 5
+/// operand bytes would make the picker read into the following instruction's
+/// bytes - still resident MAN bytes at runtime, so they are interpreted too).
+// REF: FUN_801EF014
+// REF: FUN_801F159C
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Op49WindowSite {
+    /// CDNAME scene name whose MAN carries the op.
+    pub scene_name: String,
+    /// Partition the carrying record lives in.
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// Absolute byte offset of the `0x49` opcode in the MAN buffer.
+    pub abs_pc: usize,
+    /// The sub-op byte (`_DAT_8007B450` target).
+    pub sub_op: u8,
+    /// Descriptor `+1`: window width in flags.
+    pub count: u8,
+    /// Descriptor `+2`: default selection index.
+    pub default_index: u8,
+    /// Descriptor `+3`: widget row-geometry byte.
+    pub rows: u8,
+    /// Descriptor `+4..5` (u16 LE): first flag id of the window.
+    pub base_flag: u16,
+    /// `true` iff all 6 descriptor bytes sit inside the instruction's own
+    /// decoded footprint (see the type docs).
+    pub in_footprint: bool,
+}
+
+impl Op49WindowSite {
+    /// The window's inclusive flag span `[base, base+count-1]`, or `None`
+    /// when `count == 0` (the CLEAR loop never runs; only the
+    /// `base + default_index` fallback remains reachable).
+    pub fn window(&self) -> Option<(u32, u32)> {
+        (self.count > 0).then(|| {
+            let base = u32::from(self.base_flag);
+            (base, base + u32::from(self.count) - 1)
+        })
+    }
+
+    /// `true` iff `flag` is in the site's covered flag set
+    /// `[base, base+count) ∪ {base + default_index}`.
+    pub fn covers(&self, flag: u16) -> bool {
+        self.min_distance(flag) == 0
+    }
+
+    /// Minimum absolute distance from `flag` to the site's covered flag set
+    /// (`0` = contained). Computed in `u32` so `base + count` cannot wrap.
+    pub fn min_distance(&self, flag: u16) -> u32 {
+        let flag = u32::from(flag);
+        let base = u32::from(self.base_flag);
+        let fallback = base + u32::from(self.default_index);
+        let mut best = flag.abs_diff(fallback);
+        if let Some((lo, hi)) = self.window() {
+            // Distance to the inclusive span [lo, hi]: 0 when inside.
+            let d = if flag < lo {
+                lo - flag
+            } else {
+                flag.saturating_sub(hi)
+            };
+            best = best.min(d);
+        }
+        best
+    }
+}
+
+/// Disc-wide **op-`0x49` flag-window census**: walk every scene MAN's
+/// field-VM bytecode (every partition record, decoded with the opcode-aware
+/// [`LinearWalker`] - real instruction boundaries, not raw byte pairs) and
+/// report every op-`0x49` site with its operand window interpreted under the
+/// [`Op49WindowSite`] flag-window descriptor layout.
+///
+/// This is the residual static probe for the spine flags whose writers are
+/// corpus-negative as LITERAL operands (`0x142` dolk-clear / `0x482` Drake
+/// mist-walls, plus the same-family orphans `0x1BE` / `0x225`): a flag-window
+/// site writes `base + offset`, so a window whose arithmetic covers a target
+/// flag would explain the write with **no literal** anywhere in the corpus.
+/// Consumers check containment / near-miss with [`Op49WindowSite::covers`] /
+/// [`Op49WindowSite::min_distance`].
+///
+/// Same contract as [`system_flag_census`] / [`motion_flag_census`]: scenes
+/// without a resolvable MAN are skipped (best-effort over the CDNAME scene
+/// set, all bundle forms incl. scripted-table + v12-embedded via
+/// [`crate::scene::Scene::field_man_payload`]); site order preserves scene /
+/// partition / record discovery order. Descriptor bytes are read from the
+/// full MAN buffer (the retail picker reads through `_DAT_8007B450` into the
+/// resident MAN, not the instruction footprint); sites whose descriptor
+/// window would run past the MAN end are skipped (nothing resident to read).
+// REF: FUN_801EF014
+pub fn op49_window_census<I, S>(index: &ProtIndex, scenes: I) -> Vec<Op49WindowSite>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut out = Vec::new();
+    for name in scenes {
+        let name = name.as_ref();
+        let Ok(scene) = Scene::load(index, name) else {
+            continue;
+        };
+        let Ok(Some(man)) = scene.field_man_payload(index) else {
+            continue;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            continue;
+        };
+        let partition_count = man_file.header.partition_counts.len();
+        for partition in 0..partition_count {
+            let records = man_file
+                .header
+                .partition_counts
+                .get(partition)
+                .copied()
+                .unwrap_or(0)
+                .max(0) as usize;
+            for record in 0..records {
+                let Some((script_start, pc0, body_len)) =
+                    partition_record_span(&man_file, &man, partition, record)
+                else {
+                    continue;
+                };
+                let body = &man[script_start..script_start + body_len];
+                for insn in LinearWalker::new(body, pc0).flatten() {
+                    let InsnInfo::StateResume { sub_op, .. } = insn.info else {
+                        continue;
+                    };
+                    // Header size: 1 byte, or 2 with the 0x80 cross-context
+                    // prefix. The descriptor pointer (`_DAT_8007B450`)
+                    // targets the sub-op byte right after the header.
+                    let hs = if insn.extended.is_some() { 2 } else { 1 };
+                    let desc = script_start + insn.pc + hs;
+                    // Descriptor bytes +1..+5 from the sub-op byte, read
+                    // from the full resident MAN (see fn docs).
+                    let Some(win) = man.get(desc + 1..desc + 6) else {
+                        continue;
+                    };
+                    out.push(Op49WindowSite {
+                        scene_name: name.to_string(),
+                        partition,
+                        record,
+                        abs_pc: script_start + insn.pc,
+                        sub_op,
+                        count: win[0],
+                        default_index: win[1],
+                        rows: win[2],
+                        base_flag: u16::from_le_bytes([win[3], win[4]]),
+                        in_footprint: insn.size >= hs + 6,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
 /// One motion-VM system-flag site recovered by [`motion_flag_census`]:
 /// the scene plus the [`legaia_asset::man_motion::MotionFlagSite`] the
 /// scene's MAN tail-section 1 carries.
