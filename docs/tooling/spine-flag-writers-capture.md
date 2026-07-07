@@ -57,8 +57,9 @@ card's physical block order does not follow the PRO numbering (verify with
 `save-tool saves <card>`; e.g. PRO-01 sits mid-card, after PRO-03/04/05).
 | flag `0x482` (mist walls) | (not on this card) | `0x482` is unset in all 15 slots; no catalogued save reaches it | see note below |
 
-PRO-00 is also a viable single start to catch **both** `0x142` and the Zeto
-beat's `0x1BE` in one forward run.
+PRO-00 is also a viable single start for a forward run past the Caruban beat
+(`0x142`) toward the remaining capture target, the `jou`-side Zeto battle-id
+staging write.
 
 **Mist-wall caveat.** Flag `0x482` is unset across every slot of this card (it
 matches the library-wide zero the backlog notes). It is **not bracketable** from
@@ -85,11 +86,13 @@ re-capturing. Same launch shape, same emulator constraints, same
 
 ## What the captures settled
 
-- **Flag `0x142` - CAUGHT.** The SET fires at the **rikuroa post-Caruban
-  beat** ("dolk clear" was a mislabel), `ra 0x801E3598` = the field-VM
-  dispatcher's own `0x5x` SET arm. The source is script bytes `51 42` in the
-  scene's segment-pool blob (PROT `0157_rikuroa`; carrier format + provenance
-  model in [script-vm.md](../subsystems/script-vm.md#a-second-script-byte-carrier-the-standalone-segment-pool-blob)).
+- **Flag `0x142` - CAUGHT, then closed statically.** The SET fires at the
+  **rikuroa post-Caruban beat** ("dolk clear" was a mislabel),
+  `ra 0x801E3598` = the field-VM dispatcher's own `0x5x` SET arm. The source
+  is script bytes `51 42` in the scene's **streaming variant MAN** (PROT
+  `0157_rikuroa`, records `P1[10..12]` + the self-latching post-victory
+  `P2[50]`; carrier + census in
+  [script-vm.md](../subsystems/script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man)).
   Save-state bracket catalogued as `rikuroa_pre_caruban` / `rikuroa_post_caruban`.
 - **Story-flag provenance model (capture-proven).** Across every chapter-1
   scene traversed, story flags are written exclusively by the `0x5x`/`0x6x`
@@ -101,9 +104,11 @@ re-capturing. Same launch shape, same emulator constraints, same
   writer VAs (over-read/alias) - attribute callers by disassembling the
   **resident bytes from a same-mode save state**, not from static overlay
   dumps.
-- `0x1BE` and the Zeto battle-id staging write have not fired in any capture
-  yet; with the pool carrier identified, census the pools statically before
-  burning another session on them.
+- The carrier-complete census closed the remaining flag targets statically:
+  `0x482` = `other7`-pool scripts, `0x1BE` = geremi's Jeremi-arrival one-shot
+  (never a Zeto gate). The capture targets still standing are the
+  `DAT_8007B7FC` battle-id staging write (Zeto's trigger, scene `jou` per the
+  battle-state scene buffer) and flag `549` (`0x225`, a direct code path).
 
 ## Running the probe
 
@@ -143,10 +148,11 @@ order, so a single armed session can sweep several:
 
 1. **keikoku** - walk the Kikoku Cliff leg (sets `0x193`; not watched, but the
    marker that you're on the spine).
-2. **rikuroa (Zeto trigger)** - enter Mt. Rikuroa; the encounter trigger writes
-   `DAT_8007b7fc = 0x4B`. The `zeto_battle_id` row fires here.
-3. **Zeto victory** - win the fight (sets `0x1BE`; possibly `0x142` depending on
-   route).
+2. **rikuroa (Caruban trigger)** - enter Mt. Rikuroa; the encounter trigger
+   writes the battle-id global (`DAT_8007b7fc`, Caruban band). The
+   `zeto_battle_id` watch row fires on the same global.
+3. **Caruban victory** - win the fight; the post-victory record `P2[50]` sets
+   `0x142` (the write the firehose caught).
 4. **dolk clear** - clear the dolk dungeon to its clear beat; the
    `flag_0x142_dolk_clear` row fires.
 5. **mist-wall event** - continue to the Drake mist-wall story event; the

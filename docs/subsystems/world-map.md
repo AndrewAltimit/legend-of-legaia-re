@@ -274,15 +274,16 @@ runs, `step_world_map_locomotion` stands the overworld player down (the force-wa
 lock) and `World::tick`'s world-map arm steps the timeline whenever one is active
 (not just during the opening `map01` fly-in).
 
-**Gate-flag setters that are NOT MAN field-VM ops.** Progress flags read by
-these gates can have no MAN `0x50`-op setter - `man-scripts
---system-flag-census` walks only MAN field-VM ops `0x50/0x60/0x70`. The other
-disc-resident bytecode that writes the same bank is the second motion VM
+**Gate-flag setters beyond a scene's bundle MAN.** `man-scripts
+--system-flag-census` walks the MAN field-VM ops `0x50/0x60/0x70` across
+EVERY carrier per scene (bundle + the streaming variant MANs); the other
+disc-resident bytecode writing the same bank is the second motion VM
 `FUN_80038158` (op-`7` sets, op-`8` clears, flag = `operand[1] |
 operand[2] << 8`; carrier = MAN tail-section 1, see
-[`motion-vm.md`](motion-vm.md)); `man-scripts --motion-flag-census` sweeps
-that op family disc-wide. A flag absent from BOTH censuses is set by a direct
-code path (`FUN_8003CE08`-class call in an overlay), not by scene bytecode:
+[`motion-vm.md`](motion-vm.md)), swept by `--motion-flag-census`. A flag
+absent from BOTH censuses is set by a direct code path
+(`FUN_8003CE08`-class call in an overlay). Where the chapter-1 spine flags
+landed:
 
 - **`549` (`0x225`)**, the `town01` opening one-shot: writer still
   unrecovered. The bank RAM-diff pin stands (byte `+0x44` bit `0x04` flips
@@ -292,20 +293,25 @@ code path (`FUN_8003CE08`-class call in an overlay), not by scene bytecode:
   no disc stream uses it for `549`). The setter is a direct code path; the
   spine flag-writer capture harness is the closer. See
   [`functions.md`](../reference/functions.md).
-- **`0x482`** (Drake mist walls) and **`0x142`** (the dolk/dolk2 dungeon
-  variant): still unrecovered writers. `0x482` reads `0` across the whole
-  mednafen save library (including both pre-victory Zeto captures),
-  `rikuroa`'s MAN sets it nowhere, and the motion-flag census finds no
-  op-7/op-8 site for either (nor for `0x1BE`). The static channels are now
-  exhausted **corpus-wide**: an all-programs Ghidra sweep plus a raw-byte
-  scan of all 1235 PROT entries (setter `jal`s, address materializers,
-  `ori`-formed targets, derived-base stores, setter data words - all
-  alignment phases; `ghidra/scripts/find_spine_flag_writers.py`) finds no
-  statically-formed write of either flag or of `DAT_8007B7FC` anywhere on
-  the disc - the writes go through runtime-computed pointers/indices. A
-  fresh post-story-beat write-watchpoint capture is the closer. The engine
-  leaves both gated, which is faithful (the walls / the dolk2 variant
-  *should* stay closed pre-beat).
+- **`0x142`** (the Caruban beat / dolk-dolk2 switch): writer **pinned**.
+  The SETs are plain field-VM `51 42` script bytes in the rikuroa
+  streaming-carrier MAN (extraction 157) - `P1[10..12]` plus the
+  post-victory record `P2[50]` (C1 = `0x142` itself, the self-latching
+  one-shot) - re-asserted by dolk2's carrier `P1[0..1]` and cleared by
+  dolk's bundle `P1[26]`. The firehose capture caught the write live
+  (`ra 0x801E3598`, the dispatcher's own `0x5x` SET arm) and the resident
+  script heap byte-matches the carrier. The old corpus-negative stood
+  because no census walked the streaming variant MANs (and the earlier
+  raw-byte sweep looked for setter *code*, not script operand bytes at
+  op boundaries). Engine: `SCRIPTED_SCENE_BOSSES` arms Caruban (73) in
+  `rikuroa` gated on `0x142`; the victory latch sets it, flipping the
+  dolk-dolk2 entrance organically.
+- **`0x482`** (Drake mist walls): script writers **found** - SETs in the
+  `other7` block's `P1[15]`/`P1[39]` (op `0x54`), clears in the
+  `edbalden`/`eddoman` epilogue variant carriers. Which story beat
+  executes the `other7` records (an "other"-block script pool, not a
+  per-town scene) is the remaining question before the engine can open
+  the walls organically; the engine leaves the gate as-is meanwhile.
 
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
   with that id. `inline` is the record's structural inline dialog-text block (see
@@ -598,11 +604,12 @@ in `SceneMode::Field` with its MAN present.
 | `suimon` | `(57,61)` | `P2[19]` | Scripted (PROT 77) | `[10,7,3]` | `map01` |
 | `jou` | `(95,23)` | `P2[37]` | Scripted (PROT 630) | `[15,8,7]` | `map01`, `jouina` |
 
-**`dolk2` onward destination.** `dolk2` (post-boss `dolk` variant, PROT 76,
-v12-embedded MAN, partitions `[10,7,3]`) lists a single `0x3F`: back to `map01`.
-It is a terminal interior - the boss chain returns the player to the overworld,
-no deeper leg. (`jou` is the one swept leg with an interior onward warp of its
-own, to its interior variant `jouina`, alongside the `map01` exit.)
+**`dolk2` onward destination.** `dolk2` (post-boss `dolk` variant; its real
+MAN is the streaming carrier extraction 70, partitions `[29,73,17]`) lists a
+single named `0x3F`: back to `map01`. It is a terminal interior - the boss
+chain returns the player to the overworld, no deeper leg. (`jou` is the one
+swept leg with an interior onward warp of its own, to its interior variant
+`jouina`, alongside the `map01` exit.)
 
 **Gate census.** Every one of the five swept entrance records installs
 **unconditionally** - empty `C1`/`C2`. On `map01` the only C1-gated overworld
@@ -614,19 +621,18 @@ progression gate stands between a fresh Drake arrival and any of the five legs**
 the chapter-1 story order on this hub is carried only by the `keikoku` `0x193`
 gate and the `dolk`/`dolk2` `0x142` switch.
 
-**`suimon` and `dolk2` share a MAN - explained.** `suimon`'s Scripted bundle
-(PROT 77) and `dolk2`'s "v12-embedded" bundle (PROT 76) resolve to a
-**byte-identical** MAN payload - both `[10,7,3]`, 2345 bytes, single `0x3F`
-back to `map01`. The identity is an **extended-footprint over-read**, not an
-embedding: the "MAN at 0x1000" window inside the v12-family entry reads into
-the following TOC entries, landing on suimon's ordinary `base+3` bundle
-(byte comparison + position law in
-[scene-v12-table.md](../formats/scene-v12-table.md#the-embedded-man-at-0x1000-is-an-extended-footprint-over-read);
-`rikuroa`/`geremi` alias the same way). `dolk2`/`rikuroa`'s own `base+3`
-bundles are the MAN-less `count=4` form, so where retail sources their
-partition scripts is a reopened thread; the engine's `V12Embedded` fallback
-follows the over-read window, which yields a valid MAN but naive scene
-attribution.
+**The "`suimon` and `dolk2` share a MAN" identity - dissolved.** Both halves
+were the CDNAME-shifted scene window: `dolk2`'s unshifted window bled two
+entries into `suimon`'s block and picked up suimon's sidecar copy of its own
+2345-byte `[10,7,3]` MAN (`rikuroa`/`geremi` aliased the same way; byte
+comparison + position law in
+[scene-v12-table.md](../formats/scene-v12-table.md#the-embedded-man-at-0x1000-is-an-extended-footprint-over-read)).
+In the retail frame `suimon` keeps that MAN (its scripted bundle) and
+`dolk2` resolves its own streaming carrier (extraction 70, `[29,73,17]`).
+`Scene::load` now converts CDNAME raw-TOC block ranges to the extraction
+frame (`raw - 2`), which also dissolves the historical "a scene's `.MAP` is
+two entries below its block" rule - the `.MAP` is simply the retail block's
+FIRST entry.
 
 #### Chapter-1 hub depth: vozz + jou -> jouina
 

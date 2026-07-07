@@ -125,9 +125,11 @@ No op writes `DAT_8007B7FC`-class globals - op-`9` only posts to the 4-slot
 Disc-wide the op-7/op-8 surface is overworld walking-band choreography
 (`map02`/`map03`: `0x466`/`0x467` toggles, the `0x56D..0x570` self-advancing
 4-phase cycle, `0x5A2..0x5A7` one-shot latches) plus one `town0b` clear of
-`0x23F`. The spine gate flags `0x142`/`0x482`/`0x1BE` and the town01 opening
-one-shot `549` appear in **no** motion stream - those writers are direct
-code paths, not scene bytecode (see
+`0x23F`. The spine gate flags appear in **no** motion stream - their writers
+are field-VM script bytes in the streaming variant MAN carriers
+(`0x142`/`0x482`/`0x1BE`; see
+[`script-vm.md`](script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man))
+or, for the town01 opening one-shot `549`, a direct code path (see
 [`world-map.md`](world-map.md#gate-flag-setters-that-are-not-man-field-vm-ops)).
 Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
 

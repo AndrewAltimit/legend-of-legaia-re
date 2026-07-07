@@ -264,13 +264,15 @@ for (i, s) in t.scripts.iter().enumerate() {
   <code>.PCH</code> files, not dolk2's / rikuroa's.</p>
   <p>What stays true: <code>dolk2</code> and <code>rikuroa</code> are the two scenes whose <strong>own</strong> base+3 bundle is
   the MAN-less <code>count=4</code> form (types <code>[1, 2, 6, 0x14]</code>; the type-<code>0x14</code> slot is a small LZS
-  filler, not a MAN carrier), so where retail sources their partition scripts / doors is a <strong>reopened</strong> question.
-  The engine loader's <code>BundleSource::V12Embedded { table_offset: 0x1000 }</code> fallback
-  (<code>legaia_engine_core::scene_bundle::find_bundle</code>, disc-gated
-  <code>crates/engine-core/tests/v12_bundle_man_disc.rs</code>) reads through these over-read windows - behaviorally it resolves a
-  valid MAN (suimon's: 2345&nbsp;B, partitions <code>[10, 7, 3]</code>, lists <code>map01</code>; geremi's: 39508&nbsp;B,
-  partitions <code>[18, 70, 20]</code>, no named <code>0x3F</code> warp), but the scene attribution of that MAN follows the naive
-  labels and needs re-verification against dolk2/rikuroa gameplay.</p>
+  filler, not a MAN carrier). Where retail sources their partition scripts is now <strong>closed</strong>: each block ships a
+  standalone <code>data_field_streaming</code> entry whose type-3 chunk is a plain MAN (<code>dolk2</code> extraction 70,
+  partitions <code>[29, 73, 17]</code>; <code>rikuroa</code> extraction 157, <code>[13, 29, 64]</code>), and the live script heap
+  at the Mt. Rikuroa Caruban beat byte-matches the <code>0157</code> chunk - the streaming carrier IS the resident MAN (see
+  <a href="../subsystems/script-vm.html">script-vm &sect; streaming variant MAN</a>). The engine resolves it via the
+  <code>field_man_payload</code> streaming fallback (<code>legaia_engine_core::scene_bundle::streaming_man_payloads</code>,
+  disc-gated <code>crates/engine-core/tests/v12_bundle_man_disc.rs</code>); the earlier
+  <code>V12Embedded { table_offset: 0x1000 }</code> fallback resolved the over-read windows (suimon's / geremi's bundles) under
+  the CDNAME-shifted scene windows and is superseded for these two scenes.</p>
 </section>
 
 <section class="doc-section" id="open-questions">
@@ -293,9 +295,9 @@ for (i, s) in t.scripts.iter().enumerate() {
     <li><strong>Empty kinds 0/2/3.</strong> No retail <code>.PCH</code> populates teleports, elevation overrides, or region AABBs
     (those live only in the <code>.MAP</code> <code>+0x10000</code> block). Whether the engine-side patch mechanism was ever used
     for them is a dev-history question, not a runtime one.</li>
-    <li><strong>dolk2 / rikuroa MAN source.</strong> Their own base+3 bundles are the MAN-less <code>count=4</code> form and their
-    <code>.PCH</code> windows carry no bundle - where retail sources their partition scripts is reopened (see the over-read
-    section above).</li>
+    <li><strong><del>dolk2 / rikuroa MAN source</del></strong> - closed: the standalone <code>data_field_streaming</code>
+    sibling's type-3 chunk is the scene's MAN (live byte-match at the Caruban beat; see the over-read section above for what
+    the <code>.PCH</code> windows are instead).</li>
     <li><strong>Two prescript tables per scene</strong> - the sister offset-0 <code>scene_event_scripts</code> entry (raw
     <code>n + 2</code>) and this file's offset-<code>0x800</code> copy carry the same move-VM stager records, both consumed via
     <code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code>. The runtime split is unpinned; the <code>.PCH</code> copy is

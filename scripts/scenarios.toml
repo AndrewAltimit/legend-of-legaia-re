@@ -2083,8 +2083,11 @@ topics = ["playthrough", "trace-coverage", "S5", "rim-elm", "town01", "tetsu", "
 # "no catalogued state brackets the spine writes" hole: flag 0x142 is
 # UNSET in rikuroa_pre_caruban and SET in rikuroa_post_caruban (the
 # firehose caught the write live: field-VM script op `51 42`, writer
-# ra 0x801E3598, set in-scene during the post-Caruban sequence). Flag
-# 0x1BE (Zeto beat) is unset in all four - still ahead of them.
+# ra 0x801E3598, set in-scene during the post-Caruban sequence - the
+# rikuroa streaming-carrier MAN's P2[50] self-latching one-shot). Flag
+# 0x1BE is geremi's Jeremi-arrival one-shot (chapter 2), so it reads 0
+# in all four chapter-1 states - it is NOT a Zeto gate; Zeto's trigger
+# scene is `jou` (battle-state scene buffer + DAT_8007B7FC = 0x4B).
 # ----------------------------------------------------------------------
 
 [[scenarios]]

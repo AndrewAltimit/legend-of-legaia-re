@@ -332,16 +332,20 @@ geremi's `.PCH` files, not dolk2's / rikuroa's.
 
 What stays true: `dolk2` and `rikuroa` are the two scenes whose **own**
 base+3 bundle is the MAN-less `count=4` form (types `[1, 2, 6, 0x14]`;
-the type-`0x14` slot is a small LZS filler, not a MAN carrier), so where
-retail sources their partition scripts / doors is a **reopened** question.
-The engine loader's `BundleSource::V12Embedded { table_offset: 0x1000 }`
-fallback ([`legaia_engine_core::scene_bundle::find_bundle`](../../crates/engine-core/src/scene_bundle.rs),
-disc-gated `crates/engine-core/tests/v12_bundle_man_disc.rs`) reads
-through these over-read windows - behaviorally it resolves a valid MAN
-(suimon's: 2345 B, partitions `[10, 7, 3]`, lists `map01`; geremi's:
-39508 B, partitions `[18, 70, 20]`, no named `0x3F` warp), but the
-scene attribution of that MAN follows the naive labels and needs
-re-verification against dolk2/rikuroa gameplay.
+the type-`0x14` slot is a small LZS filler, not a MAN carrier). Where
+retail sources their partition scripts is now **closed**: each block
+ships a standalone `data_field_streaming` entry whose type-3 chunk is a
+plain MAN (`dolk2` extraction 70, partitions `[29, 73, 17]`; `rikuroa`
+extraction 157, `[13, 29, 64]`), and the live script heap at the Mt.
+Rikuroa Caruban beat byte-matches the `0157` chunk - the streaming
+carrier IS the resident MAN (see
+[script-vm.md](../subsystems/script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man)).
+The engine resolves it via the `field_man_payload` streaming fallback
+(`legaia_engine_core::scene_bundle::streaming_man_payloads`, disc-gated
+`crates/engine-core/tests/v12_bundle_man_disc.rs`); the earlier
+`V12Embedded { table_offset: 0x1000 }` fallback resolved the over-read
+windows (suimon's / geremi's bundles) under the CDNAME-shifted scene
+windows and is superseded for these two scenes.
 
 ## Open questions
 
@@ -369,10 +373,10 @@ Still open:
   overrides, or region AABBs (those live only in the `.MAP` `+0x10000`
   block). Whether the engine-side patch mechanism was ever used for them
   is a dev-history question, not a runtime one.
-- **dolk2 / rikuroa MAN source.** Their own base+3 bundles are the
-  MAN-less `count=4` form and their `.PCH` windows carry no bundle -
-  where retail sources their partition scripts is reopened (see the
-  over-read section above).
+- ~~dolk2 / rikuroa MAN source~~ - closed: the standalone
+  `data_field_streaming` sibling's type-3 chunk is the scene's MAN
+  (live byte-match at the Caruban beat; see the over-read section
+  above for what the `.PCH` windows are instead).
 - **Two prescript tables per scene** - the sister offset-0
   `scene_event_scripts` entry (raw `n + 2`) and this file's offset-`0x800`
   copy carry the same move-VM stager records, both consumed via
