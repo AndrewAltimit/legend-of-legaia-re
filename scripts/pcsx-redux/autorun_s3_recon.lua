@@ -56,7 +56,10 @@ local function on_vsync()
         log(sstate.load(START_SAVE) and ("resumed "..START_SAVE) or ("FAILED load "..START_SAVE))
     end
 end
-PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
 
 local tick = 0
 local mash_until = 0

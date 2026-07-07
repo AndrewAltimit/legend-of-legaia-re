@@ -292,7 +292,10 @@ log(string.format("opening capture armed: out=%s cap_every=%d stall=%d town=%d",
 
 -- The vsync listener is a heartbeat + backup quit path only (it goes blind
 -- during XA streaming; the exec-bp ticks + nextTick shots are the drivers).
-PCSX.Events.createEventListener("GPU::Vsync", function()
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", function()
     g_vsync = g_vsync + 1
     if PHASE == "DONE" and g_quit_at then
         -- backup quit path in case both tick BPs have stopped firing

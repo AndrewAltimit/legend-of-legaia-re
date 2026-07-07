@@ -150,7 +150,10 @@ pcall(function() bp.arm(ICON,"Exec",4,"icon",on_icon) end)
 pcall(function() bp.arm(MESREND,"Exec",4,"mesrend",on_mesrend) end)
 log(string.format("seru blit probe armed: win=[%d,%d] out=%s", WIN_LO, WIN_HI, OUT_DIR))
 
-PCSX.Events.createEventListener("GPU::Vsync", function()
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", function()
     if PHASE=="DONE" and g_quit_at then
         g_quit_at.vs_seen=(g_quit_at.vs_seen or 0)+1
         if g_quit_at.vs_seen>10 then PCSX.quit(g_quit_at.code) end

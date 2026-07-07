@@ -205,4 +205,7 @@ end
 log(string.format(
     "armed: field=0x%08X; GPU BPs (load=0x%08X move=0x%08X) arm at scene=%s; target=%s",
     FIELD_BP, LOAD_IMAGE, MOVE_IMAGE, tostring(ARM_SCENE), CKPT_SCENE))
-PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", on_vsync)

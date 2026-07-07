@@ -48,7 +48,10 @@ local function apply_mask(mask) for b=0,15 do local on=(math.floor(mask/btn_bit(
 
 local st={frame=-1, ti=1, cur=0, phase="REPLAY", t=nil, step=0, cross=false, done=false}
 local vsync,loaded=0,false
-PCSX.Events.createEventListener("GPU::Vsync", function()
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", function()
     vsync=vsync+1
     if not loaded and START_SAVE~="" and vsync>=START_DELAY then loaded=true; log(sstate.load(START_SAVE) and "resumed" or "FAILED") end
 end)

@@ -330,5 +330,8 @@ logline("  flag idx N -> byte at 0x80085758 + (N>>3)")
 logline("  buys = floor((byte_addr - 0x800859E8) / 2) + 1")
 logline("  prize id: must have bit (0x80>>(N&7)) set; e.g. flag 5248 (bit0) needs prize id with bit 0x80 set")
 
-PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
 logline("vsync listener installed; waiting for boot")

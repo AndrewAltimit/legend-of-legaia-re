@@ -359,7 +359,10 @@ pcall(function() bp.arm(TITLE_BP, "Exec", 4, "title_tick", title_tick) end)
 pcall(function() bp.arm(FIELD_BP, "Exec", 4, "field_tick", field_tick) end)
 log(string.format("opening spawn probe armed: out=%s pos_window=%d", OUT_DIR, POS_WINDOW))
 
-PCSX.Events.createEventListener("GPU::Vsync", function()
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", function()
     g_vsync = g_vsync + 1
     if PHASE == "DONE" and g_quit_at then
         g_quit_at.vs_seen = (g_quit_at.vs_seen or 0) + 1

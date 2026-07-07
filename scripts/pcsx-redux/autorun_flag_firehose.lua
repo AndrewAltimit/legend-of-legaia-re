@@ -310,5 +310,8 @@ log("repeat suppression: first " .. DETAIL_FULL .. " per (kind,value,ra), then e
     .. SUPPRESS_EVERY .. "th (count column keeps totals exact)")
 log("this session never self-quits -- wrap the launch in timeout --kill-after")
 
-PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
 log("vsync listener installed; waiting for field mode to arm")

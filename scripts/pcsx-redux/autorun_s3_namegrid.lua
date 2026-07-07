@@ -34,7 +34,10 @@ local function ru16(a) return mem.in_ram(a) and ((ru8(a) or 0) + 0x100*(ru8(a+1)
 local function ru32(a) return mem.in_ram(a) and mem.read_u32(a) or nil end
 
 local vsync, loaded = 0, false
-PCSX.Events.createEventListener("GPU::Vsync", function()
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", function()
     vsync = vsync + 1
     if not loaded and START_SAVE ~= "" and vsync >= START_DELAY then
         loaded = true
