@@ -43,10 +43,11 @@
 -- (attribute_overlay_hits.py) exactly like the spine runbook describes.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
-local probe = require("probe")
-local mem   = require("probe.mem")
-local bp    = require("probe.bp")
-local bit   = require("bit")
+local probe  = require("probe")
+local mem    = require("probe.mem")
+local bp     = require("probe.bp")
+local bit    = require("bit")
+local sstate = require("probe.sstate")
 
 -- +-- addresses -------------------------------------------------------------
 local GAME_MODE     = 0x8007B83C  -- u8; field mode = 0x03
@@ -79,6 +80,17 @@ local DETAIL = probe.out_path("flag_firehose.detail.txt")
 local POINT_CARD_MAX  = probe.getenv("LEGAIA_POINT_CARD_MAX", "") == "1"
 local POINT_CARD_ADDR = 0x800845B4
 local POINT_CARD_CAP  = 9999999  -- 0x0098967F
+
+-- Crash insurance: once armed, autosave the emulator state every N ticks
+-- into the run dir, alternating two files so a crash mid-write can never
+-- destroy the only copy. Resume a crashed session with
+-- LEGAIA_SSTATE=<run dir>/autosave_a.sstate (whichever is newest).
+-- Autosaves are raw (no Lua zWriter); probe.sstate.load sniffs the format.
+-- 0 disables.
+local AUTOSAVE_EVERY = probe.getenv_num("LEGAIA_AUTOSAVE_EVERY", 1800) -- ~30s
+local AUTOSAVE_PATHS = { probe.out_path("autosave_a.sstate"),
+                         probe.out_path("autosave_b.sstate") }
+local autosave_flip  = 0
 
 -- +-- helpers ----------------------------------------------------------------
 local function u8(addr) return mem.read_u8(addr) or 0 end
@@ -247,6 +259,16 @@ local function on_vsync()
         log(string.format(
             "alive tick=%d mode=0x%02X scene=%s set=%d clear=%d battleid=%d",
             vsync, md, sc, totals.set, totals.clear, totals.battleid))
+    end
+
+    -- Rotating autosave (crash insurance; see AUTOSAVE_EVERY above).
+    if AUTOSAVE_EVERY > 0 and (vsync % AUTOSAVE_EVERY) == 0 then
+        autosave_flip = 1 - autosave_flip
+        local path = AUTOSAVE_PATHS[autosave_flip + 1]
+        if sstate.save(path) then
+            log(string.format("autosaved -> %s (tick %d, scene=%s)",
+                path, vsync, sc))
+        end
     end
 end
 
