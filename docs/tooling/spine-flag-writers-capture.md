@@ -67,6 +67,22 @@ Zeto beat to the Drake mist-wall story event, or source a different card that
 sits nearer it. Treat this as the one leg that needs fresh forward play - the
 other two are one short walk from their load slot.
 
+## The firehose variant - capture every flag write, not just the spine
+
+[`autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
+generalizes this session: instead of filtering to the three spine targets it
+logs **every** story-flag SET (`FUN_8003CE08`) and CLEAR (`FUN_8003CE34`)
+with the writer `ra`, every battle-id staging write (`0x8007B7FC`), and every
+scene-name / game-mode transition as a context timeline - one CSV
+(`flag_firehose.csv`: `tick,kind,value,pc,ra,mode,scene,count`). Per-key
+repeat suppression (first 8 of each `(kind,flag,ra)`, then every 64th with a
+running count) keeps hot per-tick callers from flooding the file; a long
+session stays in the hundreds of KB. Prefer it for any play-forward longer
+than a single beat: the same session that catches the spine writers also
+banks the full flag-provenance stream for later analysis, so nothing needs
+re-capturing. Same launch shape, same emulator constraints, same
+`attribute_overlay_hits.py` post-pass per row.
+
 ## Running the probe
 
 Wrap the launch in `timeout --kill-after` - the probe never exits on its own,
