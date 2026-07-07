@@ -424,7 +424,7 @@ impl SceneHost {
             Some(Err(err)) => eprintln!("[scene] field-carrier MAN payload skipped: {err:#}"),
             _ => {}
         }
-        // Scripted-boss first-visit latch (chapter-1: Mt. Rikuroa's Zeto).
+        // Scripted-boss first-visit latch (chapter-1: Mt. Rikuroa's Caruban).
         // Some dungeon bosses have no on-disc encounter formation - retail
         // arms them through a battle-id global write in the scene prescript,
         // gated by a first-visit story flag. When the active scene is a

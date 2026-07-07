@@ -1328,7 +1328,7 @@ pub struct World {
 
     /// System-flag index a scripted boss encounter latches once the party
     /// wins it (the first-visit one-shot the retail cutscene sets so the
-    /// fight does not re-arm - e.g. rikuroa's Zeto gate `0x1BE`). Consumed by
+    /// fight does not re-arm - e.g. rikuroa's Caruban gate `0x142`). Consumed by
     /// [`World::apply_battle_loot`]. `None` when no boss encounter is armed.
     pub pending_boss_victory_flag: Option<u16>,
 
