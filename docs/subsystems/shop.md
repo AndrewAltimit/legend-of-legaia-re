@@ -28,6 +28,13 @@ Gold and inventory deltas are applied to the world on `ShopConfirm` slot 0
 (Yes): `try_buy` deducts gold and credits inventory; `try_sell` credits gold
 and decrements inventory.
 
+**Point Card accrual (retail).** The retail buy commit `FUN_801db7f4` also
+credits the Point Card counter `_DAT_800845B4` (u32) before the gold debit:
+when the party holds item `0xFE` (the Point Card - inventory-has check
+`func_0x80042f4c(0xFE)`), it adds `price / 20` per unit bought, capped at
+`9,999,999`. Sell transactions never accrue. Not yet mirrored in the engine's
+`buy_from_shop`. `see ghidra/scripts/funcs/overlay_shop_save_801db7f4.txt`.
+
 ### State-machine routing
 
 The menu state machine (`engine-vm::menu`) owns the per-screen transition graph

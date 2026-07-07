@@ -69,6 +69,17 @@ local CSV = probe.csv_open(probe.out_path("flag_firehose.csv"),
     "tick,kind,value,pc,ra,mode,scene,count")
 local DETAIL = probe.out_path("flag_firehose.detail.txt")
 
+-- Optional booster: LEGAIA_POINT_CARD_MAX=1 pins the Point Card counter at
+-- its retail cap every vsync, so card strikes hit for max damage all
+-- session (kept re-topped even where battle use spends points). The
+-- counter is _DAT_800845B4 (u32, cap 9,999,999): the shop buy commit
+-- FUN_801db7f4 accrues `price/20 * qty` into it when item 0xFE (the Point
+-- Card) is held - see ghidra/scripts/funcs/overlay_shop_save_801db7f4.txt.
+-- Lua pokes bypass the CPU, so this never pollutes the exec-bp capture.
+local POINT_CARD_MAX  = probe.getenv("LEGAIA_POINT_CARD_MAX", "") == "1"
+local POINT_CARD_ADDR = 0x800845B4
+local POINT_CARD_CAP  = 9999999  -- 0x0098967F
+
 -- +-- helpers ----------------------------------------------------------------
 local function u8(addr) return mem.read_u8(addr) or 0 end
 local function regs()   return PCSX.getRegisters() end
@@ -161,6 +172,10 @@ local function arm_all()
     log(string.format("  clear : Exec-bp 0x%08X (every flag CLEAR, any a0)", FLAG_CLEAR_PC))
     log(string.format("  battle: Write-watch 0x%08X width 1", BATTLE_ID))
     log("  scene + mode transitions polled per vsync")
+    if POINT_CARD_MAX then
+        log(string.format("  point-card booster ON: 0x%08X pinned at %d every vsync",
+            POINT_CARD_ADDR, POINT_CARD_CAP))
+    end
     log("play as far as you like - every flag write is being recorded")
 end
 
@@ -211,6 +226,20 @@ local function on_vsync()
             field_frames = 0
         end
         return
+    end
+
+    -- Point-card booster: re-top the counter every vsync while active.
+    if POINT_CARD_MAX then
+        mem.write_u16(POINT_CARD_ADDR,     POINT_CARD_CAP % 0x10000)
+        mem.write_u16(POINT_CARD_ADDR + 2, math.floor(POINT_CARD_CAP / 0x10000))
+        if (vsync % 480) == 0 then
+            local lo = mem.read_u16(POINT_CARD_ADDR) or 0
+            local hi = mem.read_u16(POINT_CARD_ADDR + 2) or 0
+            local v = hi * 0x10000 + lo
+            if v ~= POINT_CARD_CAP then
+                log(string.format("point-card poke MISMATCH: read back %d", v))
+            end
+        end
     end
 
     -- Heartbeat every ~8s.
