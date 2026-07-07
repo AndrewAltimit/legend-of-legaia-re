@@ -154,6 +154,97 @@ pub fn placement_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement)
     None
 }
 
+/// Decode placement `p`'s **initial facing** - the heading-LUT index its
+/// spawn prologue writes into the actor's `+0x26` render heading at scene
+/// load - or `None` when the prologue sets no facing (the actor keeps the
+/// spawn default, retail `0` = Z-).
+///
+/// ## Retail mechanism
+///
+/// The placement record carries **no facing byte** - the 4-byte header is
+/// `[model, anim, tile_x, tile_z]` only. Instead, the placement installer
+/// `FUN_8003A1E4` ends with a **spawn-time pre-run** of the record's leading
+/// field-VM ops: when the first opcode is the `0x24`/`0x25` spawn-prologue
+/// marker, it executes ops one at a time through the field VM
+/// (`FUN_801DE840`) until a `0x21` NOP terminator or a below-`0x20` byte.
+/// Two prologue ops write the actor's `+0x26` heading from the 8-entry
+/// direction LUT at SCUS `0x80073F04` (see
+/// [`facing_index_to_engine_heading`]):
+///
+/// - `0x4C 0x51` NPC move-to-tile: operand byte +3's low nibble
+///   (`table[b3 & 0xF]` in the dispatcher's nibble-5 sub-1 arm) - the same
+///   op whose x/z bytes [`placement_motion_route`] decodes;
+/// - `0x38` CAM_CFG **simple path** (`op1 & 0x7F == 0`):
+///   `table[op0 & 0xF]`.
+///
+/// Every authored town prologue routes through a story-flag `0x7x`-TEST
+/// branch chain (jump when the flag is **set**), so the *fall-through*
+/// branch (the first leg in linear record order) is the fresh-game state.
+/// This decoder returns that first facing-carrying leg's LUT index, skipping
+/// cross-context legs (they face another actor) and parked-sentinel legs
+/// (the actor is despawned in that branch, so its facing byte is dead);
+/// flag-gated later-chapter branches are not conditioned (the same
+/// linear-walk caveat as [`placement_motion_route`]).
+// PORT: FUN_8003A1E4 (spawn-time prologue pre-run, body 0x8003A474..0x8003A4F8)
+// REF: FUN_801DE840 (op 0x38 simple path + 0x4C n5 sub-1 heading-LUT writes)
+pub fn placement_initial_facing(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> Option<u8> {
+    let (region, pc0) = placement_pretext_region(man_file, man, p)?;
+    // Retail gate: `FUN_8003A1E4` only pre-runs records whose first opcode is
+    // the 0x24/0x25 spawn-prologue marker (`uVar14 - 0x24 < 2`).
+    if !matches!(region.get(pc0), Some(0x24 | 0x25)) {
+        return None;
+    }
+    for insn in LinearWalker::new(region, pc0).flatten() {
+        let op = region[insn.pc];
+        if op == 0x21 {
+            break; // prologue terminator (retail executes the NOP, then stops)
+        }
+        if (op & 0x7F) < 0x20 {
+            break; // below-opcode byte ends the pre-run (retail loop guard)
+        }
+        match insn.info {
+            InsnInfo::CamCfg { op0, op1 } if op1 & 0x7F == 0 && insn.extended.is_none() => {
+                return Some(op0 & 0xF);
+            }
+            InsnInfo::MenuCtrl {
+                kind:
+                    MenuCtrlKind::Nibble5NpcRun {
+                        x_enc,
+                        z_enc,
+                        depth,
+                        ..
+                    },
+                ..
+            } => {
+                if insn.extended.is_some() {
+                    continue; // cross-context: faces another channel's actor
+                }
+                if (x_enc & 0x7F, z_enc & 0x7F) == PARKED_SENTINEL_TILE {
+                    continue; // despawn branch: its facing byte never shows
+                }
+                return Some(depth & 0xF);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Convert a spawn-prologue facing-LUT index (0..=7) to the engine's 12-bit
+/// render heading (`0` = Z+, the [`crate::world::World::field_npc_headings`]
+/// convention). `None` for indices 8..=15 - the SCUS LUT at `0x80073F04` has
+/// 16 addressable slots but only the first 8 are direction entries
+/// (`i * 0x200`); no authored prologue uses the upper half.
+///
+/// Retail heading space (pinned from the locomotion's pad->facing writes,
+/// `FUN_801d01b0` body `0x801d04b8..0x801d0548`): `0` = Z-, `0x400` = X-,
+/// `0x800` = Z+, `0xC00` = X+ - the engine convention rotated a half-turn,
+/// so `engine = (retail + 0x800) & 0xFFF` with no axis mirror.
+// REF: FUN_801d01b0 (retail heading convention), FUN_801DE840 (LUT consumer)
+pub fn facing_index_to_engine_heading(idx: u8) -> Option<i16> {
+    (idx <= 7).then(|| ((i32::from(idx) * 0x200 + 0x800) & 0xFFF) as i16)
+}
+
 /// The field-VM **player system channel** id (`0xF8`): a cross-context op
 /// prefixed `op | 0x80, 0xF8` targets the player actor (retail resolves it to
 /// `_DAT_8007c364`). See `docs/subsystems/script-vm.md`.

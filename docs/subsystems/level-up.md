@@ -514,12 +514,17 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   + Noa L2->L3 capture), `crates/engine-shell/tests/new_game_seed.rs` (full
   boot). No per-level character stat table exists in `crates/gamedata`, so the
   ground truth is the new-game seed plus the single-level capture, not gamedata.
-- **`+0x120` u16 LE field renaming.** The captured triplets pin
-  `record[+0x120]` as a constant 100 across every save / character. The
-  existing `legaia_save::character::CharacterRecord::stat_cap` accessor reads
-  `+0x11A` instead, which is a live stat byte (mutated by level-up). The
-  accessor needs renaming or relocation. Tracked separately to keep this
-  level-up doc focused.
+- **`+0x120` u16 LE field renaming - RESOLVED.** The captured triplets pin
+  `record[+0x120]` as a constant 100 across every save / character, and the
+  cheat-derived layout labels the offset `stat_cap_constant_100(+0x120)`
+  while `+0x11A` is the live INT stat (mutated by level-up, already typed as
+  `LiveStats::int`). The `legaia_save::character::CharacterRecord::stat_cap`
+  accessor now reads/writes `+0x120` - the same field as
+  `RecordStats::cap_constant` - so name and offset agree; the aliasing (and
+  the non-collision with live INT) is pinned by
+  `character::tests::stat_cap_aliases_record_cap_constant`. The runtime `999`
+  clamp in `FUN_80042558` is a code constant (`legaia_save::STAT_CAP`), not
+  this record field.
 - **Battle actor struct fields `+0x14C`–`+0x176` - RESOLVED.** The full field
   map (HP/MP + the six working/base stat pairs + Spirit + the side/element
   bit-field + snapshots) is documented above (*Battle-actor stat struct*), traced

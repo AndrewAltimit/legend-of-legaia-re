@@ -322,7 +322,13 @@ pub(super) fn decode_inventory_cmp(
         })
     };
     match sub_op {
-        0 | 1 => {
+        // Sub-ops 0/1 (inventory) share the 6-operand compare shape with
+        // 2/3/9 (char level byte +0x130 / party gold _DAT_8008459C / coin
+        // bank 0x800845A4): the overlay-0897 jump table at VA 0x801CEE30
+        // routes 2/3/9 to dedicated value loaders (0x801E0AC0/0AEC/0B34)
+        // that fall into the same compare-and-skip continuation as 0/1;
+        // only sub-ops 5..8 take the 0x801C6460 absolute-jump arm.
+        0 | 1 | 2 | 3 | 9 => {
             need(6)?;
             let arg = u16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
             let skip_delta = u16::from_le_bytes([bytecode[operand + 4], bytecode[operand + 5]]);
@@ -337,7 +343,7 @@ pub(super) fn decode_inventory_cmp(
                 },
             )
         }
-        2 | 3 | 5 | 6 | 7 | 8 | 9 => {
+        5..=8 => {
             need(4)?;
             let target =
                 u16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]) as usize;

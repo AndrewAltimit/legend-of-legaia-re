@@ -224,7 +224,10 @@ w(string.format("prescript read-watch: boot_delay=%d scan [%08X,%08X) %d capture
 local vsync = 0
 local loaded = false
 local capture_start = 0
-PCSX.Events.createEventListener("GPU::Vsync", function()
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", function()
   vsync = vsync + 1
   if not loaded then
     if vsync < BOOT_DELAY - 2 then

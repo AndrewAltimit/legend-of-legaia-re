@@ -145,6 +145,13 @@ pub(crate) enum Cmd {
         /// live in this blob.
         #[arg(long)]
         dump_man: Option<PathBuf>,
+        /// Operate on the scene's standalone **variant** MAN carried by this
+        /// PROT extraction entry (the type-3 chunk of a DATA_FIELD streaming
+        /// entry in the scene's block, e.g. `157` for rikuroa's post-Caruban
+        /// story-state MAN) instead of the asset-table bundle MAN. Use the
+        /// census output's `PROT[NNNN] VARIANT-MAN` tag to find the index.
+        #[arg(long)]
+        variant: Option<u32>,
         /// Walk a partition's records as field-VM scripts and report their
         /// flag write/test sites - both the scratchpad global-flag ops
         /// (`GFLAG_SET`/`GFLAG_CLEAR`) and the wide SYSTEM-flag ops
@@ -171,6 +178,17 @@ pub(crate) enum Cmd {
         /// ignores the per-scene `--scene` argument.
         #[arg(long)]
         motion_flag_census: bool,
+        /// Run a disc-wide **op-0x49 flag-WINDOW census**: decode every scene
+        /// MAN's partition records with the field-VM disassembler and print
+        /// every op-`0x49` (`STATE_RESUME`) site with its operand bytes
+        /// interpreted under the `FUN_801EF014` flag-window descriptor
+        /// (`+1` count, `+2` default, `+3` rows, `+4..5` u16 base flag), plus
+        /// containment / near-miss verdicts for the spine flags
+        /// `0x142`/`0x482`/`0x1BE`/`0x225`. This closes the "a window's
+        /// base+offset arithmetic lands on a spine flag with no literal in
+        /// the corpus" hypothesis. Disc-wide; ignores `--scene`.
+        #[arg(long)]
+        op49_window_census: bool,
         /// Dump the inline cutscene-narration text pages embedded in a
         /// cutscene-timeline record (the `0x1F`/`0x00`-framed subtitle pages
         /// after a `0x4C` narration op). Pair with `--disasm-record N

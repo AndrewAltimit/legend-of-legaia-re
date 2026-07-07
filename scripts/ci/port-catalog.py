@@ -76,16 +76,24 @@ IGNORE_TOML = REPO / "scripts" / "ci" / "port-catalog-ignore.toml"
 # as the lowercase form Ghidra emits.
 CODE_ADDR_RE = re.compile(r"80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4}", re.IGNORECASE)
 
-# Addresses scraped from a `// PORT:` tag's tail. Same code-range shape as
-# CODE_ADDR_RE, but with the citation regex's negative lookbehinds on `_DAT_` /
-# `DAT_` / `PTR_`: a PORT tag's prose often names the *data global* a ported
-# function writes (e.g. ``PORT: the `_DAT_801F0204 = N` writes in FUN_801DD35C``),
-# and an overlay-range data global (0x801c..0x8020) would otherwise be miscounted
-# as a ported function address - a "ported but not dumped" false positive, since
-# data globals have no function dump. The function on the same line (`FUN_...`)
-# is still picked up, so the real port credit is unaffected.
+# Addresses scraped from a `// PORT:` tag's tail. Only two token shapes count
+# as a port claim:
+#
+#   FUN_<addr>                      -- the canonical Ghidra function name
+#   overlay_<label>_<addr>          -- a funcs/ dump-file stem for an
+#                                      overlay-resident function (some tags
+#                                      cite the dump stem when the bare VA is
+#                                      aliased across overlays)
+#
+# Bare hex in the tag's prose does NOT count: tags routinely name data globals
+# (``PORT: the `_DAT_801F0204 = N` writes in FUN_801DD35C``) and interior
+# address *ranges* (``PORT: FUN_801D9E1C (rate shifts, 0x801da1b8..0x801da200)``),
+# and a loose match turned those into phantom "ported but not dumped"
+# provenance-gap rows - range endpoints and data globals have no function dump.
+# The function named on the same line (`FUN_...`) is still picked up, so the
+# real port credit is unaffected.
 PORT_ADDR_RE = re.compile(
-    r"(?<!PTR_)(?<!_DAT_)(?<!DAT_)(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})",
+    r"(?:FUN_|overlay_[0-9a-zA-Z_]+?_)(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})",
     re.IGNORECASE,
 )
 

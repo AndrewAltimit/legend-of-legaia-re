@@ -85,11 +85,19 @@ fn town01_targeted_upload_keeps_majority_of_textured_prims() {
         upload_stats.total_tims
     );
 
-    // Walk every TMD's prim filter and aggregate keep / drop counts.
+    // Walk every SCENE TMD's prim filter and aggregate keep / drop counts.
+    // Shared-block head TMDs (the `player_data` character pack) are
+    // excluded: retail textures them through the dedicated
+    // `field_char_textures` CLUT path, not the scene TIM set, so their
+    // prims are not part of this contract.
     let mut total_kept = 0usize;
     let mut total_textured = 0usize;
     let (mut mc, mut cdm, mut mtp) = (0usize, 0usize, 0usize);
-    for rtmd in &res.tmds {
+    for rtmd in res
+        .tmds
+        .iter()
+        .filter(|t| (scene.start..scene.end).contains(&t.entry_idx))
+    {
         let (_mesh, stats) = rtmd.build_filtered_vram_mesh_reasoned(&res.vram);
         total_kept += stats.kept;
         mc += stats.missing_clut;
@@ -227,7 +235,13 @@ fn town01_field_mode_skips_battle_only_scene_tmd_stream() {
     // the prim filter, the skip is missing something.
     let mut field_textured = 0usize;
     let mut field_kept = 0usize;
-    for rtmd in &field.tmds {
+    // Scene TMDs only - shared-block head TMDs texture via the dedicated
+    // character CLUT path (see the upload_all test above).
+    for rtmd in field
+        .tmds
+        .iter()
+        .filter(|t| (scene.start..scene.end).contains(&t.entry_idx))
+    {
         let (_mesh, stats) = rtmd.build_filtered_vram_mesh_reasoned(&field.vram);
         field_kept += stats.kept;
         field_textured += stats.kept

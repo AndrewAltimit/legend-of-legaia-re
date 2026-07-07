@@ -1,12 +1,43 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; inn</div>
   <h1>Inn</h1>
-  <p class="lede">HP / MP restore flow at in-game inns. Lives inside the <strong>menu overlay</strong> (same 129-function binary as shop, save screen, and status screens). Clean-room session state: <code>engine-core::inn::InnSession</code>.</p>
+  <p class="lede">HP / MP restore flow at in-game inns. Retail has <strong>no inn overlay and no inn cost table</strong>: each inn is an ordinary field-VM dialogue in its scene's MAN, and the price is a script literal. Clean-room session state: <code>engine-core::inn::InnSession</code>; <code>open_inn(cost)</code> takes the scene's scripted cost.</p>
 </header>
+
+<section class="doc-section" id="cost-source">
+  <h2>Retail cost source (field-VM script literals)</h2>
+  <p>An inn stay is a scripted <strong>gold-gate + debit pair</strong> inline in the scene MAN (asset type <code>0x03</code>),
+  the same place the town gold-shop stock lives (see <a href="shop.html#stock-source">Shop</a>):</p>
+<pre><code>0x4E &lt;pp&gt; 0x30 &lt;cost u16&gt; &lt;skip u16&gt;   ; if gold &lt; cost, jump +skip
+...                                    ;   (the "can't afford" reply)
+0x3A &lt;sext24(-cost)&gt;                   ; ADD_MONEY: gold -= cost</code></pre>
+  <p>Op <code>0x4E</code> <strong>sub-op 3</strong> (operand byte 1, high nibble) loads the party gold <code>_DAT_8008459C</code>
+  and compares it against the u16 literal at operand <code>+2</code> (low nibble <code>0</code> = jump when gold &lt; literal -
+  the can't-afford branch); sub-op 10 is the 32-bit sibling (literal lo16 at <code>+2</code> / hi16 at <code>+6</code>, 9 bytes)
+  used where a price can exceed 65535 (the casino gold-to-coin counter). Provenance: the op-<code>0x4E</code> inner jump table at
+  field-overlay VA <code>0x801CEE30</code> (12 entries) - the sub-3 arm at <code>0x801E0AEC</code> loads
+  <code>_DAT_8008459C</code>, sub-2 at <code>0x801E0AC0</code> loads a per-character level byte (<code>+0x130</code>), sub-9 at
+  <code>0x801E0B34</code> loads the casino coin bank <code>_DAT_800845A4</code> (see
+  <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>; the decompiled-C case labels collapse these arms - the
+  disassembly + jump-table words are ground truth). Op <code>0x3A</code> (<code>ADD_MONEY</code>, see the
+  <a href="script-vm.html">field/event VM</a>) applies the signed 24-bit delta.</p>
+  <p>After the debit the same script continues in-line: the innkeeper's thank-you text, per-party-slot <code>0x4C</code> records
+  on slots 0/1/2 (the restore), and a <code>0x3F</code> transition whose destination name is <code>DREAM@@</code> - the inn dream
+  sequences. So cost prompt, gate, debit, restore, and dream hand-off are all one field-VM dialogue; no menu-overlay sub-screen
+  is involved in retail.</p>
+  <p>The shared scanner is <code>legaia_asset::inn_costs</code>: a byte scan (robust to the dialogue-picker jump tables that
+  desync a linear walk) for a gold compare whose literal reappears as the magnitude of a negative <code>ADD_MONEY</code> within a
+  few ops of the gate (retail sites sit 7..~16 bytes apart). Swept disc-wide by
+  <code>crates/asset/tests/inn_costs_disc.rs</code>: the pair resolves in the inn / paid-lodging scenes (e.g. the 200 G
+  innkeeper sites in the <code>ropeway</code> and <code>balden</code> blocks, <code>rayman2</code>'s 200 G stay,
+  <code>retock</code>'s 240 G stay), the paid tours and the 3,000 G <code>station3</code> train ticket (sub-3, u16 costs), and
+  the casino gold-to-coin counters (<code>koin*</code>; <code>koin4</code> carries the only sub-10 u32 sites, 8,500..90,000 G).
+  Free rests (Rim Elm's bed, Biron) simply have no gate + debit pair in their scripts.</p>
+</section>
 
 <section class="doc-section" id="flow">
   <h2>Flow</h2>
-  <p>The retail engine enters the inn from the field-VM shop-trigger opcode (same entry point as the shop, different sub-screen ID). Two phases:</p>
+  <p>The engine port models the prompt as a menu session (retail runs it as plain field-VM dialogue - see above). The port handles:</p>
   <table>
     <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
     <tbody>
@@ -27,15 +58,21 @@
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><span class="tag tag-partial">Open</span> <strong>Per-scene costs.</strong> Retail inn prices are in the menu overlay DATA segment. Locating them requires tracing the <code>InnConfirm</code> entry sub-screen. Pending <code>overlay_shop_save</code> capture.</li>
-    <li><strong>Render layout.</strong> Cost prompt pixel offsets and layout pending overlay trace.</li>
+    <li><span class="tag tag-done">Resolved</span> <strong>Per-scene costs.</strong> The old &ldquo;menu overlay DATA segment&rdquo;
+    reading is falsified: no cost table exists anywhere. Each cost is a field-VM script literal in the scene MAN (gate
+    <code>0x4E</code> sub-3 + debit <code>0x3A</code>), parsed by <code>legaia_asset::inn_costs</code> and swept disc-wide by
+    <code>crates/asset/tests/inn_costs_disc.rs</code> (see <em>Retail cost source</em> above). Remaining wiring: feed the scanned
+    per-scene cost into <code>open_inn(cost)</code> at scene entry instead of a host-supplied constant.</li>
+    <li><strong>Render layout.</strong> Retail renders the prompt as ordinary field dialogue (MES text + option picker), not a
+    dedicated cost window; the port's <code>InnConfirm</code> panel is an engine-side presentation choice. The scripted restore
+    (<code>0x4C</code> records) and the <code>DREAM@@</code> hand-off are not yet mirrored.</li>
     <li><strong>Party filtering.</strong> Retail may only restore active-roster members (not reserve bench). The current port iterates all <code>World::roster.members</code> without a slot-active gate.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
-  <p>Complete flow and provenance at <code>docs/subsystems/inn.md</code>. Source: <code>crates/engine-core/src/inn.rs</code>.</p>
+  <p>Complete flow and provenance at <code>docs/subsystems/inn.md</code>. Source: <code>crates/engine-core/src/inn.rs</code>, scanner <code>legaia_asset::inn_costs</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also">
@@ -43,6 +80,7 @@
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="shop.html">Shop UI</a>
+    <a href="script-vm.html">Field/event VM</a>
     <a href="save-screen.html">Save screen</a>
     <a href="level-up.html">Level-up</a>
   </div>

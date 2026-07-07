@@ -13,30 +13,51 @@ pub(crate) fn cmd_man_scripts(
     disasm_record: Option<usize>,
     disasm_partition: usize,
     dump_man: Option<&Path>,
+    variant: Option<u32>,
     gflag_partition: Option<usize>,
     narration: bool,
     system_flag_census: bool,
     motion_flag_census: bool,
+    op49_window_census: bool,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::{
-        FlagBank, partition_record_span, system_flag_census as run_system_flag_census,
-        walk_partition_gflag_sites, walk_partition1_scripts,
+        FlagBank, partition_record_span, scene_man_carriers,
+        system_flag_census as run_system_flag_census, walk_partition_gflag_sites,
+        walk_partition1_scripts,
     };
-    use legaia_engine_core::scene_bundle;
     use legaia_engine_vm::field_disasm::FlagKind;
 
     let index = open_index_from_args(extracted_root, disc)?;
     let scene =
         Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
-    let bundle = scene_bundle::find_bundle(&scene).with_context(|| {
-        format!("scene '{scene_name}' has no scene_asset_table bundle (no MAN)")
-    })?;
-    let entry_bytes = index
-        .entry_bytes_extended(bundle.entry_idx())
-        .with_context(|| format!("entry bytes for PROT[{}]", bundle.entry_idx()))?;
-    let man = scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
-        .with_context(|| format!("scene '{scene_name}' MAN payload did not decode"))?;
+    let carriers = scene_man_carriers(&index, &scene);
+    let carrier = match variant {
+        Some(idx) => carriers
+            .iter()
+            .find(|c| c.is_variant() && c.entry_idx == idx)
+            .with_context(|| {
+                let have: Vec<u32> = carriers
+                    .iter()
+                    .filter(|c| c.is_variant())
+                    .map(|c| c.entry_idx)
+                    .collect();
+                format!(
+                    "scene '{scene_name}' has no variant MAN at PROT[{idx}] (variants: {have:?})"
+                )
+            })?,
+        None => carriers.first().with_context(|| {
+            format!("scene '{scene_name}' has no scene_asset_table bundle (no MAN)")
+        })?,
+    };
+    let entry_idx = carrier.entry_idx;
+    let man = carrier.payload.clone();
     let man_file = legaia_asset::man_section::parse(&man)?;
+    if carrier.is_variant() {
+        println!(
+            "using VARIANT MAN from PROT[{entry_idx}] (chunk offset 0x{:X})",
+            carrier.chunk_offset.unwrap_or(0),
+        );
+    }
 
     if let Some(path) = dump_man {
         std::fs::write(path, &man)
@@ -52,7 +73,7 @@ pub(crate) fn cmd_man_scripts(
     println!(
         "scene '{}' (PROT[{}]): {} partition-1 records, counts {:?}",
         scene.name,
-        bundle.entry_idx(),
+        entry_idx,
         records.len(),
         man_file.header.partition_counts,
     );
@@ -179,8 +200,13 @@ pub(crate) fn cmd_man_scripts(
                     FlagKind::Test => "Test ",
                 };
                 println!(
-                    "    {kind} scene={:<10} P{}[{}] (op 0x{:02X})",
-                    h.scene_name, h.partition, h.record, h.opcode,
+                    "    {kind} scene={:<10} PROT[{:04}]{} P{}[{}] (op 0x{:02X})",
+                    h.scene_name,
+                    h.entry_idx,
+                    if h.variant { " VARIANT-MAN" } else { "" },
+                    h.partition,
+                    h.record,
+                    h.opcode,
                 );
             }
         }
@@ -215,12 +241,82 @@ pub(crate) fn cmd_man_scripts(
                     .map(|b| format!("0x{:02X}", b.actor_id))
                     .collect();
                 println!(
-                    "    {kind} scene={:<10} rec{} var{} ({gate}) actors=[{}] @0x{:05X}",
+                    "    {kind} scene={:<10} PROT[{:04}]{} rec{} var{} ({gate}) actors=[{}] @0x{:05X}",
                     h.scene_name,
+                    h.entry_idx,
+                    if h.carrier_variant {
+                        " VARIANT-MAN"
+                    } else {
+                        ""
+                    },
                     h.site.record,
                     h.site.variant,
                     binds.join(","),
                     h.site.offset,
+                );
+            }
+        }
+    }
+
+    if op49_window_census {
+        use legaia_engine_core::man_field_scripts::op49_window_census as run_op49_window_census;
+        let scenes = index.cdname_scene_names();
+        let sites = run_op49_window_census(&index, &scenes);
+        println!(
+            "\n--- disc-wide op-0x49 flag-WINDOW census ({} scenes scanned, {} sites) ---",
+            scenes.len(),
+            sites.len(),
+        );
+        for s in &sites {
+            let window = match s.window() {
+                Some((lo, hi)) => format!("[0x{lo:04X}..0x{hi:04X}]"),
+                None => "(empty)".to_string(),
+            };
+            println!(
+                "  scene={:<10}{} P{}[{:3}] @0x{:05X} sub=0x{:02X} base=0x{:04X} count={:3} default={:3} rows={:3} window={window}{}",
+                s.scene_name,
+                if s.variant { " VARIANT-MAN" } else { "" },
+                s.partition,
+                s.record,
+                s.abs_pc,
+                s.sub_op,
+                s.base_flag,
+                s.count,
+                s.default_index,
+                s.rows,
+                if s.in_footprint {
+                    ""
+                } else {
+                    "  [past-footprint]"
+                },
+            );
+        }
+        // Spine-flag verdicts: containment + near-miss (+/-8) per target.
+        const TARGETS: [u16; 4] = [0x142, 0x482, 0x1BE, 0x225];
+        const MARGIN: u32 = 8;
+        for target in TARGETS {
+            let contained = sites.iter().filter(|s| s.covers(target)).count();
+            let near: Vec<&legaia_engine_core::man_field_scripts::Op49WindowSite> = sites
+                .iter()
+                .filter(|s| !s.covers(target) && s.min_distance(target) <= MARGIN)
+                .collect();
+            let nearest = sites.iter().map(|s| s.min_distance(target)).min();
+            println!(
+                "target 0x{target:04X} ({target:>4}): contained by {contained} site(s), {} near-miss(es) within +/-{MARGIN}, nearest distance {:?}",
+                near.len(),
+                nearest,
+            );
+            for s in near {
+                println!(
+                    "    near-miss scene={} P{}[{}] @0x{:05X} sub=0x{:02X} base=0x{:04X} count={} (distance {})",
+                    s.scene_name,
+                    s.partition,
+                    s.record,
+                    s.abs_pc,
+                    s.sub_op,
+                    s.base_flag,
+                    s.count,
+                    s.min_distance(target),
                 );
             }
         }

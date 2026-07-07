@@ -306,15 +306,16 @@ for a plain id (`[0x4F,0x4F,0x4F,0]`), whereas the Tetsu cell is `[0x4F,0,0,0]`
 So the Rim Elm fight uses the indexed-record path; `FUN_8005567c` is the
 formation source for battles cued by a battle-id rather than an entity record.
 
-**This is the chapter-1 first-boss path.** Zeto (fought in `rikuroa`) is monster
+**This is the chapter-1 first-boss path.** Zeto (fought from scene `jou`) is monster
 id `0x4B`, in the bespoke `0x49..=0x4d` range, so `FUN_8005567c` expands it to the
 lone cell `[0x4B,0,0,0]` - byte-exact with the two `zeto_*_mid_cast` capture
-states (`0x8007BD0C = 4B 00 00 00`). Zeto has **no** on-disc formation record
-(not in `rikuroa`'s MAN encounter section, not as an inline armed-YIELD window),
-so the battle-id path is its only formation source. The clean-room engine ports
-this as `World::install_boss_encounter` (a lone-monster `FormationDef` under a
-synthetic boss-namespace id), armed by a `rikuroa` first-visit scene-entry latch
-on story flag `0x1BE` (see [`world::SCRIPTED_SCENE_BOSSES`]).
+states (`0x8007BD0C = 4B 00 00 00`; their active scene is `jou`, Zeto's own
+trigger scene). Boss fights on this path have no on-disc formation record, so
+the battle-id global is their only formation source. The clean-room engine
+ports this as `World::install_boss_encounter` (a lone-monster `FormationDef`
+under a synthetic boss-namespace id); the chapter-1 consumer arms Mt.
+Rikuroa's **Caruban** (id 73 = `0x49`, same band) behind first-visit flag
+`0x142` (see [`world::SCRIPTED_SCENE_BOSSES`]).
 
 **Open - the writer of `DAT_8007b7fc` is not in the static corpus.** Four
 exhaustive Ghidra sweeps across all 47 loaded programs (SCUS + 46 overlays) -
@@ -324,9 +325,11 @@ validated), and pointer-table occurrences - find only **readers**
 mode gate `FUN_80046a20`), **zero writers** by any addressing mode. The
 "LUI+ADDIU trap" is falsified for this address. The writer therefore sits in an
 overlay not imported into Ghidra (or an un-disassembled data-classified region
-of field overlay `0897`); a write-watchpoint on `0x8007B7FC` captured as it flips
-to `0x4B` at Mt. Rikuroa yields the writer PC directly (no catalogued save
-brackets the write - both Zeto captures are mid-battle, post-write).
+of field overlay `0897`); a write-watchpoint on `0x8007B7FC` captured as it
+flips in scene `jou` (the Zeto captures' active field scene; the same global
+stages Caruban's id at Mt. Rikuroa) yields the writer PC directly (no
+catalogued save brackets the write - both Zeto captures are mid-battle,
+post-write).
 
 ## Random-encounter trigger path
 

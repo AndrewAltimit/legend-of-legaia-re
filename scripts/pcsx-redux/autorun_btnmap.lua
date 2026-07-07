@@ -13,7 +13,10 @@ local function log(s) PCSX.log("[bm] "..s); if LOG then LOG:write(s.."\n"); LOG:
 local function ru16(a) return mem.in_ram(a) and mem.read_u16(a) or 0 end
 local NAMES={[0]="SELECT",[1]="L3",[2]="R3",[3]="START",[4]="UP",[5]="RIGHT",[6]="DOWN",[7]="LEFT",[8]="L2",[9]="R2",[10]="L1",[11]="R1",[12]="TRIANGLE",[13]="CIRCLE",[14]="CROSS",[15]="SQUARE"}
 local vsync,loaded=0,false
-PCSX.Events.createEventListener("GPU::Vsync", function()
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", function()
     vsync=vsync+1
     if not loaded and START_SAVE~="" and vsync>=2 then loaded=true; log(sstate.load(START_SAVE) and "resumed" or "FAILED") end
 end)

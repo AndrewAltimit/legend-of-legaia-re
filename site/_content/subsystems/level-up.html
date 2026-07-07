@@ -127,7 +127,13 @@
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><strong><code>+0x120</code> stat-cap accessor renaming.</strong> Captures pin the per-stat cap constant 100 at <code>+0x120</code> (u16 LE); the existing <code>CharacterRecord::stat_cap</code> accessor reads <code>+0x11A</code>, which is a live stat slot. Tracked separately.</li>
+    <li><span class="tag tag-done">Resolved</span> <strong><code>+0x120</code> stat-cap accessor.</strong> Captures pin the per-stat cap
+      constant 100 at <code>+0x120</code> (u16 LE), and the cheat-derived layout labels the offset <code>stat_cap_constant_100(+0x120)</code>
+      while <code>+0x11A</code> is the live INT stat (mutated by level-up, typed as <code>LiveStats::int</code>). The
+      <code>legaia_save::character::CharacterRecord::stat_cap</code> accessor now reads/writes <code>+0x120</code> - the same field as
+      <code>RecordStats::cap_constant</code> - so name and offset agree; the aliasing (and the non-collision with live INT) is pinned by
+      <code>character::tests::stat_cap_aliases_record_cap_constant</code>. The runtime <code>999</code> clamp in <code>FUN_80042558</code> is a
+      code constant (<code>legaia_save::STAT_CAP</code>), not this record field.</li>
     <li><strong>Overlay display.</strong> Retail shows per-stat increments (STR, INT, VIT, &hellip;) with animated counters; the port renders only the HP/MP banner lines.</li>
   </ul>
 </section>

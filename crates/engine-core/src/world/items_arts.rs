@@ -857,7 +857,7 @@ impl World {
         self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         // Scripted-boss victory latch: winning the boss formation installed by
         // [`Self::install_boss_encounter`] sets its first-visit one-shot system
-        // flag (rikuroa Zeto = `0x1BE`) so the fight does not re-arm on
+        // flag (rikuroa Caruban = `0x142`) so the fight does not re-arm on
         // re-entry - the engine-side stand-in for the retail cutscene that sets
         // the gate flag after the boss is beaten. `apply_battle_loot` runs only
         // on a win (it grants XP/gold), so reaching here IS the victory.

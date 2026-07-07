@@ -253,15 +253,23 @@ fn classify_warp_wins_over_a_preceding_dialog() {
 /// Build a minimal one-partition-2-record MAN whose single record is a
 /// field-VM script ending in `GFLAG_SET 26` (op `0x2E`, operand `0x1A`) -
 /// the opening prologue's `town01` hand-off arm.
+///
+/// Partition-2 records use the **named-record header** (`FUN_8003BDE0`)
+/// `[u8 name_len][name_len*2 SJIS][u8 C0][C0][u8 C1][C1*u16][u8 C2][C2*u16]`,
+/// the shape `walk_partition_gflag_sites` now decodes via
+/// `partition_record_span` (the generic `[u8 N][N*2][4-byte header]` prefix
+/// is the partition-0/1 shape).
 fn synthetic_man_with_gflag_set_26() -> (ManFile, Vec<u8>) {
     let data_region_offset = 0x40usize;
     let p2_0 = 0u32;
     let script_start = data_region_offset + p2_0 as usize;
 
-    // Record prefix: N=0 -> pc0 = 5. Then GFLAG_SET 26.
+    // Named-record header: empty name + three empty cond blocks -> pc0 = 4.
     let mut man = vec![0u8; script_start];
-    man.push(0x00); // N = 0
-    man.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]); // 4-byte header
+    man.push(0x00); // name_len = 0
+    man.push(0x00); // C0 = 0
+    man.push(0x00); // C1 = 0
+    man.push(0x00); // C2 = 0
     man.push(0x2E); // GFLAG_SET
     man.push(0x1A); // bit 26
     man.push(0x48); // a trailing no-op so the walk has a clean boundary
@@ -547,6 +555,79 @@ fn walk_touch_event_classifies_portal_and_player_moveto() {
     let (mf, man) = man_with_placement_script(&[0x21]);
     let placements = mf.actor_placements(&man);
     assert_eq!(placement_walk_touch_event(&mf, &man, &placements[0]), None);
+}
+
+#[test]
+fn initial_facing_reads_spawn_prologue_npc_run_nibble() {
+    // 0x25 spawn-prologue marker, then a local `0x4C 0x51` leg whose
+    // operand-byte-3 low nibble (6 = retail X+, heading 0xC00) is the
+    // facing-LUT index `FUN_801DE840`'s nibble-5 sub-1 arm writes to +0x26.
+    let script = [0x25, 0x4C, 0x51, 11, 10, 0x06, 5, 0x21];
+    let (mf, man) = man_with_placement_script(&script);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(placement_initial_facing(&mf, &man, p), Some(6));
+}
+
+#[test]
+fn initial_facing_requires_the_prologue_marker() {
+    // Same leg without the leading 0x24/0x25 marker: retail's spawn pre-run
+    // gate (`FUN_8003A1E4` `uVar14 - 0x24 < 2`) never fires.
+    let script = [0x4C, 0x51, 11, 10, 0x06, 5, 0x21];
+    let (mf, man) = man_with_placement_script(&script);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(placement_initial_facing(&mf, &man, p), None);
+}
+
+#[test]
+fn initial_facing_skips_parked_and_cross_context_legs() {
+    // A despawn (park-sentinel) branch and a cross-context poke both carry
+    // facing nibbles that never show on this actor; the first *visible*
+    // local leg's nibble (3) wins.
+    let script = [
+        0x25, //
+        0x4C, 0x51, 0x7F, 0x7F, 0x02, 5, // parked: skipped
+        0xCC, 0x07, 0x51, 11, 11, 0x05, 5, // cross-context: skipped
+        0x4C, 0x51, 11, 10, 0x03, 5, // first visible local leg
+        0x21,
+    ];
+    let (mf, man) = man_with_placement_script(&script);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(placement_initial_facing(&mf, &man, p), Some(3));
+}
+
+#[test]
+fn initial_facing_stops_at_the_prologue_terminator() {
+    // A leg after the 0x21 NOP is outside the spawn pre-run (retail breaks
+    // on the 0x21) - it must not leak a facing.
+    let script = [0x25, 0x31, 0x02, 0x21, 0x4C, 0x51, 11, 10, 0x06, 5, 0x21];
+    let (mf, man) = man_with_placement_script(&script);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(placement_initial_facing(&mf, &man, p), None);
+}
+
+#[test]
+fn initial_facing_reads_cam_cfg_simple_path() {
+    // `0x38 CAM_CFG` with `op1 & 0x7F == 0` is the other +0x26 LUT write.
+    let script = [0x25, 0x38, 0x05, 0x00, 0x21];
+    let (mf, man) = man_with_placement_script(&script);
+    let p = &mf.actor_placements(&man)[0];
+    assert_eq!(placement_initial_facing(&mf, &man, p), Some(5));
+}
+
+#[test]
+fn facing_index_maps_to_engine_heading_with_half_turn() {
+    // Retail LUT entry i = i*0x200 in retail space (0 = Z-, pinned from
+    // FUN_801d01b0's pad->facing writes); engine space is retail + 0x800.
+    assert_eq!(facing_index_to_engine_heading(0), Some(0x800)); // Z-
+    assert_eq!(facing_index_to_engine_heading(2), Some(0xC00)); // X-
+    assert_eq!(facing_index_to_engine_heading(4), Some(0x000)); // Z+
+    assert_eq!(facing_index_to_engine_heading(6), Some(0x400)); // X+
+    assert_eq!(facing_index_to_engine_heading(7), Some(0x600)); // X+ Z-
+    assert_eq!(
+        facing_index_to_engine_heading(8),
+        None,
+        "non-direction slot"
+    );
 }
 
 #[test]

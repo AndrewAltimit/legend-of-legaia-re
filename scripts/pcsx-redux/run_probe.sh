@@ -233,8 +233,21 @@ if [[ $FAST -eq 0 ]]; then
     emu_flags=(-interpreter -debugger "${emu_flags[@]}")
 fi
 
-stdbuf -oL -eL "$PCSX_REDUX" "${emu_flags[@]}" >> "$LOG_FILE" 2>&1
-EXIT=$?
+# LEGAIA_GDB=1 wraps the emulator in gdb so a segfault (sporadic on
+# cold-boot / scene transitions with the debugger enabled) yields a
+# backtrace in the log instead of just "(core dumped)". Runs at full
+# speed until a signal fires; no interaction needed.
+if [[ "${LEGAIA_GDB:-0}" == "1" ]]; then
+    gdb -batch -q \
+        -ex "set exec-wrapper stdbuf -oL -eL" \
+        -ex run \
+        -ex "thread apply all bt" \
+        --args "$PCSX_REDUX" "${emu_flags[@]}" >> "$LOG_FILE" 2>&1
+    EXIT=$?
+else
+    stdbuf -oL -eL "$PCSX_REDUX" "${emu_flags[@]}" >> "$LOG_FILE" 2>&1
+    EXIT=$?
+fi
 
 echo "" | tee -a "$LOG_FILE"
 echo "pcsx-redux exited with status $EXIT" | tee -a "$LOG_FILE"

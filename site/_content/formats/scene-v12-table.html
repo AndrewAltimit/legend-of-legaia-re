@@ -1,31 +1,48 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; scene_v12_table</div>
-  <h1>scene_v12_table - scene header + event-script bundle <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">A per-scene container that bundles a small "runtime fixup" header with a full <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene event-scripts</a> prescript at a sector-aligned offset. 97 PROT entries - one per game scene.</p>
+  <h1>scene_v12_table - the per-scene <code>.PCH</code> walk-on trigger sidecar <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">The scene's <strong>walk-on tile-trigger patch file</strong>: dev filename <code>DATA\FIELD\&lt;scene&gt;.PCH</code> (suffix pool <code>0x8007B3BC/.MAP</code>, <code>0x8007B3C4/.PCH</code>, <code>0x8007B3CC/.LZS</code> in <code>SCUS_942.54</code>). The first <code>0x800</code> bytes are a four-kind sub-table directory + the kind-1 trigger records - the same header shape as the <code>.MAP</code> file's <code>+0x10000</code> trigger block (<a href="../subsystems/field-locomotion.html#grid-source">field locomotion &sect; trigger block</a>) - followed by a full <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene event-scripts</a> prescript at a sector-aligned offset.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>Implementation: <code>crates/asset/src/scene_v12_table.rs</code>. CLI: <code>asset scene-v12 &lt;PROT-entry&gt;</code> (single), <code>asset scene-v12-scan &lt;dir&gt;</code> (bulk).</p>
-  <p><strong>Confidence:</strong> Confirmed - header algebra, inline-record shape, and prescript-at-0x800 layout verified across all 97 corpus entries by the disc-gated <code>scene_v12_corpus</code> test. The semantics of the inline records is inferred from grouping patterns; the exact runtime consumer of the <code>(b0, b1)</code> pair hasn't been pinned to a specific function.</p>
+  <p>Implementation: <code>crates/asset/src/scene_v12_table.rs</code>. CLI: <code>asset scene-v12 &lt;PROT-entry&gt;</code> (single), <code>asset scene-v12-scan &lt;dir&gt;</code> (bulk). 97 PROT entries match.</p>
+  <p><strong>Position law:</strong> a scene with CDNAME <code>#define &lt;scene&gt; n</code> carries its <code>.PCH</code> at
+  <strong>raw TOC index <code>n + 1</code></strong> = extraction entry <code>n &minus; 1</code> (defines are raw indices - see
+  <a href="cdname.html">CDNAME &sect; numbering space</a>; disc-gated <code>scene_v12_position_law_and_lzs_sibling</code> in
+  <code>crates/asset/tests/scene_v12_corpus.rs</code>). Scenes without one (<code>opurud</code>, <code>opkorout</code>,
+  <code>edson</code> - op-<code>0x44</code>-driven cutscene scenes with no trigger tiles) hit the loader's zero-fill branch below.</p>
+  <p><strong>Naming caveat.</strong> The extraction <em>filename</em> labels apply defines as extraction indices and are shifted
+  +2, so per-file attributions inherited from those labels are off by one block: <code>0093_map01.BIN</code> is
+  <strong>garmel</strong>'s table (raw <code>95 = 94 + 1</code>), Drake <code>map01</code>'s is <code>0084_suimon.BIN</code>
+  (raw <code>86 = 85 + 1</code>, and it alone carries <code>b2 = 0x26</code> = the <code>P2[38]</code> fly-in record the
+  <a href="../subsystems/cutscene.html">cutscene page</a> pins to <code>map01</code>), and <code>town01</code>'s is
+  <code>0002_gameover_data.BIN</code> (raw <code>4</code>, carrying the opening trigger record <code>(0x1D, 0x5B, 0x03)</code> =
+  P2[3] at the documented arrival tile).</p>
+  <p><strong>Confidence:</strong> Confirmed - header algebra, inline-record shape, and prescript-at-0x800 layout verified across
+  all 97 corpus entries by the disc-gated <code>scene_v12_corpus</code> test. The inline-record semantics is also
+  <strong>confirmed</strong>: the records are kind-1 walk-on tile triggers <code>[tile_x][tile_z][p2_record][gate]</code>, read by
+  the same consumers as the <code>.MAP</code> <code>+0x10000</code> trigger block (see
+  <a href="#runtime-staging">Runtime staging</a> below). The earlier &ldquo;<code>b0</code> = scene-local resource index&rdquo;
+  reading is superseded.</p>
 </section>
 
 <section class="doc-section" id="on-disc-layout">
   <h2>On-disc layout</h2>
-<pre><code>+0x000   u16  N + 4              ; runtime fixup-slot offset; header field
-+0x002   u16  0x0012             ; constant magic
-+0x004   u16  0x0000             ; constant
-+0x006   u16  0x0014             ; constant magic (= byte offset of records)
-+0x008   u16  param              ; count of inline records (0..=192 in retail)
-+0x00A   u16  N                  ; runtime fixup-slot offset; header field
-+0x00C   u16  0x0000             ; constant
-+0x00E   u16  N + 2              ; runtime fixup-slot offset; header field
-+0x010   u32  0                  ; padding to 0x14
-+0x014   param × 4 bytes         ; inline record table
-+end_records (= 0x14 + 4*param)  ; runtime fills three fixup pointers
-                                 ; immediately past here, at offsets
+<pre><code>+0x000   u16  N + 4              ; directory end-of-table offset
++0x002   u16  0x0012             ; kind-0 sub-table offset (empty in retail)
++0x004   u16  0x0000             ; kind-0 count
++0x006   u16  0x0014             ; kind-1 sub-table offset (= the records)
++0x008   u16  param              ; kind-1 count (0..=192 in retail)
++0x00A   u16  N                  ; kind-2 sub-table offset (empty)
++0x00C   u16  0x0000             ; kind-2 count
++0x00E   u16  N + 2              ; kind-3 sub-table offset (empty)
++0x010   u32  0                  ; kind-3 count + pad to 0x14
++0x014   param × 4 bytes         ; kind-1 trigger records
++end_records (= 0x14 + 4*param)  ; empty kind-2/3 sub-table bodies at
                                  ; +N (= +end_records+2), +N+2, +N+4.
-                                 ; These bytes are zero on disc.
+                                 ; Zero on disc (see Open questions on
+                                 ; the old "runtime fixup" reading).
 +end_records .. 0x800            ; zero padding
 +0x800   u16  script_count       ; scene event-scripts prescript
 +0x802   script_count × u16      ;   offset table (relative to +0x800)
@@ -37,7 +54,7 @@
 </section>
 
 <section class="doc-section" id="header-algebra">
-  <h2>Header algebra</h2>
+  <h2>Header algebra - a four-kind sub-table directory</h2>
   <p>The three u16 fields at <code>u16[0]</code>, <code>u16[5]</code>, <code>u16[7]</code> sit in the tightest algebraic family the corpus exhibits:</p>
   <table>
     <thead><tr><th>Field</th><th>Value</th></tr></thead>
@@ -48,37 +65,58 @@
       <tr><td><code>N</code></td><td><code>4 * param + 22</code></td></tr>
     </tbody>
   </table>
-  <p><code>N</code> is the byte distance from the start of the file to the <strong>first runtime fixup slot</strong>, which sits immediately past the inline records: <code>N = (0x14 + 4*param) + 2 = 4*param + 22</code>. The slots at <code>+N</code>, <code>+N+2</code>, <code>+N+4</code> are zero on disc; the loader writes computed pointers into them at scene init. The three u16 fields at the header front therefore double as slot-offset hints for the loader and as a strict validation signature.</p>
-  <p>The constants <code>0x0012</code> at <code>u16[1]</code> and <code>0x0014</code> at <code>u16[3]</code> are stable across the whole corpus; <code>u16[3]</code> also happens to equal the byte offset of the inline records table (<code>+0x14</code>), which is unlikely to be a coincidence - the loader probably re-reads it as the records pointer.</p>
+  <p><code>N</code> is the byte distance from the start of the file to the <strong>first runtime fixup slot</strong>, which sits immediately past the inline records: <code>N = (0x14 + 4*param) + 2 = 4*param + 22</code>.</p>
+  <p><strong>The header is a four-kind sub-table directory</strong> - the same shape the per-tile lookup helper reads for the
+  <code>.MAP</code> <code>+0x10000</code> trigger block: for kind <code>k</code>, the sub-table body offset is the <code>s16</code>
+  at <code>+4k+2</code> and its record count the <code>s16</code> at <code>+4k+4</code> (overlay 0897 <code>FUN_801D5AE0</code>,
+  called by the two-window wrapper <code>FUN_801D5630</code>). Under that reading the algebra dissolves:</p>
+  <table>
+    <thead><tr><th>Kind</th><th>Offset field</th><th>Count field</th><th>Retail <code>.PCH</code> value</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td><code>u16[1] = 0x0012</code></td><td><code>u16[2] = 0</code></td><td>empty (teleports live in the <code>.MAP</code> block)</td></tr>
+      <tr><td>1</td><td><code>u16[3] = 0x0014</code></td><td><code>u16[4] = param</code></td><td><strong>the inline trigger records</strong></td></tr>
+      <tr><td>2</td><td><code>u16[5] = N</code></td><td><code>u16[6] = 0</code></td><td>empty (elevation overrides)</td></tr>
+      <tr><td>3</td><td><code>u16[7] = N + 2</code></td><td><code>u16[8] = 0</code></td><td>empty (region AABBs)</td></tr>
+    </tbody>
+  </table>
+  <p><code>u16[0] = N + 4</code> is the directory's end-of-table offset. Every retail <code>.PCH</code> populates
+  <strong>kind 1 only</strong>; the empty kinds' offsets pack consecutively past the records, which is exactly the
+  <code>N = 4*param + 22</code> tie the detector checks. The zero &ldquo;fixup slots&rdquo; at <code>+N</code>, <code>+N+2</code>,
+  <code>+N+4</code> are the empty kind-2/3 sub-table bodies.</p>
 </section>
 
 <section class="doc-section" id="inline-records">
-  <h2>Inline records at +0x14</h2>
-  <p><code>param</code> records, each 4 bytes:</p>
+  <h2>Inline records at +0x14 - kind-1 walk-on tile triggers</h2>
+  <p><code>param</code> records, each 4 bytes, in the trigger-block kind-1 form:</p>
   <table>
     <thead><tr><th>Byte</th><th>Field</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td><code>+0</code></td><td><code>b0</code></td><td>Scene-local identifier (sub-index / region-id).</td></tr>
-      <tr><td><code>+1</code></td><td><code>b1</code></td><td>Scene-local identifier (region-id / target-id).</td></tr>
-      <tr><td><code>+2</code></td><td><code>b2</code></td><td>Categorises records into 1..N groups within the scene.</td></tr>
-      <tr><td><code>+3</code></td><td><code>flag</code></td><td>Always <code>0x01</code> across all 97 entries - probably "live" bit.</td></tr>
+      <tr><td><code>+0</code></td><td><code>tile_x</code> (<code>b0</code>)</td><td>Trigger tile column (128-unit field tiles).</td></tr>
+      <tr><td><code>+1</code></td><td><code>tile_z</code> (<code>b1</code>)</td><td>Trigger tile row.</td></tr>
+      <tr><td><code>+2</code></td><td><code>p2_record</code> (<code>b2</code>)</td><td>MAN <strong>partition-2 record index</strong> spawned on step-on.</td></tr>
+      <tr><td><code>+3</code></td><td><code>gate</code> (<code>flag</code>)</td><td>Always <code>0x01</code> across all 97 entries = gate-1 &ldquo;spawn on walk-on&rdquo; (the <code>.MAP</code> block's gate-0 object-bind class never appears in a <code>.PCH</code>).</td></tr>
     </tbody>
   </table>
-  <p><code>b2</code> partitions records into per-scene groups. Drake (<code>map01</code>) has 8 distinct <code>b2</code> values across 12 records (one group of 3, one of 3, then singletons); Karisto (<code>map03</code>) groups 12 of its 23 records under a single <code>(b1=0x2F, b2=0x05)</code> triple, plus several smaller groups. This "many records share a <code>b2</code>, a few singletons" pattern matches a scene-region transition table: rooms / sub-areas of the scene each get a <code>b2</code> group, and sub-records inside each group correspond to interactive objects, NPCs, or exits.</p>
-  <p>Concrete shape for <code>0093_map01.BIN</code> (Drake's kingdom map, <code>param=12</code>):</p>
-<pre><code>[0] b0=15 b1=08 b2=02  ┐
-[1] b0=14 b1=08 b2=02  │ group b2=0x02, 3 records
-[2] b0=13 b1=08 b2=02  ┘
-[3] b0=17 b1=2A b2=0C
-[4] b0=17 b1=68 b2=0B  ┐
-[5] b0=17 b1=69 b2=0B  │ group b2=0x0B, 3 records
-[6] b0=17 b1=6A b2=0B  ┘
-[7] b0=14 b1=09 b2=0A
-[8] b0=06 b1=5F b2=09
-[9] b0=14 b1=5E b2=08
-[10] b0=77 b1=12 b2=01
-[11] b0=72 b1=3E b2=00</code></pre>
-  <p>The full semantic decoding of the <code>(b0, b1)</code> pair depends on the consumer. It maps to scene-actor placements <strong>only on world-map kingdom scenes</strong>; on towns and dungeons the pair selects different runtime resources.</p>
+  <p>Records sharing a <code>b2</code> are <strong>multi-tile strips of one trigger</strong> - adjacent tiles that all fire the same
+  partition-2 record (a gate several tiles wide gets one record per tile). The record's own C1/C2 story-flag gates still apply at
+  spawn time (<code>FUN_8003BDE0</code> vs <code>DAT_80085758</code> - see the <a href="../subsystems/cutscene.html">cutscene page</a>).</p>
+  <p>Concrete shape for <code>0093_map01.BIN</code> (<strong>garmel</strong>'s table under the position law - the filename label is
+  the +2-shifted naive attribution, see the naming caveat above; <code>param=12</code>):</p>
+<pre><code>[0] x=15 z=08 p2=02  ┐
+[1] x=14 z=08 p2=02  │ one trigger spanning 3 adjacent tiles
+[2] x=13 z=08 p2=02  ┘
+[3] x=17 z=2A p2=0C
+[4] x=17 z=68 p2=0B  ┐
+[5] x=17 z=69 p2=0B  │ 3-tile strip
+[6] x=17 z=6A p2=0B  ┘
+[7] x=14 z=09 p2=0A
+[8] x=06 z=5F p2=09
+[9] x=14 z=5E p2=08
+[10] x=77 z=12 p2=01
+[11] x=72 z=3E p2=00</code></pre>
+  <p>The earlier &ldquo;maps to actor placements only on world-map kingdom scenes&rdquo; reading is superseded:
+  <code>(b0, b1)</code> are tile coordinates on every scene class; on kingdom overworlds the referenced P2 records happen to be
+  the town/dungeon-entrance and story-beat records, which produced the placement correlation.</p>
 </section>
 
 <section class="doc-section" id="event-script-prescript">
@@ -97,6 +135,75 @@
   <p>The 22 entries with frame-opener rate below 50 % carry "init"-style first records that open differently, then transition into the standard header-sentinel stream. Those entries carry the same word-aligned command structure; the first record is just shaped differently (record 0 on the town scenes is the fixed 768-byte master ambient stager the entry effect-actor installs - see <a href="scene-bundles.html">scene-bundles</a>).</p>
 </section>
 
+<section class="doc-section" id="runtime-staging">
+  <h2>Runtime staging - the <code>.PCH</code> sidecar</h2>
+  <p>The field-asset loader <code>FUN_8001F7C0</code> (called per scene entry from the mode-2 initializer
+  <code>FUN_801D6704</code>) stages the file <strong>statically</strong> - no capture needed
+  (see <code>ghidra/scripts/funcs/8001f7c0.txt</code>). Retail branch, in order:</p>
+  <ol class="bullets">
+    <li><code>DATA\FIELD\&lt;scene&gt;.MAP</code> &rarr; the per-scene buffer <code>*(0x1F8003EC)</code> (collision grid
+    <code>+0x4000</code>, event-cell grid <code>+0x8000</code>, trigger block <code>+0x10000</code>).</li>
+    <li><code>DATA\FIELD\&lt;scene&gt;.PCH</code> &rarr; <strong><code>*(0x1F8003EC) + 0x12000</code></strong>. If the open
+    (<code>FUN_800608F0</code>) misses, the loader <strong>zero-fills <code>0x800</code> bytes</strong> there instead - the
+    empty-directory fallback for trigger-less scenes.</li>
+    <li><code>h:\PROT\FIELD\&lt;scene&gt;\efect.dat</code> &rarr; <code>*(0x1F8003EC) + 0x12800</code>
+    (<code>= _DAT_8007B8D0</code>), which <strong>overwrites every <code>.PCH</code> byte past the first
+    <code>0x800</code></strong> - so the runtime-live window is exactly the directory + kind-1 records; the on-disc prescript at
+    <code>+0x800</code> is not reachable through this path.</li>
+  </ol>
+  <p>This closes the format's long-open &ldquo;where does the loader stage the file&rdquo; question and matches the live capture
+  that found the table at heap <code>0x8014B530</code> (= the <code>town01</code> scene buffer
+  <code>0x80139530 + 0x12000</code>).</p>
+  <p>Consumers of the staged window:</p>
+  <ul class="bullets">
+    <li><strong>Scene init</strong> - <code>FUN_8003AEB0</code> (the field/town map-init, body
+    <code>0x8003AFA8..0x8003B018</code>) walks the kind-1 records (<code>count</code> at <code>+0x12008</code>, cursor from
+    <code>+0x12006</code>) and ORs the footprint bit <code>0x400</code> into the u16 event-cell word at
+    <code>*(0x1F8003EC) + 0x8000 + (tile_z &lt;&lt; 8) + (tile_x &lt;&lt; 1)</code>.</li>
+    <li><strong>Per step</strong> - the tile lookup <code>FUN_801D5630</code> (overlay 0897) scans the <code>.MAP</code>'s
+    <code>+0x10000</code> block first and <strong>falls back to the <code>+0x12000</code> <code>.PCH</code> window</strong>
+    (helper <code>FUN_801D5AE0</code>, same directory shape); a kind-1 hit reaches
+    <code>FUN_8003BDE0(x, z, rec[2], rec[3])</code> and spawns the partition-2 record. Full runtime contract:
+    <a href="../subsystems/field-locomotion.html#grid-source">field locomotion &sect; trigger block</a>.</li>
+  </ul>
+  <p>So the <code>.PCH</code> is a <strong>patch/extension layer over the <code>.MAP</code> trigger block</strong>: same
+  directory, same record forms, second lookup window.</p>
+</section>
+
+<section class="doc-section" id="lzs-streamer">
+  <h2>The ~0x800219xx lead resolved - <code>FUN_80021934</code> stages the <code>.LZS</code>, not the <code>.PCH</code></h2>
+  <p>The formerly un-analyzed <code>_DAT_8007B85C</code> reader near <code>~0x800219xx</code> is
+  <strong><code>FUN_80021934</code></strong> (real entry 3 instructions before the <code>0x80021940</code> prologue; see
+  <code>ghidra/scripts/funcs/80021940.txt</code>): the <strong>scene-transition streaming actor</strong>, a 5-state SM (state at
+  <code>actor+0x1A</code>, jump table <code>0x80010760</code>) that pre-streams the <em>next</em> scene's
+  <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">scene_asset_table</a> bundle during the transition
+  fade:</p>
+  <ul class="bullets">
+    <li>It is <strong>not</strong> a game-mode handler: its only corpus reference is the handler word of the 24-byte spawn
+    descriptor at <code>0x80070734</code> (the system-actor descriptor family at <code>0x800705FC..0x80070763</code>, just below
+    the mode table at <code>0x8007078C</code> - phase-misaligned with it, layout
+    <code>[+4 0xFFFF0000][+8 handler][+0xC flags]</code>). <code>FUN_8001FD44</code> (the named scene-change packet) spawns it
+    via the pool spawner <code>FUN_80020DE0</code> (<code>actor+0x0C</code> = handler, <code>actor+0x1A</code> zeroed; see
+    <code>ghidra/scripts/funcs/8001fd44.txt</code>, <code>80020de0.txt</code>); the five <code>FUN_8001FD44</code> call sites all
+    live in the field overlay 0897 (field-VM op <code>0x3F</code> at <code>0x801DEB14</code> plus four controller sites).</li>
+    <li><strong>Case 0</strong> seeds a 70-frame countdown (<code>gp+0x710 = 0x46</code>); cases 1/3 poll stream progress
+    (<code>FUN_8003DE7C(1)</code>).</li>
+    <li><strong>Case 2</strong> (dev flag <code>_DAT_8007B8C2</code> set): streams <strong>raw TOC entry
+    <code>DAT_8007B768 + 3</code></strong> - the destination scene's block base + 3, the
+    <code>.LZS</code>/<code>scene_asset_table</code> slot - into <code>_DAT_8007B85C</code> by index
+    (<code>FUN_8001EEF0</code> &rarr; <code>FUN_8003EB98</code>; see <code>ghidra/scripts/funcs/8001eef0.txt</code>,
+    <code>8003eb98.txt</code>).</li>
+    <li><strong>Case 4</strong> (retail): builds the literal path <code>DATA_FIELD\&lt;scene&gt;.LZS</code> (suffix
+    <code>0x8007B3CC</code>) and streams it into <code>_DAT_8007B85C</code> by name, then hands off with
+    <code>_DAT_8007B83C = 2</code> (mode 2 MAIN INIT, whose <code>FUN_801D6704</code> &rarr; <code>FUN_8001F7C0</code> chain then
+    stages <code>.MAP</code>/<code>.PCH</code>/efect as above).</li>
+  </ul>
+  <p>So the raw scene block layout is <code>n+0</code> <code>.MAP</code> (<code>0x12000</code> footprint), <code>n+1</code>
+  <code>.PCH</code> (this format), <code>n+2</code> event-scripts sister, <code>n+3</code> <code>.LZS</code> bundle head,
+  <code>n+6</code> BGM base - and the transition actor touches only <code>n+3</code>. The v12 record-table staging + consumer
+  chain is the <code>.PCH</code> path above; <code>_DAT_8007B85C</code> never holds this file.</p>
+</section>
+
 <section class="doc-section" id="detection">
   <h2>Detection</h2>
   <p>The strict gate combines six checks:</p>
@@ -113,13 +220,17 @@
 
 <section class="doc-section" id="sister-formats">
   <h2>Sister formats</h2>
-  <p>The v12 file is the <strong>second</strong> scene-event-scripts table in each scene block. Every scene block also has a sister <code>scene_event_scripts</code> entry (prescript at offset 0, no v12 header):</p>
-<pre><code>PROT 0085_map01  scene_event_scripts (no v12 header)   ┐ Drake
-PROT 0093_map01  scene_v12_table (this format)         ┘
-PROT 0244_map02  scene_event_scripts                   ┐ Sebucus
-PROT 0253_map02  scene_v12_table                       ┘
-…</code></pre>
-  <p>The two tables likely serve different scopes (scene-enter effects vs. per-actor / per-region effects), or they're "early-load" and "late-load" splits of a single logical stager set. The exact runtime split isn't pinned down yet; both carry the same move-VM stager records, installed via <code>FUN_800252EC</code> and run by the move VM <code>FUN_80023070</code>.</p>
+  <p>Every scene block carries a sister <code>scene_event_scripts</code> entry (prescript at offset 0, no directory header) at
+  raw <code>n + 2</code> - <strong>directly after</strong> the <code>.PCH</code> at raw <code>n + 1</code>:</p>
+<pre><code>raw n+1  (extraction n−1)  scene_v12_table / .PCH (this format)  ┐ same
+raw n+2  (extraction n)    scene_event_scripts (no header)       ┘ scene</code></pre>
+  <p>For Drake <code>map01</code> (<code>n = 85</code>) that is extraction <code>0084</code> + <code>0085</code>; the historical
+  pairing of <code>0085</code> with <code>0093</code> crossed a block boundary (<code>0093</code> is garmel's <code>.PCH</code> -
+  see the naming caveat above).</p>
+  <p>The two prescript tables likely serve different scopes (scene-enter triggers vs. per-actor / per-region triggers), or
+  they're &ldquo;early-load&rdquo; and &ldquo;late-load&rdquo; splits of one logical script set. The exact runtime split isn't pinned
+  down; note the <code>.PCH</code>-resident copy at <code>+0x800</code> is dead via the retail staging path (efect.dat overwrites
+  it - see <a href="#runtime-staging">Runtime staging</a>).</p>
 </section>
 
 <section class="doc-section" id="reading-parsed-structure">
@@ -141,27 +252,57 @@ for (i, s) in t.scripts.iter().enumerate() {
 }</code></pre>
 </section>
 
-<section class="doc-section" id="embedded-man-asset-table">
-  <h2>Embedded MAN-bearing asset table (v12-family dungeon bundles)</h2>
-  <p>Some dungeon scenes ship their <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">scene_asset_table</a> <strong>inside</strong> their <code>scene_v12_table</code> entry rather than as a first-class sibling PROT entry. The canonical 7-asset table is embedded at file offset <strong><code>0x1000</code></strong> (the second 0x800-aligned window, past the header + inline records + the offset-<code>0x800</code> prescript). Its descriptor <code>data_offset</code>s are file-relative against the entry's <strong>extended footprint</strong>, so <code>table_offset (0x1000) + data_offset</code> addresses the MAN's LZS stream.</p>
-  <p>Two scenes carry the MAN <em>only</em> this way (no <code>scene_asset_table</code> / <code>scene_scripted_asset_table</code> sibling in their CDNAME block):</p>
-  <table>
-    <thead><tr><th>Scene</th><th>v12 PROT</th><th>Table</th><th>MAN desc size</th><th>MAN data_off</th><th>MAN abs</th><th>Decoded</th><th>Partitions</th></tr></thead>
-    <tbody>
-      <tr><td><code>dolk2</code></td><td>76</td><td>0x1000</td><td>0x929</td><td>0x1a89e</td><td>0x1b89e</td><td>2345&nbsp;B</td><td>[10,&nbsp;7,&nbsp;3]</td></tr>
-      <tr><td><code>rikuroa</code></td><td>164</td><td>0x1000</td><td>0x9a54</td><td>0x40927</td><td>0x41927</td><td>39508&nbsp;B</td><td>[18,&nbsp;70,&nbsp;20]</td></tr>
-    </tbody>
-  </table>
-  <p>The v12 header wins the classifier at offset 0, so the standalone <code>scene_asset_table</code> detector never probes <code>0x1000</code>. By contrast <code>dolk</code> / <code>keikoku</code> have a first-class scripted + bare table pair and don't need this path. The engine loader (<code>legaia_engine_core::scene_bundle::find_bundle</code>) adds a fallback that scans a <code>SceneV12Table</code> entry's 0x800-aligned offsets for the first <code>scene_asset_table</code> whose descriptors include a type-3 (MAN) slot (the count-gate also rejects the MAN-less count=4 sibling table) and reports it as <code>BundleSource::V12Embedded { table_offset: 0x1000 }</code>. This lets <code>rikuroa</code> / <code>dolk2</code> resolve their scene-entry system script, collision grid, encounter table, and scene-destination table. Disc-gated coverage: <code>crates/engine-core/tests/v12_bundle_man_disc.rs</code>.</p>
-  <p><code>rikuroa</code>'s MAN carries <strong>no named <code>0x3F</code> warp</strong> - the Ravine's exit and its first-boss (Zeto) trigger are gated by the partition-2 cutscene timeline, not a scene-change op - so its scene-destination table decodes to an empty list. <code>dolk2</code>'s MAN lists <code>map01</code> (its overworld return).</p>
+<section class="doc-section" id="embedded-man-over-read">
+  <h2>The "embedded MAN at 0x1000" is an extended-footprint over-read</h2>
+  <p>Extraction entries <code>0076</code> and <code>0164</code> show a canonical 7-asset
+  <a href="scene-bundles.html#scene-asset-table-count-prefixed-asset-bundle">scene_asset_table</a> at file offset
+  <code>0x1000</code>, which was read as the v12 &ldquo;embedding&rdquo; its scene's bundle. Byte comparison falsifies the
+  embedding: <code>0076 + 0x1000</code> onward is <strong>byte-identical to extraction <code>0078</code></strong> (suimon's
+  ordinary base+3 bundle) and <code>0164 + 0x1000</code> to extraction <code>0166</code> (geremi's) - the extraction slice of the
+  <code>.PCH</code> slot simply <strong>over-reads into the following TOC entries</strong> (the same extended-window trap as the
+  historical &ldquo;16 MB container at 0865&rdquo;). Under the position law those two windows are suimon's and geremi's
+  <code>.PCH</code> files, not dolk2's / rikuroa's.</p>
+  <p>What stays true: <code>dolk2</code> and <code>rikuroa</code> are the two scenes whose <strong>own</strong> base+3 bundle is
+  the MAN-less <code>count=4</code> form (types <code>[1, 2, 6, 0x14]</code>; the type-<code>0x14</code> slot is a small LZS
+  filler, not a MAN carrier). Where retail sources their partition scripts is now <strong>closed</strong>: each block ships a
+  standalone <code>data_field_streaming</code> entry whose type-3 chunk is a plain MAN (<code>dolk2</code> extraction 70,
+  partitions <code>[29, 73, 17]</code>; <code>rikuroa</code> extraction 157, <code>[13, 29, 64]</code>), and the live script heap
+  at the Mt. Rikuroa Caruban beat byte-matches the <code>0157</code> chunk - the streaming carrier IS the resident MAN (see
+  <a href="../subsystems/script-vm.html">script-vm &sect; streaming variant MAN</a>). The engine resolves it via the
+  <code>field_man_payload</code> streaming fallback (<code>legaia_engine_core::scene_bundle::streaming_man_payloads</code>,
+  disc-gated <code>crates/engine-core/tests/v12_bundle_man_disc.rs</code>); the earlier
+  <code>V12Embedded { table_offset: 0x1000 }</code> fallback resolved the over-read windows (suimon's / geremi's bundles) under
+  the CDNAME-shifted scene windows and is superseded for these two scenes.</p>
 </section>
 
 <section class="doc-section" id="open-questions">
   <h2>Open questions</h2>
+  <p>The two long-standing opens are <strong>closed statically</strong>: the loader stages the file at
+  <code>*(0x1F8003EC) + 0x12000</code> (<code>FUN_8001F7C0</code> <code>.PCH</code> load, zero-fill when absent), and
+  <code>b0</code>/<code>b1</code> are trigger tile coordinates consumed by <code>FUN_8003AEB0</code> (footprint-bit
+  <code>0x400</code> marking) and the <code>FUN_801D5630</code> fallback lookup - see
+  <a href="#runtime-staging">Runtime staging</a>. The <code>~0x800219xx</code> / <code>_DAT_8007B85C</code> lead resolved to the
+  <em>sibling</em> <code>.LZS</code> transition streamer <code>FUN_80021934</code>, not this file. Earlier falsified leads, kept
+  so they aren't re-walked: the <code>_DAT_8007B8D0</code> relocation via <code>FUN_800252EC</code> is the <code>efect.dat</code>
+  prescript stager; the <code>FUN_8001F05C</code> dispatch hypothesis fails because the <code>.PCH</code> is a standalone
+  top-level PROT entry, never a <code>type &lt;&lt; 24</code> chunk; <code>FUN_8002541C</code> is a generic 3-mode streaming
+  driver.</p>
+  <p>Still open:</p>
   <ul class="bullets">
-    <li><strong>Where does the loader stage the file?</strong> (capture-blocked). Two earlier leads are now <strong>falsified</strong>: (1) the <code>_DAT_8007b8d0</code> relocation reached via <code>FUN_800252EC</code> is the <code>efect.dat</code> / prescript stager, <em>not</em> the v12 record-table (they share the move-VM prescript format, which caused the conflation); (2) the "malloc'd heap type handler via <code>FUN_8001F05C</code> dispatch" hypothesis - <code>FUN_8001F05C</code> is fully dumped, and its jump table <code>0x80010638 + type*4</code> has 15 cases (TIM / TIM_LIST / TMD / MAN / MES / MOVE / ANM / VDF / SIN / TMD2 / FLAG / MOVE2 &hellip;), <em>none</em> of which parses a v12 header or 4-byte record table; the "next lead" <code>FUN_8002541C</code> is a generic 3-mode streaming driver, not a v12 stager. The v12 file is a <strong>standalone top-level PROT entry</strong> (offset-0 word = <code>N + 4</code>, high byte <code>0x00</code>), never dispatched through <code>FUN_8001F05C</code>. <strong>Reframe:</strong> the consumer is a <strong>scene-specific reader</strong>, not a generic asset-dispatch handler - the narrowed target is the world-map / kingdom placement path plus an un-analyzed reader near <code>~0x800219xx</code> that reads <code>_DAT_8007b85c</code>.</li>
-    <li><strong>What does <code>b0</code> index into?</strong> For Drake the <code>b0</code> values fit inside the scene's TMD pack count (40 slots), but for other scenes they exceed it, so "global TMD-slot index" is <strong>falsified</strong>. The plausible reading is a scene-local resource / placement index into a loader-built table, not a global slot id - unconfirmed pending the staging-site capture above (narrowed lead: the <code>~0x800219xx</code> / <code>_DAT_8007b85c</code> reader on the world-map kingdom path).</li>
-    <li><strong>Two prescript tables per scene</strong> - the sister offset-0 <code>scene_event_scripts</code> entry and this offset-0x800 table - carry the same move-VM stager records, both consumed via <code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code>. The exact per-record decode follows the move VM's control flow (a linear disassembly desyncs at its jump ops <code>0x18/0x19/0x1A/0x1B</code>).</li>
+    <li><strong>The <code>+N</code> "fixup slot" writes.</strong> Under the directory reading the zero words at <code>+N</code>,
+    <code>+N+2</code>, <code>+N+4</code> are the empty kind-2/3 sub-table bodies; whether any runtime writer fills them (the old
+    &ldquo;loader writes computed pointers&rdquo; observation) needs a targeted re-capture of the <code>+0x12000</code> window.</li>
+    <li><strong>Empty kinds 0/2/3.</strong> No retail <code>.PCH</code> populates teleports, elevation overrides, or region AABBs
+    (those live only in the <code>.MAP</code> <code>+0x10000</code> block). Whether the engine-side patch mechanism was ever used
+    for them is a dev-history question, not a runtime one.</li>
+    <li><strong><del>dolk2 / rikuroa MAN source</del></strong> - closed: the standalone <code>data_field_streaming</code>
+    sibling's type-3 chunk is the scene's MAN (live byte-match at the Caruban beat; see the over-read section above for what
+    the <code>.PCH</code> windows are instead).</li>
+    <li><strong>Two prescript tables per scene</strong> - the sister offset-0 <code>scene_event_scripts</code> entry (raw
+    <code>n + 2</code>) and this file's offset-<code>0x800</code> copy carry the same move-VM stager records, both consumed via
+    <code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code>. The runtime split is unpinned; the <code>.PCH</code> copy is
+    unreachable via the retail staging path (efect.dat overwrites <code>+0x800..</code>), pointing at the sister entry / the
+    <code>.LZS</code> scripted-table prefix as the live copies.</li>
   </ul>
 </section>
 
@@ -169,8 +310,9 @@ for (i, s) in t.scripts.iter().enumerate() {
   <h2>Related</h2>
   <ul class="bullets">
     <li><a href="scene-bundles.html">Scene bundles overview</a> - the four other scene-prefixed asset layouts.</li>
-    <li><a href="../subsystems/script-vm.html">Field/event script VM</a> - <code>FUN_801DE840</code>, the runtime that walks the prescript records.</li>
-    <li><a href="../subsystems/world-map.html">World-map subsystem</a> - the kingdom-map renderer that consumes parts of the v12 inline-record table for actor placements.</li>
+    <li><a href="../subsystems/script-vm.html">Field/event script VM</a> - <code>FUN_801DE840</code>, the runtime that executes the spawned partition-2 records.</li>
+    <li><a href="../subsystems/field-locomotion.html#grid-source">Field locomotion</a> - the <code>.MAP</code> <code>+0x10000</code> trigger block this file extends, and the engine's <code>field_regions</code> port of the lookup.</li>
+    <li><a href="../subsystems/cutscene.html">Cutscene routing</a> - the walk-on trigger &rarr; <code>FUN_8003BDE0</code> record-spawn chain (the <code>map01</code> / <code>town01</code> opening legs fire from these records).</li>
   </ul>
 </section>
 

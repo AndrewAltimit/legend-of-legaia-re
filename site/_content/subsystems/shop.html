@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; shop</div>
   <h1>Shop</h1>
-  <p class="lede">Buy / sell / quantity / confirm flow for town shops. Lives inside the <strong>menu overlay</strong> (same 129-function binary as the save screen, inn, and status screens). Clean-room session state: <code>engine-core::shop::ShopSession</code>. Buy-list render layout confirmed from <code>FUN_801d5de0</code> (<code>overlay_shop_save.bin</code>).</p>
+  <p class="lede">Buy / sell / quantity / confirm flow for town shops. Lives inside the <strong>menu overlay</strong> (same 129-function binary as the save screen and status screens; the inn is <em>not</em> a menu-overlay session - see <a href="inn.html">Inn</a>). Per-scene stock lives inline in the scene MAN's field-VM script and prices in the static <code>SCUS_942.54</code> item table; the menu overlay supplies the UI. Clean-room session state: <code>engine-core::shop::ShopSession</code>. Buy-list render layout confirmed from <code>FUN_801d5de0</code> (<code>overlay_shop_save.bin</code>).</p>
 </header>
 
 <section class="doc-section" id="flow">
   <h2>Flow</h2>
-  <p>The retail engine enters the shop from the field-VM WARP / shop-trigger opcode. The menu overlay dispatches on a sub-screen ID (pointer table at <code>0x801E4F40</code>, the same table the save screen and inn use). The five phases are:</p>
+  <p>The retail engine enters the shop from the field-VM WARP / shop-trigger opcode. The menu overlay dispatches on a sub-screen ID (pointer table at <code>0x801E4F40</code>, the same table the save screen uses). The five phases are:</p>
   <table>
     <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
     <tbody>
@@ -18,6 +18,7 @@
     </tbody>
   </table>
   <p>On <code>ShopConfirm</code> slot 0 (Yes): <code>try_buy</code> deducts gold and credits inventory; <code>try_sell</code> credits gold and decrements inventory. Sell price is <code>max(buy_price / 2, 1)</code>; items not in the shop's buy list sell for 1 gold.</p>
+  <p><strong>Point Card accrual (retail).</strong> The retail buy commit <code>FUN_801db7f4</code> also credits the Point Card counter <code>_DAT_800845B4</code> (u32) before the gold debit: when the party holds item <code>0xFE</code> (the Point Card - inventory-has check <code>func_0x80042f4c(0xFE)</code>), it adds <code>price / 20</code> per unit bought, capped at 9,999,999. Sell transactions never accrue. Not yet mirrored in the engine's <code>buy_from_shop</code>. (see ghidra/scripts/funcs/overlay_shop_save_801db7f4.txt)</p>
   <p>The menu state machine (<code>engine-vm::menu</code>) owns the per-screen transition graph - <code>commit_route</code> on Cross, <code>back_route</code> on Triangle - while the <code>MenuHost</code> commit hooks apply only the side effects. Cross steps <code>ShopBuy</code>/<code>ShopSell</code> &rarr; <code>ShopQuantity</code> &rarr; <code>ShopConfirm</code> &rarr; back to <code>ShopBuy</code> (so the player keeps shopping after each confirm); Triangle backs up one screen, and from the list it routes through the auto-advancing <code>ShopExit</code> teardown screen. <code>ShopExit</code> fires its one-shot session-clear on entry, holds for the render fade (<code>transient_hold_frames</code>), then drops to the menu&rsquo;s <code>Closing</code> state. The same routing drives the inn (<code>InnConfirm</code> Yes &rarr; transient <code>InnSleep</code> fade &rarr; close; No &rarr; close).</p>
 </section>
 
@@ -53,8 +54,54 @@
   <ul>
     <li><strong>Quantity selector</strong> (<code>FUN_801d5510</code>) - same 14 px line height; shows &ldquo;Have N [item]&rdquo; + &ldquo;How many will you buy?&rdquo; + a quantity&times;price line at y+34 (<code>0x22</code>) from the panel top.</li>
     <li><strong>Sell-item detail panel</strong> (<code>FUN_801d5ae8</code>) - shows item name, type description, and sell price (buy price &divide; 2) at y+43 (<code>0x2b</code>), with an icon at x+84.</li>
-    <li><strong>Mode-select panel</strong> (<code>FUN_801d4868</code>) - the Buy / Sell / Quit selector; x+20 for text, same 14 px line height as the item list.</li>
+    <li><strong>Mode-select panel</strong> (<code>FUN_801d4868</code>) - the Buy / Sell / Quit selector; fully decoded below.</li>
   </ul>
+</section>
+
+<section class="doc-section" id="mode-select-panel">
+  <h2>Mode-select panel (Buy / Sell / Quit)</h2>
+  <p>The mode selector is menu-overlay <strong>window 0x2A</strong> in the window-descriptor table at <code>0x801E473C</code>
+  (see <a href="field-menu.html">field menu</a>): content rect <code>(x 42, y 46, w 80, h 38)</code>, renderer VA
+  <code>0x801D4868</code>. Like every window content renderer it receives the live window struct and reads its content origin from
+  <code>+0xa</code> / <code>+0xc</code> (<code>WX</code> / <code>WY</code>); the 9-slice frame is caller-drawn.</p>
+  <p><code>FUN_801d4868</code> (see <code>ghidra/scripts/funcs/overlay_shop_save_801d4868.txt</code>) draws three rows through the
+  shared string primitive <code>func_0x80036888(str, 0, 0, x, y)</code>:</p>
+  <table>
+    <thead><tr><th>Row</th><th>String (overlay rodata)</th><th>X</th><th>Y</th></tr></thead>
+    <tbody>
+      <tr><td>Buy</td><td><code>0x801CEB94</code></td><td>WX + 20 (<code>0x14</code>)</td><td>WY</td></tr>
+      <tr><td>Sell</td><td><code>0x801CEB9C</code></td><td>WX + 20</td><td>WY + 14 (<code>0x0E</code>)</td></tr>
+      <tr><td>Quit</td><td><code>0x801CEBA4</code></td><td>WX + 20</td><td>WY + 28 (<code>0x1C</code>)</td></tr>
+    </tbody>
+  </table>
+  <p>Same 20 px text indent and 14 px line height as the buy list; the strings sit at an 8-byte stride with a leading control
+  byte. The CLUT-staging global <code>_DAT_8007B454</code> (read only by the string primitive - see
+  <a href="field-menu.html">field menu</a>) is set to <code>7</code> (normal white) on entry; before the Sell row the function scans
+  the inventory id/count pair array at <code>0x80085958</code> (<code>DAT_80084140 + 0x1818</code>, slot bounds
+  <code>_DAT_8007B5EA</code> .. <code>_DAT_8007B5EC</code> - the array pinned in
+  <a href="../reference/cheats.html">cheats</a>) and, when no slot has both a non-zero id <strong>and</strong> a non-zero count,
+  clears the global to <code>0</code> so <strong>Sell renders dim when the bag is empty</strong>.</p>
+  <p>After each row the cursor sprite <code>func_0x8002b994(0, mode, WX, rowY)</code> (the 16x16 bobbing menu cursor, drawn at the
+  window origin X - the same &ldquo;+0&rdquo; cursor column as the buy list) is gated on the picker cursor word
+  <code>DAT_801E46BC</code>:</p>
+  <ul>
+    <li>low 12 bits - selected row index (0 Buy / 1 Sell / 2 Quit); the cursor draws only on the matching row;</li>
+    <li>bit <code>0x1000</code> - blink phase; the sprite mode argument is the inverted bit (1 = animated frame, 0 = static);</li>
+    <li>bit <code>0x2000</code> - parked/unfocused presentation: the row-index gate is bypassed and every row gets a mode-4/0 draw
+    keyed to the blink bit;</li>
+    <li>bit <code>0x4000</code> - cursor suppressed entirely.</li>
+  </ul>
+  <p>Input lives in the picker dispatcher <code>FUN_801dafd4</code> (its sub-state var is <code>DAT_801E46AC</code>): the cursor
+  clamp is a literal <code>li a1,0x3</code> at <code>0x801DB098</code> (rows 0..2); on confirm, row 2 runs the Quit action at
+  <code>0x801DB0D0</code> (sound cue + session exit) and rows 0/1 fall through to the buy/sell check at <code>0x801DB0E8</code>.
+  The shop's window choreography is actor-VM widget scripts interpreted by <code>FUN_801d6628</code> over the window table: the
+  open script <code>DAT_801E4E38</code> slides in windows <code>0x21</code> (vendor name) / <code>0x2A</code> (this picker) /
+  <code>0x20</code> (gold) / <code>0x28</code> / <code>0x22</code>, and the Sell transition's close script
+  <code>DAT_801E4E54</code> slides away <code>0x28</code> / <code>0x2A</code> / <code>0x22</code> while keeping the gold +
+  vendor-name plates. (These instruction/descriptor words are byte-verified by the randomizer's seru-trading vendor, which patches
+  exactly these seams - cursor clamp, a detour after the Quit text draw, and the window record's height field - to grow the panel
+  to four rows; see <code>crates/rando/src/seru_overlay/consts.rs</code> and
+  <a href="../tooling/randomizer.html">randomizer</a>.)</p>
 </section>
 
 <section class="doc-section" id="stock-source">

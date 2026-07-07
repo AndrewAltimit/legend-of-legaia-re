@@ -2,13 +2,14 @@
 //! the Drake overworld (`map01`) down into the first-boss dungeon chain
 //! (`rikuroa` / `dolk`).
 //!
-//! This leg is unblocked by the v12-family bundle fix: `rikuroa` (PROT 164) and
-//! `dolk2` (PROT 76) ship their MAN inside a `scene_asset_table` embedded at
-//! offset `0x1000` of their `Class::SceneV12Table` entry, so before the
-//! `find_bundle` v12 fallback they had no loadable MAN. With the MAN resolved,
-//! the scene-entry system script + collision grid + destination table all come
-//! up and the overworld-portal transition can land the player inside the
-//! dungeon.
+//! This leg rides the retail-frame scene windows: `rikuroa` and `dolk2`
+//! resolve their MAN from the block's streaming variant carrier (PROT 0157 /
+//! 0070 - the payload the live script heap byte-matches at the Caruban
+//! beat). The earlier "v12-embedded at PROT 164 / 76" reading decoded the
+//! NEXT block's sidecar (geremi's / suimon's) through the unshifted CDNAME
+//! window. With the real MAN resolved, the scene-entry system script +
+//! collision grid + destination table all come up and the overworld-portal
+//! transition can land the player inside the dungeon.
 //!
 //! **Part A - the overworld lists the dungeon chain.** `map01`'s controller
 //! (its MAN `0x3F` named-scene-change ops) lists `rikuroa` / `dolk` / `dolk2`
@@ -21,24 +22,31 @@
 //! `SceneMode::Field`, seats the player at the portal's `0x3F` entry tile, and
 //! the scene's MAN is present + parses with the pinned partition counts.
 //!
-//! **Part C - the scripted first-boss (Zeto) fight.** Zeto (monster id 75 =
-//! `0x4B`) has no on-disc formation record: not in `rikuroa`'s MAN encounter
-//! section and not as an inline armed-YIELD window. Retail arms it through the
-//! *battle-id path* (`DAT_8007b7fc = 0x4B` -> `FUN_8005567c` collapses ids
-//! `0x49..0x4D` to a lone-monster cell), gated by a first-visit story flag. The
-//! engine models this as a `rikuroa` scene-entry latch on flag `0x1BE`
-//! (`rikuroa` cutscene record P2[0] "Meta's warning" C1) plus the battle-id
-//! port [`World::install_boss_encounter`]; the gate flag latches on victory
-//! ([`World::apply_battle_loot`]). Part C drives entry -> armed boss -> Field ->
-//! Battle seated with Zeto's real archive HP -> victory latches `0x1BE`, and a
-//! separate leg proves a post-victory revisit does not re-arm the fight.
+//! **Part C - the scripted first-boss (Caruban) fight.** Mt. Rikuroa's boss
+//! is Caruban (monster id 73 = `0x49`, in the `FUN_8005567c` lone-monster
+//! battle-id band `0x49..0x4D`): retail arms it through the *battle-id path*
+//! (`DAT_8007b7fc` -> lone-monster cell), gated by the first-visit flag
+//! `0x142` - the C1 one-shot of the real rikuroa MAN's post-victory record
+//! P2[50], which that record itself SETs (firehose-caught live, `51 42`,
+//! `ra 0x801E3598`; UNSET in `rikuroa_pre_caruban`, SET in
+//! `rikuroa_post_caruban`). The engine models this as a scene-entry latch +
+//! the battle-id port [`World::install_boss_encounter`]; the gate flag
+//! latches on victory ([`World::apply_battle_loot`]), which also flips the
+//! `map01` `dolk`->`dolk2` entrance (same flag). Part C drives entry ->
+//! armed boss -> Field -> Battle seated with Caruban's real archive HP ->
+//! victory latches `0x142`, and a separate leg proves a post-victory revisit
+//! does not re-arm the fight.
+//!
+//! (An earlier Part C armed **Zeto** (75) here, gated on `0x1BE`: both
+//! misattributed - the "rikuroa P2[0] C1 0x1BE" record is Jeremi's arrival
+//! cutscene in `geremi`'s MAN, and the Zeto battle capture's active scene is
+//! `jou`. Zeto's own trigger scene/gate is an open thread.)
 //!
 //! **Residual (documented, not faked).** The field-side op that writes the
-//! battle-id global in retail is not yet recovered from the corpus - it sits in
-//! the `rikuroa` scene prescript / event-VM (a different bytecode than the
-//! field VM) or a LUI+ADDIU-aliased store in an undumped overlay. The
-//! scene-entry flag-`0x1BE` latch is the faithful interim until that writer op
-//! is pinned.
+//! battle-id global in retail is not yet recovered from the corpus (a
+//! different bytecode than the field VM, or a LUI+ADDIU-aliased store in an
+//! undumped overlay). The scene-entry gate-flag latch is the faithful
+//! interim until that writer op is pinned.
 //!
 //! **Part D - the story-conditional dungeon entrance (`dolk` -> `dolk2`).**
 //! `dolk2` is NOT reached from a dungeon interior (that earlier reading is
@@ -48,9 +56,9 @@
 //! branch on system flag `0x142`: clear -> `dolk`, set -> `dolk2` (same trigger
 //! tile + arrival tile). The engine resolves the branch in the world-map portal
 //! seeder via `World::system_flag_test`; Part D asserts both arms + walks into
-//! `dolk2` with the flag set. (Residual RE: where retail *sets* flag `0x142` -
-//! the dolk-dungeon-clear writer - is unrecovered, like the Zeto trigger; the
-//! oracle seeds it directly.)
+//! `dolk2` with the flag set. (Flag `0x142`'s retail setter is pinned: the
+//! rikuroa post-victory record P2[50]'s script SET - the same flag Part C's
+//! victory latch models; the oracle still seeds it directly for isolation.)
 //!
 //! Skip-pass (CLAUDE.md disc-gated convention): `LEGAIA_DISC_BIN` unset /
 //! `extracted/` missing.
@@ -58,7 +66,6 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, SceneTickEvent};
-use legaia_engine_core::scene_bundle::{extract_man_payload, find_bundle};
 use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig};
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -143,17 +150,15 @@ fn find_portal_tile(host: &SceneHost, dest: &str) -> Option<(u8, u8)> {
         })
 }
 
-/// Assert the named scene's bundle carries a MAN that parses with the given
-/// partition counts (driven off the same `find_bundle` path the host uses).
+/// Assert the named scene resolves a MAN that parses with the given
+/// partition counts (through the same `field_man_payload` resolution order
+/// the host uses - bundle first, streaming variant carrier fallback).
 fn assert_scene_man(index: &ProtIndex, name: &str, want_counts: [i16; 3]) {
     let scene = Scene::load(index, name).unwrap_or_else(|e| panic!("load {name}: {e:#}"));
-    let bundle = find_bundle(&scene).unwrap_or_else(|| panic!("{name}: no bundle"));
-    let entry_bytes = index
-        .entry_bytes_extended(bundle.entry_idx())
-        .expect("extended footprint");
-    let man = extract_man_payload(&bundle, &entry_bytes)
-        .unwrap_or_else(|e| panic!("{name}: extract MAN: {e:#}"))
-        .unwrap_or_else(|| panic!("{name}: bundle carries no MAN"));
+    let man = scene
+        .field_man_payload(index)
+        .unwrap_or_else(|e| panic!("{name}: field_man_payload: {e:#}"))
+        .unwrap_or_else(|| panic!("{name}: no MAN resolves"));
     let mf = legaia_asset::man_section::parse(&man)
         .unwrap_or_else(|e| panic!("{name}: parse MAN: {e:#}"));
     assert_eq!(
@@ -238,13 +243,14 @@ fn part_b_map01_portal_into_rikuroa_first_boss_dungeon() {
     let Some(host) = drive_map01_portal_into("rikuroa") else {
         return;
     };
-    // The dungeon's MAN is resolved (the v12-embedded fix) - partitions
-    // [18, 70, 20]. This is the source the scripted-boss trigger will read.
+    // The dungeon's real MAN is resolved (streaming carrier PROT 0157) -
+    // partitions [13, 29, 64]. This is the source the scripted-boss trigger
+    // and the post-victory 0x142 record read.
     let index = host.index.clone();
-    assert_scene_man(&index, "rikuroa", [18, 70, 20]);
+    assert_scene_man(&index, "rikuroa", [13, 29, 64]);
     eprintln!(
         "[ok] Leg (Arc-2): map01 -> rikuroa overworld portal -> rikuroa (Field), \
-         MAN present. NEXT LEG: the Zeto scripted boss is gated by rikuroa's \
+         MAN present. NEXT LEG: the Caruban scripted boss is gated by rikuroa's \
          partition-2 cutscene timeline, not the encounter registry."
     );
 }
@@ -272,27 +278,26 @@ fn part_b_map01_portal_into_dolk() {
 }
 
 // ---------------------------------------------------------------------
-// Part C: the scripted first-boss (Zeto) fight, end to end
+// Part C: the scripted first-boss (Caruban) fight, end to end
 // ---------------------------------------------------------------------
 //
-// Zeto (monster id 75 = 0x4B) has NO on-disc formation record - not in
-// rikuroa's MAN encounter section and not as an inline armed-YIELD window.
-// Retail arms it through the battle-id path (`DAT_8007b7fc = 0x4B` ->
-// `FUN_8005567c` collapses ids 0x49..0x4D to a lone-monster cell), gated by a
-// first-visit story flag. The engine models this as a rikuroa scene-entry latch
-// on flag `0x1BE` (rikuroa cutscene P2[0] "Meta's warning" C1) + the battle-id
-// port `World::install_boss_encounter`; the gate flag latches on victory. The
-// field-side op that writes the battle-id global in retail is not yet recovered
-// (it sits in the scene prescript / an undumped overlay) - this leg exercises
-// the faithful interim.
+// Caruban (monster id 73 = 0x49) is Mt. Rikuroa's boss (gamedata +
+// the operator's live playthrough). Retail arms it through the battle-id
+// path (`DAT_8007b7fc` -> `FUN_8005567c` collapses ids 0x49..0x4D to a
+// lone-monster cell), gated by first-visit flag `0x142` (the real rikuroa
+// MAN's post-victory record P2[50] C1 one-shot + in-record SET). The engine
+// models this as a rikuroa scene-entry latch + the battle-id port
+// `World::install_boss_encounter`; the gate flag latches on victory. The
+// field-side op that writes the battle-id global in retail is not yet
+// recovered - this leg exercises the faithful interim.
 
-/// Zeto = monster id 75 (0x4B); rikuroa boss gate flag 0x1BE. Mirrors
+/// Caruban = monster id 73 (0x49); rikuroa boss gate flag 0x142. Mirrors
 /// `legaia_engine_core::world::SCRIPTED_SCENE_BOSSES`.
-const ZETO_MONSTER_ID: u16 = 75;
-const RIKUROA_BOSS_GATE_FLAG: u16 = 0x1BE;
+const CARUBAN_MONSTER_ID: u16 = 73;
+const RIKUROA_BOSS_GATE_FLAG: u16 = 0x142;
 
 #[test]
-fn part_c_rikuroa_arms_and_fights_the_zeto_scripted_boss() {
+fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     use legaia_engine_core::world::BOSS_FORMATION_ID_BASE;
 
     let Some(mut host) = drive_map01_portal_into("rikuroa") else {
@@ -302,12 +307,12 @@ fn part_c_rikuroa_arms_and_fights_the_zeto_scripted_boss() {
     // (1) Entering rikuroa (first visit, gate flag clear) armed the boss.
     assert!(
         !host.world.system_flag_test(RIKUROA_BOSS_GATE_FLAG),
-        "first visit: the Zeto gate flag starts clear"
+        "first visit: the Caruban gate flag starts clear"
     );
     assert_eq!(
         host.world.boss_formation_id,
-        Some(BOSS_FORMATION_ID_BASE | ZETO_MONSTER_ID),
-        "rikuroa entry arms the Zeto boss formation"
+        Some(BOSS_FORMATION_ID_BASE | CARUBAN_MONSTER_ID),
+        "rikuroa entry arms the Caruban boss formation"
     );
     assert_eq!(
         host.world.pending_boss_victory_flag,
@@ -318,13 +323,13 @@ fn part_c_rikuroa_arms_and_fights_the_zeto_scripted_boss() {
         host.world.scripted_formation_pending,
         "the boss fires on the next field step"
     );
-    // Real Zeto stats were seeded from the PROT 867 archive.
-    let zeto = host
+    // Real Caruban stats were seeded from the PROT 867 archive.
+    let caruban = host
         .world
         .monster_catalog
-        .get(ZETO_MONSTER_ID)
-        .expect("Zeto stats seeded from the monster archive");
-    assert!(zeto.hp > 0, "Zeto carries real archive HP");
+        .get(CARUBAN_MONSTER_ID)
+        .expect("Caruban stats seeded from the monster archive");
+    assert!(caruban.hp > 0, "Caruban carries real archive HP");
 
     // (2) Step -> the scripted boss flips Field -> Battle.
     host.world.live_gameplay_loop = true;
@@ -340,16 +345,16 @@ fn part_c_rikuroa_arms_and_fights_the_zeto_scripted_boss() {
             break;
         }
     }
-    assert!(reached_battle, "the Zeto cue flips Field -> Battle");
+    assert!(reached_battle, "the Caruban cue flips Field -> Battle");
     let monster_slot = host.world.party_count.clamp(1, 3) as usize;
     assert_eq!(
         host.world.actors[monster_slot].battle_monster_id,
-        Some(ZETO_MONSTER_ID),
-        "the lone enemy slot is Zeto"
+        Some(CARUBAN_MONSTER_ID),
+        "the lone enemy slot is Caruban"
     );
     assert!(
         host.world.actors[monster_slot].battle.max_hp > 0,
-        "the Zeto slot is seeded with its real HP"
+        "the Caruban slot is seeded with its real HP"
     );
 
     // (3) Winning latches the first-visit gate flag so the boss does not
@@ -362,13 +367,13 @@ fn part_c_rikuroa_arms_and_fights_the_zeto_scripted_boss() {
         .expect("boss formation captured at the Field -> Battle transition");
     assert_eq!(
         boss_formation.formation_id,
-        BOSS_FORMATION_ID_BASE | ZETO_MONSTER_ID
+        BOSS_FORMATION_ID_BASE | CARUBAN_MONSTER_ID
     );
     let catalog = host.world.monster_catalog.clone();
     let _ = host.world.apply_battle_loot(&boss_formation, &catalog);
     assert!(
         host.world.system_flag_test(RIKUROA_BOSS_GATE_FLAG),
-        "beating Zeto latches the rikuroa first-visit gate flag 0x1BE"
+        "beating Caruban latches the rikuroa first-visit gate flag 0x142"
     );
     assert_eq!(
         host.world.boss_formation_id, None,
@@ -376,13 +381,13 @@ fn part_c_rikuroa_arms_and_fights_the_zeto_scripted_boss() {
     );
 
     eprintln!(
-        "[ok] Part C: rikuroa -> armed Zeto (id 75, battle-id path) -> Battle \
+        "[ok] Part C: rikuroa -> armed Caruban (id 73, battle-id path) -> Battle \
          seated with real HP -> victory latches gate flag 0x1BE"
     );
 }
 
 #[test]
-fn part_c_rikuroa_does_not_rearm_zeto_once_the_gate_flag_is_set() {
+fn part_c_rikuroa_does_not_rearm_caruban_once_the_gate_flag_is_set() {
     let Some(mut host) = drive_map01_portal_into("rikuroa") else {
         return;
     };
@@ -393,7 +398,7 @@ fn part_c_rikuroa_does_not_rearm_zeto_once_the_gate_flag_is_set() {
         .expect("re-enter rikuroa");
     assert_eq!(
         host.world.boss_formation_id, None,
-        "with the gate flag set, re-entering rikuroa does not re-arm Zeto"
+        "with the gate flag set, re-entering rikuroa does not re-arm Caruban"
     );
     eprintln!("[ok] Part C: post-victory rikuroa revisit does not re-arm the boss");
 }
@@ -458,7 +463,7 @@ fn part_d_engine_walks_into_dolk2_after_the_story_flag() {
     assert_eq!(host.world.mode, SceneMode::Field, "dolk2 is a field scene");
     let index = host.index.clone();
     // dolk2 ships its MAN inside the v12-embedded scene_asset_table.
-    assert_scene_man(&index, "dolk2", [10, 7, 3]);
+    assert_scene_man(&index, "dolk2", [29, 73, 17]);
     eprintln!(
         "[ok] Part D: map01 (flag 0x142) -> dolk2 overworld portal -> dolk2 (Field), MAN present"
     );

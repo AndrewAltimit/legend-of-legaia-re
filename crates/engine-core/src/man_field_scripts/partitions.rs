@@ -255,17 +255,17 @@ pub fn walk_partition_gflag_sites(
         .max(0) as usize;
     let mut out = Vec::new();
     for index in 0..count {
-        let Some(script_start) = partition_record_offset(man_file, man.len(), partition, index)
+        // `partition_record_span` applies the partition-correct header shape:
+        // the `[u8 N][N*2 locals][4-byte header]` prefix for partitions 0/1,
+        // the named-record header (`FUN_8003BDE0`) for partition 2. Walking
+        // partition 2 with the generic prefix starts one byte late on a
+        // typical named record and can misdecode the leading instructions.
+        let Some((script_start, pc0, body_len)) =
+            partition_record_span(man_file, man, partition, index)
         else {
             continue;
         };
-        let n = *man.get(script_start).unwrap_or(&0) as usize;
-        let pc0 = 1 + n * 2 + 4;
-        let end = record_end_bound(man_file, man.len(), script_start);
-        if script_start + pc0 >= end {
-            continue;
-        }
-        let body = &man[script_start..end];
+        let body = &man[script_start..script_start + body_len];
         for insn in LinearWalker::new(body, pc0).flatten() {
             match insn.info {
                 // Scratchpad global flag (`0x2E` set / `0x2F` clear). The VM
@@ -303,12 +303,80 @@ pub fn walk_partition_gflag_sites(
     out
 }
 
+/// One walkable MAN payload resolved for a scene - either the scene's
+/// asset-table **bundle** MAN (what [`Scene::field_man_payload`] returns) or
+/// a **variant** MAN carried as a type-3 chunk of a standalone DATA_FIELD
+/// streaming entry in the same CDNAME block.
+///
+/// The variant carriers exist: thirteen retail blocks (`dolk2`, `rikuroa`,
+/// `rikuroa2`, `rayman`, `station`, `balden2`, `ropeway2`, `taiku`, `taiku2`,
+/// `doman`, `nilboa2`, `edbalden`, `eddoman`) ship a second MAN with
+/// different partition counts and different scripts than the bundle MAN -
+/// story-state variants of the scene. The Mt. Rikuroa post-Caruban
+/// story-flag write (system flag `0x142` SET) lives ONLY in the variant MAN
+/// (PROT `0157_rikuroa`, byte-matched against the live script heap at the
+/// beat), so a bundle-only census is structurally blind to an entire class
+/// of story-spine writers. Censuses walk every carrier.
+#[derive(Debug, Clone)]
+pub struct ManCarrier {
+    /// PROT extraction index of the entry the payload came from.
+    pub entry_idx: u32,
+    /// `None` for the scene's asset-table bundle MAN; `Some(header_offset)`
+    /// for a variant MAN lifted from the type-3 chunk at that byte offset of
+    /// a DATA_FIELD streaming entry.
+    pub chunk_offset: Option<usize>,
+    /// The decoded MAN bytes (what `man_section::parse` consumes).
+    pub payload: Vec<u8>,
+}
+
+impl ManCarrier {
+    /// `true` iff this is a standalone variant MAN (not the bundle MAN).
+    pub fn is_variant(&self) -> bool {
+        self.chunk_offset.is_some()
+    }
+}
+
+/// Every walkable MAN payload in `scene`'s CDNAME block: the asset-table
+/// bundle MAN first (when present), then each **variant** MAN found as a
+/// type-3 chunk of a `DataFieldStreaming` / `DataFieldTruncated` entry whose
+/// chunk payload parses as a MAN. Payload-identical duplicates are dropped,
+/// so a variant that merely re-ships the bundle MAN's bytes appears once.
+pub fn scene_man_carriers(index: &ProtIndex, scene: &Scene) -> Vec<ManCarrier> {
+    let mut out: Vec<ManCarrier> = Vec::new();
+    if let Some(bundle) = crate::scene_bundle::find_bundle(scene)
+        && let Ok(entry_bytes) = index.entry_bytes_extended(bundle.entry_idx())
+        && let Ok(Some(payload)) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
+    {
+        out.push(ManCarrier {
+            entry_idx: bundle.entry_idx(),
+            chunk_offset: None,
+            payload,
+        });
+    }
+    for (entry_idx, chunk_offset, payload) in crate::scene_bundle::streaming_man_payloads(scene) {
+        if out.iter().any(|c| c.payload == payload) {
+            continue;
+        }
+        out.push(ManCarrier {
+            entry_idx,
+            chunk_offset: Some(chunk_offset),
+            payload,
+        });
+    }
+    out
+}
+
 /// One SYSTEM-flag site recovered by [`system_flag_census`], carrying the
 /// scene it lives in plus the partition/record/op that touches the flag.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FlagCensusSite {
     /// CDNAME scene name whose MAN carries the op.
     pub scene_name: String,
+    /// PROT extraction index of the MAN carrier entry.
+    pub entry_idx: u32,
+    /// `true` iff the op lives in a standalone **variant** MAN (a type-3
+    /// streaming chunk), not the scene's bundle MAN. See [`ManCarrier`].
+    pub variant: bool,
     /// Partition the carrying record lives in (`0..3`).
     pub partition: usize,
     /// Record index within the partition.
@@ -331,8 +399,13 @@ pub struct FlagCensusSite {
 ///
 /// Scenes that fail to load or have no MAN are skipped silently (the census is
 /// best-effort over the whole CDNAME scene set). The returned map is sorted by
-/// flag number; each flag's site list preserves scene / partition / record
-/// discovery order.
+/// flag number; each flag's site list preserves scene / carrier / partition /
+/// record discovery order.
+///
+/// Walks **every** MAN carrier per scene ([`scene_man_carriers`]) - the
+/// bundle MAN plus the standalone story-state variant MANs - so writers that
+/// live only in a variant (e.g. the `rikuroa` post-Caruban `0x142` SET in
+/// PROT `0157`) are surfaced.
 pub fn system_flag_census<I, S>(index: &ProtIndex, scenes: I) -> BTreeMap<u16, Vec<FlagCensusSite>>
 where
     I: IntoIterator<Item = S>,
@@ -344,28 +417,231 @@ where
         let Ok(scene) = Scene::load(index, name) else {
             continue;
         };
-        let Ok(Some(man)) = scene.field_man_payload(index) else {
-            continue;
-        };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
-            continue;
-        };
-        for partition in 0..3 {
-            for site in walk_partition_gflag_sites(&man_file, &man, partition) {
-                if site.bank != FlagBank::System {
-                    continue;
+        for carrier in scene_man_carriers(index, &scene) {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+                continue;
+            };
+            for partition in 0..3 {
+                for site in walk_partition_gflag_sites(&man_file, man, partition) {
+                    if site.bank != FlagBank::System {
+                        continue;
+                    }
+                    out.entry(site.flag).or_default().push(FlagCensusSite {
+                        scene_name: name.to_string(),
+                        entry_idx: carrier.entry_idx,
+                        variant: carrier.is_variant(),
+                        partition: site.partition,
+                        record: site.record,
+                        opcode: site.opcode,
+                        kind: site.kind,
+                    });
                 }
-                out.entry(site.flag).or_default().push(FlagCensusSite {
-                    scene_name: name.to_string(),
-                    partition: site.partition,
-                    record: site.record,
-                    opcode: site.opcode,
-                    kind: site.kind,
-                });
             }
         }
     }
     out
+}
+
+/// One field-VM op-`0x49` (`STATE_RESUME`) site recovered by
+/// [`op49_window_census`], with its operand bytes interpreted under the
+/// **flag-window descriptor** layout the field-overlay picker widget
+/// `FUN_801EF014` consumes through `_DAT_8007B450` (system-actor handler id
+/// `0x23` in the `PTR_FUN_801f33b4` table, dispatcher `FUN_801F159C`):
+///
+/// ```text
+/// [0]    opcode 0x49          (descriptor pointer targets byte [1])
+/// [1]    sub-op
+/// [2]    count               ; window width in flags (`+1` from _DAT_8007B450)
+/// [3]    default_index       ; state-0 fallback selection (`+2`)
+/// [4]    rows                ; widget row geometry (`+3`)
+/// [5..6] base_flag (u16 LE)  ; first flag of the window (`+4..5`, read via
+///                            ; the u16 loader FUN_8003CE9C)
+/// ```
+///
+/// The picker's writes land on `DAT_80085758` system flags
+/// `base_flag + i` for `i` in `0..count` (state-0 window CLEAR loop via
+/// `FUN_8003CE34`) plus `base_flag + default_index` (the state-0 fallback
+/// `_DAT_8007BB88` seed the state-1 confirm SET `FUN_8003CE08` can land on) -
+/// so a site's covered flag set is `[base, base+count) ∪ {base+default}`.
+///
+/// Every op-`0x49` site is reported regardless of sub-op: which sub-op arms
+/// handler `0x23` is runtime state (`actor+0x50`), so the census interprets
+/// the descriptor window at **all** sub-ops as the conservative superset.
+/// `in_footprint` records whether the 6 descriptor bytes lie inside the
+/// instruction's own decoded operand footprint (sub-ops narrower than 5
+/// operand bytes would make the picker read into the following instruction's
+/// bytes - still resident MAN bytes at runtime, so they are interpreted too).
+// REF: FUN_801EF014
+// REF: FUN_801F159C
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Op49WindowSite {
+    /// CDNAME scene name whose MAN carries the op.
+    pub scene_name: String,
+    /// PROT extraction index of the MAN carrier entry.
+    pub entry_idx: u32,
+    /// `true` iff the op lives in a standalone **variant** MAN. See
+    /// [`ManCarrier`].
+    pub variant: bool,
+    /// Partition the carrying record lives in.
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// Absolute byte offset of the `0x49` opcode in the MAN buffer.
+    pub abs_pc: usize,
+    /// The sub-op byte (`_DAT_8007B450` target).
+    pub sub_op: u8,
+    /// Descriptor `+1`: window width in flags.
+    pub count: u8,
+    /// Descriptor `+2`: default selection index.
+    pub default_index: u8,
+    /// Descriptor `+3`: widget row-geometry byte.
+    pub rows: u8,
+    /// Descriptor `+4..5` (u16 LE): first flag id of the window.
+    pub base_flag: u16,
+    /// `true` iff all 6 descriptor bytes sit inside the instruction's own
+    /// decoded footprint (see the type docs).
+    pub in_footprint: bool,
+}
+
+impl Op49WindowSite {
+    /// The window's inclusive flag span `[base, base+count-1]`, or `None`
+    /// when `count == 0` (the CLEAR loop never runs; only the
+    /// `base + default_index` fallback remains reachable).
+    pub fn window(&self) -> Option<(u32, u32)> {
+        (self.count > 0).then(|| {
+            let base = u32::from(self.base_flag);
+            (base, base + u32::from(self.count) - 1)
+        })
+    }
+
+    /// `true` iff `flag` is in the site's covered flag set
+    /// `[base, base+count) ∪ {base + default_index}`.
+    pub fn covers(&self, flag: u16) -> bool {
+        self.min_distance(flag) == 0
+    }
+
+    /// Minimum absolute distance from `flag` to the site's covered flag set
+    /// (`0` = contained). Computed in `u32` so `base + count` cannot wrap.
+    pub fn min_distance(&self, flag: u16) -> u32 {
+        let flag = u32::from(flag);
+        let base = u32::from(self.base_flag);
+        let fallback = base + u32::from(self.default_index);
+        let mut best = flag.abs_diff(fallback);
+        if let Some((lo, hi)) = self.window() {
+            // Distance to the inclusive span [lo, hi]: 0 when inside.
+            let d = if flag < lo {
+                lo - flag
+            } else {
+                flag.saturating_sub(hi)
+            };
+            best = best.min(d);
+        }
+        best
+    }
+}
+
+/// Disc-wide **op-`0x49` flag-window census**: walk every scene MAN's
+/// field-VM bytecode (every partition record, decoded with the opcode-aware
+/// [`LinearWalker`] - real instruction boundaries, not raw byte pairs) and
+/// report every op-`0x49` site with its operand window interpreted under the
+/// [`Op49WindowSite`] flag-window descriptor layout.
+///
+/// This is the residual static probe for the spine flags whose writers are
+/// corpus-negative as LITERAL operands (`0x142` dolk-clear / `0x482` Drake
+/// mist-walls, plus the same-family orphans `0x1BE` / `0x225`): a flag-window
+/// site writes `base + offset`, so a window whose arithmetic covers a target
+/// flag would explain the write with **no literal** anywhere in the corpus.
+/// Consumers check containment / near-miss with [`Op49WindowSite::covers`] /
+/// [`Op49WindowSite::min_distance`].
+///
+/// Same contract as [`system_flag_census`] / [`motion_flag_census`]: scenes
+/// without a resolvable MAN are skipped (best-effort over the CDNAME scene
+/// set, all bundle forms incl. scripted-table + v12-embedded via
+/// [`crate::scene::Scene::field_man_payload`]); site order preserves scene /
+/// partition / record discovery order. Descriptor bytes are read from the
+/// full MAN buffer (the retail picker reads through `_DAT_8007B450` into the
+/// resident MAN, not the instruction footprint); sites whose descriptor
+/// window would run past the MAN end are skipped (nothing resident to read).
+// REF: FUN_801EF014
+pub fn op49_window_census<I, S>(index: &ProtIndex, scenes: I) -> Vec<Op49WindowSite>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut out = Vec::new();
+    for name in scenes {
+        let name = name.as_ref();
+        let Ok(scene) = Scene::load(index, name) else {
+            continue;
+        };
+        for carrier in scene_man_carriers(index, &scene) {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+                continue;
+            };
+            op49_walk_carrier(&mut out, name, &carrier, &man_file, man);
+        }
+    }
+    out
+}
+
+/// The per-carrier body of [`op49_window_census`] - split out so each MAN
+/// carrier (bundle + variants) shares the identical record walk.
+fn op49_walk_carrier(
+    out: &mut Vec<Op49WindowSite>,
+    name: &str,
+    carrier: &ManCarrier,
+    man_file: &ManFile,
+    man: &[u8],
+) {
+    let partition_count = man_file.header.partition_counts.len();
+    for partition in 0..partition_count {
+        let records = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for record in 0..records {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, record)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                let InsnInfo::StateResume { sub_op, .. } = insn.info else {
+                    continue;
+                };
+                // Header size: 1 byte, or 2 with the 0x80 cross-context
+                // prefix. The descriptor pointer (`_DAT_8007B450`)
+                // targets the sub-op byte right after the header.
+                let hs = if insn.extended.is_some() { 2 } else { 1 };
+                let desc = script_start + insn.pc + hs;
+                // Descriptor bytes +1..+5 from the sub-op byte, read
+                // from the full resident MAN (see fn docs).
+                let Some(win) = man.get(desc + 1..desc + 6) else {
+                    continue;
+                };
+                out.push(Op49WindowSite {
+                    scene_name: name.to_string(),
+                    entry_idx: carrier.entry_idx,
+                    variant: carrier.is_variant(),
+                    partition,
+                    record,
+                    abs_pc: script_start + insn.pc,
+                    sub_op,
+                    count: win[0],
+                    default_index: win[1],
+                    rows: win[2],
+                    base_flag: u16::from_le_bytes([win[3], win[4]]),
+                    in_footprint: insn.size >= hs + 6,
+                });
+            }
+        }
+    }
 }
 
 /// One motion-VM system-flag site recovered by [`motion_flag_census`]:
@@ -375,6 +651,12 @@ where
 pub struct MotionCensusSite {
     /// CDNAME scene name whose MAN motion section carries the op.
     pub scene_name: String,
+    /// PROT extraction index of the MAN carrier entry.
+    pub entry_idx: u32,
+    /// `true` iff the op lives in a standalone **variant** MAN's motion
+    /// section. See [`ManCarrier`]. (Distinct from `site.variant`, which is
+    /// the motion record's per-actor stream variant index.)
+    pub carrier_variant: bool,
     /// The section-1 record / variant / gate / offset / kind detail.
     pub site: legaia_asset::man_motion::MotionFlagSite,
     /// The record's actor bindings (who the stream runs on).
@@ -408,23 +690,25 @@ where
         let Ok(scene) = Scene::load(index, name) else {
             continue;
         };
-        let Ok(Some(man)) = scene.field_man_payload(index) else {
-            continue;
-        };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
-            continue;
-        };
-        let records = man_motion::motion_records(&man, &man_file);
-        for site in man_motion::motion_flag_sites(&man, &man_file) {
-            let bindings = records
-                .get(site.record)
-                .map(|r| r.bindings.clone())
-                .unwrap_or_default();
-            out.entry(site.flag).or_default().push(MotionCensusSite {
-                scene_name: name.to_string(),
-                site,
-                bindings,
-            });
+        for carrier in scene_man_carriers(index, &scene) {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+                continue;
+            };
+            let records = man_motion::motion_records(man, &man_file);
+            for site in man_motion::motion_flag_sites(man, &man_file) {
+                let bindings = records
+                    .get(site.record)
+                    .map(|r| r.bindings.clone())
+                    .unwrap_or_default();
+                out.entry(site.flag).or_default().push(MotionCensusSite {
+                    scene_name: name.to_string(),
+                    entry_idx: carrier.entry_idx,
+                    carrier_variant: carrier.is_variant(),
+                    site,
+                    bindings,
+                });
+            }
         }
     }
     out

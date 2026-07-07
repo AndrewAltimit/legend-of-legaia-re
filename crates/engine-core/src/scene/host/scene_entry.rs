@@ -375,6 +375,15 @@ impl SceneHost {
                 Ok(man_file) => {
                     self.world
                         .install_field_carriers_from_man(&man_file, &man_bytes);
+                    // Initial NPC facings: retail's placement installer
+                    // (`FUN_8003A1E4`) pre-runs each record's spawn prologue
+                    // at scene load, and the prologue's `0x4C 0x51` / `0x38`
+                    // ops write the actor's `+0x26` heading from the SCUS
+                    // direction LUT. Seed those headings now (after the
+                    // carrier install, which clears the heading map) so a
+                    // never-walked NPC stands with its retail facing.
+                    // REF: FUN_8003A1E4
+                    self.world.seed_field_npc_facings(&man_file, &man_bytes);
                     // Gate-0 tile-trigger object binds (retail scene-init
                     // `FUN_8003A55C`): each gate-0 kind-1 trigger binds its
                     // partition-0 record as a touch object at the trigger
@@ -415,7 +424,7 @@ impl SceneHost {
             Some(Err(err)) => eprintln!("[scene] field-carrier MAN payload skipped: {err:#}"),
             _ => {}
         }
-        // Scripted-boss first-visit latch (chapter-1: Mt. Rikuroa's Zeto).
+        // Scripted-boss first-visit latch (chapter-1: Mt. Rikuroa's Caruban).
         // Some dungeon bosses have no on-disc encounter formation - retail
         // arms them through a battle-id global write in the scene prescript,
         // gated by a first-visit story flag. When the active scene is a

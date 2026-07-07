@@ -295,4 +295,7 @@ end
 
 log(string.format("driver: target mode=0x%02X scene=%s label=%s out=%s",
     CKPT_MODE, tostring(CKPT_SCENE), CKPT_LABEL, OUT_DIR))
-PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", on_vsync)

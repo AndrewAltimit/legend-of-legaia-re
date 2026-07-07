@@ -64,9 +64,12 @@ fn town01_npc_placements_resolve_models_and_anim_records() {
         },
     )
     .expect("build town01 scene resources");
-    // The live pool table holds the 5-slot head + one slot per scene TMD
-    // (anchor-C: 119 populated slots = 5 + 114).
-    assert_eq!(res.tmds.len(), 114, "town01 scene TMD count");
+    // The live pool table holds 119 populated slots = the 5-slot head +
+    // 114 scene TMDs (anchor-C). With the shared `player_data` block
+    // resolving to the retail character pack (extraction 0874), the head's
+    // 5 player TMDs now arrive through the same sweep, so the resolved
+    // pool equals the live populated-slot count exactly.
+    assert_eq!(res.tmds.len(), 119, "town01 TMD pool incl. player head");
 
     // The per-scene ANM bundle in the player-ANM frame-stream layout (the
     // type-0x05 section of the scene's first PROT slot).

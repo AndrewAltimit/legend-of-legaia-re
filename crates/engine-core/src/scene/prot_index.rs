@@ -252,9 +252,16 @@ impl ProtIndex {
     /// default backdrop; per-sub-area variant selection is a follow-up. Empty
     /// when no CDNAME map is loaded or the block has no stage entries.
     pub fn battle_stage_entries(&self, scene_name: &str) -> Vec<u32> {
-        let Some((start, end)) = self.block_range(scene_name) else {
+        let Some((raw_start, raw_end)) = self.block_range(scene_name) else {
             return Vec::new();
         };
+        // CDNAME defines are raw-TOC indices, +2 from the extraction frame
+        // this index addresses (same conversion as `Scene::load`).
+        let shift = cdname::RAW_TOC_INDEX_OFFSET;
+        let (start, end) = (
+            raw_start.saturating_sub(shift),
+            raw_end.saturating_sub(shift),
+        );
         (start..end)
             .filter(|&idx| {
                 self.entry_bytes(idx)

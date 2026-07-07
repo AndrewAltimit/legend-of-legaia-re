@@ -139,6 +139,36 @@ impl FadeState {
     }
 }
 
+/// Fade-actor spawn wrapper - clean-room port of `FUN_80024E80` (`see
+/// ghidra/scripts/funcs/80024e80.txt`), the most-cited helper in the dump
+/// corpus: every subsystem that stages a full-screen fade goes through it.
+///
+/// Retail body: allocate a slot from the system-actor pool
+/// (`actor_free(&DAT_80070674, _DAT_8007C34C)` - the generic effect-actor
+/// list), and only on success stamp the caller's id into the template's
+/// last word (`*(u16 *)(template + 0x18) = id`, i.e. i16 index 12 =
+/// [`FadeTemplate::mode`]`[2]`) and run the loader ([`FadeState::load`] =
+/// `FUN_80020B00`) on the actor's `+0x7C` block. Pool exhaustion returns 0
+/// without touching the template.
+///
+/// The clean-room engine has no fixed-capacity fade-actor pool; `slot_free`
+/// models the retail alloc outcome for hosts that cap concurrent fades
+/// (pass `true` when a slot is available). The template is copied rather
+/// than mutated in place - retail stamps a scratch buffer (e.g. the
+/// battle-escape template at `DAT_801C9070`) that callers rebuild before
+/// every spawn, so the copy is semantics-preserving.
+///
+/// PORT: FUN_80024E80
+pub fn spawn_fade(template: &FadeTemplate, id: i16, slot_free: bool) -> Option<FadeState> {
+    if !slot_free {
+        // Retail `iVar1 == 0` branch: no stamp, no load.
+        return None;
+    }
+    let mut t = *template;
+    t.mode[2] = id;
+    Some(FadeState::load(&t))
+}
+
 /// A persistent full-scene colour grade - the warm gold/sepia the opening
 /// prologue cutscene (`opdeene`, "It was the Seru.") renders its whole 3D
 /// scene through, distinct from the transient [`ColorFade`] flashes.
@@ -349,6 +379,34 @@ mod tests {
         assert_eq!(frames + 1, 0x40, "ramp runs the template duration");
         assert!(f.finished());
         assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF], "lands exactly on white");
+    }
+
+    #[test]
+    fn spawn_fade_stamps_id_into_the_last_template_word() {
+        // FUN_80024E80: `*(u16*)(template + 0x18) = id` before the loader
+        // runs - byte offset 0x18 = i16 index 12 = mode[2]. The loader
+        // copies template[12] onto the state (retail state word 0x11).
+        let t = escape_fade_template();
+        let f = spawn_fade(&t, 0x1234, true).expect("slot free");
+        assert_eq!(f.mode, [0, -1i16, 0x1234], "id lands in mode[2] only");
+        // Everything else matches a plain load of the same template.
+        let plain = FadeState::load(&t);
+        assert_eq!(f.kind, plain.kind);
+        assert_eq!(f.duration, plain.duration);
+        assert_eq!(f.rgb(), plain.rgb());
+    }
+
+    #[test]
+    fn spawn_fade_pool_exhausted_returns_none() {
+        // Retail `iVar1 == 0` branch: alloc failed, nothing stamped/loaded.
+        assert_eq!(spawn_fade(&escape_fade_template(), 7, false), None);
+    }
+
+    #[test]
+    fn spawn_fade_does_not_mutate_the_caller_template() {
+        let t = escape_fade_template();
+        let _ = spawn_fade(&t, 0x7FFF, true);
+        assert_eq!(t.mode, [0, -1i16, 0], "caller copy untouched");
     }
 
     #[test]

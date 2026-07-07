@@ -274,15 +274,16 @@ runs, `step_world_map_locomotion` stands the overworld player down (the force-wa
 lock) and `World::tick`'s world-map arm steps the timeline whenever one is active
 (not just during the opening `map01` fly-in).
 
-**Gate-flag setters that are NOT MAN field-VM ops.** Progress flags read by
-these gates can have no MAN `0x50`-op setter - `man-scripts
---system-flag-census` walks only MAN field-VM ops `0x50/0x60/0x70`. The other
-disc-resident bytecode that writes the same bank is the second motion VM
+**Gate-flag setters beyond a scene's bundle MAN.** `man-scripts
+--system-flag-census` walks the MAN field-VM ops `0x50/0x60/0x70` across
+EVERY carrier per scene (bundle + the streaming variant MANs); the other
+disc-resident bytecode writing the same bank is the second motion VM
 `FUN_80038158` (op-`7` sets, op-`8` clears, flag = `operand[1] |
 operand[2] << 8`; carrier = MAN tail-section 1, see
-[`motion-vm.md`](motion-vm.md)); `man-scripts --motion-flag-census` sweeps
-that op family disc-wide. A flag absent from BOTH censuses is set by a direct
-code path (`FUN_8003CE08`-class call in an overlay), not by scene bytecode:
+[`motion-vm.md`](motion-vm.md)), swept by `--motion-flag-census`. A flag
+absent from BOTH censuses is set by a direct code path
+(`FUN_8003CE08`-class call in an overlay). Where the chapter-1 spine flags
+landed:
 
 - **`549` (`0x225`)**, the `town01` opening one-shot: writer still
   unrecovered. The bank RAM-diff pin stands (byte `+0x44` bit `0x04` flips
@@ -292,20 +293,25 @@ code path (`FUN_8003CE08`-class call in an overlay), not by scene bytecode:
   no disc stream uses it for `549`). The setter is a direct code path; the
   spine flag-writer capture harness is the closer. See
   [`functions.md`](../reference/functions.md).
-- **`0x482`** (Drake mist walls) and **`0x142`** (the dolk/dolk2 dungeon
-  variant): still unrecovered writers. `0x482` reads `0` across the whole
-  mednafen save library (including both pre-victory Zeto captures),
-  `rikuroa`'s MAN sets it nowhere, and the motion-flag census finds no
-  op-7/op-8 site for either (nor for `0x1BE`). The static channels are now
-  exhausted **corpus-wide**: an all-programs Ghidra sweep plus a raw-byte
-  scan of all 1235 PROT entries (setter `jal`s, address materializers,
-  `ori`-formed targets, derived-base stores, setter data words - all
-  alignment phases; `ghidra/scripts/find_spine_flag_writers.py`) finds no
-  statically-formed write of either flag or of `DAT_8007B7FC` anywhere on
-  the disc - the writes go through runtime-computed pointers/indices. A
-  fresh post-story-beat write-watchpoint capture is the closer. The engine
-  leaves both gated, which is faithful (the walls / the dolk2 variant
-  *should* stay closed pre-beat).
+- **`0x142`** (the Caruban beat / dolk-dolk2 switch): writer **pinned**.
+  The SETs are plain field-VM `51 42` script bytes in the rikuroa
+  streaming-carrier MAN (extraction 157) - `P1[10..12]` plus the
+  post-victory record `P2[50]` (C1 = `0x142` itself, the self-latching
+  one-shot) - re-asserted by dolk2's carrier `P1[0..1]` and cleared by
+  dolk's bundle `P1[26]`. The firehose capture caught the write live
+  (`ra 0x801E3598`, the dispatcher's own `0x5x` SET arm) and the resident
+  script heap byte-matches the carrier. The old corpus-negative stood
+  because no census walked the streaming variant MANs (and the earlier
+  raw-byte sweep looked for setter *code*, not script operand bytes at
+  op boundaries). Engine: `SCRIPTED_SCENE_BOSSES` arms Caruban (73) in
+  `rikuroa` gated on `0x142`; the victory latch sets it, flipping the
+  dolk-dolk2 entrance organically.
+- **`0x482`** (Drake mist walls): script writers **found** - SETs in the
+  `other7` block's `P1[15]`/`P1[39]` (op `0x54`), clears in the
+  `edbalden`/`eddoman` epilogue variant carriers. Which story beat
+  executes the `other7` records (an "other"-block script pool, not a
+  per-town scene) is the remaining question before the engine can open
+  the walls organically; the engine leaves the gate as-is meanwhile.
 
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
   with that id. `inline` is the record's structural inline dialog-text block (see
@@ -598,11 +604,12 @@ in `SceneMode::Field` with its MAN present.
 | `suimon` | `(57,61)` | `P2[19]` | Scripted (PROT 77) | `[10,7,3]` | `map01` |
 | `jou` | `(95,23)` | `P2[37]` | Scripted (PROT 630) | `[15,8,7]` | `map01`, `jouina` |
 
-**`dolk2` onward destination.** `dolk2` (post-boss `dolk` variant, PROT 76,
-v12-embedded MAN, partitions `[10,7,3]`) lists a single `0x3F`: back to `map01`.
-It is a terminal interior - the boss chain returns the player to the overworld,
-no deeper leg. (`jou` is the one swept leg with an interior onward warp of its
-own, to its interior variant `jouina`, alongside the `map01` exit.)
+**`dolk2` onward destination.** `dolk2` (post-boss `dolk` variant; its real
+MAN is the streaming carrier extraction 70, partitions `[29,73,17]`) lists a
+single named `0x3F`: back to `map01`. It is a terminal interior - the boss
+chain returns the player to the overworld, no deeper leg. (`jou` is the one
+swept leg with an interior onward warp of its own, to its interior variant
+`jouina`, alongside the `map01` exit.)
 
 **Gate census.** Every one of the five swept entrance records installs
 **unconditionally** - empty `C1`/`C2`. On `map01` the only C1-gated overworld
@@ -614,11 +621,18 @@ progression gate stands between a fresh Drake arrival and any of the five legs**
 the chapter-1 story order on this hub is carried only by the `keikoku` `0x193`
 gate and the `dolk`/`dolk2` `0x142` switch.
 
-**`suimon` and `dolk2` share a MAN.** `suimon`'s Scripted bundle (PROT 77) and
-`dolk2`'s v12-embedded bundle (PROT 76) resolve to a **byte-identical** MAN
-payload - both `[10,7,3]`, 2345 bytes, single `0x3F` back to `map01`. The oracle
-pins the identity so a future de-dup / mis-resolve of either bundle trips it; it
-is an observed disc-byte identity, not a claim about why the payload is reused.
+**The "`suimon` and `dolk2` share a MAN" identity - dissolved.** Both halves
+were the CDNAME-shifted scene window: `dolk2`'s unshifted window bled two
+entries into `suimon`'s block and picked up suimon's sidecar copy of its own
+2345-byte `[10,7,3]` MAN (`rikuroa`/`geremi` aliased the same way; byte
+comparison + position law in
+[scene-v12-table.md](../formats/scene-v12-table.md#the-embedded-man-at-0x1000-is-an-extended-footprint-over-read)).
+In the retail frame `suimon` keeps that MAN (its scripted bundle) and
+`dolk2` resolves its own streaming carrier (extraction 70, `[29,73,17]`).
+`Scene::load` now converts CDNAME raw-TOC block ranges to the extraction
+frame (`raw - 2`), which also dissolves the historical "a scene's `.MAP` is
+two entries below its block" rule - the `.MAP` is simply the retail block's
+FIRST entry.
 
 #### Chapter-1 hub depth: vozz + jou -> jouina
 
@@ -647,15 +661,48 @@ disc-gated
 - **`jouina` is not terminal**: destinations `{jou, jouinb}` (both ungated;
   `P2[0..=19]` all carry the `C1=[0xF]` busy-latch pattern), so the castle
   chains one more interior deep.
-- **Engine gap (pinned, open):** `jou` `P2[5]`'s door cutscene drives the
-  PLAYER channel (`A2 F8 06` ExecMove + `C3 F8 ...` HaltAcquire); the
-  engine's `field_channels::resolve_target` returns `None` for the special
-  `0xF8` target, so the handshake never completes and the frame cap
-  force-completes the timeline WITHOUT its trailing `0x3F` - the driven
-  `jou -> jouina` hop is blocked until a player-channel completion model
-  lands (see
-  [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md)). The
-  oracle asserts the decode + a direct `jouina` load instead.
+- **Player-channel handshake (resolved):** `jou` `P2[5]`'s door cutscene
+  drives the PLAYER channel (`A2 F8 06` ExecMove + `C3 F8 ...` HaltAcquire).
+  The timeline stepper models the handshake (ExecMove arms an in-flight
+  countdown, HaltAcquire parks then steps past by encoded width; see
+  [cutscene.md](cutscene.md)), so the record reaches its trailing `0x3F`
+  and the oracle drives the `jou -> jouina` hop to `SceneEntered`.
+
+#### Chapter-1 hub breadth: cave01 / vell / suimon + the Drake Castle chain
+
+The remaining hub legs, one level deep, decoded + driven by the disc-gated
+[`chapter1_hub_breadth_oracle.rs`](../../crates/engine-shell/tests/chapter1_hub_breadth_oracle.rs):
+
+- **`cave01` is a two-mouth pass-through** - one named `0x3F` destination
+  (`map01`) carried by TWO exit records (`P2[0]` gate-0 trigger `(8,89)`,
+  `P2[1]` gate-1 band `(93..94,96)`). Nine of 18 `P2` records are gated: six
+  self-latch one-shots plus the longest ordered beat chain decoded on a hub
+  leg - `P2[13]` (C1 `0x15E` / C2 `0x15D`) -> `P2[14]` (C1 `0x169` / C2
+  `0x15E`) -> `P2[15]` (C1 `[0x13, 0x142]` / C2 `0x169`; the final beat stops
+  replaying once the Zeto flag sets). Ungated `P2[16]` SETs the `0x15D` entry
+  key. The `0x15E` beat is read cross-scene by `urudre1` `P2[0]` (the Uru
+  Mais dream tests the cave beat).
+- **`vell`** - single exit `P2[10]` (band `(88..92,7)`). `P2[11]` self-latch
+  C1=[`0x2AF`] (strictly vell-local Set/Test pair); `P2[7]` carries
+  `C1=[0x63A, 0x7]` **byte-identical to vozz `P2[7]`'s gate**, and `0x63A`
+  has ZERO script sites disc-wide (no writer anywhere in the MAN corpus -
+  open thread). Also carries a gate-4 trigger family (record 53, five
+  scattered tiles) not seen on the other legs.
+- **`suimon` is a pure corridor** - all three `P2` records are ungated `0x3F`
+  exits to `map01`; story variation only via the shared controller `P1[0]`
+  testing `0x142`.
+- **The Drake Castle interior is FOUR scenes deep**: `jou -> jouina ->
+  jouinb -> jouinc -> jouind`. `jouinb` (`[19,7,13]`) is fully ungated (no
+  jouina-style `C1=[0xF]` busy-latch): `P2[9]` back to `jouina`, `P2[10]`
+  deeper to `jouinc` (`[43,18,60]`, lists `{jouinb, jouind}`). Once `jou`'s
+  `0x44D` door is passed the deep castle is open. The oracle's part F drives
+  `jou -> jouina -> jouinb -> jouinc` end-to-end in one session (the door
+  cutscene completes through the player-channel model) - the deepest driven
+  interior chain in the engine. `jouinc`/`jouind` decode is an open thread.
+- **Decoder asymmetry (pinned):** the partition-1 destination-table scan
+  under-reports doors carried only by `P2` records (`jouinb`'s `jouina`
+  return door) - the reverse of the `jou` `P2[5]` blind spot; the `P2`
+  walker and the strict portal-site join both see them.
 
 #### Loading the kingdom geometry (engine port)
 

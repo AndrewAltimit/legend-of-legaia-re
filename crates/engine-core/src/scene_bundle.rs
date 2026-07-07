@@ -427,6 +427,49 @@ pub fn extract_man_payload(bundle: &BundleSource, entry_bytes: &[u8]) -> Result<
     Ok(Some(decoded))
 }
 
+/// Streaming **variant MAN** payloads in the scene's block: the type-3
+/// chunks of `Class::DataFieldStreaming` / `Class::DataFieldTruncated`
+/// entries whose payload parses as a MAN, as `(entry_idx, chunk_offset,
+/// payload)` in entry order.
+///
+/// This is the MAN source for the v12-family dungeon scenes (`rikuroa` /
+/// `dolk2`): their own v12 sidecar embeds only the count-4 MAN-less table,
+/// and the retail script heap at the Mt. Rikuroa Caruban beat byte-matches
+/// the streaming chunk of PROT `0157` - the streaming carrier IS the
+/// resident MAN. Thirteen retail blocks carry such a MAN (see
+/// [`crate::man_field_scripts::ManCarrier`]).
+pub fn streaming_man_payloads(scene: &Scene) -> Vec<(u32, usize, Vec<u8>)> {
+    let mut out = Vec::new();
+    for entry in &scene.entries {
+        if !matches!(
+            entry.class,
+            Class::DataFieldStreaming | Class::DataFieldTruncated
+        ) {
+            continue;
+        }
+        let Ok(report) = legaia_asset::parse_streaming(&entry.bytes, 4096) else {
+            continue;
+        };
+        for chunk in &report.chunks {
+            if chunk.type_byte != 0x03 {
+                continue;
+            }
+            let start = chunk.header_offset + 4;
+            let Some(payload) = entry
+                .bytes
+                .get(start..start.saturating_add(chunk.size as usize))
+            else {
+                continue;
+            };
+            if legaia_asset::man_section::parse(payload).is_err() {
+                continue;
+            }
+            out.push((entry.idx, chunk.header_offset, payload.to_vec()));
+        }
+    }
+    out
+}
+
 /// Index every TIM that the scene exposes via the `TimList` descriptor
 /// or as scattered `Class::SceneVabStream` / `Class::SceneTmdStream`
 /// neighbours.

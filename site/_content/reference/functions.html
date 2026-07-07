@@ -18,6 +18,15 @@
         <li><code>FUN_8001F05C</code> - asset-type dispatcher</li>
         <li><code>FUN_80020224</code> - descriptor-pair walker</li>
         <li><code>FUN_8002541C</code> - streaming-asset driver</li>
+        <li><code>FUN_80021934</code> - <strong>scene-transition streaming actor</strong> (5-state SM over <code>actor+0x1A</code>,
+        jump table <code>0x80010760</code>; real entry 3 insns before the <code>0x80021940</code> prologue - the body sat in
+        never-analyzed space, invisible to instruction walks). Spawned on demand by <code>FUN_8001FD44</code> via
+        <code>FUN_80020DE0</code> from the spawn descriptor at <code>0x80070734</code> (one of the phase-misaligned descriptor
+        family <code>0x800705FC..0x80070763</code>, NOT a mode-table row). Streams the destination scene's
+        <code>DATA_FIELD\&lt;scene&gt;.LZS</code> bundle (raw <code>scene_base+3</code>) into <code>_DAT_8007B85C</code> - by PROT
+        index in dev (state 2), by built filename in retail (state 4) - then hands off with <code>_DAT_8007B83C = 2</code>
+        (MAIN INIT). Closes the <code>_DAT_8007B85C</code> staging question in
+        <a href="../subsystems/asset-loader.html">asset loader</a>. See <code>ghidra/scripts/funcs/80021940.txt</code>.</li>
       </ul>
     </div>
 
@@ -33,9 +42,19 @@
         <li><code>FUN_801E3040</code> - field-VM <code>0x4C</code> outer-nibble-<code>0xE</code> sub-dispatcher (15-entry JT at <code>0x801CF008</code>)</li>
         <li><code>FUN_801E30E4</code> - field-VM <code>0x4C 0xE2</code> FMV trigger; writes FMV index to <code>_DAT_8007BA78</code> + game mode <code>0x1A</code> (StrInit) to <code>_DAT_8007B83C</code></li>
         <li><code>FUN_8003CE9C</code> - field-VM context resolver (sign-extended u16 read)</li>
-        <li><code>FUN_80038158</code> - per-actor <strong>motion / bytecode VM</strong> (the second motion VM; dispatched by <code>FUN_8003BC08</code> when actor <code>+0x10 &amp; 0x80</code>); op-<code>7</code> <strong>sets</strong> / op-<code>8</code> clears the system story-flag bank <code>DAT_80085758</code> inline, flag index from its own script bytecode. Carrier = MAN tail-section 1 (installer <code>FUN_8003A9D4</code>, parser <code>legaia_asset::man_motion</code>), swept disc-wide by <code>man-scripts --motion-flag-census</code>: the spine gates <code>0x142</code>/<code>0x482</code>/<code>0x1BE</code> and the town01 one-shot <code>549</code> appear in no stream (the earlier "549 via op-7 bytecode" carrier reading is falsified - those writers are direct code paths).</li>
+        <li><code>FUN_80038158</code> - per-actor <strong>motion / bytecode VM</strong> (the second motion VM; dispatched by <code>FUN_8003BC08</code> when actor <code>+0x10 &amp; 0x80</code>); op-<code>7</code> <strong>sets</strong> / op-<code>8</code> clears the system story-flag bank <code>DAT_80085758</code> inline, flag index from its own script bytecode. Carrier = MAN tail-section 1 (installer <code>FUN_8003A9D4</code>, parser <code>legaia_asset::man_motion</code>), swept disc-wide by <code>man-scripts --motion-flag-census</code>: the spine gates <code>0x142</code>/<code>0x482</code>/<code>0x1BE</code> and the town01 one-shot <code>549</code> appear in no motion stream - the first three are field-VM script bytes in the streaming variant MAN carriers, and <code>549</code> is a direct code path (the earlier "549 via op-7 bytecode" carrier reading is falsified).</li>
         <li><code>FUN_800204F8</code> - move-buffer setup (Tactical Arts)</li>
         <li><code>FUN_80021DF4</code> - per-frame actor tick</li>
+        <li><code>FUN_8003A1E4</code> - <strong>field-NPC placement installer</strong> (reads
+        <code>[model, anim, tile_x, tile_z]</code> - no facing byte in the record). Its tail (body
+        <code>0x8003A474..0x8003A4F8</code>) runs a <strong>spawn-time field-VM prologue pre-run</strong>: if the placement
+        record's script opens with op <code>0x24</code>/<code>0x25</code>, it executes the leading ops one at a time through
+        <code>FUN_801DE840</code> until a <code>0x21</code> NOP or a sub-<code>0x20</code> byte - this is where a never-walked
+        NPC's INITIAL FACING comes from (ops <code>0x4C 0x51</code> sub-1 and <code>0x38</code> write <code>actor+0x26</code> from
+        the 8-direction heading LUT at <code>0x80073F04</code>, entry <code>i*0x200</code>). Port
+        <code>man_field_scripts::placement_initial_facing</code> + <code>World::seed_field_npc_facings</code>; see
+        <a href="../subsystems/field-locomotion.html#npc-initial-facing">field locomotion</a>. See
+        <code>ghidra/scripts/funcs/8003a1e4.txt</code>.</li>
       </ul>
     </div>
 
@@ -61,6 +80,12 @@
         <li><code>FUN_8001B964</code> - per-actor <strong>animated-mesh renderer</strong>: walks the actor's object table against its ANM record (<code>actor[+0x4C]</code>), posing TMD object <code>i</code> with bone <code>i</code>'s <code>R&middot;v + T</code>; skips the draw unless the object count equals the record's bone count</li>
         <li><code>FUN_8001BE80</code> - per-(bone, frame) ANM entry decoder (3 nibble-packed signed-12-bit translations + 3 u8 rotations); ported at <code>legaia_asset::player_anm::BoneTransform</code></li>
         <li><code>FUN_80024D78</code> - actor object-table fill: <code>actor[+0x44]</code> = <code>[count = *(tmd+8)][ptr to tmd+0xC+i*0x1C per object]</code>, straight off the pool TMD</li>
+        <li><code>FUN_80024E80</code> - <strong>screen-fade primitive spawn</strong> <code>(fade_template, mode)</code>: allocates
+        an actor from pool <code>&amp;DAT_80070674</code> via <code>FUN_80020DE0</code>, stores <code>mode</code> at
+        <code>actor[+0x18]</code> and loads the fade ramp via <code>FUN_80020B00</code> (start RGB + frame count <code>&lt;&lt; 6</code>,
+        per-frame deltas). The battle-action SM stages the summon backdrop fade (state <code>0x33</code>) and the
+        successful-escape white-out (state <code>0x66</code>) through it. Port <code>engine-core::fade::spawn_fade</code>. See
+        <code>ghidra/scripts/funcs/80024e80.txt</code>.</li>
         <li><code>FUN_80043390</code> - Per-prim renderer dispatcher inside <code>FUN_8001ADA4</code> case-5 (default textured-TMD path). Selects an emit leaf from one of two function-pointer tables (SCUS <code>0x8007657C</code> vs world-map overlay <code>0x801F8968</code>) based on <code>_DAT_1F800394 &amp; 1</code> - the overlay variant routes every prim through fog-enabled leaves at <code>0x801F7644..0x801F8690</code>. This is the bulk world-map continent emit path.</li>
         <li><code>FUN_8001ADA4</code> - Per-actor RENDER dispatcher (switch on <code>actor[+0x56]</code>); case-5 walks the mesh chain at <code>actor[+0x44]</code> and dispatches each TMD to <code>FUN_80043390</code> (textured), <code>FUN_80029888</code> (env-mapped), or <code>FUN_8002735C</code> (landmark)</li>
         <li><code>FUN_8001D140</code> - Stack-swap wrapper around <code>FUN_8001ADA4</code>; called 6&times; per frame from <code>FUN_80016444</code> against <code>_DAT_8007C34C..0x36C</code> (render pass)</li>
@@ -136,7 +161,7 @@
         <li><code>FUN_801EAD98</code> - world-map developer menu renderer (7280 B); 24-entry scrollable list incl. MAP CHANGE / EVENT FLAG / PLAY POS / GET ITEM (display-only; the tools live in field overlay 0897)</li>
         <li><code>FUN_801EE094</code> / <code>FUN_801EE328</code> (0897) - dev-menu warp appliers ("ON RIREMITO," / "ON RULA,"): map-table walk on <code>_DAT_80084628</code>, scene load via <code>func_0x8001fd44</code>, player teleport - the MAP CHANGE half of the debug "jump to beat" behaviour</li>
         <li><code>FUN_801DBD04</code> (0897) - dev-menu EVENT FLAG editor: cursor <code>DAT_801f2aa0</code> over flag ids <code>0..0xFFF</code>, SET/CLEAR appliers at <code>0x801EA4F8/52C</code> - the debug path that can set any story flag incl. the spine gates; also the register-pointer editor that produced the FMV trigger corpus</li>
-        <li><code>FUN_801EF014</code> (0897) - flag-window picker widget (descriptor via <code>_DAT_8007B450</code>, op-<code>0x49</code>-installed; confirm sets <code>base + selection</code>)</li>
+        <li><code>FUN_801EF014</code> (0897) - flag-window picker widget (descriptor via <code>_DAT_8007B450</code>, op-<code>0x49</code>-installed; confirm sets <code>base + selection</code>). Disc usage (<code>man-scripts --op49-window-census</code>, 209 sites): the ONLY genuine flag-window family is kor/kor3/kor4 sub-4 <code>base=0x138 count=8</code> (24 sites); no window contains a spine flag.</li>
         <li><code>FUN_801F159C</code> (0897) - system-actor dispatcher over the 52-entry handler table <code>PTR_FUN_801f33b4</code>, indexed by <code>actor+0x50</code></li>
         <li><code>FUN_801D2EBC</code> (0897) - timed-flag scheduler consumer (installer = field-VM op <code>0x4C 0xD3</code>); retail use: <code>chitei2</code> escape timer, flag <code>0x4C7</code></li>
         <li><code>FUN_801DA51C</code> - per-entity tick (260 B); 5-state SM on <code>entity[+0x8A]</code></li>

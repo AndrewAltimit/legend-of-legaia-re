@@ -235,5 +235,8 @@ logline("After the run, check the summary for unique PCs - those are the consume
 logline("Any consumer that uses the id byte as an index without a bound is an exploit chain.")
 logline("")
 
-PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
 logline("vsync listener installed; waiting for boot")

@@ -45,11 +45,11 @@ fn walk_map_resolves_real_continent_for_kingdoms() {
     }
     let index = ProtIndex::open_extracted(&extracted).expect("open index");
 
-    // The kingdom overworld walk scenes: each resolves its `.MAP` two
-    // entries below the extractor's block start (the universal field-map
-    // rule; the first 0x12000 entry INSIDE the block is the next scene's
-    // map), and the floor grid builds a dense heightfield continent
-    // (>10k quads) with real elevation variation.
+    // The kingdom overworld walk scenes: each resolves its `.MAP` as the
+    // retail block's FIRST entry (the universal field-map rule - `Scene`
+    // windows are in the retail frame, raw define - 2), and the floor grid
+    // builds a dense heightfield continent (>10k quads) with real
+    // elevation variation.
     for name in ["map01", "map02", "map03"] {
         let scene = Scene::load(&index, name).expect("load scene");
         let walk = scene.walk_field_map_index(&index).expect("walk .MAP index");
@@ -58,24 +58,21 @@ fn walk_map_resolves_real_continent_for_kingdoms() {
             scene.field_map_index(&index).expect("field .MAP index"),
             "{name}: walk + field paths share one resolver"
         );
-        // Regression guard for the superseded in-block rule: the first
-        // FIELD_MAP_LEN entry inside the block is NOT this scene's map.
+        // Retail frame: the block's first FIELD_MAP_LEN entry IS this
+        // scene's map (the superseded "in-block = next scene's map" decoy
+        // sat in the unshifted window, which started two entries late).
         let in_block = (scene.start..scene.end).find(|&idx| {
             index
                 .entries()
                 .get(idx as usize)
                 .is_some_and(|e| e.size_bytes as usize == legaia_engine_core::scene::FIELD_MAP_LEN)
         });
-        assert_ne!(
+        assert_eq!(
             Some(walk),
             in_block,
-            "{name}: the in-block 0x12000 entry belongs to the next block"
+            "{name}: the block's first 0x12000 entry is the scene's map"
         );
-        assert_eq!(
-            walk,
-            scene.start - 2,
-            "{name}: walk .MAP is block_start - 2"
-        );
+        assert_eq!(walk, scene.start, "{name}: walk .MAP is the block start");
 
         let hf = scene
             .walk_heightfield(&index)
@@ -163,7 +160,10 @@ fn field_map_rule_is_universal_and_rim_elm_variants_share_one_map() {
     let map_bytes = |scene_name: &str| -> (u32, Vec<u8>) {
         let scene = Scene::load(&index, scene_name).expect("load scene");
         let idx = scene.field_map_index(&index).expect("field .MAP index");
-        assert_eq!(idx, scene.start - 2, "{scene_name}: .MAP is define - 2");
+        assert_eq!(
+            idx, scene.start,
+            "{scene_name}: .MAP is the retail block's first entry"
+        );
         let bytes = index.entry_bytes_extended(idx).expect("read .MAP entry");
         (idx, bytes)
     };

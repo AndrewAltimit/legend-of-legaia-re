@@ -389,7 +389,7 @@ func_0x800468a4(6, signed16(operand[1..3]), signed16(operand[3..5]),
 | 0x4B | `ANIMATE` | Multi-keyframe setup. Writes `ctx[+0xB0+N] / +0xB8 / +0xC8`, sets `+0x10` bit 0x1000 (animation flag). PC += 3 + count*4. |
 | 0x4C | `MENU_CTRL` | Outer-nibble-dispatched (16 sub-dispatchers). See below. |
 | 0x4D | `BBOX_TEST` | Inside-box advances PC by 7; outside-box jumps to `pc + header_size + 4 + LE_u16(operand[4..6])` via `FUN_801E3614`. |
-| 0x4E | `INVENTORY_CMP` | Compare-and-jump across page-banked inventory state and party-money/XP banks. Sub-ops 0/1 (page-banked compare, 7 bytes), 2/3/5/6/7/8/9 (absolute jump to operand[2..4]), 10/11 (party-bank u32 compare, 9 bytes), 12..=15 (no test, fall through default arm with PC += 7). Sub-op 4 calls `func_0x80056798` (BIOS Rand thunk = `jr 0xA0; t1=0x2F`) and uses the returned value as the next PC; ported as a side-effect-only host hook (`FieldHost::op4e_sub4_bios_rand`, default returns 0) - almost certainly a dev/debug stub. |
+| 0x4E | `INVENTORY_CMP` | Compare-and-jump across page-banked inventory state and party-money/XP banks. Sub-ops 0/1 (inventory), 2 (character level byte `+0x130`), 3 (party gold `_DAT_8008459C` vs u16 - the inn/ticket gold gate, `legaia_asset::inn_costs`) and 9 (coin bank `0x800845A4` vs u16) all share the 7-byte compare-and-skip shape (jump table `0x801CEE30`, per-sub value loaders). Only sub-ops 5..8 are absolute jumps (the `0x801C6460` arm). 10/11 = gold/coin u32 compare (9 bytes); 12..=15 fall through (PC += 7). Sub-op 4 calls `func_0x80056798` (BIOS Rand thunk) and uses the returned value as the next PC; ported as a side-effect-only host hook (`FieldHost::op4e_sub4_bios_rand`) - almost certainly a dev/debug stub. |
 | 0x4F | `SCENE_REGISTER_WRITE` | Writes three `u16` values to `_DAT_801C6EA4 + 0x10/+0x12/+0x14`. |
 
 ### 0x4C MENU_CTRL - outer-nibble dispatch
@@ -437,6 +437,16 @@ An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but t
 - `system_flag_census` runs that walk over **every** CDNAME scene's MAN across all three partitions and returns `flag -> [(scene, partition, record, op, kind)]`, sorted by flag number - the setter-vs-gate map the progress-gate RE consumes.
 
 CLI: `legaia-engine man-scripts --scene <name> --gflag-partition <N>` lists both banks for one scene; `legaia-engine man-scripts --system-flag-census` runs the disc-wide census. The flag-index arithmetic mirrors the dispatchers above, and the engine's own bit helpers are `World::system_flag_set`/`_clear`/`_test`.
+
+### A second script-byte carrier: the streaming variant MAN
+
+A live whole-playthrough capture (PCSX-Redux exec-bps on `0x8003CE08`/`0x8003CE34`, probe `autorun_flag_firehose.lua`) shows every story-flag write across the chapter-1 scenes returning to the dispatcher's own `0x5x`/`0x6x` arms (`ra 0x801E3598` / `0x801E35C0`, field overlay resident) - the ops above are the **only** story-flag writers observed. The remaining callers touch only low system indices: `0`/`3` staged by the world-map entity SM (`FUN_801DA51C`), `0x35` set at battle-end victory (`FUN_8004E568`) and cleared by the entity SM, `0xB`/`0xC`/`0x18` interaction/engagement locks, `0xE` by two dispatcher spawn ops.
+
+The executed script bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is **not** the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone `data_field_streaming` PROT entry (the chunk header is the ordinary sub-asset descriptor `[u24 size][u8 type=0x03]`; the payload parses with `legaia_asset::man_section` like any MAN).
+The resident copy byte-matches PROT `0157_rikuroa`'s chunk, and it carries the story-flag `0x142` SET (`51 42`) at four record sites - `P1[10..12]` plus the post-victory cutscene record `P2[50]`, whose C1 gate is `0x142` itself (the self-latching one-shot).
+Thirteen retail blocks ship such a **streaming variant MAN** (extraction indices: `dolk2` 70, `rikuroa2` 122, `rikuroa` 157, `rayman` 201, `station` 228, `balden2` 320, `ropeway2` 339, `taiku` 373, `doman` 401, `taiku2` 427, `nilboa2` 648, `edbalden` 792, `eddoman` 817); for the v12-family dungeons (`rikuroa` / `dolk2`, whose own bundle is the MAN-less `count=4` form) the streaming carrier is the scene's **only** MAN.
+
+`system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_core::man_field_scripts::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x482` epilogue clears (`edbalden`/`eddoman` variants), the `0x63A` beat writers. Disc-gated pins: `crates/engine-core/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`).
 
 ## BGM lookup table
 

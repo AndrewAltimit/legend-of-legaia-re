@@ -15,14 +15,29 @@ pub const BOSS_FORMATION_ID_BASE: u16 = 0xB000;
 /// dungeon arms on entry while its gate flag is still clear. Each row is
 /// `(scene_label, monster_id, gate_flag)`.
 ///
-/// The chapter-1 entry is Mt. Rikuroa's Zeto (monster id 75, gate flag
-/// `0x1BE` = the C1 story-flag of rikuroa cutscene record P2[0] "Meta's
-/// warning", the first-visit one-shot). Zeto has no on-disc formation record;
-/// retail arms it through the battle-id path
-/// ([`World::install_boss_encounter`]). The host scene-entry latch
+/// The chapter-1 entry is Mt. Rikuroa's **Caruban** (monster id 73 = `0x49`,
+/// in the `FUN_8005567c` lone-monster battle-id band), gated by system flag
+/// `0x142` - the C1 one-shot of the real rikuroa MAN's post-victory cutscene
+/// record P2[50] (streaming carrier PROT `0157`, the MAN the live script
+/// heap byte-matches at the beat), which that record itself SETs on
+/// completion. `0x142` is also the `map01` dungeon-entrance `dolk`→`dolk2`
+/// selector, so the victory latch flips the entrance organically. The
+/// operator's save brackets pin the lifecycle: `0x142` UNSET in
+/// `rikuroa_pre_caruban`, SET in `rikuroa_post_caruban`, and the firehose
+/// caught the SET live (script bytes `51 42`, dispatcher SET arm
+/// `ra 0x801E3598`).
+///
+/// (An earlier row armed **Zeto** (75) here, gated on `0x1BE` - both
+/// misattributed: the "rikuroa P2[0] C1 0x1BE" record is Jeremi's arrival
+/// cutscene in `geremi`'s MAN, read through a CDNAME-shifted scene window,
+/// and the Zeto battle capture's active scene is `jou`, not `rikuroa`.
+/// Zeto's own trigger scene/gate is an open thread.)
+///
+/// The host scene-entry latch
 /// ([`crate::scene::SceneHost::enter_field_scene`]) consumes this table; the
-/// gate flag latches on victory in [`World::apply_battle_loot`].
-pub const SCRIPTED_SCENE_BOSSES: &[(&str, u16, u16)] = &[("rikuroa", 75, 0x1BE)];
+/// gate flag latches on victory in [`World::apply_battle_loot`] (the
+/// engine's stand-in for executing P2[50]'s script SET).
+pub const SCRIPTED_SCENE_BOSSES: &[(&str, u16, u16)] = &[("rikuroa", 73, 0x142)];
 
 impl World {
     /// Install an [`crate::encounter::EncounterSession`] for the current
@@ -513,15 +528,16 @@ impl World {
     /// stats.
     ///
     /// `victory_flag` is the first-visit one-shot system flag the fight latches
-    /// on a win (rikuroa's Zeto gate `0x1BE`, mirroring cutscene record P2[0]'s
-    /// C1 self-disable) so the boss does not re-arm on re-entry;
-    /// [`Self::apply_battle_loot`] sets it. Returns the synthetic formation id.
+    /// on a win (rikuroa's Caruban gate `0x142`, mirroring the post-victory
+    /// cutscene record P2[50]'s C1 self-disable + in-record SET) so the boss
+    /// does not re-arm on re-entry; [`Self::apply_battle_loot`] sets it.
+    /// Returns the synthetic formation id.
     ///
     /// NOTE: the field-side op that writes `DAT_8007b7fc` in retail is not yet
-    /// recovered from the corpus (it sits in the rikuroa scene prescript /
-    /// event-VM, a different bytecode than the field VM, or a LUI+ADDIU-aliased
-    /// store in an undumped overlay). This method + the host's flag-`0x1BE`
-    /// gate are the faithful interim until that writer op is pinned.
+    /// recovered from the corpus (a different bytecode than the field VM, or a
+    /// LUI+ADDIU-aliased store in an undumped overlay). This method + the
+    /// host's gate-flag latch are the faithful interim until that writer op
+    /// is pinned.
     ///
     /// REF: FUN_8005567c (battle-id -> lone-monster cell expansion)
     pub fn install_boss_encounter(

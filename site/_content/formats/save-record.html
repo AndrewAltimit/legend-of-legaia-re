@@ -41,7 +41,7 @@
 +0x114  u16 LE   udf_live                 ; "Max UDF"
 +0x116  u16 LE   ldf_live                 ; "Max LDF"
 +0x118  u16 LE   spd_live                 ; "Max SPD"
-+0x11A  u16 LE   int_live                 ; "Max INT" (legacy stat_cap target)
++0x11A  u16 LE   int_live                 ; "Max INT" (LiveStats::int)
 +0x11C  u16 LE   hp_max_record
 +0x11E  u16 LE   mp_max_record
 +0x120  u16 LE   stat_cap_constant        ; always 100 in captured saves
@@ -84,6 +84,7 @@
 
   <h3>The <code>+0x120</code> cap constant</h3>
   <p>Across every captured save, <code>+0x120</code> reads as <code>100</code>. The level-up overlay writes this constant on every level-up event regardless of character or stat. Interpreted as the hard ceiling the record-side stats clamp against; the runtime then re-projects through <code>FUN_80042558</code>'s <code>0x3E7</code> clamp on the live copy, so equipment / buffs can push past the record-side cap up to <code>999</code> in battle.</p>
+  <p>The <code>legaia_save::CharacterRecord::stat_cap()</code> / <code>set_stat_cap()</code> accessors read/write this <code>+0x120</code> cap constant (the same field as <code>RecordStats::cap_constant</code>); <code>+0x11A</code> is the live INT stat (<code>int_live</code>, typed as <code>LiveStats::int</code>), which the engine clamps at <code>0x3E7</code> and the cheat database calls &ldquo;Max INT&rdquo;.</p>
 </section>
 
 <details class="disclosure">

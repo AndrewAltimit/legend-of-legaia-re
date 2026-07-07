@@ -195,22 +195,33 @@
         <td><a href="../subsystems/battle.html">battle</a></td>
       </tr>
       <tr>
-        <td>First boss (Zeto) trigger &rarr; Battle</td>
-        <td><span class="tag tag-done">formation + port resolved</span>; trigger writer capture-gated</td>
-        <td>Zeto (id <code>0x4B</code>, in <code>rikuroa</code>) has <strong>no</strong> on-disc formation record; it uses the <strong>battle-id path</strong> (<code>DAT_8007b7fc = 0x4B</code> &rarr; <code>FUN_8005567c</code> lone-monster cell <code>[0x4B,0,0,0]</code>, byte-exact with both <code>zeto_*_mid_cast</code> captures). Port: <code>World::install_boss_encounter</code> + a <code>rikuroa</code> first-visit latch on flag <code>0x1BE</code>, victory-latched. <strong>Open:</strong> the <code>DAT_8007b7fc</code> writer is not statically formed anywhere in the PROT corpus (all-programs Ghidra sweep + raw-byte scan of all 1235 entries, every addressing form - <code>find_spine_flag_writers.py</code>); the write is runtime-computed. Needs a Mt. Rikuroa write-watchpoint. Spine-writer #1 of 3; capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>First boss trigger &rarr; Battle</td>
+        <td><span class="tag tag-done">rikuroa boss CORRECTED to Caruban</span> (engine ported, <code>0x142</code>-gated); Zeto re-scoped to <code>jou</code></td>
+        <td>Mt. Rikuroa's scripted boss is <strong>Caruban</strong> (id 73 = <code>0x49</code>, <code>FUN_8005567c</code> lone-monster band), gated by <code>0x142</code> - the rikuroa MAN's post-victory record <code>P2[50]</code> C1 one-shot + in-record SET (carrier PROT 0157; brackets <code>rikuroa_pre/post_caruban</code>). Engine: <code>SCRIPTED_SCENE_BOSSES = (rikuroa, 73, 0x142)</code>; the victory latch flips dolk&rarr;dolk2 organically. The old "Zeto in rikuroa, gated <code>0x1BE</code>" is falsified: the Zeto battle capture's scene is <code>jou</code>, and <code>0x1BE</code> is geremi's arrival one-shot. <strong>Open:</strong> the <code>jou</code>-side Zeto staging record + gate, and the <code>DAT_8007B7FC</code> writer op.</td>
         <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
       <tr>
-        <td>Spine flag <code>0x142</code> (dolk-dungeon-clear) writer</td>
-        <td>open (capture-gated; ALL static channels exhausted corpus-wide)</td>
-        <td>Spine-writer #2 of 3. Flag <code>0x142</code> clear routes <code>map01</code>'s dungeon entrance to <code>dolk</code> (pre-boss), set routes to <code>dolk2</code> (post-boss); the branch mechanism + engine port are resolved. No writer exists by ANY static channel: readers only in all loaded programs, motion-VM census negative, and the corpus-wide sweep (all-programs Ghidra + raw-byte scan of all 1235 PROT entries: setter jals, materializers, ori-formed, derived-base stores, data words - <code>find_spine_flag_writers.py</code>) is clean; the write is runtime-computed. Closes with a fresh PCSX-Redux write-watchpoint capture at the dolk-clear story beat. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td>Spine flag <code>0x142</code> (Caruban beat / dolk-dolk2 switch) writer</td>
+        <td><span class="tag tag-done">RESOLVED</span> (disc writers + engine port + oracle)</td>
+        <td>Spine-writer #2 of 3, CLOSED: plain field-VM <code>51 42</code> SETs in the rikuroa <strong>streaming variant MAN</strong>
+        (PROT 0157: <code>P1[10..12]</code> + post-victory <code>P2[50]</code>, C1 = <code>0x142</code> itself - the self-latching
+        one-shot), re-asserted by dolk2's carrier <code>P1[0..1]</code>, cleared by dolk <code>P1[26]</code>. Firehose-caught live
+        (<code>ra 0x801E3598</code>); resident heap byte-matches the carrier. The old corpus-negative stood because no census walked
+        the streaming carriers. Census + pins: <code>man_variant_carrier_census_disc.rs</code>; engine victory-latch port in
+        <code>SCRIPTED_SCENE_BOSSES</code> (<a href="../subsystems/world-map.html">world-map</a>).</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
         <td>Spine flag <code>0x482</code> (Drake mist-wall) writer</td>
-        <td>open (capture-gated; ALL static channels exhausted corpus-wide)</td>
-        <td>Spine-writer #3 of 3. Flag <code>0x482</code> gates <code>map01</code>'s mist walls (<code>P2[34..36]</code> C1); it reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, <code>rikuroa</code> sets it nowhere, the motion-VM census is negative, and the corpus-wide static sweep (see the <code>0x142</code> row) is clean. Closes with a fresh PCSX-Redux write-watchpoint capture at the post-mist story event. Capture runbook <code>docs/tooling/spine-flag-writers-capture.md</code>.</td>
+        <td><span class="tag tag-done">script writers FOUND</span> (static); executing beat open</td>
+        <td>Spine-writer #3 of 3: SETs are script bytes in the <code>other7</code> block's <code>P1[15]</code>/<code>P1[39]</code> (op <code>0x54</code>), clears in the <code>edbalden</code>/<code>eddoman</code> epilogue <strong>variant carriers</strong>. The corpus-negative dissolved with the carrier-complete retail-frame census (<code>man_variant_carrier_census_disc.rs</code>). <strong>Open:</strong> which story beat executes the <code>other7</code> pool records (an "other"-block shared script pool, not a per-town scene) - needed before the engine opens the walls organically.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>CDNAME scene-window frame (<code>raw = extraction + 2</code>) in <code>Scene::load</code></td>
+        <td><span class="tag tag-done">resolved</span> (engine converts; misattributions corrected)</td>
+        <td>Engine scene windows used raw-TOC defines as extraction indices - two entries late, dropping each block's first two retail entries and bleeding in the next block's. Corrections that fell out: the <code>.MAP</code> is the retail block's FIRST entry (not "two below"); "suimon == dolk2 MAN" and "rikuroa MAN = <code>[18,70,20]</code>" were next-block sidecars under the wrong label; "urudre1 tests <code>0x15E</code>" and "<code>0x63A</code> has no writer" are falsified; "<code>0x1BE</code> = rikuroa Zeto gate" was geremi's arrival one-shot. Head blocks (defines 0/1, inside the TOC header rows) keep legacy windows. See <a href="../formats/cdname.html#numbering-space">cdname &sect; numbering space</a>.</td>
+        <td><a href="../formats/cdname.html">cdname</a></td>
       </tr>
       <tr>
         <td>Motion-VM (<code>FUN_80038158</code>) bytecode carrier + flag census</td>
@@ -226,9 +237,9 @@
       </tr>
       <tr>
         <td>Spawned-record player-channel (<code>0xF8</code>) ExecMove/HaltAcquire handshake</td>
-        <td>open (engine gap)</td>
-        <td>A door-cutscene P2 record that drives the PLAYER channel (<code>A2 F8 06</code> ExecMove + <code>C3 F8 ...</code> HaltAcquire) never completes in the engine: <code>field_channels::resolve_target</code> returns <code>None</code> for the special <code>0xF8</code> target, so no completion bit is signalled and the frame cap force-completes the timeline WITHOUT its trailing <code>0x3F</code> - blocking driven hops like <code>jou</code>&rarr;<code>jouina</code> (pinned by <code>chapter1_hub_depth_oracle.rs</code>). Closes with a player-channel completion model in the timeline stepper.</td>
-        <td><a href="../subsystems/world-map.html">world-map</a></td>
+        <td><span class="tag tag-done">resolved</span> (engine completion model)</td>
+        <td>The timeline stepper models the handshake directly: <code>A2 F8</code> ExecMove arms an in-flight countdown (<code>CutsceneTimeline::player_move_frames</code>) and <code>C3 F8</code> HaltAcquire PARKS at the op until it drains, then steps past by encoded width (<code>resolve_target</code> keeps its <code>None</code> contract for <code>0xF8</code>) - so door-cutscene records reach their trailing <code>0x3F</code> and driven hops land (<code>jou</code>&rarr;<code>jouina</code>, and the full castle chain to <code>jouinc</code>, in <code>chapter1_hub_depth_oracle.rs</code> part J + <code>chapter1_hub_breadth_oracle.rs</code> part F). See <a href="../subsystems/cutscene.html">cutscene</a> &sect; player-channel completion.</td>
+        <td><a href="../subsystems/cutscene.html">cutscene</a></td>
       </tr>
       <tr>
         <td>Item-effect table - class/targeting + amounts</td>
@@ -253,6 +264,54 @@
         <td>open (low value)</td>
         <td>Bit <code>0x400</code> of the battle-actor flags word <code>+0x16E</code> reads as a guard-disabling Sleep/Numb-like status. The sibling AI-delegated bits <code>0x380</code> in the same word are pinned (the enemy-ally charm hook sets them via <code>FUN_801E7320</code> retarget), but the <em>setter</em> that raises <code>0x400</code> is not in the decompiled corpus - readers only. Low value. Closes with a before/after RAM capture around a battle turn that inflicts the status, diffing the <code>+0x16E</code> word to catch the byte that raises <code>0x400</code>.</td>
         <td></td>
+      </tr>
+      <tr>
+        <td>Flag <code>0x63A</code> - the vell/vozz <code>P2[7]</code> gate with NO script writer</td>
+        <td>open (small)</td>
+        <td>vell <code>P2[7]</code> and vozz <code>P2[7]</code> carry byte-identical <code>C1=[0x63A, 0x7]</code> gates, but <code>0x63A</code> has ZERO script sites disc-wide (no Set/Clear/Test anywhere else; <code>chapter1_hub_breadth_oracle</code> part E). Either an engine/SCUS-side writer exists (runtime-computed, like the spine writers) or the flag is never set and the requires-clear condition always passes. A write-watchpoint on bank byte <code>0x800858C7</code> during the vell/vozz beats would settle it; low stakes since the gate passes either way on a fresh game.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>cave01 <code>P2[16]</code> (the <code>0x15D</code> entry-key setter) - what spawns it</td>
+        <td>open (small)</td>
+        <td>The ungated record that SETs <code>0x15D</code> (the entry key of cave01's <code>0x15D</code>&rarr;<code>0x15E</code>&rarr;<code>0x169</code> ordered beat chain) has no tile trigger; likely spawned by a P1 interact (NPC dialogue). Pin the spawner record + interaction.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td>Drake Castle deep interiors (<code>jouinc</code>/<code>jouind</code>) depth decode</td>
+        <td>open</td>
+        <td>The castle chain is driven to <code>jouinc</code> (<code>chapter1_hub_breadth_oracle</code> part F); <code>jouinc</code> (<code>[43,18,60]</code>) lists <code>{jouinb, jouind}</code> and is otherwise undecoded; <code>jouind</code> is untouched. Next depth push: gate census + beat chains for both.</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td><code>scene_destinations</code> P1-table scan misses P2-only door names</td>
+        <td>open (engine hygiene)</td>
+        <td>The partition-1 destination-table scan under-reports doors carried only by P2 records (jouinb&rarr;jouina return door; reverse of the jou <code>P2[5]</code> blind spot). The P2 walker + strict portal-site join see them. Fold the P2 pass into <code>scene_destinations</code> (the breadth oracle pins the asymmetry and will trip when fixed).</td>
+        <td><a href="../subsystems/world-map.html">world-map</a></td>
+      </tr>
+      <tr>
+        <td><code>0x4C 0x51</code> byte <code>+3</code> = <code>[bit7 special-model | facing nibble]</code> vs the glide-speed interim <code>depth &amp; 7</code> reading</td>
+        <td>open (reconcile)</td>
+        <td>The spawn-prologue facing decode (see <a href="../subsystems/field-locomotion.html#npc-initial-facing">field-locomotion &sect; NPC initial facing</a>) pins retail <code>4C 51</code> case-1 as a TELEPORT+move-start whose byte <code>+3</code> low nibble indexes the heading LUT <code>0x80073F04</code> - which overlaps the route/glide decoder's interim <code>depth &amp; 7</code> reading of the same byte. Reconcile the two models when the motion-bytecode synthesis is traced.</td>
+        <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
+      </tr>
+      <tr>
+        <td>dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read)</td>
+        <td><span class="tag tag-done">closed</span> (streaming carrier)</td>
+        <td>Their own <code>base+3</code> bundles are the MAN-less count=4 form <code>[1,2,6,0x14]</code>; the "embedded MAN at 0x1000" inside their SceneV12Table entries is the extended-footprint over-read onto the NEXT scene's <code>base+3</code> bundle (byte-identical to suimon/geremi's - see <a href="../formats/scene-v12-table.html#embedded-man-over-read">scene-v12-table &sect; over-read</a>). The scene's real MAN is the type-3 chunk of its block's standalone <code>data_field_streaming</code> entry (<code>dolk2</code> extraction 70, <code>[29,73,17]</code>; <code>rikuroa</code> extraction 157, <code>[13,29,64]</code>); the live script heap at the Caruban beat byte-matches PROT 0157's chunk. Engine: the <code>field_man_payload</code> streaming fallback (<code>v12_bundle_man_disc.rs</code>) supersedes <code>V12Embedded</code> for these two scenes.</td>
+        <td><a href="../formats/scene-v12-table.html">scene-v12-table</a></td>
+      </tr>
+      <tr>
+        <td>kor-family op-<code>0x49</code> flag window <code>[0x138..0x13F]</code> - what the 8 flags gate</td>
+        <td>open (small)</td>
+        <td>The only genuine op-<code>0x49</code> flag-window family on the disc (24 sites, kor/kor3/kor4, <code>base=0x138 count=8</code>, paired <code>default=0 rows=8</code> / <code>default=4 rows=4</code>). An 8-way picker window - likely a puzzle/selection state block in the Uru Mais dream scenes. Decode what each flag drives.</td>
+        <td><a href="functions.html">functions</a></td>
+      </tr>
+      <tr>
+        <td><code>801d58f0</code> / <code>801d63b0</code> as single shared port blockers</td>
+        <td><span class="tag tag-done">falsified</span> (VA-aliasing artifact)</td>
+        <td>The two addresses host DIFFERENT code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via <code>overlay_&lt;label&gt;_&lt;addr&gt;</code> identities; catalog ignore category <code>va_aliased_overlay_local</code>.</td>
+        <td><a href="../tooling/port-catalog.html">port-catalog</a></td>
       </tr>
     </tbody>
   </table>
@@ -359,13 +418,13 @@
       <tr>
         <td>Overworld story-conditional destination (<code>dolk</code>&rarr;<code>dolk2</code>)</td>
         <td><span class="tag tag-done">resolved</span> (mechanism + port)</td>
-        <td>Beyond the record-level C1/C2 gate, an entrance record can switch its <code>0x3F</code> target by an in-record op-<code>0x70</code> <code>SysFlag.Test</code>. <code>map01</code>'s dungeon entrance (<code>P2[1]</code>/<code>P2[2]</code>) branches on flag <code>0x142</code>: clear &rarr; <code>dolk</code> (pre-boss), set &rarr; <code>dolk2</code> (post-boss), same trigger + arrival tile. <code>overworld_portal_sites</code> decodes the conditional pair (<code>ConditionalDest</code>); the seeder resolves via <code>World::system_flag_test</code>. <strong>Falsifies</strong> "dolk2 is reached from a dungeon interior" (no interior lists dolk2). <strong>Open:</strong> who <em>sets</em> <code>0x142</code> - capture-gated.</td>
+        <td>Beyond the record-level C1/C2 gate, an entrance record can switch its <code>0x3F</code> target by an in-record op-<code>0x70</code> <code>SysFlag.Test</code>. <code>map01</code>'s dungeon entrance (<code>P2[1]</code>/<code>P2[2]</code>) branches on flag <code>0x142</code>: clear &rarr; <code>dolk</code> (pre-boss), set &rarr; <code>dolk2</code> (post-boss), same trigger + arrival tile. <code>overworld_portal_sites</code> decodes the conditional pair (<code>ConditionalDest</code>); the seeder resolves via <code>World::system_flag_test</code>. <strong>Falsifies</strong> "dolk2 is reached from a dungeon interior" (no interior lists dolk2). The <code>0x142</code> setter is now pinned (rikuroa streaming-carrier script records; see the spine <code>0x142</code> row).</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
-        <td>Gate-flag setters outside the MAN field VM (<code>549</code>, <code>0x482</code>)</td>
-        <td>both open (capture-gated; <code>549</code> op-7 carrier falsified)</td>
-        <td><code>549</code> (<code>0x225</code>, town01 opening): the bank RAM-diff pin stands (the bit flips across the opening) and <code>FUN_80038158</code> op-<code>7</code> CAN write the bank - but the disc-wide <code>--motion-flag-census</code> finds <strong>no</strong> stream carrying <code>549</code>, falsifying the "written by op-7 from its own script bytecode" reading; the setter is a direct code path (<code>FUN_8003CE08</code>-class, overlay-resident). <code>0x482</code> (mist walls) reads <code>0</code> across the whole save library incl. both pre-victory Zeto captures, <code>rikuroa</code> sets it nowhere, and both bytecode censuses are negative - needs a fresh post-beat capture. Engine leaves both gated (faithful).</td>
+        <td>Gate-flag setters outside the MAN field VM (<code>549</code>)</td>
+        <td><code>549</code> open (op-7 carrier falsified); <code>0x482</code> moved to its own resolved row</td>
+        <td><code>549</code> (<code>0x225</code>, town01 opening one-shot): the bank RAM-diff pin stands, but <code>--motion-flag-census</code> finds <strong>no</strong> stream carrying <code>549</code> and the carrier-complete field-VM census has no SET either - the setter is a direct code path (<code>FUN_8003CE08</code>-class, overlay-resident); a targeted capture at the opening beat is the closer. <code>0x482</code>'s writers are now pinned as <code>other7</code>-pool script bytes (see the spine <code>0x482</code> row).</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
     </tbody>

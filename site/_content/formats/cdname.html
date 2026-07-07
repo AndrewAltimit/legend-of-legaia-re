@@ -84,6 +84,15 @@
     <li>One v12-shaped header sits at extraction 1227 (<code>other7</code> region), outside the scene region.</li>
     <li>Opaque names (<code>other1</code>/<code>other4</code>/<code>other5</code>/<code>other6</code>/<code>other7</code>, <code>card_data</code>) are unscoreable; nothing about them conflicts with &minus;2.</li>
   </ul>
+  <h3 id="engine-consequence">Engine consequence: scene windows are the retail block</h3>
+  <p><code>Scene::load</code> (engine-core) converts the raw-TOC block range to the extraction frame (<code>raw - 2</code>) so a
+  scene's entries are its <strong>retail</strong> block: the first entry is the scene's <code>.MAP</code> file, the second
+  typically its v12 trigger sidecar. An unshifted window is two entries late - it drops those and bleeds in the next block's
+  first two, which mis-frames any scene whose load-bearing entry sits at a block edge (<code>rikuroa</code>'s window used to
+  pick up <code>geremi</code>'s v12 sidecar and load Jeremi's MAN under the <code>rikuroa</code> label; the same bleed produced
+  the &ldquo;suimon == dolk2 MAN&rdquo; identity). The two head defines (<code>init_data 0</code>, <code>gameover_data 1</code>)
+  sit inside the TOC header rows where the conversion has no content to land on; those blocks keep their unshifted legacy
+  windows.</p>
 </section>
 
 <section class="doc-section" id="block-names-can-be-misleading">

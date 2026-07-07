@@ -42,6 +42,7 @@ pub mod fishing_exchange;
 pub mod fishing_species;
 pub mod fmv_dispatch;
 pub mod init_pak;
+pub mod inn_costs;
 pub mod interior_page;
 pub mod item_effect;
 pub mod item_names;

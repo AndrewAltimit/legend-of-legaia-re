@@ -110,4 +110,7 @@ end
 
 pcall(function() bp.arm(FIELD_BP, "Exec", 4, "field_tick", field_tick) end)
 log("armed field tick; phases: idle/walkDOWN/idle/walkUP/idle")
-PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
+-- keep the handle: a GC'd listener object deletes the C++ listener
+-- (silently unregisters; GC mid-dispatch can segfault the emulator)
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] = PCSX.Events.createEventListener("GPU::Vsync", on_vsync)

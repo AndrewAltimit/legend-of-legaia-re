@@ -246,15 +246,18 @@ impl SceneAssets {
 
     /// Resolve a BGM id to a SEQ-bearing PROT entry's index. Mirrors the
     /// retail [`docs/subsystems/script-vm.md`] BGM lookup: scene-local ids
-    /// (`< 2000`) live at `block_start + 6 + id`; ids `>= 2000` live in the
-    /// global pool (not modeled here). Checks both standalone SEQ entries
-    /// and the `scene_vab_stream`-wrapped form (where SEQ data lives after
-    /// a 4-byte chunk header).
+    /// (`< 2000`) live at `raw_define + 6 + id` in the raw-TOC frame =
+    /// `block_range.0 + 8 + id` here ([`Scene`] windows are in the
+    /// extraction frame, retail block first entry = the `.MAP`; the raw
+    /// define is `block_range.0 + 2`). Ids `>= 2000` live in the global pool
+    /// (not modeled here). Checks both standalone SEQ entries and the
+    /// `scene_vab_stream`-wrapped form (where SEQ data lives after a 4-byte
+    /// chunk header). Absolute slots pinned by the audio oracles.
     pub fn bgm_seq_entry(&self, bgm_id: u16) -> Option<u32> {
         if bgm_id >= 2000 {
             return None;
         }
-        let target = self.block_range.0 + 6 + bgm_id as u32;
+        let target = self.block_range.0 + 8 + bgm_id as u32;
         if self.seq_entries.contains(&target)
             || self
                 .seq_in_stream_entries
@@ -510,8 +513,8 @@ mod tests {
             }],
         };
         let assets = SceneAssets::build(&scene);
-        // BGM id 7 → block_start (100) + 6 + 7 = 113.
-        assert_eq!(assets.bgm_seq_entry(7), Some(113));
+        // BGM id 5 → block_start (100) + 8 + 5 = 113 (raw_define+6+id frame).
+        assert_eq!(assets.bgm_seq_entry(5), Some(113));
         // BGM id past the available SEQ entries returns None.
         assert_eq!(assets.bgm_seq_entry(0), None);
     }

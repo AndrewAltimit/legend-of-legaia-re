@@ -138,15 +138,22 @@ fn field_map_object_grid_matches_live_sessions() {
         );
 
         if DISCRIMINATING.contains(&scene_name) {
-            // The old rule: first FIELD_MAP_LEN entry INSIDE the block.
-            let in_block = (scene.start..scene.end)
+            // Discriminating decoy: the NEXT `.MAP`-sized entry past the
+            // scene's own (the next block's map, at/after `scene.end` in the
+            // retail frame). Under the retail window the scene's `.MAP` is
+            // its block's FIRST entry, so the historical "first
+            // FIELD_MAP_LEN entry inside the block" decoy is now the
+            // resolved map itself; the neighbour map keeps the
+            // discrimination live (adjacent-variant blocks byte-copy their
+            // maps, which is why only DISCRIMINATING scenes assert this).
+            let in_block = (map_idx + 1..map_idx + 32)
                 .find(|&i| {
                     index
                         .entries()
                         .get(i as usize)
                         .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
                 })
-                .expect("block carries an in-block FIELD_MAP_LEN entry");
+                .expect("a neighbouring FIELD_MAP_LEN entry exists");
             assert_ne!(in_block, map_idx);
             let decoy = index
                 .entry_bytes_extended(in_block)

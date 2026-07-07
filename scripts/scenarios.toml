@@ -2076,3 +2076,56 @@ expected_game_mode = 21
 expected_active_scene = "town01"
 description = "S5 of the trace-driven playthrough: FIRST BATTLE - the scripted Tetsu sparring tutorial (formation_id 4), entered from the S4 exterior anchor. Rim Elm has no random encounters at this story point (story-gated), so the first fight is the spar, started by talking to the sparring partner and picking the 3rd 'training fight' list option. Reached by a record-then-replay loop: a human played the route (S4 -> walk to Tetsu at world (2752,1856) -> his dialogue -> 3rd option -> start) under autorun_record_inputs.lua, and autorun_replay_inputs.lua reproduces it deterministically (drives the pad via pad.force from the recorded 0x8007B850 mask, since FUN_8001822C rebuilds the mask after the field-tick BP so direct RAM writes don't stick). Validated: reloads to game_mode 0x15 (BattleMode), battle_ctx 0x8007BD24 = 0x800EB654 (resident), over town01. Faithful: real D-pad + interact inputs, no pokes. See docs/tooling/playthrough-coverage.md."
 topics = ["playthrough", "trace-coverage", "S5", "rim-elm", "town01", "tetsu", "battle", "record-replay", "pcsx-redux"]
+
+# ----------------------------------------------------------------------
+# Chapter-1 rikuroa / Drake-castle story-beat brackets (operator-captured
+# during the flag-firehose playthrough). These close the runbook's
+# "no catalogued state brackets the spine writes" hole: flag 0x142 is
+# UNSET in rikuroa_pre_caruban and SET in rikuroa_post_caruban (the
+# firehose caught the write live: field-VM script op `51 42`, writer
+# ra 0x801E3598, set in-scene during the post-Caruban sequence - the
+# rikuroa streaming-carrier MAN's P2[50] self-latching one-shot). Flag
+# 0x1BE is geremi's Jeremi-arrival one-shot (chapter 2), so it reads 0
+# in all four chapter-1 states - it is NOT a Zeto gate; Zeto's trigger
+# scene is `jou` (battle-state scene buffer + DAT_8007B7FC = 0x4B).
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "rikuroa_pre_caruban"
+backup_fingerprint = "b22d6844b05042e7e5440928dd08dd62815a4eb75ae951beef097d6d0d8395b2"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "rikuroa"
+description = "Mt. Rikuroa, standing right before the Caruban boss trigger (party: Vahn + Noa). Spine bracket: story flag 0x142 UNSET here, SET in rikuroa_post_caruban - load this to re-drive the Caruban fight and the 0x142 script write (field-VM op bytes 51 42, PROT 0157 rikuroa carrier)."
+topics = ["chapter-1", "rikuroa", "caruban", "boss", "spine-flags", "flag-0x142", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "rikuroa_post_caruban"
+backup_fingerprint = "1adb5c862902908041b3a43350ebed266a23c80619d4bd333a4a19a9a568d2f5"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "rikuroa"
+description = "Mt. Rikuroa immediately after the Caruban boss fight, during the post-fight dialogue. Story flag 0x142 now SET (the write happens in the post-fight rikuroa script, NOT in the dolk dungeon - firehose-pinned). Pair with rikuroa_pre_caruban for the tightest 0x142 bracket."
+topics = ["chapter-1", "rikuroa", "caruban", "post-boss", "spine-flags", "flag-0x142", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "rikuroa_post_genesis_tree"
+backup_fingerprint = "685397e7dfce0e5c381b87c9c766f0bd58e68dbbcb1ee700b19f7fa72861b118"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "rikuroa"
+description = "Mt. Rikuroa summit after the Genesis Tree revival scene (Noa recruited). Flags 0x142 set / 0x1BE still unset - the state to play FORWARD from toward the Zeto beat (0x1BE + the battle-id staging write, both still uncaptured)."
+topics = ["chapter-1", "rikuroa", "genesis-tree", "noa", "spine-flags", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "dolk2_market_noa"
+backup_fingerprint = "72c8fcfc1340720dcee78de5f5e1e562431fce08c09feee0b87bbc254a4f9e24"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "dolk2"
+description = "Drake Castle interior (dolk2) entering the market with Noa - story scene where she talks to each vendor. Useful shop/dialogue-heavy beat inside the dolk2 conditional-entrance scene (the 0x142-gated variant)."
+topics = ["chapter-1", "dolk2", "drake-castle", "market", "noa", "shop-dialogue", "pcsx-redux"]

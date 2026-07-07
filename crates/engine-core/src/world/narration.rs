@@ -723,6 +723,25 @@ impl World {
                 }
             }
         }
+        // Player-channel (`0xF8`) halt-acquire park: the timeline is holding
+        // at a `C3 F8` op for the player-anchor move armed by a preceding
+        // `A2 F8 <move_id>` to play out (retail's halt-acquire / state-resume
+        // handshake against the live player object). The armed countdown
+        // stands in for the playout - the engine's player pokes complete
+        // synchronously - so drain it one frame per tick; when it hits zero,
+        // step PAST the halt-acquire by its encoded width so the record flows
+        // on to its trailing ops (the door records' terminal `0x3F`).
+        // REF: FUN_8003BDE0
+        if let Some(width) = tl.player_wait.take() {
+            tl.player_move_frames = tl.player_move_frames.saturating_sub(1);
+            if tl.player_move_frames > 0 {
+                tl.player_wait = Some(width);
+                self.field_channels = channels;
+                self.in_cutscene_timeline = false;
+                return false;
+            }
+            tl.pc += width;
+        }
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = CUTSCENE_TIMELINE_STEP_BUDGET;
@@ -842,6 +861,69 @@ impl World {
                     }
                     tl.pc = pc + insn.size;
                     continue;
+                }
+                // Player-anchor channel (`0xF8`) ExecMove / halt-acquire
+                // completion model. Retail resolves `0xF8` to the live player
+                // object (`_DAT_8007C364`, the `FUN_8003C83C` special-target
+                // arm) - not a spawned channel - so `resolve_target` keeps its
+                // `None` contract, and the two ops the door-cutscene records
+                // drive the player with are modelled here instead of falling
+                // through to the timeline's own ctx:
+                //
+                // - `A2 F8 <move_id>` (op 0x22 ExecMove): retail pokes the
+                //   move-table clip onto the player and lets it play out over
+                //   the following frames. Emit the same `ExecMove` field
+                //   event and arm a short completion countdown standing in
+                //   for the playout.
+                // - `C3 F8 <sub> …` (op 0x43 sub-0/1/A/B halt-acquire):
+                //   retail halts the caller and state-resumes it at the
+                //   operand s16 once the player move completes. That resume
+                //   PC points BACKWARD into the poke loop (jou `P2[5]`:
+                //   `C3 F8 00 5E E2 50` at `+0x60` resumes at `+0x50`), so
+                //   taking the VM's yield here spins the timeline until the
+                //   frame cap kills it WITHOUT the trailing `0x3F` scene
+                //   change. Instead PARK at the op until the armed countdown
+                //   drains (the pre-step gate above), then step PAST it by
+                //   encoded width - the completion side of the handshake. A
+                //   halt-acquire with no move in flight completes at once.
+                //   (The op-0x38 halt-acquire variant resumes FORWARD at its
+                //   post-instruction PC, so its yield is already
+                //   completion-shaped and needs no special case.)
+                // REF: FUN_8003C83C
+                // REF: FUN_8003BDE0
+                if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
+                    let op = opcode_byte & 0x7F;
+                    if op == 0x22
+                        && let Some(&move_id) = tl.bytecode.get(pc + 2)
+                    {
+                        host.world
+                            .pending_field_events
+                            .push(FieldEvent::ExecMove { move_id });
+                        tl.player_move_frames = CHANNEL_WAIT_PARK_TIMEOUT;
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        tl.pc = pc + 3;
+                        continue;
+                    }
+                    if op == 0x43
+                        && let Some(&sub) = tl.bytecode.get(pc + 2)
+                        && matches!(sub, 0 | 1 | 0xA | 0xB)
+                    {
+                        // Encoded width: extended header (2) + sub-0/1
+                        // operand (4) or sub-A/B operand (8) - the VM's own
+                        // predicate-failure stride.
+                        let width = if sub == 0xA || sub == 0xB { 10 } else { 6 };
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        if tl.player_move_frames == 0 {
+                            tl.pc = pc + width;
+                            continue;
+                        }
+                        tl.player_wait = Some(width);
+                        break;
+                    }
                 }
                 let result = if let Some((_, ci)) = target {
                     host.world.executing_channel = Some(channels[ci].placement_index as u8);
@@ -1703,6 +1785,113 @@ mod tests {
         assert!(
             resumed,
             "the park times out and the timeline steps past the flag-test"
+        );
+    }
+
+    /// Build a timeline whose record drives the **player-anchor channel**
+    /// (`0xF8`) with the jou castle-door shape: `A2 F8 06` ExecMove, the
+    /// `C3 F8 00 …` halt-acquire whose operand s16 resumes BACKWARD (offset
+    /// 0 here), the retail filler bytes, then the trailing `0x3F` scene
+    /// change to `jouina` and the record's terminal backward-jump park.
+    fn timeline_with_player_channel_door() -> World {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let mut w = World::new();
+        let mut bc = vec![
+            0xA2, 0xF8, 0x06, // ExecMove move_id=6 against the player anchor
+            0xC3, 0xF8, 0x00, 0x5E, 0xE2,
+            0x00, // halt-acquire sub-0, resume s16 = 0 (backward)
+            0x00, 0x1E, 0x00, // filler region (consumed by the terminator skip)
+        ];
+        // `0x3F` SceneChange -> "jouina", entry (0x84, 0x14), dir 0.
+        bc.extend_from_slice(&[
+            0x3F, 0x8F, 0x02, 0x06, b'j', b'o', b'u', b'i', b'n', b'a', 0x84, 0x14, 0x00,
+        ]);
+        bc.extend_from_slice(&[0x21, 0x26, 0xFE, 0xFF]); // Nop + JmpRel-to-self park
+        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w
+    }
+
+    #[test]
+    fn cutscene_timeline_player_channel_door_reaches_scene_change() {
+        // The player-channel completion model: the `A2 F8` ExecMove arms the
+        // in-flight countdown (emitting the move event), the `C3 F8`
+        // halt-acquire PARKS instead of taking its backward resume yield,
+        // and once the countdown drains the record runs its trailing `0x3F`.
+        // Regression shape: the pre-model stepper took the backward yield
+        // and spun `pc 0 -> 3` until the frame cap, never firing the scene
+        // change.
+        let mut w = timeline_with_player_channel_door();
+        w.step_cutscene_timeline();
+        {
+            let tl = w
+                .cutscene_timeline
+                .as_ref()
+                .expect("timeline still installed");
+            assert!(
+                tl.player_wait.is_some(),
+                "parks at the player-channel halt-acquire"
+            );
+            assert_eq!(tl.pc, 3, "PC held on the halt-acquire op while parked");
+            assert_eq!(
+                tl.player_move_frames,
+                crate::world::CHANNEL_WAIT_PARK_TIMEOUT,
+                "the ExecMove armed the in-flight countdown"
+            );
+        }
+        assert!(
+            w.pending_field_events
+                .iter()
+                .any(|e| matches!(e, crate::field_events::FieldEvent::ExecMove { move_id: 6 })),
+            "the player-channel ExecMove emits the move event"
+        );
+        // The park drains over the countdown, then the trailing `0x3F` fires
+        // and the record's backward-jump park completes the timeline - well
+        // inside the frame cap.
+        let cap = crate::world::CHANNEL_WAIT_PARK_TIMEOUT;
+        let mut ticks = 0;
+        while w.cutscene_timeline.is_some() && ticks < cap + 8 {
+            w.step_cutscene_timeline();
+            ticks += 1;
+        }
+        assert_eq!(
+            w.pending_named_scene_transition
+                .as_ref()
+                .map(|(n, ..)| n.as_str()),
+            Some("jouina"),
+            "the trailing 0x3F scene change fired"
+        );
+        assert!(
+            w.cutscene_timeline.is_none(),
+            "the timeline completed without hitting the frame cap"
+        );
+        assert!(
+            ticks <= cap + 4,
+            "completion took {ticks} ticks - the park drained, not the frame cap"
+        );
+    }
+
+    #[test]
+    fn cutscene_timeline_player_halt_acquire_without_move_steps_past() {
+        // A player-channel halt-acquire with NO move in flight completes
+        // immediately: no park, PC steps past by the encoded width onto the
+        // next op.
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let mut w = World::new();
+        let bc = vec![
+            0xC3, 0xF8, 0x00, 0x5E, 0xE2, 0x00, // halt-acquire sub-0
+            0x00, // filler (terminator skip)
+            0x4A, 0xFF, 0x7F, // WAIT_FRAMES target 0x7FFF (keeps it installed)
+        ];
+        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.step_cutscene_timeline();
+        let tl = w
+            .cutscene_timeline
+            .as_ref()
+            .expect("timeline still installed");
+        assert!(tl.player_wait.is_none(), "no park without a move in flight");
+        assert_eq!(
+            tl.pc, 7,
+            "stepped past the 6-byte halt-acquire (+ filler) onto WAIT_FRAMES"
         );
     }
 

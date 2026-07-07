@@ -228,6 +228,29 @@ pub struct CutsceneTimeline {
     /// leaves the PC on the flag-test op and resumes past it only once the
     /// awaited channel raises the completion bit (or the park times out).
     pub channel_wait: Option<ChannelWait>,
+    /// Frames remaining on an in-flight **player-channel move**: armed when
+    /// the timeline executes an ExecMove against the player-anchor target
+    /// `0xF8` (`A2 F8 <move_id>`). Retail resolves `0xF8` to the live player
+    /// object (`_DAT_8007C364`, `FUN_8003C83C`) and lets the poked move-table
+    /// clip play out over the following frames; the engine's player pokes
+    /// complete synchronously, so this countdown stands in for the playout -
+    /// a following player-channel halt-acquire parks until it drains. Armed
+    /// to [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`]; decremented once per
+    /// parked tick.
+    // REF: FUN_8003C83C
+    pub player_move_frames: u32,
+    /// `Some(step_past_width)` while the timeline is PARKED at a
+    /// **player-channel halt-acquire** (`C3 F8 <sub> …` = op `0x43`
+    /// sub-0/1/A/B against `0xF8`). Retail halts the caller and resumes it at
+    /// the operand s16 once the player move completes - a resume PC pointing
+    /// BACKWARD into the poke loop (jou's castle-door record `P2[5]`:
+    /// `C3 F8 00 5E E2 50` at `+0x60` resumes at `+0x50`). The engine parks
+    /// at the op until [`Self::player_move_frames`] drains, then steps PAST
+    /// it by this encoded width - the completion side of the halt-acquire /
+    /// state-resume handshake - so the record reaches its trailing ops (the
+    /// door record's terminal `0x3F` scene change).
+    // REF: FUN_8003BDE0
+    pub player_wait: Option<usize>,
 }
 
 impl CutsceneTimeline {
@@ -258,6 +281,8 @@ impl CutsceneTimeline {
             dialog: None,
             visited,
             channel_wait: None,
+            player_move_frames: 0,
+            player_wait: None,
         }
     }
 

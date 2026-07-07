@@ -437,8 +437,9 @@ fn scene_destination_resolver_resolves_by_index() {
     assert!(SceneDestinationResolver::default().is_empty());
 }
 
-/// Smoke test: BGM index math matches the documented retail resolver.
-/// `block_start + 6 + bgm_id` for ids < 2000.
+/// Smoke test: BGM index math matches the documented retail resolver -
+/// `raw_define + 6 + bgm_id` for ids < 2000, which is `start + 8 + id` in
+/// the extraction frame `Scene` windows use (the raw define is `start + 2`).
 #[test]
 fn find_bgm_uses_documented_offset() {
     let scene = Scene {
@@ -454,8 +455,8 @@ fn find_bgm_uses_documented_offset() {
             .collect(),
     };
     let bgm = scene.find_bgm(0).unwrap();
-    assert_eq!(bgm.idx, 106);
-    let bgm = scene.find_bgm(7).unwrap();
+    assert_eq!(bgm.idx, 108);
+    let bgm = scene.find_bgm(5).unwrap();
     assert_eq!(bgm.idx, 113);
 }
 

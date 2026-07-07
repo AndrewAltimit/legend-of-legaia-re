@@ -650,6 +650,27 @@ STATE_RESUME name-entry suspend are still honoured. Unit-covered by
 `cutscene_timeline_parks_on_channel_wait_until_flag_set` (parks while the flag is clear, resumes
 the tick it is set) + the timeout fallback.
 
+**Player-channel (`0xF8`) ExecMove / halt-acquire completion.** Door-cutscene records drive the
+**player** through the same handshake: `A2 F8 <move_id>` (ExecMove) pokes a move-table clip onto
+the player object, then `C3 F8 <sub> …` (op `0x43` sub-0/1/A/B halt-acquire) halts the caller and
+state-resumes it at the operand s16 once the move completes - a resume PC pointing **backward**
+into the poke loop (jou's castle-door record `P2[5]`: `C3 F8 00 5E E2 50` at `+0x60` resumes at
+`+0x50`; the record's terminal `0x3F` to `jouina` sits at `+0xD0`). Retail resolves `0xF8` to the
+live player object (`_DAT_8007C364`, `FUN_8003C83C`); the engine spawns no player channel, so
+[`field_channels::resolve_target`](../../crates/engine-core/src/field_channels.rs) keeps its
+`None`-for-`0xF8` contract and `run_spawned_record_slice` models the two ops directly: the
+ExecMove emits the same `ExecMove` field event and arms a short in-flight countdown
+([`CutsceneTimeline::player_move_frames`](../../crates/engine-core/src/cutscene_timeline.rs),
+standing in for the playout since engine player pokes complete synchronously), and the
+halt-acquire **parks** at the op ([`CutsceneTimeline::player_wait`]) until the countdown drains,
+then steps **past** it by encoded width - the completion side of the handshake - so the record
+flows on to its trailing scene change instead of taking the backward yield into a spin. A
+halt-acquire with no move in flight completes at once; the op-`0x38` halt-acquire variant resumes
+forward at its post-instruction PC, so its plain yield already reads as completion. Unit-covered
+by `cutscene_timeline_player_channel_door_reaches_scene_change`; the disc-gated
+`chapter1_hub_depth_oracle` drives the jou castle door through this path to
+`SceneEntered("jouina")`.
+
 ### Colour fade (op `0x34` sub-0)
 
 The prologue opens on a white flash: the timeline's first op is `34 05 FF FF FF 00 00` = op

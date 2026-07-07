@@ -13,6 +13,7 @@
 //!    cross-format integration with `scene_event_scripts` is broken).
 
 use legaia_asset::scene_v12_table::detect;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 fn extracted_prot() -> Option<PathBuf> {
@@ -142,5 +143,135 @@ fn scene_v12_detector_matches_97_entry_cluster() {
     assert!(
         max_param <= 200,
         "max param {max_param} above observed ceiling"
+    );
+}
+
+/// Position law + `.LZS` sibling: every detected `scene_v12_table` (the
+/// per-scene `DATA\FIELD\<scene>.PCH` walk-on trigger sidecar) sits at raw
+/// TOC index `define + 1` (= extraction `define - 1`), and the entry at raw
+/// `define + 3` (= extraction `define + 1`) is the scene's `.LZS`
+/// `scene_asset_table` bundle - the entry the transition streamer
+/// `FUN_80021934` stages at `_DAT_8007B85C` (state 2 streams
+/// `DAT_8007B768 + 3` by index; state 4 the same file by name).
+/// See `docs/formats/scene-v12-table.md` and
+/// `docs/subsystems/asset-loader.md`.
+#[test]
+fn scene_v12_position_law_and_lzs_sibling() {
+    let Some(prot) = extracted_prot() else {
+        eprintln!("[skip] extracted/PROT/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let cdname_path = prot.parent().unwrap().join("CDNAME.TXT");
+    let Ok(defines) = legaia_prot::cdname::parse(&cdname_path) else {
+        eprintln!("[skip] CDNAME.TXT missing next to extracted/PROT/");
+        return;
+    };
+
+    // Extraction index -> file path.
+    let mut by_idx: BTreeMap<u32, PathBuf> = BTreeMap::new();
+    for entry in std::fs::read_dir(&prot).unwrap().flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".BIN") || name.len() < 4 {
+            continue;
+        }
+        if let Ok(idx) = name[..4].parse::<u32>() {
+            by_idx.insert(idx, path);
+        }
+    }
+
+    // 1. Every v12 in the corpus sits at raw `define + 1`, i.e. its
+    //    extraction index `p` satisfies `p + 1 in defines` (raw = p + 2).
+    let mut v12_at = Vec::new();
+    for (&idx, path) in &by_idx {
+        let Ok(bytes) = std::fs::read(path) else {
+            continue;
+        };
+        if detect(&bytes).is_some() {
+            assert!(
+                defines.contains_key(&(idx + 1)),
+                "v12 at extraction {idx} is not at raw define+1 (no define {})",
+                idx + 1
+            );
+            v12_at.push(idx);
+        }
+    }
+    eprintln!(
+        "[v12-law] {} v12 entries, all at raw define+1",
+        v12_at.len()
+    );
+    assert!((95..=100).contains(&v12_at.len()));
+
+    // 2. Kingdom scenes + town01: define-1 is the v12, define+1 is a
+    //    scene_asset_table head with legal dispatcher types (the raw
+    //    base+3 `.LZS` slot the transition streamer loads).
+    const LEGAL_TYPES: [u8; 14] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xA, 0xB, 0xF, 0x14];
+    for scene in ["town01", "map01", "map02", "map03"] {
+        let define = *defines
+            .iter()
+            .find(|(_, v)| v.as_str() == scene)
+            .map(|(k, _)| k)
+            .unwrap_or_else(|| panic!("{scene} missing from CDNAME"));
+        let v12_bytes = std::fs::read(&by_idx[&(define - 1)]).unwrap();
+        let table = detect(&v12_bytes)
+            .unwrap_or_else(|| panic!("{scene}: extraction define-1 is not a v12"));
+        let bundle = std::fs::read(&by_idx[&(define + 1)]).unwrap();
+        let count = u32::from_le_bytes(bundle[0..4].try_into().unwrap());
+        assert!(
+            (1..=16).contains(&count),
+            "{scene}: base+3 count word {count} not a descriptor table"
+        );
+        let mut types = Vec::new();
+        for i in 0..count as usize {
+            let ts = u32::from_le_bytes(bundle[4 + 8 * i + 4..4 + 8 * i + 8].try_into().unwrap());
+            let ty = (ts >> 24) as u8;
+            assert!(
+                LEGAL_TYPES.contains(&ty),
+                "{scene}: base+3 descriptor[{i}] type {ty:#x} not a dispatcher type"
+            );
+            types.push(ty);
+        }
+        assert!(
+            types.contains(&3),
+            "{scene}: base+3 bundle carries no type-3 (MAN) slot"
+        );
+        eprintln!(
+            "[v12-law] {scene}: v12 param={} at ext {}, base+3 bundle count={count} types={types:?}",
+            table.param,
+            define - 1
+        );
+    }
+
+    // 3. Content anchors pinning the scene attribution (not the naive
+    //    filename labels): town01's v12 carries the opening walk-on
+    //    trigger record (tile 0x1D, 0x5B -> P2[3]); map01's carries a
+    //    record spawning P2[38] (0x26), the world-map fly-in.
+    let town01 = *defines
+        .iter()
+        .find(|(_, v)| v.as_str() == "town01")
+        .unwrap()
+        .0;
+    let t = detect(&std::fs::read(&by_idx[&(town01 - 1)]).unwrap()).unwrap();
+    assert!(
+        t.records
+            .iter()
+            .any(|r| (r.b0, r.b1, r.b2) == (0x1D, 0x5B, 0x03)),
+        "town01 v12 lacks the (0x1D, 0x5B, P2[3]) opening trigger"
+    );
+    let map01 = *defines
+        .iter()
+        .find(|(_, v)| v.as_str() == "map01")
+        .unwrap()
+        .0;
+    let m = detect(&std::fs::read(&by_idx[&(map01 - 1)]).unwrap()).unwrap();
+    assert!(
+        m.records.iter().any(|r| r.b2 == 0x26),
+        "map01 v12 lacks a P2[38] (fly-in) trigger record"
     );
 }
