@@ -129,16 +129,15 @@ fn spine_flag_writers_surface_in_the_carrier_census() {
         .collect();
     assert_eq!(
         s482_set,
-        BTreeSet::from([
-            ("other7".to_string(), 1, 15),
-            ("other7".to_string(), 1, 39),
-        ]),
+        BTreeSet::from([("other7".to_string(), 1, 15), ("other7".to_string(), 1, 39),]),
         "0x482 SET sites (other7 script pool)"
     );
     assert!(
-        census.get(&0x482).unwrap().iter().any(|h| {
-            h.scene_name == "edbalden" && h.variant && h.kind == FlagKind::Clear
-        }),
+        census
+            .get(&0x482)
+            .unwrap()
+            .iter()
+            .any(|h| { h.scene_name == "edbalden" && h.variant && h.kind == FlagKind::Clear }),
         "0x482 cleared by the edbalden epilogue variant carrier"
     );
 
@@ -173,6 +172,10 @@ fn rikuroa_carrier_p2_50_is_the_0x142_self_latch() {
     let mf = legaia_asset::man_section::parse(&man).expect("parse");
     assert_eq!(mf.header.partition_counts, [13, 29, 64]);
     let (c1, c2) = partition2_record_gates(&mf, &man, 50).expect("P2[50] gates");
-    assert_eq!(c1, vec![0x142], "P2[50] C1 blocks respawn once 0x142 is set");
+    assert_eq!(
+        c1,
+        vec![0x142],
+        "P2[50] C1 blocks respawn once 0x142 is set"
+    );
     assert!(c2.is_empty(), "P2[50] has no requires-all gate");
 }
