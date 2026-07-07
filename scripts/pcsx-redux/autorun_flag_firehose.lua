@@ -131,30 +131,56 @@ local function log(s)
     PCSX.log("[firehose] " .. s)
 end
 
--- One event. Applies per-(kind,value,ra) repeat suppression; every written
--- row carries the key's running count so suppressed repeats reconstruct.
+-- One event, called from INSIDE a breakpoint callback (emulation thread,
+-- mid-instruction). Registers + guest RAM reads MUST happen here (the hit
+-- context is gone by vsync); all file/GUI I/O is queued and drained by
+-- on_vsync instead, keeping the callback minimal. NB this hygiene was
+-- tested as a fix for the sporadic live-display segfaults and is NOT the
+-- cause: the crash reproduces with zero-I/O callbacks and on cold boots
+-- with no watches armed at all - it is a PCSX-Redux scene-transition race
+-- on a live display (headless and gdb-wrapped runs never crash; see
+-- run_probe.sh LEGAIA_GDB=1).
+local pending = {}
 local function record(kind, value, pc, ra)
     totals[kind] = (totals[kind] or 0) + 1
     local key = string.format("%s|%d|%08X", kind, value, ra)
     local n = (key_counts[key] or 0) + 1
     key_counts[key] = n
+    local ev = nil
     if n <= DETAIL_FULL or (n % SUPPRESS_EVERY) == 0 then
-        CSV:row("%d,%s,%d,0x%08X,0x%08X,0x%02X,%s,%d",
-            vsync, kind, value, pc, ra, u8(GAME_MODE), scene_name(), n)
+        ev = {
+            csv = string.format("%d,%s,%d,0x%08X,0x%08X,0x%02X,%s,%d",
+                vsync, kind, value, pc, ra, u8(GAME_MODE), scene_name(), n),
+        }
         if n == 1 then
-            PCSX.log(string.format(
+            ev.log = string.format(
                 "[firehose] %-8s value=%-5d pc=0x%08X ra=0x%08X scene=%s",
-                kind, value, pc, ra, scene_name()))
+                kind, value, pc, ra, scene_name())
         end
     end
     local dkey = string.format("%s|%08X", kind, ra)
     if not ra_detailed[dkey] and detail_used < DETAIL_MAX then
         ra_detailed[dkey] = true
         detail_used = detail_used + 1
-        probe.append_call_context(DETAIL, probe.capture_call_context(
+        ev = ev or {}
+        -- capture NOW (regs + RAM snapshot, string-formatting only) ...
+        ev.detail = probe.capture_call_context(
             string.format("%s value=%d ra=0x%08X tick=%d scene=%s",
-                kind, value, ra, vsync, scene_name())))
+                kind, value, ra, vsync, scene_name()))
+        -- ... but write it to disk from the vsync drain.
     end
+    if ev then pending[#pending + 1] = ev end
+end
+
+local function drain_pending()
+    if #pending == 0 then return end
+    for i = 1, #pending do
+        local ev = pending[i]
+        if ev.csv then CSV:row("%s", ev.csv) end
+        if ev.log then PCSX.log(ev.log) end
+        if ev.detail then probe.append_call_context(DETAIL, ev.detail) end
+    end
+    pending = {}
 end
 
 -- +-- arm --------------------------------------------------------------------
@@ -211,6 +237,10 @@ local function on_vsync()
         return
     end
     if loaded_at < 0 then return end
+
+    -- Flush any bp-callback hits queued since the last frame (all file/GUI
+    -- I/O happens here, never inside the callbacks - see record()).
+    drain_pending()
 
     -- Scene + mode transition rows (context timeline; cheap, unconditional).
     local sc = scene_name()
