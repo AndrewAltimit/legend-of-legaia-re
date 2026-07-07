@@ -83,6 +83,28 @@ banks the full flag-provenance stream for later analysis, so nothing needs
 re-capturing. Same launch shape, same emulator constraints, same
 `attribute_overlay_hits.py` post-pass per row.
 
+## What the captures settled
+
+- **Flag `0x142` - CAUGHT.** The SET fires at the **rikuroa post-Caruban
+  beat** ("dolk clear" was a mislabel), `ra 0x801E3598` = the field-VM
+  dispatcher's own `0x5x` SET arm. The source is script bytes `51 42` in the
+  scene's segment-pool blob (PROT `0157_rikuroa`; carrier format + provenance
+  model in [script-vm.md](../subsystems/script-vm.md#a-second-script-byte-carrier-the-standalone-segment-pool-blob)).
+  Save-state bracket catalogued as `rikuroa_pre_caruban` / `rikuroa_post_caruban`.
+- **Story-flag provenance model (capture-proven).** Across every chapter-1
+  scene traversed, story flags are written exclusively by the `0x5x`/`0x6x`
+  script ops; every other setter caller is an engine system touching low
+  indices (`0`/`3` entity-SM staging, `0x35` battle-end victory in
+  `FUN_8004E568`, `0xB`/`0xC`/`0x18` interaction locks, `0xE` dispatcher
+  spawn ops).
+- **Attribution caveat:** the static field-overlay image is WRONG at the
+  writer VAs (over-read/alias) - attribute callers by disassembling the
+  **resident bytes from a same-mode save state**, not from static overlay
+  dumps.
+- `0x1BE` and the Zeto battle-id staging write have not fired in any capture
+  yet; with the pool carrier identified, census the pools statically before
+  burning another session on them.
+
 ## Running the probe
 
 Wrap the launch in `timeout --kill-after` - the probe never exits on its own,

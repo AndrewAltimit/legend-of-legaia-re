@@ -438,6 +438,14 @@ An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but t
 
 CLI: `legaia-engine man-scripts --scene <name> --gflag-partition <N>` lists both banks for one scene; `legaia-engine man-scripts --system-flag-census` runs the disc-wide census. The flag-index arithmetic mirrors the dispatchers above, and the engine's own bit helpers are `World::system_flag_set`/`_clear`/`_test`.
 
+### A second script-byte carrier: the standalone segment-pool blob
+
+A live whole-playthrough capture (PCSX-Redux exec-bps on `0x8003CE08`/`0x8003CE34`, probe `autorun_flag_firehose.lua`) shows every story-flag write across the chapter-1 scenes returning to the dispatcher's own `0x5x`/`0x6x` arms (`ra 0x801E3598` / `0x801E35C0`, field overlay resident) - the ops above are the **only** story-flag writers observed. The remaining callers touch only low system indices: `0`/`3` staged by the world-map entity SM (`FUN_801DA51C`), `0x35` set at battle-end victory (`FUN_8004E568`) and cleared by the entity SM, `0xB`/`0xC`/`0x18` interaction/engagement locks, `0xE` by two dispatcher spawn ops.
+
+The executed script bytes live in a heap-resident **record pool** distinct from the MAN partitions the census above walks: on disc the carrier is `[u16 size][u16 0x0300]` followed by the pool - `[u32 record_count][u16 record_offsets...]` plus record bytes (script ops interleaved with `0x1F`-marked dialogue text) - and the loader strips the 4-byte header and places the pool verbatim in the script heap. Mt. Rikuroa's pool carries the story-flag `0x142` SET (bytes `51 42`) at three record sites plus one paired with a `0x3F` scene change; the resident copy byte-matches PROT entry `0157_rikuroa` file range `[0x4..0x74E5)`. Thirteen PROT entries carry standalone pools of this shape; scene bundles embed further copies.
+
+Consequence: the MAN-only `system_flag_census` is **incomplete** over script-byte carriers - the rikuroa `0x142` SET is invisible to it. Extending the flag-site walker over pool records is the open item (see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+
 ## BGM lookup table
 
 There isn't really a "BGM → file" lookup table - the BGM ID is a PROT-relative offset. From `FUN_800243F0` (the per-frame BGM/asset poller):
