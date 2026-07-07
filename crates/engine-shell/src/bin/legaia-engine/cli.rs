@@ -145,6 +145,13 @@ pub(crate) enum Cmd {
         /// live in this blob.
         #[arg(long)]
         dump_man: Option<PathBuf>,
+        /// Operate on the scene's standalone **variant** MAN carried by this
+        /// PROT extraction entry (the type-3 chunk of a DATA_FIELD streaming
+        /// entry in the scene's block, e.g. `157` for rikuroa's post-Caruban
+        /// story-state MAN) instead of the asset-table bundle MAN. Use the
+        /// census output's `PROT[NNNN] VARIANT-MAN` tag to find the index.
+        #[arg(long)]
+        variant: Option<u32>,
         /// Walk a partition's records as field-VM scripts and report their
         /// flag write/test sites - both the scratchpad global-flag ops
         /// (`GFLAG_SET`/`GFLAG_CLEAR`) and the wide SYSTEM-flag ops

@@ -253,15 +253,23 @@ fn classify_warp_wins_over_a_preceding_dialog() {
 /// Build a minimal one-partition-2-record MAN whose single record is a
 /// field-VM script ending in `GFLAG_SET 26` (op `0x2E`, operand `0x1A`) -
 /// the opening prologue's `town01` hand-off arm.
+///
+/// Partition-2 records use the **named-record header** (`FUN_8003BDE0`)
+/// `[u8 name_len][name_len*2 SJIS][u8 C0][C0][u8 C1][C1*u16][u8 C2][C2*u16]`,
+/// the shape `walk_partition_gflag_sites` now decodes via
+/// `partition_record_span` (the generic `[u8 N][N*2][4-byte header]` prefix
+/// is the partition-0/1 shape).
 fn synthetic_man_with_gflag_set_26() -> (ManFile, Vec<u8>) {
     let data_region_offset = 0x40usize;
     let p2_0 = 0u32;
     let script_start = data_region_offset + p2_0 as usize;
 
-    // Record prefix: N=0 -> pc0 = 5. Then GFLAG_SET 26.
+    // Named-record header: empty name + three empty cond blocks -> pc0 = 4.
     let mut man = vec![0u8; script_start];
-    man.push(0x00); // N = 0
-    man.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]); // 4-byte header
+    man.push(0x00); // name_len = 0
+    man.push(0x00); // C0 = 0
+    man.push(0x00); // C1 = 0
+    man.push(0x00); // C2 = 0
     man.push(0x2E); // GFLAG_SET
     man.push(0x1A); // bit 26
     man.push(0x48); // a trailing no-op so the walk has a clean boundary

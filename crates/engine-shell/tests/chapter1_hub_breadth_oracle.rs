@@ -713,12 +713,41 @@ fn part_e_flag_census_setters_disc_wide() {
         "flag 0x2AF census: vell-local Test/Set pair"
     );
 
-    // (2) 0x63A - the shared vell/vozz P2[7] C1 gate - has NO script site of
-    // any kind on the whole disc: an engine/SCUS-side (or never-written)
-    // flag, so the requires-clear condition always passes on a fresh save.
-    assert!(
-        !census.contains_key(&0x63A),
-        "flag 0x63A has no MAN script site disc-wide"
+    // (2) 0x63A - the shared vell/vozz P2[7] C1 gate - IS script-written:
+    // the retail-frame census (variant carriers + correct scene windows)
+    // surfaces its setters, which the bundle-only shifted-window sweep was
+    // structurally blind to. The SETs live in `retockin` P2[8] (+ the
+    // `edretoin` epilogue twin) and the rikuroa / rikuroa2 variant MANs'
+    // P2[29] (paired with a P2[30] CLEAR). The earlier "no script site
+    // disc-wide -> engine/SCUS-side flag" reading is falsified.
+    let s63a: BTreeSet<(String, usize, usize, &str)> = census
+        .get(&0x63A)
+        .map(|hits| {
+            hits.iter()
+                .map(|h| {
+                    let kind = match h.kind {
+                        FlagKind::Set => "set",
+                        FlagKind::Clear => "clear",
+                        FlagKind::Test => "test",
+                    };
+                    (h.scene_name.clone(), h.partition, h.record, kind)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        s63a,
+        BTreeSet::from([
+            ("edretoin".to_string(), 2, 7, "clear"),
+            ("edretoin".to_string(), 2, 8, "set"),
+            ("retockin".to_string(), 2, 7, "clear"),
+            ("retockin".to_string(), 2, 8, "set"),
+            ("rikuroa".to_string(), 2, 29, "set"),
+            ("rikuroa".to_string(), 2, 30, "clear"),
+            ("rikuroa2".to_string(), 2, 29, "set"),
+            ("rikuroa2".to_string(), 2, 30, "clear"),
+        ]),
+        "flag 0x63A census: retockin/edretoin + rikuroa/rikuroa2 variant sites"
     );
 
     // (3) The cave01 beat chain's flags are cave01-owned: every 0x15D setter
@@ -739,14 +768,16 @@ fn part_e_flag_census_setters_disc_wide() {
         BTreeSet::from([("cave01".to_string(), 2, 13)]),
         "flag 0x15E single setter: cave01 P2[13]"
     );
+    // 0x15E is cave01-local in the retail frame: the earlier "urudre1 P2[0]
+    // tests it cross-scene" attribution came through the shifted scene
+    // window (the tester record belonged to a neighbouring block's MAN read
+    // under the urudre1 label). The corrected census shows every 0x15E site
+    // in cave01.
     assert!(
         census
             .get(&0x15E)
-            .is_some_and(|hits| hits.iter().any(|h| h.scene_name == "urudre1"
-                && h.partition == 2
-                && h.record == 0
-                && h.kind == FlagKind::Test)),
-        "urudre1 P2[0] tests cave01's 0x15E cross-scene"
+            .is_some_and(|hits| hits.iter().all(|h| h.scene_name == "cave01")),
+        "flag 0x15E sites are cave01-local"
     );
     assert_eq!(
         set_sites(0x157),
@@ -754,38 +785,39 @@ fn part_e_flag_census_setters_disc_wide() {
         "flag 0x157 setters: cave01-only"
     );
 
-    // (4) 0x142 - the dolk/dolk2 (and cave01 P2[15]) Zeto switch - has NO SET
-    // site in any MAN on the disc; the only non-test site is a Clear in dolk
-    // P1[26]. Corroborates the battle-id victory-path write (the flag is
-    // stamped by the battle system, not a field script).
+    // (4) 0x142 - the Caruban-beat / dolk->dolk2 switch - IS script-SET:
+    // the retail-frame census surfaces the writers the bundle-only shifted
+    // sweep missed. The setters live in the rikuroa streaming-carrier MAN
+    // (P1[10..12] + the post-victory record P2[50], the self-latching C1
+    // one-shot the firehose caught live: `51 42`, `ra 0x801E3598`) and in
+    // dolk2's own streaming MAN (P1[0]/P1[1], re-asserting on entry). The
+    // wave-earlier "no SET site disc-wide -> battle-path write" reading is
+    // falsified. dolk's bundle still carries the P1[26] Clear.
     let s142 = census.get(&0x142).expect("0x142 has census sites");
-    assert!(
-        !s142.iter().any(|h| h.kind == FlagKind::Set),
-        "flag 0x142 has no MAN SET site disc-wide"
-    );
-    let clears: Vec<(String, usize, usize)> = s142
-        .iter()
-        .filter(|h| h.kind == FlagKind::Clear)
-        .map(|h| (h.scene_name.clone(), h.partition, h.record))
-        .collect();
     assert_eq!(
-        clears,
-        vec![("dolk".to_string(), 1, 26)],
-        "flag 0x142's only non-test MAN site is the dolk P1[26] Clear"
+        set_sites(0x142),
+        BTreeSet::from([
+            ("dolk2".to_string(), 1, 0),
+            ("dolk2".to_string(), 1, 1),
+            ("rikuroa".to_string(), 1, 10),
+            ("rikuroa".to_string(), 1, 11),
+            ("rikuroa".to_string(), 1, 12),
+            ("rikuroa".to_string(), 2, 50),
+        ]),
+        "flag 0x142 setters: rikuroa post-Caruban records + dolk2 re-assert"
     );
-    // The suimon/dolk2 shared controller branches on it (P1[0] Test in both
-    // name spaces of the byte-identical MAN).
     assert!(
-        s142.iter().any(|h| h.scene_name == "suimon"
+        s142.iter().any(|h| h.scene_name == "dolk"
             && h.partition == 1
-            && h.record == 0
-            && h.kind == FlagKind::Test),
-        "suimon P1[0] (the dolk2-shared controller) tests 0x142"
+            && h.record == 26
+            && h.kind == FlagKind::Clear),
+        "dolk P1[26] clears 0x142"
     );
 
     eprintln!(
-        "[ok] Part E: 0x2AF vell-local; 0x63A zero sites; 0x15D/0x15E/0x157 cave01-owned \
-         (0x15E read by urudre1); 0x142 has no MAN setter (battle-path write)"
+        "[ok] Part E: 0x2AF vell-local; 0x63A retockin/rikuroa-written; \
+         0x15D/0x15E/0x157 cave01-owned; 0x142 SET by the rikuroa \
+         post-Caruban records (pool census)"
     );
 }
 

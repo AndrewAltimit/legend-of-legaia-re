@@ -79,10 +79,34 @@ pub struct Scene {
 impl Scene {
     /// Load every PROT entry in the named CDNAME block. Errors if the block
     /// isn't present.
+    ///
+    /// CDNAME `#define` numbers are **raw in-RAM TOC indices**, shifted `+2`
+    /// from the extraction-entry space this loader indexes
+    /// (`legaia_prot::cdname::RAW_TOC_INDEX_OFFSET`; see
+    /// `docs/formats/cdname.md` § numbering space). The window is converted
+    /// here so a scene's entries are its **retail** block: the first entry is
+    /// the scene's `.MAP` file ([`Self::field_map_index`]), the early entries
+    /// its v12 / event-script sidecars. An unshifted window drops those first
+    /// two retail entries and bleeds in the *next* block's first two - which
+    /// mis-frames scenes whose asset table sits at the block edge (`rikuroa`'s
+    /// v12 entry is its 2nd retail entry; the unshifted window instead found
+    /// `geremi`'s v12 table and loaded Jeremi's MAN under the `rikuroa`
+    /// label).
     pub fn load(index: &ProtIndex, name: &str) -> Result<Self> {
-        let (start, end) = index
+        let (raw_start, raw_end) = index
             .block_range(name)
             .ok_or_else(|| anyhow::anyhow!("scene '{}' not found in CDNAME map", name))?;
+        let shift = legaia_prot::cdname::RAW_TOC_INDEX_OFFSET;
+        // The first defines (`init_data 0`, `gameover_data 1`) sit inside the
+        // raw TOC's header rows, where the -2 conversion has no content to
+        // land on (it would produce an empty window). Keep those head blocks
+        // at their unshifted legacy windows - the content entries they name
+        // (`0000_init_data` etc.) are what engine consumers load.
+        let (start, end) = if raw_start < shift {
+            (raw_start, raw_end)
+        } else {
+            (raw_start - shift, raw_end.saturating_sub(shift))
+        };
         let mut entries = Vec::with_capacity((end - start) as usize);
         for idx in start..end {
             // Skip out-of-range indices defensively.
@@ -126,7 +150,11 @@ impl Scene {
         if bgm_id >= 2000 {
             return None;
         }
-        let target = self.start + 6 + bgm_id as u32;
+        // `self.start` is the retail block's first entry (extraction frame);
+        // the audio-oracle-pinned BGM slots sit at `raw_define + 6 + id` in
+        // the raw-TOC frame = `start + 8 + id` here (the raw define is
+        // `start + 2`). Absolute slots unchanged from the pre-shift loader.
+        let target = self.start + 8 + bgm_id as u32;
         self.entries.iter().find(|e| e.idx == target)
     }
 
@@ -202,28 +230,26 @@ impl Scene {
     /// `DATA\FIELD\<scene>.MAP`, the first file `FUN_8001f7c0` streams into the
     /// field-buffer base (`_DAT_1f8003ec`).
     ///
-    /// The runtime resolves it through `FUN_8003e8a8`'s `toc[idx+2]`, which
-    /// lands **two entries below the per-entry extractor's CDNAME block
-    /// start** - the scene PROT clusters overlap, so the extractor attributes
-    /// each scene's `.MAP` to the tail of the *previous* block. The entry is
-    /// identified by its **extended on-disc footprint** of exactly
-    /// [`FIELD_MAP_LEN`] (`0x12000`) bytes; scenes whose `start - 2` entry
-    /// isn't that size have no field map (cutscene / pure-asset blocks).
+    /// The `.MAP` is the scene's retail block's **first entry** - exactly
+    /// [`Scene::start`] now that [`Scene::load`] converts the CDNAME raw-TOC
+    /// window into the extraction frame. (The historical "two entries below
+    /// the block start" rule was this same entry seen from the unshifted
+    /// window; the extractor's shifted filename labels attribute it to the
+    /// tail of the *previous* block.) The entry is identified by its
+    /// **extended on-disc footprint** of exactly [`FIELD_MAP_LEN`]
+    /// (`0x12000`) bytes; scenes whose first entry isn't that size have no
+    /// field map (cutscene / pure-asset blocks).
     ///
-    /// The first `FIELD_MAP_LEN` entry *inside* a block is the **next**
-    /// scene's `.MAP`, not this scene's - an earlier in-block rule loaded the
-    /// wrong map for every field scene and was masked only where adjacent
-    /// variants byte-copy (the Rim Elm pair `town01`/`town0b`/`town0c` share
-    /// one identical map). Pinned by a save-library census: the live field
-    /// buffer of a `keikoku` session matches entry `define-2` (PROT 0109)
-    /// with **zero** collision-grid diffs (in-block entry 0118 diffs by
-    /// thousands), same for `koin3` (PROT 0559 exact), and the kingdom walk
-    /// maps were already live-verified at `start - 2`. The **object-index
-    /// grid** (`+0x8000`, the [`Self::field_object_placements`] source) is
-    /// live-validated the same way: residuals of 0..96 bytes against the
-    /// resolved entry across town01 / town0c / keikoku / koin3 sessions
-    /// (story-conditional cell mutations), thousands against every other
-    /// candidate (regression-guarded by the disc + save-library gated
+    /// Pinned by a save-library census: the live field buffer of a `keikoku`
+    /// session matches this entry (PROT 0109) with **zero** collision-grid
+    /// diffs (in-block entry 0118 diffs by thousands), same for `koin3`
+    /// (PROT 0559 exact), and the kingdom walk maps were live-verified at
+    /// the same position. The **object-index grid** (`+0x8000`, the
+    /// [`Self::field_object_placements`] source) is live-validated the same
+    /// way: residuals of 0..96 bytes against the resolved entry across
+    /// town01 / town0c / keikoku / koin3 sessions (story-conditional cell
+    /// mutations), thousands against every other candidate
+    /// (regression-guarded by the disc + save-library gated
     /// `field_map_object_grid_live` test).
     ///
     /// The footprint matters: the TOC-indexed payload is only the first
@@ -233,12 +259,12 @@ impl Scene {
     ///
     /// See [`docs/subsystems/field-locomotion.md`] for the load chain.
     pub fn field_map_index(&self, index: &ProtIndex) -> Option<u32> {
-        self.start.checked_sub(2).filter(|&idx| {
-            index
-                .entries()
-                .get(idx as usize)
-                .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
-        })
+        let idx = self.start;
+        index
+            .entries()
+            .get(idx as usize)
+            .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
+            .then_some(idx)
     }
 
     /// The per-scene base collision/floor grid: the `+0x4000..+0x8000` region
@@ -547,12 +573,7 @@ impl Scene {
         &self,
         index: &ProtIndex,
     ) -> Result<Option<Vec<legaia_asset::man_section::ActorPlacement>>> {
-        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
-            return Ok(None);
-        };
-        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
-        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
-        else {
+        let Some(man_bytes) = self.field_man_payload(index)? else {
             return Ok(None);
         };
         let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
@@ -571,12 +592,24 @@ impl Scene {
     /// fetch behind the entry-script / encounter-table accessors, exposed so
     /// the field host can also walk the cutscene-timeline partition (e.g. the
     /// opening prologue's `GFLAG_SET 26` hand-off arm).
+    ///
+    /// Resolution order: the asset-table bundle MAN first; when the scene has
+    /// no MAN-bearing bundle (the v12-family dungeons `rikuroa` / `dolk2`,
+    /// whose v12 sidecar embeds only the count-4 MAN-less table), fall back
+    /// to the block's **streaming variant MAN**
+    /// ([`crate::scene_bundle::streaming_man_payloads`]) - the carrier the
+    /// live script heap byte-matches at the Mt. Rikuroa Caruban beat.
     pub fn field_man_payload(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
-        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
-            return Ok(None);
-        };
-        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
-        crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
+        if let Some(bundle) = crate::scene_bundle::find_bundle(self) {
+            let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+            if let Some(man) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)? {
+                return Ok(Some(man));
+            }
+        }
+        Ok(crate::scene_bundle::streaming_man_payloads(self)
+            .into_iter()
+            .next()
+            .map(|(_, _, payload)| payload))
     }
 
     /// The scene's MAN **section-3 zone table** - the count-prefixed

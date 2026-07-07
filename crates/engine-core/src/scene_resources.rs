@@ -33,13 +33,14 @@
 //! REF: FUN_8001E890
 
 use anyhow::Result;
+use legaia_asset::categorize::Class;
 use legaia_asset::{
     anm_detect, battle_data_pack, kingdom_bundle, pack, scene_tmd_stream, tim_scan, tmd_scan,
     world_map_overlay,
 };
 use legaia_tim::Vram;
 
-use crate::scene::Scene;
+use crate::scene::{Scene, SceneEntry};
 
 /// Which retail dispatch path the engine is mimicking when it builds a
 /// scene's VRAM pre-pass. Controls whether scene_tmd_stream PROT
@@ -350,6 +351,30 @@ pub struct SceneResources {
 /// an optional inspection layer). Accepts the first entry whose slot 4
 /// decodes and parses, mirroring `parse_scene_tmds_anms`'s "first kingdom
 /// bundle per scene" rule.
+/// PROT index of the v12 trigger-sidecar entry that also **hosts** the
+/// scene's asset bundle, when the bundle is
+/// [`crate::scene_bundle::BundleSource::V12Embedded`] (`rikuroa` / `dolk2`
+/// ship their only asset table embedded in the v12 entry). `None` when the
+/// bundle is a first-class table or the scene has none.
+fn v12_bundle_host_idx(scene: &Scene) -> Option<u32> {
+    match crate::scene_bundle::find_bundle(scene) {
+        Some(crate::scene_bundle::BundleSource::V12Embedded { entry, .. }) => Some(entry.idx),
+        _ => None,
+    }
+}
+
+/// `true` when `entry` is a v12 trigger sidecar the retail loaders stream
+/// through a dedicated conditional channel (the `.PCH` trigger path), never
+/// the field VRAM / TMD pre-pass - swept blindly it contributes uploads
+/// live VRAM does not have (e.g. town01's sidecar carries a `(0,474)` CLUT
+/// absent from every live field capture). The one exception is a sidecar
+/// that **hosts** the scene's v12-embedded asset bundle (`rikuroa` /
+/// `dolk2`): its LZS sections are the scene's real texture/mesh source, so
+/// it stays in the sweep (`host_idx` = [`v12_bundle_host_idx`]).
+fn v12_sidecar_skip(entry: &SceneEntry, host_idx: Option<u32>) -> bool {
+    entry.class == Class::SceneV12Table && host_idx != Some(entry.idx)
+}
+
 fn parse_world_map_slot4(
     scene: &Scene,
     kind: SceneLoadKind,
@@ -456,9 +481,18 @@ impl SceneResources {
             // OVERVIEW, not the per-kingdom walk view - the walk-view
             // resident pool is the landmark pack alone (savestate ground
             // truth, docs/subsystems/world-map.md). So accept only the first
-            // kingdom bundle per scene.
+            // kingdom bundle per scene - and no shared-block head TMDs at
+            // all (the field pool keeps the `player_data` character pack
+            // resident; the walk-view pool does not).
+            if !is_main && matches!(kind, SceneLoadKind::WorldMap) {
+                return;
+            }
             let mut took_kingdom = false;
+            let v12_host = v12_bundle_host_idx(s);
             for entry in &s.entries {
+                if v12_sidecar_skip(entry, v12_host) {
+                    continue;
+                }
                 let bytes: &[u8] = &entry.bytes;
                 // World-map kingdom bundles carry their landmark geometry as
                 // slot 1 (a Legaia-TMD pack) of a 7-asset descriptor table,
@@ -592,6 +626,11 @@ impl SceneResources {
                 }
             }
         };
+        // Main scene first: placement `model_index` bytes index the scene
+        // TMD list from 0 (the head slots are addressed via the `0xF0+`
+        // special range), so the shared blocks' head TMDs (the retail
+        // `player_data` character pack) append after the scene's own.
+        parse_scene_tmds_anms(scene, &mut tmds, &mut anm_packs, &mut 0usize, true);
         for shared in shared_scenes {
             parse_scene_tmds_anms(
                 shared,
@@ -601,7 +640,6 @@ impl SceneResources {
                 false,
             );
         }
-        parse_scene_tmds_anms(scene, &mut tmds, &mut anm_packs, &mut 0usize, true);
 
         // Pass 2: collect prim targets from every TMD - the union is
         // what the targeted upload aims for.
@@ -631,10 +669,23 @@ impl SceneResources {
                                 tim_bufs: &mut Vec<Vec<u8>>,
                                 tim_parse_failures: &mut usize,
                                 is_main: bool| {
+            // The shared `player_data` block (the raw-876 character pack,
+            // extraction 0874) feeds the TMD pool head, but its §2 texture
+            // bank is NOT blanket-uploaded by the retail field pre-pass -
+            // live field VRAM has none of its extra CLUTs (e.g. the
+            // `(0,474)` row). The rows retail does place (478 field-char
+            // CLUTs) go through the dedicated `field_char_textures` path.
+            if !is_main && s.name == "player_data" {
+                return;
+            }
             // Match the TMD pool: only the first (primary) kingdom bundle
             // per scene contributes its slot-0 atlas.
             let mut took_kingdom = false;
+            let v12_host = v12_bundle_host_idx(s);
             for entry in &s.entries {
+                if v12_sidecar_skip(entry, v12_host) {
+                    continue;
+                }
                 let bytes: &[u8] = &entry.bytes;
                 // World-map kingdom bundles: slot 0 is the terrain TIM
                 // atlas (a tim-pack of ~50 TIMs) that textures the slot-1
@@ -850,7 +901,11 @@ impl SceneResources {
                            tim_count: &mut usize,
                            tim_parse_failures: &mut usize,
                            tmd_count: &mut usize| {
+            let v12_host = v12_bundle_host_idx(s);
             for entry in &s.entries {
+                if v12_sidecar_skip(entry, v12_host) {
+                    continue;
+                }
                 let bytes: &[u8] = &entry.bytes;
                 for hit in tim_scan::scan_buffer(bytes) {
                     let payload = &bytes[hit.offset..hit.offset + hit.byte_len];

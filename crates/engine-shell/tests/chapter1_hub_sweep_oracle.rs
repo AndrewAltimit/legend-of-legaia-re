@@ -52,7 +52,6 @@ use legaia_engine_core::man_field_scripts::{
     overworld_portal_sites, partition2_record_gates, scene_destinations,
 };
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, SceneTickEvent};
-use legaia_engine_core::scene_bundle::{extract_man_payload, find_bundle};
 use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig};
 
 // ---------------------------------------------------------------------
@@ -130,17 +129,15 @@ fn find_portal_tile(host: &SceneHost, dest: &str) -> Option<(u8, u8)> {
         })
 }
 
-/// The named scene's MAN payload (v12-embedded or scripted), through the same
-/// `find_bundle` path the live host uses.
+/// The named scene's MAN payload through the engine's resolution order
+/// (bundle first, streaming variant carrier fallback) - the same
+/// `field_man_payload` path the live host uses.
 fn load_man(index: &ProtIndex, name: &str) -> Vec<u8> {
     let scene = Scene::load(index, name).unwrap_or_else(|e| panic!("load {name}: {e:#}"));
-    let bundle = find_bundle(&scene).unwrap_or_else(|| panic!("{name}: no bundle"));
-    let entry_bytes = index
-        .entry_bytes_extended(bundle.entry_idx())
-        .expect("extended footprint");
-    extract_man_payload(&bundle, &entry_bytes)
-        .unwrap_or_else(|e| panic!("{name}: extract MAN: {e:#}"))
-        .unwrap_or_else(|| panic!("{name}: bundle carries no MAN"))
+    scene
+        .field_man_payload(index)
+        .unwrap_or_else(|e| panic!("{name}: field_man_payload: {e:#}"))
+        .unwrap_or_else(|| panic!("{name}: no MAN resolves"))
 }
 
 /// Assert the named scene's MAN parses with the given partition counts.
@@ -184,9 +181,9 @@ fn part_a_dolk2_onward_destination_is_map01_only() {
         return;
     };
     let index = host.index.clone();
-    // dolk2 ships its MAN inside the v12-embedded scene_asset_table
-    // (partitions [10, 7, 3]); its only 0x3F destination is back to map01.
-    assert_scene_man(&index, "dolk2", [10, 7, 3]);
+    // dolk2's real MAN is the streaming variant carrier (ext 70, partitions
+    // [29, 73, 17]); its only named 0x3F destination is back to map01.
+    assert_scene_man(&index, "dolk2", [29, 73, 17]);
     let dests = scene_dest_names(&index, "dolk2");
     assert_eq!(
         dests,
@@ -366,7 +363,8 @@ fn part_c_hub_leg_entrances_are_ungated() {
 }
 
 // ---------------------------------------------------------------------
-// Named finding: suimon and dolk2 ship a byte-identical MAN
+// Named finding (corrected): the "suimon == dolk2 MAN" identity was frame
+// bleed - dolk2's real MAN is its streaming carrier
 // ---------------------------------------------------------------------
 
 #[test]
@@ -375,18 +373,26 @@ fn named_finding_suimon_and_dolk2_share_man_payload() {
         return;
     };
     let index = host.index.clone();
-    // suimon's Scripted bundle (PROT 77) and dolk2's v12-embedded bundle
-    // (PROT 76) resolve to the same 2345-byte, [10, 7, 3] MAN.
+    // The earlier "suimon and dolk2 ship a byte-identical [10, 7, 3] MAN"
+    // identity was the CDNAME-shifted scene window: dolk2's unshifted window
+    // bled into suimon's block and picked up suimon's v12 sidecar (ext 76),
+    // so both labels decoded suimon's 2345-byte MAN. In the retail frame,
+    // suimon keeps that MAN (its scripted bundle) and dolk2 resolves its own
+    // streaming carrier (ext 70, [29, 73, 17]).
     let suimon = load_man(&index, "suimon");
     let dolk2 = load_man(&index, "dolk2");
-    assert_eq!(
+    assert_eq!(suimon.len(), 2345, "suimon's MAN is 2345 bytes");
+    let suimon_mf = legaia_asset::man_section::parse(&suimon).expect("parse suimon MAN");
+    assert_eq!(suimon_mf.header.partition_counts, [10, 7, 3]);
+    let dolk2_mf = legaia_asset::man_section::parse(&dolk2).expect("parse dolk2 MAN");
+    assert_eq!(dolk2_mf.header.partition_counts, [29, 73, 17]);
+    assert_ne!(
         suimon, dolk2,
-        "suimon and dolk2 carry a byte-identical MAN payload (both [10, 7, 3], \
-         2345 bytes, single 0x3F back to map01) - a pinned observed identity"
+        "dolk2's real MAN is its own streaming carrier, not suimon's sidecar"
     );
-    assert_eq!(suimon.len(), 2345, "the shared MAN is 2345 bytes");
     eprintln!(
-        "[ok] finding: suimon MAN == dolk2 MAN ({} bytes)",
-        suimon.len()
+        "[ok] corrected finding: suimon MAN ({} B) != dolk2 MAN ({} B)",
+        suimon.len(),
+        dolk2.len()
     );
 }

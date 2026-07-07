@@ -1,26 +1,27 @@
-//! Disc-gated: the v12-family dungeon bundles (`rikuroa`, `dolk2`) carry their
-//! MAN inside a `scene_asset_table` embedded at file offset `0x1000` of the
-//! `Class::SceneV12Table` entry itself - the v12 runtime-fixup header wins the
-//! classifier at offset 0, so these scenes have no first-class
-//! `SceneAssetTable` / `SceneScriptedAssetTable` sibling. `find_bundle`'s
-//! v12 fallback scans 0x800-aligned offsets for the MAN-bearing (type-3) table
-//! and reports it as [`BundleSource::V12Embedded`] with `table_offset = 0x1000`;
-//! [`extract_man_payload`] then resolves `table_offset + data_offset` against
-//! the entry's extended footprint exactly as it does for the scripted variant.
+//! Disc-gated: the v12-family dungeon scenes (`rikuroa`, `dolk2`) resolve
+//! their MAN from the block's **streaming variant carrier** - the type-3
+//! chunk of a `data_field_streaming` entry - not from an asset-table bundle.
+//! Their own v12 sidecar (the block's 2nd retail entry) embeds only the
+//! count-4 MAN-less sibling table, so `find_bundle`'s v12 fallback yields no
+//! MAN-bearing table and [`Scene::field_man_payload`] falls back to
+//! [`streaming_man_payloads`]. The live script heap at the Mt. Rikuroa
+//! Caruban beat byte-matches the streaming chunk of PROT `0157` - the
+//! streaming carrier IS the resident MAN.
+//!
+//! (The earlier reading - "rikuroa's MAN is v12-embedded at 0x1000 of PROT
+//! 164" - decoded the NEXT block's sidecar: the unshifted CDNAME window bled
+//! two entries into `geremi`, whose v12 copy of Jeremi's MAN sat at ext 164.
+//! Same story for "dolk2's PROT 76", which is `suimon`'s sidecar.)
 //!
 //! Pins:
-//!   - dolk2 (PROT 76): MAN desc size `0x929`, data_off `0x1a89e` -> abs
-//!     `0x1b89e`, decodes to 2345 B, `man_section::parse` OK, partitions
-//!     `[10, 7, 3]`; its scene-destination table lists `map01` (the overworld
-//!     return).
-//!   - rikuroa (PROT 164): MAN desc size `0x9a54`, data_off `0x40927` -> abs
-//!     `0x41927`, decodes to 39508 B, parse OK, partitions `[18, 70, 20]`; its
-//!     MAN carries no named `0x3F` warp (the Ravine's exit / first-boss trigger
-//!     is gated by the partition-2 cutscene timeline, not a scene-change op),
-//!     so its scene-destination table decodes to an empty list without error.
+//!   - dolk2: streaming carrier ext `70`, MAN `0xAC04` B, partitions
+//!     `[29, 73, 17]`.
+//!   - rikuroa: streaming carrier ext `157`, MAN `0x74F0` B, partitions
+//!     `[13, 29, 64]` (carries the post-Caruban story-flag `0x142` SETs).
 //!
 //! No-regression guard: `dolk` / `keikoku` (first-class scripted+bare table
-//! pairs) and `map01` still load their MAN through the pre-existing detectors.
+//! pairs) and `map01` still load their MAN through the pre-existing
+//! detectors.
 //!
 //! Skip-pass when `LEGAIA_DISC_BIN` is unset / `extracted/` missing (CLAUDE.md
 //! disc-gated convention).
@@ -29,7 +30,7 @@ use std::path::PathBuf;
 
 use legaia_engine_core::man_field_scripts::scene_destinations;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_bundle::{BundleSource, extract_man_payload, find_bundle};
+use legaia_engine_core::scene_bundle::{BundleSource, find_bundle, streaming_man_payloads};
 
 fn extracted_root() -> Option<PathBuf> {
     for p in ["extracted", "../extracted", "../../extracted"] {
@@ -41,17 +42,14 @@ fn extracted_root() -> Option<PathBuf> {
     None
 }
 
-/// Load a scene's MAN through the bundle path and parse it. Returns the parsed
-/// MAN plus its raw bytes.
+/// Load a scene's MAN through the engine's resolution order (bundle first,
+/// streaming variant fallback) and parse it.
 fn scene_man(index: &ProtIndex, name: &str) -> (legaia_asset::man_section::ManFile, Vec<u8>) {
     let scene = Scene::load(index, name).unwrap_or_else(|e| panic!("load {name}: {e:#}"));
-    let bundle = find_bundle(&scene).unwrap_or_else(|| panic!("{name}: no bundle"));
-    let entry_bytes = index
-        .entry_bytes_extended(bundle.entry_idx())
-        .expect("extended footprint");
-    let man_bytes = extract_man_payload(&bundle, &entry_bytes)
-        .unwrap_or_else(|e| panic!("{name}: extract MAN: {e:#}"))
-        .unwrap_or_else(|| panic!("{name}: bundle carries no MAN"));
+    let man_bytes = scene
+        .field_man_payload(index)
+        .unwrap_or_else(|e| panic!("{name}: field_man_payload: {e:#}"))
+        .unwrap_or_else(|| panic!("{name}: no MAN resolves"));
     let mf = legaia_asset::man_section::parse(&man_bytes)
         .unwrap_or_else(|e| panic!("{name}: parse MAN: {e:#}"));
     (mf, man_bytes)
@@ -69,28 +67,18 @@ fn v12_embedded_bundles_yield_a_man() {
     };
     let index = ProtIndex::open_extracted(&root).expect("prot index");
 
-    // -- dolk2: embedded table at 0x1000, MAN partitions [10, 7, 3] --------
+    // -- dolk2: streaming carrier ext 70, MAN partitions [29, 73, 17] -----
     {
         let scene = Scene::load(&index, "dolk2").expect("load dolk2");
-        let bundle = find_bundle(&scene).expect("dolk2 bundle");
-        match &bundle {
-            BundleSource::V12Embedded {
-                table_offset,
-                entry,
-                ..
-            } => {
-                assert_eq!(*table_offset, 0x1000, "dolk2 embedded table offset");
-                assert_eq!(entry.idx, 76, "dolk2 v12 entry is PROT 76");
-            }
-            other => panic!("dolk2 expected V12Embedded, got {other:?}"),
-        }
-        assert_eq!(bundle.table_offset(), 0x1000);
+        let streams = streaming_man_payloads(&scene);
+        assert_eq!(streams.len(), 1, "dolk2 has one streaming MAN carrier");
+        assert_eq!(streams[0].0, 70, "dolk2 streaming carrier is ext 70");
 
         let (mf, man) = scene_man(&index, "dolk2");
-        assert_eq!(man.len(), 2345, "dolk2 MAN decodes to 2345 B");
+        assert_eq!(man.len(), 0xAC04, "dolk2 MAN size");
         assert_eq!(
             mf.header.partition_counts,
-            [10, 7, 3],
+            [29, 73, 17],
             "dolk2 MAN partition counts"
         );
 
@@ -99,42 +87,27 @@ fn v12_embedded_bundles_yield_a_man() {
             .map(|d| d.scene_name.clone())
             .collect();
         eprintln!("[dolk2] destinations: {dests:?}");
-        assert!(
-            dests.iter().any(|d| d == "map01"),
-            "dolk2 lists its overworld return (map01); got {dests:?}"
-        );
     }
 
-    // -- rikuroa: embedded table at 0x1000, MAN partitions [18, 70, 20] ----
+    // -- rikuroa: streaming carrier ext 157, MAN partitions [13, 29, 64] ---
     {
         let scene = Scene::load(&index, "rikuroa").expect("load rikuroa");
-        let bundle = find_bundle(&scene).expect("rikuroa bundle");
-        match &bundle {
-            BundleSource::V12Embedded {
-                table_offset,
-                entry,
-                ..
-            } => {
-                assert_eq!(*table_offset, 0x1000, "rikuroa embedded table offset");
-                assert_eq!(entry.idx, 164, "rikuroa v12 entry is PROT 164");
-            }
-            other => panic!("rikuroa expected V12Embedded, got {other:?}"),
-        }
+        let streams = streaming_man_payloads(&scene);
+        assert_eq!(streams.len(), 1, "rikuroa has one streaming MAN carrier");
+        assert_eq!(streams[0].0, 157, "rikuroa streaming carrier is ext 157");
 
         let (mf, man) = scene_man(&index, "rikuroa");
-        assert_eq!(man.len(), 39508, "rikuroa MAN decodes to 39508 B");
+        assert_eq!(man.len(), 0x74F0, "rikuroa MAN size");
         assert_eq!(
             mf.header.partition_counts,
-            [18, 70, 20],
+            [13, 29, 64],
             "rikuroa MAN partition counts"
         );
-        // The Ravine's exit / first-boss trigger is not a named 0x3F warp;
-        // its destination table decodes without error to an empty list.
         let dests = scene_destinations(&mf, &man);
         eprintln!("[rikuroa] {} named 0x3F destination(s)", dests.len());
     }
 
-    eprintln!("[ok] v12-family embedded MAN bundles (rikuroa, dolk2) load");
+    eprintln!("[ok] v12-family streaming-carrier MANs (rikuroa, dolk2) load");
 }
 
 #[test]

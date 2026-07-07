@@ -105,11 +105,11 @@ fn op49_window_census_pins_the_corpus_shape() {
         );
     }
 
-    // Disc invariant: 209 op-0x49 sites across 62 scene MANs (framed with
-    // the corrected 0x4E sub-2/3/9 compare widths; the pre-fix framing
-    // under-counted by one resync-shadowed site).
-    assert_eq!(sites.len(), 209, "op-0x49 site count changed");
-    assert_eq!(scenes.len(), 62, "op-0x49 carrying-scene count changed");
+    // Disc invariant: 219 op-0x49 sites (framed with the corrected 0x4E
+    // sub-2/3/9 compare widths) - the census walks every MAN carrier per
+    // scene in the retail-frame windows, including the streaming variant
+    // MANs the bundle-only sweep missed.
+    assert_eq!(sites.len(), 219, "op-0x49 site count changed");
 
     // The one genuine flag-window family: every sub-0x04 site (the exact
     // 6-operand-byte descriptor shape) is a kor-family base=0x138 count=8

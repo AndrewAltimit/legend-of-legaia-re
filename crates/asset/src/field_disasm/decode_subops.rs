@@ -343,7 +343,7 @@ pub(super) fn decode_inventory_cmp(
                 },
             )
         }
-        5 | 6 | 7 | 8 => {
+        5..=8 => {
             need(4)?;
             let target =
                 u16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]) as usize;
