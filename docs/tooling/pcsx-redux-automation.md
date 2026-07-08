@@ -377,6 +377,28 @@ typo'd symbol fails CI rather than the probe run.
   single-step); leaving the debugger unchecked is cleaner and drops it out of
   the sporadic scene-transition crash surface, and is safe because the exec-bp
   probes re-enable it per-run.
+- **Config isolation makes the community kit config-independent.** The
+  `-dynarec` override above pins the *CPU*, but a volunteer's persisted
+  `pcsx.json` still rides in for everything else - a broken hardware-GPU pick, a
+  low frame limit, leftover debugger windows - because PCSX-Redux reads its
+  whole profile (settings + memcards + imgui layout) from `getPersistentDir()`
+  (`src/core/system.cc`): `$HOME/.config/pcsx-redux` on Linux, `%APPDATA%\pcsx-redux`
+  on Windows. It does **not** honour `XDG_CONFIG_HOME`. The override hook is the
+  `-portable <PATH>` flag, which repoints `getPersistentDir()` at any dir
+  (`src/core/arguments.cc`: the flag's value sets both `m_portable` and
+  `m_portablePath`). So `run_probe.sh --fast` (and `run_probe.ps1 -Fast`) now
+  default to **isolation**: they write a minimal fast profile - `Dynarec` on,
+  `Debug` off, ship-default renderer, `Scaler` 100, auto-update off; every
+  unset key falls back to the emulator's compile-time ship default
+  (`src/core/psxemulator.h`), so nothing drifts from a volunteer's oddities -
+  into `LEGAIA_PCSX_PROFILE_DIR` (default `captures/.pcsx-profile`) and launch
+  `-portable` at it. Memory cards are pointed at the real config dir via
+  **absolute** `Mcd1`/`Mcd2` paths (`memorycard.cc` only prepends the persistent
+  dir to *relative* names), so card saves still load and save. Opt out with
+  `--no-isolate-config` / `-NoIsolateConfig` (or `LEGAIA_NO_ISOLATE=1`) to use
+  your own saved layout; force the OpenGL renderer with
+  `LEGAIA_PCSX_HARDWARE_GPU=1`. The isolated profile is rewritten fresh every
+  run, so the pins can't drift even after PCSX rewrites `pcsx.json` on exit.
 
 ## Fast whole-playthrough capture (two-tier model)
 
