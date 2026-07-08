@@ -44,7 +44,9 @@ local bit   = require("bit") -- PCSX-Redux is LuaJIT: use bit.band, not `&`
 local RETARGET_LOOP_HEAD = 0x801E7370 -- FUN_801E7320 loop-1 reroll head
 local ACTOR_TABLE = 0x801C9370        -- slots 0..2 party, 3..6 monsters
 local CTX_PTR     = 0x8007BD24        -- -> ctx struct (byte[0]=party, [1]=monster)
-local VICT_SIGNAL = 0x8007BD71        -- 0xFE = battle-end signal
+local VICT_SIGNAL = 0x8007BD71        -- u8:  0xFE = battle-end signal
+local WIPE_SIDE   = 0x8007BD2C        -- u32: 0 = monster wipe (WIN), 5 = party wipe (LOSE)
+local BATTLE_FLAG = 0x8007BD60        -- u8:  &= 0x7F on battle end
 local A_HP        = 0x14C
 local A_FLAGS     = 0x16E
 local AI_DELEGATE = 0x380
@@ -99,9 +101,16 @@ local function on_loop_head()
             .. "monster target).", RETARGET_LOOP_HEAD, frame_hits))
         dump_monster_slots("state at spin")
         if UNSTICK then
+            -- Force a MONSTER WIPE (win): set the win side FIRST, then the end
+            -- signal. Poking only BD71 leaves BD2C stale and the teardown reads
+            -- a party wipe -> "team annihilated" -> title (0=win, 5=lose;
+            -- reader FUN_801D5854 0x801D69D4 `beq BD2C,zero,<victory>`).
+            probe.write_u16(WIPE_SIDE, 0)
+            probe.write_u16(WIPE_SIDE + 2, 0)
+            probe.write_u8(BATTLE_FLAG, bit.band(u8(BATTLE_FLAG), 0x7F))
             probe.write_u8(VICT_SIGNAL, 0xFE)
-            log("[charm-softlock] LEGAIA_CHARM_UNSTICK=1: poked "
-                .. "DAT_8007BD71=0xFE (battle-end). Fight should resolve; if it "
+            log("[charm-softlock] LEGAIA_CHARM_UNSTICK=1: forced MONSTER WIPE "
+                .. "(BD2C=0, BD71=0xFE). Fight should resolve as a WIN; if it "
                 .. "does, the victory path is fine and the loop is the only bug.")
         else
             log("[charm-softlock] (re-run with LEGAIA_CHARM_UNSTICK=1 to "

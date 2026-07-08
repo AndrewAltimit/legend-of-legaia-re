@@ -120,7 +120,13 @@ local ACTOR_TABLE   = 0x801C9370 -- slots 0..2 party, 3..6 monsters
 local A_HP          = 0x14C
 local A_FLAGS       = 0x16E
 local AI_DELEGATE   = 0x380
-local VICT_SIGNAL   = 0x8007BD71  -- 0xFE = battle-end signal
+-- The state-0x5A wipe branch writes THREE globals together. A victory (monster
+-- wipe) is NOT just the end signal - the wipe-SIDE discriminator DAT_8007BD2C
+-- selects victory (0) vs game-over (5, "party annihilated"). Poking only the
+-- signal leaves BD2C stale and the teardown reads a party wipe -> title screen.
+local VICT_SIGNAL   = 0x8007BD71  -- u8:  0xFE = battle-end signal
+local WIPE_SIDE     = 0x8007BD2C  -- u32: 0 = monster wipe (WIN), 5 = party wipe (LOSE)
+local BATTLE_FLAG   = 0x8007BD60  -- u8:  &= 0x7F on battle end (clear the active bit)
 local BATTLE_MODE   = 0x15        -- _DAT_8007B83C during the battle orbit camera
 local charm_unstuck = false       -- one-shot latch, reset when out of battle
 
@@ -372,10 +378,16 @@ local function on_vsync()
             end
             if living >= 1 and hostile == 0 then
                 charm_unstuck = true
-                mem.write_u8(VICT_SIGNAL, 0xFE)
+                -- Replicate the game's monster-wipe branch: set the WIN side
+                -- FIRST, then the end signal, so the teardown never samples the
+                -- signal with a stale (party-wipe) side.
+                mem.write_u16(WIPE_SIDE, 0)      -- \ DAT_8007BD2C = 0 (monster wipe = WIN)
+                mem.write_u16(WIPE_SIDE + 2, 0)  -- /
+                mem.write_u8(BATTLE_FLAG, bit.band(u8(BATTLE_FLAG), 0x7F))
+                mem.write_u8(VICT_SIGNAL, 0xFE)  -- battle-end signal, last
                 log(string.format("charm auto-unstick: %d living monster(s), all "
-                    .. "charmed, 0 hostile -> poked DAT_8007BD71=0xFE (battle-end) "
-                    .. "at tick %d scene=%s", living, vsync, sc))
+                    .. "charmed, 0 hostile -> forced MONSTER WIPE (win): BD2C=0, "
+                    .. "BD71=0xFE at tick %d scene=%s", living, vsync, sc))
             end
         end
     end

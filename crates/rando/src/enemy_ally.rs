@@ -96,11 +96,15 @@
 //!
 //! **Runtime mitigation (works now, at full speed):** `autorun_state_poll.lua`
 //! with `LEGAIA_CHARM_UNSTICK=1` runs under `--fast` and, each in-battle frame,
-//! forces the battle-end signal (`DAT_8007BD71 = 0xFE`) the moment every living
-//! monster is charmed and no live hostile remains - so the retarget never spins
-//! on an empty enemy set. Charm-patched capture runs then proceed without
-//! softlocking. The standalone exec-BP probe `autorun_charm_win_softlock.lua`
-//! (interpreter-only) confirms the spin site.
+//! forces a **monster wipe** the moment every living monster is charmed and no
+//! live hostile remains - so the retarget never spins on an empty enemy set. It
+//! replicates the game's state-`0x5A` wipe branch: `DAT_8007BD2C = 0` (the WIN
+//! side; `5` would be a party wipe / "team annihilated" game-over) then
+//! `DAT_8007BD71 = 0xFE` (end signal). Setting only the signal loses the fight -
+//! the teardown (`FUN_801D5854` `0x801D69D4`) branches victory on `BD2C == 0`.
+//! Charm-patched capture runs then proceed without softlocking. The standalone
+//! exec-BP probe `autorun_charm_win_softlock.lua` (interpreter-only) confirms the
+//! spin site.
 //!
 //! **Proper fix (disc, open):** bound the `FUN_801E7320` reroll - an
 //! overlay-hosted detour to a bounded-retarget routine (the SCUS rodata gap is
