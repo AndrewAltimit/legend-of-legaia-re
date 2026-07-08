@@ -17,6 +17,14 @@ It installs a bare Vsync listener with **no self-quit** (this is a
 human-at-the-controls session), arms the watches once the game settles into
 field mode, and streams every hit to a CSV.
 
+> **Localise first with the fast poll tier.** These exec-bp watches force the
+> interpreter (~10 fps). Before a targeted session, a `--fast` dynarec run of
+> [`autorun_state_poll.lua`](../../scripts/pcsx-redux/autorun_state_poll.lua)
+> (the [two-tier model](pcsx-redux-automation.md#fast-whole-playthrough-capture-two-tier-model))
+> logs *which scene* each flag changes in at full speed - point the exec-bp
+> firehose there for the writer `ra`. Both probes share the USA-build version
+> guard (`lib/probe/version.lua`).
+
 ## Derived watch addresses
 
 Flag-bank geometry (SCUS-resident): base `0x80085758`,

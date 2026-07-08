@@ -213,7 +213,7 @@ cd "$REPO_ROOT"
     echo "  frames     : $LEGAIA_FRAMES"
     [[ -n "$LEGAIA_OUT" ]]     && echo "  out        : $LEGAIA_OUT"
     [[ -n "$LEGAIA_OUT_DIR" ]] && echo "  out_dir    : $LEGAIA_OUT_DIR"
-    [[ $FAST -eq 1 ]] && echo "  mode       : fast (recompiler - no Lua BPs)" \
+    [[ $FAST -eq 1 ]] && echo "  mode       : fast (-dynarec forced; no Lua BPs; verify top bar = CPU: Dynarec)" \
                       || echo "  mode       : interpreter+debugger (Lua BPs fire)"
     echo "  log        : $LOG_FILE"
     echo "===================="
@@ -231,6 +231,17 @@ if [[ $FAST -eq 0 ]]; then
     # Both flags are required: -interpreter selects the non-recompiling CPU,
     # and DebugSettings::Debug (= -debugger) gates the debug-process hook.
     emu_flags=(-interpreter -debugger "${emu_flags[@]}")
+else
+    # EXPLICITLY force the recompiler. Merely OMITTING -interpreter is not
+    # enough: with no CPU flag, PCSX-Redux falls back to the PERSISTED
+    # settings in pcsx.json ("Dynarec": false, "Debug": true), which pin it to
+    # the slow interpreter+debugger core regardless of the CLI - the top bar
+    # reads "CPU: Interpreted" and fps tanks. -dynarec overrides that per-run
+    # without editing the user's config (the slow firehose still needs the
+    # persisted debugger). The debugger WINDOW may still open from the saved
+    # imgui layout - harmless here (no BPs arm); the CPU runs the recompiler.
+    # Verify: the top bar should read "CPU: Dynarec".
+    emu_flags=(-dynarec "${emu_flags[@]}")
 fi
 
 # LEGAIA_GDB=1 wraps the emulator in gdb so a segfault (sporadic on

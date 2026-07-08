@@ -364,6 +364,67 @@ typo'd symbol fails CI rather than the probe run.
   The local build carries a rebalance patch (`int base = L.gettop()` before dispatch, pop back to `base` after; verified alive past tick 33500 by a forced counter probe). Rebuilding PCSX-Redux from clean upstream REINTRODUCES the cap until the patch is upstreamed - re-apply it after any emulator update.
 - **Don't `readAt(2 MiB, 0)` inside a vsync callback.** A single 2 MiB `PCSX.getMemoryAsFile():readAt(...)` call permanently degrades subsequent `GPU::Vsync` event delivery in the same emulator launch - subsequent callbacks fire rarely or not at all. This is the listener-GC trap above wearing a different hat: the multi-MiB garbage burst triggers the collect that kills an unanchored listener. With the handle anchored, prefer small reads anyway (64 KiB at a time is safe) - full-RAM materialisation per vsync still stalls the frame.
 - **PCSX.quit(0) doesn't always exit the process.** Wrap every probe invocation with `timeout --kill-after=10s <budget>` so a hung emulator gets reliably killed. The captured data is already on disk by the time PCSX.quit fires - the timeout-kill is purely cleanup.
+- **`--fast` must FORCE `-dynarec`, not just omit `-interpreter`.** PCSX-Redux
+  persists CPU + debugger choice in `pcsx.json` (`"Dynarec": false`,
+  `"Debug": true` once the debugger has ever been used). With no CPU flag on
+  the command line those saved values win, so a run launched `--fast` still
+  comes up on the interpreter with the debugger enabled - the top bar reads
+  `CPU: Interpreted` and fps stays at the slow-core rate. `run_probe.sh --fast`
+  therefore passes `-dynarec` explicitly to override the persisted setting
+  per-run (the interpreter path still forces `-interpreter -debugger` its own
+  way). Always confirm the top bar reads **`CPU: Dynarec`**. The dynarec runs
+  happily with the debugger window still open (no BPs = nothing to
+  single-step); leaving the debugger unchecked is cleaner and drops it out of
+  the sporadic scene-transition crash surface, and is safe because the exec-bp
+  probes re-enable it per-run.
+
+## Fast whole-playthrough capture (two-tier model)
+
+Some questions - "which story flag/item/party change happens in which scene" across a long play session - are answered by a *human playing the game*, the one thing the harness can't automate. Two probes split that work by cost:
+
+- **Tier 1 - `autorun_state_poll.lua` (fast, `--fast`/dynarec, ~full speed):**
+  arms **no breakpoints**. Every `GPU::Vsync` it diffs a fixed set of
+  progression cells against the previous frame - the story-flag bank
+  (`0x80085758`, idx space identical to the exec-bp writer's `a0`), the
+  battle-id staging byte (`0x8007B7FC`), gold (`0x8008459C`), item inventory
+  (`0x80085958`, consumables + start of the key-item page), and party
+  count/ids (`0x80084594`/`0x80084598`) - plus scene (`0x8007050C`) and mode
+  (`0x8007B83C`) transitions. Per-frame diffing naturally filters intra-frame
+  churn. Because it uses no breakpoints it runs under the recompiler at full
+  speed (dynarec even sustains 3x), so it is the probe to hand to community
+  volunteers for a whole-playthrough sweep. Output `state_poll.csv`
+  (`tick,kind,idx,value,delta,mode,scene,note`) carries no Sony bytes - only
+  flag/item ids, scene names, ticks. Trade-off: it captures *what* changed and
+  *where*, not the writer.
+- **Tier 2 - `autorun_flag_firehose.lua` (slow, interpreter+debugger, ~10 fps):** exec-breakpoints on `FUN_8003CE08`/`_CE34` capture the writer `ra` for the specific flags Tier 1 fingered. Run in short targeted bursts, not a full playthrough.
+
+The flag window is capped at `0x200` bytes (idx `0..4095`) deliberately: the char-record slot-3 tail ends exactly at the flag base and the item inventory begins exactly `0x200` above it, so `0x200` is the largest window that is pure story-flag bytes with no overlap onto volatile record/inventory cells. Widening re-introduces inventory double-counting.
+
+**Version guard (`lib/probe/version.lua`).** Every probe hard-codes
+USA-`SCUS_942.54` addresses; a JP/EU/PAL or wrong-revision disc would arm on
+the wrong code and log silent garbage. Both the poll tier and the firehose
+call `version.check()`, which fingerprints 6 always-resident code words at
+each of `0x8003CE08`/`_CE34`/`_CE64`. Residency is gated on the fingerprinted
+*code* being loaded (not merely an anchor string, which lands during boot
+before `.text`), so it never latches on the all-zero partial-load window.
+Modes: **locked** (`USA_FINGERPRINT` set - the shipped default; mismatch =
+hard refusal), **unlocked** (empty - warns but still fail-closes on a
+non-Legaia anchor), **record** (`LEGAIA_FP_RECORD=1` - prints the fingerprint
+and refuses to arm, for relocking after a rebuild). The volunteer-facing
+runbook is [`scripts/pcsx-redux/COMMUNITY-CAPTURE.md`](../../scripts/pcsx-redux/COMMUNITY-CAPTURE.md).
+
+```bash
+# Tier 1 - fast community sweep (verify top bar = CPU: Dynarec):
+LEGAIA_NO_SSTATE=1 timeout --kill-after=15s 14400s \
+  bash scripts/pcsx-redux/run_probe.sh --fast \
+    --lua scripts/pcsx-redux/autorun_state_poll.lua
+
+# Relock the version fingerprint after an emulator/disc change:
+LEGAIA_FP_RECORD=1 LEGAIA_NO_SSTATE=1 \
+  bash scripts/pcsx-redux/run_probe.sh --fast \
+    --lua scripts/pcsx-redux/autorun_state_poll.lua
+# -> paste [state_poll] fingerprint = <hex> into version.USA_FINGERPRINT
+```
 
 ## Catalogue
 
@@ -409,6 +470,8 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_battle_palette_source.lua` | Confirms the scene bundle is LZS-decompressed into the work arena at load; does NOT pin the party palette. → [detail](#autorun_battle_palette_sourcelua) |
 | `autorun_load_screen_dump.lua` | Ground-truth capture for the load-screen panel border + slot-pill source sprites. → [detail](#autorun_load_screen_dumplua) |
 | `autorun_town01_script_flow.lua` | Pins a field scene's script execution model. → [detail](#autorun_town01_script_flowlua) |
+| `autorun_state_poll.lua` | Fast (dynarec, no BPs) per-vsync diff of all progression state (flags/battle-id/gold/items/party/scene/mode) for a whole-playthrough sweep. Tier 1 of the [two-tier model](#fast-whole-playthrough-capture-two-tier-model); the community-handoff probe. |
+| `autorun_flag_firehose.lua` | Slow (interpreter) exec-bp capture of EVERY story-flag write with its writer `ra` + battle-id staging watch. Tier 2 - writer provenance for the flags the poll tier fingers. |
 | [`autorun_battle_char_clut_source.lua`](../../scripts/pcsx-redux/autorun_battle_char_clut_source.lua) | Pins the disc source of the battle-form party CLUT band (VRAM rows 490..497). → [detail](#autorun_battle_char_clut_sourcelua) |
 | [`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua) | Pins the battle-form party-mesh install callsite. → [detail](#autorun_battle_party_mesh_installlua) |
 | [`autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua) | Live-confirms the exact battle camera byte-exact. → [detail](#autorun_battle_render_capturelua) |
@@ -613,11 +676,12 @@ bash scripts/pcsx-redux/run_probe.sh --scenario party_basic_attack_vs_gobu_gobu 
 LEGAIA_NO_SSTATE=1 bash scripts/pcsx-redux/run_probe.sh \
     --lua scripts/pcsx-redux/autorun_countdown_trigger.lua
 
-# Fast (recompiler) mode - drops `-interpreter -debugger`. Lua **BPs do
-# NOT fire** under the recompiler, so this is only useful for
-# vsync-event-only probes (e.g. autorun_dump_full_ram.lua).
+# Fast (recompiler) mode - FORCES `-dynarec` (overriding the persisted
+# interpreter+debugger config; confirm top bar = CPU: Dynarec). Lua **BPs
+# do NOT fire** under the recompiler, so this is for vsync-event-only
+# probes: full-RAM dumps and the poll-diff progression capture below.
 bash scripts/pcsx-redux/run_probe.sh --fast \
-    --lua scripts/pcsx-redux/autorun_dump_full_ram.lua
+    --lua scripts/pcsx-redux/autorun_state_poll.lua
 ```
 
 The earlier `run_world_map_probe.sh` / `run_fast_probe.sh` /
