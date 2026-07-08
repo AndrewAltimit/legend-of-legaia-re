@@ -207,3 +207,62 @@ fn geremi_p2_0_is_the_0x1be_self_latch() {
     );
     assert!(c2.is_empty(), "P2[0] has no requires-all gate");
 }
+
+/// The READER of flag `0x225` (549, the Rim Elm opening one-shot) is the same
+/// record-gate evaluator `FUN_8003BDE0`, disc-wide across the Rim Elm scene
+/// variants: `P2[3]` C1 = `[0x225]` (blocks the opening once it has played)
+/// and `P2[4]` C2 contains `0x225` (the post-naming beat requires the opening
+/// done). It is read ONLY from these record-HEADER C1/C2 gate lists, never an
+/// inline `0x70` TEST - which is why the inline-opcode census reports zero
+/// test sites. (The WRITER of `0x225` is a separate, still-open question: a
+/// direct code path, not carrier bytecode.)
+#[test]
+fn flag_549_reader_is_the_rim_elm_p2_gate() {
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    // Canonical case pinned exactly; the other variants share the shape.
+    let scene = Scene::load(&index, "town01").expect("load town01");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("town01 MAN resolves");
+    let mf = legaia_asset::man_section::parse(&man).expect("parse");
+    let (c1_3, _) = partition2_record_gates(&mf, &man, 3).expect("P2[3] gates");
+    assert_eq!(c1_3, vec![0x225], "town01 P2[3] C1 = the opening one-shot");
+    let (c1_4, c2_4) = partition2_record_gates(&mf, &man, 4).expect("P2[4] gates");
+    assert_eq!(
+        c1_4,
+        vec![0x226],
+        "town01 P2[4] C1 = its own one-shot (550)"
+    );
+    assert!(
+        c2_4.contains(&0x225),
+        "town01 P2[4] C2 requires the opening done (549 set)"
+    );
+    // Disc-wide: 0x225 is read as a gate in the four Rim Elm variants.
+    let mut scenes_gating = 0usize;
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = Scene::load(&index, &name) else {
+            continue;
+        };
+        let Some(man) = scene.field_man_payload(&index).ok().flatten() else {
+            continue;
+        };
+        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+            continue;
+        };
+        let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
+        let gates_549 = (0..n_p2).any(|i| {
+            partition2_record_gates(&mf, &man, i)
+                .map(|(c1, c2)| c1.contains(&0x225) || c2.contains(&0x225))
+                .unwrap_or(false)
+        });
+        if gates_549 {
+            scenes_gating += 1;
+        }
+    }
+    assert!(
+        scenes_gating >= 4,
+        "0x225 is read as a C1/C2 gate in >= 4 Rim Elm variants, got {scenes_gating}"
+    );
+}
