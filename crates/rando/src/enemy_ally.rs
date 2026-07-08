@@ -92,13 +92,21 @@
 //! for the state-`0x5A` victory gate, but that gate only runs *after* an action
 //! completes; the spin happens *inside* the retarget at ActionSeed (`0x0C`),
 //! reachable when the ally acts with no live enemy left (e.g. a multi-action
-//! turn). Confirm/repro + un-stick probe:
-//! `scripts/pcsx-redux/autorun_charm_win_softlock.lua`.
+//! turn).
 //!
-//! Fix requires bounding the `FUN_801E7320` reroll (an overlay-hosted detour to
-//! a bounded-retarget routine - the SCUS rodata gap is full, so it can't host a
-//! new SCUS routine; overlay dead space or an in-overlay accept-on-exhaust word
-//! is the candidate). Pending live confirmation before landing an injection.
+//! **Runtime mitigation (works now, at full speed):** `autorun_state_poll.lua`
+//! with `LEGAIA_CHARM_UNSTICK=1` runs under `--fast` and, each in-battle frame,
+//! forces the battle-end signal (`DAT_8007BD71 = 0xFE`) the moment every living
+//! monster is charmed and no live hostile remains - so the retarget never spins
+//! on an empty enemy set. Charm-patched capture runs then proceed without
+//! softlocking. The standalone exec-BP probe `autorun_charm_win_softlock.lua`
+//! (interpreter-only) confirms the spin site.
+//!
+//! **Proper fix (disc, open):** bound the `FUN_801E7320` reroll - an
+//! overlay-hosted detour to a bounded-retarget routine (the SCUS rodata gap is
+//! full, so it can't host a new SCUS routine; overlay dead space or an
+//! in-overlay accept-on-exhaust word is the candidate). Pending live
+//! confirmation before landing an injection.
 
 use anyhow::{Result, bail};
 
