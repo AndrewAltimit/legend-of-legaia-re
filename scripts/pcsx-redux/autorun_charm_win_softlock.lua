@@ -24,10 +24,18 @@
 -- flags), which will show the charmed ally (flags & 0x380) alive and every other
 -- monster dead (HP==0) - the confirmation.
 --
--- LEGAIA_CHARM_UNSTICK=1: on spin, poke the battle-end signal DAT_8007BD71=0xFE
--- so the fight ends and you can keep playing/capturing. This also proves the fix
--- direction: if forcing battle-end resolves cleanly, the victory logic is fine
--- and the ONLY bug is the unbounded loop.
+-- OBSERVE-ONLY: this probe does NOT poke anything. Forcing a battle-end (BD71/
+-- BD2C) from Lua mid-action tears the SM down at an unsafe point and corrupts it
+-- (observed: the game then does 32-bit writes to garbage addresses -> freeze).
+-- Its job is to CONFIRM whether the stall is really this loop and dump the live
+-- slot state; the fix is designed from what it shows, not by poking.
+--
+-- CAUTION on the theory: loop-1 picks `a0 = 3 + rand % monster_count`, and the
+-- alive charmed ally is itself a monster slot in that range - so the reroll can
+-- pick the ally (HP!=0) and exit (it even has a self-target branch at 801e73e0).
+-- So this may NOT be an infinite loop; if the exec BP does NOT hammer, the real
+-- softlock is elsewhere and we look again. That's exactly why this observes
+-- before anything gets patched.
 --
 -- Exec BPs need the interpreter + debugger, so DO NOT run this with --fast:
 --   bash scripts/pcsx-redux/run_probe.sh \
@@ -44,9 +52,6 @@ local bit   = require("bit") -- PCSX-Redux is LuaJIT: use bit.band, not `&`
 local RETARGET_LOOP_HEAD = 0x801E7370 -- FUN_801E7320 loop-1 reroll head
 local ACTOR_TABLE = 0x801C9370        -- slots 0..2 party, 3..6 monsters
 local CTX_PTR     = 0x8007BD24        -- -> ctx struct (byte[0]=party, [1]=monster)
-local VICT_SIGNAL = 0x8007BD71        -- u8:  0xFE = battle-end signal
-local WIPE_SIDE   = 0x8007BD2C        -- u32: 0 = monster wipe (WIN), 5 = party wipe (LOSE)
-local BATTLE_FLAG = 0x8007BD60        -- u8:  &= 0x7F on battle end
 local A_HP        = 0x14C
 local A_FLAGS     = 0x16E
 local AI_DELEGATE = 0x380
@@ -54,8 +59,6 @@ local AI_DELEGATE = 0x380
 -- A frame with more loop-head hits than this, with no vsync in between, is a
 -- spin (real retargeting rerolls at most a handful of times per frame).
 local SPIN_THRESHOLD = 4000
-
-local UNSTICK = probe.getenv("LEGAIA_CHARM_UNSTICK", "") == "1"
 
 local function u8(a)  return probe.read_u8(a)  or 0 end
 local function u16(a) return probe.read_u16(a) or 0 end
@@ -100,22 +103,9 @@ local function on_loop_head()
             .. "%d times in one frame with no vsync -> unbounded reroll (no live "
             .. "monster target).", RETARGET_LOOP_HEAD, frame_hits))
         dump_monster_slots("state at spin")
-        if UNSTICK then
-            -- Force a MONSTER WIPE (win): set the win side FIRST, then the end
-            -- signal. Poking only BD71 leaves BD2C stale and the teardown reads
-            -- a party wipe -> "team annihilated" -> title (0=win, 5=lose;
-            -- reader FUN_801D5854 0x801D69D4 `beq BD2C,zero,<victory>`).
-            probe.write_u16(WIPE_SIDE, 0)
-            probe.write_u16(WIPE_SIDE + 2, 0)
-            probe.write_u8(BATTLE_FLAG, bit.band(u8(BATTLE_FLAG), 0x7F))
-            probe.write_u8(VICT_SIGNAL, 0xFE)
-            log("[charm-softlock] LEGAIA_CHARM_UNSTICK=1: forced MONSTER WIPE "
-                .. "(BD2C=0, BD71=0xFE). Fight should resolve as a WIN; if it "
-                .. "does, the victory path is fine and the loop is the only bug.")
-        else
-            log("[charm-softlock] (re-run with LEGAIA_CHARM_UNSTICK=1 to "
-                .. "force the battle to end and recover.)")
-        end
+        log("[charm-softlock] observe-only: NOT poking anything (forcing a "
+            .. "battle-end mid-action corrupts the SM -> garbage writes / freeze). "
+            .. "Send this log; the slot dump above is what pins the real cause.")
     end
 end
 
@@ -142,7 +132,8 @@ bp.arm(RETARGET_LOOP_HEAD, "Exec", 4, "charm_retarget_loop", on_loop_head)
 
 log(string.format(
     "[charm-softlock] armed Exec BP on FUN_801E7320 loop head 0x%08X "
-    .. "(spin threshold %d hits/frame). unstick=%s", RETARGET_LOOP_HEAD,
-    SPIN_THRESHOLD, tostring(UNSTICK)))
-log("[charm-softlock] load your save, walk into a charmed multi-enemy "
-    .. "fight, and let the charmed ally KO the last hostile.")
+    .. "(observe-only; spin threshold %d hits/frame).",
+    RETARGET_LOOP_HEAD, SPIN_THRESHOLD))
+log("[charm-softlock] load your save, reproduce the softlock (the fight that "
+    .. "froze), and send the log. If the SPIN line never appears, the stall is "
+    .. "not this loop.")

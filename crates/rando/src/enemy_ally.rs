@@ -74,43 +74,35 @@
 //! corrupted. No Sony bytes are embedded: the routine is the randomizer's own
 //! code.
 //!
-//! ## Known limitation: win-by-ally softlock (open)
+//! ## Known limitation: charm battle softlock (OPEN - cause NOT yet confirmed)
 //!
-//! In a **multi-enemy** fight, if the charmed ally lands the **killing blow on
-//! the last hostile** it can hard-softlock. Root cause (static, from
-//! `overlay_battle_action_801e7320.txt`): the `0x380` retarget helper
-//! `FUN_801E7320` has an **unbounded reroll loop** at `0x801E7370` -
-//! `a0 = 3 + rand % monster_count`, then `do { reroll } while (monster[a0].HP ==
-//! 0)`. A charmed monster's default target is a party slot (`< 3`), so it enters
-//! this loop, which flips it to a *monster* target and rerolls while the pick is
-//! dead. Once the charmed ally is the last living monster, every other monster
-//! slot is dead, so the reroll never terminates. Vanilla can't hit this: a
-//! confused actor's opposite side is the *party*, which can't be fully dead
-//! mid-battle (a party wipe ends the fight first); charm makes the opposite side
-//! the *other monsters*, which can be wiped while the (charmed) monster lives.
-//! The [`VICTORY_VA`] widen is NOT enough - it makes the ally count as "down"
-//! for the state-`0x5A` victory gate, but that gate only runs *after* an action
-//! completes; the spin happens *inside* the retarget at ActionSeed (`0x0C`),
-//! reachable when the ally acts with no live enemy left (e.g. a multi-action
-//! turn).
+//! In a charm fight the battle can hard-lock (user-reported live). The cause is
+//! **not yet confirmed** and two runtime workarounds have been tried and
+//! rejected - do not repeat them:
 //!
-//! **Runtime mitigation (works now, at full speed):** `autorun_state_poll.lua`
-//! with `LEGAIA_CHARM_UNSTICK=1` runs under `--fast` and, each in-battle frame,
-//! forces a **monster wipe** the moment every living monster is charmed and no
-//! live hostile remains - so the retarget never spins on an empty enemy set. It
-//! replicates the game's state-`0x5A` wipe branch: `DAT_8007BD2C = 0` (the WIN
-//! side; `5` would be a party wipe / "team annihilated" game-over) then
-//! `DAT_8007BD71 = 0xFE` (end signal). Setting only the signal loses the fight -
-//! the teardown (`FUN_801D5854` `0x801D69D4`) branches victory on `BD2C == 0`.
-//! Charm-patched capture runs then proceed without softlocking. The standalone
-//! exec-BP probe `autorun_charm_win_softlock.lua` (interpreter-only) confirms the
-//! spin site.
+//! - **DO NOT force the battle-end from Lua/mid-action.** Poking `DAT_8007BD71`
+//!   (end signal) and `DAT_8007BD2C` (wipe side: `0` win / `5` "team
+//!   annihilated" game-over; teardown `FUN_801D5854` `0x801D69D4` branches
+//!   victory on `BD2C == 0`) at an arbitrary frame tears the SM down at an
+//!   unsafe point. Observed results: BD71-only -> game-over; BD71+BD2C=0 ->
+//!   the game then does 32-bit writes to garbage addresses (corrupted base
+//!   register) -> freeze. The game only writes these at the safe end-of-action
+//!   gate (state `0x5A`), never mid-action.
 //!
-//! **Proper fix (disc, open):** bound the `FUN_801E7320` reroll - an
-//! overlay-hosted detour to a bounded-retarget routine (the SCUS rodata gap is
-//! full, so it can't host a new SCUS routine; overlay dead space or an
-//! in-overlay accept-on-exhaust word is the candidate). Pending live
-//! confirmation before landing an injection.
+//! - **The `FUN_801E7320` "unbounded reroll" theory is NOT settled.** Loop-1 at
+//!   `0x801E7370` picks `a0 = 3 + rand % monster_count` and rerolls while
+//!   `monster[a0].HP == 0` - but the alive charmed ally is itself a monster slot
+//!   in that range, so the reroll can pick the ally (HP != 0) and exit (it has a
+//!   self-target branch at `0x801E73E0`). So it may not spin at all. Needs a
+//!   live observation (the [`VICTORY_VA`] widen already wins the ordinary case,
+//!   where `0x5A` runs after the killing action and counts the ally as "down").
+//!
+//! Path forward: OBSERVE first with the observe-only exec-BP probe
+//! `autorun_charm_win_softlock.lua` (interpreter-only) - reproduce the freeze
+//! and read its slot dump to pin the real stall - THEN design the fix (likely a
+//! disc-side change at the confirmed site; the SCUS rodata gap is full, so a
+//! `FUN_801E7320` bound would need overlay dead space). No runtime poke is
+//! shipped; the widen is the only charm victory aid that is in place.
 
 use anyhow::{Result, bail};
 

@@ -106,30 +106,6 @@ local POINT_CARD_MAX  = probe.getenv("LEGAIA_POINT_CARD_MAX", "") == "1"
 local POINT_CARD_ADDR = 0x800845B4
 local POINT_CARD_CAP  = 9999999  -- 0x0098967F
 
--- Optional charm auto-unstick: LEGAIA_CHARM_UNSTICK=1. The enemy-ally "charm"
--- mod can hard-softlock when a charmed ally KOs the last hostile - the 0x380
--- retarget helper FUN_801E7320 then rerolls forever looking for a live enemy
--- monster (none left; unbounded loop at 0x801E7370). This runs under --fast: on
--- each in-battle frame, if every LIVING monster is charmed (0x380) and no live
--- hostile remains, force the battle-end signal DAT_8007BD71=0xFE so the fight
--- resolves BEFORE the retarget can spin. A Lua poke (no CSV cell touched), so
--- captures stay clean. Root cause + the standalone diagnosis probe:
--- scripts/pcsx-redux/autorun_charm_win_softlock.lua + enemy_ally.rs.
-local CHARM_UNSTICK = probe.getenv("LEGAIA_CHARM_UNSTICK", "") == "1"
-local ACTOR_TABLE   = 0x801C9370 -- slots 0..2 party, 3..6 monsters
-local A_HP          = 0x14C
-local A_FLAGS       = 0x16E
-local AI_DELEGATE   = 0x380
--- The state-0x5A wipe branch writes THREE globals together. A victory (monster
--- wipe) is NOT just the end signal - the wipe-SIDE discriminator DAT_8007BD2C
--- selects victory (0) vs game-over (5, "party annihilated"). Poking only the
--- signal leaves BD2C stale and the teardown reads a party wipe -> title screen.
-local VICT_SIGNAL   = 0x8007BD71  -- u8:  0xFE = battle-end signal
-local WIPE_SIDE     = 0x8007BD2C  -- u32: 0 = monster wipe (WIN), 5 = party wipe (LOSE)
-local BATTLE_FLAG   = 0x8007BD60  -- u8:  &= 0x7F on battle end (clear the active bit)
-local BATTLE_MODE   = 0x15        -- _DAT_8007B83C during the battle orbit camera
-local charm_unstuck = false       -- one-shot latch, reset when out of battle
-
 local CSV = probe.csv_open(probe.out_path("state_poll.csv"),
     "tick,kind,idx,value,delta,mode,scene,note")
 
@@ -353,43 +329,6 @@ local function on_vsync()
     if POINT_CARD_MAX then
         mem.write_u16(POINT_CARD_ADDR,     POINT_CARD_CAP % 0x10000)
         mem.write_u16(POINT_CARD_ADDR + 2, math.floor(POINT_CARD_CAP / 0x10000))
-    end
-
-    -- Charm auto-unstick: end the fight the moment no live hostile remains but a
-    -- charmed monster lives, so the 0x380 retarget can never spin on an empty
-    -- enemy set. Gated on the battle render mode (0x15) so stale out-of-battle
-    -- actor pointers are never mistaken for monsters.
-    if CHARM_UNSTICK then
-        if md ~= BATTLE_MODE then
-            charm_unstuck = false
-        elseif not charm_unstuck then
-            local living, hostile = 0, 0
-            for slot = 3, 6 do
-                local p = u32(ACTOR_TABLE + slot * 4)
-                if p >= 0x80000000 and p < 0x80200000 then
-                    local hp = u16(p + A_HP)
-                    if hp > 0 and hp <= 9999 then
-                        living = living + 1
-                        if bit.band(u16(p + A_FLAGS), AI_DELEGATE) ~= AI_DELEGATE then
-                            hostile = hostile + 1
-                        end
-                    end
-                end
-            end
-            if living >= 1 and hostile == 0 then
-                charm_unstuck = true
-                -- Replicate the game's monster-wipe branch: set the WIN side
-                -- FIRST, then the end signal, so the teardown never samples the
-                -- signal with a stale (party-wipe) side.
-                mem.write_u16(WIPE_SIDE, 0)      -- \ DAT_8007BD2C = 0 (monster wipe = WIN)
-                mem.write_u16(WIPE_SIDE + 2, 0)  -- /
-                mem.write_u8(BATTLE_FLAG, bit.band(u8(BATTLE_FLAG), 0x7F))
-                mem.write_u8(VICT_SIGNAL, 0xFE)  -- battle-end signal, last
-                log(string.format("charm auto-unstick: %d living monster(s), all "
-                    .. "charmed, 0 hostile -> forced MONSTER WIPE (win): BD2C=0, "
-                    .. "BD71=0xFE at tick %d scene=%s", living, vsync, sc))
-            end
-        end
     end
 
     -- Heartbeat every ~8s.
