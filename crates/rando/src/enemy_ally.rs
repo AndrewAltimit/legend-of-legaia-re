@@ -73,6 +73,32 @@
 //! verified before it is widened). A differently-laid-out image is refused, not
 //! corrupted. No Sony bytes are embedded: the routine is the randomizer's own
 //! code.
+//!
+//! ## Known limitation: win-by-ally softlock (open)
+//!
+//! In a **multi-enemy** fight, if the charmed ally lands the **killing blow on
+//! the last hostile** it can hard-softlock. Root cause (static, from
+//! `overlay_battle_action_801e7320.txt`): the `0x380` retarget helper
+//! `FUN_801E7320` has an **unbounded reroll loop** at `0x801E7370` -
+//! `a0 = 3 + rand % monster_count`, then `do { reroll } while (monster[a0].HP ==
+//! 0)`. A charmed monster's default target is a party slot (`< 3`), so it enters
+//! this loop, which flips it to a *monster* target and rerolls while the pick is
+//! dead. Once the charmed ally is the last living monster, every other monster
+//! slot is dead, so the reroll never terminates. Vanilla can't hit this: a
+//! confused actor's opposite side is the *party*, which can't be fully dead
+//! mid-battle (a party wipe ends the fight first); charm makes the opposite side
+//! the *other monsters*, which can be wiped while the (charmed) monster lives.
+//! The [`VICTORY_VA`] widen is NOT enough - it makes the ally count as "down"
+//! for the state-`0x5A` victory gate, but that gate only runs *after* an action
+//! completes; the spin happens *inside* the retarget at ActionSeed (`0x0C`),
+//! reachable when the ally acts with no live enemy left (e.g. a multi-action
+//! turn). Confirm/repro + un-stick probe:
+//! `scripts/pcsx-redux/autorun_charm_win_softlock.lua`.
+//!
+//! Fix requires bounding the `FUN_801E7320` reroll (an overlay-hosted detour to
+//! a bounded-retarget routine - the SCUS rodata gap is full, so it can't host a
+//! new SCUS routine; overlay dead space or an in-overlay accept-on-exhaust word
+//! is the candidate). Pending live confirmation before landing an injection.
 
 use anyhow::{Result, bail};
 

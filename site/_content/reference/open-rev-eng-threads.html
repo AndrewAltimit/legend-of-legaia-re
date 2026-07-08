@@ -260,6 +260,12 @@
         <td><a href="../formats/accessory-passive-table.html">accessory-passive-table</a></td>
       </tr>
       <tr>
+        <td>Enemy-ally charm win-by-ally softlock (<code>FUN_801E7320</code>)</td>
+        <td>root cause CONFIRMED (static); fix open</td>
+        <td>Multi-enemy fight: a charmed ally that KOs the last hostile hard-locks. The <code>0x380</code> retarget <code>FUN_801E7320</code> has an unbounded reroll at <code>0x801E7370</code> - <code>do { reroll } while (monster[a0].HP == 0)</code> over the monster band; when the ally is the last living monster every other slot is dead so it never terminates. The <code>0x801E6638</code> victory widen isn't enough (it fixes the state-<code>0x5A</code> count, which runs <em>after</em> the action; the spin is inside the retarget at ActionSeed <code>0x0C</code>). Fix needs an overlay-hosted bounded-retarget detour (SCUS gap full). Probe <code>autorun_charm_win_softlock.lua</code>; <code>enemy_ally.rs</code> "## Known limitation".</td>
+        <td></td>
+      </tr>
+      <tr>
         <td>Battle-actor <code>+0x16E</code> bit <code>0x400</code> applier (guard-disabling status)</td>
         <td>open (low value)</td>
         <td>Bit <code>0x400</code> of the battle-actor flags word <code>+0x16E</code> reads as a guard-disabling Sleep/Numb-like status. The sibling AI-delegated bits <code>0x380</code> in the same word are pinned (the enemy-ally charm hook sets them via <code>FUN_801E7320</code> retarget), but the <em>setter</em> that raises <code>0x400</code> is not in the decompiled corpus - readers only. Low value. Closes with a before/after RAM capture around a battle turn that inflicts the status, diffing the <code>+0x16E</code> word to catch the byte that raises <code>0x400</code>.</td>
