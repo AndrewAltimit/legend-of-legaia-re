@@ -64,24 +64,26 @@ local frame_hits   = 0
 local total_hits   = 0
 local spin_logged  = false
 
+local function log(s) PCSX.log(s) end
+
 local function dump_monster_slots(tag)
     local ctx = u32(CTX_PTR)
     local party_n = ok_ptr(ctx) and u8(ctx + 0) or -1
     local mon_n   = ok_ptr(ctx) and u8(ctx + 1) or -1
-    probe.log(string.format("[charm-softlock] %s  party_n=%d monster_n=%d",
+    log(string.format("[charm-softlock] %s  party_n=%d monster_n=%d",
         tag, party_n, mon_n))
     for slot = 3, 6 do
         local p = u32(ACTOR_TABLE + slot * 4)
         if ok_ptr(p) then
             local hp = u16(p + A_HP)
             local fl = u16(p + A_FLAGS)
-            probe.log(string.format(
+            log(string.format(
                 "  slot %d @%08X  HP=%-5d flags=0x%04X%s%s",
                 slot, p, hp, fl,
                 bit.band(fl, AI_DELEGATE) == AI_DELEGATE and "  [CHARMED 0x380]" or "",
                 hp == 0 and "  [DEAD]" or ""))
         else
-            probe.log(string.format("  slot %d  (empty)", slot))
+            log(string.format("  slot %d  (empty)", slot))
         end
     end
 end
@@ -91,44 +93,47 @@ local function on_loop_head()
     total_hits = total_hits + 1
     if frame_hits == SPIN_THRESHOLD and not spin_logged then
         spin_logged = true
-        probe.log(string.format(
+        log(string.format(
             "[charm-softlock] SPIN DETECTED: FUN_801E7320 loop-1 head 0x%08X hit "
             .. "%d times in one frame with no vsync -> unbounded reroll (no live "
             .. "monster target).", RETARGET_LOOP_HEAD, frame_hits))
         dump_monster_slots("state at spin")
         if UNSTICK then
             probe.write_u8(VICT_SIGNAL, 0xFE)
-            probe.log("[charm-softlock] LEGAIA_CHARM_UNSTICK=1: poked "
+            log("[charm-softlock] LEGAIA_CHARM_UNSTICK=1: poked "
                 .. "DAT_8007BD71=0xFE (battle-end). Fight should resolve; if it "
                 .. "does, the victory path is fine and the loop is the only bug.")
         else
-            probe.log("[charm-softlock] (re-run with LEGAIA_CHARM_UNSTICK=1 to "
+            log("[charm-softlock] (re-run with LEGAIA_CHARM_UNSTICK=1 to "
                 .. "force the battle to end and recover.)")
         end
     end
 end
 
 -- vsync means a frame completed, so we were NOT spinning: reset the per-frame
--- counter and the one-shot log latch. Anchor the listener (a GC'd listener
--- silently deletes the C++ side and can segfault mid-dispatch).
-local vsync_listener
-vsync_listener = PCSX.Events.createEventListener("GPU::Vsync", function()
+-- counter and the one-shot log latch. Anchor the listener in the GLOBAL anchor
+-- table - a `local` handle is GC'd once this chunk returns, and PCSX's __gc
+-- proxy then deletes the C++ listener (and GC mid-dispatch can segfault).
+local function on_vsync()
     if frame_hits > 0 and frame_hits < SPIN_THRESHOLD then
         -- occasional heartbeat so a healthy run shows the loop is bounded
         if (total_hits % 997) < frame_hits then
-            probe.log(string.format("[charm-softlock] alive: retarget loop bounded "
+            log(string.format("[charm-softlock] alive: retarget loop bounded "
                 .. "(%d hits last frame, %d total)", frame_hits, total_hits))
         end
     end
     frame_hits  = 0
     spin_logged = false
-end)
+end
+PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
+PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] =
+    PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
 
 bp.arm(RETARGET_LOOP_HEAD, "Exec", 4, "charm_retarget_loop", on_loop_head)
 
-probe.log(string.format(
+log(string.format(
     "[charm-softlock] armed Exec BP on FUN_801E7320 loop head 0x%08X "
     .. "(spin threshold %d hits/frame). unstick=%s", RETARGET_LOOP_HEAD,
     SPIN_THRESHOLD, tostring(UNSTICK)))
-probe.log("[charm-softlock] load your save, walk into a charmed multi-enemy "
+log("[charm-softlock] load your save, walk into a charmed multi-enemy "
     .. "fight, and let the charmed ally KO the last hostile.")
