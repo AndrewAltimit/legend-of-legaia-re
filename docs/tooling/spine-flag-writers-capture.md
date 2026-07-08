@@ -7,9 +7,20 @@ the writer PC (`ra`) of each:
 
 | Target | What it gates | Watch method |
 |---|---|---|
-| `DAT_8007b7fc = 0x4B` | Zeto battle-id (Mt. Rikuroa trigger) | Write-watch `0x8007b7fc`, width 1 |
+| `DAT_8007b7fc = 0x4B` | ~~Zeto battle-id~~ **FALSIFIED - see banner** | Write-watch `0x8007b7fc`, width 1 |
 | system flag `0x142` | dolk-dungeon clear | Exec-bp `0x8003CE08`, `a0 == 322` |
 | system flag `0x482` | Drake mist walls | Exec-bp `0x8003CE08`, `a0 == 1154` |
+
+> **Correction - the `DAT_8007b7fc` Zeto leg is moot.** A live firehose from
+> `chapter2_garmel_pre_zeto` (interpreter, this exact write-watch armed width-1
+> **and** width-4) stayed **silent** across three reproducible Zeto fights.
+> Zeto (`0x4B`, byte-confirmed name in PROT 867) fights in scene **`garmel`**,
+> and its formation `[0x4B,0,0,0]` is installed by the `FUN_801DA51C`
+> `actor[+0x94]` **record path** - not the `DAT_8007b7fc` battle-id path (which
+> reads `0` everywhere and may be vestigial). The `jou` scoping below is
+> superseded. The **flag** legs (`0x142` / `0x482` / `549`) are unaffected;
+> keep the runbook for them. Full detail:
+> [`formats/encounter.md`](../formats/encounter.md#scripted-battle-id-path-fun_8005567c).
 
 The probe is
 [`autorun_spine_flag_writers.lua`](../../scripts/pcsx-redux/autorun_spine_flag_writers.lua).
@@ -66,8 +77,8 @@ card's physical block order does not follow the PRO numbering (verify with
 | flag `0x482` (mist walls) | (not on this card) | `0x482` is unset in all 15 slots; no catalogued save reaches it | see note below |
 
 PRO-00 is also a viable single start for a forward run past the Caruban beat
-(`0x142`) toward the remaining capture target, the `jou`-side Zeto battle-id
-staging write.
+(`0x142`). (The old `jou`-side Zeto battle-id write it once targeted was
+falsified live - see the correction banner.)
 
 **Mist-wall caveat.** Flag `0x482` is unset across every slot of this card (it
 matches the library-wide zero the backlog notes). It is **not bracketable** from
@@ -114,9 +125,10 @@ re-capturing. Same launch shape, same emulator constraints, same
   dumps.
 - The carrier-complete census closed the remaining flag targets statically:
   `0x482` = `other7`-pool scripts, `0x1BE` = geremi's Jeremi-arrival one-shot
-  (never a Zeto gate). The capture targets still standing are the
-  `DAT_8007B7FC` battle-id staging write (Zeto's trigger, scene `jou` per the
-  battle-state scene buffer) and flag `549` (`0x225`, a direct code path).
+  (never a Zeto gate). The `DAT_8007B7FC` battle-id write was falsified live
+  (see the correction banner: silent at the Zeto trigger, Zeto is a `garmel`
+  record-path fight) and is no longer a standing target. The one capture
+  target still standing is flag `549` (`0x225`, a direct code path).
 
 ## Running the probe
 
@@ -156,9 +168,10 @@ order, so a single armed session can sweep several:
 
 1. **keikoku** - walk the Kikoku Cliff leg (sets `0x193`; not watched, but the
    marker that you're on the spine).
-2. **rikuroa (Caruban trigger)** - enter Mt. Rikuroa; the encounter trigger
-   writes the battle-id global (`DAT_8007b7fc`, Caruban band). The
-   `zeto_battle_id` watch row fires on the same global.
+2. **rikuroa (Caruban trigger)** - enter Mt. Rikuroa; Caruban is `0x142`-gated.
+   (The `zeto_battle_id` watch on `DAT_8007b7fc` was falsified live and stays
+   silent - see the correction banner; Caruban's own formation mechanism is
+   still un-captured and worth re-checking with the firehose.)
 3. **Caruban victory** - win the fight; the post-victory record `P2[50]` sets
    `0x142` (the write the firehose caught).
 4. **dolk clear** - clear the dolk dungeon to its clear beat; the

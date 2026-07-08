@@ -73,6 +73,36 @@
 //! verified before it is widened). A differently-laid-out image is refused, not
 //! corrupted. No Sony bytes are embedded: the routine is the randomizer's own
 //! code.
+//!
+//! ## Known limitation: charm battle softlock (OPEN - cause NOT yet confirmed)
+//!
+//! In a charm fight the battle can hard-lock (user-reported live). The cause is
+//! **not yet confirmed** and two runtime workarounds have been tried and
+//! rejected - do not repeat them:
+//!
+//! - **DO NOT force the battle-end from Lua/mid-action.** Poking `DAT_8007BD71`
+//!   (end signal) and `DAT_8007BD2C` (wipe side: `0` win / `5` "team
+//!   annihilated" game-over; teardown `FUN_801D5854` `0x801D69D4` branches
+//!   victory on `BD2C == 0`) at an arbitrary frame tears the SM down at an
+//!   unsafe point. Observed results: BD71-only -> game-over; BD71+BD2C=0 ->
+//!   the game then does 32-bit writes to garbage addresses (corrupted base
+//!   register) -> freeze. The game only writes these at the safe end-of-action
+//!   gate (state `0x5A`), never mid-action.
+//!
+//! - **The `FUN_801E7320` "unbounded reroll" theory is NOT settled.** Loop-1 at
+//!   `0x801E7370` picks `a0 = 3 + rand % monster_count` and rerolls while
+//!   `monster[a0].HP == 0` - but the alive charmed ally is itself a monster slot
+//!   in that range, so the reroll can pick the ally (HP != 0) and exit (it has a
+//!   self-target branch at `0x801E73E0`). So it may not spin at all. Needs a
+//!   live observation (the [`VICTORY_VA`] widen already wins the ordinary case,
+//!   where `0x5A` runs after the killing action and counts the ally as "down").
+//!
+//! Path forward: OBSERVE first with the observe-only exec-BP probe
+//! `autorun_charm_win_softlock.lua` (interpreter-only) - reproduce the freeze
+//! and read its slot dump to pin the real stall - THEN design the fix (likely a
+//! disc-side change at the confirmed site; the SCUS rodata gap is full, so a
+//! `FUN_801E7320` bound would need overlay dead space). No runtime poke is
+//! shipped; the widen is the only charm victory aid that is in place.
 
 use anyhow::{Result, bail};
 

@@ -24,6 +24,14 @@
 -- filtered - a flag set-then-cleared inside one frame shows no change):
 --   flagset/flagclr  story-flag bank 0x80085758 (idx space == firehose's)
 --   battleid         0x8007B7FC staged battle id (the Zeto-class trigger)
+--   battle           ONE row per battle, emitted on the field->battle mode
+--                    edge: the formation table 0x8007BD0C[4] (first-monster
+--                    ids, sampled once the battle scene is active so they are
+--                    the NEW battle's) identifies boss vs random, plus a
+--                    best-effort read of the 0x8007B7FC staging id (idx col;
+--                    usually 0 because it is written+consumed sub-vsync - that
+--                    is exactly why battleid diffs come up empty, and why the
+--                    writer needs the exec-bp firehose, not this poll)
 --   gold             0x8008459C party gold (with delta)
 --   item             0x80085958 inventory: id/count changes (with delta) -
 --                    consumables AND the start of the key-item page, so
@@ -62,11 +70,21 @@ local bit     = require("bit")
 local GAME_MODE  = 0x8007B83C  -- u8; field mode = 0x03
 local SCENE_NAME = 0x8007050C  -- 8-byte CDNAME label
 local BATTLE_ID  = 0x8007B7FC  -- DAT_8007b7fc battle-id staging byte
+local FORMATION  = 0x8007BD0C  -- DAT_8007bd0c[4] live battle formation (first-monster ids)
 local FLAG_BASE  = 0x80085758  -- fourth flag bank; idx 0 == firehose value 0
 local GOLD       = 0x8008459C  -- u32 party gold
 local PARTY_CNT  = 0x80084594  -- u8 party member count
 local PARTY_IDS  = 0x80084598  -- u8[4] member ids
 local INV_BASE   = 0x80085958  -- inventory (id,count) 2-byte stride
+
+-- Game-mode brackets for the per-battle identity row. BATTLE_MODES is the broad
+-- "a battle is loading/active" set that latches the in-battle state (so we emit
+-- exactly one row per fight); BATTLE_ACTIVE is the subset where the battle scene
+-- is fully up, so the formation table 0x8007BD0C holds THIS battle's ids (not the
+-- previous one's, which persists across the 0x08/0x09 load shims).
+local BATTLE_MODES  = { [0x08]=true, [0x09]=true, [0x14]=true, [0x15]=true,
+                        [0x16]=true, [0x17]=true }
+local BATTLE_ACTIVE = { [0x14]=true, [0x15]=true, [0x16]=true, [0x17]=true }
 
 -- +-- config ----------------------------------------------------------------
 local SSTATE    = probe.getenv("LEGAIA_SSTATE",
@@ -90,6 +108,21 @@ local AUTOSAVE_EVERY = probe.getenv_num("LEGAIA_AUTOSAVE_EVERY", 1800) -- ~30s
 local AUTOSAVE_PATHS = { probe.out_path("autosave_a.sstate"),
                          probe.out_path("autosave_b.sstate") }
 local autosave_flip  = 0
+
+-- Optional cruise booster: LEGAIA_POINT_CARD_MAX=1 pins the Point Card counter
+-- at its retail cap every vsync, so a Point Card (item 0xFE) strike nukes any
+-- boss for max damage - the easiest way to blow through fights while capturing
+-- progression. Ported verbatim from autorun_flag_firehose.lua. The counter is
+-- _DAT_800845B4 (u32, cap 9,999,999): the shop buy commit FUN_801db7f4 accrues
+-- `price/20 * qty` into it when the Point Card is held (see
+-- ghidra/scripts/funcs/overlay_shop_save_801db7f4.txt). It writes ONLY this
+-- counter - none of the CSV progression cells (flags/battle-id/gold/items/
+-- party/scene/mode) - so the capture stays intact. Off by default: a normal
+-- run never writes memory. You still need the Point Card in inventory and must
+-- USE it in battle; this just keeps its damage pinned at max.
+local POINT_CARD_MAX  = probe.getenv("LEGAIA_POINT_CARD_MAX", "") == "1"
+local POINT_CARD_ADDR = 0x800845B4
+local POINT_CARD_CAP  = 9999999  -- 0x0098967F
 
 local CSV = probe.csv_open(probe.out_path("state_poll.csv"),
     "tick,kind,idx,value,delta,mode,scene,note")
@@ -127,14 +160,33 @@ local prev_gold  = nil
 local prev_pcnt  = nil
 local prev_pids  = nil
 local prev_inv   = nil       -- string of INV_SLOTS*2 bytes
-local totals     = { flagset = 0, flagclr = 0, battleid = 0, gold = 0,
-                     item = 0, party = 0, scene = 0, mode = 0 }
+-- Per-battle identity latch (see BATTLE_MODES above).
+local in_battle       = false  -- latched while mode is in a battle bracket
+local batt_pending    = false  -- a `battle` row is still owed for this fight
+local batt_batid      = 0      -- staging id captured this fight (best-effort)
+local batt_enter_mode = 0      -- the mode that started the fight
+local totals     = { flagset = 0, flagclr = 0, battleid = 0, battle = 0,
+                     gold = 0, item = 0, party = 0, scene = 0, mode = 0 }
 
 local function row(kind, idx, value, delta, note)
     totals[kind] = (totals[kind] or 0) + 1
     CSV:row("%d,%s,%d,%d,%d,0x%02X,%s,%s",
         vsync, kind, idx, value, delta, u8(GAME_MODE), scene_name(),
         note or "")
+end
+
+-- Emit the one-per-battle identity row: idx = best-effort staging id, value =
+-- formation[0] (the first-monster / lone-boss id), note = the full 4-id
+-- formation + the mode the fight started in. Cleared once emitted.
+local function emit_battle()
+    local f0 = u8(FORMATION)
+    local f1 = u8(FORMATION + 1)
+    local f2 = u8(FORMATION + 2)
+    local f3 = u8(FORMATION + 3)
+    row("battle", batt_batid, f0, 0,
+        string.format("form=%02X%02X%02X%02X enter=0x%02X",
+            f0, f1, f2, f3, batt_enter_mode))
+    batt_pending = false
 end
 
 -- +-- diffs ------------------------------------------------------------------
@@ -282,6 +334,11 @@ local function on_vsync()
         log("version guard: " .. msg)
         log(string.format("baseline snapshot: flag window 0x%X bytes, %d inv slots",
             FLAG_BYTES, INV_SLOTS))
+        if POINT_CARD_MAX then
+            log(string.format("cruise booster ON: Point Card counter 0x%08X "
+                .. "pinned at %d every vsync (use item 0xFE to nuke bosses)",
+                POINT_CARD_ADDR, POINT_CARD_CAP))
+        end
         log("polling under fast core - play as far as you like")
     end
 
@@ -301,8 +358,38 @@ local function on_vsync()
         CSV:row("%d,mode,%d,%d,0,0x%02X,%s,%d", vsync, md, md, md, sc, totals.mode)
     end
 
+    -- Per-battle identity: latch on the field->battle edge, emit one `battle`
+    -- row once the scene is active (formation is this fight's). Fixes "which of
+    -- N battles was the boss" (formation) + best-effort staging id.
+    local inb = BATTLE_MODES[md] ~= nil
+    if inb and not in_battle then
+        in_battle       = true
+        batt_pending    = true
+        batt_enter_mode = md
+        batt_batid      = u8(BATTLE_ID)   -- earliest shot at the staging byte
+    elseif (not inb) and in_battle then
+        in_battle = false
+        if batt_pending then emit_battle() end  -- ended before an active mode
+    end
+    if in_battle then
+        if batt_batid == 0 then
+            local b = u8(BATTLE_ID)          -- keep watching in case it flickers up
+            if b ~= 0 then batt_batid = b end
+        end
+        if batt_pending and BATTLE_ACTIVE[md] ~= nil then
+            emit_battle()                     -- formation is current here
+        end
+    end
+
     -- The whole point: diff every progression cell against last frame.
     snapshot_and_diff()
+
+    -- Cruise booster: re-top the Point Card counter every vsync while active.
+    -- Lua pokes bypass the CPU, so this touches no CSV cell.
+    if POINT_CARD_MAX then
+        mem.write_u16(POINT_CARD_ADDR,     POINT_CARD_CAP % 0x10000)
+        mem.write_u16(POINT_CARD_ADDR + 2, math.floor(POINT_CARD_CAP / 0x10000))
+    end
 
     -- Heartbeat every ~8s.
     if (vsync % 480) == 0 then

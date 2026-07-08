@@ -2129,3 +2129,33 @@ expected_game_mode = 3
 expected_active_scene = "dolk2"
 description = "Drake Castle interior (dolk2) entering the market with Noa - story scene where she talks to each vendor. Useful shop/dialogue-heavy beat inside the dolk2 conditional-entrance scene (the 0x142-gated variant)."
 topics = ["chapter-1", "dolk2", "drake-castle", "market", "noa", "shop-dialogue", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "chapter2_garmel_pre_songi"
+backup_fingerprint = "e40d1ef52d405eba0e0412a7ea9688a67a3abd72ea843be3fcbd7cce7a2fde90"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "garmel"
+description = "Second-kingdom run, standing just before the Songi fight. Scene garmel, field mode. Formation table DAT_8007BD0C=[1D,31,..] (the Songi encounter pair). Clean disc (no PPF). Companion to the pre-Zeto / post-Zeto brackets from the same capture session."
+topics = ["chapter-2", "garmel", "songi", "boss", "capture-bracket", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "chapter2_garmel_pre_zeto"
+backup_fingerprint = "3a0247170816254f5e50e5fe34d328c027441ae00f21d3f93ce9a8ee1ee5fc01"
+phase = "field"
+expected_game_mode = 3
+expected_active_scene = "garmel"
+description = "Second-kingdom run, standing just before the Zeto fight. Scene garmel, field mode, battle-id staging DAT_8007B7FC still 0 (staged AT the trigger, between here and the fight) - the ideal FORWARD-play save for the open Zeto battle-id-staging RE thread. Formation DAT_8007BD0C=[37,37,..]. Clean disc."
+topics = ["chapter-2", "garmel", "zeto", "boss", "battle-id-staging", "capture-bracket", "pcsx-redux"]
+
+[[scenarios]]
+slot = 255
+label = "chapter2_garmel_post_zeto"
+backup_fingerprint = "9c1842050b814263a8ddc7be106872b397a2286ff93e7977ef2e777993eb44e4"
+phase = "battle"
+expected_game_mode = 2
+expected_active_scene = "garmel"
+description = "Second-kingdom run, immediately after the boss fight resolves. Scene garmel, mode 0x02 (post-battle transition). Formation DAT_8007BD0C=[4B,00,00,00] - lone-boss id 0x4B (labelled Zeto by the capture, but the id->name lookup + the garmel-vs-jou scene scoping are unverified; see the open reconcile thread). Clean disc. Closes the pre/post bracket."
+topics = ["chapter-2", "garmel", "zeto", "boss", "capture-bracket", "pcsx-redux"]

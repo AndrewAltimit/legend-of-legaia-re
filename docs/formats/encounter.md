@@ -306,30 +306,48 @@ for a plain id (`[0x4F,0x4F,0x4F,0]`), whereas the Tetsu cell is `[0x4F,0,0,0]`
 So the Rim Elm fight uses the indexed-record path; `FUN_8005567c` is the
 formation source for battles cued by a battle-id rather than an entity record.
 
-**This is the chapter-1 first-boss path.** Zeto (fought from scene `jou`) is monster
-id `0x4B`, in the bespoke `0x49..=0x4d` range, so `FUN_8005567c` expands it to the
-lone cell `[0x4B,0,0,0]` - byte-exact with the two `zeto_*_mid_cast` capture
-states (`0x8007BD0C = 4B 00 00 00`; their active scene is `jou`, Zeto's own
-trigger scene). Boss fights on this path have no on-disc formation record, so
-the battle-id global is their only formation source. The clean-room engine
-ports this as `World::install_boss_encounter` (a lone-monster `FormationDef`
-under a synthetic boss-namespace id); the chapter-1 consumer arms Mt.
-Rikuroa's **Caruban** (id 73 = `0x49`, same band) behind first-visit flag
-`0x142` (see [`world::SCRIPTED_SCENE_BOSSES`]).
+**Zeto is NOT on this path - it uses the record path in scene `garmel`.** A live
+PCSX-Redux firehose capture (three reproducible runs forward-played from the
+`chapter2_garmel_pre_zeto` bracket) shows the Zeto fight installs its formation
+via `FUN_801DA51C` - the `actor[+0x94]` entity-record path (`count=1`,
+`record[4]=0x4B`), storing `[0x4B,0,0,0]` directly into `DAT_8007bd0c` at the
+battle-launch tick (writer `ra` inside `FUN_801DA51C` body `0x801DA620..78`).
+A write-watch armed on `0x8007b7fc` stayed **silent across the entire fight**
+(field → `0x08` load → `0x15` orbit → back to field), and a mid-battle
+save-state reads `0x8007b7fc = 0`. Zeto is monster id `0x4B` (byte-confirmed
+from the PROT 867 name table: `Zeto`, HP 5000, gold 8000, exp 9000). Although
+`0x4B` falls in `FUN_8005567c`'s bespoke `0x49..=0x4d` boss-expansion band, the
+retail encounter carries the boss id in a **count-1 entity record**, not the
+`DAT_8007b7fc` global - so "boss id in-band ⇒ battle-id path" does **not** hold.
+The mid-battle cell `[0x4B,0,0,0]` matches the earlier `zeto_*_mid_cast` states
+byte-for-byte; those captures pinned the id, not the mechanism, and their `jou`
+scene attribution is superseded by the live forward-play (runtime scene buffer
+`0x8007050C` reads `garmel` through the whole fight). The clean-room engine's
+`World::install_boss_encounter` (a lone-monster `FormationDef`) still produces
+the same `[0x4B]` cell, so the engine result is unaffected - only the retail
+provenance changes from the battle-id path to the record path.
 
-**Open - the writer of `DAT_8007b7fc` is not in the static corpus.** Four
-exhaustive Ghidra sweeps across all 47 loaded programs (SCUS + 46 overlays) -
-`lui`+`addiu` absolute stores, `lui`+`ori`, gp-relative (`gp = 0x8007B318`,
-validated), and pointer-table occurrences - find only **readers**
-(`FUN_8005567c` ×4, battle-init `FUN_80055b6c`, and the per-frame post-battle
-mode gate `FUN_80046a20`), **zero writers** by any addressing mode. The
-"LUI+ADDIU trap" is falsified for this address. The writer therefore sits in an
-overlay not imported into Ghidra (or an un-disassembled data-classified region
-of field overlay `0897`); a write-watchpoint on `0x8007B7FC` captured as it
-flips in scene `jou` (the Zeto captures' active field scene; the same global
-stages Caruban's id at Mt. Rikuroa) yields the writer PC directly (no
-catalogued save brackets the write - both Zeto captures are mid-battle,
-post-write).
+Mt. Rikuroa's **Caruban** (id 73 = `0x49`, same band) is a *separate* boss,
+gated behind first-visit flag `0x142` (see [`world::SCRIPTED_SCENE_BOSSES`]);
+its flag gating is independently evidenced, but its formation **mechanism**
+(battle-id vs record path) was inferred from the same in-band assumption the
+Zeto capture just undercut - re-verify it with the same firehose method before
+relying on the `FUN_8005567c` route for Caruban.
+
+**Open - does any retail battle write `DAT_8007b7fc`?** Four exhaustive Ghidra
+sweeps across all 47 loaded programs (SCUS + 46 overlays) - `lui`+`addiu`
+absolute stores, `lui`+`ori`, gp-relative (`gp = 0x8007B318`, validated), and
+pointer-table occurrences - find only **readers** (`FUN_8005567c` ×4,
+battle-init `FUN_80055b6c`, and the per-frame post-battle mode gate
+`FUN_80046a20`), **zero writers** by any addressing mode. The earlier plan -
+catch the writer with a write-watch at the Zeto trigger - is falsified: the
+Zeto trigger uses the record path and never writes the global. Every capture to
+date (Tetsu frames, the `pre_zeto` bracket, the full Zeto fight) reads
+`DAT_8007b7fc = 0`, and battle-init `FUN_80055b6c` takes its "`== 0` ⇒ preserve
+the record formation" branch, so the global may be **always-0 / vestigial in
+retail** with all battles resolving through `FUN_801DA51C`. Whether any retail
+encounter exercises the `FUN_8005567c` battle-id path at all is now the open
+question; the writer (if one exists) still sits outside the static corpus.
 
 ## Random-encounter trigger path
 
