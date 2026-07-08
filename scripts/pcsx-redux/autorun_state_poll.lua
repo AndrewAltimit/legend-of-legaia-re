@@ -91,6 +91,21 @@ local AUTOSAVE_PATHS = { probe.out_path("autosave_a.sstate"),
                          probe.out_path("autosave_b.sstate") }
 local autosave_flip  = 0
 
+-- Optional cruise booster: LEGAIA_POINT_CARD_MAX=1 pins the Point Card counter
+-- at its retail cap every vsync, so a Point Card (item 0xFE) strike nukes any
+-- boss for max damage - the easiest way to blow through fights while capturing
+-- progression. Ported verbatim from autorun_flag_firehose.lua. The counter is
+-- _DAT_800845B4 (u32, cap 9,999,999): the shop buy commit FUN_801db7f4 accrues
+-- `price/20 * qty` into it when the Point Card is held (see
+-- ghidra/scripts/funcs/overlay_shop_save_801db7f4.txt). It writes ONLY this
+-- counter - none of the CSV progression cells (flags/battle-id/gold/items/
+-- party/scene/mode) - so the capture stays intact. Off by default: a normal
+-- run never writes memory. You still need the Point Card in inventory and must
+-- USE it in battle; this just keeps its damage pinned at max.
+local POINT_CARD_MAX  = probe.getenv("LEGAIA_POINT_CARD_MAX", "") == "1"
+local POINT_CARD_ADDR = 0x800845B4
+local POINT_CARD_CAP  = 9999999  -- 0x0098967F
+
 local CSV = probe.csv_open(probe.out_path("state_poll.csv"),
     "tick,kind,idx,value,delta,mode,scene,note")
 
@@ -282,6 +297,11 @@ local function on_vsync()
         log("version guard: " .. msg)
         log(string.format("baseline snapshot: flag window 0x%X bytes, %d inv slots",
             FLAG_BYTES, INV_SLOTS))
+        if POINT_CARD_MAX then
+            log(string.format("cruise booster ON: Point Card counter 0x%08X "
+                .. "pinned at %d every vsync (use item 0xFE to nuke bosses)",
+                POINT_CARD_ADDR, POINT_CARD_CAP))
+        end
         log("polling under fast core - play as far as you like")
     end
 
@@ -303,6 +323,13 @@ local function on_vsync()
 
     -- The whole point: diff every progression cell against last frame.
     snapshot_and_diff()
+
+    -- Cruise booster: re-top the Point Card counter every vsync while active.
+    -- Lua pokes bypass the CPU, so this touches no CSV cell.
+    if POINT_CARD_MAX then
+        mem.write_u16(POINT_CARD_ADDR,     POINT_CARD_CAP % 0x10000)
+        mem.write_u16(POINT_CARD_ADDR + 2, math.floor(POINT_CARD_CAP / 0x10000))
+    end
 
     -- Heartbeat every ~8s.
     if (vsync % 480) == 0 then

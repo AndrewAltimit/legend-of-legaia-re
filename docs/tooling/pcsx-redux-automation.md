@@ -417,7 +417,12 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   volunteers for a whole-playthrough sweep. Output `state_poll.csv`
   (`tick,kind,idx,value,delta,mode,scene,note`) carries no Sony bytes - only
   flag/item ids, scene names, ticks. Trade-off: it captures *what* changed and
-  *where*, not the writer.
+  *where*, not the writer. Maintainer cruise knob (off by default, so volunteer
+  runs stay pure read-only): `LEGAIA_POINT_CARD_MAX=1` pins the Point Card
+  counter `_DAT_800845B4` at its cap every vsync (ported from the firehose), so
+  a Point Card (item `0xFE`) strike one-shots any boss when you want to blow
+  through fights on your own capture pass. It writes only that counter, none of
+  the CSV cells.
 - **Tier 2 - `autorun_flag_firehose.lua` (slow, interpreter+debugger, ~10 fps):** exec-breakpoints on `FUN_8003CE08`/`_CE34` capture the writer `ra` for the specific flags Tier 1 fingered. Run in short targeted bursts, not a full playthrough.
 
 The flag window is capped at `0x200` bytes (idx `0..4095`) deliberately: the char-record slot-3 tail ends exactly at the flag base and the item inventory begins exactly `0x200` above it, so `0x200` is the largest window that is pure story-flag bytes with no overlap onto volatile record/inventory cells. Widening re-introduces inventory double-counting.
