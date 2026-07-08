@@ -2,7 +2,8 @@
 
 Thanks for helping map *Legend of Legaia*'s story progression! You play the
 game normally; a small script watches memory and records **which story flags,
-items, party members, and battle triggers change, and in which scene**. One
+items, party members, and battle triggers change, in which scene, and which
+enemy formation each fight was**. One
 long playthrough answers a pile of reverse-engineering questions at once.
 
 This uses the **fast** capture (`autorun_state_poll.lua`) — full speed, no

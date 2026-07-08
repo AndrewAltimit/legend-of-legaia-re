@@ -196,8 +196,8 @@
       </tr>
       <tr>
         <td>First boss trigger &rarr; Battle</td>
-        <td><span class="tag tag-done">rikuroa boss CORRECTED to Caruban</span> (engine ported, <code>0x142</code>-gated); Zeto re-scoped to <code>jou</code></td>
-        <td>Mt. Rikuroa's scripted boss is <strong>Caruban</strong> (id 73 = <code>0x49</code>, <code>FUN_8005567c</code> lone-monster band), gated by <code>0x142</code> - the rikuroa MAN's post-victory record <code>P2[50]</code> C1 one-shot + in-record SET (carrier PROT 0157; brackets <code>rikuroa_pre/post_caruban</code>). Engine: <code>SCRIPTED_SCENE_BOSSES = (rikuroa, 73, 0x142)</code>; the victory latch flips dolk&rarr;dolk2 organically. The old "Zeto in rikuroa, gated <code>0x1BE</code>" is falsified: the Zeto battle capture's scene is <code>jou</code>, and <code>0x1BE</code> is geremi's arrival one-shot. <strong>Open:</strong> the <code>jou</code>-side Zeto staging record + gate, and the <code>DAT_8007B7FC</code> writer op.</td>
+        <td><span class="tag tag-done">Caruban = rikuroa boss</span> (<code>0x142</code>-gated, engine ported); Zeto = <code>garmel</code> via <strong>record path</strong></td>
+        <td>Mt. Rikuroa's boss is <strong>Caruban</strong> (id 73 = <code>0x49</code>), gated by <code>0x142</code> (<code>SCRIPTED_SCENE_BOSSES</code>). <strong>Zeto RESOLVED</strong> (live firehose from <code>chapter2_garmel_pre_zeto</code>): id <code>0x4B</code> (byte-confirmed <code>Zeto</code>, PROT 867) fights in <code>garmel</code> via the <code>FUN_801DA51C</code> <code>actor[+0x94]</code> record path (formation <code>[0x4B,0,0,0]</code>); the <code>0x8007b7fc</code> write-watch stayed <strong>silent</strong> all fight &rarr; NOT the battle-id path, supersedes the old <code>jou</code> scoping. <strong>Open:</strong> does any retail battle write <code>DAT_8007b7fc</code> (reads <code>0</code> everywhere &rarr; maybe vestigial)? Full detail + Caruban re-verify note in <a href="../formats/encounter.html#battle-id-path">encounter.html</a>.</td>
         <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
       <tr>

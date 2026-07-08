@@ -411,8 +411,15 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   battle-id staging byte (`0x8007B7FC`), gold (`0x8008459C`), item inventory
   (`0x80085958`, consumables + start of the key-item page), and party
   count/ids (`0x80084594`/`0x80084598`) - plus scene (`0x8007050C`) and mode
-  (`0x8007B83C`) transitions. Per-frame diffing naturally filters intra-frame
-  churn. Because it uses no breakpoints it runs under the recompiler at full
+  (`0x8007B83C`) transitions. On each field->battle mode edge it also emits one
+  **`battle`** row carrying the formation table (`0x8007BD0C[4]`, the
+  first-monster ids that identify boss vs random - sampled once the battle
+  scene is active so they are the new fight's) plus a best-effort read of the
+  staging id. Per-frame diffing naturally filters intra-frame churn. The
+  staging byte, unlike everything else, is written and consumed *within one
+  frame*, so the per-vsync `battleid` diff comes up empty and the `battle`
+  row's staging field usually reads 0 - the writer needs the exec-bp firehose
+  (Tier 2), not this poll; the poll's win here is the formation identity. Because it uses no breakpoints it runs under the recompiler at full
   speed (dynarec even sustains 3x), so it is the probe to hand to community
   volunteers for a whole-playthrough sweep. Output `state_poll.csv`
   (`tick,kind,idx,value,delta,mode,scene,note`) carries no Sony bytes - only
@@ -452,6 +459,22 @@ LEGAIA_FP_RECORD=1 LEGAIA_NO_SSTATE=1 \
     --lua scripts/pcsx-redux/autorun_state_poll.lua
 # -> paste [state_poll] fingerprint = <hex> into version.USA_FINGERPRINT
 ```
+
+**Offline analysis (`analyze_state_poll.py`).** A `state_poll.csv` is a raw
+per-frame event log; `scripts/pcsx-redux/analyze_state_poll.py <csv-or-dir>`
+turns it into the timelines a reverse-engineer actually reads: a **scene
+timeline** (contiguous occupancy windows), **battle windows** (the frames the
+game-mode byte sat in the battle-orbit modes `0x14`/`0x15`) annotated with the
+per-fight **`battle` identity rows** (formation ids, with a `*` on lone-enemy
+fights = the likely bosses), a **story-flag census** that separates one-off
+story beats from the bulk flag dumps a
+save-load / scene-init writes in a single frame (any tick flipping `>= 20`
+flags is treated as a load frame and reported separately, not as a beat), and
+the item / gold / party change lists. `--json` emits the same structure for
+downstream tooling; `--only scenes,battles,flags,...` selects sections. The
+analysis functions are pure and importable, exercised by
+`test_analyze_state_poll.py` on synthetic rows (`python3
+scripts/pcsx-redux/test_analyze_state_poll.py`, no capture or disc needed).
 
 ## Catalogue
 
@@ -497,7 +520,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_battle_palette_source.lua` | Confirms the scene bundle is LZS-decompressed into the work arena at load; does NOT pin the party palette. → [detail](#autorun_battle_palette_sourcelua) |
 | `autorun_load_screen_dump.lua` | Ground-truth capture for the load-screen panel border + slot-pill source sprites. → [detail](#autorun_load_screen_dumplua) |
 | `autorun_town01_script_flow.lua` | Pins a field scene's script execution model. → [detail](#autorun_town01_script_flowlua) |
-| `autorun_state_poll.lua` | Fast (dynarec, no BPs) per-vsync diff of all progression state (flags/battle-id/gold/items/party/scene/mode) for a whole-playthrough sweep. Tier 1 of the [two-tier model](#fast-whole-playthrough-capture-two-tier-model); the community-handoff probe. |
+| `autorun_state_poll.lua` | Fast (dynarec, no BPs) per-vsync diff of all progression state (flags/battle-id/gold/items/party/scene/mode) plus a per-fight `battle` formation-identity row on each field->battle edge, for a whole-playthrough sweep. Tier 1 of the [two-tier model](#fast-whole-playthrough-capture-two-tier-model); the community-handoff probe. |
 | `autorun_flag_firehose.lua` | Slow (interpreter) exec-bp capture of EVERY story-flag write with its writer `ra` + battle-id staging watch. Tier 2 - writer provenance for the flags the poll tier fingers. |
 | [`autorun_battle_char_clut_source.lua`](../../scripts/pcsx-redux/autorun_battle_char_clut_source.lua) | Pins the disc source of the battle-form party CLUT band (VRAM rows 490..497). → [detail](#autorun_battle_char_clut_sourcelua) |
 | [`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua) | Pins the battle-form party-mesh install callsite. → [detail](#autorun_battle_party_mesh_installlua) |

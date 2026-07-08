@@ -9,9 +9,20 @@
 --   2. Exec-bp FUN_8003CE34 (0x8003CE34) - flag CLEAR, a0 = flag index.
 --      (TEST 0x8003CE64 is deliberately NOT armed: gate tests run every
 --       walk-on/frame and reads are already census-known statically.)
---   3. Write-watch 0x8007B7FC - the scripted battle-id staging byte
---      (the Zeto-class trigger path).
---   4. Vsync poll: scene-name (0x8007050C) and game-mode (0x8007B83C)
+--   3. Write-watch 0x8007B7FC - the (hypothesised) scripted battle-id
+--      staging byte. Kept as an A/B control: a live Zeto capture shows it
+--      is NEVER written across the whole fight, so it is falsified as the
+--      identity path for that boss - see #4.
+--   4. Write-watch 0x8007BD0C width 4 - the live battle formation table
+--      DAT_8007bd0c[4] (first-monster / boss ids). This is where a scripted
+--      boss's identity actually lands: the encounter launcher FUN_801DA51C
+--      (ra ~0x801DA5F8/0x801DA63C) copies the formation directly here from
+--      the actor[+0x94] encounter record, one tick before mode 0x08. The
+--      writer ra is the deliverable; NB the BP fires mid-store (pre-commit)
+--      so its `value` column is the STALE slot-0. For the committed ids see
+--      the mode-0x08-edge snapshot (a `battleform` row with pc/ra=0x0, plus
+--      a "[f0 f1 f2 f3]" log line).
+--   5. Vsync poll: scene-name (0x8007050C) and game-mode (0x8007B83C)
 --      transitions, so every flag row has a story-context timeline.
 --
 -- Every CSV row carries the writer pc/ra plus the current mode + scene.
@@ -39,9 +50,10 @@
 --
 -- Output:
 --   flag_firehose.csv        tick,kind,value,pc,ra,mode,scene,count
---     kind = set | clear | battleid | scene | mode
---     value = flag index (set/clear), staged byte (battleid),
---             new mode byte (mode); scene rows carry the name in `scene`.
+--     kind = set | clear | battleid | battleform | scene | mode
+--     value = flag index (set/clear), staged byte (battleid), formation
+--             slot-0 / boss id (battleform), new mode byte (mode); scene
+--             rows carry the name in `scene`.
 --   flag_firehose.detail.txt call-context for the first hit of each
 --                            unique (kind, ra) writer site.
 --
@@ -59,7 +71,8 @@ local version = require("probe.version")
 -- +-- addresses -------------------------------------------------------------
 local GAME_MODE     = 0x8007B83C  -- u8; field mode = 0x03
 local SCENE_NAME    = 0x8007050C  -- 8-byte CDNAME label (pcsxr SCENE_NAME_VA)
-local BATTLE_ID     = 0x8007B7FC  -- DAT_8007b7fc: battle-id staging byte
+local BATTLE_ID     = 0x8007B7FC  -- DAT_8007b7fc: (hypothesised) battle-id staging byte
+local FORMATION     = 0x8007BD0C  -- DAT_8007bd0c[4]: live battle formation (first-monster/boss ids)
 local FLAG_SET_PC   = 0x8003CE08  -- FUN_8003CE08: set bit;   a0 = flag index
 local FLAG_CLEAR_PC = 0x8003CE34  -- FUN_8003CE34: clear bit; a0 = flag index
 
@@ -131,7 +144,7 @@ local capture_disabled = false  -- terminal: record mode done, or wrong build
 local key_counts  = {}  -- "kind|value|ra" -> occurrences
 local ra_detailed = {}  -- "kind|ra" -> true once call context dumped
 local detail_used = 0
-local totals      = { set = 0, clear = 0, battleid = 0, scene = 0, mode = 0 }
+local totals      = { set = 0, clear = 0, battleid = 0, battleform = 0, scene = 0, mode = 0 }
 local last_scene  = nil
 local last_mode   = nil
 
@@ -212,12 +225,19 @@ local function arm_all()
         local ra = u32(r.GPR.n.ra)
         record("battleid", u8(BATTLE_ID), pc, ra)
     end)
+    bp.arm(FORMATION, "Write", 4, "formation", function()
+        local r  = regs()
+        local pc = u32(r.pc)
+        local ra = u32(r.GPR.n.ra)
+        record("battleform", u8(FORMATION), pc, ra)
+    end)
     armed = true
     log(string.format("armed at tick %d (mode=0x%02X scene=%s)",
         vsync, u8(GAME_MODE), scene_name()))
     log(string.format("  set   : Exec-bp 0x%08X (every flag SET, any a0)", FLAG_SET_PC))
     log(string.format("  clear : Exec-bp 0x%08X (every flag CLEAR, any a0)", FLAG_CLEAR_PC))
-    log(string.format("  battle: Write-watch 0x%08X width 1", BATTLE_ID))
+    log(string.format("  battle: Write-watch 0x%08X width 1 (staging byte; A/B control)", BATTLE_ID))
+    log(string.format("  form  : Write-watch 0x%08X width 4 (formation table; boss-id writer)", FORMATION))
     log("  scene + mode transitions polled per vsync")
     if POINT_CARD_MAX then
         log(string.format("  point-card booster ON: 0x%08X pinned at %d every vsync",
@@ -307,6 +327,20 @@ local function on_vsync()
         last_mode = md
         totals.mode = totals.mode + 1
         CSV:row("%d,mode,%d,0x0,0x0,0x%02X,%s,%d", vsync, md, md, sc, totals.mode)
+        -- On the field->battle-load edge (mode 0x08) the formation table is
+        -- freshly installed AND committed, so snapshot it here for the clean
+        -- ids. The write-watch below fires mid-store (pre-commit), so its
+        -- `value` column is the STALE slot-0; this snapshot (pc/ra=0x0, marks
+        -- it a poll not a writer hit) is the reliable formation read.
+        if md == 0x08 then
+            local f0=u8(FORMATION); local f1=u8(FORMATION+1)
+            local f2=u8(FORMATION+2); local f3=u8(FORMATION+3)
+            totals.battleform = totals.battleform + 1
+            CSV:row("%d,battleform,%d,0x0,0x0,0x%02X,%s,%d",
+                vsync, f0, md, sc, totals.battleform)
+            log(string.format("battle formation @0x08: [%02X %02X %02X %02X] (tick %d)",
+                f0, f1, f2, f3, vsync))
+        end
     end
 
     -- Arm once the game settles into field mode (arming exec-bps during a
@@ -339,8 +373,8 @@ local function on_vsync()
     -- Heartbeat every ~8s.
     if (vsync % 480) == 0 then
         log(string.format(
-            "alive tick=%d mode=0x%02X scene=%s set=%d clear=%d battleid=%d",
-            vsync, md, sc, totals.set, totals.clear, totals.battleid))
+            "alive tick=%d mode=0x%02X scene=%s set=%d clear=%d battleid=%d battleform=%d",
+            vsync, md, sc, totals.set, totals.clear, totals.battleid, totals.battleform))
     end
 
     -- Rotating autosave (crash insurance; see AUTOSAVE_EVERY above).
