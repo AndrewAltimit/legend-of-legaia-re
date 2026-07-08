@@ -21,6 +21,12 @@
 -- first DETAIL_FULL occurrences log fully, then only every SUPPRESS_EVERYth,
 -- with the running count in the last column - totals stay reconstructible.
 --
+-- VERSION GUARD: refuses to arm unless the loaded game fingerprints as the
+-- USA SCUS_942.54 build (probe/version.lua) - a wrong region/revision would
+-- arm exec-bps on the wrong code and log silent garbage. Lock the fingerprint
+-- (LEGAIA_FP_RECORD=1 then set version.USA_FINGERPRINT) before any handoff;
+-- see COMMUNITY-CAPTURE.md.
+--
 -- HUMAN-NAVIGATED session, NO self-quit: wrap the launch in
 -- `timeout --kill-after`. Data volume is small (hundreds of KB for hours
 -- of play); play as far as you like - deeper is strictly better.
@@ -43,11 +49,12 @@
 -- (attribute_overlay_hits.py) exactly like the spine runbook describes.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
-local probe  = require("probe")
-local mem    = require("probe.mem")
-local bp     = require("probe.bp")
-local bit    = require("bit")
-local sstate = require("probe.sstate")
+local probe   = require("probe")
+local mem     = require("probe.mem")
+local bp      = require("probe.bp")
+local bit     = require("bit")
+local sstate  = require("probe.sstate")
+local version = require("probe.version")
 
 -- +-- addresses -------------------------------------------------------------
 local GAME_MODE     = 0x8007B83C  -- u8; field mode = 0x03
@@ -119,6 +126,8 @@ local vsync       = 0
 local loaded_at   = nil
 local armed       = false
 local field_frames = 0
+local version_pass = false      -- version guard cleared once
+local capture_disabled = false  -- terminal: record mode done, or wrong build
 local key_counts  = {}  -- "kind|value|ra" -> occurrences
 local ra_detailed = {}  -- "kind|ra" -> true once call context dumped
 local detail_used = 0
@@ -217,9 +226,43 @@ local function arm_all()
     log("play as far as you like - every flag write is being recorded")
 end
 
+-- +-- version gate -----------------------------------------------------------
+-- Confirm the loaded game is the USA SCUS_942.54 build before arming any
+-- exec-bp: a wrong-region/revision disc would arm on the wrong code and log
+-- silent garbage. Returns true only when it is safe to arm. Handles record
+-- mode (LEGAIA_FP_RECORD=1) and a terminal MISMATCH via capture_disabled.
+local function check_version_gate()
+    if version_pass then return true end
+    if version.record_mode() then
+        local sig = version.record_fingerprint()  -- nil until SCUS resident
+        if sig then
+            log("fingerprint = " .. sig)
+            log("RECORD MODE: paste into version.USA_FINGERPRINT (or export "
+                .. "LEGAIA_FP_EXPECTED), relaunch without LEGAIA_FP_RECORD. Not arming.")
+            capture_disabled = true
+        end
+        return false
+    end
+    local ok, msg, terminal = version.check(version.USA_FINGERPRINT)
+    if ok then
+        version_pass = true
+        log("version guard: " .. msg)
+        return true
+    end
+    if terminal then
+        log("FATAL version guard: " .. msg)
+        log("Refusing to arm - not the expected USA SCUS_942.54 build.")
+        capture_disabled = true
+        return false
+    end
+    if (vsync % 60) == 0 then log("waiting for SCUS: " .. msg) end
+    return false
+end
+
 -- +-- vsync loop -------------------------------------------------------------
 local function on_vsync()
     vsync = vsync + 1
+    if capture_disabled then return end
 
     if loaded_at == nil then
         if NO_SSTATE then
@@ -237,6 +280,14 @@ local function on_vsync()
         return
     end
     if loaded_at < 0 then return end
+
+    -- Version guard BEFORE anything else - fail fast on a wrong-region/
+    -- revision disc. The fingerprinted SCUS code is resident immediately
+    -- post-load, so there is no need to wait for field mode; block ALL
+    -- capture (drain, timeline, arming) until the USA build is confirmed.
+    if not version_pass then
+        if not check_version_gate() then return end
+    end
 
     -- Flush any bp-callback hits queued since the last frame (all file/GUI
     -- I/O happens here, never inside the callbacks - see record()).
@@ -259,7 +310,8 @@ local function on_vsync()
     end
 
     -- Arm once the game settles into field mode (arming exec-bps during a
-    -- menu/battle-load blip can crash PCSX-Redux).
+    -- menu/battle-load blip can crash PCSX-Redux). The version guard has
+    -- already passed by here (checked right after load, above).
     if not armed then
         if md == 0x03 then
             field_frames = field_frames + 1
