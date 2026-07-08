@@ -32,6 +32,15 @@
 #   --fast               drop -interpreter -debugger (recompiler ~10-50x
 #                        faster; Lua BPs do NOT fire in this mode - use
 #                        only for vsync-event-only probes)
+#   --isolate-config     run the emulator against a throwaway persistent dir
+#                        (a curated fast profile) instead of the user's real
+#                        ~/.config/pcsx-redux. ON BY DEFAULT under --fast so a
+#                        volunteer's persisted PCSX-Redux config (debugger-on
+#                        -> interpreter, a broken hardware-GPU pick, an odd
+#                        frame limit) can't degrade the capture.
+#   --no-isolate-config  force the real persistent dir even under --fast
+#                        (env: LEGAIA_NO_ISOLATE=1). Use when you WANT your own
+#                        saved layout / memcards / settings.
 #   --log PATH           emulator log path (default logs/pcsx_probe_<stem>.log)
 #   --help               print this header and exit
 #
@@ -39,6 +48,21 @@
 #   psxinterpreter.cc:1652 - Lua BPs only fire when both are set. The
 #   interpreter is required for the debug-process hook, and DebugSettings::Debug
 #   gates the hook itself. --fast skips both for probes that don't arm BPs.
+#
+# Config isolation (--isolate-config, default-on under --fast):
+#   PCSX-Redux reads pcsx.json + memcards + imgui layout from getPersistentDir()
+#   (src/core/system.cc): $HOME/.config/pcsx-redux on Linux, OR the -portable
+#   PATH argument when given. It does NOT honour XDG_CONFIG_HOME. So a volunteer's
+#   persisted settings (Debug=true forces the interpreter; HardwareRenderer /
+#   Scaler / frame limits ride the saved config) leak into the community capture
+#   and tank speed. Isolation writes a minimal fast profile (Dynarec on, Debug
+#   off, ship-default renderer) into LEGAIA_PCSX_PROFILE_DIR and launches with
+#   -portable, so the capture is config-independent. Memory cards are pointed at
+#   the real ~/.config/pcsx-redux via ABSOLUTE Mcd paths (memorycard.cc only
+#   prepends the persistent dir to RELATIVE names), so card saves still work.
+#   Knobs: LEGAIA_PCSX_PROFILE_DIR (profile dir), LEGAIA_PCSX_REAL_CONFIG (real
+#   config dir for memcards), LEGAIA_PCSX_HARDWARE_GPU=1 (pin the OpenGL/hardware
+#   renderer instead of the ship-default software one).
 
 set -euo pipefail
 
@@ -57,6 +81,14 @@ LEGAIA_SCENARIO="${LEGAIA_SCENARIO:-}"
 LEGAIA_PROBE_SPEC="${LEGAIA_PROBE_SPEC:-}"
 LOG_FILE=""
 FAST=0
+# Config isolation (see "Config isolation" block below). "" = auto (on under
+# --fast), 1 = force on, 0 = force off. Env LEGAIA_NO_ISOLATE=1 forces off.
+ISOLATE_CONFIG="${LEGAIA_ISOLATE_CONFIG:-}"
+# Managed throwaway persistent dir for the isolated profile.
+LEGAIA_PCSX_PROFILE_DIR="${LEGAIA_PCSX_PROFILE_DIR:-$REPO_ROOT/captures/.pcsx-profile}"
+# Where the volunteer's real memory cards live, so isolation keeps card saves
+# visible instead of stranding them behind a fresh persistent dir.
+LEGAIA_PCSX_REAL_CONFIG="${LEGAIA_PCSX_REAL_CONFIG:-$HOME/.config/pcsx-redux}"
 
 # ---------- flag parsing ----------
 while [[ $# -gt 0 ]]; do
@@ -73,8 +105,10 @@ while [[ $# -gt 0 ]]; do
         --pcsx)      PCSX_REDUX="$2"; shift 2 ;;
         --log)       LOG_FILE="$2"; shift 2 ;;
         --fast)      FAST=1; shift ;;
+        --isolate-config)    ISOLATE_CONFIG=1; shift ;;
+        --no-isolate-config) ISOLATE_CONFIG=0; shift ;;
         -h|--help)
-            sed -n '2,38p' "$0"
+            sed -n '2,65p' "$0"
             exit 0 ;;
         *)
             echo "ERROR: unknown flag: $1" >&2
@@ -199,6 +233,62 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 cd "$REPO_ROOT"
 
+# ---------- config isolation resolution + fast-profile write ----------
+# Resolve the effective isolation setting: explicit flag/env wins, else auto
+# (on under --fast, off otherwise). See the "Config isolation" header block.
+if [[ -z "$ISOLATE_CONFIG" ]]; then
+    if [[ "${LEGAIA_NO_ISOLATE:-0}" == "1" ]]; then
+        ISOLATE_CONFIG=0
+    elif [[ $FAST -eq 1 ]]; then
+        ISOLATE_CONFIG=1
+    else
+        ISOLATE_CONFIG=0
+    fi
+elif [[ "${LEGAIA_NO_ISOLATE:-0}" == "1" ]]; then
+    # An explicit LEGAIA_NO_ISOLATE=1 always disables, even vs LEGAIA_ISOLATE_CONFIG.
+    ISOLATE_CONFIG=0
+fi
+
+PROFILE_HW_GPU="ship-default (software)"
+if [[ "$ISOLATE_CONFIG" == "1" ]]; then
+    if [[ "${LEGAIA_PCSX_HARDWARE_GPU:-0}" == "1" ]]; then
+        _hw_gpu=true; PROFILE_HW_GPU="hardware (OpenGL)"
+    else
+        _hw_gpu=false
+    fi
+    # CPU/Debug mirror the run mode so isolation composes with either core: fast
+    # -> recompiler + debugger off; slow (firehose) -> interpreter + debugger on
+    # (the -interpreter/-debugger CLI flags below re-assert this per-run too, but
+    # pinning it in the profile keeps the two in agreement).
+    if [[ $FAST -eq 1 ]]; then _dynarec=true; _debug=false; else _dynarec=false; _debug=true; fi
+    mkdir -p "$LEGAIA_PCSX_PROFILE_DIR" "$LEGAIA_PCSX_REAL_CONFIG"
+    # Minimal, deterministic fast profile. Only the keys we care about are
+    # pinned; every other setting falls back to the emulator's compile-time
+    # ship default (src/core/psxemulator.h), so this can't drift from a
+    # volunteer's oddities. Rewritten fresh every run (PCSX rewrites it fully
+    # on exit, so we re-pin each launch). Mcd paths are ABSOLUTE (into the real
+    # config dir) so card saves survive isolation (memorycard.cc only prepends
+    # the persistent dir to relative names).
+    cat > "$LEGAIA_PCSX_PROFILE_DIR/pcsx.json" <<JSON
+{
+  "emulator": {
+    "Dynarec": $_dynarec,
+    "HardwareRenderer": $_hw_gpu,
+    "Xa": true,
+    "SpuIrq": false,
+    "FastBoot": true,
+    "Scaler": 100,
+    "AutoUpdate": false,
+    "Mcd1": "$LEGAIA_PCSX_REAL_CONFIG/memcard1.mcd",
+    "Mcd2": "$LEGAIA_PCSX_REAL_CONFIG/memcard2.mcd",
+    "Mcd1Inserted": true,
+    "Mcd2Inserted": true,
+    "Debug": { "Debug": $_debug, "GdbServer": false, "WebServer": false }
+  }
+}
+JSON
+fi
+
 # ---------- banner ----------
 {
     echo "=== run_probe.sh ==="
@@ -215,6 +305,9 @@ cd "$REPO_ROOT"
     [[ -n "$LEGAIA_OUT_DIR" ]] && echo "  out_dir    : $LEGAIA_OUT_DIR"
     [[ $FAST -eq 1 ]] && echo "  mode       : fast (-dynarec forced; no Lua BPs; verify top bar = CPU: Dynarec)" \
                       || echo "  mode       : interpreter+debugger (Lua BPs fire)"
+    [[ "$ISOLATE_CONFIG" == "1" ]] \
+        && echo "  config     : ISOLATED profile ($LEGAIA_PCSX_PROFILE_DIR; renderer=$PROFILE_HW_GPU; cards=$LEGAIA_PCSX_REAL_CONFIG)" \
+        || echo "  config     : real persistent dir ($LEGAIA_PCSX_REAL_CONFIG)"
     echo "  log        : $LOG_FILE"
     echo "===================="
 } | tee "$LOG_FILE"
@@ -227,6 +320,13 @@ export LEGAIA_SSTATE LEGAIA_FRAMES LEGAIA_OUT LEGAIA_OUT_DIR LEGAIA_SCENARIO LEG
 # than dumping in one chunk at exit. -stdout enables pcsx-redux's
 # fputs-to-stdout path.
 emu_flags=(-bios "$LEGAIA_BIOS" -iso "$LEGAIA_ISO" -run -stdout -dofile "$LEGAIA_LUA")
+if [[ "$ISOLATE_CONFIG" == "1" ]]; then
+    # -portable PATH points getPersistentDir() at our throwaway profile dir
+    # (src/core/arguments.cc: the flag's value sets m_portablePath AND flips
+    # m_portable true). The flags parser takes the token after -portable as its
+    # value, so keep the path immediately after the flag.
+    emu_flags=(-portable "$LEGAIA_PCSX_PROFILE_DIR" "${emu_flags[@]}")
+fi
 if [[ $FAST -eq 0 ]]; then
     # Both flags are required: -interpreter selects the non-recompiling CPU,
     # and DebugSettings::Debug (= -debugger) gates the debug-process hook.

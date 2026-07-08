@@ -35,11 +35,21 @@ param(
     [int]$Sweep       = 120,
     [string]$OutDir   = "",
     [switch]$Fast,
-    [switch]$NoMidi
+    [switch]$NoMidi,
+    # Config isolation: run against a throwaway persistent dir with a curated
+    # fast profile instead of the user's real %APPDATA%\pcsx-redux, so a
+    # volunteer's persisted PCSX-Redux settings can't degrade the capture.
+    # ON BY DEFAULT under -Fast (mirrors run_probe.sh). -NoIsolateConfig or
+    # $env:LEGAIA_NO_ISOLATE=1 forces the real dir.
+    [switch]$IsolateConfig,
+    [switch]$NoIsolateConfig,
+    [string]$ProfileDir  = $(if ($env:LEGAIA_PCSX_PROFILE_DIR) { $env:LEGAIA_PCSX_PROFILE_DIR } else { "" }),
+    [string]$RealConfig  = $(if ($env:LEGAIA_PCSX_REAL_CONFIG) { $env:LEGAIA_PCSX_REAL_CONFIG } else { "$env:APPDATA\pcsx-redux" })
 )
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+if (-not $ProfileDir) { $ProfileDir = Join-Path $RepoRoot "captures\.pcsx-profile" }
 
 # ---- scenario -> save-state resolution (optional; mirrors run_probe.sh) ----
 # Uses python + scripts/scenarios.toml when -Scenario is given. Otherwise -Sstate
@@ -101,9 +111,55 @@ $env:LEGAIA_OUT_DIR       = $OutDir
 # Empty string reads as "unset" to the sink's from_env (null sink / dry run).
 $env:LEGAIA_MIDI_WINPORT  = $(if ($NoMidi) { "" } else { $MidiPort })
 
+# ---- config isolation resolution + fast-profile write ----
+# Effective isolation: explicit switch wins, else auto (on under -Fast).
+$isolate = $false
+if ($NoIsolateConfig -or $env:LEGAIA_NO_ISOLATE -eq "1") { $isolate = $false }
+elseif ($IsolateConfig) { $isolate = $true }
+elseif ($Fast) { $isolate = $true }
+$rendererDesc = "ship-default (software)"
+if ($isolate) {
+    $hwGpu = ($env:LEGAIA_PCSX_HARDWARE_GPU -eq "1")
+    if ($hwGpu) { $rendererDesc = "hardware (OpenGL)" }
+    New-Item -ItemType Directory -Force -Path $ProfileDir, $RealConfig | Out-Null
+    # CPU/Debug mirror the run mode (fast -> recompiler+debug off, slow ->
+    # interpreter+debug on); only pinned keys are set, the rest fall back to the
+    # emulator ship defaults. Mcd paths are ABSOLUTE into the real config dir so
+    # card saves survive isolation (memorycard.cc only prepends the persistent
+    # dir to relative names). Rewritten fresh each run.
+    $mcd1 = (Join-Path $RealConfig "memcard1.mcd")
+    $mcd2 = (Join-Path $RealConfig "memcard2.mcd")
+    $profile = [ordered]@{
+        emulator = [ordered]@{
+            Dynarec          = [bool]$Fast
+            HardwareRenderer = $hwGpu
+            Xa               = $true
+            SpuIrq           = $false
+            FastBoot         = $true
+            Scaler           = 100
+            AutoUpdate       = $false
+            Mcd1             = $mcd1
+            Mcd2             = $mcd2
+            Mcd1Inserted     = $true
+            Mcd2Inserted     = $true
+            Debug            = [ordered]@{ Debug = (-not $Fast); GdbServer = $false; WebServer = $false }
+        }
+    }
+    ($profile | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath (Join-Path $ProfileDir "pcsx.json") -Encoding utf8
+}
+
 # ---- emulator flags (interpreter+debugger unless -Fast) ----
 $emuArgs = @('-bios', $Bios, '-iso', $Iso, '-run', '-stdout', '-dofile', $Lua)
-if (-not $Fast) { $emuArgs = @('-interpreter', '-debugger') + $emuArgs }
+if (-not $Fast) {
+    $emuArgs = @('-interpreter', '-debugger') + $emuArgs
+} else {
+    # Force the recompiler explicitly: omitting -interpreter lets a persisted
+    # "Dynarec": false win (same trap the bash runner documents).
+    $emuArgs = @('-dynarec') + $emuArgs
+}
+# -portable PATH must be immediately followed by its value (the flags parser
+# takes the next token as the value).
+if ($isolate) { $emuArgs = @('-portable', $ProfileDir) + $emuArgs }
 
 Write-Host "=== run_probe.ps1 ==="
 Write-Host "  pcsx-redux : $Pcsx"
@@ -113,7 +169,8 @@ Write-Host "  sstate     : $Sstate"
 Write-Host "  lua        : $Lua"
 Write-Host "  midi       : $(if ($NoMidi) { '(null sink -- -NoMidi)' } else { $MidiPort })"
 Write-Host "  frames     : $Frames  sweep: $Sweep"
-Write-Host "  mode       : $(if ($Fast) { 'fast (recompiler -- no Lua BPs)' } else { 'interpreter+debugger' })"
+Write-Host "  mode       : $(if ($Fast) { 'fast (-dynarec forced -- no Lua BPs)' } else { 'interpreter+debugger' })"
+Write-Host "  config     : $(if ($isolate) { "ISOLATED profile ($ProfileDir; renderer=$rendererDesc; cards=$RealConfig)" } else { "real persistent dir ($RealConfig)" })"
 Write-Host "  out_dir    : $OutDir"
 Write-Host "  log        : $log"
 Write-Host "====================="

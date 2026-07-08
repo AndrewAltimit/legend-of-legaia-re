@@ -36,6 +36,14 @@ timeout --kill-after=15s 14400s \
   The script never quits on its own.
 - If you'd rather load a memory-card save by hand inside the emulator, add
   `LEGAIA_NO_SSTATE=1` before `bash` and skip `--sstate`.
+- **Your existing PCSX-Redux settings are left untouched.** Under `--fast` the
+  script runs the emulator against a throwaway profile (a clean, fast preset)
+  instead of your saved config, so a debugger-on / odd-GPU / frame-limit setting
+  can't slow the capture down — you don't have to change anything in your own
+  PCSX-Redux. Your memory cards still work normally (saving in-game writes to
+  your usual cards). If you'd rather use your own saved layout/settings, add
+  `--no-isolate-config`. On a box where the software renderer is slow, add
+  `LEGAIA_PCSX_HARDWARE_GPU=1` before `bash` to use the OpenGL renderer.
 
 Then **just play.** Deeper is strictly better — every new area, boss, and
 quest step adds coverage. You'll see a heartbeat line in the log every few
