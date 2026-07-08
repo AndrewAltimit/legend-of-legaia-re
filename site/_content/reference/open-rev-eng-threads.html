@@ -429,8 +429,8 @@
       </tr>
       <tr>
         <td>Chapter-2 opener flag <code>0x1BE</code> (Jeremi/<code>geremi</code> arrival)</td>
-        <td><span class="tag tag-done">resolved</span> (writer decoded; consumer engine-side)</td>
-        <td><code>0x1BE</code> (446) is SET unconditionally at the head of <code>geremi</code> <code>P2[0]</code>, the Jeremi-arrival cutscene record (<code>51 BE</code>, then the <code>0x527..0x52E</code> narration-scratch clears; embedded dialog "&hellip;monsters in the Mist!" / "it's a Genesis Tree!"), and CLEARED in <code>geremi</code> <code>P1[1]</code>. It has <strong>zero Test sites disc-wide</strong> in field-VM space (<code>man-scripts --system-flag-census</code>) - a write-only progress marker read by engine/overlay code, matching the state-poll (flips once on <code>geremi</code> entry, tick 28605). Corrects the old "<code>0x1BE</code> = rikuroa Zeto gate" (a CDNAME-frame-skew artefact). <strong>Open:</strong> the engine-side reader of bit <code>0x1BE</code>.</td>
+        <td><span class="tag tag-done">resolved</span> (writer + reader)</td>
+        <td><code>0x1BE</code> (446) is SET at the head of <code>geremi</code> <code>P2[0]</code> (the Jeremi-arrival cutscene; <code>51 BE</code>, dialog "&hellip;monsters in the Mist!"), cleared in <code>P1[1]</code>. <strong>Reader</strong> = the record-gate evaluator <code>FUN_8003BDE0</code>: <code>P2[0]</code>'s C1 one-shot list = <code>[0x1BE]</code> - the record that sets it also gates on it, a self-latch (same shape as rikuroa <code>P2[50]</code>/<code>0x142</code>). A reader-watch caught it live on both geremi entries (<code>pc 0x8003BF78</code>, caller <code>0x801D218C</code> = field scene-init). The census showed "zero Test sites" because it walks inline <code>0x70</code> TESTs, NOT the record-HEADER C1/C2 gate lists (<code>partition2_record_gates</code>). Anchor <code>geremi_p2_0_is_the_0x1be_self_latch</code>; probe <code>autorun_flag_reader_watch.lua</code>.</td>
         <td><a href="../subsystems/script-vm.html">script-vm</a></td>
       </tr>
       <tr>

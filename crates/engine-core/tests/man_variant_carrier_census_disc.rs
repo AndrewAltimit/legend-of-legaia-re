@@ -179,3 +179,31 @@ fn rikuroa_carrier_p2_50_is_the_0x142_self_latch() {
     );
     assert!(c2.is_empty(), "P2[50] has no requires-all gate");
 }
+
+/// `geremi`'s Jeremi-arrival cutscene record P2[0] both SETS `0x1BE` (at its
+/// script head) and lists `0x1BE` as its own C1 one-shot gate - the same
+/// self-latching shape as rikuroa's `0x142`. This is the record whose C1
+/// evaluation is the "engine-side reader" a reader-watch capture caught: the
+/// gate evaluator `FUN_8003BDE0` tests `0x1BE` on every geremi entry (via the
+/// field-overlay scene-init at `0x801D218C`), which is why the flag looked
+/// "write-only" to the inline-opcode census - it is read from the record
+/// HEADER gate list, not an inline `0x70` TEST.
+#[test]
+fn geremi_p2_0_is_the_0x1be_self_latch() {
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let scene = Scene::load(&index, "geremi").expect("load geremi");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("geremi MAN resolves");
+    let mf = legaia_asset::man_section::parse(&man).expect("parse");
+    assert_eq!(mf.header.partition_counts, [18, 70, 20]);
+    let (c1, c2) = partition2_record_gates(&mf, &man, 0).expect("P2[0] gates");
+    assert_eq!(
+        c1,
+        vec![0x1BE],
+        "P2[0] C1 blocks the arrival cutscene once 0x1BE is set"
+    );
+    assert!(c2.is_empty(), "P2[0] has no requires-all gate");
+}
