@@ -77,6 +77,15 @@ KNOWN_FLAGS = {
     0x1FB: "rayman sub-chain -> P2[12]",
     0x200: "rayman sub-chain -> P2[18]",
     0x1FC: "rayman sub-chain -> P2[19] (tail)",
+    # tunnela: seven treasure-chest "opened" flags (P1[1..7], each TEST->give
+    # ->SET; edlast P2[1] tests all seven as a completion battery). Not spine.
+    0x96: "tunnela treasure chest 1/7 (opened)",
+    0x97: "tunnela treasure chest 2/7 (opened)",
+    0x98: "tunnela treasure chest 3/7 (opened)",
+    0x99: "tunnela treasure chest 4/7 (opened)",
+    0x9A: "tunnela treasure chest 5/7 (opened)",
+    0x9B: "tunnela treasure chest 6/7 (opened)",
+    0x9C: "tunnela treasure chest 7/7 (opened)",
 }
 
 

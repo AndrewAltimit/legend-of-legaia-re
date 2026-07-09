@@ -837,3 +837,71 @@ fn map03_karisto_region_gate_families() {
         "korb3 P2[5..=13] are nine distinct 0x403-gated collection records"
     );
 }
+
+/// The `tunnela` `0x96..=0x9C` chain - a **seven-chest treasure set**, NOT a
+/// story-spine gate family. A poll traversal caught all seven set in-scene in
+/// strict order at distinct tiles; static mining resolves what they are.
+///
+/// tunnela carries ONE (bundle) MAN, no streaming variant, and its 12
+/// partition-2 records hold **zero C1/C2 header gates** - so `0x96..=0x9C` are
+/// not `FUN_8003BDE0` record gates. They live inline in seven byte-identical
+/// partition-1 walk-on-trigger records (`P1[1..=7]`), one per flag, each a
+/// treasure-chest: **TEST own flag (already opened?) -> give item + SET own
+/// flag**. The records are laid out on a fixed `0xA2` stride with TEST->SET at
+/// `+0x5D` (`0x96`: TEST @0x457 / SET @0x4B4; `0x9C`: TEST @0x823 / SET @0x880);
+/// none carry a CLEAR (a chest never re-locks). The field-VM disassembler
+/// desyncs into each record's chest dialogue after the opening TEST, so the
+/// SET for `0x96`/`0x97`/`0x9A` is invisible to `system_flag_census` (which
+/// reports it for the other four) - the byte-exact `50 XX` op is the robust
+/// signal, and the poll confirmed all seven fire. The ending scene `edlast`
+/// (`P2[1]`) TESTs all seven together in a collection/completion battery - the
+/// only cross-scene consumer, and why these persist to the endgame.
+///
+/// This is the "dungeon-LOCAL puzzle/objective state" class (cf. taiku's
+/// `0x505..=0x519`), the mining frontier the poll's `[lead]` markers surface.
+#[test]
+fn chapter2_tunnela_treasure_chest_flags() {
+    let Some(index) = open_index() else { return };
+    let man_of = |scene_name: &str| -> Vec<u8> {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    let count = |hay: &[u8], needle: [u8; 2]| hay.windows(2).filter(|w| *w == needle).count();
+
+    // tunnela: each 0x96+k is SET (`50 XX`) and TEST (`70 XX`) exactly once,
+    // never CLEARed - seven one-way treasure-chest flags.
+    let tunnela = man_of("tunnela");
+    for f in 0x96u8..=0x9C {
+        assert_eq!(count(&tunnela, [0x50, f]), 1, "tunnela SET 0x{f:02X} once");
+        assert_eq!(count(&tunnela, [0x70, f]), 1, "tunnela TEST 0x{f:02X} once");
+        assert_eq!(
+            count(&tunnela, [0x60, f]),
+            0,
+            "tunnela never CLEAR 0x{f:02X}"
+        );
+    }
+
+    // edlast (the ending): TESTs all seven (the completion battery), sets none.
+    let edlast = man_of("edlast");
+    for f in 0x96u8..=0x9C {
+        assert_eq!(count(&edlast, [0x70, f]), 1, "edlast TEST 0x{f:02X}");
+        assert_eq!(count(&edlast, [0x50, f]), 0, "edlast never SET 0x{f:02X}");
+    }
+
+    // Structural: tunnela's partition-2 records carry NO header gates (this is
+    // inline chest state, not a spine gate family).
+    let mf = legaia_asset::man_section::parse(&tunnela).expect("parse");
+    let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
+    for r in 0..n_p2 {
+        let (c1, c2) =
+            legaia_engine_core::man_field_scripts::partition2_record_gates(&mf, &tunnela, r)
+                .unwrap_or_default();
+        assert!(
+            c1.is_empty() && c2.is_empty(),
+            "tunnela P2[{r}] has no gates"
+        );
+    }
+}
