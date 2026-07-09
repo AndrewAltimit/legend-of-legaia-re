@@ -14,9 +14,13 @@
 //!     carrier's P1[10..12] + post-victory record P2[50] (the C1 self-latch
 //!     the firehose caught live, `51 42`, `ra 0x801E3598`), re-asserted by
 //!     dolk2's carrier P1[0..1], CLEARed by dolk's bundle P1[26].
-//!   - `0x482` (Drake mist walls): SET by the `other7` script pool
-//!     P1[15]/P1[39], CLEARed by the epilogue variant carriers
-//!     (`edbalden` / `eddoman`).
+//!   - `0x482` (Drake mist walls): NO genuine script site. The earlier
+//!     "SET by the other7 script pool, CLEARed by the edbalden/eddoman
+//!     epilogue carriers" reading is falsified - every census site for
+//!     0x482 is a desynced-walker alias of Shift-JIS text (full-width
+//!     digits / an ＥＸＩＴ label table); see the per-site breakdown in
+//!     `spine_flag_writers_surface_in_the_carrier_census`. The writer is a
+//!     direct code path (capture target), like flag 549.
 //!   - `0x1BE`: SET by `geremi` P2[0] (Jeremi's arrival one-shot "Meta's
 //!     warning", C1 = itself) - surfaced by the partition-2 named-record
 //!     header fix, NOT a rikuroa/Zeto flag.
@@ -121,26 +125,71 @@ fn spine_flag_writers_surface_in_the_carrier_census() {
         "0x142 SET sites (all in streaming variant carriers)"
     );
 
-    // 0x482: set in other6/other7, cleared by the epilogue carriers.
-    let s482_set: BTreeSet<(String, usize, usize)> = census
-        .get(&0x482)
-        .expect("0x482 sites")
-        .iter()
-        .filter(|h| h.kind == FlagKind::Set)
-        .map(|h| (h.scene_name.clone(), h.partition, h.record))
-        .collect();
-    assert_eq!(
-        s482_set,
-        BTreeSet::from([("other7".to_string(), 1, 15), ("other7".to_string(), 1, 39),]),
-        "0x482 SET sites (other7 script pool)"
+    // 0x482 (Drake mist walls): every census site is desync NOISE - the
+    // earlier "SET by the other7 script pool P1[15]/P1[39], CLEARed by the
+    // edbalden/eddoman epilogue carriers" reading is FALSIFIED by hand
+    // disasm of each site class:
+    //   - the other7 "SETs" are the full-width SJIS digit run `82 54 82 4F`
+    //     (e.g. the text ５００) read one byte off as `54 82` = SET 0x482;
+    //   - the edbalden/eddoman "CLEARs" are a repeating full-width label
+    //     table (`82 64 82 77 82 68 82 73` = ＥＸＩＴ + counter), 17 aliases
+    //     of `64 82` per carrier;
+    //   - the edbylon "TEST" is SJIS dialogue (`74 82` with a garbage branch
+    //     target 0x8E51).
+    // (other7 itself is a dev-leftover earlier revision of koin3's MAN - its
+    // 8 partition-2 records are a name-exact prefix subset of koin3's 12 -
+    // with no loader anywhere in the captured code.) The motion-VM and
+    // op-0x49 censuses carry no 0x482 site either, and every poll-captured
+    // 0x482 set sits in a bulk save-load tick, so the flag's writer is a
+    // direct code path (FUN_8003CE08-class, like flag 549) - a capture
+    // target (P7 write-watch around the post-Zeto Drake-revival beat), not a
+    // script hunt.
+    let s482 = census.get(&0x482).expect("0x482 sites");
+    assert!(
+        s482.iter().all(|h| !h.clean),
+        "every 0x482 census site is decode-desynced text noise; a CLEAN site \
+         appearing here means a genuine script writer surfaced - re-open the \
+         static hunt: {s482:?}"
     );
+    // Pin the two site classes the falsified reading was built on, so the
+    // census still *surfaces* them (as flagged noise) rather than silently
+    // dropping them if the walker changes.
+    for (scene, partition, record) in [("other7", 1usize, 15usize), ("other7", 1, 39)] {
+        assert!(
+            s482.iter().any(|h| h.scene_name == scene
+                && h.partition == partition
+                && h.record == record
+                && h.kind == FlagKind::Set
+                && !h.clean),
+            "expected the {scene} P{partition}[{record}] phantom-SET alias to \
+             surface as non-clean noise"
+        );
+    }
+    assert!(
+        s482.iter().any(|h| h.scene_name == "edbalden"
+            && h.variant
+            && h.kind == FlagKind::Clear
+            && !h.clean),
+        "expected the edbalden EXIT-label aliases to surface as non-clean noise"
+    );
+
+    // The live-confirmed 0x142 writer arms decode CLEAN (the P2[50]
+    // post-victory one-shot and the dolk2 P1[0] re-assert), separating them
+    // from the 0x482 mirage class. (The rikuroa P1[10..=12] debug-ladder
+    // SETs sit a few instructions after inline ASCII labels - "Dummy" /
+    // "Clear" - so they stay under the resync window and keep the
+    // verify-by-hand tag; hand disasm confirms real `51 42` ladder ops.)
     assert!(
         census
-            .get(&0x482)
+            .get(&0x142)
             .unwrap()
             .iter()
-            .any(|h| { h.scene_name == "edbalden" && h.variant && h.kind == FlagKind::Clear }),
-        "0x482 cleared by the edbalden epilogue variant carrier"
+            .any(|h| h.scene_name == "rikuroa"
+                && h.partition == 2
+                && h.record == 50
+                && h.kind == FlagKind::Set
+                && h.clean),
+        "rikuroa P2[50] 0x142 SET must decode clean"
     );
 
     // 0x1BE: geremi's arrival one-shot (P2[0] self-latch) - the flag the

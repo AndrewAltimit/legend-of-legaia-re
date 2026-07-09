@@ -62,7 +62,28 @@ pub struct GFlagSite {
     pub bit: u8,
     /// The full flag number: scratchpad bit index, or the `u16` system flag id.
     pub flag: u16,
+    /// `true` iff the site sits in a locally coherent opcode stream: at
+    /// least [`CLEAN_RESYNC_INSNS`] instructions decoded without error
+    /// between the walker's last decode error (or the record start) and this
+    /// site. `false` means the walker was desynced or freshly resyncing -
+    /// typically inside unframed Shift-JIS dialogue or an inline data table,
+    /// where operand/text bytes alias the `0x50..=0x7F` flag opcodes: e.g.
+    /// the full-width digit run `82 54 82 4F` yields a phantom
+    /// `SysFlag.Set idx=0x482`. Non-clean sites are byte noise until
+    /// verified by hand disasm or a live capture - the wave-8 `other7`-pool
+    /// "0x482 writers" were exactly this class (all 37 census sites for
+    /// `0x482` are non-clean; the live-confirmed `0x142` writer ladders all
+    /// stay clean).
+    pub clean: bool,
 }
+
+/// Consecutive error-free instructions the linear walk must decode before a
+/// flag site counts as [`GFlagSite::clean`] again after a desync. SJIS text
+/// runs do produce short bursts of 2..4 valid-looking decodes between
+/// errors, so the resync window must comfortably exceed that; genuine flag
+/// ladders (e.g. the rikuroa variant `0x142` battery) decode dozens of
+/// instructions cleanly.
+pub const CLEAN_RESYNC_INSNS: usize = 8;
 
 /// The script `script_start` of `partition`'s record `index`, computed from
 /// the partition's u24 record-offset table against the MAN data region.
@@ -150,6 +171,20 @@ pub fn partition2_record_gates(
     let c1 = read_u16_list(body, &mut cur)?;
     let c2 = read_u16_list(body, &mut cur)?;
     Some((c1, c2))
+}
+
+/// The raw Shift-JIS name bytes of a **partition-2 named-record** (the
+/// `[u8 name_len][name_len*2 bytes]` header field `FUN_8003BDE0` matches
+/// records by; see [`partition2_record_script_offset`]). Returns `None` when
+/// the index is out of range or the name field overruns the record body.
+/// Callers render lossily (the names are dev labels, often SJIS).
+// REF: FUN_8003BDE0
+pub fn partition2_record_name(man_file: &ManFile, man: &[u8], index: usize) -> Option<Vec<u8>> {
+    let script_start = partition_record_offset(man_file, man.len(), 2, index)?;
+    let end = record_end_bound(man_file, man.len(), script_start);
+    let body = man.get(script_start..end)?;
+    let name_len = *body.first()? as usize;
+    body.get(1..1 + name_len * 2).map(|s| s.to_vec())
 }
 
 /// The byte span of `partition`'s record `index` as a field-VM script:
@@ -266,7 +301,24 @@ pub fn walk_partition_gflag_sites(
             continue;
         };
         let body = &man[script_start..script_start + body_len];
-        for insn in LinearWalker::new(body, pc0).flatten() {
+        // Coherence tracking: after a decode error the walker is no longer at
+        // a trustworthy instruction boundary - it resynchronises by advancing
+        // one byte at a time, and inside unframed SJIS dialogue / data tables
+        // that produces phantom flag ops. A site is `clean` only once the
+        // walk has put CLEAN_RESYNC_INSNS error-free instructions behind it
+        // (see [`GFlagSite::clean`]). Start past the threshold: record starts
+        // are real boundaries.
+        let mut ok_run = CLEAN_RESYNC_INSNS;
+        for insn in LinearWalker::new(body, pc0) {
+            let insn = match insn {
+                Ok(insn) => insn,
+                Err(_) => {
+                    ok_run = 0;
+                    continue;
+                }
+            };
+            let clean = ok_run >= CLEAN_RESYNC_INSNS;
+            ok_run += 1;
             match insn.info {
                 // Scratchpad global flag (`0x2E` set / `0x2F` clear). The VM
                 // has no scratchpad TEST op reaching this variant, but guard
@@ -281,6 +333,7 @@ pub fn walk_partition_gflag_sites(
                     bank: FlagBank::Scratchpad,
                     bit,
                     flag: u16::from(bit),
+                    clean,
                 }),
                 // Wide SYSTEM-flag bank (`0x5x` set / `0x6x` clear / `0x7x`
                 // test). `idx` is the full `u16` flag number; `bit` keeps the
@@ -295,6 +348,7 @@ pub fn walk_partition_gflag_sites(
                     bank: FlagBank::System,
                     bit: (idx & 0xFF) as u8,
                     flag: idx,
+                    clean,
                 }),
                 _ => {}
             }
@@ -385,6 +439,10 @@ pub struct FlagCensusSite {
     pub opcode: u8,
     /// SET / CLEAR / TEST discriminator.
     pub kind: FlagKind,
+    /// Decode coherence: `false` when the record's walk had already desynced
+    /// (a decode error) before this site - byte noise until verified. See
+    /// [`GFlagSite::clean`].
+    pub clean: bool,
 }
 
 /// Disc-wide SYSTEM-flag census: walk every scene's MAN across all three
@@ -435,6 +493,7 @@ where
                         record: site.record,
                         opcode: site.opcode,
                         kind: site.kind,
+                        clean: site.clean,
                     });
                 }
             }

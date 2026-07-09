@@ -19,6 +19,7 @@ pub(crate) fn cmd_man_scripts(
     system_flag_census: bool,
     motion_flag_census: bool,
     op49_window_census: bool,
+    p2_gates: bool,
 ) -> Result<()> {
     use legaia_engine_core::man_field_scripts::{
         FlagBank, partition_record_span, scene_man_carriers,
@@ -127,6 +128,45 @@ pub(crate) fn cmd_man_scripts(
         total_yields, total_records, tetsu,
     );
 
+    if p2_gates {
+        use legaia_engine_core::man_field_scripts::{
+            partition2_record_gates, partition2_record_name,
+        };
+        let n2 = *man_file.header.partition_counts.get(2).unwrap_or(&0) as usize;
+        println!("\n--- partition-2 record C1/C2 header gates ({n2} records) ---");
+        for i in 0..n2 {
+            let name = partition2_record_name(&man_file, &man, i)
+                .map(|b| {
+                    b.iter()
+                        .map(|&c| {
+                            if c.is_ascii_graphic() || c == b' ' {
+                                c as char
+                            } else {
+                                '.'
+                            }
+                        })
+                        .collect::<String>()
+                })
+                .unwrap_or_default();
+            match partition2_record_gates(&man_file, &man, i) {
+                Some((c1, c2)) => {
+                    let fmt = |v: &[u16]| {
+                        v.iter()
+                            .map(|f| format!("0x{f:03X}"))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    };
+                    println!(
+                        "  P2[{i:3}] C1=[{}] C2=[{}]  name={name:?}",
+                        fmt(&c1),
+                        fmt(&c2),
+                    );
+                }
+                None => println!("  P2[{i:3}] <header overruns record body>  name={name:?}"),
+            }
+        }
+    }
+
     if let Some(target) = disasm_record {
         use legaia_engine_vm::field_disasm::{LinearWalker, format_instruction};
         let (script_start, pc0, body_len) =
@@ -200,13 +240,14 @@ pub(crate) fn cmd_man_scripts(
                     FlagKind::Test => "Test ",
                 };
                 println!(
-                    "    {kind} scene={:<10} PROT[{:04}]{} P{}[{}] (op 0x{:02X})",
+                    "    {kind} scene={:<10} PROT[{:04}]{} P{}[{}] (op 0x{:02X}){}",
                     h.scene_name,
                     h.entry_idx,
                     if h.variant { " VARIANT-MAN" } else { "" },
                     h.partition,
                     h.record,
                     h.opcode,
+                    if h.clean { "" } else { "  DESYNCED?" },
                 );
             }
         }
