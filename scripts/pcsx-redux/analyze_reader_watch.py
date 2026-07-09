@@ -42,10 +42,13 @@ KNOWN_SITES: dict[int, str] = {
     0x8003BF78: "FUN_8003BDE0 internal gate-bit read (walk-on trigger gate check)",
     0x8003C008: "FUN_8003BDE0 internal gate-bit read (walk-on trigger gate check)",
     0x8001A8BC: "bulk lbu;sb memcpy loop (save/transfer scan of the flag bank - discard)",
+    0x800583C8: "FUN_800583C8 LoadImage (libgpu RAM->VRAM)",
+    0x80058490: "FUN_80058490 MoveImage (libgpu VRAM->VRAM)",
 }
 
-HELPER_PCS = {0x8003CE08, 0x8003CE34, 0x8003CE64}
+HELPER_PCS = {0x8003CE08, 0x8003CE34, 0x8003CE64, 0x800583C8, 0x80058490}
 CONTEXT_KINDS = {"scene", "mode", "snap"}
+FLAG_KINDS = {"test", "set", "clear", "byteread"}
 
 
 def classify_region(addr: int) -> str:
@@ -82,6 +85,9 @@ class Site:
     first_scene: str = ""
     scenes: set[str] = field(default_factory=set)
     tiles: set[str] = field(default_factory=set)
+    rects: set[str] = field(default_factory=set)   # vram "r<x>;<y>;<w>;<h>"
+    values: set[str] = field(default_factory=set)  # write "pre=../now=.." pairs
+    name: str = ""                                 # write watch name
     target: bool = False
 
 
@@ -121,10 +127,17 @@ def collect_sites(rows: list[Row]) -> dict[tuple, Site]:
         s.total = max(s.total, r.count)
         s.scenes.add(r.scene)
         for tok in r.note.split():
-            if tok.startswith("t") and ";" in tok:
-                s.tiles.add(tok)
             if tok == "tgt":
                 s.target = True
+            elif tok.startswith(("pre=", "now=")):
+                s.values.add(tok)
+            elif ";" in tok:
+                if tok.startswith("t"):
+                    s.tiles.add(tok)
+                elif tok.startswith(("r", "d")):
+                    s.rects.add(tok)
+            elif r.kind == "write" and not s.name:
+                s.name = tok
     # The probe logs every hit up to a per-class prefix (targets 8,
     # background 4) and then only every Nth - so a max count inside the
     # prefix is exact, anything past it is a lower bound.
@@ -147,6 +160,21 @@ def site_line(s: Site, labels: dict[int, str]) -> str:
     return (f"    {s.kind:<9} pc=0x{s.pc:08X} ra=0x{s.ra:08X} n={cnt:<7} "
             f"first@{s.first_tick}/{s.first_scene}{tiles}\n"
             f"              -> {label_for(who, labels)}")
+
+
+def annotate_rect(tok: str) -> str:
+    """Tag a vram rect token: single-row narrow uploads are CLUT-shaped."""
+    if not tok.startswith("r"):
+        return tok
+    try:
+        _x, y, w, h = (int(v) for v in tok[1:].split(";"))
+    except ValueError:
+        return tok
+    if h == 1 and w <= 256:
+        return tok + "[CLUT?]"
+    if y >= 448:
+        return tok + "[CLUT-region]"
+    return tok
 
 
 def load_labels(path: str | None) -> dict[int, str]:
@@ -179,8 +207,9 @@ def render(rows: list[Row], labels: dict[int, str], only: str | None) -> str:
     out.append("totals (lower bounds): " + " ".join(
         f"{k}={v}" for k, v in sorted(totals.items())) or "-")
 
-    target_flags = sorted({s.flag for s in sites.values() if s.target}
-                          | {s.flag for s in sites.values() if s.kind == "byteread"})
+    flag_sites = [s for s in sites.values() if s.kind in FLAG_KINDS]
+    target_flags = sorted({s.flag for s in flag_sites
+                           if s.target or s.kind == "byteread"})
 
     if only in (None, "targets"):
         out.append("\n== TARGET FLAGS ==")
@@ -188,7 +217,7 @@ def render(rows: list[Row], labels: dict[int, str], only: str | None) -> str:
             out.append("  (no target-flag hits)")
         for f in target_flags:
             out.append(f"  flag 0x{f:X} ({f}):")
-            fs = sorted((s for s in sites.values() if s.flag == f),
+            fs = sorted((s for s in flag_sites if s.flag == f),
                         key=lambda s: (s.kind, s.first_tick))
             for s in fs:
                 out.append(site_line(s, labels))
@@ -197,11 +226,11 @@ def render(rows: list[Row], labels: dict[int, str], only: str | None) -> str:
 
     if only in (None, "background"):
         out.append("\n== ALL-FLAG PROVENANCE (background, deduped) ==")
-        bg_flags = sorted({s.flag for s in sites.values()} - set(target_flags))
+        bg_flags = sorted({s.flag for s in flag_sites} - set(target_flags))
         if not bg_flags:
             out.append("  (none)")
         for f in bg_flags:
-            fs = sorted((s for s in sites.values() if s.flag == f),
+            fs = sorted((s for s in flag_sites if s.flag == f),
                         key=lambda s: (s.kind, s.first_tick))
             kinds = {}
             news = []
@@ -215,6 +244,30 @@ def render(rows: list[Row], labels: dict[int, str], only: str | None) -> str:
                 for k, v in sorted(kinds.items()))
             mark = "  [NEW ra]" if news else ""
             out.append(f"  0x{f:<5X} {desc}{mark}")
+
+    if only in (None, "writes"):
+        ws = sorted((s for s in sites.values() if s.kind == "write"),
+                    key=lambda s: (s.flag, s.first_tick))
+        if ws:
+            out.append("\n== WATCHED WRITES (P7 allowlist) ==")
+            for s in ws:
+                out.append(f"  {s.name or f'slot{s.flag}'}:")
+                out.append(site_line(s, labels))
+                if s.values:
+                    out.append("              values: "
+                               + " ".join(sorted(s.values)))
+
+    if only in (None, "vram"):
+        vs = sorted((s for s in sites.values()
+                     if s.kind in ("vram", "vrammove")),
+                    key=lambda s: (s.kind, s.first_tick))
+        if vs:
+            out.append("\n== VRAM UPLOADS (P8) ==")
+            for s in vs:
+                out.append(site_line(s, labels))
+                if s.rects:
+                    out.append("              rects: " + " ".join(
+                        annotate_rect(t) for t in sorted(s.rects)))
 
     if only in (None, "snaps"):
         snaps = [r for r in rows if r.kind == "snap"]
@@ -235,6 +288,8 @@ def to_json(rows: list[Row], labels: dict[int, str]) -> str:
             "ra": f"0x{s.ra:08X}", "total_min": s.total, "exact": s.exact,
             "first_tick": s.first_tick, "first_scene": s.first_scene,
             "scenes": sorted(s.scenes), "tiles": sorted(s.tiles),
+            "rects": sorted(s.rects), "values": sorted(s.values),
+            "name": s.name,
             "target": s.target, "label": label_for(who, labels),
             "new": who not in labels,
         })
@@ -245,7 +300,8 @@ def to_json(rows: list[Row], labels: dict[int, str]) -> str:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("csv", help="flag_reader_watch.csv path")
-    ap.add_argument("--only", choices=["targets", "background", "snaps"])
+    ap.add_argument("--only",
+                    choices=["targets", "background", "writes", "vram", "snaps"])
     ap.add_argument("--labels", help="extra site labels: '0xADDR text' lines")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)

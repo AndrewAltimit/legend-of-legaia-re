@@ -118,6 +118,41 @@ def test_json_output_shape():
     assert payload[0]["new"] is False
 
 
+def test_watched_write_section_with_values_and_name():
+    rows = _rows(
+        # P7: formation-table write from the encounter launcher, committed
+        # value appended at the drain
+        "100,write,1,0x801DA5F8,0x801DA51C,0x03,rayman,1,tgt form pre=0x0 t3;-2 now=0x4F",
+    )
+    sites = arw.collect_sites(rows)
+    s = sites[("write", 1, 0x801DA5F8, 0x801DA51C)]
+    assert s.name == "form"
+    assert {"pre=0x0", "now=0x4F"} <= s.values
+    assert s.target  # tgt-class suppression tier
+    text = arw.render(rows, arw.load_labels(None), "writes")
+    assert "WATCHED WRITES" in text and "form" in text and "now=0x4F" in text
+    # write slots must NOT leak into the flag sections
+    full = arw.render(rows, arw.load_labels(None), None)
+    assert "flag 0x1 (1)" not in full
+
+
+def test_vram_section_clut_classification():
+    rows = _rows(
+        # CLUT-shaped row-479 upload + a texture page + a move
+        "10,vram,0,0x800583C8,0x801E4C58,0x03,map01,1,r64;479;16;1",
+        "11,vram,0,0x800583C8,0x801E4C58,0x03,map01,2,r960;256;64;64",
+        "12,vrammove,0,0x80058490,0x801E4794,0x03,map01,1,r0;0;16;1 d64;479",
+    )
+    text = arw.render(rows, arw.load_labels(None), "vram")
+    assert "VRAM UPLOADS" in text
+    assert "r64;479;16;1[CLUT?]" in text
+    assert "r960;256;64;64" in text and "r960;256;64;64[" not in text
+    assert "FUN_800583C8 LoadImage" not in text  # helper pc labels the CALLER ra
+    assert "[NEW] uncataloged, overlay" in text
+    # vram rows never enter the flag sections
+    assert "flag 0x0" not in arw.render(rows, arw.load_labels(None), "targets")
+
+
 def _run_all():
     mod = sys.modules[__name__]
     names = [n for n in dir(mod) if n.startswith("test_")]

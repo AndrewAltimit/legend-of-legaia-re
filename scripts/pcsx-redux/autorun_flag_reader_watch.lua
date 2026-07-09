@@ -33,6 +33,24 @@
 --      the code at `pc` masks the target bit (the analyzer marks these).
 --      Accesses from inside the three helpers (0x8003CE08..0x8003CE8F)
 --      are suppressed - watches 1/2 already cover them.
+--   4. (P7) Write-watch ALLOWLIST - writer ra for arbitrary non-flag
+--      globals. LEGAIA_WATCH_WRITES="0xADDR:width[:name],..." - default
+--      the battle-id staging byte + formation table (the firehose's two,
+--      so this probe fully supersedes it). kind=write rows carry the
+--      pre-store value at the hit and the committed value at the vsync
+--      drain (the BP fires MID-store, so the hit-time read is stale -
+--      the firehose's documented trap, handled here).
+--   5. (P8) VRAM upload log - exec-bps on the libgpu writers
+--      LoadImage FUN_800583C8 (RECT* a0: RAM->VRAM) and MoveImage
+--      FUN_80058490 (RECT* a0, dstx a1, dsty a2: VRAM->VRAM). kind=
+--      vram/vrammove rows carry the rect ("r<x>;<y>;<w>;<h>", move adds
+--      "d<x>;<y>") + uploader ra, deduped per (ra, rect) - texture/CLUT
+--      upload provenance for every scene crossed. SAFETY: a hot
+--      LoadImage exec-bp during XA/FMV streaming segfaults the emulator
+--      (see autorun_town01_vram_upload_census.lua), so these two bps
+--      AUTO-DISARM when the mode byte enters the STR modes (0x1A/0x1B)
+--      and re-arm on the next stable field frame. LEGAIA_TRACE_VRAM=0
+--      to disable entirely.
 --
 -- TARGETS: LEGAIA_FLAG accepts a COMMA LIST ("0x1E8,0x5A0,0x5A1,0x6C3") -
 -- one trek answers the whole worklist. Targets get byteread watches,
@@ -68,8 +86,11 @@
 --   flag_reader_watch.csv    tick,kind,flag,pc,ra,mode,scene,count,note
 --     kind = test | set | clear   (helper hits; flag = a0, ra = caller)
 --          | byteread             (direct read of a target byte; post-filter)
+--          | write                (P7 allowlist hit; flag = slot index)
+--          | vram | vrammove      (P8 upload; rect in note)
 --          | scene | mode | snap  (context timeline / snapshot record)
---     note = "tgt" marks a target flag; "t<x>;<z>" player tile (field mode)
+--     note = "tgt" marks a target flag; "t<x>;<z>" player tile (field mode);
+--            write rows "name pre=0x.. now=0x.."; vram rows "r<x>;<y>;<w>;<h>"
 --   flag_reader_watch.detail.txt  call context (targets prioritized)
 --   manifest.txt                  run config + source sstate
 --   snap_*.sstate                 new-scene + first-target-hit snapshots
@@ -99,6 +120,11 @@ local PLAYER_PTR  = 0x8007C364
 local POS_X_OFF   = 0x14
 local POS_Z_OFF   = 0x18
 local FIELD_MODE  = 0x03
+-- P8: the two libgpu VRAM writers (RECT* in a0; u16 x,y,w,h at +0/2/4/6).
+local LOAD_IMAGE  = 0x800583C8  -- FUN_800583C8 LoadImage (RAM -> VRAM)
+local MOVE_IMAGE  = 0x80058490  -- FUN_80058490 MoveImage (VRAM -> VRAM; dst a1,a2)
+-- STR/FMV game modes: a hot LoadImage exec-bp here segfaults the emulator.
+local FMV_MODES   = { [0x1A] = true, [0x1B] = true }
 
 -- +-- config ----------------------------------------------------------------
 -- Target flags: comma list, 0x.. or decimal. Targets get byteread watches +
@@ -144,6 +170,27 @@ local ARM_STABLE  = 6
 -- New-scene / first-target-hit snapshots (P2, ported from the poll tier).
 local AUTOSNAP  = probe.getenv("LEGAIA_AUTOSNAP", "1") ~= "0"
 local SNAP_MAX  = probe.getenv_num("LEGAIA_SNAP_MAX", 20)
+-- P7: write-watch allowlist "0xADDR:width[:name],..." ("off" disables).
+-- Default = the firehose's two watches, so this probe supersedes it.
+local WATCH_WRITES = {}  -- { {addr, width, name}, ... }; flag col = slot idx
+do
+    local spec = probe.getenv("LEGAIA_WATCH_WRITES",
+        "0x8007B7FC:1:batid,0x8007BD0C:4:form")
+    if spec ~= "0" and spec:lower() ~= "off" then
+        for tok in spec:gmatch("[^,%s]+") do
+            local a, w, n = tok:match("^(0[xX]%x+):(%d+):?(%w*)$")
+            if a ~= nil then
+                WATCH_WRITES[#WATCH_WRITES + 1] = {
+                    addr  = tonumber(a),
+                    width = tonumber(w),
+                    name  = (n ~= "") and n or string.format("w%X", tonumber(a)),
+                }
+            end
+        end
+    end
+end
+-- P8: VRAM upload log (auto-disarmed across FMV modes; 0 disables).
+local TRACE_VRAM = probe.getenv("LEGAIA_TRACE_VRAM", "1") ~= "0"
 
 local CSV = probe.csv_open(probe.out_path("flag_reader_watch.csv"),
     "tick,kind,flag,pc,ra,mode,scene,count,note")
@@ -215,11 +262,22 @@ end
 
 -- Called from INSIDE a bp callback (emulation thread). Read regs/RAM here;
 -- queue all file/GUI/sstate I/O for the vsync drain.
+-- `extra` (optional): note     = extra note text (space-joined, no commas)
+--                     dedup    = extra dedup-key suffix (e.g. the vram rect)
+--                     tgtclass = target-tier suppression/detail (P7 writes)
+--                     nodetail = never burn a call-context slot (P8 vram)
+--                     postread = {addr,width}: re-read at the vsync drain and
+--                                append "now=0x.." (committed value; the bp
+--                                fires MID-store so hit-time reads are stale)
+local FLAG_KINDS = { test = true, set = true, clear = true, byteread = true }
 local pending = {}
-local function record(kind, flag, pc, ra)
-    local tgt = TARGETS[flag] or (kind == "byteread")
+local function record(kind, flag, pc, ra, extra)
+    extra = extra or {}
+    local is_flag = FLAG_KINDS[kind] ~= nil
+    local tgt = (is_flag and (TARGETS[flag] or kind == "byteread"))
+        or extra.tgtclass or false
     totals[kind] = (totals[kind] or 0) + 1
-    local key = string.format("%s|%d|%08X", kind, flag, ra)
+    local key = string.format("%s|%d|%08X|%s", kind, flag, ra, extra.dedup or "")
     local n = (key_counts[key] or 0) + 1
     key_counts[key] = n
     local full, every
@@ -228,11 +286,15 @@ local function record(kind, flag, pc, ra)
     local ev = nil
     if n <= full or (n % every) == 0 then
         local note = tgt and "tgt" or ""
+        if extra.note then
+            note = (note == "") and extra.note or (note .. " " .. extra.note)
+        end
         local tn = tile_note()
         if tn ~= "" then note = (note == "") and tn or (note .. " " .. tn) end
         ev = {
             csv = string.format("%d,%s,%d,0x%08X,0x%08X,0x%02X,%s,%d,%s",
                 vsync, kind, flag, pc, ra, u8(GAME_MODE), scene_name(), n, note),
+            postread = extra.postread,
         }
         if n == 1 and (tgt or kind ~= "test") then
             ev.log = string.format(
@@ -240,21 +302,23 @@ local function record(kind, flag, pc, ra)
                 kind, flag, pc, ra, scene_name(), tgt and " [TGT]" or "")
         end
     end
-    -- Call-context detail: targets have their own budget (per kind|flag|ra)
+    -- Call-context detail: targets have their own budget (per dedup key)
     -- so background churn can never starve the flags this run is FOR.
     local want_detail = false
-    if tgt then
-        if not tgt_detailed[key] and tgt_detail_used < TGT_DETAIL_MAX then
-            tgt_detailed[key] = true
-            tgt_detail_used = tgt_detail_used + 1
-            want_detail = true
-        end
-    else
-        local dkey = string.format("%s|%08X", kind, ra)
-        if not ra_detailed[dkey] and detail_used < DETAIL_MAX then
-            ra_detailed[dkey] = true
-            detail_used = detail_used + 1
-            want_detail = true
+    if not extra.nodetail then
+        if tgt then
+            if not tgt_detailed[key] and tgt_detail_used < TGT_DETAIL_MAX then
+                tgt_detailed[key] = true
+                tgt_detail_used = tgt_detail_used + 1
+                want_detail = true
+            end
+        else
+            local dkey = string.format("%s|%08X", kind, ra)
+            if not ra_detailed[dkey] and detail_used < DETAIL_MAX then
+                ra_detailed[dkey] = true
+                detail_used = detail_used + 1
+                want_detail = true
+            end
         end
     end
     if want_detail then
@@ -266,18 +330,32 @@ local function record(kind, flag, pc, ra)
     -- First helper hit on a target flag: queue a snapshot (a mid-beat
     -- bracket exactly at the moment the flag mattered). Drained at vsync -
     -- sstate.save is I/O and must NOT run on the emulation thread.
-    if TARGETS[flag] and kind ~= "byteread" and not snap_flags[flag] then
+    if is_flag and TARGETS[flag] and kind ~= "byteread"
+        and not snap_flags[flag] then
         snap_flags[flag] = true
         pending_snaps[#pending_snaps + 1] = string.format("hit_f%X", flag)
     end
     if ev then pending[#pending + 1] = ev end
 end
 
+local function read_width(addr, width)
+    if width == 4 then return mem.read_u32(addr) or 0 end
+    if width == 2 then return u16(addr) end
+    return u8(addr)
+end
+
 local function drain_pending()
     if #pending == 0 then return end
     for i = 1, #pending do
         local ev = pending[i]
-        if ev.csv then CSV:row("%s", ev.csv) end
+        if ev.csv then
+            if ev.postread then
+                -- committed value: the store has landed by the vsync drain
+                ev.csv = ev.csv .. string.format(" now=0x%X",
+                    read_width(ev.postread.addr, ev.postread.width))
+            end
+            CSV:row("%s", ev.csv)
+        end
         if ev.log then PCSX.log(ev.log) end
         if ev.detail then probe.append_call_context(DETAIL, ev.detail) end
     end
@@ -301,6 +379,46 @@ local function autosnap(reason)
 end
 
 -- +-- arm --------------------------------------------------------------------
+-- P8: LoadImage/MoveImage exec-bps, held in their own handle list so they
+-- can be REMOVED when the mode byte enters the STR/FMV modes (a hot
+-- LoadImage bp there segfaults the emulator) and re-armed back in field.
+local vram_bps = nil
+local function arm_vram()
+    if not TRACE_VRAM or vram_bps ~= nil then return end
+    local function on_upload(kind, entry_pc)
+        return function()
+            local r  = regs()
+            local ra = u32(r.GPR.n.ra)
+            local rect = u32(r.GPR.n.a0)
+            if not mem.in_ram(rect, 8) then return end
+            local note = string.format("r%d;%d;%d;%d",
+                u16(rect), u16(rect + 2), u16(rect + 4), u16(rect + 6))
+            if kind == "vrammove" then
+                note = note .. string.format(" d%d;%d",
+                    (tonumber(r.GPR.n.a1) or 0) % 0x10000,
+                    (tonumber(r.GPR.n.a2) or 0) % 0x10000)
+            end
+            record(kind, 0, entry_pc, ra,
+                { note = note, dedup = note, nodetail = true })
+        end
+    end
+    vram_bps = {
+        bp.arm(LOAD_IMAGE, "Exec", 4, "load_image",
+            on_upload("vram", LOAD_IMAGE)),
+        bp.arm(MOVE_IMAGE, "Exec", 4, "move_image",
+            on_upload("vrammove", MOVE_IMAGE)),
+    }
+    log("vram watch armed (LoadImage/MoveImage; auto-disarms across FMV modes)")
+end
+local function disarm_vram(reason)
+    if vram_bps == nil then return end
+    for _, h in ipairs(vram_bps) do
+        pcall(function() h:remove() end)
+    end
+    vram_bps = nil
+    log("vram watch disarmed (" .. reason .. ")")
+end
+
 local function arm_all()
     -- 1. TEST helper: every read (or targets only, LEGAIA_ALL_TESTS=0).
     bp.arm(FLAG_GET_PC, "Exec", 4, "flag_get", function()
@@ -343,6 +461,21 @@ local function arm_all()
             end)
         end
     end
+    -- 4. (P7) Write-watch allowlist: writer ra for non-flag globals.
+    for i, def in ipairs(WATCH_WRITES) do
+        local slot = i - 1
+        bp.arm(def.addr, "Write", def.width, "ww_" .. def.name, function()
+            local r = regs()
+            record("write", slot, u32(r.pc), u32(r.GPR.n.ra), {
+                note     = string.format("%s pre=0x%X",
+                    def.name, read_width(def.addr, def.width)),
+                postread = def,
+                tgtclass = true,
+            })
+        end)
+    end
+    -- 5. (P8) VRAM upload log (own handle list; mode-gated in on_vsync).
+    arm_vram()
     armed = true
     log(string.format("armed at tick %d (mode=0x%02X scene=%s)",
         vsync, u8(GAME_MODE), scene_name()))
@@ -368,6 +501,12 @@ local function arm_all()
     if DIRECT_READ then
         log("  byteread: Read-watch per target byte (direct readers; dedup by pc,ra)")
     end
+    local ww = {}
+    for _, def in ipairs(WATCH_WRITES) do
+        ww[#ww + 1] = string.format("%s@0x%08X:%d", def.name, def.addr, def.width)
+        log(string.format("  write : Write-watch 0x%08X w%d (%s)",
+            def.addr, def.width, def.name))
+    end
     log("  now: open the menu, SAVE, cross scene transitions to trigger reads")
 
     probe.write_manifest("autorun_flag_reader_watch.lua", {
@@ -376,6 +515,8 @@ local function arm_all()
         all_tests      = tostring(ALL_TESTS),
         writers        = tostring(WRITERS),
         direct_read    = tostring(DIRECT_READ),
+        watch_writes   = (#ww > 0) and table.concat(ww, " ") or "off",
+        trace_vram     = tostring(TRACE_VRAM),
         autosnap       = string.format("%s (max %d)", tostring(AUTOSNAP), SNAP_MAX),
         autosave_every = tostring(AUTOSAVE_EVERY),
         armed_tick     = tostring(vsync),
@@ -474,11 +615,22 @@ local function on_vsync()
         return
     end
 
+    -- P8 safety gate: pull the LoadImage/MoveImage bps across FMV stretches
+    -- (hot exec-bp there segfaults the emulator), re-arm on return to field.
+    if TRACE_VRAM then
+        if FMV_MODES[md] then
+            disarm_vram(string.format("FMV mode 0x%02X", md))
+        elseif vram_bps == nil and md == FIELD_MODE then
+            arm_vram()
+        end
+    end
+
     if (vsync % 480) == 0 then
         log(string.format(
-            "alive tick=%d mode=0x%02X scene=%s test=%d set=%d clear=%d byteread=%d snap=%d",
+            "alive tick=%d mode=0x%02X scene=%s test=%d set=%d clear=%d byteread=%d write=%d vram=%d snap=%d",
             vsync, md, sc, totals.test, totals.set, totals.clear,
-            totals.byteread, snap_count))
+            totals.byteread, totals.write or 0,
+            (totals.vram or 0) + (totals.vrammove or 0), snap_count))
     end
 
     if AUTOSAVE_EVERY > 0 and (vsync % AUTOSAVE_EVERY) == 0 then
@@ -492,8 +644,10 @@ end
 
 -- +-- startup ----------------------------------------------------------------
 log("=== autorun_flag_reader_watch (flag provenance) ===")
-log(string.format("targets: %d flag(s); unfiltered test=%s writers=%s",
-    #TARGET_LIST, tostring(ALL_TESTS), tostring(WRITERS)))
+log(string.format(
+    "targets: %d flag(s); unfiltered test=%s writers=%s write-watches=%d vram=%s",
+    #TARGET_LIST, tostring(ALL_TESTS), tostring(WRITERS),
+    #WATCH_WRITES, tostring(TRACE_VRAM)))
 log("every flag tested/set/cleared this session is recorded with its ra (deduped)")
 log("this session never self-quits -- wrap the launch in timeout --kill-after")
 
