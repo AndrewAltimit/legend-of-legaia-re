@@ -644,3 +644,69 @@ fn chapter2_map02_hub_gate_family() {
         "retock-area mirror; 0x357 shared with retock/retockin"
     );
 }
+
+/// `town0c` is NOT a chapter-2 Sebucus spoke - it is a **Rim Elm (Vahn's
+/// hometown, `town01`) story-state VARIANT**. (The poll's "scene" spoke is a
+/// non-entity: it is the state-poll CSV's column header, not a CDNAME map.)
+///
+/// `town01`/`town0b`/`town0c` all carry the same Rim Elm opening-chain block at
+/// `P2[3..=11]` - the `0x225` (=549) opening one-shot -> `0x226` -> `0x227`
+/// chain plus the `0x231/0x232/0x233/0x141` sub-chains - which is exactly the
+/// 549-reader gate family (`flag_549_reader_is_the_rim_elm_p2_gate`). So these
+/// are progressive story-state renditions of the one town, keyed by that chain,
+/// and `town0c` being in the chapter-2 poll is a hometown REVISIT (its opening
+/// chain was long-since latched: no organic set of it appears in the poll).
+/// `town0d` is the fully `0x7`-gated later variant (the low-flag discriminator
+/// also seen on rayman2/retockin/dohaty). This corrects the "ch2 spoke" reading.
+#[test]
+fn town0c_is_a_rim_elm_state_variant_not_a_ch2_spoke() {
+    use legaia_asset::man_section::parse as parse_man;
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let gates = |scene_name: &str, rec: usize| -> (Vec<u16>, Vec<u16>) {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        let man = scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN");
+        let mf = parse_man(&man).expect("parse");
+        partition2_record_gates(&mf, &man, rec).unwrap_or_default()
+    };
+
+    // The Rim Elm opening-chain block is byte-identical across the three
+    // variants at P2[3,4,5,8,9,10,11] (P2[7] town0b adds 0x141 to its C1).
+    for &rec in &[3usize, 4, 5, 8, 9, 10, 11] {
+        let base = gates("town01", rec);
+        assert_eq!(
+            gates("town0b", rec),
+            base,
+            "town0b P2[{rec}] mirrors town01"
+        );
+        assert_eq!(
+            gates("town0c", rec),
+            base,
+            "town0c P2[{rec}] mirrors town01"
+        );
+    }
+    // The chain head is the 549 (0x225) opening one-shot -> 0x226 -> 0x227.
+    assert_eq!(gates("town0c", 3), (vec![0x225], vec![]));
+    assert_eq!(gates("town0c", 4), (vec![0x226], vec![0x225]));
+    assert_eq!(gates("town0c", 5), (vec![0x227], vec![0x226]));
+
+    // town0d is the 0x7-gated later variant.
+    let scene = Scene::load(&index, "town0d").expect("load town0d");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("MAN");
+    let mf = parse_man(&man).expect("parse");
+    let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
+    let with_0x7 = (0..n_p2)
+        .filter_map(|r| partition2_record_gates(&mf, &man, r))
+        .filter(|(c1, _)| c1.contains(&0x7))
+        .count();
+    assert!(
+        with_0x7 > 10,
+        "town0d is the 0x7-gated Rim Elm variant ({with_0x7} records carry 0x7)"
+    );
+}
