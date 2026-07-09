@@ -45,24 +45,6 @@
         <td><a href="memory-map.html">memory-map</a></td>
       </tr>
       <tr>
-        <td>PROT 0874 section-0 outer producer</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td>Pinned: the per-scene field initializer <code>FUN_801D6704</code> drives the pool fill - <code>FUN_80020118</code> loads the party meshes (<code>FUN_8001E890</code>), then <code>FUN_80020224</code> walks the scene's main field file through <code>FUN_8001F05C</code>; both feed <code>FUN_80026B4C</code>.</td>
-        <td><a href="../formats/character-mesh.html">character-mesh</a></td>
-      </tr>
-      <tr>
-        <td>Drake uncapped cluster-A totals</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td>The <code>LEGAIA_PC_CAP=50000</code> re-run landed: no PC saturates the cap, so the per-kingdom totals are exact and the cross-kingdom delta table is closed - see <a href="../formats/world-map-overlay.html">world-map-overlay</a> (kind 18 = the workhorse; Sebucus dispatches ~20.6k instances).</td>
-        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
-      </tr>
-      <tr>
-        <td>Slot-4 freeze flag <code>_DAT_8007B824</code></td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td>The corpus has one store to <code>0x8007B824</code>: the <code>FUN_8001F05C</code> case-2 freeze sub-path (PC <code>0x8001F2F8</code>), gated <code>param_3 == 1</code>. Every static + overlay caller passes <code>param_3 != 1</code>, so the flag stays BSS-zero and the "persistent slots" semantic is vestigial. Not capture-blocked.</td>
-        <td><a href="../formats/world-map-overlay.html">world-map-overlay</a></td>
-      </tr>
-      <tr>
         <td>World-map outline / coastline reading</td>
         <td><span class="tag tag-done">falsified</span></td>
         <td>The slot-4 bodies are small object-local 3D meshes, not kingdom border / coastline wireframe. Treat any future "kingdom border lines" claim with suspicion.</td>
@@ -80,18 +62,6 @@
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>Current answer</th><th>Detail</th></tr></thead>
     <tbody>
-      <tr>
-        <td>Encounter record carrier</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td>No encounter-record table on disc: each scripted encounter is its own field-VM dispatcher-op site (cases <code>0x37</code>/<code>0x41</code>, <code>0x38</code>, <code>0x43</code>, <code>0x47</code>, <code>0x4C</code>) with monster count/ids inline as operand bytes.</td>
-        <td><a href="../formats/encounter.html">encounter</a></td>
-      </tr>
-      <tr>
-        <td>Random-encounter trigger path</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td><code>FUN_801D9E1C</code> rolls per step (rate counter <code>_DAT_8007B5FC</code>); on underflow it picks a formation from the region's RNG range and installs <code>actor[+0x94]</code>. The per-scene control block comes from the MAN via <code>FUN_8003A110</code>.</td>
-        <td><a href="../formats/encounter.html">encounter</a></td>
-      </tr>
       <tr>
         <td>Encounter MAN sub-section layout</td>
         <td><span class="tag tag-done">resolved</span></td>
@@ -196,14 +166,14 @@
       </tr>
       <tr>
         <td>First boss trigger &rarr; Battle</td>
-        <td><span class="tag tag-done">Caruban = rikuroa boss</span> (<code>0x142</code>-gated, engine ported); Zeto = <code>garmel</code> via <strong>record path</strong></td>
-        <td>Mt. Rikuroa's boss is <strong>Caruban</strong> (id 73 = <code>0x49</code>), gated by <code>0x142</code> (<code>SCRIPTED_SCENE_BOSSES</code>). <strong>Zeto is resolved</strong> (live firehose from <code>chapter2_garmel_pre_zeto</code>): id <code>0x4B</code> (byte-confirmed <code>Zeto</code>, PROT 867) fights in <code>garmel</code> via the <code>FUN_801DA51C</code> <code>actor[+0x94]</code> record path (formation <code>[0x4B,0,0,0]</code>); the <code>0x8007b7fc</code> write-watch stayed <strong>silent</strong> all fight &rarr; not the battle-id path, supersedes the old <code>jou</code> scoping. <strong>Open:</strong> does any retail battle write <code>DAT_8007b7fc</code> (reads <code>0</code> everywhere &rarr; maybe vestigial)? Full detail + Caruban re-verify note in <a href="../formats/encounter.html#battle-id-path">encounter.html</a>.</td>
+        <td><span class="tag tag-partial">partial</span> (both bosses pinned; one vestigial-flag question open)</td>
+        <td>Mt. Rikuroa's boss is Caruban (id 73 = <code>0x49</code>), gated by <code>0x142</code> (<code>SCRIPTED_SCENE_BOSSES</code>). Zeto is resolved (live firehose from <code>chapter2_garmel_pre_zeto</code>): id <code>0x4B</code> (byte-confirmed <code>Zeto</code>, PROT 867) fights in <code>garmel</code> via the <code>FUN_801DA51C</code> <code>actor[+0x94]</code> record path (formation <code>[0x4B,0,0,0]</code>); the <code>0x8007b7fc</code> write-watch stayed silent all fight, so it is not the battle-id path, superseding the old <code>jou</code> scoping. Open: does any retail battle write <code>DAT_8007b7fc</code> (reads <code>0</code> everywhere, so it may be vestigial)? Full detail + Caruban re-verify note in <a href="../formats/encounter.html#battle-id-path">encounter.html</a>.</td>
         <td><a href="../formats/encounter.html">encounter</a></td>
       </tr>
       <tr>
         <td>Spine flag <code>0x142</code> (Caruban beat / dolk-dolk2 switch) writer</td>
         <td><span class="tag tag-done">resolved</span> (disc writers + engine port + oracle)</td>
-        <td>Spine-writer #2 of 3, CLOSED: plain field-VM <code>51 42</code> SETs in the rikuroa <strong>streaming variant MAN</strong>
+        <td>Spine-writer #2 of 3, closed: plain field-VM <code>51 42</code> SETs in the rikuroa <strong>streaming variant MAN</strong>
         (PROT 0157: <code>P1[10..12]</code> + post-victory <code>P2[50]</code>, C1 = <code>0x142</code> itself - the self-latching
         one-shot), re-asserted by dolk2's carrier <code>P1[0..1]</code>, cleared by dolk <code>P1[26]</code>. Firehose-caught live
         (<code>ra 0x801E3598</code>); resident heap byte-matches the carrier. The old corpus-negative stood because no census walked
@@ -220,13 +190,13 @@
       <tr>
         <td>CDNAME scene-window frame (<code>raw = extraction + 2</code>) in <code>Scene::load</code></td>
         <td><span class="tag tag-done">resolved</span> (engine converts; misattributions corrected)</td>
-        <td>Engine scene windows used raw-TOC defines as extraction indices - two entries late, dropping each block's first two retail entries and bleeding in the next block's. Corrections that fell out: the <code>.MAP</code> is the retail block's FIRST entry (not "two below"); "suimon == dolk2 MAN" and "rikuroa MAN = <code>[18,70,20]</code>" were next-block sidecars under the wrong label; "urudre1 tests <code>0x15E</code>" and "<code>0x63A</code> has no writer" are falsified; "<code>0x1BE</code> = rikuroa Zeto gate" was geremi's arrival one-shot. Head blocks (defines 0/1, inside the TOC header rows) keep legacy windows. See <a href="../formats/cdname.html#numbering-space">cdname &sect; numbering space</a>.</td>
+        <td>Engine scene windows used raw-TOC defines as extraction indices - two entries late, dropping each block's first two retail entries and bleeding in the next block's. Corrections that fell out: the <code>.MAP</code> is the retail block's first entry (not "two below"); "suimon == dolk2 MAN" and "rikuroa MAN = <code>[18,70,20]</code>" were next-block sidecars under the wrong label; "urudre1 tests <code>0x15E</code>" and "<code>0x63A</code> has no writer" are falsified; "<code>0x1BE</code> = rikuroa Zeto gate" was geremi's arrival one-shot. Head blocks (defines 0/1, inside the TOC header rows) keep legacy windows. See <a href="../formats/cdname.html#numbering-space">cdname &sect; numbering space</a>.</td>
         <td><a href="../formats/cdname.html">cdname</a></td>
       </tr>
       <tr>
         <td>Motion-VM (<code>FUN_80038158</code>) bytecode carrier + flag census</td>
         <td><span class="tag tag-done">resolved</span> (carrier pinned; spine flags negative)</td>
-        <td>The second motion VM's bytecode source is <strong>MAN tail-section 1</strong> (<code>FUN_8003AEB0</code> installs it; <code>FUN_8003A9D4</code> binds records to actors; parser <code>legaia_asset::man_motion</code>). Disc-wide op-7/op-8 census (<code>man-scripts --motion-flag-census</code>): overworld walking-band choreography (<code>map02</code>/<code>map03</code>) + one <code>town0b</code> clear; <code>0x142</code>/<code>0x482</code>/<code>0x1BE</code> and <code>549</code> appear in NO stream - the earlier "549 set by op-7 from its own script bytecode" carrier claim is <strong>falsified</strong>. Anchor test <code>motion_flag_census_disc.rs</code>.</td>
+        <td>The second motion VM's bytecode source is <strong>MAN tail-section 1</strong> (<code>FUN_8003AEB0</code> installs it; <code>FUN_8003A9D4</code> binds records to actors; parser <code>legaia_asset::man_motion</code>). Disc-wide op-7/op-8 census (<code>man-scripts --motion-flag-census</code>): overworld walking-band choreography (<code>map02</code>/<code>map03</code>) + one <code>town0b</code> clear; <code>0x142</code>/<code>0x482</code>/<code>0x1BE</code> and <code>549</code> appear in no stream - the earlier "549 set by op-7 from its own script bytecode" carrier claim is <strong>falsified</strong>. Anchor test <code>motion_flag_census_disc.rs</code>.</td>
         <td><a href="../subsystems/motion-vm.html">motion-vm</a></td>
       </tr>
       <tr>
@@ -238,31 +208,19 @@
       <tr>
         <td>Spawned-record player-channel (<code>0xF8</code>) ExecMove/HaltAcquire handshake</td>
         <td><span class="tag tag-done">resolved</span> (engine completion model)</td>
-        <td>The timeline stepper models the handshake directly: <code>A2 F8</code> ExecMove arms an in-flight countdown (<code>CutsceneTimeline::player_move_frames</code>) and <code>C3 F8</code> HaltAcquire PARKS at the op until it drains, then steps past by encoded width (<code>resolve_target</code> keeps its <code>None</code> contract for <code>0xF8</code>) - so door-cutscene records reach their trailing <code>0x3F</code> and driven hops land (<code>jou</code>&rarr;<code>jouina</code>, and the full castle chain to <code>jouinc</code>, in <code>chapter1_hub_depth_oracle.rs</code> part J + <code>chapter1_hub_breadth_oracle.rs</code> part F). See <a href="../subsystems/cutscene.html">cutscene</a> &sect; player-channel completion.</td>
+        <td>The timeline stepper models the handshake directly: <code>A2 F8</code> ExecMove arms an in-flight countdown (<code>CutsceneTimeline::player_move_frames</code>) and <code>C3 F8</code> HaltAcquire parks at the op until it drains, then steps past by encoded width (<code>resolve_target</code> keeps its <code>None</code> contract for <code>0xF8</code>) - so door-cutscene records reach their trailing <code>0x3F</code> and driven hops land (<code>jou</code>&rarr;<code>jouina</code>, and the full castle chain to <code>jouinc</code>, in <code>chapter1_hub_depth_oracle.rs</code> part J + <code>chapter1_hub_breadth_oracle.rs</code> part F). See <a href="../subsystems/cutscene.html">cutscene</a> &sect; player-channel completion.</td>
         <td><a href="../subsystems/cutscene.html">cutscene</a></td>
       </tr>
       <tr>
-        <td>Item-effect table - class/targeting + amounts</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td>Class/tier/targeting/usability is the static <code>DAT_800752C0</code> table; the restore <em>amounts</em> are also static (apply handler <code>FUN_800402F4</code>, tier-indexed heal tables) - not overlay-resident. Parser <code>legaia_asset::item_effect</code>.</td>
-        <td><a href="../formats/item-effect-table.html">item-effect-table</a></td>
-      </tr>
-      <tr>
         <td>Equipment stat-bonus table - slot model</td>
-        <td><span class="tag tag-done">resolved</span></td>
+        <td><span class="tag tag-done">resolved</span> (slot model + passives)</td>
         <td><code>DAT_80074F68</code> (8-byte stride) decoded from <code>FUN_801CF650</code>: <code>+0</code> INT, <code>+1</code> ATK, <code>+2</code> UDF, <code>+3</code> LDF, <code>+4</code> SPD. The four <code>+7</code> categories are the weapon/armour slots; accessories are absent.</td>
         <td><a href="../formats/equipment-table.html">equipment-table</a></td>
       </tr>
       <tr>
-        <td>Accessory ("Goods") passive-effect data</td>
-        <td><span class="tag tag-done">resolved</span></td>
-        <td>The descriptor <code>+3</code> byte is a 64-slot passive-effect index - a bit in the per-character ability bitfield <code>char+0xF4</code> (aggregator <code>FUN_80042558</code>); magnitudes inline, name/scope table at <code>0x8007625C</code>. Byte-validated vs gamedata.</td>
-        <td><a href="../formats/accessory-passive-table.html">accessory-passive-table</a></td>
-      </tr>
-      <tr>
         <td>Enemy-ally charm battle softlock</td>
         <td><span class="tag tag-open">open</span> (cause unconfirmed)</td>
-        <td>A charm fight can hard-freeze (user-reported live; once after a Gimard cast, once after an arts combo). Cause not yet pinned. The <code>FUN_801E7320</code> "unbounded reroll at <code>0x801E7370</code>" theory is unsettled - loop-1 picks <code>a0 = 3 + rand % monster_count</code> and rerolls while <code>monster[a0].HP == 0</code>, but the alive charmed ally is itself a monster slot in that range, so it can pick the ally and exit (self-target branch <code>0x801E73E0</code>). Two runtime workarounds (Lua-forced battle-end) were tried and REVERTED: they tear the SM down mid-action -&gt; game-over, then garbage writes / freeze (the game only writes the end signal at the safe <code>0x5A</code> gate). Next: OBSERVE with the observe-only probe <code>autorun_charm_win_softlock.lua</code>, then a disc-side fix. <code>enemy_ally.rs</code> "## Known limitation".</td>
+        <td>A charm fight can hard-freeze (user-reported live; once after a Gimard cast, once after an arts combo). Cause not yet pinned. The <code>FUN_801E7320</code> "unbounded reroll at <code>0x801E7370</code>" theory is unsettled - loop-1 picks <code>a0 = 3 + rand % monster_count</code> and rerolls while <code>monster[a0].HP == 0</code>, but the alive charmed ally is itself a monster slot in that range, so it can pick the ally and exit (self-target branch <code>0x801E73E0</code>). Two runtime workarounds (Lua-forced battle-end) were tried and reverted: they tear the SM down mid-action -&gt; game-over, then garbage writes / freeze (the game only writes the end signal at the safe <code>0x5A</code> gate). Next: observe with the observe-only probe <code>autorun_charm_win_softlock.lua</code>, then a disc-side fix. <code>enemy_ally.rs</code> "## Known limitation".</td>
         <td></td>
       </tr>
       <tr>
@@ -316,7 +274,7 @@
       <tr>
         <td><code>801d58f0</code> / <code>801d63b0</code> as single shared port blockers</td>
         <td><span class="tag tag-done">falsified</span> (VA-aliasing artifact)</td>
-        <td>The two addresses host DIFFERENT code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via <code>overlay_&lt;label&gt;_&lt;addr&gt;</code> identities; catalog ignore category <code>va_aliased_overlay_local</code>.</td>
+        <td>The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via <code>overlay_&lt;label&gt;_&lt;addr&gt;</code> identities; catalog ignore category <code>va_aliased_overlay_local</code>.</td>
         <td><a href="../tooling/port-catalog.html">port-catalog</a></td>
       </tr>
     </tbody>
