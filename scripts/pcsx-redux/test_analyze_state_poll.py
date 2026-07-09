@@ -198,6 +198,78 @@ def test_report_omits_boot_scene_and_respects_only():
         assert not line.strip().endswith(" ?")
 
 
+def test_flag_census_treats_bulkload_note_as_bulk():
+    # tick 100 has only 2 flag events (below any threshold) but they carry the
+    # probe's note=bulkload -> excluded from beats and reported as a bulk frame.
+    lines = [
+        "100,flagset,10,1,1,0x08,town01,bulkload",
+        "100,flagset,11,1,1,0x08,town01,bulkload",
+        "200,flagset,50,1,1,0x03,garmel,",
+    ]
+    cen = asp.flag_census(_rows(*lines), bulk_threshold=100)
+    assert [t for (t, _s, _n) in cen.bulk_ticks] == [100]
+    assert [b.idx for b in cen.beats] == [50]  # bulkload rows dropped
+
+
+def test_flag_beat_tile_and_label_annotation():
+    # a pos crossing at tick 190 in garmel, then a KNOWN flag (0x142=322) and an
+    # unlabeled flag (99) both set at tick 200 -> tile attached to both, label
+    # only on 0x142.
+    lines = [
+        "190,pos,12,7,0,0x03,garmel,x=1600 z=960",
+        "200,flagset,322,1,1,0x03,garmel,",
+        "200,flagset,99,1,1,0x03,garmel,",
+    ]
+    cen = asp.flag_census(_rows(*lines), bulk_threshold=100)
+    by_idx = {b.idx: b for b in cen.beats}
+    assert by_idx[322].tile == (12, 7)
+    assert by_idx[322].label is not None and "Caruban" in by_idx[322].label
+    assert by_idx[99].tile == (12, 7)
+    assert by_idx[99].label is None  # unlabeled => a new lead
+    txt = asp.render_report(_rows(*lines), bulk_threshold=100, want={"flags"})
+    assert "@tile(12,7)" in txt
+    assert "[lead]" in txt  # the unlabeled beat surfaces as a lead
+
+
+def test_tile_at_is_scene_scoped():
+    # a warp: garmel tile at tick 10, then town01 tile at tick 30. A tick-40
+    # town01 query must NOT return the garmel tile.
+    track = asp.player_track(
+        _rows(
+            "10,pos,5,5,0,0x03,garmel,",
+            "30,pos,20,20,0,0x03,town01,",
+        )
+    )
+    assert asp.tile_at(track, 40, "town01") == (20, 20)
+    assert asp.tile_at(track, 40, "garmel") == (5, 5)
+    assert asp.tile_at(track, 5, "town01") is None  # no town01 sample yet
+
+
+def test_bgm_picks_snaps_and_walk():
+    rows = _rows(
+        "10,bgm,0,2015,15,0x03,town01,",
+        "20,pos,3,4,0,0x03,town01,x=448 z=576",
+        "25,pos,4,4,0,0x03,town01,x=576 z=576",
+        "30,input,14,1,0,0x03,town01,CROSS",
+        "31,pick,2,2,0,0x03,town01,CROSS",
+        "40,snap,1,0,0,0x03,garmel,boss4B -> snap_0000040_boss4B_garmel.sstate",
+    )
+    assert asp.bgm_changes(rows)[0].value == 2015
+    assert asp.picker_choices(rows)[0].idx == 2
+    assert asp.snapshots(rows)[0].note.startswith("boss4B")
+    assert len(asp.input_edges(rows)) == 1
+    j = asp.build_json(rows, bulk_threshold=100)
+    assert j["bgm"][0]["id"] == 2015
+    assert j["picks"][0]["choice"] == 2
+    assert j["snapshots"][0]["note"].startswith("boss4B")
+    assert j["walk"][0]["tile"] == [3, 4]
+    txt = asp.render_report(rows, bulk_threshold=100, want={"bgm", "picks", "snaps", "walk"})
+    assert "bgm=2015" in txt
+    assert "choice=2" in txt
+    assert "boss4B" in txt
+    assert "crossings=" in txt
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

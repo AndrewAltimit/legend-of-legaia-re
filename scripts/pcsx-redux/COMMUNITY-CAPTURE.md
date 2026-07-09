@@ -2,9 +2,10 @@
 
 Thanks for helping map *Legend of Legaia*'s story progression! You play the
 game normally; a small script watches memory and records **which story flags,
-items, party members, levels, Seru-magic grants, and battle triggers change, in which scene, and which
-enemy formation each fight was**. One
-long playthrough answers a pile of reverse-engineering questions at once.
+items, party members, levels, Seru-magic grants, and battle triggers change, in
+which scene, at which map tile, over which music track, and which enemy
+formation each fight was** — plus your dialogue choices. One long playthrough
+answers a pile of reverse-engineering questions at once.
 
 This uses the **fast** capture (`autorun_state_poll.lua`) — full speed, no
 debugger, pleasant to play. It records *what* changed and *where*, not the
@@ -50,6 +51,25 @@ Then **just play.** Deeper is strictly better — every new area, boss, and
 quest step adds coverage. You'll see a heartbeat line in the log every few
 seconds (`alive tick=… scene=…`) confirming it's recording.
 
+### What the extra columns add (all on by default)
+
+The capture now also records, per playthrough:
+
+- **Player tile** on every tile-crossing (in the field) — so a flag flip is
+  pinned to *where* on the map it fired, which door/trigger did it.
+- **Music track id** whenever the BGM changes.
+- **Button presses + your dialogue menu choices** — so a branch decision is
+  attributable to the answer you picked.
+- **Auto-snapshots**: the script quietly saves a full state the first time you
+  enter any new area, at each boss fight, and at a few key story flags. These
+  land as `snap_*.sstate` files next to the CSV — a free harvest of mid-story
+  brackets. **If you're short on disk or upload bandwidth**, turn them off with
+  `LEGAIA_AUTOSNAP=0` before `bash` (the CSV is unaffected).
+
+You can trim any single stream if you want a leaner file: `LEGAIA_TRACE_POS=0`
+(tiles), `LEGAIA_TRACE_BGM=0` (music), `LEGAIA_TRACE_INPUT=0` (buttons). None of
+this is required — the defaults capture the most.
+
 ## What to send back
 
 Everything under the run's output directory (printed at startup, under
@@ -58,10 +78,13 @@ Everything under the run's output directory (printed at startup, under
 - `state_poll.csv` — the capture. This is the prize.
 - `autosave_a.sstate` / `autosave_b.sstate` — crash-resume snapshots (send the
   newest if the emulator crashed and you want the maintainer to continue).
+- `snap_*.sstate` — the auto-snapshots (optional but valuable; skip them if
+  they're too large to upload). Named for the event that triggered them.
 
 The CSV is small (hundreds of KB even for hours of play) and contains **no
 copyrighted game data** — only flag numbers, item ids, character levels,
-spell-grant ids, scene names, and tick counts. It's safe to share.
+spell-grant ids, scene names, tile coordinates, music ids, and tick counts.
+It's safe to share.
 
 ## If it crashes
 

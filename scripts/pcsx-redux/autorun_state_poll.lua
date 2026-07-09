@@ -45,6 +45,24 @@
 --                    Offsets are the capture-pinned ones in
 --                    crates/engine-core/src/capture_observations/seru_capture.rs
 --   scene / mode     0x8007050C name + 0x8007B83C mode transitions
+--   pos    (P1)      player tile (col idx=tileX, value=tileZ) emitted on a tile
+--                    crossing while in field mode; turns "flag X flipped in
+--                    scene Y" into "...at tile T" for door/trigger attribution
+--                    with no second pass. Raw world XZ in the note.
+--   bgm    (P5)      global BGM id (0x8007BAC8) on change - finishes the
+--                    music_labels sound-test census join on any run.
+--   input  (P4)      pad press/release edges (0x8007B850); idx=button bit,
+--                    value=1 press / 0 release, note=button name.
+--   pick   (P4)      dialogue picker cursor index at a confirm press
+--                    (*(0x801C6EA4)+0x0C) - the branch/answer chosen.
+--   snap   (P2)      an auto-snapshot save state was written (rare-event
+--                    harvest: never-seen scene / lone-boss formation / a
+--                    first-time target-set flag). note = reason + filename.
+--
+-- P3 (bulk-load tagging): a frame that flips >= LEGAIA_BULK_FLAGS story flags
+--   (a save-load / scene-init dump, not a beat) tags every one of its flag rows
+--   note=bulkload, so analyze_state_poll.py auto-filters the noise that
+--   otherwise buries the organic in-scene sets carrying the play-order signal.
 --
 -- VERSION GUARD: refuses to run unless the loaded game fingerprints as the
 -- USA SCUS_942.54 build (probe/version.lua). Lock the fingerprint before
@@ -91,6 +109,28 @@ local LEVEL_OFF   = 0x130      -- displayed-level byte (rank counter)
 -- Spell window: +0x13C count u8, +0x13D..0x160 id array, +0x161..0x184 levels.
 local SPELL_OFF   = 0x13C
 local SPELL_LEN   = 0x49       -- count + 36 ids + 36 levels
+-- P1: player-position / tile. Player actor pointer global; the live struct
+-- stores world X at +0x14 and world Z at +0x18 (both s16). tile = (pos-0x40)>>7
+-- (the camera cluster FUN_801dbec4 derives the player tile the same way). Only
+-- valid in field mode (0x03); the pointer is stale/garbage otherwise.
+local PLAYER_PTR  = 0x8007C364
+local POS_X_OFF   = 0x14
+local POS_Z_OFF   = 0x18
+local FIELD_MODE  = 0x03
+-- P5: global BGM id (field-VM op 0x35 sub-1 target; <2000 scene-local, >=2000
+-- global pool). Emitted on change for the music_labels census join.
+local BGM_ID      = 0x8007BAC8  -- u16
+-- P4: per-frame held-pad mask (game-decoded; bit layout == probe.pad.BTN) and
+-- the dialogue picker struct pointer (cursor index at +0x0C).
+local HELD_PAD    = 0x8007B850  -- u16
+local PICKER_PTR  = 0x801C6EA4  -- *(PICKER_PTR)+0x0C = picker cursor index
+local PICKER_CUR  = 0x0C
+local BTN_NAME = { [0]="SELECT", [1]="L3", [2]="R3", [3]="START",
+                   [4]="UP", [5]="RIGHT", [6]="DOWN", [7]="LEFT",
+                   [8]="L2", [9]="R2", [10]="L1", [11]="R1",
+                   [12]="TRIANGLE", [13]="CIRCLE", [14]="CROSS", [15]="SQUARE" }
+-- Confirm-button bits sampled for the picker-choice column.
+local CONFIRM_BITS = { [13]=true, [14]=true }  -- CIRCLE / CROSS
 
 -- Game-mode brackets for the per-battle identity row. BATTLE_MODES is the broad
 -- "a battle is loading/active" set that latches the in-battle state (so we emit
@@ -123,6 +163,38 @@ local AUTOSAVE_EVERY = probe.getenv_num("LEGAIA_AUTOSAVE_EVERY", 1800) -- ~30s
 local AUTOSAVE_PATHS = { probe.out_path("autosave_a.sstate"),
                          probe.out_path("autosave_b.sstate") }
 local autosave_flip  = 0
+
+-- +-- enhancement toggles (P1..P4) -------------------------------------------
+-- All default ON so a single volunteer playthrough harvests the most; a
+-- volunteer who wants the leanest CSV can switch any off.
+local TRACE_POS   = probe.getenv("LEGAIA_TRACE_POS", "1")   ~= "0"  -- P1
+local TRACE_BGM   = probe.getenv("LEGAIA_TRACE_BGM", "1")   ~= "0"  -- P5
+local TRACE_INPUT = probe.getenv("LEGAIA_TRACE_INPUT", "1") ~= "0"  -- P4
+-- P3: a frame flipping >= this many flags is a bulk load/init dump, not a
+-- story beat. Matches analyze_state_poll.py's DEFAULT_BULK_THRESHOLD.
+local BULK_FLAGS  = probe.getenv_num("LEGAIA_BULK_FLAGS", 20)
+-- P2: auto-snapshot on rare events. Capped so disk stays bounded; the CSV is
+-- always the prize, snapshots are a free bonus harvest. AUTOSNAP off => no
+-- state files written (a volunteer short on disk/upload can disable).
+local AUTOSNAP     = probe.getenv("LEGAIA_AUTOSNAP", "1") ~= "0"
+local SNAP_MAX     = probe.getenv_num("LEGAIA_SNAP_MAX", 40)
+-- Target flag set for the first-time-flag snapshot trigger: the known
+-- spine/story gates (mid-beat brackets around these are what future sessions
+-- keep wishing for). Comma list of decimal idxs overrides the default.
+local SNAP_FLAGS = {}
+do
+    local spec = probe.getenv("LEGAIA_SNAP_FLAGS", "")
+    if spec == "" then
+        -- 0x142=322 (Caruban gate), 0x225=549 (Rim Elm one-shot),
+        -- 0x482=1154 (other7 mist walls), 0x1BE=446 (geremi arrival).
+        for _, f in ipairs({ 322, 549, 1154, 446 }) do SNAP_FLAGS[f] = true end
+    else
+        for tok in spec:gmatch("[^,]+") do
+            local n = tonumber(tok)
+            if n then SNAP_FLAGS[n] = true end
+        end
+    end
+end
 
 -- Optional cruise booster: LEGAIA_POINT_CARD_MAX=1 pins the Point Card counter
 -- at its retail cap every vsync, so a Point Card (item 0xFE) strike nukes any
@@ -177,6 +249,14 @@ local prev_pids  = nil
 local prev_inv   = nil       -- string of INV_SLOTS*2 bytes
 local prev_level = {}        -- per roster slot: level byte
 local prev_spell = {}        -- per roster slot: SPELL_LEN-byte window string
+local prev_tilex = nil       -- P1: last emitted player tile X
+local prev_tilez = nil       -- P1: last emitted player tile Z
+local prev_bgm   = nil       -- P5: last global BGM id
+local prev_pad   = 0         -- P4: last held-pad mask
+-- P2 rare-event bookkeeping.
+local seen_scenes = {}       -- scenes visited this run (never-seen -> snap)
+local snap_flags  = {}       -- target flags already snapped this run
+local snap_count  = 0        -- snapshots written (capped at SNAP_MAX)
 -- Per-battle identity latch (see BATTLE_MODES above).
 local in_battle       = false  -- latched while mode is in a battle bracket
 local batt_pending    = false  -- a `battle` row is still owed for this fight
@@ -184,13 +264,30 @@ local batt_batid      = 0      -- staging id captured this fight (best-effort)
 local batt_enter_mode = 0      -- the mode that started the fight
 local totals     = { flagset = 0, flagclr = 0, battleid = 0, battle = 0,
                      gold = 0, item = 0, party = 0, scene = 0, mode = 0,
-                     level = 0, spell = 0 }
+                     level = 0, spell = 0, pos = 0, bgm = 0, input = 0,
+                     pick = 0, snap = 0 }
 
 local function row(kind, idx, value, delta, note)
     totals[kind] = (totals[kind] or 0) + 1
     CSV:row("%d,%s,%d,%d,%d,0x%02X,%s,%s",
         vsync, kind, idx, value, delta, u8(GAME_MODE), scene_name(),
         note or "")
+end
+
+-- P2: write a fingerprinted full save state on a rare event so future sessions
+-- can harvest a mid-beat bracket for free. Capped at SNAP_MAX; a `snap` CSV row
+-- records the reason + filename. Follows the autosave out_path convention.
+local function autosnap(reason)
+    if not AUTOSNAP or snap_count >= SNAP_MAX then return end
+    local sc = scene_name()
+    local fname = string.format("snap_%07d_%s_%s.sstate", vsync, reason, sc)
+    local path = probe.out_path(fname)
+    if sstate.save(path) then
+        snap_count = snap_count + 1
+        row("snap", snap_count, 0, 0, reason .. " -> " .. fname)
+        log(string.format("AUTOSNAP #%d/%d: %s (tick %d scene %s) -> %s",
+            snap_count, SNAP_MAX, reason, vsync, sc, fname))
+    end
 end
 
 -- Emit the one-per-battle identity row: idx = best-effort staging id, value =
@@ -205,6 +302,11 @@ local function emit_battle()
         string.format("form=%02X%02X%02X%02X enter=0x%02X",
             f0, f1, f2, f3, batt_enter_mode))
     batt_pending = false
+    -- Lone non-zero formation slot = a solo enemy = almost always a scripted
+    -- boss (or a solo-strong random) - snapshot it.
+    if f0 ~= 0 and f1 == 0 and f2 == 0 and f3 == 0 then
+        autosnap(string.format("boss%02X", f0))
+    end
 end
 
 -- +-- diffs ------------------------------------------------------------------
@@ -213,8 +315,13 @@ end
 -- Bit convention MATCHES FUN_8003CE08: byte = base + (idx>>3),
 -- mask = 0x80 >> (idx & 7). So within a byte, bit position p (0=LSB..7=MSB)
 -- maps to idx&7 = 7 - p, and idx = byte_index*8 + (7 - p).
-local function diff_flags(cur)
-    if prev_flags == nil then return end
+-- Collect this frame's flag flips into a list {idx, set} WITHOUT emitting, so
+-- the caller can count them first (P3: a >= BULK_FLAGS frame is a save-load /
+-- init dump and every row is tagged note=bulkload; and P2: first-time target
+-- flags only snapshot on non-bulk frames).
+local function collect_flag_flips(cur)
+    local events = {}
+    if prev_flags == nil then return events end
     for i = 1, #cur do
         local a = prev_flags:byte(i)
         local b = cur:byte(i)
@@ -224,15 +331,12 @@ local function diff_flags(cur)
                 if bit.band(x, bit.lshift(1, p)) ~= 0 then
                     local idx = (i - 1) * 8 + (7 - p)
                     local nowset = bit.band(b, bit.lshift(1, p)) ~= 0
-                    if nowset then
-                        row("flagset", idx, 1, 1)
-                    else
-                        row("flagclr", idx, 0, -1)
-                    end
+                    events[#events + 1] = { idx = idx, set = nowset }
                 end
             end
         end
     end
+    return events
 end
 
 -- Inventory: diff (id,count) pairs slot by slot; log net change per slot.
@@ -287,12 +391,104 @@ local function diff_chars()
     end
 end
 
+-- P1: player tile. Only meaningful in field mode (the pointer is stale/garbage
+-- in battle/menu/world modes); emit a `pos` row on a tile crossing so the CSV
+-- stays small (idle standing writes nothing). idx=tileX value=tileZ; note holds
+-- the raw signed world XZ. tile = (pos-0x40)>>7 (arithmetic shift; s16 pos).
+local function s16(v) return (v >= 0x8000) and (v - 0x10000) or v end
+local function tile_of(pos) return math.floor((pos - 0x40) / 128) end
+local function diff_pos()
+    if not TRACE_POS then return end
+    if u8(GAME_MODE) ~= FIELD_MODE then return end
+    local ptr = u32(PLAYER_PTR)
+    -- Reject a null/low pointer: it would still pass in_ram (offset 0x18) and
+    -- read garbage out of low RAM. A live actor sits well above the first 64K.
+    local off = mem.ram_offset(ptr)
+    if off == nil or off < 0x10000 then return end
+    if not mem.in_ram(ptr + POS_Z_OFF, 2) then return end
+    local x = s16(u16(ptr + POS_X_OFF))
+    local z = s16(u16(ptr + POS_Z_OFF))
+    local tx, tz = tile_of(x), tile_of(z)
+    if tx ~= prev_tilex or tz ~= prev_tilez then
+        row("pos", tx, tz, 0, string.format("x=%d z=%d", x, z))
+        prev_tilex, prev_tilez = tx, tz
+    end
+end
+
+-- P5: global BGM id on change.
+local function diff_bgm()
+    if not TRACE_BGM then return end
+    local id = u16(BGM_ID)
+    if baselined and id ~= prev_bgm then
+        row("bgm", 0, id, id - (prev_bgm or 0))
+    end
+    prev_bgm = id
+end
+
+-- P4: pad press/release edges + picker-choice at a confirm press. The held mask
+-- is the game-decoded per-frame button word (bit layout == probe.pad.BTN).
+local function read_picker_cursor()
+    local ptr = u32(PICKER_PTR)
+    local off = mem.ram_offset(ptr)
+    if off == nil or off < 0x10000 then return nil end
+    if not mem.in_ram(ptr + PICKER_CUR, 2) then return nil end
+    local cur = u16(ptr + PICKER_CUR)
+    -- Reject stale/garbage: a real menu cursor is small. Filters the common
+    -- case where confirm is pressed in the field with no picker open.
+    if cur >= 64 then return nil end
+    return cur
+end
+local function diff_input()
+    if not TRACE_INPUT then return end
+    local pad = u16(HELD_PAD)
+    if baselined and pad ~= prev_pad then
+        local changed = bit.bxor(pad, prev_pad)
+        for b = 0, 15 do
+            local mask = bit.lshift(1, b)
+            if bit.band(changed, mask) ~= 0 then
+                local nowdown = bit.band(pad, mask) ~= 0
+                row("input", b, nowdown and 1 or 0, 0, BTN_NAME[b] or "?")
+                -- On a confirm press, sample the dialogue picker cursor.
+                if nowdown and CONFIRM_BITS[b] then
+                    local cur = read_picker_cursor()
+                    if cur ~= nil then
+                        row("pick", cur, cur, 0, BTN_NAME[b])
+                    end
+                end
+            end
+        end
+    end
+    prev_pad = pad
+end
+
 local function snapshot_and_diff()
-    -- Flag bank
+    -- Flag bank. Collect flips first so the frame can be classified bulk vs
+    -- beat (P3) before any row is written, and target-flag snapshots (P2) are
+    -- suppressed on bulk frames.
     local flags = mem.read_bytes(FLAG_BASE, FLAG_BYTES)
     if flags ~= nil then
         flags = tostring(flags)
-        if baselined then diff_flags(flags) end
+        if baselined then
+            local events = collect_flag_flips(flags)
+            local bulk = #events >= BULK_FLAGS
+            local note = bulk and "bulkload" or ""
+            for _, e in ipairs(events) do
+                if e.set then
+                    row("flagset", e.idx, 1, 1, note)
+                else
+                    row("flagclr", e.idx, 0, -1, note)
+                end
+            end
+            -- P2: first-time target-set flag (real beats only, not load dumps).
+            if not bulk then
+                for _, e in ipairs(events) do
+                    if e.set and SNAP_FLAGS[e.idx] and not snap_flags[e.idx] then
+                        snap_flags[e.idx] = true
+                        autosnap(string.format("flag%d", e.idx))
+                    end
+                end
+            end
+        end
         prev_flags = flags
     end
 
@@ -332,6 +528,11 @@ local function snapshot_and_diff()
 
     -- Per-character level + spell/Seru list
     diff_chars()
+
+    -- P1/P5/P4: player tile, BGM id, input edges + picker choice.
+    diff_pos()
+    diff_bgm()
+    diff_input()
 
     baselined = true
 end
@@ -394,6 +595,24 @@ local function on_vsync()
                 POINT_CARD_ADDR, POINT_CARD_CAP))
         end
         log("polling under fast core - play as far as you like")
+        -- Run manifest: config + source sstate, so this run dir stays
+        -- interpretable later and chains to the state it resumed from.
+        probe.write_manifest("autorun_state_poll.lua", {
+            sstate         = NO_SSTATE and "(hand-loaded card save)" or SSTATE,
+            flag_window    = string.format("0x%X", FLAG_BYTES),
+            inv_slots      = tostring(INV_SLOTS),
+            trace_pos      = tostring(TRACE_POS),
+            trace_bgm      = tostring(TRACE_BGM),
+            trace_input    = tostring(TRACE_INPUT),
+            bulk_flags     = tostring(BULK_FLAGS),
+            autosnap       = string.format("%s (max %d)", tostring(AUTOSNAP), SNAP_MAX),
+            point_card_max = tostring(POINT_CARD_MAX),
+            autosave_every = tostring(AUTOSAVE_EVERY),
+            baseline_tick  = tostring(vsync),
+            baseline_scene = scene_name(),
+            core           = probe.getenv("LEGAIA_CORE",
+                "unknown (no LEGAIA_CORE; hand launch)"),
+        })
     end
 
     -- Scene + mode transition rows (context timeline).
@@ -404,6 +623,16 @@ local function on_vsync()
         CSV:row("%d,scene,0,0,0,0x%02X,%s,%d",
             vsync, u8(GAME_MODE), sc, totals.scene)
         log(string.format("scene -> %s (tick %d)", sc, vsync))
+        -- P1: a scene change is a warp, not a walk - drop the tile baseline so
+        -- the first field frame in the new scene doesn't emit a phantom
+        -- crossing between the two scenes' coordinate frames.
+        prev_tilex, prev_tilez = nil, nil
+        -- P2: snapshot the first time we ever enter a scene this run (a fresh
+        -- bracket at the mouth of every new area - the highest-value harvest).
+        if sc ~= "?" and not seen_scenes[sc] then
+            seen_scenes[sc] = true
+            autosnap("scene_" .. sc)
+        end
     end
     local md = u8(GAME_MODE)
     if md ~= last_mode then
@@ -448,9 +677,10 @@ local function on_vsync()
     -- Heartbeat every ~8s.
     if (vsync % 480) == 0 then
         log(string.format(
-            "alive tick=%d mode=0x%02X scene=%s flags(set=%d clr=%d) item=%d gold=%d party=%d",
+            "alive tick=%d mode=0x%02X scene=%s flags(set=%d clr=%d) item=%d gold=%d party=%d pos=%d bgm=%d input=%d snap=%d",
             vsync, md, sc, totals.flagset, totals.flagclr,
-            totals.item, totals.gold, totals.party))
+            totals.item, totals.gold, totals.party,
+            totals.pos, totals.bgm, totals.input, snap_count))
     end
 
     -- Rotating autosave (crash insurance).
@@ -465,8 +695,16 @@ end
 
 -- +-- startup ----------------------------------------------------------------
 log("=== autorun_state_poll (fast-core progression capture) ===")
-log("poll-diff: flags/battleid/gold/item/party/level/spell/scene/mode - NO breakpoints")
+log("poll-diff: flags/battleid/gold/item/party/level/spell/scene/mode/pos/bgm/input - NO breakpoints")
+log(string.format("enhancements: pos=%s bgm=%s input=%s autosnap=%s(max %d) bulk>=%d",
+    TRACE_POS and "on" or "off", TRACE_BGM and "on" or "off",
+    TRACE_INPUT and "on" or "off", AUTOSNAP and "on" or "off", SNAP_MAX, BULK_FLAGS))
 log("run with run_probe.sh --fast; this session never self-quits (use timeout)")
+if probe.getenv("LEGAIA_CORE", "") == "interpreter" then
+    log("NOTE: launched on the interpreter core (no --fast). The poll works")
+    log("  fine but runs ~10x slow; this probe arms NO breakpoints, so you")
+    log("  almost certainly wanted --fast.")
+end
 
 -- Anchor the listener handle: a GC'd listener object silently deletes the
 -- C++ listener (and GC mid-dispatch can segfault the emulator).

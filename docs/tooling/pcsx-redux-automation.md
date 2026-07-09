@@ -430,7 +430,93 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   a Point Card (item `0xFE`) strike one-shots any boss when you want to blow
   through fights on your own capture pass. It writes only that counter, none of
   the CSV cells.
+  The poll also captures, per frame, several context streams (all default-on,
+  each toggleable) so a single playthrough answers more at once: a **`pos`**
+  row on every player tile-crossing in field mode (player ptr `0x8007C364`, X
+  `+0x14` / Z `+0x18` s16, `tile = (pos-0x40)>>7`) - which pins each flag beat
+  to *where* it fired (door/trigger attribution with no second pass); a
+  **`bgm`** row on each global BGM-id change (`0x8007BAC8`, the music_labels
+  census join); **`input`** rows for pad press/release edges (`0x8007B850`) and
+  a **`pick`** row sampling the dialogue picker cursor (`*(0x801C6EA4)+0x0C`) at
+  a confirm press (branch/answer attribution). It tags a flag frame
+  `note=bulkload` when it flips `>= LEGAIA_BULK_FLAGS` flags (a save-load/init
+  dump, not a beat) so the analyzer filters the noise. And it **auto-snapshots**
+  a fingerprinted save state on rare events - a never-seen scene, a lone-boss
+  formation, or a first-time target-set flag (`LEGAIA_SNAP_FLAGS`, default the
+  known spine gates) - capped at `LEGAIA_SNAP_MAX`, so every volunteer run grows
+  the mid-beat state library for free (`LEGAIA_AUTOSNAP=0` to disable). Toggles:
+  `LEGAIA_TRACE_POS`/`_BGM`/`_INPUT` (`0` = off).
 - **Tier 2 - `autorun_flag_firehose.lua` (slow, interpreter+debugger, ~10 fps):** exec-breakpoints on `FUN_8003CE08`/`_CE34` capture the writer `ra` for the specific flags Tier 1 fingered. Run in short targeted bursts, not a full playthrough.
+- **Tier 2 provenance - `autorun_flag_reader_watch.lua` (slow, interpreter+debugger):**
+  the full story-flag provenance probe. Arms all THREE flag helpers
+  **unfiltered** - `FUN_8003CE64` (TEST -> reader `ra`) plus
+  `FUN_8003CE08`/`_CE34` (SET/CLEAR -> writer `ra`, the firehose merged in) -
+  deduped per `(kind, flag, ra)` with count-suppressed rows, so one
+  interpreter trek banks reader+writer provenance for EVERY flag the segment
+  touches, answering questions not yet asked. (The static census cannot
+  backstop runtime reads: its bytecode walker desyncs in dialogue-heavy MANs,
+  so "zero TEST sites" is not proof of no reader - see
+  `flag_test_bytescan` in `crates/engine-core/src/man_field_scripts/`.)
+  `LEGAIA_FLAG` takes a **comma list** of target flags; targets additionally
+  get a per-byte read-watch (inlined readers that bypass the helper),
+  prioritized call-context detail, and a **first-hit auto-snapshot**. Every
+  row carries mode/scene plus the player tile (`note` column, field mode).
+  New-scene auto-snapshots bank a state at the mouth of each area reached so
+  a follow-up run resumes adjacent instead of replaying the trek, and
+  `manifest.txt` records the config + source sstate (the resume/provenance
+  chain between runs). Two further streams ride the same session:
+  a **write-watch allowlist** (`LEGAIA_WATCH_WRITES="0xADDR:width[:name],..."`,
+  default the battle-id staging byte + formation table - the firehose's two
+  watches, so this probe supersedes it) whose `write` rows carry the writer
+  `pc`/`ra`, the pre-store value at the hit, and the committed value re-read
+  at the vsync drain (the bp fires mid-store, so hit-time reads are stale);
+  and a **VRAM upload log** - exec-bps on the libgpu writers LoadImage
+  `FUN_800583C8` / MoveImage `FUN_80058490` emitting `vram`/`vrammove` rows
+  with the rect + uploader `ra`, deduped per `(ra, rect)`, giving
+  texture/CLUT upload provenance for every scene crossed. The VRAM bps
+  **auto-disarm** while the game-mode byte sits in the STR/FMV modes
+  (`0x1A`/`0x1B`) and re-arm on the next field frame - a hot LoadImage
+  exec-bp during XA/FMV streaming segfaults the emulator. Each fight also
+  emits one **`battle` identity row** once the battle scene is active
+  (committed formation ids + entry mode + the **last field tile** before
+  the mode left field = the encounter's spawn spot; lone-formation fights
+  auto-snapshot as boss-shaped) - the committed-value complement to the
+  `form` watched write, whose `ra` is the encounter-provenance deliverable.
+  **Overlay residency** rides along too: a 512-byte FNV-1a checksum of each
+  runtime overlay slot (A `0x801CE818`, B `0x801F69D8` - the bases in
+  `crates/asset/data/static-overlays.toml`), re-taken on scene/mode changes
+  plus a slow heartbeat, emitted as `overlay` rows on change. The
+  field/menu/battle/cutscene/minigame overlays all VA-alias slot A, so a
+  bare overlay-region address is ambiguous; the checksum names the sibling
+  resident when each hit fired (`LEGAIA_TRACE_OVERLAY=0` off).
+  And **field-VM script-PC capture**: when a flag helper's caller is
+  overlay-resident, the probe scans the saved registers for a pointer whose
+  bytes decode as the very flag op being executed (class nibble + operand
+  == `a0` - self-validating across every sibling's VM copy and call site;
+  at the primary flag-op cluster `s0` = the opcode VA and `s8` = the
+  dispatcher's `pc_offset`, see
+  [`script-vm.md`](../subsystems/script-vm.md)). Hits gain `vm=`/`vmo=`
+  note tokens - the exact script-buffer VA and byte offset of the bytecode
+  op - joining runtime provenance to MAN offsets, the ground truth the
+  static census cannot give where its opcode walker desyncs.
+  Toggles: `LEGAIA_ALL_TESTS`/`LEGAIA_WRITERS`/`LEGAIA_DIRECT_READ`/
+  `LEGAIA_AUTOSNAP`/`LEGAIA_TRACE_VRAM` (`0` = off),
+  `LEGAIA_WATCH_WRITES=off`.
+
+**Core contract (dynarec vs interpreter).** Lua breakpoints fire ONLY under
+`-interpreter -debugger`; the recompiler runs them past silently. The
+separation is enforced in three layers so a mismatch can't produce silent
+garbage: (1) `run_probe.sh` forces the core explicitly in both directions
+(`--fast` passes `-dynarec` because the persisted `pcsx.json` otherwise wins;
+the default passes `-interpreter -debugger`) and **exports `LEGAIA_CORE`**;
+(2) the breakpoint probes (`autorun_flag_reader_watch.lua`,
+`autorun_flag_firehose.lua`) **hard-refuse to arm** when `LEGAIA_CORE=dynarec`,
+and the poll tier logs an advisory when launched on the interpreter (works,
+just ~10x slow); (3) for hand launches with no `LEGAIA_CORE`, the provenance
+probe runs a **liveness canary** - with the unfiltered TEST bp armed,
+field-mode gate tests fire every frame, so a long post-arm silence triggers
+loud repeating "BPs are dead, relaunch without --fast" warnings. Every run's
+`manifest.txt` records the core it actually ran on.
 
 The flag window is capped at `0x200` bytes (idx `0..4095`) deliberately: the char-record slot-3 tail ends exactly at the flag base and the item inventory begins exactly `0x200` above it, so `0x200` is the largest window that is pure story-flag bytes with no overlap onto volatile record/inventory cells. Widening re-introduces inventory double-counting.
 
@@ -469,12 +555,56 @@ per-fight **`battle` identity rows** (formation ids, with a `*` on lone-enemy
 fights = the likely bosses), a **story-flag census** that separates one-off
 story beats from the bulk flag dumps a
 save-load / scene-init writes in a single frame (any tick flipping `>= 20`
-flags is treated as a load frame and reported separately, not as a beat), and
-the item / gold / party change lists. `--json` emits the same structure for
-downstream tooling; `--only scenes,battles,flags,...` selects sections. The
+flags **or** carrying the probe's `note=bulkload` tag is treated as a load
+frame and reported separately, not as a beat), and the item / gold / party
+change lists. Each story-flag beat is annotated with the **player tile** it
+fired at (joined from the `pos` stream, scene-scoped) and a **known-flag
+label** - a sticky beat with no label is surfaced as a `[lead]` (a candidate
+unmapped gate; extend the label map with `--labels FILE`). Extra sections cover
+the **BGM timeline**, **picker choices**, **auto-snapshots**, and (opt-in) the
+per-scene **walk track** and raw **input edges**. `--json` emits the same
+structure for downstream tooling; `--only scenes,battles,flags,bgm,picks,...`
+selects sections. The
 analysis functions are pure and importable, exercised by
 `test_analyze_state_poll.py` on synthetic rows (`python3
 scripts/pcsx-redux/test_analyze_state_poll.py`, no capture or disc needed).
+
+**Offline analysis (`analyze_reader_watch.py`).** The provenance probe's
+sibling: `scripts/pcsx-redux/analyze_reader_watch.py <csv>` aggregates a
+`flag_reader_watch.csv` into per-flag **site tables** - each distinct
+`(kind, flag, pc, ra)` with its count (exact inside the unsuppressed prefix,
+`>=N` past it), first tick/scene, and tiles - and **labels every site against
+the already-cataloged functions** (the flag helpers, the field-VM op-`0x70`
+TEST handler return `0x801E35E8`, the walk-on tile-trigger dispatch
+`0x801D218C` and its `FUN_8003BDE0` gate-bit reads, the bulk `lbu;sb`
+save-scan memcpy). Anything uncataloged prints `[NEW]` with a coarse region
+(SCUS-resident vs overlay + the containment-attribution pointer), so a new
+reader/writer function is visible at a glance. `byteread` sites carry a
+reminder that the byte holds 8 flags (verify the mask at `pc`). Watched
+writes get their own section (name, writer sites, pre/committed values), as
+do VRAM uploads (per-uploader rect lists, with single-row narrow rects
+tagged `[CLUT?]` and `y>=448` rects `[CLUT-region]`) and battles (one line
+per fight, boss-shaped lone formations starred). `--only
+targets|background|writes|vram|battles|snaps`, `--labels FILE` (`0xADDR
+text` lines), `--json`.
+
+Two capabilities make it a cumulative database rather than a per-run report.
+**Cross-run merge**: pass several csvs or run *directories* (scanned
+recursively) and the sites union - counts sum per run, every site lists the
+runs that saw it, and `--merged-out FILE` persists the merged JSON. Each
+trek permanently grows one provenance map instead of answering one
+question. **Overlay-residency attribution**: the probe's `overlay` rows
+carry per-slot checksums; the committed
+[`overlay-map.txt`](../../scripts/pcsx-redux/overlay-map.txt) (FNV-1a32 of
+each raw overlay's first 512 as-loaded bytes - derived checksums only, no
+Sony bytes, same policy class as the TOML's sha256 fingerprints; regenerate
+with `--gen-overlay-map <extracted-dir>` after a static-overlays.toml
+change) resolves them to labels, so every overlay-region hit prints
+`resident=[menu (PROT 899 ...)]` - the VA-alias disambiguation that
+previously needed a manual `attribute_overlay_hits.py` pass. An unmapped
+checksum degrades visibly (`csum:XXXXXXXX?`). `--overlay-map FILE`
+overrides the committed map.
+Pure functions, exercised by `test_analyze_reader_watch.py` on synthetic rows.
 
 ## Catalogue
 
@@ -522,6 +652,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_town01_script_flow.lua` | Pins a field scene's script execution model. → [detail](#autorun_town01_script_flowlua) |
 | `autorun_state_poll.lua` | Fast (dynarec, no BPs) per-vsync diff of all progression state (flags/battle-id/gold/items/party/scene/mode) plus a per-fight `battle` formation-identity row on each field->battle edge, for a whole-playthrough sweep. Tier 1 of the [two-tier model](#fast-whole-playthrough-capture-two-tier-model); the community-handoff probe. |
 | `autorun_flag_firehose.lua` | Slow (interpreter) exec-bp capture of EVERY story-flag write with its writer `ra` + battle-id staging watch. Tier 2 - writer provenance for the flags the poll tier fingers. |
+| `autorun_flag_reader_watch.lua` | Slow (interpreter) full PROVENANCE probe: unfiltered test/set/clear helper exec-bps (reader + writer `ra` for every flag touched, deduped) + per-target byte read-watches + a write-watch allowlist for non-flag globals (default battle-id + formation) + a LoadImage/MoveImage VRAM upload log (auto-disarmed across FMV modes) + per-fight `battle` identity rows with spawn-tile attribution + per-slot overlay-residency checksums, tile context, first-hit/new-scene/boss auto-snapshots, run `manifest.txt`, dynarec hard-refusal + BP-liveness canary. Summarize (and cross-run merge) with `analyze_reader_watch.py`. |
 | [`autorun_battle_char_clut_source.lua`](../../scripts/pcsx-redux/autorun_battle_char_clut_source.lua) | Pins the disc source of the battle-form party CLUT band (VRAM rows 490..497). → [detail](#autorun_battle_char_clut_sourcelua) |
 | [`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua) | Pins the battle-form party-mesh install callsite. → [detail](#autorun_battle_party_mesh_installlua) |
 | [`autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua) | Live-confirms the exact battle camera byte-exact. → [detail](#autorun_battle_render_capturelua) |

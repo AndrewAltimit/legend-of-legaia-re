@@ -72,9 +72,10 @@ end })
 -- existing autorun_*.lua probe consumes.
 
 -- env
-M.getenv      = env.getenv
-M.getenv_num  = env.getenv_num
-M.out_path    = env.out_path
+M.getenv         = env.getenv
+M.getenv_num     = env.getenv_num
+M.out_path       = env.out_path
+M.write_manifest = env.write_manifest
 
 -- mem
 M.RAM_SIZE        = mem.RAM_SIZE

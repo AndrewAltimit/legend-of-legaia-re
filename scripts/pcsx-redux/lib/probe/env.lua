@@ -47,4 +47,27 @@ function M.out_path(default_name)
     return default_name
 end
 
+-- Write a run manifest (manifest.txt in the run dir) recording what this
+-- capture WAS: which script, which save state it started from, every config
+-- knob, and the arm-time context. Old run dirs otherwise go stale - a CSV
+-- with no record of its targets/toggles can't be trusted months later, and
+-- "which sstate did this run start from" is the resume/provenance chain
+-- between runs. Call once at arm/baseline time (post version-guard) so the
+-- context fields are live. `kv` is a flat table; keys are sorted for a
+-- stable, diffable layout. Returns true on success.
+function M.write_manifest(script, kv)
+    local fh = io.open(M.out_path("manifest.txt"), "w")
+    if fh == nil then return false end
+    fh:write("script = " .. tostring(script) .. "\n")
+    fh:write("written_utc = " .. os.date("!%Y-%m-%dT%H:%M:%SZ") .. "\n")
+    local keys = {}
+    for k in pairs(kv) do keys[#keys + 1] = k end
+    table.sort(keys)
+    for _, k in ipairs(keys) do
+        fh:write(k .. " = " .. tostring(kv[k]) .. "\n")
+    end
+    fh:close()
+    return true
+end
+
 return M

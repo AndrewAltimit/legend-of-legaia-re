@@ -27,7 +27,9 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{scene_man_carriers, system_flag_census};
+use legaia_engine_core::man_field_scripts::{
+    flag_test_bytescan, scene_man_carriers, system_flag_census,
+};
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_vm::field_disasm::FlagKind;
 
@@ -836,4 +838,609 @@ fn map03_karisto_region_gate_families() {
         ],
         "korb3 P2[5..=13] are nine distinct 0x403-gated collection records"
     );
+}
+
+/// The `tunnela` `0x96..=0x9C` chain - a **seven-chest treasure set**, NOT a
+/// story-spine gate family. A poll traversal caught all seven set in-scene in
+/// strict order at distinct tiles; static mining resolves what they are.
+///
+/// tunnela carries ONE (bundle) MAN, no streaming variant, and its 12
+/// partition-2 records hold **zero C1/C2 header gates** - so `0x96..=0x9C` are
+/// not `FUN_8003BDE0` record gates. They live inline in seven byte-identical
+/// partition-1 walk-on-trigger records (`P1[1..=7]`), one per flag, each a
+/// treasure-chest: **TEST own flag (already opened?) -> give item + SET own
+/// flag**. The records are laid out on a fixed `0xA2` stride with TEST->SET at
+/// `+0x5D` (`0x96`: TEST @0x457 / SET @0x4B4; `0x9C`: TEST @0x823 / SET @0x880);
+/// none carry a CLEAR (a chest never re-locks). The field-VM disassembler
+/// desyncs into each record's chest dialogue after the opening TEST, so the
+/// SET for `0x96`/`0x97`/`0x9A` is invisible to `system_flag_census` (which
+/// reports it for the other four) - the byte-exact `50 XX` op is the robust
+/// signal, and the poll confirmed all seven fire. The ending scene `edlast`
+/// (`P2[1]`) TESTs all seven together in a collection/completion battery - the
+/// only cross-scene consumer, and why these persist to the endgame.
+///
+/// This is the "dungeon-LOCAL puzzle/objective state" class (cf. taiku's
+/// `0x505..=0x519`), the mining frontier the poll's `[lead]` markers surface.
+#[test]
+fn chapter2_tunnela_treasure_chest_flags() {
+    let Some(index) = open_index() else { return };
+    let man_of = |scene_name: &str| -> Vec<u8> {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    let count = |hay: &[u8], needle: [u8; 2]| hay.windows(2).filter(|w| *w == needle).count();
+
+    // tunnela: each 0x96+k is SET (`50 XX`) and TEST (`70 XX`) exactly once,
+    // never CLEARed - seven one-way treasure-chest flags.
+    let tunnela = man_of("tunnela");
+    for f in 0x96u8..=0x9C {
+        assert_eq!(count(&tunnela, [0x50, f]), 1, "tunnela SET 0x{f:02X} once");
+        assert_eq!(count(&tunnela, [0x70, f]), 1, "tunnela TEST 0x{f:02X} once");
+        assert_eq!(
+            count(&tunnela, [0x60, f]),
+            0,
+            "tunnela never CLEAR 0x{f:02X}"
+        );
+    }
+
+    // edlast (the ending): TESTs all seven (the completion battery), sets none.
+    let edlast = man_of("edlast");
+    for f in 0x96u8..=0x9C {
+        assert_eq!(count(&edlast, [0x70, f]), 1, "edlast TEST 0x{f:02X}");
+        assert_eq!(count(&edlast, [0x50, f]), 0, "edlast never SET 0x{f:02X}");
+    }
+
+    // Structural: tunnela's partition-2 records carry NO header gates (this is
+    // inline chest state, not a spine gate family).
+    let mf = legaia_asset::man_section::parse(&tunnela).expect("parse");
+    let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
+    for r in 0..n_p2 {
+        let (c1, c2) =
+            legaia_engine_core::man_field_scripts::partition2_record_gates(&mf, &tunnela, r)
+                .unwrap_or_default();
+        assert!(
+            c1.is_empty() && c2.is_empty(),
+            "tunnela P2[{r}] has no gates"
+        );
+    }
+}
+
+/// The `stone` `0x1D8..=0x1E8` cluster - the in-game **"Gate of Shadows"
+/// symbol-code puzzle**, the richest dungeon-LOCAL objective family the poll
+/// surfaced. Static mining decodes both the mechanic and the flag layout.
+///
+/// The puzzle (from the scene's own dialogue): a statue with a **row of four
+/// symbols** you set via four directional **Keys** (North/South/East/West),
+/// each key pressing one of four elemental **Symbols** (Wind/Fire/Water/Earth).
+/// Enter the right four-symbol code to open the Gate of Shadows ("to visit the
+/// past"); a wrong answer spawns a punishment battle.
+///
+/// Flag layout - `0x1D8..=0x1E7` = **16 state flags = 4 keys x 4 symbols**, in
+/// four contiguous mutually-exclusive groups of four
+/// (`0x1D8..=0x1DB` / `0x1DC..=0x1DF` / `0x1E0..=0x1E3` / `0x1E4..=0x1E7`).
+/// Each flag is SET when pressed and CLEARed **six** times: pressing a symbol
+/// batch-clears its key's whole group then sets the chosen one, so each group
+/// always holds exactly one bit = "the symbol currently on this key".
+///
+/// The disc **encodes the solution**: the solved record contains a block of
+/// four `51 XX` SET ops re-asserting exactly one symbol per key -
+/// `{0x1D9, 0x1DE, 0x1E3, 0x1E4}` (so those four flags are SET twice; the
+/// other twelve once). This is the four-symbol code, and the poll caught
+/// exactly this as the solved resting state (+ `0x1E8`). `0x1E8` = the
+/// **puzzle-SOLVED gate**: set by the
+/// solved-cutscene record `P2[5]`, TESTed ~20x across stone's scene-entry
+/// scripts (`P0[0..5]`, `P1[0]`) to gate the opened-gate behavior, and - the
+/// only cross-scene consumer - TESTed once in `map02 P0[32]` (the Sebucus hub
+/// reads whether the Gate is open). `0x492` is a shared region-progress flag
+/// (SET in both stone `P1[0]` and `map02 P2[13]`), NOT part of the mechanic.
+///
+/// Not story spine - inline puzzle state (the taiku-`0x505` class), but far
+/// richer, and with a real cross-scene payoff gate (`0x1E8` in `map02`).
+#[test]
+fn chapter2_stone_symbol_puzzle_flags() {
+    let Some(index) = open_index() else { return };
+    let man_of = |scene_name: &str| -> Vec<u8> {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    // Count a 2-byte field-VM flag op. The opcode carries the flag's high byte
+    // in its low nibble (`base | (idx>>8)`), the next byte is `idx & 0xFF`.
+    let count_op = |hay: &[u8], base: u8, idx: u16| -> usize {
+        let op = [base | (idx >> 8) as u8, (idx & 0xFF) as u8];
+        hay.windows(2).filter(|w| *w == op).count()
+    };
+
+    let stone = man_of("stone");
+    // The 16 selector flags: each SET (once when pressed; the four SOLUTION
+    // symbols a second time in the solved record) and CLEARed six times
+    // (batch-reset = the four 4-way mutually-exclusive symbol groups).
+    let mut solution: Vec<u16> = Vec::new();
+    for f in 0x1D8u16..=0x1E7 {
+        let sets = count_op(&stone, 0x50, f);
+        assert!(sets >= 1, "stone SETs selector 0x{f:X}");
+        assert_eq!(
+            count_op(&stone, 0x60, f),
+            6,
+            "stone CLEAR 0x{f:X} x6 (batch)"
+        );
+        if sets == 2 {
+            solution.push(f);
+        }
+    }
+    // The disc ENCODES the answer: the solved record re-asserts exactly one
+    // symbol per key group -> the four-symbol code. (Poll-confirmed: this is
+    // the solved resting state the traversal reached.)
+    assert_eq!(
+        solution,
+        vec![0x1D9, 0x1DE, 0x1E3, 0x1E4],
+        "encoded solution: one symbol per key (A..D)"
+    );
+    // The SOLVED gate is a one-way completion flag, NOT a batch-cleared
+    // selector: heavily tested, at most one clear.
+    assert!(
+        count_op(&stone, 0x50, 0x1E8) >= 1,
+        "stone SETs 0x1E8 (solved)"
+    );
+    assert!(
+        count_op(&stone, 0x60, 0x1E8) <= 1,
+        "0x1E8 is not batch-cleared"
+    );
+    assert!(
+        count_op(&stone, 0x70, 0x1E8) >= 10,
+        "0x1E8 tested pervasively"
+    );
+
+    // Cross-scene: the Sebucus hub map02 reads the solved gate, shares 0x492,
+    // and carries NONE of the 16 stone-local selector flags.
+    let map02 = man_of("map02");
+    assert!(
+        count_op(&map02, 0x70, 0x1E8) >= 1,
+        "map02 TESTs the solved gate"
+    );
+    assert!(count_op(&map02, 0x50, 0x492) >= 1, "map02 shares 0x492");
+    for f in 0x1D8u16..=0x1E7 {
+        assert_eq!(count_op(&map02, 0x50, f), 0, "0x{f:X} is stone-local");
+    }
+}
+
+/// The `rayman` `0x1FD..=0x1FF` cluster - the **"three Haris" oracle
+/// interaction hub**. Distinct from rayman's header-gate spine chain
+/// (`0x201`/`0x1FB`/`0x200`/`0x1FC` off the `0x1EB`/`0x1EC` arc, covered by
+/// `chapter2_dungeon_gate_families`): this is a self-contained **field-VM
+/// AND-gate**, not a C1/C2 header chain.
+///
+/// The mechanic (from the scene's own dialogue): three "Hari" statues -
+/// "from the left, teller of the past, of the present and of the future" -
+/// that "remain awake only for a short time". Talking to each of the three
+/// oracles sets one flag; combined gates then check that all three have been
+/// consulted before advancing ("Hari has entrusted you with the future").
+///
+/// Flag layout (byte-exact off the decoded MAN):
+/// - `0x1FD`/`0x1FE`/`0x1FF` = one flag per oracle. Each is SET **twice**:
+///   once in its own per-actor NPC script (census: `P1[44]`/`P1[45]`/`P1[46]`,
+///   three consecutive actor records) and once in a dev **reset arm** ("End
+///   flag setting" / "Back=") that SETs all three consecutively
+///   (`51 FF 51 FE 51 FD`) then CLEARs all three consecutively
+///   (`61 FF 61 FE 61 FD`) - hence CLEAR exactly once each.
+/// - All three are TESTed together in tight AND-gate clusters (census records
+///   `P1[42]`/`P1[43]`/`P1[47]` + the completion cutscene `P2[18]`), the
+///   "have you consulted all three oracles" check. Six TESTs per flag.
+///
+/// **Self-contained**: no genuine cross-scene consumer. The one out-of-scene
+/// census hit (`geremi P1[22]` "CLEAR 0x1FE") is a disassembler-desync false
+/// positive - the byte pair `61 FE` is consumed as the operand of a 3-byte
+/// `0x26` op sitting inside Shift-JIS text (`26 61 FE 0D 83 4A ...`), not a
+/// standalone CLEAR at an instruction boundary. Unlike `stone`'s `0x1E8`, this
+/// hub has no cross-scene payoff gate.
+#[test]
+fn chapter2_rayman_three_haris_hub_flags() {
+    let Some(index) = open_index() else { return };
+    let man_of = |scene_name: &str| -> Vec<u8> {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    let count_op = |hay: &[u8], base: u8, idx: u16| -> usize {
+        let op = [base | (idx >> 8) as u8, (idx & 0xFF) as u8];
+        hay.windows(2).filter(|w| *w == op).count()
+    };
+    let count_sub = |hay: &[u8], sub: &[u8]| hay.windows(sub.len()).filter(|w| *w == sub).count();
+
+    let rayman = man_of("rayman");
+
+    // Each oracle flag: SET twice (own NPC script + the reset arm), CLEARed
+    // exactly once (the reset arm), TESTed pervasively by the AND-gates.
+    for f in 0x1FDu16..=0x1FF {
+        assert_eq!(count_op(&rayman, 0x50, f), 2, "rayman SET 0x{f:X} twice");
+        assert_eq!(count_op(&rayman, 0x60, f), 1, "rayman CLEAR 0x{f:X} once");
+        assert!(
+            count_op(&rayman, 0x70, f) >= 4,
+            "rayman TESTs 0x{f:X} in the AND-gates"
+        );
+    }
+
+    // The dev reset arm SETs all three consecutively then CLEARs all three
+    // consecutively - one such block each.
+    assert_eq!(
+        count_sub(&rayman, &[0x51, 0xFF, 0x51, 0xFE, 0x51, 0xFD]),
+        1,
+        "reset arm SETs all three oracles"
+    );
+    assert_eq!(
+        count_sub(&rayman, &[0x61, 0xFF, 0x61, 0xFE, 0x61, 0xFD]),
+        1,
+        "reset arm CLEARs all three oracles"
+    );
+
+    // The AND-gate: distinct sites where all three flags are TESTed together
+    // (the "consulted all three oracles" conjunction). Count non-overlapping
+    // 24-byte windows carrying a TEST of each of the three.
+    let tf: [[u8; 2]; 3] = [[0x71, 0xFD], [0x71, 0xFE], [0x71, 0xFF]];
+    let has = |w: &[u8], s: &[u8; 2]| w.windows(2).any(|x| x == *s);
+    let mut clusters = 0usize;
+    let mut o = 0usize;
+    while o + 24 <= rayman.len() {
+        let w = &rayman[o..o + 24];
+        if tf.iter().all(|s| has(w, s)) {
+            clusters += 1;
+            o += 24;
+        } else {
+            o += 1;
+        }
+    }
+    assert!(
+        clusters >= 4,
+        "at least four AND-gate sites, got {clusters}"
+    );
+}
+
+/// `0x528` is NOT a story-progression flag - it is one bit of the
+/// **`0x527..=0x52E` scratch-register bank** that field scripts bulk-reset.
+/// The poll surfaced it as a churn=125 "[lead]", but it is scratch traffic.
+///
+/// The bank is reset as one contiguous eight-flag run
+/// (`65 27 65 28 65 29 65 2A 65 2B 65 2C 65 2D 65 2E` = CLEAR `0x527..=0x52E`)
+/// in ~70-90 scenes' scene-entry / per-actor setup - which is exactly the high
+/// churn the poll sees on every scene transition.
+///
+/// CORRECTION (runtime-confirmed): an earlier static-only pass called `0x528`
+/// "write-only to the VM" because the disc-wide opcode census reports ZERO
+/// `0x70` TEST sites for it. **That was a census desync miss, not the truth.**
+/// A read-watch capture (`autorun_flag_reader_watch.lua`, `LEGAIA_FLAG=0x528`,
+/// balden) caught the field-VM TEST-opcode handler reading it 1951x in one idle
+/// minute: `jal FUN_8003CE64` from `ra=0x801E35E8` (the op-`0x70` case; SET is
+/// `ra=0x801E3598`, CLEAR `ra=0x801E35C0`). The consumer is balden's
+/// scene-entry script, which TESTs `0x528` to guard its own scratch-bank reset
+/// (`75 28 5D 00` immediately before the batch-clear run at balden MAN 0xAC54):
+/// a per-scene init guard, not a story gate. The static census walker
+/// desyncs past that `75 28` in balden's dialogue-heavy record, so the census
+/// UNDERCOUNTS here: for `0x528` the census's zero is a floor, not the answer.
+#[test]
+fn flag_0x528_is_scratch_bank_tested_only_as_an_init_guard() {
+    let Some(index) = open_index() else { return };
+    let scenes = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+    let man_of = |name: &str| -> Vec<u8> {
+        Scene::load(&index, name)
+            .expect("load")
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    let kinds = |flag: u16| -> (usize, usize, usize) {
+        let sites = census.get(&flag).map(Vec::as_slice).unwrap_or(&[]);
+        let n = |k: FlagKind| sites.iter().filter(|h| h.kind == k).count();
+        (n(FlagKind::Set), n(FlagKind::Clear), n(FlagKind::Test))
+    };
+    let count_sub = |hay: &[u8], sub: &[u8]| hay.windows(sub.len()).filter(|w| *w == sub).count();
+    // Genuine field-VM TEST: the op followed by a small `[lo, 0x00]` branch word.
+    let genuine_tests = |hay: &[u8], op: [u8; 2]| -> usize {
+        (0..hay.len().saturating_sub(3))
+            .filter(|&o| hay[o] == op[0] && hay[o + 1] == op[1] && hay[o + 3] == 0x00)
+            .count()
+    };
+
+    // 0x528 is written both ways (its 64 SETs cluster in balden).
+    let (set, clr, _tst) = kinds(0x528);
+    assert!(set > 0 && clr > 0, "0x528 is written (SET+CLEAR)");
+
+    // The census UNDERCOUNTS its TEST (reports zero via desync), but balden
+    // carries a genuine `75 28` TEST - the reader the runtime capture confirmed
+    // (field-VM op-0x70 handler, ra 0x801E35E8), gating the bank reset.
+    assert_eq!(
+        kinds(0x528).2,
+        0,
+        "census reports zero TEST (a desync floor)"
+    );
+    let balden = man_of("balden");
+    assert!(
+        genuine_tests(&balden, [0x75, 0x28]) >= 1,
+        "but balden genuinely TESTs 0x528 (the census missed it)"
+    );
+
+    // The bank is live scratch, not dead: sibling bits are TESTed too.
+    for sib in [0x527u16, 0x52C, 0x52E] {
+        assert!(kinds(sib).2 > 0, "sibling 0x{sib:X} is VM-tested scratch");
+    }
+
+    // Structural: the eight-flag batch-clear run resets the whole bank at once
+    // (town01 P1[0]); in balden the TEST guards exactly this run.
+    let batch: [u8; 16] = [
+        0x65, 0x27, 0x65, 0x28, 0x65, 0x29, 0x65, 0x2A, 0x65, 0x2B, 0x65, 0x2C, 0x65, 0x2D, 0x65,
+        0x2E,
+    ];
+    assert!(
+        count_sub(&man_of("town01"), &batch) >= 1,
+        "town01 bulk-clears the 0x527..=0x52E scratch bank"
+    );
+    assert!(
+        count_sub(&balden, &batch) >= 1,
+        "balden also carries the bank-reset run (guarded by the 0x528 TEST)"
+    );
+}
+
+/// The other two poll "high-churn" leads - `0x5A1` and `0x6C3` - are also
+/// write-only cutscene toggles, NOT gates. Both are zero-TEST to the field VM.
+///
+/// - **`0x5A1` is half of a flip-flop pair with `0x5A0`**: the two are toggled
+///   mutually exclusively (`CLEAR 0x5A0 ; SET 0x5A1` = `65 A0 55 A1`, and the
+///   reverse `55 A0 65 A1`), a two-state binary variable held as two flags
+///   inside rayman's Hari cutscene records (`P2[7]`/`P2[19]`). Confined to
+///   `rayman`; engine-read display/sequence state, never an inline script test.
+///
+/// - **`0x6C3` is a stone SOLVED-cutscene toggle** (`P2[5]`), write-only.
+///   Its census hit list names six scenes, but that is a DESYNC artifact: the
+///   flag operand byte `0xC3` collides with a repeating `C3 CC nn` data table
+///   in the town-family / rayman records, so `56 C3` matches across a table
+///   record boundary. Filtering to genuine ops (a `56 C3` NOT adjacent to a
+///   `0xCC`) leaves `stone` as the only real user. A sharper form of the
+///   `0x528` note: even the opcode-boundary census's SET/CLEAR *attributions*
+///   can be desync false positives when the operand byte aliases table data.
+#[test]
+fn flags_0x5a1_and_0x6c3_are_write_only_cutscene_toggles() {
+    let Some(index) = open_index() else { return };
+    let scenes = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+    let man_of = |name: &str| -> Vec<u8> {
+        Scene::load(&index, name)
+            .expect("load")
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    let test_count = |flag: u16| -> usize {
+        census
+            .get(&flag)
+            .map(|s| s.iter().filter(|h| h.kind == FlagKind::Test).count())
+            .unwrap_or(0)
+    };
+    let census_scenes = |flag: u16| -> BTreeSet<String> {
+        census
+            .get(&flag)
+            .map(|s| s.iter().map(|h| h.scene_name.clone()).collect())
+            .unwrap_or_default()
+    };
+    let count_sub = |hay: &[u8], sub: &[u8]| hay.windows(sub.len()).filter(|w| *w == sub).count();
+
+    // 0x5A0 / 0x5A1: both write-only; 0x5A1 confined to rayman; the two toggle
+    // as a mutually-exclusive flip-flop.
+    assert_eq!(test_count(0x5A0), 0, "0x5A0 write-only");
+    assert_eq!(test_count(0x5A1), 0, "0x5A1 write-only");
+    assert_eq!(
+        census_scenes(0x5A1),
+        BTreeSet::from(["rayman".to_string()]),
+        "0x5A1 lives only in rayman"
+    );
+    let rayman = man_of("rayman");
+    assert!(
+        count_sub(&rayman, &[0x65, 0xA0, 0x55, 0xA1]) > 0
+            && count_sub(&rayman, &[0x55, 0xA0, 0x65, 0xA1]) > 0,
+        "0x5A0/0x5A1 toggle as a flip-flop (both directions present)"
+    );
+
+    // 0x6C3: write-only, and genuinely stone-local despite the inflated census
+    // scene list. A genuine op is a `56 C3` (SET 0x6C3) not adjacent to a 0xCC
+    // (which would make it a `C3 CC nn` data-table boundary match).
+    assert_eq!(test_count(0x6C3), 0, "0x6C3 write-only");
+    let genuine_6c3 = |hay: &[u8]| -> usize {
+        (0..hay.len().saturating_sub(1))
+            .filter(|&o| hay[o] == 0x56 && hay[o + 1] == 0xC3)
+            .filter(|&o| !(o >= 1 && hay[o - 1] == 0xCC || o + 2 < hay.len() && hay[o + 2] == 0xCC))
+            .count()
+    };
+    assert!(
+        genuine_6c3(&man_of("stone")) > 0,
+        "0x6C3 real user is stone"
+    );
+    for other in ["town01", "town0b", "gameover_data"] {
+        assert_eq!(
+            genuine_6c3(&man_of(other)),
+            0,
+            "0x6C3 in {other} is a C3-CC data-table desync, not a real op"
+        );
+    }
+}
+
+/// Unlike the write-only churn flags, the last two poll leads - `0x32A` and
+/// `0x590` - ARE real stone-LOCAL progress gates: both are SET and TESTed by
+/// the field VM (a story gate is SET + TESTed; a scratch/toggle is
+/// SET/CLEAR-many + zero-TEST). Checking for TEST sites first is what
+/// separates them from `0x528`/`0x5A1`/`0x6C3`.
+///
+/// - **`0x32A` = the stone "code clue" marker**: SET (`53 2A`) at the
+///   "Some sort of code is..." hint, TESTed three times in the SOLVED cutscene
+///   (`P2[5]`) via the clean `73 2A 05 00 26` test-and-branch idiom. Distinct
+///   from the 16 selector flags (`0x1D8..=0x1E7`) and the solved gate
+///   (`0x1E8`). The census misses the SET (its walker desyncs in the
+///   dialogue-heavy record) but decodes the three TESTs.
+/// - **`0x590` = a stone scene-entry progress gate**: SET in a stone cutscene
+///   (`P2[6]`), TESTed at scene-entry (`P1[0]`, right before the scratch-bank
+///   clear) to branch opened-state behavior. Stone-LOCAL: the census's
+///   `other7 P1[15]` "cross-scene TEST" is FALSIFIED - those `75 90` bytes sit
+///   inside Shift-JIS dialogue (`75 90 B6 82 ...` = きてる), so the branch word
+///   high byte is `0x82`, not `0x00`. A real field-VM TEST is followed by a
+///   small `[lo, 0x00]` branch offset; that high-byte==0 test is the
+///   real-op-vs-text-desync discriminator.
+#[test]
+fn stone_0x32a_and_0x590_are_real_local_progress_gates() {
+    let Some(index) = open_index() else { return };
+    let man_of = |name: &str| -> Vec<u8> {
+        Scene::load(&index, name)
+            .expect("load")
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    let count_sub = |hay: &[u8], sub: &[u8]| hay.windows(sub.len()).filter(|w| *w == sub).count();
+    // A genuine field-VM TEST: the two-byte TEST op followed by a `[lo, 0x00]`
+    // branch word (real jump offsets are small; text desync gives a high byte).
+    let genuine_tests = |hay: &[u8], op: [u8; 2]| -> usize {
+        (0..hay.len().saturating_sub(3))
+            .filter(|&o| hay[o] == op[0] && hay[o + 1] == op[1] && hay[o + 3] == 0x00)
+            .count()
+    };
+
+    let stone = man_of("stone");
+    // 0x32A: real SET (53 2A) + real TESTs (73 2A .. 00) in stone.
+    assert!(count_sub(&stone, &[0x53, 0x2A]) >= 1, "stone SETs 0x32A");
+    assert!(
+        genuine_tests(&stone, [0x73, 0x2A]) >= 3,
+        "stone TESTs 0x32A in the solved cutscene"
+    );
+    // 0x590: real SET (55 90) + real TEST (75 90 .. 00) in stone.
+    assert!(count_sub(&stone, &[0x55, 0x90]) >= 1, "stone SETs 0x590");
+    assert!(
+        genuine_tests(&stone, [0x75, 0x90]) >= 1,
+        "stone TESTs 0x590 at scene entry"
+    );
+
+    // Cross-scene reader FALSIFIED: other7's census 0x590 TESTs are Shift-JIS
+    // text - `75 90` occurs, but never as a genuine `[lo, 0x00]` branch.
+    let other7 = man_of("other7");
+    assert!(
+        count_sub(&other7, &[0x75, 0x90]) > 0,
+        "other7 has the 75 90 byte pair (the census hit)"
+    );
+    assert_eq!(
+        genuine_tests(&other7, [0x75, 0x90]),
+        0,
+        "but none are real TESTs - 0x590 is stone-local, not cross-scene"
+    );
+}
+
+/// Desync cross-check over every mined flag: the systemic guard the `0x528`
+/// correction earned. [`system_flag_census`]'s opcode walker is NOT
+/// authoritative for TEST in dialogue-heavy records - it desyncs into
+/// Shift-JIS text and silently drops real ops. The walker-independent
+/// [`flag_test_bytescan`] (the `[0x70|hi][lo][blo][0x00]` branch idiom)
+/// cross-checks it. This test re-validates all seven poll minings against that
+/// side channel; it FAILS if any flag we asserted "write-only" elsewhere turns
+/// out to carry a hidden TEST reader (a second `0x528`).
+///
+/// Key results (see [`flag_test_bytescan`] for the noise-floor model):
+/// - **Write-only is robust, not a desync floor**: `0x5A0` / `0x5A1` / `0x6C3`
+///   have `raw == 0` - the TEST byte-pair is *absent disc-wide*, so no reader
+///   can hide. This is the strongest possible confirmation of the cutscene-
+///   toggle finding, far beyond "census TEST == 0".
+/// - **`0x528` is the lone census-zero-but-real case** (already corrected +
+///   firehose-confirmed): census TEST == 0 yet `genuine` sits ~67 vs a `0.4`
+///   noise floor. The scratch bank `0x527..=0x52E` is where both static tools
+///   disagree wildly - inherently runtime-only, consistent with scratch churn.
+/// - **The real gates confirm**: the stone puzzle (`0x1D8..=0x1E8`), rayman
+///   Haris hub (`0x1FD..=0x1FF`), and stone-local `0x32A` / `0x590` all show
+///   `genuine` far above their (~0) noise floors; `0x1E8` even surfaces its
+///   `map02` cross-scene reader.
+#[test]
+fn desync_crosscheck_revalidates_every_mined_flag() {
+    let Some(index) = open_index() else { return };
+    let scenes: Vec<String> = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+
+    // Cache every scene's concatenated MAN-carrier payloads once (a 0xFF
+    // separator keeps a cross-carrier window from matching a spurious pair).
+    let mut man_cache: Vec<(String, Vec<u8>)> = Vec::new();
+    for name in &scenes {
+        let Ok(scene) = Scene::load(&index, name) else {
+            continue;
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        for c in scene_man_carriers(&index, &scene) {
+            buf.extend_from_slice(&c.payload);
+            buf.push(0xFF);
+        }
+        if !buf.is_empty() {
+            man_cache.push((name.clone(), buf));
+        }
+    }
+    assert!(!man_cache.is_empty(), "no MAN carriers decoded");
+
+    // Disc-wide (raw, genuine) for a flag's TEST branch idiom.
+    let bytescan = |flag: u16| -> (usize, usize) {
+        man_cache.iter().fold((0, 0), |(r, g), (_, hay)| {
+            let (dr, dg) = flag_test_bytescan(hay, flag);
+            (r + dr, g + dg)
+        })
+    };
+    let census_test = |flag: u16| -> usize {
+        census
+            .get(&flag)
+            .map(|s| s.iter().filter(|h| h.kind == FlagKind::Test).count())
+            .unwrap_or(0)
+    };
+
+    // (1) THE GUARD: every flag asserted "write-only" elsewhere must have a
+    // truly absent TEST byte-pair disc-wide (raw == 0). A future mining that
+    // mislabels a real gate as write-only trips this.
+    for wo in [0x5A0u16, 0x5A1, 0x6C3] {
+        let (raw, genuine) = bytescan(wo);
+        assert_eq!(
+            (raw, genuine),
+            (0, 0),
+            "0x{wo:X} claimed write-only but its TEST byte-pair appears disc-wide (possible hidden reader)"
+        );
+    }
+
+    // (2) 0x528: the census reports zero TEST (a desync floor), but the
+    // byte-scan finds the reader far above the noise floor. Locks the
+    // correction + the "census not authoritative" lesson.
+    assert_eq!(census_test(0x528), 0, "0x528 census TEST is a desync floor");
+    let (raw_528, gen_528) = bytescan(0x528);
+    assert!(
+        gen_528 >= 10 && gen_528 as f64 > (raw_528 as f64 / 256.0) * 6.0,
+        "0x528 carries a real TEST reader the census missed (genuine {gen_528} vs raw {raw_528})"
+    );
+
+    // (3) The real gates: genuine TEST far above a ~0 noise floor. Each has a
+    // tiny raw pool (rare op-pair), so the branch-idiom count is decisive.
+    let real = |flag: u16, min: usize| {
+        let (raw, genuine) = bytescan(flag);
+        assert!(
+            genuine >= min && genuine as f64 > (raw as f64 / 256.0) * 3.0 + 0.5,
+            "0x{flag:X} is a real TEST gate (genuine {genuine} >= {min}, raw {raw})"
+        );
+    };
+    for chest in 0x96u16..=0x9C {
+        real(chest, 2); // tunnela treasure-chest gates
+    }
+    for sym in 0x1D8u16..=0x1E8 {
+        real(sym, 4); // stone symbol-puzzle selectors + solved gate
+    }
+    for hari in [0x1FDu16, 0x1FE, 0x1FF] {
+        real(hari, 4); // rayman three-Haris hub
+    }
+    real(0x32A, 3); // stone code-clue marker
+    real(0x590, 1); // stone scene-entry progress gate
+
+    // 0x1E8 (stone SOLVED) is read cross-scene in map02 - the byte-scan sees
+    // it even though it is a different scene than the setter.
+    let (_, gen_1e8) = bytescan(0x1E8);
+    assert!(gen_1e8 >= 15, "0x1E8 solved gate is heavily TESTed");
 }
