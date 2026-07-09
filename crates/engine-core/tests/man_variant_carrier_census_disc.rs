@@ -504,3 +504,89 @@ fn chapter2_ropeway_jiji_gate_families() {
     assert_eq!(gates("jiji", 6), (vec![0x3BD], vec![]));
     assert_eq!(gates("jiji", 7), (vec![0x3BD], vec![]));
 }
+
+/// The chapter-2 `dohaty`/`retock`/`retockin`/`stone` gate families - the
+/// remaining `map02`-hub spokes, mined disc-static (C1/C2 record headers). None
+/// were walked in the poll, so this is structure, not confirmed play order.
+///
+/// - **dohaty**: a six-record group `P2[3..=8]` all C1=`[0xF]` (a low-flag
+///   first-visit / variant gate, like retockin's `0x7`), a `0x344` one-shot
+///   (`P2[10]`), and a `0x63D` self-latch pair (`P2[14]`/`P2[15]`).
+/// - **retock** (rich): its progression depends CROSS-SCENE on balden's
+///   `0x1D5` - the `P2[13/14/15]` chain over `0x337`/`0x339`/`0x33A` all gate
+///   on `0x1D5` (C2), and `P2[28]` needs it outright. A second internal chain
+///   runs `0x357` -> `P2[33]` (`0x502`) -> `P2[31]`/`P2[32]` (C2=`0x502`).
+/// - **retockin** = the `0x7`-gated interior variant (~30 records C1-carry
+///   `0x7`, the variant discriminator, like rayman2); it SHARES `0x502` and
+///   `0x357` with retock (same dungeon, exterior/interior), plus a `0x205`
+///   self-latch pair (`P2[4]`/`P2[34]`).
+/// - **stone** is trivial: a single `0x590` one-shot (`P2[6]`).
+#[test]
+fn chapter2_dohaty_retock_stone_gate_families() {
+    use legaia_asset::man_section::parse as parse_man;
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        let man = scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN");
+        let mf = parse_man(&man).expect("parse");
+        let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
+        (0..n_p2)
+            .map(|r| partition2_record_gates(&mf, &man, r).unwrap_or_default())
+            .collect()
+    };
+
+    // dohaty: the 0xF first-visit group, the 0x344 one-shot, the 0x63D pair.
+    let dohaty = all_gates("dohaty");
+    for (i, g) in dohaty[3..=8].iter().enumerate() {
+        let rec = i + 3;
+        assert_eq!(
+            *g,
+            (vec![0xF], vec![]),
+            "dohaty P2[{rec}] is in the 0xF group"
+        );
+    }
+    assert_eq!(dohaty[10], (vec![0x344], vec![]));
+    assert_eq!(dohaty[14], (vec![0x63D], vec![]));
+    assert_eq!(dohaty[15], (vec![], vec![0x63D]));
+
+    // retock: the balden-0x1D5 cross-scene dependency + two internal chains.
+    let retock = all_gates("retock");
+    assert_eq!(retock[13], (vec![0x339, 0x1D5], vec![]));
+    assert_eq!(retock[14], (vec![0x33A, 0x337], vec![0x1D5, 0x339]));
+    assert_eq!(retock[15], (vec![0x337, 0x33A, 0x339], vec![0x1D5]));
+    assert_eq!(
+        retock[28],
+        (vec![], vec![0x1D5]),
+        "retock needs balden's 0x1D5"
+    );
+    assert_eq!(retock[33], (vec![0x502], vec![0x357]));
+    assert_eq!(retock[31], (vec![0x33E], vec![0x502]));
+
+    // retockin: 0x7-gated variant, shares 0x502/0x357 with retock, 0x205 pair.
+    let retockin = all_gates("retockin");
+    let with_0x7 = retockin.iter().filter(|(c1, _)| c1.contains(&0x7)).count();
+    assert!(
+        with_0x7 > 20,
+        "retockin is the 0x7-gated variant ({with_0x7} records carry 0x7)"
+    );
+    assert_eq!(retockin[4], (vec![0x205], vec![]));
+    assert_eq!(retockin[34], (vec![], vec![0x205]));
+    assert_eq!(
+        retockin[42],
+        (vec![0x357, 0x43B], vec![]),
+        "shares retock's 0x357"
+    );
+    assert_eq!(
+        retockin[45],
+        (vec![0x617], vec![0x502]),
+        "shares retock's 0x502"
+    );
+
+    // stone: a single one-shot.
+    let stone = all_gates("stone");
+    assert_eq!(stone[6], (vec![0x590], vec![]));
+}
