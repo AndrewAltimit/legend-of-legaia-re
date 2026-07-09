@@ -115,6 +115,20 @@ KNOWN_FLAGS = {
     0x1E8: "stone puzzle SOLVED (Gate of Shadows open; read in map02)",
     0x1E9: "stone puzzle solved follow-on/sub-state",
     0x492: "Sebucus region-progress (shared stone/map02)",
+    # 0x527..0x52E = an eight-bit SCRATCH-register bank, bulk-CLEARed as one run
+    # (`65 27..65 2E`) in ~70-90 scenes' entry/setup scripts. NOT progression -
+    # this is the churn a scene transition produces. Siblings 0x527/0x52C/0x52E
+    # are VM-tested (live conditional scratch); 0x528/0x52A/0x52B are write-only
+    # to the VM (consumed by engine code / header gates, not inline TESTs).
+    # man_variant_carrier_census_disc.rs::flag_0x528_is_scratch_bank_not_a_gate.
+    0x527: "scratch-bank bit (0x527..0x52E; VM-tested)",
+    0x528: "scratch-bank bit (0x527..0x52E; write-only, not a gate)",
+    0x529: "scratch-bank bit (0x527..0x52E)",
+    0x52A: "scratch-bank bit (0x527..0x52E; write-only)",
+    0x52B: "scratch-bank bit (0x527..0x52E; write-only)",
+    0x52C: "scratch-bank bit (0x527..0x52E; VM-tested)",
+    0x52D: "scratch-bank bit (0x527..0x52E)",
+    0x52E: "scratch-bank bit (0x527..0x52E; VM-tested)",
 }
 
 

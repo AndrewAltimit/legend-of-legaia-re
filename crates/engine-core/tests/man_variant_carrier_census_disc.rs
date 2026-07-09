@@ -1099,3 +1099,66 @@ fn chapter2_rayman_three_haris_hub_flags() {
         "at least four AND-gate sites, got {clusters}"
     );
 }
+
+/// `0x528` is NOT a progression flag - it is one bit of the **`0x527..=0x52E`
+/// scratch-register bank** that field scripts bulk-reset. The poll surfaced it
+/// as a churn=125 "[lead]", but it is scratch write-traffic, not a gate.
+///
+/// The bank is reset as one contiguous eight-flag run
+/// (`65 27 65 28 65 29 65 2A 65 2B 65 2C 65 2D 65 2E` = CLEAR `0x527..=0x52E`)
+/// in ~70-90 scenes' scene-entry / per-actor setup - which is exactly the
+/// high churn the poll sees on every scene transition. Within the bank the
+/// bits are used independently: siblings `0x527`/`0x52C`/`0x52E` are read by
+/// real field-VM `0x70` TESTs (live conditional scratch), but **`0x528` is
+/// write-only to the VM** (SET + CLEAR, never a boundary TEST across the whole
+/// disc), so its 64 SETs must be consumed by engine code or a record header
+/// gate, not an inline script test - the same "looks write-only to the
+/// inline-opcode census" shape as `0x1BE`.
+///
+/// Method note: a raw byte-scan for `75 28` (TEST 0x528) finds hits, but they
+/// are dialogue-text false positives (`"u("`); the opcode-boundary census
+/// correctly reports zero. For low-value flag byte pairs the census is
+/// authoritative for TESTs; byte-scan overcounts.
+#[test]
+fn flag_0x528_is_scratch_bank_not_a_gate() {
+    let Some(index) = open_index() else { return };
+    let scenes = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+
+    let kinds = |flag: u16| -> (usize, usize, usize) {
+        let sites = census.get(&flag).map(Vec::as_slice).unwrap_or(&[]);
+        let n = |k: FlagKind| sites.iter().filter(|h| h.kind == k).count();
+        (n(FlagKind::Set), n(FlagKind::Clear), n(FlagKind::Test))
+    };
+
+    // 0x528: written both ways, never read by an inline field-VM TEST.
+    let (set, clr, tst) = kinds(0x528);
+    assert!(set > 0 && clr > 0, "0x528 is written (SET+CLEAR)");
+    assert_eq!(tst, 0, "0x528 has no field-VM TEST (write-only to the VM)");
+
+    // The bank is live, not dead: sibling bits ARE tested as real conditions.
+    for sib in [0x527u16, 0x52C, 0x52E] {
+        assert!(
+            kinds(sib).2 > 0,
+            "sibling 0x{sib:X} is a real VM-tested scratch bit"
+        );
+    }
+
+    // Structural: the eight-flag batch-clear run resets the whole bank at once,
+    // in a representative scene-entry script (town01 P1[0]).
+    let town01 = {
+        let scene = Scene::load(&index, "town01").expect("load town01");
+        scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("town01 MAN")
+    };
+    let batch: [u8; 16] = [
+        0x65, 0x27, 0x65, 0x28, 0x65, 0x29, 0x65, 0x2A, 0x65, 0x2B, 0x65, 0x2C, 0x65, 0x2D, 0x65,
+        0x2E,
+    ];
+    assert!(
+        town01.windows(16).any(|w| w == batch),
+        "town01 bulk-clears the 0x527..=0x52E scratch bank"
+    );
+}
