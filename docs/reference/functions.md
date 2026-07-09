@@ -25,7 +25,7 @@ A directory of the Ghidra-traced functions that matter for understanding Legaia'
 
 ## Disc / loader chain
 
-Full 13-function CD-read API stack documented in [`subsystems/boot.md` § CD-read API stack](../subsystems/boot.md#cd-read-api-stack); per-function memory entry in `project_cd_read_api_stack.md`.
+Full 13-function CD-read API stack documented in [`subsystems/boot.md` § CD-read API stack](../subsystems/boot.md#cd-read-api-stack).
 
 | Address | Role |
 |---|---|

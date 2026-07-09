@@ -37,6 +37,13 @@
 --                    consumables AND the start of the key-item page, so
 --                    quest-item grants land too
 --   party            0x80084594 count + 0x80084598 member-id list
+--   level            per-roster-slot displayed-level byte (char record
+--                    0x80084708 + slot*0x414, +0x130) - level-up beats
+--   spell            per-roster-slot Seru-magic list (record +0x13C count +
+--                    +0x13D ids + +0x161 levels) - a count bump = a Seru
+--                    capture grant; a level byte bump = a spell level-up.
+--                    Offsets are the capture-pinned ones in
+--                    crates/engine-core/src/capture_observations/seru_capture.rs
 --   scene / mode     0x8007050C name + 0x8007B83C mode transitions
 --
 -- VERSION GUARD: refuses to run unless the loaded game fingerprints as the
@@ -76,6 +83,14 @@ local GOLD       = 0x8008459C  -- u32 party gold
 local PARTY_CNT  = 0x80084594  -- u8 party member count
 local PARTY_IDS  = 0x80084598  -- u8[4] member ids
 local INV_BASE   = 0x80085958  -- inventory (id,count) 2-byte stride
+-- Character records (roster slots 0..3; slot-3 tail ends exactly at FLAG_BASE).
+local CHAR_BASE   = 0x80084708
+local CHAR_STRIDE = 0x414
+local CHAR_SLOTS  = 4
+local LEVEL_OFF   = 0x130      -- displayed-level byte (rank counter)
+-- Spell window: +0x13C count u8, +0x13D..0x160 id array, +0x161..0x184 levels.
+local SPELL_OFF   = 0x13C
+local SPELL_LEN   = 0x49       -- count + 36 ids + 36 levels
 
 -- Game-mode brackets for the per-battle identity row. BATTLE_MODES is the broad
 -- "a battle is loading/active" set that latches the in-battle state (so we emit
@@ -160,13 +175,16 @@ local prev_gold  = nil
 local prev_pcnt  = nil
 local prev_pids  = nil
 local prev_inv   = nil       -- string of INV_SLOTS*2 bytes
+local prev_level = {}        -- per roster slot: level byte
+local prev_spell = {}        -- per roster slot: SPELL_LEN-byte window string
 -- Per-battle identity latch (see BATTLE_MODES above).
 local in_battle       = false  -- latched while mode is in a battle bracket
 local batt_pending    = false  -- a `battle` row is still owed for this fight
 local batt_batid      = 0      -- staging id captured this fight (best-effort)
 local batt_enter_mode = 0      -- the mode that started the fight
 local totals     = { flagset = 0, flagclr = 0, battleid = 0, battle = 0,
-                     gold = 0, item = 0, party = 0, scene = 0, mode = 0 }
+                     gold = 0, item = 0, party = 0, scene = 0, mode = 0,
+                     level = 0, spell = 0 }
 
 local function row(kind, idx, value, delta, note)
     totals[kind] = (totals[kind] or 0) + 1
@@ -236,6 +254,39 @@ local function diff_inv(cur)
     end
 end
 
+-- Per-roster-slot level + spell-list diff. Level-ups and spell/Seru grants
+-- are rare, so one row per slot per changed frame stays quiet in the CSV.
+local function diff_chars()
+    for s = 0, CHAR_SLOTS - 1 do
+        local rec = CHAR_BASE + s * CHAR_STRIDE
+
+        local lvl = u8(rec + LEVEL_OFF)
+        if baselined and prev_level[s] ~= nil and lvl ~= prev_level[s] then
+            row("level", s, lvl, lvl - prev_level[s])
+        end
+        prev_level[s] = lvl
+
+        local win = mem.read_bytes(rec + SPELL_OFF, SPELL_LEN)
+        if win ~= nil then
+            win = tostring(win)
+            if baselined and prev_spell[s] ~= nil and win ~= prev_spell[s] then
+                local cnt  = win:byte(1)
+                local pcnt = prev_spell[s]:byte(1)
+                -- note = the first `cnt` spell ids + their levels (both small)
+                local n = math.min(cnt, 36)
+                local ids, lvs = "", ""
+                for i = 1, n do
+                    ids = ids .. string.format("%02X", win:byte(1 + i))
+                    lvs = lvs .. string.format("%02X", win:byte(1 + 36 + i))
+                end
+                row("spell", s, cnt, cnt - pcnt,
+                    string.format("ids=%s lv=%s", ids, lvs))
+            end
+            prev_spell[s] = win
+        end
+    end
+end
+
 local function snapshot_and_diff()
     -- Flag bank
     local flags = mem.read_bytes(FLAG_BASE, FLAG_BYTES)
@@ -278,6 +329,9 @@ local function snapshot_and_diff()
         if baselined then diff_inv(inv) end
         prev_inv = inv
     end
+
+    -- Per-character level + spell/Seru list
+    diff_chars()
 
     baselined = true
 end
@@ -411,7 +465,7 @@ end
 
 -- +-- startup ----------------------------------------------------------------
 log("=== autorun_state_poll (fast-core progression capture) ===")
-log("poll-diff: flags/battleid/gold/item/party/scene/mode - NO breakpoints")
+log("poll-diff: flags/battleid/gold/item/party/level/spell/scene/mode - NO breakpoints")
 log("run with run_probe.sh --fast; this session never self-quits (use timeout)")
 
 -- Anchor the listener handle: a GC'd listener object silently deletes the

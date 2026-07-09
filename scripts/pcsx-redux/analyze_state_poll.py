@@ -8,7 +8,9 @@ the schema:
 
 `kind` is one of: flagset / flagclr (story-flag bank 0x80085758, `idx` == bit
 number), item (0x80084648 inventory; `idx` == item id, `value` == count),
-gold (0x8008459C), party (0x80084594 count + 0x80084598 ids), scene / mode
+gold (0x8008459C), party (0x80084594 count + 0x80084598 ids), level / spell
+(per-roster-slot char-record 0x80084708+slot*0x414: displayed-level byte +0x130
+and the Seru-magic list +0x13C; `idx` == roster slot), scene / mode
 (0x8007050C name + 0x8007B83C game-mode transitions). See the probe header for
 the exact source addresses.
 
@@ -316,6 +318,20 @@ def party_changes(rows: list[Row]) -> list[Row]:
     return [r for r in rows if r.kind == "party"]
 
 
+def level_changes(rows: list[Row]) -> list[Row]:
+    """`level` rows: per-roster-slot displayed-level byte changes (level-ups)."""
+    return [r for r in rows if r.kind == "level"]
+
+
+def spell_changes(rows: list[Row]) -> list[Row]:
+    """`spell` rows: per-roster-slot Seru-magic list changes.
+
+    A positive delta on the count (`value`) is a Seru-capture grant; a row with
+    delta 0 is a spell level-up (the level array changed under a fixed count).
+    """
+    return [r for r in rows if r.kind == "spell"]
+
+
 def _fmt_flag(idx: int) -> str:
     return f"0x{idx:X} ({idx})"
 
@@ -376,6 +392,20 @@ def render_report(rows: list[Row], bulk_threshold: int, want: set[str]) -> str:
         for r in party_changes(rows):
             lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  count={r.value}  {r.note}")
 
+    if "progress" in want:
+        lines.append("\n## level-ups (per roster slot)")
+        for r in level_changes(rows):
+            sign = "+" if r.delta > 0 else ""
+            lines.append(
+                f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  level={r.value} ({sign}{r.delta})"
+            )
+        lines.append("\n## spell / Seru grants (count delta > 0 = capture grant)")
+        for r in spell_changes(rows):
+            sign = "+" if r.delta > 0 else ""
+            lines.append(
+                f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  spells={r.value} ({sign}{r.delta})  {r.note}"
+            )
+
     return "\n".join(lines)
 
 
@@ -421,6 +451,14 @@ def build_json(rows: list[Row], bulk_threshold: int) -> dict:
         "party": [
             {"tick": r.tick, "scene": r.scene, "count": r.value, "note": r.note} for r in party_changes(rows)
         ],
+        "levels": [
+            {"tick": r.tick, "scene": r.scene, "slot": r.idx, "level": r.value, "delta": r.delta}
+            for r in level_changes(rows)
+        ],
+        "spells": [
+            {"tick": r.tick, "scene": r.scene, "slot": r.idx, "count": r.value, "delta": r.delta, "note": r.note}
+            for r in spell_changes(rows)
+        ],
     }
 
 
@@ -445,8 +483,8 @@ def main(argv=None) -> int:
     )
     ap.add_argument(
         "--only",
-        default="scenes,battles,flags,items,gold,party",
-        help="comma list of sections: scenes,battles,flags,items,gold,party",
+        default="scenes,battles,flags,items,gold,party,progress",
+        help="comma list of sections: scenes,battles,flags,items,gold,party,progress",
     )
     args = ap.parse_args(argv)
 

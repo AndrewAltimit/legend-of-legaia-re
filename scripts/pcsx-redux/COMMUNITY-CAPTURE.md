@@ -2,7 +2,7 @@
 
 Thanks for helping map *Legend of Legaia*'s story progression! You play the
 game normally; a small script watches memory and records **which story flags,
-items, party members, and battle triggers change, in which scene, and which
+items, party members, levels, Seru-magic grants, and battle triggers change, in which scene, and which
 enemy formation each fight was**. One
 long playthrough answers a pile of reverse-engineering questions at once.
 
@@ -60,8 +60,8 @@ Everything under the run's output directory (printed at startup, under
   newest if the emulator crashed and you want the maintainer to continue).
 
 The CSV is small (hundreds of KB even for hours of play) and contains **no
-copyrighted game data** — only flag numbers, item ids, scene names, and tick
-counts. It's safe to share.
+copyrighted game data** — only flag numbers, item ids, character levels,
+spell-grant ids, scene names, and tick counts. It's safe to share.
 
 ## If it crashes
 

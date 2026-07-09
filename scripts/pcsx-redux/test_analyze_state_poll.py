@@ -148,6 +148,26 @@ def test_item_and_gold_and_party_changes():
     assert len(parties) == 1 and parties[0].note == "ids=00010200"
 
 
+def test_level_and_spell_changes():
+    rows = _rows(
+        "10,level,0,4,1,0x15,vozz,",                    # Vahn level-up 3->4
+        "20,spell,1,1,1,0x15,garmel,ids=81 lv=01",      # Noa Seru grant (Gimard)
+        "30,spell,1,1,0,0x03,garmel,ids=81 lv=02",      # spell level-up (count fixed)
+    )
+    lvls = asp.level_changes(rows)
+    assert len(lvls) == 1 and lvls[0].idx == 0 and lvls[0].value == 4
+    spells = asp.spell_changes(rows)
+    assert len(spells) == 2
+    assert spells[0].delta == 1 and spells[0].note == "ids=81 lv=01"  # grant
+    assert spells[1].delta == 0                                       # level-up
+    j = asp.build_json(rows, bulk_threshold=100)
+    assert j["levels"][0] == {"tick": 10, "scene": "vozz", "slot": 0, "level": 4, "delta": 1}
+    assert j["spells"][0]["note"] == "ids=81 lv=01"
+    txt = asp.render_report(rows, bulk_threshold=100, want={"progress"})
+    assert "level-ups" in txt and "slot 0  level=4 (+1)" in txt
+    assert "Seru grants" in txt and "ids=81 lv=01" in txt
+
+
 def test_json_shape():
     rows = _rows(
         "10,mode,3,3,0,0x03,town01,",
