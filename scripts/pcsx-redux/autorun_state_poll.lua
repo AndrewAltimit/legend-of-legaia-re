@@ -595,6 +595,23 @@ local function on_vsync()
                 POINT_CARD_ADDR, POINT_CARD_CAP))
         end
         log("polling under fast core - play as far as you like")
+        -- Run manifest: config + source sstate, so this run dir stays
+        -- interpretable later and chains to the state it resumed from.
+        probe.write_manifest("autorun_state_poll.lua", {
+            sstate         = NO_SSTATE and "(hand-loaded card save)" or SSTATE,
+            flag_window    = string.format("0x%X", FLAG_BYTES),
+            inv_slots      = tostring(INV_SLOTS),
+            trace_pos      = tostring(TRACE_POS),
+            trace_bgm      = tostring(TRACE_BGM),
+            trace_input    = tostring(TRACE_INPUT),
+            bulk_flags     = tostring(BULK_FLAGS),
+            autosnap       = string.format("%s (max %d)", tostring(AUTOSNAP), SNAP_MAX),
+            point_card_max = tostring(POINT_CARD_MAX),
+            autosave_every = tostring(AUTOSAVE_EVERY),
+            baseline_tick  = tostring(vsync),
+            baseline_scene = scene_name(),
+            core           = "dynarec (--fast; poll-only, no BPs)",
+        })
     end
 
     -- Scene + mode transition rows (context timeline).
