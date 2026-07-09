@@ -443,3 +443,64 @@ fn chapter2_balden_station_gate_families() {
     let station3 = all_gates("station3");
     assert_eq!(station3[2], (vec![0x467], vec![0x38F]));
 }
+
+/// The chapter-2 `ropeway`/`ropeway2` and `jiji` gate families - the ONLY
+/// chapter-2 dungeons the poll walked ORGANICALLY (every flag below was caught
+/// as an in-scene `flagset`, not a bulk-load artifact), so both the structure
+/// AND the play order are poll-confirmed here.
+///
+/// - **ropeway** is sparse: one-shot entry gates `0x1D6` (`P2[5]`/`P2[6]`; the
+///   ropeway-reached flag, contiguous with balden's `0x1D5`), `0x321`
+///   (`P2[18]`), `0x514` (`P2[30]`, adjacent to taiku's `0x505..0x519`).
+/// - **ropeway2** (the streaming variant) shares `0x1D6`/`0x321`, adds a
+///   `0x5A8` cross-scene successor (`P2[23]`), and - the payoff - **resolves
+///   the switch-group consumer**: `P2[31..=34]` each C1=`[0x359]`
+///   C2=`[0x3FF,0x400,0x401,0x402]`, i.e. they spawn only when all four switch
+///   bits are set AND the `0x359` commit is still clear, then `0x359` latches
+///   them shut. The consumer is INTERNAL (same scene, header C2 gate), not the
+///   "external" site the inline census hinted at. Poll order confirmed: the
+///   four switches flip, then `0x359` commits.
+/// - **jiji** (small): one-shot pairs `0x305` (`P2[2]`), `0x306`
+///   (`P2[3]`/`P2[4]`), `0x3BD` (`P2[6]`/`P2[7]`).
+#[test]
+fn chapter2_ropeway_jiji_gate_families() {
+    use legaia_asset::man_section::parse as parse_man;
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let gates = |scene_name: &str, rec: usize| -> (Vec<u16>, Vec<u16>) {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        let man = scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN");
+        let mf = parse_man(&man).expect("parse");
+        partition2_record_gates(&mf, &man, rec).unwrap_or_default()
+    };
+
+    // ropeway one-shot entry gates.
+    assert_eq!(gates("ropeway", 5), (vec![0x1D6], vec![]));
+    assert_eq!(gates("ropeway", 6), (vec![0x1D6], vec![]));
+    assert_eq!(gates("ropeway", 18), (vec![0x321], vec![]));
+    assert_eq!(gates("ropeway", 30), (vec![0x514], vec![]));
+
+    // ropeway2: the switch-group CONSUMER - P2[31..=34] all require the four
+    // switch bits (C2) and block once the 0x359 commit is set (C1).
+    let switches = vec![0x3FF, 0x400, 0x401, 0x402];
+    for rec in 31..=34 {
+        assert_eq!(
+            gates("ropeway2", rec),
+            (vec![0x359], switches.clone()),
+            "ropeway2 P2[{rec}] is a switch-group payoff consumer"
+        );
+    }
+    // shared entry gates + the cross-scene successor.
+    assert_eq!(gates("ropeway2", 5), (vec![0x1D6], vec![]));
+    assert_eq!(gates("ropeway2", 23), (vec![], vec![0x5A8]));
+
+    // jiji one-shot pairs.
+    assert_eq!(gates("jiji", 2), (vec![0x305], vec![]));
+    assert_eq!(gates("jiji", 3), (vec![0x306], vec![]));
+    assert_eq!(gates("jiji", 4), (vec![0x306], vec![]));
+    assert_eq!(gates("jiji", 6), (vec![0x3BD], vec![]));
+    assert_eq!(gates("jiji", 7), (vec![0x3BD], vec![]));
+}
