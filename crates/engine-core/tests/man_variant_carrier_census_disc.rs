@@ -1100,66 +1100,88 @@ fn chapter2_rayman_three_haris_hub_flags() {
     );
 }
 
-/// `0x528` is NOT a progression flag - it is one bit of the **`0x527..=0x52E`
-/// scratch-register bank** that field scripts bulk-reset. The poll surfaced it
-/// as a churn=125 "[lead]", but it is scratch write-traffic, not a gate.
+/// `0x528` is NOT a story-progression flag - it is one bit of the
+/// **`0x527..=0x52E` scratch-register bank** that field scripts bulk-reset.
+/// The poll surfaced it as a churn=125 "[lead]", but it is scratch traffic.
 ///
 /// The bank is reset as one contiguous eight-flag run
 /// (`65 27 65 28 65 29 65 2A 65 2B 65 2C 65 2D 65 2E` = CLEAR `0x527..=0x52E`)
-/// in ~70-90 scenes' scene-entry / per-actor setup - which is exactly the
-/// high churn the poll sees on every scene transition. Within the bank the
-/// bits are used independently: siblings `0x527`/`0x52C`/`0x52E` are read by
-/// real field-VM `0x70` TESTs (live conditional scratch), but **`0x528` is
-/// write-only to the VM** (SET + CLEAR, never a boundary TEST across the whole
-/// disc), so its 64 SETs must be consumed by engine code or a record header
-/// gate, not an inline script test - the same "looks write-only to the
-/// inline-opcode census" shape as `0x1BE`.
+/// in ~70-90 scenes' scene-entry / per-actor setup - which is exactly the high
+/// churn the poll sees on every scene transition.
 ///
-/// Method note: a raw byte-scan for `75 28` (TEST 0x528) finds hits, but they
-/// are dialogue-text false positives (`"u("`); the opcode-boundary census
-/// correctly reports zero. For low-value flag byte pairs the census is
-/// authoritative for TESTs; byte-scan overcounts.
+/// CORRECTION (runtime-confirmed): an earlier static-only pass called `0x528`
+/// "write-only to the VM" because the disc-wide opcode census reports ZERO
+/// `0x70` TEST sites for it. **That was a census desync miss, not the truth.**
+/// A read-watch capture (`autorun_flag_reader_watch.lua`, `LEGAIA_FLAG=0x528`,
+/// balden) caught the field-VM TEST-opcode handler reading it 1951x in one idle
+/// minute: `jal FUN_8003CE64` from `ra=0x801E35E8` (the op-`0x70` case; SET is
+/// `ra=0x801E3598`, CLEAR `ra=0x801E35C0`). The consumer is balden's
+/// scene-entry script, which TESTs `0x528` to guard its own scratch-bank reset
+/// (`75 28 5D 00` immediately before the batch-clear run at balden MAN 0xAC54):
+/// a per-scene init guard, not a story gate. The static census walker
+/// desyncs past that `75 28` in balden's dialogue-heavy record, so the census
+/// UNDERCOUNTS here: for `0x528` the census's zero is a floor, not the answer.
 #[test]
-fn flag_0x528_is_scratch_bank_not_a_gate() {
+fn flag_0x528_is_scratch_bank_tested_only_as_an_init_guard() {
     let Some(index) = open_index() else { return };
     let scenes = index.cdname_scene_names();
     let census = system_flag_census(&index, &scenes);
-
+    let man_of = |name: &str| -> Vec<u8> {
+        Scene::load(&index, name)
+            .expect("load")
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
     let kinds = |flag: u16| -> (usize, usize, usize) {
         let sites = census.get(&flag).map(Vec::as_slice).unwrap_or(&[]);
         let n = |k: FlagKind| sites.iter().filter(|h| h.kind == k).count();
         (n(FlagKind::Set), n(FlagKind::Clear), n(FlagKind::Test))
     };
+    let count_sub = |hay: &[u8], sub: &[u8]| hay.windows(sub.len()).filter(|w| *w == sub).count();
+    // Genuine field-VM TEST: the op followed by a small `[lo, 0x00]` branch word.
+    let genuine_tests = |hay: &[u8], op: [u8; 2]| -> usize {
+        (0..hay.len().saturating_sub(3))
+            .filter(|&o| hay[o] == op[0] && hay[o + 1] == op[1] && hay[o + 3] == 0x00)
+            .count()
+    };
 
-    // 0x528: written both ways, never read by an inline field-VM TEST.
-    let (set, clr, tst) = kinds(0x528);
+    // 0x528 is written both ways (its 64 SETs cluster in balden).
+    let (set, clr, _tst) = kinds(0x528);
     assert!(set > 0 && clr > 0, "0x528 is written (SET+CLEAR)");
-    assert_eq!(tst, 0, "0x528 has no field-VM TEST (write-only to the VM)");
 
-    // The bank is live, not dead: sibling bits ARE tested as real conditions.
+    // The census UNDERCOUNTS its TEST (reports zero via desync), but balden
+    // carries a genuine `75 28` TEST - the reader the runtime capture confirmed
+    // (field-VM op-0x70 handler, ra 0x801E35E8), gating the bank reset.
+    assert_eq!(
+        kinds(0x528).2,
+        0,
+        "census reports zero TEST (a desync floor)"
+    );
+    let balden = man_of("balden");
+    assert!(
+        genuine_tests(&balden, [0x75, 0x28]) >= 1,
+        "but balden genuinely TESTs 0x528 (the census missed it)"
+    );
+
+    // The bank is live scratch, not dead: sibling bits are TESTed too.
     for sib in [0x527u16, 0x52C, 0x52E] {
-        assert!(
-            kinds(sib).2 > 0,
-            "sibling 0x{sib:X} is a real VM-tested scratch bit"
-        );
+        assert!(kinds(sib).2 > 0, "sibling 0x{sib:X} is VM-tested scratch");
     }
 
-    // Structural: the eight-flag batch-clear run resets the whole bank at once,
-    // in a representative scene-entry script (town01 P1[0]).
-    let town01 = {
-        let scene = Scene::load(&index, "town01").expect("load town01");
-        scene
-            .field_man_payload(&index)
-            .expect("payload")
-            .expect("town01 MAN")
-    };
+    // Structural: the eight-flag batch-clear run resets the whole bank at once
+    // (town01 P1[0]); in balden the TEST guards exactly this run.
     let batch: [u8; 16] = [
         0x65, 0x27, 0x65, 0x28, 0x65, 0x29, 0x65, 0x2A, 0x65, 0x2B, 0x65, 0x2C, 0x65, 0x2D, 0x65,
         0x2E,
     ];
     assert!(
-        town01.windows(16).any(|w| w == batch),
+        count_sub(&man_of("town01"), &batch) >= 1,
         "town01 bulk-clears the 0x527..=0x52E scratch bank"
+    );
+    assert!(
+        count_sub(&balden, &batch) >= 1,
+        "balden also carries the bank-reset run (guarded by the 0x528 TEST)"
     );
 }
 
