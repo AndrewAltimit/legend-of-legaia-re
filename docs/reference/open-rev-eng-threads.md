@@ -618,6 +618,20 @@ Two reader-only flags first exposed the pattern. `0x1BE` (Jeremi's arrival at `g
 
 **Chapter 3 — Karisto (`map03` and its spokes).** `map03` is a pure router with no gated records at all. Its spokes are `bubu2` (a small requires-all chain), `son` and `deroa` (sparse one-shots; `deroa` leads to the underground `chitei2`), and `korb3`, the Karisto castle approach, whose nine-record collection group `P2[5..=13]` — each record gated on a distinct flag under one shared `0x403` "all done" latch — is the most elaborate family found. `bubu1` carries no field MAN. Anchor `map03_karisto_region_gate_families`.
 
+**Chapter 3 — Karisto castle depth (`kor`/`koin` cluster + `chitei2`).** `kor` holds one-shot beats (`0x408` read by `korout`, self-latches `0x409`/`0x40A`) plus a
+**door group** C2-gated on `0x612` — an *arm-then-consume* mechanic: the partition-0 entry scripts SET `0x612`, each door record clears it back; `kor3`/`kor4` gate
+their doors on the same flag. `kor5` is a three-step chain `0x43A → 0x436 → 0x6C4`. `koin1b` is `koin1`'s story-state sibling (same gate shape + a spliced `0x00B`
+toggle pair; it owns the `0x3DA` SET koin1 gates on); koin1's `P2[9..10]` are a `0x50A` set/clear **toggle pair**. `chitei2` holds the `0x470`/`0x4F0` and
+`0x4C4`/`0x4C6`/`0x4C8`/`0x4C9` families — `0x4C8` is co-written by `map03 P2[19]` (the hub co-writes the underground beat). `korb2`/`koin2`/`koin6` are gateless.
+Writer-less gates worth a capture: `0x50A` (koin1 toggle) and `0x5D6` (koin4) — no clean script SET disc-wide, code-path leads like `549`.
+Anchors `chapter3_karisto_castle_gate_families` + `chapter3_koin_family_and_writer_pins`.
+
+**Chapter 3 — Conkram (`conc*`, the "past" arc).** The pivot pair is `0x3E1`/`0x3E5`: `conc2 P2[12]` SETs `0x3E1` — the flag `deroa` C2-gates the `chitei2` descent
+on (the cross-region bridge) — and `conc3` self-latches `0x3E5` (`P2[10]`) + SETs `0x3F9` (ungated `P2[9]`); `conc P2[10]` chains on both. `conc`/`concnow` carry
+`r1..rN` **soldier rows** all C1-gated on the low flag `0x007` (SET by `concnow P0[34]` + `conc2 P0[21]` — a "soldiers disperse" beat); `conc` has eleven doors on
+`0x6DE`, armed by the entry script's player-position BBoxTest run (same mechanic as kor's `0x612`). `concnow` holds a one-shot ladder
+(`0x3ED`/`0x3EE`/`0x3D2`/`0x3CE`/`0x423`); `concend` is a single ungated epilogue record. Anchor `chapter3_conkram_gate_families`.
+
 **Cross-cutting patterns.** Two low-numbered flags recur as variant discriminators, gating nearly every record of an alternate or interior carrier: `0x7` (`rayman2`, `retockin`, `town0d`) and `0xF` (`dohaty`, `nilboa`, `nilboa2`) — most likely party- or chapter-state globals that select which rendition of a scene is live. Region hubs hold little or no gate state of their own; the progression logic lives in the spoke dungeons.
 
 **Residual.** The families for the dungeons the capture corpus never walked (`taiku`/`doman`/`rayman`, `station`, `dohaty`/`retock`, the Karisto spokes) are proven as structure, but their in-game play order is not yet confirmed against a live capture. The generic C1/C2 seeder already drives them, so one dungeon-walk capture per region would close the residual.
