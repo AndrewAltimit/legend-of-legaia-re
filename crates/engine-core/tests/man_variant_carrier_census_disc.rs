@@ -710,3 +710,57 @@ fn town0c_is_a_rim_elm_state_variant_not_a_ch2_spoke() {
         "town0d is the 0x7-gated Rim Elm variant ({with_0x7} records carry 0x7)"
     );
 }
+
+/// The `nilboa` (Nivora Ravine; music track M111 ニルボア/NIRUBOA) gate family -
+/// the first scene mined for the NEXT region beyond Sebucus, disc-static.
+///
+/// - A first-visit **entry group** `P2[0..=3]` each C1-shares `0x456` (blocked
+///   once the area is entered) with a per-record switch flag
+///   (`0xD`/`0x50C`/`0x50D`/`0x50E`); `P2[4..=6]` are the `0xD` successors.
+/// - A `0x47x` puzzle cluster (`0x475`/`0x476` at `P2[14]`; `P2[18]`/`P2[19]`
+///   C2-gate on `0x475`) and a `0x45x` cluster (`0x456`/`0x457`/`0x458`).
+/// - `P2[32]` C1=`[0x47E]` C2=`[0x370]` - a cross-scene successor.
+/// - The same `0xF` low-flag variant gate as the Sebucus dungeons
+///   (`P2[8/9/12/13/15/16/36/37]`); `nilboa2` (variant carrier, entry 648) is
+///   the fully `0xF`-gated trimmed rendition.
+///
+/// (`map03`, the chapter-3 hub, routes to `taiku`/`station3`/`korb3`/`bubu1`/
+/// `son`/`deroa` - none of them "jankeria", which resolves to no CDNAME scene.)
+#[test]
+fn nilboa_nivora_ravine_gate_family() {
+    use legaia_asset::man_section::parse as parse_man;
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        let man = scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN");
+        let mf = parse_man(&man).expect("parse");
+        let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
+        (0..n_p2)
+            .map(|r| partition2_record_gates(&mf, &man, r).unwrap_or_default())
+            .collect()
+    };
+
+    let nilboa = all_gates("nilboa");
+    // the 0x456 entry group + its 0xD successors.
+    assert_eq!(nilboa[0], (vec![0xD, 0x456], vec![]));
+    assert_eq!(nilboa[1], (vec![0x50C, 0x456], vec![]));
+    assert!(nilboa[2].0.contains(&0x456) && nilboa[3].0.contains(&0x456));
+    assert_eq!(nilboa[4], (vec![], vec![0xD]));
+    // the 0x475 puzzle cluster.
+    assert_eq!(nilboa[14], (vec![0x475, 0x476], vec![]));
+    assert_eq!(nilboa[18], (vec![], vec![0x475]));
+    // a cross-scene successor.
+    assert_eq!(nilboa[32], (vec![0x47E], vec![0x370]));
+
+    // nilboa2 = the 0xF-gated variant carrier.
+    let nilboa2 = all_gates("nilboa2");
+    let with_0xf = nilboa2.iter().filter(|(c1, _)| c1.contains(&0xF)).count();
+    assert!(
+        with_0xf > 6,
+        "nilboa2 is the 0xF-gated Nivora variant ({with_0xf} records carry 0xF)"
+    );
+}
