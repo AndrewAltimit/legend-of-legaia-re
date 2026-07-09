@@ -58,11 +58,25 @@ BULK_NOTE = "bulkload"
 # a sticky beat with NO label is surfaced as a NEW LEAD (an unmapped gate worth
 # a name). Seed set = the pinned spine/story gates (extend via --labels FILE).
 KNOWN_FLAGS = {
+    # chapter-1 spine gates
     0x142: "Caruban victory gate (Mt.Rikuroa -> dolk2 entrance)",
     0x1BE: "geremi Jeremi-arrival one-shot",
     0x225: "Rim Elm opening one-shot (flag 549)",
     0x482: "other7 mist-wall pool gate",
     0x63A: "rikuroa/retockin carrier flag",
+    # chapter-2 Sebucus gate families (man_variant_carrier_census_disc.rs,
+    # PR #313; live-confirmed play-order + tiles from a poll traversal).
+    0x1D5: "balden arc-reached flag",
+    0x1C0: "balden P2[9] pair (set in geremi; cross-scene)",
+    0x1CB: "balden P2[9] pair",
+    0x346: "balden cross-scene successor (P2[14])",
+    0x5B3: "balden 0x5B3 self-latch (Sebucus spine)",
+    0x1EB: "rayman arc-reached one-shot (P2[7])",
+    0x1EC: "rayman arc-reached C2 group",
+    0x201: "rayman linear sub-chain head",
+    0x1FB: "rayman sub-chain -> P2[12]",
+    0x200: "rayman sub-chain -> P2[18]",
+    0x1FC: "rayman sub-chain -> P2[19] (tail)",
 }
 
 
