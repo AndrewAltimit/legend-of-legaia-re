@@ -86,6 +86,28 @@ KNOWN_FLAGS = {
     0x9A: "tunnela treasure chest 5/7 (opened)",
     0x9B: "tunnela treasure chest 6/7 (opened)",
     0x9C: "tunnela treasure chest 7/7 (opened)",
+    # stone: the "Gate of Shadows" symbol-code puzzle. 0x1D8..0x1E7 = 16 state
+    # flags (4 directional keys x 4 elemental symbols), one mutually-exclusive
+    # group of 4 per key; * = the disc-encoded solution (SET twice).
+    0x1D8: "stone puzzle: key A symbol 0",
+    0x1D9: "stone puzzle: key A symbol 1 * SOLUTION",
+    0x1DA: "stone puzzle: key A symbol 2",
+    0x1DB: "stone puzzle: key A symbol 3",
+    0x1DC: "stone puzzle: key B symbol 0",
+    0x1DD: "stone puzzle: key B symbol 1",
+    0x1DE: "stone puzzle: key B symbol 2 * SOLUTION",
+    0x1DF: "stone puzzle: key B symbol 3",
+    0x1E0: "stone puzzle: key C symbol 0",
+    0x1E1: "stone puzzle: key C symbol 1",
+    0x1E2: "stone puzzle: key C symbol 2",
+    0x1E3: "stone puzzle: key C symbol 3 * SOLUTION",
+    0x1E4: "stone puzzle: key D symbol 0 * SOLUTION",
+    0x1E5: "stone puzzle: key D symbol 1",
+    0x1E6: "stone puzzle: key D symbol 2",
+    0x1E7: "stone puzzle: key D symbol 3",
+    0x1E8: "stone puzzle SOLVED (Gate of Shadows open; read in map02)",
+    0x1E9: "stone puzzle solved follow-on/sub-state",
+    0x492: "Sebucus region-progress (shared stone/map02)",
 }
 
 

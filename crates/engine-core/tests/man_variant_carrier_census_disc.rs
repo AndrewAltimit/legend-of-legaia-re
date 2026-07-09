@@ -905,3 +905,104 @@ fn chapter2_tunnela_treasure_chest_flags() {
         );
     }
 }
+
+/// The `stone` `0x1D8..=0x1E8` cluster - the in-game **"Gate of Shadows"
+/// symbol-code puzzle**, the richest dungeon-LOCAL objective family the poll
+/// surfaced. Static mining decodes both the mechanic and the flag layout.
+///
+/// The puzzle (from the scene's own dialogue): a statue with a **row of four
+/// symbols** you set via four directional **Keys** (North/South/East/West),
+/// each key pressing one of four elemental **Symbols** (Wind/Fire/Water/Earth).
+/// Enter the right four-symbol code to open the Gate of Shadows ("to visit the
+/// past"); a wrong answer spawns a punishment battle.
+///
+/// Flag layout - `0x1D8..=0x1E7` = **16 state flags = 4 keys x 4 symbols**, in
+/// four contiguous mutually-exclusive groups of four
+/// (`0x1D8..=0x1DB` / `0x1DC..=0x1DF` / `0x1E0..=0x1E3` / `0x1E4..=0x1E7`).
+/// Each flag is SET when pressed and CLEARed **six** times: pressing a symbol
+/// batch-clears its key's whole group then sets the chosen one, so each group
+/// always holds exactly one bit = "the symbol currently on this key".
+///
+/// The disc **encodes the solution**: the solved record contains a block of
+/// four `51 XX` SET ops re-asserting exactly one symbol per key -
+/// `{0x1D9, 0x1DE, 0x1E3, 0x1E4}` (so those four flags are SET twice; the
+/// other twelve once). This is the four-symbol code, and the poll caught
+/// exactly this as the solved resting state (+ `0x1E8`). `0x1E8` = the
+/// **puzzle-SOLVED gate**: set by the
+/// solved-cutscene record `P2[5]`, TESTed ~20x across stone's scene-entry
+/// scripts (`P0[0..5]`, `P1[0]`) to gate the opened-gate behavior, and - the
+/// only cross-scene consumer - TESTed once in `map02 P0[32]` (the Sebucus hub
+/// reads whether the Gate is open). `0x492` is a shared region-progress flag
+/// (SET in both stone `P1[0]` and `map02 P2[13]`), NOT part of the mechanic.
+///
+/// Not story spine - inline puzzle state (the taiku-`0x505` class), but far
+/// richer, and with a real cross-scene payoff gate (`0x1E8` in `map02`).
+#[test]
+fn chapter2_stone_symbol_puzzle_flags() {
+    let Some(index) = open_index() else { return };
+    let man_of = |scene_name: &str| -> Vec<u8> {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    // Count a 2-byte field-VM flag op. The opcode carries the flag's high byte
+    // in its low nibble (`base | (idx>>8)`), the next byte is `idx & 0xFF`.
+    let count_op = |hay: &[u8], base: u8, idx: u16| -> usize {
+        let op = [base | (idx >> 8) as u8, (idx & 0xFF) as u8];
+        hay.windows(2).filter(|w| *w == op).count()
+    };
+
+    let stone = man_of("stone");
+    // The 16 selector flags: each SET (once when pressed; the four SOLUTION
+    // symbols a second time in the solved record) and CLEARed six times
+    // (batch-reset = the four 4-way mutually-exclusive symbol groups).
+    let mut solution: Vec<u16> = Vec::new();
+    for f in 0x1D8u16..=0x1E7 {
+        let sets = count_op(&stone, 0x50, f);
+        assert!(sets >= 1, "stone SETs selector 0x{f:X}");
+        assert_eq!(
+            count_op(&stone, 0x60, f),
+            6,
+            "stone CLEAR 0x{f:X} x6 (batch)"
+        );
+        if sets == 2 {
+            solution.push(f);
+        }
+    }
+    // The disc ENCODES the answer: the solved record re-asserts exactly one
+    // symbol per key group -> the four-symbol code. (Poll-confirmed: this is
+    // the solved resting state the traversal reached.)
+    assert_eq!(
+        solution,
+        vec![0x1D9, 0x1DE, 0x1E3, 0x1E4],
+        "encoded solution: one symbol per key (A..D)"
+    );
+    // The SOLVED gate is a one-way completion flag, NOT a batch-cleared
+    // selector: heavily tested, at most one clear.
+    assert!(
+        count_op(&stone, 0x50, 0x1E8) >= 1,
+        "stone SETs 0x1E8 (solved)"
+    );
+    assert!(
+        count_op(&stone, 0x60, 0x1E8) <= 1,
+        "0x1E8 is not batch-cleared"
+    );
+    assert!(
+        count_op(&stone, 0x70, 0x1E8) >= 10,
+        "0x1E8 tested pervasively"
+    );
+
+    // Cross-scene: the Sebucus hub map02 reads the solved gate, shares 0x492,
+    // and carries NONE of the 16 stone-local selector flags.
+    let map02 = man_of("map02");
+    assert!(
+        count_op(&map02, 0x70, 0x1E8) >= 1,
+        "map02 TESTs the solved gate"
+    );
+    assert!(count_op(&map02, 0x50, 0x492) >= 1, "map02 shares 0x492");
+    for f in 0x1D8u16..=0x1E7 {
+        assert_eq!(count_op(&map02, 0x50, f), 0, "0x{f:X} is stone-local");
+    }
+}
