@@ -266,3 +266,50 @@ fn flag_549_reader_is_the_rim_elm_p2_gate() {
         "0x225 is read as a C1/C2 gate in >= 4 Rim Elm variants, got {scenes_gating}"
     );
 }
+
+/// The chapter-2 (Sebucus) progression spine, mined from the chapter-2 poll
+/// capture and pinned via the C1/C2 record-gate lists (`FUN_8003BDE0`). The
+/// same self-latch + requires-all shape as the chapter-1 gates chains the
+/// teien beat sequence into the tower into geremi:
+///
+/// - `teien` `P2[1]` C1=`[0x1C9]` (one-shot) sets `0x1C8`;
+///   `P2[2]` C1=`[0x1C9]` C2=`[0x1C8]` (needs step 1) sets `0x1C9`;
+///   `P2[5]` C1=`[0x332]` C2=`[0x1C9]` sets `0x332`.
+/// - `tower` `P2[2]` C1=`[0x1C7]` C2=`[0x1C9]`: available once the teien arc
+///   is reached (`0x1C9`), sets tower-clear `0x1C7`.
+/// - `geremi` `P2[1]` C2=`[0x1C7]`: a geremi beat that requires the tower.
+/// - `balden` `P2[19]` C1=`[0x5B3]` self-latch / `P2[18]` C2=`[0x5B3]`
+///   successor (the town01/549 shape).
+/// - `map02` `P2[9]` C1=`[0x332]` C2=`[0x1C9]`: the overworld-side one-shot
+///   mirroring the teien arc.
+///
+/// (The low flags `0x8C..0x8F` the poll also caught are tower/teien-LOCAL
+/// switch state, tested by inline actor scripts only - not progression gates.)
+#[test]
+fn chapter2_sebucus_gate_spine() {
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let gates = |scene_name: &str, rec: usize| -> (Vec<u16>, Vec<u16>) {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        let man = scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN");
+        let mf = legaia_asset::man_section::parse(&man).expect("parse");
+        partition2_record_gates(&mf, &man, rec).expect("gates")
+    };
+
+    // teien beat sequence.
+    assert_eq!(gates("teien", 1), (vec![0x1C9], vec![]));
+    assert_eq!(gates("teien", 2), (vec![0x1C9], vec![0x1C8]));
+    assert_eq!(gates("teien", 5), (vec![0x332], vec![0x1C9]));
+    // tower, gated on the teien arc, latches tower-clear.
+    assert_eq!(gates("tower", 2), (vec![0x1C7], vec![0x1C9]));
+    // geremi beat requiring the tower.
+    assert_eq!(gates("geremi", 1), (vec![], vec![0x1C7]));
+    // balden self-latch + successor.
+    assert_eq!(gates("balden", 19), (vec![0x5B3], vec![]));
+    assert_eq!(gates("balden", 18), (vec![], vec![0x5B3]));
+    // overworld mirror of the teien arc.
+    assert_eq!(gates("map02", 9), (vec![0x332], vec![0x1C9]));
+}
