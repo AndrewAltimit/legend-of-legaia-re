@@ -92,7 +92,7 @@ Diffing the actor pool (`0x801C9594..0x801C9F7F`, 0x60-byte stride per anim slot
 
 | Writer | Payload | When |
 |---|---|---|
-| `FUN_801D77F4` (overlay actor allocator, field-VM `0x4C 0xD8` host hook) | VDF body bytes (`[u32 record_count][record_0]...[record_n]` where each record is 12 bytes starting `[u32 group_idx]`) | Synchronous spawn of a background actor whose mesh comes from the global TMD pool. See [`docs/subsystems/script-vm.md`](script-vm.md) and `project_fun_801d77f4_actor_allocator.md`. |
+| `FUN_801D77F4` (overlay actor allocator, field-VM `0x4C 0xD8` host hook) | VDF body bytes (`[u32 record_count][record_0]...[record_n]` where each record is 12 bytes starting `[u32 group_idx]`) | Synchronous spawn of a background actor whose mesh comes from the global TMD pool. See [`docs/subsystems/script-vm.md`](script-vm.md). |
 | `FUN_80024CFC` (ANM keyframe registrar) | Pose-output buffer (`[u8 bone_count][u8 ?][u16 1][...][u8 1][...] @ +0x0F: per-bone 8-byte data`) | Animation transition - bound when the engine starts a new keyframe arm. |
 
 ### Readers
@@ -109,7 +109,7 @@ Diffing the actor pool (`0x801C9594..0x801C9F7F`, 0x60-byte stride per anim slot
 
 1. **The actor VM at `FUN_801D6628` is *not* a consumer of `actor[+0x4C]`.** That function is a per-frame command-list interpreter walking an *external* 4-byte-stride bytecode stream (passed in as `param_1`); it dispatches each command through a 13-entry jump table at `0x801CED70` and routes side-effects to actor records *looked up by the slot byte* (`param_1[+1]`), not by following `actor[+0x4C]`.
 2. **No PC-bootstrap entry is needed.** The earlier framing - "the actor VM starts by resetting PC to 0 of the spawn record" - doesn't apply: VDF-spawned actors are driven by the vertex-pool render pipeline (`actor[+0x90]`), not by ticking their `+0x4C` body bytes as actor-VM opcodes.
-3. **`Actor::spawn_record` in `legaia_engine_core` is a retention/observation slot.** Mirroring the retail `actor[+0x4C] = VDF_body_ptr` write keeps the bytes alive for diagnostic inspection but doesn't need to be fed back into any clean-room VM tick. The downstream consumer that *would* matter is the per-actor vertex-pool allocator (mirror of `FUN_801D77F4`'s second pass) - already wired in the host hook, with the "stride mystery" (12-byte first-pass cursor vs `vertex_count*8` second-pass cursor) tracked in `project_fun_801d77f4_actor_allocator.md`.
+3. **`Actor::spawn_record` in `legaia_engine_core` is a retention/observation slot.** Mirroring the retail `actor[+0x4C] = VDF_body_ptr` write keeps the bytes alive for diagnostic inspection but doesn't need to be fed back into any clean-room VM tick. The downstream consumer that *would* matter is the per-actor vertex-pool allocator (mirror of `FUN_801D77F4`'s second pass) - already wired in the host hook, with the "stride mystery" (12-byte first-pass cursor vs `vertex_count*8` second-pass cursor) still open.
 4. **`legaia_engine_vm::actor` does *not* need an `entry_with_spawn_record` constructor.** The 13-opcode dispatcher consumes an external command list, not the VDF body. The host hook already mirrors the retail spawn-time writes; no further VM-side dispatch on the VDF body bytes happens in retail.
 
 ### VDF body header (Q2 from the actor-spawn handoff)
