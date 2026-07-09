@@ -168,6 +168,65 @@ def test_battle_rows_render_with_boss_marker():
     assert "flag 0x4F" not in arw.render(rows, arw.load_labels(None), "targets")
 
 
+def test_fnv1a32_reference_vectors():
+    assert arw.fnv1a32(b"") == 0x811C9DC5
+    assert arw.fnv1a32(b"a") == 0xE40C292C
+    # cross-checked bit-identical against the probe's LuaJIT copy
+    t, x = [], 12345
+    for _ in range(512):
+        x = (x * 75 + 74) % 65537
+        t.append(x % 256)
+    assert arw.fnv1a32(bytes(t)) == 0x9D7577E8
+
+
+def test_merge_sums_per_run_maxima_and_tracks_runs():
+    r1 = arw.parse_rows([HEADER,
+        "10,test,488,0x8003CE64,0x801E35E8,0x03,map02,1,tgt",
+        "90,test,488,0x8003CE64,0x801E35E8,0x03,map02,64,tgt",
+    ], run="runA")
+    r2 = arw.parse_rows([HEADER,
+        "10,test,488,0x8003CE64,0x801E35E8,0x03,map02,7,tgt",
+    ], run="runB")
+    sites = arw.collect_sites(r1 + r2)
+    s = sites[("test", 488, 0x8003CE64, 0x801E35E8)]
+    assert s.total == 64 + 7          # per-run maxima summed
+    assert not s.exact                # runA went past the logged prefix
+    assert s.runs == {"runA", "runB"}
+    text = arw.render(r1 + r2, arw.load_labels(None), None)
+    assert "runs merged: 2" in text and "runs=2" in text
+
+
+def test_overlay_residency_join_and_label():
+    rows = _rows(
+        # slot A resident = csum aabbccdd, then a menu swap to 11223344
+        "5,overlay,0,0x801CE818,0x0,0x03,map01,1,csum=aabbccdd",
+        "10,set,549,0x8003CE08,0x801D9000,0x03,map01,1,",
+        "20,overlay,0,0x801CE818,0x0,0x04,map01,2,csum=11223344",
+        "30,set,549,0x8003CE08,0x801D9000,0x04,map01,2,",
+        # slot B window hit picks slot B residency, not slot A's
+        "40,overlay,0,0x801F69D8,0x0,0x14,map01,1,csum=55667788",
+        "50,test,300,0x8003CE64,0x801F7000,0x14,map01,1,",
+    )
+    sites = arw.collect_sites(rows)
+    w = sites[("set", 549, 0x8003CE08, 0x801D9000)]
+    assert w.overlays == {"aabbccdd", "11223344"}
+    b = sites[("test", 300, 0x8003CE64, 0x801F7000)]
+    assert b.overlays == {"55667788"}
+    omap = {"aabbccdd": "field (PROT 897)", "11223344": "menu (PROT 899)"}
+    text = arw.render(rows, arw.load_labels(None), None, omap)
+    assert "resident=[field (PROT 897), menu (PROT 899)]" in text
+    assert "csum:55667788?" in text  # unmapped csum degrades visibly
+
+
+def test_overlay_base_windowing():
+    bases = [0x801CE818, 0x801F69D8]
+    assert arw.overlay_base_for(0x801DE840, bases) == 0x801CE818
+    assert arw.overlay_base_for(0x801F7000, bases) == 0x801F69D8
+    assert arw.overlay_base_for(0x8003CE64, bases) is None
+    # slot A window ends at slot B's base, not at +MAX
+    assert arw.overlay_base_for(0x801F69D8 - 1, bases) == 0x801CE818
+
+
 def _run_all():
     mod = sys.modules[__name__]
     names = [n for n in dir(mod) if n.startswith("test_")]

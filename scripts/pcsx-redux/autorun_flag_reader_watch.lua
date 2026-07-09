@@ -92,6 +92,10 @@
 --                                  note = full formation + entry mode + the
 --                                  last field tile = the encounter spawn spot;
 --                                  lone-boss fights auto-snapshot)
+--          | overlay              (slot residency: pc = slot base, note =
+--                                  csum=<fnv1a32 of the first 512 bytes>;
+--                                  the analyzer's overlay-map.txt names the
+--                                  resident sibling per hit)
 --          | scene | mode | snap  (context timeline / snapshot record)
 --     note = "tgt" marks a target flag; "t<x>;<z>" player tile (field mode);
 --            write rows "name pre=0x.. now=0x.."; vram rows "r<x>;<y>;<w>;<h>"
@@ -129,6 +133,14 @@ local LOAD_IMAGE  = 0x800583C8  -- FUN_800583C8 LoadImage (RAM -> VRAM)
 local MOVE_IMAGE  = 0x80058490  -- FUN_80058490 MoveImage (VRAM -> VRAM; dst a1,a2)
 -- STR/FMV game modes: a hot LoadImage exec-bp here segfaults the emulator.
 local FMV_MODES   = { [0x1A] = true, [0x1B] = true }
+-- Overlay residency: the two runtime overlay slots (crates/asset/data/
+-- static-overlays.toml). Slot A hosts the VA-aliased field/menu/battle/
+-- cutscene/minigame siblings; slot B the summon/stager library. A 512-byte
+-- FNV-1a checksum at each base, re-taken on every scene/mode change,
+-- identifies WHICH sibling is resident - the offline analyzer joins hit
+-- addresses to the overlay resident when they fired (overlay-map.txt).
+local OVERLAY_BASES = { 0x801CE818, 0x801F69D8 }
+local OVERLAY_CSUM_BYTES = 512
 -- P9: per-battle identity (same brackets as autorun_state_poll.lua).
 -- BATTLE_MODES latches "a fight is loading/active" (one row per fight);
 -- BATTLE_ACTIVE is where the formation table holds THIS battle's ids.
@@ -203,6 +215,8 @@ do
 end
 -- P8: VRAM upload log (auto-disarmed across FMV modes; 0 disables).
 local TRACE_VRAM = probe.getenv("LEGAIA_TRACE_VRAM", "1") ~= "0"
+-- Overlay-residency rows (0 disables).
+local TRACE_OVERLAY = probe.getenv("LEGAIA_TRACE_OVERLAY", "1") ~= "0"
 -- Core guard: this probe is 100% breakpoints - under the recompiler
 -- (--fast) Lua BPs silently never fire and hours of play produce an empty
 -- capture. run_probe.sh exports which core it launched; refuse dynarec.
@@ -237,6 +251,21 @@ local function scene_name()
     return (s == "") and "?" or s
 end
 local function s16(v) return (v >= 0x8000) and (v - 0x10000) or v end
+-- FNV-1a 32-bit over a Lua string. MUST stay bit-identical to the Python
+-- copy in analyze_reader_watch.py (fnv1a32) - the overlay map is keyed on
+-- it. The multiply is decomposed into 16-bit halves because h*prime
+-- overflows the double's 53-bit integer range.
+local function fnv1a32(s)
+    local h = 0x811C9DC5
+    for i = 1, #s do
+        h = bit.bxor(h, s:byte(i)) % 4294967296
+        local lo = bit.band(h, 0xFFFF)
+        local hi = bit.rshift(h, 16) % 0x10000
+        h = (lo * 0x01000193 + bit.band(hi * 0x01000193, 0xFFFF) * 0x10000)
+            % 4294967296
+    end
+    return h
+end
 -- Player tile as a note fragment ("t<x>;<z>"), or "" outside field mode /
 -- with no live actor. Semicolon separator keeps the CSV column count sane.
 local function tile_note()
@@ -412,6 +441,28 @@ end
 -- can no longer tell us. Lone non-zero slot = a solo enemy = boss-shaped:
 -- snapshot it. The formation WRITER's ra is the P7 `form` watch's job;
 -- this row is the committed-value complement (poll-style, pc/ra=0x0).
+-- Overlay residency: checksum each slot and emit an `overlay` row when it
+-- changes. Re-polled on scene/mode changes (the swap events) plus a slow
+-- heartbeat that self-corrects a snapshot taken mid-stream. pc column =
+-- slot base; note = the FNV-1a csum the offline map resolves to a label.
+local overlay_csums = {}
+local function poll_overlays()
+    if not TRACE_OVERLAY then return end
+    for _, base in ipairs(OVERLAY_BASES) do
+        local win = mem.read_bytes(base, OVERLAY_CSUM_BYTES)
+        if win ~= nil then
+            local c = fnv1a32(tostring(win))
+            if overlay_csums[base] ~= c then
+                overlay_csums[base] = c
+                totals.overlay = (totals.overlay or 0) + 1
+                CSV:row("%d,overlay,0,0x%08X,0x0,0x%02X,%s,%d,csum=%08x",
+                    vsync, base, u8(GAME_MODE), scene_name(),
+                    totals.overlay, c)
+            end
+        end
+    end
+end
+
 local function emit_battle()
     local f0, f1 = u8(FORMATION), u8(FORMATION + 1)
     local f2, f3 = u8(FORMATION + 2), u8(FORMATION + 3)
@@ -529,6 +580,8 @@ local function arm_all()
     end
     -- 5. (P8) VRAM upload log (own handle list; mode-gated in on_vsync).
     arm_vram()
+    -- Baseline overlay residency at arm time.
+    poll_overlays()
     armed = true
     armed_tick = vsync
     log(string.format("armed at tick %d (mode=0x%02X scene=%s)",
@@ -571,6 +624,7 @@ local function arm_all()
         direct_read    = tostring(DIRECT_READ),
         watch_writes   = (#ww > 0) and table.concat(ww, " ") or "off",
         trace_vram     = tostring(TRACE_VRAM),
+        trace_overlay  = tostring(TRACE_OVERLAY),
         autosnap       = string.format("%s (max %d)", tostring(AUTOSNAP), SNAP_MAX),
         autosave_every = tostring(AUTOSAVE_EVERY),
         armed_tick     = tostring(vsync),
@@ -646,6 +700,7 @@ local function on_vsync()
         CSV:row("%d,scene,0,0x0,0x0,0x%02X,%s,%d,",
             vsync, u8(GAME_MODE), sc, totals.scene)
         log(string.format("scene -> %s (tick %d)", sc, vsync))
+        poll_overlays()
         -- New-scene snapshot: bank a state at the mouth of every area this
         -- trek reaches, so a future run starts adjacent, not from scratch.
         if armed and sc ~= "?" and not seen_scenes[sc] then
@@ -658,7 +713,9 @@ local function on_vsync()
         last_mode = md
         totals.mode = totals.mode + 1
         CSV:row("%d,mode,%d,0x0,0x0,0x%02X,%s,%d,", vsync, md, md, sc, totals.mode)
+        poll_overlays()
     end
+    if (vsync % 480) == 137 then poll_overlays() end  -- mid-stream self-correct
 
     if not armed then
         if md == 0x03 then

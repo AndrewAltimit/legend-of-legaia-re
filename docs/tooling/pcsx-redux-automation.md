@@ -482,6 +482,13 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   the mode left field = the encounter's spawn spot; lone-formation fights
   auto-snapshot as boss-shaped) - the committed-value complement to the
   `form` watched write, whose `ra` is the encounter-provenance deliverable.
+  **Overlay residency** rides along too: a 512-byte FNV-1a checksum of each
+  runtime overlay slot (A `0x801CE818`, B `0x801F69D8` - the bases in
+  `crates/asset/data/static-overlays.toml`), re-taken on scene/mode changes
+  plus a slow heartbeat, emitted as `overlay` rows on change. The
+  field/menu/battle/cutscene/minigame overlays all VA-alias slot A, so a
+  bare overlay-region address is ambiguous; the checksum names the sibling
+  resident when each hit fired (`LEGAIA_TRACE_OVERLAY=0` off).
   Toggles: `LEGAIA_ALL_TESTS`/`LEGAIA_WRITERS`/`LEGAIA_DIRECT_READ`/
   `LEGAIA_AUTOSNAP`/`LEGAIA_TRACE_VRAM` (`0` = off),
   `LEGAIA_WATCH_WRITES=off`.
@@ -570,6 +577,23 @@ tagged `[CLUT?]` and `y>=448` rects `[CLUT-region]`) and battles (one line
 per fight, boss-shaped lone formations starred). `--only
 targets|background|writes|vram|battles|snaps`, `--labels FILE` (`0xADDR
 text` lines), `--json`.
+
+Two capabilities make it a cumulative database rather than a per-run report.
+**Cross-run merge**: pass several csvs or run *directories* (scanned
+recursively) and the sites union - counts sum per run, every site lists the
+runs that saw it, and `--merged-out FILE` persists the merged JSON. Each
+trek permanently grows one provenance map instead of answering one
+question. **Overlay-residency attribution**: the probe's `overlay` rows
+carry per-slot checksums; the committed
+[`overlay-map.txt`](../../scripts/pcsx-redux/overlay-map.txt) (FNV-1a32 of
+each raw overlay's first 512 as-loaded bytes - derived checksums only, no
+Sony bytes, same policy class as the TOML's sha256 fingerprints; regenerate
+with `--gen-overlay-map <extracted-dir>` after a static-overlays.toml
+change) resolves them to labels, so every overlay-region hit prints
+`resident=[menu (PROT 899 ...)]` - the VA-alias disambiguation that
+previously needed a manual `attribute_overlay_hits.py` pass. An unmapped
+checksum degrades visibly (`csum:XXXXXXXX?`). `--overlay-map FILE`
+overrides the committed map.
 Pure functions, exercised by `test_analyze_reader_watch.py` on synthetic rows.
 
 ## Catalogue
@@ -618,7 +642,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_town01_script_flow.lua` | Pins a field scene's script execution model. → [detail](#autorun_town01_script_flowlua) |
 | `autorun_state_poll.lua` | Fast (dynarec, no BPs) per-vsync diff of all progression state (flags/battle-id/gold/items/party/scene/mode) plus a per-fight `battle` formation-identity row on each field->battle edge, for a whole-playthrough sweep. Tier 1 of the [two-tier model](#fast-whole-playthrough-capture-two-tier-model); the community-handoff probe. |
 | `autorun_flag_firehose.lua` | Slow (interpreter) exec-bp capture of EVERY story-flag write with its writer `ra` + battle-id staging watch. Tier 2 - writer provenance for the flags the poll tier fingers. |
-| `autorun_flag_reader_watch.lua` | Slow (interpreter) full PROVENANCE probe: unfiltered test/set/clear helper exec-bps (reader + writer `ra` for every flag touched, deduped) + per-target byte read-watches + a write-watch allowlist for non-flag globals (default battle-id + formation) + a LoadImage/MoveImage VRAM upload log (auto-disarmed across FMV modes) + per-fight `battle` identity rows with spawn-tile attribution, tile context, first-hit/new-scene/boss auto-snapshots, run `manifest.txt`, dynarec hard-refusal + BP-liveness canary. Summarize with `analyze_reader_watch.py`. |
+| `autorun_flag_reader_watch.lua` | Slow (interpreter) full PROVENANCE probe: unfiltered test/set/clear helper exec-bps (reader + writer `ra` for every flag touched, deduped) + per-target byte read-watches + a write-watch allowlist for non-flag globals (default battle-id + formation) + a LoadImage/MoveImage VRAM upload log (auto-disarmed across FMV modes) + per-fight `battle` identity rows with spawn-tile attribution + per-slot overlay-residency checksums, tile context, first-hit/new-scene/boss auto-snapshots, run `manifest.txt`, dynarec hard-refusal + BP-liveness canary. Summarize (and cross-run merge) with `analyze_reader_watch.py`. |
 | [`autorun_battle_char_clut_source.lua`](../../scripts/pcsx-redux/autorun_battle_char_clut_source.lua) | Pins the disc source of the battle-form party CLUT band (VRAM rows 490..497). → [detail](#autorun_battle_char_clut_sourcelua) |
 | [`autorun_battle_party_mesh_install.lua`](../../scripts/pcsx-redux/autorun_battle_party_mesh_install.lua) | Pins the battle-form party-mesh install callsite. → [detail](#autorun_battle_party_mesh_installlua) |
 | [`autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua) | Live-confirms the exact battle camera byte-exact. → [detail](#autorun_battle_render_capturelua) |
