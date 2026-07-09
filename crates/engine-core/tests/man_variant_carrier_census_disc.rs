@@ -764,3 +764,76 @@ fn nilboa_nivora_ravine_gate_family() {
         "nilboa2 is the 0xF-gated Nivora variant ({with_0xf} records carry 0xF)"
     );
 }
+
+/// The `map03` (chapter-3 / Karisto) hub region gate families - disc-static
+/// (none walked in the poll). `map03`'s `0x3F` doors route to `taiku`/
+/// `station3`/`korb3`/`bubu1`/`son`/`deroa` (taiku + station3 already mined
+/// as ch2 spokes; "jankeria" is not among them and resolves to no CDNAME
+/// scene).
+///
+/// - **map03** is an even purer router than `map02`: ZERO gated partition-2
+///   records - all its logic is the `0x3F` door table + partition-1 scripts.
+/// - **bubu1** (Buma) has NO field MAN payload (a streamed/special scene).
+/// - **bubu2**: a small requires-all chain over `0x608`/`0x3D3`/`0x609`.
+/// - **son**: sparse one-shots (`0x3A6`/`0x3A7`/`0x60D`); routes back to `taiku`.
+/// - **deroa**: a `0x46D`/`0x46E`/`0x46F` one-shot group + `0x3E1` gate; routes
+///   to the underground `chitei2`.
+/// - **korb3** (Karisto castle approach) is the RICH one: a nine-record
+///   **collection group** `P2[5..=13]`, every one C1=`[0x403]` (the "all done"
+///   latch) and C2 a distinct flag `0x43E..=0x45C`, plus a `0x41x` requires-all
+///   cluster (`P2[2]` C2=`[0x41B,0x41C,0x436]`); routes to `korb2`/`kor`.
+#[test]
+fn map03_karisto_region_gate_families() {
+    use legaia_asset::man_section::{ManFile, parse as parse_man};
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let payload = |scene_name: &str| -> Option<(ManFile, Vec<u8>)> {
+        let scene = Scene::load(&index, scene_name).ok()?;
+        let man = scene.field_man_payload(&index).ok().flatten()?;
+        let mf = parse_man(&man).ok()?;
+        Some((mf, man))
+    };
+    let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
+        let (mf, man) = payload(scene_name).expect("payload");
+        let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
+        (0..n_p2)
+            .map(|r| partition2_record_gates(&mf, &man, r).unwrap_or_default())
+            .collect()
+    };
+
+    // map03: a pure router - no gated partition-2 records at all.
+    let map03_gated = all_gates("map03")
+        .iter()
+        .filter(|(c1, c2)| !c1.is_empty() || !c2.is_empty())
+        .count();
+    assert_eq!(
+        map03_gated, 0,
+        "map03 hub has no gated P2 records (pure router)"
+    );
+
+    // bubu1 has no field MAN payload.
+    assert!(payload("bubu1").is_none(), "bubu1 has no field MAN payload");
+
+    // bubu2 requires-all chain tail; son / deroa one-shots.
+    assert_eq!(all_gates("bubu2")[3], (vec![0x609], vec![0x608, 0x3D3]));
+    assert_eq!(all_gates("son")[3], (vec![0x3A6], vec![]));
+    assert_eq!(all_gates("deroa")[4], (vec![0x46D], vec![0x3E1]));
+
+    // korb3: the nine-record 0x403 collection group + the 0x41x requires-all.
+    let korb3 = all_gates("korb3");
+    assert_eq!(korb3[2], (vec![0x41D], vec![0x41B, 0x41C, 0x436]));
+    let mut collected = Vec::new();
+    for (i, g) in korb3.iter().enumerate().take(14).skip(5) {
+        assert_eq!(g.0, vec![0x403], "korb3 P2[{i}] C1 is the 0x403 latch");
+        assert_eq!(g.1.len(), 1, "korb3 P2[{i}] C2 is a single collection flag");
+        collected.push(g.1[0]);
+    }
+    collected.sort_unstable();
+    assert_eq!(
+        collected,
+        vec![
+            0x43E, 0x43F, 0x440, 0x441, 0x442, 0x443, 0x444, 0x459, 0x45C
+        ],
+        "korb3 P2[5..=13] are nine distinct 0x403-gated collection records"
+    );
+}
