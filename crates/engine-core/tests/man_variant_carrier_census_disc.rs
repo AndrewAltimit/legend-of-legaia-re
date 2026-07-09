@@ -313,3 +313,69 @@ fn chapter2_sebucus_gate_spine() {
     // overworld mirror of the teien arc.
     assert_eq!(gates("map02", 9), (vec![0x332], vec![0x1C9]));
 }
+
+/// The chapter-2 **dungeon** gate families - `taiku`/`doman`/`rayman` - mined
+/// STATICALLY from the disc C1/C2 record-header gates (`FUN_8003BDE0`), the same
+/// self-latch / requires-all shapes as the Sebucus spine.
+///
+/// IMPORTANT provenance note: unlike the teien/tower/balden spine (which the
+/// chapter-2 state-poll walked organically), the poll never traversed these
+/// dungeons - the only time their flags appear in any 07-08 capture is a bulk
+/// save-state LOAD (1392 flags set then cleared 15 ticks later) plus the map01
+/// scene-entry mass-clear, never an in-scene organic set. So these families are
+/// disc-static gate STRUCTURE, not poll-confirmed progression order; a live
+/// dungeon capture is still owed to pin the play order. The structure itself is
+/// robust (record-header fields, not the desync-prone inline bytecode walk).
+///
+/// - `taiku` story cluster (`0x384..=0x390`): two self-latch pairs
+///   (`0x390`: `P2[8]` one-shot / `P2[9]` successor; `0x38F`: `P2[10]` /
+///   `P2[15]`) plus the entry beats. The `0x505..=0x519` cluster is dungeon
+///   -LOCAL puzzle-switch state (multi-flag C1 groups), not story spine.
+/// - `rayman` arc: an "arc-reached" group (`P2[3..]` C2=`[0x1EC]`) fanning off
+///   the `P2[7]` one-shot `0x1EB`, plus a linear requires-all sub-chain
+///   `0x201` -> `P2[12]` (`0x1FB`) -> `P2[18]` (`0x200`) -> `P2[19]` (`0x1FC`).
+/// - `rayman2` = the same MAN gated by a shared C1 on low flag `0x7` across
+///   `P2[2..=21]` (the variant discriminator; base `rayman` carries `0x7` on
+///   `P2[22]` only). Two carriers for one location, selected by `0x7`.
+/// - `doman` (tiny): `P2[4]` one-shot `0x3FB`; `P2[3]` successor needs `0x6E7`
+///   (set in a different scene - the cross-scene gate pattern).
+/// - `taiku2` is a single-record sub-room variant: no gate family.
+#[test]
+fn chapter2_dungeon_gate_families() {
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let gates = |scene_name: &str, rec: usize| -> (Vec<u16>, Vec<u16>) {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        let man = scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN");
+        let mf = legaia_asset::man_section::parse(&man).expect("parse");
+        partition2_record_gates(&mf, &man, rec).expect("gates")
+    };
+
+    // taiku: 0x390 and 0x38F self-latch pairs (one-shot setter + successor).
+    assert_eq!(gates("taiku", 8), (vec![0x390], vec![]));
+    assert_eq!(gates("taiku", 9), (vec![], vec![0x390]));
+    assert_eq!(gates("taiku", 10), (vec![0x38F], vec![]));
+    assert_eq!(gates("taiku", 15), (vec![], vec![0x38F]));
+
+    // rayman: the linear requires-all sub-chain 0x201 -> 0x1FB -> 0x200 -> 0x1FC.
+    assert_eq!(gates("rayman", 12), (vec![0x1FB], vec![0x201]));
+    assert_eq!(gates("rayman", 18), (vec![0x200], vec![0x1FB]));
+    assert_eq!(gates("rayman", 19), (vec![0x1FC], vec![0x200]));
+    // the arc-reached fan-out gates on 0x1EC; 0x1EB is the entry one-shot.
+    assert_eq!(gates("rayman", 3), (vec![], vec![0x1EC]));
+    assert_eq!(gates("rayman", 7), (vec![0x1EB], vec![]));
+
+    // rayman2: the SAME chain, each record additionally C1-gated on 0x7 (the
+    // variant discriminator). Base rayman does not carry 0x7 on these records.
+    assert_eq!(gates("rayman2", 12), (vec![0x1FB, 0x7], vec![0x201]));
+    assert_eq!(gates("rayman2", 3), (vec![0x7], vec![0x1EC]));
+    assert!(!gates("rayman", 12).0.contains(&0x7));
+    assert!(!gates("rayman", 3).0.contains(&0x7));
+
+    // doman: entry one-shot 0x3FB; a successor gated on the cross-scene 0x6E7.
+    assert_eq!(gates("doman", 4), (vec![0x3FB], vec![]));
+    assert_eq!(gates("doman", 3), (vec![], vec![0x6E7]));
+}
