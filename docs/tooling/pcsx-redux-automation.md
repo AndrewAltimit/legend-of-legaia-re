@@ -430,6 +430,22 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   a Point Card (item `0xFE`) strike one-shots any boss when you want to blow
   through fights on your own capture pass. It writes only that counter, none of
   the CSV cells.
+  The poll also captures, per frame, several context streams (all default-on,
+  each toggleable) so a single playthrough answers more at once: a **`pos`**
+  row on every player tile-crossing in field mode (player ptr `0x8007C364`, X
+  `+0x14` / Z `+0x18` s16, `tile = (pos-0x40)>>7`) - which pins each flag beat
+  to *where* it fired (door/trigger attribution with no second pass); a
+  **`bgm`** row on each global BGM-id change (`0x8007BAC8`, the music_labels
+  census join); **`input`** rows for pad press/release edges (`0x8007B850`) and
+  a **`pick`** row sampling the dialogue picker cursor (`*(0x801C6EA4)+0x0C`) at
+  a confirm press (branch/answer attribution). It tags a flag frame
+  `note=bulkload` when it flips `>= LEGAIA_BULK_FLAGS` flags (a save-load/init
+  dump, not a beat) so the analyzer filters the noise. And it **auto-snapshots**
+  a fingerprinted save state on rare events - a never-seen scene, a lone-boss
+  formation, or a first-time target-set flag (`LEGAIA_SNAP_FLAGS`, default the
+  known spine gates) - capped at `LEGAIA_SNAP_MAX`, so every volunteer run grows
+  the mid-beat state library for free (`LEGAIA_AUTOSNAP=0` to disable). Toggles:
+  `LEGAIA_TRACE_POS`/`_BGM`/`_INPUT` (`0` = off).
 - **Tier 2 - `autorun_flag_firehose.lua` (slow, interpreter+debugger, ~10 fps):** exec-breakpoints on `FUN_8003CE08`/`_CE34` capture the writer `ra` for the specific flags Tier 1 fingered. Run in short targeted bursts, not a full playthrough.
 
 The flag window is capped at `0x200` bytes (idx `0..4095`) deliberately: the char-record slot-3 tail ends exactly at the flag base and the item inventory begins exactly `0x200` above it, so `0x200` is the largest window that is pure story-flag bytes with no overlap onto volatile record/inventory cells. Widening re-introduces inventory double-counting.
@@ -469,9 +485,16 @@ per-fight **`battle` identity rows** (formation ids, with a `*` on lone-enemy
 fights = the likely bosses), a **story-flag census** that separates one-off
 story beats from the bulk flag dumps a
 save-load / scene-init writes in a single frame (any tick flipping `>= 20`
-flags is treated as a load frame and reported separately, not as a beat), and
-the item / gold / party change lists. `--json` emits the same structure for
-downstream tooling; `--only scenes,battles,flags,...` selects sections. The
+flags **or** carrying the probe's `note=bulkload` tag is treated as a load
+frame and reported separately, not as a beat), and the item / gold / party
+change lists. Each story-flag beat is annotated with the **player tile** it
+fired at (joined from the `pos` stream, scene-scoped) and a **known-flag
+label** - a sticky beat with no label is surfaced as a `[lead]` (a candidate
+unmapped gate; extend the label map with `--labels FILE`). Extra sections cover
+the **BGM timeline**, **picker choices**, **auto-snapshots**, and (opt-in) the
+per-scene **walk track** and raw **input edges**. `--json` emits the same
+structure for downstream tooling; `--only scenes,battles,flags,bgm,picks,...`
+selects sections. The
 analysis functions are pure and importable, exercised by
 `test_analyze_state_poll.py` on synthetic rows (`python3
 scripts/pcsx-redux/test_analyze_state_poll.py`, no capture or disc needed).

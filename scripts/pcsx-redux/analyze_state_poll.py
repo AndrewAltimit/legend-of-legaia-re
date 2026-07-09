@@ -7,12 +7,15 @@ the schema:
     tick,kind,idx,value,delta,mode,scene,note
 
 `kind` is one of: flagset / flagclr (story-flag bank 0x80085758, `idx` == bit
-number), item (0x80084648 inventory; `idx` == item id, `value` == count),
-gold (0x8008459C), party (0x80084594 count + 0x80084598 ids), level / spell
-(per-roster-slot char-record 0x80084708+slot*0x414: displayed-level byte +0x130
-and the Seru-magic list +0x13C; `idx` == roster slot), scene / mode
-(0x8007050C name + 0x8007B83C game-mode transitions). See the probe header for
-the exact source addresses.
+number; a flag row noted `bulkload` is a save-load/init dump, not a beat), item
+(0x80084648 inventory; `idx` == item id, `value` == count), gold (0x8008459C),
+party (0x80084594 count + 0x80084598 ids), level / spell (per-roster-slot
+char-record 0x80084708+slot*0x414: displayed-level byte +0x130 and the
+Seru-magic list +0x13C; `idx` == roster slot), scene / mode (0x8007050C name +
+0x8007B83C game-mode transitions), pos (P1: player tile `idx`==tileX
+`value`==tileZ, emitted on a crossing), bgm (P5: global BGM id), input / pick
+(P4: pad edges + picker cursor at a confirm), snap (P2: an auto-dumped save
+state). See the probe header for the exact source addresses.
 
 This tool turns that raw event log into the things a reverse-engineer actually
 wants out of a playthrough capture:
@@ -48,6 +51,19 @@ BATTLE_MODES = {0x14, 0x15}
 DEFAULT_BULK_THRESHOLD = 20
 # scene label the probe emits before a real save/new-game is resolved.
 BOOT_SCENE = "?"
+# note the probe stamps on flag rows it classified as a bulk load/init dump (P3).
+BULK_NOTE = "bulkload"
+
+# P6: known story-flag labels. A `flagset` beat whose idx is here is annotated;
+# a sticky beat with NO label is surfaced as a NEW LEAD (an unmapped gate worth
+# a name). Seed set = the pinned spine/story gates (extend via --labels FILE).
+KNOWN_FLAGS = {
+    0x142: "Caruban victory gate (Mt.Rikuroa -> dolk2 entrance)",
+    0x1BE: "geremi Jeremi-arrival one-shot",
+    0x225: "Rim Elm opening one-shot (flag 549)",
+    0x482: "other7 mist-wall pool gate",
+    0x63A: "rikuroa/retockin carrier flag",
+}
 
 
 @dataclass
@@ -106,6 +122,8 @@ class FlagBeat:
     scene: str
     churn: int  # total set+clr events for this flag across the gameplay window
     sticky: bool  # last event was a set (flag ends up set)
+    tile: tuple[int, int] | None = None  # P1: player tile (x,z) when it fired
+    label: str | None = None  # P6: known-flag label, None => a new lead
 
 
 @dataclass
@@ -249,15 +267,51 @@ def battle_starts(rows: list[Row]) -> list[BattleStart]:
     return out
 
 
+@dataclass
+class PosSample:
+    tick: int
+    scene: str
+    tile_x: int
+    tile_z: int
+
+
+def player_track(rows: list[Row]) -> list[PosSample]:
+    """P1: the player tile-crossing track (one sample per `pos` row).
+
+    `idx` == tile X, `value` == tile Z. Rows are already in tick order.
+    """
+    return [
+        PosSample(tick=r.tick, scene=r.scene, tile_x=r.idx, tile_z=r.value)
+        for r in rows
+        if r.kind == "pos"
+    ]
+
+
+def tile_at(track: list[PosSample], tick: int, scene: str) -> tuple[int, int] | None:
+    """The last player tile at or before `tick` within the same `scene`.
+
+    Scene-scoped so a beat is never attributed to the previous area's tile
+    across a warp (the probe drops the tile baseline on a scene change).
+    """
+    best: PosSample | None = None
+    for s in track:
+        if s.tick > tick:
+            break
+        if s.scene == scene:
+            best = s
+    return (best.tile_x, best.tile_z) if best is not None else None
+
+
 def flag_census(rows: list[Row], bulk_threshold: int = DEFAULT_BULK_THRESHOLD) -> FlagCensus:
     """Separate one-off story-flag beats from bulk (load/init) flag dumps.
 
-    A tick whose number of flag events (>= bulk_threshold) is treated as a bulk
-    write (save-load / scene-init / new-game zero) and excluded from the beat
-    list; it is reported separately. Remaining flag events are aggregated per
-    flag idx: churn count, the last SET tick+scene, and whether the flag ends up
-    set (sticky). Only sticky flags are returned as beats (a flag that ends
-    cleared is not a durable progression marker).
+    A tick is treated as a bulk write (save-load / scene-init / new-game zero)
+    when it flips >= bulk_threshold flags OR the probe already tagged its flag
+    rows note=bulkload (P3). Bulk ticks are excluded from the beat list and
+    reported separately. Remaining flag events aggregate per flag idx: churn
+    count, the last SET tick+scene, sticky-ness. Only sticky flags are returned
+    as beats. Each beat is annotated with the player tile it fired at (P1) and
+    a known-flag label (P6, None => a new lead).
     """
     # count flag events per tick to find bulk frames
     per_tick: dict[int, list[Row]] = {}
@@ -268,7 +322,8 @@ def flag_census(rows: list[Row], bulk_threshold: int = DEFAULT_BULK_THRESHOLD) -
     bulk_ticks_set: set[int] = set()
     bulk_ticks: list[tuple[int, str, int]] = []
     for tick, evs in sorted(per_tick.items()):
-        if len(evs) >= bulk_threshold:
+        note_bulk = any(BULK_NOTE in e.note for e in evs)
+        if len(evs) >= bulk_threshold or note_bulk:
             bulk_ticks_set.add(tick)
             bulk_ticks.append((tick, evs[0].scene, len(evs)))
 
@@ -287,18 +342,23 @@ def flag_census(rows: list[Row], bulk_threshold: int = DEFAULT_BULK_THRESHOLD) -
             last_set_tick[r.idx] = r.tick
             last_set_scene[r.idx] = r.scene
 
+    track = player_track(rows)
     beats: list[FlagBeat] = []
     for idx, n in churn.items():
         sticky = last_kind.get(idx) == "flagset"
         if not sticky:
             continue
+        t = last_set_tick[idx]
+        sc = last_set_scene[idx]
         beats.append(
             FlagBeat(
                 idx=idx,
-                set_tick=last_set_tick[idx],
-                scene=last_set_scene[idx],
+                set_tick=t,
+                scene=sc,
                 churn=n,
                 sticky=True,
+                tile=tile_at(track, t, sc),
+                label=KNOWN_FLAGS.get(idx),
             )
         )
     beats.sort(key=lambda b: b.set_tick)
@@ -330,6 +390,26 @@ def spell_changes(rows: list[Row]) -> list[Row]:
     delta 0 is a spell level-up (the level array changed under a fixed count).
     """
     return [r for r in rows if r.kind == "spell"]
+
+
+def bgm_changes(rows: list[Row]) -> list[Row]:
+    """`bgm` rows (P5): global BGM id changes (`value` == id in the 2000+ space)."""
+    return [r for r in rows if r.kind == "bgm"]
+
+
+def picker_choices(rows: list[Row]) -> list[Row]:
+    """`pick` rows (P4): dialogue picker cursor index at a confirm press."""
+    return [r for r in rows if r.kind == "pick"]
+
+
+def snapshots(rows: list[Row]) -> list[Row]:
+    """`snap` rows (P2): auto-dumped save states (note = reason + filename)."""
+    return [r for r in rows if r.kind == "snap"]
+
+
+def input_edges(rows: list[Row]) -> list[Row]:
+    """`input` rows (P4): pad press/release edges (`value` 1 press / 0 release)."""
+    return [r for r in rows if r.kind == "input"]
 
 
 def _fmt_flag(idx: int) -> str:
@@ -369,9 +449,14 @@ def render_report(rows: list[Row], bulk_threshold: int, want: set[str]) -> str:
         for tick, scene, n in cen.bulk_ticks:
             lines.append(f"  tick {tick:>7}  scene {scene:<8}  {n} flags")
         lines.append("\n## story-flag beats (sticky, per-frame, load frames excluded)")
+        lines.append("##   [lead] = unlabeled sticky flag (a candidate new gate)")
         for b in cen.beats:
             churn = "" if b.churn == 1 else f"  churn={b.churn}"
-            lines.append(f"  tick {b.set_tick:>7}  {b.scene:<8}  flag {_fmt_flag(b.idx)}{churn}")
+            tile = f"  @tile({b.tile[0]},{b.tile[1]})" if b.tile is not None else ""
+            tag = f"  {b.label}" if b.label else "  [lead]"
+            lines.append(
+                f"  tick {b.set_tick:>7}  {b.scene:<8}  flag {_fmt_flag(b.idx)}{tile}{churn}{tag}"
+            )
 
     if "items" in want:
         lines.append("\n## item changes (non-zero delta)")
@@ -406,6 +491,41 @@ def render_report(rows: list[Row], bulk_threshold: int, want: set[str]) -> str:
                 f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  spells={r.value} ({sign}{r.delta})  {r.note}"
             )
 
+    if "bgm" in want:
+        lines.append("\n## BGM changes (global id; 2000+ = global pool)")
+        for r in bgm_changes(rows):
+            lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  bgm={r.value}")
+
+    if "picks" in want:
+        lines.append("\n## dialogue picker choices (cursor index at a confirm)")
+        for r in picker_choices(rows):
+            lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  choice={r.idx}  ({r.note})")
+
+    if "snaps" in want:
+        lines.append("\n## auto-snapshot save states (P2 harvest)")
+        for r in snapshots(rows):
+            lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  {r.note}")
+
+    if "walk" in want:
+        lines.append("\n## walk track (per-scene tile-crossing count + bounds)")
+        track = player_track(rows)
+        by_scene: dict[str, list[PosSample]] = {}
+        for s in track:
+            by_scene.setdefault(s.scene, []).append(s)
+        for scene, samples in by_scene.items():
+            xs = [s.tile_x for s in samples]
+            zs = [s.tile_z for s in samples]
+            lines.append(
+                f"  {scene:<8}  crossings={len(samples):>4}  "
+                f"x[{min(xs)}..{max(xs)}] z[{min(zs)}..{max(zs)}]"
+            )
+
+    if "input" in want:
+        lines.append("\n## input edges (pad press/release)")
+        for r in input_edges(rows):
+            edge = "down" if r.value else "up"
+            lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  {r.note} {edge}")
+
     return "\n".join(lines)
 
 
@@ -438,7 +558,16 @@ def build_json(rows: list[Row], bulk_threshold: int) -> dict:
             {"tick": t, "scene": s, "flags": n} for (t, s, n) in cen.bulk_ticks
         ],
         "flag_beats": [
-            {"flag": b.idx, "flag_hex": f"0x{b.idx:X}", "tick": b.set_tick, "scene": b.scene, "churn": b.churn}
+            {
+                "flag": b.idx,
+                "flag_hex": f"0x{b.idx:X}",
+                "tick": b.set_tick,
+                "scene": b.scene,
+                "churn": b.churn,
+                "tile": list(b.tile) if b.tile is not None else None,
+                "label": b.label,
+                "lead": b.label is None,
+            }
             for b in cen.beats
         ],
         "items": [
@@ -458,6 +587,20 @@ def build_json(rows: list[Row], bulk_threshold: int) -> dict:
         "spells": [
             {"tick": r.tick, "scene": r.scene, "slot": r.idx, "count": r.value, "delta": r.delta, "note": r.note}
             for r in spell_changes(rows)
+        ],
+        "bgm": [
+            {"tick": r.tick, "scene": r.scene, "id": r.value} for r in bgm_changes(rows)
+        ],
+        "picks": [
+            {"tick": r.tick, "scene": r.scene, "choice": r.idx, "button": r.note}
+            for r in picker_choices(rows)
+        ],
+        "snapshots": [
+            {"tick": r.tick, "scene": r.scene, "note": r.note} for r in snapshots(rows)
+        ],
+        "walk": [
+            {"tick": s.tick, "scene": s.scene, "tile": [s.tile_x, s.tile_z]}
+            for s in player_track(rows)
         ],
     }
 
@@ -483,10 +626,22 @@ def main(argv=None) -> int:
     )
     ap.add_argument(
         "--only",
-        default="scenes,battles,flags,items,gold,party,progress",
-        help="comma list of sections: scenes,battles,flags,items,gold,party,progress",
+        default="scenes,battles,flags,items,gold,party,progress,bgm,picks,snaps",
+        help="comma list of sections: scenes,battles,flags,items,gold,party,"
+        "progress,bgm,picks,snaps,walk,input (walk+input are opt-in: verbose)",
+    )
+    ap.add_argument(
+        "--labels",
+        help="JSON file of extra {flag_idx: label} to merge into the flag-label "
+        "map (P6). idx may be decimal or 0x-hex string.",
     )
     args = ap.parse_args(argv)
+
+    if args.labels:
+        with open(args.labels) as fh:
+            for k, v in json.load(fh).items():
+                idx = int(k, 16) if str(k).lower().startswith("0x") else int(k)
+                KNOWN_FLAGS[idx] = v
 
     path = _resolve_csv(args.csv)
     if not path.exists():
