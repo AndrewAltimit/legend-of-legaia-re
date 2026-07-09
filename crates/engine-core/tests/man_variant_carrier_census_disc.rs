@@ -1006,3 +1006,96 @@ fn chapter2_stone_symbol_puzzle_flags() {
         assert_eq!(count_op(&map02, 0x50, f), 0, "0x{f:X} is stone-local");
     }
 }
+
+/// The `rayman` `0x1FD..=0x1FF` cluster - the **"three Haris" oracle
+/// interaction hub**. Distinct from rayman's header-gate spine chain
+/// (`0x201`/`0x1FB`/`0x200`/`0x1FC` off the `0x1EB`/`0x1EC` arc, covered by
+/// `chapter2_dungeon_gate_families`): this is a self-contained **field-VM
+/// AND-gate**, not a C1/C2 header chain.
+///
+/// The mechanic (from the scene's own dialogue): three "Hari" statues -
+/// "from the left, teller of the past, of the present and of the future" -
+/// that "remain awake only for a short time". Talking to each of the three
+/// oracles sets one flag; combined gates then check that all three have been
+/// consulted before advancing ("Hari has entrusted you with the future").
+///
+/// Flag layout (byte-exact off the decoded MAN):
+/// - `0x1FD`/`0x1FE`/`0x1FF` = one flag per oracle. Each is SET **twice**:
+///   once in its own per-actor NPC script (census: `P1[44]`/`P1[45]`/`P1[46]`,
+///   three consecutive actor records) and once in a dev **reset arm** ("End
+///   flag setting" / "Back=") that SETs all three consecutively
+///   (`51 FF 51 FE 51 FD`) then CLEARs all three consecutively
+///   (`61 FF 61 FE 61 FD`) - hence CLEAR exactly once each.
+/// - All three are TESTed together in tight AND-gate clusters (census records
+///   `P1[42]`/`P1[43]`/`P1[47]` + the completion cutscene `P2[18]`), the
+///   "have you consulted all three oracles" check. Six TESTs per flag.
+///
+/// **Self-contained**: no genuine cross-scene consumer. The one out-of-scene
+/// census hit (`geremi P1[22]` "CLEAR 0x1FE") is a disassembler-desync false
+/// positive - the byte pair `61 FE` is consumed as the operand of a 3-byte
+/// `0x26` op sitting inside Shift-JIS text (`26 61 FE 0D 83 4A ...`), not a
+/// standalone CLEAR at an instruction boundary. Unlike `stone`'s `0x1E8`, this
+/// hub has no cross-scene payoff gate.
+#[test]
+fn chapter2_rayman_three_haris_hub_flags() {
+    let Some(index) = open_index() else { return };
+    let man_of = |scene_name: &str| -> Vec<u8> {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    let count_op = |hay: &[u8], base: u8, idx: u16| -> usize {
+        let op = [base | (idx >> 8) as u8, (idx & 0xFF) as u8];
+        hay.windows(2).filter(|w| *w == op).count()
+    };
+    let count_sub = |hay: &[u8], sub: &[u8]| hay.windows(sub.len()).filter(|w| *w == sub).count();
+
+    let rayman = man_of("rayman");
+
+    // Each oracle flag: SET twice (own NPC script + the reset arm), CLEARed
+    // exactly once (the reset arm), TESTed pervasively by the AND-gates.
+    for f in 0x1FDu16..=0x1FF {
+        assert_eq!(count_op(&rayman, 0x50, f), 2, "rayman SET 0x{f:X} twice");
+        assert_eq!(count_op(&rayman, 0x60, f), 1, "rayman CLEAR 0x{f:X} once");
+        assert!(
+            count_op(&rayman, 0x70, f) >= 4,
+            "rayman TESTs 0x{f:X} in the AND-gates"
+        );
+    }
+
+    // The dev reset arm SETs all three consecutively then CLEARs all three
+    // consecutively - one such block each.
+    assert_eq!(
+        count_sub(&rayman, &[0x51, 0xFF, 0x51, 0xFE, 0x51, 0xFD]),
+        1,
+        "reset arm SETs all three oracles"
+    );
+    assert_eq!(
+        count_sub(&rayman, &[0x61, 0xFF, 0x61, 0xFE, 0x61, 0xFD]),
+        1,
+        "reset arm CLEARs all three oracles"
+    );
+
+    // The AND-gate: distinct sites where all three flags are TESTed together
+    // (the "consulted all three oracles" conjunction). Count non-overlapping
+    // 24-byte windows carrying a TEST of each of the three.
+    let tf: [[u8; 2]; 3] = [[0x71, 0xFD], [0x71, 0xFE], [0x71, 0xFF]];
+    let has = |w: &[u8], s: &[u8; 2]| w.windows(2).any(|x| x == *s);
+    let mut clusters = 0usize;
+    let mut o = 0usize;
+    while o + 24 <= rayman.len() {
+        let w = &rayman[o..o + 24];
+        if tf.iter().all(|s| has(w, s)) {
+            clusters += 1;
+            o += 24;
+        } else {
+            o += 1;
+        }
+    }
+    assert!(
+        clusters >= 4,
+        "at least four AND-gate sites, got {clusters}"
+    );
+}

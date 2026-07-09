@@ -77,6 +77,13 @@ KNOWN_FLAGS = {
     0x1FB: "rayman sub-chain -> P2[12]",
     0x200: "rayman sub-chain -> P2[18]",
     0x1FC: "rayman sub-chain -> P2[19] (tail)",
+    # rayman "three Haris" oracle hub: one flag per oracle (past/present/
+    # future), each SET by its own NPC script (P1[44/45/46]); AND-gated
+    # together (P1[42/43/47], cutscene P2[18]). Self-contained; no cross-scene
+    # payoff. man_variant_carrier_census_disc.rs::chapter2_rayman_three_haris_hub_flags.
+    0x1FD: "rayman Hari oracle A consulted",
+    0x1FE: "rayman Hari oracle B consulted",
+    0x1FF: "rayman Hari oracle C consulted",
     # tunnela: seven treasure-chest "opened" flags (P1[1..7], each TEST->give
     # ->SET; edlast P2[1] tests all seven as a completion battery). Not spine.
     0x96: "tunnela treasure chest 1/7 (opened)",
