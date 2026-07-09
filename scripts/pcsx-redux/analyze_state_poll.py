@@ -129,6 +129,14 @@ KNOWN_FLAGS = {
     0x52C: "scratch-bank bit (0x527..0x52E; VM-tested)",
     0x52D: "scratch-bank bit (0x527..0x52E)",
     0x52E: "scratch-bank bit (0x527..0x52E; VM-tested)",
+    # 0x5A0/0x5A1 = a write-only flip-flop PAIR (mutually-exclusive toggle) held
+    # inside rayman's Hari cutscene records; not a gate. 0x6C3 = a write-only
+    # toggle in stone's SOLVED cutscene (its multi-scene census list is C3-CC
+    # data-table desync). All three are zero-TEST cutscene toggles = churn noise.
+    # man_variant_carrier_census_disc.rs::flags_0x5a1_and_0x6c3_are_write_only_cutscene_toggles.
+    0x5A0: "rayman cutscene flip-flop (write-only, with 0x5A1)",
+    0x5A1: "rayman cutscene flip-flop (write-only, with 0x5A0)",
+    0x6C3: "stone SOLVED-cutscene toggle (write-only, not a gate)",
 }
 
 

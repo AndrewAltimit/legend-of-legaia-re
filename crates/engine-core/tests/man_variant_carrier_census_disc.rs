@@ -1162,3 +1162,85 @@ fn flag_0x528_is_scratch_bank_not_a_gate() {
         "town01 bulk-clears the 0x527..=0x52E scratch bank"
     );
 }
+
+/// The other two poll "high-churn" leads - `0x5A1` and `0x6C3` - are also
+/// write-only cutscene toggles, NOT gates. Both are zero-TEST to the field VM.
+///
+/// - **`0x5A1` is half of a flip-flop pair with `0x5A0`**: the two are toggled
+///   mutually exclusively (`CLEAR 0x5A0 ; SET 0x5A1` = `65 A0 55 A1`, and the
+///   reverse `55 A0 65 A1`), a two-state binary variable held as two flags
+///   inside rayman's Hari cutscene records (`P2[7]`/`P2[19]`). Confined to
+///   `rayman`; engine-read display/sequence state, never an inline script test.
+///
+/// - **`0x6C3` is a stone SOLVED-cutscene toggle** (`P2[5]`), write-only.
+///   Its census hit list names six scenes, but that is a DESYNC artifact: the
+///   flag operand byte `0xC3` collides with a repeating `C3 CC nn` data table
+///   in the town-family / rayman records, so `56 C3` matches across a table
+///   record boundary. Filtering to genuine ops (a `56 C3` NOT adjacent to a
+///   `0xCC`) leaves `stone` as the only real user. A sharper form of the
+///   `0x528` note: even the opcode-boundary census's SET/CLEAR *attributions*
+///   can be desync false positives when the operand byte aliases table data.
+#[test]
+fn flags_0x5a1_and_0x6c3_are_write_only_cutscene_toggles() {
+    let Some(index) = open_index() else { return };
+    let scenes = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+    let man_of = |name: &str| -> Vec<u8> {
+        Scene::load(&index, name)
+            .expect("load")
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    let test_count = |flag: u16| -> usize {
+        census
+            .get(&flag)
+            .map(|s| s.iter().filter(|h| h.kind == FlagKind::Test).count())
+            .unwrap_or(0)
+    };
+    let census_scenes = |flag: u16| -> BTreeSet<String> {
+        census
+            .get(&flag)
+            .map(|s| s.iter().map(|h| h.scene_name.clone()).collect())
+            .unwrap_or_default()
+    };
+    let count_sub = |hay: &[u8], sub: &[u8]| hay.windows(sub.len()).filter(|w| *w == sub).count();
+
+    // 0x5A0 / 0x5A1: both write-only; 0x5A1 confined to rayman; the two toggle
+    // as a mutually-exclusive flip-flop.
+    assert_eq!(test_count(0x5A0), 0, "0x5A0 write-only");
+    assert_eq!(test_count(0x5A1), 0, "0x5A1 write-only");
+    assert_eq!(
+        census_scenes(0x5A1),
+        BTreeSet::from(["rayman".to_string()]),
+        "0x5A1 lives only in rayman"
+    );
+    let rayman = man_of("rayman");
+    assert!(
+        count_sub(&rayman, &[0x65, 0xA0, 0x55, 0xA1]) > 0
+            && count_sub(&rayman, &[0x55, 0xA0, 0x65, 0xA1]) > 0,
+        "0x5A0/0x5A1 toggle as a flip-flop (both directions present)"
+    );
+
+    // 0x6C3: write-only, and genuinely stone-local despite the inflated census
+    // scene list. A genuine op is a `56 C3` (SET 0x6C3) not adjacent to a 0xCC
+    // (which would make it a `C3 CC nn` data-table boundary match).
+    assert_eq!(test_count(0x6C3), 0, "0x6C3 write-only");
+    let genuine_6c3 = |hay: &[u8]| -> usize {
+        (0..hay.len().saturating_sub(1))
+            .filter(|&o| hay[o] == 0x56 && hay[o + 1] == 0xC3)
+            .filter(|&o| !(o >= 1 && hay[o - 1] == 0xCC || o + 2 < hay.len() && hay[o + 2] == 0xCC))
+            .count()
+    };
+    assert!(
+        genuine_6c3(&man_of("stone")) > 0,
+        "0x6C3 real user is stone"
+    );
+    for other in ["town01", "town0b", "gameover_data"] {
+        assert_eq!(
+            genuine_6c3(&man_of(other)),
+            0,
+            "0x6C3 in {other} is a C3-CC data-table desync, not a real op"
+        );
+    }
+}
