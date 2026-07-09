@@ -55,7 +55,14 @@ KNOWN_SITES: dict[int, str] = {
     0x8003CE08: "FUN_8003CE08 flag SET helper",
     0x8003CE34: "FUN_8003CE34 flag CLEAR helper",
     0x8003CE64: "FUN_8003CE64 flag TEST helper",
-    0x801E35E8: "field-VM op-0x70 TEST handler return (overlay; FUN_801DE840 dispatch)",
+    # The field/event VM's flag-op dispatch (FUN_801DE840; every slot-A
+    # sibling carries the same copy at the same VAs - jals disc-verified).
+    0x801E3598: "field-VM op-0x50 SET handler return (FUN_801DE840 flag-op cluster)",
+    0x801E35C0: "field-VM op-0x60 CLEAR handler return (FUN_801DE840 flag-op cluster)",
+    0x801E35E8: "field-VM op-0x70 TEST handler return (FUN_801DE840 flag-op cluster)",
+    0x801E26BC: "field-VM secondary TEST site (FUN_801DE840; high-byte/gate op family)",
+    0x801E28A8: "field-VM secondary TEST site (FUN_801DE840; high-byte/gate op family)",
+    0x801E28C4: "field-VM secondary TEST site (FUN_801DE840; high-byte/gate op family)",
     0x801D218C: "walk-on tile-trigger dispatch (FUN_801D1EC4 -> FUN_801D5630 -> FUN_8003BDE0)",
     0x8003BF78: "FUN_8003BDE0 internal gate-bit read (walk-on trigger gate check)",
     0x8003C008: "FUN_8003BDE0 internal gate-bit read (walk-on trigger gate check)",
@@ -115,6 +122,7 @@ class Site:
     run_max: dict = field(default_factory=dict)    # run id -> max count seen
     runs: set = field(default_factory=set)
     overlays: set = field(default_factory=set)     # resident csums at hit time
+    vmops: set = field(default_factory=set)        # script op "0xVA(+0xOFF)"
 
 
 def parse_rows(lines, run: str = "") -> list[Row]:
@@ -208,9 +216,14 @@ def collect_sites(rows: list[Row]) -> dict[tuple, Site]:
                 csum = resident.get((r.run, b))
                 if csum is not None:
                     s.overlays.add(csum)
+        vm_va, vm_off = None, None
         for tok in r.note.split():
             if tok == "tgt":
                 s.target = True
+            elif tok.startswith("vm="):
+                vm_va = tok[3:]
+            elif tok.startswith("vmo="):
+                vm_off = tok[4:]
             elif tok.startswith(("pre=", "now=")):
                 s.values.add(tok)
             elif ";" in tok:
@@ -220,6 +233,8 @@ def collect_sites(rows: list[Row]) -> dict[tuple, Site]:
                     s.rects.add(tok)
             elif r.kind == "write" and not s.name:
                 s.name = tok
+        if vm_va:
+            s.vmops.add(vm_va + (f"(+{vm_off})" if vm_off else ""))
     # The probe logs every hit up to a per-class prefix (targets 8,
     # background 4) and then only every Nth - so a max count inside the
     # prefix is exact, anything past it is a lower bound. Totals sum the
@@ -252,9 +267,16 @@ def site_line(s: Site, labels: dict[int, str],
     tiles = f" tiles={','.join(sorted(s.tiles))}" if s.tiles else ""
     runs = f" runs={len(s.runs)}" if multi else ""
     res = resident_note(s, omap or {})
-    return (f"    {s.kind:<9} pc=0x{s.pc:08X} ra=0x{s.ra:08X} n={cnt:<7} "
+    line = (f"    {s.kind:<9} pc=0x{s.pc:08X} ra=0x{s.ra:08X} n={cnt:<7} "
             f"first@{s.first_tick}/{s.first_scene}{tiles}{runs}\n"
             f"              -> {label_for(who, labels)}{res}")
+    if s.vmops:
+        shown = sorted(s.vmops)
+        extra = f" +{len(shown) - 6} more" if len(shown) > 6 else ""
+        line += ("\n              script-ops: "
+                 + " ".join(shown[:6]) + extra
+                 + "  (buffer VA(+offset) of the bytecode op)")
+    return line
 
 
 def annotate_rect(tok: str) -> str:
@@ -402,12 +424,14 @@ def render(rows: list[Row], labels: dict[int, str], only: str | None,
             kinds = {}
             news = []
             resident: set[str] = set()
+            vmops: set[str] = set()
             for s in fs:
                 who = s.ra if s.pc in HELPER_PCS else s.pc
                 kinds.setdefault(s.kind, set()).add(who)
                 if who not in labels:
                     news.append(who)
                 resident |= s.overlays
+                vmops |= s.vmops
             desc = " ".join(
                 f"{k}[{','.join(f'0x{a:08X}' for a in sorted(v))}]"
                 for k, v in sorted(kinds.items()))
@@ -416,7 +440,12 @@ def render(rows: list[Row], labels: dict[int, str], only: str | None,
             if resident:
                 names = sorted(omap.get(c, f"csum:{c}?") for c in resident)
                 res = " resident=[" + ", ".join(names) + "]"
-            out.append(f"  0x{f:<5X} {desc}{res}{mark}")
+            ops = ""
+            if vmops:
+                shown = sorted(vmops)
+                more = f" +{len(shown) - 4}" if len(shown) > 4 else ""
+                ops = " script-ops: " + " ".join(shown[:4]) + more
+            out.append(f"  0x{f:<5X} {desc}{res}{ops}{mark}")
 
     if only in (None, "writes"):
         ws = sorted((s for s in sites.values() if s.kind == "write"),
@@ -476,6 +505,7 @@ def to_json(rows: list[Row], labels: dict[int, str],
             "name": s.name,
             "runs": sorted(s.runs),
             "resident": sorted(omap.get(c, f"csum:{c}?") for c in s.overlays),
+            "script_ops": sorted(s.vmops),
             "target": s.target, "label": label_for(who, labels),
             "new": who not in labels,
         })

@@ -227,6 +227,29 @@ def test_overlay_base_windowing():
     assert arw.overlay_base_for(0x801F69D8 - 1, bases) == 0x801CE818
 
 
+def test_vm_script_op_capture_render_and_json():
+    rows = _rows(
+        # target flag: full site_line with label + script-ops detail line
+        "10,test,1320,0x8003CE64,0x801E35E8,0x03,balden,1,tgt vm=0x801F8234 vmo=0x1A4",
+        "20,test,1320,0x8003CE64,0x801E35E8,0x03,balden,2,tgt vm=0x801F8400",
+        # background flag: compact line still carries the script-ops
+        "30,set,999,0x8003CE08,0x801E3598,0x03,balden,1,vm=0x801F8500 vmo=0x2B0",
+    )
+    sites = arw.collect_sites(rows)
+    s = sites[("test", 1320, 0x8003CE64, 0x801E35E8)]
+    assert s.vmops == {"0x801F8234(+0x1A4)", "0x801F8400"}
+    text = arw.render(rows, arw.load_labels(None), None)
+    assert "script-ops: 0x801F8234(+0x1A4) 0x801F8400" in text
+    assert "field-VM op-0x70 TEST handler return" in text  # target site label
+    assert "script-ops: 0x801F8500(+0x2B0)" in text        # background compact
+    import json
+
+    payload = json.loads(arw.to_json(rows, arw.load_labels(None)))
+    by_flag = {d["flag"]: d for d in payload}
+    assert by_flag[1320]["script_ops"] == ["0x801F8234(+0x1A4)", "0x801F8400"]
+    assert by_flag[999]["label"].startswith("field-VM op-0x50 SET handler")
+
+
 def _run_all():
     mod = sys.modules[__name__]
     names = [n for n in dir(mod) if n.startswith("test_")]

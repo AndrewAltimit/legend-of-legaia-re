@@ -489,6 +489,16 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   field/menu/battle/cutscene/minigame overlays all VA-alias slot A, so a
   bare overlay-region address is ambiguous; the checksum names the sibling
   resident when each hit fired (`LEGAIA_TRACE_OVERLAY=0` off).
+  And **field-VM script-PC capture**: when a flag helper's caller is
+  overlay-resident, the probe scans the saved registers for a pointer whose
+  bytes decode as the very flag op being executed (class nibble + operand
+  == `a0` - self-validating across every sibling's VM copy and call site;
+  at the primary flag-op cluster `s0` = the opcode VA and `s8` = the
+  dispatcher's `pc_offset`, see
+  [`script-vm.md`](../subsystems/script-vm.md)). Hits gain `vm=`/`vmo=`
+  note tokens - the exact script-buffer VA and byte offset of the bytecode
+  op - joining runtime provenance to MAN offsets, the ground truth the
+  static census cannot give where its opcode walker desyncs.
   Toggles: `LEGAIA_ALL_TESTS`/`LEGAIA_WRITERS`/`LEGAIA_DIRECT_READ`/
   `LEGAIA_AUTOSNAP`/`LEGAIA_TRACE_VRAM` (`0` = off),
   `LEGAIA_WATCH_WRITES=off`.

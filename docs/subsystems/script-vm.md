@@ -407,6 +407,21 @@ The default arm of the dispatcher checks `*pbVar43 & 0x70`:
 - `0x60`: `func_0x8003CE34(...)` - **CLEAR bit**.
 - `0x70`: `func_0x8003CE64(...)` - **TEST bit** (returns `0xFF` if set, `0` if clear). When non-zero, the dispatcher consumes two more operand bytes (`pbVar43[2..4]`) as the post-test action target.
 
+The flag-op cluster's helper calls sit at fixed VAs shared by **every**
+slot-A sibling's copy of the dispatcher (disc-byte-verified `jal` words in
+PROT 0897 at file `+0x14D78/+0x14DA0/+0x14DC8`): SET `jal` at `0x801E3590`
+(return `ra 0x801E3598`), CLEAR at `0x801E35B8` (`ra 0x801E35C0`), TEST at
+`0x801E35E0` (`ra 0x801E35E8`). At these sites register `s0` holds
+`pbVar43` (the VA of the current opcode byte in the script buffer) and
+`s8` holds the running `pc_offset` (the byte offset the dispatcher was
+entered with) - the anchor the runtime provenance probe
+(`autorun_flag_reader_watch.lua`) uses to attribute each live flag
+set/clear/test to its exact bytecode offset. Three secondary TEST call
+sites (`jal`s at `0x801E26B4`/`0x801E28A0`/`0x801E28BC`, the high-byte /
+gate op families) use different register allocation; the probe recovers
+the op pointer there by scanning the saved registers for a pointer whose
+bytes decode as the matching op + operand.
+
 The three SCUS dispatchers all operate on the **same bitfield array based at `0x80085758`**:
 
 - The disassembly of `FUN_8003ce64` (TEST) is `lui v1,0x8008; addiu v1,v1,0x4140` (`v1 = 0x80084140`) then `lbu v1, 0x1618(v0)` with `v0 = (idx >> 3) + v1`, i.e. the byte address is `0x80084140 + 0x1618 + (idx >> 3)` = `0x80085758 + (idx >> 3)`. Each does `index >> 3` to pick the byte and `0x80 >> (index & 7)` to pick the bit.

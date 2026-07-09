@@ -98,7 +98,9 @@
 --                                  resident sibling per hit)
 --          | scene | mode | snap  (context timeline / snapshot record)
 --     note = "tgt" marks a target flag; "t<x>;<z>" player tile (field mode);
---            write rows "name pre=0x.. now=0x.."; vram rows "r<x>;<y>;<w>;<h>"
+--            write rows "name pre=0x.. now=0x.."; vram rows "r<x>;<y>;<w>;<h>";
+--            field-VM flag hits gain "vm=0x<opcode VA> vmo=0x<pc_offset>" -
+--            the exact script-buffer position of the bytecode op
 --   flag_reader_watch.detail.txt  call context (targets prioritized)
 --   manifest.txt                  run config + source sstate
 --   snap_*.sstate                 new-scene + first-target-hit snapshots
@@ -315,6 +317,43 @@ local function log(s)
     PCSX.log("[reader] " .. s)
 end
 
+-- Field-VM script-PC capture: when a flag helper is called from the
+-- overlay-resident field/event VM (the FUN_801DE840 copy every slot-A
+-- sibling carries at the same VAs; primary flag-op cluster jals at
+-- 0x801E3590/0x801E35B8/0x801E35E0, disc-byte-verified), the current
+-- opcode POINTER rides in a saved register (s0 at the primary cluster;
+-- other TEST call sites vary) and s8 carries the running byte OFFSET into
+-- the script buffer. Rather than trusting fixed registers, scan s0..s7
+-- for a pointer whose bytes DECODE as this very op (class nibble matches
+-- the helper kind AND (op & 0x8F) << 8 | operand == a0) - self-validating
+-- across all VM copies and call sites; a random register passes the
+-- 2-byte check ~never, and repeated hits corroborate. The deliverable:
+-- the hit's exact script-buffer VA (+ buffer offset when s8 is
+-- consistent), joining runtime provenance to MAN bytecode offsets - the
+-- ground truth the static census cannot give where its walker desyncs.
+local VM_S_REGS = { "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7" }
+local function vm_script_note(r, cls, a0)
+    for i = 1, #VM_S_REGS do
+        local va = u32(r.GPR.n[VM_S_REGS[i]])
+        if mem.in_ram(va, 2) then
+            local op = u8(va)
+            if bit.band(op, 0xF0) == cls
+                and bit.lshift(bit.band(op, 0x8F), 8) + u8(va + 1) == a0 then
+                local note = string.format("vm=0x%08X", va)
+                -- s8 = pc_offset when the primary cluster called; validate
+                -- base = va - off looks like a live script buffer.
+                local off = u32(r.GPR.n.s8)
+                if off > 0 and off < 0x40000 and va - off >= 0x80010000
+                    and mem.in_ram(va - off, 1) then
+                    note = note .. string.format(" vmo=0x%X", off)
+                end
+                return note
+            end
+        end
+    end
+    return nil
+end
+
 -- Called from INSIDE a bp callback (emulation thread). Read regs/RAM here;
 -- queue all file/GUI/sstate I/O for the vsync drain.
 -- `extra` (optional): note     = extra note text (space-joined, no commas)
@@ -524,25 +563,29 @@ local function disarm_vram(reason)
 end
 
 local function arm_all()
+    -- Shared arm body: exec-bp a flag helper; capture a0 + ra, and when the
+    -- caller is overlay-resident try the field-VM script-PC capture (the
+    -- op class nibble is 0x50 SET / 0x60 CLEAR / 0x70 TEST).
+    local function arm_helper(pc, kind, cls, label, filter)
+        bp.arm(pc, "Exec", 4, label, function()
+            local r  = regs()
+            local a0 = (tonumber(r.GPR.n.a0) or 0) % 0x10000
+            if filter and not ALL_TESTS and not TARGETS[a0] then return end
+            local ra = u32(r.GPR.n.ra)
+            local extra = nil
+            if ra >= 0x801C0000 then
+                local vn = vm_script_note(r, cls, a0)
+                if vn then extra = { note = vn } end
+            end
+            record(kind, a0, pc, ra, extra)
+        end)
+    end
     -- 1. TEST helper: every read (or targets only, LEGAIA_ALL_TESTS=0).
-    bp.arm(FLAG_GET_PC, "Exec", 4, "flag_get", function()
-        local r  = regs()
-        local a0 = (tonumber(r.GPR.n.a0) or 0) % 0x10000
-        if not ALL_TESTS and not TARGETS[a0] then return end
-        record("test", a0, FLAG_GET_PC, u32(r.GPR.n.ra))
-    end)
+    arm_helper(FLAG_GET_PC, "test", 0x70, "flag_get", true)
     -- 2. SET/CLEAR helpers: every write with writer ra (firehose merge).
     if WRITERS then
-        bp.arm(FLAG_SET_PC, "Exec", 4, "flag_set", function()
-            local r  = regs()
-            local a0 = (tonumber(r.GPR.n.a0) or 0) % 0x10000
-            record("set", a0, FLAG_SET_PC, u32(r.GPR.n.ra))
-        end)
-        bp.arm(FLAG_CLEAR_PC, "Exec", 4, "flag_clear", function()
-            local r  = regs()
-            local a0 = (tonumber(r.GPR.n.a0) or 0) % 0x10000
-            record("clear", a0, FLAG_CLEAR_PC, u32(r.GPR.n.ra))
-        end)
+        arm_helper(FLAG_SET_PC, "set", 0x50, "flag_set", false)
+        arm_helper(FLAG_CLEAR_PC, "clear", 0x60, "flag_clear", false)
     end
     -- 3. Direct/inlined readers: one Read-watch per distinct TARGET byte.
     --    Suppress the helpers' own accesses (watches 1/2 cover those). The
