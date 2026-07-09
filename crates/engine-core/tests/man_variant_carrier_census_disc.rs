@@ -379,3 +379,67 @@ fn chapter2_dungeon_gate_families() {
     assert_eq!(gates("doman", 4), (vec![0x3FB], vec![]));
     assert_eq!(gates("doman", 3), (vec![], vec![0x6E7]));
 }
+
+/// The chapter-2 `balden`/`balden2` and `station`/`station3` gate families,
+/// mined the same disc-static way (C1/C2 record headers, `FUN_8003BDE0`).
+///
+/// - **balden** is a full arc around `0x1D5` (the balden-reached flag): entry
+///   `P2[0]` C1=`[0x1D4,0x1D2]` C2=`[0x1D5]`, the `0x1D5` group (`P2[3]`/`[16]`/
+///   `[17]` one-shots, `P2[8]`/`[12]` successors), a `0x1C0`/`0x1CB` pair
+///   (`P2[9]`), a `0x346` cross-scene successor (`P2[14]`), and the `0x5B3`
+///   self-latch pair (`P2[19]`/`P2[18]`) already in the Sebucus spine. NB the
+///   `0x5B3` beat is the ONE chapter-2 dungeon gate the poll caught ORGANICALLY
+///   (`flagset` in `scene=balden` @tick 89729); the rest are disc-static.
+/// - **balden2** is a sibling streaming carrier with a BYTE-different body
+///   (differs ~53 bytes) but an IDENTICAL gate family - same 20 partition-2
+///   records, same C1/C2 on every one. Unlike `rayman2` (which adds a `0x7`
+///   discriminator), the two balden carriers carry no gate-level selector, so
+///   the variant is chosen by the streaming slot, not a flag.
+/// - **balden `P2[15]`** C1=`[0x3FD,0x359]` gates on the `ropeway2`
+///   switch-group flags - a cross-scene link into that puzzle's state.
+/// - **station**/`station3` are small and both gate on taiku's `0x38F`
+///   (`station P2[24]` C2=`[0x38F]`, `station3 P2[2]` C2=`[0x38F]`), so `0x38F`
+///   is a shared taiku/station area-progress flag. Poll never walked them.
+#[test]
+fn chapter2_balden_station_gate_families() {
+    use legaia_asset::man_section::parse as parse_man;
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
+        let scene = Scene::load(&index, scene_name).expect("load");
+        let man = scene
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN");
+        let mf = parse_man(&man).expect("parse");
+        let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
+        (0..n_p2)
+            .map(|r| partition2_record_gates(&mf, &man, r).unwrap_or_default())
+            .collect()
+    };
+
+    let balden = all_gates("balden");
+    // balden arc around 0x1D5 + the cross-scene links.
+    assert_eq!(balden[0], (vec![0x1D4, 0x1D2], vec![0x1D5]));
+    assert_eq!(balden[9], (vec![0x1CB], vec![0x1C0]));
+    assert_eq!(balden[14], (vec![], vec![0x346]));
+    // P2[15] gates on the ropeway2 switch-group flags (cross-scene link).
+    assert_eq!(balden[15], (vec![0x3FD, 0x359], vec![]));
+    // the 0x5B3 self-latch pair (also in the Sebucus spine; poll-confirmed).
+    assert_eq!(balden[19], (vec![0x5B3], vec![]));
+    assert_eq!(balden[18], (vec![], vec![0x5B3]));
+
+    // balden2 is a sibling carrier: identical gate family, no 0x7-style selector.
+    assert_eq!(
+        all_gates("balden2"),
+        balden,
+        "balden2 gate family mirrors balden"
+    );
+
+    // station / station3: small, both gate on taiku's 0x38F (shared area flag).
+    let station = all_gates("station");
+    assert_eq!(station[19], (vec![0x36B], vec![]));
+    assert_eq!(station[24], (vec![], vec![0x38F]));
+    let station3 = all_gates("station3");
+    assert_eq!(station3[2], (vec![0x467], vec![0x38F]));
+}
