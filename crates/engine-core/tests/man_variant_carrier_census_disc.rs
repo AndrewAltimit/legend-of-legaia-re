@@ -590,3 +590,57 @@ fn chapter2_dohaty_retock_stone_gate_families() {
     let stone = all_gates("stone");
     assert_eq!(stone[6], (vec![0x590], vec![]));
 }
+
+/// The `map02` Sebucus HUB's own gate family. The hub is deliberately sparse -
+/// a router (33 partition-1 door/NPC scripts) whose partition-2 layer carries
+/// only TWO gated records, both **overworld-mirror one-shots** of a dungeon-arc
+/// completion (the same shape: C1 = the mirror flag the record sets, C2 = the
+/// dungeon prerequisite it waits on):
+///
+/// - `P2[9]` C1=`[0x332]` C2=`[0x1C9]` - the teien-arc mirror (also pinned in
+///   `chapter2_sebucus_gate_spine`).
+/// - `P2[10]` C1=`[0x357]` C2=`[0x3AD]` - the retock-area mirror; its `0x357`
+///   is the SAME flag retock/retockin gate on (`retock P2[33]`,
+///   `retockin P2[42]`), so this is the hub-side record that reflects the
+///   retock dungeon back onto the overworld.
+///
+/// Every OTHER progression gate for the chapter lives in a spoke dungeon's MAN,
+/// not the hub - the hub just mirrors two arc-completions.
+#[test]
+fn chapter2_map02_hub_gate_family() {
+    use legaia_asset::man_section::parse as parse_man;
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let scene = Scene::load(&index, "map02").expect("load map02");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("MAN");
+    let mf = parse_man(&man).expect("parse");
+    let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
+    let mut gated_recs = Vec::new();
+    let mut gates = Vec::new();
+    for r in 0..n_p2 {
+        let Some((c1, c2)) = partition2_record_gates(&mf, &man, r) else {
+            continue;
+        };
+        if c1.is_empty() && c2.is_empty() {
+            continue;
+        }
+        gated_recs.push(r);
+        gates.push((c1, c2));
+    }
+
+    // The hub has exactly two gated partition-2 records.
+    assert_eq!(
+        gated_recs,
+        [9, 10],
+        "map02 hub carries only the two overworld-mirror beats"
+    );
+    assert_eq!(gates[0], (vec![0x332], vec![0x1C9]), "teien-arc mirror");
+    assert_eq!(
+        gates[1],
+        (vec![0x357], vec![0x3AD]),
+        "retock-area mirror; 0x357 shared with retock/retockin"
+    );
+}
