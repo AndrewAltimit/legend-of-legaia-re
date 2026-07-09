@@ -137,6 +137,13 @@ KNOWN_FLAGS = {
     0x5A0: "rayman cutscene flip-flop (write-only, with 0x5A1)",
     0x5A1: "rayman cutscene flip-flop (write-only, with 0x5A0)",
     0x6C3: "stone SOLVED-cutscene toggle (write-only, not a gate)",
+    # 0x32A/0x590 = REAL stone-local progress gates (SET + TESTed), unlike the
+    # write-only toggles above. 0x32A = the "code clue" marker; 0x590 = a
+    # scene-entry progress gate. Both stone-local (0x590's other7 census TEST is
+    # Shift-JIS desync, not cross-scene).
+    # man_variant_carrier_census_disc.rs::stone_0x32a_and_0x590_are_real_local_progress_gates.
+    0x32A: "stone: code-clue discovered (SET+TEST gate)",
+    0x590: "stone: scene-entry progress gate (local)",
 }
 
 

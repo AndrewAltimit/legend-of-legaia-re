@@ -1244,3 +1244,70 @@ fn flags_0x5a1_and_0x6c3_are_write_only_cutscene_toggles() {
         );
     }
 }
+
+/// Unlike the write-only churn flags, the last two poll leads - `0x32A` and
+/// `0x590` - ARE real stone-LOCAL progress gates: both are SET and TESTed by
+/// the field VM (a story gate is SET + TESTed; a scratch/toggle is
+/// SET/CLEAR-many + zero-TEST). Checking for TEST sites first is what
+/// separates them from `0x528`/`0x5A1`/`0x6C3`.
+///
+/// - **`0x32A` = the stone "code clue" marker**: SET (`53 2A`) at the
+///   "Some sort of code is..." hint, TESTed three times in the SOLVED cutscene
+///   (`P2[5]`) via the clean `73 2A 05 00 26` test-and-branch idiom. Distinct
+///   from the 16 selector flags (`0x1D8..=0x1E7`) and the solved gate
+///   (`0x1E8`). The census misses the SET (its walker desyncs in the
+///   dialogue-heavy record) but decodes the three TESTs.
+/// - **`0x590` = a stone scene-entry progress gate**: SET in a stone cutscene
+///   (`P2[6]`), TESTed at scene-entry (`P1[0]`, right before the scratch-bank
+///   clear) to branch opened-state behavior. Stone-LOCAL: the census's
+///   `other7 P1[15]` "cross-scene TEST" is FALSIFIED - those `75 90` bytes sit
+///   inside Shift-JIS dialogue (`75 90 B6 82 ...` = きてる), so the branch word
+///   high byte is `0x82`, not `0x00`. A real field-VM TEST is followed by a
+///   small `[lo, 0x00]` branch offset; that high-byte==0 test is the
+///   real-op-vs-text-desync discriminator.
+#[test]
+fn stone_0x32a_and_0x590_are_real_local_progress_gates() {
+    let Some(index) = open_index() else { return };
+    let man_of = |name: &str| -> Vec<u8> {
+        Scene::load(&index, name)
+            .expect("load")
+            .field_man_payload(&index)
+            .expect("payload")
+            .expect("MAN")
+    };
+    let count_sub = |hay: &[u8], sub: &[u8]| hay.windows(sub.len()).filter(|w| *w == sub).count();
+    // A genuine field-VM TEST: the two-byte TEST op followed by a `[lo, 0x00]`
+    // branch word (real jump offsets are small; text desync gives a high byte).
+    let genuine_tests = |hay: &[u8], op: [u8; 2]| -> usize {
+        (0..hay.len().saturating_sub(3))
+            .filter(|&o| hay[o] == op[0] && hay[o + 1] == op[1] && hay[o + 3] == 0x00)
+            .count()
+    };
+
+    let stone = man_of("stone");
+    // 0x32A: real SET (53 2A) + real TESTs (73 2A .. 00) in stone.
+    assert!(count_sub(&stone, &[0x53, 0x2A]) >= 1, "stone SETs 0x32A");
+    assert!(
+        genuine_tests(&stone, [0x73, 0x2A]) >= 3,
+        "stone TESTs 0x32A in the solved cutscene"
+    );
+    // 0x590: real SET (55 90) + real TEST (75 90 .. 00) in stone.
+    assert!(count_sub(&stone, &[0x55, 0x90]) >= 1, "stone SETs 0x590");
+    assert!(
+        genuine_tests(&stone, [0x75, 0x90]) >= 1,
+        "stone TESTs 0x590 at scene entry"
+    );
+
+    // Cross-scene reader FALSIFIED: other7's census 0x590 TESTs are Shift-JIS
+    // text - `75 90` occurs, but never as a genuine `[lo, 0x00]` branch.
+    let other7 = man_of("other7");
+    assert!(
+        count_sub(&other7, &[0x75, 0x90]) > 0,
+        "other7 has the 75 90 byte pair (the census hit)"
+    );
+    assert_eq!(
+        genuine_tests(&other7, [0x75, 0x90]),
+        0,
+        "but none are real TESTs - 0x590 is stone-local, not cross-scene"
+    );
+}
