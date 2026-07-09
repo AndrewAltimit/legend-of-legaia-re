@@ -27,7 +27,9 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{scene_man_carriers, system_flag_census};
+use legaia_engine_core::man_field_scripts::{
+    flag_test_bytescan, scene_man_carriers, system_flag_census,
+};
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_vm::field_disasm::FlagKind;
 
@@ -1332,4 +1334,113 @@ fn stone_0x32a_and_0x590_are_real_local_progress_gates() {
         0,
         "but none are real TESTs - 0x590 is stone-local, not cross-scene"
     );
+}
+
+/// Desync cross-check over every mined flag: the systemic guard the `0x528`
+/// correction earned. [`system_flag_census`]'s opcode walker is NOT
+/// authoritative for TEST in dialogue-heavy records - it desyncs into
+/// Shift-JIS text and silently drops real ops. The walker-independent
+/// [`flag_test_bytescan`] (the `[0x70|hi][lo][blo][0x00]` branch idiom)
+/// cross-checks it. This test re-validates all seven poll minings against that
+/// side channel; it FAILS if any flag we asserted "write-only" elsewhere turns
+/// out to carry a hidden TEST reader (a second `0x528`).
+///
+/// Key results (see [`flag_test_bytescan`] for the noise-floor model):
+/// - **Write-only is robust, not a desync floor**: `0x5A0` / `0x5A1` / `0x6C3`
+///   have `raw == 0` - the TEST byte-pair is *absent disc-wide*, so no reader
+///   can hide. This is the strongest possible confirmation of the cutscene-
+///   toggle finding, far beyond "census TEST == 0".
+/// - **`0x528` is the lone census-zero-but-real case** (already corrected +
+///   firehose-confirmed): census TEST == 0 yet `genuine` sits ~67 vs a `0.4`
+///   noise floor. The scratch bank `0x527..=0x52E` is where both static tools
+///   disagree wildly - inherently runtime-only, consistent with scratch churn.
+/// - **The real gates confirm**: the stone puzzle (`0x1D8..=0x1E8`), rayman
+///   Haris hub (`0x1FD..=0x1FF`), and stone-local `0x32A` / `0x590` all show
+///   `genuine` far above their (~0) noise floors; `0x1E8` even surfaces its
+///   `map02` cross-scene reader.
+#[test]
+fn desync_crosscheck_revalidates_every_mined_flag() {
+    let Some(index) = open_index() else { return };
+    let scenes: Vec<String> = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+
+    // Cache every scene's concatenated MAN-carrier payloads once (a 0xFF
+    // separator keeps a cross-carrier window from matching a spurious pair).
+    let mut man_cache: Vec<(String, Vec<u8>)> = Vec::new();
+    for name in &scenes {
+        let Ok(scene) = Scene::load(&index, name) else {
+            continue;
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        for c in scene_man_carriers(&index, &scene) {
+            buf.extend_from_slice(&c.payload);
+            buf.push(0xFF);
+        }
+        if !buf.is_empty() {
+            man_cache.push((name.clone(), buf));
+        }
+    }
+    assert!(!man_cache.is_empty(), "no MAN carriers decoded");
+
+    // Disc-wide (raw, genuine) for a flag's TEST branch idiom.
+    let bytescan = |flag: u16| -> (usize, usize) {
+        man_cache.iter().fold((0, 0), |(r, g), (_, hay)| {
+            let (dr, dg) = flag_test_bytescan(hay, flag);
+            (r + dr, g + dg)
+        })
+    };
+    let census_test = |flag: u16| -> usize {
+        census
+            .get(&flag)
+            .map(|s| s.iter().filter(|h| h.kind == FlagKind::Test).count())
+            .unwrap_or(0)
+    };
+
+    // (1) THE GUARD: every flag asserted "write-only" elsewhere must have a
+    // truly absent TEST byte-pair disc-wide (raw == 0). A future mining that
+    // mislabels a real gate as write-only trips this.
+    for wo in [0x5A0u16, 0x5A1, 0x6C3] {
+        let (raw, genuine) = bytescan(wo);
+        assert_eq!(
+            (raw, genuine),
+            (0, 0),
+            "0x{wo:X} claimed write-only but its TEST byte-pair appears disc-wide (possible hidden reader)"
+        );
+    }
+
+    // (2) 0x528: the census reports zero TEST (a desync floor), but the
+    // byte-scan finds the reader far above the noise floor. Locks the
+    // correction + the "census not authoritative" lesson.
+    assert_eq!(census_test(0x528), 0, "0x528 census TEST is a desync floor");
+    let (raw_528, gen_528) = bytescan(0x528);
+    assert!(
+        gen_528 >= 10 && gen_528 as f64 > (raw_528 as f64 / 256.0) * 6.0,
+        "0x528 carries a real TEST reader the census missed (genuine {gen_528} vs raw {raw_528})"
+    );
+
+    // (3) The real gates: genuine TEST far above a ~0 noise floor. Each has a
+    // tiny raw pool (rare op-pair), so the branch-idiom count is decisive.
+    let real = |flag: u16, min: usize| {
+        let (raw, genuine) = bytescan(flag);
+        assert!(
+            genuine >= min && genuine as f64 > (raw as f64 / 256.0) * 3.0 + 0.5,
+            "0x{flag:X} is a real TEST gate (genuine {genuine} >= {min}, raw {raw})"
+        );
+    };
+    for chest in 0x96u16..=0x9C {
+        real(chest, 2); // tunnela treasure-chest gates
+    }
+    for sym in 0x1D8u16..=0x1E8 {
+        real(sym, 4); // stone symbol-puzzle selectors + solved gate
+    }
+    for hari in [0x1FDu16, 0x1FE, 0x1FF] {
+        real(hari, 4); // rayman three-Haris hub
+    }
+    real(0x32A, 3); // stone code-clue marker
+    real(0x590, 1); // stone scene-entry progress gate
+
+    // 0x1E8 (stone SOLVED) is read cross-scene in map02 - the byte-scan sees
+    // it even though it is a different scene than the setter.
+    let (_, gen_1e8) = bytescan(0x1E8);
+    assert!(gen_1e8 >= 15, "0x1E8 solved gate is heavily TESTed");
 }

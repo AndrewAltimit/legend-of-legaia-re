@@ -443,6 +443,46 @@ where
     out
 }
 
+/// Side-channel byte-scan for the field-VM **TEST-op branch idiom** of a SYSTEM
+/// flag: `[0x70|hi][lo][branch_lo][0x00]` (a `0x7x` TEST followed by a small
+/// `u16` branch-offset word whose high byte is zero). Returns `(raw, genuine)`
+/// where `raw` counts every `[op][operand]` pair in `payload` (the noise pool)
+/// and `genuine` the subset whose following branch high byte is `0x00`.
+///
+/// This cross-checks [`system_flag_census`]'s TEST count, which is *not*
+/// authoritative in dialogue-heavy records: the opcode walker desyncs into
+/// Shift-JIS text / data tables and silently drops real ops (undercount) or
+/// mis-attributes aliased operand bytes (overcount). The byte-scan is
+/// walker-independent, so a discrepancy exposes a desync:
+///
+/// - `genuine` far above the `raw / 256` random-noise floor while the census
+///   reports **zero** TEST is a desync-**hidden reader** - the `0x528` case,
+///   independently confirmed live (field-VM op-`0x70` handler `ra 0x801E35E8`,
+///   flag `0x528` read 1951x). "Census zero-TEST" alone is a desync *floor*,
+///   not proof of write-only.
+/// - `raw == 0` conversely proves the flag is genuinely **never** TESTed - the
+///   TEST byte-pair is absent disc-wide, so no reader can hide (the robust
+///   form of a "write-only cutscene toggle": `0x5A0` / `0x5A1` / `0x6C3`).
+///
+/// Caveat: the `genuine` **count** is only decisive when `raw` is small (a rare
+/// op-pair). For a common byte-pair the `raw / 256` floor swamps the signal and
+/// only a runtime read-watch settles the exact reader.
+pub fn flag_test_bytescan(payload: &[u8], flag: u16) -> (usize, usize) {
+    let op = (0x70 | (flag >> 8)) as u8;
+    let operand = (flag & 0xFF) as u8;
+    let mut raw = 0usize;
+    let mut genuine = 0usize;
+    for o in 0..payload.len().saturating_sub(1) {
+        if payload[o] == op && payload[o + 1] == operand {
+            raw += 1;
+            if o + 3 < payload.len() && payload[o + 3] == 0x00 {
+                genuine += 1;
+            }
+        }
+    }
+    (raw, genuine)
+}
+
 /// One field-VM op-`0x49` (`STATE_RESUME`) site recovered by
 /// [`op49_window_census`], with its operand bytes interpreted under the
 /// **flag-window descriptor** layout the field-overlay picker widget
