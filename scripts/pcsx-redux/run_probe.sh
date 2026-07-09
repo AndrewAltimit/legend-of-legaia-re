@@ -315,6 +315,14 @@ fi
 # Pass through all the LEGAIA_* knobs the autorun reads.
 export LEGAIA_SSTATE LEGAIA_FRAMES LEGAIA_OUT LEGAIA_OUT_DIR LEGAIA_SCENARIO LEGAIA_PROBE_SPEC
 
+# Tell the Lua side which CPU core this launch selected, so a breakpoint
+# probe can HARD-REFUSE a --fast launch (Lua BPs silently never fire under
+# the recompiler - hours of play, empty capture) and a poll probe can warn
+# it was launched on the slow core. Probes launched outside this runner
+# see no LEGAIA_CORE and fall back to their runtime canaries.
+if [[ $FAST -eq 1 ]]; then LEGAIA_CORE=dynarec; else LEGAIA_CORE=interpreter; fi
+export LEGAIA_CORE
+
 # ---------- run ----------
 # stdbuf forces line-buffered stdout/stderr so the log streams live rather
 # than dumping in one chunk at exit. -stdout enables pcsx-redux's

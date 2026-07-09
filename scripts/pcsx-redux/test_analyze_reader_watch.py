@@ -153,6 +153,21 @@ def test_vram_section_clut_classification():
     assert "flag 0x0" not in arw.render(rows, arw.load_labels(None), "targets")
 
 
+def test_battle_rows_render_with_boss_marker():
+    rows = _rows(
+        # boss-shaped (lone formation slot) + a normal 2-monster fight
+        "100,battle,79,0x0,0x0,0x14,rimelm,1,form=4F000000 enter=0x08 t3;-2",
+        "200,battle,18,0x0,0x0,0x14,map02,2,form=12120000 enter=0x08 batid=0x05",
+    )
+    text = arw.render(rows, arw.load_labels(None), "battles")
+    assert "BATTLES" in text
+    assert "form=4F000000" in text and "*boss-shaped*" in text
+    assert "form=12120000" in text
+    assert text.count("*boss-shaped*") == 1
+    # battle rows are context, not flag sites
+    assert "flag 0x4F" not in arw.render(rows, arw.load_labels(None), "targets")
+
+
 def _run_all():
     mod = sys.modules[__name__]
     names = [n for n in dir(mod) if n.startswith("test_")]

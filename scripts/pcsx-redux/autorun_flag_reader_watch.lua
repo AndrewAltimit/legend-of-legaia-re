@@ -88,6 +88,10 @@
 --          | byteread             (direct read of a target byte; post-filter)
 --          | write                (P7 allowlist hit; flag = slot index)
 --          | vram | vrammove      (P8 upload; rect in note)
+--          | battle               (P9 one row per fight: flag = formation[0],
+--                                  note = full formation + entry mode + the
+--                                  last field tile = the encounter spawn spot;
+--                                  lone-boss fights auto-snapshot)
 --          | scene | mode | snap  (context timeline / snapshot record)
 --     note = "tgt" marks a target flag; "t<x>;<z>" player tile (field mode);
 --            write rows "name pre=0x.. now=0x.."; vram rows "r<x>;<y>;<w>;<h>"
@@ -125,6 +129,14 @@ local LOAD_IMAGE  = 0x800583C8  -- FUN_800583C8 LoadImage (RAM -> VRAM)
 local MOVE_IMAGE  = 0x80058490  -- FUN_80058490 MoveImage (VRAM -> VRAM; dst a1,a2)
 -- STR/FMV game modes: a hot LoadImage exec-bp here segfaults the emulator.
 local FMV_MODES   = { [0x1A] = true, [0x1B] = true }
+-- P9: per-battle identity (same brackets as autorun_state_poll.lua).
+-- BATTLE_MODES latches "a fight is loading/active" (one row per fight);
+-- BATTLE_ACTIVE is where the formation table holds THIS battle's ids.
+local BATTLE_ID     = 0x8007B7FC  -- staging byte (also a P7 default watch)
+local FORMATION     = 0x8007BD0C  -- DAT_8007bd0c[4] first-monster ids
+local BATTLE_MODES  = { [0x08]=true, [0x09]=true, [0x14]=true, [0x15]=true,
+                        [0x16]=true, [0x17]=true }
+local BATTLE_ACTIVE = { [0x14]=true, [0x15]=true, [0x16]=true, [0x17]=true }
 
 -- +-- config ----------------------------------------------------------------
 -- Target flags: comma list, 0x.. or decimal. Targets get byteread watches +
@@ -191,6 +203,11 @@ do
 end
 -- P8: VRAM upload log (auto-disarmed across FMV modes; 0 disables).
 local TRACE_VRAM = probe.getenv("LEGAIA_TRACE_VRAM", "1") ~= "0"
+-- Core guard: this probe is 100% breakpoints - under the recompiler
+-- (--fast) Lua BPs silently never fire and hours of play produce an empty
+-- capture. run_probe.sh exports which core it launched; refuse dynarec.
+-- Hand launches (no LEGAIA_CORE) fall through to the runtime canary below.
+local CORE = probe.getenv("LEGAIA_CORE", "")
 
 local CSV = probe.csv_open(probe.out_path("flag_reader_watch.csv"),
     "tick,kind,flag,pc,ra,mode,scene,count,note")
@@ -254,6 +271,15 @@ local seen_scenes = {}   -- new-scene snapshot trigger
 local snap_flags  = {}   -- first-target-hit snapshot, once per flag
 local snap_count  = 0
 local pending_snaps = {} -- snapshot requests queued by bp callbacks
+local armed_tick  = nil  -- for the BP-liveness canary
+local canary_warned = 0
+local last_field_tile = ""  -- last tile seen in field mode (battle-entry attribution)
+-- P9 per-battle latch (see BATTLE_MODES above).
+local in_battle       = false
+local batt_pending    = false
+local batt_batid      = 0
+local batt_enter_mode = 0
+local batt_tile       = ""
 
 local function log(s)
     CSV.fh:flush()
@@ -378,6 +404,33 @@ local function autosnap(reason)
     end
 end
 
+-- P9: one identity row per fight, emitted once the battle scene is active
+-- (the formation table holds THIS battle's ids there, not the previous
+-- one's). flag = formation[0] (lone-boss id); note carries the full 4-id
+-- formation, the entry mode, and the LAST FIELD TILE before the mode left
+-- field - the encounter's spawn point, which the in-battle player pointer
+-- can no longer tell us. Lone non-zero slot = a solo enemy = boss-shaped:
+-- snapshot it. The formation WRITER's ra is the P7 `form` watch's job;
+-- this row is the committed-value complement (poll-style, pc/ra=0x0).
+local function emit_battle()
+    local f0, f1 = u8(FORMATION), u8(FORMATION + 1)
+    local f2, f3 = u8(FORMATION + 2), u8(FORMATION + 3)
+    totals.battle = (totals.battle or 0) + 1
+    local note = string.format("form=%02X%02X%02X%02X enter=0x%02X",
+        f0, f1, f2, f3, batt_enter_mode)
+    if batt_batid ~= 0 then
+        note = note .. string.format(" batid=0x%02X", batt_batid)
+    end
+    if batt_tile ~= "" then note = note .. " " .. batt_tile end
+    CSV:row("%d,battle,%d,0x0,0x0,0x%02X,%s,%d,%s",
+        vsync, f0, u8(GAME_MODE), scene_name(), totals.battle, note)
+    log(string.format("battle #%d: %s", totals.battle, note))
+    batt_pending = false
+    if f0 ~= 0 and f1 == 0 and f2 == 0 and f3 == 0 then
+        autosnap(string.format("boss%02X", f0))
+    end
+end
+
 -- +-- arm --------------------------------------------------------------------
 -- P8: LoadImage/MoveImage exec-bps, held in their own handle list so they
 -- can be REMOVED when the mode byte enters the STR/FMV modes (a hot
@@ -477,6 +530,7 @@ local function arm_all()
     -- 5. (P8) VRAM upload log (own handle list; mode-gated in on_vsync).
     arm_vram()
     armed = true
+    armed_tick = vsync
     log(string.format("armed at tick %d (mode=0x%02X scene=%s)",
         vsync, u8(GAME_MODE), scene_name()))
     local tl = {}
@@ -521,7 +575,8 @@ local function arm_all()
         autosave_every = tostring(AUTOSAVE_EVERY),
         armed_tick     = tostring(vsync),
         armed_scene    = scene_name(),
-        core           = "interpreter+debugger (required; BPs dead under --fast)",
+        core           = (CORE ~= "") and CORE
+            or "unknown (no LEGAIA_CORE; hand launch - canary armed)",
     })
 end
 
@@ -625,6 +680,47 @@ local function on_vsync()
         end
     end
 
+    -- Track the last field tile for battle-entry attribution (the player
+    -- pointer is stale/garbage once the mode leaves field).
+    if md == FIELD_MODE then
+        local tn = tile_note()
+        if tn ~= "" then last_field_tile = tn end
+    end
+
+    -- P9: latch on the field->battle edge; emit one identity row once the
+    -- battle scene is active (formation committed) or on early exit.
+    local inb = BATTLE_MODES[md] ~= nil
+    if inb and not in_battle then
+        in_battle       = true
+        batt_pending    = true
+        batt_enter_mode = md
+        batt_tile       = last_field_tile
+        batt_batid      = u8(BATTLE_ID)  -- earliest shot at the staging byte
+    elseif (not inb) and in_battle then
+        in_battle = false
+        if batt_pending then emit_battle() end
+    end
+    if in_battle then
+        if batt_batid == 0 then
+            local b = u8(BATTLE_ID)
+            if b ~= 0 then batt_batid = b end
+        end
+        if batt_pending and BATTLE_ACTIVE[md] ~= nil then emit_battle() end
+    end
+
+    -- BP-liveness canary: with the unfiltered TEST bp armed, field-mode gate
+    -- tests fire every frame - a long silence means the bps are NOT firing
+    -- (recompiler core, i.e. launched with --fast, or a debugger-hook
+    -- failure). Warn loudly and repeatedly; the capture would be garbage.
+    if ALL_TESTS and armed_tick ~= nil and md == FIELD_MODE
+        and (totals.test + totals.set + totals.clear) == 0
+        and (vsync - armed_tick) >= 900 * (canary_warned + 1) then
+        canary_warned = canary_warned + 1
+        log("WARNING: no breakpoint has fired since arming - Lua BPs are")
+        log("  likely DEAD (recompiler core?). Relaunch WITHOUT --fast; the")
+        log("  top bar must read 'CPU: Interpreted'. This capture is empty.")
+    end
+
     if (vsync % 480) == 0 then
         log(string.format(
             "alive tick=%d mode=0x%02X scene=%s test=%d set=%d clear=%d byteread=%d write=%d vram=%d snap=%d",
@@ -650,6 +746,12 @@ log(string.format(
     #WATCH_WRITES, tostring(TRACE_VRAM)))
 log("every flag tested/set/cleared this session is recorded with its ra (deduped)")
 log("this session never self-quits -- wrap the launch in timeout --kill-after")
+if CORE == "dynarec" then
+    capture_disabled = true
+    log("FATAL: launched with --fast (LEGAIA_CORE=dynarec). This probe is")
+    log("  100% breakpoints and Lua BPs NEVER fire under the recompiler -")
+    log("  the capture would be silently empty. Relaunch WITHOUT --fast.")
+end
 
 PROBE_LISTENER_ANCHORS = PROBE_LISTENER_ANCHORS or {}
 PROBE_LISTENER_ANCHORS[#PROBE_LISTENER_ANCHORS + 1] =

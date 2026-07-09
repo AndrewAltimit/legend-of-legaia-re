@@ -395,6 +395,12 @@ log("kinds: set/clear (value=flag idx), battleid (value=staged byte), scene, mod
 log("repeat suppression: first " .. DETAIL_FULL .. " per (kind,value,ra), then every "
     .. SUPPRESS_EVERY .. "th (count column keeps totals exact)")
 log("this session never self-quits -- wrap the launch in timeout --kill-after")
+if probe.getenv("LEGAIA_CORE", "") == "dynarec" then
+    capture_disabled = true
+    log("FATAL: launched with --fast (LEGAIA_CORE=dynarec). This probe is")
+    log("  100% breakpoints and Lua BPs NEVER fire under the recompiler -")
+    log("  the capture would be silently empty. Relaunch WITHOUT --fast.")
+end
 
 -- keep the handle: a GC'd listener object deletes the C++ listener
 -- (silently unregisters; GC mid-dispatch can segfault the emulator)

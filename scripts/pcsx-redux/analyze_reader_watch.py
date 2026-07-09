@@ -47,7 +47,7 @@ KNOWN_SITES: dict[int, str] = {
 }
 
 HELPER_PCS = {0x8003CE08, 0x8003CE34, 0x8003CE64, 0x800583C8, 0x80058490}
-CONTEXT_KINDS = {"scene", "mode", "snap"}
+CONTEXT_KINDS = {"scene", "mode", "snap", "battle"}
 FLAG_KINDS = {"test", "set", "clear", "byteread"}
 
 
@@ -269,6 +269,15 @@ def render(rows: list[Row], labels: dict[int, str], only: str | None) -> str:
                     out.append("              rects: " + " ".join(
                         annotate_rect(t) for t in sorted(s.rects)))
 
+    if only in (None, "battles"):
+        battles = [r for r in rows if r.kind == "battle"]
+        if battles:
+            out.append("\n== BATTLES (P9; formation writer ra = the `form` watched write) ==")
+            for r in battles:
+                lone = " *boss-shaped*" if r.note.startswith(
+                    f"form={r.flag:02X}000000") else ""
+                out.append(f"  tick {r.tick} scene {r.scene}: {r.note}{lone}")
+
     if only in (None, "snaps"):
         snaps = [r for r in rows if r.kind == "snap"]
         if snaps:
@@ -301,7 +310,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("csv", help="flag_reader_watch.csv path")
     ap.add_argument("--only",
-                    choices=["targets", "background", "writes", "vram", "snaps"])
+                    choices=["targets", "background", "writes", "vram",
+                             "battles", "snaps"])
     ap.add_argument("--labels", help="extra site labels: '0xADDR text' lines")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)

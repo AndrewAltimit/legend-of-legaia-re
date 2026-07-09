@@ -610,7 +610,8 @@ local function on_vsync()
             autosave_every = tostring(AUTOSAVE_EVERY),
             baseline_tick  = tostring(vsync),
             baseline_scene = scene_name(),
-            core           = "dynarec (--fast; poll-only, no BPs)",
+            core           = probe.getenv("LEGAIA_CORE",
+                "unknown (no LEGAIA_CORE; hand launch)"),
         })
     end
 
@@ -699,6 +700,11 @@ log(string.format("enhancements: pos=%s bgm=%s input=%s autosnap=%s(max %d) bulk
     TRACE_POS and "on" or "off", TRACE_BGM and "on" or "off",
     TRACE_INPUT and "on" or "off", AUTOSNAP and "on" or "off", SNAP_MAX, BULK_FLAGS))
 log("run with run_probe.sh --fast; this session never self-quits (use timeout)")
+if probe.getenv("LEGAIA_CORE", "") == "interpreter" then
+    log("NOTE: launched on the interpreter core (no --fast). The poll works")
+    log("  fine but runs ~10x slow; this probe arms NO breakpoints, so you")
+    log("  almost certainly wanted --fast.")
+end
 
 -- Anchor the listener handle: a GC'd listener object silently deletes the
 -- C++ listener (and GC mid-dispatch can segfault the emulator).
