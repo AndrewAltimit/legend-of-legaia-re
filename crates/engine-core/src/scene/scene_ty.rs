@@ -93,20 +93,12 @@ impl Scene {
     /// `geremi`'s v12 table and loaded Jeremi's MAN under the `rikuroa`
     /// label).
     pub fn load(index: &ProtIndex, name: &str) -> Result<Self> {
-        let (raw_start, raw_end) = index
-            .block_range(name)
+        // Head defines (`init_data 0`, `gameover_data 1`) keep their legacy
+        // unshifted windows - the -2 conversion has no content to land on
+        // there; see `cdname::block_range_for_name_extraction`.
+        let (start, end) = index
+            .block_range_extraction(name)
             .ok_or_else(|| anyhow::anyhow!("scene '{}' not found in CDNAME map", name))?;
-        let shift = legaia_prot::cdname::RAW_TOC_INDEX_OFFSET;
-        // The first defines (`init_data 0`, `gameover_data 1`) sit inside the
-        // raw TOC's header rows, where the -2 conversion has no content to
-        // land on (it would produce an empty window). Keep those head blocks
-        // at their unshifted legacy windows - the content entries they name
-        // (`0000_init_data` etc.) are what engine consumers load.
-        let (start, end) = if raw_start < shift {
-            (raw_start, raw_end)
-        } else {
-            (raw_start - shift, raw_end.saturating_sub(shift))
-        };
         let mut entries = Vec::with_capacity((end - start) as usize);
         for idx in start..end {
             // Skip out-of-range indices defensively.

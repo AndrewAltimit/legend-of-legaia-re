@@ -87,13 +87,17 @@ pub(crate) fn scene_bundle_dirs(
 ) -> Result<Vec<PathBuf>> {
     let map = cdname::parse(cdname_path)
         .with_context(|| format!("parse CDNAME at {}", cdname_path.display()))?;
-    let (start, end) = cdname::block_range_for_name(&map, scene_name).ok_or_else(|| {
-        anyhow::anyhow!(
-            "scene '{}' not found in CDNAME at {}",
-            scene_name,
-            cdname_path.display()
-        )
-    })?;
+    // `tim_scan` dir names carry EXTRACTION indices, so resolve the block in
+    // the retail extraction frame (raw define - 2); the unshifted window
+    // would drop the block's first two entries and bleed into the next block.
+    let (start, end) =
+        cdname::block_range_for_name_extraction(&map, scene_name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "scene '{}' not found in CDNAME at {}",
+                scene_name,
+                cdname_path.display()
+            )
+        })?;
     // tim_scan dir names look like "<NNNN>_<scene>". Walk the dir and
     // pick entries whose numeric prefix falls in [start, end).
     let tim_root = extracted_root.join("tim_scan");
