@@ -251,6 +251,20 @@ pub struct CutsceneTimeline {
     /// door record's terminal `0x3F` scene change).
     // REF: FUN_8003BDE0
     pub player_wait: Option<usize>,
+    /// PCs of `45 C0 <s16>` camera-apply ops whose backward loop-jump has
+    /// already been broken once. Retail's sub-`0xC0` arm applies the camera
+    /// solve and RETURNS the operand s16 as the next PC - in the Drake-castle
+    /// door records that target points back into the walk-through poke loop
+    /// (a camera-tracking repeat riding the player's real walk-out), and the
+    /// door-state tail (`4C CD` + the `54 BE`-family latches + the mutex
+    /// release) lives AFTER the op. The engine's choreography completes
+    /// synchronously, so the loop-back must not wrap-complete the record
+    /// before that tail runs: the first backward-onto-visited jump per site
+    /// falls through past the op instead (see the wrap detection in
+    /// `run_spawned_record_slice`); a second arrival wraps as usual (the
+    /// resident-loop completion the Mei-beat shape relies on).
+    // REF: FUN_801dab90 (the case-0x45 sub-0xC0 camera solve)
+    pub camera_loop_broken: Vec<usize>,
 }
 
 impl CutsceneTimeline {
@@ -283,6 +297,7 @@ impl CutsceneTimeline {
             channel_wait: None,
             player_move_frames: 0,
             player_wait: None,
+            camera_loop_broken: Vec::new(),
         }
     }
 

@@ -1085,8 +1085,31 @@ impl World {
                     && next_pc <= pc
                     && tl.visited.get(next_pc).copied().unwrap_or(false)
                 {
-                    tl.done = true;
-                    stop = true;
+                    // Camera-apply loop-back (`45 C0 <s16>`): retail's
+                    // sub-`0xC0` arm applies the camera solve and jumps to the
+                    // operand s16 - in the Drake-castle door records that is a
+                    // camera-tracking repeat over the walk-through poke loop,
+                    // and the record's door-state tail (`54 BE`-family latches
+                    // + the `60 0F` mutex release) lives AFTER the op. Since
+                    // the engine's choreography completes synchronously, break
+                    // the loop ONCE per site: fall through past the op (plain
+                    // width 4 / extended 5) so the tail executes. A second
+                    // arrival wraps as usual - the resident-loop completion
+                    // shape (the town01 Mei beat) still terminates.
+                    // REF: FUN_801dab90
+                    let header_size = if opcode_byte & 0x80 != 0 { 2 } else { 1 };
+                    let is_camera_apply = (opcode_byte & 0x7F) == 0x45
+                        && tl
+                            .bytecode
+                            .get(pc + header_size)
+                            .is_some_and(|b| b & 0xC0 == 0xC0);
+                    if is_camera_apply && !tl.camera_loop_broken.contains(&pc) {
+                        tl.camera_loop_broken.push(pc);
+                        next_pc = pc + header_size + 3;
+                    } else {
+                        tl.done = true;
+                        stop = true;
+                    }
                 }
                 if tl.trace_enabled {
                     tl.trace.push(crate::cutscene_timeline::TraceEntry {
