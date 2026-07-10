@@ -140,10 +140,13 @@ fn spine_flag_writers_surface_in_the_carrier_census() {
     // 8 partition-2 records are a name-exact prefix subset of koin3's 12 -
     // with no loader anywhere in the captured code.) The motion-VM and
     // op-0x49 censuses carry no 0x482 site either, and every poll-captured
-    // 0x482 set sits in a bulk save-load tick, so the flag's writer is a
-    // direct code path (FUN_8003CE08-class, like flag 549) - a capture
-    // target (P7 write-watch around the post-Zeto Drake-revival beat), not a
-    // script hunt.
+    // 0x482 set sits in a bulk save-load tick, so the flag's writer is
+    // presumed a direct code path - a capture target (P7 write-watch around
+    // the post-Zeto Drake-revival beat), not a script hunt. (NB flag 549's
+    // identical-sounding verdict was since overturned by the `4C ED` width
+    // fix - see `flag_549_writer_is_the_rim_elm_p2_3_self_latch` - but 0x482
+    // stays all-noise even under the fixed widths: the assert below is the
+    // living check.)
     let s482 = census.get(&0x482).expect("0x482 sites");
     assert!(
         s482.iter().all(|h| !h.clean),
@@ -315,6 +318,66 @@ fn flag_549_reader_is_the_rim_elm_p2_gate() {
     assert!(
         scenes_gating >= 4,
         "0x225 is read as a C1/C2 gate in >= 4 Rim Elm variants, got {scenes_gating}"
+    );
+}
+
+/// Flag 549 (`0x225`) WRITER: the Rim Elm opening one-shot is a SELF-LATCH -
+/// town01 `P2[3]` (the very record whose C1 gate reads 549) SETs it from its
+/// own script bytes (`52 25` at body offset `+0x3`), the same shape as the
+/// rikuroa `P2[50]`/`0x142` post-victory latch.
+///
+/// Runtime-pinned first (reader-watch burst from the `s2_rimelm_town01`
+/// anchor, where 549 is still clear; it is set by `s3_rimelm_freeroam`): the
+/// SET fired via `FUN_8003CE08` with `ra 0x801E3598` - the field-VM
+/// dispatcher's own `0x5x` arm - and the captured script-PC
+/// (`vm=0x800EAFDF vmo=0xF`) resolves to town01 P2[3] body `+0x3`
+/// (record start `0x6FC8`, pc0 12). The census had missed it because the
+/// `4C ED` op (`_DAT_8007BA66` write, retail `param_2 + 3`) had no width in
+/// the disassembler, desyncing the walk one byte before the SET. So the old
+/// "direct code path, capture-only" verdict is FALSIFIED - the writer is
+/// plain script bytes in the PRIMARY bundle MAN; the census was width-blind,
+/// not carrier-blind.
+#[test]
+fn flag_549_writer_is_the_rim_elm_p2_3_self_latch() {
+    let Some(index) = open_index() else { return };
+    let scenes = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+
+    let sites = census.get(&0x225).expect("0x225 sites");
+    let sets: BTreeSet<(String, bool, usize, usize, bool)> = sites
+        .iter()
+        .filter(|h| h.kind == FlagKind::Set)
+        .map(|h| {
+            (
+                h.scene_name.clone(),
+                h.variant,
+                h.partition,
+                h.record,
+                h.clean,
+            )
+        })
+        .collect();
+    assert_eq!(
+        sets,
+        BTreeSet::from([
+            // gameover_data is the dev copy of the town01 MAN; both carry the
+            // identical P2[3] opening record.
+            ("gameover_data".to_string(), false, 2, 3, true),
+            ("town01".to_string(), false, 2, 3, true),
+        ]),
+        "0x225 SET sites: the town01 P2[3] self-latch (clean decode) + its \
+         gameover_data dev-copy sibling"
+    );
+
+    // The runtime-confirmed inline TEST (P1[0], the scene-entry system
+    // script, live `vm` offset +0x5D) also surfaces - decode-flagged, since
+    // P1[0] walks through dialogue upstream, but present.
+    assert!(
+        sites.iter().any(|h| h.scene_name == "town01"
+            && h.partition == 1
+            && h.record == 0
+            && h.kind == FlagKind::Test),
+        "town01 P1[0] inline TEST of 0x225 surfaces in the census"
     );
 }
 

@@ -181,7 +181,7 @@ struct TestHost {
     n_c_party_flag_bits: std::collections::HashMap<u16, bool>,
     n_e_sub_4_outside: bool,
     n_e_sub_4_bboxes: std::cell::RefCell<Vec<[i16; 4]>>,
-    n_e_sub_5_xp_deltas: Vec<i32>,
+    n_e_sub_5_coin_deltas: Vec<i32>,
     n_e_sub_b_resolves: bool,
     n_e_sub_b_actor_ids: Vec<u8>,
     // 0x43 halt-acquire (sub-0/1/A/B).
@@ -712,8 +712,8 @@ impl FieldHost for TestHost {
         self.n_e_sub_4_bboxes.borrow_mut().push(bbox);
         self.n_e_sub_4_outside
     }
-    fn op4c_n_e_sub_5_add_xp(&mut self, xp_delta: i32) {
-        self.n_e_sub_5_xp_deltas.push(xp_delta);
+    fn op4c_n_e_sub_5_add_coins(&mut self, coin_delta: i32) {
+        self.n_e_sub_5_coin_deltas.push(coin_delta);
     }
     fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
         self.n_e_sub_b_actor_ids.push(actor_id);

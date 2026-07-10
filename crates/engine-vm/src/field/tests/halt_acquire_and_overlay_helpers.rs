@@ -378,14 +378,15 @@ fn op_4c_n_c_sub_d_script_alloc_halts_at_pc() {
 }
 
 #[test]
-fn op_4c_n_e_sub_4_bbox_inside_advances_9_bytes() {
-    // Host returns false (= "inside") → PC += 9. The dispatcher computes
-    // a tile-center bbox and passes it to the host.
-    let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x20, 0x20, 0x00, 0x00, 0x00];
+fn op_4c_n_e_sub_4_bbox_inside_advances_8_bytes() {
+    // Host returns false (= "inside") → PC += 8 (retail case-4
+    // `iVar45 = param_2 + 8`; the earlier 9 was an off-by-one). The
+    // dispatcher computes a tile-center bbox and passes it to the host.
+    let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x20, 0x20, 0x00, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 9 });
+    assert_eq!(r, StepResult::Advance { next_pc: 8 });
     assert_eq!(host.n_e_sub_4_bboxes.borrow().len(), 1);
 }
 
@@ -454,35 +455,35 @@ fn op_4c_n_e_sub_4_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_e_sub_5_add_xp_positive_value() {
+fn op_4c_n_e_sub_5_add_coins_positive_value() {
     // [4C, E5, 0xE8, 0x03, 0x00] - 0x0003E8 = 1000.
     let bytecode = [0x4Cu8, 0xE5, 0xE8, 0x03, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 5 });
-    assert_eq!(host.n_e_sub_5_xp_deltas, vec![1000]);
+    assert_eq!(host.n_e_sub_5_coin_deltas, vec![1000]);
 }
 
 #[test]
-fn op_4c_n_e_sub_5_add_xp_negative_value() {
+fn op_4c_n_e_sub_5_add_coins_negative_value() {
     // 0xFFFFFE = -2 in 24-bit two's complement.
     let bytecode = [0x4Cu8, 0xE5, 0xFE, 0xFF, 0xFF];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 5 });
-    assert_eq!(host.n_e_sub_5_xp_deltas, vec![-2]);
+    assert_eq!(host.n_e_sub_5_coin_deltas, vec![-2]);
 }
 
 #[test]
-fn op_4c_n_e_sub_5_add_xp_zero_advances_5_bytes() {
+fn op_4c_n_e_sub_5_add_coins_zero_advances_5_bytes() {
     let bytecode = [0x4Cu8, 0xE5, 0x00, 0x00, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 5 });
-    assert_eq!(host.n_e_sub_5_xp_deltas, vec![0]);
+    assert_eq!(host.n_e_sub_5_coin_deltas, vec![0]);
 }
 
 #[test]
@@ -498,7 +499,7 @@ fn op_4c_n_e_sub_5_truncated_buffer_returns_unknown() {
             pc: 0
         }
     ));
-    assert!(host.n_e_sub_5_xp_deltas.is_empty());
+    assert!(host.n_e_sub_5_coin_deltas.is_empty());
 }
 
 #[test]
