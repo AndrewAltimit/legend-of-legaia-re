@@ -1966,22 +1966,23 @@ pub trait FieldHost {
         false
     }
 
-    /// Op 0x4C outer-nibble-E sub-5 - add XP to the party-XP accumulator.
+    /// Op 0x4C outer-nibble-E sub-5 - add to the casino coin bank.
     ///
     /// 5-byte instruction `[4C, 0xE5, b1, b2, b3]`. The original (dispatcher
     /// dump 7256-7267) reads a 24-bit signed value via
     /// [`field_helpers::load_u24_le`] + [`field_helpers::sign_extend_24`],
-    /// adds it to `_DAT_800845A4` (the party-XP global), clamps to
-    /// `[0, 9999999]`, and calls `func_0x8003CE08(8)` (the standard
-    /// "party stats refresh" trigger).
+    /// adds it to `_DAT_800845A4` (the casino coin bank -
+    /// `docs/reference/memory-map.md`; the earlier "party-XP global" label
+    /// was wrong), clamps to `[0, 9999999]`, and calls `func_0x8003CE08(8)`
+    /// (SysFlag.Set idx 8).
     ///
-    /// `xp_delta` is the sign-extended 24-bit value already prepared by the
-    /// dispatcher. Hosts apply the clamp + refresh; default no-op.
+    /// `coin_delta` is the sign-extended 24-bit value already prepared by
+    /// the dispatcher. Hosts apply the clamp + flag set; default no-op.
     ///
     /// [`field_helpers::load_u24_le`]: crate::field_helpers::load_u24_le
     /// [`field_helpers::sign_extend_24`]: crate::field_helpers::sign_extend_24
-    fn op4c_n_e_sub_5_add_xp(&mut self, xp_delta: i32) {
-        let _ = xp_delta;
+    fn op4c_n_e_sub_5_add_coins(&mut self, coin_delta: i32) {
+        let _ = coin_delta;
     }
 
     /// Op 0x4C outer-nibble-E sub-B - conditional actor lookup with

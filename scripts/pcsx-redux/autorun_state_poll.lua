@@ -44,6 +44,22 @@
 --                    capture grant; a level byte bump = a spell level-up.
 --                    Offsets are the capture-pinned ones in
 --                    crates/engine-core/src/capture_observations/seru_capture.rs
+--   xp               per-roster-slot cumulative XP (record +0x0, u32) - the
+--                    per-battle grant that the level byte only shows at a
+--                    threshold; validates the loot/flee-EXP formulas live
+--   equip            per-roster-slot equipment bytes (record +0x196..0x19D,
+--                    weapon/armour/helmet/ring/goods) - idx = slot*8+eq_slot
+--   counter          persistent counters on change: fishing points 0x8008444C,
+--                    casino coins 0x800845A4, Point Card 0x800845B4
+--   status           (battle only) per-battle-actor +0x16E mechanical status
+--                    word on change (1 Venom, 2 Toxic, 4 Stone, 8/10/20 Rot,
+--                    0x380 AI-delegated, 0x400 guard-disable, 0x1000 Curse);
+--                    idx = actor slot (0..2 party, 3..7 monsters). A first-run
+--                    0x400 set auto-snapshots - the bracket the open
+--                    guard-disable applier thread needs.
+--   hp               (battle only) per-battle-actor +0x14C current HP on
+--                    change - a per-hit damage/heal/drain timeline; note
+--                    carries max HP
 --   scene / mode     0x8007050C name + 0x8007B83C mode transitions
 --   pos    (P1)      player tile (col idx=tileX, value=tileZ) emitted on a tile
 --                    crossing while in field mode; turns "flag X flipped in
@@ -57,7 +73,9 @@
 --                    (*(0x801C6EA4)+0x0C) - the branch/answer chosen.
 --   snap   (P2)      an auto-snapshot save state was written (rare-event
 --                    harvest: never-seen scene / lone-boss formation / a
---                    first-time target-set flag). note = reason + filename.
+--                    first-time target-set flag / first nonzero battle-id
+--                    staging byte / first 0x400 status). note = reason +
+--                    filename.
 --
 -- P3 (bulk-load tagging): a frame that flips >= LEGAIA_BULK_FLAGS story flags
 --   (a save-load / scene-init dump, not a beat) tags every one of its flag rows
@@ -120,6 +138,33 @@ local FIELD_MODE  = 0x03
 -- P5: global BGM id (field-VM op 0x35 sub-1 target; <2000 scene-local, >=2000
 -- global pool). Emitted on change for the music_labels census join.
 local BGM_ID      = 0x8007BAC8  -- u16
+-- Battle-actor pointer table: 8 u32 slots (0..2 party, 3..7 monsters), each a
+-- pointer to a live battle actor (docs/subsystems/battle.md). Per actor:
+-- +0x14C u16 current HP (liveness; the mechanical value the formulas write,
+-- not the animated bar), +0x14E u16 max HP, +0x16E u16 mechanical status word
+-- (1 Venom, 2 Toxic, 4 Stone, 8/0x10/0x20 Rot arms, 0x380 AI-delegated,
+-- 0x400 guard-disable - the open applier thread, 0x1000 Curse;
+-- docs/subsystems/battle-formulas.md section status appliers).
+local ACTOR_TABLE = 0x801C9370
+local ACTOR_SLOTS = 8
+local HP_OFF      = 0x14C
+local MAXHP_OFF   = 0x14E
+local STATUS_OFF  = 0x16E
+-- Char-record XP (+0x0 cumulative u32; the level byte is diffed separately)
+-- and equipment slots (+0x196..0x19D: weapon/armour/helmet/ring/goods,
+-- crates/save/src/character.rs).
+local XP_OFF      = 0x0
+local EQUIP_OFF   = 0x196
+local EQUIP_LEN   = 8
+-- Persistent economy / minigame counters (docs/reference/memory-map.md):
+-- fishing points 0x8008444C, casino coin bank 0x800845A4, Point Card
+-- accrual 0x800845B4. Live deltas validate the fishing / slot-machine /
+-- shop point-accrual RE opportunistically on any run.
+local COUNTERS = {
+    { addr = 0x8008444C, name = "fishing_points" },
+    { addr = 0x800845A4, name = "casino_coins" },
+    { addr = 0x800845B4, name = "point_card" },
+}
 -- P4: per-frame held-pad mask (game-decoded; bit layout == probe.pad.BTN) and
 -- the dialogue picker struct pointer (cursor index at +0x0C).
 local HELD_PAD    = 0x8007B850  -- u16
@@ -170,6 +215,11 @@ local autosave_flip  = 0
 local TRACE_POS   = probe.getenv("LEGAIA_TRACE_POS", "1")   ~= "0"  -- P1
 local TRACE_BGM   = probe.getenv("LEGAIA_TRACE_BGM", "1")   ~= "0"  -- P5
 local TRACE_INPUT = probe.getenv("LEGAIA_TRACE_INPUT", "1") ~= "0"  -- P4
+-- Battle-detail stream: per-actor status-word + HP diffs while a battle scene
+-- is active. Statuses close the "what inflicted it, when" gap (incl. the open
+-- +0x16E bit 0x400 guard-disable applier hunt); HP deltas are a per-hit damage
+-- timeline. Both stay quiet outside battle.
+local TRACE_BATTLE = probe.getenv("LEGAIA_TRACE_BATTLE", "1") ~= "0"
 -- P3: a frame flipping >= this many flags is a bulk load/init dump, not a
 -- story beat. Matches analyze_state_poll.py's DEFAULT_BULK_THRESHOLD.
 local BULK_FLAGS  = probe.getenv_num("LEGAIA_BULK_FLAGS", 20)
@@ -253,6 +303,13 @@ local prev_tilex = nil       -- P1: last emitted player tile X
 local prev_tilez = nil       -- P1: last emitted player tile Z
 local prev_bgm   = nil       -- P5: last global BGM id
 local prev_pad   = 0         -- P4: last held-pad mask
+local prev_xp     = {}       -- per roster slot: cumulative XP u32
+local prev_equip  = {}       -- per roster slot: EQUIP_LEN-byte window string
+local prev_count  = {}       -- per COUNTERS entry: u32 value
+local prev_status = {}       -- per battle-actor slot: +0x16E status word
+local prev_hp     = {}       -- per battle-actor slot: +0x14C current HP
+local snapped_400   = false  -- one 0x400-status snapshot per run
+local snapped_batid = false  -- one nonzero staging-id snapshot per run
 -- P2 rare-event bookkeeping.
 local seen_scenes = {}       -- scenes visited this run (never-seen -> snap)
 local snap_flags  = {}       -- target flags already snapped this run
@@ -265,7 +322,8 @@ local batt_enter_mode = 0      -- the mode that started the fight
 local totals     = { flagset = 0, flagclr = 0, battleid = 0, battle = 0,
                      gold = 0, item = 0, party = 0, scene = 0, mode = 0,
                      level = 0, spell = 0, pos = 0, bgm = 0, input = 0,
-                     pick = 0, snap = 0 }
+                     pick = 0, snap = 0, xp = 0, equip = 0, counter = 0,
+                     status = 0, hp = 0 }
 
 local function row(kind, idx, value, delta, note)
     totals[kind] = (totals[kind] or 0) + 1
@@ -391,6 +449,90 @@ local function diff_chars()
     end
 end
 
+-- Per-roster-slot cumulative XP (u32 at record +0x0). A battle victory's
+-- grant lands as one row per surviving member; a save load re-seeds all
+-- slots (correlate with the flag bulkload tick).
+local function diff_xp()
+    for s = 0, CHAR_SLOTS - 1 do
+        local xp = u32(CHAR_BASE + s * CHAR_STRIDE + XP_OFF)
+        if baselined and prev_xp[s] ~= nil and xp ~= prev_xp[s] then
+            row("xp", s, xp, xp - prev_xp[s])
+        end
+        prev_xp[s] = xp
+    end
+end
+
+-- Per-roster-slot equipment bytes (+0x196..0x19D). One row per changed equip
+-- slot: idx = roster_slot*8 + equip_slot, value = new item id.
+local function diff_equip()
+    for s = 0, CHAR_SLOTS - 1 do
+        local win = mem.read_bytes(CHAR_BASE + s * CHAR_STRIDE + EQUIP_OFF,
+                                   EQUIP_LEN)
+        if win ~= nil then
+            win = tostring(win)
+            if baselined and prev_equip[s] ~= nil and win ~= prev_equip[s] then
+                for e = 0, EQUIP_LEN - 1 do
+                    local old = prev_equip[s]:byte(e + 1)
+                    local new = win:byte(e + 1)
+                    if old ~= new then
+                        row("equip", s * 8 + e, new, new - old,
+                            string.format("slot%d eq%d id%02X->%02X",
+                                s, e, old, new))
+                    end
+                end
+            end
+            prev_equip[s] = win
+        end
+    end
+end
+
+-- Persistent counters (fishing points / casino coins / Point Card).
+local function diff_counters()
+    for i, c in ipairs(COUNTERS) do
+        local v = u32(c.addr)
+        if baselined and prev_count[i] ~= nil and v ~= prev_count[i] then
+            row("counter", i - 1, v, v - prev_count[i], c.name)
+        end
+        prev_count[i] = v
+    end
+end
+
+-- Battle-detail stream: per-actor status-word + HP diffs. Only while a battle
+-- scene is fully active (the pointer table holds THIS battle's actors there);
+-- baselines are dropped on battle exit so the next fight re-baselines without
+-- phantom rows. A first-ever 0x400 status set auto-snapshots: that is the
+-- exact before/after bracket the open guard-disable applier thread needs.
+local function diff_battle_actors(md)
+    if not TRACE_BATTLE then return end
+    if BATTLE_ACTIVE[md] == nil then return end
+    for s = 0, ACTOR_SLOTS - 1 do
+        local ptr = u32(ACTOR_TABLE + s * 4)
+        local off = mem.ram_offset(ptr)
+        if off ~= nil and off >= 0x10000
+            and mem.in_ram(ptr + STATUS_OFF, 2) then
+            local st = u16(ptr + STATUS_OFF)
+            local hp = u16(ptr + HP_OFF)
+            if prev_status[s] ~= nil and st ~= prev_status[s] then
+                row("status", s, st, st - prev_status[s],
+                    string.format("0x%04X->0x%04X hp=%d",
+                        prev_status[s], st, hp))
+                if not snapped_400
+                    and bit.band(st, 0x400) ~= 0
+                    and bit.band(prev_status[s], 0x400) == 0 then
+                    snapped_400 = true
+                    autosnap("status400")
+                end
+            end
+            if prev_hp[s] ~= nil and hp ~= prev_hp[s] then
+                row("hp", s, hp, hp - prev_hp[s],
+                    string.format("max=%d", u16(ptr + MAXHP_OFF)))
+            end
+            prev_status[s] = st
+            prev_hp[s] = hp
+        end
+    end
+end
+
 -- P1: player tile. Only meaningful in field mode (the pointer is stale/garbage
 -- in battle/menu/world modes); emit a `pos` row on a tile crossing so the CSV
 -- stays small (idle standing writes nothing). idx=tileX value=tileZ; note holds
@@ -492,10 +634,16 @@ local function snapshot_and_diff()
         prev_flags = flags
     end
 
-    -- Battle-id staging byte
+    -- Battle-id staging byte. A nonzero value ANYWHERE settles the open
+    -- "does any retail battle write DAT_8007B7FC?" question (it reads 0
+    -- everywhere observed; see encounter.md) - snapshot the moment once.
     local batid = u8(BATTLE_ID)
     if baselined and batid ~= prev_batid and batid ~= 0 then
         row("battleid", 0, batid, batid - (prev_batid or 0))
+        if not snapped_batid then
+            snapped_batid = true
+            autosnap(string.format("batid%02X", batid))
+        end
     end
     prev_batid = batid
 
@@ -526,8 +674,11 @@ local function snapshot_and_diff()
         prev_inv = inv
     end
 
-    -- Per-character level + spell/Seru list
+    -- Per-character level + spell/Seru list, XP, equipment; counters.
     diff_chars()
+    diff_xp()
+    diff_equip()
+    diff_counters()
 
     -- P1/P5/P4: player tile, BGM id, input edges + picker choice.
     diff_pos()
@@ -604,6 +755,7 @@ local function on_vsync()
             trace_pos      = tostring(TRACE_POS),
             trace_bgm      = tostring(TRACE_BGM),
             trace_input    = tostring(TRACE_INPUT),
+            trace_battle   = tostring(TRACE_BATTLE),
             bulk_flags     = tostring(BULK_FLAGS),
             autosnap       = string.format("%s (max %d)", tostring(AUTOSNAP), SNAP_MAX),
             point_card_max = tostring(POINT_CARD_MAX),
@@ -653,6 +805,10 @@ local function on_vsync()
     elseif (not inb) and in_battle then
         in_battle = false
         if batt_pending then emit_battle() end  -- ended before an active mode
+        -- Drop the battle-detail baselines: the next fight's actor pointers
+        -- are new actors, not continuations of these.
+        prev_status = {}
+        prev_hp     = {}
     end
     if in_battle then
         if batt_batid == 0 then
@@ -662,6 +818,7 @@ local function on_vsync()
         if batt_pending and BATTLE_ACTIVE[md] ~= nil then
             emit_battle()                     -- formation is current here
         end
+        diff_battle_actors(md)               -- status-word + HP per-hit stream
     end
 
     -- The whole point: diff every progression cell against last frame.
@@ -695,10 +852,12 @@ end
 
 -- +-- startup ----------------------------------------------------------------
 log("=== autorun_state_poll (fast-core progression capture) ===")
-log("poll-diff: flags/battleid/gold/item/party/level/spell/scene/mode/pos/bgm/input - NO breakpoints")
-log(string.format("enhancements: pos=%s bgm=%s input=%s autosnap=%s(max %d) bulk>=%d",
+log("poll-diff: flags/battleid/gold/item/party/level/spell/xp/equip/counter/"
+    .. "status/hp/scene/mode/pos/bgm/input - NO breakpoints")
+log(string.format("enhancements: pos=%s bgm=%s input=%s battle=%s autosnap=%s(max %d) bulk>=%d",
     TRACE_POS and "on" or "off", TRACE_BGM and "on" or "off",
-    TRACE_INPUT and "on" or "off", AUTOSNAP and "on" or "off", SNAP_MAX, BULK_FLAGS))
+    TRACE_INPUT and "on" or "off", TRACE_BATTLE and "on" or "off",
+    AUTOSNAP and "on" or "off", SNAP_MAX, BULK_FLAGS))
 log("run with run_probe.sh --fast; this session never self-quits (use timeout)")
 if probe.getenv("LEGAIA_CORE", "") == "interpreter" then
     log("NOTE: launched on the interpreter core (no --fast). The poll works")

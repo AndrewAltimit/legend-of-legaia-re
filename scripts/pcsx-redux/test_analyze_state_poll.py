@@ -270,6 +270,72 @@ def test_bgm_picks_snaps_and_walk():
     assert "crossings=" in txt
 
 
+def test_xp_equip_and_counter_changes():
+    rows = _rows(
+        "10,xp,0,1200,64,0x03,garmel,",                       # Vahn battle grant
+        "20,equip,2,17,17,0x03,town01,slot0 eq2 id00->11",    # helmet equipped
+        "30,counter,0,45,5,0x03,sun01,fishing_points",
+        "40,counter,2,120,20,0x03,town01,point_card",
+    )
+    xps = asp.xp_changes(rows)
+    assert len(xps) == 1 and xps[0].idx == 0 and xps[0].delta == 64
+    eqs = asp.equip_changes(rows)
+    assert len(eqs) == 1 and eqs[0].idx == 2 and eqs[0].value == 17
+    cnts = asp.counter_changes(rows)
+    assert len(cnts) == 2 and cnts[0].note == "fishing_points"
+    j = asp.build_json(rows, bulk_threshold=100)
+    assert j["xp"][0] == {"tick": 10, "scene": "garmel", "slot": 0, "xp": 1200, "delta": 64}
+    assert j["equip"][0]["slot"] == 0 and j["equip"][0]["equip_slot"] == 2
+    assert j["counters"][1] == {
+        "tick": 40, "scene": "town01", "name": "point_card", "value": 120, "delta": 20,
+    }
+    txt = asp.render_report(rows, bulk_threshold=100, want={"progress", "counters"})
+    assert "XP grants" in txt and "xp=1200 (+64)" in txt
+    assert "id00->11" in txt
+    assert "fishing_points=45 (+5)" in txt
+
+
+def test_decode_status_names_bits_and_residue():
+    assert asp.decode_status(0) == "clear"
+    assert asp.decode_status(0x1) == "Venom"
+    assert asp.decode_status(0x2 | 0x1000) == "Toxic|Curse"
+    assert asp.decode_status(0x380) == "AI-delegated"
+    assert asp.decode_status(0x400) == "guard-disable[OPEN]"
+    # unknown residue bits surface rather than vanish
+    assert "0x4000?" in asp.decode_status(0x4000)
+    # a partial AI-delegation pattern is residue, not "AI-delegated"
+    assert asp.decode_status(0x80) == "0x80?"
+
+
+def test_status_and_hp_changes_and_0x400_leads():
+    rows = _rows(
+        # Venom inflicted on party slot 0 (0x0000 -> 0x0001)
+        "100,status,0,1,1,0x15,garmel,0x0000->0x0001 hp=196",
+        # guard-disable raised on monster slot 3 (0x0000 -> 0x0400) => a lead
+        "200,status,3,1024,1024,0x15,garmel,0x0000->0x0400 hp=76",
+        # 0x400 already set, another bit added => NOT a new lead
+        "210,status,3,1025,1,0x15,garmel,0x0400->0x0401 hp=76",
+        # per-hit damage on monster slot 3
+        "220,hp,3,40,-36,0x15,garmel,max=76",
+    )
+    sts = asp.status_changes(rows)
+    assert len(sts) == 3
+    leads = asp.status_leads(rows)
+    assert len(leads) == 1 and leads[0].tick == 200 and leads[0].idx == 3
+    hps = asp.hp_changes(rows)
+    assert len(hps) == 1 and hps[0].delta == -36
+    j = asp.build_json(rows, bulk_threshold=100)
+    assert j["status"][0]["decoded"] == "Venom"
+    assert j["status_leads_0x400"] == [
+        {"tick": 200, "scene": "garmel", "slot": 3, "note": "0x0000->0x0400 hp=76"}
+    ]
+    assert j["hp"][0]["hp"] == 40
+    txt = asp.render_report(rows, bulk_threshold=100, want={"status", "hp"})
+    assert "0x0000->0x0001  Venom" in txt
+    assert "0x400 guard-disable raised" in txt
+    assert "hp=40 (-36)" in txt
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

@@ -60,6 +60,12 @@ The capture now also records, per playthrough:
 - **Music track id** whenever the BGM changes.
 - **Button presses + your dialogue menu choices** — so a branch decision is
   attributable to the answer you picked.
+- **XP, equipment changes, and the fishing/casino/Point-Card counters** — so
+  battle rewards, gear swaps, and minigame payouts date themselves.
+- **In-battle statuses + HP** — every poison/petrify/etc. infliction and every
+  hit's damage, per actor. (One rare status bit is an open research question;
+  if your run ever triggers it the script flags it and saves a snapshot —
+  that file alone would close the hunt.)
 - **Auto-snapshots**: the script quietly saves a full state the first time you
   enter any new area, at each boss fight, and at a few key story flags. These
   land as `snap_*.sstate` files next to the CSV — a free harvest of mid-story
@@ -67,8 +73,9 @@ The capture now also records, per playthrough:
   `LEGAIA_AUTOSNAP=0` before `bash` (the CSV is unaffected).
 
 You can trim any single stream if you want a leaner file: `LEGAIA_TRACE_POS=0`
-(tiles), `LEGAIA_TRACE_BGM=0` (music), `LEGAIA_TRACE_INPUT=0` (buttons). None of
-this is required — the defaults capture the most.
+(tiles), `LEGAIA_TRACE_BGM=0` (music), `LEGAIA_TRACE_INPUT=0` (buttons),
+`LEGAIA_TRACE_BATTLE=0` (statuses/HP). None of this is required — the defaults
+capture the most.
 
 ## What to send back
 

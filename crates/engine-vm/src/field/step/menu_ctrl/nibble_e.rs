@@ -107,15 +107,16 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 next_pc: pc + header_size + 9,
             }
         }
-        // Sub-4: 9-byte `[4C, 0xE4, x0, z0, x1, z1, scale, ?, ?]`.
-        // BBox collision query. Each operand byte goes through
-        // the standard tile-center conversion (`(b & 0x7F) * 0x80
-        // + 0x40`, plus 0x40 if the high bit is set). When the
-        // host predicate says "outside", the original calls the
-        // halt helper FUN_801E3614; we model that as Halt at PC.
-        // When inside, advance PC by 8.
+        // Sub-4: 8-byte `[4C, 0xE4, x0, z0, x1, z1, ?, ?]` (retail
+        // `iVar45 = param_2 + 8`). BBox collision query. Each
+        // operand byte goes through the standard tile-center
+        // conversion (`(b & 0x7F) * 0x80 + 0x40`, plus 0x40 if
+        // the high bit is set). When the host predicate says
+        // "outside", the original calls the halt helper
+        // FUN_801E3614; we model that as Halt at PC. When
+        // inside, advance PC by 8 total.
         4 => {
-            if operand + 8 > bytecode.len() {
+            if operand + 7 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
             let bbox = [
@@ -128,20 +129,21 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 StepResult::Halt { final_pc: pc }
             } else {
                 StepResult::Advance {
-                    next_pc: pc + header_size + 8,
+                    next_pc: pc + header_size + 7,
                 }
             }
         }
         // Sub-5: 5-byte `[4C, 0xE5, b1, b2, b3]`. Read 24-bit
-        // signed XP delta via load_u24_le + sign_extend_24, then
-        // call the host's add-xp hook. PC += 4.
+        // signed coin delta via load_u24_le + sign_extend_24,
+        // then call the host's add-coins hook (`_DAT_800845A4`,
+        // the casino coin bank). PC += 4.
         5 => {
             if operand + 4 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
             let raw = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
-            let xp_delta = crate::field_helpers::sign_extend_24(raw);
-            host.op4c_n_e_sub_5_add_xp(xp_delta);
+            let coin_delta = crate::field_helpers::sign_extend_24(raw);
+            host.op4c_n_e_sub_5_add_coins(coin_delta);
             StepResult::Advance {
                 next_pc: pc + header_size + 4,
             }

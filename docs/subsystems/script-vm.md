@@ -469,6 +469,18 @@ Every census site therefore carries `GFlagSite::clean`: `true` only when at leas
 The CLI prints `DESYNCED?` on non-clean rows - treat those as byte noise until verified by hand disasm or a live capture.
 This falsified the earlier "`0x482` set by the `other7` pool / cleared by the `edbalden`/`eddoman` epilogue variants" reading: all 37 of `0x482`'s census sites are non-clean text aliases, while the live-confirmed `0x142` writer arms decode clean.
 
+**Width blindness is the desync's second face.** A missing/wrong sub-op *width* in the disassembler desyncs
+the walk even in clean non-dialogue code, and a site hidden that way looks identical to "no writer exists".
+Flag `549` (`0x225`, the Rim Elm opening one-shot) was exactly this: town01 `P2[3]` SETs it from its own
+script bytes (`52 25` at body `+0x3`, the record its own C1 gates - the `P2[50]`/`0x142` self-latch shape),
+but the preceding `4C ED` op (`_DAT_8007BA66` write, retail `param_2 + 3`) had no width in the disassembler,
+so the walk mis-read `ED 01 52` as a phantom Clear and swallowed the SET. Caught live first (reader-watch
+script-PC capture: SET `ra 0x801E3598`, `vm` offset `+0xF`), then fixed statically: the whole `4C 0xE_` sub-op
+width family is now pinned from the retail dispatcher's `param_2 + N` advances (subs 4/5/7/8/9/A/B/C/D/E;
+sub-0/3 exit through the delay-slot-hidden `LAB_801e00bc` and keep their empirical widths). Anchor
+`flag_549_writer_is_the_rim_elm_p2_3_self_latch`. Before trusting any "flag F has no script writer" verdict,
+confirm the ops *around* the expected site decode with known widths.
+
 ## BGM lookup table
 
 There isn't really a "BGM → file" lookup table - the BGM ID is a PROT-relative offset. From `FUN_800243F0` (the per-frame BGM/asset poller):

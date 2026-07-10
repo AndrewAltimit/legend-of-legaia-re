@@ -542,9 +542,16 @@ pub(super) fn decode_menu_ctrl(
             )
         }
         0xE => {
-            // 0x4C 0xE_ - the FMV trigger (sub-2) lives here. The width math
-            // mirrors `step()`: most sub-ops are 6 bytes total (header +
-            // 5), sub-3 is 2 bytes, sub-7 is 7 bytes, sub-8 is 10 bytes.
+            // 0x4C 0xE_ - the FMV trigger (sub-2) lives here. Widths follow the
+            // retail dispatcher's `param_2 + N` advances (FUN_801DE840, outer
+            // nibble 0xE switch): sub-2/6 = 6/8 total, sub-4 = 8, sub-5 = 5,
+            // sub-7 = 7, sub-8 = 10, sub-9/C/E = 2, sub-B = 5 (or an absolute
+            // jump when the actor is missing - linear walk uses 5), sub-D = 3
+            // (the `_DAT_8007BA66` write - runtime-pinned by the flag-549
+            // capture: town01 P2[3] executes `4C ED 01` then `52 25`).
+            // Sub-0 and sub-3 exit via `LAB_801e00bc` (j epilogue, advance in
+            // the branch-delay slot, invisible to the decompile) - their
+            // widths are the empirical desync-minimizing ones.
             let sub = op0 & 0x0F;
             match sub {
                 0 => {
@@ -591,6 +598,30 @@ pub(super) fn decode_menu_ctrl(
                         },
                     )
                 }
+                // Sub-4: bbox halt-or-advance, retail `param_2 + 8`.
+                4 => {
+                    need(7)?;
+                    mk(
+                        header_size + 7,
+                        MenuCtrlKind::HighNibble {
+                            outer: 0xE,
+                            sub,
+                            encoded_size: header_size + 7,
+                        },
+                    )
+                }
+                // Sub-5: 24-bit signed coin-bank add + SysFlag.Set(8); 5 total.
+                5 => {
+                    need(4)?;
+                    mk(
+                        header_size + 4,
+                        MenuCtrlKind::HighNibble {
+                            outer: 0xE,
+                            sub,
+                            encoded_size: header_size + 4,
+                        },
+                    )
+                }
                 6 => {
                     need(7)?;
                     mk(
@@ -602,29 +633,64 @@ pub(super) fn decode_menu_ctrl(
                         },
                     )
                 }
+                // Sub-7: camera animate, retail `param_2 + 7`.
                 7 => {
-                    need(7)?;
+                    need(6)?;
                     mk(
-                        header_size + 7,
+                        header_size + 6,
                         MenuCtrlKind::HighNibble {
                             outer: 0xE,
                             sub,
-                            encoded_size: header_size + 7,
+                            encoded_size: header_size + 6,
                         },
                     )
                 }
+                // Sub-8: camera zoom, retail `param_2 + 10`.
                 8 => {
-                    need(10)?;
+                    need(9)?;
                     mk(
-                        header_size + 10,
+                        header_size + 9,
                         MenuCtrlKind::HighNibble {
                             outer: 0xE,
                             sub,
-                            encoded_size: header_size + 10,
+                            encoded_size: header_size + 9,
                         },
                     )
                 }
-                0xC => {
+                // Sub-9: clear `_DAT_8007B9C4`, retail `caseD_4` = PC += 2.
+                // Sub-A: call `func_0x8003C7EC` then halt at PC; no operands.
+                // Sub-C: capture `FUN_801DDF48`, retail `param_2 + 2`.
+                // Sub-E: snapshot `_DAT_800845DC = _DAT_80084570`, `param_2 + 2`.
+                9 | 0xA | 0xC | 0xE => {
+                    need(1)?;
+                    mk(
+                        header_size + 1,
+                        MenuCtrlKind::HighNibble {
+                            outer: 0xE,
+                            sub,
+                            encoded_size: header_size + 1,
+                        },
+                    )
+                }
+                // Sub-B: conditional actor lookup, retail `param_2 + 5` when
+                // the actor resolves, else absolute jump to LE_u16(+2..+3).
+                // Linear walk uses the resolved width (5 total).
+                0xB => {
+                    need(4)?;
+                    mk(
+                        header_size + 4,
+                        MenuCtrlKind::HighNibble {
+                            outer: 0xE,
+                            sub,
+                            encoded_size: header_size + 4,
+                        },
+                    )
+                }
+                // Sub-D: `_DAT_8007BA66 = b1`, retail `param_2 + 3`. The op
+                // whose missing width hid the town01 P2[3] flag-549 self-latch
+                // (`4C ED 01` immediately followed by `52 25` SysFlag.Set
+                // 0x225 - runtime-pinned via the field-VM script-PC capture).
+                0xD => {
                     need(2)?;
                     mk(
                         header_size + 2,
