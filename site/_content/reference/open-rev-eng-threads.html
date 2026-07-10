@@ -334,8 +334,14 @@
       <tr>
         <td>Engine VRAM byte-exactness for town01</td>
         <td><span class="tag tag-partial">partial</span></td>
-        <td>Single-snapshot byte-exactness is unachievable (much of the texpage band is dynamic/residual); the oracle asserts the static mask and passes on every static pixel uploaded. Residue: the <code>x=896..1024</code> character-texture region + small UI residue.</td>
+        <td>Single-snapshot byte-exactness is unachievable (much of the texpage band is dynamic/residual); the oracle asserts the static mask and passes on every static pixel uploaded. Residue: the <code>x=896..1024</code> character-texture region + small UI residue (the <code>(960,256..511)</code> part is now explained as the boot-resident system-UI band).</td>
         <td></td>
+      </tr>
+      <tr>
+        <td>CLUT row 510 population (env meshes' <code>(64,510)</code> CBA)</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Row 510/511 = the flat-strip CLUT band of the <strong>boot-resident system-UI TIM bundle</strong> (the <code>prot::timpack</code> at raw PROT TOC entry 0, below the extraction index space; uploader <code>FUN_800198E0</code> flattens every declared CLUT bank to a <code>w*h &times; 1</code> strip). Byte-identical to the disc in every captured phase, title included; town01 slots 21/26/74 + rikuroa slots 50/51/63 sample atlas strip entries 64..79 and a constant mid-grey texel patch. Residue: the exact boot walker call site + a constant runtime overlay at page rows 456..462.</td>
+        <td><a href="../formats/npc-palette.html#row510-band">npc-palette</a></td>
       </tr>
       <tr>
         <td>Field <code>.MAP</code> PROT resolution</td>
@@ -652,7 +658,7 @@
         <li>PROT 0896 as the menu overlay, or as the mode-24 overlay at <code>0x801C5818</code>: both refuted (menu = 0899; the base was an over-read artifact). It is the vestigial Japanese-build sibling of 0899, never loaded by the USA build.</li>
         <li>"PROT 0905 = Gimard": the <code>+ 0x381</code> off-by-2 - Gimard <code>0x81</code> arithmetics to extraction 0903; the Nighto "Hell's Music" dance-song reading is refuted (it is the attack's display name).</li>
         <li>XP table at <code>0x8007123C</code> / <code>0x80070A3C</code>: both wrong; the real table is <code>DAT_80076AF4</code>.</li>
-        <li>Menu-glyph atlas as boot-resident field VRAM: it is menu-time-resident; uploading it at field entry flags a wrong static texel.</li>
+        <li>"Menu-glyph atlas is menu-time-resident, not boot-resident": itself falsified - the atlas IS boot-resident (strip CLUT + image page match the disc in every captured phase, title included); the "wrong static texel at (960,400)" was the next bundle TIM (<code>PROT.DAT[0x19438]</code>) overlaying that rect. CLUT row 510 = the boot-resident system-UI bundle's flat-strip band; see <a href="../formats/npc-palette.html#row510-band">npc-palette &sect; rows 510/511</a>.</li>
         <li>Equipment table <code>+4</code> as AGL/evasion: falsified - it is SPD.</li>
         <li>"PROT 0028 = town0c's <code>.MAP</code>": misattribution - 0028 is <code>izumi</code>'s; town0c's map (PROT 0019) is byte-identical to town01's.</li>
       </ul>

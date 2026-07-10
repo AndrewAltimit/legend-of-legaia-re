@@ -135,6 +135,45 @@ Row 479 starts at byte offset `0xEF800` (= `479 * 2048`). Slicing 32
 bytes at `0xEF800 + slot * 32` gives one CLUT slot. See
 [`docs/tooling/mednafen-automation.md`](../tooling/mednafen-automation.md).
 
+## Boot-resident strip band (rows 510/511)
+
+Rows **510 and 511** look superficially like another NPC-palette band
+but are a **different mechanism entirely**: they hold the flat-strip
+CLUTs of the boot-resident **system-UI TIM bundle**, not scene data.
+The bundle is the `prot::timpack` at **raw PROT TOC entry 0**
+(CDNAME `init_data`; on-disc `PROT.DAT` sectors 3..55 - the region the
+extraction index space skips, since extraction entry 0 is raw entry 2;
+a second single-TIM pack sits at raw entry 1). The retail per-TIM
+uploader `FUN_800198E0` uploads **every** TIM's CLUT block as a
+`w*h × 1` strip at the block's declared origin (the rect
+`(clut_x, clut_y, w*h, 1)` is built inline before the `LoadImage`
+wrapper `FUN_800583C8`; `see ghidra/scripts/funcs/800198e0.txt`), so
+the bundle's declared multi-row CLUT banks land as:
+
+| Row | fb_x | Source TIM (PROT.DAT offset) | Declared CLUT rect |
+|---|---|---|---|
+| 510 | 0..255 | menu-glyph / interior-page atlas `0x11218` (image `(960,256)` 64×256) | `(0,510,16,16)` |
+| 510 | 256..319 | UI sprite strip `0x19438` (image `(960,400)` 60×24) | `(256,510,16,4)` |
+| 511 | 0..255 | system-UI sprite sheet `0x018E0` (image `(896,256)` 64×192) | `(0,511,16,16)` |
+| 511 | 256..303 | boot cursor `0x01858` | `(256,511,16,3)` |
+| 511 | 304..319 | UI element `0x07B00` | `(304,511,16,1)` |
+
+Every strip is **byte-identical to the on-disc CLUT data across
+captured save states in every phase** (title, opening cutscene, town
+field, dungeon, house interior, world map, battle) - uploaded once at
+boot, never evicted, never scene-touched. This is why field/dungeon
+env-pack meshes can reference CBA cells on row 510 (`town01` env slots
+21/26/74, `rikuroa` slots 50/51/63: CBA `(64,510)` = atlas strip
+entries 64..79, texpage `(960,256)`) even though **no scene TIM ever
+uploads that row**. Extractor `legaia_asset::interior_page` reads the
+atlas straight out of `PROT.DAT` and reproduces the strip upload.
+
+Contrast with row 479 above: row 479 is per-scene content raced
+through the merge-zeros targeted pass at battle init; rows 510/511 are
+global boot residue. A parity oracle must treat them accordingly
+(row 479 = scene/battle-history-dependent, rows 510/511 fb_x 0..319 =
+static disc bytes).
+
 ## See also
 
 - [PSX TIM](tim.md) - the plain TIM form these CLUTs ship as.

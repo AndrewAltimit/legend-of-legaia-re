@@ -586,6 +586,7 @@ This relies on the **runtime actor frame == MAN placement frame** finding: `FUN_
 | game_mode 0x03 = field/town gameplay | resolved | [details ↓](#game_mode-0x03--fieldtown-gameplay) |
 | Scene prescript: field-VM event scripts vs move-VM stagers (dual consumer) | resolved | **Single consumer.** The op-`0x34` sub-3 operand census across every scene MAN shows every prescript record is a **move-VM stager**: partition-1 effect-actor records stage the ambience on entry (record 0 = the master ambient record in 62 scenes), partition-2 cutscene timelines install the per-shot ids. Id space = record index (the RAM `[u16 count][u16 offsets]` relocation at `_DAT_8007b8d0`, live-pinned vs the file bundle). The "field-VM runs a record" premise was the engine's own fallback, not retail behaviour. See [scene-bundles](../formats/scene-bundles.md) § consumer census. |
 | Engine VRAM byte-exactness for town01 | resolved (major source); minor residue | [details ↓](#engine-vram-byte-exactness-for-town01) |
+| CLUT row 510 population (env meshes' `(64,510)` CBA) | resolved (boot-resident system-UI strip band); residue = the exact boot walker call site | [details ↓](#clut-row-510-population-boot-resident-system-ui-strip-band) |
 | Scene-transition (`0x3F` door) destination indexing | resolved | [details ↓](#scene-transition-0x3f-door-destination-indexing) |
 | Intra-town (house / interior) door mechanism | resolved | [details ↓](#intra-town-house--interior-door-mechanism) |
 | Field/town environment-geometry placement | resolved (renders) | [details ↓](#fieldtown-environment-geometry-placement) |
@@ -736,9 +737,11 @@ The dominant missing static block is the **extraction-0874 section-2 TIMs** (ret
 
 and the gap was an oracle artifact (the lightweight pre-pass skipped that step; now fixed, image pages only, since retail uploads their CLUTs at battle entry).
 
-**Negative finding (don't re-walk):** the menu-glyph atlas (`PROT.DAT[0x11218]`) is **menu-time-resident, not boot-resident in field VRAM** - uploading it flags a wrong static texel at `(960,400)`.
+**Earlier negative finding retracted:** "the menu-glyph atlas (`PROT.DAT[0x11218]`) is menu-time-resident, not boot-resident in field VRAM" is **falsified** - the atlas IS boot-resident (its image page and flat-strip CLUT match the disc bytes in every captured phase, title included).
+The "wrong static texel at `(960,400)`" that drove the old verdict is real but differently caused: the `(960,400)` 60×24 rect belongs to the **next bundle TIM** (`PROT.DAT[0x19438]`), which retail uploads *after* the atlas and which therefore overlays that part of the atlas image.
+Uploading the atlas alone reproduces the pre-overlay bytes there; uploading the whole system-UI bundle in on-disc order reproduces the retail band. See [CLUT row 510 population](#clut-row-510-population-boot-resident-system-ui-strip-band) below.
 
-**Minor residue (open):** `x=896..1024, y=256` (~12k) is the character/party-texture region uploaded by the battle/character targeted-CLUT pass the field pre-pass excludes by design (the CLUT-scattering thread), plus ~2.5k UI residue.
+**Minor residue (open):** `x=896..1024, y=256` (~12k) splits into (a) the now-explained boot-resident system-UI band (the `(960,256)` atlas page + its overlay TIMs; static disc bytes) and (b) the character/party-texture region uploaded by the battle/character targeted-CLUT pass the field pre-pass excludes by design (the CLUT-scattering thread), plus ~2.5k UI residue.
 
 **Per-scene mask premise refined (map01 false red resolved).** Two capture-pinned failure modes of "stable across same-scene captures = static": (1) the extraction-0874 §2 (`player.lzs`) texture band is **global, history-dependent** state - the pause-menu entry path writes a 3-word F-variant onto row 271 that the first battle effect use overwrites with the disc bytes again (pinned at `(853,271)`: menu-lineage captures hold `0xFFFF` words, the disc TIM and effect-lineage captures hold `0x3333`), so same-lineage captures misclassify them as static; the oracle demands cross-scene staticity inside `scene::effect_texture_image_rects`.
 
@@ -792,6 +795,25 @@ write identical bytes to identical cells - a no-op. **Residual (low):** the
 decisive comparison used a direct prepass measurement, not a full VRAM oracle
 (no map03-WorldMap-resident save exists in the corpus); a map03-resident
 mednafen capture would close it fully.
+
+
+### CLUT row 510 population (boot-resident system-UI strip band)
+
+*Status:* resolved (source + upload semantics + retail residency pinned); residue = the exact boot-time walker call site + a small constant runtime overlay at page rows 456..462
+
+**Question.** `town01` env-pack slots 21/26/74 and `rikuroa` slots 50/51/63 are textured prims whose CBA decodes to `(64, 510)` with texpage `(960, 256)` 4bpp, yet no scene TIM uploads CLUT row 510 - so what populates it at runtime, and are those prims validly textured in retail frames?
+
+**Answer.** Row 510 (and 511) is the **flat-strip CLUT band of the boot-resident system-UI TIM bundle** - the `prot::timpack` at **raw PROT TOC entry 0** (LBA words `toc[0]=3` / `toc[1]=55` precede `init_data`'s 121, so the "unindexed head gap" is indexed after all, just below the extraction space; CDNAME's `#define init_data 0` names this block, and a second single-TIM pack sits at raw entry 1).
+The retail per-TIM uploader `FUN_800198E0` uploads *every* TIM CLUT block as a `w*h × 1` strip at the declared origin (`see ghidra/scripts/funcs/800198e0.txt`), so the atlas at `PROT.DAT[0x11218]` (declared CLUT `(0,510,16,16)`, image `(960,256)` 64×256) lands as the 256-entry strip on row 510 x=0..255, and the `0x19438` UI-strip TIM adds x=256..319; three more bundle TIMs tile row 511 x=0..319.
+Full row layout: [`formats/npc-palette.md`](../formats/npc-palette.md#boot-resident-strip-band-rows-510511).
+
+**Evidence (save-state census).** Across mednafen library states spanning every phase - title (`title_screen_new_game`), opening cutscene (`new_game_cutscene_intro_a`), town field (`v0_1_pre_battle_tetsu`), dungeon (`keikoku_chest_pre`), house interior (`mei_house_inside`), world map (`sebucus_overworld_resident`), battle (`v0_1_battle_start_tetsu`) - the row-510/511 strips are **byte-identical to the on-disc CLUT data** (256/256 + 64/64 + 256/256 + 48/48 + 16/16 halfwords per strip, every state), and the `(960,256)` image page matches the disc TIM on every row not covered by a later bundle member.
+Compositing the bundle's TIMs in on-disc order (images at declared rects, CLUTs as strips) reproduces the whole retail `(960, 256..511)` band except **six 64-word rows at y=456..458/460..462**, which differ from the disc but are identical across all states (a fixed runtime overlay, unattributed - low value).
+So the affected prims ARE validly textured in retail: CBA `(64,510)` = atlas strip entries 64..79, and their UVs (u `0..2`, v `240..242`) sample a constant mid-grey texel patch - a flat-material trick through the textured pipeline.
+
+**Falsified along the way:** (a) "row 510 is scene-loaded / a runtime targeted upload" - it is static boot residue, resident before the title screen; (b) "the viewer's CBA decode misreads the row" - the standard `x=(cba&0x3F)*16, y=(cba>>6)&0x1FF` decode is correct and retail-populated; (c) the earlier "menu-glyph atlas is menu-time-resident, not boot-resident" negative (see the retraction in the town01 VRAM section above).
+
+**What would close the residue:** a cold-boot write-watch on the row-510 VRAM upload (the existing `scripts/pcsx-redux/autorun_town01_vram_upload_census.lua` probe) to pin which boot routine issues the `byindex`-style read of raw TOC entries 0/1 and walks the pack into `FUN_800198E0`; plus attribution of the constant y=456..462 overlay.
 
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels - pause-menu-lineage, not boot
