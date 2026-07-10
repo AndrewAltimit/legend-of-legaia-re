@@ -413,15 +413,18 @@ fn part_j_census_pins_gate_setters_disc_wide() {
     );
 
     // 0x44D (the jou -> jouina C2 gate): tested by map01's controller-side
-    // P0[9], set only by jou's own walk-on beat P2[4].
+    // P0[9] and by jou's own entry script P1[0] (a scene-state dispatch
+    // test the census sees now that the whole-nibble 0x4C widths are
+    // pinned), set only by jou's walk-on beat P2[4].
     let s44d = sites(0x44D);
     assert_eq!(
         s44d,
         vec![
             ("map01".to_string(), 0, 9, FlagKind::Test),
+            ("jou".to_string(), 1, 0, FlagKind::Test),
             ("jou".to_string(), 2, 4, FlagKind::Set),
         ],
-        "flag 0x44D census: one SET (jou P2[4]), tested by map01 P0[9]"
+        "flag 0x44D census: one SET (jou P2[4]), tested by map01 P0[9] + jou P1[0]"
     );
     eprintln!("[ok] Part J: disc-wide census pins 0x193 -> vozz P1[7], 0x44D -> jou P2[4]");
 }
