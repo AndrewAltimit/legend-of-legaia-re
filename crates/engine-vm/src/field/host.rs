@@ -1675,12 +1675,14 @@ pub trait FieldHost {
 
     /// Op 0x4C outer-nibble-E sub-0 - three-way scene/menu state write.
     ///
-    /// 2-byte instruction `[4C, 0xE0, b1]`. The original at line 7173:
+    /// 3-byte instruction `[4C, 0xE0, b1]`. The original at line 7173:
     /// - `b1 == 0`: `DAT_801F2744 = 1`
     /// - `b1 < 100`: `DAT_801F2740 = b1`
     /// - else: `*(u16*)(_DAT_801C6EA4 + 0xE) = b1 - 100`
     ///
-    /// Halt at PC (`goto LAB_801e00bc`).
+    /// PC += 3: the decompile's `goto LAB_801e00bc` hides the advance - the
+    /// raw asm (0x801E306C) exits every path through the `addiu s8,s8,0x3`
+    /// entry at 0x801E00B8, one instruction above that label.
     fn op4c_n_e_sub0_state_write(&mut self, b1: u8) {
         let _ = b1;
     }
@@ -2192,7 +2194,7 @@ pub trait FieldHost {
         ActorSearchResult::EmptySlot
     }
 
-    /// Camera-anchored teleport (op 0x4C nE sub-3, 2 bytes).
+    /// Camera-anchored teleport (op 0x4C nE sub-3, 3 bytes).
     ///
     /// `[4C, 0xE3, actor_id]`. The original at lines 7208-7227 resolves
     /// the actor via `func_0x8003C83C(actor_id)`, then copies the active
@@ -2202,8 +2204,11 @@ pub trait FieldHost {
     /// `flags & 0x20000000` is set, the actor's `+0x8E` (inverted-Y mirror)
     /// is also negated to match.
     ///
-    /// PC always advances by 2; if the actor lookup fails the original is a
-    /// silent no-op. Hosts get the actor ID and decide whether to apply.
+    /// PC always advances by 3 (raw asm 0x801E3108: `addiu s8,s8,0x3` in
+    /// the `j 0x801E00BC` branch-delay slot on the player path, the
+    /// 0x801E00B8 +3 entry on the NPC path); if the actor lookup fails the
+    /// original is a silent no-op. Hosts get the actor ID and decide
+    /// whether to apply.
     fn op4c_n_e_sub_3_actor_sync_camera(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
         let _ = (ctx, actor_id);
     }

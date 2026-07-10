@@ -674,12 +674,14 @@ fn op_4c_n_d_sub_8_passes_b1_and_three_words_advances_9() {
 }
 
 #[test]
-fn op_4c_n_e_sub_0_writes_b1_and_halts() {
+fn op_4c_n_e_sub_0_writes_b1_and_advances_3() {
     let bytecode = [0x4Cu8, 0xE0, 0x42];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    // Raw asm (0x801E306C): every write path exits through the
+    // `addiu s8,s8,0x3` entry at 0x801E00B8 - advance, not halt.
+    assert_eq!(r, StepResult::Advance { next_pc: 3 });
     assert_eq!(host.n_e_sub0_writes, vec![0x42u8]);
 }
 

@@ -4,9 +4,9 @@ use super::*;
 
 // Outer nibble 0xE - misc scene writes + emitter helper calls.
 // All sub-ops 0x0..=0xE are ported: sub-0 (3-way state write,
-// halt at PC), sub-1 (variable-length text balloon), sub-2
+// 3-byte), sub-1 (variable-length text balloon), sub-2
 // (set globals, 6-byte), sub-3 (camera-anchored teleport,
-// 2-byte), sub-4 (bbox-test halt-or-advance, 9-byte), sub-5
+// 3-byte), sub-4 (bbox-test halt-or-advance, 9-byte), sub-5
 // (XP add, 5-byte), sub-6 (FUN_801D8280, 8-byte), sub-7
 // (camera animate, 7-byte), sub-8 (camera zoom, 10-byte),
 // sub-9 (clear b9c4, 2-byte), sub-0xA (call c7ec then halt),
@@ -25,14 +25,21 @@ pub(super) fn op_4c_ne<H: FieldHost>(
     op0: u8,
 ) -> StepResult {
     match op0 & 0x0F {
-        // Sub-0: 2-byte `[4C, 0xE0, b1]`. 3-way write (host
-        // performs based on b1 value); halt at PC.
+        // Sub-0: 3-byte `[4C, 0xE0, b1]`. 3-way write (host
+        // performs based on b1 value); PC += 3. The decompile
+        // renders all three write paths as `goto LAB_801e00bc`
+        // (no visible advance), but the raw asm at 0x801E306C
+        // jumps to 0x801E00B8 - the `addiu s8,s8,0x3` entry one
+        // instruction ABOVE that label - so retail advances past
+        // the op (a Halt here would re-fire the write forever).
         0 => {
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
             host.op4c_n_e_sub0_state_write(b1);
-            StepResult::Halt { final_pc: pc }
+            StepResult::Advance {
+                next_pc: pc + header_size + 2,
+            }
         }
         // Sub-1: variable-length text balloon. Spawns a
         // screen-anchored text actor when the leading byte is
@@ -61,17 +68,21 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 next_pc: pc + header_size + 5,
             }
         }
-        // Sub-3: 2-byte `[4C, 0xE3, actor_id]`. Camera-anchored
+        // Sub-3: 3-byte `[4C, 0xE3, actor_id]`. Camera-anchored
         // teleport: copy active camera position+rotation onto
         // the resolved actor. Dispatcher lines 7208-7227. PC
-        // advances by 2; missing actor is a silent no-op.
+        // advances by 3 (raw asm at 0x801E3108: the player path
+        // exits `j 0x801E00BC` with `addiu s8,s8,0x3` in the
+        // branch-delay slot, the NPC path via the 0x801E00B8 +3
+        // entry - the decompile shows neither advance); missing
+        // actor is a silent no-op.
         3 => {
             let Some(&actor_id) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
             host.op4c_n_e_sub_3_actor_sync_camera(ctx, actor_id);
             StepResult::Advance {
-                next_pc: pc + header_size + 1,
+                next_pc: pc + header_size + 2,
             }
         }
         // Sub-7: 7-byte `[4C, 0xE7, t0, t1, t2, d0, d1]`.

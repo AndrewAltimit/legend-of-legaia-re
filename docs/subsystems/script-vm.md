@@ -469,6 +469,33 @@ Every census site therefore carries `GFlagSite::clean`: `true` only when at leas
 The CLI prints `DESYNCED?` on non-clean rows - treat those as byte noise until verified by hand disasm or a live capture.
 This falsified the earlier "`0x482` set by the `other7` pool / cleared by the `edbalden`/`eddoman` epilogue variants" reading: all 37 of `0x482`'s census sites are non-clean text aliases, while the live-confirmed `0x142` writer arms decode clean.
 
+### Door-choreography record families: the `0x00F` busy-mutex + the jouind per-visit band
+
+Two partition-2 record shapes in the Drake-castle cluster (`jouinc` `[43,18,60]`, `jouind` `[.,.,17]`) look
+like story-gate families in the `--p2-gates` output but are **mechanism state, not story state**. Both rest
+on the C1 polarity: a C1 flag **blocks the record while SET** (the one-shot mechanism, see
+[`field-locomotion.md`](field-locomotion.md) kind-1 triggers).
+
+**The `0x00F` busy-mutex family.** `jouinc` P2[2..59] (SJIS names `Ｊ０１`..`Ｊ５８`) and `jouind`
+P2[0..1]/[6..9] are all gated `C1=[0x00F]`, and every record's **first op sets `0x00F`** (`50 0F`) while its
+**last clears it** (`60 0F`) before parking on a `JmpRel -2`. `0x00F` is a transient low system flag (the
+same band as the `0xB`/`0xC`/`0x18` interaction locks), so the C1 gate is a **mutual-exclusion lock**: no
+door record spawns while another is mid-flight, and the running record cannot re-trigger itself. The body is
+door-walk choreography, one record per castle door: an extended nibble-A conditional (`CC <door_actor> A1 0A
+target`) branches on the door actor's local flag 10 (open state), the door actor animates (`CB` Animate) and
+flips its local-flag pose bits, the player channel `0xF8` gets the `ExecMove 6` / `ExecMove 7` / `ExecMove 2`
+walk-through sequence, and the room transition is a `36 00 80 xx` + `36 04 80 00` SceneFade pair (an
+intra-scene reposition, not a `0x3F` scene change). The record names are door ids, not grid coordinates.
+
+**The jouind per-visit door band `0x4BE..0x4C2`.** `jouind` P2[10..13] are gated on the *story-numbered*
+band but the band is **reset by `jouina` P1[0]** (entry script clears all five flags), so it is per-castle-
+visit door/lift state, not chapter-persistent progress: P2[10]/P2[11] (each `C1=[0x4C1]`, i.e. live while
+`0x4C1` is clear) are door choreographies that SET `0x4BE`/`0x4BF` respectively and share a first-use latch
+`0x4C2` (in-body `74 C2` test-skip + `54 C2` set); P2[12] (`C1=[0x4C0,0x4C1]`) is a two-door camera cutscene
+that one-shots itself via `54 C0`; P2[14] SETs `0x4C1`, retiring the whole family for the visit; and P2[13]
+(SJIS name `セット`) re-applies the door-open visuals on entry by branching on `0x4BE`/`0x4BF`. All
+sites are census-clean (`--system-flag-census`, scenes `jouina`/`jouind`/`jouine`).
+
 **Width blindness is the desync's second face.** A missing/wrong sub-op *width* in the disassembler desyncs
 the walk even in clean non-dialogue code, and a site hidden that way looks identical to "no writer exists".
 Flag `549` (`0x225`, the Rim Elm opening one-shot) was exactly this: town01 `P2[3]` SETs it from its own
@@ -476,10 +503,23 @@ script bytes (`52 25` at body `+0x3`, the record its own C1 gates - the `P2[50]`
 but the preceding `4C ED` op (`_DAT_8007BA66` write, retail `param_2 + 3`) had no width in the disassembler,
 so the walk mis-read `ED 01 52` as a phantom Clear and swallowed the SET. Caught live first (reader-watch
 script-PC capture: SET `ra 0x801E3598`, `vm` offset `+0xF`), then fixed statically: the whole `4C 0xE_` sub-op
-width family is now pinned from the retail dispatcher's `param_2 + N` advances (subs 4/5/7/8/9/A/B/C/D/E;
-sub-0/3 exit through the delay-slot-hidden `LAB_801e00bc` and keep their empirical widths). Anchor
+width family is now pinned from the retail dispatcher's `param_2 + N` advances (subs 4/5/7/8/9/A/B/C/D/E),
+and the last two delay-slot-hidden legs (sub-0/3) from the raw asm: both arms (`0x801E306C` / `0x801E3108`,
+case targets confirmed against the outer-0xE jump table at VA `0x801CF008`) advance +3 - sub-0 through the
+`addiu s8,s8,0x3` entry at `0x801E00B8`, sub-3 there or in the `j 0x801E00BC` branch-delay slot. Neither is
+a halt (the decompile's `goto LAB_801e00bc` folds both entries into the no-advance label). Anchor
 `flag_549_writer_is_the_rim_elm_p2_3_self_latch`. Before trusting any "flag F has no script writer" verdict,
 confirm the ops *around* the expected site decode with known widths.
+
+Width blindness also comes at **whole-nibble granularity**: the disassembler once had no decoder at all for
+`0x4C` outer nibbles `9`/`A`/`C`/`D`/`F`, so every record crossing one (e.g. the `CC 06 A1 ..` extended
+nibble-A conditional jumps that pepper the jou-castle door records) desynced exactly like the `4C ED` case,
+hiding thousands of clean flag sites and minting phantom ones from the resync garbage. All sixteen outer
+nibbles now decode (`legaia_asset::field_disasm::decode_subops`), with widths mirrored from the executing
+VM's `menu_ctrl` port (itself pinned from the retail dispatcher's `param_2 + N` advances); nibble `B` is
+genuinely undefined in retail (no `case 0xb` - the default arm halts) and stays a decode error. The pinned
+spine-flag verdicts are unchanged under the full-width walk: `0x482` stays all-alias, and the koin gates
+`0x50A`/`0x5D6` still have no script writer disc-wide.
 
 ## BGM lookup table
 

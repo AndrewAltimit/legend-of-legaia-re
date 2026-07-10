@@ -191,12 +191,14 @@ fn op_4c_n_8_sub_d_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_e_sub_3_advances_2_and_records_actor() {
+fn op_4c_n_e_sub_3_advances_3_and_records_actor() {
     let bytecode = [0x4Cu8, 0xE3, 0x09];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 2 });
+    // Raw asm (0x801E3108): both exit paths advance s8 by 3 (the
+    // player path in the `j 0x801E00BC` branch-delay slot).
+    assert_eq!(r, StepResult::Advance { next_pc: 3 });
     assert_eq!(host.n_e_sub_3_camera_syncs, vec![9]);
 }
 
