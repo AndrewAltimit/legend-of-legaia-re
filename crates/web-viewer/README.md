@@ -18,6 +18,25 @@ instead of every raw entry.
 - `legaia-tmd` - mesh parser.
 - `legaia-rando` + `legaia-iso` - the randomizer / disc patcher (see `rom_patcher` below).
 
+## Assembled full-scene maps (`field_scene`)
+
+`LegaiaViewer::set_scene_field(name)` loads a CDNAME field/town scene
+through the **real engine loaders** and surfaces the whole assembled map -
+the answer to "a `scene_asset_table` entry viewed alone shows one
+object-local mesh at the origin". The build is the engine-parity path:
+`SceneResources::build_targeted_with_options` (field-mode VRAM pre-pass +
+the LZS-packed environment TMD pack), the shared
+`engine-core::field_env` kernel (env-pack vote + `.MAP` object-grid
+placement resolution + floor-height-LUT world Y), the terrain-tile layer,
+and the walk-ground heightfield. Accessors mirror the kingdom `pack_*`
+family: `field_scene_mesh(slot)` + `field_scene_mesh_*` per-mesh arrays,
+`field_scene_vram_bytes`, `field_scene_placement_{slots,positions}`,
+`field_scene_terrain_{slots,positions}`, `field_scene_ground_*`. The
+site's viewer page drives it from the "full map" button, streaming the
+draws through the WebGL renderer's instanced scene-mesh path (the same
+plumbing as the world-overview kingdom continents). Disc-gated parity
+test: `tests/field_scene_assembly.rs`.
+
 ## In-browser ROM patcher (`rom_patcher`)
 
 `rom_patcher::patch_rom(image, seed, drops, encounters, chests)` runs the

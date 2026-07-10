@@ -115,7 +115,14 @@ impl Scene {
             // prologue's whole vignette geometry pack; see
             // docs/formats/scene-bundles.md). Load those entries at their
             // full footprint so the resource sweep can reach every stream.
-            if class == Class::SceneAssetTable
+            //
+            // The same applies to plain `lzs_container` entries: dungeon
+            // scenes carry their environment mesh pack as a standalone LZS
+            // container (rikuroa = entry 156, 77 TMDs) whose streams start
+            // inside the TOC window but run into the trailing sectors -
+            // truncated at the TOC end every stream fails to decode and the
+            // scene resolves zero environment meshes.
+            if matches!(class, Class::SceneAssetTable | Class::LzsContainer)
                 && let Ok(ext) = index.entry_bytes_extended(idx)
                 && ext.len() > bytes.len()
             {
@@ -434,13 +441,12 @@ impl Scene {
     /// negated; `FUN_8003aeb0` fills it from the MAN, `FUN_8003a55c` reads it).
     /// Validated against a live `town01` save (Vahn's house tile nibble `6`,
     /// `lut[6]=192` -> world Y `-192`). Returns `Ok(None)` when the scene has
-    /// no MAN bundle.
+    /// no MAN (neither a bundle MAN nor a streaming-carrier MAN - the
+    /// resolution order of [`Self::field_man_payload`], so dungeon scenes
+    /// whose MAN ships in a streaming variant carrier, e.g. `rikuroa`,
+    /// resolve their floor LUT too).
     pub fn field_floor_height_lut(&self, index: &ProtIndex) -> Result<Option<[i16; 16]>> {
-        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
-            return Ok(None);
-        };
-        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
-        let Some(man) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)? else {
+        let Some(man) = self.field_man_payload(index)? else {
             return Ok(None);
         };
         let Some(lut_bytes) = man.get(0x02..0x22) else {

@@ -10,6 +10,7 @@ mod audio_api;
 mod catalog;
 mod character;
 pub mod disc;
+pub mod field_scene;
 pub mod fog_lut;
 mod inspect;
 mod monster;
@@ -226,6 +227,18 @@ pub struct LegaiaViewer {
     /// accessors so the viewer draws the landmark meshes on top of the
     /// continent terrain instead of the misaligned overview-frame JSON layer.
     walk_placements: Option<Vec<WalkPlacement>>,
+    /// Assembled full field/town scene (env mesh pack + `.MAP` placement /
+    /// terrain draws + walk-ground heightfield), loaded through the engine's
+    /// real scene loaders. Populated by [`LegaiaViewer::set_scene_field`];
+    /// consumed by the `field_scene_*` accessors.
+    field_scene: Option<field_scene::FieldScenePack>,
+    /// Cached engine-core PROT index over the loaded disc (built on the
+    /// first `set_scene_field`; cleared on `load_disc`).
+    prot_index: Option<std::sync::Arc<legaia_engine_core::scene::ProtIndex>>,
+    /// CDNAME.TXT contents captured at `load_disc` time (the stored `disc`
+    /// buffer only retains PROT.DAT, but the full-scene assembler needs the
+    /// scene-name -> block map). `None` on raw PROT.DAT / single-TIM loads.
+    cdname_text: Option<String>,
 }
 
 /// VRAM rectangles a single primitive's CBA / TSB lookup will touch.

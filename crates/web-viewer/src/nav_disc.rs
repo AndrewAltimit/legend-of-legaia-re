@@ -28,6 +28,9 @@ impl LegaiaViewer {
             deep_section_cache: std::cell::RefCell::new(None),
             walk_ground: None,
             walk_placements: None,
+            field_scene: None,
+            prot_index: None,
+            cdname_text: None,
         })
     }
 
@@ -48,7 +51,14 @@ impl LegaiaViewer {
         *self.deep_section_cache.borrow_mut() = None;
         self.walk_ground = None;
         self.walk_placements = None;
+        self.field_scene = None;
+        self.prot_index = None;
+        self.cdname_text = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
+            // Keep the CDNAME text: `self.disc` only retains the extracted
+            // PROT.DAT, but the full-scene assembler needs the scene-name ->
+            // block map to resolve CDNAME labels.
+            self.cdname_text = crate::disc::extract_cdname_txt(&bytes);
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
                 bytes.len() / 1024 / 1024,

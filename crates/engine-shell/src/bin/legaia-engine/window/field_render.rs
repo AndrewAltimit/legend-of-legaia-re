@@ -193,52 +193,44 @@ impl PlayWindowApp {
             .ok()
             .flatten();
         // The environment meshes are the scene's geometry-pack TMDs, in scan
-        // order; `pack_index` indexes that subset of `res.tmds`.
-        //
-        // The geometry pack is the scene-owned PROT entry that actually
-        // produced the most environment TMDs - NOT necessarily
-        // `find_bundle`'s entry. For a single-entry town both agree (town01:
-        // MAN + 114 TMDs in entry 4). But two scene shapes split them, in
-        // opposite directions, so neither "the bundle entry" nor "the first
-        // SceneAssetTable" is universally right:
-        //   - the opening cutscene `opdeene` keeps its MAN in a
-        //     `SceneScriptedAssetTable` (entry 748, what `find_bundle` returns)
-        //     and its 72-TMD vignette geometry in a *separate* `SceneAssetTable`
-        //     sibling (entry 749) - so keying on `find_bundle` found zero env
-        //     meshes and the prologue rendered as a blank screen;
-        //   - a world-map kingdom bundle keeps its geometry in the
-        //     `SceneScriptedAssetTable` (`find_bundle`, entry 85) while a
-        //     sibling `SceneAssetTable` (entry 86) holds an unrelated sub-area -
-        //     so "prefer the SceneAssetTable" would break the overworld.
-        // Selecting the scene-owned entry with the most parsed TMDs resolves
-        // the geometry pack the placements index in every case (opdeene 749,
-        // town01 4, map01 85), and the `scene_entry_ids` filter keeps shared
-        // blocks (the player mesh) out of the vote.
-        let scene_entry_ids: std::collections::HashSet<u32> =
-            scene.entries.iter().map(|e| e.idx).collect();
-        let mut entry_tmd_counts: std::collections::HashMap<u32, usize> =
-            std::collections::HashMap::new();
-        for t in &res.tmds {
-            if scene_entry_ids.contains(&t.entry_idx) {
-                *entry_tmd_counts.entry(t.entry_idx).or_default() += 1;
+        // order; `pack_index` indexes that subset of `res.tmds`. Pack
+        // selection (the per-entry TMD-count vote) + the placement -> draw
+        // resolution live in the shared kernel `engine_core::field_env`, so
+        // the web viewer's assembled scene view resolves the exact same
+        // draws; this method only adds the uploaded-mesh bridge and the
+        // render-frame model matrix.
+        let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
+        if env_tmds.is_empty() {
+            return Vec::new();
+        }
+        let (env_draws, dropped) =
+            legaia_engine_core::field_env::resolve_env_draws(&env_tmds, placements, floor_lut);
+        let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
+        if diag {
+            for d in &dropped {
+                match d {
+                    legaia_engine_core::field_env::EnvDrawDrop::NoPackIndex {
+                        world_x,
+                        world_z,
+                    } => {
+                        log::info!("DIAG place drop: no pack_index at ({world_x}, {world_z})");
+                    }
+                    legaia_engine_core::field_env::EnvDrawDrop::SlotOutOfRange {
+                        pack_index,
+                        world_x,
+                        world_z,
+                    } => {
+                        log::info!(
+                            "DIAG place drop: pack_index {} out of range ({} env tmds) at ({}, {})",
+                            pack_index,
+                            env_tmds.len(),
+                            world_x,
+                            world_z
+                        );
+                    }
+                }
             }
         }
-        // Highest TMD count wins; ties break to the lowest entry index so the
-        // choice is deterministic (HashMap iteration order is not).
-        let Some(env_entry) = entry_tmd_counts
-            .into_iter()
-            .max_by_key(|&(idx, n)| (n, std::cmp::Reverse(idx)))
-            .map(|(idx, _)| idx)
-        else {
-            return Vec::new();
-        };
-        let env_tmds: Vec<usize> = res
-            .tmds
-            .iter()
-            .enumerate()
-            .filter(|(_, t)| t.entry_idx == env_entry)
-            .map(|(i, _)| i)
-            .collect();
         // res.tmds index -> uploaded-mesh index (None where the mesh was
         // dropped for having no renderable prims).
         let mut res_to_mesh: Vec<Option<usize>> = vec![None; res.tmds.len()];
@@ -247,48 +239,19 @@ impl PlayWindowApp {
                 *slot = Some(mesh_idx);
             }
         }
-        let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
         let mut draws = Vec::new();
-        for p in placements {
-            let Some(pack_index) = p.pack_index else {
-                if diag {
-                    log::info!(
-                        "DIAG place drop: no pack_index at ({}, {})",
-                        p.world_x,
-                        p.world_z
-                    );
-                }
-                continue;
-            };
-            let Some(&res_idx) = env_tmds.get(pack_index as usize) else {
-                if diag {
-                    log::info!(
-                        "DIAG place drop: pack_index {} out of range ({} env tmds) at ({}, {})",
-                        pack_index,
-                        env_tmds.len(),
-                        p.world_x,
-                        p.world_z
-                    );
-                }
-                continue;
-            };
-            let Some(mesh_idx) = res_to_mesh[res_idx] else {
+        for d in &env_draws {
+            let Some(mesh_idx) = res_to_mesh[d.res_tmd] else {
                 if diag {
                     log::info!(
                         "DIAG place drop: pack {} (res {}) not in this mesh bridge at ({}, {})",
-                        pack_index,
-                        res_idx,
-                        p.world_x,
-                        p.world_z
+                        d.env_slot,
+                        d.res_tmd,
+                        d.world_x,
+                        d.world_z
                     );
                 }
                 continue;
-            };
-            // World Y from the floor-height LUT (`-lut[nibble] + y_off`), or
-            // the ground plane when the LUT / nibble is unavailable.
-            let world_y = match (floor_lut, p.floor_nibble) {
-                (Some(lut), Some(nib)) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
-                _ => 0,
             };
             // PSX field coords (same retail Y-down convention as actor
             // positions). `flip_y` selects the render-frame pairing: the
@@ -297,9 +260,9 @@ impl PlayWindowApp {
             // camera's FIELD_WORLD_FLIP provides the single net negation
             // (elevation renders retail-correct).
             let t = Mat4::from_translation(Vec3::new(
-                p.world_x as f32,
-                world_y as f32,
-                p.world_z as f32,
+                d.world_x as f32,
+                d.world_y as f32,
+                d.world_z as f32,
             ));
             let model = if flip_y {
                 t * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
