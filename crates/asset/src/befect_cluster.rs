@@ -9,21 +9,25 @@
 //! entry into its sub-files, and classifies every resulting blob by content
 //! signature.
 //!
-//! Identity note: the CDNAME symbol resolves in *define-number* space, so
-//! this walker's window is extraction entries 872..875 - which, under the
-//! raw-TOC −2 numbering correction (`docs/formats/cdname.md`), are retail
-//! `vdf.dat` (872), `efect.dat` (873), the `player_data` file `player.lzs`
-//! (874), and a `sound_data2` VAB stream (875). The retail `befect_data`
-//! block proper is extraction 870..873 (`etim`/`etmd`/`vdf`/`efect`). The
-//! window's parts classify as:
-//!   - a generic offset pack (`vdf.dat`),
-//!   - the effect-script 2-pack `efect.dat` (inline sprite atlas + pack0 anim
-//!     batches + pack1 effect scripts) - the first ~`0x2000` of "entry 873",
-//!   - the `player.lzs` LZS container of three sub-files: the field
-//!     character TMD pack, a generic offset pack, and the field-character
-//!     texture TIMs (CLUTs in the high VRAM rows 473..478, pixels at
-//!     fb_y=256; see `docs/formats/character-mesh.md`),
-//!   - a trailing VAB-prefixed streaming blob.
+//! Identity note: the CDNAME `#define` numbers are raw-TOC indices, so the
+//! symbol's window is converted to the retail **extraction** frame
+//! (`cdname::block_range_for_name_extraction`; see
+//! `docs/formats/cdname.md` § numbering space): the `befect_data` block is
+//! extraction entries 870..874 - the four dev-named battle-effect files the
+//! battle scene loader `FUN_800520F0` pulls as a sequential state machine:
+//!   - `etim.dat` (870): the effect texture pages - a 16-byte pack header
+//!     then three 64×256 4bpp TIMs targeting VRAM `(320,0)`/`(384,0)`/
+//!     `(448,0)` with CLUTs at rows 474..476,
+//!   - `etmd.dat` (871): the effect 3D model pack (Legaia TMD magics),
+//!   - `vdf.dat` (872): a generic offset pack,
+//!   - `efect.dat` (873): the effect-script runtime 2-pack (inline sprite
+//!     atlas + pack0 anim batches + pack1 effect scripts).
+//!
+//! An earlier revision applied the raw window unshifted (extraction
+//! 872..876), which dropped `etim`/`etmd` and bled into the neighbouring
+//! `player_data` `player.lzs` + a `sound_data2` VAB stream - the
+//! "player.lzs sections are effect content" reading superseded in
+//! `docs/formats/effect.md`.
 //!
 //! See [`docs/formats/effect.md`](../../../docs/formats/effect.md).
 
@@ -93,6 +97,8 @@ pub struct ClusterPart {
 /// The fully-extracted cluster.
 #[derive(Debug, Default, Serialize)]
 pub struct BefectCluster {
+    /// First PROT entry of the cluster, in the **extraction** frame
+    /// (`extracted/PROT/NNNN_*.BIN` numbering).
     pub first_index: u32,
     pub parts: Vec<ClusterPart>,
 }
@@ -212,12 +218,13 @@ fn classify(b: &[u8]) -> Component {
 }
 
 /// Extract the `befect_data` cluster from an open PROT archive, using its
-/// CDNAME symbol map to locate the entry range. Each entry is read at its
-/// footprint size (`next_lba - this_lba`), not the extended/indexed size; the
-/// one LZS-container entry is expanded into its sections; every part is
-/// classified by content signature.
+/// CDNAME symbol map to locate the entry range (retail extraction frame -
+/// see the module identity note). Each entry is read at its footprint size
+/// (`next_lba - this_lba`), not the extended/indexed size; any LZS-container
+/// entry is expanded into its sections; every part is classified by content
+/// signature.
 pub fn extract(archive: &mut Archive, cdname: &IndexMap) -> Result<BefectCluster> {
-    let (start, end) = cdname::block_range_for_name(cdname, CLUSTER_SYMBOL)
+    let (start, end) = cdname::block_range_for_name_extraction(cdname, CLUSTER_SYMBOL)
         .ok_or_else(|| anyhow!("CDNAME has no `{CLUSTER_SYMBOL}` symbol"))?;
     let mut cluster = BefectCluster {
         first_index: start,

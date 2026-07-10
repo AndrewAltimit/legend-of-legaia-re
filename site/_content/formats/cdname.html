@@ -83,6 +83,7 @@
     <li>Extraction 0893 (<code>summon.dat</code>) opens with a <code>[u32 2][u16 table&hellip;]</code> shape that mimics a sound-address bank - a shift-0 reading &ldquo;confirms&rdquo; <code>monster_se</code> on it spuriously; the byte-pins show texture streaming slots. Trust byte-pins over shape coincidences.</li>
     <li>One v12-shaped header sits at extraction 1227 (<code>other7</code> region), outside the scene region.</li>
     <li>Opaque names (<code>other1</code>/<code>other4</code>/<code>other5</code>/<code>other6</code>/<code>other7</code>, <code>card_data</code>) are unscoreable; nothing about them conflicts with &minus;2.</li>
+    <li><code>other7</code> (extraction 1226+, define 1228) is a dev-leftover <strong>earlier revision of <code>koin3</code>'s field MAN</strong>: its 8 partition-2 records are a name-exact prefix subset of <code>koin3</code>'s 12 (koin3 appends four later records), and its partition-1 pool shares koin3's gate flags (<code>0x431</code>/<code>0x4CA</code>/<code>0x3DA</code> at matching record shapes). No captured code loads it (no path string, no raw-index loader) - orphaned content, consistent with its leftover-JP text.</li>
   </ul>
   <h3 id="engine-consequence">Engine consequence: scene windows are the retail block</h3>
   <p><code>Scene::load</code> (engine-core) converts the raw-TOC block range to the extraction frame (<code>raw - 2</code>) so a

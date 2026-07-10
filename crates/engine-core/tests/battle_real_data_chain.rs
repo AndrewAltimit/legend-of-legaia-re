@@ -101,12 +101,14 @@ fn real_effect_bundle_parses_and_battle_sm_progresses() {
         "battle SM made zero transitions across 500 frames"
     );
 
-    // CDNAME sanity: the `battle_data` block defined in CDNAME contains
-    // the per-monster bundle table. Confirm we can resolve its range
-    // and that the first entry isn't empty.
+    // CDNAME sanity: the `battle_data` block (retail extraction 863..867 =
+    // PLAYER1..4; raw defines 865..869) resolves in the extraction frame the
+    // archive's entry list is indexed in, and its first entry (PLAYER1 -
+    // Vahn's battle file) isn't empty. The unshifted raw window would read
+    // PLAYER3 as "entry 0".
     let map = cdname::parse(&extracted.join("CDNAME.TXT")).expect("parse CDNAME");
-    let (bd_start, bd_end) =
-        cdname::block_range_for_name(&map, "battle_data").expect("battle_data in CDNAME");
+    let (bd_start, bd_end) = cdname::block_range_for_name_extraction(&map, "battle_data")
+        .expect("battle_data in CDNAME");
     assert!(
         bd_end > bd_start,
         "battle_data block range must be non-empty"

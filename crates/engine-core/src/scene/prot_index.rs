@@ -236,11 +236,24 @@ impl ProtIndex {
         Ok(class)
     }
 
-    /// Look up a CDNAME block range (`first_idx, end_idx`) by scene label.
-    /// Returns `None` if no CDNAME map was loaded or the label isn't present.
+    /// Look up a CDNAME block range (`first_idx, end_idx`) by scene label,
+    /// in the **raw-TOC** frame the `#define` numbers live in. Returns `None`
+    /// if no CDNAME map was loaded or the label isn't present.
+    ///
+    /// Almost every consumer wants [`Self::block_range_extraction`] instead -
+    /// this index addresses entries in the extraction frame (`raw - 2`).
     pub fn block_range(&self, scene_name: &str) -> Option<(u32, u32)> {
         let map = self.cdname.as_ref()?;
         cdname::block_range_for_name(map, scene_name)
+    }
+
+    /// [`Self::block_range`] converted to the retail **extraction** frame this
+    /// index addresses (`raw - RAW_TOC_INDEX_OFFSET`; head defines keep their
+    /// legacy unshifted windows). See
+    /// `legaia_prot::cdname::block_range_for_name_extraction`.
+    pub fn block_range_extraction(&self, scene_name: &str) -> Option<(u32, u32)> {
+        let map = self.cdname.as_ref()?;
+        cdname::block_range_for_name_extraction(map, scene_name)
     }
 
     /// PROT entries in `scene_name`'s CDNAME block whose payload is a
@@ -252,16 +265,9 @@ impl ProtIndex {
     /// default backdrop; per-sub-area variant selection is a follow-up. Empty
     /// when no CDNAME map is loaded or the block has no stage entries.
     pub fn battle_stage_entries(&self, scene_name: &str) -> Vec<u32> {
-        let Some((raw_start, raw_end)) = self.block_range(scene_name) else {
+        let Some((start, end)) = self.block_range_extraction(scene_name) else {
             return Vec::new();
         };
-        // CDNAME defines are raw-TOC indices, +2 from the extraction frame
-        // this index addresses (same conversion as `Scene::load`).
-        let shift = cdname::RAW_TOC_INDEX_OFFSET;
-        let (start, end) = (
-            raw_start.saturating_sub(shift),
-            raw_end.saturating_sub(shift),
-        );
         (start..end)
             .filter(|&idx| {
                 self.entry_bytes(idx)

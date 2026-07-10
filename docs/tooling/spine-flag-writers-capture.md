@@ -123,12 +123,17 @@ re-capturing. Same launch shape, same emulator constraints, same
   writer VAs (over-read/alias) - attribute callers by disassembling the
   **resident bytes from a same-mode save state**, not from static overlay
   dumps.
-- The carrier-complete census closed the remaining flag targets statically:
-  `0x482` = `other7`-pool scripts, `0x1BE` = geremi's Jeremi-arrival one-shot
-  (never a Zeto gate). The `DAT_8007B7FC` battle-id write was falsified live
-  (see the correction banner: silent at the Zeto trigger, Zeto is a `garmel`
-  record-path fight) and is no longer a standing target. The one capture
-  target still standing is flag `549` (`0x225`, a direct code path).
+- The carrier-complete census closed `0x1BE` statically (geremi's
+  Jeremi-arrival one-shot - never a Zeto gate). Its `0x482` closure did NOT
+  hold: every census site for `0x482` is a desynced-walker alias of SJIS
+  text (hand-disasm-falsified per class; the census now flags decode
+  coherence per site - `GFlagSite::clean`). The `DAT_8007B7FC` battle-id
+  write was falsified live (see the correction banner: silent at the Zeto
+  trigger, Zeto is a `garmel` record-path fight) and is no longer a standing
+  target. TWO capture targets stand: flag `549` (`0x225`) and flag `0x482`
+  (Drake mist walls) - both direct code paths; for `0x482` arm a write-watch
+  across the post-Zeto Drake-revival beat (`chapter2_garmel_pre_zeto`
+  brackets it).
 
 ## Running the probe
 

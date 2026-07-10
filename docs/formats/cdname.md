@@ -78,6 +78,7 @@ Honest residue from the quantitative pass (none of it contradicts the uniform �
 - Extraction 0893 (`summon.dat`) opens with a `[u32 2][u16 table…]` shape that mimics a sound-address bank - a shift-0 reading "confirms" `monster_se` on it spuriously; the byte-pins show texture streaming slots. Trust byte-pins over shape coincidences.
 - One v12-shaped header sits at extraction 1227 (`other7` region), outside the scene region.
 - Opaque names (`other1`/`other4`/`other5`/`other6`/`other7`, `card_data`) are unscoreable; nothing about them conflicts with −2.
+- `other7` (extraction 1226+, define 1228) is a dev-leftover **earlier revision of `koin3`'s field MAN**: its 8 partition-2 records are a name-exact prefix subset of `koin3`'s 12 (koin3 appends four later records), and its partition-1 pool shares koin3's gate flags (`0x431`/`0x4CA`/`0x3DA` at matching record shapes). No captured code loads it (no path string, no raw-index loader) - orphaned content, consistent with its leftover-JP text.
 
 ### Engine consequence: scene windows are the retail block
 

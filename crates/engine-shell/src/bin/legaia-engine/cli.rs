@@ -196,6 +196,14 @@ pub(crate) enum Cmd {
         /// scanning every partition-2 record when no record is given.
         #[arg(long)]
         narration: bool,
+        /// Print every partition-2 record's C1/C2 header gate lists (the
+        /// `FUN_8003BDE0` spawn conditions: C1 blocks the spawn if ANY listed
+        /// flag is set - the one-shot latch; C2 requires ALL listed flags
+        /// set) plus the record's name bytes. This is the record-HEADER flag
+        /// read surface the inline op censuses are structurally blind to -
+        /// the gate-family mining view (`partition2_record_gates`).
+        #[arg(long)]
+        p2_gates: bool,
     },
     /// Compare engine VRAM (built from the scene's targeted asset
     /// upload) against a runtime VRAM blob captured from a mednafen

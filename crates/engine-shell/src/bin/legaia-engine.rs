@@ -87,6 +87,7 @@ fn main() -> Result<()> {
             system_flag_census,
             motion_flag_census,
             op49_window_census,
+            p2_gates,
         } => cmd_man_scripts(
             &scene,
             &extracted_root,
@@ -101,6 +102,7 @@ fn main() -> Result<()> {
             system_flag_census,
             motion_flag_census,
             op49_window_census,
+            p2_gates,
         ),
         Cmd::VramOracle {
             scene,

@@ -50,7 +50,9 @@ pub(crate) fn run_world(
     }
     let index = ProtIndex::open_extracted(extracted_root)
         .with_context(|| format!("open ProtIndex at {}", extracted_root.display()))?;
-    let (start, end) = index.block_range(scene_name).ok_or_else(|| {
+    // `tmd_scan`/`tim_scan` dirs carry EXTRACTION indices, so resolve the
+    // block in the retail extraction frame (raw define - 2).
+    let (start, end) = index.block_range_extraction(scene_name).ok_or_else(|| {
         anyhow::anyhow!(
             "scene '{}' not found in CDNAME map at {}",
             scene_name,

@@ -86,6 +86,33 @@ pub fn block_range_for_name(map: &IndexMap, name: &str) -> Option<(u32, u32)> {
     Some((start, end))
 }
 
+/// Resolve a scene/block name to its retail **extraction-frame** entry window
+/// `[start, end_exclusive)` - the index space of `extracted/PROT/NNNN_*.BIN`
+/// files and of [`crate::archive::Archive::entries`].
+///
+/// CDNAME `#define` numbers are raw-TOC indices ([`RAW_TOC_INDEX_OFFSET`]), so
+/// the window [`block_range_for_name`] returns is `+2` from the extraction
+/// frame: applying it unshifted drops the block's first two retail entries
+/// (the `.MAP` + sidecars) and bleeds in the *next* block's first two - the
+/// mis-framing behind the historical rikuroa/geremi MAN mixup.
+///
+/// Head defines whose raw start sits inside the TOC's header rows
+/// (`raw_start < RAW_TOC_INDEX_OFFSET`: `init_data 0`, `gameover_data 1`)
+/// keep their legacy unshifted windows - the `-2` conversion has no content
+/// to land on there, and the entries they name (`0000_init_data`, ...) are
+/// what consumers load. Mirrors `Scene::load` in `legaia-engine-core`.
+pub fn block_range_for_name_extraction(map: &IndexMap, name: &str) -> Option<(u32, u32)> {
+    let (raw_start, raw_end) = block_range_for_name(map, name)?;
+    if raw_start < RAW_TOC_INDEX_OFFSET {
+        Some((raw_start, raw_end))
+    } else {
+        Some((
+            raw_start - RAW_TOC_INDEX_OFFSET,
+            raw_end.saturating_sub(RAW_TOC_INDEX_OFFSET),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +168,47 @@ not a define
     #[test]
     fn parse_str_empty_is_empty_map() {
         assert!(parse_str("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn block_range_for_name_extraction_shifts_to_retail_frame() {
+        // Real CDNAME tail around the effect cluster: `befect_data 872`,
+        // `player_data 876`. The retail befect block is EXTRACTION 870..874
+        // (etim/etmd/vdf/efect); the unshifted window (872..876) misses
+        // etim/etmd and bleeds into player_data.
+        let map = parse_str("#define befect_data 872\n#define player_data 876\n").unwrap();
+        assert_eq!(
+            block_range_for_name_extraction(&map, "befect_data"),
+            Some((870, 874))
+        );
+        // The last block's open end (u32::MAX) also shifts; callers clamp to
+        // the actual archive size either way.
+        assert_eq!(
+            block_range_for_name_extraction(&map, "player_data"),
+            Some((874, u32::MAX - 2))
+        );
+        assert_eq!(block_range_for_name_extraction(&map, "missing"), None);
+    }
+
+    #[test]
+    fn block_range_for_name_extraction_keeps_head_define_legacy_windows() {
+        // `init_data 0` / `gameover_data 1` sit inside the raw TOC's header
+        // rows; the -2 conversion has no content to land on, so their legacy
+        // unshifted windows are kept (mirrors `Scene::load`).
+        let map =
+            parse_str("#define init_data 0\n#define gameover_data 1\n#define town01 3\n").unwrap();
+        assert_eq!(
+            block_range_for_name_extraction(&map, "init_data"),
+            Some((0, 1))
+        );
+        assert_eq!(
+            block_range_for_name_extraction(&map, "gameover_data"),
+            Some((1, 3))
+        );
+        assert_eq!(
+            block_range_for_name_extraction(&map, "town01"),
+            Some((1, u32::MAX - 2))
+        );
     }
 
     #[test]

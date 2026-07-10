@@ -274,7 +274,10 @@ pub(crate) fn cmd_list_scenes(
 
     println!("{} distinct scene names:", names.len());
     for name in &names {
-        if let Some((start, end)) = cdname::block_range_for_name(&map, name) {
+        // Report windows in the retail EXTRACTION frame (what Scene::load
+        // reads and what extracted/PROT/NNNN_*.BIN filenames use), not the
+        // raw #define frame, so the listing matches the loaders.
+        if let Some((start, end)) = cdname::block_range_for_name_extraction(&map, name) {
             println!(
                 "  {:<24} PROT [{}..{}) ({} entries)",
                 name,

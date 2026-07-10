@@ -306,12 +306,16 @@ landed:
   op boundaries). Engine: `SCRIPTED_SCENE_BOSSES` arms Caruban (73) in
   `rikuroa` gated on `0x142`; the victory latch sets it, flipping the
   dolk-dolk2 entrance organically.
-- **`0x482`** (Drake mist walls): script writers **found** - SETs in the
-  `other7` block's `P1[15]`/`P1[39]` (op `0x54`), clears in the
-  `edbalden`/`eddoman` epilogue variant carriers. Which story beat
-  executes the `other7` records (an "other"-block script pool, not a
-  per-town scene) is the remaining question before the engine can open
-  the walls organically; the engine leaves the gate as-is meanwhile.
+- **`0x482`** (Drake mist walls): no script writer exists - the earlier
+  "SETs in the `other7` block, clears in the `edbalden`/`eddoman`
+  epilogue carriers" reading was desynced-walker text noise (full-width
+  SJIS digits / an `ＥＸＩＴ` label table aliasing the `54 82`/`64 82`
+  op bytes; falsified per-site by hand disasm, pinned by the census
+  decode-coherence flag in `man_variant_carrier_census_disc.rs`). The
+  writer is a direct code path - a capture target (write-watch across
+  the post-Zeto Drake-revival beat), like flag 549. The reader stays
+  solid: the `map01` `P2[34..36]` C1 force-walk bands. The engine leaves
+  the gate as-is meanwhile.
 
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
   with that id. `inline` is the record's structural inline dialog-text block (see

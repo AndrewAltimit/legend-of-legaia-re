@@ -38,8 +38,11 @@ fn real_seq_vab_chain_renders_through_spu_without_panic() {
 
     let mut archive = Archive::open(&extracted.join("PROT.DAT")).expect("open PROT");
     let map = cdname::parse(&extracted.join("CDNAME.TXT")).expect("parse CDNAME");
-    let (start, end) =
-        cdname::block_range_for_name(&map, "music_01").expect("music_01 block in CDNAME");
+    // Retail extraction frame: the archive's entry list is extraction-
+    // indexed, so the raw #define window would scan two entries past the
+    // block (and skip its first two).
+    let (start, end) = cdname::block_range_for_name_extraction(&map, "music_01")
+        .expect("music_01 block in CDNAME");
 
     // Walk the music_01 block until we find an entry that holds both pBAV
     // and pQES - that's a single-entry VAB+SEQ pair.
