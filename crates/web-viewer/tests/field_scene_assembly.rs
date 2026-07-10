@@ -14,7 +14,7 @@
 
 use legaia_engine_core::scene::ProtIndex;
 use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};
-use legaia_web_viewer::field_scene::build_field_scene;
+use legaia_web_viewer::field_scene::{build_field_scene, build_hybrid_env_mesh};
 use std::env;
 use std::fs;
 
@@ -112,5 +112,72 @@ fn town01_env_pack_matches_engine_ground_truth() {
         (20..=60).contains(&pack.placements.len()),
         "town01 placement draw count {} outside expected band",
         pack.placements.len()
+    );
+}
+
+/// The hybrid env-mesh build (`build_hybrid_env_mesh`) must surface the
+/// untextured vertex-colour prims the plain VRAM-filtered build drops - the
+/// browser sibling of the native engine's colour-mesh pipeline. town01's env
+/// pack carries **colour-only** placed props (slots whose textured build is
+/// empty but whose flat/gouraud prims carry per-vertex RGB); before the
+/// hybrid path those placements silently vanished from the assembled view.
+#[test]
+fn hybrid_env_mesh_recovers_vertex_colour_props() {
+    let Some(disc_path) = env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("LEGAIA_DISC_BIN unset; skipping hybrid env-mesh test");
+        return;
+    };
+    let disc = fs::read(&disc_path).expect("disc image");
+    let prot = extract_prot_dat(&disc).expect("PROT.DAT extraction");
+    let cdname = extract_cdname_txt(&disc).expect("CDNAME.TXT extraction");
+    let index = ProtIndex::from_bytes(prot, Some(&cdname)).expect("ProtIndex from in-memory PROT");
+
+    let pack = build_field_scene(&index, "town01").expect("town01 build");
+    let referenced: std::collections::BTreeSet<usize> = pack
+        .placements
+        .iter()
+        .chain(pack.terrain.iter())
+        .map(|d| d.env_slot)
+        .collect();
+
+    let mut colour_only_recovered = 0usize;
+    for &slot in &referenced {
+        let rtmd = &pack.res.tmds[pack.env_tmds[slot]];
+        let textured = rtmd.build_filtered_vram_mesh(&pack.res.vram);
+        let (hybrid, flat) = build_hybrid_env_mesh(rtmd, &pack.res.vram);
+
+        // Structural invariants: flat is per-vertex [r, g, b, flag] and only
+        // present when the mesh carries untextured prims; the hybrid mesh's
+        // vertex arrays stay index-aligned.
+        assert_eq!(hybrid.positions.len(), hybrid.uvs.len(), "slot {slot}");
+        assert_eq!(hybrid.positions.len(), hybrid.cba_tsb.len(), "slot {slot}");
+        if !flat.is_empty() {
+            assert_eq!(flat.len(), hybrid.positions.len() * 4, "slot {slot}");
+            // The textured prefix is flagged 255, the colour tail 0.
+            assert_eq!(
+                flat[3],
+                if textured.positions.is_empty() {
+                    0
+                } else {
+                    255
+                }
+            );
+            assert_eq!(*flat.last().unwrap(), 0, "slot {slot} tail flag");
+        }
+        assert!(
+            hybrid.indices.len() >= textured.indices.len(),
+            "slot {slot}: hybrid dropped textured prims"
+        );
+        if textured.indices.is_empty() && !hybrid.indices.is_empty() {
+            colour_only_recovered += 1;
+        }
+    }
+    // town01 ships a handful of colour-only placed props (benches / fences /
+    // small furniture; slots 31, 55, 87, 97, 109 at the current pack vote).
+    // The exact set can drift with loader changes - require the *class* of
+    // mesh to be recovered, not the exact slot ids.
+    assert!(
+        colour_only_recovered >= 4,
+        "expected >= 4 colour-only env meshes recovered on town01, got {colour_only_recovered}"
     );
 }

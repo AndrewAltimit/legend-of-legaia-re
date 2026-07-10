@@ -1174,10 +1174,13 @@ export class LegaiaViewer {
         return v1;
     }
     /**
-     * Select the active environment-pack slot and build its mesh (textured
-     * prims whose pages/CLUTs are resident in the field VRAM; matches the
-     * engine's per-prim filter). Returns the slot, or an error when out of
-     * range. Subsequent `field_scene_mesh_*` calls read the built mesh.
+     * Select the active environment-pack slot and build its mesh: the
+     * textured prims whose pages/CLUTs are resident in the field VRAM
+     * (matches the engine's per-prim filter) **plus** the untextured
+     * `F*`/`G*` vertex-colour prims, merged by [`build_hybrid_env_mesh`]
+     * (the engine-shell's colour-mesh pipeline sibling). Returns the slot,
+     * or an error when out of range. Subsequent `field_scene_mesh_*` calls
+     * read the built mesh.
      * @param {number} slot
      * @returns {number}
      */
@@ -1195,6 +1198,20 @@ export class LegaiaViewer {
         const ret = wasm.legaiaviewer_field_scene_mesh_cba_tsb(this.__wbg_ptr);
         var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Per-vertex `[r, g, b, flag]` bytes for the current mesh's hybrid
+     * flat-colour render (`flag` 255 = textured vertex, sample VRAM; 0 =
+     * untextured vertex, use the RGB). **Empty** when the mesh carries no
+     * untextured prims - the JS side then skips binding the attribute and
+     * the draw behaves exactly like the pure-textured path.
+     * @returns {Uint8Array}
+     */
+    field_scene_mesh_flat_rgba() {
+        const ret = wasm.legaiaviewer_field_scene_mesh_flat_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
     }
     /**

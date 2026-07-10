@@ -90,6 +90,7 @@ export const legaiaviewer_field_scene_ground_quad_count: (a: number) => number;
 export const legaiaviewer_field_scene_ground_uvs: (a: number) => [number, number];
 export const legaiaviewer_field_scene_mesh: (a: number, b: number) => [number, number, number];
 export const legaiaviewer_field_scene_mesh_cba_tsb: (a: number) => [number, number];
+export const legaiaviewer_field_scene_mesh_flat_rgba: (a: number) => [number, number];
 export const legaiaviewer_field_scene_mesh_indices: (a: number) => [number, number];
 export const legaiaviewer_field_scene_mesh_positions: (a: number) => [number, number];
 export const legaiaviewer_field_scene_mesh_uvs: (a: number) => [number, number];

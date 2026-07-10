@@ -14,7 +14,7 @@
  *   r.uploadVram(vramBytes);                                   // 1MB Uint8Array
  *   r.uploadMesh(positions, uvs, cbaTsb, indices);
  *   r.render(yaw, pitch, center, radius);
- *   r.uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices);
+ *   r.uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices, flatRgba?);
  *   r.getMeshAabb(meshId);   // null until uploadSceneMesh has run
  *   r.uploadFogLut(u16Array, params);                          // optional
  *   r.renderAssembled(placements, worldExtent, cam);
@@ -504,8 +504,16 @@ class TmdRenderer {
    * resident on the GPU. The world-overview page uses the kingdom pack slot
    * as the meshId, so repeated placements that share a slot share GPU buffers.
    *
+   * `flatRgba` (optional): Uint8Array, 4 bytes per vertex [r, g, b, flag]
+   * (flag 255 = textured / sample VRAM, 0 = untextured / use the colour) for
+   * hybrid env meshes whose untextured flat/gouraud prims carry per-vertex RGB
+   * instead of UVs (the viewer full-map path; mirrors the native engine's
+   * colour-mesh pipeline). Omit / pass null for pure-textured meshes - the
+   * attribute then reads the context constant (1,1,1,1) and the FS flat
+   * branch never fires.
+   *
    * Idempotent: re-upload under the same meshId overwrites. */
-  uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices) {
+  uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices, flatRgba) {
     const gl = this.gl;
     let m = this.sceneMeshes.get(meshId);
     if (!m) {
@@ -514,8 +522,10 @@ class TmdRenderer {
         posBuf: gl.createBuffer(),
         uvBuf:  gl.createBuffer(),
         ctBuf:  gl.createBuffer(),
+        flatBuf: null,
         idxBuf: gl.createBuffer(),
         indexCount: 0,
+        hasFlat: false,
         aabb: null,
       };
       this.sceneMeshes.set(meshId, m);
@@ -538,6 +548,19 @@ class TmdRenderer {
     gl.enableVertexAttribArray(this.locCbaTsb);
     gl.vertexAttribIPointer(this.locCbaTsb, 2, gl.UNSIGNED_SHORT, 0, 0);
 
+    m.hasFlat = !!(flatRgba && flatRgba.length && this.locFlatRgba >= 0);
+    if (m.hasFlat) {
+      if (!m.flatBuf) m.flatBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, m.flatBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, flatRgba, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(this.locFlatRgba);
+      gl.vertexAttribPointer(this.locFlatRgba, 4, gl.UNSIGNED_BYTE, true, 0, 0);
+    } else if (this.locFlatRgba >= 0) {
+      /* Attribute enables are VAO state: leave it disabled in this VAO so
+       * draws read the context-global constant (1,1,1,1). */
+      gl.disableVertexAttribArray(this.locFlatRgba);
+    }
+
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
 
@@ -556,6 +579,7 @@ class TmdRenderer {
       gl.deleteBuffer(m.posBuf);
       gl.deleteBuffer(m.uvBuf);
       gl.deleteBuffer(m.ctBuf);
+      if (m.flatBuf) gl.deleteBuffer(m.flatBuf);
       gl.deleteBuffer(m.idxBuf);
     }
     this.sceneMeshes.clear();
@@ -746,7 +770,14 @@ class TmdRenderer {
      * rows; the walk-frame path uploads the kingdom's real VRAM image, so
      * CLUTs now resolve exactly like retail. */
     gl.uniform1i(this.locNoDisc, 0);
-    gl.uniform1i(this.locUseFlatColors, 0);  /* scenes never use the character flat-colour path */
+    /* Flat-colour hybrid: off for the ground pass; re-enabled per placed
+     * mesh below when it carries an untextured vertex-colour half (the
+     * viewer full-map path). The context-global constant keeps disabled
+     * a_flat_rgba attributes reading as "textured". */
+    gl.uniform1i(this.locUseFlatColors, 0);
+    if (this.locFlatRgba >= 0) {
+      gl.vertexAttrib4f(this.locFlatRgba, 1.0, 1.0, 1.0, 1.0);
+    }
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
@@ -798,9 +829,17 @@ class TmdRenderer {
       if (!list) { list = []; byMesh.set(p.meshId, list); }
       list.push(p);
     }
+    let flatColorsOn = false;
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
       if (m.indexCount === 0) continue;
+      /* Hybrid env meshes carry an untextured vertex-colour half; flip the
+       * FS flat branch on only for them (state-change once per mesh). */
+      const wantFlat = !!m.hasFlat;
+      if (wantFlat !== flatColorsOn) {
+        gl.uniform1i(this.locUseFlatColors, wantFlat ? 1 : 0);
+        flatColorsOn = wantFlat;
+      }
       gl.bindVertexArray(m.vao);
       for (const p of list) {
         const scale = (p.scale != null) ? p.scale : MESH_SCALE;

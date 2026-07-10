@@ -31,11 +31,26 @@ placement resolution + floor-height-LUT world Y), the terrain-tile layer,
 and the walk-ground heightfield. Accessors mirror the kingdom `pack_*`
 family: `field_scene_mesh(slot)` + `field_scene_mesh_*` per-mesh arrays,
 `field_scene_vram_bytes`, `field_scene_placement_{slots,positions}`,
-`field_scene_terrain_{slots,positions}`, `field_scene_ground_*`. The
-site's viewer page drives it from the "full map" button, streaming the
+`field_scene_terrain_{slots,positions}`, `field_scene_ground_*`.
+
+Each `field_scene_mesh` is a **hybrid** (`build_hybrid_env_mesh`): the
+VRAM-filtered textured prims plus the untextured flat/gouraud
+vertex-colour prims the textured builder drops - the browser sibling of
+the native engine's colour-mesh pipeline, so colour-only props (benches /
+fences / small furniture) render instead of vanishing.
+`field_scene_mesh_flat_rgba` returns the parallel per-vertex
+`[r, g, b, flag]` array (flag `255` = textured / sample VRAM, `0` =
+untextured / use the colour; empty for pure-textured meshes), consumed by
+the WebGL shader's `u_use_flat_colors` / `a_flat_rgba` hybrid path.
+
+The site's viewer page drives it from the "full map" button, streaming the
 draws through the WebGL renderer's instanced scene-mesh path (the same
-plumbing as the world-overview kingdom continents). Disc-gated parity
-test: `tests/field_scene_assembly.rs`.
+plumbing as the world-overview kingdom continents). The page classifies
+sky-dome shells and horizon-backdrop planes (huge-footprint /
+zero-depth-sheet AABB heuristic in `viewer.html`'s `isSkyMesh`) and hides
+their draws - under the top-down assembled camera they'd paint over the
+map they surround in retail. Disc-gated parity test:
+`tests/field_scene_assembly.rs` (incl. the colour-only prop recovery).
 
 ## In-browser ROM patcher (`rom_patcher`)
 

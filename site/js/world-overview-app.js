@@ -702,10 +702,20 @@
             continue;
           }
           if (!ensureMeshUploaded(ms)) continue;
+          /* The WASM returns retail-frame world Y (PSX +Y down: the stamp
+           * anchor is `-lut[nibble] + y_off`, the heightfield's PRE-flip
+           * stored-vertex frame). placementModelScaledY flips only the
+           * mesh-local geometry, not the translation - while the ground
+           * bakes `-lut` into its vertices and gets the renderer's
+           * (1,-1,1) model, landing at `+lut` (up). Negate the placement Y
+           * so stamps sit ON the terrain instead of mirrored below it -
+           * the same negation the viewer.html full-map path applies.
+           * Kingdom LUT heights are small, so the un-negated artifact was
+           * a subtle sink/hover that doubled with the cell height. */
           drawPlacements.push({
             meshId: ms,
             x: pos[i * 3],
-            y: pos[i * 3 + 1],
+            y: -pos[i * 3 + 1],
             z: pos[i * 3 + 2],
             scale: 1.0,
             kind: 'walk_landmark',

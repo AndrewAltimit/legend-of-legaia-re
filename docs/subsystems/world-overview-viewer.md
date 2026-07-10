@@ -172,10 +172,16 @@ resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
 The `walk_placement_{count,slots,positions}` WASM accessors hand the list to
 JS, which uploads each referenced pack mesh once and pushes a draw record per
 stamp. `renderAssembled` draws them after the ground with
-`placementModelScaledY(x, y, z, 0, 1)` - scale `1` (the slot-1 meshes are
-already in true world units, unlike the legacy overview-frame icons that
+`placementModelScaledY(x, -world_y, z, 0, 1)` - scale `1` (the slot-1 meshes
+are already in true world units, unlike the legacy overview-frame icons that
 needed a presentation scale) and the same `(1, -1, 1)` Y-flip the ground and
-the native render use. The "landmarks" checkbox toggles the layer. The
+the native render use. The anchor Y **must be negated on the JS side**:
+`placementModelScaledY` flips only the mesh-local geometry, not the
+translation, while the ground bakes `-lut` into its vertices and lands at
+`+lut` (up) under the shared flip. An un-negated anchor mirrors the stamp
+below the surface by `2*(lut - y_off)` - on Drake's mountain cells (LUT up
+to 288) that buried whole cave entrances; the same negation the site
+viewer's full-map path applies. The "landmarks" checkbox toggles the layer. The
 fragment shader's PSX cutout rule (BGR555 `0` with STP `0` discards) is what
 makes the tree quads read as foliage; the old `u_no_discard` silhouette
 fallback is off in the assembled path now that the kingdom's real VRAM image
