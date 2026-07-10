@@ -521,6 +521,62 @@ genuinely undefined in retail (no `case 0xb` - the default arm halts) and stays 
 spine-flag verdicts are unchanged under the full-width walk: `0x482` stays all-alias, and the koin gates
 `0x50A`/`0x5D6` still have no script writer disc-wide.
 
+**ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
+flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
+`a..g`, `Test` leads `0x71..0x77` = `q..w`, each followed by one operand byte. So common English bigrams
+mint flag ops - `ta` = `Test 0x461`, `s,` = `Test 0x32C`, `Sp` = `Set 0x370` - and because every such
+2-byte pair *decodes* without error, a run of prose keeps the walker's error counter at zero and the
+resulting sites carry `clean=true`. The `DESYNCED?` tag catches text only when a non-decodable byte
+happens to precede the site within the resync window. Triage rules that follow from this:
+
+- A flag whose **operand byte is outside printable ASCII** (`< 0x20` or `> 0x7E`) cannot be minted by
+  dialogue - its census rows are trustworthy as sites (e.g. `0x382`, `0x3EF`, `0x304`, `0x5DC`).
+- A flag whose operand byte is a letter/punctuation needs the site's *context window* checked in the
+  record disasm (`--disasm-record`): trust sites embedded in choreography ops (`Camera`, `WaitFrames`,
+  `SceneFade`, `4C`-family, `ExecMove`, emitter runs, or a `JmpRel` branch-arm boundary); reject sites
+  whose neighbours decode as further letter-pair flag ops or `.byte` errors.
+- Mirrored runs are self-proving: a `Set` run over a flag band whose exact mirror `Clear` run appears in
+  the same record (the rikuroa `0x281..0x287`+`0x142` pairs) is real even when the census tags it
+  `DESYNCED?` - the clean tag is conservative in both directions.
+
+Hand-checks that applied these rules: the "chapter-wide readers" the census reports for `0x32C` (~50
+scenes) and `0x461` (~30 scenes) are the `s,` / `ta` bigrams in NPC dialogue - both flags are real but
+scene-local (see [open-rev-eng-threads](../reference/open-rev-eng-threads.md#region-story-flag-gate-families));
+the lone census writer candidate for the Nivora successor gate `0x370` (`doman` variant `P1[15]`) is the
+`Sp` in "Space Bomb" dialogue text, so `0x370` stays writer-less; and a `Clear 0x400` inside `vozz P1[7]`
+sits in a `CC 0B 81` operand tail immediately followed by a decode error - operand-stream residue, not a
+co-writer of the ropeway2 switch bit.
+
+### The `0x527..0x531` scene-transition scratch band
+
+A story-numbered flag band that is **engine scratch, not story state** - the census surfaces it as SETs in
+nearly every scene once the full-nibble widths decode, which is exactly the signature of a shared idiom
+rather than a beat. Every field scene's `P1[0]` entry script (and the exit-choreography arms of many
+`P0`/`P2` records) repeats two patterns, byte-stereotyped across the disc (hand-verified in `deene P1[0]`
+at body `+0x5B`/`+0x15D`/`+0x8F9` and its siblings):
+
+- **One-hot selector `0x527..0x52E`**: clear all eight (`65 27` .. `65 2E`), then SET exactly one. Each
+  block precedes a `SceneFade` (`36 xx`) / `4C 12` fade sequence, so the selected slot rides a scene
+  transition - a departure-choice latch the arrival script can branch on.
+- **Fade handshake `0x52F`/`0x530`/`0x531`**: `Set 0x52F` → `Test 0x52F` → `Clear 0x52F` ping-pong
+  around `4C CA`/`4C CB` (screen-widget open/close) and `4C 12` fade ops, with `0x530`/`0x531` as the
+  busy/latch pair. Same shape every time; never read outside the idiom.
+
+The conc-family entry scripts keep an adjacent private slot in the same style (`0x522`: set at entry,
+conditionally cleared on `0x3E5`/`0x4EE`). Treat any census row in `0x522..0x531` as this band's
+mechanism traffic - like the `0x00F` door busy-mutex above, it lives in the story-numbered space without
+being story progress.
+
+### Drake-castle interior beat band: jouinb `0x44E..0x450` + the `0x461` record-state flag
+
+`jouinb`'s cutscene records `P2[6..8]` (SJIS door-id names, the same family styling as the jouinc door
+records) each end in a one-shot latch - `P2[6]` SETs `0x44E`, `P2[7]` `0x44F`, `P2[8]` `0x450`
+(`Camera`/`WaitFrames`/`4C CD` choreography then `Set` + park-jump, hand-verified at `P2[6]` body
+`+0x4A3`). `P2[8]` additionally runs an in-body state machine on `0x461`: `Test 0x461` at `+0xBC` (skip
+to the already-done arm at `+0x1BC`, which starts with `Clear 0x461`), a second `Test` at `+0x70C`, and
+`Set 0x461` at `+0xBC2` inside the closing camera choreography. All four flags are jouinb-local; the
+census's wide `0x461` reader list across other scenes is the `ta` bigram (see the alias rules above).
+
 ## BGM lookup table
 
 There isn't really a "BGM → file" lookup table - the BGM ID is a PROT-relative offset. From `FUN_800243F0` (the per-frame BGM/asset poller):
