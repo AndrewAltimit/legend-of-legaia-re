@@ -15,7 +15,11 @@ Seru-magic list +0x13C; `idx` == roster slot), scene / mode (0x8007050C name +
 0x8007B83C game-mode transitions), pos (P1: player tile `idx`==tileX
 `value`==tileZ, emitted on a crossing), bgm (P5: global BGM id), input / pick
 (P4: pad edges + picker cursor at a confirm), snap (P2: an auto-dumped save
-state). See the probe header for the exact source addresses.
+state), xp / equip (per-roster-slot cumulative XP +0x0 and equipment bytes
++0x196; `idx` == slot / slot*8+eq_slot), counter (fishing points / casino
+coins / Point Card on change), status / hp (battle-detail stream: per-battle-
+actor +0x16E status word and +0x14C current HP; `idx` == actor slot, 0..2
+party / 3..7 monsters). See the probe header for the exact source addresses.
 
 This tool turns that raw event log into the things a reverse-engineer actually
 wants out of a playthrough capture:
@@ -146,6 +150,37 @@ KNOWN_FLAGS = {
     0x32A: "stone: code-clue discovered (SET+TEST gate)",
     0x590: "stone: scene-entry progress gate (local)",
 }
+
+
+# Battle-actor +0x16E mechanical-status bits (docs/subsystems/
+# battle-formulas.md section "status appliers" + battle-action.md +0x16E).
+# 0x400 is the OPEN guard-disable applier thread: a status row that raises it
+# names the exact tick/fight the hunt needs.
+STATUS_BITS = [
+    (0x0001, "Venom"),
+    (0x0002, "Toxic"),
+    (0x0004, "Stone"),
+    (0x0008, "Rot-L"),
+    (0x0010, "Rot-R"),
+    (0x0020, "Rot-UD"),
+    (0x0380, "AI-delegated"),
+    (0x0400, "guard-disable[OPEN]"),
+    (0x1000, "Curse"),
+]
+
+
+def decode_status(word: int) -> str:
+    """Render a +0x16E status word as its known-bit names (+ any residue)."""
+    names = []
+    matched = 0
+    for mask, name in STATUS_BITS:
+        if (word & mask) == mask:
+            names.append(name)
+            matched |= mask
+    residue = word & ~matched
+    if residue:
+        names.append(f"0x{residue:X}?")
+    return "|".join(names) if names else "clear"
 
 
 @dataclass
@@ -474,6 +509,43 @@ def spell_changes(rows: list[Row]) -> list[Row]:
     return [r for r in rows if r.kind == "spell"]
 
 
+def xp_changes(rows: list[Row]) -> list[Row]:
+    """`xp` rows: per-roster-slot cumulative-XP changes (battle grants)."""
+    return [r for r in rows if r.kind == "xp"]
+
+
+def equip_changes(rows: list[Row]) -> list[Row]:
+    """`equip` rows: per-equip-slot byte changes (idx = roster_slot*8 + slot)."""
+    return [r for r in rows if r.kind == "equip"]
+
+
+def counter_changes(rows: list[Row]) -> list[Row]:
+    """`counter` rows: fishing points / casino coins / Point Card (note = name)."""
+    return [r for r in rows if r.kind == "counter"]
+
+
+def status_changes(rows: list[Row]) -> list[Row]:
+    """`status` rows: battle-actor +0x16E status-word changes (idx = slot)."""
+    return [r for r in rows if r.kind == "status"]
+
+
+def hp_changes(rows: list[Row]) -> list[Row]:
+    """`hp` rows: battle-actor +0x14C current-HP changes (per-hit timeline)."""
+    return [r for r in rows if r.kind == "hp"]
+
+
+def status_leads(rows: list[Row]) -> list[Row]:
+    """Status rows that RAISE the open 0x400 guard-disable bit - each one is
+    the exact bracket the +0x16E-0x400 applier hunt needs (idx = actor slot).
+    """
+    out = []
+    for r in status_changes(rows):
+        old = r.value - r.delta
+        if (r.value & 0x400) and not (old & 0x400):
+            out.append(r)
+    return out
+
+
 def bgm_changes(rows: list[Row]) -> list[Row]:
     """`bgm` rows (P5): global BGM id changes (`value` == id in the 2000+ space)."""
     return [r for r in rows if r.kind == "bgm"]
@@ -571,6 +643,47 @@ def render_report(rows: list[Row], bulk_threshold: int, want: set[str]) -> str:
             sign = "+" if r.delta > 0 else ""
             lines.append(
                 f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  spells={r.value} ({sign}{r.delta})  {r.note}"
+            )
+        lines.append("\n## XP grants (per roster slot, cumulative)")
+        for r in xp_changes(rows):
+            sign = "+" if r.delta > 0 else ""
+            lines.append(
+                f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  xp={r.value} ({sign}{r.delta})"
+            )
+        lines.append("\n## equipment changes (idx = roster_slot*8 + equip_slot)")
+        for r in equip_changes(rows):
+            lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  {r.note}")
+
+    if "counters" in want:
+        lines.append("\n## counters (fishing points / casino coins / Point Card)")
+        for r in counter_changes(rows):
+            sign = "+" if r.delta > 0 else ""
+            lines.append(
+                f"  tick {r.tick:>7}  {r.scene:<8}  {r.note}={r.value} ({sign}{r.delta})"
+            )
+
+    if "status" in want:
+        lines.append("\n## battle status changes (+0x16E; slot 0..2 party, 3..7 monsters)")
+        for r in status_changes(rows):
+            old = r.value - r.delta
+            lines.append(
+                f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  "
+                f"0x{old & 0xFFFF:04X}->0x{r.value:04X}  {decode_status(r.value)}"
+            )
+        leads = status_leads(rows)
+        if leads:
+            lines.append("\n## !! 0x400 guard-disable raised (OPEN applier thread - report these)")
+            for r in leads:
+                lines.append(
+                    f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  {r.note}"
+                )
+
+    if "hp" in want:
+        lines.append("\n## battle HP timeline (+0x14C per hit; opt-in verbose)")
+        for r in hp_changes(rows):
+            sign = "+" if r.delta > 0 else ""
+            lines.append(
+                f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  hp={r.value} ({sign}{r.delta})  {r.note}"
             )
 
     if "bgm" in want:
@@ -684,6 +797,45 @@ def build_json(rows: list[Row], bulk_threshold: int) -> dict:
             {"tick": s.tick, "scene": s.scene, "tile": [s.tile_x, s.tile_z]}
             for s in player_track(rows)
         ],
+        "xp": [
+            {"tick": r.tick, "scene": r.scene, "slot": r.idx, "xp": r.value, "delta": r.delta}
+            for r in xp_changes(rows)
+        ],
+        "equip": [
+            {
+                "tick": r.tick,
+                "scene": r.scene,
+                "slot": r.idx // 8,
+                "equip_slot": r.idx % 8,
+                "id": r.value,
+                "note": r.note,
+            }
+            for r in equip_changes(rows)
+        ],
+        "counters": [
+            {"tick": r.tick, "scene": r.scene, "name": r.note, "value": r.value, "delta": r.delta}
+            for r in counter_changes(rows)
+        ],
+        "status": [
+            {
+                "tick": r.tick,
+                "scene": r.scene,
+                "slot": r.idx,
+                "word": r.value,
+                "delta": r.delta,
+                "decoded": decode_status(r.value),
+                "note": r.note,
+            }
+            for r in status_changes(rows)
+        ],
+        "status_leads_0x400": [
+            {"tick": r.tick, "scene": r.scene, "slot": r.idx, "note": r.note}
+            for r in status_leads(rows)
+        ],
+        "hp": [
+            {"tick": r.tick, "scene": r.scene, "slot": r.idx, "hp": r.value, "delta": r.delta, "note": r.note}
+            for r in hp_changes(rows)
+        ],
     }
 
 
@@ -708,9 +860,10 @@ def main(argv=None) -> int:
     )
     ap.add_argument(
         "--only",
-        default="scenes,battles,flags,items,gold,party,progress,bgm,picks,snaps",
+        default="scenes,battles,flags,items,gold,party,progress,counters,status,bgm,picks,snaps",
         help="comma list of sections: scenes,battles,flags,items,gold,party,"
-        "progress,bgm,picks,snaps,walk,input (walk+input are opt-in: verbose)",
+        "progress,counters,status,bgm,picks,snaps,walk,input,hp "
+        "(walk+input+hp are opt-in: verbose)",
     )
     ap.add_argument(
         "--labels",
