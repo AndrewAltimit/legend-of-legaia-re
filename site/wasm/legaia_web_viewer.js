@@ -1128,6 +1128,184 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * @returns {Uint16Array}
+     */
+    field_scene_ground_cba_tsb() {
+        const ret = wasm.legaiaviewer_field_scene_ground_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    field_scene_ground_indices() {
+        const ret = wasm.legaiaviewer_field_scene_ground_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Ground-heightfield accessors (same layout as the kingdom
+     * `walk_ground_*` family; empty when the scene has no resolvable floor
+     * grid).
+     * @returns {Float32Array}
+     */
+    field_scene_ground_positions() {
+        const ret = wasm.legaiaviewer_field_scene_ground_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    field_scene_ground_quad_count() {
+        const ret = wasm.legaiaviewer_field_scene_ground_quad_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    field_scene_ground_uvs() {
+        const ret = wasm.legaiaviewer_field_scene_ground_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Select the active environment-pack slot and build its mesh (textured
+     * prims whose pages/CLUTs are resident in the field VRAM; matches the
+     * engine's per-prim filter). Returns the slot, or an error when out of
+     * range. Subsequent `field_scene_mesh_*` calls read the built mesh.
+     * @param {number} slot
+     * @returns {number}
+     */
+    field_scene_mesh(slot) {
+        const ret = wasm.legaiaviewer_field_scene_mesh(this.__wbg_ptr, slot);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    field_scene_mesh_cba_tsb() {
+        const ret = wasm.legaiaviewer_field_scene_mesh_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    field_scene_mesh_indices() {
+        const ret = wasm.legaiaviewer_field_scene_mesh_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    field_scene_mesh_positions() {
+        const ret = wasm.legaiaviewer_field_scene_mesh_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    field_scene_mesh_uvs() {
+        const ret = wasm.legaiaviewer_field_scene_mesh_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Number of TMDs in the loaded field scene's environment pack. 0 when
+     * no field scene is loaded.
+     * @returns {number}
+     */
+    field_scene_pack_count() {
+        const ret = wasm.legaiaviewer_field_scene_pack_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Per-placement world positions `[x, y, z, ...]` (flattened), same
+     * pre-Y-flip world frame as the ground heightfield (draw with the shared
+     * `(1, -1, 1)` model flip at scale 1).
+     * @returns {Float32Array}
+     */
+    field_scene_placement_positions() {
+        const ret = wasm.legaiaviewer_field_scene_placement_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-placement env-pack slot, one `u32` per placed object. Feed each
+     * into [`Self::field_scene_mesh`] and draw at the matching
+     * [`Self::field_scene_placement_positions`] entry.
+     * @returns {Uint32Array}
+     */
+    field_scene_placement_slots() {
+        const ret = wasm.legaiaviewer_field_scene_placement_slots(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * One-line JSON status for the UI:
+     * `{"name", "pack_count", "placements", "terrain", "ground_quads"}`.
+     * @returns {string}
+     */
+    field_scene_status_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_field_scene_status_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Per-terrain-tile world positions `[x, y, z, ...]` (flattened).
+     * @returns {Float32Array}
+     */
+    field_scene_terrain_positions() {
+        const ret = wasm.legaiaviewer_field_scene_terrain_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-terrain-tile env-pack slot (the dense `CELL_VISIBLE` decor layer).
+     * @returns {Uint32Array}
+     */
+    field_scene_terrain_slots() {
+        const ret = wasm.legaiaviewer_field_scene_terrain_slots(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Field-mode VRAM bytes (1 MB) shared by every env-pack mesh + the
+     * ground heightfield. Empty when no field scene is loaded.
+     * @returns {Uint8Array}
+     */
+    field_scene_vram_bytes() {
+        const ret = wasm.legaiaviewer_field_scene_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
      * 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
      * per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex
@@ -1306,7 +1484,7 @@ export class LegaiaViewer {
      *                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
      *                  "steal_item": u8, "steal_item_name": "Incense"|null,
      *                  "steal_chance_pct": u8,
-     *                  "spells": [ { "id": u8, "sp_cost": u8,
+     *                  "spells": [ { "id": u8, "agl_cost": u8,
      *                               "castable": bool } ] }, ... ] }
      * ```
      *
@@ -1926,6 +2104,28 @@ export class LegaiaViewer {
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
+    }
+    /**
+     * Load a CDNAME scene (e.g. `"town01"`, `"korb3"`) as an **assembled
+     * full map**: field-mode VRAM + the environment mesh pack + the `.MAP`
+     * placement / terrain draws + the walk-ground heightfield. Returns the
+     * environment pack's TMD count (the `field_scene_mesh` slot space).
+     *
+     * Requires a full disc image (CDNAME.TXT resolves the scene block).
+     * World-map scenes (`map01..03`) load their walk-frame landmark
+     * placements; every other field scene loads the placed-object +
+     * terrain-tile layers.
+     * @param {string} name
+     * @returns {number}
+     */
+    set_scene_field(name) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_set_scene_field(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
     }
     /**
      * Open a world-map kingdom's 7-asset bundle, LZS-decode slot 0
@@ -2611,7 +2811,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 256, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 104, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23);
             return ret;
         },
