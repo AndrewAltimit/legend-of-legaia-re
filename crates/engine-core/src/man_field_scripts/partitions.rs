@@ -75,6 +75,81 @@ pub struct GFlagSite {
     /// `0x482` are non-clean; the live-confirmed `0x142` writer ladders all
     /// stay clean).
     pub clean: bool,
+    /// `true` iff the site looks like an **ASCII text alias**: its raw
+    /// operand byte is printable ASCII **and** the surrounding byte window
+    /// carries a sentence-length printable run (see [`text_alias_suspect`]).
+    /// US dialogue letters land
+    /// exactly on the wide flag ops (`0x53..=0x57` = `'S'..'W'` Set,
+    /// `0x61..=0x67` = `'a'..'g'` Clear, `0x71..=0x77` = `'q'..'w'` Test), so
+    /// prose like `"ta"` (`74 61`) mints an error-free `Test 0x461` row that
+    /// the `clean` decode-coherence heuristic alone cannot reject. This flag
+    /// is a marker, not a suppression: mirrored Set/Clear runs and
+    /// non-printable operands are alias-immune and stay unmarked, while a
+    /// genuine flag op that happens to sit inside a text-dense window
+    /// self-identifies for hand verification.
+    pub text_alias: bool,
+}
+
+/// Bytes inspected on each side of a flag opcode by [`text_alias_suspect`]'s
+/// local text window.
+pub const TEXT_ALIAS_WINDOW: usize = 16;
+
+/// Minimum length of a consecutive printable-ASCII run inside the window for
+/// [`text_alias_suspect`] to call the site text. US-dialogue prose runs tens
+/// of printable bytes between control codes; genuine bytecode never gets
+/// close - flag-op ladders are themselves printable ASCII (`52 81 52 82 ..
+/// 51 42` renders as `R.R.R.QB`) but every 1-2 printable bytes are broken by
+/// a non-printable operand/terminator, so raw printable *density* cannot
+/// separate a `51 42` ladder from `"ta"` prose while run length can.
+pub const TEXT_ALIAS_MIN_RUN: usize = 10;
+
+/// ASCII text-alias heuristic for a flag site at `pc` in `body` (the
+/// record's bounded byte slice), with the site's raw operand byte at
+/// `pc + header_size`.
+///
+/// `true` iff the operand byte is printable ASCII (`0x20..=0x7E`) **and**
+/// the [`TEXT_ALIAS_WINDOW`]-byte window on each side of the opcode contains
+/// a consecutive printable-ASCII run of at least [`TEXT_ALIAS_MIN_RUN`]
+/// bytes **and** the window has two *adjacent* lowercase letters somewhere.
+/// All three conditions are required:
+///
+/// - a **non-printable operand** is alias-immune (no US-dialogue byte pair
+///   can mint it), so e.g. `62 89` (`SysFlag.Clear 0x289`) never flags;
+/// - a **printable operand inside binary bytecode** stays unflagged because
+///   bytecode rarely sustains a long printable run - the runtime-pinned
+///   town01 P2[3] self-latch `52 25` (`SysFlag.Set 0x225`, operand `'%'`)
+///   and the rikuroa variant `51 42`/`61 42` ladders (operand `'B'`) top
+///   out at 4-5 consecutive printable bytes, while the prose that mints
+///   `"ta"` = `Test 0x461` sits inside a sentence-length run;
+/// - a flag ladder whose operands are *also* printable defeats run length
+///   alone (the `0x527..0x52E` one-hot selector clears `65 27 65 28 ..`
+///   render as a 16-byte printable run), but it alternates op/operand so
+///   it never puts two lowercase letters side by side, while English prose
+///   always does.
+pub fn text_alias_suspect(body: &[u8], pc: usize, header_size: usize) -> bool {
+    let Some(&operand) = body.get(pc + header_size) else {
+        return false;
+    };
+    if !(0x20..=0x7E).contains(&operand) {
+        return false;
+    }
+    let lo = pc.saturating_sub(TEXT_ALIAS_WINDOW);
+    let hi = (pc + TEXT_ALIAS_WINDOW).min(body.len());
+    let window = &body[lo..hi];
+    let mut run = 0usize;
+    let mut best = 0usize;
+    for &b in window {
+        if (0x20..=0x7E).contains(&b) {
+            run += 1;
+            best = best.max(run);
+        } else {
+            run = 0;
+        }
+    }
+    let lowercase_pair = window
+        .windows(2)
+        .any(|p| p[0].is_ascii_lowercase() && p[1].is_ascii_lowercase());
+    best >= TEXT_ALIAS_MIN_RUN && lowercase_pair
 }
 
 /// Consecutive error-free instructions the linear walk must decode before a
@@ -321,6 +396,8 @@ pub fn walk_partition_gflag_sites(
             };
             let clean = ok_run >= CLEAN_RESYNC_INSNS;
             ok_run += 1;
+            let header_size = if insn.extended.is_some() { 2 } else { 1 };
+            let text_alias = text_alias_suspect(body, insn.pc, header_size);
             match insn.info {
                 // Scratchpad global flag (`0x2E` set / `0x2F` clear). The VM
                 // has no scratchpad TEST op reaching this variant, but guard
@@ -336,6 +413,7 @@ pub fn walk_partition_gflag_sites(
                     bit,
                     flag: u16::from(bit),
                     clean,
+                    text_alias,
                 }),
                 // Wide SYSTEM-flag bank (`0x5x` set / `0x6x` clear / `0x7x`
                 // test). `idx` is the full `u16` flag number; `bit` keeps the
@@ -351,6 +429,7 @@ pub fn walk_partition_gflag_sites(
                     bit: (idx & 0xFF) as u8,
                     flag: idx,
                     clean,
+                    text_alias,
                 }),
                 _ => {}
             }
@@ -445,6 +524,11 @@ pub struct FlagCensusSite {
     /// (a decode error) before this site - byte noise until verified. See
     /// [`GFlagSite::clean`].
     pub clean: bool,
+    /// ASCII/SJIS text-alias suspect: the operand byte is printable ASCII
+    /// and the local byte window is majority text. Catches the prose aliases
+    /// that decode error-free and so pass `clean` (e.g. `"ta"` = `74 61` =
+    /// `Test 0x461`). See [`GFlagSite::text_alias`] / [`text_alias_suspect`].
+    pub text_alias: bool,
 }
 
 /// Disc-wide SYSTEM-flag census: walk every scene's MAN across all three
@@ -496,6 +580,7 @@ where
                         opcode: site.opcode,
                         kind: site.kind,
                         clean: site.clean,
+                        text_alias: site.text_alias,
                     });
                 }
             }

@@ -525,6 +525,20 @@ genuinely undefined in retail (no `case 0xb` - the default arm halts) and stays 
 spine-flag verdicts are unchanged under the full-width walk: `0x482` stays all-alias, and the koin gates
 `0x50A`/`0x5D6` still have no script writer disc-wide.
 
+**Width blindness's third face is a *wrong* width in an already-decoded arm.** The `0x4C` nibble-8
+sub-widths are pinned from the raw asm of the nibble-8 switch (same overlay, base `0x801CE818`): sub-1
+(actor model+anim set) advances `+9` unconditionally (`addiu fp,fp,9` at `0x801E1FC4`), sub-3 (rect tile
+fill) `+7` (exit `addiu fp,fp,7` at `0x801E2130`), sub-5/E/F (halt-acquire) `+5` on acquire (`li s7,5` at
+`0x801E21B8`, `addu fp,fp,s7` in the `beqz` delay slot at `0x801E21D4` - only the predicate-failure path
+halts), sub-6 `+15` (`addiu fp,fp,0xf` in the `jal` delay slot at `0x801E21E8`), sub-0 `+3`, sub-C `+4` -
+matching the executing VM's `menu_ctrl/nibble_8.rs` port. A sub-1 width one byte over is what the
+`vozz P1[7]` `.byte 0x05` decode error was: each `CC 0B 81 ..` op swallowed its follower's lead byte,
+minting a phantom `Clear 0x400` where the retail stream reads the op's 10-byte extended form followed by
+`35 64 00 05` (a BGM op) / `4A 1E 00` (WaitFrames). Under the pinned widths those followers decode in
+place, the phantom rows disappear, and the spine verdicts above hold row-identical (`549`/`0x142` site
+sets unchanged; `0x482` all-alias; `0x50A`/`0x5D6` writer-less, `0x50A` gaining one more clean koin3 TEST
+reader and still no writer).
+
 **ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
 flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
 `a..g`, `Test` leads `0x71..0x77` = `q..w`, each followed by one operand byte. So common English bigrams
@@ -547,9 +561,26 @@ Hand-checks that applied these rules: the "chapter-wide readers" the census repo
 scenes) and `0x461` (~30 scenes) are the `s,` / `ta` bigrams in NPC dialogue - both flags are real but
 scene-local (see [open-rev-eng-threads](../reference/open-rev-eng-threads.md#region-story-flag-gate-families));
 the lone census writer candidate for the Nivora successor gate `0x370` (`doman` variant `P1[15]`) is the
-`Sp` in "Space Bomb" dialogue text, so `0x370` stays writer-less; and a `Clear 0x400` inside `vozz P1[7]`
-sits in a `CC 0B 81` operand tail immediately followed by a decode error - operand-stream residue, not a
-co-writer of the ropeway2 switch bit.
+`Sp` in "Space Bomb" dialogue text, so `0x370` stays writer-less; and the once-reported `Clear 0x400`
+inside `vozz P1[7]` was the nibble-8 sub-1 width bug above - under the pinned width the bytes are the
+op's own operand tail and its `35` BGM follower, and the census row disappears entirely.
+
+**The census self-identifies the ASCII prose aliases.** Every site also carries `GFlagSite::text_alias`
+(CLI marker `TEXT-ALIAS?`, on both the census and `--gflag-partition` rows): `true` when the site's raw
+operand byte is printable ASCII **and** the surrounding `TEXT_ALIAS_WINDOW` (16 bytes each side)
+contains a consecutive printable-ASCII run of at least `TEXT_ALIAS_MIN_RUN` (10) bytes **and** the
+window puts two lowercase letters side by side - the sentence signature prose always has and bytecode
+does not. This mechanizes the triage rules: the `ta`/`Sp`/`s,` bigram rows carry the marker even where
+they decode error-free (`clean=true`), while the runtime-pinned real sites with printable operands stay
+unmarked. The three conditions each carry weight: the town01 `P2[3]` `52 25` self-latch and the rikuroa
+`51 42`/`61 42` ladders render as printable byte-streams themselves (`R.R.R.QB`) but break the run every
+1-5 bytes on a non-printable operand (run length beats printable *density*), and the `0x527..0x52E`
+one-hot selector clears (`65 27 65 28 ..`) sustain a 16-byte printable run but alternate op/operand so
+they never form an adjacent lowercase pair. Like `clean`, the marker is triage, not suppression -
+non-printable operands are alias-immune by construction, mirrored Set/Clear runs stay self-proving, and
+a marked row means "check the record disasm", not "discard". The split it produces on a mixed flag is
+the point: `0x527`'s census population is real one-hot ladder sites (unmarked, clean) *plus* the `e'`
+prose bigram (marked), separated row by row.
 
 ### The `0x527..0x531` scene-transition scratch band
 

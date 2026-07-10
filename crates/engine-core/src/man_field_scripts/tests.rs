@@ -663,3 +663,82 @@ fn empty_partition1_yields_no_records() {
     let man = vec![0u8; 0x80];
     assert!(walk_partition1_scripts(&man_file, &man).is_empty());
 }
+
+/// `text_alias_suspect` fires on a flag pair embedded in prose: printable
+/// operand + a sentence-length printable run in the window.
+#[test]
+fn text_alias_fires_inside_prose() {
+    // Synthetic dialogue: a `74 61` ("ta") pair inside a sentence. The
+    // "opcode" sits mid-run, exactly how a US-dialogue bigram aliases
+    // `SysFlag.Test 0x461`.
+    let mut body = vec![0u8; 8];
+    body.extend_from_slice(b"please water the plants soon");
+    let pc = 8 + 13; // the 't' of "the"
+    assert_eq!(body[pc], b't');
+    assert!(text_alias_suspect(&body, pc, 1));
+}
+
+/// A non-printable operand is alias-immune regardless of context - no
+/// US-dialogue byte pair can mint it (the `62 89` Clear-0x289 rule).
+#[test]
+fn text_alias_immune_on_non_printable_operand() {
+    let mut body = b"a long stretch of prose text ".to_vec();
+    body.push(0x62); // Clear lead 'b'
+    let pc = body.len() - 1;
+    body.push(0x89); // non-printable operand
+    body.extend_from_slice(b" and more prose after it");
+    assert!(!text_alias_suspect(&body, pc, 1));
+}
+
+/// A flag-op ladder is itself printable ASCII (`52 xx` repeats render as
+/// `R.R.R.`) but never sustains a long printable run - the run-length
+/// discriminator keeps real ladders unmarked where a density heuristic
+/// would flag them.
+#[test]
+fn text_alias_stays_quiet_on_flag_ladders() {
+    // Set ladder over a high band (non-printable operands) ending in a
+    // printable-operand set - the rikuroa `52 81 .. 51 42` shape.
+    let body = vec![
+        0x21, 0x52, 0x81, 0x52, 0x82, 0x52, 0x83, 0x52, 0x84, 0x52, 0x86, 0x51, 0x42, 0x21, 0x26,
+        0xB9, 0xFF, 0x21, 0x26, 0xB5, 0xFF, 0x62, 0x81, 0x62, 0x82, 0x62, 0x84, 0x61, 0x42, 0x62,
+        0xC9, 0x21,
+    ];
+    let set_pc = 11; // the `51 42` Set with printable operand 'B'
+    assert_eq!(body[set_pc], 0x51);
+    assert!(!text_alias_suspect(&body, set_pc, 1));
+    let clear_pc = 27; // the mirrored `61 42` Clear
+    assert_eq!(body[clear_pc], 0x61);
+    assert!(!text_alias_suspect(&body, clear_pc, 1));
+}
+
+/// Ordinary bytecode around a printable-operand SET stays unmarked - the
+/// town01 `4C ED 01 52 25` self-latch shape (operand `'%'` is printable,
+/// but the window never reaches a sentence-length printable run).
+#[test]
+fn text_alias_stays_quiet_in_bytecode() {
+    // Synthetic P2-record shape: a short SJIS-lead name field, header
+    // bytes, then the documented `4C ED 01 / 52 25` op pair and trailing
+    // bytecode.
+    let body = vec![
+        0x02, 0x82, 0x60, 0x82, 0x61, 0x00, 0x00, 0x01, 0x30, 0x03, 0x00, 0x00, 0x4C, 0xED, 0x01,
+        0x52, 0x25, 0x50, 0x20, 0x4C, 0xE8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2F,
+        0x1A,
+    ];
+    let pc = 15; // the `52 25` Set-0x225
+    assert_eq!(body[pc], 0x52);
+    assert!(!text_alias_suspect(&body, pc, 1));
+}
+
+/// A ladder whose operands are ALSO printable (the `0x527..0x52E` one-hot
+/// selector clears) sustains a 16-byte printable run, but it alternates
+/// op/operand and never puts two lowercase letters side by side - the
+/// adjacent-lowercase condition keeps it unmarked.
+#[test]
+fn text_alias_stays_quiet_on_printable_operand_ladders() {
+    let body = vec![
+        0x65, 0x27, 0x65, 0x28, 0x65, 0x29, 0x65, 0x2A, 0x65, 0x2B, 0x65, 0x2C, 0x65, 0x2D, 0x65,
+        0x2E, 0x51, 0x28, 0x36, 0x00, 0x80, 0x11, 0x02,
+    ];
+    assert!(!text_alias_suspect(&body, 0, 1));
+    assert!(!text_alias_suspect(&body, 14, 1));
+}
