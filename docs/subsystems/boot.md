@@ -262,7 +262,7 @@ The title-screen overlay loads into `0x801E0000+` during the boot sequence and k
 | `+0x154` | u32 | Title-attract idle countdown (`_DAT_801EF16C`). Initialized to `0x8000`; decremented per-frame by `_DAT_1F800393` (the global per-frame scalar - same byte used by `World::tick_move_vms_with_delta`); underflow writes the master game-mode index to `0x1A` (= STR FMV mode 26) and zeroes the FMV id at `_DAT_8007BA78` → `MV1.STR`. See [`cutscene.md`](cutscene.md). |
 | `+0x158` | u32 | Title-overlay frame counter (`_DAT_801EF170`). Incremented unconditionally every tick. |
 
-Initial values come from a SCUS-side bulk-initializer at `FUN_8005DA40` (called via `0x8005C2D4`) that walks a pointer table at `_DAT_800795B4` and writes initial values into multiple overlay BSS regions in one pass. The countdown's `0x8000` sentinel is set during this init pass, before the overlay's tick function starts running. The same initializer writes other addresses sharing a `…116C` low-half offset, suggesting `_DAT_800795B4` is a list of struct bases the init pass walks with a common per-struct displacement.
+Initial values are **disc bytes**: the CD-DMA-channel-3 primitive `FUN_8005D9A0` copies the overlay image (initialized data included) into the overlay window, and a write-watch on the countdown fires at the DMA-trigger instruction `0x8005DA4C` inside it. The countdown's `0x8000` sentinel is therefore part of the overlay's on-disc initialized data, not computed by an init routine. (An earlier reading attributed this to a "bulk-initializer `FUN_8005DA40` walking a pointer table `_DAT_800795B4`" - both artifacts of a Ghidra-promoted intra-function label; see the negative findings above.)
 
 ### Tick function
 

@@ -87,7 +87,7 @@ Just before the copy (`0x801DA5F8..0x801DA61C`) the reader also reads `record[+0
 - The install opcodes below are the field VM's generic **halt-acquire** family (`0x37/0x41/0x38/0x43/0x47/0x4C`), the same ones used for ordinary script yields.
 - What turns a halt into an encounter is the *consumer*: only world-map / field **entities** ticked by `FUN_801DA51C` (those carrying the 5-state `entity[+0x8A]` SM) ever read their `+0x94` as a formation record, and only once the SM reaches the encounter-confirm state.
 - The random-encounter path enters that state via the `FUN_801D9E1C` roll (state 0); a *scripted* arm relies on the scene bytecode having authored `[count @ +3][ids @ +4..]` after the halt opcode on such an entity's context.
-- Which specific opcode a given scripted fight uses, and how that scene advances the entity SM to the confirm state, are therefore per-scene bytecode facts (not resolvable from the static dispatcher alone).
+- The general-purpose scripted arm is the interact op **`0x3E` with `op0 = 0xFF`** (`3E FF <row>`): the retail case-0x3E handler sets `entity[+0x8A] = 1` and installs `entity[+0x94] = ctrl[+0x20] + row * ctrl[+0x5D] + 1` - pointing the record slot at MAN formation-table row `row` directly (full arm + disc sites in [battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row): garmel rows 8/9 = Songi/Zeto, rikuroa row 17 = Caruban; boss rows sit outside every region's rollable `[base, base+count)` slice). Other per-scene shapes (an inline `[count][ids]` authored after a halt op) still occur; which shape a fight uses remains a per-scene bytecode fact.
 
 **Engine port.** The clean-room field VM mirrors this discriminator split:
 

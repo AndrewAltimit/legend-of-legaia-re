@@ -580,7 +580,10 @@ they never form an adjacent lowercase pair. Like `clean`, the marker is triage, 
 non-printable operands are alias-immune by construction, mirrored Set/Clear runs stay self-proving, and
 a marked row means "check the record disasm", not "discard". The split it produces on a mixed flag is
 the point: `0x527`'s census population is real one-hot ladder sites (unmarked, clean) *plus* the `e'`
-prose bigram (marked), separated row by row.
+prose bigram (marked), separated row by row. The advisory direction also occurs: two **runtime-pinned
+real** `0x142` sites (the dolk `P1[26]` Clear and the dolk2 variant-carrier `P1[1]` Set) sit inside
+dialogue-adjacent bytecode and carry the marker - exactly the "check by hand" case, and why the marker
+never suppresses a row.
 
 ### The `0x527..0x531` scene-transition scratch band
 

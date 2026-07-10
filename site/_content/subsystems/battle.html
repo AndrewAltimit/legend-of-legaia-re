@@ -345,7 +345,7 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
   </table>
   <p>The active scene-name table at <code>0x80084540</code> is <strong>identical</strong> between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out.</p>
 
-  <h3>Scripted-battle entry (<code>3E FF &lt;row&gt;</code>)</h3>
+  <h3 id="scripted-battle-entry">Scripted-battle entry (<code>3E FF &lt;row&gt;</code>)</h3>
   <p>The scripted boss fights enter through the field-VM interact op <code>0x3E</code> with <code>op0 = 0xFF</code>: the case-0x3E interact arm (<code>FUN_801DE840</code>) sets the SYSTEM entity's 5-state SM to Activating (<code>sys_ctx[+0x8A] = 1</code>), points its encounter-record slot at the per-scene MAN formation-table row <code>op1</code> (<code>sys_ctx[+0x94] = *(ctrl+0x20) + op1 * stride + 1</code>), and requests the battle mode switch; the entity tick <code>FUN_801DA51C</code>'s confirm state then copies the row into the battle formation cell <code>0x8007BD0C</code>. The boss rows sit <strong>outside</strong> every region's rollable slice, so they can only enter through this op.</p>
   <table class="data-table">
     <thead><tr><th>Scene</th><th>Beat record</th><th>Op</th><th>Formation row</th><th>Contents</th></tr></thead>
