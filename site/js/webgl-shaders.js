@@ -31,15 +31,20 @@ const VRAM_H = 512;
 const OCEAN_VS_SRC = `#version 300 es
 precision highp float;
 uniform mat4 u_mvp;
-uniform vec2 u_uv_scale;   /* world units per ocean-texture cell */
+uniform vec2 u_uv_scale;   /* quad extent in texture wraps */
+uniform vec2 u_uv_offset;  /* quad centre in texture wraps (world-anchors the pattern) */
 in vec3 a_position;
 in vec2 a_uv_world;        /* unit-quad XZ in [-0.5, 0.5] */
 out vec2 v_uv;
 void main() {
   /* a_uv_world matches the quad's XZ; multiply by u_uv_scale to tile
-   * across the kingdom extent. The fragment shader takes fract() so
-   * UVs wrap as the camera pans. */
-  v_uv = a_uv_world * u_uv_scale;
+   * across the kingdom extent, then add the quad-centre offset so the
+   * pattern is anchored in WORLD space - the quad itself recentres on
+   * the camera target every frame, and without the offset the waves
+   * would slide with the camera instead of staying put like the
+   * terrain-embedded water cells. The fragment shader takes fract()
+   * so UVs wrap. */
+  v_uv = a_uv_world * u_uv_scale + u_uv_offset;
   gl_Position = u_mvp * vec4(a_position, 1.0);
 }
 `;
@@ -53,6 +58,9 @@ uniform usampler2D u_ocean_clut;  /* R16UI, 16×1: 16 BGR555 entries (animated p
 uniform int u_ocean_textured;     /* 0 = solid u_color fallback, 1 = textured pipeline */
 uniform vec2 u_ocean_sample_size; /* (w, h) - the logical-pixel region of the texture page that holds ocean data */
 uniform vec4 u_color;             /* fallback solid colour (also used where CLUT entry 0 maps to transparent) */
+uniform float u_shade;            /* flat-ground Lambert shade of the main program, so the
+                                   * backdrop matches the heightfield's water cells exactly
+                                   * and the sea reads as one continuous layer */
 
 in vec2 v_uv;
 out vec4 o_color;
@@ -94,7 +102,7 @@ void main() {
     o_color = u_color;
     return;
   }
-  o_color = vec4(bgr555_to_rgb(entry), 1.0);
+  o_color = vec4(bgr555_to_rgb(entry) * u_shade, 1.0);
 }
 `;
 

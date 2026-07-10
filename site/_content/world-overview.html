@@ -48,7 +48,7 @@
         <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the distance-cue fog post-process - the same far-haze tint the retail world map draws.">
           <input type="checkbox" id="wo-fog-enable"> fog
         </label>
-        <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render the disc-side ocean tile + 13-frame CLUT animation from slot 0 of the kingdom bundle.">
+        <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render the ocean backdrop plane beyond the continent. The 13-frame CLUT wave animation itself cycles inside VRAM (retail mechanism), so terrain water keeps shimmering even with this off.">
           <input type="checkbox" id="wo-ocean-enable" checked> ocean
         </label>
         <label style="margin-left:0.5rem" id="wo-show-terrain-wrap" title="Render the walk-view continent ground as a procedural heightfield, per-cell textured from the terrain-type atlas - the same terrain the native engine draws.">
@@ -57,7 +57,7 @@
         <label style="margin-left:0.5rem" id="wo-show-landmarks-wrap" title="Draw the placed landmark meshes (towns, gates, towers) on top of the continent terrain, at the world positions the game places them.">
           <input type="checkbox" id="wo-show-landmarks" checked> landmarks
         </label>
-        <button id="wo-lock-topview" type="button" hidden title="Recenter the camera on the kingdom's captured top-view spawn. Same anchor the retail dev menu enters with.">lock to retail top-view</button>
+        <button id="wo-lock-topview" type="button" hidden title="Flatten the camera to straight-down and recenter on the kingdom's captured top-view spawn. Same anchor the retail dev menu enters with.">lock to retail top-view</button>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
       <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D.</div>
@@ -243,7 +243,7 @@
      below this point relies on, so users don't hit a stale cached copy. -->
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
-<script src="js/webgl-shaders.js?v=fog-scalar-3"></script>
-<script src="js/webgl-math.js?v=fog-scalar-3"></script>
-<script src="js/webgl-tmd.js?v=fog-scalar-3"></script>
-<script src="js/world-overview-app.js?v=fog-scalar-3"></script>
+<script src="js/webgl-shaders.js?v=orbit3d-1"></script>
+<script src="js/webgl-math.js?v=orbit3d-1"></script>
+<script src="js/webgl-tmd.js?v=orbit3d-1"></script>
+<script src="js/world-overview-app.js?v=orbit3d-1"></script>

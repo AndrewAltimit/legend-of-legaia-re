@@ -6,8 +6,8 @@
  * compileProgram, mulMat4, perspective, translate, rotateY, rotateX,
  * scaleMat, buildMvp, placementModelScaled, placementModelScaledY,
  * placementModelCentered,
- * computeAabb, buildTopDownVp, ortho, lookAt. Must be loaded before
- * webgl-tmd.js.
+ * computeAabb, buildTopDownVp, buildWorldOrbitVp, ortho, lookAt. Must be
+ * loaded before webgl-tmd.js.
  */
 
 const IDENTITY4 = new Float32Array([
@@ -287,6 +287,76 @@ function buildTopDownVp(viewportW, viewportH, worldExtent, cam) {
    * The pan controls in attachTopDownControls map drag deltas back through
    * this same (post-mirror) basis. */
   const P = ortho(hw, -hw, -hh, hh, 1.0, farPad);
+  return mulMat4(P, V);
+}
+
+/* Perspective orbit view-projection for the assembled world view.
+ *
+ * The retail world map is genuinely 3D (GTE RTPT perspective; confirmed by
+ * moving the camera with GameShark in retail), so the world-overview page
+ * renders it with a real perspective camera instead of the ortho top-down.
+ *
+ * `cam` extends the top-down camera record with orbit angles:
+ *   centerX / centerZ        - ground-plane target (world units)
+ *   halfWidth / halfHeight   - requested half-extents at the target plane;
+ *                              zoom keeps its ortho meaning (the visible
+ *                              window at the target distance), so wheel
+ *                              zoom and pan speed behave identically in
+ *                              both camera modes.
+ *   yaw                      - azimuth in radians; 0 matches the retail
+ *                              screen basis (screen-up = world +Z,
+ *                              screen-right = world +X).
+ *   pitch                    - tilt from straight-down in radians; 0 is
+ *                              the pure top-down view, larger values lean
+ *                              the camera toward the horizon.
+ *
+ * The eye orbits the target on a sphere: at pitch=0 it sits directly
+ * above (up = world +Z rotated by yaw, matching buildTopDownVp), and the
+ * projection mirrors screen X the same way the ortho path does so the
+ * retail horizontal flip is preserved. Winding flips with the mirror,
+ * which is harmless (renderAssembled disables CULL_FACE) and the FS
+ * already compensates via u_normal_sign = -1. */
+function buildWorldOrbitVp(viewportW, viewportH, worldExtent, cam) {
+  const aspect = viewportW / viewportH;
+  let hw = cam.halfWidth;
+  let hh = cam.halfHeight;
+  /* Same letterbox rule as the ortho path: expand the shorter axis. */
+  if (hw / hh < aspect) hw = hh * aspect; else hh = hw / aspect;
+
+  /* Distance so the vertical half-extent at the target plane equals hh
+   * (perspective analogue of the ortho window). */
+  const FOV_Y = 0.9;   /* ~52 deg - close to the retail world-map FOV feel */
+  const dist = Math.max(hh / Math.tan(FOV_Y / 2), 1.0);
+
+  const yaw = cam.yaw || 0;
+  const pitch = Math.max(0, Math.min(1.45, cam.pitch || 0));
+  const sinY = Math.sin(yaw), cosY = Math.cos(yaw);
+  const sinP = Math.sin(pitch), cosP = Math.cos(pitch);
+
+  /* Eye direction (target -> eye): pitch=0 is straight up; tilting at
+   * yaw=0 moves the eye toward -Z (looking north over the map), the same
+   * convention buildTopDownVp's eyeZ offset used. */
+  const target = [cam.centerX, 0, cam.centerZ];
+  const eye = [
+    target[0] + dist * sinP * sinY,
+    target[1] + dist * cosP,
+    target[2] - dist * sinP * cosY,
+  ];
+  /* Up = the world +Y axis projected perpendicular to the view ray; at
+   * pitch=0 this degenerates to +Z rotated by yaw (the top-down up). */
+  const up = [-cosP * sinY, sinP, cosP * cosY];
+  const V = lookAt(eye, target, up);
+
+  /* Near/far sized to the orbit distance + the world diagonal so tilted
+   * views keep the widened ocean backdrop inside the frustum. */
+  const wx = worldExtent[0], wz = worldExtent[1];
+  const worldSpan = Math.max(wx, wz);
+  const near = Math.max(dist / 500, 1.0);
+  const far = dist + worldSpan * 10 + 4096;
+  const P = perspective(FOV_Y, aspect, near, far);
+  /* Mirror screen X (retail horizontal flip) - the perspective matrix
+   * keeps X only in element [0], so negating it is the full mirror. */
+  P[0] = -P[0];
   return mulMat4(P, V);
 }
 

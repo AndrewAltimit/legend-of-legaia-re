@@ -109,15 +109,32 @@ camera framing (centred on its XZ centroid, sized to its extent); the
 "lock to retail top-view" button still recentres on the captured spawn
 anchor on demand.
 
-The top-down camera renders the map **rotated 180° and then horizontally
-flipped** to match retail's world-map orientation. The `buildTopDownVp` up
-vector is world `+Z` (the 180° rotation: screen-up = world `+Z`,
-screen-right = world `-X`), and the projection then mirrors the horizontal
-screen axis (swapping `ortho`'s left/right), so the net basis is
-screen-up = world `+Z`, screen-right = world `+X`. The mirror reverses
-triangle winding, which is harmless since `renderAssembled` disables
-`CULL_FACE`. The pan controls map drag deltas back through this same
-post-mirror basis.
+The assembled world view renders through a **perspective orbit camera**
+(`buildWorldOrbitVp` in `site/js/webgl-math.js`) - the retail world map is
+genuinely 3D (GTE `RTPT` perspective projection; confirmed by moving the
+retail camera with GameShark), so the viewer matches: the eye orbits a
+ground-plane target on `(yaw, pitch)` spherical angles, with `pitch = 0` the
+straight-down view and larger values tilting toward the horizon. Zoom keeps
+its orthographic meaning - `halfWidth`/`halfHeight` define the visible
+window at the target plane, and the orbit distance is derived from them
+(`dist = halfHeight / tan(fovY/2)`), so wheel zoom and pan speed behave
+identically at any tilt. Controls: left-drag pans (through the yaw-rotated
+ground basis), right-drag or shift+drag orbits, wheel zooms; "lock to
+retail top-view" flattens `pitch` to 0 on the captured spawn anchor and the
+reset button restores the default tilt.
+
+Both cameras render the map **rotated 180° and then horizontally flipped**
+to match retail's world-map orientation. The up vector is world `+Z` (the
+180° rotation: screen-up = world `+Z`, screen-right = world `-X`), and the
+projection then mirrors the horizontal screen axis (`buildTopDownVp` swaps
+`ortho`'s left/right; `buildWorldOrbitVp` negates the perspective matrix's
+X scale), so the net basis at `yaw = 0` is screen-up = world `+Z`,
+screen-right = world `+X`. The mirror reverses triangle winding, which is
+harmless since `renderAssembled` disables `CULL_FACE`. The pan controls map
+drag deltas back through this same post-mirror basis. The ortho
+`buildTopDownVp` path remains the projection for `renderAssembled` callers
+whose camera record carries no `yaw` field (the asset viewer's full-scene
+map mode).
 
 ## Walk-frame placed landmarks
 
@@ -378,13 +395,23 @@ signature-scans the slot for the animation table. The disc-gated
 test ``crates/web-viewer/tests/ocean_assets.rs`` verifies extraction
 across all three kingdoms.
 
-The WebGL ocean shader (``site/js/webgl-tmd.js``) draws a flat
-quad at ``y=0`` covering the world extent, samples the 4bpp texture
-+ animated 16-entry CLUT, and advances the frame counter on a
-wall-clock timer (frame duration tunable; default ~8 Hz so the
-visible cadence matches retail at roughly normal playback speed).
+The viewer animates the water the way retail does: each animation
+step writes the frame's 16 BGR555 entries **into the VRAM texture at
+`(0, 506)`** - the CLUT row the continent heightfield's water cells
+sample (CBA `0x7E80`; the retail per-frame ocean DMA target, same
+mechanism as the live engine's `advance_ocean_animation`). Every
+water prim in the scene shimmers from that single CLUT write, so
+terrain-embedded water and the open sea stay phase-locked as one
+layer. The wall-clock frame cadence matches the live engine's tuned
+approximation (6 sim ticks at 60 Hz = 0.1 s/frame) and advances even
+when the backdrop pass is toggled off.
+
+The ocean *backdrop* (``site/js/webgl-tmd.js``) is a flat quad at
+``y=0`` extending past the continent so the sea reaches the horizon
+under the orbit camera; its shader samples the same 4bpp texture
+through a 16-entry CLUT texture updated from the same frame counter.
 The plane is drawn before bulk-terrain meshes so depth-test handles
-occlusion.
+occlusion; the "ocean" checkbox toggles only this backdrop pass.
 
 Capture pipeline for the procedural-tint fallback used before the
 disc is loaded:

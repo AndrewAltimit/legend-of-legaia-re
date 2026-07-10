@@ -139,11 +139,13 @@ class TmdRenderer {
     this.oceanProgram   = compileProgram(gl, OCEAN_VS_SRC, OCEAN_FS_SRC);
     this.locOceanMvp        = gl.getUniformLocation(this.oceanProgram, 'u_mvp');
     this.locOceanUvScale    = gl.getUniformLocation(this.oceanProgram, 'u_uv_scale');
+    this.locOceanUvOffset   = gl.getUniformLocation(this.oceanProgram, 'u_uv_offset');
     this.locOceanColor      = gl.getUniformLocation(this.oceanProgram, 'u_color');
     this.locOceanTex        = gl.getUniformLocation(this.oceanProgram, 'u_ocean_tex');
     this.locOceanClut       = gl.getUniformLocation(this.oceanProgram, 'u_ocean_clut');
     this.locOceanTextured   = gl.getUniformLocation(this.oceanProgram, 'u_ocean_textured');
     this.locOceanSampleSize = gl.getUniformLocation(this.oceanProgram, 'u_ocean_sample_size');
+    this.locOceanShade      = gl.getUniformLocation(this.oceanProgram, 'u_shade');
     this.locOceanPos        = gl.getAttribLocation(this.oceanProgram, 'a_position');
     this.locOceanUv         = gl.getAttribLocation(this.oceanProgram, 'a_uv_world');
     this.oceanVao           = gl.createVertexArray();
@@ -218,10 +220,10 @@ class TmdRenderer {
       animationFrames: null,   /* Uint16Array, 13×16 entries flat */
       frameCount: 0,
       currentFrame: 0,
-      /* How many wall-clock seconds between animation steps. 60 FPS
-       * retail / 13 frames = full cycle in ~0.22s (4.6 Hz) - we slow
-       * that down to roughly the visible rate in the user's screenshot. */
-      frameDurationSec: 1 / 8,
+      /* How many wall-clock seconds between animation steps. Matches
+       * the live engine's tuned cadence (OCEAN_ANIM_TICKS_PER_FRAME = 6
+       * sim ticks at 60 Hz = 0.1 s/frame, full 13-frame cycle ~1.3 s). */
+      frameDurationSec: 6 / 60,
       lastFrameAdvanceTs: 0,
     };
 
@@ -364,17 +366,32 @@ class TmdRenderer {
   }
 
   /* Internal: upload animation frame `idx` (16 BGR555 entries) to the
-   * CLUT texture. Called from renderAssembled when wall-clock time
-   * crosses `frameDurationSec`. */
+   * backdrop plane's CLUT texture AND into the main VRAM texture at
+   * `(0, 506)` - the retail per-frame ocean DMA target (CBA 0x7E80).
+   * The continent heightfield's water cells sample that VRAM CLUT row
+   * directly, so writing the frame there animates every water prim in
+   * the scene in lockstep with the backdrop plane - one layer, exactly
+   * the retail mechanism (mirrors the live engine's
+   * `advance_ocean_animation` / `write_clut_row(0, 506, frame)`).
+   * Called from renderAssembled when wall-clock time crosses
+   * `frameDurationSec`. */
   _uploadOceanFrame(idx) {
     const p = this.oceanParams;
     if (!p.animationFrames || idx >= p.frameCount) return;
     const slice = p.animationFrames.subarray(idx * 16, (idx + 1) * 16);
     const gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, this.oceanClutTex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.bindTexture(gl.TEXTURE_2D, this.oceanClutTex);
     gl.texSubImage2D(
       gl.TEXTURE_2D, 0, 0, 0, 16, 1,
+      gl.RED_INTEGER, gl.UNSIGNED_SHORT,
+      slice,
+    );
+    /* Retail-parity path: overwrite the first 16 entries of the ocean
+     * CLUT row inside VRAM so terrain-embedded water shimmers too. */
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, 0, 506, 16, 1,
       gl.RED_INTEGER, gl.UNSIGNED_SHORT,
       slice,
     );
@@ -620,7 +637,31 @@ class TmdRenderer {
     gl.clearColor(0.04, 0.05, 0.08, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    const vp = buildTopDownVp(w, h, worldExtent, cam);
+    /* Orbit-3D vs legacy ortho top-down: a cam carrying a `yaw` field
+     * opts into the perspective orbit path (world-overview page); carts
+     * without it (viewer.html full-map) keep the ortho projection. */
+    const vp = (cam && cam.yaw != null)
+      ? buildWorldOrbitVp(w, h, worldExtent, cam)
+      : buildTopDownVp(w, h, worldExtent, cam);
+
+    /* Advance the water CLUT animation on wall-clock time, regardless
+     * of whether the backdrop plane is enabled - the frame write also
+     * lands in the VRAM CLUT row at (0, 506), which the continent
+     * heightfield's water cells sample, so terrain water must shimmer
+     * even when the backdrop pass is toggled off. */
+    {
+      const p = this.oceanParams;
+      if (p.textured && p.frameCount > 0) {
+        const now = performance.now() / 1000;
+        if (p.lastFrameAdvanceTs === 0) p.lastFrameAdvanceTs = now;
+        if (now - p.lastFrameAdvanceTs >= p.frameDurationSec) {
+          const steps = Math.floor((now - p.lastFrameAdvanceTs) / p.frameDurationSec);
+          const next = (p.currentFrame + steps) % p.frameCount;
+          this._uploadOceanFrame(next);
+          p.lastFrameAdvanceTs += steps * p.frameDurationSec;
+        }
+      }
+    }
 
     /* Ocean plane: drawn first so bulk-terrain meshes occlude it
      * through depth-test. Skipped when `setOceanColor(..., false)` is
@@ -633,19 +674,15 @@ class TmdRenderer {
       const ez = (worldExtent && worldExtent[1]) || 16320;
       const cx = (cam && cam.centerX != null) ? cam.centerX : ex * 0.5;
       const cz = (cam && cam.centerZ != null) ? cam.centerZ : ez * 0.5;
-      const sx = ex * p.extentScale;
-      const sz = ez * p.extentScale;
-      /* Advance animation frame based on wall-clock. */
-      if (p.textured && p.frameCount > 0) {
-        const now = performance.now() / 1000;
-        if (p.lastFrameAdvanceTs === 0) p.lastFrameAdvanceTs = now;
-        if (now - p.lastFrameAdvanceTs >= p.frameDurationSec) {
-          const steps = Math.floor((now - p.lastFrameAdvanceTs) / p.frameDurationSec);
-          const next = (p.currentFrame + steps) % p.frameCount;
-          this._uploadOceanFrame(next);
-          p.lastFrameAdvanceTs += steps * p.frameDurationSec;
-        }
-      }
+      /* Under the perspective orbit camera a tilted view can see much
+       * further toward the horizon than the ortho frame ever showed, so
+       * widen the backdrop quad to keep the sea unbroken to the far
+       * plane. */
+      const horizonScale = (cam && cam.yaw != null)
+        ? Math.max(p.extentScale, 8.0)
+        : p.extentScale;
+      const sx = ex * horizonScale;
+      const sz = ez * horizonScale;
       /* model = T(cx, planeY, cz) * S(sx, 1, sz) */
       const model = new Float32Array([
         sx, 0,  0,  0,
@@ -662,8 +699,18 @@ class TmdRenderer {
       const wrapsX = sx / p.tileWorldSize;
       const wrapsZ = sz / p.tileWorldSize;
       gl.uniform2f(this.locOceanUvScale, wrapsX, wrapsZ);
+      /* World-anchor the pattern: offset UVs by the quad centre so the
+       * waves stay put as the camera pans (the quad follows the cam). */
+      gl.uniform2f(this.locOceanUvOffset,
+        cx / p.tileWorldSize, cz / p.tileWorldSize);
       gl.uniform1i(this.locOceanTextured, p.textured ? 1 : 0);
       gl.uniform2f(this.locOceanSampleSize, p.sampleWidth, p.sampleHeight);
+      /* Match the main program's flat-ground Lambert shade (light dir
+       * (0.5, -0.7, 0.4), shade = 0.45 + 0.55 * lambert(up-normal)) so
+       * the backdrop is pixel-identical in brightness to the
+       * heightfield's water cells - the sea reads as one layer. */
+      const lambertUp = 0.7 / Math.hypot(0.5, 0.7, 0.4);
+      gl.uniform1f(this.locOceanShade, 0.45 + 0.55 * lambertUp);
       const c = p.color;
       gl.uniform4f(this.locOceanColor, c.r, c.g, c.b, 1.0);
       gl.activeTexture(gl.TEXTURE0);

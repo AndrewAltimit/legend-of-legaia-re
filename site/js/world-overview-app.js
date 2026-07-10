@@ -118,8 +118,18 @@
   let glRenderer = null;
   let rafId = null;
   const cam = { yaw: 0, pitch: 0.25, distance: 2.5, panX: 0, panY: 0, autoRotate: true };
-  /* Top-down camera state (world units). Reset per-kingdom to fit the world. */
-  const worldCam = { centerX: 8160, centerZ: 8160, halfWidth: 9000, halfHeight: 9000, pitch: 0 };
+  /* World camera state (world units). Reset per-kingdom to fit the world.
+   * `yaw`/`pitch` drive the perspective orbit camera (buildWorldOrbitVp):
+   * pitch = 0 is straight-down, larger tilts toward the horizon; the
+   * default tilt makes the 3D terrain relief legible on load, matching
+   * the retail world map being a real 3D perspective view (GameShark
+   * camera moves in retail confirm it). "Lock to retail top-view" and
+   * the reset button snap pitch back to their respective framings. */
+  const WORLD_DEFAULT_PITCH = 0.85;
+  const worldCam = {
+    centerX: 8160, centerZ: 8160, halfWidth: 9000, halfHeight: 9000,
+    yaw: 0, pitch: WORLD_DEFAULT_PITCH,
+  };
 
   /* ---------- Placement JSON (always available) ----------- */
   try {
@@ -187,7 +197,8 @@
       }
       worldCam.halfWidth = ext[0] / 2 + 1000;
       worldCam.halfHeight = ext[1] / 2 + 1000;
-      worldCam.pitch = 0;
+      worldCam.yaw = 0;
+      worldCam.pitch = WORLD_DEFAULT_PITCH;
     } else {
       resetCam();
     }
@@ -298,6 +309,7 @@
       const ext = k?.world_extent || [16320, 16320];
       worldCam.halfWidth  = ext[0] / 2;
       worldCam.halfHeight = ext[1] / 2;
+      worldCam.yaw = 0;
       worldCam.pitch = 0;
     });
   }
@@ -890,7 +902,8 @@
       }
     }
     frameWorldCam(drawPlacements, ext, glRenderer.getGroundAabb());
-    worldCam.pitch = 0;
+    worldCam.yaw = 0;
+    worldCam.pitch = WORLD_DEFAULT_PITCH;
     const unplacedShownTotal = unplacedShown.landmark
       + unplacedShown.decoration + unplacedShown.ground_tile
       + unplacedShown.unknown;
@@ -947,8 +960,9 @@
             : `${k.cdname} - no walk-view terrain resolved`);
     }
     $meshInfo.textContent =
-      `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
-    attachTopDownControls(fresh);
+      `3D perspective view; world ${ext[0]} x ${ext[1]} units; `
+      + `drag to pan, right-drag (or shift+drag) to rotate/tilt, scroll to zoom`;
+    attachWorldControls(fresh);
     const tick = () => {
       glRenderer.renderAssembled(drawPlacements, ext, worldCam);
       rafId = requestAnimationFrame(tick);
@@ -1012,27 +1026,46 @@
     }
   }
 
-  /* Pan / zoom controls for the top-down camera. Replaces the orbit
-   * controls in `attachCameraControls` for world-view mode. */
-  function attachTopDownControls(canvas) {
-    let dragging = false, lastX = 0, lastY = 0;
+  /* Pan / orbit / zoom controls for the world camera. Left-drag pans the
+   * map (yaw-aware); right-drag or shift+left-drag orbits (yaw + tilt);
+   * wheel zooms. Replaces the mesh-inspector orbit controls in
+   * `attachCameraControls` for world-view mode. */
+  function attachWorldControls(canvas) {
+    let mode = null, lastX = 0, lastY = 0;   /* mode: 'pan' | 'orbit' */
     canvas.addEventListener('mousedown', e => {
-      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      mode = (e.button === 2 || e.shiftKey) ? 'orbit' : 'pan';
+      lastX = e.clientX; lastY = e.clientY;
     });
-    window.addEventListener('mouseup', () => { dragging = false; });
+    /* Right-drag is the orbit gesture; suppress the context menu. */
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+    window.addEventListener('mouseup', () => { mode = null; });
     window.addEventListener('mousemove', e => {
-      if (!dragging) return;
+      if (!mode) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      /* Drag -> camera grabs the map (content follows the cursor).
+      if (mode === 'orbit') {
+        /* Drag right rotates the view; drag down tilts toward the
+         * horizon. Pitch 0 = straight-down; clamp short of the horizon
+         * so the ground plane never edge-on degenerates. */
+        worldCam.yaw += dx * 0.008;
+        worldCam.pitch = Math.max(0, Math.min(1.40, worldCam.pitch + dy * 0.008));
+        return;
+      }
+      /* Pan: camera grabs the map (content follows the cursor).
        * Convert pixel deltas to world units via the current camera
-       * half-extents, through the basis buildTopDownVp uses (180 deg
-       * rotation + horizontal mirror): screen-right = world +X,
-       * screen-down = world -Z. */
-      const sx = (worldCam.halfWidth  * 2) / canvas.width;
-      const sy = (worldCam.halfHeight * 2) / canvas.height;
-      worldCam.centerX -= dx * sx;
-      worldCam.centerZ += dy * sy;
+       * half-extents, through the yaw-rotated retail screen basis
+       * (at yaw = 0: screen-right = world +X, screen-down = world -Z).
+       * Apply the same letterbox rule the projection uses (expand the
+       * shorter axis to the canvas aspect) so the point under the
+       * cursor tracks the drag exactly. */
+      const aspect = canvas.width / canvas.height;
+      let hw = worldCam.halfWidth, hh = worldCam.halfHeight;
+      if (hw / hh < aspect) hw = hh * aspect; else hh = hw / aspect;
+      const sx = (hw * 2) / canvas.width;
+      const sy = (hh * 2) / canvas.height;
+      const cosY = Math.cos(worldCam.yaw), sinY = Math.sin(worldCam.yaw);
+      worldCam.centerX += -dx * sx * cosY - dy * sy * sinY;
+      worldCam.centerZ += -dx * sx * sinY + dy * sy * cosY;
     });
     canvas.addEventListener('wheel', e => {
       e.preventDefault();
