@@ -408,13 +408,19 @@ fn scene_host_seeds_global_tmd_pool_head_from_befect_data() {
 
 /// SceneHost-driven variant: boot `balden2` through `enter_field_scene`
 /// at record 0 (the natural entry record), drive many frames, and
-/// surface a per-frame summary. Documents the negative finding -
-/// stepping naturally from record 0 will not reach the deep-offset
-/// 0x4C 0xD8 cluster, so no ActorSpawned event is expected here.
-/// The test is informational: it just verifies the scene boots
-/// without panic.
+/// surface a per-frame summary.
+///
+/// `balden2` has no bundle MAN - its only MAN is the block's streaming
+/// variant carrier (PROT 320), and `Scene::field_man_entry_script`
+/// resolves it (the same fallback `field_man_payload` uses), so the
+/// natural drive runs the carrier's real `P1[0]` entry script and
+/// reaches the `0x4C 0xD8` synchronous-spawn cluster organically. (The
+/// earlier negative finding - "natural stepping never reaches the
+/// cluster" - held only while the entry-script resolver was
+/// bundle-MAN-only and the scene fell back to the event-record-0 load,
+/// which parks at the trigger table.)
 #[test]
-fn balden2_natural_drive_does_not_reach_4c_d8_cluster() {
+fn balden2_natural_drive_reaches_4c_d8_cluster_via_entry_script() {
     let Some(extracted) = skip_if_no_disc() else {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
         return;
@@ -442,14 +448,11 @@ fn balden2_natural_drive_does_not_reach_4c_d8_cluster() {
     eprintln!(
         "[disc] balden2 record 0 natural drive: {spawned} ActorSpawned events across 500 frames"
     );
-    // Negative-finding assert: natural stepping from record 0 doesn't
-    // reach the deep-offset 0x4C 0xD8 cluster. If this ever starts
-    // firing real spawns, the field-VM's halt-recovery wiring or
-    // cross-context dispatch reached new territory and the
-    // `drives_real_balden2_4c_d8_into_synchronous_spawn` test above
-    // becomes redundant.
-    assert_eq!(
-        spawned, 0,
-        "balden2 record 0 unexpectedly hit a synchronous spawn - update this test"
+    // The streaming-carrier P1[0] entry script reaches the 0x4C 0xD8
+    // synchronous-spawn cluster during the natural drive, so real
+    // ActorSpawned events fire without the forced-pc harness above.
+    assert!(
+        spawned > 0,
+        "balden2's entry script reaches the 0x4C 0xD8 spawn cluster naturally"
     );
 }

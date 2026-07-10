@@ -13,7 +13,7 @@ pub const BOSS_FORMATION_ID_BASE: u16 = 0xB000;
 
 /// Scripted single-boss fights keyed by scene label: the first-visit fight a
 /// dungeon arms on entry while its gate flag is still clear. Each row is
-/// `(scene_label, monster_id, gate_flag)`.
+/// `(scene_label, monster_id, gate_flag, staged_marker)`.
 ///
 /// The chapter-1 entry is Mt. Rikuroa's **Caruban** (monster id 73 = `0x49`,
 /// in the `FUN_8005567c` lone-monster battle-id band), gated by system flag
@@ -21,11 +21,21 @@ pub const BOSS_FORMATION_ID_BASE: u16 = 0xB000;
 /// record P2[50] (streaming carrier PROT `0157`, the MAN the live script
 /// heap byte-matches at the beat), which that record itself SETs on
 /// completion. `0x142` is also the `map01` dungeon-entrance `dolk`→`dolk2`
-/// selector, so the victory latch flips the entrance organically. The
+/// selector, so executing the record flips the entrance organically. The
 /// operator's save brackets pin the lifecycle: `0x142` UNSET in
 /// `rikuroa_pre_caruban`, SET in `rikuroa_post_caruban`, and the firehose
 /// caught the SET live (script bytes `51 42`, dispatcher SET arm
 /// `ra 0x801E3598`).
+///
+/// `staged_marker` is the transient "battle staged" system flag the retail
+/// stager record (`rikuroa` `P1[3]`) SETs right before its battle-entry op
+/// (`52 89` then `3E FF 11`): the scene-entry script `P1[0]` tests it on the
+/// post-battle re-entry (`72 89` at `+0x13A` -> the `+0x7E6` arm) and issues
+/// the op-`0x44` spawn of the post-victory record `P2[50]`, whose script
+/// bytes SET the gate flag and CLEAR the marker. The engine stamps the
+/// marker at battle entry ([`World::begin_encounter_battle`]) as the
+/// stand-in for executing the stager record; the gate flag itself lands
+/// from `P2[50]`'s execution.
 ///
 /// (An earlier row armed **Zeto** (75) here, gated on `0x1BE` - both
 /// misattributed: the "rikuroa P2[0] C1 0x1BE" record is Jeremi's arrival
@@ -34,10 +44,8 @@ pub const BOSS_FORMATION_ID_BASE: u16 = 0xB000;
 /// Zeto's own trigger scene/gate is an open thread.)
 ///
 /// The host scene-entry latch
-/// ([`crate::scene::SceneHost::enter_field_scene`]) consumes this table; the
-/// gate flag latches on victory in [`World::apply_battle_loot`] (the
-/// engine's stand-in for executing P2[50]'s script SET).
-pub const SCRIPTED_SCENE_BOSSES: &[(&str, u16, u16)] = &[("rikuroa", 73, 0x142)];
+/// ([`crate::scene::SceneHost::enter_field_scene`]) consumes this table.
+pub const SCRIPTED_SCENE_BOSSES: &[(&str, u16, u16, u16)] = &[("rikuroa", 73, 0x142, 0x289)];
 
 impl World {
     /// Install an [`crate::encounter::EncounterSession`] for the current
@@ -527,23 +535,26 @@ impl World {
     /// a catalog entry the slot still spawns (tagged with its id) with default
     /// stats.
     ///
-    /// `victory_flag` is the first-visit one-shot system flag the fight latches
-    /// on a win (rikuroa's Caruban gate `0x142`, mirroring the post-victory
-    /// cutscene record P2[50]'s C1 self-disable + in-record SET) so the boss
-    /// does not re-arm on re-entry; [`Self::apply_battle_loot`] sets it.
-    /// Returns the synthetic formation id.
+    /// `staged_marker` is the transient "battle staged" system flag the retail
+    /// stager record sets right before its battle-entry op (rikuroa's Caruban
+    /// = `0x289`, `P1[3]`'s `52 89`); [`Self::begin_encounter_battle`] stamps
+    /// it when this formation actually enters battle. The first-visit gate
+    /// flag itself (`0x142`) is NOT engine-written: the post-battle field
+    /// return re-runs the scene-entry script, whose staged-marker arm spawns
+    /// the post-victory record `P2[50]`, and that record's own script bytes
+    /// SET the gate + CLEAR the marker. Returns the synthetic formation id.
     ///
     /// NOTE: the field-side op that writes `DAT_8007b7fc` in retail is not yet
     /// recovered from the corpus (a different bytecode than the field VM, or a
     /// LUI+ADDIU-aliased store in an undumped overlay). This method + the
-    /// host's gate-flag latch are the faithful interim until that writer op
+    /// battle-entry marker stamp are the faithful interim until that writer op
     /// is pinned.
     ///
     /// REF: FUN_8005567c (battle-id -> lone-monster cell expansion)
     pub fn install_boss_encounter(
         &mut self,
         monster_id: u16,
-        victory_flag: Option<u16>,
+        staged_marker: Option<u16>,
     ) -> Option<u16> {
         // Synthetic boss-namespace formation id, disjoint from the MAN
         // formation-table row ids (small indices) and the record-hash ids
@@ -570,7 +581,7 @@ impl World {
         // per-region random tracker installed for the dungeon.
         self.scripted_formation_pending = true;
         self.boss_formation_id = Some(formation_id);
-        self.pending_boss_victory_flag = victory_flag;
+        self.pending_boss_staged_marker = staged_marker;
         Some(formation_id)
     }
 

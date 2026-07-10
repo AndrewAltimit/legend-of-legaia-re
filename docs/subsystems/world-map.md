@@ -304,8 +304,14 @@ landed:
   because no census walked the streaming variant MANs (and the earlier
   raw-byte sweep looked for setter *code*, not script operand bytes at
   op boundaries). Engine: `SCRIPTED_SCENE_BOSSES` arms Caruban (73) in
-  `rikuroa` gated on `0x142`; the victory latch sets it, flipping the
-  dolk-dolk2 entrance organically.
+  `rikuroa` while `0x142` is clear; entering the fight stamps the
+  transient staged marker `0x289` (the stager `P1[3]`'s pre-battle
+  `52 89`), and the post-battle field return re-runs the scene-entry
+  script `P1[0]`, whose `72 89` test arm spawns `P2[50]` through the
+  C1-gated record dispatch - the record's own `51 42` script bytes SET
+  `0x142` (and `62 89` clears the marker), flipping the dolk-dolk2
+  entrance organically. Disc-gated oracle:
+  `engine-core/tests/organic_beat_records_disc.rs`.
 - **`0x482`** (Drake mist walls): no script writer exists - the earlier
   "SETs in the `other7` block, clears in the `edbalden`/`eddoman`
   epilogue carriers" reading was desynced-walker text noise (full-width

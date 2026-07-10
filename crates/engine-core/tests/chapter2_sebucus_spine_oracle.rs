@@ -8,13 +8,15 @@
 //! [`World::p2_record_gates_pass`] and the real seeder entry point
 //! [`World::install_gated_p2_record`] against the actual scene MANs.
 //!
-//! No chapter-specific engine code is needed - unlike chapter 1's Caruban beat
-//! (whose `0x142` latch is a post-BATTLE record the engine can't execute, so it
-//! needs the `SCRIPTED_SCENE_BOSSES` victory stand-in), every chapter-2 beat
-//! here is a field-mode CUTSCENE record whose script `SysFlag.Set` latches its
-//! flag organically through [`World::system_flag_set`] (the field-VM host path,
-//! already proven organic by the town01 `549` walk-on oracle). So the generic
-//! seeder drives the whole arc for free; this oracle is the proof.
+//! No chapter-specific engine code is needed - even chapter 1's Caruban beat
+//! (whose `0x142` latch is a post-BATTLE record) now executes organically: the
+//! post-battle field return re-runs the entry script, whose staged-marker arm
+//! spawns `P2[50]` through the same gated dispatch (see
+//! `organic_beat_records_disc.rs`). Every chapter-2 beat here is a field-mode
+//! CUTSCENE record whose script `SysFlag.Set` latches its flag organically
+//! through [`World::system_flag_set`] (the field-VM host path, already proven
+//! organic by the town01 `549` walk-on oracle). So the generic seeder drives
+//! the whole arc for free; this oracle is the proof.
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md convention).
 

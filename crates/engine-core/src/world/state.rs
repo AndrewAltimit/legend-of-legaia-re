@@ -1321,16 +1321,30 @@ pub struct World {
 
     /// Synthetic formation id installed by [`World::install_boss_encounter`]
     /// for a scripted single-boss fight (the battle-id path, retail
-    /// `FUN_8005567c`). Recognised in [`World::apply_battle_loot`] to latch
-    /// [`Self::pending_boss_victory_flag`] on victory. `None` when no boss
-    /// encounter is armed.
+    /// `FUN_8005567c`). Recognised in [`World::begin_encounter_battle`] to
+    /// stamp [`Self::pending_boss_staged_marker`] at battle entry. `None`
+    /// when no boss encounter is armed.
     pub boss_formation_id: Option<u16>,
 
-    /// System-flag index a scripted boss encounter latches once the party
-    /// wins it (the first-visit one-shot the retail cutscene sets so the
-    /// fight does not re-arm - e.g. rikuroa's Caruban gate `0x142`). Consumed by
-    /// [`World::apply_battle_loot`]. `None` when no boss encounter is armed.
-    pub pending_boss_victory_flag: Option<u16>,
+    /// System-flag index of the boss fight's transient **battle-staged
+    /// marker** (rikuroa's Caruban = `0x289`): the flag the retail stager
+    /// record (`rikuroa` `P1[3]`) SETs immediately before its battle-entry
+    /// op, and which the scene-entry system script `P1[0]` tests on the
+    /// post-battle re-entry to spawn the post-victory cutscene record
+    /// (`P2[50]` - whose own script bytes SET the progression gate `0x142`
+    /// and CLEAR this marker). Stamped at battle entry by
+    /// [`World::begin_encounter_battle`] (the engine's stand-in for executing
+    /// the stager record itself); the progression flag is NOT engine-written,
+    /// it lands from record execution. `None` when no boss encounter is
+    /// armed.
+    pub pending_boss_staged_marker: Option<u16>,
+
+    /// The staged marker of the boss battle currently in flight, kept so an
+    /// escaped fight reverts it in [`World::finish_battle`] (retail boss
+    /// fights are flee-blocked; un-staging on escape is the engine's
+    /// equivalent, so the post-victory record cannot spawn without a win).
+    /// `None` outside a staged boss battle.
+    pub active_boss_staged_marker: Option<u16>,
 
     /// Aggregated rewards from the most recent victory - surfaced for the
     /// post-battle banner / HUD. `None` until the first battle resolves.
@@ -1881,7 +1895,8 @@ impl World {
             battle_arts_menu: None,
             active_formation: None,
             boss_formation_id: None,
-            pending_boss_victory_flag: None,
+            pending_boss_staged_marker: None,
+            active_boss_staged_marker: None,
             last_battle_rewards: None,
             game_over: false,
             field_return: None,

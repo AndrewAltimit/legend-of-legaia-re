@@ -27,6 +27,16 @@ impl World {
         if self.battle_end == Some(BattleEndCause::PartyWipe) {
             self.game_over = true;
         }
+        // Staged-boss bookkeeping: a fled staged fight reverts its transient
+        // staged marker (retail boss fights are flee-blocked; without this the
+        // entry-script re-run would spawn the post-victory record on an
+        // unearned return). A win leaves the marker set - the post-victory
+        // record's own `62 xx` script bytes clear it.
+        if let Some(marker) = self.active_boss_staged_marker.take()
+            && self.battle_escaped
+        {
+            self.system_flag_clear(marker);
+        }
         self.active_formation = None;
         self.battle_end = None;
         self.battle_escaped = false;

@@ -24,22 +24,22 @@ impl SceneHost {
         self.monster_archive_cache.clone()
     }
 
-    /// First-visit scripted-boss latch. When `name` is a scripted-boss scene
+    /// First-visit scripted-boss arm. When `name` is a scripted-boss scene
     /// ([`crate::world::SCRIPTED_SCENE_BOSSES`]) whose gate flag is still clear,
     /// seed the boss monster's real stats from the PROT 867 archive and arm the
     /// lone-monster fight ([`crate::world::World::install_boss_encounter`]) so
     /// the next field step enters it. No-op for every non-boss scene and for a
-    /// boss already beaten (its gate flag latched by
-    /// [`crate::world::World::apply_battle_loot`]).
+    /// boss already beaten (its gate flag SET by the scene's post-victory
+    /// partition-2 record executing on the post-battle field return).
     fn arm_scripted_scene_boss(&mut self, name: &str) {
         // A boss arm belongs to one dungeon visit; clear any left from a prior
         // visit so a revisit (or a non-boss scene) reflects this entry's
         // decision. Re-set below only when this scene arms a boss.
         self.world.boss_formation_id = None;
-        self.world.pending_boss_victory_flag = None;
-        let Some(&(_, monster_id, gate_flag)) = crate::world::SCRIPTED_SCENE_BOSSES
+        self.world.pending_boss_staged_marker = None;
+        let Some(&(_, monster_id, gate_flag, staged_marker)) = crate::world::SCRIPTED_SCENE_BOSSES
             .iter()
-            .find(|&&(scene, _, _)| scene == name)
+            .find(|&&(scene, _, _, _)| scene == name)
         else {
             return;
         };
@@ -57,7 +57,7 @@ impl SceneHost {
             self.ensure_move_power_table();
         }
         self.world
-            .install_boss_encounter(monster_id, Some(gate_flag));
+            .install_boss_encounter(monster_id, Some(staged_marker));
         log::info!("field: armed scripted boss (monster {monster_id}) for scene {name}");
     }
 
@@ -1095,7 +1095,29 @@ impl SceneHost {
     /// boot/transition path seeds the overworld the same way the explicit
     /// `--world-map` entry does.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        let was_battle = matches!(self.world.mode, crate::world::SceneMode::Battle);
         let _ = self.world.tick();
+        // Post-battle field return: retail re-enters the field scene after a
+        // battle (game-mode battle -> field reload), which re-runs the
+        // scene-entry system script `P1[0]` from the MAN - the "P2 timeline
+        // re-scan". That re-run is how a post-battle beat record spawns:
+        // rikuroa's `P1[0]` tests the battle-staged marker `0x289` and issues
+        // the op-`0x44` spawn of the post-victory record `P2[50]` (C1-gated on
+        // `0x142`, the self-latching one-shot), whose own script bytes SET the
+        // gate flag. The engine keeps the world state in place across the
+        // battle, so the re-entry's script side is reproduced by reloading the
+        // entry script here.
+        // REF: FUN_8003ab2c (system-script rebuild on field entry)
+        if was_battle && matches!(self.world.mode, crate::world::SceneMode::Field) {
+            let entry_script = self
+                .scene
+                .as_ref()
+                .and_then(|scene| scene.field_man_entry_script(&self.index).ok().flatten());
+            if let Some((bytecode, pc0)) = entry_script {
+                self.world.load_field_script_at(bytecode, pc0);
+                log::info!("field: post-battle return re-ran the scene-entry script");
+            }
+        }
         self.world
             .materialize_actor_spawns(crate::world::FIELD_SPAWN_START_SLOT);
         // Field-VM op-0x44 SPAWN_RECORD: resolve each queued request against

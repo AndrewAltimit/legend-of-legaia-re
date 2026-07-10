@@ -434,12 +434,31 @@ impl World {
     /// prologue scene hand-off - `town01` is the destination, and the record's
     /// terminal is the name-entry suspend, not a scene change. Returns `true`
     /// when installed.
+    ///
+    /// The record's C1/C2 header gates are honored (the `FUN_8003BDE0`
+    /// dispatch walk): `P2[3]` lists its own SET, system flag `0x225` (549) -
+    /// the record's opening `52 25` script bytes latch it, so the opening is
+    /// a self-disabling one-shot exactly like the rikuroa post-victory
+    /// record. A world whose flag bank already carries `0x225` (a replay /
+    /// loaded save) refuses the install.
     // REF: FUN_8003BDE0
     pub fn install_town01_opening_timeline(
         &mut self,
         man_file: &legaia_asset::man_section::ManFile,
         man: &[u8],
     ) -> bool {
+        match crate::man_field_scripts::partition2_record_gates(
+            man_file,
+            man,
+            Self::TOWN01_OPENING_TIMELINE_RECORD,
+        ) {
+            Some((c1, c2)) => {
+                if !self.p2_record_gates_pass(&c1, &c2) {
+                    return false;
+                }
+            }
+            None => return false,
+        }
         if !self.install_cutscene_timeline_record(
             man_file,
             man,

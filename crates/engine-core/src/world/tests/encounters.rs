@@ -492,44 +492,87 @@ fn install_boss_encounter_arms_a_lone_monster_formation() {
         .expect("boss formation registered");
     assert_eq!(def.slots.len(), 1, "boss is a lone monster");
     assert_eq!(def.slots[0].monster_id, 75);
-    // Armed to fire on the next field step, with the victory latch pending.
+    // Armed to fire on the next field step, with the staged marker pending.
     assert!(world.scripted_formation_pending);
     assert_eq!(world.boss_formation_id, Some(fid));
-    assert_eq!(world.pending_boss_victory_flag, Some(0x1BE));
-    // The gate flag is NOT set yet - only a win latches it.
+    assert_eq!(world.pending_boss_staged_marker, Some(0x1BE));
+    // The marker is NOT set yet - it stamps when the battle actually enters.
     assert!(!world.system_flag_test(0x1BE));
 }
 
 #[test]
-fn boss_victory_latches_the_gate_flag_via_apply_battle_loot() {
-    use crate::monster_catalog::MonsterCatalog;
+fn boss_battle_entry_stamps_the_staged_marker() {
     let mut world = World::new();
     world.set_active_scene_label("rikuroa");
-    let fid = world.install_boss_encounter(75, Some(0x1BE)).unwrap();
+    let fid = world.install_boss_encounter(75, Some(0x289)).unwrap();
+    // Entering the boss battle stamps the transient staged marker (the retail
+    // stager record's pre-battle SET) - the progression gate flag is NOT
+    // engine-written; it lands from the post-victory record's own script.
+    world.begin_encounter_battle(crate::encounter::EncounterRoll {
+        formation_id: fid,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    assert!(matches!(world.mode, SceneMode::Battle));
+    assert!(
+        world.system_flag_test(0x289),
+        "battle entry stamps the staged marker"
+    );
+    assert_eq!(world.pending_boss_staged_marker, None, "stamp is one-shot");
+    assert_eq!(world.active_boss_staged_marker, Some(0x289));
+    // A win keeps the marker set (the post-victory record's `62 89` clears
+    // it); loot resolution writes NO flags.
+    let cat = crate::monster_catalog::MonsterCatalog::new();
     let boss_formation = world.formation_table.formation(fid).cloned().unwrap();
-    // Resolving loot for the boss formation (the win path) latches the gate.
-    let cat = MonsterCatalog::new();
     let _ = world.apply_battle_loot(&boss_formation, &cat);
     assert!(
-        world.system_flag_test(0x1BE),
-        "beating the boss sets its first-visit one-shot gate flag"
+        world.system_flag_test(0x289),
+        "win leaves the marker staged"
     );
-    // Pending state cleared so a re-fought formation doesn't re-latch.
-    assert_eq!(world.pending_boss_victory_flag, None);
-    assert_eq!(world.boss_formation_id, None);
+    assert!(
+        !world.system_flag_test(0x142),
+        "the gate flag is not engine-written on victory (no latch)"
+    );
 }
 
 #[test]
-fn non_boss_victory_does_not_latch_a_gate_flag() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog};
+fn escaped_boss_battle_reverts_the_staged_marker() {
     let mut world = World::new();
     world.set_active_scene_label("rikuroa");
-    world.install_boss_encounter(75, Some(0x1BE)).unwrap();
-    // Win a DIFFERENT (random) formation while the boss is armed: the latch
-    // is keyed on the boss formation id, so the gate flag stays clear.
-    let other = FormationDef::new(3, vec![FormationSlot::new(10)]);
-    let cat = MonsterCatalog::new();
-    let _ = world.apply_battle_loot(&other, &cat);
-    assert!(!world.system_flag_test(0x1BE));
-    assert_eq!(world.pending_boss_victory_flag, Some(0x1BE));
+    let fid = world.install_boss_encounter(75, Some(0x289)).unwrap();
+    world.begin_encounter_battle(crate::encounter::EncounterRoll {
+        formation_id: fid,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    assert!(world.system_flag_test(0x289));
+    // A fled fight un-stages: the entry-script re-run must not spawn the
+    // post-victory record without a win.
+    world.battle_escaped = true;
+    world.finish_battle();
+    assert!(
+        !world.system_flag_test(0x289),
+        "escape reverts the staged marker"
+    );
+    assert_eq!(world.active_boss_staged_marker, None);
+}
+
+#[test]
+fn non_boss_battle_entry_does_not_stamp_the_marker() {
+    use crate::monster_catalog::{FormationDef, FormationSlot};
+    let mut world = World::new();
+    world.set_active_scene_label("rikuroa");
+    world.install_boss_encounter(75, Some(0x289)).unwrap();
+    // Enter a DIFFERENT (random) formation while the boss is armed: the stamp
+    // is keyed on the boss formation id, so the marker stays clear.
+    world
+        .formation_table
+        .insert(FormationDef::new(3, vec![FormationSlot::new(10)]));
+    world.begin_encounter_battle(crate::encounter::EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    assert!(!world.system_flag_test(0x289));
+    assert_eq!(world.pending_boss_staged_marker, Some(0x289));
 }

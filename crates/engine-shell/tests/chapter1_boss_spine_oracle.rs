@@ -29,13 +29,19 @@
 //! `0x142` - the C1 one-shot of the real rikuroa MAN's post-victory record
 //! P2[50], which that record itself SETs (firehose-caught live, `51 42`,
 //! `ra 0x801E3598`; UNSET in `rikuroa_pre_caruban`, SET in
-//! `rikuroa_post_caruban`). The engine models this as a scene-entry latch +
-//! the battle-id port [`World::install_boss_encounter`]; the gate flag
-//! latches on victory ([`World::apply_battle_loot`]), which also flips the
-//! `map01` `dolk`->`dolk2` entrance (same flag). Part C drives entry ->
-//! armed boss -> Field -> Battle seated with Caruban's real archive HP ->
-//! victory latches `0x142`, and a separate leg proves a post-victory revisit
-//! does not re-arm the fight.
+//! `rikuroa_post_caruban`). The engine models the arm as a scene-entry check
+//! plus the battle-id port [`World::install_boss_encounter`]; entering the
+//! battle stamps the transient staged marker `0x289` (the stager `P1[3]`'s
+//! pre-battle SET), and the gate flag lands by EXECUTING `P2[50]`: the
+//! post-battle field return re-runs the entry script, whose `0x289` arm
+//! spawns the record through the C1-gated dispatch, and its own script bytes
+//! SET `0x142` - which also flips the `map01` `dolk`->`dolk2` entrance (same
+//! flag). Part C drives entry -> armed boss -> Field -> Battle seated with
+//! Caruban's real archive HP -> victory -> `P2[50]` execution lands `0x142`,
+//! and a separate leg proves a post-victory revisit does not re-arm the
+//! fight. (The organic first-arrival flag `0x2FB` chain is covered by
+//! `engine-core/tests/organic_beat_records_disc.rs`; Part C seeds `0x2FB`
+//! for isolation.)
 //!
 //! (An earlier Part C armed **Zeto** (75) here, gated on `0x1BE`: both
 //! misattributed - the "rikuroa P2[0] C1 0x1BE" record is Jeremi's arrival
@@ -57,8 +63,8 @@
 //! tile + arrival tile). The engine resolves the branch in the world-map portal
 //! seeder via `World::system_flag_test`; Part D asserts both arms + walks into
 //! `dolk2` with the flag set. (Flag `0x142`'s retail setter is pinned: the
-//! rikuroa post-victory record P2[50]'s script SET - the same flag Part C's
-//! victory latch models; the oracle still seeds it directly for isolation.)
+//! rikuroa post-victory record P2[50]'s script SET - the same record whose
+//! execution Part C drives; the oracle still seeds it directly for isolation.)
 //!
 //! Skip-pass (CLAUDE.md disc-gated convention): `LEGAIA_DISC_BIN` unset /
 //! `extracted/` missing.
@@ -286,15 +292,20 @@ fn part_b_map01_portal_into_dolk() {
 // path (`DAT_8007b7fc` -> `FUN_8005567c` collapses ids 0x49..0x4D to a
 // lone-monster cell), gated by first-visit flag `0x142` (the real rikuroa
 // MAN's post-victory record P2[50] C1 one-shot + in-record SET). The engine
-// models this as a rikuroa scene-entry latch + the battle-id port
-// `World::install_boss_encounter`; the gate flag latches on victory. The
-// field-side op that writes the battle-id global in retail is not yet
-// recovered - this leg exercises the faithful interim.
+// models the arm as a rikuroa scene-entry check + the battle-id port
+// `World::install_boss_encounter`; battle entry stamps the staged marker
+// `0x289` and the gate flag lands from executing P2[50] on the post-battle
+// field return. The field-side op that writes the battle-id global in
+// retail is not yet recovered - this leg exercises the faithful interim.
 
-/// Caruban = monster id 73 (0x49); rikuroa boss gate flag 0x142. Mirrors
-/// `legaia_engine_core::world::SCRIPTED_SCENE_BOSSES`.
+/// Caruban = monster id 73 (0x49); rikuroa boss gate flag 0x142, staged
+/// marker 0x289, first-arrival flag 0x2FB. Mirrors
+/// `legaia_engine_core::world::SCRIPTED_SCENE_BOSSES` + the rikuroa MAN's
+/// `P1[0]` dispatch arms.
 const CARUBAN_MONSTER_ID: u16 = 73;
 const RIKUROA_BOSS_GATE_FLAG: u16 = 0x142;
+const RIKUROA_BOSS_STAGED_MARKER: u16 = 0x289;
+const RIKUROA_ARRIVAL_FLAG: u16 = 0x2FB;
 
 #[test]
 fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
@@ -315,9 +326,9 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         "rikuroa entry arms the Caruban boss formation"
     );
     assert_eq!(
-        host.world.pending_boss_victory_flag,
-        Some(RIKUROA_BOSS_GATE_FLAG),
-        "the victory latch is pending on the gate flag"
+        host.world.pending_boss_staged_marker,
+        Some(RIKUROA_BOSS_STAGED_MARKER),
+        "the staged-marker stamp is pending on battle entry"
     );
     assert!(
         host.world.scripted_formation_pending,
@@ -331,7 +342,12 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         .expect("Caruban stats seeded from the monster archive");
     assert!(caruban.hp > 0, "Caruban carries real archive HP");
 
-    // (2) Step -> the scripted boss flips Field -> Battle.
+    // (2) Step -> the scripted boss flips Field -> Battle. Seed the
+    // first-arrival flag 0x2FB (the story state a real playthrough carries at
+    // the Caruban beat; its organic landing from P2[43]'s script bytes is
+    // covered by `organic_beat_records_disc.rs`) so the post-battle
+    // entry-script re-run takes the deeper dispatch arms.
+    host.world.system_flag_set(RIKUROA_ARRIVAL_FLAG);
     host.world.live_gameplay_loop = true;
     assert!(
         host.world.on_field_step(),
@@ -357,32 +373,56 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         "the Caruban slot is seeded with its real HP"
     );
 
-    // (3) Winning latches the first-visit gate flag so the boss does not
-    // re-arm. Resolving the boss formation's loot IS the victory in the engine
-    // model (it grants XP/gold); drive it directly.
-    let boss_formation = host
-        .world
-        .active_formation
-        .clone()
-        .expect("boss formation captured at the Field -> Battle transition");
-    assert_eq!(
-        boss_formation.formation_id,
-        BOSS_FORMATION_ID_BASE | CARUBAN_MONSTER_ID
+    // Entering the staged battle stamped the transient marker (the stager
+    // P1[3]'s pre-battle `52 89` stand-in); the gate flag stays clear.
+    assert!(
+        host.world.system_flag_test(RIKUROA_BOSS_STAGED_MARKER),
+        "battle entry stamps the staged marker 0x289"
     );
-    let catalog = host.world.monster_catalog.clone();
-    let _ = host.world.apply_battle_loot(&boss_formation, &catalog);
+    assert!(
+        !host.world.system_flag_test(RIKUROA_BOSS_GATE_FLAG),
+        "the gate flag 0x142 stays clear during the fight (no victory latch)"
+    );
+    assert_eq!(
+        host.world.active_formation.as_ref().map(|f| f.formation_id),
+        Some(BOSS_FORMATION_ID_BASE | CARUBAN_MONSTER_ID),
+        "boss formation captured at the Field -> Battle transition"
+    );
+
+    // (3) Win through the live loop: the post-battle field return re-runs the
+    // scene-entry script, whose staged-marker arm spawns the post-victory
+    // record P2[50] through the C1-gated dispatch - its own `51 42` script
+    // bytes SET the gate flag (and `62 89` clears the marker).
+    let party = host.world.party_count as usize;
+    for a in host.world.actors.iter_mut().skip(party) {
+        if a.battle_monster_id.is_some() {
+            a.battle.hp = 0;
+            a.battle.liveness = 0;
+        }
+    }
+    let mut ticks = 0u32;
+    while host.world.mode == SceneMode::Battle && ticks < 2000 {
+        let _ = host.tick().expect("tick");
+        ticks += 1;
+    }
+    assert_eq!(
+        host.world.mode,
+        SceneMode::Field,
+        "the won battle tears down to the field"
+    );
+    let mut ticks = 0u32;
+    while !host.world.system_flag_test(RIKUROA_BOSS_GATE_FLAG) && ticks < 2000 {
+        let _ = host.tick().expect("tick");
+        ticks += 1;
+    }
     assert!(
         host.world.system_flag_test(RIKUROA_BOSS_GATE_FLAG),
-        "beating Caruban latches the rikuroa first-visit gate flag 0x142"
-    );
-    assert_eq!(
-        host.world.boss_formation_id, None,
-        "the boss latch is consumed on victory"
+        "P2[50]'s execution lands the rikuroa first-visit gate flag 0x142"
     );
 
     eprintln!(
         "[ok] Part C: rikuroa -> armed Caruban (id 73, battle-id path) -> Battle \
-         seated with real HP -> victory latches gate flag 0x1BE"
+         seated with real HP -> victory -> P2[50] execution lands gate flag 0x142"
     );
 }
 
