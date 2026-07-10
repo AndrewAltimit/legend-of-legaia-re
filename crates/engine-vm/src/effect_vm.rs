@@ -1,6 +1,10 @@
 //! Battle-effect VM, ported clean-room from the `0898_xxx_dat` battle overlay.
 //!
 //! PORT: FUN_801DE914, FUN_801DFDF8, FUN_801E0088
+//! PORT: FUN_801DFDF0 (the spawn API's dump entry point - the dump stem
+//! `overlay_battle_action_801dfdf0` places the entry 8 bytes before the
+//! `801DFDF8` name the docs/READMEs use; same function, both addresses
+//! resolve to [`Pool::spawn`])
 //!
 //! See [`docs/subsystems/effect-vm.md`](../../../docs/subsystems/effect-vm.md)
 //! for the authoritative byte-level reference. This crate ports the high-

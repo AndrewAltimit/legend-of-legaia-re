@@ -463,8 +463,9 @@ pub fn cutscene_camera_mvp(
 /// table toward their control-block targets with an exponential right-shift step
 /// (`srav` by `_DAT_8007B60B>>4`). This is an approximation of that ease (an
 /// orbit on decoded pitch/yaw rather than retail's world-in-camera GTE model),
-/// not a byte-faithful port. NB the same RAM address in the *dialog* overlay is
-/// an unrelated actor sprite emitter (overlays alias) - see
+/// not a byte-faithful port. The *dialog* overlay's copy is this same function
+/// (the dialog and cutscene_dialogue dumps are instruction-identical); only the
+/// menu overlay hosts different code at this VA - see
 /// `docs/reference/functions.md`.
 #[derive(Debug, Clone, Default)]
 pub struct CutsceneCameraInterp {

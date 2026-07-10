@@ -508,6 +508,76 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
     fn clear_encounter_counter(&mut self) {}
 }
 
+/// Apply the op-`0x4C 0xC3` script-table teleport onto `ctx`: re-seat the
+/// executing context at its own partition-0 record's placement header.
+///
+/// Retail resolves the record via `FUN_8003C8F0(ctx+0x50, 0)` - the
+/// `_DAT_8007B898` partition-table walk (three s16 counts at `+0x22`,
+/// flattened u24 record-offset table, data region after the tables) that
+/// [`crate::man_field_scripts::partition_record_span`] already models -
+/// then skips the `[u8 N][N*2]` locals field (`FUN_8003D0BC`) to the
+/// record's 4-byte placement header `[model, anim, bx, bz]` and writes
+/// (`overlay_0897_801de840.txt` case 3 of the nibble-C dispatcher):
+///
+/// - `+0x14`/`+0x18` (`world_x`/`world_z`) = tile centre
+///   `(b & 0x7F) * 0x80 + 0x40`, plus another `+0x40` when bit 7 is set;
+/// - `+0x5C` ([`FieldCtx::move_id`]) = the header's anim byte;
+/// - `+0x6A` = 8, `+0x72` = `0x1000`, `+0x62` = `0x15`;
+/// - `+0x54` (wait accumulator), `+0x8E`, `+0x8B` = 0;
+/// - flags word `&= 0x9EBFFAFE` (clears the halt bit `0x400` among others);
+/// - `+0x8C`/`+0x8D` = tile column/row recomputed from the new world
+///   position (signed `(w - 0x40) >> 7`).
+///
+/// Not modelled (no [`FieldCtx`] counterpart): the `+0x70`/`+0x9C`/`+0x2A`/
+/// `+0x78` zeroes, the `+0x9E` script-offset rebase onto the record's first
+/// opcode (with its `'%'`-first-opcode `func_0x8003CF7C` poke), and the
+/// linked `+0x44` struct's `+0x9A = 0xFFFF` write.
+///
+/// Returns `false` (ctx untouched) when the record cannot be resolved.
+pub(super) fn apply_script_table_teleport(
+    man_file: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    ctx: &mut FieldCtx,
+) -> bool {
+    let Some((script_start, pc0, _body_len)) =
+        crate::man_field_scripts::partition_record_span(man_file, man, 0, ctx.script_id as usize)
+    else {
+        return false;
+    };
+    // The 4-byte placement header sits right before the record's first
+    // opcode (`pc0 = 1 + N*2 + 4`): [model, anim, bx, bz].
+    let Some(hdr) = man.get(script_start + pc0 - 4..script_start + pc0) else {
+        return false;
+    };
+    let (anim, bx, bz) = (hdr[1], hdr[2], hdr[3]);
+    let center = |b: u8| -> u16 {
+        let base = u16::from(b & 0x7F) * 0x80 + 0x40;
+        if b & 0x80 != 0 { base + 0x40 } else { base }
+    };
+    ctx.world_x = center(bx);
+    ctx.world_z = center(bz);
+    ctx.move_id = u16::from(anim);
+    ctx.field_6a = 8;
+    ctx.field_72 = 0x1000;
+    ctx.wait_accum = 0;
+    ctx.field_8e = 0;
+    ctx.local_flags = 0x15;
+    ctx.flags &= 0x9EBF_FAFE;
+    // Tile column/row from the fresh world position - the retail signed
+    // `>> 7` keeps a negative-rounding fixup that is unreachable here (the
+    // tile-centre values are always positive); mirrored for fidelity.
+    let grid = |w: u16| -> u8 {
+        let w = i32::from(w as i16);
+        let v = if w - 0x40 < 0 { w + 0x3F } else { w - 0x40 };
+        (v >> 7) as u8
+    };
+    ctx.npc_x = grid(ctx.world_x);
+    // `+0x8D` (named for its op-0x23 facing role) carries the tile ROW here.
+    ctx.npc_facing = grid(ctx.world_z);
+    ctx.field_8b = 0;
+    true
+}
+
 pub(super) struct FieldHostImpl<'a> {
     pub(super) world: &'a mut World,
 }
@@ -1152,6 +1222,25 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         }
         self.world
             .start_field_npc_motion(slot, world_x as i16, world_z as i16);
+    }
+
+    // PORT: FUN_8003C8F0 - the `_DAT_8007B898` partition-table record
+    // resolver (prefix-summed s16 counts at `+0x22` + flattened u24
+    // record-offset walk) feeding the op-`0x4C 0xC3` script-table teleport;
+    // the record walk is shared with
+    // [`crate::man_field_scripts::partition_record_offset`], the descriptor
+    // decode + ctx write-set live in [`apply_script_table_teleport`].
+    fn op4c_n_c_sub_3_script_teleport(&mut self, ctx: &mut FieldCtx) {
+        // Resolve against the scene's resident MAN (kept on the world while
+        // per-actor channels run). Without one the trait's default no-op
+        // semantics stand - there is no partition table to resolve against.
+        let Some(man) = self.world.field_channels_man.clone() else {
+            return;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            return;
+        };
+        apply_script_table_teleport(&man_file, &man, ctx);
     }
 
     fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {

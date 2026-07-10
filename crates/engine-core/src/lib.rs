@@ -25,6 +25,7 @@ pub mod camera;
 pub mod capture_observations;
 pub mod cd_dma;
 pub mod cheat_applier;
+pub mod chunk_install;
 pub mod cutscene;
 pub mod cutscene_caption;
 pub mod cutscene_narration;
@@ -96,6 +97,7 @@ pub mod target_picker;
 pub mod tile_board;
 pub mod title;
 pub mod title_screen_atlas;
+pub mod walk_regen;
 pub mod world;
 pub mod world_map;
 

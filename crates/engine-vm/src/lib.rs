@@ -71,6 +71,7 @@ pub mod actor_alloc;
 pub mod actor_tick;
 pub mod anim_vm;
 pub mod battle_action;
+pub mod battle_camera;
 pub mod battle_formulas;
 pub mod cutscene_trigger;
 pub mod effect_vm;
