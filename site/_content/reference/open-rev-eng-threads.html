@@ -123,6 +123,12 @@
         <td><a href="../subsystems/level-up.html">level-up</a></td>
       </tr>
       <tr>
+        <td>Character-record HP/MP/AP pair order is <code>(max, cur)</code></td>
+        <td><span class="tag tag-done">resolved (relabel pending)</span></td>
+        <td>Three independent sources - the walk-regen tick <code>FUN_801D0B90</code> (bumps <code>+0x106</code>, clamps at <code>+0x104</code>), the per-frame stat aggregator <code>FUN_80042558</code> (rewrites <code>+0x104</code> from base stats + passives), and the GameShark "Infinite HP" codes (write <code>+0x106</code> at every character stride) - agree <code>+0x104/+0x108/+0x10C</code> are the effective maxima and <code>+0x106/+0x10A/+0x10E</code> the currents, the reverse of the <code>legaia_save::HpMpSp</code> / cheat-classifier labels. Fresh-save fixtures mask the swap (cur == max at seed). Relabel + consumer re-audit pending.</td>
+        <td><a href="cheats.html">cheats</a></td>
+      </tr>
+      <tr>
         <td>Monster stat-record archive source</td>
         <td><span class="tag tag-done">resolved</span></td>
         <td>PROT 0867 (the <code>monster_data</code> block): <code>FUN_800542C8</code> streams per-monster <code>0x14000</code> LZS slots; each head is the <code>FUN_80054CB0</code> stat record (name, battle-TMD offset, HP/MP, six stats, rewards at <code>+0x44..0x49</code>).</td>

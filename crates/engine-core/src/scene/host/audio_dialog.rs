@@ -14,6 +14,9 @@ impl SceneHost {
     /// Engines parse the returned bytes with [`legaia_seq::Seq::parse`] and
     /// attach to [`legaia_engine_audio::Sequencer::new`] alongside the
     /// scene's VAB bank.
+    // PORT: FUN_800243F0 (the BGM-id -> PROT-slot resolution; the retail
+    // double-buffered async load poller around it is host-replaced by the
+    // engine-audio Sequencer + this synchronous byte access)
     pub fn bgm_seq_bytes(&self, bgm_id: u16) -> Result<Option<Arc<Vec<u8>>>> {
         let Some(assets) = self.assets.as_ref() else {
             return Ok(None);

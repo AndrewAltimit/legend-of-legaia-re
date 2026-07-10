@@ -122,6 +122,8 @@ pub(crate) fn partition_record_offset(
 /// record 18 (`name_len=6` "Opening", all three blocks empty) this is `0x10`,
 /// the `0x34` EFFECT op that opens the prologue timeline.
 // REF: FUN_8003BDE0
+// PORT: FUN_8003D0BC (the name-field skip: first byte = char count, advance
+// 1 + count*2 - retail's standalone helper for the same walk)
 pub(crate) fn partition2_record_script_offset(body: &[u8]) -> Option<usize> {
     let name_len = *body.first()? as usize;
     let mut cur = 1 + name_len * 2; // name field (chars * 2, no terminator)

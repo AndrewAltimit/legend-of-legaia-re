@@ -218,6 +218,7 @@
 "8003adac" = "Scene-entry letterbox/sprite-pair chrome: builds two box/sprite primitives (sizes 0x1E, 0x08) via the panel emitter 80024e80. Host GP0 chrome emission; engine draws scene-entry framing through its own overlay path. see ghidra/scripts/funcs/8003adac.txt"
 "800355f0" = "Floating draw-list teardown: drains the gp+0x148 element list, freeing nodes via FUN_800319A8. Pure host data-structure teardown (maps to Rust Drop/clear); no clean-room port site. see ghidra/scripts/funcs/800355f0.txt"
 "8004313c" = "Inventory/HUD two-page window-bounds setup: computes the retail 128-slot-per-half inventory panel bounds (gp+0x2D2/0x2D4/0x2D6) gated on party count. The clean-room inventory (crates/save) is a flat model without the paginated struct; engine GIVE_ITEM adds via the inventory accessors. Menu panel-geometry setup, not game logic. see ghidra/scripts/funcs/8004313c.txt"
+"8001b964" = "Per-actor skinned-mesh GTE/OT render loop: Euler->matrix (80026988) + camera-relative rotate select, walks the actor's bones decoding each per-(bone,frame) entry and emits the assembled mesh into the OT (80043390/80029888/8002735c). The portable inner unit is ported - BoneTransform::decode carries PORT: FUN_8001BE80 (crates/asset player_anm.rs) and the playhead lives in engine-core field_anim; the loop itself is GTE COP2 register I/O + OT emission replaced by the wgpu pipeline. see ghidra/scripts/funcs/8001b964.txt"
 
 
 # libetc / libcomb (VSync, frame-pacing) plus SCUS-resident dev-instrumentation
@@ -375,6 +376,8 @@
 # returned buffer as a CDNAME char* - is modelled where the caller is ported).
 [global_accessors]
 "80019788" = "Global-buffer base getter: `lui v0, 0x8009; jr ra; ...` returns the fixed RAM pointer 0x80088758 (callers scan it as a char* for '_'-separator CDNAME names). Engine carries scene/name state as typed Rust fields (active_scene_label etc.); no body to port. See docs/reference/functions.md row 80019788."
+"8004695c" = "Request-latch setter: clears DAT_8007b6cc, arms gp[0x9d4]=1 with payload gp[0x9d0]=a0. A three-store one-shot 'arm this action' latch with no body of its own; the semantic lives in whichever consumer reads the latch. see ghidra/scripts/funcs/8004695c.txt"
+"8003d064" = "Packed 3-vector unpack leaf: reads three consecutive LE s16 from a0[0..6] into out-pointers, sign-extended. Callers (op-0x44 seat coords, cutscene/world-map overlays) inline this in Rust as 3x i16::from_le_bytes at each use site; no port artifact warranted. see ghidra/scripts/funcs/8003d064.txt"
 
 
 # Identity / no-op thunks at addresses outside the PsyQ region. These are
@@ -423,6 +426,27 @@
 "80035bd0" = "SFX cue overwrite-slot variant (the 'overwrite current head' path). Cue-play is ported as engine-audio SfxScheduler::enqueue (// PORT: FUN_80035B50) + classify_cue (// PORT: FUN_8004FCC8); the ring overwrite-vs-advance distinction is deliberately not modelled, so this variant is subsumed by the FUN_80035B50 port. see ghidra/scripts/funcs/80035bd0.txt"
 
 
+# Retail CD-streaming / boot-orchestration plumbing. The engine loads assets
+# clean-room through the legaia_asset PROT index + MemoryVfs and owns its own
+# scene/boot lifecycle, so the retail async-load state machines and dual-mode
+# (ISO9660-path vs PROT-TOC) file plumbing have no port site. Game-logic
+# residue inside each is ported separately and named in the reason.
+[asset_load_plumbing]
+"8001fc00" = "Dual-mode streaming file loader: retail branch strcat's a 'sound\\'-prefixed path (tables 0x8007B38C/0x8007B31C) into the by-path reader 8003e9c0; dev branch resolves via the PROT TOC (8003e8a8) + seek/read (8003e964/8003e800); maintains the gp+0x708 byte cursor (>>0xb sector conversion). The engine reads by PROT index; the BGM-id->slot mapping its callers feed in is ported as SceneHost::bgm_seq_bytes. see ghidra/scripts/funcs/8001fc00.txt"
+"80019794" = "Scene-transition asset-load sequencer: 5-state machine over _DAT_8007b9c8 (CD read-wait poll 8003de7c -> capture-archive load 8003eae4 -> prev-op gate 8003f2b8), returns busy until done; the op-0x36 SCENE_FADE bit-15-clear sub-path. Stage 8003de7c is ported (engine-core cd_dma read_wait_poll); the wrapper is host-owned scene-load orchestration behind the scene_fade host hook. see ghidra/scripts/funcs/80019794.txt"
+"8001dcf8" = "Boot/mode-switch one-shot initializer: bulk global zeroing (Rust struct Default), mode->VRAM-alloc-size select off _DAT_8007BF10/BF18/BF20 + _DAT_8007B83C, the _DAT_1F800394 mode-table reseed, GTE screen setup (8003d254/8005ad54, already ignore-listed), overlay teardown (80017910). Its game-logic callee FUN_80034A6C (new-game seed) is mirrored by World::begin_new_game. see ghidra/scripts/funcs/8001dcf8.txt"
+
+
+# Game-side helpers whose observable behavior is subsumed by an existing
+# clean-room port or host model: the function's own body is thin plumbing
+# (a list marker, a free-slot wrapper, a record copy) with no separate
+# semantic to port. The reason names the Rust site that owns the behavior.
+[subsumed_glue]
+"8003cf40" = "Actor-list callback-arm marker: walks the live-actor linked list setting state bit 8 (node[+0x10] |= 8) on entry-id match - the op-0x4C nibble-9/nibble-8 register-callback primitive. Modeled by the register-callback host hooks (engine-core vm_hosts op4c_n9_sub_f_register_callback: opening-chain immediate-satisfy, faithful halt otherwise); the literal bit-8 walk has no engine actor-list to mark. see ghidra/scripts/funcs/8003cf40.txt"
+"80050ed4" = "Pool-tracked spawn wrapper: scans the 0x60-pointer pool at DAT_801C90F0 for the first null slot, forwards to the part-stager FUN_80021B04, stores the actor ptr. The behavior lives in the stager + the engine's own pools (effect_vm::Pool free-slot scan, engine-core summon staging); kept as the static call-site anchor POOL_SPAWN_HELPER in crates/asset summon_overlay.rs. see ghidra/scripts/funcs/80050ed4.txt"
+"801d5718" = "Walkability-grid cell-record copy: copies a 0x18-stride record (fields +0x6/+0xa/+0xc/+0x14) between cells of the grid at _DAT_1F8003EC+0x4000 - the same grid the ported collision system reads (World::field_tile_is_wall / advance_with_collision, PORT: FUN_801cfe4c). Layout corroboration only; the copy itself has no engine consumer. see ghidra/scripts/funcs/overlay_battle_action_801d5718.txt (the 0897 static copy is garbled in this region)"
+
+
 # Overlay VA-aliased pseudo-addresses. The catalog keys functions by bare VA,
 # but the runtime overlays share the 0x801C0000+ window: the SAME VA holds
 # DIFFERENT code in different overlays, and the dump evidence proves it
@@ -438,3 +462,8 @@
 [va_aliased_overlay_local]
 "801d58f0" = "VA-aliased across overlays, not one function: overlay_0897 copy is an 80-byte mid-function division fragment (not an entry), baka_fighter 228 B, cutscene_dialogue 124 B, debug_menu/fishing/slot_machine 308 B, dance 1 B. The 41-ref count sums unrelated per-overlay callees; no single port site exists for the bare VA."
 "801d63b0" = "VA-aliased across overlays, not one function: overlay_dance copy is 208 B vs debug_menu/fishing/slot_machine 1036 B - different code at the same VA. The 43-ref count sums unrelated per-overlay callees; no single port site exists for the bare VA."
+"801dd310" = "VA-aliased across overlays, not one function: menu/save_ui/shop_save copy is a 32 B no-op passthrough (save-screen substate 0x16 -> frame-end flush 80031d00, see docs/subsystems/save-screen.md); baka/dance/fishing/slot/cutscene family 436 B and 0897 204 B are different functions. The 23-ref count sums unrelated per-overlay callees."
+"801d81e0" = "VA-aliased across overlays, not one function: cutscene copy is a 44 B two-call wrapper (800204a4 + 80020454); the 0897 dump is a 96 B mid-function fragment with no clean prologue (unaff_s registers - re-dump before use); script-vm.md cites the field-VM overlay's copy as the op-0x23 MOVE_TO movement init, matching neither dump. No single port site for the bare VA."
+"801de648" = "VA-aliased across overlays, not one function: baka/dance/debug/fishing/slot copy is the 80 B sized store (value -> *dst as byte/half/word by size 1/2/4; the move-VM tween result-store primitive, REF'd at engine-core summon.rs - a typed Rust field write); muscle_dome 244 B is a different function. No single port site for the bare VA."
+"801de234" = "VA-aliased across overlays, not one function: dialog/minigame family copy (124 B) is the region-type bitmask builder - ported as engine-core field_regions::refresh_region_attributes (PORT: FUN_800180EC, the caller/superset; loops the resumable scan 80017fbc ORing 1<<(kind&0x1F) into the _DAT_8007B8F4 mirror); overlay_menu copy (12104 B) is the title-screen idle state machine (REF'd in engine-vm cutscene_trigger.rs/menu.rs); 0897 92 B differs again. The 26-ref count sums unrelated per-overlay callees."
+"801db510" = "VA-aliased across overlays, not one function: the 988 B copy shared by dialog/cutscene/minigame overlays is the per-frame camera follow-ease + LCG shake (approximated by engine-render CutsceneCameraInterp, REF'd there; dialog and cutscene_dialogue dumps are instruction-identical - the old 'dialog copy = actor sprite emitter' functions.md row was wrong); overlay_menu 1140 B differs; 0897 12 B stub. The 34-ref count sums unrelated per-overlay callees."

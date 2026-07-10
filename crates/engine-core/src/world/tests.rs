@@ -248,6 +248,7 @@ mod move_vm_flags;
 mod party_composition;
 mod physics_steal_shop;
 mod save_state;
+mod script_teleport;
 mod shiny;
 mod summon_final_heal;
 mod tile_board;

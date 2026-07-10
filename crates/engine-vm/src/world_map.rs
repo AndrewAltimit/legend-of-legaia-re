@@ -26,6 +26,8 @@
 //! `ghidra/scripts/funcs/801da51c.txt` (decompiled from `overlay_world_map.bin`).
 //! REF: FUN_800243F0
 
+use crate::field_helpers::load_u16_le;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityState {
     Idle = 0,
@@ -199,6 +201,262 @@ impl WorldMapEntityCtx {
         // engine this zeroes a pointer; here it is a no-op since the engine
         // side owns the scene-data reference through the host.
     }
+}
+
+/// World-map atmospheric fog-RGB script interpreter, ported clean-room from
+/// `FUN_801E3E00` (overlay_world_map.bin base `0x801C0000`; dump
+/// `ghidra/scripts/funcs/overlay_world_map_801e3e00.txt`).
+///
+/// PORT: FUN_801E3E00 - atmospheric-actor tick: keyframe script driving the
+/// fog color word at actor `+0x74` (the GTE far-color / haze source) plus a
+/// secondary color word at `+0x88` and three 16-bit aux params.
+///
+/// The retail actor stores the script pointer at `+0x94`, the byte cursor
+/// (PC) at `+0x9e` and the segment phase clock at `+0x9c`, stepped each tick
+/// by the scratchpad frame-delta byte `DAT_1F800393`. The interpreter loops
+/// until an opcode "does work" (retail `s3` counter), so cursor-only opcodes
+/// are consumed within the same tick:
+///
+/// | opcode | behaviour |
+/// |---|---|
+/// | `0x00` | sets actor flag `+0x10 \|= 8` (script finished); ends tick |
+/// | `0x01` | resets the cursor to 0 (restart/loop); ends tick |
+/// | `0x02` | 15-byte keyframe segment (see below); ends tick |
+/// | `0x40` (`'@'`) | skips 2 bytes (opcode + operand); continues same tick |
+/// | other  | wraps the cursor to 0; continues same tick |
+///
+/// A `0x02` segment record is `[op][duration:u16le][target_a:u16le]`
+/// `[target_b:u16le][rgb_a:3][rgb_b:3][target_c:u16le]` (0xF bytes; all
+/// 16-bit operands read via the unaligned-LE16 helper `FUN_8003CE9C` =
+/// [`load_u16_le`]). Per tick, with `phase` at `+0x9c`:
+///
+/// * `phase == 0`: **latch only** - copies the current output values into the
+///   segment-start latches (`+0x40/+0x58/+0x6a` and the six channel bytes at
+///   `+0x80..+0x85`), writes nothing else, then steps the phase clock.
+/// * `0 < phase < duration`: writes each output as
+///   `start + (target - start) * phase / duration` (truncating signed i32
+///   division, exactly the MIPS `div`), packing the three color channels of
+///   each word as `c0<<16 | c1<<8 | c2` (targets from script `+7/+8/+9` for
+///   the `+0x74` word, `+0xa/+0xb/+0xc` for `+0x88`). The aux-C channel
+///   (`+0x16`) interpolates toward the **negated** target
+///   (`start + (-target - start) * phase / duration`). Steps the phase clock.
+/// * `phase >= duration`: snaps every output to its target (`aux_c` to
+///   `-target`), zeroes the phase clock (no step) and advances the cursor by
+///   0xF to the next record.
+#[derive(Debug, Clone, Default)]
+pub struct AtmosphericFogTick {
+    /// Keyframe script bytes (retail: pointer at actor `+0x94`).
+    pub script: Vec<u8>,
+    /// Script byte cursor (retail: actor `+0x9e`, `i16`).
+    pub pc: u16,
+    /// Phase clock within the current segment (retail: actor `+0x9c`, `i16`).
+    pub phase: u16,
+    /// Current primary packed color word (retail: actor `+0x74`; the value
+    /// `crates/web-viewer/src/sentinel_placements.rs` snapshots as the
+    /// world-overview fog anchor). Byte layout `c0<<16 | c1<<8 | c2` from
+    /// script bytes `+7/+8/+9`; under the PSX `0x00BBGGRR` color-word
+    /// convention the low byte (`+9`) is red.
+    pub fog_rgb: u32,
+    /// Secondary packed color word (retail: actor `+0x88`), channels from
+    /// script bytes `+0xa/+0xb/+0xc`.
+    pub aux_rgb: u32,
+    /// Aux 16-bit param A (retail: actor `+0x3c`), target at script `+3`.
+    pub aux_a: u16,
+    /// Aux 16-bit param B (retail: actor `+0x3e`), target at script `+5`.
+    pub aux_b: u16,
+    /// Aux 16-bit param C (retail: actor `+0x16`), driven toward the
+    /// **negation** of the script `+0xd` target.
+    pub aux_c: u16,
+    /// Set once opcode `0x00` runs (retail: actor flags `+0x10 |= 8`).
+    pub finished: bool,
+    // Segment-start latches, captured on the phase-0 tick of each segment.
+    start_a: u16,       // +0x40
+    start_b: u16,       // +0x58
+    start_c: u16,       // +0x6a
+    fog_start: [u8; 3], // +0x80 / +0x81 / +0x82
+    aux_start: [u8; 3], // +0x83 / +0x84 / +0x85
+}
+
+impl AtmosphericFogTick {
+    pub fn new(script: Vec<u8>) -> Self {
+        Self {
+            script,
+            ..Default::default()
+        }
+    }
+
+    /// One frame of the atmospheric actor tick. `step` is the frame delta
+    /// added to the phase clock (retail reads the scratchpad byte
+    /// `DAT_1F800393` via `lbu`, so retail steps are `0..=255`).
+    pub fn tick(&mut self, step: u16) {
+        if self.finished {
+            // Retail keeps re-running opcode 0 (re-setting the flag) every
+            // tick; equivalent and cheaper to stop here.
+            return;
+        }
+        // Retail loops until an opcode increments the did-work counter; an
+        // unknown opcode at PC 0 would spin forever there. Bail after every
+        // script byte could have been visited once.
+        let mut guard = self.script.len() + 2;
+        loop {
+            match self.byte_at(self.pc) {
+                0 => {
+                    // Opcode 0: mark the actor finished (flags |= 8).
+                    self.finished = true;
+                    return;
+                }
+                1 => {
+                    // Opcode 1: restart the script from the top.
+                    self.pc = 0;
+                    return;
+                }
+                2 => {
+                    self.tick_segment(step);
+                    return;
+                }
+                0x40 => {
+                    // '@' marker: skip opcode + one operand byte, keep going.
+                    self.pc = self.pc.wrapping_add(2);
+                }
+                _ => {
+                    // Unknown opcode: wrap the cursor to 0, keep going.
+                    self.pc = 0;
+                }
+            }
+            guard -= 1;
+            if guard == 0 {
+                return;
+            }
+        }
+    }
+
+    /// Opcode-2 keyframe segment body.
+    fn tick_segment(&mut self, step: u16) {
+        let pc = self.pc as usize;
+        let duration = i32::from(self.u16_at(pc + 1));
+        let phase = i32::from(self.phase as i16);
+        if phase < duration {
+            if phase == 0 {
+                // First tick of the segment: latch the segment-start state
+                // from the current outputs; write nothing else.
+                self.start_a = self.aux_a;
+                self.start_b = self.aux_b;
+                self.start_c = self.aux_c;
+                self.fog_start = unpack_channels(self.fog_rgb);
+                self.aux_start = unpack_channels(self.aux_rgb);
+            } else {
+                self.aux_a = interp_u16(self.start_a, self.u16_at(pc + 3), phase, duration);
+                self.aux_b = interp_u16(self.start_b, self.u16_at(pc + 5), phase, duration);
+                // Aux C interpolates toward the NEGATED target:
+                // start + (-target - start) * phase / duration.
+                let target_c = i32::from(self.u16_at(pc + 0xd));
+                let delta_c = -target_c - i32::from(self.start_c as i16);
+                self.aux_c = (i32::from(self.start_c) + delta_c * phase / duration) as u16;
+                self.fog_rgb = pack_channels([
+                    interp_channel(
+                        self.fog_start[0],
+                        self.byte_at_usize(pc + 7),
+                        phase,
+                        duration,
+                    ),
+                    interp_channel(
+                        self.fog_start[1],
+                        self.byte_at_usize(pc + 8),
+                        phase,
+                        duration,
+                    ),
+                    interp_channel(
+                        self.fog_start[2],
+                        self.byte_at_usize(pc + 9),
+                        phase,
+                        duration,
+                    ),
+                ]);
+                self.aux_rgb = pack_channels([
+                    interp_channel(
+                        self.aux_start[0],
+                        self.byte_at_usize(pc + 0xa),
+                        phase,
+                        duration,
+                    ),
+                    interp_channel(
+                        self.aux_start[1],
+                        self.byte_at_usize(pc + 0xb),
+                        phase,
+                        duration,
+                    ),
+                    interp_channel(
+                        self.aux_start[2],
+                        self.byte_at_usize(pc + 0xc),
+                        phase,
+                        duration,
+                    ),
+                ]);
+            }
+            // Both sub-branches step the phase clock (retail LAB_801e4404).
+            self.phase = self.phase.wrapping_add(step);
+        } else {
+            // Segment complete: snap to targets, reset the phase clock
+            // (NOT stepped on this path) and advance to the next record.
+            self.aux_a = self.u16_at(pc + 3);
+            self.aux_b = self.u16_at(pc + 5);
+            self.aux_c = self.u16_at(pc + 0xd).wrapping_neg();
+            self.fog_rgb = pack_channels([
+                self.byte_at_usize(pc + 7),
+                self.byte_at_usize(pc + 8),
+                self.byte_at_usize(pc + 9),
+            ]);
+            self.aux_rgb = pack_channels([
+                self.byte_at_usize(pc + 0xa),
+                self.byte_at_usize(pc + 0xb),
+                self.byte_at_usize(pc + 0xc),
+            ]);
+            self.phase = 0;
+            self.pc = self.pc.wrapping_add(0xf);
+        }
+    }
+
+    fn byte_at(&self, pc: u16) -> u8 {
+        self.byte_at_usize(pc as usize)
+    }
+
+    fn byte_at_usize(&self, off: usize) -> u8 {
+        self.script.get(off).copied().unwrap_or(0)
+    }
+
+    /// Unaligned-LE16 operand read (retail helper `FUN_8003CE9C`; see
+    /// [`load_u16_le`]). Out-of-range bytes read as zero.
+    fn u16_at(&self, off: usize) -> u16 {
+        self.script.get(off..).map(load_u16_le).unwrap_or(0)
+    }
+}
+
+/// Truncating per-channel interpolation: `start + (target - start) * phase /
+/// duration`, with the retail `lh`/`lhu` split - the delta uses the
+/// sign-extended start, the final add the zero-extended start, and the store
+/// keeps the low 16 bits.
+fn interp_u16(start: u16, target: u16, phase: i32, duration: i32) -> u16 {
+    let delta = i32::from(target) - i32::from(start as i16);
+    (i32::from(start) + delta * phase / duration) as u16
+}
+
+/// Truncating byte-channel interpolation; the retail masks the sum with
+/// `0xff` before packing (`as u8` here).
+fn interp_channel(start: u8, target: u8, phase: i32, duration: i32) -> u8 {
+    let delta = i32::from(target) - i32::from(start);
+    (delta * phase / duration + i32::from(start)) as u8
+}
+
+/// Pack three channel bytes as `c0<<16 | c1<<8 | c2` (retail order for the
+/// `+0x74` / `+0x88` color words).
+fn pack_channels(c: [u8; 3]) -> u32 {
+    (u32::from(c[0]) << 16) | (u32::from(c[1]) << 8) | u32::from(c[2])
+}
+
+/// Inverse of [`pack_channels`], used by the phase-0 start latch (retail
+/// reads the bytes back out of the packed word at `+0x74` / `+0x88`).
+fn unpack_channels(word: u32) -> [u8; 3] {
+    [(word >> 16) as u8, (word >> 8) as u8, word as u8]
 }
 
 #[cfg(test)]
@@ -429,5 +687,154 @@ mod tests {
         };
         step(0, &mut ctx, &mut host);
         assert!(host.events.contains(&"clear_counter".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod fog_tests {
+    use super::*;
+
+    /// Build one 0xF-byte opcode-2 keyframe segment record.
+    fn seg(dur: u16, a: u16, b: u16, rgb_a: [u8; 3], rgb_b: [u8; 3], c: u16) -> Vec<u8> {
+        let mut v = vec![2u8];
+        v.extend_from_slice(&dur.to_le_bytes());
+        v.extend_from_slice(&a.to_le_bytes());
+        v.extend_from_slice(&b.to_le_bytes());
+        v.extend_from_slice(&rgb_a);
+        v.extend_from_slice(&rgb_b);
+        v.extend_from_slice(&c.to_le_bytes());
+        assert_eq!(v.len(), 0xf);
+        v
+    }
+
+    #[test]
+    fn segment_ramps_each_channel_then_snaps() {
+        // Segment: 4-frame ramp from the initial all-zero state.
+        let mut fog = AtmosphericFogTick::new(seg(4, 1000, 2000, [100, 40, 8], [200, 80, 16], 100));
+
+        // Tick 1 (phase 0): latch only - no output change, phase steps.
+        fog.tick(1);
+        assert_eq!(fog.fog_rgb, 0);
+        assert_eq!(fog.aux_a, 0);
+        assert_eq!((fog.phase, fog.pc), (1, 0));
+
+        // Tick 2 (phase 1 of 4): quarter of the way, truncating division.
+        fog.tick(1);
+        assert_eq!(fog.fog_rgb, (25 << 16) | (10 << 8) | 2);
+        assert_eq!(fog.aux_rgb, (50 << 16) | (20 << 8) | 4);
+        assert_eq!(fog.aux_a, 250);
+        assert_eq!(fog.aux_b, 500);
+        // Aux C runs toward the NEGATED target: 0 + (-100 - 0) * 1 / 4 = -25.
+        assert_eq!(fog.aux_c as i16, -25);
+
+        // Tick 3 (phase 2): halfway.
+        fog.tick(1);
+        assert_eq!(fog.fog_rgb, (50 << 16) | (20 << 8) | 4);
+        assert_eq!(fog.aux_a, 500);
+
+        // Tick 4 (phase 3): three quarters.
+        fog.tick(1);
+        assert_eq!(fog.fog_rgb, (75 << 16) | (30 << 8) | 6);
+        assert_eq!(fog.aux_c as i16, -75);
+        assert_eq!(fog.phase, 4);
+
+        // Tick 5 (phase 4 >= duration): snap to targets, reset phase,
+        // cursor advances 0xF; the phase clock is NOT stepped on this path.
+        fog.tick(1);
+        assert_eq!(fog.fog_rgb, (100 << 16) | (40 << 8) | 8);
+        assert_eq!(fog.aux_rgb, (200 << 16) | (80 << 8) | 16);
+        assert_eq!(fog.aux_a, 1000);
+        assert_eq!(fog.aux_b, 2000);
+        assert_eq!(fog.aux_c as i16, -100);
+        assert_eq!((fog.phase, fog.pc), (0, 0xf));
+    }
+
+    #[test]
+    fn second_segment_latches_from_first_segment_end() {
+        let mut script = seg(4, 1000, 2000, [100, 40, 8], [200, 80, 16], 100);
+        script.extend(seg(2, 3000, 2500, [50, 240, 8], [0, 0, 0], 0));
+        let mut fog = AtmosphericFogTick::new(script);
+        for _ in 0..5 {
+            fog.tick(1); // run segment 1 to its snap
+        }
+        assert_eq!(fog.pc, 0xf);
+
+        // Segment 2, tick 1: latch (starts = segment-1 end values).
+        fog.tick(1);
+        assert_eq!(fog.fog_rgb, (100 << 16) | (40 << 8) | 8);
+
+        // Segment 2, tick 2 (phase 1 of 2): interpolate from the latched
+        // starts - including a downward channel (100 -> 50) and an aux-C
+        // start that is already negative (-100 -> -0).
+        fog.tick(1);
+        assert_eq!(fog.fog_rgb, (75 << 16) | (140 << 8) | 8);
+        assert_eq!(fog.aux_a, 2000); // 1000 + (3000-1000)*1/2
+        assert_eq!(fog.aux_c as i16, -50); // -100 + (0 - -100)*1/2
+
+        // Segment 2, tick 3: snap.
+        fog.tick(1);
+        assert_eq!(fog.fog_rgb, (50 << 16) | (240 << 8) | 8);
+        assert_eq!(fog.pc, 0x1e);
+    }
+
+    #[test]
+    fn opcode_1_restarts_script() {
+        let mut script = seg(1, 10, 20, [1, 2, 3], [4, 5, 6], 7);
+        script.push(1); // restart
+        let mut fog = AtmosphericFogTick::new(script);
+        fog.tick(1); // latch (phase 0 -> 1)
+        fog.tick(1); // phase 1 >= dur 1: snap, pc = 0xf
+        assert_eq!(fog.pc, 0xf);
+        fog.tick(1); // opcode 1: cursor back to 0, tick ends
+        assert_eq!((fog.pc, fog.phase), (0, 0));
+        assert!(!fog.finished);
+        fog.tick(1); // segment re-runs: phase-0 latch again
+        assert_eq!(fog.phase, 1);
+    }
+
+    #[test]
+    fn opcode_0_sets_finished_flag() {
+        let mut fog = AtmosphericFogTick::new(vec![0]);
+        fog.tick(1);
+        assert!(fog.finished, "opcode 0 = actor flags |= 8");
+        // Empty script reads opcode 0 as well (OOB bytes read as zero).
+        let mut empty = AtmosphericFogTick::new(vec![]);
+        empty.tick(1);
+        assert!(empty.finished);
+    }
+
+    #[test]
+    fn opcode_0x40_skips_two_bytes_same_tick() {
+        // '@' marker + operand, then a segment: one tick both skips the
+        // marker and runs the segment's phase-0 latch.
+        let mut script = vec![0x40, 0xaa];
+        script.extend(seg(2, 0, 0, [9, 9, 9], [0, 0, 0], 0));
+        let mut fog = AtmosphericFogTick::new(script);
+        fog.tick(1);
+        assert_eq!((fog.pc, fog.phase), (2, 1));
+    }
+
+    #[test]
+    fn unknown_opcode_wraps_cursor_to_zero_same_tick() {
+        // Segment then a junk opcode: the tick after the snap wraps the
+        // cursor to 0 and re-enters the segment in the same tick.
+        let mut script = seg(1, 0, 0, [9, 9, 9], [0, 0, 0], 0);
+        script.push(7);
+        let mut fog = AtmosphericFogTick::new(script);
+        fog.tick(1); // latch
+        fog.tick(1); // snap, pc = 0xf (the junk byte)
+        assert_eq!(fog.pc, 0xf);
+        fog.tick(1); // wrap to 0, then phase-0 latch of the segment
+        assert_eq!((fog.pc, fog.phase), (0, 1));
+    }
+
+    #[test]
+    fn all_junk_script_terminates() {
+        // Unknown opcode at PC 0 would spin forever in retail; the port's
+        // guard bails instead of hanging.
+        let mut fog = AtmosphericFogTick::new(vec![7, 7, 7]);
+        fog.tick(1);
+        assert_eq!(fog.pc, 0);
+        assert!(!fog.finished);
     }
 }
