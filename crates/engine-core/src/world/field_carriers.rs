@@ -390,16 +390,18 @@ impl World {
     ///
     /// REF: FUN_801DA51C
     pub(crate) fn tick_field_carriers(&mut self) {
-        if self.field_carriers.is_empty() {
-            return;
+        if !self.field_carriers.is_empty() {
+            let mut carriers = std::mem::take(&mut self.field_carriers);
+            for (idx, ctx) in carriers.iter_mut().enumerate() {
+                let mut host = FieldCarrierHostImpl { world: self };
+                vm::world_map::step(idx, ctx, &mut host);
+            }
+            self.field_carriers = carriers;
         }
-        let mut carriers = std::mem::take(&mut self.field_carriers);
-        for (idx, ctx) in carriers.iter_mut().enumerate() {
-            let mut host = FieldCarrierHostImpl { world: self };
-            vm::world_map::step(idx, ctx, &mut host);
-        }
-        self.field_carriers = carriers;
 
+        // The latched battle entry is shared with the field-VM op-`3E FF`
+        // scripted-battle arm ([`Self::trigger_scripted_battle`]), which can
+        // fire in a scene with no installed carriers - drain it regardless.
         if let Some(formation_id) = self.pending_field_carrier_battle.take() {
             self.begin_field_carrier_battle(formation_id);
         }

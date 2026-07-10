@@ -344,6 +344,18 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
     </tbody>
   </table>
   <p>The active scene-name table at <code>0x80084540</code> is <strong>identical</strong> between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out.</p>
+
+  <h3>Scripted-battle entry (<code>3E FF &lt;row&gt;</code>)</h3>
+  <p>The scripted boss fights enter through the field-VM interact op <code>0x3E</code> with <code>op0 = 0xFF</code>: the case-0x3E interact arm (<code>FUN_801DE840</code>) sets the SYSTEM entity's 5-state SM to Activating (<code>sys_ctx[+0x8A] = 1</code>), points its encounter-record slot at the per-scene MAN formation-table row <code>op1</code> (<code>sys_ctx[+0x94] = *(ctrl+0x20) + op1 * stride + 1</code>), and requests the battle mode switch; the entity tick <code>FUN_801DA51C</code>'s confirm state then copies the row into the battle formation cell <code>0x8007BD0C</code>. The boss rows sit <strong>outside</strong> every region's rollable slice, so they can only enter through this op.</p>
+  <table class="data-table">
+    <thead><tr><th>Scene</th><th>Beat record</th><th>Op</th><th>Formation row</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td><code>garmel</code></td><td><code>P2[12]</code> (C1 gate <code>[0x198]</code>, self-latching)</td><td><code>3E FF 09</code></td><td>9</td><td>lone <strong>Zeto</strong> (<code>0x4B</code>)</td></tr>
+      <tr><td><code>garmel</code></td><td><code>P2[11]</code> (C1 gate <code>[0x195]</code>)</td><td><code>3E FF 08</code></td><td>8</td><td>lone <strong>Songi</strong> (<code>0x4C</code>)</td></tr>
+      <tr><td><code>rikuroa</code></td><td><code>P1[3]</code> (the Caruban stager, after its <code>52 89</code> marker SET)</td><td><code>3E FF 11</code></td><td>17</td><td>lone <strong>Caruban</strong> (<code>0x49</code>)</td></tr>
+    </tbody>
+  </table>
+  <p>This dissolves the "boss battle-id global" hypothesis for these fights: the formation is the scene's own MAN encounter-section row, selected by index from script bytes (live-capture pinned for Zeto - the formation writer <code>ra</code> sits in <code>FUN_801DA51C</code>'s record-copy body while <code>0x8007B7FC</code> stays silent). Engine port: <code>World::trigger_scripted_battle(row)</code>, reached from the field-VM host's <code>field_interact</code> arm when <code>op0 == 0xFF</code>; the formation resolves against the MAN rows registered at scene entry (with the PROT 867 archive stats merged) and enters battle with no field step and no synthetic boss formation id. Disc-gated oracle: <code>organic_zeto_encounter_disc.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="battle-scene-init-residency">

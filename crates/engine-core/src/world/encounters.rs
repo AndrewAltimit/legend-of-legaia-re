@@ -39,9 +39,12 @@ pub const BOSS_FORMATION_ID_BASE: u16 = 0xB000;
 ///
 /// (An earlier row armed **Zeto** (75) here, gated on `0x1BE` - both
 /// misattributed: the "rikuroa P2[0] C1 0x1BE" record is Jeremi's arrival
-/// cutscene in `geremi`'s MAN, read through a CDNAME-shifted scene window,
-/// and the Zeto battle capture's active scene is `jou`, not `rikuroa`.
-/// Zeto's own trigger scene/gate is an open thread.)
+/// cutscene in `geremi`'s MAN, read through a CDNAME-shifted scene window.
+/// Zeto is RESOLVED as a fully organic `garmel` fight: its beat record
+/// `P2[12]` (C1 gate `[0x198]`, self-latching) ends in the field-VM
+/// scripted-battle op `3E FF 09` selecting garmel MAN formation row 9
+/// (lone monster `0x4B`), which enters battle through
+/// [`World::trigger_scripted_battle`] - no entry in this table.)
 ///
 /// The host scene-entry latch
 /// ([`crate::scene::SceneHost::enter_field_scene`]) consumes this table.
@@ -462,6 +465,50 @@ impl World {
         // random tracker is installed (town01 is 0% random). See the field.
         self.scripted_formation_pending = true;
         Some(formation_id)
+    }
+
+    /// Enter the scripted battle the field-VM op `3E FF <row>` selects: the
+    /// per-scene MAN formation-table row `row`, latched for immediate battle
+    /// entry (no field step required).
+    ///
+    /// PORT: FUN_801DE840 (case 0x3E interact arm: `sys_ctx[+0x8A] = 1`,
+    /// `sys_ctx[+0x94] = *(ctrl+0x20) + row * *(ctrl+0x5D) + 1`, then the
+    /// mode-0xE request `FUN_8003CE08(0xE)`)
+    /// REF: FUN_801DA51C (the entity SM's confirm state copies the installed
+    /// row into the battle formation cell `0x8007BD0C`)
+    ///
+    /// Retail points the SYSTEM entity's `+0x94` at the formation row and
+    /// advances its 5-state SM to Activating; the entity tick then performs
+    /// the record copy and the battle transition without any player step.
+    /// The engine models that confirm-and-transition with the same immediate
+    /// latch the field-carrier SM resolution uses
+    /// ([`Self::pending_field_carrier_battle`], drained by
+    /// `Self::tick_field_carriers` in the same frame): the formation must
+    /// already be registered by [`Self::install_man_encounter`] (the
+    /// scene-entry MAN install, which also merges the row's monster ids'
+    /// real archive stats), so the fight resolves against pure disc data.
+    ///
+    /// This is the boss-fight entry mechanism: the scripted rows sit outside
+    /// every region's rollable `[base, base+count)` slice (garmel rows 8/9 =
+    /// lone Songi `0x4C` / lone Zeto `0x4B`; rikuroa row 17 = lone Caruban
+    /// `0x49`), reachable only through this op at the end of the scene's
+    /// beat records.
+    ///
+    /// Returns `false` (and enters nothing) when the row isn't registered or
+    /// has no monsters, mirroring the reader's `count == 0` no-spawn arm.
+    pub fn trigger_scripted_battle(&mut self, row: u8) -> bool {
+        let formation_id = u16::from(row);
+        let has_slots = self
+            .formation_table
+            .formation(formation_id)
+            .is_some_and(|def| !def.slots.is_empty());
+        if !has_slots {
+            log::warn!("field: op-0x3E scripted battle row {row} is not a registered formation");
+            return false;
+        }
+        log::info!("field: op-0x3E scripted battle entry -> formation row {row}");
+        self.pending_field_carrier_battle = Some(formation_id);
+        true
     }
 
     /// Arm (or disarm) the scripted-encounter consumer.

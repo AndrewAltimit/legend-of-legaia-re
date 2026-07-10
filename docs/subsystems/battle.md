@@ -887,6 +887,40 @@ Per-scene random-encounter trigger. Engines own one `EncounterSession` per activ
 
 Implementation: [`crates/engine-core::encounter`](../../crates/engine-core/src/encounter.rs).
 
+### Scripted-battle entry (`3E FF <row>`)
+
+The scripted boss fights enter through the field-VM interact op `0x3E` with
+`op0 = 0xFF`: the case-0x3E interact arm (`FUN_801DE840`, field overlay) sets
+the SYSTEM entity's 5-state SM to Activating (`sys_ctx[+0x8A] = 1`), points its
+encounter-record slot at the per-scene MAN formation-table row `op1`
+(`sys_ctx[+0x94] = *(ctrl+0x20) + op1 * *(ctrl+0x5D) + 1`), and requests the
+battle mode switch (`FUN_8003CE08(0xE)`); the entity tick `FUN_801DA51C`'s
+confirm state then copies the row into the battle formation cell `0x8007BD0C`.
+The boss rows sit **outside** every region's rollable
+`[base, base + count)` slice, so they can only enter through this op, and they
+carry a non-zero first header byte (the reader ORs `0x80` into a battle-setup
+flag for them):
+
+| Scene | Beat record | Op | Formation row | Contents |
+|---|---|---|---|---|
+| `garmel` | `P2[12]` (C1 gate `[0x198]`, self-latching) | `3E FF 09` | 9 | lone **Zeto** (`0x4B`) |
+| `garmel` | `P2[11]` (C1 gate `[0x195]`) | `3E FF 08` | 8 | lone **Songi** (`0x4C`) |
+| `rikuroa` | `P1[3]` (the Caruban stager, after its `52 89` marker SET) | `3E FF 11` | 17 | lone **Caruban** (`0x49`) |
+
+This dissolves the "boss battle-id global" hypothesis for these fights: the
+formation is the scene's own MAN encounter-section row, selected by index from
+script bytes (live-capture pinned for Zeto - the formation writer `ra` sits in
+`FUN_801DA51C`'s record-copy body while `0x8007B7FC` stays silent).
+
+Engine port: `World::trigger_scripted_battle(row)`
+([`crates/engine-core::world::encounters`](../../crates/engine-core/src/world/encounters.rs)),
+reached from the field-VM host's `field_interact` arm when `op0 == 0xFF`. The
+formation resolves against the rows `install_man_encounter` registered at scene
+entry (with the PROT 867 archive stats merged), and the battle enters through
+the same immediate latch the field-carrier SM uses - no field step, no
+synthetic boss formation id. Oracle:
+[`crates/engine-core/tests/organic_zeto_encounter_disc.rs`](../../crates/engine-core/tests/organic_zeto_encounter_disc.rs).
+
 ## Battle target picker
 
 Drives the post-action target cursor. Parameterised on a `TargetKind` enum constraining valid targets:
