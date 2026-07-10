@@ -435,6 +435,24 @@ impl Scene {
         Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
     }
 
+    /// The walk view's **decoration layer** - trees, mountain groups, and
+    /// props: walk-visible cells whose record stamps a nonzero `+0x10` pack
+    /// mesh without the placed flag (disjoint from
+    /// [`Self::walk_object_placements`]). See
+    /// [`legaia_asset::field_objects::parse_walk_decorations`].
+    pub fn walk_decoration_placements(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+        let Some(idx) = self.walk_field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(Some(legaia_asset::field_objects::parse_walk_decorations(
+            &bytes,
+        )))
+    }
+
     /// The scene's 16-entry floor-height LUT, read from the MAN header
     /// (`man[+0x02..+0x22]`, 16 `s16` LE). A placed object's world Y is
     /// `-lut[tile_floor_nibble] + record.y_off` (the runtime stores the LUT

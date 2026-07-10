@@ -60,6 +60,15 @@ pub const OBJECT_GRID_OFFSET: usize = 0x8000;
 pub const OBJECT_INDEX_MASK: u16 = 0x1FF;
 /// Object-record `+0x12` flag bit marking the tile as a placed/visible object.
 pub const FLAG_PLACED: u16 = 0x4;
+/// Object-record `+0x12` flag bit marking the record's `+0x10` pack mesh as
+/// **drawn**. Every record family that renders a mesh carries it (placed
+/// landmarks `0x16`/`0x17`, decorations `0x13`, plus their `0x8xx` collider-
+/// correction variants); the `0x0011` family does NOT - those are the
+/// riverbank/system cells (record 408 in every kingdom walk `.MAP`: same
+/// index, same `+0x10 = 4`, same flags across Drake / Sebucus / Karisto)
+/// whose `+0x10` is not a decoration mesh reference. Stamping them draws a
+/// wall/gate mesh down every river - visually falsified against retail.
+pub const FLAG_MESH_DRAWN: u16 = 0x2;
 /// Object-record `+0x12` flag bit selecting the collision-footprint offset
 /// **correction** (`-x_off`, `+z_off`) in the static-entity collision arm.
 /// At spawn the bit is mirrored into the actor's `+0x52`, which
@@ -400,6 +409,33 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
     out
 }
 
+/// The walk view's **decoration layer**: every walk-visible
+/// ([`CELL_WALK_VISIBLE`]) cell whose object record carries a nonzero `+0x10`
+/// pack mesh with the [`FLAG_MESH_DRAWN`] bit but **not** the placed flag -
+/// the crossed-quad billboard trees, mountain groups, and small props stamped
+/// across the continent (Drake ~300 cells over 35 records; forest clusters
+/// reference one tree mesh from dozens of cells each). Flag families
+/// `0x0013`/`0x0813`, vs the placed (`FLAG_PLACED`) interactive set
+/// [`parse_placements`] returns; excluding placed records here keeps the two
+/// layers disjoint so a consumer drawing both never double-stamps a landmark.
+/// The `0x0011` family (nonzero `+0x10` but no `FLAG_MESH_DRAWN`) is
+/// excluded - those are the riverbank/system cells (see [`FLAG_MESH_DRAWN`]).
+///
+/// The bulk ground cells (97% of the walk grid) have `+0x10 == 0` and are the
+/// heightfield surface ([`build_walk_heightfield`]), not part of this layer.
+/// Mesh resolution is the walk rule (`record[+0x10]` directly, per
+/// `FUN_80020f88`), the same one [`parse_walk_terrain_tiles`] uses.
+pub fn parse_walk_decorations(field_map: &[u8]) -> Vec<Placement> {
+    parse_terrain_tiles_gated(field_map, CELL_WALK_VISIBLE, true)
+        .into_iter()
+        .filter(|p| {
+            p.pack_index.is_some_and(|m| m != 0)
+                && p.flags & FLAG_MESH_DRAWN != 0
+                && p.flags & FLAG_PLACED == 0
+        })
+        .collect()
+}
+
 /// Byte offset of the collision / floor-height grid within the field map file
 /// (`0x80 x 0x80` bytes, 1/tile; low nibble = floor-elevation tier).
 pub const COLLISION_GRID_OFFSET: usize = 0x4000;
@@ -663,6 +699,52 @@ mod tests {
         assert_eq!(t[0].obj_idx, 5);
         assert_eq!((t[0].col, t[0].row), (20, 10));
         assert_eq!(t[0].pack_index, Some(12));
+    }
+
+    #[test]
+    fn parse_walk_decorations_skips_ground_and_placed_records() {
+        let mut map = vec![0u8; 0x12000];
+        // Record 475: a tree mesh (nonzero +0x10, decoration flags 0x0013).
+        let r = &mut map[OBJECT_RECORD_STRIDE * 475..OBJECT_RECORD_STRIDE * 476];
+        r[0x10..0x12].copy_from_slice(&11u16.to_le_bytes());
+        r[0x12..0x14].copy_from_slice(&0x0013u16.to_le_bytes());
+        // Record 349: a placed landmark (nonzero +0x10 AND the placed flag).
+        let r = &mut map[OBJECT_RECORD_STRIDE * 349..OBJECT_RECORD_STRIDE * 350];
+        r[0x10..0x12].copy_from_slice(&6u16.to_le_bytes());
+        r[0x12..0x14].copy_from_slice(&0x0017u16.to_le_bytes());
+        // Record 200: bulk ground (+0x10 == 0, flags 0x0011).
+        let r = &mut map[OBJECT_RECORD_STRIDE * 200..OBJECT_RECORD_STRIDE * 201];
+        r[0x12..0x14].copy_from_slice(&0x0011u16.to_le_bytes());
+        // Record 408: the riverbank/system family - nonzero +0x10 but flags
+        // 0x0011 (no FLAG_MESH_DRAWN). Stamping it draws a wall mesh down
+        // every river, so it must be excluded.
+        let r = &mut map[OBJECT_RECORD_STRIDE * 408..OBJECT_RECORD_STRIDE * 409];
+        r[0x10..0x12].copy_from_slice(&4u16.to_le_bytes());
+        r[0x12..0x14].copy_from_slice(&0x0011u16.to_le_bytes());
+        // Walk-visible cells, one per record; the tree stamps twice.
+        for (row, col, idx) in [
+            (4, 10, 475u16),
+            (4, 11, 475),
+            (5, 10, 349),
+            (5, 11, 200),
+            (6, 10, 408),
+        ] {
+            let cell = OBJECT_GRID_OFFSET + (row * GRID_DIM + col) * 2;
+            map[cell..cell + 2].copy_from_slice(&(CELL_WALK_VISIBLE | idx).to_le_bytes());
+        }
+        let d = parse_walk_decorations(&map);
+        // Only the two tree cells: the placed landmark belongs to
+        // parse_placements, the zero-mesh cell to the heightfield, and the
+        // riverbank record lacks FLAG_MESH_DRAWN.
+        assert_eq!(d.len(), 2);
+        assert!(
+            d.iter()
+                .all(|p| p.obj_idx == 475 && p.pack_index == Some(11))
+        );
+        assert_eq!(
+            d.iter().map(|p| (p.col, p.row)).collect::<Vec<_>>(),
+            vec![(10, 4), (11, 4)]
+        );
     }
 
     #[test]

@@ -74,16 +74,22 @@ impl PlayWindowApp {
         // earlier path read the within-block decoy entry with the overhead
         // `0x2000` gate, which for the kingdoms resolved a different map and
         // produced the sparse mesh scatter.
-        // Only the sparse placed landmarks (FUN_8003A55C, flags & 0x4) resolve
-        // to slot-1 pack meshes via record[+0x10]+prefix. The bulk continent
-        // ground is NOT per-cell pack meshes (the old `walk_terrain_tiles`
-        // sweep floods 97% of cells with pool-5 because their record[+0x10] is
-        // 0); it is the heightfield surface built separately in `upload_assets`
-        // (`Scene::walk_heightfield`). See docs/subsystems/world-map.md.
-        let tiles = match scene.walk_object_placements(&self.session.host.index) {
+        // Two sparse pack-mesh layers on top of the heightfield ground:
+        // the placed landmarks (FUN_8003A55C, flags & 0x4) and the
+        // decoration layer (walk-visible cells with a nonzero record[+0x10]
+        // and no placed flag - the crossed-quad trees, mountain groups, and
+        // props). The bulk continent ground is NOT per-cell pack meshes (the
+        // old `walk_terrain_tiles` sweep floods 97% of cells with pool-5
+        // because their record[+0x10] is 0); it is the heightfield surface
+        // built separately in `upload_assets` (`Scene::walk_heightfield`).
+        // See docs/subsystems/world-map.md.
+        let mut tiles = match scene.walk_object_placements(&self.session.host.index) {
             Ok(Some(t)) => t,
             _ => Vec::new(),
         };
+        if let Ok(Some(deco)) = scene.walk_decoration_placements(&self.session.host.index) {
+            tiles.extend(deco);
+        }
         if tiles.is_empty() {
             return Vec::new();
         }

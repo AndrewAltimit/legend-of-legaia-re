@@ -442,25 +442,33 @@ pub struct WalkPlacement {
     pub world_z: i32,
 }
 
-/// Resolve the kingdom's walk-frame placed landmarks (the `flags & 0x4` slot-1
-/// pack objects `FUN_8003A55C` draws) in the same world frame as
-/// [`build_walk_ground`], so the world-overview viewer can overlay them on the
-/// continent terrain.
+/// Resolve the kingdom's walk-frame pack-mesh stamps in the same world frame
+/// as [`build_walk_ground`], so the world-overview viewer can overlay them on
+/// the continent terrain. Two disjoint layers, concatenated:
+///
+/// - the **placed landmarks** (the `flags & 0x4` slot-1 pack objects
+///   `FUN_8003A55C` draws; [`legaia_asset::field_objects::parse_placements`]),
+/// - the **decoration layer** (walk-visible cells stamping a nonzero record
+///   `+0x10` mesh without the placed flag - the crossed-quad billboard trees,
+///   mountain groups, and props;
+///   [`legaia_asset::field_objects::parse_walk_decorations`]).
 ///
 /// Reads the same walk `.MAP` + floor-height LUT [`build_walk_ground`] does
-/// (see `resolve_walk_map_and_lut`), runs
-/// [`legaia_asset::field_objects::parse_placements`], and resolves each
-/// placement's world Y from the floor nibble exactly like the native
-/// `resolve_placement_draws`. Placements whose mesh isn't in the scene pack
-/// (protagonist / NPC ids, `pack_index == None`) are dropped. Returns `None`
-/// when the walk `.MAP` / floor LUT can't be resolved.
+/// (see `resolve_walk_map_and_lut`) and resolves each placement's world Y from
+/// the floor nibble exactly like the native `resolve_placement_draws`.
+/// Placements whose mesh isn't in the scene pack (protagonist / NPC ids,
+/// `pack_index == None`) are dropped. Returns `None` when the walk `.MAP` /
+/// floor LUT can't be resolved.
 pub fn build_walk_placements(
     disc: &[u8],
     entries: &[EntryMeta],
     prot_base: u32,
 ) -> Option<Vec<WalkPlacement>> {
     let (map_bytes, lut) = resolve_walk_map_and_lut(disc, entries, prot_base)?;
-    let placements = legaia_asset::field_objects::parse_placements(map_bytes);
+    let mut placements = legaia_asset::field_objects::parse_placements(map_bytes);
+    placements.extend(legaia_asset::field_objects::parse_walk_decorations(
+        map_bytes,
+    ));
     let resolved = placements
         .iter()
         .filter_map(|p| {

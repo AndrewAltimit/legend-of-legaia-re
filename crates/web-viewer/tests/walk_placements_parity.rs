@@ -1,10 +1,12 @@
-//! Verify the world-overview viewer's walk-frame landmark placements
+//! Verify the world-overview viewer's walk-frame pack-mesh stamps
 //! (`build_walk_placements`, built from raw PROT.DAT bytes) match the native
-//! engine's authoritative `Scene::walk_object_placements` + floor-height LUT
-//! for every world-map kingdom. This is the parity guarantee that the
-//! static-site WebGL viewer draws the slot-1 pack landmarks at the same world
-//! coordinates (and Y elevation) the engine resolves them to, on top of the
-//! continent heightfield (see `walk_ground_parity.rs`).
+//! engine's authoritative `Scene::walk_object_placements` +
+//! `Scene::walk_decoration_placements` + floor-height LUT for every world-map
+//! kingdom. This is the parity guarantee that the static-site WebGL viewer
+//! draws the slot-1 pack landmarks AND the decoration layer (crossed-quad
+//! trees, mountain groups, props) at the same world coordinates (and Y
+//! elevation) the engine resolves them to, on top of the continent
+//! heightfield (see `walk_ground_parity.rs`).
 //!
 //! Skipped (passes) when `LEGAIA_DISC_BIN` is unset, matching the rest of the
 //! disc-dependent test suite. CI runs without disc data.
@@ -48,10 +50,19 @@ fn walk_placements_match_engine_for_every_kingdom() {
             .field_floor_height_lut(&index)
             .expect("floor LUT")
             .unwrap_or_else(|| panic!("{scene_name}: engine floor LUT returned None"));
-        let placements = scene
+        let mut placements = scene
             .walk_object_placements(&index)
             .expect("walk_object_placements")
             .unwrap_or_else(|| panic!("{scene_name}: engine walk_object_placements returned None"));
+        // The decoration layer, in the same order the viewer concatenates it.
+        placements.extend(
+            scene
+                .walk_decoration_placements(&index)
+                .expect("walk_decoration_placements")
+                .unwrap_or_else(|| {
+                    panic!("{scene_name}: engine walk_decoration_placements returned None")
+                }),
+        );
         let engine: Vec<(u32, i32, i32, i32)> = placements
             .iter()
             .filter_map(|p| {
@@ -84,7 +95,7 @@ fn walk_placements_match_engine_for_every_kingdom() {
         }
 
         eprintln!(
-            "{scene_name}: {} walk-frame landmark placements (viewer == engine)",
+            "{scene_name}: {} walk-frame landmark + decoration placements (viewer == engine)",
             viewer.len()
         );
     }

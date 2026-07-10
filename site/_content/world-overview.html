@@ -54,8 +54,8 @@
         <label style="margin-left:0.5rem" id="wo-show-terrain-wrap" title="Render the walk-view continent ground as a procedural heightfield, per-cell textured from the terrain-type atlas - the same terrain the native engine draws.">
           <input type="checkbox" id="wo-show-terrain" checked> terrain
         </label>
-        <label style="margin-left:0.5rem" id="wo-show-landmarks-wrap" title="Draw the placed landmark meshes (towns, gates, towers) on top of the continent terrain, at the world positions the game places them.">
-          <input type="checkbox" id="wo-show-landmarks" checked> landmarks
+        <label style="margin-left:0.5rem" id="wo-show-landmarks-wrap" title="Draw the placed landmark meshes (towns, gates, towers) and the decoration layer (trees, mountain groups, props) on top of the continent terrain, at the world positions the game places them.">
+          <input type="checkbox" id="wo-show-landmarks" checked> landmarks + trees
         </label>
         <button id="wo-lock-topview" type="button" hidden title="Flatten the camera to straight-down and recenter on the kingdom's captured top-view spawn. Same anchor the retail dev menu enters with.">lock to retail top-view</button>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
@@ -243,7 +243,7 @@
      below this point relies on, so users don't hit a stale cached copy. -->
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
-<script src="js/webgl-shaders.js?v=orbit3d-1"></script>
-<script src="js/webgl-math.js?v=orbit3d-1"></script>
-<script src="js/webgl-tmd.js?v=orbit3d-1"></script>
-<script src="js/world-overview-app.js?v=orbit3d-1"></script>
+<script src="js/webgl-shaders.js?v=trees-1"></script>
+<script src="js/webgl-math.js?v=trees-1"></script>
+<script src="js/webgl-tmd.js?v=trees-1"></script>
+<script src="js/world-overview-app.js?v=trees-1"></script>

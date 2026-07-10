@@ -130,6 +130,10 @@
     centerX: 8160, centerZ: 8160, halfWidth: 9000, halfHeight: 9000,
     yaw: 0, pitch: WORLD_DEFAULT_PITCH,
   };
+  /* Testing hook: the headless-browser verification harness steers the
+   * camera to known world coordinates through this reference. Not used
+   * by any page code. */
+  window.__woCam = worldCam;
 
   /* ---------- Placement JSON (always available) ----------- */
   try {
@@ -653,15 +657,19 @@
     const SHOW_LEGACY_PLACEMENTS = false;
     const drawPlacements = [];
 
-    /* Walk-frame placed landmarks: the slot-1 pack meshes FUN_8003A55C
-     * stamps on the continent (flags & 0x4), resolved by the WASM
+    /* Walk-frame pack-mesh stamps, two disjoint layers merged by the WASM
      * `build_walk_placements` into the SAME col*128 world frame as the
-     * heightfield ground above - so they overlay the terrain correctly,
-     * unlike the legacy overview-frame `world-overview.json` placements
-     * (kept behind SHOW_LEGACY_PLACEMENTS below). Each landmark draws its
-     * pack mesh at world (x, y, z) with scale 1 and the shared (1,-1,1)
-     * Y-flip; world Y comes from the floor-height LUT so the mesh sits on
-     * the heightfield. */
+     * heightfield ground above:
+     *   - placed landmarks (FUN_8003A55C, flags & 0x4), and
+     *   - the decoration layer (walk-visible cells stamping a nonzero
+     *     record[+0x10] mesh with the mesh-drawn flag 0x2 and no placed
+     *     flag - the crossed-quad billboard trees, mountain groups, and
+     *     props; ~210-300 cells per kingdom).
+     * They overlay the terrain correctly, unlike the legacy overview-frame
+     * `world-overview.json` placements (kept behind SHOW_LEGACY_PLACEMENTS
+     * below). Each stamp draws its pack mesh at world (x, y, z) with scale
+     * 1 and the shared (1,-1,1) Y-flip; world Y comes from the
+     * floor-height LUT so the mesh sits on the heightfield. */
     let walkLandmarkCount = 0;
     const showLandmarks = !$showLandmarks || $showLandmarks.checked;
     if (showLandmarks) {
@@ -951,7 +959,7 @@
         + terrainSummary + liveSummary + globalPoolSummary + unplacedSummary + skippedSummary;
     } else {
       const landmarkSummary = walkLandmarkCount > 0
-        ? ` + ${walkLandmarkCount} placed landmarks`
+        ? ` + ${walkLandmarkCount} landmarks/decorations (trees, mountains; ${used.size} meshes)`
         : '';
       $meshLabel.textContent = groundQuads > 0
         ? `${k.cdname} - ${groundQuads}-cell continent heightfield (walk-view terrain)${landmarkSummary}`

@@ -759,8 +759,21 @@ sweeps over the `.MAP` object grid serve two different render modes:
 - **Walk** (game mode `0x03`): the bulk continent ground is **not** a per-cell
   pack-mesh sweep at all - it is a procedural heightfield (corner heights from
   the `+0x4000` floor-nibble grid, confirmed by `FUN_80019278`; see below). The
-  `.MAP` records' `+0x10` field is used only by the sparse placed-landmark layer
-  (`FUN_8003A55C`, `flags & 0x4`); for the bulk ground cells `+0x10` is 0.
+  `.MAP` records' `+0x10` field is used by two sparse mesh layers on top of
+  that ground: the placed-landmark layer (`FUN_8003A55C`, `flags & 0x4`) and
+  the **decoration layer** - walk-visible cells whose record carries a nonzero
+  `+0x10` plus the mesh-drawn flag bit `0x2` *without* the placed flag (flag
+  families `0x0013`/`0x0813`; Drake ~295 cells over 31 records, Sebacus ~240,
+  Karisto ~210). The decorations are the crossed-quad billboard trees (one
+  tree mesh is stamped from dozens of cells per forest cluster), the mountain
+  groups, and small props
+  ([`legaia_asset::field_objects::parse_walk_decorations`]). The `0x0011`
+  family (nonzero `+0x10`, no `0x2` bit) is **not** drawn: those are the
+  riverbank/system cells - record 408 in every kingdom walk `.MAP` (same
+  index, same `+0x10 = 4`, same flags across all three kingdoms), and
+  stamping them tiles a wall/gate mesh down every river (visually falsified
+  against retail). For the bulk ground cells (97% of the walk grid) `+0x10`
+  is 0.
 
 The walk-placer `FUN_8003A55C` (placed flag `0x4`) spawns only the ~51
 interactive objects (distance-culled to ~14 live actors in the capture; most
@@ -783,6 +796,10 @@ by **positioning** them per tile. The **overview** layer is modelled today:
 - **Interactive objects** ([`Scene::field_object_placements`] →
   `resolve_field_placement_draws`): the placed-flag (`0x4`) records (Drake 51,
   Sebacus 20, Karisto 24), the `FUN_8003A55C` set.
+- **Walk decorations** ([`Scene::walk_decoration_placements`], appended to the
+  walk render in `resolve_world_map_terrain_draws`): the nonzero-`+0x10`
+  unplaced walk cells - trees, mountain groups, props (see the walk layer list
+  above).
 
 Both resolve through `resolve_placement_draws`: each tile draws the pack mesh at
 `(col*0x80 + x_off, floor_height + y_off, row*0x80 + z_off)`, Y-flipped, in the

@@ -738,7 +738,14 @@ class TmdRenderer {
      * to build the shading normal. Negate it back so lighting matches the
      * non-mirrored orbit view instead of collapsing to the ambient floor. */
     gl.uniform1f(this.locNormalSign, -1.0);
-    gl.uniform1i(this.locNoDisc, 1);  /* assembled scene: paint silhouettes instead of discarding */
+    /* Cutout discard ON (retail semantics): texel 0 with STP 0 is fully
+     * transparent, which is what makes the crossed-quad billboard trees
+     * read as foliage instead of solid star-shaped slabs. The old
+     * `u_no_discard = 1` silhouette fallback dated from the misaligned
+     * overview-frame era when placements sampled the wrong TIMs' CLUT
+     * rows; the walk-frame path uploads the kingdom's real VRAM image, so
+     * CLUTs now resolve exactly like retail. */
+    gl.uniform1i(this.locNoDisc, 0);
     gl.uniform1i(this.locUseFlatColors, 0);  /* scenes never use the character flat-colour path */
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);

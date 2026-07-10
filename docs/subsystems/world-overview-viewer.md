@@ -12,7 +12,7 @@ this page covers only the viewer + the capture-side tooling that feeds it.
 ## Contents
 
 - [Layout engine for unplaced slot-1 TMDs](#layout-engine-for-unplaced-slot-1-tmds)
-- [Continent ground heightfield](#continent-ground-heightfield) · [walk-frame placed landmarks](#walk-frame-placed-landmarks)
+- [Continent ground heightfield](#continent-ground-heightfield) · [walk-frame placed landmarks + decorations](#walk-frame-placed-landmarks--decorations)
 - [Distance-cue fog pass](#distance-cue-fog-pass) · [per-kingdom fog colour](#per-kingdom-fog-colour)
 - [Bulk-terrain placement resolver (MAN `0x7F` sentinels)](#bulk-terrain-placement-resolver-man-0x7f-sentinels) · [global-pool placement placeholders](#global-pool-placement-placeholders)
 - [Ocean tile - disc-side asset + 13-frame CLUT animation](#ocean-tile--disc-side-asset--13-frame-clut-animation) · [web-overview shader plumbing](#web-overview-shader-plumbing)
@@ -136,36 +136,50 @@ drag deltas back through this same post-mirror basis. The ortho
 whose camera record carries no `yaw` field (the asset viewer's full-scene
 map mode).
 
-## Walk-frame placed landmarks
+## Walk-frame placed landmarks + decorations
 
-The continent isn't just terrain: the sparse **placed landmarks** (the
-`flags & 0x4` slot-1 pack objects `FUN_8003A55C` stamps on occupied tiles -
-towers, castles, bridges) draw on top of the heightfield, in the **same
-`col*128` world frame** as the ground. This is the same set the native
-`play-window --scene map01 --world-map` render draws over its heightfield.
+The continent isn't just terrain: two sparse slot-1 pack-mesh layers draw on
+top of the heightfield, in the **same `col*128` world frame** as the ground -
+the same sets the native `play-window --scene map01 --world-map` render draws
+over its heightfield:
 
-`legaia_web_viewer::build_walk_placements` resolves them from the raw
+- the **placed landmarks** (the `flags & 0x4` objects `FUN_8003A55C` stamps
+  on occupied tiles - towers, castles, bridges), and
+- the **decoration layer** - walk-visible cells whose record stamps a nonzero
+  `+0x10` mesh with the mesh-drawn flag bit `0x2` and no placed flag: the
+  crossed-quad billboard trees (a forest cluster stamps one tree mesh from
+  dozens of cells), mountain groups, and small props. Cells with a nonzero
+  `+0x10` but no `0x2` bit (the riverbank/system record 408 family) are NOT
+  decorations and must not be stamped - drawing them tiles a wall mesh down
+  every river.
+
+`legaia_web_viewer::build_walk_placements` resolves both from the raw
 PROT.DAT the viewer already holds, sharing the walk `.MAP` + floor-LUT
 resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
 
-- Runs `legaia_asset::field_objects::parse_placements` on the walk `.MAP`.
+- Runs `legaia_asset::field_objects::parse_placements` +
+  `parse_walk_decorations` on the walk `.MAP` and concatenates.
 - Each placement's mesh is the record's `+0x10` field (`pack_index`) - a
   slot into the kingdom's slot-1 TMD pack the `pack_mesh_*` accessors expose.
 - World position is the placement's `(world_x, world_z)` plus a world Y of
   `-lut[floor_nibble] + y_off` (the runtime stores the floor LUT negated), so
-  the landmark sits on the heightfield. This mirrors the native engine's
+  the mesh sits on the heightfield. This mirrors the native engine's
   `resolve_placement_draws` exactly; the disc-gated
   `crates/web-viewer/tests/walk_placements_parity.rs` asserts the viewer's
-  resolved placements equal `Scene::walk_object_placements` + the floor LUT
-  for all three kingdoms (6 / 33 / 25 landmarks for Drake / Sebucus / Karisto).
+  resolved placements equal `Scene::walk_object_placements` +
+  `Scene::walk_decoration_placements` + the floor LUT for all three kingdoms.
 
 The `walk_placement_{count,slots,positions}` WASM accessors hand the list to
 JS, which uploads each referenced pack mesh once and pushes a draw record per
-landmark. `renderAssembled` draws them after the ground with
+stamp. `renderAssembled` draws them after the ground with
 `placementModelScaledY(x, y, z, 0, 1)` - scale `1` (the slot-1 meshes are
 already in true world units, unlike the legacy overview-frame icons that
 needed a presentation scale) and the same `(1, -1, 1)` Y-flip the ground and
-the native render use. The "landmarks" checkbox toggles the layer.
+the native render use. The "landmarks" checkbox toggles the layer. The
+fragment shader's PSX cutout rule (BGR555 `0` with STP `0` discards) is what
+makes the tree quads read as foliage; the old `u_no_discard` silhouette
+fallback is off in the assembled path now that the kingdom's real VRAM image
+is uploaded and CLUTs resolve like retail.
 
 **The legacy overview-frame placement layers stay hidden.** The
 `world-overview.json` MAN-table landmarks, live-RAM actor placements, and the

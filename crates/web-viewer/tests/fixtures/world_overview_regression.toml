@@ -8,11 +8,11 @@
 # for the canonical text format the digest is computed over.
 
 [kingdom.drake]
-digest = "2ec7958fc0c05d526bf17babed09d12ddf5ac3c2d0fee7a51e0a6514533abd7a"
+digest = "7039af8688f2e8fd0f9a0ab941c4af93be7c339b0bd391051b9484e50220c140"
 
 [kingdom.karisto]
-digest = "20d237580eb9a3aa23ff0838896dfe06b11e515e7606c55cfb7c31ec71884828"
+digest = "07082a51eef3fbac1e957599b2f118e2fc40cccf10ef1e8e623d55278aa9570c"
 
 [kingdom.sebucus]
-digest = "a900e33383098be691b3507413e8d56f19723cb6d31f380fb0ab4515e6c9e026"
+digest = "0fe839fab9ab680660d24061e916954e7e67795495ff35e01b29fe108045d64c"
 
