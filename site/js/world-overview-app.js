@@ -670,15 +670,37 @@
      * below). Each stamp draws its pack mesh at world (x, y, z) with scale
      * 1 and the shared (1,-1,1) Y-flip; world Y comes from the
      * floor-height LUT so the mesh sits on the heightfield. */
+    /* Authored default-state suppression for script-managed walk stamps.
+     * Drake has two golden-bridge (mesh 6) stamps: record 441, a plain
+     * decoration at the road crossing (12224, 6336), and record 349, a
+     * placed+interactive record (flags 0x0017) whose grid cell sits over
+     * the river at (10688, 5312). Retail spawns record 349 as an actor
+     * (live render-list capture: rec 349 -> pool 11) and runs its MAN
+     * interaction script's leading ops at spawn (FUN_8003A55C's inline
+     * stepper), which manage where/whether it rests - the raw grid cell
+     * is not its retail resting draw position, and retail's default map
+     * shows a single bridge at the record-441 site. The static viewer
+     * can't run MAN scripts, so the grid-cell draw is suppressed here
+     * (the same reason the legacy JSON layer skips `script_positioned`
+     * placements). Keyed by kingdom tab id; matched on
+     * (pack mesh, world x, world z). */
+    const WALK_STAMP_SUPPRESS = {
+      drake: [{ mesh: 6, x: 10688, z: 5312 }],
+    };
     let walkLandmarkCount = 0;
     const showLandmarks = !$showLandmarks || $showLandmarks.checked;
     if (showLandmarks) {
+      const suppress = WALK_STAMP_SUPPRESS[currentKingdom] || [];
       const wpCount = viewer.walk_placement_count();
       if (wpCount > 0) {
         const slots = viewer.walk_placement_slots();
         const pos = viewer.walk_placement_positions();
         for (let i = 0; i < wpCount; i++) {
           const ms = slots[i];
+          if (suppress.some((s) =>
+            s.mesh === ms && s.x === pos[i * 3] && s.z === pos[i * 3 + 2])) {
+            continue;
+          }
           if (!ensureMeshUploaded(ms)) continue;
           drawPlacements.push({
             meshId: ms,
@@ -693,6 +715,11 @@
         }
       }
     }
+    /* Headless-verification hook (same spirit as `__woCam`): the walk
+     * stamps actually queued this render, so browser tests can assert on
+     * placement contents. Not used by page code. */
+    window.__woWalkStamps = drawPlacements.filter(
+      (p) => p.kind === 'walk_landmark');
     /* MAN-table placements at the disc-encoded world coordinates. Counts
      * by source so the snapshot panel surfaces how many placements made
      * it onto the GPU vs were dropped for the global-pool gap. */

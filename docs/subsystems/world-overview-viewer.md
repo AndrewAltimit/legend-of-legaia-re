@@ -181,6 +181,18 @@ makes the tree quads read as foliage; the old `u_no_discard` silhouette
 fallback is off in the assembled path now that the kingdom's real VRAM image
 is uploaded and CLUTs resolve like retail.
 
+One authored exception (`WALK_STAMP_SUPPRESS` in `world-overview-app.js`):
+placed objects are script-managed - `FUN_8003A55C` runs each spawn's MAN
+interaction script's leading ops inline, so a placed record's resting
+position/visibility isn't necessarily its grid cell (see the placer's MAN
+gate in [`world-map.md`](world-map.md)). The static viewer can't run MAN
+scripts, so stamps known (from retail) not to rest at their grid cell are
+suppressed by `(mesh, world x, world z)` - currently Drake's record-349
+golden bridge, whose grid cell sits over the river at `(10688, 5312)` while
+retail shows the single bridge at the record-441 road crossing
+`(12224, 6336)`. `window.__woWalkStamps` exposes the stamp list actually
+queued per render (the headless-verification hook, like `__woCam`).
+
 **The legacy overview-frame placement layers stay hidden.** The
 `world-overview.json` MAN-table landmarks, live-RAM actor placements, and the
 unplaced-slot-1 layout grid (described under "Layout engine for unplaced

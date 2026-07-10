@@ -783,6 +783,29 @@ stores the record index at actor `+0x60`, and leaves the mesh chain `+0x44` at
 0; the mesh is resolved from the record index by the scene draw loop (resolver
 not yet pinned). These are props/entities, not the bulk continent.
 
+Each placed spawn is **gated on a MAN interaction record** for the cell: the
+placer calls the overlay lookup `FUN_801d5630(1, col + rec[+6], row + rec[+7])`
+and skips the spawn when it returns null. That lookup searches a partitioned
+cell-keyed table at **walk-`.MAP` + `0x10000`** (header = per-partition
+`(u16 rec_off, u16 count)` pairs at `+4p+2`/`+4p+4`; records are
+`[u8 col][u8 row][u8 script_id][u8 aux]`, stride from the per-partition byte
+table at `0x8007B318`; searcher `FUN_801d5ae0`), falling back to the same
+header shape at `+0x12000` — the next file loaded behind the walk map in the
+`_DAT_1f8003ec` buffer (Drake: PROT 0084). The matched record's `script_id`
+indexes the live MAN's global record-offset table (`_DAT_8007b898 + 0x2b`,
+3-byte entries, count = the `+0x22/+0x24/+0x26` partition totals); the actor
+stores the resolved script at `+0x90` and the placer **immediately steps its
+leading ops** (first opcode `0x24`/`0x25` enters the field VM until a yield),
+so a placed object's resting position/visibility is script-managed - the raw
+grid cell is only the spawn point. Record flags also seed actor status bits:
+flag `0x800` → actor `+0x74 |= 0x10000000`, nonzero `rec[+0x1E]` →
+`|= 0x40000000`, and mesh-drawn flag `0x2` selects actor render type 5 (the
+mesh-chain draw) vs 0. Concrete case: Drake's two golden-bridge (mesh 6)
+stamps - record 441 is a plain decoration at the road crossing
+`(12224, 6336)` and draws there, while record 349 (placed, flags `0x0017`,
+grid cell over the river at `(10688, 5312)`) is spawn-scripted and does not
+rest at its grid cell; retail shows a single bridge, at the record-441 site.
+
 #### Placing the continent terrain (engine port)
 
 The kingdom slot-1 meshes are object-local, so the continent must be assembled
