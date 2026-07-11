@@ -63,6 +63,13 @@
 //! REF: FUN_801F17F8
 //! REF: FUN_80052770
 //!
+//! Underlying primitives + dev-host branch referenced throughout:
+//! REF: FUN_8003E8A8 (TOC resolver), REF: FUN_8003E800 (async sector read),
+//! REF: FUN_8003DE7C (completion poll / cursor advance),
+//! REF: FUN_8003F128 (libcd kick), REF: FUN_800608F0 / REF: FUN_80060920 /
+//! REF: FUN_80060944 / REF: FUN_80060910 (dev-host fopen/fseek/fread/fclose,
+//! trap stubs on retail)
+//!
 //! The underlying primitives are already ported in [`crate::cd_dma`]
 //! (`FUN_8003E8A8` size lookup / `FUN_8003E800` async load); this module
 //! layers the file-API cursor semantics that `cd_dma`'s offline host does
