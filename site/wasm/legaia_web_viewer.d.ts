@@ -562,6 +562,12 @@ export class LegaiaViewer {
      */
     field_scene_placement_positions(): Float32Array;
     /**
+     * Per-placement authored yaw (object record `+0x0A`), PSX angle units
+     * (`4096` = full revolution), in placement order. Convert with
+     * `rotY = -(rot & 0xFFF) * Math.PI / 2048` for `placementModelScaled*`.
+     */
+    field_scene_placement_rot_y(): Uint16Array;
+    /**
      * Per-placement env-pack slot, one `u32` per placed object. Feed each
      * into [`Self::field_scene_mesh`] and draw at the matching
      * [`Self::field_scene_placement_positions`] entry.
@@ -576,6 +582,11 @@ export class LegaiaViewer {
      * Per-terrain-tile world positions `[x, y, z, ...]` (flattened).
      */
     field_scene_terrain_positions(): Float32Array;
+    /**
+     * Per-terrain-tile authored yaw, same encoding as
+     * [`Self::field_scene_placement_rot_y`].
+     */
+    field_scene_terrain_rot_y(): Uint16Array;
     /**
      * Per-terrain-tile env-pack slot (the dense `CELL_VISIBLE` decor layer).
      */
@@ -1109,6 +1120,15 @@ export class LegaiaViewer {
      */
     walk_placement_positions(): Float32Array;
     /**
+     * Per-placement authored yaw (object record `+0x0A`), one value per
+     * walk-frame landmark in placement order, in PSX angle units (`4096` =
+     * full revolution) - the Sebucus island bridges' quarter-turns and the
+     * decoration layer's per-tree variety. The JS renderer converts with
+     * `rotY = -(rot & 0xFFF) * Math.PI / 2048` (retail's yaw sense is the
+     * opposite of `placementModelScaled*`'s).
+     */
+    walk_placement_rot_y(): Uint16Array;
+    /**
      * Per-placement kingdom pack-mesh slot (record `+0x10`), one `u32` per
      * walk-frame landmark in placement order. Feed each into `pack_mesh` to
      * select the mesh, then draw it at the matching
@@ -1324,9 +1344,11 @@ export interface InitOutput {
     readonly legaiaviewer_field_scene_mesh_uvs: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_pack_count: (a: number) => number;
     readonly legaiaviewer_field_scene_placement_positions: (a: number) => [number, number];
+    readonly legaiaviewer_field_scene_placement_rot_y: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_status_json: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_terrain_positions: (a: number) => [number, number];
+    readonly legaiaviewer_field_scene_terrain_rot_y: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_terrain_slots: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_fog_lut_bytes: (a: number) => [number, number];
@@ -1397,6 +1419,7 @@ export interface InitOutput {
     readonly legaiaviewer_walk_ground_uvs: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_count: (a: number) => number;
     readonly legaiaviewer_walk_placement_positions: (a: number) => [number, number];
+    readonly legaiaviewer_walk_placement_rot_y: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
     readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number) => [number, number, number];

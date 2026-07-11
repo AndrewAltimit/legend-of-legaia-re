@@ -63,7 +63,7 @@ fn walk_placements_match_engine_for_every_kingdom() {
                     panic!("{scene_name}: engine walk_decoration_placements returned None")
                 }),
         );
-        let engine: Vec<(u32, i32, i32, i32)> = placements
+        let engine: Vec<(u32, i32, i32, i32, u16)> = placements
             .iter()
             .filter_map(|p| {
                 let pack_index = p.pack_index?;
@@ -71,7 +71,7 @@ fn walk_placements_match_engine_for_every_kingdom() {
                     Some(nib) => -(lut[(nib & 0x0F) as usize] as i32) + p.y_off as i32,
                     None => 0,
                 };
-                Some((pack_index as u32, p.world_x, world_y, p.world_z))
+                Some((pack_index as u32, p.world_x, world_y, p.world_z, p.rot_y))
             })
             .collect();
 
@@ -88,9 +88,26 @@ fn walk_placements_match_engine_for_every_kingdom() {
         );
         for (i, (v, e)) in viewer.iter().zip(engine.iter()).enumerate() {
             assert_eq!(
-                (v.pack_index, v.world_x, v.world_y, v.world_z),
+                (v.pack_index, v.world_x, v.world_y, v.world_z, v.rot_y),
                 *e,
                 "{scene_name}: placement {i} mismatch"
+            );
+        }
+
+        // The authored-yaw field (object record +0x0A) is what orients the
+        // Sebucus island bridges: the retail map02 walk `.MAP` places the
+        // same bridge meshes at quarter-turn rotations (0x400 = 90 deg,
+        // 0xC00 = 270 deg in the PSX 4096-per-rev space). Pin that the
+        // viewer surfaces them, so a regression back to all-zero yaw (every
+        // bridge rendered in the same orientation) fails loudly.
+        if scene_name == "map02" {
+            let quarter_turns = viewer
+                .iter()
+                .filter(|p| p.rot_y == 0x400 || p.rot_y == 0xC00)
+                .count();
+            assert!(
+                quarter_turns >= 4,
+                "map02: expected >= 4 quarter-turn bridge placements, got {quarter_turns}"
             );
         }
 

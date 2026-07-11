@@ -40,6 +40,16 @@ pub struct EnvDraw {
     pub world_y: i32,
     /// World Z (`row*0x80 - (z_off - 0x40)`).
     pub world_z: i32,
+    /// Yaw in PSX angle units (`4096` = full revolution), from the object
+    /// record's `+0x0A` field (see [`Placement::rot_y`]): the authored mesh
+    /// orientation (bridge quarter-turns, tree variety). For a pure-Y angle
+    /// retail's matrix builder (`FUN_80026988`) maps local `+Z` to
+    /// `(sin, 0, cos)` in the retail Y-down frame - `glam`'s
+    /// `Mat4::from_rotation_y` with the same angle reproduces it exactly.
+    /// The record's `+0x08`/`+0x0C` X/Z tilts (zero on every retail walk
+    /// map, rare in towns) stay on the [`Placement`] until the full
+    /// three-angle composition order of `FUN_80026988` is ported.
+    pub rot_y: u16,
 }
 
 /// Why a placement produced no [`EnvDraw`]. Surfaced so callers can log
@@ -146,6 +156,7 @@ pub fn resolve_env_draws(
             world_x: p.world_x,
             world_y,
             world_z: p.world_z,
+            rot_y: p.rot_y,
         });
     }
     (draws, drops)
@@ -166,6 +177,9 @@ mod tests {
             floor_nibble: nibble,
             pack_index,
             flags: 0x4,
+            rot_x: 0,
+            rot_y: 0x400,
+            rot_z: 0,
             collider_x: 0,
             collider_z: 0,
         }
@@ -187,6 +201,7 @@ mod tests {
                 world_x: 2 * 0x80 + 0x40,
                 world_y: -192 + 8,
                 world_z: 3 * 0x80 + 0x40,
+                rot_y: 0x400,
             }]
         );
     }

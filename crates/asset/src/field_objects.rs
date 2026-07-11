@@ -121,6 +121,24 @@ pub struct ObjectRecord {
     pub col_delta: i8,
     /// `+0x07` signed row delta to the footprint anchor.
     pub row_delta: i8,
+    /// `+0x08` rotation about world X in PSX angle units (`4096` = full
+    /// revolution). `FUN_8003A55C` copies the `+0x08/+0x0A/+0x0C` triple
+    /// verbatim into the spawned actor's `+0x24/+0x26/+0x28`, where the
+    /// per-actor render dispatcher (`FUN_8001ADA4`) feeds it to the
+    /// angle-triple -> GTE-matrix builder `FUN_80026988` (each component
+    /// masked `& 0xFFF`). Zero on every retail walk-`.MAP` record; some
+    /// town maps tilt props with it (e.g. `koin2`).
+    pub rot_x: u16,
+    /// `+0x0A` rotation about world Y (yaw), PSX angle units. The field the
+    /// Sebucus island bridges use for their quarter-turn orientations
+    /// (`0x400` = 90 degrees); the walk-view decoration layer also varies it
+    /// per tree/prop. For a pure-Y angle `FUN_80026988` produces the
+    /// row-major `[c 0 s; 0 1 0; -s 0 c]` - local `+Z` maps to
+    /// `(sin, 0, cos)`, matching the locomotion forward vector.
+    pub rot_y: u16,
+    /// `+0x0C` rotation about world Z, PSX angle units. Zero on every retail
+    /// walk-`.MAP` record; used by a few town maps.
+    pub rot_z: u16,
     /// `+0x0E` signed sub-tile X delta (16-unit steps) to the collision
     /// footprint anchor - only read by the static-entity collision arm
     /// (`FUN_801cf9f4`; see [`collision_footprint_offset`]).
@@ -159,6 +177,9 @@ impl ObjectRecord {
             z_off: i16::from_le_bytes([r[0x04], r[0x05]]),
             col_delta: r[0x06] as i8,
             row_delta: r[0x07] as i8,
+            rot_x: u16::from_le_bytes([r[0x08], r[0x09]]),
+            rot_y: u16::from_le_bytes([r[0x0A], r[0x0B]]),
+            rot_z: u16::from_le_bytes([r[0x0C], r[0x0D]]),
             sub_anchor_x: r[0x0E] as i8,
             sub_anchor_z: r[0x0F] as i8,
             pack_index_field: u16::from_le_bytes([r[0x10], r[0x11]]),
@@ -245,6 +266,17 @@ pub struct Placement {
     pub pack_index: Option<u16>,
     /// The record's flags (placed bit already confirmed set).
     pub flags: u16,
+    /// Record rotation about world X (`+0x08`), PSX angle units (`4096` =
+    /// full revolution); see [`ObjectRecord::rot_x`]. Zero on retail walk
+    /// maps.
+    pub rot_x: u16,
+    /// Record rotation about world Y (`+0x0A`), PSX angle units - the
+    /// authored yaw of the placed mesh (bridge orientations, tree variety);
+    /// see [`ObjectRecord::rot_y`].
+    pub rot_y: u16,
+    /// Record rotation about world Z (`+0x0C`), PSX angle units; see
+    /// [`ObjectRecord::rot_z`]. Zero on retail walk maps.
+    pub rot_z: u16,
     /// World X of the static collision-box centre
     /// (`world_x + collision_footprint_offset`); see
     /// [`collision_footprint_offset`].
@@ -313,6 +345,9 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
                 floor_nibble,
                 pack_index: pack_mesh_index(obj_idx, &rec),
                 flags: rec.flags,
+                rot_x: rec.rot_x,
+                rot_y: rec.rot_y,
+                rot_z: rec.rot_z,
                 collider_x: world_x(col as u8, rec.x_off) + collision_footprint_offset(&rec).0,
                 collider_z: world_z(row as u8, rec.z_off) + collision_footprint_offset(&rec).1,
             });
@@ -401,6 +436,9 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
                     pack_mesh_index(obj_idx, &rec)
                 },
                 flags: rec.flags,
+                rot_x: rec.rot_x,
+                rot_y: rec.rot_y,
+                rot_z: rec.rot_z,
                 collider_x: world_x(col as u8, rec.x_off) + collision_footprint_offset(&rec).0,
                 collider_z: world_z(row as u8, rec.z_off) + collision_footprint_offset(&rec).1,
             });

@@ -1263,6 +1263,18 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Per-placement authored yaw (object record `+0x0A`), PSX angle units
+     * (`4096` = full revolution), in placement order. Convert with
+     * `rotY = -(rot & 0xFFF) * Math.PI / 2048` for `placementModelScaled*`.
+     * @returns {Uint16Array}
+     */
+    field_scene_placement_rot_y() {
+        const ret = wasm.legaiaviewer_field_scene_placement_rot_y(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
      * Per-placement env-pack slot, one `u32` per placed object. Feed each
      * into [`Self::field_scene_mesh`] and draw at the matching
      * [`Self::field_scene_placement_positions`] entry.
@@ -1299,6 +1311,17 @@ export class LegaiaViewer {
         const ret = wasm.legaiaviewer_field_scene_terrain_positions(this.__wbg_ptr);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-terrain-tile authored yaw, same encoding as
+     * [`Self::field_scene_placement_rot_y`].
+     * @returns {Uint16Array}
+     */
+    field_scene_terrain_rot_y() {
+        const ret = wasm.legaiaviewer_field_scene_terrain_rot_y(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
         return v1;
     }
     /**
@@ -2394,6 +2417,21 @@ export class LegaiaViewer {
         const ret = wasm.legaiaviewer_walk_placement_positions(this.__wbg_ptr);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-placement authored yaw (object record `+0x0A`), one value per
+     * walk-frame landmark in placement order, in PSX angle units (`4096` =
+     * full revolution) - the Sebucus island bridges' quarter-turns and the
+     * decoration layer's per-tree variety. The JS renderer converts with
+     * `rotY = -(rot & 0xFFF) * Math.PI / 2048` (retail's yaw sense is the
+     * opposite of `placementModelScaled*`'s).
+     * @returns {Uint16Array}
+     */
+    walk_placement_rot_y() {
+        const ret = wasm.legaiaviewer_walk_placement_rot_y(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
         return v1;
     }
     /**

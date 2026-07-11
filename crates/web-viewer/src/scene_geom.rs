@@ -130,6 +130,19 @@ impl LegaiaViewer {
         out
     }
 
+    /// Per-placement authored yaw (object record `+0x0A`), one value per
+    /// walk-frame landmark in placement order, in PSX angle units (`4096` =
+    /// full revolution) - the Sebucus island bridges' quarter-turns and the
+    /// decoration layer's per-tree variety. The JS renderer converts with
+    /// `rotY = -(rot & 0xFFF) * Math.PI / 2048` (retail's yaw sense is the
+    /// opposite of `placementModelScaled*`'s).
+    pub fn walk_placement_rot_y(&self) -> Vec<u16> {
+        self.walk_placements
+            .as_ref()
+            .map(|ps| ps.iter().map(|p| p.rot_y).collect())
+            .unwrap_or_default()
+    }
+
     /// Per-vertex world positions of the walk-view continent ground
     /// heightfield, flattened `[x, y, z, ...]`. Empty until a kingdom is loaded.
     /// Same pre-Y-flip world frame as the landmark placement draws, so the JS

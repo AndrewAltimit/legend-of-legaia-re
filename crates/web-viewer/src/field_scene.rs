@@ -365,6 +365,16 @@ impl LegaiaViewer {
         out
     }
 
+    /// Per-placement authored yaw (object record `+0x0A`), PSX angle units
+    /// (`4096` = full revolution), in placement order. Convert with
+    /// `rotY = -(rot & 0xFFF) * Math.PI / 2048` for `placementModelScaled*`.
+    pub fn field_scene_placement_rot_y(&self) -> Vec<u16> {
+        self.field_scene
+            .as_ref()
+            .map(|f| f.placements.iter().map(|d| d.rot_y).collect())
+            .unwrap_or_default()
+    }
+
     /// Per-terrain-tile env-pack slot (the dense `CELL_VISIBLE` decor layer).
     pub fn field_scene_terrain_slots(&self) -> Vec<u32> {
         self.field_scene
@@ -385,6 +395,15 @@ impl LegaiaViewer {
             out.push(d.world_z as f32);
         }
         out
+    }
+
+    /// Per-terrain-tile authored yaw, same encoding as
+    /// [`Self::field_scene_placement_rot_y`].
+    pub fn field_scene_terrain_rot_y(&self) -> Vec<u16> {
+        self.field_scene
+            .as_ref()
+            .map(|f| f.terrain.iter().map(|d| d.rot_y).collect())
+            .unwrap_or_default()
     }
 
     /// Ground-heightfield accessors (same layout as the kingdom

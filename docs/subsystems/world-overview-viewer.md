@@ -121,7 +121,10 @@ window at the target plane, and the orbit distance is derived from them
 identically at any tilt. Controls: left-drag pans (through the yaw-rotated
 ground basis), right-drag or shift+drag orbits, wheel zooms; "lock to
 retail top-view" flattens `pitch` to 0 on the captured spawn anchor and the
-reset button restores the default tilt.
+reset button restores the default tilt. The gesture handler is the shared
+`attachWorldOrbitControls` in `site/js/webgl-math.js`; the asset-viewer
+page's assembled full-map mode attaches the same handler over the same
+orbit camera, so both assembled views control identically.
 
 Both cameras render the map **rotated 180° and then horizontally flipped**
 to match retail's world-map orientation. The up vector is world `+Z` (the
@@ -169,10 +172,21 @@ resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
   resolved placements equal `Scene::walk_object_placements` +
   `Scene::walk_decoration_placements` + the floor LUT for all three kingdoms.
 
-The `walk_placement_{count,slots,positions}` WASM accessors hand the list to
-JS, which uploads each referenced pack mesh once and pushes a draw record per
-stamp. `renderAssembled` draws them after the ground with
-`placementModelScaledY(x, -world_y, z, 0, 1)` - scale `1` (the slot-1 meshes
+- Each placement carries the record's authored **yaw** (`+0x0A`, PSX
+  `4096`-per-rev units) - the field `FUN_8003A55C` copies into the actor's
+  rotation triple (`+0x24/+0x26/+0x28`) and the render dispatcher turns into
+  the draw matrix via `FUN_80026988`. This is what gives the Sebucus island
+  bridges their distinct quarter-turn orientations (`0x400`/`0xC00`) and the
+  decoration trees their variety; the record's X/Z tilts are zero on every
+  retail walk `.MAP` and aren't carried.
+
+The `walk_placement_{count,slots,positions,rot_y}` WASM accessors hand the
+list to JS, which uploads each referenced pack mesh once and pushes a draw
+record per stamp. `renderAssembled` draws them after the ground with
+`placementModelScaledY(x, -world_y, z, rotY, 1)` - the JS yaw is
+`-(rot & 0xFFF) * PI / 2048` because retail's pure-Y matrix maps local `+Z`
+to `(sin, 0, cos)`, the opposite yaw sense of `placementModelScaled*` -
+scale `1` (the slot-1 meshes
 are already in true world units, unlike the legacy overview-frame icons that
 needed a presentation scale) and the same `(1, -1, 1)` Y-flip the ground and
 the native render use. The anchor Y **must be negated on the JS side**:

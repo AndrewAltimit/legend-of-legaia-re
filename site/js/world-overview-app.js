@@ -695,6 +695,15 @@
       if (wpCount > 0) {
         const slots = viewer.walk_placement_slots();
         const pos = viewer.walk_placement_positions();
+        /* Authored per-placement yaw (object record +0x0A, PSX 4096-per-rev
+         * units) - the Sebucus island bridges' quarter-turns and the
+         * decoration layer's per-tree variety. Retail's matrix builder
+         * (FUN_80026988) maps local +Z to (sin, cos) in world XZ, the
+         * opposite yaw sense of placementModelScaledY, hence the negation.
+         * Guarded so a stale cached WASM without the accessor still draws
+         * (unrotated). */
+        const rots = (typeof viewer.walk_placement_rot_y === 'function')
+          ? viewer.walk_placement_rot_y() : null;
         for (let i = 0; i < wpCount; i++) {
           const ms = slots[i];
           if (suppress.some((s) =>
@@ -717,6 +726,7 @@
             x: pos[i * 3],
             y: -pos[i * 3 + 1],
             z: pos[i * 3 + 2],
+            rotY: rots ? -(rots[i] & 0xFFF) * Math.PI / 2048 : 0,
             scale: 1.0,
             kind: 'walk_landmark',
             class: 'landmark',
@@ -1073,51 +1083,12 @@
 
   /* Pan / orbit / zoom controls for the world camera. Left-drag pans the
    * map (yaw-aware); right-drag or shift+left-drag orbits (yaw + tilt);
-   * wheel zooms. Replaces the mesh-inspector orbit controls in
-   * `attachCameraControls` for world-view mode. */
+   * wheel zooms. Shared with viewer.html's full-map mode
+   * (attachWorldOrbitControls in webgl-math.js); replaces the
+   * mesh-inspector orbit controls in `attachCameraControls` for
+   * world-view mode. */
   function attachWorldControls(canvas) {
-    let mode = null, lastX = 0, lastY = 0;   /* mode: 'pan' | 'orbit' */
-    canvas.addEventListener('mousedown', e => {
-      mode = (e.button === 2 || e.shiftKey) ? 'orbit' : 'pan';
-      lastX = e.clientX; lastY = e.clientY;
-    });
-    /* Right-drag is the orbit gesture; suppress the context menu. */
-    canvas.addEventListener('contextmenu', e => e.preventDefault());
-    window.addEventListener('mouseup', () => { mode = null; });
-    window.addEventListener('mousemove', e => {
-      if (!mode) return;
-      const dx = e.clientX - lastX, dy = e.clientY - lastY;
-      lastX = e.clientX; lastY = e.clientY;
-      if (mode === 'orbit') {
-        /* Drag right rotates the view; drag down tilts toward the
-         * horizon. Pitch 0 = straight-down; clamp short of the horizon
-         * so the ground plane never edge-on degenerates. */
-        worldCam.yaw += dx * 0.008;
-        worldCam.pitch = Math.max(0, Math.min(1.40, worldCam.pitch + dy * 0.008));
-        return;
-      }
-      /* Pan: camera grabs the map (content follows the cursor).
-       * Convert pixel deltas to world units via the current camera
-       * half-extents, through the yaw-rotated retail screen basis
-       * (at yaw = 0: screen-right = world +X, screen-down = world -Z).
-       * Apply the same letterbox rule the projection uses (expand the
-       * shorter axis to the canvas aspect) so the point under the
-       * cursor tracks the drag exactly. */
-      const aspect = canvas.width / canvas.height;
-      let hw = worldCam.halfWidth, hh = worldCam.halfHeight;
-      if (hw / hh < aspect) hw = hh * aspect; else hh = hw / aspect;
-      const sx = (hw * 2) / canvas.width;
-      const sy = (hh * 2) / canvas.height;
-      const cosY = Math.cos(worldCam.yaw), sinY = Math.sin(worldCam.yaw);
-      worldCam.centerX += -dx * sx * cosY - dy * sy * sinY;
-      worldCam.centerZ += -dx * sx * sinY + dy * sy * cosY;
-    });
-    canvas.addEventListener('wheel', e => {
-      e.preventDefault();
-      const f = Math.exp(e.deltaY * 0.001);
-      worldCam.halfWidth  = Math.max(200, Math.min(20000, worldCam.halfWidth  * f));
-      worldCam.halfHeight = Math.max(200, Math.min(20000, worldCam.halfHeight * f));
-    }, { passive: false });
+    attachWorldOrbitControls(canvas, worldCam, { minHalf: 200, maxHalf: 20000 });
   }
   function loadMesh() {
     if (!viewer) return;
