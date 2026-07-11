@@ -142,9 +142,28 @@ impl MenuRuntime {
     }
 
     /// Install an inn session and prepare for `InnConfirm` entry. `cost` is
-    /// the gold required for a rest at this inn.
+    /// the gold required for a rest at this inn - in production the scene's
+    /// scripted gold-gate literal (see [`Self::open_scene_inn`], which
+    /// resolves it from the loaded scene); passing a constant directly is
+    /// the test / tooling path.
     pub fn open_inn(&mut self, cost: u32) {
         self.inn_session = Some(InnSession::new(cost));
+    }
+
+    /// Open the inn prompt with the **current scene's scripted cost** - the
+    /// op-`0x4E` gold-gate literal scanned from the scene MAN at load
+    /// ([`crate::scene::SceneHost::scene_inn_cost`]). Installs the session
+    /// and enters `InnConfirm` at the Yes slot, mirroring the
+    /// [`Self::open_shop_buy`] field-trigger entry shape. Returns the
+    /// resolved cost, or `None` (no session installed, state untouched)
+    /// when the scene charges nothing - free rests (Rim Elm's bed, Biron)
+    /// have no gate + debit pair in their scripts.
+    pub fn open_scene_inn(&mut self, host: &crate::scene::SceneHost) -> Option<u32> {
+        let cost = host.scene_inn_cost()?;
+        self.inn_session = Some(InnSession::new(cost));
+        self.ctx.state = MenuState::InnConfirm.as_byte();
+        self.ctx.cursor = 0;
+        Some(cost)
     }
 
     /// Open the menu (entry-point - typically called when the field VM

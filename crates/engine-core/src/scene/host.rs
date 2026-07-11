@@ -97,6 +97,12 @@ pub struct SceneHost {
     /// The current scene's MAN payload, cached at scene load so a walk-on
     /// trigger hit can resolve its partition-2 record without a disc re-read.
     field_man_cache: Option<Arc<Vec<u8>>>,
+    /// The current scene's paired **scripted gold charges** (op-`0x4E`
+    /// gold-gate + negative `0x3A` debit pairs - inn stays, tours, casino
+    /// counters), scanned from the cached MAN at scene load via
+    /// [`legaia_asset::inn_costs::scan`]. Empty for scenes with no MAN or no
+    /// charge site. Drives [`Self::scene_inn_cost`].
+    scene_gold_charges: Vec<legaia_asset::inn_costs::GoldCharge>,
     /// Player collision tile at the previous tick - the engine mirror of the
     /// retail last-tile globals `FUN_801D1EC4` compares to fire the walk-on
     /// tile trigger only on a tile **crossing**. `None` = stale (scene entry
