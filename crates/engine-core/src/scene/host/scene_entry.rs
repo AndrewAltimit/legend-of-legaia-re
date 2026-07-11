@@ -535,6 +535,18 @@ impl SceneHost {
             } else {
                 crate::scene_resources::SceneLoadKind::Field
             };
+            // The boot-resident system-UI bundle (raw PROT TOC entries 0/1)
+            // layers under every scene build - it is what makes CLUT rows
+            // 510/511 + the (960,256) menu-glyph atlas resident for the env
+            // meshes that sample them. Soft-fails to None (the scene still
+            // builds; those prims just drop like they used to).
+            let system_ui = match self.index.system_ui_bundle() {
+                Ok(b) => Some(b),
+                Err(err) => {
+                    eprintln!("[scene] system-UI bundle parse skipped: {err:#}");
+                    None
+                }
+            };
             if let Ok((mut res, _stats)) =
                 crate::scene_resources::SceneResources::build_targeted_with_options(
                     scene,
@@ -550,6 +562,7 @@ impl SceneHost {
                         // ~75% of its prims (missing texture page). Uploading
                         // all TIMs lifts the town keep ratio to ~95%.
                         upload_all_tims: true,
+                        system_ui: system_ui.as_deref(),
                     },
                 )
             {

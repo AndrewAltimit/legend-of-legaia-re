@@ -341,10 +341,7 @@ impl PlayWindowApp {
     /// placement draw lists wholesale. Soft-fails (logs, keeps the stale
     /// scene render) so a bad destination never crashes the window loop.
     pub(super) fn rebuild_scene_render_state(&mut self) {
-        match build_window_scene_resources(
-            &self.session,
-            Some(self.scene_rebuild_extracted_root.as_path()),
-        ) {
+        match build_window_scene_resources(&self.session) {
             Ok(res) => {
                 // Spawn-slot drain state is per-scene (the new scene's field
                 // VM re-issues its own actor spawns; `upload_assets` re-seats

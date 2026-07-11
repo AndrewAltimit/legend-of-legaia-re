@@ -105,6 +105,11 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
     } else {
         SceneLoadKind::Field
     };
+    // Boot-resident system-UI bundle (raw PROT TOC entries 0/1): layers
+    // under the scene build so the row-510 strip CLUT + (960,256)
+    // menu-glyph atlas the env meshes sample (town01 slots 21/26/74,
+    // rikuroa slots 50/51/63) are resident in the browser build too.
+    let system_ui = index.system_ui_bundle().ok();
     let (res, _stats) = SceneResources::build_targeted_with_options(
         &scene,
         &shared_refs,
@@ -113,6 +118,7 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
             // Retail's field loader DMA-uploads every scene TIM; the
             // render-targeted subset drops ~75% of the env pack's prims.
             upload_all_tims: true,
+            system_ui: system_ui.as_deref(),
         },
     )
     .map_err(|e| format!("{e:#}"))?;

@@ -113,7 +113,7 @@ impl SceneLoadKind {
 /// "preserve VRAM from the previous scene") can be added without
 /// breaking the API.
 #[derive(Debug, Clone, Copy)]
-pub struct BuildOptions {
+pub struct BuildOptions<'a> {
     /// Whether the build mimics field-mode or battle-mode dispatch.
     /// Defaults to [`SceneLoadKind::Battle`] in [`BuildOptions::default`]
     /// so legacy `build_targeted` calls behave the same as before.
@@ -126,13 +126,25 @@ pub struct BuildOptions {
     /// render path leaves this `false` so its prim filter still matches the
     /// uploaded set. Default `false`.
     pub upload_all_tims: bool,
+    /// The boot-resident system-UI TIM bundle (raw PROT TOC entries 0/1;
+    /// [`crate::scene::ProtIndex::system_ui_bundle`]). When set, the build
+    /// layers its `FUN_800198E0`-style upload (image at declared rect,
+    /// CLUT as a flattened strip) **underneath** the scene's VRAM: retail
+    /// uploads the bundle once at boot - before any scene load - and never
+    /// evicts it, so it is resident in every scene/mode (rows 510/511
+    /// strips, the `x >= 896` UI texture band, the menu-glyph atlas at
+    /// `(960,256)` that town/dungeon env meshes sample via CBA
+    /// `(64,510)`). `None` skips the layer (legacy behaviour). Default
+    /// `None`.
+    pub system_ui: Option<&'a legaia_asset::system_ui_bundle::SystemUiBundle>,
 }
 
-impl Default for BuildOptions {
+impl Default for BuildOptions<'_> {
     fn default() -> Self {
         Self {
             kind: SceneLoadKind::Battle,
             upload_all_tims: false,
+            system_ui: None,
         }
     }
 }
@@ -447,7 +459,7 @@ impl SceneResources {
     pub fn build_targeted_with_options(
         scene: &Scene,
         shared_scenes: &[&Scene],
-        options: BuildOptions,
+        options: BuildOptions<'_>,
     ) -> Result<(Self, legaia_tmd::vram_targeted::VramUploadStats)> {
         let mut tmds = Vec::new();
         let mut anm_packs = Vec::new();
@@ -850,6 +862,21 @@ impl SceneResources {
         // `legaia_tmd::vram_targeted`). Previously a hardcoded canonical
         // hue-ramp was painted here unconditionally; that paint was from
         // an unknown scene and over-rendered every town.
+
+        // Boot-resident system-UI bundle (raw PROT TOC entries 0/1): retail
+        // uploads it at boot, BEFORE any scene load, and never evicts it.
+        // The bundle's own members upload in pack order into a fresh VRAM
+        // (last-write-wins, `FUN_800198E0` LoadImage semantics: image at
+        // declared rect + flat-strip CLUT), then that boot image is layered
+        // UNDER the scene build - scene words win any overlap, matching the
+        // boot-then-scene DMA order. This is what makes CBA row 510 / the
+        // (960,256) menu-glyph atlas resident for the field env meshes that
+        // sample them (town01 env slots 21/26/74, rikuroa slots 50/51/63).
+        if let Some(bundle) = options.system_ui {
+            let mut boot = Vram::new();
+            bundle.upload_to_vram(&mut boot);
+            vram.underlay(&boot);
+        }
 
         Ok((
             Self {

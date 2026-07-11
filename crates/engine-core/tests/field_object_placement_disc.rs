@@ -152,6 +152,7 @@ fn town01_placement_pack_indices_resolve_in_loaded_pack() {
         BuildOptions {
             kind: SceneLoadKind::Field,
             upload_all_tims: true,
+            ..Default::default()
         },
     )
     .expect("build town01 field");
@@ -189,25 +190,26 @@ fn town01_placement_pack_indices_resolve_in_loaded_pack() {
     );
 }
 
-/// Pin *why* a handful of town01 placements don't render in the field
-/// pass, so the "≈8/46 placements drop" gap stays characterised by cause
-/// (not just counted). The placement render path builds each mesh with the
-/// textured-only VRAM filter; an empty build drops the placement. There are
-/// two distinct causes, and they are NOT the same fix:
+/// Pin the town01 placement render coverage by cause. The placement render
+/// path builds each mesh with the textured-only VRAM filter; an empty build
+/// drops the placement. Two historic drop causes:
 ///
 ///   * **untextured props** - the mesh is all flat / gouraud (per-vertex RGB,
-///     no UVs), so the textured builder skips every prim. These are now
+///     no UVs), so the textured builder skips every prim. These are
 ///     recovered by the engine's vertex-colour path: `tmd_to_color_mesh` builds
 ///     a [`legaia_tmd::mesh::ColorMesh`] from the per-prim colour blocks, which
 ///     play-window uploads + draws on the colour pipeline (asserted below).
 ///   * **missing-CLUT props** - the mesh IS textured, but its prims sample a
-///     CLUT row the field VRAM pre-pass didn't upload, so the coverage filter
-///     correctly drops them (rendering them would show flat `CLUT[0]`).
-///     Recovering these is a VRAM-coverage question, not a shading one.
+///     CLUT row no scene TIM uploads. town01's instance (pack[74], obj 347,
+///     6 placements) samples CBA `(64,510)` / texpage `(960,256)` - the
+///     **boot-resident system-UI bundle** (raw PROT TOC entries 0/1,
+///     `FUN_800198E0` flat-strip CLUT upload; `legaia_asset::system_ui_bundle`).
+///     With [`BuildOptions::system_ui`] layered under the field build those
+///     prims now keep: **zero missing-CLUT drops** is the pinned invariant.
 ///
-/// This corrects the earlier "all ≈8 are fully-untextured props" reading: on
-/// town01 only 2 of the 8 dropped placements are untextured; the other 6 are
-/// textured prims missing their CLUT. Numbers are exact disc invariants.
+/// Numbers are exact disc invariants: 44 of 46 placements draw on the
+/// textured path; the 2 drops are the untextured props (recovered by the
+/// colour pipeline), and no placement is lost to a missing CLUT.
 #[test]
 fn town01_dropped_placements_split_untextured_vs_missing_clut() {
     let Some(extracted) = extracted_dir() else {
@@ -235,12 +237,18 @@ fn town01_dropped_placements_split_untextured_vs_missing_clut() {
         }
     }
     let refs: Vec<&Scene> = shared.iter().collect();
+    // The boot-resident system-UI bundle, exactly as `enter_field_scene` /
+    // play-window pass it (raw PROT TOC entries 0/1 via the index).
+    let system_ui = index
+        .system_ui_bundle()
+        .expect("parse the system-UI bundle from PROT.DAT");
     let (res, _) = SceneResources::build_targeted_with_options(
         &scene,
         &refs,
         BuildOptions {
             kind: SceneLoadKind::Field,
             upload_all_tims: true,
+            system_ui: Some(&system_ui),
         },
     )
     .expect("build town01 field");
@@ -282,17 +290,22 @@ fn town01_dropped_placements_split_untextured_vs_missing_clut() {
         dropped_meshes.len()
     );
 
-    // 38 of 46 placements draw; the 8 that don't split 2 untextured + 6
-    // missing-CLUT across exactly three distinct env-pack meshes.
-    assert_eq!(placements_drawn, 38, "town01 placements that draw");
-    assert_eq!(placements_dropped, 8, "town01 placements dropped");
+    // 44 of 46 placements draw; only the 2 untextured props drop from the
+    // textured path (recovered below on the colour pipeline). The 6
+    // previously-dropped missing-CLUT placements (pack[74], obj 347) now
+    // keep: their CBA row 510 / texpage (960,256) source is the boot-
+    // resident system-UI bundle the build layers underneath.
+    assert_eq!(placements_drawn, 44, "town01 placements that draw");
+    assert_eq!(placements_dropped, 2, "town01 placements dropped");
     assert_eq!(dropped_untextured, 2, "dropped because all-untextured");
-    assert_eq!(dropped_missing_clut, 6, "dropped because CLUT not resident");
+    assert_eq!(
+        dropped_missing_clut, 0,
+        "no placement may drop for a missing CLUT with the system-UI bundle resident"
+    );
 
-    // The three distinct dropped meshes (pack index -> obj id, untextured?).
+    // The two distinct dropped meshes (pack index -> obj id, untextured?).
     let expect: &[(u16, u16, bool)] = &[
         (31, 315, true),  // untextured prop
-        (74, 347, false), // textured, CLUT not uploaded
         (109, 114, true), // untextured prop
     ];
     assert_eq!(
@@ -308,25 +321,23 @@ fn town01_dropped_placements_split_untextured_vs_missing_clut() {
         assert_eq!(got.1, untextured, "untextured? for dropped mesh pack[{pi}]");
     }
 
-    // The textured-but-dropped mesh (pack[74], obj 347) is dropped purely
-    // because its 4 prims sample an un-uploaded CLUT row - it is NOT an
-    // untextured prop, so a per-vertex-RGB fallback would NOT recover it.
-    let (_m, reasons) = env_tmds[74].build_filtered_vram_mesh_reasoned(&res.vram);
-    assert_eq!(reasons.kept, 0, "pack[74] keeps no prims");
-    assert_eq!(reasons.missing_clut, 4, "pack[74] drops = missing CLUT");
+    // The historically missing-CLUT mesh (pack[74], obj 347) now builds
+    // non-empty: all 4 of its textured prims keep, none is dropped for a
+    // missing CLUT / texture page.
+    let (m74, reasons) = env_tmds[74].build_filtered_vram_mesh_reasoned(&res.vram);
+    assert!(!m74.indices.is_empty(), "pack[74] builds a non-empty mesh");
+    assert_eq!(reasons.kept, 4, "pack[74] keeps all 4 textured prims");
+    assert_eq!(reasons.missing_clut, 0, "pack[74] missing-CLUT drops");
     assert_eq!(reasons.missing_texture_page, 0);
     assert_eq!(reasons.clut_depth_mismatch, 0);
     assert_eq!(reasons.skipped_untextured, 0, "pack[74] IS textured");
 
-    // ROOT CAUSE (pinned): pack[74]'s 4 prims all sample the same texture page
-    // (960, 256) + CLUT row 510 - i.e. the bottom-right VRAM band x in
-    // [896, 1024], y = 256 that the Field pre-pass excludes by design (the
-    // character / party-texture region; this is the same band that shows up as
-    // the documented town01 static-VRAM residue at x=896..1024,y=256). Even
-    // `upload_all_tims: true` doesn't fill CLUT row 510, so the texture isn't a
-    // static scene TIM at all - it's a runtime targeted upload the field
-    // pre-pass doesn't model. So this mesh is NOT recoverable by a render-filter
-    // tweak; recovering it needs that runtime texture-band upload reproduced.
+    // Source pin: pack[74]'s 4 prims all sample texture page (960, 256) +
+    // CLUT row 510 - the menu-glyph / interior-page atlas of the system-UI
+    // bundle (raw PROT TOC entry 0, PROT.DAT[0x11218]; `FUN_800198E0`
+    // uploads its 16x16 CLUT bank as a flat 256-entry strip on row 510).
+    // No scene TIM ever uploads that row, which is why these prims dropped
+    // before the bundle was layered under the field build.
     for o in &env_tmds[74].tmd.objects {
         let groups = legaia_tmd::legaia_prims::iter_groups_lenient(
             &env_tmds[74].raw,

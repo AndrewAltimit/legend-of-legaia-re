@@ -181,3 +181,43 @@ fn hybrid_env_mesh_recovers_vertex_colour_props() {
         "expected >= 4 colour-only env meshes recovered on town01, got {colour_only_recovered}"
     );
 }
+
+/// The boot-resident system-UI bundle (raw PROT TOC entries 0/1, uploaded
+/// under every field build via `BuildOptions::system_ui`) makes the
+/// row-510-strip / `(960,256)`-atlas samplers render in the browser build:
+/// town01 env slots 21/26/74 and rikuroa slots 50/51/63 (all CBA
+/// `(64,510)`, texpage `(960,256)`) previously built EMPTY because no scene
+/// TIM uploads that CLUT row. Guard both scenes in the new direction.
+#[test]
+fn system_ui_bundle_recovers_row510_samplers() {
+    let Some(disc_path) = env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("LEGAIA_DISC_BIN unset; skipping row-510 sampler test");
+        return;
+    };
+    let disc = fs::read(&disc_path).expect("disc image");
+    let prot = extract_prot_dat(&disc).expect("PROT.DAT extraction");
+    let cdname = extract_cdname_txt(&disc).expect("CDNAME.TXT extraction");
+    let index = ProtIndex::from_bytes(prot, Some(&cdname)).expect("ProtIndex from in-memory PROT");
+
+    for (name, slots) in [
+        ("town01", &[21usize, 26, 74][..]),
+        ("rikuroa", &[50, 51, 63][..]),
+    ] {
+        let pack = build_field_scene(&index, name)
+            .unwrap_or_else(|e| panic!("{name}: build_field_scene failed: {e}"));
+        // The bundle's strip CLUT is resident on row 510.
+        let lit = (0..256)
+            .filter(|&x| pack.res.vram.pixel(x, 510) != 0)
+            .count();
+        assert!(lit > 200, "{name}: row-510 strip resident (lit={lit})");
+        for &slot in slots {
+            let rtmd = &pack.res.tmds[pack.env_tmds[slot]];
+            let mesh = rtmd.build_filtered_vram_mesh(&pack.res.vram);
+            assert!(
+                !mesh.indices.is_empty(),
+                "{name} env slot {slot}: row-510 sampler must build non-empty \
+                 with the system-UI bundle resident"
+            );
+        }
+    }
+}

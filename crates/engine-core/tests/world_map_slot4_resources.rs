@@ -32,6 +32,7 @@ fn build(kind: SceneLoadKind, scene: &Scene) -> SceneResources {
         BuildOptions {
             kind,
             upload_all_tims: true,
+            ..Default::default()
         },
     )
     .expect("build scene resources")

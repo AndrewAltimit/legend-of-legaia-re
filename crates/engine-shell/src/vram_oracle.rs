@@ -104,10 +104,16 @@ pub fn build_engine_vram_bytes_prepass_with_kind(
     let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
     // Parity oracle: the retail field loader uploads every scene TIM to VRAM,
     // not just the render-targeted subset a mesh prim samples, so
-    // `upload_all_tims` is on regardless of kind.
+    // `upload_all_tims` is on regardless of kind. The boot-resident
+    // system-UI bundle (raw PROT TOC entries 0/1, uploaded once at boot by
+    // `FUN_800198E0` and never evicted) layers under the build - its
+    // row-510/511 strips + UI texture pages are retail-resident in every
+    // captured phase, so the engine must reproduce them.
+    let system_ui = index.system_ui_bundle().ok();
     let options = BuildOptions {
         kind,
         upload_all_tims: true,
+        system_ui: system_ui.as_deref(),
     };
     let (mut resources, _) =
         SceneResources::build_targeted_with_options(&scene, &shared_refs, options)?;
