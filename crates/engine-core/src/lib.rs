@@ -59,6 +59,7 @@ pub mod magic_xp;
 pub mod man_field_scripts;
 pub mod menu_glyph_atlas;
 pub mod menu_input;
+pub mod menu_item_category;
 pub mod menu_runtime;
 pub mod mode;
 pub mod monster_ai;
