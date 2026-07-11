@@ -57,7 +57,9 @@ The capture now also records, per playthrough:
 
 - **Player tile** on every tile-crossing (in the field) — so a flag flip is
   pinned to *where* on the map it fired, which door/trigger did it.
-- **Music track id** whenever the BGM changes.
+- **Music track id** whenever the BGM changes, and the **movie (FMV) trigger
+  id** whenever a cutscene movie fires — live confirmation of which scene
+  fires which movie.
 - **Button presses + your dialogue menu choices** — so a branch decision is
   attributable to the answer you picked.
 - **XP, equipment changes, and the fishing/casino/Point-Card counters** — so

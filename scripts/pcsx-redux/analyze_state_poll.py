@@ -13,7 +13,9 @@ party (0x80084594 count + 0x80084598 ids), level / spell (per-roster-slot
 char-record 0x80084708+slot*0x414: displayed-level byte +0x130 and the
 Seru-magic list +0x13C; `idx` == roster slot), scene / mode (0x8007050C name +
 0x8007B83C game-mode transitions), pos (P1: player tile `idx`==tileX
-`value`==tileZ, emitted on a crossing), bgm (P5: global BGM id), input / pick
+`value`==tileZ, emitted on a crossing), bgm (P5: global BGM id), fmv (FMV
+trigger id 0x8007BA78 - live-confirms the disc-mined per-scene trigger
+corpus), input / pick
 (P4: pad edges + picker cursor at a confirm), snap (P2: an auto-dumped save
 state), xp / equip (per-roster-slot cumulative XP +0x0 and equipment bytes
 +0x196; `idx` == slot / slot*8+eq_slot), counter (fishing points / casino
@@ -601,6 +603,15 @@ def bgm_changes(rows: list[Row]) -> list[Row]:
     return [r for r in rows if r.kind == "bgm"]
 
 
+def fmv_changes(rows: list[Row]) -> list[Row]:
+    """`fmv` rows: FMV trigger id 0x8007BA78 changes (`value` == fmv_id).
+
+    Live-confirms the disc-mined per-scene trigger assignment
+    (`man_field_scripts::scene_fmv_triggers`; docs/formats/str-fmv-table.md).
+    """
+    return [r for r in rows if r.kind == "fmv"]
+
+
 def picker_choices(rows: list[Row]) -> list[Row]:
     """`pick` rows (P4): dialogue picker cursor index at a confirm press."""
     return [r for r in rows if r.kind == "pick"]
@@ -751,6 +762,13 @@ def render_report(rows: list[Row], bulk_threshold: int, want: set[str]) -> str:
         for r in bgm_changes(rows):
             lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  bgm={r.value}")
 
+    if "fmv" in want:
+        fmvs = fmv_changes(rows)
+        if fmvs:
+            lines.append("\n## FMV triggers (0x8007BA78; live-confirms scene_fmv_triggers)")
+            for r in fmvs:
+                lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  fmv_id={r.value}")
+
     if "picks" in want:
         lines.append("\n## dialogue picker choices (cursor index at a confirm)")
         for r in picker_choices(rows):
@@ -846,6 +864,9 @@ def build_json(rows: list[Row], bulk_threshold: int) -> dict:
         "bgm": [
             {"tick": r.tick, "scene": r.scene, "id": r.value} for r in bgm_changes(rows)
         ],
+        "fmv": [
+            {"tick": r.tick, "scene": r.scene, "fmv_id": r.value} for r in fmv_changes(rows)
+        ],
         "picks": [
             {"tick": r.tick, "scene": r.scene, "choice": r.idx, "button": r.note}
             for r in picker_choices(rows)
@@ -934,9 +955,9 @@ def main(argv=None) -> int:
     )
     ap.add_argument(
         "--only",
-        default="scenes,battles,flags,items,gold,party,progress,counters,status,arts,bgm,picks,snaps",
+        default="scenes,battles,flags,items,gold,party,progress,counters,status,arts,bgm,fmv,picks,snaps",
         help="comma list of sections: scenes,battles,flags,items,gold,party,"
-        "progress,counters,status,arts,bgm,picks,snaps,walk,input,hp "
+        "progress,counters,status,arts,bgm,fmv,picks,snaps,walk,input,hp "
         "(walk+input+hp are opt-in: verbose; arts = committed arts/Super-Art "
         "queue rewrites from the aq stream)",
     )

@@ -76,6 +76,10 @@
 --                    with no second pass. Raw world XZ in the note.
 --   bgm    (P5)      global BGM id (0x8007BAC8) on change - finishes the
 --                    music_labels sound-test census join on any run.
+--   fmv              FMV trigger id 0x8007BA78 on change (the field-VM
+--                    op 0x4C 0xE2 target; docs/formats/str-fmv-table.md) -
+--                    live-confirms the disc-mined per-scene trigger corpus
+--                    (man_field_scripts::scene_fmv_triggers) on any run.
 --   input  (P4)      pad press/release edges (0x8007B850); idx=button bit,
 --                    value=1 press / 0 release, note=button name.
 --   pick   (P4)      dialogue picker cursor index at a confirm press
@@ -147,6 +151,11 @@ local FIELD_MODE  = 0x03
 -- P5: global BGM id (field-VM op 0x35 sub-1 target; <2000 scene-local, >=2000
 -- global pool). Emitted on change for the music_labels census join.
 local BGM_ID      = 0x8007BAC8  -- u16
+-- FMV trigger id (_DAT_8007BA78, s16): written by the field-VM FMV-trigger op
+-- `0x4C 0xE2 lo hi` (and the title-attract tick) right before the mode swings
+-- into the STR player. A change row live-confirms the per-scene trigger
+-- assignment mined disc-static (docs/formats/str-fmv-table.md).
+local FMV_ID      = 0x8007BA78  -- s16
 -- Battle-actor pointer table: 8 u32 slots (0..2 party, 3..7 monsters), each a
 -- pointer to a live battle actor (docs/subsystems/battle.md). Per actor:
 -- +0x14C u16 current HP (liveness; the mechanical value the formulas write,
@@ -326,6 +335,7 @@ local prev_spell = {}        -- per roster slot: SPELL_LEN-byte window string
 local prev_tilex = nil       -- P1: last emitted player tile X
 local prev_tilez = nil       -- P1: last emitted player tile Z
 local prev_bgm   = nil       -- P5: last global BGM id
+local prev_fmv   = nil       -- last FMV trigger id (s16 raw u16 read)
 local prev_pad   = 0         -- P4: last held-pad mask
 local prev_xp     = {}       -- per roster slot: cumulative XP u32
 local prev_equip  = {}       -- per roster slot: EQUIP_LEN-byte window string
@@ -349,7 +359,7 @@ local totals     = { flagset = 0, flagclr = 0, battleid = 0, battle = 0,
                      gold = 0, item = 0, party = 0, scene = 0, mode = 0,
                      level = 0, spell = 0, pos = 0, bgm = 0, input = 0,
                      pick = 0, snap = 0, xp = 0, equip = 0, counter = 0,
-                     status = 0, hp = 0, aq = 0 }
+                     status = 0, hp = 0, aq = 0, fmv = 0 }
 
 local function row(kind, idx, value, delta, note)
     totals[kind] = (totals[kind] or 0) + 1
@@ -633,6 +643,15 @@ local function diff_bgm()
     prev_bgm = id
 end
 
+-- FMV trigger id on change (raw u16; retail writes 0..8, s16 space).
+local function diff_fmv()
+    local id = u16(FMV_ID)
+    if baselined and id ~= prev_fmv then
+        row("fmv", 0, id, id - (prev_fmv or 0))
+    end
+    prev_fmv = id
+end
+
 -- P4: pad press/release edges + picker-choice at a confirm press. The held mask
 -- is the game-decoded per-frame button word (bit layout == probe.pad.BTN).
 local function read_picker_cursor()
@@ -746,9 +765,10 @@ local function snapshot_and_diff()
     diff_equip()
     diff_counters()
 
-    -- P1/P5/P4: player tile, BGM id, input edges + picker choice.
+    -- P1/P5/P4: player tile, BGM id, FMV trigger, input edges + picker choice.
     diff_pos()
     diff_bgm()
+    diff_fmv()
     diff_input()
 
     baselined = true
@@ -920,7 +940,7 @@ end
 -- +-- startup ----------------------------------------------------------------
 log("=== autorun_state_poll (fast-core progression capture) ===")
 log("poll-diff: flags/battleid/gold/item/party/level/spell/xp/equip/counter/"
-    .. "status/hp/aq/scene/mode/pos/bgm/input - NO breakpoints")
+    .. "status/hp/aq/scene/mode/pos/bgm/fmv/input - NO breakpoints")
 log(string.format("enhancements: pos=%s bgm=%s input=%s battle=%s autosnap=%s(max %d) bulk>=%d",
     TRACE_POS and "on" or "off", TRACE_BGM and "on" or "off",
     TRACE_INPUT and "on" or "off", TRACE_BATTLE and "on" or "off",

@@ -436,7 +436,11 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   `+0x14` / Z `+0x18` s16, `tile = (pos-0x40)>>7`) - which pins each flag beat
   to *where* it fired (door/trigger attribution with no second pass); a
   **`bgm`** row on each global BGM-id change (`0x8007BAC8`, the music_labels
-  census join); **`input`** rows for pad press/release edges (`0x8007B850`) and
+  census join); an **`fmv`** row on each FMV-trigger-id change (`0x8007BA78`,
+  the field-VM op `0x4C 0xE2` target - live-confirms the disc-mined per-scene
+  trigger assignment `man_field_scripts::scene_fmv_triggers`,
+  [str-fmv-table.md](../formats/str-fmv-table.md)); **`input`** rows for pad
+  press/release edges (`0x8007B850`) and
   a **`pick`** row sampling the dialogue picker cursor (`*(0x801C6EA4)+0x0C`) at
   a confirm press (branch/answer attribution). It tags a flag frame
   `note=bulkload` when it flips `>= LEGAIA_BULK_FLAGS` flags (a save-load/init
@@ -475,6 +479,19 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   ([super-art-queue-capture.md](super-art-queue-capture.md)).
   Baselines drop on battle exit so cross-fight pointer reuse can't fake rows.
   Toggles: `LEGAIA_TRACE_POS`/`_BGM`/`_INPUT`/`_BATTLE` (`0` = off).
+  **Regression self-test** (run after ANY edit to the poll probe or
+  `lib/probe/*`, before volunteer handoff): `bash
+  scripts/pcsx-redux/run_state_poll_selftest.sh` - a wrapper lua
+  (`autorun_state_poll_selftest.lua`) `dofile()`s the real probe on a field
+  save state and pokes every watched RAM cell (Lua pokes bypass the CPU),
+  walks via pad override for organic `pos` rows, then loads a battle state
+  mid-run (exercising the battle-entry latch + bulk-load tagging; the full
+  state load also wipes every field-phase poke) and pokes the battle-actor
+  streams. `check_state_poll_selftest.py` then asserts every CSV stream and
+  every autosnap trigger fired (target-flag snap redirected to the
+  retail-unused flag 4001 via `LEGAIA_SNAP_FLAGS`). A couple of minutes end
+  to end, no human at the pad; a silently broken stream otherwise costs a
+  volunteer's whole playthrough.
 - **Tier 2 - `autorun_flag_firehose.lua` (slow, interpreter+debugger, ~10 fps):** exec-breakpoints on `FUN_8003CE08`/`_CE34` capture the writer `ra` for the specific flags Tier 1 fingered. Run in short targeted bursts, not a full playthrough.
 - **Tier 2 provenance - `autorun_flag_reader_watch.lua` (slow, interpreter+debugger):**
   the full story-flag provenance probe. Arms all THREE flag helpers
@@ -592,7 +609,9 @@ label** - a sticky beat with no label is surfaced as a `[lead]` (a candidate
 unmapped gate; extend the label map with `--labels FILE`). Extra sections cover
 the **BGM timeline**, **picker choices**, **auto-snapshots**, **XP grants +
 equipment changes**, the **counters** (fishing points / casino coins / Point
-Card), the **battle status timeline** (each `+0x16E` word decoded to its named
+Card), the **FMV triggers** (fmv-id changes joined to the firing scene -
+the live confirmation column for the disc-mined trigger corpus), the
+**battle status timeline** (each `+0x16E` word decoded to its named
 bits, with any raise of the open `0x400` guard-disable bit called out as a
 report-this lead), the **arts commits** (aq-stream rows whose queue window is
 in starter form, Super Arts flagged for tail-matching against
@@ -685,7 +704,8 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_battle_palette_source.lua` | Confirms the scene bundle is LZS-decompressed into the work arena at load; does NOT pin the party palette. → [detail](#autorun_battle_palette_sourcelua) |
 | `autorun_load_screen_dump.lua` | Ground-truth capture for the load-screen panel border + slot-pill source sprites. → [detail](#autorun_load_screen_dumplua) |
 | `autorun_town01_script_flow.lua` | Pins a field scene's script execution model. → [detail](#autorun_town01_script_flowlua) |
-| `autorun_state_poll.lua` | Fast (dynarec, no BPs) per-vsync diff of all progression state (flags/battle-id/gold/items/party/level/spell/xp/equip/counters/scene/mode) plus a per-fight `battle` formation-identity row on each field->battle edge and an in-battle detail stream: status/HP (actor `+0x16E`/`+0x14C`) and the party action-queue windows (`+0x1DF..+0x1F2` - arts inputs + committed combo/Super-Art queue bytes), for a whole-playthrough sweep. Tier 1 of the [two-tier model](#fast-whole-playthrough-capture-two-tier-model); the community-handoff probe. |
+| `autorun_state_poll.lua` | Fast (dynarec, no BPs) per-vsync diff of all progression state (flags/battle-id/gold/items/party/level/spell/xp/equip/counters/scene/mode/bgm/fmv) plus a per-fight `battle` formation-identity row on each field->battle edge and an in-battle detail stream: status/HP (actor `+0x16E`/`+0x14C`) and the party action-queue windows (`+0x1DF..+0x1F2` - arts inputs + committed combo/Super-Art queue bytes), for a whole-playthrough sweep. Tier 1 of the [two-tier model](#fast-whole-playthrough-capture-two-tier-model); the community-handoff probe. |
+| `autorun_state_poll_selftest.lua` | Regression self-test wrapper for the poll probe: `dofile()`s the real probe, pokes every watched cell (field state, then a mid-run battle-state load for the battle streams), drives pad-override walks for organic `pos` rows. Launched by `run_state_poll_selftest.sh`; verdict via `check_state_poll_selftest.py` (every stream + autosnap must fire). Run before any volunteer handoff. |
 | `autorun_flag_firehose.lua` | Slow (interpreter) exec-bp capture of EVERY story-flag write with its writer `ra` + battle-id staging watch. Tier 2 - writer provenance for the flags the poll tier fingers. |
 | `autorun_flag_reader_watch.lua` | Slow (interpreter) full PROVENANCE probe: unfiltered test/set/clear helper exec-bps (reader + writer `ra` for every flag touched, deduped) + per-target byte read-watches + a write-watch allowlist for non-flag globals (default battle-id + formation) + a LoadImage/MoveImage VRAM upload log (auto-disarmed across FMV modes) + per-fight `battle` identity rows with spawn-tile attribution + per-slot overlay-residency checksums, tile context, first-hit/new-scene/boss auto-snapshots, run `manifest.txt`, dynarec hard-refusal + BP-liveness canary. Summarize (and cross-run merge) with `analyze_reader_watch.py`. |
 | [`autorun_battle_char_clut_source.lua`](../../scripts/pcsx-redux/autorun_battle_char_clut_source.lua) | Pins the disc source of the battle-form party CLUT band (VRAM rows 490..497). → [detail](#autorun_battle_char_clut_sourcelua) |
