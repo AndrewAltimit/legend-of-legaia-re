@@ -19,7 +19,10 @@ state), xp / equip (per-roster-slot cumulative XP +0x0 and equipment bytes
 +0x196; `idx` == slot / slot*8+eq_slot), counter (fishing points / casino
 coins / Point Card on change), status / hp (battle-detail stream: per-battle-
 actor +0x16E status word and +0x14C current HP; `idx` == actor slot, 0..2
-party / 3..7 monsters). See the probe header for the exact source addresses.
+party / 3..7 monsters), aq (party action-parameter queue +0x1DF..+0x1F2 on
+change; `idx` == party slot, note == the 20-byte window hex - arts inputs are
+raw direction bytes 0x0C..0x0F, a commit rewrites to 0x19/0x1A starter form).
+See the probe header for the exact source addresses.
 
 This tool turns that raw event log into the things a reverse-engineer actually
 wants out of a playthrough capture:
@@ -66,8 +69,16 @@ KNOWN_FLAGS = {
     0x142: "Caruban victory gate (Mt.Rikuroa -> dolk2 entrance)",
     0x1BE: "geremi Jeremi-arrival one-shot",
     0x225: "Rim Elm opening one-shot (flag 549)",
-    0x482: "other7 mist-wall pool gate",
+    0x482: "Drake mist-wall gate (writer OPEN - capture target, report a set!)",
     0x63A: "rikuroa/retockin carrier flag",
+    # 0x370's writer is statically pinned (doman P1[15], the Usha briefing
+    # latch - man_variant_carrier_census_disc.rs); a live set confirms it.
+    0x370: "Nivora successor gate (SET = doman P1[15] Usha latch; live confirm wanted)",
+    # writer-less gates the static path exhausted on (backlog Track A): a
+    # non-bulk SET of either is exactly the bracket the code-path writer
+    # hunts need (the probe auto-snapshots them).
+    0x50A: "koin1 toggle gate (writer OPEN - capture target, report a set!)",
+    0x5D6: "koin4 gate (writer OPEN - capture target, report a set!)",
     # chapter-2 Sebucus gate families (man_variant_carrier_census_disc.rs,
     # PR #313; live-confirmed play-order + tiles from a poll traversal).
     0x1D5: "balden arc-reached flag",
@@ -534,6 +545,45 @@ def hp_changes(rows: list[Row]) -> list[Row]:
     return [r for r in rows if r.kind == "hp"]
 
 
+def aq_changes(rows: list[Row]) -> list[Row]:
+    """`aq` rows: party action-queue window changes (idx = party slot 0..2)."""
+    return [r for r in rows if r.kind == "aq"]
+
+
+def _aq_window_bytes(note: str) -> list[int]:
+    """Parse an `aq` row note `q=<hex>` into its window bytes ([] if absent)."""
+    if not note.startswith("q="):
+        return []
+    hexs = note[2:].strip()
+    if len(hexs) % 2 != 0:
+        return []
+    try:
+        return [int(hexs[i : i + 2], 16) for i in range(0, len(hexs), 2)]
+    except ValueError:
+        return []
+
+
+ART_STARTER = 0x19
+SUPER_ART_STARTER = 0x1A
+
+
+def arts_commits(rows: list[Row]) -> list[tuple[Row, bool]]:
+    """`aq` rows whose window holds a committed arts queue (starter form).
+
+    Returns (row, is_super) pairs: the window contains the 0x19 art-starter
+    byte; is_super when the 0x1A Super-Art special starter is also present -
+    those rows are the byte-exact `replace`-string validation data the
+    Super-Art capture batch needs (docs/tooling/super-art-queue-capture.md;
+    tail-match the hex against crates/art/src/super_art.rs).
+    """
+    out: list[tuple[Row, bool]] = []
+    for r in aq_changes(rows):
+        win = _aq_window_bytes(r.note)
+        if ART_STARTER in win:
+            out.append((r, SUPER_ART_STARTER in win))
+    return out
+
+
 def status_leads(rows: list[Row]) -> list[Row]:
     """Status rows that RAISE the open 0x400 guard-disable bit - each one is
     the exact bracket the +0x16E-0x400 applier hunt needs (idx = actor slot).
@@ -677,6 +727,16 @@ def render_report(rows: list[Row], bulk_threshold: int, want: set[str]) -> str:
                 lines.append(
                     f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  {r.note}"
                 )
+
+    if "arts" in want:
+        commits = arts_commits(rows)
+        lines.append("\n## arts commits (party queue in starter form; ** = Super Art)")
+        lines.append("##   Super rows: tail-match hex vs crates/art/src/super_art.rs replace strings")
+        for r, is_super in commits:
+            mark = " **SUPER" if is_super else ""
+            lines.append(
+                f"  tick {r.tick:>7}  {r.scene:<8}  slot {r.idx}  {r.note}{mark}"
+            )
 
     if "hp" in want:
         lines.append("\n## battle HP timeline (+0x14C per hit; opt-in verbose)")
@@ -836,6 +896,20 @@ def build_json(rows: list[Row], bulk_threshold: int) -> dict:
             {"tick": r.tick, "scene": r.scene, "slot": r.idx, "hp": r.value, "delta": r.delta, "note": r.note}
             for r in hp_changes(rows)
         ],
+        "aq": [
+            {"tick": r.tick, "scene": r.scene, "slot": r.idx, "changed": r.delta, "note": r.note}
+            for r in aq_changes(rows)
+        ],
+        "arts_commits": [
+            {
+                "tick": r.tick,
+                "scene": r.scene,
+                "slot": r.idx,
+                "queue_hex": r.note[2:] if r.note.startswith("q=") else r.note,
+                "is_super": is_super,
+            }
+            for r, is_super in arts_commits(rows)
+        ],
     }
 
 
@@ -860,10 +934,11 @@ def main(argv=None) -> int:
     )
     ap.add_argument(
         "--only",
-        default="scenes,battles,flags,items,gold,party,progress,counters,status,bgm,picks,snaps",
+        default="scenes,battles,flags,items,gold,party,progress,counters,status,arts,bgm,picks,snaps",
         help="comma list of sections: scenes,battles,flags,items,gold,party,"
-        "progress,counters,status,bgm,picks,snaps,walk,input,hp "
-        "(walk+input+hp are opt-in: verbose)",
+        "progress,counters,status,arts,bgm,picks,snaps,walk,input,hp "
+        "(walk+input+hp are opt-in: verbose; arts = committed arts/Super-Art "
+        "queue rewrites from the aq stream)",
     )
     ap.add_argument(
         "--labels",

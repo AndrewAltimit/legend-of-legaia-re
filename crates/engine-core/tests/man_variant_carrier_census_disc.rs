@@ -1890,3 +1890,96 @@ fn desync_crosscheck_revalidates_every_mined_flag() {
     let (_, gen_1e8) = bytescan(0x1E8);
     assert!(gen_1e8 >= 15, "0x1E8 solved gate is heavily TESTed");
 }
+
+/// Flag `0x370` (the Nivora-side successor gate): the "writer-less after
+/// alias rejection - capture-only" verdict is FALSIFIED by the full-nibble
+/// `0x4C` width pinning, the same wave that resolved flag 549. The census
+/// surfaces exactly ONE genuine (clean-decode, non-text-alias) script SET
+/// disc-wide: `doman`'s variant MAN (PROT 0401) `P1[15]` at MAN offset
+/// `0x06397` - `53 70` at a coherent opcode boundary inside a real
+/// choreography run (`CFlag.Test` / `CamCfg` / `WaitFrames` / `MoveTo` /
+/// `Effect AnimTrigger` / `4C CD`), followed by a `JmpRel` back to the
+/// record's gate-test head and the Dr. Usha "Do you understand? The first
+/// TimeSpace..." dialogue segment - the research-center briefing latch.
+/// The prose sites ("Time**Sp**ace Bomb" = `53 70`) stay rejected as
+/// text aliases. The doman NPC records `P1[3..=18]` carry the clean head
+/// TESTs of the same flag (the arc-gate dispatch chain, non-printable jump
+/// operands = alias-immune).
+#[test]
+fn flag_0x370_writer_is_the_doman_p1_15_usha_latch() {
+    let Some(index) = open_index() else { return };
+    let scenes = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+
+    let sites = census.get(&0x370).expect("0x370 sites");
+    let sets: BTreeSet<(String, bool, usize, usize)> = sites
+        .iter()
+        .filter(|h| h.kind == FlagKind::Set && h.clean && !h.text_alias)
+        .map(|h| (h.scene_name.clone(), h.variant, h.partition, h.record))
+        .collect();
+    assert_eq!(
+        sets,
+        BTreeSet::from([("doman".to_string(), true, 1, 15)]),
+        "0x370's one genuine script SET = doman variant P1[15] (the Usha \
+         briefing latch); anything else appearing here is a new surfaced \
+         writer - re-verify before trusting"
+    );
+
+    // The reader family: clean head TESTs across doman's NPC records (the
+    // per-record arc-gate dispatch chain).
+    let doman_tests: BTreeSet<usize> = sites
+        .iter()
+        .filter(|h| {
+            h.scene_name == "doman"
+                && h.kind == FlagKind::Test
+                && h.clean
+                && !h.text_alias
+                && h.partition == 1
+        })
+        .map(|h| h.record)
+        .collect();
+    for rec in [3usize, 4, 7, 8, 9, 15] {
+        assert!(
+            doman_tests.contains(&rec),
+            "doman P1[{rec}] carries a clean head TEST of 0x370 (got {doman_tests:?})"
+        );
+    }
+}
+
+/// The two koin gates stay genuinely writer-less in script space even under
+/// the fully-pinned nibble widths: the census holds clean TESTs only
+/// (`koin3` P2[9]/P2[10] for `0x50A`, `koin4` P1[15] for `0x5D6`) and NO
+/// genuine SET/CLEAR disc-wide. Their writers are code paths or the
+/// C1-passes-anyway shape - the capture-target class (Track A). If this
+/// test ever fails on the SET side, a static writer has surfaced -
+/// re-verify it (the 549/0x370 pattern) before scheduling a capture.
+#[test]
+fn koin_gates_0x50a_0x5d6_remain_script_writer_less() {
+    let Some(index) = open_index() else { return };
+    let scenes = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+
+    for (flag, scene, sites_want) in [
+        (0x50Au16, "koin3", vec![(2usize, 9usize), (2, 10)]),
+        (0x5D6, "koin4", vec![(1, 15), (1, 15)]),
+    ] {
+        let sites = census.get(&flag).expect("gate sites");
+        let writers: Vec<_> = sites
+            .iter()
+            .filter(|h| h.kind != FlagKind::Test && h.clean && !h.text_alias)
+            .map(|h| (h.scene_name.clone(), h.partition, h.record))
+            .collect();
+        assert!(
+            writers.is_empty(),
+            "0x{flag:X} gained a genuine script writer {writers:?} - re-verify"
+        );
+        let tests: Vec<(usize, usize)> = sites
+            .iter()
+            .filter(|h| {
+                h.scene_name == scene && h.kind == FlagKind::Test && h.clean && !h.text_alias
+            })
+            .map(|h| (h.partition, h.record))
+            .collect();
+        assert_eq!(tests, sites_want, "0x{flag:X} clean TEST sites in {scene}");
+    }
+}

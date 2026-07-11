@@ -560,8 +560,15 @@ happens to precede the site within the resync window. Triage rules that follow f
 Hand-checks that applied these rules: the "chapter-wide readers" the census reports for `0x32C` (~50
 scenes) and `0x461` (~30 scenes) are the `s,` / `ta` bigrams in NPC dialogue - both flags are real but
 scene-local (see [open-rev-eng-threads](../reference/open-rev-eng-threads.md#region-story-flag-gate-families));
-the lone census writer candidate for the Nivora successor gate `0x370` (`doman` variant `P1[15]`) is the
-`Sp` in "Space Bomb" dialogue text, so `0x370` stays writer-less; and the once-reported `Clear 0x400`
+the Nivora successor gate `0x370` shows the context-window rule cutting **both ways inside one record**
+(`doman` variant `P1[15]`): three `Sp` = `53 70` sites are the "Time**Sp**ace Bomb" dialogue (rejected),
+but the fourth, at MAN offset `0x06397` (`+0x3018`), sits in a choreography run (`WaitFrames` / `MoveTo` /
+`Effect` / `4C CD`) with a loop-back `JmpRel` to the record's gate-test head - and the head's own
+`Test 0x370 -> +0x301E` jump target lands on the very next op after that `JmpRel`, so both sites decode
+on the same op grid: this is the **genuine writer** (the Dr. Usha briefing self-latch; pinned by
+`man_variant_carrier_census_disc.rs::flag_0x370_writer_is_the_doman_p1_15_usha_latch` - the earlier
+"writer-less, the candidate is Space-Bomb prose" verdict predated the nibble-width pinning and
+adjudicated a prose sibling, not this site); and the once-reported `Clear 0x400`
 inside `vozz P1[7]` was the nibble-8 sub-1 width bug above - under the pinned width the bytes are the
 op's own operand tail and its `35` BGM follower, and the census row disappears entirely.
 
