@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+pub mod seq_slots;
 pub mod sequencer;
 pub mod sfx;
 pub mod spu;
@@ -29,6 +30,7 @@ pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 mod webaudio;
 
+pub use seq_slots::{SeqResourceSlot, SeqResourceTable};
 pub use sequencer::Sequencer;
 pub use sfx::{
     CueDispatch, PendingCue, SfxBank, SfxEntry, SfxFireBatch, SfxScheduler, classify_cue,
