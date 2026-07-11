@@ -52,15 +52,54 @@ pub(super) fn op_4e<H: FieldHost>(
                 }
             }
         }
-        2 | 3 | 5 | 6 | 7 | 8 | 9 => {
-            let Some(&lo) = bytecode.get(operand + 2) else {
+        // Sub-ops 2..=9 share the 7-byte compare-and-skip shape with 0/1,
+        // minus the `factor * arg >> 8` scaling. The raw jump table at
+        // 0x801CEE30 routes each to a value loader that joins the shared
+        // compare at 0x801E0B40; the earlier "absolute jump to u16" (and
+        // sub-4 "rand -> next PC") reading was the Ghidra decomp's
+        // collapsed bare-`break` switch arms - falsified by the raw
+        // loader bodies at 0x801E0AC0..0x801E0B34.
+        2..=9 => {
+            let Some(&arg_lo) = bytecode.get(operand + 2) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let Some(&hi) = bytecode.get(operand + 3) else {
+            let Some(&arg_hi) = bytecode.get(operand + 3) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let target = u16::from_le_bytes([lo, hi]) as usize;
-            StepResult::Advance { next_pc: target }
+            let Some(&skip_lo) = bytecode.get(operand + 4) else {
+                return StepResult::Unknown { opcode, pc };
+            };
+            let Some(&skip_hi) = bytecode.get(operand + 5) else {
+                return StepResult::Unknown { opcode, pc };
+            };
+            let scaled = i32::from(u16::from_le_bytes([arg_lo, arg_hi]));
+            let state: i32 = match sub_op {
+                // 0x801E0AC0: char record `page` level byte +0x130.
+                2 => host.op4e_char_level(page),
+                // 0x801E0AEC / 0x801E0B34: gold / coin bank (same globals
+                // as the 9-byte sub-10/11 forms, compared vs a u16 here).
+                3 => host.party_bank_value(10),
+                9 => host.party_bank_value(11),
+                // 0x801E0AFC: BIOS Rand() & 0xFF - a random-chance branch.
+                4 => host.op4e_sub4_bios_rand() & 0xFF,
+                // 0x801E0B0C: slot table 0x801C6460[sub - 5] (s16).
+                _ => i32::from(host.slot_table_read(sub_op - 5)),
+            };
+            let cmp = mode_byte & 0x0F;
+            let taken = match cmp {
+                0 => state < scaled,
+                1 => scaled < state,
+                _ => false,
+            };
+            if taken {
+                StepResult::Advance {
+                    next_pc: rel_jump(pc + header_size + 4, skip_lo, skip_hi),
+                }
+            } else {
+                StepResult::Advance {
+                    next_pc: pc + header_size + 6,
+                }
+            }
         }
         12..=15 => {
             // sub-ops 12..=15 hit the dispatcher's default arm at
@@ -114,18 +153,6 @@ pub(super) fn op_4e<H: FieldHost>(
                 StepResult::Advance {
                     next_pc: pc + header_size + 8,
                 }
-            }
-        }
-        // Sub-op 4: `iVar18 = func_0x80056798(); return iVar18;` -
-        // FUN_80056798 is a BIOS Rand thunk (`jr 0xA0; t1=0x2F`).
-        // The original returns the random value as the next PC. There
-        // are no captured callers, so this is almost certainly a dev
-        // stub. The host hook returns the next-PC value (default 0,
-        // matching broken-as-shipped behaviour).
-        4 => {
-            let next = host.op4e_sub4_bios_rand();
-            StepResult::Advance {
-                next_pc: next as usize,
             }
         }
         // `mode_byte >> 4` is at most 0xF; arms above cover every

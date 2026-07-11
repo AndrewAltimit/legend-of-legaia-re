@@ -322,13 +322,19 @@ pub(super) fn decode_inventory_cmp(
         })
     };
     match sub_op {
-        // Sub-ops 0/1 (inventory) share the 6-operand compare shape with
-        // 2/3/9 (char level byte +0x130 / party gold _DAT_8008459C / coin
-        // bank 0x800845A4): the overlay-0897 jump table at VA 0x801CEE30
-        // routes 2/3/9 to dedicated value loaders (0x801E0AC0/0AEC/0B34)
-        // that fall into the same compare-and-skip continuation as 0/1;
-        // only sub-ops 5..8 take the 0x801C6460 absolute-jump arm.
-        0 | 1 | 2 | 3 | 9 => {
+        // Sub-ops 0..=9 all share the 6-operand compare-and-skip shape:
+        // the overlay-0897 jump table at VA 0x801CEE30 (12 entries, PROT
+        // 0897 file +0x618) routes each to a dedicated value loader
+        // (0 HP / 1 MP pair at 0x801E0A40/0A70, 2 char level byte +0x130
+        // at 0x801E0AC0, 3 party gold _DAT_8008459C at 0x801E0AEC,
+        // 4 BIOS Rand() & 0xFF at 0x801E0AFC, 5..=8 slot table
+        // 0x801C6460[sub - 5] at 0x801E0B0C, 9 coin bank _DAT_800845A4 at
+        // 0x801E0B34) that joins the shared compare continuation at
+        // 0x801E0B40. The decompiled bare-`break` arms for 2..9 were the
+        // collapsed switch, not fall-throughs to an absolute jump: the raw
+        // loaders each end `j 0x801e0b40` / `j 0x801e0b3c` with the
+        // operand pointer staged in the delay slot.
+        0..=9 => {
             need(6)?;
             let arg = u16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
             let skip_delta = u16::from_le_bytes([bytecode[operand + 4], bytecode[operand + 5]]);
@@ -343,13 +349,6 @@ pub(super) fn decode_inventory_cmp(
                 },
             )
         }
-        5..=8 => {
-            need(4)?;
-            let target =
-                u16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]) as usize;
-            mk(header_size + 4, InventoryCmpKind::AbsJump { target })
-        }
-        4 => mk(header_size + 2, InventoryCmpKind::BiosRandJump),
         10 | 11 => {
             need(8)?;
             let lo1 = u16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]) as u32;
@@ -487,6 +486,27 @@ pub(super) fn decode_menu_ctrl(
                     ]);
                 }
                 mk(header_size + 13, MenuCtrlKind::Nibble6Emitter6 { words })
+            } else if op0 == 0x61 {
+                // Sub-0x61: 16-byte scripted CLUT-cell effect (one-shot cell
+                // write / cross-fade spawn, FUN_801E4C58). Operands are LE16
+                // pairs relative to the sub-byte: `+1/+3` = cell A, `+5/+7` =
+                // cell B (`B.y == 0` -> B.x is a flat BGR555 colour), `+9/+0xB`
+                // = destination cell, `+0xD` = frame count in vsyncs (0 =
+                // one-shot). Mirrors the executing VM's advance of
+                // `header + 15` (engine-vm menu_ctrl/nibble_5_6_7.rs).
+                need(15)?;
+                let w = |o: usize| {
+                    i16::from_le_bytes([bytecode[operand + o], bytecode[operand + o + 1]])
+                };
+                mk(
+                    header_size + 15,
+                    MenuCtrlKind::Nibble6ClutFx {
+                        a: (w(1), w(3)),
+                        b: (w(5), w(7)),
+                        dest: (w(9), w(11)),
+                        frames: w(13),
+                    },
+                )
             } else {
                 Err(DisasmError::UnknownSubOp {
                     pc,

@@ -26,6 +26,7 @@ pub mod capture_observations;
 pub mod cd_dma;
 pub mod cheat_applier;
 pub mod chunk_install;
+pub mod clut_fx;
 pub mod cutscene;
 pub mod cutscene_caption;
 pub mod cutscene_narration;

@@ -1184,6 +1184,38 @@ pub struct World {
     /// can be live at once (the prescript triggers them independently).
     pub active_field_fx: Vec<crate::summon::SummonScene>,
 
+    /// Adaptive frame-step factor `dt` - the retail scratchpad byte
+    /// `DAT_1F800393`, the number of *vsyncs per game tick*. The frame-flip
+    /// path (`FUN_80016B6C`, see `ghidra/scripts/funcs/80016b6c.txt`) rewrites
+    /// it every frame from the measured frame cost (`1`, `2` past `0xF0`, `3`
+    /// past `0x1FE`, `4` past `0x2D0`), clamped up to the per-mode floor
+    /// `_DAT_8007B9D8`. Live poll baselines: field/town scenes run at `2`
+    /// (30 fps) and the overworld kingdom scenes (`mapNN`) at `3` (20 fps) -
+    /// the engine pins those per-scene values on entry
+    /// ([`crate::scene::SceneHost::enter_field_scene`]) rather than modelling
+    /// the load-adaptive writer. Consumed by everything that advances
+    /// per-game-tick in vsync units - the scripted CLUT fades
+    /// ([`Self::step_clut_fx`]) and the shell's CLUT-cycle cadence.
+    ///
+    /// REF: FUN_80016B6C
+    pub frame_step: u8,
+    /// Vsyncs accumulated toward the next retail *game tick* (a game tick
+    /// spans [`Self::frame_step`] vsyncs). Advanced by [`World::tick`] on the
+    /// sim ticks that map to a retail vsync ([`Self::field_frame_step`]).
+    pub clut_vsync_accum: u8,
+    /// Retail game ticks elapsed since the host last drained the scripted
+    /// CLUT effects ([`World::step_clut_fx`] consumes these). Only
+    /// accumulates while [`Self::clut_fx`] is non-empty, and saturates at a
+    /// small cap so a host that never drains can't wind up an unbounded
+    /// backlog.
+    pub clut_pending_game_ticks: u32,
+    /// Live scripted CLUT-cell effects (field-VM `0x4C` n6 sub-`0x61`):
+    /// pending one-shot cell writes and in-flight cross-fades. Spawned by
+    /// [`World::spawn_clut_cell_fx`] (the `op4c_n6_sub_61_emitter` host
+    /// hook), stepped + applied against the host's software VRAM by
+    /// [`World::step_clut_fx`], cleared on scene entry.
+    pub clut_fx: Vec<crate::world::ClutCellFx>,
+
     /// Pending move-FX sound cue id (`+0x0d`), set by [`World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
     /// [`World::take_pending_move_fx_cue`] and routes it through
@@ -1893,6 +1925,11 @@ impl World {
             field_stagers: Vec::new(),
             field_stager_bytes: Vec::new(),
             active_field_fx: Vec::new(),
+            // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
+            frame_step: 2,
+            clut_vsync_accum: 0,
+            clut_pending_game_ticks: 0,
+            clut_fx: Vec::new(),
             pending_move_fx_cue: None,
             element_affinity: None,
             item_shop_data: None,

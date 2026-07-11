@@ -121,19 +121,27 @@ impl PlayWindowApp {
                 return Some(OceanAnim {
                     frames: ocean.animation_frames,
                     cur: 0,
-                    tick: 0,
+                    vsyncs_to_game_tick: 0,
+                    vsync_accum: 0,
                 });
             }
         }
         None
     }
 
-    /// Advance the world-map ocean CLUT animation one sim tick. When the frame
-    /// cursor crosses [`OCEAN_ANIM_TICKS_PER_FRAME`], write the next frame's 16
-    /// BGR555 entries into the CPU VRAM CLUT row at `(0, 506)` and re-upload the
-    /// VRAM so the heightfield's water cells (which sample that CLUT) shimmer.
-    /// No-op when no ocean animation is loaded. Cheap: the whole-VRAM re-upload
-    /// fires only on a frame change (~10x/s), not every render frame.
+    /// Advance the world-map ocean CLUT animation one sim tick, in retail
+    /// vsync units: only the sim ticks that map to a retail vsync
+    /// (`World::field_frame_step`) advance the clock, a retail *game tick*
+    /// lands every `World::frame_step` vsyncs (the adaptive `DAT_1F800393`
+    /// factor `FUN_80016B6C` writes - `3` on the overworld), and each game
+    /// tick banks `frame_step` vsyncs toward
+    /// [`OCEAN_ANIM_VSYNCS_PER_FRAME`] - the retail CLUT-effect
+    /// `counter += dt` cadence (`FUN_801E4794`). When the accumulator
+    /// crosses, write the next frame's 16 BGR555 entries into the CPU VRAM
+    /// CLUT row at `(0, 506)` and re-upload the VRAM so the heightfield's
+    /// water cells (which sample that CLUT) shimmer. No-op when no ocean
+    /// animation is loaded. Cheap: the whole-VRAM re-upload fires only on a
+    /// frame change (~15x/s), not every render frame.
     pub(super) fn advance_ocean_animation(&mut self) {
         // While a battle is up the GPU texture holds the BATTLE VRAM (party
         // band + palettes + monster pages); the ocean cells aren't visible
@@ -144,15 +152,28 @@ impl PlayWindowApp {
         if self.session.host.world.mode == SceneMode::Battle {
             return;
         }
+        // Only the sim ticks that map to a retail vsync advance the clock
+        // (the 100 Hz sim carries ~60 vsyncs/s; see `World::field_frame_step`).
+        if self.session.host.world.field_frame_step == 0 {
+            return;
+        }
+        let dt = u32::from(self.session.host.world.frame_step.max(1));
         let frame: [u8; 32] = {
             let Some(anim) = self.ocean_anim.as_mut() else {
                 return;
             };
-            anim.tick += 1;
-            if anim.tick < OCEAN_ANIM_TICKS_PER_FRAME {
+            // A retail game tick lands every `dt` vsyncs; on each one, bank
+            // `dt` vsyncs (the retail `counter += DAT_1F800393` step).
+            anim.vsyncs_to_game_tick += 1;
+            if anim.vsyncs_to_game_tick < dt {
                 return;
             }
-            anim.tick = 0;
+            anim.vsyncs_to_game_tick = 0;
+            anim.vsync_accum += dt;
+            if anim.vsync_accum < OCEAN_ANIM_VSYNCS_PER_FRAME {
+                return;
+            }
+            anim.vsync_accum -= OCEAN_ANIM_VSYNCS_PER_FRAME;
             let nframes = anim.frames.len() / 32;
             if nframes == 0 {
                 return;
@@ -170,6 +191,34 @@ impl PlayWindowApp {
             match r.upload_vram(base) {
                 Ok(v) => self.uploaded_vram = Some(v),
                 Err(e) => log::error!("play-window: ocean CLUT re-upload: {e:#}"),
+            }
+        }
+    }
+
+    /// Apply the world's scripted CLUT-cell effects (field-VM `0x4C` n6
+    /// sub-`0x61` one-shots + cross-fades, `World::step_clut_fx`) against the
+    /// CPU VRAM and re-upload when anything changed. `World::tick` banks the
+    /// retail game ticks (every `frame_step` vsyncs); this drains them once
+    /// per sim tick. Battle-guarded for the same reason as
+    /// [`Self::advance_ocean_animation`]: while a battle is up the GPU
+    /// texture holds the battle VRAM and a field re-upload would clobber it.
+    pub(super) fn apply_world_clut_fx(&mut self) {
+        if self.session.host.world.mode == SceneMode::Battle {
+            return;
+        }
+        if self.session.host.world.clut_fx.is_empty() {
+            return;
+        }
+        let Some(base) = self.cpu_vram_base.as_mut() else {
+            return;
+        };
+        if !self.session.host.world.step_clut_fx(base) {
+            return;
+        }
+        if let Some(r) = self.win.renderer.as_ref() {
+            match r.upload_vram(base) {
+                Ok(v) => self.uploaded_vram = Some(v),
+                Err(e) => log::error!("play-window: scripted CLUT-fx re-upload: {e:#}"),
             }
         }
     }

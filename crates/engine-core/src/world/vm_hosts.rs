@@ -1257,6 +1257,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::ExecMove { move_id });
     }
 
+    /// Op `0x4C 0x61` - scripted CLUT-cell effect (one-shot cell write /
+    /// cross-fade spawn). Decodes the 14-byte operand payload and queues the
+    /// effect on the world; [`World::step_clut_fx`] applies it against the
+    /// host's software VRAM on the retail game-tick cadence.
+    ///
+    /// PORT: FUN_801E4C58
+    fn op4c_n6_sub_61_emitter(&mut self, _ctx: &mut FieldCtx, payload: [u8; 14]) {
+        self.world.spawn_clut_cell_fx(&payload);
+    }
+
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
         // In the spawned opening-cutscene context (target 0xF8) this op is the
         // inline-narration text-draw, not an actor spawn - the separate

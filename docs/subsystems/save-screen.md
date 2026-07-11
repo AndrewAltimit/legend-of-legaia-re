@@ -477,9 +477,15 @@ if (0x1000 < DAT_801ef194) DAT_801ef194 = 0x1000;
 // slide-out direction: subtract until clamped to 0.
 ```
 
-`DAT_1f800393` is the global frame-step multiplier (1 NTSC, 2 PAL),
-so PAL builds slide twice as fast in real time per the doubled
-per-tick rate.
+`DAT_1f800393` is the **adaptive frame-skip factor** - the number of
+vsyncs the current game tick spans. The frame-flip path rewrites it
+every frame from the measured frame cost (`1` baseline, `2` past
+`0xF0`, `3` past `0x1FE`, `4` past `0x2D0`), clamped up to the
+per-mode floor `_DAT_8007B9D8`
+(`ghidra/scripts/funcs/80016b6c.txt`); live polls show field/town
+scenes at `2` (30 fps) and the overworld at `3` (20 fps). Scaling the
+per-tick increment by it keeps the slide's *real-time* speed constant
+under frame-skip.
 
 ### Engine port
 

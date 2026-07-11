@@ -242,8 +242,8 @@
       </tr>
       <tr>
         <td>cave01 <code>P2[16]</code> (the <code>0x15D</code> entry-key setter) - what spawns it</td>
-        <td>open (small)</td>
-        <td>The ungated record that SETs <code>0x15D</code> (the entry key of cave01's <code>0x15D</code>&rarr;<code>0x15E</code>&rarr;<code>0x169</code> ordered beat chain) has no tile trigger; likely spawned by a P1 interact (NPC dialogue). Pin the spawner record + interaction.</td>
+        <td><span class="tag tag-done">closed</span> (slot-counted spawn chain)</td>
+        <td><code>P2[16]</code> (global <code>0x1E</code>) is spawned by <code>44 1E</code> at <code>P2[12]</code> body <code>+0x1C</code> (MAN <code>0x35B9</code>), gated by an op-<code>0x4E</code> <strong>sub-5 slot-table compare</strong> at <code>+0x15</code> (<code>4E 00 50 08 00 06 00</code>: skip while slot <code>0x801C6460[0]</code> &lt; 8). <code>P2[12]</code> (global <code>0x1A</code>) opens with <code>4C CB 00 01 00</code> (slot 0 += 1) and is spawned once per interaction by each of the five creature-interact scripts <code>P1[3..7]</code> (<code>44 1A</code> at the first-interact branch tail); the per-NPC talked latches <code>0x161..0x165</code> are re-cleared inside the interact scripts so interactions repeat until the count reaches 8. <code>P1[2]</code> (the lead-NPC ladder record) zeroes slot 0 (<code>4C CA 00 00 00</code>). Decoding the gate exposed the op-<code>0x4E</code> sub-op family mis-read (subs 0..9 are all the 7-byte compare-and-skip; the "sub-5..8 absolute jump" / "sub-4 rand as next PC" readings were the collapsed decomp switch).</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
@@ -260,8 +260,8 @@
       </tr>
       <tr>
         <td><code>0x4C 0x51</code> byte <code>+3</code> = <code>[bit7 special-model | facing nibble]</code> vs the glide-speed interim <code>depth &amp; 7</code> reading</td>
-        <td>open (reconcile)</td>
-        <td>The spawn-prologue facing decode (see <a href="../subsystems/field-locomotion.html#npc-initial-facing">field-locomotion &sect; NPC initial facing</a>) pins retail <code>4C 51</code> case-1 as a teleport+move-start whose byte <code>+3</code> low nibble indexes the heading LUT <code>0x80073F04</code> - which overlaps the route/glide decoder's interim <code>depth &amp; 7</code> reading of the same byte. Reconcile the two models when the motion-bytecode synthesis is traced.</td>
+        <td><span class="tag tag-done">closed</span> (facing wins; two different ops)</td>
+        <td>Raw asm settles both halves: <code>4C 51</code> case-1 consumes byte <code>+3</code> <strong>only</strong> as <code>[bit7 special-model | facing-LUT nibble]</code> and carries no speed operand (byte <code>+4</code> = move-anim id); the <code>depth &amp; 7</code> base-step selector belongs to the walk-kernel op <code>0x47</code>'s <em>own</em> third operand (<code>FUN_8003774C</code>; ops 0x37/0x41 use <code>(op0&gt;&gt;5 &amp; 4)|(op1&gt;&gt;6)</code>). No motion-bytecode synthesis exists: the field-VM yield-class ops park their instruction pointer at actor <code>+0x94</code> and the walk kernel interprets the record bytes in place. See <a href="../subsystems/field-locomotion.html#npc-glide-speed">field-locomotion &sect; NPC glide speed</a>.</td>
         <td><a href="../subsystems/field-locomotion.html">field-locomotion</a></td>
       </tr>
       <tr>
@@ -272,8 +272,8 @@
       </tr>
       <tr>
         <td>kor-family op-<code>0x49</code> flag window <code>[0x138..0x13F]</code> - what the 8 flags gate</td>
-        <td>open (small)</td>
-        <td>The only genuine op-<code>0x49</code> flag-window family on the disc (24 sites, kor/kor3/kor4, <code>base=0x138 count=8</code>, paired <code>default=0 rows=8</code> / <code>default=4 rows=4</code>). An 8-way picker window - likely a puzzle/selection state block in the Uru Mais dream scenes. Decode what each flag drives.</td>
+        <td><span class="tag tag-done">closed</span> (Uru Mais warp-pad destination memory)</td>
+        <td>Each flag is one destination row of the Uru Mais dream-shrine teleport-pad picker: the pad records (kor <code>P2[17..20]</code>, kor3 <code>P2[9..12]</code>, kor4 <code>P2[4..7]</code>) clear the window, pre-set <strong>their own row</strong> (kor &rarr; <code>0x138..0x13B</code>, kor3 &rarr; <code>0x13C</code>/<code>0x13D</code>, kor4 &rarr; <code>0x13E</code>/<code>0x13F</code>), run the <code>FUN_801EF014</code> picker, then an 8-way test ladder executes a named <code>0x3F</code> SceneChange per row (4 KOR entries, 2 KOR3, 2 KOR4). Descriptor <code>+2</code> = first visible row, <code>+3</code> = visible row count, so the paired descriptors are the full 8-row menu vs the rows-4..7 chambers-only menu (state flags <code>0x136</code>/<code>0x137</code>). Confirming a different row sets <code>base + selection</code>; picking the current row or cancelling sets nothing, so the ladder falls through to the stay-put arm.</td>
         <td><a href="functions.html">functions</a></td>
       </tr>
       <tr>
@@ -441,7 +441,7 @@
   <p>The op-<code>0x34</code> sub-3 census (scanner <code>man_field_scripts::scene_stager_installs</code>, oracle <code>scene_prescript_consumer_census_disc</code>) walked all three MAN partitions across the corpus: 78 scenes install stagers, from both the placement scripts and the cutscene timelines. The install carriers in partition 1 are dedicated effect-actor records - Shift-JIS-named "effect", whole script = <code>install id N</code> + infinite loop - and the town "768-byte dispatch table" at record 0 is those actors' target: the scene's master ambient stager (8-byte-periodic spawn rows), not a table. A town01 field state pins the id space: retail relocates the bundle to RAM as <code>[u16 count][u16 offsets[count]]</code> at <code>_DAT_8007B8D0</code> with count = the file record count and record 0 byte-identical at the first offset.</p>
 
   <h3 id="d-clut-cycle">World-map CLUT cycling - residual</h3>
-  <p>Destination cells are kingdom-universal; no rect constant exists in any code image because the rows live in scene-script operands. Residual: the exact retail cadence (the scratchpad frame-delta byte <code>0x1F800393</code> feeds the fade SM); the engine animates only the row-506 ocean head.</p>
+  <p>Destination cells are kingdom-universal; no rect constant exists in any code image. The operand-source finding splits: only the <strong>row-498 strip park row</strong> is script-operand-driven - map01's field MAN carries exactly eight <code>4C 61</code> ops (four <code>frames=0</code> one-shots copying <code>(112, 499)</code> onto <code>(0/16/32/48, 498)</code> + four 128-vsync cross-fades back; <code>scene_clut_cell_fx</code>, disc-gated <code>map01_clut_fx_disc</code>). The row-506/508/509 head-walk operands appear in <strong>no</strong> MAN (exhaustive u16 scan), so the head-walk's overlay-resident operand source is still unpinned. Cadence: <code>0x1F800393</code> is the adaptive frame-skip factor (vsyncs per game tick, <code>FUN_80016B6C</code>; field/town 2, overworld 3) and the fade SM is ported (<code>engine-core::clut_fx</code> + <code>World::step_clut_fx</code>); the remaining unknown is the ocean-head step interval in vsyncs (needs a mednafen frame-series capture).</p>
 </section>
 
 <section class="doc-section" id="text-dialog">

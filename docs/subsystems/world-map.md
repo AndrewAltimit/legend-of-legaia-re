@@ -1007,8 +1007,12 @@ engine the ocean texture + base CLUT already land in VRAM via the kingdom
 slot-0 TIM pass, and the heightfield's water cells reference that CLUT (~39% of
 map01's verts carry CBA `0x7E80`), so `play-window` animates the sea by writing
 each frame's 16 entries into the CPU VRAM CLUT row at `(0, 506)` and
-re-uploading (`OceanAnim` / `advance_ocean_animation`). The exact retail DMA
-cadence isn't pinned, so the engine's frame interval is a tuned approximation.
+re-uploading (`OceanAnim` / `advance_ocean_animation`). The clock runs in
+retail vsync units - a game tick every `World::frame_step` vsyncs (the
+adaptive `DAT_1F800393` factor `FUN_80016B6C` writes; overworld `3`), each
+banking `frame_step` vsyncs toward `OCEAN_ANIM_VSYNCS_PER_FRAME` - but the
+step interval *value* is still a tuned approximation (the exact retail
+interval awaits a mednafen frame-series capture of the row-506 head).
 The cycle is live-verified on **all three kingdoms**: resident Sebucus /
 Karisto captures hold a mid-cycle frame of their own bundle's 13-frame strip
 at the `(0, 506)` head (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`).
@@ -1045,26 +1049,46 @@ plus a `(48, 500)` sibling - and whose sources walk frame strips parked in
 VRAM rows 498 / 501..505 in 16-px steps (the 13-frame palette banks). Two
 field-overlay handlers emit them:
 
-- `FUN_801E4C58` - the field-VM `0x4C` n6 sub-`0x61` emitter: a one-shot
-  16×1 CLUT-cell write whose **coordinates are script operands** (source
-  `(x, y)` at instruction `+5`/`+7`, destination at `+9`/`+0xB`, read via the
-  misaligned-u16 helper `FUN_8003CE9C`). Non-zero source-y enqueues a libgpu
-  `MoveImage` cell copy; zero source-y replicates the `+5` halfword as a flat
-  BGR555 colour across all 16 entries and `LoadImage`s it.
+- `FUN_801E4C58` - the field-VM `0x4C` n6 sub-`0x61` emitter: with the
+  `+0xD` frame count zero, a one-shot 16×1 CLUT-cell write whose
+  **coordinates are script operands** (source `(x, y)` at instruction
+  `+5`/`+7`, destination at `+9`/`+0xB`, read via the misaligned-u16 helper
+  `FUN_8003CE9C`). Non-zero source-y enqueues a libgpu `MoveImage` cell
+  copy; zero source-y replicates the `+5` halfword as a flat BGR555 colour
+  across all 16 entries and `LoadImage`s it. A non-zero `+0xD` instead
+  spawns the cross-fade actor below (descriptor `DAT_801F2918`).
 - `FUN_801E4794` - the multi-frame **cross-fade** state machine (installed
   via the `[0xFFFF0000][handler]` descriptor records at `0x801F291C+`):
   captures two 16-colour cells (`StoreImage` of `+1`/`+3` and `+5`/`+7`),
   precomputes per-entry per-channel step deltas `(B−A)/frames` (`+0xD`),
-  accumulates them each tick against the scratchpad frame-delta byte
-  `0x1F800393`, and `LoadImage`s the repacked cell to `+9`/`+0xB`.
+  accumulates `delta × dt` each game tick where `dt` is the adaptive
+  frame-skip byte `0x1F800393` (vsyncs per game tick, rewritten per frame
+  by `FUN_80016B6C`), and `LoadImage`s the repacked cell to `+9`/`+0xB` -
+  so the `+0xD` operand is denominated in **vsyncs** and the fade's
+  real-time length is frame-rate independent. On `counter >= frames` it
+  `MoveImage`s cell B (or flat-fills) onto the destination, frees the
+  scratch, and clears the spawning script context's halt bit
+  (`*(ctx+0x94)+0x10 &= ~0x400`). Engine mirror:
+  `legaia_engine_core::clut_fx` (the arithmetic kernel) +
+  `World::step_clut_fx` (the VRAM driver), fed by the
+  `op4c_n6_sub_61_emitter` field-VM host hook.
 
 Both bottom out in the statically-linked libgpu (`MoveImage FUN_80058490`,
 which patches the static 5-word GP0 packet template at `0x80078DFC`;
 `LoadImage FUN_800583C8`; `StoreImage FUN_8005842C`) - which is why no
-`y = 506/508/509` rect constant exists in any code image: the rows live in
-the scene's field-VM bytecode operands. The lockstep phase coupling across
-rows comes from sibling script ops sharing the frame counter, not from one
-wider rect.
+`y = 506/508/509` rect constant exists in any code image. What the scene
+script actually carries is narrower than the full censused cell set:
+map01's field MAN holds exactly eight `4C 61` ops, all on the **row-498
+strip park row** - four one-shots (`frames = 0`) copying cell `(112, 499)`
+onto `(0/16/32/48, 498)`, and four cross-fades (`frames = 0x80` = 128
+vsyncs) fading those same four cells back toward `(112, 499)`
+(`legaia_engine_core::man_field_scripts::scene_clut_cell_fx`, disc-gated
+`map01_clut_fx_disc`). The row-506/508/509 head-walk operands appear in
+**no** MAN (exhaustive u16 scan over every scene's field MAN), so the
+head-walk's operand source is still unpinned - see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md). The
+lockstep phase coupling across rows comes from sibling emissions sharing
+the frame counter, not from one wider rect.
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:

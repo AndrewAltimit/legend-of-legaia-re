@@ -1566,9 +1566,12 @@ fn chapter2_rayman_three_haris_hub_flags() {
 /// `ra=0x801E3598`, CLEAR `ra=0x801E35C0`). The consumer is balden's
 /// scene-entry script, which TESTs `0x528` to guard its own scratch-bank reset
 /// (`75 28 5D 00` immediately before the batch-clear run at balden MAN 0xAC54):
-/// a per-scene init guard, not a story gate. The static census walker
-/// desyncs past that `75 28` in balden's dialogue-heavy record, so the census
-/// UNDERCOUNTS here: for `0x528` the census's zero is a floor, not the answer.
+/// a per-scene init guard, not a story gate. The static census walker used to
+/// desync past that `75 28` in balden's dialogue-heavy record (census TEST
+/// count 0 - a floor, not the answer); the op-`0x4E` sub-op width fix (subs
+/// 4..8 are the 7-byte compare-and-skip, not 3/5-byte jumps - see
+/// `field_disasm::decode_subops`) resyncs the walker and the census now
+/// surfaces the TEST family disc-wide, balden's guard included.
 #[test]
 fn flag_0x528_is_scratch_bank_tested_only_as_an_init_guard() {
     let Some(index) = open_index() else { return };
@@ -1598,18 +1601,18 @@ fn flag_0x528_is_scratch_bank_tested_only_as_an_init_guard() {
     let (set, clr, _tst) = kinds(0x528);
     assert!(set > 0 && clr > 0, "0x528 is written (SET+CLEAR)");
 
-    // The census UNDERCOUNTS its TEST (reports zero via desync), but balden
-    // carries a genuine `75 28` TEST - the reader the runtime capture confirmed
-    // (field-VM op-0x70 handler, ra 0x801E35E8), gating the bank reset.
-    assert_eq!(
-        kinds(0x528).2,
-        0,
-        "census reports zero TEST (a desync floor)"
+    // The census used to UNDERCOUNT its TEST to zero (walker desync across
+    // the mis-widthed 0x4E sub-ops); post-width-fix it surfaces the reader
+    // family, including balden's `75 28` guard - the reader the runtime
+    // capture confirmed (field-VM op-0x70 handler, ra 0x801E35E8).
+    assert!(
+        kinds(0x528).2 > 0,
+        "census surfaces the 0x528 TEST family (the old zero was a desync floor)"
     );
     let balden = man_of("balden");
     assert!(
         genuine_tests(&balden, [0x75, 0x28]) >= 1,
-        "but balden genuinely TESTs 0x528 (the census missed it)"
+        "balden genuinely TESTs 0x528 (byte-scan cross-check)"
     );
 
     // The bank is live scratch, not dead: sibling bits are TESTed too.
@@ -1854,14 +1857,19 @@ fn desync_crosscheck_revalidates_every_mined_flag() {
         );
     }
 
-    // (2) 0x528: the census reports zero TEST (a desync floor), but the
-    // byte-scan finds the reader far above the noise floor. Locks the
-    // correction + the "census not authoritative" lesson.
-    assert_eq!(census_test(0x528), 0, "0x528 census TEST is a desync floor");
+    // (2) 0x528: the census used to report zero TEST here (a desync floor
+    // from the mis-widthed 0x4E sub-ops 4..8); the width fix resyncs the
+    // walker and the census now agrees with the byte-scan that the reader
+    // family is real. Locks the correction both ways: the census surfaces
+    // the family AND the branch-idiom scan confirms it above the noise floor.
+    assert!(
+        census_test(0x528) > 0,
+        "0x528 census TEST surfaced by the 0x4E width fix (old zero = desync floor)"
+    );
     let (raw_528, gen_528) = bytescan(0x528);
     assert!(
         gen_528 >= 10 && gen_528 as f64 > (raw_528 as f64 / 256.0) * 6.0,
-        "0x528 carries a real TEST reader the census missed (genuine {gen_528} vs raw {raw_528})"
+        "0x528 carries a real TEST reader (genuine {gen_528} vs raw {raw_528})"
     );
 
     // (3) The real gates: genuine TEST far above a ~0 noise floor. Each has a

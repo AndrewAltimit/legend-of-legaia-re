@@ -224,14 +224,50 @@ fn op_4e_sub1_gt_uses_second_pair() {
 }
 
 #[test]
-fn op_4e_sub2_absolute_jump() {
-    // sub-op 2 falls through to absolute jump = LE_u16(operand[2..4]).
+fn op_4e_sub2_compares_char_level() {
+    // Sub-op 2 loads the character-record level byte (+0x130) and joins
+    // the shared 7-byte compare-and-skip continuation (raw loader
+    // 0x801E0AC0 -> 0x801E0B40); the old "absolute jump" reading was the
+    // Ghidra decomp's collapsed switch arm. mode low nibble 0
+    // (state < arg): level 5 < 10 -> taken, jump pc + 1 + 4 + 0x10 = 21.
     let mut host = TestHost::default();
+    host.op4e_char_levels.insert(2, 5);
     let mut ctx = FieldCtx::default();
-    // mode_byte high nibble = 2; LE u16 at +2 = 0x1234.
-    let bc = [0x4E, 0x00, 0x20, 0x34, 0x12, 0x00, 0x00];
+    let bc = [0x4E, 0x02, 0x20, 0x0A, 0x00, 0x10, 0x00];
     let r = step(&mut host, &mut ctx, &bc, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x1234 });
+    assert_eq!(r, StepResult::Advance { next_pc: 21 });
+    // Level 10: 10 < 10 is false -> PC += 7.
+    let mut host = TestHost::default();
+    host.op4e_char_levels.insert(2, 10);
+    let r = step(&mut host, &mut ctx, &bc, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 7 });
+}
+
+#[test]
+fn op_4e_sub5_through_8_compare_slot_table() {
+    // Sub-ops 5..=8 load the slot table 0x801C6460[sub - 5] (s16) via the
+    // loader at 0x801E0B0C and join the shared compare. This is the
+    // cave01 P2[12] spawn gate shape: `4E 00 50 08 00 06 00` = skip +6
+    // while slot 0 < 8.
+    let mut ctx = FieldCtx::default();
+    let bc = [0x4E, 0x00, 0x50, 0x08, 0x00, 0x06, 0x00];
+    // slot 0 = 3 -> 3 < 8 taken: pc + 1 + 4 + 6 = 11.
+    let mut host = TestHost::default();
+    host.slot_table_values.insert(0, 3);
+    let r = step(&mut host, &mut ctx, &bc, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 11 });
+    // slot 0 = 8 -> not taken: PC += 7 (falls into the next op).
+    let mut host = TestHost::default();
+    host.slot_table_values.insert(0, 8);
+    let r = step(&mut host, &mut ctx, &bc, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 7 });
+    // Sub-8 reads slot 3.
+    let mut host = TestHost::default();
+    host.slot_table_values.insert(3, 100);
+    let bc = [0x4E, 0x00, 0x81, 0x63, 0x00, 0x02, 0x00];
+    let r = step(&mut host, &mut ctx, &bc, 0);
+    // mode 1: arg 0x63 = 99 < 100 -> taken: pc + 5 + 2 = 7... (delta 2)
+    assert_eq!(r, StepResult::Advance { next_pc: 7 });
 }
 
 #[test]
@@ -281,17 +317,28 @@ fn op_4e_sub_a_compare_taken() {
 }
 
 #[test]
-fn op_4e_sub_4_invokes_bios_rand_and_jumps_to_returned_pc() {
-    // Sub-op 4 calls BIOS Rand (FUN_80056798) and uses the result as the
-    // next PC. With the host returning 0x42, the VM should jump to 0x42.
+fn op_4e_sub_4_compares_bios_rand_low_byte() {
+    // Sub-op 4 calls BIOS Rand (FUN_80056798), masks the result to
+    // `& 0xFF` (raw loader 0x801E0AFC: `andi s1, v0, 0xff` then
+    // `j 0x801e0b3c` into the shared compare) - a random-chance branch,
+    // not a jump-to-rand PC. rand = 0x142 -> state = 0x42 = 66.
+    // mode 0 (state < arg): 66 < 100 -> taken, jump pc + 5 + 0x10 = 21.
     let mut host = TestHost {
-        op4e_sub4_bios_rand_value: 0x42,
+        op4e_sub4_bios_rand_value: 0x142,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &[0x4E, 0, 0x40], 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x42 });
+    let bc = [0x4E, 0, 0x40, 0x64, 0x00, 0x10, 0x00];
+    let r = step(&mut host, &mut ctx, &bc, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 21 });
     assert_eq!(host.op4e_sub4_bios_rand_calls, 1);
+    // rand low byte 200: 200 < 100 false -> PC += 7.
+    let mut host = TestHost {
+        op4e_sub4_bios_rand_value: 200,
+        ..Default::default()
+    };
+    let r = step(&mut host, &mut ctx, &bc, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 7 });
 }
 
 #[test]

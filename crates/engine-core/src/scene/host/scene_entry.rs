@@ -94,6 +94,21 @@ impl SceneHost {
         // in `camera_configure`, so a stale set would leak the prior scene's
         // focus / depth into a beat that omits those slots).
         self.world.camera_state.params.clear();
+        // Scripted CLUT-cell effects are scene-scoped (their cell operands
+        // came from the previous scene's MAN); drop any in flight and re-pin
+        // the frame-step factor `dt` (retail `DAT_1F800393`, the adaptive
+        // vsyncs-per-game-tick factor the frame-flip path `FUN_80016B6C`
+        // writes): live poll baselines run field/town scenes at 2 (30 fps)
+        // and the overworld kingdom scenes (`mapNN`) at 3 (20 fps). See
+        // `World::frame_step`.
+        self.world.clut_fx.clear();
+        self.world.clut_vsync_accum = 0;
+        self.world.clut_pending_game_ticks = 0;
+        self.world.frame_step = if crate::scene::is_world_map_scene(name) {
+            3
+        } else {
+            2
+        };
         let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self
                 .scene

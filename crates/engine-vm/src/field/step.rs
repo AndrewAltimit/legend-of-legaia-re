@@ -803,13 +803,15 @@ pub fn step<H: FieldHost>(
         // success, jump to `pc + header_size + 4 + LE_u16(operand[4..6])`;
         // on failure, advance past the 7-byte instruction.
         //
-        // Sub-ops 2/3/5/6/7/8/9 fall through to an absolute jump:
-        // `next_pc = LE_u16(operand[2..4])`.
-        //
-        // Sub-op 4 invokes [`FieldHost::op4e_sub4_bios_rand`] (BIOS Rand stub)
-        // and uses the returned value as the next PC; the default is 0, which
-        // restarts the script at the bytecode origin. Sub-ops 10/11 are the
-        // party-bank comparison (9-byte encoding) ported above.
+        // Sub-ops 2..=9 share the same 7-byte compare-and-skip shape
+        // without the `>> 8` scaling; each has a dedicated value loader
+        // (raw jump table `0x801CEE30`): 2 = char level byte `+0x130`
+        // ([`FieldHost::op4e_char_level`]), 3 / 9 = gold / coin bank
+        // ([`FieldHost::party_bank_value`]), 4 = BIOS `Rand() & 0xFF`
+        // ([`FieldHost::op4e_sub4_bios_rand`], a random-chance branch),
+        // 5..=8 = slot table `0x801C6460[sub - 5]`
+        // ([`FieldHost::slot_table_read`]). Sub-ops 10/11 are the
+        // party-bank comparison (9-byte u32 encoding).
         0x4E => flow::op_4e(host, bytecode, pc, opcode, header_size, operand),
 
         // 0x49 - STATE_RESUME. Multi-frame state machine on `_DAT_8007B450`.

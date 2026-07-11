@@ -1,14 +1,16 @@
-//! Disc-gated: field-NPC glide speed is derived from the real `0x4C 0x51`
-//! motion-op base-step operand off the disc, replacing the flat stand-in.
+//! Disc-gated: field-NPC glide speed is derived from the `0x4C 0x51` leg's
+//! byte-+3 operand off the disc, replacing the flat stand-in.
 //!
 //! Retail glides an NPC at `_DAT_1f800393 × 0x80 / (4 << bits)` per frame
 //! (`FUN_8003774C` ops 0x37/0x41/0x47), where `bits` is a base-step selector
-//! encoded in the motion op's own operand - NOT the player's `+0x72` speed
-//! path (falsified). The engine derives each placement's glide speed from its
-//! first local `0x4C 0x51` leg's `depth` operand
-//! (`man_field_scripts::placement_glide_speed`) into
-//! `World::field_npc_glide_speeds`, and `World::start_field_npc_motion` writes
-//! that into the leg's motion-VM speed instead of the flat stand-in (8).
+//! encoded in the motion op's own operands - NOT the player's `+0x72` speed
+//! path (falsified). Reconcile outcome: `4C 51` itself carries NO speed field
+//! (its byte +3 is `[bit7 special-model | facing nibble]`), so this derivation
+//! reads the facing nibble as a stable per-NPC variation - see the modelling
+//! note on `man_field_scripts::placement_glide_speed`. The engine feeds the
+//! derived value through `World::field_npc_glide_speeds`, and
+//! `World::start_field_npc_motion` writes it into the leg's motion-VM speed
+//! instead of the flat stand-in (8).
 //!
 //! Assertions are structural (the derived speeds land on the retail base-step
 //! ladder, and the engine's motion state carries the derived value, not the

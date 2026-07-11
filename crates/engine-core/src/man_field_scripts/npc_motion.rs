@@ -101,11 +101,10 @@ pub fn placement_motion_route(
 }
 
 /// The per-frame glide speed placement `p`'s motion legs run at, derived from
-/// the base-step operand of its **first local** `0x4C 0x51` motion op (the
-/// `depth` byte - the MAN carrier of the motion VM's `4 << bits` base step;
-/// retail `FUN_8003774C` ops 0x37/0x41/0x47). Returns `None` when the placement
-/// carries no decodable local motion leg, so the caller falls back to the
-/// stand-in [`crate::world::FIELD_NPC_MOTION_SPEED`].
+/// the byte-+3 (`depth`) operand of its **first local** `0x4C 0x51` leg.
+/// Returns `None` when the placement carries no decodable local motion leg,
+/// so the caller falls back to the stand-in
+/// [`crate::world::FIELD_NPC_MOTION_SPEED`].
 ///
 /// This reads the **same first kept leg** [`placement_motion_route`]'s first
 /// waypoint comes from (identical extended / parked-sentinel / locality
@@ -113,12 +112,16 @@ pub fn placement_motion_route(
 /// per-frame-speed mapping is [`crate::world::field_npc_glide_speed`]
 /// (`0x80 >> (2 + (depth & 7))`). See `docs/subsystems/field-locomotion.md`.
 ///
-/// Modelling note: retail synthesises the motion op from the field-VM
-/// `0x4C 0x51` operands; the base step is `(op0>>5 & 4)|(op1>>6)` of the
-/// *synthesised* motion bytecode. The engine models that selector from the
-/// `0x4C 0x51` leg's `depth` operand low 3 bits (the field-VM carrier of the
-/// glide granularity), pending an exact trace of the `0x4C 0x51` -> motion
-/// script write.
+/// Modelling note (reconcile outcome): the raw `4C 51` case-1 handler pins
+/// byte +3 as `[bit7 special-model | facing-LUT nibble]` with **no speed
+/// field** - retail `4C 51` is a teleport + move-anim start, and the only
+/// speed-carrying ops are the walk kernel `FUN_8003774C`'s own yield-class
+/// field-VM ops (0x37/0x41: `(op0>>5 & 4)|(op1>>6)`; 0x47: `b2 & 7`),
+/// interpreted in place from the pointer parked at actor `+0x94` (no
+/// synthesised motion bytecode exists). This heuristic therefore reads the
+/// *facing nibble* as the base-step selector - a stable per-NPC variation
+/// with no retail speed semantics, kept until the route model is reworked
+/// onto real 0x37/0x41/0x47 operands.
 pub fn placement_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> Option<u16> {
     let (region, pc0) = placement_pretext_region(man_file, man, p)?;
     for insn in LinearWalker::new(region, pc0).flatten() {

@@ -371,12 +371,15 @@ pub trait FieldHost {
         let _ = ctx;
     }
 
-    /// Op 0x4E sub-ops 10 / 11 (party-bank comparison).
+    /// Op 0x4E party-bank read (sub-ops 3 / 9 via the 7-byte u16 compare,
+    /// sub-ops 10 / 11 via the 9-byte u32 compare).
     ///
-    /// The original reads a 32-bit value from `_DAT_8008459C` (sub-10) or
-    /// `_DAT_800845A4` (sub-11). These globals are the party-money / party-XP
-    /// banks (separate from the per-page inventory used by sub-0/1). The VM
-    /// compares this against the operand-encoded scaled value.
+    /// The original reads a 32-bit value from `_DAT_8008459C` (party gold;
+    /// sub-3 loader `0x801E0AC0`-family sibling at `0x801E0AEC`, sub-10 at
+    /// `0x801E0B50`) or `_DAT_800845A4` (coin bank; sub-9 at `0x801E0B34`,
+    /// sub-11 at `0x801E0B60`). The VM passes `sub_op` 10 for the gold bank
+    /// and 11 for the coin bank regardless of which encoded form triggered
+    /// the read.
     ///
     /// Default returns 0; comparisons resolve to `0 < scaled` or `scaled < 0`
     /// depending on the mode, matching the original's behaviour when the
@@ -386,22 +389,38 @@ pub trait FieldHost {
         0
     }
 
-    /// Op 0x4E sub-op 4 - BIOS Rand stub.
+    /// Op 0x4E sub-op 2 - character-record level byte read.
     ///
-    /// The original at line 7479 of `overlay_0897_801de840.txt` is
-    /// `iVar18 = func_0x80056798(); return iVar18;`. `FUN_80056798` is a
-    /// 3-instruction BIOS thunk: `li t2,0xa0; jr t2; _li t1,0x2f` - i.e.
-    /// `jr 0xA0` with `t1 = 0x2F`, the BIOS `Rand()` syscall. The script-VM
-    /// dispatcher then uses the returned value directly as the next PC, which
-    /// would jump into arbitrary memory in any sane retail execution. There
-    /// are no callers of opcode 0x4E sub-4 in the captured bytecode, so this
-    /// is almost certainly a dev / debug-only stub left in by the original
-    /// authors.
+    /// The loader at `0x801E0AC0` reads `u8` at
+    /// `0x80084140 + page * 0x414 + 0x6F8` = character record `page`'s
+    /// displayed-level byte `+0x130`, then joins the shared 7-byte
+    /// compare-and-skip continuation at `0x801E0B40`. Default returns 0.
+    fn op4e_char_level(&self, page: u8) -> i32 {
+        let _ = page;
+        0
+    }
+
+    /// Slot-table (scene-register) read at `0x801C6460 + slot * 2` (s16).
     ///
-    /// The default returns 0 (PC restarts at the bytecode origin), matching
-    /// the broken-by-design behaviour. A custom host can override to either
-    /// halt the script (return the current PC; the dispatch wrapper does NOT
-    /// special-case this) or to actually invoke a PRNG.
+    /// The read side of op 0x4E sub-ops 5..=8 (`slot = sub_op - 5`, loader
+    /// `0x801E0B0C`); the write side is op 0x4C outer-nibble-C sub-0xA
+    /// (set) / sub-0xB (add) / sub-0xC (subtract) - see
+    /// [`FieldHost::op4c_n_c_sub_a_set_slot`]. Default returns 0.
+    fn slot_table_read(&self, slot: u8) -> i16 {
+        let _ = slot;
+        0
+    }
+
+    /// Op 0x4E sub-op 4 - BIOS `Rand()` read.
+    ///
+    /// `FUN_80056798` is a 3-instruction BIOS thunk: `li t2,0xa0; jr t2;
+    /// _li t1,0x2f` - the BIOS `Rand()` syscall. The loader at `0x801E0AFC`
+    /// masks the result to `& 0xFF` and joins the shared compare
+    /// continuation (`j 0x801e0b3c` staging the operand pointer), so
+    /// sub-op 4 is a **random-chance branch**, not a jump-to-rand PC (the
+    /// decompiled `return iVar18;` was the collapsed switch arm). The VM
+    /// applies the `& 0xFF` mask itself; hosts return the raw PRNG value.
+    /// Default returns 0.
     fn op4e_sub4_bios_rand(&mut self) -> i32 {
         0
     }

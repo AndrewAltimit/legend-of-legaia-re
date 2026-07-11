@@ -428,3 +428,67 @@ fn format_instruction_includes_byte_dump_and_mnemonic() {
     assert!(line.contains("FmvTrigger"));
     assert!(line.contains("MV4.STR"));
 }
+
+#[test]
+fn menu_ctrl_nibble6_clut_fx_decodes_the_16_byte_form() {
+    // map01's first row-498 fade op: A=(0,498) B=(112,499) dest=(0,498)
+    // frames=128 (the retail bytes at MAN offset 0xf03).
+    let bc = [
+        0x4Cu8, 0x61, 0x00, 0x00, 0xF2, 0x01, 0x70, 0x00, 0xF3, 0x01, 0x00, 0x00, 0xF2, 0x01, 0x80,
+        0x00,
+    ];
+    let insn = decode(&bc, 0).unwrap();
+    assert_eq!(insn.size, 16);
+    match insn.info {
+        InsnInfo::MenuCtrl {
+            op0: 0x61,
+            kind: MenuCtrlKind::Nibble6ClutFx { a, b, dest, frames },
+        } => {
+            assert_eq!(a, (0, 498));
+            assert_eq!(b, (112, 499));
+            assert_eq!(dest, (0, 498));
+            assert_eq!(frames, 128);
+        }
+        other => panic!("wrong decode: {other:?}"),
+    }
+}
+
+#[test]
+fn inventory_cmp_sub_ops_4_through_8_decode_as_the_7_byte_compare() {
+    // cave01 P2[12]'s spawn gate: `4E 00 50 08 00 06 00` = sub-5 slot-table
+    // compare (slot 0x801C6460[0] vs 8, skip +6). The raw jump table at
+    // 0x801CEE30 routes every sub-op 0..9 to a value loader joining the
+    // shared compare at 0x801E0B40 - the earlier "sub-5..8 absolute jump"
+    // and "sub-4 rand -> next PC" readings were the collapsed decomp switch.
+    let bc = [0x4Eu8, 0x00, 0x50, 0x08, 0x00, 0x06, 0x00];
+    let insn = decode(&bc, 0).unwrap();
+    assert_eq!(insn.size, 7);
+    match insn.info {
+        InsnInfo::InventoryCmp {
+            kind:
+                InventoryCmpKind::Compare {
+                    sub_op: 5,
+                    arg: 8,
+                    skip_delta: 6,
+                    skip_target,
+                    ..
+                },
+            ..
+        } => {
+            // skip base = pc + header + 4 = 5; +6 = 11.
+            assert_eq!(skip_target, 11);
+        }
+        other => panic!("wrong decode: {other:?}"),
+    }
+    // Sub-4 (BIOS-rand chance branch) shares the exact same shape.
+    let bc = [0x4Eu8, 0x00, 0x40, 0x64, 0x00, 0x10, 0x00];
+    let insn = decode(&bc, 0).unwrap();
+    assert_eq!(insn.size, 7);
+    assert!(matches!(
+        insn.info,
+        InsnInfo::InventoryCmp {
+            kind: InventoryCmpKind::Compare { sub_op: 4, .. },
+            ..
+        }
+    ));
+}

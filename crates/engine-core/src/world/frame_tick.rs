@@ -66,6 +66,20 @@ impl World {
         } else {
             self.field_frame_step = 0;
         }
+        // Retail game-tick clock for the scripted CLUT-cell effects: one game
+        // tick spans `frame_step` vsyncs (the adaptive `DAT_1F800393` factor
+        // written by `FUN_80016B6C`; see [`Self::frame_step`]). Count the sim
+        // ticks that map to a retail vsync and bank a game tick every
+        // `frame_step` of them; [`Self::step_clut_fx`] drains the bank
+        // against the host's VRAM. Only accumulates while effects are live
+        // (capped so an undrained host can't wind up a backlog).
+        if self.field_frame_step == 1 && !self.clut_fx.is_empty() {
+            self.clut_vsync_accum += 1;
+            if self.clut_vsync_accum >= self.frame_step.max(1) {
+                self.clut_vsync_accum = 0;
+                self.clut_pending_game_ticks = (self.clut_pending_game_ticks + 1).min(600);
+            }
+        }
         // Step the active full-screen fade (escape teardown ramp); drop it
         // once the ramp lands on its target so hosts stop drawing the overlay.
         if let Some(fade) = &mut self.screen_fade

@@ -155,18 +155,23 @@ pub(crate) const FIELD_PROP_BOX_HALF: i32 = 0x40 + 0x10;
 /// The engine drives NPC legs through a synthetic single-op `0x47` program
 /// (see [`FIELD_NPC_MOTION_PROGRAM`]) whose operand bytes are zero, so the
 /// motion VM cannot decode the base step from the program itself; instead the
-/// engine derives each placement's glide speed from the real `0x4C 0x51`
-/// motion-op operand off the disc ([`field_npc_glide_speed`]) and writes it
-/// into the leg's [`vm::motion_vm::MotionState::speed`]. This constant is the
+/// engine derives each placement's glide "speed" from the `0x4C 0x51` leg's
+/// byte-+3 operand off the disc ([`field_npc_glide_speed`]) and writes it
+/// into the leg's [`vm::motion_vm::MotionState::speed`]. NB that byte is
+/// pinned as the facing nibble (`4C 51` carries no speed field - see the
+/// `placement_glide_speed` modelling note); the derivation is a stable
+/// per-NPC pacing heuristic, not retail speed data. This constant is the
 /// **fallback** used when a placement carries no decodable motion leg (and for
 /// the actor-VM sprite glide, which has no MAN motion operand): base step 8 =
 /// `field_npc_glide_speed(2)`, so a placement with the default base-step
 /// selector paces exactly as this stand-in did.
 pub(crate) const FIELD_NPC_MOTION_SPEED: u16 = 8;
 
-/// Derive a field-NPC per-frame glide speed from a motion-op base-step selector
-/// (the low 3 bits of the `0x4C 0x51` leg's `depth` operand - the MAN carrier
-/// of the motion VM's `4 << bits` base step; see [`FIELD_NPC_MOTION_SPEED`] and
+/// Derive a field-NPC per-frame glide speed from a base-step selector - the
+/// retail encoding of the walk-kernel ops' own operands (`b2 & 7` for 0x47,
+/// `(op0>>5 & 4)|(op1>>6)` for 0x37/0x41). The engine feeds it the low 3 bits
+/// of the `0x4C 0x51` leg's byte-+3 operand (the facing nibble - a pacing
+/// heuristic; see [`FIELD_NPC_MOTION_SPEED`] and
 /// `docs/subsystems/field-locomotion.md`).
 ///
 /// Retail `FUN_8003774C` (ops 0x37/0x41/0x47) glides at

@@ -96,14 +96,115 @@ Engine bakes per-cell UV + `[clut,tpage]` in `build_walk_heightfield` (`WalkHeig
 | Enemy-ally charm battle softlock | open (cause unconfirmed) | A charm fight can hard-freeze (user-reported live; once after a Gimard cast, once an arts combo). Cause not pinned. The `FUN_801E7320` "unbounded reroll at `0x801E7370`" theory is unsettled - loop-1 rerolls while `monster[a0].HP == 0` over `a0 = 3 + rand % monster_count`, but the alive charmed ally is itself a slot in that range and can be picked (exit via self-target `0x801E73E0`). Two Lua-forced-battle-end workarounds were tried and reverted: forcing the end mid-action tears the SM down -> game-over, then garbage writes / freeze (the game only writes the end signal at the safe `0x5A` gate). Next: observe with `autorun_charm_win_softlock.lua`, then a disc-side fix. |
 | Battle-actor `+0x16E` bit `0x400` applier (guard-disabling status) | open (low value) | Bit `0x400` of the battle-actor flags word `+0x16E` reads as a guard-disabling Sleep/Numb-like status. The sibling AI-delegated bits `0x380` in the same word are pinned (the enemy-ally charm hook sets them via `FUN_801E7320` retarget), but the *setter* that raises `0x400` is not in the decompiled corpus - readers only. Low value. Closes with a before/after RAM capture around a battle turn that inflicts the status, diffing the `+0x16E` word to catch the byte that raises `0x400`. |
 | Flag `0x63A` - the vell/vozz `P2[7]` gate with NO script writer | open (small) | vell `P2[7]` and vozz `P2[7]` carry byte-identical `C1=[0x63A, 0x7]` gates, but `0x63A` has no script sites disc-wide (no Set/Clear/Test anywhere else; `chapter1_hub_breadth_oracle` part E). Either an engine/SCUS-side writer exists (runtime-computed, like the spine writers) or the flag is never set and the requires-clear condition always passes. A write-watchpoint on bank byte `0x800858C7` during the vell/vozz beats would settle it; low stakes since the gate passes either way on a fresh game. |
-| cave01 `P2[16]` (the `0x15D` entry-key setter) - what spawns it | open (small) | The ungated record that SETs `0x15D` (the entry key of cave01's `0x15D`→`0x15E`→`0x169` ordered beat chain) has no tile trigger; likely spawned by a P1 interact (NPC dialogue). Pin the spawner record + interaction. |
+| cave01 `P2[16]` (the `0x15D` entry-key setter) - what spawns it | resolved (slot-counted spawn chain) | [details ↓](#cave01-p216-spawner---the-slot-counted-interact-chain) |
+| Op-`0x4E` sub-ops 4..8 "absolute jump" / "rand -> next PC" readings | falsified (all sub-ops 0..9 are the 7-byte compare-and-skip) | [details ↓](#op-0x4e-sub-op-family---every-sub-op-09-is-a-compare) |
 | Drake Castle deep interiors (`jouinc`/`jouind`) depth decode | resolved (door-choreography families, not story gates) | `jouinc`'s 58-record `C1=[0x00F]` P2 family is a **busy-mutex door family**: each record SETs `0x00F` first / CLEARs it last, so the C1 gate is a mutual-exclusion lock, and bodies are per-door walk-through choreography. `jouind` P2[10..13]'s `0x4BE..0x4C2` band is **per-visit door/lift state** (cleared by `jouina` P1[0] on entry), not a later-chapter revisit gate pair. Decoding these exposed (and fixed) whole-nibble width blindness (`0x4C` nibbles 9/A/C/D/F). `jouinb P2[6..8]` is the interior beat band (`0x44E..0x450` latches + the jouinb-local `0x461` state flag). Full mechanism: [script-vm.md](../subsystems/script-vm.md) § door-choreography record families. |
 | `scene_destinations` P1-table scan misses P2-only door names | resolved (P2 pass folded in) | The P2-only class is the town/dungeon **exit door** (a P2 door-choreography record): `town01`→`map01` (Rim Elm's overworld exit; the P1 pass alone sees *zero* town01 destinations), `retockin`→`retona`, `geremi`→`map02`/`tower` - 13 scenes / 14 destinations disc-wide. The suspected `jouinb`→`jouina` exemplar is falsified: it is P1-visible (the over-walk resyncs across that record). Merged kernel `legaia_asset::man_edit::scene_destinations` (P1 pass as prefix + clean-gated P2 pass, `(name, index)` dedupe); the engine delegates to it; disc pins `scene_destinations_p2_disc.rs`. |
-| `0x4C 0x51` byte `+3` = `[bit7 special-model \| facing nibble]` vs the glide-speed interim `depth & 7` reading | open (reconcile) | The spawn-prologue facing decode (see [field-locomotion.md](../subsystems/field-locomotion.md) § NPC initial facing) pins retail `4C 51` case-1 as a teleport+move-start whose byte `+3` low nibble indexes the heading LUT `0x80073F04` - which overlaps the route/glide decoder's interim `depth & 7` reading of the same byte. Reconcile the two models when the motion-bytecode synthesis is traced. |
+| `0x4C 0x51` byte `+3` = `[bit7 special-model \| facing nibble]` vs the glide-speed interim `depth & 7` reading | resolved (facing wins; the two readings were two different ops) | [details ↓](#0x4c-0x51-byte-3-reconcile---facing-wins-no-motion-bytecode-synthesis) |
 | dolk2/rikuroa MAN source (the "v12-embedded MAN" was an over-read) | resolved (streaming carrier) | Their own `base+3` bundles are the MAN-less count=4 form `[1,2,6,0x14]`; the "embedded MAN at 0x1000" inside their SceneV12Table entries is an over-read onto the next scene's bundle (suimon's / geremi's; [scene-v12-table.md](../formats/scene-v12-table.md) § over-read). Retail sources their partition scripts from the block's standalone `data_field_streaming` entry's type-3 chunk (`dolk2` ext 70 `[29,73,17]`, `rikuroa` ext 157 `[13,29,64]`; live script-heap byte-match at the Caruban beat). Engine: `field_man_payload` streaming fallback (`streaming_man_payloads`) + retail-frame `Scene::load` windows; pins `v12_bundle_man_disc.rs`. |
-| kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | open (small) | The only genuine op-0x49 flag-window family on the disc (24 sites, kor/kor3/kor4, `base=0x138 count=8`, paired `default=0 rows=8` / `default=4 rows=4`). An 8-way picker window - likely a puzzle/selection state block in the Uru Mais dream scenes. Decode what each flag drives. |
+| kor-family op-0x49 flag window `[0x138..0x13F]` - what the 8 flags gate | resolved (Uru Mais warp-pad destination memory) | [details ↓](#kor-family-op-0x49-flag-window-0x1380x13f---uru-mais-warp-pad-picker) |
 | `801d58f0` / `801d63b0` as single shared port blockers | falsified (VA-aliasing artifact) | The two addresses host different code in different overlays (byte-verified: 80/228/124/308/1 B and 208/1036 B across 0897/baka/cutscene/debug-menu/fishing/slot/dance) - the port-catalog's bare-VA keying aggregated their refs into phantom top blockers. Tracked per-overlay via `overlay_<label>_<addr>` identities; catalog ignore category `va_aliased_overlay_local`. |
 
+
+### cave01 P2[16] spawner - the slot-counted interact chain
+
+*Status:* resolved
+
+The ungated `0x15D` setter `P2[16]` (global record `0x1E`; `51 5D` at body `+0x22`, MAN `0x3C10`)
+is spawned by `44 1E` at **`P2[12]` body `+0x1C`** (MAN `0x35B9`). The spawn is gated by an
+op-`0x4E` **sub-5 slot-table compare** at `P2[12]` `+0x15` (`4E 00 50 08 00 06 00`): while slot
+`0x801C6460[0]` < 8 the compare skips forward past the spawn (to the `0x166`→`0x167`→`0x168`
+progressive counter at `+0x20`); at 8 it falls into the `44 1E`.
+
+`P2[12]` (global `0x1A`) opens with `4C CB 00 01 00` (slot 0 += 1) and is spawned once per
+interaction by each of the five creature-interact scripts **`P1[3..7]`** (`44 1A` at the
+first-interact branch tail: `P1[3]` `+0x2CC` = MAN `0x1CE4`, siblings at `0x1FCC` / `0x22B6` /
+`0x259E` / `0x2888`). The per-NPC talked latches `0x161..0x165` are re-cleared inside the
+interact scripts (`P1[3]` `+0x82..+0x8A`), so interactions repeat and the slot count reaches 8.
+`P1[2]` - the lead-NPC ladder record that tests `0x15E`/`0x15D`/…/`0x157` - zeroes slot 0
+(`4C CA 00 00 00` at `+0x0C`). PROT cites are the extraction frame (cave01 = PROT extraction 38).
+
+Decoding the sub-5 gate exposed the op-`0x4E` sub-op family mis-read - see
+[the 0x4E details](#op-0x4e-sub-op-family---every-sub-op-09-is-a-compare).
+
+### Op-0x4E sub-op family - every sub-op 0..9 is a compare
+
+*Status:* falsified ("absolute jump" 5..8 and "rand -> next PC" 4 were Ghidra's collapsed switch)
+
+The raw 12-entry jump table at `0x801CEE30` (field overlay, PROT 0897 file `+0x618`) routes
+**every** sub-op 0..9 to a value loader that joins the shared 7-byte compare-and-skip
+continuation at `0x801E0B40`:
+
+| sub | loader | state value |
+|---|---|---|
+| 0 / 1 | `0x801E0A40` / `0x801E0A70` | char-record HP / MP `(cur, max)` pair - the only scaled form (`max * arg >> 8`) |
+| 2 | `0x801E0AC0` | char level byte `+0x130` |
+| 3 | `0x801E0AEC` | party gold `_DAT_8008459C` |
+| 4 | `0x801E0AFC` | **BIOS `Rand() & 0xFF`** - a random-chance branch |
+| 5..8 | `0x801E0B0C` | **slot table `0x801C6460[sub - 5]`** (s16; the read side of the `4C CA/CB/CC` slot writes) |
+| 9 | `0x801E0B34` | coin bank `_DAT_800845A4` |
+
+Sub-ops 10/11 keep the 9-byte u32 gold/coin form; 12..15 fall through (PC += 7). The decompiled
+bare-`break` arms for 2..9 were the collapsed switch - each raw loader ends `j 0x801e0b40` /
+`j 0x801e0b3c` with the operand pointer staged in the delay slot (the same class of trap as the
+label-call idiom). Disassembler + executing VM corrected: `field_disasm::decode_subops` (single
+0..=9 compare arm), `engine-vm` `field/step/flow.rs` + `FieldHost::op4e_char_level` /
+`slot_table_read`. cave01's `P2[12]` spawn gate is the live sub-5 exemplar.
+
+### 0x4C 0x51 byte +3 reconcile - facing wins; no motion-bytecode synthesis
+
+*Status:* resolved
+
+Raw asm settles both halves of the overlap:
+
+- **`4C 51` case-1** (dispatcher `overlay_0897_801de840.txt`, case 5 sub 1) consumes byte `+3`
+  **only** as `[bit7 -> actor render flag 0x1000000 (special model) | low nibble -> +0x26 =
+  heading LUT 0x80073F04[b & 0xF]]`. The op carries **no speed operand**: byte `+4` is the
+  move-anim id written to `+0x5C` (consumed by the anim-stream stepper `FUN_800204F8`);
+  non-player targets also get the `+0x8C/+0x8D` current-tile bookkeeping, and the trailing
+  `FUN_801D81E0` is an active-list relink (the unlink/relink pair `FUN_800204A4` /
+  `FUN_80020454`), not a bytecode builder.
+- The `depth & 7` base-step selector belongs to the **walk-kernel op `0x47`'s own third
+  operand**: `FUN_8003774C` case `0x47` computes `4 << (b & 7)` (per-frame step
+  `0x80 * dt / that`) with the high nibble an approach-mode selector; ops `0x37`/`0x41` encode
+  their base step as `(op0 >> 5 & 4) | (op1 >> 6)` of their own two operand bytes
+  (`ghidra/scripts/funcs/8003774c.txt`).
+- There is **no motion-bytecode synthesis step**: the field-VM yield-class ops
+  `0x37`/`0x41`/`0x47` (and `0x38` with a nonzero duration) park the current instruction
+  pointer at actor `+0x94`, zero the progress cursor `+0x54` and set actor flag `0x400`
+  (dispatcher cases `0x37/0x41`, `0x38`, `0x47`), and `FUN_8003774C` interprets the record
+  bytes **in place** - it even resolves the field VM's `0x80` extended-target convention
+  (`0xF8` player / `0xFB` world-map entity / placement id vs actor `+0x50`).
+
+Consequence: the engine's `placement_glide_speed` heuristic (reading the `4C 51` byte-`+3`
+low bits as a base step) actually reads the facing nibble - flagged in
+`man_field_scripts::npc_motion` for a rework onto real `0x37`/`0x41`/`0x47` operands. See
+[field-locomotion.md](../subsystems/field-locomotion.md) § NPC initial facing / § NPC glide speed.
+
+### kor-family op-0x49 flag window [0x138..0x13F] - Uru Mais warp-pad picker
+
+*Status:* resolved
+
+Each flag is one destination row of the Uru Mais dream-shrine **teleport-pad picker**. The pad
+records (kor `P2[17..20]`, kor3 `P2[9..12]`, kor4 `P2[4..7]`; extraction PROT 483/492/501)
+clear the whole window, pre-set **their own row** (kor pads -> `0x138..0x13B`, kor3 ->
+`0x13C`/`0x13D`, kor4 -> `0x13E`/`0x13F`), run the `FUN_801EF014` picker, then dispatch an
+8-way `0x71` test ladder in which each arm clears `0x612`, fades, stops the BGM and executes a
+**named `0x3F` SceneChange** (kor `P2[17]` body `+0x8D..+0x1C6`):
+
+| rows | destination |
+|---|---|
+| 0..3 | `KOR` entries `(0x0E,0x35)` / `(0x1E,0x35)` / `(0x2E,0x35)` / `(0x3E,0x35)` |
+| 4..5 | `KOR3` entries `(0x70,0x25)` / `(0x0D,0x36)` |
+| 6..7 | `KOR4` entries `(0x27,0x27)` / `(0x1E,0x3E)` |
+
+Widget semantics (`ghidra/scripts/funcs/801ef014.txt`): descriptor `+2` `default` = **first
+visible row**, `+3` `rows` = visible row count (menu height `rows * 16` px), so the paired
+descriptors are the full 8-row menu (selected by state flag `0x136`) vs the rows-4..7
+chambers-only menu (`0x137`; kor3/kor4 carry per-pad record pairs, one per variant). State 0
+cursors to the pre-set bit (= "you are here") and clears the window; confirming a **different**
+row sets `base + selection`; picking the current row or cancelling sets nothing, so the test
+ladder falls through to the stay-put arm (`+0x1C9`: clear `0x136`/`0x137`, fade back, park).
 
 ### Encounter MAN sub-section layout
 
@@ -788,9 +889,10 @@ The four overworld-battle angle states are byte-identical on these rows (the cyc
 
 **The writer is located** - resolved from the `keikoku_chest_preload` capture's RAM alone (no live probe): the map01 libgpu command queue holds 16×1 GP0 `0x80` cell copies whose destinations are exactly the censused cells (plus a `(48, 500)` sibling) and whose sources walk the 13-frame palette strips parked at VRAM rows 498/501..505.
 The emitters are the field overlay's script-driven CLUT-cell effect family - `FUN_801E4C58` (field-VM `0x4C` n6 sub-`0x61`: one-shot `MoveImage` cell copy or flat-colour `LoadImage`, coordinates = script operands at `+5/+7` → `+9/+0xB`) and `FUN_801E4794` (multi-frame cross-fade SM via the `[0xFFFF0000][handler]` records at `0x801F291C+`) - bottoming out in statically-linked libgpu `MoveImage`/`LoadImage`/`StoreImage`.
-No rect constant exists in any code image because the rows live in scene-script operands; the lockstep coupling = sibling ops sharing the frame counter, not one wider rect. See [`world-map.md`](../subsystems/world-map.md) "Ocean animation".
+No rect constant exists in any code image; the lockstep coupling = sibling emissions sharing the frame counter, not one wider rect. See [`world-map.md`](../subsystems/world-map.md) "Ocean animation".
 **Cross-kingdom verification:** the destination-cell set is kingdom-universal - on the resident Sebucus / Karisto captures every censused destination cell (`(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`, `(48, 500)`) holds a 16-px-aligned window of that state's own strip park rows (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`), i.e. the copy family runs against per-kingdom strips with kingdom-invariant destination operands.
-Remaining residue: the exact retail cadence (the scratchpad frame-delta byte `0x1F800393` feeds the fade SM) is still unpinned, and `play-window` animates the row-506 ocean head only.
+**Operand source - split finding.** The "rows live in scene-script operands" reading holds only for the **row-498 strip park row**: map01's field MAN carries exactly eight `4C 61` ops (four `frames = 0` one-shots copying `(112, 499)` onto `(0/16/32/48, 498)` + four `frames = 0x80` cross-fades back toward `(112, 499)`; `scene_clut_cell_fx`, disc-gated `map01_clut_fx_disc`). The row-506/508/509 **head-walk operands appear in no MAN** - an exhaustive u16 scan over every scene's field MAN finds no `(506|508|509)` cell coordinates - so the head-walk's emitter call site / operand table (overlay-resident, driving the same `FUN_801E4C58` family the GP0 queue shows) is still unpinned.
+Cadence residue narrowed: the scratchpad frame-delta byte `0x1F800393` is the **adaptive frame-skip factor** (vsyncs per game tick, rewritten per frame by `FUN_80016B6C`; field/town `2`, overworld `3` in live polls), the fade SM is ported (`legaia_engine_core::clut_fx` + `World::step_clut_fx`), and the remaining unknown is the ocean-head *step interval* in vsyncs (needs a mednafen frame-series capture; `play-window` uses a tuned constant and animates the row-506 head + the scripted row-498 effects only).
 
 
 ### `init_data` UI-tile pages - journey-dependent residency (resolved); map03 texture column (resolved - "not uploaded" premise falsified)
