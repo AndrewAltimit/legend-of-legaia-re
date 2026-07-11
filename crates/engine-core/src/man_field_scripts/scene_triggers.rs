@@ -27,7 +27,8 @@ pub struct SceneDestination {
 }
 
 /// Recover the inline scene-destination table from a scene's MAN by decoding the
-/// `0x3F` named-scene-change ops across its partition-1 scripts.
+/// `0x3F` named-scene-change ops across its partition-1 **and** partition-2
+/// scripts.
 ///
 /// Returns one [`SceneDestination`] per distinct `(scene_name, index)` reached,
 /// in first-seen order. Only ops whose inline name passes
@@ -38,59 +39,23 @@ pub struct SceneDestination {
 /// stable indices across the controller's records; phantoms don't survive the
 /// gate.
 pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestination> {
-    // The `0x3F` destination table is a data blob the scene controller appends
-    // *after* its small per-actor records (in `map01` it trails the last
-    // partition-1 record, well past `record_end_bound`, which clips on the next
-    // partition/section). So bound each partition-1 record by the **next
-    // partition-1 record start** (man-end for the last record) rather than the
-    // tight per-record ceiling, letting the final record's walk reach the table.
-    // The clean-name gate + `(name, index)` dedup absorb the over-walk: a record
-    // viewed from an earlier start re-sees the same ops, and desync junk past the
-    // table fails the gate.
-    let n1 = man_file.header.partition_counts[1].max(0) as usize;
-    let mut starts: Vec<usize> = (0..n1)
-        .filter_map(|i| man_file.actor_placement_record_offset(i, man.len()))
-        .collect();
-    starts.sort_unstable();
-    let mut out: Vec<SceneDestination> = Vec::new();
-    for (k, &start) in starts.iter().enumerate() {
-        let end = starts.get(k + 1).copied().unwrap_or(man.len());
-        let pc0 = {
-            let locals = *man.get(start).unwrap_or(&0) as usize;
-            1 + locals * 2 + 4
-        };
-        if start + pc0 >= end {
-            continue;
-        }
-        let body = &man[start..end];
-        for insn in LinearWalker::new(body, pc0).flatten() {
-            let InsnInfo::SceneChange {
-                index,
-                entry_x,
-                entry_z,
-                ..
-            } = insn.info
-            else {
-                continue;
-            };
-            let Some(scene_name) = scene_change_name(body, &insn) else {
-                continue;
-            };
-            if out
-                .iter()
-                .any(|d| d.index == index && d.scene_name == scene_name)
-            {
-                continue;
-            }
-            out.push(SceneDestination {
-                scene_name,
-                index,
-                entry_x,
-                entry_z,
-            });
-        }
-    }
-    out
+    // Delegates to the shared kernel in `legaia_asset::man_edit`: the P1
+    // destination-table pass (next-P1-record-start bound so the trailing table
+    // is reachable; clean-name gate + `(name, index)` dedup absorb the
+    // over-walk) runs verbatim as the prefix, then a partition-2 pass appends
+    // the clean-gated `0x3F` destinations the P1 tables never carry. The
+    // retail P2-only class is the town/dungeon **exit door** (a P2
+    // door-choreography record): `town01`'s overworld exit to `map01` is
+    // entirely P2-carried - its P1 pass alone sees zero destinations.
+    legaia_asset::man_edit::scene_destinations(man_file, man)
+        .into_iter()
+        .map(|d| SceneDestination {
+            scene_name: d.scene_name,
+            index: d.index,
+            entry_x: d.entry_x,
+            entry_z: d.entry_z,
+        })
+        .collect()
 }
 
 /// One overworld town/dungeon entrance recovered from the `.MAP` walk-on

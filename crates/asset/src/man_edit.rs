@@ -345,6 +345,152 @@ pub fn scene_change_sites(man: &[u8]) -> Vec<SceneChangeSite> {
     out
 }
 
+/// One inline scene destination decoded from a `0x3F` named-scene-change op:
+/// the disc-sourced answer to "which scenes can this scene warp to". Deduped
+/// by `(scene_name, index)`. Field-for-field the same shape as the engine's
+/// `man_field_scripts::SceneDestination`, so the engine-side scan can
+/// delegate here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneDestination {
+    /// Destination CDNAME scene label (e.g. `"town0c"`, `"jouina"`).
+    pub scene_name: String,
+    /// The `i16` index operand the op carries (a story/entry id; *not* the
+    /// `0x3E` door-warp `map_id` - distinct id space, observed past 100).
+    pub index: i16,
+    /// Entry tile X byte at the destination (`& 0x7F` tile, `& 0x80` half-tile).
+    pub entry_x: u8,
+    /// Entry tile Z byte at the destination (same encoding as `entry_x`).
+    pub entry_z: u8,
+}
+
+/// The **partition-1 table pass**: recover the `0x3F` destinations reachable
+/// from a scene's partition-1 scripts plus the trailing destination-table
+/// blob some controllers append *after* their last partition-1 record.
+///
+/// The blob sits past the tight per-record ceiling (in `map01` it trails the
+/// last partition-1 record, well past the next-section bound), so each record
+/// is bounded by the **next partition-1 record start** (man-end for the last
+/// record) and walked with the *recovering* [`field_disasm::LinearWalker`].
+/// The clean-name gate + `(name, index)` dedup absorb the over-walk: a record
+/// viewed from an earlier start re-sees the same ops, and desync junk past
+/// the table fails the gate.
+///
+/// This pass **under-reports doors carried only by partition-2 records**: the
+/// recovering over-walk can be desynced when it crosses a P2 record's
+/// SJIS-name header, so a P2-only `0x3F` is missed. The retail class is the
+/// town/dungeon **exit door** (a P2 door-choreography record) - `town01`'s
+/// exit to the `map01` overworld, `retockin`→`retona`, `geremi`→`map02` /
+/// `tower`. Use [`scene_destinations`] for the full (P1 ∪ P2) set; this pass
+/// stays public so the asymmetry is pinnable.
+pub fn partition1_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestination> {
+    let n1 = man_file.header.partition_counts[1].max(0) as usize;
+    let mut starts: Vec<usize> = (0..n1)
+        .filter_map(|i| man_file.actor_placement_record_offset(i, man.len()))
+        .collect();
+    starts.sort_unstable();
+    let mut out: Vec<SceneDestination> = Vec::new();
+    for (k, &start) in starts.iter().enumerate() {
+        let end = starts.get(k + 1).copied().unwrap_or(man.len());
+        let pc0 = {
+            let locals = *man.get(start).unwrap_or(&0) as usize;
+            1 + locals * 2 + 4
+        };
+        if start + pc0 >= end {
+            continue;
+        }
+        let body = &man[start..end];
+        for insn in field_disasm::LinearWalker::new(body, pc0).flatten() {
+            let InsnInfo::SceneChange {
+                index,
+                entry_x,
+                entry_z,
+                ..
+            } = insn.info
+            else {
+                continue;
+            };
+            let Some(scene_name) = field_disasm::scene_change_name(body, &insn) else {
+                continue;
+            };
+            if out
+                .iter()
+                .any(|d| d.index == index && d.scene_name == scene_name)
+            {
+                continue;
+            }
+            out.push(SceneDestination {
+                scene_name,
+                index,
+                entry_x,
+                entry_z,
+            });
+        }
+    }
+    out
+}
+
+/// Recover the full inline scene-destination set from a scene's MAN:
+/// the [`partition1_destinations`] table pass **plus a partition-2 pass**
+/// that walks each P2 record from its true `pc0` ([`p2_pc0`]'s SJIS-name +
+/// condition-list header) with a clean fall-through decode - the same walk
+/// as [`scene_change_sites`], which is what sees the P2-only doors the P1
+/// over-walk desyncs past (the town/dungeon exit doors: `town01`→`map01`,
+/// `retockin`→`retona`, …). Results are merged in first-seen order (P1 pass
+/// first, then P2 additions), deduped by `(scene_name, index)`, so the
+/// output is a superset of the P1 pass and existing consumers see the same
+/// destinations plus the previously missing ones.
+pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestination> {
+    let mut out = partition1_destinations(man_file, man);
+    let starts = record_starts(man_file);
+    let dro = man_file.data_region_offset;
+    for &off in &man_file.partitions[2] {
+        let start = dro + off as usize;
+        if start >= man.len() {
+            continue;
+        }
+        let Some(pc0) = p2_pc0(man, start) else {
+            continue;
+        };
+        let end = starts
+            .iter()
+            .copied()
+            .find(|&s| s > start)
+            .unwrap_or(man.len());
+        if start + pc0 >= end {
+            continue;
+        }
+        let mut pc = start + pc0;
+        while pc < end {
+            let Ok(insn) = field_disasm::decode(man, pc) else {
+                break;
+            };
+            if insn.size == 0 || insn.pc >= end {
+                break;
+            }
+            if let InsnInfo::SceneChange {
+                index,
+                entry_x,
+                entry_z,
+                ..
+            } = insn.info
+                && let Some(scene_name) = field_disasm::scene_change_name(man, &insn)
+                && !out
+                    .iter()
+                    .any(|d| d.index == index && d.scene_name == scene_name)
+            {
+                out.push(SceneDestination {
+                    scene_name,
+                    index,
+                    entry_x,
+                    entry_z,
+                });
+            }
+            pc += insn.size;
+        }
+    }
+    out
+}
+
 /// One field-VM `0x23 MOVE_TO` ("teleport to grid tile") op located in a
 /// decompressed MAN. Intra-town doors are these: a script repositions the
 /// player to an interior sub-area tile. Distinguishing door warps from NPC /

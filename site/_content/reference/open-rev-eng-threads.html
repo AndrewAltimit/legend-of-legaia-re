@@ -254,8 +254,8 @@
       </tr>
       <tr>
         <td><code>scene_destinations</code> P1-table scan misses P2-only door names</td>
-        <td>open (engine hygiene)</td>
-        <td>The partition-1 destination-table scan under-reports doors carried only by P2 records (jouinb&rarr;jouina return door; reverse of the jou <code>P2[5]</code> blind spot). The P2 walker + strict portal-site join see them. Fold the P2 pass into <code>scene_destinations</code> (the breadth oracle pins the asymmetry and will trip when fixed).</td>
+        <td>resolved (P2 pass folded in)</td>
+        <td>The P2-only class is the town/dungeon <strong>exit door</strong> (a P2 door-choreography record): <code>town01</code>&rarr;<code>map01</code> (Rim Elm's overworld exit; the P1 pass alone sees <em>zero</em> town01 destinations), <code>retockin</code>&rarr;<code>retona</code>, <code>geremi</code>&rarr;<code>map02</code>/<code>tower</code> &mdash; 13 scenes / 14 destinations disc-wide. The suspected <code>jouinb</code>&rarr;<code>jouina</code> exemplar is falsified: it is P1-visible (the over-walk resyncs across that record). Merged kernel <code>legaia_asset::man_edit::scene_destinations</code> (P1 pass as prefix + clean-gated P2 pass, <code>(name, index)</code> dedupe); the engine delegates to it; disc pins <code>scene_destinations_p2_disc.rs</code>.</td>
         <td><a href="../subsystems/world-map.html">world-map</a></td>
       </tr>
       <tr>
