@@ -4,51 +4,17 @@
 
 use super::*;
 
-/// High bits of the synthetic formation id [`World::install_boss_encounter`]
-/// registers for a scripted single-boss fight. Sits above the MAN
-/// formation-table row indices (small) and outside the range record-hash
-/// ids ([`crate::encounter_record::EncounterRecord::synthetic_formation_id`])
-/// realistically fold to, so a boss formation never aliases a random one.
-pub const BOSS_FORMATION_ID_BASE: u16 = 0xB000;
-
-/// Scripted single-boss fights keyed by scene label: the first-visit fight a
-/// dungeon arms on entry while its gate flag is still clear. Each row is
-/// `(scene_label, monster_id, gate_flag, staged_marker)`.
-///
-/// The chapter-1 entry is Mt. Rikuroa's **Caruban** (monster id 73 = `0x49`,
-/// in the `FUN_8005567c` lone-monster battle-id band), gated by system flag
-/// `0x142` - the C1 one-shot of the real rikuroa MAN's post-victory cutscene
-/// record P2[50] (streaming carrier PROT `0157`, the MAN the live script
-/// heap byte-matches at the beat), which that record itself SETs on
-/// completion. `0x142` is also the `map01` dungeon-entrance `dolk`→`dolk2`
-/// selector, so executing the record flips the entrance organically. The
-/// operator's save brackets pin the lifecycle: `0x142` UNSET in
-/// `rikuroa_pre_caruban`, SET in `rikuroa_post_caruban`, and the firehose
-/// caught the SET live (script bytes `51 42`, dispatcher SET arm
-/// `ra 0x801E3598`).
-///
-/// `staged_marker` is the transient "battle staged" system flag the retail
-/// stager record (`rikuroa` `P1[3]`) SETs right before its battle-entry op
-/// (`52 89` then `3E FF 11`): the scene-entry script `P1[0]` tests it on the
-/// post-battle re-entry (`72 89` at `+0x13A` -> the `+0x7E6` arm) and issues
-/// the op-`0x44` spawn of the post-victory record `P2[50]`, whose script
-/// bytes SET the gate flag and CLEAR the marker. The engine stamps the
-/// marker at battle entry ([`World::begin_encounter_battle`]) as the
-/// stand-in for executing the stager record; the gate flag itself lands
-/// from `P2[50]`'s execution.
-///
-/// (An earlier row armed **Zeto** (75) here, gated on `0x1BE` - both
-/// misattributed: the "rikuroa P2[0] C1 0x1BE" record is Jeremi's arrival
-/// cutscene in `geremi`'s MAN, read through a CDNAME-shifted scene window.
-/// Zeto is RESOLVED as a fully organic `garmel` fight: its beat record
-/// `P2[12]` (C1 gate `[0x198]`, self-latching) ends in the field-VM
-/// scripted-battle op `3E FF 09` selecting garmel MAN formation row 9
-/// (lone monster `0x4B`), which enters battle through
-/// [`World::trigger_scripted_battle`] - no entry in this table.)
-///
-/// The host scene-entry latch
-/// ([`crate::scene::SceneHost::enter_field_scene`]) consumes this table.
-pub const SCRIPTED_SCENE_BOSSES: &[(&str, u16, u16, u16)] = &[("rikuroa", 73, 0x142, 0x289)];
+/// A boss-stager binding installed for the active scene: the partition-1
+/// record an approach/interact on the placement slot runs, plus its park
+/// gate. See [`World::install_boss_stagers_from_man`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldBossStager {
+    /// Partition-1 record index (= the placement index) to execute.
+    pub record: u8,
+    /// The record's own head gate: refuse the launch while this system flag
+    /// is SET (the beaten-boss one-shot - e.g. rikuroa's `0x142`).
+    pub park_gate: Option<u16>,
+}
 
 impl World {
     /// Install an [`crate::encounter::EncounterSession`] for the current
@@ -508,6 +474,11 @@ impl World {
         }
         log::info!("field: op-0x3E scripted battle entry -> formation row {row}");
         self.pending_field_carrier_battle = Some(formation_id);
+        // Scripted rows carry a non-zero first header byte the retail reader
+        // ORs `0x80` into a battle-setup flag for; the staged fight refuses
+        // the Run command (the `ctx+0x287` no-escape input of the escape
+        // roll `FUN_801E791C`). Cleared by `finish_battle`.
+        self.battle_no_escape = true;
         true
     }
 
@@ -559,77 +530,137 @@ impl World {
         id
     }
 
-    /// Install a scripted single-monster **boss** encounter via the retail
-    /// battle-id path, so the next [`Self::on_field_step`] flips Field ->
-    /// Battle against that lone monster.
+    /// Install the active scene's **boss-stager placements** as approach /
+    /// interact dispatch bindings, derived entirely from the MAN's own bytes
+    /// ([`crate::man_field_scripts::boss_stager_placements`]).
     ///
-    /// This is a distinct mechanism from the MAN-formation scripted encounters
-    /// ([`Self::install_man_formation`] / [`Self::install_scripted_encounter`]).
-    /// The chapter-1 boss (Zeto, monster id 75, fought in `rikuroa`) has **no**
-    /// on-disc formation record - not in the scene's MAN encounter section and
-    /// not as an inline armed-YIELD window. Instead the retail trigger writes a
-    /// battle-id global (`DAT_8007b7fc`) which battle-init `FUN_8005567c`
-    /// expands: for ids in `0x49..=0x4D` it stores `(u8)id` into the formation
-    /// cell `DAT_8007bd0c` and clears the higher monster slots, yielding a lone
-    /// enemy. This models that expansion directly - a one-slot
-    /// [`crate::monster_catalog::FormationDef`] registered under a synthetic
-    /// boss-namespace id and forced as the next encounter.
+    /// For each partition-1 placement whose record carries the scripted-battle
+    /// op `3E FF <row>` (rikuroa's Caruban stager `P1[3]`: `52 89` marker SET
+    /// then `3E FF 11`), and whose
     ///
-    /// Real per-monster stats are the caller's responsibility: seed
-    /// [`Self::monster_catalog`] with `monster_id` from the PROT 867 archive
-    /// before calling (the host scene-entry latch does this) so
-    /// [`Self::enter_battle_from_formation`] overlays genuine HP/attack; absent
-    /// a catalog entry the slot still spawns (tagged with its id) with default
-    /// stats.
+    /// - `formation_row` resolves in the already-installed MAN formation table
+    ///   (the [`Self::install_man_encounter`] scene-entry install - this drops
+    ///   any text-desync phantom site), and
+    /// - park-gate flag (the record's own head `SysFlag.Test`, e.g. `0x142`)
+    ///   is still clear (the beaten-boss one-shot),
     ///
-    /// `staged_marker` is the transient "battle staged" system flag the retail
-    /// stager record sets right before its battle-entry op (rikuroa's Caruban
-    /// = `0x289`, `P1[3]`'s `52 89`); [`Self::begin_encounter_battle`] stamps
-    /// it when this formation actually enters battle. The first-visit gate
-    /// flag itself (`0x142`) is NOT engine-written: the post-battle field
-    /// return re-runs the scene-entry script, whose staged-marker arm spawns
-    /// the post-victory record `P2[50]`, and that record's own script bytes
-    /// SET the gate + CLEAR the marker. Returns the synthetic formation id.
+    /// this registers the placement slot in [`Self::field_boss_stagers`] and
+    /// stations its approach point - the record's own `0x4C 0x51` NPC-run
+    /// destination (Noa at the nest tile), or the placement spawn tile when
+    /// the record has no station leg - as an interact-probe position
+    /// ([`Self::field_npc_positions`]) plus a walk-touch contact
+    /// ([`Self::field_walk_touch`],
+    /// [`crate::man_field_scripts::WalkTouchEvent::StagerBeat`]). Walking
+    /// into / interacting with the placed actor then runs the record itself
+    /// ([`Self::run_boss_stager_record`]) - the engine mirror of retail's
+    /// touch dispatch resuming the parked stager script.
     ///
-    /// NOTE: the field-side op that writes `DAT_8007b7fc` in retail is not yet
-    /// recovered from the corpus (a different bytecode than the field VM, or a
-    /// LUI+ADDIU-aliased store in an undumped overlay). This method + the
-    /// battle-entry marker stamp are the faithful interim until that writer op
-    /// is pinned.
-    ///
-    /// REF: FUN_8005567c (battle-id -> lone-monster cell expansion)
-    pub fn install_boss_encounter(
+    /// Call after [`Self::install_field_carriers_from_man`] (whose inner
+    /// install clears the walk-touch map) and after
+    /// [`Self::install_man_encounter`] (the formation-row validator).
+    // REF: FUN_801d5b5c (touch dispatch), FUN_801cf9f4 (interaction probe)
+    pub fn install_boss_stagers_from_man(
         &mut self,
-        monster_id: u16,
-        staged_marker: Option<u16>,
-    ) -> Option<u16> {
-        // Synthetic boss-namespace formation id, disjoint from the MAN
-        // formation-table row ids (small indices) and the record-hash ids
-        // `install_encounter_from_record` synthesizes.
-        let formation_id = BOSS_FORMATION_ID_BASE | monster_id;
-        let label = format!("Boss {monster_id}");
-        let formation = crate::monster_catalog::FormationDef::new(
-            formation_id,
-            vec![crate::monster_catalog::FormationSlot::new(monster_id)],
-        )
-        .with_label(label);
-        self.formation_table.insert(formation);
+        man_file: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+    ) {
+        self.field_boss_stagers.clear();
+        for site in crate::man_field_scripts::boss_stager_placements(man_file, man) {
+            // The row must be a registered scene formation (scene entry merged
+            // the MAN rows + their archive stats) - a desync phantom is not.
+            let row_ok = self
+                .formation_table
+                .formation(u16::from(site.formation_row))
+                .is_some_and(|def| !def.slots.is_empty());
+            if !row_ok {
+                continue;
+            }
+            // One-shot park gate (the record's own head test): a beaten boss
+            // never re-arms.
+            if site
+                .park_gate_flag
+                .is_some_and(|flag| self.system_flag_test(flag))
+            {
+                continue;
+            }
+            let Ok(slot) = u8::try_from(site.placement_index) else {
+                continue;
+            };
+            let station = match site.station_world {
+                Some(w) => w,
+                None if !site.spawn_parked => site.spawn_world,
+                // Parked with no station leg: no reachable approach point.
+                None => continue,
+            };
+            self.field_boss_stagers.insert(
+                slot,
+                FieldBossStager {
+                    record: slot,
+                    park_gate: site.park_gate_flag,
+                },
+            );
+            self.field_npc_positions.insert(slot, station);
+            self.field_walk_touch.insert(
+                slot,
+                (
+                    station,
+                    crate::man_field_scripts::WalkTouchEvent::StagerBeat,
+                ),
+            );
+            log::info!(
+                "field: boss stager P1[{slot}] armed at {station:?} (formation row {}, park gate {:?})",
+                site.formation_row,
+                site.park_gate_flag,
+            );
+        }
+    }
 
-        use crate::encounter::{
-            EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
+    /// Run the boss-stager record bound to placement `slot`: install its
+    /// partition-1 record as the modal cutscene timeline, so the record's own
+    /// script bytes stage the fight (rikuroa `P1[3]`: choreography + dialog,
+    /// `52 89` staged-marker SET, then `3E FF 11` ->
+    /// [`Self::trigger_scripted_battle`] on MAN formation row 17).
+    ///
+    /// The engine mirror of retail's approach dispatch: the locomotion touch
+    /// dispatch (`FUN_801d5b5c`) / interaction probe (`FUN_801cf9f4`) resumes
+    /// the placed actor's parked script context - no script-side un-halt poke
+    /// to the stager channel exists in the MAN. Reached from
+    /// [`Self::trigger_field_interact`] (which both paths route through).
+    ///
+    /// Returns `true` when the record installed as the timeline. The binding
+    /// is consumed on install (one approach = one beat; the record's own gate
+    /// flag latches the one-shot across visits). Refuses while another
+    /// timeline plays, when the park gate has latched mid-visit, or when no
+    /// scene MAN is resident.
+    // REF: FUN_801d5b5c, FUN_801cf9f4, FUN_8003BDE0 (context install)
+    pub fn run_boss_stager_record(&mut self, slot: u8) -> bool {
+        let Some(&FieldBossStager { record, park_gate }) = self.field_boss_stagers.get(&slot)
+        else {
+            return false;
         };
-        let mut table = EncounterTable::new(&self.active_scene_label);
-        // Force the next step roll: the boss cue installs this lone formation.
-        table.set_trigger_rate(0xFF);
-        table.push(EncounterEntry::new(formation_id, 1));
-        let tracker = EncounterTracker::new(table);
-        self.encounter = Some(EncounterSession::new(tracker));
-        // One-shot override: fire on the next field step regardless of any
-        // per-region random tracker installed for the dungeon.
-        self.scripted_formation_pending = true;
-        self.boss_formation_id = Some(formation_id);
-        self.pending_boss_staged_marker = staged_marker;
-        Some(formation_id)
+        if park_gate.is_some_and(|flag| self.system_flag_test(flag)) {
+            // Latched mid-visit (the fight resolved): drop the stale binding.
+            self.field_boss_stagers.remove(&slot);
+            self.field_walk_touch.remove(&slot);
+            return false;
+        }
+        if self.cutscene_timeline_active() {
+            return false;
+        }
+        let Some(man) = self.field_channels_man.clone() else {
+            return false;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            return false;
+        };
+        let installed =
+            self.install_cutscene_timeline_record(&man_file, &man, 1, record as usize, false);
+        if installed {
+            self.field_boss_stagers.remove(&slot);
+            self.field_walk_touch.remove(&slot);
+            log::info!("field: boss stager P1[{record}] launched as the beat timeline");
+        }
+        installed
     }
 
     /// Field-step trigger. Engines call this once per "the player walked

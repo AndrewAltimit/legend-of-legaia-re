@@ -859,7 +859,8 @@ impl World {
         // flag (rikuroa Caruban = `0x142`) lands by EXECUTING the scene's
         // post-victory partition-2 record: the post-battle field return
         // re-runs the scene-entry script `P1[0]`, whose staged-marker test
-        // (`0x289`, stamped at battle entry) spawns `P2[50]` through the
+        // (`0x289`, SET by the stager record `P1[3]`'s own `52 89` when the
+        // approach dispatch ran it pre-battle) spawns `P2[50]` through the
         // gated record dispatch, and that record's own `51 42` script bytes
         // set the flag. See `SceneHost::tick`'s battle-return arm.
         BattleRewards {

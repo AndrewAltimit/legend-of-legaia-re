@@ -64,7 +64,7 @@ mod assets_events;
 mod battle;
 mod effects;
 mod encounters;
-pub use encounters::{BOSS_FORMATION_ID_BASE, SCRIPTED_SCENE_BOSSES};
+pub use encounters::FieldBossStager;
 mod field_carriers;
 mod field_loop;
 mod field_movement;

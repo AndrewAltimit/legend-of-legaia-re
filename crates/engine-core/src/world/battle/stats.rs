@@ -43,8 +43,10 @@ impl World {
     /// rand draws in retail order; the Chicken Heart (Escape Boost, ability
     /// bit 52) and Chicken King (Great Escape, bit 55) accessory bits fold
     /// from the *living* party members' second ability word (`record+0xF8`).
-    /// The engine has no scripted no-escape battles yet, so `ctx+0x287` /
-    /// `_DAT_8007bac0 & 0x100` pass as unset.
+    /// The scripted no-escape flag (`ctx+0x287`) is the engine's
+    /// [`World::battle_no_escape`], set at scripted-battle entry
+    /// ([`World::trigger_scripted_battle`] - the boss fights); the forced
+    /// flee `_DAT_8007bac0 & 0x100` passes as unset.
     ///
     /// PORT: FUN_801E791C (roll + compare via
     /// `battle_formulas::escape_roll`; the success-side flee staging stays
@@ -61,7 +63,10 @@ impl World {
         };
         let party: Vec<EscapeActor> = (0..party_n).map(fold).collect();
         let enemies: Vec<EscapeActor> = (party_n..self.actors.len()).map(fold).collect();
-        let mut flags = EscapeFlags::default();
+        let mut flags = EscapeFlags {
+            no_escape: self.battle_no_escape,
+            ..EscapeFlags::default()
+        };
         for slot in 0..party_n {
             if self.actors[slot].battle.liveness == 0 {
                 continue;

@@ -264,6 +264,12 @@ pub enum WalkTouchEvent {
     /// `(world_x, world_z)` - the cave-guard throw-back / intra-scene door
     /// mechanism.
     PlayerMoveTo { world_x: i16, world_z: i16 },
+    /// A boss-stager placement ([`super::BossStagerPlacement`]): contact runs
+    /// the placement's own partition-1 record through the field VM (retail
+    /// resumes the parked stager script on touch - `FUN_801d5b5c`). The touch
+    /// dispatch's [`crate::world::World::trigger_field_interact`] call does
+    /// the work; the event itself carries no extra effect.
+    StagerBeat,
 }
 
 /// Decode a **partition-0 object record**'s walk-touch effect, if any.

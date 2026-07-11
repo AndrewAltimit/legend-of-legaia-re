@@ -73,20 +73,11 @@ impl World {
             party_count: self.party_count,
         });
         self.battle_return_mode = SceneMode::Field;
-        // Scripted-boss battle staging: stamp the transient staged marker the
-        // retail stager record sets right before its battle-entry op
-        // (rikuroa `P1[3]`: `52 89` SET 0x289, then `3E FF 11`). The scene's
-        // entry script tests this marker on the post-battle re-entry and
-        // spawns the post-victory record (`P2[50]`), whose own script bytes
-        // land the progression gate. The marker stamp is the engine's
-        // stand-in for executing the stager record; everything downstream is
-        // record execution.
-        if self.boss_formation_id == Some(formation.formation_id)
-            && let Some(marker) = self.pending_boss_staged_marker.take()
-        {
-            self.system_flag_set(marker);
-            self.active_boss_staged_marker = Some(marker);
-        }
+        // No engine-side battle staging: a scripted boss fight's transient
+        // staged marker (rikuroa's `0x289`) is SET by the stager record's own
+        // script bytes (`P1[3]`'s `52 89`, executed through
+        // [`Self::run_boss_stager_record`]) immediately before its `3E FF`
+        // battle-entry op reaches this path.
         self.enter_battle_from_formation(&formation);
         self.active_formation = Some(formation);
     }

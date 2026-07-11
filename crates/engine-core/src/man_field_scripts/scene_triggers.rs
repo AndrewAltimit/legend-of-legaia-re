@@ -516,3 +516,132 @@ pub fn scene_stager_installs(man_file: &ManFile, man: &[u8]) -> Vec<SceneStagerI
     }
     out
 }
+
+/// One partition-1 **boss-stager placement**: a placed actor whose own
+/// interaction record carries the field-VM scripted-battle op `3E FF <row>`
+/// (see `docs/subsystems/battle.md` § "Scripted-battle entry").
+///
+/// The chapter-1 case is Mt. Rikuroa's Caruban: the streaming-carrier MAN's
+/// `P1[3]` (the parked special-model placement the record's SJIS locals name
+/// ノア/Noa) opens on a `SysFlag.Test 0x142` park gate (the beaten-boss
+/// one-shot), stations its actor at the nest tile via its own `0x4C 0x51`
+/// NPC-run leg, self-suspends on a `4C 85` halt-acquire, and its beat body
+/// SETs the transient staged marker (`52 89`) immediately before `3E FF 11`
+/// (formation-table row 17 = lone Caruban `0x49`). Retail resumes the parked
+/// record through the locomotion touch dispatch / interaction probe
+/// (`FUN_801d5b5c` / `FUN_801cf9f4` - no script-side un-halt poke to the
+/// stager channel exists anywhere in the MAN), so approaching the placed
+/// actor is what runs the beat.
+///
+/// Every field is decoded from the record's own bytes; nothing is authored
+/// engine-side.
+// REF: FUN_801d5b5c (touch dispatch), FUN_801cf9f4 (interaction probe),
+//      FUN_801DE840 (case-0x3E interact arm the record's op enters through)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BossStagerPlacement {
+    /// Partition-1 record index (= the placement slot the interact /
+    /// walk-touch dispatch carries).
+    pub placement_index: usize,
+    /// MAN formation-table row the record's `3E FF <row>` selects.
+    pub formation_row: u8,
+    /// The record's park gate: the first clean `SysFlag.Test` at its entry -
+    /// the record parks (one-shot done) while this flag is SET. `None` when
+    /// the record opens unconditionally.
+    pub park_gate_flag: Option<u16>,
+    /// World position the record's own choreography stations the actor at
+    /// (its first own-context non-parked `0x4C 0x51` NPC-run leg) - the
+    /// approach point for the touch/interact dispatch. `None` when the
+    /// record never repositions its actor (the placement spawn tile stands).
+    pub station_world: Option<(i16, i16)>,
+    /// The placement's own spawn world position - the approach point when
+    /// the record carries no station leg (the Ravine ambush placements sit
+    /// at their spawn tiles).
+    pub spawn_world: (i16, i16),
+    /// `true` when the placement spawns at the [`PARKED_SENTINEL_TILE`]
+    /// (off-field until its own script stations it). A parked stager with no
+    /// station leg has no reachable approach point - consumers skip it.
+    pub spawn_parked: bool,
+}
+
+/// Recover every boss-stager placement from a scene's MAN: walk each
+/// partition-1 placement record for a **clean** scripted-battle op
+/// (`3E FF <row>`, base opcode, decoded at a trusted boundary - the same
+/// [`CLEAN_RESYNC_INSNS`] coherence rule the flag census uses, since a `>`
+/// glyph inside dialog text aliases `0x3E`). For each hit the record's park
+/// gate (first clean flag TEST) and station leg (first clean own-context
+/// non-parked `0x4C 0x51`) are decoded alongside.
+///
+/// Consumers must still validate `formation_row` against the scene's
+/// installed MAN formation table (a desync phantom row would not resolve);
+/// see `World::install_boss_stagers_from_man`.
+pub fn boss_stager_placements(man_file: &ManFile, man: &[u8]) -> Vec<BossStagerPlacement> {
+    let mut out: Vec<BossStagerPlacement> = Vec::new();
+    for p in man_file.actor_placements(man) {
+        let start = p.record_offset;
+        let end = record_end_bound(man_file, man.len(), start);
+        if start + p.script_pc0 >= end {
+            continue;
+        }
+        let body = &man[start..end];
+        // Coherence tracking (see `walk_partition_gflag_sites`): sites are
+        // trusted only after CLEAN_RESYNC_INSNS error-free decodes.
+        let mut ok_run = CLEAN_RESYNC_INSNS;
+        let mut park_gate_flag: Option<u16> = None;
+        let mut station_world: Option<(i16, i16)> = None;
+        let mut formation_row: Option<u8> = None;
+        for insn in LinearWalker::new(body, p.script_pc0) {
+            let insn = match insn {
+                Ok(insn) => insn,
+                Err(_) => {
+                    ok_run = 0;
+                    continue;
+                }
+            };
+            let clean = ok_run >= CLEAN_RESYNC_INSNS;
+            ok_run += 1;
+            if !clean {
+                continue;
+            }
+            match insn.info {
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    idx,
+                    ..
+                } if park_gate_flag.is_none() => {
+                    park_gate_flag = Some(idx);
+                }
+                InsnInfo::MenuCtrl {
+                    kind: MenuCtrlKind::Nibble5NpcRun { x_enc, z_enc, .. },
+                    ..
+                } if station_world.is_none()
+                    && insn.extended.is_none()
+                    && (x_enc & 0x7F, z_enc & 0x7F) != PARKED_SENTINEL_TILE =>
+                {
+                    station_world = Some((grid_byte_to_world(x_enc), grid_byte_to_world(z_enc)));
+                }
+                InsnInfo::WarpOrInteract {
+                    op0: 0xFF,
+                    op1,
+                    is_warp: false,
+                } if insn.extended.is_none() => {
+                    formation_row = Some(op1);
+                }
+                _ => {}
+            }
+            if formation_row.is_some() {
+                break; // the battle op is the stager's terminal beat
+            }
+        }
+        if let Some(row) = formation_row {
+            out.push(BossStagerPlacement {
+                placement_index: p.index,
+                formation_row: row,
+                park_gate_flag,
+                station_world,
+                spawn_world: (p.world_x, p.world_z),
+                spawn_parked: (p.tile_x, p.tile_z) == PARKED_SENTINEL_TILE,
+            });
+        }
+    }
+    out
+}

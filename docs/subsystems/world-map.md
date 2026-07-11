@@ -303,14 +303,16 @@ landed:
   script heap byte-matches the carrier. The old corpus-negative stood
   because no census walked the streaming variant MANs (and the earlier
   raw-byte sweep looked for setter *code*, not script operand bytes at
-  op boundaries). Engine: `SCRIPTED_SCENE_BOSSES` arms Caruban (73) in
-  `rikuroa` while `0x142` is clear; entering the fight stamps the
-  transient staged marker `0x289` (the stager `P1[3]`'s pre-battle
-  `52 89`), and the post-battle field return re-runs the scene-entry
-  script `P1[0]`, whose `72 89` test arm spawns `P2[50]` through the
-  C1-gated record dispatch - the record's own `51 42` script bytes SET
-  `0x142` (and `62 89` clears the marker), flipping the dolk-dolk2
-  entrance organically. Disc-gated oracle:
+  op boundaries). Engine: the whole chain is organic record execution -
+  approaching the rikuroa boss-stager placement `P1[3]` runs the record
+  through the field VM (`World::install_boss_stagers_from_man` /
+  `run_boss_stager_record`; park gate = `0x142`, read from the record's
+  own head test), whose `52 89` SETs the transient staged marker `0x289`
+  and whose `3E FF 11` enters the fight; the post-battle field return
+  re-runs the scene-entry script `P1[0]`, whose `72 89` test arm spawns
+  `P2[50]` through the C1-gated record dispatch - the record's own
+  `51 42` script bytes SET `0x142` (and `62 89` clears the marker),
+  flipping the dolk-dolk2 entrance organically. Disc-gated oracle:
   `engine-core/tests/organic_beat_records_disc.rs`.
 - **`0x482`** (Drake mist walls): no script writer exists - the earlier
   "SETs in the `other7` block, clears in the `edbalden`/`eddoman`

@@ -475,104 +475,72 @@ fn prologue_handoff_only_fires_while_the_opening_chain_plays() {
     assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 }
 
-// ---- scripted single-boss encounter (battle-id path, FUN_8005567c) ----
+// ---- boss-stager placements (approach/interact -> record execution) ----
 
 #[test]
-fn install_boss_encounter_arms_a_lone_monster_formation() {
+fn run_boss_stager_refuses_when_the_park_gate_is_latched() {
     let mut world = World::new();
-    world.set_active_scene_label("rikuroa");
-    let fid = world
-        .install_boss_encounter(75, Some(0x1BE))
-        .expect("boss install returns a formation id");
-    // Synthetic boss-namespace id, disjoint from MAN row ids.
-    assert_eq!(fid, crate::world::BOSS_FORMATION_ID_BASE | 75);
-    let def = world
-        .formation_table
-        .formation(fid)
-        .expect("boss formation registered");
-    assert_eq!(def.slots.len(), 1, "boss is a lone monster");
-    assert_eq!(def.slots[0].monster_id, 75);
-    // Armed to fire on the next field step, with the staged marker pending.
-    assert!(world.scripted_formation_pending);
-    assert_eq!(world.boss_formation_id, Some(fid));
-    assert_eq!(world.pending_boss_staged_marker, Some(0x1BE));
-    // The marker is NOT set yet - it stamps when the battle actually enters.
-    assert!(!world.system_flag_test(0x1BE));
-}
-
-#[test]
-fn boss_battle_entry_stamps_the_staged_marker() {
-    let mut world = World::new();
-    world.set_active_scene_label("rikuroa");
-    let fid = world.install_boss_encounter(75, Some(0x289)).unwrap();
-    // Entering the boss battle stamps the transient staged marker (the retail
-    // stager record's pre-battle SET) - the progression gate flag is NOT
-    // engine-written; it lands from the post-victory record's own script.
-    world.begin_encounter_battle(crate::encounter::EncounterRoll {
-        formation_id: fid,
-        row_index: 0,
-        roll_q8: 0,
-    });
-    assert!(matches!(world.mode, SceneMode::Battle));
-    assert!(
-        world.system_flag_test(0x289),
-        "battle entry stamps the staged marker"
+    world.field_boss_stagers.insert(
+        3,
+        crate::world::FieldBossStager {
+            record: 3,
+            park_gate: Some(0x142),
+        },
     );
-    assert_eq!(world.pending_boss_staged_marker, None, "stamp is one-shot");
-    assert_eq!(world.active_boss_staged_marker, Some(0x289));
-    // A win keeps the marker set (the post-victory record's `62 89` clears
-    // it); loot resolution writes NO flags.
-    let cat = crate::monster_catalog::MonsterCatalog::new();
-    let boss_formation = world.formation_table.formation(fid).cloned().unwrap();
-    let _ = world.apply_battle_loot(&boss_formation, &cat);
+    world.system_flag_set(0x142);
     assert!(
-        world.system_flag_test(0x289),
-        "win leaves the marker staged"
+        !world.run_boss_stager_record(3),
+        "a latched park gate refuses the launch"
     );
     assert!(
-        !world.system_flag_test(0x142),
-        "the gate flag is not engine-written on victory (no latch)"
+        !world.field_boss_stagers.contains_key(&3),
+        "the stale binding is dropped"
     );
 }
 
 #[test]
-fn escaped_boss_battle_reverts_the_staged_marker() {
+fn run_boss_stager_requires_a_resident_scene_man() {
     let mut world = World::new();
-    world.set_active_scene_label("rikuroa");
-    let fid = world.install_boss_encounter(75, Some(0x289)).unwrap();
-    world.begin_encounter_battle(crate::encounter::EncounterRoll {
-        formation_id: fid,
-        row_index: 0,
-        roll_q8: 0,
-    });
-    assert!(world.system_flag_test(0x289));
-    // A fled fight un-stages: the entry-script re-run must not spawn the
-    // post-victory record without a win.
-    world.battle_escaped = true;
-    world.finish_battle();
-    assert!(
-        !world.system_flag_test(0x289),
-        "escape reverts the staged marker"
+    world.field_boss_stagers.insert(
+        3,
+        crate::world::FieldBossStager {
+            record: 3,
+            park_gate: None,
+        },
     );
-    assert_eq!(world.active_boss_staged_marker, None);
+    // No `field_channels_man` installed: nothing to execute.
+    assert!(!world.run_boss_stager_record(3));
+    assert!(
+        world.field_boss_stagers.contains_key(&3),
+        "an unresolvable launch keeps the binding for a later approach"
+    );
 }
 
 #[test]
-fn non_boss_battle_entry_does_not_stamp_the_marker() {
+fn boss_battle_entry_writes_no_flags() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
+    // Entering a scripted-battle formation writes NO system flags: the
+    // staged marker (rikuroa 0x289) is the stager record's own `52 89`,
+    // and the gate flag (0x142) is the post-victory record's `51 42`.
     let mut world = World::new();
     world.set_active_scene_label("rikuroa");
-    world.install_boss_encounter(75, Some(0x289)).unwrap();
-    // Enter a DIFFERENT (random) formation while the boss is armed: the stamp
-    // is keyed on the boss formation id, so the marker stays clear.
     world
         .formation_table
-        .insert(FormationDef::new(3, vec![FormationSlot::new(10)]));
-    world.begin_encounter_battle(crate::encounter::EncounterRoll {
-        formation_id: 3,
-        row_index: 0,
-        roll_q8: 0,
-    });
+        .insert(FormationDef::new(17, vec![FormationSlot::new(73)]));
+    assert!(world.trigger_scripted_battle(17));
+    world.tick_field_carriers();
+    assert!(matches!(world.mode, SceneMode::Battle));
+    // The scripted fight refuses the Run command (retail `ctx+0x287`).
+    assert!(world.battle_no_escape, "scripted battle sets no-escape");
+    assert!(
+        !world.system_flag_test(0x289),
+        "no engine stamp: the marker comes from the record's bytes"
+    );
+    assert!(!world.system_flag_test(0x142), "no victory latch either");
+    // Loot resolution also writes no flags.
+    let cat = crate::monster_catalog::MonsterCatalog::new();
+    let formation = world.formation_table.formation(17).cloned().unwrap();
+    let _ = world.apply_battle_loot(&formation, &cat);
     assert!(!world.system_flag_test(0x289));
-    assert_eq!(world.pending_boss_staged_marker, Some(0x289));
+    assert!(!world.system_flag_test(0x142));
 }

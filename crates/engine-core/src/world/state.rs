@@ -1314,37 +1314,31 @@ pub struct World {
     /// game-over). Cleared by `World::finish_battle`.
     pub battle_escaped: bool,
 
+    /// Scripted "can't run from this battle" flag (retail battle ctx
+    /// `+0x287`, the input `FUN_801E791C`'s escape roll tests). Set when a
+    /// battle enters through the field-VM scripted-battle op
+    /// ([`World::trigger_scripted_battle`]) - the boss rows carry a non-zero
+    /// first header byte the retail reader ORs `0x80` into a battle-setup
+    /// flag for - so a staged boss fight refuses the Run command (fleeing
+    /// would leave the stager's marker set and let the post-victory record
+    /// spawn unearned). Cleared by [`World::finish_battle`].
+    pub battle_no_escape: bool,
+
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
     /// outside battle.
     pub active_formation: Option<crate::monster_catalog::FormationDef>,
 
-    /// Synthetic formation id installed by [`World::install_boss_encounter`]
-    /// for a scripted single-boss fight (the battle-id path, retail
-    /// `FUN_8005567c`). Recognised in [`World::begin_encounter_battle`] to
-    /// stamp [`Self::pending_boss_staged_marker`] at battle entry. `None`
-    /// when no boss encounter is armed.
-    pub boss_formation_id: Option<u16>,
-
-    /// System-flag index of the boss fight's transient **battle-staged
-    /// marker** (rikuroa's Caruban = `0x289`): the flag the retail stager
-    /// record (`rikuroa` `P1[3]`) SETs immediately before its battle-entry
-    /// op, and which the scene-entry system script `P1[0]` tests on the
-    /// post-battle re-entry to spawn the post-victory cutscene record
-    /// (`P2[50]` - whose own script bytes SET the progression gate `0x142`
-    /// and CLEAR this marker). Stamped at battle entry by
-    /// [`World::begin_encounter_battle`] (the engine's stand-in for executing
-    /// the stager record itself); the progression flag is NOT engine-written,
-    /// it lands from record execution. `None` when no boss encounter is
-    /// armed.
-    pub pending_boss_staged_marker: Option<u16>,
-
-    /// The staged marker of the boss battle currently in flight, kept so an
-    /// escaped fight reverts it in [`World::finish_battle`] (retail boss
-    /// fights are flee-blocked; un-staging on escape is the engine's
-    /// equivalent, so the post-victory record cannot spawn without a win).
-    /// `None` outside a staged boss battle.
-    pub active_boss_staged_marker: Option<u16>,
+    /// Boss-stager bindings for the active scene, keyed by partition-1
+    /// placement slot: the record an approach (walk-touch) or interact on
+    /// that placed actor runs through the field VM. Derived from the scene
+    /// MAN's own bytes at entry
+    /// ([`World::install_boss_stagers_from_man`]); consumed by
+    /// [`World::run_boss_stager_record`] (rikuroa's Caruban stager `P1[3]`:
+    /// `52 89` staged-marker SET then `3E FF 11` battle entry - every flag
+    /// in the chain lands from the record's own script bytes, nothing is
+    /// engine-stamped).
+    pub field_boss_stagers: std::collections::HashMap<u8, crate::world::FieldBossStager>,
 
     /// Aggregated rewards from the most recent victory - surfaced for the
     /// post-battle banner / HUD. `None` until the first battle resolves.
@@ -1853,6 +1847,7 @@ impl World {
             seru_trade_config: None,
             magic_level_ups: Vec::new(),
             battle_escaped: false,
+            battle_no_escape: false,
             character_max_mp: Vec::new(),
             encounter: None,
             per_char_ext: Vec::new(),
@@ -1894,9 +1889,7 @@ impl World {
             battle_spell_menu: None,
             battle_arts_menu: None,
             active_formation: None,
-            boss_formation_id: None,
-            pending_boss_staged_marker: None,
-            active_boss_staged_marker: None,
+            field_boss_stagers: std::collections::HashMap::new(),
             last_battle_rewards: None,
             game_over: false,
             field_return: None,

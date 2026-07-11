@@ -742,3 +742,37 @@ fn text_alias_stays_quiet_on_printable_operand_ladders() {
     assert!(!text_alias_suspect(&body, 0, 1));
     assert!(!text_alias_suspect(&body, 14, 1));
 }
+
+#[test]
+fn boss_stager_placements_decodes_gate_station_and_row() {
+    // The rikuroa P1[3] shape in miniature: park-gate TEST, an own-context
+    // station NPC-run, the staged-marker SET, then the scripted-battle op
+    // `3E FF 11` (formation row 17).
+    let script = [
+        0x71, 0x42, 0x00, 0x00, // SysFlag.Test 0x142 (park gate)
+        0x4C, 0x51, 69, 75, 6, 24, // NPC_RUN -> tile (69, 75) (station)
+        0x52, 0x89, // SysFlag.Set 0x289 (staged marker)
+        0x3E, 0xFF, 0x11, // scripted-battle: formation row 17
+        0x21,
+    ];
+    let (mf, man) = man_with_placement_script(&script);
+    let sites = boss_stager_placements(&mf, &man);
+    assert_eq!(sites.len(), 1, "one stager placement");
+    let s = sites[0];
+    assert_eq!(s.placement_index, 1);
+    assert_eq!(s.formation_row, 17);
+    assert_eq!(s.park_gate_flag, Some(0x142));
+    assert_eq!(
+        s.station_world,
+        Some((grid_byte_to_world(69), grid_byte_to_world(75)))
+    );
+    assert!(!s.spawn_parked, "helper places the actor at tile (3, 4)");
+
+    // A record without the battle op yields no site.
+    let (mf, man) = man_with_placement_script(&[0x71, 0x42, 0x00, 0x00, 0x21]);
+    assert!(boss_stager_placements(&mf, &man).is_empty());
+
+    // A cross-context `3E FF` (another channel's op) is not a stager.
+    let (mf, man) = man_with_placement_script(&[0xBE, 0x07, 0xFF, 0x11, 0x21]);
+    assert!(boss_stager_placements(&mf, &man).is_empty());
+}

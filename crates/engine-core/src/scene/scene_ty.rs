@@ -537,10 +537,10 @@ impl Scene {
     /// per-row formation defs from the same MAN asset (retail
     /// `_DAT_8007B898`) the scene-entry script comes from.
     ///
-    /// Returns `Ok(None)` when the scene's static bundle carries no MAN (the
-    /// same detector gap [`Self::field_man_entry_script`] documents) or when
-    /// the MAN's encounter section declares no rollable formations (towns
-    /// with no encounters). Resolves now for the `count=6`
+    /// Returns `Ok(None)` when the scene resolves no MAN at all (the same
+    /// detector gap [`Self::field_man_entry_script`] documents) or when the
+    /// MAN's encounter section declares no rollable formations (towns with
+    /// no encounters). Resolves now for the `count=6`
     /// [`legaia_asset::scene_asset_table`] field scenes (town01 etc.) thanks
     /// to the relaxed detector.
     ///
@@ -560,12 +560,13 @@ impl Scene {
             Vec<crate::monster_catalog::FormationDef>,
         )>,
     > {
-        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
-            return Ok(None);
-        };
-        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
-        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
-        else {
+        // Same resolution order as [`Self::field_man_payload`] (bundle MAN
+        // first, streaming variant carrier fallback): the v12-family
+        // dungeons (`rikuroa` / `dolk2`) carry their encounter section -
+        // including the scripted-battle rows the `3E FF <row>` op selects
+        // (rikuroa row 17 = lone Caruban) - in the variant MAN, their only
+        // carrier.
+        let Some(man_bytes) = self.field_man_payload(index)? else {
             return Ok(None);
         };
         Ok(crate::encounter_man::scene_encounter_from_man(

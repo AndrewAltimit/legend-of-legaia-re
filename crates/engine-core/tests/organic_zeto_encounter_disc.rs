@@ -23,8 +23,8 @@
 //! installs the MAN formation rows (+ the PROT 867 archive stats for their
 //! monster ids), the walk-on/beat record executes through the field VM, and
 //! its `3E FF 09` routes through `World::trigger_scripted_battle` into the
-//! formation-table row - no `SCRIPTED_SCENE_BOSSES` entry, no synthetic
-//! formation id.
+//! formation-table row - no synthetic formation id, no engine-side battle
+//! staging (the Caruban twin of this chain is `organic_beat_records_disc.rs`).
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
@@ -162,10 +162,8 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
         "baseline: nothing pre-armed at scene entry"
     );
     assert!(
-        !legaia_engine_core::world::SCRIPTED_SCENE_BOSSES
-            .iter()
-            .any(|&(scene, ..)| scene == "garmel"),
-        "garmel has no synthetic scripted-boss row - the fight is record-borne"
+        host.world.field_boss_stagers.is_empty(),
+        "garmel has no P1 boss-stager placement - the fight is P2-record-borne"
     );
 
     // Spawn the beat record through the real gated dispatch (the walk-on
