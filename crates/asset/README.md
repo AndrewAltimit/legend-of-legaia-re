@@ -129,6 +129,15 @@ CLI `asset monster-archive --id N --obj <out>` exports the mesh, `--texture-png
 a binary glTF (`monster_gltf::export_glb`; per-object animated nodes + a per-palette
 texture atlas).
 
+`scene_gltf::build_scene_glb` is the sibling exporter for assembled
+VRAM-textured scenes (kingdom continents, full town maps, single scene
+TMDs): instanced meshes carrying page-local UVs + per-vertex `(cba, tsb)`
+are baked against a supplied `legaia_tim::Vram` into one RGBA atlas (one
+256x256 tile per distinct `(cba, tsb-page)` pair; hybrid flat-colour
+vertices ride `COLOR_0` + a white tile). Consumed by the web viewer's
+`scene_export_*` WASM session behind the site's download buttons.
+Disc-gated smoke: `tests/scene_gltf_real.rs`.
+
 See [`battle.md`](../../docs/subsystems/battle.md#monster-mesh-record-0x04) and
 [`monster-animation.md`](../../docs/formats/monster-animation.md).
 

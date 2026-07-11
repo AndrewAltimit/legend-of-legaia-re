@@ -96,8 +96,10 @@ The same randomizer is also exposed client-side: `legaia_web_viewer::rom_patcher
 `tooling/rom-patcher.html` page lets a user supply their own disc, toggle every
 setting (drops / equipment-drops / encounters / chests / town shops / casino /
 steals / doors / house doors / starting items / unused content), and download a
-patched image - the disc bytes never leave the browser. The CLI below is the
-scriptable / shareable-PPF path.
+patched image - the disc bytes never leave the browser. The page's change
+report is spoiler-safe: when a random starting-item fill is requested it
+prints only the item *count* (the CLI listing below stays verbose - it's the
+offline spoiler log). The CLI below is the scriptable / shareable-PPF path.
 
 ## CLI: `legaia-rando`
 

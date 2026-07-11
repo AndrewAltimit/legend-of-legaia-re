@@ -88,30 +88,31 @@ pub fn export_glb(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
 // ---------------------------------------------------------------------------
 
 /// Accumulates the single glTF binary buffer plus the `bufferViews` / `accessors`
-/// that index into it. Keeps every view 4-byte aligned.
+/// that index into it. Keeps every view 4-byte aligned. Shared with the scene
+/// exporter ([`crate::scene_gltf`]).
 #[derive(Default)]
-struct BinBuilder {
-    bin: Vec<u8>,
-    buffer_views: Vec<Value>,
-    accessors: Vec<Value>,
+pub(crate) struct BinBuilder {
+    pub(crate) bin: Vec<u8>,
+    pub(crate) buffer_views: Vec<Value>,
+    pub(crate) accessors: Vec<Value>,
 }
 
 // glTF component types.
 const COMP_U32: u32 = 5125;
 const COMP_F32: u32 = 5126;
 // glTF bufferView targets.
-const TARGET_ARRAY: u32 = 34962;
-const TARGET_ELEMENT: u32 = 34963;
+pub(crate) const TARGET_ARRAY: u32 = 34962;
+pub(crate) const TARGET_ELEMENT: u32 = 34963;
 
 impl BinBuilder {
-    fn pad4(&mut self) {
+    pub(crate) fn pad4(&mut self) {
         while !self.bin.len().is_multiple_of(4) {
             self.bin.push(0);
         }
     }
 
     /// Append raw bytes as a new bufferView, returning its index.
-    fn push_view(&mut self, bytes: &[u8], target: Option<u32>) -> usize {
+    pub(crate) fn push_view(&mut self, bytes: &[u8], target: Option<u32>) -> usize {
         self.pad4();
         let offset = self.bin.len();
         self.bin.extend_from_slice(bytes);
@@ -123,13 +124,18 @@ impl BinBuilder {
         self.buffer_views.len() - 1
     }
 
-    fn push_accessor(&mut self, accessor: Value) -> usize {
+    pub(crate) fn push_accessor(&mut self, accessor: Value) -> usize {
         self.accessors.push(accessor);
         self.accessors.len() - 1
     }
 
     /// f32 VEC3 accessor (with min/max - required for `POSITION`).
-    fn push_vec3(&mut self, data: &[[f32; 3]], target: Option<u32>, with_bounds: bool) -> usize {
+    pub(crate) fn push_vec3(
+        &mut self,
+        data: &[[f32; 3]],
+        target: Option<u32>,
+        with_bounds: bool,
+    ) -> usize {
         let mut bytes = Vec::with_capacity(data.len() * 12);
         for v in data {
             for &c in v {
@@ -154,7 +160,7 @@ impl BinBuilder {
         self.push_accessor(acc)
     }
 
-    fn push_vec2(&mut self, data: &[[f32; 2]], target: Option<u32>) -> usize {
+    pub(crate) fn push_vec2(&mut self, data: &[[f32; 2]], target: Option<u32>) -> usize {
         let mut bytes = Vec::with_capacity(data.len() * 8);
         for v in data {
             for &c in v {
@@ -167,7 +173,7 @@ impl BinBuilder {
         }))
     }
 
-    fn push_vec4(&mut self, data: &[[f32; 4]]) -> usize {
+    pub(crate) fn push_vec4(&mut self, data: &[[f32; 4]]) -> usize {
         let mut bytes = Vec::with_capacity(data.len() * 16);
         for v in data {
             for &c in v {
@@ -181,7 +187,7 @@ impl BinBuilder {
     }
 
     /// Scalar f32 accessor with min/max (animation sampler inputs need bounds).
-    fn push_scalar_f32(&mut self, data: &[f32]) -> usize {
+    pub(crate) fn push_scalar_f32(&mut self, data: &[f32]) -> usize {
         let mut bytes = Vec::with_capacity(data.len() * 4);
         for &c in data {
             bytes.extend_from_slice(&c.to_le_bytes());
@@ -195,7 +201,7 @@ impl BinBuilder {
         }))
     }
 
-    fn push_indices(&mut self, data: &[u32]) -> usize {
+    pub(crate) fn push_indices(&mut self, data: &[u32]) -> usize {
         let mut bytes = Vec::with_capacity(data.len() * 4);
         for &i in data {
             bytes.extend_from_slice(&i.to_le_bytes());
@@ -518,7 +524,7 @@ fn bake_palette_atlas(tex: &MonsterTexture, used: &[usize]) -> Vec<u8> {
 }
 
 /// Encode an RGBA8 image to in-memory PNG bytes.
-fn rgba_to_png(width: usize, height: usize, rgba: &[u8]) -> Vec<u8> {
+pub(crate) fn rgba_to_png(width: usize, height: usize, rgba: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut out, width as u32, height as u32);
@@ -532,7 +538,7 @@ fn rgba_to_png(width: usize, height: usize, rgba: &[u8]) -> Vec<u8> {
 
 /// Wrap a glTF JSON document + binary buffer into the GLB container:
 /// `[magic "glTF"][version 2][total len] + JSON chunk + BIN chunk`.
-fn pack_glb(root: &Value, bin: &[u8]) -> Vec<u8> {
+pub(crate) fn pack_glb(root: &Value, bin: &[u8]) -> Vec<u8> {
     let mut json = serde_json::to_vec(root).expect("serialize glTF json");
     while !json.len().is_multiple_of(4) {
         json.push(b' '); // JSON chunk padded with spaces

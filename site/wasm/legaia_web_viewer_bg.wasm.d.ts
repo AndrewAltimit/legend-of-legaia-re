@@ -155,6 +155,11 @@ export const legaiaviewer_render_deep_catalog_tim: (a: number, b: number, c: num
 export const legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
 export const legaiaviewer_save_state_framebuffer: (a: number, b: number, c: number) => [number, number, number, number];
 export const legaiaviewer_save_state_prim_replay: (a: number, b: number, c: number) => [number, number, number, number];
+export const legaiaviewer_scene_export_add_instance: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+export const legaiaviewer_scene_export_add_mesh: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
+export const legaiaviewer_scene_export_begin: (a: number, b: number, c: number) => void;
+export const legaiaviewer_scene_export_finish: (a: number) => [number, number];
+export const legaiaviewer_scene_export_set_vram: (a: number, b: number, c: number) => void;
 export const legaiaviewer_set_clut: (a: number, b: number) => [number, number];
 export const legaiaviewer_set_scene_field: (a: number, b: number, c: number) => [number, number, number];
 export const legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];

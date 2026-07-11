@@ -52,6 +52,27 @@ their draws - under the top-down assembled camera they'd paint over the
 map they surround in retail. Disc-gated parity test:
 `tests/field_scene_assembly.rs` (incl. the colour-only prop recovery).
 
+## Scene `.glb` export (`scene_export`)
+
+Builder-style session on `LegaiaViewer` so the site pages can download
+**exactly what they render** as a binary glTF: `scene_export_begin(name)` /
+`scene_export_set_vram(bytes)` / `scene_export_add_mesh(name, positions,
+uvs, cba_tsb, indices, flat_rgba) -> handle` /
+`scene_export_add_instance(handle, tx, ty, tz, rot_y, scale)` /
+`scene_export_finish() -> Vec<u8>`. The page feeds the same mesh buffers it
+uploads to WebGL plus the same per-draw `(translation, rotY, scale)`
+triples it builds model matrices from; the bake
+(`legaia_asset::scene_gltf::build_scene_glb`) renders every distinct
+`(cba, tsb-page)` pair the vertices sample into a 256x256 tile of one RGBA
+atlas (the PSX VRAM+CLUT indirection has no glTF equivalent), remaps UVs,
+and keeps hybrid meshes' untextured vertices via `COLOR_0` + a white atlas
+tile. Consumers: the world-overview page (assembled continent), the viewer
+page's full-map mode (assembled town) and single-TMD inspector. The
+monster page's enemy export stays on the sibling
+`monster_gltf::export_glb` (it additionally carries the action
+animations). Disc-gated smoke: `legaia-asset`'s
+`tests/scene_gltf_real.rs`.
+
 ## In-browser ROM patcher (`rom_patcher`)
 
 `rom_patcher::patch_rom(image, seed, drops, encounters, chests)` runs the

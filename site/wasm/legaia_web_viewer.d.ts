@@ -966,6 +966,38 @@ export class LegaiaViewer {
      * matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
      */
     save_state_prim_replay(save_state_bytes: Uint8Array): Uint8Array;
+    /**
+     * Place mesh handle `mesh` at `(tx, ty, tz)` with `rot_y` radians about
+     * +Y and uniform `scale` - the same triple the page's
+     * `placementModelScaledY` builds its model matrix from.
+     */
+    scene_export_add_instance(mesh: number, tx: number, ty: number, tz: number, rot_y: number, scale: number): void;
+    /**
+     * Register a reusable mesh (the exact streams the page renders:
+     * `positions` f32 xyz PSX-space, `uvs` u8 page-local texel pairs,
+     * `cba_tsb` u16 `[cba, tsb]` pairs, u32 triangle indices, and the
+     * optional hybrid `flat_rgba` side channel - pass an empty array for
+     * pure-textured meshes). Returns the mesh handle for
+     * [`Self::scene_export_add_instance`], or `u32::MAX` when no session
+     * is open.
+     */
+    scene_export_add_mesh(name: string, positions: Float32Array, uvs: Uint8Array, cba_tsb: Uint16Array, indices: Uint32Array, flat_rgba: Uint8Array): number;
+    /**
+     * Start a fresh export session named `name` (becomes the glTF root
+     * node name). Discards any prior unfinished session.
+     */
+    scene_export_begin(name: string): void;
+    /**
+     * Bake the accumulated session into `.glb` bytes and close it. Returns
+     * an empty array when the session is missing or contains no drawable
+     * geometry.
+     */
+    scene_export_finish(): Uint8Array;
+    /**
+     * Supply the 1 MiB VRAM image (`1024*512` LE u16 words - the same bytes
+     * the page uploads to its R16UI texture) the atlas bake reads from.
+     */
+    scene_export_set_vram(bytes: Uint8Array): void;
     set_clut(idx: number): void;
     /**
      * Load a CDNAME scene (e.g. `"town01"`, `"korb3"`) as an **assembled
@@ -1403,6 +1435,11 @@ export interface InitOutput {
     readonly legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly legaiaviewer_save_state_framebuffer: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaviewer_save_state_prim_replay: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiaviewer_scene_export_add_instance: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly legaiaviewer_scene_export_add_mesh: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
+    readonly legaiaviewer_scene_export_begin: (a: number, b: number, c: number) => void;
+    readonly legaiaviewer_scene_export_finish: (a: number) => [number, number];
+    readonly legaiaviewer_scene_export_set_vram: (a: number, b: number, c: number) => void;
     readonly legaiaviewer_set_clut: (a: number, b: number) => [number, number];
     readonly legaiaviewer_set_scene_field: (a: number, b: number, c: number) => [number, number, number];
     readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];

@@ -186,6 +186,7 @@
       <button id="autorotate-btn" title="Toggle auto-rotate (space)">⏸ stop spin</button>
       <button id="reset-btn" title="Reset camera (R or double-click)">⟲ reset</button>
       <button id="fullscene-btn" style="display: none;" title="Assemble the whole scene: every environment mesh placed at its authored world position, plus the ground">⛰ full map</button>
+      <button id="export-glb-btn" style="display: none;" title="Download the current 3D view (single mesh or assembled full map) as a binary glTF .glb with textures baked from VRAM. Opens in Blender, three.js, or any glTF viewer.">&#11015; .glb</button>
       <span class="viewer-info" id="viewer-info"></span>
     </div>
 
@@ -255,6 +256,7 @@
         <label style="font-size: 0.82rem; color: var(--text-dim);">CLUT
           <select id="cat-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.2rem;"></select>
         </label>
+        <button id="cat-png" type="button" title="Download this texture (current palette) as a PNG">&#11015; PNG</button>
         <span class="viewer-info" id="cat-info"></span>
       </div>
       <div style="background: #0a0e15; border: 1px solid var(--border); padding: 0.6rem; overflow: auto; max-height: 560px;">
@@ -278,6 +280,7 @@
         <label style="font-size: 0.82rem; color: var(--text-dim);">CLUT
           <select id="deep-cat-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.2rem;"></select>
         </label>
+        <button id="deep-cat-png" type="button" title="Download this texture (current palette) as a PNG">&#11015; PNG</button>
         <span class="viewer-info" id="deep-cat-info"></span>
       </div>
       <div style="background: #0a0e15; border: 1px solid var(--border); padding: 0.6rem; overflow: auto; max-height: 560px;">
@@ -291,6 +294,7 @@
 <section class="doc-section" id="using-the-viewer">
   <h2>Using the viewer</h2>
   <p>The top viewer lists every PROT entry that carries a Legaia TMD; pick one from the sidebar or jump by PROT index. By default it renders textured (WebGL2; the same paletted fragment shader the native engine uses); toggle "textured" off for a flat-shaded fallback. Below it, the <strong>PROT.DAT TIM catalog</strong> grid shows every raw 2D texture and the <strong>compressed textures</strong> grid shows the LZS-embedded ones - click a thumbnail in either to load it full-size and switch CLUT (palette) variants.</p>
+  <p>Everything on this page exports. The <strong>&#11015; .glb</strong> button downloads the current 3D view - the single mesh, or the whole assembled town in full-map mode - as a binary <a href="https://www.khronos.org/gltf/">glTF</a> with the textures baked from VRAM into one atlas, ready for Blender, three.js, or any glTF viewer (the same format as the enemy-table model export). The <strong>&#11015; PNG</strong> buttons in the two texture grids download the selected texture in its current palette.</p>
   <p class="hint">Sound and cutscene video on disc live on the <a href="media.html">media browser</a>. The native build adds stage geometry and cross-PROT-entry CLUT chains (via <code>--vram-extra-dir</code>):</p>
   <div class="cli"><code>./target/release/asset-viewer prot extracted/PROT.DAT</code></div>
 </section>
@@ -341,7 +345,35 @@
     const infoEl = document.getElementById(cfg.info);
     const prevBt = document.getElementById(cfg.prev);
     const nextBt = document.getElementById(cfg.next);
+    const pngBt  = document.getElementById(cfg.png);
     let count = 0, cur = 0, observer = null;
+
+    /* Download the detail canvas (already rendered at native TIM pixel
+     * size) as a PNG named by id + curated label + palette. */
+    function downloadPng() {
+      const cv = document.getElementById(cfg.canvas);
+      if (!viewer || !cv || detail.style.display === 'none') return;
+      let name = `${cfg.pngPrefix}${cur}`;
+      try {
+        const meta = JSON.parse(cfg.infoJson(cur));
+        if (meta.label) {
+          name += '-' + String(meta.label).toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        }
+        if ((meta.clut_count | 0) > 1) {
+          name += `-p${parseInt(clutSel.value, 10) || 0}`;
+        }
+      } catch (e) { /* fall back to the bare id */ }
+      cv.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name + '.png';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }, 'image/png');
+    }
 
     function render(id, clut) {
       try { cfg.render(id, clut, cfg.canvas); }
@@ -436,6 +468,7 @@
 
     if (prevBt) prevBt.onclick = () => show(cur - 1);
     if (nextBt) nextBt.onclick = () => show(cur + 1);
+    if (pngBt)  pngBt.onclick = downloadPng;
     if (idIn)   idIn.addEventListener('change', () => show(parseInt(idIn.value, 10) || 0));
     if (clutSel) clutSel.addEventListener('change', () => render(cur, parseInt(clutSel.value, 10) || 0));
 
@@ -449,6 +482,7 @@
     detail: 'catalog-detail', idInput: 'cat-id', clut: 'cat-clut',
     info: 'cat-info', prev: 'cat-prev', next: 'cat-next',
     canvas: 'catalog-canvas', thumbPrefix: 'cat-thumb-',
+    png: 'cat-png', pngPrefix: 'tim-',
     emptyMsg: 'No TIM catalog for this input (load a disc or raw PROT.DAT).',
     len:      ()           => viewer.catalog_len(),
     infoJson: (id)         => viewer.catalog_info_json(id),
@@ -464,6 +498,7 @@
     detail: 'deep-catalog-detail', idInput: 'deep-cat-id', clut: 'deep-cat-clut',
     info: 'deep-cat-info', prev: 'deep-cat-prev', next: 'deep-cat-next',
     canvas: 'deep-catalog-canvas', thumbPrefix: 'deep-cat-thumb-',
+    png: 'deep-cat-png', pngPrefix: 'tim-deep-',
     emptyMsg: 'No compressed TIMs for this input (load a disc or raw PROT.DAT).',
     len:      ()           => viewer.deep_catalog_len(),
     infoJson: (id)         => viewer.deep_catalog_info_json(id),
@@ -653,6 +688,105 @@
   /* Drop pressed-key state when window blurs so a release isn't missed. */
   window.addEventListener('blur', () => keysDown.clear());
 
+  /* ---------- .glb export (single mesh / assembled full map) ----------
+   * What the button downloads follows the active 3D view: the textured
+   * single-TMD inspector exports that mesh, the assembled full-map view
+   * exports every placed mesh + the ground. Both feed the WASM scene
+   * exporter the exact buffers + transforms the WebGL loop renders, so
+   * the file matches the screen (textures baked from VRAM into one atlas). */
+  let glbExport = null;   /* null | {kind:'entry',...} | {kind:'fullmap',...} */
+  function setGlbExport(state) {
+    /* Guarded on the WASM builder existing so a stale cached module
+     * (before scene_export_* landed) just leaves the button hidden. */
+    if (state && (!viewer || typeof viewer.scene_export_begin !== 'function')) {
+      state = null;
+    }
+    glbExport = state;
+    const btn = document.getElementById('export-glb-btn');
+    if (btn) btn.style.display = state ? '' : 'none';
+  }
+  function downloadGlbBytes(bytes, filename) {
+    const blob = new Blob([bytes], { type: 'model/gltf-binary' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+  async function exportCurrentGlb() {
+    if (!viewer || !glbExport) return;
+    const btn = document.getElementById('export-glb-btn');
+    const prevLabel = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'baking…'; }
+    /* Let the label paint before the synchronous WASM bake. */
+    await new Promise((r) => setTimeout(r, 30));
+    const done = (msg) => {
+      if (!btn) return;
+      btn.disabled = false;
+      if (msg) {
+        btn.textContent = msg;
+        setTimeout(() => { btn.textContent = prevLabel; }, 1500);
+      } else {
+        btn.textContent = prevLabel;
+      }
+    };
+    try {
+      const none = new Uint8Array(0);
+      if (glbExport.kind === 'entry') {
+        viewer.scene_export_begin(`prot_${glbExport.protIndex}`);
+        viewer.scene_export_set_vram(viewer.current_vram_bytes());
+        const mi = viewer.scene_export_add_mesh(
+          `prot_${glbExport.protIndex}`,
+          viewer.mesh_positions(), viewer.mesh_uvs(),
+          viewer.mesh_cba_tsb(), viewer.mesh_indices(), none);
+        viewer.scene_export_add_instance(mi, 0, 0, 0, 0, 1.0);
+        const glb = viewer.scene_export_finish();
+        if (!glb || glb.length === 0) return done('no mesh');
+        downloadGlbBytes(glb, `legaia-prot-${glbExport.protIndex}.glb`);
+        return done(null);
+      }
+      /* Assembled full map: ground heightfield + every on-screen draw
+       * (hybrid meshes keep their untextured vertex-colour half). */
+      viewer.scene_export_begin(glbExport.label);
+      viewer.scene_export_set_vram(viewer.field_scene_vram_bytes());
+      if (glbExport.hasGround) {
+        const gi = viewer.scene_export_add_mesh(
+          'ground',
+          viewer.field_scene_ground_positions(), viewer.field_scene_ground_uvs(),
+          viewer.field_scene_ground_cba_tsb(), viewer.field_scene_ground_indices(), none);
+        viewer.scene_export_add_instance(gi, 0, 0, 0, 0, 1.0);
+      }
+      const meshHandles = new Map();
+      for (const d of glbExport.draws) {
+        let mi = meshHandles.get(d.meshId);
+        if (mi === undefined) {
+          try { viewer.field_scene_mesh(d.meshId); } catch (e) { continue; }
+          mi = viewer.scene_export_add_mesh(
+            'mesh_' + d.meshId,
+            viewer.field_scene_mesh_positions(), viewer.field_scene_mesh_uvs(),
+            viewer.field_scene_mesh_cba_tsb(), viewer.field_scene_mesh_indices(),
+            viewer.field_scene_mesh_flat_rgba());
+          meshHandles.set(d.meshId, mi);
+        }
+        viewer.scene_export_add_instance(
+          mi, d.x, d.y || 0, d.z, d.rotY || 0,
+          (d.scale != null) ? d.scale : 1.0);
+      }
+      const glb = viewer.scene_export_finish();
+      if (!glb || glb.length === 0) return done('no mesh');
+      downloadGlbBytes(glb, `legaia-${glbExport.label}-map.glb`);
+      return done(null);
+    } catch (err) {
+      console.warn('glb export failed:', err);
+      return done('export failed');
+    }
+  }
+  {
+    const btn = document.getElementById('export-glb-btn');
+    if (btn) btn.addEventListener('click', exportCurrentGlb);
+  }
+
   function refreshInfo() {
     if (!viewer) return;
     const stat = JSON.parse(viewer.status());
@@ -690,6 +824,7 @@
 
     stopRaf();
     disposeGl();
+    setGlbExport(null);   /* the 3D loops re-arm it when applicable */
     const cameraHint = document.getElementById('camera-hint');
     if (stat.has_tmd) {
       if (cameraHint) cameraHint.style.display = 'block';
@@ -720,6 +855,7 @@
     if (!viewer) return;
     stopRaf();
     disposeGl();
+    setGlbExport(null);   /* re-armed below once the draw list is built */
     const oldCanvas = document.getElementById('viewer-canvas');
     if (!oldCanvas) return;
     const fresh = document.createElement('canvas');
@@ -895,6 +1031,13 @@
         Array.from(used).map(ms => [ms, glRenderer.getMeshAabb(ms)])),
     };
 
+    /* Arm the .glb export with the assembled draw list (ground + placed
+     * meshes, sky backdrops already excluded above - same as the screen). */
+    setGlbExport({
+      kind: 'fullmap', label, draws,
+      hasGround: viewer.field_scene_ground_quad_count() > 0,
+    });
+
     /* Shared world-camera controls (same gestures as the world-overview
      * page): left-drag pans, right-drag / shift-drag pivots (yaw + tilt),
      * wheel zooms. Wider zoom clamp than the kingdom default - scenes
@@ -952,6 +1095,10 @@
     console.debug(`[textured] ${positions.length / 3} verts, ${indices.length / 3} tris, vram ${vramBytes.length} bytes`);
     glRenderer.uploadVram(vramBytes);
     glRenderer.uploadMesh(positions, uvs, cbaTsb, indices);
+    /* Arm the .glb export for this single-mesh view. */
+    try {
+      setGlbExport({ kind: 'entry', protIndex: JSON.parse(viewer.status()).prot_index });
+    } catch (e) { setGlbExport(null); }
 
     const center = [bounds[0], bounds[1], bounds[2]];
     const radius = bounds[3];

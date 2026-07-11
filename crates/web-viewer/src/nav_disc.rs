@@ -31,6 +31,7 @@ impl LegaiaViewer {
             field_scene: None,
             prot_index: None,
             cdname_text: None,
+            scene_export: None,
         })
     }
 

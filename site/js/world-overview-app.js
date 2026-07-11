@@ -101,6 +101,7 @@
   const $showTerrain = document.getElementById('wo-show-terrain');
   const $showLandmarks = document.getElementById('wo-show-landmarks');
   const $lockTopView = document.getElementById('wo-lock-topview');
+  const $exportGlb  = document.getElementById('wo-export-glb');
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
   let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'mesh' (single TMD inspector) */
   let   fogLut      = null;     /* Uint16Array(512) BGR555 entries, or null */
@@ -117,6 +118,10 @@
   let placements = null;      /* world-overview.json */
   let glRenderer = null;
   let rafId = null;
+  /* Draw list of the currently-assembled world view, kept so the .glb
+   * export can bake exactly what's on screen. Null until a kingdom's
+   * world view has loaded (and while in mesh-inspector mode). */
+  let worldExportState = null;
   const cam = { yaw: 0, pitch: 0.25, distance: 2.5, panX: 0, panY: 0, autoRotate: true };
   /* World camera state (world units). Reset per-kingdom to fit the world.
    * `yaw`/`pitch` drive the perspective orbit camera (buildWorldOrbitVp):
@@ -209,6 +214,89 @@
   });
   $autoRot.addEventListener('change', () => { cam.autoRotate = $autoRot.checked; });
 
+  /* ---------- Continent .glb export ----------- */
+  function downloadBytes(bytes, filename) {
+    const blob = new Blob([bytes], { type: 'model/gltf-binary' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+  /* Bake the assembled continent (terrain heightfield + placed landmark /
+   * decoration stamps, textures baked from VRAM) into a binary glTF and
+   * download it. Feeds the WASM exporter the exact mesh buffers + per-draw
+   * transforms the on-screen renderAssembled loop uses, so the file matches
+   * the view (ocean backdrop excluded - it's an animated screen effect). */
+  async function exportWorldGlb() {
+    if (!viewer || !worldExportState || viewMode !== 'world') return;
+    if (typeof viewer.scene_export_begin !== 'function') return;
+    const prevLabel = $exportGlb.textContent;
+    $exportGlb.disabled = true;
+    $exportGlb.textContent = 'baking…';
+    /* Let the label paint before the synchronous WASM bake. */
+    await new Promise((r) => setTimeout(r, 30));
+    try {
+      const k = KINGDOM_PROT[currentKingdom];
+      viewer.scene_export_begin(k ? k.cdname : currentKingdom);
+      viewer.scene_export_set_vram(viewer.pack_vram_bytes());
+      const none = new Uint8Array(0);
+      if (worldExportState.hasGround && (!$showTerrain || $showTerrain.checked)) {
+        /* Ground vertices are already in world coords (PSX pre-flip frame);
+         * the renderer draws them with diag(1,-1,1) and no translation, so
+         * an identity instance reproduces it (the exporter bakes the flip). */
+        const gi = viewer.scene_export_add_mesh(
+          'ground',
+          viewer.walk_ground_positions(), viewer.walk_ground_uvs(),
+          viewer.walk_ground_cba_tsb(), viewer.walk_ground_indices(), none);
+        viewer.scene_export_add_instance(gi, 0, 0, 0, 0, 1.0);
+      }
+      const meshHandles = new Map();
+      for (const p of worldExportState.draws) {
+        let mi = meshHandles.get(p.meshId);
+        if (mi === undefined) {
+          try { viewer.pack_mesh(p.meshId); } catch (e) { continue; }
+          mi = viewer.scene_export_add_mesh(
+            'mesh_' + p.meshId,
+            viewer.pack_mesh_positions(), viewer.pack_mesh_uvs(),
+            viewer.pack_mesh_cba_tsb(), viewer.pack_mesh_indices(), none);
+          meshHandles.set(p.meshId, mi);
+        }
+        const scale = (p.scale != null) ? p.scale : MESH_SCALE;
+        let x = p.x, y = p.y || 0, z = p.z;
+        if (p.anchor === 'centroid' && glRenderer) {
+          /* Legacy layout-grid stamps pivot on the mesh AABB centroid;
+           * fold that into the translation (placementModelCentered math). */
+          const aabb = glRenderer.getMeshAabb(p.meshId);
+          if (aabb) {
+            const c = Math.cos(p.rotY || 0), s = Math.sin(p.rotY || 0);
+            x = scale * (-c * aabb.cx + s * aabb.cz) + p.x;
+            y = scale * aabb.cy;
+            z = scale * (-s * aabb.cx - c * aabb.cz) + p.z;
+          }
+        }
+        viewer.scene_export_add_instance(mi, x, y, z, p.rotY || 0, scale);
+      }
+      const glb = viewer.scene_export_finish();
+      if (!glb || glb.length === 0) {
+        $exportGlb.textContent = 'nothing to export';
+        setTimeout(() => { $exportGlb.textContent = prevLabel; }, 1500);
+        return;
+      }
+      downloadBytes(glb, `legaia-${currentKingdom}-continent.glb`);
+      $exportGlb.textContent = prevLabel;
+    } catch (err) {
+      console.warn('glb export failed:', err);
+      $exportGlb.textContent = 'export failed';
+      setTimeout(() => { $exportGlb.textContent = prevLabel; }, 1500);
+    } finally {
+      $exportGlb.disabled = false;
+      if ($exportGlb.textContent === 'baking…') $exportGlb.textContent = prevLabel;
+    }
+  }
+  if ($exportGlb) $exportGlb.addEventListener('click', exportWorldGlb);
+
   /* ---------- View-mode toggle ----------- */
   function setViewMode(mode) {
     if (!['world', 'mesh'].includes(mode)) return;
@@ -240,6 +328,7 @@
     if ($terrainWrap)   $terrainWrap.hidden   = meshOnly;
     if ($landmarksWrap) $landmarksWrap.hidden = meshOnly;
     if ($lockTopView)   $lockTopView.hidden   = meshOnly;
+    if ($exportGlb)     $exportGlb.hidden     = true; /* loadWorldView unhides */
     $resetCam.hidden = false;
     /* Re-enter the active kingdom so the right path renders. */
     selectKingdom(currentKingdom);
@@ -582,6 +671,8 @@
    * world-overview.json's `tmd_source` block. */
   function loadWorldView() {
     if (!viewer) return;
+    worldExportState = null;
+    if ($exportGlb) $exportGlb.hidden = true;
     const k = placements?.[currentKingdom];
     if (!k) {
       $meshLabel.textContent = 'placement JSON missing';
@@ -1018,6 +1109,13 @@
       `3D perspective view; world ${ext[0]} x ${ext[1]} units; `
       + `drag to pan, right-drag (or shift+drag) to rotate/tilt, scroll to zoom`;
     attachWorldControls(fresh);
+    /* Arm the .glb export with what this load actually put on screen.
+     * Guarded on the WASM builder existing so a stale cached module
+     * (before scene_export_* landed) just leaves the button hidden. */
+    worldExportState = { draws: drawPlacements, hasGround: groundQuads > 0 };
+    if ($exportGlb) {
+      $exportGlb.hidden = (typeof viewer.scene_export_begin !== 'function');
+    }
     const tick = () => {
       glRenderer.renderAssembled(drawPlacements, ext, worldCam);
       rafId = requestAnimationFrame(tick);
