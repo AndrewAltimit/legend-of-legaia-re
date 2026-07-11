@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; inn</div>
   <h1>Inn</h1>
-  <p class="lede">HP / MP restore flow at in-game inns. Retail has <strong>no inn overlay and no inn cost table</strong>: each inn is an ordinary field-VM dialogue in its scene's MAN, and the price is a script literal. Clean-room session state: <code>engine-core::inn::InnSession</code>; <code>open_inn(cost)</code> takes the scene's scripted cost.</p>
+  <p class="lede">HP / MP restore flow at in-game inns. Retail has <strong>no inn overlay and no inn cost table</strong>: each inn is an ordinary field-VM dialogue in its scene's MAN, and the price is a script literal. Clean-room session state: <code>engine-core::inn::InnSession</code>; the scene host scans the scripted cost from the MAN at load (<code>SceneHost::scene_inn_cost</code>) and <code>MenuRuntime::open_scene_inn</code> opens the prompt with it (<code>open_inn(cost)</code> is the direct entry for tests and tooling).</p>
 </header>
 
 <section class="doc-section" id="cost-source">
@@ -46,27 +46,31 @@
       <tr><td>Commit</td><td>-</td><td>Deducts gold; restores all active party members&rsquo; HP and MP to their current maxima.</td></tr>
     </tbody>
   </table>
-  <p>On commit: <code>InnSession::can_afford(world_money)</code> gates the transaction. If affordable, gold is deducted (<code>World::money -= cost</code>) and every active roster member gets <code>hp_cur = hp_max</code>, <code>mp_cur = mp_max</code>. <code>save_party()</code> is called to sync the roster records.</p>
+  <p>On commit: <code>InnSession::can_afford(world_money)</code> gates the transaction. If affordable, gold is deducted (<code>World::money -= cost</code>) and each of the first <code>World::party_count</code> actor slots whose <code>active</code> flag is set gets <code>battle.hp = battle.max_hp</code> and <code>battle.mp</code> restored to the roster record&rsquo;s <code>mp_max</code>; inactive slots and the reserve bench are untouched. <code>save_party()</code> is called to sync the roster records.</p>
   <p>The menu state machine (<code>engine-vm::menu</code>) routes the prompt: <code>InnConfirm</code> Yes (slot 0) commits the rest and routes to the transient <code>InnSleep</code> fade, which auto-advances to the menu&rsquo;s <code>Closing</code> state after <code>transient_hold_frames</code>; No (slot 1) and Triangle route straight to <code>Closing</code>. Either way the inn session is cleared.</p>
 </section>
 
 <section class="doc-section" id="session">
   <h2>InnSession</h2>
-  <p><code>InnSession { cost: u32 }</code> is installed on <code>MenuRuntime</code> by <code>open_inn(cost)</code> before the menu VM enters <code>InnConfirm</code>. <code>can_afford(world_money: i32) -&gt; bool</code> checks <code>world_money &ge; cost</code>.</p>
+  <p><code>InnSession { cost: u32 }</code> is installed on <code>MenuRuntime</code> by <code>open_scene_inn(&amp;SceneHost)</code> (resolves the loaded scene's scanned cost and enters <code>InnConfirm</code>; returns <code>None</code> and installs nothing for free-rest scenes) or directly by <code>open_inn(cost)</code>. <code>can_afford(world_money: i32) -&gt; bool</code> checks <code>world_money &ge; cost</code>.</p>
 </section>
 
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><span class="tag tag-done">Resolved</span> <strong>Per-scene costs.</strong> The old &ldquo;menu overlay DATA segment&rdquo;
+    <li><span class="tag tag-done">Resolved</span> <strong>Per-scene costs - wired.</strong> The old &ldquo;menu overlay DATA segment&rdquo;
     reading is falsified: no cost table exists anywhere. Each cost is a field-VM script literal in the scene MAN (gate
     <code>0x4E</code> sub-3 + debit <code>0x3A</code>), parsed by <code>legaia_asset::inn_costs</code> and swept disc-wide by
-    <code>crates/asset/tests/inn_costs_disc.rs</code> (see <em>Retail cost source</em> above). Remaining wiring: feed the scanned
-    per-scene cost into <code>open_inn(cost)</code> at scene entry instead of a host-supplied constant.</li>
-    <li><strong>Render layout.</strong> Retail renders the prompt as ordinary field dialogue (MES text + option picker), not a
-    dedicated cost window; the port's <code>InnConfirm</code> panel is an engine-side presentation choice. The scripted restore
+    <code>crates/asset/tests/inn_costs_disc.rs</code> (see <em>Retail cost source</em> above). Production wiring:
+    <code>SceneHost::load_scene</code> scans the cached MAN into <code>scene_gold_charges</code>
+    (<code>scene_inn_cost()</code> = the first sub-3 charge), and <code>MenuRuntime::open_scene_inn(&amp;SceneHost)</code> opens
+    <code>InnConfirm</code> with that scanned cost - <code>open_inn(cost)</code> stays as the direct test / tooling entry.
+    Disc-gated oracle: <code>crates/engine-core/tests/inn_cost_scene_disc.rs</code> (<code>retock</code>'s 240 G stay resolves;
+    free-rest <code>town01</code> opens nothing).</li>
+    <li><strong>Render layout + trigger.</strong> Retail renders the prompt as ordinary field dialogue (MES text + option picker), not a
+    dedicated cost window; the port's <code>InnConfirm</code> panel is an engine-side presentation choice, and the innkeeper
+    dialogue does not yet hand off into it automatically (hosts call <code>open_scene_inn</code> themselves). The scripted restore
     (<code>0x4C</code> records) and the <code>DREAM@@</code> hand-off are not yet mirrored.</li>
-    <li><strong>Party filtering.</strong> Retail may only restore active-roster members (not reserve bench). The current port iterates all <code>World::roster.members</code> without a slot-active gate.</li>
   </ul>
 </section>
 

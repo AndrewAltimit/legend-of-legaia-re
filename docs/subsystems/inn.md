@@ -4,7 +4,9 @@ Covers the HP / MP restore flow used at in-game inns. Retail has **no inn
 overlay and no inn cost table**: each inn is an ordinary field-VM dialogue in
 its scene's MAN, and the price is a script literal (see *Retail cost source*
 below). The clean-room port (`engine-core::inn`) supplies the session state
-machine; `open_inn(cost)` takes the scene's scripted cost.
+machine; the scene host scans the scripted cost from the MAN at load
+(`SceneHost::scene_inn_cost`) and `MenuRuntime::open_scene_inn` opens the
+prompt with it (`open_inn(cost)` is the direct entry for tests and tooling).
 
 ## Retail cost source (field-VM script literals)
 
@@ -69,9 +71,12 @@ auto-advances to the menu's `Closing` state after `transient_hold_frames`;
 inn session is cleared (`MenuRuntimeHost::commit` / `cancel`).
 
 On confirmation the engine calls `InnSession::can_afford(world_money)` before
-committing. The commit path:
+committing. The commit path (`commit_inn_confirm`):
 1. Deducts `InnSession::cost` from `World::money`.
-2. For every active party member in `World::roster`: sets `battle.hp_cur = battle.hp_max` and `battle.mp_cur = battle.mp_max`.
+2. For each of the first `World::party_count` actor slots whose `active` flag
+   is set: restores `battle.hp` to `battle.max_hp` and `battle.mp` to the
+   roster record's `mp_max`. Inactive slots and the reserve bench are
+   untouched.
 3. Calls `save_party()` to sync the roster records.
 
 ## Key data structure
@@ -85,24 +90,29 @@ committing. The commit path:
 Key method:
 - `can_afford(world_money: i32) -> bool` - `world_money >= cost`
 
-Installed on `MenuRuntime` by `open_inn(cost)` before menu entry.
+Installed on `MenuRuntime` by `open_scene_inn(&SceneHost)` (resolves the
+loaded scene's scanned cost and enters `InnConfirm`; returns `None` and
+installs nothing for free-rest scenes) or directly by `open_inn(cost)`.
 
 ## Open items
 
-- **Per-scene costs - RESOLVED.** The old "menu overlay DATA segment" reading
-  is falsified: no cost table exists anywhere. Each cost is a field-VM script
-  literal in the scene MAN (gate `0x4E` sub-3 + debit `0x3A`), parsed by
-  `legaia_asset::inn_costs` and swept disc-wide by
+- **Per-scene costs - RESOLVED, wired.** The old "menu overlay DATA segment"
+  reading is falsified: no cost table exists anywhere. Each cost is a field-VM
+  script literal in the scene MAN (gate `0x4E` sub-3 + debit `0x3A`), parsed
+  by `legaia_asset::inn_costs` and swept disc-wide by
   `crates/asset/tests/inn_costs_disc.rs` (see *Retail cost source* above).
-  Remaining wiring: feed the scanned per-scene cost into `open_inn(cost)` at
-  scene entry instead of a host-supplied constant.
-- **Render layout.** Retail renders the prompt as ordinary field dialogue
-  (MES text + option picker), not a dedicated cost window; the port's
-  `InnConfirm` panel is an engine-side presentation choice. The scripted
-  restore (`0x4C` records) and the `DREAM@@` hand-off are not yet mirrored.
-- **Party filtering.** The retail engine may only restore party members who are
-  currently in the active roster (not the reserve bench). The current port
-  iterates all members of `World::roster.members` without a slot-active gate.
+  Production wiring: `SceneHost::load_scene` scans the cached MAN into
+  `scene_gold_charges` (`scene_inn_cost()` = the first sub-3 charge), and
+  `MenuRuntime::open_scene_inn(&SceneHost)` opens `InnConfirm` with that
+  scanned cost - `open_inn(cost)` stays as the direct test / tooling entry.
+  Disc-gated oracle: `crates/engine-core/tests/inn_cost_scene_disc.rs`
+  (`retock`'s 240 G stay resolves; free-rest `town01` opens nothing).
+- **Render layout + trigger.** Retail renders the prompt as ordinary field
+  dialogue (MES text + option picker), not a dedicated cost window; the port's
+  `InnConfirm` panel is an engine-side presentation choice, and the innkeeper
+  dialogue does not yet hand off into it automatically (hosts call
+  `open_scene_inn` themselves). The scripted restore (`0x4C` records) and the
+  `DREAM@@` hand-off are not yet mirrored.
 
 ## Relationship to `legaia_save`
 

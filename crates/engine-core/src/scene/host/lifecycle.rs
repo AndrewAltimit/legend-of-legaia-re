@@ -20,7 +20,10 @@ impl SceneHost {
             scene_destinations: Vec::new(),
             field_triggers: (Vec::new(), Vec::new()),
             field_man_cache: None,
+            scene_gold_charges: Vec::new(),
             last_trigger_tile: None,
+            sustained_sfx: SustainedSfx::new(),
+            mode_cell: 0,
         }
     }
 
@@ -78,6 +81,12 @@ impl SceneHost {
     ///
     /// [`enter_field_scene`]: SceneHost::enter_field_scene
     pub fn load_scene(&mut self, name: &str) -> Result<&Scene> {
+        // Release any sustained-SFX voices the outgoing scene still holds -
+        // the retail teardown runs from the mode initializer on mode entry
+        // (and from the battle anim commit on anim transitions, which
+        // engines drive via [`SceneHost::release_sustained_sfx`] directly).
+        // REF: FUN_80017910, FUN_8001DCF8, FUN_8004AD80
+        self.release_sustained_sfx();
         let scene = Scene::load(&self.index, name)?;
         let assets = crate::scene_assets::SceneAssets::build(&scene);
         self.scene = Some(scene);
@@ -97,6 +106,13 @@ impl SceneHost {
             .as_ref()
             .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
             .map(Arc::new);
+        // Scan the cached MAN for scripted gold charges (inn gate + debit
+        // pairs) so the inn UI can open with this scene's real cost.
+        self.scene_gold_charges = self
+            .field_man_cache
+            .as_ref()
+            .map(|man| legaia_asset::inn_costs::scan(man))
+            .unwrap_or_default();
         self.last_trigger_tile = None;
         Ok(self.scene.as_ref().unwrap())
     }
@@ -125,6 +141,32 @@ impl SceneHost {
     /// [`crate::man_field_scripts::scene_destinations`].
     pub fn scene_destinations(&self) -> &[crate::man_field_scripts::SceneDestination] {
         &self.scene_destinations
+    }
+
+    /// The current scene's disc-sourced **scripted gold charges**: every
+    /// op-`0x4E` gold-gate + negative `0x3A` debit pair in its field-VM
+    /// script (inn stays, paid tours, casino gold-to-coin counters), in
+    /// script order. Scanned from the MAN at [`Self::load_scene`] via
+    /// [`legaia_asset::inn_costs::scan`]. Empty when no scene is loaded or
+    /// the scene charges nothing.
+    pub fn scene_gold_charges(&self) -> &[legaia_asset::inn_costs::GoldCharge] {
+        &self.scene_gold_charges
+    }
+
+    /// The current scene's **inn cost** in gold: the first sub-op-3 (u16
+    /// literal) gold charge in its script - the inn / paid-lodging class of
+    /// site (sub-op-10 u32 sites are the casino counters). `None` when the
+    /// scene has no scripted charge: free rests (Rim Elm's bed, Biron) have
+    /// no gate + debit pair at all. Feed this to
+    /// [`crate::menu_runtime::MenuRuntime::open_inn`] (or call
+    /// [`crate::menu_runtime::MenuRuntime::open_scene_inn`], which resolves
+    /// it for you) when the scene's innkeeper dialogue hands off to the
+    /// inn prompt.
+    pub fn scene_inn_cost(&self) -> Option<u32> {
+        self.scene_gold_charges
+            .iter()
+            .find(|c| c.sub_op == 3)
+            .map(|c| c.cost)
     }
 
     /// A [`SceneDestinationResolver`] over the current scene's destinations -
