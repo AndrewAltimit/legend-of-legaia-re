@@ -152,3 +152,51 @@ fn town01_sparring_carrier_is_pinned_and_renders_dialogue() {
         RIM_ELM_SPARRING_CARRIER_TILE, RIM_ELM_SPARRING_CARRIER_MODEL,
     );
 }
+
+/// The sparring fight's **selection bytecode is pinned**: town01 `P1[10]`
+/// (the sparring-partner interaction record) carries the field-VM
+/// scripted-battle install op `3E FF 04` - the same case-0x3E
+/// `entity[+0x94] = formation-table row` arm as garmel's Zeto (`3E FF 09`)
+/// and rikuroa's Caruban (`3E FF 11`) - selecting town01 formation row 4,
+/// the lone-Tetsu (`0x4F`) training formation. The op sits in the
+/// post-"Come at me!" dialogue branch (`WaitFrames 16` + flag sets before
+/// it; the adjacent `Test 0x227`/`JmpRel` targets land on op boundaries -
+/// the decode-coherence cross-proof). This closes the "formation index 4
+/// selection bytecode" residual: the Tetsu fight uses the standard `3E FF`
+/// install, not a bespoke path.
+#[test]
+fn town01_p1_10_carries_the_tetsu_3e_ff_04_install() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        return;
+    };
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let scene = Scene::load(&index, "town01").expect("load town01");
+    let man_bytes = scene
+        .field_man_payload(&index)
+        .expect("MAN payload read")
+        .expect("town01 resolves its bundle MAN");
+    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("MAN parses");
+
+    // Formation row 4 = lone Tetsu (0x4F).
+    let record = legaia_engine_core::encounter_man::formation_record_for_row(&man_bytes, 4)
+        .expect("town01 formation row 4 decodes");
+    assert_eq!(record.count, 1, "row 4 is a lone-monster formation");
+    assert_eq!(
+        record.monster_ids[0],
+        legaia_engine_core::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID,
+        "row 4's lone slot is Tetsu"
+    );
+
+    // P1[10] carries `3E FF 04` exactly once.
+    let (start, _pc0, len) =
+        legaia_engine_core::man_field_scripts::partition_record_span(&man_file, &man_bytes, 1, 10)
+            .expect("P1[10] span resolves");
+    let body = &man_bytes[start..start + len];
+    let hits = body.windows(3).filter(|w| *w == [0x3E, 0xFF, 0x04]).count();
+    assert_eq!(hits, 1, "P1[10] carries `3E FF 04` exactly once");
+    eprintln!("[town01] Tetsu install pinned: P1[10] `3E FF 04` -> row 4 = [0x4F]");
+}
