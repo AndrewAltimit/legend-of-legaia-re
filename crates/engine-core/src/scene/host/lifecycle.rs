@@ -22,6 +22,8 @@ impl SceneHost {
             field_man_cache: None,
             scene_gold_charges: Vec::new(),
             last_trigger_tile: None,
+            sustained_sfx: SustainedSfx::new(),
+            mode_cell: 0,
         }
     }
 
@@ -79,6 +81,12 @@ impl SceneHost {
     ///
     /// [`enter_field_scene`]: SceneHost::enter_field_scene
     pub fn load_scene(&mut self, name: &str) -> Result<&Scene> {
+        // Release any sustained-SFX voices the outgoing scene still holds -
+        // the retail teardown runs from the mode initializer on mode entry
+        // (and from the battle anim commit on anim transitions, which
+        // engines drive via [`SceneHost::release_sustained_sfx`] directly).
+        // REF: FUN_80017910, FUN_8001DCF8, FUN_8004AD80
+        self.release_sustained_sfx();
         let scene = Scene::load(&self.index, name)?;
         let assets = crate::scene_assets::SceneAssets::build(&scene);
         self.scene = Some(scene);
