@@ -58,12 +58,13 @@ Field offsets are pinned by a fusion of three sources:
                                            ; FUN_80042558; not all bytes named)
 +0x0F4  u8[16]   ability_bits             ; OR'd into 0x80074358 by the
                                            ; per-frame aggregator
-+0x104  u16 LE   hp_curr_live             ; "Infinite HP" / "Max HP" cheat target
-+0x106  u16 LE   hp_max_live              ;
-+0x108  u16 LE   mp_curr_live             ;
-+0x10A  u16 LE   mp_max_live              ;
-+0x10C  u16 LE   sp_curr_live             ;
-+0x10E  u16 LE   sp_max_live              ; "100 AP" cheat target
++0x104  u16 LE   hp_max_live              ; effective max, aggregator-rebuilt
++0x106  u16 LE   hp_curr_live             ; "Infinite HP" cheat target; walk-
+                                           ; regen bumps it clamping at +0x104
++0x108  u16 LE   mp_max_live              ; (each pair is (max, cur) - see
++0x10A  u16 LE   mp_curr_live             ;  legaia_save::HpMpSp provenance)
++0x10C  u16 LE   sp_max_live              ;
++0x10E  u16 LE   sp_curr_live             ; "100 AP" cheat target
 +0x110  u16 LE   agl_live                 ; "Max AGL" target (live copy)
 +0x112  u16 LE   atk_live                 ; "Max ATK"
 +0x114  u16 LE   udf_live                 ; "Max UDF"
@@ -122,9 +123,9 @@ The mapping from cheat description to record offset is:
 
 | Cheat | Address (Vahn) | Offset | Field |
 |---|---|---:|---|
-| `100 AP` | `0x80084816` | `+0x10E` | sp_max_live |
-| `Max HP` | `0x8008480C` / `0x8008480E` / `0x80084824` | `+0x104` / `+0x106` / `+0x11C` | hp_curr_live / hp_max_live / hp_max_record |
-| `Max MP` | `0x80084810` / `0x80084812` / `0x80084826` | `+0x108` / `+0x10A` / `+0x11E` | mp_curr_live / mp_max_live / mp_max_record |
+| `100 AP` | `0x80084816` | `+0x10E` | sp_curr_live |
+| `Max HP` | `0x8008480C` / `0x8008480E` / `0x80084824` | `+0x104` / `+0x106` / `+0x11C` | hp_max_live / hp_curr_live / hp_max_record |
+| `Max MP` | `0x80084810` / `0x80084812` / `0x80084826` | `+0x108` / `+0x10A` / `+0x11E` | mp_max_live / mp_curr_live / mp_max_record |
 | `Max AGL` | `0x80084818` / `0x8008482A` | `+0x110` / `+0x122` | agl_live / agl_record |
 | `Max ATK` | `0x8008481A` / `0x8008482C` | `+0x112` / `+0x124` | atk_live / atk_record |
 | `Max UDF` | `0x8008481C` / `0x8008482E` | `+0x114` / `+0x126` | udf_live / udf_record |

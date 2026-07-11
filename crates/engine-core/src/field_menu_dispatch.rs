@@ -379,10 +379,11 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             mp: hms.mp_cur,
             mp_max: hms.mp_max,
             // The status page's AP gauge reads the persistent char-record
-            // AP at `+0x10E` (`hp_mp_sp().sp_max` - 0 on a fresh party;
-            // the new-game seed zeroes it), NOT the battle ApGauge's base
-            // AP. REF: FUN_801D33D8 (docs/subsystems/field-menu.md).
-            ap: hms.sp_max.min(u8::MAX as u16) as u8,
+            // AP at `+0x10E` (`hp_mp_sp().sp_cur` under the (max, cur) pair
+            // order - 0 on a fresh party; the new-game seed zeroes it), NOT
+            // the battle ApGauge's base AP.
+            // REF: FUN_801D33D8 (docs/subsystems/field-menu.md).
+            ap: hms.sp_cur.min(u8::MAX as u16) as u8,
             ap_max: 100,
             attack: world.battle_attack.get(i).copied().unwrap_or(0),
             defense: world.battle_defense.get(i).copied().unwrap_or(0),

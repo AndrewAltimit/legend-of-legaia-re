@@ -47,14 +47,16 @@ pub struct LevelUpObservation {
     pub hp_gained: u16,
     /// Total MP_max gained across `from_level → to_level`.
     pub mp_gained: u16,
-    /// Spirit-max (SP_max at char-record `+0x10E`) gain across the same
-    /// range. Engines that mirror the retail "Spirit gain on level-up"
+    /// Spirit/AP gain across the same range, observed at char-record
+    /// `+0x10E` - the live AP pair's *current* cell under the `(max, cur)`
+    /// order (`legaia_save::HpMpSp`); a level-up refills it to the raised
+    /// max. Engines that mirror the retail "Spirit gain on level-up"
     /// behavior fold this into their gauge cap.
     pub sp_gained: u16,
     /// Per-stat byte deltas observed at char-record `+0x11C..+0x12D` (18
     /// bytes = 9 u16 LE values). Each u16 entry is the total delta across
     /// `levels_gained` levels. The first two values are HP_max / MP_max
-    /// (mirroring `+0x106` / `+0x10A` in the live copy); the third value
+    /// (mirroring `+0x104` / `+0x108` in the live copy); the third value
     /// at `+0x120` is the per-stat cap constant (`100`); the remaining
     /// six are the record-side stats at `+0x122..+0x12D`.
     pub stat_deltas: [u8; 18],
@@ -126,8 +128,8 @@ impl LevelUpObservation {
 /// | Phase | Window | Writes |
 /// |---|---|---|
 /// | Record write | pre → mid | char-record stats `+0x11C..+0x12D`, XP `+0x004..+0x005`, rank `+0x130` |
-/// | Live copy | mid → post | live stat window `+0x104..+0x11B` (HP_cur, MP_cur, six u16 stats) |
-/// | Settle | post → next | live HP_max / MP_max / SP_max settle at `+0x106 / +0x10A / +0x10E` |
+/// | Live copy | mid → post | live stat window `+0x104..+0x11B` (HP_max, MP_max, six u16 stats) |
+/// | Settle | post → next | live HP_cur / MP_cur / AP_cur settle at `+0x106 / +0x10A / +0x10E` |
 ///
 /// The Noa and Gala observations exposed below capture the *settled*
 /// pre→settled diff (multi-frame collapse) so consumers see the total
@@ -156,7 +158,7 @@ pub mod observations {
     /// - `+0x12C`: `0x0B → 0x0F` (+4)
     /// - `+0x130`: `0x02 → 0x03` (+1, rank counter - not a stat)
     ///
-    /// SP_max byte at `+0x10E`: `0x3A → 0x42` (+8).
+    /// AP byte at `+0x10E` (the live pair's current cell): `0x3A → 0x42` (+8).
     pub fn vahn_4_level_jump() -> LevelUpObservation {
         LevelUpObservation {
             label: "Vahn 4-level jump (legacy)".into(),
@@ -181,10 +183,13 @@ pub mod observations {
     /// `102 → 336` reward across the early-game thresholds (L2 → L6).
     ///
     /// Settled deltas:
-    /// - HP_max: `0x96 → 0xB6` (+32) at `+0x106` (live) and `+0x11C` (record)
+    /// - HP_max: `0x96 → 0xB6` (+32) at `+0x11C` (record); the live pair
+    ///   follows (`+0x104` max in the live-copy phase, the `+0x106` current
+    ///   refilling to it at settle)
     /// - MP_max: `0x0A → 0x10` (+6) at `+0x10A` (live) and `+0x11E` (record)
-    /// - SP_max: `0x38 → 0x60` (+40) at `+0x10E` (live only; record at
-    ///   `+0x120` is a 100-cap constant, not SP_max)
+    /// - AP: `0x38 → 0x60` (+40) at `+0x10E` (the live AP pair's current
+    ///   cell; live-only - the record at `+0x120` is a 100-cap constant,
+    ///   not an AP max)
     /// - Six record-side stats at `+0x122..+0x12D`: +4 / +3 / +3 / +2 / +4 / +3
     /// - Rank counter at `+0x130`: `0x01 → 0x02` (+1)
     /// - XP at `+0x004..+0x005` (u16 LE): 102 → 336 (+234, Noa's share
@@ -215,9 +220,10 @@ pub mod observations {
     /// `140 → 394` reward across the early-game thresholds (L3 → L7).
     ///
     /// Settled deltas:
-    /// - HP_max: `0xD2 → 0xFE` (+44) at `+0x106` (live) and `+0x11C` (record)
+    /// - HP_max: `0xD2 → 0xFE` (+44) at `+0x11C` (record) and across the
+    ///   live pair
     /// - MP_max: `0x28 → 0x30` (+8) at `+0x10A` (live) and `+0x11E` (record)
-    /// - SP_max: **no change** at `+0x10E` (Gala uses physical Tactical
+    /// - AP: **no change** at `+0x10E` (Gala uses physical Tactical
     ///   Arts; level-up grants no SP for him)
     /// - Six record-side stats at `+0x122..+0x12D`: +2 / +4 / +4 / +2 / +2 / +2
     /// - Rank counter at `+0x130`: `0x01 → 0x02` (+1)

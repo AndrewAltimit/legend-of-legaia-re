@@ -312,8 +312,8 @@ For Noa the captured triplet pins three phases:
 | Phase | Window | Writes |
 |---|---|---|
 | Record write | pre → mid₁ | `+0x11C..+0x12D` (record stat window), `+0x004..+0x005` (XP), `+0x130` (rank counter +1) |
-| Live copy | mid₁ → mid₂ | `+0x104..+0x11B` (HP_cur, MP_cur, six u16 live stats) |
-| Settle | mid₂ → post | `+0x106 / +0x10A / +0x10E` (live HP_max / MP_max / SP_max settle) |
+| Live copy | mid₁ → mid₂ | `+0x104..+0x11B` (HP_max, MP_max, six u16 live stats) |
+| Settle | mid₂ → post | `+0x106 / +0x10A / +0x10E` (live HP_cur / MP_cur / AP_cur settle - the level-up refill) |
 
 Gala's level-up runs in two phases (record write, then live copy + settle
 collapsed into one frame).

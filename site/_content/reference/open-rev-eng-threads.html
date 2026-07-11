@@ -125,7 +125,7 @@
       <tr>
         <td>Character-record HP/MP/AP pair order is <code>(max, cur)</code></td>
         <td><span class="tag tag-done">resolved (relabel pending)</span></td>
-        <td>Three independent sources - the walk-regen tick <code>FUN_801D0B90</code> (bumps <code>+0x106</code>, clamps at <code>+0x104</code>), the per-frame stat aggregator <code>FUN_80042558</code> (rewrites <code>+0x104</code> from base stats + passives), and the GameShark "Infinite HP" codes (write <code>+0x106</code> at every character stride) - agree <code>+0x104/+0x108/+0x10C</code> are the effective maxima and <code>+0x106/+0x10A/+0x10E</code> the currents, the reverse of the <code>legaia_save::HpMpSp</code> / cheat-classifier labels. Fresh-save fixtures mask the swap (cur == max at seed). Relabel + consumer re-audit pending.</td>
+        <td>Three independent sources - the walk-regen tick <code>FUN_801D0B90</code> (bumps <code>+0x106</code>, clamps at <code>+0x104</code>), the per-frame stat aggregator <code>FUN_80042558</code> (rewrites <code>+0x104</code> from base stats + passives), and the GameShark "Infinite HP" codes (write <code>+0x106</code> at every character stride) - agree <code>+0x104/+0x108/+0x10C</code> are the effective maxima and <code>+0x106/+0x10A/+0x10E</code> the currents. <code>legaia_save::HpMpSp</code>, the cheat classifier, and every downstream doc now carry the (max, cur) order; the status-page AP gauge reads the AP current at <code>+0x10E</code>. Fresh-save fixtures masked the original swap (cur == max at seed).</td>
         <td><a href="cheats.html">cheats</a></td>
       </tr>
       <tr>

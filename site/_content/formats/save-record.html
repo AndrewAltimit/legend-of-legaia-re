@@ -30,12 +30,12 @@
 +0x004  u32 LE   xp_next_threshold        ; next-level XP threshold - the status
                                           ; screen's "next" readout.
 +0x0F4  u8[16]   ability_bits             ; OR'd into 0x80074358 each frame
-+0x104  u16 LE   hp_curr_live             ; "Infinite HP" / "Max HP"
-+0x106  u16 LE   hp_max_live
-+0x108  u16 LE   mp_curr_live             ; "Max MP"
-+0x10A  u16 LE   mp_max_live
-+0x10C  u16 LE   sp_curr_live
-+0x10E  u16 LE   sp_max_live              ; "100 AP"
++0x104  u16 LE   hp_max_live              ; effective max, aggregator-rebuilt
++0x106  u16 LE   hp_curr_live             ; "Infinite HP"; walk-regen bumps it
++0x108  u16 LE   mp_max_live              ; (each pair is (max, cur))
++0x10A  u16 LE   mp_curr_live             ; "Max MP"
++0x10C  u16 LE   sp_max_live
++0x10E  u16 LE   sp_curr_live             ; "100 AP"
 +0x110  u16 LE   agl_live                 ; "Max AGL" (live copy)
 +0x112  u16 LE   atk_live                 ; "Max ATK"
 +0x114  u16 LE   udf_live                 ; "Max UDF"

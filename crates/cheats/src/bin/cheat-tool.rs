@@ -172,7 +172,7 @@ fn cmd_extract_offsets(path: &Path) -> Result<()> {
             if cls.category != Category::CharacterRecord {
                 continue;
             }
-            // detail = "vahn_record:hp_curr_live(+0x104)"
+            // detail = "vahn_record:hp_curr_live(+0x106)"
             let Some((who, field)) = cls.detail.split_once('_') else {
                 continue;
             };

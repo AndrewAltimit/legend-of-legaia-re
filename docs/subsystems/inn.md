@@ -107,9 +107,9 @@ Installed on `MenuRuntime` by `open_inn(cost)` before menu entry.
 ## Relationship to `legaia_save`
 
 Gold is stored at `_DAT_8008459C` in retail RAM and in `World::money` in the
-engine. Per-character HP/MP maxima are at `+0xFE / +0x102` (hp_max) and
-`+0x104 / +0x106` (mp_max) within the 0x414-byte character record
-(see `docs/reference/memory-map.md`).
+engine. Per-character HP/MP live pools are the `(max, cur)` u16 pairs at
+`+0x104 / +0x106` (HP) and `+0x108 / +0x10A` (MP) within the 0x414-byte
+character record (see [`save-record.md`](../formats/save-record.md)).
 
 ## See also
 
