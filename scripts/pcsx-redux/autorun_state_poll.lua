@@ -60,6 +60,15 @@
 --   hp               (battle only) per-battle-actor +0x14C current HP on
 --                    change - a per-hit damage/heal/drain timeline; note
 --                    carries max HP
+--   aq               (battle only) PARTY action-parameter queue
+--                    (actor +0x1DF..+0x1F2, slots 0..2) on change; note =
+--                    the full 20-byte window hex. Arts inputs land as raw
+--                    direction bytes 0x0C..0x0F; a commit rewrites to
+--                    starter form (0x19 / 0x1A Super-Art). Any Super Art the
+--                    player performs hands back its committed queue bytes -
+--                    the A3 replace-string validation data. First pure-
+--                    direction append per slot auto-snapshots (an
+--                    arts-command-input-open bracket).
 --   scene / mode     0x8007050C name + 0x8007B83C mode transitions
 --   pos    (P1)      player tile (col idx=tileX, value=tileZ) emitted on a tile
 --                    crossing while in field mode; turns "flag X flipped in
@@ -74,8 +83,8 @@
 --   snap   (P2)      an auto-snapshot save state was written (rare-event
 --                    harvest: never-seen scene / lone-boss formation / a
 --                    first-time target-set flag / first nonzero battle-id
---                    staging byte / first 0x400 status). note = reason +
---                    filename.
+--                    staging byte / first 0x400 status / first arts input
+--                    per party slot). note = reason + filename.
 --
 -- P3 (bulk-load tagging): a frame that flips >= LEGAIA_BULK_FLAGS story flags
 --   (a save-load / scene-init dump, not a beat) tags every one of its flag rows
@@ -150,6 +159,13 @@ local ACTOR_SLOTS = 8
 local HP_OFF      = 0x14C
 local MAXHP_OFF   = 0x14E
 local STATUS_OFF  = 0x16E
+-- Party action-parameter queue (+0x1DF..+0x1F2, the window the Super-Art
+-- captures read; docs/tooling/super-art-queue-capture.md). Raw arts inputs
+-- land as direction bytes 0x0C..0x0F; a commit rewrites the window into
+-- starter form (0x19 art-starter / 0x1A Super-Art special starter).
+local Q_OFF       = 0x1DF
+local Q_LEN       = 0x14
+local PARTY_ACTOR_SLOTS = 3   -- queue diff covers party slots 0..2 only
 -- Char-record XP (+0x0 cumulative u32; the level byte is diffed separately)
 -- and equipment slots (+0x196..0x19D: weapon/armour/helmet/ring/goods,
 -- crates/save/src/character.rs).
@@ -215,10 +231,11 @@ local autosave_flip  = 0
 local TRACE_POS   = probe.getenv("LEGAIA_TRACE_POS", "1")   ~= "0"  -- P1
 local TRACE_BGM   = probe.getenv("LEGAIA_TRACE_BGM", "1")   ~= "0"  -- P5
 local TRACE_INPUT = probe.getenv("LEGAIA_TRACE_INPUT", "1") ~= "0"  -- P4
--- Battle-detail stream: per-actor status-word + HP diffs while a battle scene
--- is active. Statuses close the "what inflicted it, when" gap (incl. the open
--- +0x16E bit 0x400 guard-disable applier hunt); HP deltas are a per-hit damage
--- timeline. Both stay quiet outside battle.
+-- Battle-detail stream: per-actor status-word + HP diffs + party action-queue
+-- windows while a battle scene is active. Statuses close the "what inflicted
+-- it, when" gap (incl. the open +0x16E bit 0x400 guard-disable applier hunt);
+-- HP deltas are a per-hit damage timeline; queue rows capture arts inputs +
+-- Super-Art commit rewrites. All stay quiet outside battle.
 local TRACE_BATTLE = probe.getenv("LEGAIA_TRACE_BATTLE", "1") ~= "0"
 -- P3: a frame flipping >= this many flags is a bulk load/init dump, not a
 -- story beat. Matches analyze_state_poll.py's DEFAULT_BULK_THRESHOLD.
@@ -236,8 +253,15 @@ do
     local spec = probe.getenv("LEGAIA_SNAP_FLAGS", "")
     if spec == "" then
         -- 0x142=322 (Caruban gate), 0x225=549 (Rim Elm one-shot),
-        -- 0x482=1154 (other7 mist walls), 0x1BE=446 (geremi arrival).
-        for _, f in ipairs({ 322, 549, 1154, 446 }) do SNAP_FLAGS[f] = true end
+        -- 0x482=1154 (Drake mist walls - writer OPEN, capture target),
+        -- 0x1BE=446 (geremi arrival), plus the writer-less gates the static
+        -- path exhausted on: 0x370=880 (Nivora successor gate),
+        -- 0x50A=1290 (koin1 toggle), 0x5D6=1494 (koin4). A first organic SET
+        -- of any of these brackets the exact code-path-writer hunt the
+        -- backlog lists as capture-only.
+        for _, f in ipairs({ 322, 549, 1154, 446, 880, 1290, 1494 }) do
+            SNAP_FLAGS[f] = true
+        end
     else
         for tok in spec:gmatch("[^,]+") do
             local n = tonumber(tok)
@@ -308,8 +332,10 @@ local prev_equip  = {}       -- per roster slot: EQUIP_LEN-byte window string
 local prev_count  = {}       -- per COUNTERS entry: u32 value
 local prev_status = {}       -- per battle-actor slot: +0x16E status word
 local prev_hp     = {}       -- per battle-actor slot: +0x14C current HP
+local prev_aq     = {}       -- per party slot: Q_LEN-byte action-queue window
 local snapped_400   = false  -- one 0x400-status snapshot per run
 local snapped_batid = false  -- one nonzero staging-id snapshot per run
+local snapped_arts  = {}     -- per party slot: one arts-input snapshot per run
 -- P2 rare-event bookkeeping.
 local seen_scenes = {}       -- scenes visited this run (never-seen -> snap)
 local snap_flags  = {}       -- target flags already snapped this run
@@ -323,7 +349,7 @@ local totals     = { flagset = 0, flagclr = 0, battleid = 0, battle = 0,
                      gold = 0, item = 0, party = 0, scene = 0, mode = 0,
                      level = 0, spell = 0, pos = 0, bgm = 0, input = 0,
                      pick = 0, snap = 0, xp = 0, equip = 0, counter = 0,
-                     status = 0, hp = 0 }
+                     status = 0, hp = 0, aq = 0 }
 
 local function row(kind, idx, value, delta, note)
     totals[kind] = (totals[kind] or 0) + 1
@@ -497,6 +523,45 @@ local function diff_counters()
     end
 end
 
+-- Party action-queue diff (kind `aq`): the +0x1DF..+0x1F2 window of party
+-- slots 0..2 while a battle is active. Every arts-input press appends a raw
+-- direction byte (0x0C..0x0F); the commit rewrites the window into starter
+-- form (0x19 art starter, 0x1A Super-Art special starter). Logging every
+-- change means a volunteer who performs a Super Art in normal play hands
+-- back its committed queue bytes - the byte-exact `replace`-string
+-- validation the A3 batch is otherwise blocked on (see
+-- docs/tooling/super-art-queue-capture.md). A first-per-slot pure-direction
+-- append also auto-snapshots: that state is an "arts command input open"
+-- bracket on whatever card the volunteer is playing.
+local function diff_party_queues(s, ptr)
+    if not mem.in_ram(ptr + Q_OFF, Q_LEN) then return end
+    local win = mem.read_bytes(ptr + Q_OFF, Q_LEN)
+    if win == nil then return end
+    win = tostring(win)
+    local prev = prev_aq[s]
+    if prev ~= nil and win ~= prev then
+        local hex = ""
+        local first_new, changed = nil, 0
+        local dirs_only = true
+        for i = 1, Q_LEN do
+            local b = win:byte(i)
+            hex = hex .. string.format("%02X", b)
+            if b ~= prev:byte(i) then
+                changed = changed + 1
+                if first_new == nil then first_new = b end
+                if b < 0x0C or b > 0x0F then dirs_only = false end
+            end
+        end
+        row("aq", s, first_new or 0, changed, "q=" .. hex)
+        -- Arts-input bracket: the change is purely appended direction bytes.
+        if dirs_only and not snapped_arts[s] then
+            snapped_arts[s] = true
+            autosnap("artsin" .. s)
+        end
+    end
+    prev_aq[s] = win
+end
+
 -- Battle-detail stream: per-actor status-word + HP diffs. Only while a battle
 -- scene is fully active (the pointer table holds THIS battle's actors there);
 -- baselines are dropped on battle exit so the next fight re-baselines without
@@ -529,6 +594,7 @@ local function diff_battle_actors(md)
             end
             prev_status[s] = st
             prev_hp[s] = hp
+            if s < PARTY_ACTOR_SLOTS then diff_party_queues(s, ptr) end
         end
     end
 end
@@ -809,6 +875,7 @@ local function on_vsync()
         -- are new actors, not continuations of these.
         prev_status = {}
         prev_hp     = {}
+        prev_aq     = {}
     end
     if in_battle then
         if batt_batid == 0 then
@@ -853,7 +920,7 @@ end
 -- +-- startup ----------------------------------------------------------------
 log("=== autorun_state_poll (fast-core progression capture) ===")
 log("poll-diff: flags/battleid/gold/item/party/level/spell/xp/equip/counter/"
-    .. "status/hp/scene/mode/pos/bgm/input - NO breakpoints")
+    .. "status/hp/aq/scene/mode/pos/bgm/input - NO breakpoints")
 log(string.format("enhancements: pos=%s bgm=%s input=%s battle=%s autosnap=%s(max %d) bulk>=%d",
     TRACE_POS and "on" or "off", TRACE_BGM and "on" or "off",
     TRACE_INPUT and "on" or "off", TRACE_BATTLE and "on" or "off",

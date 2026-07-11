@@ -336,6 +336,50 @@ def test_status_and_hp_changes_and_0x400_leads():
     assert "hp=40 (-36)" in txt
 
 
+def test_aq_changes_and_arts_commits():
+    # queue window hex is 20 bytes (40 hex chars); pad with zeros
+    def q(prefix_hex):
+        return "q=" + prefix_hex + "0" * (40 - len(prefix_hex))
+
+    rows = _rows(
+        # raw arts-input presses (direction bytes appended one per frame)
+        f"100,aq,0,15,1,0x15,garmel,{q('0F')}",
+        f"110,aq,0,14,1,0x15,garmel,{q('0F0E')}",
+        # ordinary art commit: starter form 0x19 but no 0x1A
+        f"200,aq,0,25,6,0x15,garmel,{q('19270F')}",
+        # Super-Art commit: 0x19 starters + the 0x1A special starter
+        f"300,aq,1,25,10,0x15,garmel,{q('19270F191F0E1A2B2B2B')}",
+        # a monster-side status row must not leak into aq views
+        "310,status,3,1,1,0x15,garmel,0x0000->0x0001 hp=76",
+    )
+    aq = asp.aq_changes(rows)
+    assert len(aq) == 4 and all(r.kind == "aq" for r in aq)
+    commits = asp.arts_commits(rows)
+    assert [(r.tick, s) for r, s in commits] == [(200, False), (300, True)]
+    j = asp.build_json(rows, bulk_threshold=100)
+    assert len(j["aq"]) == 4
+    assert j["arts_commits"] == [
+        {"tick": 200, "scene": "garmel", "slot": 0,
+         "queue_hex": "19270F" + "0" * 34, "is_super": False},
+        {"tick": 300, "scene": "garmel", "slot": 1,
+         "queue_hex": "19270F191F0E1A2B2B2B" + "0" * 20, "is_super": True},
+    ]
+    txt = asp.render_report(rows, bulk_threshold=100, want={"arts"})
+    assert "arts commits" in txt
+    assert "**SUPER" in txt
+    # the raw-press rows (no 0x19 in window) are not commit rows
+    assert txt.count("tick") >= 2 and "q=0F0" not in txt
+
+
+def test_aq_window_parse_tolerates_malformed_notes():
+    assert asp._aq_window_bytes("") == []
+    assert asp._aq_window_bytes("q=") == []
+    assert asp._aq_window_bytes("q=0F0") == []       # odd length
+    assert asp._aq_window_bytes("q=ZZ") == []        # non-hex
+    assert asp._aq_window_bytes("max=76") == []      # not an aq note
+    assert asp._aq_window_bytes("q=190C") == [0x19, 0x0C]
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:

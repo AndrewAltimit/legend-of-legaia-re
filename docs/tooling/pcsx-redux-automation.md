@@ -443,9 +443,13 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   dump, not a beat) so the analyzer filters the noise. And it **auto-snapshots**
   a fingerprinted save state on rare events - a never-seen scene, a lone-boss
   formation, a first-time target-set flag (`LEGAIA_SNAP_FLAGS`, default the
-  known spine gates), a first nonzero battle-id staging byte (which would settle
-  the open "does any retail battle write `DAT_8007B7FC`?" question), or a
-  first-run `0x400` status set (below) - capped at `LEGAIA_SNAP_MAX`, so every
+  known spine gates **plus the open writer-less gates** `0x370`/`0x50A`/`0x5D6`
+  - a non-bulk organic SET of any of those brackets a code-path-writer hunt),
+  a first nonzero battle-id staging byte (which would settle
+  the open "does any retail battle write `DAT_8007B7FC`?" question), a
+  first-run `0x400` status set (below), or a first-per-slot arts-input press
+  (an arts-command-input-open bracket on whatever card the volunteer plays) -
+  capped at `LEGAIA_SNAP_MAX`, so every
   volunteer run grows the mid-beat state library for free (`LEGAIA_AUTOSNAP=0`
   to disable).
   Character-progression cells beyond level/spell are diffed too: per-roster-slot
@@ -459,8 +463,16 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   a **`status`** row on each `+0x16E` mechanical-status-word change (Venom /
   Toxic / Stone / Rot / AI-delegation / Curse timelines; a first-run raise of
   the **`0x400` guard-disable bit** auto-snapshots - the exact before/after
-  bracket the open applier hunt needs) and an **`hp`** row on each `+0x14C`
-  current-HP change (a per-hit damage/heal/DoT timeline; note carries max HP).
+  bracket the open applier hunt needs), an **`hp`** row on each `+0x14C`
+  current-HP change (a per-hit damage/heal/DoT timeline; note carries max HP),
+  and an **`aq`** row on each change of a *party* actor's action-parameter
+  queue window (`+0x1DF..+0x1F2`, slots 0..2; note = the full 20-byte window
+  hex). Arts inputs land in that window as raw direction bytes `0x0C..0x0F`
+  and a commit rewrites it into starter form (`0x19` art starter / `0x1A`
+  Super-Art special starter), so any Super Art the player performs hands back
+  its committed queue bytes - the byte-exact `replace`-string validation the
+  Super-Art capture batch otherwise needs dedicated sessions for
+  ([super-art-queue-capture.md](super-art-queue-capture.md)).
   Baselines drop on battle exit so cross-fight pointer reuse can't fake rows.
   Toggles: `LEGAIA_TRACE_POS`/`_BGM`/`_INPUT`/`_BATTLE` (`0` = off).
 - **Tier 2 - `autorun_flag_firehose.lua` (slow, interpreter+debugger, ~10 fps):** exec-breakpoints on `FUN_8003CE08`/`_CE34` capture the writer `ra` for the specific flags Tier 1 fingered. Run in short targeted bursts, not a full playthrough.
@@ -582,8 +594,10 @@ the **BGM timeline**, **picker choices**, **auto-snapshots**, **XP grants +
 equipment changes**, the **counters** (fishing points / casino coins / Point
 Card), the **battle status timeline** (each `+0x16E` word decoded to its named
 bits, with any raise of the open `0x400` guard-disable bit called out as a
-report-this lead), and (opt-in) the per-scene **walk track**, raw **input
-edges**, and the per-hit **HP timeline**. `--json` emits the same structure
+report-this lead), the **arts commits** (aq-stream rows whose queue window is
+in starter form, Super Arts flagged for tail-matching against
+`crates/art/src/super_art.rs`), and (opt-in) the per-scene **walk track**, raw
+**input edges**, and the per-hit **HP timeline**. `--json` emits the same structure
 for downstream tooling; `--only scenes,battles,flags,status,counters,...`
 selects sections. The
 analysis functions are pure and importable, exercised by
@@ -671,7 +685,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | `autorun_battle_palette_source.lua` | Confirms the scene bundle is LZS-decompressed into the work arena at load; does NOT pin the party palette. → [detail](#autorun_battle_palette_sourcelua) |
 | `autorun_load_screen_dump.lua` | Ground-truth capture for the load-screen panel border + slot-pill source sprites. → [detail](#autorun_load_screen_dumplua) |
 | `autorun_town01_script_flow.lua` | Pins a field scene's script execution model. → [detail](#autorun_town01_script_flowlua) |
-| `autorun_state_poll.lua` | Fast (dynarec, no BPs) per-vsync diff of all progression state (flags/battle-id/gold/items/party/level/spell/xp/equip/counters/scene/mode) plus a per-fight `battle` formation-identity row on each field->battle edge and an in-battle status/HP detail stream (actor `+0x16E`/`+0x14C`), for a whole-playthrough sweep. Tier 1 of the [two-tier model](#fast-whole-playthrough-capture-two-tier-model); the community-handoff probe. |
+| `autorun_state_poll.lua` | Fast (dynarec, no BPs) per-vsync diff of all progression state (flags/battle-id/gold/items/party/level/spell/xp/equip/counters/scene/mode) plus a per-fight `battle` formation-identity row on each field->battle edge and an in-battle detail stream: status/HP (actor `+0x16E`/`+0x14C`) and the party action-queue windows (`+0x1DF..+0x1F2` - arts inputs + committed combo/Super-Art queue bytes), for a whole-playthrough sweep. Tier 1 of the [two-tier model](#fast-whole-playthrough-capture-two-tier-model); the community-handoff probe. |
 | `autorun_flag_firehose.lua` | Slow (interpreter) exec-bp capture of EVERY story-flag write with its writer `ra` + battle-id staging watch. Tier 2 - writer provenance for the flags the poll tier fingers. |
 | `autorun_flag_reader_watch.lua` | Slow (interpreter) full PROVENANCE probe: unfiltered test/set/clear helper exec-bps (reader + writer `ra` for every flag touched, deduped) + per-target byte read-watches + a write-watch allowlist for non-flag globals (default battle-id + formation) + a LoadImage/MoveImage VRAM upload log (auto-disarmed across FMV modes) + per-fight `battle` identity rows with spawn-tile attribution + per-slot overlay-residency checksums, tile context, first-hit/new-scene/boss auto-snapshots, run `manifest.txt`, dynarec hard-refusal + BP-liveness canary. Summarize (and cross-run merge) with `analyze_reader_watch.py`. |
 | [`autorun_battle_char_clut_source.lua`](../../scripts/pcsx-redux/autorun_battle_char_clut_source.lua) | Pins the disc source of the battle-form party CLUT band (VRAM rows 490..497). → [detail](#autorun_battle_char_clut_sourcelua) |

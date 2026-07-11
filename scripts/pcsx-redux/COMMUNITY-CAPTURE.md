@@ -66,11 +66,18 @@ The capture now also records, per playthrough:
   hit's damage, per actor. (One rare status bit is an open research question;
   if your run ever triggers it the script flags it and saves a snapshot —
   that file alone would close the hunt.)
+- **Your battle command inputs** — the raw arts-input queue for each party
+  member, including the exact byte sequence every combo/Super Art commits to.
+  If you perform any of the Super Arts during your run, those rows alone
+  validate research data that otherwise needs dedicated capture sessions.
 - **Auto-snapshots**: the script quietly saves a full state the first time you
-  enter any new area, at each boss fight, and at a few key story flags. These
-  land as `snap_*.sstate` files next to the CSV — a free harvest of mid-story
-  brackets. **If you're short on disk or upload bandwidth**, turn them off with
-  `LEGAIA_AUTOSNAP=0` before `bash` (the CSV is unaffected).
+  enter any new area, at each boss fight, at a few key story flags (several of
+  which are *open writer hunts* — a snapshot of one firing organically closes
+  a research thread by itself), and the first time each character enters arts
+  command input. These land as `snap_*.sstate` files next to the CSV — a free
+  harvest of mid-story brackets. **If you're short on disk or upload
+  bandwidth**, turn them off with `LEGAIA_AUTOSNAP=0` before `bash` (the CSV
+  is unaffected).
 
 You can trim any single stream if you want a leaner file: `LEGAIA_TRACE_POS=0`
 (tiles), `LEGAIA_TRACE_BGM=0` (music), `LEGAIA_TRACE_INPUT=0` (buttons),
