@@ -478,6 +478,18 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   Super-Art capture batch otherwise needs dedicated sessions for
   ([super-art-queue-capture.md](super-art-queue-capture.md)).
   Baselines drop on battle exit so cross-fight pointer reuse can't fake rows.
+  On the kingdom overworld scenes (`mapNN`, field mode) a **`wmcam`** row
+  captures the walk-view camera tuple - rotation trio `0x8007B790/92/94`,
+  projection H `0x8007B6F4`, eye-space TR trio `0x800840B8/BC/C0`, view-mode
+  flag `0x801F2B94` - once on entry, then on any change (min 10-frame gap, so
+  a held zoom logs a ~6/s trajectory). The retail pitch/TR zoom dynamics are
+  pinned at only two save-state anchors
+  ([world-map.md](../subsystems/world-map.md) walk-view camera); any volunteer
+  zoom/rotate fills in the path between them. A **`dt`** row logs the
+  scratchpad frame-step byte `0x1F800393` (the multiplier every dt-scaled
+  timer/animation consumes: world-map CLUT cadence, fishing tension,
+  battle-action waits) - one baseline row per run, then whenever a new value
+  holds 30 consecutive frames (so unstable load-time pacing can't chatter).
   Toggles: `LEGAIA_TRACE_POS`/`_BGM`/`_INPUT`/`_BATTLE` (`0` = off).
   **Regression self-test** (run after ANY edit to the poll probe or
   `lib/probe/*`, before volunteer handoff): `bash

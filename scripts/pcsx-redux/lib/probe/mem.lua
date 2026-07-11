@@ -116,4 +116,14 @@ function M.read_scratch_u32(addr)
     return tonumber(scratch_u32_ptr[off / 4]) or 0
 end
 
+-- Byte-granular scratchpad reader (the u32 form is word-aligned only; use
+-- this for byte cells like the frame-step DAT_1F800393).
+local scratch_u8_ptr = nil
+function M.read_scratch_u8(addr)
+    if scratch_u8_ptr == nil then
+        scratch_u8_ptr = ffi.cast("uint8_t*", PCSX.getScratchPtr())
+    end
+    return tonumber(scratch_u8_ptr[bit.band(addr, 0x3FF)]) or 0
+end
+
 return M

@@ -23,7 +23,10 @@ coins / Point Card on change), status / hp (battle-detail stream: per-battle-
 actor +0x16E status word and +0x14C current HP; `idx` == actor slot, 0..2
 party / 3..7 monsters), aq (party action-parameter queue +0x1DF..+0x1F2 on
 change; `idx` == party slot, note == the 20-byte window hex - arts inputs are
-raw direction bytes 0x0C..0x0F, a commit rewrites to 0x19/0x1A starter form).
+raw direction bytes 0x0C..0x0F, a commit rewrites to 0x19/0x1A starter form),
+wmcam (world-map walk-view camera tuple: `idx` == pitch, `value` == H,
+note == yaw/roll/TR-trio/view - the zoom-dynamics trajectory), dt (scratchpad
+frame-step byte 0x1F800393, baseline + stabilized changes).
 See the probe header for the exact source addresses.
 
 This tool turns that raw event log into the things a reverse-engineer actually
@@ -612,6 +615,19 @@ def fmv_changes(rows: list[Row]) -> list[Row]:
     return [r for r in rows if r.kind == "fmv"]
 
 
+def wmcam_changes(rows: list[Row]) -> list[Row]:
+    """`wmcam` rows: world-map walk-view camera tuple (idx = pitch, value = H,
+    note = yaw/roll/TR/view). The pitch/TR trajectory between the two pinned
+    zoom anchors is the open walk-camera zoom-dynamics thread."""
+    return [r for r in rows if r.kind == "wmcam"]
+
+
+def dt_changes(rows: list[Row]) -> list[Row]:
+    """`dt` rows: scratchpad frame-step byte 0x1F800393 (value = step;
+    note = `baseline` on the run's first stable sample)."""
+    return [r for r in rows if r.kind == "dt"]
+
+
 def picker_choices(rows: list[Row]) -> list[Row]:
     """`pick` rows (P4): dialogue picker cursor index at a confirm press."""
     return [r for r in rows if r.kind == "pick"]
@@ -769,6 +785,22 @@ def render_report(rows: list[Row], bulk_threshold: int, want: set[str]) -> str:
             for r in fmvs:
                 lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  fmv_id={r.value}")
 
+    if "wmcam" in want:
+        cams = wmcam_changes(rows)
+        if cams:
+            lines.append("\n## world-map camera tuple (pitch/H + yaw/roll/TR/view)")
+            for r in cams:
+                lines.append(
+                    f"  tick {r.tick:>7}  {r.scene:<8}  pitch={r.idx}  H={r.value}  {r.note}"
+                )
+
+    if "dt" in want:
+        dts = dt_changes(rows)
+        if dts:
+            lines.append("\n## frame-step (scratchpad 0x1F800393; dt-scaled timer base)")
+            for r in dts:
+                lines.append(f"  tick {r.tick:>7}  {r.scene:<8}  dt={r.value}  {r.note}")
+
     if "picks" in want:
         lines.append("\n## dialogue picker choices (cursor index at a confirm)")
         for r in picker_choices(rows):
@@ -921,6 +953,14 @@ def build_json(rows: list[Row], bulk_threshold: int) -> dict:
             {"tick": r.tick, "scene": r.scene, "slot": r.idx, "changed": r.delta, "note": r.note}
             for r in aq_changes(rows)
         ],
+        "wmcam": [
+            {"tick": r.tick, "scene": r.scene, "pitch": r.idx, "h": r.value, "note": r.note}
+            for r in wmcam_changes(rows)
+        ],
+        "dt": [
+            {"tick": r.tick, "scene": r.scene, "dt": r.value, "delta": r.delta, "note": r.note}
+            for r in dt_changes(rows)
+        ],
         "arts_commits": [
             {
                 "tick": r.tick,
@@ -955,11 +995,11 @@ def main(argv=None) -> int:
     )
     ap.add_argument(
         "--only",
-        default="scenes,battles,flags,items,gold,party,progress,counters,status,arts,bgm,fmv,picks,snaps",
+        default="scenes,battles,flags,items,gold,party,progress,counters,status,arts,bgm,fmv,picks,snaps,dt",
         help="comma list of sections: scenes,battles,flags,items,gold,party,"
-        "progress,counters,status,arts,bgm,fmv,picks,snaps,walk,input,hp "
-        "(walk+input+hp are opt-in: verbose; arts = committed arts/Super-Art "
-        "queue rewrites from the aq stream)",
+        "progress,counters,status,arts,bgm,fmv,picks,snaps,dt,wmcam,walk,input,hp "
+        "(wmcam+walk+input+hp are opt-in: verbose; arts = committed arts/"
+        "Super-Art queue rewrites from the aq stream)",
     )
     ap.add_argument(
         "--labels",
