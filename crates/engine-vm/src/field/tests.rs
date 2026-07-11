@@ -142,6 +142,8 @@ struct TestHost {
     n9_callback_regs: u32,
     op4e_sub4_bios_rand_value: i32,
     op4e_sub4_bios_rand_calls: u32,
+    op4e_char_levels: std::collections::HashMap<u8, i32>,
+    slot_table_values: std::collections::HashMap<u8, i16>,
     n_c_subtile_broadcasts: Vec<(u8, u8)>,
     n_c_sound_triggers: Vec<(u8, u8)>,
     n_c_slot_writes: Vec<(u8, i16)>,
@@ -595,6 +597,12 @@ impl FieldHost for TestHost {
     fn op4e_sub4_bios_rand(&mut self) -> i32 {
         self.op4e_sub4_bios_rand_calls += 1;
         self.op4e_sub4_bios_rand_value
+    }
+    fn op4e_char_level(&self, page: u8) -> i32 {
+        self.op4e_char_levels.get(&page).copied().unwrap_or(0)
+    }
+    fn slot_table_read(&self, slot: u8) -> i16 {
+        self.slot_table_values.get(&slot).copied().unwrap_or(0)
     }
     fn op4c_n_c_sub4_subtile_broadcast(&mut self, x: u8, z: u8) {
         self.n_c_subtile_broadcasts.push((x, z));

@@ -215,28 +215,23 @@ fn scan_record_refs(
                 base: t.wrapping_sub(*d as usize),
                 target: *t,
             }),
-            InsnInfo::InventoryCmp { kind, .. } => match kind {
-                InventoryCmpKind::Compare {
-                    skip_delta,
-                    skip_target,
-                    ..
-                }
-                | InventoryCmpKind::PartyBank {
-                    skip_delta,
-                    skip_target,
-                    ..
-                } => jumps.push(RelJump {
-                    base: skip_target.wrapping_sub(*skip_delta as usize),
-                    target: *skip_target,
-                }),
-                InventoryCmpKind::AbsJump { .. } => {
-                    return Err(ManEditError::AbsoluteRef {
-                        op_pc,
-                        ref_pc: insn.pc,
-                    });
-                }
-                _ => {}
-            },
+            InsnInfo::InventoryCmp {
+                kind:
+                    InventoryCmpKind::Compare {
+                        skip_delta,
+                        skip_target,
+                        ..
+                    }
+                    | InventoryCmpKind::PartyBank {
+                        skip_delta,
+                        skip_target,
+                        ..
+                    },
+                ..
+            } => jumps.push(RelJump {
+                base: skip_target.wrapping_sub(*skip_delta as usize),
+                target: *skip_target,
+            }),
             InsnInfo::Camera {
                 kind: CameraKind::Apply { .. },
                 ..

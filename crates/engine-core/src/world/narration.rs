@@ -1500,8 +1500,10 @@ impl World {
     /// no inline dialogue is running.
     // PORT: FUN_80039B7C
     // REF: FUN_80038050 (the option-jump apply is delegated to OwnedDialogPanel::confirm_menu)
-    // REF: FUN_8003CF7C (the inline fast-forward loop below subsumes retail's
-    //      run-to-next-text helper: tick the field VM until `byte & 0x7F < 0x20`)
+    // PORT: FUN_8003CF7C (the inline fast-forward loop below is retail's
+    //      run-to-next-text helper: tick the field VM until `byte & 0x7F <
+    //      0x20`, with the raw-`0x21` execute-then-stop and the stalled-PC
+    //      stop mapped to the loop's end paths)
     pub fn step_inline_dialogue(&mut self, confirm: bool, up: bool, down: bool) {
         use crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
         let Some(mut id) = self.inline_dialogue.take() else {
@@ -1600,7 +1602,22 @@ impl World {
                     id.done = true;
                     break;
                 }
-                FieldStepResult::Advance { next_pc } => id.pc = next_pc,
+                FieldStepResult::Advance { next_pc } => {
+                    id.pc = next_pc;
+                    // Retail's run-to-next-text helper breaks after executing
+                    // a raw `0x21` byte and returns it (`FUN_8003CF7C`
+                    // `if (bVar1 == 0x21) break`); the dialog SM reads that
+                    // as conversation end. Raw compare only - an extended
+                    // `0xA1` NOP runs through like any other op.
+                    if b == 0x21 {
+                        if let Some(fb) = id.fallback_segment_pc.take() {
+                            id.pc = fb;
+                            continue;
+                        }
+                        id.done = true;
+                        break;
+                    }
+                }
                 FieldStepResult::Yield { resume_pc } => id.pc = resume_pc,
                 // A wait/hold, an unhandled op, or an end: stop. (Unlike the
                 // cutscene timeline the runner does not force-advance past a

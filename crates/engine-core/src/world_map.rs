@@ -43,6 +43,59 @@ const TOGGLE_MASK: u16 = 0x4A;
 /// Additional held guard for the toggle.
 const TOGGLE_HELD: u16 = 0x40;
 
+/// One-shot gate for the world-map POLY_FT4 batch emitter (`FUN_801D7EA0`;
+/// 0897 field-overlay sibling `FUN_801C9688`).
+///
+/// Retail keeps this in the persistent `0x801F0000+` region so it survives
+/// overlay swaps:
+///
+/// | Field | Retail global | Notes |
+/// |---|---|---|
+/// | `armed` | `_DAT_801F351C` | Set to `1` by the arm; the emitter self-clears it after one emission. |
+/// | `scale` | `_DAT_801F3520` | Render scale / range (the emitter uses it as `local_3c` and `local_3c / 5`). |
+/// | `angle_step` | `_DAT_801F3524` | Angle step per frame tick. |
+/// | `ot_layer` | `_DAT_801F3528` | OT layer / draw priority. |
+///
+/// Armed by the 40-byte setter `FUN_801D8258`, whose caller (`FUN_801D1344`,
+/// 0897 relocation copy `FUN_801C2B2C`) sources the three params from the
+/// trigger globals `_DAT_8007BCD4/_D8/_DC`. The setter's first argument is
+/// dead - retail stores only `a1..a3`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EmitterGate {
+    pub armed: bool,
+    pub scale: u32,
+    pub angle_step: u32,
+    pub ot_layer: u32,
+}
+
+impl EmitterGate {
+    /// Arm the gate for one emission, staging the emitter's inputs. A re-arm
+    /// before the emitter consumes the gate overwrites the staged params
+    /// (retail plain stores, no accumulate).
+    // PORT: FUN_801D8258
+    // REF: FUN_801D1344 (param-prep wrapper; forwards _DAT_8007BCD4/_D8/_DC)
+    // REF: FUN_801C2B2C (the wrapper's 0897 field-overlay relocation copy)
+    pub fn arm(&mut self, scale: u32, angle_step: u32, ot_layer: u32) {
+        self.armed = true;
+        self.scale = scale;
+        self.angle_step = angle_step;
+        self.ot_layer = ot_layer;
+    }
+
+    /// Consumer side: if armed, self-clear the gate and yield the staged
+    /// `(scale, angle_step, ot_layer)` params for one emission (the
+    /// `_DAT_801F351C != 0 -> _DAT_801F351C = 0` head of `FUN_801D7EA0` /
+    /// `FUN_801C9688`). `None` when not armed.
+    // REF: FUN_801D7EA0, FUN_801C9688 (the two gate-clearing emitters)
+    pub fn take(&mut self) -> Option<(u32, u32, u32)> {
+        if !self.armed {
+            return None;
+        }
+        self.armed = false;
+        Some((self.scale, self.angle_step, self.ot_layer))
+    }
+}
+
 /// World-map controller state. Attach to [`crate::world::World`] when the
 /// scene mode is `SceneMode::WorldMap`.
 #[derive(Debug, Clone, Default)]
@@ -62,6 +115,11 @@ pub struct WorldMapController {
     pub zoom: i32,
     /// When `true` the debug toggle combo (`_DAT_8007B98C != 0`) is enabled.
     pub debug_enabled: bool,
+    /// One-shot POLY_FT4 batch-emitter gate. Retail hosts it in persistent
+    /// RAM shared with the 0897 field overlay (see [`EmitterGate`]); the
+    /// engine parks it on the controller, where the world-map render state
+    /// lives.
+    pub emitter_gate: EmitterGate,
 }
 
 impl WorldMapController {
@@ -206,5 +264,28 @@ mod tests {
             ctrl.tick(CAM_X_INC, 0);
         }
         assert_eq!(ctrl.camera_x, 40);
+    }
+
+    #[test]
+    fn emitter_gate_arms_and_self_clears_once() {
+        let mut gate = EmitterGate::default();
+        assert_eq!(gate.take(), None, "unarmed gate yields nothing");
+        gate.arm(0x500, 0x10, 4);
+        assert!(gate.armed);
+        // The emitter consumes the gate exactly once (retail self-clear).
+        assert_eq!(gate.take(), Some((0x500, 0x10, 4)));
+        assert!(!gate.armed);
+        assert_eq!(gate.take(), None, "one-shot: second take is empty");
+        // The staged params stay readable after the clear (retail leaves
+        // _DAT_801F3520..28 in place; only the flag resets).
+        assert_eq!(gate.scale, 0x500);
+    }
+
+    #[test]
+    fn emitter_gate_rearm_overwrites_staged_params() {
+        let mut gate = EmitterGate::default();
+        gate.arm(1, 2, 3);
+        gate.arm(7, 8, 9);
+        assert_eq!(gate.take(), Some((7, 8, 9)), "plain stores, last arm wins");
     }
 }

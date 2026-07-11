@@ -844,15 +844,23 @@ struct OceanAnim {
     frames: Vec<u8>,
     /// Current frame index (`0..frames.len()/32`).
     cur: usize,
-    /// Sim-tick accumulator; the frame advances every
-    /// [`OCEAN_ANIM_TICKS_PER_FRAME`] ticks.
-    tick: u32,
+    /// Vsyncs counted toward the next retail *game tick* (a game tick spans
+    /// `World::frame_step` vsyncs - the retail `DAT_1F800393` adaptive
+    /// frame-skip factor written by `FUN_80016B6C`).
+    vsyncs_to_game_tick: u32,
+    /// Vsync accumulator toward the next frame advance; each game tick adds
+    /// `frame_step` vsyncs (the retail `counter += DAT_1F800393` cadence)
+    /// and the frame advances every [`OCEAN_ANIM_VSYNCS_PER_FRAME`].
+    vsync_accum: u32,
 }
 
-/// Sim ticks between ocean-CLUT frame advances. A gentle shimmer: the 13-frame
-/// cycle completes in ~1.3 s at 60 Hz. The exact retail DMA cadence isn't
-/// pinned, so this is a tuned approximation, not a parity figure.
-const OCEAN_ANIM_TICKS_PER_FRAME: u32 = 6;
+/// Vsyncs between ocean-CLUT frame advances. A gentle shimmer: the 13-frame
+/// cycle completes in ~0.9 s. Expressed in retail vsync units (the fade SM's
+/// `counter += DAT_1F800393` clock) so the cadence is frame-rate independent,
+/// but the *value* is still a tuned approximation - `4` reproduces the
+/// previously-tuned 60 ms step at the 100 Hz sim; the exact retail step
+/// interval awaits a mednafen frame-series capture of the row-506 head.
+const OCEAN_ANIM_VSYNCS_PER_FRAME: u32 = 4;
 
 /// Map a winit `KeyCode` to the user-friendly key name used in
 /// [`legaia_engine_core::input::Mapping`]. Returns `""` for keys outside

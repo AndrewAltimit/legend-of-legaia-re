@@ -178,17 +178,23 @@ pub enum CameraKind {
 
 #[derive(Debug, Clone)]
 pub enum InventoryCmpKind {
-    /// Sub-op 0/1 - paginated 7-byte form.
+    /// Sub-ops 0..=9 - the shared 7-byte compare-and-skip form. The raw
+    /// jump table at `0x801CEE30` routes every sub-op to a value loader
+    /// that joins the shared compare at `0x801E0B40` (only 0/1 apply the
+    /// `factor * arg >> 8` scaling). Value source per sub-op: 0/1 =
+    /// char-record HP/MP fraction-of-max, 2 = char level byte `+0x130`,
+    /// 3 = party gold `_DAT_8008459C`, 4 = BIOS `Rand() & 0xFF` (a random
+    /// chance branch), 5..=8 = slot table `0x801C6460[sub - 5]`, 9 = coin
+    /// bank `_DAT_800845A4`. The earlier "absolute jump" (5..8) and
+    /// "rand -> next PC" (4) readings were the Ghidra decomp's collapsed
+    /// switch arms and are falsified by the raw loader bodies at
+    /// `0x801E0AC0..0x801E0B34`.
     Compare {
         sub_op: u8,
         arg: u16,
         skip_delta: u16,
         skip_target: usize,
     },
-    /// Sub-op 2/3/5/6/7/8/9 - absolute jump.
-    AbsJump { target: usize },
-    /// Sub-op 4 - BIOS rand → next-PC.
-    BiosRandJump,
     /// Sub-op 10/11 - 9-byte party-bank comparison.
     PartyBank {
         sub_op: u8,
@@ -315,6 +321,18 @@ pub enum MenuCtrlKind {
     Nibble5Dialog { sub: u8 },
     /// Outer nibble 6 sub-0 - 14-byte 6-word emitter call.
     Nibble6Emitter6 { words: [i16; 6] },
+    /// Outer nibble 6 sub-1 - 16-byte scripted **CLUT-cell effect**
+    /// (`FUN_801E4C58`): `frames == 0` is a one-shot 16x1 cell write (copy
+    /// cell `b` -> `dest`, or flat-fill `dest` with colour `b.0` when
+    /// `b.1 == 0`); `frames != 0` spawns the CLUT cross-fade actor
+    /// (`FUN_801E4794`) fading `a` toward `b` into `dest` over `frames`
+    /// vsyncs. Cells are `(x, y)` VRAM framebuffer coordinates.
+    Nibble6ClutFx {
+        a: (i16, i16),
+        b: (i16, i16),
+        dest: (i16, i16),
+        frames: i16,
+    },
     /// Outer nibble 7 - 7-byte VRAM tile-flag bulk operation.
     Nibble7Tile {
         sub: u8,

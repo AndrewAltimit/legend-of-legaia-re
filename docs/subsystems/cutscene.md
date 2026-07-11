@@ -676,7 +676,9 @@ by `cutscene_timeline_player_channel_door_reaches_scene_change`; the disc-gated
 ### Colour fade (op `0x34` sub-0)
 
 The prologue opens on a white flash: the timeline's first op is `34 05 FF FF FF 00 00` = op
-`0x34` sub-0 (effect-global colour + intensity, `FUN_801E1FB0`). Retail clears the active fade
+`0x34` sub-0 (effect-global colour + intensity; the sub-0 arm at `0x801E1FB0` inside the field-VM
+dispatcher `FUN_801DE840` - a Ghidra-promoted intra-function label, not a separate function).
+Retail clears the active fade
 when the colour is all-zero, else schedules a fade of that colour with a direction from `op0 & 1`.
 The engine ports the *setup* to [`fade::ColorFade`](../../crates/engine-core/src/fade.rs) (a
 colour + a coverage ramp; `op0 & 1` selects a reveal / fade-from-colour vs a fade-to-colour),

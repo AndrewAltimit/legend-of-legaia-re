@@ -208,7 +208,8 @@ The engine reads the slice directly via `ProtIndex::prot_dat_raw_bytes(byte_offs
 
 #### Loader pathway (hypothesis)
 
-These TIMs land in main RAM at vaddrs `0x80105000..0x80110200` (well below the `0x801C0000+` overlay window), which means they're treated as **shared static assets**, loaded once at boot before any overlay. The loader has not been pinned function-by-function yet; the most likely candidate is the same CD-DMA primitive (`FUN_8005D9A0`) that delivers the title overlay, driven from the SCUS-side bulk-initializer (`FUN_8005DA40` site). Confirming this requires a Write-breakpoint capture targeting the `0x80105000..0x80110200` range on cold boot, mirroring the title-overlay hunt in [`scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua`](../../scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua).
+These TIMs land in main RAM at vaddrs `0x80105000..0x80110200` (well below the `0x801C0000+` overlay window), which means they're treated as **shared static assets**, loaded once at boot before any overlay. The loader has not been pinned function-by-function yet; the most likely candidate is the same CD-DMA-channel-3 read primitive (`FUN_8005D9A0`) that delivers the title overlay, driven from the SCUS-side boot sequence. (There is no separate "bulk-initializer" - the `FUN_8005DA40` of earlier notes is a Ghidra-promoted intra-function label inside `FUN_8005D9A0`; see the negative findings below.)
+Confirming this requires a Write-breakpoint capture targeting the `0x80105000..0x80110200` range on cold boot, mirroring the title-overlay hunt in [`scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua`](../../scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua).
 
 ### Title-overlay source on disc
 

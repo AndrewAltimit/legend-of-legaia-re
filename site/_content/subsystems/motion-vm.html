@@ -53,7 +53,7 @@
     <li><strong>Interaction-prologue runs</strong> - a record's own <code>0x4C 0x51</code> walks the interacted NPC.</li>
     <li><strong>Actor-VM <code>start_motion</code> glide</strong> - op <code>0x09</code>, retail <code>FUN_800358c0</code>.</li>
   </ul>
-  <p>Residue: the exact retail per-NPC glide speed is unpinned (the engine paces NPCs at the player walking step), and per-actor field-VM channels are not executed - the engine loops the decoded waypoint list.</p>
+  <p>The retail speed encoding is pinned: the walk kernel's ops carry their own base-step selector (<code>(op0&gt;&gt;5 &amp; 4)|(op1&gt;&gt;6)</code> for 0x37/0x41, <code>b2 &amp; 7</code> for 0x47), and the ops are the field-VM record's yield-class bytes interpreted in place from the pointer parked at actor <code>+0x94</code> - see <a href="field-locomotion.html#npc-glide-speed">field-locomotion &sect; NPC glide speed</a>. Per-actor field-VM channels are not executed - the engine loops the decoded waypoint list, pacing each placement by the <code>placement_glide_speed</code> heuristic.</p>
 </section>
 
 <section class="doc-section" id="second-vm">

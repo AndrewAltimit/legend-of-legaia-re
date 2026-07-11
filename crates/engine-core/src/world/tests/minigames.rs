@@ -260,3 +260,54 @@ fn slot_machine_tick_without_session_falls_back_to_return_mode() {
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Field);
 }
+
+// --- Mode-24 minigame door-warp round trip (FUN_80025980 / FUN_80026018) ---
+
+#[test]
+fn minigame_return_warp_restores_scene_and_commits_winnings() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.active_scene_label = "sioro".to_string();
+    world.casino_coins = 100;
+
+    // 0x3E warp arm + mode-24 OTHER-INIT: name backed up, accumulator zeroed.
+    world.minigame_winnings = 55; // stale value from a previous session
+    world.arm_minigame_warp();
+    assert_eq!(world.minigame_scene_backup.as_deref(), Some("sioro"));
+    assert_eq!(world.minigame_winnings, 0);
+
+    // The minigame overlay runs: scene state clobbered, winnings accumulate.
+    world.active_scene_label = "minigame".to_string();
+    world.mode = SceneMode::SlotMachine;
+    world.minigame_winnings = 250;
+
+    // FUN_80026018: name restored, `_DAT_800845A4 += _DAT_80084440`, mode 2.
+    world.minigame_return_warp();
+    assert_eq!(world.active_scene_label, "sioro");
+    assert_eq!(world.casino_coins, 350);
+    assert_eq!(world.mode, SceneMode::Field);
+    assert!(world.minigame_scene_backup.is_none(), "backup consumed");
+}
+
+#[test]
+fn minigame_return_warp_coin_bank_saturates_at_retail_cap() {
+    let mut world = World::new();
+    world.active_scene_label = "sioro".to_string();
+    world.arm_minigame_warp();
+    world.casino_coins = 9_999_000;
+    world.minigame_winnings = 5_000;
+    world.minigame_return_warp();
+    assert_eq!(world.casino_coins, 9_999_999, "clamped to the retail cap");
+}
+
+#[test]
+fn minigame_return_warp_without_arm_keeps_scene_but_still_commits() {
+    let mut world = World::new();
+    world.active_scene_label = "town01".to_string();
+    world.casino_coins = 1;
+    world.minigame_winnings = 2;
+    world.minigame_return_warp();
+    // Retail's coin add is unconditional; only the restore needs the backup.
+    assert_eq!(world.casino_coins, 3);
+    assert_eq!(world.active_scene_label, "town01");
+}

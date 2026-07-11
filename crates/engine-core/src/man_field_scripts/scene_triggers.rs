@@ -409,6 +409,85 @@ pub fn scene_bgm_starts(man_file: &ManFile, man: &[u8]) -> Vec<SceneBgmStart> {
     out
 }
 
+/// One inline `4C 61` scripted CLUT-cell effect decoded from a scene's
+/// scripts.
+///
+/// The field-VM CLUT-cell op carries its cell coordinates and frame count as
+/// literal LE16 operands (`FUN_8003CE9C` reads at `+1/+3` = cell A, `+5/+7`
+/// = cell B, `+9/+0xB` = destination, `+0xD` = frames) - so which VRAM CLUT
+/// cells a scene's script animates is disc-sourced script data. `frames == 0`
+/// is the one-shot cell write (`FUN_801E4C58` inline path); `frames != 0`
+/// spawns the cross-fade actor (`FUN_801E4794`). map01 carries eight of
+/// these: four one-shots copying `(112, 499)` onto the row-498 strip park
+/// cells `(0/16/32/48, 498)` and four 128-vsync fades back. See
+/// `docs/subsystems/world-map.md` "Ocean animation".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneClutCellFx {
+    /// MAN record partition (0..3) whose script carries the op.
+    pub partition: usize,
+    /// Record index within that partition.
+    pub record: usize,
+    /// Bytecode pc of the op within that record's walk.
+    pub pc: usize,
+    /// The decoded operands.
+    pub op: crate::clut_fx::ClutCellFxOp,
+}
+
+/// Recover every inline `4C 61` scripted CLUT-cell effect from a scene's MAN
+/// by walking all three record partitions - the same record walk (and the
+/// same over-approximation caveats) as [`scene_fmv_triggers`].
+///
+/// Phantom guard: a literal `4C 61` inside message text can desync-decode a
+/// bogus op, so ops whose destination / non-flat source cells fall outside
+/// the VRAM CLUT space (`0 <= x <= 1008`, `0 <= y < 512`) or whose frame
+/// count is negative are dropped, and `(partition, record, op)` tuples
+/// re-seen from an earlier over-walk start are deduped. Returns
+/// partition-record-order.
+pub fn scene_clut_cell_fx(man_file: &ManFile, man: &[u8]) -> Vec<SceneClutCellFx> {
+    let cell_ok = |(x, y): (i16, i16)| (0..=1024 - 16).contains(&x) && (0..512).contains(&y);
+    let mut out: Vec<SceneClutCellFx> = Vec::new();
+    for partition in 0..3 {
+        let count = man_file.header.partition_counts[partition].max(0) as usize;
+        for record in 0..count {
+            let Some((start, pc0, len)) = partition_record_span(man_file, man, partition, record)
+            else {
+                continue;
+            };
+            let body = &man[start..start + len];
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                let InsnInfo::MenuCtrl {
+                    kind: MenuCtrlKind::Nibble6ClutFx { a, b, dest, frames },
+                    ..
+                } = insn.info
+                else {
+                    continue;
+                };
+                let op = crate::clut_fx::ClutCellFxOp { a, b, dest, frames };
+                if frames < 0 || !cell_ok(dest) || !(op.b_is_flat() || cell_ok(b)) {
+                    continue;
+                }
+                if frames != 0 && !cell_ok(a) {
+                    continue;
+                }
+                let site = SceneClutCellFx {
+                    partition,
+                    record,
+                    pc: insn.pc,
+                    op,
+                };
+                if out
+                    .iter()
+                    .any(|t| t.partition == partition && t.record == record && t.op == site.op)
+                {
+                    continue;
+                }
+                out.push(site);
+            }
+        }
+    }
+    out
+}
+
 /// One inline move-VM stager install decoded from an op-`0x34` sub-`3` in a
 /// scene's scripts.
 ///

@@ -658,6 +658,29 @@ pub struct FieldReturnState {
     pub party_count: u8,
 }
 
+/// Active 3-actor talk session - the engine mirror of the talk-controller
+/// actor `FUN_801D2D38` spawns from pool `0x801F22C4` for field-VM op
+/// `0x43` sub-2 (three-way cutscene conversations).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ThreeActorTalk {
+    /// The three participant ids from the instruction (retail resolves them
+    /// through the actor-list walk `FUN_8003C83C` and stores the pointers at
+    /// controller `+0x80/+0x84/+0x88`).
+    pub actor_ids: [u8; 3],
+    /// Controller script id (retail `+0x50` from the instruction's u16).
+    pub script_id: u16,
+    /// Raw duration byte from the instruction. Retail stores
+    /// `arg - a - b` at controller `+0x72`, where `(a, b)` is the scene-MAN
+    /// header pair read via `FUN_8003D064(_DAT_8007B898 + 0x22)`; the engine
+    /// keeps the raw operand (its MAN header staging lives elsewhere).
+    pub duration: u8,
+    /// Positions + headings of the three participants captured when the
+    /// talk armed. Retail: the controller SM's state 0 (`FUN_801D27E0`)
+    /// writes the 3-record table at `0x800845E4`; a re-arm while the talk
+    /// flag is up restores from it (`FUN_801D2D38`'s else-branch loop).
+    pub saved: [Option<((i16, i16), i16)>; 3],
+}
+
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
 /// renders + advances; clearing `World::current_dialog` signals the script
 /// to resume.

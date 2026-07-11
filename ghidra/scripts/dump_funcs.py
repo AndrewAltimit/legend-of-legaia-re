@@ -308,6 +308,13 @@ def dump(addr_str):
     if func is None:
         # try the entry directly
         func = fm.getFunctionAt(addr)
+    if func is None and prog.getMemory().contains(addr):
+        # not yet defined in the project DB: disassemble + create it
+        if listing.getInstructionAt(addr) is None:
+            disassemble(addr)
+        func = createFunction(addr, "FUN_" + addr_str)
+        if func is not None:
+            print("[new] created function at {}".format(addr_str))
     if func is None:
         print("[skip] no function for {}".format(addr_str))
         return

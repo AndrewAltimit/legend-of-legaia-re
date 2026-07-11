@@ -447,8 +447,11 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   dump, not a beat) so the analyzer filters the noise. And it **auto-snapshots**
   a fingerprinted save state on rare events - a never-seen scene, a lone-boss
   formation, a first-time target-set flag (`LEGAIA_SNAP_FLAGS`, default the
-  known spine gates **plus the open writer-less gates** `0x370`/`0x50A`/`0x5D6`
-  - a non-bulk organic SET of any of those brackets a code-path-writer hunt),
+  known spine gates **plus** the open writer-less gates `0x50A`/`0x5D6` (a
+  non-bulk organic SET of either brackets a code-path-writer hunt) and the
+  statically-resolved `0x370` (writer pinned: the `doman` variant P1[15] Usha
+  self-latch - the autosnap here is a play-order confirmation of the known
+  writer, not a writer hunt)),
   a first nonzero battle-id staging byte (which would settle
   the open "does any retail battle write `DAT_8007B7FC`?" question), a
   first-run `0x400` status set (below), or a first-per-slot arts-input press

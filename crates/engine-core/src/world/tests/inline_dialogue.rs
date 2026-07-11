@@ -310,3 +310,38 @@ fn vm_dialogue_tick_executes_branch_through_field_vm() {
         "option A branch must not have run"
     );
 }
+
+#[test]
+fn inline_dialogue_raw_0x21_ends_the_conversation() {
+    // Retail's run-to-next-text helper (`FUN_8003CF7C`) executes a raw
+    // `0x21` byte and then stops, returning it to the dialog SM as
+    // "conversation over" - even when more script (here another text
+    // segment) follows. The engine loop must not run past it.
+    let mut b = vec![0x50, 0x05]; // SET system flag 5 (prologue op runs)
+    b.push(0x21); // raw NOP: executed, then the conversation ends
+    b.extend_from_slice(&[0x1F, b'x', 0x00]); // unreachable text segment
+
+    let mut world = World::new();
+    world.start_inline_dialogue(b);
+    world.step_inline_dialogue(false, false, false);
+
+    let id = world.inline_dialogue.as_ref().unwrap();
+    assert!(id.is_done(), "0x21 ends the conversation");
+    assert!(id.panel.is_none(), "the trailing segment never opened");
+    assert!(world.system_flag_test(5), "ops before the 0x21 still ran");
+}
+
+#[test]
+fn inline_dialogue_extended_0xa1_nop_runs_through() {
+    // The retail stop compares the RAW byte (`bVar1 == 0x21`): an extended
+    // `0xA1` NOP is executed and the run continues to the next segment.
+    let b = vec![0xA1, 0xF8, 0x1F, b'y', 0x00];
+
+    let mut world = World::new();
+    world.start_inline_dialogue(b);
+    world.step_inline_dialogue(false, false, false);
+
+    let id = world.inline_dialogue.as_ref().unwrap();
+    assert!(!id.is_done(), "0xA1 is not a conversation end");
+    assert!(id.panel.is_some(), "the segment after the 0xA1 opened");
+}

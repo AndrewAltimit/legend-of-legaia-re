@@ -243,6 +243,10 @@ impl PlayWindowApp {
             // World-map ocean shimmer: cycle the 13-frame CLUT animation
             // (self-gates to None off the world map).
             self.advance_ocean_animation();
+            // Scripted CLUT-cell effects (field-VM 4C 61 one-shots +
+            // cross-fades): drain the world's banked game ticks against the
+            // CPU VRAM (self-gates when none are live).
+            self.apply_world_clut_fx();
             // Catch any path that re-uploaded VRAM over the battle
             // texture this frame (and restore it).
             self.check_battle_vram_residency();

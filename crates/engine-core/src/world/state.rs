@@ -502,6 +502,12 @@ pub struct World {
     /// the box placement.
     pub current_dialog: Option<DialogRequest>,
 
+    /// Active 3-actor talk session (field-VM op `0x43` sub-2; retail talk
+    /// controller from `FUN_801D2D38`). Refreshed on every sub-2
+    /// instruction; the paired system flag `0xD` is the retail talk-active
+    /// lock. See [`ThreeActorTalk`].
+    pub three_actor_talk: Option<ThreeActorTalk>,
+
     /// Last `field_interact` request. Cleared by the engine when handled
     /// (set to `None`).
     pub last_field_interact: Option<(u8, u8)>,
@@ -778,6 +784,12 @@ pub struct World {
     /// Renderers composite these 2D overlays above the scene.
     pub screen_fx_frame: crate::screen_fx::ScreenFxFrame,
 
+    /// Live 4-byte register-ramp records spawned by the field-VM op `0x43`
+    /// sub-3..6 (retail `FUN_8003C6A4` actors on the effect list). The
+    /// engine holds the parameterization; the per-frame interpolator handler
+    /// is untraced, so nothing ticks these yet. See [`crate::register_ramp`].
+    pub register_ramps: Vec<crate::register_ramp::RegisterRamp>,
+
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
     /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
@@ -854,6 +866,18 @@ pub struct World {
     /// **assigned** its final balance on cash-out (the retail state-100
     /// commit is an assignment, not a delta).
     pub casino_coins: u32,
+
+    /// The mode-24 minigame door-warp's backup of the active scene name
+    /// (retail `0x8007BAE8`, written by the OTHER-INIT entry `FUN_80025980`
+    /// from `0x80084548`). [`World::minigame_return_warp`] restores it into
+    /// [`World::active_scene_label`] on exit. `None` while no warp is armed.
+    pub minigame_scene_backup: Option<String>,
+
+    /// The mode-24 session-winnings accumulator (retail `_DAT_80084440`,
+    /// zeroed by the field-VM `0x3E` warp arm; the minigame overlays add
+    /// their winnings here). [`World::minigame_return_warp`] commits it
+    /// into [`World::casino_coins`].
+    pub minigame_winnings: u32,
 
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
@@ -1159,6 +1183,38 @@ pub struct World {
     /// through [`World::active_field_fx_render_nodes`]. A `Vec` because several
     /// can be live at once (the prescript triggers them independently).
     pub active_field_fx: Vec<crate::summon::SummonScene>,
+
+    /// Adaptive frame-step factor `dt` - the retail scratchpad byte
+    /// `DAT_1F800393`, the number of *vsyncs per game tick*. The frame-flip
+    /// path (`FUN_80016B6C`, see `ghidra/scripts/funcs/80016b6c.txt`) rewrites
+    /// it every frame from the measured frame cost (`1`, `2` past `0xF0`, `3`
+    /// past `0x1FE`, `4` past `0x2D0`), clamped up to the per-mode floor
+    /// `_DAT_8007B9D8`. Live poll baselines: field/town scenes run at `2`
+    /// (30 fps) and the overworld kingdom scenes (`mapNN`) at `3` (20 fps) -
+    /// the engine pins those per-scene values on entry
+    /// ([`crate::scene::SceneHost::enter_field_scene`]) rather than modelling
+    /// the load-adaptive writer. Consumed by everything that advances
+    /// per-game-tick in vsync units - the scripted CLUT fades
+    /// ([`Self::step_clut_fx`]) and the shell's CLUT-cycle cadence.
+    ///
+    /// REF: FUN_80016B6C
+    pub frame_step: u8,
+    /// Vsyncs accumulated toward the next retail *game tick* (a game tick
+    /// spans [`Self::frame_step`] vsyncs). Advanced by [`World::tick`] on the
+    /// sim ticks that map to a retail vsync ([`Self::field_frame_step`]).
+    pub clut_vsync_accum: u8,
+    /// Retail game ticks elapsed since the host last drained the scripted
+    /// CLUT effects ([`World::step_clut_fx`] consumes these). Only
+    /// accumulates while [`Self::clut_fx`] is non-empty, and saturates at a
+    /// small cap so a host that never drains can't wind up an unbounded
+    /// backlog.
+    pub clut_pending_game_ticks: u32,
+    /// Live scripted CLUT-cell effects (field-VM `0x4C` n6 sub-`0x61`):
+    /// pending one-shot cell writes and in-flight cross-fades. Spawned by
+    /// [`World::spawn_clut_cell_fx`] (the `op4c_n6_sub_61_emitter` host
+    /// hook), stepped + applied against the host's software VRAM by
+    /// [`World::step_clut_fx`], cleared on scene entry.
+    pub clut_fx: Vec<crate::world::ClutCellFx>,
 
     /// Pending move-FX sound cue id (`+0x0d`), set by [`World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
@@ -1777,6 +1833,7 @@ impl World {
             field_bgm_resume: None,
             battle_bgm_active: false,
             current_dialog: None,
+            three_actor_talk: None,
             last_field_interact: None,
             field_npc_dialog: std::collections::HashMap::new(),
             field_npc_dialog_prologue: std::collections::HashMap::new(),
@@ -1815,6 +1872,7 @@ impl World {
             tile_board_draw_list: Vec::new(),
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
+            register_ramps: Vec::new(),
             dance: None,
             dance_return_mode: SceneMode::Field,
             dance_last_judge: None,
@@ -1830,6 +1888,8 @@ impl World {
             muscle_dome: None,
             muscle_return_mode: SceneMode::Field,
             casino_coins: 0,
+            minigame_scene_backup: None,
+            minigame_winnings: 0,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             battle_guarding: [false; 3],
@@ -1865,6 +1925,11 @@ impl World {
             field_stagers: Vec::new(),
             field_stager_bytes: Vec::new(),
             active_field_fx: Vec::new(),
+            // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
+            frame_step: 2,
+            clut_vsync_accum: 0,
+            clut_pending_game_ticks: 0,
+            clut_fx: Vec::new(),
             pending_move_fx_cue: None,
             element_affinity: None,
             item_shop_data: None,
