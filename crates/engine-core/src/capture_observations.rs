@@ -293,19 +293,21 @@ pub mod str_fmv_overlay;
 ///    and the rank counter at `+0x130` are written in one frame. The
 ///    live in-battle stat copy at `+0x104..+0x11B` is unchanged at this
 ///    point.
-/// 2. **Live copy**. The live stat copy mirrors the record copy: HP_cur
-///    (`+0x104`), MP_cur (`+0x108`), and the six u16 stats at
-///    `+0x110..+0x11B` settle to their post-level-up values. HP_max /
-///    MP_max / SP_max in the live copy at `+0x106 / +0x10A / +0x10E`
-///    have NOT yet been written.
-/// 3. **Settle**. The live HP_max / MP_max / SP_max settle at
-///    `+0x106 / +0x10A / +0x10E`. After this frame the live and record
-///    copies of HP_max / MP_max agree.
+/// 2. **Live copy**. The live stat copy mirrors the record copy: the
+///    pool maxima HP_max (`+0x104`), MP_max (`+0x108`), and the six u16
+///    stats at `+0x110..+0x11B` settle to their post-level-up values.
+///    The pool *currents* at `+0x106 / +0x10A / +0x10E` have NOT yet
+///    been written. (Each live pair is `(max, cur)` -
+///    `legaia_save::HpMpSp`.)
+/// 3. **Settle**. The live HP_cur / MP_cur / AP_cur settle at
+///    `+0x106 / +0x10A / +0x10E` (the level-up refill). After this
+///    frame the live maxima agree with the record copies of
+///    HP_max / MP_max.
 ///
 /// Gala's level-up sequence runs in two phases (record → live+settle in
 /// one frame); the Gala capture lacks a dedicated "record-only" frame,
-/// so HP_max / MP_max / SP_max in the live copy land in the live-copy
-/// step alongside HP_cur / MP_cur / live stats.
+/// so the pool currents land in the live-copy step alongside the maxima
+/// and live stats.
 ///
 /// The pinned byte deltas live in [`crate::levelup::observations`]:
 /// - [`crate::levelup::observations::noa_4_level_jump`]
@@ -320,17 +322,17 @@ pub mod str_fmv_overlay;
 ///
 /// **Record stat window** at `+0x11C..+0x12D` (9 u16 LE values). Values
 /// pinned across the corpus:
-/// - `[+0x11C]` HP_max - mirrors live `+0x106`.
-/// - `[+0x11E]` MP_max - mirrors live `+0x10A`.
+/// - `[+0x11C]` HP_max - mirrors live `+0x104`.
+/// - `[+0x11E]` MP_max - mirrors live `+0x108`.
 /// - `[+0x120]` per-stat cap constant `100` - unchanged across every
 ///   captured save and every character.
 /// - `[+0x122..+0x12D]` six u16 record-side stats - mirror live
 ///   `+0x110..+0x11B`.
 ///
-/// SP_max at `+0x10E` lives only in the live in-battle copy. The record
-/// at `+0x120` is a 100-cap constant, **not** SP_max. Noa's level-up
-/// grants `+40` SP_max (Seru-magic user); Gala's grants `0` (physical
-/// Tactical Arts user).
+/// The AP pair (`+0x10C` max / `+0x10E` current) lives only in the live
+/// copy. The record at `+0x120` is a 100-cap constant, **not** AP max.
+/// Noa's level-up grants `+40` AP (Seru-magic user); Gala's grants `0`
+/// (physical Tactical Arts user).
 pub mod char_level_up;
 
 /// Battle scene-init transition observation captured from a save pair:

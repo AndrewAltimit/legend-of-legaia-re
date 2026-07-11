@@ -24,8 +24,10 @@ use crate::world::World;
 /// row. The mapping is validated against an early `town01` save state (Vahn):
 /// the template's eight `u16` stats fill the HP/MP/SP triplet, the live-stat
 /// window, and the record-side stat window; the per-stat cap is the constant
-/// the runtime uses ([`RECORD_CAP_CONSTANT`]), and the spirit gauge starts at
-/// the template's agility value (Vahn: `100`).
+/// the runtime uses ([`RECORD_CAP_CONSTANT`]), and the spirit gauge's *max*
+/// (`+0x10C` - AP max is AGL-sized) starts at the template's agility value
+/// (Vahn: `100`, the capture-pinned `+0x10C` byte) with the current
+/// (`+0x10E`, the status-page AP gauge cell) zeroed.
 pub fn starting_record(c: &StartingChar) -> CharacterRecord {
     let mut rec = CharacterRecord::zeroed();
     rec.set_hp_mp_sp(HpMpSp {
@@ -33,8 +35,8 @@ pub fn starting_record(c: &StartingChar) -> CharacterRecord {
         hp_max: c.hp_max,
         mp_cur: c.mp_max,
         mp_max: c.mp_max,
-        sp_cur: c.agl,
-        sp_max: 0,
+        sp_cur: 0,
+        sp_max: c.agl,
     });
     rec.set_live_stats(LiveStats {
         agl: c.agl,
@@ -132,7 +134,8 @@ mod tests {
         assert_eq!(hms.hp_max, 180);
         assert_eq!(hms.mp_cur, 20);
         assert_eq!(hms.mp_max, 20);
-        assert_eq!(hms.sp_cur, 100);
+        assert_eq!(hms.sp_max, 100, "AP max (+0x10C) is AGL-sized at seed");
+        assert_eq!(hms.sp_cur, 0, "status-page AP gauge (+0x10E) seeds to 0");
         let ls = rec.live_stats();
         assert_eq!(
             (ls.agl, ls.atk, ls.udf, ls.ldf, ls.spd, ls.int),

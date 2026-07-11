@@ -6,7 +6,7 @@
 //! - [`Category::CharacterRecord`] - inside one of the four party
 //!   per-character `0x414`-byte records at `0x80084708 + n * 0x414`.
 //!   The [`ClassifiedAddress::detail`] then names the field offset
-//!   inside the record (e.g. `"hp_max_live(+0x106)"`).
+//!   inside the record (e.g. `"hp_curr_live(+0x106)"`).
 //! - [`Category::PartyMoney`] - gold / coins / game time globals
 //!   that sit between the inventory header and the per-character
 //!   records.
@@ -170,12 +170,16 @@ pub fn field_name_for_offset(off: u32) -> &'static str {
         0x006..=0x00F => "header_tail",
         0x010..=0x0F3 => "stat_block_unmapped",
         0x0F4..=0x103 => "ability_bits[16]",
-        0x104..=0x105 => "hp_curr_live(+0x104)",
-        0x106..=0x107 => "hp_max_live(+0x106)",
-        0x108..=0x109 => "mp_curr_live(+0x108)",
-        0x10A..=0x10B => "mp_max_live(+0x10A)",
-        0x10C..=0x10D => "sp_curr_live(+0x10C)",
-        0x10E..=0x10F => "sp_max_live(+0x10E)",
+        // Each live pair is (max, cur): the aggregator FUN_80042558 rewrites
+        // +0x104 per frame, walk-regen FUN_801D0B90 bumps +0x106 clamping at
+        // +0x104, and GameShark "Infinite HP" codes write +0x106 (the
+        // current) - see legaia_save::HpMpSp.
+        0x104..=0x105 => "hp_max_live(+0x104)",
+        0x106..=0x107 => "hp_curr_live(+0x106)",
+        0x108..=0x109 => "mp_max_live(+0x108)",
+        0x10A..=0x10B => "mp_curr_live(+0x10A)",
+        0x10C..=0x10D => "sp_max_live(+0x10C)",
+        0x10E..=0x10F => "sp_curr_live(+0x10E)",
         0x110..=0x111 => "agl_live(+0x110)",
         0x112..=0x113 => "atk_live(+0x112)",
         0x114..=0x115 => "udf_live(+0x114)",

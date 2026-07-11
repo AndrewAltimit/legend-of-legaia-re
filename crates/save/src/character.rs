@@ -82,23 +82,30 @@ pub const MAGIC_GROUP_STRIDE: usize = 12;
 
 // --- Sub-structs -----------------------------------------------------------
 
-/// HP / MP / SP triplet: each pair is (current, maximum) at `+0x104..0x110`.
+/// HP / MP / SP triplet: each pair is (**maximum, current**) at
+/// `+0x104..0x110` - `+0x104/+0x108/+0x10C` hold the effective maxima and
+/// `+0x106/+0x10A/+0x10E` the current values.
 ///
-/// Offsets verified against `FUN_80042558` (the per-frame stat aggregator
-/// that caps each value at [`STAT_CAP`]).
+/// Three independent sources pin the order: the walk-regen `FUN_801D0B90`
+/// bumps `+0x106` clamping at `+0x104`; the per-frame stat aggregator
+/// `FUN_80042558` rewrites `+0x104` from base stats + %-passives (a
+/// per-frame recompute cannot be current HP) and caps each value at
+/// [`STAT_CAP`]; GameShark "Infinite HP" codes write `+0x106` at every
+/// character stride. (Fresh-save fixtures mask the distinction - current ==
+/// maximum at seed - which is how the reversed labels survived initially.)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct HpMpSp {
-    /// Current HP.
+    /// Current HP (`+0x106`).
     pub hp_cur: u16,
-    /// Maximum HP.
+    /// Maximum HP (`+0x104`).
     pub hp_max: u16,
-    /// Current MP.
+    /// Current MP (`+0x10A`).
     pub mp_cur: u16,
-    /// Maximum MP.
+    /// Maximum MP (`+0x108`).
     pub mp_max: u16,
-    /// Current SP.
+    /// Current SP (`+0x10E`).
     pub sp_cur: u16,
-    /// Maximum SP.
+    /// Maximum SP (`+0x10C`).
     pub sp_max: u16,
 }
 
@@ -289,16 +296,17 @@ impl CharacterRecord {
         self.raw[0xF4..0xF4 + ABILITY_BITS_LEN].copy_from_slice(&bits);
     }
 
-    /// HP / MP / SP triplet at `+0x104..0x110` (six u16s LE).
+    /// HP / MP / SP triplet at `+0x104..0x110` (six u16s LE; each pair is
+    /// `(max, cur)` - see [`HpMpSp`] for the three-source provenance).
     pub fn hp_mp_sp(&self) -> HpMpSp {
         let r = |off: usize| u16::from_le_bytes([self.raw[off], self.raw[off + 1]]);
         HpMpSp {
-            hp_cur: r(0x104),
-            hp_max: r(0x106),
-            mp_cur: r(0x108),
-            mp_max: r(0x10A),
-            sp_cur: r(0x10C),
-            sp_max: r(0x10E),
+            hp_max: r(0x104),
+            hp_cur: r(0x106),
+            mp_max: r(0x108),
+            mp_cur: r(0x10A),
+            sp_max: r(0x10C),
+            sp_cur: r(0x10E),
         }
     }
 
@@ -307,12 +315,12 @@ impl CharacterRecord {
         let mut w = |off: usize, v: u16| {
             self.raw[off..off + 2].copy_from_slice(&v.to_le_bytes());
         };
-        w(0x104, hms.hp_cur);
-        w(0x106, hms.hp_max);
-        w(0x108, hms.mp_cur);
-        w(0x10A, hms.mp_max);
-        w(0x10C, hms.sp_cur);
-        w(0x10E, hms.sp_max);
+        w(0x104, hms.hp_max);
+        w(0x106, hms.hp_cur);
+        w(0x108, hms.mp_max);
+        w(0x10A, hms.mp_cur);
+        w(0x10C, hms.sp_max);
+        w(0x10E, hms.sp_cur);
     }
 
     /// Stat-cap field at `+0x120` (u16 LE) - the record-side per-stat cap

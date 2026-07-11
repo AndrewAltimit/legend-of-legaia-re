@@ -288,15 +288,15 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
         "phase 2 (record-write → live-copy) should write into the live in-battle window"
     );
 
-    // Phase 3 (live-copy → settle): settles HP_max / MP_max / SP_max in
-    // the live copy at +0x106 / +0x10A / +0x10E.
+    // Phase 3 (live-copy → settle): settles the pool currents HP_cur /
+    // MP_cur / AP_cur in the live copy at +0x106 / +0x10A / +0x10E.
     let phase3 = diff_ram(r6, r7, "noa_live_copy", "noa_settle", &opts);
     assert!(
         phase3
             .regions
             .iter()
             .any(|r| r.start_addr == char_level_up::NOA_BASE + 0x10E),
-        "phase 3 (live-copy → settle) should settle SP_max at +0x10E"
+        "phase 3 (live-copy → settle) should settle AP_cur at +0x10E"
     );
 
     // Settled deltas (pre → settle) match the codified observation.

@@ -72,6 +72,11 @@ The capture now also records, per playthrough:
   member, including the exact byte sequence every combo/Super Art commits to.
   If you perform any of the Super Arts during your run, those rows alone
   validate research data that otherwise needs dedicated capture sessions.
+- **The overworld camera** — whenever you zoom or rotate the view on the
+  world map, the camera's position/tilt path is recorded. The retail zoom
+  behaviour is only known at two fixed points; one volunteer zooming in and
+  out fills in the whole curve. (Plus the game's internal frame-step value,
+  which several animation-speed questions hang off.)
 - **Auto-snapshots**: the script quietly saves a full state the first time you
   enter any new area, at each boss fight, at a few key story flags (several of
   which are *open writer hunts* — a snapshot of one firing organically closes

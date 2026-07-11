@@ -266,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn applier_writes_per_character_hp_max_live() {
+    fn applier_writes_per_character_hp_curr_live() {
         let mut world = empty_world();
         let mut db = Database::new();
         db.entries.push(entry(

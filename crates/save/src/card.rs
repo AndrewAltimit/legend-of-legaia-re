@@ -845,7 +845,7 @@ mod tests {
         assert_eq!(
             parsed.hp_mp_sp().hp_max,
             180,
-            "HP must read back from +0x106, not a 0x2A7-shifted field"
+            "HP must read back from the +0x104 pair, not a 0x2A7-shifted field"
         );
         assert_eq!(parsed.name(), "Vahn");
 

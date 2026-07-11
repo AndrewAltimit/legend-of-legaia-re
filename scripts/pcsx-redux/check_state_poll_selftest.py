@@ -34,8 +34,8 @@ from pathlib import Path
 # derived checks over flagset/flagclr notes rather than raw kinds.
 PHASE_A_KINDS = [
     "flagset", "flagclr", "gold", "item", "party", "level", "spell", "xp",
-    "equip", "counter", "scene", "mode", "pos", "bgm", "fmv", "input",
-    "pick", "battleid", "snap",
+    "equip", "counter", "scene", "mode", "pos", "bgm", "fmv", "wmcam", "dt",
+    "input", "pick", "battleid", "snap",
 ]
 # Streams exercised by phase B (battle state loaded mid-run).
 PHASE_B_KINDS = ["battle", "status", "hp", "aq"]

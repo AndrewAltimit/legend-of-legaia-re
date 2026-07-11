@@ -461,6 +461,13 @@ screen = H * (R * (S*(v - focus)) + TR) / Ze     R = Rx(pitch) * Ry(azimuth)
 between the two pinned zoom anchors on the controller's zoom input. The
 top-view debug camera keeps its synthetic framing.
 
+The retail pitch/TR path *between* the two anchors is not yet pinned. The
+community poll probe streams the full tuple on the overworld (`wmcam` rows:
+rotation trio + H + the TR low halves + view mode, on change;
+[pcsx-redux-automation.md](../tooling/pcsx-redux-automation.md) fast
+whole-playthrough capture), so any captured zoom/rotate session yields the
+trajectory.
+
 ### Boot-path seeding
 
 The overworld seeds itself on the natural scene-transition path, not just the

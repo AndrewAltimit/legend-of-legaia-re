@@ -80,6 +80,19 @@
 --                    op 0x4C 0xE2 target; docs/formats/str-fmv-table.md) -
 --                    live-confirms the disc-mined per-scene trigger corpus
 --                    (man_field_scripts::scene_fmv_triggers) on any run.
+--   wmcam            (world-map scenes only) the walk-view camera tuple -
+--                    rotation trio 0x8007B790/92/94, projection H
+--                    0x8007B6F4, eye-space TR trio 0x800840B8/BC/C0, view
+--                    mode 0x801F2B94 - one row on world-map entry, then on
+--                    change (min 10-frame gap). The retail pitch/TR zoom
+--                    dynamics are pinned at only two save-state anchors
+--                    (docs/subsystems/world-map.md walk-view camera); any
+--                    volunteer overworld zoom/rotate captures the full
+--                    trajectory between them.
+--   dt               scratchpad frame-step byte 0x1F800393 (the per-frame
+--                    tick every dt-scaled timer/animation multiplies by:
+--                    world-map CLUT cadence, fishing tension, battle
+--                    waits) - one baseline row per run, then on change.
 --   input  (P4)      pad press/release edges (0x8007B850); idx=button bit,
 --                    value=1 press / 0 release, note=button name.
 --   pick   (P4)      dialogue picker cursor index at a confirm press
@@ -156,6 +169,25 @@ local BGM_ID      = 0x8007BAC8  -- u16
 -- into the STR player. A change row live-confirms the per-scene trigger
 -- assignment mined disc-static (docs/formats/str-fmv-table.md).
 local FMV_ID      = 0x8007BA78  -- s16
+-- World-map walk-view camera globals (docs/subsystems/world-map.md
+-- "Walk-view camera"): rotation trio (pitch/yaw/roll, 12-bit angles),
+-- GTE projection H, eye-space translation trio (the zoom axis - two pinned
+-- anchors, trajectory between them open), and the field-overlay view-mode
+-- flag (0 walk / 1 top-view debug; only meaningful while overlay 0897 is
+-- resident, which the mapNN scene gate guarantees). Sampled only when the
+-- scene is a kingdom overworld (mapNN) in field mode.
+local WM_ROT      = 0x8007B790  -- s16[3] pitch / yaw / roll
+local WM_H        = 0x8007B6F4  -- u16 GTE projection H (walk-view 0x170)
+-- Eye-space translation trio: three 32-bit accumulator words; the camera
+-- consumes the LOW s16 half of each (engine-vm::battle_camera "low halves
+-- of the accumulator words"; every pinned TR anchor fits s16).
+local WM_TR       = 0x800840B8  -- word stride 4; value = low s16
+local WM_VIEWMODE = 0x801F2B94  -- u8 0=walk 1=top-view (overlay 0897)
+local WMCAM_MIN_GAP = 10        -- frames between rows during a continuous slide
+-- Scratchpad frame-step byte (DAT_1F800393): the per-frame tick multiplier
+-- every dt-scaled system consumes (world-map CLUT/angle cadence, fishing
+-- tension, battle-action timers). One baseline row, then on change.
+local FRAME_DT    = 0x1F800393  -- scratchpad u8
 -- Battle-actor pointer table: 8 u32 slots (0..2 party, 3..7 monsters), each a
 -- pointer to a live battle actor (docs/subsystems/battle.md). Per actor:
 -- +0x14C u16 current HP (liveness; the mechanical value the formulas write,
@@ -336,6 +368,11 @@ local prev_tilex = nil       -- P1: last emitted player tile X
 local prev_tilez = nil       -- P1: last emitted player tile Z
 local prev_bgm   = nil       -- P5: last global BGM id
 local prev_fmv   = nil       -- last FMV trigger id (s16 raw u16 read)
+local prev_wmcam = nil       -- last world-map camera tuple (string key)
+local wmcam_last_row = -1000 -- tick of the last wmcam row (min-gap throttle)
+local prev_dt    = nil       -- last EMITTED frame-step byte (nil = baseline owed)
+local dt_candidate = nil     -- frame-step stabilization candidate
+local dt_streak    = 0       -- consecutive frames dt_candidate has held
 local prev_pad   = 0         -- P4: last held-pad mask
 local prev_xp     = {}       -- per roster slot: cumulative XP u32
 local prev_equip  = {}       -- per roster slot: EQUIP_LEN-byte window string
@@ -359,7 +396,7 @@ local totals     = { flagset = 0, flagclr = 0, battleid = 0, battle = 0,
                      gold = 0, item = 0, party = 0, scene = 0, mode = 0,
                      level = 0, spell = 0, pos = 0, bgm = 0, input = 0,
                      pick = 0, snap = 0, xp = 0, equip = 0, counter = 0,
-                     status = 0, hp = 0, aq = 0, fmv = 0 }
+                     status = 0, hp = 0, aq = 0, fmv = 0, wmcam = 0, dt = 0 }
 
 local function row(kind, idx, value, delta, note)
     totals[kind] = (totals[kind] or 0) + 1
@@ -652,6 +689,57 @@ local function diff_fmv()
     prev_fmv = id
 end
 
+-- World-map walk-view camera tuple: one `enter` row per world-map entry, then
+-- a row whenever any component moves (min WMCAM_MIN_GAP frames apart, so a
+-- held zoom logs a ~6/s trajectory instead of 60/s). idx = pitch, value = H;
+-- yaw/roll/TR/view ride the note. Any volunteer zoom/rotate on the overworld
+-- fills in the pitch/TR path between the two save-state anchors the docs
+-- currently pin (the open walk-camera zoom-dynamics thread).
+local function diff_wmcam()
+    if not baselined then return end
+    local sc = scene_name()
+    if u8(GAME_MODE) ~= FIELD_MODE or sc:match("^map%d") == nil then
+        prev_wmcam = nil   -- next world-map frame re-emits an `enter` row
+        return
+    end
+    local p  = s16(u16(WM_ROT))
+    local y  = s16(u16(WM_ROT + 2))
+    local r  = s16(u16(WM_ROT + 4))
+    local h  = u16(WM_H)
+    local tx = s16(u16(WM_TR))
+    local ty = s16(u16(WM_TR + 4))
+    local tz = s16(u16(WM_TR + 8))
+    local vm = u8(WM_VIEWMODE)
+    local key = string.format("%d/%d/%d/%d/%d/%d/%d/%d",
+        p, y, r, h, tx, ty, tz, vm)
+    if key == prev_wmcam then return end
+    local entering = (prev_wmcam == nil)
+    if not entering and (vsync - wmcam_last_row) < WMCAM_MIN_GAP then return end
+    prev_wmcam = key
+    wmcam_last_row = vsync
+    row("wmcam", p, h, 0, string.format(
+        "y=%d r=%d tr=%d/%d/%d view=%d%s",
+        y, r, tx, ty, tz, vm, entering and " enter" or ""))
+end
+
+-- Scratchpad frame-step byte: emit only once a NEW value has held for
+-- DT_STABLE_FRAMES consecutive frames, so unstable frame pacing during
+-- loads can't chatter the CSV. First stable sample = the run's baseline.
+local DT_STABLE_FRAMES = 30
+local function diff_dt()
+    local v = mem.read_scratch_u8(FRAME_DT)
+    if v == dt_candidate then
+        dt_streak = dt_streak + 1
+    else
+        dt_candidate, dt_streak = v, 1
+    end
+    if baselined and dt_streak >= DT_STABLE_FRAMES and v ~= prev_dt then
+        row("dt", 0, v, prev_dt and (v - prev_dt) or 0,
+            prev_dt == nil and "baseline" or "")
+        prev_dt = v
+    end
+end
+
 -- P4: pad press/release edges + picker-choice at a confirm press. The held mask
 -- is the game-decoded per-frame button word (bit layout == probe.pad.BTN).
 local function read_picker_cursor()
@@ -770,6 +858,10 @@ local function snapshot_and_diff()
     diff_bgm()
     diff_fmv()
     diff_input()
+
+    -- World-map camera tuple + scratchpad frame-step.
+    diff_wmcam()
+    diff_dt()
 
     baselined = true
 end
@@ -940,7 +1032,7 @@ end
 -- +-- startup ----------------------------------------------------------------
 log("=== autorun_state_poll (fast-core progression capture) ===")
 log("poll-diff: flags/battleid/gold/item/party/level/spell/xp/equip/counter/"
-    .. "status/hp/aq/scene/mode/pos/bgm/fmv/input - NO breakpoints")
+    .. "status/hp/aq/scene/mode/pos/bgm/fmv/wmcam/dt/input - NO breakpoints")
 log(string.format("enhancements: pos=%s bgm=%s input=%s battle=%s autosnap=%s(max %d) bulk>=%d",
     TRACE_POS and "on" or "off", TRACE_BGM and "on" or "off",
     TRACE_INPUT and "on" or "off", TRACE_BATTLE and "on" or "off",

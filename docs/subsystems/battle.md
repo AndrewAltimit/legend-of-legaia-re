@@ -632,8 +632,8 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x2A7..+0x2B0` | NUL-padded ASCII display name (`Vahn`/`Noa`/`Gala`/`Terra`/player-entered lead), 9 bytes bounded by the active-spell table at `+0x2B0`. Pinned across six in-game RAM captures for all four roster slots. In the retail SC save block this lands at `game+0x66F + n*0x414` (SC `+0x86F` for slot 0); see [`save-screen.md`](save-screen.md). Accessor `legaia_save::CharacterRecord::name` (`NAME_OFFSET`). |
 | `+0x2B0..+0x37F` | Active spell-slot array (stride `0x14`, up to N entries). Populated by `FUN_80042DBC` from the spell list. |
 | `+0xF4..0x100` | "Active abilities" 16-byte block - OR'd into the global 4×u32 bitmask at `0x80074358..0x80074368` by `FUN_80042558`. |
-| `+0x104..0x110` | HP / MP / AP triplets (cur, max stored as separate u16s; AP = the arts / action-point gauge, its max sized by AGL - the AGL stat itself is the adjacent "Max AGL" field at `+0x110`/`+0x122`, see [save-record.md](../formats/save-record.md)). |
-| `+0x10E` | u8 - written on level-up (delta `+8` for Vahn slot in the captured pre→post pair). Likely max-HP byte component or stat-derived rank. |
+| `+0x104..0x110` | HP / MP / AP `(max, cur)` u16 pairs - `+0x104/+0x108/+0x10C` effective maxima, `+0x106/+0x10A/+0x10E` currents (see [save-record.md](../formats/save-record.md)); AP = the arts / action-point gauge, its max sized by AGL - the AGL stat itself is the adjacent "Max AGL" field at `+0x110`/`+0x122`, see [save-record.md](../formats/save-record.md)). |
+| `+0x10E` | u8 - written on level-up (delta `+8` for Vahn slot in the captured pre→post pair): the live AP pair's current cell refilling to the raised max. |
 | `+0x11A` | Stat-cap field (clamped to `0x3E7`). |
 | `+0x11C..+0x122` | Six adjacent stat bytes (paired) - incremented by small deltas (`+1..+4`) on level-up. Likely the per-stat rank table consumed by the level-up apply path. |
 | `+0x130` | u8 - the **displayed character level** (the byte the status screen reads as "LV"; the `Level 99` cheat target), incremented `+1` per level-up event. See [save-record.md](../formats/save-record.md#0x130-is-the-displayed-character-level). |
@@ -645,7 +645,7 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 |---|---|---|---|
 | `+0x00` | u8 | `0x4F` → `0x73` (79 → 115) | Possibly raw level byte / per-character XP-derived counter. |
 | `+0x04..+0x06` | u16 LE | `0x016D` → `0x02DA` (365 → 730) | XP word delta (+365). Matches the published level-up XP curves. |
-| `+0x10E` | u8 | `0x3A` → `0x42` (+8) | Max-HP / vitality byte. |
+| `+0x10E` | u8 | `0x3A` → `0x42` (+8) | AP current (live pair `(max, cur)`; the +8 AP grant). |
 | `+0x11C..+0x122` | 6× u8 | `67/1C/13/10/16/0B` → `6B/20/15/12/1A/0F` | Per-stat increments (`+4 +4 +2 +2 +4 +4`). |
 | `+0x130` | u8 | `0x02` → `0x03` | Displayed character level (+1 - the level 2 → 3 event). |
 
@@ -1046,11 +1046,11 @@ The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../to
 |---|---|---|---|
 | Magic-rank up (pre → post) | `+0x08` | `0x30 → 0x3C` | flag word low byte (+12) |
 | Magic-rank up | `+0x9C` | `0x09 → 0x0A` | magic-rank counter (+1) |
-| Magic-rank up | `+0x10A` | `0x1B → 0x11` | low byte of `mp_max` (cast cost spent) |
+| Magic-rank up | `+0x10A` | `0x1B → 0x11` | low byte of `mp_cur` (cast cost spent) |
 | Magic-rank up | `+0x161` | `0x02 → 0x03` | spell-level array (`spell_levels[0]` +1) |
 | Level-up, 4-level jump (pre → post) | `+0x00` | `0x4F → 0x73` | unconfirmed (jump +0x24 doesn't match a single-level granularity) |
 | Level-up | `+0x04..+0x06` | `0x016D → 0x02DA` | u16 LE XP delta (+365) |
-| Level-up | `+0x10E` | `0x3A → 0x42` | low byte of `ap_max` (AP / arts gauge, +8) |
+| Level-up | `+0x10E` | `0x3A → 0x42` | low byte of `ap_cur` (AP / arts gauge refill, +8) |
 | Level-up | `+0x11C..+0x12C` | six per-byte +1..+4 | per-stat increments at byte stride 2 |
 | Level-up | `+0x130` | `0x02 → 0x03` | displayed character level (+1) |
 

@@ -397,11 +397,11 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
     <tbody>
       <tr><td>Magic-rank up (pre &rarr; post)</td><td><code>+0x08</code></td><td><code>0x30 &rarr; 0x3C</code></td><td>flag word low byte (+12)</td></tr>
       <tr><td>Magic-rank up</td><td><code>+0x9C</code></td><td><code>0x09 &rarr; 0x0A</code></td><td>magic-rank counter (+1)</td></tr>
-      <tr><td>Magic-rank up</td><td><code>+0x10A</code></td><td><code>0x1B &rarr; 0x11</code></td><td>low byte of <code>mp_max</code> (cast cost spent)</td></tr>
+      <tr><td>Magic-rank up</td><td><code>+0x10A</code></td><td><code>0x1B &rarr; 0x11</code></td><td>low byte of <code>mp_cur</code> (cast cost spent)</td></tr>
       <tr><td>Magic-rank up</td><td><code>+0x161</code></td><td><code>0x02 &rarr; 0x03</code></td><td>spell-level array (<code>spell_levels[0]</code> +1)</td></tr>
       <tr><td>Level-up, 4-level jump (pre &rarr; post)</td><td><code>+0x00</code></td><td><code>0x4F &rarr; 0x73</code></td><td>unconfirmed (jump +0x24 doesn't match single-level granularity)</td></tr>
       <tr><td>Level-up</td><td><code>+0x04..+0x06</code></td><td><code>0x016D &rarr; 0x02DA</code></td><td>u16 LE XP delta (+365)</td></tr>
-      <tr><td>Level-up</td><td><code>+0x10E</code></td><td><code>0x3A &rarr; 0x42</code></td><td>low byte of <code>ap_max</code> (AP / arts gauge, +8)</td></tr>
+      <tr><td>Level-up</td><td><code>+0x10E</code></td><td><code>0x3A &rarr; 0x42</code></td><td>low byte of <code>ap_cur</code> (AP / arts gauge refill, +8)</td></tr>
       <tr><td>Level-up</td><td><code>+0x11C..+0x12C</code></td><td>six per-byte +1..+4</td><td>per-stat increments at byte stride 2</td></tr>
       <tr><td>Level-up</td><td><code>+0x130</code></td><td><code>0x02 &rarr; 0x03</code></td><td>displayed character level (+1 per level-up event; see <a href="level-up.html#record-fields">level-up</a>)</td></tr>
     </tbody>

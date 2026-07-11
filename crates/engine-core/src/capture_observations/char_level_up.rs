@@ -16,8 +16,9 @@ pub const GALA_BASE: u32 = TABLE_BASE + 2 * RECORD_STRIDE;
 pub const SLOT3_BASE: u32 = TABLE_BASE + 3 * RECORD_STRIDE;
 
 /// Offset within the record where the level-up event writes the live
-/// in-battle stat copy: HP_cur, HP_max, MP_cur, MP_max, SP_cur,
-/// SP_max (six u16s) at `+0x104..+0x110`, then six u16 live stats at
+/// in-battle stat copy: the (max, cur) pool pairs HP_max, HP_cur,
+/// MP_max, MP_cur, AP_max, AP_cur (six u16s) at `+0x104..+0x110`
+/// (`legaia_save::HpMpSp`), then six u16 live stats at
 /// `+0x110..+0x11C`.
 pub const LIVE_WINDOW: (u32, u32) = (0x104, 0x11C);
 

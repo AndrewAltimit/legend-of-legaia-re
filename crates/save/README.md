@@ -14,7 +14,7 @@ N-character rosters.
 | Offset | Field | Source |
 |---|---|---|
 | `+0xF4..0x100` | active-abilities bitfield | `FUN_80042558` |
-| `+0x104..0x110` | HP / MP / SP (cur, max each) | `FUN_80042558` |
+| `+0x104..0x110` | HP / MP / SP (`(max, cur)` u16 pairs - maxima at `+0x104/+0x108/+0x10C`, currents at `+0x106/+0x10A/+0x10E`) | `FUN_80042558` / `FUN_801D0B90` |
 | `+0x110..0x11C` | live stats (AGL/ATK/UDF/LDF/SPD/INT) | cheat-derived layout |
 | `+0x11C..0x12E` | record-side stats + `+0x120` cap constant (`stat_cap()`) | level-up writer |
 | `+0x13C..0x184` | spell list (count + IDs + levels, 36 entries) | `FUN_80042DBC` |

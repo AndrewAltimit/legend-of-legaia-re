@@ -18,7 +18,8 @@
 --     spell, xp, equip, counters, scene-name (never-seen-scene autosnap),
 --     bgm, fmv, battle-id staging (+ autosnap), organic pos rows via a
 --     pad-override walk, input edges, picker-choice row via a fabricated
---     picker struct in the verified-dead SCUS arena 0x8007AE00.
+--     picker struct in the verified-dead SCUS arena 0x8007AE00, the wmcam
+--     enter row via a map01 scene poke, and the organic dt baseline row.
 --   B (battle state, e.g. party_battle_gobu_gobu, loaded MID-RUN via
 --     sstate.load): the load itself exercises the battle-entry latch
 --     (`battle` row) + bulk-load flag tagging; then per-actor HP, status
@@ -260,6 +261,25 @@ end)
 wait(10)
 step("scene_restore", function()
     for i = 0, 7 do w8(SCENE_NAME + i, saved.scene[i]) end
+end)
+
+-- wmcam: the stream gates on scene mapNN + field mode; poking the scene name
+-- to map01 (mode is already 0x03 in the field scenario) must emit the
+-- deterministic `enter` row with the live camera-global tuple. The dt
+-- baseline row needs no poke - it fires once the frame-step byte has held
+-- 30 frames past the probe baseline.
+step("wmcam_scene_poke", function()
+    saved.scene2 = {}
+    for i = 0, 7 do saved.scene2[i] = u8(SCENE_NAME + i) end
+    local name = "map01"
+    for i = 0, 7 do
+        local c = name:byte(i + 1)
+        w8(SCENE_NAME + i, c or 0)
+    end
+end)
+wait(30)
+step("wmcam_scene_restore", function()
+    for i = 0, 7 do w8(SCENE_NAME + i, saved.scene2[i]) end
 end)
 
 -- battle-id staging byte: nonzero must row + autosnap batid01. 0x01 is far

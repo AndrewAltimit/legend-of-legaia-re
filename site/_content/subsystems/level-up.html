@@ -101,8 +101,8 @@
       <thead><tr><th>Phase</th><th>Window</th><th>Writes</th></tr></thead>
       <tbody>
         <tr><td>Record write</td><td>pre &rarr; mid&#x2081;</td><td><code>+0x11C..+0x12D</code> (record stats), <code>+0x004</code> (XP), <code>+0x130</code> (displayed level +1)</td></tr>
-        <tr><td>Live copy</td><td>mid&#x2081; &rarr; mid&#x2082;</td><td><code>+0x104..+0x11B</code> (HP_cur, MP_cur, six u16 live stats)</td></tr>
-        <tr><td>Settle</td><td>mid&#x2082; &rarr; post</td><td><code>+0x106 / +0x10A / +0x10E</code> (live HP_max / MP_max / SP_max settle)</td></tr>
+        <tr><td>Live copy</td><td>mid&#x2081; &rarr; mid&#x2082;</td><td><code>+0x104..+0x11B</code> (HP_max, MP_max, six u16 live stats)</td></tr>
+        <tr><td>Settle</td><td>mid&#x2082; &rarr; post</td><td><code>+0x106 / +0x10A / +0x10E</code> (live HP_cur / MP_cur / AP_cur settle - the level-up refill)</td></tr>
       </tbody>
     </table>
     <p>Gala's runs in two phases (live copy + settle collapsed). Per-character record bases (Vahn <code>0x80084708</code>, Noa <code>0x80084B1C</code>, Gala <code>0x80084F30</code>, slot 3 <code>0x80085344</code>, stride <code>0x414</code>) are documented in <code>engine_core::capture_observations::char_level_up</code>; disc-gated tests in <code>crates/mednafen/tests/real_saves.rs</code> exercise both triplets. NB the multi-level captures are unreliable for <em>per-level</em> growth rates (their stated HP deltas are impossible under the validated ~38/level rate); the single-level Noa L2&rarr;L3 pair is the arithmetic oracle. Slot indices rotate with the corpus (<code>scripts/scenarios.toml</code>).</p>
