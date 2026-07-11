@@ -62,6 +62,7 @@
 # libc / PsyQ runtime glue. Each maps to a Rust stdlib equivalent.
 [libc]
 "80017888" = "malloc wrapper (alloc-count++, calls FUN_8002b468 best-fit allocator, on null increments OOM-size sum and prints 'malloc_err_size %d')"
+"8002b468" = "best-fit heap allocator under the 80017888 malloc wrapper (free-list walk + block split, no game state); Rust-side allocation replaces the arena wholesale"
 "80017b94" = "free wrapper (alloc-count--, on null prints 'free_err', calls FUN_8002b584 underlying free)"
 "800567b8" = "printf-class formatter (handles %d %x %o %s %f); writes into a static buffer"
 "80056b18" = "printf-class formatter (sister of 800567b8)"
