@@ -2,30 +2,34 @@
 //! sample at texpage `(960,256)` / CLUT row 510.
 //!
 //! A 256×256 4bpp TIM with image rect `(960,256)` 64×256 and a declared
-//! **16×16 CLUT block** at `(0,510)` ships raw (uncompressed) in the
-//! **unindexed head gap** of `PROT.DAT` - at byte offset
-//! [`PROT_DAT_OFFSET`], after the 3-sector TOC but before the first TOC
-//! entry's data - so no per-entry extraction file carries it (the same
-//! unindexed region the flat TIM catalog documents as the "system-UI
-//! gap"; see [`docs/formats/tim.md`](../../../docs/formats/tim.md)).
-//! The retail engine uploads the CLUT block as a **flat 256-entry
-//! strip** on row 510 (x = 0..256), NOT the declared 16-row rect (which
-//! would overflow VRAM at y ≥ 512): the strip is byte-identical to VRAM
-//! row 510 in every captured field save from the first post-New-Game
-//! scene (`opdeene`) onward. Town scene meshes (23 town01 tile
-//! instances, incl. the spawn plaza) reference CBA `(64,510)` = entry 64
-//! of that strip (declared sub-row 4) with texture pages inside the
-//! `(960,256)` image - content that is otherwise absent from the town's
-//! own PROT block, which is why the engine's per-scene targeted build
-//! can't source it.
+//! **16×16 CLUT block** at `(0,510)` ships raw (uncompressed) at
+//! `PROT.DAT` byte offset [`PROT_DAT_OFFSET`] - member 8 of the
+//! **system-UI TIM-pack at raw PROT TOC entry 0** (sectors 3..55, the
+//! head region the extraction index space skips, so no per-entry
+//! extraction file carries it; see [`crate::system_ui_bundle`] for the
+//! whole bundle and [`docs/formats/tim-pack.md`](../../../docs/formats/tim-pack.md)).
+//! The retail per-TIM uploader `FUN_800198E0` uploads the CLUT block as
+//! a **flat 256-entry strip** on row 510 (x = 0..256), NOT the declared
+//! 16-row rect (which would overflow VRAM at y ≥ 512); the upload
+//! happens once at boot, so the strip is byte-identical to VRAM row 510
+//! in every captured save **from the title screen onward**, across
+//! every scene and mode. Town scene meshes (23 town01 tile instances,
+//! incl. the spawn plaza) reference CBA `(64,510)` = entry 64 of that
+//! strip (declared sub-row 4) with texture pages inside the `(960,256)`
+//! image - content that is otherwise absent from the town's own PROT
+//! block, which is why the engine's per-scene targeted build can't
+//! source it.
 //!
-//! The precise retail upload site is untraced (the content is resident
-//! from the opening onward across every captured lineage; a VRAM-upload
-//! census probe exists at
-//! `scripts/pcsx-redux/autorun_town01_vram_upload_census.lua` for when a
-//! scene-load can be captured live). ~70 of the image's 256 rows are
-//! additionally overwritten at runtime by later sub-uploads; the disc
-//! base covers the rest.
+//! ~70 of the image's 256 rows differ from this TIM in live VRAM: they
+//! are overwritten **by the sibling bundle members** uploaded after it in
+//! pack order - the UI sprite strip at `PROT.DAT[0x19438]` (image
+//! `(960,400)` 60×24), the cursor parts at `0x19490..` (images at
+//! `(976,256..)`), and the six bare row-patch blocks at `0x1A018..`
+//! (single rows at `(960, 456..=458)` / `(960, 460..=462)`) - not by any
+//! scene upload. Uploading the whole bundle in table order
+//! ([`crate::system_ui_bundle::SystemUiBundle::upload_to_vram`])
+//! reproduces the retail bytes exactly (byte-verified via the VRAM
+//! static-mask parity oracle).
 
 use std::io::{Read, Seek, SeekFrom};
 
@@ -33,8 +37,8 @@ use anyhow::{Context, Result, bail};
 use legaia_tim::{Tim, Vram};
 
 /// Byte offset of the family TIM inside the retail NA `PROT.DAT` image -
-/// in the unindexed gap between the TOC and the first entry's data (the
-/// only raw copy in the image).
+/// member 8 of the raw-TOC-entry-0 TIM-pack (entry-relative offset
+/// `0xFA18` from sector 3); the only raw copy in the image.
 pub const PROT_DAT_OFFSET: u64 = 0x11218;
 
 /// Generous read window covering the TIM (header + 512-byte CLUT block +

@@ -73,6 +73,11 @@ impl World {
             party_count: self.party_count,
         });
         self.battle_return_mode = SceneMode::Field;
+        // No engine-side battle staging: a scripted boss fight's transient
+        // staged marker (rikuroa's `0x289`) is SET by the stager record's own
+        // script bytes (`P1[3]`'s `52 89`, executed through
+        // [`Self::run_boss_stager_record`]) immediately before its `3E FF`
+        // battle-entry op reaches this path.
         self.enter_battle_from_formation(&formation);
         self.active_formation = Some(formation);
     }

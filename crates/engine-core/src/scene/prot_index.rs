@@ -34,6 +34,9 @@ pub struct ProtIndex {
     entry_cache: Mutex<HashMap<u32, Arc<Vec<u8>>>>,
     /// Lazy classification cache. Populated on first `class_of` call.
     class_cache: Mutex<HashMap<u32, Class>>,
+    /// Lazy parse of the boot-resident system-UI TIM bundle (raw TOC
+    /// entries 0/1). Populated on first `system_ui_bundle` call.
+    system_ui_cache: Mutex<Option<Arc<legaia_asset::system_ui_bundle::SystemUiBundle>>>,
     /// Retail region this index was opened against. Metadata only - the TOC
     /// formula and CDNAME layout are identical across regions.
     pub region: Region,
@@ -64,6 +67,7 @@ impl ProtIndex {
             cdname,
             entry_cache: Mutex::new(HashMap::new()),
             class_cache: Mutex::new(HashMap::new()),
+            system_ui_cache: Mutex::new(None),
             region: Region::Na,
         })
     }
@@ -83,6 +87,7 @@ impl ProtIndex {
             cdname,
             entry_cache: Mutex::new(HashMap::new()),
             class_cache: Mutex::new(HashMap::new()),
+            system_ui_cache: Mutex::new(None),
             region: Region::Na,
         })
     }
@@ -219,6 +224,37 @@ impl ProtIndex {
             .read_raw(byte_offset, len, &mut bytes)
             .with_context(|| format!("read PROT.DAT raw at 0x{:X} +{}", byte_offset, len))?;
         Ok(bytes)
+    }
+
+    /// The boot-resident **system-UI TIM bundle** - the `prot::timpack`s
+    /// at raw PROT TOC entries 0 and 1 (the head region the extraction
+    /// index space skips; menu-glyph atlas, system-UI sprite sheet, boot
+    /// cursor parts). Retail uploads it once at boot via `FUN_800198E0`
+    /// (image at declared rect, CLUT as a flattened `w*h x 1` strip) and
+    /// never evicts it, so the engine's per-scene VRAM pre-pass layers it
+    /// under every scene build. Lazy + cached; see
+    /// [`legaia_asset::system_ui_bundle`] and
+    /// [`docs/formats/tim-pack.md`].
+    ///
+    /// Raw TOC entry `n` spans sectors `toc[n] .. toc[n+1]` in this
+    /// index's TOC frame (extraction entry `p` = raw entry `p + 2`).
+    pub fn system_ui_bundle(&self) -> Result<Arc<legaia_asset::system_ui_bundle::SystemUiBundle>> {
+        if let Some(b) = crate::lock_poison_tolerant(&self.system_ui_cache).clone() {
+            return Ok(b);
+        }
+        let mut ranges = Vec::with_capacity(legaia_asset::system_ui_bundle::RAW_ENTRY_COUNT);
+        for n in 0..legaia_asset::system_ui_bundle::RAW_ENTRY_COUNT {
+            let (start, end) = match (self.toc.get(n), self.toc.get(n + 1)) {
+                (Some(&s), Some(&e)) if s > 0 && e > s => (s as u64 * 0x800, e as u64 * 0x800),
+                _ => anyhow::bail!("PROT TOC head words missing for raw entry {n}"),
+            };
+            ranges.push(self.prot_dat_raw_bytes(start, (end - start) as usize)?);
+        }
+        let bundle = legaia_asset::system_ui_bundle::parse_entries(&ranges[0], &ranges[1])
+            .context("parse the system-UI bundle (raw TOC entries 0/1)")?;
+        let arc = Arc::new(bundle);
+        *crate::lock_poison_tolerant(&self.system_ui_cache) = Some(arc.clone());
+        Ok(arc)
     }
 
     /// Detected class of an entry (lazy + cached).

@@ -84,6 +84,7 @@ pub mod str_fmv_table;
 pub mod summon_creatures;
 pub mod summon_overlay;
 pub mod summon_readef;
+pub mod system_ui_bundle;
 pub mod tim_catalog;
 pub mod tim_deep_catalog;
 pub mod tim_labels;

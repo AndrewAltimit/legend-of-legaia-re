@@ -91,12 +91,12 @@ class = "landmark"
 note = "small faceted dome"
 
 [drake.10]
-class = "npc_token"
-note = "4-point star primitive (~284B); generic actor base"
+class = "decoration"
+note = "crossed-quad billboard tree (top view reads as a star); walk .MAP stamps it on ~68 forest cells (recs 478/479)"
 
 [drake.11]
-class = "npc_token"
-note = "4-point star primitive (~352B); generic actor base"
+class = "decoration"
+note = "crossed-quad billboard tree variant; walk .MAP stamps it on ~117 forest cells (recs 429/475..477)"
 
 [drake.12]
 class = "landmark"
@@ -236,12 +236,12 @@ class = "landmark"
 note = "building cluster with spires"
 
 [sebucus.10]
-class = "npc_token"
-note = "4-point star primitive (~284B); generic actor base"
+class = "decoration"
+note = "crossed-quad billboard tree; walk .MAP stamps it on ~75 forest cells (recs 409/462/463)"
 
 [sebucus.11]
-class = "npc_token"
-note = "4-point star primitive (~352B); generic actor base"
+class = "decoration"
+note = "crossed-quad billboard tree variant; walk .MAP stamps it on ~138 forest cells (recs 447/459..461)"
 
 [sebucus.12]
 class = "landmark"
@@ -397,24 +397,24 @@ class = "landmark"
 note = "large multi-peak mountain range"
 
 [karisto.19]
-class = "npc_token"
-note = "small octahedron primitive (~472B); generic actor base"
+class = "decoration"
+note = "tree/prop mesh; walk .MAP stamps it on ~109 cells (recs 474/489/490)"
 
 [karisto.20]
-class = "npc_token"
-note = "small octahedron primitive (~476B); same family as karisto.19"
+class = "decoration"
+note = "tree/prop mesh; walk .MAP stamps it on ~20 cells (recs 475/491)"
 
 [karisto.21]
-class = "npc_token"
-note = "small octahedron primitive (~452B); same family as karisto.19"
+class = "decoration"
+note = "tree/prop mesh; walk .MAP stamps it on ~30 cells (recs 476/492)"
 
 [karisto.22]
 class = "decoration"
-note = "5-pointed star / umbrella shape"
+note = "tree/prop mesh (5-pointed star / umbrella shape); walk .MAP stamps it on ~15 cells (recs 477/493)"
 
 [karisto.23]
-class = "npc_token"
-note = "small octahedron primitive (~452B); same family as karisto.19"
+class = "decoration"
+note = "tree/prop mesh; walk .MAP stamps it on ~9 cells (recs 478/494)"
 
 [karisto.24]
 class = "landmark"

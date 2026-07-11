@@ -136,19 +136,14 @@ pub(crate) fn cmd_play_window(
 /// Build the play-window's render-side [`SceneResources`] for the host's
 /// currently loaded scene: the shared blocks (`init_data` + `player_data`)
 /// stay resident, the load kind mirrors the host's `enter_field_scene`
-/// selection (WorldMap for `map\d\d`, Field otherwise), and the two
-/// always-resident VRAM extras (field character atlas + shared interior
-/// page) are layered on. Used both for the initial scene at window boot and
-/// to REBUILD the render state after a door transition
+/// selection (WorldMap for `map\d\d`, Field otherwise), the boot-resident
+/// system-UI bundle (raw PROT TOC entries 0/1 - the row-510/511 strip
+/// CLUTs + the `(960,256)` menu-glyph atlas the town env meshes sample)
+/// layers under the build via [`BuildOptions::system_ui`], and the field
+/// character atlas is layered on. Used both for the initial scene at
+/// window boot and to REBUILD the render state after a door transition
 /// (`SceneTickEvent::SceneEntered`) swaps the host's scene.
-///
-/// `extracted_root` sources the shared interior page (it lives in
-/// PROT.DAT's unindexed head gap, unreachable through per-entry reads);
-/// `None` soft-skips that upload.
-pub(super) fn build_window_scene_resources(
-    session: &BootSession,
-    extracted_root: Option<&Path>,
-) -> Result<SceneResources> {
+pub(super) fn build_window_scene_resources(session: &BootSession) -> Result<SceneResources> {
     let s = session
         .host
         .scene
@@ -182,12 +177,24 @@ pub(super) fn build_window_scene_resources(
     } else {
         SceneLoadKind::Field
     };
+    // Boot-resident system-UI bundle (raw PROT TOC entries 0/1): the
+    // pre-pass layers it under the scene build - image pages at their
+    // declared rects, CLUTs as `FUN_800198E0` flat strips (rows 510/511
+    // etc). Soft-fails to None (the affected prims just drop).
+    let system_ui = match session.host.index.system_ui_bundle() {
+        Ok(b) => Some(b),
+        Err(err) => {
+            log::warn!("play-window: system-UI bundle parse skipped: {err:#}");
+            None
+        }
+    };
     let (mut res, _stats) = SceneResources::build_targeted_with_options(
         s,
         &shared_refs,
         BuildOptions {
             kind: load_kind,
             upload_all_tims: true,
+            system_ui: system_ui.as_deref(),
         },
     )?;
     // Field-character atlas upload (PROT 0874 §2, the `FUN_800198e0`
@@ -219,24 +226,6 @@ pub(super) fn build_window_scene_resources(
         Err(err) => {
             log::warn!("play-window: field char atlas upload skipped: {err:#}");
         }
-    }
-    // Shared interior page (texpage (960,256) + the flat 256-entry strip
-    // CLUT on row 510): resident in retail VRAM from the opening onward,
-    // sampled by town env meshes (23 town01 tile instances incl. the
-    // spawn plaza). It lives in PROT.DAT's unindexed head gap (before
-    // the first TOC entry's data), so no per-entry read can source it.
-    match extracted_root {
-        Some(root) => match legaia_asset::interior_page::read_from_prot_dat(&root.join("PROT.DAT"))
-        {
-            Ok(tim) => {
-                legaia_asset::interior_page::upload_to_vram(&tim, &mut res.vram);
-                log::info!("play-window: shared interior page uploaded (row-510 strip CLUT)");
-            }
-            Err(err) => {
-                log::warn!("play-window: shared interior page skipped: {err:#}");
-            }
-        },
-        None => log::warn!("play-window: shared interior page skipped: no extracted root"),
     }
     Ok(res)
 }
@@ -480,7 +469,7 @@ pub(super) fn cmd_play_window_with_record(
         );
     }
 
-    let scene_res = build_window_scene_resources(&session, Some(extracted_root))?;
+    let scene_res = build_window_scene_resources(&session)?;
     log::info!(
         "play-window: scene '{}', {} TMDs, {} TIMs",
         scene,
@@ -752,7 +741,6 @@ pub(super) fn cmd_play_window_with_record(
         // or, when booting from a disc image, straight from the ISO with its
         // interleaved XA audio. Exactly one of these is set.
         extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
-        scene_rebuild_extracted_root: extracted_root.to_path_buf(),
         disc_path: disc.map(|d| d.to_path_buf()),
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),

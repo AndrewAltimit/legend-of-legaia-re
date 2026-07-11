@@ -39,6 +39,7 @@ impl World {
         self.field_npc_glide_speeds.clear();
         self.field_npc_motions.clear();
         self.field_walk_touch.clear();
+        self.field_boss_stagers.clear();
         self.active_walk_touch = None;
         self.stepping_inline_npc = None;
         self.active_inline_slot = None;
@@ -188,6 +189,17 @@ impl World {
     /// `Self::tick_field_interaction_probe`.
     pub fn trigger_field_interact(&mut self, interact_id: u8, slot: u8) {
         self.last_field_interact = Some((interact_id, slot));
+        // A boss-stager placement (rikuroa's Caruban stager P1[3]): the
+        // approach / interact runs the placement's own partition-1 record
+        // through the field VM - the engine mirror of retail's touch
+        // dispatch resuming the parked stager script. The record's own bytes
+        // stage the fight (`52 89` marker SET -> `3E FF <row>` battle entry),
+        // so no dialog panel opens here.
+        if self.field_boss_stagers.contains_key(&slot) && self.run_boss_stager_record(slot) {
+            self.pending_field_events
+                .push(crate::field_events::FieldEvent::FieldInteract { interact_id, slot });
+            return;
+        }
         // Stash this slot's untruncated record (if any) so the opt-in VM-dialogue
         // runner can execute its interaction prologue. Always reassigned (to
         // `None` when absent) so a prior interaction's prologue can't leak.
@@ -390,16 +402,18 @@ impl World {
     ///
     /// REF: FUN_801DA51C
     pub(crate) fn tick_field_carriers(&mut self) {
-        if self.field_carriers.is_empty() {
-            return;
+        if !self.field_carriers.is_empty() {
+            let mut carriers = std::mem::take(&mut self.field_carriers);
+            for (idx, ctx) in carriers.iter_mut().enumerate() {
+                let mut host = FieldCarrierHostImpl { world: self };
+                vm::world_map::step(idx, ctx, &mut host);
+            }
+            self.field_carriers = carriers;
         }
-        let mut carriers = std::mem::take(&mut self.field_carriers);
-        for (idx, ctx) in carriers.iter_mut().enumerate() {
-            let mut host = FieldCarrierHostImpl { world: self };
-            vm::world_map::step(idx, ctx, &mut host);
-        }
-        self.field_carriers = carriers;
 
+        // The latched battle entry is shared with the field-VM op-`3E FF`
+        // scripted-battle arm ([`Self::trigger_scripted_battle`]), which can
+        // fire in a scene with no installed carriers - drain it regardless.
         if let Some(formation_id) = self.pending_field_carrier_battle.take() {
             self.begin_field_carrier_battle(formation_id);
         }

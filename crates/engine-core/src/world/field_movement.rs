@@ -676,6 +676,10 @@ impl World {
                     is_player: true,
                 });
             }
+            // Boss-stager contact: the `trigger_field_interact` call above
+            // already ran the placement's record ([`crate::world::World::
+            // run_boss_stager_record`]); the event carries no extra effect.
+            WalkTouchEvent::StagerBeat => {}
         }
     }
 

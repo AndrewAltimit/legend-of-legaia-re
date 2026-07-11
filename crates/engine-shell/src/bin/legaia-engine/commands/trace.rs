@@ -217,8 +217,15 @@ pub(crate) fn cmd_man_scripts(
                 FlagKind::Test => "Test ",
             };
             println!(
-                "  P{}[{}] {bank} {kind} flag=0x{:04X} ({:>5}) @ 0x{:05X} (op 0x{:02X})",
-                s.partition, s.record, s.flag, s.flag, s.abs_pc, s.opcode,
+                "  P{}[{}] {bank} {kind} flag=0x{:04X} ({:>5}) @ 0x{:05X} (op 0x{:02X}){}{}",
+                s.partition,
+                s.record,
+                s.flag,
+                s.flag,
+                s.abs_pc,
+                s.opcode,
+                if s.clean { "" } else { "  DESYNCED?" },
+                if s.text_alias { "  TEXT-ALIAS?" } else { "" },
             );
         }
     }
@@ -240,7 +247,7 @@ pub(crate) fn cmd_man_scripts(
                     FlagKind::Test => "Test ",
                 };
                 println!(
-                    "    {kind} scene={:<10} PROT[{:04}]{} P{}[{}] (op 0x{:02X}){}",
+                    "    {kind} scene={:<10} PROT[{:04}]{} P{}[{}] (op 0x{:02X}){}{}",
                     h.scene_name,
                     h.entry_idx,
                     if h.variant { " VARIANT-MAN" } else { "" },
@@ -248,6 +255,7 @@ pub(crate) fn cmd_man_scripts(
                     h.record,
                     h.opcode,
                     if h.clean { "" } else { "  DESYNCED?" },
+                    if h.text_alias { "  TEXT-ALIAS?" } else { "" },
                 );
             }
         }

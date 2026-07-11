@@ -159,12 +159,16 @@ impl PlayWindowApp {
             }
         }
         let refs: Vec<&Scene> = shared.iter().collect();
+        let system_ui = self.session.host.index.system_ui_bundle().ok();
         let (res, _) = SceneResources::build_targeted_with_options(
             scene,
             &refs,
             BuildOptions {
                 kind: SceneLoadKind::Battle,
                 upload_all_tims: true,
+                // Boot-resident system-UI bundle: resident through battle
+                // in retail (uploaded once at boot, never evicted).
+                system_ui: system_ui.as_deref(),
             },
         )
         .ok()?;

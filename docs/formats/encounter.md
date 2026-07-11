@@ -87,7 +87,7 @@ Just before the copy (`0x801DA5F8..0x801DA61C`) the reader also reads `record[+0
 - The install opcodes below are the field VM's generic **halt-acquire** family (`0x37/0x41/0x38/0x43/0x47/0x4C`), the same ones used for ordinary script yields.
 - What turns a halt into an encounter is the *consumer*: only world-map / field **entities** ticked by `FUN_801DA51C` (those carrying the 5-state `entity[+0x8A]` SM) ever read their `+0x94` as a formation record, and only once the SM reaches the encounter-confirm state.
 - The random-encounter path enters that state via the `FUN_801D9E1C` roll (state 0); a *scripted* arm relies on the scene bytecode having authored `[count @ +3][ids @ +4..]` after the halt opcode on such an entity's context.
-- Which specific opcode a given scripted fight uses, and how that scene advances the entity SM to the confirm state, are therefore per-scene bytecode facts (not resolvable from the static dispatcher alone).
+- The general-purpose scripted arm is the interact op **`0x3E` with `op0 = 0xFF`** (`3E FF <row>`): the retail case-0x3E handler sets `entity[+0x8A] = 1` and installs `entity[+0x94] = ctrl[+0x20] + row * ctrl[+0x5D] + 1` - pointing the record slot at MAN formation-table row `row` directly (full arm + disc sites in [battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row): garmel rows 8/9 = Songi/Zeto, rikuroa row 17 = Caruban; boss rows sit outside every region's rollable `[base, base+count)` slice). Other per-scene shapes (an inline `[count][ids]` authored after a halt op) still occur; which shape a fight uses remains a per-scene bytecode fact.
 
 **Engine port.** The clean-room field VM mirrors this discriminator split:
 
@@ -322,17 +322,17 @@ retail encounter carries the boss id in a **count-1 entity record**, not the
 The mid-battle cell `[0x4B,0,0,0]` matches the earlier `zeto_*_mid_cast` states
 byte-for-byte; those captures pinned the id, not the mechanism, and their `jou`
 scene attribution is superseded by the live forward-play (runtime scene buffer
-`0x8007050C` reads `garmel` through the whole fight). The clean-room engine's
-`World::install_boss_encounter` (a lone-monster `FormationDef`) still produces
-the same `[0x4B]` cell, so the engine result is unaffected - only the retail
-provenance changes from the battle-id path to the record path.
+`0x8007050C` reads `garmel` through the whole fight). The clean-room engine
+enters the fight through the MAN formation row selected by the beat record's
+`3E FF <row>` op (`World::trigger_scripted_battle`), producing the same
+`[0x4B]` cell from the disc bytes.
 
-Mt. Rikuroa's **Caruban** (id 73 = `0x49`, same band) is a *separate* boss,
-gated behind first-visit flag `0x142` (see [`world::SCRIPTED_SCENE_BOSSES`]);
-its flag gating is independently evidenced, but its formation **mechanism**
-(battle-id vs record path) was inferred from the same in-band assumption the
-Zeto capture just undercut - re-verify it with the same firehose method before
-relying on the `FUN_8005567c` route for Caruban.
+Mt. Rikuroa's **Caruban** (id 73 = `0x49`, same band) is a *separate* boss and
+uses the **same record path**: its carrier is the rikuroa P1[3] boss-stager
+placement (park-gated on first-visit flag `0x142`, `3E FF 11` -> formation
+row 17 = lone `0x49`), which the engine runs on approach
+(`World::run_boss_stager_record`). The earlier "re-verify Caruban's mechanism"
+caveat is settled statically - both bosses are `3E FF` record-path fights.
 
 **Open - does any retail battle write `DAT_8007b7fc`?** Four exhaustive Ghidra
 sweeps across all 47 loaded programs (SCUS + 46 overlays) - `lui`+`addiu`

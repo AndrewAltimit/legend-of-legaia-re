@@ -424,8 +424,9 @@ pub const STATE_FADE_SWEEP_ADDR: u32 = 0x801E_F160;
 
 /// `state[-0xe94]` (= `0x801EF16C`): attract countdown (u32). Reset to
 /// [`COUNTDOWN_RESET_VALUE`] by [`TitleOverlaySubMode::Init`] and
-/// [`TitleOverlaySubMode::AttractDelay`]; the FUN_8005DA40 DMA load
-/// initialises it to `0x8000` before the first tick.
+/// [`TitleOverlaySubMode::AttractDelay`]; the CD-DMA overlay load
+/// (FUN_8005D9A0, trigger instruction `0x8005DA4C`) deposits the
+/// `0x8000` initial value as disc bytes before the first tick.
 pub const STATE_ATTRACT_COUNTDOWN_ADDR: u32 = 0x801E_F16C;
 
 /// `state[-0xe90]` (= `0x801EF170`): free-running tick counter (u32),
@@ -472,8 +473,9 @@ pub const STATE_EARLY_OUT_OFFSET: u32 = 0x0000_0230;
 /// [`TitleOverlaySubMode::AttractDelay`] write to
 /// [`STATE_ATTRACT_COUNTDOWN_ADDR`].
 ///
-/// Distinct from the `0x8000` initial value that the DMA load
-/// (`FUN_8005DA40` site) deposits before the first tick.
+/// Distinct from the `0x8000` initial value that the CD-DMA overlay
+/// load (`FUN_8005D9A0`, trigger `0x8005DA4C`) deposits before the
+/// first tick.
 pub const COUNTDOWN_RESET_VALUE: u32 = 0x0000_05DC;
 
 /// Master game-mode word `_DAT_8007B83C` (the global mode the 28-mode

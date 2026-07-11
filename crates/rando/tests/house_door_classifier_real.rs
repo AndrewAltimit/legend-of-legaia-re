@@ -24,9 +24,13 @@ fn load_disc() -> Option<Vec<u8>> {
 /// CDNAME: 4 = town01, 13 = town0b, 22 = town0c (the Rim Elm variants),
 /// 53 = bylon, 166 = geremi, 183 = balden, 192 = conc, 255 = tower,
 /// 282 = retockin, 291 = retona, 348 = town0d, 435 = uru.) `unclassified`
-/// counts the partition-0 player warps without a door-name class (story
-/// repositions, e.g. the town01 intro "inside the house" warp) - found but
-/// never shuffled.
+/// counts the partition-0 player warps found but not shuffle-eligible: warps
+/// without a door-name class (story repositions, e.g. the town01 intro
+/// "inside the house" warp; town0d carries a byte-identical twin pair of one
+/// such reposition - both target the same tile - which the pinned nibble-8
+/// widths surface in full) plus the multi-warp choreography records (the
+/// tower's multi-stop elevator-2 pair carries 10 warps per side - floor
+/// branches and `(0, 0)` sync repositions the full-width op walk surfaces).
 const EXPECTED: &[(usize, (usize, usize, usize))] = &[
     (4, (2, 2, 1)),
     (13, (2, 2, 1)),
@@ -35,10 +39,10 @@ const EXPECTED: &[(usize, (usize, usize, usize))] = &[
     (166, (2, 2, 0)),
     (183, (1, 1, 0)),
     (192, (2, 2, 0)),
-    (255, (7, 7, 0)),
+    (255, (7, 7, 20)),
     (282, (1, 3, 0)),
     (291, (1, 1, 0)),
-    (348, (1, 1, 1)),
+    (348, (1, 1, 2)),
     (435, (3, 3, 0)),
 ];
 

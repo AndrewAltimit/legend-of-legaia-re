@@ -1314,23 +1314,31 @@ pub struct World {
     /// game-over). Cleared by `World::finish_battle`.
     pub battle_escaped: bool,
 
+    /// Scripted "can't run from this battle" flag (retail battle ctx
+    /// `+0x287`, the input `FUN_801E791C`'s escape roll tests). Set when a
+    /// battle enters through the field-VM scripted-battle op
+    /// ([`World::trigger_scripted_battle`]) - the boss rows carry a non-zero
+    /// first header byte the retail reader ORs `0x80` into a battle-setup
+    /// flag for - so a staged boss fight refuses the Run command (fleeing
+    /// would leave the stager's marker set and let the post-victory record
+    /// spawn unearned). Cleared by [`World::finish_battle`].
+    pub battle_no_escape: bool,
+
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
     /// outside battle.
     pub active_formation: Option<crate::monster_catalog::FormationDef>,
 
-    /// Synthetic formation id installed by [`World::install_boss_encounter`]
-    /// for a scripted single-boss fight (the battle-id path, retail
-    /// `FUN_8005567c`). Recognised in [`World::apply_battle_loot`] to latch
-    /// [`Self::pending_boss_victory_flag`] on victory. `None` when no boss
-    /// encounter is armed.
-    pub boss_formation_id: Option<u16>,
-
-    /// System-flag index a scripted boss encounter latches once the party
-    /// wins it (the first-visit one-shot the retail cutscene sets so the
-    /// fight does not re-arm - e.g. rikuroa's Caruban gate `0x142`). Consumed by
-    /// [`World::apply_battle_loot`]. `None` when no boss encounter is armed.
-    pub pending_boss_victory_flag: Option<u16>,
+    /// Boss-stager bindings for the active scene, keyed by partition-1
+    /// placement slot: the record an approach (walk-touch) or interact on
+    /// that placed actor runs through the field VM. Derived from the scene
+    /// MAN's own bytes at entry
+    /// ([`World::install_boss_stagers_from_man`]); consumed by
+    /// [`World::run_boss_stager_record`] (rikuroa's Caruban stager `P1[3]`:
+    /// `52 89` staged-marker SET then `3E FF 11` battle entry - every flag
+    /// in the chain lands from the record's own script bytes, nothing is
+    /// engine-stamped).
+    pub field_boss_stagers: std::collections::HashMap<u8, crate::world::FieldBossStager>,
 
     /// Aggregated rewards from the most recent victory - surfaced for the
     /// post-battle banner / HUD. `None` until the first battle resolves.
@@ -1839,6 +1847,7 @@ impl World {
             seru_trade_config: None,
             magic_level_ups: Vec::new(),
             battle_escaped: false,
+            battle_no_escape: false,
             character_max_mp: Vec::new(),
             encounter: None,
             per_char_ext: Vec::new(),
@@ -1880,8 +1889,7 @@ impl World {
             battle_spell_menu: None,
             battle_arts_menu: None,
             active_formation: None,
-            boss_formation_id: None,
-            pending_boss_victory_flag: None,
+            field_boss_stagers: std::collections::HashMap::new(),
             last_battle_rewards: None,
             game_over: false,
             field_return: None,

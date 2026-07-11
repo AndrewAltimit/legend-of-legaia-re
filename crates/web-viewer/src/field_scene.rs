@@ -39,9 +39,46 @@ pub struct FieldScenePack {
     /// Walk-ground heightfield surface (`None` when the scene has no
     /// resolvable `.MAP` floor grid / floor LUT).
     pub ground: Option<legaia_asset::field_objects::WalkHeightfield>,
-    /// Currently-selected env-pack slot + its built mesh, cached so the
-    /// positions/uvs/cba_tsb/indices accessors don't rebuild per call.
-    pub cur: Option<(usize, legaia_tmd::mesh::VramMesh)>,
+    /// Currently-selected env-pack slot + its built mesh + the parallel
+    /// per-vertex flat-colour array (see [`build_hybrid_env_mesh`]), cached
+    /// so the positions/uvs/cba_tsb/indices accessors don't rebuild per call.
+    pub cur: Option<(usize, legaia_tmd::mesh::VramMesh, Vec<u8>)>,
+}
+
+/// Build one env-pack mesh the way the native play-window renders it: the
+/// VRAM-filtered **textured** prims plus the untextured `F*`/`G*`
+/// **vertex-colour** prims (`legaia_tmd::mesh::tmd_to_color_mesh` - the props
+/// whose prims carry per-vertex RGB instead of UVs, which the textured
+/// builder drops; the engine-shell draws them on its colour-mesh pipeline).
+/// Both halves are merged into one vertex stream for the WebGL renderer, with
+/// a parallel `[r, g, b, flag]` byte array (`flag` 255 = textured, sample
+/// VRAM; 0 = untextured, use the vertex colour) matching the
+/// `u_use_flat_colors` / `a_flat_rgba` convention the field-character hybrid
+/// shader path already implements. The flat array is empty when the mesh has
+/// no untextured prims, so purely-textured meshes upload exactly as before.
+pub fn build_hybrid_env_mesh(
+    rtmd: &legaia_engine_core::scene_resources::ResolvedTmd,
+    vram: &legaia_tim::Vram,
+) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
+    let mut mesh = rtmd.build_filtered_vram_mesh(vram);
+    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
+    if cmesh.is_empty() {
+        return (mesh, Vec::new());
+    }
+    let mut flat = Vec::with_capacity((mesh.positions.len() + cmesh.positions.len()) * 4);
+    for _ in 0..mesh.positions.len() {
+        flat.extend_from_slice(&[255, 255, 255, 255]);
+    }
+    let base = mesh.positions.len() as u32;
+    for (p, c) in cmesh.positions.iter().zip(cmesh.colors.iter()) {
+        mesh.positions.push(*p);
+        mesh.uvs.push([0, 0]);
+        mesh.cba_tsb.push([0, 0]);
+        mesh.normals.push([0.0, 0.0, 0.0]);
+        flat.extend_from_slice(&[c[0], c[1], c[2], 0]);
+    }
+    mesh.indices.extend(cmesh.indices.iter().map(|i| i + base));
+    (mesh, flat)
 }
 
 /// Assemble a CDNAME scene's full static map: field-mode
@@ -68,6 +105,11 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
     } else {
         SceneLoadKind::Field
     };
+    // Boot-resident system-UI bundle (raw PROT TOC entries 0/1): layers
+    // under the scene build so the row-510 strip CLUT + (960,256)
+    // menu-glyph atlas the env meshes sample (town01 slots 21/26/74,
+    // rikuroa slots 50/51/63) are resident in the browser build too.
+    let system_ui = index.system_ui_bundle().ok();
     let (res, _stats) = SceneResources::build_targeted_with_options(
         &scene,
         &shared_refs,
@@ -76,6 +118,7 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
             // Retail's field loader DMA-uploads every scene TIM; the
             // render-targeted subset drops ~75% of the env pack's prims.
             upload_all_tims: true,
+            system_ui: system_ui.as_deref(),
         },
     )
     .map_err(|e| format!("{e:#}"))?;
@@ -207,10 +250,13 @@ impl LegaiaViewer {
         }
     }
 
-    /// Select the active environment-pack slot and build its mesh (textured
-    /// prims whose pages/CLUTs are resident in the field VRAM; matches the
-    /// engine's per-prim filter). Returns the slot, or an error when out of
-    /// range. Subsequent `field_scene_mesh_*` calls read the built mesh.
+    /// Select the active environment-pack slot and build its mesh: the
+    /// textured prims whose pages/CLUTs are resident in the field VRAM
+    /// (matches the engine's per-prim filter) **plus** the untextured
+    /// `F*`/`G*` vertex-colour prims, merged by [`build_hybrid_env_mesh`]
+    /// (the engine-shell's colour-mesh pipeline sibling). Returns the slot,
+    /// or an error when out of range. Subsequent `field_scene_mesh_*` calls
+    /// read the built mesh.
     pub fn field_scene_mesh(&mut self, slot: u32) -> Result<u32, JsValue> {
         let f = self
             .field_scene
@@ -223,15 +269,15 @@ impl LegaiaViewer {
                 f.env_tmds.len()
             )));
         };
-        if f.cur.as_ref().map(|(cs, _)| *cs) != Some(s) {
-            let mesh = f.res.tmds[res_idx].build_filtered_vram_mesh(&f.res.vram);
-            f.cur = Some((s, mesh));
+        if f.cur.as_ref().map(|(cs, _, _)| *cs) != Some(s) {
+            let (mesh, flat) = build_hybrid_env_mesh(&f.res.tmds[res_idx], &f.res.vram);
+            f.cur = Some((s, mesh, flat));
         }
         Ok(slot)
     }
 
     pub fn field_scene_mesh_positions(&self) -> Vec<f32> {
-        let Some((_, mesh)) = self.field_scene.as_ref().and_then(|f| f.cur.as_ref()) else {
+        let Some((_, mesh, _)) = self.field_scene.as_ref().and_then(|f| f.cur.as_ref()) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.positions.len() * 3);
@@ -242,7 +288,7 @@ impl LegaiaViewer {
     }
 
     pub fn field_scene_mesh_uvs(&self) -> Vec<u8> {
-        let Some((_, mesh)) = self.field_scene.as_ref().and_then(|f| f.cur.as_ref()) else {
+        let Some((_, mesh, _)) = self.field_scene.as_ref().and_then(|f| f.cur.as_ref()) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
@@ -253,7 +299,7 @@ impl LegaiaViewer {
     }
 
     pub fn field_scene_mesh_cba_tsb(&self) -> Vec<u16> {
-        let Some((_, mesh)) = self.field_scene.as_ref().and_then(|f| f.cur.as_ref()) else {
+        let Some((_, mesh, _)) = self.field_scene.as_ref().and_then(|f| f.cur.as_ref()) else {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
@@ -267,7 +313,20 @@ impl LegaiaViewer {
         self.field_scene
             .as_ref()
             .and_then(|f| f.cur.as_ref())
-            .map(|(_, m)| m.indices.clone())
+            .map(|(_, m, _)| m.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, flag]` bytes for the current mesh's hybrid
+    /// flat-colour render (`flag` 255 = textured vertex, sample VRAM; 0 =
+    /// untextured vertex, use the RGB). **Empty** when the mesh carries no
+    /// untextured prims - the JS side then skips binding the attribute and
+    /// the draw behaves exactly like the pure-textured path.
+    pub fn field_scene_mesh_flat_rgba(&self) -> Vec<u8> {
+        self.field_scene
+            .as_ref()
+            .and_then(|f| f.cur.as_ref())
+            .map(|(_, _, flat)| flat.clone())
             .unwrap_or_default()
     }
 

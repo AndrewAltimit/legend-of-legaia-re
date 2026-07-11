@@ -14,7 +14,7 @@
 
 use legaia_engine_core::scene::ProtIndex;
 use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};
-use legaia_web_viewer::field_scene::build_field_scene;
+use legaia_web_viewer::field_scene::{build_field_scene, build_hybrid_env_mesh};
 use std::env;
 use std::fs;
 
@@ -113,4 +113,111 @@ fn town01_env_pack_matches_engine_ground_truth() {
         "town01 placement draw count {} outside expected band",
         pack.placements.len()
     );
+}
+
+/// The hybrid env-mesh build (`build_hybrid_env_mesh`) must surface the
+/// untextured vertex-colour prims the plain VRAM-filtered build drops - the
+/// browser sibling of the native engine's colour-mesh pipeline. town01's env
+/// pack carries **colour-only** placed props (slots whose textured build is
+/// empty but whose flat/gouraud prims carry per-vertex RGB); before the
+/// hybrid path those placements silently vanished from the assembled view.
+#[test]
+fn hybrid_env_mesh_recovers_vertex_colour_props() {
+    let Some(disc_path) = env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("LEGAIA_DISC_BIN unset; skipping hybrid env-mesh test");
+        return;
+    };
+    let disc = fs::read(&disc_path).expect("disc image");
+    let prot = extract_prot_dat(&disc).expect("PROT.DAT extraction");
+    let cdname = extract_cdname_txt(&disc).expect("CDNAME.TXT extraction");
+    let index = ProtIndex::from_bytes(prot, Some(&cdname)).expect("ProtIndex from in-memory PROT");
+
+    let pack = build_field_scene(&index, "town01").expect("town01 build");
+    let referenced: std::collections::BTreeSet<usize> = pack
+        .placements
+        .iter()
+        .chain(pack.terrain.iter())
+        .map(|d| d.env_slot)
+        .collect();
+
+    let mut colour_only_recovered = 0usize;
+    for &slot in &referenced {
+        let rtmd = &pack.res.tmds[pack.env_tmds[slot]];
+        let textured = rtmd.build_filtered_vram_mesh(&pack.res.vram);
+        let (hybrid, flat) = build_hybrid_env_mesh(rtmd, &pack.res.vram);
+
+        // Structural invariants: flat is per-vertex [r, g, b, flag] and only
+        // present when the mesh carries untextured prims; the hybrid mesh's
+        // vertex arrays stay index-aligned.
+        assert_eq!(hybrid.positions.len(), hybrid.uvs.len(), "slot {slot}");
+        assert_eq!(hybrid.positions.len(), hybrid.cba_tsb.len(), "slot {slot}");
+        if !flat.is_empty() {
+            assert_eq!(flat.len(), hybrid.positions.len() * 4, "slot {slot}");
+            // The textured prefix is flagged 255, the colour tail 0.
+            assert_eq!(
+                flat[3],
+                if textured.positions.is_empty() {
+                    0
+                } else {
+                    255
+                }
+            );
+            assert_eq!(*flat.last().unwrap(), 0, "slot {slot} tail flag");
+        }
+        assert!(
+            hybrid.indices.len() >= textured.indices.len(),
+            "slot {slot}: hybrid dropped textured prims"
+        );
+        if textured.indices.is_empty() && !hybrid.indices.is_empty() {
+            colour_only_recovered += 1;
+        }
+    }
+    // town01 ships a handful of colour-only placed props (benches / fences /
+    // small furniture; slots 31, 55, 87, 97, 109 at the current pack vote).
+    // The exact set can drift with loader changes - require the *class* of
+    // mesh to be recovered, not the exact slot ids.
+    assert!(
+        colour_only_recovered >= 4,
+        "expected >= 4 colour-only env meshes recovered on town01, got {colour_only_recovered}"
+    );
+}
+
+/// The boot-resident system-UI bundle (raw PROT TOC entries 0/1, uploaded
+/// under every field build via `BuildOptions::system_ui`) makes the
+/// row-510-strip / `(960,256)`-atlas samplers render in the browser build:
+/// town01 env slots 21/26/74 and rikuroa slots 50/51/63 (all CBA
+/// `(64,510)`, texpage `(960,256)`) previously built EMPTY because no scene
+/// TIM uploads that CLUT row. Guard both scenes in the new direction.
+#[test]
+fn system_ui_bundle_recovers_row510_samplers() {
+    let Some(disc_path) = env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("LEGAIA_DISC_BIN unset; skipping row-510 sampler test");
+        return;
+    };
+    let disc = fs::read(&disc_path).expect("disc image");
+    let prot = extract_prot_dat(&disc).expect("PROT.DAT extraction");
+    let cdname = extract_cdname_txt(&disc).expect("CDNAME.TXT extraction");
+    let index = ProtIndex::from_bytes(prot, Some(&cdname)).expect("ProtIndex from in-memory PROT");
+
+    for (name, slots) in [
+        ("town01", &[21usize, 26, 74][..]),
+        ("rikuroa", &[50, 51, 63][..]),
+    ] {
+        let pack = build_field_scene(&index, name)
+            .unwrap_or_else(|e| panic!("{name}: build_field_scene failed: {e}"));
+        // The bundle's strip CLUT is resident on row 510.
+        let lit = (0..256)
+            .filter(|&x| pack.res.vram.pixel(x, 510) != 0)
+            .count();
+        assert!(lit > 200, "{name}: row-510 strip resident (lit={lit})");
+        for &slot in slots {
+            let rtmd = &pack.res.tmds[pack.env_tmds[slot]];
+            let mesh = rtmd.build_filtered_vram_mesh(&pack.res.vram);
+            assert!(
+                !mesh.indices.is_empty(),
+                "{name} env slot {slot}: row-510 sampler must build non-empty \
+                 with the system-UI bundle resident"
+            );
+        }
+    }
 }

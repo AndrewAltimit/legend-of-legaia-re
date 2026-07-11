@@ -303,9 +303,17 @@ landed:
   script heap byte-matches the carrier. The old corpus-negative stood
   because no census walked the streaming variant MANs (and the earlier
   raw-byte sweep looked for setter *code*, not script operand bytes at
-  op boundaries). Engine: `SCRIPTED_SCENE_BOSSES` arms Caruban (73) in
-  `rikuroa` gated on `0x142`; the victory latch sets it, flipping the
-  dolk-dolk2 entrance organically.
+  op boundaries). Engine: the whole chain is organic record execution -
+  approaching the rikuroa boss-stager placement `P1[3]` runs the record
+  through the field VM (`World::install_boss_stagers_from_man` /
+  `run_boss_stager_record`; park gate = `0x142`, read from the record's
+  own head test), whose `52 89` SETs the transient staged marker `0x289`
+  and whose `3E FF 11` enters the fight; the post-battle field return
+  re-runs the scene-entry script `P1[0]`, whose `72 89` test arm spawns
+  `P2[50]` through the C1-gated record dispatch - the record's own
+  `51 42` script bytes SET `0x142` (and `62 89` clears the marker),
+  flipping the dolk-dolk2 entrance organically. Disc-gated oracle:
+  `engine-core/tests/organic_beat_records_disc.rs`.
 - **`0x482`** (Drake mist walls): no script writer exists - the earlier
   "SETs in the `other7` block, clears in the `edbalden`/`eddoman`
   epilogue carriers" reading was desynced-walker text noise (full-width
@@ -759,8 +767,21 @@ sweeps over the `.MAP` object grid serve two different render modes:
 - **Walk** (game mode `0x03`): the bulk continent ground is **not** a per-cell
   pack-mesh sweep at all - it is a procedural heightfield (corner heights from
   the `+0x4000` floor-nibble grid, confirmed by `FUN_80019278`; see below). The
-  `.MAP` records' `+0x10` field is used only by the sparse placed-landmark layer
-  (`FUN_8003A55C`, `flags & 0x4`); for the bulk ground cells `+0x10` is 0.
+  `.MAP` records' `+0x10` field is used by two sparse mesh layers on top of
+  that ground: the placed-landmark layer (`FUN_8003A55C`, `flags & 0x4`) and
+  the **decoration layer** - walk-visible cells whose record carries a nonzero
+  `+0x10` plus the mesh-drawn flag bit `0x2` *without* the placed flag (flag
+  families `0x0013`/`0x0813`; Drake ~295 cells over 31 records, Sebacus ~240,
+  Karisto ~210). The decorations are the crossed-quad billboard trees (one
+  tree mesh is stamped from dozens of cells per forest cluster), the mountain
+  groups, and small props
+  ([`legaia_asset::field_objects::parse_walk_decorations`]). The `0x0011`
+  family (nonzero `+0x10`, no `0x2` bit) is **not** drawn: those are the
+  riverbank/system cells - record 408 in every kingdom walk `.MAP` (same
+  index, same `+0x10 = 4`, same flags across all three kingdoms), and
+  stamping them tiles a wall/gate mesh down every river (visually falsified
+  against retail). For the bulk ground cells (97% of the walk grid) `+0x10`
+  is 0.
 
 The walk-placer `FUN_8003A55C` (placed flag `0x4`) spawns only the ~51
 interactive objects (distance-culled to ~14 live actors in the capture; most
@@ -769,6 +790,29 @@ live actors are script-spawned, not from the placed-flag set). It allocates via
 stores the record index at actor `+0x60`, and leaves the mesh chain `+0x44` at
 0; the mesh is resolved from the record index by the scene draw loop (resolver
 not yet pinned). These are props/entities, not the bulk continent.
+
+Each placed spawn is **gated on a MAN interaction record** for the cell: the
+placer calls the overlay lookup `FUN_801d5630(1, col + rec[+6], row + rec[+7])`
+and skips the spawn when it returns null. That lookup searches a partitioned
+cell-keyed table at **walk-`.MAP` + `0x10000`** (header = per-partition
+`(u16 rec_off, u16 count)` pairs at `+4p+2`/`+4p+4`; records are
+`[u8 col][u8 row][u8 script_id][u8 aux]`, stride from the per-partition byte
+table at `0x8007B318`; searcher `FUN_801d5ae0`), falling back to the same
+header shape at `+0x12000` — the next file loaded behind the walk map in the
+`_DAT_1f8003ec` buffer (Drake: PROT 0084). The matched record's `script_id`
+indexes the live MAN's global record-offset table (`_DAT_8007b898 + 0x2b`,
+3-byte entries, count = the `+0x22/+0x24/+0x26` partition totals); the actor
+stores the resolved script at `+0x90` and the placer **immediately steps its
+leading ops** (first opcode `0x24`/`0x25` enters the field VM until a yield),
+so a placed object's resting position/visibility is script-managed - the raw
+grid cell is only the spawn point. Record flags also seed actor status bits:
+flag `0x800` → actor `+0x74 |= 0x10000000`, nonzero `rec[+0x1E]` →
+`|= 0x40000000`, and mesh-drawn flag `0x2` selects actor render type 5 (the
+mesh-chain draw) vs 0. Concrete case: Drake's two golden-bridge (mesh 6)
+stamps - record 441 is a plain decoration at the road crossing
+`(12224, 6336)` and draws there, while record 349 (placed, flags `0x0017`,
+grid cell over the river at `(10688, 5312)`) is spawn-scripted and does not
+rest at its grid cell; retail shows a single bridge, at the record-441 site.
 
 #### Placing the continent terrain (engine port)
 
@@ -783,6 +827,10 @@ by **positioning** them per tile. The **overview** layer is modelled today:
 - **Interactive objects** ([`Scene::field_object_placements`] →
   `resolve_field_placement_draws`): the placed-flag (`0x4`) records (Drake 51,
   Sebacus 20, Karisto 24), the `FUN_8003A55C` set.
+- **Walk decorations** ([`Scene::walk_decoration_placements`], appended to the
+  walk render in `resolve_world_map_terrain_draws`): the nonzero-`+0x10`
+  unplaced walk cells - trees, mountain groups, props (see the walk layer list
+  above).
 
 Both resolve through `resolve_placement_draws`: each tile draws the pack mesh at
 `(col*0x80 + x_off, floor_height + y_off, row*0x80 + z_off)`, Y-flipped, in the

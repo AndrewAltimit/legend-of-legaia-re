@@ -475,61 +475,72 @@ fn prologue_handoff_only_fires_while_the_opening_chain_plays() {
     assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 }
 
-// ---- scripted single-boss encounter (battle-id path, FUN_8005567c) ----
+// ---- boss-stager placements (approach/interact -> record execution) ----
 
 #[test]
-fn install_boss_encounter_arms_a_lone_monster_formation() {
+fn run_boss_stager_refuses_when_the_park_gate_is_latched() {
     let mut world = World::new();
-    world.set_active_scene_label("rikuroa");
-    let fid = world
-        .install_boss_encounter(75, Some(0x1BE))
-        .expect("boss install returns a formation id");
-    // Synthetic boss-namespace id, disjoint from MAN row ids.
-    assert_eq!(fid, crate::world::BOSS_FORMATION_ID_BASE | 75);
-    let def = world
-        .formation_table
-        .formation(fid)
-        .expect("boss formation registered");
-    assert_eq!(def.slots.len(), 1, "boss is a lone monster");
-    assert_eq!(def.slots[0].monster_id, 75);
-    // Armed to fire on the next field step, with the victory latch pending.
-    assert!(world.scripted_formation_pending);
-    assert_eq!(world.boss_formation_id, Some(fid));
-    assert_eq!(world.pending_boss_victory_flag, Some(0x1BE));
-    // The gate flag is NOT set yet - only a win latches it.
-    assert!(!world.system_flag_test(0x1BE));
-}
-
-#[test]
-fn boss_victory_latches_the_gate_flag_via_apply_battle_loot() {
-    use crate::monster_catalog::MonsterCatalog;
-    let mut world = World::new();
-    world.set_active_scene_label("rikuroa");
-    let fid = world.install_boss_encounter(75, Some(0x1BE)).unwrap();
-    let boss_formation = world.formation_table.formation(fid).cloned().unwrap();
-    // Resolving loot for the boss formation (the win path) latches the gate.
-    let cat = MonsterCatalog::new();
-    let _ = world.apply_battle_loot(&boss_formation, &cat);
-    assert!(
-        world.system_flag_test(0x1BE),
-        "beating the boss sets its first-visit one-shot gate flag"
+    world.field_boss_stagers.insert(
+        3,
+        crate::world::FieldBossStager {
+            record: 3,
+            park_gate: Some(0x142),
+        },
     );
-    // Pending state cleared so a re-fought formation doesn't re-latch.
-    assert_eq!(world.pending_boss_victory_flag, None);
-    assert_eq!(world.boss_formation_id, None);
+    world.system_flag_set(0x142);
+    assert!(
+        !world.run_boss_stager_record(3),
+        "a latched park gate refuses the launch"
+    );
+    assert!(
+        !world.field_boss_stagers.contains_key(&3),
+        "the stale binding is dropped"
+    );
 }
 
 #[test]
-fn non_boss_victory_does_not_latch_a_gate_flag() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog};
+fn run_boss_stager_requires_a_resident_scene_man() {
+    let mut world = World::new();
+    world.field_boss_stagers.insert(
+        3,
+        crate::world::FieldBossStager {
+            record: 3,
+            park_gate: None,
+        },
+    );
+    // No `field_channels_man` installed: nothing to execute.
+    assert!(!world.run_boss_stager_record(3));
+    assert!(
+        world.field_boss_stagers.contains_key(&3),
+        "an unresolvable launch keeps the binding for a later approach"
+    );
+}
+
+#[test]
+fn boss_battle_entry_writes_no_flags() {
+    use crate::monster_catalog::{FormationDef, FormationSlot};
+    // Entering a scripted-battle formation writes NO system flags: the
+    // staged marker (rikuroa 0x289) is the stager record's own `52 89`,
+    // and the gate flag (0x142) is the post-victory record's `51 42`.
     let mut world = World::new();
     world.set_active_scene_label("rikuroa");
-    world.install_boss_encounter(75, Some(0x1BE)).unwrap();
-    // Win a DIFFERENT (random) formation while the boss is armed: the latch
-    // is keyed on the boss formation id, so the gate flag stays clear.
-    let other = FormationDef::new(3, vec![FormationSlot::new(10)]);
-    let cat = MonsterCatalog::new();
-    let _ = world.apply_battle_loot(&other, &cat);
-    assert!(!world.system_flag_test(0x1BE));
-    assert_eq!(world.pending_boss_victory_flag, Some(0x1BE));
+    world
+        .formation_table
+        .insert(FormationDef::new(17, vec![FormationSlot::new(73)]));
+    assert!(world.trigger_scripted_battle(17));
+    world.tick_field_carriers();
+    assert!(matches!(world.mode, SceneMode::Battle));
+    // The scripted fight refuses the Run command (retail `ctx+0x287`).
+    assert!(world.battle_no_escape, "scripted battle sets no-escape");
+    assert!(
+        !world.system_flag_test(0x289),
+        "no engine stamp: the marker comes from the record's bytes"
+    );
+    assert!(!world.system_flag_test(0x142), "no victory latch either");
+    // Loot resolution also writes no flags.
+    let cat = crate::monster_catalog::MonsterCatalog::new();
+    let formation = world.formation_table.formation(17).cloned().unwrap();
+    let _ = world.apply_battle_loot(&formation, &cat);
+    assert!(!world.system_flag_test(0x289));
+    assert!(!world.system_flag_test(0x142));
 }

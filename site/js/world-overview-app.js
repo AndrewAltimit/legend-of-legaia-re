@@ -118,8 +118,22 @@
   let glRenderer = null;
   let rafId = null;
   const cam = { yaw: 0, pitch: 0.25, distance: 2.5, panX: 0, panY: 0, autoRotate: true };
-  /* Top-down camera state (world units). Reset per-kingdom to fit the world. */
-  const worldCam = { centerX: 8160, centerZ: 8160, halfWidth: 9000, halfHeight: 9000, pitch: 0 };
+  /* World camera state (world units). Reset per-kingdom to fit the world.
+   * `yaw`/`pitch` drive the perspective orbit camera (buildWorldOrbitVp):
+   * pitch = 0 is straight-down, larger tilts toward the horizon; the
+   * default tilt makes the 3D terrain relief legible on load, matching
+   * the retail world map being a real 3D perspective view (GameShark
+   * camera moves in retail confirm it). "Lock to retail top-view" and
+   * the reset button snap pitch back to their respective framings. */
+  const WORLD_DEFAULT_PITCH = 0.85;
+  const worldCam = {
+    centerX: 8160, centerZ: 8160, halfWidth: 9000, halfHeight: 9000,
+    yaw: 0, pitch: WORLD_DEFAULT_PITCH,
+  };
+  /* Testing hook: the headless-browser verification harness steers the
+   * camera to known world coordinates through this reference. Not used
+   * by any page code. */
+  window.__woCam = worldCam;
 
   /* ---------- Placement JSON (always available) ----------- */
   try {
@@ -187,7 +201,8 @@
       }
       worldCam.halfWidth = ext[0] / 2 + 1000;
       worldCam.halfHeight = ext[1] / 2 + 1000;
-      worldCam.pitch = 0;
+      worldCam.yaw = 0;
+      worldCam.pitch = WORLD_DEFAULT_PITCH;
     } else {
       resetCam();
     }
@@ -298,6 +313,7 @@
       const ext = k?.world_extent || [16320, 16320];
       worldCam.halfWidth  = ext[0] / 2;
       worldCam.halfHeight = ext[1] / 2;
+      worldCam.yaw = 0;
       worldCam.pitch = 0;
     });
   }
@@ -641,29 +657,65 @@
     const SHOW_LEGACY_PLACEMENTS = false;
     const drawPlacements = [];
 
-    /* Walk-frame placed landmarks: the slot-1 pack meshes FUN_8003A55C
-     * stamps on the continent (flags & 0x4), resolved by the WASM
+    /* Walk-frame pack-mesh stamps, two disjoint layers merged by the WASM
      * `build_walk_placements` into the SAME col*128 world frame as the
-     * heightfield ground above - so they overlay the terrain correctly,
-     * unlike the legacy overview-frame `world-overview.json` placements
-     * (kept behind SHOW_LEGACY_PLACEMENTS below). Each landmark draws its
-     * pack mesh at world (x, y, z) with scale 1 and the shared (1,-1,1)
-     * Y-flip; world Y comes from the floor-height LUT so the mesh sits on
-     * the heightfield. */
+     * heightfield ground above:
+     *   - placed landmarks (FUN_8003A55C, flags & 0x4), and
+     *   - the decoration layer (walk-visible cells stamping a nonzero
+     *     record[+0x10] mesh with the mesh-drawn flag 0x2 and no placed
+     *     flag - the crossed-quad billboard trees, mountain groups, and
+     *     props; ~210-300 cells per kingdom).
+     * They overlay the terrain correctly, unlike the legacy overview-frame
+     * `world-overview.json` placements (kept behind SHOW_LEGACY_PLACEMENTS
+     * below). Each stamp draws its pack mesh at world (x, y, z) with scale
+     * 1 and the shared (1,-1,1) Y-flip; world Y comes from the
+     * floor-height LUT so the mesh sits on the heightfield. */
+    /* Authored default-state suppression for script-managed walk stamps.
+     * Drake has two golden-bridge (mesh 6) stamps: record 441, a plain
+     * decoration at the road crossing (12224, 6336), and record 349, a
+     * placed+interactive record (flags 0x0017) whose grid cell sits over
+     * the river at (10688, 5312). Retail spawns record 349 as an actor
+     * (live render-list capture: rec 349 -> pool 11) and runs its MAN
+     * interaction script's leading ops at spawn (FUN_8003A55C's inline
+     * stepper), which manage where/whether it rests - the raw grid cell
+     * is not its retail resting draw position, and retail's default map
+     * shows a single bridge at the record-441 site. The static viewer
+     * can't run MAN scripts, so the grid-cell draw is suppressed here
+     * (the same reason the legacy JSON layer skips `script_positioned`
+     * placements). Keyed by kingdom tab id; matched on
+     * (pack mesh, world x, world z). */
+    const WALK_STAMP_SUPPRESS = {
+      drake: [{ mesh: 6, x: 10688, z: 5312 }],
+    };
     let walkLandmarkCount = 0;
     const showLandmarks = !$showLandmarks || $showLandmarks.checked;
     if (showLandmarks) {
+      const suppress = WALK_STAMP_SUPPRESS[currentKingdom] || [];
       const wpCount = viewer.walk_placement_count();
       if (wpCount > 0) {
         const slots = viewer.walk_placement_slots();
         const pos = viewer.walk_placement_positions();
         for (let i = 0; i < wpCount; i++) {
           const ms = slots[i];
+          if (suppress.some((s) =>
+            s.mesh === ms && s.x === pos[i * 3] && s.z === pos[i * 3 + 2])) {
+            continue;
+          }
           if (!ensureMeshUploaded(ms)) continue;
+          /* The WASM returns retail-frame world Y (PSX +Y down: the stamp
+           * anchor is `-lut[nibble] + y_off`, the heightfield's PRE-flip
+           * stored-vertex frame). placementModelScaledY flips only the
+           * mesh-local geometry, not the translation - while the ground
+           * bakes `-lut` into its vertices and gets the renderer's
+           * (1,-1,1) model, landing at `+lut` (up). Negate the placement Y
+           * so stamps sit ON the terrain instead of mirrored below it -
+           * the same negation the viewer.html full-map path applies.
+           * Kingdom LUT heights are small, so the un-negated artifact was
+           * a subtle sink/hover that doubled with the cell height. */
           drawPlacements.push({
             meshId: ms,
             x: pos[i * 3],
-            y: pos[i * 3 + 1],
+            y: -pos[i * 3 + 1],
             z: pos[i * 3 + 2],
             scale: 1.0,
             kind: 'walk_landmark',
@@ -673,6 +725,11 @@
         }
       }
     }
+    /* Headless-verification hook (same spirit as `__woCam`): the walk
+     * stamps actually queued this render, so browser tests can assert on
+     * placement contents. Not used by page code. */
+    window.__woWalkStamps = drawPlacements.filter(
+      (p) => p.kind === 'walk_landmark');
     /* MAN-table placements at the disc-encoded world coordinates. Counts
      * by source so the snapshot panel surfaces how many placements made
      * it onto the GPU vs were dropped for the global-pool gap. */
@@ -890,7 +947,8 @@
       }
     }
     frameWorldCam(drawPlacements, ext, glRenderer.getGroundAabb());
-    worldCam.pitch = 0;
+    worldCam.yaw = 0;
+    worldCam.pitch = WORLD_DEFAULT_PITCH;
     const unplacedShownTotal = unplacedShown.landmark
       + unplacedShown.decoration + unplacedShown.ground_tile
       + unplacedShown.unknown;
@@ -938,7 +996,7 @@
         + terrainSummary + liveSummary + globalPoolSummary + unplacedSummary + skippedSummary;
     } else {
       const landmarkSummary = walkLandmarkCount > 0
-        ? ` + ${walkLandmarkCount} placed landmarks`
+        ? ` + ${walkLandmarkCount} landmarks/decorations (trees, mountains; ${used.size} meshes)`
         : '';
       $meshLabel.textContent = groundQuads > 0
         ? `${k.cdname} - ${groundQuads}-cell continent heightfield (walk-view terrain)${landmarkSummary}`
@@ -947,8 +1005,9 @@
             : `${k.cdname} - no walk-view terrain resolved`);
     }
     $meshInfo.textContent =
-      `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
-    attachTopDownControls(fresh);
+      `3D perspective view; world ${ext[0]} x ${ext[1]} units; `
+      + `drag to pan, right-drag (or shift+drag) to rotate/tilt, scroll to zoom`;
+    attachWorldControls(fresh);
     const tick = () => {
       glRenderer.renderAssembled(drawPlacements, ext, worldCam);
       rafId = requestAnimationFrame(tick);
@@ -1012,27 +1071,46 @@
     }
   }
 
-  /* Pan / zoom controls for the top-down camera. Replaces the orbit
-   * controls in `attachCameraControls` for world-view mode. */
-  function attachTopDownControls(canvas) {
-    let dragging = false, lastX = 0, lastY = 0;
+  /* Pan / orbit / zoom controls for the world camera. Left-drag pans the
+   * map (yaw-aware); right-drag or shift+left-drag orbits (yaw + tilt);
+   * wheel zooms. Replaces the mesh-inspector orbit controls in
+   * `attachCameraControls` for world-view mode. */
+  function attachWorldControls(canvas) {
+    let mode = null, lastX = 0, lastY = 0;   /* mode: 'pan' | 'orbit' */
     canvas.addEventListener('mousedown', e => {
-      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      mode = (e.button === 2 || e.shiftKey) ? 'orbit' : 'pan';
+      lastX = e.clientX; lastY = e.clientY;
     });
-    window.addEventListener('mouseup', () => { dragging = false; });
+    /* Right-drag is the orbit gesture; suppress the context menu. */
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+    window.addEventListener('mouseup', () => { mode = null; });
     window.addEventListener('mousemove', e => {
-      if (!dragging) return;
+      if (!mode) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      /* Drag -> camera grabs the map (content follows the cursor).
+      if (mode === 'orbit') {
+        /* Drag right rotates the view; drag down tilts toward the
+         * horizon. Pitch 0 = straight-down; clamp short of the horizon
+         * so the ground plane never edge-on degenerates. */
+        worldCam.yaw += dx * 0.008;
+        worldCam.pitch = Math.max(0, Math.min(1.40, worldCam.pitch + dy * 0.008));
+        return;
+      }
+      /* Pan: camera grabs the map (content follows the cursor).
        * Convert pixel deltas to world units via the current camera
-       * half-extents, through the basis buildTopDownVp uses (180 deg
-       * rotation + horizontal mirror): screen-right = world +X,
-       * screen-down = world -Z. */
-      const sx = (worldCam.halfWidth  * 2) / canvas.width;
-      const sy = (worldCam.halfHeight * 2) / canvas.height;
-      worldCam.centerX -= dx * sx;
-      worldCam.centerZ += dy * sy;
+       * half-extents, through the yaw-rotated retail screen basis
+       * (at yaw = 0: screen-right = world +X, screen-down = world -Z).
+       * Apply the same letterbox rule the projection uses (expand the
+       * shorter axis to the canvas aspect) so the point under the
+       * cursor tracks the drag exactly. */
+      const aspect = canvas.width / canvas.height;
+      let hw = worldCam.halfWidth, hh = worldCam.halfHeight;
+      if (hw / hh < aspect) hw = hh * aspect; else hh = hw / aspect;
+      const sx = (hw * 2) / canvas.width;
+      const sy = (hh * 2) / canvas.height;
+      const cosY = Math.cos(worldCam.yaw), sinY = Math.sin(worldCam.yaw);
+      worldCam.centerX += -dx * sx * cosY - dy * sy * sinY;
+      worldCam.centerZ += -dx * sx * sinY + dy * sy * cosY;
     });
     canvas.addEventListener('wheel', e => {
       e.preventDefault();

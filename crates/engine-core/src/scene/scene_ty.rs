@@ -435,6 +435,24 @@ impl Scene {
         Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
     }
 
+    /// The walk view's **decoration layer** - trees, mountain groups, and
+    /// props: walk-visible cells whose record stamps a nonzero `+0x10` pack
+    /// mesh without the placed flag (disjoint from
+    /// [`Self::walk_object_placements`]). See
+    /// [`legaia_asset::field_objects::parse_walk_decorations`].
+    pub fn walk_decoration_placements(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+        let Some(idx) = self.walk_field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(Some(legaia_asset::field_objects::parse_walk_decorations(
+            &bytes,
+        )))
+    }
+
     /// The scene's 16-entry floor-height LUT, read from the MAN header
     /// (`man[+0x02..+0x22]`, 16 `s16` LE). A placed object's world Y is
     /// `-lut[tile_floor_nibble] + record.y_off` (the runtime stores the LUT
@@ -479,9 +497,9 @@ impl Scene {
     /// runtime decompressed-MAN buffer; for these scenes it is exactly this
     /// bundle MAN, so the script source is present in the static bundle.
     ///
-    /// Returns `Ok(None)` only when [`crate::scene_bundle::find_bundle`] finds
-    /// no `scene_asset_table` bundle, or when the MAN's partition 1 is empty.
-    /// Those scenes fall back to the event-script record-0 load.
+    /// Returns `Ok(None)` only when the scene resolves no MAN at all (no
+    /// bundle MAN and no streaming variant), or when the MAN's partition 1 is
+    /// empty. Those scenes fall back to the event-script record-0 load.
     ///
     /// Note that the entry script's `0x4C` nibble-7 wall-paint deltas are
     /// gated behind system-flag tests, so they only fire once the world's
@@ -489,14 +507,18 @@ impl Scene {
     /// collision grid ([`Self::field_collision_grid`]) is independent of the
     /// entry script.
     ///
+    /// Resolution order matches [`Self::field_man_payload`]: the asset-table
+    /// bundle MAN first, then the block's **streaming variant MAN** for the
+    /// bundle-MAN-less v12-family dungeons (`rikuroa` / `dolk2`). For those
+    /// scenes the streaming carrier IS the runtime `_DAT_8007B898` MAN, so its
+    /// `P1[0]` is the scene-entry system script retail runs - including the
+    /// post-battle-return dispatch that spawns the partition-2 beat records
+    /// (`rikuroa` P1[0] tests the `0x289` battle-staged marker and issues the
+    /// op-`0x44` spawn of the post-victory record `P2[50]`).
+    ///
     /// REF: FUN_8003ab2c (the port lives in `legaia_asset::man_section`).
     pub fn field_man_entry_script(&self, index: &ProtIndex) -> Result<Option<(Vec<u8>, usize)>> {
-        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
-            return Ok(None);
-        };
-        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
-        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
-        else {
+        let Some(man_bytes) = self.field_man_payload(index)? else {
             return Ok(None);
         };
         let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
@@ -515,10 +537,10 @@ impl Scene {
     /// per-row formation defs from the same MAN asset (retail
     /// `_DAT_8007B898`) the scene-entry script comes from.
     ///
-    /// Returns `Ok(None)` when the scene's static bundle carries no MAN (the
-    /// same detector gap [`Self::field_man_entry_script`] documents) or when
-    /// the MAN's encounter section declares no rollable formations (towns
-    /// with no encounters). Resolves now for the `count=6`
+    /// Returns `Ok(None)` when the scene resolves no MAN at all (the same
+    /// detector gap [`Self::field_man_entry_script`] documents) or when the
+    /// MAN's encounter section declares no rollable formations (towns with
+    /// no encounters). Resolves now for the `count=6`
     /// [`legaia_asset::scene_asset_table`] field scenes (town01 etc.) thanks
     /// to the relaxed detector.
     ///
@@ -538,12 +560,13 @@ impl Scene {
             Vec<crate::monster_catalog::FormationDef>,
         )>,
     > {
-        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
-            return Ok(None);
-        };
-        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
-        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
-        else {
+        // Same resolution order as [`Self::field_man_payload`] (bundle MAN
+        // first, streaming variant carrier fallback): the v12-family
+        // dungeons (`rikuroa` / `dolk2`) carry their encounter section -
+        // including the scripted-battle rows the `3E FF <row>` op selects
+        // (rikuroa row 17 = lone Caruban) - in the variant MAN, their only
+        // carrier.
+        let Some(man_bytes) = self.field_man_payload(index)? else {
             return Ok(None);
         };
         Ok(crate::encounter_man::scene_encounter_from_man(

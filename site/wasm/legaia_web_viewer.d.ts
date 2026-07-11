@@ -529,13 +529,24 @@ export class LegaiaViewer {
     field_scene_ground_quad_count(): number;
     field_scene_ground_uvs(): Uint8Array;
     /**
-     * Select the active environment-pack slot and build its mesh (textured
-     * prims whose pages/CLUTs are resident in the field VRAM; matches the
-     * engine's per-prim filter). Returns the slot, or an error when out of
-     * range. Subsequent `field_scene_mesh_*` calls read the built mesh.
+     * Select the active environment-pack slot and build its mesh: the
+     * textured prims whose pages/CLUTs are resident in the field VRAM
+     * (matches the engine's per-prim filter) **plus** the untextured
+     * `F*`/`G*` vertex-colour prims, merged by [`build_hybrid_env_mesh`]
+     * (the engine-shell's colour-mesh pipeline sibling). Returns the slot,
+     * or an error when out of range. Subsequent `field_scene_mesh_*` calls
+     * read the built mesh.
      */
     field_scene_mesh(slot: number): number;
     field_scene_mesh_cba_tsb(): Uint16Array;
+    /**
+     * Per-vertex `[r, g, b, flag]` bytes for the current mesh's hybrid
+     * flat-colour render (`flag` 255 = textured vertex, sample VRAM; 0 =
+     * untextured vertex, use the RGB). **Empty** when the mesh carries no
+     * untextured prims - the JS side then skips binding the attribute and
+     * the draw behaves exactly like the pure-textured path.
+     */
+    field_scene_mesh_flat_rgba(): Uint8Array;
     field_scene_mesh_indices(): Uint32Array;
     field_scene_mesh_positions(): Float32Array;
     field_scene_mesh_uvs(): Uint8Array;
@@ -1307,6 +1318,7 @@ export interface InitOutput {
     readonly legaiaviewer_field_scene_ground_uvs: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_field_scene_mesh_cba_tsb: (a: number) => [number, number];
+    readonly legaiaviewer_field_scene_mesh_flat_rgba: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_mesh_indices: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_mesh_positions: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_mesh_uvs: (a: number) => [number, number];

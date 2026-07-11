@@ -66,6 +66,7 @@ fn town01_targeted_upload_keeps_majority_of_textured_prims() {
         BuildOptions {
             kind: SceneLoadKind::Field,
             upload_all_tims: true,
+            ..Default::default()
         },
     )
     .expect("build town01 field");
@@ -189,6 +190,7 @@ fn town01_field_mode_skips_battle_only_scene_tmd_stream() {
             // Retail field-load model: DMA every TIM (see the keep-ratio
             // assertion below - the town meshes sample the whole atlas).
             upload_all_tims: true,
+            ..Default::default()
         },
     )
     .expect("build_targeted town01 field");

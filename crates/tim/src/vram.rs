@@ -189,6 +189,22 @@ impl Vram {
         self.write_words(fb_x, fb_y, w_words, h, &halfwords);
     }
 
+    /// Fill every **zero** word of `self` from `base` - i.e. layer a
+    /// boot-resident upload *underneath* an already-built scene VRAM.
+    /// Scene words win wherever the scene build wrote (matching the
+    /// retail boot-first-then-scene DMA order, where a later scene
+    /// upload overwrites boot content); the boot content shows through
+    /// everywhere else. Uses the codebase-wide "0 = unpopulated"
+    /// convention (see [`Self::prim_has_texture_data`] and the VRAM
+    /// parity oracle's incompleteness rule).
+    pub fn underlay(&mut self, base: &Vram) {
+        for (dst, &src) in self.pixels.iter_mut().zip(base.pixels.iter()) {
+            if *dst == 0 {
+                *dst = src;
+            }
+        }
+    }
+
     /// VRAM-to-VRAM rectangle copy: `w x h` halfwords from `(src_x, src_y)`
     /// to `(dst_x, dst_y)` - the libgpu `MoveImage` primitive. A zero `w` or
     /// `h` is a no-op (the retail wrapper rejects those rects); cells falling
@@ -756,6 +772,20 @@ mod tests {
         // Sanity: no panic, no writes.
         vram.write_clut_row(0, 0, &[]);
         assert_eq!(vram.pixel(0, 0), 0);
+    }
+
+    #[test]
+    fn underlay_fills_only_zero_words() {
+        let mut scene = Vram::new();
+        let mut boot = Vram::new();
+        // Scene wrote (5, 300); boot wrote (5, 300) and (6, 300).
+        scene.write_block(5, 300, 1, 1, &0xAAAAu16.to_le_bytes());
+        boot.write_block(5, 300, 1, 1, &0xBBBBu16.to_le_bytes());
+        boot.write_block(6, 300, 1, 1, &0xCCCCu16.to_le_bytes());
+        scene.underlay(&boot);
+        // Scene word wins the overlap; boot shows through the zero word.
+        assert_eq!(scene.pixel(5, 300), 0xAAAA);
+        assert_eq!(scene.pixel(6, 300), 0xCCCC);
     }
 
     #[test]

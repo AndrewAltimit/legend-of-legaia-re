@@ -459,6 +459,10 @@ A live whole-playthrough capture (PCSX-Redux exec-bps on `0x8003CE08`/`0x8003CE3
 
 The executed script bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is **not** the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone `data_field_streaming` PROT entry (the chunk header is the ordinary sub-asset descriptor `[u24 size][u8 type=0x03]`; the payload parses with `legaia_asset::man_section` like any MAN).
 The resident copy byte-matches PROT `0157_rikuroa`'s chunk, and it carries the story-flag `0x142` SET (`51 42`) at four record sites - `P1[10..12]` plus the post-victory cutscene record `P2[50]`, whose C1 gate is `0x142` itself (the self-latching one-shot).
+The carrier's records also pin **how** `P2[50]` runs: the boss stager `P1[3]` SETs the transient marker `0x289` (`52 89`) right before its battle-entry op (`3E FF 11`),
+and the scene-entry system script `P1[0]` tests that marker on the post-battle scene re-entry (`72 89` at `+0x13A`) - its taken arm (`+0x7E6`: fade, BGM, `44 5C`) issues the op-`0x44` spawn of global record `0x5C` = `P2[50]`, C1-gate-checked by the dispatcher.
+The same shape sits one branch level up: `P1[0]`'s first-arrival arm spawns `P2[43]` (`44 55`) while flag `0x2FB` is clear, and that record's own `52 FB` latches it.
+The clean-room engine executes this chain organically - the host re-runs the entry script on the battle-to-field mode edge (`SceneHost::tick`) and the spawned record's own script bytes land `0x142`; disc-gated oracle `engine-core/tests/organic_beat_records_disc.rs`.
 Thirteen retail blocks ship such a **streaming variant MAN** (extraction indices: `dolk2` 70, `rikuroa2` 122, `rikuroa` 157, `rayman` 201, `station` 228, `balden2` 320, `ropeway2` 339, `taiku` 373, `doman` 401, `taiku2` 427, `nilboa2` 648, `edbalden` 792, `eddoman` 817); for the v12-family dungeons (`rikuroa` / `dolk2`, whose own bundle is the MAN-less `count=4` form) the streaming carrier is the scene's **only** MAN.
 
 `system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_core::man_field_scripts::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-core/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
@@ -469,6 +473,33 @@ Every census site therefore carries `GFlagSite::clean`: `true` only when at leas
 The CLI prints `DESYNCED?` on non-clean rows - treat those as byte noise until verified by hand disasm or a live capture.
 This falsified the earlier "`0x482` set by the `other7` pool / cleared by the `edbalden`/`eddoman` epilogue variants" reading: all 37 of `0x482`'s census sites are non-clean text aliases, while the live-confirmed `0x142` writer arms decode clean.
 
+### Door-choreography record families: the `0x00F` busy-mutex + the jouind per-visit band
+
+Two partition-2 record shapes in the Drake-castle cluster (`jouinc` `[43,18,60]`, `jouind` `[.,.,17]`) look
+like story-gate families in the `--p2-gates` output but are **mechanism state, not story state**. Both rest
+on the C1 polarity: a C1 flag **blocks the record while SET** (the one-shot mechanism, see
+[`field-locomotion.md`](field-locomotion.md) kind-1 triggers).
+
+**The `0x00F` busy-mutex family.** `jouinc` P2[2..59] (SJIS names `Ｊ０１`..`Ｊ５８`) and `jouind`
+P2[0..1]/[6..9] are all gated `C1=[0x00F]`, and every record's **first op sets `0x00F`** (`50 0F`) while its
+**last clears it** (`60 0F`) before parking on a `JmpRel -2`. `0x00F` is a transient low system flag (the
+same band as the `0xB`/`0xC`/`0x18` interaction locks), so the C1 gate is a **mutual-exclusion lock**: no
+door record spawns while another is mid-flight, and the running record cannot re-trigger itself. The body is
+door-walk choreography, one record per castle door: an extended nibble-A conditional (`CC <door_actor> A1 0A
+target`) branches on the door actor's local flag 10 (open state), the door actor animates (`CB` Animate) and
+flips its local-flag pose bits, the player channel `0xF8` gets the `ExecMove 6` / `ExecMove 7` / `ExecMove 2`
+walk-through sequence, and the room transition is a `36 00 80 xx` + `36 04 80 00` SceneFade pair (an
+intra-scene reposition, not a `0x3F` scene change). The record names are door ids, not grid coordinates.
+
+**The jouind per-visit door band `0x4BE..0x4C2`.** `jouind` P2[10..13] are gated on the *story-numbered*
+band but the band is **reset by `jouina` P1[0]** (entry script clears all five flags), so it is per-castle-
+visit door/lift state, not chapter-persistent progress: P2[10]/P2[11] (each `C1=[0x4C1]`, i.e. live while
+`0x4C1` is clear) are door choreographies that SET `0x4BE`/`0x4BF` respectively and share a first-use latch
+`0x4C2` (in-body `74 C2` test-skip + `54 C2` set); P2[12] (`C1=[0x4C0,0x4C1]`) is a two-door camera cutscene
+that one-shots itself via `54 C0`; P2[14] SETs `0x4C1`, retiring the whole family for the visit; and P2[13]
+(SJIS name `セット`) re-applies the door-open visuals on entry by branching on `0x4BE`/`0x4BF`. All
+sites are census-clean (`--system-flag-census`, scenes `jouina`/`jouind`/`jouine`).
+
 **Width blindness is the desync's second face.** A missing/wrong sub-op *width* in the disassembler desyncs
 the walk even in clean non-dialogue code, and a site hidden that way looks identical to "no writer exists".
 Flag `549` (`0x225`, the Rim Elm opening one-shot) was exactly this: town01 `P2[3]` SETs it from its own
@@ -476,10 +507,113 @@ script bytes (`52 25` at body `+0x3`, the record its own C1 gates - the `P2[50]`
 but the preceding `4C ED` op (`_DAT_8007BA66` write, retail `param_2 + 3`) had no width in the disassembler,
 so the walk mis-read `ED 01 52` as a phantom Clear and swallowed the SET. Caught live first (reader-watch
 script-PC capture: SET `ra 0x801E3598`, `vm` offset `+0xF`), then fixed statically: the whole `4C 0xE_` sub-op
-width family is now pinned from the retail dispatcher's `param_2 + N` advances (subs 4/5/7/8/9/A/B/C/D/E;
-sub-0/3 exit through the delay-slot-hidden `LAB_801e00bc` and keep their empirical widths). Anchor
+width family is now pinned from the retail dispatcher's `param_2 + N` advances (subs 4/5/7/8/9/A/B/C/D/E),
+and the last two delay-slot-hidden legs (sub-0/3) from the raw asm: both arms (`0x801E306C` / `0x801E3108`,
+case targets confirmed against the outer-0xE jump table at VA `0x801CF008`) advance +3 - sub-0 through the
+`addiu s8,s8,0x3` entry at `0x801E00B8`, sub-3 there or in the `j 0x801E00BC` branch-delay slot. Neither is
+a halt (the decompile's `goto LAB_801e00bc` folds both entries into the no-advance label). Anchor
 `flag_549_writer_is_the_rim_elm_p2_3_self_latch`. Before trusting any "flag F has no script writer" verdict,
 confirm the ops *around* the expected site decode with known widths.
+
+Width blindness also comes at **whole-nibble granularity**: the disassembler once had no decoder at all for
+`0x4C` outer nibbles `9`/`A`/`C`/`D`/`F`, so every record crossing one (e.g. the `CC 06 A1 ..` extended
+nibble-A conditional jumps that pepper the jou-castle door records) desynced exactly like the `4C ED` case,
+hiding thousands of clean flag sites and minting phantom ones from the resync garbage. All sixteen outer
+nibbles now decode (`legaia_asset::field_disasm::decode_subops`), with widths mirrored from the executing
+VM's `menu_ctrl` port (itself pinned from the retail dispatcher's `param_2 + N` advances); nibble `B` is
+genuinely undefined in retail (no `case 0xb` - the default arm halts) and stays a decode error. The pinned
+spine-flag verdicts are unchanged under the full-width walk: `0x482` stays all-alias, and the koin gates
+`0x50A`/`0x5D6` still have no script writer disc-wide.
+
+**Width blindness's third face is a *wrong* width in an already-decoded arm.** The `0x4C` nibble-8
+sub-widths are pinned from the raw asm of the nibble-8 switch (same overlay, base `0x801CE818`): sub-1
+(actor model+anim set) advances `+9` unconditionally (`addiu fp,fp,9` at `0x801E1FC4`), sub-3 (rect tile
+fill) `+7` (exit `addiu fp,fp,7` at `0x801E2130`), sub-5/E/F (halt-acquire) `+5` on acquire (`li s7,5` at
+`0x801E21B8`, `addu fp,fp,s7` in the `beqz` delay slot at `0x801E21D4` - only the predicate-failure path
+halts), sub-6 `+15` (`addiu fp,fp,0xf` in the `jal` delay slot at `0x801E21E8`), sub-0 `+3`, sub-C `+4` -
+matching the executing VM's `menu_ctrl/nibble_8.rs` port. A sub-1 width one byte over is what the
+`vozz P1[7]` `.byte 0x05` decode error was: each `CC 0B 81 ..` op swallowed its follower's lead byte,
+minting a phantom `Clear 0x400` where the retail stream reads the op's 10-byte extended form followed by
+`35 64 00 05` (a BGM op) / `4A 1E 00` (WaitFrames). Under the pinned widths those followers decode in
+place, the phantom rows disappear, and the spine verdicts above hold row-identical (`549`/`0x142` site
+sets unchanged; `0x482` all-alias; `0x50A`/`0x5D6` writer-less, `0x50A` gaining one more clean koin3 TEST
+reader and still no writer).
+
+**ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
+flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
+`a..g`, `Test` leads `0x71..0x77` = `q..w`, each followed by one operand byte. So common English bigrams
+mint flag ops - `ta` = `Test 0x461`, `s,` = `Test 0x32C`, `Sp` = `Set 0x370` - and because every such
+2-byte pair *decodes* without error, a run of prose keeps the walker's error counter at zero and the
+resulting sites carry `clean=true`. The `DESYNCED?` tag catches text only when a non-decodable byte
+happens to precede the site within the resync window. Triage rules that follow from this:
+
+- A flag whose **operand byte is outside printable ASCII** (`< 0x20` or `> 0x7E`) cannot be minted by
+  dialogue - its census rows are trustworthy as sites (e.g. `0x382`, `0x3EF`, `0x304`, `0x5DC`).
+- A flag whose operand byte is a letter/punctuation needs the site's *context window* checked in the
+  record disasm (`--disasm-record`): trust sites embedded in choreography ops (`Camera`, `WaitFrames`,
+  `SceneFade`, `4C`-family, `ExecMove`, emitter runs, or a `JmpRel` branch-arm boundary); reject sites
+  whose neighbours decode as further letter-pair flag ops or `.byte` errors.
+- Mirrored runs are self-proving: a `Set` run over a flag band whose exact mirror `Clear` run appears in
+  the same record (the rikuroa `0x281..0x287`+`0x142` pairs) is real even when the census tags it
+  `DESYNCED?` - the clean tag is conservative in both directions.
+
+Hand-checks that applied these rules: the "chapter-wide readers" the census reports for `0x32C` (~50
+scenes) and `0x461` (~30 scenes) are the `s,` / `ta` bigrams in NPC dialogue - both flags are real but
+scene-local (see [open-rev-eng-threads](../reference/open-rev-eng-threads.md#region-story-flag-gate-families));
+the lone census writer candidate for the Nivora successor gate `0x370` (`doman` variant `P1[15]`) is the
+`Sp` in "Space Bomb" dialogue text, so `0x370` stays writer-less; and the once-reported `Clear 0x400`
+inside `vozz P1[7]` was the nibble-8 sub-1 width bug above - under the pinned width the bytes are the
+op's own operand tail and its `35` BGM follower, and the census row disappears entirely.
+
+**The census self-identifies the ASCII prose aliases.** Every site also carries `GFlagSite::text_alias`
+(CLI marker `TEXT-ALIAS?`, on both the census and `--gflag-partition` rows): `true` when the site's raw
+operand byte is printable ASCII **and** the surrounding `TEXT_ALIAS_WINDOW` (16 bytes each side)
+contains a consecutive printable-ASCII run of at least `TEXT_ALIAS_MIN_RUN` (10) bytes **and** the
+window puts two lowercase letters side by side - the sentence signature prose always has and bytecode
+does not. This mechanizes the triage rules: the `ta`/`Sp`/`s,` bigram rows carry the marker even where
+they decode error-free (`clean=true`), while the runtime-pinned real sites with printable operands stay
+unmarked. The three conditions each carry weight: the town01 `P2[3]` `52 25` self-latch and the rikuroa
+`51 42`/`61 42` ladders render as printable byte-streams themselves (`R.R.R.QB`) but break the run every
+1-5 bytes on a non-printable operand (run length beats printable *density*), and the `0x527..0x52E`
+one-hot selector clears (`65 27 65 28 ..`) sustain a 16-byte printable run but alternate op/operand so
+they never form an adjacent lowercase pair. Like `clean`, the marker is triage, not suppression -
+non-printable operands are alias-immune by construction, mirrored Set/Clear runs stay self-proving, and
+a marked row means "check the record disasm", not "discard". The split it produces on a mixed flag is
+the point: `0x527`'s census population is real one-hot ladder sites (unmarked, clean) *plus* the `e'`
+prose bigram (marked), separated row by row. The advisory direction also occurs: two **runtime-pinned
+real** `0x142` sites (the dolk `P1[26]` Clear and the dolk2 variant-carrier `P1[1]` Set) sit inside
+dialogue-adjacent bytecode and carry the marker - exactly the "check by hand" case, and why the marker
+never suppresses a row.
+
+### The `0x527..0x531` scene-transition scratch band
+
+A story-numbered flag band that is **engine scratch, not story state** - the census surfaces it as SETs in
+nearly every scene once the full-nibble widths decode, which is exactly the signature of a shared idiom
+rather than a beat. Every field scene's `P1[0]` entry script (and the exit-choreography arms of many
+`P0`/`P2` records) repeats two patterns, byte-stereotyped across the disc (hand-verified in `deene P1[0]`
+at body `+0x5B`/`+0x15D`/`+0x8F9` and its siblings):
+
+- **One-hot selector `0x527..0x52E`**: clear all eight (`65 27` .. `65 2E`), then SET exactly one. Each
+  block precedes a `SceneFade` (`36 xx`) / `4C 12` fade sequence, so the selected slot rides a scene
+  transition - a departure-choice latch the arrival script can branch on.
+- **Fade handshake `0x52F`/`0x530`/`0x531`**: `Set 0x52F` → `Test 0x52F` → `Clear 0x52F` ping-pong
+  around `4C CA`/`4C CB` (screen-widget open/close) and `4C 12` fade ops, with `0x530`/`0x531` as the
+  busy/latch pair. Same shape every time; never read outside the idiom.
+
+The conc-family entry scripts keep an adjacent private slot in the same style (`0x522`: set at entry,
+conditionally cleared on `0x3E5`/`0x4EE`). Treat any census row in `0x522..0x531` as this band's
+mechanism traffic - like the `0x00F` door busy-mutex above, it lives in the story-numbered space without
+being story progress.
+
+### Drake-castle interior beat band: jouinb `0x44E..0x450` + the `0x461` record-state flag
+
+`jouinb`'s cutscene records `P2[6..8]` (SJIS door-id names, the same family styling as the jouinc door
+records) each end in a one-shot latch - `P2[6]` SETs `0x44E`, `P2[7]` `0x44F`, `P2[8]` `0x450`
+(`Camera`/`WaitFrames`/`4C CD` choreography then `Set` + park-jump, hand-verified at `P2[6]` body
+`+0x4A3`). `P2[8]` additionally runs an in-body state machine on `0x461`: `Test 0x461` at `+0xBC` (skip
+to the already-done arm at `+0x1BC`, which starts with `Clear 0x461`), a second `Test` at `+0x70C`, and
+`Set 0x461` at `+0xBC2` inside the closing camera choreography. All four flags are jouinb-local; the
+census's wide `0x461` reader list across other scenes is the `ta` bigram (see the alias rules above).
 
 ## BGM lookup table
 

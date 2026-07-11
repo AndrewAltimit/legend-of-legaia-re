@@ -38,6 +38,16 @@
 //! partition-1/2 cutscene player warps are deliberately left vanilla, as are
 //! all plain (actor-context) `MOVE_TO`s - NPC and prop positions never move.
 //!
+//! **A door record is shuffle-eligible only when it carries exactly one player
+//! warp with a real target.** A door-named record carrying *several* player
+//! warps is riding choreography, not a door endpoint: the tower's elevator-2
+//! pair (SJIS `エレ２Ａ`/`エレ２Ｂ`) is a multi-stop elevator whose records
+//! branch between floor tiles and interleave `(0, 0)` sync repositions between
+//! `WaitFrames` - permuting those mid-sequence targets would corrupt the ride
+//! (and could land the player at the map corner). Such records' warps are
+//! counted in [`SceneHouseDoors::unclassified`] and never shuffled; the seven
+//! single-warp elevator endpoint pairs of the same scene stay in the pool.
+//!
 //! Record walk notes: partition-0 records are `[u8 n][n*2 SJIS name][u8 attr]`
 //! then bytecode (NOT the partition-1 `[n][n*2][4-byte header]` shape), and the
 //! walk skips inline-dialogue `0x1F` segments exactly like [`crate::chest`]'s
@@ -102,8 +112,10 @@ pub struct SceneHouseDoors {
     pub decoded: Vec<u8>,
     /// Classified door-warp sites, in record order.
     pub sites: Vec<HouseDoorSite>,
-    /// Partition-0 player warps found but carrying no door-name class
-    /// (story repositions) - counted for audit, never shuffled.
+    /// Partition-0 player warps found but not shuffle-eligible: warps in
+    /// records carrying no door-name class (story repositions), plus warps in
+    /// door-named records that hold several warps or a `(0, 0)` sync target
+    /// (multi-stop elevator choreography). Counted for audit, never shuffled.
     pub unclassified: usize,
 }
 
@@ -238,8 +250,18 @@ fn door_warp_sites(man: &[u8]) -> (Vec<HouseDoorSite>, usize) {
             continue;
         }
         let name_end = (start + 1 + n as usize * 2).min(man.len());
-        match name_class(&man[start + 1..name_end]) {
-            Some(side) => {
+        // Shuffle-eligible = a door-named record carrying exactly ONE player
+        // warp with a real target. Multi-warp door-named records are riding
+        // choreography (the tower's multi-stop elevator 2), and a `(0, 0)`
+        // target is a mid-sequence sync reposition, not a door endpoint.
+        let side = name_class(&man[start + 1..name_end]);
+        let eligible = side.is_some()
+            && warps.len() == 1
+            && warps.first().is_some_and(|&op_pc| {
+                (man.get(op_pc + 2), man.get(op_pc + 3)) != (Some(&0), Some(&0))
+            });
+        match side {
+            Some(side) if eligible => {
                 for op_pc in warps {
                     // Structural re-check before trusting the site.
                     if man.get(op_pc) == Some(&MOVE_TO_EXTENDED)
@@ -254,7 +276,7 @@ fn door_warp_sites(man: &[u8]) -> (Vec<HouseDoorSite>, usize) {
                     }
                 }
             }
-            None => unclassified += warps.len(),
+            _ => unclassified += warps.len(),
         }
     }
     (sites, unclassified)

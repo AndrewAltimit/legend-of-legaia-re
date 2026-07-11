@@ -24,43 +24,6 @@ impl SceneHost {
         self.monster_archive_cache.clone()
     }
 
-    /// First-visit scripted-boss latch. When `name` is a scripted-boss scene
-    /// ([`crate::world::SCRIPTED_SCENE_BOSSES`]) whose gate flag is still clear,
-    /// seed the boss monster's real stats from the PROT 867 archive and arm the
-    /// lone-monster fight ([`crate::world::World::install_boss_encounter`]) so
-    /// the next field step enters it. No-op for every non-boss scene and for a
-    /// boss already beaten (its gate flag latched by
-    /// [`crate::world::World::apply_battle_loot`]).
-    fn arm_scripted_scene_boss(&mut self, name: &str) {
-        // A boss arm belongs to one dungeon visit; clear any left from a prior
-        // visit so a revisit (or a non-boss scene) reflects this entry's
-        // decision. Re-set below only when this scene arms a boss.
-        self.world.boss_formation_id = None;
-        self.world.pending_boss_victory_flag = None;
-        let Some(&(_, monster_id, gate_flag)) = crate::world::SCRIPTED_SCENE_BOSSES
-            .iter()
-            .find(|&&(scene, _, _)| scene == name)
-        else {
-            return;
-        };
-        if self.world.system_flag_test(gate_flag) {
-            return; // first-visit one-shot already fired
-        }
-        // Seed genuine boss stats (HP/attack/EXP/gold) from the disc archive so
-        // the fight + its loot resolve against real values; a read failure
-        // leaves the catalog default in place (the fight still spawns).
-        if let Some(archive) = self.monster_archive_bytes() {
-            let cat = crate::monster_catalog::catalog_from_monster_archive(&archive, &[monster_id]);
-            for def in cat.by_id.into_values() {
-                self.world.monster_catalog.insert(def);
-            }
-            self.ensure_move_power_table();
-        }
-        self.world
-            .install_boss_encounter(monster_id, Some(gate_flag));
-        log::info!("field: armed scripted boss (monster {monster_id}) for scene {name}");
-    }
-
     /// Install the battle-action move-power table onto the world from PROT
     /// entry 0898 (the battle-action overlay), once per host. The monster
     /// special-attack damage path reads it to roll faithful per-move damage;
@@ -418,20 +381,22 @@ impl SceneHost {
                         );
                     }
                     self.world.install_trigger_walk_touch(&binds);
+                    // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban
+                    // stager P1[3]): partition-1 records carrying the
+                    // scripted-battle op `3E FF <row>`, armed as approach /
+                    // interact bindings while their own park gate is clear.
+                    // Runs after the MAN encounter install above (the
+                    // formation-row validator) and after the walk-touch map
+                    // was rebuilt. The record's own script bytes do the rest
+                    // (marker SET -> `trigger_scripted_battle`).
+                    self.world
+                        .install_boss_stagers_from_man(&man_file, &man_bytes);
                 }
                 Err(err) => eprintln!("[scene] field-carrier MAN parse skipped: {err:#}"),
             },
             Some(Err(err)) => eprintln!("[scene] field-carrier MAN payload skipped: {err:#}"),
             _ => {}
         }
-        // Scripted-boss first-visit latch (chapter-1: Mt. Rikuroa's Caruban).
-        // Some dungeon bosses have no on-disc encounter formation - retail
-        // arms them through a battle-id global write in the scene prescript,
-        // gated by a first-visit story flag. When the active scene is a
-        // scripted-boss scene whose gate flag is still clear, seed the boss
-        // stats from the archive and install the lone-monster fight so the
-        // next field step enters it. See `crate::world::SCRIPTED_SCENE_BOSSES`.
-        self.arm_scripted_scene_boss(name);
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only
         // a handful of scenes carry VDF data (8/124 in the retail
@@ -535,6 +500,18 @@ impl SceneHost {
             } else {
                 crate::scene_resources::SceneLoadKind::Field
             };
+            // The boot-resident system-UI bundle (raw PROT TOC entries 0/1)
+            // layers under every scene build - it is what makes CLUT rows
+            // 510/511 + the (960,256) menu-glyph atlas resident for the env
+            // meshes that sample them. Soft-fails to None (the scene still
+            // builds; those prims just drop like they used to).
+            let system_ui = match self.index.system_ui_bundle() {
+                Ok(b) => Some(b),
+                Err(err) => {
+                    eprintln!("[scene] system-UI bundle parse skipped: {err:#}");
+                    None
+                }
+            };
             if let Ok((mut res, _stats)) =
                 crate::scene_resources::SceneResources::build_targeted_with_options(
                     scene,
@@ -550,6 +527,7 @@ impl SceneHost {
                         // ~75% of its prims (missing texture page). Uploading
                         // all TIMs lifts the town keep ratio to ~95%.
                         upload_all_tims: true,
+                        system_ui: system_ui.as_deref(),
                     },
                 )
             {
@@ -1095,7 +1073,29 @@ impl SceneHost {
     /// boot/transition path seeds the overworld the same way the explicit
     /// `--world-map` entry does.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        let was_battle = matches!(self.world.mode, crate::world::SceneMode::Battle);
         let _ = self.world.tick();
+        // Post-battle field return: retail re-enters the field scene after a
+        // battle (game-mode battle -> field reload), which re-runs the
+        // scene-entry system script `P1[0]` from the MAN - the "P2 timeline
+        // re-scan". That re-run is how a post-battle beat record spawns:
+        // rikuroa's `P1[0]` tests the battle-staged marker `0x289` and issues
+        // the op-`0x44` spawn of the post-victory record `P2[50]` (C1-gated on
+        // `0x142`, the self-latching one-shot), whose own script bytes SET the
+        // gate flag. The engine keeps the world state in place across the
+        // battle, so the re-entry's script side is reproduced by reloading the
+        // entry script here.
+        // REF: FUN_8003ab2c (system-script rebuild on field entry)
+        if was_battle && matches!(self.world.mode, crate::world::SceneMode::Field) {
+            let entry_script = self
+                .scene
+                .as_ref()
+                .and_then(|scene| scene.field_man_entry_script(&self.index).ok().flatten());
+            if let Some((bytecode, pc0)) = entry_script {
+                self.world.load_field_script_at(bytecode, pc0);
+                log::info!("field: post-battle return re-ran the scene-entry script");
+            }
+        }
         self.world
             .materialize_actor_spawns(crate::world::FIELD_SPAWN_START_SLOT);
         // Field-VM op-0x44 SPAWN_RECORD: resolve each queued request against

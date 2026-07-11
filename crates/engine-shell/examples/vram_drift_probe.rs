@@ -227,9 +227,11 @@ fn main() -> anyhow::Result<()> {
         } else {
             SceneLoadKind::Field
         };
+        let system_ui = index.system_ui_bundle().ok();
         let options = BuildOptions {
             kind,
             upload_all_tims: true,
+            system_ui: system_ui.as_deref(),
         };
         let (mut resources, _) =
             SceneResources::build_targeted_with_options(&scene, &shared_refs, options)?;

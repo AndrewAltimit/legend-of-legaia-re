@@ -12,7 +12,7 @@ this page covers only the viewer + the capture-side tooling that feeds it.
 ## Contents
 
 - [Layout engine for unplaced slot-1 TMDs](#layout-engine-for-unplaced-slot-1-tmds)
-- [Continent ground heightfield](#continent-ground-heightfield) · [walk-frame placed landmarks](#walk-frame-placed-landmarks)
+- [Continent ground heightfield](#continent-ground-heightfield) · [walk-frame placed landmarks + decorations](#walk-frame-placed-landmarks--decorations)
 - [Distance-cue fog pass](#distance-cue-fog-pass) · [per-kingdom fog colour](#per-kingdom-fog-colour)
 - [Bulk-terrain placement resolver (MAN `0x7F` sentinels)](#bulk-terrain-placement-resolver-man-0x7f-sentinels) · [global-pool placement placeholders](#global-pool-placement-placeholders)
 - [Ocean tile - disc-side asset + 13-frame CLUT animation](#ocean-tile--disc-side-asset--13-frame-clut-animation) · [web-overview shader plumbing](#web-overview-shader-plumbing)
@@ -109,46 +109,95 @@ camera framing (centred on its XZ centroid, sized to its extent); the
 "lock to retail top-view" button still recentres on the captured spawn
 anchor on demand.
 
-The top-down camera renders the map **rotated 180° and then horizontally
-flipped** to match retail's world-map orientation. The `buildTopDownVp` up
-vector is world `+Z` (the 180° rotation: screen-up = world `+Z`,
-screen-right = world `-X`), and the projection then mirrors the horizontal
-screen axis (swapping `ortho`'s left/right), so the net basis is
-screen-up = world `+Z`, screen-right = world `+X`. The mirror reverses
-triangle winding, which is harmless since `renderAssembled` disables
-`CULL_FACE`. The pan controls map drag deltas back through this same
-post-mirror basis.
+The assembled world view renders through a **perspective orbit camera**
+(`buildWorldOrbitVp` in `site/js/webgl-math.js`) - the retail world map is
+genuinely 3D (GTE `RTPT` perspective projection; confirmed by moving the
+retail camera with GameShark), so the viewer matches: the eye orbits a
+ground-plane target on `(yaw, pitch)` spherical angles, with `pitch = 0` the
+straight-down view and larger values tilting toward the horizon. Zoom keeps
+its orthographic meaning - `halfWidth`/`halfHeight` define the visible
+window at the target plane, and the orbit distance is derived from them
+(`dist = halfHeight / tan(fovY/2)`), so wheel zoom and pan speed behave
+identically at any tilt. Controls: left-drag pans (through the yaw-rotated
+ground basis), right-drag or shift+drag orbits, wheel zooms; "lock to
+retail top-view" flattens `pitch` to 0 on the captured spawn anchor and the
+reset button restores the default tilt.
 
-## Walk-frame placed landmarks
+Both cameras render the map **rotated 180° and then horizontally flipped**
+to match retail's world-map orientation. The up vector is world `+Z` (the
+180° rotation: screen-up = world `+Z`, screen-right = world `-X`), and the
+projection then mirrors the horizontal screen axis (`buildTopDownVp` swaps
+`ortho`'s left/right; `buildWorldOrbitVp` negates the perspective matrix's
+X scale), so the net basis at `yaw = 0` is screen-up = world `+Z`,
+screen-right = world `+X`. The mirror reverses triangle winding, which is
+harmless since `renderAssembled` disables `CULL_FACE`. The pan controls map
+drag deltas back through this same post-mirror basis. The ortho
+`buildTopDownVp` path remains the projection for `renderAssembled` callers
+whose camera record carries no `yaw` field (the asset viewer's full-scene
+map mode).
 
-The continent isn't just terrain: the sparse **placed landmarks** (the
-`flags & 0x4` slot-1 pack objects `FUN_8003A55C` stamps on occupied tiles -
-towers, castles, bridges) draw on top of the heightfield, in the **same
-`col*128` world frame** as the ground. This is the same set the native
-`play-window --scene map01 --world-map` render draws over its heightfield.
+## Walk-frame placed landmarks + decorations
 
-`legaia_web_viewer::build_walk_placements` resolves them from the raw
+The continent isn't just terrain: two sparse slot-1 pack-mesh layers draw on
+top of the heightfield, in the **same `col*128` world frame** as the ground -
+the same sets the native `play-window --scene map01 --world-map` render draws
+over its heightfield:
+
+- the **placed landmarks** (the `flags & 0x4` objects `FUN_8003A55C` stamps
+  on occupied tiles - towers, castles, bridges), and
+- the **decoration layer** - walk-visible cells whose record stamps a nonzero
+  `+0x10` mesh with the mesh-drawn flag bit `0x2` and no placed flag: the
+  crossed-quad billboard trees (a forest cluster stamps one tree mesh from
+  dozens of cells), mountain groups, and small props. Cells with a nonzero
+  `+0x10` but no `0x2` bit (the riverbank/system record 408 family) are NOT
+  decorations and must not be stamped - drawing them tiles a wall mesh down
+  every river.
+
+`legaia_web_viewer::build_walk_placements` resolves both from the raw
 PROT.DAT the viewer already holds, sharing the walk `.MAP` + floor-LUT
 resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
 
-- Runs `legaia_asset::field_objects::parse_placements` on the walk `.MAP`.
+- Runs `legaia_asset::field_objects::parse_placements` +
+  `parse_walk_decorations` on the walk `.MAP` and concatenates.
 - Each placement's mesh is the record's `+0x10` field (`pack_index`) - a
   slot into the kingdom's slot-1 TMD pack the `pack_mesh_*` accessors expose.
 - World position is the placement's `(world_x, world_z)` plus a world Y of
   `-lut[floor_nibble] + y_off` (the runtime stores the floor LUT negated), so
-  the landmark sits on the heightfield. This mirrors the native engine's
+  the mesh sits on the heightfield. This mirrors the native engine's
   `resolve_placement_draws` exactly; the disc-gated
   `crates/web-viewer/tests/walk_placements_parity.rs` asserts the viewer's
-  resolved placements equal `Scene::walk_object_placements` + the floor LUT
-  for all three kingdoms (6 / 33 / 25 landmarks for Drake / Sebucus / Karisto).
+  resolved placements equal `Scene::walk_object_placements` +
+  `Scene::walk_decoration_placements` + the floor LUT for all three kingdoms.
 
 The `walk_placement_{count,slots,positions}` WASM accessors hand the list to
 JS, which uploads each referenced pack mesh once and pushes a draw record per
-landmark. `renderAssembled` draws them after the ground with
-`placementModelScaledY(x, y, z, 0, 1)` - scale `1` (the slot-1 meshes are
-already in true world units, unlike the legacy overview-frame icons that
+stamp. `renderAssembled` draws them after the ground with
+`placementModelScaledY(x, -world_y, z, 0, 1)` - scale `1` (the slot-1 meshes
+are already in true world units, unlike the legacy overview-frame icons that
 needed a presentation scale) and the same `(1, -1, 1)` Y-flip the ground and
-the native render use. The "landmarks" checkbox toggles the layer.
+the native render use. The anchor Y **must be negated on the JS side**:
+`placementModelScaledY` flips only the mesh-local geometry, not the
+translation, while the ground bakes `-lut` into its vertices and lands at
+`+lut` (up) under the shared flip. An un-negated anchor mirrors the stamp
+below the surface by `2*(lut - y_off)` - on Drake's mountain cells (LUT up
+to 288) that buried whole cave entrances; the same negation the site
+viewer's full-map path applies. The "landmarks" checkbox toggles the layer. The
+fragment shader's PSX cutout rule (BGR555 `0` with STP `0` discards) is what
+makes the tree quads read as foliage; the old `u_no_discard` silhouette
+fallback is off in the assembled path now that the kingdom's real VRAM image
+is uploaded and CLUTs resolve like retail.
+
+One authored exception (`WALK_STAMP_SUPPRESS` in `world-overview-app.js`):
+placed objects are script-managed - `FUN_8003A55C` runs each spawn's MAN
+interaction script's leading ops inline, so a placed record's resting
+position/visibility isn't necessarily its grid cell (see the placer's MAN
+gate in [`world-map.md`](world-map.md)). The static viewer can't run MAN
+scripts, so stamps known (from retail) not to rest at their grid cell are
+suppressed by `(mesh, world x, world z)` - currently Drake's record-349
+golden bridge, whose grid cell sits over the river at `(10688, 5312)` while
+retail shows the single bridge at the record-441 road crossing
+`(12224, 6336)`. `window.__woWalkStamps` exposes the stamp list actually
+queued per render (the headless-verification hook, like `__woCam`).
 
 **The legacy overview-frame placement layers stay hidden.** The
 `world-overview.json` MAN-table landmarks, live-RAM actor placements, and the
@@ -378,13 +427,23 @@ signature-scans the slot for the animation table. The disc-gated
 test ``crates/web-viewer/tests/ocean_assets.rs`` verifies extraction
 across all three kingdoms.
 
-The WebGL ocean shader (``site/js/webgl-tmd.js``) draws a flat
-quad at ``y=0`` covering the world extent, samples the 4bpp texture
-+ animated 16-entry CLUT, and advances the frame counter on a
-wall-clock timer (frame duration tunable; default ~8 Hz so the
-visible cadence matches retail at roughly normal playback speed).
+The viewer animates the water the way retail does: each animation
+step writes the frame's 16 BGR555 entries **into the VRAM texture at
+`(0, 506)`** - the CLUT row the continent heightfield's water cells
+sample (CBA `0x7E80`; the retail per-frame ocean DMA target, same
+mechanism as the live engine's `advance_ocean_animation`). Every
+water prim in the scene shimmers from that single CLUT write, so
+terrain-embedded water and the open sea stay phase-locked as one
+layer. The wall-clock frame cadence matches the live engine's tuned
+approximation (6 sim ticks at 60 Hz = 0.1 s/frame) and advances even
+when the backdrop pass is toggled off.
+
+The ocean *backdrop* (``site/js/webgl-tmd.js``) is a flat quad at
+``y=0`` extending past the continent so the sea reaches the horizon
+under the orbit camera; its shader samples the same 4bpp texture
+through a 16-entry CLUT texture updated from the same frame counter.
 The plane is drawn before bulk-terrain meshes so depth-test handles
-occlusion.
+occlusion; the "ocean" checkbox toggles only this backdrop pass.
 
 Capture pipeline for the procedural-tint fallback used before the
 disc is loaded:

@@ -887,6 +887,59 @@ Per-scene random-encounter trigger. Engines own one `EncounterSession` per activ
 
 Implementation: [`crates/engine-core::encounter`](../../crates/engine-core/src/encounter.rs).
 
+### Scripted-battle entry (`3E FF <row>`)
+
+The scripted boss fights enter through the field-VM interact op `0x3E` with
+`op0 = 0xFF`: the case-0x3E interact arm (`FUN_801DE840`, field overlay) sets
+the SYSTEM entity's 5-state SM to Activating (`sys_ctx[+0x8A] = 1`), points its
+encounter-record slot at the per-scene MAN formation-table row `op1`
+(`sys_ctx[+0x94] = *(ctrl+0x20) + op1 * *(ctrl+0x5D) + 1`), and requests the
+battle mode switch (`FUN_8003CE08(0xE)`); the entity tick `FUN_801DA51C`'s
+confirm state then copies the row into the battle formation cell `0x8007BD0C`.
+The boss rows sit **outside** every region's rollable
+`[base, base + count)` slice, so they can only enter through this op, and they
+carry a non-zero first header byte (the reader ORs `0x80` into a battle-setup
+flag for them):
+
+| Scene | Beat record | Op | Formation row | Contents |
+|---|---|---|---|---|
+| `garmel` | `P2[12]` (C1 gate `[0x198]`, self-latching) | `3E FF 09` | 9 | lone **Zeto** (`0x4B`) |
+| `garmel` | `P2[11]` (C1 gate `[0x195]`) | `3E FF 08` | 8 | lone **Songi** (`0x4C`) |
+| `rikuroa` | `P1[3]` (the Caruban stager, after its `52 89` marker SET) | `3E FF 11` | 17 | lone **Caruban** (`0x49`) |
+
+This dissolves the "boss battle-id global" hypothesis for these fights: the
+formation is the scene's own MAN encounter-section row, selected by index from
+script bytes (live-capture pinned for Zeto - the formation writer `ra` sits in
+`FUN_801DA51C`'s record-copy body while `0x8007B7FC` stays silent).
+
+The carrier differs per boss. The garmel fights ride **partition-2 beat
+records** (spawned by the gated record dispatch). The Caruban op instead lives
+in a **partition-1 boss-stager placement**: `P1[3]` of the rikuroa streaming
+carrier is a parked special-model placement (SJIS locals ノア/Noa) whose own
+record opens on a `SysFlag.Test 0x142` park gate, stations its actor at the
+nest tile via its own `0x4C 0x51` leg, self-suspends on a `4C 85` halt-acquire,
+and carries the beat body (`52 89` staged-marker SET -> `3E FF 11`). No
+script-side un-halt poke to the stager channel (`B2 10 0A`) exists anywhere in
+the MAN, so the resume is the engine-side approach dispatch: the locomotion
+touch (`FUN_801d5b5c`) / interaction probe (`FUN_801cf9f4`) runs the placed
+actor's record.
+
+Engine port: `World::trigger_scripted_battle(row)`
+([`crates/engine-core::world::encounters`](../../crates/engine-core/src/world/encounters.rs)),
+reached from the field-VM host's `field_interact` arm when `op0 == 0xFF`. The
+formation resolves against the rows `install_man_encounter` registered at scene
+entry (with the PROT 867 archive stats merged; the v12 dungeons resolve their
+encounter section from the streaming variant MAN, their only carrier), and the
+battle enters through the same immediate latch the field-carrier SM uses - no
+field step, no synthetic boss formation id. Boss-stager placements are derived
+from the MAN at scene entry (`man_field_scripts::boss_stager_placements` ->
+`World::install_boss_stagers_from_man`: the `3E FF` site, the park-gate flag
+and the station tile all decode from the record's own bytes) and run on
+approach/interact via `World::run_boss_stager_record` - the whole rikuroa
+chain, staged marker included, lands from script bytes. Oracles:
+[`crates/engine-core/tests/organic_zeto_encounter_disc.rs`](../../crates/engine-core/tests/organic_zeto_encounter_disc.rs),
+[`crates/engine-core/tests/organic_beat_records_disc.rs`](../../crates/engine-core/tests/organic_beat_records_disc.rs).
+
 ## Battle target picker
 
 Drives the post-action target cursor. Parameterised on a `TargetKind` enum constraining valid targets:
@@ -1104,6 +1157,11 @@ to `Battle`. If a battle track is configured (`World::battle_bgm`, set via
 cross-fades to exactly like a field op-`0x35` start.
 - **Battle tick** (`World::live_battle_tick`): wraps `step_battle` with the host-side glue the retail engine performs through its render + animation systems, so the battle resolves from `tick` alone. It folds this frame's `BattleEvent::ApplyArtStrike` damage into target HP; applies a generic physical strike (`apply_basic_attack`, `damage = art_strike_damage_default(attack, defense, 16)`) on the `AttackChain → AttackRecovery` edge when no art strike did; marks zero-HP combatants dead so the SM's wipe scan resolves; clears `ADVANCE_DONE` at `AttackRecovery`; and re-arms the next party attacker at `EndOfAction`. On `StepOutcome::BattleComplete` it calls `World::finish_battle`.
 - **Return** (`World::finish_battle`): on `BattleEndCause::MonsterWipe` it credits loot via `World::apply_battle_loot` (recorded in `World::last_battle_rewards`); on `PartyWipe` it raises `World::game_over`. Either way it ends the encounter session's battle (post-battle grace + suppression), restores the `field_return` actor snapshot, and flips `mode` back to `Field`. When a battle-BGM swap was active it also calls `World::restore_field_bgm`, which queues a `FieldEvent::Bgm{sub_op: 1}` for the stashed field track (or a stop, sub-op 4, if no field track was playing at encounter start) so the director cross-fades back.
+- **Post-battle script re-entry** (`SceneHost::tick`): retail reloads the field scene after every battle, re-running the scene-entry system script `P1[0]` (`FUN_8003ab2c`).
+The host mirrors that on the `Battle -> Field` mode edge by reloading the entry script (`Scene::field_man_entry_script` -> `World::load_field_script_at`).
+This re-run is what dispatches post-battle beat records: rikuroa's `P1[0]` tests the transient staged marker `0x289` (SET by the stager `P1[3]`'s own `52 89` script bytes when the approach dispatch ran the record pre-battle)
+and issues the op-`0x44` spawn of the post-victory record `P2[50]` through the C1-gated dispatch - whose own script bytes SET the progression gate `0x142`.
+No engine code writes the gate flag or the marker (there is no victory latch and no battle-entry stamp); both land from record execution. Disc-gated oracle: `engine-core/tests/organic_beat_records_disc.rs`.
 
 ### Auto-resolve vs player-driven
 

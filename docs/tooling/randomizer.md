@@ -1058,6 +1058,16 @@ same-size 2-byte operand swap recompressed in place (no relocation). On retail:
 class-less partition-0 story warps (e.g. the town01 intro "inside the house"
 reposition) are detected but deliberately left vanilla.
 
+**Shuffle eligibility = exactly one player warp per door record, with a real
+target.** A door-named record carrying *several* player warps is riding
+choreography, not a door endpoint: the tower's elevator-2 pair (`エレ２Ａ`/
+`エレ２Ｂ`) is a multi-stop elevator whose records branch between floor tiles
+and interleave `(0, 0)` sync repositions between `WaitFrames` ops - permuting
+those mid-sequence targets would corrupt the ride (and could land the player at
+the map corner). Those warps are counted in the audit (`unclassified`) and left
+vanilla; the scene's seven single-warp elevator endpoint pairs stay in the
+shuffle pool.
+
 The feature is opt-in and `shuffle`-only (a `random` draw would place the
 player off-map). The read-only `house-doors` listing shows the population per
 scene. The disc-gated `house_door_classifier_real` test pins the per-scene

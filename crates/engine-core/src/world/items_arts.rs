@@ -855,19 +855,14 @@ impl World {
         };
         let new_money = (self.money as i64).saturating_add(gold_credited as i64);
         self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
-        // Scripted-boss victory latch: winning the boss formation installed by
-        // [`Self::install_boss_encounter`] sets its first-visit one-shot system
-        // flag (rikuroa Caruban = `0x142`) so the fight does not re-arm on
-        // re-entry - the engine-side stand-in for the retail cutscene that sets
-        // the gate flag after the boss is beaten. `apply_battle_loot` runs only
-        // on a win (it grants XP/gold), so reaching here IS the victory.
-        if let Some(flag) = self.pending_boss_victory_flag
-            && self.boss_formation_id == Some(formation.formation_id)
-        {
-            self.system_flag_set(flag);
-            self.pending_boss_victory_flag = None;
-            self.boss_formation_id = None;
-        }
+        // NB: no scripted-boss "victory latch" here. The first-visit gate
+        // flag (rikuroa Caruban = `0x142`) lands by EXECUTING the scene's
+        // post-victory partition-2 record: the post-battle field return
+        // re-runs the scene-entry script `P1[0]`, whose staged-marker test
+        // (`0x289`, SET by the stager record `P1[3]`'s own `52 89` when the
+        // approach dispatch ran it pre-battle) spawns `P2[50]` through the
+        // gated record dispatch, and that record's own `51 42` script bytes
+        // set the flag. See `SceneHost::tick`'s battle-return arm.
         BattleRewards {
             xp: xp_total,
             gold: gold_credited,

@@ -510,27 +510,45 @@ pub(super) fn decode_menu_ctrl(
                 },
             )
         }
+        // Nibble 8 - large multi-purpose dispatcher. Widths are the retail
+        // dispatcher's `s8 += N` advances, pinned from the raw asm of the
+        // nibble-8 switch in FUN_801DE840 (overlay 0897, base 0x801CE818):
+        // sub-1 `addiu fp,fp,9` @ 0x801E1FC4, sub-3 exit `addiu fp,fp,7` @
+        // 0x801E2130, sub-5/E/F `li s7,5; addu fp,fp,s7` @ 0x801E21B8/21D4,
+        // sub-6 `addiu fp,fp,0xf` @ 0x801E21E8 (branch-delay slot). They
+        // match the executing VM's port (engine-vm menu_ctrl/nibble_8.rs).
+        // `encoded` counts the sub-op byte + operands, so total = header + N
+        // with N = retail advance - 1. The earlier sub-1 width (encoded 9)
+        // was one byte wide and desynced the walker right after every
+        // `[4C, 0x81, ..]` actor model+anim set (the vozz P1[7]
+        // `.byte 0x05` case).
         8 => {
             let sub = op0 & 0x0F;
             let encoded = match sub {
-                1 => 9,
-                2 | 4 | 0xC => 2,
-                3 => 1, // sub-3: box-fill table halt-acquire (pending in step.rs); halts at PC
-                5 | 0xE | 0xF => 1, // halt-acquire idiom; step.rs halts at PC, no operand bytes consumed
-                6 => 15,
-                7 => 1, // halt at PC; encoded width is 1
+                // Sub-0: actor-allocator halt-acquire `[4C, 0x80, count]`;
+                // retail advances +3 on spawn (the inline child records past
+                // +2 belong to the spawned actor's bytecode pointer).
+                0 => 2,
+                // Sub-1: 9-byte actor model + anim set
+                // `[4C, 0x81, m0..m2, anim_lo, anim_hi, frames_lo, frames_hi]`.
+                1 => 8,
+                2 | 4 => 2,
+                3 => 6, // sub-3: 7-byte rectangular tile fill
+                // Sub-5/E/F: halt-acquire `[4C, op0, p0, p1, p2]`; retail
+                // advances +5 on acquire (only the predicate-failure path
+                // halts at PC) - the linear walk uses the acquire width.
+                5 | 0xE | 0xF => 4,
+                6 => 14, // sub-6: 15-byte actor set position+rotation
+                7 => 1,  // halt at PC; footprint width is the 2-byte op
                 8 => 5,
                 9 => 3, // sub-9: 4-byte total `[4C, 0x89, lo, hi]`
                 0xA => 10,
                 0xB => 4, // sub-B: 5-byte `[4C, 0x8B, type_byte, target_lo, target_hi]`
+                // Sub-C: 4-byte conditional jump on ctx+0x68
+                // `[4C, 0x8C, target_lo, target_hi]`; fall-through width.
+                0xC => 3,
                 0xD => 5, // sub-D: 6-byte char-actor search
-                _ => {
-                    return Err(DisasmError::UnknownSubOp {
-                        pc,
-                        opcode,
-                        sub_op: op0,
-                    });
-                }
+                _ => unreachable!("op0 & 0x0F is at most 0xF"),
             };
             need(encoded)?;
             mk(
@@ -549,13 +567,17 @@ pub(super) fn decode_menu_ctrl(
             // jump when the actor is missing - linear walk uses 5), sub-D = 3
             // (the `_DAT_8007BA66` write - runtime-pinned by the flag-549
             // capture: town01 P2[3] executes `4C ED 01` then `52 25`).
-            // Sub-0 and sub-3 exit via `LAB_801e00bc` (j epilogue, advance in
-            // the branch-delay slot, invisible to the decompile) - their
-            // widths are the empirical desync-minimizing ones.
+            // Sub-0 and sub-3 are pinned from the raw asm (the decompile hides
+            // their advances behind `goto LAB_801e00bc`): sub-0 (0x801E306C)
+            // exits every write path through the `addiu s8,s8,0x3` entry at
+            // 0x801E00B8, sub-3 (0x801E3108) advances +3 either there or in
+            // the `j 0x801E00BC` branch-delay slot - both 3 bytes total,
+            // confirming the previously-empirical widths. Case arms verified
+            // against the overlay-0897 jump table at VA 0x801CF008.
             let sub = op0 & 0x0F;
             match sub {
                 0 => {
-                    // Halt at PC; encoded width = 2 bytes (4C, E0, b1 - state-write).
+                    // 3-way state write; retail advances +3 total (4C, E0, b1).
                     need(2)?;
                     mk(
                         header_size + 2,
@@ -708,7 +730,131 @@ pub(super) fn decode_menu_ctrl(
                 }),
             }
         }
-        outer @ (0xA | 0xB | 0xC | 0xD | 0xF) => Err(DisasmError::UnknownSubOp {
+        // Outer nibbles 9 / A / C / D / F - widths mirror the executing VM's
+        // menu_ctrl port (crates/engine-vm/src/field/step/menu_ctrl/
+        // nibble_9_a.rs / nibble_c.rs / nibble_d.rs), which took them from the
+        // retail dispatcher's `param_2 + N` advances. Before these arms the
+        // disassembler returned UnknownSubOp for all five nibbles, so ANY
+        // record crossing one desynced exactly like the flag-549 `4C ED`
+        // case - notably nibble-A (flag-conditional absolute jump; sub-2
+        // tests a global story flag) and nibble-D sub-3 (SCHEDULE_TIMED_FLAGS,
+        // a timed flag writer). First seen live on jouinc's P2 J-family
+        // records (`CC 06 A1 0A 1D 00` at body +0xE).
+        //
+        // Nibble 9 - fade family. Sub-0/1/2 = 9 total, sub-E = 34-byte
+        // 16-word table copy, sub-F = 2-byte callback registration (halts at
+        // PC until the callback fires; linear walk uses the footprint).
+        // Sub-3..=0xD have no `case` arm in retail (dispatcher returns
+        // `param_2`) - genuinely undefined, kept as UnknownSubOp.
+        9 => {
+            let sub = op0 & 0x0F;
+            let encoded = match sub {
+                0..=2 => 8,
+                0xE => 33,
+                0xF => 1,
+                _ => {
+                    return Err(DisasmError::UnknownSubOp {
+                        pc,
+                        opcode,
+                        sub_op: op0,
+                    });
+                }
+            };
+            need(encoded)?;
+            mk(
+                header_size + encoded,
+                MenuCtrlKind::HighNibble {
+                    outer: 9,
+                    sub,
+                    encoded_size: header_size + encoded,
+                },
+            )
+        }
+        // Nibble A - conditional jump on a flag bit, 5 bytes total
+        // `[4C, 0xAN, bit, lo, hi]` for every sub (sub-0 ctx.flags, sub-1
+        // ctx.local_flags, sub-2 the global story-flag word; sub-3..=0xF test
+        // nothing and always fall through). Bit SET takes the absolute jump
+        // from LE_u16(+2..+3); the linear walk uses the fall-through width.
+        0xA => {
+            need(4)?;
+            mk(
+                header_size + 4,
+                MenuCtrlKind::HighNibble {
+                    outer: 0xA,
+                    sub: op0 & 0x0F,
+                    encoded_size: header_size + 4,
+                },
+            )
+        }
+        // Nibble C - small per-actor / per-scene writes. Encoded widths per
+        // sub (counting the sub-op byte + operands): 0/1/3/8/9/D = 1,
+        // 2/E = 2, 4/5/6/7/F = 3, A/B/C = 4. Sub-5/6 are party-flag
+        // conditional jumps (linear walk uses the fall-through width);
+        // sub-9/D halt at PC (footprint width).
+        0xC => {
+            let sub = op0 & 0x0F;
+            let encoded = match sub {
+                0 | 1 | 3 | 8 | 9 | 0xD => 1,
+                2 | 0xE => 2,
+                4..=7 | 0xF => 3,
+                0xA..=0xC => 4,
+                _ => unreachable!("op0 & 0x0F is at most 0xF"),
+            };
+            need(encoded)?;
+            mk(
+                header_size + encoded,
+                MenuCtrlKind::HighNibble {
+                    outer: 0xC,
+                    sub,
+                    encoded_size: header_size + encoded,
+                },
+            )
+        }
+        // Nibble D - heterogeneous. Encoded widths per sub: 2/6/7/A = 1
+        // (sub-2/6/7 halt at PC; footprint width), D/F = 2, 1/9 = 3,
+        // C/E = 4 (party search; linear walk uses the miss width), 0/4/5 = 5,
+        // 8 = 8, B = 12, 3 = 13 (SCHEDULE_TIMED_FLAGS - the timed
+        // flag-scheduler write the flag census must be able to walk).
+        0xD => {
+            let sub = op0 & 0x0F;
+            let encoded = match sub {
+                2 | 6 | 7 | 0xA => 1,
+                0xD | 0xF => 2,
+                1 | 9 => 3,
+                0xC | 0xE => 4,
+                0 | 4 | 5 => 5,
+                8 => 8,
+                0xB => 12,
+                3 => 13,
+                _ => unreachable!("op0 & 0x0F is at most 0xF"),
+            };
+            need(encoded)?;
+            mk(
+                header_size + encoded,
+                MenuCtrlKind::HighNibble {
+                    outer: 0xD,
+                    sub,
+                    encoded_size: header_size + encoded,
+                },
+            )
+        }
+        // Nibble F - only `op0 == 0xFF` is meaningful in retail; every sub
+        // falls through to the default arm's PC += 2.
+        0xF => {
+            need(1)?;
+            mk(
+                header_size + 1,
+                MenuCtrlKind::HighNibble {
+                    outer: 0xF,
+                    sub: op0 & 0x0F,
+                    encoded_size: header_size + 1,
+                },
+            )
+        }
+        // Nibble B has no `case 0xb` in the retail 0x4C switch (the dump goes
+        // case 0xa -> default -> case 0xc; the default arm prints
+        // SUB_CMD_ERROR and halts at PC) - genuinely undefined.
+        outer @ 0xB => Err(DisasmError::UnknownSubOp {
             pc,
             opcode,
             sub_op: op0 | (outer << 4),

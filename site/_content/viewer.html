@@ -711,6 +711,8 @@
    * result into the TmdRenderer's instanced scene-mesh path - the same
    * plumbing the world-overview page uses for the kingdom continents. */
   const fsCam = { centerX: 0, centerZ: 0, halfWidth: 4000, halfHeight: 4000, pitch: 0.65 };
+  /* Headless-verification entry point (see `__fsState` below). */
+  window.__fsLoad = (label) => startFullSceneLoop(label);
   function startFullSceneLoop(label) {
     if (!viewer) return;
     stopRaf();
@@ -752,8 +754,12 @@
       glRenderer.uploadGround(new Float32Array(0), null, null, new Uint32Array(0));
     }
 
-    /* Upload each referenced env-pack mesh once; slots whose mesh has no
-     * renderable (textured) prims are skipped. */
+    /* Upload each referenced env-pack mesh once. A mesh is the WASM-side
+     * hybrid: VRAM-filtered textured prims plus the untextured flat/gouraud
+     * vertex-colour prims (flat_rgba non-empty), so colour-only props
+     * (fences, rocks, the town01 vertex-colour residue) render instead of
+     * being skipped - the browser sibling of the engine's colour-mesh
+     * pipeline. Slots with no renderable prims of either kind are skipped. */
     const used = new Set();
     const empty = new Set();
     function ensureMesh(ms) {
@@ -763,18 +769,47 @@
       const positions = viewer.field_scene_mesh_positions();
       const indices = viewer.field_scene_mesh_indices();
       if (positions.length === 0 || indices.length === 0) { empty.add(ms); return false; }
+      const flat = viewer.field_scene_mesh_flat_rgba();
       glRenderer.uploadSceneMesh(
         ms, positions, viewer.field_scene_mesh_uvs(),
         viewer.field_scene_mesh_cba_tsb(), indices,
+        flat.length ? flat : null,
       );
       used.add(ms);
       return true;
     }
+    /* Sky-dome / horizon-backdrop classifier. Open maps place their sky as
+     * env-pack meshes too: a hemispherical cloud shell over the whole map
+     * (rikuroa slot 37, town01 slot 84) and kilometre-wide vertical horizon
+     * planes (town01 slot 85 spans 17920 units). Under the retail in-world
+     * camera they read as sky; under this viewer's top-down assembled
+     * camera they draw ON TOP of the terrain and hide the actual map, so
+     * they're excluded from the draw list (and hence the framing AABB).
+     * Calibrated against the disc: a *backdrop plane* is a near-zero-depth
+     * vertical sheet wider than any real wall (town cliffs are thick, and
+     * flat floor slabs are horizontal); a *dome shell* is huge on BOTH
+     * horizontal axes AND tall (interior floor slabs like korb3's 3584-unit
+     * carpets are flat; mountain walls like rikuroa slot 32 are long but
+     * shallow). */
+    function isSkyMesh(aabb) {
+      if (!aabb) return false;
+      const flatPlane = Math.min(aabb.sx, aabb.sz) < 8
+        && Math.max(aabb.sx, aabb.sz) > 3000 && aabb.sy > 600;
+      const domeShell = aabb.sx > 3400 && aabb.sz > 3400 && aabb.sy > 800;
+      return flatPlane || domeShell;
+    }
+    const skySlots = new Set();
+    let skyDrawsHidden = 0;
     const draws = [];
     function pushDraws(slots, pos) {
       for (let i = 0; i < slots.length; i++) {
         const ms = slots[i];
         if (!ensureMesh(ms)) continue;
+        if (isSkyMesh(glRenderer.getMeshAabb(ms))) {
+          skySlots.add(ms);
+          skyDrawsHidden++;
+          continue;
+        }
         /* The WASM returns retail-frame world Y (PSX +Y down: elevated
          * tiles are NEGATIVE). placementModelScaledY flips only the mesh-
          * local geometry, not the translation - while the ground
@@ -822,9 +857,31 @@
 
     const cameraHint = document.getElementById('camera-hint');
     if (cameraHint) cameraHint.style.display = 'none';
-    info.innerHTML = `<b>${label}</b> · full map · ${packCount} env meshes (${used.size} drawn) `
-      + `· ${st.placements} placements · ${st.terrain} terrain tiles · ${st.ground_quads} ground quads `
-      + `· drag pan / wheel zoom / shift-drag tilt · click any entry to exit`;
+    const skyNote = skyDrawsHidden
+      ? ` · ${skyDrawsHidden} sky-backdrop draw${skyDrawsHidden > 1 ? 's' : ''} hidden`
+      : '';
+    const drawnMeshes = new Set(draws.map(d => d.meshId)).size;
+    info.innerHTML = `<b>${label}</b> · full map · ${packCount} env meshes (${drawnMeshes} drawn) `
+      + `· ${st.placements} placements · ${st.terrain} terrain tiles · ${st.ground_quads} ground quads`
+      + `${skyNote} · drag pan / wheel zoom / shift-drag tilt · click any entry to exit`;
+
+    /* Headless-verification hook (same spirit as the world-overview page's
+     * `__woWalkStamps`): the assembled state this load produced, so browser
+     * tests can assert on mesh/draw counts and the computed framing. Not
+     * used by page code. */
+    window.__fsState = {
+      label, packCount,
+      drawn: drawnMeshes,
+      drawnSlots: Array.from(new Set(draws.map(d => d.meshId))).sort((a, b) => a - b),
+      emptySlots: Array.from(empty).sort((a, b) => a - b),
+      skySlots: Array.from(skySlots).sort((a, b) => a - b),
+      skyDrawsHidden,
+      draws,
+      cam: fsCam,
+      status: st,
+      meshAabbs: Object.fromEntries(
+        Array.from(used).map(ms => [ms, glRenderer.getMeshAabb(ms)])),
+    };
 
     /* Pan / zoom / tilt controls (top-down basis: screen-right = world +X,
      * screen-down = world -Z; shift-drag adjusts pitch). */

@@ -48,11 +48,11 @@
 //! `jouinb`'s 13 partition-2 records is UNGATED (empty C1/C2) - unlike
 //! `jouina`'s uniform `C1=[0xF]` busy-latch - so the deep-castle doors are
 //! open once the `jou` castle-door gate (`C2=[0x44D]`, depth oracle) is
-//! passed. Named decoder asymmetry: the partition-1 destination-table scan
-//! (`scene_destinations`) lists only `{jouinc}`, while the resync-capable
-//! partition-2 walker and the strict portal-site join BOTH see the `jouina`
-//! return door - the reverse of the `jou P2[5]` blind spot, where the strict
-//! join was the one that bailed.
+//! passed. The partition-1 destination-table scan (`scene_destinations`),
+//! the resync-capable partition-2 walker, and the strict portal-site join
+//! all agree on `{jouina, jouinc}` - the scan's earlier blind spot on the
+//! `jouina` return door was a `0x4C` sub-op width desync, removed by the
+//! whole-nibble width pinning.
 //!
 //! **Part E - the disc-wide flag census on the new gates.** One-setter facts:
 //! `0x2AF` = vell-only pair (`P1[3]` Test / `P2[11]` Set); `0x63A` = zero
@@ -625,14 +625,15 @@ fn part_d_jouinb_direct_load_and_decode() {
         "all 13 jouinb partition-2 records are ungated"
     );
 
-    // (4) Named decoder asymmetry (reverse of the jou P2[5] blind spot): the
-    // partition-1 destination-table scan lists only jouinc, while BOTH the
-    // partition-2 walker (2) and the strict portal-site join see the jouina
-    // return door.
+    // (4) Full decoder agreement: the partition-1 destination-table scan,
+    // the partition-2 walker (2), and the strict portal-site join all see
+    // both castle doors. (The scan's earlier blind spot on the jouina
+    // return door was a `0x4C` sub-op width desync; the whole-nibble width
+    // pinning removed it.)
     assert_eq!(
         scene_dest_names(&index, "jouinb"),
-        BTreeSet::from(["jouinc".to_string()]),
-        "P1 destination-table scan misses the jouina return door"
+        BTreeSet::from(["jouina".to_string(), "jouinc".to_string()]),
+        "P1 destination-table scan sees both castle doors"
     );
     let scene = Scene::load(&index, "jouinb").expect("load jouinb");
     let (primary, fallback) = scene.field_tile_triggers(&index).expect("jouinb triggers");

@@ -925,6 +925,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn field_interact(&mut self, interact_id: u8, slot: u8) {
+        // `3E FF <row>` - the scripted-battle entry arm. Retail's case-0x3E
+        // interact path installs the per-scene MAN formation-table row `op1`
+        // as the SYSTEM entity's encounter record (`sys_ctx[+0x8A] = 1`,
+        // `sys_ctx[+0x94] = formation_table + op1*stride + 1`) and requests
+        // the battle mode switch; `FUN_801DA51C`'s confirm state then copies
+        // the row into the battle formation cell. This is how the scripted
+        // boss fights enter: garmel's Zeto beat record ends in `3E FF 09`
+        // (row 9 = lone monster `0x4B`), its Songi twin in `3E FF 08`, and
+        // rikuroa's Caruban stager in `3E FF 11` (row 17 = lone `0x49`).
+        if interact_id == 0xFF {
+            self.world.trigger_scripted_battle(slot);
+            return;
+        }
         // The real field-dialogue path: open the interacted actor's own inline
         // interaction-script MES (retail `actor[+0x90]`, keyed by `slot`) and
         // arm/engage a scripted-encounter carrier on that slot (the dialogue-

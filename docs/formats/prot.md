@@ -64,7 +64,11 @@ Hence `resolver idx = extraction index + 2` - any PROT index recovered from a
 `FUN_8003E8A8` argument must subtract 2 to land in extraction space (byte-verified for
 the battle side-band files: TOC indices `0x37F`/`0x380` resolve to extraction entries
 893/894, see [`summon-readef.md`](summon-readef.md)). Raw-TOC entries 0 and 1 cover the
-pre-`init_data` boot-UI region (LBA 3..120) that extraction indexing leaves unindexed.
+pre-`init_data` boot-UI region (LBA 3..120) that extraction indexing leaves unindexed:
+two TIM-packs holding the boot-resident **system-UI bundle** (menu-glyph atlas, sprite
+sheets, cursor parts; uploaded once at boot by `FUN_800198E0` with flat-strip CLUT
+semantics, parser `legaia_asset::system_ui_bundle`) - see
+[`tim-pack.md` § boot-resident system-UI instance](tim-pack.md#boot-resident-system-ui-instance-raw-toc-entries-0-and-1).
 [`CDNAME.TXT`](cdname.md)'s `#define` numbers are authored in this raw-TOC space - the
 extractor's filename labels are shifted +2 relative to the content the defines name; see
 [`cdname.md` § numbering space](cdname.md#numbering-space) for the evidence and the

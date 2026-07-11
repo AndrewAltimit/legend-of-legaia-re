@@ -30,6 +30,7 @@ impl World {
         self.active_formation = None;
         self.battle_end = None;
         self.battle_escaped = false;
+        self.battle_no_escape = false;
         self.battle_guarding = [false; 3];
         // Restore the field track stashed at encounter start (cross-fades
         // back from the battle music). No-op if no swap was active.

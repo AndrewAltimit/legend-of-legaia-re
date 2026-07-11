@@ -434,12 +434,31 @@ impl World {
     /// prologue scene hand-off - `town01` is the destination, and the record's
     /// terminal is the name-entry suspend, not a scene change. Returns `true`
     /// when installed.
+    ///
+    /// The record's C1/C2 header gates are honored (the `FUN_8003BDE0`
+    /// dispatch walk): `P2[3]` lists its own SET, system flag `0x225` (549) -
+    /// the record's opening `52 25` script bytes latch it, so the opening is
+    /// a self-disabling one-shot exactly like the rikuroa post-victory
+    /// record. A world whose flag bank already carries `0x225` (a replay /
+    /// loaded save) refuses the install.
     // REF: FUN_8003BDE0
     pub fn install_town01_opening_timeline(
         &mut self,
         man_file: &legaia_asset::man_section::ManFile,
         man: &[u8],
     ) -> bool {
+        match crate::man_field_scripts::partition2_record_gates(
+            man_file,
+            man,
+            Self::TOWN01_OPENING_TIMELINE_RECORD,
+        ) {
+            Some((c1, c2)) => {
+                if !self.p2_record_gates_pass(&c1, &c2) {
+                    return false;
+                }
+            }
+            None => return false,
+        }
         if !self.install_cutscene_timeline_record(
             man_file,
             man,
@@ -1066,8 +1085,31 @@ impl World {
                     && next_pc <= pc
                     && tl.visited.get(next_pc).copied().unwrap_or(false)
                 {
-                    tl.done = true;
-                    stop = true;
+                    // Camera-apply loop-back (`45 C0 <s16>`): retail's
+                    // sub-`0xC0` arm applies the camera solve and jumps to the
+                    // operand s16 - in the Drake-castle door records that is a
+                    // camera-tracking repeat over the walk-through poke loop,
+                    // and the record's door-state tail (`54 BE`-family latches
+                    // + the `60 0F` mutex release) lives AFTER the op. Since
+                    // the engine's choreography completes synchronously, break
+                    // the loop ONCE per site: fall through past the op (plain
+                    // width 4 / extended 5) so the tail executes. A second
+                    // arrival wraps as usual - the resident-loop completion
+                    // shape (the town01 Mei beat) still terminates.
+                    // REF: FUN_801dab90
+                    let header_size = if opcode_byte & 0x80 != 0 { 2 } else { 1 };
+                    let is_camera_apply = (opcode_byte & 0x7F) == 0x45
+                        && tl
+                            .bytecode
+                            .get(pc + header_size)
+                            .is_some_and(|b| b & 0xC0 == 0xC0);
+                    if is_camera_apply && !tl.camera_loop_broken.contains(&pc) {
+                        tl.camera_loop_broken.push(pc);
+                        next_pc = pc + header_size + 3;
+                    } else {
+                        tl.done = true;
+                        stop = true;
+                    }
                 }
                 if tl.trace_enabled {
                     tl.trace.push(crate::cutscene_timeline::TraceEntry {

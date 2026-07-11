@@ -231,16 +231,105 @@ fn linear_walker_yields_three_instructions_then_stops() {
 
 #[test]
 fn linear_walker_recovers_from_unknown_sub_op() {
-    // 0x4C 0xFF: outer nibble 0xF has no decoder (HighNibble unknown).
-    // Walker should emit the error then advance one byte.
-    let bc = [0x4Cu8, 0xFF, 0x21];
+    // 0x4C 0xB0: outer nibble 0xB has no `case 0xb` in the retail switch -
+    // genuinely undefined, so the decoder errors and the walker advances one
+    // byte to resync.
+    let bc = [0x4Cu8, 0xB0, 0x21];
     let mut walked = LinearWalker::new(&bc, 0);
     let first = walked.next().unwrap();
     assert!(first.is_err(), "first instruction should error");
-    // Walker advanced 1 byte; next instruction is at pc=1 (still inside 0x4C/0xFF/0x21).
+    // Walker advanced 1 byte; next instruction is at pc=1 (still inside 0x4C/0xB0/0x21).
     let second = walked.next().unwrap();
     match second {
         Ok(_) | Err(_) => {}
+    }
+}
+
+#[test]
+fn menu_ctrl_high_nibble_widths_match_the_retail_dispatcher() {
+    // Widths for the outer nibbles 9/A/C/D/F, mirrored from the executing
+    // VM's menu_ctrl port (retail `param_2 + N` advances). Each entry is
+    // (op0, total_size_without_ext_header).
+    let cases: &[(u8, usize)] = &[
+        // nibble 9: fade family 9 total, sub-E 16-word table copy, sub-F.
+        (0x90, 9),
+        (0x92, 9),
+        (0x9E, 34),
+        (0x9F, 2),
+        // nibble A: conditional flag jump, 5 total for every sub.
+        (0xA0, 5),
+        (0xA1, 5),
+        (0xA2, 5),
+        (0xAF, 5),
+        // nibble C.
+        (0xC0, 2),
+        (0xC2, 3),
+        (0xC4, 4),
+        (0xC5, 4),
+        (0xC7, 4),
+        (0xCA, 5),
+        (0xCD, 2),
+        (0xCE, 3),
+        (0xCF, 4),
+        // nibble D. Sub-3 is SCHEDULE_TIMED_FLAGS (14 total) - the timed
+        // flag writer the flag census has to be able to walk.
+        (0xD0, 6),
+        (0xD1, 4),
+        (0xD3, 14),
+        (0xD4, 6),
+        (0xD8, 9),
+        (0xDB, 13),
+        (0xDC, 5),
+        (0xDF, 3),
+        // nibble F: pass-through, 2 total.
+        (0xFF, 2),
+    ];
+    for &(op0, total) in cases {
+        let mut bc = vec![0x4Cu8, op0];
+        bc.extend(std::iter::repeat_n(0u8, 40));
+        let insn = decode(&bc, 0).unwrap_or_else(|e| panic!("op0 {op0:#04X} should decode: {e:?}"));
+        assert_eq!(insn.size, total, "op0 {op0:#04X} width");
+        match insn.info {
+            InsnInfo::MenuCtrl {
+                kind: MenuCtrlKind::HighNibble { outer, sub, .. },
+                ..
+            } => {
+                assert_eq!(outer, op0 >> 4, "op0 {op0:#04X} outer");
+                assert_eq!(sub, op0 & 0x0F, "op0 {op0:#04X} sub");
+            }
+            ref other => panic!("op0 {op0:#04X}: unexpected info {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn menu_ctrl_nibble_9_undefined_subs_error() {
+    // Nibble-9 subs 3..=0xD have no `case` arm in retail - keep erroring.
+    for sub in 3u8..=0xD {
+        let bc = [0x4Cu8, 0x90 | sub, 0, 0, 0, 0];
+        assert!(
+            decode(&bc, 0).is_err(),
+            "nibble-9 sub {sub:#X} should stay undefined"
+        );
+    }
+}
+
+#[test]
+fn menu_ctrl_nibble_a_extended_form_decodes_the_jouinc_door_branch() {
+    // The extended-target form seen on every jouinc J-family door record:
+    // [CC, actor, A1, bit, lo, hi] - 6 bytes total with the ext header.
+    let bc = [0xCCu8, 0x06, 0xA1, 0x0A, 0x1D, 0x00];
+    let insn = decode(&bc, 0).unwrap();
+    assert_eq!(insn.size, 6);
+    assert_eq!(insn.extended, Some(0x06));
+    match insn.info {
+        InsnInfo::MenuCtrl {
+            op0: 0xA1,
+            kind: MenuCtrlKind::HighNibble {
+                outer: 0xA, sub: 1, ..
+            },
+        } => {}
+        ref other => panic!("unexpected info {other:?}"),
     }
 }
 

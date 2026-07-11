@@ -540,13 +540,6 @@ struct PlayWindowApp {
     /// `play` loop's `extracted_root.join(rel)`). `None` in disc-only runs,
     /// where the STR is read straight from the ISO via `disc_path`.
     extracted_root: Option<std::path::PathBuf>,
-    /// The startup extracted-root path, kept unconditionally (unlike
-    /// [`Self::extracted_root`], which is `None` in disc runs) so scene
-    /// rebuilds after a door transition source the shared interior page from
-    /// `PROT.DAT`'s unindexed head gap the same way the boot-time build did.
-    /// May point at a non-existent directory in pure-disc runs - the interior
-    /// page upload soft-fails there, matching the boot build.
-    scene_rebuild_extracted_root: std::path::PathBuf,
     /// Disc image, retained so the in-flow cutscene driver can read a movie's
     /// raw 2352-byte sectors off the ISO and play its interleaved XA audio in
     /// sync with the video. `None` when running from an extracted root (where

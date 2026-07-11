@@ -61,6 +61,7 @@ fn town01_npc_placements_resolve_models_and_anim_records() {
         BuildOptions {
             kind: SceneLoadKind::Field,
             upload_all_tims: false,
+            ..Default::default()
         },
     )
     .expect("build town01 scene resources");
