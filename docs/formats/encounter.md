@@ -322,17 +322,17 @@ retail encounter carries the boss id in a **count-1 entity record**, not the
 The mid-battle cell `[0x4B,0,0,0]` matches the earlier `zeto_*_mid_cast` states
 byte-for-byte; those captures pinned the id, not the mechanism, and their `jou`
 scene attribution is superseded by the live forward-play (runtime scene buffer
-`0x8007050C` reads `garmel` through the whole fight). The clean-room engine's
-`World::install_boss_encounter` (a lone-monster `FormationDef`) still produces
-the same `[0x4B]` cell, so the engine result is unaffected - only the retail
-provenance changes from the battle-id path to the record path.
+`0x8007050C` reads `garmel` through the whole fight). The clean-room engine
+enters the fight through the MAN formation row selected by the beat record's
+`3E FF <row>` op (`World::trigger_scripted_battle`), producing the same
+`[0x4B]` cell from the disc bytes.
 
-Mt. Rikuroa's **Caruban** (id 73 = `0x49`, same band) is a *separate* boss,
-gated behind first-visit flag `0x142` (see [`world::SCRIPTED_SCENE_BOSSES`]);
-its flag gating is independently evidenced, but its formation **mechanism**
-(battle-id vs record path) was inferred from the same in-band assumption the
-Zeto capture just undercut - re-verify it with the same firehose method before
-relying on the `FUN_8005567c` route for Caruban.
+Mt. Rikuroa's **Caruban** (id 73 = `0x49`, same band) is a *separate* boss and
+uses the **same record path**: its carrier is the rikuroa P1[3] boss-stager
+placement (park-gated on first-visit flag `0x142`, `3E FF 11` -> formation
+row 17 = lone `0x49`), which the engine runs on approach
+(`World::run_boss_stager_record`). The earlier "re-verify Caruban's mechanism"
+caveat is settled statically - both bosses are `3E FF` record-path fights.
 
 **Open - does any retail battle write `DAT_8007b7fc`?** Four exhaustive Ghidra
 sweeps across all 47 loaded programs (SCUS + 46 overlays) - `lui`+`addiu`
