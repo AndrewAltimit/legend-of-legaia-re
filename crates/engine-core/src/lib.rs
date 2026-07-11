@@ -91,6 +91,7 @@ pub mod slot_machine;
 pub mod spell_menu;
 pub mod spells;
 pub mod status_screen;
+pub mod stream_file;
 pub mod summon;
 pub mod tactical_arts;
 pub mod tactical_arts_editor;
