@@ -440,6 +440,14 @@ pub struct WalkPlacement {
     pub world_y: i32,
     /// World Z in the `row*128` walk frame.
     pub world_z: i32,
+    /// Authored yaw from the object record's `+0x0A`, PSX angle units
+    /// (`4096` = full revolution) - the Sebucus bridges' quarter-turns and
+    /// the decoration layer's per-tree variety. Retail's pure-Y matrix
+    /// (`FUN_80026988`) maps local `+Z` to `(sin, 0, cos)`; the JS
+    /// renderer's `placementModelScaled*` yaw is the opposite sense, so the
+    /// page applies `rotY = -(rot_y & 0xFFF) * PI / 2048`. The record's
+    /// X/Z tilts are zero on all three retail walk maps and aren't carried.
+    pub rot_y: u16,
 }
 
 /// Resolve the kingdom's walk-frame pack-mesh stamps in the same world frame
@@ -485,6 +493,7 @@ pub fn build_walk_placements(
                 world_x: p.world_x,
                 world_y,
                 world_z: p.world_z,
+                rot_y: p.rot_y,
             })
         })
         .collect();

@@ -6,8 +6,8 @@
  * compileProgram, mulMat4, perspective, translate, rotateY, rotateX,
  * scaleMat, buildMvp, placementModelScaled, placementModelScaledY,
  * placementModelCentered,
- * computeAabb, buildTopDownVp, buildWorldOrbitVp, ortho, lookAt. Must be
- * loaded before webgl-tmd.js.
+ * computeAabb, buildTopDownVp, buildWorldOrbitVp, ortho, lookAt,
+ * attachWorldOrbitControls. Must be loaded before webgl-tmd.js.
  */
 
 const IDENTITY4 = new Float32Array([
@@ -397,3 +397,69 @@ function lookAt(eye, target, up) {
   ]);
 }
 
+
+/* Shared pan / orbit / zoom mouse controls for the assembled world /
+ * full-map orbit camera (buildWorldOrbitVp). Left-drag pans the map
+ * (yaw-aware); right-drag or shift+left-drag pivots (yaw + tilt); wheel
+ * zooms. Used by both the world-overview page and viewer.html's full-map
+ * mode so the two assembled views handle identically.
+ *
+ * `cam` is the live camera record ({ centerX, centerZ, halfWidth,
+ * halfHeight, yaw, pitch }) - mutated in place. `opts`:
+ *   minHalf / maxHalf - wheel-zoom clamp on the half-extents
+ *                       (default 200 / 20000, the kingdom-scale range).
+ *   maxPitch          - orbit tilt clamp in radians (default 1.40,
+ *                       just short of horizon edge-on). */
+function attachWorldOrbitControls(canvas, cam, opts) {
+  const minHalf = (opts && opts.minHalf != null) ? opts.minHalf : 200;
+  const maxHalf = (opts && opts.maxHalf != null) ? opts.maxHalf : 20000;
+  const maxPitch = (opts && opts.maxPitch != null) ? opts.maxPitch : 1.40;
+  let mode = null, lastX = 0, lastY = 0;   /* mode: 'pan' | 'orbit' */
+  canvas.style.cursor = 'grab';
+  canvas.addEventListener('mousedown', e => {
+    mode = (e.button === 2 || e.shiftKey) ? 'orbit' : 'pan';
+    lastX = e.clientX; lastY = e.clientY;
+    canvas.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  /* Right-drag is the orbit gesture; suppress the context menu. */
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  window.addEventListener('mouseup', () => {
+    mode = null;
+    canvas.style.cursor = 'grab';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!mode) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    if (mode === 'orbit') {
+      /* Drag right rotates the view; drag down tilts toward the
+       * horizon. Pitch 0 = straight-down; clamp short of the horizon
+       * so the ground plane never edge-on degenerates. */
+      cam.yaw += dx * 0.008;
+      cam.pitch = Math.max(0, Math.min(maxPitch, cam.pitch + dy * 0.008));
+      return;
+    }
+    /* Pan: camera grabs the map (content follows the cursor).
+     * Convert pixel deltas to world units via the current camera
+     * half-extents, through the yaw-rotated retail screen basis
+     * (at yaw = 0: screen-right = world +X, screen-down = world -Z).
+     * Apply the same letterbox rule the projection uses (expand the
+     * shorter axis to the canvas aspect) so the point under the
+     * cursor tracks the drag exactly. */
+    const aspect = canvas.width / canvas.height;
+    let hw = cam.halfWidth, hh = cam.halfHeight;
+    if (hw / hh < aspect) hw = hh * aspect; else hh = hw / aspect;
+    const sx = (hw * 2) / canvas.width;
+    const sy = (hh * 2) / canvas.height;
+    const cosY = Math.cos(cam.yaw), sinY = Math.sin(cam.yaw);
+    cam.centerX += -dx * sx * cosY - dy * sy * sinY;
+    cam.centerZ += -dx * sx * sinY + dy * sy * cosY;
+  });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const f = Math.exp(e.deltaY * 0.001);
+    cam.halfWidth  = Math.max(minHalf, Math.min(maxHalf, cam.halfWidth  * f));
+    cam.halfHeight = Math.max(minHalf, Math.min(maxHalf, cam.halfHeight * f));
+  }, { passive: false });
+}

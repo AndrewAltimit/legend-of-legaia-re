@@ -662,8 +662,9 @@ class TmdRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     /* Orbit-3D vs legacy ortho top-down: a cam carrying a `yaw` field
-     * opts into the perspective orbit path (world-overview page); carts
-     * without it (viewer.html full-map) keep the ortho projection. */
+     * opts into the perspective orbit path (the world-overview page and
+     * viewer.html's full-map mode both do); cams without it keep the
+     * ortho projection. */
     const vp = (cam && cam.yaw != null)
       ? buildWorldOrbitVp(w, h, worldExtent, cam)
       : buildTopDownVp(w, h, worldExtent, cam);

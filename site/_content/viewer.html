@@ -306,9 +306,9 @@
   </div>
 </section>
 
-<script src="js/webgl-shaders.js"></script>
-<script src="js/webgl-math.js"></script>
-<script src="js/webgl-tmd.js"></script>
+<script src="js/webgl-shaders.js?v=orbit-controls-1"></script>
+<script src="js/webgl-math.js?v=orbit-controls-1"></script>
+<script src="js/webgl-tmd.js?v=orbit-controls-1"></script>
 <script>
 (function () {
   const fileInput = document.getElementById('viewer-file');
@@ -710,7 +710,10 @@
    * floor-height LUT + the walk-ground heightfield); this loop streams the
    * result into the TmdRenderer's instanced scene-mesh path - the same
    * plumbing the world-overview page uses for the kingdom continents. */
-  const fsCam = { centerX: 0, centerZ: 0, halfWidth: 4000, halfHeight: 4000, pitch: 0.65 };
+  /* `yaw` present -> renderAssembled picks the perspective orbit camera
+   * (buildWorldOrbitVp), the same projection the world-overview page uses,
+   * so the shared pan/pivot/zoom controls behave identically here. */
+  const fsCam = { centerX: 0, centerZ: 0, halfWidth: 4000, halfHeight: 4000, yaw: 0, pitch: 0.65 };
   /* Headless-verification entry point (see `__fsState` below). */
   window.__fsLoad = (label) => startFullSceneLoop(label);
   function startFullSceneLoop(label) {
@@ -801,7 +804,7 @@
     const skySlots = new Set();
     let skyDrawsHidden = 0;
     const draws = [];
-    function pushDraws(slots, pos) {
+    function pushDraws(slots, pos, rots) {
       for (let i = 0; i < slots.length; i++) {
         const ms = slots[i];
         if (!ensureMesh(ms)) continue;
@@ -817,19 +820,27 @@
          * renderer's (1,-1,1) model, landing at `+lut` (up). Negate the
          * placement Y so objects sit ON their floor tiles instead of
          * mirrored below them (visible as sunken buildings on elevated
-         * maps like Rim Elm's cliff). */
+         * maps like Rim Elm's cliff).
+         * rotY: the record's authored yaw (+0x0A, PSX 4096-per-rev);
+         * retail's yaw sense is opposite placementModelScaledY's, hence
+         * the negation. */
         draws.push({
           meshId: ms,
           x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
+          rotY: rots ? -(rots[i] & 0xFFF) * Math.PI / 2048 : 0,
           scale: 1.0,
         });
       }
     }
     /* Terrain tiles first (ground layer), placed objects on top - depth
      * test resolves overlap either way; the order just matches the native
-     * draw sequence. */
-    pushDraws(viewer.field_scene_terrain_slots(), viewer.field_scene_terrain_positions());
-    pushDraws(viewer.field_scene_placement_slots(), viewer.field_scene_placement_positions());
+     * draw sequence. Yaw accessors are guarded so a stale cached WASM
+     * still draws (unrotated). */
+    const hasRot = typeof viewer.field_scene_placement_rot_y === 'function';
+    pushDraws(viewer.field_scene_terrain_slots(), viewer.field_scene_terrain_positions(),
+      hasRot ? viewer.field_scene_terrain_rot_y() : null);
+    pushDraws(viewer.field_scene_placement_slots(), viewer.field_scene_placement_positions(),
+      hasRot ? viewer.field_scene_placement_rot_y() : null);
 
     /* Frame the camera on the assembled geometry (ground AABB if present,
      * else the draw cluster). */
@@ -853,6 +864,7 @@
     fsCam.centerZ = (zmin + zmax) / 2;
     fsCam.halfWidth = spanX / 2 + 512;
     fsCam.halfHeight = spanZ / 2 + 512;
+    fsCam.yaw = 0;
     fsCam.pitch = 0.65;
 
     const cameraHint = document.getElementById('camera-hint');
@@ -863,7 +875,7 @@
     const drawnMeshes = new Set(draws.map(d => d.meshId)).size;
     info.innerHTML = `<b>${label}</b> · full map · ${packCount} env meshes (${drawnMeshes} drawn) `
       + `· ${st.placements} placements · ${st.terrain} terrain tiles · ${st.ground_quads} ground quads`
-      + `${skyNote} · drag pan / wheel zoom / shift-drag tilt · click any entry to exit`;
+      + `${skyNote} · drag pan / right-drag pivot / wheel zoom · click any entry to exit`;
 
     /* Headless-verification hook (same spirit as the world-overview page's
      * `__woWalkStamps`): the assembled state this load produced, so browser
@@ -883,36 +895,11 @@
         Array.from(used).map(ms => [ms, glRenderer.getMeshAabb(ms)])),
     };
 
-    /* Pan / zoom / tilt controls (top-down basis: screen-right = world +X,
-     * screen-down = world -Z; shift-drag adjusts pitch). */
-    let dragging = false, lastX = 0, lastY = 0;
-    fresh.style.cursor = 'grab';
-    fresh.addEventListener('mousedown', e => {
-      if (e.button !== 0) return;
-      dragging = true; lastX = e.clientX; lastY = e.clientY;
-      fresh.style.cursor = 'grabbing';
-      e.preventDefault();
-    });
-    window.addEventListener('mouseup', () => { dragging = false; fresh.style.cursor = 'grab'; });
-    window.addEventListener('mousemove', e => {
-      if (!dragging) return;
-      const dx = e.clientX - lastX, dy = e.clientY - lastY;
-      lastX = e.clientX; lastY = e.clientY;
-      if (e.shiftKey) {
-        fsCam.pitch = Math.max(0, Math.min(1.25, fsCam.pitch + dy * 0.005));
-        return;
-      }
-      const sx = (fsCam.halfWidth * 2) / fresh.width;
-      const sy = (fsCam.halfHeight * 2) / fresh.height;
-      fsCam.centerX -= dx * sx;
-      fsCam.centerZ += dy * sy;
-    });
-    fresh.addEventListener('wheel', e => {
-      e.preventDefault();
-      const f = Math.exp(e.deltaY * 0.001);
-      fsCam.halfWidth = Math.max(150, Math.min(40000, fsCam.halfWidth * f));
-      fsCam.halfHeight = Math.max(150, Math.min(40000, fsCam.halfHeight * f));
-    }, { passive: false });
+    /* Shared world-camera controls (same gestures as the world-overview
+     * page): left-drag pans, right-drag / shift-drag pivots (yaw + tilt),
+     * wheel zooms. Wider zoom clamp than the kingdom default - scenes
+     * range from single-room interiors to whole towns. */
+    attachWorldOrbitControls(fresh, fsCam, { minHalf: 150, maxHalf: 40000 });
 
     const tick = () => {
       glRenderer.renderAssembled(draws, ext, fsCam);

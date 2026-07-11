@@ -219,12 +219,20 @@ copy; the runtime region is mutated). Decoded fields:
 | `+0x04` | `i16` | Z offset; `world_z = row*128 - (this - 0x40)` |
 | `+0x06` | `i8`  | footprint column delta to the anchor tile |
 | `+0x07` | `i8`  | footprint row delta to the anchor tile |
+| `+0x08` | `u16` | rotation about world X, PSX angle units (`4096` = full rev); zero on every retail walk `.MAP`, rare prop tilts in towns (`koin2`) |
+| `+0x0a` | `u16` | **rotation about world Y (yaw)** - the authored mesh orientation. The Sebucus island bridges' quarter-turns (`0x400`/`0xC00`) and the walk decoration layer's per-tree variety live here |
+| `+0x0c` | `u16` | rotation about world Z, PSX angle units; zero on every retail walk `.MAP` |
 | `+0x12` | `u16` | flags; bit `0x4` = placed/active, bit `0x800` ORs actor `+0x74` bit `0x10000000` |
 | `+0x1e` | `u8`  | non-zero ORs actor `+0x74` bit `0x40000000` |
 
 The anchor object is created by `FUN_80024c88(pos, …)` (writes `actor+0x14/16/18`), then
 `FUN_8003a55c` writes `actor+0x60 = object_index` and copies record `+0x08/+0x0a/+0x0c`
-into `actor+0x24/+0x26/+0x28`.
+into `actor+0x24/+0x26/+0x28` - the **rotation triple**. The per-actor render dispatcher
+(`FUN_8001ADA4`) hands `actor+0x24` to the angle-triple → GTE-matrix builder
+`FUN_80026988` (each component masked `& 0xFFF`, cos/sin LUT pointers at
+`DAT_8007b7f8`/`_DAT_8007b81c`); for a pure-Y angle the result is the row-major
+`[c 0 s; 0 1 0; -s 0 c]`, mapping local `+Z` to `(sin, 0, cos)` - the same forward
+vector the locomotion integrator walks along.
 
 **This table is the static environment placement** - the visible terrain
 segments, buildings, and props, *not* (only) NPC spawns. Each placed tile
@@ -232,8 +240,8 @@ allocates a static-object actor (shared tick fn `0x8003BC08`); the actor draws
 its mesh from the [`scene_asset_table`](../formats/scene-bundles.md) TMD pack
 through its `+0x44` mesh chain. (Validated against a live `town01` save: object
 id `137` = Vahn's house, anchor tile `(col 38, row 25)` -> `world (4864, _, 3208)`,
-matching the live actor; the near-zero `+0x08..+0x0c` fields are not the mesh
-selector.) NPCs and event triggers ride
+matching the live actor; the `+0x08..+0x0c` fields are the rotation triple, not
+the mesh selector.) NPCs and event triggers ride
 the same map via a sibling path (`FUN_8003a1e4`, partition-1 records, the
 `0x7F,0x7F` parked-sentinel decode); the small actor pool note (about 8 slots,
 `0xD8` stride, list heads `0x8007C34C..0x36C`, player `_DAT_8007c364`) refers to
