@@ -2137,6 +2137,84 @@ export class LegaiaViewer {
         return v2;
     }
     /**
+     * Place mesh handle `mesh` at `(tx, ty, tz)` with `rot_y` radians about
+     * +Y and uniform `scale` - the same triple the page's
+     * `placementModelScaledY` builds its model matrix from.
+     * @param {number} mesh
+     * @param {number} tx
+     * @param {number} ty
+     * @param {number} tz
+     * @param {number} rot_y
+     * @param {number} scale
+     */
+    scene_export_add_instance(mesh, tx, ty, tz, rot_y, scale) {
+        wasm.legaiaviewer_scene_export_add_instance(this.__wbg_ptr, mesh, tx, ty, tz, rot_y, scale);
+    }
+    /**
+     * Register a reusable mesh (the exact streams the page renders:
+     * `positions` f32 xyz PSX-space, `uvs` u8 page-local texel pairs,
+     * `cba_tsb` u16 `[cba, tsb]` pairs, u32 triangle indices, and the
+     * optional hybrid `flat_rgba` side channel - pass an empty array for
+     * pure-textured meshes). Returns the mesh handle for
+     * [`Self::scene_export_add_instance`], or `u32::MAX` when no session
+     * is open.
+     * @param {string} name
+     * @param {Float32Array} positions
+     * @param {Uint8Array} uvs
+     * @param {Uint16Array} cba_tsb
+     * @param {Uint32Array} indices
+     * @param {Uint8Array} flat_rgba
+     * @returns {number}
+     */
+    scene_export_add_mesh(name, positions, uvs, cba_tsb, indices, flat_rgba) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(positions, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(uvs, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray16ToWasm0(cba_tsb, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passArray32ToWasm0(indices, wasm.__wbindgen_malloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ptr5 = passArray8ToWasm0(flat_rgba, wasm.__wbindgen_malloc);
+        const len5 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_scene_export_add_mesh(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5);
+        return ret >>> 0;
+    }
+    /**
+     * Start a fresh export session named `name` (becomes the glTF root
+     * node name). Discards any prior unfinished session.
+     * @param {string} name
+     */
+    scene_export_begin(name) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.legaiaviewer_scene_export_begin(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * Bake the accumulated session into `.glb` bytes and close it. Returns
+     * an empty array when the session is missing or contains no drawable
+     * geometry.
+     * @returns {Uint8Array}
+     */
+    scene_export_finish() {
+        const ret = wasm.legaiaviewer_scene_export_finish(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Supply the 1 MiB VRAM image (`1024*512` LE u16 words - the same bytes
+     * the page uploads to its R16UI texture) the atlas bake reads from.
+     * @param {Uint8Array} bytes
+     */
+    scene_export_set_vram(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.legaiaviewer_scene_export_set_vram(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * @param {number} idx
      */
     set_clut(idx) {
@@ -3125,9 +3203,30 @@ function makeMutClosure(arg0, arg1, f) {
     return real;
 }
 
+function passArray16ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 2, 2) >>> 0;
+    getUint16ArrayMemory0().set(arg, ptr / 2);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArray32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getUint32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
 function passArray8ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 1, 1) >>> 0;
     getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArrayF32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getFloat32ArrayMemory0().set(arg, ptr / 4);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }

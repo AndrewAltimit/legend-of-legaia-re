@@ -2,7 +2,7 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview</h1>
   <p class="lede">
-    Each kingdom's overworld in real-time WebGL 3D, straight from your disc image - no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately. Your disc is cached locally in the browser (shared with the viewer, audio, and monster pages), so it auto-loads on reload - use <em>Forget</em> on the chip to clear.
+    Each kingdom's overworld in real-time WebGL 3D, straight from your disc image - no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately. Your disc is cached locally in the browser (shared with the viewer, audio, and monster pages), so it auto-loads on reload - use <em>Forget</em> on the chip to clear. The <strong>&#11015; Download .glb</strong> button under the canvas exports the assembled continent - terrain heightfield, placed landmarks and trees, textures baked from VRAM - as a single binary <a href="https://www.khronos.org/gltf/">glTF</a> that drops straight into Blender, three.js, or any glTF viewer (same format as the enemy-table model export).
   </p>
 </header>
 
@@ -59,6 +59,7 @@
         </label>
         <button id="wo-lock-topview" type="button" hidden title="Flatten the camera to straight-down and recenter on the kingdom's captured top-view spawn. Same anchor the retail dev menu enters with.">lock to retail top-view</button>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
+        <button id="wo-export-glb" type="button" hidden title="Download the assembled continent - terrain heightfield + placed landmarks and trees, textures baked from VRAM - as a binary glTF. Opens in Blender, three.js, or any glTF viewer.">&#11015; Download .glb</button>
       </div>
       <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D.</div>
     </div>
@@ -246,4 +247,4 @@
 <script src="js/webgl-shaders.js?v=orbit-controls-1"></script>
 <script src="js/webgl-math.js?v=orbit-controls-1"></script>
 <script src="js/webgl-tmd.js?v=orbit-controls-1"></script>
-<script src="js/world-overview-app.js?v=orbit-controls-1"></script>
+<script src="js/world-overview-app.js?v=scene-export-1"></script>

@@ -16,7 +16,7 @@ this page covers only the viewer + the capture-side tooling that feeds it.
 - [Distance-cue fog pass](#distance-cue-fog-pass) · [per-kingdom fog colour](#per-kingdom-fog-colour)
 - [Bulk-terrain placement resolver (MAN `0x7F` sentinels)](#bulk-terrain-placement-resolver-man-0x7f-sentinels) · [global-pool placement placeholders](#global-pool-placement-placeholders)
 - [Ocean tile - disc-side asset + 13-frame CLUT animation](#ocean-tile--disc-side-asset--13-frame-clut-animation) · [web-overview shader plumbing](#web-overview-shader-plumbing)
-- [Camera anchors](#camera-anchors)
+- [Camera anchors](#camera-anchors) · [continent `.glb` export](#continent-glb-export)
 
 ## Layout engine for unplaced slot-1 TMDs
 
@@ -502,6 +502,24 @@ would refine this with an interactively-scrolled centre + a refined
 ``zoom``; walk-view captures (``DAT_801F2B94 == 0``) match the spawn
 anchor, which is good enough as a "lock" target since the dev-menu
 top-view also enters from this anchor before user input scrolls it.
+
+## Continent `.glb` export
+
+The page's "Download .glb" button bakes the assembled world view - the
+continent ground heightfield plus every walk-frame landmark / decoration
+stamp on screen - into a single binary glTF via the WASM
+`scene_export_*` session (`legaia_web_viewer::scene_export`, bake in
+`legaia_asset::scene_gltf`). The page hands the exporter the same mesh
+buffers it uploads to WebGL and the same per-draw
+`(translation, rotY, scale)` triples it builds model matrices from, so
+the file matches the render; the PSX VRAM+CLUT texture indirection is
+baked out into one RGBA atlas (one 256x256 tile per distinct
+`(cba, tsb-page)` pair the vertices sample, NEAREST-sampled, `MASK`
+alpha for the PSX word-0 cutout rule). The animated ocean backdrop is a
+screen effect, not geometry, and is excluded. The asset-viewer page's
+full-map (town) and single-TMD exports ride the same session; the enemy
+table's monster export is the sibling `monster_gltf::export_glb` (it
+additionally carries action animations).
 
 ## See also
 

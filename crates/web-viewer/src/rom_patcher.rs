@@ -516,21 +516,32 @@ pub fn patch_rom(
     if seed_opts.is_active() {
         let rep = apply::randomize_starting_items(&mut patcher, seed_n, &seed_opts)
             .map_err(|e| err(format!("starting-items: {e}")))?;
-        let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-            .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
-        let list: Vec<String> = rep
-            .items
-            .iter()
-            .map(|(id, count)| {
-                let nm = names.as_ref().and_then(|t| t.name(*id)).unwrap_or("?");
-                format!("{count}x {nm}")
-            })
-            .collect();
-        summary.push_str(&format!(
-            "starting-items: new game begins with {} item(s): {}\n",
-            rep.items_set,
-            list.join(", ")
-        ));
+        // With a random fill requested, the seeded bag contains seed-derived
+        // draws - listing their names would spoil the run before it starts.
+        // Only the convenience toggles (which the user picked themselves) are
+        // ever named; a randomized bag is reported count-only.
+        if starting_items > 0 {
+            summary.push_str(&format!(
+                "starting-items: new game begins with {} item(s) (randomized - names hidden, no spoilers)\n",
+                rep.items_set
+            ));
+        } else {
+            let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+                .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+            let list: Vec<String> = rep
+                .items
+                .iter()
+                .map(|(id, count)| {
+                    let nm = names.as_ref().and_then(|t| t.name(*id)).unwrap_or("?");
+                    format!("{count}x {nm}")
+                })
+                .collect();
+            summary.push_str(&format!(
+                "starting-items: new game begins with {} item(s): {}\n",
+                rep.items_set,
+                list.join(", ")
+            ));
+        }
         if rep.all_warps {
             summary.push_str("all-warps: every Door of Wind destination unlocked from the start\n");
         }
@@ -545,18 +556,12 @@ pub fn patch_rom(
                 legaia_rando::starting_bag::DEFAULT_GUARD_BIT,
             )
             .map_err(|e| err(format!("starting-items overflow: {e}")))?;
-            let extra: Vec<String> = overflow
-                .iter()
-                .map(|(id, count)| {
-                    let nm = names.as_ref().and_then(|t| t.name(*id)).unwrap_or("?");
-                    format!("{count}x {nm}")
-                })
-                .collect();
             if bag.applied {
+                // Overflow slots are always part of the random fill - count
+                // only, same no-spoiler rule as the direct seed above.
                 summary.push_str(&format!(
-                    "starting-items: + {} more via the opening scene: {}\n",
-                    overflow.len(),
-                    extra.join(", ")
+                    "starting-items: + {} more via the opening scene\n",
+                    overflow.len()
                 ));
             } else {
                 summary.push_str(&format!(

@@ -18,6 +18,7 @@ mod nav_disc;
 mod player_anm;
 pub mod rom_patcher;
 pub mod runtime;
+mod scene_export;
 mod scene_geom;
 pub mod sentinel_placements;
 pub mod tmd3d;
@@ -239,6 +240,11 @@ pub struct LegaiaViewer {
     /// buffer only retains PROT.DAT, but the full-scene assembler needs the
     /// scene-name -> block map). `None` on raw PROT.DAT / single-TIM loads.
     cdname_text: Option<String>,
+    /// In-progress scene `.glb` export session (see [`scene_export`]). The
+    /// JS pages feed the exact mesh buffers + per-draw transforms they
+    /// render, then `scene_export_finish` bakes the textured glTF. `None`
+    /// when no export is being assembled.
+    scene_export: Option<scene_export::SceneExportState>,
 }
 
 /// VRAM rectangles a single primitive's CBA / TSB lookup will touch.

@@ -67,6 +67,7 @@ pub mod pack;
 pub mod player_anm;
 pub mod scene_asset_table;
 pub mod scene_event_scripts;
+pub mod scene_gltf;
 pub mod scene_scripted_asset_table;
 pub mod scene_tmd_stream;
 pub mod scene_v12_table;
