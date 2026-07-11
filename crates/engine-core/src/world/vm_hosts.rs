@@ -696,6 +696,97 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.screen_fx.panel_move(words);
     }
 
+    // Op-0x43 sub-3..6 register-ramp spawn (retail `FUN_8003C6A4` actor on
+    // the effect list). The record's parameterization is the ported kernel;
+    // the world holds the spawned records ([`World::register_ramps`]).
+    // REF: FUN_8003C6A4 (kernel PORT lives in crate::register_ramp)
+    fn op43_sound_register_ramp(&mut self, sub_op: u8, bytes: [u8; 4], ticks: u16, curve: u16) {
+        if let Some(ramp) = crate::register_ramp::spawn_register_ramp(sub_op, bytes, ticks, curve) {
+            self.world.register_ramps.push(ramp);
+        }
+    }
+
+    // Op-0x43 sub-2 three-actor talk setup - the talk-controller spawn.
+    // Spec: `overlay_cutscene_dialogue_801d2d38.txt` (the 0897 static copy
+    // of this VA is a garbled mid-function fragment). Gate = system flag
+    // `0xD`, the talk-active lock this same function (re)sets on exit:
+    //
+    // - First arm (flag clear): retail collapses the story party list to
+    //   its leader (count `0x80084594` = 1, ids `0x80084598..` =
+    //   `[leader, 0, 0, 0]` from the leader byte `0x80084597`), clears the
+    //   per-character talk flags `0x10/0x11/0x12`, sets flag
+    //   `0x10 + leader`, and zeroes the dialog-busy byte `DAT_8007B648`
+    //   (the engine's busy signal is `current_dialog`, left as-is). The
+    //   fresh controller's SM state 0 (`FUN_801D27E0`) then captures the
+    //   three participants' positions/headings into `0x800845E4` -
+    //   mirrored here at arm time into the session record.
+    // - Re-arm (flag set): restore the three participants' saved positions
+    //   + headings from the table - retail's else-branch loop pairs saved
+    //   record `i` with the new controller's actor `i`.
+    //
+    // Retail's controller countdown `+0x72` subtracts the scene-MAN header
+    // pair (`FUN_8003D064(_DAT_8007B898 + 0x22)`) from `arg_byte`; the
+    // session keeps the raw operand (no MAN header staged on this path).
+    // PORT: FUN_801D2D38
+    // REF: FUN_801D27E0 (controller SM; state 0 = the position capture)
+    // REF: FUN_8003C83C (id resolve), FUN_8003D064 (MAN-header pair read)
+    fn op43_three_actor_talk(&mut self, actor_ids: [u8; 3], arg_word: u16, arg_byte: u8) {
+        // Instruction ids resolve through the actor-list walk (retail
+        // `FUN_8003C83C`) to the placement slots the engine's field-NPC
+        // state is keyed by; an unmatched id passes through raw (tests /
+        // channel-less scenes).
+        fn resolve(world: &World, id: u8) -> u8 {
+            crate::field_channels::resolve_target(&world.field_channels, id)
+                .map(|ci| world.field_channels[ci].placement_index as u8)
+                .unwrap_or(id)
+        }
+        let w = &mut *self.world;
+        let saved = if !w.system_flag_test(0xD) {
+            // First arm: collapse the story party to its leader.
+            let leader = w
+                .party_leader_slot
+                .or_else(|| w.party_actor_slots.first().copied().flatten())
+                .unwrap_or(0);
+            w.party_actor_slots = vec![Some(leader)];
+            w.party_leader_slot = Some(leader);
+            w.system_flag_clear(0x10);
+            w.system_flag_clear(0x11);
+            w.system_flag_clear(0x12);
+            w.system_flag_set(0x10 + u16::from(leader));
+            // Capture the participants' live positions for the paired
+            // restore (retail: controller SM state 0).
+            actor_ids.map(|id| {
+                let slot = resolve(w, id);
+                w.field_npc_positions
+                    .get(&slot)
+                    .map(|&pos| (pos, w.field_npc_headings.get(&slot).copied().unwrap_or(0)))
+            })
+        } else {
+            // Re-arm during an active talk: restore saved positions onto
+            // this instruction's participants, positionally.
+            let saved = w
+                .three_actor_talk
+                .as_ref()
+                .map(|t| t.saved)
+                .unwrap_or_default();
+            for (i, &id) in actor_ids.iter().enumerate() {
+                if let Some((pos, heading)) = saved[i] {
+                    let slot = resolve(w, id);
+                    w.field_npc_positions.insert(slot, pos);
+                    w.field_npc_headings.insert(slot, heading);
+                }
+            }
+            saved
+        };
+        w.system_flag_set(0xD);
+        w.three_actor_talk = Some(ThreeActorTalk {
+            actor_ids,
+            script_id: arg_word,
+            duration: arg_byte,
+            saved,
+        });
+    }
+
     // Shared system flag bank - same fourth-flag-bank at `_DAT_80085758`
     // that move-VM ext sub-ops 0x13 / 0x14 / 0x1C / 0x1D query, plus the
     // 0x5x / 0x6x / 0x7x default-route opcodes.

@@ -502,6 +502,12 @@ pub struct World {
     /// the box placement.
     pub current_dialog: Option<DialogRequest>,
 
+    /// Active 3-actor talk session (field-VM op `0x43` sub-2; retail talk
+    /// controller from `FUN_801D2D38`). Refreshed on every sub-2
+    /// instruction; the paired system flag `0xD` is the retail talk-active
+    /// lock. See [`ThreeActorTalk`].
+    pub three_actor_talk: Option<ThreeActorTalk>,
+
     /// Last `field_interact` request. Cleared by the engine when handled
     /// (set to `None`).
     pub last_field_interact: Option<(u8, u8)>,
@@ -778,6 +784,12 @@ pub struct World {
     /// Renderers composite these 2D overlays above the scene.
     pub screen_fx_frame: crate::screen_fx::ScreenFxFrame,
 
+    /// Live 4-byte register-ramp records spawned by the field-VM op `0x43`
+    /// sub-3..6 (retail `FUN_8003C6A4` actors on the effect list). The
+    /// engine holds the parameterization; the per-frame interpolator handler
+    /// is untraced, so nothing ticks these yet. See [`crate::register_ramp`].
+    pub register_ramps: Vec<crate::register_ramp::RegisterRamp>,
+
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
     /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
@@ -854,6 +866,18 @@ pub struct World {
     /// **assigned** its final balance on cash-out (the retail state-100
     /// commit is an assignment, not a delta).
     pub casino_coins: u32,
+
+    /// The mode-24 minigame door-warp's backup of the active scene name
+    /// (retail `0x8007BAE8`, written by the OTHER-INIT entry `FUN_80025980`
+    /// from `0x80084548`). [`World::minigame_return_warp`] restores it into
+    /// [`World::active_scene_label`] on exit. `None` while no warp is armed.
+    pub minigame_scene_backup: Option<String>,
+
+    /// The mode-24 session-winnings accumulator (retail `_DAT_80084440`,
+    /// zeroed by the field-VM `0x3E` warp arm; the minigame overlays add
+    /// their winnings here). [`World::minigame_return_warp`] commits it
+    /// into [`World::casino_coins`].
+    pub minigame_winnings: u32,
 
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
@@ -1777,6 +1801,7 @@ impl World {
             field_bgm_resume: None,
             battle_bgm_active: false,
             current_dialog: None,
+            three_actor_talk: None,
             last_field_interact: None,
             field_npc_dialog: std::collections::HashMap::new(),
             field_npc_dialog_prologue: std::collections::HashMap::new(),
@@ -1815,6 +1840,7 @@ impl World {
             tile_board_draw_list: Vec::new(),
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
+            register_ramps: Vec::new(),
             dance: None,
             dance_return_mode: SceneMode::Field,
             dance_last_judge: None,
@@ -1830,6 +1856,8 @@ impl World {
             muscle_dome: None,
             muscle_return_mode: SceneMode::Field,
             casino_coins: 0,
+            minigame_scene_backup: None,
+            minigame_winnings: 0,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             battle_guarding: [false; 3],

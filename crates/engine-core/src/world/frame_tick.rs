@@ -777,6 +777,50 @@ impl World {
         machine
     }
 
+    /// Arm the mode-24 minigame door-warp: back up the active scene name and
+    /// zero the session-winnings accumulator, so [`Self::minigame_return_warp`]
+    /// can round-trip back to the departure scene.
+    ///
+    /// Mirrors the two retail halves of the entry: the field-VM `0x3E` warp
+    /// arm zeroes the winnings accumulator `_DAT_80084440`, and the mode-24
+    /// OTHER-INIT entry `FUN_80025980` copies the active scene name
+    /// `0x80084548` into the backup at `0x8007BAE8` before the minigame
+    /// overlay clobbers the field.
+    // REF: FUN_80025980 (scene-name backup half), FUN_801DE840 case 0x3E
+    //      (winnings-accumulator zero half)
+    pub fn arm_minigame_warp(&mut self) {
+        self.minigame_scene_backup = Some(self.active_scene_label.clone());
+        self.minigame_winnings = 0;
+    }
+
+    /// Mode-24 minigame exit / return-warp: restore the backed-up scene name
+    /// into [`Self::active_scene_label`], commit the session winnings into
+    /// the casino coin bank (`casino_coins += minigame_winnings`, saturating
+    /// at the retail `9_999_999` cap), and drop back to [`SceneMode::Field`]
+    /// (retail latches `_DAT_8007B83C = 2`, mode 2 MAIN INIT, whose
+    /// per-scene initializer reloads the restored scene; the engine keeps
+    /// the field state resident underneath its minigame sessions, so
+    /// restoring the label + mode completes the same round trip without a
+    /// reload).
+    ///
+    /// Distinct from the slot overlay's cash-out ([`Self::exit_slot_machine`],
+    /// an *assignment* into the bank): this commit is a delta-add of the
+    /// accumulator (`_DAT_800845A4 += _DAT_80084440`).
+    ///
+    /// The winnings commit runs even when no warp is armed (retail's add is
+    /// unconditional); only the name restore needs the backup.
+    // PORT: FUN_80026018
+    pub fn minigame_return_warp(&mut self) {
+        self.casino_coins = self
+            .casino_coins
+            .saturating_add(self.minigame_winnings)
+            .min(9_999_999);
+        if let Some(name) = self.minigame_scene_backup.take() {
+            self.active_scene_label = name;
+        }
+        self.mode = SceneMode::Field;
+    }
+
     /// Advance the slot machine one frame, reading this frame's pad:
     ///
     /// - **Idle**: a [`Cross`](input::PadButton::Cross) press charges the

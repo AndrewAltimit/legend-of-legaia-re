@@ -490,3 +490,90 @@ fn field_dialogue_accept_on_plain_npc_does_not_arm_battle() {
         "dismissing a plain NPC's dialogue stays in the field"
     );
 }
+
+// --- Op-0x43 sub-2 three-actor talk (FUN_801D2D38) --------------------------
+
+/// Build the 8-byte `[43, 2, a1, a2, a3, lo, hi, b6]` instruction.
+fn talk_op(ids: [u8; 3], word: u16, byte: u8) -> Vec<u8> {
+    let mut op = vec![0x43, 0x02, ids[0], ids[1], ids[2]];
+    op.extend_from_slice(&word.to_le_bytes());
+    op.push(byte);
+    op
+}
+
+#[test]
+fn three_actor_talk_first_arm_collapses_party_and_sets_flags() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.party_actor_slots = vec![Some(1), Some(0), Some(2)];
+    world.party_leader_slot = Some(1);
+    world.field_npc_positions.insert(5, (100, 200));
+    world.field_npc_headings.insert(5, 0x400);
+
+    let op = talk_op([5, 6, 7], 0x3412, 0xAB);
+    let mut ctx = FieldCtx::default();
+    let mut host = FieldHostImpl { world: &mut world };
+    match vm::field::step(&mut host, &mut ctx, &op, 0) {
+        FieldStepResult::Advance { next_pc } => assert_eq!(next_pc, 8),
+        other => panic!("sub-2 should advance 8 bytes, got {other:?}"),
+    }
+
+    // Party collapsed to the leader (retail count=1, ids=[leader,0,0,0]).
+    assert_eq!(world.party_actor_slots, vec![Some(1)]);
+    // Talk lock + per-character flag choreography.
+    assert!(world.system_flag_test(0xD), "talk-active lock set");
+    assert!(!world.system_flag_test(0x10));
+    assert!(world.system_flag_test(0x11), "flag 0x10 + leader(1) set");
+    assert!(!world.system_flag_test(0x12));
+    // Session record captured, including actor 5's live position.
+    let talk = world.three_actor_talk.expect("session installed");
+    assert_eq!(talk.actor_ids, [5, 6, 7]);
+    assert_eq!(talk.script_id, 0x3412);
+    assert_eq!(talk.duration, 0xAB);
+    assert_eq!(talk.saved[0], Some(((100, 200), 0x400)));
+    assert_eq!(talk.saved[1], None, "unseeded participant has no capture");
+}
+
+#[test]
+fn three_actor_talk_rearm_restores_saved_positions() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.party_leader_slot = Some(0);
+    world.field_npc_positions.insert(5, (100, 200));
+    world.field_npc_headings.insert(5, 0x400);
+
+    // First arm captures actor 5's position.
+    let op = talk_op([5, 6, 7], 1, 10);
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
+    }
+    // The talk moves the actor.
+    world.field_npc_positions.insert(5, (900, 900));
+    world.field_npc_headings.insert(5, 0);
+
+    // Re-arm while flag 0xD is up: retail's else-branch restores the saved
+    // table onto the new instruction's participants.
+    {
+        let mut host = FieldHostImpl { world: &mut world };
+        let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
+    }
+    assert_eq!(world.field_npc_positions.get(&5), Some(&(100, 200)));
+    assert_eq!(world.field_npc_headings.get(&5), Some(&0x400));
+    assert!(world.system_flag_test(0xD), "lock stays up");
+}
+
+#[test]
+fn three_actor_talk_first_arm_without_leader_defaults_to_slot_zero() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    // No leader, no party list: retail reads whatever the leader byte holds;
+    // the engine defaults to roster slot 0.
+    let op = talk_op([1, 2, 3], 0, 0);
+    let mut ctx = FieldCtx::default();
+    let mut host = FieldHostImpl { world: &mut world };
+    let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
+    assert_eq!(world.party_actor_slots, vec![Some(0)]);
+    assert!(world.system_flag_test(0x10), "flag 0x10 + leader(0)");
+}
