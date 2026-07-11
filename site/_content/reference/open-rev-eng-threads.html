@@ -339,7 +339,7 @@
       <tr>
         <td>CLUT row 510 population (env meshes' <code>(64,510)</code> CBA)</td>
         <td><span class="tag tag-done">resolved</span></td>
-        <td>Row 510/511 = the flat-strip CLUT band of the <strong>boot-resident system-UI TIM bundle</strong> (the <code>prot::timpack</code> at raw PROT TOC entry 0, below the extraction index space; uploader <code>FUN_800198E0</code> flattens every declared CLUT bank to a <code>w*h &times; 1</code> strip). Byte-identical to the disc in every captured phase, title included; town01 slots 21/26/74 + rikuroa slots 50/51/63 sample atlas strip entries 64..79 and a constant mid-grey texel patch. Residue: the exact boot walker call site + a constant runtime overlay at page rows 456..462.</td>
+        <td>Row 510/511 = the flat-strip CLUT band of the <strong>boot-resident system-UI TIM bundle</strong> (the <code>prot::timpack</code> at raw PROT TOC entry 0, below the extraction index space; uploader <code>FUN_800198E0</code> flattens every declared CLUT bank to a <code>w*h &times; 1</code> strip). Byte-identical to the disc in every captured phase, title included; town01 slots 21/26/74 + rikuroa slots 50/51/63 sample atlas strip entries 64..79 and a constant mid-grey texel patch. The engine pre-pass uploads the bundle (<code>legaia_asset::system_ui_bundle</code>); the once-unattributed page rows 456..462 are the pack's own bare row-patch members (<code>(960, y, 256, 1)</code> blocks, byte-exact vs live captures). Residue: the exact boot walker call site.</td>
         <td><a href="../formats/npc-palette.html#row510-band">npc-palette</a></td>
       </tr>
       <tr>

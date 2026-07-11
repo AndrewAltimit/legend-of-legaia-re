@@ -165,8 +165,13 @@ boot, never evicted, never scene-touched. This is why field/dungeon
 env-pack meshes can reference CBA cells on row 510 (`town01` env slots
 21/26/74, `rikuroa` slots 50/51/63: CBA `(64,510)` = atlas strip
 entries 64..79, texpage `(960,256)`) even though **no scene TIM ever
-uploads that row**. Extractor `legaia_asset::interior_page` reads the
-atlas straight out of `PROT.DAT` and reproduces the strip upload.
+uploads that row**. Parser `legaia_asset::system_ui_bundle` reads both
+raw-entry packs straight out of `PROT.DAT` and reproduces the full
+upload (`legaia_asset::interior_page` remains the atlas-only reader).
+The pack's six 532-byte non-TIM members are bare **row patches** -
+`[u32, u32]` preamble + TIM-style `[u32 bnum][u16 x,y,w,h]` blocks
+declaring `(960, 456..458/460..462, 256, 1)` - that overlay the atlas
+image rows in place (byte-exact vs live captures in every phase).
 
 Contrast with row 479 above: row 479 is per-scene content raced
 through the merge-zeros targeted pass at battle init; rows 510/511 are

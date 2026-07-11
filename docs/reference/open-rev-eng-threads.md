@@ -799,7 +799,7 @@ mednafen capture would close it fully.
 
 ### CLUT row 510 population (boot-resident system-UI strip band)
 
-*Status:* resolved (source + upload semantics + retail residency pinned); residue = the exact boot-time walker call site + a small constant runtime overlay at page rows 456..462
+*Status:* resolved (source + upload semantics + retail residency pinned; engine pre-pass uploads the bundle - `legaia_asset::system_ui_bundle`); residue = the exact boot-time walker call site only
 
 **Question.** `town01` env-pack slots 21/26/74 and `rikuroa` slots 50/51/63 are textured prims whose CBA decodes to `(64, 510)` with texpage `(960, 256)` 4bpp, yet no scene TIM uploads CLUT row 510 - so what populates it at runtime, and are those prims validly textured in retail frames?
 
@@ -808,12 +808,12 @@ The retail per-TIM uploader `FUN_800198E0` uploads *every* TIM CLUT block as a `
 Full row layout: [`formats/npc-palette.md`](../formats/npc-palette.md#boot-resident-strip-band-rows-510511).
 
 **Evidence (save-state census).** Across mednafen library states spanning every phase - title (`title_screen_new_game`), opening cutscene (`new_game_cutscene_intro_a`), town field (`v0_1_pre_battle_tetsu`), dungeon (`keikoku_chest_pre`), house interior (`mei_house_inside`), world map (`sebucus_overworld_resident`), battle (`v0_1_battle_start_tetsu`) - the row-510/511 strips are **byte-identical to the on-disc CLUT data** (256/256 + 64/64 + 256/256 + 48/48 + 16/16 halfwords per strip, every state), and the `(960,256)` image page matches the disc TIM on every row not covered by a later bundle member.
-Compositing the bundle's TIMs in on-disc order (images at declared rects, CLUTs as strips) reproduces the whole retail `(960, 256..511)` band except **six 64-word rows at y=456..458/460..462**, which differ from the disc but are identical across all states (a fixed runtime overlay, unattributed - low value).
+Compositing the bundle's TIMs in on-disc order (images at declared rects, CLUTs as strips) reproduces the whole retail `(960, 256..511)` band - the last six 64-word rows at y=456..458/460..462, initially unattributed, turn out to be **bare row-patch members of the same pack** (raw-entry-0 members 10..15 at `PROT.DAT 0x1A018..0x1AA7C`: a `[u32, u32]` preamble + TIM-style `[u32 bnum][u16 x,y,w,h]` block declaring `(960, y, 256, 1)`, byte-exact vs live captures; parsed as `RowPatch` in `legaia_asset::system_ui_bundle`).
 So the affected prims ARE validly textured in retail: CBA `(64,510)` = atlas strip entries 64..79, and their UVs (u `0..2`, v `240..242`) sample a constant mid-grey texel patch - a flat-material trick through the textured pipeline.
 
 **Falsified along the way:** (a) "row 510 is scene-loaded / a runtime targeted upload" - it is static boot residue, resident before the title screen; (b) "the viewer's CBA decode misreads the row" - the standard `x=(cba&0x3F)*16, y=(cba>>6)&0x1FF` decode is correct and retail-populated; (c) the earlier "menu-glyph atlas is menu-time-resident, not boot-resident" negative (see the retraction in the town01 VRAM section above).
 
-**What would close the residue:** a cold-boot write-watch on the row-510 VRAM upload (the existing `scripts/pcsx-redux/autorun_town01_vram_upload_census.lua` probe) to pin which boot routine issues the `byindex`-style read of raw TOC entries 0/1 and walks the pack into `FUN_800198E0`; plus attribution of the constant y=456..462 overlay.
+**What would close the residue:** a cold-boot write-watch on the row-510 VRAM upload (the existing `scripts/pcsx-redux/autorun_town01_vram_upload_census.lua` probe) to pin which boot routine issues the `byindex`-style read of raw TOC entries 0/1 and walks the pack into `FUN_800198E0`.
 
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels - pause-menu-lineage, not boot
