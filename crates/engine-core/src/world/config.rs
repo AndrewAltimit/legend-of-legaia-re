@@ -155,26 +155,46 @@ pub(crate) const FIELD_PROP_BOX_HALF: i32 = 0x40 + 0x10;
 /// The engine drives NPC legs through a synthetic single-op `0x47` program
 /// (see [`FIELD_NPC_MOTION_PROGRAM`]) whose operand bytes are zero, so the
 /// motion VM cannot decode the base step from the program itself; instead the
-/// engine derives each placement's glide "speed" from the `0x4C 0x51` leg's
-/// byte-+3 operand off the disc ([`field_npc_glide_speed`]) and writes it
-/// into the leg's [`vm::motion_vm::MotionState::speed`]. NB that byte is
-/// pinned as the facing nibble (`4C 51` carries no speed field - see the
-/// `placement_glide_speed` modelling note); the derivation is a stable
-/// per-NPC pacing heuristic, not retail speed data. This constant is the
-/// **fallback** used when a placement carries no decodable motion leg (and for
-/// the actor-VM sprite glide, which has no MAN motion operand): base step 8 =
+/// engine derives each placement's glide speed from the placement's **real
+/// walk-kernel operands** off the disc
+/// ([`crate::man_field_scripts::placement_glide_speed`]: the MAN
+/// tail-section-1 wander/step ops first, then the record's own field-VM
+/// `0x37`/`0x41`/`0x47` yield ops) and writes it into the leg's
+/// [`vm::motion_vm::MotionState::speed`]. This constant is the **fallback**
+/// used when a placement carries no walk-kernel op at all (and for the
+/// actor-VM sprite glide, which has no MAN motion operand): base step 8 =
 /// `field_npc_glide_speed(2)`, so a placement with the default base-step
 /// selector paces exactly as this stand-in did.
 pub(crate) const FIELD_NPC_MOTION_SPEED: u16 = 8;
 
+/// The shared retail walk-step formula: `numerator >> (2 + bits)` world units
+/// per frame, floored at 1 so a leg always makes progress (the engine choice;
+/// retail's integer division reaches 0 for `bits >= 6`, which no authored
+/// stream uses). Both walk kernels step on this ladder:
+///
+/// - `FUN_8003774C` (field-VM yield ops, interpreted in place from the
+///   pointer parked at actor `+0x94`): per-frame magnitude
+///   `numerator * dt / (4 << bits)` - `numerator = 0x80` for ops
+///   `0x37`/`0x47`, **`0x40` for op `0x41`** (the `li a1,0x40` / `li a1,0x80`
+///   split at `0x80037908`), `dt = _DAT_1f800393` taken at 1 (one engine tick
+///   = one retail update; the frame-step scalar is modelled by tick cadence,
+///   not by scaling the step).
+/// - `FUN_80038158` (MAN tail-section-1 motion streams): the directional
+///   steps `0x03`/`0x19`/`0x20`, the pad-echo step `0x06`, and the AABB
+///   wander `0x18` all move `0x80 >> (2 + bits)` per frame.
+// PORT: FUN_8003774C (ops 0x37/0x41/0x47 step magnitude)
+// REF: FUN_80038158 (ops 0x03/0x06/0x18/0x19/0x20 step magnitude)
+pub(crate) fn field_npc_walk_step_speed(numerator: u16, bits: u8) -> u16 {
+    (u32::from(numerator) >> (2 + u32::from(bits & 0xF))).max(1) as u16
+}
+
 /// Derive a field-NPC per-frame glide speed from a base-step selector - the
 /// retail encoding of the walk-kernel ops' own operands (`b2 & 7` for 0x47,
-/// `(op0>>5 & 4)|(op1>>6)` for 0x37/0x41). The engine feeds it the low 3 bits
-/// of the `0x4C 0x51` leg's byte-+3 operand (the facing nibble - a pacing
-/// heuristic; see [`FIELD_NPC_MOTION_SPEED`] and
-/// `docs/subsystems/field-locomotion.md`).
+/// `(op0>>5 & 4)|(op1>>6)` for 0x37/0x41, `b1 & 0xF` for the tail-section-1
+/// steps 0x03/0x19/0x20, the scattered AABB-byte high bits for 0x06/0x18).
+/// The `0x80`-numerator arm of [`field_npc_walk_step_speed`].
 ///
-/// Retail `FUN_8003774C` (ops 0x37/0x41/0x47) glides at
+/// Retail `FUN_8003774C` (ops 0x37/0x47) glides at
 /// `_DAT_1f800393 × 0x80 / (4 << bits)` units per frame, i.e. per-frame
 /// magnitude `0x80 >> (2 + bits)` with the per-frame delta scalar
 /// `_DAT_1f800393 = 1` (its cold-field value). The `+0x72` player speed
@@ -193,7 +213,7 @@ pub(crate) const FIELD_NPC_MOTION_SPEED: u16 = 8;
 /// Clamped to a minimum of 1 so a leg always makes progress (retail never
 /// stalls a glide at 0).
 pub(crate) fn field_npc_glide_speed(base_step_bits: u8) -> u16 {
-    (0x80u16 >> (2 + (base_step_bits & 0x7) as u32)).max(1)
+    field_npc_walk_step_speed(0x80, base_step_bits & 0x7)
 }
 
 /// Motion-VM bytecode for one field-NPC walk leg: a single `0x47`

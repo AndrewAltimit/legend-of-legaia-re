@@ -62,7 +62,13 @@ The default mode follows a target actor slot at a configured distance + height.
 - **Interaction-prologue runs**: when the opt-in field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::op4c_n5_sub1_npc_run`) starts the interacted actor's walk leg. These run through the dialogue - they are the interaction's choreography.
 - **Actor-VM `start_motion`** (op `0x09` `MotionAt`, retail `FUN_800358c0`): `World::start_actor_motion` records the glide target and steps the actor's sprite position toward it through the same pursue kernel (`World::tick_actor_motions`).
 
-The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape - write the target, reset the glide cursor - and the per-frame consumer is this VM. The retail speed encoding is pinned: the ops carry their own base-step selector (`(op0>>5 & 4)|(op1>>6)` for 0x37/0x41, `b2 & 7` for 0x47) and are the field-VM record's yield-class bytes interpreted in place from the pointer parked at actor `+0x94` - see [field-locomotion.md](field-locomotion.md#npc-glide-speed) + [script-vm.md](script-vm.md) § 0x37-0x42. Per-actor field-VM channels are not modelled - the engine drives the decoded waypoint list, pacing each placement by the `placement_glide_speed` heuristic (see the field-locomotion modelling note).
+The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape - write the target, reset the glide cursor - and the per-frame consumer is this VM.
+The retail speed encoding is pinned: the ops carry their own base-step selector (`(op0>>5 & 4)|(op1>>6)` for 0x37/0x41, `b2 & 7` for 0x47; numerator `0x80`, or `0x40` for 0x41)
+and are the field-VM record's yield-class bytes interpreted in place from the pointer parked at actor `+0x94` -
+see [field-locomotion.md](field-locomotion.md#npc-glide-speed) + [script-vm.md](script-vm.md) § 0x37-0x42.
+Per-actor field-VM channels are not modelled - the engine drives the decoded waypoint list, pacing each placement by its **real decoded walk-kernel step**
+(`man_field_scripts::placement_glide_speed`: the bound tail-section-1 stream's wander/step ops first, then the record's own yield ops,
+then the facing-nibble heuristic only for placements with no walk-kernel op at all).
 
 ## The second motion VM - `FUN_80038158`
 
@@ -89,8 +95,15 @@ The only disc source of this bytecode is **MAN tail-section 1** (parser
   2*count` and the enable byte at `+0x8A` (bit 0 gates the tick). Actor
   resolution: `0xF8` = player (`_DAT_8007C364`), `0xFB` = first
   `_DAT_8007C34C` node ticking the world-map entity SM `0x801DA51C`, else
-  the `_DAT_8007C354` field actor whose `+0x50` equals the MAN partition-1
-  placement index.
+  the `_DAT_8007C354` field actor whose `+0x50` equals the binding byte.
+  The placement spawner `FUN_8003A1E4` writes `+0x50 = N0 +
+  placement_index` (`N0` = the MAN's partition-0 record count, passed down
+  from the `FUN_8003AEB0` header decode), so a binding resolves to
+  partition-1 placement `actor_id - N0` - the id space is offset by the
+  object records, NOT the raw partition-1 index (town01: `N0 = 36`, binding
+  `0x30` = placement 12). Engine decoders:
+  `man_field_scripts::placement_wander_step` /
+  `motion_default_move_writes`.
 - The stream opens with a **variant header table** `[u16 selector][s16
   delta]...`: the interpreter preamble picks the first variant whose
   `DAT_80085758` flag is set (`0xFFFF` = default/terminator); bytecode starts
@@ -108,11 +121,42 @@ The only disc source of this bytecode is **MAN tail-section 1** (parser
 |---|---|
 | 1 | `0x01` end/loop-back |
 | 2 | `0x05` wait, `0x10`/`0x11`/`0x12` bit set/clear/wait |
-| 3 | `0x02` anim/timer, `0x03`/`0x19`/`0x20` directional step, `0x04` facing ramp, `0x07` SET flag, `0x08` CLEAR flag, `0x09` post u16 to the `DAT_8007B6D8` ring (`FUN_80035B50`), `0x0A`/`0x0B` actor-flag +/-`0x1000000`, `0x0E` model swap, `0x0F` tile teleport, `0x17` pause-table pair |
+| 3 | `0x02` anim/timer, `0x03`/`0x19`/`0x20` directional step, `0x04` facing ramp, `0x07` SET flag, `0x08` CLEAR flag, `0x09` post u16 to the `DAT_8007B6D8` ring (`FUN_80035B50`), `0x0A`/`0x0B` actor-flag +/-`0x1000000`, `0x0E` model swap, `0x0F` tile teleport, `0x17` default-move pair write |
 | 4 | `0x0D` facing ramp + tween channel |
 | 5 | `0x06` pad-echo step, `0x14`/`0x15`/`0x16` tween installs, `0x18` AABB wander |
 | 8 | `0x0C` glide-channel install |
 | 13 | `0x13` `FUN_80058490` call |
+
+### Walk-op speed encoding
+
+The walk ops step on the same `0x80 >> (2 + bits)` per-frame ladder as the
+`FUN_8003774C` yield ops, with the base-step selector in their own
+operands: the directional steps `0x03`/`0x19`/`0x20` carry `bits` in
+operand byte 1's low nibble (byte 1's high nibble = the heading-LUT index,
+byte 2 & 0x3F × `4 << bits` = the frame budget; `0x20` halves the budget),
+while the pad-echo step `0x06` and the AABB wander `0x18` scatter a 4-bit
+selector over their four operand bytes' high bits (`(b1&0x80)>>4 |
+(b2&0x80)>>5 | (b3&0x80)>>6 | b4>>7`; the low 7 bits are the pad-echo
+offsets / wander-box tiles). This is the disc source of a town NPC's
+ambient wander pace; the engine decode is
+`man_field_scripts::placement_wander_step` →
+`World::field_npc_glide_speeds` (default variant first, then the gated
+variants in table order).
+
+### Op `0x17` - the per-actor default-move table
+
+`[0x17, move_id, anim_id]` writes `0x801C6470[actor(+0x50) * 4] = move_id`
+/ `+1 = anim_id`, guarded `+0x50 < 0x8C` (the table's 0x8C-record arena;
+`0x8C` is also the "unset" sentinel the variant-swap preamble reseeds a
+record to). The walk/anim ops (`0x02`, `0x03`/`0x19`/`0x20`, `0x18` phase
+1/3) reload the actor's requested-move pair `+0x88`/`+0x5C` from the
+record while it is set, and the interaction motion-pause kick
+`FUN_8003C9AC` (ported at `legaia_engine_vm::motion_pause`) sweeps the same
+table on the touch-event post. The engine statically harvests each
+stream's first `0x17` per bound placement
+(`man_field_scripts::motion_default_move_writes` →
+`World::field_npc_default_moves`), keyed by placement slot (`actor_id -
+N0`).
 
 No op writes `DAT_8007B7FC`-class globals - op-`9` only posts to the 4-slot
 `DAT_8007B6D8` ring, so the battle-id write has no motion-VM analogue.

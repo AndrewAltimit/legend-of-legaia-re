@@ -37,6 +37,7 @@ impl World {
         // previous scene's routes / in-flight legs / door events leak.
         self.field_npc_routes.clear();
         self.field_npc_glide_speeds.clear();
+        self.field_npc_default_moves.clear();
         self.field_npc_motions.clear();
         self.field_walk_touch.clear();
         self.field_boss_stagers.clear();
@@ -122,9 +123,12 @@ impl World {
                 if !route.is_empty() {
                     self.field_npc_routes.insert(slot, route);
                     // Faithful per-leg glide speed from the placement's real
-                    // `0x4C 0x51` motion-op base-step operand (retail
-                    // `FUN_8003774C` `4 << bits`), replacing the flat stand-in;
-                    // absent = the leg falls back to `FIELD_NPC_MOTION_SPEED`.
+                    // walk-kernel operands: the bound tail-section-1
+                    // wander/step ops (`FUN_80038158` `0x80 >> (2+bits)`)
+                    // first, then the record's own field-VM yield ops
+                    // (`FUN_8003774C` `numerator / (4 << bits)`), then the
+                    // facing-nibble heuristic as a last resort; absent = the
+                    // leg falls back to `FIELD_NPC_MOTION_SPEED`.
                     if let Some(speed) =
                         crate::man_field_scripts::placement_glide_speed(man_file, man, &placement)
                     {
@@ -141,6 +145,15 @@ impl World {
                 self.field_walk_touch
                     .insert(slot, ((placement.world_x, placement.world_z), event));
             }
+        }
+
+        // Per-NPC default-move pairs: the motion op-`0x17` writes into the
+        // retail per-actor table at `0x801C6470`, statically harvested from
+        // the MAN's tail-section-1 streams. Feeds the interaction
+        // motion-pause kick (`legaia_engine_vm::motion_pause`) a real table.
+        // REF: FUN_80038158 (case 0x17), FUN_8003C9AC
+        for (slot, pair) in crate::man_field_scripts::motion_default_move_writes(man_file, man) {
+            self.field_npc_default_moves.insert(slot, pair);
         }
 
         // Seed the per-actor field-VM channels from the same placement partition
