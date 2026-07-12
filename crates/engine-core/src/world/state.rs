@@ -375,8 +375,8 @@ pub struct World {
     /// the field VM has signalled that the next-game-mode global should
     /// transition to game mode 26 (StrInit) with the given index. Engines
     /// drain this after [`World::tick`] to actually open the corresponding
-    /// `MV*.STR` (use [`crate::cutscene::FmvIndex::str_filename`] for the
-    /// retail mapping). `None` between triggers.
+    /// `MV*.STR` (use [`crate::cutscene::fmv_index_to_str_filename`] for
+    /// the retail mapping). `None` between triggers.
     pub pending_fmv_trigger: Option<i16>,
 
     /// Pending scripted-encounter install (field-VM bare arm-encounter op

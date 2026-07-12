@@ -819,7 +819,8 @@ fn op_4c_n_d_sub_f_scene_byte_write() {
 fn op_4c_n_e_sub_2_fmv_trigger_decodes_fmv_id() {
     // The 6-byte form `[4C, 0xE2, lo, hi, _, _]` triggers an FMV
     // (game-mode 26 / StrInit). The fmv_id is the s16 at +1..+3
-    // and selects an entry in the runtime FMV-state table.
+    // and selects a 32-byte slot in the FMV dispatch table at
+    // `0x801D0A6C` (retail ids 0..=8).
     let bytecode = [0x4Cu8, 0xE2, 0x03, 0x00, 0, 0];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();

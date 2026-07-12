@@ -98,11 +98,13 @@ fn every_scene_fmv_trigger_decodes_from_disc() {
     assert!(scenes_with_man > 50, "MAN extraction regressed");
 
     // The pinned per-scene movie assignment (one trigger op per scene, ids
-    // literal in the bytecode). fmv_id 0 (the MV1 intro) fires from the
-    // title/new-game path, not a scene MAN; fmv_id 5 (the cut MOV15 slot)
-    // appears in no scene script. town0d / uru / jouine fire ids 6..=8,
-    // which resolve to the dev-only `\DATA\MOV.STR` path - vestigial
-    // triggers for movies cut from the retail disc.
+    // literal in the bytecode). Under the corrected 32-byte-stride dispatch
+    // table (`legaia_asset::fmv_dispatch`) every id below is a retail
+    // movie: 1 = MV2, 2..=4 = MV3 segments 1..3, 6 = MV4, 7 = MV5,
+    // 8 = MV6. fmv_id 0 (the MV1 intro) fires from the title/new-game
+    // path, not a scene MAN; fmv_id 5 (MV3 segment 4, the one slot whose
+    // post-play hand-off stays in the current scene) appears in no scene
+    // MAN script.
     let expected: &[(&str, &[i16])] = &[
         ("0004_town01", &[1]),
         ("0095_garmel", &[2]),

@@ -129,7 +129,7 @@ patching an instruction. Useful Ghidra anchors.
 |---|---|
 | `0x801C70F0` | In-RAM PROT TOC - populated at boot by `FUN_8003E4E8`. Different stride from on-disc. |
 | `0x801C6EA4` | Current world / scene struct pointer. |
-| `0x801C6ED8` | CD-XA streaming-clip table (8-byte records, indexed by clip id). `+0x0` = 6-byte BCD-MSF disc start address, `+0x4` = length/valid word (zero = empty slot). Read by `FUN_8003D53C` (XA streaming-clip start) via `msf_to_lba` (`FUN_8005C42C`). |
+| `0x801C6ED8` | CD-XA streaming-clip table: 34 slots of `[CdlLOC][u32 byte_len]` (8-byte stride, indexed by clip id; `+0x0` = 4-byte BCD-MSF `CdlLOC` disc start, `+0x4` = length, zero = empty slot). **Slot `i` = file `XA<i+1>.XA`** - lengths byte-exact vs the disc. Read by the XA cue starter `FUN_8003D53C` (via `msf_to_lba`, `FUN_8005C42C`), which drives the CdSync-callback state machine `FUN_8003D764` (`CdlSetfilter {file 1, chan}` per cue). See [`cutscene.md`](../subsystems/cutscene.md#xa-channel-selection). |
 | `0x801C6460` | 64-entry × u16 scratchpad slot table. Written by op 0x4C nibble-C sub-A; adjusted by sub-B / sub-C. |
 | `0x801C66A0` | 64-slot ramp scheduler pool (stride 0x20). |
 | `0x8007C018` | TMD pointer table (`idx * 4` stride). Sole writer is `FUN_80026B4C`. All populated entries (`[0..DAT_8007BB38]`) are post-fixup Legaia TMDs. |

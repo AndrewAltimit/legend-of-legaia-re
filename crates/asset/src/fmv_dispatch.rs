@@ -46,7 +46,7 @@
 //!
 //! This is the read side that lets the engine source its `fmv_id -> MVn.STR`
 //! mapping from the user's own disc instead of a hard-coded table; the disc-gated
-//! `fmv_dispatch_real` test pins the five retail entries.
+//! `fmv_dispatch_real` test pins the nine retail entries.
 
 /// Load base of the STR/MDEC overlay (PROT 0970), from the static-overlay map.
 pub const STR_OVERLAY_BASE_VA: u32 = 0x801C_E818;

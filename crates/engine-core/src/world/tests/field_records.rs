@@ -111,14 +111,16 @@ fn field_op_4c_e2_records_pending_fmv_trigger() {
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    // `[0x4C, 0xE2, 0x03, 0x00, 0, 0]` → fmv_id 3 → MV4.STR.
+    // `[0x4C, 0xE2, 0x03, 0x00, 0, 0]` → fmv_id 3 → MV3.STR segment 2
+    // (the deroa/chitei2 clip; dispatch table `0x801D0A6C`, 32-byte
+    // slots).
     let bytecode = vec![0x4C, 0xE2, 0x03, 0x00, 0, 0];
     world.load_field_script(bytecode);
     let _ = world.tick();
     assert_eq!(world.pending_fmv_trigger, Some(3));
     let events = world.drain_field_events();
     assert!(events.contains(&FieldEvent::FmvTrigger { fmv_id: 3 }));
-    assert_eq!(fmv_index_to_str_filename(3), Some("MOV/MV4.STR"));
+    assert_eq!(fmv_index_to_str_filename(3), Some("MOV/MV3.STR"));
     assert_eq!(STR_INIT_GAME_MODE, 26);
 }
 
@@ -131,7 +133,7 @@ fn field_op_4c_e2_records_pending_fmv_trigger() {
 fn field_fmv_trigger_drives_field_cutscene_field_flow() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    // fmv_id 3 → MV4.STR (a playable slot).
+    // fmv_id 3 → MV3.STR segment 2 (a playable retail slot).
     world.load_field_script(vec![0x4C, 0xE2, 0x03, 0x00, 0, 0]);
 
     // Frame 1: op fires, records the pending trigger; still in Field.
@@ -146,7 +148,7 @@ fn field_fmv_trigger_drives_field_cutscene_field_flow() {
     assert_eq!(world.mode, SceneMode::Cutscene);
     assert_eq!(world.pending_fmv_trigger, None);
     assert_eq!(world.active_fmv(), Some(3));
-    assert_eq!(world.active_fmv_str_filename(), Some("MOV/MV4.STR"));
+    assert_eq!(world.active_fmv_str_filename(), Some("MOV/MV3.STR"));
 
     // While the FMV plays the field VM is suspended (no further field
     // stepping); ticking keeps the world in Cutscene until the host ends
@@ -168,11 +170,12 @@ fn field_fmv_trigger_drives_field_cutscene_field_flow() {
 fn field_fmv_trigger_cut_path_is_a_noop() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    // fmv_id 7 → slots 5..=11 are dev-only cut paths (no retail STR).
-    world.load_field_script(vec![0x4C, 0xE2, 0x07, 0x00, 0, 0]);
+    // fmv_id 10 → slots 9..=22 are dev-only cut paths (no retail STR;
+    // retail ids run 0..=8, dispatch table `0x801D0A6C` stride 0x20).
+    world.load_field_script(vec![0x4C, 0xE2, 0x0A, 0x00, 0, 0]);
 
     let _ = world.tick(); // op fires
-    assert_eq!(world.pending_fmv_trigger, Some(7));
+    assert_eq!(world.pending_fmv_trigger, Some(10));
     let _ = world.tick(); // pending consumed
     assert_eq!(
         world.mode,

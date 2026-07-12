@@ -2,7 +2,8 @@
 
 /// PSX-virtual address of the FMV-id global written by the
 /// field-VM op `0x4C 0xE2` handler at `0x801E30E4`. The runtime
-/// FMV-state selector at `0x801CECA0` reads this as a `s16`.
+/// dispatch selector (`lh` at `0x801CEC94`, `sll v0,v0,0x5` at
+/// `0x801CEC9C` in `FUN_801CEA3C`) reads this as a `s16`.
 pub const FMV_ID_ADDR: u32 = 0x8007_BA78;
 
 /// PSX-virtual address of the next-game-mode global. Every

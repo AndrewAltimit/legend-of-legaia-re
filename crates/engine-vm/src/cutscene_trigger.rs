@@ -6,8 +6,9 @@
 //! The retail STR FMV play loop (`FUN_801CF098` in the cutscene-overlay
 //! slice) only runs when the global game-mode word at `_DAT_8007B83C`
 //! equals `0x1A` and the FMV index at `_DAT_8007BA78` (a `s16`) selects
-//! one of the six runtime FMV-state struct slots at `0x801D0A6C` (see
-//! [`docs/formats/str-fmv-table.md`]).
+//! one of the 23 32-byte dispatch slots at `0x801D0A6C` (nine retail,
+//! `fmv_id 0..=8`; selector `sll v0,v0,0x5` in the master dispatch
+//! `FUN_801CEA3C` - see [`docs/formats/str-fmv-table.md`]).
 //!
 //! A backward sweep of every Ghidra dump in the corpus surfaces
 //! **three** writers of `_DAT_8007B83C = 0x1A`:
@@ -34,19 +35,20 @@
 //! the JT dispatch chain `0x4C → byte1 >> 4 == 0xE → byte1 & 0xF == 0x2`,
 //! and Ghidra's reference manager does not promote that to a call edge.
 //!
-//! ## Implication for the seven mid-game scenes
+//! ## Per-scene triggers vs the seven-label list
 //!
-//! `town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e` all
-//! kick off mid-game STR FMVs. Since [`FIELD_VM_OP_4C_E2`] is the only
-//! field-VM-driven trigger and the title-screen attract path is
-//! hardcoded to `fmv_id = 0`, those seven scenes **must** trigger via
-//! the same `0x4C 0xE2` op. The byte sequence is not statically
-//! present in their on-disc PROT entries, however - a bytewise scan
-//! across the corpus surfaces only one in-range trigger
-//! (`PROT[371] taiku`, `fmv_id=5`). The conclusion is that the
-//! seven scenes' field-VM bytecode is reconstructed at scene-load
-//! time from the field-pack preamble's runtime-projected slot (the
-//! same indirection blocking the §2.5 / `field-pack` byte-level map).
+//! The seven CDNAME labels the FMV overlay carries at `0x801CE8AC`
+//! (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`)
+//! are the **post-play return scenes**: after playback the master
+//! dispatch (`FUN_801CEA3C`) copies the label for the just-played
+//! mid-game `fmv_id` into the next-scene name global `0x80084548`.
+//! They are NOT the trigger-scene set. The actual `0x4C 0xE2` trigger
+//! ops live LZS-compressed inside each trigger scene's MAN (which is
+//! why a raw bytewise PROT scan misses them);
+//! `man_field_scripts::scene_fmv_triggers` (engine-core) recovers the
+//! literal `fmv_id` operands for all eight trigger scenes (`town01`,
+//! `garmel`, `deroa`, `chitei2`, `dohaty`, `town0d`, `uru`, `jouine`),
+//! pinned by the disc-gated `scene_fmv_triggers_disc` test.
 //!
 //! ## Provenance
 //!
@@ -80,10 +82,10 @@ pub struct FmvTriggerSite {
 pub enum FmvIdSource {
     /// The handler decodes the FMV id from the field-VM bytecode
     /// (specifically `decode_u16_be(pc+1)` via `FUN_8003CE9C`). The
-    /// id range observed in retail is `0..=8` (the runtime
-    /// FMV-state table at `0x801D0A6C` carries 12 slots; the
-    /// per-STR FMV trigger corpus pins the first nine as
-    /// debug-menu-reachable).
+    /// id range observed in retail is `0..=8` - exactly the nine
+    /// retail slots of the 23-slot dispatch table at `0x801D0A6C`
+    /// (every movie on the disc); the per-STR FMV trigger corpus
+    /// pins all nine as debug-menu-reachable.
     BytecodeOperand,
     /// The handler stores a literal value. Currently the only
     /// observed literal is `0`, which selects `MV1.STR` (the intro).
@@ -196,8 +198,9 @@ pub const FMV_TRIGGER_SITES: &[FmvTriggerSite] =
 /// only fires when this equals [`STR_INIT_MODE`].
 pub const GAME_MODE_ADDR: u32 = 0x8007_B83C;
 
-/// `_DAT_8007BA78` (the active FMV index, `s16`). Selects a 64-byte
-/// runtime FMV-state slot at `0x801D0A6C + index * 64`.
+/// `_DAT_8007BA78` (the active FMV index, `s16`). Selects a 32-byte
+/// dispatch slot at `0x801D0A6C + index * 0x20` (selector
+/// `sll v0,v0,0x5` at `0x801CEC9C`).
 pub const FMV_ID_ADDR: u32 = 0x8007_BA78;
 
 /// Game mode `0x1A` (`= 26`). The STR-init mode that the cutscene
