@@ -101,7 +101,7 @@
       <tr>
         <td>Battle face-stamp issuing site</td>
         <td><span class="tag tag-done">resolved</span></td>
-        <td>The per-frame facial animator <code>FUN_8004C7B4</code> stamps eye/mouth frames every frame (action-entry tracks <code>+0x8C</code>/<code>+0x98</code>, static per-character SCUS tables, via <code>MoveImage</code>; Terra skipped). Residue: the sibling pass <code>FUN_8004CCD4</code>'s trigger states.</td>
+        <td>The per-frame facial animator <code>FUN_8004C7B4</code> stamps eye/mouth frames every frame (action-entry tracks <code>+0x8C</code>/<code>+0x98</code>, static per-character SCUS tables, via <code>MoveImage</code>; Terra skipped). The sibling-pass residue is closed: <code>FUN_8004CCD4</code> is not a stamp - it is the per-frame equipment mesh-variant swap driven by the entry's third track at <code>+0xA4</code> (retail windows Noa-only), re-run per after-image ghost by the arts trail renderer.</td>
         <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
       </tr>
       <tr>
@@ -502,8 +502,8 @@
       </tr>
       <tr>
         <td>Record[0] <code>+0x5C</code> pointer + art-anim stream source</td>
-        <td><span class="tag tag-partial">partial</span></td>
-        <td>The art keyframe streams are "ME" archives in <code>readef.DAT</code> slots <code>3*char+1</code>/<code>+2</code> (ported, disc-validated). The staging arm <code>FUN_80055B4C</code> is now traced - it is driven by the side-band streamer <code>FUN_801F12D0</code>, which stages the <code>3*char+{0..3}</code> readef group. Residue: <code>+0x5C</code> is a zero word with no traced reader (needs a runtime read-watchpoint).</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The art keyframe streams are "ME" archives in <code>readef.DAT</code> slots <code>3*char+1</code>/<code>+2</code> (ported, disc-validated). The staging is traced end to end: the initiative scheduler <code>FUN_801DABA4</code> stages the acting character's group per turn (main archive resident), the battle-end arms request <code>3*char+2</code> directly (base archive = the win-pose records 1..8). <code>+0x5C</code> is reframed as a vestigial paired-relocation field: rebased at load alongside <code>+0x58</code>, but an exhaustive corpus sweep finds no reader.</td>
         <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
       </tr>
     </tbody>
