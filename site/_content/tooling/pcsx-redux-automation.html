@@ -200,6 +200,7 @@ LEGAIA_FP_RECORD=1 LEGAIA_NO_SSTATE=1 \
     <thead><tr><th>Script</th><th>What it answers</th></tr></thead>
     <tbody>
       <tr><td><code>autorun_world_map_probe.lua</code></td><td>Pins the world-map POLY_FT4 emitter's one-shot gate flag (<code>_DAT_801F351C</code>) + the three-param block driving it (<code>_DAT_8007BCD0..D8</code>).</td></tr>
+      <tr><td><code>autorun_ocean_moveimage.lua</code></td><td>Exec-BP trace on the three libgpu transfer wrappers (vsync tick + scratchpad-read source RECT + dest per call, per-vsync <code>dt</code> column, in-capture snapshots). Confirmed the kingdom-slot-5 CLUT-walk cadence: constant <code>ceil(hold/dt)*dt</code> intervals, reset-to-zero accumulators, shared spawn epoch. Interpreter mode only.</td></tr>
       <tr><td><code>autorun_world_map_fog_probe.lua</code></td><td>Captures the per-Z fog-tint LUT the world-map overlay consults on every vertex (<code>0x801F7644..0x801F8690</code>).</td></tr>
       <tr><td><code>autorun_prim_pool_writers.lua</code></td><td>Confirms the eight overlay-resident high-mode renderers write the 341 KB GPU prim pool at <code>0x800AD400+</code> (matches <code>FUN_80043390</code>'s dispatch table).</td></tr>
       <tr><td><code>autorun_lzs_and_bundle_probe.lua</code></td><td>Pins which PROT entries get LZS-decoded for the world-map bundle (LZS entry + bundle dispatcher <code>FUN_8001F05C</code>).</td></tr>

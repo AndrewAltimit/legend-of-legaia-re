@@ -20,7 +20,7 @@
 //! | 2 | `0x03` MAN | Entity placement records (50 / 23 / 40 records) | scene-bundles.md |
 //! | 3 | `0x04` HD-OBJ index | Small structural index (~500B); semantic unpinned | - |
 //! | 4 | `0x05` "MOVE" | Object-local 3D-mesh-shaped record bodies; per-record semantic open (old wireframe/coastline reading falsified) | [world-map-overlay.md] |
-//! | 5 | `0x06` | Unknown | - |
+//! | 5 | `0x06` "anm" | Ocean CLUT-walk table (8 MoveImage actors; byte-identical across kingdoms) | [`clut_walk`](crate::clut_walk), world-map.md |
 //! | 6 | `0x07` | Unknown | - |
 //!
 //! The kingdom bundle re-purposes the slot-4 byte (the standard "MOVE"
