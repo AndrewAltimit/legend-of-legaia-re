@@ -42,6 +42,8 @@ Implementations:
   - [Swing records](#swing-records-equipment-sections--slots-0xc0xf)
   - [Art-animation bank](#art-animation-bank-record0-0x58)
   - ["ME" stream archives](#me-stream-archives-readefdat)
+  - [Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98)
+  - [Equipment-variant track](#equipment-variant-track-entry-0xa4--fun_8004ccd4)
 - [Texture-pool VRAM placement](#texture-pool-vram-placement)
 - [Parser status](#parser-status)
 - [VRAM byte-match corpus](#vram-byte-match-corpus)
@@ -249,7 +251,9 @@ The assembler `FUN_800536BC` reads the section through the **loader frame**
 at `decoded + frame_off`: one bone-id byte per object while
 `obj_index < attach_count`, then `0xFF` / `0xFE` tags for the surplus
 objects (the equipment's visual meshes - see
-[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files)).
+[`character-mesh.md` § Battle form](character-mesh.md#battle-form--assembled-from-the-player-files);
+`0xFF` = the per-clip swap variant, `0xFE` = an extra animated part - see
+[Equipment-variant track](#equipment-variant-track-entry-0xa4--fun_8004ccd4)).
 The byte runs the earlier byte-match corpus read as "texture format tags" at
 `u32[5..6]` (e.g. `0x0b0a0906`, `0x000e0d0c`) are these attach-count +
 bone-id bytes (`06 09 0a 0b | 0c 0d 0e 00` = 6 attached objects on bones
@@ -415,16 +419,38 @@ the head of the **`readef.DAT`** (extraction PROT 894) slots
 | Terra | slot 10 (1) | slot 11 (8) |
 
 i.e. slots `3*char + 1` / `3*char + 2` (slot `3*char` is the group's
-non-ME texture slot). The staging path is traced: the request arm
-`FUN_80055B4C` writes the staging byte `ctx+0x26B = slot + 1`, and its
-caller is the side-band streamer `FUN_801F12D0`, which stages slots
-`ctx+0x277+{0,1,2,3}` = the `3*char+{0..3}` group (the `+1` main / `+2` base
-readef ME archives). The **per-record** main-vs-base pick (which queued art
-selects the `+1` vs the `+2` slot) is the residual - it is pinned by exact
-cover: each file's eight `rate_alt == 0xFF` records carry `stream_source` `0..=7` =
-the base archive's exact entry range, and the remaining records' max
-`stream_source` equals the main archive's `count − 1` exactly, in all
-four files.
+non-ME texture slot). The staging is traced end to end, and the
+main-vs-base pick is **per battle phase, not per record** - the resident
+`*0x8007BD74` buffer holds one `0x10800` slot at a time, and which archive
+is resident when `FUN_8004AD80` commits decides the read:
+
+- **Main archive (`3*char+1`) - resident during turns.** Every scheduled
+  turn the initiative scheduler `FUN_801DABA4` writes the acting entity's
+  group base into `ctx+0x277` (party actor: `3*(char−1)` from
+  `DAT_8007BD10`; enemy actor: `3 * monster_record[+0x1C]`, the monster's
+  readef group byte; an AI-delegated party attacker substitutes the
+  delegate's group) and kicks the applier SM `FUN_801F12D0`
+  (`ctx+0x276 = 1`), which requests slot `base+0` (the texture page),
+  uploads it, requests slot `base+1`, and **stops there for readef
+  groups** (the stage-4 tail resets the SM unless bit 7 is set or
+  `base == 0x36`) - so any art committed mid-turn decodes from the main
+  archive.
+- **Base archive (`3*char+2`) - resident at battle end.** The battle-end
+  arms request it directly through `FUN_80055B4C` (one slot, bypassing
+  the group SM): the scheduler's no-living-enemy branch and the
+  battle-action SM's victory arm (`FUN_801E295C`, which first re-rolls
+  `ctx+0x13` onto a living party member). The victory sequencer then
+  stages the win poses - ids `0x11..=0x18` = bank records 1..8, exactly
+  the eight `rate_alt == 0xFF` records with `stream_source` `0..=7` in
+  all four retail files - and `FUN_8004AD80` decodes them from the
+  resident base archive.
+
+The exact cover observable on disc (the eight base records' sources =
+`0..=7` = the base archive's entry range; the remaining records' max
+source = the main archive's `count − 1`) is the consequence of this
+phase split, not a per-record selector. Decomps
+`overlay_battle_action_801daba4.txt`, `overlay_battle_action_801e295c.txt`,
+`overlay_muscle_dome_801f12d0.txt`, `80055b4c.txt`.
 
 Archive layout (reader `FUN_8002B28C`, decomp `8002b28c.txt`):
 
@@ -573,10 +599,11 @@ entry's `+0x8C` records - becomes the global victory counter
 per-frame incrementer is not in the dumped corpus), still clamped at
 `0xFE`. The record shape and mouth-frame indexing are unchanged; the
 retail rows only ever select non-neutral in-range mouth frames, some held
-to end `0xFF` - the win-quote mouth flap. The sibling stamp pass
-`FUN_8004CCD4` (called
-right after) covers an additional overlay family; its trigger states are
-untraced. This resolves the historical "~220-byte facial-texel
+to end `0xFF` - the win-quote mouth flap. The sibling pass
+`FUN_8004CCD4` (called right after) is **not a stamp** - it is the
+per-frame equipment mesh-variant swap, decoded below
+([Equipment-variant track](#equipment-variant-track-entry-0xa4--fun_8004ccd4)).
+This resolves the historical "~220-byte facial-texel
 overwrite" residue in the texture-placement validation: the overwrite is
 the facial animator's current frame, and a character whose stamped frame
 equals the pool default (Noa in the catalogued captures, Terra always)
@@ -613,7 +640,71 @@ frames, the empty rows where retail has no flap, in-band stamps for
 every reachable counter) and
 `crates/engine-shell/tests/battle_face_stamp_live.rs` (live battle
 VRAM holds a byte-exact stamped frame at the documented rects). The
-`FUN_8004CCD4` sibling pass is not modelled.
+`FUN_8004CCD4` equipment-variant swap (next section) is not modelled
+in the engine.
+
+### Equipment-variant track (entry `+0xA4`) + `FUN_8004CCD4`
+
+The last 8 bytes of the `0xAC` action-entry header are a third per-clip
+track: two 2-byte `[start_frame, end_frame]` windows per **variant pair**
+(pair 0 at `+0xA4`/`+0xA6`, pair 1 at `+0xA8`/`+0xAA`; a window is active
+while `start <= clip_frame <= end` with `end != 0` - the facial tracks'
+activity rule, without the `frame_id` byte). The consumer is
+`FUN_8004CCD4`, called back to back with the facial animator from the
+render-node tick `FUN_80047430` under the same guards (party render
+slots, Terra skipped, animator not paused) - but it is a **mesh swap,
+not a texture stamp**: it writes Legaia-TMD object pointers into the
+render node's per-channel model table (`*(node+0x44) + 4 + channel*4`,
+the array the draw pass `FUN_80048A08` hands to `tmd_render` once per
+animation channel).
+
+The swappable objects are the sections' **surplus objects** (`nobj`
+larger than the loader frame's attach count). The splice `FUN_800536BC`
+tags each section's surplus `0xFF` (the first) / `0xFE` (the rest); the
+post-pass `FUN_80053898` then:
+
+- retags every `0xFE` into the `0x64` band, so the selection sort seats
+  it **directly after the skeleton bones** - these are *extra animated
+  parts*, driven in place by the extra stream channels that exist only
+  in their own section's swing streams (the swing census's "up to +2
+  channels"); it also records the pair ordinal (the count of `0xFF`
+  objects seen so far) at `ctx+0x240+slot`;
+- retags every `0xFF` into the `0xC8` band (post-sort table indices
+  `nobj−2` / `nobj−1`, past every drawn channel - **never rendered
+  directly**) and appends the preceding object's bone tag to the side
+  table at `blob+nobj` - the variant's attach-bone channel.
+
+At registration `FUN_800513F0` snapshots, per party slot, the two
+attach-bone channel indices (`ctx+0x23A`/`+0x23B`) and the
+default-vs-variant object-pointer pairs (`ctx+0x1030..0x103C`: default =
+the bone's own object, variant = the `0xFF` object at `nobj−2`/`nobj−1`).
+Per frame `FUN_8004CCD4` then picks which pointer sits in each attach
+channel:
+
+- **extra-channel escape**: if the playing stream's part count (first
+  byte at `*(entry+0x88)`) differs from the idle stream's, the clip is
+  one of the extra-channel swings - the pass force-installs the variant
+  of the pair recorded at `ctx+0x240` and returns;
+- otherwise the `ctx+0x240` pair is pinned to its default and every
+  other pair follows the entry's `+0xA4` windows - variant inside a
+  window, default outside.
+
+The arts motion-trail renderer `FUN_80049348` re-runs the pass per
+after-image ghost (history entries whose staged-anim-id byte, the actor
+`+0x1FB` ring, is `> 0x10` - dynamic-art clips) with the ghost's
+historical cursor (`+0x17A` ring) and entry (`+0x234` ring), so each
+translucent trail copy shows the variant state of its own frame.
+
+Retail census (all four player files): live `+0xA4` windows exist **only
+in Noa's file** - her reaction entries 1..5/7..9, 28 of her 35 art-bank
+records (every named art, e.g. `Vulture Blade` frames 3..47), and her
+swing records; Vahn / Gala / Terra carry all-zero windows everywhere, so
+for them the pass re-asserts the defaults every frame. The extra-channel
+escape fires exactly where the disc has `0xFE` surplus: Noa's `0x1E`
+weapon band (17-part swings vs 16 bones) and Gala's Ra-Seru Ozma high
+tiers (16/17-part swings vs 15 bones). Decomps `8004ccd4.txt`,
+`80047430.txt`, `80049348.txt`, `800536bc.txt`, `80053898.txt`,
+`800513f0.txt`, `80048a08.txt`.
 
 ## Texture-pool VRAM placement
 
@@ -787,7 +878,11 @@ on the player files.)
   (The earlier "one-shot at init" reading came from tracing a summon
   mid-cast window, where the animator is paused; a battle-entry trace
   from `karisto_sol_pre_encounter` shows it re-stamping every frame.)
-  Residue: the trigger states of the sibling stamp pass `FUN_8004CCD4`.
+  The sibling-pass residue is **resolved**: `FUN_8004CCD4` is not a
+  stamp - it is the per-frame equipment mesh-variant swap driven by the
+  entry's third track at `+0xA4`, running under the same caller guards
+  plus a per-ghost re-run in the arts trail renderer - see
+  [Equipment-variant track](#equipment-variant-track-entry-0xa4--fun_8004ccd4).
 - ~~**Slot id ↔ equipment id mapping**~~ **resolved**: the section ids ARE
   item-table ids and the `FUN_80052770` case-4 picker matches them against
   the character record's equipped-item bytes (see
@@ -813,13 +908,15 @@ on the player files.)
   paired-relocation field, not untraced-dead; a read-watchpoint would only
   confirm the deadness (low-yield). The art `"ME"`-archive hypothesis is
   separately refuted (the archives are in `readef.DAT`).
-- **Art-archive slot staging**: the request arm `FUN_80055B4C` (staging byte
-  `battle ctx +0x26B = slot + 1`, consumed by `FUN_801F17F8`) is driven by the
-  side-band streamer `FUN_801F12D0`, which stages the `3*char+{0..3}` group at
-  `ctx+0x277+{0,1,2,3}` (the `+1` main / `+2` base readef ME archives). The
-  residual is the **per-record** main-vs-base choice for a queued art, still
-  pinned by exact cover rather than a traced picker (see
-  ["ME" stream archives](#me-stream-archives-readefdat)).
+- ~~**Art-archive slot staging**~~ **resolved**: the main-vs-base pick is
+  per battle phase, not per record. The initiative scheduler `FUN_801DABA4`
+  stages the acting character's group each turn (the applier SM stops after
+  slot `base+1`, leaving the **main** archive resident); the battle-end arms
+  (`FUN_801DABA4`'s no-living-enemy branch + `FUN_801E295C`'s victory arm)
+  directly request slot `3*char+2`, so the win poses (ids `0x11..=0x18` =
+  the eight `rate_alt == 0xFF` bank records 1..8) decode from the **base**
+  archive. The exact cover is the consequence - see
+  ["ME" stream archives](#me-stream-archives-readefdat).
 
 ## See also
 

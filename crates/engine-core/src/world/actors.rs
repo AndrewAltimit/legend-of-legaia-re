@@ -740,6 +740,16 @@ impl World {
     /// The field VM resumes from where it paused - its program counter is
     /// already past the FMV op, so the next field tick continues the script.
     /// A no-op when no cutscene is active.
+    ///
+    /// TODO(return scenes): retail's master dispatch (`FUN_801CEA3C`) does
+    /// NOT return to the trigger scene for mid-game FMVs - it copies a
+    /// CDNAME label from the seven-entry list at `0x801CE8AC` into the
+    /// next-scene name global `0x80084548` (+ spawn/door word `0x80084540`),
+    /// e.g. `town01` triggers fmv 1 and lands in `town0b`. The per-id map is
+    /// [`crate::cutscene::fmv_post_play_return_scene`]; wiring the actual
+    /// scene transition here is pending (hosts currently drive transitions
+    /// themselves after playback).
+    // REF: FUN_801CEA3C
     pub fn finish_cutscene(&mut self) {
         if self.mode == SceneMode::Cutscene {
             self.mode = self.cutscene_return_mode.take().unwrap_or(SceneMode::Field);

@@ -298,9 +298,10 @@ pub struct SceneFmvTrigger {
 /// over-approximation caveats) as [`scene_destinations`].
 ///
 /// Phantom guard: a literal `4C E2` inside message text can desync-decode a
-/// bogus trigger, so ops whose `fmv_id` falls outside the runtime FMV-state
-/// table's 12 slots (`0..=11`; observed retail range `0..=8`) are dropped,
-/// and `(record, fmv_id)` pairs re-seen from an earlier over-walk start are
+/// bogus trigger, so ops whose `fmv_id` falls outside the dispatch table's
+/// nine retail slots (`0..=8`; the 23-slot table's slots `9..=22` are
+/// dev-only files no scene MAN references) are dropped, and
+/// `(record, fmv_id)` pairs re-seen from an earlier over-walk start are
 /// deduped. Returns first-seen order.
 pub fn scene_fmv_triggers(man_file: &ManFile, man: &[u8]) -> Vec<SceneFmvTrigger> {
     let n1 = man_file.header.partition_counts[1].max(0) as usize;
@@ -327,7 +328,7 @@ pub fn scene_fmv_triggers(man_file: &ManFile, man: &[u8]) -> Vec<SceneFmvTrigger
             else {
                 continue;
             };
-            if !(0..=11).contains(&fmv_id) {
+            if !(0..=8).contains(&fmv_id) {
                 continue;
             }
             if out.iter().any(|t| t.record == k && t.fmv_id == fmv_id) {

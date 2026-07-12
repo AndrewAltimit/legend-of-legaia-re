@@ -70,8 +70,27 @@ each frame. Two coupled state machines live in the battle context at
   odd stages request slots `base`, `base+1`, `base+2`, `base+3`; even stages
   consume the arrived slot.
 
-The base slot byte is computed by the battle-action SM `FUN_801E295C` (case
-`0x32` of the cast sequence) from the actor's action id (`actor + 0x1DF`):
+Three sites feed the SMs (decomps `overlay_battle_action_801daba4.txt`,
+`overlay_battle_action_801e295c.txt`):
+
+- **Per turn** the initiative scheduler `FUN_801DABA4` seeds `+0x277` with
+  the acting entity's group base - party actor: `3*(char−1)` from
+  `DAT_8007BD10`; enemy actor: `3 * monster_record[+0x1C]` (each monster
+  record carries its readef group byte at `+0x1C`); an AI-delegated party
+  attacker substitutes the delegate's group - and sets `+0x276 = 1`. For
+  readef groups the applier stops after `base+1`, leaving the character's
+  **main "ME" archive** resident for the turn.
+- **At battle end** the win-pose staging requests slot `3*char + 2` (the
+  **base "ME" archive**) directly through `FUN_80055B4C`, bypassing the
+  applier: `FUN_801DABA4`'s no-living-enemy branch and `FUN_801E295C`'s
+  victory arm (which first re-rolls `ctx+0x13` onto a living party member,
+  with per-formation overrides). See
+  [`battle-data-pack.md` § "ME" stream archives](battle-data-pack.md#me-stream-archives-readefdat)
+  for the archive-side consequence (win-pose records read the base archive,
+  everything else the main).
+- **At cast time** the base slot byte is computed by the battle-action SM
+  `FUN_801E295C` (case `0x32` of the cast sequence) from the actor's action
+  id (`actor + 0x1DF`):
 
 ```text
 id <  0x9A:  base = 3 * (id - 1)    (mod 256)
@@ -175,8 +194,12 @@ archives](battle-data-pack.md#me-stream-archives-readefdat). Parser
 `SlotKind::MeArchive`. Slot `3*char` is the group's non-ME (texture) slot.
 
 The aux slots of the **higher** readef groups (the enemy-special bands) are
-still unattributed; the bytes LZS-decode plausibly but no consumer is
-pinned (see [open threads](../reference/open-rev-eng-threads.md)).
+still unattributed as content; the bytes LZS-decode plausibly but no consumer
+is pinned. The group *selection* is now traced - each monster record names
+its readef group at byte `+0x1C`, staged per enemy turn by `FUN_801DABA4`
+(see [Streaming state machine](#streaming-state-machine)) - which narrows
+the hunt to that group's `base+1` slot
+(see [open threads](../reference/open-rev-eng-threads.md)).
 
 ## Tooling
 
@@ -201,4 +224,4 @@ Provenance: `ghidra/scripts/funcs/overlay_battle_801f17f8.txt`,
 `overlay_muscle_dome_801f12d0.txt`, `overlay_muscle_dome_801f19ec.txt`,
 `800558fc.txt`, `80055a5c.txt`, `800559ec.txt`, `80055b4c.txt`,
 `8003e8a8.txt`, `8003e964.txt`, `8003e4e8.txt`,
-`overlay_magic_capture_801e295c.txt`.
+`overlay_magic_capture_801e295c.txt`, `overlay_battle_action_801daba4.txt`.

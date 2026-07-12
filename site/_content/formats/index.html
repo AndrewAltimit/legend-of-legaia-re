@@ -212,7 +212,7 @@
     </a>
     <a class="card" href="str-fmv-table.html">
       <div class="card-title"><span>STR FMV table</span> <span class="tag tag-partial">Inferred</span></div>
-      <div class="card-body">The cutscene / MDEC overlay's STR lookup tables: the 6-entry compact dev table at <code>0x801CAE40</code> and the 12-slot FMV dispatch table at <code>0x801D0A6C</code> the play loop reads; per-scene <code>fmv_id</code> triggers are disc-pinned as literal operands in the scene MAN scripts.</div>
+      <div class="card-body">The cutscene / MDEC overlay's STR lookup tables: libcd's <code>CdlFILE</code> directory cache at <code>0x801CAE08</code> and the 23-slot FMV dispatch table at <code>0x801D0A6C</code> (32-byte stride) the play loop reads - nine retail slots covering every movie on the disc; per-scene <code>fmv_id</code> triggers are disc-pinned as literal operands in the scene MAN scripts.</div>
     </a>
   </div>
 </section>

@@ -12,17 +12,19 @@ XA-ADPCM audio interleaved in the same CD-XA sectors. The engine drives it throu
 | 27 | `STR MODE` (`StrMode`) | `0x000` | `ConfigInit` |
 
 `StrInit` (index 26) bootstraps the cutscene: opens the STR stream, initialises the MDEC hardware
-(or the clean-room decoder), starts the XA channel. `StrMode` (index 27) runs the per-frame loop:
+(or the clean-room decoder), starts the XA audio. `StrMode` (index 27) runs the per-frame loop:
 reads the next batch of sectors, decodes a frame, blits it full-screen, and advances the audio
 position. When the stream ends, the mode chain transitions to `ConfigInit` (index 1).
 
 Both modes share `SceneMode::Cutscene` and see the same world state. The retail STR/MDEC FMV
-handler lives in a dedicated overlay (game modes 26/27). Its **source is now pinned: PROT 0970**
+handler lives in a dedicated overlay (game modes 26/27). Its **source is pinned: PROT 0970**
 (`cutscene_str`, slot-A base `0x801CE818`), identified statically from the disc by its leading
 `MV*.STR` movie paths + the MDEC decoder strings (`MDEC_in_sync` / `MDEC_out_sync` /
 `MDEC_rest:bad option`); see [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md).
-So the overlay code is now Ghidra-importable straight from the disc (`asset overlay ghidra`) -
-the master-dispatch + mode-26/27 handler can be decompiled without a live capture; the per-scene
+The overlay is Ghidra-importable straight from the disc (`asset overlay ghidra`), and the
+master dispatch + play loop + frame-demux state machine are statically decompiled - see
+"[Retail playback engine](#retail-playback-engine-str-overlay--scus-st-streaming-library)"
+below; the per-scene
 `fmv_id` assignment is disc-sourced too (literal operands in the scene MAN scripts - see
 "per-scene trigger assignment" below). The two
 script-cutscene captures (`overlay_cutscene_dialogue.bin`, `overlay_cutscene_mapview.bin`) in the
@@ -56,6 +58,147 @@ Multi-chunk frames: `StrFrameAssembler` accumulates sector payloads in arrival o
 `frame_size_bytes`. Non-video sectors (magic ≠ 0x0160) are skipped silently.
 
 Implementation: `crates/mdec/src/str_sector.rs` (`StrFrameAssembler`).
+
+## Retail playback engine (STR overlay + SCUS St streaming library)
+
+Statically decompiled from PROT 0970 at base `0x801CE818` plus the SCUS-resident PsyQ-libpress-shape
+"St" streaming library it calls. Byte-identical against the FMV-resident RAM capture
+(`overlay_str_fmv.bin`), so the capture-era dumps and the disc-sourced program agree address-for-address.
+
+### Master dispatch - `FUN_801CEA3C` (overlay)
+
+The mode-26/27 entry. Pre-play, per `_DAT_8007BA78` (the `fmv_id`):
+
+- selects the bitstream decoder: `DAT_801E09FC = 1` (the **Iki** decoder) by default; dev slots
+  9/10 (`MV1A.STR` / `MOV15.STR`) clear it to select the STRv2/v3 VLC-table decoder;
+- clears the letterbox bands via `ClearImage` rects (fmv 3 opens on a white flash instead);
+- calls the play loop on the dispatch slot: `FUN_801CF098(wide_flag, 0x801D0A6C + fmv_id * 0x20)`
+  (**32-byte stride** - `sll v0,v0,0x5` at `0x801CEC9C`; an earlier `* 0x40` reading paired wrong
+  slot halves, see [`str-fmv-table.md`](../formats/str-fmv-table.md#fmv-dispatch-table-0x801d0a6c-23--32-b)).
+
+Post-play it hands control back per `fmv_id`: mid-game slots 1..4 and 6..8 copy a **return-scene
+label** from the table at `0x801CE8AC` (`town0b` / `map01` / `chitei2` / `map02` / `jou` / `uru2` /
+`town0e`) into the next-scene name global `0x80084548`, write a spawn/door word to `0x80084540`,
+and set game mode 2; slot 0 (the intro) and dev slot 9 hand off to mode `0x16` (22 = CARD init,
+`_DAT_8007BB00` = 2 / 1); slot 5 sets mode 2 with `_DAT_8007B8B8 = 2` and no scene-name write.
+Full table in [`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping).
+`see ghidra/scripts/funcs/overlay_cutscene_str_0970_801cea3c.txt`.
+
+### Play loop - `FUN_801CF098` (overlay)
+
+`(wide_flag, &dispatch_slot)`:
+
+1. `CdSearchFile` (`FUN_8005DBB4`) resolves the slot's path string; the result populates the
+   libcd `CdlFILE` directory cache at `0x801CAE08` (what an earlier reading mislabelled the
+   "compact MV table" - see [`str-fmv-table.md`](../formats/str-fmv-table.md#directory-record-cache-0x801cae08-24-b-cdlfile-records)).
+2. Ring + stream setup (below), then seek `(start_frame - 1) * 10` sectors past the file start
+   (`CdIntToPos`/`CdPosToInt` + `CdControl(CdlSetloc)`) - the 15 fps cadence.
+3. Opens the SPU CD input for the interleaved XA audio: `FUN_800643C4(0, 0x7F, 0x7F)`
+   (`SpuSetCommonAttr` CD-volume L/R) + `FUN_80062A0C(0, 0, 1)` (CD-mix enable).
+4. Per frame: poll a complete demuxed frame (`FUN_801CFA14`, up to 2000 spins), VLC-decode it into
+   the MDEC-code double buffer, kick MDEC (below), build the display rect (24-bit slots draw at
+   `width * 3/2` 16-bit pixels), `LoadImage`/swap. A stall re-seeks via the timeout handler
+   `FUN_801CFB94` (re-`Setloc` + re-read, `time out in strNext` debug print).
+5. Loop exit: the demuxer's end-frame latch (`DAT_801E09F8`, set when the sector header's frame
+   number reaches the slot's `end_frame`) - or a pad press (`_DAT_8007B850 & 0x1F0`) **only when
+   `fmv_id == 0`**: the intro/attract movie is skippable, mid-game FMVs are not.
+6. Teardown: CD-mix mute (`FUN_800643C4(0,0,0)`), MDEC reset, `CdControl(CdlPause)`.
+
+`see ghidra/scripts/funcs/str0970_801cf098.txt`.
+
+### Frame-demux state machine (SCUS St library)
+
+The overlay primes a **sector ring** in the streaming asset buffer (`_DAT_8007B85C + 0x10000`,
+end `+0x38000`) and registers the demuxer:
+
+- `FUN_801CF8B0` - ring/VRAM-rect init: stores the per-slot frame rects (double-buffered at
+  `(fb_x, fb_y)` and `(fb_x, fb_y + height)`).
+- `FUN_801CF988` - `StSetRing` (`FUN_8005BBF8(ring, 0x20)` - 32 sectors) + `StSetStream`
+  (`FUN_8005EDC4(color_flag, start_frame, -1, 0, 0)`) + MDEC reset + `DecDCToutCallback`
+  (`FUN_801CFEBC` -> `FUN_801CF56C`) + first seek/read.
+- `FUN_801CFB94` - seek + read start: `CdControlF(CdlSetloc)`, `CdControlF(CdlSetmode, 0x80)`
+  (double speed for the seek), then `FUN_8005EB68(0x1E0)`: Setmode **`0xE0`**
+  (`CdlModeSpeed | CdlModeRT | CdlModeSize1` - XA-ADPCM realtime play ON, **sector filter OFF**),
+  install the CD data-ready callback (`CdReadyCallback(FUN_8005ECD4)`), issue **`CdlReadS`**
+  (`0x1B`). See "[XA channel selection](#xa-channel-selection)" for why no filter is set.
+
+The demuxer proper is the data-ready pair `FUN_8005ECD4` / `FUN_8005F024` (SCUS): per delivered
+sector it DMAs the 32-byte STR sector header out of the CD FIFO and walks the assembler state:
+
+- **video gate**: magic `0x160` at `+0x00` and the type field's stream number
+  (`(type >> 10) & 0x1F`) matching `_DAT_801CADB0` (0 for every retail movie); non-matching
+  sectors (any leftover data) are dropped - XA audio sectors never reach this path at all, the
+  drive's RT mode consumes them in hardware;
+- **seek-to-start state** (`_DAT_801CADD0 = 1`, armed by `StSetStream`): skip sectors until
+  `frame_number == start_frame`, so a mid-file segment starts exactly on its first frame;
+- **sequence check**: `chunk_number` must equal the running counter `_DAT_801CAD94` within the
+  current `frame_number` (`_DAT_801CAD90`); chunk 0 latches a new frame;
+- **end check**: on chunk 0, `end_frame` reached -> raise the end latch, wrap the ring, fire the
+  optional end callback; **ring-full** -> mark the frame slot dropped (status 1) rather than
+  overrun;
+- payloads DMA into per-frame ring slots (2016 bytes per sector after the 32-byte per-slot status
+  headers), status 2 = frame complete.
+
+The overlay consumes frames via `StGetNext` (`FUN_8005EF40`: status 2 -> 4 "in use") and returns
+slots with `StFreeRing` (`FUN_8005EE4C`). This is the retail counterpart of the engine's
+[`StrFrameAssembler`](../../crates/mdec/src/str_sector.rs) - same header fields, same
+arrival-order chunk accumulation, plus the ring bookkeeping the engine doesn't need.
+
+### Bitstream decode + MDEC feed (overlay)
+
+`FUN_801CFA14` VLC-decodes each demuxed frame into an MDEC-code list, double-buffered; the decoder
+is selected by `DAT_801E09FC`:
+
+- **Iki** (`FUN_801D0378`, retail movies): decompresses the per-block qscale/DC table with the
+  LZSS decoder `FUN_801D0604` (the retail original of `legaia_mdec::iki_lzss_decompress` -
+  control-byte LSB-first, length `+3`, 1/2-byte offsets) and converts the AC-only bitstream using
+  the GTE leading-zero-count register as the VLC prefix scanner.
+- **STRv2/v3** (`FUN_801D070C`, dev slots 9/10 only): standard VLC with per-block DC deltas,
+  lookup table unpacked at runtime by `FUN_801F1A00` into `DAT_801E0A00`.
+
+The MDEC feed is register-level in the overlay: `FUN_801CFD84` sets the 24bpp/16bpp control bits
+and starts the DMA-0 code upload (`FUN_801CFFDC`); the MDEC-out slice callback `FUN_801CF56C`
+`LoadImage`s each decoded 32-pixel-wide strip into the slot's VRAM frame rect, alternating the
+double-buffered rects. In/out sync waiters `FUN_801D0100` / `FUN_801D0198` spin on the MDEC status
+register and dump the DMA/FIFO state on timeout (`FUN_801D0248` - the `MDEC_in_sync` /
+`MDEC_out_sync` strings that identify the overlay); `FUN_801CFEE0` is the reset
+(`MDEC_rest:bad option(%d)`).
+
+## XA channel selection
+
+Two distinct retail paths, neither of which lives where the old hypothesis put it (the STR overlay
+holds **no** channel selector):
+
+- **STR FMVs: no channel selection at all.** The streaming read runs Setmode `0xE0` -
+  `CdlModeRT` (play XA-ADPCM sectors in hardware) *without* `CdlModeSF` (sector filter). With the
+  filter off the drive plays **every** ADPCM-flagged sector it passes, and each `MV*.STR`
+  interleaves exactly one XA track - `(file 1, chan 0)`, stereo 37.8 kHz 4-bit, 1 audio sector per
+  8 (verified across all six movies' raw subheaders). The audio is routed through the SPU CD input
+  (opened/muted by the play loop), never through the data path. So the per-cutscene "(file_no,
+  ch_no) -> name" question dissolves for FMVs: audio selection *is* file + frame-range selection
+  via the dispatch table, and the multi-channel `\DATA\MOV.STR` container the old hypothesis
+  invoked is a dev leftover that isn't on the retail disc.
+- **XA clips (`XA1.XA..XA34.XA` - voice banks + streamed music): `CdlSetfilter`.** The
+  SCUS-static clip starter `FUN_8003D53C(clip_id, chan, duration_sectors)` reads the 8-byte
+  `[CdlLOC][u32 byte_len]` clip table at `0x801C6ED8` - **slot `i` = file `XA<i+1>`** (34 slots,
+  runtime-built from the ISO file list; title-capture-pinned, lengths byte-exact vs the disc
+  files) - then its CdSync-callback state machine `FUN_8003D764` sequences the drive:
+  `CdlSeekL` -> Setmode **`0xC8`** (`Speed | RT | SF` - filter ON) -> `CdlSetloc` ->
+  **`CdlSetfilter` with `{file = 1, chan = <the caller's chan argument>}`** (filter struct at
+  `0x8007BBC0`/`0x8007BBC1`) -> `CdlReadS` -> `CdlNop`/`CdlGetlocP` polling until the end LBA
+  (`gp+0x974`). Every XA sector on the disc carries `file_no = 1` (subheader-verified), matching
+  the hard-coded file byte; the **channel is caller-supplied** - e.g. the menu voice dispatcher
+  `FUN_8004FCC8` derives `clip slot = (id - 0x100) >> 3` (remapped `1/3/5 -> 0x1A/0x1B/0x1C`) and
+  `chan = id & 7`. `FUN_8003EAE4` is the by-index sibling starter; `FUN_8003ED04` the stop.
+  `see ghidra/scripts/funcs/8003d764.txt` / `8003d53c.txt`.
+
+So the complete channel map is: **movies** = one track per file at `(1, 0)`, selected by
+`fmv_id -> MVn.STR + frame range`; **XA files** = `(1, chan)` inside `XA<clip_id + 1>.XA`, with
+`chan` picked per cue by the caller of the clip starter. The per-`(file, chan)` content itself is
+extractable via `xa demux-disc-all` (316 channels across the 34 files - 16-channel mono voice
+banks and 8-channel stereo music). Which game systems fire which `(clip_id, chan)` cues beyond
+the menu voice path is per-caller data, not a single table - an open census, tracked in
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ## MDEC decoder (Iki bitstream)
 
@@ -164,12 +307,12 @@ the soundtrack instead of free-running on a separate wall-clock timer (which dri
 hardware audio rate). When no audio track is present the same function falls back to a wall-clock
 position, preserving the video-only pacing.
 
-**Open item:** the mapping from cutscene *name* to the expected `(file_no, ch_no)` channel pair is
-still overlay-resident (in the not-yet-captured cutscene overlay) - this is only needed for
-selecting a cutscene by name from a separate multi-channel container; the in-file interleaving above
-needs no such map. The 8-bit-ADPCM coding mode is now decoded too (the cutscene audio path maps each
-channel's `coding_info` width); no 8-bit audio appears in the movie corpus, so it stays an untested
-fallback rather than a verified path.
+There is no per-cutscene channel map to recover: the retail STR player reads with the sector
+filter **off** (`CdlModeRT` without `CdlModeSF`), so it plays whatever single XA track the movie
+interleaves - see "[XA channel selection](#xa-channel-selection)" for the traced mechanism and for
+the `CdlSetfilter` path the separate `XA*.XA` clips use. The 8-bit-ADPCM coding mode is decoded
+too (the cutscene audio path maps each channel's `coding_info` width); no 8-bit audio appears in
+the movie corpus, so it stays an untested fallback rather than a verified path.
 
 ## Playback loop (`play-str`)
 
@@ -214,8 +357,10 @@ it falls behind. When the interleaved XA audio is playing (disc-sourced
 playback), the audio cursor is the master clock instead - see "Interleaved
 cutscene audio (A/V sync)" above.
 
-For PROT-scene routing (`play --scene cutsceneN`), the mapping from CDNAME scene label to STR
-entry needs the cutscene overlay trace (see "Open items" below).
+For PROT-scene routing (`play --scene cutsceneN`), the retail mapping is fully disc-decoded:
+`fmv_id -> movie + frame range` via `legaia_asset::fmv_dispatch`, per-scene trigger ids via
+`man_field_scripts::scene_fmv_triggers`, and the post-play return scene via the master dispatch
+(see [`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping)).
 
 ## CLI reference
 
@@ -273,27 +418,18 @@ Pinned data structures inside the residency window (captured from a save state d
 
 | Address | Size | Stride | Contents |
 |---|---:|---:|---|
-| `0x801CAE40` | 144 B | 24 B × 6 | Compact MV-file table: `MV1.STR;1` .. `MV6.STR;1` |
+| `0x801CAE08` | variable | 24 B | libcd `CdlFILE` directory cache (the `MOV` dir while an FMV plays: `.`, `..`, `MV1.STR;1`..`MV6.STR;1`) |
 | `0x801CCA80` | 336 B | 56 B × 6 | ISO9660-shape directory record copies of the same six files |
 | `0x801CE810` | ~150 B | variable | Path-string table (\\DATA\\MOV.STR;1, \\DATA\\MOV15.STR;1, \\MOV\\MV1A.STR;1, \\MOV\\MV6..MV1.STR;1) |
-| `0x801CE8AC` | ~50 B | variable | CDNAME labels for mid-game FMV-bearing field scenes |
+| `0x801CE8AC` | ~50 B | variable | Post-FMV return-scene labels (CDNAME shape) |
 
-### Compact MV-file table layout
+### Directory-record cache
 
-Each entry in the compact table at `0x801CAE40` is 24 bytes:
+The 24-byte records at `0x801CAE08` are PsyQ `CdlFILE` structs - `[u32 CdlLOC][u32 size][char name[16]]` - libcd's `CdSearchFile` cache for the last directory searched, not an FMV structure. An earlier name-first parse ("compact MV table at `0x801CAE40`") was phase-shifted 8 bytes and paired each name with the *next* record's location; the shift artefacts ("`MV1` points at disc `MV2`") dissolve at the `CdlFILE` phase. Details + the title-capture cross-check (the same cache holding `XA1.XA..XA34.XA`) in [`str-fmv-table.md`](../formats/str-fmv-table.md#directory-record-cache-0x801cae08-24-b-cdlfile-records).
 
-```text
-+0x00 char[12]  filename (libcd-shaped, e.g. "MV1.STR;1\0")
-+0x0C u32       reserved (zero across the captured corpus)
-+0x10 u32       BCD MSF (byte 0=BCD minute, 1=BCD second, 2=BCD frame, 3=zero)
-+0x14 u32       file size in bytes (LE)
-```
+The historical name-first window parser is `legaia_asset::str_fmv_table::parse_entries` (kept as a capture-forensics helper); the residency check + pinned addresses are in `legaia_engine_core::capture_observations::str_fmv_overlay`.
 
-`bcd_msf` matches the libcd `CdlLOC` representation passed to `CdControl(CdlSetloc, ...)`. Convert to LBA with the standard CD identity: `LBA = ((M * 60) + S) * 75 + F - 150`.
-
-The Rust parser is `legaia_asset::str_fmv_table::parse_entries`; the residency check + pinned addresses are in `legaia_engine_core::capture_observations::str_fmv_overlay`.
-
-### Mid-game FMV-bearing field scenes
+### Post-FMV return scenes
 
 The FMV overlay's data section carries the CDNAME labels of seven field scenes - distinct from the `op*` / `ed*` engine cutscene scenes:
 
@@ -301,7 +437,7 @@ The FMV overlay's data section carries the CDNAME labels of seven field scenes -
 town0b  map01  chitei2  map02  jou  uru2  town0e
 ```
 
-These labels are the scenes the overlay itself references (e.g. for the post-playback scene restore) - **not** the trigger-op scene list: the disc-walked trigger table (below) finds the `0x4C 0xE2` ops in a different scene set, with only `chitei2` overlapping. The heuristic in [`cutscene_str_for`](../../crates/engine-core/src/scene.rs) covers the `op*` / `ed*` scenes in CDNAME order; `FMV_TRIGGER_FIELD_SCENES` (sibling constant) records this overlay label list; the per-scene MV index resolves through [`cutscene::fmv_index_to_str_filename`](../../crates/engine-core/src/cutscene.rs).
+These are the **destinations the master dispatch `FUN_801CEA3C` hands control to after playback**: one label per mid-game `fmv_id` (1..4, 6..8), written to the next-scene name global `0x80084548` with a spawn/door word at `0x80084540` (see [Retail playback engine](#retail-playback-engine-str-overlay--scus-st-streaming-library)). They are *not* the trigger-op scene list (the `0x4C 0xE2` ops live in a different scene set, only `chitei2` overlapping - a scene that returns to itself). The heuristic in [`cutscene_str_for`](../../crates/engine-core/src/scene.rs) covers the `op*` / `ed*` scenes in CDNAME order; `FMV_TRIGGER_FIELD_SCENES` (sibling constant) records this overlay label list.
 
 ## Field-VM FMV-trigger op
 
@@ -325,13 +461,15 @@ Outer opcode `0x4C` enters the field-VM dispatcher's high-nibble re-dispatch at 
 
 The two globals it writes are the only side-effects:
 
-- **`_DAT_8007BA78`** - FMV index. Read by the str_fmv overlay to select a 64-byte dispatch-table slot from `0x801D0A6C`. On retail USA the table has 12 slots (`fmv_id ∈ 0..=11`); the field VM has been observed writing values up to `fmv_id = 8` via the per-STR FMV trigger corpus. The mapping (`fmv_id → STR file + frame range`) is **not** a 1:1 walk over `MV1.STR..MV6.STR` - it skips `MV2.STR` and `MV5.STR` (disc-resident but unreferenced) and slots 5..=11 point at cut paths. The table is static overlay data, decoded from the disc by `legaia_asset::fmv_dispatch`; see [`str-fmv-table.md`](../formats/str-fmv-table.md#fmv-dispatch-table-0x801d0a6c-12--64-b) for the mapping.
+- **`_DAT_8007BA78`** - FMV index. Read by the str_fmv overlay's master dispatch to select a 32-byte dispatch-table slot from `0x801D0A6C`. On retail USA the table has 23 slots; the nine retail movies occupy `fmv_id 0..=8` - exactly the range the per-STR FMV trigger corpus observes - and every `MVn.STR` on the disc is dispatched (`MV3.STR` carries four segments by frame range; slots 9+ are dev files absent from the disc). The table is static overlay data, decoded from the disc by `legaia_asset::fmv_dispatch`; see [`str-fmv-table.md`](../formats/str-fmv-table.md#fmv-dispatch-table-0x801d0a6c-23--32-b) for the mapping.
 - **`_DAT_8007B83C`** - next-game-mode global. Setting it to `0x1A` (decimal 26) kicks the main mode dispatcher (`FUN_80017714`) into `StrInit` on the next frame, which loads the str_fmv overlay and reads `_DAT_8007BA78` to pick the file.
 
 The field-VM port handles this op as `op4c_n_e_sub2_fmv_trigger(fmv_id: i16)` in [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs) and the world's [`FieldHostImpl`](../../crates/engine-core/src/world.rs) records the request as `World::pending_fmv_trigger` plus a `FieldEvent::FmvTrigger { fmv_id }`.
 
 The world drives the Field → Cutscene → Field flow itself, mirroring the retail next-game-mode dispatch: the **next** `World::tick` consumes `pending_fmv_trigger` at the top of the frame (one frame after the op fires, exactly as `FUN_80017714` reads the next-game-mode global a frame late), and if the id resolves to a playable slot (`cutscene::fmv_index_to_str_filename` is `Some`) it flips `World::mode` into `SceneMode::Cutscene` and records the active FMV (`World::active_fmv()`). While the FMV plays the world **suspends the field VM** (the STR overlay owns the frame in retail); the host polls `World::active_fmv_str_filename()`, plays the resolved `MV*.STR`, and calls `World::finish_cutscene()` when playback ends,
-which returns to the field with the field-VM program counter already past the op. A `fmv_id` whose runtime slot points at a cut/missing path is drained as a no-op (no mode flip), matching the engine's "treat a cut slot as a no-op" rule. The `legaia-engine play` loop runs this flow headlessly, decoding the resolved STR via MDEC to report its frame count. The windowed `play-window` host plays it **in the engine window**: when a tick flips the world into `SceneMode::Cutscene`, it resolves the `MV*.STR` and decodes it (shared `cutscene_av` module with `play-str`), suspends world ticks, and shows the video one frame per redraw; once the frames drain it calls `finish_cutscene()` and resumes the field.
+which returns to the field with the field-VM program counter already past the op. A `fmv_id` whose runtime slot points at a dev/missing path is drained as a no-op (no mode flip).
+**The engine's hard-coded resolver still carries the superseded 5-slot map** (`fmv_index_to_str_filename`: `Some` for `0..=4` only, and with the wrong movie for the mid-game ids) -
+the disc-parsed `legaia_asset::fmv_dispatch::FmvTable` is the authoritative source (nine retail slots, see [`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping)); consumers should prefer the table and the resolver needs realigning to it. The `legaia-engine play` loop runs this flow headlessly, decoding the resolved STR via MDEC to report its frame count. The windowed `play-window` host plays it **in the engine window**: when a tick flips the world into `SceneMode::Cutscene`, it resolves the `MV*.STR` and decodes it (shared `cutscene_av` module with `play-str`), suspends world ticks, and shows the video one frame per redraw; once the frames drain it calls `finish_cutscene()` and resumes the field.
 When booting from a **disc image** the movie is read straight from the ISO with its interleaved XA audio (the scene BGM sequencer is paused for the duration and the video is paced off the audio cursor); when booting from an **extracted root** it plays video only (the extract truncates the audio). A `fmv_id` whose slot points at a missing path drains as a no-op.
 
 The trailing 3 bytes of the instruction are reserved by the dispatcher's PC math (the handler's `addiu s8, s8, 6` is fixed, but only bytes `+1..+3` are read). Disassemblers should leave them as opaque padding.
@@ -355,7 +493,7 @@ Both title-side sites live in the same outer function `FUN_801DD35C` (the per-fr
 A raw bytewise PROT scan can't see the trigger ops because the scene scripts live **LZS-compressed** inside each scene's MAN. Decompressing every scene MAN and walking its partition-1 scripts with the field-VM disassembler (`man_field_scripts::scene_fmv_triggers`, the `0x3F`-destination walk's sibling) recovers the full assignment statically - `town01 → 1`, `garmel → 2`, `deroa / chitei2 → 3`, `dohaty → 4`, `town0d → 6`, `uru → 7`, `jouine → 8`; one op per scene, no other scene MAN carries one.
 Pinned by the disc-gated `scene_fmv_triggers_disc` test; full table in [`str-fmv-table.md` § Per-scene trigger assignment](../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced). The earlier conclusion that the trigger bytecode is "reconstructed at scene-load from the field-pack preamble's runtime-projected slot" is **falsified** - the ops were simply compressed on disc.
 
-The overlay's seven-label list above is therefore *not* the trigger-scene set (only `chitei2` appears in both). Outside the MAN-carried scripts, a raw sweep also finds in-range `4C E2` byte candidates in `taiku` (`fmv_id 5`, the cut `MOV15.STR` slot) and `opmap01` / `koin1b` (`fmv_id 7`) in uncompressed regions of non-MAN scene structures - uncontextualized byte matches (the same sweep "finds" triggers inside VAB sample data), kept as candidates rather than pins.
+The overlay's seven-label list above is therefore *not* the trigger-scene set (only `chitei2` appears in both) - it is the post-play **return-scene** table. Outside the MAN-carried scripts, a raw sweep also finds in-range `4C E2` byte candidates in `taiku` (`fmv_id 5` - under the corrected dispatch stride that is the fourth `MV3.STR` segment, the one slot with a "stay in the current scene" hand-off, which fits a `taiku` trigger) and `opmap01` / `koin1b` (`fmv_id 7`) in uncompressed regions of non-MAN scene structures - uncontextualized byte matches (the same sweep "finds" triggers inside VAB sample data), kept as candidates rather than pins.
 
 ### Per-STR FMV trigger corpus
 
@@ -730,15 +868,23 @@ pixel-aligned against a pure-diagnostic grade - the encoded output lands `G/R �
 
 ## Open items
 
-- **FMV dispatch table - decoded from disc.** The play loop `FUN_801CF098` (1236 B) is reached from the selector at `0x801CECA0` (`_DAT_8007BA78 << 6 + 0x801D0A6C`), and that dispatch table is **static overlay data** now decoded straight from the disc (`legaia_asset::fmv_dispatch`): each `fmv_id`'s movie + frame range, used to seek to the right segment (`cutscene_av::fmv_segment_window`). The STR overlay (PROT 0970) is Ghidra-importable at its base, so the master-dispatch is a static decompile, no capture. Still finer-grained: the XA channel selector + the MDEC frame-demux state machine.
-- **XA channel map.** `(file_no, ch_no)` → cutscene-name association is inside the STR/MDEC overlay. The MV-file table doesn't carry XA channel info directly; the channel selector is presumably driven by `\DATA\MOV.STR;1` (which appears to be a multi-channel container distinct from the per-cutscene `\MOV\MVn.STR;1` files).
-- **MOV15.STR + MV1A.STR.** Two extra path strings (`\DATA\MOV15.STR;1` and `\MOV\MV1A.STR;1`) appear alongside the six numbered MVs. These are dev / debug branches: `MOV15` is the 15-FPS test file (referenced by the `psx.cdspeedup` / 15 fps debug paths), and `MV1A` is an alternate / cut version of MV1. Neither ships in the released disc layout.
+- **XA channel map - resolved.** There is no channel selector in the STR overlay: FMVs play with the sector filter off (each movie carries one `(1, 0)` track), and the `XA*.XA` clip path selects `CdlSetfilter {file 1, chan}` per cue in SCUS (`FUN_8003D764`), with `clip_id -> XA<n>.XA` via the table at `0x801C6ED8`. See [XA channel selection](#xa-channel-selection). The earlier "`\DATA\MOV.STR` multi-channel container drives it" hypothesis is falsified (dev leftover, not on the disc).
+- **Frame-demux SM + master dispatch - statically decompiled.** `FUN_801CEA3C` (dispatch + return-scene hand-off), `FUN_801CF098` (play loop), the SCUS St-library demuxer `FUN_8005ECD4`/`FUN_8005F024`, and the two bitstream decoders are decoded; see [Retail playback engine](#retail-playback-engine-str-overlay--scus-st-streaming-library). The dispatch-table stride is 32 bytes (nine retail slots) - the superseded 64-byte reading is corrected in [`str-fmv-table.md`](../formats/str-fmv-table.md).
+- **Engine resolver realignment.** `legaia_engine_core::cutscene::fmv_index_to_str_filename` still hard-codes the superseded 5-slot map; the engine flow should re-source it from `legaia_asset::fmv_dispatch::FmvTable` (correct nine-slot mapping, incl. `MV2`/`MV5` and the four `MV3` segments) plus the master dispatch's per-`fmv_id` return scenes.
+- **XA clip-table writer + cue census.** The `0x801C6ED8` clip-table *content* is pinned (34 slots = `XA1..XA34`, `[CdlLOC][byte len]`), but its filler is a DMA/computed-pointer write no static addressing-form scan sees (both `lui 0x801c`-materialised sites in SCUS are the readers `FUN_8003D53C`/`FUN_8003EAE4`). Which game systems fire which `(clip_id, chan)` cues beyond the menu voice dispatcher `FUN_8004FCC8` is a per-caller census, still open.
+- **MOV15.STR + MV1A.STR.** Two extra path strings (`\DATA\MOV15.STR;1` and `\MOV\MV1A.STR;1`) appear alongside the six numbered MVs, dispatched by dev slots 9/10 (the only slots selecting the STRv2/v3 decoder and non-default VRAM rects): `MOV15` is the 15-FPS test file (referenced by the `psx.cdspeedup` / 15 fps debug paths), and `MV1A` is an alternate / cut version of MV1. Neither ships in the released disc layout.
 - **8-bit ADPCM.** `coding_info` width detection drives a real 8-bit group decoder (`BitsPerSample::Eight`: 4 units/group, full-byte samples). No 8-bit audio has been observed in the corpus, so the path is covered by synthetic unit tests rather than a bit-exact reference.
 
 ## Provenance
 
 | Subject | Source |
 |---|---|
+| Master dispatch + return-scene hand-off | `FUN_801CEA3C`; `see ghidra/scripts/funcs/overlay_cutscene_str_0970_801cea3c.txt` |
+| Play loop | `FUN_801CF098`; `see ghidra/scripts/funcs/str0970_801cf098.txt` |
+| Frame-demux SM (St library) | `FUN_8005ECD4` / `FUN_8005F024`; `see ghidra/scripts/funcs/8005f024.txt` |
+| Iki / STRv2 bitstream decoders | `FUN_801D0378` / `FUN_801D070C` (+ LZSS `FUN_801D0604`); `see ghidra/scripts/funcs/overlay_str_fmv_0x801D0378.txt` |
+| XA-clip channel selector (`CdlSetfilter`) | `FUN_8003D53C` / `FUN_8003D764`; `see ghidra/scripts/funcs/8003d764.txt` |
+| Per-movie XA `(file 1, chan 0)` single track | raw-sector subheader scan of all six `MOV/MV*.STR` on the disc |
 | STR sector header layout | `crates/mdec/src/str_sector.rs`; PSX-SPX §STR Video Files |
 | Iki AC VLC table + LZSS qscale/DC table | `crates/mdec/src/lib.rs`; PSX-SPX BS-compression pages + jPSXdec `PlayStation1_STR_format.txt` (format docs) |
 | IDCT + dequantize formula | `crates/mdec/src/lib.rs`; PSX-SPX §MDEC |

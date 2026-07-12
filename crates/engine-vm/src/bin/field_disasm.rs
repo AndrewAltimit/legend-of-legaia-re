@@ -89,12 +89,12 @@ enum Cmd {
         #[arg(long)]
         scene: Option<String>,
         /// By default, the scan only reports FMV triggers whose fmv_id is in
-        /// the retail valid range (0..=8). The runtime FMV-state table at
-        /// `0x801D0A6C` has 12 slots - slots 0..=4 reference real
-        /// `MV*.STR` files; slots 5..=11 reference cut paths. The
-        /// per-STR FMV trigger corpus pins fmv_ids 0..=8 as
-        /// debug-menu-reachable values. Pass this to disable
-        /// filtering and see every coincidental 0x4C 0xE2 match.
+        /// the retail valid range (0..=8). The FMV dispatch table at
+        /// `0x801D0A6C` has 23 slots of 32 bytes - the nine retail slots
+        /// 0..=8 reference real `MV*.STR` files (every movie on the
+        /// disc); slots 9..=22 reference dev files absent from the
+        /// retail disc. Pass this to disable filtering and see every
+        /// coincidental 0x4C 0xE2 match.
         #[arg(long)]
         no_filter: bool,
         /// Run the scan over every PROT entry's raw bytes (not just
@@ -286,9 +286,11 @@ fn cmd_scan_prot(
         if bytewise {
             // Brute-force byte-pattern scan for `0x4C 0xE2 lo hi`. The
             // dispatcher's PC math reserves the two trailing operand bytes
-            // but doesn't check them, so we don't either - the in-range
-            // fmv_id alone (0..=8) is a strong-enough fingerprint to surface
-            // the seven retail FMV-bearing scenes. Window step = 1.
+            // but doesn't check them, so we don't either. NB the genuine
+            // per-scene triggers live LZS-compressed inside scene MANs
+            // (`man_field_scripts::scene_fmv_triggers` recovers them), so
+            // this raw scan only surfaces uncompressed candidates.
+            // Window step = 1.
             let mut p = 0usize;
             while p + 4 <= buf.len() {
                 if buf[p] == 0x4C && buf[p + 1] == 0xE2 {

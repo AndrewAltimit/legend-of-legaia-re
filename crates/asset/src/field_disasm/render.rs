@@ -160,20 +160,22 @@ pub fn clean_scene_name(raw: &[u8]) -> Option<String> {
     Some(String::from_utf8_lossy(raw).into_owned())
 }
 
-/// Map a retail FMV index to its filename via the runtime FMV-state
-/// table at `0x801D0A6C`. The retail mapping skips `MV2.STR` and
-/// `MV5.STR` (disc-resident but not referenced by any FMV slot) and
-/// reaches them via `MV3.STR` segments instead. Slots `5..=11`
-/// reference cut paths.
+/// Map a retail FMV index to its filename via the FMV dispatch table at
+/// `0x801D0A6C` (32-byte slots; see `crate::fmv_dispatch`). The nine
+/// retail slots `0..=8` dispatch every movie on the disc - `MV3.STR`
+/// carries four segments carved out by frame range - and slots `9..=22`
+/// reference dev files absent from the retail disc.
 pub fn fmv_filename(fmv_id: i16) -> &'static str {
     match fmv_id {
         0 => "MV1.STR",
-        1 => "MV3.STR",
-        2 => "MV3.STR", // second segment of MV3 (different start sector)
-        3 => "MV4.STR",
-        4 => "MV6.STR",
-        5 => "(cut: MOV15.STR)",
-        6..=11 => "(cut: MOV.STR)",
+        1 => "MV2.STR",
+        2..=5 => "MV3.STR", // four abutting frame-range segments
+        6 => "MV4.STR",
+        7 => "MV5.STR",
+        8 => "MV6.STR",
+        9 => "(dev: MV1A.STR)",
+        10 => "(dev: MOV15.STR)",
+        11..=22 => "(dev: MOV.STR)",
         _ => "(unknown)",
     }
 }

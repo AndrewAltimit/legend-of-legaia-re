@@ -786,8 +786,9 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scene-event-scripts <PATH> [
 
 # Walk every PROT.DAT entry and report 0x4C 0xE2 byte-pattern hits with
 # their CDNAME label and decoded fmv_id (filtered to the retail valid
-# range 0..=8 unless --no-filter is passed; the runtime FMV-state table
-# at 0x801D0A6C carries 12 slots - slots 5..=11 point at cut paths):
+# range 0..=8 unless --no-filter is passed; the FMV dispatch table at
+# 0x801D0A6C carries 23 32-byte slots - the nine retail slots 0..=8
+# dispatch every movie on the disc, slots 9..=22 point at dev files):
 cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
     --disc <PROT.DAT> --cdname <CDNAME.TXT> --bytewise
 ```
@@ -809,16 +810,18 @@ The library exposes `legaia_engine_vm::field_disasm::{decode, LinearWalker, find
 
 ## FMV-trigger sites - exhaustive backward sweep
 
-A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds **only two distinct writers**. Both are codified in [`legaia_engine_vm::cutscene_trigger`](../../crates/engine-vm/src/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
+A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in [`legaia_engine_vm::cutscene_trigger`](../../crates/engine-vm/src/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
 
 | Label | Function | Mode-write addr | FMV-id source | Trigger condition |
 |---|---|---|---|---|
 | `field_vm_op_4c_e2` | `FUN_801DE840` | `0x801E3104` | `decode_u16_be(pc+1)` from field-VM bytecode | Field-VM hits the byte sequence `0x4C 0xE2 lo hi`; reached via JT chain `0x801CEE60` (high nibble 0xE) → `0x801CF008` (low nibble 0x2) → label `0x801E30E4`. |
 | `title_attract_loop` | `FUN_801DE234`, case `0x10` | `0x801E0F50` | Hardcoded `0` (= `MV1.STR`, intro) | Title-screen idle countdown `DAT_801ef16c` underflows. |
+| `title_tick_inline` | `FUN_801DD35C` | `0x801DDCF0` | Hardcoded `0` (= `MV1.STR`, intro) | Same attract countdown, inline fall-through past the decrement at `0x801DDCCC` - the PC a live watchpoint reports. |
 
 **`FUN_801E30E4` has zero static callers.** It is a label inside `FUN_801DE840`, not a callable subroutine. Ghidra promotes it to a `FUN_` symbol because the JT entry at `0x801CF008[2]` resolves there; the actual control flow is the dispatch chain above. A direct `grep -rn 'jal 0x801e30e4' ghidra/scripts/funcs/` returns zero matches.
 
-The per-scene trigger assignment is **disc-sourced**: the `0x4C 0xE2` ops live LZS-compressed inside each scene's MAN (which is why a raw bytewise PROT scan misses them - it finds only `PROT[371] taiku, fmv_id=5` in a non-MAN structure). Walking the decompressed partition-1 scripts recovers the literal `fmv_id` operands for all eight trigger scenes (`town01`, `garmel`, `deroa`, `chitei2`, `dohaty`, `town0d`, `uru`, `jouine`); the FMV overlay's own seven-label scene list (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`) is the overlay's internal scene references, not the trigger-scene set. See [`cutscene.md`](cutscene.md) and [`../formats/str-fmv-table.md`](../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced).
+The per-scene trigger assignment is **disc-sourced**: the `0x4C 0xE2` ops live LZS-compressed inside each scene's MAN (which is why a raw bytewise PROT scan misses them - it finds only `PROT[371] taiku, fmv_id=5` in a non-MAN structure). Walking the decompressed partition-1 scripts recovers the literal `fmv_id` operands for all eight trigger scenes (`town01`, `garmel`, `deroa`, `chitei2`, `dohaty`, `town0d`, `uru`, `jouine`).
+The FMV overlay's own seven-label scene list at `0x801CE8AC` (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`) is the **post-play return-scene** table the master dispatch `FUN_801CEA3C` hands control to after playback, not the trigger-scene set. See [`cutscene.md`](cutscene.md) and [`../formats/str-fmv-table.md`](../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced).
 
 ## See also
 

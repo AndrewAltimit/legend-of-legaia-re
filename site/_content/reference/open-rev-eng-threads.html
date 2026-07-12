@@ -101,7 +101,7 @@
       <tr>
         <td>Battle face-stamp issuing site</td>
         <td><span class="tag tag-done">resolved</span></td>
-        <td>The per-frame facial animator <code>FUN_8004C7B4</code> stamps eye/mouth frames every frame (action-entry tracks <code>+0x8C</code>/<code>+0x98</code>, static per-character SCUS tables, via <code>MoveImage</code>; Terra skipped). Residue: the sibling pass <code>FUN_8004CCD4</code>'s trigger states.</td>
+        <td>The per-frame facial animator <code>FUN_8004C7B4</code> stamps eye/mouth frames every frame (action-entry tracks <code>+0x8C</code>/<code>+0x98</code>, static per-character SCUS tables, via <code>MoveImage</code>; Terra skipped). The sibling-pass residue is closed: <code>FUN_8004CCD4</code> is not a stamp - it is the per-frame equipment mesh-variant swap driven by the entry's third track at <code>+0xA4</code> (retail windows Noa-only), re-run per after-image ghost by the arts trail renderer.</td>
         <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
       </tr>
       <tr>
@@ -446,8 +446,8 @@
   <h3 id="d-prescript">Scene prescript dual consumer - resolution</h3>
   <p>The op-<code>0x34</code> sub-3 census (scanner <code>man_field_scripts::scene_stager_installs</code>, oracle <code>scene_prescript_consumer_census_disc</code>) walked all three MAN partitions across the corpus: 78 scenes install stagers, from both the placement scripts and the cutscene timelines. The install carriers in partition 1 are dedicated effect-actor records - Shift-JIS-named "effect", whole script = <code>install id N</code> + infinite loop - and the town "768-byte dispatch table" at record 0 is those actors' target: the scene's master ambient stager (8-byte-periodic spawn rows), not a table. A town01 field state pins the id space: retail relocates the bundle to RAM as <code>[u16 count][u16 offsets[count]]</code> at <code>_DAT_8007B8D0</code> with count = the file record count and record 0 byte-identical at the first offset.</p>
 
-  <h3 id="d-clut-cycle">World-map CLUT cycling - residual</h3>
-  <p>Destination cells are kingdom-universal; no rect constant exists in any code image. The operand-source finding splits: only the <strong>row-498 strip park row</strong> is script-operand-driven - map01's field MAN carries exactly eight <code>4C 61</code> ops (four <code>frames=0</code> one-shots copying <code>(112, 499)</code> onto <code>(0/16/32/48, 498)</code> + four 128-vsync cross-fades back; <code>scene_clut_cell_fx</code>, disc-gated <code>map01_clut_fx_disc</code>). The row-506/508/509 head-walk operands appear in <strong>no</strong> MAN (exhaustive u16 scan), so the head-walk's overlay-resident operand source is still unpinned. Cadence: <code>0x1F800393</code> is the adaptive frame-skip factor (vsyncs per game tick, <code>FUN_80016B6C</code>; field/town 2, overworld 3) and the fade SM is ported (<code>engine-core::clut_fx</code> + <code>World::step_clut_fx</code>); the remaining unknown is the ocean-head step interval in vsyncs (needs a mednafen frame-series capture).</p>
+  <h3 id="d-clut-cycle">World-map CLUT cycling - closed</h3>
+  <p>The head-walk operands are a literal disc table: <strong>kingdom-bundle slot 5</strong> (type byte <code>0x06</code>), a 516-byte 8-entry CLUT-walk animation table byte-identical across all three kingdoms (parser <code>legaia_asset::clut_walk</code>). Chain: loader <code>FUN_8001F05C</code> case 6 &rarr; <code>DAT_8007B7C8</code>; field-init <code>FUN_801D6704</code> spawns one render-mode-<code>0xB</code> actor per entry (<code>FUN_80024CFC</code>, accumulator seeded 100); emitter <code>FUN_8001ADA4</code> case <code>0xB</code> banks <code>acc += DAT_1F800393</code> and on <code>acc &gt;= hold</code> issues the 16&times;1 <code>MoveImage</code>, <em>resetting</em> <code>acc = 0</code>. Live traces on all three kingdoms confirm strictly constant intervals <code>ceil(hold/dt)*dt</code> (9/12/21 vsyncs for holds 8/10/20 at overworld <code>dt=3</code>), a shared spawn epoch with independent per-entry phases, and the 18-step head cycle sourcing two extra wave frames parked before the <code>OCEAN_ANIM_FRAME0_HEAD</code> signature (ocean frame 12 never shown). The emitter is <em>not</em> the script-driven <code>FUN_801E4C58</code>/<code>FUN_801E4794</code> family - that carries only the row-498 park one-shots/fades, whose cells the slot-5 walkers then use as <em>sources</em>. "Dest rows = park rows + 8" is falsified (literal u16 dest cells). Engine: <code>WaterAnim::Walk</code> in play-window; <code>WORLD_MAP_CLUT_CYCLE_CELLS</code> = the slot-5 destination fold. See <a href="../subsystems/world-map.html">world-map</a> &sect; Ocean animation.</p>
 </section>
 
 <section class="doc-section" id="text-dialog">
@@ -502,8 +502,8 @@
       </tr>
       <tr>
         <td>Record[0] <code>+0x5C</code> pointer + art-anim stream source</td>
-        <td><span class="tag tag-partial">partial</span></td>
-        <td>The art keyframe streams are "ME" archives in <code>readef.DAT</code> slots <code>3*char+1</code>/<code>+2</code> (ported, disc-validated). The staging arm <code>FUN_80055B4C</code> is now traced - it is driven by the side-band streamer <code>FUN_801F12D0</code>, which stages the <code>3*char+{0..3}</code> readef group. Residue: <code>+0x5C</code> is a zero word with no traced reader (needs a runtime read-watchpoint).</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>The art keyframe streams are "ME" archives in <code>readef.DAT</code> slots <code>3*char+1</code>/<code>+2</code> (ported, disc-validated). The staging is traced end to end: the initiative scheduler <code>FUN_801DABA4</code> stages the acting character's group per turn (main archive resident), the battle-end arms request <code>3*char+2</code> directly (base archive = the win-pose records 1..8). <code>+0x5C</code> is reframed as a vestigial paired-relocation field: rebased at load alongside <code>+0x58</code>, but an exhaustive corpus sweep finds no reader.</td>
         <td><a href="../formats/battle-data-pack.html">battle-data-pack</a></td>
       </tr>
     </tbody>
@@ -520,6 +520,18 @@
         <td><span class="tag tag-done">resolved</span></td>
         <td>Retail runs the <code>Studio C</code> preset, master-enabled, globally; per-voice <code>EON</code> send is broad (BGM + SFX alike). No per-cue enable source exists. Wired at SPU init; residual: output-depth tuning only.</td>
         <td><a href="../subsystems/audio.html">audio</a></td>
+      </tr>
+      <tr>
+        <td>XA channel map / STR demux SM</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Statically decompiled from PROT 0970 + SCUS. No channel selector exists in the STR overlay: FMVs play filter-off (each movie = one <code>(1, 0)</code> track); the <code>XA*.XA</code> clip path selects <code>CdlSetfilter {file 1, chan}</code> per cue (<code>FUN_8003D764</code>). Falsified: the "<code>\DATA\MOV.STR</code> multi-channel container" hypothesis; the 64-byte dispatch stride (real stride 32 B - all nine retail slots resolve, every disc movie plays, <code>town0d</code>/<code>uru</code>/<code>jouine</code> triggers are not vestigial); the name-first "compact MV table" phase (it is libcd's <code>CdlFILE</code> dir cache). Residual: <code>fmv_index_to_str_filename</code> realignment.</td>
+        <td><a href="../subsystems/cutscene.html#xa-channel-selection">cutscene</a></td>
+      </tr>
+      <tr>
+        <td>XA clip-table writer + <code>(clip_id, chan)</code> cue census</td>
+        <td><span class="tag tag-open">open</span></td>
+        <td>The <code>0x801C6ED8</code> clip-table content is pinned (34 <code>[CdlLOC][len]</code> slots = <code>XA1..XA34</code>, title-capture byte-exact vs the disc files), but its filler is a DMA/computed write (both <code>lui 0x801c</code> sites in SCUS are readers). A boot write-watchpoint would pin the filler; a caller census of <code>FUN_8003D53C</code>/<code>FUN_8003EAE4</code> would name each cue (only the menu voice dispatcher <code>FUN_8004FCC8</code> is decoded).</td>
+        <td><a href="../subsystems/cutscene.html#xa-channel-selection">cutscene</a></td>
       </tr>
     </tbody>
   </table>

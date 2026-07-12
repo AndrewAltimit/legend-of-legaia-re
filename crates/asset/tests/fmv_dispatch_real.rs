@@ -1,14 +1,15 @@
 //! Disc-gated decode of the STR FMV dispatch table out of the real STR/MDEC
-//! overlay (PROT 0970), pinning the five retail `fmv_id -> MVn.STR` entries +
+//! overlay (PROT 0970), pinning the nine retail `fmv_id -> MVn.STR` entries +
 //! their frame ranges.
 //!
 //! The overlay loads verbatim from its PROT entry (`form = raw` in the
 //! static-overlay map), so the raw entry bytes are byte-identical to the
-//! as-loaded overlay and the table at VA `0x801D0A6C` decodes directly.
+//! as-loaded overlay and the table at VA `0x801D0A6C` decodes directly at the
+//! selector's 32-byte stride (`sll v0,v0,0x5` at overlay VA `0x801CEC9C`).
 //!
 //! Skips + passes when `extracted/PROT/` or `LEGAIA_DISC_BIN` is missing.
 
-use legaia_asset::fmv_dispatch::FmvTable;
+use legaia_asset::fmv_dispatch::{FMV_SLOT_COUNT, FmvTable};
 use std::path::PathBuf;
 
 fn str_overlay() -> Option<Vec<u8>> {
@@ -41,18 +42,22 @@ fn retail_fmv_dispatch_table_decodes_from_disc() {
     };
     let table = FmvTable::from_str_overlay(&overlay).expect("decode FMV dispatch table");
 
-    // All 12 slots decode (5 retail + dev placeholders).
-    assert_eq!(table.entries.len(), 12, "full FMV slot table");
+    // All 23 slots decode (9 retail + 14 dev placeholders).
+    assert_eq!(table.entries.len(), FMV_SLOT_COUNT, "full FMV slot table");
 
-    // The five retail FMVs: file + (start, end) frame range. fmv 1 + 2 are two
-    // distinct cutscenes carved out of the single MV3.STR by frame range; fmv 2
-    // is the one that seeks in to frame 0x1a5.
+    // The nine retail FMVs: file + (start, end) frame range. Every one of the
+    // six on-disc movies is dispatched; MV3.STR carries four distinct
+    // cutscenes carved out by frame range.
     let want: &[(i16, &str, u32, u32)] = &[
         (0, "MOV/MV1.STR", 1, 0x53a),
-        (1, "MOV/MV3.STR", 1, 0xe1),
-        (2, "MOV/MV3.STR", 0x1a5, 0x27b),
-        (3, "MOV/MV4.STR", 1, 0x152),
-        (4, "MOV/MV6.STR", 1, 0x297),
+        (1, "MOV/MV2.STR", 1, 0xf4),
+        (2, "MOV/MV3.STR", 1, 0xe1),
+        (3, "MOV/MV3.STR", 0xe2, 0x1a4),
+        (4, "MOV/MV3.STR", 0x1a5, 0x27b),
+        (5, "MOV/MV3.STR", 0x27c, 0x36a),
+        (6, "MOV/MV4.STR", 1, 0x152),
+        (7, "MOV/MV5.STR", 1, 0x288),
+        (8, "MOV/MV6.STR", 1, 0x297),
     ];
     for &(id, path, start, end) in want {
         let e = table
@@ -66,12 +71,13 @@ fn retail_fmv_dispatch_table_decodes_from_disc() {
         assert_eq!(e.start_frame, start, "fmv {id} start frame");
         assert_eq!(e.end_frame, end, "fmv {id} end frame");
         assert_eq!((e.width, e.height), (320, 240), "fmv {id} dims");
+        assert_ne!(e.scale_flag, 0, "fmv {id} is 24-bit color");
         assert!(e.on_retail_disc(), "fmv {id} is a retail movie");
     }
 
-    // The dev slots (5..) reference MOV15.STR / MOV.STR, which aren't on the
-    // released disc, so engine_path() declines them.
-    for id in 5..12i16 {
+    // The dev slots (9..) reference MV1A.STR / MOV15.STR / MOV.STR, which
+    // aren't on the released disc, so engine_path() declines them.
+    for id in 9..FMV_SLOT_COUNT as i16 {
         assert!(
             !table.entry(id).unwrap().on_retail_disc(),
             "dev slot {id} is not a retail movie"
@@ -83,28 +89,10 @@ fn retail_fmv_dispatch_table_decodes_from_disc() {
         );
     }
 
-    // Cross-check the disc decode against the engine's resolver: every retail
-    // slot agrees, so the engine mapping is faithfully disc-sourced.
-    for &(id, path, ..) in want {
-        assert_eq!(
-            legaia_engine_core_cutscene_path(id).as_deref(),
-            Some(path),
-            "fmv {id} matches the engine resolver"
-        );
+    // Retail frame ranges partition each movie contiguously: MV3's four
+    // segments abut (1..0xe1 | 0xe2..0x1a4 | 0x1a5..0x27b | 0x27c..0x36a).
+    for pair in [(2i16, 3i16), (3, 4), (4, 5)] {
+        let (a, b) = (table.entry(pair.0).unwrap(), table.entry(pair.1).unwrap());
+        assert_eq!(a.end_frame + 1, b.start_frame, "MV3 segments abut");
     }
-}
-
-/// Mirror of `legaia_engine_core::cutscene::fmv_index_to_str_filename` (kept
-/// local so `legaia-asset` doesn't depend on the engine crate).
-fn legaia_engine_core_cutscene_path(fmv_id: i16) -> Option<String> {
-    Some(
-        match fmv_id {
-            0 => "MOV/MV1.STR",
-            1 | 2 => "MOV/MV3.STR",
-            3 => "MOV/MV4.STR",
-            4 => "MOV/MV6.STR",
-            _ => return None,
-        }
-        .to_string(),
-    )
 }

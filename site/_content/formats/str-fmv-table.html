@@ -1,29 +1,28 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; STR FMV table</div>
-  <h1>In-RAM STR FMV file tables <span class="tag tag-partial">Inferred</span></h1>
-  <p class="lede">The cutscene / MDEC overlay's lookup tables for STR FMV files. Two distinct tables coexist in the str_fmv overlay's data section, with different roles: a 6-entry <em>compact</em> dev-shape metadata table at <code>0x801CAE40</code>, and the 12-entry <em>FMV dispatch</em> table at <code>0x801D0A6C</code> that the play loop (<code>FUN_801CF098</code>) actually reads. Both are static overlay data, so they decode straight from the disc; the dispatch table carries each <code>fmv_id</code>'s movie + frame range (<code>legaia_asset::fmv_dispatch</code>).</p>
+  <h1>In-RAM STR FMV file tables <span class="tag tag-confirmed">Confirmed</span></h1>
+  <p class="lede">The cutscene / MDEC overlay's lookup tables for STR FMV files. Two distinct tables coexist in the str_fmv overlay's data section, with different roles: libcd's generic <em>directory-record cache</em> at <code>0x801CAE08</code> (PsyQ <code>CdlFILE</code> records - not an FMV structure), and the 23-slot <em>FMV dispatch</em> table at <code>0x801D0A6C</code> (32-byte stride) that the master dispatch hands to the play loop (<code>FUN_801CF098</code>). The dispatch table is static overlay data, so it decodes straight from the disc; it carries each <code>fmv_id</code>'s movie + frame range (<code>legaia_asset::fmv_dispatch</code>).</p>
 </header>
 
 <section class="doc-section" id="confidence">
   <h2>Confidence</h2>
-  <p><strong>Inferred - structural reading.</strong> Compact-table layout pinned from a captured FMV-overlay-resident save. Runtime FMV-state table layout lifted from the str_fmv overlay's data section, cross-validated against the play loop's offset reads. The retail trigger range (<code>0..=8</code>) is pinned by the per-STR FMV trigger corpus (nine save states, <code>_DAT_8007BA78 ∈ 0..=8</code>).</p>
+  <p><strong>Confirmed.</strong> The dispatch-table stride and field layout are pinned from the disc bytes of PROT 0970 at its static base (selector <code>sll v0,v0,0x5</code> at <code>0x801CEC9C</code>) and byte-identical in the FMV-overlay-resident RAM capture; the play loop's field reads cross-validate every field. The retail trigger range (<code>0..=8</code>) is pinned by the per-STR FMV trigger corpus (nine save states, <code>_DAT_8007BA78 ∈ 0..=8</code>) - exactly matching the table's nine retail slots.</p>
 </section>
 
-<section class="doc-section" id="compact-table">
-  <h2>Compact table layout (<code>0x801CAE40</code>, 6 × 24 B)</h2>
-<pre><code>+0x00  char[12]  filename     "MV1.STR;1\0..." (null-padded; libcd path shape)
-+0x0C  u32       reserved     zero across all observed entries
-+0x10  u32       bcd_msf      byte 0 = BCD minute, 1 = BCD second,
-                              2 = BCD frame, 3 = zero
-+0x14  u32       size         file size in bytes (LE)</code></pre>
-  <p><code>bcd_msf</code> is the standard libcd <code>CdlLOC</code> representation: each byte is two BCD digits (high nibble = tens, low nibble = ones). Convert to absolute LBA with the standard CD identity:</p>
-<pre><code>LBA = ((M * 60) + S) * 75 + F - 150</code></pre>
-  <p>The compact table's name fields are dev-only labels and <strong>do not match what the disc reader resolves at the table's BCD MSF</strong>. The first five entries shift by one against the disc layout (entry [0] "MV1" points at disc MV2, etc.); entry [5] "MV6" points at the unrelated <code>XA15.XA</code>. <strong>The compact table is a separate dev/init lookup, not the FMV play engine's resolver.</strong></p>
+<section class="doc-section" id="dir-cache">
+  <h2>Directory-record cache (<code>0x801CAE08</code>, 24 B <code>CdlFILE</code> records)</h2>
+  <p>What earlier captures read as a "compact MV-file table at <code>0x801CAE40</code>" is libcd's <code>CdSearchFile</code> per-directory file cache - one PsyQ <code>CdlFILE</code> record per file of the last-searched directory:</p>
+<pre><code>+0x00  u32       CdlLOC   - byte 0 = BCD minute, 1 = BCD second,
+                            2 = BCD frame, 3 = zero
++0x04  u32       size     - file size in bytes (LE)
++0x08  char[16]  name     - "MV1.STR;1\0..." (null-padded)</code></pre>
+  <p>starting with the <code>.</code> / <code>..</code> entries at <code>0x801CAE08</code> / <code>0x801CAE20</code>; the first named record sits at <code>0x801CAE38</code>. The earlier name-first parse (name at <code>+0x00</code>, MSF at <code>+0x10</code>) was <strong>phase-shifted 8 bytes</strong>, pairing each name with the <em>next</em> record's location - manufacturing the apparent one-entry shift ("MV1 points at disc MV2", "MV6 points at XA15.XA"). At the <code>CdlFILE</code> phase every record is self-consistent. A title-screen capture shows the same cache holding the <code>XA</code> directory (<code>XA1.XA;1..XA34.XA;1</code>); the FMV capture shows the <code>MOV</code> directory. Convert <code>CdlLOC</code> to LBA with <code>LBA = ((M×60)+S)×75 + F − 150</code>.</p>
+  <p>The <code>legaia_asset::str_fmv_table</code> parser still reads the historical name-first window (its <code>bcd_msf</code> is the <em>following</em> record's location); treat it as a capture-forensics helper, not a format decoder.</p>
 </section>
 
 <section class="doc-section" id="path-table">
   <h2>Path string table (<code>0x801CE810</code>)</h2>
-  <p>The runtime FMV-state slots' path-pointer field (<code>+0x00</code>) points into a packed null-terminated string table at the very start of the STR/MDEC overlay: the dispatch slots' <code>path_ptr</code> values resolve against the overlay link base <code>0x801CE818</code> (<code>legaia_asset::fmv_dispatch::STR_OVERLAY_BASE_VA</code>; the first real string sits at overlay offset 0 = <code>0x801CE810 + 0x008</code> in the column below). Nine paths in storage order:</p>
+  <p>The dispatch slots' path-pointer field (<code>+0x00</code>) points into a packed null-terminated string table at the very start of the STR/MDEC overlay: the <code>path_ptr</code> values resolve against the overlay link base <code>0x801CE818</code> (<code>legaia_asset::fmv_dispatch::STR_OVERLAY_BASE_VA</code>). Nine paths in storage order:</p>
   <table class="param-table">
     <thead><tr><th>Offset</th><th>String</th></tr></thead>
     <tbody>
@@ -41,41 +40,52 @@
   <p>Three of the nine paths (<code>\DATA\MOV.STR;1</code>, <code>\DATA\MOV15.STR;1</code>, <code>\MOV\MV1A.STR;1</code>) are dev-only - the corresponding files are not on the retail disc.</p>
 </section>
 
+<section class="doc-section" id="return-scenes">
+  <h2>Return-scene labels (<code>0x801CE8AC</code>)</h2>
+  <p>The overlay data section carries seven CDNAME-shape labels: <code>town0b</code>, <code>map01</code>, <code>chitei2</code>, <code>map02</code>, <code>jou</code>, <code>uru2</code>, <code>town0e</code>. These are the <strong>post-FMV return scenes</strong>: after the play loop exits, the master dispatch (<code>FUN_801CEA3C</code>) copies the label for the just-played <code>fmv_id</code> into the next-scene name global <code>0x80084548</code>, writes a spawn/door word to <code>0x80084540</code>, and hands the game mode back to the field chain (see the mapping below).</p>
+</section>
+
 <section class="doc-section" id="runtime-table">
-  <h2>FMV dispatch table (<code>0x801D0A6C</code>, 12 × 64 B)</h2>
-  <p>The play loop's selector lives at <code>0x801CECA0</code>:</p>
+  <h2>FMV dispatch table (<code>0x801D0A6C</code>, 23 × 32 B)</h2>
+  <p>The selector lives in the master dispatch <code>FUN_801CEA3C</code>:</p>
 <pre><code>0x801CEC94: lh   v0, -0x4588(s0)        ; v0 = (s16) _DAT_8007BA78
-0x801CEC9C: sll  v0, v0, 6              ; v0 = fmv_id * 64
+0x801CEC9C: sll  v0, v0, 0x5            ; v0 = fmv_id * 32
 0x801CECA0: jal  FUN_801CF098
-0x801CECA4:  addu a1, v0, 0x801D0A6C    ; param_2 = &amp;dispatch_table[fmv_id]</code></pre>
-  <p>Each slot's leading 32-byte record is <code>[u32 path_ptr, u32 scale_flag, u32 start_frame, u32 end_frame, .., u32 (8), u32 width, u32 height]</code>. The play loop opens the file at <code>path_ptr</code>, seeks <code>(start_frame − 1) × 10</code> sectors in (the 15 fps cadence), and reads to <code>end_frame</code> - so one <code>MVn.STR</code> file carries several cutscenes by frame range.</p>
-  <p>This is <strong>static initialised data</strong> in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc - <code>legaia_asset::fmv_dispatch</code> reads it (per-<code>fmv_id</code> movie + frame range + dimensions), pinned by the disc-gated <code>fmv_dispatch_real</code> test, and the windowed player uses the frame range to seek to the right segment (<code>cutscene_av::fmv_segment_window</code>).</p>
+0x801CECA4:  _addu a1, v0, 0x801D0A6C   ; param_2 = &amp;dispatch_table[fmv_id]</code></pre>
+  <p>Each 32-byte record is <code>[u32 path_ptr, u32 color_flag, u32 start_frame, u32 end_frame, u32 fb_x, u32 fb_y, u32 width, u32 height]</code> (<code>color_flag</code> non-0 = 24-bit color; <code>fb_x</code>/<code>fb_y</code> = the VRAM decode-target rect, double-buffered at <code>fb_y</code> and <code>fb_y + height</code>). The play loop opens the file at <code>path_ptr</code>, seeks <code>(start_frame − 1) × 10</code> sectors in (the 15 fps cadence), and streams until the demuxed frame number reaches <code>end_frame</code> - so one <code>MVn.STR</code> file carries several cutscenes by frame range.</p>
+  <p>This is <strong>static initialised data</strong> in the cutscene overlay (PROT 0970), so it decodes straight from the disc - <code>legaia_asset::fmv_dispatch</code> reads it, pinned by the disc-gated <code>fmv_dispatch_real</code> test, and the windowed player uses the frame range to seek to the right segment (<code>cutscene_av::fmv_segment_window</code>).</p>
+  <p>An earlier reading used a 64-byte stride (a <code>sll v0,v0,6</code> transcription error), pairing wrong slot halves - it concluded <code>MV2</code>/<code>MV5</code> were never referenced and slots 5..11 pointed at cut files. That reading is <strong>superseded</strong>; <code>legaia_engine_core::cutscene::fmv_index_to_str_filename</code> still hard-codes the superseded 5-slot map, so the disc-parsed <code>FmvTable</code> is the authoritative resolver.</p>
   <p><code>_DAT_8007BA78</code> is a <code>s16</code> written by the field-VM FMV-trigger op (<code>0x4C 0xE2 lo hi …</code>); see the <a href="../subsystems/cutscene.html#fmv-trigger-op">cutscene subsystem</a> for the full opcode trace.</p>
 
   <h3>Authoritative mapping</h3>
   <table class="param-table">
-    <thead><tr><th><code>fmv_id</code></th><th>Path resolved</th><th>Notes</th></tr></thead>
+    <thead><tr><th><code>fmv_id</code></th><th>Movie</th><th>Frames</th><th>Post-play hand-off</th></tr></thead>
     <tbody>
-      <tr><td>0</td><td><code>\MOV\MV1.STR;1</code></td><td>frames 1..0x53a; intro logo (also fired by title-screen attract loop)</td></tr>
-      <tr><td>1</td><td><code>\MOV\MV3.STR;1</code></td><td>frames 1..0xe1 (first segment)</td></tr>
-      <tr><td>2</td><td><code>\MOV\MV3.STR;1</code></td><td>frames 0x1a5..0x27b (second segment)</td></tr>
-      <tr><td>3</td><td><code>\MOV\MV4.STR;1</code></td><td>frames 1..0x152</td></tr>
-      <tr><td>4</td><td><code>\MOV\MV6.STR;1</code></td><td>frames 1..0x297</td></tr>
-      <tr><td>5</td><td><code>\DATA\MOV15.STR;1</code></td><td>dev-only path (file not on retail disc)</td></tr>
-      <tr><td>6..=11</td><td><code>\DATA\MOV.STR;1</code></td><td>dev-only path (file not on retail disc)</td></tr>
+      <tr><td>0</td><td><code>\MOV\MV1.STR;1</code></td><td>1..0x53a</td><td>mode <code>0x16</code> (22 = CARD init) with <code>_DAT_8007BB00 = 2</code>; the intro/attract movie</td></tr>
+      <tr><td>1</td><td><code>\MOV\MV2.STR;1</code></td><td>1..0xf4</td><td>scene <code>town0b</code>, spawn word <code>0x0C</code></td></tr>
+      <tr><td>2</td><td><code>\MOV\MV3.STR;1</code></td><td>1..0xe1</td><td>scene <code>map01</code>, spawn word <code>0x55</code></td></tr>
+      <tr><td>3</td><td><code>\MOV\MV3.STR;1</code></td><td>0xe2..0x1a4</td><td>scene <code>chitei2</code>, spawn word <code>0x2C1</code></td></tr>
+      <tr><td>4</td><td><code>\MOV\MV3.STR;1</code></td><td>0x1a5..0x27b</td><td>scene <code>map02</code>, spawn word <code>0xF4</code></td></tr>
+      <tr><td>5</td><td><code>\MOV\MV3.STR;1</code></td><td>0x27c..0x36a</td><td>mode 2 with <code>_DAT_8007B8B8 = 2</code> (no scene-name write)</td></tr>
+      <tr><td>6</td><td><code>\MOV\MV4.STR;1</code></td><td>1..0x152</td><td>scene <code>jou</code>, spawn word <code>0x276</code></td></tr>
+      <tr><td>7</td><td><code>\MOV\MV5.STR;1</code></td><td>1..0x288</td><td>scene <code>uru2</code>, spawn word <code>0x1BC</code></td></tr>
+      <tr><td>8</td><td><code>\MOV\MV6.STR;1</code></td><td>1..0x297</td><td>scene <code>town0e</code>, spawn word <code>0x2E5</code></td></tr>
+      <tr><td>9</td><td><code>\MOV\MV1A.STR;1</code></td><td>1..0xad4</td><td>dev slot (file not on disc); mode <code>0x16</code> with <code>_DAT_8007BB00 = 1</code></td></tr>
+      <tr><td>10</td><td><code>\DATA\MOV15.STR;1</code></td><td>1..0xad4</td><td>dev slot; mode 0</td></tr>
+      <tr><td>11..=22</td><td><code>\DATA\MOV.STR;1</code></td><td>1..0x64</td><td>dev multi-window test slots (varying <code>fb_x</code>/<code>fb_y</code>/width)</td></tr>
     </tbody>
   </table>
-  <p><strong><code>MV2.STR</code> and <code>MV5.STR</code> exist on the retail disc but are never referenced by any FMV slot</strong> - the FMV play engine never opens them. The same mapping ships in <code>legaia_engine_core::cutscene::fmv_index_to_str_filename</code> and is cross-checked byte-for-byte against the disc decode.</p>
+  <p><code>MV3.STR</code>'s four segments abut exactly (<code>0xe1+1 = 0xe2</code>, <code>0x1a4+1 = 0x1a5</code>, <code>0x27b+1 = 0x27c</code>). Every movie on the retail disc is dispatched.</p>
 </section>
 
 <section class="doc-section" id="trigger-corpus">
   <h2>Per-STR FMV trigger corpus</h2>
-  <p>The current corpus carries nine save states captured RIGHT before each FMV begins playing, one per <code>_DAT_8007BA78</code> value (<code>fmv_id ∈ 0..=8</code>). Each save pins:</p>
+  <p>The current corpus carries nine save states captured RIGHT before each FMV begins playing, one per <code>_DAT_8007BA78</code> value (<code>fmv_id ∈ 0..=8</code> - exactly the retail slot range). Each save pins:</p>
   <ul class="bullets">
     <li><code>_DAT_8007BA78 = expected_fmv_id</code> (s16 LE)</li>
     <li><code>_DAT_8007B83C = 0x1A</code> (StrInit game mode)</li>
     <li><code>_DAT_8007BAC8 = 2000</code> (BGM ID; global pool index 0)</li>
-    <li>Active scene = <code>map01</code> (one of the seven mid-game FMV-trigger field scenes)</li>
+    <li>Active scene = <code>map01</code> (one of the seven return-scene labels)</li>
     <li><code>recover_base()</code> = <code>0x80139530</code> (<code>map01</code>'s field-pack base)</li>
   </ul>
   <p>The <code>0x4C 0xE2 lo hi</code> byte sequence does NOT appear in the field-pack RAM region for any save in the corpus - the saves were generated by debug-menu-driven trigger paths, NOT by stepping the field VM through a per-scene FMV trigger op. The corpus pins the trigger-side state across the full <code>0..=8</code> range. The two direct <code>_DAT_8007BA78</code> store sites (the <code>4C E2</code> handler and the title-attract tick) are <strong>corpus-exhaustive</strong> (raw-byte scan of all 1235 PROT entries, every addressing form) - the debug path writes the global through the dev-menu's register-pointer editor (<code>FUN_801DBD04</code> family, field overlay 0897), invisible to static addressing-form scans.</p>
@@ -86,38 +96,36 @@
   <h2>Per-scene trigger assignment (disc-sourced)</h2>
   <p>Which <code>fmv_id</code> each scene fires is <strong>inline script data</strong>, not a runtime value: the trigger op carries its id as a literal <code>i16</code> operand, so walking every scene MAN's partition-1 scripts with the field-VM disassembler recovers the full assignment straight from the disc (<code>legaia_engine_core::man_field_scripts::scene_fmv_triggers</code>, the <code>0x3F</code>-destination walk's sibling; pinned by the disc-gated <code>scene_fmv_triggers_disc</code> test over all 88 scene MANs):</p>
   <table class="param-table">
-    <thead><tr><th>Scene (extraction entry)</th><th><code>fmv_id</code></th><th>Resolves to</th></tr></thead>
+    <thead><tr><th>Scene (extraction entry)</th><th><code>fmv_id</code></th><th>Movie segment</th><th>Returns to</th></tr></thead>
     <tbody>
-      <tr><td><code>0004_town01</code></td><td>1</td><td><code>MV3.STR</code> first segment</td></tr>
-      <tr><td><code>0095_garmel</code></td><td>2</td><td><code>MV3.STR</code> second segment</td></tr>
-      <tr><td><code>0606_deroa</code></td><td>3</td><td><code>MV4.STR</code></td></tr>
-      <tr><td><code>0706_chitei2</code></td><td>3</td><td><code>MV4.STR</code></td></tr>
-      <tr><td><code>0218_dohaty</code></td><td>4</td><td><code>MV6.STR</code></td></tr>
-      <tr><td><code>0348_town0d</code></td><td>6</td><td>cut (<code>\DATA\MOV.STR</code>, not on retail disc)</td></tr>
-      <tr><td><code>0435_uru</code></td><td>7</td><td>cut</td></tr>
-      <tr><td><code>0689_jouine</code></td><td>8</td><td>cut</td></tr>
+      <tr><td><code>0004_town01</code></td><td>1</td><td><code>MV2.STR</code></td><td><code>town0b</code></td></tr>
+      <tr><td><code>0095_garmel</code></td><td>2</td><td><code>MV3.STR</code> 1..0xe1</td><td><code>map01</code></td></tr>
+      <tr><td><code>0606_deroa</code></td><td>3</td><td><code>MV3.STR</code> 0xe2..0x1a4</td><td><code>chitei2</code></td></tr>
+      <tr><td><code>0706_chitei2</code></td><td>3</td><td><code>MV3.STR</code> 0xe2..0x1a4</td><td><code>chitei2</code></td></tr>
+      <tr><td><code>0218_dohaty</code></td><td>4</td><td><code>MV3.STR</code> 0x1a5..0x27b</td><td><code>map02</code></td></tr>
+      <tr><td><code>0348_town0d</code></td><td>6</td><td><code>MV4.STR</code></td><td><code>jou</code></td></tr>
+      <tr><td><code>0435_uru</code></td><td>7</td><td><code>MV5.STR</code></td><td><code>uru2</code></td></tr>
+      <tr><td><code>0689_jouine</code></td><td>8</td><td><code>MV6.STR</code></td><td><code>town0e</code></td></tr>
     </tbody>
   </table>
-  <p>One trigger op per scene; no other scene MAN carries one. <code>fmv_id 0</code> (the <code>MV1.STR</code> intro) fires from the title/new-game path rather than a scene script, and <code>fmv_id 5</code> (the cut <code>MOV15.STR</code> slot) appears in no scene script. The <code>town0d</code> / <code>uru</code> / <code>jouine</code> triggers are <strong>vestigial</strong> - retail scene scripts still firing slots whose movies were cut from the disc.</p>
+  <p>One trigger op per scene; no other scene MAN carries one. <code>fmv_id 0</code> (the <code>MV1.STR</code> intro) fires from the title/new-game path rather than a scene script. <code>fmv_id 5</code> (the fourth <code>MV3.STR</code> segment, the "stay in mode 2" slot) appears in no scene MAN partition-1 script; the raw-byte <code>4C E2</code> candidate inside <code>taiku</code>'s uncompressed scene structures is the matching suspect. The earlier "vestigial triggers at cut movies" reading of <code>town0d</code> / <code>uru</code> / <code>jouine</code> is superseded - they play <code>MV4</code> / <code>MV5</code> / <code>MV6</code>.</p>
 </section>
 
 <section class="doc-section" id="rust-api">
   <h2>Rust API</h2>
-<pre><code>use legaia_asset::str_fmv_table;
-use legaia_engine_core::cutscene::fmv_index_to_str_filename;
+<pre><code>use legaia_asset::fmv_dispatch::FmvTable;
 
-// Slice the compact table out of a captured main-RAM image.
-let off = (0x801CAE40 - 0x80000000) as usize;
-let bytes = &amp;main_ram[off..off + 6 * str_fmv_table::ENTRY_STRIDE];
+// Decode the dispatch table straight from the PROT 0970 entry bytes.
+let overlay = std::fs::read("extracted/PROT/0970_xxx_dat.BIN")?;
+let table = FmvTable::from_str_overlay(&amp;overlay).expect("dispatch table");
 
-// Parse 6 entries; zero-filled trailing slots are dropped silently.
-let entries = str_fmv_table::parse_entries(bytes, 6).expect("table parses");
+// fmv_id (the value the field VM writes to _DAT_8007BA78) -> movie + range.
+let e = table.entry(1).unwrap();
+assert_eq!(e.engine_path(), "MOV/MV2.STR");
+assert_eq!((e.start_frame, e.end_frame), (1, 0xf4));
 
-// Resolve fmv_id (the value the field VM writes to _DAT_8007BA78)
-// to a STR file via the authoritative runtime mapping.
-assert_eq!(fmv_index_to_str_filename(0), Some("MOV/MV1.STR"));
-assert_eq!(fmv_index_to_str_filename(1), Some("MOV/MV3.STR"));
-assert_eq!(fmv_index_to_str_filename(5), None); // cut/missing slot</code></pre>
+// Dev slots decode too but engine_path() declines them.
+assert_eq!(table.engine_path(10), None); // MOV15.STR, not on the retail disc</code></pre>
 </section>
 
 <section class="doc-section" id="see-also">

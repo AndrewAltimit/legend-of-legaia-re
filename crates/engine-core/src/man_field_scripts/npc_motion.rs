@@ -100,29 +100,219 @@ pub fn placement_motion_route(
     out
 }
 
-/// The per-frame glide speed placement `p`'s motion legs run at, derived from
-/// the byte-+3 (`depth`) operand of its **first local** `0x4C 0x51` leg.
-/// Returns `None` when the placement carries no decodable local motion leg,
-/// so the caller falls back to the stand-in
-/// [`crate::world::FIELD_NPC_MOTION_SPEED`].
+/// One decoded walk-kernel step: the opcode that carries the base-step
+/// selector, the selector itself, and the per-frame speed it derives to
+/// (`numerator >> (2 + bits)`, floored at 1 -
+/// [`crate::world::field_npc_walk_step_speed`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlacementWalkStep {
+    /// The carrying opcode. Tail-section-1 motion ops `0x03`/`0x19`/`0x20`
+    /// (directional step), `0x06` (pad-echo step), `0x18` (AABB wander); or
+    /// field-VM yield ops `0x37`/`0x41` (axis glide), `0x47` (walk-to-tile).
+    pub op: u8,
+    /// Raw base-step selector from the op's own operands.
+    pub bits: u8,
+    /// Per-frame world-unit step.
+    pub speed: u16,
+}
+
+/// The base-step selector of a `FUN_80038158` walk op at `code[0..width]`,
+/// or `None` when the op moves nothing. Directional steps `0x03`/`0x19`/
+/// `0x20` carry it in operand byte 1's low nibble; the pad-echo step `0x06`
+/// and the AABB wander `0x18` scatter a 4-bit selector over their four
+/// operand bytes' high bits (`(b1&0x80)>>4 | (b2&0x80)>>5 | (b3&0x80)>>6 |
+/// b4>>7`). Every arm steps `0x80 >> (2 + bits)` units per frame.
+// PORT: FUN_80038158 (cases 0x03/0x19/0x20 body 0x800384xx, 0x06, 0x18 -
+//       the `0x80 >> (bits + 2)` position writes)
+fn motion_walk_op_bits(code: &[u8]) -> Option<u8> {
+    match *code.first()? {
+        0x03 | 0x19 | 0x20 => Some(code.get(1)? & 0xF),
+        0x06 | 0x18 => {
+            let b = |i: usize| -> Option<u8> { code.get(i).copied() };
+            Some(
+                (b(1)? & 0x80) >> 4
+                    | (b(2)? & 0x80) >> 5
+                    | (b(3)? & 0x80) >> 6
+                    | (b(4)? & 0x80) >> 7,
+            )
+        }
+        _ => None,
+    }
+}
+
+/// Decode placement `p`'s walk step from its bound **MAN tail-section-1
+/// motion stream** (the `FUN_80038158` scripted-motion VM - the mechanism
+/// behind town NPCs' ambient wandering), or `None` when no motion record
+/// binds the placement or its stream carries no walk op.
 ///
-/// This reads the **same first kept leg** [`placement_motion_route`]'s first
-/// waypoint comes from (identical extended / parked-sentinel / locality
-/// filtering), so the derived speed pairs with that route. The operand ->
-/// per-frame-speed mapping is [`crate::world::field_npc_glide_speed`]
-/// (`0x80 >> (2 + (depth & 7))`). See `docs/subsystems/field-locomotion.md`.
+/// Binding resolution: the installer `FUN_8003A9D4` matches each record's
+/// `actor_id` byte against actor `+0x50`, and the placement spawner
+/// `FUN_8003A1E4` writes `+0x50 = N0 + placement_index` (`N0` = the MAN's
+/// partition-0 record count - the id space is offset by the object records,
+/// NOT the raw partition-1 index). Ids `0xF8`/`0xFB` are the player /
+/// world-entity specials and never a placement.
+///
+/// Variant choice: the interpreter preamble re-selects the first variant
+/// whose `DAT_80085758` system flag is set, falling through to the `0xFFFF`
+/// default - this decoder scans the **default variant first** (the
+/// fresh-game state), then the flag-gated variants in table order, and
+/// returns the first walk op found (`0x03`/`0x19`/`0x20` directional step,
+/// `0x06` pad-echo step, `0x18` AABB wander - all stepping
+/// `0x80 >> (2 + bits)` units per frame).
+// PORT: FUN_80038158 (walk-op base-step operands)
+// REF: FUN_8003A9D4 (binding installer), FUN_8003A1E4 (+0x50 = N0 + index)
+pub fn placement_wander_step(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<PlacementWalkStep> {
+    use legaia_asset::man_motion;
+    let n0 = man_file.partitions.first()?.len();
+    let bind_id = u8::try_from(n0.checked_add(p.index)?).ok()?;
+    if bind_id >= man_motion::ACTOR_PLAYER {
+        return None; // collides with the 0xF8/0xFB special ids
+    }
+    let rec = man_motion::motion_records(man, man_file)
+        .into_iter()
+        .find(|r| r.bindings.iter().any(|b| b.actor_id == bind_id))?;
+    let mut variants = man_motion::stream_variants(man, &rec);
+    // Default variant first: it is the fresh-game state the interpreter
+    // falls through to when no gating flag is set.
+    variants.sort_by_key(|v| (!v.is_default(), v.index));
+    for var in variants {
+        let mut pc = var.code_offset;
+        while pc < var.code_end {
+            let op = *man.get(pc)?;
+            let width = man_motion::op_width(op)?;
+            if let Some(bits) = motion_walk_op_bits(man.get(pc..)?) {
+                return Some(PlacementWalkStep {
+                    op,
+                    bits,
+                    speed: crate::world::field_npc_walk_step_speed(0x80, bits),
+                });
+            }
+            pc += width;
+        }
+    }
+    None
+}
+
+/// Decode placement `p`'s walk step from the **field-VM yield ops** in its
+/// own pre-text script region (`0x37`/`0x41` axis glide, `0x47`
+/// walk-to-tile), or `None` when the region carries none.
+///
+/// These are the `FUN_8003774C` walk-kernel ops: the field-VM dispatcher
+/// parks the op pointer at actor `+0x94` and the kernel interprets the
+/// record bytes in place, so the base step lives in the op's own operands -
+/// `4 << ((op0>>5 & 4) | (op1>>6))` for `0x37`/`0x41`,
+/// `4 << (b2 & 7)` for `0x47` (its high nibble is the approach-mode
+/// selector). The per-frame magnitude is `numerator / (4 << bits)`:
+/// `numerator = 0x80` for `0x37`/`0x47`, **`0x40` for `0x41`** (half speed -
+/// the `li a1,0x40` / `li a1,0x80` split at `0x80037908`).
+///
+/// Cross-context ops (the `0x80` prefix) drive another actor's channel and
+/// are skipped; a `0x47` targeting the parked sentinel or beyond
+/// [`NPC_ROUTE_LOCALITY`] of the spawn anchor is a despawn / story
+/// relocation, skipped with the same filters as [`placement_motion_route`].
+// PORT: FUN_8003774C (ops 0x37/0x41/0x47 operand decode)
+pub fn placement_yield_step(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<PlacementWalkStep> {
+    let (region, pc0) = placement_pretext_region(man_file, man, p)?;
+    for insn in LinearWalker::new(region, pc0).flatten() {
+        let InsnInfo::Yield { kind } = insn.info else {
+            continue;
+        };
+        if insn.extended.is_some() {
+            continue; // cross-context: drives another channel, not this actor
+        }
+        let op = region[insn.pc] & 0x7F;
+        let opnd = insn.pc + 1;
+        match kind {
+            YieldKind::Wide => {
+                // 0x47 walk-to-tile: [tile_x, tile_z, mode|bits].
+                let (b0, b1, b2) = (
+                    *region.get(opnd)?,
+                    *region.get(opnd + 1)?,
+                    *region.get(opnd + 2)?,
+                );
+                if (b0 & 0x7F, b1 & 0x7F) == PARKED_SENTINEL_TILE {
+                    continue; // park/despawn, not a walk target
+                }
+                let (wx, wz) = (grid_byte_to_world(b0), grid_byte_to_world(b1));
+                let (dx, dz) = (
+                    (wx as i32 - p.world_x as i32).abs(),
+                    (wz as i32 - p.world_z as i32).abs(),
+                );
+                if dx.max(dz) > NPC_ROUTE_LOCALITY {
+                    continue; // story-gated relocation, not a local patrol leg
+                }
+                let bits = b2 & 7;
+                return Some(PlacementWalkStep {
+                    op,
+                    bits,
+                    speed: crate::world::field_npc_walk_step_speed(0x80, bits),
+                });
+            }
+            YieldKind::Standard => {
+                // 0x37/0x41 axis glide: [dir|bits-hi, dist|bits-lo].
+                let (b0, b1) = (*region.get(opnd)?, *region.get(opnd + 1)?);
+                let bits = (b0 >> 5 & 4) | (b1 >> 6);
+                let numerator = if op == 0x41 { 0x40 } else { 0x80 };
+                return Some(PlacementWalkStep {
+                    op,
+                    bits,
+                    speed: crate::world::field_npc_walk_step_speed(numerator, bits),
+                });
+            }
+        }
+    }
+    None
+}
+
+/// The per-frame glide speed placement `p`'s motion legs run at, decoded
+/// from the placement's **real walk-kernel operands**, in priority order:
+///
+/// 1. [`placement_wander_step`] - the bound MAN tail-section-1 motion
+///    stream's walk ops (`FUN_80038158`; the ambient town-NPC wander pace);
+/// 2. [`placement_yield_step`] - the record's own field-VM
+///    `0x37`/`0x41`/`0x47` ops (`FUN_8003774C`; scripted glide legs);
+/// 3. the facing-nibble **heuristic** ([`facing_nibble_glide_speed`]) as the
+///    last resort for placements whose motion leg carries no walk-kernel op
+///    at all - see that function's modelling note.
+///
+/// Returns `None` when even the heuristic finds no decodable local motion
+/// leg, so the caller falls back to the stand-in
+/// [`crate::world::FIELD_NPC_MOTION_SPEED`]. See
+/// `docs/subsystems/field-locomotion.md`.
+// PORT: FUN_80038158, FUN_8003774C (base-step operand decode - see the
+//       per-arm functions)
+pub fn placement_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> Option<u16> {
+    if let Some(step) = placement_wander_step(man_file, man, p) {
+        return Some(step.speed);
+    }
+    if let Some(step) = placement_yield_step(man_file, man, p) {
+        return Some(step.speed);
+    }
+    facing_nibble_glide_speed(man_file, man, p)
+}
+
+/// The retired pacing **heuristic**, kept only as [`placement_glide_speed`]'s
+/// last-resort arm: the byte-+3 (`depth`) operand of the placement's first
+/// local `0x4C 0x51` leg, mapped through
+/// [`crate::world::field_npc_glide_speed`] (`0x80 >> (2 + (depth & 7))`).
 ///
 /// Modelling note (reconcile outcome): the raw `4C 51` case-1 handler pins
 /// byte +3 as `[bit7 special-model | facing-LUT nibble]` with **no speed
 /// field** - retail `4C 51` is a teleport + move-anim start, and the only
-/// speed-carrying ops are the walk kernel `FUN_8003774C`'s own yield-class
-/// field-VM ops (0x37/0x41: `(op0>>5 & 4)|(op1>>6)`; 0x47: `b2 & 7`),
-/// interpreted in place from the pointer parked at actor `+0x94` (no
-/// synthesised motion bytecode exists). This heuristic therefore reads the
-/// *facing nibble* as the base-step selector - a stable per-NPC variation
-/// with no retail speed semantics, kept until the route model is reworked
-/// onto real 0x37/0x41/0x47 operands.
-pub fn placement_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> Option<u16> {
+/// speed-carrying ops are the walk kernels' own operands (the two real arms
+/// above). This heuristic therefore reads the *facing nibble* as the
+/// base-step selector - a stable per-NPC variation with no retail speed
+/// semantics - and fires only for placements with no walk-kernel op in
+/// either carrier.
+fn facing_nibble_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> Option<u16> {
     let (region, pc0) = placement_pretext_region(man_file, man, p)?;
     for insn in LinearWalker::new(region, pc0).flatten() {
         let InsnInfo::MenuCtrl {
@@ -155,6 +345,74 @@ pub fn placement_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement)
         return Some(crate::world::field_npc_glide_speed(depth));
     }
     None
+}
+
+/// Statically harvest every motion op-`0x17` **default-move write** in the
+/// MAN's tail-section-1 streams: `(placement_slot, [move_id, anim_id])`
+/// pairs, first `0x17` per bound placement in the same
+/// default-variant-first order as [`placement_wander_step`].
+///
+/// Retail: `[0x17, b1, b2]` writes `DAT_801C6470[actor_id*4] = b1` /
+/// `[actor_id*4 + 1] = b2` (guarded `actor_id < 0x8C`) - the per-actor
+/// default-move table the interaction motion-pause kick `FUN_8003C9AC`
+/// (ported at `legaia_engine_vm::motion_pause`) reloads every moving-class
+/// actor's `+0x88`/`+0x5C` requested-move pair from, and the wander/step ops
+/// consult for their move-anim override. The variant-swap preamble reseeds a
+/// record to the `0x8C` sentinel, so a stream's own `0x17` (always its first
+/// op in the authored corpus) is the value the table holds while the stream
+/// runs. `actor_id` resolves to a placement slot as in
+/// [`placement_wander_step`] (`slot = actor_id - N0`).
+// PORT: FUN_80038158 (case 0x17)
+// REF: FUN_8003C9AC (table consumer), FUN_8003A9D4 (binding installer)
+pub fn motion_default_move_writes(man_file: &ManFile, man: &[u8]) -> Vec<(u8, [u8; 2])> {
+    use legaia_asset::man_motion;
+    let Some(n0) = man_file.partitions.first().map(|p| p.len()) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(u8, [u8; 2])> = Vec::new();
+    for rec in man_motion::motion_records(man, man_file) {
+        // First 0x17 in default-variant-first order (the fresh-game write).
+        let mut pair: Option<[u8; 2]> = None;
+        let mut variants = man_motion::stream_variants(man, &rec);
+        variants.sort_by_key(|v| (!v.is_default(), v.index));
+        'vars: for var in variants {
+            let mut pc = var.code_offset;
+            while pc < var.code_end {
+                let Some(&op) = man.get(pc) else { break };
+                let Some(width) = man_motion::op_width(op) else {
+                    break;
+                };
+                if op == 0x17
+                    && let (Some(&b1), Some(&b2)) = (man.get(pc + 1), man.get(pc + 2))
+                {
+                    pair = Some([b1, b2]);
+                    break 'vars;
+                }
+                pc += width;
+            }
+        }
+        let Some(pair) = pair else { continue };
+        for bind in &rec.bindings {
+            // Mirror the retail `actor_id < 0x8C` table guard, then resolve
+            // the +0x50 id back to a partition-1 placement slot.
+            if usize::from(bind.actor_id) >= 0x8C {
+                continue;
+            }
+            let Some(slot) = usize::from(bind.actor_id).checked_sub(n0) else {
+                continue;
+            };
+            if slot == 0 {
+                continue; // record 0 is the scene controller, not a placement
+            }
+            let Ok(slot) = u8::try_from(slot) else {
+                continue;
+            };
+            if !out.iter().any(|(s, _)| *s == slot) {
+                out.push((slot, pair));
+            }
+        }
+    }
+    out
 }
 
 /// Decode placement `p`'s **initial facing** - the heading-LUT index its

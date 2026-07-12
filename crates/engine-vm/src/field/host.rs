@@ -1652,11 +1652,14 @@ pub trait FieldHost {
     /// 1+6). Writes `_DAT_8007BA78 = signed_16(operand[1..3])` (the
     /// FMV index passed to the STR/MDEC overlay) and
     /// `_DAT_8007B83C = 0x1A` (next-game-mode = 26 / StrInit). The
-    /// FMV index selects a 64-byte entry from the runtime FMV-state
-    /// table at `0x801D0A6C` (which the str_fmv overlay populates from
-    /// the compact MV-file table at `0x801CAE40`); index range
-    /// `0..=5` corresponds to `MV1.STR..MV6.STR`. The trailing 3
-    /// bytes are reserved by the dispatcher's PC math but unused.
+    /// FMV index selects a 32-byte entry from the static dispatch
+    /// table at `0x801D0A6C` in the str_fmv overlay (master dispatch
+    /// `FUN_801CEA3C`, selector `sll v0,v0,0x5`; decoder
+    /// `legaia_asset::fmv_dispatch`). Retail ids are `0..=8` -
+    /// `MV1`/`MV2`/four `MV3` frame-range segments/`MV4`/`MV5`/`MV6`,
+    /// every movie on the disc. The trailing 3 bytes are reserved by
+    /// the dispatcher's PC math but unused.
+    // REF: FUN_801CEA3C
     fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
         let _ = fmv_id;
     }

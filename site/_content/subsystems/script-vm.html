@@ -294,8 +294,9 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scene-event-scripts &lt;PATH
 
 # Walk every PROT.DAT entry and report 0x4C 0xE2 byte-pattern hits with
 # their CDNAME label and decoded fmv_id (filtered to the retail valid
-# range 0..=8 unless --no-filter is passed; the runtime FMV-state table
-# at 0x801D0A6C carries 12 slots - slots 5..=11 point at cut paths):
+# range 0..=8 unless --no-filter is passed; the FMV dispatch table at
+# 0x801D0A6C carries 23 32-byte slots - the nine retail slots 0..=8
+# dispatch every movie on the disc, slots 9..=22 point at dev files):
 cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
     --disc &lt;PROT.DAT&gt; --cdname &lt;CDNAME.TXT&gt; --bytewise</code></pre>
   <p>The library exposes <code>legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}</code> for downstream tooling. The <code>InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }</code> variant carries the operand of the <code>0x4C 0xE2</code> op for callers who want to grep for cutscene triggers across the corpus.</p>
@@ -304,7 +305,7 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
 
 <section class="doc-section" id="fmv-trigger-sites">
   <h2>FMV-trigger sites - exhaustive backward sweep</h2>
-  <p>A grep across every Ghidra dump in the corpus for writes to the global game-mode word <code>_DAT_8007B83C = 0x1A</code> (the <code>StrInit</code> mode that boots the str_fmv overlay) finds <strong>only two distinct writers</strong>. Both are codified in <a href="../../crates/engine-vm/src/cutscene_trigger.rs"><code>legaia_engine_vm::cutscene_trigger</code></a> as <code>FMV_TRIGGER_SITES</code>:</p>
+  <p>A grep across every Ghidra dump in the corpus for writes to the global game-mode word <code>_DAT_8007B83C = 0x1A</code> (the <code>StrInit</code> mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in <a href="../../crates/engine-vm/src/cutscene_trigger.rs"><code>legaia_engine_vm::cutscene_trigger</code></a> as <code>FMV_TRIGGER_SITES</code>:</p>
   <table>
     <thead><tr><th>Label</th><th>Function</th><th>Mode-write addr</th><th>FMV-id source</th><th>Trigger condition</th></tr></thead>
     <tbody>
@@ -321,6 +322,13 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
         <td><code>0x801E0F50</code></td>
         <td>Hardcoded <code>0</code> (= <code>MV1.STR</code>, intro)</td>
         <td>Title-screen idle countdown <code>DAT_801ef16c</code> underflows.</td>
+      </tr>
+      <tr>
+        <td><code>title_tick_inline</code></td>
+        <td><code>FUN_801DD35C</code></td>
+        <td><code>0x801DDCF0</code></td>
+        <td>Hardcoded <code>0</code> (= <code>MV1.STR</code>, intro)</td>
+        <td>Same attract countdown, inline fall-through past the decrement at <code>0x801DDCCC</code> - the PC a live watchpoint reports.</td>
       </tr>
     </tbody>
   </table>

@@ -204,6 +204,20 @@ Type-sequence variants (count=7 unless noted):
 
 Sizes ~60 KB to ~452 KB.
 
+In the **world-map kingdom bundles** (PROT 0085 / 0244 / 0391) the type-6 slot
+(**slot 5**) is not a field-actor ANM pack: it is the **CLUT-walk animation
+table** - an LZS-compressed 516-byte table, byte-identical across the three
+kingdoms, of eight `16x1` `MoveImage` walker entries (ocean head +
+shoreline/terrain shimmer cells) that the asset-type dispatcher `FUN_8001F05C`
+case 6 installs at `DAT_8007B7C8` and the SCUS actor walker `FUN_8001ADA4`
+case 0xB steps per game tick. Format + runtime semantics in
+[`world-map.md`](../subsystems/world-map.md) "Ocean / water animation"; parser
+`legaia_asset::clut_walk`. Those bundles' slot-0 TIM_LIST also interleaves
+**non-TIM raw CLUT-block records** (`[u32, u32]` prefix + a bare TIM CLUT
+block, no `0x10` magic) - the walk's parked source strips at VRAM rows
+498/499/502..505, which plain TIM walkers skip (`clut_walk::park_strips`
+locates them).
+
 ### Slot→asset mapping (the runtime walk)
 
 The mapping is **positional + offset-based** - there is no separate indirection table; the descriptor's `data_offset` field *is* the indirection. The runtime walker `FUN_80020224` reads `count = *base`, then for each `slot` dispatches `asset_type_dispatch(base + descriptor[slot].data_offset, type_size, …)` with descriptors at `base + 8 + slot*8` (stride 8 bytes). So slot `i` is the `i`-th 8-byte descriptor; its payload starts at `base + data_offset` and its handler is keyed by `type_size >> 24`. The full three-function chain (buffer allocation at `FUN_8001E1B4` → file load at `FUN_8001F7C0` → walk at `FUN_80020224` → dispatch at `FUN_8001F05C`) is pinned under the [asset-loader subsystem](../subsystems/asset-loader.md#asset-descriptor-walker-fun_80020224--the-slotasset-mapping).

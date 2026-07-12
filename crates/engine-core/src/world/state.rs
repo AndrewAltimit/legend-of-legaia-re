@@ -375,8 +375,8 @@ pub struct World {
     /// the field VM has signalled that the next-game-mode global should
     /// transition to game mode 26 (StrInit) with the given index. Engines
     /// drain this after [`World::tick`] to actually open the corresponding
-    /// `MV*.STR` (use [`crate::cutscene::FmvIndex::str_filename`] for the
-    /// retail mapping). `None` between triggers.
+    /// `MV*.STR` (use [`crate::cutscene::fmv_index_to_str_filename`] for
+    /// the retail mapping). `None` between triggers.
     pub pending_fmv_trigger: Option<i16>,
 
     /// Pending scripted-encounter install (field-VM bare arm-encounter op
@@ -591,14 +591,25 @@ pub struct World {
     /// Per-NPC glide speed, keyed by the same placement `slot` as
     /// [`Self::field_npc_routes`]: the per-frame world-unit step
     /// `Self::start_field_npc_motion` writes into a leg's motion-VM
-    /// [`legaia_engine_vm::motion_vm::MotionState::speed`], derived from the
-    /// placement's real `0x4C 0x51` motion-op base-step operand
-    /// ([`crate::man_field_scripts::placement_glide_speed`] ->
-    /// [`crate::world::field_npc_glide_speed`]). A slot with no decodable
-    /// motion leg is absent and the leg falls back to the stand-in
+    /// [`legaia_engine_vm::motion_vm::MotionState::speed`], decoded from the
+    /// placement's real walk-kernel operands
+    /// ([`crate::man_field_scripts::placement_glide_speed`]: the bound MAN
+    /// tail-section-1 wander/step ops first, then the record's own field-VM
+    /// `0x37`/`0x41`/`0x47` yield ops, then the facing-nibble heuristic as a
+    /// last resort). A slot with no decodable motion leg is absent and the
+    /// leg falls back to the stand-in
     /// [`crate::world::FIELD_NPC_MOTION_SPEED`]. See
     /// `docs/subsystems/field-locomotion.md`.
     pub field_npc_glide_speeds: std::collections::BTreeMap<u8, u16>,
+
+    /// Per-NPC default-move pair `[move_id, anim_id]`, keyed by placement
+    /// `slot`: the motion op-`0x17` writes into the retail per-actor table at
+    /// `0x801C6470`, statically harvested from the scene MAN's tail-section-1
+    /// streams ([`crate::man_field_scripts::motion_default_move_writes`]).
+    /// The table the interaction motion-pause kick (`FUN_8003C9AC`, ported at
+    /// [`legaia_engine_vm::motion_pause`]) reloads a moving-class actor's
+    /// requested-move pair from.
+    pub field_npc_default_moves: std::collections::BTreeMap<u8, [u8; 2]>,
 
     /// In-flight field-NPC walk legs, keyed by placement `slot`. Stepped once
     /// per field tick through the ported motion VM; each step writes the new
@@ -1843,6 +1854,7 @@ impl World {
             field_prop_colliders: Vec::new(),
             field_npc_routes: std::collections::BTreeMap::new(),
             field_npc_glide_speeds: std::collections::BTreeMap::new(),
+            field_npc_default_moves: std::collections::BTreeMap::new(),
             field_npc_motions: std::collections::BTreeMap::new(),
             animate_field_npcs: false,
             field_walk_touch: std::collections::BTreeMap::new(),
