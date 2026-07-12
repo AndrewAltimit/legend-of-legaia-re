@@ -144,12 +144,15 @@ mirrors the MP-half/quarter shift-subtract in `FUN_801E295C` state
 `SPD + missingHP>>5`, two rand draws, Chicken Heart / Chicken King
 ability bits honoured.
 
-The retail per-slot "target valid" predicate `FUN_8003fb10` (the 16-arm
+The retail per-slot "target valid" predicate `FUN_8003fb10` (the 18-arm
 menu/UI gate documented in
 [`docs/subsystems/battle-action.md`](../../docs/subsystems/battle-action.md#action-validator-fun_8003fb10))
-is not a standalone module here: its target-relevance arms are re-implemented
-where they are consumed - liveness/kind gating in `legaia-engine-core`'s
-`target_picker`, and the item-benefit arms in `inventory_use::effect_benefits_target`.
+is ported whole as `battle_action::validate_action` over the
+`ActionValidatorHost` trait (per-slot HP/MP quads, record stats, party
+indirection, system flags, the `FUN_80046898` inventory leaf). The older
+consumption-site mirrors remain where they are used - liveness/kind gating in
+`legaia-engine-core`'s `target_picker`, and the item-benefit arms in
+`inventory_use::effect_benefits_target`.
 
 ## See also
 

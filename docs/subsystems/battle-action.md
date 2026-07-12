@@ -72,7 +72,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x37` | Summon - verify all alive | `FUN_801D5854(actor, 6)`. Iterates the 8-actor table (party + active monsters); checks each is alive (`+0x14C != 0` AND `+0x1D9 != 0`). Sets a 4-byte fade-back-in sentinel at `ctx[+0x890..+0x893]` (`84 10 42 08`). | `0x38`. |
 | `0x38` | Summon - done | OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`. | `0x50`. |
 | `0x3C` | **Spirit / Item - pre-arm** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim). Sets `ctx[+0x243] = 1` ("action in progress" marker). For `+0x1DE == 1` (Item): looks up item record at `ctx[+0x1DF]*0xC + -0x7FF8BC97` for label/icon; writes `actor[+0x1E8/+0x1E9]` (icon page/x); writes HUD via `_DAT_80077332..+0x35C`. Special case: `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. For non-Item (Magic/Spirit, `+0x1DE != 1`): does the same write of `+0x1E8/+0x1E9` from the spell table at `actor[+0x1DF]*0xC + -0x7FF8AB38`, computes MP cost (with ability-bit half/quarter), subtracts from `actor[+0x150]`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label). | `0x3D`. |
-| `0x3D` | Spirit - wait | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`. When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [per-move damage roll](#battle-helper-functions) `FUN_801F3894` - move-power table + RNG → damage). | `0x3E`. |
+| `0x3D` | Spirit - wait | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`. When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [cast audio-cue dispatcher](#battle-helper-functions)). | `0x3E`. |
 | `0x3E` | Spirit - fire | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. For spirit-type 4 (Originals) on party, fires `FUN_801D8DE8(0x34, 1)`. For type 5 (Spirit-arts variant), invokes the Damage UI: writes `_DAT_80076D7E` (damage value) from target HP+formula, calls `FUN_801D8DE8(0xF, 0)` (damage popup) and `FUN_801D8DE8(0x52, 0)` (damage text); RNG via `func_0x80056798`; computes damage scaling: `((target_HP * 7) / 5) + 8`, capped at 0x120 or 100. Otherwise re-fires UI elements 6/0x4E/0x4F (monster effect) or 7 (party effect) per slot. Sets `ctx[+0x6D8] = 0x20` (post-cast timer). | `0x3F`. |
 | `0x3F` | Spirit - wait & fire damage | Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**. Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown). | `0x40`. |
 | `0x40` | Spirit - post-damage | `FUN_801D5854(target, 6)`. Iterates HP-bar widget at `ctx[+0x1080]+0xE`: ramps it toward `ctx[+0x6DC]` (target HP) by `DAT_1F800393` per frame; mirrors damage-popup widget at `_DAT_801F6968+0x10`. When `ctx[+0x6D8] < 0` and target is no longer valid (dead or out of slot), sets `actor[+0x1DE] = 0` and clears HUD. | `0x50`. |
@@ -92,10 +92,10 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x6B` | Capture - end | `FUN_801D5854(0, 9)`; screen rotates; decrements timer. When < 0 → `0x5A` (end-of-action). | `0x5A`. |
 | `0x6E` | **Magic-capture branch** | `FUN_801D5854(actor, 6)`; waits on `func_0x8003DE7C(1)` (CD ready). When ready: calls `func_0x8003EAE4(0, capture_index)` (load capture archive); sets `_DAT_8007BDB0` to capture-monster index. | `0x6F`. |
 | `0x6F` | Magic-capture - fade | If `ctx[+0x287] != 0`: ramp `_DAT_8007B910 -= DAT_1F800393`, clamp to `(_DAT_8008457C * 0x4B) / 100`. Adjusts ctx-buffer X position. Waits on `func_0x8003F2B8(1)`. | `0x70`. |
-| `0x70` | Magic-capture - phase 2 | Same brightness ramp as `0x6F`. Waits on `func_0x801F2160`. When done, calls `func_0x801F0348` (the [widget-pool teardown](#battle-helper-functions) `FUN_801F02D0`). | `0x71`. |
+| `0x70` | Magic-capture - phase 2 | Same brightness ramp as `0x6F`. Waits on `func_0x801F2160`. When done, calls `func_0x801F0348` (the [widget-pool teardown](#battle-helper-functions)). | `0x71`. |
 | `0x71` | Magic-capture - finalize | `FUN_801D5854(actor, 6)`; checks all 8 slots are settled (alive with non-zero `+0x4`, or non-`8` `+0x1D9`). Once stable: clears ctx buffers, writes the 4-byte fade sentinel (`84 10 42 08`), iterates resetting per-actor `+0x21C = 0` and `+0x8 = 0x81000000`. | `0x50`. |
 | `0xFD` | Idle hold (battle paused?) | `FUN_801D5854(actor, 8)`. No state change. | (stays). |
-| `0xFF` | **Battle complete** | Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (battle-count?), calls `func_0x801F45A4` (the [end-of-action damage/HP-bar settle](#battle-helper-functions) `FUN_801F452C`). | (terminal - exits the battle overlay). |
+| `0xFF` | **Battle complete** | Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (battle-count?), calls `func_0x801F45A4` (the [end-of-action damage/HP-bar settle](#battle-helper-functions)). | (terminal - exits the battle overlay). |
 
 States `0x67` (post-fade hold), `0x07` (unused?), and several gaps in the table are not present as case labels - they fall into the `default` no-op arm (the dispatcher's `sltiu v0, v1, 0x100` bound is 256 and the JT slot for unhandled values points at the function epilogue at `0x801E6814`).
 
@@ -527,12 +527,19 @@ menu resolves Run.
 
 ### Battle helper functions
 
-Four helpers `FUN_801E295C` reaches by their mid-body label addresses (`0x801F0348` /
-`0x801F1ED4` / `0x801F3990` / `0x801F45A4`); each label sits inside a function whose entry is
-earlier (`0x801F02D0` / `0x801F1CC8` / `0x801F3894` / `0x801F452C`). All decoded from their dumps.
+Four helper addresses `FUN_801E295C` calls in the `0x801Fxxxx` battle-overlay region
+(`0x801F0348` / `0x801F1ED4` / `0x801F3990` / `0x801F45A4`). **Dump-aliasing caution:** the
+`overlay_0897_801f*` dumps these were first decoded from are double-shifted - PROT 0897's
+extraction over-reads into PROT 0898 and that Ghidra program maps the file at base `0x801C0000`
+instead of the true `0x801CE818`, so every function it surfaces at a `0x801Fxxxx` VA is really a
+different battle-overlay function (and the "mid-body label inside an earlier entry" pairing is
+an artifact of the same shift). `0x801F3990` is re-pinned below from battle-resident bytes; the
+other three descriptions are retained but **need re-verification** against a battle-resident
+dump (`overlay_battle_action_*`) before being relied on.
 
-**`FUN_801F02D0` (label `0x801F0348`) - battle-UI widget-pool teardown.** `see
-ghidra/scripts/funcs/overlay_0897_801f0348.txt`. Walks the 40-slot (`0x28`) tracked-widget table
+**`0x801F0348` - battle-UI widget-pool teardown.** *Decoded from the aliased
+`overlay_0897_801f0348.txt` dump - identity, entry address, and body need re-verification
+against battle-resident bytes.* Walks the 40-slot (`0x28`) tracked-widget table
 at ctx `+0x11B4` (stride `0xC`): for each slot whose flag byte `+0x11B7` is set and whose parallel
 live-widget pointer at ctx `+0x1074 + slot*4` is non-null, releases the widget via
 `func_0x800319A8(widget[+8])` (the UI-element free call, id at `widget+0x8`), then zeroes the
@@ -541,8 +548,9 @@ widget pointer and the `+0x11B4`/`+0x11B7` flag bytes; finally clears 16 words o
 leftover damage-popup / label widgets. It is a general widget-pool sweep, not a capture-specific
 routine.
 
-**`FUN_801F1CC8` (label `0x801F1ED4`) - summon actor/camera re-frame.** `see
-ghidra/scripts/funcs/overlay_0897_801f1ed4.txt`. Computes the bounding box of all live actors'
+**`0x801F1ED4` - summon actor/camera re-frame.** *Decoded from the aliased
+`overlay_0897_801f1ed4.txt` dump - identity, entry address, and body need re-verification
+against battle-resident bytes.* Computes the bounding box of all live actors'
 ground positions (`actor[+0x34]` = X, `actor[+0x38]` = Z) across the 8-slot table (party slots
 `0..2` unconditionally, monster slots gated on `+0x14C` alive), subtracts the box center from every
 actor's position, and adds the center to the world/camera anchor globals `_DAT_80089118` (X) /
@@ -553,19 +561,18 @@ returning 0" reading was an inference - it is the per-frame summon framing pass.
 **creature spawn** is a separate mechanism (the `summon.dat` applier `FUN_801F12D0` /
 `FUN_801F19EC`, see [summon-readef](../formats/summon-readef.md)).
 
-**`FUN_801F3894` (label `0x801F3990`) - per-move damage roll.** `see
-ghidra/scripts/funcs/overlay_0897_801f3990.txt`. `int f(move_id, attacker_slot, defender_slot)`.
-Indexes the move-power table `DAT_801F4F5C` (26-byte / `0x1A` stride) by `move_id & 0xFF`, draws
-several `func_0x80056798()` (BIOS-rand) rolls, forms an attacker score from the move-power record's
-bitfields (`>> 0x10`/`0x11`/`0x12`/`0x13`) plus attacker stats (`+0x14C`, `+0x168`) and a defender
-score from the target's stats (`+0x14C`, `+0x15C`, `+0x160`, `+0x168`), runs them through
-`FUN_801DD864` (scale) + `FUN_801DDB30` (finish/clamp), and returns `attacker_score -
-defender_score` = the damage. The `attacker_slot == 7` arm additionally formats a decimal digit
-string into the caller's buffer via `FUN_801EC964` (an on-screen number). So the state-`0x3D`
-call is the spirit/magic **damage computation**, not an "init / Originals flash".
+**`FUN_801F3990` - cast audio-cue dispatcher.** Pinned from battle-resident bytes (the aliased
+`overlay_0897_801f3990.txt` dump surfaces a different function - really `FUN_801DD0AC` - at this
+VA). Argument-less: reads the active-actor index `ctx[+0x13]` and the per-slot char-kind table
+`DAT_8007BD10`, dispatches on `actor[+0x1E8]` through two 9-entry jump tables, and plays the
+per-class cast sound cues via `FUN_8004FCC8`. The earlier "per-move damage roll `FUN_801F3894` -
+move-power table + RNG → damage, with a `FUN_801EC964` decimal-digit formatter" description came
+from that double-shifted dump and is falsified. The spirit damage the state-`0x3D` reading
+attributed here is state `0x3E`'s inline formula, ported as `battle_formulas::spirit_damage`.
 
-**`FUN_801F452C` (label `0x801F45A4`) - end-of-action damage / HP-bar settle.** `see
-ghidra/scripts/funcs/overlay_0897_801f45a4.txt` (disasm only; the Ghidra decompile times out). Per
+**`0x801F45A4` - end-of-action damage / HP-bar settle.** *Decoded from the aliased
+`overlay_0897_801f45a4.txt` dump (disasm only; the Ghidra decompile times out) - identity, entry
+address, and body need re-verification against battle-resident bytes.* Per
 action category (`actor[+0x1DE]` `1..6`) it tests the actor's ability bits in the character record's
 `+0xF4`/`+0xF8` bitfield (base `0x80084140 + (char_id-1)*0x414`, fields `+0x6BC`/`+0x6C0` = record
 `+0xF4`/`+0xF8`) and, when set, ramps a value pair `*s0` toward `*s2` by half per pass (`*s0 += (*s2
@@ -616,21 +623,34 @@ Monsters install no bank, so their staged ids stay plain archive entry indices a
 
 ## Action validator (`FUN_8003FB10`)
 
-The 16-arm gate the menu / battle UI runs against a candidate slot before committing the player's action. Selects which validation rule fires from the outer `param_1` arm and (for arm 6) a sub-case `param_2`. Reads HP / MP / status / item-count / stat caps from the active record (battle-actor pointer table when `_DAT_8007B83C == 0x15`, character record array otherwise) and writes a per-slot validity bit at `gp + 0x9A8`. Source: [`ghidra/scripts/funcs/8003fb10.txt`](../../ghidra/scripts/funcs/8003fb10.txt).
+The 18-arm gate (`0x00..=0x0D` plus `0x80..=0x83`) the menu / battle UI runs against a candidate
+slot before committing the player's action. Selects which validation rule fires from the outer
+`param_1` arm (jump table at `0x80014D70`, bound `< 0x84`; unhandled slots return invalid) and,
+for arm 6, a sub-case `param_2` through a second 7-entry table at `0x80014F80`. Reads HP / MP /
+status / stat caps from the active record - the setup loop caches per-slot
+`(hp, hp_max, mp, mp_max)` pointer quads from the battle-actor table `DAT_801C9370`
+(`+0x14C/+0x14E/+0x150/+0x152`, 7 slots) when `_DAT_8007B83C == 0x15`, else from the character
+records `0x80084708 + slot*0x414` (`+0x106/+0x104/+0x10A/+0x108`, 3 slots) - and writes a
+per-slot validity bit at `gp + 0x9A8`. Source:
+[`ghidra/scripts/funcs/8003fb10.txt`](../../ghidra/scripts/funcs/8003fb10.txt).
 
-Arms (the target-relevance arms are re-implemented where they are consumed - liveness/kind gating in `legaia-engine-core`'s `target_picker`, item-benefit arms in `inventory_use::effect_benefits_target`; there is no standalone validator module):
+Arms (ported wholesale as `legaia_engine_vm::battle_action::validate_action` over the
+`ActionValidatorHost` trait, with the `gp + 0x9A8` byte modelled as an explicit `validity_bits`
+parameter; the target-relevance arms are additionally re-implemented where they are consumed -
+liveness/kind gating in `legaia-engine-core`'s `target_picker`, item-benefit arms in
+`inventory_use::effect_benefits_target`):
 
 | arm | meaning |
 |---|---|
 | `0x00` | Alive AND `hp < hp_max` (heal target). |
 | `0x01` | Walk party - set bit per slot that's alive-and-not-full. |
 | `0x02` | Alive AND `mp < mp_max` (restore-MP target). |
-| `0x03` | Status-flag presence. Battle: `actor[+0x16E] != 0`. |
+| `0x03` | Status-flag presence. Battle: `actor[+0x16E] != 0`, returned **without touching the validity byte**; field: record `+0x12E != 0` with the usual clear-then-set bit write. |
 | `0x04` | Dead target (Revive item validator). |
 | `0x05` | Alive (any-action target). |
-| `0x06` | Stat-cap walker - sub-case picks which stat to check. |
+| `0x06` | Stat-cap walker - alive slot AND sub-case-picked effective record stat(s) still below cap (strict `<`; character records regardless of mode): 0 = HP max (`+0x104` < 9999), 1 = ATK (`+0x112` < 999), 2 = UDF/LDF pair (`+0x114`/`+0x116` < 999), 3 = SPD (`+0x118` < 999), 4 = INT (`+0x11A` < 999), 5 = MP max (`+0x108` < 999), 6 = all of those plus AGL (`+0x110` < `0x118`). Sub-case ≥ 7 is invalid. |
 | `0x07` | Alive (synonym of arm 5; separate code path with no upper bound). |
-| `0x08` | Alive AND `(status & 3) != 0` ("can apply paralysis / sleep"). |
+| `0x08` | Alive AND `(status & 3) != 0` ("can apply paralysis / sleep"). Battle branch skips the validity-byte write; the field branch reads the record status word **signed** and tests `& 0xFFFF0003`, so a status word with bit 15 set validates even with bits 0-1 clear (sign-extension quirk, kept by the port). |
 | `0x09` / `0x0A` | Always valid; force the bitmask to the literal `0x07`. |
 | `0x0B` / `0x0C` / `0x0D` | Per-slot exact match; only valid when `slot == arm - 0x0B`. |
 | `0x80` | Out-of-battle; story flag `0x100000` clear AND system flag 5 clear. |
@@ -638,7 +658,21 @@ Arms (the target-relevance arms are re-implemented where they are consumed - liv
 | `0x82` | Out-of-battle; calls the external item-count validator (`FUN_80046898`). |
 | `0x83` | Always valid. |
 
-The retail dispatcher writes a per-slot validity bit at `gp + 0x9A8`; the engine surfaces the same signal through the consuming paths (`target_picker` for battle-target cursors, `inventory_use` for item-menu greying) rather than a single exported byte.
+The retail dispatcher writes a per-slot validity bit at `gp + 0x9A8` with per-arm discipline:
+most arms clear their slot's bit before testing and set it on success, arm `0x01` zeroes the
+whole byte before its walk, arms `0x09`/`0x0A` force the byte to `7` and `0x0B..=0x0D` overwrite
+it with the matched slot's mask, while the battle branches of `0x03`/`0x08` and all of
+`0x80..=0x83` never touch it. The engine port (`validate_action`) keeps that discipline via its
+`validity_bits` parameter; the consuming menu paths (`target_picker` for battle-target cursors,
+`inventory_use` for item-menu greying) additionally surface the same signal where it is read.
+The dump's only real callees are the system-flag test `FUN_8003CE64` (arms `0x80`/`0x81`, flags
+5/6 in the `DAT_80085758` bank, alongside `_DAT_1F800394` bits `0x100000`/`0x200000`) and the
+arm-`0x82` inventory gate `FUN_80046898` - a 3-instruction leaf returning
+`*(int *)(gp + 0x2E8) < 0xE0` ("the inventory has room", signed compare against the 224-slot
+cap; `see ghidra/scripts/funcs/80046898.txt`), ported as
+`battle_action::item_count_gate` over `ActionValidatorHost::inventory_count`. The validator
+does **not** call the ability bit-test `FUN_800431D0` (an earlier attribution in
+[`battle.md`](battle.md) / `reference/functions.md`).
 
 ## Action queue and Tactical Arts trigger ordering
 
