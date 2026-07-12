@@ -722,6 +722,23 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
 
 ## What's still open
 
+- **"`FUN_801F3894`" is not a missing chain caller - it is `FUN_801DD0AC` under a
+  double VA shift.** The `overlay_0897_801f3894` dump looks like a fourth caller of
+  the damage chain (it calls `FUN_801DD864` + `FUN_801DDB30`), but its 257
+  instructions are `FUN_801DD0AC`'s byte-for-byte: only the PC-relative branch
+  targets move, and the absolute `j 0x801dd260` / `j 0x801dd460` intra-function
+  exits still target the `0x801DD0AC` body, so the bytes are linked for that base.
+  The alias mechanism: PROT 0897's extraction window over-reads into PROT 0898
+  (0897-file offset `0x25000` = 0898-file offset `0x0`), and the dump's Ghidra
+  program maps the file at `0x801C0000` rather than the slot-A base `0x801CE818`,
+  so the already-ported kernel surfaces at the fake entry VA `0x801F3894`. The
+  retail battle overlay holds unrelated code at that VA, and the state-`0x3D` call
+  target `0x801F3990` (`jal` at `0x801E3E04` in `FUN_801E295C`, with no argument
+  setup) is an argument-less cast **audio-cue dispatcher** (actor `+0x1E8`
+  jump-table arms playing `FUN_8004FCC8` cues; the actor `+0x1DF == 0xFE` arm goes
+  through `FUN_800421D4`/`FUN_8003D53C` instead), not damage arithmetic. The
+  chain's rolls, scale stage, and finisher are the ported kernels above; no
+  unported spirit/magic damage roll hides behind state `0x3D`.
 - **Selector dispatch for selectors `0x10..=0x83`.** The cases beyond status / buff / damage handle stat-up animations, status-clear, queue-end markers, and the multi-target item slot used by Smelly Glove etc. They're mostly read-only stat ramps that don't affect game balance, so leaving them un-decoded is fine for a first port.
 - The monster record is now fully decoded: all six stat halfwords (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)), the reward fields (see [victory spoils](#victory-spoils-rewards)), and the spell-offset list (see [spell list](#spell-list-record-0x4c)). No record fields remain open. The spell entries' `+0x04`/`+0x08` **effect indices** now resolve through the per-block effect-offset table to the per-spell effect descriptor (`MonsterSpell::effect_offset` / `aux_offset`; see [spell list](#spell-list-record-0x4c)) - these are indices into a table, not direct sub-pointers, and the target is a small fixed descriptor, not TMD geometry. What stays open is only that descriptor's **interior field semantics** (its runtime consumer is the cast/effect path).
 - **Ability-bit catalogue.** The ability bitfield at `+0xF4` of the character record has at least the documented MP-half / MP-quarter / HP-cap / MP-cap bits in use, plus the impact-step modifier (`0x10` / `0x20`) on attack actions. The full per-character mapping comes out of save-data (the 0x414 record's `+0xF4..+0xF8` is one row in the save schema's character block) - a few new-game saves with different early-game characters resolve it.

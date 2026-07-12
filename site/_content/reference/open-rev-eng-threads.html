@@ -65,8 +65,14 @@
       <tr>
         <td>Encounter MAN sub-section layout</td>
         <td><span class="tag tag-done">resolved</span></td>
-        <td><code>FUN_8003AEB0</code> walks the MAN multi-section header; the region table is a count-prefixed array of 18-byte records (kind + tile-space bounding box + payload) consumed by the field camera handlers. Residual: the payload's camera-parameter sub-split.</td>
-        <td><a href="../formats/encounter.html">encounter</a></td>
+        <td><code>FUN_8003AEB0</code> walks the MAN multi-section header; the region table is a count-prefixed array of 18-byte records (kind + tile-space bounding box + a per-region camera preset). The camera payload <code>bytes[5..17]</code> is decoded byte-for-byte: three mode-keyed splits on <code>byte[5] &gt;&gt; 4</code> into the <code>0x8007B607..27</code> camera globals (loader <code>FUN_801dbc20</code>, builder <code>FUN_801dab90</code>). Residual: the mask-kind records' scratchpad side-copy (<code>0x1F8003E8..EB</code>) has no traced reader.</td>
+        <td><a href="../formats/encounter.html#camera-region-table">encounter</a></td>
+      </tr>
+      <tr>
+        <td>"<code>FUN_801F3894</code> spirit/magic damage roll" (state-<code>0x3D</code> chain caller)</td>
+        <td><span class="tag tag-done">falsified</span></td>
+        <td>The <code>overlay_0897_801f3894</code> dump is <code>FUN_801DD0AC</code> byte-for-byte under a double VA shift (0897's extraction over-reads into 0898; the program maps the file at <code>0x801C0000</code>, not the slot-A base <code>0x801CE818</code>), so the already-ported damage kernel surfaces at a fake entry VA. The real state-<code>0x3D</code> callee <code>FUN_801F3990</code> is a cast audio-cue dispatcher; spirit damage is state <code>0x3E</code>'s inline formula (<code>battle_formulas::spirit_damage</code>). Corollary: every <code>overlay_0897_801fxxxx</code> dump of the <code>0x801F</code> region is suspect &mdash; verify vs battle-resident bytes (<code>0x801F0348</code>/<code>0x801F1ED4</code>/<code>0x801F45A4</code> pending).</td>
+        <td><a href="../subsystems/battle-formulas.html">battle-formulas</a></td>
       </tr>
       <tr>
         <td>Super / Miracle Arts trigger logic</td>

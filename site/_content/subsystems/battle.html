@@ -252,7 +252,7 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
   <dl class="kv">
     <dt>Function</dt><dd><code>FUN_8003FB10</code></dd>
   </dl>
-  <p>Decides whether a queued action can proceed for the active actor. Sub-dispatches on <code>actor[+0x9A8]</code> (the queued-action byte) into 16+ handler arms; each arm consults a mix of per-actor state, the current target's record at <code>0x80084708 + tgt*0x414</code>, the global ability bitmask via <code>FUN_800431D0</code>, and the <code>0x8007BD10</code> actor-type table to gate the action with a 16-bit return code (action-OK, blocked, requires-target-flag, etc.).</p>
+  <p>The per-slot target-validity walker: decides which slots a queued action may target. Dispatches the arm byte through an 18-arm jump table (bound <code>0x84</code>); each arm tests per-slot HP/MP quads (battle-actor table <code>DAT_801C9370</code> in battle, char records <code>0x80084708 + n*0x414</code> in field), record stats, party-slot indirection, system flags (<code>FUN_8003CE64</code>), or the inventory-count leaf <code>FUN_80046898</code>, writing per-slot validity bits. It does <strong>not</strong> consult the ability bitmask (<code>FUN_800431D0</code>). Ported as <code>engine-vm::battle_action::validate_action</code>; the full arm map lives on the battle-action page.</p>
 </section>
 
 <section class="doc-section" id="character-record">

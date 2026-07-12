@@ -61,5 +61,8 @@ use run::*;
 mod enemy_budget;
 pub use enemy_budget::*;
 
+mod validator;
+pub use validator::*;
+
 #[cfg(test)]
 mod tests;

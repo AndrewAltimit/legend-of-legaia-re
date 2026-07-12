@@ -28,7 +28,7 @@ The per-frame driver is `FUN_801cf3bc` (`overlay_fishing_801cf3bc.txt`). It is d
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
 | `200` (`0xc8`) | Exit / fade-out: ramps a fade value to white and, once full, plays the leaving XA cue and tears the mode down. |
 
-The shared tail also services three auxiliary one-shot animation timers (`DAT_801d9160` / `DAT_801d915c` / `DAT_801d90f0`, each advanced through `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4`), applies the screen fade, draws the persistent HUD (`FUN_801d13f0`) and - while a fish is hooked (`DAT_801d9058`) - the catch HUD (`FUN_801d1580`), and honours a global "confirm-to-leave" edge that returns to state `10`.
+The shared tail also services three auxiliary one-shot animation timers (`DAT_801d9160` / `DAT_801d915c` / `DAT_801d90f0`, each advanced through `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` - see [HUD and banner animations](#hud-and-banner-animations)), applies the screen fade, draws the persistent HUD (`FUN_801d13f0`) and - while a fish is hooked (`DAT_801d9058`) - the catch HUD (`FUN_801d1580`), and honours a global "confirm-to-leave" edge that returns to state `10`. Each timer is idle at `0`, seeded to `1` by its trigger event, passed to its animator as the frame count, advanced by the frame step `DAT_1f800393` while the animator reports active, and zeroed when it expires; while the `FUN_801d75dc` timer runs, the tail forces the `FUN_801d78ec` timer back to zero.
 
 The reeling / fish-AI tick `FUN_801d4004` and the per-fish actor handler `FUN_801d26cc` run from the actor side of the run loop (`FUN_801d26cc` calls `FUN_801d4004` while the fish is engaged), not directly from the mode switch.
 
@@ -47,9 +47,21 @@ The reel buttons are pinned from the pad-mask packer `FUN_8001822C` (both its di
 
 The catch HUD `FUN_801d1580` (`overlay_fishing_801d1580.txt`) renders the live state: the line length / record number `DAT_801d927c`, the casting-power bar `DAT_801d9274`, the depth `DAT_801d9298`, and - gated on `DAT_801d91b4` - the tension bar `DAT_801d9168` itself (drawn via `FUN_801d1870`). It uses the digit / glyph blitters `FUN_801d76e0` (number) and `FUN_801d63b0` (single sprite-quad).
 
+The catch-HUD readout arithmetic: the length total is `max(record - 300, 0) * 100 >> 9` plus the `DAT_801d9178 >> 9` extent term (each clamped at zero), split as `/10` (whole) and `%10` (tenths digit) - the same `300` base as the hook check; the cast-power percent is `power * 100 >> 12` (percent of the `0x1000` meter ceiling); `FUN_801d1a90` draws the power bar. A debug length print sits behind the global print flag `_DAT_8007b9b0`.
+
 A landed catch is resolved in `FUN_801d5298` (`overlay_fishing_801d5298.txt`). The awarded points are
 `points = (fish_base_value * (DAT_801d91b8 + 0x9c0)) / 0x32000`,
 where `fish_base_value` is the species record's `+0x04` field (`&DAT_801d81a8 + DAT_801d91cc*0x28`) and `DAT_801d91b8` is the accumulated pull / strength for the fight. The points are added to the persistent counter `_DAT_8008444c` (clamped to `999999`), guarded by a per-catch latch at actor `+0x2a` so a single fish is scored once. If the catch beats the current best (`_DAT_80084458`), the best value and its fish id (`_DAT_8008445c`) are updated.
+
+## HUD and banner animations
+
+The persistent HUD `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) is drawn every frame by the driver tail: the best-catch row (`_DAT_80084458`, glyph `0x1a`), the point-total row (`_DAT_8008444c` rendered capped at `999999`, glyph `0x1c`), the selected rod/lure label (three overlay strings picked by `_DAT_80084450` = 0/1/2; any other index draws no label), and a lures-remaining line: a caption plus the live inventory count of item `_DAT_80084450 + 0x9d` (`func_0x80042f4c`) as a 4-digit number, plus a trailing caption. All rows draw at brightness `0x80`.
+
+The three one-shot animators the tail's timers drive (each takes the timer value as its frame count and returns whether it is still active; all expire by returning 0, which zeroes the timer):
+
+- `FUN_801d78ec` (`overlay_fishing_801d78ec.txt`, timer `DAT_801d9160`) - a banner (glyph `7`, `y = 0x78`) sliding in from the **left** at 8 px/frame, holding at `x = 0xa0` from frame `0x14`, sliding off from frame `0x8c` (`x = frame*8 - 0x3c0`, joining the hold continuously), active while `frame < 0xc8`. Seeded at the moment the fish hooks (`FUN_801d26cc`, alongside `DAT_801d91b4 = 1`).
+- `FUN_801d75dc` (`overlay_fishing_801d75dc.txt`, timer `DAT_801d915c`) - the mirrored banner (glyph `0xd`) sliding in from the **right**: same ramp, `x = 0x140 -` ramp, holding at the same `x = 0xa0`; same `0xc8` lifetime. Seeded on the hooked fight's reel-in-complete path (`FUN_801d26cc`: `DAT_801d927c` below `0x136` while `DAT_801d91b4` set); while it runs the tail cancels the `FUN_801d78ec` timer.
+- `FUN_801d71d4` (`overlay_fishing_801d71d4.txt`, timer `DAT_801d90f0`) - the strike splash: a two-glyph pair (`0x416` / `0x816`) at `x = 0xa0` rising one pixel every 32 frames from `y = 0x50`, brightness ramping `frame*8` up to a `0x80` hold (frame `0x10`), holding until frame `0x88`, then fading `0x80 - (frame-0x88)*8` to expire at frame `0x98`. Seeded at the strike / hit event before the fish hooks (`FUN_801d26cc`, gated on `DAT_801d91b4 == 0`).
 
 ## Per-species parameter table
 
@@ -88,6 +100,12 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 | `0x801d9110` | `s32` | Frame countdown until the next fish-behaviour re-roll. |
 | `0x801d91b8` | `s32` | Accumulated pull / strength for the current fight; feeds the score formula. |
 | `0x801d927c` | `s32` | Line length / catch record value shown on the HUD. |
+| `0x801d9280` | `s32` | HUD length term `max(record - 300, 0)`, written back by `FUN_801d1580` each frame. |
+| `0x801d9178` | `s32` | Second length-readout term (`>>9` scale); drawn alone as the lower readout and added into the length total. |
+| `0x801d91b4` | `u32` | Set at the hook; gates the catch HUD's depth + tension gauge block and the strike-splash seed. |
+| `0x801d9160` | `u32` | One-shot timer for the from-left banner `FUN_801d78ec`; seeded to 1 at the hook. |
+| `0x801d915c` | `u32` | One-shot timer for the from-right banner `FUN_801d75dc`; seeded on the reel-in-complete path (cancels `0x801d9160` while running). |
+| `0x801d90f0` | `u32` | One-shot timer for the strike splash `FUN_801d71d4`; seeded at the strike event. |
 | `0x801d9058` | `u32` | "Fish hooked" flag; gates the catch HUD (`FUN_801d1580`). |
 | `0x801d905c` | `s32` | Screen-fade level (down-ramped on fade-in, up-ramped on exit). |
 | `0x801d90d0` | `u32` | Fishing-location variant selected at setup. |
@@ -106,12 +124,15 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 - `FUN_801d26cc` (`overlay_fishing_801d26cc.txt`) - hooked-fish actor handler; positions the fish / lure / line actors and calls `FUN_801d4004` while engaged.
 - `FUN_801d5298` (`overlay_fishing_801d5298.txt`) - catch resolution + scoring: computes the point award, credits `_DAT_8008444c`, and updates the best-catch record.
 - `FUN_801d1580` (`overlay_fishing_801d1580.txt`) - catch HUD: draws tension, casting power, depth, and record values.
-- `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) - persistent HUD: draws the fishing-point total (`_DAT_8008444c`, capped) and the rod-type label.
+- `FUN_801d13f0` (`overlay_fishing_801d13f0.txt`) - persistent HUD: draws the best-catch value, the fishing-point total (`_DAT_8008444c`, capped), the rod-type label, and the lures-remaining count (item `_DAT_80084450 + 0x9d`).
+- `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` (`overlay_fishing_801d78ec.txt` / `..75dc.txt` / `..71d4.txt`) - the three one-shot banner/splash animators (see [HUD and banner animations](#hud-and-banner-animations)).
 - `FUN_801d712c` (`overlay_fishing_801d712c.txt`) - rod-ownership gate; queries inventory item ids `0x9d`..`0x9f` (`func_0x80042f4c`).
 
 Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species.rs) decodes the [per-species table](#per-species-parameter-table) from the disc.
 
 Engine port: [`legaia_engine_core::fishing`](../../crates/engine-core/src/fishing.rs) is the clean-room rules engine over that table. The **Confirmed** numeric kernels are ported directly: the casting-power oscillator (`CastPower`, bounds `0x20..=0x1000`, seed `0x40`; `FUN_801cf3bc` state `0x14`), the tension-gauge tug-of-war (`TensionGauge`, reel divisors `rod*9+0x23` / `rod*6+0x19`, release `(rod*0x40+0x4a)*frame_step`, clamp `[0, 0x1000]`; `FUN_801d4004`), and the catch award + persistent-record credit (`FishingRecord`, `value*(strength+0x9c0)/0x32000`, `999999` cap, best-catch; `FUN_801d5298`).
+
+The HUD / banner cluster is ported as a draw-list layer (`HudDraw`): `persistent_hud_draws` (`FUN_801d13f0`), `catch_hud_draws` plus the `length_display` / `extent_display` / `cast_power_percent` kernels (`FUN_801d1580`), the three animators `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` (`FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4`), and `BannerTimer` (the tail's timer-service loop).
 
 The `FishingSession` composes those kernels into a cast → fight → score loop. The win/lose glue (line-snaps-at-max-tension, reel-progress land, the locked-cast species pick, and the steady per-frame fish pull) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in.
 

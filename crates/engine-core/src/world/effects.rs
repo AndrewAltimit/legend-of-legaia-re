@@ -613,14 +613,11 @@ impl World {
     /// `global_tmd_pool[model_sel + 3]` - the PROT 0871 effect-model library,
     /// already resident.
     ///
-    /// Returns `false` (no scene spawned) when the move-power table / overlay
-    /// isn't installed (disc-free battles), the move id has no power record, or
-    /// the move carries no spawnable effect entries. Replaces any in-flight
+    /// Returns `false` (nothing spawned) when the move-power table isn't
+    /// installed (disc-free battles), the move id has no power record, or the
+    /// move carries no spawnable effect entries. Replaces any in-flight
     /// move-FX scene. Tick with [`Self::tick_move_fx`].
     pub fn spawn_move_fx(&mut self, move_id: u8, origin: [i16; 3]) -> bool {
-        let Some(overlay) = self.move_power_overlay.clone() else {
-            return false;
-        };
         let Some(cat) = self.move_power.as_ref() else {
             return false;
         };
@@ -629,14 +626,20 @@ impl World {
         };
         use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE, EffectListEntry};
 
-        // Parse ALL prototype records first (full offset set) so each record's
-        // move-VM bytecode is bounded by its true packed neighbour, then select
-        // the ones this move's Spawn entries reference. Bounding against only
-        // this move's subset would over-run each record into the next selected
-        // one rather than the next packed one.
-        let Some(all_parts) = move_power::parse_effect_proto_records(&overlay) else {
-            return false;
-        };
+        // The high-bit (`0x80`) effect-list entries route to the 2D efect.dat
+        // pool (`FUN_801dfdf0`), not the 0x801f6324 scene-graph. They spawn
+        // whether or not a 3D scene stages below: a move whose lists hold
+        // *only* AltEffect entries has no Spawn prototype but still fires its
+        // 2D effects.
+        let alt_ids: Vec<u8> = fx
+            .contact_effects
+            .iter()
+            .chain(fx.launch_effects.iter())
+            .filter_map(|e| match e.entry {
+                EffectListEntry::AltEffect(id) => Some(id),
+                _ => None,
+            })
+            .collect();
 
         // The file offsets this move's Spawn entries point at (proto VA → file).
         let wanted: std::collections::BTreeSet<usize> = fx
@@ -649,48 +652,53 @@ impl World {
             })
             .filter_map(|va| va.checked_sub(BATTLE_OVERLAY_BASE).map(|o| o as usize))
             .collect();
-        if wanted.is_empty() {
-            return false;
-        }
-        let parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
-            .into_iter()
-            .filter(|p| wanted.contains(&p.record_off))
-            .collect();
-        if parts.is_empty() {
-            return false;
-        }
-        self.active_move_fx = Some(crate::summon::SummonScene::spawn_parts(
-            &parts,
-            &overlay,
-            crate::scene::EFFECT_MODEL_LIBRARY_BASE,
-            origin,
-        ));
-        // Surface the move's presentation fields for the render / audio layers:
-        // the trail/afterimage texpage (`+0x0b`) and the sound cue (`+0x0d`).
-        self.active_move_fx_trail_texpage = Some(fx.trail_texpage);
-        if fx.sound_cue_id != 0 {
-            self.pending_move_fx_cue = Some(fx.sound_cue_id);
+        let trail_texpage = fx.trail_texpage;
+        let sound_cue_id = fx.sound_cue_id;
+
+        let mut staged_scene = false;
+        if !wanted.is_empty() {
+            // The 3D scene-graph path needs the retained battle-action overlay
+            // (PROT 0898) for the prototype records; the 2D pool path does not.
+            //
+            // Parse ALL prototype records first (full offset set) so each
+            // record's move-VM bytecode is bounded by its true packed
+            // neighbour, then select the ones this move's Spawn entries
+            // reference. Bounding against only this move's subset would
+            // over-run each record into the next selected one rather than the
+            // next packed one.
+            if let Some(overlay) = self.move_power_overlay.clone()
+                && let Some(all_parts) = move_power::parse_effect_proto_records(&overlay)
+            {
+                let parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
+                    .into_iter()
+                    .filter(|p| wanted.contains(&p.record_off))
+                    .collect();
+                if !parts.is_empty() {
+                    self.active_move_fx = Some(crate::summon::SummonScene::spawn_parts(
+                        &parts,
+                        &overlay,
+                        crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                        origin,
+                    ));
+                    // Surface the move's presentation fields for the
+                    // render / audio layers: the trail/afterimage texpage
+                    // (`+0x0b`) and the sound cue (`+0x0d`). The texpage is
+                    // scene-scoped (dropped when the scene drains), so it
+                    // only surfaces when a scene actually stages.
+                    self.active_move_fx_trail_texpage = Some(trail_texpage);
+                    if sound_cue_id != 0 {
+                        self.pending_move_fx_cue = Some(sound_cue_id);
+                    }
+                    staged_scene = true;
+                }
+            }
         }
 
-        // The high-bit (`0x80`) effect-list entries route to the 2D efect.dat
-        // pool (`FUN_801dfdf0`), not the 0x801f6324 scene-graph: spawn each
-        // through the effect pool by its 7-bit id (no-op when efect.dat isn't
-        // loaded). (Reached only on the scene-graph success path; a move whose
-        // lists hold *only* AltEffect entries returns early above with the
-        // empty-Spawn-set guard - an documented edge case, rare for FX moves.)
-        let alt_ids: Vec<u8> = fx
-            .contact_effects
-            .iter()
-            .chain(fx.launch_effects.iter())
-            .filter_map(|e| match e.entry {
-                legaia_asset::move_power::EffectListEntry::AltEffect(id) => Some(id),
-                _ => None,
-            })
-            .collect();
+        let spawned_alt = !alt_ids.is_empty();
         for id in alt_ids {
             self.try_spawn_effect(id, origin, 0);
         }
-        true
+        staged_scene || spawned_alt
     }
 
     /// Take the pending move-FX sound cue id, if [`Self::spawn_move_fx`] set one
