@@ -355,9 +355,10 @@ fn fmv_trigger_search_finds_all() {
 #[test]
 fn fmv_filename_known_indices() {
     assert_eq!(fmv_filename(0), "MV1.STR");
-    assert_eq!(fmv_filename(1), "MV3.STR");
-    assert_eq!(fmv_filename(4), "MV6.STR");
-    assert_eq!(fmv_filename(5), "(cut: MOV15.STR)");
+    assert_eq!(fmv_filename(1), "MV2.STR");
+    assert_eq!(fmv_filename(4), "MV3.STR");
+    assert_eq!(fmv_filename(8), "MV6.STR");
+    assert_eq!(fmv_filename(10), "(dev: MOV15.STR)");
     assert_eq!(fmv_filename(99), "(unknown)");
 }
 
@@ -426,7 +427,7 @@ fn format_instruction_includes_byte_dump_and_mnemonic() {
     assert!(line.contains("0x0000"));
     assert!(line.contains("4C E2 03 00 00 00"));
     assert!(line.contains("FmvTrigger"));
-    assert!(line.contains("MV4.STR"));
+    assert!(line.contains("MV3.STR")); // fmv_id 3 = the second MV3 segment
 }
 
 #[test]

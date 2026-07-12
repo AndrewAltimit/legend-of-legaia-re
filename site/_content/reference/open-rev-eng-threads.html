@@ -521,6 +521,18 @@
         <td>Retail runs the <code>Studio C</code> preset, master-enabled, globally; per-voice <code>EON</code> send is broad (BGM + SFX alike). No per-cue enable source exists. Wired at SPU init; residual: output-depth tuning only.</td>
         <td><a href="../subsystems/audio.html">audio</a></td>
       </tr>
+      <tr>
+        <td>XA channel map / STR demux SM</td>
+        <td><span class="tag tag-done">resolved</span></td>
+        <td>Statically decompiled from PROT 0970 + SCUS. No channel selector exists in the STR overlay: FMVs play filter-off (each movie = one <code>(1, 0)</code> track); the <code>XA*.XA</code> clip path selects <code>CdlSetfilter {file 1, chan}</code> per cue (<code>FUN_8003D764</code>). Falsified: the "<code>\DATA\MOV.STR</code> multi-channel container" hypothesis; the 64-byte dispatch stride (real stride 32 B - all nine retail slots resolve, every disc movie plays, <code>town0d</code>/<code>uru</code>/<code>jouine</code> triggers are not vestigial); the name-first "compact MV table" phase (it is libcd's <code>CdlFILE</code> dir cache). Residual: <code>fmv_index_to_str_filename</code> realignment.</td>
+        <td><a href="../subsystems/cutscene.html#xa-channel-selection">cutscene</a></td>
+      </tr>
+      <tr>
+        <td>XA clip-table writer + <code>(clip_id, chan)</code> cue census</td>
+        <td><span class="tag tag-open">open</span></td>
+        <td>The <code>0x801C6ED8</code> clip-table content is pinned (34 <code>[CdlLOC][len]</code> slots = <code>XA1..XA34</code>, title-capture byte-exact vs the disc files), but its filler is a DMA/computed write (both <code>lui 0x801c</code> sites in SCUS are readers). A boot write-watchpoint would pin the filler; a caller census of <code>FUN_8003D53C</code>/<code>FUN_8003EAE4</code> would name each cue (only the menu voice dispatcher <code>FUN_8004FCC8</code> is decoded).</td>
+        <td><a href="../subsystems/cutscene.html#xa-channel-selection">cutscene</a></td>
+      </tr>
     </tbody>
   </table>
 </section>

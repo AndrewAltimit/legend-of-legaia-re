@@ -1068,7 +1068,18 @@ The piece poses `R·v + T` about its own object origin (no centroid subtraction)
 | Thread | Status | What would close it |
 |---|---|---|
 | SPU reverb live routing (C7-REVERB) | resolved (wired; Studio C, global) | [details ↓](#spu-reverb-live-routing-c7-reverb) |
+| XA channel map / STR demux SM | resolved (static decompile of PROT 0970 + SCUS) | [details ↓](#xa-channel-map--str-demux-sm) |
+| XA clip-table writer + `(clip_id, chan)` cue census | open | The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..XA34`, title-capture byte-exact vs the disc files), but its filler is a DMA/computed write - both `lui 0x801c` materialisation sites in SCUS are the readers (`FUN_8003D53C`/`FUN_8003EAE4`). A write-watchpoint at boot would pin the filler; a caller census of `FUN_8003D53C`/`FUN_8003EAE4` across the overlay corpus would name each `(clip_id, chan)` cue (only the menu voice dispatcher `FUN_8004FCC8` is decoded: slot `(id-0x100)>>3` remapped `1/3/5 -> 0x1A/0x1B/0x1C`, chan `id & 7`). |
 
+
+### XA channel map / STR demux SM
+
+*Status:* resolved - the historically "overlay-blocked" halves are statically decompiled from PROT 0970 at its base + the SCUS St library; three superseded readings worth not re-walking.
+
+- **No XA channel selector exists in the STR overlay.** FMV playback reads with Setmode `0xE0` (`Speed|RT|Size1`, sector filter **off**): the drive hardware-plays every ADPCM sector, and each `MOV/MV*.STR` interleaves exactly one XA track at `(file 1, chan 0)` (raw-subheader-verified across all six movies). The old hypothesis - "the channel selector is driven by the multi-channel `\DATA\MOV.STR` container" - is **falsified**: `MOV.STR` is a dev path in slots 11..=22 of the dispatch table, absent from the disc. The real per-cue channel selector is the SCUS XA-clip sequencer `FUN_8003D764` (`CdlSetfilter {file 1, chan}`, mode `0xC8`), used for the `XA1..XA34` voice/music files, not for movies. See [cutscene.md § XA channel selection](../subsystems/cutscene.md#xa-channel-selection).
+- **The FMV dispatch table stride is 32 bytes, not 64.** The selector at `0x801CEC9C` is `sll v0,v0,0x5`; the earlier `sll v0,v0,6` transcription paired wrong slot halves and concluded `MV2`/`MV5` were unreferenced and the `town0d`/`uru`/`jouine` triggers vestigial.
+  Under the disc bytes (byte-identical in the RAM capture) all nine retail slots `0..=8` resolve - every movie on the disc plays, `MV3.STR` carries four abutting segments - and the master dispatch `FUN_801CEA3C` hands each mid-game FMV off to a **return scene** (the seven-label table at `0x801CE8AC` + spawn word). Corrected mapping + parser: [str-fmv-table.md](../formats/str-fmv-table.md#authoritative-runtime-mapping), `legaia_asset::fmv_dispatch` (disc-gated `fmv_dispatch_real`). Residual: `legaia_engine_core::cutscene::fmv_index_to_str_filename` still hard-codes the superseded 5-slot map and needs realigning to the parsed table.
+- **The "compact MV table" was libcd's directory cache mis-phased.** The 24-byte records at `0x801CAE08` are `CdlFILE` structs (`[loc][size][name[16]]`); the historical name-first parse paired each name with the next record's location, manufacturing the "MV1 points at disc MV2 / MV6 points at XA15" shift. See [str-fmv-table.md](../formats/str-fmv-table.md#directory-record-cache-0x801cae08-24-b-cdlfile-records).
 
 ### SPU reverb live routing (C7-REVERB)
 

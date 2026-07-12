@@ -6,38 +6,43 @@
 //! The field VM's FMV-trigger op (`0x4C 0xE2 lo hi`, handler `FUN_801E30E4`)
 //! writes a signed `fmv_id` to `_DAT_8007BA78` and pokes game mode `0x1A` (26,
 //! STR INIT). The STR/MDEC overlay (PROT 0970, loaded at `0x801CE818`) then runs
-//! its play loop `FUN_801CF098`, which the mode dispatcher reaches via a selector
-//! that indexes a **static table at VA `0x801D0A6C`** by `fmv_id * 0x40`. The
-//! selected 64-byte slot's leading 32-byte record is:
+//! its master dispatch `FUN_801CEA3C`, whose selector at `0x801CEC9C`
+//! (`sll v0,v0,0x5`) indexes a **static table at VA `0x801D0A6C`** by
+//! `fmv_id * 0x20` and calls the play loop `FUN_801CF098` on the slot. Each
+//! 32-byte slot is one record:
 //!
 //! ```text
 //! +0x00  u32  path_ptr     ; -> a "\MOV\MVn.STR;1" path string in the overlay
-//! +0x04  u32  scale_flag   ; 0 = normal; non-0 scales the frame size by 3/2
+//! +0x04  u32  scale_flag   ; non-0 = 24-bit color (width * 3/2 in 16-bit px)
 //! +0x08  u32  start_frame  ; 1-based; the loop seeks (start-1)*10 sectors in
 //! +0x0C  u32  end_frame    ; the strNext frame-count bound
-//! +0x10  u32  reserved     ; 0 across every entry
-//! +0x14  u32  field_14     ; 8 across every entry
-//! +0x18  u32  width        ; framebuffer width (320 retail; dev slots vary)
-//! +0x1C  u32  height       ; framebuffer height (240)
+//! +0x10  u32  fb_x         ; VRAM decode-target x (0 retail; dev slots vary)
+//! +0x14  u32  fb_y         ; VRAM decode-target y (8 retail; double-buffer
+//!                          ;   sibling rect sits at fb_y + height)
+//! +0x18  u32  width        ; frame width (320 retail; dev slots vary)
+//! +0x1C  u32  height       ; frame height (240)
 //! ```
 //!
-//! (Each 64-byte slot's *second* 32-byte record is a sibling segment the play
-//! loop doesn't read for the primary path; only the leading record is dispatched
-//! per `fmv_id`.) The path strings live at the very start of the overlay (the
+//! The path strings live at the very start of the overlay (the
 //! `\MOV\MVn.STR;1` + `\DATA\MOV*.STR;1` table at offset `0`), so the `path_ptr`
 //! resolves to `offset = path_ptr - base`.
 //!
 //! The 10-sectors-per-frame seek (`(start-1)*10`) is the 15 fps cadence every
 //! Legaia movie runs at; `start_frame`/`end_frame` are what let one `MVn.STR`
-//! file carry several distinct cutscenes (e.g. `MV3.STR` is split across three
+//! file carry several distinct cutscenes (`MV3.STR` is split across four
 //! `fmv_id`s by frame range).
 //!
 //! ## Retail vs dev slots
 //!
-//! The table has 12 slots. The five retail FMVs are `fmv_id 0..=4`
-//! (`MV1`/`MV3`/`MV3`/`MV4`/`MV6`); the rest reference `MOV15.STR` / `MOV.STR`,
-//! dev-only files absent from the released disc. [`FmvEntry::on_retail_disc`]
-//! flags the difference.
+//! The table has 23 slots. The nine retail FMVs are `fmv_id 0..=8`
+//! (`MV1` / `MV2` / four `MV3` segments / `MV4` / `MV5` / `MV6` - every movie
+//! on the disc is dispatched); slots 9/10 reference `MV1A.STR` / `MOV15.STR`
+//! and 11..=22 are `MOV.STR` multi-window dev tests, all files absent from the
+//! released disc. [`FmvEntry::on_retail_disc`] flags the difference.
+//!
+//! (An earlier reading used a 64-byte stride - `sll v0,v0,6` - pairing wrong
+//! slot halves and concluding `MV2`/`MV5` were unreferenced; the disc bytes and
+//! the resident RAM capture both encode the 32-byte stride.)
 //!
 //! This is the read side that lets the engine source its `fmv_id -> MVn.STR`
 //! mapping from the user's own disc instead of a hard-coded table; the disc-gated
@@ -53,11 +58,11 @@ pub const STR_OVERLAY_PROT_INDEX: u32 = 970;
 pub const SECTORS_PER_FRAME: u32 = 10;
 /// VA of the per-`fmv_id` dispatch table the play-loop selector indexes.
 const FMV_TABLE_VA: u32 = 0x801D_0A6C;
-/// Per-`fmv_id` slot stride (`fmv_id * 0x40`); only the leading 32-byte record
-/// of each slot is the dispatched movie.
-const SLOT_STRIDE: usize = 0x40;
-/// Number of `fmv_id` slots in the table.
-pub const FMV_SLOT_COUNT: usize = 12;
+/// Per-`fmv_id` slot stride (`fmv_id * 0x20` - the `sll v0,v0,0x5` selector at
+/// overlay VA `0x801CEC9C`).
+const SLOT_STRIDE: usize = 0x20;
+/// Number of `fmv_id` slots in the table (9 retail + 14 dev).
+pub const FMV_SLOT_COUNT: usize = 23;
 
 /// One decoded FMV dispatch entry: which movie file the `fmv_id` plays and over
 /// what frame range, plus the framebuffer dimensions.
@@ -67,7 +72,8 @@ pub struct FmvEntry {
     pub fmv_id: u8,
     /// Raw path string the record points at, e.g. `\MOV\MV1.STR;1`.
     pub path: String,
-    /// `scale_flag`: non-zero scales the decoded frame size by 3/2 in the loop.
+    /// `scale_flag`: non-zero = 24-bit color; the loop scales the VRAM
+    /// footprint by 3/2 (24bpp pixels over a 16bpp framebuffer).
     pub scale_flag: u32,
     /// 1-based start frame (the loop seeks `(start-1)*10` sectors into the file).
     pub start_frame: u32,
@@ -94,10 +100,13 @@ impl FmvEntry {
     }
 
     /// Whether this entry's movie is a file present on the released retail disc
-    /// (the `MV*.STR` movies); the dev-only `MOV15.STR` / `MOV.STR` slots are not.
+    /// (the six `MVn.STR` movies); the dev-only `MV1A.STR` / `MOV15.STR` /
+    /// `MOV.STR` slots are not.
     pub fn on_retail_disc(&self) -> bool {
-        let b = self.basename();
-        b.starts_with("MV") && b.ends_with(".STR")
+        matches!(
+            self.basename(),
+            "MV1.STR" | "MV2.STR" | "MV3.STR" | "MV4.STR" | "MV5.STR" | "MV6.STR"
+        )
     }
 }
 
@@ -153,8 +162,8 @@ impl FmvTable {
                 height: height as u16,
             });
         }
-        // Drift guard: slot 0 is always the intro movie, and the five retail
-        // FMVs must all decode.
+        // Drift guard: slot 0 is always the intro movie, and at least the
+        // first retail slots must decode.
         if entries.len() < 5 || entries[0].basename() != "MV1.STR" {
             return None;
         }
