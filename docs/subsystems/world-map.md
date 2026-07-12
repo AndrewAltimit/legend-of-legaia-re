@@ -998,55 +998,79 @@ fallback for cells whose record carries no terrain run. (Distinct from the
 MAN `0x7F`-sentinel resolver - see
 [`world-overview-viewer.md`](world-overview-viewer.md).)
 
-**Ocean animation.** The water tile is a 4bpp texture at fb `(768, 256)` whose
-CLUT row at fb `(0, 506)` (CBA `0x7E80`) the retail engine DMAs one of 13
-precomputed BGR555 frames into each animation step - the rolling-wave shimmer.
-The 13-frame table is the shared global asset across the three kingdoms; the
-tile texture + base CLUT are per-kingdom ([`legaia_asset::ocean`]). In the live
-engine the ocean texture + base CLUT already land in VRAM via the kingdom
-slot-0 TIM pass, and the heightfield's water cells reference that CLUT (~39% of
-map01's verts carry CBA `0x7E80`), so `play-window` animates the sea by writing
-each frame's 16 entries into the CPU VRAM CLUT row at `(0, 506)` and
-re-uploading (`OceanAnim` / `advance_ocean_animation`). The clock runs in
-retail vsync units - a game tick every `World::frame_step` vsyncs (the
-adaptive `DAT_1F800393` factor `FUN_80016B6C` writes; overworld `3`), each
-banking `frame_step` vsyncs toward `OCEAN_ANIM_VSYNCS_PER_FRAME` - but the
-step interval *value* is still a tuned approximation (the exact retail
-interval awaits a mednafen frame-series capture of the row-506 head).
-The cycle is live-verified on **all three kingdoms**: resident Sebucus /
-Karisto captures hold a mid-cycle frame of their own bundle's 13-frame strip
-at the `(0, 506)` head (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`).
+**Ocean / water animation.** The water tile is a 4bpp texture at fb
+`(768, 256)` whose CLUT row at fb `(0, 506)` (CBA `0x7E80`) the retail engine
+rewrites every few game ticks - the rolling-wave shimmer - along with seven
+more shoreline/terrain shimmer cells. **The operand source is the kingdom
+bundle's slot 5** (the type-byte `0x06` slot of PROT 0085 / 0244 / 0391): an
+LZS-compressed 516-byte **CLUT-walk animation table**, byte-identical across
+the three kingdoms (the per-kingdom colours come from the parked source
+strips, not the table). Format (parser [`legaia_asset::clut_walk`]):
+`[u32 count = 8][u32 entry_offsets[8]]`, then per entry
+`[u8 kind = 1][u8 nframes][u16 cumulative_size][u16 dest_x][u16 dest_y]`
+followed by `nframes` 8-byte frames
+`[u8 0][u8 hold_vsyncs][u16 0][u16 src_x][u16 src_y]`.
 
-The cycling reaches beyond the row-506 head, on a precisely censused column
-set (per-column variance across the ten map01-CLUT-resident capture states):
-row 506 animates cols `0..48` (head + a second block head + a rotating ring
-of STP-set ocean near-copies at 32..39 + the runtime-generated pure-channel
-tail at 40..47, all phase-locked to the ocean), row **508** animates head
-entries `{1, 14, 15, 26, 27}` and live-maintains a mirror `[32..47] ==
-[0..15]` over a disc-base palette it overwrites, and row **509** animates
-exactly cols `{42, 43}`. Row 507 is fully static. The `(48, 500)` sibling
-destination (next paragraph) is censused dynamic too - cols `62..63` vary
-across the map01-band captures, so the whole 16-wide cell is excluded (a
-`MoveImage` rewrites all 16 entries; the stable columns merely coincide
-across the strip's frames). The VRAM parity oracle excludes exactly the
-censused columns for world-map scenes and asserts the rest
-(`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`).
+At scene load the asset-type dispatcher `FUN_8001f05c` case 6 installs the
+decoded table at `DAT_8007B7C8`, and field init `FUN_801d6704` spawns **one
+actor per entry** via `FUN_80024cfc`, each with its own accumulator (actor
+`+0x68`, seeded to `100` so every entry's first copy fires on the first game
+tick at scene entry - all eight share one epoch). The SCUS actor walker
+`FUN_8001ada4` **case 0xB** steps each actor: `acc += dt` per game tick
+(`dt` = the adaptive frame-step byte `DAT_1F800393` `FUN_80016B6C` rewrites;
+overworld `3`, towns `2`), and on `acc >= hold_vsyncs` it emits a libgpu
+`MoveImage` of `RECT{src_x, src_y, 16, 1}` onto `(dest_x, dest_y)`, **resets
+`acc` to zero** (not subtract-remainder: live exec-BP traces on the
+`MoveImage` wrapper show strictly constant intervals with zero jitter), and
+advances the frame index with wrap-around. The real interval is therefore
+`ceil(hold / dt) * dt` vsyncs. The eight entries: the ocean head `(0, 506)` -
+18 steps hold 8 over the row-505 strip (`x = 0..208` in 16-px steps with a
+128/144 ping-pong x3 mid-cycle; every 9 vsyncs at `dt = 3`, full cycle 162
+vsyncs ≈ 2.7 s), `(0, 508)` 4 steps hold 6 from row 504, `(16, 508)` 4 steps
+hold 8 from row 504, `(16, 506)` 7 steps hold 48-then-12 from row 503,
+`(32, 506)` 7 steps hold 10 from row 502, `(32, 509)` 4 steps hold 20 from
+row 501 (`x = 0, 16, 32, 16`), `(32, 508)` 4 steps hold 6 from row 498 (the
+script-faded park cells), and `(48, 500)` 4 steps hold 6 from row 498
+`x = 160..208`. The cycle is live-verified on **all three kingdoms**
+(`crates/engine-shell/tests/world_map_ocean_clut_live.rs`); the disc-gated
+`clut_walk_real` test pins the full entry set against all three bundles.
 
-The destination-cell set is **kingdom-universal**: on the resident Sebucus /
-Karisto captures every censused destination cell - `(0/16/32, 506)`,
-`(0/16/32, 508)`, `(32, 509)`, `(48, 500)` - holds a 16-px-aligned window of
-that state's own strip park rows (same test file, cross-kingdom leg), i.e.
-the copy family runs against per-kingdom strips with kingdom-invariant
-destination operands. The row-508 mirror, by contrast, is a **map01 script
-behaviour**: on Sebucus / Karisto the `(32, 508)` cell holds strip content
-that differs from `(0, 508)`.
+The engine consumes the table in `play-window` (`WaterAnim::Walk` /
+`advance_ocean_animation`): slot 5 is parsed at scene resolve, all eight
+entries run as independent accumulators with the retail semantics above
+(clock in retail vsync units - a game tick every `World::frame_step`
+vsyncs), and each fire is a CPU-VRAM 16x1 `move_image` + re-upload. The
+legacy single-cell 13-frame ocean-head cycle (`legaia_asset::ocean`,
+`WaterAnim::Ocean`) survives only as the fallback for a bundle without a
+parseable slot 5 (no retail bundle). **Source-strip residency**: the walk
+sources park in VRAM rows 498/499/501..505 as raw CLUT-block records in the
+bundle's slot-0 TIM_LIST (`[u32, u32]` prefix + a bare TIM CLUT block; no
+TIM magic, so plain TIM walkers skip them - `clut_walk::park_strips`
+locates them, and the engine parks them at scene resolve). map01 ships the
+full six-record set plus TIM CLUTs for rows 500/501/508; **map02 / map03
+ship only rows `{501, 503, 505}`** and inherit the kingdom-invariant rest
+(rows 498/499/502/504) as **VRAM residue from the Drake upload** - map01 is
+always the first world map, and the resident Sebucus / Karisto captures
+hold map01's record bytes on those rows byte-exact - so the engine parks
+the byte-identical records from the Drake bundle for rows the scene's own
+bundle doesn't carry.
 
-**The writer is the script-driven CLUT-cell effect family**, not a single
-hardcoded DMA. A map01-resident capture's libgpu command queue holds the
-smoking gun: 16×1 GP0 `0x80` VRAM→VRAM copy packets whose destinations are
-exactly the censused cells - `(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`
-plus a `(48, 500)` sibling - and whose sources walk frame strips parked in
-VRAM rows 498 / 501..505 in 16-px steps (the 13-frame palette banks). Two
+The earlier ten-state map01 capture census stays as corroboration: every
+censused animating column falls inside a slot-5 destination cell (row 506
+cols `0..48` incl. the STP-set ocean near-copies at 32..39 + the
+pure-channel tail at 40..47; row 508 cols `0..48` incl. the map01-only
+mirror `[32..47] == [0..15]`; row 509's animated entries 42..43 inside the
+`(32, 509)` cell; row 500 cols 62..63 inside `(48, 500)` - a `MoveImage`
+rewrites all 16 entries, the stable columns merely coincide across the
+strip's frames), and row 507 - which no slot-5 entry targets - is fully
+static. The VRAM parity oracle excludes exactly the destination-cell fold
+for world-map scenes and asserts the rest
+(`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`). The row-508 mirror is strip
+*content*, not a second writer: on Sebucus / Karisto the `(32, 508)` cell
+holds strip content that differs from `(0, 508)`.
+
+**The row-498 park-cell fades are a separate, script-driven family** -
+event-triggered MAN `4C 61` ops, not part of the slot-5 table. Two
 field-overlay handlers emit them:
 
 - `FUN_801E4C58` - the field-VM `0x4C` n6 sub-`0x61` emitter: with the
@@ -1073,22 +1097,21 @@ field-overlay handlers emit them:
   `World::step_clut_fx` (the VRAM driver), fed by the
   `op4c_n6_sub_61_emitter` field-VM host hook.
 
-Both bottom out in the statically-linked libgpu (`MoveImage FUN_80058490`,
-which patches the static 5-word GP0 packet template at `0x80078DFC`;
-`LoadImage FUN_800583C8`; `StoreImage FUN_8005842C`) - which is why no
-`y = 506/508/509` rect constant exists in any code image. What the scene
-script actually carries is narrower than the full censused cell set:
-map01's field MAN holds exactly eight `4C 61` ops, all on the **row-498
-strip park row** - four one-shots (`frames = 0`) copying cell `(112, 499)`
-onto `(0/16/32/48, 498)`, and four cross-fades (`frames = 0x80` = 128
-vsyncs) fading those same four cells back toward `(112, 499)`
+Both families bottom out in the statically-linked libgpu (`MoveImage
+FUN_80058490`, which patches the static 5-word GP0 packet template at
+`0x80078DFC`; `LoadImage FUN_800583C8`; `StoreImage FUN_8005842C`) - which
+is why no `y = 506/508/509` rect constant exists in any code image: the
+head-walk operands are **data** (the kingdom-bundle slot-5 table above),
+and the row-498 fade operands are MAN script operands. map01's field MAN
+holds exactly eight `4C 61` ops, all on the **row-498 strip park row** -
+four one-shots (`frames = 0`) copying cell `(112, 499)` onto
+`(0/16/32/48, 498)`, and four cross-fades (`frames = 0x80` = 128 vsyncs)
+fading those same four cells back toward `(112, 499)`
 (`legaia_engine_core::man_field_scripts::scene_clut_cell_fx`, disc-gated
-`map01_clut_fx_disc`). The row-506/508/509 head-walk operands appear in
-**no** MAN (exhaustive u16 scan over every scene's field MAN), so the
-head-walk's operand source is still unpinned - see
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md). The
-lockstep phase coupling across rows comes from sibling emissions sharing
-the frame counter, not from one wider rect.
+`map01_clut_fx_disc`); the head-walk operands appear in **no** MAN
+(exhaustive u16 scan) because they never were script-carried. The lockstep
+phase coupling across rows comes from the walker actors sharing the
+game-tick clock and spawn epoch, not from one wider rect.
 
 The field-file loader `FUN_8001f7c0` (`ghidra/scripts/trace_field_loader.py`) is
 **dual-mode**, gated on two globals:

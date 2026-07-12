@@ -99,18 +99,54 @@ impl PlayWindowApp {
         self.resolve_placement_draws(res, tmd_src_index, &tiles, false)
     }
 
-    /// Resolve the world-map ocean CLUT animation for the active scene: scan the
-    /// scene's PROT entries for the kingdom bundle, decode its slot-0 TIM_LIST,
-    /// and pull the ocean tile's 13-frame CLUT animation table
-    /// ([`legaia_asset::ocean::find_ocean_assets`]). Returns `None` for a
-    /// non-world-map scene or a bundle without the ocean tile. The ocean tile
-    /// texture and its base CLUT are already uploaded into VRAM by the slot-0
-    /// TIM pass; this only recovers the per-frame palette overrides.
-    pub(super) fn resolve_ocean_anim(&self) -> Option<OceanAnim> {
+    /// Resolve the world-map water/CLUT-cell animation for the active scene.
+    ///
+    /// Retail path: the kingdom bundle's slot 5 (the type-byte `0x06` slot of
+    /// PROT 0085 / 0244 / 0391) is the CLUT-walk animation table - eight
+    /// independent 16x1 `MoveImage` walkers (ocean head + shoreline/terrain
+    /// shimmer cells), parsed by [`legaia_asset::clut_walk`]. Parsing it also
+    /// parks the walkers' VRAM source strips into the CPU VRAM (see
+    /// [`Self::park_clut_walk_strips`]): the strips ship in the bundle's
+    /// slot-0 TIM_LIST as raw CLUT-block records without the TIM magic, so
+    /// the scene TIM pre-pass skips them.
+    ///
+    /// Fallback: the legacy single-cell 13-frame ocean-head cycle
+    /// ([`legaia_asset::ocean::find_ocean_assets`]), used ONLY when no scene
+    /// entry yields a parseable slot-5 table. The fallback exists for
+    /// modified / damaged bundles (every retail kingdom ships slot 5): it
+    /// keeps the most visible water shimmer alive rather than freezing the
+    /// sea, at the cost of the seven non-ocean shimmer cells.
+    // REF: FUN_8001f05c - asset-type dispatch case 6 installs the decoded
+    // slot-5 table at DAT_8007B7C8; FUN_801d6704 (field init) spawns one
+    // walker actor per entry via FUN_80024cfc.
+    pub(super) fn resolve_ocean_anim(&mut self) -> Option<WaterAnim> {
         let scene = self.session.host.scene.as_ref()?;
         if !legaia_engine_core::scene::is_world_map_scene(&scene.name) {
             return None;
         }
+        let mut walk: Option<legaia_asset::clut_walk::ClutWalkTable> = None;
+        let mut strips: Vec<legaia_asset::clut_walk::ParkStrip> = Vec::new();
+        for entry in &scene.entries {
+            let Ok(table) = legaia_asset::clut_walk::from_kingdom_entry(&entry.bytes) else {
+                continue;
+            };
+            if let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0) {
+                strips = legaia_asset::clut_walk::park_strips(&slot0);
+            }
+            walk = Some(table);
+            break;
+        }
+        if let Some(table) = walk {
+            self.park_clut_walk_strips(&table, strips);
+            let state =
+                vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
+            return Some(WaterAnim::Walk(ClutWalkAnim {
+                table,
+                state,
+                vsyncs_to_game_tick: 0,
+            }));
+        }
+        // Slot 5 absent/unparseable: legacy ocean-head fallback.
         for entry in &scene.entries {
             let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0) else {
                 continue;
@@ -118,33 +154,123 @@ impl PlayWindowApp {
             if let Some(ocean) = legaia_asset::ocean::find_ocean_assets(&slot0)
                 && ocean.animation_frames.len() >= 32
             {
-                return Some(OceanAnim {
+                log::warn!(
+                    "play-window: no slot-5 CLUT-walk table in the kingdom bundle; \
+                     falling back to the legacy ocean-head cycle"
+                );
+                return Some(WaterAnim::Ocean(OceanAnim {
                     frames: ocean.animation_frames,
                     cur: 0,
                     vsyncs_to_game_tick: 0,
                     vsync_accum: 0,
-                });
+                }));
             }
         }
         None
     }
 
-    /// Advance the world-map ocean CLUT animation one sim tick, in retail
-    /// vsync units: only the sim ticks that map to a retail vsync
-    /// (`World::field_frame_step`) advance the clock, a retail *game tick*
-    /// lands every `World::frame_step` vsyncs (the adaptive `DAT_1F800393`
-    /// factor `FUN_80016B6C` writes - `3` on the overworld), and each game
-    /// tick banks `frame_step` vsyncs toward
-    /// [`OCEAN_ANIM_VSYNCS_PER_FRAME`] - the retail CLUT-effect
-    /// `counter += dt` cadence (`FUN_801E4794`). When the accumulator
-    /// crosses, write the next frame's 16 BGR555 entries into the CPU VRAM
-    /// CLUT row at `(0, 506)` and re-upload the VRAM so the heightfield's
-    /// water cells (which sample that CLUT) shimmer. No-op when no ocean
-    /// animation is loaded. Cheap: the whole-VRAM re-upload fires only on a
-    /// frame change (~15x/s), not every render frame.
+    /// Park the CLUT-walk source strips into the CPU VRAM and verify every
+    /// walk source cell is populated.
+    ///
+    /// Two layers, mirroring what the retail VRAM actually holds:
+    ///
+    /// 1. The scene bundle's own slot-0 CLUT-block records (`strips`) - the
+    ///    retail loader `LoadImage`s these verbatim; the engine's TIM
+    ///    pre-pass skips them because they carry no TIM magic.
+    /// 2. The **Drake complement**: map02 / map03 park only rows
+    ///    `{501, 503, 505}` while the (kingdom-invariant) walk table also
+    ///    sources rows 498/502/504. Retail inherits those rows as VRAM
+    ///    residue from the Drake kingdom's upload - map01 is always the
+    ///    first world map, and resident Sebucus / Karisto captures hold
+    ///    map01's record bytes on those rows byte-exact - so the engine
+    ///    parks the byte-identical records straight from the Drake bundle
+    ///    (PROT entry 85) for any source row the scene's own bundle
+    ///    doesn't cover.
+    ///
+    /// Any source cell still unpopulated after both layers is a real
+    /// residency gap: reported loudly, never papered over.
+    fn park_clut_walk_strips(
+        &mut self,
+        table: &legaia_asset::clut_walk::ClutWalkTable,
+        strips: Vec<legaia_asset::clut_walk::ParkStrip>,
+    ) {
+        /// Drake kingdom bundle (`map01`), the shared source of the
+        /// kingdom-invariant strip rows.
+        const DRAKE_KINGDOM_BUNDLE_ENTRY: u32 = 85;
+        let Some(base) = self.cpu_vram_base.as_mut() else {
+            return;
+        };
+        for s in &strips {
+            base.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+        }
+        let covered = |base: &legaia_tim::Vram| {
+            let mut missing: Vec<(u16, u16)> = Vec::new();
+            for e in &table.entries {
+                for f in &e.frames {
+                    if !base.region_has_data(
+                        f.src_x as usize,
+                        f.src_y as usize,
+                        legaia_asset::clut_walk::COPY_WIDTH as usize,
+                        1,
+                    ) && !missing.contains(&(f.src_x, f.src_y))
+                    {
+                        missing.push((f.src_x, f.src_y));
+                    }
+                }
+            }
+            missing
+        };
+        let mut missing = covered(base);
+        if !missing.is_empty() {
+            if let Ok(drake) = self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(DRAKE_KINGDOM_BUNDLE_ENTRY)
+                && let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&drake, 0)
+            {
+                let missing_rows: Vec<u16> = missing.iter().map(|&(_, y)| y).collect();
+                for s in legaia_asset::clut_walk::park_strips(&slot0) {
+                    if missing_rows.contains(&s.fb_y) {
+                        base.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+                    }
+                }
+            }
+            missing = covered(base);
+        }
+        for (x, y) in &missing {
+            log::warn!(
+                "play-window: CLUT-walk source cell ({x}, {y}) has no VRAM data - \
+                 the walker will copy blank entries (strip residency gap)"
+            );
+        }
+    }
+
+    /// Advance the world-map water/CLUT-cell animation one sim tick, in
+    /// retail vsync units: only the sim ticks that map to a retail vsync
+    /// (`World::field_frame_step`) advance the clock, and a retail *game
+    /// tick* lands every `World::frame_step` vsyncs (the adaptive
+    /// `DAT_1F800393` factor `FUN_80016B6C` writes - `3` on the overworld,
+    /// `2` in towns).
+    ///
+    /// Table path (retail): each slot-5 entry is an independent walker.
+    /// Per game tick every accumulator banks `dt` vsyncs; when one crosses
+    /// its current frame's `hold_vsyncs` it emits a 16x1 VRAM->VRAM
+    /// `MoveImage` from the parked source strip onto the entry's
+    /// destination cell, **resets the accumulator to zero** (NOT
+    /// subtract-remainder: live captures show strictly constant intervals -
+    /// hold 8 at dt 3 fires every 9 vsyncs with zero jitter, which only a
+    /// reset produces), and advances the frame index with wrap-around. The
+    /// real interval is therefore `ceil(hold / dt) * dt` vsyncs.
+    ///
+    /// The CPU VRAM is re-uploaded only when at least one copy fired, so
+    /// the whole-VRAM upload runs a few times a second, not every frame.
+    // PORT: FUN_8001ada4 - the SCUS actor walker's case 0xB, the CLUT-walk
+    // stepper (acc += DAT_1F800393; on acc >= hold: MoveImage 16x1, acc = 0,
+    // frame++ wrapping).
     pub(super) fn advance_ocean_animation(&mut self) {
         // While a battle is up the GPU texture holds the BATTLE VRAM (party
-        // band + palettes + monster pages); the ocean cells aren't visible
+        // band + palettes + monster pages); the water cells aren't visible
         // under the battle stage, and re-uploading the field snapshot here
         // would clobber that texture so every battle mesh samples field
         // bytes (white speckle on the party band). Hold the shimmer until
@@ -158,39 +284,85 @@ impl PlayWindowApp {
             return;
         }
         let dt = u32::from(self.session.host.world.frame_step.max(1));
-        let frame: [u8; 32] = {
+        // First pass under the animation borrow: bank the game tick and
+        // collect the fired copies; second pass applies them to the VRAM.
+        let mut copies: Vec<(u16, u16, u16, u16)> = Vec::new();
+        let mut head_frame: Option<[u8; 32]> = None;
+        {
             let Some(anim) = self.ocean_anim.as_mut() else {
                 return;
             };
-            // A retail game tick lands every `dt` vsyncs; on each one, bank
-            // `dt` vsyncs (the retail `counter += DAT_1F800393` step).
-            anim.vsyncs_to_game_tick += 1;
-            if anim.vsyncs_to_game_tick < dt {
-                return;
+            match anim {
+                WaterAnim::Walk(w) => {
+                    // A retail game tick lands every `dt` vsyncs; on each
+                    // one, every entry banks `dt` (the walker's
+                    // `acc += DAT_1F800393` step - one shared clock, so the
+                    // entries stay phase-locked).
+                    w.vsyncs_to_game_tick += 1;
+                    if w.vsyncs_to_game_tick < dt {
+                        return;
+                    }
+                    w.vsyncs_to_game_tick = 0;
+                    for (entry, (acc, idx)) in w.table.entries.iter().zip(w.state.iter_mut()) {
+                        *acc += dt;
+                        let frame = &entry.frames[*idx];
+                        if *acc < u32::from(frame.hold_vsyncs) {
+                            continue;
+                        }
+                        *acc = 0;
+                        copies.push((frame.src_x, frame.src_y, entry.dest_x, entry.dest_y));
+                        *idx = (*idx + 1) % entry.frames.len();
+                    }
+                    if copies.is_empty() {
+                        return;
+                    }
+                }
+                WaterAnim::Ocean(anim) => {
+                    // Legacy fallback: single ocean-head cell, frame bytes
+                    // written from the decoded table rather than copied
+                    // from a parked strip.
+                    anim.vsyncs_to_game_tick += 1;
+                    if anim.vsyncs_to_game_tick < dt {
+                        return;
+                    }
+                    anim.vsyncs_to_game_tick = 0;
+                    anim.vsync_accum += dt;
+                    if anim.vsync_accum < OCEAN_ANIM_VSYNCS_PER_FRAME {
+                        return;
+                    }
+                    anim.vsync_accum = 0;
+                    let nframes = anim.frames.len() / 32;
+                    if nframes == 0 {
+                        return;
+                    }
+                    anim.cur = (anim.cur + 1) % nframes;
+                    let off = anim.cur * 32;
+                    head_frame = Some(anim.frames[off..off + 32].try_into().unwrap());
+                }
             }
-            anim.vsyncs_to_game_tick = 0;
-            anim.vsync_accum += dt;
-            if anim.vsync_accum < OCEAN_ANIM_VSYNCS_PER_FRAME {
-                return;
-            }
-            anim.vsync_accum -= OCEAN_ANIM_VSYNCS_PER_FRAME;
-            let nframes = anim.frames.len() / 32;
-            if nframes == 0 {
-                return;
-            }
-            anim.cur = (anim.cur + 1) % nframes;
-            let off = anim.cur * 32;
-            anim.frames[off..off + 32].try_into().unwrap()
-        };
+        }
         let Some(base) = self.cpu_vram_base.as_mut() else {
             return;
         };
-        // CLUT row at VRAM (0, 506) - the retail per-frame ocean DMA target.
-        base.write_clut_row(0, 506, &frame);
+        for (src_x, src_y, dst_x, dst_y) in copies {
+            // The retail 16x1 CLUT-cell MoveImage (libgpu FUN_80058490).
+            base.move_image(
+                src_x,
+                src_y,
+                legaia_asset::clut_walk::COPY_WIDTH,
+                1,
+                dst_x,
+                dst_y,
+            );
+        }
+        if let Some(frame) = head_frame {
+            // Fallback: CLUT row at VRAM (0, 506), the ocean-head cell.
+            base.write_clut_row(0, 506, &frame);
+        }
         if let Some(r) = self.win.renderer.as_ref() {
             match r.upload_vram(base) {
                 Ok(v) => self.uploaded_vram = Some(v),
-                Err(e) => log::error!("play-window: ocean CLUT re-upload: {e:#}"),
+                Err(e) => log::error!("play-window: water CLUT re-upload: {e:#}"),
             }
         }
     }

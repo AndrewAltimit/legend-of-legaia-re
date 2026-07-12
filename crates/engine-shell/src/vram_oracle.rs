@@ -223,51 +223,37 @@ pub fn first_texpage_divergence(engine: &[u8], runtime: &[u8]) -> Option<Texpage
 pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 
 /// CLUT cells the **world-map walk-view runtime rewrites** (water / shoreline
-/// palette cycling). The kingdom bundle's slot-0 terrain atlas declares its
-/// CLUTs on rows 506..=509. Row 506's 16-entry head is the documented
-/// **13-frame ocean CLUT animation** (`legaia_asset::ocean`,
-/// `docs/subsystems/world-map.md` "Ocean animation") - retail DMAs a
-/// precomputed frame over it each step, so a capture holds an arbitrary
-/// animation phase, never the disc base CLUT. A ten-state capture census
-/// (per-column variance across the map01-resident catalog states) pins the
-/// runtime-touched columns precisely:
+/// palette cycling). Disc-derived: the exclusion set is the eight 16x1
+/// `MoveImage` **destination cells of the kingdom-bundle slot-5 CLUT-walk
+/// table** (`legaia_asset::clut_walk`, byte-identical across PROT 0085 /
+/// 0244 / 0391) - `(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`,
+/// `(48, 500)` - folded per row. The walker (`FUN_8001ada4` case 0xB, one
+/// actor per entry) rewrites each whole 16-entry cell every few game ticks,
+/// so a capture holds an arbitrary animation phase there, never the disc
+/// base CLUT. The disc-gated `clut_walk_real` test in `legaia-asset` pins
+/// the destination fold against this constant's cell values.
 ///
-/// - **row 506, cols 0..48**: the ocean head (0..15), a second block head
-///   (16..31), a rotating ring of STP-set near-copies of the ocean colours
-///   (32..39, phase-locked to the ocean), and the runtime-*generated*
-///   pure-channel tail (40..47) whose intensity animates with the same
-///   phase.
-/// - **row 508, cols 0..48**: animated head entries ({1, 14, 15, 26, 27})
-///   plus a live-maintained mirror at 32..47 (`[32..47] == [0..15]` at every
-///   captured phase - the disc base there is a different palette the runtime
-///   overwrites).
-/// - **row 509, cols 42..44**: exactly two animated entries; the rest of the
-///   row is byte-exact vs the disc build in every capture.
-/// - **row 500, cols 48..64**: the `(48, 500)` sibling destination cell from
-///   the live GP0 `MoveImage` packet census. Per-column variance across the
-///   map01-band captures shows cols 62..63 animating; the whole 16-wide
-///   destination cell is excluded because each `MoveImage` rewrites all 16
-///   entries (the other columns merely coincide across the strip's frames).
+/// The ten-state map01 capture census that originally pinned these columns
+/// stays as corroboration: every censused animating column falls inside a
+/// slot-5 destination cell (row 506 cols 0..48 incl. the STP near-copies +
+/// pure-channel tail; row 508 cols 0..48 incl. the map01-only
+/// `[32..47] == [0..15]` mirror; row 509's animated entries at 42..43
+/// inside the `(32, 509)` cell; row 500 cols 62..63 inside `(48, 500)`),
+/// and row 507 - which no slot-5 entry targets - is fully static (256/256
+/// byte-exact) and stays asserted, as do the remaining columns.
 ///
-/// Row 507 is fully static (256/256 byte-exact) and stays asserted, as do
-/// the remaining columns of 506/508/509 - the census lets the oracle assert
-/// them instead of excluding the whole rows.
+/// The walkers' *source* strips park at VRAM rows 498/499/501..505; those
+/// rows are read, not rewritten, at idle (the row-498 park-cell fades are
+/// event-triggered MAN `4C 61` script ops, a separate family:
+/// `FUN_801E4C58` / `FUN_801E4794`). See `docs/subsystems/world-map.md`
+/// "Ocean / water animation".
 ///
-/// The writer is the field overlay's script-driven CLUT-cell effect family,
-/// not one hardcoded DMA: `FUN_801E4C58` (field-VM `0x4C` n6 sub-`0x61`,
-/// one-shot 16x1 `MoveImage` cell copy / flat-colour fill with the
-/// coordinates as script operands) and `FUN_801E4794` (multi-frame CLUT
-/// cross-fade via StoreImage + per-channel interpolation + LoadImage); the
-/// copies source 13-frame palette strips parked at VRAM rows 498/501..505.
-/// The lockstep phase coupling = sibling script ops sharing the frame
-/// counter. See `docs/subsystems/world-map.md` "Ocean animation".
-///
-/// The destination-cell set is kingdom-universal: the resident Sebucus /
-/// Karisto captures hold strip-frame content at the same cells
-/// (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`), though the
-/// row-508 mirror relation is a map01 script behaviour only.
+/// The destination-cell set is kingdom-universal (the operand table is the
+/// same file in all three bundles): the resident Sebucus / Karisto captures
+/// hold strip-frame content at the same cells
+/// (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`).
 pub const WORLD_MAP_CLUT_CYCLE_CELLS: [(usize, std::ops::Range<usize>); 4] =
-    [(500, 48..64), (506, 0..48), (508, 0..48), (509, 42..44)];
+    [(500, 48..64), (506, 0..48), (508, 0..48), (509, 32..48)];
 
 /// Clear `mask` on every cell of [`WORLD_MAP_CLUT_CYCLE_CELLS`]. Apply to a
 /// world-map scene's static mask before asserting upload parity; field/town
