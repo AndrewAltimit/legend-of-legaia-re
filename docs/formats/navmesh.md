@@ -42,7 +42,7 @@ Real per-scene region / event-trigger data for actor pathing is NOT in this RAM 
 
 - **General town/field free-movement locomotion + collision** is `FUN_801d01b0` (player controller) + `FUN_801cfe4c` (collision), which sample a per-scene walkability tile map through the base pointer `_DAT_1f8003ec` (grid at `+0x4000`, 4 sub-cell wall bits per byte). See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). This is the resolved answer to "where is the collision data" - a nibble grid keyed on the player tile, not a RAM table in this window.
 - A **tile-board grid** (cell `2` = wall) is installed inline in the field-VM event script by op `0x49`, but that drives the puzzle / board minigame mode, not general locomotion (see [`subsystems/tile-board.md`](../subsystems/tile-board.md)).
-- Per-scene **region / zone boxes** are 18-byte records at the MAN control block `_DAT_801c6ea4 + 0x4`, queried by player tile via `FUN_801dba20` (bbox in `bytes[1..4]`).
+- Per-scene **region / zone boxes** are 18-byte records at the MAN control block `_DAT_801c6ea4 + 0x4`, queried by player tile via `FUN_801dba20` (bbox in `bytes[1..4]`; `bytes[5..17]` is the region's [camera preset](encounter.md#man-section-3-the-camera-region-table), not pathing data).
 - The **encounter-record pointer** lives in actor records at `actor[+0x94]` - see [`subsystems/world-map.md`](../subsystems/world-map.md#encounter-record-installation) for that flow.
 
 ## See also

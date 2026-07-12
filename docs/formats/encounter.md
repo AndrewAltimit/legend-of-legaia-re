@@ -13,6 +13,7 @@ The on-disc encounter record installed onto a field actor when the script VM tri
   - [The carrier entity](#the-carrier-entity)
 - [Scripted-battle id path (`FUN_8005567c`)](#scripted-battle-id-path-fun_8005567c)
 - [Random-encounter trigger path](#random-encounter-trigger-path)
+- [MAN section 3: the camera-region table](#man-section-3-the-camera-region-table)
 - [What this doesn't tell us](#what-this-doesnt-tell-us)
 - [Random vs scripted formations (the MAN encounter section)](#random-vs-scripted-formations-the-man-encounter-section)
 - [Files referencing this format](#files-referencing-this-format)
@@ -519,7 +520,7 @@ The six sections install into different globals (per FUN_8003AEB0):
 | 0 | `_DAT_801C6EA4[+0x20]` | Encounter / formation tables (consumed by `FUN_8003A110`; see below). |
 | 1 | `_DAT_801C6EA4[+0x00]` | (Open) - referenced by the field-script context dispatcher; the pointer is advanced past its length prefix immediately after the walk. |
 | 2 | `_DAT_801C6EA0` | (Open) - same advance-by-3 treatment. |
-| 3 | `_DAT_801C6EA4[+0x04]` | (Open) - same advance-by-3 treatment. |
+| 3 | `_DAT_801C6EA4[+0x04]` | **Camera-region table** - count-prefixed 18-byte records queried by player tile (`FUN_801DBA20`); the camera-parameter payload split is [decoded below](#man-section-3-the-camera-region-table). |
 | 4 | `DAT_80073ED8` | (Open) - advances by 4 (skipping length + 1 byte); the byte at `+3` is copied into `DAT_80073EDC`, and a zero terminator there detaches the pointer (`DAT_80073ED8 = NULL`). |
 | 5 | `DAT_80073EE0` | Universally a zero-length terminator. Reserved-but-unused sentinel. |
 
@@ -567,6 +568,102 @@ formation cell `04 04 00 00` byte-for-byte. The
 crate exposes this parser plus per-record decoders for formation +
 region rows.
 
+## MAN section 3: the camera-region table
+
+Section 3 (installed at `_DAT_801C6EA4[+0x04]`) is the per-scene **camera-region table**:
+`[u8 count]` then `count × 18-byte` records. The per-tile query `FUN_801DBA20` walks it
+(`tile = (player_pos - 0x40) >> 7`, first match wins; kind dispatch on `byte[0]` - see
+[`reference/functions.md`](../reference/functions.md)). The field camera arrival handler
+`FUN_801DBE9C` hands the hit to the config loader **`FUN_801DBC20`**, which splits
+`bytes[5..17]` into the resident camera-parameter globals at `0x8007B607..0x8007B627`
+(a query miss loads fixed defaults instead - see below). The camera-param builder
+`FUN_801DAB90` then folds those globals into the same staging-struct slots the script-VM
+Camera Configure op `0x45` writes (pitch `+0x02`, yaw `+0x06`, eye-space `(dx, dy, depth)`
+`+0x0E/+0x12/+0x16`, GTE H `+0x26`; see [`subsystems/cutscene.md`](../subsystems/cutscene.md#timeline-execution-model-ghidra-traced)
+§ "Camera Configure op `0x45`") - so a zone record is a per-region camera preset in the
+op-`0x45` parameter space.
+
+Provenance: loader `see ghidra/scripts/funcs/overlay_fishing_801dbc20.txt` (byte-identical
+across the fishing / dance / debug_menu / slot_machine captures; the cutscene_dialogue /
+cutscene_mapview captures differ only in Ghidra label prefixes - the function sits in the
+co-resident camera cluster, while the `overlay_0897` and `overlay_baka_fighter` captures
+alias different bytes at this VA). Consumers: `overlay_cutscene_dialogue_801dab90.txt`
+(builder) + `overlay_cutscene_dialogue_801dbe9c.txt` (arrival handler + defaults).
+
+**Record header (`bytes[0..5]`, the query side):**
+
+- `+0x00` u8 `kind` - `0` = anchor `(rec[1], rec[2])` and the player tile both inside the
+  scratch attribute box, `1` = inclusive tile-bbox match, `2..=0x1F` = region-type mask
+  bit (matched against `_DAT_8007B8F4`).
+- `+0x01..+0x04` u8×4 - tile-space bbox `[minX, minZ, maxX, maxZ]` (kind 1) /
+  anchor `(rec[1], rec[2])` (kind 0).
+- For mask kinds with `byte[1] != 0`, the loader side-copies `bytes[3],[4],[1],[2]` to
+  scratchpad `0x1F8003E8..EB` and the mirror words `0x801F2778/80/7C/84` before the
+  split. The writes are **Confirmed**; their consumer is **Unknown** (untraced in the
+  current dump corpus).
+
+**Camera payload `bytes[5..17]`** - `byte[5]` is stored whole to the camera **mode byte**
+`DAT_8007B607`; its high nibble selects both the loader split and the `FUN_801DAB90` build
+branch (low nibble = mode-specific strength). Mode `6` = *keep current camera*: the loader
+returns without writing any global, so the previous zone's parameters persist. `s16` =
+signed 16-bit LE read via the shared operand reader `FUN_8003CE9C` (`load_u16_le`,
+sign-extended at the call sites).
+
+| offset | sweep split (every mode but 3/5/6) | mode 3 split (look-at anchor) | mode 5 split (fixed shot) |
+|---|---|---|---|
+| `+5` | u8 → `B607` mode byte | same | same |
+| `+6` | u8 → `B608` pitch sweep | s16 `+6..7` → `B61C` anchor tile X | u8 → `B61C` focus tile X |
+| `+7` | u8 → `B609` depth sweep | (high byte of anchor X) | u8 → `B624` focus tile Z |
+| `+8` | u8 → `B60A` heading-pitch coupling | u8 → `B60A` | s8 → `B620` height offset |
+| `+9` | u8 → `B60B` dy + ease damping | u8 → `B60B` | u8 → `B60B` |
+| `+10..11` | s16 → `B610` base yaw | s16 → `B620` anchor height | s16 → `B610` yaw |
+| `+12..13` | s16 → `B60C` base pitch | s16 → `B624` anchor tile Z | s16 → `B60C` pitch |
+| `+14..15` | s16 → `B614` eye depth | s16 → `B614` eye-depth bias | s16 → `B614` eye depth |
+| `+16..17` | s16 → `B618` GTE H | s16 → `B618` GTE H | s16 → `B618` GTE H |
+
+(`B6xx` = `0x8007B6xx`. Mode-5 `B620` is an s8: the loader ORs `0xFFFFFF00` in when
+`byte[8] >= 0x80`.)
+
+**Global roles** (consumer `FUN_801DAB90` unless noted; angles in the 4096 = 360° space,
+positions in world units, one tile = `0x80`):
+
+- `B607` - mode byte. High nibble `1`/`2`: anchor-follow with a **position-proportional
+  yaw sweep** - `yaw = B610 ± (B607 & 0xF) · lerp(player X across the zone attribute box
+  at scratchpad 0x1F800384/386)`, sign by nibble. `3` = look-at anchor, `4` = pad-analog
+  yaw (pitch `B60C`, depth `B614`), `5` = fixed scripted shot, `6` = keep current.
+- `B608` - pitch sweep: high nibble `1`/`2` = sweep sign about the box Z midpoint
+  (`pitch = B60C ± (B608 & 0xF) · lerp(player Z)`); other values pin pitch to `0x1B8`.
+- `B609` - depth sweep: high nibble `n ∈ 1..=5` anchors the sweep `(n−1)/4` of the Z span
+  from the box max (`depth = B614 + (B609 & 0xF) · lerp(player Z)`); else depth = `B614`.
+- `B60A` - heading-coupled pitch adjust: high nibble `1..=4` → `pitch += (B60A & 0xF) ·
+  heading / 4`; `5` → `/ 8` plus sin/cos-LUT `(dy, depth)` compensation from the player
+  facing `+0x16` (LUT bases `_DAT_8007B7F8` / `_DAT_8007B81C`). Heading =
+  `func_0x80019278(anchor)`.
+- `B60B` - high nibble `1..=0xB`: eye-space `dy = 0x200 − heading · (B60B & 0xF)`; else
+  `dy = 0x200`. The same high nibble is the per-frame **ease-damping shift** in the
+  follow-ease `FUN_801DB510` (`srav` by `B60B >> 4` - see
+  [`subsystems/cutscene.md`](../subsystems/cutscene.md)).
+- `B610` / `B60C` - base yaw / base pitch (staging struct `+0x06` / `+0x02`).
+- `B614` - eye-space depth (`tr_eye.z`, staging struct `+0x16`). Mode 3 treats it as a
+  bias: `depth = (dist3D(anchor, player) · ((B607 & 0xF) + 1) · 6 >> 10) + B614 − 0x4000`.
+- `B618` - **GTE H** (projection focal length, staging struct `+0x26`) in every mode.
+- `B61C` / `B624` - camera anchor/focus tile X / Z. Mode 3: the look-at target is world
+  `(B61C·0x80+0x40, B620·0x20, B624·0x80+0x40)` - yaw and pitch are aimed from it at the
+  player (`func_0x80019b28` arctan). Mode 5: the **focus tile** - the focus setter
+  `FUN_801DB8EC` writes focus `−(tile << 7) − 0x40` and `FUN_801DB510` smooth-scrolls
+  toward it.
+- `B620` - mode 3: anchor height (`× 0x20` world units). Mode 5: s8 height offset rotated
+  by pitch into `(dy, depth)` via the sin/cos LUTs.
+
+**Query-miss defaults** (`FUN_801DBE9C`, loaded when no record contains the player tile):
+`B607 = 0x10` (anchor-follow, sweep strength 0), `B608 = 0x10`, `B609 = 0x30`,
+`B60A = 0x51`, `B60B = 0x20`, `B610 = 0`, `B60C = 0x1B8`, `B614 = 0x4000`,
+`B618 = 0x300`.
+
+Confidence: the three byte splits and the global routing are **Confirmed** (direct
+disassembly + the builder's consumption); the mask-kind scratchpad side-write consumer is
+**Unknown**.
+
 ## What this doesn't tell us
 
 - **Per-opcode encoding of the trailing operand bytes.** Each install
@@ -575,13 +672,15 @@ region rows.
   layout at `+0x3..` is fixed by the reader but the opcode-header
   bytes need a per-case decode in the dispatcher to interpret as
   "encounter trigger from script X at PC Y".
-- **Sibling section roles (sections 1..4).** The MAN multi-section
+- **Sibling section roles (sections 1, 2, 4).** The MAN multi-section
   walker pins exact offsets and lengths for every section across all
-  80 retail scene bundles, but the interior layout of sections 1..4
-  (the three pointers `_DAT_801C6EA4 + 0/+4`, `_DAT_801C6EA0`, and
-  `DAT_80073ED8` install onto) is still open. The lengths cluster
-  small (often 1 byte, occasionally a few hundred), suggesting per-
-  scene callbacks / inline state rather than record arrays.
+  80 retail scene bundles, and section 3 is now decoded (the
+  [camera-region table](#man-section-3-the-camera-region-table)), but
+  the interior layout of sections 1, 2, and 4 (the pointers
+  `_DAT_801C6EA4 + 0`, `_DAT_801C6EA0`, and `DAT_80073ED8` install
+  onto) is still open. The lengths cluster small (often 1 byte,
+  occasionally a few hundred), suggesting per-scene callbacks / inline
+  state rather than record arrays.
 - **The pre-encounter live-pointer state.** No save state in the
   current scenario corpus captures an actor with `+0x94` mid-armed -
   the corpus's `mc0` carries a stale value and every other slot is
