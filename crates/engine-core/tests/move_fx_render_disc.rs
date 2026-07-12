@@ -197,6 +197,79 @@ fn spawnable_move_ids_match_what_actually_renders() {
 }
 
 #[test]
+fn alt_effect_only_moves_still_fire_the_2d_pool() {
+    let Some(bytes) = overlay_0898() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing");
+        return;
+    };
+    let mut world = world_with_move_power(&bytes);
+    {
+        use legaia_engine_vm::effect_vm::{EffectCatalog, EffectScript};
+        let entries: Vec<_> = (0..128)
+            .map(|_| {
+                (
+                    EffectScript {
+                        child_count: 1,
+                        flags: 0,
+                        spread: 0,
+                        body: vec![],
+                    },
+                    vec![],
+                )
+            })
+            .collect();
+        world.effect_catalog = EffectCatalog::new(entries);
+    }
+
+    // Scan the real table for moves whose effect lists hold AltEffect entries
+    // but no Spawn entry (the alt-only edge case).
+    use legaia_asset::move_power::EffectListEntry;
+    let alt_only: Vec<(u8, usize)> = {
+        let cat = world.move_power.as_ref().unwrap();
+        (0x01..=0xFFu8)
+            .filter_map(|id| cat.fx_for_move_id(id).map(|fx| (id, fx)))
+            .filter_map(|(id, fx)| {
+                let entries: Vec<_> = fx
+                    .contact_effects
+                    .iter()
+                    .chain(fx.launch_effects.iter())
+                    .map(|e| e.entry)
+                    .collect();
+                let alts = entries
+                    .iter()
+                    .filter(|e| matches!(e, EffectListEntry::AltEffect(_)))
+                    .count();
+                let spawns = entries
+                    .iter()
+                    .filter(|e| matches!(e, EffectListEntry::Spawn(_)))
+                    .count();
+                (alts > 0 && spawns == 0).then_some((id, alts))
+            })
+            .collect()
+    };
+    let Some(&(id, alt_count)) = alt_only.first() else {
+        eprintln!("[skip] no alt-only move in the retail table (edge case is synthetic-only)");
+        return;
+    };
+
+    // The alt-only move spawns its 2D pool effects (this is the path the old
+    // empty-Spawn-set early return used to skip), stages NO 3D scene, and
+    // surfaces neither scene-scoped presentation field.
+    assert!(
+        world.spawn_move_fx(id, [0, 0, 0]),
+        "alt-only move {id:#04x} spawns its 2D effects"
+    );
+    assert_eq!(
+        world.effect_pool.active_count(),
+        alt_count,
+        "each AltEffect entry spawned one effect-pool master"
+    );
+    assert!(world.active_move_fx_part_draws().is_empty(), "no 3D scene");
+    assert_eq!(world.active_move_fx_trail_texpage(), None);
+    assert_eq!(world.take_pending_move_fx_cue(), None);
+}
+
+#[test]
 fn move_fx_guards_when_uninstalled_or_inert() {
     // No catalog / overlay installed -> no spawn, no panic.
     let mut bare = World::new();

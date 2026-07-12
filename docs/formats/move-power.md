@@ -300,11 +300,13 @@ SPU note-on resolves through the [SFX descriptor table](sfx-table.md) against th
 sequencer plays, not a separate SFX master).
 
 The effect-list **`AltEffect`** entries (the high-bit `0x80` bytes, distinct from
-the `0x801f6324` scene-graph `Spawn` entries) now spawn through the 2D `efect.dat`
+the `0x801f6324` scene-graph `Spawn` entries) spawn through the 2D `efect.dat`
 pool: `spawn_move_fx` calls `World::try_spawn_effect` (`spawn_by_ui_id`,
 `FUN_801dfdf0`) for each by its 7-bit id (no-op when `efect.dat` isn't loaded).
-This currently fires only on the scene-graph success path; a move whose lists hold
-*only* `AltEffect` entries (no `Spawn` prototype) is the documented edge case.
+This fires whether or not a 3D scene stages, so a move whose lists hold *only*
+`AltEffect` entries (no `Spawn` prototype) still fires its 2D effects; the
+scene-scoped presentation fields (trail texpage, sound cue) surface only when a
+scene-graph spawn actually stages.
 
 **`gp[0x754] = party_count + 2` in battle (save-corpus-pinned).** A PCSX-Redux
 exec-bp on `FUN_80021B04` during a battle move-FX spawn (probe
