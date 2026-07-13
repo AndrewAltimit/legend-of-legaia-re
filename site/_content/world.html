@@ -1,10 +1,121 @@
+<!--HEAD: <style>
+.world-shell { display: flex; flex-direction: column; gap: 1rem; }
+.file-input-group {
+  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
+  padding: 0.75rem; border: 1px solid var(--border); background: var(--bg-card);
+}
+.file-input-group input[type="file"] { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.85rem; }
+.world-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem; }
+
+/* Navigator (left) + map canvas (right). Collapses to one column on narrow
+ * viewports, navigator first. */
+.world-viewer {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 0.85rem;
+}
+@media (max-width: 860px) { .world-viewer { grid-template-columns: minmax(0, 1fr); } }
+
+.world-nav { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.world-nav-search {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.35rem 0.5rem; font: inherit; font-size: 0.82rem; border-radius: 3px;
+  width: 100%; box-sizing: border-box;
+}
+.world-nav-list {
+  overflow-y: auto; max-height: 560px;
+  display: flex; flex-direction: column; gap: 0.1rem;
+  font-family: var(--font-mono); font-size: 0.8rem;
+}
+.world-nav-group {
+  color: var(--text-dim); font-size: 0.68rem; text-transform: uppercase;
+  letter-spacing: 0.05em; margin: 0.5rem 0 0.15rem;
+}
+.world-nav-item {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem;
+  background: none; border: 1px solid transparent; color: var(--text-muted);
+  padding: 0.28rem 0.4rem; cursor: pointer; text-align: left;
+  font: inherit; border-radius: 3px; width: 100%;
+}
+.world-nav-item:hover { border-color: var(--accent); color: var(--text); }
+.world-nav-item.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.world-nav-item.is-active .world-nav-code { color: var(--bg); opacity: 0.75; }
+.world-nav-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.world-nav-code { color: var(--text-dim); font-size: 0.72rem; flex: none; }
+
+.world-stage { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+canvas.world-canvas {
+  width: 100%; aspect-ratio: 16 / 11; max-height: 620px;
+  background: radial-gradient(circle at 50% 40%, #1c2026 0%, #0c0e12 100%);
+  border: 1px solid var(--border); display: block; cursor: grab;
+}
+.world-map-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.78rem; min-height: 1.2em; }
+.world-map-status b { color: var(--text); }
+.world-stage-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.world-stage-title { color: var(--text); font-family: var(--font-mono); font-size: 0.95rem; font-weight: bold; }
+.world-stage-btns { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.world-stage-btns button, .world-stage-btns a {
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 0.3rem 0.6rem; font-family: var(--font-mono); font-size: 0.76rem;
+  cursor: pointer; text-decoration: none; border-radius: 3px;
+}
+.world-stage-btns button:hover, .world-stage-btns a:hover { border-color: var(--accent); }
+.world-stage-btns button[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+/* Walkthrough facts for the selected location, under the canvas. */
+.world-facts {
+  display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem;
+  font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted);
+}
+.world-facts .tile-key { color: var(--text-dim); margin-right: 0.35rem; }
+.world-facts-row { max-width: 100%; }
+</style>
+<script src="js/rom-cache.js"></script>
+<script src="js/load-progress.js"></script>
+-->
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; game world</div>
   <h1>Game world</h1>
   <p class="lede">
-    Browse every town, dungeon, and battlefield in the game - each card shows its enemy roster, bosses, and shops, and deep-links into the asset viewer pre-filtered to that location. Under the hood, every location ties back to a scene label on the disc via the <a href="formats/cdname.html">CDNAME map</a>.
+    Every town, dungeon, and battlefield in the game - rendered here, in 3D, from your own disc image. Pick a location from the navigator and its full map assembles in the browser: the terrain, the buildings, the props, all textured from the real PSX VRAM. Each location also carries its enemy roster, bosses, and shops. Under the hood, every one ties back to a scene label on the disc via the <a href="formats/cdname.html">CDNAME map</a>. Nothing leaves your machine.
   </p>
 </header>
+
+<section class="doc-section" id="map">
+  <h2>Explore the maps</h2>
+  <div class="world-shell">
+    <div class="file-input-group">
+      <label for="world-file"><strong>Choose file:</strong></label>
+      <input type="file" id="world-file" accept=".bin,.DAT,.dat">
+      <span class="world-status" id="world-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (a raw <code>PROT.DAT</code> won't do - scene names come from <code>CDNAME.TXT</code>).</span>
+    </div>
+
+    <div class="world-viewer" id="world-viewer" style="display: none;">
+      <div class="world-nav">
+        <input type="search" id="world-nav-search" class="world-nav-search" placeholder="Filter locations…" autocomplete="off">
+        <div class="world-nav-list" id="world-nav-list"></div>
+      </div>
+      <div class="world-stage">
+        <div class="world-stage-head">
+          <span class="world-stage-title" id="world-stage-title">-</span>
+          <div class="world-stage-btns">
+            <button id="world-glb-btn" type="button" title="Download the assembled map as a textured .glb">&#11015; .glb</button>
+            <a id="world-viewer-link" href="viewer.html">assets &rarr;</a>
+          </div>
+        </div>
+        <canvas id="world-canvas" class="world-canvas" width="1024" height="704"></canvas>
+        <div class="world-map-status" id="world-map-status">Pick a location to assemble its map.</div>
+        <div class="world-facts" id="world-facts"></div>
+      </div>
+    </div>
+  </div>
+  <p class="char-info-note" style="color: var(--text-dim); font-size: 0.78rem; line-height: 1.55;">
+    The map is assembled the way the game assembles it: the scene's environment mesh pack, its <code>.MAP</code> object grid, the floor-height table, and the walk-ground heightfield, all decoded in the browser. Sky domes and horizon backdrops are hidden - under this camera they'd sit on top of the map and hide it. Drag to pan, right-drag to pivot, wheel to zoom.
+  </p>
+</section>
 
 <section class="doc-section" id="towns">
   <h2>Towns</h2>
@@ -27,12 +138,30 @@
   <p>
     Cards pull from <code>data/gamedata/*.toml</code> (curated enemy / boss / shop tables - see <a href="reference/gamedata.html">game-data reference</a>) joined against the <a href="formats/cdname.html">CDNAME map</a>. Walkthrough name &harr; CDNAME label isn't always 1:1 (<code>balden</code> = Vidna, <code>geremi</code> = Jeremi), and a handful of field-pack labels still have no walkthrough mapping.
   </p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="npcs.html">NPC catalog</a>
+    <a href="formats/scene-bundles.html">Scene bundles</a>
+    <a href="subsystems/world-overview-viewer.html">World-overview viewer</a>
+  </div>
 </section>
 
+<script src="js/webgl-shaders.js?v=world-map-1"></script>
+<script src="js/webgl-math.js?v=world-map-1"></script>
+<script src="js/webgl-tmd.js?v=world-map-1"></script>
+<!-- Assembled full-map view, shared with the asset viewer's full-map button. -->
+<script src="js/field-scene-view.js?v=fsview-1"></script>
 <script>
 /* ------------------------------------------------------------------
- * Game-world page: hydrate the towns + fields tiles from JSON.
- * scenes.json = CDNAME -> category map.
+ * Game-world page.
+ *
+ * Two halves that share one data join:
+ *  - the map navigator: every renderable CDNAME scene, assembled in place
+ *    by the shared FieldSceneView so locations can be swapped without a
+ *    page load;
+ *  - the town / field card grids: the curated walkthrough facts.
+ *
+ * scenes.json = CDNAME -> {label, display, category} map.
  * world.json  = per-location walkthrough data (enemies, bosses, shops).
  * ------------------------------------------------------------------ */
 (async function () {
@@ -40,29 +169,199 @@
   const $fields = document.getElementById('fields-grid');
   if (!$towns || !$fields) return;
 
+  const fileInput = document.getElementById('world-file');
+  const status    = document.getElementById('world-status');
+  const wrap      = document.getElementById('world-viewer');
+  const navList   = document.getElementById('world-nav-list');
+  const navSearch = document.getElementById('world-nav-search');
+  const canvas    = document.getElementById('world-canvas');
+  const mapStatus = document.getElementById('world-map-status');
+  const stageTitle= document.getElementById('world-stage-title');
+  const factsEl   = document.getElementById('world-facts');
+  const glbBtn    = document.getElementById('world-glb-btn');
+  const viewerLink= document.getElementById('world-viewer-link');
+
+  let viewer = null;      /* WASM LegaiaViewer */
+  let fsView = null;      /* FieldSceneView over the canvas */
   let scenes = [];
   let world  = { locations: [] };
+  let locByScene = new Map();   /* scene label -> walkthrough location */
+  let active = null;            /* active scene label */
+
+  /* ---------------- data ---------------- */
+
   try {
     [scenes, world] = await Promise.all([
       fetch('scenes.json').then(r => r.json()),
       fetch('world.json').then(r => r.json()),
     ]);
   } catch (err) {
-    $towns.innerHTML  = '<p style="color:var(--text-dim)">Couldn\'t load world.json - re-run <code>python3 site/_gen.py</code>.</p>';
+    $towns.innerHTML = '<p style="color:var(--text-dim)">Couldn\'t load world.json - re-run <code>python3 site/_gen.py</code>.</p>';
     return;
   }
+  for (const loc of world.locations) {
+    if (loc.scene && loc.scene.label) locByScene.set(loc.scene.label, loc);
+  }
 
-  // Build a quick lookup: scene_label -> scene record.
-  const byLabel = new Map(scenes.map(s => [s.label, s]));
-  // And a separate town-set for partitioning world.locations.
-  const townLabels = new Set(scenes.filter(s => s.category === 'town').map(s => s.label));
+  /* Scenes the map view can assemble. Battle / audio / "other" blocks carry no
+   * field MAN, so they'd only ever error - keep them out of the navigator. */
+  const NAV_GROUPS = [
+    { key: 'town',      title: 'Towns' },
+    { key: 'field',     title: 'Fields & dungeons' },
+    { key: 'world_map', title: 'World map' },
+    { key: 'cutscene',  title: 'Cutscene scenes' },
+  ];
+  const renderable = scenes.filter(s => NAV_GROUPS.some(g => g.key === s.category));
 
-  // For each location with a known scene mapping, render a card. For
-  // locations without one (walkthrough mentions a town but no CDNAME
-  // candidate is pinned), we still render under the appropriate bucket
-  // using `is_town`.
+  /* A location's best display name: the walkthrough's, else the CDNAME map's,
+   * else the bare label. */
+  function nameFor(scene) {
+    const loc = locByScene.get(scene.label);
+    if (loc) return loc.name;
+    return scene.display || scene.label;
+  }
+
+  /* ---------------- navigator ---------------- */
+
+  function renderNav(filter) {
+    const f = (filter || '').trim().toLowerCase();
+    const parts = [];
+    for (const g of NAV_GROUPS) {
+      const items = renderable
+        .filter(s => s.category === g.key)
+        .filter(s => !f || nameFor(s).toLowerCase().includes(f) || s.label.toLowerCase().includes(f))
+        .sort((a, b) => nameFor(a).localeCompare(nameFor(b)));
+      if (!items.length) continue;
+      parts.push(`<div class="world-nav-group">${g.title}</div>`);
+      for (const s of items) {
+        const cls = s.label === active ? 'world-nav-item is-active' : 'world-nav-item';
+        parts.push(
+          `<button class="${cls}" data-scene="${s.label}" type="button">` +
+          `<span class="world-nav-name">${nameFor(s)}</span>` +
+          `<span class="world-nav-code">${s.label}</span></button>`);
+      }
+    }
+    navList.innerHTML = parts.length
+      ? parts.join('')
+      : '<div class="world-nav-group">No match</div>';
+  }
+
+  navList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.world-nav-item');
+    if (btn) loadScene(btn.dataset.scene);
+  });
+  navSearch.addEventListener('input', () => renderNav(navSearch.value));
+
+  /* ---------------- map view ---------------- */
+
+  /* Walkthrough facts for the selected location, shown under the canvas. */
+  function renderFacts(label) {
+    const loc = locByScene.get(label);
+    if (!loc) { factsEl.innerHTML = ''; return; }
+    const bits = [];
+    if (loc.bosses.length) {
+      bits.push(`<span class="world-facts-row"><span class="tile-key">Boss</span>${loc.bosses.map(b => b.name).join(', ')}</span>`);
+    }
+    if (loc.enemy_count) {
+      const preview = loc.enemies.slice(0, 6).map(e => e.name).join(', ');
+      const more = loc.enemy_count > 6 ? ` +${loc.enemy_count - 6}` : '';
+      bits.push(`<span class="world-facts-row"><span class="tile-key">Enemies (${loc.enemy_count})</span>${preview}${more}</span>`);
+    }
+    if (loc.shop_count)  bits.push(`<span><span class="tile-key">Shops</span>${loc.shop_count}</span>`);
+    if (loc.has_casino)  bits.push('<span class="tile-tag">Casino</span>');
+    if (loc.has_fishing) bits.push('<span class="tile-tag">Fishing</span>');
+    factsEl.innerHTML = bits.join('');
+  }
+
+  async function loadScene(label) {
+    if (!viewer || !label) return;
+    active = label;
+    renderNav(navSearch.value);
+    const scene = scenes.find(s => s.label === label);
+    stageTitle.textContent = scene ? nameFor(scene) : label;
+    viewerLink.href = `viewer.html?scene=${label}`;
+    renderFacts(label);
+    glbBtn.disabled = true;
+    mapStatus.textContent = `Assembling ${label}…`;
+    /* Let the status paint before the synchronous WASM scene build. */
+    await new Promise(r => setTimeout(r, 20));
+    try {
+      if (!fsView) fsView = new window.FieldSceneView(viewer, canvas);
+      fsView.load(label);
+      mapStatus.innerHTML = `<b>${label}</b> · ${fsView.summary()} · drag pan / right-drag pivot / wheel zoom`;
+      glbBtn.disabled = false;
+      /* Headless-verification hook: the assembled state of the last load. */
+      window.__worldState = fsView.state;
+    } catch (err) {
+      mapStatus.textContent = `${label}: ${err.message || err}`;
+      window.__worldState = null;
+    }
+  }
+  /* Headless-verification entry point. */
+  window.__worldLoad = loadScene;
+
+  glbBtn.addEventListener('click', async () => {
+    if (!fsView || !fsView.state) return;
+    const prev = glbBtn.textContent;
+    glbBtn.disabled = true;
+    glbBtn.textContent = 'baking…';
+    await new Promise(r => setTimeout(r, 30));
+    try {
+      const glb = fsView.exportGlb();
+      if (!glb || glb.length === 0) {
+        glbBtn.textContent = 'no mesh';
+      } else {
+        const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `legaia-${fsView.state.label}-map.glb`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        glbBtn.textContent = prev;
+      }
+    } catch (err) {
+      console.warn('glb export failed:', err);
+      glbBtn.textContent = 'export failed';
+    }
+    setTimeout(() => { glbBtn.textContent = prev; glbBtn.disabled = false; }, 1500);
+  });
+
+  /* ---------------- disc load ---------------- */
+
+  async function loadDisc(f) {
+    if (!f) { status.textContent = 'No file loaded.'; return; }
+    const prog = LoadProgress.create(status);
+    try {
+      const buf = await prog.read(f, `Reading ${f.name}`);
+      prog.indeterminate('Initialising decoder…');
+      const mod = await import('./wasm/legaia_web_viewer.js');
+      await mod.default();
+      viewer = new mod.LegaiaViewer('world-canvas');
+      prog.indeterminate('Parsing PROT.DAT…');
+      await prog.paint();
+      viewer.load_disc(buf);
+      if (typeof viewer.set_scene_field !== 'function') {
+        prog.fail('This build of the viewer has no full-map support.');
+        return;
+      }
+      wrap.style.display = '';
+      renderNav('');
+      prog.done(`Ready - ${renderable.length} locations.`);
+      /* Open on the starter town so the page shows a map immediately. */
+      const first = renderable.find(s => s.label === 'town01') || renderable[0];
+      if (first) loadScene(first.label);
+    } catch (err) {
+      prog.fail(`Failed to decode: ${err.message || err}`);
+      console.error(err);
+    }
+  }
+
+  RomCache.attach(fileInput, { onLoad: loadDisc });
+
+  /* ---------------- card grids ---------------- */
+
   function renderCard(loc) {
-    const scene = loc.scene; // {label, category, display} or null
+    const scene = loc.scene; /* {label, category, display} or null */
     const enemyPreview = loc.enemies.slice(0, 6).map(e => e.name).join(', ');
     const enemyMore = loc.enemy_count > 6 ? ` +${loc.enemy_count - 6}` : '';
     const bossLine = loc.bosses.length
@@ -79,9 +378,12 @@
       ? `<div class="tile-scene"><a href="viewer.html?scene=${scene.label}">CDNAME · <code>${scene.label}</code></a> &middot; <span class="tile-cat tile-cat-${scene.category}">${scene.category}</span></div>`
       : `<div class="tile-scene tile-scene-unmapped">CDNAME scene not yet pinned</div>`;
 
-    const viewerLink = scene
-      ? `<a class="tile-cta" href="viewer.html?scene=${scene.label}">View in asset viewer &rarr;</a>`
-      : `<span class="tile-cta tile-cta-disabled">No viewer deep-link</span>`;
+    /* The CTA renders the map on this page (the navigator above). It only
+     * works once a disc is open, so it's a plain link to the map section when
+     * one isn't - clicking it still gets the user to the file picker. */
+    const cta = scene
+      ? `<a class="tile-cta" href="#map" data-scene="${scene.label}">View the map &rarr;</a>`
+      : `<span class="tile-cta tile-cta-disabled">No scene to render</span>`;
 
     return `
       <article class="tile ${scene ? 'tile-has-scene' : 'tile-no-scene'}">
@@ -93,15 +395,22 @@
         ${shopLine}
         ${bossLine}
         ${loc.enemy_count ? `<div class="tile-row tile-row-enemies"><span class="tile-key">Enemies (${loc.enemy_count})</span><span class="tile-enemies">${enemyPreview}${enemyMore}</span></div>` : ''}
-        ${viewerLink}
+        ${cta}
       </article>`;
   }
 
-  // Partition: towns (is_town=true) vs everything else.
   const towns  = world.locations.filter(l => l.is_town).sort((a, b) => a.name.localeCompare(b.name));
   const fields = world.locations.filter(l => !l.is_town).sort((a, b) => a.name.localeCompare(b.name));
-
   $towns.innerHTML  = towns.map(renderCard).join('');
   $fields.innerHTML = fields.map(renderCard).join('');
+
+  /* A card's CTA jumps to the map section and loads it (when a disc is open;
+   * otherwise the anchor alone lands the user on the file picker). */
+  for (const grid of [$towns, $fields]) {
+    grid.addEventListener('click', (e) => {
+      const a = e.target.closest('.tile-cta[data-scene]');
+      if (a && viewer) loadScene(a.dataset.scene);
+    });
+  }
 })();
 </script>

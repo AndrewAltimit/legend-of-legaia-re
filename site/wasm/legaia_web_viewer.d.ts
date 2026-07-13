@@ -518,6 +518,59 @@ export class LegaiaViewer {
      * this VRAM through the same paletted pipeline the Battle form uses.
      */
     field_char_vram_bytes(): Uint8Array;
+    /**
+     * The loaded scene's NPC catalog as JSON. Shape:
+     * ```text
+     * {
+     *   "scene": "town01",
+     *   "anm_prot": 4,            // null when the scene ships no ANM bundle
+     *   "special_count": 3,       // party / savepoint heads (not listed)
+     *   "unposable_count": 0,     // multi-object actors with no pose source
+     *   "npcs": [
+     *     { "i": 0,               // catalog index -> field_npc_mesh(i)
+     *       "slot": 7,            // MAN partition-1 record index
+     *       "model": 42,          // scene TMD-pool index (the mesh identity)
+     *       "anim": 9,            // ANM record index + 1; 0 = no clip
+     *       "nobj": 12,           // TMD object count
+     *       "kind": "talk",       // talk | door | prop
+     *       "target_map": null,
+     *       "dialog": "Hey, Vahn!",
+     *       "conditional": false, // true = script-gated spawn (parked off-map)
+     *       "x": 1088, "z": 2624  // spawn, world units
+     *     }, ...
+     *   ]
+     * }
+     * ```
+     * `null` when no catalog is loaded.
+     */
+    field_npc_catalog_json(): string;
+    /**
+     * Build (and cache) one catalogued NPC's mesh. The **field-hybrid** build:
+     * textured prims that sample the scene VRAM plus the untextured
+     * flat/gouraud prims that carry per-vertex RGB, in one vertex stream with
+     * parallel per-vertex object ids - so the page can both render the
+     * colour-only body parts and compose the ANM pose. Returns the catalog
+     * index.
+     */
+    field_npc_mesh(catalog_idx: number): number;
+    /**
+     * Bounding sphere `[cx, cy, cz, r]` of the built mesh, for camera framing.
+     */
+    field_npc_mesh_bounds(): Float32Array;
+    field_npc_mesh_cba_tsb(): Uint16Array;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the hybrid render.
+     */
+    field_npc_mesh_flat_rgba(): Uint8Array;
+    field_npc_mesh_indices(): Uint32Array;
+    /**
+     * Per-vertex TMD object index, parallel to the positions - the bone each
+     * vertex belongs to. The page's animator keys the per-frame
+     * `R . v + T` on this.
+     */
+    field_npc_mesh_object_ids(): Uint32Array;
+    field_npc_mesh_positions(): Float32Array;
+    field_npc_mesh_uvs(): Uint8Array;
     field_scene_ground_cba_tsb(): Uint16Array;
     field_scene_ground_indices(): Uint32Array;
     /**
@@ -1032,6 +1085,13 @@ export class LegaiaViewer {
      */
     set_scene_kingdom(prot_base: number): number;
     /**
+     * Load a CDNAME scene and catalog every NPC / actor its MAN places.
+     * Loads the field scene first when it isn't already resident (so
+     * `field_scene_vram_bytes` is the VRAM these meshes sample). Returns the
+     * number of catalogued placements.
+     */
+    set_scene_npcs(name: string): number;
+    /**
      * Jump to the slot in the filtered list (NOT the PROT index). Used by
      * the dropdown / list-click UI.
      */
@@ -1363,6 +1423,15 @@ export interface InitOutput {
     readonly legaiaviewer_entry_count: (a: number) => number;
     readonly legaiaviewer_entry_list_json: (a: number) => [number, number];
     readonly legaiaviewer_field_char_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_field_npc_catalog_json: (a: number) => [number, number];
+    readonly legaiaviewer_field_npc_mesh: (a: number, b: number) => [number, number, number];
+    readonly legaiaviewer_field_npc_mesh_bounds: (a: number) => [number, number];
+    readonly legaiaviewer_field_npc_mesh_cba_tsb: (a: number) => [number, number];
+    readonly legaiaviewer_field_npc_mesh_flat_rgba: (a: number) => [number, number];
+    readonly legaiaviewer_field_npc_mesh_indices: (a: number) => [number, number];
+    readonly legaiaviewer_field_npc_mesh_object_ids: (a: number) => [number, number];
+    readonly legaiaviewer_field_npc_mesh_positions: (a: number) => [number, number];
+    readonly legaiaviewer_field_npc_mesh_uvs: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_ground_cba_tsb: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_ground_indices: (a: number) => [number, number];
     readonly legaiaviewer_field_scene_ground_positions: (a: number) => [number, number];
@@ -1443,6 +1512,7 @@ export interface InitOutput {
     readonly legaiaviewer_set_clut: (a: number, b: number) => [number, number];
     readonly legaiaviewer_set_scene_field: (a: number, b: number, c: number) => [number, number, number];
     readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
+    readonly legaiaviewer_set_scene_npcs: (a: number, b: number, c: number) => [number, number, number];
     readonly legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_slot4_body_inventory_json: (a: number, b: number) => [number, number];
     readonly legaiaviewer_slot4_wireframe_bounds: (a: number, b: number, c: number, d: number) => [number, number];

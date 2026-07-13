@@ -1,0 +1,536 @@
+<!--HEAD: <style>
+.npc-shell { display: flex; flex-direction: column; gap: 1rem; }
+.file-input-group {
+  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
+  padding: 0.75rem; border: 1px solid var(--border); background: var(--bg-card);
+}
+.file-input-group input[type="file"] { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.85rem; }
+.npc-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem; }
+
+.npc-picker { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.npc-select {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; border-radius: 3px;
+  min-width: 16rem;
+}
+.npc-filters { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.npc-filter {
+  background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border);
+  padding: 0.25rem 0.55rem; font-family: var(--font-mono); font-size: 0.74rem;
+  border-radius: 3px; cursor: pointer;
+}
+.npc-filter:hover { border-color: var(--accent); color: var(--text); }
+.npc-filter.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.npc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.5rem;
+}
+.npc-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.5rem 0.6rem; cursor: pointer;
+  font-family: var(--font-mono); font-size: 0.78rem;
+  display: flex; flex-direction: column; gap: 0.2rem; min-width: 0;
+}
+.npc-card:hover { border-color: var(--accent); }
+.npc-card.is-active { border-color: var(--accent); background: var(--bg-raised); }
+.npc-card-name {
+  color: var(--text); font-size: 0.85rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.npc-card-meta { color: var(--text-dim); font-size: 0.72rem; }
+.npc-card-tags { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.1rem; }
+.npc-tag {
+  display: inline-block; padding: 0.02rem 0.35rem;
+  background: var(--bg-code); color: var(--text-dim); font-size: 0.68rem;
+  border: 1px solid var(--border); border-radius: 2px;
+}
+.npc-tag-talk { color: var(--accent); border-color: var(--accent); }
+.npc-tag-cond { color: var(--text-muted); font-style: italic; }
+
+.npc-viewer-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 330px);
+  gap: 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 0.85rem;
+}
+@media (max-width: 860px) { .npc-viewer-wrap { grid-template-columns: minmax(0, 1fr); } }
+canvas.npc-canvas {
+  width: 100%; aspect-ratio: 4 / 3; max-height: 460px;
+  background: radial-gradient(circle at 50% 38%, #1c2026 0%, #0c0e12 100%);
+  border: 1px solid var(--border); display: block; cursor: grab;
+}
+canvas.npc-canvas:active { cursor: grabbing; }
+.npc-side { font-family: var(--font-mono); font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.55rem; }
+.npc-side h3 { margin: 0; color: var(--text); font-size: 1rem; }
+.npc-stat { color: var(--text-muted); line-height: 1.6; }
+.npc-stat b { color: var(--text); }
+.npc-quote {
+  color: var(--text-muted); font-size: 0.78rem; line-height: 1.5;
+  background: var(--bg-code); border-left: 2px solid var(--accent);
+  padding: 0.4rem 0.55rem; white-space: pre-wrap;
+}
+.npc-section-label {
+  color: var(--text-dim); font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.05em; margin-top: 0.2rem;
+}
+.npc-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.npc-controls button {
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 0.32rem 0.6rem; font-family: var(--font-mono); font-size: 0.76rem; cursor: pointer;
+}
+.npc-controls button:hover { border-color: var(--accent); }
+.npc-controls button[disabled] { opacity: 0.4; cursor: not-allowed; }
+.npc-anm-row { display: flex; align-items: center; gap: 0.55rem; }
+.npc-anm-row input[type=range] { flex: 1; }
+.npc-anm-readout {
+  font: 0.76rem/1.0 var(--font-mono, monospace);
+  color: var(--text-muted); min-width: 11ch; text-align: right;
+}
+.npc-note { color: var(--text-dim); font-size: 0.74rem; line-height: 1.55; }
+</style>
+<script src="js/rom-cache.js"></script>
+<script src="js/load-progress.js"></script>
+-->
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; npcs</div>
+  <h1>NPCs</h1>
+  <p class="lede">
+    Every character the game places in a town or dungeon - the villagers, shopkeepers, guards, and story figures you walk up to and talk to - in 3D, from your own disc image. Pick a location and its whole cast appears; click any of them to spin the model and play its real idle animation. These are the <strong>field</strong> models, the ones the game uses while you're walking around. Nothing leaves your machine.
+  </p>
+</header>
+
+<section class="doc-section">
+  <h2>Open a disc image</h2>
+  <div class="npc-shell">
+    <div class="file-input-group">
+      <label for="npc-file"><strong>Choose file:</strong></label>
+      <input type="file" id="npc-file" accept=".bin,.DAT,.dat">
+      <span class="npc-status" id="npc-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (a raw <code>PROT.DAT</code> won't do - scene names come from <code>CDNAME.TXT</code>).</span>
+    </div>
+
+    <div id="npc-main" style="display: none;">
+      <div class="npc-picker">
+        <label for="npc-scene"><strong>Location:</strong></label>
+        <select id="npc-scene" class="npc-select"></select>
+        <div class="npc-filters" id="npc-filters"></div>
+      </div>
+      <div class="npc-status" id="npc-scene-status" style="margin: 0.5rem 0;"></div>
+
+      <div class="npc-viewer-wrap" id="npc-viewer-wrap" style="display: none; margin-bottom: 0.75rem;">
+        <div>
+          <canvas id="npc-canvas" class="npc-canvas" width="640" height="480"></canvas>
+        </div>
+        <div class="npc-side">
+          <h3 id="npc-name">-</h3>
+          <div class="npc-quote" id="npc-quote" style="display: none;"></div>
+          <div class="npc-stat" id="npc-stats"></div>
+
+          <div class="npc-section-label">View</div>
+          <div class="npc-controls">
+            <button id="npc-spin-btn" type="button">&#9208; stop spin</button>
+            <button id="npc-reset-btn" type="button">&#8634; reset view</button>
+            <button id="npc-glb-btn" type="button" title="Download this NPC as a textured glTF model, posed as shown">&#11015; .glb</button>
+          </div>
+
+          <div class="npc-section-label" id="npc-anm-label">Animation</div>
+          <div class="npc-anm-row">
+            <input type="range" id="npc-anm-frame" min="0" max="0" value="0">
+            <span id="npc-anm-readout" class="npc-anm-readout">-</span>
+          </div>
+          <div class="npc-controls">
+            <button id="npc-play-btn" type="button">&#9654; play</button>
+            <button id="npc-rest-btn" type="button">&#8634; rest pose</button>
+          </div>
+          <div class="npc-note" id="npc-anm-note"></div>
+        </div>
+      </div>
+
+      <div id="npc-grid" class="npc-grid"></div>
+    </div>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>How an NPC is put together</h2>
+  <p>
+    There is no "NPC file" on the disc. An NPC is an entry in the scene's placement list: one byte naming a model in the scene's own mesh pool, one byte naming an animation clip, and two bytes for the tile it stands on - followed by the script it runs when you talk to it. So the cast of a town is simply that list, resolved against the meshes the town already loads. That's why an NPC's only real "name" is the first line it says to you, which is what this page labels them with.
+  </p>
+  <p>
+    The models are stored in pieces - a head, a torso, arms - each with its coordinates measured from its own joint rather than from the character's centre. On their own they'd collapse into a heap. What assembles them is the animation clip: every frame carries a position and rotation for each piece, and frame&nbsp;0 is the character's resting stance. This page composes that pose in the browser, the same way the game composes it on the console, which is why the figures stand up straight and can be played back.
+  </p>
+  <p>
+    A few actors in each scene are held back. The party members (Vahn, Noa, Gala) and the save crystal are drawn from a global pool shared by every scene rather than the scene's own - they live on the <a href="characters.html">characters page</a>. And a handful of story actors in some dungeons ship no clip to pose them with, so they're counted in the status line rather than shown as a pile of parts.
+  </p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="subsystems/script-vm.html">Field script VM</a>
+    <a href="formats/anm.html">ANM animation format</a>
+    <a href="formats/character-mesh.html">Character mesh</a>
+    <a href="world.html">Game world</a>
+  </div>
+</section>
+
+<script src="js/webgl-shaders.js?v=npc-1"></script>
+<script src="js/webgl-math.js?v=npc-1"></script>
+<script src="js/webgl-tmd.js?v=npc-1"></script>
+<!-- Posed single-model orbit view, shared with the characters page. -->
+<script src="js/mesh-view.js?v=meshview-1"></script>
+<script>
+/* ------------------------------------------------------------------
+ * NPC catalog.
+ *
+ * A scene's NPCs are its MAN partition-1 actor placements: the WASM
+ * `set_scene_npcs(label)` loads the field scene (for its TMD pool + VRAM)
+ * and resolves each placement to a mesh + clip; `field_npc_catalog_json()`
+ * returns the list.
+ *
+ * The meshes are object-local, so each is posed by frame 0 of its clip
+ * before it's shown (see js/mesh-view.js). The clip itself comes from the
+ * scene's ANM bundle via the existing player_anm_* accessors.
+ * ------------------------------------------------------------------ */
+(async function () {
+  const fileInput  = document.getElementById('npc-file');
+  const status     = document.getElementById('npc-status');
+  const main       = document.getElementById('npc-main');
+  const sceneSel   = document.getElementById('npc-scene');
+  const filtersEl  = document.getElementById('npc-filters');
+  const sceneStat  = document.getElementById('npc-scene-status');
+  const gridEl     = document.getElementById('npc-grid');
+  const wrap       = document.getElementById('npc-viewer-wrap');
+  const canvasEl   = document.getElementById('npc-canvas');
+  const nameEl     = document.getElementById('npc-name');
+  const quoteEl    = document.getElementById('npc-quote');
+  const statsEl    = document.getElementById('npc-stats');
+  const spinBtn    = document.getElementById('npc-spin-btn');
+  const resetBtn   = document.getElementById('npc-reset-btn');
+  const playBtn    = document.getElementById('npc-play-btn');
+  const restBtn    = document.getElementById('npc-rest-btn');
+  const frameSlider= document.getElementById('npc-anm-frame');
+  const frameOut   = document.getElementById('npc-anm-readout');
+  const anmNote    = document.getElementById('npc-anm-note');
+
+  let viewer = null;
+  let meshView = null;
+  let catalog = null;     /* { scene, anm_prot, special_count, unposable_count, npcs } */
+  let selected = null;    /* catalog index */
+  let filter = 'all';
+  let scenes = [];
+
+  /* Scenes worth offering: the ones with a field MAN. Battle / audio blocks
+   * have no actors at all. */
+  const NAV_CATS = ['town', 'field', 'cutscene'];
+
+  try {
+    scenes = await fetch('scenes.json').then(r => r.json());
+  } catch (e) {
+    scenes = [];
+  }
+
+  /* ---------------- labels ---------------- */
+
+  /* An NPC has no name on the disc - the first line it speaks is the closest
+   * thing. Fall back to what its script does. */
+  function labelFor(n) {
+    if (n.dialog) {
+      const t = n.dialog.trim();
+      return t.length > 34 ? t.slice(0, 33) + '…' : t;
+    }
+    if (n.kind === 'door') return 'Doorway';
+    if (n.kind === 'prop') return 'Scene actor';
+    return 'Villager';
+  }
+
+  function kindTag(n) {
+    if (n.kind === 'talk') return '<span class="npc-tag npc-tag-talk">talks</span>';
+    if (n.kind === 'door') return '<span class="npc-tag">door</span>';
+    return '<span class="npc-tag">prop</span>';
+  }
+
+  /* ---------------- grid ---------------- */
+
+  const FILTERS = [
+    { key: 'all',   text: 'All' },
+    { key: 'talk',  text: 'Talks to you' },
+    { key: 'prop',  text: 'Scene actors' },
+    { key: 'door',  text: 'Doors' },
+  ];
+
+  function renderFilters() {
+    filtersEl.innerHTML = FILTERS.map(f =>
+      `<button class="npc-filter${f.key === filter ? ' is-active' : ''}" data-filter="${f.key}" type="button">${f.text}</button>`
+    ).join('');
+  }
+  filtersEl.addEventListener('click', (e) => {
+    const b = e.target.closest('.npc-filter');
+    if (!b) return;
+    filter = b.dataset.filter;
+    renderFilters();
+    renderGrid();
+  });
+
+  function visibleNpcs() {
+    if (!catalog) return [];
+    return catalog.npcs.filter(n => filter === 'all' || n.kind === filter);
+  }
+
+  function renderGrid() {
+    const list = visibleNpcs();
+    if (!list.length) {
+      gridEl.innerHTML = '<p class="npc-note">No actors of this kind in this location.</p>';
+      return;
+    }
+    gridEl.innerHTML = list.map(n => `
+      <article class="npc-card${n.i === selected ? ' is-active' : ''}" data-i="${n.i}">
+        <span class="npc-card-name">${labelFor(n)}</span>
+        <span class="npc-card-meta">model ${n.model} · ${n.nobj} part${n.nobj === 1 ? '' : 's'}</span>
+        <span class="npc-card-tags">
+          ${kindTag(n)}
+          ${n.conditional ? '<span class="npc-tag npc-tag-cond">story-gated</span>' : ''}
+        </span>
+      </article>`).join('');
+  }
+
+  gridEl.addEventListener('click', (e) => {
+    const card = e.target.closest('.npc-card');
+    if (card) select(parseInt(card.dataset.i, 10));
+  });
+
+  /* ---------------- selection + posing ---------------- */
+
+  function updateSpinLabel(on) {
+    spinBtn.textContent = on ? '⏸ stop spin' : '▶ start spin';
+  }
+
+  function select(i) {
+    if (!viewer || !catalog) return;
+    const n = catalog.npcs.find(x => x.i === i);
+    if (!n) return;
+    selected = i;
+    renderGrid();
+    wrap.style.display = '';
+
+    try {
+      viewer.field_npc_mesh(i);
+    } catch (err) {
+      sceneStat.textContent = `Couldn't build that model: ${err.message || err}`;
+      return;
+    }
+    const positions = viewer.field_npc_mesh_positions();
+    const indices   = viewer.field_npc_mesh_indices();
+    if (!positions.length || !indices.length) {
+      nameEl.textContent = labelFor(n);
+      statsEl.innerHTML = '<b>No renderable geometry</b> - this actor\'s model has no drawable primitives.';
+      return;
+    }
+
+    if (!meshView) {
+      /* Field models are authored facing +Z (away from the default camera), so
+       * the stock orbit start would open on the back of every NPC's head. Spin
+       * the default half a turn so they're introduced face-on. */
+      meshView = new window.MeshView(canvasEl, {
+        onSpin: updateSpinLabel,
+        cam: { yaw: Math.PI + 0.35, pitch: 0.12, distance: 2.6, autoRotate: true },
+      });
+      meshView.onFrame = (f) => {
+        frameSlider.value = f;
+        frameOut.textContent = `frame ${f + 1}/${(parseInt(frameSlider.max, 10) || 0) + 1}`;
+      };
+      /* Headless-verification hook: lets a browser test assert the posed
+       * geometry actually assembles (an unposed multi-part model collapses to
+       * a point). Not used by page code. */
+      window.__npcMeshView = meshView;
+    }
+    /* Every NPC in a scene samples the same field VRAM the map does. */
+    meshView.uploadVram(viewer.field_scene_vram_bytes());
+    const flat = viewer.field_npc_mesh_flat_rgba();
+    meshView.setMesh(
+      positions,
+      viewer.field_npc_mesh_uvs(),
+      viewer.field_npc_mesh_cba_tsb(),
+      indices,
+      viewer.field_npc_mesh_bounds(),
+      viewer.field_npc_mesh_object_ids(),
+      flat.length ? flat : null,
+    );
+
+    /* Pose it. A multi-part model MUST be posed or it draws as a heap - the
+     * catalog only lists actors we can pose, so this always resolves for
+     * them. Single-part models need no pose. */
+    let posed = false;
+    if (n.anim > 0 && catalog.anm_prot != null) {
+      const rec = n.anim - 1;
+      const dims = viewer.player_anm_record_dims(catalog.anm_prot, rec);
+      const boneCount = dims[0] | 0;
+      const frameCount = dims[1] | 0;
+      if (frameCount > 0) {
+        /* Pad the clip out to the TMD's object count: objects the clip doesn't
+         * animate get an identity transform and stay at their model-local
+         * origin, rather than being collapsed. */
+        const partCount = Math.max(n.nobj, boneCount);
+        const frames = viewer.player_anm_record_pose_frames(catalog.anm_prot, rec, n.nobj);
+        if (frames.length >= frameCount * partCount * 6) {
+          meshView.setAnimation({ partCount, frameCount, frames });
+          posed = true;
+          frameSlider.max = frameCount - 1;
+          frameSlider.value = 0;
+          frameOut.textContent = `frame 1/${frameCount}`;
+          anmNote.textContent = frameCount > 1
+            ? `${frameCount} frames, ${boneCount} moving parts - the actor's real in-game clip.`
+            : 'A single-frame clip: this actor only ever holds its rest pose.';
+          meshView.setPlaying(frameCount > 1);
+          playBtn.textContent = frameCount > 1 ? '⏸ pause' : '▶ play';
+          playBtn.disabled = frameCount < 2;
+          frameSlider.disabled = frameCount < 2;
+        }
+      }
+    }
+    if (!posed) {
+      meshView.setAnimation(null);
+      frameSlider.max = 0;
+      frameSlider.value = 0;
+      frameSlider.disabled = true;
+      playBtn.disabled = true;
+      frameOut.textContent = '-';
+      anmNote.textContent = 'This actor is a single piece and needs no pose - it has no clip.';
+    }
+
+    nameEl.textContent = labelFor(n);
+    if (n.dialog) {
+      quoteEl.style.display = '';
+      quoteEl.textContent = '“' + n.dialog + '…”';
+    } else {
+      quoteEl.style.display = 'none';
+    }
+    const tile = `tile (${n.x >> 7}, ${n.z >> 7})`;
+    statsEl.innerHTML =
+      `Model <b>${n.model}</b> in the scene's mesh pool · <b>${n.nobj}</b> part${n.nobj === 1 ? '' : 's'}<br>` +
+      (n.anim > 0 ? `Animation clip <b>${n.anim - 1}</b><br>` : 'No animation clip<br>') +
+      (n.conditional
+        ? 'Stands off-map until the story places it - a <b>story-gated</b> spawn.<br>'
+        : `Stands at ${tile}<br>`) +
+      (n.kind === 'door' ? `Warps to map <b>${n.target_map}</b>` : '');
+    updateSpinLabel(meshView.cam.autoRotate);
+  }
+
+  spinBtn.addEventListener('click', () => {
+    if (meshView) meshView.setSpin(!meshView.cam.autoRotate);
+  });
+  resetBtn.addEventListener('click', () => meshView && meshView.resetView());
+  /* Export the assembled figure at the frame on screen (see MeshView.exportGlb
+   * - the raw parts would bake as a heap). */
+  window.MeshView.attachGlbButton(
+    document.getElementById('npc-glb-btn'),
+    () => meshView,
+    () => viewer,
+    () => {
+      const n = catalog && catalog.npcs.find(x => x.i === selected);
+      return n ? `legaia-npc-${catalog.scene}-${n.slot}` : 'legaia-npc';
+    });
+  playBtn.addEventListener('click', () => {
+    if (!meshView || !meshView.anim) return;
+    const on = !meshView.playing;
+    meshView.setPlaying(on);
+    playBtn.textContent = on ? '⏸ pause' : '▶ play';
+  });
+  restBtn.addEventListener('click', () => {
+    if (!meshView || !meshView.anim) return;
+    meshView.setFrame(0);
+    frameSlider.value = 0;
+    playBtn.textContent = '▶ play';
+  });
+  frameSlider.addEventListener('input', () => {
+    if (!meshView || !meshView.anim) return;
+    const f = parseInt(frameSlider.value, 10) || 0;
+    meshView.setFrame(f);
+    frameOut.textContent = `frame ${f + 1}/${(parseInt(frameSlider.max, 10) || 0) + 1}`;
+    playBtn.textContent = '▶ play';
+  });
+
+  /* ---------------- scene load ---------------- */
+
+  async function loadScene(label) {
+    if (!viewer) return;
+    selected = null;
+    catalog = null;
+    wrap.style.display = 'none';
+    gridEl.innerHTML = '';
+    sceneStat.textContent = `Loading ${label}…`;
+    /* Let the status paint before the synchronous WASM scene build. */
+    await new Promise(r => setTimeout(r, 20));
+    try {
+      viewer.set_scene_npcs(label);
+      catalog = JSON.parse(viewer.field_npc_catalog_json());
+    } catch (err) {
+      sceneStat.textContent = `${label}: ${err.message || err}`;
+      window.__npcState = null;
+      return;
+    }
+    const notes = [];
+    if (catalog.special_count) {
+      notes.push(`${catalog.special_count} party / save-point actor${catalog.special_count > 1 ? 's' : ''} shown on the <a href="characters.html">characters page</a>`);
+    }
+    if (catalog.unposable_count) {
+      notes.push(`${catalog.unposable_count} story actor${catalog.unposable_count > 1 ? 's' : ''} this location ships no animation for, so they can't be assembled`);
+    }
+    const n = catalog.npcs.length;
+    sceneStat.innerHTML = `<b>${n}</b> actor${n === 1 ? '' : 's'} in <code>${label}</code>`
+      + (notes.length ? ` · ${notes.join(' · ')}` : '');
+    renderGrid();
+    /* Open on the first talking NPC - the most interesting thing in a town. */
+    const first = catalog.npcs.find(x => x.kind === 'talk') || catalog.npcs[0];
+    if (first) select(first.i);
+    /* Headless-verification hook. */
+    window.__npcState = catalog;
+  }
+  window.__npcLoad = loadScene;
+
+  sceneSel.addEventListener('change', () => loadScene(sceneSel.value));
+
+  /* ---------------- disc load ---------------- */
+
+  async function loadDisc(f) {
+    if (!f) { status.textContent = 'No file loaded.'; return; }
+    const prog = LoadProgress.create(status);
+    try {
+      const buf = await prog.read(f, `Reading ${f.name}`);
+      prog.indeterminate('Initialising decoder…');
+      const mod = await import('./wasm/legaia_web_viewer.js');
+      await mod.default();
+      viewer = new mod.LegaiaViewer('npc-canvas');
+      prog.indeterminate('Parsing PROT.DAT…');
+      await prog.paint();
+      viewer.load_disc(buf);
+      if (typeof viewer.set_scene_npcs !== 'function') {
+        prog.fail('This build of the viewer has no NPC support.');
+        return;
+      }
+
+      const opts = scenes
+        .filter(s => NAV_CATS.includes(s.category))
+        .sort((a, b) => (a.category === b.category)
+          ? (a.display || a.label).localeCompare(b.display || b.label)
+          : NAV_CATS.indexOf(a.category) - NAV_CATS.indexOf(b.category));
+      sceneSel.innerHTML = opts.map(s =>
+        `<option value="${s.label}">${s.display || s.label} · ${s.label}</option>`).join('');
+      main.style.display = '';
+      renderFilters();
+      prog.done('Ready.');
+
+      const start = opts.find(s => s.label === 'town01') || opts[0];
+      if (start) {
+        sceneSel.value = start.label;
+        loadScene(start.label);
+      }
+    } catch (err) {
+      prog.fail(`Failed to decode: ${err.message || err}`);
+      console.error(err);
+    }
+  }
+
+  RomCache.attach(fileInput, { onLoad: loadDisc });
+})();
+</script>

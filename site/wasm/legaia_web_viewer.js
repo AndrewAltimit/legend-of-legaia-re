@@ -1128,6 +1128,129 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * The loaded scene's NPC catalog as JSON. Shape:
+     * ```text
+     * {
+     *   "scene": "town01",
+     *   "anm_prot": 4,            // null when the scene ships no ANM bundle
+     *   "special_count": 3,       // party / savepoint heads (not listed)
+     *   "unposable_count": 0,     // multi-object actors with no pose source
+     *   "npcs": [
+     *     { "i": 0,               // catalog index -> field_npc_mesh(i)
+     *       "slot": 7,            // MAN partition-1 record index
+     *       "model": 42,          // scene TMD-pool index (the mesh identity)
+     *       "anim": 9,            // ANM record index + 1; 0 = no clip
+     *       "nobj": 12,           // TMD object count
+     *       "kind": "talk",       // talk | door | prop
+     *       "target_map": null,
+     *       "dialog": "Hey, Vahn!",
+     *       "conditional": false, // true = script-gated spawn (parked off-map)
+     *       "x": 1088, "z": 2624  // spawn, world units
+     *     }, ...
+     *   ]
+     * }
+     * ```
+     * `null` when no catalog is loaded.
+     * @returns {string}
+     */
+    field_npc_catalog_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_field_npc_catalog_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Build (and cache) one catalogued NPC's mesh. The **field-hybrid** build:
+     * textured prims that sample the scene VRAM plus the untextured
+     * flat/gouraud prims that carry per-vertex RGB, in one vertex stream with
+     * parallel per-vertex object ids - so the page can both render the
+     * colour-only body parts and compose the ANM pose. Returns the catalog
+     * index.
+     * @param {number} catalog_idx
+     * @returns {number}
+     */
+    field_npc_mesh(catalog_idx) {
+        const ret = wasm.legaiaviewer_field_npc_mesh(this.__wbg_ptr, catalog_idx);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * Bounding sphere `[cx, cy, cz, r]` of the built mesh, for camera framing.
+     * @returns {Float32Array}
+     */
+    field_npc_mesh_bounds() {
+        const ret = wasm.legaiaviewer_field_npc_mesh_bounds(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    field_npc_mesh_cba_tsb() {
+        const ret = wasm.legaiaviewer_field_npc_mesh_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the hybrid render.
+     * @returns {Uint8Array}
+     */
+    field_npc_mesh_flat_rgba() {
+        const ret = wasm.legaiaviewer_field_npc_mesh_flat_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    field_npc_mesh_indices() {
+        const ret = wasm.legaiaviewer_field_npc_mesh_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex TMD object index, parallel to the positions - the bone each
+     * vertex belongs to. The page's animator keys the per-frame
+     * `R . v + T` on this.
+     * @returns {Uint32Array}
+     */
+    field_npc_mesh_object_ids() {
+        const ret = wasm.legaiaviewer_field_npc_mesh_object_ids(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    field_npc_mesh_positions() {
+        const ret = wasm.legaiaviewer_field_npc_mesh_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    field_npc_mesh_uvs() {
+        const ret = wasm.legaiaviewer_field_npc_mesh_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * @returns {Uint16Array}
      */
     field_scene_ground_cba_tsb() {
@@ -2274,6 +2397,23 @@ export class LegaiaViewer {
         return ret[0] >>> 0;
     }
     /**
+     * Load a CDNAME scene and catalog every NPC / actor its MAN places.
+     * Loads the field scene first when it isn't already resident (so
+     * `field_scene_vram_bytes` is the VRAM these meshes sample). Returns the
+     * number of catalogued placements.
+     * @param {string} name
+     * @returns {number}
+     */
+    set_scene_npcs(name) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_set_scene_npcs(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
      * Jump to the slot in the filtered list (NOT the PROT index). Used by
      * the dropdown / list-click UI.
      * @param {number} slot
@@ -2944,7 +3084,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 104, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 107, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23);
             return ret;
         },

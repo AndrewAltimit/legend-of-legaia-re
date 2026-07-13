@@ -29,6 +29,7 @@ impl LegaiaViewer {
             walk_ground: None,
             walk_placements: None,
             field_scene: None,
+            field_npcs: None,
             prot_index: None,
             cdname_text: None,
             scene_export: None,
@@ -53,6 +54,7 @@ impl LegaiaViewer {
         self.walk_ground = None;
         self.walk_placements = None;
         self.field_scene = None;
+        self.field_npcs = None;
         self.prot_index = None;
         self.cdname_text = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
