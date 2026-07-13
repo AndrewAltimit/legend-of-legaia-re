@@ -210,6 +210,16 @@ impl DanceGame {
         self.gauge
     }
 
+    /// Song-timer position (`DAT_801d5820`), saturating at [`Self::song_len`].
+    pub fn song_timer(&self) -> u32 {
+        self.song_timer
+    }
+
+    /// This run's song-length limit ([`SONG_LEN_SHORT`] / [`SONG_LEN_LONG`]).
+    pub fn song_len(&self) -> u32 {
+        self.song_len
+    }
+
     /// `true` once the song timer has reached this run's length limit.
     pub fn song_over(&self) -> bool {
         self.song_timer >= self.song_len

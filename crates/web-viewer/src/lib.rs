@@ -14,6 +14,7 @@ pub mod field_npc;
 pub mod field_scene;
 pub mod fog_lut;
 mod inspect;
+pub mod minigames;
 mod monster;
 mod nav_disc;
 mod player_anm;
