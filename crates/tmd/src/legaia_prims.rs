@@ -103,62 +103,13 @@ impl GroupHeader {
 }
 
 /// Look up the byte offset within a primitive where vertex indices begin,
-/// for a given group `flags` value.
-///
-/// The renderer indexes a 6-entry table at `DAT_8007326c` via
-/// `((flags >> 1) - 8) >> 1`. The byte offset depends on whether the
-/// primitive is a triangle or a quad, AND on the table entry's byte-3
-/// "type" tag (which the renderer uses to override the offset for some
-/// quad variants).
-///
-/// Triangle case (`(flags >> 1) & 1 == 0`):
-///   `iVar2 = entry.byte4` (in u16 units)
-///
-/// Quad case (`(flags >> 1) & 1 == 1`):
-///   `iVar2 = entry.byte4 + 2`, then override per byte 3:
-///     byte3 == 0  -> iVar2 = entry.byte4   (cancel the +2)
-///     byte3 == 1  -> iVar2 = 8             (override to 8)
-///     byte3 == 3  -> iVar2 = 0xE           (override to 14)
-///     else        -> iVar2 = entry.byte4 + 2 (no override)
+/// for a given group `flags` value. Thin wrapper over
+/// [`Descriptor::vertex_offset`](crate::descriptor::Descriptor::vertex_offset) -
+/// see that module for the table and the per-row derivation.
 ///
 /// Returns `None` for flags outside the known range.
 pub fn vertex_offset_bytes(flags: u16) -> Option<usize> {
-    let f_shifted = (flags as u32) >> 1;
-    if !(8..=0x13).contains(&f_shifted) {
-        return None;
-    }
-    let table_idx = ((f_shifted - 8) >> 1) as usize;
-    // Each 8-byte table entry from DAT_8007326c. (byte3 of first u32, byte4
-    // of second u32). Extracted from
-    // `ghidra/scripts/funcs/data_8007325c_around_DAT_8007326c.txt`.
-    //
-    //   entry 0 = [04 00 00 05 07 00 00 00]  byte3=0x05  byte4=0x07
-    //   entry 1 = [09 00 00 07 06 00 00 00]  byte3=0x07  byte4=0x06
-    //   entry 2 = [04 00 00 00 02 00 00 00]  byte3=0x00  byte4=0x02
-    //   entry 3 = [06 00 00 02 06 00 00 00]  byte3=0x02  byte4=0x06
-    //   entry 4 = [07 03 00 01 07 00 00 00]  byte3=0x01  byte4=0x07
-    //   entry 5 = [09 03 00 03 0B 00 00 00]  byte3=0x03  byte4=0x0B
-    const TABLE: [(u8, u8); 6] = [
-        (0x05, 0x07),
-        (0x07, 0x06),
-        (0x00, 0x02),
-        (0x02, 0x06),
-        (0x01, 0x07),
-        (0x03, 0x0B),
-    ];
-    let (byte3, byte4) = TABLE[table_idx];
-    let is_quad = (f_shifted & 1) == 1;
-    let i_var2: u8 = if is_quad {
-        match byte3 {
-            0 => byte4,
-            1 => 8,
-            3 => 0xE,
-            _ => byte4 + 2,
-        }
-    } else {
-        byte4
-    };
-    Some(i_var2 as usize * 2)
+    Descriptor::for_flags(flags).map(|d| d.vertex_offset)
 }
 
 /// One decoded primitive within a group.
