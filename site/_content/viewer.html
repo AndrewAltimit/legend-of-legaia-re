@@ -313,6 +313,8 @@
 <script src="js/webgl-shaders.js?v=orbit-controls-1"></script>
 <script src="js/webgl-math.js?v=orbit-controls-1"></script>
 <script src="js/webgl-tmd.js?v=orbit-controls-1"></script>
+<!-- Assembled full-map view, shared with the game-world page's town navigator. -->
+<script src="js/field-scene-view.js?v=fsview-1"></script>
 <script>
 (function () {
   const fileInput = document.getElementById('viewer-file');
@@ -514,6 +516,7 @@
   let visibleSlots = [];    /* indices into allEntries that match current filter */
   let rafId = null;          /* current 3D loop's requestAnimationFrame id */
   let glRenderer = null;     /* TmdRenderer (WebGL) - created lazily */
+  let fsView = null;         /* FieldSceneView - the assembled full-map view */
 
   /* Scene-category map. Loaded once from scenes.json (curated CDNAME map in
    * site/_gen.py). Each entry covers an inclusive PROT-index range and tags
@@ -561,6 +564,10 @@
     }
   }
   function disposeGl() {
+    if (fsView) {
+      fsView.dispose();
+      fsView = null;
+    }
     if (glRenderer) {
       glRenderer.dispose();
       glRenderer = null;
@@ -747,33 +754,10 @@
         return done(null);
       }
       /* Assembled full map: ground heightfield + every on-screen draw
-       * (hybrid meshes keep their untextured vertex-colour half). */
-      viewer.scene_export_begin(glbExport.label);
-      viewer.scene_export_set_vram(viewer.field_scene_vram_bytes());
-      if (glbExport.hasGround) {
-        const gi = viewer.scene_export_add_mesh(
-          'ground',
-          viewer.field_scene_ground_positions(), viewer.field_scene_ground_uvs(),
-          viewer.field_scene_ground_cba_tsb(), viewer.field_scene_ground_indices(), none);
-        viewer.scene_export_add_instance(gi, 0, 0, 0, 0, 1.0);
-      }
-      const meshHandles = new Map();
-      for (const d of glbExport.draws) {
-        let mi = meshHandles.get(d.meshId);
-        if (mi === undefined) {
-          try { viewer.field_scene_mesh(d.meshId); } catch (e) { continue; }
-          mi = viewer.scene_export_add_mesh(
-            'mesh_' + d.meshId,
-            viewer.field_scene_mesh_positions(), viewer.field_scene_mesh_uvs(),
-            viewer.field_scene_mesh_cba_tsb(), viewer.field_scene_mesh_indices(),
-            viewer.field_scene_mesh_flat_rgba());
-          meshHandles.set(d.meshId, mi);
-        }
-        viewer.scene_export_add_instance(
-          mi, d.x, d.y || 0, d.z, d.rotY || 0,
-          (d.scale != null) ? d.scale : 1.0);
-      }
-      const glb = viewer.scene_export_finish();
+       * (hybrid meshes keep their untextured vertex-colour half). The view
+       * owns the draw list, so it bakes exactly what's on screen. */
+      if (!fsView) return done('no map');
+      const glb = fsView.exportGlb();
       if (!glb || glb.length === 0) return done('no mesh');
       downloadGlbBytes(glb, `legaia-${glbExport.label}-map.glb`);
       return done(null);
@@ -839,216 +823,52 @@
     }
   }
 
-  /* Assembled full-scene view: the engine-parity map assembly. The WASM
-   * side loads the scene through the real engine loaders (field VRAM
-   * pre-pass + LZS env mesh pack + `.MAP` object-grid placements + the
-   * floor-height LUT + the walk-ground heightfield); this loop streams the
-   * result into the TmdRenderer's instanced scene-mesh path - the same
-   * plumbing the world-overview page uses for the kingdom continents. */
-  /* `yaw` present -> renderAssembled picks the perspective orbit camera
-   * (buildWorldOrbitVp), the same projection the world-overview page uses,
-   * so the shared pan/pivot/zoom controls behave identically here. */
-  const fsCam = { centerX: 0, centerZ: 0, halfWidth: 4000, halfHeight: 4000, yaw: 0, pitch: 0.65 };
+  /* Assembled full-scene view: the engine-parity map assembly, driven by the
+   * shared FieldSceneView module (js/field-scene-view.js) - the same one the
+   * game-world page's town navigator uses, so the two views frame, shade, and
+   * handle identically. */
   /* Headless-verification entry point (see `__fsState` below). */
   window.__fsLoad = (label) => startFullSceneLoop(label);
   function startFullSceneLoop(label) {
     if (!viewer) return;
     stopRaf();
     disposeGl();
-    setGlbExport(null);   /* re-armed below once the draw list is built */
+    setGlbExport(null);   /* re-armed below once the scene is assembled */
     const oldCanvas = document.getElementById('viewer-canvas');
     if (!oldCanvas) return;
+    /* Fresh canvas: a HTMLCanvasElement can only ever bind one context type,
+     * and this one may have served a 2D TIM blit. */
     const fresh = document.createElement('canvas');
     fresh.id = 'viewer-canvas';
     fresh.className = 'viewer-canvas';
     fresh.width = 1024;
     fresh.height = 700;
     oldCanvas.replaceWith(fresh);
+
+    let st;
     try {
-      glRenderer = new window.TmdRenderer(fresh);
-    } catch (err) {
-      info.innerHTML = `full map: WebGL2 not available (${err.message || err})`;
-      return;
-    }
-    let packCount;
-    try {
-      packCount = viewer.set_scene_field(label);
+      fsView = new window.FieldSceneView(viewer, fresh);
+      st = fsView.load(label);
     } catch (err) {
       info.innerHTML = `full map: ${err.message || err}`;
+      if (fsView) { fsView.dispose(); fsView = null; }
       return;
     }
-    const st = JSON.parse(viewer.field_scene_status_json());
-    glRenderer.uploadVram(viewer.field_scene_vram_bytes());
-
-    /* Ground heightfield (may be absent - some interiors floor entirely
-     * with terrain-tile meshes). */
-    if (viewer.field_scene_ground_quad_count() > 0) {
-      glRenderer.uploadGround(
-        viewer.field_scene_ground_positions(),
-        viewer.field_scene_ground_uvs(),
-        viewer.field_scene_ground_cba_tsb(),
-        viewer.field_scene_ground_indices(),
-      );
-    } else {
-      glRenderer.uploadGround(new Float32Array(0), null, null, new Uint32Array(0));
-    }
-
-    /* Upload each referenced env-pack mesh once. A mesh is the WASM-side
-     * hybrid: VRAM-filtered textured prims plus the untextured flat/gouraud
-     * vertex-colour prims (flat_rgba non-empty), so colour-only props
-     * (fences, rocks, the town01 vertex-colour residue) render instead of
-     * being skipped - the browser sibling of the engine's colour-mesh
-     * pipeline. Slots with no renderable prims of either kind are skipped. */
-    const used = new Set();
-    const empty = new Set();
-    function ensureMesh(ms) {
-      if (used.has(ms)) return true;
-      if (empty.has(ms)) return false;
-      try { viewer.field_scene_mesh(ms); } catch (e) { empty.add(ms); return false; }
-      const positions = viewer.field_scene_mesh_positions();
-      const indices = viewer.field_scene_mesh_indices();
-      if (positions.length === 0 || indices.length === 0) { empty.add(ms); return false; }
-      const flat = viewer.field_scene_mesh_flat_rgba();
-      glRenderer.uploadSceneMesh(
-        ms, positions, viewer.field_scene_mesh_uvs(),
-        viewer.field_scene_mesh_cba_tsb(), indices,
-        flat.length ? flat : null,
-      );
-      used.add(ms);
-      return true;
-    }
-    /* Sky-dome / horizon-backdrop classifier. Open maps place their sky as
-     * env-pack meshes too: a hemispherical cloud shell over the whole map
-     * (rikuroa slot 37, town01 slot 84) and kilometre-wide vertical horizon
-     * planes (town01 slot 85 spans 17920 units). Under the retail in-world
-     * camera they read as sky; under this viewer's top-down assembled
-     * camera they draw ON TOP of the terrain and hide the actual map, so
-     * they're excluded from the draw list (and hence the framing AABB).
-     * Calibrated against the disc: a *backdrop plane* is a near-zero-depth
-     * vertical sheet wider than any real wall (town cliffs are thick, and
-     * flat floor slabs are horizontal); a *dome shell* is huge on BOTH
-     * horizontal axes AND tall (interior floor slabs like korb3's 3584-unit
-     * carpets are flat; mountain walls like rikuroa slot 32 are long but
-     * shallow). */
-    function isSkyMesh(aabb) {
-      if (!aabb) return false;
-      const flatPlane = Math.min(aabb.sx, aabb.sz) < 8
-        && Math.max(aabb.sx, aabb.sz) > 3000 && aabb.sy > 600;
-      const domeShell = aabb.sx > 3400 && aabb.sz > 3400 && aabb.sy > 800;
-      return flatPlane || domeShell;
-    }
-    const skySlots = new Set();
-    let skyDrawsHidden = 0;
-    const draws = [];
-    function pushDraws(slots, pos, rots) {
-      for (let i = 0; i < slots.length; i++) {
-        const ms = slots[i];
-        if (!ensureMesh(ms)) continue;
-        if (isSkyMesh(glRenderer.getMeshAabb(ms))) {
-          skySlots.add(ms);
-          skyDrawsHidden++;
-          continue;
-        }
-        /* The WASM returns retail-frame world Y (PSX +Y down: elevated
-         * tiles are NEGATIVE). placementModelScaledY flips only the mesh-
-         * local geometry, not the translation - while the ground
-         * heightfield bakes `-lut` into its vertices and gets the
-         * renderer's (1,-1,1) model, landing at `+lut` (up). Negate the
-         * placement Y so objects sit ON their floor tiles instead of
-         * mirrored below them (visible as sunken buildings on elevated
-         * maps like Rim Elm's cliff).
-         * rotY: the record's authored yaw (+0x0A, PSX 4096-per-rev);
-         * retail's yaw sense is opposite placementModelScaledY's, hence
-         * the negation. */
-        draws.push({
-          meshId: ms,
-          x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
-          rotY: rots ? -(rots[i] & 0xFFF) * Math.PI / 2048 : 0,
-          scale: 1.0,
-        });
-      }
-    }
-    /* Terrain tiles first (ground layer), placed objects on top - depth
-     * test resolves overlap either way; the order just matches the native
-     * draw sequence. Yaw accessors are guarded so a stale cached WASM
-     * still draws (unrotated). */
-    const hasRot = typeof viewer.field_scene_placement_rot_y === 'function';
-    pushDraws(viewer.field_scene_terrain_slots(), viewer.field_scene_terrain_positions(),
-      hasRot ? viewer.field_scene_terrain_rot_y() : null);
-    pushDraws(viewer.field_scene_placement_slots(), viewer.field_scene_placement_positions(),
-      hasRot ? viewer.field_scene_placement_rot_y() : null);
-
-    /* Frame the camera on the assembled geometry (ground AABB if present,
-     * else the draw cluster). */
-    let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
-    for (const p of draws) {
-      if (p.x < xmin) xmin = p.x; if (p.x > xmax) xmax = p.x;
-      if (p.z < zmin) zmin = p.z; if (p.z > zmax) zmax = p.z;
-    }
-    const gAabb = glRenderer.getGroundAabb();
-    if (gAabb && gAabb.sx > 0) {
-      xmin = Math.min(xmin, gAabb.cx - gAabb.sx / 2);
-      xmax = Math.max(xmax, gAabb.cx + gAabb.sx / 2);
-      zmin = Math.min(zmin, gAabb.cz - gAabb.sz / 2);
-      zmax = Math.max(zmax, gAabb.cz + gAabb.sz / 2);
-    }
-    if (!Number.isFinite(xmin)) { xmin = 0; xmax = 16384; zmin = 0; zmax = 16384; }
-    const spanX = Math.max(xmax - xmin, 1024);
-    const spanZ = Math.max(zmax - zmin, 1024);
-    const ext = [spanX + 1024, spanZ + 1024];
-    fsCam.centerX = (xmin + xmax) / 2;
-    fsCam.centerZ = (zmin + zmax) / 2;
-    fsCam.halfWidth = spanX / 2 + 512;
-    fsCam.halfHeight = spanZ / 2 + 512;
-    fsCam.yaw = 0;
-    fsCam.pitch = 0.65;
 
     const cameraHint = document.getElementById('camera-hint');
     if (cameraHint) cameraHint.style.display = 'none';
-    const skyNote = skyDrawsHidden
-      ? ` · ${skyDrawsHidden} sky-backdrop draw${skyDrawsHidden > 1 ? 's' : ''} hidden`
-      : '';
-    const drawnMeshes = new Set(draws.map(d => d.meshId)).size;
-    info.innerHTML = `<b>${label}</b> · full map · ${packCount} env meshes (${drawnMeshes} drawn) `
-      + `· ${st.placements} placements · ${st.terrain} terrain tiles · ${st.ground_quads} ground quads`
-      + `${skyNote} · drag pan / right-drag pivot / wheel zoom · click any entry to exit`;
+    info.innerHTML = `<b>${label}</b> · full map · ${fsView.summary()}`
+      + ` · drag pan / right-drag pivot / wheel zoom · click any entry to exit`;
 
     /* Headless-verification hook (same spirit as the world-overview page's
      * `__woWalkStamps`): the assembled state this load produced, so browser
      * tests can assert on mesh/draw counts and the computed framing. Not
      * used by page code. */
-    window.__fsState = {
-      label, packCount,
-      drawn: drawnMeshes,
-      drawnSlots: Array.from(new Set(draws.map(d => d.meshId))).sort((a, b) => a - b),
-      emptySlots: Array.from(empty).sort((a, b) => a - b),
-      skySlots: Array.from(skySlots).sort((a, b) => a - b),
-      skyDrawsHidden,
-      draws,
-      cam: fsCam,
-      status: st,
-      meshAabbs: Object.fromEntries(
-        Array.from(used).map(ms => [ms, glRenderer.getMeshAabb(ms)])),
-    };
+    window.__fsState = st;
 
-    /* Arm the .glb export with the assembled draw list (ground + placed
-     * meshes, sky backdrops already excluded above - same as the screen). */
-    setGlbExport({
-      kind: 'fullmap', label, draws,
-      hasGround: viewer.field_scene_ground_quad_count() > 0,
-    });
-
-    /* Shared world-camera controls (same gestures as the world-overview
-     * page): left-drag pans, right-drag / shift-drag pivots (yaw + tilt),
-     * wheel zooms. Wider zoom clamp than the kingdom default - scenes
-     * range from single-room interiors to whole towns. */
-    attachWorldOrbitControls(fresh, fsCam, { minHalf: 150, maxHalf: 40000 });
-
-    const tick = () => {
-      glRenderer.renderAssembled(draws, ext, fsCam);
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
+    /* Arm the .glb export: the view bakes the same meshes + transforms it
+     * renders (sky backdrops already excluded - same as the screen). */
+    setGlbExport({ kind: 'fullmap', label });
   }
 
   /* Textured 3D loop. WebGL2-backed; uses the same paletted fragment shader

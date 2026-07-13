@@ -10,6 +10,7 @@ mod audio_api;
 mod catalog;
 mod character;
 pub mod disc;
+pub mod field_npc;
 pub mod field_scene;
 pub mod fog_lut;
 mod inspect;
@@ -233,6 +234,11 @@ pub struct LegaiaViewer {
     /// real scene loaders. Populated by [`LegaiaViewer::set_scene_field`];
     /// consumed by the `field_scene_*` accessors.
     field_scene: Option<field_scene::FieldScenePack>,
+    /// NPC catalog for the loaded field scene (the MAN's partition-1 actor
+    /// placements, resolved against `field_scene`'s TMD pool). Populated by
+    /// [`LegaiaViewer::set_scene_npcs`]; consumed by the `field_npc_*`
+    /// accessors.
+    field_npcs: Option<field_npc::FieldNpcPack>,
     /// Cached engine-core PROT index over the loaded disc (built on the
     /// first `set_scene_field`; cleared on `load_disc`).
     prot_index: Option<std::sync::Arc<legaia_engine_core::scene::ProtIndex>>,

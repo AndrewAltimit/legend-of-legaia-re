@@ -43,14 +43,47 @@ fences / small furniture) render instead of vanishing.
 untextured / use the colour; empty for pure-textured meshes), consumed by
 the WebGL shader's `u_use_flat_colors` / `a_flat_rgba` hybrid path.
 
-The site's viewer page drives it from the "full map" button, streaming the
-draws through the WebGL renderer's instanced scene-mesh path (the same
-plumbing as the world-overview kingdom continents). The page classifies
-sky-dome shells and horizon-backdrop planes (huge-footprint /
-zero-depth-sheet AABB heuristic in `viewer.html`'s `isSkyMesh`) and hides
-their draws - under the top-down assembled camera they'd paint over the
-map they surround in retail. Disc-gated parity test:
+Two site pages drive it through the shared `site/js/field-scene-view.js`
+(`window.FieldSceneView`): the **game-world** page's town navigator, which
+swaps locations in place, and the **asset viewer**'s "full map" button. The
+view streams the draws through the WebGL renderer's instanced scene-mesh
+path (the same plumbing as the world-overview kingdom continents) and
+classifies sky-dome shells and horizon-backdrop planes (huge-footprint /
+zero-depth-sheet AABB heuristic, `FieldSceneView.isSkyMesh`), hiding their
+draws - under the assembled camera they'd paint over the map they surround
+in retail. `load()` is re-entrant, so a navigator swap releases the previous
+scene's GL meshes rather than leaking them. Disc-gated parity test:
 `tests/field_scene_assembly.rs` (incl. the colour-only prop recovery).
+
+## Field-NPC catalog (`field_npc`)
+
+`LegaiaViewer::set_scene_npcs(name)` loads the field scene (for its TMD pool
++ VRAM) and catalogs every actor the scene's MAN places;
+`field_npc_catalog_json()` returns the list. An NPC is not a separate asset
+class - it's a **MAN partition-1 placement record**: a model byte indexing
+the scene's TMD pool (`res.tmds[model_index]`, *not* the env-pack subset the
+map placements use), an anim byte naming a record in the scene's ANM bundle,
+and tile bytes for the spawn. `build_npc_catalog` is the pure builder behind
+the binding (disc-gated test: `tests/field_npc_catalog.rs`).
+
+Per-actor mesh accessors mirror the character family:
+`field_npc_mesh(catalog_idx)` + `field_npc_mesh_{positions,uvs,cba_tsb,
+indices,object_ids,flat_rgba,bounds}`. The mesh is the field-hybrid build
+(`tmd_to_vram_mesh_field_hybrid`), so it carries per-vertex object ids *and*
+flat colours in one stream.
+
+**The pose is load-bearing.** A multi-object character TMD ships its
+vertices in object-local space, so drawn raw its parts collapse onto the
+origin; the figure only assembles as `v_world = R_bone . v_object_local +
+T_bone` from frame 0 of the placement's clip (the page composes this via the
+existing `player_anm_record_pose_frames`, keyed on the catalog's `anm_prot`).
+The catalog therefore lists only actors it can assemble: multi-object actors
+with no clip, or in a scene shipping no ANM bundle at all (`rikuroa`), are
+withheld and reported as `unposable_count` rather than shown as a heap.
+Party / save-point heads (`model_index >= 0xF0`) draw from the global pool
+instead of the scene's and are routed to the characters page
+(`special_count`). Off-map "hidden" spawns are script-gated story actors,
+fully resolvable, so they *are* listed - flagged `conditional`.
 
 ## Scene `.glb` export (`scene_export`)
 
@@ -66,9 +99,12 @@ triples it builds model matrices from; the bake
 `(cba, tsb-page)` pair the vertices sample into a 256x256 tile of one RGBA
 atlas (the PSX VRAM+CLUT indirection has no glTF equivalent), remaps UVs,
 and keeps hybrid meshes' untextured vertices via `COLOR_0` + a white atlas
-tile. Consumers: the world-overview page (assembled continent), the viewer
-page's full-map mode (assembled town) and single-TMD inspector. The
-monster page's enemy export stays on the sibling
+tile. Consumers: the world-overview page (assembled continent), the
+game-world page's town navigator and the viewer page's full-map mode (both
+via `FieldSceneView.exportGlb`), the viewer's single-TMD inspector, and the
+characters + NPC pages (via `MeshView.exportGlb`, which bakes the **posed**
+vertices - the object-local parts would otherwise arrive in the file as a
+heap at the origin). The monster page's enemy export stays on the sibling
 `monster_gltf::export_glb` (it additionally carries the action
 animations). Disc-gated smoke: `legaia-asset`'s
 `tests/scene_gltf_real.rs`.

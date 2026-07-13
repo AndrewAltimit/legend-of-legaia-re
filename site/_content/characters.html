@@ -174,6 +174,7 @@ table.arts-list .cmd-tag {
           <button id="char-spin-btn" type="button">⏸ stop spin</button>
           <button id="char-reset-btn" type="button">↺ reset view</button>
           <button id="char-tmd-btn" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
+          <button id="char-glb-btn" type="button" title="Download this character as a textured glTF model, posed as shown">⬇ .glb</button>
         </div>
         <div class="char-fun" id="char-fun"></div>
 
@@ -279,8 +280,8 @@ table.arts-list .cmd-tag {
   // Initialised to -1 ("never picked"); on form switch we fall back to the
   // form's default if the cached index is invalid or still -1.
   let _bundleIdxByForm = { field: -1, battle: -1, baka: -1 };
-  let meshView = null;   // BattleMeshView (TmdRenderer) for all three forms
-  let _loadedBattleVramForm = null; // which palette VRAM is in the BattleMeshView
+  let meshView = null;   // MeshView (TmdRenderer) for all three forms
+  let _loadedBattleVramForm = null; // which palette VRAM is in the MeshView
   let artsData = null;   // arts.json contents, lazily fetched
   let curArtsKind = 'regular';
 
@@ -790,9 +791,9 @@ table.arts-list .cmd-tag {
         return;
       }
       try {
-        if (!meshView || !(meshView instanceof BattleMeshView)) {
+        if (!meshView || !(meshView instanceof window.MeshView)) {
           if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
-          meshView = new BattleMeshView(canvasEl);
+          meshView = new window.MeshView(canvasEl, { onSpin: updateSpinLabel });
           _loadedBattleVramForm = null;
         }
         // Upload the VRAM whose palette matches the current form, re-uploading
@@ -868,9 +869,9 @@ table.arts-list .cmd-tag {
       return;
     }
     try {
-      if (!meshView || !(meshView instanceof BattleMeshView)) {
+      if (!meshView || !(meshView instanceof window.MeshView)) {
         if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
-        meshView = new BattleMeshView(canvasEl);
+        meshView = new window.MeshView(canvasEl, { onSpin: updateSpinLabel });
         _loadedBattleVramForm = null;
       }
       // Upload the field texture VRAM once per entry into the field form
@@ -918,7 +919,7 @@ table.arts-list .cmd-tag {
   }
 
   // Pull the (bundle, record) the scrubber currently points at and push it
-  // into the active mesh view (BattleMeshView / TmdRenderer drives all three
+  // into the active mesh view (MeshView / TmdRenderer drives all three
   // forms via its animator interface: setAnimation / setFrame / setPlaying /
   // _poseAt). No-op when:
   //   - viewer isn't ready / disc isn't loaded
@@ -1057,8 +1058,7 @@ table.arts-list .cmd-tag {
 
   spinBtn.addEventListener('click', () => {
     if (!meshView) return;
-    meshView.cam.autoRotate = !meshView.cam.autoRotate;
-    updateSpinLabel(meshView.cam.autoRotate);
+    meshView.setSpin(!meshView.cam.autoRotate);
   });
   resetBtn.addEventListener('click', () => meshView?.resetView());
   tmdBtn.addEventListener('click', () => {
@@ -1083,258 +1083,28 @@ table.arts-list .cmd-tag {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
-  // Battle-form viewer. Wraps the shared TmdRenderer (the same R16UI paletted
-  // VRAM pipeline the world-overview viewer uses) so it can sample the seven
-  // 256×256 4bpp character atlases shipped inside PROT 1204 at their
-  // disc-pinned VRAM coords (and, for the field form, the PROT 0874 §2
-  // atlas). Orbit / scroll / drag controls route the draw through TmdRenderer.
-  class BattleMeshView {
-    constructor(canvas) {
-      if (typeof window.TmdRenderer === 'undefined') {
-        throw new Error('TmdRenderer global missing (webgl-tmd.js not loaded?)');
-      }
-      this.canvas = canvas;
-      this.renderer = new window.TmdRenderer(canvas);
-      this.indexCount = 0;
-      this.center = [0, 0, 0];
-      this.radius = 1;
-      // Orbit defaults: the spin / drag / reset controls feel identical
-      // across all three forms.
-      this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
-      // Animation state - the page-side animator drives every form through a
-      // uniform interface (setAnimation / setFrame / setPlaying). The battle
-      // form pose composition is identical to field form (v_world =
-      // R_bone · v_object_local + T_bone): the per-character battle TMDs
-      // at PROT 1204 ship their vertices in bone-local space, just like
-      // PROT 0874 §0, and the battle-form ANM at PROT 1203 (other5) carries
-      // the (T, R) per (bone, frame) that the engine pushes through the GTE
-      // at runtime (FUN_8001B964 → FUN_8001BE80).
-      this._basePos = null;     // pristine Float32Array(vertices*3)
-      this._objIds = null;      // Uint32Array per-vertex object index
-      this.anim = null;
-      this._frameOverride = -1;
-      this.playing = false;
-      this._startMs = 0;
-      this._lastPosedFrame = -1;
-      this.onFrame = null;
-      this._loop = this._loop.bind(this);
-      this._raf = 0;
-      this._attachControls();
-      this._raf = requestAnimationFrame(this._loop);
-    }
+  // .glb: unlike the .tmd download (the raw disc blob), this bakes what's on
+  // screen - the assembled figure at the current animation frame, textured from
+  // the VRAM the active form uploaded. See MeshView.exportGlb.
+  window.MeshView.attachGlbButton(
+    document.getElementById('char-glb-btn'),
+    () => meshView,
+    () => viewer,
+    () => {
+      const p = activePack();
+      if (!p || selectedSlot === null) return 'legaia-character';
+      const meta = p.slots[selectedSlot];
+      const formTag = isBattlePackForm(curForm)
+        ? (curForm === 'baka' ? 'baka' : 'battle')
+        : 'field';
+      return `legaia-${meta.label.replace(/\s+/g, '_')}_slot${meta.slot}_${formTag}`;
+    });
 
-    uploadVram(vramBytes) {
-      this.renderer.uploadVram(vramBytes);
-    }
-
-    setMesh(positions, uvs8, cbaTsb, indices, bounds, objectIds, flatRgba) {
-      // The mesh sampler returns raw TMD-space vertices (PSX Y-down). The
-      // TmdRenderer's MVP build expects this convention already (it flips
-      // internally via the projection); we just feed positions through.
-      // `flatRgba` (field form only) carries per-vertex flat/gouraud colours so
-      // the untextured body prims render in their real colours; omitting it
-      // (battle / baka forms) leaves the renderer in pure-textured mode.
-      this.renderer.uploadMesh(positions, uvs8, cbaTsb, indices, flatRgba || null);
-      this.indexCount = indices.length;
-      this.center = [bounds[0], bounds[1], bounds[2]];
-      this.radius = bounds[3] || 1;
-      this._basePos = positions;
-      this._objIds = objectIds || null;
-      this.anim = null;
-      this.playing = false;
-      this._frameOverride = -1;
-    }
-
-    setAnimation(meta) {
-      if (!meta || !meta.frameCount || meta.frameCount < 2 ||
-          !this._objIds || !this._basePos) {
-        this.anim = null;
-        this.playing = false;
-        // Restore pristine geometry.
-        if (this._basePos) this.renderer.updatePositions(this._basePos);
-        return;
-      }
-      this.anim = {
-        out: new Float32Array(this._basePos),
-        partCount: meta.partCount,
-        frameCount: meta.frameCount,
-        frames: meta.frames,    // Int32Array(frameCount*partCount*6)
-      };
-      this._startMs = performance.now();
-      this._frameOverride = 0;
-      this._lastPosedFrame = -1;
-      this._poseAt(0);
-      // Re-fit the camera on the assembled rest pose (frame 0 of the
-      // selected battle ANM record is the actor's combat stance - for
-      // Vahn rec 0 frame 0 this is the sideways sword-ready pose).
-      let lo = [Infinity, Infinity, Infinity];
-      let hi = [-Infinity, -Infinity, -Infinity];
-      const o = this.anim.out, n = o.length / 3;
-      const ids = this._objIds;
-      const pc = this.anim.partCount;
-      for (let v = 0; v < n; v++) {
-        if (ids[v] >= pc) continue;
-        for (let k = 0; k < 3; k++) {
-          const x = o[v * 3 + k]; if (x < lo[k]) lo[k] = x; if (x > hi[k]) hi[k] = x;
-        }
-      }
-      if (lo[0] !== Infinity) {
-        this.center = [(lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2];
-        this.radius = Math.max(1, Math.hypot(
-          (hi[0]-lo[0])/2, (hi[1]-lo[1])/2, (hi[2]-lo[2])/2));
-      }
-    }
-
-    setPlaying(on) {
-      if (!this.anim) { this.playing = false; return; }
-      this.playing = !!on;
-      if (this.playing) {
-        this._startMs = performance.now() - (this._frameOverride >= 0
-          ? (this._frameOverride / 14) * 1000
-          : 0);
-        this._frameOverride = -1;
-      }
-    }
-
-    setFrame(f) {
-      if (!this.anim) return;
-      this._frameOverride = f | 0;
-      this.playing = false;
-      this._poseAt(this._frameOverride);
-    }
-
-    _pose(f, p) {
-      const o = (f * this.anim.partCount + p) * 6, a = this.anim.frames;
-      return { t: [a[o], a[o+1], a[o+2]], r: [a[o+3], a[o+4], a[o+5]] };
-    }
-
-    _poseAt(frameIdx) {
-      const A = this.anim;
-      if (!A) return;
-      const ff = ((frameIdx % A.frameCount) + A.frameCount) % A.frameCount;
-      const A2R = (Math.PI * 2) / 4096;
-      const base = this._basePos;
-      const out = A.out;
-      const ids = this._objIds, n = base.length / 3;
-      const sin = new Float32Array(A.partCount * 3);
-      const cos = new Float32Array(A.partCount * 3);
-      const tr = new Float32Array(A.partCount * 3);
-      for (let p = 0; p < A.partCount; p++) {
-        const pose = this._pose(ff, p);
-        for (let k = 0; k < 3; k++) {
-          const a = pose.r[k] * A2R;
-          sin[p*3+k] = Math.sin(a);
-          cos[p*3+k] = Math.cos(a);
-          tr[p*3+k] = pose.t[k];
-        }
-      }
-      for (let v = 0; v < n; v++) {
-        const o = ids[v];
-        if (o >= A.partCount) {
-          out[v*3] = 0; out[v*3+1] = 0; out[v*3+2] = 0;
-          continue;
-        }
-        const sx = sin[o*3], cxx = cos[o*3];
-        const sy = sin[o*3+1], cyy = cos[o*3+1];
-        const sz = sin[o*3+2], czz = cos[o*3+2];
-        // Rotate the object-local vertex about its own origin (0,0,0), then
-        // add the bone's absolute translation. This is exactly the retail
-        // per-object GTE pipeline: FUN_8001B964 loads the actor base matrix,
-        // FUN_8001BE80 pushes the bone's decoded T through MVMVA (matrix · V0
-        // + TR) to land the per-object world translation, composes the bone's
-        // Rz·Ry·Rx onto the matrix, then FUN_8002735C draws the object's
-        // object-local vertices as M·v + TR. No pivot/centroid subtraction -
-        // the TMD authors each object so its local origin IS the joint.
-        let x = base[v*3], y = base[v*3+1], z = base[v*3+2];
-        // Rz · Ry · Rx · v + T
-        let ny = y*cxx - z*sx, nz = y*sx + z*cxx; y = ny; z = nz;
-        let nx = x*cyy + z*sy;   nz = -x*sy + z*cyy; x = nx; z = nz;
-        nx = x*czz - y*sz;       ny = x*sz + y*czz;  x = nx; y = ny;
-        out[v*3]   = x + tr[o*3];
-        out[v*3+1] = y + tr[o*3+1];
-        out[v*3+2] = z + tr[o*3+2];
-      }
-      this.renderer.updatePositions(out);
-    }
-
-    resetView() {
-      this.cam = { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true };
-      updateSpinLabel(true);
-    }
-
-    _attachControls() {
-      const c = this.canvas;
-      let dragging = false, lastX = 0, lastY = 0;
-      const onDown = (e) => {
-        dragging = true; lastX = e.clientX; lastY = e.clientY;
-        this.cam.autoRotate = false;
-        updateSpinLabel(false);
-        c.setPointerCapture(e.pointerId);
-      };
-      const onUp = (e) => {
-        dragging = false;
-        c.releasePointerCapture(e.pointerId);
-      };
-      const onMove = (e) => {
-        if (!dragging) return;
-        this.cam.yaw   -= (e.clientX - lastX) * 0.008;
-        this.cam.pitch -= (e.clientY - lastY) * 0.008;
-        const lim = Math.PI / 2 - 0.05;
-        this.cam.pitch = Math.max(-lim, Math.min(lim, this.cam.pitch));
-        lastX = e.clientX; lastY = e.clientY;
-      };
-      const onWheel = (e) => {
-        e.preventDefault();
-        this.cam.distance *= e.deltaY > 0 ? 1.1 : 0.9;
-        this.cam.distance = Math.max(1.4, Math.min(8, this.cam.distance));
-      };
-      const onDbl = () => this.resetView();
-      c.addEventListener('pointerdown', onDown);
-      c.addEventListener('pointerup', onUp);
-      c.addEventListener('pointermove', onMove);
-      c.addEventListener('wheel', onWheel, { passive: false });
-      c.addEventListener('dblclick', onDbl);
-      this._handlers = { onDown, onUp, onMove, onWheel, onDbl };
-    }
-
-    _loop() {
-      const dpr = window.devicePixelRatio || 1;
-      const w = (this.canvas.clientWidth || 640) * dpr;
-      const h = (this.canvas.clientHeight || 480) * dpr;
-      if (this.canvas.width !== w || this.canvas.height !== h) {
-        this.canvas.width = w; this.canvas.height = h;
-      }
-      if (this.cam.autoRotate) this.cam.yaw += 0.006;
-      // Advance animation playback (~14 fps).
-      if (this.anim && this.playing) {
-        const FPS = 14;
-        const t = (performance.now() - this._startMs) / 1000 * FPS;
-        const f = Math.floor(t) % this.anim.frameCount;
-        if (f !== this._lastPosedFrame) {
-          this._poseAt(f);
-          this._lastPosedFrame = f;
-          if (typeof this.onFrame === 'function') this.onFrame(f);
-        }
-      }
-      // TmdRenderer.render takes (yaw, pitch, distance, panX, panY, center,
-      // radius). The orbit camera here keeps panX/Y at 0 for the
-      // orbit UX (drag rotates, doesn't pan).
-      this.renderer.render(
-        this.cam.yaw,
-        this.cam.pitch,
-        this.cam.distance,
-        0, 0,
-        this.center,
-        this.radius,
-      );
-      this._raf = requestAnimationFrame(this._loop);
-    }
-
-    dispose() {
-      if (this._raf) cancelAnimationFrame(this._raf);
-      this._raf = 0;
-    }
-  }
+  // The single-model orbit view + animation player lives in js/mesh-view.js
+  // (window.MeshView), shared with the NPC catalog: same TmdRenderer paletted-
+  // VRAM pipeline, same object-local bone poser (v_world = R.v + T). It samples
+  // the seven 256x256 4bpp character atlases inside PROT 1204 at their
+  // disc-pinned VRAM coords, and the PROT 0874 section-2 atlas for the field form.
 
   // PSX-Y flipped via uniform; the canvas sits in a +Y-up viewport.
   function lookAt(eye, at, up) {
@@ -1458,3 +1228,5 @@ table.arts-list .cmd-tag {
      PROT 1204 at their disc-pinned VRAM coords. -->
 <script src="js/webgl-shaders.js?v=characters-1"></script>
 <script src="js/webgl-tmd.js?v=characters-1"></script>
+<!-- Posed single-model orbit view, shared with the NPC catalog. -->
+<script src="js/mesh-view.js?v=meshview-1"></script>

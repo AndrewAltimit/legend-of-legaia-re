@@ -177,7 +177,7 @@ impl LegaiaViewer {
     /// `self.cdname_text` the CDNAME.TXT captured from the full image (raw
     /// PROT.DAT loads have no CDNAME - scene names then can't resolve and
     /// `set_scene_field` errors).
-    fn ensure_prot_index(&mut self) -> Result<Arc<ProtIndex>, String> {
+    pub(crate) fn ensure_prot_index(&mut self) -> Result<Arc<ProtIndex>, String> {
         if let Some(ix) = &self.prot_index {
             return Ok(ix.clone());
         }
@@ -208,6 +208,7 @@ impl LegaiaViewer {
     /// terrain-tile layers.
     pub fn set_scene_field(&mut self, name: &str) -> Result<u32, JsValue> {
         self.field_scene = None;
+        self.field_npcs = None;
         let index = self
             .ensure_prot_index()
             .map_err(|e| JsValue::from_str(&format!("set_scene_field({name}): {e}")))?;
