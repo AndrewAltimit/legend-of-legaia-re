@@ -249,13 +249,25 @@ that NPC/player set, while the static objects are a larger placed set.
 
 Clean-room parser: [`legaia_asset::field_objects`](../../crates/asset/src/field_objects.rs)
 (`parse_placements` + `pack_mesh_index` over the field map file); the engine
-reads it via `Scene::field_object_placements`. Each object's drawn mesh comes
-from the scene_asset_table TMD pack (byte-verified): `pack_index = obj_idx - 5`
-for the field-actor band `93..=118`, otherwise the object record's `+0x10`
-`u16` field; ids `1/2/3` are the protagonist/NPC meshes from the shared pool.
-The `anim_id` resolved separately via the MAN script (`func_0x801d5630`) only
-drives animation; it does not pick geometry. See
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+reads it via `Scene::field_object_placements`. Each object's drawn mesh is the
+object record's `+0x10` `u16` field - **uniformly, for every object id** (retail
+`FUN_80020f88`: `actor+0x64 = record[+0x10] + DAT_8007b6f8`; the id selects the
+*record*, never the mesh). Ids `1/2/3` are the protagonist/NPC meshes from the
+shared pool. The `anim_id` resolved separately via the MAN script
+(`func_0x801d5630`) only drives animation; it does not pick geometry.
+
+> A positional "field-actor band" reading (`pack_index = obj_idx - 5` for ids
+> `93..=118`) is **falsified**. Rim Elm cell `(30, 17)` carries object id `99`
+> whose record `+0x10 = 2`, and the retail GPU prim pool draws that cell's
+> surface from env-pack mesh **2**: the quad's `cba = 0x7D00` / `tsb = 0x000C`
+> and its UV set match mesh 2's primitive byte-for-byte, and its four screen
+> vertices are exactly that cell's four corners. The band rule silently swapped
+> ten town meshes per Rim Elm map - among them the terrain slab south-east of
+> the spawn, whose absence left the ground's clear colour showing through.
+> (Its supporting "windmill id 96 -> mesh 91" datum does not survive contact
+> with the disc: record `96` is all zeros, and no cell references it.)
+
+See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ## Provenance
 
@@ -282,7 +294,7 @@ Footprint caveat: the TOC-**indexed** payload of the `.MAP` entry is only the fi
 ### Environment geometry
 
 A field/town scene's environment meshes (the terrain, buildings, and props) are Legaia TMDs packed inside **LZS streams of the scene_asset_table** PROT entry (`town01` = entry 4: 121 meshes, ≈8041 vertices). The clean-room `SceneResources` TMD pass scans each entry's LZS-decompressed sections in addition to its raw bytes (`tmd_scan::scan_entry`, the same path the TIM pass already used), so these meshes land in the scene TMD pool; the `scene_tmd_stream` skip still drops battle-character meshes in field mode. The field build uses `SceneLoadKind::Field` with `upload_all_tims`, matching retail's field loader (`FUN_8001f7c0`), which DMA-uploads every TIM - the environment meshes sample texture pages across the whole atlas, so a render-targeted upload drops most of their prims.
-Per-mesh **world placement** for this static geometry is the [Object-record table](#object-record-format-0x0000-0x20-byte-stride) above (`FUN_8003a55c`: the object-index grid at `+0x8000` of the field map file selects a `+0x0000` object record per placed tile, giving the mesh its world translation; `legaia_asset::field_objects` parses it, `Scene::field_object_placements` exposes it). Each object's mesh resolves to a scene-pack index (`pack_index = obj_idx - 5` for the field-actor band `93..=118`, else the record's `+0x10` field). Per-tile **world Y** = `-floorHeightLUT[tile_nibble] + y_off`, the LUT being 16 `s16` at the MAN header `+0x02` (`Scene::field_floor_height_lut`). `legaia-engine play-window` renders the town from this:
+Per-mesh **world placement** for this static geometry is the [Object-record table](#object-record-format-0x0000-0x20-byte-stride) above (`FUN_8003a55c`: the object-index grid at `+0x8000` of the field map file selects a `+0x0000` object record per placed tile, giving the mesh its world translation; `legaia_asset::field_objects` parses it, `Scene::field_object_placements` exposes it). Each object's mesh resolves to a scene-pack index from the record's `+0x10` field (every object id; see the falsified band rule above). Per-tile **world Y** = `-floorHeightLUT[tile_nibble] + y_off`, the LUT being 16 `s16` at the MAN header `+0x02` (`Scene::field_floor_height_lut`). `legaia-engine play-window` renders the town from this:
 `resolve_field_placement_draws` pairs each placement with its uploaded pack mesh + world transform (X/Z + floor-LUT Y) and draws them in `SceneMode::Field`.
 
 ### Scene-entry script

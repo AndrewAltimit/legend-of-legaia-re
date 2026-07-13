@@ -988,6 +988,21 @@ captures.
 > the mod-3 cross-row sequence was coincidental. `+0x14` **is** the tile
 > selector; the page/CLUT come from `+0x15`/`+0x16`.
 
+**The gate is the object grid, in towns too.** Fitting the camera from a Rim Elm
+field capture's own ground quads (the quads share corner vertices, so the lattice
+rebuilds camera-independently; the fit then re-projects every cell to sub-pixel
+residual) and asking, per cell, whether retail emitted a quad gives a clean split:
+**every** on-screen `0x1000` cell has one, **no** on-screen `objcell == 0` cell
+has one, and all recovered quads carry their record's `+0x14`/`+0x15`/`+0x16`.
+
+So a floor cell with no object record has **no ground quad in retail either** -
+its surface is an **env mesh** (the pack meshes the `+0x10` records place over it).
+Widening the ground gate to the collision grid is therefore wrong twice over: it
+emits quads retail never draws, and - having no record - they sample empty atlas
+space, decode to `0x0000`, and are discarded. The visible symptom of a *missing*
+mesh over such cells is the render-pass clear colour, not a texturing bug; see the
+mesh-id rule in [`field-locomotion.md`](field-locomotion.md#environment-geometry).
+
 **Engine.** [`build_walk_heightfield`] reads each visible cell's record and bakes
 the per-cell tile UV (`+0x14` → 8×8 atlas) into `WalkHeightfield::uvs` and the
 per-cell `[clut, tpage]` (`+0x15`/`+0x16`) into `WalkHeightfield::cba_tsb`, so a
@@ -996,7 +1011,10 @@ single ground mesh samples grass / mountain / water / forest pages per cell;
 fallback for cells whose record carries no terrain run. (Distinct from the
 **top-view** bulk continent, which is per-cell *meshes* via `FUN_80043390` / the
 MAN `0x7F`-sentinel resolver - see
-[`world-overview-viewer.md`](world-overview-viewer.md).)
+[`world-overview-viewer.md`](world-overview-viewer.md).) Disc-gated coverage:
+`crates/engine-core/tests/field_ground_surface_disc.rs` (the ground layer is
+exactly the `0x1000` cells and never samples empty VRAM; every open floor cell is
+surfaced by a ground quad or a mesh).
 
 **Ocean / water animation.** The water tile is a 4bpp texture at fb
 `(768, 256)` whose CLUT row at fb `(0, 506)` (CBA `0x7E80`) the retail engine
