@@ -28,11 +28,6 @@ pub(super) fn create_depth_view(
     tex.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-pub(super) fn normalize3(v: [f32; 3]) -> [f32; 4] {
-    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-6);
-    [v[0] / len, v[1] / len, v[2] / len, 0.0]
-}
-
 pub(crate) fn letterbox_scale(win_w: u32, win_h: u32, tex_w: u32, tex_h: u32) -> (f32, f32) {
     let win_aspect = win_w as f32 / win_h.max(1) as f32;
     let tex_aspect = tex_w as f32 / tex_h.max(1) as f32;

@@ -82,7 +82,7 @@ prim data (count × ilen*4 bytes):
     <li><strong>G3</strong> (flags 0x1D, 20-byte record): 3 colour words at a 4-byte stride, then 3&times;u16 vertex offsets.</li>
     <li><strong>G4</strong> (flags 0x1F, 24-byte record): 4 colour words read in winding order <code>[0,1,3,2]</code> (table <code>DAT_8007b410 = 00 01 03 02</code>, applied to both colours and vertices), then 4&times;u16 vertex offsets.</li>
   </ul>
-  <p><strong>No per-prim normal field exists</strong> - the renderer reads only the prim pointer, the vertex base and the loop count, never the object's normal table; lighting is the GTE <code>NCDS</code> op fed the stored colour. <code>legaia_tmd::legaia_prims</code> decodes the colours into <code>Prim::colors</code>, and <code>tmd_to_color_mesh</code> builds a vertex-colour mesh the engine renders for untextured props (see <a href="../subsystems/renderer.html">renderer</a>).</p>
+  <p><strong>Neither renderer lights from the normal array</strong> - <code>FUN_8002735c</code> reads only the prim pointer, the vertex base and the loop count, never the object's normal table, and the sibling <code>FUN_80029888</code> that handles the lit rows issues no <code>NC*</code> op either. Between them the two run exactly one GTE colour op, <code>DPCS</code> (the depth cue), so shading is the stored <strong>colour</strong> word modulating the texel on the GPU (<code>texel * colour / 128</code>). <code>legaia_tmd::legaia_prims</code> decodes the colours into <code>Prim::colors</code> for every prim, and they reach the engine as a per-vertex attribute on the VRAM-mesh pipeline (see <a href="../subsystems/renderer.html#lighting">renderer &sect; Lighting</a>).</p>
 </section>
 
 <section class="doc-section" id="worked-example">

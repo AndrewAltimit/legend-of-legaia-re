@@ -145,12 +145,19 @@ resolves the shape and the `vertex_offset` per group.
   held for the byte1 = 3 rows; the byte1 = 0 rows then read `(cba, tsb)` from
   geometry bytes and rendered as rainbow garbage (the Rim Elm decorative-plant
   props). `texture_block_offset` fixes this while leaving rows 4/5 byte-identical.
-- **Untextured**: a per-vertex RGB colour block (PSX `[R, G, B, code]` word; the
-  4th byte is the SDK GP0 command/code, not part of the colour). **Flat**
-  (`F3`/`F4`) stores **one** colour word at prim offset 0, shared by all corners
-  (the renderer loads it into the GTE RGBC reg and runs `NCDS` once); **gouraud**
-  (`G3`/`G4`) stores one colour word **per corner** at a 4-byte stride from prim
-  offset 0 (`colour[v] = bytes[v*4 .. v*4+3]`, `NCDS` per vertex).
+- **Colour block** (every row except the lit rows 0/1): a per-vertex RGB colour
+  block (PSX `[R, G, B, code]` word; the 4th byte is the SDK GP0 command/code,
+  not part of the colour - `0x20`/`0x24`/`0x28`/`0x2C`/`0x30`/`0x34`/`0x38`/`0x3C`,
+  optionally `| 2` for the semi-transparent variant, and only on the *leading*
+  word of a gouraud packet). **Flat** (`F3`/`F4`/`FT3`/`FT4`) stores **one**
+  colour word at prim offset 0, shared by all corners; **gouraud**
+  (`G3`/`G4`/`GT3`/`GT4`) stores one colour word **per corner** at a 4-byte
+  stride from prim offset 0 (`colour[v] = bytes[v*4 .. v*4+3]`). On a *textured*
+  prim this block is what pushes the texture block off offset 0. The renderer
+  loads the word into the GTE `RGBC` register and runs `DPCS` (the depth cue) -
+  **not** an `NC*` light op - and the GPU then modulates the texel by it
+  (`texel * colour / 128`). This is the field's entire lighting signal; see
+  [`subsystems/renderer.md`](../subsystems/renderer.md#lighting).
 
 The exact untextured record layouts (colour block first, then the vertex-index
 block), pinned byte-exact from the renderer + real town01 props (pack 31 obj
@@ -206,14 +213,17 @@ slot 36 object 0: `8 + 44*3 + 100*4 = 540`, its declared normal count). The
 normal *before* the vertices - `[12-byte texture block][n0][v0 v1 v2]` - which is
 what row 0's `byte4` (7 → byte 14) encodes.
 
-**`FUN_8002735c` ignores the normal array.** It reads only the prim pointer
-(`param_1[4]`), the vertex base (`param_1[0]`) and the loop count
+**Neither renderer lights from the normal array.** `FUN_8002735c` reads only the
+prim pointer (`param_1[4]`), the vertex base (`param_1[0]`) and the loop count
 (`param_1[5]`) - never the object header's normal table (`param_1[2]` /
-`param_1[3]`). For the baked rows lighting is the GTE `NCDS` op fed the stored
-**colour** word. The lit rows' normals are consumed by the sibling renderer
-`FUN_80029888` (the only other function in `SCUS_942.54` that reads the
-descriptor table); the engine port re-derives smooth normals from the geometry
-instead, so it decodes the indices only to know where the vertex block ends.
+`param_1[3]`). `FUN_80029888`, the sibling that handles the lit rows (the only
+other function in `SCUS_942.54` that reads the descriptor table), issues no `NC*`
+op either: between them the two renderers run exactly one GTE colour op, `DPCS`
+(`cop2 0x780010`). So the lit rows' normals are authored but never transformed,
+and shading is the stored **colour** word modulating the texel on the GPU. See
+[`subsystems/renderer.md`](../subsystems/renderer.md#lighting). The engine port
+re-derives smooth normals from the geometry, so it decodes the indices only to
+know where the vertex block ends.
 
 Mis-reading an untextured colour block as a texture block yields bogus `(cba,
 tsb)` and samples a random VRAM page - the historic "flat green tint / transparent

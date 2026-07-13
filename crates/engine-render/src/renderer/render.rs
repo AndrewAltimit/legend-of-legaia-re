@@ -64,7 +64,7 @@ impl Renderer {
                     bytemuck::cast_slice(&[MeshUniforms {
                         mvp: mvp.to_cols_array_2d(),
                         // Light coming from upper-back-left in world space.
-                        light_dir: normalize3([0.4, -0.8, 0.4]),
+                        depth_cue: self.depth_cue.get(),
                         psx_params: [
                             self.config.width as f32,
                             self.config.height as f32,
@@ -583,7 +583,7 @@ impl Renderer {
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
             let u = MeshUniforms {
                 mvp: mvp.to_cols_array_2d(),
-                light_dir: normalize3([0.4, -0.8, 0.4]),
+                depth_cue: self.depth_cue.get(),
                 psx_params,
                 tex_window,
                 grade,

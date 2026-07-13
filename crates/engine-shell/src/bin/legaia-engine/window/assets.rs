@@ -140,6 +140,7 @@ impl PlayWindowApp {
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
+                    &vmesh.colors,
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
@@ -176,6 +177,7 @@ impl PlayWindowApp {
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
+                    &vmesh.colors,
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
@@ -514,6 +516,7 @@ impl PlayWindowApp {
                         &vmesh.uvs,
                         &vmesh.cba_tsb,
                         &vmesh.normals,
+                        &vmesh.colors,
                         &vmesh.indices,
                     ) {
                         Ok(m) => {
@@ -736,6 +739,7 @@ impl PlayWindowApp {
                         &vmesh.uvs,
                         &vmesh.cba_tsb,
                         &vmesh.normals,
+                        &vmesh.colors,
                         &vmesh.indices,
                     ) {
                         Ok(m) => {

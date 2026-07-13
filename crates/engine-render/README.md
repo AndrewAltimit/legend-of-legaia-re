@@ -71,12 +71,16 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
 - **TSB / CBA flat shading per primitive.** Texture page and CLUT base
   remain `@interpolate(flat)` so each triangle samples from the same
   page and palette, matching `GP0(0x24)` semantics.
-- **No synthetic lighting.** The engine's default readability hack - a
-  per-frame directional Lambert from a made-up light direction - is
-  disabled. Retail bakes its GTE lighting into the per-vertex colours and
-  texels; faithful mode shows that source data unlit (the textured/colour
-  meshes pass texel/vertex colour straight through). Default mode keeps
-  the ambient-biased shade so untextured silhouettes stay readable.
+- **PSX texture blending - the lighting.** Retail runs *no light source* on
+  the field path: its two TMD renderers issue exactly one GTE colour op
+  between them (`DPCS`, the depth cue) and never an `NC*` op, so the
+  shading is baked into each prim's colour word and applied by the GPU as
+  `texel * colour / 128` (`0x80` neutral, below darkens, above brightens
+  up to ~2x). The mesh shaders do the same: each vertex carries the baked
+  colour, `psx_modulate` applies the blend, `psx_depth_cue` applies `DPCS`
+  (identity at the field's `IR0 = 0`; set with `Renderer::set_depth_cue`).
+  The `psx_light` module mirrors both on the CPU and pins them. There is
+  no synthetic Lambert on any path that has real colour data to draw.
 
 - **Semi-transparency blend modes.** Per-prim PSX blending on the
   VRAM-mesh and colour-mesh paths (see the `psx_blend` module). The TMD

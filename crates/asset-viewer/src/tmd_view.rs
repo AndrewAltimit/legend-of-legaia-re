@@ -13,6 +13,9 @@ pub(crate) struct VramMeshPayload {
     pub(crate) uvs: Vec<[u8; 2]>,
     pub(crate) cba_tsb: Vec<[u16; 2]>,
     pub(crate) normals: Vec<[f32; 3]>,
+    /// Per-vertex baked prim colour - the PSX texture-modulation term
+    /// (`texel * colour / 128`). See [`legaia_tmd::mesh::VramMesh::colors`].
+    pub(crate) colors: Vec<[u8; 3]>,
     pub(crate) indices: Vec<u32>,
     /// CPU-side VRAM holding every TIM in the source PROT entry, placed at
     /// its canonical fb_x/fb_y. The fragment shader does the page+CLUT
@@ -99,6 +102,7 @@ pub(crate) fn load_tmd_for_view(
                     uvs: vram_mesh.uvs,
                     cba_tsb: vram_mesh.cba_tsb,
                     normals: vram_mesh.normals,
+                    colors: vram_mesh.colors,
                     indices: vram_mesh.indices,
                     vram,
                     tim_count,

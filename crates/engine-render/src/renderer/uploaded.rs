@@ -17,9 +17,17 @@ pub(super) struct Uniforms {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct MeshUniforms {
     pub(super) mvp: [[f32; 4]; 4],
-    /// Direction the light is *coming from*, in world space, normalized.
-    /// Stored as vec4 for std140 padding.
-    pub(super) light_dir: [f32; 4],
+    /// GTE **depth cue** (`DPCS`, `cop2 0x780010`) - the only colour op the
+    /// retail TMD renderers run.
+    ///
+    /// `[0..3]` = the far colour (GTE `RFC`/`GFC`/`BFC`, control registers
+    /// cr21-23), normalized to `0..1`. `[3]` = `IR0`, the blend factor, also
+    /// `0..1` (the hardware's `0..0x1000`). The shaded colour is
+    /// `c + (fc - c) * ir0`, so `ir0 = 0` is the identity - which is what the
+    /// field passes for an unfogged scene, and what a town0c retail capture
+    /// shows (the baked colours come back out of the GTE's RGB FIFO
+    /// unmodified).
+    pub(super) depth_cue: [f32; 4],
     /// PSX-faithful rendering knobs:
     /// - `[0]` viewport width in pixels (used for the sub-pixel snap)
     /// - `[1]` viewport height in pixels

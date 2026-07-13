@@ -224,7 +224,7 @@ impl Renderer {
             "mesh uniforms",
             bytemuck::cast_slice(&[MeshUniforms {
                 mvp: Mat4::IDENTITY.to_cols_array_2d(),
-                light_dir: [0.4, -0.8, 0.4, 0.0],
+                depth_cue: [0.0, 0.0, 0.0, 0.0],
                 psx_params: [width as f32, height as f32, 0.0, 0.0],
                 tex_window: [0; 4],
                 grade: [1.0, 1.0, 1.0, 0.0],
@@ -379,9 +379,13 @@ impl Renderer {
             push_constant_ranges: &[],
         });
         // 12 (pos) + 4 (uv as Uint8x4) + 4 (cba/tsb as Uint16x2) + 12
-        // (normal as Float32x3) = 32 bytes
+        // (normal as Float32x3) + 4 (prim colour as Uint8x4) = 36 bytes.
+        //
+        // The colour is the TMD prim's baked colour word, kept as raw bytes
+        // (never converted): the GPU modulates the texel by it as
+        // `texel * colour / 128`, which is retail's whole field lighting model.
         let vram_vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: 32,
+            array_stride: 36,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -403,6 +407,11 @@ impl Renderer {
                     offset: 20,
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: 32,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Uint8x4,
                 },
             ],
         };
@@ -560,32 +569,11 @@ impl Renderer {
                 vertex: wgpu::VertexState {
                     module: &vram_mesh_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: 32,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 0,
-                                format: wgpu::VertexFormat::Float32x3,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 12,
-                                shader_location: 1,
-                                format: wgpu::VertexFormat::Uint8x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 16,
-                                shader_location: 2,
-                                format: wgpu::VertexFormat::Uint16x2,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 20,
-                                shader_location: 3,
-                                format: wgpu::VertexFormat::Float32x3,
-                            },
-                        ],
-                    }],
+                    // Same vertex layout as the non-scene VRAM pipeline - share
+                    // it rather than restating it, so the two cannot drift (an
+                    // earlier hand-rolled copy silently omitted the prim-colour
+                    // attribute and failed pipeline validation).
+                    buffers: std::slice::from_ref(&vram_vertex_layout),
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -1105,6 +1093,7 @@ impl Renderer {
             vram_upload_counter: std::cell::Cell::new(0),
             tex_window: std::cell::Cell::new([0; 4]),
             color_grade: std::cell::Cell::new([1.0, 1.0, 1.0, 0.0]),
+            depth_cue: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
             screen_overlay_pipeline,
             screen_overlay_blend_pipelines,
             screen_overlay_vbuf: std::cell::RefCell::new(screen_overlay_vbuf),

@@ -259,6 +259,7 @@ impl PlayWindowApp {
                 &vmesh.uvs,
                 &vmesh.cba_tsb,
                 &vmesh.normals,
+                &vmesh.colors,
                 &vmesh.indices,
             ) {
                 Ok(m) => posed_overrides[tmd_idx] = Some(m),
@@ -378,6 +379,7 @@ impl PlayWindowApp {
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
+                    &vmesh.colors,
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
@@ -431,6 +433,7 @@ impl PlayWindowApp {
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
+                    &vmesh.colors,
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
@@ -473,6 +476,7 @@ impl PlayWindowApp {
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
+                    &vmesh.colors,
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
@@ -583,7 +587,10 @@ impl PlayWindowApp {
             }
             if !idx.is_empty() {
                 let normals = vec![[0.0f32; 3]; pos.len()];
-                match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &idx) {
+                // Screen-FX sprites are engine-synthesised: no baked colour
+                // word, so the neutral colour draws the texel unchanged.
+                let colors = vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; pos.len()];
+                match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &colors, &idx) {
                     Ok(m) => screen_fx_tex = Some(m),
                     Err(e) => log::warn!("screen-fx textured mesh upload: {e:#}"),
                 }

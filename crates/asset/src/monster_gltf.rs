@@ -587,6 +587,7 @@ mod tests {
             cba_tsb: vec![[0, 0], [0, 0], [0, 0]],
             indices: vec![0, 1, 2],
             normals: vec![[0.0, 0.0, 1.0]; 3],
+            colors: vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; 3],
         };
         let glb = build_glb("test", &mesh, &[0, 0, 0], None, &[]);
         assert_eq!(&glb[0..4], b"glTF");

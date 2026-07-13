@@ -119,6 +119,11 @@ pub struct Renderer {
     /// Defaults to `(1, 1, 1, 0)` = identity (no grade). Set with
     /// [`Renderer::set_color_grade`]; drives the opening prologue sepia.
     pub(super) color_grade: std::cell::Cell<[f32; 4]>,
+    /// GTE depth cue `(far_r, far_g, far_b, ir0)` staged into every field
+    /// `MeshUniforms`. Defaults to all-zero = `ir0 = 0` = identity, which is
+    /// what the field passes for an unfogged scene. Set with
+    /// [`Renderer::set_depth_cue`].
+    pub(super) depth_cue: std::cell::Cell<[f32; 4]>,
     /// Screen-space 2D overlay pass (see [`crate::screen_overlay`]): PSX
     /// `POLY_FT4` textured quads + flat quads in NDC, ordering-table order,
     /// per-ABR semi-transparency. Opaque pipeline (replace).
@@ -197,6 +202,31 @@ impl Renderer {
     pub fn set_color_grade(&self, gold: [f32; 3], strength: f32) {
         self.color_grade
             .set([gold[0], gold[1], gold[2], strength.clamp(0.0, 1.0)]);
+    }
+
+    /// Set the GTE **depth cue** the field mesh shaders apply after the
+    /// texture-modulation pass - a port of `DPCS` (`cop2 0x780010`), the only
+    /// colour op either retail TMD renderer (`FUN_8002735c`, `FUN_80029888`)
+    /// executes.
+    ///
+    /// `far` is the GTE far colour (cr21-23) in `0..1`; `ir0` is the blend
+    /// factor (`IR0`, hardware `0..0x1000`) in `0..1`. Each shaded pixel
+    /// becomes `c + (far - c) * ir0`, so `ir0 = 0` (the default) is the
+    /// identity. Retail sets both per drawn object; an unfogged field scene
+    /// passes `ir0 = 0`, which is why a town0c capture shows the baked prim
+    /// colours emerging from the GTE's RGB FIFO byte-unchanged.
+    pub fn set_depth_cue(&self, far: [f32; 3], ir0: f32) {
+        self.depth_cue.set([
+            far[0].clamp(0.0, 1.0),
+            far[1].clamp(0.0, 1.0),
+            far[2].clamp(0.0, 1.0),
+            ir0.clamp(0.0, 1.0),
+        ]);
+    }
+
+    /// Read the current depth cue `(far_r, far_g, far_b, ir0)`.
+    pub fn depth_cue(&self) -> [f32; 4] {
+        self.depth_cue.get()
     }
 
     /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.

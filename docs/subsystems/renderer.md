@@ -21,10 +21,61 @@ first; u32 second}` per row, selects `row = ((flags >> 1) - 8) >> 1`, and reads
 
 The low 2 bits of byte3 select the OT packet shape (`0`=flat untextured,
 `1`=flat textured, `2`=gouraud untextured, `3`=gouraud textured); the quad bit
-`(flags>>1)&1` picks tri vs quad. Untextured prims carry a per-prim/per-vertex
-**colour** block instead of UVs and are lit by the GTE `NCDS` op; **no per-prim
-normal is stored** (the renderer never reads the object's normal table). See
+`(flags>>1)&1` picks tri vs quad. Byte1 says whether the prim carries a leading
+**colour** block: rows 4/5 (`byte1 = 3`) do, rows 0-3 (`byte1 = 0`) do not.
+Rows 0/1 are the *light-source-lit* textured rows - their texture block starts
+at prim offset 0 and normal indices trail the vertex indices. See
 [`formats/tmd.md`](../formats/tmd.md) for the full per-mode record layout.
+
+## Lighting
+
+**Retail runs no light source on the field path.** `SCUS_942.54` has two TMD
+renderers over this table - `FUN_8002735C` and its light-source sibling
+`FUN_80029888` - and between them they issue exactly **one** GTE colour op:
+`DPCS` (`cop2 0x780010`; real command `0x10`, `sf = 1`), the depth cue. Neither
+ever issues `NCDS` / `NCDT` / `NCS` / `NCT` / `NCCS` / `NCCT` / `CDP` / `CC`, so
+no light matrix is consulted and no vertex normal is transformed. The GTE light
+matrix `L` (cr8-12) and light-colour matrix `LC` (cr16-20) *are* populated
+(`FUN_8005B648` = `SetLightMatrix`, `FUN_8005B678` = `SetColorMatrix`), but the
+only functions that consume them - via `NCCS`/`NCCT` - are the world-map slot-4
+mesh handlers `FUN_8004409C` / `FUN_8004423C` / `FUN_80044434` / `FUN_800445B0`.
+
+Field shading is instead **baked into the TMD**. Every primitive carries a
+colour word `[R][G][B][GP0 code]`, the code byte being one of `0x20` (`F3`),
+`0x24` (`FT3`), `0x28` (`F4`), `0x2C` (`FT4`), `0x30` (`G3`), `0x34` (`GT3`),
+`0x38` (`G4`), `0x3C` (`GT4`), each optionally `| 2` for the semi-transparent
+variant. A flat prim stores one word; a gouraud prim one per corner (only the
+leading word carries the command byte - the rest have a zero top byte). The
+renderer loads it into the GTE's `RGBC`, runs `DPCS`, and hands the result to
+the GPU as the packet colour. The GPU then blends it with the texel:
+
+```text
+out = texel * colour / 128
+```
+
+`0x80` is therefore the neutral colour (texel unchanged), below darkens, and
+above brightens - up to `255/128` ≈ 2x. That factor-of-two headroom is why
+retail's field has more contrast than an unlit render: across the field scenes'
+environment packs, ~79% of colour components sit below `0x80`, ~12% at it, and
+~10% above. An untextured prim has no texel and is simply filled with the
+colour.
+
+`DPCS` blends that colour toward the far colour (`RFC`/`GFC`/`BFC`, cr21-23) by
+`IR0`: `out = c + (fc - c) * IR0`. Both are staged per drawn object -
+`FUN_80029888` writes the far colour from its `param_2` (each byte `<< 4`) and
+`IR0` from `param_3` - and by `FUN_80043390`, which also stages the ambient /
+background colour (`RBK`/`GBK`/`BBK`, cr13-15; consumed only by the `NC*` ops,
+so inert on the field path). An unfogged field scene passes `IR0 = 0`, making
+the depth cue the identity: a retail town0c capture's GTE register file shows
+`RGB.Raw8 = 30 30 30 34` (a `GT3` prim) and an `RGB_FIFO` of `0x30, 0x60, 0x30`
+- the prim's three baked corner colours, out of the depth-cue op byte-unchanged.
+
+Engine port: `legaia_tmd::legaia_prims::Prim::colors` (populated for every prim;
+the lit rows, having no colour word, get `MODULATION_NEUTRAL`) →
+`legaia_tmd::mesh::VramMesh::colors` → a per-vertex attribute on the VRAM-mesh
+pipeline → `psx_modulate` / `psx_depth_cue` in the shader prelude, mirrored on
+the CPU by `legaia_engine_render::psx_light` and pinned by its tests. The far
+colour and `IR0` are set with `Renderer::set_depth_cue` (default `IR0 = 0`).
 
 ## TMD pointer table
 

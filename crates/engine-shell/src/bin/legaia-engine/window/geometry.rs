@@ -5,6 +5,7 @@
 //! and the battle ground grid builder.
 
 use super::*;
+use legaia_tmd::legaia_prims::MODULATION_NEUTRAL as NEUTRAL;
 
 /// Raw `LineList` geometry: `(positions, per-vertex colours, line indices)`.
 /// The geometry helpers (`world_map_*_line_geometry`) emit this shape; it is
@@ -56,6 +57,9 @@ pub(crate) fn effect_billboard_mesh(
     // Quad faces the camera; a single normal toward the viewer keeps the
     // lambert term stable rather than relying on the derivative fallback.
     let face = right.cross(up).normalize_or_zero().to_array();
+    // Effect sprites are engine-synthesised, not TMD prims: no baked colour
+    // word, so the neutral modulation colour draws the texel unchanged.
+    let mut colors: Vec<[u8; 3]> = Vec::with_capacity(sprites.len() * 4);
     for s in sprites {
         let [u0, v0] = s.uv;
         let u1 = u0.saturating_add(s.uv_size[0].saturating_sub(1)).min(255) as u8;
@@ -70,10 +74,11 @@ pub(crate) fn effect_billboard_mesh(
             uvs.push(uv);
             cba_tsb.push([s.clut, s.page]);
             normals.push(face);
+            colors.push([NEUTRAL; 3]);
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 1, base + 3]);
     }
-    match r.upload_vram_mesh(&positions, &uvs, &cba_tsb, &normals, &indices) {
+    match r.upload_vram_mesh(&positions, &uvs, &cba_tsb, &normals, &colors, &indices) {
         Ok(m) => Some(m),
         Err(e) => {
             log::warn!("effect billboard mesh upload: {e:#}");
@@ -147,6 +152,9 @@ pub(crate) fn heightfield_to_vram_mesh(
         // Per-cell terrain page + palette (multi-page terrain atlas).
         cba_tsb: hf.cba_tsb.clone(),
         normals: vec![[0.0, 0.0, 0.0]; n],
+        // Terrain is engine-synthesised from the walk heightfield, not a TMD
+        // prim: no baked colour word, so it draws at the raw texel.
+        colors: vec![[NEUTRAL; 3]; n],
         indices: hf.indices.clone(),
     }
 }
@@ -320,6 +328,7 @@ pub(crate) fn build_battle_ground_grid(
         cba_tsb: Vec::new(),
         indices: Vec::new(),
         normals: Vec::new(),
+        colors: Vec::new(),
     };
     // Per-cell quads (own 4 vertices each) so EVERY cell maps to the same full
     // grass UV tile `[u0..u1]x[v0..v1]`. Shared-vertex grids forced a single UV

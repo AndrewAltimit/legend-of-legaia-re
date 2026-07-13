@@ -150,26 +150,36 @@ impl Renderer {
     }
 
     /// Upload a VRAM mesh: position + per-vertex `(u, v)` (each 0..255) +
-    /// per-vertex `(cba, tsb)` PSX VRAM addresses, plus triangle indices.
-    /// Vertex layout matches the VRAM-mesh pipeline's 20-byte stride.
+    /// per-vertex `(cba, tsb)` PSX VRAM addresses + per-vertex baked prim
+    /// colour, plus triangle indices. Vertex layout matches the VRAM-mesh
+    /// pipeline's 36-byte stride.
+    ///
+    /// `colors` is the TMD prim's colour word (`legaia_tmd::mesh::VramMesh`'s
+    /// `colors`), uploaded as raw bytes. The fragment shader modulates the
+    /// texel by it exactly as the PSX GPU does - `texel * colour / 128` - so
+    /// `0x80` leaves the texel alone, below darkens and above brightens. This
+    /// is retail's field lighting; there is no runtime light source.
     pub fn upload_vram_mesh(
         &self,
         positions: &[[f32; 3]],
         uvs: &[[u8; 2]],
         cba_tsb: &[[u16; 2]],
         normals: &[[f32; 3]],
+        colors: &[[u8; 3]],
         indices: &[u32],
     ) -> Result<UploadedVramMesh> {
         if positions.len() != uvs.len()
             || positions.len() != cba_tsb.len()
             || positions.len() != normals.len()
+            || positions.len() != colors.len()
         {
             anyhow::bail!(
-                "vram mesh attribute length mismatch: pos={} uvs={} cba_tsb={} normals={}",
+                "vram mesh attribute length mismatch: pos={} uvs={} cba_tsb={} normals={} colors={}",
                 positions.len(),
                 uvs.len(),
                 cba_tsb.len(),
-                normals.len()
+                normals.len(),
+                colors.len()
             );
         }
         if !indices.len().is_multiple_of(3) {
@@ -187,12 +197,13 @@ impl Renderer {
                 positions.len()
             );
         }
-        let mut bytes = Vec::with_capacity(positions.len() * 32);
-        for (((pos, uv), ct), n) in positions
+        let mut bytes = Vec::with_capacity(positions.len() * 36);
+        for ((((pos, uv), ct), n), c) in positions
             .iter()
             .zip(uvs.iter())
             .zip(cba_tsb.iter())
             .zip(normals.iter())
+            .zip(colors.iter())
         {
             bytes.extend_from_slice(bytemuck::cast_slice(pos));
             // UV padded to 4 bytes (Uint8x4 - extra bytes ignored by shader).
@@ -203,6 +214,11 @@ impl Renderer {
             bytes.extend_from_slice(&ct[0].to_le_bytes());
             bytes.extend_from_slice(&ct[1].to_le_bytes());
             bytes.extend_from_slice(bytemuck::cast_slice(n));
+            // Baked prim colour, raw bytes (Uint8x4; alpha slot unused).
+            bytes.push(c[0]);
+            bytes.push(c[1]);
+            bytes.push(c[2]);
+            bytes.push(0);
         }
         let vertex_buf = self
             .device
