@@ -85,6 +85,31 @@ instead of the scene's and are routed to the characters page
 (`special_count`). Off-map "hidden" spawns are script-gated story actors,
 fully resolvable, so they *are* listed - flagged `conditional`.
 
+## Playable minigames (`minigames`)
+
+`LegaiaMinigames` is a standalone `#[wasm_bindgen]` class (its own
+`load_disc`, no canvas) that runs three of the game's side-games in the
+browser for `site/minigames.html`. It is a thin JSON shell over the
+clean-room rules engines in `legaia-engine-core` - the beat clock + judge
+(`dance`), the rock-paper-scissors duel (`baka_fighter`), the reel state
+machine + payout eval (`slot_machine`). It carries no rules of its own.
+
+Every table each game plays with is decoded from the visitor's own disc via
+the same path the play-window uses (raw PROT entry ->
+`static_overlay::as_loaded` -> table parser): the step chart out of PROT
+0980, the roster + action tables out of 0976, the payout table out of 0975.
+Nothing is shipped with the site.
+
+Per game: `<g>_start` / `<g>_tick` / an input method
+(`dance_press` / `baka_choose` / `slot_spin` + `slot_stop` +
+`slot_collect`) / `<g>_state_json`. `load_disc` returns a status object
+naming which games' overlays resolved, so a disc that can't feed one game
+still plays the others. `dance_state_json` deliberately surfaces **both**
+halves of retail's split chart lookup - `judged` (what the hit judge
+matches, the step to press) and `displayed` (the display half's
+held-sequence substitution); see `docs/subsystems/minigame-dance.md`.
+Disc-gated oracle: `tests/minigames_wasm_api.rs`.
+
 ## Scene `.glb` export (`scene_export`)
 
 Builder-style session on `LegaiaViewer` so the site pages can download

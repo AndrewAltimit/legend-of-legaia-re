@@ -233,7 +233,7 @@ impl LegaiaMinigames {
     ///
     /// ```json
     /// { "live": true, "score": 0, "gauge": 0, "lane": 0, "beat": 3,
-    ///   "phase": 40, "window": 210, "accuracy": 3200, "dead_zone": false,
+    ///   "phase": 40, "period": 281, "window": 210, "accuracy": 3200, "dead_zone": false,
     ///   "judged": 2, "displayed": 3, "song_timer": 900, "song_len": 16860,
     ///   "over": false, "passed": false }
     /// ```
@@ -255,7 +255,7 @@ impl LegaiaMinigames {
         format!(
             concat!(
                 r#"{{"live":true,"score":{},"gauge":{},"lane":{},"beat":{},"phase":{},"#,
-                r#""window":{},"accuracy":{},"dead_zone":{},"judged":{},"displayed":{},"#,
+                r#""period":{},"window":{},"accuracy":{},"dead_zone":{},"judged":{},"displayed":{},"#,
                 r#""song_timer":{},"song_len":{},"over":{},"passed":{}}}"#
             ),
             g.score(),
@@ -263,6 +263,7 @@ impl LegaiaMinigames {
             g.lane(),
             g.beat_index(),
             g.intra_beat_phase(),
+            legaia_engine_core::dance::BEAT_PERIOD,
             legaia_engine_core::dance::BEAT_WINDOW,
             g.accuracy_weight(),
             g.in_dead_zone(),

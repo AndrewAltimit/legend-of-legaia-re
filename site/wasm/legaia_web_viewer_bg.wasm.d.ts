@@ -2,6 +2,7 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_legaiaaudio_free: (a: number, b: number) => void;
+export const __wbg_legaiaminigames_free: (a: number, b: number) => void;
 export const __wbg_legaiaruntime_free: (a: number, b: number) => void;
 export const __wbg_legaiaviewer_free: (a: number, b: number) => void;
 export const legaiaaudio_bgm_device_rate: (a: number) => number;
@@ -25,6 +26,24 @@ export const legaiaaudio_str_video_open: (a: number, b: number, c: number) => [n
 export const legaiaaudio_vab_sample_list_json: (a: number, b: number, c: number) => [number, number];
 export const legaiaaudio_vab_sample_rate: (a: number) => number;
 export const legaiaaudio_xa_metadata_json: (a: number, b: number, c: number) => [number, number];
+export const legaiaminigames_baka_choose: (a: number, b: number) => number;
+export const legaiaminigames_baka_roster_json: (a: number) => [number, number];
+export const legaiaminigames_baka_start: (a: number, b: number, c: number) => number;
+export const legaiaminigames_baka_state_json: (a: number) => [number, number];
+export const legaiaminigames_baka_tick: (a: number, b: number) => void;
+export const legaiaminigames_dance_chart_json: (a: number) => [number, number];
+export const legaiaminigames_dance_press: (a: number, b: number) => [number, number];
+export const legaiaminigames_dance_start: (a: number, b: number) => number;
+export const legaiaminigames_dance_state_json: (a: number) => [number, number];
+export const legaiaminigames_dance_tick: (a: number, b: number) => void;
+export const legaiaminigames_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
+export const legaiaminigames_new: () => number;
+export const legaiaminigames_slot_collect: (a: number) => number;
+export const legaiaminigames_slot_spin: (a: number) => number;
+export const legaiaminigames_slot_start: (a: number, b: number, c: number) => number;
+export const legaiaminigames_slot_state_json: (a: number) => [number, number];
+export const legaiaminigames_slot_stop: (a: number) => number;
+export const legaiaminigames_slot_tick: (a: number) => void;
 export const legaiaruntime_active_actor_count: (a: number) => number;
 export const legaiaruntime_audio_init: (a: number) => number;
 export const legaiaruntime_disc_loaded: (a: number) => number;

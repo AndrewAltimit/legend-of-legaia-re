@@ -68,6 +68,12 @@ So the judge has three tiers:
 
 There is no separate Perfect/Good text tier exposed by the judge itself; the *quality* of a hit is carried continuously by the accuracy weight `w` (closer to the beat → larger `w` → larger awarded points and bonus). The **scoring** routine `FUN_801d1af4` does carry a discrete Perfect tier, though: a combo hit whose streak counter `DAT_801d5334 - 0xb < 2` takes the `× 0x22` branch and raises the flag `DAT_801d538c = 1` (vs. the ordinary `× 0x19` combo). That flag is **Confirmed** to mark the top tier; which on-screen banner string it spawns is **Inferred** (capture-leaning).
 
+### The two chart lookups diverge on exactly the beats that carry notes
+
+`FUN_801d1820` and `FUN_801d1960` read the **same** chart with different rules on the `beat & 3 == 3` slots: the lookup substitutes the held-sequence symbol `3`, the judge reads the raw cell. That is not a corner case in the retail chart - the **lane-0 row places every one of its steps on a 4-beat boundary**, so on lane 0 the two sources never agree on a note. Higher lanes (which the groove gauge promotes into) add off-boundary steps, where they do agree.
+
+The consequence for any host that renders the chart: **the arrow the player must press is the judged cell**, not `FUN_801d1820`'s return. The engine mirror surfaces both - [`DanceGame::judged_symbol`] (the judge's source) and [`DanceGame::required_symbol`] (the display / auto-feed source) - and the site's playable dance drives its note highway off the former.
+
 ## Scoring
 
 `FUN_801d1af4(player)` is the score/award routine, run for each dancer (player 0 = human pad; for other indices the press is auto-fed from the chart via `FUN_801d4040`, i.e. CPU dancers auto-play). It guards on the play states (`DAT_801d5334 - 10 < 3`) and on the not-paused flag `DAT_801d5130`. **Confirmed.**

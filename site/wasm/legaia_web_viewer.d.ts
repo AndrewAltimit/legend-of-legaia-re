@@ -149,6 +149,152 @@ export class LegaiaAudio {
 }
 
 /**
+ * The three side-games playable in the browser, plus the disc they read.
+ */
+export class LegaiaMinigames {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Commit the visitor's attack this exchange: `1`/`2`/`3` are the three
+     * rock-paper-scissors throws, `4` the special. Returns `false` when the
+     * fighter can't act yet (cooldown, or a choice is already pending).
+     */
+    baka_choose(attack: number): boolean;
+    /**
+     * The parsed roster, for the opponent picker. The disc carries no names for
+     * these fighters - only their numbers - so each row is the record's own
+     * stat block:
+     *
+     * ```json
+     * [ { "id": 1, "gold": 30, "damage_mod": 20, "crit_chance": 10,
+     *     "atk_tiers": [..], "def_tiers": [..], "pattern": [2,1,3],
+     *     "power": [..] }, ... ]
+     * ```
+     */
+    baka_roster_json(): string;
+    /**
+     * Start a best-of-3 duel: the visitor fights as roster fighter 0 (the
+     * player-side default) against `opponent`. Returns `false` when the tables
+     * didn't decode or the roster id is out of range.
+     */
+    baka_start(opponent: number, seed: number): boolean;
+    /**
+     * Live duel state.
+     *
+     * ```json
+     * { "live": true, "phase": "fighting"|"round_over"|"match_over",
+     *   "round": 0, "hp": [3200, 2900], "hp_start": 3200,
+     *   "wins": [0, 1], "combo": [0, 2], "chosen": [2, null],
+     *   "can_choose": true, "gold": 30, "winner": null,
+     *   "last": { "winner": 0, "draw": false, "damage": 512,
+     *             "critical": false, "special": false } }
+     * ```
+     */
+    baka_state_json(): string;
+    /**
+     * Advance the duel one frame's worth of `frame_step` (the retail SM's
+     * per-frame delta; `1` is a normal frame).
+     */
+    baka_tick(frame_step: number): void;
+    /**
+     * The whole decoded step chart, for the page's scrolling note lane:
+     * `{"rows":[[u8; 32], ...]}` (one row per difficulty lane).
+     */
+    dance_chart_json(): string;
+    /**
+     * Judge a directional press. `dir` is the chart symbol (`1` / `2` / `3`).
+     * Returns `"miss"` / `"hit"` / `"sequence"` (`"none"` with no live run).
+     */
+    dance_press(dir: number): string;
+    /**
+     * Start a dance run on the disc's baked step chart. `long_song` picks the
+     * long song-length limit. Returns `false` when the chart didn't decode.
+     */
+    dance_start(long_song: boolean): boolean;
+    /**
+     * Live dance state.
+     *
+     * ```json
+     * { "live": true, "score": 0, "gauge": 0, "lane": 0, "beat": 3,
+     *   "phase": 40, "period": 281, "window": 210, "accuracy": 3200, "dead_zone": false,
+     *   "judged": 2, "displayed": 3, "song_timer": 900, "song_len": 16860,
+     *   "over": false, "passed": false }
+     * ```
+     *
+     * **`judged` is the step to press.** Retail splits the chart lookup
+     * (`FUN_801d1820`) into two halves: the hit judge (`FUN_801d1960`) matches
+     * a press against the raw chart cell (`judged`), while the display /
+     * auto-feed half substitutes the held-sequence symbol `3` on every 4th
+     * beat (`displayed`). Both are surfaced; only `judged` scores. `0` = the
+     * beat carries no step, `null` = the dead zone between beats.
+     */
+    dance_state_json(): string;
+    /**
+     * Advance the beat clock by `frames` frames (the retail clock steps
+     * `frame_delta * 10` phase units per frame).
+     */
+    dance_tick(frames: number): void;
+    /**
+     * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`), parse the TOC,
+     * and pre-decode every minigame table that resolves. Returns a JSON status
+     * object naming which games came up:
+     *
+     * ```json
+     * { "entries": 1290,
+     *   "dance":  { "ok": true, "rows": 3, "beats": 32 },
+     *   "baka":   { "ok": true, "fighters": 17 },
+     *   "slot":   { "ok": true, "payouts": [.., ..] } }
+     * ```
+     *
+     * A game whose overlay or table doesn't resolve reports `{"ok":false}` with
+     * a reason rather than throwing - a regional / modded disc can still play
+     * the others.
+     */
+    load_disc(bytes: Uint8Array): string;
+    constructor();
+    /**
+     * Tally the latched payout into the balance and return to idle. Returns
+     * the credited coins.
+     */
+    slot_collect(): number;
+    /**
+     * Charge the bet and start a spin. `false` when the machine isn't idle or
+     * the balance is under the 3-coin gate.
+     */
+    slot_spin(): boolean;
+    /**
+     * Start a slot session on the disc's payout table with `balance` coins in
+     * the machine. Returns `false` when the payout table didn't decode.
+     */
+    slot_start(seed: number, balance: number): boolean;
+    /**
+     * Live machine state. `window` is the 3x3 grid of symbol ids actually on
+     * screen (`window[reel][0..3]` = top / payline / bottom row), read off the
+     * live reel positions so the page can render a spinning machine.
+     *
+     * ```json
+     * { "live": true, "phase": "idle"|"spinning"|"stopping"|"payout"|"cashed_out",
+     *   "balance": 97, "cost": 3, "can_spin": true, "can_stop": false,
+     *   "stopped": 0, "feature_mode": 0, "bonus_spins": 0, "net_take": 6,
+     *   "window": [[4,7,1],[2,2,9],[0,3,3]],
+     *   "payouts": [..],
+     *   "last": { "line": 0, "symbol": 7, "payout": 30,
+     *             "bonus_triggered": false, "bonus_spin": false } }
+     * ```
+     */
+    slot_state_json(): string;
+    /**
+     * Stop the leftmost still-spinning reel. `false` when stopping isn't
+     * allowed yet (the reels are still spinning up).
+     */
+    slot_stop(): boolean;
+    /**
+     * Advance the reels one frame.
+     */
+    slot_tick(): void;
+}
+
+/**
  * Bridge object the JS shim instantiates once at page load. Holds a
  * `World` + a `MenuRuntime` for the headless path, and an optional
  * `SceneHost` once `load_disc` has been called.
@@ -1342,6 +1488,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_legaiaaudio_free: (a: number, b: number) => void;
+    readonly __wbg_legaiaminigames_free: (a: number, b: number) => void;
     readonly __wbg_legaiaruntime_free: (a: number, b: number) => void;
     readonly __wbg_legaiaviewer_free: (a: number, b: number) => void;
     readonly legaiaaudio_bgm_device_rate: (a: number) => number;
@@ -1365,6 +1512,24 @@ export interface InitOutput {
     readonly legaiaaudio_vab_sample_list_json: (a: number, b: number, c: number) => [number, number];
     readonly legaiaaudio_vab_sample_rate: (a: number) => number;
     readonly legaiaaudio_xa_metadata_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_baka_choose: (a: number, b: number) => number;
+    readonly legaiaminigames_baka_roster_json: (a: number) => [number, number];
+    readonly legaiaminigames_baka_start: (a: number, b: number, c: number) => number;
+    readonly legaiaminigames_baka_state_json: (a: number) => [number, number];
+    readonly legaiaminigames_baka_tick: (a: number, b: number) => void;
+    readonly legaiaminigames_dance_chart_json: (a: number) => [number, number];
+    readonly legaiaminigames_dance_press: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_start: (a: number, b: number) => number;
+    readonly legaiaminigames_dance_state_json: (a: number) => [number, number];
+    readonly legaiaminigames_dance_tick: (a: number, b: number) => void;
+    readonly legaiaminigames_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiaminigames_new: () => number;
+    readonly legaiaminigames_slot_collect: (a: number) => number;
+    readonly legaiaminigames_slot_spin: (a: number) => number;
+    readonly legaiaminigames_slot_start: (a: number, b: number, c: number) => number;
+    readonly legaiaminigames_slot_state_json: (a: number) => [number, number];
+    readonly legaiaminigames_slot_stop: (a: number) => number;
+    readonly legaiaminigames_slot_tick: (a: number) => void;
     readonly legaiaruntime_active_actor_count: (a: number) => number;
     readonly legaiaruntime_audio_init: (a: number) => number;
     readonly legaiaruntime_disc_loaded: (a: number) => number;
