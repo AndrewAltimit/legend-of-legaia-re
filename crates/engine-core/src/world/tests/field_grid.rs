@@ -292,6 +292,70 @@ fn sample_field_floor_height_bilinear_interpolates() {
     assert!(world.sample_field_floor_height(64, 64) < 128);
 }
 
+/// A tile carrying the object-grid `0x800` bit is a **ramp / stair** tile: its
+/// height is the flat mean of the four corner tiers plus its kind-2 override
+/// record's steps - NOT the bilinear corner surface. This is the model Rim
+/// Elm's shore ramps use, and it is what keeps a walking actor on top of the
+/// drawn stair mesh instead of under it.
+#[test]
+fn sample_field_floor_height_uses_the_kind2_elevation_override() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    // Sea-level nibble-0 corners, exactly like a real ramp tile: the bilinear
+    // model would put this whole tile at 0.
+    world.field_floor_height_lut[0] = 0;
+    // Tile (1,1) carries the override bit; its neighbour (2,1) does not.
+    let mut cells = vec![0u8; STRIDE * STRIDE * 2];
+    let cell = |c: usize, r: usize| (r * STRIDE + c) * 2;
+    cells[cell(1, 1)..cell(1, 1) + 2].copy_from_slice(&CELL_ELEVATION_OVERRIDE.to_le_bytes());
+    world.load_field_object_cells(&cells);
+    // Kind-2 table: tile (1,1), coarse 2 (= -64), quads 0x2a (sub-cells (0,0),
+    // (1,0), (0,1) step 2 = -32; (1,1) steps 0).
+    let mut block = vec![0u8; 0x20];
+    block[0xA..0xC].copy_from_slice(&16i16.to_le_bytes());
+    block[0xC..0xE].copy_from_slice(&1i16.to_le_bytes());
+    block[16..20].copy_from_slice(&[1, 1, 2, 0x2a]);
+    world.load_field_elevation_overrides(&block, &[]);
+
+    assert!(world.field_tile_has_elevation_override(1, 1));
+    assert!(!world.field_tile_has_elevation_override(2, 1));
+    // Mean of four nibble-0 corners = 0, so the height is purely the override:
+    // -64 whole-tile step, plus the sub-cell step of the 64-unit quadrant.
+    let (x0, z0) = (128, 128); // tile (1,1) origin
+    assert_eq!(world.sample_field_floor_height(x0 + 10, z0 + 10), -96); // (0,0)
+    assert_eq!(world.sample_field_floor_height(x0 + 70, z0 + 10), -96); // (1,0)
+    assert_eq!(world.sample_field_floor_height(x0 + 10, z0 + 70), -96); // (0,1)
+    assert_eq!(world.sample_field_floor_height(x0 + 70, z0 + 70), -64); // (1,1)
+    // The neighbouring plain tile still reads the (sea-level) nibble surface -
+    // the override does not leak past its own tile.
+    assert_eq!(world.sample_field_floor_height(2 * 128 + 10, z0 + 10), 0);
+}
+
+/// The override bit without a matching kind-2 record still switches the model:
+/// the tile flattens to the mean of its corner tiers instead of interpolating.
+#[test]
+fn elevation_override_bit_without_a_record_flattens_the_tile() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    world.field_floor_height_lut[1] = 0;
+    world.field_floor_height_lut[2] = 256;
+    // Corners of tile (0,0): c00=0, c01=256, c10=0, c11=0 -> mean 64.
+    world.field_collision_grid[0] = 0x01;
+    world.field_collision_grid[1] = 0x02;
+    world.field_collision_grid[STRIDE] = 0x01;
+    world.field_collision_grid[STRIDE + 1] = 0x01;
+    let mut cells = vec![0u8; STRIDE * STRIDE * 2];
+    cells[0..2].copy_from_slice(&CELL_ELEVATION_OVERRIDE.to_le_bytes());
+    world.load_field_object_cells(&cells);
+
+    // Flat at the mean everywhere in the tile - no sub-tile gradient at all.
+    assert_eq!(world.sample_field_floor_height(0, 0), 64);
+    assert_eq!(world.sample_field_floor_height(64, 0), 64);
+    assert_eq!(world.sample_field_floor_height(127, 127), 64);
+}
+
 #[test]
 fn field_vm_nibble7_paints_collision_grid() {
     let mut world = World::new();

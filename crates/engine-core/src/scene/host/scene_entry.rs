@@ -173,6 +173,46 @@ impl SceneHost {
         if let Some(grid) = base_grid {
             self.world.load_field_collision_grid(&grid);
         }
+        // The floor sampler's second input: the `.MAP` object-grid cell words
+        // (`+0x8000`) and the kind-2 elevation-override records (the `+0x10000`
+        // trigger block's third sub-table, plus the `+0x12000` fallback block
+        // the retail loader reads contiguously). Together they carry the
+        // scene's ramps and staircases - a tile with the `0x800` cell bit takes
+        // its height from its override record, NOT from the collision grid's
+        // corner nibbles (see `World::sample_field_floor_height`). Installed
+        // unconditionally (cleared when absent) so a stale scene's ramps never
+        // leak across a transition.
+        let map_bytes: Option<Vec<u8>> = self.scene.as_ref().and_then(|scene| {
+            let idx = scene.field_map_index(&self.index)?;
+            match self.index.entry_bytes_extended(idx) {
+                Ok(bytes) => Some(bytes),
+                Err(err) => {
+                    eprintln!("[scene] field elevation-override load skipped: {err:#}");
+                    None
+                }
+            }
+        });
+        match map_bytes {
+            Some(bytes) => {
+                self.world.load_field_object_cells(
+                    bytes
+                        .get(legaia_asset::field_objects::OBJECT_GRID_OFFSET..)
+                        .unwrap_or_default(),
+                );
+                self.world.load_field_elevation_overrides(
+                    bytes
+                        .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..)
+                        .unwrap_or_default(),
+                    bytes
+                        .get(crate::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
+                        .unwrap_or_default(),
+                );
+            }
+            None => {
+                self.world.field_object_cells.clear();
+                self.world.field_elevation_overrides.clear();
+            }
+        }
         // Per-scene region / zone tables: the `.MAP` `+0x10000` region-record
         // block + the MAN section-3 camera-region table. Drives the per-tile
         // region-type mask (`extra_flags`, field-VM op 0x42 mode 0) and the

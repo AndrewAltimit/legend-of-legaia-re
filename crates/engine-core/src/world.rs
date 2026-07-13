@@ -67,6 +67,8 @@ pub use effects::{ClutCellFx, ClutCellFxPhase};
 mod encounters;
 pub use encounters::FieldBossStager;
 mod field_carriers;
+pub mod field_elevation;
+pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 mod field_loop;
 mod field_movement;
 mod frame_tick;

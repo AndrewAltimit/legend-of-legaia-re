@@ -124,6 +124,20 @@ pub struct World {
     /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub field_floor_height_lut: [i16; 16],
+    /// The `.MAP` **object-grid** cell words (`+0x8000`, one `u16` per tile,
+    /// `0x80 x 0x80`). [`World::sample_field_floor_height`] tests each tile's
+    /// [`crate::world::CELL_ELEVATION_OVERRIDE`] (`0x800`) bit to pick the
+    /// floor model: bilinear corner-nibble surface, or the flat tile mean plus
+    /// the tile's [`Self::field_elevation_overrides`] record (ramps / stairs).
+    /// Empty until a field scene supplies it - then every tile reads as a
+    /// plain bilinear tile, the pre-override behaviour.
+    pub field_object_cells: Vec<u16>,
+    /// The scene's kind-2 `.MAP` **elevation-override** records, primary
+    /// (`+0x10000`) table followed by the fallback (`+0x12000`) one, so a
+    /// linear first-match scan reproduces `FUN_801D5630`'s order. Consumed by
+    /// [`World::sample_field_floor_height`] on
+    /// [`crate::world::CELL_ELEVATION_OVERRIDE`] tiles.
+    pub field_elevation_overrides: Vec<crate::world::ElevationOverride>,
     /// When set, field free-movement snaps the player's `world_y` to the
     /// per-scene terrain elevation each step via
     /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`).
@@ -1786,6 +1800,8 @@ impl World {
             field_region_attributes: crate::field_regions::RegionAttributes::DEFAULT_FILL,
             field_zone_record: None,
             field_floor_height_lut: [0i16; 16],
+            field_object_cells: Vec::new(),
+            field_elevation_overrides: Vec::new(),
             follow_terrain_height: false,
             field_player_anim: None,
             leading_edge_wall_probes: false,

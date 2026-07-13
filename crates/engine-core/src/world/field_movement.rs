@@ -36,6 +36,38 @@ impl World {
         self.field_collision_grid[..n].copy_from_slice(&grid[..n]);
     }
 
+    /// Load the per-scene `.MAP` **object-grid** cell words (`+0x8000`, one
+    /// little-endian `u16` per tile). The floor sampler tests each tile's
+    /// [`CELL_ELEVATION_OVERRIDE`] bit; the other bits (`0x1FF` object index,
+    /// `0x1000` walk-visible, `0x2000` visible) belong to the scene's
+    /// placement / ground layers. A short slice loads what it has and leaves
+    /// the rest zero (a plain bilinear tile).
+    pub fn load_field_object_cells(&mut self, cells: &[u8]) {
+        let n = (cells.len() / 2).min(FIELD_GRID_LEN);
+        self.field_object_cells.clear();
+        self.field_object_cells.resize(FIELD_GRID_LEN, 0);
+        for (i, slot) in self.field_object_cells[..n].iter_mut().enumerate() {
+            *slot = u16::from_le_bytes([cells[i * 2], cells[i * 2 + 1]]);
+        }
+    }
+
+    /// Install the scene's kind-2 **elevation-override** records from the
+    /// `.MAP` trigger blocks: `primary` is the `+0x10000` block, `fallback` the
+    /// `+0x12000` one (the sibling sectors the retail loader reads
+    /// contiguously). The two parse into one first-match-wins list, mirroring
+    /// `FUN_801D5630`'s primary-then-fallback scan.
+    ///
+    /// PORT: FUN_801D5630 (kind 2) / FUN_801D5AE0
+    pub fn load_field_elevation_overrides(&mut self, primary: &[u8], fallback: &[u8]) {
+        self.field_elevation_overrides =
+            crate::world::field_elevation::parse_elevation_overrides(primary)
+                .into_iter()
+                .chain(crate::world::field_elevation::parse_elevation_overrides(
+                    fallback,
+                ))
+                .collect();
+    }
+
     /// Install the per-scene region / zone tables (the `.MAP` `+0x10000`
     /// block + the MAN section-3 camera-region table) and run the initial
     /// per-tile refresh. Pass empty slices for scenes without the data -
@@ -114,24 +146,34 @@ impl World {
     /// Sample the field floor height at a world `(x, z)`, the port of
     /// `FUN_80019278`'s height branch (`ghidra/scripts/funcs/80019278.txt`).
     ///
-    /// The collision grid's **low nibble** is a floor-elevation tier; this
-    /// resolves it through the per-scene [`Self::field_floor_height_lut`] and
-    /// **bilinearly interpolates** the `2x2` tile block around the position. The
-    /// tile is `(x >> 7, z >> 7)` (128-unit tiles); the sub-tile weights are
-    /// `x & 0x7F` / `z & 0x7F` (0..=127). When all four corner tiers match, the
-    /// LUT value is returned directly (the retail fast path); otherwise the four
-    /// corner heights are weighted `top*(0x80-wz) + bottom*wz` (each edge
-    /// interpolated by `wx`) and divided by `0x4000` (`>> 14`, with the retail
-    /// `+0x3FFF` round-toward-zero on a negative accumulator).
+    /// Retail keeps **two** floor models and picks between them per tile on the
+    /// object-grid cell's [`CELL_ELEVATION_OVERRIDE`] (`0x800`) bit
+    /// ([`Self::field_object_cells`]):
     ///
-    /// This is the town-field floor sampler: the retail function's `+0x8000`
-    /// attribute gating - the world-map continent `0x1000` on-grid flag side
-    /// effect and the `0x800` tile-board special branch (`func_0x801d5630`) - is
-    /// **not** reproduced here (the engine doesn't keep that attribute grid).
-    /// Returns `0` when the grid / LUT isn't loaded or the tile is out of range.
+    /// - **Plain tiles** (bit clear) take the collision grid's low-nibble
+    ///   elevation tier through [`Self::field_floor_height_lut`] and
+    ///   **bilinearly interpolate** it across the `2x2` corner-tile block. The
+    ///   tile is `(x >> 7, z >> 7)` (128-unit tiles); the sub-tile weights are
+    ///   `x & 0x7F` / `z & 0x7F` (0..=127). When all four corner tiers match,
+    ///   the LUT value returns directly (the retail fast path); otherwise the
+    ///   four corner heights are weighted `top*(0x80-wz) + bottom*wz` (each edge
+    ///   interpolated by `wx`) and divided by `0x4000` (`>> 14`, with the retail
+    ///   `+0x3FFF` round-toward-zero on a negative accumulator).
     ///
-    /// PORT: FUN_80019278 (floor-height branch; the `+0x8000` continent /
-    /// tile-board branches stay with the field/world-map systems).
+    /// - **Ramp / stair tiles** (bit set) do **not** interpolate at all. Their
+    ///   height is the *flat mean* of the four corner tiers (`sum >> 2`) plus
+    ///   the tile's kind-2 [`ElevationOverride`] delta - a whole-tile step plus
+    ///   a per-64-unit-sub-cell step, i.e. an authored staircase. A tile with
+    ///   the bit but no record keeps just the mean. This is the model Rim Elm's
+    ///   shore ramps are built from: their collision nibbles are sea-level `0`,
+    ///   so interpolating them drops the player through the drawn stairs.
+    ///
+    /// The retail function's other `+0x8000` use - the world-map continent
+    /// `0x1000` on-grid flag side effect on the entity's flag word - is not
+    /// reproduced here. Returns `0` when the grid / LUT isn't loaded or the
+    /// tile is out of range.
+    ///
+    /// PORT: FUN_80019278
     pub fn sample_field_floor_height(&self, world_x: i32, world_z: i32) -> i32 {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
             return 0;
@@ -154,17 +196,28 @@ impl World {
         let c01 = (g[base + 1] & 0x0F) as usize;
         let c10 = (g[base + FIELD_GRID_STRIDE] & 0x0F) as usize;
         let c11 = (g[base + FIELD_GRID_STRIDE + 1] & 0x0F) as usize;
-        if c00 == c01 && c00 == c10 && c00 == c11 {
-            return lut[c00] as i32;
-        }
-        let wx = world_x & 0x7F;
-        let wz = world_z & 0x7F;
         let (l00, l01, l10, l11) = (
             lut[c00] as i32,
             lut[c01] as i32,
             lut[c10] as i32,
             lut[c11] as i32,
         );
+        // Ramp / stair tile: flat tile mean + the authored elevation override.
+        if self.field_tile_has_elevation_override(tile_x, tile_z) {
+            let mean = (l00 + l01 + l10 + l11) >> 2;
+            let delta = crate::world::field_elevation::lookup_elevation_override(
+                &self.field_elevation_overrides,
+                tile_x as u8,
+                tile_z as u8,
+            )
+            .map_or(0, |r| r.delta_at(world_x, world_z));
+            return mean + delta;
+        }
+        if c00 == c01 && c00 == c10 && c00 == c11 {
+            return l00;
+        }
+        let wx = world_x & 0x7F;
+        let wz = world_z & 0x7F;
         let acc =
             (l01 * wx + l00 * (0x80 - wx)) * (0x80 - wz) + l10 * (0x80 - wx) * wz + l11 * wx * wz;
         if acc < 0 {
@@ -172,6 +225,24 @@ impl World {
         } else {
             acc >> 14
         }
+    }
+
+    /// Does tile `(tile_x, tile_z)` carry the object-grid
+    /// [`CELL_ELEVATION_OVERRIDE`] bit - i.e. is its floor an authored ramp /
+    /// staircase rather than the bilinear nibble surface? `false` for scenes
+    /// with no object grid loaded (every tile then reads as a plain tile).
+    ///
+    /// REF: FUN_80019278
+    pub fn field_tile_has_elevation_override(&self, tile_x: i32, tile_z: i32) -> bool {
+        if !(0..FIELD_GRID_STRIDE as i32).contains(&tile_x)
+            || !(0..FIELD_GRID_STRIDE as i32).contains(&tile_z)
+        {
+            return false;
+        }
+        let idx = tile_z as usize * FIELD_GRID_STRIDE + tile_x as usize;
+        self.field_object_cells
+            .get(idx)
+            .is_some_and(|c| c & CELL_ELEVATION_OVERRIDE != 0)
     }
 
     pub(crate) fn paint_field_collision(
