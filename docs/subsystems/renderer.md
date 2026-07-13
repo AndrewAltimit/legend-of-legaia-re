@@ -119,10 +119,33 @@ prologue's warm gold sepia - the `opdeene` / `opstati` / `opurud` cutscene legs 
 3D scenes in amber monochrome (the grade drops for the `map01` fly-in + `town01`). Retail achieves
 it with a GTE far-colour DPCS depth-cue + dim ambient (see
 [`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); the engine mirrors the
-measured display ratios (`G/R ≈ 0.90`, `B/R ≈ 0.24`). Gold coefficients are stored in linear space
-(the multiply precedes the sRGB framebuffer encode). Driven by
+measured display ratios (`G/R ≈ 0.90`, `B/R ≈ 0.24`). Gold coefficients are the display ratios
+themselves - see [Colour space](#colour-space-psx-framebuffer-values-end-to-end). Driven by
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) (only the prologue
 cutscene legs grade).
+
+### Colour space: PSX framebuffer values end to end
+
+Every colour in the engine - texels, CLUT entries, vertex colours, menu inks, grade coefficients -
+is a **PSX framebuffer value**: display-referred, exactly what the console clocks out to the
+display. Nothing on the path converts colour spaces, and nothing may:
+
+- The swapchain is presented through a **UNORM** view (`choose_surface_format`), never sRGB. An
+  sRGB attachment treats a shader's output as *linear* and applies the linear→sRGB transfer on
+  store, lifting every midtone - retail's mid-grey (5-bit `16` → byte `132`) presents as `190`.
+  That is a visible, global wash-out.
+- Sampled RGBA textures (the TIM-decoded texture uploads, the font atlas) are `Rgba8Unorm` for the
+  same reason: an sRGB *source* would be decoded to linear on sample and then written verbatim into
+  the UNORM attachment, darkening instead.
+- The last stage of every 3D shader is `psx_dither`, which quantises to 5 bits and expands with
+  `(c5 << 3) | (c5 >> 2)`. That quantisation only survives to the screen if the attachment stores
+  the byte unmodified.
+- PSX semi-transparency (`psx_blend`) blends raw 5-bit values on retail, so the fixed-function
+  blend must run in the same display-referred space.
+
+Pinned by `tests::color_space` (engine-render): the attachment is never sRGB for any surface the
+adapter might offer, and a known BGR555 texel presents at the byte retail puts on the wire -
+checked against an sRGB target too, which lifts it out of tolerance.
 
 ### Asset-viewer flat-shaded fallback
 

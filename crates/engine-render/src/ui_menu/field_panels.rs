@@ -321,20 +321,22 @@ pub struct StatusPanelView<'a> {
     pub equip_rows: &'a [(&'a str, &'a str)],
 }
 
-/// Retail body-text white: every CLUT-7 staged glyph reads back as RGB
-/// `(206, 206, 206)` in the golden `menu_status_town` capture. The
-/// component values here are the **linear-space** equivalents of that
-/// sRGB byte value: [`TextDraw`] colours multiply the whitewashed font
-/// atlas in linear space and the surface encodes to sRGB on present, so
-/// `srgb_to_linear(206/255) = 0.6172066` is what makes the presented
-/// pixel read back exactly 206.
-pub const MENU_TEXT_WHITE: [f32; 4] = [0.617_206_6, 0.617_206_6, 0.617_206_6, 1.0];
+/// Retail body-text white (menu ink 7): every CLUT-7 staged glyph reads
+/// back as RGB `(206, 206, 206)` in the golden `menu_status_town`
+/// capture. Stored as that byte value straight - `206/255` - because
+/// nothing on the path converts colour spaces: [`TextDraw`] colours
+/// multiply the whitewashed font atlas and land in a UNORM attachment,
+/// so the presented pixel is the value written (see the renderer's
+/// `choose_surface_format`). Same ink as [`OPTIONS_INK_WHITE`].
+///
+/// [`OPTIONS_INK_WHITE`]: crate::OPTIONS_INK_WHITE
+pub const MENU_TEXT_WHITE: [f32; 4] = [0.807_843_1, 0.807_843_1, 0.807_843_1, 1.0];
 /// Retail teal ink for the parenthesised base/growth values on the
 /// status page (the HP/MP `( base)` group and the stat grid's
-/// `( growth)` group, parens included): sRGB `(66, 222, 222)` in the
+/// `( growth)` group, parens included): RGB `(66, 222, 222)` in the
 /// golden capture - the CLUT row the separator-staging value 5 selects.
-/// Linear-space components, like [`MENU_TEXT_WHITE`].
-pub const MENU_TEXT_TEAL: [f32; 4] = [0.054_480_3, 0.730_460_7, 0.730_460_7, 1.0];
+/// Byte values, like [`MENU_TEXT_WHITE`].
+pub const MENU_TEXT_TEAL: [f32; 4] = [0.258_823_5, 0.870_588_2, 0.870_588_2, 1.0];
 
 /// Fixed decimal-cell pitch of the retail number primitive
 /// `FUN_80034b78`: one glyph cell per digit, 8 px apart (pinned against

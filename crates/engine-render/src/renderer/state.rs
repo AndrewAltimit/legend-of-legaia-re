@@ -9,6 +9,11 @@ pub struct Renderer {
     pub(super) device: wgpu::Device,
     pub(super) queue: wgpu::Queue,
     pub(super) config: wgpu::SurfaceConfiguration,
+    /// Format every colour attachment is rendered through - the UNORM twin of
+    /// [`Self::config`]'s format (see `choose_surface_format`). The shaders
+    /// emit PSX framebuffer bytes, so the attachment must never re-encode
+    /// them to sRGB.
+    pub(super) view_format: wgpu::TextureFormat,
     /// Quad pipeline (Phase 1 TIM viewer).
     pub(super) pipeline: wgpu::RenderPipeline,
     pub(super) sampler: wgpu::Sampler,

@@ -47,6 +47,36 @@ fn make_uniform_bind_group(
     (bgl, buf, bg)
 }
 
+/// Pick the swapchain format to configure, and the format the frame is
+/// *viewed* (and so rendered) as.
+///
+/// The shaders emit **PSX framebuffer values**, not linear light. The final
+/// stage of every 3D shader is [`psx_dither`](crate::psx_dither), which
+/// quantises each channel to 5 bits and expands it back with
+/// `(c5 << 3) | (c5 >> 2)` - exactly the 8-bit value the console clocks out to
+/// the display. Those values are already display-referred, so the attachment
+/// must not re-encode them: an sRGB view treats the shader's output as linear
+/// and applies the linear->sRGB transfer on store, which lifts every midtone
+/// (a 5-bit `16`, retail byte `132`, would present as `192`) and rounds the
+/// 5-bit quantisation the dither exists to model straight back out. It also
+/// forces the PSX semi-transparency blends ([`psx_blend`](crate::psx_blend))
+/// to happen in linear space, where retail blends the raw 5-bit values.
+///
+/// So the frame is always viewed as UNORM: what a shader writes is what the
+/// display gets. The two formats differ only when the surface offers nothing
+/// but sRGB formats, in which case the sRGB surface texture is viewed as its
+/// UNORM twin (declared in `view_formats`).
+pub(crate) fn choose_surface_format(
+    formats: &[wgpu::TextureFormat],
+) -> (wgpu::TextureFormat, wgpu::TextureFormat) {
+    let format = formats
+        .iter()
+        .copied()
+        .find(|f| !f.is_srgb())
+        .unwrap_or(formats[0]);
+    (format, format.remove_srgb_suffix())
+}
+
 impl Renderer {
     /// Constructs a renderer attached to a winit-style window. Caller passes
     /// an `Arc<Window>` so the Surface can outlive the borrow.
@@ -89,12 +119,7 @@ impl Renderer {
             .context("request device")?;
 
         let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
+        let (format, view_format) = choose_surface_format(&caps.formats);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -103,7 +128,11 @@ impl Renderer {
             present_mode: wgpu::PresentMode::AutoVsync,
             desired_maximum_frame_latency: 2,
             alpha_mode: caps.alpha_modes[0],
-            view_formats: vec![],
+            view_formats: if view_format == format {
+                vec![]
+            } else {
+                vec![view_format]
+            },
         };
         surface.configure(&device, &config);
 
@@ -162,7 +191,7 @@ impl Renderer {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -233,7 +262,7 @@ impl Renderer {
                 module: &mesh_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -300,7 +329,7 @@ impl Renderer {
                     module: &textured_mesh_shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -390,7 +419,7 @@ impl Renderer {
                 module: &vram_mesh_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -454,7 +483,7 @@ impl Renderer {
                 module: &lines_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -563,7 +592,7 @@ impl Renderer {
                     module: &vram_mesh_shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -620,7 +649,7 @@ impl Renderer {
                     module,
                     entry_point: Some(entry),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: Some(psx_blend::blend_state(mode)),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -695,7 +724,7 @@ impl Renderer {
                 module: &lines_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -768,7 +797,7 @@ impl Renderer {
                     module: &color_mesh_shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -881,7 +910,7 @@ impl Renderer {
                 module: &text_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -986,7 +1015,7 @@ impl Renderer {
                     module: &screen_overlay_shader,
                     entry_point: Some("fs_opaque"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -1038,6 +1067,7 @@ impl Renderer {
             device,
             queue,
             config,
+            view_format,
             pipeline,
             sampler,
             bind_group_layout,

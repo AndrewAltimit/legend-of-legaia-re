@@ -446,7 +446,11 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            // UNORM: the atlas holds PSX glyph bytes and the attachment is
+            // UNORM too, so the texel must reach the blend unconverted. An
+            // sRGB source would be decoded to linear on sample and then
+            // written verbatim, darkening every glyph.
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -511,7 +515,10 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            // UNORM: these are TIM-decoded PSX texels (display-referred), and
+            // the attachment is UNORM - no colour-space conversion anywhere on
+            // the path (see `choose_surface_format`).
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });

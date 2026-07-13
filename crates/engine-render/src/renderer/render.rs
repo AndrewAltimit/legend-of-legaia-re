@@ -24,9 +24,13 @@ impl Renderer {
             .surface
             .get_current_texture()
             .context("get current swapchain texture")?;
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        // Viewed as UNORM even when the surface itself is sRGB: the shaders
+        // write PSX framebuffer bytes, which must reach the display unencoded
+        // (see `choose_surface_format`).
+        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.view_format),
+            ..Default::default()
+        });
         self.encode_frame(target, &view)?;
         frame.present();
         Ok(())
@@ -440,7 +444,9 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: self.config.format,
+            // UNORM, like the presented frame: a screenshot must read back the
+            // exact bytes the window shows (see `choose_surface_format`).
+            format: self.view_format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
@@ -501,7 +507,7 @@ impl Renderer {
         // Swizzle BGRA->RGBA when the surface uses a Bgra format (typical on
         // desktop swapchains); Rgba formats pass through unchanged.
         let bgra = matches!(
-            self.config.format,
+            self.view_format,
             wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
         );
         let mut rgba = Vec::with_capacity((unpadded as usize) * (height as usize));
