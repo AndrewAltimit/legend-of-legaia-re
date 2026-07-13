@@ -19,12 +19,23 @@
 //!
 //! `FUN_8003A55C` (see `ghidra/scripts/funcs/8003a55c.txt`) sweeps the
 //! `128 x 128` tile grid; for each tile whose object-index-grid `u16` selects
-//! an object record with the *placed* flag (`+0x12` bit `0x4`) set, it
+//! an object record with the *placed* flag (`+0x12` bit `0x4`) set, it looks the
+//! record's **object bind** up by the footprint-anchor tile
+//! ([`Placement::anchor_col`] / [`Placement::anchor_row`]) via
+//! `func_0x801d5630(1, anchor_col, anchor_row)`. **A placed record with no bind
+//! at its anchor tile is not spawned at all** (`s1 == 0` -> the tile is
+//! skipped): the bind is what supplies the object's interaction script *and*
+//! its animation id, so a record without one has no actor. With a bind it
 //! allocates a static-object actor (tick fn `0x8003BC08`) at a world position
-//! derived from the tile `(col, row)` and the record's signed `X/Y/Z` offsets,
-//! then links the object's interaction script via `func_0x801d5630`. Each
-//! placed actor draws its mesh from the scene's `scene_asset_table` TMD pack
-//! through the actor's `+0x44` mesh chain.
+//! derived from the tile `(col, row)` and the record's signed `X/Y/Z` offsets.
+//! Each spawned actor draws its mesh from the scene's `scene_asset_table` TMD
+//! pack through the actor's `+0x44` mesh chain.
+//!
+//! The bind's own record - a MAN partition-0 record - carries the actor's
+//! **animation id**, and a multi-object mesh is drawn *posed* by that clip
+//! rather than with its raw object-local vertices; the resolver lives in
+//! `legaia_engine_core::field_env` (it needs the MAN, which this module does
+//! not see). See `docs/subsystems/field-locomotion.md` ("The object bind").
 //!
 //! ## Coordinate convention (validated against a live `town01` save state)
 //!
@@ -164,6 +175,15 @@ pub struct ObjectRecord {
     /// `+0x16..+0x18` ground-tile PSX `clut` (CBA) word (little-endian:
     /// `r[0x16] | r[0x17] << 8`). Selects the tile's palette row.
     pub terrain_clut: u16,
+    /// `+0x1E` **cull radius**, in units of `0x40` (half a tile). Copied to the
+    /// spawned actor's `+0x58` (`FUN_80020f88`), which the screen-space
+    /// bounding-box cull `FUN_8001b73c` reads as the object's half-extent when
+    /// it projects the four corners of a `(r+1) * 0x40` box and rejects the
+    /// draw when every corner falls off screen. `FUN_8003a55c` additionally
+    /// ORs the actor's render-flag word `+0x74` with `0x40000000` when the
+    /// byte is nonzero. It is **not** an animation / state selector - see
+    /// the object-bind record for that.
+    pub cull_radius: u8,
 }
 
 impl ObjectRecord {
@@ -188,6 +208,7 @@ impl ObjectRecord {
             terrain_tile: r[0x14],
             terrain_tpage: r[0x15] as u16,
             terrain_clut: u16::from_le_bytes([r[0x16], r[0x17]]),
+            cull_radius: r[0x1E],
         })
     }
 
@@ -257,10 +278,21 @@ pub fn pack_mesh_index(obj_idx: u16, rec: &ObjectRecord) -> Option<u16> {
 pub struct Placement {
     /// Object-record index (the grid cell's `& 0x1FF`).
     pub obj_idx: u16,
-    /// Anchor tile column (`0..128`).
+    /// Grid cell column (`0..128`) whose object-index-grid `u16` selected this
+    /// record - the tile the mesh is positioned from.
     pub col: u8,
-    /// Anchor tile row (`0..128`).
+    /// Grid cell row (`0..128`); pairs with [`Self::col`].
     pub row: u8,
+    /// Footprint-anchor tile column, `col + col_delta` (`FUN_8003A55C`'s
+    /// bounds-gated `(col + record[+0x06], row + record[+0x07])`). This - NOT
+    /// [`Self::col`] - is the tile the object's **bind lookup** keys on: retail
+    /// calls `FUN_801D5630(1, anchor_col, anchor_row)` to find the object's
+    /// kind-1 tile-trigger entry and, through it, the MAN partition-0 record
+    /// that carries the object's interaction script + animation id.
+    pub anchor_col: u8,
+    /// Footprint-anchor tile row, `row + row_delta`; pairs with
+    /// [`Self::anchor_col`].
+    pub anchor_row: u8,
     /// World X (additive offset; see module docs).
     pub world_x: i32,
     /// World Z (subtractive offset; see module docs).
@@ -349,6 +381,8 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
                 obj_idx,
                 col: col as u8,
                 row: row as u8,
+                anchor_col: acol as u8,
+                anchor_row: arow as u8,
                 world_x: world_x(col as u8, rec.x_off),
                 world_z: world_z(row as u8, rec.z_off),
                 y_off: rec.y_off,
@@ -435,6 +469,8 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
                 obj_idx,
                 col: col as u8,
                 row: row as u8,
+                anchor_col: (col as i32 + rec.col_delta as i32).clamp(0, GRID_DIM as i32 - 1) as u8,
+                anchor_row: (row as i32 + rec.row_delta as i32).clamp(0, GRID_DIM as i32 - 1) as u8,
                 world_x: world_x(col as u8, rec.x_off),
                 world_z: world_z(row as u8, rec.z_off),
                 y_off: rec.y_off,

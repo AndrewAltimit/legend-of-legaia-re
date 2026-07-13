@@ -253,8 +253,8 @@ reads it via `Scene::field_object_placements`. Each object's drawn mesh is the
 object record's `+0x10` `u16` field - **uniformly, for every object id** (retail
 `FUN_80020f88`: `actor+0x64 = record[+0x10] + DAT_8007b6f8`; the id selects the
 *record*, never the mesh). Ids `1/2/3` are the protagonist/NPC meshes from the
-shared pool. The `anim_id` resolved separately via the MAN script
-(`func_0x801d5630`) only drives animation; it does not pick geometry.
+shared pool. The `anim_id` resolved separately via the object bind
+(`func_0x801d5630`, below) never picks geometry - it *poses* it.
 
 > A positional "field-actor band" reading (`pack_index = obj_idx - 5` for ids
 > `93..=118`) is **falsified**. Rim Elm cell `(30, 17)` carries object id `99`
@@ -266,6 +266,57 @@ shared pool. The `anim_id` resolved separately via the MAN script
 > the spawn, whose absence left the ground's clear colour showing through.
 > (Its supporting "windmill id 96 -> mesh 91" datum does not survive contact
 > with the disc: record `96` is all zeros, and no cell references it.)
+
+### The object bind: spawn gate + rest pose
+
+A placed record does not become an actor on its own. `FUN_8003a55c` first
+resolves the record's **object bind** by its *footprint-anchor* tile
+(`col + record[+0x06]`, `row + record[+0x07]`):
+`func_0x801d5630(1, anchor_col, anchor_row)` returns the `.MAP` kind-1
+tile-trigger entry sitting on that tile, whose `record` byte indexes the MAN's
+flat record-offset table - partition 0 comes first in that table, so it names a
+**partition-0 record**. Two consequences, both live-verified against a Rim Elm
+capture's actor list:
+
+- **No bind, no actor.** When the lookup misses, `FUN_8003a55c` skips the tile
+  outright. `town01` has six such placements (five `obj456`, one `obj230`), and
+  not one of them appears in the live actor list.
+- **The bind carries the object's animation id.** A partition-0 record's header
+  is `[u8 n][n*2 name bytes][u8 anim_id]` (its own shape - the partition-1
+  `1 + 2n + 4` formula desyncs here); `FUN_8003a55c` stores the record base into
+  `actor+0x90`, the post-header offset into `actor+0x9E`, and that trailing byte
+  into `actor+0x5C`.
+
+The anim id decides *how the mesh is drawn*. With `+0x5C == 0` the actor stays
+at draw kind `5`, whose `FUN_8001ada4` arm draws every TMD object of the mesh
+with the actor's single transform - right for a single-object prop. With a
+nonzero id the per-actor anim tick `FUN_800204f8` binds scene-ANM record
+`anim_id - 1` (bundle base `DAT_8007b75c`) into `actor+0x4C` and flips the actor
+to draw kind `1`, whose walker `FUN_8001b964` applies the clip's **per-bone
+rigid transform to each TMD object** before drawing it, and refuses to draw at
+all unless bone count equals object count.
+
+So a **multi-object placed prop is posed, not stamped**: its TMD objects are the
+clip's bones, authored about their own pivots, and the clip's **frame 0 is the
+rest state**. Rim Elm's searchable cupboard (object id `230`, env mesh `15`) is
+the clearest one - three objects (cabinet + two doors) driven by a 3-bone,
+30-frame clip whose frame 0 closes the doors flush into the cabinet's front
+opening and whose later frames swing them open. Drawn unposed, the door objects
+hang at the cabinet's mid-depth and sink through the floor.
+
+The engine bakes frame 0 per `(mesh, anim)` pair and instances it, so every such
+prop renders in its closed / at-rest state. Advancing the frame is the
+interaction script's job - the bind record *is* that script - and the engine
+does not step it yet, so the doors never open.
+
+Parsers: `legaia_engine_core::field_env::object_binds` (the bind lookup +
+header decode; the anchor tile is `Placement::anchor_col`/`anchor_row`) and
+`resolve_placed_env_draws` (the spawn gate + `EnvDraw::anim_id`). Disc-gated
+coverage: `crates/engine-core/tests/field_object_binds_disc.rs`.
+
+The record's `+0x1E` byte is **not** part of this: it is the object's cull
+radius in `0x40` units, copied to `actor+0x58` and read by the screen-space
+bounding-box cull `FUN_8001b73c`.
 
 See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 

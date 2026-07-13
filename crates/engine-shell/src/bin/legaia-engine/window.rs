@@ -139,6 +139,23 @@ type AssembledPartyMesh = (
     Vec<Option<legaia_asset::face_anim::FaceTracks>>,
 );
 
+/// The uploaded mesh slots of one **posed** static-object placement: the
+/// frame-0 rest pose of a multi-object env prop baked into a textured and/or an
+/// untextured mesh. Either half can be absent (a prop with no textured prims,
+/// or none that survive the VRAM filter).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct PosedMesh {
+    /// Index into `PlayWindowApp::meshes` (the VRAM/textured pipeline).
+    pub vram: Option<usize>,
+    /// Index into `PlayWindowApp::color_meshes` (the untextured pipeline).
+    pub color: Option<usize>,
+}
+
+/// Posed static-object meshes keyed by `(res.tmds index, anim id)` - one baked
+/// rest pose per distinct (env mesh, animation clip) pair the scene's placed
+/// objects reference. See `PlayWindowApp::posed_placement_keys`.
+pub(crate) type PosedPlacementMeshes = std::collections::HashMap<(usize, u8), PosedMesh>;
+
 /// Per-party-member battle facial-animation state: the member's per-action
 /// face tracks (entry `+0x8C` eyes / `+0x98` mouth, indexed by the playing
 /// clip's `action_id`) plus the last applied stamp set, so the VRAM is only

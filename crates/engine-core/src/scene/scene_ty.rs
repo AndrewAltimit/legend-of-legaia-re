@@ -366,6 +366,33 @@ impl Scene {
         Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
     }
 
+    /// The scene's **object binds**: for every `.MAP` tile carrying a kind-1
+    /// trigger, the MAN partition-0 record retail attaches to a placed object
+    /// anchored there, plus that record's animation id
+    /// ([`crate::field_env::ObjectBind`]).
+    ///
+    /// A placed object with no bind at its footprint-anchor tile is never
+    /// spawned; one whose bind names a nonzero anim id is drawn **posed** from
+    /// that clip's frame 0 (the rest state) rather than at its raw object-local
+    /// vertices. Mirrors the `func_0x801d5630` lookup inside `FUN_8003A55C`.
+    /// Returns `Ok(None)` if the scene has no field map or no MAN.
+    pub fn field_object_binds(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<std::collections::HashMap<(u8, u8), crate::field_env::ObjectBind>>> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok(None);
+        };
+        let Some(man) = self.field_man_payload(index)? else {
+            return Ok(None);
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            return Ok(None);
+        };
+        let map = index.entry_bytes_extended(idx)?;
+        Ok(Some(crate::field_env::object_binds(&map, &man_file, &man)))
+    }
+
     /// The scene's **bulk terrain** tiles: one entry per visible cell of the
     /// field map's object-index grid (`+0x8000`, cell bit
     /// [`legaia_asset::field_objects::CELL_VISIBLE`]), positioned the same way

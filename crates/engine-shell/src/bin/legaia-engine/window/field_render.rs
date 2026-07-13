@@ -19,6 +19,8 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
+        posed: &PosedPlacementMeshes,
+        textured: bool,
     ) -> Vec<(usize, Mat4)> {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Vec::new();
@@ -27,9 +29,54 @@ impl PlayWindowApp {
             Ok(Some(p)) if !p.is_empty() => p,
             _ => return Vec::new(),
         };
+        let binds = scene
+            .field_object_binds(&self.session.host.index)
+            .ok()
+            .flatten();
         // Field frame: raw retail-convention transforms (the camera's
         // FIELD_WORLD_FLIP provides the single net Y negation).
-        self.resolve_placement_draws(res, tmd_src_index, &placements, false)
+        self.resolve_placement_draws(
+            res,
+            tmd_src_index,
+            &placements,
+            false,
+            binds.as_ref(),
+            Some((posed, textured)),
+        )
+    }
+
+    /// The distinct `(res.tmds index, anim id)` pairs the scene's **placed**
+    /// objects need a posed rest mesh for: every bound placement whose bind
+    /// names a nonzero anim id. `upload_assets` bakes frame 0 of each.
+    pub(super) fn posed_placement_keys(&self, res: &SceneResources) -> Vec<(usize, u8)> {
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return Vec::new();
+        };
+        let (Ok(Some(placements)), Ok(Some(binds))) = (
+            scene.field_object_placements(&self.session.host.index),
+            scene.field_object_binds(&self.session.host.index),
+        ) else {
+            return Vec::new();
+        };
+        let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
+        let floor_lut = scene
+            .field_floor_height_lut(&self.session.host.index)
+            .ok()
+            .flatten();
+        let (draws, _) = legaia_engine_core::field_env::resolve_placed_env_draws(
+            &env_tmds,
+            &placements,
+            floor_lut,
+            Some(&binds),
+        );
+        let mut keys: Vec<(usize, u8)> = draws
+            .iter()
+            .filter(|d| d.anim_id != 0)
+            .map(|d| (d.res_tmd, d.anim_id))
+            .collect();
+        keys.sort_unstable();
+        keys.dedup();
+        keys
     }
 
     /// Resolve the field scene's **terrain / ground** tiles (the `CELL_VISIBLE`
@@ -37,6 +84,13 @@ impl PlayWindowApp {
     /// way `resolve_field_placement_draws` resolves the placed objects. This is
     /// the town's floor / ground layer; without it a field scene renders its
     /// buildings floating over the bare clear colour.
+    ///
+    /// Records carrying the *placed* flag are excluded: they are already drawn
+    /// by `resolve_field_placement_draws`, from the same record and at the same
+    /// transform, so a visible cell pointing at one would stamp a second, and
+    /// the second copy would be the **unposed** one (the placement layer poses
+    /// its multi-object props). Keeping the two layers disjoint is the same rule
+    /// `field_objects::parse_walk_decorations` applies on the world map.
     pub(super) fn resolve_field_terrain_draws(
         &self,
         res: &SceneResources,
@@ -45,12 +99,19 @@ impl PlayWindowApp {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Vec::new();
         };
-        let tiles = match scene.field_terrain_tiles(&self.session.host.index) {
-            Ok(Some(t)) if !t.is_empty() => t,
-            _ => return Vec::new(),
-        };
+        let tiles: Vec<legaia_asset::field_objects::Placement> =
+            match scene.field_terrain_tiles(&self.session.host.index) {
+                Ok(Some(t)) => t
+                    .into_iter()
+                    .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+                    .collect(),
+                _ => return Vec::new(),
+            };
+        if tiles.is_empty() {
+            return Vec::new();
+        }
         // Field frame: raw retail-convention transforms (see above).
-        self.resolve_placement_draws(res, tmd_src_index, &tiles, false)
+        self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None)
     }
 
     /// World-map continent terrain draws: the dense visible-tile set
@@ -96,7 +157,7 @@ impl PlayWindowApp {
         // World-map frame: raw retail-convention transforms - both world-map
         // cameras compose FIELD_WORLD_FLIP (the walk view through the pinned
         // retail composition), so the draws are unflipped like the field's.
-        self.resolve_placement_draws(res, tmd_src_index, &tiles, false)
+        self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None)
     }
 
     /// Resolve the world-map water/CLUT-cell animation for the active scene.
@@ -399,12 +460,25 @@ impl PlayWindowApp {
     /// object layer and the world-map continent terrain. Maps each placement's
     /// scene-pack mesh index through the uploaded-mesh bridge and builds its
     /// world model matrix.
+    ///
+    /// `binds` (the placed layer only) applies retail's spawn gate: an object
+    /// with no bind at its anchor tile is skipped, exactly as `FUN_8003A55C`
+    /// skips the tile. `posed` then swaps in the baked frame-0 rest mesh for any
+    /// bind that names an animation - the multi-object props, whose TMD objects
+    /// are that clip's bones and are nonsense without its transform. The `bool`
+    /// selects which uploaded-mesh list the caller is bridging (textured vs
+    /// colour), since a posed prop has one slot in each.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn resolve_placement_draws(
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
         placements: &[legaia_asset::field_objects::Placement],
         flip_y: bool,
+        binds: Option<
+            &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
+        >,
+        posed: Option<(&PosedPlacementMeshes, bool)>,
     ) -> Vec<(usize, Mat4)> {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Vec::new();
@@ -430,8 +504,9 @@ impl PlayWindowApp {
         if env_tmds.is_empty() {
             return Vec::new();
         }
-        let (env_draws, dropped) =
-            legaia_engine_core::field_env::resolve_env_draws(&env_tmds, placements, floor_lut);
+        let (env_draws, dropped) = legaia_engine_core::field_env::resolve_placed_env_draws(
+            &env_tmds, placements, floor_lut, binds,
+        );
         let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
         if diag {
             for d in &dropped {
@@ -455,6 +530,16 @@ impl PlayWindowApp {
                             world_z
                         );
                     }
+                    legaia_engine_core::field_env::EnvDrawDrop::Unbound {
+                        anchor,
+                        world_x,
+                        world_z,
+                    } => {
+                        log::info!(
+                            "DIAG place drop: anchor tile {anchor:?} has no object bind \
+                             (retail never spawns it) at ({world_x}, {world_z})"
+                        );
+                    }
                 }
             }
         }
@@ -468,17 +553,39 @@ impl PlayWindowApp {
         }
         let mut draws = Vec::new();
         for d in &env_draws {
-            let Some(mesh_idx) = res_to_mesh[d.res_tmd] else {
-                if diag {
-                    log::info!(
-                        "DIAG place drop: pack {} (res {}) not in this mesh bridge at ({}, {})",
-                        d.env_slot,
-                        d.res_tmd,
-                        d.world_x,
-                        d.world_z
-                    );
-                }
-                continue;
+            // A bind with an anim id means the prop's TMD objects are that
+            // clip's bones: draw the baked frame-0 rest mesh, never the raw
+            // one. When the pose is unavailable (no scene ANM bundle, or a
+            // bone-count mismatch) `upload_assets` has already logged it and we
+            // fall back to the unposed mesh rather than losing the object.
+            let posed_idx = match (d.anim_id, posed) {
+                (0, _) | (_, None) => None,
+                (anim, Some((table, textured))) => table
+                    .get(&(d.res_tmd, anim))
+                    .map(|m| if textured { m.vram } else { m.color }),
+            };
+            let mesh_idx = match posed_idx {
+                // The prop has a pose but no mesh on *this* pipeline (e.g. it
+                // is fully textured, so the colour bridge has nothing) - skip
+                // it here; the other pipeline draws it.
+                Some(None) => continue,
+                Some(Some(idx)) => idx,
+                None => match res_to_mesh[d.res_tmd] {
+                    Some(idx) => idx,
+                    None => {
+                        if diag {
+                            log::info!(
+                                "DIAG place drop: pack {} (res {}) not in this mesh bridge \
+                                 at ({}, {})",
+                                d.env_slot,
+                                d.res_tmd,
+                                d.world_x,
+                                d.world_z
+                            );
+                        }
+                        continue;
+                    }
+                },
             };
             // PSX field coords (same retail Y-down convention as actor
             // positions). `flip_y` selects the render-frame pairing: the
