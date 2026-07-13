@@ -152,9 +152,12 @@ pub(crate) fn heightfield_to_vram_mesh(
         // Per-cell terrain page + palette (multi-page terrain atlas).
         cba_tsb: hf.cba_tsb.clone(),
         normals: vec![[0.0, 0.0, 0.0]; n],
-        // Terrain is engine-synthesised from the walk heightfield, not a TMD
-        // prim: no baked colour word, so it draws at the raw texel.
-        colors: vec![[NEUTRAL; 3]; n],
+        // The heightfield carries the ground's baked prim colour
+        // (`GROUND_PRIM_COLOR`): retail's ground quads are neutral `0x808080`
+        // on every cell, so the modulation is the identity and the tile draws
+        // at its raw texel. Sourced from the heightfield rather than assumed
+        // here, so the one disc-derived fact has one home.
+        colors: hf.colors.clone(),
         indices: hf.indices.clone(),
     }
 }
