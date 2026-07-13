@@ -126,10 +126,29 @@ impl Vram {
         merge_clut_zeros: bool,
     ) {
         if upload_clut && let Some(clut) = tim.clut.as_ref() {
+            // A Legaia CLUT block lands as a **linear run** of `w * h`
+            // halfwords along row `fb_y`, NOT as a `w x h` rectangle: palette
+            // `i` of a multi-palette block goes to `(fb_x + 16*i, fb_y)`, the
+            // next 16-colour slot on the same row, not to `(fb_x, fb_y + i)`.
+            //
+            // Pinned byte-exactly against retail VRAM (the town0c field save
+            // state): of the 69 non-zero secondary palettes the scene's TIMs
+            // declare, 69 sit where the linear layout puts them and 0 sit
+            // where the rectangle would. It is also what the prims ask for -
+            // their CBAs index those odd 16-colour slots - and what makes the
+            // NPC-palette blocks legal at all: `parse_strict` notes CLUTs at
+            // `fb_y` 510..511 with `h` up to 16, which as a rectangle would
+            // run off the bottom of a 512-row framebuffer and as a linear run
+            // fits comfortably.
+            //
+            // Uploading these as rectangles left every odd CLUT slot empty, so
+            // the 4bpp prims indexing them decoded to `0x0000`, were discarded
+            // by the renderer, and left holes in the town ground.
+            let run = clut.w.saturating_mul(clut.h);
             if merge_clut_zeros {
-                self.write_words_merge_zeros(clut.fb_x, clut.fb_y, clut.w, clut.h, &clut.entries);
+                self.write_words_merge_zeros(clut.fb_x, clut.fb_y, run, 1, &clut.entries);
             } else {
-                self.write_words(clut.fb_x, clut.fb_y, clut.w, clut.h, &clut.entries);
+                self.write_words(clut.fb_x, clut.fb_y, run, 1, &clut.entries);
             }
         }
         if !upload_image {
@@ -521,6 +540,69 @@ mod tests {
         assert_eq!(vram.pixel(0, 0), 0);
         assert_eq!(vram.pixel(63, 128), 0);
         assert_eq!(vram.pixel(68, 128), 0);
+    }
+
+    /// 4bpp TIM whose CLUT block declares `w=16, h=2` - two 16-colour
+    /// palettes - loading at `(clut_x, clut_y)`.
+    fn tim_4bpp_two_palettes(clut_x: u16, clut_y: u16) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x10u32.to_le_bytes());
+        buf.extend_from_slice(&0x08u32.to_le_bytes()); // pmode 0 = 4bpp, has CLUT
+        // CLUT block: 12-byte header + 16*2 halfwords.
+        buf.extend_from_slice(&(12u32 + 16 * 2 * 2).to_le_bytes());
+        buf.extend_from_slice(&clut_x.to_le_bytes());
+        buf.extend_from_slice(&clut_y.to_le_bytes());
+        buf.extend_from_slice(&16u16.to_le_bytes()); // w = 16 colours
+        buf.extend_from_slice(&2u16.to_le_bytes()); // h = 2 palettes
+        for i in 0..16u16 {
+            buf.extend_from_slice(&(0x0100 + i).to_le_bytes()); // palette 0
+        }
+        for i in 0..16u16 {
+            buf.extend_from_slice(&(0x0200 + i).to_le_bytes()); // palette 1
+        }
+        // Image block: 4 words of 4bpp indices at (0, 0).
+        buf.extend_from_slice(&(12u32 + 4 * 2).to_le_bytes());
+        buf.extend_from_slice(&0u16.to_le_bytes());
+        buf.extend_from_slice(&0u16.to_le_bytes());
+        buf.extend_from_slice(&4u16.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&[0u8; 8]);
+        buf
+    }
+
+    /// A multi-palette CLUT block lands as a **linear run** along its row:
+    /// palette `i` at `(fb_x + 16*i, fb_y)`, NOT stacked at `(fb_x, fb_y + i)`.
+    ///
+    /// This is what retail does (byte-pinned against the town0c field save
+    /// state: 69 of 69 non-zero secondary palettes sit where the linear layout
+    /// puts them, 0 where the rectangle would) and what the scene's prims ask
+    /// for - their CBAs index those odd 16-colour slots. Uploading the block as
+    /// a `w x h` rectangle left every odd slot empty, so the 4bpp prims reading
+    /// them decoded to `0x0000`, got discarded, and punched holes in the town
+    /// ground.
+    #[test]
+    fn multi_palette_clut_loads_linearly_along_the_row() {
+        let mut vram = Vram::new();
+        vram.upload_tim(&parse(&tim_4bpp_two_palettes(0, 480)).unwrap());
+
+        // Palette 0: slot 0 of row 480.
+        assert_eq!(vram.pixel(0, 480), 0x0100);
+        assert_eq!(vram.pixel(15, 480), 0x010F);
+        // Palette 1: the NEXT SLOT ON THE SAME ROW, not the row below.
+        assert_eq!(
+            vram.pixel(16, 480),
+            0x0200,
+            "palette 1 belongs at fb_x + 16"
+        );
+        assert_eq!(vram.pixel(31, 480), 0x020F);
+        // The row below is untouched - a rectangle upload would have put
+        // palette 1 there and left slot 1 of row 480 dead.
+        assert_eq!(
+            vram.pixel(0, 481),
+            0,
+            "palette 1 must not stack onto fb_y + 1"
+        );
+        assert_eq!(vram.pixel(15, 481), 0);
     }
 
     #[test]
