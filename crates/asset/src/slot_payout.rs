@@ -69,8 +69,7 @@ pub const PUNCH_SYMBOL_ID: u8 = 9;
 /// Bonus rounds a line of [`PUNCH_SYMBOL_ID`] earns.
 pub const PUNCH_BONUS_ROUNDS: u32 = 3;
 
-/// Lowest number a bonus reel can stop on (the bonus strip shows `1..=10`;
-/// each factor is the reel symbol id + 1).
+/// Lowest number a bonus reel can stop on (the bonus strip shows `1..=10`).
 pub const BONUS_NUMBER_MIN: u32 = 1;
 /// Highest number a bonus reel can stop on.
 pub const BONUS_NUMBER_MAX: u32 = 10;
@@ -78,6 +77,44 @@ pub const BONUS_NUMBER_MAX: u32 = 10;
 pub const BONUS_PAYOUT_MIN: u32 = BONUS_NUMBER_MIN.pow(3);
 /// Maximum coins a bonus round can pay (`10 × 10 × 10`).
 pub const BONUS_PAYOUT_MAX: u32 = BONUS_NUMBER_MAX.pow(3);
+
+// --- The bonus strip's own value space ---
+//
+// A bonus round does not re-label the symbol strip: it swaps the reels onto a
+// **second strip array** the init builds beside the symbol one (`FUN_801cf0d8`
+// case 0 fills `DAT_801d3fd0` with `slot/2 + 0x10`), so a bonus reel row carries
+// a value in `0x10..=0x19` - not a symbol id in `0..=9`. Three consumers read
+// that value, and the `>= 0x10` test is what each one switches on:
+//
+// * the **reel renderer** (`FUN_801d0fa8`) takes `value >= 0x10` as the signal to
+//   switch texpage (`0x0C` -> `0x0D`) and CLUT base (`0x7A80` -> `0x7AC0`), so the
+//   numerals come off their own art page - see [`crate::minigame_art`];
+// * the **payout** (`FUN_801d13e8`, bonus branch) multiplies the three payline
+//   `value - 0xf` factors - [`bonus_number_for_value`], i.e. `1..=10`;
+// * the **marquee tally** (`FUN_801d0554` latches `value + 1` into
+//   `DAT_801d3d20`; `FUN_801cfff0` prints message `(claimed - 0x10) + 6`) - the
+//   same `value - 0xf` number, which is why the strip and the payout can never
+//   disagree.
+
+/// First value of the bonus reel strip (`DAT_801d3fd0` = `slot/2 + 0x10`).
+pub const BONUS_VALUE_BASE: u8 = 0x10;
+/// The bias the payout evaluator subtracts from a bonus strip value to get its
+/// multiplier factor (`FUN_801d13e8`: `(value - 0xf) * ...`).
+pub const BONUS_VALUE_BIAS: u8 = 0x0F;
+
+/// The bonus number `1..=10` a bonus **strip value** (`0x10..=0x19`) shows -
+/// `value - 0xf`, the exact factor `FUN_801d13e8` multiplies.
+///
+/// This one byte is the reel's on-screen numeral, the tally column's digit and
+/// the payout factor at once: all three read it through the same bias.
+pub fn bonus_number_for_value(value: u8) -> u32 {
+    (value.saturating_sub(BONUS_VALUE_BIAS) as u32).clamp(BONUS_NUMBER_MIN, BONUS_NUMBER_MAX)
+}
+
+/// The bonus strip value that carries `number` (`1..=10` -> `0x10..=0x19`).
+pub fn bonus_value_for_number(number: u32) -> u8 {
+    (number.clamp(BONUS_NUMBER_MIN, BONUS_NUMBER_MAX) as u8) + BONUS_VALUE_BIAS
+}
 
 /// The number of bonus rounds a winning line of `symbol` earns, or `None` when
 /// the symbol is not a jackpot symbol (`FUN_801d13e8`: id 8 → 1, id 9 → 3).
@@ -89,9 +126,11 @@ pub fn bonus_rounds_for(symbol: u8) -> Option<u32> {
     }
 }
 
-/// The bonus-reel **number** a stopped reel symbol shows (`1..=10`). The bonus
-/// strip's numerals are the reel symbol id + 1 - the retail bonus strip carries
-/// values `0x10..=0x19` whose `value - 0xf` factor is `symbol + 1`.
+/// The bonus number a **symbol id** (`0..=9`) maps to - `symbol + 1`, the same
+/// numeral the strip value `symbol + 0x10` carries. The two strips are built
+/// slot-for-slot from the same `slot / 2` id, so a symbol id and its bonus value
+/// name the same numeral; [`bonus_number_for_value`] is the one to use on a live
+/// reel row, since that row holds the *value*.
 pub fn bonus_number_for_symbol(symbol: u8) -> u32 {
     (symbol as u32 + 1).clamp(BONUS_NUMBER_MIN, BONUS_NUMBER_MAX)
 }

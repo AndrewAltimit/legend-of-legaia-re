@@ -337,6 +337,62 @@ pub const DOT_STRIDE: usize = 0x10;
 pub const DOT_U_PER_NIBBLE: u32 = 4;
 
 // ---------------------------------------------------------------------------
+// The marquee's message bank - what the 21 records ARE (FUN_801cfff0)
+// ---------------------------------------------------------------------------
+//
+// The bank is not 21 anonymous bitmaps. `FUN_801cfff0` composes the marquee out
+// of it every frame, and the ids it indexes give every record its role. The
+// arithmetic is the pin: the payout caption prints its digits with
+// `FUN_801d3230(n / 1000 + 6)`, `(n % 1000) / 100 + 6`, `/ 10 + 6`, `% 10 + 6`,
+// so records `6..=15` are the glyphs `"0".."9"` - and record `16` is the extra
+// one-record glyph **"10"**, because the bonus tally indexes `claimed - 0x10 + 6`
+// over a `claimed` of `0x10..=0x1A` (see [`crate::slot_payout`]).
+//
+// The bank decodes off the disc as exactly that: 6..=16 are the eleven numerals
+// `"0"`..`"10"`, 0x11 is the multiplication sign, 0x12 / 0x13 the filled /
+// hollow round pips, and 0x14 the word "coin".
+
+/// First numeral record of the message bank. Record `MSG_NUMBER_BASE + n` is the
+/// glyph for `n`, for `n` in `0..=10` - eleven records, because **"10"** gets a
+/// glyph of its own (a bonus reel can land on 10).
+pub const MSG_NUMBER_BASE: usize = 6;
+/// The largest numeral the bank has a glyph for (`MSG_NUMBER_BASE + 10`).
+pub const MSG_NUMBER_MAX: usize = 10;
+/// The multiplication sign the bonus tally separates its columns with.
+pub const MSG_TIMES: usize = 0x11;
+/// A bonus round still owed (filled pip).
+pub const MSG_ROUND_PIP_ON: usize = 0x12;
+/// A bonus round already played (hollow pip).
+pub const MSG_ROUND_PIP_OFF: usize = 0x13;
+/// The word "coin", printed after the payout figure.
+pub const MSG_COINS: usize = 0x14;
+
+/// Dot columns the **bonus tally**'s three numerals are blitted at - one per
+/// reel (`FUN_801cfff0`: `FUN_801d3230(msg, reel << 5, 0)`).
+///
+/// The tally is the strip across the top of the machine that reads `0 x 0 x 0`
+/// at the start of a bonus round and fills in each column's landed number as
+/// that reel's stop is claimed. It is drawn *only* in feature modes 4..=6 and
+/// only in the reel states (3 = stopping, 4 = payout); in the normal game the
+/// same dot matrix scrolls the attract legend instead.
+pub const TALLY_NUMBER_COLS: [usize; 3] = [0x00, 0x20, 0x40];
+/// Dot columns the two [`MSG_TIMES`] signs sit at, between the numerals.
+pub const TALLY_TIMES_COLS: [usize; 2] = [0x10, 0x30];
+/// Dot columns the **payout caption**'s four digits are blitted at (thousands →
+/// units; a digit is only drawn once the figure reaches its place).
+pub const PAYOUT_DIGIT_COLS: [usize; 4] = [0x00, 0x0D, 0x1A, 0x27];
+/// Dot column the [`MSG_COINS`] word follows the payout figure at. The word runs
+/// past the matrix's 78 columns, so its tail clips - as it does in retail.
+pub const PAYOUT_COINS_COL: usize = 0x34;
+/// The payout caption slides down into place over its first frames: it is drawn
+/// at dot row `min(frame - 0xD, 0)` (`FUN_801cfff0`), i.e. from 13 rows above the
+/// matrix down to row 0.
+pub const PAYOUT_SLIDE_ROWS: i32 = 0x0D;
+/// Dot columns the three bonus-round pips sit at while a round is idle / spinning
+/// up (states 1-2) - the tally strip's other face, counting the rounds still owed.
+pub const ROUND_PIP_COLS: [usize; 3] = [0x00, 0x20, 0x40];
+
+// ---------------------------------------------------------------------------
 // Projection
 // ---------------------------------------------------------------------------
 

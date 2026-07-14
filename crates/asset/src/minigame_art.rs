@@ -56,6 +56,12 @@
 //!   ids `0..=9` are the ten reel symbols. The per-symbol CLUT is load-bearing:
 //!   several symbols share one cell of artwork and are told apart *only* by
 //!   their palette.
+//! - **Bonus numerals** - the same three lines of `FUN_801d0fa8`, rebased. When
+//!   the strip value clears `0x10` (a bonus round swaps the reels onto the
+//!   `0x10..=0x19` strip) the renderer bumps the texpage to `0x0D` and the CLUT
+//!   base to `0x7AC0`, so the `1..=10` faces are **their own 64x64 artwork on
+//!   page 1**, each with its own palette column - which is why every numeral on
+//!   the retail bonus reels is a different colour. [`slot_bonus_number`].
 //! - **Digit font** - `FUN_801d2914` draws the coin readout from the same
 //!   `0x0C` page: `U = 0x40 + digit * 0x10`, `V = 0xC0`, 16x16 per glyph, CLUT
 //!   `0x7A8D` (row 490, column 13). The 64x16 cell at `(0, 0xC0)` immediately
@@ -83,6 +89,10 @@ const TYPE_TIM_LIST: u8 = 0x01;
 /// Index into the decoded pack of the page the reel renderer samples
 /// (texpage `0x0C`, fb `(768, 0)`).
 pub const SLOT_SYMBOL_PAGE: usize = 0;
+/// Index of the **bonus numeral** page - the `1..=10` reel faces a bonus round
+/// swaps the reels onto (texpage `0x0D`, fb `(832, 0)`, CLUT row 491). See
+/// [`slot_bonus_number`].
+pub const SLOT_BONUS_PAGE: usize = 1;
 /// Index of the banner/cursor page (texpage `0x1D`, fb `(832, 256)`).
 pub const SLOT_BANNER_PAGE: usize = 3;
 /// Index of the paytable / coin info-panel page (texpage `0x8A`, fb `(640, 0)`).
@@ -98,6 +108,11 @@ pub const SLOT_SYMBOL_CELL: usize = 64;
 
 /// CLUT id base the reel renderer samples: `0x7A80 + sym`.
 pub const SLOT_SYMBOL_CLUT_BASE: u16 = 0x7A80;
+/// CLUT id base for a **bonus strip value** (`>= 0x10`): `0x7AC0 + (value & 0xF)`
+/// - CLUT row 491, one palette column per numeral (`FUN_801d0fa8`).
+pub const SLOT_BONUS_CLUT_BASE: u16 = 0x7AC0;
+/// Numerals on the bonus strip (`1..=10`).
+pub const SLOT_BONUS_NUMBER_COUNT: usize = 10;
 /// CLUT id the digit font samples (`FUN_801d2914`).
 pub const SLOT_DIGIT_CLUT: u16 = 0x7A8D;
 
@@ -261,6 +276,16 @@ fn crop(page: &[u8], page_w: usize, x: usize, y: usize, w: usize, h: usize) -> R
     })
 }
 
+/// The 64x64 cell a reel **strip value** occupies on its art page, as the reel
+/// renderer computes it - there is no descriptor table (`FUN_801d0fa8`):
+/// `U = (value & 3) * 0x40`, `V = (value & 0xC) * 0x10`. A 4x4 grid, walked
+/// row-major, and the same arithmetic serves both strips: the symbol ids
+/// `0..=9` on the `0x0C` page and the bonus values `0x10..=0x19` on the `0x0D`
+/// page (whose low nibble is `0..=9` again).
+fn reel_cell(value: usize) -> (usize, usize) {
+    ((value & 3) * 0x40, (value & 0x0C) * 0x10)
+}
+
 /// Decode reel symbol `sym` (`0..=9`) at its retail cell and **its own** CLUT.
 ///
 /// Port of the UV + CLUT arithmetic in `FUN_801d0fa8`.
@@ -276,8 +301,51 @@ pub fn slot_symbol(art: &[Tim], sym: usize) -> Result<Sprite> {
         tim,
         ClutId(SLOT_SYMBOL_CLUT_BASE + sym as u16).palette_index(),
     )?;
-    let u = (sym & 3) * 0x40;
-    let v = (sym & 0x0C) * 0x10;
+    let (u, v) = reel_cell(sym);
+    crop(
+        &page,
+        tim.pixel_width(),
+        u,
+        v,
+        SLOT_SYMBOL_CELL,
+        SLOT_SYMBOL_CELL,
+    )
+}
+
+/// Decode the **bonus reel numeral** `number` (`1..=10`) - the big coloured
+/// digit a bonus round swaps the reels onto - at its retail cell and its own
+/// CLUT.
+///
+/// These are not a scaled-up coin font and not drawn glyphs: they are ten 64x64
+/// cells of their own artwork on art-pack page [`SLOT_BONUS_PAGE`], which is
+/// exactly the page the reel renderer switches to when a strip value clears
+/// `0x10`. `FUN_801d0fa8` reads the strip value `v`, and *the same three lines*
+/// that serve the symbol strip serve this one - only rebased:
+///
+/// ```text
+/// texpage = 0x0C + (v >= 0x10)      // 0x0D = the (832, 0) page
+/// clut    = (v >= 0x10 ? 0x7AC0 : 0x7A80) + (v & 0xF)
+/// U, V    = (v & 3) * 0x40, (v & 0xC) * 0x10
+/// ```
+///
+/// The per-numeral CLUT column is load-bearing exactly as it is for the symbols:
+/// the ten cells are drawn once and **recoloured per numeral** (that is why every
+/// digit on the retail bonus reels is a different colour), so decoding page 1
+/// through a single palette gives ten same-coloured digits.
+pub fn slot_bonus_number(art: &[Tim], number: usize) -> Result<Sprite> {
+    if number == 0 || number > SLOT_BONUS_NUMBER_COUNT {
+        bail!("bonus number {number} out of range (1..={SLOT_BONUS_NUMBER_COUNT})");
+    }
+    let tim = art
+        .get(SLOT_BONUS_PAGE)
+        .context("art pack has no bonus-numeral page")?;
+    // The strip value that carries this numeral: `number + 0xF` (0x10..=0x19).
+    let value = number + crate::slot_payout::BONUS_VALUE_BIAS as usize;
+    let page = decode_rgba8(
+        tim,
+        ClutId(SLOT_BONUS_CLUT_BASE + (value & 0xF) as u16).palette_index(),
+    )?;
+    let (u, v) = reel_cell(value);
     crop(
         &page,
         tim.pixel_width(),

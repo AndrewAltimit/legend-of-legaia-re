@@ -918,26 +918,35 @@ impl LegaiaMinigames {
         )
     }
 
-    /// The **bonus game**: the two jackpot triggers and, when a bonus round is
-    /// live, the numbers currently on the reels and their product payout.
+    /// The **bonus game**: the two jackpot triggers, and - when a round is live -
+    /// the numbers on the reels and the **claimed-column tally** the machine
+    /// prints across its marquee.
     ///
     /// A matching line of the **blue "kick"** symbol (id 8) earns 1 bonus round;
     /// the **red "punch"** symbol (id 9) earns 3 - the counts and symbol ids are
     /// pinned in the disassembly (`FUN_801d13e8`) and the colours in the PROT
-    /// 1200 reel art. A bonus round swaps the reels to numbers `1..=10` (the
-    /// symbol id + 1) and pays the **product of the three stopped numbers**
-    /// (`1..=1000`).
+    /// 1200 reel art. A bonus round swaps the reels onto the machine's *second*
+    /// strip - the numerals `1..=10`, their own artwork on art page 1 - and pays
+    /// the **product of the three numbers you stop on** (`1..=1000`).
     ///
     /// ```json
     /// { "kick_symbol": 8, "kick_rounds": 1, "punch_symbol": 9, "punch_rounds": 3,
     ///   "min": 1, "max": 1000, "active": true, "rounds_left": 2,
-    ///   "numbers": [7, 7, 7], "product": 343 }
+    ///   "numbers": [9, 5, 3], "tally": [9, 5, 0], "claimed": [true, true, false],
+    ///   "complete": false, "product": 0 }
     /// ```
     ///
-    /// `active` is true only in feature mode 6 (the bonus round); `numbers` is
-    /// each reel's payline number (`symbol + 1`) and `product` their payout, so
-    /// the page can render the number wheels and caption the win without
-    /// re-deriving the rule.
+    /// * `numbers` - the number **live on each reel's payline** right now, so the
+    ///   page can draw the wheels while they spin.
+    /// * `tally` - the machine's own claimed-column latch (`DAT_801d3d20`): `0`
+    ///   for a column whose reel is still spinning, its landed number once that
+    ///   stop is taken. This is the `0 x 0 x 0` -> `9 x 5 x 0` strip.
+    /// * `product` - the tally's product, i.e. the coins the round pays; `0`
+    ///   until all three columns are claimed (`complete`).
+    ///
+    /// The tally and the payout are **the same state**, not two copies: the
+    /// evaluator multiplies the very rows the tally latched. A page that renders
+    /// `tally` cannot show a line that disagrees with what the spin paid.
     pub fn slot_bonus_json(&self) -> String {
         use legaia_asset::slot_payout as sp;
         use legaia_engine_core::slot_machine::REEL_COUNT;
@@ -952,22 +961,83 @@ impl LegaiaMinigames {
         );
         let Some(m) = self.slot.as_ref() else {
             return format!(
-                r#"{{{head},"active":false,"rounds_left":0,"numbers":[],"product":0}}"#
+                r#"{{{head},"active":false,"rounds_left":0,"numbers":[],"tally":[],"claimed":[],"complete":false,"product":0}}"#
             );
         };
-        let active = m.feature_mode() == 6;
-        let numbers: Vec<u32> = (0..REEL_COUNT)
-            .map(|r| sp::bonus_number_for_symbol(m.payline_symbol(r)))
-            .collect();
-        let product: u32 = numbers.iter().product();
-        let nums = numbers
-            .iter()
-            .map(|n| n.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
+        let join = |v: &[String]| v.join(",");
+        // The live payline numbers - the display strip's value biased by 0xF,
+        // which is the same byte the reel renderer draws the numeral from.
+        let numbers = (0..REEL_COUNT)
+            .map(|r| sp::bonus_number_for_value(m.payline_symbol(r)).to_string())
+            .collect::<Vec<_>>();
+        let tally = m.tally();
+        let claimed = (0..REEL_COUNT)
+            .map(|r| (m.claimed(r) > sp::BONUS_VALUE_BIAS as i32).to_string())
+            .collect::<Vec<_>>();
+        let tally_s = tally.iter().map(|n| n.to_string()).collect::<Vec<_>>();
         format!(
-            r#"{{{head},"active":{active},"rounds_left":{},"numbers":[{nums}],"product":{product}}}"#,
-            m.bonus_spins().max(0),
+            concat!(
+                r#"{{{head},"active":{active},"rounds_left":{rounds},"numbers":[{numbers}],"#,
+                r#""tally":[{tally}],"claimed":[{claimed}],"complete":{complete},"product":{product}}}"#
+            ),
+            head = head,
+            active = m.in_bonus_round(),
+            rounds = m.bonus_spins().max(0),
+            numbers = join(&numbers),
+            tally = join(&tally_s),
+            claimed = join(&claimed),
+            complete = m.tally_complete(),
+            product = m.tally_product(),
+        )
+    }
+
+    /// The **marquee message bank's roles** - which of the 21 dot-matrix bitmaps
+    /// in [`Self::slot_scene_json`] is which glyph, and the dot columns the
+    /// machine blits them at.
+    ///
+    /// The tally strip and the payout caption are not chrome the page invents:
+    /// they are `FUN_801cfff0` composing the *same* 78x13 dot matrix that
+    /// scrolls the attract legend in the normal game. This hands over the ids and
+    /// columns it uses, so the page draws the retail glyphs at the retail
+    /// positions rather than a font of its own.
+    ///
+    /// ```json
+    /// { "number_base": 6, "number_max": 10, "times": 17, "coins": 20,
+    ///   "pip_on": 18, "pip_off": 19,
+    ///   "tally_cols": [0, 32, 64], "times_cols": [16, 48], "pip_cols": [0, 32, 64],
+    ///   "payout_digit_cols": [0, 13, 26, 39], "payout_coins_col": 52,
+    ///   "payout_slide_rows": 13 }
+    /// ```
+    ///
+    /// `number_base + n` is the bitmap for the numeral `n`, `0..=10` - eleven
+    /// records, because a bonus reel can land on **10** and retail gives it a
+    /// glyph of its own rather than two digit cells.
+    pub fn slot_marquee_json(&self) -> String {
+        let cols = |c: &[usize]| {
+            c.iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        format!(
+            concat!(
+                r#"{{"number_base":{nb},"number_max":{nm},"times":{times},"coins":{coins},"#,
+                r#""pip_on":{pon},"pip_off":{poff},"tally_cols":[{tc}],"times_cols":[{xc}],"#,
+                r#""pip_cols":[{pc}],"payout_digit_cols":[{pdc}],"payout_coins_col":{pcc},"#,
+                r#""payout_slide_rows":{psr}}}"#
+            ),
+            nb = slot_scene::MSG_NUMBER_BASE,
+            nm = slot_scene::MSG_NUMBER_MAX,
+            times = slot_scene::MSG_TIMES,
+            coins = slot_scene::MSG_COINS,
+            pon = slot_scene::MSG_ROUND_PIP_ON,
+            poff = slot_scene::MSG_ROUND_PIP_OFF,
+            tc = cols(&slot_scene::TALLY_NUMBER_COLS),
+            xc = cols(&slot_scene::TALLY_TIMES_COLS),
+            pc = cols(&slot_scene::ROUND_PIP_COLS),
+            pdc = cols(&slot_scene::PAYOUT_DIGIT_COLS),
+            pcc = slot_scene::PAYOUT_COINS_COL,
+            psr = slot_scene::PAYOUT_SLIDE_ROWS,
         )
     }
 
@@ -993,6 +1063,26 @@ impl LegaiaMinigames {
         self.slot_art
             .as_ref()
             .and_then(|art| minigame_art::slot_symbol(art, sym).ok())
+            .map(|s| s.rgba)
+            .unwrap_or_default()
+    }
+
+    /// One **bonus reel numeral** (`1..=10`) as a 64x64 RGBA8 buffer - the big
+    /// coloured digit the reels carry during a bonus round.
+    ///
+    /// These are the retail faces, not a scaled coin font: ten 64x64 cells of
+    /// their own artwork on art-pack page 1, each drawn through its own palette
+    /// column (`CLUT 0x7AC0 + n - 1`), which is why every numeral is a different
+    /// colour. `FUN_801d0fa8` reaches them by the same UV arithmetic it uses for
+    /// the symbols - a bonus strip value simply clears `0x10`, which bumps the
+    /// texpage to `0x0D` and the CLUT base to `0x7AC0`.
+    ///
+    /// Empty when the art pack didn't decode - in which case the page must say
+    /// so, not draw digits of its own.
+    pub fn slot_bonus_number_rgba(&self, number: usize) -> Vec<u8> {
+        self.slot_art
+            .as_ref()
+            .and_then(|art| minigame_art::slot_bonus_number(art, number).ok())
             .map(|s| s.rgba)
             .unwrap_or_default()
     }
