@@ -76,6 +76,11 @@ pub struct EnvDraw {
     /// the front face (closed). The clip's later frames are the door opening -
     /// retail advances the frame only while the interaction script runs.
     pub anim_id: u8,
+    /// The placement's **footprint-anchor tile** (`col + record[+0x06]`,
+    /// `row + record[+0x07]`) - the tile `FUN_8003A55C` resolves the object
+    /// bind by, and therefore the identity of this prop's actor. Keyed on by
+    /// [`PropAnimBank`] so each placed instance keeps its own frame cursor.
+    pub anchor: (u8, u8),
 }
 
 /// The **object bind** of a placed field object: the MAN partition-0 record
@@ -319,9 +324,703 @@ pub fn resolve_placed_env_draws(
             world_z: p.world_z,
             rot_y: p.rot_y,
             anim_id,
+            anchor,
         });
     }
     (draws, drops)
+}
+
+// ---------------------------------------------------------------------------
+// Placed-prop animation: the door swing.
+// ---------------------------------------------------------------------------
+
+/// `actor+0x62` bit `0x0002` - **hold**. Set, the per-frame anim tick skips the
+/// cursor advance, so the clip freezes at whatever frame it is on.
+pub const ANIM_HOLD: u16 = 0x0002;
+/// `actor+0x62` bit `0x0008` - **clamp** (one-shot). Set, the cursor stops at
+/// the end of the clip; clear, it wraps (the looping idle case).
+pub const ANIM_CLAMP: u16 = 0x0008;
+/// `actor+0x62` bit `0x0080` - **reverse**. Set, the cursor counts down.
+pub const ANIM_REVERSE: u16 = 0x0080;
+/// `actor+0x62` bit `0x0100` - the **end latch**. Set by the tick on the frame
+/// the cursor reaches either end of the clip; scripts wait on it.
+pub const ANIM_END: u16 = 0x0100;
+/// `actor+0x62` bit `0x0200` - **restart request**. Consumed by the next tick,
+/// which snaps the cursor to frame `0` (forward) or the last frame (reverse).
+pub const ANIM_RESTART: u16 = 0x0200;
+
+/// The `+0x62` word every actor is born with, from the placed-object actor
+/// template `DAT_80073E70` (`FUN_80020DE0` copies `template[1]` into `+0x62`):
+/// no hold, no clamp, forward - i.e. **looping playback**, which is what the
+/// scene's NPCs run their idle clips under.
+pub const ANIM_SPAWN_FLAGS: u16 = 0x0015;
+
+/// The `+0x6A` rate a placed object is born with: the template's `0x10`
+/// (1 frame per tick, since the cursor is in 1/16-frame units) halved by
+/// `FUN_8003A55C`'s `*(short *)(actor + 0x6a) >>= 1`.
+pub const ANIM_SPAWN_RATE: i16 = 8;
+
+/// Half-extent of the prop contact box, in world units. Same box the field
+/// locomotion's static-entity collision arm uses for a placed record
+/// (`World::field_prop_colliders` / `FIELD_PROP_BOX_HALF`); retail's
+/// `FUN_801CFC40` links the player and the touched actor through their `+0x98`
+/// partner slots and `FUN_801D5B5C` then resumes the touched actor's script.
+pub const PROP_TOUCH_BOX_HALF: i32 = 0x40 + 0x10;
+
+/// Live animation state of one placed prop - the fields of the retail actor
+/// record that the per-frame anim tick reads and writes.
+///
+/// | field | actor offset | meaning |
+/// |---|---|---|
+/// | `anim_id` | `+0x5C` | clip id; `0` = none. Clip = scene-ANM record `anim_id - 1`. |
+/// | `cursor` | `+0x68` | frame cursor in **1/16-frame** units (`frame = cursor >> 4`). |
+/// | `flags` | `+0x62` | the `ANIM_*` bits above. |
+/// | `rate` | `+0x6A` | cursor units added per tick. |
+///
+/// PORT: FUN_800204F8 (the binder + per-frame advancer, called from the actor
+/// tick `FUN_80021DF4`)
+/// REF: FUN_8001B964 (the draw walker: `frame = (i16)(actor+0x68) >> 4`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PropAnim {
+    /// Clip id (`actor+0x5C`).
+    pub anim_id: u8,
+    /// Frame count of the bound clip (the ANM record's `b` header field).
+    pub frames: u16,
+    /// Bit 0 of the ANM record header's `a` high byte: selects the scaled step.
+    pub scaled_step: bool,
+    /// The ANM record header's `flag` low byte - the scaled step's divisor.
+    pub step_div: u8,
+    /// Frame cursor in 1/16-frame units (`actor+0x68`).
+    pub cursor: i16,
+    /// Animation control word (`actor+0x62`).
+    pub flags: u16,
+    /// Per-tick cursor step (`actor+0x6A`).
+    pub rate: i16,
+}
+
+impl PropAnim {
+    /// A freshly spawned placed prop: the actor-template flags and the halved
+    /// template rate, cursor at zero.
+    pub fn spawned(anim_id: u8, frames: u16, scaled_step: bool, step_div: u8) -> Self {
+        Self {
+            anim_id,
+            frames,
+            scaled_step,
+            step_div,
+            cursor: 0,
+            flags: ANIM_SPAWN_FLAGS,
+            rate: ANIM_SPAWN_RATE,
+        }
+    }
+
+    /// The clip frame the draw walker poses from: `(i16)(actor+0x68) >> 4`.
+    pub fn frame(&self) -> usize {
+        (self.cursor >> 4).max(0) as usize
+    }
+
+    /// True once the cursor has reached an end of the clip and latched
+    /// [`ANIM_END`] - what a script's "wait for the animation" spin tests.
+    pub fn at_end(&self) -> bool {
+        self.flags & ANIM_END != 0
+    }
+
+    /// One frame of the retail anim tick: consume a restart request, step the
+    /// cursor unless held, then wrap (loop) or clamp (one-shot) at either end,
+    /// latching [`ANIM_END`] when an end is hit.
+    ///
+    /// PORT: FUN_800204F8
+    pub fn tick(&mut self) {
+        if self.anim_id == 0 || self.frames == 0 {
+            return;
+        }
+        let span = (self.frames as i32) * 16;
+        // The clip's own per-frame step scaling (`clip[1] & 1` selects it,
+        // `clip[6]` divides). Every field door / prop clip takes the plain arm.
+        let step = if self.scaled_step && self.step_div != 0 {
+            let d = self.step_div as i32;
+            ((self.rate as i32 * 2 + d - 1) / d) as i16
+        } else {
+            self.rate
+        };
+        if self.flags & ANIM_RESTART != 0 {
+            self.flags &= !ANIM_RESTART;
+            self.cursor = if self.flags & ANIM_REVERSE == 0 {
+                0
+            } else {
+                (span - 16).max(0) as i16
+            };
+        }
+        // Retail re-reads the flag word here, so the restart bit it just
+        // cleared is not what the hold test below sees.
+        let flags = self.flags;
+        self.flags &= !ANIM_END;
+        if flags & ANIM_HOLD == 0 {
+            self.cursor = if flags & ANIM_REVERSE == 0 {
+                self.cursor.wrapping_add(step)
+            } else {
+                self.cursor.wrapping_sub(step)
+            };
+        }
+        if self.cursor < 0 {
+            self.cursor = if self.flags & ANIM_CLAMP == 0 {
+                self.cursor.wrapping_add(span as i16)
+            } else {
+                0
+            };
+            self.flags |= ANIM_END;
+        }
+        let last = (span - 1) as i16;
+        if last <= self.cursor {
+            self.cursor = if self.flags & ANIM_CLAMP == 0 {
+                0
+            } else {
+                last
+            };
+            self.flags |= ANIM_END;
+        }
+    }
+}
+
+/// One animation command a placed prop's bind script issues against `+0x62` /
+/// `+0x6A`. The field VM's whole animation surface, as the retail prop records
+/// use it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnimCmd {
+    /// `0x4C` nibble-4 sub-1 with a zero ramp: `actor+0x6A = max(1, value >> 1)`.
+    Rate(i16),
+    /// `0x2B <bit>`: `actor+0x62 |= 1 << bit`.
+    SetBit(u8),
+    /// `0x2C <bit>`: `actor+0x62 &= !(1 << bit)`.
+    ClearBit(u8),
+    /// `0x4C 0x35`: `actor+0x62 = (+0x62 & !REVERSE) | 0x20A` - restart at
+    /// frame 0, one-shot, and hold. The rest pose of every closed door.
+    ResetHold,
+    /// `0x4C 0x36`: `actor+0x62 |= 0x28A` - restart at the *last* frame,
+    /// reverse, one-shot, hold. The "already opened" snap (the shelf whose
+    /// story flag says it has been searched).
+    EndHold,
+}
+
+impl AnimCmd {
+    /// Apply the command to a live prop.
+    pub fn apply(self, a: &mut PropAnim) {
+        match self {
+            AnimCmd::Rate(v) => a.rate = (v >> 1).max(1),
+            AnimCmd::SetBit(b) => a.flags |= 1u16.wrapping_shl(u32::from(b) & 0x1F),
+            AnimCmd::ClearBit(b) => a.flags &= !1u16.wrapping_shl(u32::from(b) & 0x1F),
+            AnimCmd::ResetHold => a.flags = (a.flags & !ANIM_REVERSE) | 0x020A,
+            AnimCmd::EndHold => a.flags |= 0x028A,
+        }
+    }
+}
+
+/// A run of a prop script's animation commands, ending either at the script's
+/// "wait until the clip finishes" spin (`0x2D` on bit 8 = [`ANIM_END`]) or at
+/// the end of the pass.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AnimSegment {
+    /// Commands applied on entering the segment.
+    pub cmds: Vec<AnimCmd>,
+    /// True when the segment ends on the end-latch spin: the script parks here
+    /// until the clip reaches its end, then runs the next segment.
+    pub wait_for_end: bool,
+}
+
+/// A placed prop's animation program, decoded from its bind record's script.
+///
+/// The record is a field-VM script whose passes are delimited by the `0x21`
+/// park opcode:
+///
+/// - **spawn**: `FUN_8003A55C` runs the record from its post-header PC up to
+///   the first `0x21` (the retail loop only enters when the leading opcode is
+///   `0x24`/`0x25`, which every prop record carries). That pass sets the rate
+///   and issues `0x4C 0x35`, leaving the prop **held at frame 0** - a closed
+///   door, a shut cupboard.
+/// - **touch**: the next pass, which `FUN_801D5B5C` resumes when the player's
+///   body hits the prop. For a house door that is `[clear REVERSE, clear HOLD,
+///   set CLAMP, clear END]` then the end-latch spin: the clip plays forward and
+///   clamps open. Rim Elm's cupboard adds a second segment after the spin -
+///   `[set REVERSE, clear HOLD, set CLAMP]` - which plays the doors back shut.
+///
+/// Records with no animation commands in their touch pass (the locked drawer,
+/// the clock) decode to an empty program and never move, exactly as in retail.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PropProgram {
+    /// Commands the spawn pass issues.
+    pub spawn: Vec<AnimCmd>,
+    /// The touch pass, split at the end-latch spins.
+    pub touch: Vec<AnimSegment>,
+}
+
+impl PropProgram {
+    /// True when contact plays the clip - the doors, the cupboards, the shop
+    /// sign. False for the props whose record only poses them once (the locked
+    /// drawer) and for the ones that never stop (the windmill: its spawn pass
+    /// issues no `0x4C 0x35`, so it keeps the template's looping
+    /// [`ANIM_SPAWN_FLAGS`] and spins forever).
+    pub fn animates(&self) -> bool {
+        !self.touch.is_empty()
+    }
+}
+
+/// The field-VM opcodes the prop-script decoder reacts to.
+const OP_PARK: u8 = 0x21;
+const OP_FLAG_SET: u8 = 0x2B;
+const OP_FLAG_CLEAR: u8 = 0x2C;
+const OP_FLAG_TEST: u8 = 0x2D;
+/// Bit index of [`ANIM_END`] - what the "wait for the clip" spin tests.
+const ANIM_END_BIT: u8 = 8;
+/// The bits of `actor+0x62` the per-frame anim tick reads: hold, clamp,
+/// reverse, end, restart. A `0x2B` / `0x2C` on any other bit is a per-actor
+/// flag the animation does not see, so the decoder ignores it - which also
+/// keeps a linear walk that drifts into a record's inline dialogue text from
+/// synthesising phantom animation commands out of ASCII (a `,` in a message is
+/// the byte `0x2C`).
+const ANIM_BITS: &[u8] = &[1, 3, 7, 8, 9];
+
+/// Decode a bind record's animation program. `record` is the partition-0
+/// record's bytes, `pc0` the offset just past its `[u8 n][n*2 name][u8 anim]`
+/// header (where `FUN_8003A55C` parks the actor's PC).
+///
+/// The **spawn** commands are the ones before the record's first `0x21` park -
+/// exactly the run `FUN_8003A55C`'s prologue loop executes (it stops on that
+/// opcode). Everything after it is the resumable body, scanned linearly for
+/// animation commands and cut at each `0x2D 0x08` end-latch spin.
+///
+/// A body segment is only kept when it actually **plays** the clip, i.e. it
+/// clears the hold bit (`0x2C 0x01`). That drops the flag-gated pose snaps
+/// (`0x4C 0x36` on a shelf whose story flag says it has already been searched)
+/// that a linear walk sees but a branch-following VM would only reach through a
+/// story-flag test - they are alternate *spawn* states, not contact reactions -
+/// and it makes the decode robust against the walk drifting through a record's
+/// inline dialogue text.
+///
+/// PORT: FUN_8003A55C (the spawn-prologue run) + the field-VM animation ops
+/// (`0x2B` / `0x2C` / `0x2D` on `actor+0x62`, `0x4C` nibble-3 sub-5/6, `0x4C`
+/// nibble-4 sub-1)
+pub fn decode_prop_program(record: &[u8], pc0: usize) -> PropProgram {
+    use legaia_asset::field_disasm::{FlagKind, InsnInfo, LinearWalker, MenuCtrlKind};
+
+    let anim_cmd = |insn: &legaia_asset::field_disasm::Insn| -> Option<AnimCmd> {
+        // Cross-context writes target a different actor's record, not this
+        // prop's - retail's `0x2B`/`0x2C` write `iVar18 + 0x62`, the executing
+        // context's own actor.
+        if insn.extended.is_some() {
+            return None;
+        }
+        match (insn.opcode, &insn.info) {
+            (OP_FLAG_SET, InsnInfo::LFlag { bit, .. }) if ANIM_BITS.contains(bit) => {
+                Some(AnimCmd::SetBit(*bit))
+            }
+            (OP_FLAG_CLEAR, InsnInfo::LFlag { bit, .. }) if ANIM_BITS.contains(bit) => {
+                Some(AnimCmd::ClearBit(*bit))
+            }
+            (
+                _,
+                InsnInfo::MenuCtrl {
+                    kind: MenuCtrlKind::Nibble3 { sub: 5 },
+                    ..
+                },
+            ) => Some(AnimCmd::ResetHold),
+            (
+                _,
+                InsnInfo::MenuCtrl {
+                    kind: MenuCtrlKind::Nibble3 { sub: 6 },
+                    ..
+                },
+            ) => Some(AnimCmd::EndHold),
+            (
+                _,
+                InsnInfo::MenuCtrl {
+                    kind:
+                        MenuCtrlKind::Nibble4 {
+                            sub: 1,
+                            target,
+                            ticks: 0,
+                        },
+                    ..
+                },
+            ) => Some(AnimCmd::Rate(*target)),
+            _ => None,
+        }
+    };
+
+    let mut prog = PropProgram::default();
+    let mut spawned = false; // past the prologue's terminating `0x21`?
+    let mut seg = AnimSegment::default();
+    let mut body: Vec<AnimSegment> = Vec::new();
+    for insn in LinearWalker::new(record, pc0).flatten() {
+        if !spawned {
+            if insn.opcode == OP_PARK && insn.extended.is_none() {
+                spawned = true;
+            } else if let Some(c) = anim_cmd(&insn) {
+                prog.spawn.push(c);
+            }
+            continue;
+        }
+        // The end-latch spin closes the current segment.
+        if insn.opcode == OP_FLAG_TEST
+            && insn.extended.is_none()
+            && matches!(
+                insn.info,
+                InsnInfo::LFlag {
+                    kind: FlagKind::Test,
+                    bit: ANIM_END_BIT
+                }
+            )
+        {
+            seg.wait_for_end = true;
+            body.push(std::mem::take(&mut seg));
+            continue;
+        }
+        if let Some(c) = anim_cmd(&insn) {
+            seg.cmds.push(c);
+        }
+    }
+    body.push(seg);
+    /// `0x2C 0x01` - the command that un-holds the clip. A segment without it
+    /// does not play anything.
+    const PLAY: AnimCmd = AnimCmd::ClearBit(1);
+    prog.touch = body
+        .into_iter()
+        .filter(|s| s.cmds.contains(&PLAY))
+        .collect();
+    prog
+}
+
+/// One placed prop's animation runtime: its live [`PropAnim`], the program its
+/// bind record decodes to, and where its contact box sits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PropAnimState {
+    /// Live clip state.
+    pub anim: PropAnim,
+    /// The bind record's decoded animation program.
+    pub program: PropProgram,
+    /// Contact-box centre (the placement's world position).
+    pub world: (i32, i32),
+    /// Index of the touch segment currently running, if the program is mid-pass.
+    pub segment: Option<usize>,
+    /// Whether the player was inside the contact box last tick (the edge latch
+    /// that keeps a sustained press from restarting the pass every frame -
+    /// retail's `+0x10 & 0x80000` engaged flag plays the same role).
+    pub contact: bool,
+}
+
+impl PropAnimState {
+    /// Start the touch pass from its first segment.
+    fn begin_touch(&mut self) {
+        if self.program.touch.is_empty() {
+            return;
+        }
+        self.segment = Some(0);
+        for c in &self.program.touch[0].cmds {
+            c.apply(&mut self.anim);
+        }
+    }
+}
+
+/// Per-scene bank of placed-prop animation runtimes, keyed by the placement's
+/// footprint-anchor tile ([`EnvDraw::anchor`]) so the four Rim Elm cupboards
+/// each keep their own cursor.
+#[derive(Debug, Clone, Default)]
+pub struct PropAnimBank {
+    /// Live props, keyed by anchor tile.
+    pub props: std::collections::BTreeMap<(u8, u8), PropAnimState>,
+}
+
+impl PropAnimBank {
+    /// Build the bank for a scene: one entry per posed placement (`anim_id !=
+    /// 0`), with its bind record's program run through the spawn prologue so
+    /// the prop starts in its authored rest state.
+    ///
+    /// `clip` resolves an anim id to `(frame_count, scaled_step, step_div)`
+    /// from the scene's ANM bundle (record `anim_id - 1`); a prop whose clip
+    /// does not resolve is skipped, mirroring retail's refusal to pose a mesh
+    /// whose bone count disagrees with the clip.
+    pub fn build(
+        draws: &[EnvDraw],
+        binds: &HashMap<(u8, u8), ObjectBind>,
+        man_file: &ManFile,
+        man: &[u8],
+        mut clip: impl FnMut(u8) -> Option<(u16, bool, u8)>,
+    ) -> Self {
+        let mut bank = PropAnimBank::default();
+        for d in draws {
+            if d.anim_id == 0 || bank.props.contains_key(&d.anchor) {
+                continue;
+            }
+            let Some(bind) = binds.get(&d.anchor) else {
+                continue;
+            };
+            let Some((frames, scaled, div)) = clip(d.anim_id) else {
+                continue;
+            };
+            let Some((record, pc0)) = partition0_record(man_file, man, bind.record as usize) else {
+                continue;
+            };
+            let program = decode_prop_program(record, pc0);
+            let mut anim = PropAnim::spawned(d.anim_id, frames, scaled, div);
+            for c in &program.spawn {
+                c.apply(&mut anim);
+            }
+            // The spawn pass is run by `FUN_8003A55C` before the first actor
+            // tick, and the tick then consumes the restart request it left.
+            anim.tick();
+            bank.props.insert(
+                d.anchor,
+                PropAnimState {
+                    anim,
+                    program,
+                    world: (d.world_x, d.world_z),
+                    segment: None,
+                    contact: false,
+                },
+            );
+        }
+        bank
+    }
+
+    /// The clip frame prop `anchor` currently poses from, if it has one.
+    pub fn frame(&self, anchor: (u8, u8)) -> Option<usize> {
+        self.props.get(&anchor).map(|p| p.anim.frame())
+    }
+
+    /// Advance every prop one frame, and post the player's contact edges.
+    ///
+    /// Entering a prop's contact box runs its touch pass (retail:
+    /// `FUN_801CFC40` links the bodies, `FUN_801D5B5C` resumes the touched
+    /// actor's parked script). A segment that ends on the end-latch spin holds
+    /// until the clip reaches its end, then the next segment runs - which is
+    /// how the cupboard's doors swing open, and then shut again.
+    pub fn tick(&mut self, player: (i32, i32)) {
+        for p in self.props.values_mut() {
+            let inside = (player.0 - p.world.0).abs() < PROP_TOUCH_BOX_HALF
+                && (player.1 - p.world.1).abs() < PROP_TOUCH_BOX_HALF;
+            if inside && !p.contact {
+                p.begin_touch();
+            }
+            p.contact = inside;
+
+            p.anim.tick();
+
+            // Advance the touch pass across its end-latch spin. A segment that
+            // does not wait ends the pass; one that does parks until the tick
+            // latches the clip's end, then hands over to the next segment (the
+            // cupboard's "and now shut the doors again").
+            let Some(i) = p.segment else { continue };
+            let done = match p.program.touch.get(i) {
+                None => true,
+                Some(seg) if !seg.wait_for_end => true,
+                Some(_) if !p.anim.at_end() => continue, // still playing
+                Some(_) => false,
+            };
+            if done {
+                p.segment = None;
+                continue;
+            }
+            match p.program.touch.get(i + 1) {
+                Some(next) => {
+                    let cmds = next.cmds.clone();
+                    p.segment = Some(i + 1);
+                    for c in &cmds {
+                        c.apply(&mut p.anim);
+                    }
+                }
+                None => p.segment = None,
+            }
+        }
+    }
+}
+
+/// A partition-0 record's bytes and the PC just past its
+/// `[u8 n][n*2 name bytes][u8 anim_id]` header - where `FUN_8003A55C` parks the
+/// actor's script cursor (`actor+0x9E`).
+fn partition0_record<'a>(
+    man_file: &ManFile,
+    man: &'a [u8],
+    index: usize,
+) -> Option<(&'a [u8], usize)> {
+    let start = man_file
+        .data_region_offset
+        .checked_add(*man_file.partitions[0].get(index)? as usize)?;
+    let n = *man.get(start)? as usize;
+    let pc0 = 1 + 2 * n + 1;
+    // The record runs to the next record start in the flat table (partitions
+    // are laid out back to back), or to the end of the MAN.
+    let mut end = man.len();
+    for part in &man_file.partitions {
+        for &off in part {
+            let a = man_file.data_region_offset.checked_add(off as usize)?;
+            if a > start && a < end {
+                end = a;
+            }
+        }
+    }
+    let body = man.get(start..end)?;
+    if pc0 >= body.len() {
+        return None;
+    }
+    Some((body, pc0))
+}
+
+#[cfg(test)]
+mod anim_tests {
+    use super::*;
+
+    /// A 30-frame clip - the length of Rim Elm's door / cupboard swing.
+    fn door(flags: u16, rate: i16) -> PropAnim {
+        PropAnim {
+            anim_id: 1,
+            frames: 30,
+            scaled_step: false,
+            step_div: 2,
+            cursor: 0,
+            flags,
+            rate,
+        }
+    }
+
+    /// The state `0x4C 0x35` leaves a prop in - the closed door. Retail's live
+    /// Rim Elm actors read `+0x62 = 0x001F`, cursor `0`: the restart has been
+    /// consumed, hold + clamp are set, and the cursor never moves.
+    #[test]
+    fn reset_hold_freezes_the_clip_at_frame_zero() {
+        let mut a = door(ANIM_SPAWN_FLAGS, 16);
+        AnimCmd::ResetHold.apply(&mut a);
+        a.tick(); // consumes the restart request
+        assert_eq!(a.flags, 0x001F, "the live actors' resting +0x62");
+        for _ in 0..120 {
+            a.tick();
+            assert_eq!(a.frame(), 0, "a held clip must not advance");
+        }
+    }
+
+    /// Clearing hold with clamp set plays the clip forward once and stops on
+    /// the last frame, latching the end bit. Retail's open door reads
+    /// `+0x62 = 0x011D`, cursor `479` = `30 * 16 - 1`.
+    #[test]
+    fn clearing_hold_plays_forward_and_clamps_open() {
+        let mut a = door(ANIM_SPAWN_FLAGS, 16);
+        AnimCmd::ResetHold.apply(&mut a);
+        a.tick();
+        // The house-door touch pass: `2c 07`, `2c 01`, `2b 03`, `2c 08`.
+        for c in [
+            AnimCmd::ClearBit(7),
+            AnimCmd::ClearBit(1),
+            AnimCmd::SetBit(3),
+            AnimCmd::ClearBit(8),
+        ] {
+            c.apply(&mut a);
+        }
+        for _ in 0..60 {
+            a.tick();
+        }
+        assert_eq!(a.cursor, 479, "clamped at the last frame (30 * 16 - 1)");
+        assert_eq!(a.frame(), 29);
+        assert_eq!(a.flags, 0x011D, "the live open door's +0x62");
+        assert!(a.at_end());
+    }
+
+    /// The cupboard's second segment (`2b 07`, `2c 01`, `2b 03`) plays the
+    /// clip backwards to frame 0 and clamps there - retail's `+0x62 = 0x019D`.
+    #[test]
+    fn setting_reverse_plays_the_clip_shut() {
+        let mut a = door(0x011D, 16);
+        a.cursor = 479;
+        for c in [AnimCmd::SetBit(7), AnimCmd::ClearBit(1), AnimCmd::SetBit(3)] {
+            c.apply(&mut a);
+        }
+        for _ in 0..60 {
+            a.tick();
+        }
+        assert_eq!(a.cursor, 0);
+        assert_eq!(a.flags, 0x019D, "the live closing door's +0x62");
+    }
+
+    /// The template flags an actor is born with loop, so an NPC idle clip runs
+    /// forever - which is why only the props' own `0x4C 0x35` freezes them.
+    #[test]
+    fn the_spawn_flags_loop() {
+        let mut a = door(ANIM_SPAWN_FLAGS, 8);
+        let mut wrapped = false;
+        let mut last = 0;
+        for _ in 0..200 {
+            a.tick();
+            if a.frame() < last {
+                wrapped = true;
+            }
+            last = a.frame();
+        }
+        assert!(wrapped, "no clamp bit -> the cursor wraps");
+    }
+
+    /// The house-door script shape, byte for byte from a retail `town01`
+    /// partition-0 record (`主人公の家`, anim 1), decodes to: a spawn pass that
+    /// sets the rate and resets+holds, and a one-segment touch pass that plays
+    /// the clip forward and waits for the end.
+    #[test]
+    fn a_house_door_record_decodes_to_open_and_wait() {
+        // `[u8 n=0][u8 anim=1]` header, then the script.
+        let rec: &[u8] = &[
+            0x00, 0x01, // header: no name, anim 1
+            0x25, // prologue marker
+            0x4C, 0x41, 0x20, 0x00, 0x00, 0x00, // rate <- 0x20
+            0x4C, 0x35, // reset + hold
+            0x21, // park
+            0x36, 0x00, 0x80, 0x2E, 0x00, // SFX (the door creak)
+            0x2C, 0x07, // clear reverse
+            0x2C, 0x01, // clear hold
+            0x2B, 0x03, // set clamp
+            0x31, 0x00, // (actor local flag, not an anim bit)
+            0x2C, 0x08, // clear the end latch
+            0x2D, 0x08, // wait for the end latch
+            0x21, // park
+            0x26, 0xED, 0xFF, // jump back
+        ];
+        let p = decode_prop_program(rec, 2);
+        assert_eq!(p.spawn, vec![AnimCmd::Rate(0x20), AnimCmd::ResetHold]);
+        assert_eq!(p.touch.len(), 1);
+        assert!(p.touch[0].wait_for_end);
+        assert_eq!(
+            p.touch[0].cmds,
+            vec![
+                AnimCmd::ClearBit(7),
+                AnimCmd::ClearBit(1),
+                AnimCmd::SetBit(3),
+                AnimCmd::ClearBit(8),
+            ]
+        );
+        assert!(p.animates());
+
+        // The spawn pass leaves it closed; the touch pass swings it open.
+        let mut a = PropAnim::spawned(1, 30, false, 2);
+        for c in &p.spawn {
+            c.apply(&mut a);
+        }
+        a.tick();
+        assert_eq!(a.frame(), 0);
+        assert_eq!(a.rate, 16, "0x20 >> 1");
+        for c in &p.touch[0].cmds {
+            c.apply(&mut a);
+        }
+        for _ in 0..40 {
+            a.tick();
+        }
+        assert_eq!(a.frame(), 29, "the door ends fully open");
+    }
+
+    /// A record with no animation commands past its park (the locked drawer,
+    /// the clock) decodes to a program that never moves the clip.
+    #[test]
+    fn a_static_prop_record_decodes_to_no_animation() {
+        let rec: &[u8] = &[
+            0x00, 0x03, // header: no name, anim 3
+            0x25, 0x31, 0x00, 0x21, 0x21, 0x26, 0xFE, 0xFF,
+        ];
+        let p = decode_prop_program(rec, 2);
+        assert!(p.spawn.is_empty());
+        assert!(!p.animates(), "nothing in the touch pass touches +0x62");
+    }
 }
 
 #[cfg(test)]
@@ -367,6 +1066,7 @@ mod tests {
                 world_z: 3 * 0x80 + 0x40,
                 rot_y: 0x400,
                 anim_id: 0,
+                anchor: (2, 3),
             }]
         );
     }

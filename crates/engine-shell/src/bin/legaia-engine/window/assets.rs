@@ -42,6 +42,7 @@ impl PlayWindowApp {
             color_meshes,
             color_tmd_src_index,
             posed_placement_meshes,
+            posed_tmds,
             lo,
             hi,
             world_map_hf,
@@ -188,10 +189,14 @@ impl PlayWindowApp {
             // leaves the doors floating inside the cabinet, below the floor.
             //
             // The rest state is **frame 0** (doors closed); the clip's later
-            // frames are the door swinging open, which retail only steps while
-            // the object's interaction script runs. So we bake frame 0 once per
-            // (mesh, anim) pair and instance it, exactly like the unposed props.
+            // frames are the door swinging open, which retail steps once the
+            // object's bind script is resumed by body contact. Frame 0 is baked
+            // once per (mesh, anim) pair and instanced - the cheap path every
+            // prop sits on until it is touched - while a prop whose clip has
+            // moved off frame 0 is re-posed per frame at the draw site (see
+            // `PlayWindowApp::field_posed_props` / `field_prop_anims`).
             let mut posed_placement_meshes = PosedPlacementMeshes::new();
+            let mut posed_tmds: Vec<(legaia_tmd::Tmd, Vec<u8>)> = Vec::new();
             if let Some(bundle) = scene_bundle.as_ref() {
                 for (res_tmd, anim_id) in self.posed_placement_keys(&res) {
                     let rtmd = &res.tmds[res_tmd];
@@ -229,7 +234,13 @@ impl PlayWindowApp {
                     let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
                         &rtmd.tmd, &rtmd.raw, &offsets,
                     );
-                    let mut slot = PosedMesh::default();
+                    // Retain the raw TMD so the draw pass can re-pose this prop
+                    // at whatever frame its clip is on.
+                    let mut slot = PosedMesh {
+                        tmd: Some(posed_tmds.len()),
+                        ..Default::default()
+                    };
+                    posed_tmds.push((rtmd.tmd.clone(), rtmd.raw.clone()));
                     if !vmesh.indices.is_empty() {
                         match r.upload_vram_mesh(
                             &vmesh.positions,
@@ -320,6 +331,7 @@ impl PlayWindowApp {
                 color_meshes,
                 color_tmd_src_index,
                 posed_placement_meshes,
+                posed_tmds,
                 lo,
                 hi,
                 world_map_hf,
@@ -349,6 +361,11 @@ impl PlayWindowApp {
         // environment object -> its scene-pack mesh -> a world transform.
         // Built here (not per-frame) because the placement table + pack are
         // fixed for the scene; the field draw branch just replays the list.
+        // Posed placed props (house doors, cupboards, the windmill): one draw
+        // per placement + its live clip state, so each keeps its own cursor.
+        // Resolved before the placement lists, which hand these props over.
+        let (posed_props, prop_anims) =
+            self.resolve_posed_props(&res, &posed_placement_meshes, scene_bundle.as_ref());
         let field_placement_draws =
             self.resolve_field_placement_draws(&res, &tmd_src_index, &posed_placement_meshes, true);
         // Same resolver, but bridged through the colour-mesh list: the untextured
@@ -528,6 +545,11 @@ impl PlayWindowApp {
         self.field_placement_draws = field_placement_draws;
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
+        // The posed props own their own draws (one per placement, so each keeps
+        // its own clip cursor) and their own live animation state.
+        self.field_posed_tmds = posed_tmds;
+        self.field_posed_props = posed_props;
+        self.field_prop_anims = prop_anims;
         self.world_map_terrain_draws = world_map_terrain_draws;
         self.ground_heightfield = world_map_hf;
         self.world_map_slot4_lines = world_map_slot4_lines;

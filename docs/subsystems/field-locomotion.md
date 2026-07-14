@@ -317,15 +317,86 @@ the clearest one - three objects (cabinet + two doors) driven by a 3-bone,
 opening and whose later frames swing them open. Drawn unposed, the door objects
 hang at the cabinet's mid-depth and sink through the floor.
 
-The engine bakes frame 0 per `(mesh, anim)` pair and instances it, so every such
-prop renders in its closed / at-rest state. Advancing the frame is the
-interaction script's job - the bind record *is* that script - and the engine
-does not step it yet, so the doors never open.
-
 Parsers: `legaia_engine_core::field_env::object_binds` (the bind lookup +
 header decode; the anchor tile is `Placement::anchor_col`/`anchor_row`) and
 `resolve_placed_env_draws` (the spawn gate + `EnvDraw::anim_id`). Disc-gated
 coverage: `crates/engine-core/tests/field_object_binds_disc.rs`.
+
+### The door swing: how a bind script drives the clip
+
+The bind record is not just a header carrying an anim id - it **is** the prop's
+field-VM script, and running it is what opens a door. Its passes are delimited
+by the `0x21` park opcode, and it drives the clip entirely through the anim
+control word `actor+0x62` plus the rate `actor+0x6A`.
+
+The per-frame advancer is `FUN_800204f8` (called from the actor tick
+`FUN_80021df4`). It rebinds `actor+0x4C` whenever the requested id `+0x5C`
+differs from the bound id `+0x5E`, then walks the **frame cursor** `actor+0x68`,
+which is in **1/16-frame units** - `FUN_8001b964` poses from
+`frame = (i16)(actor+0x68) >> 4`. The step is `actor+0x6A` (scaled by the clip's
+own `clip[1] & 1` / `clip[6]` divisor when set). `actor+0x62` selects the mode:
+
+| bit | name | effect in `FUN_800204f8` |
+|---|---|---|
+| `0x0002` | hold | skip the cursor advance - the clip freezes |
+| `0x0008` | clamp | stop at the clip's end; clear = wrap (loop) |
+| `0x0080` | reverse | count the cursor down instead of up |
+| `0x0100` | end | latched by the tick when the cursor reaches an end |
+| `0x0200` | restart | consumed by the next tick: snap to frame 0 (or the last frame, reversed) |
+
+The field-VM ops that write them are `0x2B <bit>` (set), `0x2C <bit>` (clear) and
+`0x2D <bit>` (test / spin) - all three address `actor+0x62`, not the per-actor
+flag word `actor+0x10` (that is `0x31`/`0x32`/`0x33`). `0x4C` nibble-4 sub-1
+writes the rate (`+0x6A = max(1, operand >> 1)`), and `0x4C` nibble-3 sub-5 /
+sub-6 are the two pose snaps: `+0x62 = (+0x62 & !reverse) | 0x20A` (restart at
+frame 0, one-shot, **hold**) and `+0x62 |= 0x28A` (restart at the *last* frame,
+reversed, one-shot, hold). `0x22 <id>` is SET_ANIM (`+0x5C`, forces a rebind via
+`+0x5E = 0xFFFE`, and picks draw kind `1` / `5` by whether the id is nonzero).
+
+An actor is born with the placed-object template `DAT_80073E70`'s
+`+0x62 = 0x0015` (no hold, no clamp - i.e. **looping**) and `+0x6A = 0x10`, which
+`FUN_8003a55c` halves to `8`. So the passes read:
+
+- **spawn** - `FUN_8003a55c` runs the record's prologue itself (its loop stops on
+  the first `0x21`). A door's is `0x4C 0x41 <rate>` then `0x4C 0x35`: rate `16`
+  (one frame per tick), then reset-and-hold. The door is shut and frozen. A prop
+  whose prologue carries **no** `0x4C 0x35` keeps the looping template flags and
+  turns forever - that is Rim Elm's windmill (`風車`).
+- **touch** - resumed when the player's body hits the prop (`FUN_801cfc40` links
+  the two actors through their `+0x98` partner slots; `FUN_801d5b5c` resumes the
+  touched one's parked script). A house door's pass is a creak
+  (`0x36` sub-`0x8000` → the SFX cue player `FUN_80035b50`) then
+  `2C 07` / `2C 01` / `2B 03` / `2C 08` - clear reverse, **clear hold**, set
+  clamp, clear the end latch - followed by `2D 08`, which spins until the tick
+  latches the end. The clip plays forward and clamps open.
+
+Rim Elm's cupboard adds a second segment after that spin - `2B 07` / `2C 01` /
+`2B 03`, i.e. set reverse and play again - so its doors swing out and then back
+shut, which is why every capture finds them closed.
+
+Live PCSX-Redux Rim Elm captures read exactly those words back off the actor
+list: a resting door is `+0x62 = 0x001F` / cursor `0`, the door the player is
+standing at is `+0x62 = 0x011D` / cursor `479` (`= 30 * 16 - 1`, the last frame
+of the 30-frame swing), and one that has played back shut is `+0x62 = 0x019D` /
+cursor `0`. The scene's NPCs sit at the untouched template `0x0015`.
+
+Engine port: `legaia_engine_core::field_env` - `PropAnim::tick` (the
+`FUN_800204f8` arithmetic), `decode_prop_program` (the record's spawn + touch
+command runs), and `PropAnimBank`, which holds one cursor **per placement** (so
+touching one cupboard leaves its three siblings shut) and posts contact edges
+against the same `±0x50` prop box the locomotion's static-entity collision arm
+uses. The play-window keeps the baked frame-0 mesh for every prop at rest and
+re-poses only the ones whose clip is running. Disc-gated coverage:
+`crates/engine-core/tests/field_prop_anim_disc.rs`.
+
+**Not modelled:** the touch pass's non-animation body. Retail's cupboard shows
+its item message *between* the open and the close (the script's dialogue sits
+after the end-latch spin); the engine's prop-contact path runs only the record's
+animation commands, so the doors swing out and straight back. The story-flag
+branches inside a record are likewise not followed - the decoder takes the
+record's play runs linearly and ignores the flag-gated pose snaps (`0x4C 0x36`
+on an already-searched shelf), which are alternate *spawn* states rather than
+contact reactions.
 
 The record's `+0x1E` byte is **not** part of this: it is the object's cull
 radius in `0x40` units, copied to `actor+0x58` and read by the screen-space

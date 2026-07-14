@@ -45,6 +45,208 @@ impl PlayWindowApp {
         )
     }
 
+    /// The scene's **posed placed props**, one entry per placement (not per
+    /// `(mesh, anim)` pair), plus the live animation bank that drives them.
+    ///
+    /// A `.MAP` placed object whose object bind names an animation is a
+    /// multi-object prop posed by that clip, and the clip is what makes a Rim
+    /// Elm house door swing: the bind record's script holds the prop on frame 0
+    /// at spawn (`0x4C 0x35`) and its resumable body clears the hold bit on body
+    /// contact, so the per-frame anim tick walks the clip forward
+    /// (`legaia_engine_core::field_env::PropAnimBank`, ports `FUN_800204F8`).
+    /// Each placement gets its own cursor, so touching one cupboard leaves its
+    /// three siblings shut.
+    ///
+    /// Props whose clip does not resolve (no ANM bundle, a bone-count mismatch)
+    /// yield no entry, and `resolve_placement_draws` then falls back to the raw
+    /// unposed mesh for them exactly as before.
+    pub(super) fn resolve_posed_props(
+        &self,
+        res: &SceneResources,
+        posed: &PosedPlacementMeshes,
+        bundle: Option<&legaia_asset::player_anm::PlayerAnmBundle>,
+    ) -> (
+        Vec<PosedPropDraw>,
+        legaia_engine_core::field_env::PropAnimBank,
+    ) {
+        use legaia_engine_core::field_env::{self, PropAnimBank};
+        let empty = (Vec::new(), PropAnimBank::default());
+        let Some(scene) = self.session.host.scene.as_ref() else {
+            return empty;
+        };
+        let Some(bundle) = bundle else { return empty };
+        let (Ok(Some(placements)), Ok(Some(binds))) = (
+            scene.field_object_placements(&self.session.host.index),
+            scene.field_object_binds(&self.session.host.index),
+        ) else {
+            return empty;
+        };
+        let (Ok(Some(man)), Ok(Some(_))) = (
+            scene.field_man_payload(&self.session.host.index),
+            scene.field_object_placements(&self.session.host.index),
+        ) else {
+            return empty;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            return empty;
+        };
+        let env_tmds = field_env::env_pack_tmd_indices(scene, res);
+        let floor_lut = scene
+            .field_floor_height_lut(&self.session.host.index)
+            .ok()
+            .flatten();
+        let (draws, _) =
+            field_env::resolve_placed_env_draws(&env_tmds, &placements, floor_lut, Some(&binds));
+
+        // Clip metadata straight off the ANM record header: frame count, the
+        // step-scaling selector (`a`'s high byte, bit 0) and its divisor
+        // (`flag`'s low byte) - the fields `FUN_800204F8` reads at clip `+2`,
+        // `+1` and `+6`.
+        let clip = |anim: u8| -> Option<(u16, bool, u8)> {
+            let r = bundle.record(anim.checked_sub(1)? as usize).ok()?;
+            Some((r.frame_count, (r.a >> 8) & 1 != 0, (r.flag & 0xFF) as u8))
+        };
+        let bank = PropAnimBank::build(&draws, &binds, &man_file, &man, clip);
+
+        let mut props = Vec::new();
+        for d in &draws {
+            if d.anim_id == 0 || !bank.props.contains_key(&d.anchor) {
+                continue;
+            }
+            let Some(&baked) = posed.get(&(d.res_tmd, d.anim_id)) else {
+                continue; // no baked pose - the unposed fallback draws it
+            };
+            let t = Mat4::from_translation(Vec3::new(
+                d.world_x as f32,
+                d.world_y as f32,
+                d.world_z as f32,
+            ));
+            let rot = Mat4::from_rotation_y(
+                f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0),
+            );
+            props.push(PosedPropDraw {
+                anchor: d.anchor,
+                anim_id: d.anim_id,
+                model: t * rot,
+                baked,
+            });
+        }
+        log::info!(
+            "play-window: {} posed placed props ({} of them animate on contact)",
+            props.len(),
+            bank.props.values().filter(|p| p.program.animates()).count(),
+        );
+        (props, bank)
+    }
+
+    /// Advance every posed prop's clip one frame and post the player's contact
+    /// edges into the bank. A no-op off the field, and while a dialog / menu /
+    /// cutscene owns the frame (the world is not stepping the player then, so
+    /// no contact edge can be crossed).
+    pub(super) fn tick_field_prop_anims(&mut self) {
+        if self.field_prop_anims.props.is_empty() {
+            return;
+        }
+        let w = &self.session.host.world;
+        if w.mode != SceneMode::Field {
+            return;
+        }
+        let player = w
+            .player_actor_slot
+            .and_then(|s| w.actors.get(s as usize))
+            .filter(|a| a.active)
+            .map(|a| (a.move_state.world_x as i32, a.move_state.world_z as i32))
+            // No player actor: tick the clips (the windmill keeps turning) but
+            // put the contact probe where nothing can touch it.
+            .unwrap_or((i32::MIN / 2, i32::MIN / 2));
+        self.field_prop_anims.tick(player);
+    }
+
+    /// Build this frame's posed-prop draws. A prop resting on frame 0 replays
+    /// its baked rest mesh (the cheap path - and where every prop sits until it
+    /// is touched); one whose clip has moved is re-posed from the raw TMD at its
+    /// live frame, so the door is drawn mid-swing.
+    ///
+    /// Returns `(baked_vram, baked_color, live_vram, live_color)` as
+    /// `(mesh index / uploaded mesh, model)` lists for the caller's draw pass.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn posed_prop_frame_draws(
+        &self,
+        r: &legaia_engine_render::Renderer,
+    ) -> (
+        Vec<(usize, Mat4)>,
+        Vec<(usize, Mat4)>,
+        Vec<(UploadedVramMesh, Mat4)>,
+        Vec<(UploadedColorMesh, Mat4)>,
+    ) {
+        let mut baked_v = Vec::new();
+        let mut baked_c = Vec::new();
+        let mut live_v = Vec::new();
+        let mut live_c = Vec::new();
+        let Some(bundle) = self.npc_anim_bundles.0.as_ref() else {
+            return (baked_v, baked_c, live_v, live_c);
+        };
+        for p in &self.field_posed_props {
+            let frame = self.field_prop_anims.frame(p.anchor).unwrap_or(0);
+            if frame == 0 {
+                if let Some(i) = p.baked.vram {
+                    baked_v.push((i, p.model));
+                }
+                if let Some(i) = p.baked.color {
+                    baked_c.push((i, p.model));
+                }
+                continue;
+            }
+            // Off the rest pose: rebuild. `FUN_8001B964` poses object `b` of the
+            // mesh by bone `b` of the clip at the actor's current frame
+            // (`(i16)(actor+0x68) >> 4`), which is exactly the `R*v + T` builder
+            // the battle / player pose path already uses.
+            let Some((tmd, raw)) = p.baked.tmd.and_then(|i| self.field_posed_tmds.get(i)) else {
+                continue;
+            };
+            let rec = (p.anim_id - 1) as usize;
+            let bones = tmd.objects.len();
+            let offsets: Vec<([i16; 3], [i16; 3])> = (0..bones)
+                .map(|b| match bundle.bone_transform(rec, frame, b) {
+                    Some(t) => (
+                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                    ),
+                    None => ([0; 3], [0; 3]),
+                })
+                .collect();
+            if p.baked.vram.is_some() {
+                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &offsets);
+                if !vmesh.indices.is_empty()
+                    && let Ok(m) = r.upload_vram_mesh(
+                        &vmesh.positions,
+                        &vmesh.uvs,
+                        &vmesh.cba_tsb,
+                        &vmesh.normals,
+                        &vmesh.colors,
+                        &vmesh.indices,
+                    )
+                {
+                    live_v.push((m, p.model));
+                }
+            }
+            if p.baked.color.is_some() {
+                let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(tmd, raw, &offsets);
+                if !cmesh.is_empty()
+                    && let Ok(m) = r.upload_color_mesh_blended(
+                        &cmesh.positions,
+                        &cmesh.colors,
+                        &cmesh.indices,
+                        &cmesh.blend,
+                    )
+                {
+                    live_c.push((m, p.model));
+                }
+            }
+        }
+        (baked_v, baked_c, live_v, live_c)
+    }
+
     /// The distinct `(res.tmds index, anim id)` pairs the scene's **placed**
     /// objects need a posed rest mesh for: every bound placement whose bind
     /// names a nonzero anim id. `upload_assets` bakes frame 0 of each.
@@ -554,22 +756,19 @@ impl PlayWindowApp {
         let mut draws = Vec::new();
         for d in &env_draws {
             // A bind with an anim id means the prop's TMD objects are that
-            // clip's bones: draw the baked frame-0 rest mesh, never the raw
-            // one. When the pose is unavailable (no scene ANM bundle, or a
+            // clip's bones, and the clip is live (a house door swings open on
+            // contact). Those props are drawn from `field_posed_props`, which
+            // owns one entry per placement and re-poses it at its own frame -
+            // so hand them over rather than emitting a static instance here.
+            // When the pose is unavailable (no scene ANM bundle, or a
             // bone-count mismatch) `upload_assets` has already logged it and we
             // fall back to the unposed mesh rather than losing the object.
             let posed_idx = match (d.anim_id, posed) {
                 (0, _) | (_, None) => None,
-                (anim, Some((table, textured))) => table
-                    .get(&(d.res_tmd, anim))
-                    .map(|m| if textured { m.vram } else { m.color }),
+                (anim, Some((table, _))) => table.get(&(d.res_tmd, anim)).map(|_| ()),
             };
             let mesh_idx = match posed_idx {
-                // The prop has a pose but no mesh on *this* pipeline (e.g. it
-                // is fully textured, so the colour bridge has nothing) - skip
-                // it here; the other pipeline draws it.
-                Some(None) => continue,
-                Some(Some(idx)) => idx,
+                Some(()) => continue, // owned by the posed-prop pass
                 None => match res_to_mesh[d.res_tmd] {
                     Some(idx) => idx,
                     None => {

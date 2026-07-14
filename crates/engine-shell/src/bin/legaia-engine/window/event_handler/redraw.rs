@@ -161,6 +161,12 @@ impl PlayWindowApp {
                 Ok(_) => {}
                 Err(e) => log::error!("session tick: {e:#}"),
             }
+            // Placed-prop animation: advance every posed prop's clip and post
+            // the player's contact edges, so walking into a Rim Elm house door
+            // resumes its bind script and swings it open (retail's per-actor
+            // anim tick `FUN_800204F8`, driven by the body-contact script
+            // resume `FUN_801D5B5C`).
+            self.tick_field_prop_anims();
             // Opt-in synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`): no
             // retail scene script installs one, so this is the visual
             // trigger for the per-cell tile-actor draw pass.
@@ -481,6 +487,10 @@ impl PlayWindowApp {
             // pose_frame, regenerate and re-upload the posed mesh.
             // posed_overrides[i] replaces meshes[i] when present.
             let (posed_overrides, player_color_posed) = self.build_posed_actor_overrides(r);
+            // Placed props posed at their live clip frame: the ones resting on
+            // frame 0 keep the baked rest mesh, the ones mid-swing get rebuilt.
+            let (posed_prop_baked_v, posed_prop_baked_c, posed_prop_live_v, posed_prop_live_c) =
+                self.posed_prop_frame_draws(r);
 
             // Field-NPC clip playback: advance each placed NPC's
             // looping ANM clip and re-upload its posed mesh halves
@@ -754,6 +764,24 @@ impl PlayWindowApp {
                                 });
                             }
                         }
+                        // Posed props (house doors, cupboards, the windmill):
+                        // the ones resting on frame 0 replay their baked rest
+                        // mesh; the ones whose clip is running were re-posed
+                        // above, so the door draws mid-swing.
+                        for (mesh_idx, model) in &posed_prop_baked_v {
+                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * *model,
+                                });
+                            }
+                        }
+                        for (mesh, model) in &posed_prop_live_v {
+                            draws.push(SceneDraw {
+                                mesh,
+                                mvp: cam * *model,
+                            });
+                        }
                     }
                     // Untextured props (the F*/G* meshes the VRAM path
                     // drops) on the colour pipeline, same transforms.
@@ -765,6 +793,20 @@ impl PlayWindowApp {
                                     mvp: cam * *model,
                                 });
                             }
+                        }
+                        for (mesh_idx, model) in &posed_prop_baked_c {
+                            if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                color_draws.push(ColorSceneDraw {
+                                    mesh,
+                                    mvp: cam * *model,
+                                });
+                            }
+                        }
+                        for (mesh, model) in &posed_prop_live_c {
+                            color_draws.push(ColorSceneDraw {
+                                mesh,
+                                mvp: cam * *model,
+                            });
                         }
                     }
                     // The player's untextured mesh half (pants /

@@ -149,12 +149,36 @@ pub(crate) struct PosedMesh {
     pub vram: Option<usize>,
     /// Index into `PlayWindowApp::color_meshes` (the untextured pipeline).
     pub color: Option<usize>,
+    /// Index into `PlayWindowApp::field_posed_tmds` - the raw TMD this prop
+    /// re-poses from when its clip moves off frame 0.
+    pub tmd: Option<usize>,
 }
 
 /// Posed static-object meshes keyed by `(res.tmds index, anim id)` - one baked
 /// rest pose per distinct (env mesh, animation clip) pair the scene's placed
 /// objects reference. See `PlayWindowApp::posed_placement_keys`.
 pub(crate) type PosedPlacementMeshes = std::collections::HashMap<(usize, u8), PosedMesh>;
+
+/// One **posed placed prop** draw: a multi-object env mesh whose TMD objects are
+/// the bones of the clip its object bind names (Rim Elm's house doors, its
+/// cupboards, the windmill).
+///
+/// A prop resting on frame 0 draws the shared baked rest mesh - the cheap path,
+/// and where every prop sits until it is touched. Once its clip advances, the
+/// draw pass rebuilds the pose from the raw TMD at the prop's live frame, so the
+/// door actually swings.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PosedPropDraw {
+    /// The placement's footprint-anchor tile - its key into
+    /// `PlayWindowApp::field_prop_anims`.
+    pub anchor: (u8, u8),
+    /// The clip id the prop's bind names (ANM record `anim_id - 1`).
+    pub anim_id: u8,
+    /// World model matrix.
+    pub model: Mat4,
+    /// The baked frame-0 rest meshes + the raw TMD to re-pose from.
+    pub baked: PosedMesh,
+}
 
 /// Per-party-member battle facial-animation state: the member's per-action
 /// face tracks (entry `+0x8C` eyes / `+0x98` mouth, indexed by the playing
@@ -317,6 +341,22 @@ struct PlayWindowApp {
     /// scenes. Drawn in `SceneMode::Field` so the town renders its buildings /
     /// terrain at their world positions instead of all at the origin.
     field_placement_draws: Vec<(usize, Mat4)>,
+    /// The scene's **posed** placed props (a bind naming a nonzero anim id), one
+    /// entry per placement rather than one per `(mesh, anim)` pair: each keeps
+    /// its own clip cursor, so touching one Rim Elm cupboard does not open the
+    /// other three. Excluded from `field_placement_draws` /
+    /// `field_placement_color_draws` - this list owns their draws.
+    field_posed_props: Vec<PosedPropDraw>,
+    /// Live clip state of every posed prop, keyed by anchor tile. Ticked once
+    /// per field frame with the player's position: entering a prop's contact box
+    /// runs its bind record's touch pass, which is what swings a house door open.
+    /// See `legaia_engine_core::field_env::PropAnimBank`.
+    field_prop_anims: legaia_engine_core::field_env::PropAnimBank,
+    /// Raw TMDs of the posed props, indexed by `PosedMesh::tmd`. A moving prop
+    /// re-poses from these at its live frame; the rest pose is baked once into
+    /// `PosedPropDraw::baked`. (The clip source is `npc_anim_bundles.0`, the
+    /// scene ANM bundle.)
+    field_posed_tmds: Vec<(legaia_tmd::Tmd, Vec<u8>)>,
     /// The current scene's TMD pack indexed by `pack_index` (= a field move-VM
     /// stager's relative `model_sel`): `res.tmds` filtered to the
     /// `scene_asset_table` bundle entry, in scan order - the same `env_tmds` the
