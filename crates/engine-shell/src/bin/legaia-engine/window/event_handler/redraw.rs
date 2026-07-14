@@ -1108,6 +1108,10 @@ impl PlayWindowApp {
             // behind its text, which is emitted in the text layer).
             let mut save_chrome_draw_vec = self.save_select_chrome_sprite_draws(w, h);
             save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
+            // Dialog-window chrome (gradient fill + gold frame + hand
+            // cursors) shares the system-UI atlas slot; a dialog box
+            // and the boot/menu chrome are mutually exclusive states.
+            save_chrome_draw_vec.extend(self.dialog_chrome_sprite_draws(w, h));
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,

@@ -580,6 +580,7 @@ impl PlayWindowApp {
                         gauge_digits: atlas_data.band_gauge_digits(),
                         gauge_100: atlas_data.band_gauge_100(),
                         gauge_fill: atlas_data.band_gauge_fill(),
+                        dialog_fill: atlas_data.band_dialog_fill(),
                         icon_weapon: atlas_data.band_icon_weapon(),
                         icon_helmet: atlas_data.band_icon_helmet(),
                         icon_armor: atlas_data.band_icon_armor(),
