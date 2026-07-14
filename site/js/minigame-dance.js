@@ -21,18 +21,25 @@
  *     and the BGM is the real SEQ+VAB pair rendered through the clean-room
  *     SPU.
  *
+ * The dancers are the retail cast: the overlay's spawner (FUN_801d0190)
+ * names each floor slot's dancer kind in a baked descriptor table - Noa's
+ * own field mesh in the centre, the dance-hall scene module's dedicated
+ * dancer NPCs left and right - and every clip they play here (the idle,
+ * the dance-groove loop, the judge-triggered moves) is a record of that
+ * scene's choreography ANM bundle (PROT 1229), exactly the clip the
+ * descriptor names for the event (`dance_cast_json`).
+ *
  * What is NOT drawn, and the page says so: the dance hall itself (disco
  * ball, spotlights, crowd, floor) is the host field scene's 3D geometry,
  * not the overlay's, so the HUD sits on a neutral ground; and the two AI
  * dancers' runs are not simulated - their score boxes idle at zero and
- * their faces only react cosmetically.
+ * their moves demonstrate the chart rather than score it.
  */
 window.MgDance = (function () {
   'use strict';
 
   const SCALE = 2;                 /* retail 320x240 -> 640x480 canvas */
   const A2R = (Math.PI * 2) / 4096; /* PSX angle units -> radians */
-  const ANIM_FPS = 14;             /* locomotion clip rate (idle bob) */
 
   /* Widget ids, as named in legaia_asset::dance_art (traced draw sites). */
   const W = {
@@ -51,10 +58,10 @@ window.MgDance = (function () {
 
     let widgets = null;      /* the overlay's widget table */
     let layout = null;       /* traced emitter geometry */
+    let castMeta = null;     /* the overlay's cast tables (dance_cast_json) */
     let pages = {};          /* palette -> HUD-page canvas */
     let faces = null;        /* [dancer][pose] -> canvas, + meta */
     let body = null;         /* the 3D dancer-body scene (null = HUD only) */
-    let bodyTick = 0;        /* frame counter for the idle bob when not live */
     let sfx = null;          /* { ctx, buffers, stings } */
     let sfxIds = null;
     let bgm = null;          /* { buffer, src } */
@@ -62,9 +69,9 @@ window.MgDance = (function () {
 
     /* ---- run-local presentation state ---- */
     let banners = [];        /* {w, x, y, t, life, rise} */
-    let poses = [0, 0, 0];   /* face pose per displayed dancer */
-    let poseT = [0, 0, 0];
-    let blinkT = [40, 90, 140];
+    let poses = [0, 0, 0, 0];   /* face pose per rig (0 = Noa, 1..3 = NPCs) */
+    let poseT = [0, 0, 0, 0];
+    let blinkT = [40, 90, 140, 190];
     let flashT = 0;          /* track hit flash */
     let intro = null;        /* pre-run count-in: {t} or null */
     let finished = false;
@@ -94,11 +101,13 @@ window.MgDance = (function () {
       widgets.forEach(w => pals.add(w.palette));
       pals.forEach(p => page(p));
 
-      /* The face windows: [dancer 0 = Noa, 1..2 = the pack strips], every
-       * pose pre-composed through the traced MoveImage blits. */
+      /* The face windows: rig 0 = Noa's field atlas, rigs 1..3 = the pack's
+       * dancer strips (Mary + the two competitors), every pose pre-composed
+       * through the traced MoveImage blits. The floor cast picks its rig by
+       * dancer kind (kind = rig, FUN_801d03c4). */
       const meta = JSON.parse(api.dance_face_meta_json());
       faces = { meta, imgs: [] };
-      for (let d = 0; d < 3; d++) {
+      for (let d = 0; d < meta.length; d++) {
         const m = meta[d];
         const per = [];
         if (m && m.ok) {
@@ -113,6 +122,9 @@ window.MgDance = (function () {
       const cues = JSON.parse(api.dance_sfx_json());
       if (cues.length) sfxIds = JSON.parse(api.dance_sfx_cue_ids());
       bgmInfo = JSON.parse(api.dance_bgm_ready_json());
+      try {
+        castMeta = api.dance_cast_json ? JSON.parse(api.dance_cast_json()) : null;
+      } catch (e) { castMeta = null; }
 
       /* The dancer bodies: Noa's own field-view model plus the two AI dancers,
        * drawn on a WebGL canvas behind the HUD (the same TmdRenderer the Baka
@@ -129,14 +141,16 @@ window.MgDance = (function () {
 
     /* ------------- 3D dancer bodies (behind the HUD) ------------- */
 
-    /* Assemble the three dancer bodies into one posed buffer + camera, the
+    /* Assemble the retail floor cast into one posed buffer + camera, the
      * browser twin of minigame-baka.js's fighter scene. Returns null (HUD
-     * only) when the bodies or the WebGL context aren't available. */
+     * only) when the cast or the WebGL context aren't available. */
     function buildBodyScene() {
       if (!glCanvas || !window.TmdRenderer) return null;
       if (!api.dance_body_ready || !api.dance_body_ready()) return null;
       const count = api.dance_body_count();
       if (!count) return null;
+      const cast = api.dance_cast_json ? JSON.parse(api.dance_cast_json()) : null;
+      if (!cast) return null;
 
       const dancers = [];
       for (let d = 0; d < count; d++) {
@@ -150,27 +164,35 @@ window.MgDance = (function () {
           oid: api.dance_body_object_ids(d),
           flat: api.dance_body_flat_rgba(d),
           parts: api.dance_body_part_count(d),
+          kind: cast.dancers[d] ? cast.dancers[d].kind : 0,
         });
       }
 
-      /* Idle + walk locomotion clips per dancer (frame 0 assembles the parts;
-       * the walk clip is what we cycle to the beat). */
+      /* Every choreography clip the descriptor names (0 = idle, 1 = the
+       * dance-groove loop, 2.. = the judge-triggered moves), with the retail
+       * cursor rate (1/16-frame units per tick, FUN_800204F8). */
       const clip = (d, c, parts) => {
         const dims = api.dance_body_anim_dims(d, c);
         if (!dims[0] || !dims[1]) return null;
         const frames = api.dance_body_pose_frames(d, c, parts);
         if (!frames.length) return null;
-        return { frames, frameCount: dims[1], parts };
+        const meta = (cast.dancers[d].clips || [])[c] || {};
+        return { frames, frameCount: dims[1], parts, rate: meta.rate || 8 };
       };
-      const clips = dancers.map((f, d) => ({
-        idle: clip(d, 0, f.parts),
-        walk: clip(d, 1, f.parts),
-      }));
+      const clips = dancers.map((f, d) => {
+        const per = [];
+        for (let c = 0; c < (cast.dancers[d].clips || []).length; c++) {
+          per.push(clip(d, c, f.parts));
+        }
+        return per;
+      });
+      /* Per-dancer playback state: cursor in 1/16-frame units over the
+       * current clip; `move` = a one-shot move clip overriding the loop. */
+      const anim = dancers.map(() => ({ cursor: 0, move: null }));
 
-      /* Half-extent of each assembled rest pose -> floor spacing (FITTED, the
-       * same measure baka uses to stand its fighters apart). */
+      /* Vertical extent of the rest pose, for camera framing. */
       const halfOf = (f, cl) => {
-        const c = cl.idle || cl.walk;
+        const c = cl[0] || cl[1];
         if (!c) return 200;
         const out = new Float32Array(f.pos);
         poseInto(out, f.pos, f.oid, c, 0, 0, 0, 0);
@@ -181,14 +203,16 @@ window.MgDance = (function () {
         }
         return (hi - lo) / 2 || 200;
       };
-      const halves = dancers.map((f, d) => halfOf(f, clips[d]));
-      const maxHalf = Math.max.apply(null, halves);
-      const gap = maxHalf * 2.6;
+      const maxHalf = Math.max.apply(null, dancers.map((f, d) => halfOf(f, clips[d])));
       const human = api.dance_body_human_index();
-      /* Display order left/centre/right; centre (the human) sits at x=0. */
-      const dx = dancers.map((_, d) => (d - human) * gap);
+      /* Floor offsets: the overlay's own spawn table (qualifier mode), the
+       * human's slot at the origin - retail spacing, not a fitted gap. */
+      const humanX = cast.dancers[human] ? cast.dancers[human].x : 0;
+      const dx = dancers.map((_, d) =>
+        cast.dancers[d] ? (cast.dancers[d].x - humanX) : 0);
+      const spread = Math.max.apply(null, dx.map(Math.abs)) || maxHalf;
 
-      /* Combined vertex buffers (player, then dancer 2, then dancer 3, ...). */
+      /* Combined vertex buffers (left dancer, human, right dancer). */
       const vertBases = [];
       let total = 0;
       for (const f of dancers) { vertBases.push(total); total += f.pos.length / 3; }
@@ -212,43 +236,83 @@ window.MgDance = (function () {
       renderer.uploadMesh(pos, uvs, ct, idx, flat);
 
       const scene = {
-        renderer, dancers, clips, dx, vertBases,
+        renderer, dancers, clips, anim, moves: cast.moves, dx, vertBases,
         base: pos.slice(),      /* pristine object-local vertices */
         out: pos,               /* per-frame posed copy (uploaded buffer) */
+        lastBeat: -1,
         cam: { yaw: 0.0, pitch: 0.12, distance: 1.9 },
         center: [0, -maxHalf * 0.85, 0],
-        radius: gap * 1.1 + maxHalf * 0.9,
+        radius: spread * 1.15 + maxHalf * 1.05,
       };
       attachOrbit(scene);
       return scene;
     }
 
-    /* Pick the clip frame for `clip` this render: when the run is live the
-     * walk cycles to the beat (two beats per walk loop, synced to the beat
-     * phase); before/after a run the idle bobs at the clip rate. */
-    function beatFrame(cl, st) {
-      if (!cl) return 0;
-      const n = cl.frameCount;
-      if (!st || !st.live) return Math.floor(bodyTick * (ANIM_FPS / 60)) % n;
-      const period = st.period || 281;
-      const phaseTotal = (st.beat | 0) * period + (st.phase | 0);
-      const step = (period * 2) / n;              /* two beats per loop */
-      const f = Math.floor(phaseTotal / step);
-      return ((f % n) + n) % n;
+    /* Start a one-shot move clip on dancer `d` (a judge-triggered pair from
+     * the kind descriptor); it plays through once, then the dance loop
+     * resumes. Ignored when that clip didn't decode. */
+    function triggerMove(d, clipId) {
+      const b = body;
+      if (!b || !b.clips[d] || !b.clips[d][clipId]) return;
+      b.anim[d].move = clipId;
+      b.anim[d].cursor = 0;
     }
 
-    /* Pose every dancer to the beat and render the 3D floor on the gl canvas. */
-    function bodyRender(st) {
+    /* Advance dancer `d`'s cursor by its clip rate and return the frame to
+     * pose this render. Mirrors the retail clip driver's cursor semantics:
+     * cursor is in 1/16-frame units, one-shot moves clamp at the last frame
+     * then hand back to the loop, loops wrap. */
+    function advance(d, live) {
+      const b = body, a = b.anim[d];
+      const loopId = live ? 1 : 0;             /* dance-groove loop / idle */
+      let clipId = a.move !== null ? a.move : loopId;
+      let c = b.clips[d][clipId] || b.clips[d][loopId] || b.clips[d][0];
+      if (!c) return { clip: null, frame: 0 };
+      const last = c.frameCount * 16 - 1;
+      if (a.move !== null && a.cursor >= last) {
+        a.move = null;                          /* move done -> loop */
+        a.cursor = 0;
+        clipId = loopId;
+        c = b.clips[d][clipId] || b.clips[d][0];
+        if (!c) return { clip: null, frame: 0 };
+      }
+      const frame = Math.min(a.cursor >> 4, c.frameCount - 1);
+      a.cursor += c.rate;
+      if (a.move === null && a.cursor > last) a.cursor = 0;
+      return { clip: c, frame };
+    }
+
+    /* Pose every dancer and render the 3D floor on the gl canvas. The AI
+     * dancers demonstrate the chart: retail auto-feeds them their presses
+     * from the same chart (FUN_801d1af4 for player != 0), so on each judged
+     * beat they fire the same move clip a correct press would - direction
+     * symbols trigger the sequence move, the every-4th-beat combo window the
+     * on-beat step. (Their scores aren't simulated; the note says so.) */
+    function bodyRender(st, chart) {
       const b = body;
-      bodyTick++;
       const live = !!(st && st.live);
+      if (live && chart && b.moves) {
+        const beat = st.beat | 0;
+        if (beat !== b.lastBeat) {
+          b.lastBeat = beat;
+          const row = chart.rows[Math.min(st.lane, chart.rows.length - 1)];
+          const sym = row ? row[beat % row.length] : 0;
+          for (let d = 0; d < b.dancers.length; d++) {
+            if (d === api.dance_body_human_index()) continue;
+            if ((beat & 3) === 3) triggerMove(d, b.moves.beat[0]);
+            else if (sym === 1) triggerMove(d, b.moves.seq_square[0]);
+            else if (sym === 2) triggerMove(d, b.moves.seq_circle[0]);
+          }
+        }
+      } else {
+        b.lastBeat = -1;
+      }
       for (let d = 0; d < b.dancers.length; d++) {
-        const f = b.dancers[d], cl = b.clips[d];
-        const c = live ? (cl.walk || cl.idle) : (cl.idle || cl.walk);
-        if (!c) continue;
-        const frame = beatFrame(c, live ? st : null);
+        const st_ = advance(d, live);
+        if (!st_.clip) continue;
         /* The field meshes face +Z; spin them PI so they face the camera. */
-        poseInto(b.out, b.base, f.oid, c, frame, b.vertBases[d], b.dx[d], Math.PI);
+        poseInto(b.out, b.base, b.dancers[d].oid, st_.clip, st_.frame,
+                 b.vertBases[d], b.dx[d], Math.PI);
       }
       b.renderer.updatePositions(b.out);
       b.renderer.render(b.cam.yaw, b.cam.pitch, b.cam.distance,
@@ -506,8 +570,22 @@ window.MgDance = (function () {
 
     /* ---- events from the rules engine ---- */
 
-    function onPress(result, st) {
+    function onPress(result, st, sym) {
       const B = layout.banners;
+      /* Noa's body plays the judge-triggered move clip the kind descriptor
+       * names for the event (see bodyRender's doc for the pair semantics). */
+      if (body && body.moves && st) {
+        const lane = Math.min(st.lane | 0, 2);
+        const M = body.moves, human = api.dance_body_human_index();
+        if (result === 'miss') {
+          if (sym === 1) triggerMove(human, M.miss_square);
+          else if (sym === 2) triggerMove(human, M.miss_circle);
+        } else if (sym === 3) {
+          triggerMove(human, M.beat[lane]);
+        } else if (result === 'sequence') {
+          triggerMove(human, (sym === 2 ? M.seq_circle : M.seq_square)[lane]);
+        }
+      }
       if (result === 'miss') {
         play('miss', 0.5);
         poses[0] = 1; poseT[0] = 24;
@@ -545,7 +623,11 @@ window.MgDance = (function () {
 
     function startRun(songSeconds) {
       banners = [];
-      poses = [0, 0, 0]; poseT = [0, 0, 0];
+      poses = [0, 0, 0, 0]; poseT = [0, 0, 0, 0];
+      if (body) {
+        body.lastBeat = -1;
+        for (const a of body.anim) { a.cursor = 0; a.move = null; }
+      }
       flashT = 0; finished = false;
       onPress.combo = 0;
       intro = { t: 0 };
@@ -562,10 +644,17 @@ window.MgDance = (function () {
      * Returns true while the engine clock should hold. */
     function introActive() { return intro !== null; }
 
+    /* Face rigs of the floor cast, left/centre/right (kind = rig id,
+     * FUN_801d03c4); the retail qualifier cast when the tables didn't decode. */
+    function castRigs() {
+      if (castMeta && castMeta.dancers) return castMeta.dancers.map(d => d.kind);
+      return [2, 0, 3];
+    }
+
     function tickCosmetics(st) {
-      /* Blink + AI reactions (cosmetic only - the AI runs are not
-       * simulated, and the page's note says so). */
-      for (let d = 0; d < 3; d++) {
+      /* Blink + AI reactions (cosmetic - the AI scores are not simulated,
+       * and the page's note says so). */
+      for (let d = 0; d < 4; d++) {
         if (poseT[d] > 0 && --poseT[d] === 0) poses[d] = 0;
         if (--blinkT[d] <= 0) {
           blinkT[d] = 80 + ((Math.random() * 80) | 0);
@@ -573,8 +662,8 @@ window.MgDance = (function () {
         }
       }
       if (st && !st.dead_zone && (st.beat & 3) === 3 && st.phase < 40) {
-        for (let d = 1; d < 3; d++) {
-          if (poseT[d] === 0) { poses[d] = 2; poseT[d] = 16; }
+        for (const rig of castRigs()) {
+          if (rig !== 0 && poseT[rig] === 0) { poses[rig] = 2; poseT[rig] = 16; }
         }
       }
       if (flashT > 0) flashT--;
@@ -585,10 +674,10 @@ window.MgDance = (function () {
       const Wpx = canvas.width, Hpx = canvas.height;
       if (body) {
         /* The dancers are drawn in 3D on the gl canvas behind this one -
-         * Noa's own field-view model plus the two AI dancers, posed to the
-         * beat off the party locomotion ANM. Keep the HUD canvas transparent
-         * so the bodies show through. */
-        bodyRender(st);
+         * Noa's own field-view model plus the dance-hall scene's dancer
+         * NPCs, playing the scene's choreography clips. Keep the HUD canvas
+         * transparent so the bodies show through. */
+        bodyRender(st, chart);
         g.clearRect(0, 0, Wpx, Hpx);
       } else {
         /* No body scene (no WebGL, or PROT 0874 didn't decode): the HUD sits
@@ -616,10 +705,12 @@ window.MgDance = (function () {
       }
 
       /* The dancers' faces - the real face-stamp windows, under each box.
-       * Display order: left AI = rig 1, centre = Noa (rig 0), right = rig 2. */
-      drawFace(1, L.score_boxes.xs[0], 46);
-      drawFace(0, L.score_boxes.xs[1], 46);
-      drawFace(2, L.score_boxes.xs[2], 46);
+       * Rig per box = the floor cast's dancer kind (retail qualifier:
+       * left = rig 2, centre = Noa rig 0, right = rig 3). */
+      const rigs = castRigs();
+      drawFace(rigs[0], L.score_boxes.xs[0], 46);
+      drawFace(rigs[1], L.score_boxes.xs[1], 46);
+      drawFace(rigs[2], L.score_boxes.xs[2], 46);
 
       if (st) {
         /* Groove gauge: Lv. label + the level digit (u0 = 0xD0 + lane*8). */

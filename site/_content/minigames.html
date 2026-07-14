@@ -710,28 +710,34 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           '(extraction 1048, SEQ+VAB) rendered through the clean-room SPU when you press Start. '
         : 'The BGM entry did not decode from this image, so the run plays without music. ') +
       (danceR.bodyOk()
-        ? '<br><br><b>The dancers’ bodies are drawn in 3D.</b> The dance overlay loads ' +
-          'no mesh of its own, so its dancers are actors drawn from the field-character ' +
-          'pool the engine keeps resident across every field scene (PROT&nbsp;0874&nbsp;&sect;0, ' +
-          '<code>DAT_8007C018[0..4]</code>): the centre dancer is <b>Noa’s own field-view ' +
-          'model</b> - the very mesh the play / field view walks - and the two AI dancers ' +
-          'are the other resident party bodies (Vahn, Gala). They render textured against ' +
-          'the field-character VRAM (PROT&nbsp;0874&nbsp;&sect;2) and are posed to the beat ' +
-          'off the party field-locomotion ANM (PROT&nbsp;0874&nbsp;&sect;1) - the same clip ' +
-          'bank the field pool actors animate with - through the shared WebGL renderer the ' +
-          'Baka duel uses. Drag to orbit. '
-        : '<br><br>The dancer <b>bodies</b> did not decode from this image (PROT&nbsp;0874), ' +
-          'so the HUD sits on a neutral ground rather than a faked floor. ') +
+        ? '<br><br><b>The dancers are the retail cast, and they dance.</b> The dance ' +
+          'overlay loads no mesh of its own - its spawner (<code>FUN_801d0190</code>) ' +
+          'names each floor slot’s dancer <em>kind</em> in a baked 5-record descriptor ' +
+          'table: the centre dancer is <b>Noa’s own field-view model</b> (resident ' +
+          'global pool slot 1 = PROT&nbsp;0874&nbsp;&sect;0) and the two AI dancers are ' +
+          'the <b>dedicated dancer NPCs of the dance-hall scene module</b> ' +
+          '(CDNAME&nbsp;<code>other7</code>) - the same figures the koin3 town scene ' +
+          'places on its dance floor, with their own face strips in the art pack. ' +
+          'Every clip they play is a record of that scene’s <b>60-record choreography ' +
+          'ANM bundle</b> (PROT&nbsp;1229), exactly as the descriptor names it: the ' +
+          'pre-game idle, the dance-groove loop during play, and the judge-triggered ' +
+          'move clips (<code>FUN_801d1358</code>/<code>FUN_801d1af4</code> - miss ' +
+          'reactions, per-lane sequence moves, the on-beat step). Noa plays the move ' +
+          'your judged press earns; the AI dancers demonstrate the chart’s step on ' +
+          'each beat, since their scoring runs aren’t simulated. Drag to orbit. '
+        : '<br><br>The dancer <b>cast</b> did not decode from this image (the overlay ' +
+          'tables, the dance-hall scene module, or PROT&nbsp;0874), so the HUD sits on ' +
+          'a neutral ground rather than a faked floor. ') +
       '<br><br><b>What is missing, and why.</b> The dance hall itself - the disco ball, ' +
       'the spotlight cones, the crowd - is the host <em>field scene’s</em> ' +
       '3D geometry, not the overlay’s to draw (its textures are even in this same ' +
       'pack), so the dancers stand on a neutral floor rather than a faked room. The two ' +
       '<b>AI dancers’ runs are not simulated</b>: retail auto-feeds them from the same ' +
       'chart, but this page runs the human lane only, so their score boxes idle at zero ' +
-      'and their faces only react cosmetically. Banner rise/fade curves are approximated ' +
-      '(retail drives them through per-banner actor scripts), and the three step-stock ' +
-      'chips under the track stay at three (the rules engine doesn’t model the ' +
-      'timing-button stock).';
+      'and their moves demonstrate the chart rather than score it. Banner rise/fade ' +
+      'curves are approximated (retail drives them through per-banner actor scripts), ' +
+      'and the three step-stock chips under the track stay at three (the rules engine ' +
+      'doesn’t model the timing-button stock).';
   }
 
   function danceStart() {
@@ -767,7 +773,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (danceR && danceR.introGate) return;   /* count-in: not judging yet */
     const stBefore = JSON.parse(api.dance_state_json());
     const r = api.dance_press(sym);
-    if (danceR) danceR.onPress(r, stBefore);
+    if (danceR) danceR.onPress(r, stBefore, sym);
     if (r === 'sequence')   verdict($('dance-verdict'), 'PERFECT', 'good');
     else if (r === 'hit')   verdict($('dance-verdict'), 'HIT', 'good');
     else if (r === 'miss')  verdict($('dance-verdict'), 'MISS', 'bad');
