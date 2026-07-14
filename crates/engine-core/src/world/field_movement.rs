@@ -348,6 +348,125 @@ impl World {
         (byte >> 4) & (1u8 << quad) != 0
     }
 
+    /// Is world `(x, z)` on the scene's authored **walkable floor** - i.e. does
+    /// its plain (unbiased) `.MAP` object-grid cell carry the
+    /// [`legaia_asset::field_objects::CELL_WALK_VISIBLE`] (`0x1000`) bit? This
+    /// is the retail "player may stand on this tile" flag the field walk loader
+    /// gates on ([`Self::field_object_cells`], plain `world >> 7` indexing -
+    /// the same convention [`Self::sample_field_floor_height`] samples the floor
+    /// under). `false` for out-of-range coords and for scenes with no object
+    /// grid loaded (every tile then reads as off-floor void).
+    pub fn field_tile_is_walk_visible(&self, x: i16, z: i16) -> bool {
+        if x < 0 || z < 0 {
+            return false;
+        }
+        let tx = (x as usize) >> 7;
+        let tz = (z as usize) >> 7;
+        if tx >= FIELD_GRID_STRIDE || tz >= FIELD_GRID_STRIDE {
+            return false;
+        }
+        self.field_object_cells
+            .get(tz * FIELD_GRID_STRIDE + tx)
+            .is_some_and(|c| c & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0)
+    }
+
+    /// Is world `(x, z)` a valid cold-entry standing spot - on the authored
+    /// walkable floor ([`Self::field_tile_is_walk_visible`]) **and** clear of
+    /// the collision-grid wall bits ([`Self::field_tile_is_wall`])?
+    fn field_spawn_is_valid(&self, x: i16, z: i16) -> bool {
+        self.field_tile_is_walk_visible(x, z) && !self.field_tile_is_wall(x, z)
+    }
+
+    /// Mean tile of every walk-visible
+    /// ([`legaia_asset::field_objects::CELL_WALK_VISIBLE`]) floor cell, returned
+    /// as its world-space centre. The seed for the cold-spawn nearest-floor
+    /// search - it lands in the middle of the scene's playable region rather
+    /// than at the fixed retail town01 seat. `None` for a scene with no
+    /// walk-visible floor loaded.
+    fn walk_visible_centroid(&self) -> Option<(i16, i16)> {
+        let (mut sum_c, mut sum_r, mut n) = (0i64, 0i64, 0i64);
+        for r in 0..FIELD_GRID_STRIDE {
+            for c in 0..FIELD_GRID_STRIDE {
+                if self
+                    .field_object_cells
+                    .get(r * FIELD_GRID_STRIDE + c)
+                    .is_some_and(|w| w & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0)
+                {
+                    sum_c += c as i64;
+                    sum_r += r as i64;
+                    n += 1;
+                }
+            }
+        }
+        if n == 0 {
+            return None;
+        }
+        Some((
+            ((sum_c / n) * 128 + 64) as i16,
+            ((sum_r / n) * 128 + 64) as i16,
+        ))
+    }
+
+    /// Expanding (Chebyshev-ring) search outward from the tile covering
+    /// `(seed_x, seed_z)` for the nearest tile whose centre is a valid cold
+    /// spawn ([`Self::field_spawn_is_valid`]). Returns that tile's world-space
+    /// centre, or `None` if the whole grid has no valid tile.
+    fn nearest_valid_field_spawn(&self, seed_x: i16, seed_z: i16) -> Option<(i16, i16)> {
+        let stride = FIELD_GRID_STRIDE as i32;
+        let stx = ((seed_x as i32) >> 7).clamp(0, stride - 1);
+        let stz = ((seed_z as i32) >> 7).clamp(0, stride - 1);
+        for radius in 0..stride {
+            for dz in -radius..=radius {
+                for dx in -radius..=radius {
+                    // Only the current ring's perimeter (nearest-first order).
+                    if dx.abs().max(dz.abs()) != radius {
+                        continue;
+                    }
+                    let (tx, tz) = (stx + dx, stz + dz);
+                    if tx < 0 || tz < 0 || tx >= stride || tz >= stride {
+                        continue;
+                    }
+                    let (wx, wz) = ((tx * 128 + 64) as i16, (tz * 128 + 64) as i16);
+                    if self.field_spawn_is_valid(wx, wz) {
+                        return Some((wx, wz));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Resolve a cold field-entry player spawn to an in-bounds, standable
+    /// world `(x, z)`.
+    ///
+    /// Retail seats a cold (non-warp) field entry at the camera-window centre
+    /// [`FIELD_COLD_SPAWN_XZ`] (`0xA40`); a cold entry only ever happens for the
+    /// New Game opening (town01, Vahn's authored Rim Elm spawn), where that
+    /// coordinate is a real standable tile. The engine's scene picker enters
+    /// arbitrary scenes cold, and for most of them the fixed seat lands off the
+    /// authored walkable floor (in a wall or in the surrounding void).
+    ///
+    /// This keeps the retail seat whenever it is valid - town01 and any other
+    /// scene whose `0xA40` centre is genuinely on the walkable floor stay
+    /// byte-identical - and otherwise relocates to the walkable tile nearest the
+    /// scene's own playable-floor centroid ([`Self::walk_visible_centroid`]),
+    /// so the player never spawns inside a wall or off-grid. Falls back to the
+    /// retail seat when a scene supplies no walk-visible floor (nothing better
+    /// to resolve against).
+    ///
+    /// Requires the collision grid ([`Self::load_field_collision_grid`]) and the
+    /// object-grid cells ([`Self::load_field_object_cells`]) to be loaded first.
+    pub fn resolve_cold_field_spawn(&self) -> (i16, i16) {
+        let default = (FIELD_COLD_SPAWN_XZ, FIELD_COLD_SPAWN_XZ);
+        if self.field_spawn_is_valid(default.0, default.1) {
+            return default;
+        }
+        let Some((cx, cz)) = self.walk_visible_centroid() else {
+            return default;
+        };
+        self.nearest_valid_field_spawn(cx, cz).unwrap_or(default)
+    }
+
     /// Retail's static-wall direction test: from the CURRENT position
     /// `(x, z)`, probe the three leading-edge points of `FIELD_WALL_PROBES`
     /// row `dir` (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+) through

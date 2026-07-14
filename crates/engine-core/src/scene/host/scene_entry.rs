@@ -216,13 +216,19 @@ impl SceneHost {
         // (This also clears the collision grid; we repopulate it below.)
         // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
         self.world.install_field_player(0);
-        // Cold field entry: place the player at the retail cold-boot spawn.
+        // Cold field entry: seed the player at the retail cold-boot spawn.
         // `FUN_801D6704` creates the player actor at the camera-window centre
         // `(0xA40, 0, 0xA40)` on a non-warp entry; for the New Game opening
         // (town01) this is Vahn's authored Rim Elm spawn, and it also seeds the
         // follow camera onto the right region. Engines that arrive via a warp
         // override X/Z from the saved transition coords before the first tick.
-        // See [`crate::world::FIELD_COLD_SPAWN_XZ`].
+        // This is provisional: once the scene's collision grid + object cells
+        // load (just below) the spawn is resolved to an in-bounds, standable
+        // tile via `World::resolve_cold_field_spawn` - which keeps this exact
+        // seat for town01 (and any scene where `0xA40` is genuinely on the
+        // walkable floor) and relocates every other scene, whose fixed `0xA40`
+        // seat lands off the authored floor, onto the walkable tile nearest its
+        // own playable-floor centroid. See [`crate::world::FIELD_COLD_SPAWN_XZ`].
         if let Some(player) = self.world.actors.get_mut(0) {
             player.move_state.world_x = crate::world::FIELD_COLD_SPAWN_XZ;
             player.move_state.world_y = 0;
@@ -285,6 +291,33 @@ impl SceneHost {
             None => {
                 self.world.field_object_cells.clear();
                 self.world.field_elevation_overrides.clear();
+            }
+        }
+        // Resolve the provisional cold spawn against the just-loaded collision
+        // grid + object cells. `resolve_cold_field_spawn` returns the retail
+        // seat unchanged when it is a valid standing spot (town01, and any scene
+        // whose `0xA40` centre is on the walkable floor), so town01's opening
+        // stays byte-identical; for every other scene - where the fixed seat
+        // lands in a wall or off-map - it relocates the player onto the walkable
+        // tile nearest the scene's own playable-floor centroid, and snaps Y onto
+        // that tile's floor so the player isn't left floating / sunk before the
+        // first locomotion step. Only overrides when the resolver actually moved
+        // the spawn, keeping the seed (incl. `world_y = 0`) intact otherwise.
+        let resolved = self.world.resolve_cold_field_spawn();
+        if resolved
+            != (
+                crate::world::FIELD_COLD_SPAWN_XZ,
+                crate::world::FIELD_COLD_SPAWN_XZ,
+            )
+        {
+            let floor_y = self
+                .world
+                .sample_field_floor_height(resolved.0 as i32, resolved.1 as i32)
+                as i16;
+            if let Some(player) = self.world.actors.get_mut(0) {
+                player.move_state.world_x = resolved.0;
+                player.move_state.world_z = resolved.1;
+                player.move_state.world_y = floor_y;
             }
         }
         // Per-scene region / zone tables: the `.MAP` `+0x10000` region-record
