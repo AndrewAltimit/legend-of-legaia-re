@@ -188,6 +188,8 @@ The nibble-7 op is the same dispatch row in [`script-vm.md`](script-vm.md#0x4c-m
 
 The `+0x8000` map is a per-tile object/attribute word, not a terrain-flag grid: its low 9 bits index the `+0x0000` object-record table, which `FUN_8003a55c` walks at scene entry to spawn the NPCs/objects occupying each tile. `FUN_8003aeb0` (the field/town scene-entry map-init - note its `town_mode` / `baria_mode` debug strings) ORs the `0x400` footprint flag into these cells from the fallback trigger window's kind-1 records (`+0x12000`, offset/count at `+0x12006` / `+0x12008`, 4-byte records - the gate-0 object-bind entries of the trigger block below).
 
+That `0x400` bit is load-bearing, and the on-disc `.MAP` already carries it (a live town field buffer is byte-identical to the disc bytes here): read on a placed object's **footprint-anchor** tile it says *"this object is the init sweep's - do not re-create it"*, which is how the second placed-object spawner `FUN_801d7b50` stays disjoint from `FUN_8003a55c`. See [The object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose).
+
 ### Trigger block (`+0x10000`) - four kind sub-tables
 
 The `.MAP` file's `+0x10000..+0x12000` region is a **per-tile trigger block**: a shared header dispatching four kind sub-tables. For kind `k`, the sub-table body offset is the `s16` at `+4k+2`, the record count the `s16` at `+4k+4` (both relative to the block start), and the record stride the byte at `DAT_8007B318 + k` - kinds 0..2 are 4-byte records, kind 3 is 8 (`FUN_801D5AE0`; the four sub-tables tile the block back-to-back at exactly those strides in every scene). The generic lookup matches `rec[0] == tile_x && rec[1] == tile_z`:
@@ -280,25 +282,45 @@ shared pool. The `anim_id` resolved separately via the object bind
 > (Its supporting "windmill id 96 -> mesh 91" datum does not survive contact
 > with the disc: record `96` is all zeros, and no cell references it.)
 
-### The object bind: spawn gate + rest pose
+### The object bind: which sweep owns the object, and its rest pose
 
-A placed record does not become an actor on its own. `FUN_8003a55c` first
-resolves the record's **object bind** by its *footprint-anchor* tile
-(`col + record[+0x06]`, `row + record[+0x07]`):
-`func_0x801d5630(1, anchor_col, anchor_row)` returns the `.MAP` kind-1
-tile-trigger entry sitting on that tile, whose `record` byte indexes the MAN's
-flat record-offset table - partition 0 comes first in that table, so it names a
-**partition-0 record**. Two consequences, both live-verified against a Rim Elm
-capture's actor list:
+A placed record becomes an actor through **one of two sweeps**, never both.
 
-- **No bind, no actor.** When the lookup misses, `FUN_8003a55c` skips the tile
-  outright. `town01` has six such placements (five `obj456`, one `obj230`), and
-  not one of them appears in the live actor list.
+`FUN_8003a55c` (SCUS, scene init, whole grid) resolves the record's **object
+bind** by its *footprint-anchor* tile (`col + record[+0x06]`,
+`row + record[+0x07]`): `func_0x801d5630(1, anchor_col, anchor_row)` returns the
+`.MAP` kind-1 tile-trigger entry sitting on that tile, whose `record` byte indexes
+the MAN's flat record-offset table - partition 0 comes first in that table, so it
+names a **partition-0 record**. When the lookup misses, `FUN_8003a55c` skips the
+tile.
+
+`FUN_801d7b50` (field overlay, the sub-area **window rebuild**: it frees the whole
+actor list and re-populates it from the cells inside the current window) does the
+same placed-flag grid walk with **no bind lookup at all**. Its only extra gate is
+the `0x400` footprint bit on the anchor tile (`801d7ccc: andi v0,v0,0x400` ->
+`bne` skips the tile) - the bit `FUN_8003aeb0` stamps into the object-index grid
+from the gate-0 bind triggers. So it creates exactly the records the init sweep
+did *not*.
+
+The two sets are complementary on the disc: across `town01` / `town0c` / `koin3` /
+`map01`, every placement whose anchor tile carries a bind trigger also carries
+`0x400` (37 / 58 / 6 of them), and every placement without one has the bit clear
+(9 / 5 / 0). **The union is every placed record**, so a whole-map renderer draws
+them all - the bound ones posed by their bind's clip, the rest raw. Rim Elm's
+cavern shell (record `168` at cell `(32, 93)`, env mesh `72` - a ~3100 x 4000-unit
+round chamber with an entry corridor) is the window sweep's, and reading the bind
+as a *spawn gate* deletes the cave interior outright.
+
+The init sweep's half is live-verified against a Rim Elm capture's actor list: its
+37 static-object actors are exactly `town01`'s 37 bound placements, and each
+actor's `+0x5C` equals the anim id its bind resolves.
+
 - **The bind carries the object's animation id.** A partition-0 record's header
   is `[u8 n][n*2 name bytes][u8 anim_id]` (its own shape - the partition-1
   `1 + 2n + 4` formula desyncs here); `FUN_8003a55c` stores the record base into
   `actor+0x90`, the post-header offset into `actor+0x9E`, and that trailing byte
-  into `actor+0x5C`.
+  into `actor+0x5C`. The window sweep does none of this, so its actors have no
+  script and `+0x5C == 0`.
 
 The anim id decides *how the mesh is drawn*. With `+0x5C == 0` the actor stays
 at draw kind `5`, whose `FUN_8001ada4` arm draws every TMD object of the mesh

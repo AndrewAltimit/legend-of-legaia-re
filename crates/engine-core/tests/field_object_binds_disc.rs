@@ -1,38 +1,48 @@
-//! Disc-gated: the **object bind** of a placed field object, and the frame-0
-//! rest pose it puts a multi-object prop into.
+//! Disc-gated: the **object bind** of a placed field object - which of retail's
+//! two placed-object sweeps owns it, and the frame-0 rest pose the bind's clip
+//! puts a multi-object prop into.
 //!
-//! `FUN_8003A55C` does not just stamp a record's mesh at a tile. For each
-//! placed record it first resolves a **bind** - the kind-1 tile trigger sitting
-//! on the record's footprint-anchor tile, and through it a MAN partition-0
-//! record - and that bind decides two things:
+//! Retail creates a placed record's actor from one of two sweeps, and the
+//! anchor tile's `CELL_BIND_OWNED` (`0x400`) bit says which:
 //!
-//! 1. **Whether the object exists.** No bind at the anchor tile -> the tile is
-//!    skipped and no actor is ever created. `town01` has six such placements.
-//! 2. **How the object is drawn.** The bind record's header
-//!    (`[u8 n][n*2 name bytes][u8 anim_id]`) ends in an animation id, which
-//!    `FUN_8003A55C` stores at `actor+0x5C`. A nonzero one makes the per-actor
-//!    anim tick (`FUN_800204f8`) bind the scene ANM record into `actor+0x4C`
-//!    and flip the actor to draw kind `1`, whose walker (`FUN_8001b964`) poses
-//!    every TMD object by that clip's per-bone rigid transform - and refuses to
-//!    draw at all unless bone count == object count. Zero leaves the actor at
-//!    draw kind `5`, which draws the objects raw.
+//! 1. **`FUN_8003A55C`** (scene init, whole grid) resolves the record's **bind** -
+//!    the kind-1 tile trigger on its footprint-anchor tile, and through it a MAN
+//!    partition-0 record - and skips the record when there is none.
+//! 2. **`FUN_801D7B50`** (field overlay, sub-area window rebuild) does no bind
+//!    lookup at all; its only extra gate is that same `0x400` bit
+//!    (`801d7ccc: andi v0,v0,0x400` -> skip). So it creates exactly the records
+//!    the init sweep left behind - unscripted and unposed.
 //!
-//! Rim Elm's cupboard (object id `230`, env mesh `15`) is the case that makes
-//! the difference visible: three TMD objects (cabinet + two doors), the doors
-//! authored about their own hinges, so drawn raw they hang inside the cabinet
-//! and below the floor. Its bind names anim `2`, whose 3-bone / 30-frame clip
-//! is the door swing; **frame 0 is the closed state**.
+//! The two sets are complementary on the disc, so **every placed record draws**;
+//! reading the bind as a *spawn gate* culls the second sweep's objects, which in
+//! Rim Elm means the cavern shell (record `168`, env mesh `72`) disappears and
+//! the cave renders as a black hole.
 //!
-//! Every fact here is cross-checked against a live Rim Elm capture's actor list
-//! (`mei_house_inside`): the bound placements are exactly the actors present,
-//! and each actor's `+0x5C` equals the anim id the bind resolves.
+//! What the bind *does* decide is the pose. Its record header
+//! (`[u8 n][n*2 name bytes][u8 anim_id]`) ends in an animation id, which
+//! `FUN_8003A55C` stores at `actor+0x5C`. A nonzero one makes the per-actor anim
+//! tick (`FUN_800204f8`) bind the scene ANM record into `actor+0x4C` and flip the
+//! actor to draw kind `1`, whose walker (`FUN_8001b964`) poses every TMD object by
+//! that clip's per-bone rigid transform - and refuses to draw at all unless bone
+//! count == object count. Zero leaves the actor at draw kind `5`, which draws the
+//! objects raw.
+//!
+//! Rim Elm's cupboard (object id `230`, env mesh `15`) makes the pose visible:
+//! three TMD objects (cabinet + two doors), the doors authored about their own
+//! hinges, so drawn raw they hang inside the cabinet and below the floor. Its
+//! bind names anim `2`, whose 3-bone / 30-frame clip is the door swing; **frame 0
+//! is the closed state**.
+//!
+//! Cross-checked against a live Rim Elm capture's actor list: the *init* sweep's
+//! actors are exactly the bound placements (37 of `town01`'s 46), and each
+//! actor's `+0x5C` equals the anim id its bind resolves.
 //!
 //! Skips when `LEGAIA_DISC_BIN` / `extracted/` are missing (disc-gated).
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::field_objects::FLAG_PLACED;
+use legaia_asset::field_objects::{CELL_BIND_OWNED, FLAG_PLACED};
 use legaia_engine_core::field_env;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::scene_resources::{
@@ -42,11 +52,20 @@ use legaia_engine_core::scene_resources::{
 /// Rim Elm's two scene variants (they share one `.MAP`).
 const TOWN_SCENES: &[&str] = &["town01", "town0c"];
 
+/// Scenes the two-sweep partition is checked over: Rim Elm, a casino town, and
+/// the Drake overworld - the bind / `0x400` complementarity is not a town quirk.
+const SWEEP_SCENES: &[&str] = &["town01", "town0c", "koin3", "map01"];
+
 /// The searchable cupboard: object-record id, its env-pack mesh, and the anim
 /// id its bind names - all three read back from a live `town01` actor.
 const CUPBOARD_OBJ: u16 = 230;
 const CUPBOARD_MESH: u16 = 15;
 const CUPBOARD_ANIM: u8 = 2;
+
+/// Rim Elm's cavern shell: the placed record with no bind, and the env mesh it
+/// stamps (a ~3100 x 4000-unit round chamber + entry corridor).
+const CAVERN_OBJ: u16 = 168;
+const CAVERN_MESH: u16 = 72;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -91,13 +110,16 @@ fn scene_resources(index: &Arc<ProtIndex>, scene: &Scene) -> SceneResources {
     .0
 }
 
-/// The bind gate: an unbound placement is not an actor. Retail's `town01` actor
-/// list holds one `obj456` (the bound one, anchor `(95, 54)`) and four `obj230`
-/// cupboards, not the six and five the raw `.MAP` sweep yields.
+/// The `0x400` anchor-tile bit and the object bind are **complementary**: every
+/// placed record has exactly one of them, so exactly one of retail's two sweeps
+/// creates it and nothing is ever culled.
+///
+/// This is what makes the bind a *pose* selector and not a spawn gate. It holds
+/// over field scenes, town scenes and the overworld alike.
 #[test]
-fn unbound_placements_do_not_spawn() {
+fn every_placed_record_belongs_to_exactly_one_sweep() {
     let Some(index) = gate() else { return };
-    for name in TOWN_SCENES {
+    for name in SWEEP_SCENES {
         let scene = Scene::load(&index, name).expect("load scene");
         let res = scene_resources(&index, &scene);
         let env = field_env::env_pack_tmd_indices(&scene, &res);
@@ -111,48 +133,151 @@ fn unbound_placements_do_not_spawn() {
             .expect("field map + man");
         assert!(!binds.is_empty(), "{name}: no object binds resolved");
 
-        let (bound, dropped) =
-            field_env::resolve_placed_env_draws(&env, &placements, None, Some(&binds));
-        let unbound: Vec<_> = dropped
-            .iter()
-            .filter(|d| matches!(d, field_env::EnvDrawDrop::Unbound { .. }))
-            .collect();
-        assert!(
-            !unbound.is_empty(),
-            "{name}: the bind gate dropped nothing - the anchor-tile lookup is not resolving"
-        );
-        // Every surviving draw must have a bind (that is what `bound` means),
-        // and the gate must not have eaten the map (a broken lookup would drop
-        // everything).
-        assert!(
-            bound.len() > unbound.len(),
-            "{name}: {} bound vs {} unbound - the gate dropped too much",
-            bound.len(),
-            unbound.len()
+        let (mut init_sweep, mut window_sweep) = (0usize, 0usize);
+        for p in &placements {
+            let bound = binds.contains_key(&(p.anchor_col, p.anchor_row));
+            let bind_owned = p.anchor_cell & CELL_BIND_OWNED != 0;
+            assert_eq!(
+                bound, bind_owned,
+                "{name}: obj{} at ({}, {}): the anchor tile's CELL_BIND_OWNED bit must agree \
+                 with the bind - it is what keeps FUN_8003A55C and FUN_801D7B50 disjoint",
+                p.obj_idx, p.col, p.row
+            );
+            if bound {
+                init_sweep += 1;
+            } else {
+                window_sweep += 1;
+            }
+        }
+        assert!(init_sweep > 0, "{name}: no init-sweep placements");
+        assert_eq!(
+            init_sweep + window_sweep,
+            placements.len(),
+            "{name}: the two sweeps must tile the placement set"
         );
 
-        // The cupboard: five `.MAP` cells reference it, but only the four with
-        // a bind become actors (matching the live capture).
+        // ...and therefore the resolver drops nothing: every placed record is
+        // an actor, hence a draw.
+        let (draws, dropped) =
+            field_env::resolve_placed_env_draws(&env, &placements, None, Some(&binds));
+        assert!(
+            !dropped
+                .iter()
+                .any(|d| matches!(d, field_env::EnvDrawDrop::Unbound { .. })),
+            "{name}: a placed record was culled - retail's window sweep would have spawned it"
+        );
+        assert_eq!(
+            draws.len(),
+            placements.len(),
+            "{name}: every placed record must draw"
+        );
+        // Only the init sweep's actors carry a script/clip; the window sweep
+        // does no bind lookup, so its actors have `anim_id == 0`.
+        assert!(
+            draws.iter().filter(|d| d.anim_id != 0).count() <= init_sweep,
+            "{name}: an unbound draw claimed an animation id"
+        );
+    }
+}
+
+/// Rim Elm's cave: the cavern shell is a placed record with **no** bind
+/// (`FUN_801D7B50`'s), so treating the bind as a spawn gate deletes the whole
+/// interior and the cave renders as a black hole. It is a large mesh - a round
+/// chamber with an entry corridor - not a prop, which is what makes its loss so
+/// visible.
+#[test]
+fn rim_elm_cavern_shell_draws() {
+    let Some(index) = gate() else { return };
+    for name in TOWN_SCENES {
+        let scene = Scene::load(&index, name).expect("load scene");
+        let res = scene_resources(&index, &scene);
+        let env = field_env::env_pack_tmd_indices(&scene, &res);
+        let placements = scene
+            .field_object_placements(&index)
+            .expect("placements")
+            .expect("field map");
+        let binds = scene
+            .field_object_binds(&index)
+            .expect("binds")
+            .expect("field map + man");
+
+        let cave = placements
+            .iter()
+            .find(|p| p.obj_idx == CAVERN_OBJ)
+            .unwrap_or_else(|| panic!("{name}: no cavern-shell placement"));
+        assert_eq!(cave.pack_index, Some(CAVERN_MESH));
+        assert!(
+            !binds.contains_key(&(cave.anchor_col, cave.anchor_row)),
+            "{name}: the cavern shell is the window sweep's - it has no bind"
+        );
+        assert_eq!(
+            cave.anchor_cell & CELL_BIND_OWNED,
+            0,
+            "{name}: ...and therefore no CELL_BIND_OWNED bit"
+        );
+
+        let (draws, _) = field_env::resolve_placed_env_draws(&env, &placements, None, Some(&binds));
+        let drawn = draws
+            .iter()
+            .find(|d| d.env_slot == CAVERN_MESH as usize)
+            .unwrap_or_else(|| panic!("{name}: the cavern shell is not drawn - the cave is empty"));
+        assert_eq!(drawn.anim_id, 0, "{name}: the window sweep binds no clip");
+
+        // It really is the cave, not a prop: a chamber tens of tiles across.
+        let rt = &res.tmds[env[CAVERN_MESH as usize]];
+        let vm = legaia_tmd::mesh::tmd_to_vram_mesh(&rt.tmd, &rt.raw);
+        let (lo, hi) = vm.aabb();
+        assert!(
+            hi[0] - lo[0] > 2000.0 && hi[2] - lo[2] > 2000.0,
+            "{name}: cavern shell is only {} x {} units - wrong mesh?",
+            hi[0] - lo[0],
+            hi[2] - lo[2]
+        );
+    }
+}
+
+/// The cupboard: five `.MAP` cells reference it. Four are bound (the init sweep's,
+/// posed by anim `2` - the live capture has exactly four cupboard actors); the
+/// fifth is the window sweep's, and it draws too, just unposed.
+#[test]
+fn cupboard_cells_split_across_the_two_sweeps() {
+    let Some(index) = gate() else { return };
+    for name in TOWN_SCENES {
+        let scene = Scene::load(&index, name).expect("load scene");
+        let placements = scene
+            .field_object_placements(&index)
+            .expect("placements")
+            .expect("field map");
+        let binds = scene
+            .field_object_binds(&index)
+            .expect("binds")
+            .expect("field map + man");
+
         let cupboards: Vec<_> = placements
             .iter()
             .filter(|p| p.obj_idx == CUPBOARD_OBJ)
             .collect();
         assert_eq!(cupboards.len(), 5, "{name}: cupboard cell count");
-        let spawned = cupboards
+        let posed = cupboards
             .iter()
-            .filter(|p| binds.contains_key(&(p.anchor_col, p.anchor_row)))
+            .filter_map(|p| binds.get(&(p.anchor_col, p.anchor_row)))
+            .filter(|b| b.anim_id == CUPBOARD_ANIM)
             .count();
         assert_eq!(
-            spawned, 4,
-            "{name}: exactly the four bound cupboards spawn (the live actor list has four)"
+            posed, 4,
+            "{name}: four cupboards are the init sweep's, posed by the door-swing clip"
         );
     }
 }
 
-/// The bind's anim id and the retail count-equality contract: every bound
+/// The bind's anim id and the retail count-equality contract: every *bound*
 /// placement that names an animation resolves a scene-ANM record whose bone
-/// count equals its mesh's TMD-object count, and every *multi-object* placed
-/// mesh names one (an unposed multi-object prop is the bug).
+/// count equals its mesh's TMD-object count, and every **bound** multi-object
+/// mesh names one (an unposed multi-object *bound* prop is the cupboard bug).
+///
+/// The window sweep's placements are exempt: `FUN_801D7B50` does no bind lookup,
+/// so its actors have no clip and draw their objects raw - which is what retail
+/// does with them, multi-object or not.
 #[test]
 fn bound_multi_object_props_resolve_a_matching_pose_clip() {
     let Some(index) = gate() else { return };
@@ -182,11 +307,12 @@ fn bound_multi_object_props_resolve_a_matching_pose_clip() {
         let mut posed = 0usize;
         for d in &draws {
             let objects = res.tmds[d.res_tmd].tmd.objects.len();
+            let bound = binds.contains_key(&d.anchor);
             if d.anim_id == 0 {
-                assert_eq!(
-                    objects, 1,
+                assert!(
+                    !bound || objects == 1,
                     "{name}: env mesh {} has {objects} TMD objects but its bind names no \
-                     animation - a multi-object prop drawn raw is exactly the cupboard bug",
+                     animation - a multi-object BOUND prop drawn raw is exactly the cupboard bug",
                     d.env_slot
                 );
                 continue;

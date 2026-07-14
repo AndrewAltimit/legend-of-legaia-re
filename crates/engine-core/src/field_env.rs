@@ -17,11 +17,14 @@
 //! view). It resolves *which* [`SceneResources`] TMD each placement draws and
 //! *where*, leaving mesh upload / matrix conventions to the caller.
 //!
-//! A placed object is additionally **bound** to a MAN partition-0 record (see
-//! [`object_binds`]), which decides both whether it spawns at all and, when its
-//! mesh has more than one TMD object, which animation clip poses those objects.
+//! A placed object may additionally be **bound** to a MAN partition-0 record (see
+//! [`object_binds`]). The bind is not a spawn gate - retail's two placed-object
+//! sweeps between them create every placed record - but it does decide, when the
+//! object's mesh has more than one TMD object, which animation clip poses those
+//! objects.
 //!
-//! REF: FUN_8003A55C (object-grid walk), FUN_8003AEB0 (floor-LUT install)
+//! REF: FUN_8003A55C (object-grid walk), FUN_801D7B50 (window rebuild),
+//! REF: FUN_8003AEB0 (floor-LUT install)
 
 use crate::field_regions::{self, TileTrigger};
 use crate::scene::Scene;
@@ -98,11 +101,14 @@ pub struct EnvDraw {
 /// actor's `+0x90` (script buffer), the post-header offset into `+0x9E` (PC),
 /// and the header's last byte into `+0x5C` - the actor's animation id.
 ///
-/// **A placed record whose anchor tile has no trigger is never spawned.** In
-/// `town01` that silently drops six placements (an `obj456` in five houses, one
-/// `obj230` cupboard); a live Rim Elm capture's actor list contains exactly the
-/// bound ones.
-// REF: FUN_8003A55C, FUN_801D5630, FUN_800204f8
+/// **A placed record whose anchor tile has no trigger is not `FUN_8003A55C`'s** -
+/// it is skipped there, and a live Rim Elm capture's init actor list holds exactly
+/// the bound ones (37 of `town01`'s 46 placements). It is **not** unspawned,
+/// though: the sub-area window sweep `FUN_801D7B50` creates those nine, gated on
+/// the complementary anchor-tile bit
+/// [`CELL_BIND_OWNED`](legaia_asset::field_objects::CELL_BIND_OWNED) rather than
+/// on a bind, so they draw unscripted and unposed.
+// REF: FUN_8003A55C, FUN_801D5630, FUN_800204f8, FUN_801D7B50
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectBind {
     /// MAN partition-0 record index the anchor tile's trigger names.
@@ -181,8 +187,12 @@ pub enum EnvDrawDrop {
         world_x: i32,
         world_z: i32,
     },
-    /// The placed object has no [`ObjectBind`] at its footprint-anchor tile, so
-    /// retail never spawns an actor for it (`FUN_8003A55C` skips the tile).
+    /// **Neither** of retail's two placed-object sweeps would create this actor:
+    /// the footprint-anchor tile carries no [`ObjectBind`] (so `FUN_8003A55C`
+    /// skips it) *and* it is marked
+    /// [`CELL_BIND_OWNED`](legaia_asset::field_objects::CELL_BIND_OWNED) (so the
+    /// window sweep `FUN_801D7B50` skips it too). No retail map has such a cell -
+    /// the bind and the bit are complementary - so this is a malformed-map guard.
     Unbound {
         anchor: (u8, u8),
         world_x: i32,
@@ -247,11 +257,11 @@ pub fn env_pack_tmd_indices(scene: &Scene, res: &SceneResources) -> Vec<usize> {
 /// `-lut[nibble & 0xF] + y_off` when both are available, else the ground
 /// plane - exactly the retail placement math.
 ///
-/// This is the **unbound** resolver: every draw comes back with
+/// This is the **bind-less** resolver: every draw comes back with
 /// [`EnvDraw::anim_id`] `0`. It is what the terrain / decoration cell sweeps
-/// want (those cells are not `FUN_8003A55C` actors and carry no bind). The
+/// want (those cells are not static-object actors and carry no bind). The
 /// *placed*-object layer must go through [`resolve_placed_env_draws`] instead,
-/// so it inherits the spawn gate and the pose.
+/// so it inherits the pose.
 pub fn resolve_env_draws(
     env_tmds: &[usize],
     placements: &[Placement],
@@ -260,19 +270,35 @@ pub fn resolve_env_draws(
     resolve_placed_env_draws(env_tmds, placements, floor_lut, None)
 }
 
-/// Resolve the **placed**-object layer (`FUN_8003A55C`'s actors) into
-/// environment draws, applying the two things a bind decides:
+/// Resolve the **placed**-object layer (the static-object actors) into
+/// environment draws, applying what the object bind decides.
 ///
-/// - **the spawn gate**: a placement whose footprint-anchor tile has no
-///   [`ObjectBind`] is dropped ([`EnvDrawDrop::Unbound`]) - retail skips the
-///   tile outright;
-/// - **the pose**: the bind's `anim_id` lands on [`EnvDraw::anim_id`], and a
-///   nonzero one means the mesh's objects must be posed from frame 0 of scene
-///   ANM record `anim_id - 1` rather than drawn at their raw object-local
-///   vertices.
+/// Retail creates these actors from two sweeps, and every placed record belongs
+/// to exactly one of them (see [`legaia_asset::field_objects`]):
 ///
-/// Passing `binds = None` disables both (the [`resolve_env_draws`] behaviour),
-/// which is what the bind-less terrain sweeps want.
+/// - **bound** (a kind-1 trigger sits on the footprint-anchor tile): the scene-init
+///   sweep `FUN_8003A55C` creates it, and the bind's `anim_id` lands on
+///   [`EnvDraw::anim_id`]. A nonzero one means the mesh's TMD objects are that
+///   clip's bones and must be **posed** from frame 0 of scene ANM record
+///   `anim_id - 1` rather than drawn at their raw object-local vertices.
+/// - **unbound**: the sub-area window sweep `FUN_801D7B50` creates it instead.
+///   That sweep does no bind lookup, so the actor has no script and no clip -
+///   `anim_id` is `0` and the mesh draws raw. Rim Elm's cavern shell is one of
+///   these; culling it (an earlier reading of the bind as a *spawn gate*) leaves
+///   the cave a black hole.
+///
+/// A placement is dropped only in the case retail's two sweeps *both* skip:
+/// unbound **and** [`CELL_BIND_OWNED`] set on its anchor tile
+/// ([`EnvDrawDrop::Unbound`]). No retail scene has one - the bit and the bind are
+/// complementary across the corpus - so the drop list stays empty in practice;
+/// it exists so a malformed / hand-edited map cannot conjure an actor retail
+/// would not.
+///
+/// Passing `binds = None` skips the whole bind pass (every draw comes back with
+/// `anim_id` `0`, nothing is dropped), which is what the bind-less terrain-cell
+/// sweeps want.
+///
+/// [`CELL_BIND_OWNED`]: legaia_asset::field_objects::CELL_BIND_OWNED
 pub fn resolve_placed_env_draws(
     env_tmds: &[usize],
     placements: &[Placement],
@@ -301,14 +327,21 @@ pub fn resolve_placed_env_draws(
         let anim_id = match binds {
             None => 0,
             Some(b) => match b.get(&anchor) {
+                // Bound: the init sweep's actor, posed by the bind's clip.
                 Some(bind) => bind.anim_id,
+                // Unbound: the window sweep's actor - no script, no clip. It
+                // still draws; only a record the *window* sweep also skips
+                // (anchor tile marked `CELL_BIND_OWNED`) has no actor at all.
                 None => {
-                    drops.push(EnvDrawDrop::Unbound {
-                        anchor,
-                        world_x: p.world_x,
-                        world_z: p.world_z,
-                    });
-                    continue;
+                    if p.anchor_cell & legaia_asset::field_objects::CELL_BIND_OWNED != 0 {
+                        drops.push(EnvDrawDrop::Unbound {
+                            anchor,
+                            world_x: p.world_x,
+                            world_z: p.world_z,
+                        });
+                        continue;
+                    }
+                    0
                 }
             },
         };
@@ -1034,6 +1067,7 @@ mod tests {
             row: 3,
             anchor_col: 2,
             anchor_row: 3,
+            anchor_cell: 0,
             world_x: 2 * 0x80 + 0x40,
             world_z: 3 * 0x80 + 0x40,
             y_off,
@@ -1071,16 +1105,19 @@ mod tests {
         );
     }
 
-    /// The bind decides both halves: an anchor tile with a bind carries its
-    /// `anim_id` onto the draw (so a multi-object prop gets posed), and one
-    /// without a bind is dropped - retail never spawns an actor for it.
+    /// The bind carries the `anim_id` onto the draw (so a multi-object prop gets
+    /// posed), but it is **not** a spawn gate: an unbound placement is the *other*
+    /// retail sweep's actor (`FUN_801D7B50`) and still draws, unposed. Only a
+    /// placement that is unbound **and** `CELL_BIND_OWNED` on its anchor tile -
+    /// which neither sweep would take - is dropped.
     #[test]
-    fn binds_gate_the_spawn_and_carry_the_anim_id() {
+    fn binds_carry_the_anim_id_and_only_bind_owned_cells_drop() {
         let env_tmds = vec![10, 11, 12];
         let mut bound = placement(Some(1), None, 0);
         bound.anchor_col = 7;
         bound.anchor_row = 9;
-        let unbound = placement(Some(2), None, 0); // anchor (2, 3): no bind
+        bound.anchor_cell = legaia_asset::field_objects::CELL_BIND_OWNED;
+        let unbound = placement(Some(2), None, 0); // anchor (2, 3): no bind, no 0x400
         let mut binds = HashMap::new();
         binds.insert(
             (7u8, 9u8),
@@ -1092,9 +1129,24 @@ mod tests {
 
         let (draws, drops) =
             resolve_placed_env_draws(&env_tmds, &[bound, unbound], None, Some(&binds));
-        assert_eq!(draws.len(), 1, "the unbound placement must not spawn");
-        assert_eq!(draws[0].env_slot, 1);
-        assert_eq!(draws[0].anim_id, 2);
+        assert_eq!(
+            draws.len(),
+            2,
+            "the unbound placement is the window sweep's"
+        );
+        assert_eq!((draws[0].env_slot, draws[0].anim_id), (1, 2));
+        assert_eq!(
+            (draws[1].env_slot, draws[1].anim_id),
+            (2, 0),
+            "the window sweep does no bind lookup, so its actor has no clip"
+        );
+        assert!(drops.is_empty());
+
+        // Unbound *and* bind-owned: neither retail sweep takes it.
+        let mut orphan = placement(Some(2), None, 0);
+        orphan.anchor_cell = legaia_asset::field_objects::CELL_BIND_OWNED;
+        let (draws, drops) = resolve_placed_env_draws(&env_tmds, &[orphan], None, Some(&binds));
+        assert!(draws.is_empty());
         assert!(matches!(
             drops.as_slice(),
             [EnvDrawDrop::Unbound { anchor: (2, 3), .. }]

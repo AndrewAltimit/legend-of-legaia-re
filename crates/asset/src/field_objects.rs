@@ -17,18 +17,30 @@
 //!
 //! ## Consumer (provenance)
 //!
-//! `FUN_8003A55C` (see `ghidra/scripts/funcs/8003a55c.txt`) sweeps the
-//! `128 x 128` tile grid; for each tile whose object-index-grid `u16` selects
-//! an object record with the *placed* flag (`+0x12` bit `0x4`) set, it looks the
-//! record's **object bind** up by the footprint-anchor tile
-//! ([`Placement::anchor_col`] / [`Placement::anchor_row`]) via
-//! `func_0x801d5630(1, anchor_col, anchor_row)`. **A placed record with no bind
-//! at its anchor tile is not spawned at all** (`s1 == 0` -> the tile is
-//! skipped): the bind is what supplies the object's interaction script *and*
-//! its animation id, so a record without one has no actor. With a bind it
-//! allocates a static-object actor (tick fn `0x8003BC08`) at a world position
-//! derived from the tile `(col, row)` and the record's signed `X/Y/Z` offsets.
-//! Each spawned actor draws its mesh from the scene's `scene_asset_table` TMD
+//! Retail creates a placed object's actor from **one of two sweeps**, and every
+//! placed record belongs to exactly one of them. Both walk the object-index grid
+//! and take the cells whose record carries the *placed* flag (`+0x12` bit `0x4`);
+//! they differ in what else they demand, and the anchor tile's
+//! [`CELL_BIND_OWNED`] (`0x400`) bit is the switch:
+//!
+//! 1. **`FUN_8003A55C`** (SCUS, scene init, whole grid; see
+//!    `ghidra/scripts/funcs/8003a55c.txt`) resolves the record's **object bind**
+//!    at its footprint-anchor tile ([`Placement::anchor_col`] /
+//!    [`Placement::anchor_row`]) via `func_0x801d5630(1, anchor_col, anchor_row)`
+//!    and **skips the record when there is none** (`s1 == 0` -> next tile). The
+//!    bind supplies the object's interaction script *and* its animation id, so
+//!    this sweep owns the scripted / animated props. Every record it spawns has
+//!    `0x400` set on its anchor tile.
+//! 2. **`FUN_801D7B50`** (field overlay, sub-area window rebuild) frees the actor
+//!    list and re-populates it from the cells inside the current window. It does
+//!    **no** bind lookup; its only extra gate is the anchor tile's `0x400`
+//!    (`801d7ccc: andi v0,v0,0x400` -> `bne` skips the tile). So it spawns exactly
+//!    the placed records the init sweep left behind - unbound, unscripted,
+//!    unposed. Rim Elm's cave shell (record `168` at cell `(32, 93)`) is one.
+//!
+//! Either way the actor is a static-object actor (tick fn `0x8003BC08`) at a
+//! world position derived from the tile `(col, row)` and the record's signed
+//! `X/Y/Z` offsets, drawing its mesh from the scene's `scene_asset_table` TMD
 //! pack through the actor's `+0x44` mesh chain.
 //!
 //! The bind's own record - a MAN partition-0 record - carries the actor's
@@ -112,6 +124,34 @@ pub const CELL_VISIBLE: u16 = 0x2000;
 /// `.MAP` grid sets this on ~15k cells (vs ~300 with `0x2000`); see the
 /// `CELL_VISIBLE` docs for the shared `+0x10`-plus-prefix mesh resolution.
 pub const CELL_WALK_VISIBLE: u16 = 0x1000;
+/// Object-index-grid cell bit `0x0400`, read on a placed object's
+/// **footprint-anchor tile**: the marker that says *"this object is the
+/// init sweep's - do not re-create it"*.
+///
+/// Retail spawns placed objects from **two** sweeps, and this bit is what keeps
+/// them disjoint:
+///
+/// - `FUN_8003A55C` (SCUS, scene init, whole grid) resolves each placed record's
+///   **object bind** at its anchor tile and skips the record when there is none.
+///   The bound objects are the scripted / animated ones.
+/// - `FUN_801D7B50` (field overlay, sub-area window rebuild) frees the actor list
+///   and re-populates it from the cells in the current window. It does **no** bind
+///   lookup; its only extra gate is this bit on the anchor tile
+///   (`801d7ccc: andi v0,v0,0x400` / `bne -> next tile`), so it spawns exactly the
+///   placed records the init sweep did *not*.
+///
+/// The two sets are complementary on the disc: across `town01` / `town0c` /
+/// `koin3` / `map01` every placement whose anchor tile carries a kind-1 trigger
+/// also carries this bit (37 / 58 / 6 of them), and every placement without a
+/// trigger has the bit clear (9 / 5 / 0). **The union is every placed record** -
+/// so a static whole-map renderer draws them all, the bound ones posed by their
+/// bind's clip and the rest at their raw object-local vertices.
+///
+/// (Rim Elm's cave is the case that makes it visible: the cavern shell is
+/// `town01` record `168` at cell `(32, 93)`, placed with no bind, so only the
+/// window sweep ever creates it.)
+// REF: FUN_801D7B50, FUN_8003A55C
+pub const CELL_BIND_OWNED: u16 = 0x0400;
 /// The global-TMD-pool prefix retail adds to a record's `+0x10` mesh id
 /// (`FUN_80020f88`: `actor+0x64 = record[+0x10] + DAT_8007b6f8`, prefix `= 5` -
 /// the five party/NPC meshes that occupy the head of `DAT_8007C018`). Pool
@@ -293,6 +333,14 @@ pub struct Placement {
     /// Footprint-anchor tile row, `row + row_delta`; pairs with
     /// [`Self::anchor_col`].
     pub anchor_row: u8,
+    /// The object-index-grid `u16` **at the anchor tile**
+    /// ([`Self::anchor_col`] / [`Self::anchor_row`]). Only one bit of it is
+    /// consumed: [`CELL_BIND_OWNED`] (`0x400`), which decides *which* of retail's
+    /// two placed-object spawners owns this record - set, the init sweep
+    /// (`FUN_8003A55C`) creates it from its bind; clear, the sub-area window
+    /// sweep (`FUN_801D7B50`) creates it, unbound and unposed. Every placed
+    /// record is spawned by exactly one of the two.
+    pub anchor_cell: u16,
     /// World X (additive offset; see module docs).
     pub world_x: i32,
     /// World Z (subtractive offset; see module docs).
@@ -326,6 +374,15 @@ pub struct Placement {
     /// World Z of the static collision-box centre; pairs with
     /// [`Self::collider_x`].
     pub collider_z: i32,
+}
+
+/// The object-index-grid `u16` at tile `(col, row)`. `grid` is the field map
+/// sliced from [`OBJECT_GRID_OFFSET`]. Off-grid / truncated reads give `0`.
+fn grid_cell(grid: &[u8], col: u8, row: u8) -> u16 {
+    let off = (row as usize * GRID_DIM + col as usize) * 2;
+    grid.get(off..off + 2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .unwrap_or(0)
 }
 
 /// World X for a tile column + record X offset (`col*0x80 + x_off + 0x40`).
@@ -383,6 +440,7 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
                 row: row as u8,
                 anchor_col: acol as u8,
                 anchor_row: arow as u8,
+                anchor_cell: grid_cell(grid, acol as u8, arow as u8),
                 world_x: world_x(col as u8, rec.x_off),
                 world_z: world_z(row as u8, rec.z_off),
                 y_off: rec.y_off,
@@ -465,12 +523,15 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
             let floor_nibble = field_map
                 .get(0x4000 + row * GRID_DIM + col)
                 .map(|b| b & 0x0F);
+            let acol = (col as i32 + rec.col_delta as i32).clamp(0, GRID_DIM as i32 - 1) as u8;
+            let arow = (row as i32 + rec.row_delta as i32).clamp(0, GRID_DIM as i32 - 1) as u8;
             out.push(Placement {
                 obj_idx,
                 col: col as u8,
                 row: row as u8,
-                anchor_col: (col as i32 + rec.col_delta as i32).clamp(0, GRID_DIM as i32 - 1) as u8,
-                anchor_row: (row as i32 + rec.row_delta as i32).clamp(0, GRID_DIM as i32 - 1) as u8,
+                anchor_col: acol,
+                anchor_row: arow,
+                anchor_cell: grid_cell(grid, acol, arow),
                 world_x: world_x(col as u8, rec.x_off),
                 world_z: world_z(row as u8, rec.z_off),
                 y_off: rec.y_off,

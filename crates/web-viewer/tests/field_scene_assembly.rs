@@ -173,11 +173,20 @@ fn hybrid_env_mesh_recovers_vertex_colour_props() {
         }
     }
     // town01 ships a handful of colour-only placed props (benches / fences /
-    // small furniture; slots 31, 55, 87 at the current pack vote). An env pack
-    // is shared across scenes, so a slot no town01 record names is simply
-    // unused here - the referenced set is exactly what `pack_mesh_index`
-    // resolves from each record's `+0x10`. The exact set can drift with loader
-    // changes - require the *class* of mesh to be recovered, not the slot ids.
+    // small furniture; slots 31, 55, 87 at the current pack vote).
+    //
+    // The referenced set is exactly what `pack_mesh_index` resolves from each
+    // record's `+0x10`, and env slots 97 / 109 are NOT in it. They are reachable
+    // only through the falsified "field-actor band" rule (`obj_idx - 5` on object
+    // ids 102 / 114) - retail resolves an object record's mesh as
+    // `record[+0x10] + 5` for **every** id, band or not (a live Rim Elm actor
+    // list reads obj101 -> pool 18, obj105 -> 14, obj113 -> 78, obj114 -> 84,
+    // i.e. `+0x10` plus the prefix, never the id). Pool ids 93..118 *are* a real
+    // model-id space - the MAN's field actors (NPCs / animated props) - but those
+    // placements carry their pool index directly and never go through this
+    // record path. So slots 97 / 109 belong to the NPC layer, not here.
+    //
+    // The assertion guards a class of mesh, not a slot set.
     assert!(
         colour_only_recovered >= 3,
         "expected >= 3 colour-only env meshes recovered on town01, got {colour_only_recovered}"
