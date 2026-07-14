@@ -128,6 +128,109 @@ pub fn lookup_tile_trigger(
         .find(|t| t.tile_x == tile_x && t.tile_z == tile_z)
 }
 
+/// Byte offset of the `.MAP` **per-tile object-index map**: `0x80 x 0x80`
+/// `u16`s, each `& 0x1FF` an index into the object-descriptor table at the
+/// file's start. Retail addresses it as `*(_DAT_1F8003EC) + 0x8000`.
+pub const MAP_OBJECT_INDEX_OFFSET: usize = 0x8000;
+
+/// Stride of an object descriptor (the `.MAP` file's `+0x0000..+0x4000`
+/// table, `_DAT_1F8003EC + index * 0x20`).
+pub const MAP_OBJECT_DESCRIPTOR_STRIDE: usize = 0x20;
+
+/// Descriptor `+0x12` bit that marks an object as **spawnable** - the gate
+/// `FUN_8003A55C` tests (`psVar7[9] & 4`) before allocating an actor for it.
+pub const MAP_OBJECT_SPAWN_BIT: i16 = 4;
+
+/// One spawnable `.MAP` object, decoded the way retail's scene-init object
+/// spawner does.
+///
+/// Retail (`FUN_8003A55C`) walks the `0x80 x 0x80` object-index map; for each
+/// tile whose descriptor has [`MAP_OBJECT_SPAWN_BIT`] it allocates an actor at
+/// the descriptor-derived world position and resolves the tile trigger at the
+/// descriptor's **key tile** (`tile + (i8 dx, i8 dz)` from descriptor bytes
+/// `+6`/`+7`). The trigger's `record` byte is the MAN record the actor's script
+/// runs - so the trigger tile is a *lookup key*, not a place the player stands.
+///
+/// The player's contact box against the object (`FUN_801CFC40`) is centred on
+/// [`Self::contact`] - the object's world position plus the same coarse
+/// `dx * 0x80` / `dz * 0x80` offsets **plus** the fine `(i8) desc[+0xE] * 0x10`
+/// / `desc[+0xF] * 0x10` offsets - with a half-extent of
+/// [`MAP_OBJECT_CONTACT_HALF`] on each axis.
+// PORT: FUN_8003A55C (the object walk + world-position + key-tile math)
+// REF: FUN_801CFC40 (the contact-box centre + half-extent)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MapObject {
+    /// Index into the descriptor table (`raw & 0x1FF`; retail stores it on the
+    /// actor at `+0x60`).
+    pub descriptor: u16,
+    /// Object-map tile the object sits on.
+    pub tile: (u8, u8),
+    /// The object's world position (`tile * 128 + 0x40 + desc.i16[+0]` on X,
+    /// `tile * 128 + 0x40 - desc.i16[+4]` on Z).
+    pub world: (i16, i16),
+    /// Centre of the player-contact box (`FUN_801CFC40`).
+    pub contact: (i16, i16),
+    /// The trigger **key tile** the record lookup uses.
+    pub key_tile: (u8, u8),
+}
+
+/// Half-extent of the static-object contact box on each axis
+/// (`FUN_801CFC40`: `0x40` base plus the `0x10` static-object pad).
+pub const MAP_OBJECT_CONTACT_HALF: i32 = 0x50;
+
+/// Decode every spawnable object of a scene `.MAP` (the full file, from
+/// offset 0) - PORT: FUN_8003A55C.
+///
+/// Returns one [`MapObject`] per (tile, spawnable object) pair, in row-major
+/// tile order (the order retail's double loop spawns them in). Objects whose
+/// descriptor lacks [`MAP_OBJECT_SPAWN_BIT`], or whose key tile falls outside
+/// the `0..0x80` grid (retail's two range guards), are skipped.
+///
+/// Callers join `key_tile` against the scene's kind-1 trigger tables
+/// ([`lookup_tile_trigger`]) to find the MAN record the object's script is;
+/// an object whose key tile has no trigger spawns no script (retail's
+/// `iVar14 == 0` bail).
+pub fn parse_map_objects(map: &[u8]) -> Vec<MapObject> {
+    let mut out = Vec::new();
+    for tz in 0..0x80usize {
+        for tx in 0..0x80usize {
+            let o = MAP_OBJECT_INDEX_OFFSET + (tz * 0x80 + tx) * 2;
+            let (Some(&lo), Some(&hi)) = (map.get(o), map.get(o + 1)) else {
+                continue;
+            };
+            let descriptor = u16::from_le_bytes([lo, hi]) & 0x1FF;
+            let base = usize::from(descriptor) * MAP_OBJECT_DESCRIPTOR_STRIDE;
+            let Some(d) = map.get(base..base + MAP_OBJECT_DESCRIPTOR_STRIDE) else {
+                continue;
+            };
+            let flags = i16::from_le_bytes([d[0x12], d[0x13]]);
+            if flags & MAP_OBJECT_SPAWN_BIT == 0 {
+                continue;
+            }
+            let (dx, dz) = (i32::from(d[6] as i8), i32::from(d[7] as i8));
+            let (kx, kz) = (tx as i32 + dx, tz as i32 + dz);
+            if !(0..0x80).contains(&kx) || !(0..0x80).contains(&kz) {
+                continue; // retail's `< 0x80` / `-1 <` guards
+            }
+            let wx = tx as i32 * 0x80 + 0x40 + i32::from(i16::from_le_bytes([d[0], d[1]]));
+            let wz = tz as i32 * 0x80 + 0x40 - i32::from(i16::from_le_bytes([d[4], d[5]]));
+            // Contact-box centre: the coarse key-tile offset plus the fine
+            // `* 0x10` offsets the touch test adds (`FUN_801CFC40`).
+            let cx = wx + dx * 0x80 + i32::from(d[0x0E] as i8) * 0x10;
+            let cz = wz + dz * 0x80 + i32::from(d[0x0F] as i8) * 0x10;
+            let clamp = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            out.push(MapObject {
+                descriptor,
+                tile: (tx as u8, tz as u8),
+                world: (clamp(wx), clamp(wz)),
+                contact: (clamp(cx), clamp(cz)),
+                key_tile: (kx as u8, kz as u8),
+            });
+        }
+    }
+    out
+}
+
 /// Region-record stride. Retail reads it from the resident byte
 /// `DAT_8007B31B`; in the disc corpus the table body is 8-byte records
 /// (`[x0, z0, x1, z1, type, 0, 0, 0]` - see the disc-gated structural test).

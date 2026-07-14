@@ -402,40 +402,70 @@ impl SceneHost {
                     // never-walked NPC stands with its retail facing.
                     // REF: FUN_8003A1E4
                     self.world.seed_field_npc_facings(&man_file, &man_bytes);
-                    // Gate-0 tile-trigger object binds (retail scene-init
-                    // `FUN_8003A55C`): each gate-0 kind-1 trigger binds its
-                    // partition-0 record as a touch object at the trigger
-                    // tile. House doors are these - the record's script
-                    // cross-context-teleports the player (ＩＮ/ＯＵＴ
-                    // pairs), decoded here into walk-touch entries so
-                    // walking into a door works. Installed after the carrier
-                    // install above (which clears `field_walk_touch`).
-                    let binds: Vec<((i16, i16), crate::man_field_scripts::WalkTouchEvent)> = self
+                    // `.MAP` **object** binds (retail scene-init `FUN_8003A55C`):
+                    // the object layer is walked, each spawnable object's key
+                    // tile (`object_tile + descriptor (dx,dz)`) resolves a
+                    // kind-1 trigger, and the trigger's `record` byte selects a
+                    // MAN record by **flat** index - that record IS the object's
+                    // script. House doors are these; their scripts
+                    // cross-context-teleport the player (`0x23` MOVE_TO or the
+                    // `0x4C 0x51` teleport-plus-anim form).
+                    //
+                    // The bind sits at the object's **contact-box centre**
+                    // (`FUN_801CFC40`), not at the trigger tile: the trigger
+                    // tile is a lookup key and is routinely a wall the player
+                    // can never stand on (Rim Elm's own house-door key tile
+                    // (38,25) is inside the house's collision wall). Falls back
+                    // to the trigger-tile centre only when the scene has no
+                    // readable `.MAP` object layer.
+                    // REF: FUN_8003A55C, FUN_801CFC40
+                    let map_bytes = self
+                        .scene
+                        .as_ref()
+                        .and_then(|s| s.field_map_index(&self.index))
+                        .and_then(|idx| self.index.entry_bytes_extended(idx).ok());
+                    let triggers: Vec<crate::field_regions::TileTrigger> = self
                         .field_triggers
                         .0
                         .iter()
                         .chain(self.field_triggers.1.iter())
-                        .filter(|t| t.gate == 0)
-                        .filter_map(|t| {
-                            let event = crate::man_field_scripts::p0_record_walk_touch_event(
-                                &man_file,
-                                &man_bytes,
-                                t.record as usize,
-                            )?;
-                            let pos = (
-                                i16::from(t.tile_x) * 128 + 0x40,
-                                i16::from(t.tile_z) * 128 + 0x40,
-                            );
-                            Some((pos, event))
-                        })
+                        .copied()
                         .collect();
+                    type Bind = (
+                        (i16, i16),
+                        crate::man_field_scripts::WalkTouchEvent,
+                        Option<usize>,
+                    );
+                    let binds: Vec<Bind> = match map_bytes.as_deref() {
+                        Some(map) => crate::man_field_scripts::object_walk_touch_binds(
+                            map, &triggers, &man_file, &man_bytes,
+                        )
+                        .into_iter()
+                        .map(|b| (b.contact, b.event, Some(b.record)))
+                        .collect(),
+                        None => triggers
+                            .iter()
+                            .filter(|t| t.gate == 0)
+                            .filter_map(|t| {
+                                let record = t.record as usize;
+                                let event = crate::man_field_scripts::flat_record_walk_touch_event(
+                                    &man_file, &man_bytes, record,
+                                )?;
+                                let pos = (
+                                    i16::from(t.tile_x) * 128 + 0x40,
+                                    i16::from(t.tile_z) * 128 + 0x40,
+                                );
+                                Some((pos, event, Some(record)))
+                            })
+                            .collect(),
+                    };
                     if !binds.is_empty() {
                         log::info!(
-                            "field: installed {} gate-0 door bind(s) from tile triggers",
+                            "field: installed {} object door bind(s) from the .MAP object layer",
                             binds.len()
                         );
                     }
-                    self.world.install_trigger_walk_touch(&binds);
+                    self.world.install_trigger_walk_touch_with_records(&binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban
                     // stager P1[3]): partition-1 records carrying the
                     // scripted-battle op `3E FF <row>`, armed as approach /

@@ -34,6 +34,12 @@ The practical consequence: the destination "index" *is* a structural offset
 table the MAN parser already exposes, so resizing a record is safe - fix the
 table, and every door stays addressable.
 
+Note the table is **flat** across the three partitions (`[P0..P1..P2]`), and it
+is indexed that way by the runtime resolver `FUN_8003C8F0` - but each partition
+prefixes its record with a *different* header, so a record's script start is not
+a function of the index alone. The per-partition header table is in
+[`script-vm.md`](../subsystems/script-vm.md#record-headers-are-per-partition-the-record-index-space-is-flat).
+
 ## Relocation surface
 
 A mid-buffer insert/delete of `delta` bytes at a destination op needs these

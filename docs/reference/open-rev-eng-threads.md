@@ -969,6 +969,20 @@ The carrying partition-0 records have their own header form (`[u8 n][n×2 SJIS n
 The captured Mei's-house warp is byte-for-byte the `0xA3 0xF8 0x61 0x36` in town01 partition-0 record 34 (an `ＩＮ` record).
 The randomizer (`legaia_rando::house_door`) shuffles only these classified door warps, class-preserving (ＩＮ among ＩＮ, ＯＵＴ among ＯＵＴ) so every exit still lands outside; see [`randomizer.md`](../tooling/randomizer.md).
 
+**`0xA3 0xF8` is one of three player-move forms, and the ＩＮ/ＯＵＴ pair is one of several door shapes.**
+A door record repositions the player through *any* of `A3 F8 <xb> <zb>` (op `0x23`, instant),
+`CC F8 51 <xb> <zb> <depth> <mv>` (op `0x4C` nibble-5 sub-1, teleport + move anim) or
+`C7 F8 <xb> <zb> <mode>` (op `0x47`, animated walk), and the record is a **branching script** whose arm is
+selected by story flags - so a door can also be a `0x44` SPAWN_RECORD of a partition-2 choreography that
+does the seating itself.
+A census restricted to `A3 F8` in partition 0 therefore under-reads the door surface badly: it is what
+produced the (false) "Vahn's house has an ＩＮ and no ＯＵＴ, so it is a story-entry warp" reading - the exit
+is a partition-2 record in the later story-state MANs (`town0b` P2[30] / `town0c` P2[29]), reached through
+the P0 record's SPAWN_RECORD arm.
+The bind position is the `.MAP` **object's** contact box, not the trigger tile (which is a lookup key and
+usually a wall). Full mechanism:
+[`field-locomotion.md`](../subsystems/field-locomotion.md#intra-scene-doorways---the-walk-touch-teleport-family).
+
 
 ### Field/town environment-geometry placement
 

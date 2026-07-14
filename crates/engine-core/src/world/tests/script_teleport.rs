@@ -1,17 +1,24 @@
-//! Op-`0x4C 0xC3` script-table teleport: partition-0 descriptor resolve
-//! (`FUN_8003C8F0` + the `FUN_8003D0BC` locals skip) and the ctx write-set
-//! applied by the field-VM nibble-C dispatcher's case 3.
+//! Op-`0x4C 0xC3` script-table teleport: the **flat** record resolve
+//! (`FUN_8003C8F0(ctx+0x50, 0)` + the `FUN_8003D0BC` name-field skip) and the
+//! ctx write-set applied by the field-VM nibble-C dispatcher's case 3.
+//!
+//! The record a context re-seats itself at is its own **partition-1 actor
+//! placement** (`+0x50 = N0 + placement_index`, flat-indexed), not a
+//! partition-0 object record - see
+//! [`crate::man_field_scripts::flat_record_span`].
 
 use super::*;
 use crate::world::vm_hosts::apply_script_table_teleport;
 
-/// Byte-level minimal MAN: `headers.len()` partition-0 records, each
-/// `[N=1][2 locals][model, anim, bx, bz][0x21 halt]` (`pc0 = 7`), followed
-/// by six zero-length sections so `man_section::parse` accepts the buffer.
-fn man_bytes_with_p0_records(headers: &[[u8; 4]]) -> Vec<u8> {
+/// Byte-level minimal MAN: `headers.len()` partition-**1** placement records,
+/// each `[N=1][2 locals][model, anim, bx, bz][0x21 halt]` (`pc0 = 7`),
+/// followed by six zero-length sections so `man_section::parse` accepts the
+/// buffer. Partition 0 is empty, so a context's flat `+0x50` id equals its
+/// placement index.
+fn man_bytes_with_placement_records(headers: &[[u8; 4]]) -> Vec<u8> {
     let mut man = vec![0u8; 0x2B + headers.len() * 3];
-    // Partition counts at +0x22: N0 = record count, N1 = N2 = 0.
-    man[0x22] = headers.len() as u8;
+    // Partition counts at +0x22: N0 = 0, N1 = record count, N2 = 0.
+    man[0x24] = headers.len() as u8;
     // Record bodies in the data region (offsets are data-region-relative).
     let mut bodies = Vec::new();
     for (i, h) in headers.iter().enumerate() {
@@ -33,9 +40,9 @@ fn man_bytes_with_p0_records(headers: &[[u8; 4]]) -> Vec<u8> {
 }
 
 #[test]
-fn teleport_reseats_ctx_at_its_partition0_record_header() {
+fn teleport_reseats_ctx_at_its_own_placement_record_header() {
     // Record 0: anim 9, tile (3, 4) with no half-tile bits.
-    let man = man_bytes_with_p0_records(&[[0x00, 9, 0x03, 0x04]]);
+    let man = man_bytes_with_placement_records(&[[0x00, 9, 0x03, 0x04]]);
     let man_file = legaia_asset::man_section::parse(&man).expect("fixture parses");
     let mut ctx = FieldCtx {
         script_id: 0,
@@ -67,7 +74,7 @@ fn teleport_reseats_ctx_at_its_partition0_record_header() {
 #[test]
 fn coord_high_bit_adds_the_half_tile_offset() {
     // bx = 0x83 -> tile 3 + half (0x40 extra); bz = 0x04 plain.
-    let man = man_bytes_with_p0_records(&[[0x00, 0, 0x83, 0x04]]);
+    let man = man_bytes_with_placement_records(&[[0x00, 0, 0x83, 0x04]]);
     let man_file = legaia_asset::man_section::parse(&man).expect("fixture parses");
     let mut ctx = FieldCtx::default();
     assert!(apply_script_table_teleport(&man_file, &man, &mut ctx));
@@ -79,7 +86,7 @@ fn coord_high_bit_adds_the_half_tile_offset() {
 
 #[test]
 fn unresolvable_script_id_leaves_ctx_untouched() {
-    let man = man_bytes_with_p0_records(&[[0x00, 9, 0x03, 0x04]]);
+    let man = man_bytes_with_placement_records(&[[0x00, 9, 0x03, 0x04]]);
     let man_file = legaia_asset::man_section::parse(&man).expect("fixture parses");
     let mut ctx = FieldCtx {
         script_id: 5, // out of range: only record 0 exists
@@ -97,7 +104,7 @@ fn unresolvable_script_id_leaves_ctx_untouched() {
 /// teleport, and advances PC by 2.
 #[test]
 fn field_vm_op_4c_c3_teleports_through_the_host() {
-    let man = man_bytes_with_p0_records(&[
+    let man = man_bytes_with_placement_records(&[
         [0x00, 9, 0x03, 0x04],
         [0x00, 2, 0x10, 0x90], // record 1: bz high bit -> half tile
     ]);

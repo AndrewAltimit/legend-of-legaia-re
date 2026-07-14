@@ -167,30 +167,50 @@ impl World {
         sparring_idx
     }
 
-    /// Install walk-touch entries for the scene's **gate-0 tile-trigger
-    /// object binds** (house doors): each bind sits at its trigger tile's
-    /// world centre and fires the partition-0 record's decoded effect
-    /// (see [`crate::man_field_scripts::p0_record_walk_touch_event`]) on
-    /// player contact, through the same [`Self::check_field_walk_touch`]
-    /// dispatch as placement contacts.
+    /// Install walk-touch entries for the scene's **`.MAP` object binds**
+    /// (house doors): each bind sits at the object's contact-box centre
+    /// (`FUN_801CFC40`) and fires the MAN record the object's key tile
+    /// resolves (`FUN_8003A55C`) on player contact, through the same
+    /// [`Self::check_field_walk_touch`] dispatch as placement contacts.
     ///
     /// Keyed from [`Self::TRIGGER_WALK_TOUCH_SLOT_BASE`] so the synthetic
     /// slots never collide with partition-1 placement indices. Call after
     /// [`Self::install_field_carriers_from_man`] (whose inner install clears
     /// `field_walk_touch`); idempotent per scene - re-installing replaces the
     /// previous bind set.
-    // REF: FUN_8003A55C, FUN_801d5b5c
+    // REF: FUN_8003A55C, FUN_801CFC40, FUN_801d5b5c
     pub fn install_trigger_walk_touch(
         &mut self,
         binds: &[((i16, i16), crate::man_field_scripts::WalkTouchEvent)],
     ) {
+        self.install_trigger_walk_touch_with_records(
+            &binds.iter().map(|&(p, e)| (p, e, None)).collect::<Vec<_>>(),
+        );
+    }
+
+    /// [`Self::install_trigger_walk_touch`] plus each bind's **flat MAN record
+    /// index**, so the touch dispatch can re-resolve the record's story-flag
+    /// branch at contact time (see [`Self::field_walk_touch_records`]).
+    pub fn install_trigger_walk_touch_with_records(
+        &mut self,
+        binds: &[(
+            (i16, i16),
+            crate::man_field_scripts::WalkTouchEvent,
+            Option<usize>,
+        )],
+    ) {
         self.field_walk_touch
             .retain(|slot, _| *slot < Self::TRIGGER_WALK_TOUCH_SLOT_BASE);
-        for (i, (pos, event)) in binds.iter().enumerate() {
+        self.field_walk_touch_records
+            .retain(|slot, _| *slot < Self::TRIGGER_WALK_TOUCH_SLOT_BASE);
+        for (i, (pos, event, record)) in binds.iter().enumerate() {
             let Some(slot) = Self::TRIGGER_WALK_TOUCH_SLOT_BASE.checked_add(i as u8) else {
                 break;
             };
             self.field_walk_touch.insert(slot, (*pos, *event));
+            if let Some(record) = record {
+                self.field_walk_touch_records.insert(slot, *record);
+            }
         }
     }
 

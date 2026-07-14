@@ -728,6 +728,28 @@ impl World {
             return; // still inside the same contact - already posted
         }
         self.active_walk_touch = Some(touch_slot);
+        // A door record is a field-VM script, not a constant: its opening
+        // `SysFlag.Test` chain picks which arm runs (teleport into the
+        // interior vs. spawn the story beat). Retail resumes the record on
+        // contact, so the arm is chosen against the *live* flags - re-resolve
+        // here rather than reusing the load-time structural decode. Falls back
+        // to that decode when the record can't be re-walked.
+        // REF: FUN_801d5b5c (contact resumes the object's script)
+        let event = self
+            .field_walk_touch_records
+            .get(&touch_slot)
+            .copied()
+            .and_then(|record| {
+                let man = self.field_channels_man.clone()?;
+                let man_file = legaia_asset::man_section::parse(&man).ok()?;
+                let flags = self.system_flags.clone();
+                let test = |idx: u16| -> bool {
+                    let byte = usize::from(idx >> 3);
+                    byte < flags.len() && flags[byte] & (0x80u8 >> (idx & 7)) != 0
+                };
+                crate::man_field_scripts::resolve_walk_touch_event(&man_file, &man, record, &test)
+            })
+            .unwrap_or(event);
         // Post through the same dispatch path the button-gated interact uses.
         self.trigger_field_interact(0, touch_slot);
         match event {
@@ -767,6 +789,16 @@ impl World {
             // already ran the placement's record ([`crate::world::World::
             // run_boss_stager_record`]); the event carries no extra effect.
             WalkTouchEvent::StagerBeat => {}
+            // The record's taken arm is an op-`0x44` SPAWN_RECORD: queue the
+            // referenced record so `SceneHost::tick` installs it as a spawned
+            // field-VM context (the same drain the in-script op-`0x44` uses).
+            // This is the arm a story-gated door takes once its flag is set -
+            // the in-house beat, not a bare reposition.
+            WalkTouchEvent::SpawnRecord { flat_index } => {
+                if let Ok(idx) = u8::try_from(flat_index) {
+                    self.pending_record_spawns.push(idx);
+                }
+            }
         }
     }
 

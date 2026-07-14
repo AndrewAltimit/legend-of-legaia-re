@@ -21,6 +21,32 @@ records `1..` are per-actor interaction scripts. The engine mirrors this:
 `World::load_field_script_at`. These MAN scripts disassemble cleanly as
 field-VM (~8% linear-walk error on the retail town MANs).
 
+### Record headers are per-partition; the record index space is flat
+
+Every partition prefixes its script with a **different** header, so the offset
+of a record's first opcode (`pc0`) depends on which partition the record is in:
+
+| Partition | Record header | `pc0` |
+|---|---|---|
+| 0 (objects) | `[u8 n][n*2 SJIS name][u8 attr]` | `1 + 2n + 1` |
+| 1 (actor placements) | `[u8 N][N*2 locals][4-byte placement header]` | `1 + 2N + 4` |
+| 2 (named / cutscene) | name + three condition blocks (`FUN_8003BDE0`) | parsed |
+
+Reading a partition-0 record with the partition-1 formula starts the walk three
+bytes late - mid-op - so it resyncs somewhere arbitrary and silently drops ops.
+That is not a decode nicety: partition-0 records are the *door and prop scripts*
+(see [`field-locomotion.md`](field-locomotion.md#intra-scene-doorways---the-walk-touch-teleport-family)),
+so the mis-start is the difference between a door that works and one that does
+not.
+
+The record **index** space, on the other hand, is **flat**: `FUN_8003C8F0(id,
+partition_base)` indexes the concatenated `[P0..P1..P2]` record-offset table,
+and the consumers that name a record by number pass base `0` - the `.MAP` kind-1
+trigger's `record` byte (`FUN_8003A55C`), and the op-`0x4C` nibble-C sub-3
+script-table teleport. Op `0x44` SPAWN_RECORD is the exception that proves it:
+its operand is also flat, and the dispatcher re-bases it into partition 2
+(`- N0 - N1`) itself. Engine: `man_field_scripts::flat_record_span`.
+
 ### Placement header: model + animation resolution
 
 The 4-byte header after the locals block is `[model][anim_id][bx][bz]`

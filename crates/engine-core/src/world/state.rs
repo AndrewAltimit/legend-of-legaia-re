@@ -648,6 +648,15 @@ pub struct World {
     /// event post on the static-entity collision arm.
     pub field_walk_touch: std::collections::BTreeMap<u8, ((i16, i16), WalkTouchEvent)>,
 
+    /// For each `.MAP`-object door bind ([`Self::install_trigger_walk_touch`]),
+    /// the **flat** MAN record index the object's script is. A door record is a
+    /// field-VM script whose opening `SysFlag.Test` chain selects the arm that
+    /// runs, so the effect is re-resolved against the live story flags at
+    /// contact time ([`crate::man_field_scripts::resolve_walk_touch_event`])
+    /// rather than frozen at scene load; the `field_walk_touch` entry keeps the
+    /// structural decode as the fallback.
+    pub field_walk_touch_records: std::collections::BTreeMap<u8, usize>,
+
     /// Walk-touch edge latch: the slot whose contact box the player currently
     /// stands in, so a sustained press posts its event once (retail gates the
     /// per-step post on the player's `+0x10 & 0x80000` engaged flag, cleared
@@ -1874,6 +1883,7 @@ impl World {
             field_npc_motions: std::collections::BTreeMap::new(),
             animate_field_npcs: false,
             field_walk_touch: std::collections::BTreeMap::new(),
+            field_walk_touch_records: std::collections::BTreeMap::new(),
             active_walk_touch: None,
             stepping_inline_npc: None,
             active_inline_slot: None,

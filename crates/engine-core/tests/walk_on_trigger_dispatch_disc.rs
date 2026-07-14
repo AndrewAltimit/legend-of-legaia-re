@@ -226,17 +226,22 @@ fn town01_exit_tiles_leave_for_the_overworld() {
     );
 }
 
-/// House doors: a gate-0 tile trigger binds its partition-0 record as a
-/// touch object; walking into the door teleports the player to the paired
-/// endpoint (the record's cross-context `0xA3 0xF8` player MOVE_TO).
+/// House doors: a gate-0 tile trigger binds a MAN record as a touch object;
+/// walking into the door teleports the player to the paired endpoint (the
+/// record's cross-context player MOVE_TO).
+///
+/// The bind sits at the door **object's** contact-box centre (`FUN_801CFC40`),
+/// resolved through the `.MAP` object layer (`FUN_8003A55C`). The gate-0
+/// kind-1 trigger tile is only the record lookup key - it is routinely a
+/// collision wall, so binding there was unreachable.
 #[test]
 fn house_door_binds_teleport_on_contact() {
     let Some(mut host) = open_host() else {
         return;
     };
     host.enter_field_scene("town01", 0).expect("enter town01");
-    // The (17,29) doorway bind targets the pinned interior landing
-    // (12480, 6976) = tile (97, 54) - the captured Mei's-house-variant warp.
+    // Mei's-house ＩＮ door: object contact centre (2240, 3728), interior
+    // landing (12480, 6976) = tile (97, 54).
     let bind = host
         .world
         .field_walk_touch
@@ -244,7 +249,7 @@ fn house_door_binds_teleport_on_contact() {
         .find(|(s, _)| **s >= World::TRIGGER_WALK_TOUCH_SLOT_BASE)
         .map(|(_, &(pos, event))| (pos, event));
     assert!(bind.is_some(), "town01 installs gate-0 door binds");
-    let doorway = (17i16 * 128 + 0x40, 29i16 * 128 + 0x40);
+    let doorway = (2240i16, 3728i16);
     let target = host
         .world
         .field_walk_touch
@@ -265,7 +270,7 @@ fn house_door_binds_teleport_on_contact() {
     assert_eq!(
         target,
         Some((12480, 6976)),
-        "the (17,29) doorway bind decodes the pinned interior landing"
+        "the Mei's-house door bind decodes the pinned interior landing"
     );
     // Pad-walk into the doorway; the touch dispatch snaps the player inside.
     for _ in 0..3 {

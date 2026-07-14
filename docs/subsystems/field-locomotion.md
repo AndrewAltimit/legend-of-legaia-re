@@ -207,8 +207,9 @@ The per-tile lookup (`FUN_801D5630`) scans the `+0x10000` primary block first an
 
 - **Gate 1 - walk-on record spawn** (`SceneHost::dispatch_walk_on_trigger`, the `FUN_801D1EC4` per-frame tile compare): when the player crosses into a new tile during free-roam field play (`tile = (world - 0x40) >> 7`, compared against the host's last-tile mirror; a scene entry / warp arrival marks the compare stale so the arrival tile fires on the first tick, matching retail's stale globals), a gate-1 hit spawns its partition-2 record through `World::install_gated_p2_record` (C1/C2 story-flag gates checked).
   This is how town exits work - Rim Elm's south-gate tiles reference the partition-2 record whose script runs the `0x3F` named scene-change to `map01` - and how walk-on story beats (the post-naming Vahn's-house chain) launch. Skipped while a spawned record / dialog / name entry owns the frame. The dispatch runs in **both** field and world-map mode: on the overworld a gate-1 record that IS a portal (carries a `0x3F`, tested by `SceneHost::p2_record_is_portal`) is left to the world-map entity SM (`OverworldPortal`), and only non-portal **beat** records spawn here - the Drake mist-wall force-walk bands (`map01` P2[34..36], `C1=[0x482]`), which shove the player back while their story flag is clear.
-- **Gate 0 - object binds** (`SceneHost::enter_field_scene` install, the `FUN_8003A55C` scene-init consumption): each gate-0 trigger binds its **partition-0** record as a touch object at the trigger tile (`World::install_trigger_walk_touch`, synthetic walk-touch slots from `World::TRIGGER_WALK_TOUCH_SLOT_BASE`). House doors are these: the record's script cross-context-teleports the player (`0xA3 0xF8`, the ＩＮ/ＯＵＴ pair mechanism), decoded by `man_field_scripts::p0_record_walk_touch_event`.
-  Partition-0 records carry their **own header form** `[u8 n][n*2 SJIS name][u8 attr]` (`pc0 = 1 + n*2 + 1`), not the partition-1 `[N][N*2 locals][4-byte header]` shape. Contact then routes through the same `check_field_walk_touch` dispatch as placement touches.
+- **Gate 0 - object binds** (`SceneHost::enter_field_scene` install, the `FUN_8003A55C` scene-init consumption): a gate-0 trigger is **not** a tile the player steps on. It is the **lookup key** an `.MAP` *object* uses to find its script: `FUN_8003A55C` walks the object-index map, and for each spawned object looks the kind-1 trigger up at the object's **key tile** (`object_tile + (i8)desc[+0x06], (i8)desc[+0x07]`), then resolves `trigger[2]` as a **flat** MAN record index (`FUN_8003C8F0` with partition base 0 - partitions 0/1/2 concatenated). The record becomes the object's script (`actor+0x90` / `+0x9E`), its trailing header byte the anim id (`actor+0x5C`).
+  The touch box is therefore the **object's**, not the trigger tile's: `FUN_801CFC40` centres it at `object_world + (desc[+0x06] * 128 + (i8)desc[+0x0E] * 16, desc[+0x07] * 128 + (i8)desc[+0x0F] * 16)` with half-extent `0x40 + 0x10`. Binding at the trigger tile instead makes most doors unreachable - key tiles are routinely inside a wall (Rim Elm's own house-door key tile `(38,25)` is a collision wall). Engine: `field_regions::parse_map_objects` → `man_field_scripts::object_walk_touch_binds` → `World::install_trigger_walk_touch_with_records` (synthetic walk-touch slots from `World::TRIGGER_WALK_TOUCH_SLOT_BASE`); contact routes through the same `check_field_walk_touch` dispatch as placement touches.
+  Record headers differ **per partition**, so the flat index must be resolved to its partition before the script offset is computed: P0 `[u8 n][n*2 SJIS name][u8 attr]` (`pc0 = 1 + 2n + 1`), P1 `[u8 N][N*2 locals][4-byte placement header]` (`pc0 = 1 + 2N + 4`), P2 name + three condition blocks (`FUN_8003BDE0`). Engine: `man_field_scripts::flat_record_span`.
 
 The partition-2 gate bitmap (`DAT_80085758`) **is** the field VM's `0x50`/`0x60`/`0x70` system-flag bank - one store, shared by the record dispatcher's C1/C2 test (`World::p2_gate_flag_set` = `system_flag_test`) and the VM's flag writes, so an opening-timeline `set` is immediately visible to the next record's gate. It also overlaps the saved story-flag window at byte `+0x158` (`0x80085758 - 0x80085600`); the engine save mirrors the bank into that window and reloads seed it back. Disc-gated coverage: `crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs` (opening-to-free-roam progression, south-gate exit to `map01`, house-door contact teleport, ambient no-lock, gate-flag save round-trip).
 
@@ -505,91 +506,144 @@ model to it and plays the placement's scene-bundle ANM clip per frame
 (`FieldClipPlayer` over the `anim_id - 1` record, the same posed-rebuild path
 as the player's idle/walk pair).
 
-## Intra-scene doorways - the ＩＮ / ＯＵＴ record pair
+## Intra-scene doorways - the walk-touch teleport family
 
 Walking into a town house is **not** a scene change. The scene name buffers
 (`0x8007050C` / `0x80084548`) are unchanged across the warp: the interior is a
 sub-area of the *same* 128×128 collision grid, parked in an otherwise unused
-corner of it, and the door merely repositions the player. The whole mechanism
-is two partition-0 object records bound by two gate-0 tile triggers.
+corner of it, and the door merely repositions the player. The mechanism is a
+`.MAP` **object** whose key tile resolves a gate-0 kind-1 trigger to a MAN
+record (`FUN_8003A55C`), and that record's script cross-context-teleporting
+the *player* channel.
 
-**The door record.** A doorway's partition-0 script emits a fixed pair of
-cross-context ops into the **player system channel** `0xF8`:
+### The three player-move op forms
+
+A door record repositions the player by addressing the **player system
+channel** `0xF8` from another context. Three distinct ops do it, and a decoder
+that knows only the first misses two thirds of the door surface:
 
 ```text
-B8 F8 <dir> 00      ; op 0x38 | 0x80 CAM_CFG  -> player facing
-A3 F8 <xb> <zb>     ; op 0x23 | 0x80 MOVE_TO  -> player position
+A3 F8 <xb> <zb>                 ; op 0x23 | 0x80  MOVE_TO      - instant teleport
+CC F8 51 <xb> <zb> <depth> <mv> ; op 0x4C nibble-5 sub-1       - teleport + move anim
+C7 F8 <xb> <zb> <mode>          ; op 0x47 | 0x80  walk-to-tile - animated glide
 ```
 
-- `0xA3 0xF8` is the warp. `0x23 MOVE_TO` addressed to channel `0xF8` moves the
-  **player**; a plain `0x23` moves the *executing* actor (a prop positioning
-  itself). That prefix is the entire discriminator between a door and an NPC's
-  self-placement, and the two are easy to confuse - the disc-wide census
-  excludes ~220 plain-`0x23` actor moves on exactly this test. World coords are
-  the usual `(b & 0x7F) * 0x80 + 0x40` (+`0x40` when bit 7 is set).
-- `0xB8 0xF8` is the **arrival facing**, and doors always carry it: the simple
-  `0x38` path (`op1 & 0x7F == 0`) copies the SCUS compass LUT entry
-  `0x80073F04 + (op0 & 0xF) * 2` into the player's `+0x26` heading. Retail
-  authors ＩＮ records with LUT index 4 (into the room) and ＯＵＴ records with
-  index 0 (back out into the street), so the player never emerges facing the
-  door they just used. Ignoring the op leaves the arrival facing at whatever
-  direction the player happened to walk in with.
+- The `0xF8` prefix is the entire discriminator between a door and an NPC's
+  self-placement: a **plain** `0x23` moves the *executing* actor (a prop
+  positioning itself), and the disc carries hundreds of those. Any census of
+  doors must filter on the channel byte.
+- World coords are the usual `(b & 0x7F) * 0x80 + 0x40` (+`0x40` when bit 7 is
+  set).
+- `0x23` and the `0x4C` nibble-5 sub-1 form are **teleports** (the position is
+  written outright); `0x47` is an animated walk to a tile and is what a landing
+  choreography uses to step the player away from the door it arrived at.
+- The `0x4C` form's `depth & 0xF` is its own facing index; otherwise the
+  arrival facing comes from a preceding `B8 F8 <dir> 00` (op `0x38 | 0x80`
+  CAM_CFG, simple path `op1 & 0x7F == 0`), which copies the SCUS compass LUT
+  entry `0x80073F04 + (op0 & 0xF) * 2` into the player's `+0x26` heading.
+  Retail authors ＩＮ records with LUT index 4 (into the room) and ＯＵＴ
+  records with index 0 (back out into the street), so the player never emerges
+  facing the door just used.
 
-Both ops sit **before** the record's fade/lighting tail, so a linear walk of
-the record's own bytes recovers the pair without executing anything.
+Disc-wide, the trigger-bound records carry all three in quantity - the `0x23`
+form is not even the most common. Census tool:
+`cargo run -p legaia-engine-core --example scan_door_triggers` (no args = every
+CDNAME scene, with a per-class count).
 
-**The pairing convention.** Doorway records pair by their fullwidth SJIS
-record name: `…ＩＮ` / `…ＯＵＴ` (digit-suffixed when an inn has several
-exits), 入口 / 出口 for gates, Ａ / Ｂ for elevator endpoints. The ＯＵＴ
-record **is** the return trip - it is a door in its own right, bound by its own
-gate-0 trigger at a tile inside the interior, warping the player back to the
-doorstep. A scene's doorways are therefore complete iff every ＩＮ has its
-paired ＯＵＴ installed. An exit may own **several** trigger tiles (a wide
-doorway), which is why the disc-wide census counts more ＯＵＴ triggers than
-ＩＮ ones.
+### The record is a branch, not a constant
 
-**Geometry.** The trigger tile itself is a **wall** in the collision grid (you
-cannot stand in a doorway); the player reaches the door through a one-tile
-walkable corridor and the touch box (`FIELD_PROP_BOX_HALF`) fires from the last
-walkable position. Each landing is placed clear of the paired door's contact
-box, so an arrival cannot immediately re-fire the door it came through - the
-ping-pong a naive box model would otherwise produce is authored out in the
-data, not guarded in code.
+A door record is a **script**, and the retail door surface uses that: the same
+key tile runs different arms depending on story flags. `town01`'s
+主人公の家の中 ("inside the protagonist's house") is three arms deep - a
+`0x7x` TEST chain over flags `0x226` / `0x227` selecting between a plain
+teleport and a `0x44` SPAWN_RECORD of the in-house dinner beat. Taking a
+record's *first* teleport unconditionally therefore fires the wrong arm for
+every story-gated door.
 
-**Landing records.** The tile a door lands on frequently carries a *gate-1*
-trigger of its own - サウンド内 / サウンド外 ("sound inside/outside") ambience
-switches, 閉扉 ("closed door"), or a story beat. These spawn as ordinary
-partition-2 records on arrival; a landing record that opens an inline dialog
-box parks the frame until the player confirms, exactly as retail does.
+The engine resolves the arm at **contact time**, against live flags, by
+walking the record from its script start following the VM's real branch
+semantics (`SysFlag.Test` jumps when the flag is **set**; `JmpRel` follows;
+a revisited PC = the trailing idle park, stop):
+`man_field_scripts::resolve_walk_touch_event`. The first player teleport it
+reaches is the door's landing; a `0x44` SPAWN_RECORD it reaches instead makes
+the touch spawn that record as a field-VM context
+(`WalkTouchEvent::SpawnRecord`), which is how a door that leads into a cutscene
+works.
 
-**Rim Elm** (`town01` / `town0b` / `town0c` - three story states that share one
-partition-0 table and one `.MAP` trigger table) carries five player-channel
-teleports in partition 0: the two complete doorway pairs 恋人ＩＮ/恋人ＯＵＴ
-(Mei's house) and 木ＩＮ/木ＯＵＴ (the tree), plus 主人公の家の中 ("inside the
-protagonist's house"). The last is **not** a doorway: it has no ＯＵＴ record
-anywhere in the MAN (a byte-scan for `A3 F8` across all three scenes finds only
-those five sites), its trigger tile sits inside the house's wall footprint with
-no walkable approach, and its script `0x44`-spawns the dinner beat when the
-story flag for the preceding beat is set. It is a **story-entry** warp, not a
-walk-in door.
+### The pairing convention
 
-Engine port: `man_field_scripts::p0_record_walk_touch_event` decodes the pair
-(the record region via `p0_record_script_region`, the partition-0 header), the
-binds install in `SceneHost::enter_field_scene`, and `World::check_field_walk_touch`
-applies position + facing + a fresh floor-height sample on contact (the interior
-sits at its own elevation on the shared grid, so the landing must be re-seated
-on the floor rather than keeping the doorstep's height). Disc-gated coverage:
-`crates/engine-core/tests/rim_elm_door_roundtrip_disc.rs` - both pair members
-install with their decoded target and facing in all three Rim Elm scenes, the
-pairs are reciprocal and cannot re-fire, and the locomotion walks each doorway
-in and back out.
+Doorway records pair by their fullwidth SJIS record name: `…ＩＮ` / `…ＯＵＴ`
+(digit-suffixed when an inn has several exits), 入口 / 出口 for gates, Ａ / Ｂ
+for elevator endpoints. The ＯＵＴ record **is** the return trip - a door in
+its own right, bound by its own object, warping the player back to the
+doorstep. An exit may own **several** objects (a wide doorway), so a scene can
+carry more ＯＵＴ contacts than ＩＮ ones.
+
+The ＩＮ/ＯＵＴ naming is a convention, not the mechanism, and it does not
+cover the whole family: an exit can live in **partition 2**, reached through a
+gate-0 record's SPAWN_RECORD arm rather than through an object of its own.
+
+### Geometry
+
+The gate-0 kind-1 trigger tile is the object's script **lookup key**, not a
+tile the player steps on - it is routinely a wall (Rim Elm's house-door key
+tile `(38,25)` is a collision wall). The contact box is the object's
+(`FUN_801CFC40`; see the gate-0 bullet under
+[Trigger block](#trigger-block-0x10000---four-kind-sub-tables)), centred at the
+object world position offset by its descriptor's coarse `(desc[6], desc[7])`
+tile deltas plus fine `(desc[0x0E], desc[0x0F])` 16-unit deltas, half-extent
+`0x50`. Each landing is placed clear of the paired door's contact box, so an
+arrival cannot immediately re-fire the door it came through - the ping-pong a
+naive box model would otherwise produce is authored out in the data, not
+guarded in code.
+
+### Landing records
+
+The tile a door lands on frequently carries a *gate-1* trigger of its own -
+サウンド内 / サウンド外 ("sound inside/outside") ambience switches, 閉扉
+("closed door"), or a story beat. These spawn as ordinary partition-2 records
+on arrival; a landing record that opens an inline dialog box parks the frame
+until the player confirms, exactly as retail does.
+
+### Rim Elm
+
+`town01` / `town0b` / `town0c` are three story states that share one
+partition-0 table and one `.MAP` trigger table. Two complete object-bound
+doorway pairs - 恋人ＩＮ/恋人ＯＵＴ (Mei's house) and 木ＩＮ/木ＯＵＴ (the
+tree) - plus 主人公の家の中, Vahn's own house.
+
+Vahn's house is the branch case above, and it is **not** an exit-less
+story-entry warp. Its P0 record's arms are: flag `0x226` clear → teleport
+inside; `0x226` set and `0x227` clear → SPAWN_RECORD the in-house beat
+(`town01` P2[5]), which seats the player with the `0x4C` nibble-5 sub-1 form
+and later walks him with `0x47`; both set → teleport. The **exit** is in
+partition 2, in the later story-state MANs: `town0b` P2[30] / `town0c` P2[29]
+carry the pair of `A3 F8` teleports - one into the room, one back out to the
+doorstep. A byte-scan restricted to partition 0 and to the `A3 F8` form sees
+none of this, which is why "Vahn's house has an ＩＮ and no ＯＵＴ" reads as
+true and is false.
+
+### Engine port
+
+`man_field_scripts::object_walk_touch_binds` joins the `.MAP` object layer to
+the trigger table and the flat MAN record space; the binds install in
+`SceneHost::enter_field_scene` (keyed at each object's contact centre, with the
+record index kept alongside); `World::check_field_walk_touch` re-resolves the
+record's arm against live story flags on contact
+(`man_field_scripts::resolve_walk_touch_event`) and applies position + facing +
+a fresh floor-height sample (the interior sits at its own elevation on the
+shared grid, so the landing must be re-seated on the floor rather than keeping
+the doorstep's height), or spawns the record the arm names. Disc-gated
+coverage: `crates/engine-core/tests/rim_elm_door_roundtrip_disc.rs` (both pair
+members install with their decoded target and facing in all three Rim Elm
+scenes, the pairs are reciprocal and cannot re-fire, and the locomotion walks
+each doorway in and back out) and
+`crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs`.
 
 ## Open
 
 - The full `FUN_801d5b5c` post-kernel state (the touch-event handler beyond the decoded entry kernel).
-- How retail reaches `town01`'s 主人公の家の中 story-entry warp (see [Intra-scene doorways](#intra-scene-doorways---the-ｉｎ--ｏｕｔ-record-pair)): its gate-0 trigger tile is walled off from every approach under the capture-pinned collision model, so the contact that runs it is not a free-roam walk-in.
-- `world::vm_hosts::apply_script_table_teleport` (field-VM op `0x4C 0xC3`) resolves its descriptor through `partition_record_span(…, 0, …)` and then reads a 4-byte `[model, anim, bx, bz]` header - the partition-**1** actor-placement shape - at `pc0 - 4`. Partition-0 records are `[u8 n][n*2 SJIS name][u8 attr]` on disc, so either the partition argument or the header read needs re-deriving from `FUN_8003C8F0`.
-- Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists, and the initial-facing decode takes the fall-through branch - see [NPC initial facing](#npc-initial-facing) - rather than evaluating the prologue's `0x7x` flag-TEST chain against live flags, so a later-chapter branch's facing/position is not selected).
+- Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists, and the initial-facing decode takes the fall-through branch - see [NPC initial facing](#npc-initial-facing) - rather than evaluating the prologue's `0x7x` flag-TEST chain against live flags, so a later-chapter branch's facing/position is not selected). The **door** path does evaluate its branches live (see [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family)); the general actor path does not yet.
 
 ## NPC initial facing
 

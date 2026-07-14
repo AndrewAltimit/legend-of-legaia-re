@@ -2,11 +2,11 @@
 //!
 //! Entering a Rim Elm house is not a scene change - the scene stays `town01`
 //! and the player's world position jumps to an interior sub-area of the same
-//! collision grid. The mechanism is a gate-0 `.MAP` tile trigger binding a
-//! **partition-0** object record (`FUN_8003A55C`) whose script cross-context
-//! teleports the *player* channel (`0xA3 0xF8 <xb> <zb>` - op `0x23 | 0x80`
-//! into channel `0xF8`), paired with the arrival heading its preceding
-//! `0xB8 0xF8 <dir> 00` (op `0x38 | 0x80`) writes.
+//! collision grid. The mechanism is a `.MAP` **object** whose key tile resolves
+//! a kind-1 trigger to a MAN record (`FUN_8003A55C`), and that record's script
+//! cross-context teleports the *player* channel (`0xA3 0xF8 <xb> <zb>` - op
+//! `0x23 | 0x80` into channel `0xF8`), paired with the arrival heading its
+//! preceding `0xB8 0xF8 <dir> 00` (op `0x38 | 0x80`) writes.
 //!
 //! The records pair by fullwidth-name convention - ＩＮ / ＯＵＴ - and the
 //! ＯＵＴ record is what makes the return trip work. Rim Elm ships two such
@@ -19,11 +19,15 @@
 //! 1. both pair members install as walk-touch binds with their disc-decoded
 //!    target **and facing**;
 //! 2. each pair is **reciprocal** - the ＯＵＴ target sits next to the ＩＮ
-//!    trigger tile and vice versa, so neither landing re-fires the door it
-//!    just came through (no ping-pong);
+//!    door and vice versa, so neither landing re-fires the door it just came
+//!    through (no ping-pong);
 //! 3. pad-walking into the ＩＮ door lands inside with the record's facing,
-//!    and pad-walking into the ＯＵＴ trigger from that landing comes back
-//!    out with the ＯＵＴ record's facing.
+//!    and pad-walking into the ＯＵＴ door from that landing comes back out
+//!    with the ＯＵＴ record's facing.
+//!
+//! The bind sits at the door **object's** contact-box centre (`FUN_801CFC40`),
+//! resolved through the `.MAP` object layer (`FUN_8003A55C`) - the kind-1
+//! trigger tile is only the record lookup key and is usually a wall.
 //!
 //! Structural assertions only (tiles, coords, headings) - no Sony bytes.
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md
@@ -38,16 +42,23 @@ use std::path::PathBuf;
 /// The three Rim Elm story-state scenes (CDNAME blocks at PROT 3 / 12 / 21).
 const RIM_ELM_SCENES: [&str; 3] = ["town01", "town0b", "town0c"];
 
-/// One doorway pair, in trigger-tile / landing-world coordinates, as decoded
-/// from the partition-0 ＩＮ / ＯＵＴ records.
+/// One doorway pair, in **contact-box-centre** / landing-world coordinates, as
+/// decoded from the ＩＮ / ＯＵＴ records and the `.MAP` object layer.
+///
+/// The bind position is the object's contact centre (`FUN_801CFC40`), NOT the
+/// kind-1 trigger tile: the trigger tile is only the record lookup key
+/// (`FUN_8003A55C` reads it at `object_tile + descriptor (dx,dz)`) and is
+/// routinely a collision wall the player can never stand on - Rim Elm's own
+/// house-door key tile `(38,25)` is inside the house wall.
 struct Doorway {
     name: &'static str,
-    /// The ＩＮ record's trigger tile (outdoors) and its interior landing.
-    in_trigger: (i16, i16),
+    /// The ＩＮ object's contact centre (outdoors) and its interior landing.
+    in_contact: (i16, i16),
     in_target: (i16, i16),
-    /// The ＯＵＴ record's trigger tile (interior) and its outdoor landing.
-    /// Only one representative tile is listed; the tree exit has three.
-    out_trigger: (i16, i16),
+    /// The ＯＵＴ object's contact centre (interior) and its outdoor landing.
+    /// Only one representative centre is listed; the tree exit has three
+    /// objects side by side.
+    out_contact: (i16, i16),
     out_target: (i16, i16),
     /// Engine render headings the two records write (`0` = Z+, `0x800` = Z-).
     in_facing: i16,
@@ -60,9 +71,9 @@ const DOORWAYS: [Doorway; 2] = [
     // 恋人ＩＮ / 恋人ＯＵＴ - Mei's house.
     Doorway {
         name: "mei",
-        in_trigger: (17, 29),
+        in_contact: (2240, 3728),
         in_target: (12480, 6976),
-        out_trigger: (97, 52),
+        out_contact: (12480, 6784),
         out_target: (2240, 3456),
         in_facing: 0,
         out_facing: 0x800,
@@ -70,9 +81,9 @@ const DOORWAYS: [Doorway; 2] = [
     // 木ＩＮ / 木ＯＵＴ - the tree.
     Doorway {
         name: "tree",
-        in_trigger: (25, 29),
+        in_contact: (3264, 3728),
         in_target: (4160, 10624),
-        out_trigger: (32, 81),
+        out_contact: (4160, 10432),
         out_target: (3264, 3520),
         in_facing: 0,
         out_facing: 0x800,
@@ -105,10 +116,6 @@ fn open_host() -> Option<SceneHost> {
     Some(SceneHost::open_extracted(&extracted).expect("open SceneHost"))
 }
 
-fn tile_world(tile: (i16, i16)) -> (i16, i16) {
-    (tile.0 * 128 + 0x40, tile.1 * 128 + 0x40)
-}
-
 fn player(host: &SceneHost) -> (i16, i16, i16) {
     let s = host.world.player_actor_slot.expect("player installed") as usize;
     let ms = &host.world.actors[s].move_state;
@@ -121,8 +128,8 @@ fn seat(host: &mut SceneHost, wx: i16, wz: i16) {
     host.world.actors[s].move_state.world_z = wz;
 }
 
-/// The gate-0 door bind installed at `trigger` (world coords), if any.
-fn bind_at(host: &SceneHost, trigger: (i16, i16)) -> Option<(i16, i16, Option<i16>)> {
+/// The `.MAP`-object door bind whose contact box is centred at `contact`.
+fn bind_at(host: &SceneHost, contact: (i16, i16)) -> Option<(i16, i16, Option<i16>)> {
     host.world
         .field_walk_touch
         .iter()
@@ -132,7 +139,7 @@ fn bind_at(host: &SceneHost, trigger: (i16, i16)) -> Option<(i16, i16, Option<i1
                 world_x,
                 world_z,
                 facing,
-            } if pos == trigger => Some((world_x, world_z, facing)),
+            } if pos == contact => Some((world_x, world_z, facing)),
             _ => None,
         })
 }
@@ -200,8 +207,8 @@ fn both_pair_members_install_in_every_rim_elm_scene() {
             host.tick().expect("tick");
         }
         for d in &DOORWAYS {
-            let inb = bind_at(&host, tile_world(d.in_trigger)).unwrap_or_else(|| {
-                panic!("{scene}: {} IN bind missing at {:?}", d.name, d.in_trigger)
+            let inb = bind_at(&host, d.in_contact).unwrap_or_else(|| {
+                panic!("{scene}: {} IN bind missing at {:?}", d.name, d.in_contact)
             });
             assert_eq!(
                 (inb.0, inb.1),
@@ -215,10 +222,10 @@ fn both_pair_members_install_in_every_rim_elm_scene() {
                 "{scene}: {} IN carries the record's arrival facing",
                 d.name
             );
-            let out = bind_at(&host, tile_world(d.out_trigger)).unwrap_or_else(|| {
+            let out = bind_at(&host, d.out_contact).unwrap_or_else(|| {
                 panic!(
                     "{scene}: {} OUT bind missing at {:?}",
-                    d.name, d.out_trigger
+                    d.name, d.out_contact
                 )
             });
             assert_eq!(
@@ -250,8 +257,7 @@ fn pairs_are_reciprocal_and_do_not_re_fire() {
         host.tick().expect("tick");
     }
     for d in &DOORWAYS {
-        let in_trig = tile_world(d.in_trigger);
-        let out_trig = tile_world(d.out_trigger);
+        let (in_trig, out_trig) = (d.in_contact, d.out_contact);
         // Reciprocity: the OUT landing is next to the IN trigger, and the IN
         // landing is next to the OUT trigger (same doorway, both faces).
         let near = |a: (i16, i16), b: (i16, i16)| {
@@ -295,10 +301,11 @@ fn every_doorway_round_trips_under_the_locomotion() {
         host.tick().expect("tick");
     }
     for d in &DOORWAYS {
-        // Approach the doorstep from two tiles short of the trigger and hold
-        // toward it (+Z). The door tile itself is a wall - retail's contact
-        // box is what fires, not standing on the tile.
-        let (tx, tz) = tile_world(d.in_trigger);
+        // Approach the doorstep from two tiles short of the door object's
+        // contact centre and hold toward it (+Z). The doorway tile the object
+        // keys off is a wall - retail's contact box is what fires, not standing
+        // on the tile.
+        let (tx, tz) = d.in_contact;
         seat(&mut host, tx, tz - 2 * 128);
         let landed = walk_until_warp(&mut host, PadButton::Up.mask(), 240)
             .unwrap_or_else(|| panic!("{}: walking into the door never warped", d.name));

@@ -509,15 +509,21 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
 }
 
 /// Apply the op-`0x4C 0xC3` script-table teleport onto `ctx`: re-seat the
-/// executing context at its own partition-0 record's placement header.
+/// executing context at its **own** MAN record's placement header.
 ///
-/// Retail resolves the record via `FUN_8003C8F0(ctx+0x50, 0)` - the
-/// `_DAT_8007B898` partition-table walk (three s16 counts at `+0x22`,
-/// flattened u24 record-offset table, data region after the tables) that
-/// [`crate::man_field_scripts::partition_record_span`] already models -
-/// then skips the `[u8 N][N*2]` locals field (`FUN_8003D0BC`) to the
-/// record's 4-byte placement header `[model, anim, bx, bz]` and writes
-/// (`overlay_0897_801de840.txt` case 3 of the nibble-C dispatcher):
+/// Retail resolves the record via `FUN_8003C8F0(ctx+0x50, 0)`. That helper's
+/// `param_2` is a *partition base* selector, and the call passes `0`, so the
+/// base is zero and `param_1` (the context's `+0x50` script id) indexes the
+/// **flattened** `[P0..P1..P2]` record table directly. Since the placement
+/// spawner writes `+0x50 = N0 + placement_index`, the record it lands on is
+/// the context's own partition-1 placement record - NOT partition-0 record
+/// `script_id`. [`crate::man_field_scripts::flat_record_span`] models that
+/// index space; the partition-1 header shape then applies, which is what
+/// `FUN_8003D0BC` (skip the `[u8 N][N*2]` name/locals field) plus the 4-byte
+/// placement header `[model, anim, bx, bz]` expects.
+///
+/// It then writes (`overlay_0897_801de840.txt` case 3 of the nibble-C
+/// dispatcher):
 ///
 /// - `+0x14`/`+0x18` (`world_x`/`world_z`) = tile centre
 ///   `(b & 0x7F) * 0x80 + 0x40`, plus another `+0x40` when bit 7 is set;
@@ -540,7 +546,7 @@ pub(super) fn apply_script_table_teleport(
     ctx: &mut FieldCtx,
 ) -> bool {
     let Some((script_start, pc0, _body_len)) =
-        crate::man_field_scripts::partition_record_span(man_file, man, 0, ctx.script_id as usize)
+        crate::man_field_scripts::flat_record_span(man_file, man, ctx.script_id as usize)
     else {
         return false;
     };
@@ -1314,26 +1320,62 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// `func_0x800204f8` with the run animation) is not modelled here.
     ///
     /// REF: FUN_800358c0, FUN_8003774C
+    /// Op `0x4C` nibble-5 sub-1 - the retail "NPC run" primitive, which is a
+    /// **teleport plus a move-anim start** (`FUN_80024E08` writes the target
+    /// position outright and kicks the walk animation), not a glide.
+    ///
+    /// Dispatched **cross-context into the player channel** (`CC F8 51 …`) it
+    /// is one of the two op forms retail uses to reposition the *player* - the
+    /// other being the bare `0x23` MOVE_TO. Door records, scene-entry records
+    /// and cutscene beats all use it (e.g. Rim Elm's in-house beat seats the
+    /// player at its interior tile with `CC F8 51 61 0A …`), so dropping the
+    /// player arm silently voids a whole class of doors and arrivals.
+    ///
+    /// The operand's `depth` byte carries the arrival facing in its low nibble
+    /// (the dispatcher indexes the SCUS compass LUT at `0x80073F04`), the same
+    /// LUT the paired `0x38` CAM_CFG uses.
+    // PORT: FUN_801DE840 (nibble-5 sub-1: position write + heading LUT + move-anim)
     fn op4c_n5_sub1_npc_run(
         &mut self,
         _ctx: &mut FieldCtx,
         world_x: u16,
         world_z: u16,
-        _depth_byte: u8,
+        depth_byte: u8,
         _move_id: u8,
         is_player: bool,
     ) {
-        if is_player {
-            return;
-        }
-        let Some(slot) = self.world.stepping_inline_npc else {
-            return;
-        };
         // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0):
         // a despawn, not a walk.
         if world_x == 0x3FC0 && world_z == 0x3FC0 {
             return;
         }
+        if is_player {
+            let y = self
+                .world
+                .sample_field_floor_height(i32::from(world_x as i16), i32::from(world_z as i16))
+                as i16;
+            if let Some(slot) = self.world.player_actor_slot
+                && let Some(actor) = self.world.actors.get_mut(slot as usize)
+            {
+                actor.move_state.world_x = world_x as i16;
+                actor.move_state.world_z = world_z as i16;
+                actor.move_state.world_y = y;
+                if let Some(heading) =
+                    crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
+                {
+                    actor.move_state.render_26 = heading;
+                }
+            }
+            self.world.pending_field_events.push(FieldEvent::MoveTo {
+                world_x,
+                world_z,
+                is_player: true,
+            });
+            return;
+        }
+        let Some(slot) = self.world.stepping_inline_npc else {
+            return;
+        };
         self.world
             .start_field_npc_motion(slot, world_x as i16, world_z as i16);
     }
