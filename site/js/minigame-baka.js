@@ -118,19 +118,6 @@
       const O = side(1, opponentRoster);
       if (!P || !O) return false;
 
-      /* Stage set: PROT 1203 descriptor 1. Mesh 0 is the arena backdrop -
-       * a single object: the tall patterned wall with its lattice fences and the
-       * two ceiling lamps, authored with its base ON the fighters' floor
-       * plane (y = 0) and its face at z 44..225. Under this page's camera
-       * convention negative z is behind the fighters, so the whole piece is
-       * spun 180 degrees about Y (a rotation, not a mirror - the art is
-       * symmetric about the duel line in retail too). Meshes 1..3 are prop
-       * pieces whose objects sit in object-local space (they need placement
-       * transforms this page hasn't traced), so drawing them raw would pile
-       * them at the origin - they are left out, and the section note says
-       * so. */
-      const stage = this._stageBuffers(api);
-
       /* Idle clips (frame 0 = the rest pose that assembles the parts). */
       const clip = (s, id, action, parts) => {
         const dims = api.baka_anim_dims(s, id, action);
@@ -170,6 +157,24 @@
       const halfP = poseExtent(P, idleP);
       const halfO = poseExtent(O, idleO);
       this.gap = Math.max(halfP, halfO) * 2.4;
+
+      /* Stage set: PROT 1203 descriptor 1. Mesh 0 is the arena backdrop -
+       * a single object: the tall patterned wall with its lattice fences and the
+       * two ceiling lamps, authored with its base ON the fighters' floor
+       * plane (y = 0) and its face at z 44..225. Under this page's camera
+       * convention negative z is behind the fighters, so the whole piece is
+       * spun 180 degrees about Y (a rotation, not a mirror - the art is
+       * symmetric about the duel line in retail too) and then SET BACK past
+       * the fighters' own measured half-extents (`_stageBuffers` clearance) -
+       * at its raw authored z the fence plane sits 44 units from the duel
+       * line and slices straight through the posed bodies, occluding each
+       * fighter's far half (the retail wall is always fully behind them).
+       * The setback distance is fitted, like the camera. Meshes 1..3 are prop
+       * pieces whose objects sit in object-local space (they need placement
+       * transforms this page hasn't traced), so drawing them raw would pile
+       * them at the origin - they are left out, and the section note says
+       * so. */
+      const stage = this._stageBuffers(api, Math.max(halfP, halfO));
 
       /* Combined buffers: player verts, opponent verts, stage verts. */
       const nP = P.pos.length / 3, nO = O.pos.length / 3, nS = stage.pos.length / 3;
@@ -252,8 +257,6 @@
           clip: { frames, frameCount: dims[1], parts },
         });
       }
-      const stage = this._stageBuffers(api);
-
       /* Extent of the widest fighter's rest pose sets the line-up spacing. */
       let half = 0, height = 0;
       for (const f of fighters) {
@@ -265,6 +268,8 @@
         }
       }
       this.selGap = half * 2.6;
+      /* Stage behind the line-up, set back past the fighters (see load()). */
+      const stage = this._stageBuffers(api, half);
 
       /* Combined buffers: the three fighters, then the stage. */
       const counts = fighters.map(f => f.pos.length / 3);
@@ -333,14 +338,25 @@
       g.setTransform(cv.width / HUD_W, 0, 0, cv.height / HUD_H, 0, 0);
       g.clearRect(0, 0, HUD_W, HUD_H);
       g.imageSmoothingEnabled = false;
+      /* Retail framing: the select screen vignettes dark at the top and
+       * bottom of the frame (the arena light pools on the fighters). */
+      const vg = g.createLinearGradient(0, 0, 0, HUD_H);
+      vg.addColorStop(0.00, 'rgba(0,0,0,0.88)');
+      vg.addColorStop(0.16, 'rgba(0,0,0,0)');
+      vg.addColorStop(0.82, 'rgba(0,0,0,0)');
+      vg.addColorStop(1.00, 'rgba(0,0,0,0.88)');
+      g.fillStyle = vg;
+      g.fillRect(0, 0, HUD_W, HUD_H);
       /* The sheet's own PLAYER SELECT banner across the top. */
       this._widget(g, W.PLAYER_SELECT, 160, 24);
       /* Cursor arrows flanking the picked fighter's column (the fighters
        * stand at screen thirds under the fitted select camera). */
       const cx = 160 + (sel - 1) * 96;
       const bob = Math.sin(this.tick * 0.15) * 3;
-      this._widget(g, W.ARROW_L, cx - 46 - bob, 120);
-      this._widget(g, W.ARROW_R, cx + 46 + bob, 120);
+      /* Arrows point INWARD at the picked fighter (right cell mirrored -
+       * the sheet authors both cells left-pointing). */
+      this._widget(g, W.ARROW_L, cx + 46 + bob, 120);
+      this._widget(g, W.ARROW_R, cx - 46 - bob, 120, undefined, true);
       /* The picked fighter's disc name (UI text - the art pack carries no
        * name font). */
       const name = (names && names[sel]) || '';
@@ -371,13 +387,26 @@
       this.victory = this.victory || { fi: 0, step: 0, nextAt: this.tick + 12 };
     }
 
-    /* Build the arena stage buffers: the backdrop wall + the tiled floor. */
-    _stageBuffers(api) {
+    /* Build the arena stage buffers: the backdrop wall + the tiled floor.
+     * `clearance` is the widest fighter's posed half-extent: the wall is
+     * pushed back (-z) so its NEAR face clears the deepest body profile a
+     * side-on fighter can sweep - without the setback the authored face
+     * (44 units from the duel line) cuts through the fighters and the
+     * depth buffer correctly, but wrongly, draws the fence in front of
+     * their far halves. The margin is fitted against the retail framing
+     * (wall always fully behind both fighters, floor pool between). */
+    _stageBuffers(api, clearance) {
       const stage = { pos: [], uvs: [], ct: [], idx: [], flat: [] };
+      const zBack = -Math.max(360, (clearance || 0) * 1.9);
+      let wallNearZ = zBack;   /* max (nearest) z of the placed wall */
       for (const si of [0]) {
         const sp = Array.from(api.baka_stage_positions(si));
         if (!sp.length) continue;
-        for (let i = 0; i < sp.length; i += 3) { sp[i] = -sp[i]; sp[i + 2] = -sp[i + 2]; }
+        for (let i = 0; i < sp.length; i += 3) {
+          sp[i] = -sp[i];
+          sp[i + 2] = zBack - sp[i + 2];
+          if (sp[i + 2] > wallNearZ) wallNearZ = sp[i + 2];
+        }
         const base = stage.pos.length / 3;
         stage.pos.push(...sp);
         stage.uvs.push(...api.baka_stage_uvs(si));
@@ -388,10 +417,11 @@
       /* Arena floor: the stage set carries no floor mesh (the retail camera
        * grazes the ground line), so a floor is TILED from the wall's own
        * wall texture - the dominant face's exact uv cell + CLUT,
-       * repeated on the y = 0 plane the fighters and the wall base share.
-       * Disc art throughout; the tiling itself is fitted, and the section
-       * note says so. */
-      this._appendFloor(stage);
+       * repeated on the y = 0 plane the fighters and the wall base share,
+       * from the wall's near face out toward the camera. Disc art
+       * throughout; the tiling itself is fitted, and the section note says
+       * so. */
+      this._appendFloor(stage, wallNearZ);
       return stage;
     }
 
@@ -400,7 +430,7 @@
      * its exact uv cell, CLUT and texpage, repeated across the y = 0 plane.
      * No new art - the cell is sampled from the same VRAM the wall draws
      * from; only the tiling layout is fitted. */
-    _appendFloor(stage) {
+    _appendFloor(stage, backZ) {
       /* The tile cell: the wall's dominant surface - the textured face with
        * the largest WORLD footprint (the woven wall panel itself), so the
        * floor reads as the same matting the room is built from. */
@@ -425,8 +455,10 @@
         };
       }
       if (!best) return;
-      /* Grid spanning the arena: wall-to-camera in z, wall width in x. */
-      const X0 = -1750, X1 = 1750, Z0 = -260, Z1 = 520;
+      /* Grid spanning the arena: wall-to-camera in z, wall width in x.
+       * Z0 = the placed wall's near face so the floor meets the wall base
+       * (never coplanar under it). */
+      const X0 = -1750, X1 = 1750, Z0 = (backZ != null ? backZ : -260), Z1 = 520;
       const nx = Math.ceil((X1 - X0) / best.tw);
       const nz = Math.ceil((Z1 - Z0) / best.th);
       for (let iz = 0; iz < nz; iz++) {
@@ -582,8 +614,11 @@
     }
 
     /* Draw widget `id` centred at (cx, cy) - the same contract as the retail
-     * emitter FUN_801d5ed0 (scale field applied; abr 1 = additive blend). */
-    _widget(g, id, cx, cy, alpha) {
+     * emitter FUN_801d5ed0 (scale field applied; abr 1 = additive blend).
+     * `flipX` mirrors the cell horizontally - both cursor-arrow cells
+     * (48/49) are authored pointing LEFT on the sheet; retail mirrors one
+     * at draw time to make the < > pair. */
+    _widget(g, id, cx, cy, alpha, flipX) {
       const w = this.widgets[id];
       if (!w || w.page == null) return;
       const img = this._page(w.page, w.palette);
@@ -592,7 +627,13 @@
       g.save();
       if (w.semi && w.abr === 1) g.globalCompositeOperation = 'lighter';
       g.globalAlpha = alpha === undefined ? 1 : alpha;
-      g.drawImage(img, w.u, w.v, w.w, w.h, cx - hw, cy - hh, hw * 2, hh * 2);
+      if (flipX) {
+        g.translate(cx, 0);
+        g.scale(-1, 1);
+        g.drawImage(img, w.u, w.v, w.w, w.h, -hw, cy - hh, hw * 2, hh * 2);
+      } else {
+        g.drawImage(img, w.u, w.v, w.w, w.h, cx - hw, cy - hh, hw * 2, hh * 2);
+      }
       g.restore();
     }
 
@@ -727,40 +768,49 @@
           this._widget(g, W.GAME_OVER, 160, 104);
         } else if (b.kind === 'all_clear') {
           /* The tally sheet's own VICTORY! / ALL STAGE CLEAR! block +
-           * CONGRATULATIONS!, with the full pot on the GET COIN line. */
-          this._widget(g, W.VICTORY, 160, 76);
-          this._widget(g, W.CONGRATS, 160, 128);
-          this._widget(g, W.GET_COIN, 120, 156);
-          this._coinNumber(g, this.choice ? this.choice.pot : 0, 172, 156);
+           * CONGRATULATIONS!, letterboxed like the tally menu, with the
+           * full pot on the GET COIN line in the bottom band. */
+          g.fillStyle = '#000';
+          g.fillRect(0, 0, HUD_W, 58);
+          g.fillRect(0, 196, HUD_W, HUD_H - 196);
+          this._widget(g, W.VICTORY, 160, 88);
+          this._widget(g, W.CONGRATS, 160, 136);
+          this._widget(g, W.GET_COIN, 120, 218);
+          this._coinNumber(g, this.choice ? this.choice.pot : 0, 172, 218);
         }
       }
     }
 
-    /* The retail between-match tally menu: GET COIN <pot>, then the
-     * NEXT GAME / PAY OUT cells with the cursor arrow on the picked one.
-     * Cell art + palettes are the sheet's own; the screen positions are
-     * fitted (the tally screen has no parked capture). */
+    /* The retail between-match tally screen: letterboxed black bands top
+     * and bottom, "NEXT GAME <arrows> PAY OUT" across the top band and
+     * "GET COIN <pot>" in the bottom band, the arena still live between
+     * them. Cell art + palettes are the sheet's own; the band heights and
+     * screen positions are fitted to the retail payout framing (the tally
+     * screen has no parked capture). */
     _drawChoice(g, ch) {
-      this._widget(g, W.GET_COIN, 120, 116);
-      this._coinNumber(g, ch.pot, 172, 116);
+      /* Letterbox bands (retail blacks out ~the top quarter + bottom
+       * sixth of the frame on this screen). */
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, HUD_W, 58);
+      g.fillRect(0, 196, HUD_W, HUD_H - 196);
       if (ch.lapClear) this._widget(g, W.ITS_NOT_OVER, 160, 96);
+      /* Top band: NEXT GAME on the left, PAY OUT on the right, the two
+       * cursor arrows between them - the picked side's arrow lit, the
+       * other dimmed (the retail menu row). */
       const items = [
-        { id: W.NEXT_GAME_SM, cx: 92, cy: 150 },
-        { id: W.PAY_OUT, cx: 232, cy: 150 },
+        { id: W.NEXT_GAME_SM, cx: 82, cy: 29 },
+        { id: W.PAY_OUT, cx: 244, cy: 29 },
       ];
       for (let i = 0; i < 2; i++) {
-        g.globalAlpha = ch.sel === i ? 1 : 0.45;
-        this._widget(g, items[i].id, items[i].cx, items[i].cy);
-        g.globalAlpha = 1;
+        this._widget(g, items[i].id, items[i].cx, items[i].cy,
+          ch.sel === i ? 1 : 0.55);
       }
-      /* Cursor: the sheet's arrow on the OUTER side of the picked item, so
-       * it never rides over the other cell. */
-      const it = items[ch.sel] || items[0];
       const bob = Math.sin(this.tick * 0.15) * 2;
-      const w = this.widgets[it.id];
-      const hw = w ? (w.w * w.scale) / 0x1000 / 2 : 40;
-      if (ch.sel === 1) this._widget(g, W.ARROW_L, it.cx + hw + 14 + bob, it.cy);
-      else this._widget(g, W.ARROW_R, it.cx - hw - 14 - bob, it.cy);
+      this._widget(g, W.ARROW_L, 148 - bob, 29, ch.sel === 0 ? 1 : 0.4);
+      this._widget(g, W.ARROW_R, 172 + bob, 29, ch.sel === 1 ? 1 : 0.4, true);
+      /* Bottom band: GET COIN + the pot in the sheet's digit strip. */
+      this._widget(g, W.GET_COIN, 120, 218);
+      this._coinNumber(g, ch.pot, 172, 218);
     }
 
     /* Draw a number in the tally sheet's own coin digit strip (widget 47's
