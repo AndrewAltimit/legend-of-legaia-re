@@ -71,6 +71,15 @@ pub(crate) enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list the `.MAP` kind-0 intra-scene teleports (the map-data
+    /// door class most house exits belong to - no script, no MAN record),
+    /// grouped by scene, with each record's walk-component class. The
+    /// population `--house-doors shuffle` rewires alongside the script warps.
+    MapDoors {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Read-only: show the new game's current starting inventory (the
     /// `(item, count)` slots a New Game begins with - vanilla is Healing Leaf
     /// ×5).
@@ -337,9 +346,14 @@ pub(crate) struct RandomizeArgs {
     #[arg(long, value_enum, default_value_t = CouplingArg::Coupled)]
     pub(crate) door_coupling: CouplingArg,
     /// How intra-town (house / interior) doors are reassigned. Only `shuffle`
-    /// is meaningful (a per-scene, class-preserving shuffle of the player
-    /// door-warp target tiles: interior landings permute among house entries,
-    /// exterior doorsteps among exits); `random` is treated as `none`.
+    /// is meaningful; `random` is treated as `none`. Covers both intra-town
+    /// door classes: the scripted door warps (a per-scene, class-preserving
+    /// shuffle of the player door-warp target tiles: interior landings permute
+    /// among house entries, exterior doorsteps among exits) and the `.MAP`
+    /// kind-0 intra-scene teleports (most house exits; a per-scene shuffle
+    /// accepted only when the scene's walk-component reachability is
+    /// preserved, so no rewire can strand the player). `legaia-rando
+    /// house-doors` / `map-doors` list the two populations.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     pub(crate) house_doors: DropArg,
     /// Number of random starting items the new game begins with (`0` = leave the

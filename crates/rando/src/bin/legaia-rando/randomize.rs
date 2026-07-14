@@ -564,6 +564,35 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
                 );
                 manifest.push(format!("house_doors_skipped = {:?}", report.skipped));
             }
+            // The `.MAP` kind-0 intra-scene teleports (most house exits) run
+            // under the same option - see `legaia_rando::map_door`.
+            let map = &report.map;
+            println!(
+                "map-doors: {} of {} kind-0 teleports rewired across {} scenes \
+                 ({} unattributed kept vanilla)",
+                map.sites_changed, map.sites_total, map.scenes_changed, map.kept_static
+            );
+            if map.scenes_unverified > 0 {
+                println!(
+                    "  note: {} scene(s) had no reachability-verified permutation, kept vanilla",
+                    map.scenes_unverified
+                );
+            }
+            manifest.push(format!("map_doors_sites = {}", map.sites_total));
+            manifest.push(format!("map_doors_changed = {}", map.sites_changed));
+            if map.scenes_unverified > 0 {
+                manifest.push(format!(
+                    "map_doors_scenes_unverified = {}",
+                    map.scenes_unverified
+                ));
+            }
+            // Spoiler log: one line per rewired teleport.
+            for r in &map.rewires {
+                manifest.push(format!(
+                    "map_door = \"{}#{} tile ({},{}): dest ({},{}) -> ({},{})\"",
+                    r.scene, r.entry_idx, r.tile.0, r.tile.1, r.from.0, r.from.1, r.to.0, r.to.1
+                ));
+            }
         } else {
             println!(
                 "house-doors: only `shuffle` is supported (random would place the player off-map); untouched"

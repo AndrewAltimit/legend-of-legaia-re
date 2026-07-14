@@ -55,7 +55,10 @@ pub fn resolve_seed(seed: &str) -> String {
 /// character; Miracle Arts untouched). `shops`
 /// randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
 /// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
-/// `"shuffle"`. `starting_items` is the number of random starting consumables
+/// `"shuffle"` and covers both intra-town door classes: the scripted door
+/// warps and the `.MAP` kind-0 intra-scene teleports (most house exits),
+/// the latter rewired per scene only when walk-component reachability is
+/// preserved. `starting_items` is the number of random starting consumables
 /// the new game begins with (`0` = leave the vanilla Healing Leaf ×5). The
 /// random fill shares the seed's capacity (7 slots, or 5 with `all_warps`) with
 /// the convenience-item toggles below and takes whatever they leave, so it adds
@@ -495,6 +498,10 @@ pub fn patch_rom(
             summary.push_str(&format!(
                 "house-doors: {} of {} door-warp targets shuffled across {} scenes\n",
                 rep.sites_changed, rep.sites_total, rep.scenes_changed
+            ));
+            summary.push_str(&format!(
+                "map-doors: {} of {} kind-0 teleports rewired across {} scenes\n",
+                rep.map.sites_changed, rep.map.sites_total, rep.map.scenes_changed
             ));
         }
         Some(_) => summary.push_str("house-doors: only `shuffle` supported; untouched\n"),

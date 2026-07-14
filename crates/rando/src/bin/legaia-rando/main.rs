@@ -30,6 +30,7 @@ fn main() -> Result<()> {
         Cmd::Arts { input } => commands::cmd_arts(&input),
         Cmd::Doors { input } => commands::cmd_doors(&input),
         Cmd::HouseDoors { input } => commands::cmd_house_doors(&input),
+        Cmd::MapDoors { input } => commands::cmd_map_doors(&input),
         Cmd::StartingItems { input } => commands::cmd_starting_items(&input),
         Cmd::Shops { input } => commands::cmd_shops(&input),
         Cmd::Casino { input } => commands::cmd_casino(&input),

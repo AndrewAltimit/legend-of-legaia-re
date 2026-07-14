@@ -328,6 +328,44 @@ pub(crate) fn cmd_house_doors(input: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn cmd_map_doors(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let sites = apply::current_map_doors(&patcher)?;
+    let mut cur_entry = usize::MAX;
+    let mut scenes = 0usize;
+    let mut eligible = 0usize;
+    for (idx, scene, s) in &sites {
+        if *idx != cur_entry {
+            cur_entry = *idx;
+            scenes += 1;
+            println!("[{idx:>4}] {scene}");
+        }
+        let class = match s.class {
+            legaia_rando::map_door::MapDoorClass::MainBound => "exit (main-bound)",
+            legaia_rando::map_door::MapDoorClass::PocketBound => "entry (pocket-bound)",
+            legaia_rando::map_door::MapDoorClass::Static => "static (unattributed)",
+        };
+        if s.class != legaia_rando::map_door::MapDoorClass::Static {
+            eligible += 1;
+        }
+        println!(
+            "    tile ({:>3},{:>3}) -> dest ({:>3},{:>3})  landing tile ({:>3},{:>3})  {class}",
+            s.tile.0,
+            s.tile.1,
+            s.dest.0,
+            s.dest.1,
+            s.dest_tile().0,
+            s.dest_tile().1
+        );
+    }
+    println!(
+        "\n{} kind-0 intra-scene teleports across {scenes} scenes ({eligible} shuffle-eligible)",
+        sites.len()
+    );
+    Ok(())
+}
+
 pub(crate) fn cmd_chests(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
