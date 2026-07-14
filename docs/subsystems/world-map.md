@@ -1065,6 +1065,17 @@ MAN `0x7F`-sentinel resolver - see
 exactly the `0x1000` cells and never samples empty VRAM; every open floor cell is
 surfaced by a ground quad or a mesh).
 
+**The atlas page is contested VRAM.** `0x0C` = fb `(768, 0)`, and that is also
+where a scene block's **pochi-filler** slots keep their stale `256 x 256`
+character page (the fill's scratch tail parses as a real TIM - see
+[`pochi.md`](../formats/pochi.md)). Any VRAM pre-pass that sweeps a scene's whole
+CDNAME block for TIMs uploads that leftover *after* the scene's own atlas and
+erases it, and the ground quads then sample character texels - Jeremi renders a
+grid of grey "tombstone" tiles, Mt. Dhini a repeating vine/crack pattern, while
+Rim Elm (whose siblings are all `scene_tmd_stream` entries, already excluded)
+looks fine. The field build therefore skips pochi slots outright; regression:
+`crates/engine-core/tests/field_ground_texture_pages_disc.rs`.
+
 **Ocean / water animation.** The water tile is a 4bpp texture at fb
 `(768, 256)` whose CLUT row at fb `(0, 506)` (CBA `0x7E80`) the retail engine
 rewrites every few game ticks - the rolling-wave shimmer - along with seven
