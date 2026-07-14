@@ -47,6 +47,8 @@
 //!   (`DiscPatcher`), via the Mode 2/2352 sector write-back in `legaia_iso`.
 //! - [`apply`] - high-level orchestration (`randomize_*`) the CLI drives.
 //! - [`ppf`] - PPF 3.0 patch writer/reader (the portable deliverable).
+//! - [`translation`] - language-pack export / import (community translations;
+//!   YAML packs, same-size in-place text patching).
 
 pub mod apply;
 pub mod arts;
@@ -83,6 +85,7 @@ pub mod starting_bag;
 pub mod starting_items;
 pub mod starting_level;
 pub mod steal;
+pub mod translation;
 pub mod unused;
 pub mod weapon_specialty;
 
