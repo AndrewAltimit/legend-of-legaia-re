@@ -1093,10 +1093,13 @@ impl SceneHost {
         let Some(actor) = self.world.actors.get(slot as usize) else {
             return;
         };
-        // Retail tile quantisation: `tile = (world - 0x40) >> 7` (the
-        // locomotion-cluster form; the inverse of the `tile*128 + 0x40`
-        // placement mapping).
-        let quant = |w: i16| -> i32 { (i32::from(w) - 0x40) >> 7 };
+        // Retail's tile quantisation **in this dispatcher** is the raw
+        // `world >> 7` (`FUN_801D1EC4` at `0x801d2068`: `sll 0x10; sra 0x17`
+        // on each of `player+0x14` / `+0x18`), not the `(world - 0x40) >> 7`
+        // form the region refresh uses. The two agree at tile centres and
+        // differ by a half-tile band elsewhere; the kind-0 door tiles are one
+        // tile deep, so the band matters.
+        let quant = |w: i16| -> i32 { i32::from(w) >> 7 };
         let (tx, tz) = (
             quant(actor.move_state.world_x),
             quant(actor.move_state.world_z),
@@ -1109,6 +1112,19 @@ impl SceneHost {
             return; // same tile as last tick - triggers fire on crossings
         }
         self.last_trigger_tile = Some(tile);
+        self.dispatch_kind1_walk_on(tile, on_world_map);
+        // Retail runs the kind-0 arm on the SAME crossing, after the kind-1
+        // spawn (`FUN_801D1EC4` falls through to `0x801d21c0`), so a tile can
+        // both spawn its record and teleport.
+        if !on_world_map {
+            self.dispatch_intra_scene_teleport(tile);
+        }
+    }
+
+    /// The kind-1 arm of the tile-crossing dispatch: a gate-1 trigger spawns
+    /// its partition-2 record.
+    // REF: FUN_801D1EC4, FUN_8003BDE0
+    fn dispatch_kind1_walk_on(&mut self, tile: (u8, u8), on_world_map: bool) {
         let (primary, fallback) = &self.field_triggers;
         let Some(trigger) =
             crate::field_regions::lookup_tile_trigger(primary, fallback, tile.0, tile.1)
@@ -1145,6 +1161,70 @@ impl SceneHost {
                 trigger.record,
             );
         }
+    }
+
+    /// The **kind-0** arm: the `.MAP`'s intra-scene-teleport table - the door
+    /// class whose destination is map data, not a MAN script.
+    ///
+    /// This is how most house **exits** work. The interior is a sub-area of the
+    /// same collision grid; the exit is a plain tile just inside the doorway
+    /// carrying a kind-0 record, and crossing onto it repositions the player.
+    /// No object, no script, no ＩＮ/ＯＵＴ record name - so a MAN-only door
+    /// census cannot see it, and an engine that dispatches only the kind-1
+    /// table lets the player walk in and never back out.
+    ///
+    /// Retail seats the player, re-samples the floor height, resets the camera
+    /// and then re-queries the **kind-1** table at the landing tile so the
+    /// arrival's own record spawns; the engine gets the arrival record by
+    /// leaving the last-tile compare stale, which fires it on the next tick.
+    /// (Retail also runs a ~0x26-frame fade across the reposition; the engine
+    /// warps instantly.)
+    ///
+    /// PORT: FUN_801D1EC4 (kind-0 arm, `0x801d21c0..0x801d2268`)
+    fn dispatch_intra_scene_teleport(&mut self, tile: (u8, u8)) {
+        let (primary, fallback) = &self.field_intra_teleports;
+        let Some(tp) =
+            crate::field_regions::lookup_intra_scene_teleport(primary, fallback, tile.0, tile.1)
+        else {
+            return;
+        };
+        let Some(slot) = self.world.player_actor_slot else {
+            return;
+        };
+        let Some(actor) = self.world.actors.get(slot as usize) else {
+            return;
+        };
+        // Retail skips the teleport while the player's movement-disabled flag
+        // (`+0x10 & 0x80000`) is set - an encounter / cutscene owns the body.
+        if actor.move_state.flags & 0x0008_0000 != 0 {
+            return;
+        }
+        let (wx, wz) = tp.dest_world();
+        let y = self
+            .world
+            .sample_field_floor_height(i32::from(wx), i32::from(wz)) as i16;
+        if let Some(actor) = self.world.actors.get_mut(slot as usize) {
+            actor.move_state.world_x = wx;
+            actor.move_state.world_z = wz;
+            actor.move_state.world_y = y;
+        }
+        // Arrival tile is a fresh crossing: leaving the compare stale makes the
+        // next tick run the landing tile's own kind-1 record (retail queries it
+        // inline at `0x801d2030`).
+        self.last_trigger_tile = None;
+        self.world
+            .pending_field_events
+            .push(crate::field_events::FieldEvent::MoveTo {
+                world_x: wx as u16,
+                world_z: wz as u16,
+                is_player: true,
+            });
+        log::info!(
+            "field: intra-scene teleport at ({},{}) -> world ({wx},{wz}) tile {:?}",
+            tile.0,
+            tile.1,
+            tp.dest_tile(),
+        );
     }
 
     /// One frame: tick the world, materialize any actor-spawn requests

@@ -345,6 +345,40 @@ impl Scene {
         Ok((primary, fallback))
     }
 
+    /// The scene's `.MAP` **kind-0** intra-scene-teleport tables
+    /// (`(primary, fallback)`), the door class that carries its destination in
+    /// the `.MAP` rather than in a MAN script. Same block + fallback
+    /// resolution as [`Self::field_tile_triggers`].
+    ///
+    /// See [`crate::field_regions::IntraSceneTeleport`].
+    // REF: FUN_801D1EC4, FUN_801D5630
+    pub fn field_intra_scene_teleports(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<(
+        Vec<crate::field_regions::IntraSceneTeleport>,
+        Vec<crate::field_regions::IntraSceneTeleport>,
+    )> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        let primary = bytes
+            .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..)
+            .map(crate::field_regions::parse_intra_scene_teleports)
+            .unwrap_or_default();
+        let mut fallback = bytes
+            .get(crate::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
+            .map(crate::field_regions::parse_intra_scene_teleports)
+            .unwrap_or_default();
+        if fallback.is_empty()
+            && let Ok(sibling) = index.entry_bytes_extended(idx + 1)
+        {
+            fallback = crate::field_regions::parse_intra_scene_teleports(&sibling);
+        }
+        Ok((primary, fallback))
+    }
+
     /// The scene's static-object placements: one entry per placed tile of the
     /// field map file's object-index grid (`+0x8000`), positioned in world
     /// space from the `+0x0000` object-record table. This is the source for

@@ -94,6 +94,16 @@ pub struct SceneHost {
         Vec<crate::field_regions::TileTrigger>,
         Vec<crate::field_regions::TileTrigger>,
     ),
+    /// The current scene's `.MAP` **kind-0** intra-scene-teleport tables
+    /// (`(primary, fallback)` - see
+    /// [`crate::field_regions::parse_intra_scene_teleports`]), cached at scene
+    /// load for the per-frame tile-crossing dispatch. This is the second door
+    /// class: a house exit whose destination lives in the `.MAP`, with no MAN
+    /// script and no object of its own.
+    field_intra_teleports: (
+        Vec<crate::field_regions::IntraSceneTeleport>,
+        Vec<crate::field_regions::IntraSceneTeleport>,
+    ),
     /// The current scene's MAN payload, cached at scene load so a walk-on
     /// trigger hit can resolve its partition-2 record without a disc re-read.
     field_man_cache: Option<Arc<Vec<u8>>>,

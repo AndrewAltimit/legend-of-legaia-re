@@ -975,12 +975,15 @@ A door record repositions the player through *any* of `A3 F8 <xb> <zb>` (op `0x2
 `C7 F8 <xb> <zb> <mode>` (op `0x47`, animated walk), and the record is a **branching script** whose arm is
 selected by story flags - so a door can also be a `0x44` SPAWN_RECORD of a partition-2 choreography that
 does the seating itself.
-A census restricted to `A3 F8` in partition 0 therefore under-reads the door surface badly: it is what
-produced the (false) "Vahn's house has an ＩＮ and no ＯＵＴ, so it is a story-entry warp" reading - the exit
-is a partition-2 record in the later story-state MANs (`town0b` P2[30] / `town0c` P2[29]), reached through
-the P0 record's SPAWN_RECORD arm.
 The bind position is the `.MAP` **object's** contact box, not the trigger tile (which is a lookup key and
-usually a wall). Full mechanism:
+usually a wall).
+
+**And the MAN is not the only door carrier.** The `.MAP` trigger block's **kind-0** sub-table is a second,
+larger door class: `[tile_x][tile_z][dest_x][dest_z]`, no object and no script - crossing the tile seats the
+player at `(dest_x*64 + 64, (dest_z + 1)*64)` (`FUN_801D1EC4`'s kind-0 arm at `0x801d21c0`). **2330 records
+across 73 scenes.** Most house *exits* are these. This is what produced the (false) "Vahn's house has an ＩＮ
+and no ＯＵＴ, so it is a story-entry warp" reading: there is no ＯＵＴ record because the exit is not a
+record at all - it is the kind-0 tile `(97,9)` inside the room, ungated by any story flag. Full mechanism:
 [`field-locomotion.md`](../subsystems/field-locomotion.md#intra-scene-doorways---the-walk-touch-teleport-family).
 
 

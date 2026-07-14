@@ -128,10 +128,115 @@ pub fn lookup_tile_trigger(
         .find(|t| t.tile_x == tile_x && t.tile_z == tile_z)
 }
 
+/// One **kind-0** tile-trigger record: `[tile_x, tile_z, dest_x, dest_z]`.
+///
+/// The `.MAP` trigger block's kind-0 sub-table is the **intra-scene teleport**
+/// table - the second door class, alongside the kind-1 gate-0 object binds
+/// whose MAN script carries a player-channel move op. A kind-0 record has no
+/// script at all: stepping onto `(tile_x, tile_z)` repositions the player
+/// outright.
+///
+/// `dest_x` / `dest_z` are **half-tile** units. Retail's landing arithmetic
+/// (`FUN_801D1EC4` body `0x801d1f88..0x801d1fb0`) is exact:
+///
+/// ```text
+/// player.world_x = dest_x * 64 + 64          // sh -> player+0x14
+/// player.world_z = (dest_z + 1) * 64         // sh -> player+0x18
+/// landing tile   = (dest_x >> 1, dest_z >> 1)
+/// ```
+///
+/// Retail then re-samples the floor height into `player+0x16`, resets the
+/// camera, and looks a **kind-1** trigger up at the landing tile so the
+/// arrival's own record (ambience switch / story beat) spawns.
+// REF: FUN_801D1EC4, FUN_801D5630
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntraSceneTeleport {
+    /// Trigger tile X (exact-match against the player tile).
+    pub tile_x: u8,
+    /// Trigger tile Z.
+    pub tile_z: u8,
+    /// Destination X in half-tiles.
+    pub dest_x: u8,
+    /// Destination Z in half-tiles.
+    pub dest_z: u8,
+}
+
+impl IntraSceneTeleport {
+    /// The landing position in world units, exactly as retail writes it into
+    /// the player's `+0x14` / `+0x18`.
+    // PORT: FUN_801D1EC4 (0x801d1f88..0x801d1fb0)
+    pub fn dest_world(&self) -> (i16, i16) {
+        (
+            i16::from(self.dest_x) * 64 + 64,
+            (i16::from(self.dest_z) + 1) * 64,
+        )
+    }
+
+    /// The landing **tile**, the key retail re-queries the kind-1 table with
+    /// so the arrival's own record spawns (`dest >> 1` - the destination is in
+    /// half-tiles).
+    pub fn dest_tile(&self) -> (u8, u8) {
+        (self.dest_x >> 1, self.dest_z >> 1)
+    }
+}
+
+/// Parse the kind-0 intra-scene-teleport sub-table out of a `.MAP` trigger
+/// block. Same header shape as the kind-1 table (sub-table offset `s16` at
+/// `+4k+2`, count `s16` at `+4k+4`, `k = 0`), 4-byte records.
+// REF: FUN_801D5AE0
+pub fn parse_intra_scene_teleports(block: &[u8]) -> Vec<IntraSceneTeleport> {
+    let read_s16 = |off: usize| -> Option<i16> {
+        Some(i16::from_le_bytes([*block.get(off)?, *block.get(off + 1)?]))
+    };
+    let (Some(off), Some(count)) = (read_s16(2), read_s16(4)) else {
+        return Vec::new();
+    };
+    if off < 0 || count <= 0 {
+        return Vec::new();
+    }
+    let (off, count) = (off as usize, count as usize);
+    (0..count)
+        .map_while(|i| {
+            let r = block.get(off + i * 4..off + i * 4 + 4)?;
+            Some(IntraSceneTeleport {
+                tile_x: r[0],
+                tile_z: r[1],
+                dest_x: r[2],
+                dest_z: r[3],
+            })
+        })
+        .collect()
+}
+
+/// Exact-match lookup of a kind-0 intra-scene teleport at `(tile_x, tile_z)`:
+/// primary table first, then the fallback - the same scan order
+/// [`lookup_tile_trigger`] uses.
+// REF: FUN_801D5630
+pub fn lookup_intra_scene_teleport(
+    primary: &[IntraSceneTeleport],
+    fallback: &[IntraSceneTeleport],
+    tile_x: u8,
+    tile_z: u8,
+) -> Option<IntraSceneTeleport> {
+    primary
+        .iter()
+        .chain(fallback.iter())
+        .copied()
+        .find(|t| t.tile_x == tile_x && t.tile_z == tile_z)
+}
+
 /// Byte offset of the `.MAP` **per-tile object-index map**: `0x80 x 0x80`
 /// `u16`s, each `& 0x1FF` an index into the object-descriptor table at the
 /// file's start. Retail addresses it as `*(_DAT_1F8003EC) + 0x8000`.
 pub const MAP_OBJECT_INDEX_OFFSET: usize = 0x8000;
+
+/// Object-cell bits that mark a tile as **trigger-bearing**. Retail's per-frame
+/// tile dispatch (`FUN_801D1EC4` at `0x801d2140`) reads the object-index word
+/// at the crossed tile and only consults the trigger tables when
+/// `cell & 0x600 != 0` - the fast gate in front of both the kind-1 record spawn
+/// and the kind-0 teleport. Every kind-0 trigger tile on the disc carries it.
+// REF: FUN_801D1EC4
+pub const MAP_OBJECT_TRIGGER_BITS: u16 = 0x0600;
 
 /// Stride of an object descriptor (the `.MAP` file's `+0x0000..+0x4000`
 /// table, `_DAT_1F8003EC + index * 0x20`).

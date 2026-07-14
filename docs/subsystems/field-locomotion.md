@@ -196,20 +196,22 @@ The `.MAP` file's `+0x10000..+0x12000` region is a **per-tile trigger block**: a
 
 | Kind | Records | Content |
 |---|---|---|
-| 0 | `[x][z][dest_half_x][dest_half_z]` | **Intra-scene teleports** - stepping on `(x, z)` relocates the player to the destination half-tile pair. |
+| 0 | `[tile_x][tile_z][dest_x][dest_z]` | **Intra-scene teleports** - the second door class. Crossing onto `(tile_x, tile_z)` repositions the player: `world_x = dest_x*64 + 64`, `world_z = (dest_z + 1)*64` (the destination is in **half-tiles**; landing tile = `dest >> 1`). No object, no script, no record name. Retail then re-samples the floor height, resets the camera, and re-queries the **kind-1** table at the landing tile so the arrival's own record spawns. Engine `legaia_engine_core::field_regions::IntraSceneTeleport`. |
 | 1 | `[tile_x][tile_z][p2_record][gate]` | **Partition-2 record triggers.** `gate = 1`: walking onto the tile spawns MAN partition-2 record `p2_record` as a new field-VM context (`FUN_801D1EC4` → `FUN_801D5630(1, x, z)` → `FUN_8003BDE0(x, z, rec[2], rec[3])`, ra `0x801D218C`) - doors and the opening-cutscene records (`map01` / `town01`; the entry SEAT lands on the trigger tile and fires the same tick). `gate = 0`: object-bind entries consumed at scene init (`FUN_8003A55C`), never spawned. The record's own C1/C2 story-flag gates still apply (`FUN_8003BDE0` vs the bitmap at `DAT_80085758`; C1 = block if ANY set, the one-shot mechanism). |
 | 2 | `[tile_x][tile_z][coarse: i8][quads: u8]` | **Elevation overrides** - the floor height of every ramp / staircase tile. `FUN_80019278` consults this table via `FUN_801D5630(2, …)` for any tile whose object-grid cell carries bit `0x800`, and uses it **instead of** the bilinear nibble surface: `coarse` is a whole-tile step (`× -0x20`), `quads` packs four 2-bit per-64-unit-sub-cell steps (`× -0x10`). See [Floor height: two models](#floor-height-two-models). Engine `legaia_engine_core::world::field_elevation`. |
 | 3 | `[x0, z0, x1, z1, type, 0, 0, 0]` (8-byte stride) | **Region AABB table** - the resumable point-in-AABB scan `FUN_80017FBC` (body at `+0x1000E`, count at `+0x10010` = the kind-3 header slots). Region types feed the region-type bitmask `_DAT_8007B8F4` + the camera zone query `FUN_801DBA20`. Engine `legaia_engine_core::field_regions::RegionTable`. |
 
 The per-tile lookup (`FUN_801D5630`) scans the `+0x10000` primary block first and **falls back to the `+0x12000` window** - the first sectors of the *next* PROT entry (the dev-build `DATA_FIELD<scene>` sibling), which the contiguous `0x28`-sector read from the `.MAP` LBA (`FUN_8001F7C0`) pulls in with the same header shape. Engine: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-core/src/field_regions.rs) + [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned) for the opening-chain use.
 
-**Engine runtime dispatch.** Both kind-1 gate classes run live in the port:
+**Engine runtime dispatch.** All three trigger classes run live in the port. The per-frame tile compare is `SceneHost::dispatch_walk_on_trigger` (the `FUN_801D1EC4` port); it quantises `tile = world >> 7` (retail's raw shift at `0x801d2068`, **not** the `(world - 0x40) >> 7` form the region refresh uses - the two agree at tile centres and differ by a half-tile band, and a door tile is only one tile deep), compares against the host's last-tile mirror, and on a crossing runs the kind-1 arm and then the kind-0 arm - the same order retail falls through. A scene entry / warp arrival marks the compare stale so the arrival tile fires on the first tick, matching retail's stale globals.
 
-- **Gate 1 - walk-on record spawn** (`SceneHost::dispatch_walk_on_trigger`, the `FUN_801D1EC4` per-frame tile compare): when the player crosses into a new tile during free-roam field play (`tile = (world - 0x40) >> 7`, compared against the host's last-tile mirror; a scene entry / warp arrival marks the compare stale so the arrival tile fires on the first tick, matching retail's stale globals), a gate-1 hit spawns its partition-2 record through `World::install_gated_p2_record` (C1/C2 story-flag gates checked).
+- **Gate 1 - walk-on record spawn**: a gate-1 kind-1 hit spawns its partition-2 record through `World::install_gated_p2_record` (C1/C2 story-flag gates checked).
   This is how town exits work - Rim Elm's south-gate tiles reference the partition-2 record whose script runs the `0x3F` named scene-change to `map01` - and how walk-on story beats (the post-naming Vahn's-house chain) launch. Skipped while a spawned record / dialog / name entry owns the frame. The dispatch runs in **both** field and world-map mode: on the overworld a gate-1 record that IS a portal (carries a `0x3F`, tested by `SceneHost::p2_record_is_portal`) is left to the world-map entity SM (`OverworldPortal`), and only non-portal **beat** records spawn here - the Drake mist-wall force-walk bands (`map01` P2[34..36], `C1=[0x482]`), which shove the player back while their story flag is clear.
 - **Gate 0 - object binds** (`SceneHost::enter_field_scene` install, the `FUN_8003A55C` scene-init consumption): a gate-0 trigger is **not** a tile the player steps on. It is the **lookup key** an `.MAP` *object* uses to find its script: `FUN_8003A55C` walks the object-index map, and for each spawned object looks the kind-1 trigger up at the object's **key tile** (`object_tile + (i8)desc[+0x06], (i8)desc[+0x07]`), then resolves `trigger[2]` as a **flat** MAN record index (`FUN_8003C8F0` with partition base 0 - partitions 0/1/2 concatenated). The record becomes the object's script (`actor+0x90` / `+0x9E`), its trailing header byte the anim id (`actor+0x5C`).
   The touch box is therefore the **object's**, not the trigger tile's: `FUN_801CFC40` centres it at `object_world + (desc[+0x06] * 128 + (i8)desc[+0x0E] * 16, desc[+0x07] * 128 + (i8)desc[+0x0F] * 16)` with half-extent `0x40 + 0x10`. Binding at the trigger tile instead makes most doors unreachable - key tiles are routinely inside a wall (Rim Elm's own house-door key tile `(38,25)` is a collision wall). Engine: `field_regions::parse_map_objects` → `man_field_scripts::object_walk_touch_binds` → `World::install_trigger_walk_touch_with_records` (synthetic walk-touch slots from `World::TRIGGER_WALK_TOUCH_SLOT_BASE`); contact routes through the same `check_field_walk_touch` dispatch as placement touches.
   Record headers differ **per partition**, so the flat index must be resolved to its partition before the script offset is computed: P0 `[u8 n][n*2 SJIS name][u8 attr]` (`pc0 = 1 + 2n + 1`), P1 `[u8 N][N*2 locals][4-byte placement header]` (`pc0 = 1 + 2N + 4`), P2 name + three condition blocks (`FUN_8003BDE0`). Engine: `man_field_scripts::flat_record_span`.
+- **Kind 0 - intra-scene teleport** (`SceneHost::dispatch_intra_scene_teleport`, the `FUN_801D1EC4` arm at `0x801d21c0..0x801d2268`): crossing onto a kind-0 tile seats the player at the record's landing (`dest_x*64 + 64`, `(dest_z + 1)*64`), re-samples the floor height, and leaves the last-tile compare stale so the landing tile's own kind-1 record fires next tick (retail queries it inline and runs a ~`0x26`-frame fade across the reposition; the engine warps instantly). Skipped while the player's movement-disabled flag (`+0x10 & 0x80000`) is set. This is the class most house **exits** belong to - see [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family).
+  Retail gates both arms on the crossed tile's object-index word: `cell & 0x600 != 0` (`0x801d2140`) - a fast filter in front of the table scan. Every kind-0 trigger tile on the disc carries those bits, so the engine's exact-match table lookup subsumes it.
 
 The partition-2 gate bitmap (`DAT_80085758`) **is** the field VM's `0x50`/`0x60`/`0x70` system-flag bank - one store, shared by the record dispatcher's C1/C2 test (`World::p2_gate_flag_set` = `system_flag_test`) and the VM's flag writes, so an opening-timeline `set` is immediately visible to the next record's gate. It also overlaps the saved story-flag window at byte `+0x158` (`0x80085758 - 0x80085600`); the engine save mirrors the bank into that window and reloads seed it back. Disc-gated coverage: `crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs` (opening-to-free-roam progression, south-gate exit to `map01`, house-door contact teleport, ambient no-lock, gate-flag save round-trip).
 
@@ -511,10 +513,24 @@ as the player's idle/walk pair).
 Walking into a town house is **not** a scene change. The scene name buffers
 (`0x8007050C` / `0x80084548`) are unchanged across the warp: the interior is a
 sub-area of the *same* 128×128 collision grid, parked in an otherwise unused
-corner of it, and the door merely repositions the player. The mechanism is a
-`.MAP` **object** whose key tile resolves a gate-0 kind-1 trigger to a MAN
-record (`FUN_8003A55C`), and that record's script cross-context-teleporting
-the *player* channel.
+corner of it, and the door merely repositions the player.
+
+**There are two door mechanisms, and one house can use one of each.**
+
+1. **Script doors.** A `.MAP` **object** whose key tile resolves a gate-0
+   kind-1 trigger to a MAN record (`FUN_8003A55C`); that record's script
+   cross-context-teleports the *player* channel. The player fires it by
+   touching the **object's** contact box. This is the ＩＮ / ＯＵＴ family
+   described below.
+2. **Map doors** - the `.MAP` **kind-0** intra-scene-teleport table. No object,
+   no script, no record name: a plain tile carries a destination, and crossing
+   onto it repositions the player (`FUN_801D1EC4`'s kind-0 arm; see
+   [Trigger block](#trigger-block-0x10000---four-kind-sub-tables)).
+
+Class 2 is the **larger** of the two and is where most house *exits* live -
+a MAN-only census cannot see it at all, because there is nothing in the MAN to
+see. Rim Elm's own Vahn's-house door is the mixed case: a script door in, a map
+door out.
 
 ### The three player-move op forms
 
@@ -612,16 +628,29 @@ partition-0 table and one `.MAP` trigger table. Two complete object-bound
 doorway pairs - 恋人ＩＮ/恋人ＯＵＴ (Mei's house) and 木ＩＮ/木ＯＵＴ (the
 tree) - plus 主人公の家の中, Vahn's own house.
 
-Vahn's house is the branch case above, and it is **not** an exit-less
-story-entry warp. Its P0 record's arms are: flag `0x226` clear → teleport
-inside; `0x226` set and `0x227` clear → SPAWN_RECORD the in-house beat
-(`town01` P2[5]), which seats the player with the `0x4C` nibble-5 sub-1 form
-and later walks him with `0x47`; both set → teleport. The **exit** is in
-partition 2, in the later story-state MANs: `town0b` P2[30] / `town0c` P2[29]
-carry the pair of `A3 F8` teleports - one into the room, one back out to the
-doorstep. A byte-scan restricted to partition 0 and to the `A3 F8` form sees
-none of this, which is why "Vahn's house has an ＩＮ and no ＯＵＴ" reads as
-true and is false.
+Vahn's house (主人公の家の中) is the **mixed** case, and it is not an exit-less
+story-entry warp:
+
+- **In** = a script door. The P0 record's arms are: flag `0x226` clear →
+  `A3 F8` teleport to interior tile `(97,10)`; `0x226` set and `0x227` clear →
+  SPAWN_RECORD the in-house beat (`town01` P2[5], which seats the player with
+  the `0x4C` nibble-5 sub-1 form and later walks him with `0x47`); both set →
+  teleport. The door object is **recessed** - the collision grid walls its
+  contact box on three sides, leaving one walkable channel due north of it.
+- **Out** = a map door. The `.MAP` kind-0 record at interior tile `(97,9)`,
+  one tile back toward the doorway, lands the player at half-tile `(72,46)` =
+  world `(4672, 3008)` = tile `(36,23)`, the doorstep. **No story flag gates
+  it**; it is live on a cold `town01` entry.
+
+There is no ＯＵＴ *record* for Vahn's house anywhere in the MAN, and there
+never was one to find: the exit is not a MAN record. That is why a byte-scan
+over partition 0 for `A3 F8` reads as "an ＩＮ with no ＯＵＴ" and concludes,
+wrongly, that the door is a story-entry warp.
+
+Disc-wide the kind-0 class is large: **2330 records across 73 scenes** (`nilboa2`
+alone carries 128), against 114 `0x23` + 67 `4C 51` + 207 `0x47` player-move ops
+in the trigger-bound MAN records. An engine that dispatches only the MAN doors
+lets the player into most interiors and never back out.
 
 ### Engine port
 
@@ -633,11 +662,18 @@ record's arm against live story flags on contact
 (`man_field_scripts::resolve_walk_touch_event`) and applies position + facing +
 a fresh floor-height sample (the interior sits at its own elevation on the
 shared grid, so the landing must be re-seated on the floor rather than keeping
-the doorstep's height), or spawns the record the arm names. Disc-gated
-coverage: `crates/engine-core/tests/rim_elm_door_roundtrip_disc.rs` (both pair
-members install with their decoded target and facing in all three Rim Elm
-scenes, the pairs are reciprocal and cannot re-fire, and the locomotion walks
-each doorway in and back out) and
+the doorstep's height), or spawns the record the arm names.
+
+Map doors run through the tile-crossing dispatch instead:
+`Scene::field_intra_scene_teleports` caches the kind-0 tables at scene load and
+`SceneHost::dispatch_intra_scene_teleport` seats the player on a crossing.
+
+Disc-gated coverage: `crates/engine-core/tests/rim_elm_door_roundtrip_disc.rs`
+(the script-door pairs: both members install with their decoded target and
+facing in all three Rim Elm scenes, the pairs are reciprocal and cannot re-fire,
+and the locomotion walks each doorway in and back out);
+`crates/engine-core/tests/vahn_house_roundtrip_disc.rs` (the mixed case - pad-walk
+in through the script door and back out through the map door, no story flags);
 `crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs`.
 
 ## Open

@@ -19,6 +19,7 @@ impl SceneHost {
             move_power_loaded: false,
             scene_destinations: Vec::new(),
             field_triggers: (Vec::new(), Vec::new()),
+            field_intra_teleports: (Vec::new(), Vec::new()),
             field_man_cache: None,
             scene_gold_charges: Vec::new(),
             last_trigger_tile: None,
@@ -100,6 +101,11 @@ impl SceneHost {
             .scene
             .as_ref()
             .and_then(|s| s.field_tile_triggers(&self.index).ok())
+            .unwrap_or_default();
+        self.field_intra_teleports = self
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_intra_scene_teleports(&self.index).ok())
             .unwrap_or_default();
         self.field_man_cache = self
             .scene
