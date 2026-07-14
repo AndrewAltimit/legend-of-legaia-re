@@ -48,10 +48,17 @@
 }
 .play-focus-veil.is-hidden { display: none; }
 
-/* Dialogue box, drawn over the canvas the way the game does. */
+/* Dialogue box, drawn over the canvas the way the game does. Colors
+   mirror the retail FUN_8002C69C window fill: two-pass mode-0
+   semi-transparent gouraud quads, top RGB(24,24,40) to bottom
+   RGB(64,64,160) at effective alpha 0.75, framed by the gold
+   double-line 9-slice border (outer gold, dark inset gap, inner
+   gold). */
 .play-dialog {
   position: absolute; left: 6%; right: 6%; bottom: 5%;
-  background: rgba(8, 14, 40, 0.92); border: 2px solid #6f86d6;
+  background: linear-gradient(to bottom, rgba(24, 24, 40, 0.75), rgba(64, 64, 160, 0.75));
+  border: 2px solid #c9a24a;
+  box-shadow: inset 0 0 0 2px #241a08, inset 0 0 0 3px #8a6d2f;
   padding: 0.7rem 0.9rem; color: #eef2ff;
   font-family: var(--font-mono); font-size: 0.86rem; line-height: 1.5;
   white-space: pre-wrap; word-break: break-word;
