@@ -15,6 +15,7 @@ pub(crate) use crate::door::SceneDoors;
 pub(crate) use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 pub(crate) use crate::encounter::SceneEncounters;
 pub(crate) use crate::house_door::SceneHouseDoors;
+pub(crate) use crate::map_door::SceneMapDoors;
 pub(crate) use crate::monster_stats;
 pub(crate) use crate::rng::SplitMix64;
 pub(crate) use crate::shop::SceneShops;

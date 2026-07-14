@@ -503,6 +503,9 @@ pub struct HouseDoorApplyReport {
     pub sites_total: usize,
     /// Scene PROT-entry indices whose recompressed MAN overflowed (kept original).
     pub skipped: Vec<usize>,
+    /// The sibling `.MAP` kind-0 intra-scene-teleport pass (the door class most
+    /// house EXITS belong to), run under the same house-doors option.
+    pub map: MapDoorApplyReport,
 }
 
 /// Read every classified intra-town door warp on the disc (the house-door
@@ -544,6 +547,10 @@ pub fn randomize_house_doors(
     if !crate::house_door::supported_mode(mode) {
         return Ok(report);
     }
+    // The `.MAP` kind-0 intra-scene teleports are the other half of the same
+    // intra-town door class (script warps in, map-data teleports out), so the
+    // house-doors option drives both passes.
+    report.map = randomize_map_doors(patcher, seed, mode)?;
     for idx in 0..patcher.entry_count() {
         let entry = patcher
             .read_entry(idx)
@@ -566,6 +573,147 @@ pub fn randomize_house_doors(
             }
             None => report.skipped.push(idx),
         }
+    }
+    Ok(report)
+}
+
+/// One rewired `.MAP` kind-0 intra-scene teleport - a spoiler-log line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapDoorRewire {
+    /// PROT entry index of the scene's `.MAP` file.
+    pub entry_idx: usize,
+    /// CDNAME scene label (e.g. `"town01"`).
+    pub scene: String,
+    /// Trigger tile `(tile_x, tile_z)`.
+    pub tile: (u8, u8),
+    /// Original destination `(dest_x, dest_z)` in half-tiles.
+    pub from: (u8, u8),
+    /// New destination in half-tiles.
+    pub to: (u8, u8),
+}
+
+/// Outcome of randomizing the `.MAP` kind-0 intra-scene teleports.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct MapDoorApplyReport {
+    /// `.MAP` files with at least one destination rewritten.
+    pub scenes_changed: usize,
+    /// Records whose destination changed.
+    pub sites_changed: usize,
+    /// Total kind-0 records found in the scenes' primary trigger blocks.
+    pub sites_total: usize,
+    /// Records kept vanilla because an endpoint can't be attributed to a walk
+    /// component on the base grid (see [`crate::map_door`]'s softlock policy).
+    pub kept_static: usize,
+    /// Records parked past the `.MAP`'s own footprint (in the `+0x12000`
+    /// fallback window - the next PROT entry's sectors), never touched.
+    pub beyond_footprint: usize,
+    /// Scenes with a shuffleable pool where no permutation passed the
+    /// reachability verification within the attempt budget (kept vanilla).
+    pub scenes_unverified: usize,
+    /// Every rewired teleport, in PROT-entry then table order (spoiler log).
+    pub rewires: Vec<MapDoorRewire>,
+}
+
+/// The per-scene `.MAP` files carrying kind-0 teleports: `(entry_idx, scene
+/// label, located sites)`. A `.MAP` is a CDNAME block's **first** entry with
+/// the exact `0x12000` field-map footprint (the rule the engine's
+/// `field_map_index` pins by save-library census); scanning block starts -
+/// rather than every same-size entry - keeps false positives structurally
+/// impossible.
+fn locate_map_doors(patcher: &DiscPatcher) -> Result<Vec<(usize, String, SceneMapDoors)>> {
+    let cd = cdname_map(patcher);
+    let mut out = Vec::new();
+    for (&raw_idx, name) in &cd {
+        // CDNAME `#define` numbers are raw in-RAM TOC indices; the extraction
+        // frame (the `DiscPatcher` index space) is shifted -2.
+        let Some(idx) = raw_idx.checked_sub(legaia_prot::cdname::RAW_TOC_INDEX_OFFSET) else {
+            continue;
+        };
+        let idx = idx as usize;
+        if patcher.entry_footprint(idx) != Some(crate::map_door::FIELD_MAP_LEN as u64) {
+            continue;
+        }
+        let entry = patcher
+            .read_entry(idx)
+            .with_context(|| format!("read PROT entry {idx}"))?;
+        if let Some(sd) = crate::map_door::SceneMapDoors::locate(&entry, idx) {
+            out.push((idx, name.clone(), sd));
+        }
+    }
+    out.sort_by_key(|(idx, _, _)| *idx);
+    Ok(out)
+}
+
+/// Read every `.MAP` kind-0 intra-scene teleport the randomizer classifies
+/// (the map-door population), in PROT-entry then table order:
+/// `(entry_idx, scene, site)`. Purely read-only audit surface.
+pub fn current_map_doors(
+    patcher: &DiscPatcher,
+) -> Result<Vec<(usize, String, crate::map_door::MapDoorSite)>> {
+    let mut out = Vec::new();
+    for (idx, name, sd) in locate_map_doors(patcher)? {
+        for s in &sd.sites {
+            out.push((idx, name.clone(), *s));
+        }
+    }
+    Ok(out)
+}
+
+/// Randomize the `.MAP` kind-0 intra-scene teleports by a **per-scene,
+/// reachability-verified shuffle** of the destinations (see
+/// [`crate::map_door`] for the walk-component graph and the softlock
+/// argument: retail component reachability is preserved and no new one-way
+/// trap is created, or the scene keeps its vanilla doors). Each edit is a
+/// same-size 2-byte in-place write into the raw `.MAP` sectors - no
+/// relocation, EDC/ECC re-encoded per touched sector. Only
+/// [`DropMode::Shuffle`] is meaningful (a random draw would place the player
+/// off-map), so a non-shuffle mode is a no-op.
+pub fn randomize_map_doors(
+    patcher: &mut DiscPatcher,
+    seed: u64,
+    mode: DropMode,
+) -> Result<MapDoorApplyReport> {
+    let mut report = MapDoorApplyReport::default();
+    if !crate::map_door::supported_mode(mode) {
+        return Ok(report);
+    }
+    for (idx, name, sd) in locate_map_doors(patcher)? {
+        report.sites_total += sd.sites.len();
+        report.beyond_footprint += sd.beyond_footprint;
+        report.kept_static += sd
+            .sites
+            .iter()
+            .filter(|s| s.class == crate::map_door::MapDoorClass::Static)
+            .count();
+        let plan = sd.plan_shuffle(seed);
+        if plan.is_empty() {
+            // Distinguish "nothing to shuffle" from "no permutation verified".
+            let distinct: std::collections::HashSet<(u8, u8)> = sd
+                .sites
+                .iter()
+                .filter(|s| s.class != crate::map_door::MapDoorClass::Static)
+                .map(|s| s.dest)
+                .collect();
+            if distinct.len() > 1 {
+                report.scenes_unverified += 1;
+            }
+            continue;
+        }
+        for &(table_index, from, to) in &plan {
+            let site = sd.sites[table_index];
+            patcher
+                .patch_prot_entry(idx, site.dest_off(sd.table_off) as u64, &[to.0, to.1])
+                .with_context(|| format!("write .MAP {idx} kind-0 record {table_index}"))?;
+            report.rewires.push(MapDoorRewire {
+                entry_idx: idx,
+                scene: name.clone(),
+                tile: site.tile,
+                from,
+                to,
+            });
+        }
+        report.scenes_changed += 1;
+        report.sites_changed += plan.len();
     }
     Ok(report)
 }
