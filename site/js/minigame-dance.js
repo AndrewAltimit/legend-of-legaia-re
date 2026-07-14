@@ -37,11 +37,16 @@
  * handed over pre-baked as one static mesh in the dancer frame
  * (`dance_env_*`) and drawn in the same call as the posed cast.
  *
- * What is NOT simulated, and the page says so: the two AI dancers' runs -
- * their score boxes idle at zero and their moves demonstrate the chart
- * rather than score it. The face-stamp insets under the score boxes only
- * appear in the HUD-only fallback (no WebGL / no cast): retail maps those
- * windows onto the 3D dancers' heads, not the screen.
+ * The two AI dancers are running for real: retail feeds them the same chart
+ * through the same judge and award routine the player's presses take
+ * (FUN_801d1358 -> FUN_801d4040 -> FUN_801d1af4), so their score boxes climb
+ * off their own kind's bonus row and they spend their three triangles on the
+ * disc's own schedule. The rules engine simulates them; this layer draws
+ * their scores and fires their groovy move when they spend one.
+ *
+ * The face-stamp insets under the score boxes only appear in the HUD-only
+ * fallback (no WebGL / no cast): retail maps those windows onto the 3D
+ * dancers' heads, not the screen.
  */
 window.MgDance = (function () {
   'use strict';
@@ -295,6 +300,7 @@ window.MgDance = (function () {
         base: pos.slice(),      /* pristine object-local vertices */
         out: pos,               /* per-frame posed copy (uploaded buffer) */
         lastBeat: -1,
+        rivalTri: {},           /* per-rival triangle stock, to catch a spend */
         env: !!env,
         defCam,
         cam: Object.assign({}, defCam),
@@ -348,29 +354,43 @@ window.MgDance = (function () {
     }
 
     /* Pose every dancer and render the 3D floor on the gl canvas. The AI
-     * dancers demonstrate the chart: retail auto-feeds them their presses
-     * from the same chart (FUN_801d1af4 for player != 0), so on each judged
-     * beat they fire the same move clip a correct press would - direction
-     * symbols trigger the sequence move, the every-4th-beat combo window the
-     * on-beat step. (Their scores aren't simulated; the note says so.) */
+     * dancers are simulated (the rules engine runs retail's chart auto-feed
+     * through the same judge), so their bodies play what their own run does:
+     * the sequence move for the beat's direction symbol on their own lane, and
+     * the groovy move the frame their triangle stock drops. */
     function bodyRender(st, chart) {
       const b = body;
       const live = !!(st && st.live);
+      const rivals = (st && st.rivals) || [];
       if (live && chart && b.moves) {
         const beat = st.beat | 0;
-        if (beat !== b.lastBeat) {
-          b.lastBeat = beat;
-          const row = chart.rows[Math.min(st.lane, chart.rows.length - 1)];
-          const sym = row ? row[beat % row.length] : 0;
-          for (let d = 0; d < b.dancers.length; d++) {
-            if (d === api.dance_body_human_index()) continue;
-            if ((beat & 3) === 3) triggerMove(d, b.moves.beat[0]);
-            else if (sym === 1) triggerMove(d, b.moves.seq_square[0]);
-            else if (sym === 2) triggerMove(d, b.moves.seq_circle[0]);
+        const human = api.dance_body_human_index();
+        /* The cast is handed over in floor order (left / centre / right) while
+         * the rules engine numbers its dancers in the overlay's spawn-slot
+         * order, so pair them by dancer *kind* - the one id both spaces carry. */
+        const rivalOf = (d) => rivals.find(r => r.kind === b.dancers[d].kind);
+        for (let d = 0; d < b.dancers.length; d++) {
+          if (d === human) continue;
+          const rv = rivalOf(d);
+          if (!rv) continue;
+          const lane = Math.min(rv.lane | 0, chart.rows.length - 1);
+          /* A rival that just spent a triangle throws its groovy move now -
+           * on its own lane, exactly as the judge's return picks the clip. */
+          const was = b.rivalTri[d];
+          b.rivalTri[d] = rv.triangles;
+          if (was !== undefined && rv.triangles < was) {
+            triggerMove(d, b.moves.beat[Math.min(lane, 2)]);
+          } else if (beat !== b.lastBeat) {
+            const row = chart.rows[lane];
+            const sym = row ? row[beat % row.length] : 0;
+            if (sym === 1) triggerMove(d, b.moves.seq_square[Math.min(lane, 2)]);
+            else if (sym === 2) triggerMove(d, b.moves.seq_circle[Math.min(lane, 2)]);
           }
         }
+        b.lastBeat = beat;
       } else {
         b.lastBeat = -1;
+        b.rivalTri = {};
       }
       for (let d = 0; d < b.dancers.length; d++) {
         const st_ = advance(d, live);
@@ -611,9 +631,37 @@ window.MgDance = (function () {
       wdraw(W.CAP_R, T.cap_r, T.y, trackPal);
       wdraw(W.ARROW, T.arrow[0], T.arrow[1]);
 
-      for (let i = 0; i < 3; i++) {
+      /* The stock markers under the track are the remaining triangles: retail
+       * draws exactly `DAT_801d534c` of them (FUN_801d2524's tail loop), so
+       * they tick down as the groovy moves are spent. */
+      const stock = st.triangles === undefined ? 3 : st.triangles;
+      for (let i = 0; i < stock; i++) {
         wdraw(W.STOCK, T.x + i * T.stock_step, T.stock_y);
       }
+    }
+
+    /* The groovy-move window: while the spin runs, nothing the player presses
+     * is judged (retail's actor handler stops calling the award routine until
+     * the move clip ends). Say so, over the track. */
+    function drawGroovyWindow(st) {
+      if (!st.lock) return;
+      const L = layout, T = L.track;
+      const w = 108, h = 13, x = T.x - 4, y = T.y - 26;
+      g.save();
+      g.globalAlpha = 0.72;
+      g.fillStyle = '#000';
+      g.fillRect(x * SCALE, y * SCALE, w * SCALE, h * SCALE);
+      g.globalAlpha = 1;
+      /* Progress bar for the remaining spin. */
+      const frac = Math.max(0, Math.min(1, st.lock / 64));
+      g.fillStyle = st.feedback === false ? '#c9636b' : '#2dcca7';
+      g.fillRect(x * SCALE, (y + h - 2) * SCALE, w * frac * SCALE, 2 * SCALE);
+      g.fillStyle = '#fff';
+      g.font = `bold ${8 * SCALE}px monospace`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('GROOVY MOVE', (x + w / 2) * SCALE, (y + h / 2 - 1) * SCALE);
+      g.restore();
     }
 
     function spawnBanner(id, x, y, life) {
@@ -644,11 +692,39 @@ window.MgDance = (function () {
         if (result === 'miss') {
           if (sym === 1) triggerMove(human, M.miss_square);
           else if (sym === 2) triggerMove(human, M.miss_circle);
-        } else if (sym === 3) {
+        } else if (result === 'groovy' || result === 'groovy_off') {
+          /* The wildcard's clip is the on-beat step for the lane (move pair
+           * 8 + lane) - retail returns lane*2 + 0x10 from the 0x10 branch. */
           triggerMove(human, M.beat[lane]);
         } else if (result === 'sequence') {
           triggerMove(human, (sym === 2 ? M.seq_circle : M.seq_square)[lane]);
         }
+      }
+      if (result === 'ignored' || result === 'none') return;   /* mid-groovy-move */
+      if (result === 'no_charge') {
+        play('miss', 0.35);
+        return;
+      }
+      if (result === 'groovy' || result === 'groovy_off') {
+        /* Landed on the 4-beat combo slot = the big multiplier (and the gauge
+         * step that promotes the lane): the combo banner tier by lane. Off the
+         * slot it is worth (lane+1)*3 and gets no banner - retail only spawns
+         * one when DAT_801d570c says it landed. */
+        poses[0] = Math.min(3, (faces && faces.meta[0] && faces.meta[0].poses - 1) || 2);
+        poseT[0] = 30;
+        if (result === 'groovy') {
+          flashT = 12;
+          const tier = Math.min(st.lane | 0, 2);        /* Cool! / Great!! / Fever!!! */
+          const id = tier === 0 ? W.COOL : tier === 1 ? W.GREAT : W.FEVER;
+          play(tier === 0 ? 'cool' : tier === 1 ? 'great' : 'fever', 0.55);
+          spawnBanner(id, B.rating[0], B.rating[1]);
+          const so = tier === 0 ? B.star_off.cool : B.star_off.great;
+          spawnBanner(W.STAR, B.rating[0] - so, B.rating[1]);
+          spawnBanner(W.STAR, B.rating[0] + so, B.rating[1]);
+        } else {
+          playSting();
+        }
+        return;
       }
       if (result === 'miss') {
         play('miss', 0.5);
@@ -659,30 +735,16 @@ window.MgDance = (function () {
         poses[0] = Math.min(2 + (result === 'sequence' ? 1 : 0),
           (faces && faces.meta[0] && faces.meta[0].poses - 1) || 2);
         poseT[0] = 24;
-        const boundary = (st.beat & 3) === 3;
         if (result === 'sequence') {
           play('cool', 0.5);
           spawnBanner(W.GOOD, B.rating[0], B.rating[1]);
           spawnBanner(W.STAR, B.rating[0] - B.good_star_off, B.rating[1]);
           spawnBanner(W.STAR, B.rating[0] + B.good_star_off, B.rating[1]);
-        } else if (boundary) {
-          /* Combo tier escalation: Cool! -> Great!! -> Fever!!! with the
-           * matching sting (cues 0x202/0x203/0x205). */
-          onPress.combo = Math.min((onPress.combo || 0) + 1, 3);
-          const tier = onPress.combo;
-          const id = tier === 1 ? W.COOL : tier === 2 ? W.GREAT : W.FEVER;
-          play(tier === 1 ? 'cool' : tier === 2 ? 'great' : 'fever', 0.5);
-          spawnBanner(id, B.rating[0], B.rating[1]);
-          const so = tier === 1 ? B.star_off.cool : B.star_off.great;
-          spawnBanner(W.STAR, B.rating[0] - so, B.rating[1]);
-          spawnBanner(W.STAR, B.rating[0] + so, B.rating[1]);
         } else {
           playSting();
           spawnBanner(W.GOOD, B.rating[0], B.rating[1]);
         }
-        return;
       }
-      if (result === 'miss') onPress.combo = 0;
     }
 
     function startRun(songSeconds) {
@@ -693,7 +755,7 @@ window.MgDance = (function () {
         for (const a of body.anim) { a.cursor = 0; a.move = null; }
       }
       flashT = 0; finished = false;
-      onPress.combo = 0;
+      if (body) body.rivalTri = {};
       intro = { t: 0 };
       play('start', 0.5);
       startBgm(songSeconds);
@@ -716,8 +778,8 @@ window.MgDance = (function () {
     }
 
     function tickCosmetics(st) {
-      /* Blink + AI reactions (cosmetic - the AI scores are not simulated,
-       * and the page's note says so). */
+      /* Blink + the competitors' on-beat face pose (cosmetic; their scoring
+       * runs are simulated by the rules engine, not by these poses). */
       for (let d = 0; d < 4; d++) {
         if (poseT[d] > 0 && --poseT[d] === 0) poses[d] = 0;
         if (--blinkT[d] <= 0) {
@@ -734,7 +796,7 @@ window.MgDance = (function () {
     }
 
     /* One full frame. `st` may be null before the first run. */
-    function draw(st, chart, stock) {
+    function draw(st, chart) {
       const Wpx = canvas.width, Hpx = canvas.height;
       if (body) {
         /* The dancers are drawn in 3D on the gl canvas behind this one -
@@ -759,11 +821,18 @@ window.MgDance = (function () {
       g.save();
       g.translate(L.screen_offset[0] * SCALE, L.screen_offset[1] * SCALE);
 
-      /* Score boxes: the human dancer is the CENTRE box (FUN_801d231c). */
+      /* Score boxes: the human dancer is the CENTRE box (FUN_801d231c), the
+       * two competitors left and right - and their scores are live, off their
+       * own simulated runs (retail auto-feeds them the same chart). */
       for (let i = 0; i < 3; i++) {
         wdraw(W.SCORE_BOX, L.score_boxes.xs[i], L.score_boxes.y);
       }
-      const scores = [0, st ? st.score : 0, 0];   /* left AI, human, right AI */
+      const rv = (st && st.rivals) || [];
+      const scores = [
+        rv[0] ? rv[0].score : 0,
+        st ? st.score : 0,
+        rv[1] ? rv[1].score : 0,
+      ];
       for (let i = 0; i < 3; i++) {
         drawScore(L.digit_bases.xs[i], L.digit_bases.y, scores[i]);
       }
@@ -790,7 +859,8 @@ window.MgDance = (function () {
           (L.gauge.digit_x - lv.w / 2) * SCALE, (L.gauge.y - lv.h / 2) * SCALE,
           lv.w * SCALE, lv.h * SCALE);
 
-        drawTrack(st, chart, stock);
+        drawTrack(st, chart);
+        drawGroovyWindow(st);
       }
 
       /* Count-in overlay (banner widgets at the traced centre spawn). */

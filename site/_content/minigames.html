@@ -276,10 +276,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <h3>Sol Fever Disco &mdash; Noa's dance</h3>
         <p class="mg-blurb">
           Hit the step on the beat. The notes are the game's own step chart, baked
-          into the dance overlay; the groove gauge on the right is the difficulty
-          lane &mdash; every clean hit fills it, and each thousand promotes you to a
-          denser row of the chart worth more points. A miss empties it. Land on a
-          4-beat boundary for the big multipliers. <b>300 points passes.</b>
+          into the dance overlay; the groove gauge is the difficulty lane &mdash;
+          every closed step chain fills it, and each thousand promotes you to a
+          denser row of the chart worth more points. <b>Triangle is the wildcard</b>:
+          three &ldquo;groovy moves&rdquo; a song, good on any beat, but only worth the
+          big multiplier when you spend one <em>on</em> a 4-beat combo slot &mdash;
+          and it spins Noa for up to a second, during which nothing you press is
+          judged. So save them for the end of your longest combos. The two dancers
+          beside you are running the same chart for real: <b>beat them.</b>
         </p>
         <div class="dance-duel" id="dance-duel">
           <canvas id="dance-gl" width="640" height="480"></canvas>
@@ -294,6 +298,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         </div>
         <div class="mg-hud">
           <span>Score <b class="mg-big" id="dance-score">0</b> / 999</span>
+          <span>Rivals <b id="dance-rivals">0 &middot; 0</b></span>
+          <span>Triangles <b id="dance-tri">&#9650;&#9650;&#9650;</b></span>
           <span>Groove <b id="dance-gauge">0</b></span>
           <span>Lane <b id="dance-lane">0</b></span>
           <span>Song <b id="dance-song">0%</b></span>
@@ -310,9 +316,21 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           one straight to a pad-button mask, so a symbol <em>is</em> a button &mdash;
           <b>1&nbsp;=&nbsp;Square</b> (<code>0x80</code>), <b>2&nbsp;=&nbsp;Circle</b>
           (<code>0x20</code>), <b>3&nbsp;=&nbsp;Triangle</b> (<code>0x10</code>), the
-          three-times-only &ldquo;groovy move&rdquo;. The other two lanes aren't
-          difficulties &mdash; they're the <em>AI dancers</em>, fed their inputs from the
-          same chart.
+          three-times-only &ldquo;groovy move&rdquo; wildcard.
+          <br><br>
+          <b>The Triangle is not a direction.</b> Its branch in the award routine
+          (<code>FUN_801d1af4</code>, pad <code>0x10</code>) matches no chart cell at
+          all: it gates on a stock counter (<code>DAT_801d534c</code>, set to
+          <b>3</b> at run start and never refilled), scores
+          <code>(lane+1)&nbsp;&times;&nbsp;3</code> wherever you spend it but
+          <code>(lane+1)&nbsp;&times;&nbsp;0x19</code> when it lands on the 4-beat
+          combo slot &mdash; where it <em>also</em> steps the groove gauge a full
+          <code>+1000</code>, promoting the lane &mdash; and then throws the dancer
+          into a <code>lane&nbsp;+&nbsp;1</code> turn spin
+          (<code>DAT_801d564c</code>) during which the actor handler stops calling
+          the judge at all. That is the input disruption. The game's own how-to
+          script says it in words: press it together with the last command of a
+          combo, and you only get three.
         </p>
       </section>
 
@@ -766,13 +784,25 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           'score boxes replay the real <b>face-stamp windows</b> retail MoveImage-blits ' +
           'onto its dancers’ head textures (<code>FUN_801d03c4</code>; the centre ' +
           'dancer is Noa’s own field atlas, PROT&nbsp;0874&nbsp;&sect;2). ') +
-      '<br><br><b>What is missing, and why.</b> The two ' +
-      '<b>AI dancers’ runs are not simulated</b>: retail auto-feeds them from the same ' +
-      'chart, but this page runs the human lane only, so their score boxes idle at zero ' +
-      'and their moves demonstrate the chart rather than score it. Banner rise/fade ' +
-      'curves are approximated (retail drives them through per-banner actor scripts), ' +
-      'and the three step-stock chips under the track stay at three (the rules engine ' +
-      'doesn’t model the timing-button stock).';
+      '<br><br><b>The two competitors are running for real.</b> Retail does not put ' +
+      'them on a scripted score curve: the per-dancer actor handler ' +
+      '(<code>FUN_801d1358</code>) calls the <em>same</em> award routine ' +
+      '(<code>FUN_801d1af4</code>) for every dancer on the floor, and for a CPU dancer ' +
+      'the pad word is synthesised from the same chart ' +
+      '(<code>FUN_801d4040</code>&nbsp;&rarr;&nbsp;<code>FUN_801d1820</code>). They ' +
+      'differ from you only by their <em>kind</em> row in two overlay tables: the ' +
+      'sequence-bonus values (<code>DAT_801d41a4</code>) and the schedule ' +
+      '(<code>DAT_801d41e4</code>) that says how many 4-beat combo slots they bank ' +
+      'before spending each of their three triangles. The rules engine runs all of it, ' +
+      'so their score boxes climb, their groove gauges promote them, and they throw ' +
+      'their own groovy move when the schedule fires. Hands off the pad and they will ' +
+      'beat you. ' +
+      '<br><br><b>What is approximated.</b> Banner rise/fade curves (retail drives them ' +
+      'through per-banner actor scripts), and the input lockout after a groovy move is ' +
+      'timed off the dancer’s spin (<code>lane&nbsp;+&nbsp;1</code> turns at ' +
+      '<code>0x80&nbsp;+&nbsp;lane&nbsp;&times;&nbsp;0x20</code> per frame = 32/51/64 ' +
+      'frames) rather than off the move clip’s own length, which retail reads from the ' +
+      'choreography bundle.';
   }
 
   function danceStart() {
@@ -809,9 +839,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const stBefore = JSON.parse(api.dance_state_json());
     const r = api.dance_press(sym);
     if (danceR) danceR.onPress(r, stBefore, sym);
-    if (r === 'sequence')   verdict($('dance-verdict'), 'PERFECT', 'good');
-    else if (r === 'hit')   verdict($('dance-verdict'), 'HIT', 'good');
-    else if (r === 'miss')  verdict($('dance-verdict'), 'MISS', 'bad');
+    if (r === 'sequence')        verdict($('dance-verdict'), 'PERFECT', 'good');
+    else if (r === 'hit')        verdict($('dance-verdict'), 'HIT', 'good');
+    else if (r === 'miss')       verdict($('dance-verdict'), 'MISS', 'bad');
+    else if (r === 'groovy')     verdict($('dance-verdict'), 'GROOVY MOVE!', 'good');
+    else if (r === 'groovy_off') verdict($('dance-verdict'), 'Groovy move - off the combo slot', '');
+    else if (r === 'no_charge')  verdict($('dance-verdict'), 'No groovy moves left', 'bad');
+    /* 'ignored' = mid-groovy-move: retail judges nothing, so neither do we. */
   }
 
   function danceFrame() {
@@ -821,10 +855,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (!st.over && !(danceR && danceR.introGate)) api.dance_tick(1);
       else if (st.over && danceLive) {
         danceLive = false;
+        const rvs = (st.rivals || []).map(r => r.score).join(' and ');
         verdict($('dance-verdict'),
-          st.passed ? `Song over - ${st.score} points. You passed!`
-                    : `Song over - ${st.score} points. You needed 300.`,
-          st.passed ? 'good' : 'bad');
+          st.winning
+            ? `Song over - ${st.score} points against ${rvs}. You won the floor!`
+            : `Song over - ${st.score} points against ${rvs}. They out-danced you.`,
+          st.winning ? 'good' : 'bad');
         /* Persist the run (the "Your games" strips read this). */
         if (window.LegaiaSaves) {
           const d = LegaiaSaves.getMinigames().dance || {};
@@ -839,6 +875,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       $('dance-gauge').textContent = st.gauge;
       $('dance-lane').textContent  = st.lane;
       $('dance-song').textContent  = Math.round(100 * st.song_timer / st.song_len) + '%';
+      const rv = st.rivals || [];
+      $('dance-rivals').textContent = rv.map(r => r.score).join(' \u00b7 ') || '0 \u00b7 0';
+      $('dance-tri').textContent =
+        '\u25b2'.repeat(st.triangles) + '\u25b3'.repeat(3 - st.triangles) +
+        (st.lock ? ' (spinning)' : '');
     }
     if (danceR) danceR.draw(st.live ? st : null, danceChart);
     else danceDrawFallback(st.live ? st : null, danceChart);
