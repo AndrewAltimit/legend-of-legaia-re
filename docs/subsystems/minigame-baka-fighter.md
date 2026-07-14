@@ -431,19 +431,49 @@ the full-clear total.
 
 Baka Fighter fires **no** runtime-bank cue (`>= 0x200`) at all - every cue it
 uses is a **static** descriptor (`DAT_8006F198 + id*8`, see
-[`sfx-table.md`](../formats/sfx-table.md)):
+[`sfx-table.md`](../formats/sfx-table.md)). It also does not go through the cue
+dispatcher `FUN_8004FCC8`: it writes the cue **ring** `_DAT_8007B6D8` directly,
+and the ring value is the descriptor index the drainer `FUN_80016B6C` looks up.
+A sweep of every ring write in the whole overlay finds exactly **four** cue ids:
 
-| Event | Cue | Site |
+| Event | Cue | Written by |
 |---|---|---|
-| hit / exchange resolved | `0x09` | `FUN_801D3B18` |
-| confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | `FUN_801CF388` |
+| hit - an exchange's damage lands | `0x09` | `FUN_801D3B18` (top of the damage kernel) |
+| confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | the menu SM (`FUN_801CF388` family) |
 | score-tally tick | `0x21` | `FUN_801D239C` |
 
+So the duel is **quieter than it looks**: the round-start READY/FIGHT banner,
+the KO, a drawn exchange's trade, the round-result banners and the victory
+flourish all fire **no cue at all** - the only fight sound is the hit. Because
+the ring write sits at the *top* of `FUN_801D3B18`, before the damage
+arithmetic, a double-KO draw (which applies damage twice) queues the hit cue
+twice.
+
 The samples come from the class-2 VAB the init loads at **extraction PROT 0869**
-(raw `0x367`); the shared UI cues come from the always-resident class-0 bank
-(extraction PROT 0868). The minigame's **BGM** is **extraction PROT 1043**
-(`music_01`), loaded by `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5, ...)`.
+(raw `0x367`, `FUN_8001FC00(0x367, 2, ...)` + `FUN_8001E54C(2, ...)`) - the same
+bank the **battle scene loader** `FUN_800520F0` loads (also class 2, swapping to
+raw `0x36D` when `DAT_8007BD11 == 4`), so it is the shared battle/minigame SFX
+bank rather than a Baka-private one. All four cue descriptors resolve in it
+(they use programs `0` and `3`). The minigame's **BGM** is **extraction PROT
+1043** (`music_01`), loaded by `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5, ...)`.
 **Confirmed.**
+
+### Site presentation
+
+The minigames page plays exactly these cues, decoded from the visitor's disc in
+the browser: SCUS → the descriptor table, PROT 869 → the VAB, each descriptor →
+a one-shot through the clean-room SPU (`crates/web-viewer/src/sfx_view.rs`,
+`site/js/legaia-sfx.js`). The page fires cues by *event name*, so the ids stay
+next to their provenance in Rust; the two events retail leaves silent but the
+page sounds anyway - a round-start sting and a match-loss sting, reusing the
+confirm / cancel blips - are flagged `"source": "site"` in the event map, as
+against `"disc"` for the four traced ones. Playback is gated on the site-wide
+`LegaiaSound` mute toggle, and the `AudioContext` is built on the first cue so
+nothing can sound before a user gesture.
+
+The rules engine emits the hit cue itself: `BakaFight::take_cues` drains
+`BAKA_CUE_HIT`, queued from inside `apply_damage` - the same place the retail
+ring write sits (`engine-core::baka_fighter`).
 
 ## RAM state
 

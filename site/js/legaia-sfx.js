@@ -123,7 +123,27 @@
     ready: function () { return !!api; },
 
     info: function () {
-      return { bank: meta.bank, rate: meta.rate, cues: meta.cues, maps: maps };
+      return {
+        bank: meta.bank, rate: meta.rate, cues: meta.cues, maps: maps,
+        ctx: ctx ? ctx.state : 'none',
+      };
+    },
+
+    /* Peak absolute sample of the AudioBuffer a cue actually plays through
+     * (0 = silence / not built). Builds the buffer if it isn't cached, so it
+     * needs the AudioContext - i.e. a user gesture. The verification hook:
+     * "did a non-silent buffer reach WebAudio", answered on the browser side
+     * rather than trusting the Rust-reported peak. */
+    bufferPeak: function (id) {
+      var b = bufferFor(id);
+      if (!b) return 0;
+      var ch = b.buf.getChannelData(0);
+      var peak = 0;
+      for (var i = 0; i < ch.length; i++) {
+        var v = Math.abs(ch[i]);
+        if (v > peak) peak = v;
+      }
+      return peak * b.gain;
     },
 
     /* The cue id an event resolves to (-1 when unknown / not loaded). */
