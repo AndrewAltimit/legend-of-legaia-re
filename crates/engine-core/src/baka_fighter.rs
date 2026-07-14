@@ -654,6 +654,159 @@ impl BakaFight {
     }
 }
 
+// ---------------------------------------------------------------- ladder run
+
+/// Phase of a cabinet [`LadderRun`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunPhase {
+    /// A match against the current rung's opponent is in progress.
+    Fighting,
+    /// The match was won and the rung's prize joined the pot: the retail
+    /// end-of-match menu is up (the "NEXT GAME / PAY OUT" cells on the PROT
+    /// 1203 tally sheet, drawn by `FUN_801d239c`'s tally screen).
+    Choice,
+    /// The player took "PAY OUT" mid-run: the pot is banked, the run is over.
+    PaidOut,
+    /// A match was lost: the accumulated pot is forfeited, the run is over.
+    GameOver,
+    /// Every rung cleared: the full pot pays out (the "VICTORY! / ALL STAGE
+    /// CLEAR!" sheet).
+    AllClear,
+}
+
+/// The cabinet's ladder run with the between-match **cash-out** choice.
+///
+/// Retail grain: after every match win the tally screen offers "NEXT GAME"
+/// or "PAY OUT" (both are widget cells in the PROT 1203 art pack, on the
+/// same sheet as "GET COIN" + its digit strip - see
+/// `docs/subsystems/minigame-baka-fighter.md`). Fighting on keeps the
+/// accumulated prize pot at risk; paying out banks it and ends the run.
+/// Two rules are host readings of the risk (stated, not overlay-pinned):
+/// a mid-run loss forfeits the whole pot, and clearing the final rung pays
+/// the pot out automatically. The rung prizes are the roster records' own
+/// gold column, so a full 14-rung clear from rung 0 pays the full-clear
+/// total (460 on the retail disc).
+#[derive(Debug, Clone)]
+pub struct LadderRun {
+    /// `(roster_id, prize_gold)` per rung, in cabinet serve order.
+    ladder: Vec<(usize, u32)>,
+    rung: usize,
+    pot: u32,
+    banked: u32,
+    forfeited: u32,
+    phase: RunPhase,
+}
+
+impl LadderRun {
+    /// Start a run at `start_rung` of `ladder` (`(roster_id, prize)` pairs in
+    /// serve order). `None` when the ladder is empty or the rung is out of
+    /// range.
+    pub fn new(ladder: Vec<(usize, u32)>, start_rung: usize) -> Option<Self> {
+        if ladder.is_empty() || start_rung >= ladder.len() {
+            return None;
+        }
+        Some(Self {
+            ladder,
+            rung: start_rung,
+            pot: 0,
+            banked: 0,
+            forfeited: 0,
+            phase: RunPhase::Fighting,
+        })
+    }
+
+    pub fn phase(&self) -> RunPhase {
+        self.phase
+    }
+
+    /// Current rung index (0-based into the serve order).
+    pub fn rung(&self) -> usize {
+        self.rung
+    }
+
+    /// Total rungs in the ladder.
+    pub fn len(&self) -> usize {
+        self.ladder.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ladder.is_empty()
+    }
+
+    /// Prize pot currently at risk.
+    pub fn pot(&self) -> u32 {
+        self.pot
+    }
+
+    /// Coins committed by a pay-out / all-clear (0 while running or after a
+    /// forfeit).
+    pub fn banked(&self) -> u32 {
+        self.banked
+    }
+
+    /// Coins lost to a mid-run defeat.
+    pub fn forfeited(&self) -> u32 {
+        self.forfeited
+    }
+
+    /// The rung being fought (or offered next): `(roster_id, prize)`.
+    pub fn current(&self) -> Option<(usize, u32)> {
+        self.ladder.get(self.rung).copied()
+    }
+
+    /// A match win: the rung's prize joins the pot. Moves to [`RunPhase::Choice`]
+    /// (or pays out immediately on the final rung → [`RunPhase::AllClear`]).
+    /// Returns the prize added, or `None` when not fighting.
+    pub fn match_won(&mut self) -> Option<u32> {
+        if self.phase != RunPhase::Fighting {
+            return None;
+        }
+        let (_, prize) = self.current()?;
+        self.pot += prize;
+        if self.rung + 1 == self.ladder.len() {
+            self.banked = self.pot;
+            self.phase = RunPhase::AllClear;
+        } else {
+            self.phase = RunPhase::Choice;
+        }
+        Some(prize)
+    }
+
+    /// A match loss: the pot is forfeited. Returns the coins lost, or `None`
+    /// when not fighting.
+    pub fn match_lost(&mut self) -> Option<u32> {
+        if self.phase != RunPhase::Fighting {
+            return None;
+        }
+        self.forfeited = self.pot;
+        self.pot = 0;
+        self.phase = RunPhase::GameOver;
+        Some(self.forfeited)
+    }
+
+    /// Take "NEXT GAME": risk the pot on the next rung. Returns the next
+    /// rung's roster id, or `None` when no choice is pending.
+    pub fn fight_on(&mut self) -> Option<usize> {
+        if self.phase != RunPhase::Choice {
+            return None;
+        }
+        self.rung += 1;
+        self.phase = RunPhase::Fighting;
+        self.current().map(|(roster, _)| roster)
+    }
+
+    /// Take "PAY OUT": bank the pot and end the run. Returns the coins
+    /// banked, or `None` when no choice is pending.
+    pub fn pay_out(&mut self) -> Option<u32> {
+        if self.phase != RunPhase::Choice {
+            return None;
+        }
+        self.banked = self.pot;
+        self.phase = RunPhase::PaidOut;
+        Some(self.banked)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -864,5 +1017,72 @@ mod tests {
             }
         }
         assert!(seen_backward, "the scripted pattern branch fired");
+    }
+
+    // ---------------------------------------------------------- ladder run
+
+    fn run_ladder() -> Vec<(usize, u32)> {
+        // Strictly-increasing prizes like the retail first lap.
+        vec![(5, 10), (6, 20), (7, 30), (8, 40)]
+    }
+
+    #[test]
+    fn ladder_pot_accumulates_and_pays_out() {
+        let mut r = LadderRun::new(run_ladder(), 0).unwrap();
+        assert_eq!(r.current(), Some((5, 10)));
+        assert_eq!(r.match_won(), Some(10));
+        assert_eq!(r.phase(), RunPhase::Choice);
+        assert_eq!(r.pot(), 10);
+        assert_eq!(r.fight_on(), Some(6));
+        assert_eq!(r.match_won(), Some(20));
+        assert_eq!(r.pot(), 30);
+        // Cash out mid-run banks the pot and ends the run.
+        assert_eq!(r.pay_out(), Some(30));
+        assert_eq!(r.phase(), RunPhase::PaidOut);
+        assert_eq!(r.banked(), 30);
+        // No further transitions.
+        assert_eq!(r.fight_on(), None);
+        assert_eq!(r.match_won(), None);
+    }
+
+    #[test]
+    fn ladder_loss_forfeits_the_pot() {
+        let mut r = LadderRun::new(run_ladder(), 0).unwrap();
+        r.match_won();
+        r.fight_on();
+        r.match_won();
+        r.fight_on();
+        assert_eq!(r.pot(), 30);
+        assert_eq!(r.match_lost(), Some(30));
+        assert_eq!(r.phase(), RunPhase::GameOver);
+        assert_eq!(r.pot(), 0);
+        assert_eq!(r.banked(), 0);
+        assert_eq!(r.forfeited(), 30);
+    }
+
+    #[test]
+    fn ladder_full_clear_pays_the_whole_pot() {
+        let mut r = LadderRun::new(run_ladder(), 0).unwrap();
+        for _ in 0..3 {
+            r.match_won();
+            r.fight_on();
+        }
+        // Final rung: the win pays out automatically (no choice pending).
+        assert_eq!(r.match_won(), Some(40));
+        assert_eq!(r.phase(), RunPhase::AllClear);
+        assert_eq!(r.banked(), 100);
+        assert_eq!(r.pay_out(), None);
+    }
+
+    #[test]
+    fn ladder_start_rung_and_bounds() {
+        assert!(LadderRun::new(vec![], 0).is_none());
+        assert!(LadderRun::new(run_ladder(), 4).is_none());
+        let mut r = LadderRun::new(run_ladder(), 3).unwrap();
+        assert_eq!(r.current(), Some((8, 40)));
+        // Dropping in at the last rung: one win = all clear, pot = that prize.
+        assert_eq!(r.match_won(), Some(40));
+        assert_eq!(r.phase(), RunPhase::AllClear);
+        assert_eq!(r.banked(), 40);
     }
 }

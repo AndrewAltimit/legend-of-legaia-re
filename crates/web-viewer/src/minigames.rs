@@ -38,7 +38,7 @@ use legaia_asset::minigame_art::{self, SlotHudWidget};
 use legaia_asset::minigame_sfx::{self, SfxCueBank};
 use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
 use legaia_asset::static_overlay;
-use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, MatchPhase};
+use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, LadderRun, MatchPhase, RunPhase};
 use legaia_engine_core::dance::{DanceDir, DanceGame, Judge};
 use legaia_engine_core::slot_machine::{SlotMachine, SlotPhase};
 use legaia_tim::Tim;
@@ -55,6 +55,9 @@ pub struct LegaiaMinigames {
     dance: Option<DanceGame>,
     /// Live Baka Fighter duel.
     baka: Option<BakaFight>,
+    /// Live Baka Fighter ladder run (the between-match cash-out bookkeeping;
+    /// each rung's duel itself runs in `baka`).
+    baka_run: Option<LadderRun>,
     /// Parsed Baka roster + action tables (cached; the roster picker reads them
     /// before a fight starts).
     baka_tables: Option<(
@@ -135,6 +138,7 @@ impl LegaiaMinigames {
             entries: Vec::new(),
             dance: None,
             baka: None,
+            baka_run: None,
             baka_tables: None,
             slot: None,
             slot_payouts: None,
@@ -181,6 +185,7 @@ impl LegaiaMinigames {
         self.entries = entries;
         self.dance = None;
         self.baka = None;
+        self.baka_run = None;
         self.slot = None;
 
         // --- dance step chart (PROT 0980) + presentation (PROT 1230 art,
@@ -579,6 +584,106 @@ impl LegaiaMinigames {
             f.gold_reward(),
             winner,
             last,
+        )
+    }
+
+    // ------------------------------------------------- baka fighter: ladder run
+
+    /// Start a cabinet ladder run at `start_rung` (an index into
+    /// [`Self::baka_ladder_json`]'s serve order). Bookkeeping only: the caller
+    /// still starts each rung's duel with [`Self::baka_start`]. Returns the
+    /// first opponent's roster id, or `-1` when the tables didn't decode /
+    /// the rung is out of range.
+    ///
+    /// The run models the retail between-match choice - after every match win
+    /// the tally screen offers "NEXT GAME" (risk the accumulated pot on the
+    /// next rung) or "PAY OUT" (bank it and stop); the two cells live on the
+    /// PROT 1203 tally sheet next to "GET COIN" and its digit strip. A mid-run
+    /// loss forfeits the whole pot; clearing the last rung pays it in full.
+    pub fn baka_run_start(&mut self, start_rung: usize) -> i32 {
+        self.baka_run = None;
+        let Some((opponents, _)) = self.baka_tables.as_ref() else {
+            return -1;
+        };
+        let ladder: Vec<(usize, u32)> = minigame_art::baka_ladder()
+            .into_iter()
+            .filter_map(|(_, roster)| Some((roster, opponents.get(roster)?.gold_reward)))
+            .collect();
+        let Some(run) = LadderRun::new(ladder, start_rung) else {
+            return -1;
+        };
+        let roster = run.current().map(|(r, _)| r as i32).unwrap_or(-1);
+        self.baka_run = Some(run);
+        roster
+    }
+
+    /// Report the current rung's match result into the run: `true` = the
+    /// player won (prize joins the pot; a choice - or the all-clear - is now
+    /// pending), `false` = lost (the pot is forfeited). Returns `false` when
+    /// no run is fighting.
+    pub fn baka_run_match_over(&mut self, player_won: bool) -> bool {
+        let Some(run) = self.baka_run.as_mut() else {
+            return false;
+        };
+        if player_won {
+            run.match_won().is_some()
+        } else {
+            run.match_lost().is_some()
+        }
+    }
+
+    /// Take "NEXT GAME" at the between-match choice: risk the pot on the next
+    /// rung. Returns the next opponent's roster id, or `-1` when no choice is
+    /// pending.
+    pub fn baka_run_fight_on(&mut self) -> i32 {
+        self.baka_run
+            .as_mut()
+            .and_then(|r| r.fight_on())
+            .map(|r| r as i32)
+            .unwrap_or(-1)
+    }
+
+    /// Take "PAY OUT" at the between-match choice: bank the pot and end the
+    /// run. Returns the coins banked (`0` when no choice was pending).
+    pub fn baka_run_pay_out(&mut self) -> u32 {
+        self.baka_run
+            .as_mut()
+            .and_then(|r| r.pay_out())
+            .unwrap_or(0)
+    }
+
+    /// Live ladder-run state:
+    ///
+    /// ```json
+    /// { "live": true, "phase": "fighting"|"choice"|"paid_out"|"game_over"|"all_clear",
+    ///   "rung": 0, "len": 14, "roster": 5, "prize": 10,
+    ///   "pot": 0, "banked": 0, "forfeited": 0 }
+    /// ```
+    pub fn baka_run_state_json(&self) -> String {
+        let Some(run) = self.baka_run.as_ref() else {
+            return r#"{"live":false}"#.to_string();
+        };
+        let phase = match run.phase() {
+            RunPhase::Fighting => "fighting",
+            RunPhase::Choice => "choice",
+            RunPhase::PaidOut => "paid_out",
+            RunPhase::GameOver => "game_over",
+            RunPhase::AllClear => "all_clear",
+        };
+        let (roster, prize) = run.current().unwrap_or((0, 0));
+        format!(
+            concat!(
+                r#"{{"live":true,"phase":{},"rung":{},"len":{},"roster":{},"prize":{},"#,
+                r#""pot":{},"banked":{},"forfeited":{}}}"#
+            ),
+            jstr(phase),
+            run.rung(),
+            run.len(),
+            roster,
+            prize,
+            run.pot(),
+            run.banked(),
+            run.forfeited(),
         )
     }
 

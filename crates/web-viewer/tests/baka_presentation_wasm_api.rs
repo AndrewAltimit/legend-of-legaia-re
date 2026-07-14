@@ -64,6 +64,30 @@ fn duel_presentation_decodes_from_a_real_disc() {
         assert!(mg.baka_anim_record_count(1, roster) >= 6);
     }
 
+    // The retail select-screen + tally-menu widget cells the site draws
+    // (page-0 PLAYER SELECT banner + cursor arrows; the page-5 tally sheet's
+    // NEXT GAME / PAY OUT / GET COIN cells beside the coin-digit strip).
+    let cell = |i: usize| {
+        (
+            widgets[i]["u"].as_u64().unwrap(),
+            widgets[i]["v"].as_u64().unwrap(),
+            widgets[i]["w"].as_u64().unwrap(),
+            widgets[i]["h"].as_u64().unwrap(),
+        )
+    };
+    assert_eq!(cell(12), (1, 184, 254, 26), "PLAYER SELECT banner");
+    assert_eq!(cell(48), (160, 32, 32, 32), "cursor arrow (left)");
+    assert_eq!(cell(49), (192, 32, 32, 32), "cursor arrow (right)");
+    assert_eq!(cell(44), (0, 192, 144, 24), "NEXT GAME (tally sheet)");
+    assert_eq!(cell(45), (144, 192, 111, 24), "PAY OUT");
+    assert_eq!(cell(46), (0, 218, 88, 16), "GET COIN");
+    assert_eq!(cell(47), (88, 218, 16, 16), "coin digit cell");
+    // The tally cells share one art page (the sheet also carrying VICTORY! /
+    // ALL STAGE CLEAR!, widget 26).
+    for i in [26usize, 28, 29, 44, 45, 46, 47] {
+        assert_eq!(widgets[i]["page"], widgets[44]["page"], "widget {i} page");
+    }
+
     // The stage set + the duel VRAM build.
     assert!(mg.baka_stage_positions(0).len() > 300, "arena wall mesh");
     assert_eq!(mg.baka_duel_vram(5).len(), 1024 * 512 * 2);
@@ -155,5 +179,71 @@ fn facing_and_ladder_progression() {
         golds.iter().sum::<u64>(),
         460,
         "the 14 paying records sum to the full-clear prize total"
+    );
+}
+
+/// The cabinet ladder-run bookkeeping through the WASM surface: the pot
+/// accumulates the disc's own rung prizes, the between-match NEXT GAME /
+/// PAY OUT choice banks or risks it, a loss forfeits it, and running every
+/// rung pays the 460-coin full clear.
+#[test]
+fn ladder_run_cash_out_over_real_prizes() {
+    let Some(mut mg) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+
+    let roster: serde_json::Value = serde_json::from_str(&mg.baka_roster_json()).unwrap();
+    let gold = |rid: i64| roster[rid as usize]["gold"].as_u64().unwrap();
+
+    // Full clear from rung 0: fight on at every choice; the pot ends at 460.
+    let mut rid = mg.baka_run_start(0) as i64;
+    assert_eq!(rid, 5, "the run opens on roster 5 (the disc's first rung)");
+    let mut expected_pot = 0u64;
+    for step in 0..14 {
+        expected_pot += gold(rid);
+        assert!(mg.baka_run_match_over(true), "win reported (step {step})");
+        let st: serde_json::Value = serde_json::from_str(&mg.baka_run_state_json()).unwrap();
+        assert_eq!(
+            st["pot"].as_u64().unwrap(),
+            expected_pot,
+            "pot after {step}"
+        );
+        if step < 13 {
+            assert_eq!(st["phase"], "choice", "the tally menu is up");
+            rid = mg.baka_run_fight_on() as i64;
+            assert!(rid >= 0, "next rung served");
+        } else {
+            assert_eq!(st["phase"], "all_clear");
+            assert_eq!(st["banked"].as_u64().unwrap(), 460, "full clear pays 460");
+        }
+    }
+
+    // Pay out mid-run: two wins then PAY OUT banks exactly those prizes.
+    let first = mg.baka_run_start(0) as i64;
+    mg.baka_run_match_over(true);
+    let second = mg.baka_run_fight_on() as i64;
+    mg.baka_run_match_over(true);
+    let banked = mg.baka_run_pay_out();
+    assert_eq!(banked as u64, gold(first) + gold(second));
+    let st: serde_json::Value = serde_json::from_str(&mg.baka_run_state_json()).unwrap();
+    assert_eq!(st["phase"], "paid_out");
+
+    // Forfeit: two wins then a loss loses the whole pot.
+    let first = mg.baka_run_start(3) as i64;
+    mg.baka_run_match_over(true);
+    let second = mg.baka_run_fight_on() as i64;
+    mg.baka_run_match_over(true);
+    let third = mg.baka_run_fight_on();
+    assert!(third >= 0);
+    mg.baka_run_match_over(false);
+    let st: serde_json::Value = serde_json::from_str(&mg.baka_run_state_json()).unwrap();
+    assert_eq!(st["phase"], "game_over");
+    assert_eq!(st["pot"].as_u64().unwrap(), 0);
+    assert_eq!(st["banked"].as_u64().unwrap(), 0);
+    assert_eq!(
+        st["forfeited"].as_u64().unwrap(),
+        gold(first) + gold(second),
+        "the pot at risk is what a loss forfeits"
     );
 }
