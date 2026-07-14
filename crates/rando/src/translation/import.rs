@@ -184,6 +184,21 @@ fn pad_segment(translated: &[u8], len: usize) -> Vec<u8> {
 /// Longest SCUS string the reader will follow before calling the pointer bogus.
 const MAX_SCUS_STRLEN: usize = 512;
 
+/// Text bytes writable at `off` on **this disc**: the string's own length plus
+/// the zero alignment padding that follows its terminator (the name pools are
+/// 4-byte aligned; see `export::ScusCollector::padding_slack`). Measured, not
+/// asserted - the run must actually be zeros - so a pack can never talk the
+/// importer into writing over a neighbouring string.
+fn scus_writable_span(scus: &[u8], off: usize, cur_len: usize) -> usize {
+    let end = off + cur_len; // the NUL
+    let aligned = (end + 4) & !3;
+    let mut u = end + 1;
+    while u < aligned && scus.get(u) == Some(&0) {
+        u += 1;
+    }
+    (u - 1) - off
+}
+
 /// Plan one SCUS-string write: `(file_offset, bytes)`, or `None` when the
 /// entry was resolved without a write (diagnostic / already applied).
 fn plan_scus_str(
@@ -217,29 +232,25 @@ fn plan_scus_str(
         report.already_applied += 1;
         return None;
     }
-    // Budget = the original string's own span. With a source we know it
-    // exactly; without one, the disc's current span *is* it (and the hint must
-    // agree, or this isn't the disc the pack was built for).
-    let budget = match &source {
-        Some(src) => {
-            if cur != src.as_slice() {
-                report.issue(
-                    &entry.key,
-                    "disc bytes don't match the pack source (different disc revision or \
-                     a conflicting patch) - skipped",
-                );
-                return None;
-            }
-            entry.budget.min(src.len())
-        }
-        None => {
-            if !hint_agrees(entry, cur_len, report) {
-                return None;
-            }
-            cur_len
-        }
-    };
-    if !fits(entry, &translated, budget, report) {
+    // The write may never leave the string's own dead span on THIS disc: its
+    // bytes plus the zero padding after its terminator. The pack's budget is
+    // clamped to that, so a bad/tampered budget can't reach a neighbour.
+    let writable = scus_writable_span(scus, off, cur_len);
+    if let Some(src) = &source
+        && cur != src.as_slice()
+    {
+        report.issue(
+            &entry.key,
+            "disc bytes don't match the pack source (different disc revision or \
+             a conflicting patch) - skipped",
+        );
+        return None;
+    }
+    // Source-less pack: the measured span is the only wrong-disc guard there is.
+    if source.is_none() && !hint_agrees(entry, writable, report) {
+        return None;
+    }
+    if !fits(entry, &translated, entry.budget.min(writable), report) {
         return None;
     }
     let mut bytes = translated;
@@ -416,7 +427,9 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
             }
             continue;
         };
-        let mut wrote = 0usize;
+        // Apply every edit, remembering the original bytes so an individual
+        // line can be rolled back if the scene's MAN won't recompress.
+        let mut applied: Vec<(usize, Vec<u8>, &Entry)> = Vec::new();
         for (off, en) in &edits {
             let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
                 continue;
@@ -424,6 +437,8 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
             let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
                 continue;
             };
+            let before = segments::walk_to_terminator(&man.decoded, *off)
+                .map(|end| man.decoded[*off..end].to_vec());
             if apply_segment_edit(
                 &mut man.decoded,
                 en,
@@ -433,31 +448,46 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
                 &mut report,
             )
             .is_some()
+                && let Some(before) = before
             {
-                wrote += 1;
+                applied.push((*off, before, en));
             }
         }
-        if wrote == 0 {
+        if applied.is_empty() {
             continue;
         }
-        match man.repack() {
-            Some(stream) => {
-                patcher.patch_prot_entry(entry_idx, man.man_offset as u64, &stream)?;
-                report.applied += wrote;
-            }
-            None => {
-                for (_, en) in &edits {
-                    report.issue(
-                        &en.key,
-                        format!(
-                            "scene {entry_idx}: recompressed MAN overflows its {} byte \
-                             footprint - the whole scene was skipped (shorten these \
-                             translations)",
-                            man.compressed_budget
-                        ),
-                    );
+
+        // The MAN must recompress into its original footprint. Translated text
+        // is less repetitive than the source, so a scene can overflow by a few
+        // bytes; roll back the costliest lines (longest first) one at a time
+        // rather than losing the whole scene's dialog.
+        let mut stream = man.repack();
+        if stream.is_none() {
+            applied.sort_by_key(|(_, before, _)| std::cmp::Reverse(before.len()));
+            while stream.is_none()
+                && let Some((off, before, en)) = applied.pop()
+            {
+                man.decoded[off..off + before.len()].copy_from_slice(&before);
+                report.issue(
+                    &en.key,
+                    format!(
+                        "scene {entry_idx}: rolled back - the scene's dialog no longer \
+                         recompresses into its {} byte footprint (shorten this line)",
+                        man.compressed_budget
+                    ),
+                );
+                if applied.is_empty() {
+                    break;
                 }
+                stream = man.repack();
             }
+        }
+        match stream {
+            Some(stream) if !applied.is_empty() => {
+                patcher.patch_prot_entry(entry_idx, man.man_offset as u64, &stream)?;
+                report.applied += applied.len();
+            }
+            _ => {}
         }
     }
 

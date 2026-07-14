@@ -39,6 +39,8 @@ const MAX_SCUS_STRLEN: usize = 512;
 pub struct SceneManText {
     /// Byte offset of the compressed MAN stream within the entry.
     pub man_offset: usize,
+    /// Length of the compressed stream on disc (what the repack overwrites).
+    pub compressed_len: usize,
     /// Bytes the recompressed MAN must fit within (descriptor-boundary
     /// budget - see [`crate::man_compressed_budget`]).
     pub compressed_budget: usize,
@@ -61,15 +63,24 @@ impl SceneManText {
         }
         let man_offset = man.data_offset as usize;
         let body = entry.get(man_offset..)?;
-        let (decoded, _consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        let (decoded, consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
         if decoded.len() != man.size as usize {
             return None;
         }
         Some(Self {
             man_offset,
+            compressed_len: consumed,
             compressed_budget: crate::man_compressed_budget(&table, man_offset, entry.len()),
             decoded,
         })
+    }
+
+    /// Byte range the compressed stream occupies in the PROT entry. Text found
+    /// *inside* it by the raw scanner is a coincidence of the LZS bytes, not a
+    /// string: writing there would corrupt the stream, and a MAN repack moves
+    /// those bytes anyway. Export excludes the range.
+    pub fn compressed_span(&self) -> std::ops::Range<usize> {
+        self.man_offset..self.man_offset + self.compressed_len
     }
 
     /// Recompress the (mutated) MAN; `None` if it would overflow the
@@ -122,10 +133,38 @@ impl<'a> ScusCollector<'a> {
         Some(tail[..len].to_vec())
     }
 
+    /// Bytes of **alignment padding** usable past this string's terminator.
+    ///
+    /// The name pools are 4-byte aligned, so a string of length `n` occupies
+    /// `align4(n + 1)` bytes and the 0..3 bytes after its NUL are zero filler
+    /// (verified per string, not assumed: the run must actually be zeros).
+    /// Those bytes are dead - nothing reads past a terminator - so a
+    /// translation may spill into them as long as it re-terminates, which buys
+    /// the tight name tables an extra ~1.5 bytes on average. The window never
+    /// crosses another pointed-to string: any collected VA inside it clamps
+    /// the run, and `all_vas` includes the VAs of empty strings (a pointer to
+    /// a bare NUL), which is the only thing that could legally live in there.
+    fn padding_slack(&self, va: u32, strlen: usize, all_vas: &BTreeSet<u32>) -> usize {
+        let Some(off) = item_names::file_offset_for_va(self.scus, va) else {
+            return 0;
+        };
+        let end = off + strlen; // the NUL
+        let aligned = (end + 4) & !3; // first offset past the terminator, 4-aligned
+        let mut u = end + 1;
+        while u < aligned
+            && self.scus.get(u) == Some(&0)
+            && !all_vas.contains(&(va + (u - off) as u32))
+        {
+            u += 1;
+        }
+        u - 1 - end
+    }
+
     /// Materialize one section's entries (the VAs it owns), clamping each
     /// budget at the nearest interior pointer (any collected VA that lands
     /// inside the string's span - overwriting past it would corrupt the
-    /// other slot's string).
+    /// other slot's string) and widening it across the zero alignment padding
+    /// that follows the terminator (see [`Self::padding_slack`]).
     fn entries_for(&self, section: &str, all_vas: &BTreeSet<u32>) -> Vec<Entry> {
         let mut out = Vec::new();
         for (&va, (owner, context)) in &self.strings {
@@ -136,11 +175,17 @@ impl<'a> ScusCollector<'a> {
                 continue;
             };
             let strlen = bytes.len();
-            let budget = all_vas
+            let interior = all_vas
                 .range(va + 1..va + strlen as u32 + 1)
                 .next()
-                .map(|&v| (v - va - 1) as usize)
-                .unwrap_or(strlen);
+                .map(|&v| (v - va - 1) as usize);
+            // An interior pointer means another slot's string starts inside
+            // this one's span: the budget stops there, and there is no padding
+            // to reclaim (the pool continues).
+            let budget = match interior {
+                Some(clamped) => clamped,
+                None => strlen + self.padding_slack(va, strlen, all_vas),
+            };
             if budget == 0 {
                 continue;
             }
@@ -336,7 +381,8 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
         let scene = scene_of(idx);
 
         // Scene-bundle MAN (LZS domain).
-        if let Some(man) = SceneManText::locate(&entry) {
+        let man = SceneManText::locate(&entry);
+        if let Some(man) = &man {
             for seg in segments::scan(&man.decoded) {
                 let text = &man.decoded[seg.text_off..seg.text_off + seg.len];
                 pack.sections.scene_dialog.push(Entry {
@@ -349,8 +395,17 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
             }
         }
 
-        // Raw carriers (v12 prescripts, streaming MANs, ...).
+        // Raw carriers (v12 prescripts, streaming MANs, ...), skipping anything
+        // the scanner found inside this entry's compressed MAN stream - those
+        // "strings" are LZS bytes, not text.
+        let compressed = man.as_ref().map(|m| m.compressed_span());
         for seg in segments::scan(&entry) {
+            if compressed
+                .as_ref()
+                .is_some_and(|c| c.contains(&seg.text_off))
+            {
+                continue;
+            }
             let text = &entry[seg.text_off..seg.text_off + seg.len];
             pack.sections.inline_text.push(Entry {
                 key: format!("raw:{idx}:0x{off:x}", off = seg.text_off),
