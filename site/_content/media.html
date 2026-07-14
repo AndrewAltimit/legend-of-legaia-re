@@ -84,7 +84,8 @@
 .audio-prompt h3 { color: var(--accent); margin-bottom: 0.5rem; }
 </style>
 <script src="js/rom-cache.js"></script>
-<script src="js/load-progress.js"></script>-->
+<script src="js/load-progress.js"></script>
+<script src="js/audio-toggle.js"></script>-->
 
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; media</div>
@@ -224,6 +225,14 @@
 
   if (!fileInput) return;
 
+  // ---------------- Sound toggle ----------------
+  // Page-level on/off switch (js/audio-toggle.js), parked at the end of
+  // the tab row. Turning it off also stops whatever is playing.
+  if (window.LegaiaSound) {
+    LegaiaSound.attach(document.querySelector('.audio-tabs'));
+    LegaiaSound.onChange((on) => { if (!on) { stopBgm(); stopOneShot(); } });
+  }
+
   // ---------------- Tab switching ----------------
   tabs.forEach(t => t.addEventListener('click', () => {
     // Stop whatever's playing so audio doesn't bleed across tabs.
@@ -330,6 +339,9 @@
    * standard rates like XA's 37800.
    */
   async function playPcmI16(pcm, sampleRate, channels) {
+    /* Page-level sound gate (js/audio-toggle.js): every one-shot preview
+     * (XA, SE voices, FMV audio) funnels through here. */
+    if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return null;
     stopOneShot();
     const ctx = ensureAudioCtx();
     const frames = Math.floor(pcm.length / channels);
@@ -444,6 +456,7 @@
         }, 10);
       });
       btn.addEventListener('click', async () => {
+        if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return;  /* sound toggle is off */
         const prot = parseInt(li.dataset.prot, 10);
         const vab  = parseInt(li.dataset.vab, 10);
         const seq  = parseInt(li.dataset.seq, 10);

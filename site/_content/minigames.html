@@ -174,6 +174,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 <script src="js/webgl-math.js"></script>
 <script src="js/webgl-shaders.js"></script>
 <script src="js/webgl-tmd.js"></script>
+<script src="js/audio-toggle.js"></script>
 <script src="js/minigame-baka.js"></script>
 <script src="js/minigame-dance.js"></script>
 -->
@@ -591,6 +592,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const b = e.target.closest('.mg-tab');
     if (b && !b.disabled) setTab(b.dataset.game);
   });
+
+  /* Page-level sound toggle (js/audio-toggle.js), parked at the end of the
+   * tab row. Every game's audio trigger checks LegaiaSound.isSoundOn(). */
+  if (window.LegaiaSound) LegaiaSound.attach(tabsEl);
 
   function verdict(el, text, cls) {
     el.textContent = text;
@@ -1133,6 +1138,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
 
   function slotPlay(name, gain = 0.5) {
+    if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return;
     const a = slotAudioReady();
     if (!a || !a.buffers[name]) return;
     const src = a.ctx.createBufferSource();

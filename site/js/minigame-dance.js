@@ -287,6 +287,9 @@ window.MgDance = (function () {
     /* ---------------- sound ---------------- */
 
     function audioReady() {
+      /* Page-level sound gate (js/audio-toggle.js): every cue, sting and
+       * the BGM render path funnel through here, so one check mutes all. */
+      if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return null;
       if (!sfxIds) return null;
       if (!sfx) {
         const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -383,6 +386,12 @@ window.MgDance = (function () {
 
     function stopBgm() {
       if (bgm && bgm.src) { try { bgm.src.stop(); } catch (e) { /* done */ } bgm.src = null; }
+    }
+
+    /* Muting mid-song also stops the already-started BGM buffer (one-shot
+     * cues are short enough to just let ring). */
+    if (window.LegaiaSound) {
+      LegaiaSound.onChange((on) => { if (!on) stopBgm(); });
     }
 
     /* ---------------- drawing ---------------- */
