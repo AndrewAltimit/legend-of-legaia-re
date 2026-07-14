@@ -4,6 +4,15 @@ The casino's slot-machine minigame: three reels of pictographic symbols, a flat 
 
 **The machine is a 3D scene.** Not a sprite collage: the reels are textured cylinders, the paylines are 3D line segments, and the medallions / lamps / pedestals / marquee are billboards - all projected through the GTE and depth-sorted into the ordering table. See [Rendering - a 3D scene](#rendering---a-3d-scene) below.
 
+**The bonus round is the same machine.** Matching a line of either jackpot symbol
+opens it, and the reels then *rotate* onto the init's second strip - the numerals
+`1..=10`, their own artwork on the art pack's second page - one row per frame. The
+player stops all three with no help from the machine, the round pays the **product
+of the three numbers**, and the tally across the top (`0 x 0 x 0`, filling in as
+each column is claimed) is the machine's own dot-matrix marquee reading out the
+same latch the payout multiplies. See
+[The bonus game](#the-bonus-game---the-two-jackpot-symbols).
+
 **This is the slot *gameplay*, not the prize exchange.** Cashing casino coins for items is a separate static table (`DAT_801e4518` / PROT 899, debiting `_DAT_800845A4`'s sibling coin counter) covered by the randomizer's `casino::CasinoExchange`. The slot machine pays out *into* the coin balance; the exchange spends it.
 
 Provenance: the dumps are `ghidra/scripts/funcs/overlay_slot_machine_<addr>.txt`. Confidence is marked per-claim; the reel layout, RNG, bet charge, feature odds, payout lookup, entry seed and coin commit are **Confirmed** from the disassembly. Table *values* (payout bytes, HUD descriptors) decode from the user's disc and are not reproduced here.
@@ -29,15 +38,79 @@ The tail of `FUN_801cf0d8` (after the switch) always advances the three reel pos
 
 The overlay's init entry (mode-24 warp target `0x801CEC94`) seeds the session before state `0` runs. **Confirmed** from the disassembly (the function sits below the first dumped handler): the slot LCG `DAT_801d3c80` is written the literal seed `0x6C0A2AF0`; the playing balance is **assigned from the casino coin bank** (`DAT_801d4114 = _DAT_800845A4` - the symmetric counterpart of the state-`100` commit); when the battle-return flag `_DAT_8007B8B8` is zero (the overlay launched outside the casino door path) the balance instead defaults to `0x46` = 70 coins - a dev-launch fallback, printed by the adjacent `"battle_return_flag %d"` / `"game_coin %d"` debug strings; and the state word is cleared to `0`.
 
-### Reel strips
+### Reel strips - two of them, and a display strip between
 
-Each of the 3 reels is a 20-symbol (`0x14`) strip. Two parallel strip arrays exist - `DAT_801d3e90` and `DAT_801d3fd0`, each `3 × 0x14` ints at `0x50` stride - plus a display copy at `DAT_801d3d50` (the array win-eval and the renderer read). Init (`FUN_801cf0d8` case 0) fills a strip by, for each of the 20 slots, drawing a fresh RNG value, reducing it mod `0x14`, and probing forward (`+0xd` step for one array, `+1` for the other) until it finds an unused slot - a collision-resolving permutation that scatters each symbol id `slot/2` (so symbol ids run `0..9`, two strip positions each) around the reel. **Confirmed** from `overlay_slot_machine_801cf0d8.txt` (the `% 0x14` / `(uVar1 + 0xd) % 0x14` placement loops).
+Each of the 3 reels is a 20-slot (`0x14`) strip, and the init builds **two** of
+them per reel:
 
-The live reel position `DAT_801d3cc0[reel]` is a fixed-point angle; the on-screen symbol index is `(pos >> 8)` reduced mod `0x14`, and adjacent rows are read at `±1`/`±0x10`/`±0x11` offsets (the three pay rows).
+| Array | Contents | Probe step |
+|---|---|---|
+| `DAT_801d3e90` | the ten reel **symbols**, ids `0..=9` (`slot / 2`) | `+0xd` |
+| `DAT_801d3fd0` | the ten bonus **numerals**, as values `0x10..=0x19` (`slot / 2 + 0x10`) | `+1` |
+| `DAT_801d3d50` | the **display strip** - the only one the win eval and the renderer read | (copied) |
+
+Each is `3 × 0x14` ints at `0x50` stride. Init (`FUN_801cf0d8` case 0) fills both
+in one interleaved pass: for each of the 20 slots, draw an RNG value, reduce it
+mod `0x14`, probe forward by the array's step until an unused position turns up,
+and place the slot's value there - a collision-resolving permutation that
+scatters each value (two strip positions each) around the reel. Then the symbol
+strip is cloned into the display strip. **Confirmed** from
+`overlay_slot_machine_801cf0d8.txt` (the `% 0x14` / `(uVar1 + 0xd) % 0x14`
+placement loops and the `+ 0x10` on the second array).
+
+The live reel position `DAT_801d3cc0[reel]` is a fixed-point angle; the on-screen
+symbol index is `(pos >> 8)` reduced mod `0x14`, and adjacent rows are read at
+`±1`/`±0x10`/`±0x11` offsets (the three pay rows).
+
+#### The display strip is refilled one row per frame - and that IS the bonus swap
+
+The reel SM never rewrites a strip wholesale. Its render tail copies exactly
+**one row per reel per frame** into the display strip, from whichever source
+strip the feature mode names (**Confirmed**, the tail of `FUN_801cf0d8`):
+
+```c
+row = ((pos >> 8) + 0x19) % 0x14;                       // 9 rows AHEAD of the payline
+display[reel][row] = (feature_mode == 6 ? bonus : symbols)[reel][row];
+```
+
+So a bonus round does not relabel the symbols and does not swap a strip in a
+frame: the numerals **rotate into** the reels from off-screen as they turn, a row
+at a time, and rotate back out again when the round ends. Three consequences fall
+out of the arithmetic and all three are visible on the machine:
+
+- the refilled row is `0x19 - 0x10 = 9` rows ahead of the payline row
+  (`(pos >> 8) + 0x10`), so a row is converted well before it can be paid on;
+- a reel therefore has to **travel** ~9 rows for the conversion to reach the
+  payline - which is exactly why state 1 forces `DAT_801d3c90 = 0x18` (24 extra
+  spin frames) when `DAT_801d3cac == 6` **or** when the "bonus just ended" flag
+  `DAT_801d3798` is set. The long spin-up on both edges of the bonus round is
+  load-bearing, not decoration;
+- during the rotation the strip is legitimately **mixed** - some rows symbols,
+  some numerals - and the renderer copes because it switches per *row*, not per
+  mode (below).
 
 ### Symbol art - computed, not tabled
 
-The reel-symbol quads are drawn by `FUN_801d0fa8` with **arithmetic UVs from the symbol value itself** - no descriptor table is involved (**Confirmed**, `overlay_slot_machine_801d0fa8.txt`): the art is a grid of 64x64 cells (`U = (sym & 3) * 0x40`, `V = (sym & 0xC) * 0x10`), the texpage attribute is `0x0C` for the normal symbols and `0x0D` for the bonus-strip values `>= 0x10`, and each symbol has its own CLUT at id `0x7A80 + sym` (VRAM row 490, column = symbol; the bonus strip uses `0x7AC0 +` = row 491). The gouraud shade fades each row by distance from the payline (`0xB4` cap), curling the reel.
+The reel quads are drawn by `FUN_801d0fa8` with **arithmetic UVs from the strip
+value itself** - no descriptor table is involved (**Confirmed**,
+`overlay_slot_machine_801d0fa8.txt`). The value's `>= 0x10` test is the whole
+symbol/numeral switch, and it is applied **per row**, not per feature mode:
+
+```c
+tpage = 0x0C + (v >= 0x10);                       // 0x0D = the (832, 0) page
+clut  = (v >= 0x10 ? 0x7AC0 : 0x7A80) + (v & 0xF);
+U, V  = (v & 3) * 0x40, (v & 0xC) * 0x10;         // a 4x4 grid of 64x64 cells
+```
+
+So the ten symbols live on art page 0 (CLUT row 490, column = symbol) and the ten
+bonus numerals `1..=10` on art page 1 (CLUT row 491, column = `value & 0xF`), each
+with **its own palette column** - which is why every numeral on the retail bonus
+reels is a different colour, and why one strip can carry both mid-rotation.
+Decoders: [`legaia_asset::minigame_art::slot_symbol`] /
+[`slot_bonus_number`](../../crates/asset/src/minigame_art.rs).
+
+The gouraud shade fades each row by distance from the payline (`0xB4` cap),
+curling the reel.
 
 `FUN_801d2cc0` (the earlier "symbol rasteriser" attribution) is actually the **HUD widget rasteriser**: it draws a `POLY_GT4` from the 20-byte-stride descriptor table at `DAT_801d347c` indexed by the *low 10 bits* of its id argument, with the id's high bits overriding the semi-transparency mode. The table has exactly **3 records** (PROT 0975 file offset `0x4C64`; layout **Confirmed** from the field-by-field prim writes):
 
@@ -72,9 +145,18 @@ When a reel is told to stop, `FUN_801d2114(reel)` (`overlay_slot_machine_801d211
 | `1` / `2` | "reach"/tease modes: scan `(rand&3)+6` rows, target symbol `9` / `8` (the two jackpot symbols) |
 | `3` | hot mode: random target `rand%7 + 0x18`, landing offset `rand%7 + 10` |
 | `4` | guaranteed-hit mode: drives the reel to a winning symbol, decrementing a guarantee counter `DAT_801d3c90` |
-| `5`,`6` | further bonus/hold variants |
+| `5` | hold variant: depth `0x14`, target `rand%10 + 8` |
+| `6` | **the bonus round: depth `0`, target `-1`** - see below |
 
 `FUN_801d2440(reel, depth, target_symbol)` (`overlay_slot_machine_801d2440.txt`) is the actual landing search: starting from the current reel position it walks up to `depth` rows looking for `target_symbol` on the display strip; if found it returns a stop offset that lands the symbol on the payline, otherwise it returns the next natural row (no forced result). The `+ DAT_801d4134 * 0x10` term (a per-spin 0..4 jitter chosen in `FUN_801d258c`) nudges the exact landing so the stop does not look mechanical. **Confirmed.**
+
+**The bonus round steers nothing.** Mode 6 passes `depth = 0` with `target = -1`,
+and the search is guarded by `0 < depth`, so it runs zero iterations and returns
+the next natural row. The reel stops where the player stopped it: the three
+numbers a bonus round multiplies are the player's timing and nothing else.
+(An earlier reading had mode 6 reusing the guaranteed-hit plan so the free spins
+would land a matched line - that is **falsified**; the retail case is the least
+steered of the seven, not the most.)
 
 ### Feature roll - `FUN_801d258c`
 
@@ -107,7 +189,21 @@ After all three reels stop, `FUN_801d13e8` (`overlay_slot_machine_801d13e8.txt`)
    The line index doubles as the medallion / lamp index, and lines 3 / 4 terminate on the `y = ±336` medallions - exactly where the two diagonal segments in the payline geometry table end.
 2. If a line wins, the credited amount is `DAT_801d3d38 = payout_table[winning_symbol]`, read as a byte from a table at `DAT_801d3598` indexed by symbol id (so payout scales with symbol rarity). **Inferred** values (not reproduced).
 3. Symbol ids `8` and `9` are the **bonus/jackpot symbols**: matching them sets `DAT_801d3cac` to feature mode `6` and seeds a free-spin / multiplier counter `DAT_801d3cb0` (3 spins for id 9, 1 for id 8), kicking off the bonus round and a celebratory actor (`func_0x800653c8`).
-4. During an active feature (`DAT_801d3d30 != 0`) the payout is instead the **product** of the three payline symbols' `(value - 0xf)` factors - computed **unconditionally**, with no all-equal check (the mode-6 stop plan drives the line together, and every bonus spin pays *something*). The multiplier counter decrements and the payout is **subtracted from the net-take counter** `DAT_801d3d40` (`DAT_801d3d40 -= DAT_801d3d38` - a big bonus win knocks the feature odds back down); when the counter hits zero the feature ends.
+4. During an active feature (`DAT_801d3d30 != 0`) the payout is instead the
+   **product of the three centre-row values' `(value - 0xf)` factors** - computed
+   **unconditionally**, with no all-equal check and no payout-table lookup. Every
+   bonus spin pays. The rows read are the centre payline of each reel
+   (`display[reel][((pos >> 8) + 0x10) % 0x14]`), the winning line is forced to
+   the centre (`DAT_801d3c8c = 1`, so the middle lamp lights), the multiplier
+   counter decrements, and the payout is **subtracted from the net-take counter**
+   `DAT_801d3d40` (a big bonus win knocks the feature odds back down); when the
+   counter hits zero the feature ends and `DAT_801d3798` latches so the next spin
+   runs long enough to rotate the symbols back on.
+
+   The strip carries `0x10..=0x19` in a bonus round, so each factor is `1..=10`
+   and the payout is `1` (`1×1×1`) to `1000` (`10×10×10`) coins - the same
+   `value - 0xf` number the reel *draws* and the marquee *tallies*. The three
+   readings are one byte read through one bias; they cannot disagree.
 5. In feature mode 3 a `rand % 0x96 == 0` roll can spontaneously clear the feature.
 
 `FUN_801d1af4` (`overlay_slot_machine_801d1af4.txt`) is the **bonus-symbol scanner** run while reels are still settling (state 3): it sweeps the same paylines looking specifically for adjacent `8`/`9` symbols under the active-line masks (`DAT_801d3d10`/`14`/`18`) and, on the first sighting, fires the bonus-anticipation effect (`DAT_801d3ca4`/`DAT_801d3ca8` latches + `_DAT_8007b6dc = 0x200` SFX cue). It sets no payout - it only triggers the "reach" presentation. **Confirmed.**
@@ -121,22 +217,90 @@ The two jackpot symbols are the **blue "kick"** (id `8`) and the **red "punch"**
 | `8` | blue "kick" | 1 |
 | `9` | red "punch" | 3 |
 
-A bonus round runs as feature mode `6`: the reels swap to the **`1..=10` number strip** (the bonus reel value's `value - 0xf` factor, equivalently the normal reel symbol id `+ 1`), the player stops each reel, and the round pays the **product of the three stopped numbers** - `1` (`1×1×1`) to `1000` (`10×10×10`) - credited into the balance and **subtracted from the net-take counter**. `DAT_801d3cb0` counts the earned rounds down; when it reaches zero, feature mode returns to `0` and the normal slot game resumes.
+A bonus round runs as feature mode `6`. The reels rotate onto the **numeral strip**
+(`DAT_801d3fd0`, values `0x10..=0x19` - see [Reel strips](#reel-strips---two-of-them-and-a-display-strip-between)),
+the player stops each reel with no help from the machine, and the round pays the
+**product of the three numbers on the centre payline** - `1` (`1×1×1`) to `1000`
+(`10×10×10`) - credited into the balance and **subtracted from the net-take
+counter**. `DAT_801d3cb0` counts the earned rounds down; when it reaches zero,
+feature mode returns to `0` and the normal slot game resumes. Every bonus spin
+still costs 1 coin.
 
-The kick/punch symbol ids, their bonus-round counts, the `1..=10` number range and
-the `1..=1000` payout bounds are exported from [`legaia_asset::slot_payout`]
+#### The claimed-column tally
+
+The strip across the top of the machine - `0 x 0 x 0` at the start of a round,
+filling in each column's number as that reel's stop is taken, then `48 coin` when
+the round pays - is not a caption drawn over the machine. It is the **dot-matrix
+marquee** ([below](#the-marquee-is-a-dot-matrix-display---fun_801d0e1c)), the same
+1014 sprites that scroll the attract legend during the normal game, recomposed
+every frame by `FUN_801cfff0`. Two globals carry it, both **Confirmed**:
+
+- **the latch** - `FUN_801d0554` (the per-frame reel integrator) writes, on the
+  frame a reel snaps to its landing row:
+
+  ```c
+  DAT_801d3d20[reel] = display[reel][((pos >> 8) + 0x10) % 0x14] + 1;   // payline value + 1
+  ```
+
+  and state 1 clears all three with the bet charge. The `+ 1` is what makes
+  "unclaimed" (`0`) distinguishable from a landed value of `0`.
+
+- **the print** - `FUN_801cfff0`, in feature modes 4..=6 and reel states 3 / 4,
+  blits one message per reel at dot columns `reel << 5` (`0`, `0x20`, `0x40`) with
+  the multiplication glyph between them (`0x10`, `0x30`):
+
+  ```c
+  msg = (claimed > 0xf ? claimed - 0x10 : 0) + 6;   // the numeral, or the "0" glyph
+  ```
+
+So a claimed column prints `claimed - 0x10` = `value - 0xf` - **the same number
+the reel draws and the same factor the payout multiplies**. The tally is not a
+display copy that could drift from the result: it is the result, read one frame
+earlier.
+
+The other two faces of the same matrix, also `FUN_801cfff0`: between spins of a
+round (states 1 / 2) it shows the **rounds still owed** as three pips (message
+`0x12` filled / `0x13` hollow), and once a paying spin tallies it shows the
+**payout figure** - digits at fixed right-aligned columns `0 / 0xd / 0x1a / 0x27`,
+each drawn only once the figure reaches its place, then the word "coin" at column
+`0x34`, whose tail runs off the 78-column matrix exactly as it does on the machine.
+It slides down into place over 13 frames (`row = min(frame - 0xd, 0)`).
+
+#### The message bank's roles
+
+The 21 bitmaps are not anonymous, and the payout caption's own arithmetic pins
+them: it prints digits with `FUN_801d3230(n / 1000 + 6)`, `(n % 1000) / 100 + 6`,
+`/ 10 + 6`, `% 10 + 6`, so records `6..=15` are the glyphs `"0".."9"`. Record
+**16** is a glyph of its own for **"10"** - because the tally indexes
+`claimed - 0x10 + 6` over a claimed value of `0x10..=0x1A`, and a bonus reel can
+land on ten. The bank decodes off the disc as exactly that:
+
+| id | glyph |
+|---|---|
+| `0`..`5` | the attract legend + the per-feature-mode legends (scrolled by `FUN_801d069c`) |
+| `6`..`16` | the eleven numerals `"0"` .. `"10"` |
+| `0x11` | the multiplication sign |
+| `0x12` / `0x13` | the bonus-round pips, filled / hollow |
+| `0x14` | the word `"coin"` |
+
+Ids + dot columns are exported by [`legaia_asset::minigame_slot_scene`]
+(`MSG_NUMBER_BASE`, `MSG_TIMES`, `MSG_COINS`, `TALLY_NUMBER_COLS`, …).
+
+The kick/punch symbol ids, their bonus-round counts, the bonus strip's value space
+and the `1..=1000` payout bounds are exported from [`legaia_asset::slot_payout`]
 (`KICK_SYMBOL_ID` / `PUNCH_SYMBOL_ID`, `KICK_BONUS_ROUNDS` / `PUNCH_BONUS_ROUNDS`,
-`bonus_rounds_for`, `bonus_number_for_symbol`, `bonus_round_payout`); the colour
-identification is disc-checked by
-`slot_payout_real::kick_is_blue_punch_is_red_on_disc`. The engine port
-([`legaia_engine_core::slot_machine`]) drives the whole cycle through
-`SlotMachine::evaluate_spin` (jackpot trigger → mode 6 → product payout). Its mode-6
-reconstruction lands the three reels on the *same* number (a matched line), so the
-product is a perfect cube `n³`; the disc's true per-reel bonus landing is not fully
-pinned, but the payout is a product of three `1..=10` numbers bounded `1..=1000`
-either way. The site's minigames page renders the bonus round as `1..=10` number
-wheels drawn in the coin digit font (`FUN_801d2914`) and captions the earned rounds
-and product.
+`bonus_rounds_for`, `BONUS_VALUE_BASE`, `bonus_number_for_value`,
+`bonus_round_payout`); the numeral art is [`legaia_asset::minigame_art::slot_bonus_number`].
+Disc-checked by `slot_payout_real::kick_is_blue_punch_is_red_on_disc` and
+`the_bonus_reels_carry_ten_distinct_numerals_on_their_own_art_page` (ten distinct-
+coloured 64x64 cells; the grid goes blank past ten, so `1..=10` is bounded by the
+art as well as by the code).
+
+The engine port ([`legaia_engine_core::slot_machine`]) carries the whole cycle:
+both source strips, the one-row-per-frame display refill, the free mode-6 stop,
+the claimed latch (`SlotMachine::tally` / `tally_product`) and the product payout.
+The site's minigames page draws the numerals off the disc and the tally on the
+machine's own marquee.
 
 ## Coin economy
 
@@ -162,7 +326,7 @@ All overlay-local; the block clusters in `0x801d3c80..0x801d4140`. **Confirmed**
 | `DAT_801d3c80` | slot LCG state (`FUN_801d30cc`; seeded `0x6C0A2AF0` by the init entry) |
 | `DAT_801d3c84` | **state word** (reel state machine dispatch) |
 | `DAT_801d3c8c` | winning payline index (for the highlight) |
-| `DAT_801d3c90` | spin timer / guaranteed-hit countdown |
+| `DAT_801d3c90` | spin timer / guaranteed-hit countdown (`0x18` on a bonus spin, and on the first spin after one) |
 | `DAT_801d3c94` | payout-tally / prompt frame counter |
 | `DAT_801d3c9c`/`DAT_801d3ca0` | animation tick counters (marquee, digit blink) |
 | `DAT_801d3ca4`/`DAT_801d3ca8` | bonus-anticipation latch + one-shot guard (`FUN_801d1af4`) |
@@ -174,16 +338,19 @@ All overlay-local; the block clusters in `0x801d3c80..0x801d4140`. **Confirmed**
 | `DAT_801d3ce0..`/`DAT_801d3cf0..` | per-reel landing offset + search depth |
 | `DAT_801d3d00`/`+4`/`+8` | per-reel "stop accepted" flags |
 | `DAT_801d3d10`/`14`/`18` | per-reel line-match masks (filled at stop time; read by the reach scanner - not bet selections) |
+| `DAT_801d3d20`/`+4`/`+8` | per-reel **claimed value**: `payline value + 1`, latched at the snap (`FUN_801d0554`), cleared at the bet charge. What the marquee's bonus tally prints |
 | `DAT_801d3d2c` | reels-stopped count (0..3) |
 | `DAT_801d3d30` | feature/bonus-round active flag |
 | `DAT_801d3d34` | winning symbol id (`-1` = no win) |
 | `DAT_801d3d38`/`DAT_801d3d3c` | this-spin payout (live + latched for display) |
 | `DAT_801d3d40` | net-take heat counter: `+6`/`+1` per spin, minus bonus payouts; the feature-odds bracket input |
-| `DAT_801d3d50..` (3 × 0x14) | display reel strips (win eval + render) |
-| `DAT_801d3e90..` / `DAT_801d3fd0..` | the two source reel strips (3 × 0x14 each) |
+| `DAT_801d3d50..` (3 × 0x14) | **display strip** - win eval + render read only this; refilled one row per reel per frame from the active source |
+| `DAT_801d3e90..` | source strip: the ten reel **symbols** (`slot/2`, ids `0..=9`) |
+| `DAT_801d3fd0..` | source strip: the ten bonus **numerals** (`slot/2 + 0x10`, values `0x10..=0x19`) |
+| `DAT_801d37a0..` | the marquee's dot buffer (`col * 0x10 + row`), recomposed each frame by `FUN_801cfff0` |
 | `DAT_801d3790` | richer-odds flag (widens feature denominators) |
 | `DAT_801d3794` | flash/whiteout intensity |
-| `DAT_801d3798` | "bonus just ended" flag |
+| `DAT_801d3798` | "bonus just ended" flag - forces the next spin's long spin-up so the symbols rotate back onto the payline |
 | `DAT_801d4110` | cash-out submenu cursor (`% 3`) |
 | `DAT_801d4114` | **player credit balance** (seeded from `_DAT_800845A4` at entry, committed back on exit) |
 | `DAT_801d4134` | per-spin landing jitter (`rand%5`) |
@@ -206,11 +373,12 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 |---|---|
 | `FUN_801cec94` | overlay init entry: LCG seed `0x6C0A2AF0`, balance seeded from the coin bank (70-coin dev fallback) - `overlay_slot_machine_801cec94.txt` |
 | `FUN_801cf0d8` | slot-machine per-frame state machine (the real reel dispatcher) - `overlay_slot_machine_801cf0d8.txt` |
-| `FUN_801cfff0` | per-frame HUD/balance + payout-digit renderer - `overlay_slot_machine_801cfff0.txt` |
+| `FUN_801cfff0` | per-frame HUD/balance + **marquee composer**: the coin readout, and the bonus **tally** / round pips / payout caption into the dot buffer - `overlay_slot_machine_801cfff0.txt` |
+| `FUN_801d0554` | per-frame **reel integrator**: advances each reel `+0x66`, snaps a stopping reel to its landing row, and **latches the claimed value** `DAT_801d3d20[reel] = payline value + 1` - `overlay_slot_machine_801d0554.txt` |
 | `FUN_801d30cc` | slot LCG RNG (`x*5+1`, 16-bit fold) - `overlay_slot_machine_801d30cc.txt` |
 | `FUN_801d258c` | per-spin feature roll (BIOS-rand, net-take-bracketed odds) - `overlay_slot_machine_801d258c.txt` |
-| `FUN_801d2114` | per-reel stop: choose target symbol + depth by feature mode - `overlay_slot_machine_801d2114.txt` |
-| `FUN_801d2440` | reel landing search (find target symbol within depth, else next row) - `overlay_slot_machine_801d2440.txt` |
+| `FUN_801d2114` | per-reel stop: choose target symbol + depth by feature mode (mode 6 = depth 0 / target -1, the free stop) - `overlay_slot_machine_801d2114.txt` |
+| `FUN_801d2440` | reel landing search (find target symbol within depth, else next row; a zero depth searches nothing) - `overlay_slot_machine_801d2440.txt` |
 | `FUN_801d13e8` | win evaluation + payout-table lookup + bonus trigger - `overlay_slot_machine_801d13e8.txt` |
 | `FUN_801d1af4` | bonus-symbol "reach" scanner (presentation only) - `overlay_slot_machine_801d1af4.txt` |
 | `FUN_801d2cc0` | HUD widget sprite-quad rasteriser (3-record descriptor table `DAT_801d347c`) - `overlay_slot_machine_801d2cc0.txt` |
@@ -242,15 +410,17 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 [`legaia_engine_core::slot_machine`](../../crates/engine-core/src/slot_machine.rs) is the clean-room rules engine over this page. The **Confirmed** kernels are ported directly:
 
 - the slot LCG (`SlotRng`, `x*5+1` + 16-bit fold; `FUN_801d30cc`);
-- the 20-slot strip permutation (`build_strip`, mod-`0x14` draw + `+0xd`/`+1` probe, symbol `slot/2`; `FUN_801cf0d8` case 0);
+- **both** 20-slot strips per reel, built in retail's interleaved draw order (`build_reel` / `build_strip`: mod-`0x14` draw + `+0xd` / `+1` probe, values `slot/2` and `slot/2 + 0x10`; `FUN_801cf0d8` case 0);
+- the **display strip** and its one-row-per-frame refill from the active source, `DISPLAY_REFRESH_LEAD` = 9 rows ahead of the payline (`SlotMachine::tick`; the `FUN_801cf0d8` render tail) - so the bonus round's numerals rotate in and out exactly as they do on the machine, with `BONUS_SPIN_UP_FRAMES` = `0x18` buying the travel on both edges;
 - the net-take-bracketed feature roll (`feature_roll`; `FUN_801d258c`, exact draw order + bracket edges);
 - the flat spin charge + net-take accrual (3/+6 normal, 1/+1 feature);
-- the per-mode stop plan + landing search (`stop_plan` / `land_row`; `FUN_801d2114` / `FUN_801d2440`);
-- the **five**-payline / payout / bonus-round evaluation with the bonus product subtracted from the net take (`SlotMachine::evaluate_spin`, per-reel row offsets from [`legaia_asset::minigame_slot_scene`], payout via [`legaia_asset::slot_payout`]; `FUN_801d13e8`);
+- the per-mode stop plan + landing search, including mode 6's **free stop** (depth `0`, no target) (`stop_plan` / `land_row`; `FUN_801d2114` / `FUN_801d2440`);
+- the per-reel **claimed latch** and the marquee tally over it (`SlotMachine::claimed` / `tally` / `tally_product`; `FUN_801d0554` + `FUN_801cfff0`);
+- the **five**-payline / payout / bonus-round evaluation - the bonus product over the payline `(value - 0xf)` factors, the centre winning line, the product subtracted from the net take (`SlotMachine::evaluate_spin`, per-reel row offsets from [`legaia_asset::minigame_slot_scene`], payout via [`legaia_asset::slot_payout`]; `FUN_801d13e8`);
 - the entry constants (`ENTRY_DEFAULT_BALANCE` = 70, `ENTRY_LCG_SEED` = `0x6C0A2AF0`; `FUN_801cec94`);
 - the coin economy (balance seeded from the bank, `9999999` tally cap, cash-out **assignment** back into the bank).
 
-The engine-side reconstructions (each marked at its site): the spin-up pacing constants, the BIOS-`rand` stream substituted with a deterministic LCG, feature modes 3/5 folded to the normal landing plan, and the bonus product computed as `symbol + 1` over the normal strip in place of the bonus strip's `value - 0xf`.
+The engine-side reconstructions (each marked at its site): the spin-up pacing constants, the BIOS-`rand` stream substituted with a deterministic LCG, and feature modes 3/5 folded to the normal landing plan.
 
 Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::casino_coins` = `_DAT_800845A4`). The `play-window` viewer starts it from the `O` key (loads PROT 0975, `slot_payout::parse`); Cross spins / stops / collects. Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
 
@@ -384,8 +554,14 @@ The buffer's content is a **message bank**: 21 records at `DAT_801d34f0` (file
 rows tall, laid out on page 3 at `v = 16..144`. `FUN_801CEC94` `StoreImage`s each
 rect back out of VRAM and expands its nibbles into a byte-per-texel bitmap;
 `FUN_801d069c` (scrolling blit, `msg < 0` clears) and `FUN_801d3230` (blit at a
-`(col, row)`) compose them into the dot buffer. The bank is the attract legend,
-two more messages, the ten digits, and a handful of glyphs.
+`(col, row)`) compose them into the dot buffer.
+
+Every record's role is pinned - six legends, **eleven** numerals `"0".."10"`, the
+multiplication sign, the two round pips and the word "coin" - by the ids
+`FUN_801cfff0` indexes them with; see
+[the message bank's roles](#the-message-banks-roles). This is where the bonus
+round's `0 x 0 x 0` tally and its `48 coin` payout caption are drawn: the marquee
+is not decoration, it is the machine's readout.
 
 ### The two screen-space draws - `FUN_801d2cc0`
 
@@ -436,7 +612,7 @@ the per-page fb-coordinate question:
 | pack | image fb | CLUT row | texpage attr | role |
 |---|---|---|---|---|
 | 0 | `(768, 0)` | 490 | `0x0C` | reel symbols + digit font + the payline medallion |
-| 1 | `(832, 0)` | 491 | `0x0D` | bonus-strip multiplier numerals (1..10) |
+| 1 | `(832, 0)` | 491 | `0x0D` | the bonus round's reel faces: the numerals `1..=10` |
 | 2 | `(768, 256)` | 492 | `0x1C` | marquee panel, mascots, reel-stop pedestals, payline lamps |
 | 3 | `(832, 256)` | 493 | `0x1D` | dot-matrix message bank + the marquee's lamp swatches + cursor |
 | 4 | `(640, 0)` | 494 | `0x8A` | the paytable / coin info panel - sampled **8bpp** |
@@ -458,9 +634,19 @@ Sprite geometry, all Confirmed:
   a **per-symbol CLUT** at `0x7A80 + sym` (row 490, column `sym`). The palette is
   load-bearing: symbol ids 0/1/2 are *one* cell of artwork recoloured three ways,
   as are 4/5 - a renderer that ignores the CLUT draws three identical reels.
+- **Bonus numerals** - the same three lines, rebased. A strip value `>= 0x10`
+  bumps the texpage to `0x0D` and the CLUT base to `0x7AC0`, so the ten numerals
+  are their own 64x64 cells on page 1 - `U = (v & 3) * 0x40`, `V = (v & 0xC) * 0x10`,
+  CLUT `0x7AC0 + (v & 0xF)` (row 491, one **column per numeral**). Every digit on
+  the retail bonus reels is a different colour because every one has its own
+  palette column; the 4x4 grid goes blank past the tenth, which bounds the numeral
+  bank at `1..=10` from the art side. Decoder
+  [`minigame_art::slot_bonus_number`](../../crates/asset/src/minigame_art.rs); the
+  reels are **not** the coin font scaled up.
 - **Digit font** - `FUN_801d2914`: `U = 0x40 + digit * 0x10`, `V = 0xC0`, 16x16
   per glyph, CLUT `0x7A8D`. The 64x16 cell at `(0, 0xC0)` is the **"COIN"** label -
-  which is what HUD record 1 (below) actually points at.
+  which is what HUD record 1 (below) actually points at. This font is the coin
+  readout's only - the bonus reels and the marquee each have their own.
 - **HUD widgets** - the 3 records of `DAT_801d347c` resolve to the **paytable
   board** (`(640,0)` page, CLUT row 494, `uv (0,16)`, `127x239`, 8bpp), the
   **"COIN" label** (`(768,0)` page, CLUT `0x7A8D`, `uv (0,192)`, `64x16`) and the

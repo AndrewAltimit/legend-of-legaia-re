@@ -551,6 +551,24 @@ impl SlotMachine {
         self.feature_mode == FEATURE_MODE_BONUS
     }
 
+    /// `true` when a bonus round has *just* ended (`DAT_801d3798`), so the next
+    /// spin still runs the long spin-up - the symbols have to rotate back onto
+    /// the payline before it can pay on them.
+    pub fn bonus_just_ended(&self) -> bool {
+        self.bonus_just_ended
+    }
+
+    /// Frames of spin-up the next spin will arm: the long one during a bonus
+    /// round and on the spin straight after one, the short one otherwise.
+    pub fn next_spin_up_frames(&self) -> i32 {
+        SPIN_UP_FRAMES
+            + if self.in_bonus_round() || self.bonus_just_ended {
+                BONUS_SPIN_UP_FRAMES
+            } else {
+                0
+            }
+    }
+
     /// The raw claimed value of `reel` (`DAT_801d3d20[reel]`): the payline value
     /// **+ 1**, latched the frame the reel's stop was taken; `0` while the reel
     /// is still spinning.
@@ -685,8 +703,7 @@ impl SlotMachine {
         // A bonus spin (and the first spin after one) runs long, so the display
         // strip has room to rotate onto the other source strip before the
         // payline row comes round - see BONUS_SPIN_UP_FRAMES.
-        let long_spin = self.in_bonus_round() || self.bonus_just_ended;
-        self.spin_timer = SPIN_UP_FRAMES + if long_spin { BONUS_SPIN_UP_FRAMES } else { 0 };
+        self.spin_timer = self.next_spin_up_frames();
         self.bonus_just_ended = false;
         self.last_result = None;
         self.phase = SlotPhase::Spinning;

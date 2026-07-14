@@ -143,6 +143,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   image-rendering: pixelated; image-rendering: crisp-edges;
 }
 .mg-bonus-note { flex-basis: 100%; color: var(--text-dim); }
+/* The ten bonus numerals, straight off art page 1 - one palette column each,
+   which is why no two are the same colour. */
+.mg-bonus-nums { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.mg-bonus-nums .mg-glyph-num {
+  width: 34px; height: 34px; flex: none;
+  image-rendering: pixelated; image-rendering: crisp-edges;
+  border: 1px solid var(--border); border-radius: 2px;
+}
 
 .mg-note { color: var(--text-dim); font-size: 0.76rem; line-height: 1.6; margin-top: 0.7rem; }
 
@@ -482,9 +490,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           The machine keeps a hidden <b>net-take</b> counter &mdash; the more it has taken
           off you, the better the odds it rolls &mdash; and a big bonus win knocks that
           counter back down. Land <b>three blue kicks</b> and you earn <b>1 bonus round</b>;
-          <b>three red punches</b>, <b>3</b>. A bonus round turns the reels into
-          <b>1&ndash;10</b> number wheels and pays the <em>product</em> of the three you stop
-          on &mdash; 1 to 1000 coins.
+          <b>three red punches</b>, <b>3</b>. A bonus round <b>rotates the reels onto the
+          machine&rsquo;s other strip</b> &mdash; the numerals <b>1&ndash;10</b>, one row per
+          frame as the reels turn &mdash; and the marquee across the top counts your stops:
+          <code>0 x 0 x 0</code>, filling in each column as you claim it. Stop all three and it
+          pays their <em>product</em>, 1 to 1000 coins. Nothing steers those reels; the numbers
+          are your timing.
         </p>
         <canvas id="slot-canvas" class="mg-cabinet" width="640" height="240"
                 tabindex="0" role="button" aria-label="Slot machine - press space to spin, then once per reel to stop it"></canvas>
@@ -1345,38 +1356,34 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    *
    * `FUN_801d13e8` special-cases two reel symbols: a line of the BLUE "kick"
    * (id 8) earns 1 bonus round, the RED "punch" (id 9) earns 3 - the counts and
-   * ids are pinned in the disassembly, the colours in the PROT 1200 reel art. A
-   * bonus round swaps the reels to numbers 1..10 (the symbol id + 1) that you
-   * stop yourself, and pays the PRODUCT of the three stopped numbers: 1 (1x1x1)
-   * to 1000 (10x10x10). The whole rule is decoded off the disc and handed over
-   * as `slot_bonus_json()`; the engine is feature mode 6. */
+   * ids are pinned in the disassembly, the colours in the PROT 1200 reel art.
+   *
+   * A bonus round swaps the reels onto the machine's SECOND strip: the numerals
+   * 1..10, which are their own 64x64 artwork on art page 1 (each with its own
+   * palette column, which is why every digit on the reels is a different
+   * colour). You stop the three yourself - the bonus stop plan has depth 0 and
+   * no target, so the machine steers nothing - and the round pays the PRODUCT of
+   * the three numbers, 1 (1x1x1) to 1000 (10x10x10).
+   *
+   * Nothing here is drawn by this page. The digits are decoded off the disc
+   * (`slot_bonus_number_rgba`), and the tally strip across the top is the
+   * machine's own dot-matrix marquee running the retail glyph bank - see
+   * slotMarqueeBuffer. */
   let slotBonus = null;     /* the static bonus labels + the live round state */
-  const slotNumTiles = {};  /* 64x64 number faces (1..10), built from the coin font */
+  let slotMarquee = null;   /* which message-bank id is which glyph, + its columns */
 
-  /* One bonus-reel number face, 1..10, drawn in the machine's own 16px coin
-   * digit font (FUN_801d2914) scaled up and centred on a 64x64 reel cell - the
-   * "numerals drawn analogous to the coin font" the bonus strip carries. */
-  function slotNumberTile(n) {
-    if (!slotArt || !slotArt.digits) return null;
-    if (slotNumTiles[n]) return slotNumTiles[n];
-    const c = document.createElement('canvas');
-    c.width = SYM_PX; c.height = SYM_PX;
-    const g = c.getContext('2d');
-    g.imageSmoothingEnabled = false;
-    g.fillStyle = '#0c0a14'; g.fillRect(0, 0, SYM_PX, SYM_PX);
-    g.strokeStyle = '#4a4668'; g.lineWidth = 2;
-    g.strokeRect(4, 4, SYM_PX - 8, SYM_PX - 8);
-    const s = String(n);
-    const gw = 22, gh = 34, gap = 2;
-    const tw = s.length * gw + (s.length - 1) * gap;
-    let dx = (SYM_PX - tw) / 2;
-    const dy = (SYM_PX - gh) / 2;
-    for (const ch of s) {
-      const d = ch.charCodeAt(0) - 48;                 /* digit d at x = 64 + d*16 */
-      g.drawImage(slotArt.digits, 64 + d * 16, 0, 16, 16, dx, dy, gw, gh);
-      dx += gw + gap;
-    }
-    return (slotNumTiles[n] = c);
+  /* The value under a reel row is a SYMBOL id (0..9) or, once a bonus round has
+   * rotated the numbers in, a bonus strip value (0x10..0x19). Retail switches on
+   * exactly that (`FUN_801d0fa8`: `value >= 0x10` picks the other texpage and
+   * CLUT base), and it switches PER ROW - which is what lets the numbers rotate
+   * onto a spinning reel a row at a time instead of the strip changing in one
+   * frame. Same rule here. */
+  const BONUS_VALUE_BASE = 0x10;
+  function slotFaceFor(value) {
+    if (!slotArt) return null;
+    return value >= BONUS_VALUE_BASE
+      ? slotArt.numbers[value - BONUS_VALUE_BASE]    /* numeral (value - 0xF) */
+      : slotArt.symbols[value];
   }
 
   /* ---- the machine's own sound ----
@@ -1449,7 +1456,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     slotArt = null;
     slotScene = null;
     slotBonus = null;
-    for (const k in slotNumTiles) delete slotNumTiles[k];  /* rebuilt off the new font */
+    slotMarquee = null;
     const legend = $('slot-bonus-legend');
     if (legend) legend.innerHTML = '';
     if (!api || !api.slot_art_ready()) {
@@ -1462,6 +1469,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
     const symbols = [];
     for (let s = 0; s < 10; s++) symbols.push(rgbaCanvas(api.slot_symbol_rgba(s), SYM_PX, SYM_PX));
+    /* The ten bonus numerals, indexed by their strip value's low nibble: slot
+     * `n - 1` is the numeral `n`. Each comes off art page 1 at its own cell and
+     * its own palette column - the retail faces, not a scaled coin font. */
+    const numbers = [];
+    for (let n = 1; n <= 10; n++) {
+      numbers.push(rgbaCanvas(api.slot_bonus_number_rgba(n), SYM_PX, SYM_PX));
+    }
     const pages = {};
     const page = (p, pal) => {
       const k = p + ':' + pal;
@@ -1474,6 +1488,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
     slotArt = {
       symbols,
+      numbers,
       digits: rgbaCanvas(api.slot_digits_rgba(), 64 + 10 * 16, 16),
       /* HUD record 0: the paytable board on the right of the machine. Its page
        * is sampled 8bpp (the texpage's colour bit), not the 4bpp its TIM header
@@ -1483,6 +1498,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     };
 
     slotScene = api.slot_scene_ready() ? JSON.parse(api.slot_scene_json()) : null;
+    slotMarquee = JSON.parse(api.slot_marquee_json());
 
     const sfxN = JSON.parse(api.slot_sfx_json()).length;
     $('slot-art-note').innerHTML =
@@ -1497,6 +1513,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       '(<code>FUN_801d0e1c</code>) scrolling a bitmap out of a 21-message bank. Every ' +
       'position, size, cell and palette above is read out of four contiguous tables in the ' +
       'overlay’s own rodata; the art is PROT&nbsp;1200, byte-identical to a retail VRAM dump. ' +
+      'The <b>bonus round</b> is the same machine, not a second one: the reels rotate onto the ' +
+      'init’s <em>other</em> strip (<code>DAT_801d3fd0</code> = <code>slot/2&nbsp;+&nbsp;0x10</code>) ' +
+      'one row per frame, and a row whose value clears <code>0x10</code> draws its numeral off ' +
+      'art page&nbsp;1 through its own palette column — which is why each digit is a different ' +
+      'colour. The <code>0&nbsp;x&nbsp;0&nbsp;x&nbsp;0</code> strip that fills in as you claim ' +
+      'each column is <b>that same dot matrix</b>, running the message bank’s numeral glyphs ' +
+      '(<code>FUN_801cfff0</code>) over the machine’s claimed-value latch — the very rows the ' +
+      'payout multiplies, so the strip cannot show a line the spin did not pay. ' +
       (sfxN
         ? `The <b>sound</b> is the machine’s own: ${sfxN} cues out of the overlay’s ` +
           '<code>efect.dat</code> descriptor block (PROT&nbsp;1199), sampled from the VAB it ' +
@@ -1558,17 +1582,34 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       '<b>Bonus game.</b> ' +
       chip(b.kick_symbol, 'blue kicks', b.kick_rounds) +
       chip(b.punch_symbol, 'red punches', b.punch_rounds) +
-      `<span class="mg-bonus-note">A bonus round swaps the reels to <b>1–10</b> — stop three, ` +
-      `and it pays their <b>product</b> (${b.min}–${b.max} coins).</span>`;
+      `<span class="mg-bonus-note">A bonus round rotates the reels onto the machine’s ` +
+      `<b>other strip</b> — the numerals <b>1–10</b>, their own artwork on art page 1 — and ` +
+      `the marquee counts them: <code>0 x 0 x 0</code>, filling in as you claim each column. ` +
+      `Stop all three and it pays their <b>product</b> (${b.min}–${b.max} coins). Nothing ` +
+      `steers those reels: the bonus stop plan has no target at all.</span>` +
+      (slotArt ? `<span class="mg-bonus-nums" id="slot-bonus-nums"></span>` : '');
     if (slotArt) {
       el.querySelectorAll('.mg-glyph-sym').forEach(c => {
         const s = slotArt.symbols[parseInt(c.dataset.sym, 10)];
         if (s) c.getContext('2d').drawImage(s, 0, 0);
       });
+      /* The ten faces themselves, off the disc - each with its own palette. */
+      const strip = $('slot-bonus-nums');
+      if (strip) {
+        for (let n = 1; n <= 10; n++) {
+          const c = document.createElement('canvas');
+          c.width = c.height = SYM_PX;
+          c.className = 'mg-glyph-num';
+          const img = slotArt.numbers[n - 1];
+          if (img) c.getContext('2d').drawImage(img, 0, 0);
+          strip.appendChild(c);
+        }
+      }
     }
   }
 
   function slotReset() {
+    slotCaption = null;
     const seed = (Math.random() * 0xFFFFFFFF) >>> 0;
     if (!api || !api.slot_start(seed, SLOT_START_COINS)) {
       verdict($('slot-verdict'), 'The payout table did not decode from this disc.', 'bad');
@@ -1639,13 +1680,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     g.restore();
   }
 
-  /* The reel cylinder, exactly as FUN_801d0fa8 builds it. During a bonus round
-   * (feature mode 6) the reels carry the 1..10 numbers instead of the symbols -
-   * the bonus strip's numeral is the symbol id + 1 - so the same cylinder shows
-   * the number wheels the product payout reads. */
+  /* The reel cylinder, exactly as FUN_801d0fa8 builds it - including the bonus
+   * round, which is not a separate mode of this function in retail and is not
+   * one here. Each face draws whatever its strip row holds: a symbol id, or a
+   * bonus value (>= 0x10) whose numeral comes off the other art page. That is
+   * how the numbers ROTATE onto a turning reel row by row, rather than the whole
+   * strip flipping in a frame. */
   function slotDrawReels(g, st, positions) {
     const R = slotScene.reels;
-    const bonus = st.feature_mode === 6;
     const FULL = R.angle_full;
     const sinT = (a) => Math.sin(((a % FULL + FULL) % FULL) / FULL * Math.PI * 2);
     const cosT = (a) => Math.cos(((a % FULL + FULL) % FULL) / FULL * Math.PI * 2);
@@ -1697,10 +1739,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
          * payline row as the angle advances, so the payline face carries row0
          * itself and the faces above / below it carry the rows either side. */
         const idx = ((row0 + paylineFace - f) % R.strip_len + R.strip_len) % R.strip_len;
-        /* Bonus round: the number (symbol + 1), in the coin font; otherwise the
-         * symbol art. Fall back to the symbol if the number tile can't build. */
-        const sym = bonus ? (slotNumberTile(strip[idx] + 1) || slotArt.symbols[strip[idx]])
-                          : slotArt.symbols[strip[idx]];
+        /* The row's own value decides its face - symbol or numeral. */
+        const sym = slotFaceFor(strip[idx]);
         if (!sym) continue;
 
         slotTexTri(g, sym, p00, p10, p01, [0, 0], [SYM_PX, 0], [0, SYM_PX]);
@@ -1736,27 +1776,138 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
   }
 
-  /* The 78x13 dot-matrix marquee (FUN_801d0e1c + the FUN_801d069c composer). */
-  function slotDrawMarqueeDots(g, tick) {
+  /* ---- the marquee: a 78x13 dot-matrix display, and the tally lives on it ----
+   *
+   * The strip across the top of the machine - the one that reads `0 x 0 x 0` at
+   * the start of a bonus round and fills in each column as you claim it, then
+   * announces "48 coin" - is not a caption drawn over the machine. It is the
+   * SAME dot matrix that scrolls the attract legend during the normal game
+   * (`FUN_801d0e1c`: 1014 individually projected 2x2 sprites), and `FUN_801cfff0`
+   * recomposes its buffer every frame out of a 21-bitmap message bank.
+   *
+   * The bank's ids give it away, and the payout caption's own arithmetic pins
+   * them: it prints digits with `FUN_801d3230(n / 1000 + 6)`, `/100 + 6`, `/10 + 6`,
+   * `%10 + 6`, so records 6..15 are the glyphs "0".."9" - and record 16 is a
+   * glyph of its own for "10", because a bonus reel can land on ten. 0x11 is the
+   * multiplication sign, 0x12/0x13 the filled/hollow round pips, 0x14 the word
+   * "coin". All of them decode straight off the disc; the page draws no glyph of
+   * its own. The ids and the columns come over as `slot_marquee_json()`.
+   */
+  function slotMsgBits(id) {
+    const bits = slotScene.msgBits || (slotScene.msgBits =
+      slotScene.messages.map(m => m.bitmap.split(',').map(Number)));
+    return bits[id];
+  }
+
+  /* Blit message `id` into the dot buffer at (col, row) - FUN_801d3230. A
+   * negative row clips off the top of the glyph, which is how the payout caption
+   * slides down into place over its first 13 frames. */
+  function slotBlitMsg(buf, id, col, row) {
+    const m = slotScene.messages[id];
+    if (!m) return;
+    const bm = slotMsgBits(id), D = slotScene.dots;
+    for (let r = 0; r < m.h; r++) {
+      const dr = row + r;
+      if (dr < 0 || dr >= D.rows) continue;
+      for (let c = 0; c < m.w; c++) {
+        const dc = col + c;
+        if (dc < 0 || dc >= D.cols) continue;   /* the word "coin" clips here, as in retail */
+        buf[dc * D.rows + dr] = bm[r * m.w + c];
+      }
+    }
+  }
+
+  /* The scrolling blit - FUN_801d069c. `sx` walks the message past the window. */
+  function slotBlitScroll(buf, id, sx) {
+    const m = slotScene.messages[id];
+    if (!m) return;
+    const bm = slotMsgBits(id), D = slotScene.dots;
+    for (let col = 0; col < D.cols; col++) {
+      const mc = sx + col;
+      if (mc < 0 || mc >= m.w) continue;
+      for (let row = 0; row < Math.min(D.rows, m.h); row++) {
+        buf[col * D.rows + row] = bm[row * m.w + mc];
+      }
+    }
+  }
+
+  /* Compose this frame's marquee - the port of FUN_801cfff0's message pass.
+   * Its branch order IS the machine's:
+   *
+   *   1. a paying spin is tallying   -> the payout figure + "coin", sliding in;
+   *   2. a bonus round, reels moving  -> the CLAIMED-COLUMN TALLY `n x n x n`;
+   *   3. a bonus round, between spins -> the round pips (how many are left);
+   *   4. otherwise                    -> the attract legend, scrolling.
+   *
+   * The tally reads its columns straight off the machine's claimed-value latch,
+   * which is the same state the payout multiplies - so it cannot show a line the
+   * spin didn't pay. */
+  function slotMarqueeBuffer(st, bonus, tick) {
+    const D = slotScene.dots, M = slotMarquee;
+    const buf = new Uint8Array(D.cols * D.rows);
+    if (!M) return buf;
+
+    /* The tally row: one numeral per reel at its column, the "x" sign between.
+     * `tally[r]` is 0 until reel r's stop is claimed - so this reads `0 x 0 x 0`
+     * at the start of a round and fills in as you take each column. */
+    const tallyRow = (tally) => {
+      for (let r = 0; r < 3; r++) {
+        slotBlitMsg(buf, M.number_base + tally[r], M.tally_cols[r], 0);
+      }
+      slotBlitMsg(buf, M.times, M.times_cols[0], 0);
+      slotBlitMsg(buf, M.times, M.times_cols[1], 0);
+    };
+
+    /* 1. a resolved bonus round: hold the finished tally, then the payout figure
+     *    sliding down into place. Retail draws each digit only once the figure
+     *    reaches its place, at fixed right-aligned columns - so `48` prints at
+     *    the tens and units columns, and the word "coin" runs off the right of
+     *    the 78-dot matrix exactly as it does on the machine. */
+    if (slotCaption) {
+      if (slotCaption.age < 0) {
+        tallyRow(slotCaption.tally);
+        return buf;
+      }
+      const n = slotCaption.payout;
+      const row = Math.min(slotCaption.age - M.payout_slide_rows, 0);   /* the slide-in */
+      const d = M.number_base;
+      if (n > 999) slotBlitMsg(buf, d + Math.floor(n / 1000), M.payout_digit_cols[0], row);
+      if (n > 99)  slotBlitMsg(buf, d + Math.floor((n % 1000) / 100), M.payout_digit_cols[1], row);
+      if (n > 9)   slotBlitMsg(buf, d + Math.floor((n % 100) / 10), M.payout_digit_cols[2], row);
+      slotBlitMsg(buf, d + (n % 10), M.payout_digit_cols[3], row);
+      slotBlitMsg(buf, M.coins, M.payout_coins_col, row);
+      return buf;
+    }
+
+    if (bonus && bonus.active) {
+      if (st.phase === 'stopping' || st.phase === 'payout') {
+        tallyRow(bonus.tally);        /* 2. THE TALLY, filling as you claim */
+      } else {
+        /* 3. between spins: the rounds still owed, as three pips. */
+        const left = bonus.rounds_left;
+        for (let i = 0; i < 3; i++) {
+          slotBlitMsg(buf, left > (2 - i) ? M.pip_on : M.pip_off, M.pip_cols[i], 0);
+        }
+      }
+      return buf;
+    }
+
+    /* 4. the attract legend: DAT_801d3ca0 % 0x94 - 0x4a, a 148-frame sweep. */
+    slotBlitScroll(buf, 0, (tick % 0x94) - 0x4a);
+    return buf;
+  }
+
+  /* Project the dot buffer - FUN_801d0e1c, one 2x2 sprite per lit dot. */
+  function slotDrawMarqueeDots(g, buf, tick) {
     const D = slotScene.dots;
-    const msg = slotScene.messages[0];     /* the attract legend */
-    if (!msg) return;
     /* The dots' CLUT column (15) is EMPTY on the disc: retail MoveImages a 16x1
      * palette from column (tick & 1) into it every frame, which is the marquee's
      * blink. Sample the source column, or the whole marquee decodes invisible. */
     const swatch = slotArt.page(D.page, D.blink_palettes[tick & 1]);
     if (!swatch) return;
-    /* The retail scroller: DAT_801d3ca0 % 0x94 - 0x4a, so the legend sweeps in
-     * from the right and out to the left across a 148-frame cycle. */
-    const sx = (tick % 0x94) - 0x4a;
-    const bits = slotScene.msgBits || (slotScene.msgBits =
-      slotScene.messages.map(m => m.bitmap.split(',').map(Number)));
-    const bm = bits[0];
     for (let col = 0; col < D.cols; col++) {
-      const mcol = sx + col;
-      if (mcol < 0 || mcol >= msg.w) continue;
       for (let row = 0; row < D.rows; row++) {
-        const nib = bm[row * msg.w + mcol];
+        const nib = buf[col * D.rows + row];
         if (!nib) continue;                /* unlit */
         const [px, py] = slotProject(D.x0 + col * D.dx, D.y0 + row * D.dy, D.z);
         g.drawImage(swatch, nib * D.u_per_nibble, 0, D.size, D.size,
@@ -1788,6 +1939,18 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
 
   let slotTick = 0;
+
+  /* What the marquee shows after a bonus round resolves: `{payout, tally, age}`.
+   *
+   * Retail's own order is the completed tally for the first frame of the payout
+   * state, then the figure sliding down over it as the credits ramp (the caption
+   * is gated on `DAT_801d3d3c != 0 && DAT_801d3c94 != 0`, and the ramp counter
+   * starts at 0). The browser machine banks the win in ONE frame, so there is no
+   * ramp to pace it: hold the finished `9 x 5 x 6` line for a beat (a negative
+   * `age`), then run retail's slide-in exactly as written. */
+  let slotCaption = null;
+  const SLOT_TALLY_HOLD = 26;      /* frames the completed tally is held */
+  const SLOT_CAPTION_FRAMES = 110; /* frames the payout figure stays up */
 
   /* ---- the cabinet, measured off the retail framebuffer ----
    *
@@ -1852,8 +2015,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     g.fillRect(28, 197, 460, 21);
   }
 
-  /* The retail machine, on its own 640x240 framebuffer. */
-  function slotRender(st) {
+  /* The retail machine, on its own 640x240 framebuffer. `bonus` is the live
+   * bonus-round state (`slot_bonus_json`) - the claimed-column tally among it. */
+  function slotRender(st, bonus) {
     const cv = $('slot-canvas'), g = cv.getContext('2d');
     g.imageSmoothingEnabled = false;
     g.fillStyle = '#000000';
@@ -1953,28 +2117,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       slotDrawBillboard(g, img, m.cell, m.pos, m.half);
     });
 
-    /* 7. the dot-matrix legend, over the panel */
-    slotDrawMarqueeDots(g, slotTick);
+    /* 7. the dot-matrix marquee, over the panel. In the normal game it scrolls
+     *    the attract legend; in a bonus round it is the TALLY (`0 x 0 x 0`,
+     *    filling as each column is claimed) and then the payout ("48 coin").
+     *    Same 1014 dots either way - see slotMarqueeBuffer. */
+    slotDrawMarqueeDots(g, slotMarqueeBuffer(st, bonus, slotTick), slotTick);
 
     /* 8. the paytable board + the coin readout (the only screen-space draws the
      *    retail machine makes - FUN_801d2cc0 writes their XY directly) */
     if (slotArt.panel) g.drawImage(slotArt.panel, 560 - 63, 128 - 119);
     slotDrawCoins(g, st.balance);
-
-    /* 9. the bonus-round banner: the reels are numbers now, so say so and count
-     *    down the earned rounds. Not retail chrome - a browser affordance. */
-    if (st.feature_mode === 6) {
-      const rounds = st.bonus_spins || 0;
-      g.textAlign = 'center';
-      g.fillStyle = 'rgba(255,214,92,0.95)';
-      g.font = 'bold 20px monospace';
-      g.fillText('BONUS ROUND', 200, 26);
-      g.fillStyle = '#e8e8f0';
-      g.font = '12px monospace';
-      g.fillText(rounds > 0 ? `${rounds} round${rounds === 1 ? '' : 's'} left — stop for the product`
-                            : 'last round', 200, 44);
-      g.textAlign = 'start';
-    }
   }
   let slotPrev = { stopped: 0, phase: '', feature: 0 };
   /* A press during the spin-up ramp can't be taken (retail refuses a stop until
@@ -2019,7 +2171,21 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       api.slot_press();
       st = JSON.parse(api.slot_state_json());
     }
-    slotRender(st);
+    /* The live bonus state, including the claimed-column tally the marquee
+     * prints. It is read off the machine's own latch, so it is the same state
+     * the payout multiplies - the strip cannot show a line the spin didn't pay. */
+    const bonus = JSON.parse(api.slot_bonus_json());
+
+    /* A bonus round just paid: hold its finished tally, then run the caption. */
+    if (credited > 0 && st.last && st.last.bonus_spin) {
+      slotCaption = { payout: credited, tally: bonus.tally.slice(), age: -SLOT_TALLY_HOLD };
+    } else if (slotCaption) {
+      slotCaption.age++;
+      /* The next bet clears it - the marquee goes back to the round pips or the
+       * attract legend, whichever the machine is now in. */
+      if (slotCaption.age > SLOT_CAPTION_FRAMES || st.phase === 'spinning') slotCaption = null;
+    }
+    slotRender(st, bonus);
 
     /* Cue the machine's own sounds off the state transitions the retail SM
      * fires them on: one click per reel as its stop is taken, the reach sting
@@ -2046,11 +2212,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (l.payout > 0) {
         let msg;
         if (l.bonus_spin) {
-          /* A bonus round: the three number wheels multiplied. Read the live
-           * numbers off the stopped reels (not the cached static labels). */
-          const b = JSON.parse(api.slot_bonus_json());
-          const nums = (b && b.numbers && b.numbers.length === 3)
-            ? b.numbers.join(' × ') + ' = ' : '';
+          /* A bonus round: the three claimed columns, multiplied. The numbers
+           * come off the machine's tally latch - the same rows the payout read,
+           * so the line below the machine and the strip on it always agree. */
+          const nums = (bonus.tally && bonus.tally.length === 3)
+            ? bonus.tally.join(' × ') + ' = ' : '';
           msg = `Bonus round: ${nums}${l.payout} coins - banked.`;
           if (st.feature_mode === 6 && st.bonus_spins > 0) {
             msg += ` ${st.bonus_spins} more.`;
