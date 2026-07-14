@@ -173,12 +173,14 @@ fn hybrid_env_mesh_recovers_vertex_colour_props() {
         }
     }
     // town01 ships a handful of colour-only placed props (benches / fences /
-    // small furniture; slots 31, 55, 87, 97, 109 at the current pack vote).
-    // The exact set can drift with loader changes - require the *class* of
-    // mesh to be recovered, not the exact slot ids.
+    // small furniture; slots 31, 55, 87 at the current pack vote). An env pack
+    // is shared across scenes, so a slot no town01 record names is simply
+    // unused here - the referenced set is exactly what `pack_mesh_index`
+    // resolves from each record's `+0x10`. The exact set can drift with loader
+    // changes - require the *class* of mesh to be recovered, not the slot ids.
     assert!(
-        colour_only_recovered >= 4,
-        "expected >= 4 colour-only env meshes recovered on town01, got {colour_only_recovered}"
+        colour_only_recovered >= 3,
+        "expected >= 3 colour-only env meshes recovered on town01, got {colour_only_recovered}"
     );
 }
 
