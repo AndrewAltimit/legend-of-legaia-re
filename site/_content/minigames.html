@@ -1273,7 +1273,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
      * time, ticking cue 0x21 per step (FUN_801D239C). The page has no
      * animated counter, so it plays the tick run the drain would make. */
     const ticks = Math.max(2, Math.min(8, Math.round(banked / 40)));
-    for (let i = 0; i < ticks; i++) LegaiaSfx && LegaiaSfx.playIn('baka', 'tally', 120 + i * 110);
+    if (window.LegaiaSfx) {
+      for (let i = 0; i < ticks; i++) LegaiaSfx.playIn('baka', 'tally', 120 + i * 110);
+    }
     bakaPersistBank(banked);
     bakaRunState = JSON.parse(api.baka_run_state_json());
     if (bakaView && bakaView.ok) bakaView.setChoice(null);
