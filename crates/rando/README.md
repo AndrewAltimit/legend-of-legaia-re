@@ -49,6 +49,7 @@ full design.
   - [Item prices](#item-prices)
   - [Unused content](#unused-content)
   - [Name injection](#name-injection)
+- [Translation packs](#translation-packs)
 - [Orchestration (`apply`)](#orchestration-apply)
 - [Door coupling](#door-coupling)
 - [PPF output (`ppf`)](#ppf-output-ppf)
@@ -735,6 +736,22 @@ gap flanked by rodata constants proven preserved file→RAM; **not** the data-se
 zero-fill tail, which is `.sbss` scratch the game clobbers, nor an arbitrary
 always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 `name_ptr_slot`, leaving the other empty-name ids blank.
+
+## Translation packs
+
+`translation` module + the `legaia-rando translate` subcommands
+(`export` / `init` / `stats` / `import`): community language packs. Exports
+every cataloged user-facing string into an editable YAML pack - the SCUS name
+pools (items, item types, spells, Tactical Arts, accessory passives,
+new-game party names) and the `0x1F`-segment dialog corpus (scene-bundle
+MANs, LZS-decompressed; plus raw carriers - v12 event-script prescripts and
+the streaming-MAN dungeon scenes). Import applies filled `translation:`
+fields as same-size in-place patches (strings re-terminated, dialog segments
+space-padded to their exact framing; whole-scene recompress must fit the
+original LZS footprint), with per-character encodability errors for anything
+outside the retail ASCII glyph set. Untranslated entries stay byte-identical.
+Exported packs contain game text - gitignored, never commit. Full workflow +
+schema: [`docs/tooling/translation.md`](../../docs/tooling/translation.md).
 
 ## Orchestration (`apply`)
 
