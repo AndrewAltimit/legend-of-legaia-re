@@ -179,6 +179,31 @@ export class LegaiaMinigames {
      */
     baka_choose(attack: number): boolean;
     /**
+     * The duel's stage layout - which side of the arena each fighter stands
+     * on and which way it faces - as JSON:
+     *
+     * ```json
+     * { "player": { "side": -1, "facing": 1 },
+     *   "opponent": { "side": 1, "facing": -1 } }
+     * ```
+     *
+     * `side` is the sign of the fighter's X placement (the player stands on
+     * the LEFT, the opponent on the RIGHT); `facing` is the sign of its
+     * heading's X (the player faces RIGHT toward the opponent, the opponent
+     * faces LEFT toward the player). Each `facing` is the negation of the
+     * other fighter's `side`, so both look at their rival - the retail
+     * arrangement (`docs/subsystems/minigame-baka-fighter.md`).
+     *
+     * This is the **single source of truth** for the duel facing: the site's
+     * pose step (`site/js/minigame-baka.js`) turns `facing` into a world yaw
+     * (`facing * PI/2`) instead of hard-coding it, so the facing is testable
+     * off-disc. The player and opponent mesh families share the same intrinsic
+     * authored facing, so they need **opposite** world yaws to face each
+     * other; an earlier reading assumed opposite intrinsic facings and spun
+     * both the same way, leaving both looking left.
+     */
+    baka_duel_facing_json(): string;
+    /**
      * Build the duel's 1 MB PSX VRAM: the PROT 1203 HUD/stage pages, the
      * PROT 1204 party atlases (their bundled CLUT strips are the minigame's
      * own palette - see `docs/formats/character-mesh.md`), and the chosen
@@ -333,6 +358,73 @@ export class LegaiaMinigames {
      */
     dance_bgm_ready_json(): string;
     /**
+     * `[bone_count, frame_count]` of dancer `dancer`'s `clip` locomotion
+     * record (`clip` 0 = idle bank slot, else the walk bank slot).
+     */
+    dance_body_anim_dims(dancer: number, clip: number): Uint32Array;
+    /**
+     * Per-vertex `[cba, tsb]`, parallel to the positions.
+     */
+    dance_body_cba_tsb(dancer: number): Uint32Array;
+    /**
+     * The PROT 0874 §0 pack slot dancer `dancer` is drawn from
+     * (0 = Vahn, 1 = Noa, 2 = Gala). `255` when out of range.
+     */
+    dance_body_char_slot(dancer: number): number;
+    /**
+     * Number of dancer bodies (3: left / centre / right).
+     */
+    dance_body_count(): number;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the hybrid textured / flat
+     * shader path (the field body mixes textured skin with flat body prims).
+     */
+    dance_body_flat_rgba(dancer: number): Uint8Array;
+    /**
+     * Display index of the human dancer (the centre box = Noa).
+     */
+    dance_body_human_index(): number;
+    /**
+     * Triangle indices for dancer `dancer`'s body.
+     */
+    dance_body_indices(dancer: number): Uint32Array;
+    /**
+     * Per-vertex TMD object index (the bone a vertex hangs from), parallel to
+     * the positions - the animator keys `R . v + T` on this.
+     */
+    dance_body_object_ids(dancer: number): Uint32Array;
+    /**
+     * TMD object count (pose rig width) of dancer `dancer`'s body.
+     */
+    dance_body_part_count(dancer: number): number;
+    /**
+     * Dancer `dancer`'s `clip` locomotion record decoded to absolute
+     * per-(frame, bone) `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles),
+     * padded to `target_part_count` parts - the same pose stream the site's
+     * mesh animator consumes (identical shape to `baka_anim_pose_frames`).
+     */
+    dance_body_pose_frames(dancer: number, clip: number, target_part_count: number): Int32Array;
+    /**
+     * Per-vertex positions of dancer `dancer`'s body (object-local; the pose
+     * assembles them). Empty when the bodies didn't decode.
+     */
+    dance_body_positions(dancer: number): Float32Array;
+    /**
+     * Whether the three dancer bodies (Noa's field mesh + the two AI dancers)
+     * and their pose bank decoded off this disc.
+     */
+    dance_body_ready(): boolean;
+    /**
+     * Per-vertex `[u, v]` texel coords, parallel to the positions.
+     */
+    dance_body_uvs(dancer: number): Int32Array;
+    /**
+     * The 1 MB PSX VRAM the dancer bodies sample - the PROT 0874 §2
+     * field-character textures (row-478 CLUTs), uploaded exactly as the field
+     * / play view uploads them. Empty when the bodies didn't decode.
+     */
+    dance_body_vram(): Uint8Array;
+    /**
      * The whole decoded step chart, for the page's scrolling note lane:
      * `{"rows":[[u8; 32], ...]}` (one row per difficulty lane).
      */
@@ -486,6 +578,29 @@ export class LegaiaMinigames {
      * the page must fall back to symbol *ids*, not to invented artwork.
      */
     slot_art_ready(): boolean;
+    /**
+     * The **bonus game**: the two jackpot triggers and, when a bonus round is
+     * live, the numbers currently on the reels and their product payout.
+     *
+     * A matching line of the **blue "kick"** symbol (id 8) earns 1 bonus round;
+     * the **red "punch"** symbol (id 9) earns 3 - the counts and symbol ids are
+     * pinned in the disassembly (`FUN_801d13e8`) and the colours in the PROT
+     * 1200 reel art. A bonus round swaps the reels to numbers `1..=10` (the
+     * symbol id + 1) and pays the **product of the three stopped numbers**
+     * (`1..=1000`).
+     *
+     * ```json
+     * { "kick_symbol": 8, "kick_rounds": 1, "punch_symbol": 9, "punch_rounds": 3,
+     *   "min": 1, "max": 1000, "active": true, "rounds_left": 2,
+     *   "numbers": [7, 7, 7], "product": 343 }
+     * ```
+     *
+     * `active` is true only in feature mode 6 (the bonus round); `numbers` is
+     * each reel's payline number (`symbol + 1`) and `product` their payout, so
+     * the page can render the number wheels and caption the win without
+     * re-deriving the rule.
+     */
+    slot_bonus_json(): string;
     /**
      * Tally the latched payout into the balance and return to idle. Returns
      * the credited coins. [`Self::slot_tick`] already does this on the frame a
@@ -2059,6 +2174,7 @@ export interface InitOutput {
     readonly legaiaminigames_baka_anim_pose_frames: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly legaiaminigames_baka_anim_record_count: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_baka_choose: (a: number, b: number) => number;
+    readonly legaiaminigames_baka_duel_facing_json: (a: number) => [number, number];
     readonly legaiaminigames_baka_duel_vram: (a: number, b: number) => [number, number];
     readonly legaiaminigames_baka_fighter_cba_tsb: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_baka_fighter_flat_rgba: (a: number, b: number, c: number) => [number, number];
@@ -2085,6 +2201,20 @@ export interface InitOutput {
     readonly legaiaminigames_dance_art_ready: (a: number) => number;
     readonly legaiaminigames_dance_bgm_pcm_i16: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_dance_bgm_ready_json: (a: number) => [number, number];
+    readonly legaiaminigames_dance_body_anim_dims: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_dance_body_cba_tsb: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_body_char_slot: (a: number, b: number) => number;
+    readonly legaiaminigames_dance_body_count: (a: number) => number;
+    readonly legaiaminigames_dance_body_flat_rgba: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_body_human_index: (a: number) => number;
+    readonly legaiaminigames_dance_body_indices: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_body_object_ids: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_body_part_count: (a: number, b: number) => number;
+    readonly legaiaminigames_dance_body_pose_frames: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaminigames_dance_body_positions: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_body_ready: (a: number) => number;
+    readonly legaiaminigames_dance_body_uvs: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_body_vram: (a: number) => [number, number];
     readonly legaiaminigames_dance_chart_json: (a: number) => [number, number];
     readonly legaiaminigames_dance_face_meta_json: (a: number) => [number, number];
     readonly legaiaminigames_dance_face_rgba: (a: number, b: number, c: number) => [number, number];
@@ -2104,6 +2234,7 @@ export interface InitOutput {
     readonly legaiaminigames_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaminigames_new: () => number;
     readonly legaiaminigames_slot_art_ready: (a: number) => number;
+    readonly legaiaminigames_slot_bonus_json: (a: number) => [number, number];
     readonly legaiaminigames_slot_collect: (a: number) => number;
     readonly legaiaminigames_slot_digits_rgba: (a: number) => [number, number];
     readonly legaiaminigames_slot_hud_json: (a: number) => [number, number];

@@ -387,6 +387,43 @@ export class LegaiaMinigames {
         return ret !== 0;
     }
     /**
+     * The duel's stage layout - which side of the arena each fighter stands
+     * on and which way it faces - as JSON:
+     *
+     * ```json
+     * { "player": { "side": -1, "facing": 1 },
+     *   "opponent": { "side": 1, "facing": -1 } }
+     * ```
+     *
+     * `side` is the sign of the fighter's X placement (the player stands on
+     * the LEFT, the opponent on the RIGHT); `facing` is the sign of its
+     * heading's X (the player faces RIGHT toward the opponent, the opponent
+     * faces LEFT toward the player). Each `facing` is the negation of the
+     * other fighter's `side`, so both look at their rival - the retail
+     * arrangement (`docs/subsystems/minigame-baka-fighter.md`).
+     *
+     * This is the **single source of truth** for the duel facing: the site's
+     * pose step (`site/js/minigame-baka.js`) turns `facing` into a world yaw
+     * (`facing * PI/2`) instead of hard-coding it, so the facing is testable
+     * off-disc. The player and opponent mesh families share the same intrinsic
+     * authored facing, so they need **opposite** world yaws to face each
+     * other; an earlier reading assumed opposite intrinsic facings and spun
+     * both the same way, leaving both looking left.
+     * @returns {string}
+     */
+    baka_duel_facing_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_baka_duel_facing_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Build the duel's 1 MB PSX VRAM: the PROT 1203 HUD/stage pages, the
      * PROT 1204 party atlases (their bundled CLUT strips are the minigame's
      * own palette - see `docs/formats/character-mesh.md`), and the chosen
@@ -757,6 +794,160 @@ export class LegaiaMinigames {
         }
     }
     /**
+     * `[bone_count, frame_count]` of dancer `dancer`'s `clip` locomotion
+     * record (`clip` 0 = idle bank slot, else the walk bank slot).
+     * @param {number} dancer
+     * @param {number} clip
+     * @returns {Uint32Array}
+     */
+    dance_body_anim_dims(dancer, clip) {
+        const ret = wasm.legaiaminigames_dance_body_anim_dims(this.__wbg_ptr, dancer, clip);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[cba, tsb]`, parallel to the positions.
+     * @param {number} dancer
+     * @returns {Uint32Array}
+     */
+    dance_body_cba_tsb(dancer) {
+        const ret = wasm.legaiaminigames_dance_body_cba_tsb(this.__wbg_ptr, dancer);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The PROT 0874 §0 pack slot dancer `dancer` is drawn from
+     * (0 = Vahn, 1 = Noa, 2 = Gala). `255` when out of range.
+     * @param {number} dancer
+     * @returns {number}
+     */
+    dance_body_char_slot(dancer) {
+        const ret = wasm.legaiaminigames_dance_body_char_slot(this.__wbg_ptr, dancer);
+        return ret >>> 0;
+    }
+    /**
+     * Number of dancer bodies (3: left / centre / right).
+     * @returns {number}
+     */
+    dance_body_count() {
+        const ret = wasm.legaiaminigames_dance_body_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the hybrid textured / flat
+     * shader path (the field body mixes textured skin with flat body prims).
+     * @param {number} dancer
+     * @returns {Uint8Array}
+     */
+    dance_body_flat_rgba(dancer) {
+        const ret = wasm.legaiaminigames_dance_body_flat_rgba(this.__wbg_ptr, dancer);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Display index of the human dancer (the centre box = Noa).
+     * @returns {number}
+     */
+    dance_body_human_index() {
+        const ret = wasm.legaiaminigames_dance_body_human_index(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Triangle indices for dancer `dancer`'s body.
+     * @param {number} dancer
+     * @returns {Uint32Array}
+     */
+    dance_body_indices(dancer) {
+        const ret = wasm.legaiaminigames_dance_body_indices(this.__wbg_ptr, dancer);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex TMD object index (the bone a vertex hangs from), parallel to
+     * the positions - the animator keys `R . v + T` on this.
+     * @param {number} dancer
+     * @returns {Uint32Array}
+     */
+    dance_body_object_ids(dancer) {
+        const ret = wasm.legaiaminigames_dance_body_object_ids(this.__wbg_ptr, dancer);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * TMD object count (pose rig width) of dancer `dancer`'s body.
+     * @param {number} dancer
+     * @returns {number}
+     */
+    dance_body_part_count(dancer) {
+        const ret = wasm.legaiaminigames_dance_body_part_count(this.__wbg_ptr, dancer);
+        return ret >>> 0;
+    }
+    /**
+     * Dancer `dancer`'s `clip` locomotion record decoded to absolute
+     * per-(frame, bone) `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles),
+     * padded to `target_part_count` parts - the same pose stream the site's
+     * mesh animator consumes (identical shape to `baka_anim_pose_frames`).
+     * @param {number} dancer
+     * @param {number} clip
+     * @param {number} target_part_count
+     * @returns {Int32Array}
+     */
+    dance_body_pose_frames(dancer, clip, target_part_count) {
+        const ret = wasm.legaiaminigames_dance_body_pose_frames(this.__wbg_ptr, dancer, clip, target_part_count);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex positions of dancer `dancer`'s body (object-local; the pose
+     * assembles them). Empty when the bodies didn't decode.
+     * @param {number} dancer
+     * @returns {Float32Array}
+     */
+    dance_body_positions(dancer) {
+        const ret = wasm.legaiaminigames_dance_body_positions(this.__wbg_ptr, dancer);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Whether the three dancer bodies (Noa's field mesh + the two AI dancers)
+     * and their pose bank decoded off this disc.
+     * @returns {boolean}
+     */
+    dance_body_ready() {
+        const ret = wasm.legaiaminigames_dance_body_ready(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Per-vertex `[u, v]` texel coords, parallel to the positions.
+     * @param {number} dancer
+     * @returns {Int32Array}
+     */
+    dance_body_uvs(dancer) {
+        const ret = wasm.legaiaminigames_dance_body_uvs(this.__wbg_ptr, dancer);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The 1 MB PSX VRAM the dancer bodies sample - the PROT 0874 §2
+     * field-character textures (row-478 CLUTs), uploaded exactly as the field
+     * / play view uploads them. Empty when the bodies didn't decode.
+     * @returns {Uint8Array}
+     */
+    dance_body_vram() {
+        const ret = wasm.legaiaminigames_dance_body_vram(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * The whole decoded step chart, for the page's scrolling note lane:
      * `{"rows":[[u8; 32], ...]}` (one row per difficulty lane).
      * @returns {string}
@@ -1085,6 +1276,41 @@ export class LegaiaMinigames {
     slot_art_ready() {
         const ret = wasm.legaiaminigames_slot_art_ready(this.__wbg_ptr);
         return ret !== 0;
+    }
+    /**
+     * The **bonus game**: the two jackpot triggers and, when a bonus round is
+     * live, the numbers currently on the reels and their product payout.
+     *
+     * A matching line of the **blue "kick"** symbol (id 8) earns 1 bonus round;
+     * the **red "punch"** symbol (id 9) earns 3 - the counts and symbol ids are
+     * pinned in the disassembly (`FUN_801d13e8`) and the colours in the PROT
+     * 1200 reel art. A bonus round swaps the reels to numbers `1..=10` (the
+     * symbol id + 1) and pays the **product of the three stopped numbers**
+     * (`1..=1000`).
+     *
+     * ```json
+     * { "kick_symbol": 8, "kick_rounds": 1, "punch_symbol": 9, "punch_rounds": 3,
+     *   "min": 1, "max": 1000, "active": true, "rounds_left": 2,
+     *   "numbers": [7, 7, 7], "product": 343 }
+     * ```
+     *
+     * `active` is true only in feature mode 6 (the bonus round); `numbers` is
+     * each reel's payline number (`symbol + 1`) and `product` their payout, so
+     * the page can render the number wheels and caption the win without
+     * re-deriving the rule.
+     * @returns {string}
+     */
+    slot_bonus_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_slot_bonus_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * Tally the latched payout into the balance and return to idle. Returns
