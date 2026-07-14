@@ -285,6 +285,19 @@ struct SaveMenuAssets {
     atlas: legaia_engine_render::UploadedSpriteAtlas,
 }
 
+/// One placed NPC's skinned mesh halves for one clip frame: the textured
+/// (VRAM-sampled) half and the untextured (`F*`/`G*` vertex-colour) half.
+/// Either can be absent when the source TMD carries no prims of that class.
+type NpcPosedHalves = (Option<UploadedVramMesh>, Option<UploadedColorMesh>);
+
+/// `(placement slot, clip frame) -> skinned mesh`. See
+/// [`PlayWindowApp::npc_pose_cache`].
+type NpcPoseCache = std::collections::HashMap<(u8, usize), NpcPosedHalves>;
+
+/// The bone transforms one cached pose was skinned from - the correctness
+/// oracle for [`NpcPoseCache`]. See [`PlayWindowApp::npc_pose_verify`].
+type NpcPoseVerify = std::collections::HashMap<(u8, usize), Vec<([i16; 3], [i16; 3])>>;
+
 /// Windowed engine runner state. Owned by the winit event loop.
 struct PlayWindowApp {
     session: BootSession,
@@ -408,6 +421,29 @@ struct PlayWindowApp {
     npc_clip_players:
         std::collections::HashMap<u8, legaia_engine_core::field_anim::FieldClipPlayer>,
     npc_anim_srcs: std::collections::HashMap<u8, (legaia_tmd::Tmd, Vec<u8>)>,
+    /// Memoised posed NPC meshes, keyed by `(placement slot, clip frame)`.
+    ///
+    /// An NPC's clip is a short **loop** over a fixed set of poses, so the
+    /// posed mesh for a given `(slot, frame)` is a constant: rebuilding and
+    /// re-uploading it every render frame recomputes the same bytes. The first
+    /// visit to a frame skins + uploads it, every later visit reuses the GPU
+    /// buffers. Bounded by `NPCs × clip length` (tens of small meshes).
+    ///
+    /// Invalidated wholesale when `upload_assets` rebuilds `npc_clip_players`
+    /// (scene change), and per-slot when a channel op-`0x4B` ANIMATE cue swaps
+    /// that slot's clip - a new clip reuses the same low frame indices, so its
+    /// entries must not alias the outgoing clip's.
+    npc_pose_cache: NpcPoseCache,
+    /// Correctness oracle for [`Self::npc_pose_cache`], populated only under
+    /// `LEGAIA_POSE_CACHE_VERIFY=1`: the bone transforms each cached key was
+    /// built from. On every cache *hit* the incoming pose is compared against
+    /// the stored one and a mismatch is logged as an error.
+    ///
+    /// Skinning is a pure function of `(TMD, bone transforms)`, so equal poses
+    /// on a hit prove the cached GPU mesh is the mesh a rebuild would have
+    /// produced - i.e. that the `(slot, frame)` key never aliases across
+    /// clips. Empty (and free) when the env var is unset.
+    npc_pose_verify: NpcPoseVerify,
     /// The ANM bundles the placements resolved their clips through,
     /// retained past scene load so channel op-`0x4B` ANIMATE cues
     /// (`World::field_npc_anim_cues`) can re-target an NPC's clip player

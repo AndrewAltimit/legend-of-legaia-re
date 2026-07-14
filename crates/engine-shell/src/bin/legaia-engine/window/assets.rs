@@ -764,6 +764,10 @@ impl PlayWindowApp {
         self.field_npc_draws.clear();
         self.npc_clip_players.clear();
         self.npc_anim_srcs.clear();
+        // The posed-mesh memo is keyed by `(slot, clip frame)`; the incoming
+        // scene reuses both, so it must not survive the clip-player rebuild.
+        self.npc_pose_cache.clear();
+        self.npc_pose_verify.clear();
         self.npc_anim_bundles = (None, None);
         self.npc_bundle_special.clear();
         if world.mode == SceneMode::Field

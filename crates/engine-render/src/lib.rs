@@ -34,6 +34,7 @@ pub use legaia_font;
 pub use legaia_tim;
 pub use wgpu;
 
+pub mod profile;
 pub mod psx_blend;
 pub mod psx_dither;
 pub mod psx_light;

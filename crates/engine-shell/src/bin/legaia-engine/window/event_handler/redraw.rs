@@ -5,6 +5,12 @@ use super::super::*;
 
 impl PlayWindowApp {
     pub(super) fn handle_redraw(&mut self) {
+        // Opt-in frame profiler (`LEGAIA_PROFILE=1`; see
+        // `legaia_engine_render::profile`). Free when off - each call is a
+        // cached-bool branch. The stage marks below carve the frame into
+        // tick / pose / drawlist / acquire / uniforms / encode / submit /
+        // present.
+        legaia_engine_render::profile::begin_frame();
         let dt = self.win.advance_tick(100);
         // Drain up to 4 ticks per render frame so we never spiral
         // but can still catch up from minor vsync jitter.
@@ -296,6 +302,7 @@ impl PlayWindowApp {
             // the world dismisses the box).
             self.sync_dialog_panel();
         }
+        legaia_engine_render::profile::mark("tick");
         // A tick this frame may have flipped the world into
         // SceneMode::Cutscene (field-VM FMV-trigger op). Start
         // windowed STR playback if so; a cut/missing slot drains the
@@ -487,21 +494,32 @@ impl PlayWindowApp {
             // pose_frame, regenerate and re-upload the posed mesh.
             // posed_overrides[i] replaces meshes[i] when present.
             let (posed_overrides, player_color_posed) = self.build_posed_actor_overrides(r);
+            legaia_engine_render::profile::mark("pose:actor");
             // Placed props posed at their live clip frame: the ones resting on
             // frame 0 keep the baked rest mesh, the ones mid-swing get rebuilt.
             let (posed_prop_baked_v, posed_prop_baked_c, posed_prop_live_v, posed_prop_live_c) =
                 self.posed_prop_frame_draws(r);
+            legaia_engine_render::profile::mark("pose:prop");
 
-            // Field-NPC clip playback: advance each placed NPC's
-            // looping ANM clip and re-upload its posed mesh halves
-            // (the same per-frame rebuild path the player's idle /
-            // walk pair uses). The rest-pose meshes in
-            // `field_npc_draws` stay as the fallback for NPCs whose
-            // clip or upload is unavailable this frame.
-            let mut npc_posed: std::collections::HashMap<
-                u8,
-                (Option<UploadedVramMesh>, Option<UploadedColorMesh>),
-            > = std::collections::HashMap::new();
+            // Field-NPC clip playback: advance each placed NPC's looping ANM
+            // clip and draw its posed mesh halves.
+            //
+            // The skinned mesh for a `(slot, clip frame)` is a **constant** -
+            // the clip is a short loop over a fixed pose set - so it is skinned
+            // and uploaded on the first visit to that frame and memoised in
+            // `npc_pose_cache` thereafter. Rebuilding it every render frame
+            // (what this did before) re-derived the same vertex bytes and
+            // allocated fresh GPU buffers for them, which dominated the frame:
+            // the CPU re-pose plus its upload was ~70% of the field frame in a
+            // populated town. The playhead still advances every frame, so the
+            // animation is unchanged - only the recomputation is skipped.
+            //
+            // The rest-pose meshes in `field_npc_draws` stay as the fallback
+            // for NPCs whose clip or upload is unavailable.
+            //
+            // `npc_frames` records which frame each slot is showing *this*
+            // render, so the draw pass below can look its mesh up in the cache.
+            let mut npc_frames: Vec<(u8, usize)> = Vec::new();
             if self.session.host.world.mode == SceneMode::Field {
                 // Channel op-0x4B ANIMATE cues re-target the NPC's clip
                 // player before this frame's tick: the cue's anim id names
@@ -535,13 +553,46 @@ impl PlayWindowApp {
                         legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec_idx)
                     {
                         self.npc_clip_players.insert(slot, player);
+                        // The incoming clip restarts at frame 0 and reuses the
+                        // same low frame indices, so the outgoing clip's memo
+                        // entries for this slot would alias it. Drop them.
+                        self.npc_pose_cache.retain(|(s, _), _| *s != slot);
+                        self.npc_pose_verify.retain(|(s, _), _| *s != slot);
                     }
                 }
+                let verify = std::env::var_os("LEGAIA_POSE_CACHE_VERIFY").is_some();
+                let cache = &mut self.npc_pose_cache;
+                let verify_poses = &mut self.npc_pose_verify;
+                let srcs = &self.npc_anim_srcs;
                 for (slot, player) in self.npc_clip_players.iter_mut() {
-                    let Some((tmd, raw)) = self.npc_anim_srcs.get(slot) else {
+                    let Some((tmd, raw)) = srcs.get(slot) else {
                         continue;
                     };
+                    // `frame()` is the frame `tick()` is about to emit; take it
+                    // as the cache key, then tick to advance the playhead.
+                    let key = (*slot, player.frame());
                     let pose = player.tick();
+                    npc_frames.push(key);
+                    if cache.contains_key(&key) {
+                        // `LEGAIA_POSE_CACHE_VERIFY=1`: the pose behind a hit
+                        // must be the pose the entry was built from, or the key
+                        // is aliasing and the NPC would draw someone else's
+                        // frame.
+                        if verify
+                            && let Some(want) = verify_poses.get(&key)
+                            && *want != pose.bone_outputs
+                        {
+                            log::error!(
+                                "pose-cache MISMATCH at slot {} frame {}: cached pose != live pose",
+                                key.0,
+                                key.1
+                            );
+                        }
+                        continue;
+                    }
+                    if verify {
+                        verify_poses.insert(key, pose.bone_outputs.clone());
+                    }
                     let vmesh =
                         legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs);
                     let cmesh =
@@ -571,10 +622,19 @@ impl PlayWindowApp {
                         .ok()
                     };
                     if vm.is_some() || cm.is_some() {
-                        npc_posed.insert(*slot, (vm, cm));
+                        cache.insert(key, (vm, cm));
                     }
                 }
             }
+            // Re-borrow the memo immutably: `slot -> this frame's posed halves`.
+            let npc_posed: std::collections::HashMap<u8, &NpcPosedHalves> = npc_frames
+                .iter()
+                .filter_map(|k| self.npc_pose_cache.get(k).map(|m| (k.0, m)))
+                .collect();
+            // Everything above this mark is per-frame skinning: CPU mesh
+            // re-pose + GPU re-upload for the player, the animated props and
+            // every placed NPC.
+            legaia_engine_render::profile::mark("pose");
             // Iterate every actor that has a `tmd_binding`. Scene-init
             // actors (slots 0..N from `init_scene_animations`) have
             // their bindings set but aren't necessarily `.active` -
@@ -1237,6 +1297,7 @@ impl PlayWindowApp {
                     mvp: screen_fx_mvp,
                 });
             }
+            legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
             let scene = RenderScene {
                 vram,
                 draws: &draws,
@@ -1321,10 +1382,12 @@ impl PlayWindowApp {
                     }
                 }
             }
+            legaia_engine_render::profile::mark("drawlist");
             if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
                 log::error!("render: {e:#}");
             }
         }
+        legaia_engine_render::profile::end_frame();
         self.win.request_redraw();
     }
 }

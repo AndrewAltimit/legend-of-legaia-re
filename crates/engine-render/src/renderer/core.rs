@@ -118,14 +118,31 @@ impl Renderer {
             .await
             .context("request device")?;
 
+        let info = adapter.get_info();
+        log::info!(
+            "wgpu adapter: {} ({:?}, {:?} backend, driver {})",
+            info.name,
+            info.device_type,
+            info.backend,
+            info.driver
+        );
+
         let caps = surface.get_capabilities(&adapter);
         let (format, view_format) = choose_surface_format(&caps.formats);
+        // `LEGAIA_VSYNC=off` uncaps the present rate so a profiling run reads the
+        // engine's own frame cost rather than the display's refresh interval.
+        // Default stays vsync'd (tear-free, and the sim is fixed-timestep anyway).
+        let present_mode = if crate::profile::no_vsync() {
+            wgpu::PresentMode::AutoNoVsync
+        } else {
+            wgpu::PresentMode::AutoVsync
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: width.max(1),
             height: height.max(1),
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode,
             desired_maximum_frame_latency: 2,
             alpha_mode: caps.alpha_modes[0],
             view_formats: if view_format == format {

@@ -31,8 +31,13 @@ impl Renderer {
             format: Some(self.view_format),
             ..Default::default()
         });
+        // `acquire` is the swapchain wait: under vsync (and under a full frame
+        // queue with vsync off) this is where the CPU blocks, so keeping it as
+        // its own profiler stage stops it from being misread as GPU-submit cost.
+        crate::profile::mark("acquire");
         self.encode_frame(target, &view)?;
         frame.present();
+        crate::profile::mark("present");
         Ok(())
     }
 
@@ -106,6 +111,7 @@ impl Renderer {
             }
             RenderTarget::Clear => {}
         }
+        crate::profile::mark("uniforms");
 
         let view = color_view;
         let mut enc = self
@@ -423,7 +429,9 @@ impl Renderer {
                 }
             }
         }
+        crate::profile::mark("encode");
         self.queue.submit(std::iter::once(enc.finish()));
+        crate::profile::mark("submit");
         Ok(())
     }
 

@@ -231,6 +231,51 @@ field pause menu and its sub-screens (status / spells / items / equip /
 arts) route through both, framed by the play-window at the placement rects
 documented in [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md).
 
+## Frame profiler
+
+`profile` is an opt-in per-frame timing breakdown for `play-window`. It is
+off by default and free when off (every entry point short-circuits on one
+cached `bool`), so the instrumented call sites cost a predicted branch per
+frame. Enable it with `LEGAIA_PROFILE=1`; a rolling one-second summary goes
+to stderr:
+
+```text
+[profile] 1052.7 fps over 629 frames | frame avg  0.93ms p50  0.82 p99  3.49 \
+  | draws 288+92 | tick 0.00 pose:actor 0.25 pose:prop 0.11 pose 0.01 \
+    drawlist 0.02 acquire 0.08 uniforms 0.02 encode 0.33 submit 0.07 present 0.03
+```
+
+The stages carve the frame at the boundaries that matter: `tick` (world
+sim), `pose:*` (per-frame mesh skinning + upload), `drawlist` (building the
+scene draw list), then the renderer's own `acquire` (swapchain wait),
+`uniforms` (per-draw uniform staging), `encode`, `submit` and `present`.
+`draws N+M` is the scene's textured + untextured draw-call count, so the
+`encode` cost is attributable per draw.
+
+Two companion knobs make it a repeatable benchmark:
+
+| Env var | Effect |
+|---|---|
+| `LEGAIA_PROFILE=1` | Enable the breakdown. |
+| `LEGAIA_PROFILE_FRAMES=N` | Print a final summary and exit after `N` frames. |
+| `LEGAIA_VSYNC=off` | Configure the surface with an uncapped present mode. |
+
+`LEGAIA_VSYNC=off` matters for measurement: with the default `AutoVsync`
+the frame time is pinned to the display refresh interval and the whole cost
+of a frame lands in `acquire`, so a vsync'd run reads the refresh rate
+rather than the engine's own headroom.
+
+**Skinned actors are memoised, not rebuilt.** A field NPC's ANM clip is a
+short loop over a fixed set of poses, so the skinned mesh for a given
+`(placement slot, clip frame)` is a constant. `play-window` skins and
+uploads it on the first visit to that frame and reuses the GPU buffers
+afterwards; the playhead still advances every frame, so the animation is
+unchanged. Rebuilding it per frame instead - re-deriving identical vertex
+bytes into freshly allocated GPU buffers - dominates the field frame in a
+populated town. `LEGAIA_POSE_CACHE_VERIFY=1` re-checks the memo against the
+live pose on every cache hit and logs any mismatch, which is what pins the
+`(slot, frame)` key as non-aliasing.
+
 ## Future phases
 
 Batched draws and reverse-engineered TSB / CBA per-mode descriptor
