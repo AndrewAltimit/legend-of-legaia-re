@@ -152,10 +152,10 @@ impl World {
             // Empty template (unreadable SCUS) - nothing was seeded.
             return false;
         }
-        if self.inventory.is_empty() {
-            if let Some(inv) = &defaults.inventory {
-                self.seed_starting_inventory(inv);
-            }
+        if self.inventory.is_empty()
+            && let Some(inv) = &defaults.inventory
+        {
+            self.seed_starting_inventory(inv);
         }
         if self.money == 0 {
             self.money = crate::world::NEW_GAME_STARTING_GOLD;
@@ -361,7 +361,10 @@ mod tests {
         loaded.money = 9999;
         assert!(!loaded.seed_cold_boot_defaults(&defaults));
         assert_eq!(loaded.money, 9999);
-        assert!(loaded.inventory.is_empty(), "bag untouched on a loaded save");
+        assert!(
+            loaded.inventory.is_empty(),
+            "bag untouched on a loaded save"
+        );
     }
 
     #[test]

@@ -1566,6 +1566,7 @@ dependencies = [
  "legaia-mes",
  "legaia-prot",
  "legaia-rando",
+ "legaia-save",
  "legaia-seq",
  "legaia-tim",
  "legaia-tmd",

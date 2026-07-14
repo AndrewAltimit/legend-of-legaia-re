@@ -25,6 +25,7 @@ pub mod runtime;
 mod scene_export;
 mod scene_geom;
 pub mod sentinel_placements;
+pub mod session_save;
 pub mod tmd3d;
 mod viewer_render;
 

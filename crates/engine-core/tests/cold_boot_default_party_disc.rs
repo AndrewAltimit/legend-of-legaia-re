@@ -74,7 +74,10 @@ fn cold_scene_boot_seeds_new_game_defaults_and_round_trips() {
     assert_eq!(w.roster.members.len(), 1);
     let rec = &w.roster.members[0];
     let hms = rec.hp_mp_sp();
-    assert_eq!(hms.hp_max, template_vahn.hp_max, "template HP seeds the record");
+    assert_eq!(
+        hms.hp_max, template_vahn.hp_max,
+        "template HP seeds the record"
+    );
     assert_eq!(hms.hp_cur, template_vahn.hp_max);
     assert_eq!(hms.mp_max, template_vahn.mp_max);
     let ls = rec.live_stats();
@@ -100,7 +103,10 @@ fn cold_scene_boot_seeds_new_game_defaults_and_round_trips() {
     let mut fresh = legaia_engine_core::world::World::new();
     fresh.load_full(parsed);
     assert_eq!(fresh.roster.members.len(), 1);
-    assert_eq!(fresh.roster.members[0].hp_mp_sp().hp_max, template_vahn.hp_max);
+    assert_eq!(
+        fresh.roster.members[0].hp_mp_sp().hp_max,
+        template_vahn.hp_max
+    );
     assert_eq!(fresh.money, NEW_GAME_STARTING_GOLD);
     for &(id, count) in &seed_items {
         if id == 0 || count == 0 {
@@ -112,6 +118,7 @@ fn cold_scene_boot_seeds_new_game_defaults_and_round_trips() {
     // --- And the guard: re-entering a scene (a door transition) never
     // re-seeds over live state.
     host.world.money = 4321;
-    host.enter_field_scene("town01", 0).expect("re-enter town01");
+    host.enter_field_scene("town01", 0)
+        .expect("re-enter town01");
     assert_eq!(host.world.money, 4321, "re-entry must not reset gold");
 }

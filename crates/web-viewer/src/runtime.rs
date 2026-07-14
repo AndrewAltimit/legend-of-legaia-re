@@ -112,13 +112,13 @@ impl LegaiaRuntime {
         // template party + starting bag, so the engine never runs a zeroed
         // scaffold roster. Best-effort - a PROT.DAT-only load has no SCUS and
         // keeps the old behaviour.
-        if let Some(scus) = scus {
-            if let Some(party) = legaia_asset::new_game::StartingParty::from_scus(&scus) {
-                host.new_game_defaults = Some(legaia_engine_core::new_game::NewGameDefaults {
-                    party,
-                    inventory: legaia_asset::new_game::StartingInventory::from_scus(&scus),
-                });
-            }
+        if let Some(scus) = scus
+            && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(&scus)
+        {
+            host.new_game_defaults = Some(legaia_engine_core::new_game::NewGameDefaults {
+                party,
+                inventory: legaia_asset::new_game::StartingInventory::from_scus(&scus),
+            });
         }
 
         let count = host.index.entry_count() as u32;
@@ -328,6 +328,17 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
+    /// The **active** world: the scene host's once a disc is loaded, the
+    /// disc-free scaffold world otherwise. Save import/export
+    /// (`crate::session_save`) targets this so a session saved on the play
+    /// page captures the world the engine is actually simulating.
+    pub(crate) fn world_mut(&mut self) -> &mut World {
+        match self.scene_host.as_mut() {
+            Some(h) => &mut h.world,
+            None => &mut self.world,
+        }
+    }
+
     /// Decode the live dialogue box (the field VM's inline-script runner) into
     /// the JSON the HUD prints. Glyph bytes are ASCII-compatible from `0x20`.
     fn dialog_value(&self) -> serde_json::Value {
