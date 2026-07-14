@@ -645,6 +645,78 @@ export class LegaiaMinigames {
         }
     }
     /**
+     * Take "NEXT GAME" at the between-match choice: risk the pot on the next
+     * rung. Returns the next opponent's roster id, or `-1` when no choice is
+     * pending.
+     * @returns {number}
+     */
+    baka_run_fight_on() {
+        const ret = wasm.legaiaminigames_baka_run_fight_on(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Report the current rung's match result into the run: `true` = the
+     * player won (prize joins the pot; a choice - or the all-clear - is now
+     * pending), `false` = lost (the pot is forfeited). Returns `false` when
+     * no run is fighting.
+     * @param {boolean} player_won
+     * @returns {boolean}
+     */
+    baka_run_match_over(player_won) {
+        const ret = wasm.legaiaminigames_baka_run_match_over(this.__wbg_ptr, player_won);
+        return ret !== 0;
+    }
+    /**
+     * Take "PAY OUT" at the between-match choice: bank the pot and end the
+     * run. Returns the coins banked (`0` when no choice was pending).
+     * @returns {number}
+     */
+    baka_run_pay_out() {
+        const ret = wasm.legaiaminigames_baka_run_pay_out(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Start a cabinet ladder run at `start_rung` (an index into
+     * [`Self::baka_ladder_json`]'s serve order). Bookkeeping only: the caller
+     * still starts each rung's duel with [`Self::baka_start`]. Returns the
+     * first opponent's roster id, or `-1` when the tables didn't decode /
+     * the rung is out of range.
+     *
+     * The run models the retail between-match choice - after every match win
+     * the tally screen offers "NEXT GAME" (risk the accumulated pot on the
+     * next rung) or "PAY OUT" (bank it and stop); the two cells live on the
+     * PROT 1203 tally sheet next to "GET COIN" and its digit strip. A mid-run
+     * loss forfeits the whole pot; clearing the last rung pays it in full.
+     * @param {number} start_rung
+     * @returns {number}
+     */
+    baka_run_start(start_rung) {
+        const ret = wasm.legaiaminigames_baka_run_start(this.__wbg_ptr, start_rung);
+        return ret;
+    }
+    /**
+     * Live ladder-run state:
+     *
+     * ```json
+     * { "live": true, "phase": "fighting"|"choice"|"paid_out"|"game_over"|"all_clear",
+     *   "rung": 0, "len": 14, "roster": 5, "prize": 10,
+     *   "pot": 0, "banked": 0, "forfeited": 0 }
+     * ```
+     * @returns {string}
+     */
+    baka_run_state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_baka_run_state_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * @param {number} index
      * @returns {Uint32Array}
      */
@@ -794,8 +866,10 @@ export class LegaiaMinigames {
         }
     }
     /**
-     * `[bone_count, frame_count]` of dancer `dancer`'s `clip` locomotion
-     * record (`clip` 0 = idle bank slot, else the walk bank slot).
+     * `[bone_count, frame_count]` of dancer `dancer`'s clip slot `clip`
+     * (0 = idle, 1 = the dance loop, `2 + k` = move pair `k`). Lenient on
+     * the record-size invariant: several choreography records carry frame
+     * data past the header count that the retail cursor never plays.
      * @param {number} dancer
      * @param {number} clip
      * @returns {Uint32Array}
@@ -818,17 +892,8 @@ export class LegaiaMinigames {
         return v1;
     }
     /**
-     * The PROT 0874 §0 pack slot dancer `dancer` is drawn from
-     * (0 = Vahn, 1 = Noa, 2 = Gala). `255` when out of range.
-     * @param {number} dancer
-     * @returns {number}
-     */
-    dance_body_char_slot(dancer) {
-        const ret = wasm.legaiaminigames_dance_body_char_slot(this.__wbg_ptr, dancer);
-        return ret >>> 0;
-    }
-    /**
-     * Number of dancer bodies (3: left / centre / right).
+     * Number of dancer bodies (3 on the qualifier floor: left / centre /
+     * right).
      * @returns {number}
      */
     dance_body_count() {
@@ -848,7 +913,8 @@ export class LegaiaMinigames {
         return v1;
     }
     /**
-     * Display index of the human dancer (the centre box = Noa).
+     * Display index of the human dancer (Noa - the centre of the retail
+     * qualifier floor).
      * @returns {number}
      */
     dance_body_human_index() {
@@ -865,6 +931,17 @@ export class LegaiaMinigames {
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
+    }
+    /**
+     * Dancer `dancer`'s kind descriptor index (0 = Noa, 1 = Mary, 2/3 = the
+     * competitor dancers, 4 = the Disco King) - also the face-stamp rig id
+     * for kinds 0..=3. `255` when out of range.
+     * @param {number} dancer
+     * @returns {number}
+     */
+    dance_body_kind(dancer) {
+        const ret = wasm.legaiaminigames_dance_body_kind(this.__wbg_ptr, dancer);
+        return ret >>> 0;
     }
     /**
      * Per-vertex TMD object index (the bone a vertex hangs from), parallel to
@@ -888,10 +965,10 @@ export class LegaiaMinigames {
         return ret >>> 0;
     }
     /**
-     * Dancer `dancer`'s `clip` locomotion record decoded to absolute
-     * per-(frame, bone) `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles),
-     * padded to `target_part_count` parts - the same pose stream the site's
-     * mesh animator consumes (identical shape to `baka_anim_pose_frames`).
+     * Dancer `dancer`'s clip slot `clip` decoded to absolute per-(frame,
+     * bone) `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles), padded to
+     * `target_part_count` parts - the same pose stream the site's mesh
+     * animator consumes (identical shape to `baka_anim_pose_frames`).
      * @param {number} dancer
      * @param {number} clip
      * @param {number} target_part_count
@@ -916,8 +993,8 @@ export class LegaiaMinigames {
         return v1;
     }
     /**
-     * Whether the three dancer bodies (Noa's field mesh + the two AI dancers)
-     * and their pose bank decoded off this disc.
+     * Whether the dance cast (Noa + the dancer NPCs) and the choreography
+     * bundle decoded off this disc.
      * @returns {boolean}
      */
     dance_body_ready() {
@@ -936,9 +1013,10 @@ export class LegaiaMinigames {
         return v1;
     }
     /**
-     * The 1 MB PSX VRAM the dancer bodies sample - the PROT 0874 §2
-     * field-character textures (row-478 CLUTs), uploaded exactly as the field
-     * / play view uploads them. Empty when the bodies didn't decode.
+     * The 1 MB PSX VRAM the dancer bodies sample: the dance-hall scene's
+     * full TIM upload (the dancer NPC atlases + their row-480/481 CLUTs)
+     * merged with the PROT 0874 §2 field-character textures (Noa's atlas,
+     * row-478 CLUTs). Empty when the cast didn't decode.
      * @returns {Uint8Array}
      */
     dance_body_vram() {
@@ -946,6 +1024,39 @@ export class LegaiaMinigames {
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
+    }
+    /**
+     * The decoded cast + choreography map, so the page drives retail clips
+     * rather than invented ones:
+     *
+     * ```json
+     * { "human": 1,
+     *   "dancers": [
+     *     { "kind": 2, "model": 62, "x": 5952, "z": 13440,
+     *       "clips": [ { "id": 0, "record": 32, "frames": 20, "rate": 8,
+     *                    "translucent": false }, ... ] }, ... ],
+     *   "moves": { "miss_square": 2, "miss_circle": 3,
+     *              "seq_square": [4, 6, 8], "seq_circle": [5, 7, 9],
+     *              "beat": [10, 11, 12] } }
+     * ```
+     *
+     * Clip ids: `0` = idle (pre-game), `1` = the dance-groove loop, `2 + k` =
+     * judge-triggered move pair `k` (`FUN_801d1af4`'s return, in pair units).
+     * The `moves` map gives the clip id per judge event on each difficulty
+     * lane. `"[]"`-empty when the cast didn't decode.
+     * @returns {string}
+     */
+    dance_cast_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_dance_cast_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * The whole decoded step chart, for the page's scrolling note lane:
