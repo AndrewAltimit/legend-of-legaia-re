@@ -167,7 +167,9 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d1820` | Chart lookup: the symbol that should be pressed on the current beat (incl. the every-4th-beat held-sequence slot). `overlay_dance_801d1820.txt` |
 | `FUN_801d4040` | Chart symbol → pad-mask direction bit (`1→0x80`, `2→0x20`, `3→0x10`). `overlay_dance_801d4040.txt` |
 | `FUN_801d231c` | Score / gauge HUD render (per-player score + groove gauge via the sprite emitter). `overlay_dance_801d231c.txt` |
-| `FUN_801d03c4` | Dancer pose / animation switch driven by hit results. `overlay_dance_801d03c4.txt` |
+| `FUN_801d03c4` | Dancer face-pose switch driven by hit results (the eye/mouth MoveImage stamp). `overlay_dance_801d03c4.txt` |
+| `FUN_801d0190` | Dancer spawner: per-mode spawn table + kind descriptor table → actor list (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables)). `overlay_dance_801d0190.txt` |
+| `FUN_801d1358` | Per-dancer actor handler: binds idle / the dance loop, applies the judge-returned move clip + translucency bit, then hands to the shared clip driver `FUN_800204F8`. `overlay_dance_801d1358.txt` |
 | `FUN_801d2f38` | Textured-quad sprite emitter (HUD digits / banners / gauge); shared presentation helper. `overlay_dance_801d2f38.txt` |
 | `FUN_801d3a2c` | Per-frame dance-floor draw pass (actor list + tile-grid sweep). See [Dance-floor rendering](#dance-floor-rendering). `overlay_dance_801d3a2c.txt` |
 | `FUN_801d2a10` | Dance-floor tile-grid blit (scratchpad column-Y table + rect quad emit). `overlay_dance_801d2a10.txt` |
@@ -217,29 +219,63 @@ PROT 1230/1231 sit against the PROT TOC's zeroed tail, where the indexed size
 formula `toc[p+5] - toc[p+3] + 4` underflows; the TOC readers fall back to the
 LBA footprint for them (`legaia_prot::archive`).
 
-### Dancer bodies
+### Dancer bodies: the retail cast + choreography tables
 
-The overlay issues no mesh load, so the dancers on the floor are actors drawn
-from the **field-character pool** the engine keeps resident across every field
-scene - PROT 0874 §0, `DAT_8007C018[0..4]` (Vahn / Noa / Gala + savepoint +
-aux; parser [`legaia_asset::character_pack`]). The **human dancer is Noa's own
-field-view model** (pack slot 1): the rig-0 face stamp reads its eye/mouth
-cells straight out of Noa's field atlas (PROT 0874 §2, `(852, 256)`), so the
-head the overlay animates sits on her field mesh, not a bespoke dancer model.
-With no other character bodies resident, the two AI dancers are the remaining
-party meshes (Vahn slot 0, Gala slot 2). Poses come from the party
-field-locomotion ANM bundle (PROT 0874 §1, `character_pack::field_locomotion_anm`):
-frame 0 of the idle bank (bank slot 1) is the rest-pose assembly transform, and
-the walk bank (slot 0) is the clip cycled to the beat.
+The overlay issues no mesh load, but it *names* every dancer: the spawner
+`FUN_801d0190` reads a per-mode **spawn table** (`0x801D4D5C` mode 0/2,
+`0x801D4D8C` mode 1, `0x801D4DBC` mode 3; 0x10-byte records
+`[u32 kind, x, y, z]`) and a 5-record × `0x80`-byte **kind descriptor table**
+at `0x801D4E1C`. Parser: [`legaia_asset::dance_cast`]. Per descriptor: `+0xC`
+mesh id, `+0x10`/`+0x14` pre-game idle anim + rate, `+0x18`/`+0x1C` the
+in-play dance-groove loop, `+0x28..+0x80` eleven `[anim | flags, rate]` **move
+pairs** the judge triggers (anim bit `0x200` = draw translucent). Kind 0's
+mesh id is written *without* the scene TMD base `hw(0x8007B6F8)`, so it
+indexes the resident global pool; the others get the base added, so they are
+scene-pool indices in the MAN model-byte space.
 
-This is what the site's playable dance renders: Noa's field mesh plus the two
-resident party bodies, textured against the field-character VRAM (PROT 0874 §2)
-and posed to the beat clock, drawn on a WebGL canvas behind the HUD through the
-same `TmdRenderer` the Baka duel uses (`crates/web-viewer/src/minigames_dance.rs`
-`dance_body_*` accessors; `site/js/minigame-dance.js`). What is *not* pinned
-from a live capture is the exact per-dancer floor placement (the `_DAT_8007c36c`
-actor coordinates and yaw) and whether the entry path ever swaps a non-party
-mesh onto a dancer slot; the site's placement is fitted, not traced.
+The clips resolve against the **dance-hall scene module** - CDNAME block
+`other7` (raw TOC `0x4CC`, extraction 1226..; the same block that carries the
+dance's `efect.dat` PROT 1228 and art pack PROT 1230). Its first MOVE section
+is a **60-record ANM bundle (PROT 1229)** and the descriptor anim ids are
+placement-space ids into it (`record = id - 1`), pinned by the bone-count
+partition being exact:
+
+| kind | mesh | rig bones | anim ids (records) | identity |
+|---|---|---|---|---|
+| 0 | global pool slot 1 | 10 | idle 6, dance 18, moves 7..17 (recs 5..17) | **Noa** - her own field-view model (PROT 0874 §0 slot 1); the rig-0 face stamp reads her field atlas |
+| 1 | scene TMD 58 | 11 | idle 47, dance 51, moves 48..58 | **Mary** - face-strip rig 1 (`(400,0)`); koin3's Mary (its model 63) shares her CLUTs `(192/208, 480)` |
+| 2 | scene TMD 62 | 12 | idle 33, dance 36, moves 37..46 | dancer NPC - rig 2 (strip `(416,0)`, CLUT `(224,480)`); koin3 twin model 67 |
+| 3 | scene TMD 61 | 12 | idle 19, dance 31, moves 20..30 | dancer recolor - rig 3 (strip `(432,0)`, CLUT `(224,481)`); koin3 twin model 66 |
+| 4 | scene TMD 63 | 10 | idle 59, dance 60 (moves all 60) | **Disco King** (koin3 twin model 71) - the setumei demo dancer, also mode-2's extra spawn |
+
+So the AI dancers are **dedicated dancer NPCs, not party members** - the
+earlier "the two AI dancers are Vahn / Gala" reading is falsified by the
+descriptor table. The floor casts per mode: yosenn = Noa (centre, `x 0x1800`)
++ kinds 2/3 flanking (`0x1740`/`0x18C0`, all `z 0x3480`); hosenn = Mary centre
++ Noa right + kind 2 left; setumei = Noa + the Disco King demonstrating;
+asobi = six dancers (kind 3 twice + the Disco King). The host town scene
+(**koin3** - the field scene the PCSX load-transition capture parks in) places
+the same NPCs on its dance floor at the matching coordinates with sibling
+clips in its own 95-record bundle.
+
+The per-dancer actor handler `FUN_801d1358` binds the idle before the play
+states and the dance loop during them; on a judged event `FUN_801d1af4`
+returns a u32-word index into the descriptor's move array - in pair units:
+pair `0`/`1` = miss reaction (Square/Circle), pair `lane*2 + 2`/`+ 3` =
+sequence-complete move per difficulty lane, pair `8 + lane` = the on-beat
+timing-button step. Several choreography records carry frame data past the
+header's frame count (the retail cursor clamps at `frame_count*16 - 1`, so
+the tail never plays); `PlayerAnmBundle::record_lenient` accepts them.
+
+This is what the site's playable dance renders: the retail qualifier cast at
+the spawn-table offsets, textured against the `other7` scene VRAM (+ Noa's
+field atlas), playing the descriptor-named clips - idle before the run, the
+dance-groove loop synced to the beat clock, Noa's judge-triggered move on
+each press, the AI dancers demonstrating the chart's step per beat
+(`crates/web-viewer/src/minigames_dance.rs` `dance_body_*` /
+`dance_cast_json`; `site/js/minigame-dance.js`). Not pinned: the actor yaw on
+the retail floor, and the AI dancers' own scoring runs (the site does not
+simulate them).
 
 ### HUD widget table (`DAT_801d46cc`) + emitter geometry
 
@@ -298,15 +334,17 @@ samples). Per-case rig (jumptable at `PTR_LAB_801ceec8`; frame tables are 4-byte
 | 2 | `(0x1A0, 0)` = pack strip `(416, 0)` | `0x801D4380` (4) | 13x16 -> `(0x1A0, 8)` | 3x8 -> `(0x1A2, 0x2F)` |
 | 3 | `(0x1B0, 0)` = pack strip `(432, 0)` | `0x801D4390` (4) | 12x16 -> `(0x1B2, 0xA)` | 3x8 -> `(0x1B2, 0x29)` |
 
-In mode 0 (yosenn) the overlay remaps dancer `2 -> 3` and `1 -> 2`. The four
-poses are eye/mouth expression variants (open / blink / intense / wink).
-`FUN_801d1af4` switches the human's pose on a scoring event. **Confirmed**
-(rigs + tables read from the image; the strip diffs against the live capture
-land exactly on the blit destination rows). The dancer **bodies** are drawn
-from the resident field-character pool (see [Dancer bodies](#dancer-bodies)):
-the overlay loads no mesh, and rig 0's strip being Noa's own field atlas pins
-the human dancer to her field-view model, so the bodies are the party pool
-meshes (`_DAT_8007c36c` walks them in `FUN_801d3a2c`).
+In mode 0 (yosenn) the overlay remaps dancer `2 -> 3` and `1 -> 2` - exactly
+the qualifier cast's kinds (dancer slots hold kinds 0/2/3), so **rig id =
+dancer kind**. The four poses are eye/mouth expression variants (open / blink
+/ intense / wink). `FUN_801d1af4` switches the human's pose on a scoring
+event. **Confirmed** (rigs + tables read from the image; the strip diffs
+against the live capture land exactly on the blit destination rows). The
+strips are the dancer NPCs' own face windows: rig 0 = Noa's field atlas, and
+rigs 1..3 are sampled by the heads of the `other7` scene's dancer meshes
+(Mary + the two competitors - see
+[Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables));
+`_DAT_8007c36c` walks the spawned actors in `FUN_801d3a2c`.
 
 The chart's symbols are likewise not abstract notes. `FUN_801d1820`'s only caller,
 `FUN_801d4040`, maps a symbol straight to a **pad-button bitmask**:
@@ -346,11 +384,12 @@ each pick keys VAB **program 1, tones `2r` and `2r + 1` together**, at note
   and `efect.dat` (1228): not in the 0980 image, so they live in the
   `FUN_80025980` -> `FUN_8003EBE4` chain. The entries themselves are pinned by
   content + the byte-identical VRAM capture.
-- The dancer **bodies**' exact floor placement: the meshes are the resident
-  field-character pool (Noa's field model is pinned by the rig-0 face stamp;
-  see [Dancer bodies](#dancer-bodies)), but the per-dancer `_DAT_8007c36c`
-  world coordinates / yaw are not RAM-pinned, and whether the entry path ever
-  swaps a non-party mesh onto a dancer slot is open.
+- The dancers' **yaw** on the retail floor: the spawn tables pin kind + world
+  position
+  (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables))
+  but not the facing, and the actor records are not RAM-pinned live.
+- The kind descriptor's third header clip slot (`desc+0x20`; present for every
+  kind, consumer untraced - a results/outro pose is the natural guess).
 - The `Chicken!!` banner cell's spawner (no widget record names it).
 - Which of `DAT_801D514C`'s modes picks BGM 1048 vs 1054 (the branch is
   pinned, the arm-to-song mapping is not).
