@@ -589,7 +589,8 @@ export class LegaiaMinigames {
     }
     /**
      * Tally the latched payout into the balance and return to idle. Returns
-     * the credited coins.
+     * the credited coins. [`Self::slot_tick`] already does this on the frame a
+     * spin resolves; this stays for hosts that drive the tally themselves.
      * @returns {number}
      */
     slot_collect() {
@@ -689,6 +690,36 @@ export class LegaiaMinigames {
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
+    }
+    /**
+     * The machine's **single input**: one press means whatever the machine's
+     * phase says it means. Folds the cabinet's three stop buttons onto one
+     * key by taking them in sequence - press to spin, then press once per
+     * reel, left to right.
+     *
+     * Returns what the press did:
+     * - `"spin"` - idle, and the bet was charged (the reels are spinning up);
+     * - `"spinup"` - the reels are still ramping, so retail refuses a stop.
+     *   The host may hold the press and re-issue it when `can_stop` opens;
+     * - `"stop"` - the next still-spinning reel took its stop;
+     * - `"collect"` - a press landed on a resolved spin before the frame
+     *   tally ran: it was tallied, but the balance can't fund another spin;
+     * - `"broke"` - idle and under the 3-coin gate. The machine is empty; the
+     *   host racks a new one;
+     * - `"none"` - no machine, or it has cashed out.
+     * @returns {string}
+     */
+    slot_press() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_slot_press(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * The live reel positions (`DAT_801d3cc0`) - fixed-point angles whose high
@@ -901,10 +932,22 @@ export class LegaiaMinigames {
         return v1;
     }
     /**
-     * Advance the reels one frame.
+     * Advance the reels one frame and **tally a resolved spin automatically**.
+     *
+     * The retail cabinet has three stop buttons and a payout tray; a browser
+     * page has one key. Collecting is therefore not an input here: the moment
+     * the third reel lands and the spin evaluates
+     * ([`SlotPhase::Payout`]), this runs the machine's own state-4 credit
+     * ([`SlotMachine::collect`] - the payout arithmetic is untouched) and the
+     * machine drops back to idle. The evaluated spin stays latched in
+     * `last_result`, so the host can keep the winning line lit until the next
+     * spin is charged. Returns the coins credited on this frame (`0` on a
+     * losing spin or any frame that didn't resolve one).
+     * @returns {number}
      */
     slot_tick() {
-        wasm.legaiaminigames_slot_tick(this.__wbg_ptr);
+        const ret = wasm.legaiaminigames_slot_tick(this.__wbg_ptr);
+        return ret;
     }
 }
 if (Symbol.dispose) LegaiaMinigames.prototype[Symbol.dispose] = LegaiaMinigames.prototype.free;

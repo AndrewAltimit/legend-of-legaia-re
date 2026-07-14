@@ -291,6 +291,14 @@ falls to black within ~48 degrees either side. That fade is what caps each reel
 window top and bottom, and what hides the near half of the cylinder: there is no
 backface cull, the near half is simply shaded to black.
 
+The **payline face is the one that carries the payline row** - the strip row the
+win eval pays on (`strip[(pos >> 8) % 0x14]`). It is not the first face emitted:
+with the first face at angle `0x380` and a `0x100` step, the face at the shade
+peak is the *fifth* (`z(0x380 + 4*0x100 + 0x80) = -512`), and the faces above /
+below it carry the rows either side as the strip walks downward with the angle. A
+renderer that indexes the strip straight off the face index is off by that
+constant, and draws a payline whose three symbols are not the three that paid.
+
 ### The paylines are 3D lines - `FUN_801d3380`
 
 Five `LINE_F2` prims, each of whose two endpoints is `RTPS`-projected on its own.

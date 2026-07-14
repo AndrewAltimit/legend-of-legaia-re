@@ -84,6 +84,21 @@ canvas.mg-canvas {
   border: 1px solid var(--border); border-radius: 4px;
   /* The art is PSX texture data - never smooth it. */
   image-rendering: pixelated; image-rendering: crisp-edges;
+  /* The cabinet IS the button: a click on it is a press, for want of a
+   * spacebar on a phone. */
+  cursor: pointer;
+}
+canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mg-controls {
+  font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.7;
+  color: var(--text-muted); margin: 0.6rem 0 0.2rem;
+  padding: 0.5rem 0.65rem; background: var(--bg-code); border: 1px solid var(--border);
+}
+.mg-controls b { color: var(--text); }
+.mg-controls kbd {
+  font-family: var(--font-mono); font-size: 0.76rem; padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 3px;
+  background: var(--bg-card); color: var(--text);
 }
 .mg-reels {
   display: grid; grid-template-columns: repeat(3, 4.2rem); gap: 0.35rem;
@@ -152,7 +167,7 @@ canvas.mg-canvas {
   <div class="breadcrumb"><a href="index.html">home</a> &middot; minigames</div>
   <h1>Minigames &amp; Sol Tower</h1>
   <p class="lede">
-    Coin-economy minigames, prize-exchange counters, and the side-quest chains layered through Sol Tower (CDNAME <code>town0d</code>). Three of them - <strong>Noa's dance, Baka Fighter and the casino slot machine</strong> - are <a href="#play">playable right here in your browser</a>, run by the clean-room rules engines against the tables read out of your own disc image.
+    Coin-economy minigames, prize-exchange counters, and the side-quest chains layered through Sol Tower (CDNAME <code>town0d</code>). Three of them - <strong>the casino slot machine, Noa's dance and Baka Fighter</strong> - are <a href="#play">playable right here in your browser</a>, run by the clean-room rules engines against the tables read out of your own disc image.
   </p>
 </header>
 
@@ -177,13 +192,13 @@ canvas.mg-canvas {
 
     <div id="mg-main" style="display: none;">
       <div class="mg-tabs" id="mg-tabs">
-        <button class="mg-tab is-active" type="button" data-game="dance">Dance</button>
+        <button class="mg-tab is-active" type="button" data-game="slot">Slot machine</button>
+        <button class="mg-tab" type="button" data-game="dance">Dance</button>
         <button class="mg-tab" type="button" data-game="baka">Baka Fighter</button>
-        <button class="mg-tab" type="button" data-game="slot">Slot machine</button>
       </div>
 
       <!-- ---------------- dance ---------------- -->
-      <section class="mg-panel is-active" data-game="dance">
+      <section class="mg-panel" data-game="dance">
         <h3>Sol Fever Disco &mdash; Noa's dance</h3>
         <p class="mg-blurb">
           Hit the step on the beat. The notes are the game's own step chart, baked
@@ -300,7 +315,7 @@ canvas.mg-canvas {
       </section>
 
       <!-- ---------------- slot machine ---------------- -->
-      <section class="mg-panel" data-game="slot">
+      <section class="mg-panel is-active" data-game="slot">
         <h3>Vidna casino &mdash; slot machine</h3>
         <p class="mg-blurb">
           Three coins a spin, all <b>five</b> paylines always live &mdash; three straight and two diagonal. Stop each reel yourself.
@@ -309,15 +324,17 @@ canvas.mg-canvas {
           counter back down. Land a line of the two jackpot symbols and the bonus round
           opens: cheap spins that pay the <em>product</em> of the line.
         </p>
-        <canvas id="slot-canvas" class="mg-cabinet" width="640" height="240"></canvas>
+        <canvas id="slot-canvas" class="mg-cabinet" width="640" height="240"
+                tabindex="0" role="button" aria-label="Slot machine - press space to spin, then once per reel to stop it"></canvas>
         <div class="mg-reels" id="slot-reels" hidden></div>
         <div class="mg-verdict" id="slot-verdict"></div>
-        <div class="mg-row">
-          <button class="mg-btn mg-primary" type="button" id="slot-spin">Spin<span class="mg-key">SPACE</span></button>
-          <button class="mg-btn" type="button" id="slot-stop">Stop reel<span class="mg-key">S</span></button>
-          <button class="mg-btn" type="button" id="slot-collect">Collect<span class="mg-key">C</span></button>
-          <button class="mg-btn" type="button" id="slot-reset">New machine</button>
-        </div>
+        <p class="mg-controls">
+          <b><kbd>Space</kbd> is the whole machine.</b> Press it to spin, then press it once
+          more per reel to stop them left to right &mdash; three presses, three reels, which is
+          exactly what the cabinet's three stop buttons do. A win banks itself, so there is
+          nothing to collect; when the coins run out, a press racks a fresh machine.
+          Clicking the machine counts as a press, for want of a spacebar.
+        </p>
         <div class="mg-hud">
           <span>Coins <b class="mg-big" id="slot-balance">0</b></span>
           <span>Spin costs <b id="slot-cost">3</b></span>
@@ -471,7 +488,7 @@ canvas.mg-canvas {
   const tabsEl    = document.getElementById('mg-tabs');
 
   let api = null;         /* LegaiaMinigames */
-  let active = 'dance';   /* which panel is showing */
+  let active = 'slot';    /* which panel is showing */
   let raf = null;
 
   /* ---------------- shared ---------------- */
@@ -957,7 +974,7 @@ canvas.mg-canvas {
       verdict($('slot-verdict'), 'The payout table did not decode from this disc.', 'bad');
       return;
     }
-    verdict($('slot-verdict'), `${SLOT_START_COINS} coins in the machine. 3 a spin.`, '');
+    verdict($('slot-verdict'), `${SLOT_START_COINS} coins in the machine, 3 a spin. Press space.`, '');
     slotDrawPaytable();
   }
 
@@ -1037,6 +1054,21 @@ canvas.mg-canvas {
     const shade = (z) => Math.max(0, Math.min(R.shade_max,
       R.shade_max - Math.floor((z + R.shade_bias) * R.shade_gain / 512)));
 
+    /* WHICH face is the payline face: the one turned toward the player, i.e. the
+     * one whose depth cue peaks (z = -shade_bias; -z is toward the viewer). It
+     * falls out of the table, it is not a magic number - for the retail reel
+     * (angle_base 896, step 256, 8 faces of a 4096 turn) it is face 4.
+     *
+     * It matters because THAT face has to carry the machine's payline row - the
+     * row the win eval pays on. Index the strip straight off the face and the
+     * reels draw a row that isn't the one that pays: the lamps light a line of
+     * three symbols that don't match. */
+    let paylineFace = 0, nearest = Infinity;
+    for (let f = 0; f < R.faces; f++) {
+      const z = rz(R.angle_base + f * R.angle_step + R.angle_step / 2);
+      if (z < nearest) { nearest = z; paylineFace = f; }
+    }
+
     for (let r = 0; r < 3; r++) {
       const pos = positions[r];
       const row0 = Math.floor(((pos >> 8) % R.strip_len + R.strip_len) % R.strip_len);
@@ -1058,8 +1090,9 @@ canvas.mg-canvas {
         const p01 = slotProject(x0, yB, zB), p11 = slotProject(x1, yB, zB);
 
         /* Which symbol is on this face: retail walks the strip DOWNWARD from the
-         * current row as the angle advances. */
-        const idx = ((row0 - f) % R.strip_len + R.strip_len) % R.strip_len;
+         * payline row as the angle advances, so the payline face carries row0
+         * itself and the faces above / below it carry the rows either side. */
+        const idx = ((row0 + paylineFace - f) % R.strip_len + R.strip_len) % R.strip_len;
         const sym = slotArt.symbols[strip[idx]];
         if (!sym) continue;
 
@@ -1166,7 +1199,11 @@ canvas.mg-canvas {
     }
 
     const C = slotScene.cells;
-    const winLine = (st.phase === 'payout' && st.last && st.last.line != null) ? st.last.line : null;
+    /* The win stays lit until the next spin is charged. A resolved spin tallies
+     * itself (there is no collect input), so the machine is already back at
+     * idle by the time you read this - but `last` is only cleared when the next
+     * bet is charged, which is exactly how long the lamps should stay on. */
+    const winLine = (st.last && st.last.line != null) ? st.last.line : null;
 
     /* The machine's face, on the ground the cabinet would occupy. This ground is
      * NOT retail art - the cabinet is the casino room's 3D geometry, not the
@@ -1209,7 +1246,9 @@ canvas.mg-canvas {
      *    branch of FUN_801d08e4 overrides only the Us). That swap is how retail
      *    shows a taken stop. */
     slotScene.pedestals.forEach((p, r) => {
-      const stopped = (st.phase === 'stopping' || st.phase === 'payout') && st.stopped > r;
+      /* `stopped` counts this spin's taken stops and is only cleared when the
+       * next bet is charged, so the taken-stop art survives the auto-tally. */
+      const stopped = st.stopped > r;
       const pal = (stopped ? C.pedestal_clut_stopped : C.pedestal_clut_spinning) + r;
       const img = slotArt.page(C.pedestal_page, pal & 0x3F);
       const cell = (stopped ? C.pedestal_cells_stopped : C.pedestal_cells)[r];
@@ -1230,58 +1269,102 @@ canvas.mg-canvas {
     if (slotArt.panel) g.drawImage(slotArt.panel, 560 - 63, 128 - 119);
     slotDrawCoins(g, st.balance);
   }
-  let slotPrev = { stopped: 0, phase: '', feature: 0, payout: -1 };
+  let slotPrev = { stopped: 0, phase: '', feature: 0 };
+  /* A press during the spin-up ramp can't be taken (retail refuses a stop until
+   * the reels are up to speed), so hold it and take the first stop the moment
+   * the machine will accept one. Otherwise a fast triple-tap silently drops a
+   * press and you end up one reel short. */
+  let slotPendingStop = false;
+
+  /* ---- the one control ----
+   *
+   * The cabinet has three stop buttons and a payout tray. A web page has one
+   * key, so the three stops are taken in sequence and the tray tallies itself:
+   * press to spin, press once per reel, and the win is already in the balance
+   * by the time the reels settle. `slot_press` (the WASM API) is the dispatch;
+   * this only decides what to SAY about it, and what an empty machine means. */
+  function slotPress() {
+    if (!api) return;
+    const st = JSON.parse(api.slot_state_json());
+    if (!st.live) { slotReset(); return; }
+    if (st.phase === 'idle' && !st.can_spin) {   /* empty: rack a fresh machine */
+      slotReset();
+      return;
+    }
+    const did = api.slot_press();
+    if (did === 'spin') {
+      slotPendingStop = false;
+      verdict($('slot-verdict'), 'Spinning - press again to stop each reel.', '');
+    } else if (did === 'spinup') {
+      slotPendingStop = true;                    /* taken as soon as stops open */
+    }
+  }
 
   function slotFrame() {
-    const st = JSON.parse(api.slot_state_json());
-    if (!st.live) return;
-    api.slot_tick();
+    /* The tick tallies a resolved spin on its own - there is no collect input.
+     * It returns the coins it banked, which is also the payout cue. */
+    const credited = api.slot_tick();
     slotTick++;
+    let st = JSON.parse(api.slot_state_json());
+    if (!st.live) return;
+    if (slotPendingStop && st.can_stop) {
+      slotPendingStop = false;
+      api.slot_press();
+      st = JSON.parse(api.slot_state_json());
+    }
     slotRender(st);
 
     /* Cue the machine's own sounds off the state transitions the retail SM
      * fires them on: one click per reel as its stop is taken, the reach sting
-     * when a feature mode opens, and the payout tick while credits tally. */
+     * when a feature mode opens, and the payout tick as the credits tally. */
     if (st.stopped > slotPrev.stopped) slotPlay('reel_stop', 0.55);
     if (st.feature_mode !== slotPrev.feature && st.feature_mode > 0) {
       slotPlay(st.feature_mode === 2 ? 'reach2' : 'reach1', 0.5);
     }
-    if (st.phase === 'payout' && slotPrev.phase !== 'payout'
-        && st.last && st.last.payout > 0) {
-      slotPlay('payout_tick', 0.5);
-    }
-    slotPrev = { stopped: st.stopped, phase: st.phase,
-                 feature: st.feature_mode, payout: st.last ? st.last.payout : -1 };
+    if (credited > 0) slotPlay('payout_tick', 0.5);
+    /* The spin resolved on this frame: the last reel's stop evaluated it and the
+     * tally put the machine back at idle (a press can beat the tally by a frame,
+     * so 'payout' is a legal predecessor too). */
+    const resolved = (slotPrev.phase === 'stopping' || slotPrev.phase === 'payout')
+                     && st.phase === 'idle';
+    slotPrev = { stopped: st.stopped, phase: st.phase, feature: st.feature_mode };
 
     $('slot-balance').textContent  = st.balance;
     $('slot-cost').textContent     = st.cost;
     $('slot-feature').textContent  = st.feature_mode + (st.bonus_spins > 0 ? ` (${st.bonus_spins} bonus)` : '');
     $('slot-nettake').textContent  = st.net_take;
 
-    $('slot-spin').disabled    = !st.can_spin;
-    $('slot-stop').disabled    = !st.can_stop;
-    $('slot-collect').disabled = st.phase !== 'payout';
-
-    if (st.phase === 'payout' && st.last) {
+    if (resolved && st.last) {
       const l = st.last;
       if (l.payout > 0) {
         verdict($('slot-verdict'),
-          (l.bonus_spin ? `Bonus spin pays ${l.payout}!` : `A line of symbol #${l.symbol} pays ${l.payout}!`)
-          + (l.bonus_triggered ? ' JACKPOT - bonus round!' : '') + ' Collect.', 'good');
+          (l.bonus_spin ? `Bonus spin pays ${l.payout}` : `A line of symbol #${l.symbol} pays ${l.payout}`)
+          + ' - banked.' + (l.bonus_triggered ? ' JACKPOT - bonus round!' : ''), 'good');
       } else {
-        verdict($('slot-verdict'), 'No line. Collect and spin again.', '');
+        verdict($('slot-verdict'), 'No line. Press space to spin again.', '');
       }
-    } else if (st.phase === 'idle' && !st.can_spin) {
-      verdict($('slot-verdict'), 'Out of coins. Start a new machine.', 'bad');
+    }
+    if (st.phase === 'idle' && !st.can_spin) {
+      verdict($('slot-verdict'), 'Out of coins - press space to rack a fresh machine.', 'bad');
     }
   }
 
-  $('slot-spin').addEventListener('click', () => api && api.slot_spin());
-  $('slot-stop').addEventListener('click', () => api && api.slot_stop());
-  $('slot-collect').addEventListener('click', () => api && api.slot_collect());
-  $('slot-reset').addEventListener('click', slotReset);
+  /* The machine itself is the button, so a tap works where a spacebar doesn't. */
+  $('slot-canvas').addEventListener('click', slotPress);
 
   /* ---------------- keyboard ---------------- */
+
+  /* Space is the slot machine's only control, so it is also the one key this
+   * page takes away from the browser. Take it only while the machine is both
+   * the active tab AND actually on screen - a reader scrolled down to the Sol
+   * Tower tables still gets to page down with it. */
+  function slotOnScreen() {
+    const p = document.querySelector('.mg-panel[data-game="slot"]');
+    if (!p || !p.classList.contains('is-active')) return false;
+    const r = p.getBoundingClientRect();
+    const h = window.innerHeight || document.documentElement.clientHeight;
+    return r.bottom > 0 && r.top < h;
+  }
 
   document.addEventListener('keydown', (e) => {
     if (!api || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -1293,9 +1376,7 @@ canvas.mg-canvas {
       const m = { a: 1, s: 2, d: 3, ' ': 4, 1: 1, 2: 2, 3: 3, 4: 4 }[k];
       if (m) { e.preventDefault(); bakaChoose(m); }
     } else if (active === 'slot') {
-      if (k === ' ')      { e.preventDefault(); api.slot_spin(); }
-      else if (k === 's') { e.preventDefault(); api.slot_stop(); }
-      else if (k === 'c') { e.preventDefault(); api.slot_collect(); }
+      if (k === ' ' && slotOnScreen()) { e.preventDefault(); slotPress(); }
     }
   });
 
@@ -1325,7 +1406,7 @@ canvas.mg-canvas {
         b.disabled = !ok[b.dataset.game];
         if (b.disabled) b.title = (status[b.dataset.game] || {}).why || 'table did not decode';
       });
-      const firstOk = ['dance', 'baka', 'slot'].find(g => ok[g]);
+      const firstOk = ['slot', 'dance', 'baka'].find(g => ok[g]);
       if (!firstOk) {
         prog.fail('None of the minigame overlays decoded from this image.');
         return;
@@ -1362,9 +1443,7 @@ canvas.mg-canvas {
                          state: () => api && JSON.parse(api.baka_state_json()),
                          roster: () => api && JSON.parse(api.baka_roster_json()) };
   window.__mgSlot    = { reset: slotReset,
-                         spin: () => api && api.slot_spin(),
-                         stop: () => api && api.slot_stop(),
-                         collect: () => api && api.slot_collect(),
+                         press: slotPress,
                          state: () => api && JSON.parse(api.slot_state_json()) };
 
   RomCache.attach(fileInput, { onLoad: loadDisc });

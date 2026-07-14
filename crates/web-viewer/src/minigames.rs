@@ -569,10 +569,26 @@ impl LegaiaMinigames {
         self.slot.as_mut().is_some_and(|m| m.spin())
     }
 
-    /// Advance the reels one frame.
-    pub fn slot_tick(&mut self) {
-        if let Some(m) = self.slot.as_mut() {
-            m.tick();
+    /// Advance the reels one frame and **tally a resolved spin automatically**.
+    ///
+    /// The retail cabinet has three stop buttons and a payout tray; a browser
+    /// page has one key. Collecting is therefore not an input here: the moment
+    /// the third reel lands and the spin evaluates
+    /// ([`SlotPhase::Payout`]), this runs the machine's own state-4 credit
+    /// ([`SlotMachine::collect`] - the payout arithmetic is untouched) and the
+    /// machine drops back to idle. The evaluated spin stays latched in
+    /// `last_result`, so the host can keep the winning line lit until the next
+    /// spin is charged. Returns the coins credited on this frame (`0` on a
+    /// losing spin or any frame that didn't resolve one).
+    pub fn slot_tick(&mut self) -> i32 {
+        let Some(m) = self.slot.as_mut() else {
+            return 0;
+        };
+        m.tick();
+        if m.phase() == SlotPhase::Payout {
+            m.collect()
+        } else {
+            0
         }
     }
 
@@ -583,9 +599,57 @@ impl LegaiaMinigames {
     }
 
     /// Tally the latched payout into the balance and return to idle. Returns
-    /// the credited coins.
+    /// the credited coins. [`Self::slot_tick`] already does this on the frame a
+    /// spin resolves; this stays for hosts that drive the tally themselves.
     pub fn slot_collect(&mut self) -> i32 {
         self.slot.as_mut().map(|m| m.collect()).unwrap_or(0)
+    }
+
+    /// The machine's **single input**: one press means whatever the machine's
+    /// phase says it means. Folds the cabinet's three stop buttons onto one
+    /// key by taking them in sequence - press to spin, then press once per
+    /// reel, left to right.
+    ///
+    /// Returns what the press did:
+    /// - `"spin"` - idle, and the bet was charged (the reels are spinning up);
+    /// - `"spinup"` - the reels are still ramping, so retail refuses a stop.
+    ///   The host may hold the press and re-issue it when `can_stop` opens;
+    /// - `"stop"` - the next still-spinning reel took its stop;
+    /// - `"collect"` - a press landed on a resolved spin before the frame
+    ///   tally ran: it was tallied, but the balance can't fund another spin;
+    /// - `"broke"` - idle and under the 3-coin gate. The machine is empty; the
+    ///   host racks a new one;
+    /// - `"none"` - no machine, or it has cashed out.
+    pub fn slot_press(&mut self) -> String {
+        let Some(m) = self.slot.as_mut() else {
+            return "none".to_string();
+        };
+        let what = match m.phase() {
+            // A press can only beat the frame tally by landing in the same
+            // frame the third reel did. Tally it, then treat the press as the
+            // spin it was meant to be.
+            SlotPhase::Payout => {
+                m.collect();
+                if m.spin() { "spin" } else { "collect" }
+            }
+            SlotPhase::Idle => {
+                if m.spin() {
+                    "spin"
+                } else {
+                    "broke"
+                }
+            }
+            SlotPhase::Spinning => "spinup",
+            SlotPhase::Stopping => {
+                if m.stop_next_reel() {
+                    "stop"
+                } else {
+                    "none"
+                }
+            }
+            SlotPhase::CashedOut => "none",
+        };
+        what.to_string()
     }
 
     /// Live machine state. `window` is the 3x3 grid of symbol ids actually on
