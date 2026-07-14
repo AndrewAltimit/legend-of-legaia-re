@@ -3,12 +3,31 @@
 //! A pack is one YAML document: a small header (format tag, language code,
 //! contributors, notes) plus fixed, ordered sections of [`Entry`] lists. Every
 //! entry carries a stable provenance `key` (where on the disc the text lives),
-//! the `source` text in markup form (see [`super::markup`]), an initially
-//! empty `translation`, and the byte `budget` an encoded translation must fit
-//! (same-size in-place patching - see `docs/tooling/translation.md`).
+//! an initially empty `translation`, and the byte `budget` an encoded
+//! translation must fit (same-size in-place patching - see
+//! `docs/tooling/translation.md`).
 //!
 //! Only entries whose `translation` is non-empty are ever written to a disc;
 //! everything else is left byte-identical.
+//!
+//! # Two pack shapes
+//!
+//! | Shape | `source:` | Contains | Where it lives |
+//! |---|---|---|---|
+//! | **working** | yes | the disc's own text, for the translator to read | the user's machine (never redistributed) |
+//! | **distributable** | no | only *new* text keyed by disc coordinates | shareable / shippable |
+//!
+//! [`LanguagePack::strip_sources`] converts working -> distributable: it drops
+//! every `source:` field and every unfilled entry, leaving a pure
+//! `key -> translation` lookup table. A distributable pack therefore carries
+//! none of the original script - the `key` is a disc coordinate (a VA or a
+//! PROT-entry byte offset) and the `budget` is a byte count.
+//!
+//! Because a distributable pack has no `source` to check itself against, its
+//! `budget` is only a **hint**: [`super::import`] re-derives the real byte
+//! budget from the disc it is patching and rejects any entry that doesn't fit
+//! (and any entry whose on-disc length disagrees with the hint - the wrong-disc
+//! guard that `source` provides for a working pack).
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -33,7 +52,10 @@ pub struct Entry {
     /// Human context (scene name, table ids, neighbours). Not machine-read.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub context: String,
-    /// Source (US English) text in markup form.
+    /// Source (US English) text in markup form. **Absent in a distributable
+    /// pack** - that shape ships only new text, so there is nothing to compare
+    /// against and [`super::import`] derives the budget from the disc instead.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub source: String,
     /// Target-language text in markup form. Empty = leave the disc untouched.
     #[serde(default)]
@@ -41,7 +63,19 @@ pub struct Entry {
     /// Maximum **encoded byte** length a translation may occupy. The encoder
     /// output must satisfy `len <= budget` (shorter is fine - dialog segments
     /// are space-padded, strings are re-terminated).
+    ///
+    /// Authoritative in a working pack (it was measured off the disc during
+    /// export); a *hint* in a distributable pack, where import re-measures the
+    /// target on the disc being patched and uses the hint only to detect a
+    /// disc/pack mismatch.
     pub budget: usize,
+}
+
+impl Entry {
+    /// `true` when a translator has filled this entry in.
+    pub fn is_filled(&self) -> bool {
+        !self.translation.trim().is_empty()
+    }
 }
 
 /// Fixed section set, serialized in this order. Each is one text population
@@ -91,9 +125,30 @@ impl Sections {
         .into_iter()
     }
 
+    /// Mutable view of every section, in serialization order.
+    pub fn each_mut(&mut self) -> [&mut Vec<Entry>; 8] {
+        [
+            &mut self.items,
+            &mut self.item_types,
+            &mut self.spells,
+            &mut self.arts,
+            &mut self.accessory_passives,
+            &mut self.party_names,
+            &mut self.scene_dialog,
+            &mut self.inline_text,
+        ]
+    }
+
     /// Total entry count across all sections.
     pub fn total(&self) -> usize {
         self.iter().map(|(_, e)| e.len()).sum()
+    }
+
+    /// Entries a translator has filled in.
+    pub fn filled(&self) -> usize {
+        self.iter()
+            .map(|(_, e)| e.iter().filter(|e| e.is_filled()).count())
+            .sum()
     }
 }
 
@@ -180,7 +235,10 @@ impl LanguagePack {
                 if !e.context.is_empty() {
                     out.push_str(&format!("    context: {}\n", q(&e.context)));
                 }
-                out.push_str(&format!("    source: {}\n", q(&e.source)));
+                // Omitted entirely in a distributable pack (see module docs).
+                if !e.source.is_empty() {
+                    out.push_str(&format!("    source: {}\n", q(&e.source)));
+                }
                 out.push_str(&format!("    translation: {}\n", q(&e.translation)));
                 out.push_str(&format!("    budget: {}\n", e.budget));
             }
@@ -188,21 +246,105 @@ impl LanguagePack {
         Ok(out)
     }
 
+    /// Working pack -> **distributable** pack: keep only the entries a
+    /// translator filled in, and drop their `source` (and `context`, which
+    /// quotes table ids and scene names but can also echo the source text).
+    /// The result is a pure `key -> new text` lookup table plus the byte-budget
+    /// hint: none of the original script survives.
+    pub fn strip_sources(mut self) -> Self {
+        for entries in self.sections.each_mut() {
+            entries.retain(|e| e.is_filled());
+            for e in entries.iter_mut() {
+                e.source.clear();
+                e.context.clear();
+            }
+        }
+        self
+    }
+
+    /// Copy every non-empty `translation` from `other` onto the entry with the
+    /// same key here. Powers `translate merge` (chunked skeletons -> one pack)
+    /// and `translate init --resume` (a shipped distributable pack -> a fresh
+    /// source-bearing working pack, so a translator can keep editing without
+    /// anyone redistributing the source text). Returns the number of entries
+    /// updated.
+    pub fn merge_translations(&mut self, other: &LanguagePack) -> usize {
+        let filled: std::collections::HashMap<&str, &str> = other
+            .sections
+            .iter()
+            .flat_map(|(_, e)| e.iter())
+            .filter(|e| e.is_filled())
+            .map(|e| (e.key.as_str(), e.translation.as_str()))
+            .collect();
+        let mut n = 0;
+        for entries in self.sections.each_mut() {
+            for e in entries.iter_mut() {
+                if let Some(t) = filled.get(e.key.as_str())
+                    && e.translation != *t
+                {
+                    e.translation = (*t).to_string();
+                    n += 1;
+                }
+            }
+        }
+        n
+    }
+
+    /// Split into chunks of at most `max_entries` entries, preserving section
+    /// membership and order. Each chunk is itself a valid pack (same header,
+    /// a slice of the entries), so a bulk-fill pass can be parallelized over
+    /// the chunks and the results recombined with [`Self::merge_translations`].
+    pub fn split_chunks(&self, max_entries: usize) -> Vec<LanguagePack> {
+        assert!(max_entries > 0, "chunk size must be positive");
+        let mut chunks: Vec<LanguagePack> = Vec::new();
+        let mut cur = self.empty_like();
+        let mut n = 0usize;
+        for (name, entries) in self.sections.iter() {
+            for e in entries {
+                cur.section_mut(name).push(e.clone());
+                n += 1;
+                if n == max_entries {
+                    chunks.push(std::mem::replace(&mut cur, self.empty_like()));
+                    n = 0;
+                }
+            }
+        }
+        if n > 0 {
+            chunks.push(cur);
+        }
+        chunks
+    }
+
+    /// Same header, no entries.
+    fn empty_like(&self) -> LanguagePack {
+        LanguagePack {
+            sections: Sections::default(),
+            ..self.clone()
+        }
+    }
+
+    /// Section list by serialization name (panics on an unknown name - the set
+    /// is closed and comes from [`Sections::iter`]).
+    fn section_mut(&mut self, name: &str) -> &mut Vec<Entry> {
+        match name {
+            "items" => &mut self.sections.items,
+            "item_types" => &mut self.sections.item_types,
+            "spells" => &mut self.sections.spells,
+            "arts" => &mut self.sections.arts,
+            "accessory_passives" => &mut self.sections.accessory_passives,
+            "party_names" => &mut self.sections.party_names,
+            "scene_dialog" => &mut self.sections.scene_dialog,
+            "inline_text" => &mut self.sections.inline_text,
+            other => unreachable!("unknown section {other}"),
+        }
+    }
+
     /// Re-target this pack for a new language: keeps every key / source /
     /// context / budget, clears all translations, stamps the header.
     pub fn into_skeleton(mut self, language: &str, contributors: Vec<String>) -> Self {
         self.language = language.to_string();
         self.contributors = contributors;
-        for entries in [
-            &mut self.sections.items,
-            &mut self.sections.item_types,
-            &mut self.sections.spells,
-            &mut self.sections.arts,
-            &mut self.sections.accessory_passives,
-            &mut self.sections.party_names,
-            &mut self.sections.scene_dialog,
-            &mut self.sections.inline_text,
-        ] {
+        for entries in self.sections.each_mut() {
             for e in entries.iter_mut() {
                 e.translation.clear();
             }
@@ -287,6 +429,75 @@ mod tests {
         assert_eq!(p.contributors, vec!["someone".to_string()]);
         assert!(p.sections.scene_dialog[0].translation.is_empty());
         assert_eq!(p.sections.scene_dialog[0].source, "Clean water flows from");
+    }
+
+    /// The distributable shape: filled entries only, no `source:` / `context:`
+    /// anywhere in the emitted YAML, and it still re-parses as a pack.
+    #[test]
+    fn strip_sources_drops_the_original_script() {
+        let dist = sample().strip_sources();
+        assert_eq!(dist.sections.items.len(), 0, "unfilled entry dropped");
+        assert_eq!(dist.sections.scene_dialog.len(), 1);
+        assert!(dist.sections.scene_dialog[0].source.is_empty());
+        let y = dist.to_yaml().unwrap();
+        assert!(!y.contains("source:"), "{y}");
+        assert!(!y.contains("Clean water"), "{y}");
+        assert!(!y.contains("context:"), "{y}");
+        assert!(y.contains("translation: 'L''eau claire coule'"), "{y}");
+        assert!(y.contains("budget: 22"), "{y}");
+        let back = LanguagePack::from_yaml(&y).unwrap();
+        assert_eq!(back.sections.scene_dialog[0].key, "man:31:0xe7");
+        assert_eq!(back.sections.scene_dialog[0].budget, 22);
+    }
+
+    /// The resume path: a shipped (source-less) pack merges back onto a fresh
+    /// source-bearing skeleton exported from the user's own disc.
+    #[test]
+    fn merge_translations_resumes_from_a_distributable_pack() {
+        let dist = sample().strip_sources();
+        let mut skeleton = sample().into_skeleton("fr", vec![]);
+        assert_eq!(skeleton.sections.scene_dialog[0].translation, "");
+        assert_eq!(skeleton.merge_translations(&dist), 1);
+        assert_eq!(
+            skeleton.sections.scene_dialog[0].translation,
+            "L'eau claire coule"
+        );
+        // The skeleton still carries source + budget from the disc export.
+        assert_eq!(
+            skeleton.sections.scene_dialog[0].source,
+            "Clean water flows from"
+        );
+        // Re-merging is a no-op (nothing changes).
+        assert_eq!(skeleton.merge_translations(&dist), 0);
+    }
+
+    #[test]
+    fn split_chunks_partitions_every_entry() {
+        let mut p = sample();
+        for i in 0..5 {
+            p.sections.inline_text.push(Entry {
+                key: format!("raw:9:0x{i:x}"),
+                context: String::new(),
+                source: "x".into(),
+                translation: String::new(),
+                budget: 1,
+            });
+        }
+        let total = p.sections.total();
+        let chunks = p.split_chunks(3);
+        assert_eq!(chunks.len(), total.div_ceil(3));
+        assert_eq!(
+            chunks.iter().map(|c| c.sections.total()).sum::<usize>(),
+            total
+        );
+        // Every key survives exactly once, and the header rides along.
+        let keys: Vec<String> = chunks
+            .iter()
+            .flat_map(|c| c.sections.iter().flat_map(|(_, e)| e.iter()))
+            .map(|e| e.key.clone())
+            .collect();
+        assert_eq!(keys.len(), total);
+        assert_eq!(chunks[0].language, p.language);
     }
 
     #[test]

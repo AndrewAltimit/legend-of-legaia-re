@@ -11,12 +11,21 @@
 //!   MAN is recompressed and must fit its original compressed footprint;
 //! - `raw:*` - same space-padded overwrite, directly in the PROT entry.
 //!
-//! Before writing, each target is verified against the pack's `source`: if
-//! the disc bytes already equal the translation the entry counts as already
-//! applied (idempotent re-import); if they match neither, the entry is
-//! skipped with a warning (wrong disc / conflicting patch). Encode failures
-//! (non-Latin characters, over-budget text) are reported per entry with
-//! per-character positions and leave the disc untouched.
+//! Before writing, each target is verified:
+//!
+//! - a **working pack** (one that carries `source:`) is checked against it -
+//!   if the disc bytes already equal the translation the entry counts as
+//!   already applied (idempotent re-import); if they match neither, the entry
+//!   is skipped with a warning (wrong disc / conflicting patch);
+//! - a **distributable pack** (translation-only - see [`super::pack`]) has no
+//!   source to check against, so the target is measured *on the disc being
+//!   patched*: the string's own span / the segment's own `0x1F .. 0x00`
+//!   framing is the byte budget, and the pack's `budget` hint must agree with
+//!   it. A disagreement means the pack wasn't built for this image and the
+//!   entry is skipped rather than written blind.
+//!
+//! Encode failures (non-Latin characters, over-budget text) are reported per
+//! entry with per-character positions and leave the disc untouched.
 
 use std::collections::BTreeMap;
 
@@ -29,6 +38,7 @@ use crate::disc::DiscPatcher;
 use super::export::SceneManText;
 use super::markup::{self, Target};
 use super::pack::{Entry, LanguagePack};
+use super::segments;
 
 /// Import outcome counters + per-entry diagnostics.
 #[derive(Debug, Default)]
@@ -86,19 +96,20 @@ fn parse_key(key: &str) -> Option<Key> {
     }
 }
 
-/// Encode `entry.translation` for `target`, enforcing the byte budget.
-/// When `clamp_to_source` is set the budget is additionally clamped by the
-/// encoded source length, so a tampered pack can't widen its own budget past
-/// the original string's span (string / segment targets; fixed-width fields
-/// carry their own hard bound instead). `None` = a diagnostic was recorded.
-fn encode_checked(
+/// Encode the pack's `source` for `target`. `Ok(None)` = the pack is a
+/// distributable (translation-only) one and carries no source; `Err(())` = a
+/// diagnostic was recorded.
+#[allow(clippy::result_unit_err)]
+fn encode_source(
     entry: &Entry,
     target: Target,
-    clamp_to_source: bool,
     report: &mut ImportReport,
-) -> Option<(Vec<u8>, Vec<u8>)> {
-    let source = match markup::encode(&entry.source, target) {
-        Ok(b) => b,
+) -> Result<Option<Vec<u8>>, ()> {
+    if entry.source.is_empty() {
+        return Ok(None);
+    }
+    match markup::encode(&entry.source, target) {
+        Ok(b) => Ok(Some(b)),
         Err(issues) => {
             report.issue(
                 &entry.key,
@@ -107,25 +118,28 @@ fn encode_checked(
                     issues[0]
                 ),
             );
-            return None;
+            Err(())
         }
-    };
-    let translated = match markup::encode(&entry.translation, target) {
-        Ok(b) => b,
+    }
+}
+
+/// Encode `entry.translation` for `target`. `None` = a diagnostic was recorded.
+fn encode_translation(entry: &Entry, target: Target, report: &mut ImportReport) -> Option<Vec<u8>> {
+    match markup::encode(&entry.translation, target) {
+        Ok(b) => Some(b),
         Err(issues) => {
             let detail: Vec<String> = issues.iter().map(ToString::to_string).collect();
             report.issue(
                 &entry.key,
                 format!("translation not encodable: {}", detail.join("; ")),
             );
-            return None;
+            None
         }
-    };
-    let budget = if clamp_to_source {
-        entry.budget.min(source.len())
-    } else {
-        entry.budget
-    };
+    }
+}
+
+/// Budget check against the byte span actually measured on the disc.
+fn fits(entry: &Entry, translated: &[u8], budget: usize, report: &mut ImportReport) -> bool {
     if translated.len() > budget {
         report.issue(
             &entry.key,
@@ -135,9 +149,29 @@ fn encode_checked(
                 translated.len()
             ),
         );
-        return None;
+        return false;
     }
-    Some((source, translated))
+    true
+}
+
+/// Wrong-disc guard for a source-less entry: the target's real length on the
+/// disc must equal the pack's `budget` hint, which was measured off the disc
+/// the pack was authored against. (A working pack proves the same thing, more
+/// strongly, by comparing the bytes.)
+fn hint_agrees(entry: &Entry, disc_len: usize, report: &mut ImportReport) -> bool {
+    if entry.budget != disc_len {
+        report.issue(
+            &entry.key,
+            format!(
+                "this disc's text is {disc_len} bytes but the pack expects {} - the pack \
+                 was not built for this image (or another patch already moved the text) \
+                 - skipped",
+                entry.budget
+            ),
+        );
+        return false;
+    }
+    true
 }
 
 /// `translated`, space-padded to exactly `len` bytes (dialog-segment form).
@@ -147,6 +181,9 @@ fn pad_segment(translated: &[u8], len: usize) -> Vec<u8> {
     v
 }
 
+/// Longest SCUS string the reader will follow before calling the pointer bogus.
+const MAX_SCUS_STRLEN: usize = 512;
+
 /// Plan one SCUS-string write: `(file_offset, bytes)`, or `None` when the
 /// entry was resolved without a write (diagnostic / already applied).
 fn plan_scus_str(
@@ -155,31 +192,54 @@ fn plan_scus_str(
     va: u32,
     report: &mut ImportReport,
 ) -> Option<(usize, Vec<u8>)> {
-    let (source, translated) = encode_checked(entry, Target::CString, true, report)?;
+    let source = encode_source(entry, Target::CString, report).ok()?;
+    let translated = encode_translation(entry, Target::CString, report)?;
     let Some(off) = item_names::file_offset_for_va(scus, va) else {
         report.issue(&entry.key, "VA not in the SCUS data segment");
         return None;
     };
-    let span = source.len().max(translated.len()) + 1;
-    let Some(current) = scus.get(off..off + span) else {
+    // The string as it stands on this disc, up to (not including) its NUL.
+    let Some(tail) = scus.get(off..) else {
         report.issue(&entry.key, "string span past end of SCUS");
         return None;
     };
-    let cur_len = current
+    let Some(cur_len) = tail
         .iter()
+        .take(MAX_SCUS_STRLEN)
         .position(|&b| b == 0)
-        .unwrap_or(current.len());
-    let cur = &current[..cur_len];
+        .filter(|&l| l > 0)
+    else {
+        report.issue(&entry.key, "no NUL-terminated string at this VA - skipped");
+        return None;
+    };
+    let cur = &tail[..cur_len];
     if cur == translated.as_slice() {
         report.already_applied += 1;
         return None;
     }
-    if cur != source.as_slice() {
-        report.issue(
-            &entry.key,
-            "disc bytes don't match the pack source (different disc revision or \
-             a conflicting patch) - skipped",
-        );
+    // Budget = the original string's own span. With a source we know it
+    // exactly; without one, the disc's current span *is* it (and the hint must
+    // agree, or this isn't the disc the pack was built for).
+    let budget = match &source {
+        Some(src) => {
+            if cur != src.as_slice() {
+                report.issue(
+                    &entry.key,
+                    "disc bytes don't match the pack source (different disc revision or \
+                     a conflicting patch) - skipped",
+                );
+                return None;
+            }
+            entry.budget.min(src.len())
+        }
+        None => {
+            if !hint_agrees(entry, cur_len, report) {
+                return None;
+            }
+            cur_len
+        }
+    };
+    if !fits(entry, &translated, budget, report) {
         return None;
     }
     let mut bytes = translated;
@@ -194,7 +254,11 @@ fn plan_scus_party(
     slot: usize,
     report: &mut ImportReport,
 ) -> Option<(usize, Vec<u8>)> {
-    let (source, translated) = encode_checked(entry, Target::CString, false, report)?;
+    let source = encode_source(entry, Target::CString, report).ok()?;
+    let translated = encode_translation(entry, Target::CString, report)?;
+    if !fits(entry, &translated, entry.budget, report) {
+        return None;
+    }
     if slot >= new_game::PARTY_RECORDS {
         report.issue(&entry.key, "party slot out of range");
         return None;
@@ -217,7 +281,11 @@ fn plan_scus_party(
         report.already_applied += 1;
         return None;
     }
-    if &field[..cur_len] != source.as_slice() {
+    // Fixed-width field: the write is bounded by the field itself, so a
+    // source-less (distributable) pack needs no extra guard here.
+    if let Some(src) = &source
+        && &field[..cur_len] != src.as_slice()
+    {
         report.issue(
             &entry.key,
             "disc bytes don't match the pack source - skipped",
@@ -229,40 +297,60 @@ fn plan_scus_party(
     Some((off, bytes))
 }
 
-/// One decompressed-domain segment edit, verified against the MAN bytes.
+/// One segment edit in the domain the key addresses (a decompressed MAN, or a
+/// raw PROT entry), measured and verified against the bytes actually there.
+///
+/// The segment's byte budget is its own `0x1F <text> 0x00` framing on this
+/// disc - never a number the pack asserts - so a bad pack can't overrun the
+/// text pool it edits. `Some(byte_len)` = written; `None` = nothing to write
+/// (already applied, or a diagnostic was recorded).
 fn apply_segment_edit(
     buf: &mut [u8],
     entry: &Entry,
     off: usize,
-    source: &[u8],
+    source: Option<&[u8]>,
     translated: &[u8],
     report: &mut ImportReport,
-) -> bool {
-    let len = source.len();
-    let in_range = off + len < buf.len();
-    if !in_range || buf.get(off + len) != Some(&0x00) {
+) -> Option<usize> {
+    // Framing, read off the disc: the 0x1F lead immediately before the keyed
+    // text offset, and the segment's own terminator after it.
+    let framed = off > 0
+        && buf.get(off - 1) == Some(&0x1F)
+        && segments::walk_to_terminator(buf, off).is_some_and(|t| buf[t] == 0x00);
+    if !framed {
         report.issue(
             &entry.key,
             "segment framing not found at the keyed offset - skipped",
         );
-        return false;
+        return None;
     }
-    let cur = &buf[off..off + len];
+    let term = segments::walk_to_terminator(buf, off).expect("framing checked");
+    let len = term - off;
+
     let padded = pad_segment(translated, len);
-    if cur == padded.as_slice() {
+    if &buf[off..term] == padded.as_slice() {
         report.already_applied += 1;
-        return false;
+        return None;
     }
-    if cur != source {
-        report.issue(
-            &entry.key,
-            "disc bytes don't match the pack source (different disc revision or \
-             a conflicting patch) - skipped",
-        );
-        return false;
+    match source {
+        Some(src) => {
+            if &buf[off..term] != src {
+                report.issue(
+                    &entry.key,
+                    "disc bytes don't match the pack source (different disc revision or \
+                     a conflicting patch) - skipped",
+                );
+                return None;
+            }
+        }
+        None if !hint_agrees(entry, len, report) => return None,
+        None => {}
     }
-    buf[off..off + len].copy_from_slice(&padded);
-    true
+    if !fits(entry, translated, len, report) {
+        return None;
+    }
+    buf[off..term].copy_from_slice(&padded);
+    Some(len)
 }
 
 /// Apply `pack` to the patcher's image. Untranslated entries are untouched.
@@ -330,18 +418,22 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
         };
         let mut wrote = 0usize;
         for (off, en) in &edits {
-            let Some((source, translated)) = encode_checked(en, Target::Segment, true, &mut report)
-            else {
+            let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
+                continue;
+            };
+            let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
                 continue;
             };
             if apply_segment_edit(
                 &mut man.decoded,
                 en,
                 *off,
-                &source,
+                source.as_deref(),
                 &translated,
                 &mut report,
-            ) {
+            )
+            .is_some()
+            {
                 wrote += 1;
             }
         }
@@ -371,8 +463,10 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
 
     // Raw carriers: direct same-size in-place writes.
     for (entry_idx, off, en) in raw_work {
-        let Some((source, translated)) = encode_checked(en, Target::Segment, true, &mut report)
-        else {
+        let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
+            continue;
+        };
+        let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
             continue;
         };
         let mut window = match patcher.read_entry(entry_idx) {
@@ -382,8 +476,15 @@ pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<Imp
                 continue;
             }
         };
-        if apply_segment_edit(&mut window, en, off, &source, &translated, &mut report) {
-            patcher.patch_prot_entry(entry_idx, off as u64, &window[off..off + source.len()])?;
+        if let Some(len) = apply_segment_edit(
+            &mut window,
+            en,
+            off,
+            source.as_deref(),
+            &translated,
+            &mut report,
+        ) {
+            patcher.patch_prot_entry(entry_idx, off as u64, &window[off..off + len])?;
             report.applied += 1;
         }
     }

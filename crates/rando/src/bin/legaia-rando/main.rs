@@ -54,15 +54,31 @@ fn main() -> Result<()> {
                 from,
                 input,
                 contributor,
+                resume,
+                chunk,
                 output,
             } => translate::cmd_init(
                 &lang,
                 from.as_deref(),
                 input.as_deref(),
                 contributor,
+                resume.as_deref(),
+                chunk,
                 &output,
             ),
-            cli::TranslateCmd::Stats { pack } => translate::cmd_stats(&pack),
+            cli::TranslateCmd::Strip {
+                pack,
+                output,
+                notes,
+            } => translate::cmd_strip(&pack, &output, notes.as_deref()),
+            cli::TranslateCmd::Merge {
+                base,
+                packs,
+                output,
+            } => translate::cmd_merge(&base, &packs, &output),
+            cli::TranslateCmd::Stats { pack, input } => {
+                translate::cmd_stats(&pack, input.as_deref())
+            }
             cli::TranslateCmd::Import {
                 input,
                 pack,

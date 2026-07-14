@@ -191,6 +191,10 @@ pub(crate) enum TranslateCmd {
     },
     /// Produce an empty per-language skeleton from an exported pack: same
     /// keys / sources / budgets, cleared translations, stamped header.
+    ///
+    /// `--resume` seeds it with the translations of an already-published
+    /// (source-less) pack, so a translator can pick up where a shipped pack
+    /// left off without anyone redistributing the source text.
     Init {
         /// Target language code (e.g. fr, de, es, it, pt-BR, ja, ru, zh, ko -
         /// note: non-Latin scripts also need a font patch, see the docs).
@@ -205,17 +209,63 @@ pub(crate) enum TranslateCmd {
         /// Contributor names for the pack header (repeatable).
         #[arg(long)]
         contributor: Vec<String>,
+        /// Pre-fill from an existing (working or distributable) pack, matched
+        /// by key - e.g. one of the shipped `site/lang/*.yaml` packs.
+        #[arg(long)]
+        resume: Option<PathBuf>,
+        /// Also split the skeleton into chunk files of at most N entries each
+        /// (`<output stem>.001.yaml`, ...) for a parallel / bulk fill pass.
+        /// Recombine them with `translate merge`.
+        #[arg(long, value_name = "N")]
+        chunk: Option<usize>,
         /// Where to write the skeleton (YAML).
         #[arg(long, short)]
         output: PathBuf,
     },
+    /// Strip a filled pack down to the **distributable** shape: the filled
+    /// entries only, keys + your translations + the byte-budget hint, with
+    /// every `source:` / `context:` field (the game's own text) removed.
+    ///
+    /// This is the shape that is safe to publish / commit.
+    Strip {
+        /// The filled working pack (YAML).
+        #[arg(long)]
+        pack: PathBuf,
+        /// Where to write the distributable pack (YAML).
+        #[arg(long, short)]
+        output: PathBuf,
+        /// Overwrite the pack's `notes:` header line.
+        #[arg(long)]
+        notes: Option<String>,
+    },
+    /// Merge the filled entries of several packs (chunks of a bulk fill, a
+    /// shipped pack + your edits, ...) into the first one, matched by key.
+    Merge {
+        /// Base pack - defines the entry set (keys / sources / budgets).
+        #[arg(long)]
+        base: PathBuf,
+        /// Packs whose translations are merged onto the base, in order.
+        #[arg(long = "pack", required = true)]
+        packs: Vec<PathBuf>,
+        /// Where to write the merged pack (YAML).
+        #[arg(long, short)]
+        output: PathBuf,
+    },
     /// Coverage + validation report for a pack: per-section translated/total
-    /// counts, plus encodability and budget checks on every filled entry
-    /// (dry run - no disc needed).
+    /// counts, plus encodability and budget checks on every filled entry.
+    ///
+    /// Without `--input` this is an offline check against the pack's own
+    /// budgets. With `--input` it is a full dry run against a real disc: every
+    /// entry is planned exactly as `import` would (in memory, nothing is
+    /// written), which is the only way to validate a distributable pack's
+    /// budgets - they are hints until a disc is there to measure.
     Stats {
         /// The language pack (YAML).
         #[arg(long)]
         pack: PathBuf,
+        /// Dry-run the pack against this disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: Option<PathBuf>,
     },
     /// Apply a filled pack to a copy of a disc. Untranslated entries are
     /// left byte-identical; every write is same-size in place and each

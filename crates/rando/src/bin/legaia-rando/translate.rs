@@ -54,6 +54,8 @@ pub(crate) fn cmd_init(
     from: Option<&Path>,
     input: Option<&Path>,
     contributors: Vec<String>,
+    resume: Option<&Path>,
+    chunk: Option<usize>,
     output: &Path,
 ) -> Result<()> {
     let pack = match (from, input) {
@@ -65,25 +67,84 @@ pub(crate) fn cmd_init(
         }
         (None, None) => bail!("pass --from <pack.yaml> or --input <disc.bin>"),
     };
-    let skeleton = pack.into_skeleton(lang, contributors);
+    let mut skeleton = pack.into_skeleton(lang, contributors);
+    if let Some(prev) = resume {
+        let seed = read_pack(prev)?;
+        let n = skeleton.merge_translations(&seed);
+        println!("resumed {n} translation(s) from {}", prev.display());
+    }
     write_pack(&skeleton, output)?;
     println!(
         "wrote {} ({} entries, language {lang})",
         output.display(),
         skeleton.sections.total()
     );
+    if let Some(size) = chunk {
+        if size == 0 {
+            bail!("--chunk must be at least 1");
+        }
+        let chunks = skeleton.split_chunks(size);
+        let stem = output
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "pack".into());
+        let dir = output.parent().unwrap_or(Path::new("."));
+        for (i, c) in chunks.iter().enumerate() {
+            let path = dir.join(format!("{stem}.{:03}.yaml", i + 1));
+            write_pack(c, &path)?;
+        }
+        println!(
+            "wrote {} chunk file(s) of <= {size} entries ({stem}.001.yaml ...)",
+            chunks.len()
+        );
+    }
     Ok(())
 }
 
-pub(crate) fn cmd_stats(pack_path: &Path) -> Result<()> {
+pub(crate) fn cmd_strip(pack_path: &Path, output: &Path, notes: Option<&str>) -> Result<()> {
     let pack = read_pack(pack_path)?;
-    print_coverage(&pack);
+    let total = pack.sections.total();
+    let mut dist = pack.strip_sources();
+    if let Some(n) = notes {
+        dist.notes = n.to_string();
+    }
+    let kept = dist.sections.total();
+    write_pack(&dist, output)?;
+    println!(
+        "wrote {} ({kept} translated entr{} kept of {total}; source text stripped)",
+        output.display(),
+        if kept == 1 { "y" } else { "ies" }
+    );
+    Ok(())
+}
 
-    // Dry-run validation of every filled entry: encodability + byte budget.
+pub(crate) fn cmd_merge(base: &Path, packs: &[std::path::PathBuf], output: &Path) -> Result<()> {
+    let mut merged = read_pack(base)?;
+    let mut total = 0usize;
+    for p in packs {
+        let other = read_pack(p)?;
+        let n = merged.merge_translations(&other);
+        total += n;
+        println!("  {}: {n} translation(s)", p.display());
+    }
+    write_pack(&merged, output)?;
+    println!(
+        "wrote {} ({total} translation(s) merged; {} / {} filled)",
+        output.display(),
+        merged.sections.filled(),
+        merged.sections.total()
+    );
+    Ok(())
+}
+
+/// Offline validation: encodability + the pack's own budget. For a
+/// distributable (source-less) pack the budget is only a hint, so this is a
+/// pre-check - `--input` runs the real thing.
+fn offline_check(pack: &LanguagePack) -> usize {
     let mut problems = 0usize;
     for (section, entries) in pack.sections.iter() {
         for e in entries {
-            if e.translation.trim().is_empty() {
+            if !e.is_filled() {
                 continue;
             }
             let target = if e.key.starts_with("scus:") {
@@ -113,6 +174,34 @@ pub(crate) fn cmd_stats(pack_path: &Path) -> Result<()> {
             }
         }
     }
+    problems
+}
+
+pub(crate) fn cmd_stats(pack_path: &Path, input: Option<&Path>) -> Result<()> {
+    let pack = read_pack(pack_path)?;
+    print_coverage(&pack);
+    let mut problems = offline_check(&pack);
+
+    // With a disc: plan every entry exactly as `import` would, in memory. This
+    // measures each target's real byte budget on the disc, which is the only
+    // way to validate a distributable pack (its budgets are hints).
+    if let Some(disc) = input {
+        let image = load_image(disc)?;
+        let mut patcher = DiscPatcher::open(image).context("parse disc image")?;
+        let report = import_pack(&mut patcher, &pack)?;
+        println!(
+            "dry run vs {}: {} would apply, {} already applied, {} skipped",
+            disc.display(),
+            report.applied,
+            report.already_applied,
+            report.issues.len()
+        );
+        for (key, msg) in &report.issues {
+            println!("  [skip] {key}: {msg}");
+        }
+        problems += report.issues.len();
+    }
+
     if problems == 0 {
         println!("all filled entries encode within budget");
     } else {
