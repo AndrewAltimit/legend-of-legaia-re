@@ -96,9 +96,9 @@ pub const MULT_FINALE: u32 = 0x22;
 pub const TRIANGLE_STOCK: u32 = 3;
 
 /// Feedback window armed when a triangle is spent (`DAT_801d5144 = 0x3c`,
-/// counted down by the frame delta). Retail's tutorial reads it to caption the
-/// spend ("pretty good!" when it landed on the combo slot, "your timing is off"
-/// when it didn't).
+/// counted down by the frame delta). The retail tutorial reads it to caption the
+/// spend - praise when it landed on the combo slot, a timing scold when it did
+/// not (`FUN_801d0750` case `0xd`, gated on `DAT_801d570c`).
 pub const TRIANGLE_FEEDBACK_WINDOW: u32 = 0x3c;
 
 /// Spin accumulator units per full turn of the groovy move (`FUN_801d1358`
