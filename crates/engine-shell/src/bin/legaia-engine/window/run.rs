@@ -754,11 +754,33 @@ pub(super) fn cmd_play_window_with_record(
         active_dialog: None,
         seru_names: None,
         dynamic_lighting,
+        orbit_drag_last_x: None,
+        cursor_x: 0.0,
     };
 
     // Push the loaded options into their live consumers (audio downmix)
     // before the loop starts.
     app.apply_options_side_effects();
+
+    // Camera framing + movement toggles from the persisted options file:
+    // the distance preset (default `far` - a bit more on screen than
+    // retail; `T` cycles) and the precise-movement toggle (`R`). The
+    // compass bias tells the engine-core camera what fixed yaw this
+    // window's follow camera renders at (compass sense = the negated PSX
+    // render yaw), so `BootSession::tick`'s d-pad remap feed tracks the
+    // on-screen view exactly - including after a left-mouse drag-orbit.
+    app.session.camera.distance = app.options_state.camera_distance;
+    app.session.camera.render_yaw_bias = -FIELD_FOLLOW_YAW_UNITS / 4096.0 * std::f32::consts::TAU;
+    app.session.host.world.precise_movement = app.options_state.precise_movement;
+    log::info!(
+        "camera: distance = {} (T cycles); precise movement {} (R toggles); drag to orbit",
+        app.options_state.camera_distance.label(),
+        if app.options_state.precise_movement {
+            "ON"
+        } else {
+            "off"
+        }
+    );
 
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;

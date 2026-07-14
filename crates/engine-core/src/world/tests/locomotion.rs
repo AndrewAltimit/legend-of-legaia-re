@@ -73,9 +73,15 @@ fn precise_movement_honours_continuous_camera_azimuth() {
         )
     };
     let (qx, qz) = drive(false);
-    assert!(qx > 0 && qz == 0, "quantised: quadrant-1 snap walks +X only");
+    assert!(
+        qx > 0 && qz == 0,
+        "quantised: quadrant-1 snap walks +X only"
+    );
     let (px, pz) = drive(true);
-    assert!(px > 0 && pz > 0, "precise: 45-degree azimuth walks +X and +Z");
+    assert!(
+        px > 0 && pz > 0,
+        "precise: 45-degree azimuth walks +X and +Z"
+    );
     assert_eq!(px, pz, "the two axes advance equally at 45 degrees");
 }
 

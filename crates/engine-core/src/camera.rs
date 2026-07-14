@@ -318,8 +318,8 @@ impl Camera {
     /// sees, including after a drag-orbit. All three terms default to `0`,
     /// so headless hosts keep the historical `yaw`-only feed bit-identical.
     pub fn compass_azimuth_units(&self) -> u16 {
-        let az = (self.yaw + self.manual_orbit + self.render_yaw_bias) / std::f32::consts::TAU
-            * 4096.0;
+        let az =
+            (self.yaw + self.manual_orbit + self.render_yaw_bias) / std::f32::consts::TAU * 4096.0;
         az.rem_euclid(4096.0) as u16
     }
 

@@ -641,6 +641,15 @@ pub(crate) enum Cmd {
     /// Open a window, boot a scene, and run the engine with rendering.
     /// Accepts keyboard input (arrows = D-pad, Z = Cross, Esc = quit).
     ///
+    /// Camera + movement keys: left-mouse drag orbits the field camera
+    /// around the player (the movement compass follows the orbited view,
+    /// so "up" always walks away from the camera); `T` cycles the camera
+    /// distance preset (retail / far / farther - default `far`, persisted
+    /// in `legaia-options.toml`); `R` toggles precise free-angle movement
+    /// (non-retail; true key diagonals + continuous analog angles,
+    /// persisted); `C` toggles the wide debug orbit vantage; `I` toggles
+    /// dynamic lighting; `V` mutes audio.
+    ///
     /// When `--str-file` is provided the STR video plays first in a windowed
     /// player (same as `play-str`). After the video window closes the scene
     /// window opens and runs normally.

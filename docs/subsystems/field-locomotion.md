@@ -774,6 +774,15 @@ A placement with no walk-kernel op in either carrier falls back to the facing-ni
 
 Modelling note (reconcile outcome): the raw `4C 51` handler pins its byte +3 as `[bit7 special-model | facing nibble]` with **no speed field** - retail `4C 51` is a teleport + move-anim start, and the only speed-carrying ops are the walk kernels' own operands (above). The heuristic arm therefore reads a *facing nibble* as the base-step selector - a stable per-NPC variation with no retail speed semantics - and fires only when no real walk-kernel op decodes.
 
+## Engine port: movement compass + opt-in precise movement
+
+The engine mirrors retail's camera-remapped pad in `World::step_field_locomotion` (`decode_field_direction`): the held d-pad is rotated by `World::field_camera_azimuth` **quantised to the nearest 90°** - the same job `func_0x800467e8` does - and stepped through the per-axis collision above. The azimuth feed is `Camera::compass_azimuth_units()` (engine-core): scripted yaw + the user's `manual_orbit` (the play-window's left-mouse drag-orbit) + the host renderer's `render_yaw_bias` (the follow camera's fixed base yaw, compass sense = the negated PSX render yaw), pushed into the world each `BootSession::tick`. All three terms default to 0, so headless hosts keep the identity remap.
+
+Two non-retail, opt-in knobs layer on top (play-window keybinds, persisted in `legaia-options.toml`):
+
+- **Camera distance** (`Camera::distance`, presets retail / far / farther; `T` cycles) - a pure framing scale on the follow camera's eye-back depth. Never feeds the simulation; the engine-core default stays `retail` so oracle/replay paths are bit-identical, while the windowed host defaults to `far`.
+- **Precise movement** (`World::precise_movement`; `R` toggles, default off) - swaps the quantised remap for a continuous decode (`decode_field_direction_precise`): the azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45° vectors at normalised speed (no ×0.75 cut - the vector itself is unit length), and a deflected analog stick (`InputState::lstick`) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (`advance_with_collision_vector`, Z before X per sub-step), with a sub-step remainder carried across frames so shallow angles keep their exact slope.
+
 ## See also
 
 **Reference** -

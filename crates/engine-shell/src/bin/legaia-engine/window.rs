@@ -642,6 +642,16 @@ struct PlayWindowApp {
     /// the HUD status line. Default `false` = the faithful pixel-identical
     /// render.
     dynamic_lighting: bool,
+    /// Mouse drag-orbit state: the last cursor X (window pixels) while the
+    /// left button is held, `None` when not dragging. A horizontal drag in
+    /// field free-roam rotates `session.camera.manual_orbit`, which both
+    /// the follow camera's render yaw and the movement compass
+    /// ([`legaia_engine_core::camera::Camera::compass_azimuth_units`]) read
+    /// - so orbiting the view keeps "screen up walks away from the camera".
+    orbit_drag_last_x: Option<f64>,
+    /// Latest cursor X (window pixels), fed by `CursorMoved` so a drag that
+    /// starts before any motion has an anchor.
+    cursor_x: f64,
     /// Phase J3 pad-capture state. `Some` when the user invoked the
     /// `record` subcommand; the keyboard handler appends transitions
     /// to `events` and the close handler flushes a `j-replay-v1` file
@@ -912,6 +922,13 @@ impl PlayWindowApp {
 /// PSX Y-down local vertices ride the same world negation). Battle and
 /// world-map keep the older pairing (per-model `scale(1,-1,1)` + a camera
 /// with no world negation), so this must not leak into those arms.
+/// The follow camera's fixed base yaw (PSX 12-bit units, savestate-pinned
+/// `_DAT_8007B792 = -160` on the town01 anchor). Shared between the render
+/// camera (`field_follow_camera_mvp`) and the movement-compass bias pushed
+/// into the engine-core camera at startup (`render_yaw_bias` - the compass
+/// sense is the negation: `alpha = -psi` for the PSX GTE camera).
+const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
+
 const FIELD_WORLD_FLIP: Mat4 = Mat4::from_cols_array(&[
     1.0, 0.0, 0.0, 0.0, //
     0.0, -1.0, 0.0, 0.0, //

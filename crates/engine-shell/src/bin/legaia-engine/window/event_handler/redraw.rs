@@ -152,6 +152,10 @@ impl PlayWindowApp {
             } else {
                 self.pad
             };
+            // Re-assert the precise-movement toggle each tick: scene / New
+            // Game transitions can reseed world state, and the toggle is
+            // host policy (options file + `R` key), not world state.
+            self.session.host.world.precise_movement = self.options_state.precise_movement;
             self.session.host.world.set_pad(field_pad);
             match self.session.tick() {
                 // Door transition: the host loaded a new scene under

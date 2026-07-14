@@ -552,6 +552,44 @@ impl PlayWindowApp {
             );
             return;
         }
+        // `T`: cycle the field camera-distance preset (retail -> far ->
+        // farther). A pure framing knob on the follow / debug-orbit
+        // cameras - it never feeds the world simulation. Persisted to the
+        // options config file; the interactive default is `far`.
+        if matches!(code, KeyCode::KeyT)
+            && state == ElementState::Pressed
+            && !self.boot_ui.is_active()
+        {
+            let next = self.session.camera.distance.cycle();
+            self.session.camera.distance = next;
+            self.options_state.camera_distance = next;
+            self.persist_and_apply_options();
+            log::info!("camera: distance = {} (T cycles)", next.label());
+            return;
+        }
+        // `R`: toggle precise movement (opt-in, NON-RETAIL): free-angle
+        // camera-relative locomotion instead of retail's 4/8-way
+        // quantisation - key diagonals walk true 45-degree vectors and an
+        // analog stick's angle passes through continuously. Persisted to
+        // the options config file; default off (the faithful remap).
+        if matches!(code, KeyCode::KeyR)
+            && state == ElementState::Pressed
+            && !self.boot_ui.is_active()
+        {
+            let on = !self.options_state.precise_movement;
+            self.options_state.precise_movement = on;
+            self.session.host.world.precise_movement = on;
+            self.persist_and_apply_options();
+            log::info!(
+                "movement: precise {}",
+                if on {
+                    "ON (free-angle - not retail)"
+                } else {
+                    "off (retail 8-way remap)"
+                }
+            );
+            return;
+        }
         // `N`: open the name-entry overlay for the lead character. The
         // NEW GAME flow now opens it automatically at the `opdeene` ->
         // `town01` opening hand-off (see the prologue-handoff block

@@ -12,6 +12,10 @@ impl PlayWindowApp {
         // a fixed-size framing box around the player actor (the field draws
         // actor-bound meshes at actor positions) so the view stays close.
         const FIELD_VIEW_HALF: f32 = 700.0;
+        // The camera-distance preset (T cycles) widens the framing box, and
+        // a mouse drag-orbit swings the vantage - same knobs as the follow
+        // camera, so the debug view composes with both.
+        let view_half = FIELD_VIEW_HALF * self.session.camera.distance.scale();
         let (lo, hi) = self
             .session
             .host
@@ -26,16 +30,8 @@ impl PlayWindowApp {
                     p.move_state.world_z as f32,
                 );
                 (
-                    [
-                        cx - FIELD_VIEW_HALF,
-                        cy - FIELD_VIEW_HALF,
-                        cz - FIELD_VIEW_HALF,
-                    ],
-                    [
-                        cx + FIELD_VIEW_HALF,
-                        cy + FIELD_VIEW_HALF,
-                        cz + FIELD_VIEW_HALF,
-                    ],
+                    [cx - view_half, cy - view_half, cz - view_half],
+                    [cx + view_half, cy + view_half, cz + view_half],
                 )
             })
             .unwrap_or((self.scene_aabb.0, self.scene_aabb.1));
@@ -53,7 +49,8 @@ impl PlayWindowApp {
         const FIELD_ORBIT_SPEED: f32 = 0.25;
         const FIELD_ORBIT_ANGLE: f32 = 0.75;
         const FIELD_EYE_HEIGHT: f32 = 0.85;
-        let fixed_time = FIELD_ORBIT_ANGLE / FIELD_ORBIT_SPEED;
+        let angle = FIELD_ORBIT_ANGLE + self.session.camera.manual_orbit;
+        let fixed_time = angle / FIELD_ORBIT_SPEED;
         orbit_camera_mvp(
             lo,
             hi,
@@ -78,11 +75,20 @@ impl PlayWindowApp {
     ///
     /// Falls back to the fixed orbit vantage (`camera_mvp`) when no player
     /// actor exists to follow.
+    ///
+    /// Two user camera knobs compose onto the pinned base: the
+    /// camera-distance preset (`T` cycles retail / far / farther) scales the
+    /// eye-back depth, and a left-mouse horizontal drag orbits the yaw
+    /// around the player (`Camera::manual_orbit`, compass sense - the PSX
+    /// render yaw is its negation, so the movement compass fed through
+    /// `Camera::compass_azimuth_units` tracks the on-screen view exactly).
+    /// Both default to the retail-identical values.
     pub(super) fn field_follow_camera_mvp(&self, aspect: f32) -> Option<Mat4> {
         const PITCH_UNITS: f32 = 450.0;
-        const YAW_UNITS: f32 = -160.0;
         const FIELD_H: f32 = 512.0;
         const FIELD_CAM_DEPTH: f32 = 1200.0;
+        let cam = &self.session.camera;
+        let depth = FIELD_CAM_DEPTH * cam.distance.scale();
         let world = &self.session.host.world;
         let p = world
             .actors
@@ -101,11 +107,15 @@ impl PlayWindowApp {
         let floor_y = world.sample_field_floor_height(wx as i32, wz as i32);
         let target = Vec3::new(wx as f32, floor_y as f32, wz as f32);
         let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        // PSX camera yaw is the compass negation (`alpha = -psi`): a
+        // positive manual orbit (compass sense) subtracts from the render
+        // yaw. Base yaw is the pinned FIELD_FOLLOW_YAW_UNITS.
+        let yaw = to_rad(FIELD_FOLLOW_YAW_UNITS) - cam.manual_orbit;
         Some(Self::psx_camera_mvp(
             to_rad(PITCH_UNITS),
-            to_rad(YAW_UNITS),
+            yaw,
             FIELD_H,
-            Vec3::new(0.0, 0.0, FIELD_CAM_DEPTH),
+            Vec3::new(0.0, 0.0, depth),
             target,
             aspect,
         ))
@@ -384,6 +394,71 @@ impl PlayWindowApp {
             let yaw = std::f32::consts::PI
                 + (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU;
             Mat4::from_translation(pos) * Mat4::from_rotation_y(yaw)
+        }
+    }
+}
+
+#[cfg(test)]
+mod follow_compass_tests {
+    use super::*;
+    use std::f32::consts::TAU;
+
+    /// The movement compass must agree with the rendered follow camera at
+    /// ANY manual orbit: walking the compass-forward direction
+    /// (`alpha = base_bias + manual_orbit`, forward = `(sin a, 0, cos a)`)
+    /// must move the player UP the screen (away from the camera), and the
+    /// compass-right direction must move screen-right. This is the
+    /// engine-shell ground-truth check for `Camera::compass_azimuth_units`'s
+    /// sign convention against `psx_camera_mvp` (the same job
+    /// `world_map_camera_remap.rs` does for the overworld remap).
+    #[test]
+    fn compass_forward_walks_up_screen_for_any_manual_orbit() {
+        const PITCH_UNITS: f32 = 450.0;
+        let to_rad = |units: f32| units / 4096.0 * TAU;
+        for manual_orbit in [0.0f32, 0.4, 1.2, 2.5, -0.7, 3.9] {
+            // The exact composition `field_follow_camera_mvp` builds
+            // (with the caller's FIELD_WORLD_FLIP post-multiply).
+            let yaw = to_rad(FIELD_FOLLOW_YAW_UNITS) - manual_orbit;
+            let target = Vec3::new(500.0, 0.0, 800.0);
+            let mvp = PlayWindowApp::psx_camera_mvp(
+                to_rad(PITCH_UNITS),
+                yaw,
+                512.0,
+                Vec3::new(0.0, 0.0, 1200.0),
+                target,
+                4.0 / 3.0,
+            ) * FIELD_WORLD_FLIP;
+            // Compass azimuth = render bias + manual orbit (what
+            // BootSession feeds World::field_camera_azimuth).
+            let alpha = -to_rad(FIELD_FOLLOW_YAW_UNITS) + manual_orbit;
+            let forward = Vec3::new(alpha.sin(), 0.0, alpha.cos());
+            let right = Vec3::new(alpha.cos(), 0.0, -alpha.sin());
+            let project = |p: Vec3| {
+                let c = mvp * p.extend(1.0);
+                (c.x / c.w, c.y / c.w)
+            };
+            let (x0, y0) = project(target);
+            let (xf, yf) = project(target + forward * 100.0);
+            let (xr, yr) = project(target + right * 100.0);
+            // NDC +y is up: forward must increase y and stay ~centred in x.
+            assert!(
+                yf > y0 + 1e-4,
+                "orbit {manual_orbit}: forward walks up-screen (dy={})",
+                yf - y0
+            );
+            assert!(
+                (xf - x0).abs() < 0.35 * (yf - y0).abs().max(1e-3),
+                "orbit {manual_orbit}: forward stays near-vertical (dx={} dy={})",
+                xf - x0,
+                yf - y0
+            );
+            // Right must increase x and stay ~level in y.
+            assert!(
+                xr > x0 + 1e-4,
+                "orbit {manual_orbit}: right walks screen-right (dx={})",
+                xr - x0
+            );
+            let _ = yr;
         }
     }
 }

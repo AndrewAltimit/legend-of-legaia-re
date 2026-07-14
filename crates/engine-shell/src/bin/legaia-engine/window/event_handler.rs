@@ -62,6 +62,35 @@ impl ApplicationHandler for PlayWindowApp {
             } => {
                 self.handle_keyboard(evl, code, state);
             }
+            // Left-mouse drag-orbit: horizontal drag rotates the field
+            // camera around the player (`Camera::manual_orbit`). The
+            // movement compass reads the same field, so the d-pad remap
+            // tracks the orbited view (see `field_follow_camera_mvp`).
+            // Field free-roam only - world map / battle / menus keep their
+            // own cameras.
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(last) = self.orbit_drag_last_x {
+                    let dx = (position.x - last) as f32;
+                    if dx != 0.0
+                        && !self.boot_ui.is_active()
+                        && self.session.host.world.mode == SceneMode::Field
+                    {
+                        const ORBIT_RAD_PER_PX: f32 = 0.008;
+                        self.session.camera.manual_orbit = (self.session.camera.manual_orbit
+                            + dx * ORBIT_RAD_PER_PX)
+                            .rem_euclid(std::f32::consts::TAU);
+                    }
+                    self.orbit_drag_last_x = Some(position.x);
+                }
+                self.cursor_x = position.x;
+            }
+            WindowEvent::MouseInput {
+                state,
+                button: winit::event::MouseButton::Left,
+                ..
+            } => {
+                self.orbit_drag_last_x = (state == ElementState::Pressed).then_some(self.cursor_x);
+            }
             WindowEvent::RedrawRequested => {
                 self.handle_redraw();
             }

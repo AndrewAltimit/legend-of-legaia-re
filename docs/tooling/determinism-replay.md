@@ -100,6 +100,16 @@ The file's `meta.frames` reflects the actual recorded duration
 (highest `session.frames` observed during the run), so playback of the
 captured file replays exactly as long as the human session was.
 
+**Interactive-toggle caveat.** `j-replay-v1` captures the pad stream
+only - the play-window's interactive camera/movement toggles (camera
+distance preset, left-mouse drag-orbit, the precise-movement toggle)
+are not recorded. The defaults are safe: the distance preset and orbit
+are pure render framing (no simulation effect), and replays run with
+`precise_movement` off (the retail-faithful quantised remap), matching
+the engine-core defaults. A session recorded while precise movement was
+ON (or with a non-zero drag-orbit compass) is not replay-stable; keep
+the toggles at their defaults when capturing replay fixtures.
+
 ## Determinism gate
 
 [`crates/engine-shell/tests/determinism_j2.rs`](../../crates/engine-shell/tests/determinism_j2.rs)
