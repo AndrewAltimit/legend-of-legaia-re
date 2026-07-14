@@ -163,6 +163,78 @@ pub(crate) enum Cmd {
         #[arg(long)]
         output: Option<PathBuf>,
     },
+    /// Translation / language-pack tools: export the disc's text to an
+    /// editable YAML pack, generate per-language skeletons, check coverage,
+    /// and import a filled pack back onto a disc copy.
+    Translate {
+        #[command(subcommand)]
+        cmd: TranslateCmd,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum TranslateCmd {
+    /// Export every cataloged user-facing string (item / spell / art /
+    /// accessory / party names, scene dialog, event-script text) from a disc
+    /// into a YAML language pack with empty `translation:` fields.
+    ///
+    /// The exported pack contains the game's copyrighted text - keep it
+    /// local / share only filled translations per your jurisdiction's rules;
+    /// never commit it to this repository.
+    Export {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+        /// Where to write the pack (YAML).
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+    /// Produce an empty per-language skeleton from an exported pack: same
+    /// keys / sources / budgets, cleared translations, stamped header.
+    Init {
+        /// Target language code (e.g. fr, de, es, it, pt-BR, ja, ru, zh, ko -
+        /// note: non-Latin scripts also need a font patch, see the docs).
+        #[arg(long)]
+        lang: String,
+        /// An existing exported pack to derive from...
+        #[arg(long, conflicts_with = "input", required_unless_present = "input")]
+        from: Option<PathBuf>,
+        /// ...or export straight from a disc image.
+        #[arg(long, required_unless_present = "from")]
+        input: Option<PathBuf>,
+        /// Contributor names for the pack header (repeatable).
+        #[arg(long)]
+        contributor: Vec<String>,
+        /// Where to write the skeleton (YAML).
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+    /// Coverage + validation report for a pack: per-section translated/total
+    /// counts, plus encodability and budget checks on every filled entry
+    /// (dry run - no disc needed).
+    Stats {
+        /// The language pack (YAML).
+        #[arg(long)]
+        pack: PathBuf,
+    },
+    /// Apply a filled pack to a copy of a disc. Untranslated entries are
+    /// left byte-identical; every write is same-size in place and each
+    /// touched sector's EDC/ECC is re-encoded.
+    Import {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+        /// The filled language pack (YAML).
+        #[arg(long)]
+        pack: PathBuf,
+        /// Write the patched image here (contains Sony bytes - local play
+        /// only, never redistribute).
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Write a portable PPF 3.0 patch here (safe to share).
+        #[arg(long)]
+        patch: Option<PathBuf>,
+    },
 }
 
 #[derive(Parser)]

@@ -14,6 +14,7 @@
 mod cli;
 mod commands;
 mod randomize;
+mod translate;
 mod util;
 
 use anyhow::Result;
@@ -46,5 +47,28 @@ fn main() -> Result<()> {
             patch,
             output,
         } => randomize::cmd_verify(&input, &patch, output.as_deref()),
+        Cmd::Translate { cmd } => match cmd {
+            cli::TranslateCmd::Export { input, output } => translate::cmd_export(&input, &output),
+            cli::TranslateCmd::Init {
+                lang,
+                from,
+                input,
+                contributor,
+                output,
+            } => translate::cmd_init(
+                &lang,
+                from.as_deref(),
+                input.as_deref(),
+                contributor,
+                &output,
+            ),
+            cli::TranslateCmd::Stats { pack } => translate::cmd_stats(&pack),
+            cli::TranslateCmd::Import {
+                input,
+                pack,
+                output,
+                patch,
+            } => translate::cmd_import(&input, &pack, output.as_deref(), patch.as_deref()),
+        },
     }
 }
