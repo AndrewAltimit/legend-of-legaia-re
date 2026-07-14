@@ -90,7 +90,8 @@ How the runtime engine works.
 | [`engine.md`](docs/subsystems/engine.md) | Clean-room Rust port architecture and boundaries. |
 | [`boot.md`](docs/subsystems/boot.md) | Boot sequence; PROT TOC into `0x801C70F0`. |
 | [`asset-loader.md`](docs/subsystems/asset-loader.md) | LBA resolver + sub-asset chain. |
-| [`renderer.md`](docs/subsystems/renderer.md) | TMD renderer at `FUN_8002735c` (60 GTE ops). |
+| [`renderer.md`](docs/subsystems/renderer.md) | TMD renderer at `FUN_8002735c` (60 GTE ops). Scene clip volume: every camera draws the whole scene (`SCENE_FAR`), no distance/frustum culling in the port. |
+| [`vr-mode.md`](docs/subsystems/vr-mode.md) | WebXR `immersive-vr` on the static site's 3D pages (world overview / field-scene viewer / play). Flat renderer stays the geometry source; only the framebuffer (per-eye `XRWebGLLayer` + scissor) and the view-projection (per-eye XRFrame matrices) fork. World->XR keeps the retail screen-X mirror (the shader's `u_normal_sign = -1` depends on it). Per-page metres-per-unit scale sets diorama-vs-human framing; stick locomotion + snap turn, no teleport (pages carry no ground query). |
 | [`audio.md`](docs/subsystems/audio.md) | PsyQ libsnd / libspu stack; SsAPI sequencer; SPU DMA transfer engine. |
 | [`script-vm.md`](docs/subsystems/script-vm.md) | Field/event VM at `FUN_801DE840` (overlay-resident, 43 opcodes). |
 | [`tile-board.md`](docs/subsystems/tile-board.md) | Tile-board grid mode (puzzle / board minigame), NOT general town locomotion. `width×height` byte cell array (cell `2` = wall) + per-cell tile-actor rendering; installed inline in the field-VM script by op `0x49` (`_DAT_8007b450`); walk SM at `overlay_0897_801ef2b0`. |

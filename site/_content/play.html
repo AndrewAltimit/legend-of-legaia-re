@@ -275,9 +275,10 @@
   </ul>
   <p class="hint">
     Some scenes frame better than others, and the reason is a real gap rather than a page bug. Retail
-    authors a camera per scene; this page runs one generic follow camera, so it culls whatever
-    straddles the line from the lens to the player - that is what keeps a cave roof or a monastery
-    ceiling from filling the screen. Caves also expose a deeper disagreement: for scenes whose floor
+    authors a camera per scene; this page runs one generic follow camera, so it drops the bodies the
+    lens-to-player segment actually passes through - an exact test against each body's world box, which
+    is what keeps a cave roof or a monastery ceiling from filling the screen without taking the floor
+    under your feet with it. Caves also expose a deeper disagreement: for scenes whose floor
     is not in the floor-height table, the engine's floor sampler reports height 0 while the drawn
     walk-ground sits below it, so the character can appear to stand above or inside the rock. That is
     an engine-level thread, tracked with the
