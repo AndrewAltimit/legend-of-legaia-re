@@ -30,6 +30,7 @@ pub mod character_pack;
 pub mod clut_walk;
 pub mod cutscene_text;
 pub mod dance_art;
+pub mod dance_cast;
 pub mod dance_chart;
 pub mod data_field_truncated;
 pub mod effect_bundle;

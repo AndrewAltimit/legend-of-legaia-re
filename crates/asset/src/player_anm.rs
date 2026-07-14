@@ -245,6 +245,43 @@ impl PlayerAnmBundle {
         })
     }
 
+    /// Like [`Self::record`] but tolerating records whose payload runs
+    /// **longer** than the `16 + 8 * bones * frames` invariant. The dance-hall
+    /// scene bundle (PROT 1229, the `other7` MOVE section) carries several
+    /// choreography records with extra frame data past the header's count -
+    /// the retail clip driver clamps its cursor at `frame_count * 16 - 1`
+    /// (`FUN_800204F8`), so only the header's frames ever play and the tail is
+    /// unread. Still errors on records **shorter** than the invariant (frames
+    /// past the buffer would be garbage).
+    pub fn record_lenient(&self, index: usize) -> Result<PlayerAnmRecord> {
+        match self.record(index) {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                let r = self.record_bytes(index);
+                if r.len() < RECORD_HEADER_SIZE + RECORD_TRAILER_SIZE {
+                    return Err(e);
+                }
+                let a = u16::from_le_bytes([r[0], r[1]]);
+                let b = u16::from_le_bytes([r[2], r[3]]);
+                let bone_count = a & 0xFF;
+                let expected = RECORD_HEADER_SIZE
+                    + (bone_count as usize) * (b as usize) * BONE_FRAME_BYTES
+                    + RECORD_TRAILER_SIZE;
+                if r.len() < expected {
+                    return Err(e);
+                }
+                Ok(PlayerAnmRecord {
+                    a,
+                    b,
+                    marker_1: u16::from_le_bytes([r[4], r[5]]),
+                    flag: u16::from_le_bytes([r[6], r[7]]),
+                    bone_count,
+                    frame_count: b,
+                })
+            }
+        }
+    }
+
     /// Borrow the per-frame slice (`bone_count * 8` bytes) for one frame.
     /// Returns `&[]` on out-of-range record or frame. The body sits
     /// immediately after the 8-byte header, frame-major.
