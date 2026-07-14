@@ -91,6 +91,8 @@
       this.charState = null;  /* set_character() JSON for the current char */
       this.charName = null;
       this.currentArt = null; /* the playing art's display name, or null=idle */
+      this.cueFrames = null;  /* Set of clip frames that fire the strike cue */
+      this.cueLog = [];       /* [{frame, t}] - the headless-check hook */
     }
 
     get ready() { return !!(this.api && this.charState && this.charState.ok); }
@@ -125,6 +127,11 @@
         this.els.stage.hidden = false;
         prog.done(`Ready - ${st.entries} PROT entries; click any art card below.`);
         document.body.classList.add('arts-live');
+        /* Sound: render the strike cue off the same disc bytes (SCUS -> the
+         * SFX descriptor table, PROT 869 -> the class-2 sound bank, through
+         * the clean-room SPU). Non-blocking, and a no-op on a raw PROT.DAT
+         * load (no SCUS to read the descriptors from). */
+        if (window.LegaiaSfx) LegaiaSfx.init(mod, buf);
       } catch (err) {
         prog.fail(`Failed to decode: ${err.message || err}`);
         console.error(err);
@@ -166,9 +173,31 @@
       return true;
     }
 
+    /* Fire the art strike cue on the clip frames `frames` (a Set).
+     *
+     * Retail times an art's sound from the art record's Hit Effect Cue words
+     * ([frame][kind], see docs/formats/art-data.md) - a field whose offset in
+     * the record is not pinned, and the move-power table's per-move sound cue
+     * covers enemy specials only. So the *cue id* is retail's documented
+     * generic "play sound" kind (0x1A, resolved through the disc's SFX
+     * descriptor table) and the *frames* are derived from the clip itself -
+     * the local peaks of the rig's extension, i.e. where each swing lands.
+     * Fitted timing, real cue: the page's note says so. */
+    _armCues(frames) {
+      this.cueFrames = frames;
+      if (!this.view) return;
+      this.view.onFrame = (f) => {
+        if (!this.cueFrames || !this.cueFrames.has(f)) return;
+        this.cueLog.push({ frame: f, t: Date.now() });
+        if (this.cueLog.length > 200) this.cueLog.shift();
+        if (window.LegaiaSfx) LegaiaSfx.play('arts', 'strike');
+      };
+    }
+
     playIdle(note) {
       if (!this.ready || !this.view) return;
       this.currentArt = null;
+      this._armCues(null);          /* the idle loop is silent */
       const idle = this.charState.idle;
       const frames = this.api.idle_pose_frames();
       if (idle && frames.length) {
@@ -212,6 +241,17 @@
       const frames = new Int32Array(total);
       let o = 0;
       for (const s of segs) { frames.set(s, o); o += s.length; }
+      /* Strike frames of every segment, offset into the concatenated clip. */
+      const cues = new Set();
+      if (this.api.art_strike_frames) {
+        let base = 0;
+        chain.forEach((i, k) => {
+          const segFrames = segs[k].length / (parts * 6);
+          for (const f of this.api.art_strike_frames(i)) cues.add(base + f);
+          base += segFrames;
+        });
+      }
+      this._armCues(cues);
       this.currentArt = art.name;
       this.view.setAnimation({
         partCount: parts,
@@ -225,11 +265,17 @@
       const dev = bank[first].name && norm(bank[first].name) !== norm(art.name)
         ? ` (dev name "${bank[first].name}")` : '';
       const segNote = chain.length > 1 ? `, ${chain.length} chained segments` : '';
+      /* Sound, and what is and isn't retail about it. */
+      const sfxNote = (window.LegaiaSfx && LegaiaSfx.ready() && cues.size)
+        ? `; strike cue 0x${LegaiaSfx.cueFor('arts', 'strike').toString(16).toUpperCase()}`
+          + ` on ${cues.size} impact frame${cues.size > 1 ? 's' : ''}`
+          + ' (retail cue id, timing fitted from the clip)'
+        : '';
       this.els.now.textContent =
         `${this.charName} - ${art.name}${dev}`;
       this.els.note.textContent =
         `record 0x${bank[first].anim_id.toString(16).toUpperCase()}` +
-        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}`;
+        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${sfxNote}`;
     }
   }
 
@@ -247,6 +293,11 @@
     const fileInput = $(ids.file);
     if (fileInput && window.RomCache) {
       RomCache.attach(fileInput, { onLoad: (f) => app.load(f) });
+    }
+    /* The shared sound gate (js/audio-toggle.js), parked with the file input.
+     * Every cue the viewer fires checks it. */
+    if (window.LegaiaSound && fileInput && fileInput.parentElement) {
+      LegaiaSound.attach(fileInput.parentElement);
     }
     const panels = $(ids.panels);
     if (panels) {
@@ -278,6 +329,13 @@
       character: app.charName,
       current: app.currentArt,
       bank: app.charState ? app.charState.arts : null,
+      /* Sound: the armed impact frames, the cues actually fired, and what the
+       * WASM cue renderer decoded off the disc. */
+      cueFrames: app.cueFrames ? Array.from(app.cueFrames).sort((a, b) => a - b) : null,
+      cueLog: app.cueLog.slice(),
+      sfxReady: !!(window.LegaiaSfx && LegaiaSfx.ready()),
+      sfxInfo: window.LegaiaSfx && LegaiaSfx.ready() ? LegaiaSfx.info() : null,
+      sfxLog: window.LegaiaSfx ? LegaiaSfx.log() : [],
     });
     return app;
   };

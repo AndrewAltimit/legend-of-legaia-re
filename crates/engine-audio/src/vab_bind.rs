@@ -124,6 +124,48 @@ impl VabBank {
         let Some(tone) = tones.iter().find(|t| note >= t.min && note <= t.max) else {
             return false;
         };
+        self.fire(spu, voice, tone, note, velocity)
+    }
+
+    /// Play the tone at an **explicit index** inside `program`, rather than
+    /// resolving it by key range the way [`Self::play_note`] does.
+    ///
+    /// This is the shape of the retail *SFX* path, which differs from the
+    /// sequencer's: the SFX descriptor's `+1` byte names the ADSR region
+    /// directly (`FUN_80065034` is handed program `+0`, region `+1` `+ i`, and
+    /// the note-level attribute `+2`), so a cue's tone is an index, and a
+    /// multi-voice cue walks consecutive regions. Key-range resolution would
+    /// silently miss those cues whose descriptor note falls outside the tone's
+    /// authored `min..=max` window (several retail cues do, e.g. the generic
+    /// strike cue `0x1A`). See `docs/formats/sfx-table.md`.
+    ///
+    /// Returns `false` when the program / tone / sample isn't valid.
+    pub fn play_tone(
+        &self,
+        spu: &mut Spu,
+        voice: usize,
+        program: usize,
+        tone_index: usize,
+        note: u8,
+        velocity: u8,
+    ) -> bool {
+        let Some(tone) = self.programs.get(program).and_then(|t| t.get(tone_index)) else {
+            return false;
+        };
+        self.fire(spu, voice, tone, note, velocity)
+    }
+
+    /// Configure + key on `voice` for one resolved tone. Shared by
+    /// [`Self::play_note`] (key-range lookup) and [`Self::play_tone`]
+    /// (explicit region index).
+    fn fire(
+        &self,
+        spu: &mut Spu,
+        voice: usize,
+        tone: &legaia_vab::VagAtr,
+        note: u8,
+        velocity: u8,
+    ) -> bool {
         // tone.vag is 1-based in PSX VAB format. legaia_vab::VabReport's
         // `vag_samples` is 0-indexed (samples[0..vs]), so subtract 1.
         if tone.vag <= 0 {

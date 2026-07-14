@@ -131,6 +131,79 @@ fn flatten_pose_frames(anim: &MonsterAnimation) -> Vec<i32> {
     out
 }
 
+/// Frames of an art clip on which the page fires the strike cue.
+///
+/// **This is a fit, not a traced timing.** Retail times an art's sound from
+/// the art record's *Hit Effect Cue* words (`[u16 frame][u16 kind]`, see
+/// `docs/formats/art-data.md`) - a field whose offset inside the `0xD0`-stride
+/// record is not pinned, and the move-power table's per-move `+0x0d` cue covers
+/// enemy specials only (a party art's move id is unmapped - see
+/// `docs/formats/move-power.md`). So the page derives the impact frames from
+/// the clip itself: the local maxima of the rig's **extension** - the largest
+/// per-part translation distance from the rest pose - which is where a swing,
+/// kick or lunge reaches full reach. A multi-hit art therefore fires once per
+/// swing, and a single-strike art once.
+///
+/// Frames are returned ascending, at most four (the art record carries four
+/// power bytes, so retail lands at most four hits per art).
+fn strike_frames(anim: &MonsterAnimation) -> Vec<u32> {
+    if anim.frame_count < 3 || anim.part_count == 0 {
+        return Vec::new();
+    }
+    let rest = &anim.frames[0];
+    // Per-frame extension: how far the furthest-displaced part has travelled
+    // from its rest position.
+    let extension: Vec<f32> = anim
+        .frames
+        .iter()
+        .map(|frame| {
+            frame
+                .iter()
+                .zip(rest.iter())
+                .map(|(p, r)| {
+                    let dx = f32::from(p.tx) - f32::from(r.tx);
+                    let dy = f32::from(p.ty) - f32::from(r.ty);
+                    let dz = f32::from(p.tz) - f32::from(r.tz);
+                    (dx * dx + dy * dy + dz * dz).sqrt()
+                })
+                .fold(0.0f32, f32::max)
+        })
+        .collect();
+    let peak = extension.iter().copied().fold(0.0f32, f32::max);
+    if peak <= 0.0 {
+        return Vec::new();
+    }
+    // Only peaks in the top half of the clip's reach count as a strike; that
+    // filters the wind-up and recovery wobble.
+    let floor = peak * 0.5;
+    let mut hits: Vec<u32> = (1..extension.len() - 1)
+        .filter(|&f| {
+            extension[f] >= floor
+                && extension[f] >= extension[f - 1]
+                && extension[f] > extension[f + 1]
+        })
+        .map(|f| f as u32)
+        .collect();
+    if hits.is_empty() {
+        // Monotone clip (a lunge that ends at full reach): the final frame is
+        // the impact.
+        let best = extension
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .map(|(f, _)| f as u32)
+            .unwrap_or(0);
+        hits.push(best);
+    }
+    if hits.len() > 4 {
+        // Keep the four biggest, back in frame order.
+        hits.sort_by(|a, b| extension[*b as usize].total_cmp(&extension[*a as usize]));
+        hits.truncate(4);
+        hits.sort_unstable();
+    }
+    hits
+}
+
 /// Build one character's full bundle off the PROT bytes. `Err(reason)` names
 /// the first stage that failed; per-art stream failures degrade to
 /// `ArtSlot::why` instead (the page falls that art back to the idle pose).
@@ -448,5 +521,25 @@ impl LegaiaArts {
             .and_then(|a| a.anim.as_ref())
             .map(flatten_pose_frames)
             .unwrap_or_default()
+    }
+
+    /// Frames of art clip `index` on which the page should fire the strike
+    /// sound cue ([`Self::art_strike_cue`]), ascending. See [`strike_frames`]
+    /// for what they are and why they are a fit rather than a traced timing.
+    /// Empty when the clip didn't decode.
+    pub fn art_strike_frames(&self, index: u32) -> Vec<u32> {
+        self.current
+            .as_ref()
+            .and_then(|c| c.arts.get(index as usize))
+            .and_then(|a| a.anim.as_ref())
+            .map(strike_frames)
+            .unwrap_or_default()
+    }
+
+    /// The SFX cue id an art strike fires: the art record's documented generic
+    /// "play sound" Hit Effect Cue kind. Resolve it to audio through
+    /// [`crate::sfx_view::LegaiaSfx`].
+    pub fn art_strike_cue(&self) -> u32 {
+        crate::sfx_view::CUE_ART_STRIKE as u32
     }
 }
