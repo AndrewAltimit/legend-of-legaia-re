@@ -29,6 +29,116 @@ fn locomotion_diagonal_normalises_speed() {
 }
 
 #[test]
+fn precise_movement_walks_true_diagonals_at_full_speed() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.precise_movement = true;
+    world.actors[0].move_state.world_x = 400;
+    world.actors[0].move_state.world_z = 400;
+    // Up+Right in precise mode: the normalised 45-degree vector at speed 8
+    // is ~5.66 units per axis per frame (vs the quantised path's 6+6 =
+    // over-speed diagonal). Two frames accumulate ~11.3 per axis; the
+    // carry keeps the fraction, so both axes land on the same total.
+    for _ in 0..2 {
+        world.set_pad(input::PadButton::Up.mask() | input::PadButton::Right.mask());
+        let _ = world.tick();
+    }
+    let dx = world.actors[0].move_state.world_x - 400;
+    let dz = world.actors[0].move_state.world_z - 400;
+    assert_eq!(dx, dz, "true 45-degree diagonal: equal per-axis distance");
+    assert!((10..=12).contains(&dx), "~8/sqrt(2) per frame, got {dx}");
+}
+
+#[test]
+fn precise_movement_honours_continuous_camera_azimuth() {
+    // Azimuth 512 units = 45 degrees. The quantised remap snaps that to
+    // quadrant 1 (screen-up -> +X only); precise mode rotates the screen
+    // vector continuously, so screen-up walks the true (+X, +Z) diagonal.
+    let drive = |precise: bool| -> (i16, i16) {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        world.precise_movement = precise;
+        world.field_camera_azimuth = 512;
+        world.actors[0].move_state.world_x = 400;
+        world.actors[0].move_state.world_z = 400;
+        for _ in 0..4 {
+            world.set_pad(input::PadButton::Up.mask());
+            let _ = world.tick();
+        }
+        (
+            world.actors[0].move_state.world_x - 400,
+            world.actors[0].move_state.world_z - 400,
+        )
+    };
+    let (qx, qz) = drive(false);
+    assert!(qx > 0 && qz == 0, "quantised: quadrant-1 snap walks +X only");
+    let (px, pz) = drive(true);
+    assert!(px > 0 && pz > 0, "precise: 45-degree azimuth walks +X and +Z");
+    assert_eq!(px, pz, "the two axes advance equally at 45 degrees");
+}
+
+#[test]
+fn precise_movement_passes_analog_stick_angle_through() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.precise_movement = true;
+    world.actors[0].move_state.world_x = 400;
+    world.actors[0].move_state.world_z = 400;
+    // Stick deflected up-and-slightly-right (~26.6 degrees off forward):
+    // an angle no 8-way quantisation can produce. Stick +Y is down, so
+    // "up" is negative Y. Expect Z to advance ~2x X.
+    for _ in 0..8 {
+        world.input.set_lstick((50, -100));
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    let dx = (world.actors[0].move_state.world_x - 400) as f32;
+    let dz = (world.actors[0].move_state.world_z - 400) as f32;
+    assert!(dx > 0.0 && dz > 0.0, "moved along the stick angle");
+    let ratio = dz / dx;
+    assert!(
+        (1.6..=2.4).contains(&ratio),
+        "z/x tracks the 2:1 stick deflection, got {ratio}"
+    );
+}
+
+#[test]
+fn precise_movement_off_is_bit_identical_to_quantised_path() {
+    // The default (precise off) must reproduce the historical positions
+    // exactly - the determinism / replay contract.
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.actors[0].move_state.world_x = 400;
+    world.actors[0].move_state.world_z = 400;
+    world.set_pad(input::PadButton::Up.mask() | input::PadButton::Right.mask());
+    let _ = world.tick();
+    assert_eq!(world.actors[0].move_state.world_z, 406);
+    assert_eq!(world.actors[0].move_state.world_x, 406);
+    assert_eq!(world.precise_move_carry, (0.0, 0.0), "carry untouched");
+}
+
+#[test]
+fn precise_movement_stops_at_wall() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.precise_movement = true;
+    world.actors[0].move_state.world_x = 200;
+    world.actors[0].move_state.world_z = 250;
+    // Same wall band as `locomotion_stops_at_wall` - the precise stepper
+    // routes through the same per-axis collision probes.
+    world.paint_field_collision(1, (1, 2), (3, 4), 0);
+    world.set_pad(input::PadButton::Up.mask());
+    let _ = world.tick();
+    assert_eq!(world.actors[0].move_state.world_z, 254);
+    assert_eq!(world.actors[0].move_state.world_x, 200);
+}
+
+#[test]
 fn locomotion_stops_at_wall() {
     let mut world = World::new();
     world.mode = SceneMode::Field;

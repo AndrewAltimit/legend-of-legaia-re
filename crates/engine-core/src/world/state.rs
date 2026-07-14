@@ -184,6 +184,22 @@ pub struct World {
     /// `+Z`). Engines that orbit the camera write the current azimuth here
     /// each frame; the locomotion remap quantises it to the nearest 90°.
     pub field_camera_azimuth: u16,
+    /// Opt-in precise-movement mode for pad locomotion. When set,
+    /// [`World::step_field_locomotion`] decodes the held direction
+    /// **continuously** instead of through retail's 4/8-way quantisation:
+    /// the camera azimuth is applied at full angular resolution (not
+    /// snapped to the nearest 90°), key diagonals walk true 45° vectors at
+    /// full speed, and an analog stick ([`crate::input::InputState::lstick`])
+    /// passes its angle through untouched. Off by default - the default
+    /// path stays bit-identical to the retail-faithful quantised remap
+    /// (replays / oracles are unaffected unless a host opts in).
+    pub precise_movement: bool,
+    /// Sub-step remainder carried between precise-movement frames, in world
+    /// units per axis (|carry| < one collision step). Lets shallow movement
+    /// angles accumulate distance across frames instead of rounding to
+    /// zero. Only touched while [`Self::precise_movement`] is active with a
+    /// direction held; reset when input releases.
+    pub precise_move_carry: (f32, f32),
     /// Party-member actor slots - `party_actor_slots[i] = Some(actor_slot)`
     /// resolves move-VM ext sub-op 0x3B (`ext_party_member_lookup`) to the
     /// world-coords of the actor at that slot. Default empty (the lookup
@@ -1848,6 +1864,8 @@ impl World {
             leading_edge_wall_probes: false,
             solid_field_npcs: false,
             field_camera_azimuth: 0,
+            precise_movement: false,
+            precise_move_carry: (0.0, 0.0),
             party_actor_slots: Vec::new(),
             pending_fade: None,
             move_dat_8007b9d8: 0,

@@ -1263,6 +1263,73 @@ impl World {
         (bits, heading)
     }
 
+    /// Continuous (non-quantised) camera-relative movement decode for the
+    /// opt-in [`World::precise_movement`] mode. Returns
+    /// `(world_dir, dir_bits, heading)` where `world_dir` is the unnormalised
+    /// world-space XZ movement vector, `dir_bits` is the sign-derived retail
+    /// direction mask (kept for the facing / animation / touch consumers that
+    /// key on [`World::last_move_dir_bits`]), and `heading` is the continuous
+    /// PSX 12-bit angle. `None` when no direction is held.
+    ///
+    /// Differences from [`Self::decode_field_direction`] (the retail path):
+    /// the camera azimuth rotates the screen vector at full angular
+    /// resolution instead of snapping to the nearest 90°, and a deflected
+    /// analog stick ([`crate::input::InputState::lstick`], PSX `[-127, 127]`
+    /// axes, +Y down) supplies an arbitrary screen angle - digital keys are
+    /// the 8-way fallback when the stick rests inside the deadzone.
+    fn decode_field_direction_precise(&self) -> Option<((f32, f32), u16, i16)> {
+        const STICK_DEADZONE: i32 = 24;
+        let (lx, ly) = self.input.lstick();
+        let (sx, sy) = if (lx as i32).pow(2) + (ly as i32).pow(2) >= STICK_DEADZONE.pow(2) {
+            // Stick +Y is down (PSX convention); screen forward is up.
+            (lx as f32 / 127.0, -(ly as f32) / 127.0)
+        } else {
+            let mut sx = 0.0f32;
+            let mut sy = 0.0f32;
+            if self.input.pressed(input::PadButton::Up) {
+                sy += 1.0;
+            }
+            if self.input.pressed(input::PadButton::Down) {
+                sy -= 1.0;
+            }
+            if self.input.pressed(input::PadButton::Right) {
+                sx += 1.0;
+            }
+            if self.input.pressed(input::PadButton::Left) {
+                sx -= 1.0;
+            }
+            (sx, sy)
+        };
+        if sx == 0.0 && sy == 0.0 {
+            return None;
+        }
+        // Rotate the screen vector by the camera azimuth continuously.
+        // Azimuth 0 = identity (screen-up -> +Z, screen-right -> +X); the
+        // quadrant table in `decode_field_direction` is this rotation
+        // sampled at the four cardinal angles.
+        let az = self.field_camera_azimuth as f32 / 4096.0 * std::f32::consts::TAU;
+        let (sin, cos) = az.sin_cos();
+        let wx = sx * cos + sy * sin;
+        let wz = -sx * sin + sy * cos;
+        let mut bits = 0u16;
+        if wz > f32::EPSILON {
+            bits |= 0x1000; // Z+
+        } else if wz < -f32::EPSILON {
+            bits |= 0x4000; // Z-
+        }
+        if wx > f32::EPSILON {
+            bits |= 0x2000; // X+
+        } else if wx < -f32::EPSILON {
+            bits |= 0x8000; // X-
+        }
+        if bits == 0 {
+            return None;
+        }
+        let heading =
+            ((wx.atan2(wz) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF) as i16;
+        Some(((wx, wz), bits, heading))
+    }
+
     /// Free-movement locomotion step - the engine-side port of
     /// `FUN_801d01b0` (field overlay `overlay_0897`).
     ///
@@ -1303,9 +1370,24 @@ impl World {
             return;
         }
 
-        let (dir_bits, heading) = self.decode_field_direction();
+        // Opt-in precise mode swaps the quantised d-pad remap for the
+        // continuous decode; the default path is bit-identical to the
+        // historical quantised behaviour.
+        let precise = if self.precise_movement {
+            self.decode_field_direction_precise()
+        } else {
+            None
+        };
+        let (dir_bits, heading) = if self.precise_movement {
+            precise.map(|(_, b, h)| (b, h)).unwrap_or((0, 0))
+        } else {
+            self.decode_field_direction()
+        };
         self.last_move_dir_bits = dir_bits;
         if dir_bits == 0 {
+            // Input released: drop any precise sub-step remainder so a later
+            // hold starts clean.
+            self.precise_move_carry = (0.0, 0.0);
             return;
         }
         self.actors[slot].move_state.render_26 = heading;
@@ -1315,9 +1397,11 @@ impl World {
         let ratio = self.move_ramp_ratio.max(1) as i32;
         let mut speed = ((FIELD_BASE_STEP * mult) >> 12) * ratio;
         // Diagonal normalise (camera mode 4, both axes pressed): x0.75.
+        // The precise path normalises its vector instead (below), so the
+        // fixed cut only applies to the quantised path.
         let z_pressed = dir_bits & 0x5000 != 0;
         let x_pressed = dir_bits & 0xA000 != 0;
-        if z_pressed && x_pressed {
+        if precise.is_none() && z_pressed && x_pressed {
             speed -= speed >> 2;
         }
         if speed <= 0 {
@@ -1330,7 +1414,11 @@ impl World {
             anim.moved_this_frame = true;
         }
 
-        self.advance_with_collision(slot, dir_bits, speed);
+        if let Some(((wx, wz), _, _)) = precise {
+            self.advance_with_collision_vector(slot, wx, wz, speed);
+        } else {
+            self.advance_with_collision(slot, dir_bits, speed);
+        }
 
         // Walk-touch dispatch (retail: the per-sub-step touch check inside
         // `FUN_801d01b0`, posting `FUN_801d5b5c` on a static-entity contact
@@ -1446,6 +1534,40 @@ impl World {
             }
             remaining -= FIELD_STEP_UNIT;
         }
+    }
+
+    /// Advance actor `slot` by `speed` world units along the arbitrary
+    /// ground-plane direction `(wx, wz)` - the [`World::precise_movement`]
+    /// sibling of [`Self::advance_with_collision`]. The vector is
+    /// normalised, split into per-axis distances, and walked in the same
+    /// `FIELD_STEP_UNIT` sub-steps through the same per-axis collision
+    /// probes (each sub-step is one single-axis `advance_with_collision`
+    /// call, Z before X, so X collision sees the just-committed Z exactly
+    /// like the quantised path). Sub-`FIELD_STEP_UNIT` remainders persist in
+    /// [`World::precise_move_carry`] so shallow angles keep their exact
+    /// slope across frames instead of rounding each frame's minor axis to
+    /// zero.
+    pub fn advance_with_collision_vector(&mut self, slot: usize, wx: f32, wz: f32, speed: i32) {
+        let len = (wx * wx + wz * wz).sqrt();
+        if len <= f32::EPSILON || speed <= 0 {
+            return;
+        }
+        let step = FIELD_STEP_UNIT as f32;
+        let mut ax = self.precise_move_carry.0 + wx / len * speed as f32;
+        let mut az = self.precise_move_carry.1 + wz / len * speed as f32;
+        while ax.abs() >= step || az.abs() >= step {
+            if az.abs() >= step {
+                let bit = if az > 0.0 { 0x1000 } else { 0x4000 };
+                self.advance_with_collision(slot, bit, FIELD_STEP_UNIT);
+                az -= step * az.signum();
+            }
+            if ax.abs() >= step {
+                let bit = if ax > 0.0 { 0x2000 } else { 0x8000 };
+                self.advance_with_collision(slot, bit, FIELD_STEP_UNIT);
+                ax -= step * ax.signum();
+            }
+        }
+        self.precise_move_carry = (ax, az);
     }
 
     /// One movement sub-step's prop probe: blocks on any solid prop box hit

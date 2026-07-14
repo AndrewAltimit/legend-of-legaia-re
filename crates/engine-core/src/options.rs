@@ -143,6 +143,17 @@ pub struct OptionsState {
     /// master gate (`AudioOut::set_muted`), which silences the output
     /// without pausing the sequencer / SPU, so unmuting stays in sync.
     pub muted: bool,
+    /// Field follow-camera distance preset (engine-only framing knob;
+    /// windowed hosts cycle it with a keybind). Defaults to
+    /// [`CameraDistance::Far`] - the interactive default frames a bit more
+    /// of the scene than retail. Pure render framing: never feeds the
+    /// world simulation, so replays / oracles are unaffected (headless
+    /// hosts don't read options and keep the engine-core `Retail` default).
+    pub camera_distance: crate::camera::CameraDistance,
+    /// Opt-in precise-movement toggle (engine-only, non-retail): mirrors
+    /// into [`World::precise_movement`](crate::world::World::precise_movement)
+    /// by windowed hosts. Default off = retail's quantised 4/8-way remap.
+    pub precise_movement: bool,
 }
 
 impl Default for OptionsState {
@@ -161,6 +172,8 @@ impl Default for OptionsState {
             sfx_volume: 8,
             message_speed: 5,
             muted: false,
+            camera_distance: crate::camera::CameraDistance::Far,
+            precise_movement: false,
         }
     }
 }

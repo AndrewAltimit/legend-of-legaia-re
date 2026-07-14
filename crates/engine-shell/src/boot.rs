@@ -652,10 +652,11 @@ impl BootSession {
         self.camera.reset_for_free_roam(&self.host.world);
         // Feed the previous frame's camera azimuth into the world so the
         // field free-movement controller remaps the d-pad camera-relative
-        // ("screen up" walks away from the camera). The follow camera's
-        // default yaw is 0, which maps straight to world +Z.
-        let azimuth = (self.camera.yaw / std::f32::consts::TAU * 4096.0).rem_euclid(4096.0);
-        self.host.world.field_camera_azimuth = azimuth as u16;
+        // ("screen up" walks away from the camera). The compass sums the
+        // scripted yaw, the user's manual drag-orbit, and the host
+        // renderer's fixed framing bias (`Camera::compass_azimuth_units`);
+        // all three default to 0, which maps straight to world +Z.
+        self.host.world.field_camera_azimuth = self.camera.compass_azimuth_units();
         let event = self.host.tick()?;
         self.camera.route_camera_events(&mut self.host.world);
         if let Some(bgm) = self.bgm.as_mut() {
