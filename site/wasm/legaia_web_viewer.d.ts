@@ -274,8 +274,7 @@ export class LegaiaMinigames {
     slot_art_ready(): boolean;
     /**
      * Tally the latched payout into the balance and return to idle. Returns
-     * the credited coins. [`Self::slot_tick`] already does this on the frame a
-     * spin resolves; this stays for hosts that drive the tally themselves.
+     * the credited coins.
      */
     slot_collect(): number;
     /**
@@ -328,24 +327,6 @@ export class LegaiaMinigames {
      * decoding it as the header claims yields noise.
      */
     slot_panel_rgba(): Uint8Array;
-    /**
-     * The machine's **single input**: one press means whatever the machine's
-     * phase says it means. Folds the cabinet's three stop buttons onto one
-     * key by taking them in sequence - press to spin, then press once per
-     * reel, left to right.
-     *
-     * Returns what the press did:
-     * - `"spin"` - idle, and the bet was charged (the reels are spinning up);
-     * - `"spinup"` - the reels are still ramping, so retail refuses a stop.
-     *   The host may hold the press and re-issue it when `can_stop` opens;
-     * - `"stop"` - the next still-spinning reel took its stop;
-     * - `"collect"` - a press landed on a resolved spin before the frame
-     *   tally ran: it was tallied, but the balance can't fund another spin;
-     * - `"broke"` - idle and under the 3-coin gate. The machine is empty; the
-     *   host racks a new one;
-     * - `"none"` - no machine, or it has cashed out.
-     */
-    slot_press(): string;
     /**
      * The live reel positions (`DAT_801d3cc0`) - fixed-point angles whose high
      * byte is the strip row and whose low byte is the sub-symbol fraction. The
@@ -459,54 +440,75 @@ export class LegaiaMinigames {
      */
     slot_symbol_rgba(sym: number): Uint8Array;
     /**
-     * Advance the reels one frame and **tally a resolved spin automatically**.
-     *
-     * The retail cabinet has three stop buttons and a payout tray; a browser
-     * page has one key. Collecting is therefore not an input here: the moment
-     * the third reel lands and the spin evaluates
-     * ([`SlotPhase::Payout`]), this runs the machine's own state-4 credit
-     * ([`SlotMachine::collect`] - the payout arithmetic is untouched) and the
-     * machine drops back to idle. The evaluated spin stays latched in
-     * `last_result`, so the host can keep the winning line lit until the next
-     * spin is charged. Returns the coins credited on this frame (`0` on a
-     * losing spin or any frame that didn't resolve one).
+     * Advance the reels one frame.
      */
-    slot_tick(): number;
+    slot_tick(): void;
 }
 
 /**
- * Bridge object the JS shim instantiates once at page load. Holds a
- * `World` + a `MenuRuntime` for the headless path, and an optional
- * `SceneHost` once `load_disc` has been called.
+ * Bridge object the play page instantiates once. Holds a `World` +
+ * `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
+ * `SceneHost` plus the render state for the scene it is running.
  */
 export class LegaiaRuntime {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Number of currently active actors.
-     */
-    active_actor_count(): number;
-    /**
-     * Attempt to initialise the WebAudio backend. Must be called from a
-     * user-gesture handler (browser autoplay policy). Returns `true` if
-     * audio started successfully, `false` otherwise (e.g. blocked by the
-     * browser before any interaction or on a platform without WebAudio).
-     *
-     * Idempotent - calling a second time replaces the existing backend.
+     * Attempt to start the WebAudio backend. Must be called from a user-gesture
+     * handler (browser autoplay policy). `true` on success.
      */
     audio_init(): boolean;
     /**
-     * `true` if a disc has been loaded via `load_disc`.
+     * `true` if a disc has been loaded.
      */
     disc_loaded(): boolean;
     /**
-     * Boot a named scene (CDNAME label, e.g. `"town01"`). Requires
-     * `load_disc` to have been called first. Loads the scene's assets,
-     * enters `SceneMode::Field`, and seeds the field-VM with record 0 of
-     * the scene's event-script pack. Throws a JS error if the disc hasn't
-     * been loaded or the scene name is unknown.
+     * Boot a named CDNAME scene (e.g. `"town01"`) and assemble everything the
+     * page draws. This is the real field entry: the scene's assets, the
+     * walkability grid + elevation overrides, the MAN system script, the player
+     * install, the encounter session. World-map labels (`map01`..`map03`) route
+     * through the world-map entry, which installs the overworld controller
+     * instead.
+     *
+     * Returns the same JSON as [`Self::state_json`]. Throws when the disc isn't
+     * loaded or the label is unknown.
      */
-    enter_scene(name: string): void;
+    enter_field(name: string): string;
+    field_ground_cba_tsb(): Uint16Array;
+    field_ground_indices(): Uint32Array;
+    field_ground_positions(): Float32Array;
+    field_ground_quad_count(): number;
+    field_ground_uvs(): Uint8Array;
+    /**
+     * Select + build environment-pack slot `slot`; subsequent `field_mesh_*`
+     * reads return that mesh.
+     */
+    field_mesh(slot: number): number;
+    field_mesh_cba_tsb(): Uint16Array;
+    field_mesh_flat_rgba(): Uint8Array;
+    field_mesh_indices(): Uint32Array;
+    field_mesh_positions(): Float32Array;
+    field_mesh_uvs(): Uint8Array;
+    field_placement_positions(): Float32Array;
+    field_placement_rot_y(): Uint16Array;
+    /**
+     * Per-placement env-pack slot (parallel to
+     * [`Self::field_placement_positions`] / [`Self::field_placement_rot_y`]).
+     */
+    field_placement_slots(): Uint32Array;
+    /**
+     * `{"pack_count", "placements", "terrain", "ground_quads"}` for the status
+     * line; `null` before a scene is entered.
+     */
+    field_status_json(): string;
+    field_terrain_positions(): Float32Array;
+    field_terrain_rot_y(): Uint16Array;
+    field_terrain_slots(): Uint32Array;
+    /**
+     * Field VRAM (1 MB) - the image every mesh below samples. The engine's own
+     * scene VRAM, not a viewer-side rebuild.
+     */
+    field_vram_bytes(): Uint8Array;
     /**
      * Frame counter.
      */
@@ -514,47 +516,135 @@ export class LegaiaRuntime {
     /**
      * Load a disc image from raw in-memory bytes.
      *
-     * `raw_bytes` may be either:
-     * - A Mode2/2352 full disc image (`.bin`): PROT.DAT and CDNAME.TXT are
-     *   extracted automatically via ISO9660 walk.
-     * - The raw contents of `PROT.DAT` directly.
+     * `raw_bytes` may be either a Mode2/2352 full disc image (`.bin`) - PROT.DAT
+     * and CDNAME.TXT are extracted via an ISO9660 walk - or the raw contents of
+     * `PROT.DAT`. `cdname_text` overrides any CDNAME.TXT found on the disc; pass
+     * an empty string to use the disc's own.
      *
-     * `cdname_text` overrides any CDNAME.TXT found on the disc. Pass an empty
-     * string to use the disc's own CDNAME.TXT (full disc) or skip scene-name
-     * resolution (PROT.DAT-only path without a CDNAME).
-     *
-     * Returns the number of PROT entries parsed, or throws a JS error on
-     * parse failure.
+     * Returns the number of PROT entries parsed. Nothing leaves the browser.
      */
     load_disc(raw_bytes: Uint8Array, cdname_text: string): number;
-    /**
-     * Boolean: true if the menu is open.
-     */
     menu_is_open(): boolean;
-    /**
-     * Read the menu's current label (e.g. "STATUS", "SAVE - PICK SLOT")
-     * for HUD rendering.
-     */
     menu_label(): string;
     /**
-     * Tick the menu state machine with a packed PSX-pad button mask.
-     * The mask matches `legaia_engine_vm::menu::MenuInput` field order:
-     * `cross | (circle<<1) | (triangle<<2) | (square<<3) | (up<<4) | (down<<5) | (left<<6) | (right<<7)`.
+     * Tick the scaffold menu with a packed button mask
+     * (`cross | circle<<1 | triangle<<2 | square<<3 | up<<4 | down<<5 |
+     * left<<6 | right<<7`).
      */
     menu_tick(button_mask: number): any;
     constructor();
     /**
-     * Open the menu (sets MenuCtx state to Idle).
+     * Open the disc-free scaffold menu (the headless [`MenuRuntime`] - the
+     * retail pause menu's screens are a native-only draw path today).
      */
     open_menu(): void;
     /**
-     * Read the active scene mode as a stable enum string.
+     * The scene's NPC / actor catalog. Shape:
+     * `{"anm_prot": 4, "npcs": [{"i", "slot", "model", "anim", "nobj",
+     * "kind", "target_map", "dialog", "conditional", "x", "z"}, ...]}`.
+     * `null` before a scene is entered.
+     */
+    play_npc_catalog_json(): string;
+    /**
+     * Build catalog entry `i`'s mesh (hybrid: textured + vertex-colour prims,
+     * with per-vertex bone ids). Returns `i`.
+     */
+    play_npc_mesh(i: number): number;
+    play_npc_mesh_cba_tsb(): Uint16Array;
+    play_npc_mesh_flat_rgba(): Uint8Array;
+    play_npc_mesh_indices(): Uint32Array;
+    /**
+     * Per-vertex TMD object index for the built NPC mesh - the bone each
+     * vertex hangs from. The page's animator keys its per-frame `R . v + T`
+     * on this.
+     */
+    play_npc_mesh_object_ids(): Uint32Array;
+    play_npc_mesh_positions(): Float32Array;
+    play_npc_mesh_uvs(): Uint8Array;
+    /**
+     * `[frame_count, bone_count]` of catalog entry `i`'s clip; `[0, 0]` when
+     * it has none.
+     */
+    play_npc_pose_dims(i: number): Uint32Array;
+    /**
+     * Catalog entry `i`'s clip, decoded to the pose format the JS animator
+     * consumes: `6` entries per bone per frame (`[tx, ty, tz, rx, ry, rz]`,
+     * absolute). Empty when the placement names no clip or the scene ships no
+     * ANM bundle. An NPC's clip is its placement `anim_id - 1` in the scene's
+     * own ANM bundle (`docs/formats/anm.md` § per-scene bundle).
+     */
+    play_npc_pose_frames(i: number): Int32Array;
+    /**
+     * Live world state of every catalogued NPC, flattened
+     * `[x, y, z, facing_units, ...]` in catalog order. Positions come from the
+     * **world** (`field_npc_positions`), so an NPC walking its MAN-authored
+     * route walks on screen; the MAN placement anchor is the fallback for one
+     * that has never moved. `y` is the floor height under the NPC.
+     */
+    play_npc_transforms(): Float32Array;
+    /**
+     * `true` when the lead's field mesh resolved out of the global TMD pool.
+     */
+    player_has_mesh(): boolean;
+    player_mesh_cba_tsb(): Uint16Array;
+    player_mesh_flat_rgba(): Uint8Array;
+    /**
+     * Player mesh geometry (object-local; pair with
+     * [`Self::player_mesh_positions`], which poses it).
+     */
+    player_mesh_indices(): Uint32Array;
+    /**
+     * The player's vertices **posed at the current frame**: the world's live
+     * `pose_frame` (idle clip standing, walk clip moving), composed per bone.
+     * Falls back to the object-local rest geometry when no clip is installed -
+     * which is what a lead outside the Vahn / Noa / Gala trio gets, since the
+     * locomotion bundle only banks those three.
+     */
+    player_mesh_positions(): Float32Array;
+    player_mesh_uvs(): Uint8Array;
+    /**
+     * `[world_x, world_y, world_z, facing_units]` for the player actor.
+     * `facing_units` is the engine heading (`render_26`, PSX 12-bit; `0` =
+     * travelling `+Z`); the world coords are the raw retail frame (`+Y` down).
+     */
+    player_transform(): Float32Array;
+    /**
+     * Active scene mode as a stable enum string (`Field`, `WorldMap`, ...).
      */
     scene_mode(): string;
     /**
-     * Tick the world once. Returns the current frame counter.
+     * Tell the engine where the camera is looking, so the free-movement
+     * controller remaps the d-pad camera-relative ("up" walks away from the
+     * camera). PSX 12-bit angle units (`4096` = a full turn); the field
+     * controller quantises it to the nearest quarter-turn, as retail does.
      */
-    tick(): bigint;
+    set_camera_azimuth(units: number): void;
+    /**
+     * Route this frame's pad word into the engine. Bit layout is the PSX digital
+     * pad ([`legaia_engine_core::input::PadButton`]): `0x0008` Start, `0x0010`
+     * Up, `0x0020` Right, `0x0040` Down, `0x0080` Left, `0x1000` Triangle,
+     * `0x2000` Circle, `0x4000` Cross, `0x8000` Square. Edge detection is the
+     * engine's - just hand it the held set each frame.
+     */
+    set_pad(mask: number): void;
+    /**
+     * One-line engine state for the HUD:
+     * ```text
+     * { "scene": "town01", "frame": 421, "mode": "Field",
+     *   "actors": 12, "npcs": 9,
+     *   "player": { "x": 2688, "y": -256, "z": 2432, "facing": 2048,
+     *               "walking": true },
+     *   "dialog": { "text": "...", "options": ["Yes", "No"], "cursor": 0 } }
+     * ```
+     * `dialog` is `null` when no box is up.
+     */
+    state_json(): string;
+    /**
+     * Advance the engine one frame. Returns `""` normally, or the label of the
+     * scene the engine just walked into (a door / warp) - the page rebuilds its
+     * render state whenever the return is non-empty.
+     */
+    tick_frame(): string;
 }
 
 export class LegaiaViewer {
@@ -1714,7 +1804,6 @@ export interface InitOutput {
     readonly legaiaminigames_slot_page_rgba: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_slot_page_width: (a: number, b: number) => number;
     readonly legaiaminigames_slot_panel_rgba: (a: number) => [number, number];
-    readonly legaiaminigames_slot_press: (a: number) => [number, number];
     readonly legaiaminigames_slot_reel_pos: (a: number) => [number, number];
     readonly legaiaminigames_slot_scene_json: (a: number) => [number, number];
     readonly legaiaminigames_slot_scene_ready: (a: number) => number;
@@ -1728,11 +1817,29 @@ export interface InitOutput {
     readonly legaiaminigames_slot_stop: (a: number) => number;
     readonly legaiaminigames_slot_strip: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_symbol_rgba: (a: number, b: number) => [number, number];
-    readonly legaiaminigames_slot_tick: (a: number) => number;
-    readonly legaiaruntime_active_actor_count: (a: number) => number;
+    readonly legaiaminigames_slot_tick: (a: number) => void;
     readonly legaiaruntime_audio_init: (a: number) => number;
     readonly legaiaruntime_disc_loaded: (a: number) => number;
-    readonly legaiaruntime_enter_scene: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_enter_field: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiaruntime_field_ground_cba_tsb: (a: number) => [number, number];
+    readonly legaiaruntime_field_ground_indices: (a: number) => [number, number];
+    readonly legaiaruntime_field_ground_positions: (a: number) => [number, number];
+    readonly legaiaruntime_field_ground_quad_count: (a: number) => number;
+    readonly legaiaruntime_field_ground_uvs: (a: number) => [number, number];
+    readonly legaiaruntime_field_mesh: (a: number, b: number) => [number, number, number];
+    readonly legaiaruntime_field_mesh_cba_tsb: (a: number) => [number, number];
+    readonly legaiaruntime_field_mesh_flat_rgba: (a: number) => [number, number];
+    readonly legaiaruntime_field_mesh_indices: (a: number) => [number, number];
+    readonly legaiaruntime_field_mesh_positions: (a: number) => [number, number];
+    readonly legaiaruntime_field_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaruntime_field_placement_positions: (a: number) => [number, number];
+    readonly legaiaruntime_field_placement_rot_y: (a: number) => [number, number];
+    readonly legaiaruntime_field_placement_slots: (a: number) => [number, number];
+    readonly legaiaruntime_field_status_json: (a: number) => [number, number];
+    readonly legaiaruntime_field_terrain_positions: (a: number) => [number, number];
+    readonly legaiaruntime_field_terrain_rot_y: (a: number) => [number, number];
+    readonly legaiaruntime_field_terrain_slots: (a: number) => [number, number];
+    readonly legaiaruntime_field_vram_bytes: (a: number) => [number, number];
     readonly legaiaruntime_frame: (a: number) => bigint;
     readonly legaiaruntime_load_disc: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly legaiaruntime_menu_is_open: (a: number) => number;
@@ -1740,8 +1847,29 @@ export interface InitOutput {
     readonly legaiaruntime_menu_tick: (a: number, b: number) => any;
     readonly legaiaruntime_new: () => number;
     readonly legaiaruntime_open_menu: (a: number) => void;
+    readonly legaiaruntime_play_npc_catalog_json: (a: number) => [number, number];
+    readonly legaiaruntime_play_npc_mesh: (a: number, b: number) => [number, number, number];
+    readonly legaiaruntime_play_npc_mesh_cba_tsb: (a: number) => [number, number];
+    readonly legaiaruntime_play_npc_mesh_flat_rgba: (a: number) => [number, number];
+    readonly legaiaruntime_play_npc_mesh_indices: (a: number) => [number, number];
+    readonly legaiaruntime_play_npc_mesh_object_ids: (a: number) => [number, number];
+    readonly legaiaruntime_play_npc_mesh_positions: (a: number) => [number, number];
+    readonly legaiaruntime_play_npc_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaruntime_play_npc_pose_dims: (a: number, b: number) => [number, number];
+    readonly legaiaruntime_play_npc_pose_frames: (a: number, b: number) => [number, number];
+    readonly legaiaruntime_play_npc_transforms: (a: number) => [number, number];
+    readonly legaiaruntime_player_has_mesh: (a: number) => number;
+    readonly legaiaruntime_player_mesh_cba_tsb: (a: number) => [number, number];
+    readonly legaiaruntime_player_mesh_flat_rgba: (a: number) => [number, number];
+    readonly legaiaruntime_player_mesh_indices: (a: number) => [number, number];
+    readonly legaiaruntime_player_mesh_positions: (a: number) => [number, number];
+    readonly legaiaruntime_player_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaruntime_player_transform: (a: number) => [number, number];
     readonly legaiaruntime_scene_mode: (a: number) => [number, number];
-    readonly legaiaruntime_tick: (a: number) => bigint;
+    readonly legaiaruntime_set_camera_azimuth: (a: number, b: number) => void;
+    readonly legaiaruntime_set_pad: (a: number, b: number) => void;
+    readonly legaiaruntime_state_json: (a: number) => [number, number];
+    readonly legaiaruntime_tick_frame: (a: number) => [number, number, number, number];
     readonly legaiaviewer_battle_char_atlas_bytes: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_mesh_bounds: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_mesh_cba_tsb: (a: number, b: number) => [number, number];

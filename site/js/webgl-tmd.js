@@ -572,6 +572,21 @@ class TmdRenderer {
     return this.sceneMeshes.has(meshId);
   }
 
+  /* Re-upload just the positions of an already-registered scene mesh, keeping
+   * its UVs / CBA-TSB / indices / flat colours. This is the animated-actor path
+   * on the play page: a character's vertices are object-local, so every frame
+   * its posed positions change while the rest of the vertex stream doesn't.
+   * The buffer must keep its vertex count (a pose moves vertices, it never adds
+   * them). No-op for an unknown meshId. */
+  updateSceneMeshPositions(meshId, positions) {
+    const gl = this.gl;
+    const m = this.sceneMeshes.get(meshId);
+    if (!m || !positions || positions.length === 0) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.posBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
+    m.aabb = computeAabb(positions);
+  }
+
   clearScene() {
     const gl = this.gl;
     for (const m of this.sceneMeshes.values()) {

@@ -110,6 +110,7 @@ def autolink_md_refs(body: str, paths: set[str], by_basename: dict[str, str]) ->
 # Multi-pane interactive surfaces; everything else (format / subsystem /
 # tooling / reference) stays narrow for readability.
 WIDE_PAGES: set[str] = {
+    "play",
     "shops",
     "world",
     "minigames",
@@ -169,6 +170,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("index.html",                 "Home",                          "home",                       "home.html"),
     ("architecture.html",          "How the layers stack",          "architecture",               "architecture.html"),
     ("quickstart.html",            "Quick start",                   "quickstart",                 "quickstart.html"),
+    ("play.html",                  "Play the port (WASM)",          "play",                       "play.html"),
     ("viewer.html",                "Asset viewer (WASM)",           "viewer",                     "viewer.html"),
     ("media.html",                 "Media browser (WASM)",          "media",                      "media.html"),
     ("world.html",                 "Game world",                    "world",                      "world.html"),

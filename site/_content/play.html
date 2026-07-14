@@ -1,0 +1,482 @@
+<!--HEAD: <style>
+.play-shell { display: flex; flex-direction: column; gap: 1rem; }
+
+.play-load {
+  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
+  padding: 0.75rem; border: 1px solid var(--border); background: var(--bg-card);
+}
+.play-load input[type="file"] {
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 0.85rem;
+}
+.play-status {
+  color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem;
+  flex: 1; min-width: 14rem;
+}
+
+/* Boot-mode presets. */
+.play-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.6rem; }
+.play-mode {
+  text-align: left; background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.7rem 0.8rem; cursor: pointer; color: var(--text);
+  display: flex; flex-direction: column; gap: 0.25rem;
+  transition: border-color var(--transition), background var(--transition);
+}
+.play-mode:hover:not([disabled]) { border-color: var(--accent); background: var(--bg-raised); }
+.play-mode[disabled] { opacity: 0.45; cursor: not-allowed; }
+.play-mode.is-active { border-color: var(--accent); background: var(--accent-soft); }
+.play-mode-name { font-weight: 600; font-size: 0.92rem; }
+.play-mode-desc { color: var(--text-muted); font-size: 0.76rem; line-height: 1.45; }
+.play-mode-tag {
+  font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+/* Stage: canvas + side rail. */
+.play-stage { display: grid; grid-template-columns: 1fr 260px; gap: 1rem; align-items: start; }
+@media (max-width: 980px) { .play-stage { grid-template-columns: 1fr; } }
+
+.play-canvas-wrap { position: relative; }
+.play-canvas {
+  width: 100%; aspect-ratio: 4 / 3; display: block;
+  background: #05070c; border: 1px solid var(--border); outline: none;
+}
+.play-canvas:focus { border-color: var(--accent); }
+.play-focus-veil {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(4, 6, 12, 0.72); color: var(--text); cursor: pointer;
+  font-family: var(--font-mono); font-size: 0.9rem; text-align: center; padding: 1rem;
+}
+.play-focus-veil.is-hidden { display: none; }
+
+/* Dialogue box, drawn over the canvas the way the game does. */
+.play-dialog {
+  position: absolute; left: 6%; right: 6%; bottom: 5%;
+  background: rgba(8, 14, 40, 0.92); border: 2px solid #6f86d6;
+  padding: 0.7rem 0.9rem; color: #eef2ff;
+  font-family: var(--font-mono); font-size: 0.86rem; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+.play-dialog.is-hidden { display: none; }
+.play-dialog-opt { color: #b9c6ff; }
+.play-dialog-opt.is-sel { color: #fff2a8; }
+
+.play-hud {
+  display: flex; gap: 0.9rem; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-muted);
+  padding: 0.4rem 0.1rem;
+}
+.play-hud b { color: var(--text-dim); font-weight: 500; }
+
+.play-rail { display: flex; flex-direction: column; gap: 0.8rem; }
+.play-card { border: 1px solid var(--border); background: var(--bg-card); padding: 0.6rem 0.7rem; }
+.play-card h3 {
+  margin: 0 0 0.5rem; font-size: 0.78rem; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-dim); font-weight: 600;
+}
+.play-keys { display: grid; grid-template-columns: auto 1fr; gap: 0.28rem 0.6rem; align-items: center; }
+.play-keys kbd {
+  font-family: var(--font-mono); font-size: 0.72rem;
+  background: var(--bg-code); border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 3px; padding: 0.08rem 0.35rem; color: var(--text); white-space: nowrap;
+}
+.play-keys kbd.is-held { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.play-keys span { font-size: 0.76rem; color: var(--text-muted); }
+
+.play-scene-search {
+  width: 100%; background: var(--bg-code); color: var(--text);
+  border: 1px solid var(--border); padding: 0.3rem 0.45rem;
+  font-family: var(--font-mono); font-size: 0.78rem; margin-bottom: 0.4rem;
+}
+.play-scene-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; }
+.play-scene-item {
+  display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline;
+  background: none; border: none; border-bottom: 1px solid var(--border);
+  padding: 0.32rem 0.2rem; cursor: pointer; text-align: left; color: var(--text);
+  font-size: 0.78rem;
+}
+.play-scene-item:hover { background: var(--bg-raised); }
+.play-scene-item.is-active { background: var(--accent-soft); }
+.play-scene-code { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim); }
+.play-scene-group {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim); padding: 0.45rem 0.2rem 0.2rem; font-family: var(--font-mono);
+}
+.play-btn-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.play-btn-row button {
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 0.28rem 0.55rem; font-family: var(--font-mono); font-size: 0.74rem; cursor: pointer;
+}
+.play-btn-row button:hover { border-color: var(--accent); }
+</style>
+<script src="js/rom-cache.js"></script>
+<script src="js/load-progress.js"></script>
+-->
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; play</div>
+  <h1>Play the port</h1>
+  <p class="lede">
+    The clean-room engine, running in your browser, on your own disc. This is not a video and it is not an emulator: it is the actual Rust port compiled to WebAssembly - the <a href="subsystems/script-vm.html">field VM</a>, the <a href="subsystems/field-locomotion.html">free-movement controller</a> with its per-scene walkability grid, the floor-height sampler, the NPC motion VMs, the interaction probe - stepping once per frame while WebGL draws the world it is simulating. Pick a disc, pick a place, and walk around inside it. Nothing is uploaded; the image never leaves your machine.
+  </p>
+</header>
+
+<section class="doc-section" id="run">
+  <h2>Run it</h2>
+
+  <div class="play-shell">
+    <div class="play-load">
+      <label for="play-file"><strong>Disc image:</strong></label>
+      <input type="file" id="play-file" accept=".bin">
+      <span class="play-status" id="play-status">
+        Provide a <code>.bin</code> Mode2/2352 image. If you have already loaded your disc on
+        another page here, it is cached in the browser and will be picked up automatically.
+      </span>
+    </div>
+
+    <div class="play-modes" id="play-modes" style="display: none;">
+      <button class="play-mode" type="button" data-mode="newgame">
+        <span class="play-mode-tag">boot</span>
+        <span class="play-mode-name">New game</span>
+        <span class="play-mode-desc">Start where a new game starts: Rim Elm, the scene the disc's
+          own new-game table names as the opening. The pre-title FMV, the title screen, and the
+          prologue cutscene chain are native-only for now - this drops you straight into the town.</span>
+      </button>
+      <button class="play-mode" type="button" data-mode="scene">
+        <span class="play-mode-tag">explore</span>
+        <span class="play-mode-name">Scene picker</span>
+        <span class="play-mode-desc">Drop into any town or field map on the disc and walk it. The
+          best-supported mode - use the list on the right.</span>
+      </button>
+    </div>
+
+    <div class="play-stage" id="play-stage" style="display: none;">
+      <div>
+        <div class="play-canvas-wrap">
+          <canvas id="play-canvas" class="play-canvas" width="960" height="720" tabindex="0"></canvas>
+          <div class="play-focus-veil" id="play-veil">Click to take the controls</div>
+          <div class="play-dialog is-hidden" id="play-dialog"></div>
+        </div>
+        <div class="play-hud">
+          <span><b>Scene</b> <span id="hud-scene">-</span></span>
+          <span><b>Mode</b> <span id="hud-mode">-</span></span>
+          <span><b>Frame</b> <span id="hud-frame">0</span></span>
+          <span><b>FPS</b> <span id="hud-fps">0</span></span>
+          <span><b>Pos</b> <span id="hud-pos">-</span></span>
+          <span><b>NPCs</b> <span id="hud-npcs">0</span></span>
+        </div>
+        <div class="play-btn-row">
+          <button id="play-pause" type="button">Pause</button>
+          <button id="play-step" type="button">Step 1 frame</button>
+          <button id="play-recenter" type="button">Reset camera</button>
+        </div>
+      </div>
+
+      <div class="play-rail">
+        <div class="play-card">
+          <h3>Controls</h3>
+          <div class="play-keys" id="play-keys">
+            <kbd data-key="ArrowUp">&uarr;&darr;&larr;&rarr;</kbd><span>Walk (camera-relative)</span>
+            <kbd data-key="KeyZ">Z</kbd><span>Talk / confirm (Cross)</span>
+            <kbd data-key="KeyX">X</kbd><span>Cancel (Circle)</span>
+            <kbd data-key="Enter">Enter</kbd><span>Start</span>
+            <kbd>Drag</kbd><span>Swing the camera</span>
+            <kbd>Wheel</kbd><span>Zoom</span>
+          </div>
+        </div>
+
+        <div class="play-card" id="play-scene-card">
+          <h3>Scenes</h3>
+          <input type="search" id="play-scene-search" class="play-scene-search"
+                 placeholder="Filter…" autocomplete="off">
+          <div class="play-scene-list" id="play-scene-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="doc-section" id="what-works">
+  <h2>What actually works</h2>
+  <p>
+    This is a partial reimplementation and the honest map matters more than a demo reel. What runs
+    in the browser today:
+  </p>
+  <ul>
+    <li><strong>Field and town scenes.</strong> The map assembles from the scene's environment mesh
+      pack, its <code>.MAP</code> object grid, the floor-height table, and the walk-ground
+      heightfield, textured from the real PSX VRAM the engine builds. You walk with the ported
+      free-movement controller: the same 2-unit stepping, the same per-axis collision against the
+      per-scene walkability grid, the same terrain follow.</li>
+    <li><strong>The player character.</strong> The lead's field mesh out of the global TMD pool,
+      posed every frame from the real locomotion clips - idle while standing, the walk cycle while
+      moving.</li>
+    <li><strong>NPCs.</strong> Every actor the scene's MAN places, on its own animation clip, at the
+      position the engine's motion VMs put it. Walk up to one and press Z: the interaction probe
+      runs and the field VM plays out their dialogue, branches and all.</li>
+    <li><strong>Doors.</strong> Walk into one and the engine loads the destination scene under you;
+      the page rebuilds the geometry around the transition.</li>
+  </ul>
+  <p>What does <em>not</em> run here yet, and why:</p>
+  <ul>
+    <li><strong>Battles.</strong> The battle state machine and its formulas are ported and tested,
+      but the battle stage's render path lives in the native window. Random encounters are therefore
+      left disarmed in the browser rather than dropping you into a black screen.</li>
+    <li><strong>The title screen and the opening prologue.</strong> The boot chain, the narration
+      crawl, and the cutscene camera all run natively; their draw path is the native one. "New game"
+      here starts you at the scene the disc's new-game table names, not at the title card.</li>
+    <li><strong>The pause menu, shops, and the inn.</strong> The runtime state is all there; the
+      menu's window-descriptor draw path has not been ported to the WebGL renderer.</li>
+    <li><strong>Audio.</strong> The sequencer and the SPU are ported and the WebAudio backend exists,
+      but the BGM director is not wired into this page yet.</li>
+    <li><strong>The overworld.</strong> World-map scenes load, but their locomotion and camera are a
+      different controller; the <a href="world-overview.html">world overview</a> is the place to see
+      the continents today.</li>
+  </ul>
+  <p class="hint">
+    Some scenes frame better than others, and the reason is a real gap rather than a page bug. Retail
+    authors a camera per scene; this page runs one generic follow camera, so it culls whatever
+    straddles the line from the lens to the player - that is what keeps a cave roof or a monastery
+    ceiling from filling the screen. Caves also expose a deeper disagreement: for scenes whose floor
+    is not in the floor-height table, the engine's floor sampler reports height 0 while the drawn
+    walk-ground sits below it, so the character can appear to stand above or inside the rock. That is
+    an engine-level thread, tracked with the
+    <a href="reference/open-rev-eng-threads.html">others</a>, not a mystery.
+  </p>
+</section>
+
+<section class="doc-section" id="how">
+  <h2>How this page is wired</h2>
+  <p>
+    The WebAssembly bundle is the engine crates themselves - <code>engine-core</code> (world state,
+    scene host, VMs) and the asset parsers - compiled for <code>wasm32-unknown-unknown</code>. The
+    page owns three things and no more: it turns key state into a PSX pad word, it calls
+    <code>tick_frame()</code> once per animation frame, and it draws what the engine reports. The
+    engine decides where you are; the page never moves the player itself.
+  </p>
+  <p>
+    Character meshes ship their vertices in <em>object-local</em> space - each limb's coordinates are
+    relative to its own joint - so every actor on screen is assembled per frame as
+    <code>R&middot;v + T</code> from the animation record's bone transforms. Draw one without that
+    and you get a heap of parts at the origin. See <a href="formats/character-mesh.html">character
+    meshes</a> and <a href="formats/anm.html">ANM</a>.
+  </p>
+  <div class="see-also">
+    <span class="see-also-label">Related</span>
+    <a href="subsystems/engine.html">Engine reimplementation</a>
+    <a href="subsystems/field-locomotion.html">Field locomotion</a>
+    <a href="subsystems/script-vm.html">Field / event VM</a>
+    <a href="viewer.html">Asset viewer</a>
+    <a href="world.html">Game world</a>
+  </div>
+</section>
+
+<script src="js/webgl-shaders.js?v=play-1"></script>
+<script src="js/webgl-math.js?v=play-1"></script>
+<script src="js/webgl-tmd.js?v=play-1"></script>
+<script src="js/field-scene-view.js?v=play-1"></script>
+<script src="js/play-app.js?v=play-1"></script>
+<script>
+(function () {
+  'use strict';
+
+  const fileInput = document.getElementById('play-file');
+  const statusEl  = document.getElementById('play-status');
+  const modesEl   = document.getElementById('play-modes');
+  const stageEl   = document.getElementById('play-stage');
+  const canvas    = document.getElementById('play-canvas');
+  const veil      = document.getElementById('play-veil');
+  const dialogEl  = document.getElementById('play-dialog');
+  const listEl    = document.getElementById('play-scene-list');
+  const searchEl  = document.getElementById('play-scene-search');
+  const keysEl    = document.getElementById('play-keys');
+
+  const hud = {
+    scene: document.getElementById('hud-scene'),
+    mode:  document.getElementById('hud-mode'),
+    frame: document.getElementById('hud-frame'),
+    fps:   document.getElementById('hud-fps'),
+    pos:   document.getElementById('hud-pos'),
+    npcs:  document.getElementById('hud-npcs'),
+  };
+
+  let wasm = null, runtime = null, view = null;
+  let scenes = [];
+  let active = null;
+
+  /* The scene the disc's new-game table names as the opening (Rim Elm). Kept in
+   * sync with `legaia_asset::new_game::OPENING_SCENE`. */
+  const OPENING_SCENE = 'town01';
+
+  /* Only categories whose scenes are actually walkable are offered. World-map
+   * blocks load but run a different controller; battle / audio / system blocks
+   * aren't scenes at all. */
+  const GROUPS = [
+    { key: 'town',  title: 'Towns' },
+    { key: 'field', title: 'Field areas & dungeons' },
+  ];
+
+  fetch('scenes.json').then(r => r.ok ? r.json() : []).then(s => {
+    scenes = s.filter(x => GROUPS.some(g => g.key === x.category));
+    renderList('');
+  }).catch(() => {});
+
+  function renderList(filter) {
+    const f = (filter || '').trim().toLowerCase();
+    const parts = [];
+    for (const g of GROUPS) {
+      const items = scenes
+        .filter(s => s.category === g.key)
+        .filter(s => !f || s.display.toLowerCase().includes(f) || s.label.includes(f))
+        .sort((a, b) => a.display.localeCompare(b.display));
+      if (!items.length) continue;
+      parts.push(`<div class="play-scene-group">${g.title}</div>`);
+      for (const s of items) {
+        const cls = s.label === active ? 'play-scene-item is-active' : 'play-scene-item';
+        parts.push(
+          `<button class="${cls}" type="button" data-scene="${s.label}">` +
+          `<span>${s.display}</span><span class="play-scene-code">${s.label}</span></button>`);
+      }
+    }
+    listEl.innerHTML = parts.join('') || '<div class="play-scene-group">No match</div>';
+  }
+
+  searchEl.addEventListener('input', () => renderList(searchEl.value));
+  listEl.addEventListener('click', (e) => {
+    const b = e.target.closest('.play-scene-item');
+    if (b) enter(b.dataset.scene);
+  });
+
+  document.getElementById('play-modes').addEventListener('click', (e) => {
+    const b = e.target.closest('.play-mode');
+    if (!b) return;
+    for (const el of modesEl.querySelectorAll('.play-mode')) el.classList.remove('is-active');
+    b.classList.add('is-active');
+    if (b.dataset.mode === 'newgame') enter(OPENING_SCENE);
+    else searchEl.focus();
+  });
+
+  /* ---------------- boot ---------------- */
+
+  async function load(file) {
+    statusEl.textContent = 'Loading the engine…';
+    const prog = LoadProgress.create(statusEl);
+    try {
+      const bytes = await prog.read(file, `Reading ${file.name}`);
+      prog.indeterminate('Starting the engine…');
+      if (!wasm) {
+        wasm = await import('./wasm/legaia_web_viewer.js');
+        await wasm.default();
+      }
+      runtime = new wasm.LegaiaRuntime();
+      prog.indeterminate('Walking ISO9660 + parsing PROT.DAT…');
+      await prog.paint();   /* the parse below blocks the main thread */
+      const count = runtime.load_disc(bytes, '');
+      prog.done(`${count} PROT entries. Pick a boot mode.`);
+      statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
+      modesEl.style.display = 'grid';
+      window.__playRuntime = runtime;
+    } catch (err) {
+      prog.fail(`Couldn't load: ${err.message || err}`);
+      console.warn(err);
+    }
+  }
+
+  function enter(label) {
+    if (!runtime) return;
+    active = label;
+    renderList(searchEl.value);
+    stageEl.style.display = 'grid';
+    statusEl.textContent = `Entering ${label}…`;
+    try {
+      if (!view) {
+        view = new window.PlayView(runtime, canvas, {
+          onState: onState,
+          onScene: (name) => { active = name; renderList(searchEl.value); },
+          onError: (msg) => { statusEl.textContent = `Engine stopped: ${msg}`; },
+        });
+        window.__playView = view;
+      }
+      const st = view.enter(label);
+      view.start();
+      statusEl.textContent = `Running ${label}. Click the canvas, then walk with the arrow keys.`;
+      window.__playState = st;
+      canvas.focus();
+    } catch (err) {
+      statusEl.textContent = `${label}: ${err.message || err}`;
+      window.__playState = null;
+      console.warn(err);
+    }
+  }
+
+  /* ---------------- per-frame HUD ---------------- */
+
+  function onState(st, fps) {
+    hud.scene.textContent = st.scene || '-';
+    hud.mode.textContent  = st.mode;
+    hud.frame.textContent = st.frame;
+    hud.fps.textContent   = fps;
+    hud.npcs.textContent  = st.npcs;
+    hud.pos.textContent = st.player
+      ? `${st.player.x}, ${st.player.z}` + (st.player.walking ? ' (walking)' : '')
+      : '-';
+
+    if (st.dialog && st.dialog.text) {
+      let html = st.dialog.text.replace(/[<>&]/g, c => (
+        { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+      if (st.dialog.options && st.dialog.options.length) {
+        html += '\n' + st.dialog.options.map((o, i) => {
+          const cls = i === st.dialog.cursor ? 'play-dialog-opt is-sel' : 'play-dialog-opt';
+          return `<span class="${cls}">${i === st.dialog.cursor ? '▸ ' : '  '}${o}</span>`;
+        }).join('\n');
+      }
+      dialogEl.innerHTML = html;
+      dialogEl.classList.remove('is-hidden');
+    } else {
+      dialogEl.classList.add('is-hidden');
+    }
+
+    /* Light up the keys that are actually held - the legend doubles as an input
+     * monitor, which is the fastest way to see the canvas has focus. */
+    const held = new Set(view ? view.heldKeys() : []);
+    for (const kbd of keysEl.querySelectorAll('kbd[data-key]')) {
+      const k = kbd.dataset.key;
+      const on = k === 'ArrowUp'
+        ? ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']
+          .some(x => held.has(x))
+        : held.has(k);
+      kbd.classList.toggle('is-held', on);
+    }
+
+    window.__playState = st;
+  }
+
+  /* ---------------- focus + buttons ---------------- */
+
+  const showVeil = () => veil.classList.remove('is-hidden');
+  const hideVeil = () => veil.classList.add('is-hidden');
+  veil.addEventListener('click', () => { canvas.focus(); });
+  canvas.addEventListener('focus', hideVeil);
+  canvas.addEventListener('blur', showVeil);
+
+  const pauseBtn = document.getElementById('play-pause');
+  pauseBtn.addEventListener('click', () => {
+    if (!view) return;
+    view.setPaused(!view.paused);
+    pauseBtn.textContent = view.paused ? 'Resume' : 'Pause';
+  });
+  document.getElementById('play-step').addEventListener('click', () => {
+    if (view) view.step();
+  });
+  document.getElementById('play-recenter').addEventListener('click', () => {
+    if (!view) return;
+    view.cam.yaw = 0;
+    view.cam.pitch = 0.62;
+    view.cam.halfWidth = view.cam.halfHeight = 520;
+  });
+
+  /* Headless-verification entry points (see site/_content/play.html tests). */
+  window.__playLoad = load;
+  window.__playEnter = enter;
+
+  RomCache.attach(fileInput, { onLoad: load });
+})();
+</script>

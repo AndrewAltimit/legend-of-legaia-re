@@ -23,6 +23,7 @@ const NAV = [
   {
     label: 'explore',
     items: [
+      { href: 'play.html',                      text: 'Play the port',            key: 'play' },
       { href: 'viewer.html',                    text: 'Asset viewer',             key: 'viewer' },
       { href: 'media.html',                     text: 'Media browser',            key: 'media' },
       { href: 'tooling/rom-patcher.html',       text: 'ROM patcher',              key: 'tooling/rom-patcher' },

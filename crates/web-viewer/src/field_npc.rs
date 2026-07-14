@@ -132,6 +132,19 @@ pub fn build_npc_catalog(
     name: &str,
     pack: &FieldScenePack,
 ) -> Result<FieldNpcPack, String> {
+    build_npc_catalog_res(index, name, &pack.res)
+}
+
+/// [`build_npc_catalog`] against an already-built
+/// [`SceneResources`](legaia_engine_core::scene_resources::SceneResources) - the
+/// form the play page uses, whose resources come from the running
+/// [`SceneHost`](legaia_engine_core::scene::SceneHost) rather than a viewer-side
+/// scene build. `res.tmds` is the model-byte index space either way.
+pub fn build_npc_catalog_res(
+    index: &ProtIndex,
+    name: &str,
+    res: &legaia_engine_core::scene_resources::SceneResources,
+) -> Result<FieldNpcPack, String> {
     let scene = Scene::load(index, name).map_err(|e| format!("{e:#}"))?;
     let man = scene
         .field_man_payload(index)
@@ -150,7 +163,7 @@ pub fn build_npc_catalog(
             special_count += 1;
             continue;
         }
-        let Some(t) = pack.res.tmds.get(p.model_index as usize) else {
+        let Some(t) = res.tmds.get(p.model_index as usize) else {
             continue;
         };
         let nobj = t.tmd.objects.len() as u32;

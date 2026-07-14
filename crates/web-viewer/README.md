@@ -18,6 +18,43 @@ instead of every raw entry.
 - `legaia-tmd` - mesh parser.
 - `legaia-rando` + `legaia-iso` - the randomizer / disc patcher (see `rom_patcher` below).
 
+## Playing the port in the browser (`runtime` + `play`)
+
+`LegaiaRuntime` is the engine, not a re-implementation of it: it owns a real
+`legaia_engine_core::scene::SceneHost` - the same host the native
+`legaia-engine play-window` drives - so the browser runs the ported field /
+event VM, the free-movement controller against the per-scene walkability grid,
+floor-height sampling, the NPC motion VMs, the interaction probe, and the
+inline-script dialogue runner. Drives `site/play.html`.
+
+The split is deliberate:
+
+- **`runtime`** - the simulation. `load_disc` (user's own image, in memory, in
+  their browser), `enter_field(name)`, `set_pad(mask)` (PSX pad word),
+  `set_camera_azimuth(units)` (so the d-pad remaps camera-relative),
+  `tick_frame()` (returns the label of the scene a door just walked into, so the
+  page rebuilds around a transition), and `state_json()` (frame / mode / player
+  transform / live dialogue box).
+- **`play`** - what the page draws, resolved against the **same**
+  `SceneResources` the host already built at scene entry (nothing is decoded
+  twice): the assembled map (`field_*` accessors), the lead's field mesh posed
+  each frame from the world's live `pose_frame` (`player_mesh_*`,
+  `player_transform`), and the scene's MAN-placed NPCs at their live world
+  positions (`play_npc_*`).
+
+Two things the browser host has to do that the native one gets for free:
+
+- **Seating.** Scene entry puts the player at the retail *cold-boot spawn*,
+  which is only meaningful for `town01` - every other scene is normally entered
+  through a door that supplies the arrival tile. Picking a scene from a list has
+  no door, so `LegaiaRuntime::seat_player` keeps the cold spawn when it has floor
+  under it and otherwise seats the player on the walk-ground heightfield, never
+  on a walk-on trigger tile (which would fire on the first tick and warp the
+  scene out from under them).
+- **Framing.** Retail authors a camera per scene. The page has one follow camera,
+  so `site/js/play-app.js` culls any mesh straddling the camera-to-player line -
+  without it a cave roof or a house's upper storey fills the screen.
+
 ## Assembled full-scene maps (`field_scene`)
 
 `LegaiaViewer::set_scene_field(name)` loads a CDNAME field/town scene

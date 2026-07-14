@@ -336,7 +336,11 @@ function buildWorldOrbitVp(viewportW, viewportH, worldExtent, cam) {
   /* Eye direction (target -> eye): pitch=0 is straight up; tilting at
    * yaw=0 moves the eye toward -Z (looking north over the map), the same
    * convention buildTopDownVp's eyeZ offset used. */
-  const target = [cam.centerX, 0, cam.centerZ];
+  /* `centerY` (optional, default 0) lifts the look-at off the ground plane -
+   * the play page's follow camera targets the player's chest on an elevated
+   * floor tier, where a y=0 target would aim under the terrain. Omit it and the
+   * camera behaves exactly as the world-overview / full-map views always have. */
+  const target = [cam.centerX, cam.centerY || 0, cam.centerZ];
   const eye = [
     target[0] + dist * sinP * sinY,
     target[1] + dist * cosP,

@@ -953,9 +953,9 @@ export class LegaiaMinigames {
 if (Symbol.dispose) LegaiaMinigames.prototype[Symbol.dispose] = LegaiaMinigames.prototype.free;
 
 /**
- * Bridge object the JS shim instantiates once at page load. Holds a
- * `World` + a `MenuRuntime` for the headless path, and an optional
- * `SceneHost` once `load_disc` has been called.
+ * Bridge object the play page instantiates once. Holds a `World` +
+ * `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
+ * `SceneHost` plus the render state for the scene it is running.
  */
 export class LegaiaRuntime {
     __destroy_into_raw() {
@@ -969,20 +969,8 @@ export class LegaiaRuntime {
         wasm.__wbg_legaiaruntime_free(ptr, 0);
     }
     /**
-     * Number of currently active actors.
-     * @returns {number}
-     */
-    active_actor_count() {
-        const ret = wasm.legaiaruntime_active_actor_count(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * Attempt to initialise the WebAudio backend. Must be called from a
-     * user-gesture handler (browser autoplay policy). Returns `true` if
-     * audio started successfully, `false` otherwise (e.g. blocked by the
-     * browser before any interaction or on a platform without WebAudio).
-     *
-     * Idempotent - calling a second time replaces the existing backend.
+     * Attempt to start the WebAudio backend. Must be called from a user-gesture
+     * handler (browser autoplay policy). `true` on success.
      * @returns {boolean}
      */
     audio_init() {
@@ -990,7 +978,7 @@ export class LegaiaRuntime {
         return ret !== 0;
     }
     /**
-     * `true` if a disc has been loaded via `load_disc`.
+     * `true` if a disc has been loaded.
      * @returns {boolean}
      */
     disc_loaded() {
@@ -998,20 +986,222 @@ export class LegaiaRuntime {
         return ret !== 0;
     }
     /**
-     * Boot a named scene (CDNAME label, e.g. `"town01"`). Requires
-     * `load_disc` to have been called first. Loads the scene's assets,
-     * enters `SceneMode::Field`, and seeds the field-VM with record 0 of
-     * the scene's event-script pack. Throws a JS error if the disc hasn't
-     * been loaded or the scene name is unknown.
+     * Boot a named CDNAME scene (e.g. `"town01"`) and assemble everything the
+     * page draws. This is the real field entry: the scene's assets, the
+     * walkability grid + elevation overrides, the MAN system script, the player
+     * install, the encounter session. World-map labels (`map01`..`map03`) route
+     * through the world-map entry, which installs the overworld controller
+     * instead.
+     *
+     * Returns the same JSON as [`Self::state_json`]. Throws when the disc isn't
+     * loaded or the label is unknown.
      * @param {string} name
+     * @returns {string}
      */
-    enter_scene(name) {
-        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.legaiaruntime_enter_scene(this.__wbg_ptr, ptr0, len0);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
+    enter_field(name) {
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.legaiaruntime_enter_field(this.__wbg_ptr, ptr0, len0);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
         }
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    field_ground_cba_tsb() {
+        const ret = wasm.legaiaruntime_field_ground_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    field_ground_indices() {
+        const ret = wasm.legaiaruntime_field_ground_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    field_ground_positions() {
+        const ret = wasm.legaiaruntime_field_ground_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    field_ground_quad_count() {
+        const ret = wasm.legaiaruntime_field_ground_quad_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    field_ground_uvs() {
+        const ret = wasm.legaiaruntime_field_ground_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Select + build environment-pack slot `slot`; subsequent `field_mesh_*`
+     * reads return that mesh.
+     * @param {number} slot
+     * @returns {number}
+     */
+    field_mesh(slot) {
+        const ret = wasm.legaiaruntime_field_mesh(this.__wbg_ptr, slot);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    field_mesh_cba_tsb() {
+        const ret = wasm.legaiaruntime_field_mesh_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    field_mesh_flat_rgba() {
+        const ret = wasm.legaiaruntime_field_mesh_flat_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    field_mesh_indices() {
+        const ret = wasm.legaiaruntime_field_mesh_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    field_mesh_positions() {
+        const ret = wasm.legaiaruntime_field_mesh_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    field_mesh_uvs() {
+        const ret = wasm.legaiaruntime_field_mesh_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    field_placement_positions() {
+        const ret = wasm.legaiaruntime_field_placement_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    field_placement_rot_y() {
+        const ret = wasm.legaiaruntime_field_placement_rot_y(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Per-placement env-pack slot (parallel to
+     * [`Self::field_placement_positions`] / [`Self::field_placement_rot_y`]).
+     * @returns {Uint32Array}
+     */
+    field_placement_slots() {
+        const ret = wasm.legaiaruntime_field_placement_slots(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * `{"pack_count", "placements", "terrain", "ground_quads"}` for the status
+     * line; `null` before a scene is entered.
+     * @returns {string}
+     */
+    field_status_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_field_status_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    field_terrain_positions() {
+        const ret = wasm.legaiaruntime_field_terrain_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    field_terrain_rot_y() {
+        const ret = wasm.legaiaruntime_field_terrain_rot_y(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    field_terrain_slots() {
+        const ret = wasm.legaiaruntime_field_terrain_slots(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Field VRAM (1 MB) - the image every mesh below samples. The engine's own
+     * scene VRAM, not a viewer-side rebuild.
+     * @returns {Uint8Array}
+     */
+    field_vram_bytes() {
+        const ret = wasm.legaiaruntime_field_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
     /**
      * Frame counter.
@@ -1024,17 +1214,12 @@ export class LegaiaRuntime {
     /**
      * Load a disc image from raw in-memory bytes.
      *
-     * `raw_bytes` may be either:
-     * - A Mode2/2352 full disc image (`.bin`): PROT.DAT and CDNAME.TXT are
-     *   extracted automatically via ISO9660 walk.
-     * - The raw contents of `PROT.DAT` directly.
+     * `raw_bytes` may be either a Mode2/2352 full disc image (`.bin`) - PROT.DAT
+     * and CDNAME.TXT are extracted via an ISO9660 walk - or the raw contents of
+     * `PROT.DAT`. `cdname_text` overrides any CDNAME.TXT found on the disc; pass
+     * an empty string to use the disc's own.
      *
-     * `cdname_text` overrides any CDNAME.TXT found on the disc. Pass an empty
-     * string to use the disc's own CDNAME.TXT (full disc) or skip scene-name
-     * resolution (PROT.DAT-only path without a CDNAME).
-     *
-     * Returns the number of PROT entries parsed, or throws a JS error on
-     * parse failure.
+     * Returns the number of PROT entries parsed. Nothing leaves the browser.
      * @param {Uint8Array} raw_bytes
      * @param {string} cdname_text
      * @returns {number}
@@ -1051,7 +1236,6 @@ export class LegaiaRuntime {
         return ret[0] >>> 0;
     }
     /**
-     * Boolean: true if the menu is open.
      * @returns {boolean}
      */
     menu_is_open() {
@@ -1059,8 +1243,6 @@ export class LegaiaRuntime {
         return ret !== 0;
     }
     /**
-     * Read the menu's current label (e.g. "STATUS", "SAVE - PICK SLOT")
-     * for HUD rendering.
      * @returns {string}
      */
     menu_label() {
@@ -1076,9 +1258,9 @@ export class LegaiaRuntime {
         }
     }
     /**
-     * Tick the menu state machine with a packed PSX-pad button mask.
-     * The mask matches `legaia_engine_vm::menu::MenuInput` field order:
-     * `cross | (circle<<1) | (triangle<<2) | (square<<3) | (up<<4) | (down<<5) | (left<<6) | (right<<7)`.
+     * Tick the scaffold menu with a packed button mask
+     * (`cross | circle<<1 | triangle<<2 | square<<3 | up<<4 | down<<5 |
+     * left<<6 | right<<7`).
      * @param {number} button_mask
      * @returns {any}
      */
@@ -1093,13 +1275,216 @@ export class LegaiaRuntime {
         return this;
     }
     /**
-     * Open the menu (sets MenuCtx state to Idle).
+     * Open the disc-free scaffold menu (the headless [`MenuRuntime`] - the
+     * retail pause menu's screens are a native-only draw path today).
      */
     open_menu() {
         wasm.legaiaruntime_open_menu(this.__wbg_ptr);
     }
     /**
-     * Read the active scene mode as a stable enum string.
+     * The scene's NPC / actor catalog. Shape:
+     * `{"anm_prot": 4, "npcs": [{"i", "slot", "model", "anim", "nobj",
+     * "kind", "target_map", "dialog", "conditional", "x", "z"}, ...]}`.
+     * `null` before a scene is entered.
+     * @returns {string}
+     */
+    play_npc_catalog_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_npc_catalog_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Build catalog entry `i`'s mesh (hybrid: textured + vertex-colour prims,
+     * with per-vertex bone ids). Returns `i`.
+     * @param {number} i
+     * @returns {number}
+     */
+    play_npc_mesh(i) {
+        const ret = wasm.legaiaruntime_play_npc_mesh(this.__wbg_ptr, i);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    play_npc_mesh_cba_tsb() {
+        const ret = wasm.legaiaruntime_play_npc_mesh_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    play_npc_mesh_flat_rgba() {
+        const ret = wasm.legaiaruntime_play_npc_mesh_flat_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    play_npc_mesh_indices() {
+        const ret = wasm.legaiaruntime_play_npc_mesh_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex TMD object index for the built NPC mesh - the bone each
+     * vertex hangs from. The page's animator keys its per-frame `R . v + T`
+     * on this.
+     * @returns {Uint32Array}
+     */
+    play_npc_mesh_object_ids() {
+        const ret = wasm.legaiaruntime_play_npc_mesh_object_ids(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    play_npc_mesh_positions() {
+        const ret = wasm.legaiaruntime_play_npc_mesh_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    play_npc_mesh_uvs() {
+        const ret = wasm.legaiaruntime_play_npc_mesh_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * `[frame_count, bone_count]` of catalog entry `i`'s clip; `[0, 0]` when
+     * it has none.
+     * @param {number} i
+     * @returns {Uint32Array}
+     */
+    play_npc_pose_dims(i) {
+        const ret = wasm.legaiaruntime_play_npc_pose_dims(this.__wbg_ptr, i);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Catalog entry `i`'s clip, decoded to the pose format the JS animator
+     * consumes: `6` entries per bone per frame (`[tx, ty, tz, rx, ry, rz]`,
+     * absolute). Empty when the placement names no clip or the scene ships no
+     * ANM bundle. An NPC's clip is its placement `anim_id - 1` in the scene's
+     * own ANM bundle (`docs/formats/anm.md` § per-scene bundle).
+     * @param {number} i
+     * @returns {Int32Array}
+     */
+    play_npc_pose_frames(i) {
+        const ret = wasm.legaiaruntime_play_npc_pose_frames(this.__wbg_ptr, i);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Live world state of every catalogued NPC, flattened
+     * `[x, y, z, facing_units, ...]` in catalog order. Positions come from the
+     * **world** (`field_npc_positions`), so an NPC walking its MAN-authored
+     * route walks on screen; the MAN placement anchor is the fallback for one
+     * that has never moved. `y` is the floor height under the NPC.
+     * @returns {Float32Array}
+     */
+    play_npc_transforms() {
+        const ret = wasm.legaiaruntime_play_npc_transforms(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * `true` when the lead's field mesh resolved out of the global TMD pool.
+     * @returns {boolean}
+     */
+    player_has_mesh() {
+        const ret = wasm.legaiaruntime_player_has_mesh(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    player_mesh_cba_tsb() {
+        const ret = wasm.legaiaruntime_player_mesh_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    player_mesh_flat_rgba() {
+        const ret = wasm.legaiaruntime_player_mesh_flat_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Player mesh geometry (object-local; pair with
+     * [`Self::player_mesh_positions`], which poses it).
+     * @returns {Uint32Array}
+     */
+    player_mesh_indices() {
+        const ret = wasm.legaiaruntime_player_mesh_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The player's vertices **posed at the current frame**: the world's live
+     * `pose_frame` (idle clip standing, walk clip moving), composed per bone.
+     * Falls back to the object-local rest geometry when no clip is installed -
+     * which is what a lead outside the Vahn / Noa / Gala trio gets, since the
+     * locomotion bundle only banks those three.
+     * @returns {Float32Array}
+     */
+    player_mesh_positions() {
+        const ret = wasm.legaiaruntime_player_mesh_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    player_mesh_uvs() {
+        const ret = wasm.legaiaruntime_player_mesh_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * `[world_x, world_y, world_z, facing_units]` for the player actor.
+     * `facing_units` is the engine heading (`render_26`, PSX 12-bit; `0` =
+     * travelling `+Z`); the world coords are the raw retail frame (`+Y` down).
+     * @returns {Float32Array}
+     */
+    player_transform() {
+        const ret = wasm.legaiaruntime_player_transform(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Active scene mode as a stable enum string (`Field`, `WorldMap`, ...).
      * @returns {string}
      */
     scene_mode() {
@@ -1115,12 +1500,73 @@ export class LegaiaRuntime {
         }
     }
     /**
-     * Tick the world once. Returns the current frame counter.
-     * @returns {bigint}
+     * Tell the engine where the camera is looking, so the free-movement
+     * controller remaps the d-pad camera-relative ("up" walks away from the
+     * camera). PSX 12-bit angle units (`4096` = a full turn); the field
+     * controller quantises it to the nearest quarter-turn, as retail does.
+     * @param {number} units
      */
-    tick() {
-        const ret = wasm.legaiaruntime_tick(this.__wbg_ptr);
-        return BigInt.asUintN(64, ret);
+    set_camera_azimuth(units) {
+        wasm.legaiaruntime_set_camera_azimuth(this.__wbg_ptr, units);
+    }
+    /**
+     * Route this frame's pad word into the engine. Bit layout is the PSX digital
+     * pad ([`legaia_engine_core::input::PadButton`]): `0x0008` Start, `0x0010`
+     * Up, `0x0020` Right, `0x0040` Down, `0x0080` Left, `0x1000` Triangle,
+     * `0x2000` Circle, `0x4000` Cross, `0x8000` Square. Edge detection is the
+     * engine's - just hand it the held set each frame.
+     * @param {number} mask
+     */
+    set_pad(mask) {
+        wasm.legaiaruntime_set_pad(this.__wbg_ptr, mask);
+    }
+    /**
+     * One-line engine state for the HUD:
+     * ```text
+     * { "scene": "town01", "frame": 421, "mode": "Field",
+     *   "actors": 12, "npcs": 9,
+     *   "player": { "x": 2688, "y": -256, "z": 2432, "facing": 2048,
+     *               "walking": true },
+     *   "dialog": { "text": "...", "options": ["Yes", "No"], "cursor": 0 } }
+     * ```
+     * `dialog` is `null` when no box is up.
+     * @returns {string}
+     */
+    state_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_state_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Advance the engine one frame. Returns `""` normally, or the label of the
+     * scene the engine just walked into (a door / warp) - the page rebuilds its
+     * render state whenever the return is non-empty.
+     * @returns {string}
+     */
+    tick_frame() {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ret = wasm.legaiaruntime_tick_frame(this.__wbg_ptr);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
     }
 }
 if (Symbol.dispose) LegaiaRuntime.prototype[Symbol.dispose] = LegaiaRuntime.prototype.free;

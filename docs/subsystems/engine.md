@@ -187,6 +187,17 @@ Pending:
 
 Native (winit + wgpu via Vulkan / Metal / DX12), WASM browser target. Mobile / console targets are deferred.
 
+## The browser host
+
+The WASM target runs the **engine itself**, not a second implementation of it: `legaia_web_viewer::runtime::LegaiaRuntime` owns a real [`SceneHost`](../../crates/engine-core/src/scene/host.rs), so the browser executes the same field / event VM, free-movement controller, floor sampler, NPC motion VMs, interaction probe, and inline-dialogue runner the native window drives. The host's per-frame contract is small: hand the engine a PSX pad word, tell it the camera azimuth (so the d-pad remaps camera-relative), tick it, draw what it reports. Rendering goes through the site's shared WebGL TMD renderer rather than `engine-render`'s wgpu path.
+
+What the browser host reaches today: field and town scenes (map, player, NPCs, doors, dialogue). What it does not: battles, the title / prologue chain, the pause-menu screens, and audio - each of those has its *state* ported but its *draw path* only in the native window (`engine-render`).
+
+Two responsibilities fall to any host that enters a scene without a door to arrive through - the browser's scene picker is the case that exists:
+
+- **Seating.** `enter_field_scene` places the player at the retail cold-boot spawn (`FIELD_COLD_SPAWN_XZ`), which is authored for `town01` - the one scene retail cold-boots into. Every other scene expects a door warp to override X/Z with an entry tile. A host that drops the player in cold must seat them itself, and must avoid seating them on a gate-1 walk-on trigger tile ([`SceneHost::tile_has_walk_on_trigger`]) - the first tick would fire it and warp the scene away.
+- **Framing.** Retail authors a camera per scene; a generic follow camera puts a cave roof between the lens and the player. The browser host culls meshes straddling the camera-to-player line.
+
 ## Provenance + memory hygiene
 
 The decompiled C dumps under `ghidra/scripts/funcs/` are reference material. Engine code in `crates/engine-vm/` is fresh Rust written *from* the decompile - never paste, always rewrite from the documented spec.

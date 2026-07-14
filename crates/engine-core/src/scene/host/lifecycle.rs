@@ -169,6 +169,27 @@ impl SceneHost {
             .map(|c| c.cost)
     }
 
+    /// `true` when the world position `(world_x, world_z)` falls on a tile that
+    /// carries a **gate-1 walk-on trigger** - the per-tile compare the field loop
+    /// fires on a tile crossing (a town exit, a scripted story beat). Read-only
+    /// view of the `.MAP` kind-1 trigger tables cached at scene load.
+    ///
+    /// A host that seats the player somewhere other than a door arrival (the
+    /// browser play page's scene picker does exactly that) needs this: dropping
+    /// them onto a trigger tile fires it on the first tick, which reads to the
+    /// player as "the scene immediately warped somewhere else".
+    pub fn tile_has_walk_on_trigger(&self, world_x: i16, world_z: i16) -> bool {
+        // Retail tile quantisation, matching the walk-on dispatch.
+        let quant = |w: i16| -> i32 { (i32::from(w) - 0x40) >> 7 };
+        let (tx, tz) = (quant(world_x), quant(world_z));
+        if !(0..=0x7F).contains(&tx) || !(0..=0x7F).contains(&tz) {
+            return false;
+        }
+        let (primary, fallback) = &self.field_triggers;
+        crate::field_regions::lookup_tile_trigger(primary, fallback, tx as u8, tz as u8)
+            .is_some_and(|t| t.gate == 1)
+    }
+
     /// A [`SceneDestinationResolver`] over the current scene's destinations -
     /// the live resolver for the `0x3F` named-scene-change `i16` index space,
     /// rebuilt from disc each scene entry. (The `0x3E` door-warp keeps the
