@@ -57,6 +57,7 @@ pub mod menu_glyph_atlas;
 pub mod menu_windows;
 pub mod minigame_art;
 pub mod minigame_sfx;
+pub mod minigame_slot_scene;
 pub mod mips_overlay;
 pub mod mode_table;
 pub mod monster_archive;

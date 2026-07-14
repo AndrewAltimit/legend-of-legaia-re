@@ -347,3 +347,122 @@ fn slot_session_on_the_real_paytable_spins_and_pays() {
     );
     assert!(credited >= 0);
 }
+
+/// The slot machine's **3D scene graph**, byte-checked against the retail frame.
+///
+/// The machine is a 3D scene, not a sprite collage: its paylines, medallions,
+/// lamps, pedestals and marquee are GTE-projected quads whose model-space
+/// positions live in four contiguous tables in the overlay's own rodata. This
+/// pins that those tables decode, and that projecting them lands each element
+/// where a retail framebuffer captured at the machine has it - the check that
+/// would fail if the geometry were being measured off the art instead of read.
+#[test]
+fn the_slot_machines_3d_scene_decodes_and_projects_onto_the_retail_frame() {
+    use legaia_asset::minigame_slot_scene as sc;
+
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert!(mg.slot_scene_ready(), "the scene graph decoded");
+    let s: serde_json::Value = serde_json::from_str(&mg.slot_scene_json()).unwrap();
+    assert_eq!(s["ok"], true);
+
+    // Five paylines: three horizontal (y = -192 / 0 / +192) and two diagonals
+    // that cross. The retail win evaluator reads exactly these five.
+    let lines = s["paylines"].as_array().unwrap();
+    assert_eq!(lines.len(), sc::PAYLINE_COUNT);
+    let y = |i: usize, e: &str| lines[i][e][1].as_i64().unwrap();
+    for (i, want) in [(0usize, -192i64), (1, 0), (2, 192)] {
+        assert_eq!(y(i, "a"), want, "payline {i} is horizontal at y={want}");
+        assert_eq!(y(i, "b"), want);
+    }
+    assert_eq!(y(3, "a"), -y(3, "b"), "payline 3 is a diagonal");
+    assert_eq!(y(4, "a"), -y(4, "b"), "payline 4 is the other diagonal");
+    assert_eq!(y(3, "a"), -y(4, "a"), "...and they mirror each other");
+
+    // One medallion and one lamp per payline, and the column is symmetric about
+    // the middle line - so a medallion's y matches its payline's.
+    let meds = s["medallions"].as_array().unwrap();
+    let lamps = s["lamps"].as_array().unwrap();
+    assert_eq!(meds.len(), sc::PAYLINE_COUNT);
+    assert_eq!(lamps.len(), sc::PAYLINE_COUNT);
+    for (i, med) in meds.iter().enumerate().take(3) {
+        assert_eq!(
+            med["pos"][1].as_i64().unwrap(),
+            y(i, "a"),
+            "medallion {i} sits on payline {i}"
+        );
+    }
+    // The medallions are one cell of art recoloured - their `art` field is the
+    // CLUT column, and it is symmetric (2,1,0,1,2 across the column).
+    let arts: Vec<i64> = meds
+        .iter()
+        .map(|m| m["art"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(arts[0], arts[2], "the two ±192 medallions share a palette");
+    assert_eq!(arts[3], arts[4], "the two ±336 medallions share a palette");
+
+    // The projection must land the scene on the retail 640x240 frame where a
+    // capture at the machine has it. These targets were measured off that frame
+    // and none of them entered the fit (which was solved on the lamps alone).
+    let proj = |x: i32, y: i32, z: i32| sc::project(x, y, z);
+    for (i, want_y) in [(0usize, 91.5f32), (1, 118.5), (2, 145.5)] {
+        let p = &lamps[i]["pos"];
+        let (_, sy) = proj(
+            p[0].as_i64().unwrap() as i32,
+            p[1].as_i64().unwrap() as i32,
+            p[2].as_i64().unwrap() as i32,
+        );
+        assert!(
+            (sy - want_y).abs() < 1.5,
+            "lamp {i} projects to y={sy}, the retail frame has it at {want_y}"
+        );
+    }
+    // The marquee panel: centred, at the top, 285px wide on screen.
+    let panel = s["marquee"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["pos"][0].as_i64().unwrap() == 0)
+        .expect("a centred marquee panel");
+    let z = panel["pos"][2].as_i64().unwrap() as i32;
+    let (hw, _) = sc::billboard_half(
+        panel["half"][0].as_i64().unwrap() as i32,
+        panel["half"][1].as_i64().unwrap() as i32,
+        z,
+    );
+    assert!(
+        (hw * 2.0 - 285.0).abs() < 8.0,
+        "the marquee panel projects {}px wide; the retail frame has it ~285px",
+        hw * 2.0
+    );
+
+    // The dot-matrix marquee: 21 message bitmaps, and the legend the attract
+    // mode scrolls is a real, non-empty bitmap 13 rows tall.
+    let msgs = s["messages"].as_array().unwrap();
+    assert_eq!(msgs.len(), sc::MESSAGE_COUNT);
+    for (i, m) in msgs.iter().enumerate() {
+        assert_eq!(m["h"].as_u64().unwrap(), sc::DOT_ROWS as u64);
+        let lit = m["bitmap"]
+            .as_str()
+            .unwrap()
+            .split(',')
+            .filter(|v| *v != "0")
+            .count();
+        assert!(lit > 0, "marquee message {i} is not blank");
+    }
+
+    // The dot grid must project onto the marquee panel it lives on.
+    let (dx0, dy0) = proj(sc::DOT_X0, sc::DOT_Y0, sc::DOT_Z);
+    let (dx1, dy1) = proj(
+        sc::DOT_X0 + (sc::DOT_COLS as i32 - 1) * sc::DOT_X_STEP,
+        sc::DOT_Y0 + (sc::DOT_ROWS as i32 - 1) * sc::DOT_Y_STEP,
+        sc::DOT_Z,
+    );
+    let (px, _) = sc::project(0, panel["pos"][1].as_i64().unwrap() as i32, z);
+    assert!(
+        dx0 > px - hw && dx1 < px + hw && dy0 > 0.0 && dy1 < 60.0,
+        "the dot grid ({dx0}..{dx1}, {dy0}..{dy1}) sits inside the marquee panel"
+    );
+}

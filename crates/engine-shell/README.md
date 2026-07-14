@@ -89,7 +89,7 @@ are the three arrows), the `L` key starts the fishing minigame
 casts then reels, Circle is the second reel button), the `O` key starts the
 casino slot machine (`legaia_engine_core::slot_machine`, from the slot overlay
 PROT 0975 - Cross spins / stops each reel / collects; a spin is the retail
-flat 3-coin bet across all three paylines, 1 coin during a feature; quitting
+flat 3-coin bet across all five paylines, 1 coin during a feature; quitting
 cashes the balance out into the casino coin bank), and the `B`
 key starts a Baka Fighter duel (`legaia_engine_core::baka_fighter`, from the
 Baka Fighter overlay PROT 0976 - Left/Right/Up throw the three

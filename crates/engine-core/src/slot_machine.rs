@@ -37,8 +37,9 @@
 //!   `9` / `8` in the reach modes 1 / 2 (`FUN_801d2114`, [`stop_plan`]);
 //! - the landing search: walk up to `depth` rows ahead for the target symbol,
 //!   else stop on the next natural row (`FUN_801d2440`, [`land_row`]);
-//! - the win evaluation: three paylines checked all-equal on the display
-//!   strip, highest-value line kept, normal payout =
+//! - the win evaluation: five paylines - three horizontal and two diagonal
+//!   ([`legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS`]) - checked
+//!   all-equal on the display strip, highest-value line kept, normal payout =
 //!   `payout_table[symbol]` ([`legaia_asset::slot_payout`]), jackpot symbols
 //!   `9` / `8` kick off a bonus round of 3 / 1 free spins, and a bonus-round
 //!   win pays the *product* of the three matched `(value - 0xf)` factors
@@ -77,7 +78,7 @@ pub const BALANCE_CAP: i32 = 9_999_999;
 /// feature mode, even though a feature spin only costs 1.
 pub const MIN_SPIN_BALANCE: i32 = 3;
 /// Flat coin cost of a normal spin (feature modes 0..=3): `DAT_801d4114 -= 3`
-/// in state `1`. All three paylines always play - there is no bet-line
+/// in state `1`. All five paylines always play - there is no bet-line
 /// selection ("insert 3 coins" is the whole bet).
 pub const SPIN_COST_NORMAL: i32 = 3;
 /// Coin cost of a spin during feature modes 4..=6 (`DAT_801d4114 -= 1`).
@@ -278,7 +279,9 @@ pub fn land_row(strip: &[u8; STRIP_LEN], from_row: usize, depth: usize, target: 
 /// The outcome of one evaluated spin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpinResult {
-    /// Winning payline index (`0` middle / `1` top / `2` bottom), or `None`.
+    /// Winning payline index (`0` top / `1` middle / `2` bottom / `3`, `4` the
+    /// two diagonals), or `None`. The index is also the medallion / lamp the
+    /// machine lights - see [`legaia_asset::minigame_slot_scene`].
     pub line: Option<usize>,
     /// Winning symbol id, or `None`.
     pub symbol: Option<u8>,
@@ -444,6 +447,14 @@ impl SlotMachine {
         ((self.reel_pos[reel] >> 8) as usize) % STRIP_LEN
     }
 
+    /// The raw reel position of `reel` - a fixed-point angle whose high byte is
+    /// the strip row and whose low byte is the sub-symbol fraction
+    /// (`DAT_801d3cc0`). The renderer needs the fraction: retail's reel is a 3D
+    /// cylinder and the fraction is what rotates it between symbols.
+    pub fn reel_pos(&self, reel: usize) -> i32 {
+        self.reel_pos[reel]
+    }
+
     /// How many reels are stopped this spin (`DAT_801d3d2c`).
     pub fn reels_stopped(&self) -> usize {
         self.stopped.iter().filter(|s| s.is_some()).count()
@@ -456,7 +467,7 @@ impl SlotMachine {
 
     /// The coin cost of the next spin: flat [`SPIN_COST_NORMAL`] in modes
     /// 0..=3, [`SPIN_COST_FEATURE`] in feature modes 4..=6 (there is no
-    /// bet-line selection - all three paylines always play).
+    /// bet-line selection - all five paylines always play).
     pub fn spin_cost(&self) -> i32 {
         if (4..=6).contains(&self.feature_mode) {
             SPIN_COST_FEATURE
@@ -579,7 +590,7 @@ impl SlotMachine {
     }
 
     /// Evaluate the stopped spin (`FUN_801d13e8`): outside a bonus round,
-    /// check all three paylines all-three-equal on the display strips, keep
+    /// check all five paylines all-three-equal on the display strips, keep
     /// the highest-value line, pay `payout_table[symbol]`, and trigger the
     /// bonus round on the jackpot symbols. During a bonus round every spin
     /// pays the *product* of the three payline factors unconditionally (no
@@ -612,14 +623,18 @@ impl SlotMachine {
                 bonus_spin: true,
             };
         }
-        // Payline row offsets: 0 = middle (the payline row itself), 1 = top
-        // (-1), 2 = bottom (+1) - the ±1 row reads in the dump. All three
-        // lines always play.
-        const LINE_OFFSETS: [isize; 3] = [0, -1, 1];
+        // Five paylines - three horizontal and two diagonal. The per-reel row
+        // offsets are `legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS`,
+        // read off the retail evaluator's absolute row reads. All five always
+        // play; the winning line index is also the medallion the machine lights.
         let mut best: Option<(usize, u8, i32)> = None;
-        for (line, &off) in LINE_OFFSETS.iter().enumerate() {
+        for (line, offs) in legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS
+            .iter()
+            .enumerate()
+        {
             let sym = |r: usize| {
-                let row = (rows[r] as isize + off).rem_euclid(STRIP_LEN as isize) as usize;
+                let row =
+                    (rows[r] as isize + offs[r] as isize).rem_euclid(STRIP_LEN as isize) as usize;
                 self.strips[r][row]
             };
             let (a, b, c) = (sym(0), sym(1), sym(2));
@@ -889,32 +904,57 @@ mod tests {
         assert_eq!(m.phase(), SlotPhase::CashedOut);
     }
 
-    #[test]
-    fn all_three_paylines_always_play() {
-        // There is no bet-line selection: a top-row-only match pays.
+    /// Rig a machine whose three reels are stopped on row 0 with the given
+    /// per-reel row offsets carrying symbol `sym`, and every other cell distinct.
+    fn rigged(sym: u8, offsets: [i32; REEL_COUNT]) -> SpinResult {
         let mut m = SlotMachine::new(payouts(), 9, 100);
-        assert_eq!(m.spin_cost(), SPIN_COST_NORMAL);
         assert!(m.spin());
         for _ in 0..SPIN_UP_FRAMES {
             m.tick();
         }
-        for reel in 0..REEL_COUNT {
-            // Middle rows differ; only the top row (-1) matches.
+        for (reel, &off) in offsets.iter().enumerate() {
+            // Fill with symbols that can never line up across all three reels.
             let mut s = [0u8; STRIP_LEN];
-            s[STRIP_LEN - 1] = 6; // row -1 from row 0
-            s[0] = reel as u8; // middle row: 0/1/2 - no match
+            for (row, cell) in s.iter_mut().enumerate() {
+                *cell = ((reel * 3 + row) % 5) as u8;
+            }
+            s[off.rem_euclid(STRIP_LEN as i32) as usize] = sym;
             m.strips[reel] = s;
-        }
-        // Rig positions to row 0 and stop.
-        for reel in 0..REEL_COUNT {
             m.reel_pos[reel] = 0;
             m.reel_vel[reel] = 0;
             m.stopped[reel] = Some(0);
         }
-        let r = m.evaluate_spin();
-        assert_eq!(r.symbol, Some(6), "top-line match pays");
-        assert_eq!(r.payout, (6 + 1) * 2);
-        assert_eq!(r.line, Some(1), "line 1 = the top payline");
+        m.evaluate_spin()
+    }
+
+    #[test]
+    fn all_five_paylines_always_play() {
+        // There is no bet-line selection: a match on ANY of the five lines pays,
+        // and the line index is the medallion the machine lights.
+        //
+        // Retail's per-reel row offsets (relative to the payline row):
+        //   0 = top   (+1 +1 +1)      3 = diagonal (-1  0 +1)
+        //   1 = middle ( 0  0  0)     4 = diagonal (+1  0 -1)
+        //   2 = bottom (-1 -1 -1)
+        for (line, offsets) in legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS
+            .iter()
+            .enumerate()
+        {
+            let r = rigged(6, *offsets);
+            assert_eq!(r.symbol, Some(6), "line {line} pays");
+            assert_eq!(r.payout, (6 + 1) * 2);
+            assert_eq!(r.line, Some(line), "the winning line index is {line}");
+        }
+    }
+
+    #[test]
+    fn the_two_diagonals_are_real_lines_and_not_the_straights() {
+        // The falsifiable half: a diagonal match must NOT be reported as a
+        // straight line, and a straight must not be reported as a diagonal.
+        let diag = rigged(6, [-1, 0, 1]);
+        assert_eq!(diag.line, Some(3), "bottom-left to top-right is line 3");
+        let straight = rigged(6, [0, 0, 0]);
+        assert_eq!(straight.line, Some(1), "the middle row is line 1");
     }
 
     #[test]

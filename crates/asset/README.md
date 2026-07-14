@@ -23,6 +23,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`fishing_species`](#fishing_species)
   - [`dance_chart`](#dance_chart)
   - [`slot_payout`](#slot_payout)
+  - [`minigame_slot_scene`](#minigame_slot_scene)
   - [`baka_opponents`](#baka_opponents)
   - [`muscle_dome`](#muscle_dome)
   - [`element_affinity`](#element_affinity)
@@ -218,6 +219,28 @@ zero padding + an overlay string at `+0x10`.
   `is_bonus_symbol(id)` (ids 8/9 trigger the bonus round). No Sony bytes
   committed (disc-gated `slot_payout_real`). See
   [`minigame-slot-machine.md`](../../docs/subsystems/minigame-slot-machine.md).
+
+### `minigame_slot_scene`
+
+The slot machine's **3D scene graph**. The machine is not a sprite collage: every
+element on its face is a quad projected through the GTE and depth-sorted into the
+ordering table, and the overlay reaches the GTE entirely through SCUS wrappers, so
+it carries no `cop2` op of its own.
+
+- The four geometry tables tile contiguously at PROT 0975 file `0x4E68..0x4F38`:
+  the 5 paylines (`FUN_801d3380` - three straight, two diagonal), the 5 payline
+  medallions, the 5 payline lamps, and the marquee panel + two mascots
+  (`FUN_801d08e4`). `parse_scene` decodes all four plus the **21-bitmap
+  dot-matrix message bank** (file `0x4CD8`), cut out of art page 3.
+- The reel cylinder (`FUN_801d0fa8`): `reel_y` / `reel_z` (SCUS trig tables,
+  radius 585 x 512), `reel_shade` (the depth cue that peaks on the payline face
+  and blacks out the near half - there is no backface cull).
+- `project` / `billboard_half`: the screen mapping onto the retail 640x240
+  framebuffer. Its shape is derived from the camera matrix `diag(6, 3, 3)`; its
+  four scalars are *fitted* to a retail framebuffer (the GTE control words are in
+  COP2, not main RAM), solved on the five payline lamps and then verified by
+  predicting every other element's rect. No Sony bytes committed (disc-gated
+  `the_slot_machines_3d_scene_decodes_and_projects_onto_the_retail_frame`).
 
 ### `baka_opponents`
 

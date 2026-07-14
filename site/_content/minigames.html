@@ -76,10 +76,13 @@ canvas.mg-canvas {
 
 /* Slots */
 .mg-cabinet {
-  display: block; width: 100%; max-width: 640px; margin: 0.9rem auto;
-  aspect-ratio: 2 / 1; background: #0b0b10;
+  display: block; width: 100%; max-width: 720px; margin: 0.9rem auto;
+  /* The retail machine draws into a 640x240 hi-res framebuffer whose pixels are
+   * half-width, so 640x240 of buffer is a 4:3 picture. Do not "fix" this to 8:3 -
+   * the aspect IS the reason the medallions come out round. */
+  aspect-ratio: 4 / 3; background: #0b0b10;
   border: 1px solid var(--border); border-radius: 4px;
-  /* The art is 4bpp PSX texture data - never smooth it. */
+  /* The art is PSX texture data - never smooth it. */
   image-rendering: pixelated; image-rendering: crisp-edges;
 }
 .mg-reels {
@@ -300,13 +303,13 @@ canvas.mg-canvas {
       <section class="mg-panel" data-game="slot">
         <h3>Vidna casino &mdash; slot machine</h3>
         <p class="mg-blurb">
-          Three coins a spin, all three paylines always live. Stop each reel yourself.
+          Three coins a spin, all <b>five</b> paylines always live &mdash; three straight and two diagonal. Stop each reel yourself.
           The machine keeps a hidden <b>net-take</b> counter &mdash; the more it has taken
           off you, the better the odds it rolls &mdash; and a big bonus win knocks that
           counter back down. Land a line of the two jackpot symbols and the bonus round
           opens: cheap spins that pay the <em>product</em> of the line.
         </p>
-        <canvas id="slot-canvas" class="mg-cabinet" width="512" height="256"></canvas>
+        <canvas id="slot-canvas" class="mg-cabinet" width="640" height="240"></canvas>
         <div class="mg-reels" id="slot-reels" hidden></div>
         <div class="mg-verdict" id="slot-verdict"></div>
         <div class="mg-row">
@@ -749,53 +752,53 @@ canvas.mg-canvas {
 
   /* ================= slot machine ================= */
 
-  /* ---- the machine's own art, decoded out of the visitor's disc ----
+  /* ---- the machine is a 3D scene, and this draws it as one ----
    *
-   * Every pixel below comes from PROT entry 1200 - the five-TIM pack the slot
-   * overlay's init `FUN_801CEC94` loads. Nothing is shipped with this page.
+   * The retail slot machine is not a sprite collage. Every element on its face
+   * is a quad in a 3D scene, projected through the PlayStation's GTE and
+   * depth-sorted into the ordering table:
    *
-   * Two tiers of provenance, and the page says which is which:
+   *   - the three reels are textured CYLINDERS (`FUN_801d0fa8`). Each visible
+   *     face is a POLY_GT4 whose corners are (x, y(a), z(a)) for two adjacent
+   *     reel angles, y and z read out of the SCUS sine/cosine tables. The four
+   *     corners go through RotTransPers4. The symbols curl away from the payline
+   *     because the cylinder does, and they darken because the quad's gouraud
+   *     shade is depth-cued off z.
+   *   - the five paylines are 3D line segments, both endpoints RTPS-projected
+   *     (`FUN_801d3380`).
+   *   - the medallions, the payline lamps, the reel-stop pedestals, the marquee
+   *     panel and the two mascots are billboards (`FUN_801d08e4`).
+   *   - the marquee is a 78x13 DOT-MATRIX display: 1014 individually projected
+   *     2x2 sprites (`FUN_801d0e1c`), scrolling a message out of a 21-bitmap
+   *     bank the overlay reads back out of VRAM at init.
    *
-   *   TRACED  - the rect + palette are read straight out of the disassembly or
-   *             the overlay's own descriptor table. The reel symbols
-   *             (`FUN_801d0fa8`), the coin font (`FUN_801d2914`) and the three
-   *             `DAT_801d347c` HUD widgets are all traced, so they are exact.
-   *   MEASURED- the sprite is unmistakably on the machine's own chrome page,
-   *             but its rect is cropped from the decoded texture rather than
-   *             traced to the emitter that draws it. The marquee, the mascots
-   *             and the reel-stop medallions are measured.
+   * The overlay has no GTE instruction of its own - it reaches the GTE through
+   * SCUS wrappers - which is why the machine had been read as 2D.
    *
-   * Nothing here is invented. If the art does not decode, the machine falls
-   * back to naming the symbol *ids* - not to a made-up sprite.
+   * Every position, size, cell and palette below is READ OFF THE DISC: four
+   * contiguous tables in the slot overlay's own rodata (PROT 0975), decoded by
+   * `legaia_asset::minigame_slot_scene` and handed over as `slot_scene_json()`.
+   * Nothing here is measured by eye and nothing is invented.
+   *
+   * The one thing that is fitted rather than read is the PROJECTION - the four
+   * scalars that map model space onto the retail 640x240 framebuffer - because
+   * the GTE's control words don't live in main RAM and so aren't in a save
+   * state. The fit was solved on the five payline lamps alone and then predicted,
+   * to about a pixel each, every other element's on-screen rect.
+   *
+   * WHAT IS MISSING, AND THE PAGE SAYS SO: the machine's CABINET - the grey body
+   * and the dark red face the reels sit in - is not drawn here, because it is not
+   * the slot overlay's to draw. It is in neither the art pack nor any prim the
+   * overlay emits; it is the casino room's own 3D geometry, rendered by the
+   * shared scene renderer behind the layer this code owns. Rather than invent a
+   * cabinet, the page draws the machine's face on a neutral ground and says why.
    */
   const SLOT_START_COINS = 60;
   const SYM_PX = 64;              /* a reel symbol cell, in texels */
-  const CHROME_PAGE = 2;          /* pack page: marquee + mascots + medallions */
-  const BANNER_PAGE = 3;          /* pack page: banner text + cursor */
-
-  /* MEASURED rects (texture coords) on the chrome / banner pages. */
-  const CHROME = {
-    mascot:   { u: 0,  v: 0,   w: 64,  h: 64 },   /* one cell; palettes recolour it */
-    marquee:  { u: 0,  v: 64,  w: 116, h: 62 },
-    medallion:{ u: 0,  v: 128, w: 32,  h: 32 },   /* row = reel: 0 square, 1 cross, 2 circle */
-    wildcard: { u: 0,  v: 17,  w: 80,  h: 14 },   /* on BANNER_PAGE */
-  };
-  /* Palettes matched against a real frame of the retail machine, not guessed.
-   * The rasteriser lets a call site override a record's CLUT (the id's high
-   * field swaps in 0x7D0F), so a descriptor's palette is not always the one on
-   * screen - and several of these sprites are one cell of art recoloured.
-   *
-   * The reel-stop medallion is the clearest case: its palette co-varies with
-   * its row, giving exactly the retail trio - gold ribbon over a pink square
-   * (reel 0), a blue cross (reel 1), an orange circle (reel 2), which is the
-   * pad binding 0x80 / 0x40 / 0x20 the reel SM reads. */
-  const PAL = {
-    mascotL: 0, mascotR: 1, marquee: 10, cabinet: 14, wildcard: 0,
-    medallion: [3, 4, 5],
-  };
 
   let slotPayouts = [];
-  let slotArt = null;   /* null => the art did not decode; draw ids, not sprites */
+  let slotArt = null;    /* null => the art did not decode; draw ids, not sprites */
+  let slotScene = null;  /* the 3D scene graph out of the overlay's rodata */
 
   /* ---- the machine's own sound ----
    *
@@ -861,9 +864,10 @@ canvas.mg-canvas {
     return c;
   }
 
-  /* Decode the machine's textures once, after a disc lands. */
+  /* Decode the machine's textures + its 3D scene graph once, after a disc lands. */
   function slotLoadArt() {
     slotArt = null;
+    slotScene = null;
     if (!api || !api.slot_art_ready()) {
       $('slot-art-note').innerHTML =
         'The payouts are the disc’s own per-symbol table, but this disc’s <b>art pack ' +
@@ -871,56 +875,62 @@ canvas.mg-canvas {
         'No stand-in sprites are drawn.';
       return;
     }
+
     const symbols = [];
     for (let s = 0; s < 10; s++) symbols.push(rgbaCanvas(api.slot_symbol_rgba(s), SYM_PX, SYM_PX));
-    const hud = JSON.parse(api.slot_hud_json());
     const pages = {};
     const page = (p, pal) => {
       const k = p + ':' + pal;
-      if (!(k in pages)) pages[k] = rgbaCanvas(api.slot_page_rgba(p, pal), 256, 256);
+      if (!(k in pages)) {
+        const w = api.slot_page_width(p) || 256;
+        pages[k] = rgbaCanvas(api.slot_page_rgba(p, pal), w, 256);
+      }
       return pages[k];
     };
+
     slotArt = {
       symbols,
       digits: rgbaCanvas(api.slot_digits_rgba(), 64 + 10 * 16, 16),
-      hud,
-      /* The cabinet: the TRACED rect of HUD record 0, re-decoded through the
-       * palette the retail frame actually shows. */
-      cabinet: hud[0] ? { rect: hud[0], img: page(hud[0].page, PAL.cabinet) } : null,
-      chrome: {
-        mascotL:   page(CHROME_PAGE, PAL.mascotL),
-        mascotR:   page(CHROME_PAGE, PAL.mascotR),
-        marquee:   page(CHROME_PAGE, PAL.marquee),
-        medallion: PAL.medallion.map(p => page(CHROME_PAGE, p)),
-        wildcard:  page(BANNER_PAGE, PAL.wildcard),
-      },
+      /* HUD record 0: the paytable board on the right of the machine. Its page
+       * is sampled 8bpp (the texpage's colour bit), not the 4bpp its TIM header
+       * claims - decode it as the header says and you get noise. */
+      panel: rgbaCanvas(api.slot_panel_rgba(), 127, 239),
+      page,
     };
+
+    slotScene = api.slot_scene_ready() ? JSON.parse(api.slot_scene_json()) : null;
+
     const sfxN = JSON.parse(api.slot_sfx_json()).length;
     $('slot-art-note').innerHTML =
-      'Every pixel and every sound of this machine is decoded from <b>your</b> disc at ' +
-      'runtime; nothing is shipped with the page. The art is PROT entry <b>1200</b>, the ' +
-      'five-TIM pack the overlay init <code>FUN_801CEC94</code> loads — byte-identical to a ' +
-      'retail VRAM dump taken at the real machine. The reel symbols are drawn at the exact ' +
-      'cell and <b>per-symbol palette</b> the retail reel renderer <code>FUN_801d0fa8</code> ' +
-      'samples (<code>U=(sym&amp;3)&times;0x40</code>, <code>V=(sym&amp;0xC)&times;0x10</code>, ' +
-      'CLUT&nbsp;<code>0x7A80+sym</code>). That palette is load-bearing: symbols 0/1/2 are ' +
-      '<em>one</em> piece of artwork recoloured three ways, and so are 4/5. The coin font ' +
-      '(<code>FUN_801d2914</code>) and the cabinet (descriptor table ' +
-      '<code>DAT_801d347c</code>) are traced too. ' +
+      'This is the retail machine’s <b>3D scene</b>, rebuilt from your own disc at runtime — ' +
+      'nothing is shipped with the page. It is not a sprite collage and never was: the reels ' +
+      'are textured <b>cylinders</b> (<code>FUN_801d0fa8</code> — the symbols curl away from ' +
+      'the payline because the cylinder does, and darken because the quad’s gouraud shade is ' +
+      'depth-cued off <code>z</code>), the five paylines are 3D line segments ' +
+      '(<code>FUN_801d3380</code>), the medallions / lamps / reel-stop pedestals / marquee / ' +
+      'mascots are billboards (<code>FUN_801d08e4</code>), and the marquee legend is a ' +
+      '<b>78×13 dot-matrix display</b> — 1014 individually projected 2×2 sprites ' +
+      '(<code>FUN_801d0e1c</code>) scrolling a bitmap out of a 21-message bank. Every ' +
+      'position, size, cell and palette above is read out of four contiguous tables in the ' +
+      'overlay’s own rodata; the art is PROT&nbsp;1200, byte-identical to a retail VRAM dump. ' +
       (sfxN
         ? `The <b>sound</b> is the machine’s own: ${sfxN} cues out of the overlay’s ` +
           '<code>efect.dat</code> descriptor block (PROT&nbsp;1199), sampled from the VAB it ' +
-          'loads beside it (PROT&nbsp;1198) — the reel-stop click is cue <code>0x20A</code>, ' +
-          'the payout tick <code>0x209</code>, the reach sting <code>0x200</code>–' +
-          '<code>0x202</code>. '
+          'loads beside it (PROT&nbsp;1198) — reel-stop click <code>0x20A</code>, payout tick ' +
+          '<code>0x209</code>, reach sting <code>0x200</code>–<code>0x202</code>. '
         : 'The machine’s <b>sound did not decode</b> from this image, so the page is silent ' +
           'rather than beeping at you. ') +
-      '<br><br>Two things here are honest approximations, and they are the only two: the ' +
-      'marquee / mascots / reel-stop medallions are cropped from the machine’s own chrome ' +
-      'page by <em>measurement</em> rather than traced to the emitter that draws them (real ' +
-      'art, approximate rect), and the cabinet’s palette is matched against a real frame ' +
-      'because the HUD rasteriser lets a call site override a record’s CLUT. Everything else ' +
-      'on this machine is traced.';
+      '<br><br><b>What is missing, and why.</b> The <b>cabinet</b> — the grey body and dark-red ' +
+      'face the reels sit in — is not drawn here, because it is not the slot overlay’s to draw. ' +
+      'It is in neither the art pack nor any primitive the overlay emits: it is the casino ' +
+      'room’s own 3D geometry (the <code>koin*</code> scene bundles), rendered by the shared ' +
+      'scene renderer <em>behind</em> the layer this code owns. Rather than invent a cabinet, ' +
+      'the machine’s face is drawn on a neutral ground. The <b>projection</b> (the four scalars ' +
+      'that map model space onto the retail 640×240 frame) is <em>fitted</em> to a retail ' +
+      'framebuffer rather than read, because the GTE control words are not in main RAM — but ' +
+      'the fit was solved on the five payline lamps alone and then predicted every other ' +
+      'element’s rect to about a pixel. The machine’s <b>in-game BGM is still unpinned</b>: the ' +
+      'overlay starts no track, and every capture reaches it by a debug warp.';
   }
 
   function slotDrawPaytable() {
@@ -951,113 +961,282 @@ canvas.mg-canvas {
     slotDrawPaytable();
   }
 
-  /* Draw the balance in the machine's own 16px digit font. */
-  function slotDrawCoins(g, x, y, value) {
+  /* ---------------- the 3D pass ---------------- */
+
+  /* The retail projection. `-z` is toward the viewer, so the glass (paylines,
+   * medallions, lamps, marquee) at z = -800 sits IN FRONT of the reel cylinders,
+   * whose payline face is at z = -512. Both axes divide by the same perspective
+   * term; the 2:1 x:y ratio is the camera matrix's own diag(6,3,3), which is the
+   * 640-wide hi-res mode's pixel aspect. */
+  function slotScale(z) {
+    const P = slotScene.proj;
+    return P.sx0 * P.z0 / (P.z0 + z);
+  }
+  function slotProject(x, y, z) {
+    const P = slotScene.proj, s = slotScale(z);
+    return [P.ofx + s * x, P.ofy + (s / P.aspect) * y];
+  }
+  /* A billboard's half-extents are in VIEW space - the retail projector builds
+   * its corners after the matrix multiply - so they divide by the camera's own
+   * x scale, not by the aspect. */
+  function slotBillboard(hw, hh, z) {
+    const k = slotScale(z) / slotScene.proj.xscale;
+    return [hw * k, hh * k];
+  }
+
+  /* Draw a texture cell as a billboard centred on a model-space point. */
+  function slotDrawBillboard(g, img, cell, pos, half, alpha) {
+    if (!img) return;
+    const [cx, cy] = slotProject(pos[0], pos[1], pos[2]);
+    const [hw, hh] = slotBillboard(half[0], half[1], pos[2]);
+    g.globalAlpha = alpha === undefined ? 1 : alpha;
+    g.drawImage(img, cell[0], cell[1], cell[2], cell[3],
+                cx - hw, cy - hh, hw * 2, hh * 2);
+    g.globalAlpha = 1;
+  }
+
+  /* Affine-map one texture triangle onto a screen triangle. This is what lets
+   * the reel faces be real perspective-projected quads instead of upright rects:
+   * each face's four corners land wherever the cylinder + the perspective divide
+   * put them, and the texture follows. */
+  function slotTexTri(g, img, s0, s1, s2, t0, t1, t2) {
+    g.save();
+    g.beginPath();
+    /* Expand a hair around the centroid so adjacent triangles don't seam. */
+    const cx = (s0[0] + s1[0] + s2[0]) / 3, cy = (s0[1] + s1[1] + s2[1]) / 3;
+    const gr = (p) => [cx + (p[0] - cx) * 1.02, cy + (p[1] - cy) * 1.02];
+    const [a, b, c] = [gr(s0), gr(s1), gr(s2)];
+    g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); g.closePath();
+    g.clip();
+    const d = (t1[0] - t0[0]) * (t2[1] - t0[1]) - (t2[0] - t0[0]) * (t1[1] - t0[1]);
+    if (Math.abs(d) > 1e-6) {
+      const m11 = ((s1[0] - s0[0]) * (t2[1] - t0[1]) - (s2[0] - s0[0]) * (t1[1] - t0[1])) / d;
+      const m12 = ((s1[1] - s0[1]) * (t2[1] - t0[1]) - (s2[1] - s0[1]) * (t1[1] - t0[1])) / d;
+      const m21 = ((s2[0] - s0[0]) * (t1[0] - t0[0]) - (s1[0] - s0[0]) * (t2[0] - t0[0])) / d;
+      const m22 = ((s2[1] - s0[1]) * (t1[0] - t0[0]) - (s1[1] - s0[1]) * (t2[0] - t0[0])) / d;
+      g.transform(m11, m12, m21, m22,
+                  s0[0] - m11 * t0[0] - m21 * t0[1],
+                  s0[1] - m12 * t0[0] - m22 * t0[1]);
+      g.drawImage(img, 0, 0);
+    }
+    g.restore();
+  }
+
+  /* The reel cylinder, exactly as FUN_801d0fa8 builds it. */
+  function slotDrawReels(g, st, positions) {
+    const R = slotScene.reels;
+    const FULL = R.angle_full;
+    const sinT = (a) => Math.sin(((a % FULL + FULL) % FULL) / FULL * Math.PI * 2);
+    const cosT = (a) => Math.cos(((a % FULL + FULL) % FULL) / FULL * Math.PI * 2);
+    const ry = (a) => (4096 * sinT(a) * -R.y_radius) / 4096;   /* y(a) */
+    const rz = (a) => (4096 * cosT(a)) / (1 << R.z_shift);     /* z(a) */
+    /* Retail shade: clamp(0xB4 - (z + 0x200) * 0x21C / 512, 0, 0xB4), then the
+     * POLY_GT4 blend is texel * shade / 128 - so the payline face is brightened
+     * 1.41x and everything away from it fades to black. That fade is what hides
+     * the near half of the cylinder; there is no backface cull. */
+    const shade = (z) => Math.max(0, Math.min(R.shade_max,
+      R.shade_max - Math.floor((z + R.shade_bias) * R.shade_gain / 512)));
+
+    for (let r = 0; r < 3; r++) {
+      const pos = positions[r];
+      const row0 = Math.floor(((pos >> 8) % R.strip_len + R.strip_len) % R.strip_len);
+      const frac = ((pos % 256) + 256) % 256;
+      const strip = api.slot_strip(r);
+      if (!strip.length) continue;
+      const x0 = R.x[r], x1 = x0 + R.w;
+
+      for (let f = 0; f < R.faces; f++) {
+        const aTop = R.angle_base + frac + f * R.angle_step;
+        const aBot = aTop + R.angle_step;
+        const zT = rz(aTop), zB = rz(aBot);
+        const sT = shade(zT), sB = shade(zB);
+        const yT = ry(aTop), yB = ry(aBot);
+        /* The end faces shade all the way to black and retail still draws them -
+         * that black IS the cap at the top and bottom of each reel window, and
+         * the reason the near half of the cylinder never shows. Don't skip. */
+        const p00 = slotProject(x0, yT, zT), p10 = slotProject(x1, yT, zT);
+        const p01 = slotProject(x0, yB, zB), p11 = slotProject(x1, yB, zB);
+
+        /* Which symbol is on this face: retail walks the strip DOWNWARD from the
+         * current row as the angle advances. */
+        const idx = ((row0 - f) % R.strip_len + R.strip_len) % R.strip_len;
+        const sym = slotArt.symbols[strip[idx]];
+        if (!sym) continue;
+
+        slotTexTri(g, sym, p00, p10, p01, [0, 0], [SYM_PX, 0], [0, SYM_PX]);
+        slotTexTri(g, sym, p10, p11, p01, [SYM_PX, 0], [SYM_PX, SYM_PX], [0, SYM_PX]);
+
+        /* The gouraud depth-cue, as a vertical gradient over the same quad. */
+        g.save();
+        g.beginPath();
+        g.moveTo(p00[0], p00[1]); g.lineTo(p10[0], p10[1]);
+        g.lineTo(p11[0], p11[1]); g.lineTo(p01[0], p01[1]); g.closePath();
+        g.clip();
+        const mT = Math.min(1, sT / R.shade_neutral), mB = Math.min(1, sB / R.shade_neutral);
+        const grad = g.createLinearGradient(0, (p00[1] + p10[1]) / 2, 0, (p01[1] + p11[1]) / 2);
+        const lvl = (m) => `rgb(${Math.round(m * 255)},${Math.round(m * 255)},${Math.round(m * 255)})`;
+        grad.addColorStop(0, lvl(mT));
+        grad.addColorStop(1, lvl(mB));
+        g.globalCompositeOperation = 'multiply';
+        g.fillStyle = grad;
+        g.fill();
+        /* shade > 128 brightens rather than clamping - the payline row is lit. */
+        if (sT > R.shade_neutral || sB > R.shade_neutral) {
+          const bT = Math.max(0, (sT - R.shade_neutral) / R.shade_neutral);
+          const bB = Math.max(0, (sB - R.shade_neutral) / R.shade_neutral);
+          const gb = g.createLinearGradient(0, (p00[1] + p10[1]) / 2, 0, (p01[1] + p11[1]) / 2);
+          gb.addColorStop(0, `rgba(255,255,255,${bT * 0.35})`);
+          gb.addColorStop(1, `rgba(255,255,255,${bB * 0.35})`);
+          g.globalCompositeOperation = 'lighter';
+          g.fillStyle = gb;
+          g.fill();
+        }
+        g.restore();
+      }
+    }
+  }
+
+  /* The 78x13 dot-matrix marquee (FUN_801d0e1c + the FUN_801d069c composer). */
+  function slotDrawMarqueeDots(g, tick) {
+    const D = slotScene.dots;
+    const msg = slotScene.messages[0];     /* the attract legend */
+    if (!msg) return;
+    /* The dots' CLUT column (15) is EMPTY on the disc: retail MoveImages a 16x1
+     * palette from column (tick & 1) into it every frame, which is the marquee's
+     * blink. Sample the source column, or the whole marquee decodes invisible. */
+    const swatch = slotArt.page(D.page, D.blink_palettes[tick & 1]);
+    if (!swatch) return;
+    /* The retail scroller: DAT_801d3ca0 % 0x94 - 0x4a, so the legend sweeps in
+     * from the right and out to the left across a 148-frame cycle. */
+    const sx = (tick % 0x94) - 0x4a;
+    const bits = slotScene.msgBits || (slotScene.msgBits =
+      slotScene.messages.map(m => m.bitmap.split(',').map(Number)));
+    const bm = bits[0];
+    for (let col = 0; col < D.cols; col++) {
+      const mcol = sx + col;
+      if (mcol < 0 || mcol >= msg.w) continue;
+      for (let row = 0; row < D.rows; row++) {
+        const nib = bm[row * msg.w + mcol];
+        if (!nib) continue;                /* unlit */
+        const [px, py] = slotProject(D.x0 + col * D.dx, D.y0 + row * D.dy, D.z);
+        g.drawImage(swatch, nib * D.u_per_nibble, 0, D.size, D.size,
+                    Math.round(px), Math.round(py), 2, 2);
+      }
+    }
+  }
+
+  /* The coin readout, in the machine's own 16px digit font, in the box the
+   * paytable panel leaves empty. Both of these are SCREEN-space draws in retail
+   * too: HUD record 1 (the "COIN" label) is placed at (560, 160) by
+   * FUN_801cfff0, and the digits at (546, 168) by FUN_801d2914 - the only two
+   * things on the machine that don't go through the GTE. Retail zero-pads to 5. */
+  function slotDrawCoins(g, value) {
     if (!slotArt || !slotArt.digits) return;
-    g.drawImage(slotArt.digits, 0, 0, 64, 16, x, y, 64, 16);      /* the "COIN" label */
-    const s = String(Math.max(0, value));
-    let dx = x + 68;
+    g.drawImage(slotArt.digits, 0, 0, 64, 16, 560 - 32, 152 - 8, 64, 16);   /* "COIN" */
+    const s = String(Math.max(0, Math.min(99999, value))).padStart(5, '0');
+    let dx = 560 - (s.length * 16) / 2;
     for (const ch of s) {
       const d = ch.charCodeAt(0) - 48;
-      g.drawImage(slotArt.digits, 64 + d * 16, 0, 16, 16, dx, y, 16, 16);
+      g.drawImage(slotArt.digits, 64 + d * 16, 0, 16, 16, dx, 168 + 2, 16, 16);
       dx += 16;
     }
   }
 
-  /* The retail cabinet, drawn on a 512x256 canvas. */
+  let slotTick = 0;
+
+  /* The retail machine, on its own 640x240 framebuffer. */
   function slotRender(st) {
     const cv = $('slot-canvas'), g = cv.getContext('2d');
     g.imageSmoothingEnabled = false;
-    g.fillStyle = '#0b0b10';
-    g.fillRect(0, 0, 512, 256);
+    g.fillStyle = '#14121a';
+    g.fillRect(0, 0, cv.width, cv.height);
 
-    if (!slotArt) {
-      /* No art on this disc: say so, and show the ids. Never fake a sprite. */
+    if (!slotArt || !slotScene) {
+      /* No art / no scene on this disc: say so, and show the ids. Never fake it. */
       g.fillStyle = '#8a8a99';
       g.font = '12px monospace';
-      g.fillText('art pack (PROT 1200) did not decode - symbol ids only', 14, 20);
+      g.fillText(slotArt ? 'the scene graph (PROT 0975) did not decode - symbol ids only'
+                         : 'art pack (PROT 1200) did not decode - symbol ids only', 14, 20);
       for (let r = 0; r < 3; r++) for (let row = 0; row < 3; row++) {
         g.fillStyle = row === 1 ? '#e8e8f0' : '#6a6a78';
-        g.font = (row === 1 ? 'bold ' : '') + '22px monospace';
-        g.fillText('#' + st.window[r][row], 150 + r * 90, 90 + row * 50);
+        g.font = (row === 1 ? 'bold ' : '') + '20px monospace';
+        g.fillText('#' + st.window[r][row], 190 + r * 90, 90 + row * 45);
       }
       return;
     }
 
-    /* Machine body. Its descriptor sets semi-transparency on, mode 1 - the PSX
-     * "average" blend - so retail composites the cabinet 50/50 over what is
-     * behind it rather than drawing it opaque. Doing the same here is what
-     * settles the texture's dither into the smooth maroon the machine shows. */
-    const c = slotArt.cabinet;
-    if (c) {
-      g.fillStyle = '#7a1f22';
-      g.fillRect(8, 26, 496, 226);
-      g.globalAlpha = 0.5;
-      g.drawImage(c.img, c.rect.u, c.rect.v, c.rect.w, c.rect.h, 8, 26, 496, 226);
-      g.globalAlpha = 1;
-    }
-
-    /* Marquee: the panel, its "Wild Card" legend, and the two mascots flanking
-     * it (one cell of art, two palettes - the same trick as the reel symbols). */
-    const ch = slotArt.chrome, M = CHROME.marquee, MA = CHROME.mascot, WC = CHROME.wildcard;
-    g.drawImage(ch.marquee, M.u, M.v, M.w, M.h, 140, 2, 232, 50);
-    g.drawImage(ch.wildcard, WC.u, WC.v, WC.w, WC.h, 176, 14, 160, 28);
-    g.drawImage(ch.mascotL, MA.u, MA.v, MA.w, MA.h, 96, 0, 54, 54);
-    g.drawImage(ch.mascotR, MA.u, MA.v, MA.w, MA.h, 362, 0, 54, 54);
-
-    /* Three reels. Each window shows the payline row plus the row above and
-     * below - exactly the three rows the win eval reads. Retail fades a row by
-     * its distance from the payline (the gouraud curl in FUN_801d0fa8); the
-     * same fade is applied here with a scrim. */
-    const REEL_W = 64, REEL_H = 150, GAP = 26;
-    const x0 = (512 - (3 * REEL_W + 2 * GAP)) / 2, y0 = 62;
+    const C = slotScene.cells;
     const winLine = (st.phase === 'payout' && st.last && st.last.line != null) ? st.last.line : null;
-    /* payline index 0 = middle row, 1 = top, 2 = bottom. */
-    const winRow = winLine == null ? -1 : (winLine === 0 ? 1 : (winLine === 1 ? 0 : 2));
 
-    for (let r = 0; r < 3; r++) {
-      const rx = x0 + r * (REEL_W + GAP);
-      g.fillStyle = '#c9c9c9';
-      g.fillRect(rx, y0, REEL_W, REEL_H);
-      g.save();
-      g.beginPath(); g.rect(rx, y0, REEL_W, REEL_H); g.clip();
-      for (let row = 0; row < 3; row++) {
-        const sym = slotArt.symbols[st.window[r][row]];
-        const sy = y0 + row * 50 - 7;
-        if (sym) g.drawImage(sym, rx, sy, REEL_W, REEL_H / 3 + 14);
-        if (row !== 1) {                       /* distance-from-payline fade */
-          g.fillStyle = 'rgba(0,0,0,0.28)';
-          g.fillRect(rx, y0 + row * 50, REEL_W, 50);
-        }
-      }
-      if (winRow >= 0) {                       /* the line that paid */
-        g.strokeStyle = '#ffe066'; g.lineWidth = 2;
-        g.strokeRect(rx + 1, y0 + winRow * 50 + 1, REEL_W - 2, 48);
-      }
-      g.restore();
-      g.strokeStyle = '#1a1a1a'; g.lineWidth = 2;
-      g.strokeRect(rx, y0, REEL_W, REEL_H);
+    /* The machine's face, on the ground the cabinet would occupy. This ground is
+     * NOT retail art - the cabinet is the casino room's 3D geometry, not the
+     * overlay's - so it is drawn as a plain neutral field, not a fake cabinet. */
+    g.fillStyle = '#241a1c';
+    const [gx0, gy0] = slotProject(-700, -640, -800);
+    const [gx1, gy1] = slotProject(700, 560, -800);
+    g.fillRect(gx0, gy0 - 12, gx1 - gx0, gy1 - gy0 + 24);
 
-      /* The reel's own stop button, in the machine's own art: reel 0 is Square,
-       * reel 1 Cross, reel 2 Circle (pad bits 0x80 / 0x40 / 0x20). */
-      const MD = CHROME.medallion;
-      /* Dim a reel's button once its stop has been taken - but only while the
-       * reels are actually stopping; an idle machine shows all three lit. */
-      g.globalAlpha = (st.phase === 'stopping' && st.stopped > r) ? 0.35 : 1;
-      g.drawImage(ch.medallion[r], MD.u, MD.v + r * 32, MD.w, MD.h,
-                  rx + (REEL_W - 38) / 2, y0 + REEL_H + 1, 38, 38);
-      g.globalAlpha = 1;
+    /* 1. the reels - furthest back (the cylinders live behind the glass) */
+    slotDrawReels(g, st, api.slot_reel_pos());
+
+    /* 2. the paylines: 3D segments, both endpoints projected */
+    for (let i = 0; i < slotScene.paylines.length; i++) {
+      const l = slotScene.paylines[i];
+      const a = slotProject(l.a[0], l.a[1], l.a[2]);
+      const b = slotProject(l.b[0], l.b[1], l.b[2]);
+      g.strokeStyle = (i === winLine) ? 'rgba(255,255,128,0.95)' : 'rgba(190,190,190,0.35)';
+      g.lineWidth = (i === winLine) ? 2 : 1;
+      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
     }
 
-    slotDrawCoins(g, 14, 228, st.balance);
-  }
+    /* 3. the payline medallions - one cell of art, five palettes (the record's
+     *    own `art` field is the CLUT column) */
+    slotScene.medallions.forEach((m, i) => {
+      const img = slotArt.page(C.medallion_page, (C.medallion_clut_base + m.art) & 0x3F);
+      slotDrawBillboard(g, img, C.medallion, m.pos, C.medallion_half,
+                        i === winLine ? 1 : 0.75);
+    });
 
+    /* 4. the payline lamps on the right - the winning line's lamp lights */
+    slotScene.lamps.forEach((m, i) => {
+      const img = slotArt.page(C.lamp_page, C.lamp_palette);
+      slotDrawBillboard(g, img, i === winLine ? C.lamp_lit : C.lamp_unlit,
+                        m.pos, C.lamp_half);
+    });
+
+    /* 5. the reel-stop pedestals. Once a reel's stop is taken, BOTH the palette
+     *    and the cell's U swap (the V stays on the pedestal's own row - the stop
+     *    branch of FUN_801d08e4 overrides only the Us). That swap is how retail
+     *    shows a taken stop. */
+    slotScene.pedestals.forEach((p, r) => {
+      const stopped = (st.phase === 'stopping' || st.phase === 'payout') && st.stopped > r;
+      const pal = (stopped ? C.pedestal_clut_stopped : C.pedestal_clut_spinning) + r;
+      const img = slotArt.page(C.pedestal_page, pal & 0x3F);
+      const cell = (stopped ? C.pedestal_cells_stopped : C.pedestal_cells)[r];
+      slotDrawBillboard(g, img, cell, p.pos, C.pedestal_half);
+    });
+
+    /* 6. the marquee panel + the two mascots flanking it */
+    slotScene.marquee.forEach((m) => {
+      const img = slotArt.page(C.marquee_page, m.clut);
+      slotDrawBillboard(g, img, m.cell, m.pos, m.half);
+    });
+
+    /* 7. the dot-matrix legend, over the panel */
+    slotDrawMarqueeDots(g, slotTick);
+
+    /* 8. the paytable board + the coin readout (the only screen-space draws the
+     *    retail machine makes - FUN_801d2cc0 writes their XY directly) */
+    if (slotArt.panel) g.drawImage(slotArt.panel, 560 - 63, 128 - 119);
+    slotDrawCoins(g, st.balance);
+  }
   let slotPrev = { stopped: 0, phase: '', feature: 0, payout: -1 };
 
   function slotFrame() {
     const st = JSON.parse(api.slot_state_json());
     if (!st.live) return;
     api.slot_tick();
+    slotTick++;
     slotRender(st);
 
     /* Cue the machine's own sounds off the state transitions the retail SM

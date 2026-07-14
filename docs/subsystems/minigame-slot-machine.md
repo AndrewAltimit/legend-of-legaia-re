@@ -1,6 +1,8 @@
 # Casino slot machine
 
-The casino's slot-machine minigame: three reels of pictographic symbols, a flat 3-coin spin played across all three paylines, a per-spin win evaluation against a payout table, and a running coin balance the player can cash back out to the casino coin bank. It lives in the minigame-hub overlay (the binary shared with fishing / Baka Fighter / dance), so the locomotion, sprite, actor-VM and SDK helpers it leans on are documented elsewhere - this page covers only the slot-specific logic.
+The casino's slot-machine minigame: three reels of pictographic symbols, a flat 3-coin spin played across **five** paylines (three straight, two diagonal), a per-spin win evaluation against a payout table, and a running coin balance the player can cash back out to the casino coin bank. It lives in the minigame-hub overlay (the binary shared with fishing / Baka Fighter / dance), so the locomotion, sprite, actor-VM and SDK helpers it leans on are documented elsewhere - this page covers only the slot-specific logic.
+
+**The machine is a 3D scene.** Not a sprite collage: the reels are textured cylinders, the paylines are 3D line segments, and the medallions / lamps / pedestals / marquee are billboards - all projected through the GTE and depth-sorted into the ordering table. See [Rendering - a 3D scene](#rendering---a-3d-scene) below.
 
 **This is the slot *gameplay*, not the prize exchange.** Cashing casino coins for items is a separate static table (`DAT_801e4518` / PROT 899, debiting `_DAT_800845A4`'s sibling coin counter) covered by the randomizer's `casino::CasinoExchange`. The slot machine pays out *into* the coin balance; the exchange spends it.
 
@@ -21,7 +23,7 @@ The machine is a single per-frame handler, `FUN_801cf0d8` (`overlay_slot_machine
 | `0x5a` | **not-enough-coins** prompt (reached from state `1` when `DAT_801d4114 < 3`) |
 | `100` | **commit + exit**: fades out, writes `_DAT_800845A4 = DAT_801d4114`, returns to the casino field |
 
-The tail of `FUN_801cf0d8` (after the switch) always advances the three reel positions, redraws the visible symbols via `FUN_801d0fa8`, and refreshes the marquee/HUD. There is **no bet-line selection anywhere in the machine** - every spin plays all three paylines for the flat cost (the earlier "bet-line selector" reading of `DAT_801d4110` conflated it with the cash-out submenu cursor, which is that word's only role).
+The tail of `FUN_801cf0d8` (after the switch) always advances the three reel positions, redraws the visible symbols via `FUN_801d0fa8`, and refreshes the marquee/HUD. There is **no bet-line selection anywhere in the machine** - every spin plays all five paylines for the flat cost (the earlier "bet-line selector" reading of `DAT_801d4110` conflated it with the cash-out submenu cursor, which is that word's only role).
 
 ### Entry init - `FUN_801cec94`
 
@@ -51,7 +53,7 @@ The reel-symbol quads are drawn by `FUN_801d0fa8` with **arithmetic UVs from the
 | `+0x10` | `u8 r2, g2, b2` far-edge shade |
 | `+0x13` | `u8` semi-transparency mode (0..3, into tpage bits 5-6) |
 
-Record 0 is the 128x240 reel-window backdrop panel (the cabinet), record 1 the 64x16 **"COIN" label** (the cell immediately left of digit `0` on the `0x0C` page - not a marquee), record 2 the 16x16 cash-out-cursor arrow (`FUN_801cf0d8` state `0x32` positions it at `DAT_801d4110 * 0x10 + 0x6C`). Immediately after the third record (`0x801D34B8`) the region becomes a **14-entry pointer table** - the attract-mode instruction-text lines, pointing at the string block at the head of the overlay ("To spin the wheels, insert 3 coins by pressing the ... buttons", the earlier "transitions into a pointer array" observation).
+Record 0 is the 127x239 **paytable board** on the right of the machine (8bpp - see [the screen-space draws](#the-two-screen-space-draws---fun_801d2cc0)), record 1 the 64x16 **"COIN" label** (the cell immediately left of digit `0` on the `0x0C` page - not a marquee), record 2 the 16x16 cash-out-cursor arrow (`FUN_801cf0d8` state `0x32` positions it at `DAT_801d4110 * 0x10 + 0x6C`). Immediately after the third record (`0x801D34B8`) the region becomes a **14-entry pointer table** - the attract-mode instruction-text lines, pointing at the string block at the head of the overlay ("To spin the wheels, insert 3 coins by pressing the ... buttons", the earlier "transitions into a pointer array" observation).
 
 ## RNG
 
@@ -90,13 +92,25 @@ plus a final flat `widen + 600` roll for mode 3. Exactly `1000` or `2000` falls 
 
 After all three reels stop, `FUN_801d13e8` (`overlay_slot_machine_801d13e8.txt`) evaluates the win. **Confirmed** structure:
 
-1. For each of the three diagonal/straight paylines it reads the three on-screen symbols (display strip `DAT_801d3d50` at the per-reel `±` row offsets) and checks all-three-equal. It keeps the **highest-value matching line** (`DAT_801d3d34` = winning symbol id, `DAT_801d3c8c` = winning line index for the highlight).
+1. For each of the **five** paylines it reads the three on-screen symbols (display strip `DAT_801d3d50` at the per-reel row offsets below) and checks all-three-equal. It keeps the **highest-value matching line** (`DAT_801d3d34` = winning symbol id, `DAT_801d3c8c` = winning line index, which is also the medallion / lamp the machine lights).
+
+   The absolute row reads are `+0x11 / +0x10 / +0x0F` from `(pos >> 8)`; the centre row is `+0x10`, so relative to it:
+
+   | line | reel 0 | reel 1 | reel 2 | on screen |
+   |---|---|---|---|---|
+   | 0 | `+1` | `+1` | `+1` | top row |
+   | 1 | `0` | `0` | `0` | middle row (the payline proper) |
+   | 2 | `-1` | `-1` | `-1` | bottom row |
+   | 3 | `-1` | `0` | `+1` | diagonal, bottom-left to top-right |
+   | 4 | `+1` | `0` | `-1` | diagonal, top-left to bottom-right |
+
+   The line index doubles as the medallion / lamp index, and lines 3 / 4 terminate on the `y = ±336` medallions - exactly where the two diagonal segments in the payline geometry table end.
 2. If a line wins, the credited amount is `DAT_801d3d38 = payout_table[winning_symbol]`, read as a byte from a table at `DAT_801d3598` indexed by symbol id (so payout scales with symbol rarity). **Inferred** values (not reproduced).
 3. Symbol ids `8` and `9` are the **bonus/jackpot symbols**: matching them sets `DAT_801d3cac` to feature mode `6` and seeds a free-spin / multiplier counter `DAT_801d3cb0` (3 spins for id 9, 1 for id 8), kicking off the bonus round and a celebratory actor (`func_0x800653c8`).
 4. During an active feature (`DAT_801d3d30 != 0`) the payout is instead the **product** of the three payline symbols' `(value - 0xf)` factors - computed **unconditionally**, with no all-equal check (the mode-6 stop plan drives the line together, and every bonus spin pays *something*). The multiplier counter decrements and the payout is **subtracted from the net-take counter** `DAT_801d3d40` (`DAT_801d3d40 -= DAT_801d3d38` - a big bonus win knocks the feature odds back down); when the counter hits zero the feature ends.
 5. In feature mode 3 a `rand % 0x96 == 0` roll can spontaneously clear the feature.
 
-`FUN_801d1af4` (`overlay_slot_machine_801d1af4.txt`) is the **bonus-symbol scanner** run while reels are still settling (state 3): it sweeps the same three paylines looking specifically for adjacent `8`/`9` symbols under the active-line masks (`DAT_801d3d10`/`14`/`18`) and, on the first sighting, fires the bonus-anticipation effect (`DAT_801d3ca4`/`DAT_801d3ca8` latches + `_DAT_8007b6dc = 0x200` SFX cue). It sets no payout - it only triggers the "reach" presentation. **Confirmed.**
+`FUN_801d1af4` (`overlay_slot_machine_801d1af4.txt`) is the **bonus-symbol scanner** run while reels are still settling (state 3): it sweeps the same paylines looking specifically for adjacent `8`/`9` symbols under the active-line masks (`DAT_801d3d10`/`14`/`18`) and, on the first sighting, fires the bonus-anticipation effect (`DAT_801d3ca4`/`DAT_801d3ca8` latches + `_DAT_8007b6dc = 0x200` SFX cue). It sets no payout - it only triggers the "reach" presentation. **Confirmed.**
 
 ## Coin economy
 
@@ -109,7 +123,7 @@ The casino coin bank is the global `_DAT_800845A4` (u32). The slot machine touch
 
 This is why the "Infinite Coins" cheat (`0x800845A4 = 0x05F5E0FF`, see [`cheats.md`](../reference/cheats.md)) works at the casino but does **not** make individual spins free: per-spin betting decrements the *overlay-local* `DAT_801d4114` (loaded from the bank when the machine opens). The cheat-database pointer noted "near `0x801d3cac`" lands in this overlay's state block - `DAT_801d3cac` is the **feature mode**, and the surrounding `0x801d3c80..0x801d4134` window holds the RNG seed, reel positions, state word, balance, submenu cursor and payout counters described in the table below. **Confirmed** address window from the disassembly; the specific cheat-pointer semantics are **Inferred**.
 
-Per-spin betting (**Confirmed**, state `1` of `FUN_801cf0d8`): every spin is a **flat charge** - `DAT_801d4114 -= 3` in the normal modes 0..3 (the overlay's "insert 3 coins" instruction text), `-= 1` in the feature modes 4..6 (so a bonus "free spin" actually costs 1 coin). The same branch accrues the net-take counter: `DAT_801d3d40 += 6` per normal spin, `+= 1` per feature spin. The `< 3` not-enough gate runs before the mode check, so even a 1-coin feature spin needs 3 banked. All three paylines play on every spin - the per-reel line masks `DAT_801d3d10/14/18` are match bookkeeping the win eval and the reach scanner fill at stop time, not player bet selections, and `DAT_801d4110` is the cash-out submenu cursor (its only role).
+Per-spin betting (**Confirmed**, state `1` of `FUN_801cf0d8`): every spin is a **flat charge** - `DAT_801d4114 -= 3` in the normal modes 0..3 (the overlay's "insert 3 coins" instruction text), `-= 1` in the feature modes 4..6 (so a bonus "free spin" actually costs 1 coin). The same branch accrues the net-take counter: `DAT_801d3d40 += 6` per normal spin, `+= 1` per feature spin. The `< 3` not-enough gate runs before the mode check, so even a 1-coin feature spin needs 3 banked. All five paylines play on every spin - the per-reel line masks `DAT_801d3d10/14/18` are match bookkeeping the win eval and the reach scanner fill at stop time, not player bet selections, and `DAT_801d4110` is the cash-out submenu cursor (its only role).
 
 Session entry (**Confirmed**, `FUN_801cec94` - see the init section above): `DAT_801d4114 = _DAT_800845A4`, with the 70-coin dev fallback when the battle-return flag is clear. So the bank round-trips by assignment on both ends: copied in at entry, assigned back at the state-`100` commit.
 
@@ -174,7 +188,16 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 | `FUN_801d13e8` | win evaluation + payout-table lookup + bonus trigger - `overlay_slot_machine_801d13e8.txt` |
 | `FUN_801d1af4` | bonus-symbol "reach" scanner (presentation only) - `overlay_slot_machine_801d1af4.txt` |
 | `FUN_801d2cc0` | HUD widget sprite-quad rasteriser (3-record descriptor table `DAT_801d347c`) - `overlay_slot_machine_801d2cc0.txt` |
-| `FUN_801d0fa8` | reel-column renderer: arithmetic symbol UVs, per-symbol row-490/491 CLUTs, distance shading - `overlay_slot_machine_801d0fa8.txt` |
+| `FUN_801d0fa8` | **reel cylinder** renderer: trig-table `y`/`z`, `RotTransPers4` quads, arithmetic symbol UVs, per-symbol row-490/491 CLUTs, depth-cue shade - `overlay_slot_machine_801d0fa8.txt` |
+| `FUN_801d08e4` | the **billboard pass**: medallions, lamps, reel-stop pedestals, marquee panel + mascots - `overlay_slot_machine_801d08e4.txt` |
+| `FUN_801d3380` | the **5 paylines** as `RTPS`-projected 3D line segments - `overlay_slot_machine_801d3380.txt` |
+| `FUN_801d0e1c` | the **dot-matrix marquee**: 78x13 individually projected 2x2 sprites - `overlay_slot_machine_801d0e1c.txt` |
+| `FUN_801d069c` | marquee dot-buffer composer (scrolling blit; `msg < 0` clears) - `overlay_slot_machine_801d069c.txt` |
+| `FUN_801d3230` | marquee dot-buffer blit at a `(col, row)` - `overlay_slot_machine_801d3230.txt` |
+| `FUN_801d2914` | coin-readout digit renderer (screen space) - `overlay_slot_machine_801d2914.txt` |
+| `FUN_800172c0` | the per-frame **scene camera** the machine's 3D emits project through (SCUS) |
+| `FUN_800195a8` | the **billboard projector** (SCUS): view-space centre + half-extent -> projected quad |
+| `FUN_8005bac8` / `FUN_8003d368` | `RotTransPers4` / `RTPS` (SCUS GTE wrappers) |
 | `FUN_801e6f70` | coin HUD render: reads `_DAT_800845A4` + record - `overlay_slot_machine_801e6f70.txt` |
 
 The overlay is **extraction PROT 975** (dev module `other4`), loaded by the **mode-24 minigame
@@ -197,13 +220,175 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 - the net-take-bracketed feature roll (`feature_roll`; `FUN_801d258c`, exact draw order + bracket edges);
 - the flat spin charge + net-take accrual (3/+6 normal, 1/+1 feature);
 - the per-mode stop plan + landing search (`stop_plan` / `land_row`; `FUN_801d2114` / `FUN_801d2440`);
-- the payline / payout / bonus-round evaluation with the bonus product subtracted from the net take (`SlotMachine::evaluate_spin`, payout via [`legaia_asset::slot_payout`]; `FUN_801d13e8`);
+- the **five**-payline / payout / bonus-round evaluation with the bonus product subtracted from the net take (`SlotMachine::evaluate_spin`, per-reel row offsets from [`legaia_asset::minigame_slot_scene`], payout via [`legaia_asset::slot_payout`]; `FUN_801d13e8`);
 - the entry constants (`ENTRY_DEFAULT_BALANCE` = 70, `ENTRY_LCG_SEED` = `0x6C0A2AF0`; `FUN_801cec94`);
 - the coin economy (balance seeded from the bank, `9999999` tally cap, cash-out **assignment** back into the bank).
 
 The engine-side reconstructions (each marked at its site): the spin-up pacing constants, the BIOS-`rand` stream substituted with a deterministic LCG, feature modes 3/5 folded to the normal landing plan, and the bonus product computed as `symbol + 1` over the normal strip in place of the bonus strip's `value - 0xf`.
 
 Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::casino_coins` = `_DAT_800845A4`). The `play-window` viewer starts it from the `O` key (loads PROT 0975, `slot_payout::parse`); Cross spins / stops / collects. Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
+
+## Rendering - a 3D scene
+
+The machine is **not** a sprite collage. Every element on its face is a quad in a
+3D scene, projected through the GTE and depth-sorted into the ordering table. The
+slot overlay contains **no `cop2` instruction of its own** - it reaches the GTE
+entirely through the SCUS wrappers - so a sweep for GTE ops inside the overlay
+reports the machine as 2D. It is not. The wrappers it goes through:
+
+| SCUS | GTE op | Role |
+|---|---|---|
+| `FUN_8003d368` | `cop2 0x180001` = **RTPS** | project one vertex (`VXY0`/`VZ0` in, `SXY2` out) |
+| `FUN_8005bac8` | `RTPT` + `RTPS` | project a 4-vertex quad (`RotTransPers4`) |
+| `FUN_800195a8` | via `8003d344` (`MVMVA`) + `8005bac8` | the **billboard projector**: transform a 3D centre into view space, build four corners around it at a view-space half-extent, project |
+| `FUN_800172c0` | matrix compose + `SetRotMatrix` / `SetTransMatrix` | the per-frame scene camera |
+
+### The camera
+
+`FUN_800172c0` runs every frame before the machine's 3D emits. The init clears
+the camera rotation `_DAT_8007b790` to zero and writes the scale matrix
+`_DAT_8007bf10` as `diag(0x6000, 0x3000, 0x3000)` = `diag(6, 3, 3)` in 4.12 fixed
+point. Identity rotation is what makes the machine face the camera head-on; the
+2:1 x:y scale is the **640-wide hi-res video mode's** pixel aspect (the init sets
+mode `0x280` = 640, so horizontal pixels are half-width). The projection distance
+`_DAT_8007b6f4` is set to `0x400`.
+
+**`-z` is toward the viewer.** The *glass* (paylines, medallions, lamps,
+pedestals, marquee) sits at `z = -768` / `-800`; the reel cylinders are centred on
+`z = 0` with the symbol on the payline at `z = -512` - i.e. **behind** the glass.
+
+### The reels are cylinders - `FUN_801d0fa8`
+
+Each reel emits 8 `POLY_GT4` faces per frame. A face spanning reel angles `a` and
+`a + 0x100` has corners
+
+```
+(x,            y(a),     z(a)   )   (x + 0x100,  y(a),     z(a)   )
+(x,            y(a+100), z(a+100))   (x + 0x100,  y(a+100), z(a+100))
+```
+
+with `y(a) = (sin(a) * -0x249) >> 12` and `z(a) = cos(a) >> 3` - the SCUS sine /
+cosine tables (4096-entry, amplitude `0x1000`, reached through the pointers
+`_DAT_8007b81c` / `_DAT_8007b7f8`; the tables themselves live at SCUS
+`0x80070A2C` / `0x8007122C`). So the reel is an ellipse of radius 585 in `y` and
+512 in `z`: **a cylinder**, and the four corners go through `RotTransPers4`. The
+symbols curl away from the payline because the cylinder does.
+
+Reel `r` spans `x = -0x200 + r * 0x180` to `+ 0x100` (`FUN_801cf0d8`'s render
+tail). The first face's angle is `0x380 + (pos & 0xFF)` - the low byte of the reel
+position is the **sub-symbol fraction**, and it is what rotates the cylinder
+between symbols.
+
+The gouraud shade is depth-cued off `z`:
+
+```
+shade = clamp(0xB4 - ((z + 0x200) * 0x21C >> 9), 0, 0xB4)
+```
+
+and the `POLY_GT4` blend is `texel * shade / 128`, so the shade peaks (a 1.41x
+**brighten**, not a clamp) exactly at `z = -0x200 = -512` - the payline face - and
+falls to black within ~48 degrees either side. That fade is what caps each reel
+window top and bottom, and what hides the near half of the cylinder: there is no
+backface cull, the near half is simply shaded to black.
+
+### The paylines are 3D lines - `FUN_801d3380`
+
+Five `LINE_F2` prims, each of whose two endpoints is `RTPS`-projected on its own.
+The geometry is the 5 x 16-byte table `DAT_801d3680` (`[SVECTOR a, SVECTOR b]`),
+all at `z = -768`, `x` from `-640` to `+640`: three horizontal at `y = -192 / 0 /
++192` and two diagonals crossing at `y = ±320`. The winning line (`DAT_801d3c8c`)
+is drawn bright.
+
+### The furniture is billboards - `FUN_801d08e4`
+
+Four passes, each through `FUN_800195a8`. All the geometry is disc data, in four
+tables that **tile contiguously** from file offset `0x4E68` to `0x4F38` (PROT 0975;
+the overlay's load base is `0x801C_E818`, so `file = VA - 0x801C_E818`):
+
+| Table | VA | File | Records | Draws |
+|---|---|---|---|---|
+| paylines | `DAT_801d3680` | `0x4E68` | 5 x 16B | the 5 line segments (above) |
+| medallions | `DAT_801d36d0` | `0x4EB8` | 5 x 8B | the payline medallions down the **left** |
+| lamps | `DAT_801d36f8` | `0x4EE0` | 5 x 8B | the payline lamps down the **right** |
+| marquee | `DAT_801d3720` | `0x4F08` | 3 x 16B | the marquee panel + the two mascots |
+
+- **Medallions** (`SVECTOR pos`, whose `pad` word is the CLUT column): page
+  `0x0C`, cell `uv (0xA8, 0x80)` 32x32, CLUT `0x7A80 + art`, view-space half
+  `0x1A0 x 0xD0`. One cell of artwork recoloured five ways; the column is
+  symmetric (`2, 1, 0, 1, 2` top to bottom), and each medallion's `y` is its
+  payline's `y`.
+- **Lamps**: page `0x1C`, CLUT `0x7B09`, half `0xB4 x 0xA0`; unlit cell
+  `uv (0x10, 0xE0)` 16x16, lit cell `uv (0, 0xE0)` - the winning line's lamp
+  lights.
+- **Reel-stop pedestals** (positions computed, not tabled: `x = -0x180 + r *
+  0x180`, `y = 0x1E0`, `z = -800`): page `0x1C`, half `0x230 x 0x120`, 32x32 cell
+  on row `v = 0x80 + r * 0x20`. While the reel spins it draws `u = 0x60` with CLUT
+  `0x7B03 + r`; once the reel is stopped the palette swaps to `0x7B06 + r` **and
+  the cell slides left to `u = 0`** - the stop branch overrides only the `U`s, so
+  the pedestal stays on its own row. That swap is how retail shows a taken stop.
+- **Marquee panel + mascots**: page `0x1C`, CLUT `0x7B00 + clut_off`; each record
+  carries its own view-space half-extent and its own texture cell. The panel's
+  interior is palette index 0 - **transparent**: the navy behind the legend is the
+  cabinet's, not the panel's.
+
+### The marquee is a dot-matrix display - `FUN_801d0e1c`
+
+A **78 x 13 grid of individually projected 2x2 sprites** - 1014 of them, one
+`RTPS` each, at `(-0x1AD + col * 0xB, -0x280 + row * 0xC, -800)`. Each dot samples
+page 3 at `(u, 0)` where `u` is its byte in the dot buffer `DAT_801d37a0`
+(`buf[col * 0x10 + row]`), and the buffer holds `nibble << 2` - so a nibble `n`
+picks the lamp swatch at page-3 `u = n * 4`. Nibble `0` is an unlit dot.
+
+The dots' CLUT is `0x7B4F` (row 493, **column 15**) - and that column is **empty
+on the disc**. The reel SM `MoveImage`s a 16x1 palette from `((tick & 1) * 16,
+493)` into it every frame: the marquee **blinks** between page 3's CLUT columns 0
+and 1. Decoding column 15 straight off the disc yields a fully transparent,
+invisible marquee.
+
+The buffer's content is a **message bank**: 21 records at `DAT_801d34f0` (file
+`0x4CD8`, 8-byte stride `[u8 u, u8 v, u8 w, u8 h, u32 runtime_ptr]`), every one 13
+rows tall, laid out on page 3 at `v = 16..144`. `FUN_801CEC94` `StoreImage`s each
+rect back out of VRAM and expands its nibbles into a byte-per-texel bitmap;
+`FUN_801d069c` (scrolling blit, `msg < 0` clears) and `FUN_801d3230` (blit at a
+`(col, row)`) compose them into the dot buffer. The bank is the attract legend,
+two more messages, the ten digits, and a handful of glyphs.
+
+### The two screen-space draws - `FUN_801d2cc0`
+
+The **only** things on the machine that do not go through the GTE. The 3-record
+descriptor table `DAT_801d347c` (file `0x4C64`, 20-byte stride) is rasterised at a
+caller-supplied pixel position:
+
+| Rec | Drawn at | Cell | Role |
+|---|---|---|---|
+| 0 | screen `(560, 128)` | page `(640, 0)`, `uv (0, 16)`, 127x239 | the **paytable board** on the right ("x30 back" / "x9 back" / "Bonus games", with the coin box under it) |
+| 1 | screen `(560, 160)` | page `(768, 0)`, `uv (0, 192)`, 64x16 | the **"COIN"** label |
+| 2 | screen `(0xDC, cursor * 0x10 + 0x6C)` | page `(832, 256)`, `uv (96, 160)`, 16x16 | the cash-out cursor |
+
+Record 0's page is sampled **8bpp** - its texpage attribute `0x8A` has the GPU's
+8-bit colour bit set, so the 64-halfword-wide block is 128 texels across and its
+CLUT is one 256-entry palette. The TIM header declares 4bpp; decoding it as the
+header claims yields noise.
+
+The coin digits are `FUN_801d2914` at screen `(546, 168)`: `U = 0x40 + digit *
+0x10`, `V = 0xC0`, 16x16, CLUT `0x7A8D`, zero-padded to 5.
+
+Parser [`legaia_asset::minigame_slot_scene`]; art [`legaia_asset::minigame_art`].
+
+### The projection
+
+The scene's screen mapping on the retail 640x240 framebuffer. Its **shape** is
+derived - a perspective divide of a view-space point whose x:y scale ratio is
+exactly 2, read out of the camera matrix. Its four **scalars** are *fitted* to a
+retail framebuffer captured at the machine (the `minigame_slot_machine` capture),
+because the GTE control words (`OFX` / `OFY` / `H`) live in COP2, not in main RAM,
+and so are not in a save state.
+
+The fit is over-determined and independently checked: it was solved on the five
+payline lamps alone, and then **predicted** - to about a pixel each - the
+on-screen rect of every other element, none of which entered the fit (the
+medallion column, the marquee panel, the two mascots, the three reel windows, the
+reel-stop pedestals, and the dot-matrix grid).
 
 ## Art pack (PROT 1200)
 
@@ -216,11 +401,16 @@ the per-page fb-coordinate question:
 
 | pack | image fb | CLUT row | texpage attr | role |
 |---|---|---|---|---|
-| 0 | `(768, 0)` | 490 | `0x0C` | reel symbols + digit font + prompts |
+| 0 | `(768, 0)` | 490 | `0x0C` | reel symbols + digit font + the payline medallion |
 | 1 | `(832, 0)` | 491 | `0x0D` | bonus-strip multiplier numerals (1..10) |
-| 2 | `(768, 256)` | 492 | `0x1C` | marquee panel, mascots, reel-stop medallions |
-| 3 | `(832, 256)` | 493 | `0x1D` | banner text ("Bonus Game", "One more!") + cursor |
-| 4 | `(640, 0)` | 494 | `0x8A` | the cabinet |
+| 2 | `(768, 256)` | 492 | `0x1C` | marquee panel, mascots, reel-stop pedestals, payline lamps |
+| 3 | `(832, 256)` | 493 | `0x1D` | dot-matrix message bank + the marquee's lamp swatches + cursor |
+| 4 | `(640, 0)` | 494 | `0x8A` | the paytable / coin info panel - sampled **8bpp** |
+
+Page 4 is **not the cabinet** (see [Open](#open)): it is the paytable board the
+HUD rasteriser draws on the right of the machine, and its texpage attribute has
+the GPU's 8-bit colour bit set, so it is 128 texels wide with one 256-entry
+palette - not the 4bpp its TIM header declares.
 
 Every image block is **byte-identical to a retail VRAM dump** taken at the machine
 (`minigame_slot_machine` capture), so `texpage 0x0C = (768,0)` / `0x0D = (832,0)`
@@ -237,12 +427,15 @@ Sprite geometry, all Confirmed:
 - **Digit font** - `FUN_801d2914`: `U = 0x40 + digit * 0x10`, `V = 0xC0`, 16x16
   per glyph, CLUT `0x7A8D`. The 64x16 cell at `(0, 0xC0)` is the **"COIN"** label -
   which is what HUD record 1 (below) actually points at.
-- **HUD widgets** - the 3 records of `DAT_801d347c` resolve to the cabinet panel
-  (`(640,0)` page, CLUT row 494, `uv (0,16)`, `127x239`), the **"COIN" label**
-  (not a "marquee" - `(768,0)` page, CLUT `0x7A8D`, `uv (0,192)`, `64x16`) and the
-  cash-out cursor (`(832,256)` page, `uv (96,160)`, `16x16`).
+- **HUD widgets** - the 3 records of `DAT_801d347c` resolve to the **paytable
+  board** (`(640,0)` page, CLUT row 494, `uv (0,16)`, `127x239`, 8bpp), the
+  **"COIN" label** (`(768,0)` page, CLUT `0x7A8D`, `uv (0,192)`, `64x16`) and the
+  cash-out cursor (`(832,256)` page, `uv (96,160)`, `16x16`). These three are the
+  machine's only screen-space draws - see
+  [The two screen-space draws](#the-two-screen-space-draws---fun_801d2cc0).
 
-Parser [`legaia_asset::minigame_art`].
+Parser [`legaia_asset::minigame_art`]; the machine's *geometry* is
+[`legaia_asset::minigame_slot_scene`].
 
 ## Sound
 
@@ -275,9 +468,15 @@ The slot machine starts **no BGM** - it inherits the host scene's. Parser
   and every library capture reaches the minigame through a debug warp from
   `town01`, so the inherited track in those states is Rim Elm's, not the casino's.
   Pinning it needs a capture taken by walking into the Sol casino.
-- The marquee panel, the mascot heads and the reel-stop medallions are on pack
-  page 2 but their on-screen rects are not traced to an emitter (the 3-record HUD
-  table does not cover them).
+- The machine's **cabinet** - the grey body and the dark-red face the reels sit in
+  - is not the slot overlay's to draw. It is in neither the art pack nor any prim
+  the overlay emits: no slot function emits a large untextured quad or a body
+  mesh, no slot art page holds cabinet art, and the live prim pool at the machine
+  carries ~950 `POLY_FT4` + several hundred gouraud prims per frame that no slot
+  function accounts for. The cabinet is the **casino room's own 3D geometry**
+  (the `koin1`..`koin6` scene bundles), rendered by the shared scene renderer
+  behind the layer the overlay owns, under the same camera. Which `koin*` bundle
+  carries the machine mesh is not yet pinned.
 
 ## See also
 

@@ -651,14 +651,10 @@ export class LegaiaMinigames {
         return v1;
     }
     /**
-     * A whole 256x256 art page decoded through one of its 16 palettes, as
-     * RGBA8. The escape hatch for the machine's *chrome* - the marquee panel,
-     * the mascot heads, the reel-stop button medallions - whose on-screen rects
-     * this port crops from the decoded page rather than tracing to an emitter
-     * (unlike the reel symbols / digits / cabinet / cursor above, which are
-     * traced). Page indices follow the pack order documented on
-     * [`legaia_asset::minigame_art`]: `2` = chrome, `3` = banner text,
-     * `4` = cabinet.
+     * A whole art page decoded through one of its 16 palettes, as RGBA8. Every
+     * on-screen rect the machine draws is traced to its emitter, so a caller
+     * pairs this with the cells in [`Self::slot_scene_json`] rather than
+     * cropping by eye. Pages 0..=3 are 256x256; page 4 is 512x256.
      * @param {number} page
      * @param {number} palette
      * @returns {Uint8Array}
@@ -668,6 +664,95 @@ export class LegaiaMinigames {
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
+    }
+    /**
+     * Pixel width of art page `page` (`0` when the pack didn't decode).
+     * @param {number} page
+     * @returns {number}
+     */
+    slot_page_width(page) {
+        const ret = wasm.legaiaminigames_slot_page_width(this.__wbg_ptr, page);
+        return ret >>> 0;
+    }
+    /**
+     * The machine's **paytable / coin info panel** - HUD record 0, the 127x239
+     * board `FUN_801cfff0` draws at screen `(560, 128)` ("x30 back", "x9 back",
+     * "Bonus games", with the coin readout under it). RGBA8.
+     *
+     * It has its own entry point because its page is sampled as **8bpp** (the
+     * texpage attribute's colour bit), not the 4bpp its TIM header declares -
+     * decoding it as the header claims yields noise.
+     * @returns {Uint8Array}
+     */
+    slot_panel_rgba() {
+        const ret = wasm.legaiaminigames_slot_panel_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * The live reel positions (`DAT_801d3cc0`) - fixed-point angles whose high
+     * byte is the strip row and whose low byte is the sub-symbol fraction. The
+     * renderer needs the fraction: the reel is a 3D cylinder and the fraction is
+     * what rotates it between symbols.
+     * @returns {Int32Array}
+     */
+    slot_reel_pos() {
+        const ret = wasm.legaiaminigames_slot_reel_pos(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The slot machine's **3D scene**, as the overlay's own rodata defines it,
+     * plus the projection that puts it on the retail 640x240 framebuffer.
+     *
+     * The retail machine is not a sprite collage: every element is a quad in a
+     * 3D scene projected through the GTE (see
+     * [`legaia_asset::minigame_slot_scene`]). This hands the page the same
+     * scene graph, in model space, so it can project it itself:
+     *
+     * ```json
+     * { "proj": { "ofx": 253, "ofy": 118.5, "z0": 9324, "sx0": 0.2547,
+     *             "aspect": 2, "xscale": 6, "w": 640, "h": 240 },
+     *   "paylines":  [ { "a":[-640,-192,-768], "b":[640,-192,-768] }, ... ],
+     *   "row_offsets": [[1,1,1],[0,0,0],[-1,-1,-1],[-1,0,1],[1,0,-1]],
+     *   "medallions":[ { "pos":[-602,-192,-800], "art":1 }, ... ],
+     *   "lamps":     [ { "pos":[632,-192,-800] }, ... ],
+     *   "pedestals": [ { "pos":[-384,480,-800] }, ... ],
+     *   "marquee":   [ { "pos":[-554,-560,-800], "clut":0, "half":[1024,320],
+     *                    "cell":[0,0,64,64] }, ... ],
+     *   "reels":     { "x":[-512,-128,256], "w":256, "faces":8,
+     *                  "angle_base":896, "angle_step":256 },
+     *   "cells": { "medallion":[168,128,32,32], "lamp_lit":[0,224,16,16], ... },
+     *   "dots":  { "cols":78, "rows":13, "x0":-429, "y0":-640, "dx":11, "dy":12,
+     *              "z":-800, "page":3, "blink_palettes":[0,1], "u_per_nibble":4 },
+     *   "messages": [ { "w":84, "h":13, "bitmap":"0,0,1,..." }, ... ] }
+     * ```
+     *
+     * `messages` are the dot-matrix marquee's 21 bitmaps, one palette *nibble*
+     * per dot (`0` = unlit); `bitmap` is a comma-separated row-major run.
+     * @returns {string}
+     */
+    slot_scene_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_slot_scene_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Whether the machine's 3D scene graph decoded off this disc.
+     * @returns {boolean}
+     */
+    slot_scene_ready() {
+        const ret = wasm.legaiaminigames_slot_scene_ready(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * The retail cue ids, so the page never has to hard-code a number:
@@ -787,6 +872,17 @@ export class LegaiaMinigames {
     slot_stop() {
         const ret = wasm.legaiaminigames_slot_stop(this.__wbg_ptr);
         return ret !== 0;
+    }
+    /**
+     * The 20-symbol display strip of `reel`, as the renderer reads it.
+     * @param {number} reel
+     * @returns {Uint8Array}
+     */
+    slot_strip(reel) {
+        const ret = wasm.legaiaminigames_slot_strip(this.__wbg_ptr, reel);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
     /**
      * One reel symbol (`0..=9`) as a 64x64 RGBA8 buffer, at the exact cell and

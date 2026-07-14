@@ -3,7 +3,9 @@
 //! The three playable minigame rules engines ([`crate::slot_payout`],
 //! [`crate::baka_opponents`], [`crate::dance_chart`]) decode the *numbers* a
 //! minigame plays with out of its code overlay. This module decodes the
-//! *pictures*: the reel symbols, the cabinet, the digit font.
+//! *pictures*: the reel symbols, the marquee, the digit font, the paytable
+//! panel. The machine's *geometry* - it is a 3D scene, not a sprite collage -
+//! lives next door in [`crate::minigame_slot_scene`].
 //!
 //! ## Loader provenance
 //!
@@ -27,12 +29,18 @@
 //! ```text
 //! pack | image fb   | CLUT row | texpage attr | role
 //! -----|------------|----------|--------------|-----------------------------------------
-//!   0  | (768,   0) |   490    | 0x0C         | reel symbols + digit font + prompts
+//!   0  | (768,   0) |   490    | 0x0C         | reel symbols + digit font + medallion
 //!   1  | (832,   0) |   491    | 0x0D         | bonus-strip multiplier numerals (1..10)
-//!   2  | (768, 256) |   492    | 0x1C         | reel-stop / marquee art
-//!   3  | (832, 256) |   493    | 0x1D         | banner text ("Bonus Game", "One more!") + cursor
-//!   4  | (640,   0) |   494    | 0x8A         | the slot-machine cabinet
+//!   2  | (768, 256) |   492    | 0x1C         | marquee panel, mascots, pedestals, lamps
+//!   3  | (832, 256) |   493    | 0x1D         | dot-matrix message bank + lamp swatches + cursor
+//!   4  | (640,   0) |   494    | 0x8A         | the paytable / coin info panel (8bpp - see below)
 //! ```
+//!
+//! Page 4 is the odd one: its texpage attribute has the GPU's **8-bit** colour
+//! bit set, so the block is 128 texels wide and its CLUT is one 256-entry
+//! palette. Decoding it as the TIM header's `4bpp` claims yields noise. It is
+//! *not* the machine's cabinet - the cabinet is not in this pack at all (see
+//! [`crate::minigame_slot_scene`]).
 //!
 //! Every image block is **byte-identical** to a retail VRAM dump taken at the
 //! slot machine (the `minigame_slot_machine` capture), which is what pins the
@@ -54,8 +62,11 @@
 //!   left of digit `0` is the **"COIN"** label.
 //! - **HUD widgets** - the 3-record table at `DAT_801d347c` (PROT 0975 file
 //!   offset [`SLOT_HUD_TABLE_OFFSET`], 20-byte stride) that `FUN_801d2cc0`
-//!   indexes. Parsed by [`parse_slot_hud`]; the records resolve to the cabinet
-//!   panel, the "COIN" label and the cash-out cursor.
+//!   indexes. Parsed by [`parse_slot_hud`]; the records resolve to the paytable
+//!   info panel ([`slot_info_panel`]), the "COIN" label and the cash-out cursor.
+//!   Unlike everything else the machine draws, these three are **screen-space**:
+//!   `FUN_801d2cc0` takes a pixel position and writes the quad's XY directly,
+//!   with no GTE projection.
 
 use anyhow::{Context, Result, bail};
 use legaia_tim::{PixelMode, Tim, decode_rgba8, parse as parse_tim};
@@ -74,8 +85,11 @@ const TYPE_TIM_LIST: u8 = 0x01;
 pub const SLOT_SYMBOL_PAGE: usize = 0;
 /// Index of the banner/cursor page (texpage `0x1D`, fb `(832, 256)`).
 pub const SLOT_BANNER_PAGE: usize = 3;
-/// Index of the cabinet page (texpage `0x8A`, fb `(640, 0)`).
-pub const SLOT_CABINET_PAGE: usize = 4;
+/// Index of the paytable / coin info-panel page (texpage `0x8A`, fb `(640, 0)`).
+/// Sampled as **8bpp** - see [`slot_info_panel`].
+pub const SLOT_PANEL_PAGE: usize = 4;
+/// The info panel's cell on its page: `uv (0, 16)`, 127x239 (HUD record 0).
+pub const SLOT_PANEL_CELL: (u8, u8, u8, u8) = (0, 16, 127, 239);
 
 /// Reel symbol ids `0..=9` (`FUN_801d13e8` indexes the payout table with these).
 pub const SLOT_SYMBOL_COUNT: usize = 10;
@@ -311,6 +325,87 @@ pub fn slot_hud_sprite(art: &[Tim], widget: &SlotHudWidget) -> Result<Sprite> {
         widget.w as usize,
         widget.h as usize,
     )
+}
+
+/// Texpage attribute the HUD rasteriser writes for the info panel (`0x8A`). Bit
+/// 7 is the GPU's colour-depth field: it selects **8-bit** texels, not 4.
+pub const SLOT_PANEL_TEXPAGE: u16 = 0x8A;
+
+/// Decode the machine's **paytable / coin info panel** - HUD record 0, the
+/// 127x239 sprite `FUN_801cfff0` draws at screen `(560, 128)` on the right of
+/// the machine (the "x30 back" / "x9 back" / "Bonus games" board with the coin
+/// readout under it).
+///
+/// The pack's TIM *header* declares this page 4bpp, but the texpage attribute
+/// the rasteriser actually writes ([`SLOT_PANEL_TEXPAGE`]) has the 8-bit colour
+/// bit set, so the GPU samples the same block as **8bpp**: the 64-halfword-wide
+/// image is 128 texels across, and the CLUT's 256 entries are one 8-bit palette
+/// rather than sixteen 4-bit ones. Decoding it as the header claims yields
+/// noise, which is why this has its own entry point rather than going through
+/// [`slot_page`].
+pub fn slot_info_panel(art: &[Tim]) -> Result<Sprite> {
+    let tim = art
+        .get(SLOT_PANEL_PAGE)
+        .context("art pack has no info-panel page")?;
+    let clut = tim.clut.as_ref().context("the info panel needs a CLUT")?;
+    let pal: Vec<u16> = clut.entries.iter().take(256).copied().collect();
+    if pal.len() < 256 {
+        bail!("the info panel's CLUT is not a 256-entry 8bpp palette");
+    }
+    // 8bpp: one byte per texel, `fb_w` halfwords per row.
+    let stride = tim.image.fb_w as usize * 2;
+    let (w, h) = (SLOT_PANEL_CELL.2 as usize, SLOT_PANEL_CELL.3 as usize);
+    let (u0, v0) = (SLOT_PANEL_CELL.0 as usize, SLOT_PANEL_CELL.1 as usize);
+    let mut rgba = Vec::with_capacity(w * h * 4);
+    for row in 0..h {
+        for col in 0..w {
+            let idx = tim
+                .image
+                .data
+                .get((v0 + row) * stride + u0 + col)
+                .copied()
+                .unwrap_or(0) as usize;
+            let e = pal[idx];
+            let (r, g, b) = (
+                ((e & 0x1F) as u32 * 255 / 31) as u8,
+                (((e >> 5) & 0x1F) as u32 * 255 / 31) as u8,
+                (((e >> 10) & 0x1F) as u32 * 255 / 31) as u8,
+            );
+            rgba.extend_from_slice(&[r, g, b, if e == 0 { 0 } else { 255 }]);
+        }
+    }
+    Ok(Sprite {
+        width: w,
+        height: h,
+        rgba,
+    })
+}
+
+/// The **palette indices** of a 4bpp art page - one nibble per texel, row-major.
+///
+/// The dot-matrix marquee ([`crate::minigame_slot_scene`]) needs the raw index,
+/// not a colour: the retail init reads each message rect back out of VRAM and
+/// keeps the nibble, and the nibble is what selects the lamp swatch a dot draws.
+pub fn slot_page_indices(art: &[Tim], page: usize) -> Result<(Vec<u8>, usize, usize)> {
+    let tim = art.get(page).context("art page index out of range")?;
+    if tim.mode != PixelMode::Bpp4 {
+        bail!("art page {page} is not 4bpp");
+    }
+    let (w, h) = (tim.pixel_width(), tim.pixel_height());
+    let stride = tim.image.fb_w as usize * 2;
+    let mut out = Vec::with_capacity(w * h);
+    for row in 0..h {
+        for col in 0..w {
+            let byte = tim
+                .image
+                .data
+                .get(row * stride + col / 2)
+                .copied()
+                .unwrap_or(0);
+            out.push(if col % 2 == 0 { byte & 0x0F } else { byte >> 4 });
+        }
+    }
+    Ok((out, w, h))
 }
 
 /// Decode a whole art page through one of its palettes - the escape hatch for

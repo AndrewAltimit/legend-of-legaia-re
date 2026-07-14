@@ -26,6 +26,7 @@ use super::*;
 
 use legaia_asset::minigame_art::{self, SlotHudWidget};
 use legaia_asset::minigame_sfx::{self, SfxCueBank};
+use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
 use legaia_asset::static_overlay;
 use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, MatchPhase};
 use legaia_engine_core::dance::{DanceDir, DanceGame, Judge};
@@ -60,6 +61,9 @@ pub struct LegaiaMinigames {
     slot_art: Option<Vec<Tim>>,
     /// The 3 HUD widget descriptors out of the slot overlay (PROT 0975).
     slot_hud: Option<Vec<SlotHudWidget>>,
+    /// The machine's 3D scene graph: paylines, medallions, lamps, marquee
+    /// billboards and the dot-matrix message bank (PROT 0975 + art page 3).
+    slot_scene: Option<SlotScene>,
     /// The slot machine's own SFX cue bank (descriptors from PROT 1199, samples
     /// from the PROT 1198 VAB).
     slot_sfx: Option<SfxCueBank>,
@@ -120,6 +124,7 @@ impl LegaiaMinigames {
             slot_payouts: None,
             slot_art: None,
             slot_hud: None,
+            slot_scene: None,
             slot_sfx: None,
             baka_names: None,
         }
@@ -227,6 +232,22 @@ impl LegaiaMinigames {
             legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32,
         )
         .and_then(|raw| minigame_art::parse_slot_hud(raw).ok());
+
+        // --- slot 3D scene graph (PROT 0975 rodata + art page 3) ---
+        // The machine is a 3D scene, not a sprite collage: its paylines,
+        // medallions, lamps, pedestals and marquee are GTE-projected quads whose
+        // model-space positions are four contiguous tables in the overlay's own
+        // rodata. The dot-matrix marquee's message bank is cut out of art page 3.
+        self.slot_scene = (|| {
+            let overlay = entry_bytes(
+                &self.prot,
+                &self.entries,
+                legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32,
+            )?;
+            let art = self.slot_art.as_ref()?;
+            let (idx, w, _h) = minigame_art::slot_page_indices(art, slot_scene::DOT_PAGE).ok()?;
+            slot_scene::parse_scene(overlay, &idx, w).ok()
+        })();
 
         // --- slot SFX cue bank (descriptors PROT 1199 + samples PROT 1198) ---
         // The reel-stop click, payout tick and reach sting are all runtime-bank
@@ -744,20 +765,265 @@ impl LegaiaMinigames {
         format!("[{rows}]")
     }
 
-    /// A whole 256x256 art page decoded through one of its 16 palettes, as
-    /// RGBA8. The escape hatch for the machine's *chrome* - the marquee panel,
-    /// the mascot heads, the reel-stop button medallions - whose on-screen rects
-    /// this port crops from the decoded page rather than tracing to an emitter
-    /// (unlike the reel symbols / digits / cabinet / cursor above, which are
-    /// traced). Page indices follow the pack order documented on
-    /// [`legaia_asset::minigame_art`]: `2` = chrome, `3` = banner text,
-    /// `4` = cabinet.
+    /// A whole art page decoded through one of its 16 palettes, as RGBA8. Every
+    /// on-screen rect the machine draws is traced to its emitter, so a caller
+    /// pairs this with the cells in [`Self::slot_scene_json`] rather than
+    /// cropping by eye. Pages 0..=3 are 256x256; page 4 is 512x256.
     pub fn slot_page_rgba(&self, page: usize, palette: usize) -> Vec<u8> {
         self.slot_art
             .as_ref()
             .and_then(|art| minigame_art::slot_page(art, page, palette).ok())
             .map(|s| s.rgba)
             .unwrap_or_default()
+    }
+
+    /// The machine's **paytable / coin info panel** - HUD record 0, the 127x239
+    /// board `FUN_801cfff0` draws at screen `(560, 128)` ("x30 back", "x9 back",
+    /// "Bonus games", with the coin readout under it). RGBA8.
+    ///
+    /// It has its own entry point because its page is sampled as **8bpp** (the
+    /// texpage attribute's colour bit), not the 4bpp its TIM header declares -
+    /// decoding it as the header claims yields noise.
+    pub fn slot_panel_rgba(&self) -> Vec<u8> {
+        self.slot_art
+            .as_ref()
+            .and_then(|art| minigame_art::slot_info_panel(art).ok())
+            .map(|s| s.rgba)
+            .unwrap_or_default()
+    }
+
+    /// Pixel width of art page `page` (`0` when the pack didn't decode).
+    pub fn slot_page_width(&self, page: usize) -> usize {
+        self.slot_art
+            .as_ref()
+            .and_then(|art| art.get(page))
+            .map(|t| t.pixel_width())
+            .unwrap_or(0)
+    }
+
+    // -------------------------------------------------------------- slot scene
+
+    /// Whether the machine's 3D scene graph decoded off this disc.
+    pub fn slot_scene_ready(&self) -> bool {
+        self.slot_scene.is_some()
+    }
+
+    /// The slot machine's **3D scene**, as the overlay's own rodata defines it,
+    /// plus the projection that puts it on the retail 640x240 framebuffer.
+    ///
+    /// The retail machine is not a sprite collage: every element is a quad in a
+    /// 3D scene projected through the GTE (see
+    /// [`legaia_asset::minigame_slot_scene`]). This hands the page the same
+    /// scene graph, in model space, so it can project it itself:
+    ///
+    /// ```json
+    /// { "proj": { "ofx": 253, "ofy": 118.5, "z0": 9324, "sx0": 0.2547,
+    ///             "aspect": 2, "xscale": 6, "w": 640, "h": 240 },
+    ///   "paylines":  [ { "a":[-640,-192,-768], "b":[640,-192,-768] }, ... ],
+    ///   "row_offsets": [[1,1,1],[0,0,0],[-1,-1,-1],[-1,0,1],[1,0,-1]],
+    ///   "medallions":[ { "pos":[-602,-192,-800], "art":1 }, ... ],
+    ///   "lamps":     [ { "pos":[632,-192,-800] }, ... ],
+    ///   "pedestals": [ { "pos":[-384,480,-800] }, ... ],
+    ///   "marquee":   [ { "pos":[-554,-560,-800], "clut":0, "half":[1024,320],
+    ///                    "cell":[0,0,64,64] }, ... ],
+    ///   "reels":     { "x":[-512,-128,256], "w":256, "faces":8,
+    ///                  "angle_base":896, "angle_step":256 },
+    ///   "cells": { "medallion":[168,128,32,32], "lamp_lit":[0,224,16,16], ... },
+    ///   "dots":  { "cols":78, "rows":13, "x0":-429, "y0":-640, "dx":11, "dy":12,
+    ///              "z":-800, "page":3, "blink_palettes":[0,1], "u_per_nibble":4 },
+    ///   "messages": [ { "w":84, "h":13, "bitmap":"0,0,1,..." }, ... ] }
+    /// ```
+    ///
+    /// `messages` are the dot-matrix marquee's 21 bitmaps, one palette *nibble*
+    /// per dot (`0` = unlit); `bitmap` is a comma-separated row-major run.
+    pub fn slot_scene_json(&self) -> String {
+        let Some(sc) = self.slot_scene.as_ref() else {
+            return r#"{"ok":false}"#.to_string();
+        };
+        let pos = |p: &slot_scene::Pos3| format!("[{},{},{}]", p.x, p.y, p.z);
+        let paylines = sc
+            .paylines
+            .iter()
+            .map(|l| format!(r#"{{"a":{},"b":{}}}"#, pos(&l.a), pos(&l.b)))
+            .collect::<Vec<_>>()
+            .join(",");
+        let medallions = sc
+            .medallions
+            .iter()
+            .map(|m| format!(r#"{{"pos":{},"art":{}}}"#, pos(&m.pos), m.art))
+            .collect::<Vec<_>>()
+            .join(",");
+        let lamps = sc
+            .lamps
+            .iter()
+            .map(|m| format!(r#"{{"pos":{}}}"#, pos(&m.pos)))
+            .collect::<Vec<_>>()
+            .join(",");
+        let pedestals = (0..slot_scene::REEL_COUNT)
+            .map(|r| {
+                format!(
+                    r#"{{"pos":[{},{},{}]}}"#,
+                    slot_scene::PEDESTAL_X0 + r as i32 * slot_scene::PEDESTAL_X_STEP,
+                    slot_scene::PEDESTAL_Y,
+                    slot_scene::GLASS_Z
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let marquee = sc
+            .marquee
+            .iter()
+            .map(|m| {
+                format!(
+                    r#"{{"pos":{},"clut":{},"half":[{},{}],"cell":[{},{},{},{}]}}"#,
+                    pos(&m.pos),
+                    slot_scene::MARQUEE_CLUT_BASE.wrapping_add(m.clut_off as u16) & 0x3F,
+                    m.half_w,
+                    m.half_h,
+                    m.u,
+                    m.v,
+                    m.w,
+                    m.h,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let messages = sc
+            .messages
+            .iter()
+            .map(|m| {
+                let bits = m
+                    .bitmap
+                    .iter()
+                    .map(|b| b.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(r#"{{"w":{},"h":{},"bitmap":"{}"}}"#, m.w, m.h, bits)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let reel_x = (0..slot_scene::REEL_COUNT)
+            .map(|r| slot_scene::reel_x(r).to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let row_offsets = slot_scene::PAYLINE_ROW_OFFSETS
+            .iter()
+            .map(|o| format!("[{},{},{}]", o[0], o[1], o[2]))
+            .collect::<Vec<_>>()
+            .join(",");
+        let cell = |c: (u8, u8, u8, u8)| format!("[{},{},{},{}]", c.0, c.1, c.2, c.3);
+        format!(
+            concat!(
+                r#"{{"ok":true,"#,
+                r#""proj":{{"ofx":{ofx},"ofy":{ofy},"z0":{z0},"sx0":{sx0},"#,
+                r#""aspect":{aspect},"xscale":{xscale},"w":{sw},"h":{sh}}},"#,
+                r#""paylines":[{paylines}],"row_offsets":[{row_offsets}],"#,
+                r#""medallions":[{medallions}],"lamps":[{lamps}],"#,
+                r#""pedestals":[{pedestals}],"marquee":[{marquee}],"#,
+                r#""reels":{{"x":[{reel_x}],"w":{rw},"faces":{faces},"#,
+                r#""angle_base":{ab},"angle_step":{as_},"angle_full":{af},"#,
+                r#""y_radius":{yr},"z_shift":{zs},"strip_len":{sl},"#,
+                r#""shade_max":{smax},"shade_bias":{sbias},"shade_gain":{sgain},"#,
+                r#""shade_neutral":{sneu},"centre_row_bias":{crb}}},"#,
+                r#""cells":{{"medallion":{c_med},"medallion_page":{p_med},"#,
+                r#""medallion_clut_base":{cb_med},"#,
+                r#""lamp_lit":{c_ll},"lamp_unlit":{c_lu},"lamp_page":{p_lamp},"#,
+                r#""lamp_palette":{pal_lamp},"lamp_half":[{lhw},{lhh}],"#,
+                r#""medallion_half":[{mhw},{mhh}],"pedestal_half":[{phw},{phh}],"#,
+                r#""pedestal_cells":[{c_p0},{c_p1},{c_p2}],"#,
+                r#""pedestal_cells_stopped":[{c_s0},{c_s1},{c_s2}],"#,
+                r#""pedestal_page":{p_ped},"#,
+                r#""pedestal_clut_spinning":{pcs},"pedestal_clut_stopped":{pct},"#,
+                r#""marquee_page":{p_mar}}},"#,
+                r#""dots":{{"cols":{dc},"rows":{dr},"x0":{dx0},"y0":{dy0},"#,
+                r#""dx":{ddx},"dy":{ddy},"z":{dz},"page":{dp},"size":{dsz},"#,
+                r#""blink_palettes":[{dcl0},{dcl1}],"u_per_nibble":{dun}}},"#,
+                r#""messages":[{messages}]}}"#
+            ),
+            ofx = slot_scene::PROJ_OFX,
+            ofy = slot_scene::PROJ_OFY,
+            z0 = slot_scene::PROJ_Z0,
+            sx0 = slot_scene::PROJ_SX0,
+            aspect = slot_scene::PROJ_ASPECT,
+            xscale = slot_scene::PROJ_X_SCALE,
+            sw = slot_scene::SCREEN_W,
+            sh = slot_scene::SCREEN_H,
+            paylines = paylines,
+            row_offsets = row_offsets,
+            medallions = medallions,
+            lamps = lamps,
+            pedestals = pedestals,
+            marquee = marquee,
+            reel_x = reel_x,
+            rw = slot_scene::REEL_WIDTH,
+            faces = slot_scene::REEL_FACES,
+            ab = slot_scene::REEL_ANGLE_BASE,
+            as_ = slot_scene::REEL_ANGLE_STEP,
+            af = slot_scene::ANGLE_FULL,
+            yr = slot_scene::REEL_Y_RADIUS,
+            zs = slot_scene::REEL_Z_SHIFT,
+            sl = slot_scene::STRIP_LEN,
+            smax = slot_scene::REEL_SHADE_MAX,
+            sbias = slot_scene::REEL_SHADE_Z_BIAS,
+            sgain = slot_scene::REEL_SHADE_Z_GAIN,
+            sneu = slot_scene::SHADE_NEUTRAL,
+            crb = slot_scene::PAYLINE_CENTRE_ROW_BIAS,
+            c_med = cell(slot_scene::MEDALLION_CELL),
+            p_med = slot_scene::MEDALLION_PAGE,
+            cb_med = slot_scene::MEDALLION_CLUT_BASE & 0x3F,
+            c_ll = cell(slot_scene::LAMP_CELL_LIT),
+            c_lu = cell(slot_scene::LAMP_CELL_UNLIT),
+            p_lamp = slot_scene::LAMP_PAGE,
+            pal_lamp = slot_scene::LAMP_CLUT & 0x3F,
+            lhw = slot_scene::LAMP_HALF.0,
+            lhh = slot_scene::LAMP_HALF.1,
+            mhw = slot_scene::MEDALLION_HALF.0,
+            mhh = slot_scene::MEDALLION_HALF.1,
+            phw = slot_scene::PEDESTAL_HALF.0,
+            phh = slot_scene::PEDESTAL_HALF.1,
+            c_p0 = cell(slot_scene::pedestal_cell(0, false)),
+            c_p1 = cell(slot_scene::pedestal_cell(1, false)),
+            c_p2 = cell(slot_scene::pedestal_cell(2, false)),
+            c_s0 = cell(slot_scene::pedestal_cell(0, true)),
+            c_s1 = cell(slot_scene::pedestal_cell(1, true)),
+            c_s2 = cell(slot_scene::pedestal_cell(2, true)),
+            p_ped = slot_scene::PEDESTAL_PAGE,
+            pcs = slot_scene::PEDESTAL_CLUT_SPINNING & 0x3F,
+            pct = slot_scene::PEDESTAL_CLUT_STOPPED & 0x3F,
+            p_mar = slot_scene::MARQUEE_PAGE,
+            dc = slot_scene::DOT_COLS,
+            dr = slot_scene::DOT_ROWS,
+            dx0 = slot_scene::DOT_X0,
+            dy0 = slot_scene::DOT_Y0,
+            ddx = slot_scene::DOT_X_STEP,
+            ddy = slot_scene::DOT_Y_STEP,
+            dz = slot_scene::DOT_Z,
+            dp = slot_scene::DOT_PAGE,
+            dsz = slot_scene::DOT_SIZE,
+            dcl0 = slot_scene::DOT_BLINK_PALETTES[0],
+            dcl1 = slot_scene::DOT_BLINK_PALETTES[1],
+            dun = slot_scene::DOT_U_PER_NIBBLE,
+            messages = messages,
+        )
+    }
+
+    /// The live reel positions (`DAT_801d3cc0`) - fixed-point angles whose high
+    /// byte is the strip row and whose low byte is the sub-symbol fraction. The
+    /// renderer needs the fraction: the reel is a 3D cylinder and the fraction is
+    /// what rotates it between symbols.
+    pub fn slot_reel_pos(&self) -> Vec<i32> {
+        match self.slot.as_ref() {
+            Some(m) => (0..slot_scene::REEL_COUNT).map(|r| m.reel_pos(r)).collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// The 20-symbol display strip of `reel`, as the renderer reads it.
+    pub fn slot_strip(&self, reel: usize) -> Vec<u8> {
+        match self.slot.as_ref() {
+            Some(m) => m.strips()[reel].to_vec(),
+            None => Vec::new(),
+        }
     }
 
     // ------------------------------------------------------------- slot sound
