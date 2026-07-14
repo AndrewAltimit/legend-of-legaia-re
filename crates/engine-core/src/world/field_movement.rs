@@ -5,8 +5,31 @@
 
 use super::*;
 
+/// Result of one direction's prop-collision probe
+/// ([`World::field_prop_dir_probe`]): whether a solid prop box blocks the
+/// step, and - for a static-class (auto-touch) hit - which prop-bank entry
+/// the contact posts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PropDirProbe {
+    /// A solid prop box overlaps a probe point: the 2-unit step is refused
+    /// (retail result bits `1`/`4` both gate the commit).
+    pub blocked: bool,
+    /// Static-class hit with a bank entry: the anchor whose record the
+    /// contact auto-posts (`None` for interact-class or unbound props).
+    pub touch: Option<(u8, u8)>,
+}
+
 impl World {
     // --- field collision grid + free-movement locomotion ----------------
+
+    /// The `FIELD_ACTOR_PROBES` row indices of the directions held in a
+    /// post-remap `dir_bits` word (`0x1000` = Z+ -> row 2, `0x4000` = Z- ->
+    /// row 0, `0x2000` = X+ -> row 3, `0x8000` = X- -> row 1).
+    fn dirs_of_bits(dir_bits: u16) -> impl Iterator<Item = usize> {
+        [(0x1000u16, 2usize), (0x4000, 0), (0x2000, 3), (0x8000, 1)]
+            .into_iter()
+            .filter_map(move |(bit, dir)| (dir_bits & bit != 0).then_some(dir))
+    }
 
     /// Reset the per-scene field collision grid to "all walkable" (every
     /// byte zero). Called at field entry; the scene prescript repaints the
@@ -384,7 +407,16 @@ impl World {
     /// already deep inside a box (past the probe reach) reads clear -
     /// exactly as retail's forward-only probe behaves.
     pub fn field_actor_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
-        if self.field_npc_positions.is_empty() && self.field_prop_colliders.is_empty() {
+        self.field_npc_dir_blocked(x, z, dir) || self.field_prop_dir_probe(x, z, dir).blocked
+    }
+
+    /// The **moving-NPC arm** of the actor-collision direction test (retail
+    /// result bit `1` for the village-NPC class): the three probe points
+    /// against every live NPC position at ±[`FIELD_NPC_BOX_HALF`].
+    ///
+    /// PORT: FUN_801cfc40
+    pub(crate) fn field_npc_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
+        if self.field_npc_positions.is_empty() {
             return false;
         }
         FIELD_ACTOR_PROBES[dir & 3].iter().any(|&(dx, dz)| {
@@ -393,10 +425,53 @@ impl World {
             self.field_npc_positions.values().any(|&(ax, az)| {
                 (px - ax as i32).abs() < FIELD_NPC_BOX_HALF
                     && (pz - az as i32).abs() < FIELD_NPC_BOX_HALF
-            }) || self.field_prop_colliders.iter().any(|&(cx, cz)| {
-                (px - cx).abs() < FIELD_PROP_BOX_HALF && (pz - cz).abs() < FIELD_PROP_BOX_HALF
             })
         })
+    }
+
+    /// The **placed-prop arms** of the actor-collision direction test: the
+    /// three `FIELD_ACTOR_PROBES` points of `dir` box-tested against every
+    /// solid prop collider. A static-class hit (`+0x10` clear of the
+    /// `0x40020000` interact bits - retail contact result bit `4`) also
+    /// surfaces the touched prop's bank anchor, which the locomotion
+    /// auto-posts (`FUN_801D01B0` `0x801d0800` -> `FUN_801D5B5C`); an
+    /// interact-class hit (bit `1`) blocks silently - only the button-gated
+    /// facing probe fires it.
+    ///
+    /// Box classes per collider (see [`FieldPropCollider`]): static = ±80
+    /// around the footprint centre; moving-box = ±40 around the live
+    /// position. A non-solid collider (script ran `31 00`) is skipped
+    /// entirely, exactly as `FUN_801CF754`'s `flags & 3` filter drops the
+    /// opened door from the candidate list.
+    ///
+    /// PORT: FUN_801cfc40
+    /// REF: FUN_801CF754, FUN_801D5B5C
+    pub(crate) fn field_prop_dir_probe(&self, x: i16, z: i16, dir: usize) -> PropDirProbe {
+        let mut out = PropDirProbe::default();
+        if self.field_prop_colliders.is_empty() {
+            return out;
+        }
+        for &(dx, dz) in &FIELD_ACTOR_PROBES[dir & 3] {
+            let px = x.saturating_add(dx) as i32;
+            let pz = z.saturating_sub(dz) as i32;
+            for c in &self.field_prop_colliders {
+                if !c.solid {
+                    continue;
+                }
+                let ((cx, cz), half) = if c.moving_box {
+                    (c.live, FIELD_NPC_BOX_HALF)
+                } else {
+                    (c.center, FIELD_PROP_BOX_HALF)
+                };
+                if (px - cx).abs() < half && (pz - cz).abs() < half {
+                    out.blocked = true;
+                    if !c.interact && out.touch.is_none() {
+                        out.touch = c.anchor;
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Retail's interact probe: from the player's position, take the single
@@ -710,14 +785,28 @@ impl World {
         }
         let (px, pz) = {
             let ms = &self.actors[slot].move_state;
-            (ms.world_x as i32, ms.world_z as i32)
+            (ms.world_x, ms.world_z)
         };
+        // Contact fires from the SAME probe points that block movement
+        // (retail: `FUN_801cfe4c`'s three `FUN_801cfc40` calls both refuse
+        // the step and link/post the touched actor) - so a **solid** door
+        // object still fires its walk-touch while the player stands pressed
+        // against its box, 64+ units short of the centre. The stand-inside
+        // test is kept as well (a landing seated inside a box, nav drivers).
+        let mut points: Vec<(i32, i32)> = vec![(px as i32, pz as i32)];
+        for dir in Self::dirs_of_bits(self.last_move_dir_bits) {
+            for &(dx, dz) in &FIELD_ACTOR_PROBES[dir] {
+                points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
+            }
+        }
         let hit = self
             .field_walk_touch
             .iter()
             .find(|(_, ((wx, wz), _))| {
-                (px - *wx as i32).abs() < FIELD_PROP_BOX_HALF
-                    && (pz - *wz as i32).abs() < FIELD_PROP_BOX_HALF
+                points.iter().any(|&(qx, qz)| {
+                    (qx - *wx as i32).abs() < FIELD_PROP_BOX_HALF
+                        && (qz - *wz as i32).abs() < FIELD_PROP_BOX_HALF
+                })
             })
             .map(|(&s, &(_, event))| (s, event));
         let Some((touch_slot, event)) = hit else {
@@ -989,6 +1078,7 @@ impl World {
         }
 
         let (dir_bits, heading) = self.decode_field_direction();
+        self.last_move_dir_bits = dir_bits;
         if dir_bits == 0 {
             return;
         }
@@ -1056,9 +1146,17 @@ impl World {
     /// centre test is kept (off-flag) for the locomotion oracles and the
     /// BFS nav drivers. With [`Self::solid_field_npcs`] set, each axis
     /// additionally blocks when the direction's actor-collision probes land
-    /// inside a field NPC's body box ([`Self::field_actor_dir_blocked`]) -
+    /// inside a field NPC's body box ([`Self::field_npc_dir_blocked`]) -
     /// retail gates a step on the actor bits and the wall bit together
     /// (`FUN_801cfe4c` returning any of `1`/`2`/`4` refuses the 2-unit step).
+    ///
+    /// **Placed props block unconditionally** ([`Self::field_prop_dir_probe`]):
+    /// retail's placed-object actors always sit in the collision candidate
+    /// list (`FUN_801CF754`), so a closed door is solid until its touch pass
+    /// runs `31 00`. A static-class prop hit also records the touched prop
+    /// into [`Self::pending_prop_touch`] - the same probe both refuses the
+    /// step and posts the touch (`FUN_801D01B0`'s bit-`4` auto-post of
+    /// `FUN_801D5B5C`).
     pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
         let edge = self.leading_edge_wall_probes;
         let solid_npcs = self.solid_field_npcs;
@@ -1069,21 +1167,25 @@ impl World {
             // Z axis.
             if dir_bits & 0x1000 != 0 {
                 let nz = cz.saturating_add(FIELD_STEP_UNIT as i16);
+                let prop = self.probe_props_for_step(cx, cz, 2);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz, 2)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz, 2));
+                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz, 2))
+                    || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
             } else if dir_bits & 0x4000 != 0 {
                 let nz = cz.saturating_sub(FIELD_STEP_UNIT as i16);
+                let prop = self.probe_props_for_step(cx, cz, 0);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz, 0)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz, 0));
+                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz, 0))
+                    || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
@@ -1093,27 +1195,45 @@ impl World {
             let cz2 = self.actors[slot].move_state.world_z;
             if dir_bits & 0x2000 != 0 {
                 let nx = cx.saturating_add(FIELD_STEP_UNIT as i16);
+                let prop = self.probe_props_for_step(cx, cz2, 3);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz2, 3)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz2, 3));
+                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz2, 3))
+                    || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
             } else if dir_bits & 0x8000 != 0 {
                 let nx = cx.saturating_sub(FIELD_STEP_UNIT as i16);
+                let prop = self.probe_props_for_step(cx, cz2, 1);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz2, 1)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz2, 1));
+                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz2, 1))
+                    || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
             }
             remaining -= FIELD_STEP_UNIT;
         }
+    }
+
+    /// One movement sub-step's prop probe: blocks on any solid prop box hit
+    /// and latches a static-class touch into [`Self::pending_prop_touch`]
+    /// (drained by [`Self::tick_prop_interactions`]). Returns whether the
+    /// step is prop-blocked.
+    fn probe_props_for_step(&mut self, x: i16, z: i16, dir: usize) -> bool {
+        let probe = self.field_prop_dir_probe(x, z, dir);
+        if let Some(anchor) = probe.touch
+            && self.pending_prop_touch.is_none()
+        {
+            self.pending_prop_touch = Some(anchor);
+        }
+        probe.blocked
     }
 
     /// Step the player one navigation frame toward world position `(tx, tz)`,
@@ -1158,6 +1278,7 @@ impl World {
             wx = -1;
         }
         if dir != 0 {
+            self.last_move_dir_bits = dir;
             // Walking sets the heading, exactly as the pad path does (retail
             // locomotion writes the facing every moved frame) - so a nav walk
             // leaves the player facing its travel direction and the interact

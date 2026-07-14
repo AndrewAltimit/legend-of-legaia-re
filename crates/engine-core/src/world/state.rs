@@ -580,18 +580,35 @@ pub struct World {
     /// executed).
     pub field_npc_headings: std::collections::HashMap<u8, i16>,
 
-    /// Static prop collision-box centres `(world_x, world_z)`, one per placed
-    /// object of the scene's field `.MAP` object grid - the engine's source
-    /// for the **static-entity arm** of the actor-collision probe (retail
-    /// `FUN_801cf9f4` result bit `4`; box half-extent
-    /// `FIELD_PROP_BOX_HALF`). Installed at field-scene entry from
+    /// Static prop colliders, one per placed object of the scene's field
+    /// `.MAP` object grid - the engine's source for the **actor-collision
+    /// arms** of the movement probe (retail `FUN_801CFC40`). Installed at
+    /// field-scene entry from
     /// [`crate::scene::Scene::field_object_placements`] (each placement's
     /// [`collider_x`](legaia_asset::field_objects::Placement::collider_x) /
     /// `collider_z` = spawn position + the record's collision-footprint
     /// offset, live-verified against the spawned static actors of catalogued
-    /// captures). Gated by [`Self::solid_field_npcs`] alongside the
-    /// moving-NPC arm.
-    pub field_prop_colliders: Vec<(i32, i32)>,
+    /// captures), with each bound placement's class bits decoded from its
+    /// bind record's spawn prologue. **Solid by default** - retail's placed
+    /// props always enter the collision candidate list (`FUN_801CF754`)
+    /// unless their script sets `+0x10 & 3`; a closed door blocks the player
+    /// until its touch pass runs `31 00`.
+    pub field_prop_colliders: Vec<FieldPropCollider>,
+
+    /// Per-scene bank of placed-prop animation + interaction runtimes (the
+    /// door swings, the searchable cupboards), keyed by the placement's
+    /// footprint-anchor tile. Built at field-scene entry
+    /// ([`crate::field_env::PropAnimBank::build`]); clips advance every field
+    /// tick, and a touched / interacted prop's bind record runs through the
+    /// field VM ([`Self::start_prop_interaction`]).
+    pub field_prop_bank: crate::field_env::PropAnimBank,
+
+    /// A prop the movement probe touched this tick (the `FUN_801CFC40`
+    /// static-arm hit whose result bit `4` the locomotion auto-posts through
+    /// `FUN_801D5B5C`): the anchor key of the touched [`Self::field_prop_bank`]
+    /// entry. Drained by [`Self::tick_prop_interactions`], which starts the
+    /// record's field-VM run.
+    pub pending_prop_touch: Option<(u8, u8)>,
 
     /// Per-NPC autonomous walk routes, keyed by the same placement `slot` as
     /// [`Self::field_npc_dialog`]: the ordered local waypoints the placement's
@@ -662,6 +679,14 @@ pub struct World {
     /// per-step post on the player's `+0x10 & 0x80000` engaged flag, cleared
     /// by the dialog SM teardown - the engine latches per contact instead).
     pub active_walk_touch: Option<u8>,
+
+    /// The post-remap direction bits of this tick's movement attempt
+    /// (`0x1000`/`0x4000`/`0x2000`/`0x8000`; `0` when no direction is held).
+    /// The walk-touch dispatch derives its leading probe points from it -
+    /// retail's touch fires from the same forward probes that block the
+    /// step, so contact must be tested ahead of the player, not at the
+    /// player's feet.
+    pub last_move_dir_bits: u16,
 
     /// While [`Self::step_inline_dialogue`] is stepping the field VM over an
     /// NPC's interaction record, this carries that NPC's placement slot so the
@@ -1877,6 +1902,8 @@ impl World {
             field_npc_positions: std::collections::HashMap::new(),
             field_npc_headings: std::collections::HashMap::new(),
             field_prop_colliders: Vec::new(),
+            field_prop_bank: Default::default(),
+            pending_prop_touch: None,
             field_npc_routes: std::collections::BTreeMap::new(),
             field_npc_glide_speeds: std::collections::BTreeMap::new(),
             field_npc_default_moves: std::collections::BTreeMap::new(),
@@ -1885,6 +1912,7 @@ impl World {
             field_walk_touch: std::collections::BTreeMap::new(),
             field_walk_touch_records: std::collections::BTreeMap::new(),
             active_walk_touch: None,
+            last_move_dir_bits: 0,
             stepping_inline_npc: None,
             active_inline_slot: None,
             actor_motions: std::collections::BTreeMap::new(),

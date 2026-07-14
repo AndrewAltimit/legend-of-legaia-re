@@ -210,6 +210,12 @@ impl World {
                 // the step above just set, folded into the player's
                 // `pose_frame` for the host's posed-mesh rebuild.
                 self.tick_field_player_anim();
+                // Placed-prop layer: advance the prop clips, step an
+                // in-flight prop record run (a door swing / cupboard search
+                // through the field VM), and start a run for a movement
+                // touch the locomotion just posted (the retail bit-4
+                // auto-post of FUN_801D5B5C).
+                self.tick_prop_interactions();
                 // Interaction probe (retail FUN_801cf9f4): talk to an adjacent
                 // NPC / dismiss its box on the action button. Runs before the
                 // carrier tick so a dialogue-accept engage launches the battle

@@ -741,8 +741,10 @@ pub(crate) enum Cmd {
         /// Make field NPCs solid with retail's actor-collision probes
         /// (`FUN_801cfc40`'s `DAT_801f21b4` table): walking into an NPC's
         /// body box blocks the step, as in retail. Off by default
-        /// (walk-through). The retail touch side-effects (touch event,
-        /// face-the-NPC turn) aren't modelled.
+        /// (walk-through). Placed PROPS (doors, cupboards) are solid
+        /// unconditionally - retail keeps them in the collision candidate
+        /// list until their script's `31 00` exempts them - so this flag
+        /// only gates the NPC arm.
         #[arg(long, default_value_t = false)]
         solid_npcs: bool,
         /// Animate field NPCs: drive each placement's authored walk route
@@ -796,8 +798,10 @@ pub(crate) enum Cmd {
         /// Scripted pad input for a screenshot run: `TICK:BUTTON` pairs,
         /// comma-separated, e.g. `--pad-script "30:Start,50:Down,50:Down,70:Cross"`.
         /// Each entry presses BUTTON for exactly the named tick (a one-tick
-        /// edge). BUTTON names match the pad buttons (Start/Cross/Circle/Up/
-        /// Down/Left/Right/...). Replaces `xdotool` for menu navigation.
+        /// edge); a `FIRST-LAST:BUTTON` entry HOLDS the button across the
+        /// inclusive tick range (e.g. `10-200:Up` walks the player). BUTTON
+        /// names match the pad buttons (Start/Cross/Circle/Up/Down/Left/
+        /// Right/...). Replaces `xdotool` for menu navigation.
         #[arg(long)]
         pad_script: Option<String>,
         /// Seed the New Game starting party (Vahn from the SCUS template) at

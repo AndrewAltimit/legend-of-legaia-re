@@ -46,16 +46,17 @@ impl PlayWindowApp {
     }
 
     /// The scene's **posed placed props**, one entry per placement (not per
-    /// `(mesh, anim)` pair), plus the live animation bank that drives them.
+    /// `(mesh, anim)` pair).
     ///
     /// A `.MAP` placed object whose object bind names an animation is a
     /// multi-object prop posed by that clip, and the clip is what makes a Rim
     /// Elm house door swing: the bind record's script holds the prop on frame 0
-    /// at spawn (`0x4C 0x35`) and its resumable body clears the hold bit on body
-    /// contact, so the per-frame anim tick walks the clip forward
-    /// (`legaia_engine_core::field_env::PropAnimBank`, ports `FUN_800204F8`).
-    /// Each placement gets its own cursor, so touching one cupboard leaves its
-    /// three siblings shut.
+    /// at spawn (`0x4C 0x35`) and its resumable body clears the hold bit when
+    /// the touch / interact dispatch runs the record through the field VM. The
+    /// **live animation bank lives on the world**
+    /// (`World::field_prop_bank`, installed at field entry and ticked by
+    /// `World::tick_prop_interactions`) - the draw pass here only reads each
+    /// prop's current frame.
     ///
     /// Props whose clip does not resolve (no ANM bundle, a bone-count mismatch)
     /// yield no entry, and `resolve_placement_draws` then falls back to the raw
@@ -65,30 +66,19 @@ impl PlayWindowApp {
         res: &SceneResources,
         posed: &PosedPlacementMeshes,
         bundle: Option<&legaia_asset::player_anm::PlayerAnmBundle>,
-    ) -> (
-        Vec<PosedPropDraw>,
-        legaia_engine_core::field_env::PropAnimBank,
-    ) {
-        use legaia_engine_core::field_env::{self, PropAnimBank};
-        let empty = (Vec::new(), PropAnimBank::default());
+    ) -> Vec<PosedPropDraw> {
+        use legaia_engine_core::field_env;
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return empty;
+            return Vec::new();
         };
-        let Some(bundle) = bundle else { return empty };
+        if bundle.is_none() {
+            return Vec::new();
+        }
         let (Ok(Some(placements)), Ok(Some(binds))) = (
             scene.field_object_placements(&self.session.host.index),
             scene.field_object_binds(&self.session.host.index),
         ) else {
-            return empty;
-        };
-        let (Ok(Some(man)), Ok(Some(_))) = (
-            scene.field_man_payload(&self.session.host.index),
-            scene.field_object_placements(&self.session.host.index),
-        ) else {
-            return empty;
-        };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
-            return empty;
+            return Vec::new();
         };
         let env_tmds = field_env::env_pack_tmd_indices(scene, res);
         let floor_lut = scene
@@ -98,16 +88,7 @@ impl PlayWindowApp {
         let (draws, _) =
             field_env::resolve_placed_env_draws(&env_tmds, &placements, floor_lut, Some(&binds));
 
-        // Clip metadata straight off the ANM record header: frame count, the
-        // step-scaling selector (`a`'s high byte, bit 0) and its divisor
-        // (`flag`'s low byte) - the fields `FUN_800204F8` reads at clip `+2`,
-        // `+1` and `+6`.
-        let clip = |anim: u8| -> Option<(u16, bool, u8)> {
-            let r = bundle.record(anim.checked_sub(1)? as usize).ok()?;
-            Some((r.frame_count, (r.a >> 8) & 1 != 0, (r.flag & 0xFF) as u8))
-        };
-        let bank = PropAnimBank::build(&draws, &binds, &man_file, &man, clip);
-
+        let bank = &self.session.host.world.field_prop_bank;
         let mut props = Vec::new();
         for d in &draws {
             if d.anim_id == 0 || !bank.props.contains_key(&d.anchor) {
@@ -132,35 +113,18 @@ impl PlayWindowApp {
             });
         }
         log::info!(
-            "play-window: {} posed placed props ({} of them animate on contact)",
+            "play-window: {} posed placed props ({} of them animate on touch/interact)",
             props.len(),
             bank.props.values().filter(|p| p.program.animates()).count(),
         );
-        (props, bank)
+        props
     }
 
-    /// Advance every posed prop's clip one frame and post the player's contact
-    /// edges into the bank. A no-op off the field, and while a dialog / menu /
-    /// cutscene owns the frame (the world is not stepping the player then, so
-    /// no contact edge can be crossed).
-    pub(super) fn tick_field_prop_anims(&mut self) {
-        if self.field_prop_anims.props.is_empty() {
-            return;
-        }
-        let w = &self.session.host.world;
-        if w.mode != SceneMode::Field {
-            return;
-        }
-        let player = w
-            .player_actor_slot
-            .and_then(|s| w.actors.get(s as usize))
-            .filter(|a| a.active)
-            .map(|a| (a.move_state.world_x as i32, a.move_state.world_z as i32))
-            // No player actor: tick the clips (the windmill keeps turning) but
-            // put the contact probe where nothing can touch it.
-            .unwrap_or((i32::MIN / 2, i32::MIN / 2));
-        self.field_prop_anims.tick(player);
-    }
+    /// Shim kept for the redraw loop: prop clips + touch/interact dispatch
+    /// are stepped by the world itself (`World::tick_prop_interactions`,
+    /// which runs inside `World::tick`'s field arm - collision drops and the
+    /// message sequencing live there). Nothing to do host-side.
+    pub(super) fn tick_field_prop_anims(&mut self) {}
 
     /// Build this frame's posed-prop draws. A prop resting on frame 0 replays
     /// its baked rest mesh (the cheap path - and where every prop sits until it
@@ -187,7 +151,13 @@ impl PlayWindowApp {
             return (baked_v, baked_c, live_v, live_c);
         };
         for p in &self.field_posed_props {
-            let frame = self.field_prop_anims.frame(p.anchor).unwrap_or(0);
+            let frame = self
+                .session
+                .host
+                .world
+                .field_prop_bank
+                .frame(p.anchor)
+                .unwrap_or(0);
             if frame == 0 {
                 if let Some(i) = p.baked.vram {
                     baked_v.push((i, p.model));
@@ -810,6 +780,18 @@ impl PlayWindowApp {
             } else {
                 t * rot
             };
+            if diag {
+                log::info!(
+                    "DIAG place keep: pack {} (res {} -> mesh {}) at ({}, {}, {}) rot {}",
+                    d.env_slot,
+                    d.res_tmd,
+                    mesh_idx,
+                    d.world_x,
+                    d.world_y,
+                    d.world_z,
+                    d.rot_y & 0x0FFF
+                );
+            }
             draws.push((mesh_idx, model));
         }
         log::info!(

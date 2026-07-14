@@ -60,6 +60,19 @@ pub struct InlineDialogue {
     /// to the field-VM host so the prologue's `0x4C 0x51` NPC-run ops can
     /// walk the right actor. `None` for hand-started scripts.
     pub npc_slot: Option<u8>,
+    /// When this runner executes a placed **prop's** bind record (a door
+    /// touch, a cupboard interact), the prop's [`crate::field_env::PropAnimBank`]
+    /// anchor key. The stepping loop then bridges the executing context to the
+    /// prop's live actor state - `ctx.local_flags` is the actor's `+0x62`
+    /// anim-control word, `ctx.flags` its `+0x10` class word - exactly as
+    /// retail's dialog SM (`FUN_80039B7C`) runs the dispatcher on the touched
+    /// actor's own record, and parks (instead of ending) on the waitable ops
+    /// (`2D 08` until the clip's end latch). `None` for NPC conversations.
+    pub prop_anchor: Option<(u8, u8)>,
+    /// Consecutive frames a prop-bound run has stayed parked on a waitable op
+    /// (`2D 08` end-latch spin, `4A` frame wait). The prop stepper bounds it
+    /// so a decode drift can never soft-lock the engaged player.
+    pub park_frames: u32,
     /// Per-byte "an instruction was executed here" map over
     /// [`Self::bytecode`]. Interaction records are **resident conversation
     /// drivers**: every story-state branch exits by jumping to a shared tail
@@ -86,6 +99,8 @@ impl InlineDialogue {
             last_choice: None,
             fallback_segment_pc: None,
             npc_slot: None,
+            prop_anchor: None,
+            park_frames: 0,
             visited,
         }
     }
@@ -114,6 +129,8 @@ impl InlineDialogue {
             last_choice: None,
             fallback_segment_pc: Some(first_segment),
             npc_slot: None,
+            prop_anchor: None,
+            park_frames: 0,
             visited,
         }
     }

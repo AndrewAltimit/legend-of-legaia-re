@@ -566,9 +566,9 @@ pub struct AnimSegment {
 ///
 /// - **spawn**: `FUN_8003A55C` runs the record from its post-header PC up to
 ///   the first `0x21` (the retail loop only enters when the leading opcode is
-///   `0x24`/`0x25`, which every prop record carries). That pass sets the rate
-///   and issues `0x4C 0x35`, leaving the prop **held at frame 0** - a closed
-///   door, a shut cupboard.
+///   `0x24`/`0x25`, which every posed prop record carries). That pass sets the
+///   rate and issues `0x4C 0x35`, leaving the prop **held at frame 0** - a
+///   closed door, a shut cupboard.
 /// - **touch**: the next pass, which `FUN_801D5B5C` resumes when the player's
 ///   body hits the prop. For a house door that is `[clear REVERSE, clear HOLD,
 ///   set CLAMP, clear END]` then the end-latch spin: the clip plays forward and
@@ -577,12 +577,34 @@ pub struct AnimSegment {
 ///
 /// Records with no animation commands in their touch pass (the locked drawer,
 /// the clock) decode to an empty program and never move, exactly as in retail.
+///
+/// Beyond the `+0x62` animation surface, the spawn prologue's own-context
+/// `0x31 <bit>` CFLAG_SET ops (writes into the actor flag word `+0x10`) carry
+/// the prop's **collision / interaction class**, collected into
+/// [`Self::spawn_cflags`]:
+///
+/// - bits `0`/`1` (`31 00`) - **collision exempt**: the collision candidate
+///   list builder `FUN_801CF754` and the interact probe `FUN_801CF9F4` both
+///   skip any actor whose `+0x10 & 3 != 0`.
+/// - bit `30` (`31 1E`, Rim Elm's cupboards) or bit `17` - the
+///   `flags & 0x40020000` class of `FUN_801CFC40`: contact returns result bit
+///   `1` instead of `4`, which the locomotion dispatch (`FUN_801D01B0`
+///   `0x801d0800`) does NOT auto-post - only the just-pressed-confirm facing
+///   probe posts it. This is the **interact gate**: cupboards open on the
+///   confirm button, doors on body contact.
+/// - bit `17`/`24` - the `flags & 0x1020000` box-source class: the contact box
+///   anchors at the live position with the moving-actor extents instead of the
+///   record-derived footprint centre.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PropProgram {
     /// Commands the spawn pass issues.
     pub spawn: Vec<AnimCmd>,
     /// The touch pass, split at the end-latch spins.
     pub touch: Vec<AnimSegment>,
+    /// Actor `+0x10` bits the spawn prologue sets via own-context `0x31`
+    /// CFLAG_SET ops. `0` when the record has no `0x24`/`0x25` prologue marker
+    /// (retail then skips the spawn run entirely).
+    pub spawn_cflags: u32,
 }
 
 impl PropProgram {
@@ -593,6 +615,27 @@ impl PropProgram {
     /// [`ANIM_SPAWN_FLAGS`] and spins forever).
     pub fn animates(&self) -> bool {
         !self.touch.is_empty()
+    }
+
+    /// The `FUN_801CFC40` `flags & 0x40020000` class: contact yields result
+    /// bit `1`, which the locomotion never auto-posts - the prop fires only
+    /// from the button-gated facing probe. Rim Elm's cupboards (`31 1E`).
+    pub fn interact_gated(&self) -> bool {
+        self.spawn_cflags & 0x4002_0000 != 0
+    }
+
+    /// The `flags & 0x1020000` box-source class: the contact box anchors at
+    /// the live position with the moving-actor extents (±40) instead of the
+    /// static footprint centre (±80).
+    pub fn moving_box(&self) -> bool {
+        self.spawn_cflags & 0x0102_0000 != 0
+    }
+
+    /// Born collision-exempt: the spawn prologue sets `+0x10` bit `0`/`1`
+    /// (`31 00`), so `FUN_801CF754`'s `flags & 3` filter never admits the
+    /// actor to the collision candidate list.
+    pub fn spawn_collision_off(&self) -> bool {
+        self.spawn_cflags & 3 != 0
     }
 }
 
@@ -679,7 +722,12 @@ pub fn decode_prop_program(record: &[u8], pc0: usize) -> PropProgram {
     };
 
     let mut prog = PropProgram::default();
-    let mut spawned = false; // past the prologue's terminating `0x21`?
+    // Retail's spawn-prologue loop only enters when the record's first opcode
+    // is the `0x24`/`0x25` marker (`FUN_8003A55C`, `uVar15 - 0x24 < 2`); a
+    // record without it parks at `pc0` untouched and its leading ops run on
+    // the first touch instead.
+    let has_prologue = matches!(record.get(pc0), Some(0x24) | Some(0x25));
+    let mut spawned = !has_prologue; // past the prologue's terminating `0x21`?
     let mut seg = AnimSegment::default();
     let mut body: Vec<AnimSegment> = Vec::new();
     for insn in LinearWalker::new(record, pc0).flatten() {
@@ -688,6 +736,15 @@ pub fn decode_prop_program(record: &[u8], pc0: usize) -> PropProgram {
                 spawned = true;
             } else if let Some(c) = anim_cmd(&insn) {
                 prog.spawn.push(c);
+            } else if insn.extended.is_none()
+                && insn.opcode == 0x31
+                && let InsnInfo::CFlag {
+                    kind: FlagKind::Set,
+                    bit,
+                } = insn.info
+            {
+                // Actor `+0x10` class bits (see [`PropProgram::spawn_cflags`]).
+                prog.spawn_cflags |= 1u32 << (bit & 0x1F);
             }
             continue;
         }
@@ -721,34 +778,60 @@ pub fn decode_prop_program(record: &[u8], pc0: usize) -> PropProgram {
     prog
 }
 
-/// One placed prop's animation runtime: its live [`PropAnim`], the program its
-/// bind record decodes to, and where its contact box sits.
+/// One placed prop's animation + interaction runtime: its live [`PropAnim`],
+/// the program its bind record decodes to, the record itself (the prop's
+/// field-VM script), and the actor state the retail collision / touch probes
+/// read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PropAnimState {
     /// Live clip state.
     pub anim: PropAnim,
-    /// The bind record's decoded animation program.
+    /// The bind record's decoded animation program + class bits.
     pub program: PropProgram,
-    /// Contact-box centre (the placement's world position).
+    /// The actor's live position (the placement's world position) - what the
+    /// moving-arm contact box anchors at.
     pub world: (i32, i32),
-    /// Index of the touch segment currently running, if the program is mid-pass.
-    pub segment: Option<usize>,
-    /// Whether the player was inside the contact box last tick (the edge latch
-    /// that keeps a sustained press from restarting the pass every frame -
-    /// retail's `+0x10 & 0x80000` engaged flag plays the same role).
-    pub contact: bool,
+    /// Static-arm contact-box centre: the placement's world position plus the
+    /// record's collision-footprint offset (`FUN_801CFC40`'s tile-record
+    /// derivation; [`legaia_asset::field_objects::Placement::collider_x`]).
+    pub collider: (i32, i32),
+    /// Flat MAN partition-0 record index of the bind (the prop's script).
+    pub record: usize,
+    /// The record's bytes (`[u8 n][n*2 name][u8 anim]` header + script), the
+    /// buffer a touch interaction runs through the field VM.
+    pub record_body: std::sync::Arc<Vec<u8>>,
+    /// The parked script cursor (`actor+0x9E`): where the next touch resumes.
+    /// Initially just past the spawn prologue's terminating `0x21` (or at the
+    /// post-header `pc0` when the record has no `0x24`/`0x25` prologue
+    /// marker); updated to wherever an interaction run ends.
+    pub parked_pc: usize,
+    /// The actor flag word `+0x10`: seeded from the spawn prologue's `0x31`
+    /// ops, updated by an interaction run's own `0x31`/`0x32`. Bits `0`/`1`
+    /// make the prop collision-exempt (`FUN_801CF754` / `FUN_801CF9F4` skip
+    /// `flags & 3` actors) - how an opened door stops blocking.
+    pub cflags: u32,
 }
 
 impl PropAnimState {
-    /// Start the touch pass from its first segment.
-    fn begin_touch(&mut self) {
-        if self.program.touch.is_empty() {
-            return;
-        }
-        self.segment = Some(0);
-        for c in &self.program.touch[0].cmds {
-            c.apply(&mut self.anim);
-        }
+    /// `FUN_801CF754` / `FUN_801CF9F4`'s `flags & 3` filter: the prop no
+    /// longer enters the collision candidate list nor the touch probes. Set
+    /// by the door's touch pass (`31 00` as the swing starts).
+    pub fn collision_exempt(&self) -> bool {
+        self.cflags & 3 != 0
+    }
+
+    /// `FUN_801CFC40`'s `flags & 0x40020000` class - contact result bit `1`:
+    /// blocks like any actor, but the touch is only posted by the
+    /// button-gated facing probe (the cupboard interact gate).
+    pub fn interact_gated(&self) -> bool {
+        self.cflags & 0x4002_0000 != 0
+    }
+
+    /// `FUN_801CFC40`'s `flags & 0x1020000` box-source class: live-position
+    /// anchor with the moving-actor extents (±40) instead of the static
+    /// footprint box (±80).
+    pub fn moving_box(&self) -> bool {
+        self.cflags & 0x0102_0000 != 0
     }
 }
 
@@ -768,45 +851,53 @@ impl PropAnimBank {
     ///
     /// `clip` resolves an anim id to `(frame_count, scaled_step, step_div)`
     /// from the scene's ANM bundle (record `anim_id - 1`); a prop whose clip
-    /// does not resolve is skipped, mirroring retail's refusal to pose a mesh
-    /// whose bone count disagrees with the clip.
+    /// does not resolve gets a 1-frame stand-in clip, so its script's
+    /// end-latch spin still passes (a missing ANM bundle must not leave a
+    /// door's `2D 08` spin - and therefore its collision - stuck forever).
     pub fn build(
-        draws: &[EnvDraw],
+        placements: &[Placement],
         binds: &HashMap<(u8, u8), ObjectBind>,
         man_file: &ManFile,
         man: &[u8],
         mut clip: impl FnMut(u8) -> Option<(u16, bool, u8)>,
     ) -> Self {
         let mut bank = PropAnimBank::default();
-        for d in draws {
-            if d.anim_id == 0 || bank.props.contains_key(&d.anchor) {
+        for p in placements {
+            let anchor = (p.anchor_col, p.anchor_row);
+            if bank.props.contains_key(&anchor) {
                 continue;
             }
-            let Some(bind) = binds.get(&d.anchor) else {
+            let Some(bind) = binds.get(&anchor) else {
                 continue;
             };
-            let Some((frames, scaled, div)) = clip(d.anim_id) else {
+            if bind.anim_id == 0 {
                 continue;
-            };
+            }
+            let (frames, scaled, div) = clip(bind.anim_id).unwrap_or((1, false, 0));
             let Some((record, pc0)) = partition0_record(man_file, man, bind.record as usize) else {
                 continue;
             };
             let program = decode_prop_program(record, pc0);
-            let mut anim = PropAnim::spawned(d.anim_id, frames, scaled, div);
+            let mut anim = PropAnim::spawned(bind.anim_id, frames, scaled, div);
             for c in &program.spawn {
                 c.apply(&mut anim);
             }
             // The spawn pass is run by `FUN_8003A55C` before the first actor
             // tick, and the tick then consumes the restart request it left.
             anim.tick();
+            let parked_pc = parked_pc_after_prologue(record, pc0);
+            let cflags = program.spawn_cflags;
             bank.props.insert(
-                d.anchor,
+                anchor,
                 PropAnimState {
                     anim,
                     program,
-                    world: (d.world_x, d.world_z),
-                    segment: None,
-                    contact: false,
+                    world: (p.world_x, p.world_z),
+                    collider: (p.collider_x, p.collider_z),
+                    record: bind.record as usize,
+                    record_body: std::sync::Arc::new(record.to_vec()),
+                    parked_pc,
+                    cflags,
                 },
             );
         }
@@ -818,50 +909,44 @@ impl PropAnimBank {
         self.props.get(&anchor).map(|p| p.anim.frame())
     }
 
-    /// Advance every prop one frame, and post the player's contact edges.
-    ///
-    /// Entering a prop's contact box runs its touch pass (retail:
-    /// `FUN_801CFC40` links the bodies, `FUN_801D5B5C` resumes the touched
-    /// actor's parked script). A segment that ends on the end-latch spin holds
-    /// until the clip reaches its end, then the next segment runs - which is
-    /// how the cupboard's doors swing open, and then shut again.
-    pub fn tick(&mut self, player: (i32, i32)) {
+    /// Advance every prop's clip one frame (the per-actor anim tick
+    /// `FUN_800204F8`, which runs unconditionally - the windmill turns whether
+    /// or not anyone is near). Touch / interact dispatch is the world's job
+    /// (`World::start_prop_interaction` runs the touched prop's record through
+    /// the field VM); this only steps the cursors.
+    pub fn tick_anims(&mut self) {
         for p in self.props.values_mut() {
-            let inside = (player.0 - p.world.0).abs() < PROP_TOUCH_BOX_HALF
-                && (player.1 - p.world.1).abs() < PROP_TOUCH_BOX_HALF;
-            if inside && !p.contact {
-                p.begin_touch();
-            }
-            p.contact = inside;
-
             p.anim.tick();
-
-            // Advance the touch pass across its end-latch spin. A segment that
-            // does not wait ends the pass; one that does parks until the tick
-            // latches the clip's end, then hands over to the next segment (the
-            // cupboard's "and now shut the doors again").
-            let Some(i) = p.segment else { continue };
-            let done = match p.program.touch.get(i) {
-                None => true,
-                Some(seg) if !seg.wait_for_end => true,
-                Some(_) if !p.anim.at_end() => continue, // still playing
-                Some(_) => false,
-            };
-            if done {
-                p.segment = None;
-                continue;
-            }
-            match p.program.touch.get(i + 1) {
-                Some(next) => {
-                    let cmds = next.cmds.clone();
-                    p.segment = Some(i + 1);
-                    for c in &cmds {
-                        c.apply(&mut p.anim);
-                    }
-                }
-                None => p.segment = None,
-            }
         }
+    }
+}
+
+/// The parked script cursor `FUN_8003A55C` leaves on a freshly spawned prop:
+/// just past the spawn prologue's terminating own-context `0x21`, or `pc0`
+/// itself when the record carries no `0x24`/`0x25` prologue marker (retail
+/// skips the prologue run entirely then).
+fn parked_pc_after_prologue(record: &[u8], pc0: usize) -> usize {
+    use legaia_asset::field_disasm::LinearWalker;
+    if !matches!(record.get(pc0), Some(0x24) | Some(0x25)) {
+        return pc0;
+    }
+    for insn in LinearWalker::new(record, pc0).flatten() {
+        if insn.opcode == OP_PARK && insn.extended.is_none() {
+            return insn.pc + insn.size;
+        }
+    }
+    pc0
+}
+
+/// The actor `+0x10` bits MAN partition-0 record `index`'s spawn prologue
+/// sets ([`PropProgram::spawn_cflags`]) - the collision / interaction class
+/// of the placed object the record binds, available without building a bank
+/// entry (an `anim_id == 0` bound placement still carries its class: e.g. a
+/// `31 00` born-exempt marker object).
+pub fn record_spawn_cflags(man_file: &ManFile, man: &[u8], index: usize) -> u32 {
+    match partition0_record(man_file, man, index) {
+        Some((record, pc0)) => decode_prop_program(record, pc0).spawn_cflags,
+        None => 0,
     }
 }
 

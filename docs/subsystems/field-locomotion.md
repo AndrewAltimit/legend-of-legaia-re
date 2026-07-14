@@ -102,16 +102,21 @@ For each probe the byte/sub-cell is derived as: `zc = (z>>6) + 2`, `xc = ((x + 0
 | `2` Z+ | `(−32,−63) (0,−63) (+32,−63)` |
 | `3` X+ | `(+64,−32) (+64,0) (+64,+32)` |
 
-`FUN_801cfc40(actor, scene, Δx, Δz, ex, ez)` walks the **active-actor pointer table** `DAT_801c93c8` (count `_DAT_8007b6b8`) and box-tests the probe point against each other actor.
+`FUN_801cfc40(actor, scene, Δx, Δz, ex, ez)` walks the **collision candidate table** `DAT_801c93c8` (count `_DAT_8007b6b8`) and box-tests the probe point against each other actor.
 A **static entity** (`flags+0x10 & 0x1020000 == 0`) anchors at its **MAN object record** (`_DAT_1f8003ec + rec_idx[+0x60]*0x20`; anchor `= tile*128 + sub*16` from record bytes `+6`/`+7` and `+0xE`/`+0xF`, with a `flags+0x52 & 8` offset correction from record halfwords `+0`/`+4`) plus the actor's live `+0x14`/`+0x18`, and blocks within `±(0x40+0x10)` = **80 units** per axis (strict).
 A **moving actor** uses its live position with caller extents `±(0x40 + ex−0x18)` (the locomotion passes `ex = ez = 0` → ±40).
-A hit links the pair mutually at `+0x98`, posts `func_0x8003d038(other[+0x50])`, and contributes result bit `1` (`flags & 0x40020000` class - moving NPC/event actor) or `4` (static prop). When the actor table is full (`_DAT_8007b6b8 == 0x20`) the whole call delegates to the `FUN_801cf9f4` box-test variant.
+A hit links the pair mutually at `+0x98`, posts `func_0x8003d038(other[+0x50])` (stores the touched bind-record index into `DAT_80073F1C` unless the per-record `DAT_801C6470` byte is `0x8C` - the motion-VM wait-for-touch opcode at `0x8003882C` consumes and resets it), and contributes result bit `1` (`flags & 0x40020000` class) or `4` (static prop). When the actor table is full (`_DAT_8007b6b8 == 0x20`) the whole call delegates to the `FUN_801cf9f4` box-test variant.
+
+The candidate table itself is rebuilt per frame by **`FUN_801cf754`** (`ghidra/scripts/funcs/overlay_0897_door2_801cf754.txt`): it walks the live actor linked list, culls to ±`0x180` of the player, caps at `0x20` entries - and **skips any actor whose `+0x10 & 3 != 0`**. `FUN_801cf9f4` applies the same `flags & 3` skip inline (`0x801cfa4c`). Those two bits are the placed-prop **collision/touch kill switch**, and prop bind scripts author them:
+
+- A **door's touch pass runs `31 00`** (field-VM CFLAG_SET bit 0 on its own `+0x10`) immediately after its swing-start ops (`2C 07 / 2C 01 / 2B 03`, e.g. `town01` P0[0] offset `0x24`) and *before* the `2D 08` end-latch spin - so a closed door is **solid** (bit-4 contact blocks the step while the same probe posts the touch), and its collision + touch box drop **at touch-resume, as the swing starts**, not at full-open. Props born pass-through carry `31 00` in their spawn prologue instead.
+- A **searchable prop's spawn prologue runs `31 1E`** (`+0x10 |= 0x40000000`, e.g. the `town01` cupboard P0[12] offset `0x09`), flipping its contact class to result bit `1`: it still blocks, but the locomotion dispatch **never auto-posts bit-1 partners** - only the just-pressed-confirm facing probe does. That single authored op is the whole door-vs-cupboard discriminator: doors open on body contact, cupboards only on the interact button. (`31 11` - bit 17, `0x20000` - also selects the bit-1 class *and* the moving-arm box.)
 
 **The locomotion gates a step on the actor bits and the wall bit together**: `FUN_801d01b0` commits each 2-unit axis step only when `FUN_801cfe4c` returns `0` (or the debug no-clip `_DAT_8007b98c`/`_DAT_8007b850 & 2` is on) - NPCs block movement exactly like walls.
 
 Each sub-step it also runs the **touch/interact dispatch** (gated off while the player's `+0x10 & 0x80000` engaged flag, the scratch system-channel `_DAT_1f800394 & 0x400`, or the field-control dialog byte `_DAT_801c6ea4+0x62` is set):
 
-- **Prop walk-touch is automatic**: a step whose probe result carries bit `4` (static entity) posts the touched entity's event on the spot - `FUN_801d5b5c` on the `+0x98` partner, every contact step, no button needed.
+- **Prop walk-touch is automatic for the static (bit-4) class only**: a step whose probe result carries bit `4` posts the touched entity's event on the spot - `FUN_801d5b5c` on the `+0x98` partner (`0x801d0800..0x801d0808`), every contact step, no button needed. A bit-1-class prop (the `31 1E` cupboards) never reaches this arm; it fires only from the button-gated probe below.
 - **NPC interaction is button-gated**: with no bit `4`, and only when the configured interact button is **just-pressed** (`_DAT_8007b874 & _DAT_800846d0` - the assignable confirm mask from the `0x800846xx` input-config block), it runs one more facing-indexed probe: a third table **`DAT_801f2254`** (overlay file `0x23A3C`, one `(Δx, Δz)` pair per 45° facing sector, `sector = (facing & 0xfff) >> 9`) supplies a single **radius-64 compass point ahead of the player**, box-tested through `FUN_801cf9f4` with extents `0x20` (NPC box widens to `0x40+0x20−0x18` = ±72).
 A bit-`1` hit posts the touch event (`FUN_801d5b5c` on the `+0x98` partner), turns the player toward the touched actor when the partner is a plain moving-class actor (`flags & 0x20010 == 0x20000`; `func_0x80019b28` arctan-LUT angle from the partner's position into player `+0x26`), and raises the field-control interact flag `_DAT_801c6ea4+0x60 = 1`.
 
@@ -141,12 +146,53 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
 - **The full scene context reproduces the standoff too.** The `*_full_scene_rest_matches_retail` legs press the same walls inside a real `BootSession::enter_field_live` scene entry - the resolver-loaded `.MAP` grid plus the engine-executed prescript paints, walked through the pad -> camera-remap -> `step_field_locomotion` path - and rest at the captured retail positions byte-exactly.
 - **The actor-collision arm is modelled too - and capture-classed.** `World::field_actor_dir_blocked` ports `FUN_801cfc40`'s **moving-actor arm** (result bit `1`): the three `DAT_801f21b4` probes box-tested against the NPC positions (`World::field_npc_positions`) with the **±40-unit** box (`0x40` core minus the locomotion's `0x18` extent bias), gated behind `World::solid_field_npcs` / `play-window --solid-npcs` - NPCs become solid, resting 102 units short of an NPC head-on (unit-pinned in `world.rs::tests`).
   The class is **capture-pinned by `rimelm_npc_press_tetsu`**: a live state with the player pressed into the sparring partner shows the mutual `+0x98` collision link active in-frame both ways and Tetsu's `flags+0x10 = 0x08020884` carrying the `0x20000` moving-class bit - village NPCs take the bit-1 arm, not the static prop arm. The disc-gated `npc_press_pins_moving_actor_arm` leg asserts the link, the class, and that the engine probe refuses the captured press direction while the stepper holds the captured rest.
-- **The static prop arm (bit `4`) is modelled from the `.MAP` placements.** `Scene::field_object_placements` already returns exactly the collision-actor spawns (the placed flag `0x4` *is* the spawn gate; the numerous flag-`0x11/0x12/0x13` records are the terrain layer), and each placement now carries its `collider_x`/`collider_z` box centre (spawn position + the record's collision-footprint offset, `legaia_asset::field_objects::collision_footprint_offset`). `World::field_prop_colliders` installs them at field entry; `field_actor_dir_blocked` box-tests the same three probes against them at the static ±80 half-extent - a head-on press rests 142 units short of a prop centre (same pre-step parity as the NPC arm's 102). Gated behind the same `World::solid_field_npcs` / `--solid-npcs` flag.
+- **The placed-prop arms are modelled from the `.MAP` placements, and props are solid by default.**
+  `Scene::field_object_placements` already returns exactly the collision-actor spawns (the placed
+  flag `0x4` *is* the spawn gate; the numerous flag-`0x11/0x12/0x13` records are the terrain layer),
+  and each placement carries its `collider_x`/`collider_z` box centre (spawn position + the record's
+  collision-footprint offset, `legaia_asset::field_objects::collision_footprint_offset`).
+  `SceneHost::install_field_props` builds one [`FieldPropCollider`] row per placement at field
+  entry, classed by its bind record's spawn-prologue `0x31` ops
+  (`interact`/`moving_box`/born-exempt); `advance_with_collision` blocks on them **unconditionally**
+  (retail's props always sit in the `FUN_801cf754` candidate list) - a head-on press rests 142 units
+  short of a static prop centre (same pre-step parity as the NPC arm's 102), and the same refused
+  step latches a static-class prop's touch into `World::pending_prop_touch`. A prop whose script has
+  run `31 00` (`FieldPropCollider::solid = false`) blocks and touches nothing, exactly like retail's
+  `flags & 3` skip. Only the NPC arm stays behind `World::solid_field_npcs` / `--solid-npcs`.
 - **The button-press interact dispatch is modelled faithfully.** `World::field_interact_probe_slot` ports the `DAT_801f2254` facing probe (the radius-64 compass point, ±72 interact box); a hit opens the NPC's dialogue and turns the player toward it (`World::face_field_npc`, the face-the-NPC step - shape-faithful float `atan2` rather than retail's arctan LUT). The engine's field heading stores `0` = Z+ where retail facing stores `0` = Z− (a Z+ walk writes `0x800` to `+0x26`), so the sector index adds a half-turn before quantising. The captured Tetsu press-rest position talks to him through this probe (`world.rs::tests::interaction_probe_matches_tetsu_capture_geometry`).
 - **Field-NPC motion is modelled through the motion VM.** Each talk NPC's placement script carries its authored walk legs as `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints and `World::tick_field_npc_motions` drives them through the ported motion VM (`FUN_8003774C`), one pursue step per field tick, writing the live position back into `World::field_npc_positions` - so the moving NPC's ±40 collision box and its interact box follow it, exactly as retail probes the live `+0x14`/`+0x18`.
   Autonomous patrol is opt-in (`World::animate_field_npcs` / `play-window --live-npcs`) and pauses while a dialogue is up (the retail interaction motion-pause kick); an interaction prologue's own `0x4C 0x51` runs the interacted NPC through the same kernel regardless of the flag. See [`motion-vm.md`](motion-vm.md#field-npc-walking). Disc-gated: `engine-core/tests/field_npc_motion_disc.rs` (town01 derives routes for many villagers; the engine walks them off-anchor; the collision box follows).
-- **The prop walk-touch event post is modelled for the decoded script classes.** `man_field_scripts::placement_walk_touch_event` classifies each non-parked placement's script: a genuine `0x3E` door-warp (`Warp`) or a cross-context `0x23` into the player channel `0xF8` (`PlayerMoveTo` - the cave-guard throw-back / intra-scene teleport). `World::check_field_walk_touch` runs on the locomotion step: standing inside the placement's static ±80 contact box posts once per contact through the same `trigger_field_interact` dispatch the button-gated interact uses (surfacing a `FieldInteract` event - the engine analogue of the `FUN_801d5b5c` auto post on the `+0x98` partner) and applies the decoded effect (queue the door-warp transition / snap the player).
-  Not modelled: the full post kernel (engaged flag, facing save/restore, touch counters) and prop scripts beyond those two decoded classes. Disc-gated: `engine-core/tests/field_walk_touch_disc.rs` (koin1 mine-exit warps; cave01 guard throw-backs).
+- **The prop walk-touch event post is modelled for the decoded script classes.**
+  `man_field_scripts::placement_walk_touch_event` classifies each non-parked placement's script: a
+  genuine `0x3E` door-warp (`Warp`) or a cross-context `0x23` into the player channel `0xF8`
+  (`PlayerMoveTo` - the cave-guard throw-back / intra-scene teleport).
+  `World::check_field_walk_touch` runs on the locomotion step: contact is tested with the **same
+  forward probe points that block movement** (the `DAT_801f21b4` rows of the directions held this
+  tick, plus the stand-inside fallback) against the placement's static ±80 contact box, posting once
+  per contact through the same `trigger_field_interact` dispatch the button-gated interact uses and
+  applying the decoded effect (queue the door-warp transition / snap the player) - so a **solid**
+  doorway object still fires its teleport while the player stands pressed against its box, exactly
+  as retail's one probe both refuses the step and posts the touch.
+  Not modelled: the facing save/restore and touch counters of the post kernel. Disc-gated: `engine-core/tests/field_walk_touch_disc.rs` (koin1 mine-exit warps; cave01 guard throw-backs).
+- **Prop bind records run through the field VM on touch / interact - the door swing, its collision
+  drop, and the cupboard search.** A static-class prop touch (`World::pending_prop_touch`, the bit-4
+  auto-post) or an interact-class confirm press (`World::field_interact_prop_anchor`, the
+  facing-probe prop arm wired into `tick_field_interaction_probe`) starts
+  `World::start_prop_interaction`: the prop's bind record runs through the inline field-VM runner
+  from the prop's parked cursor (`PropAnimState::parked_pc`, the engine's `actor+0x9E`) with the
+  executing context bridged to the prop actor - `ctx.local_flags` ↔ `+0x62` (the clip control word
+  the `2B`/`2C`/`2D` ops drive), `ctx.flags` ↔ `+0x10` (whose `31 00` drops the prop's collision
+  row), `ctx.field_6a` ↔ `+0x6A`. Waitable ops (`2D 08` until the per-frame anim tick latches the
+  clip end, `4A` frame waits) **park** the run; `0x1F` segments open the real dialog panel
+  (item/character name escapes resolved via `OwnedDialogPanel::substitutions`); `39` GIVE_ITEM
+  grants through the host; the raw `21` ends the interaction and re-parks the record. The player's
+  movement-disabled flag (`+0x10 & 0x80000`) is held for the run's duration - the retail engaged
+  flag `FUN_801d5b5c` raises and the dialog SM teardown clears - so the player stands while the door
+  swings and the message is up. Engine: `world/prop_interact.rs`; disc-gated:
+  `engine-core/tests/field_prop_anim_disc.rs` (a closed door blocks at the retail standoff, opens on
+  the blocked step's touch, and stops blocking via its `31 00`; the cupboard blocks silently, opens
+  only on interact, grants once under its `70 xx` searched-flag guard, shows the found/empty
+  message, and swings shut when the box is dismissed).
 
 Capture note: both wall-press captures park in the **`town0c`** Rim Elm variant. The live grid byte-matches the town01 map's base + paints - which is exactly what a town0c session *should* hold: under the universal `define−2` `.MAP` resolution (see "Engine port" below) town0c's own `.MAP` is PROT 0019, **byte-identical** to town01's (0001/0010 - the Rim Elm variants share one map). The earlier reading that PROT 0028 was "town0c's own different `.MAP`" mis-attributed the next block's map (0028 is `izumi`'s, `define 30 − 2`); the cold-vs-variant question this raised is dissolved.
 
@@ -388,16 +434,28 @@ An actor is born with the placed-object template `DAT_80073E70`'s
   whose prologue carries **no** `0x4C 0x35` keeps the looping template flags and
   turns forever - that is Rim Elm's windmill (`風車`).
 - **touch** - resumed when the player's body hits the prop (`FUN_801cfc40` links
-  the two actors through their `+0x98` partner slots; `FUN_801d5b5c` resumes the
-  touched one's parked script). A house door's pass is a creak
+  the two actors through their `+0x98` partner slots; `FUN_801d5b5c` posts the
+  engagement and the dialog SM `FUN_80039b7c` runs the touched actor's parked
+  script through the dispatcher). A house door's pass is a creak
   (`0x36` sub-`0x8000` → the SFX cue player `FUN_80035b50`) then
-  `2C 07` / `2C 01` / `2B 03` / `2C 08` - clear reverse, **clear hold**, set
-  clamp, clear the end latch - followed by `2D 08`, which spins until the tick
-  latches the end. The clip plays forward and clamps open.
+  `2C 07` / `2C 01` / `2B 03` - clear reverse, **clear hold**, set clamp - then
+  **`31 00`** (CFLAG_SET bit 0 on `+0x10`: the door leaves the collision
+  candidate list as the swing starts - see the `FUN_801cf754` `flags & 3`
+  filter above), then `2C 08` / `2D 08`, which spins until the tick latches the
+  end. The clip plays forward and clamps open, and the opened door neither
+  blocks nor re-fires.
 
-Rim Elm's cupboard adds a second segment after that spin - `2B 07` / `2C 01` /
-`2B 03`, i.e. set reverse and play again - so its doors swing out and then back
-shut, which is why every capture finds them closed.
+Rim Elm's cupboard continues past that spin with its **search body** - a
+`70 xx` searched-flag guard, `50 xx` flag SET + `39 xx` GIVE_ITEM, the `0x1F`
+message segments ("There's a `C2 xx` in the cupboard!" on the fresh arm, "The
+cupboard is empty!" on the guarded one; `C2` = the item-name escape matching
+the granted id) - and only then the closing segment (`2B 07` / `2C 01` /
+`2B 03`, set reverse and play again). Because the script resumes only when the
+pager returns, the doors swing shut **after the message is dismissed** - and
+every idle capture finds them closed. Locked-house doors (`town01` P0[1]) are
+the same shape with story-flag arms: while locked, the touch pass shows "The
+house is locked..." and never reaches the open ops (nor the `31 00`), so a
+locked door stays solid.
 
 Live PCSX-Redux Rim Elm captures read exactly those words back off the actor
 list: a resting door is `+0x62 = 0x001F` / cursor `0`, the door the player is
@@ -406,22 +464,18 @@ of the 30-frame swing), and one that has played back shut is `+0x62 = 0x019D` /
 cursor `0`. The scene's NPCs sit at the untouched template `0x0015`.
 
 Engine port: `legaia_engine_core::field_env` - `PropAnim::tick` (the
-`FUN_800204f8` arithmetic), `decode_prop_program` (the record's spawn + touch
-command runs), and `PropAnimBank`, which holds one cursor **per placement** (so
-touching one cupboard leaves its three siblings shut) and posts contact edges
-against the same `±0x50` prop box the locomotion's static-entity collision arm
-uses. The play-window keeps the baked frame-0 mesh for every prop at rest and
-re-poses only the ones whose clip is running. Disc-gated coverage:
-`crates/engine-core/tests/field_prop_anim_disc.rs`.
-
-**Not modelled:** the touch pass's non-animation body. Retail's cupboard shows
-its item message *between* the open and the close (the script's dialogue sits
-after the end-latch spin); the engine's prop-contact path runs only the record's
-animation commands, so the doors swing out and straight back. The story-flag
-branches inside a record are likewise not followed - the decoder takes the
-record's play runs linearly and ignores the flag-gated pose snaps (`0x4C 0x36`
-on an already-searched shelf), which are alternate *spawn* states rather than
-contact reactions.
+`FUN_800204f8` arithmetic), `decode_prop_program` (the record's spawn/touch
+command shape + the `0x31` class bits), and `PropAnimBank`, which holds one
+cursor **per placement** (so touching one cupboard leaves its three siblings
+shut) plus each prop's record, parked cursor and `+0x10` word. The touch /
+interact dispatch runs the record itself through the field VM
+(`World::start_prop_interaction`, `world/prop_interact.rs` - see the engine
+bullet list above), so the search body, the collision drop and the
+close-on-dismiss sequencing are the script's own. The play-window keeps the
+baked frame-0 mesh for every prop at rest and re-poses only the ones whose
+clip is running. Disc-gated coverage:
+`crates/engine-core/tests/field_prop_anim_disc.rs`. Raw record evidence:
+`cargo run -p legaia-engine-core --example dump_prop_scripts -- town01`.
 
 The record's `+0x1E` byte is **not** part of this: it is the object's cull
 radius in `0x40` units, copied to `actor+0x58` and read by the screen-space
@@ -431,8 +485,8 @@ See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ## Provenance
 
-- Controller `FUN_801d01b0`, position writes `0x801D0684 / 06E4 / 0744 / 07B4` - see `ghidra/scripts/funcs/overlay_0897_801d0684.txt`.
-- Collision `FUN_801cfe4c`, finer probe `FUN_801cfc40`, interaction `FUN_801cf9f4` - `ghidra/scripts/funcs/overlay_0897_801cfe4c.txt`.
+- Controller `FUN_801d01b0`, position writes `0x801D0684 / 06E4 / 0744 / 07B4` - see `ghidra/scripts/funcs/overlay_0897_801d0684.txt`; the touch/interact dispatch body (`0x801d07c0..0x801d08dc`) in `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d01b0.txt` (the `overlay_0897` copy is garbled in this region).
+- Collision `FUN_801cfe4c`, finer probe `FUN_801cfc40`, interaction `FUN_801cf9f4` - `ghidra/scripts/funcs/overlay_0897_801cfe4c.txt`, `overlay_0897_door_801cfc40.txt`, `overlay_0897_801cf9f4.txt`. Candidate-list builder `FUN_801cf754` (the `flags & 3` skip + ±`0x180` cull + `0x20` cap) - `ghidra/scripts/funcs/overlay_0897_door2_801cf754.txt`. Touch-post side-band `FUN_8003d038` (`DAT_80073F1C`) - `ghidra/scripts/funcs/8003d038.txt`; its motion-VM consumer at `0x8003882C` inside `ghidra/scripts/funcs/80038158.txt`.
 - Pad remap `func_0x800467e8`, direction mask `FUN_80046494` - `ghidra/scripts/funcs/800467e8.txt` / `80046494.txt`.
 - Scene-entry map-init `FUN_8003aeb0` (height LUT fill, `+0x8000` footprint OR, player-actor setup) - `ghidra/scripts/funcs/8003aeb0.txt`. Object spawn iterator `FUN_8003a55c` (low-nibble floor-height read, `+0x8000` index walk) - `ghidra/scripts/funcs/8003a55c.txt`.
 - Floor sampler `FUN_80019278` (both height models: the `cell & 0x800` elevation-override branch and the bilinear nibble branch) - `ghidra/scripts/funcs/80019278.txt`. Its kind-table lookups `FUN_801D5630` / `FUN_801D5AE0` - `ghidra/scripts/funcs/overlay_cutscene_mapview_801d5630.txt`, `ghidra/scripts/funcs/overlay_0896_801d5ae0.txt`.
@@ -678,7 +732,7 @@ in through the script door and back out through the map door, no story flags);
 
 ## Open
 
-- The full `FUN_801d5b5c` post-kernel state (the touch-event handler beyond the decoded entry kernel).
+- The `FUN_801d5b5c` post kernel's facing save/restore (`+0x26` -> `+0x5A`) and touch counters (`+0x2A` / `_DAT_801c6ea4+0xA`); the engaged flag and the parked-script resume are modelled (`world/prop_interact.rs`).
 - Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists, and the initial-facing decode takes the fall-through branch - see [NPC initial facing](#npc-initial-facing) - rather than evaluating the prologue's `0x7x` flag-TEST chain against live flags, so a later-chapter branch's facing/position is not selected). The **door** path does evaluate its branches live (see [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family)); the general actor path does not yet.
 
 ## NPC initial facing

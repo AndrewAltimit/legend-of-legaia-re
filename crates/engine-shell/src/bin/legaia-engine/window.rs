@@ -30,8 +30,9 @@ use winit::window::WindowId;
 /// offscreen at [`Self::capture_tick`] and write it to [`Self::path`], then
 /// exit - and/or a periodic sweep ([`Self::sweep`]) that captures every N
 /// ticks into a directory. [`Self::pad_script`] maps a world-tick to a
-/// one-tick pad edge so a capture run can auto-open + navigate a menu
-/// without `xdotool`.
+/// pad mask (one-tick edges, or held ranges via `FIRST-LAST:BUTTON`) so a
+/// capture run can auto-open + navigate a menu - or hold a direction to
+/// walk somewhere - without `xdotool`.
 pub(crate) struct ScreenshotConfig {
     /// Single-shot output (`--screenshot`). `None` when only the periodic
     /// sweep is requested.
@@ -85,13 +86,33 @@ impl ScreenshotConfig {
                 let (tick, btn) = entry
                     .split_once(':')
                     .with_context(|| format!("pad-script entry '{entry}' is not TICK:BUTTON"))?;
-                let tick: u64 = tick
-                    .trim()
-                    .parse()
-                    .with_context(|| format!("pad-script tick '{tick}' is not a number"))?;
                 let button = legaia_engine_core::input::PadButton::from_name(btn.trim())
                     .with_context(|| format!("pad-script button '{btn}' is not a pad button"))?;
-                *script.entry(tick).or_insert(0) |= button.mask();
+                // `TICK` (one-tick edge) or `FIRST-LAST` (held across the
+                // inclusive range - walking somewhere needs a held direction).
+                let tick = tick.trim();
+                let (first, last) =
+                    match tick.split_once('-') {
+                        Some((a, b)) => {
+                            let a: u64 = a.trim().parse().with_context(|| {
+                                format!("pad-script tick '{a}' is not a number")
+                            })?;
+                            let b: u64 = b.trim().parse().with_context(|| {
+                                format!("pad-script tick '{b}' is not a number")
+                            })?;
+                            anyhow::ensure!(a <= b, "pad-script range '{tick}' is reversed");
+                            (a, b)
+                        }
+                        None => {
+                            let t: u64 = tick.parse().with_context(|| {
+                                format!("pad-script tick '{tick}' is not a number")
+                            })?;
+                            (t, t)
+                        }
+                    };
+                for t in first..=last {
+                    *script.entry(t).or_insert(0) |= button.mask();
+                }
             }
         }
         Ok(Some(Self {
@@ -360,11 +381,6 @@ struct PlayWindowApp {
     /// other three. Excluded from `field_placement_draws` /
     /// `field_placement_color_draws` - this list owns their draws.
     field_posed_props: Vec<PosedPropDraw>,
-    /// Live clip state of every posed prop, keyed by anchor tile. Ticked once
-    /// per field frame with the player's position: entering a prop's contact box
-    /// runs its bind record's touch pass, which is what swings a house door open.
-    /// See `legaia_engine_core::field_env::PropAnimBank`.
-    field_prop_anims: legaia_engine_core::field_env::PropAnimBank,
     /// Raw TMDs of the posed props, indexed by `PosedMesh::tmd`. A moving prop
     /// re-poses from these at its live frame; the rest pose is baked once into
     /// `PosedPropDraw::baked`. (The clip source is `npc_anim_bundles.0`, the

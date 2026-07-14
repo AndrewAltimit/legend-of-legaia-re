@@ -112,7 +112,31 @@ impl PlayWindowApp {
                 // matches the asset-viewer's cleanup and avoids the "flat
                 // green CLUT[0]" shells over correctly-textured geometry
                 // that the unfiltered builder produces.
-                let vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
+                let mut vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
+                // Prologue dim ambient on the LIT prim rows. Retail stages the
+                // GTE back/ambient colour `DAT_8007B788` = `0x00202020` (dim,
+                // R=G=B=32) for the prologue cutscene legs vs `0x00FFFFFF` in
+                // town01 (`FUN_80043390` stages it into GTE cr13-15; byte-exact
+                // across save states - see docs/subsystems/cutscene.md "Full-
+                // scene sepia grade"). The lit rows (0/1) carry no baked colour
+                // word - the builder marks them MODULATION_NEUTRAL - and in
+                // retail their GPU modulation colour comes out of the GTE
+                // lighting sum, whose prologue floor is that dim ambient. Give
+                // them the pinned ambient so the opdeene cave-wall shells
+                // render dark like the retail tableau backdrop instead of
+                // full-bright gold walls that bury the crater-rim camera
+                // (the baked-colour rows - the monument / wings - keep their
+                // own words, which is exactly retail's bright-on-dark
+                // contrast). Scoped to the prologue legs by the same gate as
+                // the sepia grade; everything else keeps neutral.
+                if self.session.host.world.scene_color_grade().is_some() {
+                    const PROLOGUE_AMBIENT: u8 = 0x20; // DAT_8007B788 low byte
+                    for c in &mut vmesh.colors {
+                        if *c == [legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3] {
+                            *c = [PROLOGUE_AMBIENT; 3];
+                        }
+                    }
+                }
                 if vmesh.indices.is_empty() {
                     if std::env::var_os("LEGAIA_DIAG_PLACE").is_some() {
                         let (_, stats) = rtmd.build_filtered_vram_mesh_reasoned(&res.vram);
@@ -162,6 +186,47 @@ impl PlayWindowApp {
                     if mhi[ax] > hi[ax] {
                         hi[ax] = mhi[ax];
                     }
+                }
+                // Diag: `LEGAIA_DIAG_MESHTEX=<res index>` dumps a KEPT mesh's
+                // surviving texture references (distinct CBA/TSB pairs) + AABB,
+                // for chasing a mesh that renders flat / mis-textured.
+                if std::env::var("LEGAIA_DIAG_MESHTEX")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    == Some(src_i)
+                {
+                    let mut pairs = std::collections::BTreeSet::new();
+                    for ct in &vmesh.cba_tsb {
+                        pairs.insert((ct[0], ct[1]));
+                    }
+                    let decoded: Vec<String> = pairs
+                        .iter()
+                        .map(|&(cba, tsb)| {
+                            format!(
+                                "cba={cba:#x} CLUT({},{}) tsb={tsb:#x} page({},{}) bpp{}",
+                                (cba & 0x3f) * 16,
+                                cba >> 6,
+                                (tsb & 0xf) * 64,
+                                ((tsb >> 4) & 1) * 256,
+                                4 << ((tsb >> 7) & 3)
+                            )
+                        })
+                        .collect();
+                    let mut color_hist = std::collections::BTreeMap::new();
+                    for c in &vmesh.colors {
+                        *color_hist.entry(*c).or_insert(0usize) += 1;
+                    }
+                    log::info!(
+                        "DIAG mesh tex: res {} (entry {} off {:#x}) verts {} tris {} \
+                         aabb {mlo:?}..{mhi:?} refs: {} colors: {:?}",
+                        src_i,
+                        rtmd.entry_idx,
+                        rtmd.offset,
+                        vmesh.positions.len(),
+                        vmesh.indices.len() / 3,
+                        decoded.join(" | "),
+                        color_hist
+                    );
                 }
                 match r.upload_vram_mesh(
                     &vmesh.positions,
@@ -364,7 +429,7 @@ impl PlayWindowApp {
         // Posed placed props (house doors, cupboards, the windmill): one draw
         // per placement + its live clip state, so each keeps its own cursor.
         // Resolved before the placement lists, which hand these props over.
-        let (posed_props, prop_anims) =
+        let posed_props =
             self.resolve_posed_props(&res, &posed_placement_meshes, scene_bundle.as_ref());
         let field_placement_draws =
             self.resolve_field_placement_draws(&res, &tmd_src_index, &posed_placement_meshes, true);
@@ -549,7 +614,6 @@ impl PlayWindowApp {
         // its own clip cursor) and their own live animation state.
         self.field_posed_tmds = posed_tmds;
         self.field_posed_props = posed_props;
-        self.field_prop_anims = prop_anims;
         self.world_map_terrain_draws = world_map_terrain_draws;
         self.ground_heightfield = world_map_hf;
         self.world_map_slot4_lines = world_map_slot4_lines;

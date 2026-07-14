@@ -5,6 +5,80 @@
 use super::*;
 
 impl SceneHost {
+    /// Install the placed-prop collision + interaction layer for the current
+    /// field scene: one [`crate::world::FieldPropCollider`] per placed `.MAP`
+    /// object (retail's collision candidate list, `FUN_801CF754` - **solid by
+    /// default**, a closed door blocks), classed by its bind record's
+    /// spawn-prologue `0x31` ops (`31 1E` = interact-gated cupboard class,
+    /// `31 00` = born collision-exempt), plus the
+    /// [`crate::field_env::PropAnimBank`] whose entries carry each posed
+    /// prop's clip runtime and its bind record - the script a touch /
+    /// interact runs through the field VM.
+    ///
+    /// REF: FUN_8003A55C, FUN_801CF754, FUN_801CFC40
+    fn install_field_props(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man_bytes: &[u8],
+    ) {
+        let Some(scene) = self.scene.as_ref() else {
+            return;
+        };
+        let placements = match scene.field_object_placements(&self.index) {
+            Ok(Some(p)) => p,
+            Ok(None) => return,
+            Err(err) => {
+                eprintln!("[scene] field prop-collider load skipped: {err:#}");
+                return;
+            }
+        };
+        let binds = match scene.field_object_binds(&self.index) {
+            Ok(b) => b.unwrap_or_default(),
+            Err(err) => {
+                eprintln!("[scene] field object-bind load skipped: {err:#}");
+                Default::default()
+            }
+        };
+        // The scene ANM bundle resolves each posed prop's clip metadata
+        // (frame count + step scaling) for the bank's end-latch timing.
+        let bundle = scene.entries.iter().find_map(|e| {
+            [3usize, 5, 6, 7]
+                .into_iter()
+                .find_map(|d| legaia_asset::player_anm::find_in_entry(&e.bytes, d).pop())
+        });
+        let clip = |anim: u8| -> Option<(u16, bool, u8)> {
+            let b = bundle.as_ref()?;
+            let r = b.record(anim.checked_sub(1)? as usize).ok()?;
+            Some((r.frame_count, (r.a >> 8) & 1 != 0, (r.flag & 0xFF) as u8))
+        };
+        self.world.field_prop_bank =
+            crate::field_env::PropAnimBank::build(&placements, &binds, man_file, man_bytes, clip);
+        self.world.field_prop_colliders = placements
+            .iter()
+            .map(|p| {
+                let anchor = (p.anchor_col, p.anchor_row);
+                let bind = binds.get(&anchor);
+                let cflags = bind
+                    .map(|b| {
+                        crate::field_env::record_spawn_cflags(
+                            man_file,
+                            man_bytes,
+                            b.record as usize,
+                        )
+                    })
+                    .unwrap_or(0);
+                crate::world::FieldPropCollider {
+                    anchor: bind.map(|_| anchor),
+                    center: (p.collider_x, p.collider_z),
+                    live: (p.world_x, p.world_z),
+                    moving_box: cflags & 0x0102_0000 != 0,
+                    interact: cflags & 0x4002_0000 != 0,
+                    solid: cflags & 3 == 0,
+                }
+            })
+            .collect();
+    }
+
     /// Lazily load + cache the monster stat archive (PROT 867, extended
     /// footprint - the archive lives in the entry's trailing-gap sectors,
     /// not the small indexed payload, so `entry_bytes` would truncate it).
@@ -242,26 +316,14 @@ impl SceneHost {
         };
         self.world
             .load_field_region_tables(&region_block, &zone_table);
-        // Static prop colliders: one box centre per placed `.MAP` object
-        // (spawn position + the record's collision-footprint offset - the
-        // static-entity arm of the actor probe). Installed unconditionally
-        // (empty for scenes with no field map) so a stale scene's props
-        // never leak across a transition; blocking stays behind the opt-in
-        // `World::solid_field_npcs` flag.
-        self.world.field_prop_colliders = match self.scene.as_ref() {
-            Some(scene) => match scene.field_object_placements(&self.index) {
-                Ok(Some(placements)) => placements
-                    .iter()
-                    .map(|p| (p.collider_x, p.collider_z))
-                    .collect(),
-                Ok(None) => Vec::new(),
-                Err(err) => {
-                    eprintln!("[scene] field prop-collider load skipped: {err:#}");
-                    Vec::new()
-                }
-            },
-            None => Vec::new(),
-        };
+        // Placed-prop colliders + interaction bank are installed further
+        // down, once the scene MAN is parsed (the bind records carry each
+        // prop's collision class and its touch script). Cleared here so a
+        // stale scene's props never leak across a transition into a scene
+        // whose MAN fails to parse.
+        self.world.field_prop_colliders = Vec::new();
+        self.world.field_prop_bank = Default::default();
+        self.world.pending_prop_touch = None;
         // The 16-entry floor-height LUT the collision grid's low nibble
         // indexes - resident so the floor-height sampler
         // (`World::sample_field_floor_height`, port of `FUN_80019278`) can
@@ -402,6 +464,14 @@ impl SceneHost {
                     // never-walked NPC stands with its retail facing.
                     // REF: FUN_8003A1E4
                     self.world.seed_field_npc_facings(&man_file, &man_bytes);
+                    // Placed-prop colliders + the prop animation/interaction
+                    // bank: every placed `.MAP` object is a solid actor in
+                    // retail's collision candidate list (`FUN_801CF754`),
+                    // classed by its bind record's spawn-prologue `0x31` ops;
+                    // a bound, posed prop additionally gets a bank entry
+                    // whose record runs through the field VM on touch /
+                    // interact (the door swing, the cupboard search).
+                    self.install_field_props(&man_file, &man_bytes);
                     // `.MAP` **object** binds (retail scene-init `FUN_8003A55C`):
                     // the object layer is walked, each spawnable object's key
                     // tile (`object_tile + descriptor (dx,dz)`) resolves a

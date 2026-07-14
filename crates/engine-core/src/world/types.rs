@@ -12,6 +12,46 @@ pub struct FadeRequest {
     pub ticks: u16,
 }
 
+/// One placed field prop's collision state - the engine's row for the
+/// **actor-collision arms** of retail's movement probe (`FUN_801CFC40`) and
+/// the collision candidate list it feeds (`FUN_801CF754`).
+///
+/// A retail placed object is an actor whose contact box both **blocks** the
+/// player's 2-unit step and **posts the touch** that resumes its parked
+/// script; the flag word `+0x10` classes it:
+///
+/// - default (no class bits): static arm - box ±80 around
+///   [`Self::center`] (the record-derived footprint centre), contact result
+///   bit `4`, auto-posted on body contact (doors);
+/// - `+0x10 & 0x40020000` ([`Self::interact`]): result bit `1` - still
+///   blocks, but only the button-gated facing probe posts it (cupboards,
+///   `31 1E` in the spawn prologue);
+/// - `+0x10 & 0x1020000` ([`Self::moving_box`]): the box anchors at
+///   [`Self::live`] with the moving-actor extents (±40);
+/// - `+0x10 & 3` ([`Self::solid`] = false): exempt - `FUN_801CF754` /
+///   `FUN_801CF9F4` skip the actor entirely. The door's touch pass sets bit
+///   `0` (`31 00`) as the swing starts, which is when a door stops blocking.
+// REF: FUN_801CFC40, FUN_801CF754, FUN_801CF9F4
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldPropCollider {
+    /// Footprint-anchor tile of the placement (the [`World::field_prop_bank`]
+    /// key), when the placement is bound; `None` for unbound (window-sweep)
+    /// placements.
+    pub anchor: Option<(u8, u8)>,
+    /// Static-arm contact-box centre (`collider_x`/`collider_z`).
+    pub center: (i32, i32),
+    /// Live actor position (the placement's spawn world position) - the
+    /// moving-arm anchor.
+    pub live: (i32, i32),
+    /// `+0x10 & 0x1020000`: moving-arm box (±40 at [`Self::live`]).
+    pub moving_box: bool,
+    /// `+0x10 & 0x40020000`: interact-gated class (contact result bit `1`,
+    /// never auto-posted).
+    pub interact: bool,
+    /// Clear once `+0x10 & 3` is set: the prop no longer blocks nor touches.
+    pub solid: bool,
+}
+
 /// Render-agnostic snapshot of one live effect-pool master slot, produced by
 /// [`World::active_effect_markers`] - one entry per effect (effect origin +
 /// age). [`World::active_effect_sprites`] is the richer per-child billboard

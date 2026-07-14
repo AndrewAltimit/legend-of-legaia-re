@@ -74,6 +74,7 @@ mod field_movement;
 mod frame_tick;
 mod items_arts;
 mod narration;
+mod prop_interact;
 mod save;
 mod vm_hosts;
 mod worldmap;

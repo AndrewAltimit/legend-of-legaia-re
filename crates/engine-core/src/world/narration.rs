@@ -526,7 +526,7 @@ impl World {
                 .collect();
         let mut tl = crate::cutscene_timeline::CutsceneTimeline::new(body, pc0);
         tl.narration_blocks = narration_blocks;
-        if trace {
+        if trace || std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some() {
             tl = tl.with_trace();
         }
         self.cutscene_timeline = Some(tl);
@@ -1112,6 +1112,18 @@ impl World {
                     }
                 }
                 if tl.trace_enabled {
+                    if std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some()
+                        && !(matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
+                            && next_pc == pc)
+                    {
+                        eprintln!(
+                            "DIAG timeline: frame {} pc {pc:#06x} op {opcode_byte:#04x} \
+                             ({:#04x}) -> {next_pc:#06x} {kind:?} bytes {:02x?}",
+                            tl.frames,
+                            opcode_byte & 0x7F,
+                            &tl.bytecode[pc..(pc + 12).min(tl.bytecode.len())]
+                        );
+                    }
                     tl.trace.push(crate::cutscene_timeline::TraceEntry {
                         pc,
                         opcode_byte,
@@ -1649,6 +1661,16 @@ impl World {
     /// flag is off, so the default simplified path is untouched.
     pub fn drive_inline_dialogue(&mut self) {
         if !self.use_vm_dialogue {
+            return;
+        }
+        // A prop-bound record run (door / cupboard) is stepped by its own
+        // driver ([`Self::step_prop_interaction`]) with prop-actor bridging;
+        // stepping it here too would double-run its VM slices.
+        if self
+            .inline_dialogue
+            .as_ref()
+            .is_some_and(|id| id.prop_anchor.is_some())
+        {
             return;
         }
         // Start the runner the frame a dialogue request appears. When the opened

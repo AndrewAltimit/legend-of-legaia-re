@@ -262,9 +262,33 @@ pub struct OwnedDialogPanel {
     /// `true` once the prompt has finished typing and the menu is awaiting a
     /// choice. Only meaningful when [`Self::picker`] is `Some`.
     menu_active: bool,
+    /// Name-substitution table for the MES `0xC1..0xC7` escapes, keyed by
+    /// `(`[`substitute_kind_key`]`, arg)`. Retail resolves these against the
+    /// live name tables (`0xC1` = character, `0xC2`/`0xC4` = item, ...); a
+    /// host that knows the names installs them here and the typewriter emits
+    /// the resolved glyphs in place of the escape. Absent entries emit
+    /// nothing (the pre-wiring behaviour).
+    pub substitutions: Option<PanelSubstitutions>,
     state: PanelState,
     waiting_for_input: bool,
     done: bool,
+}
+
+/// Host-installed name-substitution table for a dialog panel: `(kind key,
+/// arg)` -> resolved glyph bytes. See [`OwnedDialogPanel::substitutions`].
+pub type PanelSubstitutions = Arc<std::collections::HashMap<(u8, u8), Vec<u8>>>;
+
+/// Stable map key for a [`legaia_mes::SubstituteKind`] (the `0xC1..0xC7`
+/// escape families), used by [`OwnedDialogPanel::substitutions`].
+pub fn substitute_kind_key(kind: legaia_mes::SubstituteKind) -> u8 {
+    use legaia_mes::SubstituteKind as K;
+    match kind {
+        K::CharacterName => 1,
+        K::ItemName => 2,
+        K::MagicName => 3,
+        K::SpellName => 5,
+        K::QuestName => 7,
+    }
 }
 
 impl OwnedDialogPanel {
@@ -281,6 +305,7 @@ impl OwnedDialogPanel {
             picker: None,
             picker_cursor: 0,
             menu_active: false,
+            substitutions: None,
             state: PanelState::Typing,
             waiting_for_input: false,
             done: false,
@@ -493,9 +518,24 @@ impl OwnedDialogPanel {
                     self.state = PanelState::Done;
                 }
             }
+            Some(MesEvent::Substitute { kind, arg }) => {
+                // Resolve through the host-installed name table (item /
+                // character names). An absent entry emits nothing - the
+                // pre-wiring behaviour.
+                if let Some(subs) = self.substitutions.as_ref()
+                    && let Some(name) = subs.get(&(substitute_kind_key(kind), arg))
+                {
+                    for &b in name {
+                        self.page.push(PanelGlyph {
+                            byte: b,
+                            clut: self.current_clut,
+                        });
+                    }
+                }
+            }
             Some(_) => {
-                // Spacing / Substitute / Truncated - engine-side
-                // routing isn't wired yet; leave the pen alone.
+                // Spacing / Truncated - engine-side routing isn't wired
+                // yet; leave the pen alone.
             }
         }
         self.state

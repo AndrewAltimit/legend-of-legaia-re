@@ -685,7 +685,6 @@ pub(super) fn cmd_play_window_with_record(
         scene_tmd_data: Vec::new(),
         field_placement_draws: Vec::new(),
         field_posed_props: Vec::new(),
-        field_prop_anims: Default::default(),
         field_posed_tmds: Vec::new(),
         field_stager_tmds: Vec::new(),
         color_meshes: Vec::new(),
