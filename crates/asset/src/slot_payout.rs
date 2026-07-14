@@ -47,6 +47,66 @@ pub const SLOT_SYMBOL_COUNT: usize = 10;
 /// kick off the bonus round: id 9 → 3 free spins, id 8 → 1).
 pub const BONUS_SYMBOL_IDS: [u8; 2] = [8, 9];
 
+// --- Bonus game (the two jackpot symbols, named by their reel artwork) ---
+//
+// `FUN_801d13e8` special-cases exactly two reel symbols to open the bonus
+// round, and their free-spin counts are pinned in the disassembly: a matching
+// line of id **8** grants **1** bonus round, id **9** grants **3**. Decoding
+// the PROT 1200 reel art off the disc pins the artwork: symbol 8 is the **blue
+// "kick"** cell, symbol 9 the **red "punch"** cell (per-symbol CLUT
+// `0x7A80 + sym`; the average opaque hue of the two cells is blue-dominant for
+// 8 and red-dominant for 9). So the player-facing rule - *3 blue kicks earn 1
+// bonus round, 3 red punches earn 3* - is exactly what the disc encodes.
+
+/// Reel symbol id of the **blue "kick"** cell - one matching line earns
+/// [`KICK_BONUS_ROUNDS`] bonus round (`FUN_801d13e8` id 8 → 1 free spin).
+pub const KICK_SYMBOL_ID: u8 = 8;
+/// Bonus rounds a line of [`KICK_SYMBOL_ID`] earns.
+pub const KICK_BONUS_ROUNDS: u32 = 1;
+/// Reel symbol id of the **red "punch"** cell - one matching line earns
+/// [`PUNCH_BONUS_ROUNDS`] bonus rounds (`FUN_801d13e8` id 9 → 3 free spins).
+pub const PUNCH_SYMBOL_ID: u8 = 9;
+/// Bonus rounds a line of [`PUNCH_SYMBOL_ID`] earns.
+pub const PUNCH_BONUS_ROUNDS: u32 = 3;
+
+/// Lowest number a bonus reel can stop on (the bonus strip shows `1..=10`;
+/// each factor is the reel symbol id + 1).
+pub const BONUS_NUMBER_MIN: u32 = 1;
+/// Highest number a bonus reel can stop on.
+pub const BONUS_NUMBER_MAX: u32 = 10;
+/// Minimum coins a bonus round can pay (`1 × 1 × 1`).
+pub const BONUS_PAYOUT_MIN: u32 = BONUS_NUMBER_MIN.pow(3);
+/// Maximum coins a bonus round can pay (`10 × 10 × 10`).
+pub const BONUS_PAYOUT_MAX: u32 = BONUS_NUMBER_MAX.pow(3);
+
+/// The number of bonus rounds a winning line of `symbol` earns, or `None` when
+/// the symbol is not a jackpot symbol (`FUN_801d13e8`: id 8 → 1, id 9 → 3).
+pub fn bonus_rounds_for(symbol: u8) -> Option<u32> {
+    match symbol {
+        KICK_SYMBOL_ID => Some(KICK_BONUS_ROUNDS),
+        PUNCH_SYMBOL_ID => Some(PUNCH_BONUS_ROUNDS),
+        _ => None,
+    }
+}
+
+/// The bonus-reel **number** a stopped reel symbol shows (`1..=10`). The bonus
+/// strip's numerals are the reel symbol id + 1 - the retail bonus strip carries
+/// values `0x10..=0x19` whose `value - 0xf` factor is `symbol + 1`.
+pub fn bonus_number_for_symbol(symbol: u8) -> u32 {
+    (symbol as u32 + 1).clamp(BONUS_NUMBER_MIN, BONUS_NUMBER_MAX)
+}
+
+/// A bonus round's coin payout: the **product of the three stopped numbers**,
+/// each clamped to `1..=10`, so the result is always `1..=1000`
+/// (`FUN_801d13e8`: during a bonus round the credit is the product of the three
+/// payline factors, no equality gate).
+pub fn bonus_round_payout(numbers: [u32; 3]) -> u32 {
+    numbers
+        .iter()
+        .map(|n| (*n).clamp(BONUS_NUMBER_MIN, BONUS_NUMBER_MAX))
+        .product()
+}
+
 /// The decoded payout table: one line-payout byte per symbol id `0..=9`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlotPayoutTable {
@@ -111,5 +171,57 @@ mod tests {
     #[test]
     fn too_short_is_none() {
         assert!(parse_at(&[0u8; 4], 0).is_none());
+    }
+
+    #[test]
+    fn three_blue_kicks_earn_one_round_three_red_punches_earn_three() {
+        // The disc pins it (`FUN_801d13e8`): a line of symbol 8 (blue kick)
+        // opens 1 bonus round, a line of symbol 9 (red punch) opens 3.
+        assert_eq!(bonus_rounds_for(KICK_SYMBOL_ID), Some(1));
+        assert_eq!(bonus_rounds_for(PUNCH_SYMBOL_ID), Some(3));
+        assert_eq!(KICK_SYMBOL_ID, 8);
+        assert_eq!(PUNCH_SYMBOL_ID, 9);
+        // Every jackpot symbol id agrees with the round-count map.
+        for &s in &BONUS_SYMBOL_IDS {
+            assert!(bonus_rounds_for(s).is_some());
+        }
+        // Any non-jackpot symbol earns no bonus round.
+        for s in 0..8u8 {
+            assert_eq!(bonus_rounds_for(s), None, "symbol {s} is not a jackpot");
+        }
+    }
+
+    #[test]
+    fn bonus_numbers_are_symbol_plus_one() {
+        // The bonus reels show 1..=10; number = reel symbol id + 1.
+        assert_eq!(bonus_number_for_symbol(0), 1);
+        assert_eq!(bonus_number_for_symbol(9), 10);
+        for s in 0..10u8 {
+            let n = bonus_number_for_symbol(s);
+            assert!((BONUS_NUMBER_MIN..=BONUS_NUMBER_MAX).contains(&n));
+        }
+    }
+
+    #[test]
+    fn bonus_payout_is_the_product_bounded_one_to_a_thousand() {
+        // Payout for a bonus round = product of the three stopped numbers.
+        assert_eq!(bonus_round_payout([1, 1, 1]), BONUS_PAYOUT_MIN);
+        assert_eq!(bonus_round_payout([1, 1, 1]), 1);
+        assert_eq!(bonus_round_payout([10, 10, 10]), BONUS_PAYOUT_MAX);
+        assert_eq!(bonus_round_payout([10, 10, 10]), 1000);
+        assert_eq!(bonus_round_payout([2, 5, 7]), 70);
+        assert_eq!(bonus_round_payout([3, 4, 6]), 72);
+        // Every number combination stays inside 1..=1000, and out-of-range
+        // inputs are clamped into the reel's own 1..=10 range first.
+        for a in 1..=10 {
+            for b in 1..=10 {
+                for c in 1..=10 {
+                    let p = bonus_round_payout([a, b, c]);
+                    assert!((BONUS_PAYOUT_MIN..=BONUS_PAYOUT_MAX).contains(&p));
+                }
+            }
+        }
+        assert_eq!(bonus_round_payout([0, 0, 0]), 1, "clamped up to 1");
+        assert_eq!(bonus_round_payout([99, 99, 99]), 1000, "clamped down to 10");
     }
 }

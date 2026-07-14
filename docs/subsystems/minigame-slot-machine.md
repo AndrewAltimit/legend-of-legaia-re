@@ -112,6 +112,32 @@ After all three reels stop, `FUN_801d13e8` (`overlay_slot_machine_801d13e8.txt`)
 
 `FUN_801d1af4` (`overlay_slot_machine_801d1af4.txt`) is the **bonus-symbol scanner** run while reels are still settling (state 3): it sweeps the same paylines looking specifically for adjacent `8`/`9` symbols under the active-line masks (`DAT_801d3d10`/`14`/`18`) and, on the first sighting, fires the bonus-anticipation effect (`DAT_801d3ca4`/`DAT_801d3ca8` latches + `_DAT_8007b6dc = 0x200` SFX cue). It sets no payout - it only triggers the "reach" presentation. **Confirmed.**
 
+### The bonus game - the two jackpot symbols
+
+The two jackpot symbols are the **blue "kick"** (id `8`) and the **red "punch"** (id `9`), told apart by their per-symbol reel-art cell in PROT 1200 (the average opaque hue of the `0x0C`-page cell is blue-dominant for symbol 8, red-dominant for symbol 9). Which symbol matches sets how many bonus rounds are earned, pinned in `FUN_801d13e8`:
+
+| line symbol | colour / art | bonus rounds |
+|---|---|---|
+| `8` | blue "kick" | 1 |
+| `9` | red "punch" | 3 |
+
+A bonus round runs as feature mode `6`: the reels swap to the **`1..=10` number strip** (the bonus reel value's `value - 0xf` factor, equivalently the normal reel symbol id `+ 1`), the player stops each reel, and the round pays the **product of the three stopped numbers** - `1` (`1×1×1`) to `1000` (`10×10×10`) - credited into the balance and **subtracted from the net-take counter**. `DAT_801d3cb0` counts the earned rounds down; when it reaches zero, feature mode returns to `0` and the normal slot game resumes.
+
+The kick/punch symbol ids, their bonus-round counts, the `1..=10` number range and
+the `1..=1000` payout bounds are exported from [`legaia_asset::slot_payout`]
+(`KICK_SYMBOL_ID` / `PUNCH_SYMBOL_ID`, `KICK_BONUS_ROUNDS` / `PUNCH_BONUS_ROUNDS`,
+`bonus_rounds_for`, `bonus_number_for_symbol`, `bonus_round_payout`); the colour
+identification is disc-checked by
+`slot_payout_real::kick_is_blue_punch_is_red_on_disc`. The engine port
+([`legaia_engine_core::slot_machine`]) drives the whole cycle through
+`SlotMachine::evaluate_spin` (jackpot trigger → mode 6 → product payout). Its mode-6
+reconstruction lands the three reels on the *same* number (a matched line), so the
+product is a perfect cube `n³`; the disc's true per-reel bonus landing is not fully
+pinned, but the payout is a product of three `1..=10` numbers bounded `1..=1000`
+either way. The site's minigames page renders the bonus round as `1..=10` number
+wheels drawn in the coin digit font (`FUN_801d2914`) and captions the earned rounds
+and product.
+
 ## Coin economy
 
 The credit balance the player accumulates while playing lives in the **overlay-local** word `DAT_801d4114` (capped at `9999999` in the tally path, displayed capped at `99999` by the HUD). It is *not* the casino coin bank. **Confirmed.**

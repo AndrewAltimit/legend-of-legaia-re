@@ -13,6 +13,7 @@
 
 use std::path::PathBuf;
 
+use legaia_asset::minigame_art;
 use legaia_asset::slot_payout::{self, SLOT_SYMBOL_COUNT};
 use legaia_asset::static_overlay;
 use legaia_prot::archive::Archive;
@@ -66,5 +67,60 @@ fn payout_table_reproduces_and_is_bounded() {
     assert!(
         after.iter().all(|&b| (0x20..0x7f).contains(&b)),
         "an unrelated string follows the table (table bounded at 10 entries)"
+    );
+}
+
+/// The bonus-game trigger symbols, pinned to the disc art: symbol 8 is the
+/// **blue "kick"** cell (1 bonus round), symbol 9 the **red "punch"** cell (3
+/// bonus rounds). Decode the PROT 1200 reel art through each symbol's own CLUT
+/// and assert the average opaque hue is blue-dominant for 8, red-dominant for 9
+/// - so the player-facing rule maps onto the disc's own colours.
+#[test]
+fn kick_is_blue_punch_is_red_on_disc() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let entry = archive
+        .entries
+        .iter()
+        .find(|e| e.index == minigame_art::SLOT_ART_PROT_INDEX as u32)
+        .cloned()
+        .expect("PROT 1200 art entry present");
+    let mut raw = Vec::new();
+    archive
+        .read_entry(&entry, &mut raw)
+        .expect("read art entry");
+    let art = minigame_art::parse_art_pack(&raw).expect("art pack decodes");
+
+    // Average opaque colour of one reel symbol cell, drawn through its own CLUT.
+    let avg = |sym: usize| -> (u64, u64, u64) {
+        let sp = minigame_art::slot_symbol(&art, sym).expect("symbol decodes");
+        let (mut r, mut g, mut b, mut n) = (0u64, 0u64, 0u64, 0u64);
+        for px in sp.rgba.chunks_exact(4) {
+            if px[3] < 8 {
+                continue; // ignore transparent texels
+            }
+            r += px[0] as u64;
+            g += px[1] as u64;
+            b += px[2] as u64;
+            n += 1;
+        }
+        assert!(n > 0, "symbol {sym} has opaque pixels");
+        (r / n, g / n, b / n)
+    };
+
+    let (kr, kg, kb) = avg(slot_payout::KICK_SYMBOL_ID as usize);
+    assert!(
+        kb > kr && kb > kg,
+        "the kick symbol ({}) is blue-dominant, avg=({kr},{kg},{kb})",
+        slot_payout::KICK_SYMBOL_ID
+    );
+    let (pr, pg, pb) = avg(slot_payout::PUNCH_SYMBOL_ID as usize);
+    assert!(
+        pr > pb && pr > pg,
+        "the punch symbol ({}) is red-dominant, avg=({pr},{pg},{pb})",
+        slot_payout::PUNCH_SYMBOL_ID
     );
 }

@@ -762,6 +762,59 @@ impl LegaiaMinigames {
         )
     }
 
+    /// The **bonus game**: the two jackpot triggers and, when a bonus round is
+    /// live, the numbers currently on the reels and their product payout.
+    ///
+    /// A matching line of the **blue "kick"** symbol (id 8) earns 1 bonus round;
+    /// the **red "punch"** symbol (id 9) earns 3 - the counts and symbol ids are
+    /// pinned in the disassembly (`FUN_801d13e8`) and the colours in the PROT
+    /// 1200 reel art. A bonus round swaps the reels to numbers `1..=10` (the
+    /// symbol id + 1) and pays the **product of the three stopped numbers**
+    /// (`1..=1000`).
+    ///
+    /// ```json
+    /// { "kick_symbol": 8, "kick_rounds": 1, "punch_symbol": 9, "punch_rounds": 3,
+    ///   "min": 1, "max": 1000, "active": true, "rounds_left": 2,
+    ///   "numbers": [7, 7, 7], "product": 343 }
+    /// ```
+    ///
+    /// `active` is true only in feature mode 6 (the bonus round); `numbers` is
+    /// each reel's payline number (`symbol + 1`) and `product` their payout, so
+    /// the page can render the number wheels and caption the win without
+    /// re-deriving the rule.
+    pub fn slot_bonus_json(&self) -> String {
+        use legaia_asset::slot_payout as sp;
+        use legaia_engine_core::slot_machine::REEL_COUNT;
+        let head = format!(
+            r#""kick_symbol":{},"kick_rounds":{},"punch_symbol":{},"punch_rounds":{},"min":{},"max":{}"#,
+            sp::KICK_SYMBOL_ID,
+            sp::KICK_BONUS_ROUNDS,
+            sp::PUNCH_SYMBOL_ID,
+            sp::PUNCH_BONUS_ROUNDS,
+            sp::BONUS_PAYOUT_MIN,
+            sp::BONUS_PAYOUT_MAX,
+        );
+        let Some(m) = self.slot.as_ref() else {
+            return format!(
+                r#"{{{head},"active":false,"rounds_left":0,"numbers":[],"product":0}}"#
+            );
+        };
+        let active = m.feature_mode() == 6;
+        let numbers: Vec<u32> = (0..REEL_COUNT)
+            .map(|r| sp::bonus_number_for_symbol(m.payline_symbol(r)))
+            .collect();
+        let product: u32 = numbers.iter().product();
+        let nums = numbers
+            .iter()
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            r#"{{{head},"active":{active},"rounds_left":{},"numbers":[{nums}],"product":{product}}}"#,
+            m.bonus_spins().max(0),
+        )
+    }
+
     // ------------------------------------------------------------- slot art
     //
     // Everything below decodes the *retail* slot machine's own textures out of

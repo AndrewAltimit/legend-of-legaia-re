@@ -128,6 +128,22 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 .mg-pay b { color: var(--text); }
 .mg-pay.mg-pay-bonus { border-color: var(--accent); color: var(--accent); }
 
+.mg-bonus-legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem;
+  font-family: var(--font-mono); font-size: 0.76rem; line-height: 1.5;
+  color: var(--text-muted); margin-top: 0.7rem;
+  padding: 0.5rem 0.65rem; background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.mg-bonus-legend:empty { display: none; }
+.mg-bonus-legend b { color: var(--text); }
+.mg-bonus-chip { display: inline-flex; align-items: center; gap: 0.35rem; }
+.mg-bonus-chip .mg-glyph-sym {
+  width: 24px; height: 24px; flex: none;
+  image-rendering: pixelated; image-rendering: crisp-edges;
+}
+.mg-bonus-note { flex-basis: 100%; color: var(--text-dim); }
+
 .mg-note { color: var(--text-dim); font-size: 0.76rem; line-height: 1.6; margin-top: 0.7rem; }
 
 /* Baka duel viewport: WebGL fighters below, retail-HUD 2D canvas on top.
@@ -385,8 +401,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           Three coins a spin, all <b>five</b> paylines always live &mdash; three straight and two diagonal. Stop each reel yourself.
           The machine keeps a hidden <b>net-take</b> counter &mdash; the more it has taken
           off you, the better the odds it rolls &mdash; and a big bonus win knocks that
-          counter back down. Land a line of the two jackpot symbols and the bonus round
-          opens: cheap spins that pay the <em>product</em> of the line.
+          counter back down. Land <b>three blue kicks</b> and you earn <b>1 bonus round</b>;
+          <b>three red punches</b>, <b>3</b>. A bonus round turns the reels into
+          <b>1&ndash;10</b> number wheels and pays the <em>product</em> of the three you stop
+          on &mdash; 1 to 1000 coins.
         </p>
         <canvas id="slot-canvas" class="mg-cabinet" width="640" height="240"
                 tabindex="0" role="button" aria-label="Slot machine - press space to spin, then once per reel to stop it"></canvas>
@@ -406,6 +424,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <span>Net take <b id="slot-nettake">0</b></span>
         </div>
         <div class="mg-paytable" id="slot-paytable"></div>
+        <p class="mg-bonus-legend" id="slot-bonus-legend"></p>
         <p class="mg-note" id="slot-art-note"></p>
       </section>
     </div>
@@ -1031,6 +1050,44 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   let slotArt = null;    /* null => the art did not decode; draw ids, not sprites */
   let slotScene = null;  /* the 3D scene graph out of the overlay's rodata */
 
+  /* ---- the bonus game ----
+   *
+   * `FUN_801d13e8` special-cases two reel symbols: a line of the BLUE "kick"
+   * (id 8) earns 1 bonus round, the RED "punch" (id 9) earns 3 - the counts and
+   * ids are pinned in the disassembly, the colours in the PROT 1200 reel art. A
+   * bonus round swaps the reels to numbers 1..10 (the symbol id + 1) that you
+   * stop yourself, and pays the PRODUCT of the three stopped numbers: 1 (1x1x1)
+   * to 1000 (10x10x10). The whole rule is decoded off the disc and handed over
+   * as `slot_bonus_json()`; the engine is feature mode 6. */
+  let slotBonus = null;     /* the static bonus labels + the live round state */
+  const slotNumTiles = {};  /* 64x64 number faces (1..10), built from the coin font */
+
+  /* One bonus-reel number face, 1..10, drawn in the machine's own 16px coin
+   * digit font (FUN_801d2914) scaled up and centred on a 64x64 reel cell - the
+   * "numerals drawn analogous to the coin font" the bonus strip carries. */
+  function slotNumberTile(n) {
+    if (!slotArt || !slotArt.digits) return null;
+    if (slotNumTiles[n]) return slotNumTiles[n];
+    const c = document.createElement('canvas');
+    c.width = SYM_PX; c.height = SYM_PX;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = '#0c0a14'; g.fillRect(0, 0, SYM_PX, SYM_PX);
+    g.strokeStyle = '#4a4668'; g.lineWidth = 2;
+    g.strokeRect(4, 4, SYM_PX - 8, SYM_PX - 8);
+    const s = String(n);
+    const gw = 22, gh = 34, gap = 2;
+    const tw = s.length * gw + (s.length - 1) * gap;
+    let dx = (SYM_PX - tw) / 2;
+    const dy = (SYM_PX - gh) / 2;
+    for (const ch of s) {
+      const d = ch.charCodeAt(0) - 48;                 /* digit d at x = 64 + d*16 */
+      g.drawImage(slotArt.digits, 64 + d * 16, 0, 16, 16, dx, dy, gw, gh);
+      dx += gw + gap;
+    }
+    return (slotNumTiles[n] = c);
+  }
+
   /* ---- the machine's own sound ----
    *
    * The reel-stop click, the payout tick and the reach sting are the retail
@@ -1099,6 +1156,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   function slotLoadArt() {
     slotArt = null;
     slotScene = null;
+    slotBonus = null;
+    for (const k in slotNumTiles) delete slotNumTiles[k];  /* rebuilt off the new font */
+    const legend = $('slot-bonus-legend');
+    if (legend) legend.innerHTML = '';
     if (!api || !api.slot_art_ready()) {
       $('slot-art-note').innerHTML =
         'The payouts are the disc’s own per-symbol table, but this disc’s <b>art pack ' +
@@ -1167,8 +1228,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   function slotDrawPaytable() {
     const st = JSON.parse(api.slot_state_json());
     slotPayouts = st.payouts || [];
+    if (!slotBonus && api) slotBonus = JSON.parse(api.slot_bonus_json());
+    const kick = slotBonus ? slotBonus.kick_symbol : 8;
+    const punch = slotBonus ? slotBonus.punch_symbol : 9;
     $('slot-paytable').innerHTML = slotPayouts.map((p, id) => {
-      const bonus = (id === 8 || id === 9);
+      const bonus = (id === kick || id === punch);
       const face = slotArt
         ? `<canvas class="mg-glyph-sym" width="${SYM_PX}" height="${SYM_PX}" data-sym="${id}"></canvas>`
         : `<span class="mg-glyph">#${id}</span>`;
@@ -1176,6 +1240,34 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }).join('');
     if (slotArt) {
       $('slot-paytable').querySelectorAll('.mg-glyph-sym').forEach(c => {
+        const s = slotArt.symbols[parseInt(c.dataset.sym, 10)];
+        if (s) c.getContext('2d').drawImage(s, 0, 0);
+      });
+    }
+    slotDrawBonusLegend();
+  }
+
+  /* The bonus-game legend: a line of the blue "kick" (id 8) earns 1 bonus
+   * round, the red "punch" (id 9) earns 3, and a round pays the product of the
+   * three 1..10 numbers it stops on. Every value read off the disc. */
+  function slotDrawBonusLegend() {
+    const el = $('slot-bonus-legend');
+    if (!el || !slotBonus) return;
+    const b = slotBonus;
+    const chip = (id, label, rounds) => {
+      const face = slotArt
+        ? `<canvas class="mg-glyph-sym" width="${SYM_PX}" height="${SYM_PX}" data-sym="${id}"></canvas>`
+        : `<span class="mg-glyph">#${id}</span>`;
+      return `<span class="mg-bonus-chip">${face}<span>3 ${label} → <b>${rounds}</b> round${rounds === 1 ? '' : 's'}</span></span>`;
+    };
+    el.innerHTML =
+      '<b>Bonus game.</b> ' +
+      chip(b.kick_symbol, 'blue kicks', b.kick_rounds) +
+      chip(b.punch_symbol, 'red punches', b.punch_rounds) +
+      `<span class="mg-bonus-note">A bonus round swaps the reels to <b>1–10</b> — stop three, ` +
+      `and it pays their <b>product</b> (${b.min}–${b.max} coins).</span>`;
+    if (slotArt) {
+      el.querySelectorAll('.mg-glyph-sym').forEach(c => {
         const s = slotArt.symbols[parseInt(c.dataset.sym, 10)];
         if (s) c.getContext('2d').drawImage(s, 0, 0);
       });
@@ -1253,9 +1345,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     g.restore();
   }
 
-  /* The reel cylinder, exactly as FUN_801d0fa8 builds it. */
+  /* The reel cylinder, exactly as FUN_801d0fa8 builds it. During a bonus round
+   * (feature mode 6) the reels carry the 1..10 numbers instead of the symbols -
+   * the bonus strip's numeral is the symbol id + 1 - so the same cylinder shows
+   * the number wheels the product payout reads. */
   function slotDrawReels(g, st, positions) {
     const R = slotScene.reels;
+    const bonus = st.feature_mode === 6;
     const FULL = R.angle_full;
     const sinT = (a) => Math.sin(((a % FULL + FULL) % FULL) / FULL * Math.PI * 2);
     const cosT = (a) => Math.cos(((a % FULL + FULL) % FULL) / FULL * Math.PI * 2);
@@ -1307,7 +1403,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
          * payline row as the angle advances, so the payline face carries row0
          * itself and the faces above / below it carry the rows either side. */
         const idx = ((row0 + paylineFace - f) % R.strip_len + R.strip_len) % R.strip_len;
-        const sym = slotArt.symbols[strip[idx]];
+        /* Bonus round: the number (symbol + 1), in the coin font; otherwise the
+         * symbol art. Fall back to the symbol if the number tile can't build. */
+        const sym = bonus ? (slotNumberTile(strip[idx] + 1) || slotArt.symbols[strip[idx]])
+                          : slotArt.symbols[strip[idx]];
         if (!sym) continue;
 
         slotTexTri(g, sym, p00, p10, p01, [0, 0], [SYM_PX, 0], [0, SYM_PX]);
@@ -1482,6 +1581,21 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
      *    retail machine makes - FUN_801d2cc0 writes their XY directly) */
     if (slotArt.panel) g.drawImage(slotArt.panel, 560 - 63, 128 - 119);
     slotDrawCoins(g, st.balance);
+
+    /* 9. the bonus-round banner: the reels are numbers now, so say so and count
+     *    down the earned rounds. Not retail chrome - a browser affordance. */
+    if (st.feature_mode === 6) {
+      const rounds = st.bonus_spins || 0;
+      g.textAlign = 'center';
+      g.fillStyle = 'rgba(255,214,92,0.95)';
+      g.font = 'bold 20px monospace';
+      g.fillText('BONUS ROUND', 200, 26);
+      g.fillStyle = '#e8e8f0';
+      g.font = '12px monospace';
+      g.fillText(rounds > 0 ? `${rounds} round${rounds === 1 ? '' : 's'} left — stop for the product`
+                            : 'last round', 200, 44);
+      g.textAlign = 'start';
+    }
   }
   let slotPrev = { stopped: 0, phase: '', feature: 0 };
   /* A press during the spin-up ramp can't be taken (retail refuses a stop until
@@ -1551,9 +1665,28 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (resolved && st.last) {
       const l = st.last;
       if (l.payout > 0) {
-        verdict($('slot-verdict'),
-          (l.bonus_spin ? `Bonus spin pays ${l.payout}` : `A line of symbol #${l.symbol} pays ${l.payout}`)
-          + ' - banked.' + (l.bonus_triggered ? ' JACKPOT - bonus round!' : ''), 'good');
+        let msg;
+        if (l.bonus_spin) {
+          /* A bonus round: the three number wheels multiplied. Read the live
+           * numbers off the stopped reels (not the cached static labels). */
+          const b = JSON.parse(api.slot_bonus_json());
+          const nums = (b && b.numbers && b.numbers.length === 3)
+            ? b.numbers.join(' × ') + ' = ' : '';
+          msg = `Bonus round: ${nums}${l.payout} coins - banked.`;
+          if (st.feature_mode === 6 && st.bonus_spins > 0) {
+            msg += ` ${st.bonus_spins} more.`;
+          }
+        } else if (l.bonus_triggered) {
+          /* The triggering line - name the symbol and the rounds it earned. */
+          const b = slotBonus;
+          const isKick = b && l.symbol === b.kick_symbol;
+          const earned = isKick ? (b ? b.kick_rounds : 1) : (b ? b.punch_rounds : 3);
+          const what = isKick ? 'blue kicks' : 'red punches';
+          msg = `Three ${what} pay ${l.payout} - and open ${earned} BONUS round${earned === 1 ? '' : 's'}!`;
+        } else {
+          msg = `A line of symbol #${l.symbol} pays ${l.payout} - banked.`;
+        }
+        verdict($('slot-verdict'), msg, 'good');
       } else {
         verdict($('slot-verdict'), 'No line. Press space to spin again.', '');
       }
