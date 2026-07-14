@@ -539,6 +539,24 @@ place, the phantom rows disappear, and the spine verdicts above hold row-identic
 sets unchanged; `0x482` all-alias; `0x50A`/`0x5D6` writer-less, `0x50A` gaining one more clean koin3 TEST
 reader and still no writer).
 
+**Width blindness's fourth face is a *variable*-width arm read as fixed.** The `0x4C` **nibble-7**
+collision-grid wall paint has **two** operand shapes (`FUN_801DE840` case 7): sub-0 (`byte &= 0x0F`, clear
+walls) and sub-1 (`byte |= 0xF0`, block all four sub-cells) ignore the mask, so they carry only the four
+range bytes and are **6-byte** ops; sub-2 (`&= ~(mask << 4)`) and sub-3 (`|= mask << 4`) consume a trailing
+mask byte and are **7-byte** ops. Reading a fixed 7 for all four subs makes every sub-0/sub-1 paint swallow
+its follower's lead byte, so a linear walk desyncs the moment it crosses one. Rim Elm's scene-entry script
+is the case that exposes it: `town0c` `P1[0]` runs three sub-0 clears in a row, and past the first the walk
+minted phantom `SysFlag.Test` rows with absurd operands (indices `24`/`280`, jump deltas of `~7000` in a
+`0x242`-byte record) and hid the record's real gate logic. Under the pinned widths the record reads clean
+and the Rim Elm gate becomes legible (below). The executing VM (`legaia-engine-vm`, field `menu_ctrl`
+nibble 7) always advanced by the correct per-sub widths - it decodes the raw stream and never consulted the
+disassembler - so this was a **static-walker-only** defect: it corrupted `scene_destinations`,
+`scene_bgm_starts`, `scene_fmv_triggers`, `scene_stager_installs`, `boss_stager_placements` and the door
+randomizer's MAN edits (all `LinearWalker` consumers), while runtime behaviour was unaffected. Fixed in
+`legaia_asset::field_disasm::decode_subops`; the general lesson is that a sub-op family whose *width
+depends on the sub* must be decoded per-sub, and the executing VM's port is the reference when the two
+disagree.
+
 **ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
 flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
 `a..g`, `Test` leads `0x71..0x77` = `q..w`, each followed by one operand byte. So common English bigrams

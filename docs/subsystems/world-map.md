@@ -274,6 +274,55 @@ runs, `step_world_map_locomotion` stands the overworld player down (the force-wa
 lock) and `World::tick`'s world-map arm steps the timeline whenever one is active
 (not just during the opening `map01` fly-in).
 
+### The Drake round trip (Rim Elm <-> map01 <-> cave01)
+
+The two directions of a hop are **different mechanisms**, so a working exit does
+not imply a working return. Both legs are disc-sourced; the table below is the
+decoded bridge (`man_field_scripts::overworld_portal_sites` joined to each
+scene's `.MAP` gate-1 triggers), and every row is asserted end-to-end by
+`engine-core/tests/scene_round_trip_disc.rs`.
+
+| From | Trigger tile(s) | P2 record | To | Arrival tile | `dir` |
+|---|---|---|---|---|---|
+| `town01` / `town0b` / `town0c` | (24..26, 46) | `P2[0]` | `map01` | (96, 25) | 4 |
+| `map01` | (96, 24) | `P2[0]` | `town0c` | (25, 45) | 0 |
+| `map01` | (37, 110) | `P2[5]` | `cave01` | (93, 97) | 4 |
+| `cave01` | (93..94, 96) | `P2[1]` | `map01` | (37, 109) | 0 |
+
+Field -> overworld is the walk-on tile trigger -> partition-2 record -> `0x3F`
+path (`SceneHost::dispatch_walk_on_trigger`); overworld -> field is the entity
+SM's `OverworldPortal` walk-onto path described above. Each arrival seat is one
+tile clear of the reciprocal trigger, so a return never immediately re-fires the
+entrance - that spacing is authored, not engine policy.
+
+The arrival seat mapping is live-pinned: `door_warp_town01_to_map01` parks the
+retail player at world `(3264, 5824)` in `town0c`, which is exactly
+`seat_player_at_tile(25, 45)` - `map01`'s town-entrance arrival tile. So
+`world = tile * 128 + 0x40` is byte-exact for `0x3F` entry bytes.
+
+Note the two pads are **not** the same space: the field walk uses world axes
+(`decode_field_direction`), while the overworld walk is **camera-relative**
+(`world_map_camera_relative_bits`; at azimuth 0, screen-Right = world `Z-`). The
+overworld entrance at (96, 24) is therefore reached by holding Right from the
+arrival seat, not Down.
+
+**Rim Elm's south gate is a story gate, enforced in the collision grid.** The
+exit trigger band is walled off on a fresh New Game - you cannot leave Rim Elm,
+exactly as retail plays. The seal is not a script gate on the `0x3F` but a
+**collision delta**: `town0c` `P1[0]` first clears the approach band
+(three `0x4C` nibble-7 sub-0 paints), then branches on system flags `327` and
+`321`. With `327` clear the script skips both arms and the base map's wall
+stands; with `327` set and `321` clear it re-blocks the band (`sub-1`
+`x=23..29 z=44..45` and friends); with **both set** it takes the open-gate arm -
+`sub-1 x=26..27 z=45..46`, **`sub-0 x=24..25 z=45..46` (the gate opening)**, and
+`sub-1 x=21..22 z=45..45` (the side wall). Only that last arm clears grid row 47
+cols 24-25, the cells that actually block the walk, and the resulting grid is
+**byte-identical to the retail live grid** lifted from the
+`door_warp_town01_to_map01` capture's `*(_DAT_1f8003ec) + 0x4000` region. So the
+exit becomes walkable precisely when the story flags latch. (These paints were
+invisible to the disassembler until the nibble-7 per-sub width fix - see
+[`script-vm.md`](script-vm.md), width blindness's fourth face.)
+
 **Gate-flag setters beyond a scene's bundle MAN.** `man-scripts
 --system-flag-census` walks the MAN field-VM ops `0x50/0x60/0x70` across
 EVERY carrier per scene (bundle + the streaming variant MANs); the other
