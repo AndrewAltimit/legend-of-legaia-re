@@ -1,6 +1,6 @@
 id	abs_offset	sector	entry_index	offset_in_entry	width	height	bpp	clut_count	byte_len	fnv1a	label
-0	6232	3	1234	6232	4	4	4	3	136	527b61a45b4622b1	other
-1	6368	3	1234	6368	256	192	4	16	25120	78f561f4b6af5a88	load-screen UI sheet
+0	6232	3	-1	6232	4	4	4	3	136	527b61a45b4622b1	other
+1	6368	3	-1	6368	256	192	4	16	25120	78f561f4b6af5a88	load-screen UI sheet
 2	31488	15	-1	31488	64	32	4	1	1088	370604fa2e38d24c	ui-text
 3	32576	15	-1	32576	256	256	4	1	32832	a9338f40a8265fc7	ui-text
 4	65408	31	-1	65408	4	4	4	4	168	281b732cf95eeb9c	other
