@@ -117,8 +117,13 @@ window.MgDance = (function () {
       /* The dancer bodies: Noa's own field-view model plus the two AI dancers,
        * drawn on a WebGL canvas behind the HUD (the same TmdRenderer the Baka
        * duel uses). Absent when no gl canvas was handed in or PROT 0874 didn't
-       * decode - the HUD then sits on a neutral ground and the note says so. */
-      body = buildBodyScene();
+       * decode - the HUD then sits on a neutral ground and the note says so. A
+       * WebGL failure must not take the HUD art down with it. */
+      try {
+        body = buildBodyScene();
+      } catch (e) {
+        body = null;
+      }
       return true;
     }
 
