@@ -206,6 +206,26 @@ clean-room SPU (`dance_bgm_pcm_i16`). Consumed by
 `site/js/minigame-dance.js`; see `docs/subsystems/minigame-dance.md`.
 Disc-gated oracle: `tests/minigames_dance_api.rs`.
 
+## Session saves + retail cards (`session_save`)
+
+The play page's save boundary. Engine sessions round-trip as **LGSF**
+(`LegaiaRuntime.export_save` / `import_save` = `World::save_full` /
+`load_full` with magic + version validation - a corrupt upload throws a
+readable message and leaves the session untouched). Retail **emulator
+saves** are first-class: `card_saves_json(bytes)` lists the Legaia saves
+inside a raw `.mcr`/`.mcd` card image, DexDrive `.gme`, or single-save
+`.mcs` (party names, gold, coins, location, the CDNAME scene label);
+`LegaiaRuntime.import_card_save(bytes, block)` lifts one into the live
+world via `legaia_save::SaveFile::from_retail_sc_block`; and
+`card_patch_coins(bytes, block, coins)` banks browser-minigame coin
+winnings into the pinned retail coin slot (SC `+0x464`, RAM
+`0x800845A4`) **in place** - the container comes back in the format it
+arrived in with only those 4 bytes changed, so an untouched export is
+byte-identical and the patched save still loads in the emulator. PS3
+`.psv` is rejected (signed container). Persistence (localStorage,
+base64) lives in `site/js/legaia-saves.js`; this module is
+serialization only.
+
 ## Scene `.glb` export (`scene_export`)
 
 Builder-style session on `LegaiaViewer` so the site pages can download
