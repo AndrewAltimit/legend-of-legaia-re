@@ -499,6 +499,29 @@ export class LegaiaMinigames {
      */
     dance_chart_json(): string;
     /**
+     * Per-vertex `[cba, tsb]` for the baked hall.
+     */
+    dance_env_cba_tsb(): Uint32Array;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the baked hall's hybrid
+     * textured / vertex-colour render (same convention as the bodies).
+     */
+    dance_env_flat_rgba(): Uint8Array;
+    /**
+     * Triangle indices for the baked hall.
+     */
+    dance_env_indices(): Uint32Array;
+    /**
+     * Baked hall vertex positions (`[x, y, z, ...]`, dancer frame). Empty
+     * when the scene's placement layers didn't resolve - the page then keeps
+     * the neutral ground and says so.
+     */
+    dance_env_positions(): Float32Array;
+    /**
+     * Per-vertex `[u, v]` texel coords for the baked hall.
+     */
+    dance_env_uvs(): Int32Array;
+    /**
      * Face window metadata:
      * `[{ "w":80, "h":64, "face":[0,0,32,48], "poses":5 }, ...]` - `w`/`h`
      * are the buffer dimensions [`Self::dance_face_rgba`] returns, `face`
@@ -2291,6 +2314,11 @@ export interface InitOutput {
     readonly legaiaminigames_dance_body_vram: (a: number) => [number, number];
     readonly legaiaminigames_dance_cast_json: (a: number) => [number, number];
     readonly legaiaminigames_dance_chart_json: (a: number) => [number, number];
+    readonly legaiaminigames_dance_env_cba_tsb: (a: number) => [number, number];
+    readonly legaiaminigames_dance_env_flat_rgba: (a: number) => [number, number];
+    readonly legaiaminigames_dance_env_indices: (a: number) => [number, number];
+    readonly legaiaminigames_dance_env_positions: (a: number) => [number, number];
+    readonly legaiaminigames_dance_env_uvs: (a: number) => [number, number];
     readonly legaiaminigames_dance_face_meta_json: (a: number) => [number, number];
     readonly legaiaminigames_dance_face_rgba: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_dance_hud_page_rgba: (a: number, b: number) => [number, number];

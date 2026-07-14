@@ -1076,6 +1076,59 @@ export class LegaiaMinigames {
         }
     }
     /**
+     * Per-vertex `[cba, tsb]` for the baked hall.
+     * @returns {Uint32Array}
+     */
+    dance_env_cba_tsb() {
+        const ret = wasm.legaiaminigames_dance_env_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the baked hall's hybrid
+     * textured / vertex-colour render (same convention as the bodies).
+     * @returns {Uint8Array}
+     */
+    dance_env_flat_rgba() {
+        const ret = wasm.legaiaminigames_dance_env_flat_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Triangle indices for the baked hall.
+     * @returns {Uint32Array}
+     */
+    dance_env_indices() {
+        const ret = wasm.legaiaminigames_dance_env_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Baked hall vertex positions (`[x, y, z, ...]`, dancer frame). Empty
+     * when the scene's placement layers didn't resolve - the page then keeps
+     * the neutral ground and says so.
+     * @returns {Float32Array}
+     */
+    dance_env_positions() {
+        const ret = wasm.legaiaminigames_dance_env_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[u, v]` texel coords for the baked hall.
+     * @returns {Int32Array}
+     */
+    dance_env_uvs() {
+        const ret = wasm.legaiaminigames_dance_env_uvs(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * Face window metadata:
      * `[{ "w":80, "h":64, "face":[0,0,32,48], "poses":5 }, ...]` - `w`/`h`
      * are the buffer dimensions [`Self::dance_face_rgba`] returns, `face`
@@ -5045,7 +5098,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 108, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 110, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23);
             return ret;
         },
