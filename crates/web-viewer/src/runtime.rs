@@ -44,6 +44,14 @@ pub struct LegaiaRuntime {
     pub(crate) player: Option<PlayerRig>,
     /// The scene's MAN-placed NPC catalog.
     pub(crate) npcs: Option<NpcRender>,
+    /// The scene's ANM bundle (the pose source for scene NPCs **and** placed
+    /// props), resolved once per scene the way the native window's
+    /// `find_scene_anm_bundle` does: entry-major, descriptor-count seed
+    /// `[3, 5, 6, 7]` minor.
+    pub(crate) scene_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    /// The PROT 0874 §1 party locomotion bundle - the pose source for the
+    /// global-pool specials (save point / party heads).
+    pub(crate) locomotion_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
     #[cfg(target_arch = "wasm32")]
     audio_out: Option<WebAudioOut>,
 }
@@ -64,6 +72,8 @@ impl LegaiaRuntime {
             field: None,
             player: None,
             npcs: None,
+            scene_anm: None,
+            locomotion_anm: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
         }
@@ -351,6 +361,8 @@ impl LegaiaRuntime {
         self.field = None;
         self.player = None;
         self.npcs = None;
+        self.scene_anm = None;
+        self.locomotion_anm = None;
         let Some(host) = self.scene_host.as_ref() else {
             return Ok(());
         };
@@ -367,8 +379,31 @@ impl LegaiaRuntime {
             res,
             is_world_map,
         ));
-        // The NPC catalog resolves against the same TMD pool + VRAM.
-        match crate::field_npc::build_npc_catalog_res(&host.index, &name, res) {
+        // Pose sources, resolved the way the native window's
+        // `find_scene_anm_bundle` does (entry-major, desc-seed minor). The
+        // scene bundle poses the MAN NPCs and the bound placed props; the
+        // locomotion bundle poses the global-pool specials.
+        self.scene_anm = scene.entries.iter().find_map(|e| {
+            [3usize, 5, 6, 7].into_iter().find_map(|desc| {
+                legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
+                    .into_iter()
+                    .next()
+            })
+        });
+        self.locomotion_anm = host
+            .index
+            .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+            .ok()
+            .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+        // The NPC catalog resolves against the same TMD pool + VRAM, plus the
+        // world's global pool for the `model >= 0xF0` specials - everything
+        // the native play-window draws.
+        match crate::field_npc::build_npc_catalog_play(
+            &host.index,
+            &name,
+            res,
+            &host.world.global_tmd_pool,
+        ) {
             Ok(pack) => self.npcs = Some(NpcRender { pack }),
             Err(e) => crate::console_log(&format!("play: NPC catalog for {name}: {e}")),
         }
@@ -572,52 +607,6 @@ impl LegaiaRuntime {
             ))
         });
         host.world.set_field_player_anim(anim);
-    }
-
-    /// Decode record `record` of the player-ANM bundle in PROT entry `prot` into
-    /// the pose format the JS animator consumes: `6` `i32` per bone per frame
-    /// (`[tx, ty, tz, rx, ry, rz]`, absolute), padded to `parts` bones so objects
-    /// the clip doesn't cover get identity transforms.
-    pub(crate) fn anm_pose_frames(&self, prot: u32, record: u32, parts: u32) -> Vec<i32> {
-        let Some(host) = self.scene_host.as_ref() else {
-            return Vec::new();
-        };
-        let Ok(bytes) = host.index.entry_bytes(prot) else {
-            return Vec::new();
-        };
-        let mut found = None;
-        for desc in [6usize, 3, 5, 7] {
-            if let Some(b) = legaia_asset::player_anm::find_in_entry(&bytes, desc)
-                .into_iter()
-                .next()
-            {
-                found = Some(b);
-                break;
-            }
-        }
-        let Some(bundle) = found else {
-            return Vec::new();
-        };
-        let Ok(rec) = bundle.record(record as usize) else {
-            return Vec::new();
-        };
-        let anm_bones = rec.bone_count as usize;
-        let frames = rec.frame_count as usize;
-        let part_count = (parts as usize).max(anm_bones);
-        let mut out = Vec::with_capacity(frames * part_count * 6);
-        for f in 0..frames {
-            for p in 0..part_count {
-                if p < anm_bones {
-                    let Some(t) = bundle.bone_transform(record as usize, f, p) else {
-                        return Vec::new();
-                    };
-                    out.extend_from_slice(&[t.t_x, t.t_y, t.t_z, t.r_x, t.r_y, t.r_z]);
-                } else {
-                    out.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-                }
-            }
-        }
-        out
     }
 }
 

@@ -42,15 +42,22 @@ pub struct FieldRender {
     /// Environment-pack subset of `res.tmds` (pack-index order) - the index
     /// space the placement records select from.
     pub env_tmds: Vec<usize>,
-    /// Placed-object draws (buildings / props / landmarks).
+    /// Placed-object draws (buildings / props / landmarks). A nonzero
+    /// [`EnvDraw::anim_id`] means the object's bind names a clip: its TMD
+    /// objects are that clip's bones and the mesh must be **posed** from
+    /// frame 0 of scene ANM record `anim_id - 1` (see
+    /// [`field_env::resolve_placed_env_draws`]).
     pub placements: Vec<EnvDraw>,
-    /// Bulk terrain-tile draws (ground / decor tiles).
+    /// Bulk terrain-tile draws (ground / decor tiles). `FLAG_PLACED` records
+    /// are excluded - they are already drawn, posed, by the placement layer
+    /// (the native window's `resolve_field_terrain_draws` rule).
     pub terrain: Vec<EnvDraw>,
     /// Walk-ground heightfield surface, when the scene has a resolvable floor.
     pub ground: Option<legaia_asset::field_objects::WalkHeightfield>,
-    /// Cached built env mesh: `(slot, mesh, flat_rgba)`.
+    /// Cached built env mesh: `((slot, anim_id), mesh, flat_rgba)`.
+    /// `anim_id != 0` is the frame-0 posed variant of the slot's mesh.
     #[allow(clippy::type_complexity)]
-    pub cur: Option<(usize, legaia_tmd::mesh::VramMesh, Vec<u8>)>,
+    pub cur: Option<((usize, u8), legaia_tmd::mesh::VramMesh, Vec<u8>)>,
 }
 
 /// The lead party member's field-form actor: the object-local mesh, its
@@ -125,7 +132,15 @@ fn pose_into(
 
 /// Resolve the scene's env-pack + placement / terrain / ground layers from the
 /// resources the host already built. The engine-parity core of the play page's
-/// static map.
+/// static map - the same resolver calls the native play-window makes:
+///
+/// - the **placed** layer goes through [`field_env::resolve_placed_env_draws`]
+///   with the scene's object binds, so every multi-object prop carries the
+///   clip that poses it (unposed, a cupboard's doors float inside the cabinet
+///   and a windmill's sails heap on its hub);
+/// - the **terrain** sweep excludes `FLAG_PLACED` records - those are already
+///   drawn (posed) by the placement layer, and the second copy would be the
+///   unposed one (the native `resolve_field_terrain_draws` rule).
 pub fn build_field_render(
     index: &ProtIndex,
     scene: &Scene,
@@ -134,7 +149,7 @@ pub fn build_field_render(
 ) -> FieldRender {
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
-    let (placement_records, terrain_records) = if is_world_map {
+    let (placement_records, terrain_records, binds) = if is_world_map {
         (
             scene
                 .walk_object_placements(index)
@@ -142,6 +157,7 @@ pub fn build_field_render(
                 .flatten()
                 .unwrap_or_default(),
             Vec::new(),
+            None,
         )
     } else {
         (
@@ -154,10 +170,19 @@ pub fn build_field_render(
                 .field_terrain_tiles(index)
                 .ok()
                 .flatten()
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+                .collect(),
+            scene.field_object_binds(index).ok().flatten(),
         )
     };
-    let (placements, _) = field_env::resolve_env_draws(&env_tmds, &placement_records, floor_lut);
+    let (placements, _) = field_env::resolve_placed_env_draws(
+        &env_tmds,
+        &placement_records,
+        floor_lut,
+        binds.as_ref(),
+    );
     let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
     let ground = scene
         .walk_heightfield(index)
@@ -179,12 +204,61 @@ impl LegaiaRuntime {
         self.scene_host.as_ref()?.resources.as_ref()
     }
 
-    fn field_cur(&self) -> Option<&(usize, legaia_tmd::mesh::VramMesh, Vec<u8>)> {
+    fn field_cur(&self) -> Option<&((usize, u8), legaia_tmd::mesh::VramMesh, Vec<u8>)> {
         self.field.as_ref()?.cur.as_ref()
     }
 
     fn npc_cur(&self) -> Option<&(usize, legaia_tmd::mesh::VramMesh, Vec<u32>, Vec<u8>)> {
         self.npcs.as_ref()?.pack.cur.as_ref()
+    }
+
+    /// Bone count of the clip a catalogued NPC placement names (`anim_id - 1`
+    /// in the scene bundle, or the locomotion bundle for a global-pool
+    /// special). `None` when the placement has no clip or the bundle is
+    /// unavailable - the mesh then keeps its full object table.
+    fn npc_clip_bone_count(&self, anim_id: u8, special: bool) -> Option<usize> {
+        let bundle = if special {
+            self.locomotion_anm.as_ref()?
+        } else {
+            self.scene_anm.as_ref()?
+        };
+        let rec_idx = (anim_id as usize).checked_sub(1)?;
+        let rec = bundle.record(rec_idx).ok()?;
+        (rec.bone_count > 0).then_some(rec.bone_count as usize)
+    }
+
+    /// Frame-0 bone transforms of scene ANM record `anim_id - 1`, under
+    /// retail's count-equality contract (`FUN_8001B964` refuses to draw a
+    /// posed prop whose mesh chain and clip disagree on the part count).
+    /// `None` = draw the raw unposed mesh instead.
+    fn frame0_bone_offsets(
+        &self,
+        anim_id: u8,
+        res_idx: usize,
+    ) -> Option<Vec<([i16; 3], [i16; 3])>> {
+        let bundle = self.scene_anm.as_ref()?;
+        let rec_idx = (anim_id as usize).checked_sub(1)?;
+        let rec = bundle.record(rec_idx).ok()?;
+        let bones = rec.bone_count as usize;
+        let objects = self.res()?.tmds.get(res_idx)?.tmd.objects.len();
+        if bones != objects {
+            crate::console_log(&format!(
+                "play: ANM record {rec_idx} has {bones} bones but env mesh (res {res_idx}) \
+                 has {objects} objects - not posing"
+            ));
+            return None;
+        }
+        Some(
+            (0..bones)
+                .map(|b| match bundle.bone_transform(rec_idx, 0, b) {
+                    Some(t) => (
+                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                    ),
+                    None => ([0; 3], [0; 3]),
+                })
+                .collect(),
+        )
     }
 }
 
@@ -218,18 +292,37 @@ impl LegaiaRuntime {
     /// Select + build environment-pack slot `slot`; subsequent `field_mesh_*`
     /// reads return that mesh.
     pub fn field_mesh(&mut self, slot: u32) -> Result<u32, JsValue> {
+        self.field_mesh_posed(slot, 0)
+    }
+
+    /// Select + build environment-pack slot `slot` **posed at frame 0** of
+    /// scene ANM record `anim_id - 1` - the rest state of a placed prop whose
+    /// object bind names a clip (cupboard doors closed on the cabinet's front
+    /// face, the windmill's sails on their hub). Falls back to the raw
+    /// object-local mesh when the pose can't resolve (no scene bundle, or the
+    /// clip's bone count doesn't match the mesh's object count - retail's
+    /// count-equality contract, `FUN_8001B964`), exactly as the native
+    /// play-window falls back to its unposed instance. `anim_id == 0` is the
+    /// plain unposed build ([`Self::field_mesh`]).
+    pub fn field_mesh_posed(&mut self, slot: u32, anim_id: u32) -> Result<u32, JsValue> {
         let s = slot as usize;
+        let anim = anim_id.min(u8::MAX as u32) as u8;
         let res_idx = {
             let f = self
                 .field
                 .as_ref()
                 .ok_or_else(|| JsValue::from_str("field_mesh: no scene"))?;
-            if f.cur.as_ref().map(|(cs, _, _)| *cs) == Some(s) {
+            if f.cur.as_ref().map(|(key, _, _)| *key) == Some((s, anim)) {
                 return Ok(slot);
             }
             *f.env_tmds
                 .get(s)
                 .ok_or_else(|| JsValue::from_str(&format!("field_mesh: slot {s} out of range")))?
+        };
+        let offsets: Option<Vec<([i16; 3], [i16; 3])>> = if anim == 0 {
+            None
+        } else {
+            self.frame0_bone_offsets(anim, res_idx)
         };
         let built = {
             let res = self
@@ -239,10 +332,13 @@ impl LegaiaRuntime {
                 .tmds
                 .get(res_idx)
                 .ok_or_else(|| JsValue::from_str("field_mesh: tmd missing"))?;
-            crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram)
+            match &offsets {
+                Some(o) => crate::field_scene::build_hybrid_env_mesh_posed(rtmd, o),
+                None => crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram),
+            }
         };
         if let Some(f) = self.field.as_mut() {
-            f.cur = Some((s, built.0, built.1));
+            f.cur = Some(((s, anim), built.0, built.1));
         }
         Ok(slot)
     }
@@ -300,6 +396,17 @@ impl LegaiaRuntime {
         self.field
             .as_ref()
             .map(|f| f.placements.iter().map(|d| d.rot_y).collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-placement object-bind animation id (parallel to
+    /// [`Self::field_placement_slots`]). `0` = unposed; nonzero = draw the
+    /// slot's mesh through [`Self::field_mesh_posed`] with this id, or the
+    /// prop's multi-object parts heap on the origin.
+    pub fn field_placement_anim_ids(&self) -> Vec<u32> {
+        self.field
+            .as_ref()
+            .map(|f| f.placements.iter().map(|d| d.anim_id as u32).collect())
             .unwrap_or_default()
     }
 
@@ -477,6 +584,7 @@ impl LegaiaRuntime {
                     "target_map": e.target_map,
                     "dialog": e.dialog,
                     "conditional": e.conditional,
+                    "special": e.special,
                     "x": e.placement.world_x,
                     "z": e.placement.world_z,
                 })
@@ -491,9 +599,16 @@ impl LegaiaRuntime {
 
     /// Build catalog entry `i`'s mesh (hybrid: textured + vertex-colour prims,
     /// with per-vertex bone ids). Returns `i`.
+    ///
+    /// Mirrors the native window's field-NPC bind: a special
+    /// (`model >= 0xF0`) resolves out of the world's **global TMD pool**
+    /// rather than the scene's, and when the placement names a clip the TMD's
+    /// object table is truncated to the clip's bone count (the objects past it
+    /// are equipment-swap templates the clip never poses - drawn, they'd
+    /// litter the actor's feet with raw parts).
     pub fn play_npc_mesh(&mut self, i: u32) -> Result<u32, JsValue> {
         let idx = i as usize;
-        let (tmd, raw) = {
+        let (mut tmd, raw, anim_id, special) = {
             let n = self
                 .npcs
                 .as_ref()
@@ -506,16 +621,31 @@ impl LegaiaRuntime {
                 .entries
                 .get(idx)
                 .ok_or_else(|| JsValue::from_str(&format!("play_npc_mesh: no entry {idx}")))?;
-            let model = e.placement.model_index as usize;
-            let res = self
-                .res()
-                .ok_or_else(|| JsValue::from_str("play_npc_mesh: no resources"))?;
-            let t = res
-                .tmds
-                .get(model)
-                .ok_or_else(|| JsValue::from_str("play_npc_mesh: model out of range"))?;
-            (t.tmd.clone(), t.raw.clone())
+            let (tmd, raw) = if e.special {
+                let slot = (e.placement.model_index - 0xF0) as usize;
+                let g = self
+                    .scene_host
+                    .as_ref()
+                    .and_then(|h| h.world.global_tmd_pool.get(slot))
+                    .and_then(|s| s.as_ref())
+                    .ok_or_else(|| JsValue::from_str("play_npc_mesh: no global-pool mesh"))?;
+                (g.tmd.clone(), g.raw.clone())
+            } else {
+                let model = e.placement.model_index as usize;
+                let res = self
+                    .res()
+                    .ok_or_else(|| JsValue::from_str("play_npc_mesh: no resources"))?;
+                let t = res
+                    .tmds
+                    .get(model)
+                    .ok_or_else(|| JsValue::from_str("play_npc_mesh: model out of range"))?;
+                (t.tmd.clone(), t.raw.clone())
+            };
+            (tmd, raw, e.placement.anim_id, e.special)
         };
+        if let Some(bones) = self.npc_clip_bone_count(anim_id, special) {
+            tmd.objects.truncate(bones);
+        }
         let (mesh, object_ids, shading) =
             legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &raw);
         let mut flat = Vec::with_capacity(shading.colors.len() * 4);
@@ -572,9 +702,11 @@ impl LegaiaRuntime {
 
     /// Catalog entry `i`'s clip, decoded to the pose format the JS animator
     /// consumes: `6` entries per bone per frame (`[tx, ty, tz, rx, ry, rz]`,
-    /// absolute). Empty when the placement names no clip or the scene ships no
-    /// ANM bundle. An NPC's clip is its placement `anim_id - 1` in the scene's
-    /// own ANM bundle (`docs/formats/anm.md` § per-scene bundle).
+    /// absolute). Empty when the placement names no clip or its bundle is
+    /// unavailable. An NPC's clip is its placement `anim_id - 1` in the
+    /// scene's own ANM bundle (`docs/formats/anm.md` § per-scene bundle); a
+    /// global-pool special's indexes the PROT 0874 locomotion bundle instead
+    /// (the native window's bundle split).
     pub fn play_npc_pose_frames(&self, i: u32) -> Vec<i32> {
         let Some(n) = self.npcs.as_ref() else {
             return Vec::new();
@@ -582,17 +714,22 @@ impl LegaiaRuntime {
         let Some(e) = n.pack.entries.get(i as usize) else {
             return Vec::new();
         };
-        let Some(prot) = n.pack.anm_prot else {
+        let bundle = if e.special {
+            self.locomotion_anm.as_ref()
+        } else {
+            self.scene_anm.as_ref()
+        };
+        let (Some(b), Some(rec_idx)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
+        else {
             return Vec::new();
         };
-        if e.placement.anim_id == 0 {
-            return Vec::new();
-        }
-        self.anm_pose_frames(prot, (e.placement.anim_id - 1) as u32, e.nobj)
+        bundle_pose_frames(b, rec_idx)
     }
 
     /// `[frame_count, bone_count]` of catalog entry `i`'s clip; `[0, 0]` when
-    /// it has none.
+    /// it has none. `bone_count` is the clip's own count - the stride of
+    /// [`Self::play_npc_pose_frames`], and the count
+    /// [`Self::play_npc_mesh`] truncated the object table to.
     pub fn play_npc_pose_dims(&self, i: u32) -> Vec<u32> {
         let Some(n) = self.npcs.as_ref() else {
             return vec![0, 0];
@@ -600,12 +737,19 @@ impl LegaiaRuntime {
         let Some(e) = n.pack.entries.get(i as usize) else {
             return vec![0, 0];
         };
-        let parts = e.nobj.max(1);
-        let f = self.play_npc_pose_frames(i);
-        if f.is_empty() {
+        let bundle = if e.special {
+            self.locomotion_anm.as_ref()
+        } else {
+            self.scene_anm.as_ref()
+        };
+        let (Some(b), Some(rec_idx)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
+        else {
             return vec![0, 0];
+        };
+        match b.record(rec_idx) {
+            Ok(r) if r.bone_count > 0 => vec![r.frame_count as u32, r.bone_count as u32],
+            _ => vec![0, 0],
         }
-        vec![f.len() as u32 / (parts * 6), parts]
     }
 
     /// Live world state of every catalogued NPC, flattened
@@ -626,12 +770,47 @@ impl LegaiaRuntime {
                 .get(&slot)
                 .copied()
                 .unwrap_or((e.placement.world_x, e.placement.world_z));
-            let facing = h.world.field_npc_headings.get(&slot).copied().unwrap_or(0) as f32;
+            // A slot with no seeded heading renders at **identity** in the
+            // native window (`redraw.rs`: `None => Mat4::IDENTITY`). The page
+            // composes `rot = -(facing + 2048)` (the half-turn the walker
+            // convention carries), so identity is `facing = 2048`, not `0` -
+            // `0` would draw every prologue-less NPC turned half a revolution.
+            let facing = h
+                .world
+                .field_npc_headings
+                .get(&slot)
+                .copied()
+                .unwrap_or(2048) as f32;
             let y = h.world.sample_field_floor_height(x as i32, z as i32) as f32;
             out.extend_from_slice(&[x as f32, y, z as f32, facing]);
         }
         out
     }
+}
+
+/// Decode ANM bundle record `rec_idx` into the flat pose stream the JS
+/// animator consumes: `6` `i32` per bone per frame
+/// (`[tx, ty, tz, rx, ry, rz]`, absolute), stride = the record's own bone
+/// count. Empty when the record doesn't decode.
+fn bundle_pose_frames(
+    bundle: &legaia_asset::player_anm::PlayerAnmBundle,
+    rec_idx: usize,
+) -> Vec<i32> {
+    let Ok(rec) = bundle.record(rec_idx) else {
+        return Vec::new();
+    };
+    let bones = rec.bone_count as usize;
+    let frames = rec.frame_count as usize;
+    let mut out = Vec::with_capacity(frames * bones * 6);
+    for f in 0..frames {
+        for b in 0..bones {
+            let Some(t) = bundle.bone_transform(rec_idx, f, b) else {
+                return Vec::new();
+            };
+            out.extend_from_slice(&[t.t_x, t.t_y, t.t_z, t.r_x, t.r_y, t.r_z]);
+        }
+    }
+    out
 }
 
 /// Flatten `EnvDraw` world positions to `[x, y, z, ...]`.

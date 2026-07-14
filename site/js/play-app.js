@@ -175,42 +175,53 @@
         this.renderer.uploadGround(new Float32Array(0), null, null, new Uint32Array(0));
       }
 
-      /* Environment meshes, uploaded once each and instanced per placement. */
+      /* Environment meshes, uploaded once per (slot, anim) pair and instanced
+       * per placement. `anim` selects the frame-0 **posed** variant of the
+       * slot's mesh: a placed prop whose object bind names a clip is a
+       * multi-object mesh whose parts are that clip's bones - cupboard doors
+       * only sit on the cabinet's front face, and windmill sails on their hub,
+       * once the pose is applied (the WASM side falls back to the raw mesh
+       * when the pose can't resolve, exactly as the native window does). */
+      const POSED_MESH_BASE = 700000;   /* + slot*256 + anim */
       const empty = new Set(), used = new Set();
-      const ensure = (slot) => {
-        if (used.has(slot)) return true;
-        if (empty.has(slot)) return false;
-        try { rt.field_mesh(slot); } catch (e) { empty.add(slot); return false; }
+      const ensure = (slot, anim) => {
+        const meshId = anim ? POSED_MESH_BASE + slot * 256 + anim : slot;
+        const key = meshId;
+        if (used.has(key)) return meshId;
+        if (empty.has(key)) return -1;
+        try { rt.field_mesh_posed(slot, anim || 0); }
+        catch (e) { empty.add(key); return -1; }
         const pos = rt.field_mesh_positions();
         const idx = rt.field_mesh_indices();
-        if (!pos.length || !idx.length) { empty.add(slot); return false; }
+        if (!pos.length || !idx.length) { empty.add(key); return -1; }
         const flat = rt.field_mesh_flat_rgba();
-        this.renderer.uploadSceneMesh(slot, pos, rt.field_mesh_uvs(),
+        this.renderer.uploadSceneMesh(meshId, pos, rt.field_mesh_uvs(),
           rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
-        used.add(slot);
-        return true;
+        used.add(key);
+        return meshId;
       };
       const isSky = (window.FieldSceneView && window.FieldSceneView.isSkyMesh)
         || (() => false);
-      const push = (slots, pos, rots) => {
+      const push = (slots, pos, rots, anims) => {
         for (let i = 0; i < slots.length; i++) {
-          const s = slots[i];
-          if (!ensure(s)) continue;
+          const meshId = ensure(slots[i], anims ? anims[i] : 0);
+          if (meshId < 0) continue;
           /* Sky domes and kilometre-wide horizon planes read as sky only from
            * the retail in-world camera; from a follow camera inside them they
            * are a wall in front of the lens. Same classifier the full-map view
            * uses. */
-          if (isSky(this.renderer.getMeshAabb(s))) continue;
+          if (isSky(this.renderer.getMeshAabb(meshId))) continue;
           this.staticDraws.push({
-            meshId: s,
+            meshId,
             x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
             rotY: -(rots[i] & 0xFFF) * A2R,
             scale: 1.0,
           });
         }
       };
-      push(rt.field_terrain_slots(), rt.field_terrain_positions(), rt.field_terrain_rot_y());
-      push(rt.field_placement_slots(), rt.field_placement_positions(), rt.field_placement_rot_y());
+      push(rt.field_terrain_slots(), rt.field_terrain_positions(), rt.field_terrain_rot_y(), null);
+      push(rt.field_placement_slots(), rt.field_placement_positions(), rt.field_placement_rot_y(),
+        rt.field_placement_anim_ids());
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
       if (rt.player_has_mesh()) {

@@ -60,8 +60,34 @@ pub fn build_hybrid_env_mesh(
     rtmd: &legaia_engine_core::scene_resources::ResolvedTmd,
     vram: &legaia_tim::Vram,
 ) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
-    let mut mesh = rtmd.build_filtered_vram_mesh(vram);
+    let mesh = rtmd.build_filtered_vram_mesh(vram);
     let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
+    merge_hybrid_halves(mesh, &cmesh)
+}
+
+/// [`build_hybrid_env_mesh`] **posed** at one set of per-object rigid
+/// transforms (frame 0 of a placed prop's object-bind clip): both halves go
+/// through the `*_posed_rot` builders - the same `R . v + T` bake the native
+/// play-window's posed-placement pass runs - and merge into the same hybrid
+/// stream. Used for the `.MAP` placed objects whose bind names an animation;
+/// their TMD objects are that clip's bones, and the raw object-local vertices
+/// are nonsense without its transform.
+pub fn build_hybrid_env_mesh_posed(
+    rtmd: &legaia_engine_core::scene_resources::ResolvedTmd,
+    offsets: &[([i16; 3], [i16; 3])],
+) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
+    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
+    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, offsets);
+    merge_hybrid_halves(mesh, &cmesh)
+}
+
+/// Merge the untextured vertex-colour half into the textured half's vertex
+/// stream, producing the parallel `[r, g, b, flag]` array (empty when there
+/// is no colour half, so pure-textured meshes upload exactly as before).
+fn merge_hybrid_halves(
+    mut mesh: legaia_tmd::mesh::VramMesh,
+    cmesh: &legaia_tmd::mesh::ColorMesh,
+) -> (legaia_tmd::mesh::VramMesh, Vec<u8>) {
     if cmesh.is_empty() {
         return (mesh, Vec::new());
     }

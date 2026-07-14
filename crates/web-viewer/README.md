@@ -42,6 +42,27 @@ The split is deliberate:
   `player_transform`), and the scene's MAN-placed NPCs at their live world
   positions (`play_npc_*`).
 
+The map + NPC layers make the **native play-window's exact resolver calls**,
+pinned by the disc-gated parity test `tests/play_parity.rs`:
+
+- the placed-object layer goes through
+  `field_env::resolve_placed_env_draws` **with the scene's object binds**, so
+  a placed prop whose bind names a clip carries its `anim_id`
+  (`field_placement_anim_ids`) and the page draws it through
+  `field_mesh_posed(slot, anim)` - the frame-0 rest pose of scene ANM record
+  `anim_id - 1` (cupboard doors closed on the cabinet's front face) with the
+  native fallback to the raw mesh under the bone-count contract;
+- the terrain sweep excludes `FLAG_PLACED` records (already drawn - posed -
+  by the placement layer; the second copy would be the unposed one);
+- the NPC catalog (`field_npc::build_npc_catalog_play`) lists **everything
+  the native window draws**: the `model >= 0xF0` global-pool specials (save
+  crystal / party heads, meshed from the world's pool and posed from the
+  PROT 0874 locomotion bundle) and the clipless multi-object actors retail
+  draws raw (draw kind 5), which the curated NPC-browser catalog withholds;
+- a catalogued NPC's mesh truncates its TMD object table to its clip's bone
+  count (the objects past it are equipment-swap templates), and a slot with
+  no seeded heading renders at identity, both as the native draw pass does.
+
 Two things the browser host has to do that the native one gets for free:
 
 - **Seating.** Scene entry puts the player at the retail *cold-boot spawn*,
@@ -146,6 +167,29 @@ halves of retail's split chart lookup - `judged` (what the hit judge
 matches, the step to press) and `displayed` (the display half's
 held-sequence substitution); see `docs/subsystems/minigame-dance.md`.
 Disc-gated oracle: `tests/minigames_wasm_api.rs`.
+
+`minigames_baka.rs` adds the Baka Fighter duel's **presentation** exports so
+the page draws with the cabinet's own assets: per-side fighter mesh buffers
+(player = PROT 1204 battle pack slot, opponent = its own PROT 1206..=1219
+`[TIM][TMD][anim]` pack), pose-frame decodes from the real animation banks
+(PROT 1203 bank records `char*9 + action` for the party, the pack's own bank
+for the opponent), the 51-record HUD widget table + PROT 1203 art pages, the
+stage TMD set, and a per-duel 1 MB VRAM build. Consumed by
+`site/js/minigame-baka.js`; see
+`docs/subsystems/minigame-baka-fighter.md` § HUD widget table.
+
+`minigames_dance.rs` adds the dance's **presentation** exports: the PROT
+1230 art pack's HUD page decoded through its row-500 CLUT strip
+(`dance_hud_page_rgba`), the overlay's 34-record widget table + the traced
+emitter geometry (`dance_widgets_json` / `dance_layout_json`, incl. the
+capture-pinned `+4`-line draw-environment offset), the dancer face-stamp
+windows with the pose blits replayed (`dance_face_rgba`; dancer 0 = Noa's
+field atlas, PROT 0874 §2), the SFX cue bank (PROT 1228 descriptors +
+the PROT 1231 sample VAB - a TOC-tail entry) plus the direct-keyed hit
+stings (`dance_sting_pcm`), and the real BGM pair rendered through the
+clean-room SPU (`dance_bgm_pcm_i16`). Consumed by
+`site/js/minigame-dance.js`; see `docs/subsystems/minigame-dance.md`.
+Disc-gated oracle: `tests/minigames_dance_api.rs`.
 
 ## Scene `.glb` export (`scene_export`)
 

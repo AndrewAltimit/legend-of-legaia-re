@@ -47,6 +47,12 @@ pub struct NpcEntry {
     /// model and clip are fully resolvable - retail just isn't drawing it at
     /// scene load - so the catalog lists it, flagged.
     pub conditional: bool,
+    /// `model_index >= 0xF0`: a **global-pool special** (party head / save
+    /// point). Its mesh comes from the world's global TMD pool (slot
+    /// `model_index - 0xF0`) and its clip from the PROT 0874 locomotion
+    /// bundle, not the scene's. Only the play catalog
+    /// ([`build_npc_catalog_play`]) lists these.
+    pub special: bool,
 }
 
 /// The NPC catalog for one loaded field scene. Built by
@@ -145,6 +151,42 @@ pub fn build_npc_catalog_res(
     name: &str,
     res: &legaia_engine_core::scene_resources::SceneResources,
 ) -> Result<FieldNpcPack, String> {
+    build_npc_catalog_impl(index, name, res, None)
+}
+
+/// The **play page's** catalog: every placement the native play-window draws.
+///
+/// Differs from [`build_npc_catalog_res`] (the NPC browser page's curated
+/// list) in two ways, both matching the play-window's field-NPC pass
+/// (`engine-shell` `window/assets.rs`):
+///
+/// - **global-pool specials are included**: a `model_index >= 0xF0` placement
+///   (save point / party head) resolves against `global_pool[model - 0xF0]` -
+///   the world's PROT 0874 §0 pool that `enter_field_scene` seeds - and its
+///   clip against the locomotion bundle. Skipping them left the save crystal
+///   (and story party members) missing from the browser scene.
+/// - **clipless multi-object actors are included**: retail draw kind 5 draws
+///   every TMD object with the actor's single transform (raw object-local
+///   vertices), and the native window does the same, so the play page must
+///   too rather than withholding them.
+pub fn build_npc_catalog_play(
+    index: &ProtIndex,
+    name: &str,
+    res: &legaia_engine_core::scene_resources::SceneResources,
+    global_pool: &[Option<std::sync::Arc<legaia_engine_core::world::GlobalTmd>>],
+) -> Result<FieldNpcPack, String> {
+    build_npc_catalog_impl(index, name, res, Some(global_pool))
+}
+
+/// Shared walk behind the two catalog builders. `play_pool` is `Some` for the
+/// play-page build (specials resolve against it, clipless multi-object actors
+/// stay in), `None` for the NPC browser page's curated build.
+fn build_npc_catalog_impl(
+    index: &ProtIndex,
+    name: &str,
+    res: &legaia_engine_core::scene_resources::SceneResources,
+    play_pool: Option<&[Option<std::sync::Arc<legaia_engine_core::world::GlobalTmd>>]>,
+) -> Result<FieldNpcPack, String> {
     let scene = Scene::load(index, name).map_err(|e| format!("{e:#}"))?;
     let man = scene
         .field_man_payload(index)
@@ -157,22 +199,37 @@ pub fn build_npc_catalog_res(
     let mut special_count = 0u32;
     let mut unposable_count = 0u32;
     for (p, kind) in classify_placements(&mf, &man) {
-        // Party / savepoint heads come from the global pool, not the scene's -
-        // the characters page is their catalog.
-        if p.special_model {
+        let nobj = if p.special_model {
+            // Party / savepoint heads come from the global pool, not the
+            // scene's. The browser NPC page routes them to the characters
+            // page; the play page draws them like the native window does.
+            let Some(pool) = play_pool else {
+                special_count += 1;
+                continue;
+            };
+            let Some(g) = pool
+                .get((p.model_index - 0xF0) as usize)
+                .and_then(|s| s.as_ref())
+            else {
+                continue; // no pool mesh - the native window skips it too
+            };
             special_count += 1;
-            continue;
-        }
-        let Some(t) = res.tmds.get(p.model_index as usize) else {
-            continue;
+            g.tmd.objects.len() as u32
+        } else {
+            let Some(t) = res.tmds.get(p.model_index as usize) else {
+                continue;
+            };
+            t.tmd.objects.len() as u32
         };
-        let nobj = t.tmd.objects.len() as u32;
         // A multi-object TMD's vertices are object-local: without a bone pose
-        // it draws as a pile of parts on the origin. Single-object models need
-        // no pose (their local space is their model space).
-        if nobj > 1 && (p.anim_id == 0 || anm_prot.is_none()) {
+        // it draws as a pile of parts on the origin. The curated NPC page
+        // withholds those; the play page keeps them (retail draw kind 5 draws
+        // them raw, and so does the native play-window).
+        if !p.special_model && nobj > 1 && (p.anim_id == 0 || anm_prot.is_none()) {
             unposable_count += 1;
-            continue;
+            if play_pool.is_none() {
+                continue;
+            }
         }
         let (label, target_map, dialog) = match &kind {
             PlacementKind::Portal { target_map } => ("door", Some(*target_map), None),
@@ -188,6 +245,7 @@ pub fn build_npc_catalog_res(
         // lists it with a flag rather than dropping it the way the field
         // renderer does.
         let conditional = p.world_x == FIELD_OFFMAP_HIDE_XZ && p.world_z == FIELD_OFFMAP_HIDE_XZ;
+        let special = p.special_model;
         entries.push(NpcEntry {
             nobj,
             placement: p,
@@ -195,6 +253,7 @@ pub fn build_npc_catalog_res(
             target_map,
             dialog,
             conditional,
+            special,
         });
     }
 
