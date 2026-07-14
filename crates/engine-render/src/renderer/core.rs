@@ -1113,6 +1113,10 @@ impl Renderer {
             color_grade: std::cell::Cell::new([1.0, 1.0, 1.0, 0.0]),
             depth_cue: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
             backface_cull: std::cell::Cell::new(0.0),
+            // Semi-transparency (ABE) blending on by default: retail's GPU
+            // always blends ABE prims, so field water / glass / effects should
+            // composite in the clean render, not just under LEGAIA_PSX_RENDER.
+            semi_blend: std::cell::Cell::new(true),
             screen_overlay_pipeline,
             screen_overlay_blend_pipelines,
             screen_overlay_vbuf: std::cell::RefCell::new(screen_overlay_vbuf),

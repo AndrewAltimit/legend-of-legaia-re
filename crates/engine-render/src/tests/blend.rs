@@ -105,6 +105,42 @@ fn vram_shader_has_blend_entry_points() {
     }
 }
 
+/// Semi-transparency (ABE) blending is gated on `flags.y` (the `set_semi_blend`
+/// toggle, default on), NOT on `psx_params.z` (the `psx_mode` UV-snap flag).
+/// This decoupling is what lets field water / glass / effects blend in the
+/// clean render without pulling in the strict-PS1 vertex jitter + dither. If a
+/// refactor re-couples them, the shipped port draws ABE prims opaque again (the
+/// harsh "solid water" fountain), so guard the gate at the source level - the
+/// GPU-free companion to the naga-validation test.
+#[test]
+fn semi_transparency_defer_is_gated_on_flags_y_not_psx_mode() {
+    // The STP / ABE defer that hands blended fragments to the blend pass keys
+    // off flags.y in both shaders.
+    assert!(
+        VRAM_MESH_SHADER_SRC.contains("u.flags.y >= 0.5 && (tsb & 0x8000u)"),
+        "vram shader: semi-transparency defer must gate on flags.y"
+    );
+    assert!(
+        COLOR_MESH_SHADER_SRC.contains("u.flags.y >= 0.5 && (in.blend & 0x8000u)"),
+        "color mesh shader: semi-transparency defer must gate on flags.y"
+    );
+    // And it must NOT ride the psx_params.z (UV-snap) flag any more - that flag
+    // stays reserved for the vertex snap so the two can be toggled apart.
+    assert!(
+        !VRAM_MESH_SHADER_SRC.contains("psx_params.z >= 0.5 && (tsb & 0x8000u)"),
+        "vram shader: semi defer must not re-couple to psx_params.z"
+    );
+    assert!(
+        !COLOR_MESH_SHADER_SRC.contains("psx_params.z >= 0.5 && (in.blend & 0x8000u)"),
+        "color mesh shader: semi defer must not re-couple to psx_params.z"
+    );
+    // The vertex-snap gate itself still uses psx_params.z (unchanged).
+    assert!(
+        VRAM_MESH_SHADER_SRC.contains("psx_params.z >= 0.5"),
+        "vram shader: UV-snap gate should still read psx_params.z"
+    );
+}
+
 #[test]
 fn psx_blend_semi_bit_matches_tmd_packing() {
     // `legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT` packs the prim ABE

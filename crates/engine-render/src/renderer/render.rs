@@ -78,7 +78,12 @@ impl Renderer {
                         ],
                         tex_window: self.tex_window.get(),
                         grade: self.color_grade.get(),
-                        flags: [self.backface_cull.get(), 0.0, 0.0, 0.0],
+                        flags: [
+                            self.backface_cull.get(),
+                            if self.semi_blend.get() { 1.0 } else { 0.0 },
+                            0.0,
+                            0.0,
+                        ],
                     }]),
                 );
             }
@@ -214,7 +219,7 @@ impl Renderer {
                     // by per-prim depth (the retail ordering-table walk),
                     // selecting the matching ABR blend pipeline per run.
                     // Gated like the rest of the faithful extras.
-                    if self.psx_mode.get() && mesh.has_semi_prims() {
+                    if self.semi_blend.get() && mesh.has_semi_prims() {
                         let c = psx_blend::MODE0_BLEND_CONSTANT;
                         rp.set_blend_constant(wgpu::Color {
                             r: c,
@@ -308,7 +313,7 @@ impl Renderer {
                     // the retail LIFO bucket order (`AddPrim` prepends).
                     let any_semi = scene.draws.iter().any(|d| d.mesh.has_semi_prims())
                         || scene.color_draws.iter().any(|d| d.mesh.has_semi_prims());
-                    if self.psx_mode.get() && any_semi {
+                    if self.semi_blend.get() && any_semi {
                         let c = psx_blend::MODE0_BLEND_CONSTANT;
                         rp.set_blend_constant(wgpu::Color {
                             r: c,
@@ -589,7 +594,12 @@ impl Renderer {
         ];
         let tex_window = self.tex_window.get();
         let grade = self.color_grade.get();
-        let flags = [self.backface_cull.get(), 0.0, 0.0, 0.0];
+        let flags = [
+            self.backface_cull.get(),
+            if self.semi_blend.get() { 1.0 } else { 0.0 },
+            0.0,
+            0.0,
+        ];
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
             let u = MeshUniforms {
                 mvp: mvp.to_cols_array_2d(),

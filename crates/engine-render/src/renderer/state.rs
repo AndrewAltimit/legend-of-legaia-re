@@ -128,6 +128,17 @@ pub struct Renderer {
     /// `0.0` (default) = draw both sides; `1.0` / `2.0` = discard back /
     /// front-facing fragments. Set with [`Renderer::set_backface_cull`].
     pub(super) backface_cull: std::cell::Cell<f32>,
+    /// PSX semi-transparency (ABE) blending, staged into `MeshUniforms.flags[1]`.
+    /// When `true` (the default), a semi-transparent prim's blended fragments
+    /// are deferred out of the opaque pass and re-drawn by the per-ABR-mode
+    /// blend pass, so water / glass / additive effects composite with the
+    /// framebuffer as they do on retail. When `false` those prims draw fully
+    /// opaque. This is decoupled from [`Self::psx_mode`] on purpose: the
+    /// modulation-correct blend is retail behaviour worth having in the clean
+    /// "enhanced" render too, whereas the GTE vertex jitter / affine UVs /
+    /// 15-bit dither that `psx_mode` also enables are strict-PS1 artefacts.
+    /// Set with [`Renderer::set_semi_blend`].
+    pub(super) semi_blend: std::cell::Cell<bool>,
     /// Screen-space 2D overlay pass (see [`crate::screen_overlay`]): PSX
     /// `POLY_FT4` textured quads + flat quads in NDC, ordering-table order,
     /// per-ABR semi-transparency. Opaque pipeline (replace).
@@ -164,6 +175,24 @@ impl Renderer {
     /// Read current PSX-mode flag.
     pub fn psx_mode(&self) -> bool {
         self.psx_mode.get()
+    }
+
+    /// Toggle PSX semi-transparency (ABE) blending on the VRAM / colour mesh
+    /// passes. When `true` (the default) a semi-transparent prim's blended
+    /// texels are deferred out of the opaque pass and composited by the
+    /// per-ABR-mode blend pass, so field water (e.g. the Hunter's Spring
+    /// fountain), glass and additive effects show the framebuffer through
+    /// them the way retail's GPU blend does. When `false` those prims draw
+    /// fully opaque (the harsh-edged "solid water" look). Independent of
+    /// [`Self::set_psx_mode`]: blending is correct in the clean render, so it
+    /// is on regardless of the strict-PS1 jitter / dither knobs.
+    pub fn set_semi_blend(&self, enable: bool) {
+        self.semi_blend.set(enable);
+    }
+
+    /// Read the current semi-transparency-blend flag.
+    pub fn semi_blend(&self) -> bool {
+        self.semi_blend.get()
     }
 
     /// Set the GP0(0xE2) "Texture Window setting" register state used by

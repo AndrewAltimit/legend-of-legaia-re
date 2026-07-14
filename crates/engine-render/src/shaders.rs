@@ -450,11 +450,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         discard;
     }
 
-    // PSX-faithful semi-transparency, opaque pass: STP texels of a
-    // semi-transparent prim (TSB bit 15 = the engine-packed ABE enable)
-    // belong to the blend pass - defer them. Gated on the same faithful
-    // flag as the blend pass so the default path draws everything opaque.
-    if u.psx_params.z >= 0.5 && (tsb & 0x8000u) != 0u && ((word >> 15u) & 1u) == 1u {
+    // PSX semi-transparency, opaque pass: STP texels of a semi-transparent
+    // prim (TSB bit 15 = the engine-packed ABE enable) belong to the blend
+    // pass - defer them. Gated on the semi-blend flag (`flags.y`, default on),
+    // the same flag the CPU-side blend pass keys off; when it is off the prim
+    // draws fully opaque.
+    if u.flags.y >= 0.5 && (tsb & 0x8000u) != 0u && ((word >> 15u) & 1u) == 1u {
         discard;
     }
 
@@ -565,11 +566,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         || (u.flags.x >= 1.5 && front_facing) {
         discard;
     }
-    // PSX-faithful mode: a semi-transparent (ABE) untextured prim blends
-    // every pixel, so nothing of it belongs in the opaque pass - the blend
-    // pass re-draws it from the per-ABR-mode index tail. Mirrors the
-    // textured opaque pass discarding STP texels of semi prims.
-    if (u.psx_params.z >= 0.5 && (in.blend & 0x8000u) != 0u) {
+    // Semi-transparency (ABE): an untextured ABE prim blends every pixel, so
+    // nothing of it belongs in the opaque pass - the blend pass re-draws it
+    // from the per-ABR-mode index tail. Gated on the semi-blend flag
+    // (`flags.y`, default on). Mirrors the textured opaque pass discarding
+    // STP texels of semi prims.
+    if (u.flags.y >= 0.5 && (in.blend & 0x8000u) != 0u) {
         discard;
     }
     // An untextured PSX prim is filled with its packet colour directly - no
