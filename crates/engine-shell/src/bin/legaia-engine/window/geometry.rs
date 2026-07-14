@@ -146,6 +146,16 @@ pub(crate) fn heightfield_to_vram_mesh(
     hf: &legaia_asset::field_objects::WalkHeightfield,
 ) -> legaia_tmd::mesh::VramMesh {
     let n = hf.positions.len();
+    // The heightfield is ENGINE-synthesised geometry (no retail winding to
+    // preserve), and its builder happens to wind opposite to the scene TMDs
+    // under the field frame. Reverse each triangle so the ground survives
+    // the cutscene-camera NCLIP pass (`Renderer::set_backface_cull`) with
+    // the same parity as the disc meshes. A no-op for every both-sided pass
+    // (the default `cull_mode: None` pipelines draw either winding).
+    let mut indices = hf.indices.clone();
+    for tri in indices.chunks_exact_mut(3) {
+        tri.swap(1, 2);
+    }
     legaia_tmd::mesh::VramMesh {
         positions: hf.positions.clone(),
         uvs: hf.uvs.clone(),
@@ -158,7 +168,7 @@ pub(crate) fn heightfield_to_vram_mesh(
         // at its raw texel. Sourced from the heightfield rather than assumed
         // here, so the one disc-derived fact has one home.
         colors: hf.colors.clone(),
-        indices: hf.indices.clone(),
+        indices,
     }
 }
 

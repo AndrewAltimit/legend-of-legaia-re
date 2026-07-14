@@ -330,43 +330,47 @@ impl PlayWindowApp {
             && self.session.host.world.cutscene_timeline_active()
         {
             let (focus, pitch, yaw, h, tr_eye) = self.cutscene_view();
-            // Ease rate from the op-`0x45` `apply_trigger` (retail `FUN_801DE084`
-            // → `FUN_801DB510`): a Configure with `apply == 0` commits the camera
-            // targets IMMEDIATELY (snap), while `apply > 0` stages them and lets
-            // the per-frame ease glide the eye toward them over roughly `apply`
-            // frames. opdeene's beats mix both: the entry shot snaps (`apply 0`),
-            // but the mid-prologue dolly (`apply 840`, paired with a 760-frame
-            // WaitFrames) glides continuously WHILE the narration text scrolls -
-            // exactly the "3D keeps playing under the crawl" retail behaviour.
-            // The old fixed `0.15` snapped every beat to a near-still hold in a
-            // few frames, which read as scene-then-text rather than concurrent.
+            // Glide pacing from the op-`0x45` `apply_trigger` (retail
+            // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
+            // commits its camera targets IMMEDIATELY (snap cut), while
+            // `apply > 0` stages them and the per-frame mover glides the live
+            // globals there over `apply` frames (constant velocity, exact
+            // arrival - the `FUN_801DB510` head subtracts a per-frame step
+            // from the eye trio). opdeene's beats mix both: the entry shot
+            // snaps (`apply 0`), the mid-prologue grove drift glides
+            // (`apply 840`, paired with a 760-frame WaitFrames), and the
+            // crater-rim tableau dolly glides (`apply 480`) WHILE the
+            // narration text scrolls - the "3D keeps playing under the
+            // crawl" retail behaviour. The interp arms glides PER COMPONENT
+            // on target change (see `CutsceneCameraInterp::glide`), so the
+            // H-only re-poke one frame after the tableau beat cannot snap
+            // the in-flight dolly (the earlier whole-tuple ease-rate model
+            // did exactly that, tele-porting the eye into the crater-rim
+            // geometry - the "opening shot buried in a gold wall" report).
+            //
+            // Advanced in SIM-TICK time, not render-frame time (`run_ticks`
+            // steps per redraw): retail's mover runs in the 60 Hz field
+            // loop, so an `apply`-paced glide must span `apply` SIM frames.
+            // Min 1 step so an idle frame still refreshes the held pose.
             let apply = self.session.host.world.camera_state.apply_trigger;
-            let t = if apply == 0 {
-                1.0
-            } else {
-                // Exponential ease: `t ≈ 4/apply` reaches ~63% of the travel in
-                // `apply/4` frames, ~95% in `apply` frames - a slow, continuous
-                // dolly for the big `apply` values and a quick settle for small
-                // ones. Clamped so no beat crawls forever or hard-snaps.
-                (4.0 / apply as f32).clamp(0.008, 0.5)
-            };
-            // Advance the ease in SIM-TICK time, not render-frame time: step it
-            // once per world tick that elapsed this redraw (`run_ticks`). Retail
-            // eases the camera one step per sim frame (`FUN_801DB510` runs in the
-            // 100 Hz field loop), so an `apply`-paced glide must span `apply` SIM
-            // frames. Stepping per-render instead let the ease converge in a
-            // fraction of a wall-clock second whenever the sim sat on a long
-            // WaitFrames (few ticks, many redraws) - the dolly finished early and
-            // the shot then froze into a dead static hold. Min 1 step so an idle
-            // frame still refreshes the held pose (e.g. right after a reset).
             let steps = run_ticks.max(1);
-            let mut out = self
-                .cutscene_cam_interp
-                .approach(focus, pitch, yaw, h, tr_eye, t);
-            for _ in 1..steps {
-                out = self
-                    .cutscene_cam_interp
-                    .approach(focus, pitch, yaw, h, tr_eye, t);
+            let out = self.cutscene_cam_interp.glide(
+                focus,
+                pitch,
+                yaw,
+                h,
+                tr_eye,
+                u32::from(apply),
+                steps,
+            );
+            if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
+                let w = &self.session.host.world;
+                eprintln!(
+                    "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
+                     yaw={yaw:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} pitch={:.3} \
+                     yaw={:.3} h={} tr_eye={:?} | params={:?}",
+                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, w.camera_state.params
+                );
             }
             Some(out)
         } else {
@@ -407,6 +411,20 @@ impl PlayWindowApp {
                 Some(g) => r.set_color_grade(g.gold, g.strength),
                 None => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
             }
+            // Retail GTE NCLIP winding rejection, scoped to the in-engine
+            // cutscene camera: the opdeene prologue's crater-rim tableau shot
+            // sits INSIDE the scene's closed cave-wall backdrop mesh, and
+            // retail's per-prim NCLIP is what discards the shell's near wall
+            // (otherwise it renders over the whole tableau - the "wall of
+            // gold burying the camera" report). The field frame draws raw
+            // retail vertices under a camera-side Y-flip, which mirrors the
+            // projected winding, so retail's front faces arrive CW - mode 2
+            // (discard front-facing = discard CCW under the pipelines'
+            // default Ccw front-face) keeps them. Off outside the cutscene
+            // camera (free-roam field / battle / world map keep both-sided
+            // draws; their per-pass winding parities differ).
+            let nclip_mode = u32::from(cutscene_cam.is_some()) * 2;
+            r.set_backface_cull(nclip_mode);
             // World-map mode frames the loaded map with the
             // controller-driven camera (azimuth / zoom / pan); an active
             // in-engine cutscene (opdeene opening prologue) frames the
@@ -816,7 +834,20 @@ impl PlayWindowApp {
                     // (resolved at scene load in
                     // `resolve_field_placement_draws`).
                     if layer_on("place") {
-                        for (mesh_idx, model) in &self.field_placement_draws {
+                        // Diag bisect: `LEGAIA_DIAG_PLACE_RANGE=a..b` draws only
+                        // placement-draw slots [a, b).
+                        let place_range =
+                            std::env::var("LEGAIA_DIAG_PLACE_RANGE").ok().and_then(|s| {
+                                let (a, b) = s.split_once("..")?;
+                                Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?))
+                            });
+                        for (di, (mesh_idx, model)) in self.field_placement_draws.iter().enumerate()
+                        {
+                            if let Some((a, b)) = place_range
+                                && !(a..b).contains(&di)
+                            {
+                                continue;
+                            }
                             if let Some(mesh) = self.meshes.get(*mesh_idx) {
                                 draws.push(SceneDraw {
                                     mesh,

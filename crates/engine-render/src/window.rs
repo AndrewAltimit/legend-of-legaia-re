@@ -443,95 +443,161 @@ pub fn cutscene_camera_mvp(
     proj * view
 }
 
-/// Smooths the cutscene camera between Camera Configure beats.
+/// Glides the cutscene camera between Camera Configure beats.
 ///
 /// [`cutscene_camera_mvp`] frames whatever the timeline's *current* op-`0x45`
 /// params decode to, so each new beat re-targets the shot instantly and the
-/// camera snaps. Retail's GTE camera eases toward the new focus/heading over a
-/// handful of frames; this holds the last rendered `(look_at, yaw, fov)` and
-/// eases it toward the live target each frame, so beats blend instead of cut.
+/// camera snaps. Retail stages each Configure's params into a persistent
+/// control block and moves the live camera globals toward them over the beat's
+/// `apply_trigger` frames; this mirrors that per component.
 ///
-/// Frame-rate-agnostic by design: the caller passes the per-frame easing factor
-/// `t` (0..=1), so a faster redraw cadence simply converges sooner. Yaw eases
-/// along the shortest arc so a wrap across ±π doesn't spin the long way round.
-/// [`Self::reset`] makes the next [`Self::approach`] snap directly to the
-/// target - call it when a cutscene (re)starts so the opening shot doesn't
-/// sweep in from a stale pose.
+/// Nine components (focus xyz, pitch, yaw, H, eye-trio xyz) each carry their
+/// own in-flight glide: when a component's target changes, a glide is armed
+/// from the CURRENT pose over the staging beat's `apply` frames (`apply == 0`
+/// commits that component immediately - the snap cut). Components whose
+/// targets did not change keep their in-flight glide untouched, so a
+/// follow-up single-slot poke (opdeene re-stages H alone one frame after
+/// arming its 480-frame tableau dolly) cannot cancel the dolly - the earlier
+/// whole-tuple ease-rate model snapped the entire shot on exactly that poke,
+/// which is what planted the eye inside the crater-rim geometry.
 ///
-/// REF: FUN_801DB510 (cutscene overlay) - retail's per-frame camera ease, which
-/// lerps the focus globals + shake/offset trio + the typed `0x801F2798` param
-/// table toward their control-block targets with an exponential right-shift step
-/// (`srav` by `_DAT_8007B60B>>4`). This is an approximation of that ease (an
-/// orbit on decoded pitch/yaw rather than retail's world-in-camera GTE model),
-/// not a byte-faithful port. The *dialog* overlay's copy is this same function
-/// (the dialog and cutscene_dialogue dumps are instruction-identical); only the
-/// menu overlay hosts different code at this VA - see
-/// `docs/reference/functions.md`.
+/// Motion arrives exactly, advanced in SIM ticks by the caller (`steps`).
+/// Two calibrations against the retail opening captures (the crawl-1
+/// PCSX-Redux screenshot ladder + a realtime retail video):
+///
+/// - **Duration**: a beat's on-screen transit runs ≈ `apply / 3.5` sim
+///   ticks, consistently across opdeene's three glides (grove drift
+///   `apply 840` ≈ 240 ticks, tableau dolly `apply 480` ≈ 140, closing
+///   push-in `apply 4800` ≈ 1350) - so `apply` is finer-grained than a
+///   1-per-frame count ([`Self::APPLY_UNITS_PER_TICK`]).
+/// - **Shape**: retail's per-frame mover steps by `delta >> shift`
+///   (`FUN_801DB510`'s `srav` ease) - fast early, creeping settle - so the
+///   glide uses a cubic ease-out (`1 - (1-s)^3`), which matches the
+///   retail dollies' front-loaded travel far better than a constant-rate
+///   line (a linear glide spends multiples longer mid-flight, where the
+///   opdeene camera path passes through scene geometry).
+///
+/// Angles glide along the shortest arc so a wrap across ±π doesn't spin the
+/// long way round. [`Self::reset`] makes the next [`Self::glide`] snap
+/// directly to the target - call it when a cutscene (re)starts so the
+/// opening shot doesn't sweep in from a stale pose.
+///
+/// REF: FUN_801DB510 (cutscene overlay) - retail's per-frame camera mover
+/// (constant-velocity eye-trio head + the typed `0x801F2798` param table).
+/// REF: FUN_801DE084 - the op-`0x45` Configure apply handler (per-slot
+/// staging into the persistent control block; `apply == 0` = immediate).
+/// The *dialog* overlay's copy is this same function (the dialog and
+/// cutscene_dialogue dumps are instruction-identical); only the menu overlay
+/// hosts different code at this VA - see `docs/reference/functions.md`.
 #[derive(Debug, Clone, Default)]
 pub struct CutsceneCameraInterp {
-    look_at: [f32; 3],
-    pitch: f32,
-    yaw: f32,
-    /// GTE projection register H (`_DAT_8007B6F4`) - the focal length, NOT a
-    /// derived FOV. Passed straight into the retail PSX projection.
-    h: f32,
-    /// Eye-space translation trio (`0x800840B8`, the op-`0x45` offset slots
-    /// 3/4/5), already reduced into the engine's 1x-geometry frame.
-    tr_eye: [f32; 3],
+    /// Current pose, packed `[look_at xyz, pitch, yaw, h, tr_eye xyz]`.
+    cur: [f32; 9],
+    /// Per-component glide start pose (the pose when the target last changed).
+    start: [f32; 9],
+    /// Per-component staged target.
+    target: [f32; 9],
+    /// Per-component glide length in sim frames (0 = committed immediately).
+    total: [u32; 9],
+    /// Per-component frames elapsed since the glide was armed.
+    done: [u32; 9],
     initialized: bool,
 }
 
 impl CutsceneCameraInterp {
+    /// Packed indices of the two angle components (shortest-arc glide).
+    const PITCH: usize = 3;
+    const YAW: usize = 4;
+    /// Capture-calibrated `apply_trigger` units per sim tick (see the type
+    /// doc): a glide staged with `apply = N` plays out over `N / 3.5` ticks.
+    const APPLY_UNITS_PER_TICK: f32 = 3.5;
+
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Drop the held pose so the next [`Self::approach`] snaps to its target.
+    /// Drop the held pose so the next [`Self::glide`] snaps to its target.
     pub fn reset(&mut self) {
         self.initialized = false;
     }
 
-    /// Ease the held camera toward `target` by `t` (clamped to `0..=1`) and
-    /// return the smoothed `(look_at, pitch, yaw, h, tr_eye)`. The first call
-    /// after a reset (or construction) snaps directly to the target.
+    /// Advance the camera `steps` sim frames toward the staged `target_*`
+    /// pose and return the current `(look_at, pitch, yaw, h, tr_eye)`.
     ///
-    /// This mirrors retail's per-frame camera ease (`FUN_801DB510`), which
-    /// lerps the focus globals, the eye-space translation trio (`0x800840B8`),
-    /// the angle trio and H toward their op-`0x45` keyframe targets - so
-    /// opdeene's beats blend rather than cut. All quantities move together
-    /// (focus + depth + height + heading), which is what keeps the shot
-    /// coherent as the vignette camera dollies between the staged islands.
-    pub fn approach(
+    /// `apply` is the staging beat's op-`0x45` `apply_trigger`: any component
+    /// whose target changed this call re-arms its glide from the current pose
+    /// over `apply` frames (`0` = snap that component). Unchanged components
+    /// keep their in-flight glide. The first call after a reset (or
+    /// construction) snaps the whole pose to the target.
+    #[allow(clippy::too_many_arguments)]
+    pub fn glide(
         &mut self,
         target_look_at: [f32; 3],
         target_pitch: f32,
         target_yaw: f32,
         target_h: f32,
         target_tr_eye: [f32; 3],
-        t: f32,
+        apply: u32,
+        steps: u32,
     ) -> ([f32; 3], f32, f32, f32, [f32; 3]) {
+        let packed = [
+            target_look_at[0],
+            target_look_at[1],
+            target_look_at[2],
+            target_pitch,
+            target_yaw,
+            target_h,
+            target_tr_eye[0],
+            target_tr_eye[1],
+            target_tr_eye[2],
+        ];
         if !self.initialized {
-            self.look_at = target_look_at;
-            self.pitch = target_pitch;
-            self.yaw = target_yaw;
-            self.h = target_h;
-            self.tr_eye = target_tr_eye;
+            self.cur = packed;
+            self.start = packed;
+            self.target = packed;
+            self.total = [0; 9];
+            self.done = [0; 9];
             self.initialized = true;
-            return (self.look_at, self.pitch, self.yaw, self.h, self.tr_eye);
+        } else {
+            // Calibrated glide length in sim ticks (0 = snap).
+            let ticks = (apply as f32 / Self::APPLY_UNITS_PER_TICK).round() as u32;
+            for (i, &target_i) in packed.iter().enumerate() {
+                // Exact compare is intentional: targets decode from the same
+                // op-0x45 integer params every frame, so a change is a real
+                // re-stage, not float drift.
+                if target_i != self.target[i] {
+                    self.target[i] = target_i;
+                    self.start[i] = self.cur[i];
+                    self.total[i] = ticks;
+                    self.done[i] = 0;
+                }
+                self.done[i] = self.done[i].saturating_add(steps).min(self.total[i]);
+                let s = if self.total[i] == 0 {
+                    1.0
+                } else {
+                    self.done[i] as f32 / self.total[i] as f32
+                };
+                // Cubic ease-out: retail's shift-step mover front-loads the
+                // travel (see the type doc).
+                let s = 1.0 - (1.0 - s) * (1.0 - s) * (1.0 - s);
+                let delta = if i == Self::PITCH || i == Self::YAW {
+                    wrap_pi(self.target[i] - self.start[i])
+                } else {
+                    self.target[i] - self.start[i]
+                };
+                self.cur[i] = self.start[i] + delta * s;
+                if i == Self::PITCH || i == Self::YAW {
+                    self.cur[i] = wrap_pi(self.cur[i]);
+                }
+            }
         }
-        let t = t.clamp(0.0, 1.0);
-        for (cur, &tgt) in self.look_at.iter_mut().zip(target_look_at.iter()) {
-            *cur += (tgt - *cur) * t;
-        }
-        for (cur, &tgt) in self.tr_eye.iter_mut().zip(target_tr_eye.iter()) {
-            *cur += (tgt - *cur) * t;
-        }
-        // Shortest-arc eases for both angles so a wrap across ±π takes the
-        // short way.
-        self.pitch = wrap_pi(self.pitch + wrap_pi(target_pitch - self.pitch) * t);
-        self.yaw = wrap_pi(self.yaw + wrap_pi(target_yaw - self.yaw) * t);
-        self.h += (target_h - self.h) * t;
-        (self.look_at, self.pitch, self.yaw, self.h, self.tr_eye)
+        (
+            [self.cur[0], self.cur[1], self.cur[2]],
+            self.cur[3],
+            self.cur[4],
+            self.cur[5],
+            [self.cur[6], self.cur[7], self.cur[8]],
+        )
     }
 }
 
@@ -689,13 +755,14 @@ mod camera_tests {
     #[test]
     fn cutscene_interp_first_call_snaps_to_target() {
         let mut it = CutsceneCameraInterp::new();
-        let (la, pitch, yaw, h, tr) = it.approach(
+        let (la, pitch, yaw, h, tr) = it.glide(
             [100.0, 0.0, -50.0],
             0.3,
             1.0,
             768.0,
             [10.0, 220.0, 2900.0],
-            0.2,
+            480,
+            1,
         );
         assert_eq!(la, [100.0, 0.0, -50.0]);
         assert_eq!(pitch, 0.3);
@@ -705,52 +772,85 @@ mod camera_tests {
     }
 
     #[test]
-    fn cutscene_interp_eases_toward_a_changed_beat() {
+    fn cutscene_interp_glides_front_loaded_and_arrives_on_schedule() {
         let mut it = CutsceneCameraInterp::new();
         // Snap to beat A.
-        it.approach([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0.25);
-        // Beat B re-targets; one ease step covers a fraction, not all of it.
-        let (la, _, _, h, tr) = it.approach(
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1);
+        // Beat B re-targets with apply 350 = 100 calibrated ticks
+        // (APPLY_UNITS_PER_TICK = 3.5). 25 steps in, the cubic ease-out has
+        // covered MORE than a quarter (front-loaded, like retail's
+        // shift-step mover) but is not done.
+        let (la, _, _, h, tr) = it.glide(
             [100.0, 0.0, 0.0],
             0.0,
             0.0,
             1024.0,
             [0.0, 200.0, 3200.0],
-            0.25,
+            350,
+            25,
         );
         assert!(
-            (la[0] - 25.0).abs() < 1e-3,
-            "look_at eased 25% -> {}",
+            la[0] > 25.0 && la[0] < 100.0,
+            "front-loaded partial travel: {}",
             la[0]
         );
-        assert!((h - 640.0).abs() < 1e-3, "h eased 25% -> {h}");
+        assert!(h > 640.0 && h < 1024.0, "h mid-glide: {h}");
         assert!(
-            (tr[2] - 2900.0).abs() < 1e-3,
-            "tr_eye depth eased 25% -> {}",
+            tr[2] > 2900.0 && tr[2] < 3200.0,
+            "tr_eye mid-glide: {}",
             tr[2]
         );
-        // Repeated steps converge toward the target.
-        for _ in 0..200 {
-            it.approach(
-                [100.0, 0.0, 0.0],
-                0.0,
-                0.0,
-                1024.0,
-                [0.0, 200.0, 3200.0],
-                0.25,
-            );
-        }
-        let (la, _, _, h, tr) = it.approach(
+        // The remaining 75 ticks arrive EXACTLY (no asymptote), and further
+        // steps hold there.
+        let (la, _, _, h, tr) = it.glide(
             [100.0, 0.0, 0.0],
             0.0,
             0.0,
             1024.0,
             [0.0, 200.0, 3200.0],
-            0.25,
+            350,
+            75,
         );
-        assert!((la[0] - 100.0).abs() < 1e-2);
-        assert!((h - 1024.0).abs() < 1e-2);
-        assert!((tr[2] - 3200.0).abs() < 1e-2);
+        assert_eq!(la[0], 100.0);
+        assert_eq!(h, 1024.0);
+        assert_eq!(tr[2], 3200.0);
+        let (la, _, _, _, _) = it.glide(
+            [100.0, 0.0, 0.0],
+            0.0,
+            0.0,
+            1024.0,
+            [0.0, 200.0, 3200.0],
+            350,
+            10,
+        );
+        assert_eq!(la[0], 100.0, "arrived glide holds");
+    }
+
+    #[test]
+    fn cutscene_interp_apply_zero_snaps_the_beat() {
+        let mut it = CutsceneCameraInterp::new();
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1);
+        let (la, _, _, _, _) = it.glide([100.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1);
+        assert_eq!(la[0], 100.0, "apply 0 commits immediately (snap cut)");
+    }
+
+    #[test]
+    fn cutscene_interp_single_slot_poke_keeps_inflight_glide() {
+        // The opdeene tableau shape: an apply-480 dolly is armed, then ONE
+        // frame later a Configure re-stages only H with apply 0. The dolly
+        // components must keep gliding (per-component arming); only H snaps.
+        let mut it = CutsceneCameraInterp::new();
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 776.0, TR0, 0, 1);
+        // Arm the dolly: focus X -> 480 over 480/3.5 = 137 calibrated ticks.
+        it.glide([480.0, 0.0, 0.0], 0.0, 0.0, 776.0, TR0, 480, 1);
+        // One frame later: H-only re-stage with apply 0.
+        let (la, _, _, h, _) = it.glide([480.0, 0.0, 0.0], 0.0, 0.0, 792.0, TR0, 0, 1);
+        assert_eq!(h, 792.0, "H snapped by its apply-0 poke");
+        assert!(
+            la[0] > 0.0 && la[0] < 100.0,
+            "dolly still in flight (2 of 137 ticks), not snapped: {}",
+            la[0]
+        );
     }
 
     #[test]
@@ -758,10 +858,10 @@ mod camera_tests {
         use std::f32::consts::PI;
         let mut it = CutsceneCameraInterp::new();
         // Start just below +π, target just above -π (i.e. ~6° apart across the
-        // wrap). The ease must move the short way (toward +π / over the seam),
-        // never unwind ~352° the long way.
-        it.approach([0.0, 0.0, 0.0], 0.0, PI - 0.05, 512.0, TR0, 0.5);
-        let (_, _, yaw, _, _) = it.approach([0.0, 0.0, 0.0], 0.0, -PI + 0.05, 512.0, TR0, 0.5);
+        // wrap). The glide must move the short way (toward +π / over the
+        // seam), never unwind ~352° the long way.
+        it.glide([0.0, 0.0, 0.0], 0.0, PI - 0.05, 512.0, TR0, 0, 1);
+        let (_, _, yaw, _, _) = it.glide([0.0, 0.0, 0.0], 0.0, -PI + 0.05, 512.0, TR0, 7, 1);
         // Halfway across a ~0.1 rad arc lands near ±π, not near 0.
         assert!(
             yaw.abs() > PI - 0.1,
@@ -772,9 +872,9 @@ mod camera_tests {
     #[test]
     fn cutscene_interp_reset_resnaps() {
         let mut it = CutsceneCameraInterp::new();
-        it.approach([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0.25);
+        it.glide([0.0, 0.0, 0.0], 0.0, 0.0, 512.0, TR0, 0, 1);
         it.reset();
-        let (la, _, _, _, _) = it.approach([500.0, 0.0, 0.0], 0.0, 0.25, 512.0, TR0, 0.25);
-        assert_eq!(la, [500.0, 0.0, 0.0], "reset snaps the next approach");
+        let (la, _, _, _, _) = it.glide([500.0, 0.0, 0.0], 0.0, 0.25, 512.0, TR0, 480, 1);
+        assert_eq!(la, [500.0, 0.0, 0.0], "reset snaps the next glide");
     }
 }

@@ -245,6 +245,7 @@ impl Renderer {
                 psx_params: [width as f32, height as f32, 0.0, 0.0],
                 tex_window: [0; 4],
                 grade: [1.0, 1.0, 1.0, 0.0],
+                flags: [0.0; 4],
             }]),
             wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
         );
@@ -1111,6 +1112,7 @@ impl Renderer {
             tex_window: std::cell::Cell::new([0; 4]),
             color_grade: std::cell::Cell::new([1.0, 1.0, 1.0, 0.0]),
             depth_cue: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
+            backface_cull: std::cell::Cell::new(0.0),
             screen_overlay_pipeline,
             screen_overlay_blend_pipelines,
             screen_overlay_vbuf: std::cell::RefCell::new(screen_overlay_vbuf),

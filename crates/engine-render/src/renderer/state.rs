@@ -124,6 +124,10 @@ pub struct Renderer {
     /// what the field passes for an unfogged scene. Set with
     /// [`Renderer::set_depth_cue`].
     pub(super) depth_cue: std::cell::Cell<[f32; 4]>,
+    /// Backface-cull mode staged into `MeshUniforms.flags[0]` (see there).
+    /// `0.0` (default) = draw both sides; `1.0` / `2.0` = discard back /
+    /// front-facing fragments. Set with [`Renderer::set_backface_cull`].
+    pub(super) backface_cull: std::cell::Cell<f32>,
     /// Screen-space 2D overlay pass (see [`crate::screen_overlay`]): PSX
     /// `POLY_FT4` textured quads + flat quads in NDC, ordering-table order,
     /// per-ABR semi-transparency. Opaque pipeline (replace).
@@ -227,6 +231,25 @@ impl Renderer {
     /// Read the current depth cue `(far_r, far_g, far_b, ir0)`.
     pub fn depth_cue(&self) -> [f32; 4] {
         self.depth_cue.get()
+    }
+
+    /// Enable/disable the shader-side backface cull on the VRAM / colour
+    /// mesh passes - the port of retail's GTE **NCLIP** screen-winding
+    /// rejection (`FUN_8002735c` skips a prim whose projected winding is
+    /// negative). The engine's rasterizer pipelines draw both sides
+    /// (`cull_mode: None`) because winding parity differs per render frame
+    /// (battle composes a per-model Y-flip, field a camera-side one), so
+    /// this is a per-fragment discard keyed off `front_facing` instead:
+    /// mode `1` discards back-facing fragments, `2` front-facing (pick the
+    /// one that matches the active frame's parity), `0` (default) draws
+    /// both sides.
+    ///
+    /// Without it a camera placed *inside* a closed mesh shell renders the
+    /// shell's near wall over the whole scene - the opdeene prologue's
+    /// crater-rim tableau shot sits inside the cave-wall backdrop mesh, and
+    /// retail's NCLIP is what makes the near wall invisible.
+    pub fn set_backface_cull(&self, mode: u32) {
+        self.backface_cull.set(mode.min(2) as f32);
     }
 
     /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.

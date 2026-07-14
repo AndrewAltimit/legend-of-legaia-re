@@ -54,6 +54,16 @@ pub(super) struct MeshUniforms {
     /// UI overlays (they use separate shaders). Set with
     /// [`Renderer::set_color_grade`]. Defaults to `(1, 1, 1, 0)` = identity.
     pub(super) grade: [f32; 4],
+    /// Render flags. `[0]` = backface cull: `0.0` = draw both sides (the
+    /// default - the engine's pipelines don't rasterizer-cull because winding
+    /// parity differs per render frame), `1.0` = discard back-facing
+    /// fragments, `2.0` = discard front-facing fragments. Implements retail's
+    /// GTE **NCLIP** screen-winding rejection as a fragment `discard` on the
+    /// VRAM / colour mesh shaders, so a camera placed inside a closed shell
+    /// (the opdeene crater's cave-wall backdrop) sees through the near wall
+    /// exactly as retail does. Set with [`Renderer::set_backface_cull`];
+    /// `[1..4]` reserved.
+    pub(super) flags: [f32; 4],
 }
 
 pub struct UploadedTexture {

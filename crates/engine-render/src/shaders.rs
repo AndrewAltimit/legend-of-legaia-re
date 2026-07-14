@@ -157,6 +157,10 @@ struct MeshUniforms {
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -220,6 +224,10 @@ struct MeshUniforms {
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_color: texture_2d<f32>;
@@ -289,6 +297,10 @@ struct MeshUniforms {
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_vram: texture_2d<u32>;
@@ -421,7 +433,12 @@ fn fetch_vram_word(uv_affine: vec2<f32>, cba: u32, tsb: u32) -> u32 {
 }
 
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    // Retail GTE NCLIP winding rejection (see MeshUniforms.flags).
+    if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
+        || (u.flags.x >= 1.5 && front_facing) {
+        discard;
+    }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
     let word = fetch_vram_word(in.uv_affine, cba, tsb);
@@ -513,6 +530,10 @@ struct MeshUniforms {
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -538,7 +559,12 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    // Retail GTE NCLIP winding rejection (see MeshUniforms.flags).
+    if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
+        || (u.flags.x >= 1.5 && front_facing) {
+        discard;
+    }
     // PSX-faithful mode: a semi-transparent (ABE) untextured prim blends
     // every pixel, so nothing of it belongs in the opaque pass - the blend
     // pass re-draws it from the per-ABR-mode index tail. Mirrors the
@@ -599,6 +625,10 @@ struct MeshUniforms {
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 

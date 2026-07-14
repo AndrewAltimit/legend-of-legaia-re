@@ -17,10 +17,17 @@
 //! - the block completes when every page has scrolled out of the window,
 //!   which un-halts the parent script.
 //!
-//! Geometry + speed are per-scene ([`RollerParams::for_scene`]), pinned from
-//! a PCSX-Redux cold-boot pixel capture of the retail opening (0.5 px/frame;
-//! `opurud` 1.0; `opdeene` window ~y64..188 at 18 px spacing, the other
-//! scenes ~y128..203 at 16 px).
+//! Geometry is per-scene ([`RollerParams::for_scene`]), pinned from a
+//! PCSX-Redux cold-boot pixel capture of the retail opening (`opdeene`
+//! window ~y64..188 at 18 px spacing, the other scenes ~y128..203 at 16 px).
+//! Speed is pinned from a realtime retail video: ~10.5 px/s = 1 px per 6
+//! frames at the 60 Hz sim tick (the earlier 0.5 px/frame figure measured
+//! px per *capture tick* under the interpreter+debugger harness, which runs
+//! ~3x slower than realtime, so it over-scrolled the engine's crawl ~3x and
+//! desynced the text from the camera beats - the tableau dolly landed after
+//! the crawl had already ended instead of under "come close to dying out
+//! forever" as in retail). `opurud` keeps its capture-pinned 2x relative
+//! speed.
 //!
 //! [`CutsceneNarration`] is that roller as a small state machine - installed
 //! on the world by [`crate::world::World::open_cutscene_narration`] (from the
@@ -30,9 +37,10 @@
 // PORT: FUN_80037174
 // REF: FUN_8003BDE0
 
-/// Frames per 1-pixel scroll step (retail default; 0.5 px/frame measured
-/// across the opening in the cold-boot pixel capture).
-pub const DEFAULT_FRAMES_PER_PIXEL: u32 = 2;
+/// Frames per 1-pixel scroll step (retail default; ~10.5 px/s measured from
+/// a realtime retail video = 1 px per 6 frames at the 60 Hz tick; see the
+/// module doc for why the older capture-derived 0.5 px/frame was ~3x fast).
+pub const DEFAULT_FRAMES_PER_PIXEL: u32 = 6;
 /// Pixel height of one text row (the roller's line step; `opdeene` uses 18).
 pub const LINE_STEP_PX: i32 = 16;
 
@@ -72,14 +80,14 @@ impl RollerParams {
                 enter_y: 188,
                 exit_y: 64,
                 line_step: 18,
-                frames_per_pixel: 2,
+                frames_per_pixel: 6,
             },
             // Double-speed short window: enter ~y187, vanish y128.
             "opurud" => Self {
                 enter_y: 187,
                 exit_y: 128,
                 line_step: 16,
-                frames_per_pixel: 1,
+                frames_per_pixel: 3,
             },
             _ => Self::DEFAULT,
         }

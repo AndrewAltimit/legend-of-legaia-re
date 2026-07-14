@@ -78,6 +78,7 @@ impl Renderer {
                         ],
                         tex_window: self.tex_window.get(),
                         grade: self.color_grade.get(),
+                        flags: [self.backface_cull.get(), 0.0, 0.0, 0.0],
                     }]),
                 );
             }
@@ -588,6 +589,7 @@ impl Renderer {
         ];
         let tex_window = self.tex_window.get();
         let grade = self.color_grade.get();
+        let flags = [self.backface_cull.get(), 0.0, 0.0, 0.0];
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
             let u = MeshUniforms {
                 mvp: mvp.to_cols_array_2d(),
@@ -595,6 +597,7 @@ impl Renderer {
                 psx_params,
                 tex_window,
                 grade,
+                flags,
             };
             let off = slot * stride;
             let n = std::mem::size_of::<MeshUniforms>();
