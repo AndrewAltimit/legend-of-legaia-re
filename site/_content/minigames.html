@@ -311,10 +311,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <button class="mg-btn mg-primary" type="button" id="baka-start">Start run</button>
         </div>
         <p class="mg-blurb" style="margin-top:0.25rem;">
-          Pick your fighter, then climb the cabinet's ladder: clear a stage and
-          it serves the next opponent in the disc's own order, best-of-three each,
-          until you lose or run the whole table. "Start at" lets you drop in at any
-          rung; the run always advances forward from there.
+          Start a run and the cabinet opens on its <b>PLAYER SELECT</b> screen &mdash;
+          the three party fighters' battle models under the sheet's own banner;
+          arrow keys (or a click) pick one, <kbd>Enter</kbd> confirms. Then climb the
+          ladder: each stage is best-of-three, and <b>after every win the retail
+          tally menu asks NEXT GAME or PAY OUT</b>. Fight on and the accumulated
+          prize pot rides on the next match &mdash; <b>lose and it's forfeit</b>.
+          Pay out and it banks. Clear all fourteen rungs and the whole pot pays,
+          460 coins from rung one. "Start at" lets you drop in at any rung.
         </p>
         <div class="baka-duel" id="baka-duel" hidden>
           <canvas id="baka-gl" width="640" height="480"></canvas>
@@ -334,7 +338,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           </div>
         </div>
         <div class="mg-verdict" id="baka-verdict"></div>
-        <div class="mg-row">
+        <div class="mg-row" id="baka-choice-row" hidden>
+          <button class="mg-btn mg-primary" type="button" id="baka-fighton">NEXT GAME</button>
+          <button class="mg-btn" type="button" id="baka-payout">PAY OUT</button>
+        </div>
+        <div class="mg-row" id="baka-throw-row">
           <button class="mg-btn mg-throw" type="button" data-baka="1">Throw 1<span class="mg-key">A</span></button>
           <button class="mg-btn mg-throw" type="button" data-baka="2">Throw 2<span class="mg-key">S</span></button>
           <button class="mg-btn mg-throw" type="button" data-baka="3">Throw 3<span class="mg-key">D</span></button>
@@ -345,6 +353,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <span>Round <b id="baka-round">1</b></span>
           <span>Your combo taken <b id="baka-combo">0</b></span>
           <span>Prize <b id="baka-gold">&mdash;</b> G</span>
+          <span>Pot at risk <b id="baka-pot">0</b> G</span>
           <span>Banked <b id="baka-bank">0</b> G</span>
         </div>
         <p class="mg-note">
@@ -369,25 +378,48 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           use), the opponent from its own per-rung pack (PROT&nbsp;1206&hellip;1219: a
           <code>[TIM][TMD][anim]</code> chain, one per ladder fighter) &mdash; posed every
           frame from their real animation banks (the party&rsquo;s from the PROT&nbsp;1203
-          battle-form bank, the opponent&rsquo;s from its own pack; idle loops, and the
-          exchange winner&rsquo;s swing / loser&rsquo;s knockdown play as they land). The
-          stage is the 4-TMD set out of PROT&nbsp;1203&rsquo;s second descriptor, and the
-          HUD &mdash; the <em>VITAL</em> bars with their traced gradient
+          battle-form bank, the opponent&rsquo;s from its own pack; idle loops, the
+          exchange winner&rsquo;s swing / loser&rsquo;s knockdown play as they land, and the
+          match winner throws a short victory flourish from the same attack slots). The
+          <b>arena</b> is the stage TMD out of PROT&nbsp;1203&rsquo;s second descriptor:
+          the tall patterned backdrop wall with its lattice fences and ceiling lamps, standing
+          at its authored base on the fighters&rsquo; floor plane. The HUD &mdash; the
+          <em>VITAL</em> bars with their traced gradient
           (<code>FUN_801d2afc</code>: right-anchored at x&nbsp;<code>0x89</code>, one pixel
           per 32&nbsp;HP), the round-win pips, the combo counter, the attack-icon columns,
-          the <em>ROUND&nbsp;/ FIGHT!&nbsp;/ YOU&nbsp;WIN!</em> banners &mdash; comes from
-          the overlay&rsquo;s own 51-record widget table (<code>DAT_801d7160</code>, read by
-          the quad emitter <code>FUN_801d5ed0</code>) over the 9-TIM art pack in
-          PROT&nbsp;1203, byte-checked against a retail VRAM dump.
+          the <em>ROUND&nbsp;/ FIGHT!&nbsp;/ YOU&nbsp;WIN!</em> banners, the
+          <em>PLAYER&nbsp;SELECT</em> screen&rsquo;s banner + cursor arrows, and the
+          between-match <em>NEXT&nbsp;GAME&nbsp;/ PAY&nbsp;OUT&nbsp;/ GET&nbsp;COIN</em>
+          tally menu &mdash; comes from the overlay&rsquo;s own 51-record widget table
+          (<code>DAT_801d7160</code>, read by the quad emitter <code>FUN_801d5ed0</code>)
+          over the 9-TIM art pack in PROT&nbsp;1203, byte-checked against a retail VRAM dump.
+          <br><br>
+          <b>The cash-out is the retail mechanic.</b> The art pack&rsquo;s tally sheet
+          carries the whole menu as widget cells &mdash; <em>NEXT GAME</em>,
+          <em>PAY OUT</em>, <em>GET COIN</em> with its own coin-digit strip, and the
+          <em>VICTORY! / ALL STAGE CLEAR! / IT&rsquo;S NOT OVER YET.</em> block &mdash; so
+          the after-every-win choice is the cabinet&rsquo;s own. Two rules here are stated
+          readings rather than overlay-pinned constants: a mid-run loss forfeits the whole
+          pot, and the final rung pays out automatically. The per-rung prizes are the
+          roster records&rsquo; own gold column (the strictly-increasing ladder that sums
+          to the 460-coin full clear).
           <br><br>
           <b>Traced vs fitted, stated plainly.</b> Every sprite cell, palette and HUD screen
-          position above is read off the disc or the disassembly. The 3D <em>camera</em> and
-          the fighters&rsquo; floor spacing are <em>fitted by eye</em> &mdash; the duel&rsquo;s
-          GTE matrices live in COP2 and no mid-duel capture exists yet (the parked save state
-          sits at the title screen). The HP-bar <em>frame</em> cells come from a runtime-built
+          position above is read off the disc or the disassembly. The 3D <em>camera</em>,
+          the fighters&rsquo; floor spacing, and the tally-menu / select-screen layout are
+          <em>fitted by eye</em> &mdash; the duel&rsquo;s GTE matrices live in COP2 and no
+          mid-duel capture exists yet (the parked save state sits at the title screen). The
+          stage set carries <b>no floor mesh</b>, so the floor is tiled from the backdrop
+          wall&rsquo;s own dominant textured face &mdash; its exact texture cell and palette,
+          repeated; the tiling itself is a fit, and the wall&rsquo;s three prop meshes
+          (which need untraced placement transforms) stay out rather than being guessed.
+          The HP-bar <em>frame</em> cells come from a runtime-built
           table (<code>DAT_801dbc34</code>) a static page can&rsquo;t read, so a plain outline
-          stands in; the attack/knockdown slot order within each anim bank is inferred from
-          the action-id fold in <code>FUN_801d3f44</code>; and the minigame&rsquo;s
+          stands in; the attack/knockdown slot order within each anim bank (and so the
+          victory flourish&rsquo;s swings) is inferred from
+          the action-id fold in <code>FUN_801d3f44</code>; the coin-digit strip&rsquo;s
+          <code>u = 88 + digit&times;16</code> stepping is inferred from the sheet layout
+          the way the traced digit widgets step; and the minigame&rsquo;s
           <b>sound</b> stays silent here because its cues are <em>static-bank</em> ids
           resolved through <code>SCUS_942.54</code>&rsquo;s descriptor table, which this
           PROT-only page doesn&rsquo;t load. When the presentation assets don&rsquo;t decode,
@@ -826,13 +858,21 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   let bakaRoster = [];
   let bakaNames = [];
   let bakaLadder = [];
-  /* Ladder-run state. `bakaRun` is `{ rung }` while climbing the ladder (the
-   * index into bakaLadder of the CURRENT opponent), null for a one-off spar or
-   * when idle. A match win advances `rung`; a loss ends the run. */
-  let bakaRun = null;
+  /* Run state machine. `bakaMode`:
+   *   'idle'   - nothing running;
+   *   'select' - the PLAYER SELECT screen (3D view; pick Vahn/Noa/Gala);
+   *   'fight'  - a match in progress (ladder rung or off-ladder spar);
+   *   'choice' - a ladder match was won: the retail NEXT GAME / PAY OUT
+   *              tally menu is up (the pot rides or banks here).
+   * The pot / forfeit / all-clear bookkeeping itself lives in the rules
+   * engine (`engine-core::baka_fighter::LadderRun`, via baka_run_*). */
+  let bakaMode = 'idle';
+  let bakaRunLive = false;   /* a WASM LadderRun is active */
+  let bakaRunState = null;   /* last parsed baka_run_state_json */
+  let bakaSel = 0;           /* PLAYER SELECT highlight (0..2) */
+  let bakaChoiceSel = 0;     /* tally menu highlight: 0 NEXT GAME, 1 PAY OUT */
+  let bakaFlourish = 0;      /* frames of victory flourish before the menu */
   let bakaPchar = 0;         /* the fighter picked for this run */
-  let bakaRunGold = 0;       /* gold banked across the run so far */
-  let bakaInterTimer = 0;    /* frames left holding the win banner before the next rung */
   /* The 3D duel view (js/minigame-baka.js): real meshes + retail HUD off the
    * disc. Null / not-ok leaves the stat-panel presentation in charge. */
   let bakaView = null;
@@ -884,6 +924,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       return false;
     }
     bakaLive = true;
+    bakaMode = 'fight';
+    $('baka-choice-row').hidden = true;
     const total = bakaLadder.length;
     const label = rung >= 0 ? `Stage ${rung + 1}/${total}` : 'Spar';
     $('baka-p1-name').textContent = bakaName(foe);
@@ -910,46 +952,161 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     return true;
   }
 
-  function bakaStart() {
+  /* Kick off the LadderRun at the "Start at" rung and serve its first
+   * opponent. The pot / choice bookkeeping lives WASM-side. */
+  function bakaBeginRun() {
     const foe = parseInt($('baka-foe').value, 10) || 5;
-    bakaPchar = parseInt($('baka-char').value, 10) || 0;
     const rung = bakaLadder.findIndex(r => r.roster === foe);
-    bakaRun = rung >= 0 ? { rung } : null;
-    bakaRunGold = 0;
-    bakaInterTimer = 0;
+    bakaRunLive = false;
+    bakaRunState = null;
     $('baka-bank').textContent = 0;
-    bakaBeginFight(foe, rung);
+    $('baka-pot').textContent = 0;
+    if (rung >= 0) {
+      const first = api.baka_run_start(rung);
+      if (first >= 0) {
+        bakaRunLive = true;
+        bakaBeginFight(first, rung);
+        return;
+      }
+    }
+    /* Off-ladder spar (a player-side record): a single match, no pot. */
+    bakaBeginFight(foe, -1);
   }
 
-  /* Match resolved - advance the ladder, or end the run. */
-  function bakaOnMatchOver(st) {
-    if (st.winner === 0) {
-      if (bakaRun) {
-        bakaRunGold += st.gold;
-        $('baka-bank').textContent = bakaRunGold;
-        if (bakaRun.rung >= bakaLadder.length - 1) {
-          verdict($('baka-verdict'),
-            `ALL STAGE CLEAR! You ran the whole ladder for ${bakaRunGold} G.`, 'good');
-          $('baka-start').textContent = 'Start run';
-          bakaRun = null;
-        } else {
-          bakaRun.rung += 1;
-          const nextFoe = bakaLadder[bakaRun.rung].roster;
-          verdict($('baka-verdict'),
-            `Stage cleared (+${st.gold} G). Next up: ${bakaName(nextFoe)}…`, 'good');
-          bakaInterTimer = 90; /* ~1.5s on the win banner, then serve the next rung */
-        }
-      } else {
-        verdict($('baka-verdict'), `You win the spar - ${st.gold} G.`, 'good');
-        $('baka-start').textContent = 'Start run';
-      }
-    } else {
-      verdict($('baka-verdict'),
-        bakaRun ? `GAME OVER at stage ${bakaRun.rung + 1}. Banked ${bakaRunGold} G.`
-                : 'You lose the spar.', 'bad');
-      $('baka-start').textContent = 'Start run';
-      bakaRun = null;
+  /* The Start button: opens PLAYER SELECT when the 3D view can draw it
+   * (arrows / click pick the fighter, Enter or the button confirms),
+   * otherwise starts straight off the dropdowns. */
+  function bakaStart() {
+    bakaPchar = parseInt($('baka-char').value, 10) || 0;
+    if (bakaMode === 'select') {          /* confirm the selection */
+      bakaPchar = bakaSel;
+      $('baka-char').value = String(bakaSel);
+      bakaBeginRun();
+      return;
     }
+    let selOk = false;
+    try {
+      if (window.MinigameBakaView) {
+        if (!bakaView) bakaView = new MinigameBakaView($('baka-gl'), $('baka-hud'));
+        selOk = bakaView.loadSelect(api);
+      }
+    } catch (err) {
+      console.warn('baka select view failed:', err);
+      selOk = false;
+    }
+    if (selOk) {
+      bakaMode = 'select';
+      bakaSel = bakaPchar;
+      bakaLive = false;
+      $('baka-duel').hidden = false;
+      $('baka-choice-row').hidden = true;
+      $('baka-start').textContent = 'Confirm fighter';
+      verdict($('baka-verdict'),
+        'PLAYER SELECT - arrows or click to pick, Enter to confirm.', '');
+    } else {
+      bakaBeginRun();
+    }
+  }
+
+  /* Match resolved. A ladder match reports into the LadderRun and lands on
+   * the retail between-match menu (or the all-clear / game-over); a spar
+   * just reports. */
+  function bakaOnMatchOver(st) {
+    const won = st.winner === 0;
+    if (!bakaRunLive) {
+      verdict($('baka-verdict'),
+        won ? `You win the spar - ${st.gold} G.` : 'You lose the spar.',
+        won ? 'good' : 'bad');
+      $('baka-start').textContent = 'Start run';
+      bakaMode = 'idle';
+      return;
+    }
+    api.baka_run_match_over(won);
+    const rs = JSON.parse(api.baka_run_state_json());
+    bakaRunState = rs;
+    if (rs.phase === 'choice') {
+      /* Hold the win banner + victory flourish, then raise the menu. */
+      bakaMode = 'choice';
+      bakaChoiceSel = 0;
+      bakaFlourish = 110;
+      $('baka-pot').textContent = rs.pot;
+      verdict($('baka-verdict'),
+        `Stage cleared! ${rs.pot} G in the pot…`, 'good');
+    } else if (rs.phase === 'all_clear') {
+      $('baka-pot').textContent = 0;
+      $('baka-bank').textContent = rs.banked;
+      if (bakaView && bakaView.ok) bakaView.showAllClear(rs.banked);
+      verdict($('baka-verdict'),
+        `ALL STAGE CLEAR! The full pot pays out - ${rs.banked} G.`, 'good');
+      $('baka-start').textContent = 'Start run';
+      bakaRunLive = false;
+      bakaMode = 'idle';
+    } else { /* game_over */
+      $('baka-pot').textContent = 0;
+      if (bakaView && bakaView.ok) bakaView.setChoice({ forfeited: rs.forfeited });
+      verdict($('baka-verdict'),
+        rs.forfeited > 0
+          ? `GAME OVER at stage ${rs.rung + 1} - the ${rs.forfeited} G pot is forfeit.`
+          : `GAME OVER at stage ${rs.rung + 1}.`, 'bad');
+      $('baka-start').textContent = 'Start run';
+      bakaRunLive = false;
+      bakaMode = 'idle';
+    }
+  }
+
+  /* Raise the tally menu (canvas widgets + the HTML buttons). */
+  function bakaShowChoiceUi() {
+    const rs = bakaRunState;
+    if (!rs) return;
+    const lapClear = rs.rung === 11 && rs.len === 14; /* first-lap clear */
+    if (bakaView && bakaView.ok) {
+      bakaView.setChoice({ pot: rs.pot, sel: bakaChoiceSel, lapClear });
+    }
+    const nextRung = bakaLadder[rs.rung + 1];
+    const nextName = nextRung ? bakaName(nextRung.roster) : '?';
+    $('baka-fighton').textContent = `NEXT GAME - ${nextName}`;
+    $('baka-payout').textContent = `PAY OUT ${rs.pot} G`;
+    $('baka-choice-row').hidden = false;
+    verdict($('baka-verdict'),
+      `${rs.pot} G in the pot: fight on (lose = forfeit) or pay out?`, '');
+  }
+
+  function bakaChoiceMove(dir) {
+    if (bakaMode !== 'choice' || $('baka-choice-row').hidden) return;
+    bakaChoiceSel = (bakaChoiceSel + dir + 2) % 2;
+    if (bakaView && bakaView.ok && bakaView.choice) {
+      bakaView.setChoice(Object.assign({}, bakaView.choice, { sel: bakaChoiceSel }));
+    }
+  }
+
+  function bakaFightOn() {
+    if (bakaMode !== 'choice') return;
+    const next = api.baka_run_fight_on();
+    if (bakaView && bakaView.ok) bakaView.setChoice(null);
+    if (next < 0) return;
+    const rs = JSON.parse(api.baka_run_state_json());
+    bakaRunState = rs;
+    bakaBeginFight(next, rs.rung);
+  }
+
+  function bakaPayOut() {
+    if (bakaMode !== 'choice') return;
+    const banked = api.baka_run_pay_out();
+    bakaRunState = JSON.parse(api.baka_run_state_json());
+    if (bakaView && bakaView.ok) bakaView.setChoice(null);
+    $('baka-choice-row').hidden = true;
+    $('baka-pot').textContent = 0;
+    $('baka-bank').textContent = banked;
+    verdict($('baka-verdict'), `Paid out - ${banked} G banked. Run over.`, 'good');
+    $('baka-start').textContent = 'Start run';
+    bakaRunLive = false;
+    bakaMode = 'idle';
+  }
+
+  function bakaChoiceCommit() {
+    if (bakaMode !== 'choice' || $('baka-choice-row').hidden) return;
+    if (bakaChoiceSel === 0) bakaFightOn();
+    else bakaPayOut();
   }
 
   function bakaChoose(t) {
@@ -960,15 +1117,20 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   const THROW_NAME = { 1: 'Throw 1', 2: 'Throw 2', 3: 'Throw 3', 4: 'Special' };
 
   function bakaFrame() {
+    /* The PLAYER SELECT screen owns the whole frame. */
+    if (bakaMode === 'select') {
+      if (bakaView && bakaView.ok) bakaView.frameSelect(bakaSel, bakaNames);
+      return;
+    }
     const st = JSON.parse(api.baka_state_json());
     if (bakaView && bakaView.ok && !$('baka-duel').hidden) {
       bakaView.frame(st.live ? st : null, bakaMeta);
     }
 
-    /* Between-stage intermission: hold the win banner, then serve the next rung. */
-    if (bakaInterTimer > 0 && --bakaInterTimer === 0 && bakaRun) {
-      bakaBeginFight(bakaLadder[bakaRun.rung].roster, bakaRun.rung);
-      return;
+    /* Post-win intermission: let the victory flourish play, then raise the
+     * retail NEXT GAME / PAY OUT menu. */
+    if (bakaMode === 'choice' && bakaFlourish > 0 && --bakaFlourish === 0) {
+      bakaShowChoiceUi();
     }
 
     if (!st.live) return;
@@ -1002,8 +1164,23 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
 
   $('baka-start').addEventListener('click', bakaStart);
+  $('baka-fighton').addEventListener('click', bakaFightOn);
+  $('baka-payout').addEventListener('click', bakaPayOut);
   document.querySelectorAll('[data-baka]').forEach(b =>
     b.addEventListener('click', () => bakaChoose(parseInt(b.dataset.baka, 10))));
+  /* PLAYER SELECT: a click on a fighter's third picks it; clicking the
+   * picked one confirms. (Keyboard: arrows + Enter.) */
+  $('baka-gl').addEventListener('click', (e) => {
+    if (bakaMode !== 'select') return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const xf = (e.clientX - r.left) / r.width;
+    const col = xf < 0.36 ? 0 : (xf > 0.64 ? 2 : 1);
+    if (col === bakaSel) bakaStart();       /* confirm */
+    else { bakaSel = col; $('baka-char').value = String(col); }
+  });
+  $('baka-char').addEventListener('change', () => {
+    if (bakaMode === 'select') bakaSel = parseInt($('baka-char').value, 10) || 0;
+  });
 
   /* ================= slot machine ================= */
 
@@ -1731,8 +1908,27 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       const m = { a: 1, s: 2, d: 3, 1: 1, 2: 2, 3: 3 }[k];
       if (m) { e.preventDefault(); dancePress(m); }
     } else if (active === 'baka') {
-      const m = { a: 1, s: 2, d: 3, ' ': 4, 1: 1, 2: 2, 3: 3, 4: 4 }[k];
-      if (m) { e.preventDefault(); bakaChoose(m); }
+      if (bakaMode === 'select') {
+        if (k === 'arrowleft' || k === 'arrowright') {
+          e.preventDefault();
+          bakaSel = (bakaSel + (k === 'arrowleft' ? 2 : 1)) % 3;
+          $('baka-char').value = String(bakaSel);
+        } else if (k === 'enter' || k === ' ') {
+          e.preventDefault();
+          bakaStart();          /* confirm the selection */
+        }
+      } else if (bakaMode === 'choice') {
+        if (k === 'arrowleft' || k === 'arrowright') {
+          e.preventDefault();
+          bakaChoiceMove(k === 'arrowleft' ? -1 : 1);
+        } else if (k === 'enter' || k === ' ') {
+          e.preventDefault();
+          bakaChoiceCommit();
+        }
+      } else {
+        const m = { a: 1, s: 2, d: 3, ' ': 4, 1: 1, 2: 2, 3: 3, 4: 4 }[k];
+        if (m) { e.preventDefault(); bakaChoose(m); }
+      }
     } else if (active === 'slot') {
       if (k === ' ' && slotOnScreen()) { e.preventDefault(); slotPress(); }
     }
@@ -1807,6 +2003,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   window.__mgBaka    = { start: bakaStart, choose: bakaChoose,
                          state: () => api && JSON.parse(api.baka_state_json()),
                          roster: () => api && JSON.parse(api.baka_roster_json()),
+                         run: () => api && JSON.parse(api.baka_run_state_json()),
+                         mode: () => bakaMode,
+                         fightOn: bakaFightOn, payOut: bakaPayOut,
                          view: () => bakaView };
   window.__mgSlot    = { reset: slotReset,
                          press: slotPress,
