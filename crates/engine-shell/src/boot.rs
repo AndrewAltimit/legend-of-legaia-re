@@ -429,6 +429,19 @@ impl BootSession {
         // transitions resolve to the right CDNAME label.
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
 
+        // Hand the host the retail new-game defaults so a cold `--scene X`
+        // boot (no New Game confirm, no save loaded) seeds the template party
+        // + starting bag at scene entry instead of leaving a zeroed scaffold
+        // roster behind the pause menu. Guarded inside `enter_field_scene` -
+        // it never fires once a party or save is installed.
+        host.new_game_defaults =
+            starting_party
+                .clone()
+                .map(|party| legaia_engine_core::new_game::NewGameDefaults {
+                    party,
+                    inventory: starting_inventory.clone(),
+                });
+
         // Install the real retail XP curve (static SCUS table + FUN_801E9504
         // formula) over the tracker's fabricated sin-LUT placeholder, when the
         // executable is reachable, together with the slots-1/2 threshold

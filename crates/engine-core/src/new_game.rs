@@ -20,6 +20,22 @@ use legaia_save::{CharacterRecord, HpMpSp, Party};
 
 use crate::world::World;
 
+/// The retail new-game defaults a scene host seeds on a **cold** scene boot -
+/// entering a scene directly (native `play-window --scene X`, the site play
+/// page's scene picker) without a New Game confirm or a loaded save. Bundles
+/// the `SCUS_942.54` starting-party template with the starting-inventory seed
+/// so [`World::seed_cold_boot_defaults`] can stand up a faithful slate and the
+/// pause menu always has valid party data to read.
+#[derive(Debug, Clone)]
+pub struct NewGameDefaults {
+    /// Starting-party template (`legaia_asset::new_game::StartingParty`,
+    /// SCUS `0x80078C4C`).
+    pub party: StartingParty,
+    /// Starting-inventory seed (`FUN_80034A6C`; vanilla = Healing Leaf ×5).
+    /// `None` when the seed couldn't be decoded - the bag stays empty.
+    pub inventory: Option<StartingInventory>,
+}
+
 /// Build a live 0x414-byte character record from one starting-party template
 /// row. The mapping is validated against an early `town01` save state (Vahn):
 /// the template's eight `u16` stats fill the HP/MP/SP triplet, the live-stat
@@ -105,6 +121,46 @@ impl World {
             let slot = self.inventory.entry(id).or_insert(0);
             *slot = slot.saturating_add(count);
         }
+    }
+
+    /// Cold-boot guard: seed the retail new-game defaults **only when no
+    /// party or save was ever loaded** (the roster is empty). Fired by
+    /// [`crate::scene::SceneHost::enter_field_scene`] when the host carries a
+    /// [`NewGameDefaults`], so entering a scene directly - native
+    /// `play-window --scene X` or the browser play page's scene picker -
+    /// never leaves the pause menu reading a zeroed scaffold party.
+    ///
+    /// Seeds, in order:
+    /// - the starting party ([`Self::seed_starting_party`] - Vahn alone, the
+    ///   retail New Game roster),
+    /// - the starting bag ([`Self::seed_starting_inventory`]) when the bag is
+    ///   still empty,
+    /// - the retail starting gold ([`crate::world::NEW_GAME_STARTING_GOLD`],
+    ///   the `FUN_80034A6C` hardcode) when no gold was granted yet.
+    ///
+    /// Unlike [`crate::world::World::begin_new_game`] this clears **nothing**:
+    /// story flags, pending transitions, and every other live field are left
+    /// as they are, so a mid-session door transition (which re-runs the scene
+    /// entry path) can never reset state - the roster guard makes the seed
+    /// once-only anyway. Returns `true` when the seed fired.
+    pub fn seed_cold_boot_defaults(&mut self, defaults: &NewGameDefaults) -> bool {
+        if !self.roster.members.is_empty() {
+            return false;
+        }
+        self.seed_starting_party(&defaults.party);
+        if self.roster.members.is_empty() {
+            // Empty template (unreadable SCUS) - nothing was seeded.
+            return false;
+        }
+        if self.inventory.is_empty() {
+            if let Some(inv) = &defaults.inventory {
+                self.seed_starting_inventory(inv);
+            }
+        }
+        if self.money == 0 {
+            self.money = crate::world::NEW_GAME_STARTING_GOLD;
+        }
+        true
     }
 }
 
@@ -273,6 +329,55 @@ mod tests {
         let mut got: Vec<(u8, u8)> = world.inventory.iter().map(|(k, v)| (*k, *v)).collect();
         got.sort_unstable();
         assert_eq!(got, vec![(0x80, 2), (0x8a, 1)]);
+    }
+
+    #[test]
+    fn cold_boot_defaults_seed_once_and_only_when_nothing_is_loaded() {
+        let defaults = NewGameDefaults {
+            party: StartingParty::from_members(vec![vahn()]),
+            inventory: Some(StartingInventory::from_items(vec![(0x77, 5)])),
+        };
+        // Fresh world: seed fires - party + bag + gold.
+        let mut world = World::new();
+        assert!(world.roster.members.is_empty());
+        assert!(world.seed_cold_boot_defaults(&defaults));
+        assert_eq!(world.party_count, 1);
+        assert_eq!(world.roster.members.len(), 1);
+        assert_eq!(world.actors[0].battle.max_hp, 180);
+        assert_eq!(world.inventory.get(&0x77).copied(), Some(5));
+        assert_eq!(world.money, crate::world::NEW_GAME_STARTING_GOLD);
+        // Second entry (a door transition re-runs scene entry): no-op.
+        world.money = 42;
+        world.inventory.insert(0x80, 1);
+        assert!(!world.seed_cold_boot_defaults(&defaults));
+        assert_eq!(world.money, 42, "re-entry must not reset gold");
+        assert_eq!(world.inventory.get(&0x77).copied(), Some(5));
+
+        // A world with a loaded party (a save) never seeds.
+        let mut loaded = World::new();
+        loaded.load_party(Party {
+            members: vec![CharacterRecord::zeroed()],
+        });
+        loaded.money = 9999;
+        assert!(!loaded.seed_cold_boot_defaults(&defaults));
+        assert_eq!(loaded.money, 9999);
+        assert!(loaded.inventory.is_empty(), "bag untouched on a loaded save");
+    }
+
+    #[test]
+    fn cold_boot_defaults_with_empty_template_are_a_no_op() {
+        let defaults = NewGameDefaults {
+            party: StartingParty::from_members(vec![]),
+            inventory: Some(StartingInventory::from_items(vec![(0x77, 5)])),
+        };
+        let mut world = World::new();
+        assert!(!world.seed_cold_boot_defaults(&defaults));
+        assert!(world.roster.members.is_empty());
+        assert!(
+            world.inventory.is_empty(),
+            "no bag seed without a party seed"
+        );
+        assert_eq!(world.money, 0);
     }
 
     #[test]

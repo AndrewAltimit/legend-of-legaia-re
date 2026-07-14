@@ -25,6 +25,7 @@ impl SceneHost {
             last_trigger_tile: None,
             sustained_sfx: SustainedSfx::new(),
             mode_cell: 0,
+            new_game_defaults: None,
         }
     }
 

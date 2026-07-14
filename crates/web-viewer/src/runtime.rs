@@ -88,15 +88,16 @@ impl LegaiaRuntime {
     ///
     /// Returns the number of PROT entries parsed. Nothing leaves the browser.
     pub fn load_disc(&mut self, raw_bytes: Vec<u8>, cdname_text: String) -> Result<u32, JsValue> {
-        use crate::disc::{extract_cdname_txt, extract_prot_dat, is_mode2_2352_disc};
+        use crate::disc::{extract_cdname_txt, extract_prot_dat, extract_scus, is_mode2_2352_disc};
 
-        let (prot_bytes, auto_cdname) = if is_mode2_2352_disc(&raw_bytes) {
+        let (prot_bytes, auto_cdname, scus) = if is_mode2_2352_disc(&raw_bytes) {
             let prot = extract_prot_dat(&raw_bytes)
                 .ok_or_else(|| JsValue::from_str("load_disc: PROT.DAT not found in disc image"))?;
             let cdname = extract_cdname_txt(&raw_bytes);
-            (prot, cdname)
+            let scus = extract_scus(&raw_bytes);
+            (prot, cdname, scus)
         } else {
-            (raw_bytes, None)
+            (raw_bytes, None, None)
         };
 
         let cdname_resolved = if !cdname_text.is_empty() {
@@ -104,8 +105,21 @@ impl LegaiaRuntime {
         } else {
             auto_cdname.as_deref()
         };
-        let host = SceneHost::from_prot_bytes(prot_bytes, cdname_resolved)
+        let mut host = SceneHost::from_prot_bytes(prot_bytes, cdname_resolved)
             .map_err(|e| JsValue::from_str(&format!("load_disc: {e}")))?;
+        // Retail new-game defaults from the disc's own executable: a cold
+        // scene entry (the page's scene picker, no save imported) seeds the
+        // template party + starting bag, so the engine never runs a zeroed
+        // scaffold roster. Best-effort - a PROT.DAT-only load has no SCUS and
+        // keeps the old behaviour.
+        if let Some(scus) = scus {
+            if let Some(party) = legaia_asset::new_game::StartingParty::from_scus(&scus) {
+                host.new_game_defaults = Some(legaia_engine_core::new_game::NewGameDefaults {
+                    party,
+                    inventory: legaia_asset::new_game::StartingInventory::from_scus(&scus),
+                });
+            }
+        }
 
         let count = host.index.entry_count() as u32;
         self.scene_host = Some(host);

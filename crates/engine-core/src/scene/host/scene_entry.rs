@@ -201,6 +201,14 @@ impl SceneHost {
             (record.to_vec(), scripts.bytes.to_vec())
         };
         self.world.mode = crate::world::SceneMode::Field;
+        // Cold-boot default init: entering a scene with no party / save ever
+        // loaded seeds the retail new-game defaults (template party, starting
+        // bag, starting gold) when the host carries them, so the pause menu
+        // always has valid data to read. The roster guard inside makes this a
+        // no-op on every later entry (door transitions, save-loaded sessions).
+        if let Some(defaults) = self.new_game_defaults.as_ref() {
+            self.world.seed_cold_boot_defaults(defaults);
+        }
         // Prescript-record-as-field-VM is a MAN-less fallback only: the
         // consumer census resolved every prescript record as a move-VM
         // stager (record 0 = the master ambient record), with no retail
