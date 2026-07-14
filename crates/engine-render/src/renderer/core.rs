@@ -246,6 +246,14 @@ impl Renderer {
                 tex_window: [0; 4],
                 grade: [1.0, 1.0, 1.0, 0.0],
                 flags: [0.0; 4],
+                // Dynamic lighting off (w = 0) = the retail-identical path.
+                light_dir: [0.0; 4],
+                light_color: [
+                    DYN_LIGHT_TINT[0],
+                    DYN_LIGHT_TINT[1],
+                    DYN_LIGHT_TINT[2],
+                    DYN_LIGHT_AMBIENT,
+                ],
             }]),
             wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
         );
@@ -1117,6 +1125,7 @@ impl Renderer {
             // always blends ABE prims, so field water / glass / effects should
             // composite in the clean render, not just under LEGAIA_PSX_RENDER.
             semi_blend: std::cell::Cell::new(true),
+            dyn_lighting: std::cell::Cell::new(false),
             screen_overlay_pipeline,
             screen_overlay_blend_pipelines,
             screen_overlay_vbuf: std::cell::RefCell::new(screen_overlay_vbuf),

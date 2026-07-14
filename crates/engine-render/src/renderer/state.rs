@@ -4,6 +4,26 @@
 
 use super::*;
 
+/// Dynamic-lighting tunables (the opt-in enhancement - see
+/// [`Renderer::set_dynamic_lighting`]). Kept as named constants so the look
+/// is easy to iterate on; the WGSL-side weights (`DYN_DIFFUSE` / `DYN_POOL` /
+/// `DYN_MAX_GAIN` / the pool geometry) live in the `dyn_light` helper in
+/// `shaders.rs`.
+///
+/// Unit direction TOWARD the light, in mesh model space: mostly "up"
+/// (TMD/PSX space is Y-down, so up is `-Y`) with a slight X/Z tilt so
+/// differently-facing wall planes read at different brightness. The
+/// orientation term is `|N.L|`, so the vertical component is sign-tolerant.
+pub const DYN_LIGHT_DIR: [f32; 3] = [0.32, -0.89, 0.31];
+/// Warm (slightly amber) light tint multiplied into the diffuse + pool
+/// terms. Red-heavy on purpose - the reference look is "PSX game + modern
+/// soft warm lighting", not a neutral studio light.
+pub const DYN_LIGHT_TINT: [f32; 3] = [1.0, 0.93, 0.80];
+/// Ambient floor: the gain a surface gets with no diffuse and no pool
+/// contribution at all (a wall facing exactly along the light at a screen
+/// corner). Keeps the enhancement a *shading*, not a blackout.
+pub const DYN_LIGHT_AMBIENT: f32 = 0.55;
+
 pub struct Renderer {
     pub(super) surface: wgpu::Surface<'static>,
     pub(super) device: wgpu::Device,
@@ -139,6 +159,15 @@ pub struct Renderer {
     /// 15-bit dither that `psx_mode` also enables are strict-PS1 artefacts.
     /// Set with [`Renderer::set_semi_blend`].
     pub(super) semi_blend: std::cell::Cell<bool>,
+    /// Opt-in dynamic-lighting enhancement, staged into
+    /// `MeshUniforms.light_dir[3]`. `false` (the default) keeps every mesh
+    /// path pixel-identical to the faithful baked-shading render - retail's
+    /// field path has NO light source (see [`crate::psx_light`]), so this is
+    /// explicitly a non-retail enhancement. When `true` the VRAM / colour
+    /// mesh shaders layer a soft warm directional light (off the smoothed
+    /// per-vertex normals) + a screen-space light pool over the baked
+    /// colours, capped at ~1.3x. Set with [`Renderer::set_dynamic_lighting`].
+    pub(super) dyn_lighting: std::cell::Cell<bool>,
     /// Screen-space 2D overlay pass (see [`crate::screen_overlay`]): PSX
     /// `POLY_FT4` textured quads + flat quads in NDC, ordering-table order,
     /// per-ABR semi-transparency. Opaque pipeline (replace).
@@ -193,6 +222,51 @@ impl Renderer {
     /// Read the current semi-transparency-blend flag.
     pub fn semi_blend(&self) -> bool {
         self.semi_blend.get()
+    }
+
+    /// Toggle the opt-in **dynamic-lighting enhancement** on the VRAM /
+    /// colour mesh passes. Off by default, and OFF IS RETAIL: the field
+    /// path has no runtime light source (shading is baked into the TMD
+    /// colour words - see [`crate::psx_light`]), so the disabled path is
+    /// pixel-identical to the faithful render and the parity oracles are
+    /// unaffected.
+    ///
+    /// When enabled, each fragment's baked colour is scaled by
+    /// `ambient + (diffuse * |N.L| + pool) * warm_tint`, where `N` is the
+    /// smoothed per-vertex normal already carried by the VRAM-mesh vertex
+    /// format (with a screen-space-derivative fallback for the normal-less
+    /// colour-mesh prims), `L` is [`DYN_LIGHT_DIR`], and `pool` is a soft
+    /// screen-centred light pool - the "modern soft warm lighting over
+    /// crisp PSX texels" look. The gain is capped at ~1.3x the baked
+    /// brightness. Tunables: [`DYN_LIGHT_DIR`] / [`DYN_LIGHT_TINT`] /
+    /// [`DYN_LIGHT_AMBIENT`] plus the `DYN_*` consts in the `dyn_light`
+    /// WGSL helper.
+    pub fn set_dynamic_lighting(&self, enable: bool) {
+        self.dyn_lighting.set(enable);
+    }
+
+    /// Read the current dynamic-lighting flag.
+    pub fn dynamic_lighting(&self) -> bool {
+        self.dyn_lighting.get()
+    }
+
+    /// The `MeshUniforms.light_dir` word for the current frame:
+    /// `[dir_x, dir_y, dir_z, enable]`. All-zero `w` = the identity
+    /// (default off) path.
+    pub(super) fn dyn_light_dir_uniform(&self) -> [f32; 4] {
+        let on = if self.dyn_lighting.get() { 1.0 } else { 0.0 };
+        [DYN_LIGHT_DIR[0], DYN_LIGHT_DIR[1], DYN_LIGHT_DIR[2], on]
+    }
+
+    /// The `MeshUniforms.light_color` word: `[tint_r, tint_g, tint_b,
+    /// ambient]`. Constant; only read by the shader when the enable is set.
+    pub(super) fn dyn_light_color_uniform(&self) -> [f32; 4] {
+        [
+            DYN_LIGHT_TINT[0],
+            DYN_LIGHT_TINT[1],
+            DYN_LIGHT_TINT[2],
+            DYN_LIGHT_AMBIENT,
+        ]
     }
 
     /// Set the GP0(0xE2) "Texture Window setting" register state used by

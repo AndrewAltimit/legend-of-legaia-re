@@ -84,6 +84,8 @@ impl Renderer {
                             0.0,
                             0.0,
                         ],
+                        light_dir: self.dyn_light_dir_uniform(),
+                        light_color: self.dyn_light_color_uniform(),
                     }]),
                 );
             }
@@ -600,6 +602,8 @@ impl Renderer {
             0.0,
             0.0,
         ];
+        let light_dir = self.dyn_light_dir_uniform();
+        let light_color = self.dyn_light_color_uniform();
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
             let u = MeshUniforms {
                 mvp: mvp.to_cols_array_2d(),
@@ -608,6 +612,8 @@ impl Renderer {
                 tex_window,
                 grade,
                 flags,
+                light_dir,
+                light_color,
             };
             let off = slot * stride;
             let n = std::mem::size_of::<MeshUniforms>();

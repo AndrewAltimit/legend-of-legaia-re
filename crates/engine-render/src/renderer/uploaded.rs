@@ -64,6 +64,18 @@ pub(super) struct MeshUniforms {
     /// exactly as retail does. Set with [`Renderer::set_backface_cull`];
     /// `[1..4]` reserved.
     pub(super) flags: [f32; 4],
+    /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
+    /// no light source; see the `dyn_light` WGSL helper). `[0..3]` = unit
+    /// direction TOWARD the light in mesh model space
+    /// ([`DYN_LIGHT_DIR`]), `[3]` = master enable: `0.0`
+    /// (the default) is the identity, keeping the faithful path
+    /// pixel-identical. Set with [`Renderer::set_dynamic_lighting`].
+    pub(super) light_dir: [f32; 4],
+    /// Dynamic-light colour terms: `[0..3]` = warm tint applied to the
+    /// diffuse + pool terms ([`DYN_LIGHT_TINT`]), `[3]` =
+    /// ambient floor ([`DYN_LIGHT_AMBIENT`]). Only read when
+    /// `light_dir[3]` is set.
+    pub(super) light_color: [f32; 4],
 }
 
 pub struct UploadedTexture {

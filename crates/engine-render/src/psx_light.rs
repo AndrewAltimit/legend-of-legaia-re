@@ -169,10 +169,21 @@ mod tests {
         assert!(src.contains("fn psx_modulate"));
         assert!(src.contains("fn psx_depth_cue"));
         assert!(src.contains("mix(rgb, cue.rgb, cue.a)"));
-        // The synthetic directional Lambert is gone for good.
+        // No always-on synthetic light may creep back into the retail
+        // helpers: the ONLY light in the prelude is the opt-in `dyn_light`
+        // enhancement, and it must early-return the input unchanged when its
+        // enable (`light_dir.w`) is zero - the staged default. The retail
+        // modulate/depth-cue bodies stay light-free.
+        let retail_end = src.find("fn dyn_light").unwrap_or(src.len());
+        let retail =
+            &src[..retail_end.min(src.find("Opt-in dynamic-lighting").unwrap_or(src.len()))];
         assert!(
-            !src.contains("lambert") && !src.contains("light_dir"),
-            "no synthetic light may leak back into the shared shader prelude"
+            !retail.contains("lambert") && !retail.contains("light_dir"),
+            "no synthetic light may leak into the retail shader helpers"
+        );
+        assert!(
+            src.contains("if (light_dir.w < 0.5) {\n        return rgb;\n    }"),
+            "dyn_light must be an exact identity when disabled (the default)"
         );
     }
 }

@@ -134,6 +134,42 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
 In the `legaia-engine play-window` binary this whole mode is opt-in via
 the `LEGAIA_PSX_RENDER=1` environment variable.
 
+## Opt-in dynamic lighting (enhancement, NOT retail)
+
+`Renderer::set_dynamic_lighting(true)` layers a soft, warm dynamic light
+over the baked shading on the VRAM-mesh and colour-mesh passes. **Off by
+default, and off IS retail**: the field path has no runtime light source
+(see `psx_light` above), so the disabled path is pixel-identical to the
+faithful render and the parity oracles are unaffected - the WGSL helper
+(`dyn_light`) early-returns the input colour when the uniform enable is
+zero.
+
+When enabled, each fragment's post-`psx_modulate` colour is scaled by
+
+```text
+gain = ambient + (diffuse * |N.L| + pool) * warm_tint    (capped at ~1.3x)
+```
+
+- `N` is the smoothed per-vertex normal the VRAM-mesh vertex format
+  already carries (area-weighted face normals accumulated per shared
+  position by `legaia_tmd::mesh` - continuous across connected surfaces,
+  so lighting varies within primitives, not per-prim). The normal-less
+  colour-mesh prims and zero-normal singletons fall back to the
+  screen-space-derivative face normal. `|N.L|` (not `max(N.L, 0)`)
+  because prim winding in the corpus is mixed - walls shade with their
+  orientation while a Y-flip in the draw parity changes nothing.
+- `pool` is a soft screen-space "pool of light" centred slightly above
+  frame centre, fading toward the corners - the gentle
+  vignette-of-light gradient over the ground.
+- Texels stay crisp: the gain is a smooth per-pixel scale on the same
+  nearest-sampled PSX texel path, never a filter.
+
+Tunables: `DYN_LIGHT_DIR` / `DYN_LIGHT_TINT` / `DYN_LIGHT_AMBIENT`
+(renderer state) plus the `DYN_*` weights in the `dyn_light` WGSL helper;
+the CPU mirror + lockstep tests live in the `dyn_light` module. In
+`play-window` this is the `--dynamic-lighting` flag, toggled at runtime
+with the `I` key and reflected on the HUD status line.
+
 `Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to
 GP0(0xE2) "Texture Window setting" - four 5-bit values in 8-pixel steps
 that clamp / wrap texture-coordinate sampling to a smaller window inside
