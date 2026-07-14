@@ -734,12 +734,28 @@ impl World {
             WalkTouchEvent::Warp { target_map } => {
                 self.pending_scene_transition = Some(target_map);
             }
-            WalkTouchEvent::PlayerMoveTo { world_x, world_z } => {
+            WalkTouchEvent::PlayerMoveTo {
+                world_x,
+                world_z,
+                facing,
+            } => {
+                // The retail op-0x23 player arm rewrites X/Z (`+0x14`/`+0x18`)
+                // and re-seats the actor on the floor; the paired op-0x38
+                // cross-context CAM_CFG writes the arrival heading (`+0x26`).
+                // A door's interior is a *sub-area of the same collision grid*
+                // at its own elevation, so the floor must be resampled at the
+                // landing - otherwise the player keeps the doorstep's outdoor
+                // height until the next locomotion frame nudges it.
+                let y = self.sample_field_floor_height(world_x as i32, world_z as i32) as i16;
                 if let Some(p) = self.player_actor_slot
                     && let Some(actor) = self.actors.get_mut(p as usize)
                 {
                     actor.move_state.world_x = world_x;
                     actor.move_state.world_z = world_z;
+                    actor.move_state.world_y = y;
+                    if let Some(heading) = facing {
+                        actor.move_state.render_26 = heading;
+                    }
                 }
                 self.pending_field_events.push(FieldEvent::MoveTo {
                     world_x: world_x as u16,

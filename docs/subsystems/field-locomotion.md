@@ -412,9 +412,90 @@ model to it and plays the placement's scene-bundle ANM clip per frame
 (`FieldClipPlayer` over the `anim_id - 1` record, the same posed-rebuild path
 as the player's idle/walk pair).
 
+## Intra-scene doorways - the ＩＮ / ＯＵＴ record pair
+
+Walking into a town house is **not** a scene change. The scene name buffers
+(`0x8007050C` / `0x80084548`) are unchanged across the warp: the interior is a
+sub-area of the *same* 128×128 collision grid, parked in an otherwise unused
+corner of it, and the door merely repositions the player. The whole mechanism
+is two partition-0 object records bound by two gate-0 tile triggers.
+
+**The door record.** A doorway's partition-0 script emits a fixed pair of
+cross-context ops into the **player system channel** `0xF8`:
+
+```text
+B8 F8 <dir> 00      ; op 0x38 | 0x80 CAM_CFG  -> player facing
+A3 F8 <xb> <zb>     ; op 0x23 | 0x80 MOVE_TO  -> player position
+```
+
+- `0xA3 0xF8` is the warp. `0x23 MOVE_TO` addressed to channel `0xF8` moves the
+  **player**; a plain `0x23` moves the *executing* actor (a prop positioning
+  itself). That prefix is the entire discriminator between a door and an NPC's
+  self-placement, and the two are easy to confuse - the disc-wide census
+  excludes ~220 plain-`0x23` actor moves on exactly this test. World coords are
+  the usual `(b & 0x7F) * 0x80 + 0x40` (+`0x40` when bit 7 is set).
+- `0xB8 0xF8` is the **arrival facing**, and doors always carry it: the simple
+  `0x38` path (`op1 & 0x7F == 0`) copies the SCUS compass LUT entry
+  `0x80073F04 + (op0 & 0xF) * 2` into the player's `+0x26` heading. Retail
+  authors ＩＮ records with LUT index 4 (into the room) and ＯＵＴ records with
+  index 0 (back out into the street), so the player never emerges facing the
+  door they just used. Ignoring the op leaves the arrival facing at whatever
+  direction the player happened to walk in with.
+
+Both ops sit **before** the record's fade/lighting tail, so a linear walk of
+the record's own bytes recovers the pair without executing anything.
+
+**The pairing convention.** Doorway records pair by their fullwidth SJIS
+record name: `…ＩＮ` / `…ＯＵＴ` (digit-suffixed when an inn has several
+exits), 入口 / 出口 for gates, Ａ / Ｂ for elevator endpoints. The ＯＵＴ
+record **is** the return trip - it is a door in its own right, bound by its own
+gate-0 trigger at a tile inside the interior, warping the player back to the
+doorstep. A scene's doorways are therefore complete iff every ＩＮ has its
+paired ＯＵＴ installed. An exit may own **several** trigger tiles (a wide
+doorway), which is why the disc-wide census counts more ＯＵＴ triggers than
+ＩＮ ones.
+
+**Geometry.** The trigger tile itself is a **wall** in the collision grid (you
+cannot stand in a doorway); the player reaches the door through a one-tile
+walkable corridor and the touch box (`FIELD_PROP_BOX_HALF`) fires from the last
+walkable position. Each landing is placed clear of the paired door's contact
+box, so an arrival cannot immediately re-fire the door it came through - the
+ping-pong a naive box model would otherwise produce is authored out in the
+data, not guarded in code.
+
+**Landing records.** The tile a door lands on frequently carries a *gate-1*
+trigger of its own - サウンド内 / サウンド外 ("sound inside/outside") ambience
+switches, 閉扉 ("closed door"), or a story beat. These spawn as ordinary
+partition-2 records on arrival; a landing record that opens an inline dialog
+box parks the frame until the player confirms, exactly as retail does.
+
+**Rim Elm** (`town01` / `town0b` / `town0c` - three story states that share one
+partition-0 table and one `.MAP` trigger table) carries five player-channel
+teleports in partition 0: the two complete doorway pairs 恋人ＩＮ/恋人ＯＵＴ
+(Mei's house) and 木ＩＮ/木ＯＵＴ (the tree), plus 主人公の家の中 ("inside the
+protagonist's house"). The last is **not** a doorway: it has no ＯＵＴ record
+anywhere in the MAN (a byte-scan for `A3 F8` across all three scenes finds only
+those five sites), its trigger tile sits inside the house's wall footprint with
+no walkable approach, and its script `0x44`-spawns the dinner beat when the
+story flag for the preceding beat is set. It is a **story-entry** warp, not a
+walk-in door.
+
+Engine port: `man_field_scripts::p0_record_walk_touch_event` decodes the pair
+(the record region via `p0_record_script_region`, the partition-0 header), the
+binds install in `SceneHost::enter_field_scene`, and `World::check_field_walk_touch`
+applies position + facing + a fresh floor-height sample on contact (the interior
+sits at its own elevation on the shared grid, so the landing must be re-seated
+on the floor rather than keeping the doorstep's height). Disc-gated coverage:
+`crates/engine-core/tests/rim_elm_door_roundtrip_disc.rs` - both pair members
+install with their decoded target and facing in all three Rim Elm scenes, the
+pairs are reciprocal and cannot re-fire, and the locomotion walks each doorway
+in and back out.
+
 ## Open
 
 - The full `FUN_801d5b5c` post-kernel state (the touch-event handler beyond the decoded entry kernel).
+- How retail reaches `town01`'s 主人公の家の中 story-entry warp (see [Intra-scene doorways](#intra-scene-doorways---the-ｉｎ--ｏｕｔ-record-pair)): its gate-0 trigger tile is walled off from every approach under the capture-pinned collision model, so the contact that runs it is not a free-roam walk-in.
+- `world::vm_hosts::apply_script_table_teleport` (field-VM op `0x4C 0xC3`) resolves its descriptor through `partition_record_span(…, 0, …)` and then reads a 4-byte `[model, anim, bx, bz]` header - the partition-**1** actor-placement shape - at `pc0 - 4`. Partition-0 records are `[u8 n][n*2 SJIS name][u8 attr]` on disc, so either the partition argument or the header read needs re-deriving from `FUN_8003C8F0`.
 - Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists, and the initial-facing decode takes the fall-through branch - see [NPC initial facing](#npc-initial-facing) - rather than evaluating the prologue's `0x7x` flag-TEST chain against live flags, so a later-chapter branch's facing/position is not selected).
 
 ## NPC initial facing

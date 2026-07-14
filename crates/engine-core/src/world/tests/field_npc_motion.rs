@@ -191,6 +191,7 @@ fn walk_touch_player_moveto_teleports_player() {
             WalkTouchEvent::PlayerMoveTo {
                 world_x: 5000,
                 world_z: 6000,
+                facing: None,
             },
         ),
     );

@@ -257,6 +257,7 @@ fn house_door_binds_teleport_on_contact() {
                 legaia_engine_core::man_field_scripts::WalkTouchEvent::PlayerMoveTo {
                     world_x,
                     world_z,
+                    ..
                 } => Some((world_x, world_z)),
                 _ => None,
             }

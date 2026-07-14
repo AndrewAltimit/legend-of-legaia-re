@@ -524,7 +524,20 @@ pub enum WalkTouchEvent {
     /// the [`PLAYER_CHANNEL`]): walking into the placement snaps the player to
     /// `(world_x, world_z)` - the cave-guard throw-back / intra-scene door
     /// mechanism.
-    PlayerMoveTo { world_x: i16, world_z: i16 },
+    ///
+    /// `facing` is the arrival heading the record's own **cross-context
+    /// `0x38 | 0x80` CAM_CFG** into the same [`PLAYER_CHANNEL`] writes just
+    /// before the teleport (retail's simple path copies the SCUS compass LUT
+    /// entry `0x80073F04 + (op0 & 0xF) * 2` into the player's `+0x26`); every
+    /// retail door record pairs the two ops. Already converted to the engine's
+    /// render-heading space by [`facing_index_to_engine_heading`]. `None` when
+    /// the record carries no facing write before its teleport - the arrival
+    /// then keeps the heading the player walked in with.
+    PlayerMoveTo {
+        world_x: i16,
+        world_z: i16,
+        facing: Option<i16>,
+    },
     /// A boss-stager placement ([`super::BossStagerPlacement`]): contact runs
     /// the placement's own partition-1 record through the field VM (retail
     /// resumes the parked stager script on touch - `FUN_801d5b5c`). The touch
@@ -557,29 +570,68 @@ pub fn p0_record_walk_touch_event(
     man: &[u8],
     record_idx: usize,
 ) -> Option<WalkTouchEvent> {
+    let (start, pc0, end) = p0_record_script_region(man_file, man, record_idx)?;
+    player_teleport_in_region(man.get(start..end)?, pc0)
+}
+
+/// The bounded script region of **partition-0** record `record_idx`:
+/// `(record_start, pc0, end)` under the partition-0 header form
+/// `[u8 n][n*2 SJIS name][u8 attr]` (`pc0 = 1 + n*2 + 1`). `None` when the
+/// record is out of range or its header already overruns its bound.
+///
+/// Partition 0 is the object-record partition the gate-0 `.MAP` tile triggers
+/// bind (`FUN_8003A55C`); its header is NOT the partition-1
+/// `[N][N*2 locals][4-byte header]` shape - see [`super::partition_record_span`].
+pub fn p0_record_script_region(
+    man_file: &ManFile,
+    man: &[u8],
+    record_idx: usize,
+) -> Option<(usize, usize, usize)> {
     let start =
         crate::man_field_scripts::partition_record_offset(man_file, man.len(), 0, record_idx)?;
     let n = *man.get(start)? as usize;
     let pc0 = 1 + n * 2 + 1;
     let end = crate::man_field_scripts::record_end_bound(man_file, man.len(), start);
-    if start + pc0 >= end {
-        return None;
-    }
-    let body = man.get(start..end)?;
+    (start + pc0 < end).then_some((start, pc0, end))
+}
+
+/// Walk `body` from `pc0` for the first **player-channel teleport**: a
+/// cross-context `0x23 | 0x80` MOVE_TO into the [`PLAYER_CHANNEL`], paired
+/// with the arrival heading the record's preceding cross-context
+/// `0x38 | 0x80` CAM_CFG into the same channel wrote.
+///
+/// Retail door records emit the pair back to back - `B8 F8 <dir> 00` then
+/// `A3 F8 <xb> <zb>` - so the facing is carried by the most recent
+/// player-channel CAM_CFG seen before the teleport. Own-context ops (the door
+/// prop repositioning / re-facing *itself*) and parked-sentinel targets are
+/// skipped.
+///
+/// REF: FUN_801DE840 (case 0x23 world write + case 0x38 simple-path `+0x26`
+/// write through the SCUS compass LUT at `0x80073F04`)
+fn player_teleport_in_region(body: &[u8], pc0: usize) -> Option<WalkTouchEvent> {
+    let mut facing: Option<i16> = None;
     for insn in LinearWalker::new(body, pc0).flatten() {
-        let InsnInfo::MoveTo { xb, zb } = insn.info else {
-            continue;
-        };
         if insn.extended != Some(PLAYER_CHANNEL) {
-            continue; // own-context positioning (the door prop itself)
+            continue; // own-context: the door prop positioning/facing itself
         }
-        if (xb & 0x7F, zb & 0x7F) == PARKED_SENTINEL_TILE {
-            continue;
+        match insn.info {
+            // The simple `0x38` path (`op1 & 0x7F == 0`) is the one that writes
+            // the actor heading; the halt-acquire path is a camera wait.
+            InsnInfo::CamCfg { op0, op1 } if op1 & 0x7F == 0 => {
+                facing = facing_index_to_engine_heading(op0 & 0xF);
+            }
+            InsnInfo::MoveTo { xb, zb } => {
+                if (xb & 0x7F, zb & 0x7F) == PARKED_SENTINEL_TILE {
+                    continue;
+                }
+                return Some(WalkTouchEvent::PlayerMoveTo {
+                    world_x: grid_byte_to_world(xb),
+                    world_z: grid_byte_to_world(zb),
+                    facing,
+                });
+            }
+            _ => {}
         }
-        return Some(WalkTouchEvent::PlayerMoveTo {
-            world_x: grid_byte_to_world(xb),
-            world_z: grid_byte_to_world(zb),
-        });
     }
     None
 }
@@ -600,20 +652,5 @@ pub fn placement_walk_touch_event(
         return Some(WalkTouchEvent::Warp { target_map });
     }
     let (region, pc0) = placement_pretext_region(man_file, man, p)?;
-    for insn in LinearWalker::new(region, pc0).flatten() {
-        let InsnInfo::MoveTo { xb, zb } = insn.info else {
-            continue;
-        };
-        if insn.extended != Some(PLAYER_CHANNEL) {
-            continue; // own-context snap (the actor's own reposition)
-        }
-        if (xb & 0x7F, zb & 0x7F) == PARKED_SENTINEL_TILE {
-            continue;
-        }
-        return Some(WalkTouchEvent::PlayerMoveTo {
-            world_x: grid_byte_to_world(xb),
-            world_z: grid_byte_to_world(zb),
-        });
-    }
-    None
+    player_teleport_in_region(region, pc0)
 }

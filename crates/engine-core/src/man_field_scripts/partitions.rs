@@ -275,6 +275,20 @@ pub fn partition2_record_name(man_file: &ManFile, man: &[u8], index: usize) -> O
 /// `partition2_record_script_offset` (`FUN_8003BDE0`); the other partitions
 /// use the `[u8 N][N*2 locals][4-byte header]` prefix (`pc0 = 1 + N*2 + 4`).
 ///
+/// **Partition-0 caveat.** Partition 0 is the *object*-record partition the
+/// gate-0 `.MAP` tile triggers bind (`FUN_8003A55C` - house doors, chests,
+/// signs), and on disc its records open `[u8 n][n*2 SJIS name][u8 attr]` -
+/// `pc0 = 1 + n*2 + 1`, byte-verified against every Rim Elm door record (the
+/// partition-1 formula starts the walk three bytes late and desyncs the whole
+/// script). This function still applies the partition-1 formula to partition 0
+/// because `world::vm_hosts::apply_script_table_teleport` reads a **4-byte
+/// placement header** at `pc0 - 4` through it; that consumer's record shape
+/// (`[model, anim, bx, bz]`) is the partition-*1* actor-placement header, so
+/// the partition argument there is the thing to re-derive, not this arm.
+/// Decoders that need a genuine partition-0 script use
+/// [`super::p0_record_script_region`] (see
+/// [`super::p0_record_walk_touch_event`]).
+///
 /// `None` when the partition / index is out of range, the offset lands past
 /// the buffer, or the record's header already overruns its bound.
 pub fn partition_record_span(

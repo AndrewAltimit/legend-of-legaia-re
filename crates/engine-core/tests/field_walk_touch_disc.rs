@@ -139,9 +139,9 @@ fn cave01_guard_walk_touch_teleports_the_player() {
         .field_walk_touch
         .iter()
         .filter_map(|(&slot, &(pos, event))| match event {
-            WalkTouchEvent::PlayerMoveTo { world_x, world_z } => {
-                Some((slot, pos, (world_x, world_z)))
-            }
+            WalkTouchEvent::PlayerMoveTo {
+                world_x, world_z, ..
+            } => Some((slot, pos, (world_x, world_z))),
             _ => None,
         })
         .collect();

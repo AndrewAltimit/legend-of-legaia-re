@@ -544,6 +544,7 @@ fn walk_touch_event_classifies_portal_and_player_moveto() {
         Some(WalkTouchEvent::PlayerMoveTo {
             world_x: grid_byte_to_world(20),
             world_z: grid_byte_to_world(30),
+            facing: None,
         })
     );
 
