@@ -207,11 +207,12 @@ fn lgsf_v2_round_trips_struct_identical() {
 
 #[test]
 fn retail_sc_round_trips_only_representable_fields() {
-    // The retail SC block has no slot for money, play_time, active_party,
+    // The retail SC block has no slot for play_time, active_party,
     // per_char ext, or saved_chains, so a round-trip through
     // write_into_retail_sc_block + from_retail_sc_block drops those
     // fields to their defaults. The party records, full story-flag
-    // bitmap, and inventory survive byte-exact.
+    // bitmap, inventory, and gold (the pinned `game_data+0x25C` slot)
+    // survive byte-exact.
     let save = build_synthetic_save();
     let mut sc_block = vec![0u8; BLOCK_SIZE];
     save.write_into_retail_sc_block(&mut sc_block)
@@ -255,7 +256,8 @@ fn retail_sc_round_trips_only_representable_fields() {
         "inventory pairs survive in order"
     );
 
+    // Gold round-trips through the pinned retail slot (RAM 0x8008459C).
+    assert_eq!(parsed.ext.money, save.ext.money, "gold round-trips");
     // Engine-only fields drop to defaults through the SC layout.
-    assert_eq!(parsed.ext.money, 0, "money is engine-only");
     assert_eq!(parsed.ext_v2, SaveExtV2::default(), "v2 ext is engine-only");
 }

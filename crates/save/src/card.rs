@@ -398,6 +398,74 @@ pub const RETAIL_INVENTORY_SLOTS: usize = 72;
 /// Size in bytes of the retail inventory array (`RETAIL_INVENTORY_SLOTS × 2`).
 pub const RETAIL_INVENTORY_SIZE: usize = RETAIL_INVENTORY_SLOTS * 2; // 0x90
 
+/// Byte offset from the SC block start to the party **gold** (i32 LE).
+///
+/// Mirrors live RAM `0x8008459C` (`_DAT_8008459C`, the word the battle-victory
+/// reward writer `FUN_8004F0E8` credits - see `docs/subsystems/boot.md`) via
+/// the linear map: `0x200 + (0x8008459C - 0x80084340) = 0x45C`
+/// (= `game_data + 0x25C`, the offset `docs/subsystems/save-screen.md` pins).
+pub const RETAIL_GOLD_OFFSET: usize = 0x45C;
+
+/// Byte offset from the SC block start to the casino **coin bank** (u32 LE).
+///
+/// Mirrors live RAM `0x800845A4` - the global the slot-machine overlay reads
+/// at session entry and assigns on cash-out (`docs/subsystems/minigame-slot-machine.md`),
+/// and the address the third-party cheat database classifies as `coins_u32`
+/// (`crates/cheats/src/classify.rs`). Linear map:
+/// `0x200 + (0x800845A4 - 0x80084340) = 0x464`.
+///
+/// Because the retail save payload is a plain memcpy of the RAM window
+/// (`FUN_8001A8B0(SC_base, staging, 0x1A18)` - no per-block checksum), a
+/// targeted in-place write here yields a save the retail loader accepts
+/// unchanged; the only checksum in a memory-card image is the **directory
+/// frame** XOR (frame byte `0x7F`), which block-byte patches never touch.
+pub const RETAIL_COINS_OFFSET: usize = 0x464;
+
+/// Read the party gold (i32 LE at [`RETAIL_GOLD_OFFSET`]) from a retail SC
+/// save block. `None` if the block is too small.
+pub fn read_retail_gold(sc_block: &[u8]) -> Option<i32> {
+    let b = sc_block.get(RETAIL_GOLD_OFFSET..RETAIL_GOLD_OFFSET + 4)?;
+    Some(i32::from_le_bytes(b.try_into().unwrap()))
+}
+
+/// Write the party gold in place. `Err` if the block is too small.
+pub fn write_retail_gold(sc_block: &mut [u8], gold: i32) -> Result<()> {
+    let end = RETAIL_GOLD_OFFSET + 4;
+    if sc_block.len() < end {
+        bail!("sc_block too small for retail gold field (need >= {end})");
+    }
+    sc_block[RETAIL_GOLD_OFFSET..end].copy_from_slice(&gold.to_le_bytes());
+    Ok(())
+}
+
+/// Read the casino coin bank (u32 LE at [`RETAIL_COINS_OFFSET`]) from a
+/// retail SC save block. `None` if the block is too small.
+pub fn read_retail_coins(sc_block: &[u8]) -> Option<u32> {
+    let b = sc_block.get(RETAIL_COINS_OFFSET..RETAIL_COINS_OFFSET + 4)?;
+    Some(u32::from_le_bytes(b.try_into().unwrap()))
+}
+
+/// Write the casino coin bank in place - the targeted patch the site's
+/// minigames use to bank won coins into a player's own retail save. Only
+/// these 4 bytes change. `Err` if the block is too small.
+pub fn write_retail_coins(sc_block: &mut [u8], coins: u32) -> Result<()> {
+    let end = RETAIL_COINS_OFFSET + 4;
+    if sc_block.len() < end {
+        bail!("sc_block too small for retail coin field (need >= {end})");
+    }
+    sc_block[RETAIL_COINS_OFFSET..end].copy_from_slice(&coins.to_le_bytes());
+    Ok(())
+}
+
+/// Byte offset from the SC block start to the most-recently-visited CDNAME
+/// scene label (NUL-terminated ASCII) - `game_data + 0x208`, the field the
+/// save-select screen reads for its location line's scene join.
+pub const RETAIL_SCENE_LABEL_OFFSET: usize = 0x408;
+
+/// Byte offset from the SC block start to the location display name
+/// (NUL-terminated ASCII at `game_data + 0x000`).
+pub const RETAIL_LOCATION_NAME_OFFSET: usize = RETAIL_GAME_DATA_OFFSET;
+
 /// RAM base address for the save game data block (`game_data[0]` in the SC block).
 ///
 /// The save block's `game_data` region (starting at `RETAIL_GAME_DATA_OFFSET`)

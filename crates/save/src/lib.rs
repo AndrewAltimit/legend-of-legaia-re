@@ -42,16 +42,18 @@
 
 pub mod card;
 pub mod character;
+pub mod emu;
 pub mod ext;
 pub mod retail_inventory;
 
 pub use card::{
     BLOCK_SIZE, CARD_MAGIC, CARD_SIZE, DIR_FRAMES, DirEntry, RETAIL_CHAR_RECORD_HEADER_SIZE,
-    RETAIL_CHAR_RECORD_STRIDE, RETAIL_GAME_DATA_OFFSET, RETAIL_INVENTORY_OFFSET,
-    RETAIL_INVENTORY_SIZE, RETAIL_INVENTORY_SLOTS, RETAIL_MAX_CHAR_RECORDS,
-    RETAIL_STORY_FLAGS_OFFSET, RETAIL_STORY_FLAGS_SIZE, SAVE_BLOCK_MAGIC, SAVE_GAME_DATA_RAM_BASE,
-    SaveBlock, parse_card, read_block, read_retail_char_records, read_retail_inventory,
-    read_retail_story_flags, walk_directory, write_block, write_retail_char_records,
+    RETAIL_CHAR_RECORD_STRIDE, RETAIL_COINS_OFFSET, RETAIL_GAME_DATA_OFFSET, RETAIL_GOLD_OFFSET,
+    RETAIL_INVENTORY_OFFSET, RETAIL_INVENTORY_SIZE, RETAIL_INVENTORY_SLOTS,
+    RETAIL_MAX_CHAR_RECORDS, RETAIL_STORY_FLAGS_OFFSET, RETAIL_STORY_FLAGS_SIZE, SAVE_BLOCK_MAGIC,
+    SAVE_GAME_DATA_RAM_BASE, SaveBlock, parse_card, read_block, read_retail_char_records,
+    read_retail_coins, read_retail_gold, read_retail_inventory, read_retail_story_flags,
+    walk_directory, write_block, write_retail_char_records, write_retail_coins, write_retail_gold,
     write_retail_inventory, write_retail_story_flags,
 };
 pub use character::{
