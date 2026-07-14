@@ -5,6 +5,7 @@
 //! and pre-scans them for embedded TIMs so the UI shows a filtered, browsable
 //! list of viewable entries instead of every raw entry.
 
+pub mod arts_view;
 pub mod audio;
 mod audio_api;
 mod catalog;

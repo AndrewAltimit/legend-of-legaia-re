@@ -42,6 +42,7 @@ features = [
 ]
 
 [dev-dependencies]
+legaia-art = { path = "../art" }
 sha2 = "0.10"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 

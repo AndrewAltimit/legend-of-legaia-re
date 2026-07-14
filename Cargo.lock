@@ -1552,6 +1552,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",
+ "legaia-art",
  "legaia-asset",
  "legaia-engine-audio",
  "legaia-engine-core",

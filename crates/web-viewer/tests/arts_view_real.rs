@@ -1,0 +1,376 @@
+//! Disc-gated: the site/arts.html WASM surface (`LegaiaArts`) must assemble
+//! every character's battle mesh and resolve every art to a decodable
+//! keyframe clip off a real disc image.
+//!
+//! Two layers of coverage:
+//!
+//! 1. **Bank-level** - for each of the four player files (863..866), every
+//!    art-bank record's `"ME"` stream decodes to a clip with a plausible
+//!    frame count and the pose buffers match the assembled rig width.
+//! 2. **Arts-table-level** - every art in the SCUS arts-name table
+//!    (`legaia_art::arts_table`, the same data the site's `arts.json` mirrors)
+//!    resolves to a *named* bank record by name or by combo, and that
+//!    record's clip decoded - or the art is explicitly listed in
+//!    [`KNOWN_UNRESOLVED`] so coverage stays visible.
+//!
+//! No Sony bytes are asserted - only structural facts. Skips + passes when
+//! `LEGAIA_DISC_BIN` is unset.
+
+#![cfg(not(target_arch = "wasm32"))]
+
+use legaia_art::{Character, arts_table};
+use legaia_web_viewer::arts_view::LegaiaArts;
+
+/// Arts-name-table entries with no matching art-bank record on the retail
+/// disc (asserted exact - a new resolution must be removed from here).
+const KNOWN_UNRESOLVED: &[(&str, &str)] = &[];
+
+fn loaded() -> Option<(LegaiaArts, Vec<u8>)> {
+    let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
+    let bytes = std::fs::read(&disc).ok()?;
+    let mut arts = LegaiaArts::new();
+    arts.load_disc(bytes.clone()).ok()?;
+    Some((arts, bytes))
+}
+
+fn norm(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
+#[test]
+fn every_character_assembles_with_idle_and_decodable_art_bank() {
+    let Some((mut arts, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    for cslot in 0..4u32 {
+        let st: serde_json::Value = serde_json::from_str(&arts.set_character(cslot)).unwrap();
+        assert_eq!(st["ok"], true, "char {cslot} assembles: {st}");
+        let name = st["character"].as_str().unwrap();
+        let parts = st["part_count"].as_u64().unwrap() as usize;
+        assert!(parts > 0, "{name}: rig width");
+        // Mesh buffers are parallel + framed.
+        let n = arts.mesh_positions().len() / 3;
+        assert!(n > 0, "{name}: mesh has vertices");
+        assert_eq!(arts.mesh_uvs().len(), n * 2, "{name}: uvs parallel");
+        assert_eq!(arts.mesh_cba_tsb().len(), n * 2, "{name}: cba parallel");
+        assert_eq!(arts.mesh_object_ids().len(), n, "{name}: obj ids parallel");
+        let idx = arts.mesh_indices();
+        assert!(
+            !idx.is_empty() && idx.len().is_multiple_of(3),
+            "{name}: tris"
+        );
+        assert!(idx.iter().all(|&i| (i as usize) < n), "{name}: idx bound");
+        let b = arts.mesh_bounds();
+        assert_eq!(b.len(), 4);
+        assert!(b[3] > 0.0, "{name}: bounds radius");
+        assert_eq!(arts.vram_bytes().len(), 1024 * 512 * 2, "{name}: VRAM");
+        // Idle loop: present, plausible, pose buffer matches the rig.
+        let idle_frames = st["idle"]["frames"].as_u64().unwrap_or(0) as usize;
+        assert!(idle_frames > 0, "{name}: idle stream: {st}");
+        assert_eq!(
+            arts.idle_pose_frames().len(),
+            idle_frames * parts * 6,
+            "{name}: idle pose layout"
+        );
+        // Every bank record decodes (the retail files carry no dead records).
+        let bank = st["arts"].as_array().unwrap();
+        assert!(!bank.is_empty(), "{name}: art bank non-empty");
+        for a in bank {
+            let i = a["index"].as_u64().unwrap() as u32;
+            let rec_name = a["name"].as_str().unwrap();
+            assert_eq!(
+                a["ok"], true,
+                "{name} art record {i} ({rec_name:?}): {}",
+                a["why"]
+            );
+            let frames = a["frames"].as_u64().unwrap() as usize;
+            assert!(frames > 0, "{name} art record {i} ({rec_name:?}): frames");
+            assert_eq!(
+                arts.art_pose_frames(i).len(),
+                frames * parts * 6,
+                "{name} art record {i}: pose layout"
+            );
+        }
+        eprintln!(
+            "[arts] {name}: {} bank records, {} named, rig {parts}, idle {idle_frames}f",
+            bank.len(),
+            bank.iter()
+                .filter(|a| !a["name"].as_str().unwrap().is_empty())
+                .count(),
+        );
+    }
+}
+
+#[test]
+fn every_arts_table_art_resolves_to_a_decoded_clip() {
+    let Some((mut arts, disc_bytes)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let scus =
+        legaia_web_viewer::disc::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
+    let table = arts_table::parse_from_scus(&scus).expect("arts-name table");
+    let mut unresolved: Vec<(String, String)> = Vec::new();
+    for (cslot, character) in [
+        (0u32, Character::Vahn),
+        (1, Character::Noa),
+        (2, Character::Gala),
+    ] {
+        let st: serde_json::Value = serde_json::from_str(&arts.set_character(cslot)).unwrap();
+        assert_eq!(st["ok"], true, "{character:?} assembles");
+        let bank = st["arts"].as_array().unwrap();
+        for entry in table.iter().filter(|e| e.character == character) {
+            let want_name = norm(&entry.name);
+            let want_combo: Vec<u64> = entry.commands.iter().map(|&c| c as u64).collect();
+            let hit = bank.iter().find(|a| {
+                let rec_name = a["name"].as_str().unwrap();
+                if !rec_name.is_empty() && norm(rec_name) == want_name {
+                    return true;
+                }
+                let combo: Vec<u64> = a["combo"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_u64().unwrap())
+                    .collect();
+                // Combo matches need >= 2 directions: the base records and
+                // the Super-Art tail records carry a 1-byte placeholder
+                // combo. Gala's Miracle record is un-named on disc, so
+                // un-named records still count here.
+                want_combo.len() >= 2 && combo == want_combo
+            });
+            match hit {
+                Some(a) => {
+                    assert_eq!(
+                        a["ok"], true,
+                        "{character:?} '{}' matched record {} but its clip failed: {}",
+                        entry.name, a["index"], a["why"]
+                    );
+                    assert!(
+                        a["frames"].as_u64().unwrap() > 0,
+                        "{character:?} '{}': zero-frame clip",
+                        entry.name
+                    );
+                }
+                None => unresolved.push((format!("{character:?}"), entry.name.clone())),
+            }
+        }
+    }
+    let unresolved_pairs: Vec<(&str, &str)> = unresolved
+        .iter()
+        .map(|(c, n)| (c.as_str(), n.as_str()))
+        .collect();
+    assert_eq!(
+        unresolved_pairs, KNOWN_UNRESOLVED,
+        "arts-table entries without a decoded bank clip changed; update KNOWN_UNRESOLVED"
+    );
+}
+
+/// The resolution ladder `site/js/arts-viewer.js` uses to map one curated
+/// art card onto a bank record:
+///
+/// 0. **action constant** - the curated `action_constant` IS the staged
+///    anim id `FUN_8004AD80` materializes (bank record `ac - 0x10`); this
+///    is exact on retail (it lands Vahn's *Hyper Elbow* on its dev-named
+///    "Miyawaki Chop" record despite the documented walkthrough combo
+///    divergence, and Gala's un-named Miracle record);
+/// 1. **exact** - a named record whose name AND combo both match;
+/// 2. **combo** - any record with the exact combo (needs >= 2 directions;
+///    named records preferred) - how the hypers land on their dev-named
+///    records ("Tornado Flame" -> "Beatfire");
+/// 3. **name** - a named record with a matching name (records with a
+///    placeholder <= 1-byte combo preferred: the Super-Art tail records).
+///
+/// Returns the record index in `bank`.
+fn resolve_art(
+    bank: &[serde_json::Value],
+    action_constant: Option<u64>,
+    name: &str,
+    directions: &[u64],
+) -> Option<usize> {
+    // 0. action constant (staged anim id space starts at 0x10)
+    if let Some(ac) = action_constant
+        && ac >= 0x10
+        && let Some(i) = bank.iter().position(|a| a["anim_id"].as_u64() == Some(ac))
+    {
+        return Some(i);
+    }
+    let want = norm(name);
+    let combo_of = |a: &serde_json::Value| -> Vec<u64> {
+        a["combo"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap())
+            .collect()
+    };
+    fn name_of(a: &serde_json::Value) -> &str {
+        a["name"].as_str().unwrap()
+    }
+    // 1. exact
+    if let Some(i) = bank.iter().position(|a| {
+        let n = name_of(a);
+        !n.is_empty() && norm(n) == want && combo_of(a) == directions
+    }) {
+        return Some(i);
+    }
+    // 2. combo (named preferred)
+    if directions.len() >= 2 {
+        let hits: Vec<usize> = bank
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| combo_of(a) == directions)
+            .map(|(i, _)| i)
+            .collect();
+        if let Some(&i) = hits
+            .iter()
+            .find(|&&i| !name_of(&bank[i]).is_empty())
+            .or(hits.first())
+        {
+            return Some(i);
+        }
+    }
+    // 3. name (placeholder-combo records preferred)
+    let hits: Vec<usize> = bank
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| {
+            let n = name_of(a);
+            !n.is_empty() && norm(n) == want
+        })
+        .map(|(i, _)| i)
+        .collect();
+    hits.iter()
+        .find(|&&i| combo_of(&bank[i]).len() <= 1)
+        .or(hits.first())
+        .copied()
+}
+
+/// The chain a resolved art plays: the record plus every immediately
+/// following record that shares its non-empty name OR its full (>= 2
+/// direction) combo. The multi-segment arts ship their strikes as
+/// consecutive bank records: "Hurricane Kick" = 0x1C..0x1E (one combo,
+/// three clips), "Rolling Combo" / "Jurassic Blow" = same-named pairs.
+fn chain_of(bank: &[serde_json::Value], first: usize) -> Vec<usize> {
+    let mut chain = vec![first];
+    let name = bank[first]["name"].as_str().unwrap();
+    let combo = bank[first]["combo"].as_array().unwrap();
+    let mut i = first + 1;
+    while i < bank.len() {
+        let n = bank[i]["name"].as_str().unwrap();
+        let c = bank[i]["combo"].as_array().unwrap();
+        let same_name = !name.is_empty() && n == name;
+        let same_combo = combo.len() >= 2 && c == combo;
+        if !(same_name || same_combo) {
+            break;
+        }
+        chain.push(i);
+        i += 1;
+    }
+    chain
+}
+
+/// Curated arts (`data/gamedata/arts.toml` - the rows the site's `arts.json`
+/// mirrors 1:1) with no resolvable bank record. Asserted exact.
+const KNOWN_UNRESOLVED_CURATED: &[(&str, &str)] = &[];
+
+#[test]
+fn every_curated_art_card_resolves_to_a_decoded_clip_chain() {
+    let Some((mut arts, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let toml_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/gamedata/arts.toml");
+    let curated: toml::Value = std::fs::read_to_string(toml_path)
+        .expect("arts.toml")
+        .parse()
+        .expect("arts.toml parses");
+    let rows = curated["arts"].as_array().expect("arts array");
+    let mut unresolved: Vec<(String, String)> = Vec::new();
+    for (cslot, character) in [(0u32, "Vahn"), (1, "Noa"), (2, "Gala")] {
+        let st: serde_json::Value = serde_json::from_str(&arts.set_character(cslot)).unwrap();
+        assert_eq!(st["ok"], true, "{character} assembles");
+        let bank = st["arts"].as_array().unwrap();
+        let parts = st["part_count"].as_u64().unwrap() as usize;
+        for row in rows
+            .iter()
+            .filter(|r| r["character"].as_str() == Some(character))
+        {
+            let name = row["name"].as_str().unwrap();
+            let directions: Vec<u64> = row["directions"]
+                .as_array()
+                .map(|a| a.iter().map(|v| v.as_integer().unwrap() as u64).collect())
+                .unwrap_or_default();
+            let ac = row["action_constant"].as_integer().map(|v| v as u64);
+            let Some(first) = resolve_art(bank, ac, name, &directions) else {
+                unresolved.push((character.to_string(), name.to_string()));
+                continue;
+            };
+            for i in chain_of(bank, first) {
+                let a = &bank[i];
+                assert_eq!(
+                    a["ok"], true,
+                    "{character} '{name}' chain record {i}: {}",
+                    a["why"]
+                );
+                let frames = a["frames"].as_u64().unwrap() as usize;
+                assert!(frames > 0, "{character} '{name}' chain record {i}: frames");
+                assert_eq!(
+                    arts.art_pose_frames(i as u32).len(),
+                    frames * parts * 6,
+                    "{character} '{name}' chain record {i}: pose layout"
+                );
+            }
+        }
+    }
+    let unresolved_pairs: Vec<(&str, &str)> = unresolved
+        .iter()
+        .map(|(c, n)| (c.as_str(), n.as_str()))
+        .collect();
+    assert_eq!(
+        unresolved_pairs, KNOWN_UNRESOLVED_CURATED,
+        "curated arts without a decoded bank clip changed; update KNOWN_UNRESOLVED_CURATED"
+    );
+}
+
+#[test]
+#[ignore]
+fn probe_dump_bank_names() {
+    let Some((mut arts, disc_bytes)) = loaded() else {
+        return;
+    };
+    let scus = legaia_web_viewer::disc::extract_scus(&disc_bytes).unwrap();
+    let table = arts_table::parse_from_scus(&scus).unwrap();
+    for (cslot, character) in [
+        (0u32, Character::Vahn),
+        (1, Character::Noa),
+        (2, Character::Gala),
+    ] {
+        let st: serde_json::Value = serde_json::from_str(&arts.set_character(cslot)).unwrap();
+        eprintln!("== {character:?} bank:");
+        for a in st["arts"].as_array().unwrap() {
+            eprintln!(
+                "  [{:2}] id {:#04x} name {:?} combo {:?} rate {} base {} frames {}",
+                a["index"],
+                a["anim_id"].as_u64().unwrap(),
+                a["name"],
+                a["combo"],
+                a["rate"],
+                a["base"],
+                a["frames"]
+            );
+        }
+        eprintln!("== {character:?} arts table:");
+        for e in table.iter().filter(|e| e.character == character) {
+            let combo: Vec<u8> = e.commands.iter().map(|&c| c as u8).collect();
+            eprintln!(
+                "  idx {:2} {:?} ap {} combo {:?} miracle {}",
+                e.index, e.name, e.ap, combo, e.is_miracle
+            );
+        }
+    }
+}
