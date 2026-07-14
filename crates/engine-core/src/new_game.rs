@@ -81,6 +81,10 @@ pub fn starting_record(c: &StartingChar) -> CharacterRecord {
     // slots 1/2 hold the ± sin-divisor-corrected value: Noa 102 / Gala 140).
     rec.set_cumulative_xp(0);
     rec.set_next_level_xp(legaia_save::xp_for_level(2));
+    // The template's 10-byte name field seeds the record's display name
+    // (record +0x2A7) - retail shows it until the name-entry overlay
+    // overwrites it.
+    rec.set_name(&c.name);
     rec
 }
 
@@ -201,6 +205,7 @@ mod tests {
         assert_eq!(rs.hp_max, 180);
         assert_eq!(rs.cap_constant, RECORD_CAP_CONSTANT);
         assert_eq!(rec.magic_rank(), 1);
+        assert_eq!(rec.name(), "Vahn", "template name stamps the record field");
         // Retail New Game: Experience 0, Next Level 121 (Status-menu capture).
         assert_eq!(rec.cumulative_xp(), 0);
         assert_eq!(rec.next_level_xp(), 121);

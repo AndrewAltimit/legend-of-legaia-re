@@ -115,6 +115,13 @@ impl Archive {
                 break;
             }
             let start_lba = toc[p + 2];
+            // A fully-zeroed TOC row is tail padding, not an entry - but the
+            // "+4" in the indexed formula makes it look like a sane 4-sector
+            // entry at LBA 0 (the archive header). Skip it before the size
+            // heuristics run.
+            if start_lba == 0 && toc[p + 3] == 0 && toc[p + 5] == 0 {
+                continue;
+            }
             let indexed_raw = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
             // Trailing-gap candidate: bytes from start_lba to next entry's
             // start_lba. Use wrapping_sub so unsorted entries don't blow up
@@ -313,5 +320,11 @@ mod tests {
         // Entry 5 starts at the file end with no next LBA: a phantom row of
         // the zeroed tail, still dropped.
         assert!(arch.entries.iter().all(|e| e.index != 5));
+        // Rows past entry 5 are all-zero padding: the "+4" indexed formula
+        // would read each as a sane 4-sector entry at LBA 0 (the header) -
+        // the zero-row guard must drop them (retail: a phantom idx-1234
+        // entry that inflated the archive to 1234 entries).
+        assert!(arch.entries.iter().all(|e| e.start_lba != 0));
+        assert_eq!(arch.entries.last().map(|e| e.index), Some(4));
     }
 }
