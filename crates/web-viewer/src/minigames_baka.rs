@@ -447,4 +447,37 @@ impl LegaiaMinigames {
         }
         vram.as_bytes().to_vec()
     }
+
+    /// The duel's stage layout - which side of the arena each fighter stands
+    /// on and which way it faces - as JSON:
+    ///
+    /// ```json
+    /// { "player": { "side": -1, "facing": 1 },
+    ///   "opponent": { "side": 1, "facing": -1 } }
+    /// ```
+    ///
+    /// `side` is the sign of the fighter's X placement (the player stands on
+    /// the LEFT, the opponent on the RIGHT); `facing` is the sign of its
+    /// heading's X (the player faces RIGHT toward the opponent, the opponent
+    /// faces LEFT toward the player). Each `facing` is the negation of the
+    /// other fighter's `side`, so both look at their rival - the retail
+    /// arrangement (`docs/subsystems/minigame-baka-fighter.md`).
+    ///
+    /// This is the **single source of truth** for the duel facing: the site's
+    /// pose step (`site/js/minigame-baka.js`) turns `facing` into a world yaw
+    /// (`facing * PI/2`) instead of hard-coding it, so the facing is testable
+    /// off-disc. The player and opponent mesh families share the same intrinsic
+    /// authored facing, so they need **opposite** world yaws to face each
+    /// other; an earlier reading assumed opposite intrinsic facings and spun
+    /// both the same way, leaving both looking left.
+    pub fn baka_duel_facing_json(&self) -> String {
+        // player: left of the arena (side -1), faces right toward the opponent
+        // (facing +1). opponent: right of the arena (side +1), faces left
+        // toward the player (facing -1).
+        concat!(
+            r#"{"player":{"side":-1,"facing":1},"#,
+            r#""opponent":{"side":1,"facing":-1}}"#
+        )
+        .to_string()
+    }
 }

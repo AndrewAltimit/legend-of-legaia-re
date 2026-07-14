@@ -379,6 +379,25 @@ the 3D camera, the fighters' spacing and the backdrop offset are fitted by eye
 screen), and the bar-frame cells fall back to an outline because their cell
 table is runtime-built.
 
+The **duel facing** is the retail arrangement: the player stands on the LEFT
+of the arena and faces RIGHT toward the opponent, the opponent stands on the
+RIGHT and faces LEFT toward the player, so the two look at each other. Because
+both mesh families (the battle-form party pack and the opponent packs) are
+authored with the **same** intrinsic facing, they take **opposite** world yaws
+(`facing * PI/2`) rather than one shared yaw. The layout is data, exposed as
+`baka_duel_facing_json()` (`{ player: { side: -1, facing: 1 }, opponent:
+{ side: 1, facing: -1 } }`, `side`/`facing` = the sign of the fighter's X
+placement / heading) so the page reads it instead of hard-coding a yaw and the
+facing is testable off the WASM surface.
+
+The site plays the cabinet's **ladder**, not single fights: a fighter-select
+entry (choose the player character) then successive opponent rounds served in
+the disc's own order (`baka_ladder()` = roster ids `5..=16` then the two
+second-lap rungs `3`, `4`). A best-of-three match win advances to the next
+rung and banks the opponent's parsed prize; a loss ends the run; clearing all
+fourteen rungs reaches an all-clear state. The fourteen paying prizes sum to
+the full-clear total.
+
 ## Sound
 
 Baka Fighter fires **no** runtime-bank cue (`>= 0x200`) at all - every cue it

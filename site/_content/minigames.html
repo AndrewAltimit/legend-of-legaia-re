@@ -275,16 +275,22 @@ canvas.dance-stage {
           it charge to full first.
         </p>
         <div class="mg-row">
-          <label for="baka-foe"><strong>Opponent:</strong></label>
-          <select id="baka-foe" class="mg-select"></select>
           <label for="baka-char"><strong>Fight as:</strong></label>
           <select id="baka-char" class="mg-select" style="min-width: 8rem;">
             <option value="0" selected>Vahn</option>
             <option value="1">Noa</option>
             <option value="2">Gala</option>
           </select>
-          <button class="mg-btn mg-primary" type="button" id="baka-start">Fight</button>
+          <label for="baka-foe"><strong>Start at:</strong></label>
+          <select id="baka-foe" class="mg-select"></select>
+          <button class="mg-btn mg-primary" type="button" id="baka-start">Start run</button>
         </div>
+        <p class="mg-blurb" style="margin-top:0.25rem;">
+          Pick your fighter, then climb the cabinet's ladder: clear a stage and
+          it serves the next opponent in the disc's own order, best-of-three each,
+          until you lose or run the whole table. "Start at" lets you drop in at any
+          rung; the run always advances forward from there.
+        </p>
         <div class="baka-duel" id="baka-duel" hidden>
           <canvas id="baka-gl" width="640" height="480"></canvas>
           <canvas id="baka-hud" class="baka-hud-canvas" width="640" height="480"></canvas>
@@ -310,9 +316,11 @@ canvas.dance-stage {
           <button class="mg-btn mg-throw" type="button" data-baka="4">Special<span class="mg-key">SPACE</span></button>
         </div>
         <div class="mg-hud">
+          <span>Stage <b id="baka-stage">&mdash;</b></span>
           <span>Round <b id="baka-round">1</b></span>
           <span>Your combo taken <b id="baka-combo">0</b></span>
           <span>Prize <b id="baka-gold">&mdash;</b> G</span>
+          <span>Banked <b id="baka-bank">0</b> G</span>
         </div>
         <p class="mg-note">
           <b>The fighters are named on the disc.</b> Each roster record opens with a
@@ -774,6 +782,13 @@ canvas.dance-stage {
   let bakaRoster = [];
   let bakaNames = [];
   let bakaLadder = [];
+  /* Ladder-run state. `bakaRun` is `{ rung }` while climbing the ladder (the
+   * index into bakaLadder of the CURRENT opponent), null for a one-off spar or
+   * when idle. A match win advances `rung`; a loss ends the run. */
+  let bakaRun = null;
+  let bakaPchar = 0;         /* the fighter picked for this run */
+  let bakaRunGold = 0;       /* gold banked across the run so far */
+  let bakaInterTimer = 0;    /* frames left holding the win banner before the next rung */
   /* The 3D duel view (js/minigame-baka.js): real meshes + retail HUD off the
    * disc. Null / not-ok leaves the stat-panel presentation in charge. */
   let bakaView = null;
@@ -792,40 +807,45 @@ canvas.dance-stage {
      * seeded to 2 and the fighter is `roster = stage + 3`, so the first lap is
      * roster 5..16 - across which the prize gold is strictly monotonic. Roster 3
      * and 4 are only reachable after the all-clear wraps the counter, which is
-     * exactly why reading the roster's gold column straight down looks jumbled. */
+     * exactly why reading the roster's gold column straight down looks jumbled.
+     * This IS the ladder the run climbs, one rung at a time, in this order. */
     bakaLadder = JSON.parse(api.baka_ladder_json());
 
+    const total = bakaLadder.length;
     const opts = bakaLadder.map((rung, i) => {
       const f = bakaRoster[rung.roster];
       if (!f) return '';
       const lap2 = i >= 12;
-      const label = lap2 ? 'after the all-clear' : `rung ${i + 1}`;
+      const tail = lap2 ? ' (2nd lap)' : '';
       return `<option value="${f.id}"${i === 0 ? ' selected' : ''}>`
-           + `${lap2 ? '★ ' : ''}${bakaName(f.id)} &middot; ${f.gold} G &middot; ${label}</option>`;
+           + `Stage ${i + 1}/${total} &middot; ${bakaName(f.id)} &middot; ${f.gold} G${tail}</option>`;
     });
-    /* The three party slots are playable-side records, not ladder rungs, but you
-     * can still spar with them. */
+    /* The three party slots are playable-side records, not ladder rungs; keep
+     * them as an off-ladder spar (no advance, no mesh - stat panel only). */
     const spar = bakaRoster.slice(0, 3).map(f =>
-      `<option value="${f.id}">${bakaName(f.id)} &middot; sparring (no prize)</option>`);
+      `<option value="${f.id}">Spar &middot; ${bakaName(f.id)} (no ladder)</option>`);
     $('baka-foe').innerHTML = opts.join('') + spar.join('');
 
-    const total = bakaLadder.slice(0, 12)
+    const firstLap = bakaLadder.slice(0, 12)
       .reduce((n, r) => n + (bakaRoster[r.roster] ? bakaRoster[r.roster].gold : 0), 0);
-    $('baka-total').textContent = total;
+    $('baka-total').textContent = firstLap;
   }
 
-  function bakaStart() {
-    const foe = parseInt($('baka-foe').value, 10) || 1;
-    const pchar = parseInt($('baka-char').value, 10) || 0;
+  /* Serve one opponent. `rung` >= 0 is a ladder rung (progression on); rung < 0
+   * is an off-ladder spar. Returns false if the tables didn't decode. */
+  function bakaBeginFight(foe, rung) {
     const seed = (Math.random() * 0xFFFFFFFF) >>> 0;
     if (!api || !api.baka_start(foe, seed)) {
       verdict($('baka-verdict'), 'The roster tables did not decode from this disc.', 'bad');
-      return;
+      return false;
     }
     bakaLive = true;
+    const total = bakaLadder.length;
+    const label = rung >= 0 ? `Stage ${rung + 1}/${total}` : 'Spar';
     $('baka-p1-name').textContent = bakaName(foe);
-    verdict($('baka-verdict'), `Round 1 - fight ${bakaName(foe)}!`, '');
-    $('baka-start').textContent = 'Rematch';
+    $('baka-stage').textContent = rung >= 0 ? `${rung + 1}/${total}` : '—';
+    verdict($('baka-verdict'), `${label} - fight ${bakaName(foe)}!`, '');
+    $('baka-start').textContent = 'Restart run';
 
     /* Stand the real fighters up. Only ladder fighters (roster 3..16) carry
      * their own mesh pack; a spar against a player-side record keeps the
@@ -835,15 +855,57 @@ canvas.dance-stage {
     try {
       if (window.MinigameBakaView && foe >= 3) {
         if (!bakaView) bakaView = new MinigameBakaView($('baka-gl'), $('baka-hud'));
-        viewOk = bakaView.load(api, pchar, foe);
+        viewOk = bakaView.load(api, bakaPchar, foe);
       }
     } catch (err) {
       console.warn('baka duel view failed:', err);
       viewOk = false;
     }
-    const rung = bakaLadder.findIndex(r => r.roster === foe);
     bakaMeta = { stage: rung >= 0 ? rung + 1 : 1, final: foe === 16 };
     $('baka-duel').hidden = !viewOk;
+    return true;
+  }
+
+  function bakaStart() {
+    const foe = parseInt($('baka-foe').value, 10) || 5;
+    bakaPchar = parseInt($('baka-char').value, 10) || 0;
+    const rung = bakaLadder.findIndex(r => r.roster === foe);
+    bakaRun = rung >= 0 ? { rung } : null;
+    bakaRunGold = 0;
+    bakaInterTimer = 0;
+    $('baka-bank').textContent = 0;
+    bakaBeginFight(foe, rung);
+  }
+
+  /* Match resolved - advance the ladder, or end the run. */
+  function bakaOnMatchOver(st) {
+    if (st.winner === 0) {
+      if (bakaRun) {
+        bakaRunGold += st.gold;
+        $('baka-bank').textContent = bakaRunGold;
+        if (bakaRun.rung >= bakaLadder.length - 1) {
+          verdict($('baka-verdict'),
+            `ALL STAGE CLEAR! You ran the whole ladder for ${bakaRunGold} G.`, 'good');
+          $('baka-start').textContent = 'Start run';
+          bakaRun = null;
+        } else {
+          bakaRun.rung += 1;
+          const nextFoe = bakaLadder[bakaRun.rung].roster;
+          verdict($('baka-verdict'),
+            `Stage cleared (+${st.gold} G). Next up: ${bakaName(nextFoe)}…`, 'good');
+          bakaInterTimer = 90; /* ~1.5s on the win banner, then serve the next rung */
+        }
+      } else {
+        verdict($('baka-verdict'), `You win the spar - ${st.gold} G.`, 'good');
+        $('baka-start').textContent = 'Start run';
+      }
+    } else {
+      verdict($('baka-verdict'),
+        bakaRun ? `GAME OVER at stage ${bakaRun.rung + 1}. Banked ${bakaRunGold} G.`
+                : 'You lose the spar.', 'bad');
+      $('baka-start').textContent = 'Start run';
+      bakaRun = null;
+    }
   }
 
   function bakaChoose(t) {
@@ -858,13 +920,18 @@ canvas.dance-stage {
     if (bakaView && bakaView.ok && !$('baka-duel').hidden) {
       bakaView.frame(st.live ? st : null, bakaMeta);
     }
+
+    /* Between-stage intermission: hold the win banner, then serve the next rung. */
+    if (bakaInterTimer > 0 && --bakaInterTimer === 0 && bakaRun) {
+      bakaBeginFight(bakaLadder[bakaRun.rung].roster, bakaRun.rung);
+      return;
+    }
+
     if (!st.live) return;
     if (st.phase !== 'match_over') api.baka_tick(1);
     else if (bakaLive) {
       bakaLive = false;
-      verdict($('baka-verdict'),
-        st.winner === 0 ? `You win the match - ${st.gold} G.` : 'You lose the match.',
-        st.winner === 0 ? 'good' : 'bad');
+      bakaOnMatchOver(st);
     }
 
     const pct = (hp) => Math.max(0, Math.min(100, 100 * hp / st.hp_start)) + '%';

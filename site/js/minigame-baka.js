@@ -76,6 +76,16 @@
       if (!this.widgets.length) return false;
       this.pageCanvases.clear();
 
+      /* Duel facing is DATA, not a hard-coded yaw: which side of the arena
+       * each fighter stands on (`side`) and which way it faces (`facing`),
+       * read straight off the WASM surface (baka_duel_facing_json, the single
+       * source of truth also asserted in baka_presentation_wasm_api.rs). The
+       * player stands LEFT and faces RIGHT; the opponent stands RIGHT and
+       * faces LEFT - so each looks at the other. */
+      this.facing = (api.baka_duel_facing_json
+        ? JSON.parse(api.baka_duel_facing_json())
+        : { player: { side: -1, facing: 1 }, opponent: { side: 1, facing: -1 } });
+
       const side = (s, id) => {
         const pos = api.baka_fighter_positions(s, id);
         if (!pos.length) return null;
@@ -278,12 +288,16 @@
                              : Math.min(rawF, c.frameCount - 1);
         poseInto(S.out, S.base, f.oid, c, frame, vertBase, dx, yaw);
       };
-      /* Both fighters take the same world yaw: the party battle meshes and
-       * the opponent packs are authored with opposite intrinsic facings
-       * (the party faces the enemies, the enemies face the party), so one
-       * spin puts them nose to nose. */
-      poseFighter(0, S.P, 0, -this.gap / 2, -Math.PI / 2);
-      poseFighter(1, S.O, S.nP, this.gap / 2, -Math.PI / 2);
+      /* Face the fighters at each other from the layout data. Both mesh
+       * families share the same intrinsic authored facing, so they take
+       * OPPOSITE world yaws (facing * PI/2): the player (left, facing +1)
+       * turns to look right at the opponent, the opponent (right, facing -1)
+       * turns to look left at the player. An earlier build spun both the same
+       * way on a wrong "opposite intrinsic facing" assumption, so both looked
+       * left. */
+      const fp = this.facing.player, fo = this.facing.opponent;
+      poseFighter(0, S.P, 0, fp.side * this.gap / 2, fp.facing * Math.PI / 2);
+      poseFighter(1, S.O, S.nP, fo.side * this.gap / 2, fo.facing * Math.PI / 2);
       /* Stage verts stay at their TMD coordinates (already world-framed). */
       this.renderer.updatePositions(S.out);
     }
