@@ -314,8 +314,13 @@ CDNAME_SCENES: list[dict] = [
     {"label": "gameover_data",    "start": 1,    "category": "system",    "display": "Game over"},
     # Towns + landmark fields - Karisto continent
     {"label": "town01",           "start": 3,    "category": "town",      "display": "Rim Elm"},
-    {"label": "town0b",           "start": 12,   "category": "town",      "display": "Town (0b)"},
-    {"label": "town0c",           "start": 21,   "category": "town",      "display": "Town (0c)"},
+    # town0b..0e are Rim Elm story-state variants, not distinct towns: their
+    # walkability .MAP is 100 / 100 / 98.6 / 87.8 % byte-identical to town01's,
+    # and their NPCs are the Rim Elm cast (Meta / Mei / Maya / Ixis, the Wall,
+    # the Genesis Tree) on the same model pool. Confirmed from engine-decoded
+    # NPC dialogue. The old "Town (0b)" / "Sol" labels were wrong.
+    {"label": "town0b",           "start": 12,   "category": "town",      "display": "Rim Elm (under attack)"},
+    {"label": "town0c",           "start": 21,   "category": "town",      "display": "Rim Elm (after the Mist)"},
     {"label": "izumi",            "start": 30,   "category": "town",      "display": "Hunter's Spring"},
     {"label": "cave01",           "start": 38,   "category": "field",     "display": "Snowdrift Cave"},
     {"label": "vell",             "start": 45,   "category": "town",      "display": "Drake Castle"},
@@ -336,7 +341,10 @@ CDNAME_SCENES: list[dict] = [
     {"label": "stone",            "start": 174,  "category": "field",     "display": "Stone field"},
     {"label": "balden",           "start": 182,  "category": "town",      "display": "Vidna"},
     {"label": "conc",             "start": 191,  "category": "town",      "display": "Conkram"},
-    {"label": "rayman",           "start": 199,  "category": "town",      "display": "Ratayu"},
+    # rayman is Octam, not Ratayu: its NPCs are "I am Hari." (Octam's ruler) and
+    # its dialogue is "fled here from the surface of Octam" / "Palace of Hari" /
+    # "go to Conkram Kingdom". Confirmed from engine-decoded NPC dialogue.
+    {"label": "rayman",           "start": 199,  "category": "town",      "display": "Octam"},
     {"label": "ropeway",          "start": 207,  "category": "field",     "display": "Ropeway"},
     {"label": "dohaty",           "start": 217,  "category": "field",     "display": "Dohati's Castle"},
     {"label": "station",          "start": 226,  "category": "town",      "display": "Karisto Station"},
@@ -350,10 +358,13 @@ CDNAME_SCENES: list[dict] = [
     {"label": "jagaroom",         "start": 300,  "category": "field",     "display": "Juggernaut chamber"},
     {"label": "tunnelc",          "start": 309,  "category": "field",     "display": "Tunnel C"},
     {"label": "balden2",          "start": 318,  "category": "town",      "display": "Vidna (revisit)"},
-    {"label": "rayman2",          "start": 328,  "category": "town",      "display": "Ratayu (revisit)"},
+    {"label": "rayman2",          "start": 328,  "category": "town",      "display": "Octam (revisit)"},
     {"label": "ropeway2",         "start": 337,  "category": "field",     "display": "Ropeway (revisit)"},
     # Master continent
-    {"label": "town0d",           "start": 347,  "category": "town",      "display": "Sol"},
+    # town0d is another Rim Elm variant (.MAP 98.6% identical to town01, Rim Elm
+    # cast + "the Wall"); the old "Sol" label was wrong. The real Sol is the
+    # `kor` cluster (kor3's NPC names the "Sol 3rd Street Theater").
+    {"label": "town0d",           "start": 347,  "category": "town",      "display": "Rim Elm (revisit)"},
     {"label": "son",              "start": 354,  "category": "field",     "display": "Field (son)"},
     {"label": "concnow",          "start": 362,  "category": "field",     "display": "Conkram (Mist)"},
     {"label": "taiku",            "start": 371,  "category": "field",     "display": "Muscle Dome"},
@@ -398,7 +409,7 @@ CDNAME_SCENES: list[dict] = [
     {"label": "noaru",            "start": 716,  "category": "field",     "display": "Noaru Valley"},
     {"label": "concend",          "start": 725,  "category": "field",     "display": "Conkram (final)"},
     {"label": "conc3",            "start": 733,  "category": "field",     "display": "Conkram (epilogue)"},
-    {"label": "town0e",           "start": 741,  "category": "town",      "display": "Town (0e)"},
+    {"label": "town0e",           "start": 741,  "category": "town",      "display": "Rim Elm (epilogue)"},
     # OP cutscenes
     {"label": "opdeene",          "start": 748,  "category": "cutscene",  "display": "Opening (Buma)"},
     {"label": "opstati",          "start": 753,  "category": "cutscene",  "display": "Opening (station)"},
@@ -536,6 +547,12 @@ def build_gamedata_json() -> tuple[dict, dict]:
     # Reverse map: walkthrough town name -> scene label + category from
     # the curated CDNAME map. The walkthrough's town names don't perfectly
     # match CDNAME labels (Vidna == balden, etc.), so we hand-map.
+    # Scene labels below are confirmed from engine-decoded NPC dialogue (see the
+    # CDNAME_SCENES notes). Octam is `rayman` (NPC "I am Hari."); the `town0b..0e`
+    # blocks are Rim Elm variants, so neither Sol nor Ratayu lives there.
+    #   - Sol is the `kor` city cluster (kor3 names the "Sol 3rd Street Theater").
+    #   - Ratayu (Gaza's city) is not confidently pinned to one block yet.
+    # Both are left None rather than pointed at the wrong (Rim Elm / Octam) block.
     TOWN_TO_SCENE = {
         "Rim Elm":              "town01",
         "Hunter's Spring":      "izumi",
@@ -544,11 +561,11 @@ def build_gamedata_json() -> tuple[dict, dict]:
         "Wind Cave":            None,        # not a CDNAME scene we ID
         "Jeremi":               "geremi",
         "Vidna":                "balden",
-        "Octam":                None,        # likely town0b / town0c / town0e
+        "Octam":                "rayman",
         "Underground Octam":    "chitei2",
-        "Ratayu":               "rayman",
+        "Ratayu":               None,        # Gaza's city; block not yet pinned
         "Karisto Station":      "station",
-        "Sol":                  "town0d",
+        "Sol":                  None,        # the `kor` cluster (kor3 = Sol district)
         "Buma":                 "deene",
         "Usha Research Center": "bubu1",
         "Soren Camp":           "koin1",

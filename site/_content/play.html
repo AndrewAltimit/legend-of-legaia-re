@@ -350,8 +350,16 @@
     if (!b) return;
     for (const el of modesEl.querySelectorAll('.play-mode')) el.classList.remove('is-active');
     b.classList.add('is-active');
-    if (b.dataset.mode === 'newgame') enter(OPENING_SCENE);
-    else searchEl.focus();
+    if (b.dataset.mode === 'newgame') {
+      enter(OPENING_SCENE);
+    } else {
+      /* The scene list lives inside #play-stage, which starts hidden. Reveal
+       * the stage so the picker is visible and selectable without first
+       * booting a scene via New Game. The canvas stays blank until a scene is
+       * chosen from the list. */
+      stageEl.style.display = 'grid';
+      searchEl.focus();
+    }
   });
 
   /* ---------------- boot ---------------- */
