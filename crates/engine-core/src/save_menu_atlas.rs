@@ -78,6 +78,15 @@ pub const ATLAS_RECT_GAUGE_100: (u32, u32, u32, u32) = (214, 200, 16, 6);
 /// per-row interpolation of the 3-row quad pair). Engines stretch it
 /// horizontally to `value/2` px.
 pub const ATLAS_RECT_GAUGE_FILL: (u32, u32, u32, u32) = (232, 200, 2, 6);
+/// Dialog-window interior fill gradient column (4x32). Not
+/// TIM-sourced: baked procedurally from the `FUN_8002C69C` hardcoded
+/// fill - two stacked semi-transparent (mode 0) gouraud quads, top
+/// RGB `(0x18,0x18,0x28)` fading to bottom RGB `(0x40,0x40,0xA0)`,
+/// drawn twice = `0.25*back + 0.75*gradient`. Baked with alpha 191
+/// (= 0.75) so a single alpha-blended sprite stretched over the box
+/// rect reproduces the retail translucency exactly. Engines stretch
+/// it to the window width and height.
+pub const ATLAS_RECT_DIALOG_FILL: (u32, u32, u32, u32) = (240, 200, 4, 32);
 
 /// Atlas placement of the status-page **equipment pictograms** (12x12
 /// gold slot icons), copied from CLUT row 8 of the system-UI TIM.
@@ -261,6 +270,12 @@ impl SaveMenuAtlas {
     /// from the `FUN_8002c0b0` gouraud endpoints).
     pub fn band_gauge_fill(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_GAUGE_FILL
+    }
+    /// Dialog-window interior fill gradient column (4x32,
+    /// procedurally baked from the `FUN_8002C69C` gouraud fill
+    /// endpoints, alpha 191).
+    pub fn band_dialog_fill(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_DIALOG_FILL
     }
     /// Equipment pictogram: weapon (fist, 12x12).
     pub fn band_icon_weapon(&self) -> (u32, u32, u32, u32) {
@@ -563,6 +578,14 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
     // sprite to the fill width.
     bake_gauge_fill_gradient(&mut out, ATLAS_RECT_GAUGE_FILL);
 
+    // Dialog-window interior fill gradient column - synthesized, not
+    // TIM-sourced: retail's `FUN_8002C69C` fills every dialog / menu
+    // box with two stacked semi-transparent gouraud quads (dark navy
+    // top -> brighter blue bottom, mode-0 blend applied twice =
+    // 0.25*back + 0.75*gradient). Bake the per-row interpolation at
+    // alpha 191 so one stretched alpha-blended sprite matches it.
+    bake_dialog_fill_gradient(&mut out, ATLAS_RECT_DIALOG_FILL);
+
     // Equipment pictograms - same sheet, CLUT row 8 (the gold icon
     // ramp; the `0x800732a4` UV/CLUT table records for icon codes
     // 0x24/0x22/0x23/0x25/0x46).
@@ -843,6 +866,39 @@ fn bake_gauge_fill_gradient(dst: &mut [u8], rect: (u32, u32, u32, u32)) {
             dst[off + 1] = g;
             dst[off + 2] = b;
             dst[off + 3] = 255;
+        }
+    }
+}
+
+/// Bake the dialog-window interior fill gradient column.
+///
+/// PORT: FUN_8002C69C (fill body) - the retail emitter's hardcoded
+/// interior: two identical semi-transparent (mode 0, `B/2 + F/2`)
+/// gouraud `POLY_G4` quads spanning the whole box rect, top vertices
+/// `(0x18,0x18,0x28)`, bottom vertices `(0x40,0x40,0xA0)`. Applying
+/// mode-0 twice composes to `0.25*back + 0.75*gradient`, which a
+/// single source-over sprite with alpha `191` reproduces exactly.
+fn bake_dialog_fill_gradient(dst: &mut [u8], rect: (u32, u32, u32, u32)) {
+    let top = title_pak::OVERLAY_SYSTEM_UI_DIALOG_FILL_TOP_RGB;
+    let bot = title_pak::OVERLAY_SYSTEM_UI_DIALOG_FILL_BOT_RGB;
+    let (x0, y0, w, h) = rect;
+    let span = (h - 1).max(1);
+    let lerp = |a: u8, b: u8, row: u32| -> u8 {
+        ((a as u32 * (span - row) + b as u32 * row) / span) as u8
+    };
+    let stride = (ATLAS_WIDTH * 4) as usize;
+    for row in 0..h {
+        let (r, g, b) = (
+            lerp(top.0, bot.0, row),
+            lerp(top.1, bot.1, row),
+            lerp(top.2, bot.2, row),
+        );
+        for col in 0..w {
+            let off = ((y0 + row) as usize) * stride + ((x0 + col) as usize) * 4;
+            dst[off] = r;
+            dst[off + 1] = g;
+            dst[off + 2] = b;
+            dst[off + 3] = title_pak::OVERLAY_SYSTEM_UI_DIALOG_FILL_ALPHA;
         }
     }
 }

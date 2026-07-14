@@ -180,6 +180,7 @@ pub(super) fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
         gauge_digits: (152, 200, 60, 6),
         gauge_100: (214, 200, 16, 6),
         gauge_fill: (232, 200, 2, 6),
+        dialog_fill: (240, 200, 4, 32),
         icon_weapon: (40, 216, 12, 12),
         icon_helmet: (54, 216, 12, 12),
         icon_armor: (68, 216, 12, 12),
@@ -374,6 +375,69 @@ fn menu_window_chrome_frames_arbitrary_rect() {
             "missing a corner tile"
         );
     }
+}
+
+#[test]
+fn dialog_window_chrome_fill_then_border() {
+    // The dialog box (FUN_8002C69C port): first draw = the translucent
+    // gradient fill stretched over the whole rect, then the same
+    // 9-slice border the menu windows use, all inside the box.
+    let rects = pinned_save_menu_rects();
+    let (px, py, pw, ph) = (26, 162, 244, 50);
+    let draws = dialog_window_chrome_draws_for(&rects, (px, py, pw, ph), (0, 0), 1);
+    assert!(draws.len() >= 5, "fill + 4 corners + edges");
+    // Fill quad first, sampling the baked gradient column, spanning
+    // the full rect.
+    let fill = &draws[0];
+    assert_eq!(fill.src, rects.dialog_fill);
+    assert_eq!(fill.dst, (px, py, pw as u32, ph as u32));
+    // The four border corners are present and inside the rect.
+    for corner in [
+        rects.panel_tl,
+        rects.panel_tr,
+        rects.panel_bl,
+        rects.panel_br,
+    ] {
+        assert!(
+            draws.iter().any(|d| d.src == corner),
+            "missing a corner tile"
+        );
+    }
+    for d in &draws {
+        let (dx, dy, dw, dh) = d.dst;
+        assert!(dx >= px && dy >= py, "tile before box origin");
+        assert!(
+            dx + dw as i32 <= px + pw && dy + dh as i32 <= py + ph,
+            "tile past box extent"
+        );
+    }
+    // No filigree tile: the dialog interior is the gradient, not the
+    // pause-menu damask.
+    assert!(
+        !draws
+            .iter()
+            .any(|d| (d.src.0, d.src.1) == (rects.panel_filigree.0, rects.panel_filigree.1)),
+        "dialog box must not tile the pause-menu filigree"
+    );
+}
+
+#[test]
+fn dialog_hand_sprites_anchor_to_box() {
+    let rects = pinned_save_menu_rects();
+    // Option hand: retail FUN_8002B994 kind 0 at (box_x - 6,
+    // box_y + cursor*0xF), 16x16 cursor sprite.
+    let hand = dialog_option_hand_sprite(&rects, (0x26, 0x96), 2, (0, 0), 1);
+    assert_eq!(hand.src, rects.cursor);
+    assert_eq!(hand.dst.0, 0x26 - 6);
+    assert_eq!(hand.dst.1, 0x96 + 2 * 0xF);
+    // Advance hand: kind 1 at the lower-right rim (retail x = 0x10A
+    // for the standard 244-wide box at x = 0x1A).
+    let adv = dialog_advance_hand_sprite(&rects, (0x1A, 162, 0xF4, 50), (0, 0), 1);
+    assert_eq!(adv.dst.0, 0x1A + 0xF4 - 4);
+    assert_eq!(adv.dst.0, 0x10A);
+    assert_eq!(adv.dst.1, 162 + 50 - 0x10);
+    // Gold tint distinguishes it from the silver option hand.
+    assert!(adv.color[2] < hand.color[2]);
 }
 
 #[test]

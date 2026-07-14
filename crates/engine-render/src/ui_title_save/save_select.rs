@@ -188,6 +188,11 @@ pub struct SaveMenuAtlasRects {
     /// `value/2` px inside the trough (the `FUN_8002c0b0` gouraud
     /// fill).
     pub gauge_fill: (u32, u32, u32, u32),
+    /// Dialog-window interior fill gradient column (4x32, baked at
+    /// alpha 191 from the `FUN_8002C69C` hardcoded two-pass gouraud
+    /// fill - dark navy top, brighter blue bottom). Stretched over
+    /// the whole box rect by [`crate::dialog_window_chrome_draws_for`].
+    pub dialog_fill: (u32, u32, u32, u32),
     /// Status-page equipment pictograms (12x12, CLUT row 8): the
     /// UV/CLUT-table records for the menu overlay's fixed slot icon
     /// codes (weapon fist / helmet / body armor / boot / Goods ring).

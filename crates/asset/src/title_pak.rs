@@ -316,6 +316,22 @@ pub const OVERLAY_SYSTEM_UI_GAUGE_FILL_GOLD_RGB: (u8, u8, u8) = (0xC0, 0xA0, 0x4
 /// Height of the AP-gauge fill band in rows (`y+5..y+10`).
 pub const OVERLAY_SYSTEM_UI_GAUGE_FILL_H: u32 = 6;
 
+/// **Dialog-window interior fill** gradient endpoints. The dialog /
+/// menu box emitter `FUN_8002C69C` fills the window body with **two
+/// stacked semi-transparent gouraud `POLY_G4` quads** (prim code
+/// `0x3B`, blend mode 0 = `B/2 + F/2`), top vertices this dark navy,
+/// bottom vertices [`OVERLAY_SYSTEM_UI_DIALOG_FILL_BOT_RGB`]. Drawing
+/// the same quad twice composes to `0.25*back + 0.75*gradient` - the
+/// translucent deep-blue panel behind every dialog box. The fill is
+/// hardcoded in the function body (not skin-table data); the frame
+/// sprites around it come from the skin's 9-slice tile records.
+pub const OVERLAY_SYSTEM_UI_DIALOG_FILL_TOP_RGB: (u8, u8, u8) = (0x18, 0x18, 0x28);
+/// Bottom-vertex colour of the dialog-window fill gradient.
+pub const OVERLAY_SYSTEM_UI_DIALOG_FILL_BOT_RGB: (u8, u8, u8) = (0x40, 0x40, 0xA0);
+/// Effective source-over alpha of the two-pass mode-0 fill
+/// (`0.25*back + 0.75*front` -> alpha `0.75` = `191/255`).
+pub const OVERLAY_SYSTEM_UI_DIALOG_FILL_ALPHA: u8 = 191;
+
 /// Status-page **equipment pictograms** - the gold slot icons of the
 /// 7-slot equipment grid. Retail resolves them through the UI-icon
 /// primitive `FUN_8002c488`: the menu overlay's fixed slot array
