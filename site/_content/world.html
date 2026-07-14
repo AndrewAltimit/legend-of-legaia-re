@@ -75,6 +75,7 @@ canvas.world-canvas {
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
+<script src="js/legaia-saves.js?v=saves-1"></script>
 -->
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; game world</div>
@@ -92,6 +93,11 @@ canvas.world-canvas {
       <input type="file" id="world-file" accept=".bin,.DAT,.dat">
       <span class="world-status" id="world-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (a raw <code>PROT.DAT</code> won't do - scene names come from <code>CDNAME.TXT</code>).</span>
     </div>
+
+    <!-- "Your games" resume strip (js/legaia-saves.js). Hidden until a
+         session or minigame progress exists in this browser; Resume links
+         to the play page, which hosts the engine runtime. -->
+    <div id="world-saves-strip" style="display: none;"></div>
 
     <div class="world-viewer" id="world-viewer" style="display: none;">
       <div class="world-nav">
@@ -412,5 +418,19 @@ canvas.world-canvas {
       if (a && viewer) loadScene(a.dataset.scene);
     });
   }
+})();
+</script>
+
+<script>
+/* "Your games" resume strip (js/legaia-saves.js). This page has no engine
+ * runtime, so Resume links to the play page. */
+(function () {
+  if (!window.LegaiaSaves) return;
+  const el = document.getElementById('world-saves-strip');
+  const render = () => LegaiaSaves.renderStrip(el, {
+    resumeHref: (e) => `play.html?resume=${encodeURIComponent(e.id)}`,
+  });
+  render();
+  window.addEventListener('legaia-saves-change', render);
 })();
 </script>

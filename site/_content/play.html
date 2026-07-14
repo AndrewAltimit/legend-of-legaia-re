@@ -114,9 +114,29 @@
   padding: 0.28rem 0.55rem; font-family: var(--font-mono); font-size: 0.74rem; cursor: pointer;
 }
 .play-btn-row button:hover { border-color: var(--accent); }
+.play-btn-row button[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* Saves card (export / import / block chooser status line). */
+.play-save-import { display: block; margin-top: 0.45rem; font-size: 0.74rem; color: var(--text-muted); }
+.play-save-import input {
+  display: block; width: 100%; margin-top: 0.2rem;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 0.68rem;
+}
+.play-save-status {
+  font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim);
+  margin-top: 0.45rem; line-height: 1.55; word-break: break-word;
+}
+.play-save-status.is-error { color: #d84b4b; }
+.play-save-status button {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.14rem 0.4rem; font-family: var(--font-mono); font-size: 0.68rem;
+  cursor: pointer; margin: 0.12rem 0.25rem 0.12rem 0;
+}
+.play-save-status button:hover { border-color: var(--accent); }
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
+<script src="js/legaia-saves.js?v=saves-1"></script>
 -->
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; play</div>
@@ -138,6 +158,10 @@
         another page here, it is cached in the browser and will be picked up automatically.
       </span>
     </div>
+
+    <!-- "Your games" resume strip (js/legaia-saves.js). Hidden until a
+         session or minigame progress exists in this browser. -->
+    <div id="play-saves-strip" style="display: none;"></div>
 
     <div class="play-modes" id="play-modes" style="display: none;">
       <button class="play-mode" type="button" data-mode="newgame">
@@ -188,6 +212,17 @@
             <kbd>Drag</kbd><span>Swing the camera</span>
             <kbd>Wheel</kbd><span>Zoom</span>
           </div>
+        </div>
+
+        <div class="play-card" id="play-saves-card">
+          <h3>Saves</h3>
+          <div class="play-btn-row">
+            <button id="save-export" type="button" disabled>Export save</button>
+          </div>
+          <label class="play-save-import">Import save (.lgsf / memory card)
+            <input type="file" id="save-import" accept=".lgsf,.mcr,.mcd,.gme,.mcs" disabled>
+          </label>
+          <div class="play-save-status" id="save-status">Load a disc to export or import saves.</div>
         </div>
 
         <div class="play-card" id="play-scene-card">
@@ -389,6 +424,14 @@
       statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
       modesEl.style.display = 'grid';
       window.__playRuntime = runtime;
+      setSaveUi(true);
+      /* ?resume=<id>: auto-resume a stored session once the disc is up. */
+      if (resumePending) {
+        const entry = LegaiaSaves.listSessions().find(s => s.id === resumePending);
+        resumePending = null;
+        if (entry) resumeSession(entry);
+        else saveMsg('The session in the resume link is no longer in this browser.', true);
+      }
     } catch (err) {
       prog.fail(`Couldn't load: ${err.message || err}`);
       console.warn(err);
@@ -463,6 +506,192 @@
 
     window.__playState = st;
   }
+
+  /* ---------------- saves: export / import / resume ---------------- */
+
+  const saveStatusEl  = document.getElementById('save-status');
+  const saveExportBtn = document.getElementById('save-export');
+  const saveImportEl  = document.getElementById('save-import');
+  const savesStripEl  = document.getElementById('play-saves-strip');
+
+  /* Session id from a `?resume=<id>` link (the strips on pages without a
+   * runtime link here). Consumed after the first successful disc load. */
+  let resumePending = new URLSearchParams(location.search).get('resume');
+
+  function saveMsg(msg, isError) {
+    saveStatusEl.textContent = msg;
+    saveStatusEl.classList.toggle('is-error', !!isError);
+  }
+
+  function setSaveUi(enabled) {
+    saveExportBtn.disabled = !enabled;
+    saveImportEl.disabled = !enabled;
+    if (enabled) saveMsg('Export the running session, or import a .lgsf / memory-card save.');
+  }
+
+  function downloadBytes(bytes, filename) {
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  function sceneKnown(label) {
+    return !!label && scenes.some(s => s.label === label);
+  }
+
+  /* Where an import lands: the save's own scene when this page can walk it,
+   * otherwise stay in the running scene, otherwise the opening town. */
+  function enterAfterImport(scene) {
+    if (sceneKnown(scene)) enter(scene);
+    else if (!active) enter(OPENING_SCENE);
+  }
+
+  function exportSession() {
+    if (!runtime) return;
+    try {
+      const bytes = runtime.export_save();
+      let party = [], money = null;
+      try {
+        const sum = JSON.parse(wasm.save_summary_json(bytes));
+        party = sum.party || [];
+        money = sum.money != null ? sum.money : null;
+      } catch (e) { /* summary is best-effort; the bytes are the save */ }
+      const scene = active || '';
+      const name = `Session ${scene || 'engine'}`;
+      const id = LegaiaSaves.putSession({ kind: 'lgsf', name, scene, party, money }, bytes);
+      downloadBytes(bytes, `${name.replace(/[^\w.-]+/g, '-')}.lgsf`);
+      saveMsg(id ? 'Exported - downloaded and kept in this browser.'
+                 : 'Exported - downloaded (browser storage is full, so it was not kept here).');
+    } catch (err) {
+      saveMsg(`Export failed: ${err.message || err}`, true);
+      console.warn(err);
+    }
+  }
+
+  /* One import path for picked files, stored sessions and ?resume= links.
+   * `opts`: { id, name, scene, block, format } - all optional. A card
+   * container holding several saves parks a block chooser in the status
+   * line rather than guessing. */
+  function importSaveBytes(bytes, opts) {
+    opts = opts || {};
+    if (!runtime) {
+      saveMsg('Load your disc image first - it is picked up from the browser cache automatically.', true);
+      return;
+    }
+    try {
+      const isLgsf = bytes.length >= 4 && bytes[0] === 0x4C && bytes[1] === 0x47
+                  && bytes[2] === 0x53 && bytes[3] === 0x46;   /* "LGSF" */
+      if (isLgsf) {
+        const sum = JSON.parse(runtime.import_save(bytes));
+        LegaiaSaves.putSession({
+          id: opts.id, kind: 'lgsf',
+          name: opts.name || 'Imported session',
+          scene: sum.scene || opts.scene || '',
+          party: sum.party || [],
+          money: sum.money != null ? sum.money : null,
+        }, bytes);
+        const who = sum.party && sum.party.length ? ` - ${sum.party.join(', ')}` : '';
+        saveMsg(`Imported engine save${who}.`);
+        enterAfterImport(sum.scene || opts.scene || '');
+        return;
+      }
+      const listing = JSON.parse(wasm.card_saves_json(bytes));
+      const valid = (listing.saves || []).filter(s => s.valid);
+      if (!valid.length) {
+        saveMsg('No Legaia save found in that card container.', true);
+        return;
+      }
+      let block = opts.block;
+      if (block == null || !valid.some(s => s.block === block)) {
+        if (valid.length === 1) block = valid[0].block;
+        else { chooseCardBlock(bytes, valid, opts, listing.format); return; }
+      }
+      finishCardImport(bytes, block, opts, listing.format);
+    } catch (err) {
+      saveMsg(`Import failed: ${err.message || err}`, true);
+      console.warn(err);
+    }
+  }
+
+  function chooseCardBlock(bytes, saves, opts, format) {
+    saveStatusEl.classList.remove('is-error');
+    saveStatusEl.textContent = `${saves.length} saves in this card - pick one: `;
+    for (const s of saves) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      const who = s.party && s.party.length ? ` ${s.party[0]}` : '';
+      b.textContent = `Block ${s.block}${who}${s.location ? ` - ${s.location}` : ''}`;
+      b.addEventListener('click', () => finishCardImport(bytes, s.block, opts, format));
+      saveStatusEl.appendChild(b);
+    }
+  }
+
+  function finishCardImport(bytes, block, opts, format) {
+    try {
+      const sum = JSON.parse(runtime.import_card_save(bytes, block));
+      LegaiaSaves.putSession({
+        id: opts.id, kind: 'card',
+        name: opts.name || `Card block ${block}`,
+        scene: sum.scene || '',
+        block,
+        format: format || opts.format || 'mcr',
+        party: sum.party || [],
+        money: sum.money != null ? sum.money : null,
+        coins: sum.coins != null ? sum.coins : null,
+      }, bytes);
+      saveMsg(`Imported card block ${block}${sum.location ? ` (${sum.location})` : ''}.`);
+      enterAfterImport(sum.scene || '');
+    } catch (err) {
+      saveMsg(`Import failed: ${err.message || err}`, true);
+      console.warn(err);
+    }
+  }
+
+  function resumeSession(entry) {
+    if (!runtime) {
+      saveMsg('Load your disc image first - it is picked up from the browser cache automatically.', true);
+      return;
+    }
+    const stored = LegaiaSaves.getSession(entry.id);
+    if (!stored) {
+      saveMsg('That save is no longer stored in this browser.', true);
+      return;
+    }
+    importSaveBytes(stored.bytes, {
+      id: entry.id, name: entry.name, scene: entry.scene,
+      block: entry.block, format: entry.format,
+    });
+  }
+
+  function renderSavesStrip() {
+    LegaiaSaves.renderStrip(savesStripEl, { onResume: resumeSession });
+  }
+
+  saveExportBtn.addEventListener('click', exportSession);
+  saveImportEl.addEventListener('change', async () => {
+    const f = saveImportEl.files && saveImportEl.files[0];
+    if (!f) return;
+    let bytes;
+    try {
+      bytes = new Uint8Array(await f.arrayBuffer());
+    } catch (err) {
+      saveMsg(`Could not read ${f.name}: ${err.message || err}`, true);
+      return;
+    }
+    const ext = (f.name.match(/\.(mcr|mcd|gme|mcs)$/i) || [])[1];
+    importSaveBytes(bytes, {
+      name: f.name.replace(/\.[^.]+$/, ''),
+      format: ext ? ext.toLowerCase() : null,
+    });
+    saveImportEl.value = '';
+  });
+
+  renderSavesStrip();
+  window.addEventListener('legaia-saves-change', renderSavesStrip);
+  window.__legaiaSaves = window.LegaiaSaves;
 
   /* ---------------- focus + buttons ---------------- */
 

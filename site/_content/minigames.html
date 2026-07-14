@@ -171,6 +171,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
+<script src="js/legaia-saves.js?v=saves-1"></script>
 <script src="js/webgl-math.js"></script>
 <script src="js/webgl-shaders.js"></script>
 <script src="js/webgl-tmd.js"></script>
@@ -215,6 +216,34 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     Coin-economy minigames, prize-exchange counters, and the side-quest chains layered through Sol Tower (CDNAME <code>town0d</code>). Three of them - <strong>the casino slot machine, Noa's dance and Baka Fighter</strong> - are <a href="#play">playable right here in your browser</a>, run by the clean-room rules engines against the tables read out of your own disc image.
   </p>
 </header>
+
+<!-- "Your games" resume strip (js/legaia-saves.js). Hidden until a session
+     or minigame progress exists in this browser; Resume links to the play
+     page, which hosts the engine runtime. -->
+<div id="mg-saves-strip" style="display: none; margin-bottom: 1rem;"></div>
+
+<section class="doc-section" id="bank-winnings">
+  <h2>Bank your winnings</h2>
+  <p>
+    Coins won at the games below - Baka Fighter pots you pay out, slot-machine
+    lines - accumulate here as a pending balance. Point this card at a retail
+    memory-card save (<code>.mcr</code> / <code>.mcd</code> / <code>.gme</code> /
+    <code>.mcs</code>) - a fresh file, or one already imported on the
+    <a href="play.html">play page</a> - and "Export with winnings" writes them
+    into that save's casino coin bank and downloads the patched container. The
+    patch changes exactly the 4-byte coin bank (RAM <code>0x800845A4</code>)
+    inside the retail save block, so the save keeps loading in an emulator.
+    Nothing is uploaded.
+  </p>
+  <div class="file-input-group" style="row-gap: 0.5rem;">
+    <span class="mg-status">Pending coins: <b id="bank-coins">0</b></span>
+    <label for="bank-file"><strong>Card file:</strong></label>
+    <input type="file" id="bank-file" accept=".mcr,.mcd,.gme,.mcs">
+    <select id="bank-stored" class="mg-select" style="min-width: 12rem; display: none;"></select>
+    <button class="mg-btn mg-primary" type="button" id="bank-export">Export with winnings</button>
+    <span class="mg-status" id="bank-status" style="flex-basis: 100%;"></span>
+  </div>
+</section>
 
 <section class="doc-section" id="play">
   <h2>Play them</h2>
@@ -796,6 +825,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           st.passed ? `Song over - ${st.score} points. You passed!`
                     : `Song over - ${st.score} points. You needed 300.`,
           st.passed ? 'good' : 'bad');
+        /* Persist the run (the "Your games" strips read this). */
+        if (window.LegaiaSaves) {
+          const d = LegaiaSaves.getMinigames().dance || {};
+          LegaiaSaves.putMinigame('dance', {
+            lastScore: st.score,
+            bestScore: Math.max(d.bestScore || 0, st.score),
+            plays: (d.plays || 0) + 1,
+          });
+        }
       }
       $('dance-score').textContent = st.score;
       $('dance-gauge').textContent = st.gauge;
@@ -892,6 +930,19 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   function bakaName(id) {
     return bakaNames[id] || `Fighter ${id}`;
+  }
+
+  /* Coins actually banked (a pay-out or the all-clear) persist into the
+   * shared minigame record + the pending-coins pool the "Bank your
+   * winnings" card exports into a card save. */
+  function bakaPersistBank(banked) {
+    if (!window.LegaiaSaves || !(banked > 0)) return;
+    const b = LegaiaSaves.getMinigames().baka || {};
+    LegaiaSaves.putMinigame('baka', {
+      bestBank: Math.max(b.bestBank || 0, banked),
+      totalBanked: (b.totalBanked || 0) + banked,
+    });
+    LegaiaSaves.addCoinsWon(banked);
   }
 
   function bakaFillRoster() {
@@ -1047,6 +1098,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     } else if (rs.phase === 'all_clear') {
       $('baka-pot').textContent = 0;
       $('baka-bank').textContent = rs.banked;
+      bakaPersistBank(rs.banked);
       if (bakaView && bakaView.ok) bakaView.showAllClear(rs.banked);
       verdict($('baka-verdict'),
         `ALL STAGE CLEAR! The full pot pays out - ${rs.banked} G.`, 'good');
@@ -1104,6 +1156,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   function bakaPayOut() {
     if (bakaMode !== 'choice') return;
     const banked = api.baka_run_pay_out();
+    bakaPersistBank(banked);
     bakaRunState = JSON.parse(api.baka_run_state_json());
     if (bakaView && bakaView.ok) bakaView.setChoice(null);
     $('baka-choice-row').hidden = true;
@@ -1972,6 +2025,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           msg = `A line of symbol #${l.symbol} pays ${l.payout} - banked.`;
         }
         verdict($('slot-verdict'), msg, 'good');
+        /* Persist the win (the "Your games" strips + the bank card read it). */
+        if (window.LegaiaSaves) {
+          const sm = LegaiaSaves.getMinigames().slot || {};
+          LegaiaSaves.putMinigame('slot', {
+            bestPayout: Math.max(sm.bestPayout || 0, l.payout),
+            coinsWon: (sm.coinsWon || 0) + l.payout,
+          });
+          LegaiaSaves.addCoinsWon(l.payout);
+        }
       } else {
         verdict($('slot-verdict'), 'No line. Press space to spin again.', '');
       }
@@ -2109,6 +2171,160 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                          state: () => api && JSON.parse(api.slot_state_json()) };
 
   RomCache.attach(fileInput, { onLoad: loadDisc });
+})();
+</script>
+
+<script>
+/* ------------------------------------------------------------------
+ * "Your games" strip + the bank-your-winnings card (js/legaia-saves.js).
+ *
+ * The strip lists the browser's stored sessions; Resume links to the play
+ * page, which hosts the engine runtime. The bank card writes the pending
+ * coins the games above accumulated into a retail card save's 4-byte coin
+ * bank (RAM 0x800845A4) via the WASM free functions - loaded lazily, no
+ * runtime and no disc image needed.
+ * ------------------------------------------------------------------ */
+(function () {
+  if (!window.LegaiaSaves) return;
+  const $ = (id) => document.getElementById(id);
+
+  const stripEl = $('mg-saves-strip');
+  function renderStrip() {
+    LegaiaSaves.renderStrip(stripEl, {
+      resumeHref: (e) => `play.html?resume=${encodeURIComponent(e.id)}`,
+    });
+  }
+
+  const coinsEl   = $('bank-coins');
+  const fileEl    = $('bank-file');
+  const storedEl  = $('bank-stored');
+  const exportBtn = $('bank-export');
+  const statusEl  = $('bank-status');
+
+  function bankStatus(msg) { statusEl.textContent = msg || ''; }
+
+  function refreshBank() {
+    coinsEl.textContent = LegaiaSaves.coinsWon();
+    const cards = LegaiaSaves.listSessions().filter(s => s.kind === 'card');
+    if (cards.length) {
+      storedEl.style.display = '';
+      storedEl.innerHTML = '<option value="">or pick a stored card save</option>' +
+        cards.map(c => {
+          const coins = c.coins != null ? `, ${c.coins} coins` : '';
+          return `<option value="${c.id}">${c.name} (block ${c.block}${coins})</option>`;
+        }).join('');
+    } else {
+      storedEl.style.display = 'none';
+      storedEl.innerHTML = '';
+    }
+  }
+
+  let wasmMod = null;
+  async function bankWasm() {
+    if (!wasmMod) {
+      const mod = await import('./wasm/legaia_web_viewer.js');
+      await mod.default();     /* idempotent when the page already booted it */
+      wasmMod = mod;
+    }
+    return wasmMod;
+  }
+
+  function download(bytes, filename) {
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  /* A container with several saves parks block buttons in the status line
+   * rather than guessing. */
+  function chooseBlock(saves) {
+    statusEl.textContent = `${saves.length} saves in this card - pick one: `;
+    for (const s of saves) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mg-btn';
+      const who = s.party && s.party.length ? ` ${s.party[0]}` : '';
+      b.textContent = `Block ${s.block}${who}${s.location ? ` - ${s.location}` : ''}`;
+      b.addEventListener('click', () => exportWithWinnings(s.block));
+      statusEl.appendChild(b);
+    }
+  }
+
+  async function exportWithWinnings(forcedBlock) {
+    try {
+      const won = LegaiaSaves.coinsWon();
+      if (!won) {
+        bankStatus('No pending coins to bank - win some at the games below first.');
+        return;
+      }
+
+      /* Source: a freshly picked file wins; else the stored-session pick. */
+      let bytes = null, filename = null, sessionMeta = null;
+      const picked = fileEl.files && fileEl.files[0];
+      if (picked) {
+        bytes = new Uint8Array(await picked.arrayBuffer());
+        filename = picked.name;
+      } else if (storedEl.value) {
+        const stored = LegaiaSaves.getSession(storedEl.value);
+        if (!stored) {
+          bankStatus('That stored save is no longer in this browser.');
+          refreshBank();
+          return;
+        }
+        bytes = stored.bytes;
+        sessionMeta = stored.meta;
+        filename = `${(stored.meta.name || stored.meta.id).replace(/[^\w.-]+/g, '-')}.${stored.meta.format || 'mcr'}`;
+      } else {
+        bankStatus('Pick a card file, or a stored card save from the play page.');
+        return;
+      }
+
+      bankStatus('Loading the save tools…');
+      const mod = await bankWasm();
+      const listing = JSON.parse(mod.card_saves_json(bytes));
+      const valid = (listing.saves || []).filter(s => s.valid);
+      if (!valid.length) {
+        bankStatus('No Legaia save found in that container.');
+        return;
+      }
+      let block = forcedBlock != null ? forcedBlock
+                : (sessionMeta && sessionMeta.block != null ? sessionMeta.block : null);
+      if (block == null || !valid.some(s => s.block === block)) {
+        if (valid.length === 1) block = valid[0].block;
+        else { chooseBlock(valid); return; }
+      }
+
+      const current = mod.card_read_coins(bytes, block);
+      const total = Math.min(current + won, 9999999);
+      const patched = mod.card_patch_coins(bytes, block, total);
+      download(patched, filename || `legaia-card.${listing.format || 'mcr'}`);
+      /* Keep the stored session's bytes + coins current with what was
+       * just downloaded. */
+      if (sessionMeta) {
+        LegaiaSaves.putSession(Object.assign({}, sessionMeta, { block, coins: total }), patched);
+      }
+      LegaiaSaves.takeCoinsWon();
+      bankStatus(`Banked ${won} coins - the save's coin bank is now ${total}. Download started.`);
+    } catch (err) {
+      /* The WASM save tools throw readable strings (bad container, signed
+       * .psv, missing save) - surface them verbatim. */
+      bankStatus(`Failed: ${err && err.message ? err.message : err}`);
+      console.warn(err);
+    }
+  }
+
+  exportBtn.addEventListener('click', () => exportWithWinnings());
+  fileEl.addEventListener('change', () => {
+    if (fileEl.files && fileEl.files[0]) storedEl.value = '';
+    bankStatus('');
+  });
+
+  renderStrip();
+  refreshBank();
+  window.addEventListener('legaia-saves-change', () => { renderStrip(); refreshBank(); });
 })();
 </script>
 
