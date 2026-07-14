@@ -594,6 +594,13 @@ pub struct World {
     /// unless their script sets `+0x10 & 3`; a closed door blocks the player
     /// until its touch pass runs `31 00`.
     pub field_prop_colliders: Vec<FieldPropCollider>,
+    /// The cold field-entry spawn `(x, z)` the scene host resolved at entry
+    /// ([`Self::resolve_cold_field_spawn`]) - a standable, reachable spot in
+    /// the scene's largest walkable component. Kept so the helper-context
+    /// teardown can re-seat the player here if a partially-executed spawned
+    /// record left them inside a wall (see [`Self::step_helper_contexts`]).
+    /// `None` outside field scenes.
+    pub resolved_cold_spawn: Option<(i16, i16)>,
 
     /// Per-scene bank of placed-prop animation + interaction runtimes (the
     /// door swings, the searchable cupboards), keyed by the placement's
@@ -1902,6 +1909,7 @@ impl World {
             field_npc_positions: std::collections::HashMap::new(),
             field_npc_headings: std::collections::HashMap::new(),
             field_prop_colliders: Vec::new(),
+            resolved_cold_spawn: None,
             field_prop_bank: Default::default(),
             pending_prop_touch: None,
             field_npc_routes: std::collections::BTreeMap::new(),

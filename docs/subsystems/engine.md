@@ -195,7 +195,11 @@ What the browser host reaches today: field and town scenes (map, player, NPCs, d
 
 Two responsibilities fall to any host that enters a scene without a door to arrive through - the browser's scene picker is the case that exists:
 
-- **Seating.** `enter_field_scene` places the player at the retail cold-boot spawn (`FIELD_COLD_SPAWN_XZ`), which is authored for `town01` - the one scene retail cold-boots into. Every other scene expects a door warp to override X/Z with an entry tile. A host that drops the player in cold must seat them itself, and must avoid seating them on a gate-1 walk-on trigger tile ([`SceneHost::tile_has_walk_on_trigger`]) - the first tick would fire it and warp the scene away.
+- **Seating.** `enter_field_scene` seeds the player at the retail cold-boot spawn (`FIELD_COLD_SPAWN_XZ`), which is authored for `town01` - the one scene retail cold-boots into; every other scene expects a door warp to override X/Z with an entry tile. For a cold entry the seed is then resolved by `World::resolve_cold_field_spawn`:
+  - the retail seat is kept only when it is standable, inside the scene's **largest** connected walkable component (4-connected flood fill over the 64-unit sub-cell lattice: walk-visible floor + clear of the wall bits), and not a `.MAP` kind-0 teleport tile;
+  - otherwise the spawn relocates to a kind-0 door-arrival destination inside that component, or to the component's centroid. A warp arrival still overrides X/Z afterwards.
+  - Hosts seating a player manually should also avoid gate-1 walk-on trigger tiles ([`SceneHost::tile_has_walk_on_trigger`]) - the first tick would fire it and warp the scene away.
+  - If an entry-spawned record ends with the player parked inside a wall (a first-visit record's `MoveTo` choreography, e.g. izumi's spring), the helper-context teardown re-seats them at the resolved spawn (`World::step_helper_contexts`).
 - **Framing.** Retail authors a camera per scene; a generic follow camera puts a cave roof between the lens and the player. The browser host culls meshes straddling the camera-to-player line.
 
 ## Provenance + memory hygiene

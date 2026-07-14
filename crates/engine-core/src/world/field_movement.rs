@@ -377,94 +377,201 @@ impl World {
         self.field_tile_is_walk_visible(x, z) && !self.field_tile_is_wall(x, z)
     }
 
-    /// Mean tile of every walk-visible
-    /// ([`legaia_asset::field_objects::CELL_WALK_VISIBLE`]) floor cell, returned
-    /// as its world-space centre. The seed for the cold-spawn nearest-floor
-    /// search - it lands in the middle of the scene's playable region rather
-    /// than at the fixed retail town01 seat. `None` for a scene with no
-    /// walk-visible floor loaded.
-    fn walk_visible_centroid(&self) -> Option<(i16, i16)> {
-        let (mut sum_c, mut sum_r, mut n) = (0i64, 0i64, 0i64);
-        for r in 0..FIELD_GRID_STRIDE {
-            for c in 0..FIELD_GRID_STRIDE {
-                if self
-                    .field_object_cells
-                    .get(r * FIELD_GRID_STRIDE + c)
-                    .is_some_and(|w| w & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0)
-                {
-                    sum_c += c as i64;
-                    sum_r += r as i64;
-                    n += 1;
-                }
-            }
+    /// Is the 64-unit **sub-cell** `(sx, sz)` (the wall-bit granularity of the
+    /// collision grid - four per 128-unit tile) an open standing spot? Tests
+    /// the sub-cell's world-space centre through the two spawn-validity
+    /// samplers: on the authored walk-visible floor and clear of the biased
+    /// wall read. Out-of-range sub-cells read closed.
+    fn field_subcell_open(&self, sx: i32, sz: i32) -> bool {
+        let stride = (FIELD_GRID_STRIDE * 2) as i32;
+        if !(0..stride).contains(&sx) || !(0..stride).contains(&sz) {
+            return false;
         }
-        if n == 0 {
-            return None;
-        }
-        Some((
-            ((sum_c / n) * 128 + 64) as i16,
-            ((sum_r / n) * 128 + 64) as i16,
-        ))
+        let (x, z) = ((sx * 64 + 32) as i16, (sz * 64 + 32) as i16);
+        self.field_spawn_is_valid(x, z)
     }
 
-    /// Expanding (Chebyshev-ring) search outward from the tile covering
-    /// `(seed_x, seed_z)` for the nearest tile whose centre is a valid cold
-    /// spawn ([`Self::field_spawn_is_valid`]). Returns that tile's world-space
-    /// centre, or `None` if the whole grid has no valid tile.
-    fn nearest_valid_field_spawn(&self, seed_x: i16, seed_z: i16) -> Option<(i16, i16)> {
-        let stride = FIELD_GRID_STRIDE as i32;
-        let stx = ((seed_x as i32) >> 7).clamp(0, stride - 1);
-        let stz = ((seed_z as i32) >> 7).clamp(0, stride - 1);
-        for radius in 0..stride {
-            for dz in -radius..=radius {
-                for dx in -radius..=radius {
-                    // Only the current ring's perimeter (nearest-first order).
-                    if dx.abs().max(dz.abs()) != radius {
-                        continue;
-                    }
-                    let (tx, tz) = (stx + dx, stz + dz);
-                    if tx < 0 || tz < 0 || tx >= stride || tz >= stride {
-                        continue;
-                    }
-                    let (wx, wz) = ((tx * 128 + 64) as i16, (tz * 128 + 64) as i16);
-                    if self.field_spawn_is_valid(wx, wz) {
-                        return Some((wx, wz));
+    /// Label the 4-connected components of the open sub-cell lattice
+    /// ([`Self::field_subcell_open`], `0x100 x 0x100` sub-cells). Returns
+    /// `(labels, sizes)`: `labels[sz * 0x100 + sx]` is `0` for a closed
+    /// sub-cell or the 1-based component id; `sizes[id - 1]` is that
+    /// component's sub-cell count. Deterministic: components are numbered in
+    /// row-major scan order.
+    fn field_walk_components(&self) -> (Vec<u16>, Vec<u32>) {
+        let stride = FIELD_GRID_STRIDE * 2;
+        let mut labels = vec![0u16; stride * stride];
+        let mut sizes: Vec<u32> = Vec::new();
+        let mut queue: std::collections::VecDeque<(i32, i32)> = std::collections::VecDeque::new();
+        for sz in 0..stride as i32 {
+            for sx in 0..stride as i32 {
+                let idx = sz as usize * stride + sx as usize;
+                if labels[idx] != 0 || !self.field_subcell_open(sx, sz) {
+                    continue;
+                }
+                let label = (sizes.len() + 1) as u16;
+                let mut count = 0u32;
+                labels[idx] = label;
+                queue.push_back((sx, sz));
+                while let Some((cx, cz)) = queue.pop_front() {
+                    count += 1;
+                    for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let (nx, nz) = (cx + dx, cz + dz);
+                        if !(0..stride as i32).contains(&nx) || !(0..stride as i32).contains(&nz) {
+                            continue;
+                        }
+                        let nidx = nz as usize * stride + nx as usize;
+                        if labels[nidx] == 0 && self.field_subcell_open(nx, nz) {
+                            labels[nidx] = label;
+                            queue.push_back((nx, nz));
+                        }
                     }
                 }
+                sizes.push(count);
             }
         }
-        None
+        (labels, sizes)
     }
 
-    /// Resolve a cold field-entry player spawn to an in-bounds, standable
-    /// world `(x, z)`.
+    /// Size (in 64-unit sub-cells) of the connected open-floor region the
+    /// world point `(x, z)` stands in - `0` when the covering sub-cell is
+    /// closed (off the walk-visible floor or inside a wall). The reachability
+    /// measure the cold-spawn resolver and the spawn-sweep tests share: a
+    /// position inside a walled-off pocket reads as a tiny component even
+    /// though the point itself is "valid".
+    pub fn field_walk_component_size(&self, x: i16, z: i16) -> usize {
+        if x < 0 || z < 0 {
+            return 0;
+        }
+        let (sx, sz) = ((x as i32) >> 6, (z as i32) >> 6);
+        if !self.field_subcell_open(sx, sz) {
+            return 0;
+        }
+        let stride = FIELD_GRID_STRIDE * 2;
+        let (labels, sizes) = self.field_walk_components();
+        let label = labels[sz as usize * stride + sx as usize];
+        if label == 0 {
+            0
+        } else {
+            sizes[label as usize - 1] as usize
+        }
+    }
+
+    /// Size (in 64-unit sub-cells) of the scene's largest connected open-floor
+    /// region, or `0` when no sub-cell is open.
+    pub fn field_largest_walk_component_size(&self) -> usize {
+        self.field_walk_components()
+            .1
+            .into_iter()
+            .max()
+            .unwrap_or(0) as usize
+    }
+
+    /// Resolve a cold field-entry player spawn to an in-bounds, standable,
+    /// **reachable** world `(x, z)`.
     ///
     /// Retail seats a cold (non-warp) field entry at the camera-window centre
     /// [`FIELD_COLD_SPAWN_XZ`] (`0xA40`); a cold entry only ever happens for the
     /// New Game opening (town01, Vahn's authored Rim Elm spawn), where that
     /// coordinate is a real standable tile. The engine's scene picker enters
-    /// arbitrary scenes cold, and for most of them the fixed seat lands off the
-    /// authored walkable floor (in a wall or in the surrounding void).
+    /// arbitrary scenes cold, and for many of them the fixed seat lands off the
+    /// authored walkable floor, inside a walled-off pocket (a "valid" point
+    /// whose connected region is tiny), in a secondary region cut off from the
+    /// scene's main playable area, or on a kind-0 intra-scene teleport tile
+    /// (a door pad whose first tile-crossing dispatch warps the player).
     ///
-    /// This keeps the retail seat whenever it is valid - town01 and any other
-    /// scene whose `0xA40` centre is genuinely on the walkable floor stay
-    /// byte-identical - and otherwise relocates to the walkable tile nearest the
-    /// scene's own playable-floor centroid ([`Self::walk_visible_centroid`]),
-    /// so the player never spawns inside a wall or off-grid. Falls back to the
-    /// retail seat when a scene supplies no walk-visible floor (nothing better
-    /// to resolve against).
+    /// Selection rule (deterministic per scene):
+    ///
+    /// 1. Keep the retail seat when it is standable, inside the scene's
+    ///    **largest** connected open-floor component, and not on a kind-0
+    ///    teleport tile (`teleport_tiles`) - town01's New Game opening stays
+    ///    byte-identical.
+    /// 2. Otherwise take the first kind-0 teleport **destination** (`anchors`,
+    ///    in disc table order) that passes the same checks - a retail-authored
+    ///    door-arrival spot.
+    /// 3. Otherwise spawn at the largest component's own sub-cell nearest its
+    ///    centroid (skipping teleport tiles), i.e. the middle of the scene's
+    ///    biggest playable region.
+    /// 4. A scene with no open floor at all keeps the retail seat (nothing
+    ///    better to resolve against).
     ///
     /// Requires the collision grid ([`Self::load_field_collision_grid`]) and the
     /// object-grid cells ([`Self::load_field_object_cells`]) to be loaded first.
-    pub fn resolve_cold_field_spawn(&self) -> (i16, i16) {
+    /// `teleport_tiles` / `anchors` are the scene's `.MAP` kind-0 trigger tiles
+    /// and landing positions ([`crate::field_regions::IntraSceneTeleport`]).
+    pub fn resolve_cold_field_spawn(
+        &self,
+        teleport_tiles: &[(u8, u8)],
+        anchors: &[(i16, i16)],
+    ) -> (i16, i16) {
         let default = (FIELD_COLD_SPAWN_XZ, FIELD_COLD_SPAWN_XZ);
-        if self.field_spawn_is_valid(default.0, default.1) {
-            return default;
-        }
-        let Some((cx, cz)) = self.walk_visible_centroid() else {
+        let stride = FIELD_GRID_STRIDE * 2;
+        let (labels, sizes) = self.field_walk_components();
+        // Largest component; ties keep the first (lowest label) for
+        // determinism.
+        let Some(largest_label) = sizes
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(&a.0)))
+            .map(|(i, _)| (i + 1) as u16)
+        else {
             return default;
         };
-        self.nearest_valid_field_spawn(cx, cz).unwrap_or(default)
+        let on_teleport_tile = |x: i16, z: i16| -> bool {
+            let (tx, tz) = ((x as u16 >> 7) as u8, (z as u16 >> 7) as u8);
+            teleport_tiles.iter().any(|&(kx, kz)| (kx, kz) == (tx, tz))
+        };
+        let good = |x: i16, z: i16| -> bool {
+            if x < 0 || z < 0 || !self.field_spawn_is_valid(x, z) || on_teleport_tile(x, z) {
+                return false;
+            }
+            let (sx, sz) = ((x as usize) >> 6, (z as usize) >> 6);
+            labels
+                .get(sz * stride + sx)
+                .is_some_and(|&l| l == largest_label)
+        };
+        // 1. The retail seat, when it is genuinely standable and reachable.
+        if good(default.0, default.1) {
+            return default;
+        }
+        // 2. A retail-authored door-arrival anchor inside the main region.
+        for &(ax, az) in anchors {
+            if good(ax, az) {
+                return (ax, az);
+            }
+        }
+        // 3. The largest component's sub-cell nearest its centroid.
+        let (mut sum_x, mut sum_z, mut n) = (0i64, 0i64, 0i64);
+        for sz in 0..stride {
+            for sx in 0..stride {
+                if labels[sz * stride + sx] == largest_label {
+                    sum_x += sx as i64;
+                    sum_z += sz as i64;
+                    n += 1;
+                }
+            }
+        }
+        if n == 0 {
+            return default;
+        }
+        let (cx, cz) = (sum_x / n, sum_z / n);
+        let mut best: Option<(i64, (i16, i16))> = None;
+        let mut best_any: Option<(i64, (i16, i16))> = None;
+        for sz in 0..stride {
+            for sx in 0..stride {
+                if labels[sz * stride + sx] != largest_label {
+                    continue;
+                }
+                let d = (sx as i64 - cx).pow(2) + (sz as i64 - cz).pow(2);
+                let world = ((sx * 64 + 32) as i16, (sz * 64 + 32) as i16);
+                if best_any.is_none_or(|(bd, _)| d < bd) {
+                    best_any = Some((d, world));
+                }
+                if !on_teleport_tile(world.0, world.1) && best.is_none_or(|(bd, _)| d < bd) {
+                    best = Some((d, world));
+                }
+            }
+        }
+        best.or(best_any).map(|(_, w)| w).unwrap_or(default)
     }
 
     /// Retail's static-wall direction test: from the CURRENT position

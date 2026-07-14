@@ -6,9 +6,12 @@
 //! authored Rim Elm (`town01`) spawn; for most other scenes it lands off the
 //! authored walkable floor (in a wall or in the surrounding void), so the
 //! player spawned out of bounds. `World::resolve_cold_field_spawn` now keeps
-//! the retail seat when it is genuinely standable (town01, and any scene whose
-//! `0xA40` centre is on the walkable floor) and otherwise relocates onto the
-//! walkable tile nearest the scene's own playable-floor centroid.
+//! the retail seat when it is standable, inside the scene's largest connected
+//! walkable component, and not a kind-0 teleport tile (town01), and otherwise
+//! relocates onto a kind-0 door-arrival anchor in that component or its
+//! centroid. Reachability itself is swept corpus-wide by
+//! `field_spawn_reachability_disc.rs`; this file keeps the point checks and
+//! the town01 byte-identity pin.
 //!
 //! This test boots a spread of real scenes - a town (`town01`), a village
 //! (`geremi`), an underground dungeon (`cave01`), and a tower interior

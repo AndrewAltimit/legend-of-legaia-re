@@ -225,10 +225,10 @@ impl SceneHost {
         // This is provisional: once the scene's collision grid + object cells
         // load (just below) the spawn is resolved to an in-bounds, standable
         // tile via `World::resolve_cold_field_spawn` - which keeps this exact
-        // seat for town01 (and any scene where `0xA40` is genuinely on the
-        // walkable floor) and relocates every other scene, whose fixed `0xA40`
-        // seat lands off the authored floor, onto the walkable tile nearest its
-        // own playable-floor centroid. See [`crate::world::FIELD_COLD_SPAWN_XZ`].
+        // seat for town01 (and any scene where `0xA40` is standable, reachable,
+        // and not a teleport-door tile) and relocates every other scene onto a
+        // door-arrival anchor or the centroid of its largest connected walkable
+        // region. See [`crate::world::FIELD_COLD_SPAWN_XZ`].
         if let Some(player) = self.world.actors.get_mut(0) {
             player.move_state.world_x = crate::world::FIELD_COLD_SPAWN_XZ;
             player.move_state.world_y = 0;
@@ -295,15 +295,37 @@ impl SceneHost {
         }
         // Resolve the provisional cold spawn against the just-loaded collision
         // grid + object cells. `resolve_cold_field_spawn` returns the retail
-        // seat unchanged when it is a valid standing spot (town01, and any scene
-        // whose `0xA40` centre is on the walkable floor), so town01's opening
-        // stays byte-identical; for every other scene - where the fixed seat
-        // lands in a wall or off-map - it relocates the player onto the walkable
-        // tile nearest the scene's own playable-floor centroid, and snaps Y onto
-        // that tile's floor so the player isn't left floating / sunk before the
-        // first locomotion step. Only overrides when the resolver actually moved
-        // the spawn, keeping the seed (incl. `world_y = 0`) intact otherwise.
-        let resolved = self.world.resolve_cold_field_spawn();
+        // seat unchanged when it is standable, inside the scene's largest
+        // connected open-floor region, AND not on a kind-0 intra-scene
+        // teleport tile (a door pad - spawning on one warps the player on the
+        // first tile-crossing dispatch), so town01's opening stays
+        // byte-identical; every other scene relocates to a retail-authored
+        // kind-0 door-arrival anchor in that region, or to the region's
+        // centroid, and snaps Y onto that spot's floor so the player isn't
+        // left floating / sunk before the first locomotion step. Only
+        // overrides when the resolver actually moved the spawn, keeping the
+        // seed (incl. `world_y = 0`) intact otherwise.
+        let teleport_tiles: Vec<(u8, u8)> = self
+            .field_intra_teleports
+            .0
+            .iter()
+            .chain(self.field_intra_teleports.1.iter())
+            .map(|t| (t.tile_x, t.tile_z))
+            .collect();
+        let anchors: Vec<(i16, i16)> = self
+            .field_intra_teleports
+            .0
+            .iter()
+            .chain(self.field_intra_teleports.1.iter())
+            .map(|t| t.dest_world())
+            .collect();
+        let resolved = self
+            .world
+            .resolve_cold_field_spawn(&teleport_tiles, &anchors);
+        // Remembered for the helper-context teardown rescue: a spawned
+        // record that ends with the player inside a wall re-seats them here
+        // (see `World::step_helper_contexts`).
+        self.world.resolved_cold_spawn = Some(resolved);
         if resolved
             != (
                 crate::world::FIELD_COLD_SPAWN_XZ,
