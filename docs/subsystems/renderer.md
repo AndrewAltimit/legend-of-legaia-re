@@ -206,6 +206,38 @@ checked against an sRGB target too, which lifts it out of tolerance.
 
 `tmd prims <PATH> --vram-dir extracted/tim_scan/<entry>` simulates the targeted upload and adds a per-prim verdict trailer (`-> Ok` / `-> MISSING CLUT (row N)` / `-> DEPTH MISMATCH (row N populated with K entries; prim expects M)` / `-> MISSING TEXTURE PAGE (tpage 0xNN)`). `tmd vram-dump <PATH> -o vram.png [--vram-dir ...] [--annotate]` exports the post-upload software VRAM as a 1024x512 PNG with optional red CLUT-row + green texture-page outlines, so collisions are obvious without firing up the GUI.
 
+## No distance culling: every loaded body is drawn
+
+The engine draws **every** mesh a scene loads, every frame. There is no
+frustum cull, no draw-distance heuristic, no per-object radius test, and no
+LOD: the field draw lists (`field_placement_draws`, `field_terrain_draws`, the
+ground heightfield, the posed props, the NPCs) are resolved once at scene load
+and submitted whole on every frame. A town is a few hundred draws of a few
+thousand triangles - the budget the port is not on is the PSX's.
+
+The one thing that can still remove geometry is the projection's own clip
+volume, so the clip planes are sized to hold an entire scene from any vantage
+rather than to frame the current view:
+
+- [`window::SCENE_FAR`](../../crates/engine-render/src/window.rs) = `1e6` for
+  every camera. A field map is `256 x 256` tiles of 128 units (~23 k units on
+  the diagonal), and the **overworld walk camera composes a 6x world scale**
+  onto `psx_camera_mvp`, so eye-space depth there runs to ~140 k. Raising the
+  far plane costs no depth precision - projected depth is `1 - near/z` to
+  within `O(near/far)`, i.e. the *near* plane sets the resolution.
+- `window::scene_clip_planes(distance)` gives the orbit-family cameras
+  (`orbit_camera_mvp`, `world_map_camera_mvp`, `walk_view_camera_mvp`,
+  `cutscene_camera_mvp`) a near plane of `distance * 0.005` clamped into
+  `[0.05, 8]` - a few units in front of the lens on any scene-sized framing,
+  small enough that a wall or floor body the camera sweeps over is never
+  clipped, while the asset-viewer's unit-radius TMD previews keep a sub-unit
+  plane.
+
+Both are pinned by `camera_tests` in `window.rs`: a full-size field map's
+corners must project inside the depth range even though the camera frames only
+a small player-sized box, and the near plane must stay within a few units of
+the lens at every framing distance the engine uses.
+
 ## PSX-faithful rendering knobs
 
 `Renderer::set_psx_mode(true)` enables a set of retail-faithful rasterisation modes on the 3D mesh pipelines (in `legaia-engine play-window`, opt in with `LEGAIA_PSX_RENDER=1`):

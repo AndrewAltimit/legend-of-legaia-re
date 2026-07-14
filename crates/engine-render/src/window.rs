@@ -172,6 +172,36 @@ impl EngineWindow {
     }
 }
 
+/// The far clip plane every engine camera uses.
+///
+/// **Nothing in a Legaia scene is ever distance-culled.** A field map is
+/// `256 x 256` tiles of 128 units (~16 k units across, ~23 k diagonal); the
+/// overworld walk camera projects that through a 6x world scale, so eye-space
+/// depth runs to ~140 k. One flat constant an order of magnitude past that
+/// keeps *every* mesh - floor slabs, staircases, wall sections, the far side
+/// of a continent - inside the frustum from any vantage, at any camera-distance
+/// preset. The engine is not on a PSX depth budget, so the far plane is not a
+/// draw-distance knob.
+///
+/// Raising the far plane costs no depth precision: for `near << far` the
+/// projected depth is `1 - near/z + O(near/far)`, i.e. governed by the *near*
+/// plane alone.
+pub const SCENE_FAR: f32 = 1_000_000.0;
+
+/// Near plane for the orbit-family cameras, from the framing distance.
+///
+/// The near plane is the *only* clip that can make close geometry vanish, so it
+/// is kept at a few units instead of the old `distance * 0.05` (which put the
+/// near plane 100-1600 units in front of the eye on a town / world-map framing
+/// and clipped whole wall and floor bodies out of the view as the camera moved
+/// over them). The tiny-model asset-viewer previews still need a sub-unit near
+/// plane, so it scales with the framing distance but clamps into
+/// `[0.05, 8.0]` - big scenes get the constant 8-unit plane, a unit-radius TMD
+/// preview keeps its 0.05.
+pub fn scene_clip_planes(distance: f32) -> (f32, f32) {
+    ((distance * 0.005).clamp(0.05, 8.0), SCENE_FAR)
+}
+
 /// Orbit-camera MVP used by all scene viewers.
 ///
 /// Frames the given AABB, orbits it at `orbit_speed` radians/second, and
@@ -222,8 +252,7 @@ pub fn orbit_camera_mvp(
             distance * angle.sin(),
         );
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-    let near = (distance * 0.05).max(0.1);
-    let far = distance * 4.0 + 1000.0;
+    let (near, far) = scene_clip_planes(distance);
     let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
     proj * view
 }
@@ -285,8 +314,7 @@ pub fn world_map_camera_mvp(
             distance * angle.sin(),
         );
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-    let near = (distance * 0.05).max(0.1);
-    let far = distance * 4.0 + 1000.0;
+    let (near, far) = scene_clip_planes(distance);
     let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
     proj * view
 }
@@ -341,8 +369,7 @@ pub fn walk_view_camera_mvp(
             distance * angle.sin(),
         );
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-    let near = (distance * 0.05).max(0.1);
-    let far = distance * 4.0 + 1000.0;
+    let (near, far) = scene_clip_planes(distance);
     let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
     proj * view
 }
@@ -437,8 +464,7 @@ pub fn cutscene_camera_mvp(
     let (ps, pc) = pitch.sin_cos();
     let eye = center + Vec3::new(distance * pc * ys, -distance * ps, distance * pc * yc);
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-    let near = (distance * 0.05).max(0.1);
-    let far = distance * 8.0 + 1000.0;
+    let (near, far) = scene_clip_planes(distance);
     let proj = Mat4::perspective_rh(fov, aspect.max(0.01), near, far);
     proj * view
 }
@@ -622,6 +648,86 @@ mod camera_tests {
 
     fn finite(m: &Mat4) -> bool {
         m.to_cols_array().iter().all(|v| v.is_finite())
+    }
+
+    /// A field map is 256x256 tiles of 128 units.
+    const FIELD_MAP_SPAN: f32 = 256.0 * 128.0;
+
+    /// Depth of `p` under `mvp`, or `None` when the point is behind the eye
+    /// (`w <= 0`, which the rasteriser clips regardless of the far plane).
+    fn depth_of(mvp: &Mat4, p: Vec3) -> Option<f32> {
+        let c = *mvp * p.extend(1.0);
+        (c.w > 0.0).then(|| c.z / c.w)
+    }
+
+    /// GUARD (no distance cull): every corner of a full-size field map stays
+    /// inside the depth range of the orbit-family cameras, even though those
+    /// cameras frame only a small player-sized box. The old
+    /// `far = distance * 4 + 1000` was derived from the *framing* box, not the
+    /// scene, so the far half of a town (floor slabs, stairs, the far wall)
+    /// fell behind the far plane and blinked in and out as the framing box
+    /// moved with the player.
+    #[test]
+    fn far_plane_never_clips_a_full_field_map() {
+        // The follow/debug orbit frames a 700-unit half-box around the player
+        // (`camera_mvp`'s FIELD_VIEW_HALF), while the map itself spans 32 k.
+        let (lo, hi) = ([-700.0, -700.0, -700.0], [700.0, 700.0, 700.0]);
+        let cams = [
+            orbit_camera_mvp(lo, hi, 0.25, 0.85, 3.0, 4.0 / 3.0),
+            world_map_camera_mvp(lo, hi, 0, 0, 0, 0, 4.0 / 3.0),
+            walk_view_camera_mvp(lo, hi, 0, 0, 0, 0, 4.0 / 3.0),
+        ];
+        let s = FIELD_MAP_SPAN;
+        for (i, mvp) in cams.iter().enumerate() {
+            for &x in &[-s, 0.0, s] {
+                for &y in &[-2000.0f32, 0.0, 2000.0] {
+                    for &z in &[-s, 0.0, s] {
+                        let Some(d) = depth_of(mvp, Vec3::new(x, y, z)) else {
+                            continue; // behind the eye: not a distance cull
+                        };
+                        assert!(
+                            d <= 1.0,
+                            "camera {i}: ({x}, {y}, {z}) is far-clipped (depth {d})"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// GUARD (no near cull): the near plane stays within a few units of the
+    /// eye at every framing distance the engine uses, so a wall / floor body
+    /// the camera passes close to is never clipped away. The old
+    /// `near = distance * 0.05` put the plane 100-1600 units out on town and
+    /// world-map framings - whole bodies vanished when the camera swept over
+    /// them.
+    #[test]
+    fn near_plane_stays_within_a_few_units_of_the_lens() {
+        for distance in [2.8f32, 50.0, 138.0, 2400.0, 32_000.0, 250_000.0] {
+            let (near, far) = scene_clip_planes(distance);
+            assert!(
+                (0.05..=8.0).contains(&near),
+                "distance {distance}: near {near} outside [0.05, 8]"
+            );
+            assert!(near < distance * 0.5, "distance {distance}: near {near}");
+            assert_eq!(far, SCENE_FAR);
+        }
+    }
+
+    /// GUARD: the far plane clears the overworld walk camera's 6x world scale.
+    /// `psx_camera_mvp` (engine-shell) projects the continent through a 6x
+    /// scale with an eye-back depth of ~11 k, so the eye-space depth of the
+    /// far side of a kingdom is `6 * span + tr.z`. The old 60 000 cut that to
+    /// ~8.5 k *world* units of draw distance - visible terrain pop-in.
+    #[test]
+    fn far_plane_clears_the_overworld_six_x_world_scale() {
+        const WORLD_SCALE: f32 = 6.0;
+        const EYE_BACK: f32 = 11_041.0;
+        let deepest = WORLD_SCALE * FIELD_MAP_SPAN * std::f32::consts::SQRT_2 + EYE_BACK;
+        assert!(
+            SCENE_FAR > deepest * 2.0,
+            "SCENE_FAR {SCENE_FAR} must clear the 6x-scaled continent depth {deepest}"
+        );
     }
 
     #[test]

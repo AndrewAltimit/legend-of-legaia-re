@@ -246,7 +246,14 @@ impl PlayWindowApp {
         // ndc.y = -H*Ey/(120*Ez) (PSX +Y down -> NDC up), clip.w = Ez, depth
         // mapped to wgpu [0,1]. Correct X for non-4:3 viewports so the 4:3
         // retail framing holds at any window size.
-        let (near, far) = (4.0f32, 60000.0f32);
+        // Near stays at the retail-ish 4 units (it is what governs depth
+        // precision); the far plane is the engine-wide `SCENE_FAR`. The old
+        // 60 000 looked generous in the 1x field frame but the **overworld
+        // walk** composes a 6x world scale onto this camera, so 60 000 eye
+        // units is only ~8.5 k world units of draw distance: continent
+        // terrain past that was silently far-clipped and popped in as the
+        // player walked toward it. Nothing is distance-culled now.
+        let (near, far) = (4.0f32, legaia_engine_render::window::SCENE_FAR);
         let a = far / (far - near);
         let b = -near * far / (far - near);
         let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
