@@ -2,6 +2,82 @@
 /* eslint-disable */
 
 /**
+ * The site's Tactical-Arts animation host: a disc, plus one character's
+ * assembled battle mesh + art-clip bank at a time.
+ */
+export class LegaiaArts {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Art clip `index`'s pose frames (the position in `set_character`'s
+     * `arts` array). Empty when the index is out of range or that record's
+     * stream did not decode - the page falls back to the idle pose.
+     */
+    art_pose_frames(index: number): Int32Array;
+    /**
+     * The idle loop's pose frames (see [`flatten_pose_frames`] layout).
+     * Empty when the character has no decodable idle stream.
+     */
+    idle_pose_frames(): Int32Array;
+    /**
+     * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
+     * TOC. Returns `{"entries": N}` JSON; errors throw.
+     */
+    load_disc(bytes: Uint8Array): string;
+    /**
+     * Bounding sphere `[cx, cy, cz, r]` (vertex centroid + max distance),
+     * so the page can frame the model before the first pose lands.
+     */
+    mesh_bounds(): Float32Array;
+    /**
+     * Per-vertex `[cba, tsb]`, parallel to the positions.
+     */
+    mesh_cba_tsb(): Uint32Array;
+    /**
+     * Triangle indices (`u32`, multiple of 3).
+     */
+    mesh_indices(): Uint32Array;
+    /**
+     * Per-vertex TMD object index (the bone a vertex hangs from), parallel
+     * to the positions.
+     */
+    mesh_object_ids(): Uint32Array;
+    /**
+     * Per-vertex positions of the current character's assembled battle mesh
+     * (flat `f32`, 3 per vertex). Empty until [`Self::set_character`].
+     */
+    mesh_positions(): Float32Array;
+    /**
+     * Per-vertex `[u, v]` integer texel coords, parallel to the positions.
+     */
+    mesh_uvs(): Int32Array;
+    constructor();
+    /**
+     * Assemble character `cslot` (0=Vahn, 1=Noa, 2=Gala, 3=Terra) and decode
+     * its art-clip bank. Returns a JSON summary the page keys everything on:
+     *
+     * ```json
+     * { "ok": true, "character": "Vahn", "part_count": 17,
+     *   "idle": { "frames": 24, "rate": 2 },
+     *   "arts": [ { "index": 0, "anim_id": 16, "name": "", "combo": [3,3],
+     *               "rate": 4, "base": true, "ok": true, "frames": 20,
+     *               "why": null }, ... ] }
+     * ```
+     *
+     * `name` is the record's inline HUD art-name string (empty on the
+     * un-named base records); `combo` the arts-matcher direction bytes
+     * (`1=L 2=R 3=D 4=U`) - the page matches its curated art cards against
+     * both. `{"ok":false,"why":...}` when the character doesn't assemble.
+     */
+    set_character(cslot: number): string;
+    /**
+     * The 1 MB PSX VRAM for the current character: band-0 texture pixels at
+     * the pinned retail placement + the character's decoded battle palette.
+     */
+    vram_bytes(): Uint8Array;
+}
+
+/**
  * In-browser audio extraction surface. Owns the loaded Mode2/2352 disc plus
  * its extracted PROT.DAT bytes; exposes JSON enumerators for the three
  * audio families (VAB / BGM / XA) and PCM-returning decoders for each.
@@ -924,6 +1000,12 @@ export class LegaiaRuntime {
      * loaded or the label is unknown.
      */
     enter_field(name: string): string;
+    /**
+     * Export the current engine session as LGSF bytes
+     * (`World::save_full().write()`). The page offers this as a `.lgsf`
+     * download and persists it (base64) in localStorage.
+     */
+    export_save(): Uint8Array;
     field_ground_cba_tsb(): Uint16Array;
     field_ground_indices(): Uint32Array;
     field_ground_positions(): Float32Array;
@@ -982,6 +1064,21 @@ export class LegaiaRuntime {
      * Frame counter.
      */
     frame(): bigint;
+    /**
+     * Import a **retail emulator save** (block `block` of a card container)
+     * into the live engine session: party records, story flags, inventory,
+     * and gold, via [`SaveFile::from_retail_sc_block`]. Returns the block's
+     * summary JSON (including the save's own `scene` label, so the page can
+     * drop the player into the scene the save was made in).
+     */
+    import_card_save(bytes: Uint8Array, block: number): string;
+    /**
+     * Import an LGSF save into the live engine session. Validates the
+     * magic/version envelope before touching the world; a bad file leaves
+     * the session unchanged and throws a readable message. Returns the
+     * same summary JSON as [`save_summary_json`].
+     */
+    import_save(bytes: Uint8Array): string;
     /**
      * Load a disc image from raw in-memory bytes.
      *
@@ -2167,6 +2264,30 @@ export class LegaiaViewer {
 }
 
 /**
+ * Bank a coin balance into save block `block` of a card container,
+ * returning the whole container with **only those 4 bytes changed** - the
+ * same format it came in, still a valid retail save (the retail payload
+ * carries no checksum; the card's directory-frame checksums are untouched).
+ */
+export function card_patch_coins(bytes: Uint8Array, block: number, coins: number): Uint8Array;
+
+/**
+ * Read the casino coin bank from save block `block` of a card container.
+ */
+export function card_read_coins(bytes: Uint8Array, block: number): number;
+
+/**
+ * List the Legaia saves inside an emulator save container.
+ *
+ * Accepts raw `.mcr`/`.mcd` card images, DexDrive `.gme`, and single-save
+ * `.mcs`. Returns
+ * `{"format": "mcr"|"gme"|"mcs", "saves": [{block, product_code, valid,
+ * party, money, coins, location, scene}, ...]}`. Errors (thrown as JS
+ * strings) on unknown containers and on signed `.psv` exports.
+ */
+export function card_saves_json(bytes: Uint8Array): string;
+
+/**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
  * `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `arts` /
@@ -2175,7 +2296,10 @@ export class LegaiaViewer {
  * character; Miracle Arts untouched). `shops`
  * randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
- * `"shuffle"`. `starting_items` is the number of random starting consumables
+ * `"shuffle"` and covers both intra-town door classes: the scripted door
+ * warps and the `.MAP` kind-0 intra-scene teleports (most house exits),
+ * the latter rewired per scene only when walk-component reachability is
+ * preserved. `starting_items` is the number of random starting consumables
  * the new game begins with (`0` = leave the vanilla Healing Leaf ×5). The
  * random fill shares the seed's capacity (7 slots, or 5 with `all_warps`) with
  * the convenience-item toggles below and takes whatever they leave, so it adds
@@ -2233,14 +2357,37 @@ export function patch_rom(image: Uint8Array, seed: string, drops: string, encoun
  */
 export function resolve_seed(seed: string): string;
 
+/**
+ * Summarise save bytes of either family (LGSF or an emulator card
+ * container) without touching the runtime - what the "your games" strip
+ * uses to describe a stored slot. Throws on unrecognised bytes.
+ */
+export function save_summary_json(bytes: Uint8Array): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_legaiaarts_free: (a: number, b: number) => void;
     readonly __wbg_legaiaaudio_free: (a: number, b: number) => void;
     readonly __wbg_legaiaminigames_free: (a: number, b: number) => void;
     readonly __wbg_legaiaruntime_free: (a: number, b: number) => void;
     readonly __wbg_legaiaviewer_free: (a: number, b: number) => void;
+    readonly card_patch_coins: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly card_read_coins: (a: number, b: number, c: number) => [number, number, number];
+    readonly card_saves_json: (a: number, b: number) => [number, number, number, number];
+    readonly legaiaarts_art_pose_frames: (a: number, b: number) => [number, number];
+    readonly legaiaarts_idle_pose_frames: (a: number) => [number, number];
+    readonly legaiaarts_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiaarts_mesh_bounds: (a: number) => [number, number];
+    readonly legaiaarts_mesh_cba_tsb: (a: number) => [number, number];
+    readonly legaiaarts_mesh_indices: (a: number) => [number, number];
+    readonly legaiaarts_mesh_object_ids: (a: number) => [number, number];
+    readonly legaiaarts_mesh_positions: (a: number) => [number, number];
+    readonly legaiaarts_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaarts_new: () => number;
+    readonly legaiaarts_set_character: (a: number, b: number) => [number, number];
+    readonly legaiaarts_vram_bytes: (a: number) => [number, number];
     readonly legaiaaudio_bgm_device_rate: (a: number) => number;
     readonly legaiaaudio_bgm_render_rate: (a: number) => number;
     readonly legaiaaudio_decode_vab_sample_i16: (a: number, b: number, c: number, d: number) => [number, number];
@@ -2363,6 +2510,7 @@ export interface InitOutput {
     readonly legaiaruntime_audio_init: (a: number) => number;
     readonly legaiaruntime_disc_loaded: (a: number) => number;
     readonly legaiaruntime_enter_field: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiaruntime_export_save: (a: number) => [number, number];
     readonly legaiaruntime_field_ground_cba_tsb: (a: number) => [number, number];
     readonly legaiaruntime_field_ground_indices: (a: number) => [number, number];
     readonly legaiaruntime_field_ground_positions: (a: number) => [number, number];
@@ -2385,6 +2533,8 @@ export interface InitOutput {
     readonly legaiaruntime_field_terrain_slots: (a: number) => [number, number];
     readonly legaiaruntime_field_vram_bytes: (a: number) => [number, number];
     readonly legaiaruntime_frame: (a: number) => bigint;
+    readonly legaiaruntime_import_card_save: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly legaiaruntime_import_save: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaruntime_load_disc: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly legaiaruntime_menu_is_open: (a: number) => number;
     readonly legaiaruntime_menu_label: (a: number) => [number, number];
@@ -2567,6 +2717,7 @@ export interface InitOutput {
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
     readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
+    readonly save_summary_json: (a: number, b: number) => [number, number, number, number];
     readonly legaiaminigames_dance_bgm_rate: (a: number) => number;
     readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

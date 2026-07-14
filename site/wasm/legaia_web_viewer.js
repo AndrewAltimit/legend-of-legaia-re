@@ -1,6 +1,185 @@
 /* @ts-self-types="./legaia_web_viewer.d.ts" */
 
 /**
+ * The site's Tactical-Arts animation host: a disc, plus one character's
+ * assembled battle mesh + art-clip bank at a time.
+ */
+export class LegaiaArts {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        LegaiaArtsFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_legaiaarts_free(ptr, 0);
+    }
+    /**
+     * Art clip `index`'s pose frames (the position in `set_character`'s
+     * `arts` array). Empty when the index is out of range or that record's
+     * stream did not decode - the page falls back to the idle pose.
+     * @param {number} index
+     * @returns {Int32Array}
+     */
+    art_pose_frames(index) {
+        const ret = wasm.legaiaarts_art_pose_frames(this.__wbg_ptr, index);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The idle loop's pose frames (see [`flatten_pose_frames`] layout).
+     * Empty when the character has no decodable idle stream.
+     * @returns {Int32Array}
+     */
+    idle_pose_frames() {
+        const ret = wasm.legaiaarts_idle_pose_frames(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
+     * TOC. Returns `{"entries": N}` JSON; errors throw.
+     * @param {Uint8Array} bytes
+     * @returns {string}
+     */
+    load_disc(bytes) {
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.legaiaarts_load_disc(this.__wbg_ptr, ptr0, len0);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        }
+    }
+    /**
+     * Bounding sphere `[cx, cy, cz, r]` (vertex centroid + max distance),
+     * so the page can frame the model before the first pose lands.
+     * @returns {Float32Array}
+     */
+    mesh_bounds() {
+        const ret = wasm.legaiaarts_mesh_bounds(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[cba, tsb]`, parallel to the positions.
+     * @returns {Uint32Array}
+     */
+    mesh_cba_tsb() {
+        const ret = wasm.legaiaarts_mesh_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Triangle indices (`u32`, multiple of 3).
+     * @returns {Uint32Array}
+     */
+    mesh_indices() {
+        const ret = wasm.legaiaarts_mesh_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex TMD object index (the bone a vertex hangs from), parallel
+     * to the positions.
+     * @returns {Uint32Array}
+     */
+    mesh_object_ids() {
+        const ret = wasm.legaiaarts_mesh_object_ids(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex positions of the current character's assembled battle mesh
+     * (flat `f32`, 3 per vertex). Empty until [`Self::set_character`].
+     * @returns {Float32Array}
+     */
+    mesh_positions() {
+        const ret = wasm.legaiaarts_mesh_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[u, v]` integer texel coords, parallel to the positions.
+     * @returns {Int32Array}
+     */
+    mesh_uvs() {
+        const ret = wasm.legaiaarts_mesh_uvs(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    constructor() {
+        const ret = wasm.legaiaarts_new();
+        this.__wbg_ptr = ret;
+        LegaiaArtsFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Assemble character `cslot` (0=Vahn, 1=Noa, 2=Gala, 3=Terra) and decode
+     * its art-clip bank. Returns a JSON summary the page keys everything on:
+     *
+     * ```json
+     * { "ok": true, "character": "Vahn", "part_count": 17,
+     *   "idle": { "frames": 24, "rate": 2 },
+     *   "arts": [ { "index": 0, "anim_id": 16, "name": "", "combo": [3,3],
+     *               "rate": 4, "base": true, "ok": true, "frames": 20,
+     *               "why": null }, ... ] }
+     * ```
+     *
+     * `name` is the record's inline HUD art-name string (empty on the
+     * un-named base records); `combo` the arts-matcher direction bytes
+     * (`1=L 2=R 3=D 4=U`) - the page matches its curated art cards against
+     * both. `{"ok":false,"why":...}` when the character doesn't assemble.
+     * @param {number} cslot
+     * @returns {string}
+     */
+    set_character(cslot) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaarts_set_character(this.__wbg_ptr, cslot);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The 1 MB PSX VRAM for the current character: band-0 texture pixels at
+     * the pinned retail placement + the character's decoded battle palette.
+     * @returns {Uint8Array}
+     */
+    vram_bytes() {
+        const ret = wasm.legaiaarts_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) LegaiaArts.prototype[Symbol.dispose] = LegaiaArts.prototype.free;
+
+/**
  * In-browser audio extraction surface. Owns the loaded Mode2/2352 disc plus
  * its extracted PROT.DAT bytes; exposes JSON enumerators for the three
  * audio families (VAB / BGM / XA) and PCM-returning decoders for each.
@@ -1908,6 +2087,18 @@ export class LegaiaRuntime {
         }
     }
     /**
+     * Export the current engine session as LGSF bytes
+     * (`World::save_full().write()`). The page offers this as a `.lgsf`
+     * download and persists it (base64) in localStorage.
+     * @returns {Uint8Array}
+     */
+    export_save() {
+        const ret = wasm.legaiaruntime_export_save(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * @returns {Uint16Array}
      */
     field_ground_cba_tsb() {
@@ -2133,6 +2324,64 @@ export class LegaiaRuntime {
     frame() {
         const ret = wasm.legaiaruntime_frame(this.__wbg_ptr);
         return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Import a **retail emulator save** (block `block` of a card container)
+     * into the live engine session: party records, story flags, inventory,
+     * and gold, via [`SaveFile::from_retail_sc_block`]. Returns the block's
+     * summary JSON (including the save's own `scene` label, so the page can
+     * drop the player into the scene the save was made in).
+     * @param {Uint8Array} bytes
+     * @param {number} block
+     * @returns {string}
+     */
+    import_card_save(bytes, block) {
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.legaiaruntime_import_card_save(this.__wbg_ptr, ptr0, len0, block);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        }
+    }
+    /**
+     * Import an LGSF save into the live engine session. Validates the
+     * magic/version envelope before touching the world; a bad file leaves
+     * the session unchanged and throws a readable message. Returns the
+     * same summary JSON as [`save_summary_json`].
+     * @param {Uint8Array} bytes
+     * @returns {string}
+     */
+    import_save(bytes) {
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.legaiaruntime_import_save(this.__wbg_ptr, ptr0, len0);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        }
     }
     /**
      * Load a disc image from raw in-memory bytes.
@@ -4736,6 +4985,76 @@ export class LegaiaViewer {
 if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.prototype.free;
 
 /**
+ * Bank a coin balance into save block `block` of a card container,
+ * returning the whole container with **only those 4 bytes changed** - the
+ * same format it came in, still a valid retail save (the retail payload
+ * carries no checksum; the card's directory-frame checksums are untouched).
+ * @param {Uint8Array} bytes
+ * @param {number} block
+ * @param {number} coins
+ * @returns {Uint8Array}
+ */
+export function card_patch_coins(bytes, block, coins) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.card_patch_coins(ptr0, len0, block, coins);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
+ * Read the casino coin bank from save block `block` of a card container.
+ * @param {Uint8Array} bytes
+ * @param {number} block
+ * @returns {number}
+ */
+export function card_read_coins(bytes, block) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.card_read_coins(ptr0, len0, block);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] >>> 0;
+}
+
+/**
+ * List the Legaia saves inside an emulator save container.
+ *
+ * Accepts raw `.mcr`/`.mcd` card images, DexDrive `.gme`, and single-save
+ * `.mcs`. Returns
+ * `{"format": "mcr"|"gme"|"mcs", "saves": [{block, product_code, valid,
+ * party, money, coins, location, scene}, ...]}`. Errors (thrown as JS
+ * strings) on unknown containers and on signed `.psv` exports.
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function card_saves_json(bytes) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.card_saves_json(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
  * `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `arts` /
@@ -4744,7 +5063,10 @@ if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.protot
  * character; Miracle Arts untouched). `shops`
  * randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
  * (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
- * `"shuffle"`. `starting_items` is the number of random starting consumables
+ * `"shuffle"` and covers both intra-town door classes: the scripted door
+ * warps and the `.MAP` kind-0 intra-scene teleports (most house exits),
+ * the latter rewired per scene only when walk-component reachability is
+ * preserved. `starting_items` is the number of random starting consumables
  * the new game begins with (`0` = leave the vanilla Healing Leaf ×5). The
  * random fill shares the seed's capacity (7 slots, or 5 with `all_warps`) with
  * the convenience-item toggles below and takes whatever they leave, so it adds
@@ -4892,6 +5214,34 @@ export function resolve_seed(seed) {
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * Summarise save bytes of either family (LGSF or an emulator card
+ * container) without touching the runtime - what the "your games" strip
+ * uses to describe a stored slot. Throws on unrecognised bytes.
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function save_summary_json(bytes) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.save_summary_json(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
     }
 }
 function __wbg_get_imports() {
@@ -5128,6 +5478,9 @@ function wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23(arg0, arg
     wasm.wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23(arg0, arg1, arg2);
 }
 
+const LegaiaArtsFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_legaiaarts_free(ptr, 1));
 const LegaiaAudioFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_legaiaaudio_free(ptr, 1));
