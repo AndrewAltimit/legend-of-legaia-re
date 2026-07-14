@@ -217,6 +217,30 @@ PROT 1230/1231 sit against the PROT TOC's zeroed tail, where the indexed size
 formula `toc[p+5] - toc[p+3] + 4` underflows; the TOC readers fall back to the
 LBA footprint for them (`legaia_prot::archive`).
 
+### Dancer bodies
+
+The overlay issues no mesh load, so the dancers on the floor are actors drawn
+from the **field-character pool** the engine keeps resident across every field
+scene - PROT 0874 §0, `DAT_8007C018[0..4]` (Vahn / Noa / Gala + savepoint +
+aux; parser [`legaia_asset::character_pack`]). The **human dancer is Noa's own
+field-view model** (pack slot 1): the rig-0 face stamp reads its eye/mouth
+cells straight out of Noa's field atlas (PROT 0874 §2, `(852, 256)`), so the
+head the overlay animates sits on her field mesh, not a bespoke dancer model.
+With no other character bodies resident, the two AI dancers are the remaining
+party meshes (Vahn slot 0, Gala slot 2). Poses come from the party
+field-locomotion ANM bundle (PROT 0874 §1, `character_pack::field_locomotion_anm`):
+frame 0 of the idle bank (bank slot 1) is the rest-pose assembly transform, and
+the walk bank (slot 0) is the clip cycled to the beat.
+
+This is what the site's playable dance renders: Noa's field mesh plus the two
+resident party bodies, textured against the field-character VRAM (PROT 0874 §2)
+and posed to the beat clock, drawn on a WebGL canvas behind the HUD through the
+same `TmdRenderer` the Baka duel uses (`crates/web-viewer/src/minigames_dance.rs`
+`dance_body_*` accessors; `site/js/minigame-dance.js`). What is *not* pinned
+from a live capture is the exact per-dancer floor placement (the `_DAT_8007c36c`
+actor coordinates and yaw) and whether the entry path ever swaps a non-party
+mesh onto a dancer slot; the site's placement is fitted, not traced.
+
 ### HUD widget table (`DAT_801d46cc`) + emitter geometry
 
 Every HUD element goes through the textured-quad emitter `FUN_801d2f38`, which
@@ -278,9 +302,11 @@ In mode 0 (yosenn) the overlay remaps dancer `2 -> 3` and `1 -> 2`. The four
 poses are eye/mouth expression variants (open / blink / intense / wink).
 `FUN_801d1af4` switches the human's pose on a scoring event. **Confirmed**
 (rigs + tables read from the image; the strip diffs against the live capture
-land exactly on the blit destination rows). The dancer **bodies** remain
-field-scene actors (the walk of `_DAT_8007c36c` in `FUN_801d3a2c`); their mesh
-/ placement source is still open.
+land exactly on the blit destination rows). The dancer **bodies** are drawn
+from the resident field-character pool (see [Dancer bodies](#dancer-bodies)):
+the overlay loads no mesh, and rig 0's strip being Noa's own field atlas pins
+the human dancer to her field-view model, so the bodies are the party pool
+meshes (`_DAT_8007c36c` walks them in `FUN_801d3a2c`).
 
 The chart's symbols are likewise not abstract notes. `FUN_801d1820`'s only caller,
 `FUN_801d4040`, maps a symbol straight to a **pad-button bitmask**:
@@ -320,8 +346,11 @@ each pick keys VAB **program 1, tones `2r` and `2r + 1` together**, at note
   and `efect.dat` (1228): not in the 0980 image, so they live in the
   `FUN_80025980` -> `FUN_8003EBE4` chain. The entries themselves are pinned by
   content + the byte-identical VRAM capture.
-- The dancer **bodies**: which field actors / meshes the entry path places on
-  the floor (the faces and their strips are pinned; the body placement is not).
+- The dancer **bodies**' exact floor placement: the meshes are the resident
+  field-character pool (Noa's field model is pinned by the rig-0 face stamp;
+  see [Dancer bodies](#dancer-bodies)), but the per-dancer `_DAT_8007c36c`
+  world coordinates / yaw are not RAM-pinned, and whether the entry path ever
+  swaps a non-party mesh onto a dancer slot is open.
 - The `Chicken!!` banner cell's spawner (no widget record names it).
 - Which of `DAT_801D514C`'s modes picks BGM 1048 vs 1054 (the branch is
   pinned, the arm-to-song mapping is not).

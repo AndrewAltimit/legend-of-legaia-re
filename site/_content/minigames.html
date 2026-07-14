@@ -140,11 +140,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 .baka-duel canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .baka-duel .baka-hud-canvas { pointer-events: none; image-rendering: pixelated; image-rendering: crisp-edges; }
 
-/* Dance stage: the retail 320x240 frame at 2x, HUD art from the disc. */
-canvas.dance-stage {
-  width: 100%; max-width: 640px; aspect-ratio: 4 / 3; height: auto;
-  background: #0b0b10; border: 1px solid var(--border); display: block; margin: 0.9rem auto;
-  image-rendering: pixelated; image-rendering: crisp-edges;
+/* Dance stage: the 3D dancer bodies on a WebGL canvas below, the retail
+ * 320x240 HUD art on a 2D canvas on top (same layering as the Baka duel). */
+.dance-duel {
+  position: relative; width: 100%; max-width: 640px; margin: 0.9rem auto;
+  aspect-ratio: 4 / 3; background: #0b0b10;
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.dance-duel canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dance-duel .dance-hud-canvas {
+  pointer-events: none; image-rendering: pixelated; image-rendering: crisp-edges;
 }
 .mg-psbtn { width: 1.05em; height: 1.05em; vertical-align: -0.22em; margin-right: 0.3em; }
 </style>
@@ -230,7 +235,10 @@ canvas.dance-stage {
           denser row of the chart worth more points. A miss empties it. Land on a
           4-beat boundary for the big multipliers. <b>300 points passes.</b>
         </p>
-        <canvas id="dance-canvas" class="dance-stage" width="640" height="480"></canvas>
+        <div class="dance-duel" id="dance-duel">
+          <canvas id="dance-gl" width="640" height="480"></canvas>
+          <canvas id="dance-canvas" class="dance-hud-canvas" width="640" height="480"></canvas>
+        </div>
         <div class="mg-verdict" id="dance-verdict"></div>
         <div class="mg-row">
           <button class="mg-btn mg-throw" type="button" data-dance="1"><svg class="mg-psbtn"><use href="#btn-square"/></svg>Square<span class="mg-key">A</span></button>
@@ -600,7 +608,7 @@ canvas.dance-stage {
     danceR = null;
     const note = $('dance-art-note');
     if (window.MgDance) {
-      const r = MgDance.create(api, $('dance-canvas'));
+      const r = MgDance.create(api, $('dance-canvas'), $('dance-gl'));
       if (r.loadAssets()) danceR = r;
     }
     const stock = note.dataset.base || (note.dataset.base = note.innerHTML);
@@ -645,17 +653,29 @@ canvas.dance-stage {
         ? 'The <b>music</b> is the real thing too: the overlay’s own BGM entry ' +
           '(extraction 1048, SEQ+VAB) rendered through the clean-room SPU when you press Start. '
         : 'The BGM entry did not decode from this image, so the run plays without music. ') +
+      (danceR.bodyOk()
+        ? '<br><br><b>The dancers’ bodies are drawn in 3D.</b> The dance overlay loads ' +
+          'no mesh of its own, so its dancers are actors drawn from the field-character ' +
+          'pool the engine keeps resident across every field scene (PROT&nbsp;0874&nbsp;&sect;0, ' +
+          '<code>DAT_8007C018[0..4]</code>): the centre dancer is <b>Noa’s own field-view ' +
+          'model</b> - the very mesh the play / field view walks - and the two AI dancers ' +
+          'are the other resident party bodies (Vahn, Gala). They render textured against ' +
+          'the field-character VRAM (PROT&nbsp;0874&nbsp;&sect;2) and are posed to the beat ' +
+          'off the party field-locomotion ANM (PROT&nbsp;0874&nbsp;&sect;1) - the same clip ' +
+          'bank the field pool actors animate with - through the shared WebGL renderer the ' +
+          'Baka duel uses. Drag to orbit. '
+        : '<br><br>The dancer <b>bodies</b> did not decode from this image (PROT&nbsp;0874), ' +
+          'so the HUD sits on a neutral ground rather than a faked floor. ') +
       '<br><br><b>What is missing, and why.</b> The dance hall itself - the disco ball, ' +
-      'the spotlight cones, the crowd, the floor - is the host <em>field scene’s</em> ' +
+      'the spotlight cones, the crowd - is the host <em>field scene’s</em> ' +
       '3D geometry, not the overlay’s to draw (its textures are even in this same ' +
-      'pack), so the HUD sits on a neutral ground rather than a faked room. The two ' +
+      'pack), so the dancers stand on a neutral floor rather than a faked room. The two ' +
       '<b>AI dancers’ runs are not simulated</b>: retail auto-feeds them from the same ' +
       'chart, but this page runs the human lane only, so their score boxes idle at zero ' +
-      'and their faces only react cosmetically. The dancers’ <b>bodies</b> are ' +
-      'field-scene actors and are not drawn - the faces are the part the overlay itself ' +
-      'animates. Banner rise/fade curves are approximated (retail drives them through ' +
-      'per-banner actor scripts), and the three step-stock chips under the track stay ' +
-      'at three (the rules engine doesn’t model the timing-button stock).';
+      'and their faces only react cosmetically. Banner rise/fade curves are approximated ' +
+      '(retail drives them through per-banner actor scripts), and the three step-stock ' +
+      'chips under the track stay at three (the rules engine doesn’t model the ' +
+      'timing-button stock).';
   }
 
   function danceStart() {

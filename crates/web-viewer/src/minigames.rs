@@ -82,6 +82,9 @@ pub struct LegaiaMinigames {
     /// The dance's presentation bundle: PROT 1230 art pack + the overlay's
     /// HUD widget table + face rigs + SFX bank (see `minigames_dance.rs`).
     dance_pres: Option<dance_presentation::DancePresentation>,
+    /// The dance's dancer bodies: Noa's field-form mesh + the two AI dancers,
+    /// their pose bank and the field VRAM they sample (see `minigames_dance.rs`).
+    dance_bodies: Option<dance_presentation::DanceBodies>,
 }
 
 impl Default for LegaiaMinigames {
@@ -141,6 +144,7 @@ impl LegaiaMinigames {
             slot_sfx: None,
             baka_names: None,
             dance_pres: None,
+            dance_bodies: None,
         }
     }
 
@@ -182,12 +186,17 @@ impl LegaiaMinigames {
         // --- dance step chart (PROT 0980) + presentation (PROT 1230 art,
         //     the overlay's widget table, PROT 1228/1231 SFX) ---
         self.dance_pres = self.load_dance_presentation();
+        // The dancer bodies (Noa's field mesh + the two AI dancers) come from
+        // the resident field-character pool (PROT 0874), decoded here so the
+        // page can render the floor, not just the HUD.
+        self.dance_bodies = self.load_dance_bodies();
         let dance_json = match self.dance_chart() {
             Some(c) => format!(
-                r#"{{"ok":true,"rows":{},"beats":{},"art":{},"sfx":{}}}"#,
+                r#"{{"ok":true,"rows":{},"beats":{},"art":{},"body":{},"sfx":{}}}"#,
                 c.rows.len(),
                 legaia_asset::dance_chart::BEATS_PER_ROW,
                 self.dance_pres.is_some(),
+                self.dance_bodies.is_some(),
                 self.dance_pres
                     .as_ref()
                     .and_then(|p| p.sfx.as_ref())

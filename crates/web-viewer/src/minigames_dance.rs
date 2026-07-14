@@ -13,7 +13,9 @@
 use super::*;
 
 use legaia_asset::dance_art::{self, DanceWidget};
-use legaia_asset::field_char_textures;
+use legaia_asset::player_anm::PlayerAnmBundle;
+use legaia_asset::{character_pack, field_char_textures};
+use legaia_tmd::mesh::{VramMesh, tmd_to_vram_mesh_field_hybrid};
 
 /// Everything the dance panel renders with, decoded once at disc load.
 pub(crate) struct DancePresentation {
@@ -32,6 +34,43 @@ pub(crate) struct DancePresentation {
     /// (`FUN_801d3d78` bypasses the cue ring and keys two voices itself).
     pub sting_vab: Option<(legaia_vab::VabReport, Vec<u8>)>,
 }
+
+/// One dancer's renderable field-form body, built once at disc load.
+pub(crate) struct DanceBodyMesh {
+    mesh: VramMesh,
+    /// Per-vertex TMD object index (the bone each vertex hangs from).
+    object_ids: Vec<u32>,
+    /// Per-vertex `[r, g, b, textured_flag]` for the hybrid shader.
+    flat: Vec<u8>,
+    /// TMD object count = the pose rig width (capped to the retail 10).
+    part_count: usize,
+    /// PROT 0874 §0 pack slot the body came from (0 Vahn / 1 Noa / 2 Gala) -
+    /// also the locomotion-bank index for the pose lookup.
+    char_slot: usize,
+}
+
+/// The three dancer bodies + the shared pose bank + the field VRAM they
+/// sample, decoded once at disc load. The dance overlay (PROT 0980) loads no
+/// mesh of its own; the dancers are actors drawn from the field-form character
+/// pool the engine keeps resident across every field scene
+/// (`DAT_8007C018[0..4]` = PROT 0874 §0). Noa (the human dancer, pinned by the
+/// rig-0 face stamp = her field atlas, `docs/subsystems/minigame-dance.md`) is
+/// pack slot 1; the two AI dancers are drawn from the other resident party
+/// meshes (Vahn slot 0, Gala slot 2) - the only character bodies guaranteed
+/// present with the overlay issuing no load. Poses come from the party
+/// field-locomotion ANM bundle (PROT 0874 §1), the same clip set the field /
+/// play view animates the pool actors with.
+pub(crate) struct DanceBodies {
+    /// Display order left / centre / right = `[Vahn, Noa(human), Gala]`.
+    dancers: Vec<DanceBodyMesh>,
+    /// The party field-locomotion ANM bundle (idle = bank slot 1, walk = 0).
+    anm: PlayerAnmBundle,
+    /// 1 MB PSX VRAM with the PROT 0874 §2 field-character textures uploaded.
+    vram: Vec<u8>,
+}
+
+/// The centre dancer - the human player (Noa). Index into [`DanceBodies::dancers`].
+const DANCE_HUMAN_INDEX: usize = 1;
 
 impl LegaiaMinigames {
     /// Decode the dance presentation off the loaded PROT bytes. Any piece
@@ -100,12 +139,249 @@ impl LegaiaMinigames {
     }
 }
 
+impl LegaiaMinigames {
+    /// Build one dancer's field-form body mesh from PROT 0874 §0 pack slot
+    /// `char_slot`. Mirrors the viewer's field-character build
+    /// (`crate::character` / `crate::field_npc`): the active-party slots are
+    /// capped to the retail 10 live groups (groups 10/11 are the equipment
+    /// templates, never drawn) and the mesh is the field **hybrid** build so
+    /// the textured skin prims and the flat-shaded body prims both render.
+    fn build_dance_body(&self, char_slot: usize) -> Option<DanceBodyMesh> {
+        let raw = entry_bytes(&self.prot, &self.entries, character_pack::PROT_ENTRY_INDEX)?;
+        let pack = character_pack::parse(raw).ok()?;
+        let cslot = pack.slot(char_slot)?;
+        let mut tmd_bytes = cslot.tmd_bytes.clone();
+        if cslot.is_active_party() && tmd_bytes.len() >= 0x0C {
+            // Overwrite the TMD header `nobj` to 10 - the retail cap
+            // (FUN_8001E890), so the equip-template groups aren't drawn.
+            tmd_bytes[0x08..0x0C].copy_from_slice(&10u32.to_le_bytes());
+        }
+        let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
+        let part_count = tmd.objects.len();
+        let (mesh, object_ids, shading) = tmd_to_vram_mesh_field_hybrid(&tmd, &tmd_bytes);
+        let mut flat = Vec::with_capacity(shading.colors.len() * 4);
+        for (c, &t) in shading.colors.iter().zip(shading.textured.iter()) {
+            flat.extend_from_slice(&[c[0], c[1], c[2], if t != 0 { 255 } else { 0 }]);
+        }
+        Some(DanceBodyMesh {
+            mesh,
+            object_ids,
+            flat,
+            part_count,
+            char_slot,
+        })
+    }
+
+    /// Decode the three dancer bodies + their shared pose bank + the field
+    /// VRAM off the loaded PROT bytes. `None` when PROT 0874 (the field
+    /// character pool) doesn't decode.
+    pub(crate) fn load_dance_bodies(&mut self) -> Option<DanceBodies> {
+        let raw = entry_bytes(&self.prot, &self.entries, character_pack::PROT_ENTRY_INDEX)?;
+        let anm = character_pack::field_locomotion_anm(raw).ok()?;
+        let vram = {
+            let pack = field_char_textures::parse(raw).ok()?;
+            let mut v = legaia_tim::Vram::new();
+            pack.upload_to_vram(&mut v, false);
+            v.as_bytes().to_vec()
+        };
+        // Display order left / centre / right; the centre is the human (Noa).
+        let order = [0usize, 1, 2];
+        let mut dancers = Vec::with_capacity(order.len());
+        for &cs in &order {
+            dancers.push(self.build_dance_body(cs)?);
+        }
+        Some(DanceBodies { dancers, anm, vram })
+    }
+
+    /// The locomotion ANM record for dancer `dancer`'s `clip` (0 = idle, else
+    /// walk): `(bundle, record_index)`.
+    fn dance_anim_record(&self, dancer: u32, clip: u32) -> Option<(&PlayerAnmBundle, usize)> {
+        let b = self.dance_bodies.as_ref()?;
+        let d = b.dancers.get(dancer as usize)?;
+        let bank_slot = if clip == 0 {
+            character_pack::LOCOMOTION_IDLE_SLOT
+        } else {
+            character_pack::LOCOMOTION_WALK_SLOT
+        };
+        let record = character_pack::locomotion_record_index(d.char_slot, bank_slot);
+        Some((&b.anm, record))
+    }
+
+    fn dance_body(&self, dancer: u32) -> Option<&DanceBodyMesh> {
+        self.dance_bodies.as_ref()?.dancers.get(dancer as usize)
+    }
+}
+
 #[wasm_bindgen]
 impl LegaiaMinigames {
     /// Whether the dance's art pack + widget table decoded off this disc.
     /// When `false` the page falls back to its own glyphs - and says so.
     pub fn dance_art_ready(&self) -> bool {
         self.dance_pres.is_some()
+    }
+
+    // --------------------------------------------------------- dancer bodies
+    //
+    // The dance overlay draws no mesh of its own; its dancers are field-scene
+    // actors drawn from the resident field-character pool (PROT 0874 §0). Noa
+    // (the human dancer, centre) is her real field-view model - the same mesh
+    // the site's play / field view walks - and the two AI dancers are the
+    // other resident party bodies (Vahn / Gala). The page poses them to the
+    // beat off the party field-locomotion ANM (PROT 0874 §1), the same bank
+    // the field pool actors animate with. This is the browser twin of the
+    // Baka Fighter 3D render (`minigames_baka.rs`): same VramMesh accessors,
+    // same per-(frame, bone) pose format, so `site/js/minigame-dance.js`
+    // drives the shared `TmdRenderer` exactly as `minigame-baka.js` does.
+
+    /// Whether the three dancer bodies (Noa's field mesh + the two AI dancers)
+    /// and their pose bank decoded off this disc.
+    pub fn dance_body_ready(&self) -> bool {
+        self.dance_bodies.is_some()
+    }
+
+    /// Number of dancer bodies (3: left / centre / right).
+    pub fn dance_body_count(&self) -> u32 {
+        self.dance_bodies
+            .as_ref()
+            .map(|b| b.dancers.len() as u32)
+            .unwrap_or(0)
+    }
+
+    /// Display index of the human dancer (the centre box = Noa).
+    pub fn dance_body_human_index(&self) -> u32 {
+        DANCE_HUMAN_INDEX as u32
+    }
+
+    /// The PROT 0874 §0 pack slot dancer `dancer` is drawn from
+    /// (0 = Vahn, 1 = Noa, 2 = Gala). `255` when out of range.
+    pub fn dance_body_char_slot(&self, dancer: u32) -> u32 {
+        self.dance_body(dancer)
+            .map(|d| d.char_slot as u32)
+            .unwrap_or(255)
+    }
+
+    /// Per-vertex positions of dancer `dancer`'s body (object-local; the pose
+    /// assembles them). Empty when the bodies didn't decode.
+    pub fn dance_body_positions(&self, dancer: u32) -> Vec<f32> {
+        let Some(d) = self.dance_body(dancer) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(d.mesh.positions.len() * 3);
+        for p in &d.mesh.positions {
+            out.extend_from_slice(&[p[0], p[1], p[2]]);
+        }
+        out
+    }
+
+    /// Per-vertex `[u, v]` texel coords, parallel to the positions.
+    pub fn dance_body_uvs(&self, dancer: u32) -> Vec<i32> {
+        let Some(d) = self.dance_body(dancer) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(d.mesh.uvs.len() * 2);
+        for uv in &d.mesh.uvs {
+            out.extend_from_slice(&[uv[0] as i32, uv[1] as i32]);
+        }
+        out
+    }
+
+    /// Per-vertex `[cba, tsb]`, parallel to the positions.
+    pub fn dance_body_cba_tsb(&self, dancer: u32) -> Vec<u32> {
+        let Some(d) = self.dance_body(dancer) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(d.mesh.cba_tsb.len() * 2);
+        for ct in &d.mesh.cba_tsb {
+            out.extend_from_slice(&[ct[0] as u32, ct[1] as u32]);
+        }
+        out
+    }
+
+    /// Triangle indices for dancer `dancer`'s body.
+    pub fn dance_body_indices(&self, dancer: u32) -> Vec<u32> {
+        self.dance_body(dancer)
+            .map(|d| d.mesh.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex TMD object index (the bone a vertex hangs from), parallel to
+    /// the positions - the animator keys `R . v + T` on this.
+    pub fn dance_body_object_ids(&self, dancer: u32) -> Vec<u32> {
+        self.dance_body(dancer)
+            .map(|d| d.object_ids.clone())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, textured_flag]` for the hybrid textured / flat
+    /// shader path (the field body mixes textured skin with flat body prims).
+    pub fn dance_body_flat_rgba(&self, dancer: u32) -> Vec<u8> {
+        self.dance_body(dancer)
+            .map(|d| d.flat.clone())
+            .unwrap_or_default()
+    }
+
+    /// TMD object count (pose rig width) of dancer `dancer`'s body.
+    pub fn dance_body_part_count(&self, dancer: u32) -> u32 {
+        self.dance_body(dancer)
+            .map(|d| d.part_count as u32)
+            .unwrap_or(0)
+    }
+
+    /// `[bone_count, frame_count]` of dancer `dancer`'s `clip` locomotion
+    /// record (`clip` 0 = idle bank slot, else the walk bank slot).
+    pub fn dance_body_anim_dims(&self, dancer: u32, clip: u32) -> Vec<u32> {
+        let Some((bundle, record)) = self.dance_anim_record(dancer, clip) else {
+            return vec![0, 0];
+        };
+        match bundle.record(record) {
+            Ok(r) => vec![r.bone_count as u32, r.frame_count as u32],
+            Err(_) => vec![0, 0],
+        }
+    }
+
+    /// Dancer `dancer`'s `clip` locomotion record decoded to absolute
+    /// per-(frame, bone) `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles),
+    /// padded to `target_part_count` parts - the same pose stream the site's
+    /// mesh animator consumes (identical shape to `baka_anim_pose_frames`).
+    pub fn dance_body_pose_frames(
+        &self,
+        dancer: u32,
+        clip: u32,
+        target_part_count: u32,
+    ) -> Vec<i32> {
+        let Some((bundle, record)) = self.dance_anim_record(dancer, clip) else {
+            return Vec::new();
+        };
+        let Ok(rec) = bundle.record(record) else {
+            return Vec::new();
+        };
+        let bones = rec.bone_count as usize;
+        let frames = rec.frame_count as usize;
+        let parts = (target_part_count as usize).max(bones);
+        let mut out = Vec::with_capacity(frames * parts * 6);
+        for f in 0..frames {
+            for p in 0..parts {
+                if p < bones {
+                    let Some(t) = bundle.bone_transform(record, f, p) else {
+                        return Vec::new();
+                    };
+                    out.extend_from_slice(&[t.t_x, t.t_y, t.t_z, t.r_x, t.r_y, t.r_z]);
+                } else {
+                    out.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                }
+            }
+        }
+        out
+    }
+
+    /// The 1 MB PSX VRAM the dancer bodies sample - the PROT 0874 §2
+    /// field-character textures (row-478 CLUTs), uploaded exactly as the field
+    /// / play view uploads them. Empty when the bodies didn't decode.
+    pub fn dance_body_vram(&self) -> Vec<u8> {
+        self.dance_bodies
+            .as_ref()
+            .map(|b| b.vram.clone())
+            .unwrap_or_default()
     }
 
     /// The 256x256 HUD page (VRAM `(512, 0)`) decoded through palette

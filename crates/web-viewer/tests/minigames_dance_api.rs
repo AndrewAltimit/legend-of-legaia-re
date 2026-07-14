@@ -73,6 +73,59 @@ fn dance_presentation_api_decodes() {
         }
     }
 
+    // Dancer bodies: Noa's field-form mesh (PROT 0874 §0 slot 1) plus the two
+    // AI dancers (Vahn / Gala), each with real geometry and a beat pose bank.
+    assert!(
+        status.contains(r#""body":true"#),
+        "dancer bodies should decode: {status}"
+    );
+    assert!(mg.dance_body_ready());
+    assert_eq!(mg.dance_body_count(), 3, "three dancer bodies");
+    // The centre dancer is the human (Noa), drawn from pack slot 1.
+    assert_eq!(mg.dance_body_human_index(), 1);
+    assert_eq!(
+        mg.dance_body_char_slot(mg.dance_body_human_index()),
+        1,
+        "centre dancer is Noa (field pack slot 1)"
+    );
+    for dancer in 0..mg.dance_body_count() {
+        let pos = mg.dance_body_positions(dancer);
+        assert!(!pos.is_empty(), "dancer {dancer} has no vertices");
+        assert!(pos.len().is_multiple_of(3));
+        let verts = pos.len() / 3;
+        let idx = mg.dance_body_indices(dancer);
+        assert!(
+            !idx.is_empty() && idx.len().is_multiple_of(3),
+            "dancer {dancer} idx"
+        );
+        assert!(idx.iter().all(|&i| (i as usize) < verts));
+        let oids = mg.dance_body_object_ids(dancer);
+        assert_eq!(oids.len(), verts, "dancer {dancer} object ids parallel");
+        assert_eq!(mg.dance_body_uvs(dancer).len(), verts * 2);
+        assert_eq!(mg.dance_body_cba_tsb(dancer).len(), verts * 2);
+        assert_eq!(mg.dance_body_flat_rgba(dancer).len(), verts * 4);
+        let parts = mg.dance_body_part_count(dancer);
+        assert!(parts > 1, "dancer {dancer} is a multi-object rig");
+        // Both clips (idle + walk) decode with real dimensions and a pose
+        // stream padded to the mesh's part count.
+        for clip in 0..2u32 {
+            let dims = mg.dance_body_anim_dims(dancer, clip);
+            assert_eq!(dims.len(), 2);
+            assert!(
+                dims[0] > 0 && dims[1] > 0,
+                "dancer {dancer} clip {clip} dims"
+            );
+            let frames = mg.dance_body_pose_frames(dancer, clip, parts);
+            assert_eq!(
+                frames.len() as u32,
+                dims[1] * parts * 6,
+                "dancer {dancer} clip {clip} pose stream shape"
+            );
+        }
+    }
+    // The field VRAM the bodies sample is the full 1 MB PSX framebuffer.
+    assert_eq!(mg.dance_body_vram().len(), 1024 * 512 * 2);
+
     // SFX: the cue bank (PROT 1228 + the TOC-tail entry 1231) and the traced
     // cue ids all decode to PCM.
     let sfx = mg.dance_sfx_json();

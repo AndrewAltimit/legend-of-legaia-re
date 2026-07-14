@@ -31,6 +31,8 @@ window.MgDance = (function () {
   'use strict';
 
   const SCALE = 2;                 /* retail 320x240 -> 640x480 canvas */
+  const A2R = (Math.PI * 2) / 4096; /* PSX angle units -> radians */
+  const ANIM_FPS = 14;             /* locomotion clip rate (idle bob) */
 
   /* Widget ids, as named in legaia_asset::dance_art (traced draw sites). */
   const W = {
@@ -43,7 +45,7 @@ window.MgDance = (function () {
   /* Runtime CLUT swaps (FUN_801d2524): palette column of the row-500 strip. */
   const PAL_TRACK_IDLE = 8, PAL_TRACK_FLASH = 13, PAL_NOTE = 14;
 
-  function create(api, canvas) {
+  function create(api, canvas, glCanvas) {
     const g = canvas.getContext('2d');
     g.imageSmoothingEnabled = false;
 
@@ -51,6 +53,8 @@ window.MgDance = (function () {
     let layout = null;       /* traced emitter geometry */
     let pages = {};          /* palette -> HUD-page canvas */
     let faces = null;        /* [dancer][pose] -> canvas, + meta */
+    let body = null;         /* the 3D dancer-body scene (null = HUD only) */
+    let bodyTick = 0;        /* frame counter for the idle bob when not live */
     let sfx = null;          /* { ctx, buffers, stings } */
     let sfxIds = null;
     let bgm = null;          /* { buffer, src } */
@@ -109,7 +113,170 @@ window.MgDance = (function () {
       const cues = JSON.parse(api.dance_sfx_json());
       if (cues.length) sfxIds = JSON.parse(api.dance_sfx_cue_ids());
       bgmInfo = JSON.parse(api.dance_bgm_ready_json());
+
+      /* The dancer bodies: Noa's own field-view model plus the two AI dancers,
+       * drawn on a WebGL canvas behind the HUD (the same TmdRenderer the Baka
+       * duel uses). Absent when no gl canvas was handed in or PROT 0874 didn't
+       * decode - the HUD then sits on a neutral ground and the note says so. */
+      body = buildBodyScene();
       return true;
+    }
+
+    /* ------------- 3D dancer bodies (behind the HUD) ------------- */
+
+    /* Assemble the three dancer bodies into one posed buffer + camera, the
+     * browser twin of minigame-baka.js's fighter scene. Returns null (HUD
+     * only) when the bodies or the WebGL context aren't available. */
+    function buildBodyScene() {
+      if (!glCanvas || !window.TmdRenderer) return null;
+      if (!api.dance_body_ready || !api.dance_body_ready()) return null;
+      const count = api.dance_body_count();
+      if (!count) return null;
+
+      const dancers = [];
+      for (let d = 0; d < count; d++) {
+        const pos = api.dance_body_positions(d);
+        if (!pos.length) return null;
+        dancers.push({
+          pos,
+          uvs: api.dance_body_uvs(d),
+          ct: api.dance_body_cba_tsb(d),
+          idx: api.dance_body_indices(d),
+          oid: api.dance_body_object_ids(d),
+          flat: api.dance_body_flat_rgba(d),
+          parts: api.dance_body_part_count(d),
+        });
+      }
+
+      /* Idle + walk locomotion clips per dancer (frame 0 assembles the parts;
+       * the walk clip is what we cycle to the beat). */
+      const clip = (d, c, parts) => {
+        const dims = api.dance_body_anim_dims(d, c);
+        if (!dims[0] || !dims[1]) return null;
+        const frames = api.dance_body_pose_frames(d, c, parts);
+        if (!frames.length) return null;
+        return { frames, frameCount: dims[1], parts };
+      };
+      const clips = dancers.map((f, d) => ({
+        idle: clip(d, 0, f.parts),
+        walk: clip(d, 1, f.parts),
+      }));
+
+      /* Half-extent of each assembled rest pose -> floor spacing (FITTED, the
+       * same measure baka uses to stand its fighters apart). */
+      const halfOf = (f, cl) => {
+        const c = cl.idle || cl.walk;
+        if (!c) return 200;
+        const out = new Float32Array(f.pos);
+        poseInto(out, f.pos, f.oid, c, 0, 0, 0, 0);
+        let lo = Infinity, hi = -Infinity;
+        for (let i = 0; i < out.length; i += 3) {
+          if (out[i] < lo) lo = out[i];
+          if (out[i] > hi) hi = out[i];
+        }
+        return (hi - lo) / 2 || 200;
+      };
+      const halves = dancers.map((f, d) => halfOf(f, clips[d]));
+      const maxHalf = Math.max.apply(null, halves);
+      const gap = maxHalf * 2.6;
+      const human = api.dance_body_human_index();
+      /* Display order left/centre/right; centre (the human) sits at x=0. */
+      const dx = dancers.map((_, d) => (d - human) * gap);
+
+      /* Combined vertex buffers (player, then dancer 2, then dancer 3, ...). */
+      const vertBases = [];
+      let total = 0;
+      for (const f of dancers) { vertBases.push(total); total += f.pos.length / 3; }
+      const pos = new Float32Array(total * 3);
+      const uvs = new Uint8Array(total * 2);
+      const ct = new Uint16Array(total * 2);
+      const flat = new Uint8Array(total * 4);
+      const idxArr = [];
+      for (let d = 0; d < dancers.length; d++) {
+        const f = dancers[d], vb = vertBases[d];
+        pos.set(f.pos, vb * 3);
+        uvs.set(f.uvs, vb * 2);
+        ct.set(f.ct, vb * 2);
+        flat.set(f.flat, vb * 4);
+        for (const ix of f.idx) idxArr.push(ix + vb);
+      }
+      const idx = new Uint32Array(idxArr);
+
+      const renderer = new window.TmdRenderer(glCanvas);
+      renderer.uploadVram(api.dance_body_vram());
+      renderer.uploadMesh(pos, uvs, ct, idx, flat);
+
+      const scene = {
+        renderer, dancers, clips, dx, vertBases,
+        base: pos.slice(),      /* pristine object-local vertices */
+        out: pos,               /* per-frame posed copy (uploaded buffer) */
+        cam: { yaw: 0.0, pitch: 0.12, distance: 1.9 },
+        center: [0, -maxHalf * 0.85, 0],
+        radius: gap * 1.1 + maxHalf * 0.9,
+      };
+      attachOrbit(scene);
+      return scene;
+    }
+
+    /* Pick the clip frame for `clip` this render: when the run is live the
+     * walk cycles to the beat (two beats per walk loop, synced to the beat
+     * phase); before/after a run the idle bobs at the clip rate. */
+    function beatFrame(cl, st) {
+      if (!cl) return 0;
+      const n = cl.frameCount;
+      if (!st || !st.live) return Math.floor(bodyTick * (ANIM_FPS / 60)) % n;
+      const period = st.period || 281;
+      const phaseTotal = (st.beat | 0) * period + (st.phase | 0);
+      const step = (period * 2) / n;              /* two beats per loop */
+      const f = Math.floor(phaseTotal / step);
+      return ((f % n) + n) % n;
+    }
+
+    /* Pose every dancer to the beat and render the 3D floor on the gl canvas. */
+    function bodyRender(st) {
+      const b = body;
+      bodyTick++;
+      const live = !!(st && st.live);
+      for (let d = 0; d < b.dancers.length; d++) {
+        const f = b.dancers[d], cl = b.clips[d];
+        const c = live ? (cl.walk || cl.idle) : (cl.idle || cl.walk);
+        if (!c) continue;
+        const frame = beatFrame(c, live ? st : null);
+        /* The field meshes face +Z; spin them PI so they face the camera. */
+        poseInto(b.out, b.base, f.oid, c, frame, b.vertBases[d], b.dx[d], Math.PI);
+      }
+      b.renderer.updatePositions(b.out);
+      b.renderer.render(b.cam.yaw, b.cam.pitch, b.cam.distance,
+                        0, 0, b.center, b.radius);
+    }
+
+    /* Drag-to-orbit on the gl canvas (the HUD canvas over it is
+     * pointer-events:none, so drags reach here); dblclick re-frames. */
+    function attachOrbit(scene) {
+      const c = glCanvas;
+      let drag = false, lx = 0, ly = 0;
+      c.addEventListener('pointerdown', (e) => {
+        drag = true; lx = e.clientX; ly = e.clientY;
+        c.setPointerCapture(e.pointerId);
+      });
+      c.addEventListener('pointerup', (e) => {
+        drag = false; try { c.releasePointerCapture(e.pointerId); } catch (_) { /* */ }
+      });
+      c.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        scene.cam.yaw -= (e.clientX - lx) * 0.006;
+        scene.cam.pitch = Math.max(-1.0, Math.min(1.0,
+          scene.cam.pitch - (e.clientY - ly) * 0.006));
+        lx = e.clientX; ly = e.clientY;
+      });
+      c.addEventListener('dblclick', () => {
+        scene.cam = { yaw: 0.0, pitch: 0.12, distance: 1.9 };
+      });
+      c.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        scene.cam.distance = Math.max(1.0, Math.min(6,
+          scene.cam.distance * (e.deltaY > 0 ? 1.1 : 0.9)));
+      }, { passive: false });
     }
 
     /* ---------------- sound ---------------- */
@@ -402,13 +569,21 @@ window.MgDance = (function () {
     /* One full frame. `st` may be null before the first run. */
     function draw(st, chart, stock) {
       const Wpx = canvas.width, Hpx = canvas.height;
-      /* Neutral ground: the dance hall (disco ball, spotlights, crowd,
-       * floor) is the host field scene's 3D geometry, not the overlay's -
-       * drawn plain rather than faked. */
-      g.fillStyle = '#0b0b10';
-      g.fillRect(0, 0, Wpx, Hpx);
-      g.fillStyle = '#11131c';
-      g.fillRect(0, 150 * SCALE, Wpx, Hpx - 150 * SCALE);
+      if (body) {
+        /* The dancers are drawn in 3D on the gl canvas behind this one -
+         * Noa's own field-view model plus the two AI dancers, posed to the
+         * beat off the party locomotion ANM. Keep the HUD canvas transparent
+         * so the bodies show through. */
+        bodyRender(st);
+        g.clearRect(0, 0, Wpx, Hpx);
+      } else {
+        /* No body scene (no WebGL, or PROT 0874 didn't decode): the HUD sits
+         * on a neutral ground rather than a faked room, and the note says so. */
+        g.fillStyle = '#0b0b10';
+        g.fillRect(0, 0, Wpx, Hpx);
+        g.fillStyle = '#11131c';
+        g.fillRect(0, 150 * SCALE, Wpx, Hpx - 150 * SCALE);
+      }
 
       if (!widgets) return;
       const L = layout;
@@ -475,8 +650,53 @@ window.MgDance = (function () {
       get introGate() { return intro !== null && !intro.go; },
       sfxCount() { return sfxIds ? Object.keys(sfxIds).length : 0; },
       bgmOk() { return !!(bgmInfo && bgmInfo.ok); },
+      bodyOk() { return !!body; },
       stopAll() { stopBgm(); },
     };
+  }
+
+  /* Pose `base` (object-local verts) through `clip` at `frame` into `out`,
+   * then spin the whole figure `yaw` about Y and shift it `dx` along X - the
+   * retail per-object composition Rz.Ry.Rx . v + T with a world transform on
+   * top. Identical to minigame-baka.js's poser (the pose stream shape matches
+   * `baka_anim_pose_frames`). `vertBase` selects the dancer's slice of the
+   * combined buffers. */
+  function poseInto(out, base, oids, clip, frame, vertBase, dx, yaw) {
+    const pc = clip.parts, f = clip.frames;
+    const ff = ((frame % clip.frameCount) + clip.frameCount) % clip.frameCount;
+    const sin = new Float32Array(pc * 3), cos = new Float32Array(pc * 3);
+    const tr = new Float32Array(pc * 3);
+    for (let p = 0; p < pc; p++) {
+      const o = (ff * pc + p) * 6;
+      for (let k = 0; k < 3; k++) {
+        const a = f[o + 3 + k] * A2R;
+        sin[p * 3 + k] = Math.sin(a);
+        cos[p * 3 + k] = Math.cos(a);
+        tr[p * 3 + k] = f[o + k];
+      }
+    }
+    const wy = yaw || 0;
+    const wsin = Math.sin(wy), wcos = Math.cos(wy);
+    const n = oids.length;
+    for (let v = 0; v < n; v++) {
+      const vi = (vertBase + v) * 3;
+      const o = oids[v];
+      let x = base[vi], y = base[vi + 1], z = base[vi + 2];
+      if (o < pc) {
+        const sx = sin[o * 3], cxx = cos[o * 3];
+        const sy = sin[o * 3 + 1], cyy = cos[o * 3 + 1];
+        const sz = sin[o * 3 + 2], czz = cos[o * 3 + 2];
+        let ny = y * cxx - z * sx, nz = y * sx + z * cxx; y = ny; z = nz;
+        let nx = x * cyy + z * sy; nz = -x * sy + z * cyy; x = nx; z = nz;
+        nx = x * czz - y * sz; ny = x * sz + y * czz; x = nx; y = ny;
+        x += tr[o * 3]; y += tr[o * 3 + 1]; z += tr[o * 3 + 2];
+      }
+      const wx = x * wcos + z * wsin;
+      const wz = -x * wsin + z * wcos;
+      out[vi] = wx + (dx || 0);
+      out[vi + 1] = y;
+      out[vi + 2] = wz;
+    }
   }
 
   return { create };
