@@ -868,6 +868,10 @@ impl PlayWindowApp {
                 self.options_state.audio,
                 legaia_engine_core::options::AudioMode::Mono
             ));
+            // Master mute (engine-only knob; `V` toggles it live). The
+            // mixer gate zeroes the output while the sequencer / SPU keep
+            // ticking, so unmuting resumes mid-track in sync.
+            audio.set_muted(self.options_state.muted);
         }
     }
 

@@ -12,6 +12,12 @@ layers:
 Engines push voice attributes / key-on masks / sample uploads through
 `AudioOut::with_spu(|spu| ...)`.
 
+`AudioOut` also carries two output-side switches: `set_mono` (the retail
+options screen's Stereo/Monaural downmix) and `set_muted` - an engine-only
+master gate that zeroes the rendered frames while the sequencer, SPU
+voices, XA stream and fade engine all keep ticking, so unmuting resumes
+playback in sync without tearing down the stream.
+
 ## SPU model
 
 | Module | Surface |

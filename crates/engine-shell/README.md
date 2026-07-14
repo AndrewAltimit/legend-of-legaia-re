@@ -81,6 +81,12 @@ edges keyed on the world-tick counter, replacing `xdotool` for menu navigation.
 Pair with `mednafen-state vram-dump --display-crop` to diff engine output against
 retail framebuffers.
 
+In `play-window`, the `V` key toggles a master audio mute: the mixer's output
+gate zeroes the rendered frames while the sequencer / SPU / XA stream keep
+ticking, so unmuting resumes mid-track in sync. The state persists in
+`legaia-options.toml` (the engine-only `muted` knob next to the retail
+options rows) and the HUD status line reflects it (`audio MUTED (V)`).
+
 In `play-window`, five minigames run as suspending scene modes driven by their
 clean-room rules engines: the `K` key starts the Noa dance rhythm minigame
 (`legaia_engine_core::dance`, from the dance overlay PROT 0980 - Left/Right/Up

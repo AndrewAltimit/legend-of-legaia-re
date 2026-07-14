@@ -138,6 +138,11 @@ pub struct OptionsState {
     pub sfx_volume: u8,
     /// 1..=8 (1 = slowest). Wired to dialog auto-advance interval.
     pub message_speed: u8,
+    /// Master audio mute (`true` = silent). Engine-only: retail's options
+    /// screen has Stereo/Monaural but no "off". Wired to the mixer's
+    /// master gate (`AudioOut::set_muted`), which silences the output
+    /// without pausing the sequencer / SPU, so unmuting stays in sync.
+    pub muted: bool,
 }
 
 impl Default for OptionsState {
@@ -155,6 +160,7 @@ impl Default for OptionsState {
             bgm_volume: 8,
             sfx_volume: 8,
             message_speed: 5,
+            muted: false,
         }
     }
 }

@@ -218,6 +218,11 @@ struct StreamResampler {
     /// Monaural downmix (the retail options screen's "Sound: Monaural"):
     /// when set, L/R are averaged into both channels at output time.
     mono: bool,
+    /// Master mute gate (engine-only; retail has no equivalent). When set,
+    /// [`Self::next_frame`] returns silence but the SPU, sequencer, fade
+    /// engine, and any XA stream all keep ticking, so unmuting resumes
+    /// exactly where playback would have been - no state is torn down.
+    muted: bool,
     /// Cached previous sample (one frame, stereo).
     prev: (i16, i16),
     /// Cached current sample (the SPU output we'll interpolate against).
@@ -245,6 +250,7 @@ impl StreamResampler {
             fade_step: 0.0,
             xa: None,
             mono: false,
+            muted: false,
             prev: (0, 0),
             cur: (0, 0),
             phase: 0.0,
@@ -295,7 +301,9 @@ impl StreamResampler {
         let l = lerp_i16(self.prev.0, self.cur.0, alpha);
         let r = lerp_i16(self.prev.1, self.cur.1, alpha);
         self.phase += self.step;
-        (l, r)
+        // Master mute: everything above still ran (sequencer, SPU, XA
+        // cursor, fades), so unmute picks up mid-stream with no state loss.
+        if self.muted { (0, 0) } else { (l, r) }
     }
 
     /// Advance `master_fade` one SPU sample toward `fade_target`. When the
@@ -478,6 +486,19 @@ impl AudioOut {
     /// averages L/R into both channels.
     pub fn set_mono(&self, mono: bool) {
         self.lock().mono = mono;
+    }
+
+    /// Master mute gate (engine-only). While muted the output stream keeps
+    /// running and every producer (sequencer, SPU voices, XA stream, fade
+    /// engine) keeps ticking - only the rendered frames are zeroed - so
+    /// unmuting resumes playback exactly in sync, mid-track.
+    pub fn set_muted(&self, muted: bool) {
+        self.lock().muted = muted;
+    }
+
+    /// Current state of the master mute gate.
+    pub fn is_muted(&self) -> bool {
+        self.lock().muted
     }
 
     /// Run a closure with mutable access to the underlying SPU model. This
@@ -985,6 +1006,42 @@ mod tests {
             let _ = r.next_frame();
         }
         assert!(r.xa.is_none(), "exhausted XA stream should detach");
+    }
+
+    // --- master mute gate ---
+
+    /// While muted the resampler renders pure zeros, but the underlying
+    /// producers keep advancing (here: the XA stream cursor), so unmuting
+    /// resumes playback from where it would have been - no state loss.
+    #[test]
+    fn resampler_mute_gate_silences_and_unmute_resumes_without_state_loss() {
+        let mut r = StreamResampler::new(SPU_INTERNAL_RATE);
+        // A long, loud, looping XA stream stands in for "audio is playing".
+        r.xa = Some(make_mono_xa(SPU_INTERNAL_RATE, vec![5000i16; 4096], true));
+        // Muted: every rendered frame is exactly silent.
+        r.muted = true;
+        for _ in 0..200 {
+            r.phase = r.phase.max(1.0);
+            assert_eq!(r.next_frame(), (0, 0), "muted render must be zeros");
+        }
+        // ...but the stream kept ticking underneath the gate.
+        let cursor = r.xa.as_ref().expect("stream still attached").cursor;
+        assert!(
+            cursor >= 199.0,
+            "producer state should keep advancing while muted, cursor={cursor}"
+        );
+        // Unmute: output resumes at the sustained XA level within a few
+        // frames (the prev/cur interpolation caches were kept warm).
+        r.muted = false;
+        let mut resumed = false;
+        for _ in 0..16 {
+            r.phase = r.phase.max(1.0);
+            let (l, _) = r.next_frame();
+            if (l - 5000).abs() < 50 {
+                resumed = true;
+            }
+        }
+        assert!(resumed, "unmute should resume playback without re-priming");
     }
 
     // --- fade engine ---

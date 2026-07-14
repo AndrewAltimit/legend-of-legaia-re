@@ -63,10 +63,12 @@ impl PlayWindowApp {
         );
         let layout1 = self.font.layout_ascii(&line1);
         let mut out = text_draws_for(&layout1, (8, 8), white);
-        let audio_str = if self.session.audio.is_some() {
-            "audio on"
-        } else {
+        let audio_str = if self.session.audio.is_none() {
             "no audio"
+        } else if self.options_state.muted {
+            "audio MUTED (V)"
+        } else {
+            "audio on (V mutes)"
         };
         // Human-readable name for the playing track: global-pool ids join
         // the music_01 bank / debug sound-test order the curated

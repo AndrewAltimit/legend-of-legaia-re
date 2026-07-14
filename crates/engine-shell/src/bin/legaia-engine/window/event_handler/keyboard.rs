@@ -494,6 +494,24 @@ impl PlayWindowApp {
             }
             return;
         }
+        // `V`: master audio mute toggle. Flips the engine-only `muted`
+        // options knob, pushes it into the mixer's master gate (output
+        // silenced; sequencer + SPU keep ticking so unmute stays in sync),
+        // and persists it to the options config file. The HUD status line
+        // reflects the state ("audio muted").
+        if matches!(code, KeyCode::KeyV) && state == ElementState::Pressed {
+            self.options_state.muted = !self.options_state.muted;
+            self.persist_and_apply_options();
+            log::info!(
+                "audio: {}",
+                if self.options_state.muted {
+                    "muted (V to unmute)"
+                } else {
+                    "unmuted"
+                }
+            );
+            return;
+        }
         // `C`: toggle the field camera between the retail follow view
         // (savestate-pinned pitch/yaw/H, player-anchored - the
         // faithful framing) and the wide debug orbit vantage (better
