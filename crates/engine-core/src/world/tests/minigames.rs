@@ -39,12 +39,15 @@ fn dance_tick_judges_a_correct_press() {
     world.set_pad(0);
     world.set_pad(input::PadButton::Left.mask());
     let _ = world.tick();
-    // The press was judged (score advanced, judgement recorded).
+    // The press was judged (the chain closed, the groove gauge advanced). The
+    // score itself is the dancer kind's disc-resident bonus row, which a chart
+    // fixture with no overlay tables leaves at zero - `dance_minigame_real`
+    // covers the scoring end on the real tables.
     assert!(matches!(
         world.dance_last_judge,
         Some(crate::dance::Judge::Hit { .. }) | Some(crate::dance::Judge::Sequence { .. })
     ));
-    assert!(world.dance.as_ref().unwrap().score() > 0);
+    assert!(world.dance.as_ref().unwrap().gauge() > 0);
 }
 
 #[test]

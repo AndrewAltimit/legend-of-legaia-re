@@ -39,7 +39,7 @@ use legaia_asset::minigame_sfx::{self, SfxCueBank};
 use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
 use legaia_asset::static_overlay;
 use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, LadderRun, MatchPhase, RunPhase};
-use legaia_engine_core::dance::{DanceDir, DanceGame, Judge};
+use legaia_engine_core::dance::{DanceDir, DanceEvent, DanceGame};
 use legaia_engine_core::slot_machine::{SlotMachine, SlotPhase};
 use legaia_tim::Tim;
 
@@ -331,26 +331,38 @@ impl LegaiaMinigames {
 
     // ---------------------------------------------------------------- dance
 
-    /// Start a dance run on the disc's baked step chart. `long_song` picks the
-    /// long song-length limit. Returns `false` when the chart didn't decode.
+    /// Start a dance run on the disc's baked step chart, scoring tables and
+    /// qualifier cast (all rodata of PROT 0980). `long_song` picks the long
+    /// song-length limit. Returns `false` when the overlay didn't decode.
     pub fn dance_start(&mut self, long_song: bool) -> bool {
-        let Some(chart) = self.dance_chart() else {
+        let Some(img) = self.dance_overlay() else {
             return false;
         };
-        self.dance = Some(DanceGame::new(chart, long_song));
+        let Some(game) = DanceGame::from_overlay(&img, long_song) else {
+            return false;
+        };
+        self.dance = Some(game);
         true
     }
 
     /// Advance the beat clock by `frames` frames (the retail clock steps
-    /// `frame_delta * 10` phase units per frame).
+    /// `frame_delta * 10` phase units per frame). This also runs the **CPU
+    /// dancers**: retail feeds them the chart every frame through the same judge
+    /// and award routine the human's presses take, so their scores climb here.
     pub fn dance_tick(&mut self, frames: u32) {
         if let Some(g) = self.dance.as_mut() {
             g.advance(frames);
         }
     }
 
-    /// Judge a directional press. `dir` is the chart symbol (`1` / `2` / `3`).
-    /// Returns `"miss"` / `"hit"` / `"sequence"` (`"none"` with no live run).
+    /// Press a dance button. `1` = Square, `2` = Circle (the judged directions),
+    /// `3` = **Triangle**, the three-per-song "groovy move" wildcard.
+    ///
+    /// Returns the event name: `"miss"` / `"hit"` / `"sequence"` for a direction,
+    /// `"groovy"` / `"groovy_off"` for a triangle spent on / off the 4-beat combo
+    /// slot, `"no_charge"` when the stock is empty, and `"ignored"` while the
+    /// dancer is inside a groovy move (input is disrupted for its whole spin).
+    /// `"none"` with no live run.
     pub fn dance_press(&mut self, dir: u8) -> String {
         let Some(g) = self.dance.as_mut() else {
             return "none".to_string();
@@ -361,11 +373,16 @@ impl LegaiaMinigames {
             3 => DanceDir::C,
             _ => return "none".to_string(),
         };
-        match g.judge_press(d) {
-            Judge::Miss => "miss".to_string(),
-            Judge::Hit { .. } => "hit".to_string(),
-            Judge::Sequence { .. } => "sequence".to_string(),
+        match g.press(d) {
+            DanceEvent::Miss => "miss",
+            DanceEvent::Hit { .. } => "hit",
+            DanceEvent::Sequence { .. } => "sequence",
+            DanceEvent::Groovy { landed: true, .. } => "groovy",
+            DanceEvent::Groovy { landed: false, .. } => "groovy_off",
+            DanceEvent::NoCharge => "no_charge",
+            DanceEvent::Ignored => "ignored",
         }
+        .to_string()
     }
 
     /// Live dance state.
@@ -373,16 +390,25 @@ impl LegaiaMinigames {
     /// ```json
     /// { "live": true, "score": 0, "gauge": 0, "lane": 0, "beat": 3,
     ///   "phase": 40, "period": 281, "window": 210, "accuracy": 3200, "dead_zone": false,
-    ///   "judged": 2, "displayed": 3, "song_timer": 900, "song_len": 16860,
-    ///   "over": false, "passed": false }
+    ///   "combo_slot": true, "judged": 2, "displayed": 3,
+    ///   "triangles": 3, "lock": 0, "feedback": null,
+    ///   "rivals": [ {"score": 12, "gauge": 500, "lane": 0, "kind": 2, "triangles": 3}, .. ],
+    ///   "song_timer": 900, "song_len": 16860, "over": false, "passed": false,
+    ///   "winning": true }
     /// ```
     ///
     /// **`judged` is the step to press.** Retail splits the chart lookup
     /// (`FUN_801d1820`) into two halves: the hit judge (`FUN_801d1960`) matches
     /// a press against the raw chart cell (`judged`), while the display /
-    /// auto-feed half substitutes the held-sequence symbol `3` on every 4th
-    /// beat (`displayed`). Both are surfaced; only `judged` scores. `0` = the
-    /// beat carries no step, `null` = the dead zone between beats.
+    /// auto-feed half substitutes the triangle symbol `3` on every 4th beat
+    /// (`displayed`). Both are surfaced; only `judged` scores a direction. `0` =
+    /// the beat carries no step, `null` = the dead zone between beats.
+    ///
+    /// `triangles` is the groovy-move stock (3 per song); `lock` is the frames of
+    /// groovy-move spin still disrupting input; `feedback` is `true`/`false`
+    /// while the post-spend caption window runs (whether it landed on the combo
+    /// slot), `null` otherwise. `rivals` are the two CPU dancers, scoring live
+    /// off the same chart.
     pub fn dance_state_json(&self) -> String {
         let Some(g) = self.dance.as_ref() else {
             return r#"{"live":false}"#.to_string();
@@ -391,11 +417,25 @@ impl LegaiaMinigames {
             Some(v) => v.to_string(),
             None => "null".to_string(),
         };
+        let rivals = (1..g.dancer_count())
+            .map(|i| {
+                format!(
+                    r#"{{"score":{},"gauge":{},"lane":{},"kind":{},"triangles":{}}}"#,
+                    g.dancer_score(i),
+                    g.dancer_gauge(i),
+                    g.dancer_lane(i),
+                    g.dancer_kind(i),
+                    g.dancer_triangles(i),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
         format!(
             concat!(
                 r#"{{"live":true,"score":{},"gauge":{},"lane":{},"beat":{},"phase":{},"#,
-                r#""period":{},"window":{},"accuracy":{},"dead_zone":{},"judged":{},"displayed":{},"#,
-                r#""song_timer":{},"song_len":{},"over":{},"passed":{}}}"#
+                r#""period":{},"window":{},"accuracy":{},"dead_zone":{},"combo_slot":{},"#,
+                r#""judged":{},"displayed":{},"triangles":{},"lock":{},"feedback":{},"#,
+                r#""rivals":[{}],"song_timer":{},"song_len":{},"over":{},"passed":{},"winning":{}}}"#
             ),
             g.score(),
             g.gauge(),
@@ -406,12 +446,21 @@ impl LegaiaMinigames {
             legaia_engine_core::dance::BEAT_WINDOW,
             g.accuracy_weight(),
             g.in_dead_zone(),
+            g.on_combo_slot(),
             opt(g.judged_symbol()),
             opt(g.required_symbol()),
+            g.triangles(),
+            g.groovy_lock(),
+            match g.triangle_feedback() {
+                Some(landed) => landed.to_string(),
+                None => "null".to_string(),
+            },
+            rivals,
             g.song_timer(),
             g.song_len(),
             g.song_over(),
             g.passed(),
+            g.beating_rivals(),
         )
     }
 
@@ -1381,13 +1430,18 @@ impl LegaiaMinigames {
 }
 
 impl LegaiaMinigames {
-    /// Decode the dance step chart out of the dance overlay (PROT 0980).
-    fn dance_chart(&self) -> Option<legaia_asset::dance_chart::DanceChart> {
-        let img = overlay_image(
+    /// The as-loaded dance overlay image (PROT 0980) - chart, scoring tables and
+    /// cast tables all live in its rodata.
+    fn dance_overlay(&self) -> Option<Vec<u8>> {
+        overlay_image(
             &self.prot,
             &self.entries,
             legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32,
-        )?;
-        legaia_asset::dance_chart::parse(&img)
+        )
+    }
+
+    /// Decode the dance step chart out of the dance overlay (PROT 0980).
+    fn dance_chart(&self) -> Option<legaia_asset::dance_chart::DanceChart> {
+        legaia_asset::dance_chart::parse(&self.dance_overlay()?)
     }
 }

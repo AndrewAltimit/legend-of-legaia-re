@@ -43,6 +43,29 @@ pub const BEATS_PER_ROW: usize = 0x20;
 /// Difficulty rows: `DAT_801d544c / 1000` over the gauge's `[0, 2999]` clamp.
 pub const DANCE_CHART_ROWS: usize = 3;
 
+/// Runtime VA of the **sequence-bonus value table** `DAT_801d41a4` - the points
+/// a completed direction sequence awards, indexed
+/// `[dancer_kind * 4 + lane]` (`FUN_801d1960`:
+/// `DAT_801d41a4 + lane*4 + DAT_801d540c[player]*0x10`, where `DAT_801d540c` is
+/// the dancer's **kind** as stamped by the spawner `FUN_801d0190`).
+pub const DANCE_BONUS_VA: u32 = 0x801D_41A4;
+
+/// Runtime VA of the **AI triangle schedule** `DAT_801d41e4` - per dancer kind,
+/// the number of 4-beat combo slots that must pass before that dancer spends its
+/// next "groovy move" (`FUN_801d1820`:
+/// `DAT_801d41e4 + tri_cursor*4 + kind*0x40 <= DAT_801d578c[player]`).
+pub const DANCE_TRIANGLE_SCHEDULE_VA: u32 = 0x801D_41E4;
+
+/// Dancer kinds the two tables are rowed by (0 = Noa / the human, 1..3 = the
+/// competitor dancers; the Disco King (kind 4) never scores).
+pub const DANCE_SKILL_ROWS: usize = 4;
+
+/// Bonus-table lanes per kind row (`kind * 0x10` stride / 4-byte words).
+pub const DANCE_BONUS_LANES: usize = 4;
+
+/// Triangle-schedule slots per kind row (`kind * 0x40` stride / 4-byte words).
+pub const DANCE_SCHEDULE_SLOTS: usize = 16;
+
 /// The decoded step chart: [`DANCE_CHART_ROWS`] rows × [`BEATS_PER_ROW`] beats of
 /// direction symbols.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +115,72 @@ pub fn parse_at(overlay: &[u8], off: usize, rows: usize) -> Option<DanceChart> {
     Some(DanceChart { rows: out })
 }
 
+/// The two per-dancer-kind scoring tables that sit just ahead of the chart in
+/// the same overlay rodata block.
+///
+/// Both are rowed by the dancer's **kind** (`DAT_801d540c[slot]`, stamped from
+/// the spawn table by `FUN_801d0190`), so they are simultaneously the human's
+/// scoring table (kind 0 = Noa) and each AI dancer's - the competitors score
+/// through the *same* award routine, only off their own kind's row.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DanceScoreTables {
+    /// `bonus[kind][lane]` - points a completed direction sequence awards
+    /// (`DAT_801d41a4`). Retail rows are `k, 2k, 3k` - the `(lane + 1)` scaling
+    /// is baked into the table, not applied by the code.
+    pub bonus: Vec<[i32; DANCE_BONUS_LANES]>,
+    /// `schedule[kind][n]` - combo slots the dancer must bank before spending
+    /// its `n`-th triangle (`DAT_801d41e4`). A huge value means "never".
+    pub schedule: Vec<[i32; DANCE_SCHEDULE_SLOTS]>,
+}
+
+impl DanceScoreTables {
+    /// Sequence-bonus points for `kind` on difficulty `lane` (`0` out of range).
+    pub fn bonus(&self, kind: usize, lane: usize) -> i32 {
+        self.bonus
+            .get(kind)
+            .and_then(|r| r.get(lane))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Combo slots `kind` banks before spending its `n`-th triangle. Out of
+    /// range (or an exhausted schedule) reports [`i32::MAX`] = never.
+    pub fn schedule(&self, kind: usize, n: usize) -> i32 {
+        self.schedule
+            .get(kind)
+            .and_then(|r| r.get(n))
+            .copied()
+            .unwrap_or(i32::MAX)
+    }
+}
+
+/// Parse [`DanceScoreTables`] out of the as-loaded dance overlay image (PROT
+/// [`DANCE_OVERLAY_PROT_INDEX`]). `None` when the buffer is too short.
+pub fn parse_tables(overlay: &[u8]) -> Option<DanceScoreTables> {
+    let word = |off: usize| -> Option<i32> {
+        Some(i32::from_le_bytes(
+            overlay.get(off..off + 4)?.try_into().ok()?,
+        ))
+    };
+    let bonus_base = (DANCE_BONUS_VA - DANCE_OVERLAY_BASE_VA) as usize;
+    let sched_base = (DANCE_TRIANGLE_SCHEDULE_VA - DANCE_OVERLAY_BASE_VA) as usize;
+    let mut bonus = Vec::with_capacity(DANCE_SKILL_ROWS);
+    let mut schedule = Vec::with_capacity(DANCE_SKILL_ROWS);
+    for k in 0..DANCE_SKILL_ROWS {
+        let mut row = [0i32; DANCE_BONUS_LANES];
+        for (lane, cell) in row.iter_mut().enumerate() {
+            *cell = word(bonus_base + (k * DANCE_BONUS_LANES + lane) * 4)?;
+        }
+        bonus.push(row);
+        let mut srow = [0i32; DANCE_SCHEDULE_SLOTS];
+        for (n, cell) in srow.iter_mut().enumerate() {
+            *cell = word(sched_base + (k * DANCE_SCHEDULE_SLOTS + n) * 4)?;
+        }
+        schedule.push(srow);
+    }
+    Some(DanceScoreTables { bonus, schedule })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,6 +190,35 @@ mod tests {
         assert_eq!(DANCE_CHART_FILE_OFFSET, 0x6884);
         assert_eq!(BEATS_PER_ROW, 0x20);
         assert_eq!(DANCE_CHART_ROWS, 3);
+        // The two scoring tables sit in the same rodata block, one row-stride
+        // apart (`0x10` words of bonus per kind, then the schedule).
+        assert_eq!(DANCE_BONUS_VA - DANCE_OVERLAY_BASE_VA, 0x598C);
+        assert_eq!(DANCE_TRIANGLE_SCHEDULE_VA - DANCE_BONUS_VA, 0x40);
+    }
+
+    #[test]
+    fn tables_parse_and_index_by_kind() {
+        let sched_off = (DANCE_TRIANGLE_SCHEDULE_VA - DANCE_OVERLAY_BASE_VA) as usize;
+        let mut buf = vec![0u8; sched_off + DANCE_SKILL_ROWS * DANCE_SCHEDULE_SLOTS * 4];
+        let bonus_off = (DANCE_BONUS_VA - DANCE_OVERLAY_BASE_VA) as usize;
+        // kind 1, lanes 0..2 = 12 / 24 / 36 (a retail-shaped `k, 2k, 3k` row).
+        for (lane, v) in [12i32, 24, 36].into_iter().enumerate() {
+            let o = bonus_off + (DANCE_BONUS_LANES + lane) * 4; // kind 1 = row stride
+            buf[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        // kind 1's first triangle fires after 8 banked combo slots.
+        let o = sched_off + DANCE_SCHEDULE_SLOTS * 4;
+        buf[o..o + 4].copy_from_slice(&8i32.to_le_bytes());
+
+        let t = parse_tables(&buf).expect("parses");
+        assert_eq!(t.bonus(1, 0), 12);
+        assert_eq!(t.bonus(1, 2), 36);
+        assert_eq!(t.bonus(0, 0), 0);
+        assert_eq!(t.schedule(1, 0), 8);
+        assert_eq!(t.schedule(1, 1), 0);
+        // Out of range = never.
+        assert_eq!(t.schedule(9, 0), i32::MAX);
+        assert_eq!(t.bonus(9, 0), 0);
     }
 
     #[test]
