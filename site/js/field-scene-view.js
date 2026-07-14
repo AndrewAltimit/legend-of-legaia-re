@@ -43,10 +43,18 @@
     return flatPlane || domeShell;
   }
 
+  /* World units per metre for the VR path. The field character mesh stands
+   * ~130 units tall (the play page's follow camera is tuned around that), so a
+   * 1.7 m human puts a metre at ~76 world units - which also makes the 128-unit
+   * walkability tile a believable 1.7 m stride. At this scale a headset stands
+   * *in* the town at human height. See docs/subsystems/vr-mode.md. */
+  const VR_UNITS_PER_METER = 76;
+
   class FieldSceneView {
     /* `viewer` is the WASM LegaiaViewer; `canvas` an existing <canvas> already
      * in the DOM (it must not have been used for a 2D context - a canvas can
-     * only ever bind one context type). `opts`: minHalf / maxHalf zoom clamps. */
+     * only ever bind one context type). `opts`: minHalf / maxHalf zoom clamps,
+     * `vrMount` (element the "Enter VR" button is appended to). */
     constructor(viewer, canvas, opts) {
       if (typeof window.TmdRenderer === 'undefined') {
         throw new Error('TmdRenderer global missing (webgl-tmd.js not loaded?)');
@@ -73,6 +81,28 @@
         minHalf: o.minHalf != null ? o.minHalf : 150,
         maxHalf: o.maxHalf != null ? o.maxHalf : 40000,
       });
+
+      /* Live draw list + world extent of the loaded scene, kept on the instance
+       * so the VR loop can re-issue the exact same draw the flat loop does. */
+      this.draws = [];
+      this.ext = [16384, 16384];
+      this.spawn = { x: 0, y: 0, z: 0 };
+      /* VR: present this scene in a headset. The button is created hidden and
+       * only unhides when `navigator.xr` reports an immersive-vr device, so a
+       * flat browser sees nothing new. */
+      this.vr = window.LegaiaVr ? window.LegaiaVr.attach({
+        mount: o.vrMount || canvas.parentElement,
+        unitsPerMeter: VR_UNITS_PER_METER,
+        renderer: () => this.renderer,
+        cam: () => this.cam,
+        extent: () => this.ext,
+        draw: () => this.renderer.renderAssembled(this.draws, this.ext, this.cam),
+        /* Stand in the middle of the built-up area, on its floor, facing the
+         * way the flat camera faces. */
+        start: () => ({ x: this.spawn.x, y: this.spawn.y, z: this.spawn.z }),
+        onEnter: () => this.stop(),
+        onExit: () => this.resume(),
+      }) : null;
     }
 
     /* Assemble and start rendering a CDNAME scene. Re-entrant: the previous
@@ -163,6 +193,7 @@
       const hasRot = typeof v.field_scene_placement_rot_y === 'function';
       pushDraws(v.field_scene_terrain_slots(), v.field_scene_terrain_positions(),
         hasRot ? v.field_scene_terrain_rot_y() : null);
+      const terrainCount = draws.length;
       pushDraws(v.field_scene_placement_slots(), v.field_scene_placement_positions(),
         hasRot ? v.field_scene_placement_rot_y() : null);
 
@@ -191,6 +222,23 @@
       this.cam.yaw = 0;
       this.cam.pitch = 0.65;
 
+      /* VR spawn point: the middle of the *built* area, taken as the component-
+       * wise median of the placed objects (houses, props, NPC anchors) - NOT
+       * the framing AABB centre. A field map is a 128x128-tile grid whose town
+       * usually occupies a corner of it, so the AABB centre lands on empty
+       * ground with the buildings a hundred metres away; the median lands in
+       * the village. Y comes from the same set: a placement's world Y *is* the
+       * floor tile it stands on. Terrain tiles are excluded (they tile the
+       * whole grid and would drag the median back to the centre). */
+      const built = draws.slice(terrainCount);
+      const src = built.length ? built : draws;
+      const med = (key) => {
+        if (!src.length) return 0;
+        const s = src.map(d => d[key]).sort((a, b) => a - b);
+        return s[Math.floor((s.length - 1) / 2)];
+      };
+      this.spawn = { x: med('x'), y: med('y'), z: med('z') };
+
       this.state = {
         label, packCount, status, draws, hasGround, skyDrawsHidden,
         drawn: new Set(draws.map(d => d.meshId)).size,
@@ -202,12 +250,31 @@
           Array.from(used).map(ms => [ms, this.renderer.getMeshAabb(ms)])),
       };
 
+      this.draws = draws;
+      this.ext = ext;
+      if (this.vr) {
+        this.vr.setReady(true);
+        /* A live headset session survives a scene swap (same canvas, same GL
+         * context, same renderer) - just re-place the viewer in the new map. */
+        if (this.vr.isActive()) {
+          this.vr.respawn();
+          return this.state;
+        }
+      }
+      this.resume();
+      return this.state;
+    }
+
+    /* (Re)start the flat render loop. Idempotent; a no-op while a VR session
+     * owns the renderer (the XR frame loop draws instead). */
+    resume() {
+      if (this.raf || !this.renderer) return;
+      if (this.vr && this.vr.isActive()) return;
       const tick = () => {
-        this.renderer.renderAssembled(draws, ext, this.cam);
+        this.renderer.renderAssembled(this.draws, this.ext, this.cam);
         this.raf = requestAnimationFrame(tick);
       };
       this.raf = requestAnimationFrame(tick);
-      return this.state;
     }
 
     /* One-line summary of the loaded scene, for a status bar. */
@@ -265,6 +332,7 @@
 
     dispose() {
       this.stop();
+      if (this.vr) { this.vr.destroy(); this.vr = null; }
       if (this.renderer) {
         this.renderer.dispose();
         this.renderer = null;

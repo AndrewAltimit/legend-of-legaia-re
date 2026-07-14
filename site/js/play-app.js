@@ -26,6 +26,10 @@
   const PLAYER_MESH_ID = 900000;      /* scene-mesh id space above any env slot */
   const NPC_MESH_BASE  = 910000;
   const NPC_CLIP_FPS   = 15;          /* the field anim cadence (30 Hz tick, 2 ticks/frame) */
+  /* VR world scale - same anchor as the full-map view: the ~130-unit character
+   * mesh is a 1.7 m human, so a metre is ~76 world units and the headset stands
+   * in the town at human height. See docs/subsystems/vr-mode.md. */
+  const VR_UNITS_PER_METER = 76;
 
   /* Keyboard -> PSX pad bits (`legaia_engine_core::input::PadButton`). */
   const PAD = {
@@ -195,7 +199,41 @@
       this._fpsAccum = 0;
       this._fpsFrames = 0;
       this._fpsLast = performance.now();
+      /* Last frame's draw list + world extent, kept on the instance so the VR
+       * loop can re-issue the same draw once per eye without re-ticking the
+       * engine. */
+      this._draws = [];
+      this._ext = [16384, 16384];
       this._attachInput();
+
+      /* VR: walk the live scene in a headset. The engine keeps ticking (the XR
+       * frame loop drives it), so NPCs move and the keyboard still steers the
+       * character; the headset is a free-flying camera in the running world.
+       * Button stays hidden unless an immersive-vr device is reported. */
+      this.vr = window.LegaiaVr ? window.LegaiaVr.attach({
+        mount: (this.opts.vrMount || document.querySelector('.play-btn-row')
+          || canvas.parentElement),
+        unitsPerMeter: VR_UNITS_PER_METER,
+        renderer: () => this.renderer,
+        cam: () => this.cam,
+        extent: () => this._ext,
+        /* The follow camera owns cam.center* every frame - don't fight it. */
+        syncCamCenter: false,
+        update: () => this._frame(true),
+        draw: () => this.renderer.renderAssembled(this._draws, this._ext, this.cam),
+        /* Spawn where the third-person camera sits (behind the character,
+         * looking at them), feet on the character's floor. */
+        start: () => {
+          const eye = this._eye();
+          const pt = this.rt.player_transform();
+          return {
+            x: eye[0], y: -pt[1], z: eye[2],
+            yaw: Math.PI - this.cam.yaw,
+          };
+        },
+        onEnter: () => this.stop(),
+        onExit: () => this.start(),
+      }) : null;
     }
 
     /* ---------- scene ---------- */
@@ -206,6 +244,12 @@
       const state = JSON.parse(this.rt.enter_field(label));
       this._rebuild();
       this.scene = state.scene || label;
+      if (this.vr) {
+        this.vr.setReady(true);
+        /* A live session survives a scene swap (same canvas / GL context) - just
+         * re-place the viewer in the new map. */
+        this.vr.respawn();
+      }
       return state;
     }
 
@@ -396,6 +440,7 @@
 
     start() {
       if (this.raf) return;
+      if (this.vr && this.vr.isActive()) return;   /* the XR loop is driving */
       const tick = () => {
         this.raf = requestAnimationFrame(tick);
         this._frame();
@@ -411,8 +456,8 @@
     setPaused(on) { this.paused = !!on; }
     step() { this.stepOnce = true; }
 
-    /* One engine frame + one draw. */
-    _frame() {
+    /* One engine frame + one draw (the draw is skipped while VR presents). */
+    _frame(skipDraw) {
       const rt = this.rt;
       const advance = !this.paused || this.stepOnce;
       this.stepOnce = false;
@@ -435,6 +480,7 @@
            * geometry has to swap too. */
           this.scene = entered;
           this._rebuild();
+          if (this.vr) this.vr.respawn();
           if (this.opts.onScene) this.opts.onScene(entered);
         }
       }
@@ -514,8 +560,10 @@
       }
 
       this._followCamera(pt);
-      const ext = [16384, 16384];
-      this.renderer.renderAssembled(draws, ext, this.cam);
+      this._draws = draws;
+      /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
+       * once per eye with the XR view matrices. */
+      if (!skipDraw) this.renderer.renderAssembled(this._draws, this._ext, this.cam);
 
       /* FPS + HUD, sampled twice a second. */
       this._fpsFrames++;
@@ -558,6 +606,7 @@
 
     dispose() {
       this.stop();
+      if (this.vr) { this.vr.destroy(); this.vr = null; }
       window.removeEventListener('keydown', this._onDown);
       window.removeEventListener('keyup', this._onUp);
       window.removeEventListener('blur', this._onBlur);

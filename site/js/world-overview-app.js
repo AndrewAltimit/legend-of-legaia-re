@@ -140,6 +140,18 @@
    * by any page code. */
   window.__woCam = worldCam;
 
+  /* ---------- VR (WebXR immersive-vr) -----------------------------
+   * A kingdom is a 16320-unit continent; at 2000 world units per metre it
+   * becomes an ~8 m diorama, and the headset's 1.6 m eye height puts the
+   * viewer 3200 world units above the sea plane - a giant looking down at the
+   * map, which is the readable framing for a whole continent. The thumbstick
+   * grips rescale it live, so 1:1 "stand on the world map" is a squeeze away.
+   * See docs/subsystems/vr-mode.md. */
+  const VR_UNITS_PER_METER = 2000;
+  let vr = null;             /* LegaiaVr handle (null before DOM wiring) */
+  let worldTick = null;      /* the flat render loop, so VR can pause/resume it */
+  let worldDrawState = null; /* { draws, ext } of the assembled kingdom */
+
   /* ---------- Placement JSON (always available) ----------- */
   try {
     placements = await fetch('world-overview.json').then(r => r.json());
@@ -296,6 +308,31 @@
     }
   }
   if ($exportGlb) $exportGlb.addEventListener('click', exportWorldGlb);
+
+  /* ---------- VR ----------- */
+  /* Attached once; the button lives in the canvas control bar (which survives
+   * the per-load canvas swap) and stays hidden unless the browser reports an
+   * immersive-vr device AND a kingdom is assembled. */
+  if (window.LegaiaVr) {
+    vr = window.LegaiaVr.attach({
+      mount: document.querySelector('.wo-canvas-controls'),
+      unitsPerMeter: VR_UNITS_PER_METER,
+      renderer: () => glRenderer,
+      cam: () => worldCam,
+      extent: () => (worldDrawState ? worldDrawState.ext : [16320, 16320]),
+      draw: () => glRenderer.renderAssembled(
+        worldDrawState.draws, worldDrawState.ext, worldCam),
+      /* Stand on the sea plane at the continent's framing centre: at the
+       * diorama scale that is 3.2 m above it, looking down. */
+      start: () => ({ x: worldCam.centerX, y: 0, z: worldCam.centerZ }),
+      onEnter: () => {
+        if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+      },
+      onExit: () => {
+        if (rafId === null && worldTick) rafId = requestAnimationFrame(worldTick);
+      },
+    });
+  }
 
   /* ---------- View-mode toggle ----------- */
   function setViewMode(mode) {
@@ -652,6 +689,11 @@
   /* Freshen the canvas (WebGL context is single-shot per canvas, and we
    * also need a clean depth buffer when switching kingdoms or modes). */
   function freshCanvas() {
+    /* The canvas (and with it the GL context an XR layer is bound to) is about
+     * to be replaced - a live session cannot survive that. */
+    if (vr) { vr.end(); vr.setReady(false); }
+    worldTick = null;
+    worldDrawState = null;
     if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
     const old = document.getElementById('wo-canvas3d');
@@ -1116,11 +1158,13 @@
     if ($exportGlb) {
       $exportGlb.hidden = (typeof viewer.scene_export_begin !== 'function');
     }
-    const tick = () => {
-      glRenderer.renderAssembled(drawPlacements, ext, worldCam);
-      rafId = requestAnimationFrame(tick);
+    worldDrawState = { draws: drawPlacements, ext };
+    if (vr) vr.setReady(true);
+    worldTick = () => {
+      glRenderer.renderAssembled(worldDrawState.draws, worldDrawState.ext, worldCam);
+      rafId = requestAnimationFrame(worldTick);
     };
-    rafId = requestAnimationFrame(tick);
+    rafId = requestAnimationFrame(worldTick);
   }
 
   /* Frame the top-down camera on the placement cluster.
