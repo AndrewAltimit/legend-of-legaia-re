@@ -88,6 +88,7 @@ class TmdRenderer {
     this.locLight   = gl.getUniformLocation(this.program, 'u_light');
     this.locNormalSign = gl.getUniformLocation(this.program, 'u_normal_sign');
     this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
+    this.locSemiPass = gl.getUniformLocation(this.program, 'u_semi_pass');
     this.locFogLut  = gl.getUniformLocation(this.program, 'u_fog_lut');
     this.locFogEnableFs = gl.getUniformLocation(this.program, 'u_fog_enable');
     this.locFogColor    = gl.getUniformLocation(this.program, 'u_fog_color');
@@ -95,7 +96,6 @@ class TmdRenderer {
     this.locFogFarRef   = gl.getUniformLocation(this.program, 'u_fog_far_ref');
     this.locFogZShift   = gl.getUniformLocation(this.program, 'u_fog_z_shift');
     this.locUseFlatColors = gl.getUniformLocation(this.program, 'u_use_flat_colors');
-    this.locSemiPass = gl.getUniformLocation(this.program, 'u_semi_pass');
     this.locPos     = gl.getAttribLocation(this.program, 'a_position');
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
@@ -105,6 +105,24 @@ class TmdRenderer {
      * a_flat_rgba colours and the FS uses them for untextured prims. Off for
      * every other consumer (scene, world map, monsters, battle characters). */
     this.useFlatColors = false;
+
+    /* Opt-in backface culling for the single-mesh `render()` path. Off by
+     * default (Legaia TMDs have inconsistent winding across the corpus, so
+     * the viewer relies on the depth buffer); the dance stage turns it on -
+     * retail's NCLIP pass culls the hall's inward-facing panels (the crowd
+     * billboard right behind its camera) and the interior only reads
+     * correctly with the same rule. Winding choice via `cullFrontFace`
+     * ('cw' | 'ccw'). */
+    this.cullBackfaces = false;
+    this.cullFrontFace = 'ccw';
+
+    /* Opt-in two-pass semi-transparency for the single-mesh `render()`
+     * path: pass 0 draws the opaque prims, pass 1 re-draws only the ABE
+     * prims (TSB bit 15) additively with the depth buffer read-only - the
+     * dance hall's smoke columns and spotlight glows are ABE prims that
+     * read as opaque grey slabs without it. Off by default (every existing
+     * consumer keeps the one-pass draw-everything behaviour). */
+    this.semiTwoPass = false;
 
     this.vao    = gl.createVertexArray();
     this.posBuf = gl.createBuffer();
@@ -498,22 +516,30 @@ class TmdRenderer {
 
   /* center: [cx, cy, cz]; radius: bounding-sphere half-extent;
    * distance: camera distance in unit-radius units (default 2.5);
-   * panX/panY: view-space pan in unit-radius units (default 0). */
-  render(yaw, pitch, distance, panX, panY, center, radius) {
+   * panX/panY: view-space pan in unit-radius units (default 0);
+   * fovY (optional, radians): vertical field of view (default 1.2). */
+  render(yaw, pitch, distance, panX, panY, center, radius, fovY) {
     const gl = this.gl;
     const w = this.canvas.width;
     const h = this.canvas.height;
     gl.viewport(0, 0, w, h);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
-    /* Legaia TMDs have inconsistent winding; let the depth buffer sort it out. */
-    gl.disable(gl.CULL_FACE);
+    /* Legaia TMDs have inconsistent winding; by default let the depth buffer
+     * sort it out. Consumers that need retail's NCLIP cull opt in. */
+    if (this.cullBackfaces) {
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.BACK);
+      gl.frontFace(this.cullFrontFace === 'cw' ? gl.CW : gl.CCW);
+    } else {
+      gl.disable(gl.CULL_FACE);
+    }
     gl.clearColor(0.04, 0.05, 0.08, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     if (this.indexCount === 0) return;
 
-    const mvp = buildMvp(yaw, pitch, distance, panX, panY, center, radius, w, h);
+    const mvp = buildMvp(yaw, pitch, distance, panX, panY, center, radius, w, h, fovY);
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
@@ -532,7 +558,26 @@ class TmdRenderer {
     gl.uniform1i(this.locVram, 0);
 
     gl.bindVertexArray(this.vao);
-    gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+    if (this.semiTwoPass) {
+      /* Pass 0: opaque prims only. */
+      gl.uniform1i(this.locSemiPass, 0);
+      gl.disable(gl.BLEND);
+      gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+      /* Pass 1: ABE prims, additive, depth-tested but not depth-written -
+       * the closest single-mode stand-in for the PSX blend modes (the hall's
+       * ABE prims are glow/smoke, which retail draws additively). */
+      gl.uniform1i(this.locSemiPass, 1);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.depthMask(false);
+      gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      gl.uniform1i(this.locSemiPass, -1);
+    } else {
+      gl.uniform1i(this.locSemiPass, -1);
+      gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+    }
     gl.bindVertexArray(null);
   }
 

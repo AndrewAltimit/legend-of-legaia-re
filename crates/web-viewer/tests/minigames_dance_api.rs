@@ -165,6 +165,50 @@ fn dance_presentation_api_decodes() {
     // The field VRAM the bodies sample is the full 1 MB PSX framebuffer.
     assert_eq!(mg.dance_body_vram().len(), 1024 * 512 * 2);
 
+    // The dance hall itself: the other7 scene's placement + terrain layers
+    // bake to one static mesh in the dancer frame (human spawn = origin).
+    let env_pos = mg.dance_env_positions();
+    assert!(!env_pos.is_empty(), "hall env baked");
+    assert!(env_pos.len().is_multiple_of(3));
+    let env_verts = env_pos.len() / 3;
+    let env_idx = mg.dance_env_indices();
+    assert!(!env_idx.is_empty() && env_idx.len().is_multiple_of(3));
+    assert!(env_idx.iter().all(|&i| (i as usize) < env_verts));
+    assert_eq!(mg.dance_env_uvs().len(), env_verts * 2);
+    assert_eq!(mg.dance_env_cba_tsb().len(), env_verts * 2);
+    assert_eq!(mg.dance_env_flat_rgba().len(), env_verts * 4);
+    // The stage must surround the origin: geometry on every side of the
+    // human spawn, the walkable floor near y = 0, and the ceiling above
+    // (negative y in the retail Y-down frame).
+    let (mut xs, mut ys, mut zs) = ((0f32, 0f32), (0f32, 0f32), (0f32, 0f32));
+    for v in env_pos.chunks_exact(3) {
+        xs = (xs.0.min(v[0]), xs.1.max(v[0]));
+        ys = (ys.0.min(v[1]), ys.1.max(v[1]));
+        zs = (zs.0.min(v[2]), zs.1.max(v[2]));
+    }
+    assert!(
+        xs.0 < -300.0 && xs.1 > 300.0,
+        "hall spans the origin in x: {xs:?}"
+    );
+    assert!(
+        zs.0 < -300.0 && zs.1 > 200.0,
+        "hall spans the origin in z: {zs:?}"
+    );
+    assert!(
+        ys.0 < -300.0 && ys.1 > 50.0,
+        "hall spans floor + ceiling: {ys:?}"
+    );
+    // Some of the hall's prims are ABE (the spotlight glows / smoke) - the
+    // page's additive pass keys off TSB bit 15.
+    assert!(
+        mg.dance_env_cba_tsb()
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .any(|&t| t & 0x8000 != 0),
+        "hall carries ABE prims"
+    );
+
     // SFX: the cue bank (PROT 1228 + the TOC-tail entry 1231) and the traced
     // cue ids all decode to PCM.
     let sfx = mg.dance_sfx_json();

@@ -116,8 +116,12 @@ function scaleMat(s) {
  * Y then X, pushes back to camera space, perspective-projects.
  *
  * PSX TMD coords have +Y pointing down, so we negate Y in the model scale
- * to bring "up" back to +Y for the rest of the pipeline. */
-function buildMvp(yaw, pitch, distance, panX, panY, center, radius, viewportW, viewportH) {
+ * to bring "up" back to +Y for the rest of the pipeline.
+ *
+ * `fovY` (optional, radians) overrides the default 1.2-rad vertical field of
+ * view - the dance stage passes a narrower PSX-like value so its interior
+ * framing matches the retail camera's apparent scale. */
+function buildMvp(yaw, pitch, distance, panX, panY, center, radius, viewportW, viewportH, fovY) {
   const s = 1.0 / radius;
   /* Model: translate to origin, then non-uniform scale that flips Y. */
   const T = translate(-center[0], -center[1], -center[2]);
@@ -146,7 +150,7 @@ function buildMvp(yaw, pitch, distance, panX, panY, center, radius, viewportW, v
   /* Projection. Tiny near plane so fly-through views don't clip out the
    * model walls when the camera passes through them. */
   const aspect = viewportW / viewportH;
-  const P = perspective(1.2, aspect, 0.001, 100.0);
+  const P = perspective(fovY || 1.2, aspect, 0.001, 100.0);
 
   return mulMat4(P, mulMat4(V, M));
 }

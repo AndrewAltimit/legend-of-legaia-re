@@ -29,11 +29,19 @@
  * scene's choreography ANM bundle (PROT 1229), exactly the clip the
  * descriptor names for the event (`dance_cast_json`).
  *
- * What is NOT drawn, and the page says so: the dance hall itself (disco
- * ball, spotlights, crowd, floor) is the host field scene's 3D geometry,
- * not the overlay's, so the HUD sits on a neutral ground; and the two AI
- * dancers' runs are not simulated - their score boxes idle at zero and
- * their moves demonstrate the chart rather than score it.
+ * The dance hall around them is the real one too: retail hosts the minigame
+ * inside the dance-hall field scene, and the hall - the raised stage, the
+ * yellow/black checkered dance floor, the portrait banners on the walls,
+ * the spotlight cones, the speaker / lamp fixtures - is that scene's own
+ * environment mesh pack instanced by its .MAP placement + terrain layers,
+ * handed over pre-baked as one static mesh in the dancer frame
+ * (`dance_env_*`) and drawn in the same call as the posed cast.
+ *
+ * What is NOT simulated, and the page says so: the two AI dancers' runs -
+ * their score boxes idle at zero and their moves demonstrate the chart
+ * rather than score it. The face-stamp insets under the score boxes only
+ * appear in the HUD-only fallback (no WebGL / no cast): retail maps those
+ * windows onto the 3D dancers' heads, not the screen.
  */
 window.MgDance = (function () {
   'use strict';
@@ -190,6 +198,24 @@ window.MgDance = (function () {
        * current clip; `move` = a one-shot move clip overriding the loop. */
       const anim = dancers.map(() => ({ cursor: 0, move: null }));
 
+      /* The dance hall: the scene's own placed geometry, baked in the same
+       * dancer frame (human spawn at the origin). Static - appended after
+       * the posed cast so one buffer + one draw renders hall and dancers,
+       * and poseInto never touches its vertices. */
+      let env = null;
+      if (api.dance_env_positions) {
+        const ep = api.dance_env_positions();
+        if (ep.length) {
+          env = {
+            pos: ep,
+            uvs: api.dance_env_uvs(),
+            ct: api.dance_env_cba_tsb(),
+            idx: api.dance_env_indices(),
+            flat: api.dance_env_flat_rgba(),
+          };
+        }
+      }
+
       /* Vertical extent of the rest pose, for camera framing. */
       const halfOf = (f, cl) => {
         const c = cl[0] || cl[1];
@@ -212,10 +238,13 @@ window.MgDance = (function () {
         cast.dancers[d] ? (cast.dancers[d].x - humanX) : 0);
       const spread = Math.max.apply(null, dx.map(Math.abs)) || maxHalf;
 
-      /* Combined vertex buffers (left dancer, human, right dancer). */
+      /* Combined vertex buffers (left dancer, human, right dancer, then the
+       * static hall geometry). */
       const vertBases = [];
       let total = 0;
       for (const f of dancers) { vertBases.push(total); total += f.pos.length / 3; }
+      const envBase = total;
+      if (env) total += env.pos.length / 3;
       const pos = new Float32Array(total * 3);
       const uvs = new Uint8Array(total * 2);
       const ct = new Uint16Array(total * 2);
@@ -229,20 +258,56 @@ window.MgDance = (function () {
         flat.set(f.flat, vb * 4);
         for (const ix of f.idx) idxArr.push(ix + vb);
       }
+      if (env) {
+        pos.set(env.pos, envBase * 3);
+        uvs.set(env.uvs, envBase * 2);
+        ct.set(env.ct, envBase * 2);
+        flat.set(env.flat, envBase * 4);
+        for (const ix of env.idx) idxArr.push(ix + envBase);
+      }
       const idx = new Uint32Array(idxArr);
 
       const renderer = new window.TmdRenderer(glCanvas);
       renderer.uploadVram(api.dance_body_vram());
       renderer.uploadMesh(pos, uvs, ct, idx, flat);
+      if (env) {
+        /* Retail's NCLIP pass culls the hall's away-facing panels - the
+         * audience/crowd billboard sits right behind the retail camera spot
+         * and only disappears from the shot under the same rule. */
+        renderer.cullBackfaces = true;
+        renderer.cullFrontFace = 'ccw';
+        /* The hall's smoke columns / spotlight glows are ABE prims; the
+         * two-pass render draws them additively instead of as grey slabs. */
+        renderer.semiTwoPass = true;
+      }
 
+      /* Default framing. With the hall baked in, the retail composition:
+       * the camera on the audience side of the stage (the -Z half of the
+       * hall - the marquee/backdrop wall at +Z reads behind the dancers),
+       * pulled back and slightly above so the raised stage edge, the
+       * checkered floor, the spotlight cones and the ceiling banners all
+       * frame the trio. Without the hall, the old close-up. */
+      const defCam = env
+        ? { yaw: Math.PI, pitch: 0.24, distance: 2.7 }
+        : { yaw: 0.0, pitch: 0.12, distance: 1.9 };
       const scene = {
         renderer, dancers, clips, anim, moves: cast.moves, dx, vertBases,
         base: pos.slice(),      /* pristine object-local vertices */
         out: pos,               /* per-frame posed copy (uploaded buffer) */
         lastBeat: -1,
-        cam: { yaw: 0.0, pitch: 0.12, distance: 1.9 },
-        center: [0, -maxHalf * 0.85, 0],
+        env: !!env,
+        defCam,
+        cam: Object.assign({}, defCam),
+        center: [0, -maxHalf * (env ? 1.6 : 0.85), 0],
         radius: spread * 1.15 + maxHalf * 1.05,
+        /* Interior framing wants the PSX-like narrow field of view; the
+         * default 1.2 rad reads as a fisheye inside the hall. */
+        fov: env ? 0.85 : undefined,
+        /* World yaw applied to every dancer. The field meshes' rest facing
+         * is -Z: on the retail floor they face the audience half of the
+         * hall (-Z, where the default camera sits); the hall-less fallback
+         * keeps its +Z camera, so there they spin PI to face it. */
+        faceYaw: env ? 0 : Math.PI,
       };
       attachOrbit(scene);
       return scene;
@@ -310,13 +375,12 @@ window.MgDance = (function () {
       for (let d = 0; d < b.dancers.length; d++) {
         const st_ = advance(d, live);
         if (!st_.clip) continue;
-        /* The field meshes face +Z; spin them PI so they face the camera. */
         poseInto(b.out, b.base, b.dancers[d].oid, st_.clip, st_.frame,
-                 b.vertBases[d], b.dx[d], Math.PI);
+                 b.vertBases[d], b.dx[d], b.faceYaw);
       }
       b.renderer.updatePositions(b.out);
       b.renderer.render(b.cam.yaw, b.cam.pitch, b.cam.distance,
-                        0, 0, b.center, b.radius);
+                        0, 0, b.center, b.radius, b.fov);
     }
 
     /* Drag-to-orbit on the gl canvas (the HUD canvas over it is
@@ -339,7 +403,7 @@ window.MgDance = (function () {
         lx = e.clientX; ly = e.clientY;
       });
       c.addEventListener('dblclick', () => {
-        scene.cam = { yaw: 0.0, pitch: 0.12, distance: 1.9 };
+        scene.cam = Object.assign({}, scene.defCam);
       });
       c.addEventListener('wheel', (e) => {
         e.preventDefault();
@@ -704,13 +768,18 @@ window.MgDance = (function () {
         drawScore(L.digit_bases.xs[i], L.digit_bases.y, scores[i]);
       }
 
-      /* The dancers' faces - the real face-stamp windows, under each box.
-       * Rig per box = the floor cast's dancer kind (retail qualifier:
-       * left = rig 2, centre = Noa rig 0, right = rig 3). */
-      const rigs = castRigs();
-      drawFace(rigs[0], L.score_boxes.xs[0], 46);
-      drawFace(rigs[1], L.score_boxes.xs[1], 46);
-      drawFace(rigs[2], L.score_boxes.xs[2], 46);
+      /* The face-stamp insets are a fallback, not a retail element: retail
+       * MoveImage-blits those windows onto the 3D dancers' head textures,
+       * never onto the screen. With the cast rendered in 3D behind the HUD
+       * they'd cover the hall's wall banners, so they only draw when the
+       * body scene is absent (rig per box = the floor cast's dancer kind;
+       * retail qualifier: left = rig 2, centre = Noa rig 0, right = rig 3). */
+      if (!body) {
+        const rigs = castRigs();
+        drawFace(rigs[0], L.score_boxes.xs[0], 46);
+        drawFace(rigs[1], L.score_boxes.xs[1], 46);
+        drawFace(rigs[2], L.score_boxes.xs[2], 46);
+      }
 
       if (st) {
         /* Groove gauge: Lv. label + the level digit (u0 = 0xD0 + lane*8). */
@@ -756,6 +825,14 @@ window.MgDance = (function () {
       sfxCount() { return sfxIds ? Object.keys(sfxIds).length : 0; },
       bgmOk() { return !!(bgmInfo && bgmInfo.ok); },
       bodyOk() { return !!body; },
+      hallOk() { return !!(body && body.env); },
+      /* Camera inspection/override (headless verification + tuning). */
+      camInfo() {
+        return body
+          ? { cam: Object.assign({}, body.cam), center: body.center.slice(), radius: body.radius }
+          : null;
+      },
+      setCam(c) { if (body && c) Object.assign(body.cam, c); },
       stopAll() { stopBgm(); },
     };
   }

@@ -12,10 +12,14 @@
 
 use super::*;
 
+use std::collections::HashMap;
+
 use legaia_asset::dance_art::{self, DanceWidget};
 use legaia_asset::dance_cast::{self, DanceCast, DanceClip};
+use legaia_asset::field_objects::FLAG_PLACED;
 use legaia_asset::player_anm::PlayerAnmBundle;
 use legaia_asset::{character_pack, field_char_textures};
+use legaia_engine_core::field_env;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use legaia_tmd::mesh::{VramMesh, tmd_to_vram_mesh_field_hybrid};
@@ -54,6 +58,189 @@ pub(crate) struct DanceBodyMesh {
     spawn: (i16, i16),
 }
 
+/// The dance hall itself, baked into one **static world-space mesh** in the
+/// dancer frame (retail Y-down world coordinates, translated so the human
+/// dancer's floor spawn is the origin): the `other7` scene's environment mesh
+/// pack instanced by its own `.MAP` placement + terrain-tile layers - the
+/// stage, the checkered dance floor, the portrait banners, the spotlight
+/// cones, the speaker/lamp fixtures - plus the walk-ground heightfield. In
+/// retail the hall is exactly this: the host field scene's 3D geometry drawn
+/// under the overlay's HUD (the overlay itself loads no mesh - see
+/// `docs/subsystems/minigame-dance.md`). Placed props whose object bind names
+/// a clip are baked **posed** at frame 0 of that clip, the same rest-state
+/// rule the play page applies.
+#[derive(Default)]
+pub(crate) struct DanceEnv {
+    positions: Vec<f32>,
+    uvs: Vec<i32>,
+    cba_tsb: Vec<u32>,
+    flat: Vec<u8>,
+    indices: Vec<u32>,
+}
+
+impl DanceEnv {
+    /// Append one env-pack mesh instanced at an [`field_env::EnvDraw`],
+    /// re-based to `origin` (the human dancer's spawn). The transform is the
+    /// retail placement composition in the Y-down world frame: rotate the
+    /// object-local vertices about Y by the authored yaw, then translate to
+    /// the draw's world position (the browser twin of the play page's
+    /// `placementModelScaledY`, without the view-time Y flip - the dance
+    /// page's orbit camera applies that flip globally, exactly as it already
+    /// does for the dancer bodies).
+    fn append_draw(
+        &mut self,
+        mesh: &VramMesh,
+        flat: &[u8],
+        draw: &field_env::EnvDraw,
+        origin: (f32, f32, f32),
+    ) {
+        let theta = (draw.rot_y & 0xFFF) as f32 * (std::f32::consts::TAU / 4096.0);
+        let (sin, cos) = theta.sin_cos();
+        let base = (self.positions.len() / 3) as u32;
+        for p in &mesh.positions {
+            let (vx, vy, vz) = (p[0], p[1], p[2]);
+            self.positions
+                .push(vx * cos + vz * sin + draw.world_x as f32 - origin.0);
+            self.positions.push(vy + draw.world_y as f32 - origin.1);
+            self.positions
+                .push(-vx * sin + vz * cos + draw.world_z as f32 - origin.2);
+        }
+        for uv in &mesh.uvs {
+            self.uvs.push(uv[0] as i32);
+            self.uvs.push(uv[1] as i32);
+        }
+        for ct in &mesh.cba_tsb {
+            self.cba_tsb.push(ct[0] as u32);
+            self.cba_tsb.push(ct[1] as u32);
+        }
+        if flat.is_empty() {
+            // Pure-textured mesh: every vertex samples VRAM.
+            self.flat
+                .extend(std::iter::repeat_n([255u8; 4], mesh.positions.len()).flatten());
+        } else {
+            self.flat.extend_from_slice(flat);
+        }
+        self.indices.extend(mesh.indices.iter().map(|i| i + base));
+    }
+
+    fn is_empty(&self) -> bool {
+        self.indices.is_empty()
+    }
+}
+
+/// Frame-0 rigid transforms of scene-ANM record `anim_id - 1`, for baking a
+/// bound placement's rest pose - `None` (draw unposed) when the record is
+/// missing or its bone count doesn't match the mesh's object count (retail's
+/// count-equality contract, the same guard the play page applies).
+fn frame0_bone_offsets(
+    anm: &PlayerAnmBundle,
+    anim_id: u8,
+    objects: usize,
+) -> Option<Vec<([i16; 3], [i16; 3])>> {
+    let rec_idx = (anim_id as usize).checked_sub(1)?;
+    let rec = anm.record_lenient(rec_idx).ok()?;
+    if rec.bone_count as usize != objects {
+        return None;
+    }
+    Some(
+        (0..objects)
+            .map(|b| match anm.bone_transform(rec_idx, 0, b) {
+                Some(t) => (
+                    [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                    [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                ),
+                None => ([0; 3], [0; 3]),
+            })
+            .collect(),
+    )
+}
+
+/// Bake the `other7` scene's full static map into one [`DanceEnv`] mesh:
+/// the env-pack vote + the `.MAP` placed-object / terrain-tile resolution
+/// (the same [`field_env`] calls the play page makes - posed placements via
+/// `resolve_placed_env_draws`, `FLAG_PLACED` records excluded from the
+/// terrain sweep) + the walk-ground heightfield, every draw transformed to
+/// world space and re-based on the human dancer's spawn.
+fn bake_dance_env(
+    index: &ProtIndex,
+    scene: &Scene,
+    res: &SceneResources,
+    anm: &PlayerAnmBundle,
+    origin: (f32, f32, f32),
+) -> DanceEnv {
+    let env_tmds = field_env::env_pack_tmd_indices(scene, res);
+    let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
+    let binds = scene.field_object_binds(index).ok().flatten();
+    let placement_records = scene
+        .field_object_placements(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let terrain_records: Vec<_> = scene
+        .field_terrain_tiles(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.flags & FLAG_PLACED == 0)
+        .collect();
+    let (placements, _) = field_env::resolve_placed_env_draws(
+        &env_tmds,
+        &placement_records,
+        floor_lut,
+        binds.as_ref(),
+    );
+    let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
+
+    let mut out = DanceEnv::default();
+    let mut built: HashMap<(usize, u8), (VramMesh, Vec<u8>)> = HashMap::new();
+    for draw in placements.iter().chain(terrain.iter()) {
+        let Some(rtmd) = res.tmds.get(draw.res_tmd) else {
+            continue;
+        };
+        let key = (draw.env_slot, draw.anim_id);
+        let entry = built.entry(key).or_insert_with(|| {
+            let offsets = (draw.anim_id != 0)
+                .then(|| frame0_bone_offsets(anm, draw.anim_id, rtmd.tmd.objects.len()))
+                .flatten();
+            match &offsets {
+                Some(o) => crate::field_scene::build_hybrid_env_mesh_posed(rtmd, o),
+                None => crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram),
+            }
+        });
+        let (mesh, flat) = (&entry.0, &entry.1);
+        out.append_draw(mesh, flat, draw, origin);
+    }
+
+    // The walk-ground heightfield: already world-space (Y-down), so only the
+    // origin re-base applies.
+    if let Some(hf) = scene
+        .walk_heightfield(index)
+        .ok()
+        .flatten()
+        .filter(|h| !h.indices.is_empty())
+    {
+        let base = (out.positions.len() / 3) as u32;
+        for p in &hf.positions {
+            out.positions.push(p[0] - origin.0);
+            out.positions.push(p[1] - origin.1);
+            out.positions.push(p[2] - origin.2);
+        }
+        for uv in &hf.uvs {
+            out.uvs.push(uv[0] as i32);
+            out.uvs.push(uv[1] as i32);
+        }
+        for ct in &hf.cba_tsb {
+            out.cba_tsb.push(ct[0] as u32);
+            out.cba_tsb.push(ct[1] as u32);
+        }
+        out.flat
+            .extend(std::iter::repeat_n([255u8; 4], hf.positions.len()).flatten());
+        out.indices.extend(hf.indices.iter().map(|i| i + base));
+    }
+    out
+}
+
 /// The dance cast + the choreography ANM bundle + the VRAM the bodies sample,
 /// decoded once at disc load. The dance overlay (PROT 0980) loads no mesh of
 /// its own - its spawner (`FUN_801d0190`) draws each dancer from a 5-kind
@@ -80,6 +267,9 @@ pub(crate) struct DanceBodies {
     /// row-480/481 CLUTs) with the PROT 0874 §2 field-character textures
     /// (Noa's atlas, row 478) merged on top.
     vram: Vec<u8>,
+    /// The dance hall's static geometry, baked in the dancer frame
+    /// (empty when the scene's placement layers didn't resolve).
+    env: DanceEnv,
 }
 
 /// Number of clip slots exposed per dancer: idle, the dance loop, and the
@@ -276,12 +466,25 @@ impl LegaiaMinigames {
             dancers.push(body);
         }
 
+        // The dance hall around them - the scene's own placed geometry,
+        // re-based so the human dancer's spawn is the origin (the frame the
+        // page already poses the bodies in).
+        let hs = &spawns[human.min(spawns.len() - 1)];
+        let env = bake_dance_env(
+            &index,
+            &scene,
+            &res,
+            &anm,
+            (hs.x as f32, hs.y as f32, hs.z as f32),
+        );
+
         Some(DanceBodies {
             dancers,
             human,
             anm,
             cast,
             vram: vram.as_bytes().to_vec(),
+            env,
         })
     }
 
@@ -574,6 +777,62 @@ impl LegaiaMinigames {
         self.dance_bodies
             .as_ref()
             .map(|b| b.vram.clone())
+            .unwrap_or_default()
+    }
+
+    // ------------------------------------------------------ the dance hall
+    //
+    // Retail draws the dance minigame inside the host field scene: the hall -
+    // the raised stage, the yellow/black checkered dance floor, the portrait
+    // banners on the walls, the spotlight cones, the speaker and lamp
+    // fixtures - is the `other7` scene's own environment pack instanced by
+    // its `.MAP` placement / terrain layers, textured by the same scene VRAM
+    // the dancer bodies already sample. These accessors hand the page that
+    // map as ONE static baked mesh in the dancer frame (the human spawn at
+    // the origin, retail Y-down coordinates), so the page appends it to the
+    // combined vertex buffer as unposed geometry behind the cast.
+
+    /// Baked hall vertex positions (`[x, y, z, ...]`, dancer frame). Empty
+    /// when the scene's placement layers didn't resolve - the page then keeps
+    /// the neutral ground and says so.
+    pub fn dance_env_positions(&self) -> Vec<f32> {
+        self.dance_bodies
+            .as_ref()
+            .filter(|b| !b.env.is_empty())
+            .map(|b| b.env.positions.clone())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[u, v]` texel coords for the baked hall.
+    pub fn dance_env_uvs(&self) -> Vec<i32> {
+        self.dance_bodies
+            .as_ref()
+            .map(|b| b.env.uvs.clone())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[cba, tsb]` for the baked hall.
+    pub fn dance_env_cba_tsb(&self) -> Vec<u32> {
+        self.dance_bodies
+            .as_ref()
+            .map(|b| b.env.cba_tsb.clone())
+            .unwrap_or_default()
+    }
+
+    /// Triangle indices for the baked hall.
+    pub fn dance_env_indices(&self) -> Vec<u32> {
+        self.dance_bodies
+            .as_ref()
+            .map(|b| b.env.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, textured_flag]` for the baked hall's hybrid
+    /// textured / vertex-colour render (same convention as the bodies).
+    pub fn dance_env_flat_rgba(&self) -> Vec<u8> {
+        self.dance_bodies
+            .as_ref()
+            .map(|b| b.env.flat.clone())
             .unwrap_or_default()
     }
 

@@ -277,6 +277,26 @@ each press, the AI dancers demonstrating the chart's step per beat
 the retail floor, and the AI dancers' own scoring runs (the site does not
 simulate them).
 
+### The dance hall itself
+
+The hall the minigame plays in - the raised stage, the yellow/black checkered
+dance floor, the portrait banners, the spotlight cones, the smoke columns,
+the speaker / lamp fixtures - is **the `other7` scene module's own field
+geometry**, not overlay art: the block is a full scene (65-mesh environment
+pack, `.MAP` placed-object + terrain-tile layers, walk-ground heightfield),
+and the qualifier spawn coordinates land mid-stage in its placement frame.
+The venue texture pages the pack samples are the same `(512..832, 0/256)`
+rects catalogued in the PROT 1230 table above. The site's playable dance
+bakes that map once at disc load into a single static mesh re-based on the
+human dancer's spawn (`dance_env_*` in
+`crates/web-viewer/src/minigames_dance.rs`: the same `field_env` placement /
+terrain resolution the play page runs, bound props posed at frame 0 of their
+clip) and draws it behind the posed cast, with the retail composition - the
+camera on the audience half of the hall, backface culling standing in for
+retail's NCLIP pass (the audience billboard sits right behind the camera
+spot), and the hall's ABE prims (spotlight glows, smoke) drawn on an
+additive second pass.
+
 ### HUD widget table (`DAT_801d46cc`) + emitter geometry
 
 Every HUD element goes through the textured-quad emitter `FUN_801d2f38`, which

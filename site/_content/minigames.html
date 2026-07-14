@@ -689,13 +689,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       '(<code>0x801D46CC</code>, emitter <code>FUN_801d2f38</code>), drawn at the traced ' +
       'emitter positions - the every-4th-beat track flash and the note tint are pure ' +
       'palette swaps (<code>0x7D0D</code>/<code>0x7D0E</code>) of the same texels, ' +
-      'exactly as <code>FUN_801d2524</code> patches them. The three faces under the ' +
-      'score boxes are the real <b>face-stamp windows</b>: retail animates its dancers ' +
-      'by MoveImage-blitting eye/mouth cells inside per-dancer VRAM strips ' +
-      '(<code>FUN_801d03c4</code>), and these insets replay those exact blits - the ' +
-      'centre dancer is <b>Noa’s own field atlas</b> (PROT&nbsp;0874&nbsp;&sect;2). The ' +
-      'inset placement is this page’s own: retail maps these windows onto the 3D ' +
-      'dancers’ heads. ' +
+      'exactly as <code>FUN_801d2524</code> patches them. ' +
       (sfxN
         ? 'The <b>sound</b> is the overlay’s own: miss <code>0x210</code>, combo ' +
           'stings <code>0x202</code>/<code>0x203</code>/<code>0x205</code> and the run-start ' +
@@ -724,14 +718,26 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           'move clips (<code>FUN_801d1358</code>/<code>FUN_801d1af4</code> - miss ' +
           'reactions, per-lane sequence moves, the on-beat step). Noa plays the move ' +
           'your judged press earns; the AI dancers demonstrate the chart’s step on ' +
-          'each beat, since their scoring runs aren’t simulated. Drag to orbit. '
+          'each beat, since their scoring runs aren’t simulated. ' +
+          (danceR.hallOk()
+            ? 'And the <b>dance hall around them is the real one</b>: retail hosts the ' +
+              'minigame inside the dance-hall field scene, so the raised stage, the ' +
+              'yellow/black checkered dance floor, the portrait banners on the walls, ' +
+              'the spotlight cones and the speaker fixtures here are that scene’s own ' +
+              'environment mesh pack, instanced by its <code>.MAP</code> placement and ' +
+              'terrain layers and textured by the same scene VRAM the dancers sample ' +
+              '(bound props baked at frame&nbsp;0 of their clip, the play page’s ' +
+              'rest-state rule). '
+            : 'The hall geometry itself did not resolve from this image, so the cast ' +
+              'dances on a neutral ground. ') +
+          'Drag to orbit, double-click to re-frame. '
         : '<br><br>The dancer <b>cast</b> did not decode from this image (the overlay ' +
           'tables, the dance-hall scene module, or PROT&nbsp;0874), so the HUD sits on ' +
-          'a neutral ground rather than a faked floor. ') +
-      '<br><br><b>What is missing, and why.</b> The dance hall itself - the disco ball, ' +
-      'the spotlight cones, the crowd - is the host <em>field scene’s</em> ' +
-      '3D geometry, not the overlay’s to draw (its textures are even in this same ' +
-      'pack), so the dancers stand on a neutral floor rather than a faked room. The two ' +
+          'a neutral ground rather than a faked floor, and the three faces under the ' +
+          'score boxes replay the real <b>face-stamp windows</b> retail MoveImage-blits ' +
+          'onto its dancers’ head textures (<code>FUN_801d03c4</code>; the centre ' +
+          'dancer is Noa’s own field atlas, PROT&nbsp;0874&nbsp;&sect;2). ') +
+      '<br><br><b>What is missing, and why.</b> The two ' +
       '<b>AI dancers’ runs are not simulated</b>: retail auto-feeds them from the same ' +
       'chart, but this page runs the human lane only, so their score boxes idle at zero ' +
       'and their moves demonstrate the chart rather than score it. Banner rise/fade ' +
