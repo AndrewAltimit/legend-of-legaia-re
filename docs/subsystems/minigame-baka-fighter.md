@@ -372,12 +372,41 @@ The site's minigames page draws the duel from exactly these sources, decoded
 from the visitor's disc in the browser (`crates/web-viewer/src/minigames_baka.rs`
 + `site/js/minigame-baka.js`): the player mesh from PROT 1204 posed by the
 PROT 1203 bank (`char*9 + action`), the opponent mesh + anim bank from its own
-pack, the stage wall from the 1203 TMD pack, and the HUD from the widget table
+pack, the arena from the 1203 TMD pack, and the HUD from the widget table
 at the `FUN_801d2afc` positions above. Traced vs fitted is stated on the page:
-the 3D camera, the fighters' spacing and the backdrop offset are fitted by eye
-(the duel's GTE matrices live in COP2 and the parked capture sits at the title
-screen), and the bar-frame cells fall back to an outline because their cell
-table is runtime-built.
+the 3D camera, the fighters' spacing and the select/tally screen layouts are
+fitted by eye (the duel's GTE matrices live in COP2 and the parked capture sits
+at the title screen), and the bar-frame cells fall back to an outline because
+their cell table is runtime-built.
+
+The **arena** is stage TMD 0 (the pack's only world-framed piece): the tall
+patterned backdrop wall with lattice fences and two ceiling lamps, base on the
+`y = 0` floor plane and face authored at `z 44..225` - drawn at its authored
+placement (spun 180° to the page camera's behind-the-fighters side). The
+stage set carries **no floor mesh**, so the page tiles a floor from the wall's
+own dominant textured face (its exact uv cell + CLUT, repeated on
+`y = 0`); the tiling is a stated fit. The three prop meshes (two identical
+single-object pieces + the 10-object figure) need placement transforms the
+static page hasn't traced and stay out.
+
+The run opens on the retail **PLAYER SELECT** screen - the three party
+fighters' battle-form models idling in front of the arena under the sheet's
+own "PLAYER SELECT" banner (widget 12) with the cursor arrows (widgets 48/49)
+picking one. On a match win the winner plays a short **victory flourish**
+(swings from the same attack anim slots; the slot order is the `FUN_801d3f44`
+action-id fold reading), the loser holds its knockdown frame, and the retail
+**tally menu** comes up: "NEXT GAME" / "PAY OUT" (widgets 44/45) beside
+"GET COIN" (widget 46) and its coin-digit strip (widget 47's cell row,
+`u = 88 + digit*16` - inferred from the sheet layout the way the traced digit
+widgets step). Fighting on risks the accumulated prize pot on the next rung;
+paying out banks it; the page treats a mid-run loss as forfeiting the whole
+pot and the final rung as an automatic payout (stated readings - the menu
+cells are the cabinet's, the forfeit grain is not overlay-pinned). The
+pot/choice bookkeeping is `engine-core::baka_fighter::LadderRun`, reached
+through the `baka_run_*` WASM surface; the per-rung prizes are the roster
+records' gold column, so a full 14-rung clear pays the 460-coin total
+(disc-gated oracle `crates/web-viewer/tests/baka_presentation_wasm_api.rs`,
+`ladder_run_cash_out_over_real_prizes`).
 
 The **duel facing** is the retail arrangement: the player stands on the LEFT
 of the arena and faces RIGHT toward the opponent, the opponent stands on the
