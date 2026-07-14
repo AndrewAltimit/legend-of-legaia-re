@@ -274,7 +274,8 @@ export class LegaiaMinigames {
     slot_art_ready(): boolean;
     /**
      * Tally the latched payout into the balance and return to idle. Returns
-     * the credited coins.
+     * the credited coins. [`Self::slot_tick`] already does this on the frame a
+     * spin resolves; this stays for hosts that drive the tally themselves.
      */
     slot_collect(): number;
     /**
@@ -327,6 +328,24 @@ export class LegaiaMinigames {
      * decoding it as the header claims yields noise.
      */
     slot_panel_rgba(): Uint8Array;
+    /**
+     * The machine's **single input**: one press means whatever the machine's
+     * phase says it means. Folds the cabinet's three stop buttons onto one
+     * key by taking them in sequence - press to spin, then press once per
+     * reel, left to right.
+     *
+     * Returns what the press did:
+     * - `"spin"` - idle, and the bet was charged (the reels are spinning up);
+     * - `"spinup"` - the reels are still ramping, so retail refuses a stop.
+     *   The host may hold the press and re-issue it when `can_stop` opens;
+     * - `"stop"` - the next still-spinning reel took its stop;
+     * - `"collect"` - a press landed on a resolved spin before the frame
+     *   tally ran: it was tallied, but the balance can't fund another spin;
+     * - `"broke"` - idle and under the 3-coin gate. The machine is empty; the
+     *   host racks a new one;
+     * - `"none"` - no machine, or it has cashed out.
+     */
+    slot_press(): string;
     /**
      * The live reel positions (`DAT_801d3cc0`) - fixed-point angles whose high
      * byte is the strip row and whose low byte is the sub-symbol fraction. The
@@ -440,9 +459,19 @@ export class LegaiaMinigames {
      */
     slot_symbol_rgba(sym: number): Uint8Array;
     /**
-     * Advance the reels one frame.
+     * Advance the reels one frame and **tally a resolved spin automatically**.
+     *
+     * The retail cabinet has three stop buttons and a payout tray; a browser
+     * page has one key. Collecting is therefore not an input here: the moment
+     * the third reel lands and the spin evaluates
+     * ([`SlotPhase::Payout`]), this runs the machine's own state-4 credit
+     * ([`SlotMachine::collect`] - the payout arithmetic is untouched) and the
+     * machine drops back to idle. The evaluated spin stays latched in
+     * `last_result`, so the host can keep the winning line lit until the next
+     * spin is charged. Returns the coins credited on this frame (`0` on a
+     * losing spin or any frame that didn't resolve one).
      */
-    slot_tick(): void;
+    slot_tick(): number;
 }
 
 /**
@@ -1804,6 +1833,7 @@ export interface InitOutput {
     readonly legaiaminigames_slot_page_rgba: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_slot_page_width: (a: number, b: number) => number;
     readonly legaiaminigames_slot_panel_rgba: (a: number) => [number, number];
+    readonly legaiaminigames_slot_press: (a: number) => [number, number];
     readonly legaiaminigames_slot_reel_pos: (a: number) => [number, number];
     readonly legaiaminigames_slot_scene_json: (a: number) => [number, number];
     readonly legaiaminigames_slot_scene_ready: (a: number) => number;
@@ -1817,7 +1847,7 @@ export interface InitOutput {
     readonly legaiaminigames_slot_stop: (a: number) => number;
     readonly legaiaminigames_slot_strip: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_symbol_rgba: (a: number, b: number) => [number, number];
-    readonly legaiaminigames_slot_tick: (a: number) => void;
+    readonly legaiaminigames_slot_tick: (a: number) => number;
     readonly legaiaruntime_audio_init: (a: number) => number;
     readonly legaiaruntime_disc_loaded: (a: number) => number;
     readonly legaiaruntime_enter_field: (a: number, b: number, c: number) => [number, number, number, number];
