@@ -182,9 +182,61 @@ Runtime wiring: the engine host installs the rules engine as a suspending scene 
 
 `DanceGame::judge_press` returns the three-way Miss/Hit/Sequence result and applies the score, gauge, and streak side effects; `DanceGame::from_overlay` starts a run straight off the disc chart (disc-gated `dance_minigame_real` auto-plays the real chart end to end). The sequence-bonus *magnitude* (the `DAT_801d41a4`-scaled award) is left to the caller since that value table is disc-resident and unmapped. The visible dance-floor / arrow rendering (the [floor cluster](#dance-floor-rendering)) is not part of the rules port - it is a separate host concern.
 
+## Assets: the dance owns none
+
+The dance overlay (extraction PROT 0980) issues **no texture load and no mesh
+load at all**. A full sweep of the 32 KB image finds no `jal 0x8003eb98` (PROT
+entry load), no `jal 0x8001f05c` (asset dispatcher) and no `jal 0x800198e0`
+(TIM -> VRAM), and it never touches the global TMD pool `DAT_8007C018`. It has
+exactly three PROT loads, all sound:
+
+| raw | extraction | role |
+|---|---|---|
+| `0x4D1` | **1231** | the dance's SFX sample bank (`VABp`) |
+| `0x41A` | **1048** | BGM (`music_01`) |
+| `0x420` | **1054** | the alternate BGM (a branch on `DAT_801D514C` picks the song) |
+
+So there is **no step-arrow sprite to source** and no dance-specific character
+model: the dancers are animated by `FUN_801d03c4`, which does two `MoveImage`
+VRAM->VRAM blits per call, copying a small 4bpp block out of a per-dancer frame
+strip into a fixed VRAM window. Those strips are **resident from the field
+scene**, not loaded here. A host that wants to draw the dance has to reach the
+field scene's VRAM, not the dance overlay. **Confirmed** (negative result).
+
+The chart's symbols are likewise not abstract notes. `FUN_801d1820`'s only caller,
+`FUN_801d4040`, maps a symbol straight to a **pad-button bitmask**:
+
+| chart symbol | 1 | 2 | 3 |
+|---|---|---|---|
+| pad mask | `0x80` (Square) | `0x20` (Circle) | `0x10` (Triangle) |
+
+Symbol `3` is the three-times-only "groovy move". Lanes 1 and 2 are **not**
+difficulty tiers - they are the two **AI dancers**, fed their inputs from the same
+chart (the difficulty *row* is `score / 1000`).
+
+## Sound
+
+Cues go to the runtime bank (`>= 0x200`; see
+[`sfx-table.md`](../formats/sfx-table.md)). The descriptor block is the scene
+module's `efect.dat` at **extraction PROT 1228**; the samples are the class-2 VAB
+at **extraction PROT 1231**. **Confirmed** cue sites:
+
+| Event | Cue | Site |
+|---|---|---|
+| intro flourish | `0x200` | `FUN_801D2D98` |
+| run start | `0x201` | `FUN_801CF470` |
+| **miss** | `0x210` | `FUN_801D1AF4` |
+| combo tier 3 / 4 / 5 | `0x202` / `0x203` / `0x205` | `FUN_801D1AF4` |
+| confirm / cursor | `0x20` / `0x21` | `FUN_801D0750` (static table) |
+
+An on-beat **hit fires no ring cue**: it keys voices directly through
+`FUN_801D3D78(rand() % 3)`, so a good step picks one of three stings at random.
+
 ## Open
 
 - The visible Perfect/Good/Miss banner *strings* each tier spawns (the `× 0x22` / `DAT_801d538c` Perfect tier and the accuracy weight `DAT_801d6090`) - the score tiers are pinned (see [Scoring](#scoring)); only the on-screen label each spawns is unmapped (capture-leaning).
+- Which PROT entry uploads the **dancer frame strips** `FUN_801d03c4` blits from. The dance overlay loads none, so they come from the resident field scene - the callsite is open, and with it the question of whether Noa is a 3D mesh in this minigame at all.
+- Which code loads the dance's `efect.dat` (1228) and SFX VAB (1231): not in the 0980 image, so it is in the SCUS mode-24 entry path (`FUN_80025980` -> `FUN_8003EBE4`). The entries themselves are live-confirmed.
 
 ## See also
 

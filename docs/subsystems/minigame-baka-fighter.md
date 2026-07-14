@@ -34,6 +34,22 @@ PROT 1204) and [`battle.md`](battle.md). The Baka Fighter actors are sprite-like
 billboards drawn from this geometry via the quad emitter described below, not
 the full 3D battle renderer.
 
+The per-fighter installer folds the party slots away (`if (idx >= 3) idx -= 3`)
+and then loads **extraction entry `1204 + k`**: `1204`/`1205` are the party pack
+(meshes + the 8 party atlases), and `1206..=1219` are the **fourteen ladder
+fighters**, one entry each, in roster order (roster id `3 + n` -> entry
+`1206 + n`). Each is a raw `[u32 (type<<24)|size][payload]` chain of
+`[TIM 256x256][TMD][anim]` walked by `FUN_801D4C50` and dispatched through
+`FUN_8001F05C` with the "already decompressed" flag. The count lines up exactly:
+fourteen paying roster records, fourteen entries, and `1220` breaks the pattern.
+
+The minigame's **HUD / banner art** is a separate load: **extraction PROT 1203**,
+descriptor 0 (`TIM_LIST`) -> LZS -> a pack of **9 TIMs** (the "STAGE" / "HIT!" /
+"KO." / "PERFECT!!" / "ALL STAGE CLEAR!" banner sheets, the digit font, the
+"Fighter" logo, the arena ellipse, the impact-burst sheet and the face parts).
+Every image block and CLUT row byte-matches a retail VRAM dump taken at the
+cabinet.
+
 Confidence: **Confirmed** for the load path and PROT-entry indices (traced in
 `overlay_baka_fighter_801cf00c.txt` + `overlay_baka_fighter_801d4c50.txt`); the
 battle-pack identity is pinned independently in `character-mesh.md`.
@@ -79,9 +95,10 @@ frame, while active, it:
    fighter exchange state. A double-KO / draw replays both. Round wins are
    counted in the per-fighter records (`&DAT_801dbff0[...]`), and the round
    index `DAT_801dbf20` advances.
-5. Drives the round-end banners: a per-state machine `DAT_801dbf84` queues
-   sound cues (`func_0x8003d53c`) and spawns "KO" / round-result banner
-   sprites (`FUN_801d6e04`).
+5. Drives the round-end banners: a per-state machine `DAT_801dbf84` spawns
+   "KO" / round-result banner sprites (`FUN_801d6e04`). (`func_0x8003d53c` is
+   **not** a cue queuer - it is the XA/CD streaming player, `xa_play_warning_1` /
+   `xa_play_err_2`. An earlier reading had it queueing sound cues.)
 
 A separate timer/ready sequence lives in `overlay_baka_fighter_801d21fc.txt`
 ("READY/FIGHT" banner + countdown via the state global `DAT_801dc134` and timer
@@ -216,7 +233,11 @@ reduced `% 3` into one of the three attack types; the picker's result index
 
 `DAT_801d76e8` is a field of the **per-fighter roster record table** based at
 `0x801d769c` (`0x6c` stride, **17 records** = the same `0x11` count the action
-table walks). The fighter-setup path installs the stat pointer as
+table walks). **Each record opens with the fighter's name**: a 32-byte NUL-padded
+ASCII string at `+0x00`, in the bytes ahead of the stat block - which is why a
+parser that starts at the `+0x20` gold field never sees them. Reader
+[`legaia_asset::minigame_art::baka_roster_names`]; the strings themselves decode
+from the disc and are not reproduced here. The fighter-setup path installs the stat pointer as
 `DAT_801dc060[slot] = 0x801d769c + id*0x6c`, so the "stat block" IS the roster
 record; the historical `0x801d76bc` table view is the same records at `+0x20`.
 Record layout (base `0x801d769c`): `+0x20` **gold reward** (`FUN_801d0fe4`
@@ -246,6 +267,46 @@ paths, and the gold payout (a flat per-opponent prize from the record table's
 `+0x00`, drained into `_DAT_80084440`); the other three tally counters
 (`DAT_801dbee0`/`ed8`/`edc`) feed the on-screen score total `DAT_801dbee4`, not
 gold.
+
+### The ladder - which roster id each round serves
+
+The stage counter `DAT_801DC10C` is **seeded to 2**, not 0 (`FUN_801CF00C`),
+incremented once per stage, and on reaching `0xE` sets the all-clear flag and
+**wraps to 0** (`FUN_801D0748`). Every consumer folds it the same way:
+
+```text
+roster_id     = stage + 3
+mesh_name_idx = stage + 5
+```
+
+So the twelve rungs the cabinet actually serves first are roster ids **5..=16** -
+and across exactly those the prize gold is **strictly monotonic**. Roster ids `3`
+and `4` are reachable only on the **second lap**, after the all-clear wraps the
+counter; they are the post-clear opponents the victory art promises ("ALL STAGE
+CLEAR! ... IT'S NOT OVER YET"). This is the whole explanation for the roster's
+gold column looking out of order when read straight down: it is not sorted by
+prize, it is sorted so that the two secret opponents sit in the wrap-around slots.
+Stages `5` and `0xD` (the last rung) are special-cased in the SM. **Confirmed.**
+
+Helper [`legaia_asset::minigame_art::baka_ladder`].
+
+## Sound
+
+Baka Fighter fires **no** runtime-bank cue (`>= 0x200`) at all - every cue it
+uses is a **static** descriptor (`DAT_8006F198 + id*8`, see
+[`sfx-table.md`](../formats/sfx-table.md)):
+
+| Event | Cue | Site |
+|---|---|---|
+| hit / exchange resolved | `0x09` | `FUN_801D3B18` |
+| confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | `FUN_801CF388` |
+| score-tally tick | `0x21` | `FUN_801D239C` |
+
+The samples come from the class-2 VAB the init loads at **extraction PROT 0869**
+(raw `0x367`); the shared UI cues come from the always-resident class-0 bank
+(extraction PROT 0868). The minigame's **BGM** is **extraction PROT 1043**
+(`music_01`), loaded by `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5, ...)`.
+**Confirmed.**
 
 ## RAM state
 

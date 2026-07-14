@@ -344,6 +344,45 @@ export class LegaiaMinigames {
         return ret !== 0;
     }
     /**
+     * The ladder the cabinet actually serves, as `[{stage, roster}]`.
+     *
+     * The stage counter starts at **2** and `roster = stage + 3`, so the first
+     * lap is roster ids `5..=16` - across which the prize gold is strictly
+     * monotonic. Roster `3` and `4` are only reachable after the all-clear
+     * wraps the counter, which is why the roster's gold column looks out of
+     * order if you read it straight down.
+     * @returns {string}
+     */
+    baka_ladder_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_baka_ladder_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The 17 fighter names, in roster order, read out of the roster records
+     * (`+0x00`, 32-byte ASCII). Empty when the overlay didn't decode.
+     * @returns {string}
+     */
+    baka_names_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_baka_names_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * The parsed roster, for the opponent picker. The disc carries no names for
      * these fighters - only their numbers - so each row is the record's own
      * stat block:
@@ -540,6 +579,15 @@ export class LegaiaMinigames {
         return this;
     }
     /**
+     * Whether the slot machine's art pack decoded off this disc. When `false`
+     * the page must fall back to symbol *ids*, not to invented artwork.
+     * @returns {boolean}
+     */
+    slot_art_ready() {
+        const ret = wasm.legaiaminigames_slot_art_ready(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * Tally the latched payout into the balance and return to idle. Returns
      * the credited coins.
      * @returns {number}
@@ -547,6 +595,141 @@ export class LegaiaMinigames {
     slot_collect() {
         const ret = wasm.legaiaminigames_slot_collect(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * The coin readout's font strip - the `"COIN"` label (`x = 0..64`) followed
+     * by digits `0..=9` at `x = 64 + d * 16` - as a 224x16 RGBA8 buffer
+     * (`FUN_801d2914`, CLUT `0x7A8D`).
+     * @returns {Uint8Array}
+     */
+    slot_digits_rgba() {
+        const ret = wasm.legaiaminigames_slot_digits_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * The 3 HUD widget descriptors, as parsed off the disc:
+     *
+     * ```json
+     * [ { "u": 0, "v": 16, "w": 127, "h": 239,
+     *     "page": 4, "palette": 0, "texpage": [640, 0], "clut": [0, 494] }, ... ]
+     * ```
+     *
+     * `page` is the index into the art pack the record's texpage resolves to,
+     * and `palette` the CLUT column - so a caller can re-decode the same traced
+     * rect through a different palette. That is not academic: the retail
+     * rasteriser `FUN_801d2cc0` lets the *call site* override the record's CLUT
+     * (the id's high field swaps in `0x7D0F`), so a widget's on-screen colour
+     * is not always the one its descriptor names.
+     * @returns {string}
+     */
+    slot_hud_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_slot_hud_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * One of the 3 HUD widgets the retail rasteriser `FUN_801d2cc0` draws from
+     * the descriptor table `DAT_801d347c`, decoded through *its own* texpage +
+     * CLUT: `0` = the cabinet panel, `1` = the "COIN" label, `2` = the cash-out
+     * cursor. RGBA8; pair with [`Self::slot_hud_json`] for the dimensions.
+     * @param {number} index
+     * @returns {Uint8Array}
+     */
+    slot_hud_rgba(index) {
+        const ret = wasm.legaiaminigames_slot_hud_rgba(this.__wbg_ptr, index);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * A whole 256x256 art page decoded through one of its 16 palettes, as
+     * RGBA8. The escape hatch for the machine's *chrome* - the marquee panel,
+     * the mascot heads, the reel-stop button medallions - whose on-screen rects
+     * this port crops from the decoded page rather than tracing to an emitter
+     * (unlike the reel symbols / digits / cabinet / cursor above, which are
+     * traced). Page indices follow the pack order documented on
+     * [`legaia_asset::minigame_art`]: `2` = chrome, `3` = banner text,
+     * `4` = cabinet.
+     * @param {number} page
+     * @param {number} palette
+     * @returns {Uint8Array}
+     */
+    slot_page_rgba(page, palette) {
+        const ret = wasm.legaiaminigames_slot_page_rgba(this.__wbg_ptr, page, palette);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * The retail cue ids, so the page never has to hard-code a number:
+     * `{"reel_stop":522,"payout_tick":521,"reach":512,"reach1":513,"reach2":514}`.
+     * @returns {string}
+     */
+    slot_sfx_cue_ids() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_slot_sfx_cue_ids(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The cue ids this disc's slot bank actually defines, with the VAB voice
+     * each one keys:
+     *
+     * ```json
+     * [ { "id": 522, "program": 1, "tone": 6, "note": 66, "rate": 46616 }, ... ]
+     * ```
+     *
+     * `id` is decimal (`522` = `0x20A`, the reel-stop click).
+     * @returns {string}
+     */
+    slot_sfx_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_slot_sfx_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Decode one cue to mono PCM (`i16`). Empty when the cue isn't in the bank.
+     * @param {number} cue
+     * @returns {Int16Array}
+     */
+    slot_sfx_pcm(cue) {
+        const ret = wasm.legaiaminigames_slot_sfx_pcm(this.__wbg_ptr, cue);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * The rate [`Self::slot_sfx_pcm`]'s samples must be played back at - the
+     * cue's note against the VAG's own centre note *is* the pitch, so this
+     * carries it. `0` when the cue isn't in the bank.
+     * @param {number} cue
+     * @returns {number}
+     */
+    slot_sfx_rate(cue) {
+        const ret = wasm.legaiaminigames_slot_sfx_rate(this.__wbg_ptr, cue);
+        return ret >>> 0;
     }
     /**
      * Charge the bet and start a spin. `false` when the machine isn't idle or
@@ -604,6 +787,22 @@ export class LegaiaMinigames {
     slot_stop() {
         const ret = wasm.legaiaminigames_slot_stop(this.__wbg_ptr);
         return ret !== 0;
+    }
+    /**
+     * One reel symbol (`0..=9`) as a 64x64 RGBA8 buffer, at the exact cell and
+     * **per-symbol CLUT** the retail reel renderer `FUN_801d0fa8` samples
+     * (`U = (sym & 3) * 0x40`, `V = (sym & 0xC) * 0x10`, CLUT `0x7A80 + sym`).
+     *
+     * The palette is load-bearing: symbols 0/1/2 are one piece of artwork
+     * recoloured three ways, and so are 4/5. Empty when the art didn't decode.
+     * @param {number} sym
+     * @returns {Uint8Array}
+     */
+    slot_symbol_rgba(sym) {
+        const ret = wasm.legaiaminigames_slot_symbol_rgba(this.__wbg_ptr, sym);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
     /**
      * Advance the reels one frame.

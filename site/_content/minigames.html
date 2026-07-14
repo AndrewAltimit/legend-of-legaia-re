@@ -75,6 +75,13 @@ canvas.mg-canvas {
 .mg-throw { min-width: 5.2rem; }
 
 /* Slots */
+.mg-cabinet {
+  display: block; width: 100%; max-width: 640px; margin: 0.9rem auto;
+  aspect-ratio: 2 / 1; background: #0b0b10;
+  border: 1px solid var(--border); border-radius: 4px;
+  /* The art is 4bpp PSX texture data - never smooth it. */
+  image-rendering: pixelated; image-rendering: crisp-edges;
+}
 .mg-reels {
   display: grid; grid-template-columns: repeat(3, 4.2rem); gap: 0.35rem;
   justify-content: center; margin: 0.9rem auto;
@@ -95,7 +102,11 @@ canvas.mg-canvas {
   background: var(--bg-code); border: 1px solid var(--border); border-radius: 3px;
   color: var(--text-muted);
 }
-.mg-pay .mg-glyph { font-size: 1rem; }
+.mg-pay .mg-glyph { font-size: 0.8rem; font-family: var(--font-mono); }
+.mg-pay .mg-glyph-sym {
+  width: 26px; height: 26px; flex: none;
+  image-rendering: pixelated; image-rendering: crisp-edges;
+}
 .mg-pay b { color: var(--text); }
 .mg-pay.mg-pay-bonus { border-color: var(--accent); color: var(--accent); }
 
@@ -181,9 +192,9 @@ canvas.mg-canvas {
         <canvas id="dance-canvas" class="mg-canvas" width="520" height="300"></canvas>
         <div class="mg-verdict" id="dance-verdict"></div>
         <div class="mg-row">
-          <button class="mg-btn mg-throw" type="button" data-dance="1">&#9679; 1<span class="mg-key">A</span></button>
-          <button class="mg-btn mg-throw" type="button" data-dance="2">&#9632; 2<span class="mg-key">S</span></button>
-          <button class="mg-btn mg-throw" type="button" data-dance="3">&#9650; 3<span class="mg-key">D</span></button>
+          <button class="mg-btn mg-throw" type="button" data-dance="1">&#9632; Square<span class="mg-key">A</span></button>
+          <button class="mg-btn mg-throw" type="button" data-dance="2">&#9679; Circle<span class="mg-key">S</span></button>
+          <button class="mg-btn mg-throw" type="button" data-dance="3">&#9650; Triangle<span class="mg-key">D</span></button>
           <button class="mg-btn mg-primary" type="button" id="dance-start">Start</button>
         </div>
         <div class="mg-hud">
@@ -196,8 +207,26 @@ canvas.mg-canvas {
           Retail splits the chart lookup in two: the hit judge matches your press
           against the raw chart cell, while the display half substitutes the
           held-sequence symbol on every fourth beat. The lane-0 chart puts <em>every</em>
-          note on a fourth beat, so the arrows above are the cells the judge
-          actually scores &mdash; the ones you can hit.
+          note on a fourth beat, so the prompts above are the cells the judge
+          actually scores &mdash; the ones you can hit. Auto-play off the
+          <em>displayed</em> cell and you score zero.
+          <br><br>
+          The chart's symbols aren't abstract notes: <code>FUN_801d4040</code> maps each
+          one straight to a pad-button mask, so a symbol <em>is</em> a button &mdash;
+          <b>1&nbsp;=&nbsp;Square</b> (<code>0x80</code>), <b>2&nbsp;=&nbsp;Circle</b>
+          (<code>0x20</code>), <b>3&nbsp;=&nbsp;Triangle</b> (<code>0x10</code>), the
+          three-times-only &ldquo;groovy move&rdquo;. The other two lanes aren't
+          difficulties &mdash; they're the <em>AI dancers</em>, fed their inputs from the
+          same chart.
+          <br><br>
+          <b>What this page cannot source, and won't fake.</b> There is no step-arrow art
+          to find: the dance overlay (PROT 0980) issues <em>no texture load at all</em> and
+          never touches the mesh pool, so it owns no sprites and no model &mdash; its
+          dancers are animated by blitting VRAM windows that the <em>field scene</em>
+          already put there. The prompts above are therefore the site's own glyphs for the
+          real buttons, and Noa is not drawn. The dance's <em>sound</em> is pinned
+          (miss&nbsp;<code>0x210</code>, combo <code>0x202</code>/<code>0x203</code>/<code>0x205</code>,
+          out of the bank at PROT&nbsp;1228/1231) but is not wired up here yet.
         </p>
       </section>
 
@@ -226,7 +255,7 @@ canvas.mg-canvas {
           </div>
           <div class="mg-vs">vs</div>
           <div class="mg-fighter">
-            <div class="mg-fname">Opponent <span class="mg-pips" id="baka-p1-pips"></span></div>
+            <div class="mg-fname"><span id="baka-p1-name">Opponent</span> <span class="mg-pips" id="baka-p1-pips"></span></div>
             <div class="mg-bar mg-bar-foe"><span id="baka-p1-hp" style="width:100%"></span></div>
             <div id="baka-p1-meta">&mdash;</div>
           </div>
@@ -244,11 +273,26 @@ canvas.mg-canvas {
           <span>Prize <b id="baka-gold">&mdash;</b> G</span>
         </div>
         <p class="mg-note">
-          The disc gives these fighters numbers, not names. Records 0&ndash;2 pay
-          nothing &mdash; they're the player-side and practice slots; 3&ndash;16 are the
-          paying ladder. Their prizes add up to <b id="baka-total">&mdash;</b> coins,
-          which is exactly the full-clear payout the walkthroughs quote &mdash; the
-          disc's own bytes agreeing with the <a href="#baka-fighter">curated table below</a>.
+          <b>The fighters are named on the disc.</b> Each roster record opens with a
+          32-byte ASCII name at <code>+0x00</code> &mdash; in the bytes just ahead of the
+          stat block, which is why a parser that starts at the stats never sees them.
+          The names above are read off <em>your</em> image, not a lookup table here.
+          <br><br>
+          The ladder order is the disc's too, and it resolves an oddity: read the roster
+          straight down and the prize gold looks jumbled. It isn't. The cabinet seeds its
+          stage counter to <b>2</b> and picks <code>roster = stage + 3</code>, so the twelve
+          rungs it actually serves are records 5&ndash;16 &mdash; across which the prize is
+          <b>strictly increasing</b>, and sums to <b id="baka-total">&mdash;</b> coins.
+          Records 3 and 4 pay out of turn because you only meet them on the
+          <b>second lap</b>, after the all-clear wraps the counter to 0. They're the
+          post-clear opponents the victory screen promises when it says the game isn't
+          over yet.
+          <br><br>
+          What's <em>not</em> here: the duel's 3D fighters. The retail cabinet poses the
+          battle-form party meshes (PROT 1204/1205) against a per-opponent mesh
+          (PROT 1206&hellip;1219, one per ladder rung) &mdash; those decode, but this page
+          doesn't yet render them, so the fight above is played on stats and bars rather
+          than bodies. A stated gap, not a stand-in.
         </p>
       </section>
 
@@ -262,7 +306,8 @@ canvas.mg-canvas {
           counter back down. Land a line of the two jackpot symbols and the bonus round
           opens: cheap spins that pay the <em>product</em> of the line.
         </p>
-        <div class="mg-reels" id="slot-reels"></div>
+        <canvas id="slot-canvas" class="mg-cabinet" width="512" height="256"></canvas>
+        <div class="mg-reels" id="slot-reels" hidden></div>
         <div class="mg-verdict" id="slot-verdict"></div>
         <div class="mg-row">
           <button class="mg-btn mg-primary" type="button" id="slot-spin">Spin<span class="mg-key">SPACE</span></button>
@@ -277,11 +322,7 @@ canvas.mg-canvas {
           <span>Net take <b id="slot-nettake">0</b></span>
         </div>
         <div class="mg-paytable" id="slot-paytable"></div>
-        <p class="mg-note">
-          The payouts are the disc's own per-symbol table. The symbol <em>glyphs</em> are
-          stand-ins &mdash; the real reel sprites are textures in the overlay, not part of
-          the payout data, so the icons here just give each of the ten symbol ids a face.
-        </p>
+        <p class="mg-note" id="slot-art-note"></p>
       </section>
     </div>
   </div>
@@ -464,7 +505,12 @@ canvas.mg-canvas {
 
   /* ================= dance ================= */
 
-  const DANCE_GLYPH = { 1: '●', 2: '■', 3: '▲' };  /* circle / square / triangle */
+  /* The chart's symbols are not abstract "notes" - `FUN_801d4040` maps each one
+   * straight to a pad-button bitmask, so a symbol IS a button:
+   *   1 -> 0x80 = Square, 2 -> 0x20 = Circle, 3 -> 0x10 = Triangle.
+   * Symbol 3 is the "groovy move" - the flourish you only get three of. */
+  const DANCE_GLYPH = { 1: '■', 2: '●', 3: '▲' };
+  const DANCE_BTN   = { 1: 'Square', 2: 'Circle', 3: 'Triangle' };
   const DANCE_COLOR = { 1: '#7798d4', 2: '#df74a6', 3: '#2dcca7' };
   const LOOKAHEAD = 7;              /* beats of chart drawn above the judge line */
 
@@ -605,22 +651,41 @@ canvas.mg-canvas {
 
   let bakaLive = false;
   let bakaRoster = [];
+  let bakaNames = [];
+  let bakaLadder = [];
+
+  function bakaName(id) {
+    return bakaNames[id] || `Fighter ${id}`;
+  }
 
   function bakaFillRoster() {
     bakaRoster = JSON.parse(api.baka_roster_json());
-    /* The disc gives these fighters numbers, not names - so label them by
-     * what the record actually says: the prize and how hard they hit.
-     * Records 0..2 pay nothing (they're the player-side / practice slots);
-     * 3..16 are the paying ladder. */
-    const opts = bakaRoster.slice(1).map(f => {
-      const pat = f.pattern.length ? `${f.pattern.length}-move pattern` : 'random';
-      const prize = f.gold > 0 ? `${f.gold} G` : 'no prize';
-      return `<option value="${f.id}"${f.id === 5 ? ' selected' : ''}>Fighter ${f.id} &middot; ${prize} &middot; ${pat}</option>`;
+    /* The roster records DO carry names - a 32-byte ASCII string at record +0x00,
+     * in the bytes ahead of the stat block the table parser starts at. */
+    bakaNames = JSON.parse(api.baka_names_json());
+    /* ...and the cabinet serves them in a specific order. The stage counter is
+     * seeded to 2 and the fighter is `roster = stage + 3`, so the first lap is
+     * roster 5..16 - across which the prize gold is strictly monotonic. Roster 3
+     * and 4 are only reachable after the all-clear wraps the counter, which is
+     * exactly why reading the roster's gold column straight down looks jumbled. */
+    bakaLadder = JSON.parse(api.baka_ladder_json());
+
+    const opts = bakaLadder.map((rung, i) => {
+      const f = bakaRoster[rung.roster];
+      if (!f) return '';
+      const lap2 = i >= 12;
+      const label = lap2 ? 'after the all-clear' : `rung ${i + 1}`;
+      return `<option value="${f.id}"${i === 0 ? ' selected' : ''}>`
+           + `${lap2 ? '★ ' : ''}${bakaName(f.id)} &middot; ${f.gold} G &middot; ${label}</option>`;
     });
-    $('baka-foe').innerHTML = opts.join('');
-    /* The 14 paying records sum to the 460 coins the walkthroughs quote for a
-     * full clear - the disc's own numbers, cross-checking the curated table. */
-    const total = bakaRoster.reduce((n, f) => n + f.gold, 0);
+    /* The three party slots are playable-side records, not ladder rungs, but you
+     * can still spar with them. */
+    const spar = bakaRoster.slice(0, 3).map(f =>
+      `<option value="${f.id}">${bakaName(f.id)} &middot; sparring (no prize)</option>`);
+    $('baka-foe').innerHTML = opts.join('') + spar.join('');
+
+    const total = bakaLadder.slice(0, 12)
+      .reduce((n, r) => n + (bakaRoster[r.roster] ? bakaRoster[r.roster].gold : 0), 0);
     $('baka-total').textContent = total;
   }
 
@@ -632,7 +697,8 @@ canvas.mg-canvas {
       return;
     }
     bakaLive = true;
-    verdict($('baka-verdict'), 'Round 1 - fight!', '');
+    $('baka-p1-name').textContent = bakaName(foe);
+    verdict($('baka-verdict'), `Round 1 - fight ${bakaName(foe)}!`, '');
     $('baka-start').textContent = 'Rematch';
   }
 
@@ -683,12 +749,197 @@ canvas.mg-canvas {
 
   /* ================= slot machine ================= */
 
-  /* Stand-in faces for the ten symbol ids. The reel art is a texture in the
-   * overlay, not part of the payout table, so these are just legible glyphs -
-   * ids 8 and 9 are the two jackpot symbols the bonus round keys off. */
-  const SLOT_GLYPH = ['✦','♣','♥','♦','♠','✿','♛','☀','★','⚡'];
+  /* ---- the machine's own art, decoded out of the visitor's disc ----
+   *
+   * Every pixel below comes from PROT entry 1200 - the five-TIM pack the slot
+   * overlay's init `FUN_801CEC94` loads. Nothing is shipped with this page.
+   *
+   * Two tiers of provenance, and the page says which is which:
+   *
+   *   TRACED  - the rect + palette are read straight out of the disassembly or
+   *             the overlay's own descriptor table. The reel symbols
+   *             (`FUN_801d0fa8`), the coin font (`FUN_801d2914`) and the three
+   *             `DAT_801d347c` HUD widgets are all traced, so they are exact.
+   *   MEASURED- the sprite is unmistakably on the machine's own chrome page,
+   *             but its rect is cropped from the decoded texture rather than
+   *             traced to the emitter that draws it. The marquee, the mascots
+   *             and the reel-stop medallions are measured.
+   *
+   * Nothing here is invented. If the art does not decode, the machine falls
+   * back to naming the symbol *ids* - not to a made-up sprite.
+   */
   const SLOT_START_COINS = 60;
+  const SYM_PX = 64;              /* a reel symbol cell, in texels */
+  const CHROME_PAGE = 2;          /* pack page: marquee + mascots + medallions */
+  const BANNER_PAGE = 3;          /* pack page: banner text + cursor */
+
+  /* MEASURED rects (texture coords) on the chrome / banner pages. */
+  const CHROME = {
+    mascot:   { u: 0,  v: 0,   w: 64,  h: 64 },   /* one cell; palettes recolour it */
+    marquee:  { u: 0,  v: 64,  w: 116, h: 62 },
+    medallion:{ u: 0,  v: 128, w: 32,  h: 32 },   /* row = reel: 0 square, 1 cross, 2 circle */
+    wildcard: { u: 0,  v: 17,  w: 80,  h: 14 },   /* on BANNER_PAGE */
+  };
+  /* Palettes matched against a real frame of the retail machine, not guessed.
+   * The rasteriser lets a call site override a record's CLUT (the id's high
+   * field swaps in 0x7D0F), so a descriptor's palette is not always the one on
+   * screen - and several of these sprites are one cell of art recoloured.
+   *
+   * The reel-stop medallion is the clearest case: its palette co-varies with
+   * its row, giving exactly the retail trio - gold ribbon over a pink square
+   * (reel 0), a blue cross (reel 1), an orange circle (reel 2), which is the
+   * pad binding 0x80 / 0x40 / 0x20 the reel SM reads. */
+  const PAL = {
+    mascotL: 0, mascotR: 1, marquee: 10, cabinet: 14, wildcard: 0,
+    medallion: [3, 4, 5],
+  };
+
   let slotPayouts = [];
+  let slotArt = null;   /* null => the art did not decode; draw ids, not sprites */
+
+  /* ---- the machine's own sound ----
+   *
+   * The reel-stop click, the payout tick and the reach sting are the retail
+   * cues, decoded from your disc: the slot overlay's efect.dat descriptor block
+   * (PROT 1199) names a VAB program/tone/note per cue id, and the sample comes
+   * out of the VAB the overlay loads beside it (PROT 1198). The cue's note
+   * against the sample's own centre note IS the pitch, so the playback rate the
+   * API reports carries it.
+   *
+   * If a cue does not decode, the page stays SILENT. No substitute beeps. */
+  let slotAudio = null;   /* { ctx, buffers: {name: AudioBuffer} } */
+  let slotSfxIds = null;
+
+  function slotLoadSfx() {
+    slotSfxIds = null;
+    if (!api) return;
+    const cues = JSON.parse(api.slot_sfx_json());
+    if (!cues.length) return;              /* silent, and the note says why */
+    slotSfxIds = JSON.parse(api.slot_sfx_cue_ids());
+  }
+
+  /* The AudioContext can only start from a gesture, so build it lazily. */
+  function slotAudioReady() {
+    if (!slotSfxIds) return null;
+    if (!slotAudio) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      const ctx = new Ctx();
+      const buffers = {};
+      for (const [name, id] of Object.entries(slotSfxIds)) {
+        const pcm = api.slot_sfx_pcm(id);
+        const rate = api.slot_sfx_rate(id);
+        if (!pcm.length || !rate) continue;
+        const buf = ctx.createBuffer(1, pcm.length, rate);
+        const ch = buf.getChannelData(0);
+        for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+        buffers[name] = buf;
+      }
+      slotAudio = { ctx, buffers };
+    }
+    if (slotAudio.ctx.state === 'suspended') slotAudio.ctx.resume();
+    return slotAudio;
+  }
+
+  function slotPlay(name, gain = 0.5) {
+    const a = slotAudioReady();
+    if (!a || !a.buffers[name]) return;
+    const src = a.ctx.createBufferSource();
+    src.buffer = a.buffers[name];
+    const g = a.ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g).connect(a.ctx.destination);
+    src.start();
+  }
+
+  /* Wrap an RGBA8 buffer from the WASM API in an offscreen canvas. */
+  function rgbaCanvas(bytes, w, h) {
+    if (!bytes || bytes.length !== w * h * 4) return null;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(bytes), w, h), 0, 0);
+    return c;
+  }
+
+  /* Decode the machine's textures once, after a disc lands. */
+  function slotLoadArt() {
+    slotArt = null;
+    if (!api || !api.slot_art_ready()) {
+      $('slot-art-note').innerHTML =
+        'The payouts are the disc’s own per-symbol table, but this disc’s <b>art pack ' +
+        '(PROT&nbsp;1200) did not decode</b>, so the reels below name the raw symbol ids. ' +
+        'No stand-in sprites are drawn.';
+      return;
+    }
+    const symbols = [];
+    for (let s = 0; s < 10; s++) symbols.push(rgbaCanvas(api.slot_symbol_rgba(s), SYM_PX, SYM_PX));
+    const hud = JSON.parse(api.slot_hud_json());
+    const pages = {};
+    const page = (p, pal) => {
+      const k = p + ':' + pal;
+      if (!(k in pages)) pages[k] = rgbaCanvas(api.slot_page_rgba(p, pal), 256, 256);
+      return pages[k];
+    };
+    slotArt = {
+      symbols,
+      digits: rgbaCanvas(api.slot_digits_rgba(), 64 + 10 * 16, 16),
+      hud,
+      /* The cabinet: the TRACED rect of HUD record 0, re-decoded through the
+       * palette the retail frame actually shows. */
+      cabinet: hud[0] ? { rect: hud[0], img: page(hud[0].page, PAL.cabinet) } : null,
+      chrome: {
+        mascotL:   page(CHROME_PAGE, PAL.mascotL),
+        mascotR:   page(CHROME_PAGE, PAL.mascotR),
+        marquee:   page(CHROME_PAGE, PAL.marquee),
+        medallion: PAL.medallion.map(p => page(CHROME_PAGE, p)),
+        wildcard:  page(BANNER_PAGE, PAL.wildcard),
+      },
+    };
+    const sfxN = JSON.parse(api.slot_sfx_json()).length;
+    $('slot-art-note').innerHTML =
+      'Every pixel and every sound of this machine is decoded from <b>your</b> disc at ' +
+      'runtime; nothing is shipped with the page. The art is PROT entry <b>1200</b>, the ' +
+      'five-TIM pack the overlay init <code>FUN_801CEC94</code> loads — byte-identical to a ' +
+      'retail VRAM dump taken at the real machine. The reel symbols are drawn at the exact ' +
+      'cell and <b>per-symbol palette</b> the retail reel renderer <code>FUN_801d0fa8</code> ' +
+      'samples (<code>U=(sym&amp;3)&times;0x40</code>, <code>V=(sym&amp;0xC)&times;0x10</code>, ' +
+      'CLUT&nbsp;<code>0x7A80+sym</code>). That palette is load-bearing: symbols 0/1/2 are ' +
+      '<em>one</em> piece of artwork recoloured three ways, and so are 4/5. The coin font ' +
+      '(<code>FUN_801d2914</code>) and the cabinet (descriptor table ' +
+      '<code>DAT_801d347c</code>) are traced too. ' +
+      (sfxN
+        ? `The <b>sound</b> is the machine’s own: ${sfxN} cues out of the overlay’s ` +
+          '<code>efect.dat</code> descriptor block (PROT&nbsp;1199), sampled from the VAB it ' +
+          'loads beside it (PROT&nbsp;1198) — the reel-stop click is cue <code>0x20A</code>, ' +
+          'the payout tick <code>0x209</code>, the reach sting <code>0x200</code>–' +
+          '<code>0x202</code>. '
+        : 'The machine’s <b>sound did not decode</b> from this image, so the page is silent ' +
+          'rather than beeping at you. ') +
+      '<br><br>Two things here are honest approximations, and they are the only two: the ' +
+      'marquee / mascots / reel-stop medallions are cropped from the machine’s own chrome ' +
+      'page by <em>measurement</em> rather than traced to the emitter that draws them (real ' +
+      'art, approximate rect), and the cabinet’s palette is matched against a real frame ' +
+      'because the HUD rasteriser lets a call site override a record’s CLUT. Everything else ' +
+      'on this machine is traced.';
+  }
+
+  function slotDrawPaytable() {
+    const st = JSON.parse(api.slot_state_json());
+    slotPayouts = st.payouts || [];
+    $('slot-paytable').innerHTML = slotPayouts.map((p, id) => {
+      const bonus = (id === 8 || id === 9);
+      const face = slotArt
+        ? `<canvas class="mg-glyph-sym" width="${SYM_PX}" height="${SYM_PX}" data-sym="${id}"></canvas>`
+        : `<span class="mg-glyph">#${id}</span>`;
+      return `<div class="mg-pay${bonus ? ' mg-pay-bonus' : ''}">${face}<b>${p}</b>${bonus ? ' ★' : ''}</div>`;
+    }).join('');
+    if (slotArt) {
+      $('slot-paytable').querySelectorAll('.mg-glyph-sym').forEach(c => {
+        const s = slotArt.symbols[parseInt(c.dataset.sym, 10)];
+        if (s) c.getContext('2d').drawImage(s, 0, 0);
+      });
+    }
+  }
 
   function slotReset() {
     const seed = (Math.random() * 0xFFFFFFFF) >>> 0;
@@ -700,38 +951,128 @@ canvas.mg-canvas {
     slotDrawPaytable();
   }
 
-  function slotDrawPaytable() {
-    const st = JSON.parse(api.slot_state_json());
-    slotPayouts = st.payouts || [];
-    $('slot-paytable').innerHTML = slotPayouts.map((p, id) => {
-      const bonus = (id === 8 || id === 9);
-      return `<div class="mg-pay${bonus ? ' mg-pay-bonus' : ''}">
-                <span class="mg-glyph">${SLOT_GLYPH[id]}</span>
-                <b>${p}</b>${bonus ? ' ★' : ''}
-              </div>`;
-    }).join('');
+  /* Draw the balance in the machine's own 16px digit font. */
+  function slotDrawCoins(g, x, y, value) {
+    if (!slotArt || !slotArt.digits) return;
+    g.drawImage(slotArt.digits, 0, 0, 64, 16, x, y, 64, 16);      /* the "COIN" label */
+    const s = String(Math.max(0, value));
+    let dx = x + 68;
+    for (const ch of s) {
+      const d = ch.charCodeAt(0) - 48;
+      g.drawImage(slotArt.digits, 64 + d * 16, 0, 16, 16, dx, y, 16, 16);
+      dx += 16;
+    }
   }
+
+  /* The retail cabinet, drawn on a 512x256 canvas. */
+  function slotRender(st) {
+    const cv = $('slot-canvas'), g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = '#0b0b10';
+    g.fillRect(0, 0, 512, 256);
+
+    if (!slotArt) {
+      /* No art on this disc: say so, and show the ids. Never fake a sprite. */
+      g.fillStyle = '#8a8a99';
+      g.font = '12px monospace';
+      g.fillText('art pack (PROT 1200) did not decode - symbol ids only', 14, 20);
+      for (let r = 0; r < 3; r++) for (let row = 0; row < 3; row++) {
+        g.fillStyle = row === 1 ? '#e8e8f0' : '#6a6a78';
+        g.font = (row === 1 ? 'bold ' : '') + '22px monospace';
+        g.fillText('#' + st.window[r][row], 150 + r * 90, 90 + row * 50);
+      }
+      return;
+    }
+
+    /* Machine body. Its descriptor sets semi-transparency on, mode 1 - the PSX
+     * "average" blend - so retail composites the cabinet 50/50 over what is
+     * behind it rather than drawing it opaque. Doing the same here is what
+     * settles the texture's dither into the smooth maroon the machine shows. */
+    const c = slotArt.cabinet;
+    if (c) {
+      g.fillStyle = '#7a1f22';
+      g.fillRect(8, 26, 496, 226);
+      g.globalAlpha = 0.5;
+      g.drawImage(c.img, c.rect.u, c.rect.v, c.rect.w, c.rect.h, 8, 26, 496, 226);
+      g.globalAlpha = 1;
+    }
+
+    /* Marquee: the panel, its "Wild Card" legend, and the two mascots flanking
+     * it (one cell of art, two palettes - the same trick as the reel symbols). */
+    const ch = slotArt.chrome, M = CHROME.marquee, MA = CHROME.mascot, WC = CHROME.wildcard;
+    g.drawImage(ch.marquee, M.u, M.v, M.w, M.h, 140, 2, 232, 50);
+    g.drawImage(ch.wildcard, WC.u, WC.v, WC.w, WC.h, 176, 14, 160, 28);
+    g.drawImage(ch.mascotL, MA.u, MA.v, MA.w, MA.h, 96, 0, 54, 54);
+    g.drawImage(ch.mascotR, MA.u, MA.v, MA.w, MA.h, 362, 0, 54, 54);
+
+    /* Three reels. Each window shows the payline row plus the row above and
+     * below - exactly the three rows the win eval reads. Retail fades a row by
+     * its distance from the payline (the gouraud curl in FUN_801d0fa8); the
+     * same fade is applied here with a scrim. */
+    const REEL_W = 64, REEL_H = 150, GAP = 26;
+    const x0 = (512 - (3 * REEL_W + 2 * GAP)) / 2, y0 = 62;
+    const winLine = (st.phase === 'payout' && st.last && st.last.line != null) ? st.last.line : null;
+    /* payline index 0 = middle row, 1 = top, 2 = bottom. */
+    const winRow = winLine == null ? -1 : (winLine === 0 ? 1 : (winLine === 1 ? 0 : 2));
+
+    for (let r = 0; r < 3; r++) {
+      const rx = x0 + r * (REEL_W + GAP);
+      g.fillStyle = '#c9c9c9';
+      g.fillRect(rx, y0, REEL_W, REEL_H);
+      g.save();
+      g.beginPath(); g.rect(rx, y0, REEL_W, REEL_H); g.clip();
+      for (let row = 0; row < 3; row++) {
+        const sym = slotArt.symbols[st.window[r][row]];
+        const sy = y0 + row * 50 - 7;
+        if (sym) g.drawImage(sym, rx, sy, REEL_W, REEL_H / 3 + 14);
+        if (row !== 1) {                       /* distance-from-payline fade */
+          g.fillStyle = 'rgba(0,0,0,0.28)';
+          g.fillRect(rx, y0 + row * 50, REEL_W, 50);
+        }
+      }
+      if (winRow >= 0) {                       /* the line that paid */
+        g.strokeStyle = '#ffe066'; g.lineWidth = 2;
+        g.strokeRect(rx + 1, y0 + winRow * 50 + 1, REEL_W - 2, 48);
+      }
+      g.restore();
+      g.strokeStyle = '#1a1a1a'; g.lineWidth = 2;
+      g.strokeRect(rx, y0, REEL_W, REEL_H);
+
+      /* The reel's own stop button, in the machine's own art: reel 0 is Square,
+       * reel 1 Cross, reel 2 Circle (pad bits 0x80 / 0x40 / 0x20). */
+      const MD = CHROME.medallion;
+      /* Dim a reel's button once its stop has been taken - but only while the
+       * reels are actually stopping; an idle machine shows all three lit. */
+      g.globalAlpha = (st.phase === 'stopping' && st.stopped > r) ? 0.35 : 1;
+      g.drawImage(ch.medallion[r], MD.u, MD.v + r * 32, MD.w, MD.h,
+                  rx + (REEL_W - 38) / 2, y0 + REEL_H + 1, 38, 38);
+      g.globalAlpha = 1;
+    }
+
+    slotDrawCoins(g, 14, 228, st.balance);
+  }
+
+  let slotPrev = { stopped: 0, phase: '', feature: 0, payout: -1 };
 
   function slotFrame() {
     const st = JSON.parse(api.slot_state_json());
     if (!st.live) return;
     api.slot_tick();
+    slotRender(st);
 
-    /* The 3x3 window the engine reports: window[reel] = [top, payline, bottom]. */
-    const win = st.last && st.last.line != null ? st.last.line : null;
-    /* payline index 0 = middle row, 1 = top, 2 = bottom. */
-    const winRow = win == null ? -1 : (win === 0 ? 1 : (win === 1 ? 0 : 2));
-    const cells = [];
-    for (let row = 0; row < 3; row++) {
-      for (let reel = 0; reel < 3; reel++) {
-        const id = st.window[reel][row];
-        const cls = 'mg-cell'
-          + (row === 1 ? ' mg-payline' : '')
-          + (st.phase === 'payout' && row === winRow ? ' mg-win' : '');
-        cells.push(`<div class="${cls}">${SLOT_GLYPH[id] || '?'}</div>`);
-      }
+    /* Cue the machine's own sounds off the state transitions the retail SM
+     * fires them on: one click per reel as its stop is taken, the reach sting
+     * when a feature mode opens, and the payout tick while credits tally. */
+    if (st.stopped > slotPrev.stopped) slotPlay('reel_stop', 0.55);
+    if (st.feature_mode !== slotPrev.feature && st.feature_mode > 0) {
+      slotPlay(st.feature_mode === 2 ? 'reach2' : 'reach1', 0.5);
     }
-    $('slot-reels').innerHTML = cells.join('');
+    if (st.phase === 'payout' && slotPrev.phase !== 'payout'
+        && st.last && st.last.payout > 0) {
+      slotPlay('payout_tick', 0.5);
+    }
+    slotPrev = { stopped: st.stopped, phase: st.phase,
+                 feature: st.feature_mode, payout: st.last ? st.last.payout : -1 };
 
     $('slot-balance').textContent  = st.balance;
     $('slot-cost').textContent     = st.cost;
@@ -746,7 +1087,7 @@ canvas.mg-canvas {
       const l = st.last;
       if (l.payout > 0) {
         verdict($('slot-verdict'),
-          (l.bonus_spin ? `Bonus spin pays ${l.payout}!` : `Line of ${SLOT_GLYPH[l.symbol]} pays ${l.payout}!`)
+          (l.bonus_spin ? `Bonus spin pays ${l.payout}!` : `A line of symbol #${l.symbol} pays ${l.payout}!`)
           + (l.bonus_triggered ? ' JACKPOT - bonus round!' : '') + ' Collect.', 'good');
       } else {
         verdict($('slot-verdict'), 'No line. Collect and spin again.', '');
@@ -812,7 +1153,7 @@ canvas.mg-canvas {
       }
 
       if (ok.baka) bakaFillRoster();
-      if (ok.slot) slotReset();
+      if (ok.slot) { slotLoadArt(); slotLoadSfx(); slotReset(); }
       mainEl.style.display = '';
       setTab(firstOk);
       if (!raf) raf = requestAnimationFrame(loop);
@@ -834,6 +1175,7 @@ canvas.mg-canvas {
   /* Headless-verification hooks (see the Playwright driver). */
   window.__mgLoad    = loadDisc;
   window.__mgSetTab  = setTab;
+  Object.defineProperty(window, '__mgApi', { get: () => api });
   window.__mgDance   = { start: danceStart, press: dancePress,
                          state: () => api && JSON.parse(api.dance_state_json()),
                          chart: () => api && JSON.parse(api.dance_chart_json()) };

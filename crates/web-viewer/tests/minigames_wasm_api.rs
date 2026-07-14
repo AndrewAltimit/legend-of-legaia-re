@@ -55,6 +55,159 @@ fn all_three_minigame_tables_decode_from_a_real_disc() {
 }
 
 #[test]
+fn slot_machine_art_decodes_off_the_disc() {
+    let Some((mg, status)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // The art pack (PROT 1200, the entry `FUN_801CEC94` loads) must reach the
+    // page - without it the machine can only draw symbol *ids*.
+    assert_eq!(status["slot"]["art"], true, "slot art pack: {status:?}");
+    assert!(mg.slot_art_ready());
+
+    // Every reel symbol decodes at its retail cell (`FUN_801d0fa8`): 64x64 RGBA.
+    for sym in 0..legaia_asset::minigame_art::SLOT_SYMBOL_COUNT {
+        let px = mg.slot_symbol_rgba(sym);
+        assert_eq!(px.len(), 64 * 64 * 4, "symbol {sym} is a 64x64 sprite");
+        assert!(
+            px.chunks_exact(4).any(|p| p[3] != 0),
+            "symbol {sym} is not fully transparent"
+        );
+    }
+
+    // Symbols 0/1/2 are one piece of artwork behind three different CLUTs, so
+    // their *alpha* masks match while their colours differ. This is the check
+    // that would fail if the per-symbol CLUT (`0x7A80 + sym`) were ignored.
+    let (a, b) = (mg.slot_symbol_rgba(0), mg.slot_symbol_rgba(1));
+    let alpha_eq = a
+        .chunks_exact(4)
+        .zip(b.chunks_exact(4))
+        .all(|(x, y)| (x[3] == 0) == (y[3] == 0));
+    assert!(alpha_eq, "symbols 0 and 1 share one cell of artwork");
+    assert_ne!(a, b, "...but different palettes, so different pixels");
+
+    // The coin font: "COIN" + digits 0..9, 16px cells.
+    let digits = mg.slot_digits_rgba();
+    assert_eq!(digits.len() * 4 / 4, (64 + 10 * 16) * 16 * 4);
+
+    // The 3 HUD widgets resolve through their own texpage + CLUT.
+    let hud: serde_json::Value = serde_json::from_str(&mg.slot_hud_json()).unwrap();
+    let hud = hud.as_array().unwrap();
+    assert_eq!(hud.len(), 3, "the descriptor table has 3 records");
+    // Record 0 is the cabinet: it samples the (640, 0) page, CLUT row 494.
+    assert_eq!(hud[0]["texpage"], serde_json::json!([640, 0]));
+    assert_eq!(hud[0]["clut"], serde_json::json!([0, 494]));
+    for (i, rec) in hud.iter().enumerate() {
+        let w = rec["w"].as_u64().unwrap() as usize;
+        let h = rec["h"].as_u64().unwrap() as usize;
+        assert_eq!(mg.slot_hud_rgba(i).len(), w * h * 4, "HUD widget {i}");
+    }
+}
+
+#[test]
+fn slot_machine_sound_decodes_off_the_disc() {
+    let Some((mg, status)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // The slot's cues are runtime-bank ids (>= 0x200), so they only resolve if
+    // BOTH the efect.dat descriptor block (PROT 1199) and the VAB it samples
+    // (PROT 1198) decode.
+    assert_eq!(status["slot"]["sfx"], 11, "slot cue bank: {status:?}");
+
+    let cues: serde_json::Value = serde_json::from_str(&mg.slot_sfx_json()).unwrap();
+    let cues = cues.as_array().unwrap();
+    assert_eq!(cues.len(), 11);
+    // The block's 11 records span the two programs in order (4 tones, then 7) -
+    // which is exactly the shape the PROT 1198 VAB declares (2 programs, 11
+    // tones). The agreement is what says the table offset is right; the record
+    // count alone is set by the class byte that terminates the block.
+    assert_eq!(cues[0]["program"], 0);
+    assert_eq!(cues[3]["program"], 0);
+    assert_eq!(cues[4]["program"], 1);
+    assert_eq!(cues[10]["program"], 1);
+    assert_eq!(cues[10]["tone"], 6);
+
+    let ids: serde_json::Value = serde_json::from_str(&mg.slot_sfx_cue_ids()).unwrap();
+    for key in ["reel_stop", "payout_tick", "reach", "reach1", "reach2"] {
+        let id = ids[key].as_u64().unwrap() as u16;
+        let pcm = mg.slot_sfx_pcm(id);
+        let rate = mg.slot_sfx_rate(id);
+        assert!(!pcm.is_empty(), "cue {key} (0x{id:X}) decodes to PCM");
+        assert!(
+            (4000..=96_000).contains(&rate),
+            "cue {key} plays at a sane rate ({rate} Hz)"
+        );
+        assert!(
+            pcm.iter().any(|s| *s != 0),
+            "cue {key} is not silence - a bank of zeros would mean a bad VAG index"
+        );
+    }
+
+    // A cue the bank does not define stays silent rather than falling back to
+    // some other sample.
+    assert!(mg.slot_sfx_pcm(0x2FF).is_empty());
+    assert_eq!(mg.slot_sfx_rate(0x2FF), 0);
+}
+
+#[test]
+fn baka_roster_is_named_and_the_ladder_orders_it() {
+    let Some((mg, status)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert_eq!(status["baka"]["named"], true, "roster names: {status:?}");
+
+    let names: serde_json::Value = serde_json::from_str(&mg.baka_names_json()).unwrap();
+    let names: Vec<&str> = names
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n.as_str().unwrap())
+        .collect();
+    assert_eq!(names.len(), 17);
+    // Slots 0..2 are the playable party; the rest are the cabinet's fighters.
+    // (Asserting they are non-empty ASCII, not asserting the Sony strings.)
+    assert!(
+        names.iter().all(|n| !n.is_empty() && n.is_ascii()),
+        "every roster record carries a name"
+    );
+
+    // The ladder: 12 first-lap rungs (roster 5..=16) then the two post-clear
+    // wrap-around opponents (roster 3 and 4).
+    let ladder: serde_json::Value = serde_json::from_str(&mg.baka_ladder_json()).unwrap();
+    let ladder = ladder.as_array().unwrap();
+    assert_eq!(ladder.len(), 14);
+    assert_eq!(ladder[0]["stage"], 2);
+    assert_eq!(ladder[0]["roster"], 5);
+    assert_eq!(ladder[11]["roster"], 16);
+    assert_eq!(ladder[12]["roster"], 3);
+    assert_eq!(ladder[13]["roster"], 4);
+
+    // The payoff of getting the order right: across the twelve rungs the cabinet
+    // actually serves first, the prize gold is strictly increasing. Read the
+    // roster straight down instead and it is not - which is what made this look
+    // unpinnable before.
+    let roster: serde_json::Value = serde_json::from_str(&mg.baka_roster_json()).unwrap();
+    let roster = roster.as_array().unwrap();
+    let gold = |id: usize| roster[id]["gold"].as_i64().unwrap();
+    let rungs: Vec<i64> = (0..12)
+        .map(|i| gold(ladder[i]["roster"].as_u64().unwrap() as usize))
+        .collect();
+    assert!(
+        rungs.windows(2).all(|w| w[0] < w[1]),
+        "ladder prize gold ascends: {rungs:?}"
+    );
+    assert!(
+        !(3..=16)
+            .collect::<Vec<_>>()
+            .windows(2)
+            .all(|w| gold(w[0] as usize) < gold(w[1] as usize)),
+        "...while plain roster order does not - the fact the ladder explains"
+    );
+}
+
+#[test]
 fn dance_run_on_the_real_chart_scores() {
     let Some((mut mg, _)) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");

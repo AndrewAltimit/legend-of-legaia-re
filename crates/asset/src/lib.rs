@@ -55,6 +55,8 @@ pub mod man_section;
 pub mod me_archive;
 pub mod menu_glyph_atlas;
 pub mod menu_windows;
+pub mod minigame_art;
+pub mod minigame_sfx;
 pub mod mips_overlay;
 pub mod mode_table;
 pub mod monster_archive;

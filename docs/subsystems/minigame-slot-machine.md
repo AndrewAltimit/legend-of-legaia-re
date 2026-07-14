@@ -51,7 +51,7 @@ The reel-symbol quads are drawn by `FUN_801d0fa8` with **arithmetic UVs from the
 | `+0x10` | `u8 r2, g2, b2` far-edge shade |
 | `+0x13` | `u8` semi-transparency mode (0..3, into tpage bits 5-6) |
 
-Record 0 is the 128x240 reel-window backdrop panel, record 1 the 64x16 marquee, record 2 the 16x16 cash-out-cursor arrow (`FUN_801cf0d8` state `0x32` positions it at `DAT_801d4110 * 0x10 + 0x6C`). Immediately after the third record (`0x801D34B8`) the region becomes a **14-entry pointer table** - the attract-mode instruction-text lines, pointing at the string block at the head of the overlay ("To spin the wheels, insert 3 coins by pressing the ... buttons", the earlier "transitions into a pointer array" observation).
+Record 0 is the 128x240 reel-window backdrop panel (the cabinet), record 1 the 64x16 **"COIN" label** (the cell immediately left of digit `0` on the `0x0C` page - not a marquee), record 2 the 16x16 cash-out-cursor arrow (`FUN_801cf0d8` state `0x32` positions it at `DAT_801d4110 * 0x10 + 0x6C`). Immediately after the third record (`0x801D34B8`) the region becomes a **14-entry pointer table** - the attract-mode instruction-text lines, pointing at the string block at the head of the overlay ("To spin the wheels, insert 3 coins by pressing the ... buttons", the earlier "transitions into a pointer array" observation).
 
 ## RNG
 
@@ -205,16 +205,79 @@ The engine-side reconstructions (each marked at its site): the spin-up pacing co
 
 Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::casino_coins` = `_DAT_800845A4`). The `play-window` viewer starts it from the `O` key (loads PROT 0975, `slot_payout::parse`); Cross spins / stops / collects. Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
 
+## Art pack (PROT 1200)
+
+The overlay init `FUN_801CEC94` loads the machine's textures from **extraction
+PROT entry 1200** (raw TOC `0x4B2`). The entry is a descriptor container whose
+descriptor 0 (`TIM_LIST`, type `0x01`) LZS-decodes to a [`pack`](../formats/pack.md)
+of **five standard PSX TIMs**. Their framebuffer destinations *are* the texture
+pages and CLUT rows the reel renderer and the HUD rasteriser sample, which closes
+the per-page fb-coordinate question:
+
+| pack | image fb | CLUT row | texpage attr | role |
+|---|---|---|---|---|
+| 0 | `(768, 0)` | 490 | `0x0C` | reel symbols + digit font + prompts |
+| 1 | `(832, 0)` | 491 | `0x0D` | bonus-strip multiplier numerals (1..10) |
+| 2 | `(768, 256)` | 492 | `0x1C` | marquee panel, mascots, reel-stop medallions |
+| 3 | `(832, 256)` | 493 | `0x1D` | banner text ("Bonus Game", "One more!") + cursor |
+| 4 | `(640, 0)` | 494 | `0x8A` | the cabinet |
+
+Every image block is **byte-identical to a retail VRAM dump** taken at the machine
+(`minigame_slot_machine` capture), so `texpage 0x0C = (768,0)` / `0x0D = (832,0)`
+is Confirmed, not inferred. The siblings PROT 1198 / 1199 (raw `0x4B0` / `0x4B1`)
+are **not** backdrop art - they are the machine's *sound* bank (see below).
+
+Sprite geometry, all Confirmed:
+
+- **Reel symbols** - `FUN_801d0fa8`, no descriptor table: a 4x4 grid of 64x64
+  cells on the `0x0C` page, `U = (sym & 3) * 0x40`, `V = (sym & 0xC) * 0x10`, and
+  a **per-symbol CLUT** at `0x7A80 + sym` (row 490, column `sym`). The palette is
+  load-bearing: symbol ids 0/1/2 are *one* cell of artwork recoloured three ways,
+  as are 4/5 - a renderer that ignores the CLUT draws three identical reels.
+- **Digit font** - `FUN_801d2914`: `U = 0x40 + digit * 0x10`, `V = 0xC0`, 16x16
+  per glyph, CLUT `0x7A8D`. The 64x16 cell at `(0, 0xC0)` is the **"COIN"** label -
+  which is what HUD record 1 (below) actually points at.
+- **HUD widgets** - the 3 records of `DAT_801d347c` resolve to the cabinet panel
+  (`(640,0)` page, CLUT row 494, `uv (0,16)`, `127x239`), the **"COIN" label**
+  (not a "marquee" - `(768,0)` page, CLUT `0x7A8D`, `uv (0,192)`, `64x16`) and the
+  cash-out cursor (`(832,256)` page, `uv (96,160)`, `16x16`).
+
+Parser [`legaia_asset::minigame_art`].
+
+## Sound
+
+The machine's cues are **runtime-bank** ids (`>= 0x200`), so they resolve through
+the cue ring's second space (see [`sfx-table.md`](../formats/sfx-table.md)): the
+descriptor block is the overlay's `efect.dat` at **extraction PROT 1199** (raw
+`0x4B0`... loaded by the same init), and the samples come from the class-2 VAB at
+**extraction PROT 1198**. Descriptors are 8 bytes - `[program, tone, note, voices,
+class]` - starting at the `u16` at `bank + 2`. The block yields exactly **11**
+class-2 records over 2 programs (4 tones + 7), and the PROT 1198 VAB declares
+exactly 2 programs and 11 tones: the agreement is what pins the table offset.
+
+| Event | Cue | Site |
+|---|---|---|
+| reel stop (once per reel) | `0x20A` | `FUN_801CF0D8` case 3 |
+| payout tally tick | `0x209` | `FUN_801CF0D8` case 4 |
+| reach / anticipation | `0x201` / `0x202` | `FUN_801CF0D8` |
+| second jackpot symbol sighted | `0x200` | `FUN_801D1AF4` |
+| confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | static table, class-0 VAB (PROT 0868) |
+
+The reel-spin *loop* is not a ring cue: it is a voice driven straight through
+`FUN_80065034` (voice `0x13`, program 1) and released on all-reels-stop.
+
+The slot machine starts **no BGM** - it inherits the host scene's. Parser
+[`legaia_asset::minigame_sfx`].
+
 ## Open
 
-- The **reel-art texture source** is traced: the slot overlay init `FUN_801CEC94`
-  loads it from **extraction PROT entry 1200** (raw TOC index `0x4B2`, the `other4`
-  dev family), which supplies texpages `0x0C`/`0x0D` and the per-symbol CLUT rows
-  490/491 that `FUN_801d0fa8` samples; its siblings PROT 1198 / 1199 (raw
-  `0x4B0`/`0x4B1`) are the backdrop / HUD art. The only residual is the per-page
-  fb-coordinate split (`0x0C` = `(768,0)` vs `0x0D` = `(832,0)`), which stays
-  disc-gated - needed only if the engine ever draws the real reel art instead of
-  symbol-id placeholders.
+- The machine's own **in-game BGM** is unpinned: the overlay never starts a track,
+  and every library capture reaches the minigame through a debug warp from
+  `town01`, so the inherited track in those states is Rim Elm's, not the casino's.
+  Pinning it needs a capture taken by walking into the Sol casino.
+- The marquee panel, the mascot heads and the reel-stop medallions are on pack
+  page 2 but their on-screen rects are not traced to an emitter (the 3-record HUD
+  table does not cover them).
 
 ## See also
 
