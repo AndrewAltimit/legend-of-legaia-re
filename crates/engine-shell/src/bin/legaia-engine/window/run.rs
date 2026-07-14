@@ -104,6 +104,7 @@ pub(crate) fn cmd_play_window(
     battle_bgm: Option<u16>,
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
+    dynamic_lighting: bool,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -129,6 +130,7 @@ pub(crate) fn cmd_play_window(
         battle_bgm,
         screenshot,
         seed_party,
+        dynamic_lighting,
         None,
     )
 }
@@ -255,6 +257,7 @@ pub(super) fn cmd_play_window_with_record(
     battle_bgm: Option<u16>,
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
+    dynamic_lighting: bool,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Resolve the cutscene map (explicit `--cutscene-map` override or the
@@ -750,6 +753,7 @@ pub(super) fn cmd_play_window_with_record(
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
         active_dialog: None,
         seru_names: None,
+        dynamic_lighting,
     };
 
     // Push the loaded options into their live consumers (audio downmix)

@@ -635,6 +635,13 @@ struct PlayWindowApp {
     /// to the Options screen's [`OptionsSession`] and persisted via
     /// the engine's options round-trip path.
     options_state: legaia_engine_core::options::OptionsState,
+    /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
+    /// no light source). Seeded from `--dynamic-lighting`, toggled at
+    /// runtime with the `I` key; mirrored into the renderer via
+    /// [`legaia_engine_render::Renderer::set_dynamic_lighting`] and shown on
+    /// the HUD status line. Default `false` = the faithful pixel-identical
+    /// render.
+    dynamic_lighting: bool,
     /// Phase J3 pad-capture state. `Some` when the user invoked the
     /// `record` subcommand; the keyboard handler appends transitions
     /// to `events` and the close handler flushes a `j-replay-v1` file

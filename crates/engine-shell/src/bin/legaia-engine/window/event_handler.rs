@@ -24,6 +24,16 @@ impl ApplicationHandler for PlayWindowApp {
             r.set_psx_mode(true);
             log::info!("play-window: PSX-faithful render mode enabled");
         }
+        // Opt-in dynamic-lighting enhancement (`--dynamic-lighting`, or the
+        // `I` key at runtime): soft warm directional light + screen-centred
+        // light pool over the baked shading. Off by default - retail has no
+        // field light source, and the disabled path is pixel-identical.
+        if self.dynamic_lighting
+            && let Some(r) = self.win.renderer.as_ref()
+        {
+            r.set_dynamic_lighting(true);
+            log::info!("play-window: dynamic-lighting enhancement enabled (I toggles)");
+        }
         self.upload_assets();
         self.win.request_redraw();
     }

@@ -85,11 +85,18 @@ impl PlayWindowApp {
                 },
             )
             .unwrap_or_default();
+        // Dynamic-lighting enhancement state (opt-in, non-retail; `I` toggles).
+        let light_str = if self.dynamic_lighting {
+            "  light ON (I)"
+        } else {
+            ""
+        };
         let line2 = format!(
-            "t {:.1}s  {}{}  arrows=dpad Z=X",
+            "t {:.1}s  {}{}{}  arrows=dpad Z=X",
             self.win.elapsed_secs(),
             audio_str,
-            bgm_str
+            bgm_str,
+            light_str
         );
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));

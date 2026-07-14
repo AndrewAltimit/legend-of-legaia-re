@@ -43,6 +43,7 @@ pub(crate) fn cmd_record(
         None,
         None,
         false,
+        false, // dynamic_lighting: replays stay on the faithful render
         Some(RecordTarget {
             out: out.to_path_buf(),
             scenario: scenario.map(str::to_string),

@@ -811,6 +811,14 @@ pub(crate) enum Cmd {
         /// Matches the retail early-game single-Vahn party.
         #[arg(long, default_value_t = false)]
         seed_party: bool,
+        /// Opt-in dynamic-lighting ENHANCEMENT (non-retail): layer a soft
+        /// warm directional light (off the smoothed mesh normals) plus a
+        /// screen-centred light pool over the baked per-prim shading, capped
+        /// at ~1.3x. Retail's field path has no light source at all, so this
+        /// is default-off and the faithful render stays pixel-identical
+        /// without it. Toggle at runtime with the `I` key.
+        #[arg(long, default_value_t = false)]
+        dynamic_lighting: bool,
     },
     /// Open a window and play back a PSX STR movie using the MDEC decoder,
     /// paced at the stream's real ~15 fps.

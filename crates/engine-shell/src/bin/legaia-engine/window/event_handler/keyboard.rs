@@ -512,6 +512,27 @@ impl PlayWindowApp {
             );
             return;
         }
+        // `I`: toggle the opt-in dynamic-lighting enhancement (the
+        // `--dynamic-lighting` flag's runtime twin). NON-RETAIL: the field
+        // path has no light source, so OFF (the default) is the faithful
+        // pixel-identical render; ON layers a soft warm directional light +
+        // screen-centred light pool over the baked shading (capped ~1.3x).
+        // Pure renderer state - no world/sim effect, replays unaffected.
+        if matches!(code, KeyCode::KeyI) && state == ElementState::Pressed {
+            self.dynamic_lighting = !self.dynamic_lighting;
+            if let Some(r) = self.win.renderer.as_ref() {
+                r.set_dynamic_lighting(self.dynamic_lighting);
+            }
+            log::info!(
+                "render: dynamic lighting {}",
+                if self.dynamic_lighting {
+                    "ON (enhancement - not retail)"
+                } else {
+                    "off (faithful baked shading)"
+                }
+            );
+            return;
+        }
         // `C`: toggle the field camera between the retail follow view
         // (savestate-pinned pitch/yaw/H, player-anchored - the
         // faithful framing) and the wide debug orbit vantage (better
