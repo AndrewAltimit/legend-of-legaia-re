@@ -369,11 +369,24 @@ CDNAME_SCENES: list[dict] = [
     {"label": "son",              "start": 354,  "category": "field",     "display": "Field (son)"},
     {"label": "concnow",          "start": 362,  "category": "field",     "display": "Conkram (Mist)"},
     {"label": "taiku",            "start": 371,  "category": "field",     "display": "Muscle Dome"},
-    {"label": "deene",            "start": 382,  "category": "town",      "display": "Buma"},
+    # Karisto naming, pinned from each scene's own MAN / event-script text
+    # (the scene a string lives in is its OWNING scene, i.e. the CDNAME block
+    # shifted -2; see docs/formats/cdname.md):
+    #   deene  - "Mt. Dhini, sacred land of Soren." (Birdman Gate) -> Mt. Dhini,
+    #            NOT Buma. `opdeene` is the opening cutscene staged on it.
+    #   bubu2  - "Welcome to Buma, the city of lakes!" + the frozen Genesis Tree
+    #            + Cara -> Buma (the pier town over the lake).
+    #   doman  - Dr./Mrs. Usha, the TimeSpace Bomb quiz, "Research Center"
+    #            -> Usha Research Center.
+    #   bubu1  - the same Buma bowl, thawed: green terraces, no ice sheet, no
+    #            MAN of its own (the post-revival stage), so it is the variant
+    #            and `bubu2` - the frozen town that carries the shops / inn /
+    #            Cara script - is the Buma you play.
+    {"label": "deene",            "start": 382,  "category": "field",     "display": "Mt. Dhini"},
     {"label": "map03",            "start": 391,  "category": "world_map", "display": "World map (Karisto)"},
-    {"label": "doman",            "start": 399,  "category": "field",     "display": "Field (doman)"},
-    {"label": "bubu1",            "start": 407,  "category": "field",     "display": "Usha Research Center"},
-    {"label": "bubu2",            "start": 416,  "category": "field",     "display": "Usha (deeper)"},
+    {"label": "doman",            "start": 399,  "category": "town",      "display": "Usha Research Center"},
+    {"label": "bubu1",            "start": 407,  "category": "town",      "display": "Buma (revived)"},
+    {"label": "bubu2",            "start": 416,  "category": "town",      "display": "Buma"},
     {"label": "taiku2",           "start": 425,  "category": "field",     "display": "Muscle Dome (later)"},
     {"label": "uru",              "start": 434,  "category": "field",     "display": "Uru Mais"},
     {"label": "uru2",             "start": 444,  "category": "field",     "display": "Uru Mais (deeper)"},
@@ -412,7 +425,7 @@ CDNAME_SCENES: list[dict] = [
     {"label": "conc3",            "start": 733,  "category": "field",     "display": "Conkram (epilogue)"},
     {"label": "town0e",           "start": 741,  "category": "town",      "display": "Rim Elm (epilogue)"},
     # OP cutscenes
-    {"label": "opdeene",          "start": 748,  "category": "cutscene",  "display": "Opening (Buma)"},
+    {"label": "opdeene",          "start": 748,  "category": "cutscene",  "display": "Opening (Mt. Dhini)"},
     {"label": "opstati",          "start": 753,  "category": "cutscene",  "display": "Opening (station)"},
     {"label": "opkorout",         "start": 758,  "category": "cutscene",  "display": "Opening (korout)"},
     {"label": "opurud",           "start": 763,  "category": "cutscene",  "display": "Opening (Uru)"},
@@ -567,8 +580,8 @@ def build_gamedata_json() -> tuple[dict, dict]:
         "Ratayu":               None,        # Gaza's city; block not yet pinned
         "Karisto Station":      "station",
         "Sol":                  None,        # the `kor` cluster (kor3 = Sol district)
-        "Buma":                 "deene",
-        "Usha Research Center": "bubu1",
+        "Buma":                 "bubu2",
+        "Usha Research Center": "doman",
         "Soren Camp":           "koin1",
         "Conkram":              "conc",
     }
