@@ -502,15 +502,22 @@ The slot machine starts **no BGM** - it inherits the host scene's. Parser
   and every library capture reaches the minigame through a debug warp from
   `town01`, so the inherited track in those states is Rim Elm's, not the casino's.
   Pinning it needs a capture taken by walking into the Sol casino.
-- The machine's **cabinet** - the grey body and the dark-red face the reels sit in
-  - is not the slot overlay's to draw. It is in neither the art pack nor any prim
-  the overlay emits: no slot function emits a large untextured quad or a body
-  mesh, no slot art page holds cabinet art, and the live prim pool at the machine
-  carries ~950 `POLY_FT4` + several hundred gouraud prims per frame that no slot
-  function accounts for. The cabinet is the **casino room's own 3D geometry**
-  (the `koin1`..`koin6` scene bundles), rendered by the shared scene renderer
-  behind the layer the overlay owns, under the same camera. Which `koin*` bundle
-  carries the machine mesh is not yet pinned.
+- The machine's **cabinet** - the grey body, the dark-red face the reels sit in,
+  the navy marquee backing and the lit floor ramp - has **no pinned emitter**. It
+  is in neither the art pack nor any prim a traced slot function emits: no slot
+  function emits a large untextured quad or a body mesh, no slot art page holds
+  cabinet art, and the live prim pool at the machine carries ~950 `POLY_FT4` +
+  several hundred gouraud prims per frame that no traced slot function accounts
+  for. The earlier "it is the casino room's own 3D geometry (`koin1`..`koin6`)"
+  reading is **falsified**: the `minigame_slot_machine` capture reaches the
+  machine by a debug warp from `town01`, a RAM TMD census over that capture finds
+  town01's env meshes resident (56 of 114 body-slice matches) and effectively
+  none of any `koin*` bundle's, and both framebuffers still carry the fully-drawn
+  cabinet - so the casino room's geometry cannot be what draws it. The emitter is
+  either an untraced slot/overlay-host function or a shared-renderer table loaded
+  with mode 24; pinning it needs a prim-pool-to-code trace at the machine. The
+  site's minigames page draws the cabinet as a composition **measured off the
+  capture's framebuffer** (edges + colours), and says so.
 
 ## See also
 

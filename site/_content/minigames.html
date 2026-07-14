@@ -1224,12 +1224,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * state. The fit was solved on the five payline lamps alone and then predicted,
    * to about a pixel each, every other element's on-screen rect.
    *
-   * WHAT IS MISSING, AND THE PAGE SAYS SO: the machine's CABINET - the grey body
-   * and the dark red face the reels sit in - is not drawn here, because it is not
-   * the slot overlay's to draw. It is in neither the art pack nor any prim the
-   * overlay emits; it is the casino room's own 3D geometry, rendered by the
-   * shared scene renderer behind the layer this code owns. Rather than invent a
-   * cabinet, the page draws the machine's face on a neutral ground and says why.
+   * THE CABINET IS MEASURED, NOT TRACED, AND THE PAGE SAYS SO: the grey body,
+   * the dark-red face the reels sit in, the navy marquee backing and the lit
+   * floor ramp are drawn by retail every frame, but their emitter is still
+   * unpinned. The old "it's the casino room's geometry" reading is FALSIFIED:
+   * the library capture reaches the machine by a debug warp from town01 - a
+   * RAM census finds town01's meshes resident and none of the koin* casino
+   * bundles' - and the cabinet still draws. Until its table is found, the
+   * page paints the same composition from edges + colours measured off the
+   * retail capture's framebuffer (see slotDrawCabinet).
    */
   const SLOT_START_COINS = 60;
   const SYM_PX = 64;              /* a reel symbol cell, in texels */
@@ -1401,17 +1404,19 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           '<code>0x209</code>, reach sting <code>0x200</code>–<code>0x202</code>. '
         : 'The machine’s <b>sound did not decode</b> from this image, so the page is silent ' +
           'rather than beeping at you. ') +
-      '<br><br><b>What is missing, and why.</b> The <b>cabinet</b> — the grey body and dark-red ' +
-      'face the reels sit in — is not drawn here, because it is not the slot overlay’s to draw. ' +
-      'It is in neither the art pack nor any primitive the overlay emits: it is the casino ' +
-      'room’s own 3D geometry (the <code>koin*</code> scene bundles), rendered by the shared ' +
-      'scene renderer <em>behind</em> the layer this code owns. Rather than invent a cabinet, ' +
-      'the machine’s face is drawn on a neutral ground. The <b>projection</b> (the four scalars ' +
-      'that map model space onto the retail 640×240 frame) is <em>fitted</em> to a retail ' +
-      'framebuffer rather than read, because the GTE control words are not in main RAM — but ' +
-      'the fit was solved on the five payline lamps alone and then predicted every other ' +
-      'element’s rect to about a pixel. The machine’s <b>in-game BGM is still unpinned</b>: the ' +
-      'overlay starts no track, and every capture reaches it by a debug warp.';
+      '<br><br><b>What is measured rather than read, and why.</b> The <b>cabinet</b> — the grey ' +
+      'body, the dark-red face the reels sit in, the navy marquee backing, the lit floor ramp — ' +
+      'is drawn by retail every frame, but its emitter is still unpinned. The earlier “it’s the ' +
+      'casino room’s geometry” reading is <b>falsified</b>: the reference capture reaches the ' +
+      'machine by a debug warp from <code>town01</code> — a RAM census finds Rim Elm’s meshes ' +
+      'resident and none of the <code>koin*</code> casino bundles’ — and the cabinet still ' +
+      'draws. Until its table is found, the page paints the same composition from edges and ' +
+      'colours <em>measured off the retail capture’s framebuffer</em>, the same epistemic ' +
+      'status as the <b>projection</b> (the four scalars that map model space onto the retail ' +
+      '640×240 frame), which is <em>fitted</em> rather than read because the GTE control words ' +
+      'are not in main RAM — solved on the five payline lamps alone, it then predicted every ' +
+      'other element’s rect to about a pixel. The machine’s <b>in-game BGM is still ' +
+      'unpinned</b>: the overlay starts no track, and every capture reaches it by a debug warp.';
   }
 
   function slotDrawPaytable() {
@@ -1684,11 +1689,74 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   let slotTick = 0;
 
+  /* ---- the cabinet, measured off the retail framebuffer ----
+   *
+   * The cabinet - the grey body, the dark-red face the reels sit in, the navy
+   * marquee backing, the lit floor ramp - is drawn by the retail machine every
+   * frame, but its emitter is still unpinned: it is NOT the casino room's
+   * geometry (the library capture reaches the machine by a debug warp from
+   * town01 - a RAM census finds town01's meshes resident and none of the
+   * koin* casino bundles' - and the cabinet still draws), and no slot-overlay
+   * function emits it. Until the table it comes from is found, this paints the
+   * same composition as a small set of flats + gradients whose every edge and
+   * colour is MEASURED from the retail capture's framebuffer - the same
+   * epistemic status as the fitted projection above, and the page says so.
+   *
+   * Measured anchors (640x240 retail frame, sampled from the
+   * minigame_slot_machine capture): body x 28..488 / y 19..218 on black;
+   * top highlight strip y 19..26 peaking rgb(136) at centre; marquee band
+   * y 26..66 rgb(48); navy panel backing rgb(0,0,72) behind the marquee
+   * cut-out; face x 36..470 dark red, vertical gradient rgb(40,32,32) @ 66 ->
+   * rgb(136,48,48) @ 115 -> rgb(24,24,24) @ 197 (the red shows BETWEEN the
+   * reel strips, exactly as retail); floor ramp y 197..218,
+   * rgb(16) -> rgb(96). */
+  function slotDrawCabinet(g) {
+    /* machine body edges (grey metal), on the black ground */
+    g.fillStyle = '#2c2c2c';
+    g.fillRect(28, 19, 460, 199);
+    /* top surface highlight - brightest at the centre */
+    let gr = g.createLinearGradient(28, 0, 488, 0);
+    gr.addColorStop(0, '#505050');
+    gr.addColorStop(0.5, '#888888');
+    gr.addColorStop(1, '#505050');
+    g.fillStyle = gr;
+    g.fillRect(28, 19, 460, 7);
+    /* marquee band */
+    gr = g.createLinearGradient(28, 0, 488, 0);
+    gr.addColorStop(0, '#2a2a2a');
+    gr.addColorStop(0.5, '#383838');
+    gr.addColorStop(1, '#2a2a2a');
+    g.fillStyle = gr;
+    g.fillRect(28, 26, 460, 40);
+    /* navy backing the marquee panel's transparent interior opens onto */
+    g.fillStyle = 'rgb(0,0,72)';
+    g.fillRect(116, 24, 274, 34);
+    /* the dark-red face (visible between and around the reel strips) */
+    gr = g.createLinearGradient(0, 66, 0, 197);
+    gr.addColorStop(0, 'rgb(40,32,32)');
+    gr.addColorStop(0.37, 'rgb(136,48,48)');
+    gr.addColorStop(0.75, 'rgb(56,24,24)');
+    gr.addColorStop(1, 'rgb(24,24,24)');
+    g.fillStyle = gr;
+    g.fillRect(36, 66, 434, 131);
+    /* body side rails flanking the face */
+    g.fillStyle = '#383838';
+    g.fillRect(28, 66, 8, 131);
+    g.fillStyle = '#404040';
+    g.fillRect(470, 66, 18, 131);
+    /* lit floor ramp under the face (the pedestals land on it) */
+    gr = g.createLinearGradient(0, 197, 0, 218);
+    gr.addColorStop(0, 'rgb(16,16,16)');
+    gr.addColorStop(1, 'rgb(96,96,96)');
+    g.fillStyle = gr;
+    g.fillRect(28, 197, 460, 21);
+  }
+
   /* The retail machine, on its own 640x240 framebuffer. */
   function slotRender(st) {
     const cv = $('slot-canvas'), g = cv.getContext('2d');
     g.imageSmoothingEnabled = false;
-    g.fillStyle = '#14121a';
+    g.fillStyle = '#000000';
     g.fillRect(0, 0, cv.width, cv.height);
 
     if (!slotArt || !slotScene) {
@@ -1712,16 +1780,32 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
      * bet is charged, which is exactly how long the lamps should stay on. */
     const winLine = (st.last && st.last.line != null) ? st.last.line : null;
 
-    /* The machine's face, on the ground the cabinet would occupy. This ground is
-     * NOT retail art - the cabinet is the casino room's 3D geometry, not the
-     * overlay's - so it is drawn as a plain neutral field, not a fake cabinet. */
-    g.fillStyle = '#241a1c';
-    const [gx0, gy0] = slotProject(-700, -640, -800);
-    const [gx1, gy1] = slotProject(700, 560, -800);
-    g.fillRect(gx0, gy0 - 12, gx1 - gx0, gy1 - gy0 + 24);
+    /* The cabinet the machine's face sits in - the measured reconstruction
+     * (see slotDrawCabinet): grey body, marquee band + navy backing, the
+     * dark-red face the reels sit in, the lit floor ramp. */
+    slotDrawCabinet(g);
 
-    /* 1. the reels - furthest back (the cylinders live behind the glass) */
+    /* 1. the reels - furthest back (the cylinders live behind the glass).
+     * Each reel spins in a black window recess cut into the face: retail
+     * shows a black backing behind each strip with ~3px black bars flanking
+     * it, and nothing of the cylinder draws above the marquee panel's bottom
+     * (y 54) or below the floor ramp (y 197) - the face quads sit between the
+     * cylinder's near and far faces in the ordering table and occlude the
+     * wrap-around. Both bounds measured off the capture framebuffer. */
+    const winTop = 54, winBot = 197;
+    g.fillStyle = '#000000';
+    const R = slotScene.reels;
+    for (let r = 0; r < 3; r++) {
+      const [rx0] = slotProject(R.x[r], 0, -512);
+      const [rx1] = slotProject(R.x[r] + R.w, 0, -512);
+      g.fillRect(rx0 - 3, winTop, rx1 - rx0 + 6, winBot - winTop);
+    }
+    g.save();
+    g.beginPath();
+    g.rect(112, winTop, 336, winBot - winTop);
+    g.clip();
     slotDrawReels(g, st, api.slot_reel_pos());
+    g.restore();
 
     /* 2. the paylines: 3D segments, both endpoints projected */
     for (let i = 0; i < slotScene.paylines.length; i++) {
@@ -1734,11 +1818,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
 
     /* 3. the payline medallions - one cell of art, five palettes (the record's
-     *    own `art` field is the CLUT column) */
-    slotScene.medallions.forEach((m, i) => {
+     *    own `art` field is the CLUT column). Retail draws all five at full
+     *    strength (the capture framebuffer shows no dimming); the winning
+     *    line is called out by its lamp + line, not by fading the others. */
+    slotScene.medallions.forEach((m) => {
       const img = slotArt.page(C.medallion_page, (C.medallion_clut_base + m.art) & 0x3F);
-      slotDrawBillboard(g, img, C.medallion, m.pos, C.medallion_half,
-                        i === winLine ? 1 : 0.75);
+      slotDrawBillboard(g, img, C.medallion, m.pos, C.medallion_half);
     });
 
     /* 4. the payline lamps on the right - the winning line's lamp lights */
