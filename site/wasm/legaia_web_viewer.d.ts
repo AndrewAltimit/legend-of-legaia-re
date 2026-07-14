@@ -15,6 +15,19 @@ export class LegaiaArts {
      */
     art_pose_frames(index: number): Int32Array;
     /**
+     * The SFX cue id an art strike fires: the art record's documented generic
+     * "play sound" Hit Effect Cue kind. Resolve it to audio through
+     * [`crate::sfx_view::LegaiaSfx`].
+     */
+    art_strike_cue(): number;
+    /**
+     * Frames of art clip `index` on which the page should fire the strike
+     * sound cue ([`Self::art_strike_cue`]), ascending. See [`strike_frames`]
+     * for what they are and why they are a fit rather than a traced timing.
+     * Empty when the clip didn't decode.
+     */
+    art_strike_frames(index: number): Uint32Array;
+    /**
      * The idle loop's pose frames (see [`flatten_pose_frames`] layout).
      * Empty when the character has no decodable idle stream.
      */
@@ -648,8 +661,14 @@ export class LegaiaMinigames {
      */
     dance_layout_json(): string;
     /**
-     * Judge a directional press. `dir` is the chart symbol (`1` / `2` / `3`).
-     * Returns `"miss"` / `"hit"` / `"sequence"` (`"none"` with no live run).
+     * Press a dance button. `1` = Square, `2` = Circle (the judged directions),
+     * `3` = **Triangle**, the three-per-song "groovy move" wildcard.
+     *
+     * Returns the event name: `"miss"` / `"hit"` / `"sequence"` for a direction,
+     * `"groovy"` / `"groovy_off"` for a triangle spent on / off the 4-beat combo
+     * slot, `"no_charge"` when the stock is empty, and `"ignored"` while the
+     * dancer is inside a groovy move (input is disrupted for its whole spin).
+     * `"none"` with no live run.
      */
     dance_press(dir: number): string;
     /**
@@ -673,8 +692,9 @@ export class LegaiaMinigames {
      */
     dance_sfx_rate(cue: number): number;
     /**
-     * Start a dance run on the disc's baked step chart. `long_song` picks the
-     * long song-length limit. Returns `false` when the chart didn't decode.
+     * Start a dance run on the disc's baked step chart, scoring tables and
+     * qualifier cast (all rodata of PROT 0980). `long_song` picks the long
+     * song-length limit. Returns `false` when the overlay didn't decode.
      */
     dance_start(long_song: boolean): boolean;
     /**
@@ -683,16 +703,25 @@ export class LegaiaMinigames {
      * ```json
      * { "live": true, "score": 0, "gauge": 0, "lane": 0, "beat": 3,
      *   "phase": 40, "period": 281, "window": 210, "accuracy": 3200, "dead_zone": false,
-     *   "judged": 2, "displayed": 3, "song_timer": 900, "song_len": 16860,
-     *   "over": false, "passed": false }
+     *   "combo_slot": true, "judged": 2, "displayed": 3,
+     *   "triangles": 3, "lock": 0, "feedback": null,
+     *   "rivals": [ {"score": 12, "gauge": 500, "lane": 0, "kind": 2, "triangles": 3}, .. ],
+     *   "song_timer": 900, "song_len": 16860, "over": false, "passed": false,
+     *   "winning": true }
      * ```
      *
      * **`judged` is the step to press.** Retail splits the chart lookup
      * (`FUN_801d1820`) into two halves: the hit judge (`FUN_801d1960`) matches
      * a press against the raw chart cell (`judged`), while the display /
-     * auto-feed half substitutes the held-sequence symbol `3` on every 4th
-     * beat (`displayed`). Both are surfaced; only `judged` scores. `0` = the
-     * beat carries no step, `null` = the dead zone between beats.
+     * auto-feed half substitutes the triangle symbol `3` on every 4th beat
+     * (`displayed`). Both are surfaced; only `judged` scores a direction. `0` =
+     * the beat carries no step, `null` = the dead zone between beats.
+     *
+     * `triangles` is the groovy-move stock (3 per song); `lock` is the frames of
+     * groovy-move spin still disrupting input; `feedback` is `true`/`false`
+     * while the post-spend caption window runs (whether it landed on the combo
+     * slot), `null` otherwise. `rivals` are the two CPU dancers, scoring live
+     * off the same chart.
      */
     dance_state_json(): string;
     /**
@@ -708,7 +737,9 @@ export class LegaiaMinigames {
     dance_sting_rate(r: number, layer: number): number;
     /**
      * Advance the beat clock by `frames` frames (the retail clock steps
-     * `frame_delta * 10` phase units per frame).
+     * `frame_delta * 10` phase units per frame). This also runs the **CPU
+     * dancers**: retail feeds them the chart every frame through the same judge
+     * and award routine the human's presses take, so their scores climb here.
      */
     dance_tick(frames: number): void;
     /**
@@ -747,28 +778,52 @@ export class LegaiaMinigames {
      */
     slot_art_ready(): boolean;
     /**
-     * The **bonus game**: the two jackpot triggers and, when a bonus round is
-     * live, the numbers currently on the reels and their product payout.
+     * The **bonus game**: the two jackpot triggers, and - when a round is live -
+     * the numbers on the reels and the **claimed-column tally** the machine
+     * prints across its marquee.
      *
      * A matching line of the **blue "kick"** symbol (id 8) earns 1 bonus round;
      * the **red "punch"** symbol (id 9) earns 3 - the counts and symbol ids are
      * pinned in the disassembly (`FUN_801d13e8`) and the colours in the PROT
-     * 1200 reel art. A bonus round swaps the reels to numbers `1..=10` (the
-     * symbol id + 1) and pays the **product of the three stopped numbers**
-     * (`1..=1000`).
+     * 1200 reel art. A bonus round swaps the reels onto the machine's *second*
+     * strip - the numerals `1..=10`, their own artwork on art page 1 - and pays
+     * the **product of the three numbers you stop on** (`1..=1000`).
      *
      * ```json
      * { "kick_symbol": 8, "kick_rounds": 1, "punch_symbol": 9, "punch_rounds": 3,
      *   "min": 1, "max": 1000, "active": true, "rounds_left": 2,
-     *   "numbers": [7, 7, 7], "product": 343 }
+     *   "numbers": [9, 5, 3], "tally": [9, 5, 0], "claimed": [true, true, false],
+     *   "complete": false, "product": 0 }
      * ```
      *
-     * `active` is true only in feature mode 6 (the bonus round); `numbers` is
-     * each reel's payline number (`symbol + 1`) and `product` their payout, so
-     * the page can render the number wheels and caption the win without
-     * re-deriving the rule.
+     * * `numbers` - the number **live on each reel's payline** right now, so the
+     *   page can draw the wheels while they spin.
+     * * `tally` - the machine's own claimed-column latch (`DAT_801d3d20`): `0`
+     *   for a column whose reel is still spinning, its landed number once that
+     *   stop is taken. This is the `0 x 0 x 0` -> `9 x 5 x 0` strip.
+     * * `product` - the tally's product, i.e. the coins the round pays; `0`
+     *   until all three columns are claimed (`complete`).
+     *
+     * The tally and the payout are **the same state**, not two copies: the
+     * evaluator multiplies the very rows the tally latched. A page that renders
+     * `tally` cannot show a line that disagrees with what the spin paid.
      */
     slot_bonus_json(): string;
+    /**
+     * One **bonus reel numeral** (`1..=10`) as a 64x64 RGBA8 buffer - the big
+     * coloured digit the reels carry during a bonus round.
+     *
+     * These are the retail faces, not a scaled coin font: ten 64x64 cells of
+     * their own artwork on art-pack page 1, each drawn through its own palette
+     * column (`CLUT 0x7AC0 + n - 1`), which is why every numeral is a different
+     * colour. `FUN_801d0fa8` reaches them by the same UV arithmetic it uses for
+     * the symbols - a bonus strip value simply clears `0x10`, which bumps the
+     * texpage to `0x0D` and the CLUT base to `0x7AC0`.
+     *
+     * Empty when the art pack didn't decode - in which case the page must say
+     * so, not draw digits of its own.
+     */
+    slot_bonus_number_rgba(number: number): Uint8Array;
     /**
      * Tally the latched payout into the balance and return to idle. Returns
      * the credited coins. [`Self::slot_tick`] already does this on the frame a
@@ -804,6 +859,30 @@ export class LegaiaMinigames {
      * cursor. RGBA8; pair with [`Self::slot_hud_json`] for the dimensions.
      */
     slot_hud_rgba(index: number): Uint8Array;
+    /**
+     * The **marquee message bank's roles** - which of the 21 dot-matrix bitmaps
+     * in [`Self::slot_scene_json`] is which glyph, and the dot columns the
+     * machine blits them at.
+     *
+     * The tally strip and the payout caption are not chrome the page invents:
+     * they are `FUN_801cfff0` composing the *same* 78x13 dot matrix that
+     * scrolls the attract legend in the normal game. This hands over the ids and
+     * columns it uses, so the page draws the retail glyphs at the retail
+     * positions rather than a font of its own.
+     *
+     * ```json
+     * { "number_base": 6, "number_max": 10, "times": 17, "coins": 20,
+     *   "pip_on": 18, "pip_off": 19,
+     *   "tally_cols": [0, 32, 64], "times_cols": [16, 48], "pip_cols": [0, 32, 64],
+     *   "payout_digit_cols": [0, 13, 26, 39], "payout_coins_col": 52,
+     *   "payout_slide_rows": 13 }
+     * ```
+     *
+     * `number_base + n` is the bitmap for the numeral `n`, `0..=10` - eleven
+     * records, because a bonus reel can land on **10** and retail gives it a
+     * glyph of its own rather than two digit cells.
+     */
+    slot_marquee_json(): string;
     /**
      * A whole art page decoded through one of its 16 palettes, as RGBA8. Every
      * on-screen rect the machine draws is traced to its emitter, so a caller
@@ -1222,6 +1301,69 @@ export class LegaiaRuntime {
      * render state whenever the return is non-empty.
      */
     tick_frame(): string;
+}
+
+/**
+ * The site's shared sound-cue surface: renders every cue the minigame + arts
+ * pages fire, once, off the loaded disc.
+ */
+export class LegaiaSfx {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Tactical-arts event -> cue map (see [`ART_EVENTS`]).
+     */
+    art_cues_json(): string;
+    /**
+     * Baka Fighter event -> cue map, with per-event provenance. The page
+     * names events (`"hit"`, `"confirm"`, ...) and never hard-codes a cue id.
+     */
+    baka_cues_json(): string;
+    /**
+     * PROT entry the cues were rendered from (0 until [`Self::load_disc`]).
+     */
+    bank_prot_index(): number;
+    /**
+     * Resolve one event name to its cue id (`255` when the event is unknown -
+     * no real descriptor uses `0xFF`).
+     */
+    cue_for_event(table: string, event: string): number;
+    /**
+     * Cue ids that rendered, in ascending order.
+     */
+    cue_ids(): Uint32Array;
+    /**
+     * One cue's interleaved-stereo i16 PCM at [`Self::sample_rate`]. Empty
+     * when the id didn't render on this disc.
+     */
+    cue_pcm_i16(id: number): Int16Array;
+    /**
+     * Peak absolute sample of one cue (0 when absent). The page stages gain
+     * off this so a quiet cue is audible without the loud ones clipping.
+     */
+    cue_peak(id: number): number;
+    /**
+     * Decode + render every site cue from a full Mode2/2352 disc image.
+     *
+     * Walks the retail chain: `SCUS_942.54` -> the static SFX descriptor
+     * table, `PROT.DAT` -> the class-2 sound bank ([`SFX_BANK_PROT_INDEX`]),
+     * then each cue's descriptor -> a one-shot through the clean-room SPU.
+     * Holds only the rendered PCM afterwards (the disc bytes are dropped), so
+     * a page can call this alongside its own decoder without a second copy of
+     * the image.
+     *
+     * Returns JSON:
+     * ```json
+     * { "ok": true, "bank": 869, "rate": 44100,
+     *   "cues": [ { "id": 9, "samples": 5400, "peak": 8123 }, ... ] }
+     * ```
+     */
+    load_disc(bytes: Uint8Array): string;
+    constructor();
+    /**
+     * Sample rate of every buffer [`Self::cue_pcm_i16`] returns.
+     */
+    sample_rate(): number;
 }
 
 export class LegaiaViewer {
@@ -2288,6 +2430,18 @@ export function card_read_coins(bytes: Uint8Array, block: number): number;
 export function card_saves_json(bytes: Uint8Array): string;
 
 /**
+ * Export a **working** language pack (source-bearing, all `translation:`
+ * fields empty) from the user's own disc, as YAML text they can download and
+ * fill in. This is the authoring on-ramp - the community can produce their own
+ * packs without any tooling beyond the browser. The exported text is the
+ * user's own disc data and never leaves the browser.
+ *
+ * `language` stamps the pack header (`fr`, `de`, ...); pass `en` for a plain
+ * source dump. Returns the YAML string.
+ */
+export function export_lang_pack(image: Uint8Array, language: string): string;
+
+/**
  * Patch a user-supplied disc image with the chosen randomizer settings.
  *
  * `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `arts` /
@@ -2347,9 +2501,18 @@ export function card_saves_json(bytes: Uint8Array): string;
  * begins the new game at that character level instead of 1 (`0` or `1` =
  * vanilla; range 2..=14), seeding the lead character's XP and recomputing the
  * starting stats from the disc's growth curves. `seed` is a number or
- * any string (hashed). Returns `{ data, summary, seed }`.
+ * any string (hashed).
+ *
+ * `lang_pack` is an **optional** `legaia-text-pack-v1` YAML document (empty
+ * string = no language patch, the default). It is applied **first**, before
+ * any randomizer pass, because a translation edit is keyed by a byte offset
+ * into a scene's decompressed MAN and the door / starting-bag passes relocate
+ * those records - translate-then-randomize composes, the reverse loses the
+ * moved scenes' lines. Per-entry skips (a line over budget, a wrong-disc
+ * mismatch) are counted in the summary but never abort the patch. Returns
+ * `{ data, summary, seed }`.
  */
-export function patch_rom(image: Uint8Array, seed: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean, enemy_ally: boolean, shiny_seru: boolean): any;
+export function patch_rom(image: Uint8Array, seed: string, lang_pack: string, drops: string, encounters: string, encounter_scope: string, chests: string, shops: string, casino: string, steals: string, arts: string, doors: string, door_coupling: string, house_doors: string, starting_items: number, door_of_wind: number, incense: number, speed_chain: number, chicken_heart: number, good_luck_bell: number, all_warps: boolean, unused_enemies: boolean, unused_items: boolean, equipment_drops: boolean, monster_stats: string, move_power: string, element_affinity: string, spell_cost: string, equip_bonus: string, weapon_specialty: boolean, starting_level: number, solo_strong_encounters: boolean, flee_exp: boolean, seru_trade: boolean, enemy_ally: boolean, shiny_seru: boolean): any;
 
 /**
  * Resolve a user seed string to the numeric seed, as a decimal string (so the
@@ -2364,6 +2527,17 @@ export function resolve_seed(seed: string): string;
  */
 export function save_summary_json(bytes: Uint8Array): string;
 
+/**
+ * Validate a `legaia-text-pack-v1` YAML document **against the user's own
+ * disc**, client-side. Returns `{ ok, language, applied, skipped, message }`:
+ * `applied` is how many entries would be written, `skipped` how many the disc
+ * rejected (over budget or not matching this image), and `message` a short
+ * human summary. This is the same dry run the CLI's `translate stats --input`
+ * does - the only way to check a distributable pack's budgets, which are
+ * hints until a disc is there to measure. Nothing is written.
+ */
+export function validate_lang_pack(image: Uint8Array, pack_yaml: string): any;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -2372,11 +2546,15 @@ export interface InitOutput {
     readonly __wbg_legaiaaudio_free: (a: number, b: number) => void;
     readonly __wbg_legaiaminigames_free: (a: number, b: number) => void;
     readonly __wbg_legaiaruntime_free: (a: number, b: number) => void;
+    readonly __wbg_legaiasfx_free: (a: number, b: number) => void;
     readonly __wbg_legaiaviewer_free: (a: number, b: number) => void;
     readonly card_patch_coins: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly card_read_coins: (a: number, b: number, c: number) => [number, number, number];
     readonly card_saves_json: (a: number, b: number) => [number, number, number, number];
+    readonly export_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly legaiaarts_art_pose_frames: (a: number, b: number) => [number, number];
+    readonly legaiaarts_art_strike_cue: (a: number) => number;
+    readonly legaiaarts_art_strike_frames: (a: number, b: number) => [number, number];
     readonly legaiaarts_idle_pose_frames: (a: number) => [number, number];
     readonly legaiaarts_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaarts_mesh_bounds: (a: number) => [number, number];
@@ -2485,10 +2663,12 @@ export interface InitOutput {
     readonly legaiaminigames_new: () => number;
     readonly legaiaminigames_slot_art_ready: (a: number) => number;
     readonly legaiaminigames_slot_bonus_json: (a: number) => [number, number];
+    readonly legaiaminigames_slot_bonus_number_rgba: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_collect: (a: number) => number;
     readonly legaiaminigames_slot_digits_rgba: (a: number) => [number, number];
     readonly legaiaminigames_slot_hud_json: (a: number) => [number, number];
     readonly legaiaminigames_slot_hud_rgba: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_slot_marquee_json: (a: number) => [number, number];
     readonly legaiaminigames_slot_page_rgba: (a: number, b: number, c: number) => [number, number];
     readonly legaiaminigames_slot_page_width: (a: number, b: number) => number;
     readonly legaiaminigames_slot_panel_rgba: (a: number) => [number, number];
@@ -2564,6 +2744,15 @@ export interface InitOutput {
     readonly legaiaruntime_set_pad: (a: number, b: number) => void;
     readonly legaiaruntime_state_json: (a: number) => [number, number];
     readonly legaiaruntime_tick_frame: (a: number) => [number, number, number, number];
+    readonly legaiasfx_art_cues_json: (a: number) => [number, number];
+    readonly legaiasfx_baka_cues_json: (a: number) => [number, number];
+    readonly legaiasfx_bank_prot_index: (a: number) => number;
+    readonly legaiasfx_cue_for_event: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly legaiasfx_cue_ids: (a: number) => [number, number];
+    readonly legaiasfx_cue_pcm_i16: (a: number, b: number) => [number, number];
+    readonly legaiasfx_cue_peak: (a: number, b: number) => number;
+    readonly legaiasfx_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiasfx_new: () => number;
     readonly legaiaviewer_battle_char_atlas_bytes: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_mesh_bounds: (a: number, b: number) => [number, number];
     readonly legaiaviewer_battle_char_mesh_cba_tsb: (a: number, b: number) => [number, number];
@@ -2715,10 +2904,12 @@ export interface InitOutput {
     readonly legaiaviewer_walk_placement_rot_y: (a: number) => [number, number];
     readonly legaiaviewer_walk_placement_slots: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number) => [number, number, number];
+    readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number, b2: number, c2: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
     readonly save_summary_json: (a: number, b: number) => [number, number, number, number];
+    readonly validate_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly legaiaminigames_dance_bgm_rate: (a: number) => number;
+    readonly legaiasfx_sample_rate: (a: number) => number;
     readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
