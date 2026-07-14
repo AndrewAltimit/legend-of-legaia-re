@@ -84,6 +84,15 @@ pub fn build_hybrid_env_mesh_posed(
 /// Merge the untextured vertex-colour half into the textured half's vertex
 /// stream, producing the parallel `[r, g, b, flag]` array (empty when there
 /// is no colour half, so pure-textured meshes upload exactly as before).
+///
+/// The colour half's per-vertex PSX blend word (ABE enable in bit 15 + ABR
+/// mode in bits 5..=6, see [`legaia_tmd::mesh::ColorMesh::blend`]) is carried
+/// into the TSB half of the merged `cba_tsb` attribute - the same packing the
+/// textured prims ride ([`legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`]).
+/// Dropping it forced every untextured semi-transparent prim (water sheets,
+/// window light shafts) to draw opaque in the WebGL viewers. The flat-colour
+/// shader path never samples VRAM for these verts, so the nonzero TSB is
+/// blend metadata only.
 fn merge_hybrid_halves(
     mut mesh: legaia_tmd::mesh::VramMesh,
     cmesh: &legaia_tmd::mesh::ColorMesh,
@@ -96,10 +105,15 @@ fn merge_hybrid_halves(
         flat.extend_from_slice(&[255, 255, 255, 255]);
     }
     let base = mesh.positions.len() as u32;
-    for (p, c) in cmesh.positions.iter().zip(cmesh.colors.iter()) {
+    for ((p, c), blend) in cmesh
+        .positions
+        .iter()
+        .zip(cmesh.colors.iter())
+        .zip(cmesh.blend.iter())
+    {
         mesh.positions.push(*p);
         mesh.uvs.push([0, 0]);
-        mesh.cba_tsb.push([0, 0]);
+        mesh.cba_tsb.push([0, *blend]);
         mesh.normals.push([0.0, 0.0, 0.0]);
         flat.extend_from_slice(&[c[0], c[1], c[2], 0]);
     }
@@ -483,5 +497,44 @@ impl LegaiaViewer {
             .and_then(|f| f.ground.as_ref())
             .map(|hf| hf.quad_count() as u32)
             .unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_hybrid_halves;
+    use legaia_tmd::mesh::{ColorMesh, TSB_SEMI_TRANSPARENT_BIT, VramMesh};
+
+    /// The colour half's blend words must survive the hybrid merge in the
+    /// TSB half of `cba_tsb` - an untextured ABE prim (fountain water /
+    /// window light shaft) that loses its blend word draws as an opaque
+    /// grey blob in the WebGL viewers.
+    #[test]
+    fn hybrid_merge_keeps_colour_half_blend_words() {
+        let mesh = VramMesh {
+            positions: vec![[0.0; 3]; 3],
+            uvs: vec![[0, 0]; 3],
+            cba_tsb: vec![[7, 0x1234]; 3],
+            indices: vec![0, 1, 2],
+            normals: vec![[0.0; 3]; 3],
+            colors: vec![[128; 3]; 3],
+        };
+        let semi = TSB_SEMI_TRANSPARENT_BIT; // ABE on, ABR 0
+        let cmesh = ColorMesh {
+            positions: vec![[1.0; 3]; 3],
+            colors: vec![[10, 20, 30]; 3],
+            indices: vec![0, 1, 2],
+            blend: vec![semi; 3],
+        };
+        let (merged, flat) = merge_hybrid_halves(mesh, &cmesh);
+        assert_eq!(merged.positions.len(), 6);
+        assert_eq!(flat.len(), 24);
+        // Textured prefix untouched, colour tail flagged 0 with its blend
+        // word in the TSB half.
+        assert_eq!(merged.cba_tsb[0], [7, 0x1234]);
+        for v in 3..6 {
+            assert_eq!(merged.cba_tsb[v], [0, semi], "vert {v}");
+            assert_eq!(flat[v * 4 + 3], 0, "vert {v} flag");
+        }
     }
 }

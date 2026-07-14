@@ -101,6 +101,21 @@ fences / small furniture) render instead of vanishing.
 untextured / use the colour; empty for pure-textured meshes), consumed by
 the WebGL shader's `u_use_flat_colors` / `a_flat_rgba` hybrid path.
 
+The per-vertex `cba_tsb` stream carries each prim's PSX **semi-transparency**
+state (ABE enable in TSB bit 15 - `legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`
+- and the ABR blend mode in bits 5..=6) for textured prims and, via the
+hybrid merge, for the untextured colour-half verts (their `ColorMesh::blend`
+word lands in the TSB slot; the flat path never samples VRAM, so it's blend
+metadata only). The WebGL renderer (`site/js/webgl-tmd.js`) draws these prims
+in a deferred **blend pass**: the opaque pass discards blending texels
+(prim ABE + texel STP, `u_semi_pass = 0`), then per-ABR-mode index tails
+(`buildSemiTail`, the browser mirror of engine-render's
+`psx_blend::append_semi_tail`) re-draw them depth-tested but not
+depth-written with the matching GL blend state (`0.5B+0.5F` / `B+F` / `B-F`
+/ `B+0.25F`). This is what makes fountain water (Hunter's Spring) and house
+window light read translucent instead of opaque grey. Disc-gated pin:
+`tests/field_scene_blend.rs`.
+
 Two site pages drive it through the shared `site/js/field-scene-view.js`
 (`window.FieldSceneView`): the **game-world** page's town navigator, which
 swaps locations in place, and the **asset viewer**'s "full map" button. The

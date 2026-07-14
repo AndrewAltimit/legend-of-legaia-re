@@ -40,6 +40,40 @@
  *   farRef  - 0..16383 reference Z for the far plane (retail gp-0x2E0).
  */
 
+/* PSX semi-transparency (ABE) tail for a scene mesh's index list: bucket
+ * every semi-transparent triangle (first vertex's TSB bit 15, packed by the
+ * Rust mesh builders) into one of four per-ABR-mode runs appended after the
+ * original indices. The opaque pass draws the original range (the fragment
+ * shader defers the blending texels via u_semi_pass = 0); the blend pass
+ * re-draws each tail run with the matching GL blend state. The browser
+ * mirror of engine-render's psx_blend::append_semi_tail.
+ *
+ * Returns null when the mesh has no semi prims, so pure-opaque meshes
+ * upload their index list untouched. */
+function buildSemiTail(indices, cbaTsb) {
+  const buckets = [[], [], [], []];
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const tsb = cbaTsb[indices[i] * 2 + 1];
+    if ((tsb & 0x8000) === 0) continue;
+    buckets[(tsb >> 5) & 3].push(indices[i], indices[i + 1], indices[i + 2]);
+  }
+  let tailLen = 0;
+  for (const b of buckets) tailLen += b.length;
+  if (tailLen === 0) return null;
+  const out = new Uint32Array(indices.length + tailLen);
+  out.set(indices, 0);
+  const ranges = [];
+  let at = indices.length;
+  for (let mode = 0; mode < 4; mode++) {
+    const b = buckets[mode];
+    if (b.length === 0) continue;
+    ranges.push({ mode, start: at, count: b.length });
+    out.set(b, at);
+    at += b.length;
+  }
+  return { indices: out, ranges };
+}
+
 class TmdRenderer {
   constructor(canvas) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
@@ -61,6 +95,7 @@ class TmdRenderer {
     this.locFogFarRef   = gl.getUniformLocation(this.program, 'u_fog_far_ref');
     this.locFogZShift   = gl.getUniformLocation(this.program, 'u_fog_z_shift');
     this.locUseFlatColors = gl.getUniformLocation(this.program, 'u_use_flat_colors');
+    this.locSemiPass = gl.getUniformLocation(this.program, 'u_semi_pass');
     this.locPos     = gl.getAttribLocation(this.program, 'a_position');
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
@@ -486,6 +521,9 @@ class TmdRenderer {
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);  /* matches WGSL light_dir.xyz */
     gl.uniform1f(this.locNormalSign, 1.0);  /* orbit VP keeps screen handedness */
     gl.uniform1i(this.locNoDisc, 0);  /* per-mesh inspector: keep cutout discard */
+    /* Single-mesh inspector: legacy single pass (no semi-transparency defer,
+     * ABE prims draw opaque) - only renderAssembled runs the blend pass. */
+    gl.uniform1i(this.locSemiPass, -1);
     /* Field-character hybrid: untextured prims use their vertex colour. Set
      * explicitly every frame (the uniform persists on the shared program). */
     gl.uniform1i(this.locUseFlatColors, this.useFlatColors ? 1 : 0);
@@ -526,6 +564,7 @@ class TmdRenderer {
         idxBuf: gl.createBuffer(),
         indexCount: 0,
         hasFlat: false,
+        semiRanges: null,
         aabb: null,
       };
       this.sceneMeshes.set(meshId, m);
@@ -561,8 +600,13 @@ class TmdRenderer {
       gl.disableVertexAttribArray(this.locFlatRgba);
     }
 
+    /* Semi-transparent (ABE) prims: append the per-ABR-mode blend tail. The
+     * opaque pass keeps drawing 0..indices.length; the tail ranges are only
+     * touched by renderAssembled's blend pass. */
+    const tail = buildSemiTail(indices, cbaTsb);
+    m.semiRanges = tail ? tail.ranges : null;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.STATIC_DRAW);
 
     m.indexCount = indices.length;
     gl.bindVertexArray(null);
@@ -786,6 +830,9 @@ class TmdRenderer {
      * rows; the walk-frame path uploads the kingdom's real VRAM image, so
      * CLUTs now resolve exactly like retail. */
     gl.uniform1i(this.locNoDisc, 0);
+    /* Opaque pass: defer semi-transparent (ABE) fragments; the blend pass
+     * after the placement loop re-draws them per ABR mode. */
+    gl.uniform1i(this.locSemiPass, 0);
     /* Flat-colour hybrid: off for the ground pass; re-enabled per placed
      * mesh below when it carries an untextured vertex-colour half (the
      * viewer full-map path). The context-global constant keeps disabled
@@ -858,23 +905,80 @@ class TmdRenderer {
       }
       gl.bindVertexArray(m.vao);
       for (const p of list) {
-        const scale = (p.scale != null) ? p.scale : MESH_SCALE;
-        const useCentroid = (p.anchor === 'centroid') && m.aabb;
-        let model;
-        if (useCentroid) {
-          model = placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb);
-        } else if (p.y != null) {
-          /* Walk-frame landmarks carry a world Y (floor-LUT height) so they
-           * sit on the continent heightfield instead of the y=0 plane. */
-          model = placementModelScaledY(p.x, p.y, p.z, p.rotY || 0, scale);
-        } else {
-          model = placementModelScaled(p.x, p.z, p.rotY || 0, scale);
-        }
-        gl.uniformMatrix4fv(this.locModel, false, model);
+        gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
     }
+
+    /* Blend pass: re-draw the deferred semi-transparent (ABE) prims over the
+     * finished opaque scene, one fixed-function blend state per ABR mode.
+     * Depth-tested against the opaque scene but not depth-written, so blend
+     * prims never occlude. Mirrors the retail GPU: the ordering table draws
+     * blend prims against the already-rendered background. */
+    let blendOn = false;
+    for (const [meshId, list] of byMesh) {
+      const m = this.sceneMeshes.get(meshId);
+      if (!m || !m.semiRanges || m.indexCount === 0) continue;
+      if (!blendOn) {
+        gl.enable(gl.BLEND);
+        gl.depthMask(false);
+        gl.uniform1i(this.locSemiPass, 1);
+        blendOn = true;
+      }
+      const wantFlat = !!m.hasFlat;
+      if (wantFlat !== flatColorsOn) {
+        gl.uniform1i(this.locUseFlatColors, wantFlat ? 1 : 0);
+        flatColorsOn = wantFlat;
+      }
+      gl.bindVertexArray(m.vao);
+      for (const p of list) {
+        gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
+        for (const r of m.semiRanges) {
+          this._setSemiBlend(r.mode);
+          gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
+        }
+      }
+    }
+    if (blendOn) {
+      gl.disable(gl.BLEND);
+      gl.depthMask(true);
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.uniform1i(this.locSemiPass, 0);
+    }
     gl.bindVertexArray(null);
+  }
+
+  /* Model matrix for one renderAssembled placement (shared by the opaque
+   * and blend passes so both draw at identical transforms). */
+  _placementModel(p, m) {
+    const scale = (p.scale != null) ? p.scale : MESH_SCALE;
+    if ((p.anchor === 'centroid') && m.aabb) {
+      return placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb);
+    }
+    if (p.y != null) {
+      /* Walk-frame landmarks carry a world Y (floor-LUT height) so they
+       * sit on the continent heightfield instead of the y=0 plane. */
+      return placementModelScaledY(p.x, p.y, p.z, p.rotY || 0, scale);
+    }
+    return placementModelScaled(p.x, p.z, p.rotY || 0, scale);
+  }
+
+  /* GL blend state for one PSX ABR semi-transparency mode (B = backbuffer,
+   * F = fragment): 0 = 0.5B + 0.5F, 1 = B + F, 2 = B - F, 3 = B + 0.25F.
+   * Constant-alpha factors carry the 0.5 / 0.25 weights, so no shader
+   * pre-scale is needed. Same table as engine-render's psx_blend. */
+  _setSemiBlend(mode) {
+    const gl = this.gl;
+    gl.blendEquation(mode === 2 ? gl.FUNC_REVERSE_SUBTRACT : gl.FUNC_ADD);
+    if (mode === 0) {
+      gl.blendColor(0, 0, 0, 0.5);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+    } else if (mode === 3) {
+      gl.blendColor(0, 0, 0, 0.25);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE);
+    } else {
+      gl.blendFunc(gl.ONE, gl.ONE);
+    }
   }
 
 

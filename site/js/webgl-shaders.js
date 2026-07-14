@@ -194,6 +194,18 @@ uniform int u_fog_enable;
  * colour from v_flat_rgba.rgb instead of sampling VRAM. Default 0 → all other
  * draws (scene, world map, monsters, battle/baka characters) are unchanged. */
 uniform int u_use_flat_colors;
+/* PSX semi-transparency (ABE) pass selector, mirroring the retail GPU:
+ *   -1 legacy       - draw everything opaque (single-mesh inspector paths
+ *                     that don't run a blend pass; the pre-blend behaviour).
+ *    0 opaque pass  - draw opaque fragments only; DEFER the blending ones
+ *                     (discard) for the blend pass to re-draw.
+ *    1 blend pass   - draw ONLY the deferred fragments (caller has GL
+ *                     blending configured per ABR mode).
+ * A fragment blends when its prim's ABE bit (TSB bit 15, packed by the mesh
+ * builders) is set AND - for textured prims - the sampled texel's own STP
+ * bit is set: STP=0 texels draw opaque even inside a semi-transparent prim.
+ * Untextured (flat-colour) prims have no STP; the whole prim blends. */
+uniform int u_semi_pass;
 /* Per-kingdom baseline fog tint (BGR555 -> RGB linear in 0..1). Used as
  * the fog color when u_fog_lut hasn't been bound to a captured LUT yet
  * so the LUT-less path still produces a visually-meaningful gradient. */
@@ -235,11 +247,18 @@ void main() {
   uint tpage_y = ((tsb >> 4u) & 1u) * 256u;
   uint depth   = (tsb >> 7u) & 3u;
 
+  /* Prim semi-transparency enable: the TMD group mode byte's ABE bit, packed
+   * by the mesh builders into bit 15 of the per-vertex TSB attribute. */
+  bool prim_semi = (tsb & 0x8000u) != 0u;
+
   /* Field-character hybrid path: an untextured (flat/gouraud) prim carries no
    * UVs, so it would sample empty VRAM and discard. Take its TMD vertex colour
    * instead, shade it, and return. Gated by u_use_flat_colors so no other draw
    * is affected. */
   if (u_use_flat_colors != 0 && v_flat_rgba.a < 0.5) {
+    /* No per-texel STP for untextured prims - the whole prim defers. */
+    if (u_semi_pass == 0 && prim_semi) discard;
+    if (u_semi_pass == 1 && !prim_semi) discard;
     vec3 dxf = dFdx(v_world);
     vec3 dyf = dFdy(v_world);
     vec3 nf = normalize(cross(dxf, dyf)) * u_normal_sign;
@@ -248,7 +267,7 @@ void main() {
     return;
   }
 
-  vec4 color;
+  uint raw;
   if (depth == 0u) {
     /* 4bpp: 4 nibbles per VRAM word */
     int vx = int(tpage_x + (u_pix >> 2u));
@@ -258,8 +277,7 @@ void main() {
     uint pal_idx = (word >> (nibble * 4u)) & 15u;
     int cx = int((cba & 63u) * 16u + pal_idx);
     int cy = int((cba >> 6u) & 511u);
-    uint pal = texelFetch(u_vram, ivec2(cx, cy), 0).r;
-    color = bgr555_to_rgba(pal);
+    raw = texelFetch(u_vram, ivec2(cx, cy), 0).r;
   } else if (depth == 1u) {
     /* 8bpp: 2 bytes per VRAM word */
     int vx = int(tpage_x + (u_pix >> 1u));
@@ -269,15 +287,17 @@ void main() {
     uint pal_idx = (word >> (byte_sel * 8u)) & 255u;
     int cx = int((cba & 63u) * 16u + pal_idx);
     int cy = int((cba >> 6u) & 511u);
-    uint pal = texelFetch(u_vram, ivec2(cx, cy), 0).r;
-    color = bgr555_to_rgba(pal);
+    raw = texelFetch(u_vram, ivec2(cx, cy), 0).r;
   } else {
     /* 15bpp direct */
     int vx = int(tpage_x + u_pix);
     int vy = int(tpage_y + v_pix);
-    uint word = texelFetch(u_vram, ivec2(vx, vy), 0).r;
-    color = bgr555_to_rgba(word);
+    raw = texelFetch(u_vram, ivec2(vx, vy), 0).r;
   }
+  vec4 color = bgr555_to_rgba(raw);
+  /* PSX per-texel semi-transparency gate: inside an ABE prim, only texels
+   * with the STP bit set blend; STP=0 texels stay opaque. */
+  bool texel_blends = prim_semi && ((raw >> 15u) & 1u) == 1u;
 
   /* PSX transparency: BGR555 == 0 with STP == 0 is "fully transparent".
    * Discard so cutout textures (grates, foliage, dialog windows) don't
@@ -298,6 +318,11 @@ void main() {
       discard;
     }
   }
+
+  /* Two-pass semi-transparency: the opaque pass defers blending texels, the
+   * blend pass draws only them (u_semi_pass -1 = legacy single pass). */
+  if (u_semi_pass == 0 && texel_blends) discard;
+  if (u_semi_pass == 1 && !texel_blends) discard;
 
   vec3 dx = dFdx(v_world);
   vec3 dy = dFdy(v_world);
