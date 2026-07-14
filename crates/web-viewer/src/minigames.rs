@@ -85,8 +85,9 @@ pub struct LegaiaMinigames {
     /// The dance's presentation bundle: PROT 1230 art pack + the overlay's
     /// HUD widget table + face rigs + SFX bank (see `minigames_dance.rs`).
     dance_pres: Option<dance_presentation::DancePresentation>,
-    /// The dance's dancer bodies: Noa's field-form mesh + the two AI dancers,
-    /// their pose bank and the field VRAM they sample (see `minigames_dance.rs`).
+    /// The dance's floor cast: Noa's field-form mesh + the dance-hall scene's
+    /// dedicated dancer NPCs, their choreography ANM bundle and the VRAM they
+    /// sample (see `minigames_dance.rs`).
     dance_bodies: Option<dance_presentation::DanceBodies>,
 }
 
@@ -191,9 +192,10 @@ impl LegaiaMinigames {
         // --- dance step chart (PROT 0980) + presentation (PROT 1230 art,
         //     the overlay's widget table, PROT 1228/1231 SFX) ---
         self.dance_pres = self.load_dance_presentation();
-        // The dancer bodies (Noa's field mesh + the two AI dancers) come from
-        // the resident field-character pool (PROT 0874), decoded here so the
-        // page can render the floor, not just the HUD.
+        // The dance cast: Noa's field mesh (global pool slot 1) + the
+        // dance-hall scene module's dedicated dancer NPCs, with the scene's
+        // choreography ANM bundle (PROT 1229) - decoded here so the page can
+        // render the floor with the retail dancers actually dancing.
         self.dance_bodies = self.load_dance_bodies();
         let dance_json = match self.dance_chart() {
             Some(c) => format!(

@@ -73,21 +73,28 @@ fn dance_presentation_api_decodes() {
         }
     }
 
-    // Dancer bodies: Noa's field-form mesh (PROT 0874 §0 slot 1) plus the two
-    // AI dancers (Vahn / Gala), each with real geometry and a beat pose bank.
+    // The floor cast: Noa (kind 0, her field mesh) in the centre plus the two
+    // dedicated dancer NPCs of the qualifier floor (kinds 2 and 3, the
+    // dance-hall scene module's meshes), each with real geometry and the
+    // scene's choreography clips.
     assert!(
         status.contains(r#""body":true"#),
-        "dancer bodies should decode: {status}"
+        "dance cast should decode: {status}"
     );
     assert!(mg.dance_body_ready());
-    assert_eq!(mg.dance_body_count(), 3, "three dancer bodies");
-    // The centre dancer is the human (Noa), drawn from pack slot 1.
-    assert_eq!(mg.dance_body_human_index(), 1);
+    assert_eq!(mg.dance_body_count(), 3, "three dancers on the floor");
+    // The centre dancer is the human (Noa, kind 0); the AI dancers are the
+    // scene NPCs the overlay's qualifier spawn table names (kinds 2 / 3 =
+    // face-strip rigs 2 / 3), NOT party members.
+    let human = mg.dance_body_human_index();
+    assert_eq!(human, 1, "Noa dances centre on the qualifier floor");
     assert_eq!(
-        mg.dance_body_char_slot(mg.dance_body_human_index()),
-        1,
-        "centre dancer is Noa (field pack slot 1)"
+        mg.dance_body_kind(human),
+        0,
+        "centre dancer is kind 0 (Noa)"
     );
+    assert_eq!(mg.dance_body_kind(0), 2, "left dancer is the rig-2 NPC");
+    assert_eq!(mg.dance_body_kind(2), 3, "right dancer is the rig-3 NPC");
     for dancer in 0..mg.dance_body_count() {
         let pos = mg.dance_body_positions(dancer);
         assert!(!pos.is_empty(), "dancer {dancer} has no vertices");
@@ -106,14 +113,20 @@ fn dance_presentation_api_decodes() {
         assert_eq!(mg.dance_body_flat_rgba(dancer).len(), verts * 4);
         let parts = mg.dance_body_part_count(dancer);
         assert!(parts > 1, "dancer {dancer} is a multi-object rig");
-        // Both clips (idle + walk) decode with real dimensions and a pose
-        // stream padded to the mesh's part count.
-        for clip in 0..2u32 {
+        // Every clip slot (idle, the dance-groove loop, and the 11
+        // judge-triggered moves) decodes with real dimensions, bones matching
+        // the dancer's rig, and a pose stream padded to the mesh's parts.
+        for clip in 0..13u32 {
             let dims = mg.dance_body_anim_dims(dancer, clip);
             assert_eq!(dims.len(), 2);
             assert!(
                 dims[0] > 0 && dims[1] > 0,
-                "dancer {dancer} clip {clip} dims"
+                "dancer {dancer} clip {clip} dims: {dims:?}"
+            );
+            assert_eq!(
+                dims[0],
+                mg.dance_body_part_count(dancer),
+                "dancer {dancer} clip {clip} bones match the rig"
             );
             let frames = mg.dance_body_pose_frames(dancer, clip, parts);
             assert_eq!(
@@ -121,7 +134,33 @@ fn dance_presentation_api_decodes() {
                 dims[1] * parts * 6,
                 "dancer {dancer} clip {clip} pose stream shape"
             );
+            // A dance clip must actually move: some (frame, bone) transform
+            // must differ from frame 0's.
+            if dims[1] > 1 {
+                let stride = (parts * 6) as usize;
+                assert!(
+                    frames
+                        .chunks(stride)
+                        .skip(1)
+                        .any(|f| f != &frames[..stride]),
+                    "dancer {dancer} clip {clip} is static"
+                );
+            }
         }
+    }
+
+    // The cast map the page drives the clips from.
+    let cast = mg.dance_cast_json();
+    for needle in [
+        r#""human":1"#,
+        r#""kind":0"#,
+        r#""kind":2"#,
+        r#""kind":3"#,
+        r#""seq_square":[4,6,8]"#,
+        r#""seq_circle":[5,7,9]"#,
+        r#""beat":[10,11,12]"#,
+    ] {
+        assert!(cast.contains(needle), "cast missing {needle}: {cast}");
     }
     // The field VRAM the bodies sample is the full 1 MB PSX framebuffer.
     assert_eq!(mg.dance_body_vram().len(), 1024 * 512 * 2);
