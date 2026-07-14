@@ -129,9 +129,32 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 .mg-pay.mg-pay-bonus { border-color: var(--accent); color: var(--accent); }
 
 .mg-note { color: var(--text-dim); font-size: 0.76rem; line-height: 1.6; margin-top: 0.7rem; }
+
+/* Baka duel viewport: WebGL fighters below, retail-HUD 2D canvas on top.
+ * The retail frame is 320x240 (4:3). */
+.baka-duel {
+  position: relative; width: 100%; max-width: 640px; margin: 0.9rem auto;
+  aspect-ratio: 4 / 3; background: #0b0b10;
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.baka-duel canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.baka-duel .baka-hud-canvas { pointer-events: none; image-rendering: pixelated; image-rendering: crisp-edges; }
+
+/* Dance stage: the retail 320x240 frame at 2x, HUD art from the disc. */
+canvas.dance-stage {
+  width: 100%; max-width: 640px; aspect-ratio: 4 / 3; height: auto;
+  background: #0b0b10; border: 1px solid var(--border); display: block; margin: 0.9rem auto;
+  image-rendering: pixelated; image-rendering: crisp-edges;
+}
+.mg-psbtn { width: 1.05em; height: 1.05em; vertical-align: -0.22em; margin-right: 0.3em; }
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
+<script src="js/webgl-math.js"></script>
+<script src="js/webgl-shaders.js"></script>
+<script src="js/webgl-tmd.js"></script>
+<script src="js/minigame-baka.js"></script>
+<script src="js/minigame-dance.js"></script>
 -->
 
 <!-- PS1 controller-button sprite. Hidden; referenced via <use href="#btn-*">.
@@ -207,12 +230,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           denser row of the chart worth more points. A miss empties it. Land on a
           4-beat boundary for the big multipliers. <b>300 points passes.</b>
         </p>
-        <canvas id="dance-canvas" class="mg-canvas" width="520" height="300"></canvas>
+        <canvas id="dance-canvas" class="dance-stage" width="640" height="480"></canvas>
         <div class="mg-verdict" id="dance-verdict"></div>
         <div class="mg-row">
-          <button class="mg-btn mg-throw" type="button" data-dance="1">&#9632; Square<span class="mg-key">A</span></button>
-          <button class="mg-btn mg-throw" type="button" data-dance="2">&#9679; Circle<span class="mg-key">S</span></button>
-          <button class="mg-btn mg-throw" type="button" data-dance="3">&#9650; Triangle<span class="mg-key">D</span></button>
+          <button class="mg-btn mg-throw" type="button" data-dance="1"><svg class="mg-psbtn"><use href="#btn-square"/></svg>Square<span class="mg-key">A</span></button>
+          <button class="mg-btn mg-throw" type="button" data-dance="2"><svg class="mg-psbtn"><use href="#btn-circle"/></svg>Circle<span class="mg-key">S</span></button>
+          <button class="mg-btn mg-throw" type="button" data-dance="3"><svg class="mg-psbtn"><use href="#btn-triangle"/></svg>Triangle<span class="mg-key">D</span></button>
           <button class="mg-btn mg-primary" type="button" id="dance-start">Start</button>
         </div>
         <div class="mg-hud">
@@ -221,11 +244,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <span>Lane <b id="dance-lane">0</b></span>
           <span>Song <b id="dance-song">0%</b></span>
         </div>
-        <p class="mg-note">
+        <p class="mg-note" id="dance-art-note">
           Retail splits the chart lookup in two: the hit judge matches your press
           against the raw chart cell, while the display half substitutes the
           held-sequence symbol on every fourth beat. The lane-0 chart puts <em>every</em>
-          note on a fourth beat, so the prompts above are the cells the judge
+          note on a fourth beat, so the notes above are the cells the judge
           actually scores &mdash; the ones you can hit. Auto-play off the
           <em>displayed</em> cell and you score zero.
           <br><br>
@@ -236,15 +259,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           three-times-only &ldquo;groovy move&rdquo;. The other two lanes aren't
           difficulties &mdash; they're the <em>AI dancers</em>, fed their inputs from the
           same chart.
-          <br><br>
-          <b>What this page cannot source, and won't fake.</b> There is no step-arrow art
-          to find: the dance overlay (PROT 0980) issues <em>no texture load at all</em> and
-          never touches the mesh pool, so it owns no sprites and no model &mdash; its
-          dancers are animated by blitting VRAM windows that the <em>field scene</em>
-          already put there. The prompts above are therefore the site's own glyphs for the
-          real buttons, and Noa is not drawn. The dance's <em>sound</em> is pinned
-          (miss&nbsp;<code>0x210</code>, combo <code>0x202</code>/<code>0x203</code>/<code>0x205</code>,
-          out of the bank at PROT&nbsp;1228/1231) but is not wired up here yet.
         </p>
       </section>
 
@@ -263,7 +277,17 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <div class="mg-row">
           <label for="baka-foe"><strong>Opponent:</strong></label>
           <select id="baka-foe" class="mg-select"></select>
+          <label for="baka-char"><strong>Fight as:</strong></label>
+          <select id="baka-char" class="mg-select" style="min-width: 8rem;">
+            <option value="0" selected>Vahn</option>
+            <option value="1">Noa</option>
+            <option value="2">Gala</option>
+          </select>
           <button class="mg-btn mg-primary" type="button" id="baka-start">Fight</button>
+        </div>
+        <div class="baka-duel" id="baka-duel" hidden>
+          <canvas id="baka-gl" width="640" height="480"></canvas>
+          <canvas id="baka-hud" class="baka-hud-canvas" width="640" height="480"></canvas>
         </div>
         <div class="mg-fighters">
           <div class="mg-fighter">
@@ -306,11 +330,35 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           post-clear opponents the victory screen promises when it says the game isn't
           over yet.
           <br><br>
-          What's <em>not</em> here: the duel's 3D fighters. The retail cabinet poses the
-          battle-form party meshes (PROT 1204/1205) against a per-opponent mesh
-          (PROT 1206&hellip;1219, one per ladder rung) &mdash; those decode, but this page
-          doesn't yet render them, so the fight above is played on stats and bars rather
-          than bodies. A stated gap, not a stand-in.
+          <b>The duel above is drawn with the cabinet's own assets</b>, decoded from your
+          disc at runtime. The fighters are the real 3D meshes &mdash; your side from the
+          battle-form party pack (PROT&nbsp;1204, the same models the turn-based battles
+          use), the opponent from its own per-rung pack (PROT&nbsp;1206&hellip;1219: a
+          <code>[TIM][TMD][anim]</code> chain, one per ladder fighter) &mdash; posed every
+          frame from their real animation banks (the party&rsquo;s from the PROT&nbsp;1203
+          battle-form bank, the opponent&rsquo;s from its own pack; idle loops, and the
+          exchange winner&rsquo;s swing / loser&rsquo;s knockdown play as they land). The
+          stage is the 4-TMD set out of PROT&nbsp;1203&rsquo;s second descriptor, and the
+          HUD &mdash; the <em>VITAL</em> bars with their traced gradient
+          (<code>FUN_801d2afc</code>: right-anchored at x&nbsp;<code>0x89</code>, one pixel
+          per 32&nbsp;HP), the round-win pips, the combo counter, the attack-icon columns,
+          the <em>ROUND&nbsp;/ FIGHT!&nbsp;/ YOU&nbsp;WIN!</em> banners &mdash; comes from
+          the overlay&rsquo;s own 51-record widget table (<code>DAT_801d7160</code>, read by
+          the quad emitter <code>FUN_801d5ed0</code>) over the 9-TIM art pack in
+          PROT&nbsp;1203, byte-checked against a retail VRAM dump.
+          <br><br>
+          <b>Traced vs fitted, stated plainly.</b> Every sprite cell, palette and HUD screen
+          position above is read off the disc or the disassembly. The 3D <em>camera</em> and
+          the fighters&rsquo; floor spacing are <em>fitted by eye</em> &mdash; the duel&rsquo;s
+          GTE matrices live in COP2 and no mid-duel capture exists yet (the parked save state
+          sits at the title screen). The HP-bar <em>frame</em> cells come from a runtime-built
+          table (<code>DAT_801dbc34</code>) a static page can&rsquo;t read, so a plain outline
+          stands in; the attack/knockdown slot order within each anim bank is inferred from
+          the action-id fold in <code>FUN_801d3f44</code>; and the minigame&rsquo;s
+          <b>sound</b> stays silent here because its cues are <em>static-bank</em> ids
+          resolved through <code>SCUS_942.54</code>&rsquo;s descriptor table, which this
+          PROT-only page doesn&rsquo;t load. When the presentation assets don&rsquo;t decode,
+          the duel falls back to the stat panel above and says so &mdash; no stand-in art.
         </p>
       </section>
 
@@ -353,7 +401,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   <div class="card-grid">
     <a class="card" href="#play">
       <div class="card-title">Play three of them</div>
-      <div class="card-body">Noa's dance, Baka Fighter and the casino slot machine, running in the browser off the clean-room rules engines and your own disc's step chart / fighter roster / payout table.</div>
+      <div class="card-body">Noa's dance, Baka Fighter and the casino slot machine, running in the browser off the clean-room rules engines and your own disc's step chart / fighter roster / payout table. The slot machine and the Baka duel draw with the game's own art - the 3D fighters, stage and retail HUD included.</div>
     </a>
     <a class="card" href="#sol-tower">
       <div class="card-title">Sol Tower map</div>
@@ -501,6 +549,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       b.classList.toggle('is-active', b.dataset.game === game));
     document.querySelectorAll('.mg-panel').forEach(p =>
       p.classList.toggle('is-active', p.dataset.game === game));
+    /* Leaving the dance stops its BGM loop. */
+    if (game !== 'dance' && typeof danceR !== 'undefined' && danceR) danceR.stopAll();
   }
   tabsEl.addEventListener('click', (e) => {
     const b = e.target.closest('.mg-tab');
@@ -525,18 +575,80 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   /* ================= dance ================= */
 
-  /* The chart's symbols are not abstract "notes" - `FUN_801d4040` maps each one
-   * straight to a pad-button bitmask, so a symbol IS a button:
-   *   1 -> 0x80 = Square, 2 -> 0x20 = Circle, 3 -> 0x10 = Triangle.
-   * Symbol 3 is the "groovy move" - the flourish you only get three of. */
+  /* The presentation is the game's own: the HUD page + widget table + face
+   * strips + cue bank decode from the visitor's disc and render through
+   * js/minigame-dance.js (window.MgDance). This block is glue: it ticks the
+   * rules engine, routes presses, and falls back to bare glyphs - saying so
+   * - when the art pack doesn't decode. */
   const DANCE_GLYPH = { 1: '■', 2: '●', 3: '▲' };
-  const DANCE_BTN   = { 1: 'Square', 2: 'Circle', 3: 'Triangle' };
   const DANCE_COLOR = { 1: '#7798d4', 2: '#df74a6', 3: '#2dcca7' };
-  const LOOKAHEAD = 7;              /* beats of chart drawn above the judge line */
 
   let danceChart = null;            /* {rows: [[u8 x32], ...]} */
   let danceLive = false;
-  let danceFlash = 0;
+  let danceR = null;                /* MgDance renderer (null = glyph fallback) */
+
+  /* Decode the retail presentation once per disc (called from loadDisc). */
+  function danceLoadArt() {
+    danceR = null;
+    const note = $('dance-art-note');
+    if (window.MgDance) {
+      const r = MgDance.create(api, $('dance-canvas'));
+      if (r.loadAssets()) danceR = r;
+    }
+    const stock = note.dataset.base || (note.dataset.base = note.innerHTML);
+    if (!danceR) {
+      note.innerHTML =
+        'This disc’s <b>dance art pack (PROT&nbsp;1230) did not decode</b>, so the ' +
+        'stage below falls back to the site’s own glyphs - no stand-in sprites are drawn.' +
+        '<br><br>' + stock;
+      return;
+    }
+    const sfxN = JSON.parse(api.dance_sfx_json()).length;
+    note.innerHTML = stock +
+      '<br><br><b>Everything on the stage is the game’s own art</b>, decoded from ' +
+      'your disc at runtime. The dance overlay (PROT&nbsp;0980) issues no texture load ' +
+      'of its own - the art is staged by the minigame entry path as PROT&nbsp;1230, a ' +
+      '31-TIM pack whose blocks are byte-identical to a retail VRAM capture parked in ' +
+      'the minigame (the only diffs are the face-strip windows the pose blit had been ' +
+      'rewriting - the mechanism, confirmed in pixels). The score boxes, blue digits, ' +
+      'beat track, scrolling notes, <em>READY&hellip;&nbsp;GO!</em> count-in, and the ' +
+      '<em>Miss! / Good! / Cool! / Great!! / Fever!!!</em> banners are cells of the ' +
+      'HUD page named by the overlay’s own 34-record widget table ' +
+      '(<code>0x801D46CC</code>, emitter <code>FUN_801d2f38</code>), drawn at the traced ' +
+      'emitter positions - the every-4th-beat track flash and the note tint are pure ' +
+      'palette swaps (<code>0x7D0D</code>/<code>0x7D0E</code>) of the same texels, ' +
+      'exactly as <code>FUN_801d2524</code> patches them. The three faces under the ' +
+      'score boxes are the real <b>face-stamp windows</b>: retail animates its dancers ' +
+      'by MoveImage-blitting eye/mouth cells inside per-dancer VRAM strips ' +
+      '(<code>FUN_801d03c4</code>), and these insets replay those exact blits - the ' +
+      'centre dancer is <b>Noa’s own field atlas</b> (PROT&nbsp;0874&nbsp;&sect;2). The ' +
+      'inset placement is this page’s own: retail maps these windows onto the 3D ' +
+      'dancers’ heads. ' +
+      (sfxN
+        ? 'The <b>sound</b> is the overlay’s own: miss <code>0x210</code>, combo ' +
+          'stings <code>0x202</code>/<code>0x203</code>/<code>0x205</code> and the run-start ' +
+          'cue from its efect.dat bank (PROT&nbsp;1228) + sample VAB (PROT&nbsp;1231 - an ' +
+          'entry that sits in the PROT TOC’s zeroed tail and needed a TOC-parser fix to ' +
+          'reach at all), plus the good-step stings retail keys directly ' +
+          '(<code>FUN_801d3d78</code>: a random pick of three paired voices). '
+        : 'The <b>sound did not decode</b> from this image, so the stage is silent rather ' +
+          'than beeping at you. ') +
+      (danceR.bgmOk()
+        ? 'The <b>music</b> is the real thing too: the overlay’s own BGM entry ' +
+          '(extraction 1048, SEQ+VAB) rendered through the clean-room SPU when you press Start. '
+        : 'The BGM entry did not decode from this image, so the run plays without music. ') +
+      '<br><br><b>What is missing, and why.</b> The dance hall itself - the disco ball, ' +
+      'the spotlight cones, the crowd, the floor - is the host <em>field scene’s</em> ' +
+      '3D geometry, not the overlay’s to draw (its textures are even in this same ' +
+      'pack), so the HUD sits on a neutral ground rather than a faked room. The two ' +
+      '<b>AI dancers’ runs are not simulated</b>: retail auto-feeds them from the same ' +
+      'chart, but this page runs the human lane only, so their score boxes idle at zero ' +
+      'and their faces only react cosmetically. The dancers’ <b>bodies</b> are ' +
+      'field-scene actors and are not drawn - the faces are the part the overlay itself ' +
+      'animates. Banner rise/fade curves are approximated (retail drives them through ' +
+      'per-banner actor scripts), and the three step-stock chips under the track stay ' +
+      'at three (the rules engine doesn’t model the timing-button stock).';
+  }
 
   function danceStart() {
     if (!api || !api.dance_start(false)) {
@@ -545,14 +657,33 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
     danceChart = JSON.parse(api.dance_chart_json());
     danceLive = true;
-    verdict($('dance-verdict'), 'Dance!', '');
     $('dance-start').textContent = 'Restart';
+    if (danceR) {
+      const st = JSON.parse(api.dance_state_json());
+      const secs = Math.ceil(st.song_len / 600) + 1;
+      if (danceR.bgmOk()) {
+        /* Rendering the SEQ through the SPU blocks for a moment - say so
+         * first, then start the count-in. */
+        verdict($('dance-verdict'), 'Mixing the song from your disc…', '');
+        setTimeout(() => {
+          danceR.startRun(secs);
+          verdict($('dance-verdict'), 'Dance!', '');
+        }, 30);
+      } else {
+        danceR.startRun(secs);
+        verdict($('dance-verdict'), 'Dance!', '');
+      }
+    } else {
+      verdict($('dance-verdict'), 'Dance!', '');
+    }
   }
 
   function dancePress(sym) {
     if (!api || !danceLive) return;
+    if (danceR && danceR.introGate) return;   /* count-in: not judging yet */
+    const stBefore = JSON.parse(api.dance_state_json());
     const r = api.dance_press(sym);
-    danceFlash = 12;
+    if (danceR) danceR.onPress(r, stBefore);
     if (r === 'sequence')   verdict($('dance-verdict'), 'PERFECT', 'good');
     else if (r === 'hit')   verdict($('dance-verdict'), 'HIT', 'good');
     else if (r === 'miss')  verdict($('dance-verdict'), 'MISS', 'bad');
@@ -560,107 +691,77 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   function danceFrame() {
     const st = JSON.parse(api.dance_state_json());
-    if (!st.live) { danceDraw(null, null); return; }
-    if (!st.over) api.dance_tick(1);
-    else if (danceLive) {
-      danceLive = false;
-      verdict($('dance-verdict'),
-        st.passed ? `Song over - ${st.score} points. You passed!`
-                  : `Song over - ${st.score} points. You needed 300.`,
-        st.passed ? 'good' : 'bad');
+    if (st.live) {
+      /* Hold the beat clock through the READY / 1-2-3 / GO! count-in. */
+      if (!st.over && !(danceR && danceR.introGate)) api.dance_tick(1);
+      else if (st.over && danceLive) {
+        danceLive = false;
+        verdict($('dance-verdict'),
+          st.passed ? `Song over - ${st.score} points. You passed!`
+                    : `Song over - ${st.score} points. You needed 300.`,
+          st.passed ? 'good' : 'bad');
+      }
+      $('dance-score').textContent = st.score;
+      $('dance-gauge').textContent = st.gauge;
+      $('dance-lane').textContent  = st.lane;
+      $('dance-song').textContent  = Math.round(100 * st.song_timer / st.song_len) + '%';
     }
-    $('dance-score').textContent = st.score;
-    $('dance-gauge').textContent = st.gauge;
-    $('dance-lane').textContent  = st.lane;
-    $('dance-song').textContent  = Math.round(100 * st.song_timer / st.song_len) + '%';
-    danceDraw(st, danceChart);
-    if (danceFlash > 0) danceFlash--;
+    if (danceR) danceR.draw(st.live ? st : null, danceChart);
+    else danceDrawFallback(st.live ? st : null, danceChart);
   }
 
-  /* The note highway. Notes fall toward a judge line; a note's distance from
-   * the line is its beat distance minus how far the beat clock has already
-   * travelled into the current beat, so it lands exactly on the beat. */
-  function danceDraw(st, chart) {
+  /* The pre-art glyph highway - only drawn when the art pack didn't decode
+   * (the note names the missing entry; nothing is faked). */
+  function danceDrawFallback(st, chart) {
     const c = $('dance-canvas');
     const g = c.getContext('2d');
     const W = c.width, H = c.height;
     g.fillStyle = '#0c0e12';
     g.fillRect(0, 0, W, H);
-
-    const judgeY = H - 56;
-    const laneW = 96, laneGap = 18;
+    const judgeY = H - 90;
+    const laneW = 150, laneGap = 30;
     const totalW = 3 * laneW + 2 * laneGap;
     const x0 = (W - totalW) / 2;
     const laneX = (i) => x0 + i * (laneW + laneGap);
-
-    /* lane columns + the judge line */
     for (let i = 0; i < 3; i++) {
       g.fillStyle = 'rgba(255,255,255,0.03)';
-      g.fillRect(laneX(i), 0, laneW, judgeY + 30);
+      g.fillRect(laneX(i), 0, laneW, judgeY + 40);
     }
-    g.strokeStyle = danceFlash > 0 ? '#6ec896' : 'rgba(255,255,255,0.35)';
-    g.lineWidth = danceFlash > 0 ? 3 : 2;
+    g.strokeStyle = 'rgba(255,255,255,0.35)';
+    g.lineWidth = 2;
     g.beginPath();
     g.moveTo(x0 - 8, judgeY); g.lineTo(x0 + totalW + 8, judgeY);
     g.stroke();
-
-    /* the three pads, under the line */
-    g.font = '20px monospace';
+    g.font = '26px monospace';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     for (let i = 0; i < 3; i++) {
       const sym = i + 1;
-      g.strokeStyle = DANCE_COLOR[sym]; g.lineWidth = 1;
-      g.strokeRect(laneX(i) + 24, judgeY + 12, laneW - 48, 32);
       g.fillStyle = DANCE_COLOR[sym];
-      g.fillText(DANCE_GLYPH[sym], laneX(i) + laneW / 2, judgeY + 29);
+      g.fillText(DANCE_GLYPH[sym], laneX(i) + laneW / 2, judgeY + 34);
     }
-
     if (!st || !chart || !chart.rows.length) {
       g.fillStyle = 'rgba(255,255,255,0.45)';
-      g.font = '13px monospace';
+      g.font = '16px monospace';
       g.fillText('Press Start', W / 2, H / 2 - 30);
       return;
     }
-
-    /* Falling notes: for each upcoming beat, the chart cell of the active
-     * lane row. `frac` is how far into the current beat the clock is, so a
-     * note reaches the judge line exactly when its beat comes up. */
     const row = chart.rows[Math.min(st.lane, chart.rows.length - 1)];
-    const beats = row.length;
     const frac = st.phase / st.period;
-    const spacing = (judgeY - 16) / LOOKAHEAD;
-    for (let ahead = 0; ahead <= LOOKAHEAD; ahead++) {
+    const spacing = (judgeY - 20) / 7;
+    for (let ahead = 0; ahead <= 7; ahead++) {
       const beat = st.beat + ahead;
-      const sym = row[beat % beats];
+      const sym = row[beat % row.length];
       if (!sym) continue;
       const y = judgeY - (ahead - frac) * spacing;
       if (y < -20 || y > judgeY + 6) continue;
-      const i = sym - 1;
-      const boundary = (beat & 3) === 3;   /* combo / Perfect multiplier beat */
       g.fillStyle = DANCE_COLOR[sym];
-      g.globalAlpha = ahead === 0 ? 1 : 0.85;
       g.beginPath();
-      g.roundRect(laneX(i) + 20, y - 11, laneW - 40, 22, 4);
+      g.roundRect(laneX(sym - 1) + 30, y - 14, laneW - 60, 28, 5);
       g.fill();
-      g.globalAlpha = 1;
-      if (boundary) {                       /* boundary notes wear a ring */
-        g.strokeStyle = '#fff'; g.lineWidth = 1.5;
-        g.beginPath();
-        g.roundRect(laneX(i) + 16, y - 15, laneW - 32, 30, 6);
-        g.stroke();
-      }
       g.fillStyle = '#0c0e12';
-      g.font = 'bold 14px monospace';
-      g.fillText(DANCE_GLYPH[sym], laneX(i) + laneW / 2, y);
+      g.font = 'bold 18px monospace';
+      g.fillText(DANCE_GLYPH[sym], laneX(sym - 1) + laneW / 2, y);
     }
-
-    /* the groove gauge, right edge */
-    const gh = judgeY - 16;
-    g.fillStyle = 'rgba(255,255,255,0.07)';
-    g.fillRect(W - 16, 16, 8, gh);
-    g.fillStyle = '#2dcca7';
-    const gf = Math.min(1, st.gauge / 2999);
-    g.fillRect(W - 16, 16 + gh * (1 - gf), 8, gh * gf);
   }
 
   $('dance-start').addEventListener('click', danceStart);
@@ -673,6 +774,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   let bakaRoster = [];
   let bakaNames = [];
   let bakaLadder = [];
+  /* The 3D duel view (js/minigame-baka.js): real meshes + retail HUD off the
+   * disc. Null / not-ok leaves the stat-panel presentation in charge. */
+  let bakaView = null;
+  let bakaMeta = null;
 
   function bakaName(id) {
     return bakaNames[id] || `Fighter ${id}`;
@@ -711,6 +816,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   function bakaStart() {
     const foe = parseInt($('baka-foe').value, 10) || 1;
+    const pchar = parseInt($('baka-char').value, 10) || 0;
     const seed = (Math.random() * 0xFFFFFFFF) >>> 0;
     if (!api || !api.baka_start(foe, seed)) {
       verdict($('baka-verdict'), 'The roster tables did not decode from this disc.', 'bad');
@@ -720,6 +826,24 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     $('baka-p1-name').textContent = bakaName(foe);
     verdict($('baka-verdict'), `Round 1 - fight ${bakaName(foe)}!`, '');
     $('baka-start').textContent = 'Rematch';
+
+    /* Stand the real fighters up. Only ladder fighters (roster 3..16) carry
+     * their own mesh pack; a spar against a player-side record keeps the
+     * stat panel. The "Fight as" pick is cosmetic - the rules engine plays
+     * roster record 0 either way, exactly like the retail player slot. */
+    let viewOk = false;
+    try {
+      if (window.MinigameBakaView && foe >= 3) {
+        if (!bakaView) bakaView = new MinigameBakaView($('baka-gl'), $('baka-hud'));
+        viewOk = bakaView.load(api, pchar, foe);
+      }
+    } catch (err) {
+      console.warn('baka duel view failed:', err);
+      viewOk = false;
+    }
+    const rung = bakaLadder.findIndex(r => r.roster === foe);
+    bakaMeta = { stage: rung >= 0 ? rung + 1 : 1, final: foe === 16 };
+    $('baka-duel').hidden = !viewOk;
   }
 
   function bakaChoose(t) {
@@ -731,6 +855,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   function bakaFrame() {
     const st = JSON.parse(api.baka_state_json());
+    if (bakaView && bakaView.ok && !$('baka-duel').hidden) {
+      bakaView.frame(st.live ? st : null, bakaMeta);
+    }
     if (!st.live) return;
     if (st.phase !== 'match_over') api.baka_tick(1);
     else if (bakaLive) {
@@ -1412,6 +1539,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         return;
       }
 
+      if (ok.dance) danceLoadArt();
       if (ok.baka) bakaFillRoster();
       if (ok.slot) { slotLoadArt(); slotLoadSfx(); slotReset(); }
       mainEl.style.display = '';
@@ -1438,10 +1566,17 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   Object.defineProperty(window, '__mgApi', { get: () => api });
   window.__mgDance   = { start: danceStart, press: dancePress,
                          state: () => api && JSON.parse(api.dance_state_json()),
-                         chart: () => api && JSON.parse(api.dance_chart_json()) };
+                         chart: () => api && JSON.parse(api.dance_chart_json()),
+                         artReady: () => api && api.dance_art_ready(),
+                         renderer: () => danceR,
+                         widgets: () => api && JSON.parse(api.dance_widgets_json()),
+                         layout: () => api && JSON.parse(api.dance_layout_json()),
+                         sfx: () => api && JSON.parse(api.dance_sfx_json()),
+                         faces: () => api && JSON.parse(api.dance_face_meta_json()) };
   window.__mgBaka    = { start: bakaStart, choose: bakaChoose,
                          state: () => api && JSON.parse(api.baka_state_json()),
-                         roster: () => api && JSON.parse(api.baka_roster_json()) };
+                         roster: () => api && JSON.parse(api.baka_roster_json()),
+                         view: () => bakaView };
   window.__mgSlot    = { reset: slotReset,
                          press: slotPress,
                          state: () => api && JSON.parse(api.slot_state_json()) };

@@ -24,6 +24,16 @@
 
 use super::*;
 
+// Baka Fighter presentation exports (fighter meshes, HUD art, stage, poses)
+// live in a child module so this file stays the rules-engine shell.
+#[path = "minigames_baka.rs"]
+mod baka_presentation;
+
+// Dance presentation exports (PROT 1230 HUD art, the overlay's widget table,
+// the dancer face-stamp rig, SFX + BGM) live in a child module too.
+#[path = "minigames_dance.rs"]
+mod dance_presentation;
+
 use legaia_asset::minigame_art::{self, SlotHudWidget};
 use legaia_asset::minigame_sfx::{self, SfxCueBank};
 use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
@@ -69,6 +79,9 @@ pub struct LegaiaMinigames {
     slot_sfx: Option<SfxCueBank>,
     /// The Baka Fighter roster's fighter names (roster record `+0x00`).
     baka_names: Option<Vec<String>>,
+    /// The dance's presentation bundle: PROT 1230 art pack + the overlay's
+    /// HUD widget table + face rigs + SFX bank (see `minigames_dance.rs`).
+    dance_pres: Option<dance_presentation::DancePresentation>,
 }
 
 impl Default for LegaiaMinigames {
@@ -127,6 +140,7 @@ impl LegaiaMinigames {
             slot_scene: None,
             slot_sfx: None,
             baka_names: None,
+            dance_pres: None,
         }
     }
 
@@ -165,12 +179,20 @@ impl LegaiaMinigames {
         self.baka = None;
         self.slot = None;
 
-        // --- dance step chart (PROT 0980) ---
+        // --- dance step chart (PROT 0980) + presentation (PROT 1230 art,
+        //     the overlay's widget table, PROT 1228/1231 SFX) ---
+        self.dance_pres = self.load_dance_presentation();
         let dance_json = match self.dance_chart() {
             Some(c) => format!(
-                r#"{{"ok":true,"rows":{},"beats":{}}}"#,
+                r#"{{"ok":true,"rows":{},"beats":{},"art":{},"sfx":{}}}"#,
                 c.rows.len(),
-                legaia_asset::dance_chart::BEATS_PER_ROW
+                legaia_asset::dance_chart::BEATS_PER_ROW,
+                self.dance_pres.is_some(),
+                self.dance_pres
+                    .as_ref()
+                    .and_then(|p| p.sfx.as_ref())
+                    .map(|b| b.cues().len())
+                    .unwrap_or(0),
             ),
             None => format!(
                 r#"{{"ok":false,"why":{}}}"#,

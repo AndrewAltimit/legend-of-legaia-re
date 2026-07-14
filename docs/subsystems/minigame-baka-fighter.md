@@ -30,9 +30,9 @@ asset dispatcher (`FUN_8001f05c`, type byte → handler). The decoded meshes are
 the same high-detail party TMDs the turn-based battle uses; the pack layout,
 provenance and its byte-match to live battle saves are described in
 [`../formats/character-mesh.md`](../formats/character-mesh.md) (battle form,
-PROT 1204) and [`battle.md`](battle.md). The Baka Fighter actors are sprite-like
-billboards drawn from this geometry via the quad emitter described below, not
-the full 3D battle renderer.
+PROT 1204) and [`battle.md`](battle.md). The fighters render as full 3D TMDs
+through the standard registered-mesh pipeline; the quad emitter described below
+draws the HUD and the banner sprite *actors*, not the fighters.
 
 The per-fighter installer folds the party slots away (`if (idx >= 3) idx -= 3`)
 and then loads **extraction entry `1204 + k`**: `1204`/`1205` are the party pack
@@ -43,12 +43,33 @@ fighters**, one entry each, in roster order (roster id `3 + n` -> entry
 `FUN_8001F05C` with the "already decompressed" flag. The count lines up exactly:
 fourteen paying roster records, fourteen entries, and `1220` breaks the pattern.
 
-The minigame's **HUD / banner art** is a separate load: **extraction PROT 1203**,
-descriptor 0 (`TIM_LIST`) -> LZS -> a pack of **9 TIMs** (the "STAGE" / "HIT!" /
-"KO." / "PERFECT!!" / "ALL STAGE CLEAR!" banner sheets, the digit font, the
-"Fighter" logo, the arena ellipse, the impact-burst sheet and the face parts).
-Every image block and CLUT row byte-matches a retail VRAM dump taken at the
-cabinet.
+Chunk types within the chain: `0` = a standard PSX TIM (the fighter's 256x256
+4bpp atlas; image rects `(448, 256)` / `(512, 256)` / `(576, 256)` with CLUT
+strips on rows 496 / 497 / 498 - the rungs past the first two all share one
+slot, loaded one at a time), `9` = the fighter's Legaia TMD (the same `TMD2`
+streaming class as the PROT 1204 party slots), `11` = the fighter's
+**animation bank**: a canonical ANM container (`[u32 count][u32 offsets]` +
+records per [`../formats/anm.md`](../formats/anm.md), marker `0x080C`), 8
+records with `bone_count` equal to the TMD's `nobj` (record 0 = idle, the
+attack / special / knockdown records after it in the action-table order).
+Parser [`legaia_asset::baka_opponents::parse_fighter_pack`]; disc-gated
+structural oracle `crates/asset/tests/baka_presentation_real.rs` (all fourteen
+packs decode, every anim rig covers its TMD, entry 1220 is refused).
+
+The minigame's **HUD / banner art** is a separate load: **extraction PROT
+1203**, a 4-descriptor container. Descriptor 0 (`TIM_LIST`) -> LZS -> a pack of
+**9 TIMs** (the banner sheets, the digit fonts, the pip / combo / attack-icon
+glyph page, the "Baka" / "Fighter" logo pieces, the boxing-glove halves and the
+title flame ellipse); the widget pages sit at `(320, 0)` `(384, 0)` `(448, 0)`
+`(320, 256)` `(384, 256)` `(832, 256)` with their CLUT strips on rows 477 / 478
+/ 479 / 485 / 502..505. Every image block byte-matches the parked title-screen
+VRAM capture (`minigame_baka_fighter` scenario) except the `(832, 0)` sheet
+(partially overwritten live) - the live CLUT rows differ because the engine
+merges several sources onto them. Descriptor 1 (type `0x02`) is a **pack of 4
+Legaia TMDs** - the stage set (a single-object arena wall/room whose floor
+plane is `y = 0`, two single-object props, and a 10-object piece whose objects
+are object-local and need placement transforms). Descriptor 2 (type `0x05`) is
+the 30-record battle-form ANM bank ([`../formats/anm.md`](../formats/anm.md)).
 
 Confidence: **Confirmed** for the load path and PROT-entry indices (traced in
 `overlay_baka_fighter_801cf00c.txt` + `overlay_baka_fighter_801d4c50.txt`); the
@@ -290,6 +311,74 @@ Stages `5` and `0xD` (the last rung) are special-cased in the SM. **Confirmed.**
 
 Helper [`legaia_asset::minigame_art::baka_ladder`].
 
+## HUD widget table + traced draw geometry
+
+Every HUD glyph and banner goes through the overlay's textured-quad emitter
+`FUN_801d5ed0(x, y, id, brightness, size)`, which indexes a **51-record widget
+descriptor table at `DAT_801d7160`** (0x14 stride - the same family as the slot
+machine's `DAT_801d347c`, plus per-quad gradient colour fields):
+
+| Offset | Field |
+|---|---|
+| `+0x00` | base-size scale, 20.12 fixed point (`0x1000` = pixel-exact) |
+| `+0x04` | texpage attribute |
+| `+0x06` | CLUT id |
+| `+0x08`..`+0x0B` | cell `u, v, w, h` |
+| `+0x0C` / `+0x10` | top / bottom gouraud RGB (the glyphs' vertical tint) |
+| `+0x0F` | semi-transparency enable (`(bit << 1) \| 0x3C` = the poly code) |
+| `+0x13` | ABR rate, folded as `texpage + abr * 0x20` (`1` = additive `B + F`) |
+
+The quad is **centred** on `(x, y)`; half-extent = `w * scale >> 13 * size
+>> 12`. Record 51 onward is string rodata, which bounds the table. Two records
+are patched live: widget 5 (the 24px stage digit, `DAT_801d71cc = stage * 0x18`
+written by the banner-actor draw callback `FUN_801d67f0`) and widget `0x13`
+(the 8px digit, `u = digit * 8`, patched by the digit drawer `FUN_801d69e4`;
+`FUN_801d6a18` draws right-aligned numbers with it). Parser
+[`legaia_asset::baka_opponents::parse_baka_hud`].
+
+The HUD renderer `FUN_801d2afc` draws, per frame (retail 320x240 frame):
+
+- **VITAL fill bars** - raw `POLY_GT4`s, y `0x26..0x2B`, one pixel per 32 HP:
+  the player's is right-anchored at x `0x89` and fills leftward, the
+  opponent's left-anchored at `0xB8` filling rightward. The quad's gouraud
+  runs `(0xBC, hp >> 5, 0)` at the far end to `(0xBC, 0, 0)` at the anchor -
+  the bar reddens toward the anchor and dims as HP drops.
+- **Bar frames** - 3 texture cells per side at x `0x1C` / `0xB0`, y
+  `0x20..0x30`, read from a **runtime-built** cell table at `DAT_801dbc34`
+  (not recoverable from the overlay's rodata).
+- **Round-win pips** - 16x16 cells at `u = 0x30` (filled) / `0x40` (empty),
+  `v = 0` on the `(320, 0)` page; player at `x = 0x70 + i*16`, opponent at
+  `0xC0 - i*16`, y `0x30`; `DAT_801dbed0` pips per side.
+- **Combo counters** - digit cells `(digit*16, 0x20)` and the "HIT!" label
+  cell `(0, 0x10)` (32x16), y `0x40`, descending from x `0x30` / `0x100`. The
+  sides are **crossed**: the `(uVar8 & 1)` fold draws the *opponent's*
+  hits-taken counter on the player's side (your streak) and vice versa.
+- **Attack-icon columns** - the three 16x16 cells `(i*16, 0x30)` at x `0x20` /
+  `0x110`, y `0x60 + i*16`; the row matching the fighter's current action
+  index (record `+0x24`) brightens with the combo count.
+- **Top strip** - the "STAGE" label (widget `0x12`) at `(0x30, 0x1E)` with the
+  stage digits beside it, and "PRESS SELECT TO MENU" (widget `0x14`) at
+  `(0xEA, 0x1E)`.
+
+The round-start banner path `FUN_801d21fc` draws widget `0x1C` and the
+round-result banners are sprite actors (spawned by `FUN_801d6e04`, widget id
+in `actor + 0x50`, drawn by the `FUN_801d67f0` hook) over the "YOU" / "WIN!" /
+"LOSE..." / "DRAW" / "ROUND" / "FIGHT!" / "PERFECT!!" / "GAME OVER" cells of
+the widget table.
+
+### Site presentation
+
+The site's minigames page draws the duel from exactly these sources, decoded
+from the visitor's disc in the browser (`crates/web-viewer/src/minigames_baka.rs`
++ `site/js/minigame-baka.js`): the player mesh from PROT 1204 posed by the
+PROT 1203 bank (`char*9 + action`), the opponent mesh + anim bank from its own
+pack, the stage wall from the 1203 TMD pack, and the HUD from the widget table
+at the `FUN_801d2afc` positions above. Traced vs fitted is stated on the page:
+the 3D camera, the fighters' spacing and the backdrop offset are fitted by eye
+(the duel's GTE matrices live in COP2 and the parked capture sits at the title
+screen), and the bar-frame cells fall back to an outline because their cell
+table is runtime-built.
+
 ## Sound
 
 Baka Fighter fires **no** runtime-bank cue (`>= 0x200`) at all - every cue it
@@ -346,6 +435,9 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `DAT_801dbed0` | round-win **target = 2** (best of 3); also the drawn round-win-pip count (init `FUN_801cf00c`) |
 | `PTR_DAT_801db8b8[char]` | per-character action-table base |
 | `DAT_801d76bc` | the `+0x20` view into the **roster record table** at `0x801d769c` (`0x6c` stride, 17 records; gold, stats, anchor, AI pattern - see [Opponent + scoring](#opponent--scoring)). Parser `legaia_asset::baka_opponents`. |
+| `DAT_801d7160` | HUD **widget descriptor table** (51 records, 0x14 stride; see [HUD widget table](#hud-widget-table--traced-draw-geometry)). Parser `legaia_asset::baka_opponents::parse_baka_hud` |
+| `DAT_801d71cc` | widget 5's `u` field, patched to `stage * 0x18` (the 24px stage digit) |
+| `DAT_801dbc34` | runtime-built VITAL bar-frame cell table (3 cells per side) |
 | `DAT_801d7684` | special-attack effect-actor template |
 | `_DAT_8007b8c2` | streaming-mode flag (selects LZS `other5` vs raw PROT load) |
 | `_DAT_8007ba2c` | actor-draw hook (set to `FUN_801d67f0`) |
@@ -368,7 +460,8 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d4df8` / `FUN_801d49e8` | knockdown / launch-arc playback |
 | `FUN_801d6e5c` | action-table keyframe lookup by frame range |
 | `FUN_801d67f0` | per-frame fighter sprite-actor draw callback (`_DAT_8007ba2c`) |
-| `FUN_801d5ed0` | textured-quad GPU emitter used for every fighter sprite + HUD glyph |
+| `FUN_801d5ed0` | textured-quad GPU emitter for every HUD glyph / banner sprite (indexes the widget table `DAT_801d7160`) |
+| `FUN_801d69e4` / `FUN_801d6a18` | 8px digit drawer (widget `0x13`, `u = digit * 8`) / right-aligned number drawer |
 | `FUN_801d553c` | developer dump of the action table (`ot5stat.txt`) |
 
 Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`.

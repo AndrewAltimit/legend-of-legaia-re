@@ -182,7 +182,7 @@ Runtime wiring: the engine host installs the rules engine as a suspending scene 
 
 `DanceGame::judge_press` returns the three-way Miss/Hit/Sequence result and applies the score, gauge, and streak side effects; `DanceGame::from_overlay` starts a run straight off the disc chart (disc-gated `dance_minigame_real` auto-plays the real chart end to end). The sequence-bonus *magnitude* (the `DAT_801d41a4`-scaled award) is left to the caller since that value table is disc-resident and unmapped. The visible dance-floor / arrow rendering (the [floor cluster](#dance-floor-rendering)) is not part of the rules port - it is a separate host concern.
 
-## Assets: the dance owns none
+## Assets: the overlay loads none - the entry path stages PROT 1230
 
 The dance overlay (extraction PROT 0980) issues **no texture load and no mesh
 load at all**. A full sweep of the 32 KB image finds no `jal 0x8003eb98` (PROT
@@ -196,12 +196,91 @@ exactly three PROT loads, all sound:
 | `0x41A` | **1048** | BGM (`music_01`) |
 | `0x420` | **1054** | the alternate BGM (a branch on `DAT_801D514C` picks the song) |
 
-So there is **no step-arrow sprite to source** and no dance-specific character
-model: the dancers are animated by `FUN_801d03c4`, which does two `MoveImage`
-VRAM->VRAM blits per call, copying a small 4bpp block out of a per-dancer frame
-strip into a fixed VRAM window. Those strips are **resident from the field
-scene**, not loaded here. A host that wants to draw the dance has to reach the
-field scene's VRAM, not the dance overlay. **Confirmed** (negative result).
+The art it draws with is nevertheless dance-specific: the mode-24 entry path
+stages **extraction PROT 1230** (`other7`, a `prot::timpack` of **31 TIMs** -
+parser [`legaia_asset::dance_art`](../../crates/asset/src/dance_art.rs)):
+
+| VRAM rect | content |
+|---|---|
+| `(512, 0)` 4bpp, CLUT strip `(0, 500)` 256x1 | the **HUD page**: blue digit font, `Lv.` cells, score box, beat-track parts, note dots, `1 2 3 READY... GO! FINISH!`, and the `Miss! / Good! / Cool! / Great!! / Fever!!! / Chicken!!` banners. The 16 palettes of the row-500 strip are the CLUT ids `0x7D00..0x7D0F` the widget table names |
+| `(400, 0)` / `(416, 0)` / `(432, 0)` 16hw x 128 | the three **dancer face strips** (live window on top, 4-pose eye/mouth bank in rows 64..128) |
+| `(320..384, 0..192)` 16hw x 64 cells | face-part cells (alternate expressions) |
+| `(512..832, 0/256)` 64hw x 256 pages | the dance hall's **venue textures**: floor tiles, brick / speaker / crate walls, the disco ball, spotlight beam cones, the crowd, dancer body art |
+
+27 of the 31 image blocks (and the HUD CLUT row) are **byte-identical to a
+live retail VRAM capture** parked in the minigame; the four that differ are
+exactly the face strips whose live window the pose blit rewrites (see below) -
+the diff rows are the blit destination rows, which confirms the mechanism in
+pixels. **Confirmed.**
+
+PROT 1230/1231 sit against the PROT TOC's zeroed tail, where the indexed size
+formula `toc[p+5] - toc[p+3] + 4` underflows; the TOC readers fall back to the
+LBA footprint for them (`legaia_prot::archive`).
+
+### HUD widget table (`DAT_801d46cc`) + emitter geometry
+
+Every HUD element goes through the textured-quad emitter `FUN_801d2f38`, which
+indexes a **34-record x 20-byte widget table** at `0x801D46CC`: `i32 scale`
+(12.12; all rows `0x1000`), `u16 texpage` (all HUD rows `0x0008` = the 4bpp
+page at `(512,0)`), `u16 CLUT id`, `u8 u0/v0/w/h` cell rect, top/bottom RGB
+tints, semi-transparency code. Quads draw **centred** on the emitter's
+`(x, y)`. Callers patch records in place: the score-digit renderer
+(`FUN_801d32f8`) rewrites widget 1's `u0 = digit * 0x10`, the gauge
+(`FUN_801d3e28`) rewrites widget 7's `u0 = 0xD0 + level * 8`, and the beat
+track (`FUN_801d2524`) swaps CLUTs - `0x7D08` idle / `0x7D0D` on the
+every-4th-beat combo window (`phase < 0x46`) for the caps + body (widgets
+16/17/30), `0x7D0E` for the scrolling notes. **Confirmed.**
+
+Traced layout (retail 320x240): score boxes (widget 8) centred at
+`(64, 20)`/`(160, 20)`/`(256, 20)` with the **human dancer in the centre box**
+(digit bases `-0x20`/`0x40`/`0xA0`, 8 slots stepping 16); gauge `Lv.` at
+`(88, 192)` + level digit at `(96, 192)`; beat track anchored at `(120, 192)`
+(arrow at `(128, 184)`, caps at `x-4`/`x+84`, 12 body tiles stepping 8, note
+`x = 120 + i*16 - (phase*16/0x119 + 5) - 4` under a hardware scissor
+`[x, x+0x50)`, stock markers at `y+16`); banner spawns (`FUN_801d3fd0`, which
+stores `x << 3`) at centre `(160, 120)` for the count-in / `READY...` / `GO!`
+/ `FINISH!`, `(160, 128)` for `Miss!`, `(160, 144)` for the rating banners
+with star sparkles flanking at `±0x38` / `±0x50`. **Confirmed.**
+
+### Rating banners per tier (`FUN_801d1af4` body)
+
+The banner each award tier spawns (previously open):
+
+| tier | banner (widget) | sound |
+|---|---|---|
+| miss | `Miss!` (10) at `(160, 128)` | cue `0x210` |
+| ordinary on-beat hit | `Good!` (11) + 2 stars (`FUN_801d40dc`, star actors carry the accuracy weight at `+0x72`) | direct-keyed sting: `FUN_801d3d78(rand() % 3)` keys VAB program 1 tones `2r`/`2r+1` at note `0x3C + r` |
+| combo tier 3 | `Cool!` (19) at `(160, 144)` + stars `±0x38` | cue `0x202` |
+| combo tier 4 | `Great!!` (20) + stars `±0x50` | cue `0x203` |
+| combo tier 5 | `Fever!!!` (21) | cue `0x205` |
+
+**Confirmed** (the banner-per-tier map closes the "which on-screen label each
+tier spawns" question; the `Chicken!!` cell on the HUD page has no widget
+record and no traced spawner - grading-screen use is **Inferred**).
+
+### The dancer face stamp (`FUN_801d03c4`)
+
+The dancers on the floor are field-scene actors; the overlay animates their
+**faces**. `FUN_801d03c4(dancer, pose)` does two `MoveImage` (`FUN_80058490`)
+blits inside a per-dancer VRAM strip, copying an **eye cell** and a **mouth
+cell** from the strip's pose bank into its live window (the rows the head
+samples). Per-case rig (jumptable at `PTR_LAB_801ceec8`; frame tables are 4-byte
+`[eye_u, eye_v, mouth_u, mouth_v]` records, `u` in pixels `>> 2` to halfwords):
+
+| case | strip | frame table | eyes (w_hw x h -> dst) | mouth |
+|---|---|---|---|---|
+| 0 | `(0x354, 0x100)` = **Noa's field atlas** (PROT 0874 §2 entry 2 at `(852, 256)`) | `0x801D435C` (5 poses) | 6x16 -> `(0x354, 0x10C)` | 4x8 -> `(0x355, 0x11C)` |
+| 1 | `(0x190, 0)` = pack strip `(400, 0)` | `0x801D4370` (4) | 13x16 -> `(0x190, 8)` | 3x8 -> `(0x192, 0x20)` |
+| 2 | `(0x1A0, 0)` = pack strip `(416, 0)` | `0x801D4380` (4) | 13x16 -> `(0x1A0, 8)` | 3x8 -> `(0x1A2, 0x2F)` |
+| 3 | `(0x1B0, 0)` = pack strip `(432, 0)` | `0x801D4390` (4) | 12x16 -> `(0x1B2, 0xA)` | 3x8 -> `(0x1B2, 0x29)` |
+
+In mode 0 (yosenn) the overlay remaps dancer `2 -> 3` and `1 -> 2`. The four
+poses are eye/mouth expression variants (open / blink / intense / wink).
+`FUN_801d1af4` switches the human's pose on a scoring event. **Confirmed**
+(rigs + tables read from the image; the strip diffs against the live capture
+land exactly on the blit destination rows). The dancer **bodies** remain
+field-scene actors (the walk of `_DAT_8007c36c` in `FUN_801d3a2c`); their mesh
+/ placement source is still open.
 
 The chart's symbols are likewise not abstract notes. `FUN_801d1820`'s only caller,
 `FUN_801d4040`, maps a symbol straight to a **pad-button bitmask**:
@@ -230,13 +309,22 @@ at **extraction PROT 1231**. **Confirmed** cue sites:
 | confirm / cursor | `0x20` / `0x21` | `FUN_801D0750` (static table) |
 
 An on-beat **hit fires no ring cue**: it keys voices directly through
-`FUN_801D3D78(rand() % 3)`, so a good step picks one of three stings at random.
+`FUN_801D3D78(rand() % 3)`, so a good step picks one of three stings at random -
+each pick keys VAB **program 1, tones `2r` and `2r + 1` together**, at note
+`0x3C + r` (two voices via `func_0x80065034`, volume from the config global
+`_DAT_80084580`). **Confirmed.**
 
 ## Open
 
-- The visible Perfect/Good/Miss banner *strings* each tier spawns (the `× 0x22` / `DAT_801d538c` Perfect tier and the accuracy weight `DAT_801d6090`) - the score tiers are pinned (see [Scoring](#scoring)); only the on-screen label each spawns is unmapped (capture-leaning).
-- Which PROT entry uploads the **dancer frame strips** `FUN_801d03c4` blits from. The dance overlay loads none, so they come from the resident field scene - the callsite is open, and with it the question of whether Noa is a 3D mesh in this minigame at all.
-- Which code loads the dance's `efect.dat` (1228) and SFX VAB (1231): not in the 0980 image, so it is in the SCUS mode-24 entry path (`FUN_80025980` -> `FUN_8003EBE4`). The entries themselves are live-confirmed.
+- The exact SCUS mode-24 entry-path call sites that stage the art pack (1230)
+  and `efect.dat` (1228): not in the 0980 image, so they live in the
+  `FUN_80025980` -> `FUN_8003EBE4` chain. The entries themselves are pinned by
+  content + the byte-identical VRAM capture.
+- The dancer **bodies**: which field actors / meshes the entry path places on
+  the floor (the faces and their strips are pinned; the body placement is not).
+- The `Chicken!!` banner cell's spawner (no widget record names it).
+- Which of `DAT_801D514C`'s modes picks BGM 1048 vs 1054 (the branch is
+  pinned, the arm-to-song mapping is not).
 
 ## See also
 
