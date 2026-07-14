@@ -124,7 +124,9 @@
     /* `meta`: { partCount, frameCount, frames } where `frames` is an
      * Int32Array(frameCount * partCount * 6) of absolute per-(frame, bone)
      * [tx, ty, tz, rx, ry, rz]. Pass null / a 1-frame clip to drop back to the
-     * mesh's own rest geometry. */
+     * mesh's own rest geometry. Optional `meta.fps` overrides the display
+     * default - clips that carry a retail rate byte play at 7.5 * rate
+     * (FUN_80047430 advances rate/8 keyframes per 60 Hz tick). */
     setAnimation(meta) {
       if (!meta || !meta.frameCount || meta.frameCount < 1 ||
           !this._objIds || !this._basePos) {
@@ -138,6 +140,11 @@
         partCount: meta.partCount,
         frameCount: meta.frameCount,
         frames: meta.frames,
+        fps: meta.fps || ANIM_FPS,
+        /* Opt-in: fit the camera over EVERY frame of the clip rather than
+         * frame 0 only - action clips (battle arts) translate the actor far
+         * from the rest stance mid-clip. */
+        fitAll: !!meta.fitAll,
       };
       this._startMs = performance.now();
       this._frameOverride = 0;
@@ -147,20 +154,33 @@
     }
 
     /* Re-fit the camera on the assembled pose. Frame 0 of a clip is the
-     * actor's rest stance, and it can sit far from the raw TMD's centroid. */
+     * actor's rest stance, and it can sit far from the raw TMD's centroid.
+     * With `fitAll` the bounds accumulate across the whole clip (each frame
+     * posed once, without uploading), so a flip / lunge stays in frame. */
     _refit() {
       if (!this.anim) return;
-      const o = this.anim.out, n = o.length / 3;
       const ids = this._objIds, pc = this.anim.partCount;
       const lo = [Infinity, Infinity, Infinity];
       const hi = [-Infinity, -Infinity, -Infinity];
-      for (let v = 0; v < n; v++) {
-        if (ids[v] >= pc) continue;
-        for (let k = 0; k < 3; k++) {
-          const x = o[v * 3 + k];
-          if (x < lo[k]) lo[k] = x;
-          if (x > hi[k]) hi[k] = x;
+      const accum = () => {
+        const o = this.anim.out, n = o.length / 3;
+        for (let v = 0; v < n; v++) {
+          if (ids[v] >= pc) continue;
+          for (let k = 0; k < 3; k++) {
+            const x = o[v * 3 + k];
+            if (x < lo[k]) lo[k] = x;
+            if (x > hi[k]) hi[k] = x;
+          }
         }
+      };
+      if (this.anim.fitAll && this.anim.frameCount > 1) {
+        for (let f = 0; f < this.anim.frameCount; f++) {
+          this._poseAt(f, false);
+          accum();
+        }
+        this._poseAt(0);
+      } else {
+        accum();
       }
       if (lo[0] === Infinity) return;
       this.center = [(lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2];
@@ -173,7 +193,7 @@
       this.playing = !!on;
       if (this.playing) {
         this._startMs = performance.now() - (this._frameOverride >= 0
-          ? (this._frameOverride / ANIM_FPS) * 1000
+          ? (this._frameOverride / (this.anim.fps || ANIM_FPS)) * 1000
           : 0);
         this._frameOverride = -1;
       }
@@ -186,7 +206,9 @@
       this._poseAt(this._frameOverride);
     }
 
-    _poseAt(frameIdx) {
+    /* Pose frame `frameIdx` into A.out. `upload` (default true) pushes the
+     * posed positions to the GPU; _refit's fitAll sweep poses without it. */
+    _poseAt(frameIdx, upload) {
       const A = this.anim;
       if (!A) return;
       const ff = ((frameIdx % A.frameCount) + A.frameCount) % A.frameCount;
@@ -227,7 +249,7 @@
         out[v*3+1] = y + tr[o*3+1];
         out[v*3+2] = z + tr[o*3+2];
       }
-      this.renderer.updatePositions(out);
+      if (upload !== false) this.renderer.updatePositions(out);
     }
 
     setSpin(on) {
@@ -283,7 +305,8 @@
       }
       if (this.cam.autoRotate) this.cam.yaw += 0.006;
       if (this.anim && this.playing && this.anim.frameCount > 1) {
-        const t = (performance.now() - this._startMs) / 1000 * ANIM_FPS;
+        const t = (performance.now() - this._startMs) / 1000 *
+          (this.anim.fps || ANIM_FPS);
         const f = Math.floor(t) % this.anim.frameCount;
         if (f !== this._lastPosedFrame) {
           this._poseAt(f);
