@@ -740,18 +740,28 @@ always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 ## Translation packs
 
 `translation` module + the `legaia-rando translate` subcommands
-(`export` / `init` / `stats` / `import`): community language packs. Exports
-every cataloged user-facing string into an editable YAML pack - the SCUS name
-pools (items, item types, spells, Tactical Arts, accessory passives,
-new-game party names) and the `0x1F`-segment dialog corpus (scene-bundle
-MANs, LZS-decompressed; plus raw carriers - v12 event-script prescripts and
-the streaming-MAN dungeon scenes). Import applies filled `translation:`
-fields as same-size in-place patches (strings re-terminated, dialog segments
-space-padded to their exact framing; whole-scene recompress must fit the
-original LZS footprint), with per-character encodability errors for anything
-outside the retail ASCII glyph set. Untranslated entries stay byte-identical.
-Exported packs contain game text - gitignored, never commit. Full workflow +
-schema: [`docs/tooling/translation.md`](../../docs/tooling/translation.md).
+(`export` / `init` / `strip` / `merge` / `stats` / `import`): community
+language packs. Exports every cataloged user-facing string into an editable YAML
+pack - the SCUS name pools (items, item types, spells, Tactical Arts, accessory
+passives, new-game party names) and the `0x1F`-segment dialog corpus
+(scene-bundle MANs, LZS-decompressed; plus raw carriers - v12 event-script
+prescripts and the streaming-MAN dungeon scenes). Import applies filled
+`translation:` fields as same-size in-place patches (strings re-terminated -
+budget reclaims the 4-byte-alignment zero padding; dialog segments space-padded
+to their exact framing; a scene whose recompress overflows its LZS footprint
+rolls back its longest lines one at a time), with per-character encodability
+errors for anything outside the retail ASCII glyph set. Untranslated entries
+stay byte-identical.
+
+Two pack shapes: a **working** pack carries `source:` (the game's own text - the
+translator's reference, gitignored, never committed) while a **distributable**
+pack (`translate strip`) drops the source and keeps only `key -> translation`,
+so it holds no original script and *is* committable - the shipped
+`site/lang/*.yaml` packs are this shape, byte-budget-validated against the disc
+at import (the in-pack budget is a hint only). `translate init --resume`
+seeds a fresh working pack from a shipped one, `--chunk` splits for a parallel
+bulk fill, `merge` recombines. Full workflow + schema:
+[`docs/tooling/translation.md`](../../docs/tooling/translation.md).
 
 ## Orchestration (`apply`)
 

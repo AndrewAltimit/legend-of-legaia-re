@@ -262,6 +262,15 @@ the drop / encounter / chest settings, and downloads a patched image. The disc
 bytes never leave the browser and nothing is uploaded - the same "user supplies
 the disc" model as the CLI, so the site ships only code.
 
+An optional `lang_pack` YAML argument (default `""` = English, strictly opt-in)
+applies a [language pack](../rando/README.md#translation-packs) **before** any
+randomizer pass (translate-then-randomize composes; the reverse loses relocated
+scenes' lines). The page offers the shipped `site/lang/*.yaml` packs by dropdown,
+plus an import path (user-supplied YAML) and `export_lang_pack` (dump a
+source-bearing working pack from the user's own disc to author one) and
+`validate_lang_pack` (disc-measured dry run before patching). The packs are
+static assets fetched from `site/lang/`, never bundled into the WASM.
+
 `LegaiaViewer::monster_archive_json` decodes the global monster stat
 archive (PROT entry 867, extended footprint) into a JSON array of every
 populated record (id / name / HP / MP / stats). It drives the static

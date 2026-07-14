@@ -186,7 +186,58 @@ Save-state parsing locates VRAM by searching for the `&GPURAM[0][0]` variable
 header (mednafen uses a `u8 name_len; bytes name; u32 size; bytes data;`
 record format inside each section); no MDFNSVST section walk is required.
 
+## Accented / non-Latin glyphs (font-patch feasibility)
+
+The [translation pipeline](../tooling/translation.md) writes only bytes the
+retail font can already draw - printable ASCII `0x20..=0x7E` - so the shipped
+Spanish/French/German/Italian/Polish packs are **ASCII-folded** (`e` for `é`,
+`ss` for `ß`, `l` for `ł`). Adding real accented or non-Latin glyphs is a
+**font patch**, not a translation-pack change; this section scopes what it takes.
+
+The glyph atlas is a fixed-size grid: a 16×14 cell layout over source bytes
+`0x20..=0xFF` (224 cells), 4bpp, uploaded to VRAM at `(896,0)`. Cells are indexed
+directly by byte (the `U/V` formula above), and the per-byte advance comes from
+the 256-entry width table at `0x80073F1C`. So a new glyph needs three things:
+
+1. **A free byte slot.** A candidate byte must be renderable as a single glyph:
+   *not* a 2-byte opcode (`0x5E`, `0xC0..=0xCF`, `0xFF` - the substitution /
+   spacing / color escapes), *not* a terminator (`0x00..=0x1F`), and not already
+   used by a string. Sweeping the exported corpus, **~106 single-byte slots at
+   `0x80..=0xFF` are unused by any string, ~50 of them currently zero-width
+   (blank atlas cells)** - comfortably enough for the accented Latin a
+   Spanish/French/German/Italian/Polish set needs (roughly `á à â ä ç é è ê ë í
+   î ï ñ ó ô ö ù û ü ß` and the Polish `ą ć ę ł ń ó ś ż ź`, ~35 code points).
+2. **A glyph bitmap in that cell.** The 32 KB 4bpp tile-page would gain a 14×15
+   drawing in each chosen cell. The on-disc carrier of the tile-page is still
+   unclassified (see below), so a patch would instead overwrite the cell **in
+   VRAM at upload time** or patch whatever routine does the `LoadImage`.
+3. **A width-table entry.** Set `widths[byte]` for each new glyph so the
+   proportional layout advances correctly - a same-size in-place byte poke into
+   `SCUS_942.54`, exactly the mechanism the translation importer already uses.
+
+What that unblocks and what it doesn't:
+
+- **Accented Latin (es/fr/de/it/pl) is tractable.** It fits the free single-byte
+  slots, needs ~35 new cells, and the pack side is a trivial change - drop the
+  ASCII-fold and emit the chosen bytes (the markup codec already round-trips any
+  byte via `{xx}`). The blocker is purely the glyph bitmaps + the width pokes.
+- **Cyrillic (ru) is tractable but larger** (~66 cells for upper+lower) - still
+  inside the ~106 free slots, same mechanism.
+- **CJK (ja/zh/ko) is *not* reachable this way.** Thousands of glyphs blow past
+  the 224-cell single-page atlas and the byte index space; it needs a second
+  variable-width glyph bank and a multi-byte encoding in the renderer - a
+  substantially bigger engine change, out of scope for a byte-poke font patch.
+
+The one genuinely-missing piece for even the tractable cases is **the on-disc
+font-bitmap carrier** (below): until that PROT entry is identified, new glyph
+bitmaps can only be injected at runtime (a VRAM overwrite after the font upload),
+not baked into the disc image the way the width table and the text are. Pinning
+the carrier turns the accented-Latin font patch into a fully static, same-size
+disc edit.
+
 ## See also
 
 - [MES dialog](mes.md) - the dialog containers this font renders.
+- [Translation / language packs](../tooling/translation.md) - the ASCII-folded
+  packs this feasibility note is the unblock for.
 - [`subsystems/renderer.md`](../subsystems/renderer.md) - the renderer that blits the glyph atlas.

@@ -19,6 +19,7 @@ use legaia_rando::disc::DiscPatcher;
 use legaia_rando::drops::DropMode;
 use legaia_rando::items::valid_item_pool;
 use legaia_rando::rng::seed_from_str;
+use legaia_rando::translation::{LanguagePack, export_pack, import_pack};
 
 fn parse_mode(s: &str) -> Option<DropMode> {
     match s {
@@ -106,12 +107,22 @@ pub fn resolve_seed(seed: &str) -> String {
 /// begins the new game at that character level instead of 1 (`0` or `1` =
 /// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
 /// starting stats from the disc's growth curves. `seed` is a number or
-/// any string (hashed). Returns `{ data, summary, seed }`.
+/// any string (hashed).
+///
+/// `lang_pack` is an **optional** `legaia-text-pack-v1` YAML document (empty
+/// string = no language patch, the default). It is applied **first**, before
+/// any randomizer pass, because a translation edit is keyed by a byte offset
+/// into a scene's decompressed MAN and the door / starting-bag passes relocate
+/// those records - translate-then-randomize composes, the reverse loses the
+/// moved scenes' lines. Per-entry skips (a line over budget, a wrong-disc
+/// mismatch) are counted in the summary but never abort the patch. Returns
+/// `{ data, summary, seed }`.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn patch_rom(
     image: Vec<u8>,
     seed: &str,
+    lang_pack: &str,
     drops: &str,
     encounters: &str,
     encounter_scope: &str,
@@ -195,6 +206,30 @@ pub fn patch_rom(
     };
 
     let mut summary = String::new();
+
+    // Language pack FIRST (before any data randomization) - see the doc comment.
+    let lang_pack = lang_pack.trim();
+    if !lang_pack.is_empty() {
+        let pack =
+            LanguagePack::from_yaml(lang_pack).map_err(|e| err(format!("language pack: {e}")))?;
+        let report = import_pack(&mut patcher, &pack)
+            .map_err(|e| err(format!("apply language pack: {e}")))?;
+        summary.push_str(&format!(
+            "language ({}): {} strings translated{}\n",
+            pack.language,
+            report.applied,
+            if report.issues.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " ({} line(s) skipped - over budget or not on this disc)",
+                    report.issues.len()
+                )
+            }
+        ));
+    } else {
+        summary.push_str("language: untouched (English)\n");
+    }
 
     // Normal drop table first: reassign the monsters that already drop something.
     match drops_mode {
@@ -603,4 +638,58 @@ pub fn patch_rom(
     Reflect::set(&out, &"summary".into(), &summary.into())?;
     Reflect::set(&out, &"seed".into(), &seed_n.to_string().into())?;
     Ok(out.into())
+}
+
+/// Validate a `legaia-text-pack-v1` YAML document **against the user's own
+/// disc**, client-side. Returns `{ ok, language, applied, skipped, message }`:
+/// `applied` is how many entries would be written, `skipped` how many the disc
+/// rejected (over budget or not matching this image), and `message` a short
+/// human summary. This is the same dry run the CLI's `translate stats --input`
+/// does - the only way to check a distributable pack's budgets, which are
+/// hints until a disc is there to measure. Nothing is written.
+#[wasm_bindgen]
+pub fn validate_lang_pack(image: Vec<u8>, pack_yaml: &str) -> Result<JsValue, JsValue> {
+    let pack = LanguagePack::from_yaml(pack_yaml).map_err(|e| err(format!("parse pack: {e}")))?;
+    let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
+    let report = import_pack(&mut patcher, &pack).map_err(|e| err(format!("dry run: {e}")))?;
+    let out = Object::new();
+    Reflect::set(&out, &"ok".into(), &JsValue::from_bool(true))?;
+    Reflect::set(&out, &"language".into(), &pack.language.into())?;
+    Reflect::set(
+        &out,
+        &"applied".into(),
+        &JsValue::from_f64(report.applied as f64),
+    )?;
+    Reflect::set(
+        &out,
+        &"skipped".into(),
+        &JsValue::from_f64(report.issues.len() as f64),
+    )?;
+    let msg = format!(
+        "{} strings would be translated, {} skipped (over budget or not on this disc)",
+        report.applied,
+        report.issues.len()
+    );
+    Reflect::set(&out, &"message".into(), &msg.into())?;
+    Ok(out.into())
+}
+
+/// Export a **working** language pack (source-bearing, all `translation:`
+/// fields empty) from the user's own disc, as YAML text they can download and
+/// fill in. This is the authoring on-ramp - the community can produce their own
+/// packs without any tooling beyond the browser. The exported text is the
+/// user's own disc data and never leaves the browser.
+///
+/// `language` stamps the pack header (`fr`, `de`, ...); pass `en` for a plain
+/// source dump. Returns the YAML string.
+#[wasm_bindgen]
+pub fn export_lang_pack(image: Vec<u8>, language: &str) -> Result<String, JsValue> {
+    let patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
+    let pack = export_pack(&patcher).map_err(|e| err(format!("export: {e}")))?;
+    let pack = if language.is_empty() || language == "en" {
+        pack
+    } else {
+        pack.into_skeleton(language, Vec::new())
+    };
+    pack.to_yaml().map_err(|e| err(format!("emit YAML: {e}")))
 }

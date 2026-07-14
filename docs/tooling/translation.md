@@ -13,22 +13,56 @@ Implementation: [`crates/rando/src/translation/`](../../crates/rando/src/transla
 [`legaia_rando::disc::DiscPatcher`](randomizer.md) - every touched sector's
 EDC/ECC is re-encoded, no LBA ever moves.
 
+## Two pack shapes
+
+A pack comes in two shapes that share one schema:
+
+| Shape | `source:` | Holds | Lives |
+|---|---|---|---|
+| **working** | yes | the disc's own text (for the translator to read) | your machine only - never redistributed |
+| **distributable** | no | only the *new* translated text, keyed by disc coordinates | shareable / committable |
+
+`translate strip` turns a filled working pack into a distributable one: it drops
+every `source:` and `context:` field and every unfilled entry, leaving a pure
+`key -> translation` lookup table plus the byte-budget hint. The `key`
+(`scus:str:0x<va>`, `scus:party:<n>`, `man:<prot>:0x<off>`, `raw:<prot>:0x<off>`)
+is a disc coordinate, not text, so a distributable pack carries none of the
+original script. **That is the only shape it is safe to commit or publish** -
+the shipped packs at [`site/lang/`](../../site/lang/) are exactly this, and a
+disc-free test (`translation_shipped_packs.rs`) fails the build if any tracked
+pack still carries a `source:` field.
+
+A distributable pack has no source to self-check against, so its `budget` is
+only a *hint*: `import` (and `translate stats --input`) re-measures every target
+on the disc being patched - the string's own span, the segment's own
+`0x1F .. 0x00` framing - and rejects any entry that doesn't fit, or whose
+on-disc length disagrees with the hint (the wrong-disc guard `source` gives a
+working pack). Same-size in place is enforced from the disc, never from the pack.
+
 ## Workflow
 
 ```bash
-# 1. Dump the source text (once).
+# 1. Dump the source text into a working pack (once).
 legaia-rando translate export --input "Legend of Legaia (USA).bin" -o legaia_en.yaml
 
-# 2. Make a skeleton for your language (fr de es it pt-BR ja ru zh ko ...).
+# 2. Make a skeleton for your language (fr de es it pl pt-BR ja ru zh ko ...).
+#    --resume seeds it from an already-published pack so you can keep editing a
+#    shipped translation without anyone redistributing the source.
 legaia-rando translate init --lang fr --from legaia_en.yaml \
-    --contributor "you" -o legaia_fr.yaml
+    --contributor "you" [--resume site/lang/fr.yaml] -o legaia_fr.yaml
 
 # 3. Fill `translation:` fields (editor, script, AI pass - your choice).
+#    --chunk N splits the skeleton into N-entry files for a parallel bulk fill;
+#    recombine them with `translate merge`.
 
-# 4. Check coverage + encodability/budget before burning a disc.
-legaia-rando translate stats --pack legaia_fr.yaml
+# 4. Check coverage + encodability/budget. Add --input to dry-run the pack
+#    against a real disc (the only way to validate a distributable pack).
+legaia-rando translate stats --pack legaia_fr.yaml [--input DISC.bin]
 
-# 5. Apply to a scratch copy (and/or emit a shareable PPF).
+# 5. Publish: strip the source to make the distributable, committable pack.
+legaia-rando translate strip --pack legaia_fr.yaml -o site/lang/fr.yaml
+
+# 6. Apply to a scratch copy (and/or emit a shareable PPF).
 legaia-rando translate import --input "Legend of Legaia (USA).bin" \
     --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf
 ```
@@ -36,12 +70,45 @@ legaia-rando translate import --input "Legend of Legaia (USA).bin" \
 Entries with an empty `translation:` are left byte-identical on the disc, so a
 partially filled pack is always playable. Import is idempotent (re-running the
 same pack over a patched image applies nothing) and incremental (fill more
-entries, re-import onto a fresh copy).
+entries, re-import onto a fresh copy). When a scene's dialog no longer
+recompresses into its MAN's on-disc footprint (translated text is less
+repetitive than the source), import rolls back that scene's longest lines one at
+a time rather than dropping the whole scene.
 
-**Do not commit exported packs to this repository** - they contain the game's
-copyrighted text. `/translations/` and `legaia_*.yaml` are gitignored.
+### What may / may not be committed
+
+- **Distributable packs may be committed** - they are new authored text plus a
+  coordinate table, and the shipped `site/lang/*.yaml` packs are tracked.
+- **Working packs must not** - they carry the game's script. `/translations/`
+  and `legaia_*.yaml` stay gitignored; keep every source-bearing pack there.
+- No disc / exe / asset bytes, ever.
+
+### On the site
+
+The in-browser ROM patcher ([`site/js/rom-patcher-app.js`](../../site/js/rom-patcher-app.js))
+offers the shipped packs directly (a language dropdown, default **None**), plus
+an *import my own pack* path and an *export a starter pack from my disc* button.
+It applies the language pack **before** any randomizer pass (see the ordering
+note below) via `patch_rom`'s `lang_pack` argument, and validates a chosen pack
+against the user's disc with `validate_lang_pack` before patching. Nothing is
+uploaded; the packs are static assets fetched from `site/lang/`.
+
+## Ordering: translate before randomize
+
+Language and randomizer edits overlap only in the scene MANs. A translation edit
+is same-size *inside the decompressed MAN*, keyed by a byte offset into it,
+whereas the door and starting-bag passes **relocate** records (variable-length
+insertion) - moving every byte after the splice. So a language pack must be
+applied first: `apply::import_language_pack` then the randomizer. The reverse
+order is not corrupting (the framing/source check skips a moved key) but it
+silently loses the relocated scenes' lines. The randomizer only ever reads
+structure - records, tables, item **ids** - never text, so translated strings
+never perturb it; the name-keyed passes test only whether a name is non-empty,
+which a translation preserves.
 
 ## YAML schema
+
+Working pack (source-bearing - the shape a translator edits):
 
 ```yaml
 format: 'legaia-text-pack-v1'
@@ -56,6 +123,17 @@ sections:
     source: 'Healing Berry'       # US text, markup form
     translation: ''               # fill me
     budget: 13                    # max encoded bytes for the translation
+```
+
+Distributable pack (source-less - the shape that is committed / shipped): the
+same document with `source:` and `context:` removed and only filled entries
+kept.
+
+```yaml
+  items:
+  - key: 'scus:str:0x80012260'
+    translation: 'Baie Soin'
+    budget: 13
 ```
 
 Sections and their patch mechanisms:
@@ -73,7 +151,11 @@ Sections and their patch mechanisms:
 
 Strings pointer-shared by several table slots export once (the `context`
 lists the referencing ids); interior pointers clamp the `budget`. Duplicate
-PROT TOC entries over the same disc bytes are deduplicated by LBA.
+PROT TOC entries over the same disc bytes are deduplicated by LBA. The SCUS name
+pools are 4-byte aligned, so each string's `budget` also claims the 0..3 bytes
+of zero padding after its terminator (verified zero per string, and never past
+another pointed-to string) - about 1.5 extra bytes on average, which is what
+lets the tightest name tables translate at all.
 
 The dialog sections are *line-granular*: the pager packs up to three
 consecutive segments into one box (`docs/formats/mes.md`), so consecutive

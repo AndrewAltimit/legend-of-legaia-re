@@ -2,17 +2,19 @@
  * user-supplied disc image, entirely client-side, and download the patched
  * image. Nothing is uploaded; the disc bytes never leave the browser.
  *
- * The WASM module (legaia_web_viewer) exposes `patch_rom(image, seed, drops,
- * encounters, encounter_scope, chests, shops, casino, steals, arts, doors,
- * door_coupling, house_doors, starting_items, door_of_wind, incense,
+ * The WASM module (legaia_web_viewer) exposes `patch_rom(image, seed, lang_pack,
+ * drops, encounters, encounter_scope, chests, shops, casino, steals, arts,
+ * doors, door_coupling, house_doors, starting_items, door_of_wind, incense,
  * speed_chain, chicken_heart, good_luck_bell, all_warps,
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
  * element_affinity, spell_cost, equip_bonus, weapon_specialty, starting_level,
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru)
- * -> { data, summary, seed }`
- * and `resolve_seed(str)`.
+ * -> { data, summary, seed }`, `resolve_seed(str)`,
+ * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message }`,
+ * and `export_lang_pack(image, language) -> yaml_string`.
  * Imports resolve relative to THIS file (site/js/), so the package at
- * site/wasm/ is `../wasm/...`.
+ * site/wasm/ is `../wasm/...`. Shipped language packs are static assets under
+ * site/lang/<lang>.yaml, fetched on demand (nothing is bundled into the WASM).
  */
 
 let wasmMod = null;
@@ -27,6 +29,45 @@ async function ensureWasm(setStatus) {
 
 function $(id) {
   return document.getElementById(id);
+}
+
+// --- Language packs ---------------------------------------------------------
+// Shipped packs are static assets fetched on demand; a user-supplied pack is
+// read from the file input. Either way the result is a YAML string handed to
+// the WASM patcher; '' means no language patch.
+const shippedPackCache = {};
+
+async function fetchShippedPack(lang) {
+  if (shippedPackCache[lang] !== undefined) return shippedPackCache[lang];
+  // Resolve relative to this JS file's directory (site/js/ -> site/lang/).
+  const url = new URL(`../lang/${lang}.yaml`, import.meta.url).href;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`could not load ${lang}.yaml (${res.status})`);
+  const text = await res.text();
+  shippedPackCache[lang] = text;
+  return text;
+}
+
+function readFileText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error || new Error('read failed'));
+    r.readAsText(file);
+  });
+}
+
+// The YAML for the currently-selected language, or '' for none. `customFile`
+// is the <input type=file> for an imported pack.
+async function resolveLangPack(langSel, customFile) {
+  const v = langSel.value;
+  if (!v) return '';
+  if (v === '__custom') {
+    const f = customFile.files && customFile.files[0];
+    if (!f) throw new Error('choose a pack .yaml file (or pick a language)');
+    return readFileText(f);
+  }
+  return fetchShippedPack(v);
 }
 
 function triggerDownload(bytes, filename) {
@@ -151,6 +192,12 @@ function init() {
   const houseDoorsChk = $('rom-house-doors');
   const unusedEnemiesChk = $('rom-unused-enemies');
   const unusedItemsChk = $('rom-unused-items');
+  const langSel = $('rom-lang');
+  const langFileRow = $('rom-lang-file-row');
+  const langFile = $('rom-lang-file');
+  const langValidateBtn = $('rom-lang-validate');
+  const langExportBtn = $('rom-lang-export');
+  const langStatusEl = $('rom-lang-status');
   const runBtn = $('rom-run');
   const statusEl = $('rom-status');
   const summaryEl = $('rom-summary');
@@ -163,6 +210,57 @@ function init() {
     statusEl.textContent = msg;
     statusEl.className = 'rom-status' + (kind ? ' rom-status-' + kind : '');
   };
+  const setLangStatus = (msg, kind) => {
+    langStatusEl.textContent = msg;
+    langStatusEl.className = 'rom-status' + (kind ? ' rom-status-' + kind : '');
+  };
+
+  // The custom-pack file input is only relevant when "Import my own pack" is
+  // chosen; the group is opt-in and defaults to None.
+  function syncLangRow() {
+    if (langFileRow) langFileRow.hidden = langSel.value !== '__custom';
+  }
+  langSel.addEventListener('change', () => { syncLangRow(); setLangStatus(''); });
+  syncLangRow();
+
+  // The current disc file's bytes, or an error if none is chosen.
+  async function discBytes() {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) throw new Error('choose a disc image (.bin) first');
+    return new Uint8Array(await file.arrayBuffer());
+  }
+
+  // "Check pack against my disc": the same disc-measured dry run the CLI does.
+  langValidateBtn.addEventListener('click', async () => {
+    try {
+      setLangStatus('Checking ...');
+      const yaml = await resolveLangPack(langSel, langFile);
+      if (!yaml) { setLangStatus('No language selected (English).'); return; }
+      const mod = await ensureWasm(setStatus);
+      const buf = await discBytes();
+      const r = mod.validate_lang_pack(buf, yaml);
+      setLangStatus(`${langSel.options[langSel.selectedIndex].text}: ${r.message}`, 'ok');
+    } catch (e) {
+      setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
+    }
+  });
+
+  // "Export a starter pack from my disc": dump a source-bearing working pack the
+  // user can edit. Uses the chosen language code as the header stamp (or en).
+  langExportBtn.addEventListener('click', async () => {
+    try {
+      setLangStatus('Exporting starter pack from your disc ...');
+      const mod = await ensureWasm(setStatus);
+      const buf = await discBytes();
+      const code = (langSel.value && langSel.value !== '__custom') ? langSel.value : 'en';
+      const yaml = mod.export_lang_pack(buf, code);
+      const bytes = new TextEncoder().encode(yaml);
+      triggerDownload(bytes, `legaia_${code}.working.yaml`);
+      setLangStatus(`Downloaded legaia_${code}.working.yaml - fill the translation: fields and import it above.`, 'ok');
+    } catch (e) {
+      setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
+    }
+  });
 
   // Apply a named preset to every control.
   function applyPreset(name) {
@@ -233,9 +331,9 @@ function init() {
   // sets values programmatically (which never fires `change`), so this only runs
   // on genuine user edits.
   formEl.addEventListener('change', (e) => {
-    // Seed and disc-file are orthogonal to the randomization config, so editing
-    // them must not flip the preset to "Custom".
-    if (e.target && (e.target.id === 'rom-seed' || e.target.id === 'rom-file')) return;
+    // Seed, disc-file and the language selection are orthogonal to the
+    // randomization config, so editing them must not flip the preset to "Custom".
+    if (e.target && ['rom-seed', 'rom-file', 'rom-lang', 'rom-lang-file'].includes(e.target.id)) return;
     markCustom();
     syncDependents();
   });
@@ -290,7 +388,9 @@ function init() {
     const equipBonus = segVal('equip_bonus', 'none');
     const weaponSpecialty = weaponSpecialtyChk.checked;
 
+    const langActive = langSel.value !== '';
     if (
+      !langActive &&
       drops === 'none' && !equipmentDrops && encounters === 'none' &&
       chests === 'none' && shops === 'none' && casino === 'none' &&
       steals === 'none' && arts === 'none' && doors === 'none' &&
@@ -300,7 +400,7 @@ function init() {
       spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru
     ) {
-      setStatus('Enable at least one option (pick a preset, or flip a toggle).', 'err');
+      setStatus('Enable at least one option (pick a preset, a language, or flip a toggle).', 'err');
       return;
     }
     const seed = (seedInput.value || '').trim() || String(Date.now());
@@ -311,10 +411,15 @@ function init() {
       const mod = await ensureWasm(setStatus);
       setStatus('Reading disc image ...');
       const buf = new Uint8Array(await file.arrayBuffer());
+      let langPack = '';
+      if (langActive) {
+        setStatus('Loading language pack ...');
+        langPack = await resolveLangPack(langSel, langFile);
+      }
       setStatus('Patching (this can take a moment for a full disc) ...');
       // Yield so the status paints before the synchronous WASM call.
       await new Promise((r) => setTimeout(r, 30));
-      const result = mod.patch_rom(buf, seed, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru);
+      const result = mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru);
       const data = result.data;
       const usedSeed = result.seed;
       const name = patchedName(file.name, usedSeed);
