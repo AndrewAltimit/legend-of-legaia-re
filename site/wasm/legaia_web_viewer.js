@@ -333,6 +333,49 @@ export class LegaiaMinigames {
         wasm.__wbg_legaiaminigames_free(ptr, 0);
     }
     /**
+     * `[bone_count, frame_count]` of one fighter's animation record.
+     * Player actions index the PROT 1203 bank (`char*9 + action`), opponent
+     * actions the fighter pack's own bank (typically 8 records, 0 = idle).
+     * @param {number} side
+     * @param {number} id
+     * @param {number} action
+     * @returns {Uint32Array}
+     */
+    baka_anim_dims(side, id, action) {
+        const ret = wasm.legaiaminigames_baka_anim_dims(this.__wbg_ptr, side, id, action);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * One fighter animation record decoded to absolute per-(frame, bone)
+     * `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles), padded to
+     * `target_part_count` parts - the same pose format the site's mesh
+     * animators consume.
+     * @param {number} side
+     * @param {number} id
+     * @param {number} action
+     * @param {number} target_part_count
+     * @returns {Int32Array}
+     */
+    baka_anim_pose_frames(side, id, action, target_part_count) {
+        const ret = wasm.legaiaminigames_baka_anim_pose_frames(this.__wbg_ptr, side, id, action, target_part_count);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Number of animation records one fighter's bank carries (9 per player
+     * character bank; the opponent packs carry their own count, idle first).
+     * @param {number} side
+     * @param {number} id
+     * @returns {number}
+     */
+    baka_anim_record_count(side, id) {
+        const ret = wasm.legaiaminigames_baka_anim_record_count(this.__wbg_ptr, side, id);
+        return ret >>> 0;
+    }
+    /**
      * Commit the visitor's attack this exchange: `1`/`2`/`3` are the three
      * rock-paper-scissors throws, `4` the special. Returns `false` when the
      * fighter can't act yet (cooldown, or a choice is already pending).
@@ -342,6 +385,132 @@ export class LegaiaMinigames {
     baka_choose(attack) {
         const ret = wasm.legaiaminigames_baka_choose(this.__wbg_ptr, attack);
         return ret !== 0;
+    }
+    /**
+     * Build the duel's 1 MB PSX VRAM: the PROT 1203 HUD/stage pages, the
+     * PROT 1204 party atlases (their bundled CLUT strips are the minigame's
+     * own palette - see `docs/formats/character-mesh.md`), and the chosen
+     * opponent's atlas last (roster 4's pack shares the `(512, 256)` page +
+     * row-497 CLUT with party atlas 6; retail loads them one at a time too).
+     * @param {number} opponent
+     * @returns {Uint8Array}
+     */
+    baka_duel_vram(opponent) {
+        const ret = wasm.legaiaminigames_baka_duel_vram(this.__wbg_ptr, opponent);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Per-vertex `[cba, tsb]`, parallel to the positions.
+     * @param {number} side
+     * @param {number} id
+     * @returns {Uint32Array}
+     */
+    baka_fighter_cba_tsb(side, id) {
+        const ret = wasm.legaiaminigames_baka_fighter_cba_tsb(this.__wbg_ptr, side, id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the hybrid textured / flat
+     * shader path (some fighter prims are untextured flat colour).
+     * @param {number} side
+     * @param {number} id
+     * @returns {Uint8Array}
+     */
+    baka_fighter_flat_rgba(side, id) {
+        const ret = wasm.legaiaminigames_baka_fighter_flat_rgba(this.__wbg_ptr, side, id);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Triangle indices for one duel fighter.
+     * @param {number} side
+     * @param {number} id
+     * @returns {Uint32Array}
+     */
+    baka_fighter_indices(side, id) {
+        const ret = wasm.legaiaminigames_baka_fighter_indices(this.__wbg_ptr, side, id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex TMD object index (the bone a vertex hangs from).
+     * @param {number} side
+     * @param {number} id
+     * @returns {Uint32Array}
+     */
+    baka_fighter_object_ids(side, id) {
+        const ret = wasm.legaiaminigames_baka_fighter_object_ids(this.__wbg_ptr, side, id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * `[part_count]` for one fighter (TMD object count = pose rig width).
+     * @param {number} side
+     * @param {number} id
+     * @returns {number}
+     */
+    baka_fighter_part_count(side, id) {
+        const ret = wasm.legaiaminigames_baka_fighter_part_count(this.__wbg_ptr, side, id);
+        return ret >>> 0;
+    }
+    /**
+     * Per-vertex positions for one duel fighter. `side` 0 = player
+     * (`id` = character 0..=2), `side` 1 = opponent (`id` = roster 3..=16).
+     * @param {number} side
+     * @param {number} id
+     * @returns {Float32Array}
+     */
+    baka_fighter_positions(side, id) {
+        const ret = wasm.legaiaminigames_baka_fighter_positions(this.__wbg_ptr, side, id);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[u, v]` texel coords, parallel to the positions.
+     * @param {number} side
+     * @param {number} id
+     * @returns {Int32Array}
+     */
+    baka_fighter_uvs(side, id) {
+        const ret = wasm.legaiaminigames_baka_fighter_uvs(this.__wbg_ptr, side, id);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The HUD widget descriptor table (`DAT_801d7160`, 51 records), as JSON:
+     *
+     * ```json
+     * [ { "scale": 4096, "page": 0, "palette": 4, "u": 48, "v": 48,
+     *     "w": 112, "h": 16, "rgb_top": [160,160,255],
+     *     "rgb_bottom": [255,255,255], "semi": 1, "abr": 1 }, ... ]
+     * ```
+     *
+     * `page` resolves the record's texpage into an index of the PROT 1203
+     * art pack (pair with [`Self::baka_page_rgba`]); `palette` is the CLUT
+     * column within that page's 256x1 strip. Empty when either side didn't
+     * decode.
+     * @returns {string}
+     */
+    baka_hud_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_baka_hud_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * The ladder the cabinet actually serves, as `[{stage, roster}]`.
@@ -383,6 +552,38 @@ export class LegaiaMinigames {
         }
     }
     /**
+     * One PROT 1203 art page decoded through one of its palettes, RGBA8.
+     * Pages are 256x256 4bpp; the palette index comes from the widget record.
+     * @param {number} page
+     * @param {number} palette
+     * @returns {Uint8Array}
+     */
+    baka_page_rgba(page, palette) {
+        const ret = wasm.legaiaminigames_baka_page_rgba(this.__wbg_ptr, page, palette);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Pixel width of PROT 1203 art page `page` (`0` when it didn't decode).
+     * @param {number} page
+     * @returns {number}
+     */
+    baka_page_width(page) {
+        const ret = wasm.legaiaminigames_baka_page_width(this.__wbg_ptr, page);
+        return ret >>> 0;
+    }
+    /**
+     * Whether the duel's presentation assets decode off this disc: the HUD
+     * art + widget table, the battle-form party pack, and at least the first
+     * ladder fighter's pack.
+     * @returns {boolean}
+     */
+    baka_presentation_ready() {
+        const ret = wasm.legaiaminigames_baka_presentation_ready(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * The parsed roster, for the opponent picker. The disc carries no names for
      * these fighters - only their numbers - so each row is the record's own
      * stat block:
@@ -405,6 +606,60 @@ export class LegaiaMinigames {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint32Array}
+     */
+    baka_stage_cba_tsb(index) {
+        const ret = wasm.legaiaminigames_baka_stage_cba_tsb(this.__wbg_ptr, index);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint8Array}
+     */
+    baka_stage_flat_rgba(index) {
+        const ret = wasm.legaiaminigames_baka_stage_flat_rgba(this.__wbg_ptr, index);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint32Array}
+     */
+    baka_stage_indices(index) {
+        const ret = wasm.legaiaminigames_baka_stage_indices(this.__wbg_ptr, index);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex positions of stage TMD `index` (PROT 1203 descriptor 1,
+     * four meshes: three single-object dressing pieces + a 10-object set).
+     * @param {number} index
+     * @returns {Float32Array}
+     */
+    baka_stage_positions(index) {
+        const ret = wasm.legaiaminigames_baka_stage_positions(this.__wbg_ptr, index);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * UVs / CBA-TSB / indices / flat colours of stage TMD `index`, matching
+     * [`Self::baka_stage_positions`]'s vertex order.
+     * @param {number} index
+     * @returns {Int32Array}
+     */
+    baka_stage_uvs(index) {
+        const ret = wasm.legaiaminigames_baka_stage_uvs(this.__wbg_ptr, index);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
     }
     /**
      * Start a best-of-3 duel: the visitor fights as roster fighter 0 (the
@@ -452,6 +707,56 @@ export class LegaiaMinigames {
         wasm.legaiaminigames_baka_tick(this.__wbg_ptr, frame_step);
     }
     /**
+     * Whether the dance's art pack + widget table decoded off this disc.
+     * When `false` the page falls back to its own glyphs - and says so.
+     * @returns {boolean}
+     */
+    dance_art_ready() {
+        const ret = wasm.legaiaminigames_dance_art_ready(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Render `seconds` of the dance BGM to interleaved stereo i16 PCM at
+     * [`Self::dance_bgm_rate`], through the clean-room SPU + sequencer -
+     * the same path the audio page uses. Empty when the pair didn't decode.
+     * @param {boolean} alt
+     * @param {number} seconds
+     * @returns {Int16Array}
+     */
+    dance_bgm_pcm_i16(alt, seconds) {
+        const ret = wasm.legaiaminigames_dance_bgm_pcm_i16(this.__wbg_ptr, alt, seconds);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Sample rate of [`Self::dance_bgm_pcm_i16`] (the SPU's 44.1 kHz).
+     * @returns {number}
+     */
+    dance_bgm_rate() {
+        const ret = wasm.legaiaminigames_dance_bgm_rate(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Whether the dance BGM pair (VAB + SEQ in one `music_01` entry)
+     * resolves: `{"ok":true,"prot":1048,"alt":true}`. The overlay starts one
+     * of two songs by mode (`FUN_801cf470` state 6 branches on the mode
+     * global); `alt = false` picks extraction 1048, `true` picks 1054.
+     * @returns {string}
+     */
+    dance_bgm_ready_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_dance_bgm_ready_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * The whole decoded step chart, for the page's scrolling note lane:
      * `{"rows":[[u8; 32], ...]}` (one row per difficulty lane).
      * @returns {string}
@@ -461,6 +766,95 @@ export class LegaiaMinigames {
         let deferred1_1;
         try {
             const ret = wasm.legaiaminigames_dance_chart_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Face window metadata:
+     * `[{ "w":80, "h":64, "face":[0,0,32,48], "poses":5 }, ...]` - `w`/`h`
+     * are the buffer dimensions [`Self::dance_face_rgba`] returns, `face`
+     * the sub-rect that is the visible face (the rest of the window is
+     * neighbouring atlas cells).
+     * @returns {string}
+     */
+    dance_face_meta_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_dance_face_meta_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * One dancer's live face window as RGBA8: the strip's top window with
+     * pose `pose` stamped in by the two traced `MoveImage` blits
+     * (`FUN_801d03c4`). `dancer` is the rig index `0..=3`: `0` = **Noa**
+     * (her field atlas, PROT 0874 §2), `1..=3` = the pack strips. Pair with
+     * [`Self::dance_face_meta_json`] for dimensions. Empty when the strip
+     * didn't decode.
+     * @param {number} dancer
+     * @param {number} pose
+     * @returns {Uint8Array}
+     */
+    dance_face_rgba(dancer, pose) {
+        const ret = wasm.legaiaminigames_dance_face_rgba(this.__wbg_ptr, dancer, pose);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * The 256x256 HUD page (VRAM `(512, 0)`) decoded through palette
+     * `palette` of its own row-500 CLUT strip, as RGBA8. Palette selection
+     * is load-bearing: the widget table names a palette per element, and
+     * the beat-track flash / note tint are pure CLUT swaps over the same
+     * texels (`0x7D08` idle / `0x7D0D` flash / `0x7D0E` notes).
+     * @param {number} palette
+     * @returns {Uint8Array}
+     */
+    dance_hud_page_rgba(palette) {
+        const ret = wasm.legaiaminigames_dance_hud_page_rgba(this.__wbg_ptr, palette);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * The traced HUD geometry, so the page draws at retail positions rather
+     * than invented ones. Everything here is an immediate in a traced
+     * emitter (`FUN_801d231c` / `FUN_801d2524` / `FUN_801d32f8` /
+     * `FUN_801d3e28` and the banner spawn sites in `FUN_801cf470` /
+     * `FUN_801d1af4` / `FUN_801d40dc`), on the retail 320x240 frame.
+     * Widgets draw **centred** on their `(x, y)`.
+     *
+     * - `score_boxes`: the three boxes; the **human dancer is the centre
+     *   box** (`FUN_801d231c` draws score slot 0 at the centre digit base).
+     * - `digit_bases`: x of digit slot 0 per box; 8 slots step 16, only
+     *   significant digits draw, so a 1-digit score lands at `base + 112`.
+     * - `track`: the beat lane - arrow, caps, 12 body tiles, the scrolling
+     *   notes (`x = track.x + i*16 - (phase*16/281 + 5) - 4`, clip window
+     *   `[track.x, track.x + 0x50)`), stock markers at `y + 16`.
+     * - `banners`: spawn points (`FUN_801d3fd0` stores `x<<3` and draws at
+     *   `>>3`): countdown / READY / GO / FINISH at centre, ratings below,
+     *   stars flanking by tier (`0x38`/`0x50` for Cool/Great).
+     * `screen_offset` is the global drawing-environment offset: every HUD
+     * element in the retail VRAM capture (score-box border, track pill,
+     * marker arrow) sits exactly 4 lines below the emitter's own `y`, so the
+     * active draw environment carries a `+4` Y offset. Pixel-pinned against
+     * the parked minigame capture.
+     * @returns {string}
+     */
+    dance_layout_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_dance_layout_json(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
             return getStringFromWasm0(ret[0], ret[1]);
@@ -485,6 +879,62 @@ export class LegaiaMinigames {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * The retail cue ids (`FUN_801d1af4` sites): miss, the three combo-tier
+     * stings, the run-start and intro cues.
+     * @returns {string}
+     */
+    dance_sfx_cue_ids() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_dance_sfx_cue_ids(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The dance's own cue bank (descriptors PROT 1228, samples PROT 1231):
+     * `[{ "id":528, "program":0, "tone":1, "note":66, "rate":44100 }, ...]`.
+     * Empty when either entry didn't decode - PROT 1231 sits in the PROT
+     * TOC's zeroed tail, so an image whose TOC truncates early loses it.
+     * @returns {string}
+     */
+    dance_sfx_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_dance_sfx_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Decode one dance cue to mono PCM (`i16`). Empty when absent.
+     * @param {number} cue
+     * @returns {Int16Array}
+     */
+    dance_sfx_pcm(cue) {
+        const ret = wasm.legaiaminigames_dance_sfx_pcm(this.__wbg_ptr, cue);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Playback rate for [`Self::dance_sfx_pcm`] (`0` when absent).
+     * @param {number} cue
+     * @returns {number}
+     */
+    dance_sfx_rate(cue) {
+        const ret = wasm.legaiaminigames_dance_sfx_rate(this.__wbg_ptr, cue);
+        return ret >>> 0;
     }
     /**
      * Start a dance run on the disc's baked step chart. `long_song` picks the
@@ -527,12 +977,61 @@ export class LegaiaMinigames {
         }
     }
     /**
+     * One layer of a good-step **hit sting**. Retail keys these directly
+     * (`FUN_801d3d78`, bypassing the cue ring): a step picks `r = rand() % 3`
+     * and keys VAB program 1 tones `2r` (layer 0) and `2r + 1` (layer 1)
+     * together at note `0x3C + r`. Mono i16 PCM; empty when absent.
+     * @param {number} r
+     * @param {number} layer
+     * @returns {Int16Array}
+     */
+    dance_sting_pcm(r, layer) {
+        const ret = wasm.legaiaminigames_dance_sting_pcm(this.__wbg_ptr, r, layer);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Playback rate for [`Self::dance_sting_pcm`] (`0` when absent).
+     * @param {number} r
+     * @param {number} layer
+     * @returns {number}
+     */
+    dance_sting_rate(r, layer) {
+        const ret = wasm.legaiaminigames_dance_sting_rate(this.__wbg_ptr, r, layer);
+        return ret >>> 0;
+    }
+    /**
      * Advance the beat clock by `frames` frames (the retail clock steps
      * `frame_delta * 10` phase units per frame).
      * @param {number} frames
      */
     dance_tick(frames) {
         wasm.legaiaminigames_dance_tick(this.__wbg_ptr, frames);
+    }
+    /**
+     * The overlay's HUD widget table, one record per id `0..=33`:
+     *
+     * ```json
+     * [ { "u":0, "v":0, "w":16, "h":24, "palette":0,
+     *     "semi":0, "top":[255,255,255], "bottom":[255,255,255] }, ... ]
+     * ```
+     *
+     * Cells index the HUD page; `palette` is the row-500 CLUT column the
+     * record names (the emitters swap it at runtime for the flash states).
+     * @returns {string}
+     */
+    dance_widgets_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaminigames_dance_widgets_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`), parse the TOC,
@@ -1102,6 +1601,27 @@ export class LegaiaRuntime {
         return v1;
     }
     /**
+     * Select + build environment-pack slot `slot` **posed at frame 0** of
+     * scene ANM record `anim_id - 1` - the rest state of a placed prop whose
+     * object bind names a clip (cupboard doors closed on the cabinet's front
+     * face, the windmill's sails on their hub). Falls back to the raw
+     * object-local mesh when the pose can't resolve (no scene bundle, or the
+     * clip's bone count doesn't match the mesh's object count - retail's
+     * count-equality contract, `FUN_8001B964`), exactly as the native
+     * play-window falls back to its unposed instance. `anim_id == 0` is the
+     * plain unposed build ([`Self::field_mesh`]).
+     * @param {number} slot
+     * @param {number} anim_id
+     * @returns {number}
+     */
+    field_mesh_posed(slot, anim_id) {
+        const ret = wasm.legaiaruntime_field_mesh_posed(this.__wbg_ptr, slot, anim_id);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
      * @returns {Float32Array}
      */
     field_mesh_positions() {
@@ -1117,6 +1637,19 @@ export class LegaiaRuntime {
         const ret = wasm.legaiaruntime_field_mesh_uvs(this.__wbg_ptr);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Per-placement object-bind animation id (parallel to
+     * [`Self::field_placement_slots`]). `0` = unposed; nonzero = draw the
+     * slot's mesh through [`Self::field_mesh_posed`] with this id, or the
+     * prop's multi-object parts heap on the origin.
+     * @returns {Uint32Array}
+     */
+    field_placement_anim_ids() {
+        const ret = wasm.legaiaruntime_field_placement_anim_ids(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
     /**
@@ -1303,6 +1836,13 @@ export class LegaiaRuntime {
     /**
      * Build catalog entry `i`'s mesh (hybrid: textured + vertex-colour prims,
      * with per-vertex bone ids). Returns `i`.
+     *
+     * Mirrors the native window's field-NPC bind: a special
+     * (`model >= 0xF0`) resolves out of the world's **global TMD pool**
+     * rather than the scene's, and when the placement names a clip the TMD's
+     * object table is truncated to the clip's bone count (the objects past it
+     * are equipment-swap templates the clip never poses - drawn, they'd
+     * litter the actor's feet with raw parts).
      * @param {number} i
      * @returns {number}
      */
@@ -1372,7 +1912,9 @@ export class LegaiaRuntime {
     }
     /**
      * `[frame_count, bone_count]` of catalog entry `i`'s clip; `[0, 0]` when
-     * it has none.
+     * it has none. `bone_count` is the clip's own count - the stride of
+     * [`Self::play_npc_pose_frames`], and the count
+     * [`Self::play_npc_mesh`] truncated the object table to.
      * @param {number} i
      * @returns {Uint32Array}
      */
@@ -1385,9 +1927,11 @@ export class LegaiaRuntime {
     /**
      * Catalog entry `i`'s clip, decoded to the pose format the JS animator
      * consumes: `6` entries per bone per frame (`[tx, ty, tz, rx, ry, rz]`,
-     * absolute). Empty when the placement names no clip or the scene ships no
-     * ANM bundle. An NPC's clip is its placement `anim_id - 1` in the scene's
-     * own ANM bundle (`docs/formats/anm.md` § per-scene bundle).
+     * absolute). Empty when the placement names no clip or its bundle is
+     * unavailable. An NPC's clip is its placement `anim_id - 1` in the
+     * scene's own ANM bundle (`docs/formats/anm.md` § per-scene bundle); a
+     * global-pool special's indexes the PROT 0874 locomotion bundle instead
+     * (the native window's bundle split).
      * @param {number} i
      * @returns {Int32Array}
      */

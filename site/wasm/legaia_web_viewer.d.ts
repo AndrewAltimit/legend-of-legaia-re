@@ -155,11 +155,82 @@ export class LegaiaMinigames {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * `[bone_count, frame_count]` of one fighter's animation record.
+     * Player actions index the PROT 1203 bank (`char*9 + action`), opponent
+     * actions the fighter pack's own bank (typically 8 records, 0 = idle).
+     */
+    baka_anim_dims(side: number, id: number, action: number): Uint32Array;
+    /**
+     * One fighter animation record decoded to absolute per-(frame, bone)
+     * `[tx, ty, tz, rx, ry, rz]` (PSX 4096-unit angles), padded to
+     * `target_part_count` parts - the same pose format the site's mesh
+     * animators consume.
+     */
+    baka_anim_pose_frames(side: number, id: number, action: number, target_part_count: number): Int32Array;
+    /**
+     * Number of animation records one fighter's bank carries (9 per player
+     * character bank; the opponent packs carry their own count, idle first).
+     */
+    baka_anim_record_count(side: number, id: number): number;
+    /**
      * Commit the visitor's attack this exchange: `1`/`2`/`3` are the three
      * rock-paper-scissors throws, `4` the special. Returns `false` when the
      * fighter can't act yet (cooldown, or a choice is already pending).
      */
     baka_choose(attack: number): boolean;
+    /**
+     * Build the duel's 1 MB PSX VRAM: the PROT 1203 HUD/stage pages, the
+     * PROT 1204 party atlases (their bundled CLUT strips are the minigame's
+     * own palette - see `docs/formats/character-mesh.md`), and the chosen
+     * opponent's atlas last (roster 4's pack shares the `(512, 256)` page +
+     * row-497 CLUT with party atlas 6; retail loads them one at a time too).
+     */
+    baka_duel_vram(opponent: number): Uint8Array;
+    /**
+     * Per-vertex `[cba, tsb]`, parallel to the positions.
+     */
+    baka_fighter_cba_tsb(side: number, id: number): Uint32Array;
+    /**
+     * Per-vertex `[r, g, b, textured_flag]` for the hybrid textured / flat
+     * shader path (some fighter prims are untextured flat colour).
+     */
+    baka_fighter_flat_rgba(side: number, id: number): Uint8Array;
+    /**
+     * Triangle indices for one duel fighter.
+     */
+    baka_fighter_indices(side: number, id: number): Uint32Array;
+    /**
+     * Per-vertex TMD object index (the bone a vertex hangs from).
+     */
+    baka_fighter_object_ids(side: number, id: number): Uint32Array;
+    /**
+     * `[part_count]` for one fighter (TMD object count = pose rig width).
+     */
+    baka_fighter_part_count(side: number, id: number): number;
+    /**
+     * Per-vertex positions for one duel fighter. `side` 0 = player
+     * (`id` = character 0..=2), `side` 1 = opponent (`id` = roster 3..=16).
+     */
+    baka_fighter_positions(side: number, id: number): Float32Array;
+    /**
+     * Per-vertex `[u, v]` texel coords, parallel to the positions.
+     */
+    baka_fighter_uvs(side: number, id: number): Int32Array;
+    /**
+     * The HUD widget descriptor table (`DAT_801d7160`, 51 records), as JSON:
+     *
+     * ```json
+     * [ { "scale": 4096, "page": 0, "palette": 4, "u": 48, "v": 48,
+     *     "w": 112, "h": 16, "rgb_top": [160,160,255],
+     *     "rgb_bottom": [255,255,255], "semi": 1, "abr": 1 }, ... ]
+     * ```
+     *
+     * `page` resolves the record's texpage into an index of the PROT 1203
+     * art pack (pair with [`Self::baka_page_rgba`]); `palette` is the CLUT
+     * column within that page's 256x1 strip. Empty when either side didn't
+     * decode.
+     */
+    baka_hud_json(): string;
     /**
      * The ladder the cabinet actually serves, as `[{stage, roster}]`.
      *
@@ -176,6 +247,21 @@ export class LegaiaMinigames {
      */
     baka_names_json(): string;
     /**
+     * One PROT 1203 art page decoded through one of its palettes, RGBA8.
+     * Pages are 256x256 4bpp; the palette index comes from the widget record.
+     */
+    baka_page_rgba(page: number, palette: number): Uint8Array;
+    /**
+     * Pixel width of PROT 1203 art page `page` (`0` when it didn't decode).
+     */
+    baka_page_width(page: number): number;
+    /**
+     * Whether the duel's presentation assets decode off this disc: the HUD
+     * art + widget table, the battle-form party pack, and at least the first
+     * ladder fighter's pack.
+     */
+    baka_presentation_ready(): boolean;
+    /**
      * The parsed roster, for the opponent picker. The disc carries no names for
      * these fighters - only their numbers - so each row is the record's own
      * stat block:
@@ -187,6 +273,19 @@ export class LegaiaMinigames {
      * ```
      */
     baka_roster_json(): string;
+    baka_stage_cba_tsb(index: number): Uint32Array;
+    baka_stage_flat_rgba(index: number): Uint8Array;
+    baka_stage_indices(index: number): Uint32Array;
+    /**
+     * Per-vertex positions of stage TMD `index` (PROT 1203 descriptor 1,
+     * four meshes: three single-object dressing pieces + a 10-object set).
+     */
+    baka_stage_positions(index: number): Float32Array;
+    /**
+     * UVs / CBA-TSB / indices / flat colours of stage TMD `index`, matching
+     * [`Self::baka_stage_positions`]'s vertex order.
+     */
+    baka_stage_uvs(index: number): Int32Array;
     /**
      * Start a best-of-3 duel: the visitor fights as roster fighter 0 (the
      * player-side default) against `opponent`. Returns `false` when the tables
@@ -212,15 +311,107 @@ export class LegaiaMinigames {
      */
     baka_tick(frame_step: number): void;
     /**
+     * Whether the dance's art pack + widget table decoded off this disc.
+     * When `false` the page falls back to its own glyphs - and says so.
+     */
+    dance_art_ready(): boolean;
+    /**
+     * Render `seconds` of the dance BGM to interleaved stereo i16 PCM at
+     * [`Self::dance_bgm_rate`], through the clean-room SPU + sequencer -
+     * the same path the audio page uses. Empty when the pair didn't decode.
+     */
+    dance_bgm_pcm_i16(alt: boolean, seconds: number): Int16Array;
+    /**
+     * Sample rate of [`Self::dance_bgm_pcm_i16`] (the SPU's 44.1 kHz).
+     */
+    dance_bgm_rate(): number;
+    /**
+     * Whether the dance BGM pair (VAB + SEQ in one `music_01` entry)
+     * resolves: `{"ok":true,"prot":1048,"alt":true}`. The overlay starts one
+     * of two songs by mode (`FUN_801cf470` state 6 branches on the mode
+     * global); `alt = false` picks extraction 1048, `true` picks 1054.
+     */
+    dance_bgm_ready_json(): string;
+    /**
      * The whole decoded step chart, for the page's scrolling note lane:
      * `{"rows":[[u8; 32], ...]}` (one row per difficulty lane).
      */
     dance_chart_json(): string;
     /**
+     * Face window metadata:
+     * `[{ "w":80, "h":64, "face":[0,0,32,48], "poses":5 }, ...]` - `w`/`h`
+     * are the buffer dimensions [`Self::dance_face_rgba`] returns, `face`
+     * the sub-rect that is the visible face (the rest of the window is
+     * neighbouring atlas cells).
+     */
+    dance_face_meta_json(): string;
+    /**
+     * One dancer's live face window as RGBA8: the strip's top window with
+     * pose `pose` stamped in by the two traced `MoveImage` blits
+     * (`FUN_801d03c4`). `dancer` is the rig index `0..=3`: `0` = **Noa**
+     * (her field atlas, PROT 0874 §2), `1..=3` = the pack strips. Pair with
+     * [`Self::dance_face_meta_json`] for dimensions. Empty when the strip
+     * didn't decode.
+     */
+    dance_face_rgba(dancer: number, pose: number): Uint8Array;
+    /**
+     * The 256x256 HUD page (VRAM `(512, 0)`) decoded through palette
+     * `palette` of its own row-500 CLUT strip, as RGBA8. Palette selection
+     * is load-bearing: the widget table names a palette per element, and
+     * the beat-track flash / note tint are pure CLUT swaps over the same
+     * texels (`0x7D08` idle / `0x7D0D` flash / `0x7D0E` notes).
+     */
+    dance_hud_page_rgba(palette: number): Uint8Array;
+    /**
+     * The traced HUD geometry, so the page draws at retail positions rather
+     * than invented ones. Everything here is an immediate in a traced
+     * emitter (`FUN_801d231c` / `FUN_801d2524` / `FUN_801d32f8` /
+     * `FUN_801d3e28` and the banner spawn sites in `FUN_801cf470` /
+     * `FUN_801d1af4` / `FUN_801d40dc`), on the retail 320x240 frame.
+     * Widgets draw **centred** on their `(x, y)`.
+     *
+     * - `score_boxes`: the three boxes; the **human dancer is the centre
+     *   box** (`FUN_801d231c` draws score slot 0 at the centre digit base).
+     * - `digit_bases`: x of digit slot 0 per box; 8 slots step 16, only
+     *   significant digits draw, so a 1-digit score lands at `base + 112`.
+     * - `track`: the beat lane - arrow, caps, 12 body tiles, the scrolling
+     *   notes (`x = track.x + i*16 - (phase*16/281 + 5) - 4`, clip window
+     *   `[track.x, track.x + 0x50)`), stock markers at `y + 16`.
+     * - `banners`: spawn points (`FUN_801d3fd0` stores `x<<3` and draws at
+     *   `>>3`): countdown / READY / GO / FINISH at centre, ratings below,
+     *   stars flanking by tier (`0x38`/`0x50` for Cool/Great).
+     * `screen_offset` is the global drawing-environment offset: every HUD
+     * element in the retail VRAM capture (score-box border, track pill,
+     * marker arrow) sits exactly 4 lines below the emitter's own `y`, so the
+     * active draw environment carries a `+4` Y offset. Pixel-pinned against
+     * the parked minigame capture.
+     */
+    dance_layout_json(): string;
+    /**
      * Judge a directional press. `dir` is the chart symbol (`1` / `2` / `3`).
      * Returns `"miss"` / `"hit"` / `"sequence"` (`"none"` with no live run).
      */
     dance_press(dir: number): string;
+    /**
+     * The retail cue ids (`FUN_801d1af4` sites): miss, the three combo-tier
+     * stings, the run-start and intro cues.
+     */
+    dance_sfx_cue_ids(): string;
+    /**
+     * The dance's own cue bank (descriptors PROT 1228, samples PROT 1231):
+     * `[{ "id":528, "program":0, "tone":1, "note":66, "rate":44100 }, ...]`.
+     * Empty when either entry didn't decode - PROT 1231 sits in the PROT
+     * TOC's zeroed tail, so an image whose TOC truncates early loses it.
+     */
+    dance_sfx_json(): string;
+    /**
+     * Decode one dance cue to mono PCM (`i16`). Empty when absent.
+     */
+    dance_sfx_pcm(cue: number): Int16Array;
+    /**
+     * Playback rate for [`Self::dance_sfx_pcm`] (`0` when absent).
+     */
+    dance_sfx_rate(cue: number): number;
     /**
      * Start a dance run on the disc's baked step chart. `long_song` picks the
      * long song-length limit. Returns `false` when the chart didn't decode.
@@ -245,10 +436,33 @@ export class LegaiaMinigames {
      */
     dance_state_json(): string;
     /**
+     * One layer of a good-step **hit sting**. Retail keys these directly
+     * (`FUN_801d3d78`, bypassing the cue ring): a step picks `r = rand() % 3`
+     * and keys VAB program 1 tones `2r` (layer 0) and `2r + 1` (layer 1)
+     * together at note `0x3C + r`. Mono i16 PCM; empty when absent.
+     */
+    dance_sting_pcm(r: number, layer: number): Int16Array;
+    /**
+     * Playback rate for [`Self::dance_sting_pcm`] (`0` when absent).
+     */
+    dance_sting_rate(r: number, layer: number): number;
+    /**
      * Advance the beat clock by `frames` frames (the retail clock steps
      * `frame_delta * 10` phase units per frame).
      */
     dance_tick(frames: number): void;
+    /**
+     * The overlay's HUD widget table, one record per id `0..=33`:
+     *
+     * ```json
+     * [ { "u":0, "v":0, "w":16, "h":24, "palette":0,
+     *     "semi":0, "top":[255,255,255], "bottom":[255,255,255] }, ... ]
+     * ```
+     *
+     * Cells index the HUD page; `palette` is the row-500 CLUT column the
+     * record names (the emitters swap it at runtime for the flash states).
+     */
+    dance_widgets_json(): string;
     /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`), parse the TOC,
      * and pre-decode every minigame table that resolves. Returns a JSON status
@@ -516,8 +730,27 @@ export class LegaiaRuntime {
     field_mesh_cba_tsb(): Uint16Array;
     field_mesh_flat_rgba(): Uint8Array;
     field_mesh_indices(): Uint32Array;
+    /**
+     * Select + build environment-pack slot `slot` **posed at frame 0** of
+     * scene ANM record `anim_id - 1` - the rest state of a placed prop whose
+     * object bind names a clip (cupboard doors closed on the cabinet's front
+     * face, the windmill's sails on their hub). Falls back to the raw
+     * object-local mesh when the pose can't resolve (no scene bundle, or the
+     * clip's bone count doesn't match the mesh's object count - retail's
+     * count-equality contract, `FUN_8001B964`), exactly as the native
+     * play-window falls back to its unposed instance. `anim_id == 0` is the
+     * plain unposed build ([`Self::field_mesh`]).
+     */
+    field_mesh_posed(slot: number, anim_id: number): number;
     field_mesh_positions(): Float32Array;
     field_mesh_uvs(): Uint8Array;
+    /**
+     * Per-placement object-bind animation id (parallel to
+     * [`Self::field_placement_slots`]). `0` = unposed; nonzero = draw the
+     * slot's mesh through [`Self::field_mesh_posed`] with this id, or the
+     * prop's multi-object parts heap on the origin.
+     */
+    field_placement_anim_ids(): Uint32Array;
     field_placement_positions(): Float32Array;
     field_placement_rot_y(): Uint16Array;
     /**
@@ -577,6 +810,13 @@ export class LegaiaRuntime {
     /**
      * Build catalog entry `i`'s mesh (hybrid: textured + vertex-colour prims,
      * with per-vertex bone ids). Returns `i`.
+     *
+     * Mirrors the native window's field-NPC bind: a special
+     * (`model >= 0xF0`) resolves out of the world's **global TMD pool**
+     * rather than the scene's, and when the placement names a clip the TMD's
+     * object table is truncated to the clip's bone count (the objects past it
+     * are equipment-swap templates the clip never poses - drawn, they'd
+     * litter the actor's feet with raw parts).
      */
     play_npc_mesh(i: number): number;
     play_npc_mesh_cba_tsb(): Uint16Array;
@@ -592,15 +832,19 @@ export class LegaiaRuntime {
     play_npc_mesh_uvs(): Uint8Array;
     /**
      * `[frame_count, bone_count]` of catalog entry `i`'s clip; `[0, 0]` when
-     * it has none.
+     * it has none. `bone_count` is the clip's own count - the stride of
+     * [`Self::play_npc_pose_frames`], and the count
+     * [`Self::play_npc_mesh`] truncated the object table to.
      */
     play_npc_pose_dims(i: number): Uint32Array;
     /**
      * Catalog entry `i`'s clip, decoded to the pose format the JS animator
      * consumes: `6` entries per bone per frame (`[tx, ty, tz, rx, ry, rz]`,
-     * absolute). Empty when the placement names no clip or the scene ships no
-     * ANM bundle. An NPC's clip is its placement `anim_id - 1` in the scene's
-     * own ANM bundle (`docs/formats/anm.md` § per-scene bundle).
+     * absolute). Empty when the placement names no clip or its bundle is
+     * unavailable. An NPC's clip is its placement `anim_id - 1` in the
+     * scene's own ANM bundle (`docs/formats/anm.md` § per-scene bundle); a
+     * global-pool special's indexes the PROT 0874 locomotion bundle instead
+     * (the native window's bundle split).
      */
     play_npc_pose_frames(i: number): Int32Array;
     /**
@@ -1811,18 +2055,52 @@ export interface InitOutput {
     readonly legaiaaudio_vab_sample_list_json: (a: number, b: number, c: number) => [number, number];
     readonly legaiaaudio_vab_sample_rate: (a: number) => number;
     readonly legaiaaudio_xa_metadata_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_baka_anim_dims: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaminigames_baka_anim_pose_frames: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly legaiaminigames_baka_anim_record_count: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_baka_choose: (a: number, b: number) => number;
+    readonly legaiaminigames_baka_duel_vram: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_baka_fighter_cba_tsb: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_baka_fighter_flat_rgba: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_baka_fighter_indices: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_baka_fighter_object_ids: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_baka_fighter_part_count: (a: number, b: number, c: number) => number;
+    readonly legaiaminigames_baka_fighter_positions: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_baka_fighter_uvs: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_baka_hud_json: (a: number) => [number, number];
     readonly legaiaminigames_baka_ladder_json: (a: number) => [number, number];
     readonly legaiaminigames_baka_names_json: (a: number) => [number, number];
+    readonly legaiaminigames_baka_page_rgba: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_baka_page_width: (a: number, b: number) => number;
+    readonly legaiaminigames_baka_presentation_ready: (a: number) => number;
     readonly legaiaminigames_baka_roster_json: (a: number) => [number, number];
+    readonly legaiaminigames_baka_stage_cba_tsb: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_baka_stage_flat_rgba: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_baka_stage_indices: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_baka_stage_positions: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_baka_stage_uvs: (a: number, b: number) => [number, number];
     readonly legaiaminigames_baka_start: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_baka_state_json: (a: number) => [number, number];
     readonly legaiaminigames_baka_tick: (a: number, b: number) => void;
+    readonly legaiaminigames_dance_art_ready: (a: number) => number;
+    readonly legaiaminigames_dance_bgm_pcm_i16: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_dance_bgm_ready_json: (a: number) => [number, number];
     readonly legaiaminigames_dance_chart_json: (a: number) => [number, number];
+    readonly legaiaminigames_dance_face_meta_json: (a: number) => [number, number];
+    readonly legaiaminigames_dance_face_rgba: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_dance_hud_page_rgba: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_layout_json: (a: number) => [number, number];
     readonly legaiaminigames_dance_press: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_sfx_cue_ids: (a: number) => [number, number];
+    readonly legaiaminigames_dance_sfx_json: (a: number) => [number, number];
+    readonly legaiaminigames_dance_sfx_pcm: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_sfx_rate: (a: number, b: number) => number;
     readonly legaiaminigames_dance_start: (a: number, b: number) => number;
     readonly legaiaminigames_dance_state_json: (a: number) => [number, number];
+    readonly legaiaminigames_dance_sting_pcm: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaminigames_dance_sting_rate: (a: number, b: number, c: number) => number;
     readonly legaiaminigames_dance_tick: (a: number, b: number) => void;
+    readonly legaiaminigames_dance_widgets_json: (a: number) => [number, number];
     readonly legaiaminigames_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaminigames_new: () => number;
     readonly legaiaminigames_slot_art_ready: (a: number) => number;
@@ -1860,8 +2138,10 @@ export interface InitOutput {
     readonly legaiaruntime_field_mesh_cba_tsb: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_flat_rgba: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_indices: (a: number) => [number, number];
+    readonly legaiaruntime_field_mesh_posed: (a: number, b: number, c: number) => [number, number, number];
     readonly legaiaruntime_field_mesh_positions: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaruntime_field_placement_anim_ids: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_positions: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_rot_y: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_slots: (a: number) => [number, number];
@@ -2053,6 +2333,7 @@ export interface InitOutput {
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
     readonly patch_rom: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number, o1: number, p1: number, q1: number, r1: number, s1: number, t1: number, u1: number, v1: number, w1: number, x1: number, y1: number, z1: number, a2: number) => [number, number, number];
     readonly resolve_seed: (a: number, b: number) => [number, number];
+    readonly legaiaminigames_dance_bgm_rate: (a: number) => number;
     readonly wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
