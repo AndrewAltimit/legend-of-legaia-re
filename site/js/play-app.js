@@ -60,6 +60,59 @@
     return (u + 4096) % 4096;
   }
 
+  /* ---------- occluder cull (see the note in `_frame`) ---------- */
+
+  /* Drop a body that sits between the lens and the player. This is an OCCLUSION
+   * test, never a distance / budget one - set it to `false` and every body a
+   * scene loads is drawn every frame, unconditionally. */
+  const OCCLUDER_CULL = true;
+
+  /* World AABB of one placement: the mesh's local box carried through the draw
+   * model `T(x, y, z) . Ry(rotY) . diag(sc, -sc, sc)` (`placementModelScaledY`).
+   * Baked once per placement so the per-frame occluder test is a slab
+   * intersection against the body's REAL box - not a bounding sphere of its
+   * longest axis, which for a floor slab or a staircase is hundreds of units of
+   * empty space and is what used to blink them out. */
+  function placementWorldBox(aabb, d) {
+    if (!aabb) return null;
+    const sc = (d.scale != null) ? d.scale : 1.0;
+    const c = Math.cos(d.rotY || 0), s = Math.sin(d.rotY || 0);
+    const ax = Math.abs(c), az = Math.abs(s);
+    const cx = d.x + sc * (c * aabb.cx + s * aabb.cz);
+    const cy = d.y - sc * aabb.cy;               /* the model flips Y */
+    const cz = d.z + sc * (-s * aabb.cx + c * aabb.cz);
+    const hx = sc * (ax * aabb.sx + az * aabb.sz) * 0.5;
+    const hy = sc * aabb.sy * 0.5;
+    const hz = sc * (az * aabb.sx + ax * aabb.sz) * 0.5;
+    return [cx - hx, cy - hy, cz - hz, cx + hx, cy + hy, cz + hz];
+  }
+
+  /* Does the segment `p + t*e`, `t in (OCC_T_MIN, OCC_T_MAX)`, pierce the world
+   * box? Standard slab test. `t = 0` is the PLAYER and `t = 1` is the LENS, so
+   * the trims are asymmetric: the first `OCC_T_MIN` of the segment is skipped so
+   * the body the player stands on / walks past is never an occluder, while the
+   * lens end runs all the way to `1` - a body the camera is *inside* (a cliff
+   * face, a cave roof) is exactly what has to go. */
+  const OCC_T_MIN = 0.12, OCC_T_MAX = 1.0;
+  function segmentHitsBox(px, py, pz, ex, ey, ez, box) {
+    if (!box) return false;
+    let t0 = OCC_T_MIN, t1 = OCC_T_MAX;
+    const p = [px, py, pz], e = [ex, ey, ez];
+    for (let i = 0; i < 3; i++) {
+      const lo = box[i], hi = box[i + 3];
+      if (Math.abs(e[i]) < 1e-6) {
+        if (p[i] < lo || p[i] > hi) return false;   /* parallel and outside */
+        continue;
+      }
+      let ta = (lo - p[i]) / e[i], tb = (hi - p[i]) / e[i];
+      if (ta > tb) { const s = ta; ta = tb; tb = s; }
+      if (ta > t0) t0 = ta;
+      if (tb < t1) t1 = tb;
+      if (t0 > t1) return false;
+    }
+    return true;
+  }
+
   /* Pose an object-local mesh into `out` from one frame of a clip: per bone,
    * `Rz . Ry . Rx . v + T`. Identical to the WASM-side player pose (and the
    * monster / character pages' animators) - a character TMD's vertices are
@@ -210,13 +263,17 @@
            * the retail in-world camera; from a follow camera inside them they
            * are a wall in front of the lens. Same classifier the full-map view
            * uses. */
-          if (isSky(this.renderer.getMeshAabb(meshId))) continue;
-          this.staticDraws.push({
+          const aabb = this.renderer.getMeshAabb(meshId);
+          if (isSky(aabb)) continue;
+          const draw = {
             meshId,
             x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
             rotY: -(rots[i] & 0xFFF) * A2R,
             scale: 1.0,
-          });
+          };
+          /* World box for the occluder test, baked once (see `_frame`). */
+          draw.box = placementWorldBox(aabb, draw);
+          this.staticDraws.push(draw);
         }
       };
       push(rt.field_terrain_slots(), rt.field_terrain_positions(), rt.field_terrain_rot_y(), null);
@@ -382,35 +439,41 @@
         }
       }
 
-      /* Occluder cull. Retail frames every scene with a per-scene authored
-       * camera; this page has one follow camera, so a cave's roof or a house's
-       * upper storey ends up between the lens and the player and fills the
-       * screen. Anything whose body straddles the camera-to-player line is
-       * dropped for the frame - the standard third-person fix, and the only way
-       * an interior is playable without porting the authored cameras.
+      /* Occluder cull - EXACT, and off by default.
        *
-       * The test is a sphere-vs-segment one against each mesh's AABB (already
-       * on the GPU record). Mesh-local Y is PSX-down and the draw flips it, so a
-       * body's world-up centre is `draw.y - cy`. */
+       * Nothing is culled for distance / budget reasons: every body a scene
+       * loads stays resident and drawn. The only thing this page ever wants to
+       * drop is a body that literally sits between the lens and the player (a
+       * cave roof, a house's upper storey), because the page has one follow
+       * camera where retail had per-scene authored ones.
+       *
+       * The old test bounded each body by a SPHERE of its longest half-extent
+       * and dropped it whenever that sphere came near the camera-to-player
+       * line. A floor slab or a staircase is wide and thin, so its sphere is
+       * enormous (a 1024-unit-wide floor gets a 512-unit sphere) - the line
+       * swept into those spheres constantly while walking and whole floors,
+       * stairs and wall sections blinked out. It also placed the body's centre
+       * at `d.x - a.cx` (the local centroid *subtracted*, un-rotated), so the
+       * sphere often wasn't even where the body was.
+       *
+       * The test is now an exact segment-vs-world-AABB (slab) intersection
+       * against the body's real box (`d.box`, baked once per placement in
+       * `_rebuild`), and only the stretch of the segment strictly between the
+       * lens and the player counts. A body you stand on, walk past, or climb
+       * cannot satisfy it; only one the camera genuinely looks through does.
+       * `OCCLUDER_CULL = false` disables even that and draws every body,
+       * always. */
       const pt = rt.player_transform();
-      const eye = this._eye();
-      const px = pt[0], py = -pt[1] + 90, pz = pt[2];
-      const ex = eye[0] - px, ey = eye[1] - py, ez = eye[2] - pz;
-      const segLen2 = ex * ex + ey * ey + ez * ez || 1;
-      const draws = this.staticDraws.filter(d => {
-        const a = this.renderer.getMeshAabb(d.meshId);
-        if (!a) return true;
-        const cx = d.x - a.cx, cy = d.y - a.cy, cz = d.z - a.cz;
-        /* Project the body's centre onto the camera->player segment. */
-        const t = ((cx - px) * ex + (cy - py) * ey + (cz - pz) * ez) / segLen2;
-        if (t <= 0.06 || t >= 0.94) return true;   /* behind the player / at the lens */
-        const qx = px + ex * t, qy = py + ey * t, qz = pz + ez * t;
-        const d2 = (cx - qx) ** 2 + (cy - qy) ** 2 + (cz - qz) ** 2;
-        /* Conservative radius: the body's largest half-extent. Overlap this
-         * loose and a distant wall would blink; too tight and the roof stays. */
-        const r = Math.max(a.sx, a.sy, a.sz) * 0.5;
-        return d2 > r * r;
-      });
+      let draws;
+      if (OCCLUDER_CULL) {
+        const eye = this._eye();
+        const px = pt[0], py = -pt[1] + 90, pz = pt[2];
+        const ex = eye[0] - px, ey = eye[1] - py, ez = eye[2] - pz;
+        draws = this.staticDraws.filter(
+          d => !segmentHitsBox(px, py, pz, ex, ey, ez, d.box));
+      } else {
+        draws = this.staticDraws.slice();
+      }
 
       /* Player: the engine's live posed vertices + its world transform. The
        * world frame is retail's (+Y down), so the draw negates Y the way every

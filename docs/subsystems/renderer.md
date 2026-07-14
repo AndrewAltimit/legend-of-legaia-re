@@ -238,6 +238,20 @@ corners must project inside the depth range even though the camera frames only
 a small player-sized box, and the near plane must stay within a few units of
 the lens at every framing distance the engine uses.
 
+The **site play page** (`site/js/play-app.js`) is the one place that drops a
+body per frame, and it is an *occlusion* test, never a distance one: the page
+has a single follow camera where retail authors one per scene, so a body the
+eye-to-player segment actually pierces (a cave roof, the cliff face the camera
+backs into) is dropped for that frame. The test is an exact
+segment-vs-world-AABB intersection against the placement's real box, with the
+segment's player end trimmed (the body you stand on is never an occluder) and
+its lens end running to `1` (a body the camera is *inside* is exactly what has
+to go). A bounding-sphere approximation is what made wide, thin bodies - floor
+slabs, staircases, wall sections - blink out while walking: a `1408 x 0 x 2302`
+floor slab's sphere has a 1151-unit radius, so any camera line passing within
+1151 units of its centre deleted the whole floor. `OCCLUDER_CULL = false` in
+that file turns even the occluder test off.
+
 ## PSX-faithful rendering knobs
 
 `Renderer::set_psx_mode(true)` enables a set of retail-faithful rasterisation modes on the 3D mesh pipelines (in `legaia-engine play-window`, opt in with `LEGAIA_PSX_RENDER=1`):
