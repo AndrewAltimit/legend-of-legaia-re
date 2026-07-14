@@ -1472,18 +1472,23 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
 
   /* The coin readout, in the machine's own 16px digit font, in the box the
-   * paytable panel leaves empty. Both of these are SCREEN-space draws in retail
-   * too: HUD record 1 (the "COIN" label) is placed at (560, 160) by
-   * FUN_801cfff0, and the digits at (546, 168) by FUN_801d2914 - the only two
-   * things on the machine that don't go through the GTE. Retail zero-pads to 5. */
+   * paytable panel leaves empty (the panel's transparent cut-out: canvas
+   * x 511..610, y 147..188 with the panel at (497, 9)). Both are SCREEN-space
+   * draws in retail too - the only two things on the machine that don't go
+   * through the GTE - and both anchors are the retail call sites in
+   * FUN_801cfff0: HUD record 1 (the "COIN" label) is CENTRED at (560, 160) by
+   * FUN_801d2cc0, and the digits are FUN_801d2914(balance, 5, 546, 168) -
+   * least-significant digit at x + (n-1)*10, stepping LEFT by 16 per digit,
+   * so the 5-digit run spans x 522..602, y 168..184. Retail clamps the display
+   * to 99999 and zero-pads to 5, which is what keeps the run inside the box. */
   function slotDrawCoins(g, value) {
     if (!slotArt || !slotArt.digits) return;
-    g.drawImage(slotArt.digits, 0, 0, 64, 16, 560 - 32, 152 - 8, 64, 16);   /* "COIN" */
+    g.drawImage(slotArt.digits, 0, 0, 64, 16, 560 - 32, 160 - 8, 64, 16);   /* "COIN" */
     const s = String(Math.max(0, Math.min(99999, value))).padStart(5, '0');
-    let dx = 560 - (s.length * 16) / 2;
+    let dx = 546 + (s.length - 1) * 10 - (s.length - 1) * 16;   /* leftmost digit */
     for (const ch of s) {
       const d = ch.charCodeAt(0) - 48;
-      g.drawImage(slotArt.digits, 64 + d * 16, 0, 16, 16, dx, 168 + 2, 16, 16);
+      g.drawImage(slotArt.digits, 64 + d * 16, 0, 16, 16, dx, 168, 16, 16);
       dx += 16;
     }
   }
