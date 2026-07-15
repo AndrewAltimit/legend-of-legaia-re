@@ -302,6 +302,18 @@ pub(crate) enum TranslateCmd {
         #[arg(long, short)]
         output: PathBuf,
     },
+    /// Measure how much of an official localization fits the USA target under
+    /// the per-string vs per-MAN (generalized rewriter) budget, and how many
+    /// scene MANs remain sector-crossers. Counts only - no text - so it is safe
+    /// to run and log.
+    FitReport {
+        /// The official-localization disc (PAL SCES build).
+        #[arg(long)]
+        from: PathBuf,
+        /// The USA target disc.
+        #[arg(long)]
+        target: PathBuf,
+    },
     /// Apply a filled pack to a copy of a disc. Untranslated entries are
     /// left byte-identical; every write is same-size in place and each
     /// touched sector's EDC/ECC is re-encoded.

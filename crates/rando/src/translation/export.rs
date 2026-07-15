@@ -45,6 +45,10 @@ pub struct SceneManText {
     /// Bytes the recompressed MAN must fit within (descriptor-boundary
     /// budget - see [`crate::man_compressed_budget`]).
     pub compressed_budget: usize,
+    /// Byte offset, within the PROT entry, of the MAN descriptor's
+    /// `(type<<24)|size` word - rewritten when the generalized rewriter grows
+    /// the decompressed MAN (see `legaia_asset::scene_asset_table`).
+    pub man_descriptor_off: usize,
     /// Decompressed MAN (dialog edits mutate this in place, same-size).
     pub decoded: Vec<u8>,
 }
@@ -54,11 +58,8 @@ impl SceneManText {
     /// bundle / has no MAN / the stream doesn't decode.
     pub fn locate(entry: &[u8]) -> Option<Self> {
         let table = scene_asset_table::detect(entry)?;
-        let man = table
-            .used()
-            .iter()
-            .find(|d| d.type_byte == MAN_TYPE)
-            .copied()?;
+        let man_idx = table.descriptor_index(MAN_TYPE)?;
+        let man = table.used()[man_idx];
         if man.size == 0 || man.data_offset == 0 {
             return None;
         }
@@ -72,6 +73,7 @@ impl SceneManText {
             man_offset,
             compressed_len: consumed,
             compressed_budget: crate::man_compressed_budget(&table, man_offset, entry.len()),
+            man_descriptor_off: scene_asset_table::SceneAssetTable::size_word_offset(man_idx),
             decoded,
         })
     }

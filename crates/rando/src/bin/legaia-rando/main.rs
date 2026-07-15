@@ -90,6 +90,9 @@ fn main() -> Result<()> {
                 target,
                 output,
             } => translate::cmd_lift_official(&from, &target, &output),
+            cli::TranslateCmd::FitReport { from, target } => {
+                translate::cmd_fit_report(&from, &target)
+            }
             cli::TranslateCmd::DiffDisc { input, other } => {
                 translate::cmd_diff_disc(&input, &other)
             }

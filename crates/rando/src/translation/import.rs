@@ -31,7 +31,8 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
 
-use legaia_asset::{item_names, new_game};
+use legaia_asset::man_edit::{self, TextEdit};
+use legaia_asset::{item_names, new_game, scene_asset_table};
 
 use crate::disc::DiscPatcher;
 
@@ -525,6 +526,108 @@ fn apply_segment_edit(
     Some(len)
 }
 
+/// A dialog segment inside a scene MAN, validated against the disc and ready
+/// to write: its decompressed-domain offset, current on-disc byte length (the
+/// `0x1F .. 0x00` framing span), and the encoded translated bytes.
+struct ReadyMan<'a> {
+    off: usize,
+    old_len: usize,
+    translated: Vec<u8>,
+    entry: &'a Entry,
+}
+
+/// Outcome of validating one dialog segment against the disc before a write.
+enum SegPrep {
+    /// Ready to write; `old_len` is its current framing span.
+    Ready { old_len: usize },
+    /// The translation is already on the disc (counted; no write needed).
+    Already,
+    /// A diagnostic was recorded; skip.
+    Skip,
+}
+
+/// Validate a dialog segment against the bytes actually on the disc (framing,
+/// already-applied, wrong-disc guard) *without* mutating - the same checks as
+/// [`apply_segment_edit`], but returning the current framing span so the caller
+/// can choose the same-size or grow path. See [`apply_segment_edit`] for the
+/// budget rationale.
+fn prepare_segment(
+    buf: &[u8],
+    entry: &Entry,
+    off: usize,
+    source: Option<&[u8]>,
+    translated: &[u8],
+    report: &mut ImportReport,
+) -> SegPrep {
+    let framed = off > 0
+        && buf.get(off - 1) == Some(&0x1F)
+        && segments::walk_to_terminator(buf, off).is_some_and(|t| buf[t] == 0x00);
+    if !framed {
+        report.issue(
+            &entry.key,
+            "segment framing not found at the keyed offset - skipped",
+        );
+        return SegPrep::Skip;
+    }
+    let term = segments::walk_to_terminator(buf, off).expect("framing checked");
+    let old_len = term - off;
+    let cur = &buf[off..term];
+    // Already applied: exact (a grown/shrunk write) or space-padded (same-size).
+    if cur == translated || cur == pad_segment(translated, old_len).as_slice() {
+        report.already_applied += 1;
+        report.already_keys.push(entry.key.clone());
+        return SegPrep::Already;
+    }
+    match source {
+        Some(src) if cur != src => {
+            report.issue(
+                &entry.key,
+                "disc bytes don't match the pack source (different disc revision or \
+                 a conflicting patch) - skipped",
+            );
+            SegPrep::Skip
+        }
+        None if !hint_agrees(entry, old_len, report) => SegPrep::Skip,
+        _ => SegPrep::Ready { old_len },
+    }
+}
+
+/// Attempt the **generalized rewriter** path for one scene MAN: grow/shrink
+/// every ready segment to its exact translated bytes, relocate all crossing
+/// references ([`man_edit::apply_text_edits`]), verify the rewrite is the same
+/// program relocated ([`man_edit::text_edits_preserve_scripts`]), and recompress
+/// within the MAN's on-disc footprint. Returns `(recompressed_stream,
+/// new_decompressed_size)` on success, or `None` when the growth can't be done
+/// safely / won't fit (caller falls back to same-size + abbreviation).
+fn try_grow_man(man: &SceneManText, ready: &[ReadyMan]) -> Option<(Vec<u8>, u32)> {
+    let edits: Vec<TextEdit> = ready
+        .iter()
+        .map(|r| TextEdit {
+            offset: r.off,
+            old_len: r.old_len,
+            new_bytes: r.translated.clone(),
+        })
+        .collect();
+    let grown = man_edit::apply_text_edits(&man.decoded, &edits).ok()?;
+    if !man_edit::text_edits_preserve_scripts(&man.decoded, &grown) {
+        return None;
+    }
+    // Recompress within the descriptor-boundary footprint (fast greedy parse,
+    // then the optimal parse when it just misses - same policy as `repack`).
+    let stream = legaia_lzs::compress(&grown);
+    let stream = if stream.len() <= man.compressed_budget {
+        stream
+    } else {
+        let opt = legaia_lzs::compress_optimal(&grown);
+        if opt.len() <= man.compressed_budget {
+            opt
+        } else {
+            return None;
+        }
+    };
+    Some((stream, grown.len() as u32))
+}
+
 /// Apply `pack` to the patcher's image. Untranslated entries are untouched.
 pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<ImportReport> {
     import_pack_phase(patcher, pack, ImportPhase::All)
@@ -624,9 +727,10 @@ pub fn import_pack_phase(
             }
             continue;
         };
-        // Apply every edit, remembering the original bytes so an individual
-        // line can be rolled back if the scene's MAN won't recompress.
-        let mut applied: Vec<(usize, Vec<u8>, &Entry)> = Vec::new();
+
+        // Validate each segment against the disc once (framing / already-applied
+        // / wrong-disc guard), collecting the ready set with its current span.
+        let mut ready: Vec<ReadyMan> = Vec::new();
         for (off, en) in &edits {
             let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
                 continue;
@@ -634,21 +738,68 @@ pub fn import_pack_phase(
             let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
                 continue;
             };
-            let before = segments::walk_to_terminator(&man.decoded, *off)
-                .map(|end| man.decoded[*off..end].to_vec());
-            if apply_segment_edit(
-                &mut man.decoded,
+            if let SegPrep::Ready { old_len } = prepare_segment(
+                &man.decoded,
                 en,
                 *off,
                 source.as_deref(),
                 &translated,
                 &mut report,
-            )
-            .is_some()
-                && let Some(before) = before
-            {
-                applied.push((*off, before, en));
+            ) {
+                ready.push(ReadyMan {
+                    off: *off,
+                    old_len,
+                    translated,
+                    entry: en,
+                });
             }
+        }
+        if ready.is_empty() {
+            continue;
+        }
+
+        // Escape hatch: if any line overflows its own byte span, try to grow the
+        // whole MAN (budget = the MAN's own on-disc footprint, not each string).
+        // On success the segment framing moves but every crossing reference is
+        // relocated, so the pager still walks it correctly.
+        if ready.iter().any(|r| r.translated.len() > r.old_len)
+            && let Some((stream, new_size)) = try_grow_man(&man, &ready)
+        {
+            patcher.patch_prot_entry(entry_idx, man.man_offset as u64, &stream)?;
+            patcher.patch_prot_entry(
+                entry_idx,
+                man.man_descriptor_off as u64,
+                &scene_asset_table::encode_size_word(0x03, new_size).to_le_bytes(),
+            )?;
+            report.applied += ready.len();
+            report
+                .applied_keys
+                .extend(ready.iter().map(|r| r.entry.key.clone()));
+            continue;
+        }
+
+        // Same-size (fast, byte-identical) path: apply the fitting lines in
+        // place, report the over-budget ones (the MAN couldn't be grown to fit
+        // them), then recompress with a longest-first rollback if the scene's
+        // dialog no longer fits its compressed footprint.
+        let mut applied: Vec<(usize, Vec<u8>, &Entry)> = Vec::new();
+        for r in &ready {
+            if r.translated.len() > r.old_len {
+                report.issue(
+                    &r.entry.key,
+                    format!(
+                        "translation needs {} bytes but the in-place budget is {} and the \
+                         scene MAN could not be grown to fit it (shorten this line)",
+                        r.translated.len(),
+                        r.old_len
+                    ),
+                );
+                continue;
+            }
+            let before = man.decoded[r.off..r.off + r.old_len].to_vec();
+            let padded = pad_segment(&r.translated, r.old_len);
+            man.decoded[r.off..r.off + r.old_len].copy_from_slice(&padded);
+            applied.push((r.off, before, r.entry));
         }
         if applied.is_empty() {
             continue;

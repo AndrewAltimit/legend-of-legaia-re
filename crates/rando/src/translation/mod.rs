@@ -29,6 +29,7 @@
 
 pub mod diff;
 pub mod export;
+pub mod fit;
 pub mod import;
 pub mod lift;
 pub mod markup;

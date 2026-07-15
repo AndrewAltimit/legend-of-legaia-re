@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 
 use legaia_rando::disc::DiscPatcher;
 use legaia_rando::translation::{
-    LanguagePack, diff, export_pack, import_pack, lift,
+    LanguagePack, diff, export_pack, fit, import_pack, lift,
     markup::{self, Target},
 };
 use legaia_rando::{apply, ppf};
@@ -337,6 +337,64 @@ pub(crate) fn cmd_lift_official(from: &Path, target: &Path, output: &Path) -> Re
     println!(
         "NB: this pack contains the game's text - keep it out of version control / \
          redistribution."
+    );
+    Ok(())
+}
+
+pub(crate) fn cmd_fit_report(from: &Path, target: &Path) -> Result<()> {
+    let source = DiscPatcher::open(load_image(from)?).context("parse source (PAL) disc image")?;
+    let usa = DiscPatcher::open(load_image(target)?).context("parse target (USA) disc image")?;
+    let rep = fit::lift_and_measure(&usa, &source)?;
+
+    let pct = |n: usize, d: usize| {
+        if d == 0 {
+            0.0
+        } else {
+            100.0 * n as f64 / d as f64
+        }
+    };
+    println!("=== fit report: {} ===", rep.language);
+    println!(
+        "pooled names ({} lines): per-string fit {} ({:.1}%)",
+        rep.name_lines,
+        rep.name_perstring_fit,
+        pct(rep.name_perstring_fit, rep.name_lines)
+    );
+    println!("MAN dialog:");
+    println!(
+        "  lines {} - per-string fit {} ({:.1}%)",
+        rep.man_lines,
+        rep.man_perstring_fit,
+        pct(rep.man_perstring_fit, rep.man_lines)
+    );
+    println!(
+        "  per-MAN (in-place growth) fit {} lines ({:.1}%), residual {} lines",
+        rep.man_lines_perman_fit,
+        pct(rep.man_lines_perman_fit, rep.man_lines),
+        rep.man_lines_residual
+    );
+    println!(
+        "  MAN entries {}: fit-in-place {}, residual {} (overflow {} + structural {})",
+        rep.man_entries,
+        rep.man_entries_fit,
+        rep.man_entries_residual_overflow + rep.man_entries_residual_structural,
+        rep.man_entries_residual_overflow,
+        rep.man_entries_residual_structural,
+    );
+    if !rep.residual_deficits.is_empty() {
+        let sum: usize = rep.residual_deficits.iter().sum();
+        println!(
+            "  residual compressed deficits: max {} B, avg {} B, all within one sector: {}",
+            rep.residual_deficit_max(),
+            sum / rep.residual_deficits.len(),
+            rep.all_residuals_within_one_sector(),
+        );
+    }
+    println!(
+        "raw carriers ({} lines, same-size only): per-string fit {} ({:.1}%)",
+        rep.raw_lines,
+        rep.raw_perstring_fit,
+        pct(rep.raw_perstring_fit, rep.raw_lines)
     );
     Ok(())
 }
