@@ -404,7 +404,16 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
 
         // Raw carriers (v12 prescripts, streaming MANs, ...), skipping anything
         // the scanner found inside this entry's compressed MAN stream - those
-        // "strings" are LZS bytes, not text.
+        // "strings" are LZS bytes, not text. The `0x1F <text> 0x00` framing
+        // also occurs by coincidence throughout binary asset banks (sequenced
+        // music, VAB, the battle-character packs, monster archives), so an
+        // entry is only treated as a raw text carrier when it carries enough
+        // real prose to be a genuine event-script / dungeon-MAN scene (see
+        // [`segments::is_dialog_carrier`]); writing over a coincidental hit in
+        // a binary bank corrupts the asset and freezes the game.
+        if !segments::is_dialog_carrier(&entry) {
+            continue;
+        }
         let compressed = man.as_ref().map(|m| m.compressed_span());
         for seg in segments::scan(&entry) {
             if compressed

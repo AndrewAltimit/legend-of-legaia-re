@@ -229,6 +229,34 @@ verified against the pack's `source`; a mismatch (wrong disc revision, or a
 conflicting randomizer patch that moved the text) skips the entry with a
 per-key warning rather than writing blind.
 
+### The dialog-carrier gate (`raw:` writes)
+
+The `0x1F <text> 0x00` dialog framing is short enough to occur **by
+coincidence** all over the disc's binary asset banks: sequenced music
+(`music_01`), VAB sample banks (`vab_01`), the battle-character mesh/animation
+packs (`battle_data`, PROT 1204 `other5`), monster archives, and every scene's
+first ANM slot all contain runs that read as a two- or three-letter "segment".
+The per-segment quality gate (`segments::qualifies`) accepts those runs - they
+are printable and letter-shaped - so a scanner that trusted them would hand a
+translator a write **into binary data**. Overwriting such a coincidental hit
+corrupts the asset with a same-size write that passes every framing/budget
+check yet freezes the game: a garbled SEQ hangs the sound driver as New-Game
+BGM starts, and a garbled PROT-1204 pack freezes the in-battle menu that
+renders a character's battle form (e.g. Meta's Seru-magic list).
+
+Both **export** and **import** therefore gate every `raw:` write on a per-entry
+**dialog-carrier** check (`segments::is_dialog_carrier`): a PROT entry is a real
+raw text carrier only if it carries at least `MIN_CARRIER_PROSE` prose segments
+(a segment with an interior space and enough letters to be a multi-word line).
+Across the retail disc the two populations separate with a wide margin - binary
+banks top out at two coincidental prose hits per entry, while the smallest
+genuine event-script / dungeon-MAN carrier has eight - so the gate keeps every
+real carrier and refuses every binary bank. Import re-runs the check on the
+disc it is patching and skips a non-carrier entry with a per-key diagnostic;
+export never emits a `raw:` key for one, so freshly generated packs are clean.
+SCUS name-table (`scus:`) and scene-MAN (`man:`) writes are unaffected - those
+targets are structurally addressed, not scanned.
+
 ## Coverage + limitations
 
 Covered: the SCUS name tables (items, item types, spells, Tactical Arts,

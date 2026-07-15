@@ -120,6 +120,76 @@ pub fn qualifies(text: &[u8]) -> bool {
     }
 }
 
+/// Minimum number of **prose** segments (see [`is_prose`]) a PROT entry must
+/// carry before its raw `0x1F`-segment hits are trusted as real dialog.
+///
+/// The `0x1F <printable> <printable> 0x00` framing is short enough to occur by
+/// coincidence throughout binary asset banks (sequenced music, VAB sample
+/// banks, the battle-character mesh/animation packs, monster archives), so a
+/// bare `qualifies` hit is not proof the bytes are text - writing a
+/// "translation" over such a hit corrupts the binary asset and freezes the
+/// game (a garbled SEQ hangs the sound driver on New Game; a garbled PROT-1204
+/// battle-form pack freezes the in-battle menu). Real dialog carriers - the
+/// v12 event-script prescripts and streaming-MAN dungeon scenes - are instead
+/// prose-dense: they carry dozens to thousands of multi-word English lines.
+///
+/// Across the retail disc the two populations separate with a wide margin: the
+/// binary banks top out at **2** coincidental prose hits per entry, while the
+/// smallest genuine dialog carrier has **8**. Requiring at least this many
+/// prose segments keeps every real carrier and rejects every binary bank.
+pub const MIN_CARRIER_PROSE: usize = 3;
+
+/// Minimum ASCII-letter count for a segment to read as prose.
+const MIN_PROSE_LETTERS: usize = 6;
+
+/// `true` when `text` (the bytes between `0x1F` and the terminator) reads as a
+/// multi-word English line: it contains an interior space (two word-like runs)
+/// and at least [`MIN_PROSE_LETTERS`] ASCII letters. Used only to *corroborate*
+/// that a PROT entry is a real text carrier (see [`is_dialog_carrier`]); the
+/// per-segment [`qualifies`] gate still governs which segments are exported.
+pub fn is_prose(text: &[u8]) -> bool {
+    // Walk glyphs, skipping 2-byte escape tokens.
+    let mut letters = 0usize;
+    let mut has_interior_space = false;
+    let mut seen_letter_before_space = false;
+    let mut i = 0;
+    while i < text.len() {
+        let b = text[i];
+        if markup::is_two_byte_op(b) {
+            i += 2;
+            continue;
+        }
+        if b.is_ascii_alphabetic() {
+            letters += 1;
+            seen_letter_before_space = true;
+        } else if b == b' ' && seen_letter_before_space {
+            // A space that follows at least one letter and precedes more text
+            // marks a word boundary inside the line.
+            if text[i + 1..]
+                .iter()
+                .any(|&c| c.is_ascii_alphabetic() && !markup::is_two_byte_op(c))
+            {
+                has_interior_space = true;
+            }
+        }
+        i += 1;
+    }
+    has_interior_space && letters >= MIN_PROSE_LETTERS
+}
+
+/// `true` when `buf` (a whole PROT entry) carries at least
+/// [`MIN_CARRIER_PROSE`] prose segments - i.e. it is a genuine dialog carrier
+/// rather than a binary asset bank in which the `0x1F <text> 0x00` framing
+/// occurs by coincidence. Both export and import gate raw-segment writes on
+/// this so a pack can never overwrite binary asset data.
+pub fn is_dialog_carrier(buf: &[u8]) -> bool {
+    scan(buf)
+        .iter()
+        .filter(|s| is_prose(&buf[s.text_off..s.text_off + s.len]))
+        .count()
+        >= MIN_CARRIER_PROSE
+}
+
 /// Scan a buffer for qualifying `0x1F <text> 0x00` segments. On a qualifying
 /// hit the cursor resumes past the terminator; otherwise it advances one
 /// byte, so overlapping candidates are still found.
@@ -224,5 +294,37 @@ mod tests {
         let s = scan(&buf);
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].len, 4);
+    }
+
+    #[test]
+    fn prose_needs_an_interior_space_and_letters() {
+        assert!(is_prose(b"Do you wish to drink this?"));
+        assert!(is_prose(b"Clean water flows"));
+        // Single word, no interior space -> not prose.
+        assert!(!is_prose(b"Cancel"));
+        // Two-letter false-positive run -> not prose.
+        assert!(!is_prose(b"Wx"));
+        // A trailing space after one word (no following word) is not interior.
+        assert!(!is_prose(b"Yes "));
+        // Too few letters even with a space.
+        assert!(!is_prose(b"a b c"));
+    }
+
+    #[test]
+    fn dialog_carrier_needs_several_prose_lines() {
+        // A binary bank: a couple of coincidental short 0x1F segments, no prose.
+        let mut bank = Vec::new();
+        bank.extend(seg(b"Wx"));
+        bank.extend([0x03, 0x11, 0x9A, 0x40]);
+        bank.extend(seg(b"aQ"));
+        assert!(!is_dialog_carrier(&bank));
+
+        // A real carrier: several multi-word English lines.
+        let mut scene = Vec::new();
+        scene.extend(seg(b"Do you wish to read it?"));
+        scene.extend(seg(b"A slightly soiled diary."));
+        scene.extend(seg(b"Yes")); // short label rides along, now trusted
+        scene.extend(seg(b"There is a chest here."));
+        assert!(is_dialog_carrier(&scene));
     }
 }

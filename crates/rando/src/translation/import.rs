@@ -471,7 +471,7 @@ pub fn import_pack_phase(
     // Group the work by write mechanism.
     let mut scus_work: Vec<&Entry> = Vec::new();
     let mut man_work: BTreeMap<usize, Vec<(usize, &Entry)>> = BTreeMap::new();
-    let mut raw_work: Vec<(usize, usize, &Entry)> = Vec::new();
+    let mut raw_work: BTreeMap<usize, Vec<(usize, &Entry)>> = BTreeMap::new();
     for (_, entries) in pack.sections.iter() {
         for e in entries {
             let key = parse_key(&e.key);
@@ -499,7 +499,9 @@ pub fn import_pack_phase(
                 Some(Key::Man { entry, off }) => {
                     man_work.entry(entry).or_default().push((off, e));
                 }
-                Some(Key::Raw { entry, off }) => raw_work.push((entry, off, e)),
+                Some(Key::Raw { entry, off }) => {
+                    raw_work.entry(entry).or_default().push((off, e));
+                }
                 None => report.issue(&e.key, "unrecognized key shape - skipped"),
             }
         }
@@ -612,32 +614,54 @@ pub fn import_pack_phase(
         }
     }
 
-    // Raw carriers: direct same-size in-place writes.
-    for (entry_idx, off, en) in raw_work {
-        let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
-            continue;
-        };
-        let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
-            continue;
-        };
+    // Raw carriers: direct same-size in-place writes, one read per PROT entry.
+    for (entry_idx, edits) in raw_work {
         let mut window = match patcher.read_entry(entry_idx) {
             Ok(b) => b,
             Err(e) => {
-                report.issue(&en.key, format!("PROT entry unreadable: {e}"));
+                for (_, en) in &edits {
+                    report.issue(&en.key, format!("PROT entry unreadable: {e}"));
+                }
                 continue;
             }
         };
-        if let Some(len) = apply_segment_edit(
-            &mut window,
-            en,
-            off,
-            source.as_deref(),
-            &translated,
-            &mut report,
-        ) {
-            patcher.patch_prot_entry(entry_idx, off as u64, &window[off..off + len])?;
-            report.applied += 1;
-            report.applied_keys.push(en.key.clone());
+        // Carrier gate: the `0x1F <text> 0x00` framing occurs by coincidence
+        // throughout binary asset banks, so refuse to write into any entry that
+        // isn't a genuine, prose-dense dialog carrier on the disc being patched
+        // - writing a "translation" over a coincidental hit corrupts the asset
+        // and freezes the game. Real event-script / dungeon-MAN scenes clear
+        // the bar with a wide margin (see [`segments::is_dialog_carrier`]).
+        if !segments::is_dialog_carrier(&window) {
+            for (_, en) in &edits {
+                report.issue(
+                    &en.key,
+                    format!(
+                        "PROT entry {entry_idx} is not a dialog carrier on this disc \
+                         (binary asset bank - writing here would corrupt it) - skipped"
+                    ),
+                );
+            }
+            continue;
+        }
+        for (off, en) in edits {
+            let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
+                continue;
+            };
+            let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
+                continue;
+            };
+            if let Some(len) = apply_segment_edit(
+                &mut window,
+                en,
+                off,
+                source.as_deref(),
+                &translated,
+                &mut report,
+            ) {
+                patcher.patch_prot_entry(entry_idx, off as u64, &window[off..off + len])?;
+                report.applied += 1;
+                report.applied_keys.push(en.key.clone());
+            }
         }
     }
 

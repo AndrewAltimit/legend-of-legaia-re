@@ -53449,51 +53449,6 @@ sections:
     translation: '{c1:02}: Uh, ahem, bene...'
     budget: 21
   inline_text:
-  - key: 'raw:1:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:4:0x13159'
-    translation: 'io'
-    budget: 2
-  - key: 'raw:10:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:19:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:22:0xc9ef'
-    translation: 'dU'
-    budget: 3
-  - key: 'raw:22:0x13234'
-    translation: 'io'
-    budget: 2
-  - key: 'raw:28:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:36:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:39:0x18e90'
-    translation: 'Xy'
-    budget: 2
-  - key: 'raw:43:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:50:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:58:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:61:0x39bc6'
-    translation: 'AH'
-    budget: 2
-  - key: 'raw:64:0xaae9'
-    translation: 'WA'
-    budget: 3
-  - key: 'raw:66:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:70:0x243'
     translation: 'Vuoi leggerlo?'
     budget: 23
@@ -55870,27 +55825,6 @@ sections:
   - key: 'raw:70:0xa686'
     translation: 'solo, ok, {c1:00}?'
     budget: 14
-  - key: 'raw:72:0xaae9'
-    translation: 'WA'
-    budget: 3
-  - key: 'raw:75:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:83:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:92:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:101:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:109:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:118:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:122:0x875'
     translation: 'C''e un {c2:77}'
     budget: 13
@@ -55921,15 +55855,6 @@ sections:
   - key: 'raw:122:0x965'
     translation: 'Il forziere e vuoto!'
     budget: 28
-  - key: 'raw:126:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:143:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:153:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:157:0x24f'
     translation: 'Sta cadendo...!'
     budget: 17
@@ -56527,21 +56452,6 @@ sections:
   - key: 'raw:157:0x70cd'
     translation: 'Hari: Ti ho dato...'
     budget: 25
-  - key: 'raw:163:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:172:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:180:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:189:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:197:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:201:0x4a2'
     translation: 'Ferma gen Nebbia Sebucus'
     budget: 27
@@ -58543,15 +58453,6 @@ sections:
   - key: 'raw:201:0xd3a7'
     translation: 'ffffffffffff'
     budget: 23
-  - key: 'raw:205:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:215:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:224:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:228:0x82c'
     translation: 'Inizio flag'
     budget: 18
@@ -59131,69 +59032,6 @@ sections:
   - key: 'raw:228:0x548e'
     translation: 'WP'
     budget: 19
-  - key: 'raw:233:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:236:0x1bcea'
-    translation: 'PH'
-    budget: 2
-  - key: 'raw:236:0x1c17e'
-    translation: 'Uw'
-    budget: 2
-  - key: 'raw:238:0x4bde'
-    translation: 'wP'
-    budget: 2
-  - key: 'raw:242:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:252:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:255:0xd88d'
-    translation: 'qJ'
-    budget: 2
-  - key: 'raw:261:0x115af'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:266:0x59aa'
-    translation: 'by'
-    budget: 2
-  - key: 'raw:266:0x5a2a'
-    translation: 'AD'
-    budget: 2
-  - key: 'raw:268:0x1eb87'
-    translation: 'SE'
-    budget: 2
-  - key: 'raw:268:0x1f1b7'
-    translation: 'TE'
-    budget: 2
-  - key: 'raw:268:0x210dd'
-    translation: 'SE'
-    budget: 2
-  - key: 'raw:270:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:273:0x2de76'
-    translation: 'Ue'
-    budget: 2
-  - key: 'raw:279:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:288:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:298:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:301:0xd24a'
-    translation: 'CB'
-    budget: 3
-  - key: 'raw:307:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:316:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:320:0x236'
     translation: 'C''e 1G'
     budget: 11
@@ -62254,12 +62092,6 @@ sections:
   - key: 'raw:320:0xd4ac'
     translation: 'Buona fortuna a voi.'
     budget: 21
-  - key: 'raw:326:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:335:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:339:0x383'
     translation: 'La porta non si apre!'
     budget: 29
@@ -63346,24 +63178,6 @@ sections:
   - key: 'raw:339:0x6ffe'
     translation: '{c1:00}, andiamo giu per le scale!'
     budget: 29
-  - key: 'raw:345:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:348:0x13c5d'
-    translation: 'io'
-    budget: 2
-  - key: 'raw:352:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:360:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:365:0x7ba2'
-    translation: 'SE'
-    budget: 2
-  - key: 'raw:369:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:373:0x1d5'
     translation: 'Leva punta su.'
     budget: 25
@@ -64366,15 +64180,6 @@ sections:
   - key: 'raw:373:0x88ee'
     translation: 'Arrivederci "caduta". Ha!'
     budget: 28
-  - key: 'raw:380:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:389:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:397:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:401:0x3d4'
     translation: 'Si'
     budget: 2
@@ -66976,15 +66781,6 @@ sections:
   - key: 'raw:401:0x9d08'
     translation: 'Gira!'
     budget: 14
-  - key: 'raw:405:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:414:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:423:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:427:0x124'
     translation: 'Leva punta su.'
     budget: 25
@@ -67198,84 +66994,6 @@ sections:
   - key: 'raw:427:0x1608'
     translation: 'conto su te!'
     budget: 20
-  - key: 'raw:432:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:442:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:452:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:455:0x48e23'
-    translation: 'io'
-    budget: 2
-  - key: 'raw:463:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:472:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:481:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:490:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:499:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:507:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:515:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:522:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:531:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:540:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:549:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:559:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:568:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:576:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:585:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:594:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:603:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:613:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:621:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:628:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:635:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:644:0x11c03'
-    translation: 'VP'
-    budget: 2
   - key: 'raw:648:0x63a'
     translation: 'Sono Delilas.'
     budget: 13
@@ -67441,108 +67159,3 @@ sections:
   - key: 'raw:648:0x1a45'
     translation: 'deve sciolto ormai.'
     budget: 22
-  - key: 'raw:653:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:658:0x1005'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:662:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:667:0x1005'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:670:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:678:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:686:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:694:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:714:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:723:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:731:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:739:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:746:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:751:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:761:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:771:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:778:0x115af'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:783:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:788:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:793:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:798:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:803:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:808:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:813:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:818:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:823:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:869:0x1c22f'
-    translation: 'SE'
-    budget: 2
-  - key: 'raw:875:0xeedf'
-    translation: 'SE'
-    budget: 2
-  - key: 'raw:891:0x553317'
-    translation: 'SE'
-    budget: 2
-  - key: 'raw:990:0x1eb87'
-    translation: 'SE'
-    budget: 2
-  - key: 'raw:990:0x1f1b7'
-    translation: 'TE'
-    budget: 2
-  - key: 'raw:990:0x210dd'
-    translation: 'SE'
-    budget: 2
-  - key: 'raw:1109:0x1937'
-    translation: 'TE'
-    budget: 2
-  - key: 'raw:1193:0x11c03'
-    translation: 'VP'
-    budget: 2
-  - key: 'raw:1226:0x11c03'
-    translation: 'VP'
-    budget: 2

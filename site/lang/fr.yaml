@@ -53296,24 +53296,6 @@ sections:
     translation: '{c1:01}: Wow! Tu es super!'
     budget: 22
   inline_text:
-  - key: 'raw:4:0x2fa43'
-    translation: 'Wx'
-    budget: 2
-  - key: 'raw:22:0xc9ef'
-    translation: 'VP'
-    budget: 3
-  - key: 'raw:39:0x18e90'
-    translation: 'io'
-    budget: 2
-  - key: 'raw:61:0x39bc6'
-    translation: 'Xy'
-    budget: 2
-  - key: 'raw:64:0xaae9'
-    translation: 'KA'
-    budget: 3
-  - key: 'raw:69:0x3cd9d'
-    translation: 'AH'
-    budget: 2
   - key: 'raw:70:0x229'
     translation: 'Un journal un peu sali.'
     budget: 24
@@ -55852,9 +55834,6 @@ sections:
   - key: 'raw:70:0xa625'
     translation: 'Desole d''etre si embetant.'
     budget: 32
-  - key: 'raw:72:0xaae9'
-    translation: 'KA'
-    budget: 3
   - key: 'raw:122:0x875'
     translation: 'Voici un {c2:77}'
     budget: 13
@@ -66496,9 +66475,6 @@ sections:
   - key: 'raw:401:0x9d08'
     translation: 'bol'
     budget: 14
-  - key: 'raw:408:0x3f482'
-    translation: 'tA'
-    budget: 3
   - key: 'raw:427:0xf4'
     translation: 'Trone'
     budget: 11
@@ -66733,54 +66709,6 @@ sections:
   - key: 'raw:427:0x1663'
     translation: 'Che Delilas: Oui, chef!'
     budget: 24
-  - key: 'raw:445:0x1c61d'
-    translation: 'kb'
-    budget: 5
-  - key: 'raw:466:0x1f4bd'
-    translation: 'PUfFCf'
-    budget: 6
-  - key: 'raw:475:0x1c9a9'
-    translation: 'DoS'
-    budget: 6
-  - key: 'raw:525:0x1e47d'
-    translation: 'tt'
-    budget: 4
-  - key: 'raw:525:0x2955a'
-    translation: 'ro'
-    budget: 2
-  - key: 'raw:552:0x373bb'
-    translation: 'KJE'
-    budget: 7
-  - key: 'raw:552:0x43110'
-    translation: 'Aa'
-    budget: 4
-  - key: 'raw:571:0xee55'
-    translation: 'Bx'
-    budget: 2
-  - key: 'raw:579:0x1d1c5'
-    translation: 'bX'
-    budget: 2
-  - key: 'raw:579:0x1d3aa'
-    translation: 'uL'
-    budget: 2
-  - key: 'raw:579:0x20414'
-    translation: 'uL'
-    budget: 2
-  - key: 'raw:606:0x2571a'
-    translation: 'Lh'
-    budget: 3
-  - key: 'raw:616:0x26269'
-    translation: 'Ez'
-    budget: 5
-  - key: 'raw:616:0x50659'
-    translation: 'Tc'
-    budget: 2
-  - key: 'raw:631:0x19708'
-    translation: 'Be'
-    budget: 2
-  - key: 'raw:633:0x91b2'
-    translation: 'DD'
-    budget: 2
   - key: 'raw:648:0x739'
     translation: 'Suis Lu Delilas.'
     budget: 16
@@ -66946,90 +66874,3 @@ sections:
   - key: 'raw:648:0x1a45'
     translation: 'doit etre fondue.'
     budget: 22
-  - key: 'raw:707:0x38653'
-    translation: 'bX'
-    budget: 2
-  - key: 'raw:1079:0x4296'
-    translation: 'btF'
-    budget: 3
-  - key: 'raw:1079:0xfb47'
-    translation: 'cC'
-    budget: 2
-  - key: 'raw:1083:0xb735'
-    translation: 'AF'
-    budget: 4
-  - key: 'raw:1094:0xb5e7'
-    translation: 'BD'
-    budget: 2
-  - key: 'raw:1096:0x4a90'
-    translation: 'NE'
-    budget: 4
-  - key: 'raw:1096:0x6986'
-    translation: 'VF'
-    budget: 3
-  - key: 'raw:1098:0x78d6'
-    translation: 'SfE'
-    budget: 3
-  - key: 'raw:1098:0xf3c6'
-    translation: 'VF'
-    budget: 3
-  - key: 'raw:1104:0x26fe'
-    translation: 'tE'
-    budget: 2
-  - key: 'raw:1104:0x7c72'
-    translation: 'uF'
-    budget: 7
-  - key: 'raw:1109:0x142f7'
-    translation: 'pI'
-    budget: 2
-  - key: 'raw:1110:0x61b7'
-    translation: 'cF'
-    budget: 2
-  - key: 'raw:1113:0x3cd90'
-    translation: 'RP'
-    budget: 2
-  - key: 'raw:1114:0xa82d'
-    translation: 'rA'
-    budget: 2
-  - key: 'raw:1115:0xec16'
-    translation: 'btF'
-    budget: 3
-  - key: 'raw:1121:0x9c4f'
-    translation: 'OP'
-    budget: 10
-  - key: 'raw:1130:0x9687'
-    translation: 'dE'
-    budget: 2
-  - key: 'raw:1131:0x71dc'
-    translation: 'DF'
-    budget: 11
-  - key: 'raw:1133:0x19dc'
-    translation: 'DF'
-    budget: 11
-  - key: 'raw:1135:0x9487'
-    translation: 'dE'
-    budget: 2
-  - key: 'raw:1142:0x9ed6'
-    translation: 'PG'
-    budget: 3
-  - key: 'raw:1147:0x52df'
-    translation: 'PTE'
-    budget: 3
-  - key: 'raw:1148:0x9d47'
-    translation: 'dE'
-    budget: 2
-  - key: 'raw:1150:0x9d47'
-    translation: 'dE'
-    budget: 2
-  - key: 'raw:1162:0xe777'
-    translation: 'cF'
-    budget: 2
-  - key: 'raw:1175:0x12ba7'
-    translation: 'dE'
-    budget: 2
-  - key: 'raw:1231:0x22de7'
-    translation: 'cF'
-    budget: 2
-  - key: 'raw:1231:0x38dd7'
-    translation: 'BD'
-    budget: 2

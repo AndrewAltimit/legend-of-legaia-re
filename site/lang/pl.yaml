@@ -49003,18 +49003,6 @@ sections:
     translation: '{c1:01}: Wow! Jestes!'
     budget: 22
   inline_text:
-  - key: 'raw:39:0x2163e'
-    translation: 'Wx'
-    budget: 2
-  - key: 'raw:61:0x39bc6'
-    translation: 'io'
-    budget: 2
-  - key: 'raw:64:0xaae9'
-    translation: 'dU'
-    budget: 3
-  - key: 'raw:69:0x3cd9d'
-    translation: 'Xy'
-    budget: 2
   - key: 'raw:70:0x229'
     translation: 'Nieco brudny dziennik.'
     budget: 24
@@ -51457,9 +51445,6 @@ sections:
   - key: 'raw:70:0xa65a'
     translation: 'od teraz, wiec...'
     budget: 18
-  - key: 'raw:72:0xaae9'
-    translation: 'dU'
-    budget: 3
   - key: 'raw:122:0x875'
     translation: 'Oto {c2:77}'
     budget: 13
@@ -51997,15 +51982,6 @@ sections:
   - key: 'raw:157:0x70cd'
     translation: 'Hari: Dalem wam...'
     budget: 25
-  - key: 'raw:184:0xf10f'
-    translation: 'EY'
-    budget: 2
-  - key: 'raw:194:0x1164a'
-    translation: 'SC'
-    budget: 2
-  - key: 'raw:200:0x38093'
-    translation: 'HX'
-    budget: 2
   - key: 'raw:201:0x4bf'
     translation: 'Ustawic flage?'
     budget: 26
@@ -61927,9 +61903,6 @@ sections:
   - key: 'raw:427:0x1663'
     translation: 'Che Delilas: Tak, pani!'
     budget: 24
-  - key: 'raw:468:0x1164a'
-    translation: 'SC'
-    budget: 2
   - key: 'raw:648:0x63a'
     translation: 'XZ'
     budget: 13
@@ -62098,9 +62071,3 @@ sections:
   - key: 'raw:648:0x1a45'
     translation: 'musi byc stopiona.'
     budget: 22
-  - key: 'raw:730:0x1164a'
-    translation: 'SC'
-    budget: 2
-  - key: 'raw:736:0x1164a'
-    translation: 'SC'
-    budget: 2
