@@ -21,6 +21,64 @@
 use crate::field_events::FieldEvent;
 use crate::world::World;
 use legaia_engine_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
+use serde::{Deserialize, Serialize};
+
+/// Discrete camera-distance preset for the field follow camera. `Retail`
+/// is the faithful framing; `Far` / `Farther` are engine enhancements that
+/// pull the eye back so more of the scene is on screen. A pure framing
+/// knob: it scales the eye-back distance only, so it never feeds the
+/// world simulation (locomotion, encounters, replays are unaffected).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CameraDistance {
+    /// The savestate-pinned retail framing (scale 1.0).
+    #[default]
+    Retail,
+    /// A bit further out than retail - the interactive play-window default.
+    Far,
+    /// Wide vantage for eyeballing scene layout.
+    Farther,
+}
+
+impl CameraDistance {
+    /// Multiplier applied to the follow camera's eye-back distance.
+    pub fn scale(self) -> f32 {
+        match self {
+            Self::Retail => 1.0,
+            Self::Far => 1.35,
+            Self::Farther => 1.8,
+        }
+    }
+
+    /// Next preset in the cycle Retail -> Far -> Farther -> Retail.
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Retail => Self::Far,
+            Self::Far => Self::Farther,
+            Self::Farther => Self::Retail,
+        }
+    }
+
+    /// Human-readable label for HUD / logs.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Retail => "retail",
+            Self::Far => "far",
+            Self::Farther => "farther",
+        }
+    }
+
+    /// Parse a CLI/HUD label (`retail` / `far` / `farther`),
+    /// case-insensitive. `None` for unknown strings.
+    pub fn from_label(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "retail" => Some(Self::Retail),
+            "far" => Some(Self::Far),
+            "farther" => Some(Self::Farther),
+            _ => None,
+        }
+    }
+}
 
 /// Camera mode - controls how the camera derives its `eye` from the
 /// world / scene state.
@@ -63,6 +121,28 @@ pub struct Camera {
     pub yaw: f32,
     /// Pitch in radians.
     pub pitch: f32,
+    /// User-controlled orbit around the follow target (radians), in the
+    /// **compass sense**: positive swings "screen up" from world `+Z`
+    /// toward `+X`. Composed on top of the scripted [`Self::yaw`] by both
+    /// the follow-eye computation and [`Self::compass_azimuth_units`], so
+    /// dragging the camera around the player keeps the movement compass
+    /// aligned with the view. Preserved across
+    /// [`Self::reset_for_free_roam`] (it is player intent, not leaked
+    /// cutscene state). Default `0.0`.
+    pub manual_orbit: f32,
+    /// Fixed yaw the HOST's renderer frames the follow view with, in the
+    /// compass sense (radians). A renderer that draws the field at a
+    /// non-zero base yaw (e.g. the play-window's savestate-pinned
+    /// `-160`-unit follow yaw = `+160` units compass) sets this once so
+    /// [`Self::compass_azimuth_units`] reports the yaw the player actually
+    /// sees. Default `0.0` (headless hosts / the plain follow eye).
+    pub render_yaw_bias: f32,
+    /// Discrete eye-back distance preset. Scales [`Self::follow_distance`]
+    /// in the follow-eye computation; render hosts multiply their own
+    /// follow-camera depth by [`CameraDistance::scale`]. Default
+    /// [`CameraDistance::Retail`] keeps every headless / oracle path
+    /// bit-identical; interactive hosts may default further out.
+    pub distance: CameraDistance,
     /// Internal motion-VM state used for cinematic / scripted paths. Driven
     /// by [`Camera::tick_script`].
     pub motion_state: MotionState,
@@ -81,6 +161,9 @@ impl Default for Camera {
             look_at: [0.0; 3],
             yaw: 0.0,
             pitch: 0.0,
+            manual_orbit: 0.0,
+            render_yaw_bias: 0.0,
+            distance: CameraDistance::Retail,
             motion_state: MotionState::default(),
             motion_target: MotionTarget::default(),
         }
@@ -205,12 +288,17 @@ impl Camera {
                     let ty = a.move_state.world_y as f32;
                     let tz = a.move_state.world_z as f32;
                     self.look_at = [tx, ty + self.follow_height, tz];
-                    let yaw_sin = self.yaw.sin();
-                    let yaw_cos = self.yaw.cos();
+                    // Effective yaw = scripted yaw + the user's manual orbit
+                    // (compass sense: forward = (sin, cos)). Distance preset
+                    // scales the eye-back distance only. Defaults (orbit 0,
+                    // Retail) keep this arithmetic bit-identical to the
+                    // historical `yaw`/`follow_distance` form.
+                    let yaw = self.yaw + self.manual_orbit;
+                    let dist = self.follow_distance * self.distance.scale();
                     self.eye = [
-                        tx - self.follow_distance * yaw_sin,
+                        tx - dist * yaw.sin(),
                         ty + self.follow_height,
-                        tz - self.follow_distance * yaw_cos,
+                        tz - dist * yaw.cos(),
                     ];
                 }
             }
@@ -219,6 +307,20 @@ impl Camera {
                 // event configured.
             }
         }
+    }
+
+    /// The camera azimuth to feed
+    /// [`World::field_camera_azimuth`](crate::world::World::field_camera_azimuth)
+    /// this frame, in PSX 12-bit units (`4096` = full turn): scripted yaw +
+    /// the user's manual orbit + the host renderer's fixed framing bias.
+    /// This is what keeps the d-pad -> world-direction remap ("screen up
+    /// walks away from the camera") tracking the yaw the player actually
+    /// sees, including after a drag-orbit. All three terms default to `0`,
+    /// so headless hosts keep the historical `yaw`-only feed bit-identical.
+    pub fn compass_azimuth_units(&self) -> u16 {
+        let az =
+            (self.yaw + self.manual_orbit + self.render_yaw_bias) / std::f32::consts::TAU * 4096.0;
+        az.rem_euclid(4096.0) as u16
     }
 
     /// Drive the cinematic motion script for one tick. Optional layer above
@@ -486,6 +588,86 @@ mod tests {
             assert_eq!(c.mode, CameraMode::Cinematic, "mode {mode:?} untouched");
             assert_eq!(c.yaw, std::f32::consts::PI, "mode {mode:?} yaw kept");
         }
+    }
+
+    #[test]
+    fn distance_preset_scales_follow_eye_only() {
+        let w = world_with_actor_at(0, 0, 0);
+        let mut c = Camera {
+            distance: CameraDistance::Far,
+            ..Default::default()
+        };
+        c.tick(&w);
+        // Eye pulled back by the preset scale; look-at unchanged.
+        assert!((c.eye[2] + 200.0 * CameraDistance::Far.scale()).abs() < 1e-3);
+        assert_eq!(c.look_at, [0.0, 80.0, 0.0]);
+        // Retail preset is the identity (the historical framing).
+        let mut r = Camera::default();
+        r.tick(&w);
+        assert_eq!(r.eye, [0.0, 80.0, -200.0]);
+    }
+
+    #[test]
+    fn distance_cycle_and_labels_round_trip() {
+        let mut d = CameraDistance::Retail;
+        for _ in 0..3 {
+            assert_eq!(CameraDistance::from_label(d.label()), Some(d));
+            d = d.cycle();
+        }
+        assert_eq!(d, CameraDistance::Retail, "cycle is a 3-cycle");
+        assert!(CameraDistance::Retail.scale() == 1.0);
+        assert!(CameraDistance::Far.scale() > 1.0);
+        assert!(CameraDistance::Farther.scale() > CameraDistance::Far.scale());
+    }
+
+    #[test]
+    fn manual_orbit_rotates_follow_eye_and_compass_together() {
+        let w = world_with_actor_at(0, 0, 0);
+        let mut c = Camera {
+            manual_orbit: std::f32::consts::FRAC_PI_2,
+            ..Default::default()
+        };
+        c.tick(&w);
+        // Quarter-turn orbit: eye swings to -X (same as a scripted
+        // yaw = pi/2 - see `follow_mode_yaw_offsets_eye`).
+        assert!((c.eye[0] + 200.0).abs() < 1e-3, "eye_x={}", c.eye[0]);
+        assert!(c.eye[2].abs() < 1e-3, "eye_z={}", c.eye[2]);
+        // And the compass azimuth follows: pi/2 = 1024 units, so the
+        // d-pad remap quantises to quadrant 1 (screen-up walks +X).
+        assert_eq!(c.compass_azimuth_units(), 1024);
+    }
+
+    #[test]
+    fn compass_azimuth_defaults_to_zero_and_sums_bias() {
+        let c = Camera::default();
+        assert_eq!(c.compass_azimuth_units(), 0, "defaults keep the old feed");
+        let c = Camera {
+            yaw: std::f32::consts::PI,
+            manual_orbit: std::f32::consts::FRAC_PI_2,
+            render_yaw_bias: std::f32::consts::FRAC_PI_2,
+            ..Default::default()
+        };
+        // pi + pi/2 + pi/2 = full turn -> wraps to 0.
+        assert_eq!(c.compass_azimuth_units(), 0);
+    }
+
+    #[test]
+    fn reset_for_free_roam_preserves_manual_orbit_and_distance() {
+        let w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        let mut c = Camera {
+            mode: CameraMode::Cinematic,
+            yaw: std::f32::consts::PI,
+            manual_orbit: 0.5,
+            distance: CameraDistance::Farther,
+            ..Default::default()
+        };
+        c.reset_for_free_roam(&w);
+        assert_eq!(c.yaw, 0.0, "scripted yaw resets");
+        assert_eq!(c.manual_orbit, 0.5, "player orbit intent is kept");
+        assert_eq!(c.distance, CameraDistance::Farther, "preset is kept");
     }
 
     #[test]

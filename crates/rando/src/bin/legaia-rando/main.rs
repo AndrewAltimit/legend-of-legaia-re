@@ -14,6 +14,7 @@
 mod cli;
 mod commands;
 mod randomize;
+mod translate;
 mod util;
 
 use anyhow::Result;
@@ -30,6 +31,7 @@ fn main() -> Result<()> {
         Cmd::Arts { input } => commands::cmd_arts(&input),
         Cmd::Doors { input } => commands::cmd_doors(&input),
         Cmd::HouseDoors { input } => commands::cmd_house_doors(&input),
+        Cmd::MapDoors { input } => commands::cmd_map_doors(&input),
         Cmd::StartingItems { input } => commands::cmd_starting_items(&input),
         Cmd::Shops { input } => commands::cmd_shops(&input),
         Cmd::Casino { input } => commands::cmd_casino(&input),
@@ -45,5 +47,44 @@ fn main() -> Result<()> {
             patch,
             output,
         } => randomize::cmd_verify(&input, &patch, output.as_deref()),
+        Cmd::Translate { cmd } => match cmd {
+            cli::TranslateCmd::Export { input, output } => translate::cmd_export(&input, &output),
+            cli::TranslateCmd::Init {
+                lang,
+                from,
+                input,
+                contributor,
+                resume,
+                chunk,
+                output,
+            } => translate::cmd_init(
+                &lang,
+                from.as_deref(),
+                input.as_deref(),
+                contributor,
+                resume.as_deref(),
+                chunk,
+                &output,
+            ),
+            cli::TranslateCmd::Strip {
+                pack,
+                output,
+                notes,
+            } => translate::cmd_strip(&pack, &output, notes.as_deref()),
+            cli::TranslateCmd::Merge {
+                base,
+                packs,
+                output,
+            } => translate::cmd_merge(&base, &packs, &output),
+            cli::TranslateCmd::Stats { pack, input } => {
+                translate::cmd_stats(&pack, input.as_deref())
+            }
+            cli::TranslateCmd::Import {
+                input,
+                pack,
+                output,
+                patch,
+            } => translate::cmd_import(&input, &pack, output.as_deref(), patch.as_deref()),
+        },
     }
 }

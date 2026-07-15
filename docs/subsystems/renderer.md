@@ -21,10 +21,61 @@ first; u32 second}` per row, selects `row = ((flags >> 1) - 8) >> 1`, and reads
 
 The low 2 bits of byte3 select the OT packet shape (`0`=flat untextured,
 `1`=flat textured, `2`=gouraud untextured, `3`=gouraud textured); the quad bit
-`(flags>>1)&1` picks tri vs quad. Untextured prims carry a per-prim/per-vertex
-**colour** block instead of UVs and are lit by the GTE `NCDS` op; **no per-prim
-normal is stored** (the renderer never reads the object's normal table). See
+`(flags>>1)&1` picks tri vs quad. Byte1 says whether the prim carries a leading
+**colour** block: rows 4/5 (`byte1 = 3`) do, rows 0-3 (`byte1 = 0`) do not.
+Rows 0/1 are the *light-source-lit* textured rows - their texture block starts
+at prim offset 0 and normal indices trail the vertex indices. See
 [`formats/tmd.md`](../formats/tmd.md) for the full per-mode record layout.
+
+## Lighting
+
+**Retail runs no light source on the field path.** `SCUS_942.54` has two TMD
+renderers over this table - `FUN_8002735C` and its light-source sibling
+`FUN_80029888` - and between them they issue exactly **one** GTE colour op:
+`DPCS` (`cop2 0x780010`; real command `0x10`, `sf = 1`), the depth cue. Neither
+ever issues `NCDS` / `NCDT` / `NCS` / `NCT` / `NCCS` / `NCCT` / `CDP` / `CC`, so
+no light matrix is consulted and no vertex normal is transformed. The GTE light
+matrix `L` (cr8-12) and light-colour matrix `LC` (cr16-20) *are* populated
+(`FUN_8005B648` = `SetLightMatrix`, `FUN_8005B678` = `SetColorMatrix`), but the
+only functions that consume them - via `NCCS`/`NCCT` - are the world-map slot-4
+mesh handlers `FUN_8004409C` / `FUN_8004423C` / `FUN_80044434` / `FUN_800445B0`.
+
+Field shading is instead **baked into the TMD**. Every primitive carries a
+colour word `[R][G][B][GP0 code]`, the code byte being one of `0x20` (`F3`),
+`0x24` (`FT3`), `0x28` (`F4`), `0x2C` (`FT4`), `0x30` (`G3`), `0x34` (`GT3`),
+`0x38` (`G4`), `0x3C` (`GT4`), each optionally `| 2` for the semi-transparent
+variant. A flat prim stores one word; a gouraud prim one per corner (only the
+leading word carries the command byte - the rest have a zero top byte). The
+renderer loads it into the GTE's `RGBC`, runs `DPCS`, and hands the result to
+the GPU as the packet colour. The GPU then blends it with the texel:
+
+```text
+out = texel * colour / 128
+```
+
+`0x80` is therefore the neutral colour (texel unchanged), below darkens, and
+above brightens - up to `255/128` ≈ 2x. That factor-of-two headroom is why
+retail's field has more contrast than an unlit render: across the field scenes'
+environment packs, ~79% of colour components sit below `0x80`, ~12% at it, and
+~10% above. An untextured prim has no texel and is simply filled with the
+colour.
+
+`DPCS` blends that colour toward the far colour (`RFC`/`GFC`/`BFC`, cr21-23) by
+`IR0`: `out = c + (fc - c) * IR0`. Both are staged per drawn object -
+`FUN_80029888` writes the far colour from its `param_2` (each byte `<< 4`) and
+`IR0` from `param_3` - and by `FUN_80043390`, which also stages the ambient /
+background colour (`RBK`/`GBK`/`BBK`, cr13-15; consumed only by the `NC*` ops,
+so inert on the field path). An unfogged field scene passes `IR0 = 0`, making
+the depth cue the identity: a retail town0c capture's GTE register file shows
+`RGB.Raw8 = 30 30 30 34` (a `GT3` prim) and an `RGB_FIFO` of `0x30, 0x60, 0x30`
+- the prim's three baked corner colours, out of the depth-cue op byte-unchanged.
+
+Engine port: `legaia_tmd::legaia_prims::Prim::colors` (populated for every prim;
+the lit rows, having no colour word, get `MODULATION_NEUTRAL`) →
+`legaia_tmd::mesh::VramMesh::colors` → a per-vertex attribute on the VRAM-mesh
+pipeline → `psx_modulate` / `psx_depth_cue` in the shader prelude, mirrored on
+the CPU by `legaia_engine_render::psx_light` and pinned by its tests. The far
+colour and `IR0` are set with `Renderer::set_depth_cue` (default `IR0 = 0`).
 
 ## TMD pointer table
 
@@ -119,10 +170,33 @@ prologue's warm gold sepia - the `opdeene` / `opstati` / `opurud` cutscene legs 
 3D scenes in amber monochrome (the grade drops for the `map01` fly-in + `town01`). Retail achieves
 it with a GTE far-colour DPCS depth-cue + dim ambient (see
 [`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)); the engine mirrors the
-measured display ratios (`G/R ≈ 0.90`, `B/R ≈ 0.24`). Gold coefficients are stored in linear space
-(the multiply precedes the sRGB framebuffer encode). Driven by
+measured display ratios (`G/R ≈ 0.90`, `B/R ≈ 0.24`). Gold coefficients are the display ratios
+themselves - see [Colour space](#colour-space-psx-framebuffer-values-end-to-end). Driven by
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) (only the prologue
 cutscene legs grade).
+
+### Colour space: PSX framebuffer values end to end
+
+Every colour in the engine - texels, CLUT entries, vertex colours, menu inks, grade coefficients -
+is a **PSX framebuffer value**: display-referred, exactly what the console clocks out to the
+display. Nothing on the path converts colour spaces, and nothing may:
+
+- The swapchain is presented through a **UNORM** view (`choose_surface_format`), never sRGB. An
+  sRGB attachment treats a shader's output as *linear* and applies the linear→sRGB transfer on
+  store, lifting every midtone - retail's mid-grey (5-bit `16` → byte `132`) presents as `190`.
+  That is a visible, global wash-out.
+- Sampled RGBA textures (the TIM-decoded texture uploads, the font atlas) are `Rgba8Unorm` for the
+  same reason: an sRGB *source* would be decoded to linear on sample and then written verbatim into
+  the UNORM attachment, darkening instead.
+- The last stage of every 3D shader is `psx_dither`, which quantises to 5 bits and expands with
+  `(c5 << 3) | (c5 >> 2)`. That quantisation only survives to the screen if the attachment stores
+  the byte unmodified.
+- PSX semi-transparency (`psx_blend`) blends raw 5-bit values on retail, so the fixed-function
+  blend must run in the same display-referred space.
+
+Pinned by `tests::color_space` (engine-render): the attachment is never sRGB for any surface the
+adapter might offer, and a known BGR555 texel presents at the byte retail puts on the wire -
+checked against an sRGB target too, which lifts it out of tolerance.
 
 ### Asset-viewer flat-shaded fallback
 
@@ -132,6 +206,52 @@ cutscene legs grade).
 
 `tmd prims <PATH> --vram-dir extracted/tim_scan/<entry>` simulates the targeted upload and adds a per-prim verdict trailer (`-> Ok` / `-> MISSING CLUT (row N)` / `-> DEPTH MISMATCH (row N populated with K entries; prim expects M)` / `-> MISSING TEXTURE PAGE (tpage 0xNN)`). `tmd vram-dump <PATH> -o vram.png [--vram-dir ...] [--annotate]` exports the post-upload software VRAM as a 1024x512 PNG with optional red CLUT-row + green texture-page outlines, so collisions are obvious without firing up the GUI.
 
+## No distance culling: every loaded body is drawn
+
+The engine draws **every** mesh a scene loads, every frame. There is no
+frustum cull, no draw-distance heuristic, no per-object radius test, and no
+LOD: the field draw lists (`field_placement_draws`, `field_terrain_draws`, the
+ground heightfield, the posed props, the NPCs) are resolved once at scene load
+and submitted whole on every frame. A town is a few hundred draws of a few
+thousand triangles - the budget the port is not on is the PSX's.
+
+The one thing that can still remove geometry is the projection's own clip
+volume, so the clip planes are sized to hold an entire scene from any vantage
+rather than to frame the current view:
+
+- [`window::SCENE_FAR`](../../crates/engine-render/src/window.rs) = `1e6` for
+  every camera. A field map is `256 x 256` tiles of 128 units (~23 k units on
+  the diagonal), and the **overworld walk camera composes a 6x world scale**
+  onto `psx_camera_mvp`, so eye-space depth there runs to ~140 k. Raising the
+  far plane costs no depth precision - projected depth is `1 - near/z` to
+  within `O(near/far)`, i.e. the *near* plane sets the resolution.
+- `window::scene_clip_planes(distance)` gives the orbit-family cameras
+  (`orbit_camera_mvp`, `world_map_camera_mvp`, `walk_view_camera_mvp`,
+  `cutscene_camera_mvp`) a near plane of `distance * 0.005` clamped into
+  `[0.05, 8]` - a few units in front of the lens on any scene-sized framing,
+  small enough that a wall or floor body the camera sweeps over is never
+  clipped, while the asset-viewer's unit-radius TMD previews keep a sub-unit
+  plane.
+
+Both are pinned by `camera_tests` in `window.rs`: a full-size field map's
+corners must project inside the depth range even though the camera frames only
+a small player-sized box, and the near plane must stay within a few units of
+the lens at every framing distance the engine uses.
+
+The **site play page** (`site/js/play-app.js`) is the one place that drops a
+body per frame, and it is an *occlusion* test, never a distance one: the page
+has a single follow camera where retail authors one per scene, so a body the
+eye-to-player segment actually pierces (a cave roof, the cliff face the camera
+backs into) is dropped for that frame. The test is an exact
+segment-vs-world-AABB intersection against the placement's real box, with the
+segment's player end trimmed (the body you stand on is never an occluder) and
+its lens end running to `1` (a body the camera is *inside* is exactly what has
+to go). A bounding-sphere approximation is what made wide, thin bodies - floor
+slabs, staircases, wall sections - blink out while walking: a `1408 x 0 x 2302`
+floor slab's sphere has a 1151-unit radius, so any camera line passing within
+1151 units of its centre deleted the whole floor. `OCCLUDER_CULL = false` in
+that file turns even the occluder test off.
+
 ## PSX-faithful rendering knobs
 
 `Renderer::set_psx_mode(true)` enables a set of retail-faithful rasterisation modes on the 3D mesh pipelines (in `legaia-engine play-window`, opt in with `LEGAIA_PSX_RENDER=1`):
@@ -140,10 +260,10 @@ cutscene legs grade).
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x` / `y` are snapped to integer pixel positions inside the vertex shader (NDC → pixel grid → NDC round-trip). Reproduces the GTE's per-vertex sub-pixel-truncation jitter that gives PSX rendering its characteristic shimmer on slowly-moving geometry.
 - **15-bit ordered dithering.** When packing the 24-bit shaded colour into the 15-bit (BGR555) framebuffer, the PSX GPU adds a signed 4x4 ordered-dither offset per pixel before truncating each channel to 5 bits. The shader helper `PSX_DITHER_WGSL` (prepended to every shaded 3D shader) reproduces it and mirrors the unit-tested CPU `psx_dither` module; the composed shader sources are naga-validated in the engine-render test suite (the GPU-free guard that the WGSL stays well-formed).
 - **No synthetic lighting.** Outside `psx_mode` the textured / VRAM / colour mesh shaders multiply the texel or vertex colour by a per-frame directional Lambert (`0.45 + 0.55·max(dot(n,l),0)` with a fixed engine light) purely so untextured silhouettes read. That is not what retail does - the GTE bakes its lighting into the per-vertex colours and texels, then the GPU just interpolates. `psx_mode` therefore drops the synthetic Lambert (`shade = 1.0`) and shows the source data unlit. The default keeps the readable shade.
-- **Semi-transparency blend modes.** PSX per-prim blending on the VRAM-mesh (textured) and colour-mesh (untextured) paths:
+- **Semi-transparency blend modes.** PSX per-prim blending on the VRAM-mesh (textured) and colour-mesh (untextured) paths. **This is independent of `psx_mode`** - it is a separate toggle, `Renderer::set_semi_blend` (staged into `MeshUniforms.flags[1]`), **on by default**. Retail's GPU always blends ABE prims, so field water (e.g. the Hunter's Spring fountain), glass and additive effects composite correctly in the clean "enhanced" render too; only the strict-PS1 artefacts (vertex jitter / affine UVs / 15-bit dither) ride `psx_mode`. Turning it off draws every ABE prim fully opaque (the harsh-edged "solid water" look).
   - A prim is semi-transparent when its packet ABE bit is set (the TMD group mode byte's bit 1). The `legaia_tmd::mesh` builders pack that bit into bit 15 of the per-vertex TSB attribute (unused by the TMD TSB encoding), so it reaches the shader with no new vertex format. The blend equation comes from texpage ABR (TSB bits 5..=6): mode 0 `0.5*B + 0.5*F`, 1 `B + F`, 2 `B - F`, 3 `B + 0.25*F` (`B` = framebuffer, `F` = texel / prim colour).
   - For textured prims the choice is per *texel*: BGR555 bit 15 (STP) set blends, clear draws opaque, `0x0000` never draws, `0x8000` blends black. With one fixed blend state per pipeline that per-texel split needs two passes: the opaque pass draws every triangle and discards STP texels of semi-transparent prims; a blend pass then re-draws only the semi-transparent triangles (a per-ABR-mode index tail appended at upload time) discarding everything except STP texels.
-  - For untextured (`F*`/`G*`) prims there is no per-texel STP gate: an ABE prim blends **all** its pixels. The colour-mesh vertex format carries a per-vertex blend word (ABE bit 15 + ABR bits 5..=6, `psx_blend::pack_blend_word` - the same packing the textured path rides on TSB) via `Renderer::upload_color_mesh_blended`; in PSX mode the opaque colour pass discards ABE prims entirely and a per-ABR-mode blend pass (same index-tail scheme, `psx_blend::append_semi_tail_words`) re-draws them with the prim colour as `F`. Untextured TMD prims carry no texpage of their own, so ABR comes from whatever draw-env state the caller resolves (mode 0 is the PSX draw-env default); `upload_color_mesh` without blend words keeps every prim opaque.
+  - For untextured (`F*`/`G*`) prims there is no per-texel STP gate: an ABE prim blends **all** its pixels. The colour-mesh vertex format carries a per-vertex blend word (ABE bit 15 + ABR bits 5..=6, `psx_blend::pack_blend_word` - the same packing the textured path rides on TSB) via `Renderer::upload_color_mesh_blended`; with semi-blend on the opaque colour pass discards ABE prims entirely and a per-ABR-mode blend pass (same index-tail scheme, `psx_blend::append_semi_tail_words`) re-draws them with the prim colour as `F`. Untextured TMD prims carry no texpage of their own, so ABR comes from whatever draw-env state the caller resolves (mode 0 is the PSX draw-env default); `upload_color_mesh` without blend words keeps every prim opaque.
   - One blend pipeline per mode (per path): mode 0 via blend constant 0.5, mode 2 via reverse-subtract, mode 3 pre-scales `F` by 0.25 in its fragment entry point. Blend draws depth-test `LessEqual` without writing depth and run after all opaque scene draws. The `psx_blend` module holds the pure mapping (ABR extraction, blend-word packing, blend-state selection, index partition, ordering list, CPU reference `blend_apply`) and is unit-tested against the PSX equations. The blend pass skips the dither stage - retail dithers the post-blend value during the VRAM write, which a fixed-function blend can't reproduce without a destination read-back.
   - Blend ordering is per *primitive*, mirroring the retail ordering table: each semi prim's depth key is its model-space centroid's clip-space `w` under the draw MVP (`psx_blend::prim_depth_key` - equal, by MVP linearity, to the average of its vertices' clip `w`, the GTE avg-Z the OT bins on), and all semi prims across all of a scene's draws (textured + untextured in one list) blend far-to-near regardless of draw boundaries, so depth-interleaved prims from overlapping draws blend in correct global order.
   - Equal keys form one OT bucket and draw later-submitted-first, the retail LIFO bucket order (`AddPrim` prepends to a bucket's linked list, `DrawOTag` walks it head-first). Per-prim metadata (`psx_blend::SemiPrim`) is recorded once at mesh upload; the per-frame ordering list reuses one renderer-owned buffer and contiguous same-draw, same-mode tail runs coalesce into single indexed draws (`psx_blend::coalesce_sorted`).

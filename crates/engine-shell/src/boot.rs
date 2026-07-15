@@ -429,6 +429,19 @@ impl BootSession {
         // transitions resolve to the right CDNAME label.
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
 
+        // Hand the host the retail new-game defaults so a cold `--scene X`
+        // boot (no New Game confirm, no save loaded) seeds the template party
+        // + starting bag at scene entry instead of leaving a zeroed scaffold
+        // roster behind the pause menu. Guarded inside `enter_field_scene` -
+        // it never fires once a party or save is installed.
+        host.new_game_defaults =
+            starting_party
+                .clone()
+                .map(|party| legaia_engine_core::new_game::NewGameDefaults {
+                    party,
+                    inventory: starting_inventory.clone(),
+                });
+
         // Install the real retail XP curve (static SCUS table + FUN_801E9504
         // formula) over the tracker's fabricated sin-LUT placeholder, when the
         // executable is reachable, together with the slots-1/2 threshold
@@ -652,10 +665,11 @@ impl BootSession {
         self.camera.reset_for_free_roam(&self.host.world);
         // Feed the previous frame's camera azimuth into the world so the
         // field free-movement controller remaps the d-pad camera-relative
-        // ("screen up" walks away from the camera). The follow camera's
-        // default yaw is 0, which maps straight to world +Z.
-        let azimuth = (self.camera.yaw / std::f32::consts::TAU * 4096.0).rem_euclid(4096.0);
-        self.host.world.field_camera_azimuth = azimuth as u16;
+        // ("screen up" walks away from the camera). The compass sums the
+        // scripted yaw, the user's manual drag-orbit, and the host
+        // renderer's fixed framing bias (`Camera::compass_azimuth_units`);
+        // all three default to 0, which maps straight to world +Z.
+        self.host.world.field_camera_azimuth = self.camera.compass_azimuth_units();
         let event = self.host.tick()?;
         self.camera.route_camera_events(&mut self.host.world);
         if let Some(bgm) = self.bgm.as_mut() {

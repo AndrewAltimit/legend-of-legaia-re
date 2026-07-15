@@ -5,6 +5,7 @@
 //! and the battle ground grid builder.
 
 use super::*;
+use legaia_tmd::legaia_prims::MODULATION_NEUTRAL as NEUTRAL;
 
 /// Raw `LineList` geometry: `(positions, per-vertex colours, line indices)`.
 /// The geometry helpers (`world_map_*_line_geometry`) emit this shape; it is
@@ -56,6 +57,9 @@ pub(crate) fn effect_billboard_mesh(
     // Quad faces the camera; a single normal toward the viewer keeps the
     // lambert term stable rather than relying on the derivative fallback.
     let face = right.cross(up).normalize_or_zero().to_array();
+    // Effect sprites are engine-synthesised, not TMD prims: no baked colour
+    // word, so the neutral modulation colour draws the texel unchanged.
+    let mut colors: Vec<[u8; 3]> = Vec::with_capacity(sprites.len() * 4);
     for s in sprites {
         let [u0, v0] = s.uv;
         let u1 = u0.saturating_add(s.uv_size[0].saturating_sub(1)).min(255) as u8;
@@ -70,10 +74,11 @@ pub(crate) fn effect_billboard_mesh(
             uvs.push(uv);
             cba_tsb.push([s.clut, s.page]);
             normals.push(face);
+            colors.push([NEUTRAL; 3]);
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 1, base + 3]);
     }
-    match r.upload_vram_mesh(&positions, &uvs, &cba_tsb, &normals, &indices) {
+    match r.upload_vram_mesh(&positions, &uvs, &cba_tsb, &normals, &colors, &indices) {
         Ok(m) => Some(m),
         Err(e) => {
             log::warn!("effect billboard mesh upload: {e:#}");
@@ -141,13 +146,29 @@ pub(crate) fn heightfield_to_vram_mesh(
     hf: &legaia_asset::field_objects::WalkHeightfield,
 ) -> legaia_tmd::mesh::VramMesh {
     let n = hf.positions.len();
+    // The heightfield is ENGINE-synthesised geometry (no retail winding to
+    // preserve), and its builder happens to wind opposite to the scene TMDs
+    // under the field frame. Reverse each triangle so the ground survives
+    // the cutscene-camera NCLIP pass (`Renderer::set_backface_cull`) with
+    // the same parity as the disc meshes. A no-op for every both-sided pass
+    // (the default `cull_mode: None` pipelines draw either winding).
+    let mut indices = hf.indices.clone();
+    for tri in indices.chunks_exact_mut(3) {
+        tri.swap(1, 2);
+    }
     legaia_tmd::mesh::VramMesh {
         positions: hf.positions.clone(),
         uvs: hf.uvs.clone(),
         // Per-cell terrain page + palette (multi-page terrain atlas).
         cba_tsb: hf.cba_tsb.clone(),
         normals: vec![[0.0, 0.0, 0.0]; n],
-        indices: hf.indices.clone(),
+        // The heightfield carries the ground's baked prim colour
+        // (`GROUND_PRIM_COLOR`): retail's ground quads are neutral `0x808080`
+        // on every cell, so the modulation is the identity and the tile draws
+        // at its raw texel. Sourced from the heightfield rather than assumed
+        // here, so the one disc-derived fact has one home.
+        colors: hf.colors.clone(),
+        indices,
     }
 }
 
@@ -320,6 +341,7 @@ pub(crate) fn build_battle_ground_grid(
         cba_tsb: Vec::new(),
         indices: Vec::new(),
         normals: Vec::new(),
+        colors: Vec::new(),
     };
     // Per-cell quads (own 4 vertices each) so EVERY cell maps to the same full
     // grass UV tile `[u0..u1]x[v0..v1]`. Shared-vertex grids forced a single UV

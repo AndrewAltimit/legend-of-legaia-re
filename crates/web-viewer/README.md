@@ -18,6 +18,64 @@ instead of every raw entry.
 - `legaia-tmd` - mesh parser.
 - `legaia-rando` + `legaia-iso` - the randomizer / disc patcher (see `rom_patcher` below).
 
+## Playing the port in the browser (`runtime` + `play`)
+
+`LegaiaRuntime` is the engine, not a re-implementation of it: it owns a real
+`legaia_engine_core::scene::SceneHost` - the same host the native
+`legaia-engine play-window` drives - so the browser runs the ported field /
+event VM, the free-movement controller against the per-scene walkability grid,
+floor-height sampling, the NPC motion VMs, the interaction probe, and the
+inline-script dialogue runner. Drives `site/play.html`.
+
+The split is deliberate:
+
+- **`runtime`** - the simulation. `load_disc` (user's own image, in memory, in
+  their browser), `enter_field(name)`, `set_pad(mask)` (PSX pad word),
+  `set_camera_azimuth(units)` (so the d-pad remaps camera-relative),
+  `tick_frame()` (returns the label of the scene a door just walked into, so the
+  page rebuilds around a transition), and `state_json()` (frame / mode / player
+  transform / live dialogue box).
+- **`play`** - what the page draws, resolved against the **same**
+  `SceneResources` the host already built at scene entry (nothing is decoded
+  twice): the assembled map (`field_*` accessors), the lead's field mesh posed
+  each frame from the world's live `pose_frame` (`player_mesh_*`,
+  `player_transform`), and the scene's MAN-placed NPCs at their live world
+  positions (`play_npc_*`).
+
+The map + NPC layers make the **native play-window's exact resolver calls**,
+pinned by the disc-gated parity test `tests/play_parity.rs`:
+
+- the placed-object layer goes through
+  `field_env::resolve_placed_env_draws` **with the scene's object binds**, so
+  a placed prop whose bind names a clip carries its `anim_id`
+  (`field_placement_anim_ids`) and the page draws it through
+  `field_mesh_posed(slot, anim)` - the frame-0 rest pose of scene ANM record
+  `anim_id - 1` (cupboard doors closed on the cabinet's front face) with the
+  native fallback to the raw mesh under the bone-count contract;
+- the terrain sweep excludes `FLAG_PLACED` records (already drawn - posed -
+  by the placement layer; the second copy would be the unposed one);
+- the NPC catalog (`field_npc::build_npc_catalog_play`) lists **everything
+  the native window draws**: the `model >= 0xF0` global-pool specials (save
+  crystal / party heads, meshed from the world's pool and posed from the
+  PROT 0874 locomotion bundle) and the clipless multi-object actors retail
+  draws raw (draw kind 5), which the curated NPC-browser catalog withholds;
+- a catalogued NPC's mesh truncates its TMD object table to its clip's bone
+  count (the objects past it are equipment-swap templates), and a slot with
+  no seeded heading renders at identity, both as the native draw pass does.
+
+Two things the browser host has to do that the native one gets for free:
+
+- **Seating.** Scene entry puts the player at the retail *cold-boot spawn*,
+  which is only meaningful for `town01` - every other scene is normally entered
+  through a door that supplies the arrival tile. Picking a scene from a list has
+  no door, so `LegaiaRuntime::seat_player` keeps the cold spawn when it has floor
+  under it and otherwise seats the player on the walk-ground heightfield, never
+  on a walk-on trigger tile (which would fire on the first tick and warp the
+  scene out from under them).
+- **Framing.** Retail authors a camera per scene. The page has one follow camera,
+  so `site/js/play-app.js` culls any mesh straddling the camera-to-player line -
+  without it a cave roof or a house's upper storey fills the screen.
+
 ## Assembled full-scene maps (`field_scene`)
 
 `LegaiaViewer::set_scene_field(name)` loads a CDNAME field/town scene
@@ -42,6 +100,21 @@ fences / small furniture) render instead of vanishing.
 `[r, g, b, flag]` array (flag `255` = textured / sample VRAM, `0` =
 untextured / use the colour; empty for pure-textured meshes), consumed by
 the WebGL shader's `u_use_flat_colors` / `a_flat_rgba` hybrid path.
+
+The per-vertex `cba_tsb` stream carries each prim's PSX **semi-transparency**
+state (ABE enable in TSB bit 15 - `legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`
+- and the ABR blend mode in bits 5..=6) for textured prims and, via the
+hybrid merge, for the untextured colour-half verts (their `ColorMesh::blend`
+word lands in the TSB slot; the flat path never samples VRAM, so it's blend
+metadata only). The WebGL renderer (`site/js/webgl-tmd.js`) draws these prims
+in a deferred **blend pass**: the opaque pass discards blending texels
+(prim ABE + texel STP, `u_semi_pass = 0`), then per-ABR-mode index tails
+(`buildSemiTail`, the browser mirror of engine-render's
+`psx_blend::append_semi_tail`) re-draw them depth-tested but not
+depth-written with the matching GL blend state (`0.5B+0.5F` / `B+F` / `B-F`
+/ `B+0.25F`). This is what makes fountain water (Hunter's Spring) and house
+window light read translucent instead of opaque grey. Disc-gated pin:
+`tests/field_scene_blend.rs`.
 
 Two site pages drive it through the shared `site/js/field-scene-view.js`
 (`window.FieldSceneView`): the **game-world** page's town navigator, which
@@ -85,6 +158,81 @@ instead of the scene's and are routed to the characters page
 (`special_count`). Off-map "hidden" spawns are script-gated story actors,
 fully resolvable, so they *are* listed - flagged `conditional`.
 
+## Playable minigames (`minigames`)
+
+`LegaiaMinigames` is a standalone `#[wasm_bindgen]` class (its own
+`load_disc`, no canvas) that runs three of the game's side-games in the
+browser for `site/minigames.html`. It is a thin JSON shell over the
+clean-room rules engines in `legaia-engine-core` - the beat clock + judge
+(`dance`), the rock-paper-scissors duel (`baka_fighter`), the reel state
+machine + payout eval (`slot_machine`). It carries no rules of its own.
+
+Every table each game plays with is decoded from the visitor's own disc via
+the same path the play-window uses (raw PROT entry ->
+`static_overlay::as_loaded` -> table parser): the step chart out of PROT
+0980, the roster + action tables out of 0976, the payout table out of 0975.
+Nothing is shipped with the site.
+
+Per game: `<g>_start` / `<g>_tick` / an input method
+(`dance_press` / `baka_choose` / `slot_spin` + `slot_stop` +
+`slot_collect`) / `<g>_state_json`. `load_disc` returns a status object
+naming which games' overlays resolved, so a disc that can't feed one game
+still plays the others. `dance_state_json` deliberately surfaces **both**
+halves of retail's split chart lookup - `judged` (what the hit judge
+matches, the step to press) and `displayed` (the display half's
+held-sequence substitution); see `docs/subsystems/minigame-dance.md`.
+Disc-gated oracle: `tests/minigames_wasm_api.rs`.
+
+`minigames_baka.rs` adds the Baka Fighter duel's **presentation** exports so
+the page draws with the cabinet's own assets: per-side fighter mesh buffers
+(player = PROT 1204 battle pack slot, opponent = its own PROT 1206..=1219
+`[TIM][TMD][anim]` pack), pose-frame decodes from the real animation banks
+(PROT 1203 bank records `char*9 + action` for the party, the pack's own bank
+for the opponent), the 51-record HUD widget table + PROT 1203 art pages, the
+stage TMD set, and a per-duel 1 MB VRAM build. Consumed by
+`site/js/minigame-baka.js`; see
+`docs/subsystems/minigame-baka-fighter.md` § HUD widget table.
+
+`minigames_dance.rs` adds the dance's **presentation** exports: the PROT
+1230 art pack's HUD page decoded through its row-500 CLUT strip
+(`dance_hud_page_rgba`), the overlay's 34-record widget table + the traced
+emitter geometry (`dance_widgets_json` / `dance_layout_json`, incl. the
+capture-pinned `+4`-line draw-environment offset), the dancer face-stamp
+windows with the pose blits replayed (`dance_face_rgba`; dancer 0 = Noa's
+field atlas, PROT 0874 §2), the SFX cue bank (PROT 1228 descriptors +
+the PROT 1231 sample VAB - a TOC-tail entry) plus the direct-keyed hit
+stings (`dance_sting_pcm`), and the real BGM pair rendered through the
+clean-room SPU (`dance_bgm_pcm_i16`). Consumed by
+`site/js/minigame-dance.js`; see `docs/subsystems/minigame-dance.md`.
+Disc-gated oracle: `tests/minigames_dance_api.rs`.
+
+## Session saves + retail cards (`session_save`)
+
+The play page's save boundary. Engine sessions round-trip as **LGSF**
+(`LegaiaRuntime.export_save` / `import_save` = `World::save_full` /
+`load_full` with magic + version validation - a corrupt upload throws a
+readable message and leaves the session untouched). Retail **emulator
+saves** are first-class: `card_saves_json(bytes)` lists the Legaia saves
+inside a raw `.mcr`/`.mcd` card image, DexDrive `.gme`, or single-save
+`.mcs` (party names, gold, coins, location, the CDNAME scene label);
+`LegaiaRuntime.import_card_save(bytes, block)` lifts one into the live
+world via `legaia_save::SaveFile::from_retail_sc_block`; and
+`card_patch_coins(bytes, block, coins)` banks browser-minigame coin
+winnings into the pinned retail coin slot (SC `+0x464`, RAM
+`0x800845A4`) **in place** - the container comes back in the format it
+arrived in with only those 4 bytes changed, so an untouched export is
+byte-identical and the patched save still loads in the emulator. PS3
+`.psv` is rejected (signed container). The minigames page's **save bar**
+draws on two more exports: `card_icon_rgba(bytes, block)` decodes the SC
+block's own 16x16 memory-card icon (palette `+0x60`, 4bpp pixels
+`+0x80` - for Legaia that is the lead character's baked portrait), and
+`LegaiaMinigames.save_portrait_rgba(char_id)` decodes the three 16x16
+load-screen portrait TIMs (Vahn / Noa / Gala) from the pre-`init_data`
+gap of `PROT.DAT`, the faces the bar's tiles show; save summaries carry
+the lead's displayed level (record `+0x130`). Persistence (localStorage,
+base64) lives in `site/js/legaia-saves.js`; the bar itself is
+`site/js/minigame-saves.js`; this module is serialization only.
+
 ## Scene `.glb` export (`scene_export`)
 
 Builder-style session on `LegaiaViewer` so the site pages can download
@@ -120,6 +268,15 @@ site's `tooling/rom-patcher.html` page: the user supplies their own disc, toggle
 the drop / encounter / chest settings, and downloads a patched image. The disc
 bytes never leave the browser and nothing is uploaded - the same "user supplies
 the disc" model as the CLI, so the site ships only code.
+
+An optional `lang_pack` YAML argument (default `""` = English, strictly opt-in)
+applies a [language pack](../rando/README.md#translation-packs) **before** any
+randomizer pass (translate-then-randomize composes; the reverse loses relocated
+scenes' lines). The page offers the shipped `site/lang/*.yaml` packs by dropdown,
+plus an import path (user-supplied YAML) and `export_lang_pack` (dump a
+source-bearing working pack from the user's own disc to author one) and
+`validate_lang_pack` (disc-measured dry run before patching). The packs are
+static assets fetched from `site/lang/`, never bundled into the WASM.
 
 `LegaiaViewer::monster_archive_json` decodes the global monster stat
 archive (PROT entry 867, extended footprint) into a JSON array of every

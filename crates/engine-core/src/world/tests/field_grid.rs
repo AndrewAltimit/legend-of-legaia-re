@@ -219,11 +219,24 @@ fn solid_field_props_block_at_retail_static_standoff() {
     // 2-unit step commits, and the next probe blocks - resting 142 short of
     // the centre, 40 units further out than the ±40 moving-NPC box (the
     // same pre-step parity as the NPC arm's 102).
+    //
+    // Props are solid UNCONDITIONALLY (retail's placed actors always enter
+    // the `FUN_801CF754` candidate list) - `solid: false` models the
+    // `+0x10 & 3` exemption an opened door's `31 00` sets, which walks clean
+    // through.
     let press = |solid: bool, prop: (i32, i32), start: (i16, i16)| {
         let mut world = World::new();
         world.install_field_player(0);
-        world.solid_field_npcs = solid;
-        world.field_prop_colliders.push(prop);
+        world
+            .field_prop_colliders
+            .push(crate::world::FieldPropCollider {
+                anchor: None,
+                center: prop,
+                live: prop,
+                moving_box: false,
+                interact: false,
+                solid,
+            });
         world.actors[0].move_state.world_x = start.0;
         world.actors[0].move_state.world_z = start.1;
         for _ in 0..100 {
@@ -233,12 +246,45 @@ fn solid_field_props_block_at_retail_static_standoff() {
     };
     // Head-on: rest at prop_x - 142.
     assert_eq!(press(true, (2000, 2526), (1800, 2526)), 2000 - 142);
-    // Flag off: the player walks straight through the prop.
+    // Collision-exempt (`31 00` ran): the player walks straight through.
     assert!(press(false, (2000, 2526), (1800, 2526)) > 2000);
     // Lateral reach is 80 + 32 = 112: a prop 100 off the walk line still
     // blocks, one 120 off does not.
     assert_eq!(press(true, (2000, 2526 + 100), (1800, 2526)), 2000 - 142);
     assert!(press(true, (2000, 2526 + 120), (1800, 2526)) > 2000);
+}
+
+#[test]
+fn interact_class_props_block_without_posting_a_touch() {
+    // The `+0x10 & 0x40020000` class (`31 1E` - Rim Elm's cupboards): the
+    // box still refuses the step (retail result bit `1` gates the commit),
+    // but the movement probe never posts the touch - `pending_prop_touch`
+    // stays empty, where a static-class prop latches its anchor. The
+    // moving-box sub-class (`31 11`) anchors ±40 at the live position.
+    let press = |interact: bool| {
+        let mut world = World::new();
+        world.install_field_player(0);
+        world
+            .field_prop_colliders
+            .push(crate::world::FieldPropCollider {
+                anchor: Some((10, 20)),
+                center: (2000, 2526),
+                live: (2000, 2526),
+                moving_box: false,
+                interact,
+                solid: true,
+            });
+        world.actors[0].move_state.world_x = 1800;
+        world.actors[0].move_state.world_z = 2526;
+        for _ in 0..100 {
+            world.advance_with_collision(0, 0x2000, 8);
+        }
+        (world.actors[0].move_state.world_x, world.pending_prop_touch)
+    };
+    // Interact class: blocked at the same standoff, no touch posted.
+    assert_eq!(press(true), (2000 - 142, None));
+    // Static class: blocked AND the touch is posted (the door auto-open).
+    assert_eq!(press(false), (2000 - 142, Some((10, 20))));
 }
 
 #[test]
@@ -290,6 +336,70 @@ fn sample_field_floor_height_bilinear_interpolates() {
     assert_eq!(world.sample_field_floor_height(127, 0), 254); // wx=127
     // Pushing wz down toward the (all-zero) bottom row pulls the value toward 0.
     assert!(world.sample_field_floor_height(64, 64) < 128);
+}
+
+/// A tile carrying the object-grid `0x800` bit is a **ramp / stair** tile: its
+/// height is the flat mean of the four corner tiers plus its kind-2 override
+/// record's steps - NOT the bilinear corner surface. This is the model Rim
+/// Elm's shore ramps use, and it is what keeps a walking actor on top of the
+/// drawn stair mesh instead of under it.
+#[test]
+fn sample_field_floor_height_uses_the_kind2_elevation_override() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    // Sea-level nibble-0 corners, exactly like a real ramp tile: the bilinear
+    // model would put this whole tile at 0.
+    world.field_floor_height_lut[0] = 0;
+    // Tile (1,1) carries the override bit; its neighbour (2,1) does not.
+    let mut cells = vec![0u8; STRIDE * STRIDE * 2];
+    let cell = |c: usize, r: usize| (r * STRIDE + c) * 2;
+    cells[cell(1, 1)..cell(1, 1) + 2].copy_from_slice(&CELL_ELEVATION_OVERRIDE.to_le_bytes());
+    world.load_field_object_cells(&cells);
+    // Kind-2 table: tile (1,1), coarse 2 (= -64), quads 0x2a (sub-cells (0,0),
+    // (1,0), (0,1) step 2 = -32; (1,1) steps 0).
+    let mut block = vec![0u8; 0x20];
+    block[0xA..0xC].copy_from_slice(&16i16.to_le_bytes());
+    block[0xC..0xE].copy_from_slice(&1i16.to_le_bytes());
+    block[16..20].copy_from_slice(&[1, 1, 2, 0x2a]);
+    world.load_field_elevation_overrides(&block, &[]);
+
+    assert!(world.field_tile_has_elevation_override(1, 1));
+    assert!(!world.field_tile_has_elevation_override(2, 1));
+    // Mean of four nibble-0 corners = 0, so the height is purely the override:
+    // -64 whole-tile step, plus the sub-cell step of the 64-unit quadrant.
+    let (x0, z0) = (128, 128); // tile (1,1) origin
+    assert_eq!(world.sample_field_floor_height(x0 + 10, z0 + 10), -96); // (0,0)
+    assert_eq!(world.sample_field_floor_height(x0 + 70, z0 + 10), -96); // (1,0)
+    assert_eq!(world.sample_field_floor_height(x0 + 10, z0 + 70), -96); // (0,1)
+    assert_eq!(world.sample_field_floor_height(x0 + 70, z0 + 70), -64); // (1,1)
+    // The neighbouring plain tile still reads the (sea-level) nibble surface -
+    // the override does not leak past its own tile.
+    assert_eq!(world.sample_field_floor_height(2 * 128 + 10, z0 + 10), 0);
+}
+
+/// The override bit without a matching kind-2 record still switches the model:
+/// the tile flattens to the mean of its corner tiers instead of interpolating.
+#[test]
+fn elevation_override_bit_without_a_record_flattens_the_tile() {
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    world.field_floor_height_lut[1] = 0;
+    world.field_floor_height_lut[2] = 256;
+    // Corners of tile (0,0): c00=0, c01=256, c10=0, c11=0 -> mean 64.
+    world.field_collision_grid[0] = 0x01;
+    world.field_collision_grid[1] = 0x02;
+    world.field_collision_grid[STRIDE] = 0x01;
+    world.field_collision_grid[STRIDE + 1] = 0x01;
+    let mut cells = vec![0u8; STRIDE * STRIDE * 2];
+    cells[0..2].copy_from_slice(&CELL_ELEVATION_OVERRIDE.to_le_bytes());
+    world.load_field_object_cells(&cells);
+
+    // Flat at the mean everywhere in the tile - no sub-tile gradient at all.
+    assert_eq!(world.sample_field_floor_height(0, 0), 64);
+    assert_eq!(world.sample_field_floor_height(64, 0), 64);
+    assert_eq!(world.sample_field_floor_height(127, 127), 64);
 }
 
 #[test]

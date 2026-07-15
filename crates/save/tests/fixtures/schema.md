@@ -43,7 +43,7 @@ want it durable need to keep emitting LGSF v2 alongside the SC export.
 | `LGSF` magic | `0x00` | - | 4 B | LGSF v2 only |
 | version byte | `0x04` | - | 1 B | `4` for v4-shaped writers (LGX4 shiny block) |
 | `ext.story_flags` | `0x05` | `0x14C0` (low u32 of bitmap) | 4 B | LGSF u32 LE; SC's first four bitmap bytes form the same scratchpad word on `from_retail_sc_block`. |
-| `ext.money` | `0x09` | engine-only | 4 B | `RETAIL_GAME_DATA_OFFSET + 0x025C` exists in retail RAM but `write_into_retail_sc_block` doesn't expose a write helper - the engine save is the source of truth. |
+| `ext.money` | `0x09` | `0x045C` | 4 B | Party gold - the pinned retail slot (`game_data+0x25C`, mirrors RAM `0x8008459C`). Both directions wired: `write_into_retail_sc_block` writes it, `from_retail_sc_block` reads it. The sibling casino coin bank sits at SC `0x0464` (RAM `0x800845A4`, `read/write_retail_coins`), not modelled in `SaveFile`. |
 | `inv_count` | `0x0D` | - | 1 B | LGSF v2: variable-length list. |
 | `ext.inventory` pairs | `0x0E` (2 × `N` bytes) | `0x1818` (72 × 2 bytes) | varies | SC layout is fixed 72-slot; `(0, 0)` empty slots are dropped on read so LGSF order/length is `compact`. |
 | `party_count` | after inventory | - | 1 B | |
@@ -64,7 +64,7 @@ want it durable need to keep emitting LGSF v2 alongside the SC export.
 ## `SC`-block-only fields the engine doesn't read
 
 The retail SC block also stores a display header at `+0x200..+0x5C8`
-(location name, primary display name, recent CDNAME labels, party gold).
+(location name, primary display name, recent CDNAME labels).
 The
 engine's `SaveFile` doesn't model these yet: the writer zero-pads the
 region and the reader skips it. When a future engine pass adds those

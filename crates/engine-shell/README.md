@@ -81,6 +81,12 @@ edges keyed on the world-tick counter, replacing `xdotool` for menu navigation.
 Pair with `mednafen-state vram-dump --display-crop` to diff engine output against
 retail framebuffers.
 
+In `play-window`, the `V` key toggles a master audio mute: the mixer's output
+gate zeroes the rendered frames while the sequencer / SPU / XA stream keep
+ticking, so unmuting resumes mid-track in sync. The state persists in
+`legaia-options.toml` (the engine-only `muted` knob next to the retail
+options rows) and the HUD status line reflects it (`audio MUTED (V)`).
+
 In `play-window`, five minigames run as suspending scene modes driven by their
 clean-room rules engines: the `K` key starts the Noa dance rhythm minigame
 (`legaia_engine_core::dance`, from the dance overlay PROT 0980 - Left/Right/Up
@@ -89,7 +95,7 @@ are the three arrows), the `L` key starts the fishing minigame
 casts then reels, Circle is the second reel button), the `O` key starts the
 casino slot machine (`legaia_engine_core::slot_machine`, from the slot overlay
 PROT 0975 - Cross spins / stops each reel / collects; a spin is the retail
-flat 3-coin bet across all three paylines, 1 coin during a feature; quitting
+flat 3-coin bet across all five paylines, 1 coin during a feature; quitting
 cashes the balance out into the casino coin bank), and the `B`
 key starts a Baka Fighter duel (`legaia_engine_core::baka_fighter`, from the
 Baka Fighter overlay PROT 0976 - Left/Right/Up throw the three

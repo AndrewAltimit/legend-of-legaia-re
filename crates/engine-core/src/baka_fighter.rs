@@ -247,11 +247,35 @@ pub enum MatchPhase {
 /// scale; a special resolved earlier still wins the exchange but not the round.
 pub const SPECIAL_CHARGE_FRAMES_PER_KEYFRAME: u32 = 4;
 
+/// The SFX cue the duel fires when an exchange's damage lands.
+///
+/// Retail queues sound by writing a cue id straight into the 4-entry ring at
+/// `_DAT_8007B6D8`, which the drainer `FUN_80016B6C` resolves against the
+/// static descriptor table (`&DAT_8006F198 + id*8`, see
+/// `docs/formats/sfx-table.md`). The damage kernel `FUN_801D3B18` writes `9`.
+///
+/// It is the only cue the *fight* fires: a sweep of the whole duel overlay
+/// finds exactly four ring writes - this one plus the menu / tally blips
+/// ([`BAKA_CUE_CONFIRM`] / [`BAKA_CUE_CURSOR`] / [`BAKA_CUE_CANCEL`]), which
+/// belong to the surrounding UI, not to [`BakaFight`]. Round-start banners,
+/// KOs, draws and victory poses are **silent** in retail.
+pub const BAKA_CUE_HIT: u8 = 0x09;
+/// Menu confirm blip (duel menu SM). Not fired by [`BakaFight`] - the host's
+/// UI owns it.
+pub const BAKA_CUE_CONFIRM: u8 = 0x20;
+/// Menu cursor-move blip, also the score-tally tick (`FUN_801D239C`).
+pub const BAKA_CUE_CURSOR: u8 = 0x21;
+/// Menu cancel blip.
+pub const BAKA_CUE_CANCEL: u8 = 0x37;
+
 /// The running Baka Fighter duel.
 #[derive(Debug, Clone)]
 pub struct BakaFight {
     cfg: [FighterConfig; 2],
     f: [FighterState; 2],
+    /// SFX cue ids queued this tick, in fire order - the host's view of the
+    /// retail cue-ring writes. Drained by [`BakaFight::take_cues`].
+    cues: Vec<u8>,
     /// Which slots the CPU picker drives (slot 1 in retail; both for demos).
     ai_controlled: [bool; 2],
     /// Special full-charge gate per slot, in frames (from the action set's
@@ -281,6 +305,7 @@ impl BakaFight {
         Self {
             cfg: [player_cfg, opponent_cfg],
             f: [FighterState::new(), FighterState::new()],
+            cues: Vec::new(),
             ai_controlled: [false, true],
             special_full_frames: [
                 special_keyframes[0].max(0) as u32 * SPECIAL_CHARGE_FRAMES_PER_KEYFRAME,
@@ -356,6 +381,19 @@ impl BakaFight {
     }
 
     /// The last resolved exchange, for the host HUD.
+    /// Drain the SFX cue ids the fight queued since the last call, in fire
+    /// order (retail's cue-ring writes; see [`BAKA_CUE_HIT`]). Hosts route
+    /// each through their SFX bank - the site's arts/minigame pages resolve
+    /// them against the disc's class-2 sound bank.
+    pub fn take_cues(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.cues)
+    }
+
+    /// Cue ids queued but not yet drained.
+    pub fn pending_cues(&self) -> &[u8] {
+        &self.cues
+    }
+
     pub fn last_exchange(&self) -> Option<ExchangeReport> {
         self.last_exchange
     }
@@ -464,6 +502,10 @@ impl BakaFight {
     /// crit override, special full-hit round win)
     fn apply_damage(&mut self, loser: usize) -> (i32, bool, bool) {
         let winner = loser ^ 1;
+        // The retail ring write (`_DAT_8007b6d8 = 9`) sits at the top of
+        // FUN_801D3B18, before the damage arithmetic - so a double-KO draw
+        // (which applies damage twice) queues the cue twice, as it does here.
+        self.cues.push(BAKA_CUE_HIT);
         self.f[loser].hits_taken += 1;
         let winner_type = self.f[winner].chosen.map(BakaAttack::type_id).unwrap_or(0);
 
@@ -654,6 +696,159 @@ impl BakaFight {
     }
 }
 
+// ---------------------------------------------------------------- ladder run
+
+/// Phase of a cabinet [`LadderRun`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunPhase {
+    /// A match against the current rung's opponent is in progress.
+    Fighting,
+    /// The match was won and the rung's prize joined the pot: the retail
+    /// end-of-match menu is up (the "NEXT GAME / PAY OUT" cells on the PROT
+    /// 1203 tally sheet, drawn by `FUN_801d239c`'s tally screen).
+    Choice,
+    /// The player took "PAY OUT" mid-run: the pot is banked, the run is over.
+    PaidOut,
+    /// A match was lost: the accumulated pot is forfeited, the run is over.
+    GameOver,
+    /// Every rung cleared: the full pot pays out (the "VICTORY! / ALL STAGE
+    /// CLEAR!" sheet).
+    AllClear,
+}
+
+/// The cabinet's ladder run with the between-match **cash-out** choice.
+///
+/// Retail grain: after every match win the tally screen offers "NEXT GAME"
+/// or "PAY OUT" (both are widget cells in the PROT 1203 art pack, on the
+/// same sheet as "GET COIN" + its digit strip - see
+/// `docs/subsystems/minigame-baka-fighter.md`). Fighting on keeps the
+/// accumulated prize pot at risk; paying out banks it and ends the run.
+/// Two rules are host readings of the risk (stated, not overlay-pinned):
+/// a mid-run loss forfeits the whole pot, and clearing the final rung pays
+/// the pot out automatically. The rung prizes are the roster records' own
+/// gold column, so a full 14-rung clear from rung 0 pays the full-clear
+/// total (460 on the retail disc).
+#[derive(Debug, Clone)]
+pub struct LadderRun {
+    /// `(roster_id, prize_gold)` per rung, in cabinet serve order.
+    ladder: Vec<(usize, u32)>,
+    rung: usize,
+    pot: u32,
+    banked: u32,
+    forfeited: u32,
+    phase: RunPhase,
+}
+
+impl LadderRun {
+    /// Start a run at `start_rung` of `ladder` (`(roster_id, prize)` pairs in
+    /// serve order). `None` when the ladder is empty or the rung is out of
+    /// range.
+    pub fn new(ladder: Vec<(usize, u32)>, start_rung: usize) -> Option<Self> {
+        if ladder.is_empty() || start_rung >= ladder.len() {
+            return None;
+        }
+        Some(Self {
+            ladder,
+            rung: start_rung,
+            pot: 0,
+            banked: 0,
+            forfeited: 0,
+            phase: RunPhase::Fighting,
+        })
+    }
+
+    pub fn phase(&self) -> RunPhase {
+        self.phase
+    }
+
+    /// Current rung index (0-based into the serve order).
+    pub fn rung(&self) -> usize {
+        self.rung
+    }
+
+    /// Total rungs in the ladder.
+    pub fn len(&self) -> usize {
+        self.ladder.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ladder.is_empty()
+    }
+
+    /// Prize pot currently at risk.
+    pub fn pot(&self) -> u32 {
+        self.pot
+    }
+
+    /// Coins committed by a pay-out / all-clear (0 while running or after a
+    /// forfeit).
+    pub fn banked(&self) -> u32 {
+        self.banked
+    }
+
+    /// Coins lost to a mid-run defeat.
+    pub fn forfeited(&self) -> u32 {
+        self.forfeited
+    }
+
+    /// The rung being fought (or offered next): `(roster_id, prize)`.
+    pub fn current(&self) -> Option<(usize, u32)> {
+        self.ladder.get(self.rung).copied()
+    }
+
+    /// A match win: the rung's prize joins the pot. Moves to [`RunPhase::Choice`]
+    /// (or pays out immediately on the final rung → [`RunPhase::AllClear`]).
+    /// Returns the prize added, or `None` when not fighting.
+    pub fn match_won(&mut self) -> Option<u32> {
+        if self.phase != RunPhase::Fighting {
+            return None;
+        }
+        let (_, prize) = self.current()?;
+        self.pot += prize;
+        if self.rung + 1 == self.ladder.len() {
+            self.banked = self.pot;
+            self.phase = RunPhase::AllClear;
+        } else {
+            self.phase = RunPhase::Choice;
+        }
+        Some(prize)
+    }
+
+    /// A match loss: the pot is forfeited. Returns the coins lost, or `None`
+    /// when not fighting.
+    pub fn match_lost(&mut self) -> Option<u32> {
+        if self.phase != RunPhase::Fighting {
+            return None;
+        }
+        self.forfeited = self.pot;
+        self.pot = 0;
+        self.phase = RunPhase::GameOver;
+        Some(self.forfeited)
+    }
+
+    /// Take "NEXT GAME": risk the pot on the next rung. Returns the next
+    /// rung's roster id, or `None` when no choice is pending.
+    pub fn fight_on(&mut self) -> Option<usize> {
+        if self.phase != RunPhase::Choice {
+            return None;
+        }
+        self.rung += 1;
+        self.phase = RunPhase::Fighting;
+        self.current().map(|(roster, _)| roster)
+    }
+
+    /// Take "PAY OUT": bank the pot and end the run. Returns the coins
+    /// banked, or `None` when no choice is pending.
+    pub fn pay_out(&mut self) -> Option<u32> {
+        if self.phase != RunPhase::Choice {
+            return None;
+        }
+        self.banked = self.pot;
+        self.phase = RunPhase::PaidOut;
+        Some(self.banked)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -675,6 +870,31 @@ mod tests {
         let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), [2, 2], 1);
         f.ai_controlled = [false, false]; // deterministic: drive both by hand
         f
+    }
+
+    #[test]
+    fn a_decided_exchange_queues_the_hit_cue_and_a_draw_queues_none() {
+        let mut f = fight();
+        // Undecided: nobody has chosen, so no damage and no cue.
+        f.tick(1);
+        assert!(f.take_cues().is_empty(), "no exchange, no cue");
+
+        // 2 beats 1 -> slot 1 wins, damage lands on slot 0, cue 9 fires once.
+        f.choose(0, BakaAttack::A);
+        f.choose(1, BakaAttack::B);
+        f.tick(1);
+        assert_eq!(f.take_cues(), vec![BAKA_CUE_HIT]);
+        // Drained.
+        assert!(f.take_cues().is_empty());
+
+        // A draw (same type both sides) resolves without applying damage.
+        f.choose(0, BakaAttack::A);
+        f.choose(1, BakaAttack::A);
+        f.tick(1);
+        assert!(
+            f.take_cues().is_empty(),
+            "a drawn exchange applies no damage, so fires no hit cue"
+        );
     }
 
     #[test]
@@ -864,5 +1084,72 @@ mod tests {
             }
         }
         assert!(seen_backward, "the scripted pattern branch fired");
+    }
+
+    // ---------------------------------------------------------- ladder run
+
+    fn run_ladder() -> Vec<(usize, u32)> {
+        // Strictly-increasing prizes like the retail first lap.
+        vec![(5, 10), (6, 20), (7, 30), (8, 40)]
+    }
+
+    #[test]
+    fn ladder_pot_accumulates_and_pays_out() {
+        let mut r = LadderRun::new(run_ladder(), 0).unwrap();
+        assert_eq!(r.current(), Some((5, 10)));
+        assert_eq!(r.match_won(), Some(10));
+        assert_eq!(r.phase(), RunPhase::Choice);
+        assert_eq!(r.pot(), 10);
+        assert_eq!(r.fight_on(), Some(6));
+        assert_eq!(r.match_won(), Some(20));
+        assert_eq!(r.pot(), 30);
+        // Cash out mid-run banks the pot and ends the run.
+        assert_eq!(r.pay_out(), Some(30));
+        assert_eq!(r.phase(), RunPhase::PaidOut);
+        assert_eq!(r.banked(), 30);
+        // No further transitions.
+        assert_eq!(r.fight_on(), None);
+        assert_eq!(r.match_won(), None);
+    }
+
+    #[test]
+    fn ladder_loss_forfeits_the_pot() {
+        let mut r = LadderRun::new(run_ladder(), 0).unwrap();
+        r.match_won();
+        r.fight_on();
+        r.match_won();
+        r.fight_on();
+        assert_eq!(r.pot(), 30);
+        assert_eq!(r.match_lost(), Some(30));
+        assert_eq!(r.phase(), RunPhase::GameOver);
+        assert_eq!(r.pot(), 0);
+        assert_eq!(r.banked(), 0);
+        assert_eq!(r.forfeited(), 30);
+    }
+
+    #[test]
+    fn ladder_full_clear_pays_the_whole_pot() {
+        let mut r = LadderRun::new(run_ladder(), 0).unwrap();
+        for _ in 0..3 {
+            r.match_won();
+            r.fight_on();
+        }
+        // Final rung: the win pays out automatically (no choice pending).
+        assert_eq!(r.match_won(), Some(40));
+        assert_eq!(r.phase(), RunPhase::AllClear);
+        assert_eq!(r.banked(), 100);
+        assert_eq!(r.pay_out(), None);
+    }
+
+    #[test]
+    fn ladder_start_rung_and_bounds() {
+        assert!(LadderRun::new(vec![], 0).is_none());
+        assert!(LadderRun::new(run_ladder(), 4).is_none());
+        let mut r = LadderRun::new(run_ladder(), 3).unwrap();
+        assert_eq!(r.current(), Some((8, 40)));
+        // Dropping in at the last rung: one win = all clear, pot = that prize.
+        assert_eq!(r.match_won(), Some(40));
+        assert_eq!(r.phase(), RunPhase::AllClear);
+        assert_eq!(r.banked(), 40);
     }
 }

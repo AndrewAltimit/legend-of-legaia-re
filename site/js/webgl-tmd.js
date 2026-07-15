@@ -40,6 +40,40 @@
  *   farRef  - 0..16383 reference Z for the far plane (retail gp-0x2E0).
  */
 
+/* PSX semi-transparency (ABE) tail for a scene mesh's index list: bucket
+ * every semi-transparent triangle (first vertex's TSB bit 15, packed by the
+ * Rust mesh builders) into one of four per-ABR-mode runs appended after the
+ * original indices. The opaque pass draws the original range (the fragment
+ * shader defers the blending texels via u_semi_pass = 0); the blend pass
+ * re-draws each tail run with the matching GL blend state. The browser
+ * mirror of engine-render's psx_blend::append_semi_tail.
+ *
+ * Returns null when the mesh has no semi prims, so pure-opaque meshes
+ * upload their index list untouched. */
+function buildSemiTail(indices, cbaTsb) {
+  const buckets = [[], [], [], []];
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const tsb = cbaTsb[indices[i] * 2 + 1];
+    if ((tsb & 0x8000) === 0) continue;
+    buckets[(tsb >> 5) & 3].push(indices[i], indices[i + 1], indices[i + 2]);
+  }
+  let tailLen = 0;
+  for (const b of buckets) tailLen += b.length;
+  if (tailLen === 0) return null;
+  const out = new Uint32Array(indices.length + tailLen);
+  out.set(indices, 0);
+  const ranges = [];
+  let at = indices.length;
+  for (let mode = 0; mode < 4; mode++) {
+    const b = buckets[mode];
+    if (b.length === 0) continue;
+    ranges.push({ mode, start: at, count: b.length });
+    out.set(b, at);
+    at += b.length;
+  }
+  return { indices: out, ranges };
+}
+
 class TmdRenderer {
   constructor(canvas) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
@@ -54,6 +88,7 @@ class TmdRenderer {
     this.locLight   = gl.getUniformLocation(this.program, 'u_light');
     this.locNormalSign = gl.getUniformLocation(this.program, 'u_normal_sign');
     this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
+    this.locSemiPass = gl.getUniformLocation(this.program, 'u_semi_pass');
     this.locFogLut  = gl.getUniformLocation(this.program, 'u_fog_lut');
     this.locFogEnableFs = gl.getUniformLocation(this.program, 'u_fog_enable');
     this.locFogColor    = gl.getUniformLocation(this.program, 'u_fog_color');
@@ -61,6 +96,7 @@ class TmdRenderer {
     this.locFogFarRef   = gl.getUniformLocation(this.program, 'u_fog_far_ref');
     this.locFogZShift   = gl.getUniformLocation(this.program, 'u_fog_z_shift');
     this.locUseFlatColors = gl.getUniformLocation(this.program, 'u_use_flat_colors');
+    this.locGhost   = gl.getUniformLocation(this.program, 'u_ghost');
     this.locPos     = gl.getAttribLocation(this.program, 'a_position');
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
@@ -70,6 +106,31 @@ class TmdRenderer {
      * a_flat_rgba colours and the FS uses them for untextured prims. Off for
      * every other consumer (scene, world map, monsters, battle characters). */
     this.useFlatColors = false;
+
+    /* Opt-in backface culling for the single-mesh `render()` path. Off by
+     * default (Legaia TMDs have inconsistent winding across the corpus, so
+     * the viewer relies on the depth buffer); the dance stage turns it on -
+     * retail's NCLIP pass culls the hall's inward-facing panels (the crowd
+     * billboard right behind its camera) and the interior only reads
+     * correctly with the same rule. Winding choice via `cullFrontFace`
+     * ('cw' | 'ccw'). */
+    this.cullBackfaces = false;
+    this.cullFrontFace = 'ccw';
+
+    /* Opt-in two-pass semi-transparency for the single-mesh `render()`
+     * path: pass 0 draws the opaque prims, pass 1 re-draws only the ABE
+     * prims (TSB bit 15) additively with the depth buffer read-only - the
+     * dance hall's smoke columns and spotlight glows are ABE prims that
+     * read as opaque grey slabs without it. Off by default (every existing
+     * consumer keeps the one-pass draw-everything behaviour). */
+    this.semiTwoPass = false;
+
+    /* After-image trail for the single-mesh `render()` path (the arts page's
+     * per-character tinted echoes). `{ passes: [{ positions, tint: [r,g,b],
+     * alpha }], restore: Float32Array }` or null. Each pass re-draws the mesh
+     * additively at a delayed pose; `restore` puts the live pose back in the
+     * position buffer afterwards (MeshView only re-uploads on frame change). */
+    this.ghostTrail = null;
 
     this.vao    = gl.createVertexArray();
     this.posBuf = gl.createBuffer();
@@ -463,22 +524,30 @@ class TmdRenderer {
 
   /* center: [cx, cy, cz]; radius: bounding-sphere half-extent;
    * distance: camera distance in unit-radius units (default 2.5);
-   * panX/panY: view-space pan in unit-radius units (default 0). */
-  render(yaw, pitch, distance, panX, panY, center, radius) {
+   * panX/panY: view-space pan in unit-radius units (default 0);
+   * fovY (optional, radians): vertical field of view (default 1.2). */
+  render(yaw, pitch, distance, panX, panY, center, radius, fovY) {
     const gl = this.gl;
     const w = this.canvas.width;
     const h = this.canvas.height;
     gl.viewport(0, 0, w, h);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
-    /* Legaia TMDs have inconsistent winding; let the depth buffer sort it out. */
-    gl.disable(gl.CULL_FACE);
+    /* Legaia TMDs have inconsistent winding; by default let the depth buffer
+     * sort it out. Consumers that need retail's NCLIP cull opt in. */
+    if (this.cullBackfaces) {
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.BACK);
+      gl.frontFace(this.cullFrontFace === 'cw' ? gl.CW : gl.CCW);
+    } else {
+      gl.disable(gl.CULL_FACE);
+    }
     gl.clearColor(0.04, 0.05, 0.08, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     if (this.indexCount === 0) return;
 
-    const mvp = buildMvp(yaw, pitch, distance, panX, panY, center, radius, w, h);
+    const mvp = buildMvp(yaw, pitch, distance, panX, panY, center, radius, w, h, fovY);
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
@@ -486,15 +555,72 @@ class TmdRenderer {
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);  /* matches WGSL light_dir.xyz */
     gl.uniform1f(this.locNormalSign, 1.0);  /* orbit VP keeps screen handedness */
     gl.uniform1i(this.locNoDisc, 0);  /* per-mesh inspector: keep cutout discard */
+    /* Single-mesh inspector: legacy single pass (no semi-transparency defer,
+     * ABE prims draw opaque) - only renderAssembled runs the blend pass. */
+    gl.uniform1i(this.locSemiPass, -1);
     /* Field-character hybrid: untextured prims use their vertex colour. Set
      * explicitly every frame (the uniform persists on the shared program). */
     gl.uniform1i(this.locUseFlatColors, this.useFlatColors ? 1 : 0);
+    /* Ghost tint OFF for the opaque pose (the trail pass sets it per echo). */
+    gl.uniform4f(this.locGhost, 0, 0, 0, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
 
     gl.bindVertexArray(this.vao);
-    gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+    if (this.semiTwoPass) {
+      /* Pass 0: opaque prims only. */
+      gl.uniform1i(this.locSemiPass, 0);
+      gl.disable(gl.BLEND);
+      gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+      /* Pass 1: ABE prims, additive, depth-tested but not depth-written -
+       * the closest single-mode stand-in for the PSX blend modes (the hall's
+       * ABE prims are glow/smoke, which retail draws additively). */
+      gl.uniform1i(this.locSemiPass, 1);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.depthMask(false);
+      gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      gl.uniform1i(this.locSemiPass, -1);
+    } else {
+      gl.uniform1i(this.locSemiPass, -1);
+      gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+    }
+
+    /* After-image trail: re-draw the mesh at each delayed pose, tinted and
+     * additive (PSX ABE mode 1 - the retail arts after-image is a delayed
+     * mesh copy drawn as a semi-transparent prim). Depth-tested against the
+     * opaque pose but not depth-written, so echoes never occlude it. */
+    const trail = this.ghostTrail;
+    if (trail && trail.passes && trail.passes.length) {
+      gl.enable(gl.BLEND);
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.depthMask(false);
+      /* Strictly-nearer depth test: where an echo coincides with the live
+       * pose (equal depth) it is rejected, so the character stays readable
+       * and the tint only builds where the delayed pose has separated -
+       * matching the retail look of a trail *behind* the motion. */
+      gl.depthFunc(gl.LESS);
+      gl.uniform1i(this.locSemiPass, -1);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+      for (const p of trail.passes) {
+        if (!p.positions || p.positions.byteLength !== this.posByteLength) continue;
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, p.positions);
+        gl.uniform4f(this.locGhost, p.tint[0], p.tint[1], p.tint[2], p.alpha);
+        gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+      }
+      gl.uniform4f(this.locGhost, 0, 0, 0, 0);
+      gl.depthMask(true);
+      gl.depthFunc(gl.LEQUAL);
+      gl.disable(gl.BLEND);
+      /* Put the live pose back - MeshView only re-uploads on frame change. */
+      if (trail.restore && trail.restore.byteLength === this.posByteLength) {
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, trail.restore);
+      }
+    }
     gl.bindVertexArray(null);
   }
 
@@ -526,6 +652,7 @@ class TmdRenderer {
         idxBuf: gl.createBuffer(),
         indexCount: 0,
         hasFlat: false,
+        semiRanges: null,
         aabb: null,
       };
       this.sceneMeshes.set(meshId, m);
@@ -561,8 +688,13 @@ class TmdRenderer {
       gl.disableVertexAttribArray(this.locFlatRgba);
     }
 
+    /* Semi-transparent (ABE) prims: append the per-ABR-mode blend tail. The
+     * opaque pass keeps drawing 0..indices.length; the tail ranges are only
+     * touched by renderAssembled's blend pass. */
+    const tail = buildSemiTail(indices, cbaTsb);
+    m.semiRanges = tail ? tail.ranges : null;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.STATIC_DRAW);
 
     m.indexCount = indices.length;
     gl.bindVertexArray(null);
@@ -570,6 +702,21 @@ class TmdRenderer {
 
   hasSceneMesh(meshId) {
     return this.sceneMeshes.has(meshId);
+  }
+
+  /* Re-upload just the positions of an already-registered scene mesh, keeping
+   * its UVs / CBA-TSB / indices / flat colours. This is the animated-actor path
+   * on the play page: a character's vertices are object-local, so every frame
+   * its posed positions change while the rest of the vertex stream doesn't.
+   * The buffer must keep its vertex count (a pose moves vertices, it never adds
+   * them). No-op for an unknown meshId. */
+  updateSceneMeshPositions(meshId, positions) {
+    const gl = this.gl;
+    const m = this.sceneMeshes.get(meshId);
+    if (!m || !positions || positions.length === 0) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.posBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
+    m.aabb = computeAabb(positions);
   }
 
   clearScene() {
@@ -771,6 +918,9 @@ class TmdRenderer {
      * rows; the walk-frame path uploads the kingdom's real VRAM image, so
      * CLUTs now resolve exactly like retail. */
     gl.uniform1i(this.locNoDisc, 0);
+    /* Opaque pass: defer semi-transparent (ABE) fragments; the blend pass
+     * after the placement loop re-draws them per ABR mode. */
+    gl.uniform1i(this.locSemiPass, 0);
     /* Flat-colour hybrid: off for the ground pass; re-enabled per placed
      * mesh below when it carries an untextured vertex-colour half (the
      * viewer full-map path). The context-global constant keeps disabled
@@ -843,23 +993,80 @@ class TmdRenderer {
       }
       gl.bindVertexArray(m.vao);
       for (const p of list) {
-        const scale = (p.scale != null) ? p.scale : MESH_SCALE;
-        const useCentroid = (p.anchor === 'centroid') && m.aabb;
-        let model;
-        if (useCentroid) {
-          model = placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb);
-        } else if (p.y != null) {
-          /* Walk-frame landmarks carry a world Y (floor-LUT height) so they
-           * sit on the continent heightfield instead of the y=0 plane. */
-          model = placementModelScaledY(p.x, p.y, p.z, p.rotY || 0, scale);
-        } else {
-          model = placementModelScaled(p.x, p.z, p.rotY || 0, scale);
-        }
-        gl.uniformMatrix4fv(this.locModel, false, model);
+        gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
     }
+
+    /* Blend pass: re-draw the deferred semi-transparent (ABE) prims over the
+     * finished opaque scene, one fixed-function blend state per ABR mode.
+     * Depth-tested against the opaque scene but not depth-written, so blend
+     * prims never occlude. Mirrors the retail GPU: the ordering table draws
+     * blend prims against the already-rendered background. */
+    let blendOn = false;
+    for (const [meshId, list] of byMesh) {
+      const m = this.sceneMeshes.get(meshId);
+      if (!m || !m.semiRanges || m.indexCount === 0) continue;
+      if (!blendOn) {
+        gl.enable(gl.BLEND);
+        gl.depthMask(false);
+        gl.uniform1i(this.locSemiPass, 1);
+        blendOn = true;
+      }
+      const wantFlat = !!m.hasFlat;
+      if (wantFlat !== flatColorsOn) {
+        gl.uniform1i(this.locUseFlatColors, wantFlat ? 1 : 0);
+        flatColorsOn = wantFlat;
+      }
+      gl.bindVertexArray(m.vao);
+      for (const p of list) {
+        gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
+        for (const r of m.semiRanges) {
+          this._setSemiBlend(r.mode);
+          gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
+        }
+      }
+    }
+    if (blendOn) {
+      gl.disable(gl.BLEND);
+      gl.depthMask(true);
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.uniform1i(this.locSemiPass, 0);
+    }
     gl.bindVertexArray(null);
+  }
+
+  /* Model matrix for one renderAssembled placement (shared by the opaque
+   * and blend passes so both draw at identical transforms). */
+  _placementModel(p, m) {
+    const scale = (p.scale != null) ? p.scale : MESH_SCALE;
+    if ((p.anchor === 'centroid') && m.aabb) {
+      return placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb);
+    }
+    if (p.y != null) {
+      /* Walk-frame landmarks carry a world Y (floor-LUT height) so they
+       * sit on the continent heightfield instead of the y=0 plane. */
+      return placementModelScaledY(p.x, p.y, p.z, p.rotY || 0, scale);
+    }
+    return placementModelScaled(p.x, p.z, p.rotY || 0, scale);
+  }
+
+  /* GL blend state for one PSX ABR semi-transparency mode (B = backbuffer,
+   * F = fragment): 0 = 0.5B + 0.5F, 1 = B + F, 2 = B - F, 3 = B + 0.25F.
+   * Constant-alpha factors carry the 0.5 / 0.25 weights, so no shader
+   * pre-scale is needed. Same table as engine-render's psx_blend. */
+  _setSemiBlend(mode) {
+    const gl = this.gl;
+    gl.blendEquation(mode === 2 ? gl.FUNC_REVERSE_SUBTRACT : gl.FUNC_ADD);
+    if (mode === 0) {
+      gl.blendColor(0, 0, 0, 0.5);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+    } else if (mode === 3) {
+      gl.blendColor(0, 0, 0, 0.25);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE);
+    } else {
+      gl.blendFunc(gl.ONE, gl.ONE);
+    }
   }
 
 

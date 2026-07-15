@@ -63,10 +63,12 @@ impl PlayWindowApp {
         );
         let layout1 = self.font.layout_ascii(&line1);
         let mut out = text_draws_for(&layout1, (8, 8), white);
-        let audio_str = if self.session.audio.is_some() {
-            "audio on"
-        } else {
+        let audio_str = if self.session.audio.is_none() {
             "no audio"
+        } else if self.options_state.muted {
+            "audio MUTED (V)"
+        } else {
+            "audio on (V mutes)"
         };
         // Human-readable name for the playing track: global-pool ids join
         // the music_01 bank / debug sound-test order the curated
@@ -83,11 +85,28 @@ impl PlayWindowApp {
                 },
             )
             .unwrap_or_default();
+        // Dynamic-lighting enhancement state (opt-in, non-retail; `I` toggles).
+        let light_str = if self.dynamic_lighting {
+            "  light ON (I)"
+        } else {
+            ""
+        };
+        // Camera-distance preset (`T` cycles) + precise-movement toggle
+        // (`R`) - the compass/zoom state, appended to the status line.
+        let cam_str = format!("  cam {} (T)", self.session.camera.distance.label());
+        let precise_str = if self.options_state.precise_movement {
+            "  precise-move ON (R)"
+        } else {
+            ""
+        };
         let line2 = format!(
-            "t {:.1}s  {}{}  arrows=dpad Z=X",
+            "t {:.1}s  {}{}{}{}{}  arrows=dpad Z=X drag=orbit",
             self.win.elapsed_secs(),
             audio_str,
-            bgm_str
+            bgm_str,
+            light_str,
+            cam_str,
+            precise_str
         );
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));
@@ -906,58 +925,102 @@ impl PlayWindowApp {
                 (32, 24),
             ));
         }
-        // Dialog box: the active NPC / event message, typed out one line near
-        // the bottom of the screen (1/8 from the left, ~70% down - the
-        // single-line layout the retail field VM emits). The panel mirrors
-        // `World::current_dialog`; the world owns dismissal.
-        if let Some(panel) = self.active_dialog.as_ref() {
-            let to_ascii = |bytes: &[u8]| -> String {
-                bytes
-                    .iter()
-                    .map(|&b| {
-                        if (0x20..=0x7E).contains(&b) {
-                            b as char
-                        } else {
-                            '?'
-                        }
-                    })
-                    .collect()
-            };
-            let page = to_ascii(&panel.page_bytes());
-            let layout = self.font.layout_ascii(&page);
-            let pen = ((w as i32) / 8, (h as i32) * 7 / 10);
-            out.extend(text_draws_for(&layout, pen, [1.0, 1.0, 1.0, 1.0]));
-
-            // Multiple-choice menu: draw the decoded option labels under the
-            // prompt, one row each, with a `>` cursor on the highlighted option
-            // (the picker decoded from the inline interaction script).
-            if panel.menu_active()
-                && let Some(picker) = panel.picker()
-            {
-                // The proportional dialog font is a ~14px cell; one row per
-                // option below the prompt.
-                let line_h = 16i32;
-                let cursor = panel.picker_cursor();
-                for (i, opt) in picker.options.iter().enumerate() {
-                    let selected = i == cursor;
-                    let marker = if selected { "> " } else { "  " };
-                    let label = format!("{marker}{}", to_ascii(&opt.label));
+        // Dialog box text: the active NPC / event message (simplified
+        // panel, cutscene-timeline segment, or the inline-script
+        // field-VM runner - `dialog_snapshot` picks whichever is
+        // live). Laid out in stage pixels inside the retail box rect
+        // computed by `dialog_stage_layout`, then upscaled with the
+        // same stage transform the window chrome uses so text and
+        // frame stay locked together. The chrome itself is emitted in
+        // the sprite layer (`dialog_chrome_sprite_draws`).
+        if let Some(snap) = self.dialog_snapshot() {
+            let lay = Self::dialog_stage_layout(&snap);
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let has_chrome = self.save_menu.is_some();
+            let mut draws: Vec<TextDraw> = Vec::new();
+            let (bx, by, _, _) = lay.main;
+            // Main text: one row per 0x7C-separated line at the retail
+            // 15-px pitch, pen at the traced interior offset (+0x10).
+            for (i, line) in snap.page.split('|').enumerate() {
+                let row_layout = self.font.layout_ascii(line);
+                let pen = (bx + 0x10, by + 4 + i as i32 * 0xF);
+                draws.extend(text_draws_for(&row_layout, pen, [1.0, 1.0, 1.0, 1.0]));
+            }
+            // Option-picker labels: retail draws them CLUT-7 white at
+            // `box_x + 0x10`, 15-px pitch; the pointing-hand sprite
+            // (drawn in the chrome layer) marks the selection. Keep a
+            // text `>` marker only when the chrome atlas is missing.
+            if let Some((px, py, _, _)) = lay.picker {
+                for (i, opt) in snap.options.iter().enumerate() {
+                    let selected = i == snap.cursor;
+                    let label = if has_chrome {
+                        opt.clone()
+                    } else {
+                        format!("{}{}", if selected { "> " } else { "  " }, opt)
+                    };
                     let row_layout = self.font.layout_ascii(&label);
-                    let row_pen = (pen.0 + (w as i32) / 16, pen.1 + line_h * (i as i32 + 1));
-                    let color = if selected {
-                        [1.0, 1.0, 0.6, 1.0]
+                    let pen = (px + 0x10, py + 4 + i as i32 * 0xF);
+                    let color = if selected || has_chrome {
+                        [1.0, 1.0, 1.0, 1.0]
                     } else {
                         [0.8, 0.85, 1.0, 1.0]
                     };
-                    out.extend(text_draws_for(&row_layout, row_pen, color));
+                    draws.extend(text_draws_for(&row_layout, pen, color));
                 }
             }
+            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
         }
+        out
+    }
 
-        // Cutscene-timeline dialog box: a `0x1F` conversation segment inside a
-        // spawned partition-2 record (e.g. the town01 Mei walk-on beat). The
-        // world's timeline stepper owns ticking + input; same layout as the
-        // other panels.
+    /// Snapshot the live dialog source (simplified panel, cutscene
+    /// timeline, or inline field-VM runner) into plain strings the
+    /// text and chrome layers both consume. `None` when no box is
+    /// open this frame.
+    pub(super) fn dialog_snapshot(&self) -> Option<DialogSnapshot> {
+        let to_ascii = |bytes: &[u8]| -> String {
+            bytes
+                .iter()
+                .map(|&b| {
+                    if (0x20..=0x7E).contains(&b) {
+                        b as char
+                    } else {
+                        '?'
+                    }
+                })
+                .collect()
+        };
+        let from_panel = |panel: &legaia_engine_core::dialog::OwnedDialogPanel,
+                          require_text: bool|
+         -> Option<DialogSnapshot> {
+            let page = to_ascii(&panel.page_bytes());
+            if require_text && page.is_empty() {
+                return None;
+            }
+            let (options, cursor) = if panel.menu_active() {
+                match panel.picker() {
+                    Some(p) => (
+                        p.options.iter().map(|o| to_ascii(&o.label)).collect(),
+                        panel.picker_cursor(),
+                    ),
+                    None => (Vec::new(), 0),
+                }
+            } else {
+                (Vec::new(), 0)
+            };
+            Some(DialogSnapshot {
+                page,
+                options,
+                cursor,
+                // The advance hand shows at a page break AND on the final
+                // fully-typed page (retail waits for a confirm on both).
+                waiting: panel.is_waiting_for_input() || panel.is_done(),
+            })
+        };
+        if let Some(panel) = self.active_dialog.as_ref() {
+            return from_panel(panel, false);
+        }
         if let Some(panel) = self
             .session
             .host
@@ -965,88 +1028,135 @@ impl PlayWindowApp {
             .cutscene_timeline
             .as_ref()
             .and_then(|tl| tl.dialog.as_ref())
+            && let Some(snap) = from_panel(panel, true)
         {
-            let to_ascii = |bytes: &[u8]| -> String {
-                bytes
-                    .iter()
-                    .map(|&b| {
-                        if (0x20..=0x7E).contains(&b) {
-                            b as char
-                        } else {
-                            '?'
-                        }
-                    })
-                    .collect()
-            };
-            let page = to_ascii(&panel.page_bytes());
-            if !page.is_empty() {
-                let layout = self.font.layout_ascii(&page);
-                let pen = ((w as i32) / 8, (h as i32) * 7 / 10);
-                out.extend(text_draws_for(&layout, pen, [1.0, 1.0, 1.0, 1.0]));
-                if panel.menu_active()
-                    && let Some(picker) = panel.picker()
-                {
-                    let line_h = 16i32;
-                    let cursor = panel.picker_cursor();
-                    for (i, opt) in picker.options.iter().enumerate() {
-                        let selected = i == cursor;
-                        let marker = if selected { "> " } else { "  " };
-                        let label = format!("{marker}{}", to_ascii(&opt.label));
-                        let row_layout = self.font.layout_ascii(&label);
-                        let row_pen = (pen.0 + (w as i32) / 16, pen.1 + line_h * (i as i32 + 1));
-                        let color = if selected {
-                            [1.0, 1.0, 0.6, 1.0]
-                        } else {
-                            [0.8, 0.85, 1.0, 1.0]
-                        };
-                        out.extend(text_draws_for(&row_layout, row_pen, color));
-                    }
-                }
-            }
+            return Some(snap);
         }
+        if let Some(id) = self.session.host.world.inline_dialogue.as_ref()
+            && let Some(panel) = id.panel.as_ref()
+        {
+            return from_panel(panel, true);
+        }
+        None
+    }
 
-        // Inline-script field-VM runner box (the `--vm-dialogue` faithful path).
-        // Same layout as the simplified panel, but the source is
-        // `world.inline_dialogue`, which the world ticks itself.
-        if let Some(id) = self.session.host.world.inline_dialogue.as_ref() {
-            let to_ascii = |bytes: &[u8]| -> String {
-                bytes
-                    .iter()
-                    .map(|&b| {
-                        if (0x20..=0x7E).contains(&b) {
-                            b as char
-                        } else {
-                            '?'
-                        }
-                    })
-                    .collect()
-            };
-            let page = to_ascii(&id.page_bytes());
-            if !page.is_empty() {
-                let layout = self.font.layout_ascii(&page);
-                let pen = ((w as i32) / 8, (h as i32) * 7 / 10);
-                out.extend(text_draws_for(&layout, pen, [1.0, 1.0, 1.0, 1.0]));
-                if id.menu_active()
-                    && let Some(picker) = id.picker()
-                {
-                    let line_h = 16i32;
-                    let cursor = id.picker_cursor();
-                    for (i, opt) in picker.options.iter().enumerate() {
-                        let selected = i == cursor;
-                        let marker = if selected { "> " } else { "  " };
-                        let label = format!("{marker}{}", to_ascii(&opt.label));
-                        let row_layout = self.font.layout_ascii(&label);
-                        let row_pen = (pen.0 + (w as i32) / 16, pen.1 + line_h * (i as i32 + 1));
-                        let color = if selected {
-                            [1.0, 1.0, 0.6, 1.0]
-                        } else {
-                            [0.8, 0.85, 1.0, 1.0]
-                        };
-                        out.extend(text_draws_for(&row_layout, row_pen, color));
-                    }
-                }
-            }
+    /// Compute the stage-pixel box rects for a dialog snapshot,
+    /// mirroring the pager's traced geometry (`FUN_801D84D0`):
+    ///
+    /// - Main box: width `0xF4` (244), height `lines*0xF - 3` (the
+    ///   per-frame `FUN_8002C69C` call passes `lines*0xF + 5 - 8`).
+    ///   Anchored near the bottom of the 320x240 stage; when an
+    ///   option picker is open the reading box moves to the top band
+    ///   and the picker takes the bottom - the retail two-box
+    ///   conversation layout.
+    /// - Picker box: `x = 0x26`, `y = 0x94 + ((4-n)*0xF)/2`,
+    ///   `w = 0xF4`, `h = 0x38 - (4-n)*0xF` (the picker-init arms'
+    ///   literal geometry writes).
+    pub(super) fn dialog_stage_layout(snap: &DialogSnapshot) -> DialogStageLayout {
+        // Retail's standard reading box is ALWAYS 3 rows tall
+        // (`_DAT_801F2740 = 3` in both box-init arms) regardless of how
+        // much text has typed in; only over-long simplified pages grow
+        // it to a 4th row.
+        let lines = snap.page.split('|').count().clamp(3, 4) as i32;
+        let main_w = 0xF4;
+        // Retail passes `h = lines*0xF - 3` and the standard skin then
+        // expands the drawn footprint by 8 (the emitter's case-0
+        // `-4/+8` border inflation); the engine's border draws inside
+        // the rect, so bake the +8 into the rect height.
+        let main_h = lines * 0xF - 3 + 8;
+        let picker = if snap.options.is_empty() {
+            None
+        } else {
+            let n = snap.options.len().clamp(2, 4) as i32;
+            Some((
+                0x26,
+                0x94 + ((4 - n) * 0xF) / 2,
+                0xF4,
+                0x38 - (4 - n) * 0xF + 8,
+            ))
+        };
+        let main_y = if picker.is_some() { 12 } else { 204 - main_h };
+        DialogStageLayout {
+            main: (0x1A, main_y, main_w, main_h),
+            picker,
+        }
+    }
+
+    /// Build the dialog-window chrome sprites (gradient fill + gold
+    /// 9-slice frame + hand cursors) for the active dialog box, if
+    /// any. Sampled from the resident system-UI atlas; composited in
+    /// the same sprite slot as the menu chrome, under the text layer.
+    pub(super) fn dialog_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        if self.boot_ui.is_active() {
+            return Vec::new();
+        }
+        let Some(snap) = self.dialog_snapshot() else {
+            return Vec::new();
+        };
+        let lay = Self::dialog_stage_layout(&snap);
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        let mut out = legaia_engine_render::dialog_window_chrome_draws_for(
+            &assets.rects,
+            lay.main,
+            stage_origin,
+            stage_scale,
+        );
+        if let Some(prect) = lay.picker {
+            out.extend(legaia_engine_render::dialog_window_chrome_draws_for(
+                &assets.rects,
+                prect,
+                stage_origin,
+                stage_scale,
+            ));
+            // Pointing-hand cursor on the selected option row
+            // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF).
+            out.push(legaia_engine_render::dialog_option_hand_sprite(
+                &assets.rects,
+                (prect.0, prect.1 + 2),
+                snap.cursor,
+                stage_origin,
+                stage_scale,
+            ));
+        } else if snap.waiting {
+            // Page-advance hand at the lower-right rim while the pager
+            // waits for confirm (FUN_8002B994 kind 1).
+            out.push(legaia_engine_render::dialog_advance_hand_sprite(
+                &assets.rects,
+                lay.main,
+                stage_origin,
+                stage_scale,
+            ));
         }
         out
     }
+}
+
+/// Plain-string view of the live dialog panel shared by the text and
+/// chrome layers (see `PlayWindowApp::dialog_snapshot`).
+pub(super) struct DialogSnapshot {
+    /// Current typed-out page, `|` (0x7C) separating rows.
+    pub page: String,
+    /// Decoded option labels when a picker menu is open (empty
+    /// otherwise).
+    pub options: Vec<String>,
+    /// Selected option row.
+    pub cursor: usize,
+    /// The panel is waiting for a confirm press (page fully typed).
+    pub waiting: bool,
+}
+
+/// Stage-pixel dialog box layout (see
+/// `PlayWindowApp::dialog_stage_layout`).
+pub(super) struct DialogStageLayout {
+    /// Main reading-box rect `(x, y, w, h)`.
+    pub main: (i32, i32, i32, i32),
+    /// Option-picker box rect when a menu is open.
+    pub picker: Option<(i32, i32, i32, i32)>,
 }

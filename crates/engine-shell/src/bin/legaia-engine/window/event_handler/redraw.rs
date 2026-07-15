@@ -5,6 +5,12 @@ use super::super::*;
 
 impl PlayWindowApp {
     pub(super) fn handle_redraw(&mut self) {
+        // Opt-in frame profiler (`LEGAIA_PROFILE=1`; see
+        // `legaia_engine_render::profile`). Free when off - each call is a
+        // cached-bool branch. The stage marks below carve the frame into
+        // tick / pose / drawlist / acquire / uniforms / encode / submit /
+        // present.
+        legaia_engine_render::profile::begin_frame();
         let dt = self.win.advance_tick(100);
         // Drain up to 4 ticks per render frame so we never spiral
         // but can still catch up from minor vsync jitter.
@@ -146,6 +152,10 @@ impl PlayWindowApp {
             } else {
                 self.pad
             };
+            // Re-assert the precise-movement toggle each tick: scene / New
+            // Game transitions can reseed world state, and the toggle is
+            // host policy (options file + `R` key), not world state.
+            self.session.host.world.precise_movement = self.options_state.precise_movement;
             self.session.host.world.set_pad(field_pad);
             match self.session.tick() {
                 // Door transition: the host loaded a new scene under
@@ -161,6 +171,12 @@ impl PlayWindowApp {
                 Ok(_) => {}
                 Err(e) => log::error!("session tick: {e:#}"),
             }
+            // Placed-prop animation: advance every posed prop's clip and post
+            // the player's contact edges, so walking into a Rim Elm house door
+            // resumes its bind script and swings it open (retail's per-actor
+            // anim tick `FUN_800204F8`, driven by the body-contact script
+            // resume `FUN_801D5B5C`).
+            self.tick_field_prop_anims();
             // Opt-in synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`): no
             // retail scene script installs one, so this is the visual
             // trigger for the per-cell tile-actor draw pass.
@@ -290,6 +306,7 @@ impl PlayWindowApp {
             // the world dismisses the box).
             self.sync_dialog_panel();
         }
+        legaia_engine_render::profile::mark("tick");
         // A tick this frame may have flipped the world into
         // SceneMode::Cutscene (field-VM FMV-trigger op). Start
         // windowed STR playback if so; a cut/missing slot drains the
@@ -317,43 +334,47 @@ impl PlayWindowApp {
             && self.session.host.world.cutscene_timeline_active()
         {
             let (focus, pitch, yaw, h, tr_eye) = self.cutscene_view();
-            // Ease rate from the op-`0x45` `apply_trigger` (retail `FUN_801DE084`
-            // → `FUN_801DB510`): a Configure with `apply == 0` commits the camera
-            // targets IMMEDIATELY (snap), while `apply > 0` stages them and lets
-            // the per-frame ease glide the eye toward them over roughly `apply`
-            // frames. opdeene's beats mix both: the entry shot snaps (`apply 0`),
-            // but the mid-prologue dolly (`apply 840`, paired with a 760-frame
-            // WaitFrames) glides continuously WHILE the narration text scrolls -
-            // exactly the "3D keeps playing under the crawl" retail behaviour.
-            // The old fixed `0.15` snapped every beat to a near-still hold in a
-            // few frames, which read as scene-then-text rather than concurrent.
+            // Glide pacing from the op-`0x45` `apply_trigger` (retail
+            // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
+            // commits its camera targets IMMEDIATELY (snap cut), while
+            // `apply > 0` stages them and the per-frame mover glides the live
+            // globals there over `apply` frames (constant velocity, exact
+            // arrival - the `FUN_801DB510` head subtracts a per-frame step
+            // from the eye trio). opdeene's beats mix both: the entry shot
+            // snaps (`apply 0`), the mid-prologue grove drift glides
+            // (`apply 840`, paired with a 760-frame WaitFrames), and the
+            // crater-rim tableau dolly glides (`apply 480`) WHILE the
+            // narration text scrolls - the "3D keeps playing under the
+            // crawl" retail behaviour. The interp arms glides PER COMPONENT
+            // on target change (see `CutsceneCameraInterp::glide`), so the
+            // H-only re-poke one frame after the tableau beat cannot snap
+            // the in-flight dolly (the earlier whole-tuple ease-rate model
+            // did exactly that, tele-porting the eye into the crater-rim
+            // geometry - the "opening shot buried in a gold wall" report).
+            //
+            // Advanced in SIM-TICK time, not render-frame time (`run_ticks`
+            // steps per redraw): retail's mover runs in the 60 Hz field
+            // loop, so an `apply`-paced glide must span `apply` SIM frames.
+            // Min 1 step so an idle frame still refreshes the held pose.
             let apply = self.session.host.world.camera_state.apply_trigger;
-            let t = if apply == 0 {
-                1.0
-            } else {
-                // Exponential ease: `t ≈ 4/apply` reaches ~63% of the travel in
-                // `apply/4` frames, ~95% in `apply` frames - a slow, continuous
-                // dolly for the big `apply` values and a quick settle for small
-                // ones. Clamped so no beat crawls forever or hard-snaps.
-                (4.0 / apply as f32).clamp(0.008, 0.5)
-            };
-            // Advance the ease in SIM-TICK time, not render-frame time: step it
-            // once per world tick that elapsed this redraw (`run_ticks`). Retail
-            // eases the camera one step per sim frame (`FUN_801DB510` runs in the
-            // 100 Hz field loop), so an `apply`-paced glide must span `apply` SIM
-            // frames. Stepping per-render instead let the ease converge in a
-            // fraction of a wall-clock second whenever the sim sat on a long
-            // WaitFrames (few ticks, many redraws) - the dolly finished early and
-            // the shot then froze into a dead static hold. Min 1 step so an idle
-            // frame still refreshes the held pose (e.g. right after a reset).
             let steps = run_ticks.max(1);
-            let mut out = self
-                .cutscene_cam_interp
-                .approach(focus, pitch, yaw, h, tr_eye, t);
-            for _ in 1..steps {
-                out = self
-                    .cutscene_cam_interp
-                    .approach(focus, pitch, yaw, h, tr_eye, t);
+            let out = self.cutscene_cam_interp.glide(
+                focus,
+                pitch,
+                yaw,
+                h,
+                tr_eye,
+                u32::from(apply),
+                steps,
+            );
+            if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
+                let w = &self.session.host.world;
+                eprintln!(
+                    "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
+                     yaw={yaw:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} pitch={:.3} \
+                     yaw={:.3} h={} tr_eye={:?} | params={:?}",
+                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, w.camera_state.params
+                );
             }
             Some(out)
         } else {
@@ -394,6 +415,20 @@ impl PlayWindowApp {
                 Some(g) => r.set_color_grade(g.gold, g.strength),
                 None => r.set_color_grade([1.0, 1.0, 1.0], 0.0),
             }
+            // Retail GTE NCLIP winding rejection, scoped to the in-engine
+            // cutscene camera: the opdeene prologue's crater-rim tableau shot
+            // sits INSIDE the scene's closed cave-wall backdrop mesh, and
+            // retail's per-prim NCLIP is what discards the shell's near wall
+            // (otherwise it renders over the whole tableau - the "wall of
+            // gold burying the camera" report). The field frame draws raw
+            // retail vertices under a camera-side Y-flip, which mirrors the
+            // projected winding, so retail's front faces arrive CW - mode 2
+            // (discard front-facing = discard CCW under the pipelines'
+            // default Ccw front-face) keeps them. Off outside the cutscene
+            // camera (free-roam field / battle / world map keep both-sided
+            // draws; their per-pass winding parities differ).
+            let nclip_mode = u32::from(cutscene_cam.is_some()) * 2;
+            r.set_backface_cull(nclip_mode);
             // World-map mode frames the loaded map with the
             // controller-driven camera (azimuth / zoom / pan); an active
             // in-engine cutscene (opdeene opening prologue) frames the
@@ -462,6 +497,7 @@ impl PlayWindowApp {
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
+                    &vmesh.colors,
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
@@ -480,17 +516,32 @@ impl PlayWindowApp {
             // pose_frame, regenerate and re-upload the posed mesh.
             // posed_overrides[i] replaces meshes[i] when present.
             let (posed_overrides, player_color_posed) = self.build_posed_actor_overrides(r);
+            legaia_engine_render::profile::mark("pose:actor");
+            // Placed props posed at their live clip frame: the ones resting on
+            // frame 0 keep the baked rest mesh, the ones mid-swing get rebuilt.
+            let (posed_prop_baked_v, posed_prop_baked_c, posed_prop_live_v, posed_prop_live_c) =
+                self.posed_prop_frame_draws(r);
+            legaia_engine_render::profile::mark("pose:prop");
 
-            // Field-NPC clip playback: advance each placed NPC's
-            // looping ANM clip and re-upload its posed mesh halves
-            // (the same per-frame rebuild path the player's idle /
-            // walk pair uses). The rest-pose meshes in
-            // `field_npc_draws` stay as the fallback for NPCs whose
-            // clip or upload is unavailable this frame.
-            let mut npc_posed: std::collections::HashMap<
-                u8,
-                (Option<UploadedVramMesh>, Option<UploadedColorMesh>),
-            > = std::collections::HashMap::new();
+            // Field-NPC clip playback: advance each placed NPC's looping ANM
+            // clip and draw its posed mesh halves.
+            //
+            // The skinned mesh for a `(slot, clip frame)` is a **constant** -
+            // the clip is a short loop over a fixed pose set - so it is skinned
+            // and uploaded on the first visit to that frame and memoised in
+            // `npc_pose_cache` thereafter. Rebuilding it every render frame
+            // (what this did before) re-derived the same vertex bytes and
+            // allocated fresh GPU buffers for them, which dominated the frame:
+            // the CPU re-pose plus its upload was ~70% of the field frame in a
+            // populated town. The playhead still advances every frame, so the
+            // animation is unchanged - only the recomputation is skipped.
+            //
+            // The rest-pose meshes in `field_npc_draws` stay as the fallback
+            // for NPCs whose clip or upload is unavailable.
+            //
+            // `npc_frames` records which frame each slot is showing *this*
+            // render, so the draw pass below can look its mesh up in the cache.
+            let mut npc_frames: Vec<(u8, usize)> = Vec::new();
             if self.session.host.world.mode == SceneMode::Field {
                 // Channel op-0x4B ANIMATE cues re-target the NPC's clip
                 // player before this frame's tick: the cue's anim id names
@@ -524,13 +575,46 @@ impl PlayWindowApp {
                         legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec_idx)
                     {
                         self.npc_clip_players.insert(slot, player);
+                        // The incoming clip restarts at frame 0 and reuses the
+                        // same low frame indices, so the outgoing clip's memo
+                        // entries for this slot would alias it. Drop them.
+                        self.npc_pose_cache.retain(|(s, _), _| *s != slot);
+                        self.npc_pose_verify.retain(|(s, _), _| *s != slot);
                     }
                 }
+                let verify = std::env::var_os("LEGAIA_POSE_CACHE_VERIFY").is_some();
+                let cache = &mut self.npc_pose_cache;
+                let verify_poses = &mut self.npc_pose_verify;
+                let srcs = &self.npc_anim_srcs;
                 for (slot, player) in self.npc_clip_players.iter_mut() {
-                    let Some((tmd, raw)) = self.npc_anim_srcs.get(slot) else {
+                    let Some((tmd, raw)) = srcs.get(slot) else {
                         continue;
                     };
+                    // `frame()` is the frame `tick()` is about to emit; take it
+                    // as the cache key, then tick to advance the playhead.
+                    let key = (*slot, player.frame());
                     let pose = player.tick();
+                    npc_frames.push(key);
+                    if cache.contains_key(&key) {
+                        // `LEGAIA_POSE_CACHE_VERIFY=1`: the pose behind a hit
+                        // must be the pose the entry was built from, or the key
+                        // is aliasing and the NPC would draw someone else's
+                        // frame.
+                        if verify
+                            && let Some(want) = verify_poses.get(&key)
+                            && *want != pose.bone_outputs
+                        {
+                            log::error!(
+                                "pose-cache MISMATCH at slot {} frame {}: cached pose != live pose",
+                                key.0,
+                                key.1
+                            );
+                        }
+                        continue;
+                    }
+                    if verify {
+                        verify_poses.insert(key, pose.bone_outputs.clone());
+                    }
                     let vmesh =
                         legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs);
                     let cmesh =
@@ -543,6 +627,7 @@ impl PlayWindowApp {
                             &vmesh.uvs,
                             &vmesh.cba_tsb,
                             &vmesh.normals,
+                            &vmesh.colors,
                             &vmesh.indices,
                         )
                         .ok()
@@ -559,10 +644,19 @@ impl PlayWindowApp {
                         .ok()
                     };
                     if vm.is_some() || cm.is_some() {
-                        npc_posed.insert(*slot, (vm, cm));
+                        cache.insert(key, (vm, cm));
                     }
                 }
             }
+            // Re-borrow the memo immutably: `slot -> this frame's posed halves`.
+            let npc_posed: std::collections::HashMap<u8, &NpcPosedHalves> = npc_frames
+                .iter()
+                .filter_map(|k| self.npc_pose_cache.get(k).map(|m| (k.0, m)))
+                .collect();
+            // Everything above this mark is per-frame skinning: CPU mesh
+            // re-pose + GPU re-upload for the player, the animated props and
+            // every placed NPC.
+            legaia_engine_render::profile::mark("pose");
             // Iterate every actor that has a `tmd_binding`. Scene-init
             // actors (slots 0..N from `init_scene_animations`) have
             // their bindings set but aren't necessarily `.active` -
@@ -744,13 +838,44 @@ impl PlayWindowApp {
                     // (resolved at scene load in
                     // `resolve_field_placement_draws`).
                     if layer_on("place") {
-                        for (mesh_idx, model) in &self.field_placement_draws {
+                        // Diag bisect: `LEGAIA_DIAG_PLACE_RANGE=a..b` draws only
+                        // placement-draw slots [a, b).
+                        let place_range =
+                            std::env::var("LEGAIA_DIAG_PLACE_RANGE").ok().and_then(|s| {
+                                let (a, b) = s.split_once("..")?;
+                                Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?))
+                            });
+                        for (di, (mesh_idx, model)) in self.field_placement_draws.iter().enumerate()
+                        {
+                            if let Some((a, b)) = place_range
+                                && !(a..b).contains(&di)
+                            {
+                                continue;
+                            }
                             if let Some(mesh) = self.meshes.get(*mesh_idx) {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp: cam * *model,
                                 });
                             }
+                        }
+                        // Posed props (house doors, cupboards, the windmill):
+                        // the ones resting on frame 0 replay their baked rest
+                        // mesh; the ones whose clip is running were re-posed
+                        // above, so the door draws mid-swing.
+                        for (mesh_idx, model) in &posed_prop_baked_v {
+                            if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * *model,
+                                });
+                            }
+                        }
+                        for (mesh, model) in &posed_prop_live_v {
+                            draws.push(SceneDraw {
+                                mesh,
+                                mvp: cam * *model,
+                            });
                         }
                     }
                     // Untextured props (the F*/G* meshes the VRAM path
@@ -763,6 +888,20 @@ impl PlayWindowApp {
                                     mvp: cam * *model,
                                 });
                             }
+                        }
+                        for (mesh_idx, model) in &posed_prop_baked_c {
+                            if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                color_draws.push(ColorSceneDraw {
+                                    mesh,
+                                    mvp: cam * *model,
+                                });
+                            }
+                        }
+                        for (mesh, model) in &posed_prop_live_c {
+                            color_draws.push(ColorSceneDraw {
+                                mesh,
+                                mvp: cam * *model,
+                            });
                         }
                     }
                     // The player's untextured mesh half (pants /
@@ -973,6 +1112,10 @@ impl PlayWindowApp {
             // behind its text, which is emitted in the text layer).
             let mut save_chrome_draw_vec = self.save_select_chrome_sprite_draws(w, h);
             save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
+            // Dialog-window chrome (gradient fill + gold frame + hand
+            // cursors) shares the system-UI atlas slot; a dialog box
+            // and the boot/menu chrome are mutually exclusive states.
+            save_chrome_draw_vec.extend(self.dialog_chrome_sprite_draws(w, h));
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,
@@ -1193,6 +1336,7 @@ impl PlayWindowApp {
                     mvp: screen_fx_mvp,
                 });
             }
+            legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
             let scene = RenderScene {
                 vram,
                 draws: &draws,
@@ -1277,10 +1421,12 @@ impl PlayWindowApp {
                     }
                 }
             }
+            legaia_engine_render::profile::mark("drawlist");
             if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
                 log::error!("render: {e:#}");
             }
         }
+        legaia_engine_render::profile::end_frame();
         self.win.request_redraw();
     }
 }

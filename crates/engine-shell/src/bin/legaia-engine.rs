@@ -268,6 +268,7 @@ fn main() -> Result<()> {
             screenshot_last_tick,
             pad_script,
             seed_party,
+            dynamic_lighting,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -299,6 +300,7 @@ fn main() -> Result<()> {
                 pad_script.as_deref(),
             )?,
             seed_party,
+            dynamic_lighting,
         ),
         Cmd::Save {
             extracted_root,

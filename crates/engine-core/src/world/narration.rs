@@ -526,7 +526,7 @@ impl World {
                 .collect();
         let mut tl = crate::cutscene_timeline::CutsceneTimeline::new(body, pc0);
         tl.narration_blocks = narration_blocks;
-        if trace {
+        if trace || std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some() {
             tl = tl.with_trace();
         }
         self.cutscene_timeline = Some(tl);
@@ -1112,6 +1112,18 @@ impl World {
                     }
                 }
                 if tl.trace_enabled {
+                    if std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some()
+                        && !(matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
+                            && next_pc == pc)
+                    {
+                        eprintln!(
+                            "DIAG timeline: frame {} pc {pc:#06x} op {opcode_byte:#04x} \
+                             ({:#04x}) -> {next_pc:#06x} {kind:?} bytes {:02x?}",
+                            tl.frames,
+                            opcode_byte & 0x7F,
+                            &tl.bytecode[pc..(pc + 12).min(tl.bytecode.len())]
+                        );
+                    }
                     tl.trace.push(crate::cutscene_timeline::TraceEntry {
                         pc,
                         opcode_byte,
@@ -1225,8 +1237,46 @@ impl World {
                 tl.done = true;
             }
         }
+        let dropped = contexts.iter().any(|tl| tl.done);
         contexts.retain(|tl| !tl.done);
         self.helper_contexts = contexts;
+        // Stranded-player rescue: a spawned record can `MoveTo` the PLAYER as
+        // part of its choreography (izumi's first-visit record parks the
+        // party at the spring pocket, a spot the base collision grid walls
+        // in; retail plays the whole modal cutscene there and leaves the
+        // scene through the record's closing `0x3F`). If the engine's
+        // concurrent rendition ends - completed or frame-capped - with the
+        // player left standing inside a wall / off the floor (walk component
+        // size 0), re-seat them at the scene's resolved cold spawn so a
+        // partially-executed record can never strand the player where no
+        // direction unblocks.
+        if dropped
+            && self.helper_contexts.is_empty()
+            && matches!(self.mode, crate::world::SceneMode::Field)
+            && let Some((sx, sz)) = self.resolved_cold_spawn
+            && let Some(slot) = self.player_actor_slot
+            && let Some(actor) = self.actors.get(slot as usize)
+            && self.field_walk_component_size(actor.move_state.world_x, actor.move_state.world_z)
+                == 0
+            // ... and only when the resolved spawn itself is on open floor: a
+            // scene with no walkability data at all (a cutscene shell) reads
+            // component 0 everywhere, and yanking the player there would be
+            // wrong.
+            && self.field_walk_component_size(sx, sz) > 0
+        {
+            let y = self.sample_field_floor_height(sx as i32, sz as i32) as i16;
+            if let Some(actor) = self.actors.get_mut(slot as usize) {
+                log::info!(
+                    "field: spawned record left the player at ({},{}) inside a wall; \
+                     re-seating at the resolved cold spawn ({sx},{sz})",
+                    actor.move_state.world_x,
+                    actor.move_state.world_z
+                );
+                actor.move_state.world_x = sx;
+                actor.move_state.world_z = sz;
+                actor.move_state.world_y = y;
+            }
+        }
     }
 
     /// Un-park every field NPC a cutscene left at the off-map hide box
@@ -1649,6 +1699,16 @@ impl World {
     /// flag is off, so the default simplified path is untouched.
     pub fn drive_inline_dialogue(&mut self) {
         if !self.use_vm_dialogue {
+            return;
+        }
+        // A prop-bound record run (door / cupboard) is stepped by its own
+        // driver ([`Self::step_prop_interaction`]) with prop-actor bridging;
+        // stepping it here too would double-run its VM slices.
+        if self
+            .inline_dialogue
+            .as_ref()
+            .is_some_and(|id| id.prop_anchor.is_some())
+        {
             return;
         }
         // Start the runner the frame a dialogue request appears. When the opened

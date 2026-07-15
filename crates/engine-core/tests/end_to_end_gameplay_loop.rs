@@ -478,12 +478,12 @@ fn synthetic_party_completes_full_gameplay_loop() {
 /// Drive the full gameplay loop and then assert the post-rewards
 /// [`SaveFile`] survives a round-trip through the retail SC block
 /// layout (`write_into_retail_sc_block` → `from_retail_sc_block`).
-/// The SC layout has no slot for the engine's `money`, play time,
-/// active party, per-character ext, or saved chains; the schema
-/// fixture in `crates/save/tests/fixtures/` documents those as
-/// engine-only drops. Everything that *is* representable in retail
-/// SC (party records, full 512-byte story-flag bitmap, compact
-/// inventory) must come back byte-equal.
+/// The SC layout has no slot for the engine's play time, active
+/// party, per-character ext, or saved chains; the schema fixture in
+/// `crates/save/tests/fixtures/` documents those as engine-only
+/// drops. Everything that *is* representable in retail SC (party
+/// records, full 512-byte story-flag bitmap, compact inventory, gold
+/// at the pinned `game_data+0x25C` slot) must come back byte-equal.
 ///
 /// Closes the symmetric gap that `real_card_roundtrip` doesn't
 /// cover: it walks a retail card *into* the engine, but until this
@@ -573,19 +573,23 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
         "compact inventory survives the SC round-trip"
     );
 
-    // Engine-only fields drop to defaults: money, play_time,
+    // Gold round-trips through the pinned retail slot (`game_data+0x25C`,
+    // RAM 0x8008459C). Engine-only fields drop to defaults: play_time,
     // active_party, per_char, saved_chains. See the K2 schema fixture
     // for the documented field map.
-    assert_eq!(parsed.ext.money, 0, "money is engine-only - drops to 0");
+    assert_eq!(
+        parsed.ext.money, post_loop.ext.money,
+        "gold round-trips through the retail SC slot"
+    );
     assert_eq!(
         parsed.ext_v2,
         SaveExtV2::default(),
         "v2 ext block is engine-only - drops to defaults"
     );
     assert!(
-        post_loop.ext.money != 0 || post_loop.ext_v2 != SaveExtV2::default(),
+        post_loop.ext_v2 != SaveExtV2::default(),
         "this test only signals when the engine save actually populates \
-         engine-only fields - if both are default the engine-only drop \
+         engine-only fields - if the v2 ext is default the engine-only drop \
          contract isn't meaningfully exercised"
     );
 
@@ -597,10 +601,11 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
     while reloaded.actors.len() < 8 {
         reloaded.actors.push(Actor::default());
     }
+    let expected_money = parsed.ext.money;
     reloaded.load_full(parsed);
     assert_eq!(
-        reloaded.money, 0,
-        "World::load_full sees money as engine-only"
+        reloaded.money, expected_money,
+        "World::load_full carries the SC-slot gold"
     );
     assert_eq!(
         reloaded.play_time_seconds, 0,

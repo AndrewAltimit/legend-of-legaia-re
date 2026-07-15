@@ -27,6 +27,31 @@ Treat as known-empty:
 - Don't include in TMD/TIM bulk-scan totals.
 - Skip in any "what's still uncategorised" tally.
 
+## The scratch tail is *live-looking* data - never load it
+
+The bytes after the `0x1A` are **not zeros**: they are whatever the mastering
+tool left in the sector, and a large share of scene-block pochi slots carry a
+complete, well-formed `256 x 256` 4bpp PSX TIM (often two: image blocks at fb
+`(768, 0)` and `(832, 0)` with CLUT rows 473 / 479 - the block's battle-side
+character pages). They parse. They upload. Retail never touches them: the field
+loader dispatches the scene's asset table, not its reserved slots.
+
+An engine-side "scan every entry in the CDNAME block for TIMs" sweep therefore
+uploads a page of stale texels *over a page the scene is actively using*. The
+collision is not hypothetical - fb `(768, 0)` is tpage `0x0C`, which is where
+most field scenes put their **ground-tile atlas** (the per-cell page in the
+`.MAP` object record's `+0x15`; see [`world-map.md`](../subsystems/world-map.md)
+"Ground texturing"). A pochi upload lands last and erases it, and the ground
+quads then sample character / backdrop texels: Jeremi's floor becomes a grid of
+grey "tombstones", Mt. Dhini's becomes a repeating vine/crack pattern. Rim Elm
+escapes only because its sibling slots are all `scene_tmd_stream` entries, which
+the field build already excludes.
+
+The engine's field VRAM pre-pass skips `Class::PochiFiller` entries outright
+(`legaia_engine_core::scene_resources`); the disc-gated regression
+`field_ground_texture_pages_disc` pins both halves - the hazard exists on the
+disc, and the built VRAM does not contain it.
+
 ## See also
 
 - [PROT TOC](prot.md) - the index whose unused slots get pochi-filled.

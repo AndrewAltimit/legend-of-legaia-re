@@ -87,6 +87,105 @@ fn apply_grade(rgb: vec3<f32>, grade: vec4<f32>) -> vec3<f32> {
     let lum = dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
     return mix(rgb, lum * grade.rgb, grade.a);
 }
+
+// PSX GPU texture blending - THE field lighting model.
+//
+// A textured primitive's texel is modulated by the packet colour:
+//     out = texel * colour / 128
+// so colour 0x80 leaves the texel exactly as-is, 0x00 blacks it out, and 0xFF
+// brightens it by 255/128 ~= 2x. The colour is the TMD prim's baked colour
+// word - retail's two TMD renderers issue no GTE light op at all (their only
+// colour op is DPCS, the depth cue below), so all field shading is baked here
+// and this multiply is the whole of it. Dropping it flattens the scene to the
+// raw texel and loses BOTH tails of the contrast: across a town's env packs
+// ~81% of colour components sit below 0x80 (darkening) and ~12% above
+// (brightening).
+//
+// `colour` is the raw 0..255 byte value. Saturates at 1.0, like the GPU.
+// Reference: nocash PSX-SPX "GPU - Texture Color / Blending".
+fn psx_modulate(texel: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
+    return clamp(texel * colour / 128.0, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// GTE depth cue (DPCS, cop2 0x780010) - the one colour op the retail TMD
+// renderers run. Blends the shaded colour toward the far colour (GTE cr21-23)
+// by IR0:
+//     out = c + (fc - c) * ir0
+// `cue.rgb` is the far colour in 0..1, `cue.a` is IR0 in 0..1 (hardware
+// 0..0x1000). ir0 = 0 is the identity - the unfogged field case, and what a
+// town0c retail capture shows (baked colours leave the GTE's RGB FIFO
+// byte-unchanged).
+fn psx_depth_cue(rgb: vec3<f32>, cue: vec4<f32>) -> vec3<f32> {
+    if (cue.a <= 0.0) {
+        return rgb;
+    }
+    return clamp(mix(rgb, cue.rgb, cue.a), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// ---- Opt-in dynamic-lighting enhancement (NON-RETAIL) ----
+//
+// Retail field rendering has no light source at all (see `psx_modulate`
+// above - the shading is baked into the TMD colour words). This helper is a
+// deliberate opt-in enhancement layered *over* the baked shading, gated on
+// `light_dir.w`: when it is zero (the default) the input colour is returned
+// bit-unchanged, keeping the faithful path pixel-identical.
+//
+// Model:  out = baked * min(ambient + (diffuse*|N.L| + pool) * tint, MAX)
+//   * |N.L| - a soft directional term off the smoothed per-vertex normals
+//     (the TMD-derived normals retail authors but never feeds to the GTE on
+//     the field path). abs() rather than max(,0) because the corpus' prim
+//     winding is mixed - the accumulated normals have no canonical side -
+//     and it keeps a mostly-vertical light Y-flip invariant.
+//   * pool - a soft screen-space "pool of light" centred a touch above the
+//     middle of the frame, falling off toward the corners: the reference
+//     look's gentle vignette-of-light over the ground.
+//   * the whole gain is clamped to DYN_MAX_GAIN so nothing ever exceeds
+//     ~1.3x the baked brightness (no blow-out), and the result saturates.
+//
+// Tunables (kept in lockstep with the CPU mirror `crate::dyn_light`):
+const DYN_DIFFUSE: f32 = 0.55;   // weight of the orientation (|N.L|) term
+const DYN_POOL: f32 = 0.35;      // weight of the screen-space light pool
+const DYN_MAX_GAIN: f32 = 1.3;   // gain ceiling relative to baked colour
+const DYN_LAMBERT_FALLBACK: f32 = 0.6; // orientation term when no normal exists
+const DYN_POOL_CENTER: vec2<f32> = vec2<f32>(0.5, 0.45); // pool centre, 0..1
+const DYN_POOL_INNER: f32 = 0.15; // pool full-strength radius (screen frac)
+const DYN_POOL_OUTER: f32 = 0.75; // pool fade-out radius (screen frac)
+
+fn dyn_light(
+    rgb: vec3<f32>,
+    vert_normal: vec3<f32>,
+    geo_normal: vec3<f32>,
+    frag_px: vec2<f32>,
+    viewport: vec2<f32>,
+    light_dir: vec4<f32>,
+    light_color: vec4<f32>,
+) -> vec3<f32> {
+    if (light_dir.w < 0.5) {
+        return rgb;
+    }
+    // Orientation term. Prefer the smoothed per-vertex normal (continuous
+    // shading across connected surfaces); fall back to the screen-space
+    // geometric normal for zero entries (singleton normal bins, and the
+    // untextured colour-mesh path which carries no normals at all).
+    var lambert = DYN_LAMBERT_FALLBACK;
+    var n = vert_normal;
+    if (dot(n, n) < 1e-8) {
+        n = geo_normal;
+    }
+    let n_len = length(n);
+    if (n_len > 1e-6) {
+        lambert = abs(dot(n / n_len, normalize(light_dir.xyz)));
+    }
+    // Soft screen-space light pool.
+    var pool = 0.0;
+    if (viewport.x > 0.0 && viewport.y > 0.0) {
+        let d = distance(frag_px / viewport, DYN_POOL_CENTER);
+        pool = 1.0 - smoothstep(DYN_POOL_INNER, DYN_POOL_OUTER, d);
+    }
+    let gain = light_color.w + (DYN_DIFFUSE * lambert + DYN_POOL * pool) * light_color.xyz;
+    let capped = min(gain, vec3<f32>(DYN_MAX_GAIN));
+    return clamp(rgb * capped, vec3<f32>(0.0), vec3<f32>(1.0));
+}
 "#;
 
 /// Prepend [`PSX_DITHER_WGSL`] to a shaded 3D shader source so its fragment
@@ -98,15 +197,19 @@ pub(crate) fn compose_psx_shader(base: &str) -> String {
 }
 
 /// Mesh shader: transforms positions by the host-supplied MVP, computes a
-/// per-fragment normal from screen-space derivatives, lights with a single
-/// directional light, and outputs a flat-shaded result. With `psx_mode`
-/// (see [`Renderer::set_psx_mode`]) the result is also ordered-dithered to
-/// 15-bit via [`PSX_DITHER_WGSL`]; affine warp + vertex jitter live in the
-/// VRAM-mesh path.
+/// per-fragment normal from screen-space derivatives, and shades with a
+/// single directional light.
+///
+/// This is the bare-geometry **preview** pipeline (asset-viewer's raw-TMD
+/// view): its meshes carry neither texture nor colour, so there is nothing of
+/// the game's own shading to show and the light below is a viewer aid, not a
+/// claim about retail. The game's field/town meshes go through the VRAM-mesh
+/// and vertex-colour pipelines, which draw the TMD's baked colours and have no
+/// light source at all.
 pub(crate) const MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
-    light_dir: vec4<f32>,
+    depth_cue: vec4<f32>,
     // (viewport_w, viewport_h, snap_enable, dither_enable)
     psx_params: vec4<f32>,
     // GP0(0xE2) "Texture Window setting":
@@ -119,6 +222,17 @@ struct MeshUniforms {
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
+    // Opt-in dynamic-lighting enhancement (see `dyn_light` in the prelude).
+    // `.xyz` = direction TOWARD the light (mesh model space), `.w` = enable
+    // (0.0 = off = retail-identical, the default).
+    light_dir: vec4<f32>,
+    // `.xyz` = warm light tint applied to the diffuse + pool terms,
+    // `.w` = ambient floor.
+    light_color: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -144,7 +258,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let dx = dpdx(in.world_pos);
     let dy = dpdy(in.world_pos);
     let n = normalize(cross(dx, dy));
-    let l = -normalize(u.light_dir.xyz);
+    // Fixed preview light (see the doc comment: this pipeline has no colour or
+    // texture data to draw, so the shading is a viewer aid, not retail's).
+    let l = -normalize(vec3<f32>(0.4, -0.8, 0.4));
     let lambert = max(dot(n, l), 0.0);
     // Soft amber-tinted ambient + directional fill, matching the site theme.
     let ambient = vec3<f32>(0.18, 0.20, 0.26);
@@ -157,12 +273,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 /// Textured-mesh shader: same depth-tested 3D pipeline as `MESH_SHADER_SRC`,
 /// but the fragment samples a bound texture (group 1) using the per-vertex
 /// UVs from attribute location 1. UVs are pre-normalized to `[0, 1)` by the
-/// CPU side (PSX UV bytes / 256.0). Light is applied as a multiplicative
-/// shade on top of the texel.
+/// CPU side (PSX UV bytes / 256.0).
+///
+/// The single-binding sibling of the VRAM-mesh path. Its `TexturedMesh`
+/// carries no per-prim colour word, so there is no modulation to apply and the
+/// texel is drawn as-is - which is exactly what the GPU does for the neutral
+/// colour `0x80`. The field/town renderer uses the VRAM-mesh pipeline, which
+/// does carry the colour.
 pub(crate) const TEXTURED_MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
-    light_dir: vec4<f32>,
+    depth_cue: vec4<f32>,
     // (viewport_w, viewport_h, snap_enable, dither_enable)
     psx_params: vec4<f32>,
     // GP0(0xE2) "Texture Window setting":
@@ -175,6 +296,17 @@ struct MeshUniforms {
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
+    // Opt-in dynamic-lighting enhancement (see `dyn_light` in the prelude).
+    // `.xyz` = direction TOWARD the light (mesh model space), `.w` = enable
+    // (0.0 = off = retail-identical, the default).
+    light_dir: vec4<f32>,
+    // `.xyz` = warm light tint applied to the diffuse + pool terms,
+    // `.w` = ambient floor.
+    light_color: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_color: texture_2d<f32>;
@@ -197,44 +329,41 @@ fn vs_main(@location(0) position: vec3<f32>, @location(1) uv: vec2<f32>) -> VsOu
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let dx = dpdx(in.world_pos);
-    let dy = dpdy(in.world_pos);
-    let n = normalize(cross(dx, dy));
-    let l = -normalize(u.light_dir.xyz);
-    let lambert = max(dot(n, l), 0.0);
-    // Bias so unlit areas aren't pitch black (PSX hardware doesn't really
-    // do per-face lighting; we just want some shape readable).
-    // In PSX-faithful mode the engine's synthetic directional Lambert is
-    // disabled: retail bakes lighting into the GTE-shaded vertex colours /
-    // texels rather than re-lighting per frame from a made-up light dir, so
-    // faithful mode shows the source data unlit. Default keeps the readable
-    // ambient-biased shade.
-    let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
+    // No per-prim colour on this vertex format: draw the raw texel (the GPU's
+    // behaviour for the neutral modulation colour 0x80), then depth-cue it.
     let texel = textureSample(t_color, s_color, in.uv);
-    let graded = apply_grade(texel.rgb * shade, u.grade);
+    let cued = psx_depth_cue(texel.rgb, u.depth_cue);
+    let graded = apply_grade(cued, u.grade);
     let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, texel.a);
 }
 "#;
 
-/// VRAM-mesh shader: faithful PSX texture lookup.
+/// VRAM-mesh shader: faithful PSX texture lookup + retail's lighting.
 ///
-/// Each vertex carries `(u, v, cba, tsb)` alongside its position. The
-/// fragment shader computes, per-fragment:
+/// Each vertex carries `(u, v, cba, tsb)` and the prim's baked colour word
+/// alongside its position. The fragment shader computes, per-fragment:
 ///   * texture-page origin from `tsb` (`tpage_x = (tsb & 0xF) * 64`,
 ///     `tpage_y = ((tsb >> 4) & 1) * 256`),
 ///   * pixel-format from `tsb` bits 7..8 (0 = 4bpp, 1 = 8bpp, 2 = 15bpp),
 ///   * for 4/8 bpp, indexes into the in-VRAM CLUT at
 ///     `(cba & 0x3F) * 16, (cba >> 6) & 0x1FF`,
-///   * decodes the resulting BGR555 + STP word to RGBA.
+///   * decodes the resulting BGR555 + STP word to RGBA,
+///   * modulates it by the prim colour, then applies the GTE depth cue.
 ///
-/// Same Lambert-with-ambient-bias shading as the textured-mesh path so the
-/// silhouette stays readable; PSX hardware doesn't really do per-face
-/// lighting either.
+/// **Lighting.** Retail's two TMD renderers (`FUN_8002735c` and its
+/// light-source sibling `FUN_80029888`) run exactly one GTE colour op between
+/// them - `DPCS` (`cop2 0x780010`, depth cue). Neither ever issues `NCDS` /
+/// `NCS` / `NCCS`, so there is no runtime light source on the field path: the
+/// lighting is *baked into the TMD's colour words* and applied by the GPU's
+/// texture blend, `texel * colour / 128`. `0x80` is neutral, below darkens,
+/// above brightens (to nearly 2x). See [`psx_modulate`] and
+/// [`crate::renderer::Renderer::set_depth_cue`].
 pub(crate) const VRAM_MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
-    light_dir: vec4<f32>,
+    // GTE depth cue: (far_r, far_g, far_b, ir0), all 0..1. ir0 = 0 = identity.
+    depth_cue: vec4<f32>,
     // (viewport_w, viewport_h, snap_enable, dither_enable)
     psx_params: vec4<f32>,
     // GP0(0xE2) "Texture Window setting":
@@ -247,6 +376,17 @@ struct MeshUniforms {
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
+    // Opt-in dynamic-lighting enhancement (see `dyn_light` in the prelude).
+    // `.xyz` = direction TOWARD the light (mesh model space), `.w` = enable
+    // (0.0 = off = retail-identical, the default).
+    light_dir: vec4<f32>,
+    // `.xyz` = warm light tint applied to the diffuse + pool terms,
+    // `.w` = ambient floor.
+    light_color: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_vram: texture_2d<u32>;
@@ -261,6 +401,11 @@ struct VsOut {
     @location(1) @interpolate(linear) uv_affine: vec2<f32>,
     @location(2) @interpolate(flat) cba_tsb: vec2<u32>,
     @location(3) normal: vec3<f32>,
+    // Baked prim colour (raw 0..255 bytes). Gouraud prims carry one word per
+    // corner, flat prims the same word on every corner - so interpolating is
+    // correct for both. PSX gouraud interpolation is affine in screen space,
+    // same as the UVs, hence `linear` rather than the default perspective.
+    @location(4) @interpolate(linear) prim_color: vec3<f32>,
 };
 
 // Snap a clip-space x/y to the nearest integer pixel of a viewport sized
@@ -293,6 +438,7 @@ fn vs_main(
     @location(1) uv_in: vec4<u32>,
     @location(2) cba_tsb_in: vec2<u32>,
     @location(3) normal_in: vec3<f32>,
+    @location(4) color_in: vec4<u32>,
 ) -> VsOut {
     var out: VsOut;
     var clip = u.mvp * vec4<f32>(position, 1.0);
@@ -304,6 +450,7 @@ fn vs_main(
     out.uv_affine = vec2<f32>(f32(uv_in.x), f32(uv_in.y));
     out.cba_tsb = cba_tsb_in;
     out.normal = normal_in;
+    out.prim_color = vec3<f32>(f32(color_in.x), f32(color_in.y), f32(color_in.z));
     return out;
 }
 
@@ -372,7 +519,12 @@ fn fetch_vram_word(uv_affine: vec2<f32>, cba: u32, tsb: u32) -> u32 {
 }
 
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    // Retail GTE NCLIP winding rejection (see MeshUniforms.flags).
+    if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
+        || (u.flags.x >= 1.5 && front_facing) {
+        discard;
+    }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
     let word = fetch_vram_word(in.uv_affine, cba, tsb);
@@ -384,36 +536,28 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         discard;
     }
 
-    // PSX-faithful semi-transparency, opaque pass: STP texels of a
-    // semi-transparent prim (TSB bit 15 = the engine-packed ABE enable)
-    // belong to the blend pass - defer them. Gated on the same faithful
-    // flag as the blend pass so the default path draws everything opaque.
-    if u.psx_params.z >= 0.5 && (tsb & 0x8000u) != 0u && ((word >> 15u) & 1u) == 1u {
+    // PSX semi-transparency, opaque pass: STP texels of a semi-transparent
+    // prim (TSB bit 15 = the engine-packed ABE enable) belong to the blend
+    // pass - defer them. Gated on the semi-blend flag (`flags.y`, default on),
+    // the same flag the CPU-side blend pass keys off; when it is off the prim
+    // draws fully opaque.
+    if u.flags.y >= 0.5 && (tsb & 0x8000u) != 0u && ((word >> 15u) & 1u) == 1u {
         discard;
     }
 
-    // Per-vertex normals smooth-shade connected geometry. Mesh-builder
-    // emits the zero vector for unbinned positions (singleton triangles or
-    // degenerate fallback); detect that and fall back to screen-space
-    // derivatives so the result still looks shaded.
-    let n_len = length(in.normal);
-    var n: vec3<f32>;
-    if n_len > 0.001 {
-        n = in.normal / n_len;
-    } else {
-        let dx = dpdx(in.world_pos);
-        let dy = dpdy(in.world_pos);
-        n = normalize(cross(dx, dy));
-    }
-    let l = -normalize(u.light_dir.xyz);
-    let lambert = max(dot(n, l), 0.0);
-    // In PSX-faithful mode the engine's synthetic directional Lambert is
-    // disabled: retail bakes lighting into the GTE-shaded vertex colours /
-    // texels rather than re-lighting per frame from a made-up light dir, so
-    // faithful mode shows the source data unlit. Default keeps the readable
-    // ambient-biased shade.
-    let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
-    let graded = apply_grade(color.rgb * shade, u.grade);
+    // Retail's lighting: modulate the texel by the prim's baked colour word
+    // (`texel * colour / 128`), then apply the GTE depth cue. No light source,
+    // no normals - see `psx_modulate`. The TMD normals are still carried on
+    // the vertex (the lit descriptor rows do author them) but retail never
+    // feeds them to the GTE on the field path; only the OPT-IN dynamic-light
+    // enhancement below consumes them (identity when disabled, the default).
+    let lit = psx_modulate(color.rgb, in.prim_color);
+    let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
+    let enhanced = dyn_light(
+        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color,
+    );
+    let cued = psx_depth_cue(enhanced, u.depth_cue);
+    let graded = apply_grade(cued, u.grade);
     let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, color.a);
 }
@@ -438,7 +582,17 @@ fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
         discard;
     }
     let color = bgr555_to_rgba(word);
-    return vec4<f32>(apply_grade(color.rgb, u.grade) * f_scale, 1.0);
+    // Semi-transparent prims are texture-blended by the GPU exactly like the
+    // opaque ones - the modulation happens before the blend equation, so it
+    // applies here too, and the opt-in dynamic light matches the opaque pass
+    // (identity when disabled) so lit water/glass composites consistently.
+    let lit = psx_modulate(color.rgb, in.prim_color);
+    let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
+    let enhanced = dyn_light(
+        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color,
+    );
+    let cued = psx_depth_cue(enhanced, u.depth_cue);
+    return vec4<f32>(apply_grade(cued, u.grade) * f_scale, 1.0);
 }
 
 @fragment
@@ -454,10 +608,11 @@ fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
 
 /// Vertex-colour mesh shader: untextured `F*`/`G*` props. Each vertex carries a
 /// position, an RGB colour, and a blend word (ABE bit 15 + ABR bits 5..=6,
-/// see `psx_blend::pack_blend_word`), flat face-shaded (screen-space-derivative
-/// normal times a Lambert term, the same ambient-biased shade as the textured /
-/// VRAM paths) so the silhouette reads. No VRAM lookup - the colour comes
-/// straight from the TMD's per-prim colour block (`legaia_tmd::mesh::ColorMesh`).
+/// see `psx_blend::pack_blend_word`). No VRAM lookup - the colour comes
+/// straight from the TMD's per-prim colour block (`legaia_tmd::mesh::ColorMesh`),
+/// and it is drawn **as-is**: an untextured PSX prim is filled with its packet
+/// colour, with no modulation and no light source. That colour is the baked
+/// shading, so re-lighting it would double-shade the prim.
 ///
 /// PSX semi-transparency (`psx_params.z >= 0.5`): an untextured ABE prim
 /// blends **all** its pixels on retail hardware (no per-texel STP gate), so
@@ -467,11 +622,22 @@ fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
 pub(crate) const COLOR_MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
-    light_dir: vec4<f32>,
+    depth_cue: vec4<f32>,
     psx_params: vec4<f32>,
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
+    // Opt-in dynamic-lighting enhancement (see `dyn_light` in the prelude).
+    // `.xyz` = direction TOWARD the light (mesh model space), `.w` = enable
+    // (0.0 = off = retail-identical, the default).
+    light_dir: vec4<f32>,
+    // `.xyz` = warm light tint applied to the diffuse + pool terms,
+    // `.w` = ambient floor.
+    light_color: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -497,26 +663,32 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    // PSX-faithful mode: a semi-transparent (ABE) untextured prim blends
-    // every pixel, so nothing of it belongs in the opaque pass - the blend
-    // pass re-draws it from the per-ABR-mode index tail. Mirrors the
-    // textured opaque pass discarding STP texels of semi prims.
-    if (u.psx_params.z >= 0.5 && (in.blend & 0x8000u) != 0u) {
+fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    // Retail GTE NCLIP winding rejection (see MeshUniforms.flags).
+    if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
+        || (u.flags.x >= 1.5 && front_facing) {
         discard;
     }
-    let dx = dpdx(in.world_pos);
-    let dy = dpdy(in.world_pos);
-    let n = normalize(cross(dx, dy));
-    let l = -normalize(u.light_dir.xyz);
-    let lambert = max(dot(n, l), 0.0);
-    // In PSX-faithful mode the engine's synthetic directional Lambert is
-    // disabled: retail bakes lighting into the GTE-shaded vertex colours /
-    // texels rather than re-lighting per frame from a made-up light dir, so
-    // faithful mode shows the source data unlit. Default keeps the readable
-    // ambient-biased shade.
-    let shade = select(0.45 + 0.55 * lambert, 1.0, u.psx_params.z >= 0.5);
-    let graded = apply_grade(in.color.rgb * shade, u.grade);
+    // Semi-transparency (ABE): an untextured ABE prim blends every pixel, so
+    // nothing of it belongs in the opaque pass - the blend pass re-draws it
+    // from the per-ABR-mode index tail. Gated on the semi-blend flag
+    // (`flags.y`, default on). Mirrors the textured opaque pass discarding
+    // STP texels of semi prims.
+    if (u.flags.y >= 0.5 && (in.blend & 0x8000u) != 0u) {
+        discard;
+    }
+    // An untextured PSX prim is filled with its packet colour directly - no
+    // modulation, no light source. The colour IS the baked shading. The
+    // opt-in dynamic light (identity when disabled) layers over it; this
+    // vertex format carries no normals, so the helper falls back to the
+    // screen-space geometric normal (flat per-face shading on props).
+    let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
+    let enhanced = dyn_light(
+        in.color.rgb, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
+        u.light_dir, u.light_color,
+    );
+    let cued = psx_depth_cue(enhanced, u.depth_cue);
+    let graded = apply_grade(cued, u.grade);
     let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, 1.0);
 }
@@ -530,7 +702,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 // math - so the dither stage applies to F here, before mode 3's 0.25
 // pre-scale (retail folds that scale into the blend itself).
 fn blend_pass_color(in: VsOut, f_scale: f32) -> vec4<f32> {
-    let graded = apply_grade(in.color.rgb, u.grade);
+    // Opt-in dynamic light first (identity when disabled), matching the
+    // opaque colour pass so a semi prim blends against equally-lit pixels.
+    let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
+    let enhanced = dyn_light(
+        in.color.rgb, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
+        u.light_dir, u.light_color,
+    );
+    let graded = apply_grade(enhanced, u.grade);
     let rgb = psx_dither(graded, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb * f_scale, 1.0);
 }
@@ -553,7 +732,7 @@ fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
 pub(crate) const LINES_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
-    light_dir: vec4<f32>,
+    depth_cue: vec4<f32>,
     // (viewport_w, viewport_h, snap_enable, dither_enable)
     psx_params: vec4<f32>,
     // GP0(0xE2) "Texture Window setting":
@@ -566,6 +745,17 @@ struct MeshUniforms {
     tex_window: vec4<u32>,
     // Full-scene colour grade (gold_rgb, strength). strength 0 = identity.
     grade: vec4<f32>,
+    // Render flags. .x = backface cull mode: 0 = draw both sides,
+    // 1 = discard back-facing fragments, 2 = discard front-facing.
+    // (Retail GTE NCLIP winding rejection as a fragment discard.)
+    flags: vec4<f32>,
+    // Opt-in dynamic-lighting enhancement (see `dyn_light` in the prelude).
+    // `.xyz` = direction TOWARD the light (mesh model space), `.w` = enable
+    // (0.0 = off = retail-identical, the default).
+    light_dir: vec4<f32>,
+    // `.xyz` = warm light tint applied to the diffuse + pool terms,
+    // `.w` = ambient floor.
+    light_color: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 

@@ -6,7 +6,9 @@
 //!    or set explicitly via [`Voice::set_loop_addr`])
 //!  - a streaming ADPCM decoder (one 28-sample block at a time)
 //!  - a fractional pitch counter - the SPU runs internally at 44.1 kHz and
-//!    advances each voice by `pitch / 0x1000` samples per output tick
+//!    advances each voice by `pitch / 0x1000` samples per output tick,
+//!    resampling through the hardware's 4-point Gaussian interpolator
+//!    ([`gauss`])
 //!  - an ADSR envelope
 //!  - linear left/right volume registers (signed 16-bit, peak 0x3FFF in
 //!    libspu)
@@ -18,6 +20,7 @@
 
 use super::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 use super::adsr::{AdsrConfig, AdsrState, Phase};
+use super::gauss;
 use super::ram::SpuRam;
 
 /// Internal SPU output rate (constant per hardware).
@@ -64,6 +67,10 @@ pub struct Voice {
     decoder: AdpcmDecoder,
     /// True if the voice has at least one decoded block ready.
     has_block: bool,
+    /// The four most recent decoded samples for the hardware's 4-point
+    /// Gaussian interpolator (`[0]` = oldest .. `[3]` = newest = the sample
+    /// at the current pitch-counter position). Survives block boundaries.
+    hist: [i16; 4],
 }
 
 impl Default for Voice {
@@ -83,6 +90,7 @@ impl Default for Voice {
             block_pcm: [0; SAMPLES_PER_BLOCK],
             decoder: AdpcmDecoder::new(),
             has_block: false,
+            hist: [0; 4],
         }
     }
 }
@@ -108,6 +116,9 @@ impl Voice {
         self.sample_frac = 0;
         self.decoder.reset();
         self.fetch_block(ram);
+        // Interpolator history starts silent; the stream's first sample is
+        // the "newest" tap at the initial counter position.
+        self.hist = [0, 0, 0, if self.has_block { self.block_pcm[0] } else { 0 }];
         self.adsr.key_on();
     }
 
@@ -130,14 +141,19 @@ impl Voice {
             return (0, 0);
         }
         let env = self.adsr.tick(&self.adsr_cfg) as i32;
-        let raw = self.block_pcm[self.sample_idx as usize] as i32;
+        // Resample through the hardware's 4-point Gaussian interpolator:
+        // fraction bits 4..11 of the pitch counter index the coefficient
+        // table (see [`gauss`]).
+        let frac_idx = ((self.sample_frac >> 4) & 0xFF) as u8;
+        let raw = gauss::interpolate(&self.hist, frac_idx);
 
         // Mix: raw * env / 0x7FFF * vol / 0x3FFF.
         let enveloped = (raw * env) >> 15;
         let left = (enveloped * self.vol_left as i32) >> 14;
         let right = (enveloped * self.vol_right as i32) >> 14;
 
-        // Advance fractional pitch counter and walk forward through samples.
+        // Advance fractional pitch counter and walk forward through samples,
+        // pushing each newly-reached sample into the interpolator history.
         self.sample_frac += self.pitch as u32;
         while self.sample_frac >= PITCH_UNITY as u32 {
             self.sample_frac -= PITCH_UNITY as u32;
@@ -149,6 +165,12 @@ impl Voice {
                     break;
                 }
             }
+            self.hist = [
+                self.hist[1],
+                self.hist[2],
+                self.hist[3],
+                self.block_pcm[self.sample_idx as usize],
+            ];
         }
 
         (left, right)
@@ -288,6 +310,42 @@ mod tests {
         // Voice's playback head should still be valid (repeat brought it
         // back to start). Envelope held by config -> not off.
         assert!(!v.is_off());
+    }
+
+    /// Half-pitch playback of a DC (constant) stream settles on the source
+    /// level rather than a staircase: the Gaussian interpolator's fractional
+    /// positions must not introduce steps on constant input.
+    #[test]
+    fn voice_half_pitch_dc_stream_is_smooth() {
+        // Filter-0 shift-0 block: every nibble 7 decodes to 7 << 12 = 28672.
+        let mut block = [0x77u8; BLOCK_BYTES];
+        block[0] = 0x00; // filter 0, shift 0
+        block[1] = 0x03; // end + repeat
+        let mut ram = SpuRam::new();
+        ram.write_at(0x1000, &block);
+        let mut v = Voice {
+            start_addr: 0x1000,
+            pitch: 0x800,
+            adsr_cfg: hold_forever_adsr(),
+            ..Voice::default()
+        };
+        v.set_loop_addr(0x1000);
+        v.key_on(&ram);
+        // Warm up past the attack ramp + the interpolator's group delay.
+        for _ in 0..64 {
+            v.tick(&ram);
+        }
+        let mut min = i32::MAX;
+        let mut max = i32::MIN;
+        for _ in 0..64 {
+            let (l, _r) = v.tick(&ram);
+            min = min.min(l);
+            max = max.max(l);
+        }
+        // Settled DC: near the decoded level (28672 scaled by the table's
+        // ~0.996 unity sum), with no fraction-position wobble to speak of.
+        assert!(max - min <= 16, "DC wobble {min}..{max}");
+        assert!((27500..=28672).contains(&min), "level {min}");
     }
 
     /// Pitch=0x800 means we walk through samples at half speed -> twice as

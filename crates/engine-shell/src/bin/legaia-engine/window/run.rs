@@ -104,6 +104,7 @@ pub(crate) fn cmd_play_window(
     battle_bgm: Option<u16>,
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
+    dynamic_lighting: bool,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -129,6 +130,7 @@ pub(crate) fn cmd_play_window(
         battle_bgm,
         screenshot,
         seed_party,
+        dynamic_lighting,
         None,
     )
 }
@@ -255,6 +257,7 @@ pub(super) fn cmd_play_window_with_record(
     battle_bgm: Option<u16>,
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
+    dynamic_lighting: bool,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Resolve the cutscene map (explicit `--cutscene-map` override or the
@@ -684,6 +687,8 @@ pub(super) fn cmd_play_window_with_record(
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
         field_placement_draws: Vec::new(),
+        field_posed_props: Vec::new(),
+        field_posed_tmds: Vec::new(),
         field_stager_tmds: Vec::new(),
         color_meshes: Vec::new(),
         field_placement_color_draws: Vec::new(),
@@ -728,6 +733,8 @@ pub(super) fn cmd_play_window_with_record(
         field_npc_draws: Vec::new(),
         npc_clip_players: std::collections::HashMap::new(),
         npc_anim_srcs: std::collections::HashMap::new(),
+        npc_pose_cache: std::collections::HashMap::new(),
+        npc_pose_verify: std::collections::HashMap::new(),
         npc_anim_bundles: (None, None),
         npc_bundle_special: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
@@ -746,11 +753,34 @@ pub(super) fn cmd_play_window_with_record(
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
         active_dialog: None,
         seru_names: None,
+        dynamic_lighting,
+        orbit_drag_last_x: None,
+        cursor_x: 0.0,
     };
 
     // Push the loaded options into their live consumers (audio downmix)
     // before the loop starts.
     app.apply_options_side_effects();
+
+    // Camera framing + movement toggles from the persisted options file:
+    // the distance preset (default `far` - a bit more on screen than
+    // retail; `T` cycles) and the precise-movement toggle (`R`). The
+    // compass bias tells the engine-core camera what fixed yaw this
+    // window's follow camera renders at (compass sense = the negated PSX
+    // render yaw), so `BootSession::tick`'s d-pad remap feed tracks the
+    // on-screen view exactly - including after a left-mouse drag-orbit.
+    app.session.camera.distance = app.options_state.camera_distance;
+    app.session.camera.render_yaw_bias = -FIELD_FOLLOW_YAW_UNITS / 4096.0 * std::f32::consts::TAU;
+    app.session.host.world.precise_movement = app.options_state.precise_movement;
+    log::info!(
+        "camera: distance = {} (T cycles); precise movement {} (R toggles); drag to orbit",
+        app.options_state.camera_distance.label(),
+        if app.options_state.precise_movement {
+            "ON"
+        } else {
+            "off"
+        }
+    );
 
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;

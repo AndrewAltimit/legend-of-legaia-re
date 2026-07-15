@@ -641,6 +641,15 @@ pub(crate) enum Cmd {
     /// Open a window, boot a scene, and run the engine with rendering.
     /// Accepts keyboard input (arrows = D-pad, Z = Cross, Esc = quit).
     ///
+    /// Camera + movement keys: left-mouse drag orbits the field camera
+    /// around the player (the movement compass follows the orbited view,
+    /// so "up" always walks away from the camera); `T` cycles the camera
+    /// distance preset (retail / far / farther - default `far`, persisted
+    /// in `legaia-options.toml`); `R` toggles precise free-angle movement
+    /// (non-retail; true key diagonals + continuous analog angles,
+    /// persisted); `C` toggles the wide debug orbit vantage; `I` toggles
+    /// dynamic lighting; `V` mutes audio.
+    ///
     /// When `--str-file` is provided the STR video plays first in a windowed
     /// player (same as `play-str`). After the video window closes the scene
     /// window opens and runs normally.
@@ -741,8 +750,10 @@ pub(crate) enum Cmd {
         /// Make field NPCs solid with retail's actor-collision probes
         /// (`FUN_801cfc40`'s `DAT_801f21b4` table): walking into an NPC's
         /// body box blocks the step, as in retail. Off by default
-        /// (walk-through). The retail touch side-effects (touch event,
-        /// face-the-NPC turn) aren't modelled.
+        /// (walk-through). Placed PROPS (doors, cupboards) are solid
+        /// unconditionally - retail keeps them in the collision candidate
+        /// list until their script's `31 00` exempts them - so this flag
+        /// only gates the NPC arm.
         #[arg(long, default_value_t = false)]
         solid_npcs: bool,
         /// Animate field NPCs: drive each placement's authored walk route
@@ -796,8 +807,10 @@ pub(crate) enum Cmd {
         /// Scripted pad input for a screenshot run: `TICK:BUTTON` pairs,
         /// comma-separated, e.g. `--pad-script "30:Start,50:Down,50:Down,70:Cross"`.
         /// Each entry presses BUTTON for exactly the named tick (a one-tick
-        /// edge). BUTTON names match the pad buttons (Start/Cross/Circle/Up/
-        /// Down/Left/Right/...). Replaces `xdotool` for menu navigation.
+        /// edge); a `FIRST-LAST:BUTTON` entry HOLDS the button across the
+        /// inclusive tick range (e.g. `10-200:Up` walks the player). BUTTON
+        /// names match the pad buttons (Start/Cross/Circle/Up/Down/Left/
+        /// Right/...). Replaces `xdotool` for menu navigation.
         #[arg(long)]
         pad_script: Option<String>,
         /// Seed the New Game starting party (Vahn from the SCUS template) at
@@ -807,6 +820,14 @@ pub(crate) enum Cmd {
         /// Matches the retail early-game single-Vahn party.
         #[arg(long, default_value_t = false)]
         seed_party: bool,
+        /// Opt-in dynamic-lighting ENHANCEMENT (non-retail): layer a soft
+        /// warm directional light (off the smoothed mesh normals) plus a
+        /// screen-centred light pool over the baked per-prim shading, capped
+        /// at ~1.3x. Retail's field path has no light source at all, so this
+        /// is default-off and the faithful render stays pixel-identical
+        /// without it. Toggle at runtime with the `I` key.
+        #[arg(long, default_value_t = false)]
+        dynamic_lighting: bool,
     },
     /// Open a window and play back a PSX STR movie using the MDEC decoder,
     /// paced at the stream's real ~15 fps.

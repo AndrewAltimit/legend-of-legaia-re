@@ -84,9 +84,16 @@ struct. `World::tick` runs:
      See [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md).
      In `Field` the field-VM step is followed by `step_field_locomotion` - the free-movement
      player controller (port of `FUN_801d01b0`): the held d-pad becomes a
-     camera-relative direction (remapped by `field_camera_azimuth`), the
+     camera-relative direction (remapped by `field_camera_azimuth`,
+     quantised to the nearest 90° like retail; the opt-in
+     `World::precise_movement` swaps in a continuous decode - true key
+     diagonals + analog-stick angles - through the same collision), the
      player actor advances in 2-unit steps with per-axis collision against
-     the per-scene `field_collision_grid`, and facing is updated. The grid
+     the per-scene `field_collision_grid`, and facing is updated. Hosts
+     feed the azimuth from `Camera::compass_azimuth_units()` (scripted yaw
+     + user drag-orbit + the renderer's framing bias); `Camera::distance`
+     is the discrete follow-camera distance preset (retail / far /
+     farther - render framing only). The grid
      (one byte per 128-unit tile, high nibble = 4 sub-cell wall bits) is
      zeroed at field entry and painted by the field-VM `0x4C` outer-nibble-7
      op as the prescript runs. The same tick walks field NPCs through the

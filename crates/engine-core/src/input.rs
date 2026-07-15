@@ -121,6 +121,26 @@ pub struct InputState {
     pressed_at: [Option<Instant>; 16],
 }
 
+/// Wall-clock read for the held-duration bookkeeping.
+///
+/// `std::time::Instant::now()` **panics** on `wasm32-unknown-unknown` (the
+/// target has no monotonic clock), and the browser build routes every frame's
+/// pad through [`InputState::set_pad`] - so the timestamps are `None` there and
+/// [`InputState::held_for`] answers `false`. Nothing in the engine's field /
+/// battle paths reads a held *duration* (they all key on the pressed / edge
+/// queries, which are pure bitmask compares), so this costs the WASM host
+/// nothing.
+fn now() -> Option<Instant> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Some(Instant::now())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
+}
+
 impl InputState {
     pub fn new() -> Self {
         Self::default()
@@ -132,14 +152,14 @@ impl InputState {
     pub fn set_pad(&mut self, mask: u16) {
         self.pad_prev = self.pad;
         self.pad = mask;
-        let now = Instant::now();
-        self.last_set = Some(now);
+        let now = now();
+        self.last_set = now;
         for bit in 0..16u8 {
             let m = 1u16 << bit;
             let pressed_now = mask & m != 0;
             let pressed_prev = self.pad_prev & m != 0;
             match (pressed_prev, pressed_now) {
-                (false, true) => self.pressed_at[bit as usize] = Some(now),
+                (false, true) => self.pressed_at[bit as usize] = now,
                 (true, false) => self.pressed_at[bit as usize] = None,
                 _ => {}
             }
@@ -191,9 +211,9 @@ impl InputState {
             return false;
         }
         let bit = button.mask().trailing_zeros() as usize;
-        match self.pressed_at[bit] {
-            Some(t) => Instant::now().duration_since(t) >= dur,
-            None => false,
+        match (self.pressed_at[bit], now()) {
+            (Some(t), Some(n)) => n.duration_since(t) >= dur,
+            _ => false,
         }
     }
 

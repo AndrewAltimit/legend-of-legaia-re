@@ -861,9 +861,10 @@ the active scene is one of the prologue cutscene legs (`opdeene` / `opstati` / `
 it into the renderer each frame ([`Renderer::set_color_grade`](../../crates/engine-render/src/renderer.rs));
 the field mesh shaders' `apply_grade` maps each shaded pixel to `luminance · gold` cross-faded by
 `strength` (the text/UI overlays use separate shaders, so the narration stays white). The gold
-coefficients are stored in **linear** space (the shader multiplies before the sRGB framebuffer
-encode, gamma ≈ 2.0), i.e. the display targets squared: `(1.0, 0.90², 0.24²)`. Verified
-pixel-aligned against a pure-diagnostic grade - the encoded output lands `G/R ≈ 0.90`, `B/R ≈ 0.24`.
+coefficients `(1.0, 0.90, 0.24)` are the **display** direction as-is: the shader multiplies into a
+pixel that is already a PSX framebuffer value and the attachment is UNORM, so nothing re-encodes
+the product (see [`renderer.md`](renderer.md#colour-space-psx-framebuffer-values-end-to-end)).
+Verified pixel-aligned against a pure-diagnostic grade - the output lands `G/R ≈ 0.90`, `B/R ≈ 0.24`.
 `scene_color_grade_only_on_the_prologue_cutscene` (engine-core) guards the scene gate.
 
 ## Open items

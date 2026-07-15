@@ -172,6 +172,164 @@ fn hash3(d: &[u8], i: usize) -> usize {
 /// one at a time as the cursor reaches them so the lazy look-ahead at `i+1` sees
 /// position `i`.
 pub fn compress(input: &[u8]) -> Vec<u8> {
+    compress_with_chain(input, MAX_CHAIN)
+}
+
+/// Optimal-parse variant of [`compress`]: a shortest-encoding dynamic program
+/// over the token graph (literal = 1 control bit + 1 byte, back-reference =
+/// 1 control bit + 2 bytes), instead of the greedy + one-step-lazy parse.
+/// Slower (full match search at every position plus a DP walk) but never
+/// longer than [`compress`]'s output, and usually a fraction of a percent
+/// shorter - enough to close the couple of bytes by which the greedy parse
+/// misses Sony's packer on a handful of retail streams whose on-disc
+/// footprint has zero slack. Same round-trip contract:
+/// `decompress(compress_optimal(x), x.len()) == x`.
+pub fn compress_optimal(input: &[u8]) -> Vec<u8> {
+    let n = input.len();
+    let mut out: Vec<u8> = Vec::with_capacity(n / 2 + 16);
+    if n == 0 {
+        return out;
+    }
+
+    // Longest match (and its distance) at every position, full-depth search.
+    // A match's shorter prefixes share its distance, so one (len, dist) pair
+    // per position covers every usable length 3..=len at that position.
+    let mut head = vec![NONE; HASH_SIZE];
+    let mut prev = vec![NONE; n];
+    // (len, dist) of the longest history match at each position; dist == 0 is
+    // the zero-window sentinel (see below), never a real history distance.
+    let mut best_at: Vec<(u16, u16)> = vec![(0, 0); n];
+    for i in 0..n {
+        let (l, d) = find_match(input, i, &head, &prev, WINDOW_SIZE);
+        best_at[i] = (l as u16, d as u16);
+        if i + MIN_MATCH <= n {
+            let h = hash3(input, i);
+            prev[i] = head[h];
+            head[h] = i;
+        }
+    }
+
+    // Zero-run tokens against the decoder's *initial* window. The ring buffer
+    // starts zero-filled, so a run of zeros can also be encoded as a
+    // back-reference into cells the decoder has not written yet: with the
+    // write cursor at `w`, reading from `base = w + 1` stays ahead of every
+    // write while `i + len <= 4095` (the first wrap that could alias). Sony's
+    // packer uses this on runs near the start of a stream where there is no
+    // zero history to reference yet.
+    let mut zero_at: Vec<u16> = vec![0; n];
+    {
+        let mut run = 0usize;
+        for i in (0..n).rev() {
+            run = if input[i] == 0 { run + 1 } else { 0 };
+            let cap = MAX_MATCH.min(run).min(4095usize.saturating_sub(i));
+            zero_at[i] = cap as u16;
+        }
+    }
+
+    // Exact shortest-encoding DP over (position, tokens-emitted mod 8): a
+    // fresh control byte costs 1 extra byte on the token that starts a group
+    // of 8, so the emitted length depends on the token phase, not just the
+    // token count. State cost = exact bytes emitted so far; a literal costs
+    // `1 (+1 at phase 0)`, a back-reference `2 (+1 at phase 0)`.
+    const PHASES: usize = 8;
+    let idx = |i: usize, r: usize| i * PHASES + r;
+    let mut cost = vec![u32::MAX; (n + 1) * PHASES];
+    // Chosen token length arriving at each state (1 = literal), plus the
+    // zero-window flag (base ahead of the write cursor) for back-references.
+    let mut step = vec![0u16; (n + 1) * PHASES];
+    let mut zero_step = vec![false; (n + 1) * PHASES];
+    cost[idx(0, 0)] = 0;
+    for i in 0..n {
+        for r in 0..PHASES {
+            let c = cost[idx(i, r)];
+            if c == u32::MAX {
+                continue;
+            }
+            let ctrl = if r == 0 { 1 } else { 0 };
+            let r2 = (r + 1) % PHASES;
+            // Literal.
+            let lc = c + 1 + ctrl;
+            if lc < cost[idx(i + 1, r2)] {
+                cost[idx(i + 1, r2)] = lc;
+                step[idx(i + 1, r2)] = 1;
+            }
+            // History back-reference of any usable length.
+            let (l, _) = best_at[i];
+            let max_l = (l as usize).min(n - i);
+            let rc = c + 2 + ctrl;
+            for take in MIN_MATCH..=max_l {
+                let s = idx(i + take, r2);
+                if rc < cost[s] {
+                    cost[s] = rc;
+                    step[s] = take as u16;
+                    zero_step[s] = false;
+                }
+            }
+            // Zero-window back-reference (initial ring-buffer zeros).
+            let max_z = (zero_at[i] as usize).min(n - i);
+            for take in MIN_MATCH..=max_z {
+                let s = idx(i + take, r2);
+                if rc < cost[s] {
+                    cost[s] = rc;
+                    step[s] = take as u16;
+                    zero_step[s] = true;
+                }
+            }
+        }
+    }
+
+    // Best final phase, then reconstruct the token path backwards.
+    let end_r = (0..PHASES)
+        .min_by_key(|&r| cost[idx(n, r)])
+        .expect("nonempty");
+    let mut tokens: Vec<(usize, u16, bool)> = Vec::new(); // (pos, take, zero)
+    let mut i = n;
+    let mut r = end_r;
+    while i > 0 {
+        let take = step[idx(i, r)] as usize;
+        debug_assert!(take >= 1, "unreachable DP state");
+        let pr = (r + PHASES - 1) % PHASES;
+        tokens.push((i - take, take as u16, zero_step[idx(i, r)]));
+        i -= take;
+        r = pr;
+    }
+    tokens.reverse();
+
+    // Emit tokens along the chosen path.
+    let mut ctrl_pos = 0usize;
+    let mut nbits = 0u32;
+    for (pos, take, via_zero) in tokens {
+        if nbits == 0 {
+            ctrl_pos = out.len();
+            out.push(0);
+        }
+        let bit = nbits;
+        let take = take as usize;
+        if take == 1 {
+            out[ctrl_pos] |= 1u8 << bit;
+            out.push(input[pos]);
+        } else {
+            let base = if via_zero {
+                // Zero-window token: read just ahead of the write cursor,
+                // where the ring buffer still holds its initial zeros.
+                (WINDOW_START_POS + pos + 1) & 0xFFF
+            } else {
+                let dist = best_at[pos].1 as usize;
+                (WINDOW_START_POS + (pos - dist)) & 0xFFF
+            };
+            let len_code = (take - MIN_MATCH) as u8;
+            out.push((base & 0xFF) as u8);
+            out.push(((((base >> 8) & 0xF) as u8) << 4) | len_code);
+        }
+        nbits += 1;
+        if nbits == 8 {
+            nbits = 0;
+        }
+    }
+    out
+}
+
+fn compress_with_chain(input: &[u8], max_chain: usize) -> Vec<u8> {
     let n = input.len();
     let mut out: Vec<u8> = Vec::with_capacity(n / 2 + 16);
     if n == 0 {
@@ -212,7 +370,7 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
         }
         let bit = nbits;
 
-        let (len1, dist1) = find_match(input, i, &head, &prev);
+        let (len1, dist1) = find_match(input, i, &head, &prev, max_chain);
 
         // Lazy look-ahead: if a non-maximal match here is beaten by the match at
         // `i+1`, emit a literal now and let the longer match land next step.
@@ -222,7 +380,7 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
                 insert_one(&mut head, &mut prev, i);
                 inserted = i + 1;
             }
-            let (len2, _) = find_match(input, i + 1, &head, &prev);
+            let (len2, _) = find_match(input, i + 1, &head, &prev, max_chain);
             if len2 > len1 {
                 emit_literal = true;
             }
@@ -267,7 +425,13 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
 
 /// Greedy longest-match search at `i` over the hash chain. Returns
 /// `(length, distance)`; `length < MIN_MATCH` means "emit a literal".
-fn find_match(input: &[u8], i: usize, head: &[usize], prev: &[usize]) -> (usize, usize) {
+fn find_match(
+    input: &[u8],
+    i: usize,
+    head: &[usize],
+    prev: &[usize],
+    max_chain: usize,
+) -> (usize, usize) {
     let n = input.len();
     if i + MIN_MATCH > n {
         return (0, 0);
@@ -279,7 +443,7 @@ fn find_match(input: &[u8], i: usize, head: &[usize], prev: &[usize]) -> (usize,
     let mut best_len = 0usize;
     let mut best_dist = 0usize;
     let mut depth = 0usize;
-    while cand != NONE && cand >= min_pos && depth < MAX_CHAIN {
+    while cand != NONE && cand >= min_pos && depth < max_chain {
         depth += 1;
         // Cheap reject: to beat the current best, byte at offset best_len must
         // already match.
@@ -668,6 +832,66 @@ mod tests {
     fn compress_all_byte_values_boundary() {
         let data: Vec<u8> = (0..=255u8).cycle().take(5000).collect();
         assert_roundtrip(&data);
+    }
+
+    /// `compress_optimal` round-trips and is never longer than the greedy
+    /// parse, across the same shapes the greedy tests use.
+    #[test]
+    fn compress_optimal_round_trips_and_never_beats_greedy_backwards() {
+        let mut cases: Vec<Vec<u8>> = vec![
+            Vec::new(),
+            vec![0x42],
+            b"AB".to_vec(),
+            b"The quick brown fox jumps over the lazy dog".to_vec(),
+            vec![0u8; 4096],
+            vec![0xAA; 500],
+            (0..600).map(|i| (i % 3) as u8).collect(),
+            (0..=255u8).cycle().take(5000).collect(),
+        ];
+        let mut x: u32 = 0x1234_5678;
+        cases.push(
+            (0..20_000)
+                .map(|_| {
+                    x = x.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                    (x >> 16) as u8
+                })
+                .collect(),
+        );
+        for data in cases {
+            let opt = compress_optimal(&data);
+            assert_eq!(
+                decompress(&opt, data.len()).expect("optimal decodes"),
+                data,
+                "optimal round-trip (len {})",
+                data.len()
+            );
+            let greedy = compress(&data);
+            assert!(
+                opt.len() <= greedy.len(),
+                "optimal ({}) must never exceed greedy ({}) for len {}",
+                opt.len(),
+                greedy.len(),
+                data.len()
+            );
+        }
+    }
+
+    /// A zero run at the very start of a stream has no history to reference;
+    /// the optimal parser must encode it via the decoder's initial zero
+    /// window (and decode back exactly).
+    #[test]
+    fn compress_optimal_uses_initial_zero_window() {
+        let mut data = vec![0u8; 40];
+        data.extend_from_slice(b"tail text after the zeros");
+        let opt = compress_optimal(&data);
+        assert_eq!(decompress(&opt, data.len()).unwrap(), data);
+        // 40 leading zeros must cost far less than 40 literals.
+        let literal_floor = 40 + 40 / 8;
+        assert!(
+            opt.len() < literal_floor,
+            "zero prefix should back-reference the virgin window ({} bytes)",
+            opt.len()
+        );
     }
 
     #[test]

@@ -71,12 +71,16 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
 - **TSB / CBA flat shading per primitive.** Texture page and CLUT base
   remain `@interpolate(flat)` so each triangle samples from the same
   page and palette, matching `GP0(0x24)` semantics.
-- **No synthetic lighting.** The engine's default readability hack - a
-  per-frame directional Lambert from a made-up light direction - is
-  disabled. Retail bakes its GTE lighting into the per-vertex colours and
-  texels; faithful mode shows that source data unlit (the textured/colour
-  meshes pass texel/vertex colour straight through). Default mode keeps
-  the ambient-biased shade so untextured silhouettes stay readable.
+- **PSX texture blending - the lighting.** Retail runs *no light source* on
+  the field path: its two TMD renderers issue exactly one GTE colour op
+  between them (`DPCS`, the depth cue) and never an `NC*` op, so the
+  shading is baked into each prim's colour word and applied by the GPU as
+  `texel * colour / 128` (`0x80` neutral, below darkens, above brightens
+  up to ~2x). The mesh shaders do the same: each vertex carries the baked
+  colour, `psx_modulate` applies the blend, `psx_depth_cue` applies `DPCS`
+  (identity at the field's `IR0 = 0`; set with `Renderer::set_depth_cue`).
+  The `psx_light` module mirrors both on the CPU and pins them. There is
+  no synthetic Lambert on any path that has real colour data to draw.
 
 - **Semi-transparency blend modes.** Per-prim PSX blending on the
   VRAM-mesh and colour-mesh paths (see the `psx_blend` module). The TMD
@@ -129,6 +133,42 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
 
 In the `legaia-engine play-window` binary this whole mode is opt-in via
 the `LEGAIA_PSX_RENDER=1` environment variable.
+
+## Opt-in dynamic lighting (enhancement, NOT retail)
+
+`Renderer::set_dynamic_lighting(true)` layers a soft, warm dynamic light
+over the baked shading on the VRAM-mesh and colour-mesh passes. **Off by
+default, and off IS retail**: the field path has no runtime light source
+(see `psx_light` above), so the disabled path is pixel-identical to the
+faithful render and the parity oracles are unaffected - the WGSL helper
+(`dyn_light`) early-returns the input colour when the uniform enable is
+zero.
+
+When enabled, each fragment's post-`psx_modulate` colour is scaled by
+
+```text
+gain = ambient + (diffuse * |N.L| + pool) * warm_tint    (capped at ~1.3x)
+```
+
+- `N` is the smoothed per-vertex normal the VRAM-mesh vertex format
+  already carries (area-weighted face normals accumulated per shared
+  position by `legaia_tmd::mesh` - continuous across connected surfaces,
+  so lighting varies within primitives, not per-prim). The normal-less
+  colour-mesh prims and zero-normal singletons fall back to the
+  screen-space-derivative face normal. `|N.L|` (not `max(N.L, 0)`)
+  because prim winding in the corpus is mixed - walls shade with their
+  orientation while a Y-flip in the draw parity changes nothing.
+- `pool` is a soft screen-space "pool of light" centred slightly above
+  frame centre, fading toward the corners - the gentle
+  vignette-of-light gradient over the ground.
+- Texels stay crisp: the gain is a smooth per-pixel scale on the same
+  nearest-sampled PSX texel path, never a filter.
+
+Tunables: `DYN_LIGHT_DIR` / `DYN_LIGHT_TINT` / `DYN_LIGHT_AMBIENT`
+(renderer state) plus the `DYN_*` weights in the `dyn_light` WGSL helper;
+the CPU mirror + lockstep tests live in the `dyn_light` module. In
+`play-window` this is the `--dynamic-lighting` flag, toggled at runtime
+with the `I` key and reflected on the HUD status line.
 
 `Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to
 GP0(0xE2) "Texture Window setting" - four 5-bit values in 8-pixel steps
@@ -226,6 +266,51 @@ surface coordinates so text and frame stay locked at any window size. The
 field pause menu and its sub-screens (status / spells / items / equip /
 arts) route through both, framed by the play-window at the placement rects
 documented in [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md).
+
+## Frame profiler
+
+`profile` is an opt-in per-frame timing breakdown for `play-window`. It is
+off by default and free when off (every entry point short-circuits on one
+cached `bool`), so the instrumented call sites cost a predicted branch per
+frame. Enable it with `LEGAIA_PROFILE=1`; a rolling one-second summary goes
+to stderr:
+
+```text
+[profile] 1052.7 fps over 629 frames | frame avg  0.93ms p50  0.82 p99  3.49 \
+  | draws 288+92 | tick 0.00 pose:actor 0.25 pose:prop 0.11 pose 0.01 \
+    drawlist 0.02 acquire 0.08 uniforms 0.02 encode 0.33 submit 0.07 present 0.03
+```
+
+The stages carve the frame at the boundaries that matter: `tick` (world
+sim), `pose:*` (per-frame mesh skinning + upload), `drawlist` (building the
+scene draw list), then the renderer's own `acquire` (swapchain wait),
+`uniforms` (per-draw uniform staging), `encode`, `submit` and `present`.
+`draws N+M` is the scene's textured + untextured draw-call count, so the
+`encode` cost is attributable per draw.
+
+Two companion knobs make it a repeatable benchmark:
+
+| Env var | Effect |
+|---|---|
+| `LEGAIA_PROFILE=1` | Enable the breakdown. |
+| `LEGAIA_PROFILE_FRAMES=N` | Print a final summary and exit after `N` frames. |
+| `LEGAIA_VSYNC=off` | Configure the surface with an uncapped present mode. |
+
+`LEGAIA_VSYNC=off` matters for measurement: with the default `AutoVsync`
+the frame time is pinned to the display refresh interval and the whole cost
+of a frame lands in `acquire`, so a vsync'd run reads the refresh rate
+rather than the engine's own headroom.
+
+**Skinned actors are memoised, not rebuilt.** A field NPC's ANM clip is a
+short loop over a fixed set of poses, so the skinned mesh for a given
+`(placement slot, clip frame)` is a constant. `play-window` skins and
+uploads it on the first visit to that frame and reuses the GPU buffers
+afterwards; the playhead still advances every frame, so the animation is
+unchanged. Rebuilding it per frame instead - re-deriving identical vertex
+bytes into freshly allocated GPU buffers - dominates the field frame in a
+populated town. `LEGAIA_POSE_CACHE_VERIFY=1` re-checks the memo against the
+live pose on every cache hit and logs any mismatch, which is what pins the
+`(slot, frame)` key as non-aliasing.
 
 ## Future phases
 

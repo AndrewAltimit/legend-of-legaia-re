@@ -2,6 +2,7 @@
 
 use crate::{Tmd, legaia_prims};
 
+use super::vram::prim_color;
 use super::{compute_smooth_normals, pack_tsb_semi, rot_zyx};
 
 /// Like [`tmd_to_vram_mesh`] but applies per-object (per-bone) pose offsets
@@ -22,6 +23,7 @@ pub fn tmd_to_vram_mesh_posed(
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
+    let mut colors = Vec::new();
     let mut indices = Vec::new();
 
     for (o_idx, o) in tmd.objects.iter().enumerate() {
@@ -58,6 +60,7 @@ pub fn tmd_to_vram_mesh_posed(
                     let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
+                    colors.push(prim_color(prim, uv_idx));
                     i
                 };
                 match raw_idx.len() {
@@ -87,6 +90,7 @@ pub fn tmd_to_vram_mesh_posed(
         cba_tsb,
         indices,
         normals,
+        colors,
     }
 }
 
@@ -113,6 +117,7 @@ pub fn tmd_to_vram_mesh_posed_rot(
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
+    let mut colors = Vec::new();
     let mut indices = Vec::new();
 
     for (o_idx, o) in tmd.objects.iter().enumerate() {
@@ -155,6 +160,7 @@ pub fn tmd_to_vram_mesh_posed_rot(
                     let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
+                    colors.push(prim_color(prim, uv_idx));
                     i
                 };
                 match raw_idx.len() {
@@ -184,5 +190,6 @@ pub fn tmd_to_vram_mesh_posed_rot(
         cba_tsb,
         indices,
         normals,
+        colors,
     }
 }

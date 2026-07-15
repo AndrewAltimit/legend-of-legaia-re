@@ -7,13 +7,15 @@
 //! 1. entering `opdeene` decodes the caption image (a 112x32 RGBA with a
 //!    transparent background and opaque white glyphs), and it starts hidden
 //!    (`cutscene_caption_alpha == 0`);
-//! 2. while the FIRST crawl block is on screen the caption stays hidden (it
-//!    would overlap the scrolling text);
-//! 3. once block 1 scrolls out (narration inactive, still `seq == 1`) the
-//!    caption fades IN (alpha rises to full);
-//! 4. it is bounded to a retail-like beat: after the hold it fades back OUT to
-//!    hidden - all still within `seq == 1`, before the second crawl opens - so
-//!    the engine's longer inter-crawl gap never leaves the caption frozen on
+//! 2. while a crawl block is on screen the caption stays hidden (it would
+//!    overlap the scrolling text);
+//! 3. in the first gap after a block has shown (narration inactive) the
+//!    caption fades IN (alpha rises to full) - at the retail-video-pinned
+//!    crawl rate the blocks run back-to-back, so this gap lands after the
+//!    LAST crawl, over the held villager tableau (where the retail capture
+//!    shows the caption);
+//! 4. it is bounded to a retail-like beat: after the hold it fades back OUT
+//!    to hidden, so the post-crawl hold never leaves the caption frozen on
 //!    screen.
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
@@ -101,14 +103,22 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
         );
     }
 
-    // 3. Block 1 scrolls out (still seq == 1) -> the caption fades IN to full.
+    // 3. The caption fades IN to full in the first post-block gap. While any
+    // crawl is on screen the alpha stays 0 (asserted inside the loop). The
+    // budget covers the video-pinned crawl rate (1 px per 6 retail frames)
+    // across every block's pages.
     let mut peak_alpha = 0.0f32;
     let mut faded_in = false;
-    for _ in 0..4000 {
+    for _ in 0..40000 {
         let _ = host.world.tick();
-        // Never leak past the first block: the beat must complete within seq 1.
-        if host.world.cutscene_narration_seq != 1 {
-            break;
+        if host.world.cutscene_narration_active() {
+            // A block can open during a brief gap's fade-in tail; the gate
+            // then targets 0 again, so the caption never reaches full while
+            // a crawl is on screen.
+            assert!(
+                host.world.cutscene_caption_alpha < 0.99,
+                "caption never fully shown while a crawl block is on screen"
+            );
         }
         peak_alpha = peak_alpha.max(host.world.cutscene_caption_alpha);
         if host.world.cutscene_caption_alpha >= 0.99 {
@@ -118,26 +128,18 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
     }
     assert!(
         faded_in,
-        "the caption fades in to full in the gap after block 1 (peak {peak_alpha})"
-    );
-    assert_eq!(
-        host.world.cutscene_narration_seq, 1,
-        "the caption shows before the second crawl block opens"
+        "the caption fades in to full in the first post-block gap (peak {peak_alpha})"
     );
     assert!(
         !host.world.cutscene_narration_active(),
-        "the caption shows only once block 1 has scrolled out"
+        "the caption shows only in a gap (no crawl on screen)"
     );
 
-    // 4. Bounded beat: after the hold it fades back OUT to hidden, still within
-    //    seq == 1 (the engine's inter-crawl gap runs long, so the caption must
-    //    not stay frozen until block 2).
+    // 4. Bounded beat: after the ~2 s hold it fades back OUT to hidden (the
+    //    post-crawl hold must not leave the caption frozen on screen).
     let mut faded_out = false;
-    for _ in 0..4000 {
+    for _ in 0..40000 {
         let _ = host.world.tick();
-        if host.world.cutscene_narration_seq != 1 {
-            break;
-        }
         if host.world.cutscene_caption_alpha <= 0.0 {
             faded_out = true;
             break;
@@ -147,9 +149,7 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
         faded_out,
         "the caption is bounded to a beat and fades back out within the gap"
     );
-    assert_eq!(
-        host.world.cutscene_narration_seq, 1,
-        "the caption faded out before the second crawl block opened"
+    eprintln!(
+        "[opdeene] caption faded in (peak {peak_alpha}) and back out within the post-block gap"
     );
-    eprintln!("[opdeene] caption faded in (peak {peak_alpha}) and back out within the crawl gap");
 }

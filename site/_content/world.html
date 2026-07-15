@@ -75,12 +75,14 @@ canvas.world-canvas {
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
+<script src="js/legaia-saves.js?v=saves-1"></script>
 -->
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; game world</div>
   <h1>Game world</h1>
   <p class="lede">
     Every town, dungeon, and battlefield in the game - rendered here, in 3D, from your own disc image. Pick a location from the navigator and its full map assembles in the browser: the terrain, the buildings, the props, all textured from the real PSX VRAM. Each location also carries its enemy roster, bosses, and shops. Under the hood, every one ties back to a scene label on the disc via the <a href="formats/cdname.html">CDNAME map</a>. Nothing leaves your machine.
+    With a VR headset, the <strong>VR</strong> button next to the assembled map steps inside it over WebXR - Chrome/Edge with SteamVR as the active OpenXR runtime, served from <code>http://localhost</code> or https (WebXR needs a secure context; the button explains what's missing if it can't start).
   </p>
 </header>
 
@@ -92,6 +94,11 @@ canvas.world-canvas {
       <input type="file" id="world-file" accept=".bin,.DAT,.dat">
       <span class="world-status" id="world-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (a raw <code>PROT.DAT</code> won't do - scene names come from <code>CDNAME.TXT</code>).</span>
     </div>
+
+    <!-- "Your games" resume strip (js/legaia-saves.js). Hidden until a
+         session or minigame progress exists in this browser; Resume links
+         to the play page, which hosts the engine runtime. -->
+    <div id="world-saves-strip" style="display: none;"></div>
 
     <div class="world-viewer" id="world-viewer" style="display: none;">
       <div class="world-nav">
@@ -146,6 +153,7 @@ canvas.world-canvas {
   </div>
 </section>
 
+<script src="js/vr-mode.js?v=vr-3"></script>
 <script src="js/webgl-shaders.js?v=world-map-1"></script>
 <script src="js/webgl-math.js?v=world-map-1"></script>
 <script src="js/webgl-tmd.js?v=world-map-1"></script>
@@ -412,5 +420,19 @@ canvas.world-canvas {
       if (a && viewer) loadScene(a.dataset.scene);
     });
   }
+})();
+</script>
+
+<script>
+/* "Your games" resume strip (js/legaia-saves.js). This page has no engine
+ * runtime, so Resume links to the play page. */
+(function () {
+  if (!window.LegaiaSaves) return;
+  const el = document.getElementById('world-saves-strip');
+  const render = () => LegaiaSaves.renderStrip(el, {
+    resumeHref: (e) => `play.html?resume=${encodeURIComponent(e.id)}`,
+  });
+  render();
+  window.addEventListener('legaia-saves-change', render);
 })();
 </script>

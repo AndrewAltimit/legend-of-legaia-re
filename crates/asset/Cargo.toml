@@ -23,10 +23,12 @@ legaia-lzs = { path = "../lzs" }
 legaia-prot = { path = "../prot" }
 legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }
+# `minigame_sfx` decodes the minigame cue banks (efect.dat descriptors -> VAB
+# voices -> PCM), so the VAB reader is a real dependency, not just a test one.
+legaia-vab = { path = "../vab" }
 png = "0.17"
 sha2 = "0.10"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 
 [dev-dependencies]
-legaia-vab = { path = "../vab" }
 legaia-seq = { path = "../seq" }

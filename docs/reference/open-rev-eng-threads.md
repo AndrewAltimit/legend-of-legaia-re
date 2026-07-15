@@ -969,12 +969,32 @@ The carrying partition-0 records have their own header form (`[u8 n][n×2 SJIS n
 The captured Mei's-house warp is byte-for-byte the `0xA3 0xF8 0x61 0x36` in town01 partition-0 record 34 (an `ＩＮ` record).
 The randomizer (`legaia_rando::house_door`) shuffles only these classified door warps, class-preserving (ＩＮ among ＩＮ, ＯＵＴ among ＯＵＴ) so every exit still lands outside; see [`randomizer.md`](../tooling/randomizer.md).
 
+**`0xA3 0xF8` is one of three player-move forms, and the ＩＮ/ＯＵＴ pair is one of several door shapes.**
+A door record repositions the player through *any* of `A3 F8 <xb> <zb>` (op `0x23`, instant),
+`CC F8 51 <xb> <zb> <depth> <mv>` (op `0x4C` nibble-5 sub-1, teleport + move anim) or
+`C7 F8 <xb> <zb> <mode>` (op `0x47`, animated walk), and the record is a **branching script** whose arm is
+selected by story flags - so a door can also be a `0x44` SPAWN_RECORD of a partition-2 choreography that
+does the seating itself.
+The bind position is the `.MAP` **object's** contact box, not the trigger tile (which is a lookup key and
+usually a wall).
+
+**And the MAN is not the only door carrier.** The `.MAP` trigger block's **kind-0** sub-table is a second,
+larger door class: `[tile_x][tile_z][dest_x][dest_z]`, no object and no script - crossing the tile seats the
+player at `(dest_x*64 + 64, (dest_z + 1)*64)` (`FUN_801D1EC4`'s kind-0 arm at `0x801d21c0`). **2330 records
+across 73 scenes.** Most house *exits* are these. This is what produced the (false) "Vahn's house has an ＩＮ
+and no ＯＵＴ, so it is a story-entry warp" reading: there is no ＯＵＴ record because the exit is not a
+record at all - it is the kind-0 tile `(97,9)` inside the room, ungated by any story flag. Full mechanism:
+[`field-locomotion.md`](../subsystems/field-locomotion.md#intra-scene-doorways---the-walk-touch-teleport-family).
+
 
 ### Field/town environment-geometry placement
 
 *Status:* resolved (renders)
 
-The town's environment meshes (terrain + buildings + props) are object-local Legaia TMDs in the **LZS streams of the scene_asset_table** PROT entry (`town01` = entry 4). Placement is `FUN_8003a55c`: the field-map object-index grid at `+0x8000` (`cell & 0x1FF` = object id) selects a `0x20`-byte record in the `+0x0000` table; placed tiles (record `+0x12` bit `0x4`) give the world transform (`world_y = -floorHeightLUT[nibble] + y_off`, the LUT being 16 `s16` at the MAN header `+0x02`). Mesh per object (byte-verified): `pack_index = obj_idx - 5` for the field-actor band `93..=118`, else record `+0x10`; ids `1/2/3` are protagonist/NPC meshes from the shared pool; `anim_id` only animates. Validated against a live `town01` save (Vahn's house id `137` → mesh 36; windmill id `96` → mesh 91).
+The town's environment meshes (terrain + buildings + props) are object-local Legaia TMDs in the **LZS streams of the scene_asset_table** PROT entry (`town01` = entry 4). Placement is `FUN_8003a55c`: the field-map object-index grid at `+0x8000` (`cell & 0x1FF` = object id) selects a `0x20`-byte record in the `+0x0000` table; placed tiles (record `+0x12` bit `0x4`) give the world transform (`world_y = -floorHeightLUT[nibble] + y_off`, the LUT being 16 `s16` at the MAN header `+0x02`). Mesh per object: the record's `+0x10`, for **every** object id (retail `FUN_80020f88`, `actor+0x64 = record[+0x10] + prefix`).
+Ids `1/2/3` are protagonist/NPC meshes from the shared pool; `anim_id` only animates.
+Validated against a live `town01` save (Vahn's house id `137` → mesh 36), and against the retail GPU prim pool for the ids an earlier positional "field-actor band" rule (`obj_idx - 5`, ids `93..=118`) mis-resolved: town0c cell `(30, 17)` (id `99`, record `+0x10 = 2`) draws its surface from env mesh **2** - the quad's `cba`/`tsb`/UVs match that mesh's primitive byte-for-byte - not from mesh `94`.
+The band rule is **falsified**: it swapped ten town meshes per Rim Elm map, dropping the terrain slab south-east of the spawn and leaving a clear-colour hole in the ground.
 
 Parser `legaia_asset::field_objects`; `Scene::field_object_placements`; `play-window` renders the town via `resolve_field_placement_draws`. Full field decode in [`field-locomotion.md`](../subsystems/field-locomotion.md#object-record-format-0x0000-0x20-byte-stride).
 
@@ -1061,7 +1081,7 @@ The piece poses `R·v + T` about its own object origin (no centroid subtraction)
 |---|---|---|
 | SPU reverb live routing (C7-REVERB) | resolved (wired; Studio C, global) | [details ↓](#spu-reverb-live-routing-c7-reverb) |
 | XA channel map / STR demux SM | resolved (static decompile of PROT 0970 + SCUS) | [details ↓](#xa-channel-map--str-demux-sm) |
-| XA clip-table writer + `(clip_id, chan)` cue census | open | The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..XA34`, title-capture byte-exact vs the disc files), but its filler is a DMA/computed write - both `lui 0x801c` materialisation sites in SCUS are the readers (`FUN_8003D53C`/`FUN_8003EAE4`). A write-watchpoint at boot would pin the filler; a caller census of `FUN_8003D53C`/`FUN_8003EAE4` across the overlay corpus would name each `(clip_id, chan)` cue (only the menu voice dispatcher `FUN_8004FCC8` is decoded: slot `(id-0x100)>>3` remapped `1/3/5 -> 0x1A/0x1B/0x1C`, chan `id & 7`). |
+| XA clip-table writer + `(clip_id, chan)` cue census | open | The `0x801C6ED8` clip-table content is pinned (34 `[CdlLOC][len]` slots = `XA1..XA34`, title-capture byte-exact vs the disc files), but its filler is a DMA/computed write - both `lui 0x801c` materialisation sites in SCUS are the readers (`FUN_8003D53C`/`FUN_8003EAE4`). A write-watchpoint at boot would pin the filler; a caller census of `FUN_8003D53C`/`FUN_8003EAE4` across the overlay corpus would name each `(clip_id, chan)` cue. Decoded so far: the menu voice dispatcher `FUN_8004FCC8`, the battle Tactical-Arts voice (`XA30.XA` chan 0/4/6, see [battle-action.md](../subsystems/battle-action.md)), the battle-SM state-`0x6E` stream (heroes -> `XA9.XA` via the `0x800787AF` table), and the slot machine's `XA1.XA`. |
 
 
 ### XA channel map / STR demux SM

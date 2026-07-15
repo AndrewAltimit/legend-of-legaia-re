@@ -2,6 +2,7 @@
 
 use crate::{Tmd, legaia_prims};
 
+use super::vram::prim_color;
 use super::{VramMesh, compute_smooth_normals, pack_tsb_semi};
 
 /// Like [`tmd_to_vram_mesh`] but drops primitives whose textures wouldn't
@@ -29,6 +30,7 @@ where
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
+    let mut colors = Vec::new();
     let mut indices = Vec::new();
 
     for o in &tmd.objects {
@@ -59,6 +61,7 @@ where
                     let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
+                    colors.push(prim_color(prim, uv_idx));
                     i
                 };
                 match raw_idx.len() {
@@ -88,6 +91,7 @@ where
         cba_tsb,
         indices,
         normals,
+        colors,
     }
 }
 
@@ -184,6 +188,7 @@ where
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
+    let mut colors = Vec::new();
     let mut indices = Vec::new();
     let mut stats = FilterStatsByReason::default();
 
@@ -229,6 +234,7 @@ where
                     let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
+                    colors.push(prim_color(prim, uv_idx));
                     i
                 };
                 match raw_idx.len() {
@@ -258,6 +264,7 @@ where
             cba_tsb,
             indices,
             normals,
+            colors,
         },
         stats,
     )
@@ -298,6 +305,7 @@ where
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
+    let mut colors = Vec::new();
     let mut indices = Vec::new();
     let mut stats = FilterStats::default();
 
@@ -333,6 +341,7 @@ where
                     let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
+                    colors.push(prim_color(prim, uv_idx));
                     i
                 };
                 match raw_idx.len() {
@@ -362,6 +371,7 @@ where
             cba_tsb,
             indices,
             normals,
+            colors,
         },
         stats,
     )

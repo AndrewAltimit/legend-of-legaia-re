@@ -270,7 +270,7 @@ The strict gate combines six checks:
 6. `N == 4 * param + 22` (= the runtime-fixup slot algebra).
 
 The algebraic tie at step 6 is the tightest constraint: across the entire
-1234-entry PROT corpus it matches **97** entries with zero false positives.
+1233-entry PROT corpus it matches **97** entries with zero false positives.
 Steps 1–5 alone would already match the same set, but the explicit `N/param`
 check is a strong contract for code that consumes the parser output and
 relies on `end_records = N - 2`.

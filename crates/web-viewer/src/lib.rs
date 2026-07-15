@@ -5,6 +5,7 @@
 //! and pre-scans them for embedded TIMs so the UI shows a filtered, browsable
 //! list of viewable entries instead of every raw entry.
 
+pub mod arts_view;
 pub mod audio;
 mod audio_api;
 mod catalog;
@@ -14,14 +15,18 @@ pub mod field_npc;
 pub mod field_scene;
 pub mod fog_lut;
 mod inspect;
+pub mod minigames;
 mod monster;
 mod nav_disc;
+pub mod play;
 mod player_anm;
 pub mod rom_patcher;
 pub mod runtime;
 mod scene_export;
 mod scene_geom;
 pub mod sentinel_placements;
+pub mod session_save;
+pub mod sfx_view;
 pub mod tmd3d;
 mod viewer_render;
 

@@ -63,7 +63,7 @@
 //! REF: FUN_8003EE7C, FUN_8005BEE4, FUN_8005E788
 //! REF: FUN_8003EBE4, FUN_8003EC70
 
-/// PROT entry index (0..1234 in retail).
+/// PROT entry index (0..=1232 in retail).
 pub type ProtIndex = u16;
 
 /// Logical LBA (PSX 75-sector-per-second clock).

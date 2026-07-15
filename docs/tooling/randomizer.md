@@ -37,6 +37,7 @@ so CI runs without a disc.
   - [Arts button combos](#arts-button-combos)
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
+  - [Map doors (`.MAP` kind-0 intra-scene teleports)](#map-doors-map-kind-0-intra-scene-teleports)
   - [Starting items](#starting-items)
   - [Starting-bag convenience toggles](#starting-bag-convenience-toggles)
   - [Unused content](#unused-content)
@@ -67,7 +68,9 @@ preservation track never had (it only ever *read* the disc):
 ## Editing model: same-size in place, except doors
 
 Drops / encounters / chests / steals / **house doors** (the player door-warp
-tile shuffle) overwrite bytes **in place** and never change a byte count, so no LBA,
+tile shuffle) / **map doors** (the `.MAP` kind-0 teleport-destination shuffle -
+raw sector bytes, not even LZS-wrapped) overwrite bytes **in place** and never
+change a byte count, so no LBA,
 PROT TOC, or ISO 9660 directory record ever moves. **Scene-transition doors are
 the one exception**: a scene-transition destination carries its
 target scene's name inline, so re-pointing a door at a differently-named scene
@@ -111,6 +114,7 @@ legaia-rando chests    --input DISC.bin                       # read-only: chest
 legaia-rando steals    --input DISC.bin                       # read-only: steal items
 legaia-rando doors     --input DISC.bin                       # read-only: scene transitions
 legaia-rando house-doors --input DISC.bin                     # read-only: intra-town door warps
+legaia-rando map-doors --input DISC.bin                       # read-only: .MAP kind-0 teleports
 legaia-rando starting-items --input DISC.bin                  # read-only: new-game starting bag
 legaia-rando shops     --input DISC.bin                       # read-only: what town stores sell
 legaia-rando casino    --input DISC.bin                       # read-only: casino prize exchange
@@ -204,7 +208,9 @@ The read-only `drops`, `chests`, `shops`, `casino`, `steals`, `arts`, `doors`,
 by scene via CDNAME). `chests` lists the exact 275-site treasure population the
 chest randomizer reassigns, which is the natural place to audit for quest / key
 items a run might want to keep static. `doors` lists every scene-transition exit
-(home scene → destination + entry tile) - the 160-site door population.
+(home scene → destination + entry tile) with its shuffle class - walk-door
+(the pool) vs excluded script/cutscene-invoked or world-map transition (see
+[Doors](#doors-scene-transitions)).
 
 ### Keep-static items
 
@@ -988,6 +994,32 @@ see [MAN relocation](../formats/man-relocation.md)). On the retail disc there ar
 160 doors across 48 scenes; the overworld scenes (`map01`/`map02`/`map03`) are
 the hubs.
 
+**Not every `0x3F` site is a walk-through door**, so the shuffle pool is gated
+(`door::DoorSiteClass`; `legaia-rando doors` prints each site's class):
+
+- **Walk-trigger evidence.** A genuine door's partition-2 record is spawned by
+  a `.MAP` **kind-1 gate-1** tile trigger (`[tile_x, tile_z, record, gate]`,
+  retail `FUN_801D1EC4` → `FUN_8003BDE0`), looked up in the primary trigger
+  block (`+0x10000`) and the `+0x12000` fallback window (the sibling PROT
+  entry's first sectors - retail scans both). A site whose carrying record no
+  gate-1 trigger references is **script/cutscene-invoked** (event warps, the
+  Retock wall gates' scripted passages) and stays vanilla: shuffling one hands
+  a cutscene a random destination *and* gives a random door the cutscene's
+  descriptor - walking through that door re-enters the cutscene.
+- **World-map endpoints.** Any site whose home scene *or* destination is a
+  kingdom-overworld hub stays vanilla, in both directions of every
+  town↔overworld connection. The hubs' own records are dominated by
+  story/arrival scripts - e.g. the Drake hub's Genesis-Tree-revival return to
+  Rim Elm (`dest town0b`, entry `(0x7f,0x7f)` "keep position"), which runs at
+  world-map arrival under story state; shuffled, it replays on every overworld
+  arrival and warps the player to one arbitrary town.
+- Non-partition-2 sites (the handful of P0/P1 `0x3F` ops) are script
+  choreography by construction and stay vanilla.
+
+Excluded records come through byte-identical (asserted per seed and per
+coupling by `door_exclusions_real`); the report + manifest carry the
+`excluded_script` / `excluded_world_map` counts.
+
 Because the destination name is variable length, `apply::randomize_doors` is the
 only randomizer that **resizes** an asset: it rewrites the `0x3F` op through the
 relocation engine, recompresses the MAN, and rewrites the descriptor's
@@ -1071,8 +1103,10 @@ vanilla; the scene's seven single-warp elevator endpoint pairs stay in the
 shuffle pool.
 
 The feature is opt-in and `shuffle`-only (a `random` draw would place the
-player off-map). The read-only `house-doors` listing shows the population per
-scene. The disc-gated `house_door_classifier_real` test pins the per-scene
+player off-map), and the same `--house-doors` option also runs the
+[map-door pass](#map-doors-map-kind-0-intra-scene-teleports) - the `.MAP`
+kind-0 teleports most house *exits* belong to. The read-only `house-doors`
+listing shows the population per scene. The disc-gated `house_door_classifier_real` test pins the per-scene
 ＩＮ/ＯＵＴ census, the `0xA3 0xF8` signature of every site, and the captured
 Mei's-house anchor; `house_door_patch_real` round-trips the shuffle off a
 patched image and asserts the per-scene, per-class target multisets, EDC/ECC
@@ -1084,6 +1118,60 @@ the live-captured Mei's-house world coords).
 Towns whose interiors are separate scenes (e.g. `retock` → `retockin`) reach
 them through `0x3F` scene-change doors - those are the [door
 randomizer](#doors-scene-transitions)'s population, not this one's.
+
+### Map doors (`.MAP` kind-0 intra-scene teleports)
+
+The third door class lives entirely in **map data**, not in any script: the
+per-scene `.MAP` file's trigger block (`+0x10000`) carries a **kind-0
+sub-table** of `[tile_x][tile_z][dest_x][dest_z]` records - crossing onto the
+trigger tile repositions the player outright, with no object, no MAN record
+and no name (retail arm `FUN_801D1EC4` at `0x801d21c0` → `FUN_801D5630`; the
+engine dispatch is `SceneHost::dispatch_intra_scene_teleport` over
+`legaia_engine_core::field_regions::IntraSceneTeleport`). **Most house exits
+are this class** - Vahn's house in Rim Elm is entered through a script door
+and left through the kind-0 record at the tile just inside the doorway - and
+it is by far the largest door population on the disc: 2319 records inside the
+`.MAP` files' own `0x12000` footprints, across 72 scenes (`nilboa2` alone
+carries 128). Destinations are in half-tiles: the landing is
+`world = (dest_x*64 + 64, (dest_z+1)*64)`.
+
+`--house-doors shuffle` drives this pass too (`legaia_rando::map_door`,
+applied by `apply::randomize_map_doors` inside `randomize_house_doors` -
+which is also how the browser patcher exposes it). Each edit is a **same-size
+2-byte in-place write** into the raw `.MAP` sectors - the `.MAP` is not
+compressed, so there is no repack and no relocation, and the trigger tiles
+never move.
+
+Kind-0 records carry no ＩＮ/ＯＵＴ name to classify by, so the softlock
+policy is **reachability verification** over the scene's own walk geometry.
+The walkable surface (the object grid's authored walk-visible floor at
+`+0x8000` minus the collision grid's wall bits at `+0x4000` - the same two
+samplers the engine's spawn resolver flood-fills) partitions into 4-connected
+components; every record is a directed edge from the component(s) its trigger
+tile touches to the component its destination lands in. The shuffle permutes
+the destinations of the scene's attributable records, then accepts the
+permutation only if the resulting component graph (walking free within a
+component, teleports as edges) **preserves every retail reachability pair**
+and **creates no new one-way trap** from the scene's main (largest)
+component; it retries deterministically up to a bounded attempt budget and
+keeps the scene vanilla when nothing verifies. Records whose endpoint can't
+be attributed on the base grid (story-gated collision paints open some areas
+only at runtime) stay vanilla, as does anything parked past the `.MAP`'s own
+footprint (the `+0x12000` fallback window is the next PROT entry's sectors).
+Because the permutation preserves the destination multiset outright, every
+landing stays a retail landing spot and every component that received a
+landing still receives one.
+
+The run manifest gets one `map_door = "scene#entry tile (x,z): dest (a,b) ->
+(c,d)"` spoiler line per rewired teleport. The read-only `map-doors`
+subcommand lists the population with each record's walk-component class. The
+disc-gated `map_door_patch_real` test round-trips the shuffle off a patched
+image (destination multisets, the reachability oracle re-derived from the
+patched bytes, EDC/ECC validity, seed determinism), and the engine-side
+`map_door_randomizer_runtime_e2e` drives the patched bytes through the
+engine's kind-0 dispatch kernels, asserting the player is seated at the
+rewired destination (baseline = the runtime-pinned Vahn's-house doorstep
+seat).
 
 ### Starting items
 

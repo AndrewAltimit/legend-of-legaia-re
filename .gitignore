@@ -5,6 +5,11 @@
 # Disc-extracted Sony bytes. NEVER commit (see CLAUDE.md, NOTICE).
 /extracted/
 
+# Translation language packs (`legaia-rando translate export/init`): exported
+# packs carry the game's dialog/name strings (Sony-derived). NEVER commit.
+/translations/
+legaia_*.yaml
+
 # PCSX-Redux probe captures - full RAM dumps, register CSVs, run logs.
 # Sony-derived runtime state; regenerable from the probe + a local save.
 /captures/

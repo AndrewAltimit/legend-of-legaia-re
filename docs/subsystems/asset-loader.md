@@ -115,6 +115,15 @@ PROT 876 (`player_data`) is a separate streaming file - VAB + an empty `TIM_LIST
 
 `SceneHost::enter_field_scene` uses `SceneLoadKind::Field` so the engine port matches the retail dispatch boundary. The `BuildOptions::default` remains `Battle` so legacy `build_targeted` calls keep their previous semantics.
 
+### Entries the sweep must never touch (all kinds)
+
+The block sweep walks *entries*, and two classes in a scene's CDNAME block are not assets at all:
+
+- **v12 trigger sidecars** (`Class::SceneV12Table`) - streamed through the conditional `.PCH` trigger channel, never the VRAM/TMD pre-pass. The exception is a sidecar that *hosts* the scene's v12-embedded asset bundle (`rikuroa` / `dolk2`).
+- **pochi-filler slots** (`Class::PochiFiller`) - reserved-but-unused slots (`pochipochi...`). The scratch **after** the fill prefix parses as real assets: most scene-block pochi slots carry a stale `256 x 256` 4bpp TIM at fb `(768, 0)` (tpage `0x0C`) and another at `(832, 0)`, left over from the block's battle-side character pages. Uploading them clobbers the scene's own **ground-tile atlas**, which lives on tpage `0x0C` in most field scenes - the ground quads then sample character texels (see [`pochi.md`](../formats/pochi.md) and [`world-map.md`](world-map.md#ground-texturing)). Retail never dispatches a reserved slot; neither does the build.
+
+Both skips apply in every `SceneLoadKind`. Regression: `crates/engine-core/tests/field_ground_texture_pages_disc.rs`.
+
 ### Battle-boot pre-load (`build_battle_boot_vram`)
 
 `SceneResources::build_battle_boot_vram(battle_data_scenes)` builds a VRAM blob from the player battle files (`BATTLE_BOOT_BLOCKS = ["edstati3", "battle_data"]` - the two extraction labels covering the retail `battle_data` block, extraction 863..866; non-pack entries in either block fail detection and are skipped). It walks every record's LZS stream, uploads any standard-PSX-TIM textures it finds, and invokes the descriptor-driven CLUT pass via `battle_data_pack::clut_uploads`. The retail engine performs an equivalent pre-pass via `FUN_8001E890` at boot or first-battle entry so battle-init has the character meshes resident before the scene-specific `FUN_8001FE70` walk fires.

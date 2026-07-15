@@ -140,6 +140,67 @@
    * by any page code. */
   window.__woCam = worldCam;
 
+  /* ---------- VR (WebXR immersive-vr) -----------------------------
+   * A kingdom is a 16320-unit continent; at 2000 world units per metre it
+   * becomes an ~8 m diorama, and the headset's 1.6 m eye height puts the
+   * viewer 3200 world units above the sea plane - a giant looking down at the
+   * map, which is the readable framing for a whole continent. The thumbstick
+   * grips rescale it live, so 1:1 "stand on the world map" is a squeeze away.
+   * See docs/subsystems/vr-mode.md. */
+  const VR_UNITS_PER_METER = 2000;
+  /* "On the ground" first-person mode: human scale, standing on the continent
+   * terrain. 76 world units per metre is the character-height anchor every
+   * human-scale page shares (the ~130-unit player mesh as a 1.7 m adult), so a
+   * metre here means the same thing it means in a town. */
+  const VR_GROUND_UNITS_PER_METER = 76;
+  let vr = null;             /* LegaiaVr handle (null before DOM wiring) */
+  let worldTick = null;      /* the flat render loop, so VR can pause/resume it */
+  let worldDrawState = null; /* { draws, ext } of the assembled kingdom */
+  let groundSampler = null;  /* (x, z) -> terrain surface Y (world up), or null */
+
+  /* Bilinear terrain-height sampler over the walk heightfield the kingdom
+   * load uploaded: vertices sit on the 128-unit cell grid at
+   * `(col*128, -lut, row*128)` (pre-Y-flip frame - world-up Y is the
+   * negation), so bucketing by grid node and lerping the enclosing four
+   * reproduces the surface the GPU rasterises. Cells outside the visible
+   * continent fall back to the sea plane (y = 0). This is what lets the VR
+   * ground mode STAND on the map: the rig's floor origin snaps to this
+   * height every frame. */
+  function buildGroundSampler() {
+    if (!viewer || typeof viewer.walk_ground_positions !== 'function') return null;
+    let pos;
+    try { pos = viewer.walk_ground_positions(); } catch (e) { return null; }
+    if (!pos || pos.length < 12) return null;
+    const TILE = 128;
+    const nodes = new Map();
+    for (let i = 0; i + 2 < pos.length; i += 3) {
+      const key = Math.round(pos[i] / TILE) * 4096 + Math.round(pos[i + 2] / TILE);
+      const y = -pos[i + 1];
+      const cur = nodes.get(key);
+      if (cur === undefined || y > cur) nodes.set(key, y);
+    }
+    return (x, z) => {
+      const gx = x / TILE, gz = z / TILE;
+      const x0 = Math.floor(gx), z0 = Math.floor(gz);
+      const fx = gx - x0, fz = gz - z0;
+      let sum = 0, wsum = 0;
+      for (let dx = 0; dx <= 1; dx++) {
+        for (let dz = 0; dz <= 1; dz++) {
+          const v = nodes.get((x0 + dx) * 4096 + (z0 + dz));
+          if (v === undefined) continue;
+          const w = (dx ? fx : 1 - fx) * (dz ? fz : 1 - fz);
+          sum += v * w;
+          wsum += w;
+        }
+      }
+      return wsum > 1e-6 ? sum / wsum : 0;
+    };
+  }
+  /* Headless-verification hook (same spirit as `__woCam`): the mock-XR
+   * harness asserts the VR ground mode stands ON this surface. Not used by
+   * page code. */
+  window.__woGround = (x, z) => (groundSampler ? groundSampler(x, z) : null);
+
   /* ---------- Placement JSON (always available) ----------- */
   try {
     placements = await fetch('world-overview.json').then(r => r.json());
@@ -296,6 +357,47 @@
     }
   }
   if ($exportGlb) $exportGlb.addEventListener('click', exportWorldGlb);
+
+  /* ---------- VR ----------- */
+  /* Attached once; the button lives in the canvas control bar (which survives
+   * the per-load canvas swap) and is always visible - it arms when the browser
+   * reports an immersive-vr device AND a kingdom is assembled, and otherwise
+   * explains what is missing on hover / click. */
+  if (window.LegaiaVr) {
+    vr = window.LegaiaVr.attach({
+      mount: document.querySelector('.wo-canvas-controls'),
+      unitsPerMeter: VR_UNITS_PER_METER,
+      renderer: () => glRenderer,
+      cam: () => worldCam,
+      extent: () => (worldDrawState ? worldDrawState.ext : [16320, 16320]),
+      draw: () => glRenderer.renderAssembled(
+        worldDrawState.draws, worldDrawState.ext, worldCam),
+      modes: [
+        /* Diorama: stand on the sea plane at the continent's framing centre -
+         * at 2000 units/m that is 3.2 m above an ~8 m tabletop continent. */
+        {
+          id: 'diorama', label: 'Diorama',
+          unitsPerMeter: VR_UNITS_PER_METER,
+          start: () => ({ x: worldCam.centerX, y: 0, z: worldCam.centerZ }),
+        },
+        /* On the ground: human scale, feet snapped to the terrain surface
+         * under the viewer every frame (walk the continent; no free-fly
+         * altitude). Spawns on the terrain under the framing centre. */
+        {
+          id: 'ground', label: 'On the ground',
+          unitsPerMeter: VR_GROUND_UNITS_PER_METER,
+          start: () => ({ x: worldCam.centerX, y: 0, z: worldCam.centerZ }),
+          groundHeight: (x, z) => (groundSampler ? groundSampler(x, z) : 0),
+        },
+      ],
+      onEnter: () => {
+        if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+      },
+      onExit: () => {
+        if (rafId === null && worldTick) rafId = requestAnimationFrame(worldTick);
+      },
+    });
+  }
 
   /* ---------- View-mode toggle ----------- */
   function setViewMode(mode) {
@@ -652,6 +754,12 @@
   /* Freshen the canvas (WebGL context is single-shot per canvas, and we
    * also need a clean depth buffer when switching kingdoms or modes). */
   function freshCanvas() {
+    /* The canvas (and with it the GL context an XR layer is bound to) is about
+     * to be replaced - a live session cannot survive that. */
+    if (vr) { vr.end(); vr.setReady(false); }
+    worldTick = null;
+    worldDrawState = null;
+    groundSampler = null;
     if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
     const old = document.getElementById('wo-canvas3d');
@@ -720,6 +828,8 @@
       glRenderer.uploadGround(new Float32Array(0), null, null, new Uint32Array(0));
     }
     glRenderer.setGroundEnable(!$showTerrain || $showTerrain.checked);
+    /* Terrain-height sampler for the VR "on the ground" mode. */
+    groundSampler = groundQuads > 0 ? buildGroundSampler() : null;
     /* Upload a single pack mesh on demand; return true if its mesh data
      * is renderable (some slots have non-textured flat-shaded prims that
      * the WebGL path skips). */
@@ -1116,11 +1226,13 @@
     if ($exportGlb) {
       $exportGlb.hidden = (typeof viewer.scene_export_begin !== 'function');
     }
-    const tick = () => {
-      glRenderer.renderAssembled(drawPlacements, ext, worldCam);
-      rafId = requestAnimationFrame(tick);
+    worldDrawState = { draws: drawPlacements, ext };
+    if (vr) vr.setReady(true);
+    worldTick = () => {
+      glRenderer.renderAssembled(worldDrawState.draws, worldDrawState.ext, worldCam);
+      rafId = requestAnimationFrame(worldTick);
     };
-    rafId = requestAnimationFrame(tick);
+    rafId = requestAnimationFrame(worldTick);
   }
 
   /* Frame the top-down camera on the placement cluster.

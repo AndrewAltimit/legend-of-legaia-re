@@ -129,6 +129,8 @@ The fresh-state seed is the new-game data-init `FUN_80034A6C` (called via the bo
 
 `FUN_801D6704` then reads this seeded state from globals during the field scene init; it is generic field entry used for every scene transition, not new-game-specific.
 
+The engine port also applies this seed on a **cold scene boot** - entering a scene directly (native `play-window --scene X`, the site play page's scene picker) with no New Game confirm and no save loaded. `SceneHost::enter_field_scene` consults an optional `NewGameDefaults` (template party + starting bag, parsed from the boot source's `SCUS_942.54` and installed by the native `BootSession` and the browser runtime's `load_disc`), and `World::seed_cold_boot_defaults` fires it once, guarded on an empty roster, so the pause menu always reads valid party data and a loaded save is never clobbered. Retail has no equivalent code path - there is no way to reach a scene without the data-init having run - so this is a port-side invariant, not a traced routine.
+
 #### Title screen is not in the mode table
 
 The title screen is not one of the 28 modes - its tick (`FUN_801DD35C`) is loaded by a pre-mode-dispatch boot routine, ahead of the mode table being consulted at all. NEW GAME is how control crosses from that title overlay into the mode table (at mode 2). The title overlay code lives in the unindexed 60-sector gap inside `PROT.DAT` between TOC entries 899 and 900 (see [§ Title-overlay source on disc](#title-overlay-source-on-disc) below). The title *wordmark* TIM is PROT 888/890 (read by `legaia_asset::title_pak`); PROT 899 carries the options-menu config bundle. So the recurring "which mode-table row is the title screen?" question has an empty answer - there isn't one.

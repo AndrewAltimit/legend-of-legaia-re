@@ -270,10 +270,23 @@ pub fn partition2_record_name(man_file: &ManFile, man: &[u8], index: usize) -> O
 /// and `body_len` the bounded body length (clamped so the walk does not spill
 /// into the next record or a sibling section).
 ///
-/// The header shape is partition-specific: partition 2 (the cutscene-timeline
-/// records) uses the named-record header decoded by
-/// `partition2_record_script_offset` (`FUN_8003BDE0`); the other partitions
-/// use the `[u8 N][N*2 locals][4-byte header]` prefix (`pc0 = 1 + N*2 + 4`).
+/// The header shape is **partition-specific** - all three differ:
+///
+/// - **partition 0** (the *object* records the gate-0 `.MAP` tile triggers
+///   bind - `FUN_8003A55C`: house doors, chests, signs, scenery) opens
+///   `[u8 n][n*2 SJIS name][u8 attr]`, so `pc0 = 1 + n*2 + 1`. The name is a
+///   dev label (`主人公の家の中`, `恋人ＩＮ`…); `attr` is the object's class
+///   byte. Applying the partition-1 formula here starts the walk three bytes
+///   late and desyncs the whole script - which is exactly how an entire class
+///   of door records goes missing from a census.
+/// - **partition 1** (actor placements / per-actor scripts) opens
+///   `[u8 N][N*2 locals][4-byte placement header]`, so `pc0 = 1 + N*2 + 4`.
+///   The 4-byte header is `[model, anim, tile_x, tile_z]` (what
+///   `FUN_8003D0BC` skips the name field to reach, and what
+///   `world::vm_hosts::apply_script_table_teleport` re-seats a context from).
+/// - **partition 2** (the cutscene-timeline / walk-on-beat records) uses the
+///   named-record header decoded by [`partition2_record_script_offset`]
+///   (`FUN_8003BDE0`).
 ///
 /// `None` when the partition / index is out of range, the offset lands past
 /// the buffer, or the record's header already overruns its bound.
@@ -286,16 +299,47 @@ pub fn partition_record_span(
     let script_start = partition_record_offset(man_file, man.len(), partition, index)?;
     let end = record_end_bound(man_file, man.len(), script_start);
     let body = man.get(script_start..end)?;
-    let pc0 = if partition == 2 {
-        partition2_record_script_offset(body)?
-    } else {
-        let n = *body.first().unwrap_or(&0) as usize;
-        1 + n * 2 + 4
+    let n = *body.first().unwrap_or(&0) as usize;
+    let pc0 = match partition {
+        // `[u8 n][n*2 SJIS name][u8 attr]` - the object-record header.
+        0 => 1 + n * 2 + 1,
+        // `[u8 N][N*2 locals][4-byte placement header]`.
+        1 => 1 + n * 2 + 4,
+        _ => partition2_record_script_offset(body)?,
     };
     if script_start + pc0 >= end {
         return None;
     }
     Some((script_start, pc0, end - script_start))
+}
+
+/// The byte span of the MAN record at **flat** index `flat` - the index space
+/// of the concatenated `[P0..P1..P2]` record-offset table, which is what the
+/// retail record resolver `FUN_8003C8F0(id, 0)` walks (its `param_2 = 0`
+/// partition argument adds a zero base, so `param_1` is already flat).
+///
+/// A field-VM context's `+0x50` script id lives in this space: the placement
+/// spawner `FUN_8003A1E4` writes `+0x50 = N0 + placement_index` (`N0` = the
+/// partition-0 record count). So a context that resolves *its own* record -
+/// e.g. the op-`0x4C` nibble-C sub-3 script-table teleport - must resolve it
+/// flat, not as "partition-0 record `script_id`".
+///
+/// Header shape follows the partition the flat index lands in (see
+/// [`partition_record_span`]). Returns `(script_start, pc0, body_len)`.
+// PORT: FUN_8003C8F0
+pub fn flat_record_span(
+    man_file: &ManFile,
+    man: &[u8],
+    flat: usize,
+) -> Option<(usize, usize, usize)> {
+    let mut base = 0usize;
+    for (partition, records) in man_file.partitions.iter().enumerate() {
+        if flat < base + records.len() {
+            return partition_record_span(man_file, man, partition, flat - base);
+        }
+        base += records.len();
+    }
+    None
 }
 
 /// Collect every inline cutscene-narration page in `partition`'s records, in

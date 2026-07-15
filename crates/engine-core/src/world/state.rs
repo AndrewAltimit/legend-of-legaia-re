@@ -124,6 +124,20 @@ pub struct World {
     /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub field_floor_height_lut: [i16; 16],
+    /// The `.MAP` **object-grid** cell words (`+0x8000`, one `u16` per tile,
+    /// `0x80 x 0x80`). [`World::sample_field_floor_height`] tests each tile's
+    /// [`crate::world::CELL_ELEVATION_OVERRIDE`] (`0x800`) bit to pick the
+    /// floor model: bilinear corner-nibble surface, or the flat tile mean plus
+    /// the tile's [`Self::field_elevation_overrides`] record (ramps / stairs).
+    /// Empty until a field scene supplies it - then every tile reads as a
+    /// plain bilinear tile, the pre-override behaviour.
+    pub field_object_cells: Vec<u16>,
+    /// The scene's kind-2 `.MAP` **elevation-override** records, primary
+    /// (`+0x10000`) table followed by the fallback (`+0x12000`) one, so a
+    /// linear first-match scan reproduces `FUN_801D5630`'s order. Consumed by
+    /// [`World::sample_field_floor_height`] on
+    /// [`crate::world::CELL_ELEVATION_OVERRIDE`] tiles.
+    pub field_elevation_overrides: Vec<crate::world::ElevationOverride>,
     /// When set, field free-movement snaps the player's `world_y` to the
     /// per-scene terrain elevation each step via
     /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`).
@@ -170,6 +184,22 @@ pub struct World {
     /// `+Z`). Engines that orbit the camera write the current azimuth here
     /// each frame; the locomotion remap quantises it to the nearest 90°.
     pub field_camera_azimuth: u16,
+    /// Opt-in precise-movement mode for pad locomotion. When set,
+    /// [`World::step_field_locomotion`] decodes the held direction
+    /// **continuously** instead of through retail's 4/8-way quantisation:
+    /// the camera azimuth is applied at full angular resolution (not
+    /// snapped to the nearest 90°), key diagonals walk true 45° vectors at
+    /// full speed, and an analog stick ([`crate::input::InputState::lstick`])
+    /// passes its angle through untouched. Off by default - the default
+    /// path stays bit-identical to the retail-faithful quantised remap
+    /// (replays / oracles are unaffected unless a host opts in).
+    pub precise_movement: bool,
+    /// Sub-step remainder carried between precise-movement frames, in world
+    /// units per axis (|carry| < one collision step). Lets shallow movement
+    /// angles accumulate distance across frames instead of rounding to
+    /// zero. Only touched while [`Self::precise_movement`] is active with a
+    /// direction held; reset when input releases.
+    pub precise_move_carry: (f32, f32),
     /// Party-member actor slots - `party_actor_slots[i] = Some(actor_slot)`
     /// resolves move-VM ext sub-op 0x3B (`ext_party_member_lookup`) to the
     /// world-coords of the actor at that slot. Default empty (the lookup
@@ -566,18 +596,42 @@ pub struct World {
     /// executed).
     pub field_npc_headings: std::collections::HashMap<u8, i16>,
 
-    /// Static prop collision-box centres `(world_x, world_z)`, one per placed
-    /// object of the scene's field `.MAP` object grid - the engine's source
-    /// for the **static-entity arm** of the actor-collision probe (retail
-    /// `FUN_801cf9f4` result bit `4`; box half-extent
-    /// `FIELD_PROP_BOX_HALF`). Installed at field-scene entry from
+    /// Static prop colliders, one per placed object of the scene's field
+    /// `.MAP` object grid - the engine's source for the **actor-collision
+    /// arms** of the movement probe (retail `FUN_801CFC40`). Installed at
+    /// field-scene entry from
     /// [`crate::scene::Scene::field_object_placements`] (each placement's
     /// [`collider_x`](legaia_asset::field_objects::Placement::collider_x) /
     /// `collider_z` = spawn position + the record's collision-footprint
     /// offset, live-verified against the spawned static actors of catalogued
-    /// captures). Gated by [`Self::solid_field_npcs`] alongside the
-    /// moving-NPC arm.
-    pub field_prop_colliders: Vec<(i32, i32)>,
+    /// captures), with each bound placement's class bits decoded from its
+    /// bind record's spawn prologue. **Solid by default** - retail's placed
+    /// props always enter the collision candidate list (`FUN_801CF754`)
+    /// unless their script sets `+0x10 & 3`; a closed door blocks the player
+    /// until its touch pass runs `31 00`.
+    pub field_prop_colliders: Vec<FieldPropCollider>,
+    /// The cold field-entry spawn `(x, z)` the scene host resolved at entry
+    /// ([`Self::resolve_cold_field_spawn`]) - a standable, reachable spot in
+    /// the scene's largest walkable component. Kept so the helper-context
+    /// teardown can re-seat the player here if a partially-executed spawned
+    /// record left them inside a wall (see [`Self::step_helper_contexts`]).
+    /// `None` outside field scenes.
+    pub resolved_cold_spawn: Option<(i16, i16)>,
+
+    /// Per-scene bank of placed-prop animation + interaction runtimes (the
+    /// door swings, the searchable cupboards), keyed by the placement's
+    /// footprint-anchor tile. Built at field-scene entry
+    /// ([`crate::field_env::PropAnimBank::build`]); clips advance every field
+    /// tick, and a touched / interacted prop's bind record runs through the
+    /// field VM ([`Self::start_prop_interaction`]).
+    pub field_prop_bank: crate::field_env::PropAnimBank,
+
+    /// A prop the movement probe touched this tick (the `FUN_801CFC40`
+    /// static-arm hit whose result bit `4` the locomotion auto-posts through
+    /// `FUN_801D5B5C`): the anchor key of the touched [`Self::field_prop_bank`]
+    /// entry. Drained by [`Self::tick_prop_interactions`], which starts the
+    /// record's field-VM run.
+    pub pending_prop_touch: Option<(u8, u8)>,
 
     /// Per-NPC autonomous walk routes, keyed by the same placement `slot` as
     /// [`Self::field_npc_dialog`]: the ordered local waypoints the placement's
@@ -634,11 +688,28 @@ pub struct World {
     /// event post on the static-entity collision arm.
     pub field_walk_touch: std::collections::BTreeMap<u8, ((i16, i16), WalkTouchEvent)>,
 
+    /// For each `.MAP`-object door bind ([`Self::install_trigger_walk_touch`]),
+    /// the **flat** MAN record index the object's script is. A door record is a
+    /// field-VM script whose opening `SysFlag.Test` chain selects the arm that
+    /// runs, so the effect is re-resolved against the live story flags at
+    /// contact time ([`crate::man_field_scripts::resolve_walk_touch_event`])
+    /// rather than frozen at scene load; the `field_walk_touch` entry keeps the
+    /// structural decode as the fallback.
+    pub field_walk_touch_records: std::collections::BTreeMap<u8, usize>,
+
     /// Walk-touch edge latch: the slot whose contact box the player currently
     /// stands in, so a sustained press posts its event once (retail gates the
     /// per-step post on the player's `+0x10 & 0x80000` engaged flag, cleared
     /// by the dialog SM teardown - the engine latches per contact instead).
     pub active_walk_touch: Option<u8>,
+
+    /// The post-remap direction bits of this tick's movement attempt
+    /// (`0x1000`/`0x4000`/`0x2000`/`0x8000`; `0` when no direction is held).
+    /// The walk-touch dispatch derives its leading probe points from it -
+    /// retail's touch fires from the same forward probes that block the
+    /// step, so contact must be tested ahead of the player, not at the
+    /// player's feet.
+    pub last_move_dir_bits: u16,
 
     /// While [`Self::step_inline_dialogue`] is stepping the field VM over an
     /// NPC's interaction record, this carries that NPC's placement slot so the
@@ -1786,11 +1857,15 @@ impl World {
             field_region_attributes: crate::field_regions::RegionAttributes::DEFAULT_FILL,
             field_zone_record: None,
             field_floor_height_lut: [0i16; 16],
+            field_object_cells: Vec::new(),
+            field_elevation_overrides: Vec::new(),
             follow_terrain_height: false,
             field_player_anim: None,
             leading_edge_wall_probes: false,
             solid_field_npcs: false,
             field_camera_azimuth: 0,
+            precise_movement: false,
+            precise_move_carry: (0.0, 0.0),
             party_actor_slots: Vec::new(),
             pending_fade: None,
             move_dat_8007b9d8: 0,
@@ -1852,13 +1927,18 @@ impl World {
             field_npc_positions: std::collections::HashMap::new(),
             field_npc_headings: std::collections::HashMap::new(),
             field_prop_colliders: Vec::new(),
+            resolved_cold_spawn: None,
+            field_prop_bank: Default::default(),
+            pending_prop_touch: None,
             field_npc_routes: std::collections::BTreeMap::new(),
             field_npc_glide_speeds: std::collections::BTreeMap::new(),
             field_npc_default_moves: std::collections::BTreeMap::new(),
             field_npc_motions: std::collections::BTreeMap::new(),
             animate_field_npcs: false,
             field_walk_touch: std::collections::BTreeMap::new(),
+            field_walk_touch_records: std::collections::BTreeMap::new(),
             active_walk_touch: None,
+            last_move_dir_bits: 0,
             stepping_inline_npc: None,
             active_inline_slot: None,
             actor_motions: std::collections::BTreeMap::new(),

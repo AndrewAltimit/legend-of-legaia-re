@@ -21,6 +21,32 @@ records `1..` are per-actor interaction scripts. The engine mirrors this:
 `World::load_field_script_at`. These MAN scripts disassemble cleanly as
 field-VM (~8% linear-walk error on the retail town MANs).
 
+### Record headers are per-partition; the record index space is flat
+
+Every partition prefixes its script with a **different** header, so the offset
+of a record's first opcode (`pc0`) depends on which partition the record is in:
+
+| Partition | Record header | `pc0` |
+|---|---|---|
+| 0 (objects) | `[u8 n][n*2 SJIS name][u8 attr]` | `1 + 2n + 1` |
+| 1 (actor placements) | `[u8 N][N*2 locals][4-byte placement header]` | `1 + 2N + 4` |
+| 2 (named / cutscene) | name + three condition blocks (`FUN_8003BDE0`) | parsed |
+
+Reading a partition-0 record with the partition-1 formula starts the walk three
+bytes late - mid-op - so it resyncs somewhere arbitrary and silently drops ops.
+That is not a decode nicety: partition-0 records are the *door and prop scripts*
+(see [`field-locomotion.md`](field-locomotion.md#intra-scene-doorways---the-walk-touch-teleport-family)),
+so the mis-start is the difference between a door that works and one that does
+not.
+
+The record **index** space, on the other hand, is **flat**: `FUN_8003C8F0(id,
+partition_base)` indexes the concatenated `[P0..P1..P2]` record-offset table,
+and the consumers that name a record by number pass base `0` - the `.MAP` kind-1
+trigger's `record` byte (`FUN_8003A55C`), and the op-`0x4C` nibble-C sub-3
+script-table teleport. Op `0x44` SPAWN_RECORD is the exception that proves it:
+its operand is also flat, and the dispatcher re-bases it into partition 2
+(`- N0 - N1`) itself. Engine: `man_field_scripts::flat_record_span`.
+
 ### Placement header: model + animation resolution
 
 The 4-byte header after the locals block is `[model][anim_id][bx][bz]`
@@ -127,7 +153,7 @@ Per-script state, passed as `ctx_ptr`. Offsets identified so far:
 
 | Offset | Type | Meaning |
 |---|---|---|
-| +0x10 | u32 | Flag word. Bit 0x400 = "halted". Bit 0x100 has special handling in op 0x31. Bit 0x1000000 toggles op 0x22 behavior. Bit 0x20200 / 0x20000000 gate the Y-collision lookup in op 0x23. |
+| +0x10 | u32 | Flag word. Bit 0x400 = "halted". Bit 0x100 has special handling in op 0x31 (and is the "touched" mark `FUN_801D5B5C` sets). Bit 0x1000000 toggles op 0x22 behavior. Bit 0x20200 / 0x20000000 gate the Y-collision lookup in op 0x23. Bits 0/1 = **collision/touch exempt** (`FUN_801CF754` / `FUN_801CF9F4` skip `flags & 3` actors - a door's touch pass runs `31 00` as its swing starts). Bits 0x20000 / 0x40000000 = the `FUN_801CFC40` contact class (result bit 1, button-gated - a cupboard's spawn prologue runs `31 1E`); 0x20000 / 0x1000000 also select the moving-arm contact box. See [`field-locomotion.md`](field-locomotion.md#collision---fun_801cfe4c). |
 | +0x14 | u16 | World X (in 0.5-tile units, formula `(b & 0x7F) * 0x80 + 0x40`). |
 | +0x16 | u16 | World Y (computed from collision via `func_0x80019278`). |
 | +0x18 | u16 | World Z. |
@@ -538,6 +564,24 @@ minting a phantom `Clear 0x400` where the retail stream reads the op's 10-byte e
 place, the phantom rows disappear, and the spine verdicts above hold row-identical (`549`/`0x142` site
 sets unchanged; `0x482` all-alias; `0x50A`/`0x5D6` writer-less, `0x50A` gaining one more clean koin3 TEST
 reader and still no writer).
+
+**Width blindness's fourth face is a *variable*-width arm read as fixed.** The `0x4C` **nibble-7**
+collision-grid wall paint has **two** operand shapes (`FUN_801DE840` case 7): sub-0 (`byte &= 0x0F`, clear
+walls) and sub-1 (`byte |= 0xF0`, block all four sub-cells) ignore the mask, so they carry only the four
+range bytes and are **6-byte** ops; sub-2 (`&= ~(mask << 4)`) and sub-3 (`|= mask << 4`) consume a trailing
+mask byte and are **7-byte** ops. Reading a fixed 7 for all four subs makes every sub-0/sub-1 paint swallow
+its follower's lead byte, so a linear walk desyncs the moment it crosses one. Rim Elm's scene-entry script
+is the case that exposes it: `town0c` `P1[0]` runs three sub-0 clears in a row, and past the first the walk
+minted phantom `SysFlag.Test` rows with absurd operands (indices `24`/`280`, jump deltas of `~7000` in a
+`0x242`-byte record) and hid the record's real gate logic. Under the pinned widths the record reads clean
+and the Rim Elm gate becomes legible (below). The executing VM (`legaia-engine-vm`, field `menu_ctrl`
+nibble 7) always advanced by the correct per-sub widths - it decodes the raw stream and never consulted the
+disassembler - so this was a **static-walker-only** defect: it corrupted `scene_destinations`,
+`scene_bgm_starts`, `scene_fmv_triggers`, `scene_stager_installs`, `boss_stager_placements` and the door
+randomizer's MAN edits (all `LinearWalker` consumers), while runtime behaviour was unaffected. Fixed in
+`legaia_asset::field_disasm::decode_subops`; the general lesson is that a sub-op family whose *width
+depends on the sub* must be decoded per-sub, and the executing VM's port is the reference when the two
+disagree.
 
 **ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
 flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =

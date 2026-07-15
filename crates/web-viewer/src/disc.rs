@@ -286,11 +286,22 @@ pub fn parse_prot_toc(buf: &[u8]) -> Option<Vec<EntryMeta>> {
             break;
         }
         let start_lba = toc[p + 2];
-        let indexed_size_sectors = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
+        let indexed_raw = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
         let footprint_sectors = toc[p + 3].wrapping_sub(start_lba);
-        let size_sectors = if footprint_sectors <= MAX_FOOTPRINT_SECTORS
-            && footprint_sectors > indexed_size_sectors
-        {
+        let footprint_sane = footprint_sectors > 0 && footprint_sectors <= MAX_FOOTPRINT_SECTORS;
+        // The last real rows sit against the zeroed TOC tail, so the indexed
+        // formula underflows for them (`toc[p+5]` = 0). They are real content
+        // - retail extraction 1231 is the dance minigame's SFX VAB - so fall
+        // back to the LBA footprint rather than dropping them (mirrors
+        // crates/prot::archive).
+        let indexed_size_sectors = if indexed_raw <= MAX_FOOTPRINT_SECTORS {
+            indexed_raw
+        } else if footprint_sane {
+            footprint_sectors
+        } else {
+            continue;
+        };
+        let size_sectors = if footprint_sane && footprint_sectors > indexed_size_sectors {
             footprint_sectors
         } else {
             indexed_size_sectors

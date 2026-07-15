@@ -105,13 +105,16 @@ fn op49_window_census_pins_the_corpus_shape() {
         );
     }
 
-    // Disc invariant: 243 op-0x49 sites (framed with the corrected 0x4E
+    // Disc invariant: 241 op-0x49 sites (framed with the corrected 0x4E
     // sub-2/3/9 compare widths AND the full 0x4C outer-nibble decoders -
-    // nibbles 9/A/C/D/F; records that previously desynced at those ops now
-    // walk further and expose more sites) - the census walks every MAN
-    // carrier per scene in the retail-frame windows, including the
-    // streaming variant MANs the bundle-only sweep missed.
-    assert_eq!(sites.len(), 243, "op-0x49 site count changed");
+    // nibbles 7/9/A/C/D/F; the nibble-7 width fix re-framed two P1[0]
+    // records whose desynced walks had exposed phantom sub-0x00 alias
+    // sites: chitei2 @0x00E4D base=0x734C "sL" and geremi @0x00A66
+    // base=0xF8CD, both far outside every spine-target near-miss margin) -
+    // the census walks every MAN carrier per scene in the retail-frame
+    // windows, including the streaming variant MANs the bundle-only sweep
+    // missed.
+    assert_eq!(sites.len(), 241, "op-0x49 site count changed");
 
     // The one genuine flag-window family: every sub-0x04 site (the exact
     // 6-operand-byte descriptor shape) is a kor-family base=0x138 count=8

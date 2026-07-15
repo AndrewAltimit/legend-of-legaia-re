@@ -30,8 +30,9 @@ use winit::window::WindowId;
 /// offscreen at [`Self::capture_tick`] and write it to [`Self::path`], then
 /// exit - and/or a periodic sweep ([`Self::sweep`]) that captures every N
 /// ticks into a directory. [`Self::pad_script`] maps a world-tick to a
-/// one-tick pad edge so a capture run can auto-open + navigate a menu
-/// without `xdotool`.
+/// pad mask (one-tick edges, or held ranges via `FIRST-LAST:BUTTON`) so a
+/// capture run can auto-open + navigate a menu - or hold a direction to
+/// walk somewhere - without `xdotool`.
 pub(crate) struct ScreenshotConfig {
     /// Single-shot output (`--screenshot`). `None` when only the periodic
     /// sweep is requested.
@@ -85,13 +86,33 @@ impl ScreenshotConfig {
                 let (tick, btn) = entry
                     .split_once(':')
                     .with_context(|| format!("pad-script entry '{entry}' is not TICK:BUTTON"))?;
-                let tick: u64 = tick
-                    .trim()
-                    .parse()
-                    .with_context(|| format!("pad-script tick '{tick}' is not a number"))?;
                 let button = legaia_engine_core::input::PadButton::from_name(btn.trim())
                     .with_context(|| format!("pad-script button '{btn}' is not a pad button"))?;
-                *script.entry(tick).or_insert(0) |= button.mask();
+                // `TICK` (one-tick edge) or `FIRST-LAST` (held across the
+                // inclusive range - walking somewhere needs a held direction).
+                let tick = tick.trim();
+                let (first, last) =
+                    match tick.split_once('-') {
+                        Some((a, b)) => {
+                            let a: u64 = a.trim().parse().with_context(|| {
+                                format!("pad-script tick '{a}' is not a number")
+                            })?;
+                            let b: u64 = b.trim().parse().with_context(|| {
+                                format!("pad-script tick '{b}' is not a number")
+                            })?;
+                            anyhow::ensure!(a <= b, "pad-script range '{tick}' is reversed");
+                            (a, b)
+                        }
+                        None => {
+                            let t: u64 = tick.parse().with_context(|| {
+                                format!("pad-script tick '{tick}' is not a number")
+                            })?;
+                            (t, t)
+                        }
+                    };
+                for t in first..=last {
+                    *script.entry(t).or_insert(0) |= button.mask();
+                }
             }
         }
         Ok(Some(Self {
@@ -138,6 +159,47 @@ type AssembledPartyMesh = (
     Vec<Option<legaia_asset::face_anim::FaceTracks>>,
     Vec<Option<legaia_asset::face_anim::FaceTracks>>,
 );
+
+/// The uploaded mesh slots of one **posed** static-object placement: the
+/// frame-0 rest pose of a multi-object env prop baked into a textured and/or an
+/// untextured mesh. Either half can be absent (a prop with no textured prims,
+/// or none that survive the VRAM filter).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct PosedMesh {
+    /// Index into `PlayWindowApp::meshes` (the VRAM/textured pipeline).
+    pub vram: Option<usize>,
+    /// Index into `PlayWindowApp::color_meshes` (the untextured pipeline).
+    pub color: Option<usize>,
+    /// Index into `PlayWindowApp::field_posed_tmds` - the raw TMD this prop
+    /// re-poses from when its clip moves off frame 0.
+    pub tmd: Option<usize>,
+}
+
+/// Posed static-object meshes keyed by `(res.tmds index, anim id)` - one baked
+/// rest pose per distinct (env mesh, animation clip) pair the scene's placed
+/// objects reference. See `PlayWindowApp::posed_placement_keys`.
+pub(crate) type PosedPlacementMeshes = std::collections::HashMap<(usize, u8), PosedMesh>;
+
+/// One **posed placed prop** draw: a multi-object env mesh whose TMD objects are
+/// the bones of the clip its object bind names (Rim Elm's house doors, its
+/// cupboards, the windmill).
+///
+/// A prop resting on frame 0 draws the shared baked rest mesh - the cheap path,
+/// and where every prop sits until it is touched. Once its clip advances, the
+/// draw pass rebuilds the pose from the raw TMD at the prop's live frame, so the
+/// door actually swings.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PosedPropDraw {
+    /// The placement's footprint-anchor tile - its key into
+    /// `PlayWindowApp::field_prop_anims`.
+    pub anchor: (u8, u8),
+    /// The clip id the prop's bind names (ANM record `anim_id - 1`).
+    pub anim_id: u8,
+    /// World model matrix.
+    pub model: Mat4,
+    /// The baked frame-0 rest meshes + the raw TMD to re-pose from.
+    pub baked: PosedMesh,
+}
 
 /// Per-party-member battle facial-animation state: the member's per-action
 /// face tracks (entry `+0x8C` eyes / `+0x98` mouth, indexed by the playing
@@ -244,6 +306,19 @@ struct SaveMenuAssets {
     atlas: legaia_engine_render::UploadedSpriteAtlas,
 }
 
+/// One placed NPC's skinned mesh halves for one clip frame: the textured
+/// (VRAM-sampled) half and the untextured (`F*`/`G*` vertex-colour) half.
+/// Either can be absent when the source TMD carries no prims of that class.
+type NpcPosedHalves = (Option<UploadedVramMesh>, Option<UploadedColorMesh>);
+
+/// `(placement slot, clip frame) -> skinned mesh`. See
+/// [`PlayWindowApp::npc_pose_cache`].
+type NpcPoseCache = std::collections::HashMap<(u8, usize), NpcPosedHalves>;
+
+/// The bone transforms one cached pose was skinned from - the correctness
+/// oracle for [`NpcPoseCache`]. See [`PlayWindowApp::npc_pose_verify`].
+type NpcPoseVerify = std::collections::HashMap<(u8, usize), Vec<([i16; 3], [i16; 3])>>;
+
 /// Windowed engine runner state. Owned by the winit event loop.
 struct PlayWindowApp {
     session: BootSession,
@@ -300,6 +375,17 @@ struct PlayWindowApp {
     /// scenes. Drawn in `SceneMode::Field` so the town renders its buildings /
     /// terrain at their world positions instead of all at the origin.
     field_placement_draws: Vec<(usize, Mat4)>,
+    /// The scene's **posed** placed props (a bind naming a nonzero anim id), one
+    /// entry per placement rather than one per `(mesh, anim)` pair: each keeps
+    /// its own clip cursor, so touching one Rim Elm cupboard does not open the
+    /// other three. Excluded from `field_placement_draws` /
+    /// `field_placement_color_draws` - this list owns their draws.
+    field_posed_props: Vec<PosedPropDraw>,
+    /// Raw TMDs of the posed props, indexed by `PosedMesh::tmd`. A moving prop
+    /// re-poses from these at its live frame; the rest pose is baked once into
+    /// `PosedPropDraw::baked`. (The clip source is `npc_anim_bundles.0`, the
+    /// scene ANM bundle.)
+    field_posed_tmds: Vec<(legaia_tmd::Tmd, Vec<u8>)>,
     /// The current scene's TMD pack indexed by `pack_index` (= a field move-VM
     /// stager's relative `model_sel`): `res.tmds` filtered to the
     /// `scene_asset_table` bundle entry, in scan order - the same `env_tmds` the
@@ -351,6 +437,29 @@ struct PlayWindowApp {
     npc_clip_players:
         std::collections::HashMap<u8, legaia_engine_core::field_anim::FieldClipPlayer>,
     npc_anim_srcs: std::collections::HashMap<u8, (legaia_tmd::Tmd, Vec<u8>)>,
+    /// Memoised posed NPC meshes, keyed by `(placement slot, clip frame)`.
+    ///
+    /// An NPC's clip is a short **loop** over a fixed set of poses, so the
+    /// posed mesh for a given `(slot, frame)` is a constant: rebuilding and
+    /// re-uploading it every render frame recomputes the same bytes. The first
+    /// visit to a frame skins + uploads it, every later visit reuses the GPU
+    /// buffers. Bounded by `NPCs × clip length` (tens of small meshes).
+    ///
+    /// Invalidated wholesale when `upload_assets` rebuilds `npc_clip_players`
+    /// (scene change), and per-slot when a channel op-`0x4B` ANIMATE cue swaps
+    /// that slot's clip - a new clip reuses the same low frame indices, so its
+    /// entries must not alias the outgoing clip's.
+    npc_pose_cache: NpcPoseCache,
+    /// Correctness oracle for [`Self::npc_pose_cache`], populated only under
+    /// `LEGAIA_POSE_CACHE_VERIFY=1`: the bone transforms each cached key was
+    /// built from. On every cache *hit* the incoming pose is compared against
+    /// the stored one and a mismatch is logged as an error.
+    ///
+    /// Skinning is a pure function of `(TMD, bone transforms)`, so equal poses
+    /// on a hit prove the cached GPU mesh is the mesh a rebuild would have
+    /// produced - i.e. that the `(slot, frame)` key never aliases across
+    /// clips. Empty (and free) when the env var is unset.
+    npc_pose_verify: NpcPoseVerify,
     /// The ANM bundles the placements resolved their clips through,
     /// retained past scene load so channel op-`0x4B` ANIMATE cues
     /// (`World::field_npc_anim_cues`) can re-target an NPC's clip player
@@ -526,6 +635,23 @@ struct PlayWindowApp {
     /// to the Options screen's [`OptionsSession`] and persisted via
     /// the engine's options round-trip path.
     options_state: legaia_engine_core::options::OptionsState,
+    /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
+    /// no light source). Seeded from `--dynamic-lighting`, toggled at
+    /// runtime with the `I` key; mirrored into the renderer via
+    /// [`legaia_engine_render::Renderer::set_dynamic_lighting`] and shown on
+    /// the HUD status line. Default `false` = the faithful pixel-identical
+    /// render.
+    dynamic_lighting: bool,
+    /// Mouse drag-orbit state: the last cursor X (window pixels) while the
+    /// left button is held, `None` when not dragging. A horizontal drag in
+    /// field free-roam rotates `session.camera.manual_orbit`, which both
+    /// the follow camera's render yaw and the movement compass
+    /// ([`legaia_engine_core::camera::Camera::compass_azimuth_units`]) read
+    /// - so orbiting the view keeps "screen up walks away from the camera".
+    orbit_drag_last_x: Option<f64>,
+    /// Latest cursor X (window pixels), fed by `CursorMoved` so a drag that
+    /// starts before any motion has an anchor.
+    cursor_x: f64,
     /// Phase J3 pad-capture state. `Some` when the user invoked the
     /// `record` subcommand; the keyboard handler appends transitions
     /// to `events` and the close handler flushes a `j-replay-v1` file
@@ -759,6 +885,10 @@ impl PlayWindowApp {
                 self.options_state.audio,
                 legaia_engine_core::options::AudioMode::Mono
             ));
+            // Master mute (engine-only knob; `V` toggles it live). The
+            // mixer gate zeroes the output while the sequencer / SPU keep
+            // ticking, so unmuting resumes mid-track in sync.
+            audio.set_muted(self.options_state.muted);
         }
     }
 
@@ -792,6 +922,13 @@ impl PlayWindowApp {
 /// PSX Y-down local vertices ride the same world negation). Battle and
 /// world-map keep the older pairing (per-model `scale(1,-1,1)` + a camera
 /// with no world negation), so this must not leak into those arms.
+/// The follow camera's fixed base yaw (PSX 12-bit units, savestate-pinned
+/// `_DAT_8007B792 = -160` on the town01 anchor). Shared between the render
+/// camera (`field_follow_camera_mvp`) and the movement-compass bias pushed
+/// into the engine-core camera at startup (`render_yaw_bias` - the compass
+/// sense is the negation: `alpha = -psi` for the PSX GTE camera).
+const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
+
 const FIELD_WORLD_FLIP: Mat4 = Mat4::from_cols_array(&[
     1.0, 0.0, 0.0, 0.0, //
     0.0, -1.0, 0.0, 0.0, //

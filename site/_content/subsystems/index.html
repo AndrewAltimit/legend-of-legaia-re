@@ -126,6 +126,10 @@
       <div class="card-title">World-overview viewer</div>
       <div class="card-body">The static-site WebGL viewer for the three kingdom maps: AABB layout, the distance-cue fog pass, MAN bulk-terrain resolution, ocean tile + 13-frame CLUT animation, and camera anchors.</div>
     </a>
+    <a class="card" href="vr-mode.html">
+      <div class="card-title">VR mode (WebXR)</div>
+      <div class="card-body">View and navigate the game world in a headset: stereo rendering through the <code>XRWebGLLayer</code>, head tracking, and thumbstick locomotion over the world overview, the assembled full-map view, and the live play page. The flat renderer stays the single source of geometry - only the framebuffer and the view-projection fork.</div>
+    </a>
     <a class="card" href="save-screen.html">
       <div class="card-title">Save screen</div>
       <div class="card-body">Save-slot selection and write flow. Lives in the menu overlay (not a separate overlay). Outer dispatcher <code>FUN_801DC6B4</code>: 9-state machine, entry-context pointer table at <code>0x801E4F40</code>, slot-select via actor VM, save-block existence scan at <code>DAT_80084140</code>.</div>

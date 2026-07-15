@@ -204,6 +204,22 @@ Boundaries:
 - The hardware's 39-tap FIR input/output resampler (44.1 kHz ↔ 22.05 kHz) is approximated by decimation + zero-order hold; the tail's character comes from the network, the FIR only affects high-frequency detail.
 - Output volume (`vLOUT`/`vROUT`) isn't part of the mode preset on hardware (libspu sets it separately via `SpuSetReverbDepth`); the engine applies a fixed depth, overridable with `Reverb::set_output_volume`.
 
+### Voice resampler - 4-point Gaussian interpolation (engine-audio)
+
+Each SPU voice resamples its ADPCM stream through the hardware's fixed
+512-entry Gaussian coefficient ROM: pitch-counter fraction bits 4..11 form the
+8-bit interpolation index, and the output mixes the four most recent decoded
+samples (`gauss[0xFF-i]`, `gauss[0x1FF-i]`, `gauss[0x100+i]`, `gauss[i]`, each
+product `>> 15`). Table + formula are the published PSX hardware spec (no$psx
+"4-Point Gaussian Interpolation") - the same provenance class as the libspu
+reverb presets. This matters audibly: Legaia's VAG bodies are 22.05 kHz played
+through the 44.1 kHz SPU, so *every* voice runs at a non-unity pitch step -
+nearest-sample resampling aliases everything. The engine model is
+[`spu::gauss`](../../crates/engine-audio/src/spu/gauss.rs), applied per tick in
+[`spu::voice`](../../crates/engine-audio/src/spu/voice.rs) with a 4-sample
+history that survives ADPCM block boundaries. The pitch step clamps at
+`0x4000` (4.0×, 176.4 kHz), matching hardware.
+
 ### SsApi seq-management layer (above libspu)
 
 | Function | Role |

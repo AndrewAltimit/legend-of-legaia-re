@@ -5,8 +5,31 @@
 
 use super::*;
 
+/// Result of one direction's prop-collision probe
+/// ([`World::field_prop_dir_probe`]): whether a solid prop box blocks the
+/// step, and - for a static-class (auto-touch) hit - which prop-bank entry
+/// the contact posts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PropDirProbe {
+    /// A solid prop box overlaps a probe point: the 2-unit step is refused
+    /// (retail result bits `1`/`4` both gate the commit).
+    pub blocked: bool,
+    /// Static-class hit with a bank entry: the anchor whose record the
+    /// contact auto-posts (`None` for interact-class or unbound props).
+    pub touch: Option<(u8, u8)>,
+}
+
 impl World {
     // --- field collision grid + free-movement locomotion ----------------
+
+    /// The `FIELD_ACTOR_PROBES` row indices of the directions held in a
+    /// post-remap `dir_bits` word (`0x1000` = Z+ -> row 2, `0x4000` = Z- ->
+    /// row 0, `0x2000` = X+ -> row 3, `0x8000` = X- -> row 1).
+    fn dirs_of_bits(dir_bits: u16) -> impl Iterator<Item = usize> {
+        [(0x1000u16, 2usize), (0x4000, 0), (0x2000, 3), (0x8000, 1)]
+            .into_iter()
+            .filter_map(move |(bit, dir)| (dir_bits & bit != 0).then_some(dir))
+    }
 
     /// Reset the per-scene field collision grid to "all walkable" (every
     /// byte zero). Called at field entry; the scene prescript repaints the
@@ -34,6 +57,38 @@ impl World {
         self.field_collision_grid.clear();
         self.field_collision_grid.resize(FIELD_GRID_LEN, 0);
         self.field_collision_grid[..n].copy_from_slice(&grid[..n]);
+    }
+
+    /// Load the per-scene `.MAP` **object-grid** cell words (`+0x8000`, one
+    /// little-endian `u16` per tile). The floor sampler tests each tile's
+    /// [`CELL_ELEVATION_OVERRIDE`] bit; the other bits (`0x1FF` object index,
+    /// `0x1000` walk-visible, `0x2000` visible) belong to the scene's
+    /// placement / ground layers. A short slice loads what it has and leaves
+    /// the rest zero (a plain bilinear tile).
+    pub fn load_field_object_cells(&mut self, cells: &[u8]) {
+        let n = (cells.len() / 2).min(FIELD_GRID_LEN);
+        self.field_object_cells.clear();
+        self.field_object_cells.resize(FIELD_GRID_LEN, 0);
+        for (i, slot) in self.field_object_cells[..n].iter_mut().enumerate() {
+            *slot = u16::from_le_bytes([cells[i * 2], cells[i * 2 + 1]]);
+        }
+    }
+
+    /// Install the scene's kind-2 **elevation-override** records from the
+    /// `.MAP` trigger blocks: `primary` is the `+0x10000` block, `fallback` the
+    /// `+0x12000` one (the sibling sectors the retail loader reads
+    /// contiguously). The two parse into one first-match-wins list, mirroring
+    /// `FUN_801D5630`'s primary-then-fallback scan.
+    ///
+    /// PORT: FUN_801D5630 (kind 2) / FUN_801D5AE0
+    pub fn load_field_elevation_overrides(&mut self, primary: &[u8], fallback: &[u8]) {
+        self.field_elevation_overrides =
+            crate::world::field_elevation::parse_elevation_overrides(primary)
+                .into_iter()
+                .chain(crate::world::field_elevation::parse_elevation_overrides(
+                    fallback,
+                ))
+                .collect();
     }
 
     /// Install the per-scene region / zone tables (the `.MAP` `+0x10000`
@@ -114,24 +169,34 @@ impl World {
     /// Sample the field floor height at a world `(x, z)`, the port of
     /// `FUN_80019278`'s height branch (`ghidra/scripts/funcs/80019278.txt`).
     ///
-    /// The collision grid's **low nibble** is a floor-elevation tier; this
-    /// resolves it through the per-scene [`Self::field_floor_height_lut`] and
-    /// **bilinearly interpolates** the `2x2` tile block around the position. The
-    /// tile is `(x >> 7, z >> 7)` (128-unit tiles); the sub-tile weights are
-    /// `x & 0x7F` / `z & 0x7F` (0..=127). When all four corner tiers match, the
-    /// LUT value is returned directly (the retail fast path); otherwise the four
-    /// corner heights are weighted `top*(0x80-wz) + bottom*wz` (each edge
-    /// interpolated by `wx`) and divided by `0x4000` (`>> 14`, with the retail
-    /// `+0x3FFF` round-toward-zero on a negative accumulator).
+    /// Retail keeps **two** floor models and picks between them per tile on the
+    /// object-grid cell's [`CELL_ELEVATION_OVERRIDE`] (`0x800`) bit
+    /// ([`Self::field_object_cells`]):
     ///
-    /// This is the town-field floor sampler: the retail function's `+0x8000`
-    /// attribute gating - the world-map continent `0x1000` on-grid flag side
-    /// effect and the `0x800` tile-board special branch (`func_0x801d5630`) - is
-    /// **not** reproduced here (the engine doesn't keep that attribute grid).
-    /// Returns `0` when the grid / LUT isn't loaded or the tile is out of range.
+    /// - **Plain tiles** (bit clear) take the collision grid's low-nibble
+    ///   elevation tier through [`Self::field_floor_height_lut`] and
+    ///   **bilinearly interpolate** it across the `2x2` corner-tile block. The
+    ///   tile is `(x >> 7, z >> 7)` (128-unit tiles); the sub-tile weights are
+    ///   `x & 0x7F` / `z & 0x7F` (0..=127). When all four corner tiers match,
+    ///   the LUT value returns directly (the retail fast path); otherwise the
+    ///   four corner heights are weighted `top*(0x80-wz) + bottom*wz` (each edge
+    ///   interpolated by `wx`) and divided by `0x4000` (`>> 14`, with the retail
+    ///   `+0x3FFF` round-toward-zero on a negative accumulator).
     ///
-    /// PORT: FUN_80019278 (floor-height branch; the `+0x8000` continent /
-    /// tile-board branches stay with the field/world-map systems).
+    /// - **Ramp / stair tiles** (bit set) do **not** interpolate at all. Their
+    ///   height is the *flat mean* of the four corner tiers (`sum >> 2`) plus
+    ///   the tile's kind-2 [`ElevationOverride`] delta - a whole-tile step plus
+    ///   a per-64-unit-sub-cell step, i.e. an authored staircase. A tile with
+    ///   the bit but no record keeps just the mean. This is the model Rim Elm's
+    ///   shore ramps are built from: their collision nibbles are sea-level `0`,
+    ///   so interpolating them drops the player through the drawn stairs.
+    ///
+    /// The retail function's other `+0x8000` use - the world-map continent
+    /// `0x1000` on-grid flag side effect on the entity's flag word - is not
+    /// reproduced here. Returns `0` when the grid / LUT isn't loaded or the
+    /// tile is out of range.
+    ///
+    /// PORT: FUN_80019278
     pub fn sample_field_floor_height(&self, world_x: i32, world_z: i32) -> i32 {
         if self.field_collision_grid.len() < FIELD_GRID_LEN {
             return 0;
@@ -154,17 +219,28 @@ impl World {
         let c01 = (g[base + 1] & 0x0F) as usize;
         let c10 = (g[base + FIELD_GRID_STRIDE] & 0x0F) as usize;
         let c11 = (g[base + FIELD_GRID_STRIDE + 1] & 0x0F) as usize;
-        if c00 == c01 && c00 == c10 && c00 == c11 {
-            return lut[c00] as i32;
-        }
-        let wx = world_x & 0x7F;
-        let wz = world_z & 0x7F;
         let (l00, l01, l10, l11) = (
             lut[c00] as i32,
             lut[c01] as i32,
             lut[c10] as i32,
             lut[c11] as i32,
         );
+        // Ramp / stair tile: flat tile mean + the authored elevation override.
+        if self.field_tile_has_elevation_override(tile_x, tile_z) {
+            let mean = (l00 + l01 + l10 + l11) >> 2;
+            let delta = crate::world::field_elevation::lookup_elevation_override(
+                &self.field_elevation_overrides,
+                tile_x as u8,
+                tile_z as u8,
+            )
+            .map_or(0, |r| r.delta_at(world_x, world_z));
+            return mean + delta;
+        }
+        if c00 == c01 && c00 == c10 && c00 == c11 {
+            return l00;
+        }
+        let wx = world_x & 0x7F;
+        let wz = world_z & 0x7F;
         let acc =
             (l01 * wx + l00 * (0x80 - wx)) * (0x80 - wz) + l10 * (0x80 - wx) * wz + l11 * wx * wz;
         if acc < 0 {
@@ -172,6 +248,24 @@ impl World {
         } else {
             acc >> 14
         }
+    }
+
+    /// Does tile `(tile_x, tile_z)` carry the object-grid
+    /// [`CELL_ELEVATION_OVERRIDE`] bit - i.e. is its floor an authored ramp /
+    /// staircase rather than the bilinear nibble surface? `false` for scenes
+    /// with no object grid loaded (every tile then reads as a plain tile).
+    ///
+    /// REF: FUN_80019278
+    pub fn field_tile_has_elevation_override(&self, tile_x: i32, tile_z: i32) -> bool {
+        if !(0..FIELD_GRID_STRIDE as i32).contains(&tile_x)
+            || !(0..FIELD_GRID_STRIDE as i32).contains(&tile_z)
+        {
+            return false;
+        }
+        let idx = tile_z as usize * FIELD_GRID_STRIDE + tile_x as usize;
+        self.field_object_cells
+            .get(idx)
+            .is_some_and(|c| c & CELL_ELEVATION_OVERRIDE != 0)
     }
 
     pub(crate) fn paint_field_collision(
@@ -254,6 +348,232 @@ impl World {
         (byte >> 4) & (1u8 << quad) != 0
     }
 
+    /// Is world `(x, z)` on the scene's authored **walkable floor** - i.e. does
+    /// its plain (unbiased) `.MAP` object-grid cell carry the
+    /// [`legaia_asset::field_objects::CELL_WALK_VISIBLE`] (`0x1000`) bit? This
+    /// is the retail "player may stand on this tile" flag the field walk loader
+    /// gates on ([`Self::field_object_cells`], plain `world >> 7` indexing -
+    /// the same convention [`Self::sample_field_floor_height`] samples the floor
+    /// under). `false` for out-of-range coords and for scenes with no object
+    /// grid loaded (every tile then reads as off-floor void).
+    pub fn field_tile_is_walk_visible(&self, x: i16, z: i16) -> bool {
+        if x < 0 || z < 0 {
+            return false;
+        }
+        let tx = (x as usize) >> 7;
+        let tz = (z as usize) >> 7;
+        if tx >= FIELD_GRID_STRIDE || tz >= FIELD_GRID_STRIDE {
+            return false;
+        }
+        self.field_object_cells
+            .get(tz * FIELD_GRID_STRIDE + tx)
+            .is_some_and(|c| c & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0)
+    }
+
+    /// Is world `(x, z)` a valid cold-entry standing spot - on the authored
+    /// walkable floor ([`Self::field_tile_is_walk_visible`]) **and** clear of
+    /// the collision-grid wall bits ([`Self::field_tile_is_wall`])?
+    fn field_spawn_is_valid(&self, x: i16, z: i16) -> bool {
+        self.field_tile_is_walk_visible(x, z) && !self.field_tile_is_wall(x, z)
+    }
+
+    /// Is the 64-unit **sub-cell** `(sx, sz)` (the wall-bit granularity of the
+    /// collision grid - four per 128-unit tile) an open standing spot? Tests
+    /// the sub-cell's world-space centre through the two spawn-validity
+    /// samplers: on the authored walk-visible floor and clear of the biased
+    /// wall read. Out-of-range sub-cells read closed.
+    fn field_subcell_open(&self, sx: i32, sz: i32) -> bool {
+        let stride = (FIELD_GRID_STRIDE * 2) as i32;
+        if !(0..stride).contains(&sx) || !(0..stride).contains(&sz) {
+            return false;
+        }
+        let (x, z) = ((sx * 64 + 32) as i16, (sz * 64 + 32) as i16);
+        self.field_spawn_is_valid(x, z)
+    }
+
+    /// Label the 4-connected components of the open sub-cell lattice
+    /// ([`Self::field_subcell_open`], `0x100 x 0x100` sub-cells). Returns
+    /// `(labels, sizes)`: `labels[sz * 0x100 + sx]` is `0` for a closed
+    /// sub-cell or the 1-based component id; `sizes[id - 1]` is that
+    /// component's sub-cell count. Deterministic: components are numbered in
+    /// row-major scan order.
+    fn field_walk_components(&self) -> (Vec<u16>, Vec<u32>) {
+        let stride = FIELD_GRID_STRIDE * 2;
+        let mut labels = vec![0u16; stride * stride];
+        let mut sizes: Vec<u32> = Vec::new();
+        let mut queue: std::collections::VecDeque<(i32, i32)> = std::collections::VecDeque::new();
+        for sz in 0..stride as i32 {
+            for sx in 0..stride as i32 {
+                let idx = sz as usize * stride + sx as usize;
+                if labels[idx] != 0 || !self.field_subcell_open(sx, sz) {
+                    continue;
+                }
+                let label = (sizes.len() + 1) as u16;
+                let mut count = 0u32;
+                labels[idx] = label;
+                queue.push_back((sx, sz));
+                while let Some((cx, cz)) = queue.pop_front() {
+                    count += 1;
+                    for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let (nx, nz) = (cx + dx, cz + dz);
+                        if !(0..stride as i32).contains(&nx) || !(0..stride as i32).contains(&nz) {
+                            continue;
+                        }
+                        let nidx = nz as usize * stride + nx as usize;
+                        if labels[nidx] == 0 && self.field_subcell_open(nx, nz) {
+                            labels[nidx] = label;
+                            queue.push_back((nx, nz));
+                        }
+                    }
+                }
+                sizes.push(count);
+            }
+        }
+        (labels, sizes)
+    }
+
+    /// Size (in 64-unit sub-cells) of the connected open-floor region the
+    /// world point `(x, z)` stands in - `0` when the covering sub-cell is
+    /// closed (off the walk-visible floor or inside a wall). The reachability
+    /// measure the cold-spawn resolver and the spawn-sweep tests share: a
+    /// position inside a walled-off pocket reads as a tiny component even
+    /// though the point itself is "valid".
+    pub fn field_walk_component_size(&self, x: i16, z: i16) -> usize {
+        if x < 0 || z < 0 {
+            return 0;
+        }
+        let (sx, sz) = ((x as i32) >> 6, (z as i32) >> 6);
+        if !self.field_subcell_open(sx, sz) {
+            return 0;
+        }
+        let stride = FIELD_GRID_STRIDE * 2;
+        let (labels, sizes) = self.field_walk_components();
+        let label = labels[sz as usize * stride + sx as usize];
+        if label == 0 {
+            0
+        } else {
+            sizes[label as usize - 1] as usize
+        }
+    }
+
+    /// Size (in 64-unit sub-cells) of the scene's largest connected open-floor
+    /// region, or `0` when no sub-cell is open.
+    pub fn field_largest_walk_component_size(&self) -> usize {
+        self.field_walk_components()
+            .1
+            .into_iter()
+            .max()
+            .unwrap_or(0) as usize
+    }
+
+    /// Resolve a cold field-entry player spawn to an in-bounds, standable,
+    /// **reachable** world `(x, z)`.
+    ///
+    /// Retail seats a cold (non-warp) field entry at the camera-window centre
+    /// [`FIELD_COLD_SPAWN_XZ`] (`0xA40`); a cold entry only ever happens for the
+    /// New Game opening (town01, Vahn's authored Rim Elm spawn), where that
+    /// coordinate is a real standable tile. The engine's scene picker enters
+    /// arbitrary scenes cold, and for many of them the fixed seat lands off the
+    /// authored walkable floor, inside a walled-off pocket (a "valid" point
+    /// whose connected region is tiny), in a secondary region cut off from the
+    /// scene's main playable area, or on a kind-0 intra-scene teleport tile
+    /// (a door pad whose first tile-crossing dispatch warps the player).
+    ///
+    /// Selection rule (deterministic per scene):
+    ///
+    /// 1. Keep the retail seat when it is standable, inside the scene's
+    ///    **largest** connected open-floor component, and not on a kind-0
+    ///    teleport tile (`teleport_tiles`) - town01's New Game opening stays
+    ///    byte-identical.
+    /// 2. Otherwise take the first kind-0 teleport **destination** (`anchors`,
+    ///    in disc table order) that passes the same checks - a retail-authored
+    ///    door-arrival spot.
+    /// 3. Otherwise spawn at the largest component's own sub-cell nearest its
+    ///    centroid (skipping teleport tiles), i.e. the middle of the scene's
+    ///    biggest playable region.
+    /// 4. A scene with no open floor at all keeps the retail seat (nothing
+    ///    better to resolve against).
+    ///
+    /// Requires the collision grid ([`Self::load_field_collision_grid`]) and the
+    /// object-grid cells ([`Self::load_field_object_cells`]) to be loaded first.
+    /// `teleport_tiles` / `anchors` are the scene's `.MAP` kind-0 trigger tiles
+    /// and landing positions ([`crate::field_regions::IntraSceneTeleport`]).
+    pub fn resolve_cold_field_spawn(
+        &self,
+        teleport_tiles: &[(u8, u8)],
+        anchors: &[(i16, i16)],
+    ) -> (i16, i16) {
+        let default = (FIELD_COLD_SPAWN_XZ, FIELD_COLD_SPAWN_XZ);
+        let stride = FIELD_GRID_STRIDE * 2;
+        let (labels, sizes) = self.field_walk_components();
+        // Largest component; ties keep the first (lowest label) for
+        // determinism.
+        let Some(largest_label) = sizes
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(&a.0)))
+            .map(|(i, _)| (i + 1) as u16)
+        else {
+            return default;
+        };
+        let on_teleport_tile = |x: i16, z: i16| -> bool {
+            let (tx, tz) = ((x as u16 >> 7) as u8, (z as u16 >> 7) as u8);
+            teleport_tiles.iter().any(|&(kx, kz)| (kx, kz) == (tx, tz))
+        };
+        let good = |x: i16, z: i16| -> bool {
+            if x < 0 || z < 0 || !self.field_spawn_is_valid(x, z) || on_teleport_tile(x, z) {
+                return false;
+            }
+            let (sx, sz) = ((x as usize) >> 6, (z as usize) >> 6);
+            labels
+                .get(sz * stride + sx)
+                .is_some_and(|&l| l == largest_label)
+        };
+        // 1. The retail seat, when it is genuinely standable and reachable.
+        if good(default.0, default.1) {
+            return default;
+        }
+        // 2. A retail-authored door-arrival anchor inside the main region.
+        for &(ax, az) in anchors {
+            if good(ax, az) {
+                return (ax, az);
+            }
+        }
+        // 3. The largest component's sub-cell nearest its centroid.
+        let (mut sum_x, mut sum_z, mut n) = (0i64, 0i64, 0i64);
+        for sz in 0..stride {
+            for sx in 0..stride {
+                if labels[sz * stride + sx] == largest_label {
+                    sum_x += sx as i64;
+                    sum_z += sz as i64;
+                    n += 1;
+                }
+            }
+        }
+        if n == 0 {
+            return default;
+        }
+        let (cx, cz) = (sum_x / n, sum_z / n);
+        let mut best: Option<(i64, (i16, i16))> = None;
+        let mut best_any: Option<(i64, (i16, i16))> = None;
+        for sz in 0..stride {
+            for sx in 0..stride {
+                if labels[sz * stride + sx] != largest_label {
+                    continue;
+                }
+                let d = (sx as i64 - cx).pow(2) + (sz as i64 - cz).pow(2);
+                let world = ((sx * 64 + 32) as i16, (sz * 64 + 32) as i16);
+                if best_any.is_none_or(|(bd, _)| d < bd) {
+                    best_any = Some((d, world));
+                }
+                if !on_teleport_tile(world.0, world.1) && best.is_none_or(|(bd, _)| d < bd) {
+                    best = Some((d, world));
+                }
+            }
+        }
+        best.or(best_any).map(|(_, w)| w).unwrap_or(default)
+    }
+
     /// Retail's static-wall direction test: from the CURRENT position
     /// `(x, z)`, probe the three leading-edge points of `FIELD_WALL_PROBES`
     /// row `dir` (`0` = Z-, `1` = X-, `2` = Z+, `3` = X+) through
@@ -313,7 +633,16 @@ impl World {
     /// already deep inside a box (past the probe reach) reads clear -
     /// exactly as retail's forward-only probe behaves.
     pub fn field_actor_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
-        if self.field_npc_positions.is_empty() && self.field_prop_colliders.is_empty() {
+        self.field_npc_dir_blocked(x, z, dir) || self.field_prop_dir_probe(x, z, dir).blocked
+    }
+
+    /// The **moving-NPC arm** of the actor-collision direction test (retail
+    /// result bit `1` for the village-NPC class): the three probe points
+    /// against every live NPC position at ±[`FIELD_NPC_BOX_HALF`].
+    ///
+    /// PORT: FUN_801cfc40
+    pub(crate) fn field_npc_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
+        if self.field_npc_positions.is_empty() {
             return false;
         }
         FIELD_ACTOR_PROBES[dir & 3].iter().any(|&(dx, dz)| {
@@ -322,10 +651,53 @@ impl World {
             self.field_npc_positions.values().any(|&(ax, az)| {
                 (px - ax as i32).abs() < FIELD_NPC_BOX_HALF
                     && (pz - az as i32).abs() < FIELD_NPC_BOX_HALF
-            }) || self.field_prop_colliders.iter().any(|&(cx, cz)| {
-                (px - cx).abs() < FIELD_PROP_BOX_HALF && (pz - cz).abs() < FIELD_PROP_BOX_HALF
             })
         })
+    }
+
+    /// The **placed-prop arms** of the actor-collision direction test: the
+    /// three `FIELD_ACTOR_PROBES` points of `dir` box-tested against every
+    /// solid prop collider. A static-class hit (`+0x10` clear of the
+    /// `0x40020000` interact bits - retail contact result bit `4`) also
+    /// surfaces the touched prop's bank anchor, which the locomotion
+    /// auto-posts (`FUN_801D01B0` `0x801d0800` -> `FUN_801D5B5C`); an
+    /// interact-class hit (bit `1`) blocks silently - only the button-gated
+    /// facing probe fires it.
+    ///
+    /// Box classes per collider (see [`FieldPropCollider`]): static = ±80
+    /// around the footprint centre; moving-box = ±40 around the live
+    /// position. A non-solid collider (script ran `31 00`) is skipped
+    /// entirely, exactly as `FUN_801CF754`'s `flags & 3` filter drops the
+    /// opened door from the candidate list.
+    ///
+    /// PORT: FUN_801cfc40
+    /// REF: FUN_801CF754, FUN_801D5B5C
+    pub(crate) fn field_prop_dir_probe(&self, x: i16, z: i16, dir: usize) -> PropDirProbe {
+        let mut out = PropDirProbe::default();
+        if self.field_prop_colliders.is_empty() {
+            return out;
+        }
+        for &(dx, dz) in &FIELD_ACTOR_PROBES[dir & 3] {
+            let px = x.saturating_add(dx) as i32;
+            let pz = z.saturating_sub(dz) as i32;
+            for c in &self.field_prop_colliders {
+                if !c.solid {
+                    continue;
+                }
+                let ((cx, cz), half) = if c.moving_box {
+                    (c.live, FIELD_NPC_BOX_HALF)
+                } else {
+                    (c.center, FIELD_PROP_BOX_HALF)
+                };
+                if (px - cx).abs() < half && (pz - cz).abs() < half {
+                    out.blocked = true;
+                    if !c.interact && out.touch.is_none() {
+                        out.touch = c.anchor;
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Retail's interact probe: from the player's position, take the single
@@ -639,14 +1011,28 @@ impl World {
         }
         let (px, pz) = {
             let ms = &self.actors[slot].move_state;
-            (ms.world_x as i32, ms.world_z as i32)
+            (ms.world_x, ms.world_z)
         };
+        // Contact fires from the SAME probe points that block movement
+        // (retail: `FUN_801cfe4c`'s three `FUN_801cfc40` calls both refuse
+        // the step and link/post the touched actor) - so a **solid** door
+        // object still fires its walk-touch while the player stands pressed
+        // against its box, 64+ units short of the centre. The stand-inside
+        // test is kept as well (a landing seated inside a box, nav drivers).
+        let mut points: Vec<(i32, i32)> = vec![(px as i32, pz as i32)];
+        for dir in Self::dirs_of_bits(self.last_move_dir_bits) {
+            for &(dx, dz) in &FIELD_ACTOR_PROBES[dir] {
+                points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
+            }
+        }
         let hit = self
             .field_walk_touch
             .iter()
             .find(|(_, ((wx, wz), _))| {
-                (px - *wx as i32).abs() < FIELD_PROP_BOX_HALF
-                    && (pz - *wz as i32).abs() < FIELD_PROP_BOX_HALF
+                points.iter().any(|&(qx, qz)| {
+                    (qx - *wx as i32).abs() < FIELD_PROP_BOX_HALF
+                        && (qz - *wz as i32).abs() < FIELD_PROP_BOX_HALF
+                })
             })
             .map(|(&s, &(_, event))| (s, event));
         let Some((touch_slot, event)) = hit else {
@@ -657,18 +1043,56 @@ impl World {
             return; // still inside the same contact - already posted
         }
         self.active_walk_touch = Some(touch_slot);
+        // A door record is a field-VM script, not a constant: its opening
+        // `SysFlag.Test` chain picks which arm runs (teleport into the
+        // interior vs. spawn the story beat). Retail resumes the record on
+        // contact, so the arm is chosen against the *live* flags - re-resolve
+        // here rather than reusing the load-time structural decode. Falls back
+        // to that decode when the record can't be re-walked.
+        // REF: FUN_801d5b5c (contact resumes the object's script)
+        let event = self
+            .field_walk_touch_records
+            .get(&touch_slot)
+            .copied()
+            .and_then(|record| {
+                let man = self.field_channels_man.clone()?;
+                let man_file = legaia_asset::man_section::parse(&man).ok()?;
+                let flags = self.system_flags.clone();
+                let test = |idx: u16| -> bool {
+                    let byte = usize::from(idx >> 3);
+                    byte < flags.len() && flags[byte] & (0x80u8 >> (idx & 7)) != 0
+                };
+                crate::man_field_scripts::resolve_walk_touch_event(&man_file, &man, record, &test)
+            })
+            .unwrap_or(event);
         // Post through the same dispatch path the button-gated interact uses.
         self.trigger_field_interact(0, touch_slot);
         match event {
             WalkTouchEvent::Warp { target_map } => {
                 self.pending_scene_transition = Some(target_map);
             }
-            WalkTouchEvent::PlayerMoveTo { world_x, world_z } => {
+            WalkTouchEvent::PlayerMoveTo {
+                world_x,
+                world_z,
+                facing,
+            } => {
+                // The retail op-0x23 player arm rewrites X/Z (`+0x14`/`+0x18`)
+                // and re-seats the actor on the floor; the paired op-0x38
+                // cross-context CAM_CFG writes the arrival heading (`+0x26`).
+                // A door's interior is a *sub-area of the same collision grid*
+                // at its own elevation, so the floor must be resampled at the
+                // landing - otherwise the player keeps the doorstep's outdoor
+                // height until the next locomotion frame nudges it.
+                let y = self.sample_field_floor_height(world_x as i32, world_z as i32) as i16;
                 if let Some(p) = self.player_actor_slot
                     && let Some(actor) = self.actors.get_mut(p as usize)
                 {
                     actor.move_state.world_x = world_x;
                     actor.move_state.world_z = world_z;
+                    actor.move_state.world_y = y;
+                    if let Some(heading) = facing {
+                        actor.move_state.render_26 = heading;
+                    }
                 }
                 self.pending_field_events.push(FieldEvent::MoveTo {
                     world_x: world_x as u16,
@@ -680,6 +1104,16 @@ impl World {
             // already ran the placement's record ([`crate::world::World::
             // run_boss_stager_record`]); the event carries no extra effect.
             WalkTouchEvent::StagerBeat => {}
+            // The record's taken arm is an op-`0x44` SPAWN_RECORD: queue the
+            // referenced record so `SceneHost::tick` installs it as a spawned
+            // field-VM context (the same drain the in-script op-`0x44` uses).
+            // This is the arm a story-gated door takes once its flag is set -
+            // the in-house beat, not a bare reposition.
+            WalkTouchEvent::SpawnRecord { flat_index } => {
+                if let Ok(idx) = u8::try_from(flat_index) {
+                    self.pending_record_spawns.push(idx);
+                }
+            }
         }
     }
 
@@ -829,6 +1263,73 @@ impl World {
         (bits, heading)
     }
 
+    /// Continuous (non-quantised) camera-relative movement decode for the
+    /// opt-in [`World::precise_movement`] mode. Returns
+    /// `(world_dir, dir_bits, heading)` where `world_dir` is the unnormalised
+    /// world-space XZ movement vector, `dir_bits` is the sign-derived retail
+    /// direction mask (kept for the facing / animation / touch consumers that
+    /// key on [`World::last_move_dir_bits`]), and `heading` is the continuous
+    /// PSX 12-bit angle. `None` when no direction is held.
+    ///
+    /// Differences from [`Self::decode_field_direction`] (the retail path):
+    /// the camera azimuth rotates the screen vector at full angular
+    /// resolution instead of snapping to the nearest 90°, and a deflected
+    /// analog stick ([`crate::input::InputState::lstick`], PSX `[-127, 127]`
+    /// axes, +Y down) supplies an arbitrary screen angle - digital keys are
+    /// the 8-way fallback when the stick rests inside the deadzone.
+    fn decode_field_direction_precise(&self) -> Option<((f32, f32), u16, i16)> {
+        const STICK_DEADZONE: i32 = 24;
+        let (lx, ly) = self.input.lstick();
+        let (sx, sy) = if (lx as i32).pow(2) + (ly as i32).pow(2) >= STICK_DEADZONE.pow(2) {
+            // Stick +Y is down (PSX convention); screen forward is up.
+            (lx as f32 / 127.0, -(ly as f32) / 127.0)
+        } else {
+            let mut sx = 0.0f32;
+            let mut sy = 0.0f32;
+            if self.input.pressed(input::PadButton::Up) {
+                sy += 1.0;
+            }
+            if self.input.pressed(input::PadButton::Down) {
+                sy -= 1.0;
+            }
+            if self.input.pressed(input::PadButton::Right) {
+                sx += 1.0;
+            }
+            if self.input.pressed(input::PadButton::Left) {
+                sx -= 1.0;
+            }
+            (sx, sy)
+        };
+        if sx == 0.0 && sy == 0.0 {
+            return None;
+        }
+        // Rotate the screen vector by the camera azimuth continuously.
+        // Azimuth 0 = identity (screen-up -> +Z, screen-right -> +X); the
+        // quadrant table in `decode_field_direction` is this rotation
+        // sampled at the four cardinal angles.
+        let az = self.field_camera_azimuth as f32 / 4096.0 * std::f32::consts::TAU;
+        let (sin, cos) = az.sin_cos();
+        let wx = sx * cos + sy * sin;
+        let wz = -sx * sin + sy * cos;
+        let mut bits = 0u16;
+        if wz > f32::EPSILON {
+            bits |= 0x1000; // Z+
+        } else if wz < -f32::EPSILON {
+            bits |= 0x4000; // Z-
+        }
+        if wx > f32::EPSILON {
+            bits |= 0x2000; // X+
+        } else if wx < -f32::EPSILON {
+            bits |= 0x8000; // X-
+        }
+        if bits == 0 {
+            return None;
+        }
+        let heading =
+            ((wx.atan2(wz) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF) as i16;
+        Some(((wx, wz), bits, heading))
+    }
+
     /// Free-movement locomotion step - the engine-side port of
     /// `FUN_801d01b0` (field overlay `overlay_0897`).
     ///
@@ -869,8 +1370,24 @@ impl World {
             return;
         }
 
-        let (dir_bits, heading) = self.decode_field_direction();
+        // Opt-in precise mode swaps the quantised d-pad remap for the
+        // continuous decode; the default path is bit-identical to the
+        // historical quantised behaviour.
+        let precise = if self.precise_movement {
+            self.decode_field_direction_precise()
+        } else {
+            None
+        };
+        let (dir_bits, heading) = if self.precise_movement {
+            precise.map(|(_, b, h)| (b, h)).unwrap_or((0, 0))
+        } else {
+            self.decode_field_direction()
+        };
+        self.last_move_dir_bits = dir_bits;
         if dir_bits == 0 {
+            // Input released: drop any precise sub-step remainder so a later
+            // hold starts clean.
+            self.precise_move_carry = (0.0, 0.0);
             return;
         }
         self.actors[slot].move_state.render_26 = heading;
@@ -880,9 +1397,11 @@ impl World {
         let ratio = self.move_ramp_ratio.max(1) as i32;
         let mut speed = ((FIELD_BASE_STEP * mult) >> 12) * ratio;
         // Diagonal normalise (camera mode 4, both axes pressed): x0.75.
+        // The precise path normalises its vector instead (below), so the
+        // fixed cut only applies to the quantised path.
         let z_pressed = dir_bits & 0x5000 != 0;
         let x_pressed = dir_bits & 0xA000 != 0;
-        if z_pressed && x_pressed {
+        if precise.is_none() && z_pressed && x_pressed {
             speed -= speed >> 2;
         }
         if speed <= 0 {
@@ -895,7 +1414,11 @@ impl World {
             anim.moved_this_frame = true;
         }
 
-        self.advance_with_collision(slot, dir_bits, speed);
+        if let Some(((wx, wz), _, _)) = precise {
+            self.advance_with_collision_vector(slot, wx, wz, speed);
+        } else {
+            self.advance_with_collision(slot, dir_bits, speed);
+        }
 
         // Walk-touch dispatch (retail: the per-sub-step touch check inside
         // `FUN_801d01b0`, posting `FUN_801d5b5c` on a static-entity contact
@@ -937,9 +1460,17 @@ impl World {
     /// centre test is kept (off-flag) for the locomotion oracles and the
     /// BFS nav drivers. With [`Self::solid_field_npcs`] set, each axis
     /// additionally blocks when the direction's actor-collision probes land
-    /// inside a field NPC's body box ([`Self::field_actor_dir_blocked`]) -
+    /// inside a field NPC's body box ([`Self::field_npc_dir_blocked`]) -
     /// retail gates a step on the actor bits and the wall bit together
     /// (`FUN_801cfe4c` returning any of `1`/`2`/`4` refuses the 2-unit step).
+    ///
+    /// **Placed props block unconditionally** ([`Self::field_prop_dir_probe`]):
+    /// retail's placed-object actors always sit in the collision candidate
+    /// list (`FUN_801CF754`), so a closed door is solid until its touch pass
+    /// runs `31 00`. A static-class prop hit also records the touched prop
+    /// into [`Self::pending_prop_touch`] - the same probe both refuses the
+    /// step and posts the touch (`FUN_801D01B0`'s bit-`4` auto-post of
+    /// `FUN_801D5B5C`).
     pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
         let edge = self.leading_edge_wall_probes;
         let solid_npcs = self.solid_field_npcs;
@@ -950,21 +1481,25 @@ impl World {
             // Z axis.
             if dir_bits & 0x1000 != 0 {
                 let nz = cz.saturating_add(FIELD_STEP_UNIT as i16);
+                let prop = self.probe_props_for_step(cx, cz, 2);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz, 2)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz, 2));
+                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz, 2))
+                    || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
             } else if dir_bits & 0x4000 != 0 {
                 let nz = cz.saturating_sub(FIELD_STEP_UNIT as i16);
+                let prop = self.probe_props_for_step(cx, cz, 0);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz, 0)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz, 0));
+                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz, 0))
+                    || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
                 }
@@ -974,27 +1509,79 @@ impl World {
             let cz2 = self.actors[slot].move_state.world_z;
             if dir_bits & 0x2000 != 0 {
                 let nx = cx.saturating_add(FIELD_STEP_UNIT as i16);
+                let prop = self.probe_props_for_step(cx, cz2, 3);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz2, 3)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz2, 3));
+                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz2, 3))
+                    || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
             } else if dir_bits & 0x8000 != 0 {
                 let nx = cx.saturating_sub(FIELD_STEP_UNIT as i16);
+                let prop = self.probe_props_for_step(cx, cz2, 1);
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz2, 1)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || (solid_npcs && self.field_actor_dir_blocked(cx, cz2, 1));
+                } || (solid_npcs && self.field_npc_dir_blocked(cx, cz2, 1))
+                    || prop;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
                 }
             }
             remaining -= FIELD_STEP_UNIT;
         }
+    }
+
+    /// Advance actor `slot` by `speed` world units along the arbitrary
+    /// ground-plane direction `(wx, wz)` - the [`World::precise_movement`]
+    /// sibling of [`Self::advance_with_collision`]. The vector is
+    /// normalised, split into per-axis distances, and walked in the same
+    /// `FIELD_STEP_UNIT` sub-steps through the same per-axis collision
+    /// probes (each sub-step is one single-axis `advance_with_collision`
+    /// call, Z before X, so X collision sees the just-committed Z exactly
+    /// like the quantised path). Sub-`FIELD_STEP_UNIT` remainders persist in
+    /// [`World::precise_move_carry`] so shallow angles keep their exact
+    /// slope across frames instead of rounding each frame's minor axis to
+    /// zero.
+    pub fn advance_with_collision_vector(&mut self, slot: usize, wx: f32, wz: f32, speed: i32) {
+        let len = (wx * wx + wz * wz).sqrt();
+        if len <= f32::EPSILON || speed <= 0 {
+            return;
+        }
+        let step = FIELD_STEP_UNIT as f32;
+        let mut ax = self.precise_move_carry.0 + wx / len * speed as f32;
+        let mut az = self.precise_move_carry.1 + wz / len * speed as f32;
+        while ax.abs() >= step || az.abs() >= step {
+            if az.abs() >= step {
+                let bit = if az > 0.0 { 0x1000 } else { 0x4000 };
+                self.advance_with_collision(slot, bit, FIELD_STEP_UNIT);
+                az -= step * az.signum();
+            }
+            if ax.abs() >= step {
+                let bit = if ax > 0.0 { 0x2000 } else { 0x8000 };
+                self.advance_with_collision(slot, bit, FIELD_STEP_UNIT);
+                ax -= step * ax.signum();
+            }
+        }
+        self.precise_move_carry = (ax, az);
+    }
+
+    /// One movement sub-step's prop probe: blocks on any solid prop box hit
+    /// and latches a static-class touch into [`Self::pending_prop_touch`]
+    /// (drained by [`Self::tick_prop_interactions`]). Returns whether the
+    /// step is prop-blocked.
+    fn probe_props_for_step(&mut self, x: i16, z: i16, dir: usize) -> bool {
+        let probe = self.field_prop_dir_probe(x, z, dir);
+        if let Some(anchor) = probe.touch
+            && self.pending_prop_touch.is_none()
+        {
+            self.pending_prop_touch = Some(anchor);
+        }
+        probe.blocked
     }
 
     /// Step the player one navigation frame toward world position `(tx, tz)`,
@@ -1039,6 +1626,7 @@ impl World {
             wx = -1;
         }
         if dir != 0 {
+            self.last_move_dir_bits = dir;
             // Walking sets the heading, exactly as the pad path does (retail
             // locomotion writes the facing every moved frame) - so a nav walk
             // leaves the player facing its travel direction and the interact

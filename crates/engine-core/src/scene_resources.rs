@@ -387,6 +387,32 @@ fn v12_sidecar_skip(entry: &SceneEntry, host_idx: Option<u32>) -> bool {
     entry.class == Class::SceneV12Table && host_idx != Some(entry.idx)
 }
 
+/// `true` when `entry` is a **pochi-filler** slot: a reserved-but-unused PROT
+/// entry whose payload is the `pochipochipochi...` + `0x1A` dev fill
+/// ([`legaia_asset::categorize`], `docs/formats/pochi.md`). Retail never
+/// dispatches one - a scene reserves N asset slots and fills only some - but
+/// the bytes *behind* the fill prefix are stale scratch from an earlier build,
+/// and a fair amount of that scratch is a well-formed TIM.
+///
+/// Sweeping a pochi slot therefore uploads **leftover** texture pages on top of
+/// the scene's real ones. The stale pages are the scene's battle-side character
+/// atlases: two `256 x 256` 4bpp pages at fb `(768, 0)` (tpage `0x0C`) and
+/// `(832, 0)` (tpage `0x1D`) with CLUT rows 473 / 479 - and tpage `0x0C` is
+/// exactly where most field scenes put their **ground-tile atlas**
+/// ([`legaia_asset::field_objects::WalkHeightfield`], whose per-cell page comes
+/// from the `.MAP` object record's `+0x15`). A full-page stale upload lands
+/// last and erases the terrain atlas, so the ground quads sample character /
+/// backdrop texels instead of dirt (Jeremi's "tombstone" lattice, Mt. Dhini's
+/// repeating vine texture). Rim Elm escaped only because *its* siblings all
+/// parse as `scene_tmd_stream` and were already excluded in field mode.
+///
+/// Retail parity check: a live `keikoku` field VRAM capture has the scene's
+/// rock atlas at `(768, 0)`, not the character page - the field loader never
+/// touches these entries.
+fn pochi_filler_skip(entry: &SceneEntry) -> bool {
+    entry.class == Class::PochiFiller
+}
+
 fn parse_world_map_slot4(
     scene: &Scene,
     kind: SceneLoadKind,
@@ -502,7 +528,7 @@ impl SceneResources {
             let mut took_kingdom = false;
             let v12_host = v12_bundle_host_idx(s);
             for entry in &s.entries {
-                if v12_sidecar_skip(entry, v12_host) {
+                if v12_sidecar_skip(entry, v12_host) || pochi_filler_skip(entry) {
                     continue;
                 }
                 let bytes: &[u8] = &entry.bytes;
@@ -695,7 +721,7 @@ impl SceneResources {
             let mut took_kingdom = false;
             let v12_host = v12_bundle_host_idx(s);
             for entry in &s.entries {
-                if v12_sidecar_skip(entry, v12_host) {
+                if v12_sidecar_skip(entry, v12_host) || pochi_filler_skip(entry) {
                     continue;
                 }
                 let bytes: &[u8] = &entry.bytes;
@@ -930,7 +956,7 @@ impl SceneResources {
                            tmd_count: &mut usize| {
             let v12_host = v12_bundle_host_idx(s);
             for entry in &s.entries {
-                if v12_sidecar_skip(entry, v12_host) {
+                if v12_sidecar_skip(entry, v12_host) || pochi_filler_skip(entry) {
                     continue;
                 }
                 let bytes: &[u8] = &entry.bytes;

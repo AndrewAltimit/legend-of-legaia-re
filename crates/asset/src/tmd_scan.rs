@@ -4,7 +4,7 @@
 //! word-aligned offset, attempts a structural parse, and records hits whose
 //! object/vert counts look plausible.
 //!
-//! Used by `asset tmd-scan` to inventory TMDs across all 1234 PROT entries
+//! Used by `asset tmd-scan` to inventory TMDs across all PROT entries
 //! (raw + LZS-decompressed) - the per-cutscene `chunk01_TMD/` extracts cover
 //! only ~29 unique meshes; the rest of the character/monster roster lives in
 //! containers we haven't broken out yet.

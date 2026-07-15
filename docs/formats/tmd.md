@@ -69,15 +69,17 @@ Bytes 0/1/2 of `first` and 1/2/3 of `second` are not consumed by the fast-path
 dispatch. The accurate per-row projection (matching
 [`legaia_tmd::descriptor`](../../crates/tmd/src/descriptor.rs)'s `TABLE`):
 
-| flags   | row | raw 8 bytes               | byte3 (shape) | byte4 (vtx off) |
-|---------|-----|---------------------------|---------------|-----------------|
-| 0x10/11 | 0   | `04 00 00 05 07 00 00 00` | 0x05          | 0x07            |
-| 0x12/13 | 1   | `09 00 00 07 06 00 00 00` | 0x07          | 0x06            |
-| 0x14/15 | 2   | `04 00 00 00 02 00 00 00` | 0x00          | 0x02            |
-| 0x16/17 | 3   | `06 00 00 02 06 00 00 00` | 0x02          | 0x06            |
-| 0x18/19 | 4   | `07 03 00 01 07 00 00 00` | 0x01          | 0x07            |
-| 0x1A/1B | 5   | `09 03 00 03 0B 00 00 00` | 0x03          | 0x0B            |
-| 0x20-27 | (re-uses rows 0-5 via the same `(flags>>1)-8` math) |  |  |  |
+Each row covers **four** flags values - a tri/quad pair for each of two adjacent
+`flags` (the low bit of `flags` is not consumed by the row-and-quad math):
+
+| row | flags (tri / quad) | raw 8 bytes               | byte3 (shape) | byte4 (vtx off) | family      |
+|-----|--------------------|---------------------------|---------------|-----------------|-------------|
+| 0   | 0x10,11 / 0x12,13  | `04 00 00 05 07 00 00 00` | 0x05          | 0x07            | FT, lit     |
+| 1   | 0x14,15 / 0x16,17  | `09 00 00 07 06 00 00 00` | 0x07          | 0x06            | GT, lit     |
+| 2   | 0x18,19 / 0x1A,1B  | `04 00 00 00 02 00 00 00` | 0x00          | 0x02            | F           |
+| 3   | 0x1C,1D / 0x1E,1F  | `06 00 00 02 06 00 00 00` | 0x02          | 0x06            | G           |
+| 4   | 0x20,21 / 0x22,23  | `07 03 00 01 07 00 00 00` | 0x01          | 0x07            | FT, baked   |
+| 5   | 0x24,25 / 0x26,27  | `09 03 00 03 0B 00 00 00` | 0x03          | 0x0B            | GT, baked   |
 
 `byte3 & 3` is the **shading / texture family** (`8002735c.txt:80027c50` etc.):
 `0 = F` (flat untextured), `1 = FT` (flat textured), `2 = G` (gouraud
@@ -86,11 +88,37 @@ chooses tri vs quad. So e.g. flags `0x1B` → row 2, byte3 0x00 → **F4** (flat
 quad), flags `0x1D` → row 3, byte3 0x02 → **G3** (gouraud tri), `0x1F` → row 3
 → **G4**.
 
-The renderer then derives the per-prim byte stride from `ilen` and the vertex
-read offset from `byte4` with a quad adjustment (`vert_off = byte4`, `+2` for a
-quad, overridden to `8` when byte3==1 and `0xE` when byte3==3, and the `+2`
-cancelled when byte3==0; `× 2` for the byte offset - see
-`Descriptor::vertex_offset_bytes`).
+### Vertex-index offset
+
+The per-prim byte stride is `ilen * 4`; the vertex-index read offset comes from
+`byte4` plus a per-`byte3` quad adjustment. **Triangles** read `byte4` (in u16
+units) directly. **Quads** take a per-`byte3` chain - and the two renderers that
+walk this table do not agree on it:
+
+| byte3 | rows  | `FUN_80029888` (lit renderer) | `FUN_8002735c` |
+|-------|-------|-------------------------------|----------------|
+| 0     | 2     | 2                             | `byte4` (= 2)  |
+| 1     | 4     | 8                             | 8              |
+| 2     | 3     | 8                             | `byte4 + 2` (= 8) |
+| 3     | 5     | 0xE                           | 0xE            |
+| 5, 7  | 0, 1  | `byte4` (7 / 6)               | `byte4 + 2` (9 / 8) |
+
+They agree everywhere except the **lit textured rows 0/1**, where
+`FUN_8002735c`'s `byte4 + 2` fallback reads past the vertex indices and into the
+normal-index block that trails them. The on-disc packets put the four vertex
+indices of a lit textured quad at **byte 12** for both rows (see the layouts
+below), so [`legaia_tmd::descriptor`](../../crates/tmd/src/descriptor.rs) resolves
+`6` (u16 units) for both - which is what `FUN_80029888` computes for row 1, and
+the one place its row-0 arithmetic (`byte4` = 7 → byte 14) parts company with the
+data. Pinned across every field/town env pack (10105 lit quads, 107 scenes):
+offset 12 is the only candidate with zero out-of-range indices, and it leaves the
+quads planar (0.79 units mean out-of-plane, vs 68-167 for 14/16/18). Guarded by
+`crates/engine-core/tests/env_mesh_prims_disc.rs`.
+
+Reading rows 0/1 quads at the `FUN_8002735c` offset makes their indices exceed
+the object's vertex count, so every mesh builder drops those prims - the visible
+symptom is a town house rendering as a shredded pile (Rim Elm object 137 kept 58
+of its 163 prims).
 
 ### Per-prim color / texture block
 
@@ -117,12 +145,19 @@ resolves the shape and the `vertex_offset` per group.
   held for the byte1 = 3 rows; the byte1 = 0 rows then read `(cba, tsb)` from
   geometry bytes and rendered as rainbow garbage (the Rim Elm decorative-plant
   props). `texture_block_offset` fixes this while leaving rows 4/5 byte-identical.
-- **Untextured**: a per-vertex RGB colour block (PSX `[R, G, B, code]` word; the
-  4th byte is the SDK GP0 command/code, not part of the colour). **Flat**
-  (`F3`/`F4`) stores **one** colour word at prim offset 0, shared by all corners
-  (the renderer loads it into the GTE RGBC reg and runs `NCDS` once); **gouraud**
-  (`G3`/`G4`) stores one colour word **per corner** at a 4-byte stride from prim
-  offset 0 (`colour[v] = bytes[v*4 .. v*4+3]`, `NCDS` per vertex).
+- **Colour block** (every row except the lit rows 0/1): a per-vertex RGB colour
+  block (PSX `[R, G, B, code]` word; the 4th byte is the SDK GP0 command/code,
+  not part of the colour - `0x20`/`0x24`/`0x28`/`0x2C`/`0x30`/`0x34`/`0x38`/`0x3C`,
+  optionally `| 2` for the semi-transparent variant, and only on the *leading*
+  word of a gouraud packet). **Flat** (`F3`/`F4`/`FT3`/`FT4`) stores **one**
+  colour word at prim offset 0, shared by all corners; **gouraud**
+  (`G3`/`G4`/`GT3`/`GT4`) stores one colour word **per corner** at a 4-byte
+  stride from prim offset 0 (`colour[v] = bytes[v*4 .. v*4+3]`). On a *textured*
+  prim this block is what pushes the texture block off offset 0. The renderer
+  loads the word into the GTE `RGBC` register and runs `DPCS` (the depth cue) -
+  **not** an `NC*` light op - and the GPU then modulates the texel by it
+  (`texel * colour / 128`). This is the field's entire lighting signal; see
+  [`subsystems/renderer.md`](../subsystems/renderer.md#lighting).
 
 The exact untextured record layouts (colour block first, then the vertex-index
 block), pinned byte-exact from the renderer + real town01 props (pack 31 obj
@@ -146,13 +181,49 @@ The quad winding-remap table `DAT_8007b410 = 00 01 03 02` reorders both the
 colour slots and the vertex indices for quads, so `colour[i]` pairs with
 `vertex[i]` after the remap.
 
-**No per-prim normal field.** The renderer reads only the prim pointer
-(`param_1[4]`), the vertex base (`param_1[0]`) and the loop count
-(`param_1[5]`) - it never reads the object header's normal table
-(`param_1[2]`/`param_1[3]`). Lighting is the GTE `NCDS` op fed the stored
-**colour** word; the object's global light/colour matrices are set once at
-function entry. Some TMDs populate a normal array, but the retail renderer
-ignores it - there is no per-prim normal offset to decode.
+### Lit textured records (rows 0/1)
+
+The baked rows above carry their shading in the colour block. The **lit** rows
+carry it in **normal indices that trail the vertex indices**, and the texture
+block is a fixed 12 bytes for both tris and quads - the quad packs `u3`/`v3` into
+the half-word the tri layout leaves as padding:
+
+```
+GT3 (flags 0x14/15), ilen 6, 24-byte record:
+  [0..12)  [u0 v0][cba][u1 v1][tsb][u2 v2][pad]
+  [12..18) 3 × u16 vertex byte-offsets
+  [18..24) 3 × u16 normal byte-offsets      (one per corner)
+
+GT4 (flags 0x16/17), ilen 7, 28-byte record:
+  [0..12)  [u0 v0][cba][u1 v1][tsb][u2 v2][u3 v3]
+  [12..20) 4 × u16 vertex byte-offsets
+  [20..28) 4 × u16 normal byte-offsets      (one per corner)
+
+FT4 (flags 0x12/13), ilen 6, 24-byte record:
+  [0..12)  [u0 v0][cba][u1 v1][tsb][u2 v2][u3 v3]
+  [12..20) 4 × u16 vertex byte-offsets
+  [20..22) 1 × u16 normal byte-offset       (flat: one per face)
+  [22..24) pad
+```
+
+The object header's `n_normal` confirms the block: it is exactly
+`1×FT4 + 3×GT3 + 4×GT4` summed over the object's lit groups (Rim Elm env pack
+slot 36 object 0: `8 + 44*3 + 100*4 = 540`, its declared normal count). The
+**tri** of row 0 (`FT3`, flags `0x10/11`) is the one shape that puts its single
+normal *before* the vertices - `[12-byte texture block][n0][v0 v1 v2]` - which is
+what row 0's `byte4` (7 → byte 14) encodes.
+
+**Neither renderer lights from the normal array.** `FUN_8002735c` reads only the
+prim pointer (`param_1[4]`), the vertex base (`param_1[0]`) and the loop count
+(`param_1[5]`) - never the object header's normal table (`param_1[2]` /
+`param_1[3]`). `FUN_80029888`, the sibling that handles the lit rows (the only
+other function in `SCUS_942.54` that reads the descriptor table), issues no `NC*`
+op either: between them the two renderers run exactly one GTE colour op, `DPCS`
+(`cop2 0x780010`). So the lit rows' normals are authored but never transformed,
+and shading is the stored **colour** word modulating the texel on the GPU. See
+[`subsystems/renderer.md`](../subsystems/renderer.md#lighting). The engine port
+re-derives smooth normals from the geometry, so it decodes the indices only to
+know where the vertex block ends.
 
 Mis-reading an untextured colour block as a texture block yields bogus `(cba,
 tsb)` and samples a random VRAM page - the historic "flat green tint / transparent

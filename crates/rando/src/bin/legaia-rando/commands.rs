@@ -288,12 +288,25 @@ pub(crate) fn cmd_doors(input: &Path) -> Result<()> {
             scenes += 1;
             println!("[{:>4}] {}", d.entry_idx, d.home_scene);
         }
+        let class = match d.class {
+            apply::DoorSiteClass::WalkDoor => "walk-door",
+            apply::DoorSiteClass::ScriptInvoked => "EXCLUDED script",
+            apply::DoorSiteClass::WorldMap => "EXCLUDED world-map",
+        };
         println!(
-            "    -> {:<10} (index {:>4})  entry=({:#04x},{:#04x}) dir={:#04x}  @0x{:x}",
+            "    -> {:<10} (index {:>4})  entry=({:#04x},{:#04x}) dir={:#04x}  @0x{:x}  [{class}]",
             d.dest_scene, d.index, d.entry_x, d.entry_z, d.dir, d.op_pc
         );
     }
-    println!("\n{} doors across {scenes} scenes", doors.len());
+    let pool = doors
+        .iter()
+        .filter(|d| d.class == apply::DoorSiteClass::WalkDoor)
+        .count();
+    println!(
+        "\n{} doors across {scenes} scenes ({pool} in the shuffle pool; the rest are \
+         script/cutscene-invoked or world-map transitions, kept vanilla)",
+        doors.len()
+    );
     Ok(())
 }
 
@@ -323,6 +336,44 @@ pub(crate) fn cmd_house_doors(input: &Path) -> Result<()> {
     }
     println!(
         "\n{} intra-town door-warp targets across {scenes} scenes",
+        sites.len()
+    );
+    Ok(())
+}
+
+pub(crate) fn cmd_map_doors(input: &Path) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let sites = apply::current_map_doors(&patcher)?;
+    let mut cur_entry = usize::MAX;
+    let mut scenes = 0usize;
+    let mut eligible = 0usize;
+    for (idx, scene, s) in &sites {
+        if *idx != cur_entry {
+            cur_entry = *idx;
+            scenes += 1;
+            println!("[{idx:>4}] {scene}");
+        }
+        let class = match s.class {
+            legaia_rando::map_door::MapDoorClass::MainBound => "exit (main-bound)",
+            legaia_rando::map_door::MapDoorClass::PocketBound => "entry (pocket-bound)",
+            legaia_rando::map_door::MapDoorClass::Static => "static (unattributed)",
+        };
+        if s.class != legaia_rando::map_door::MapDoorClass::Static {
+            eligible += 1;
+        }
+        println!(
+            "    tile ({:>3},{:>3}) -> dest ({:>3},{:>3})  landing tile ({:>3},{:>3})  {class}",
+            s.tile.0,
+            s.tile.1,
+            s.dest.0,
+            s.dest.1,
+            s.dest_tile().0,
+            s.dest_tile().1
+        );
+    }
+    println!(
+        "\n{} kind-0 intra-scene teleports across {scenes} scenes ({eligible} shuffle-eligible)",
         sites.len()
     );
     Ok(())

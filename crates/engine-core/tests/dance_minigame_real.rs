@@ -113,6 +113,71 @@ fn real_dance_chart_drives_a_scoring_run() {
     );
 }
 
+/// The **competitors' runs are real**: retail synthesises each CPU dancer's pad
+/// word from the same chart (`FUN_801d1820` -> `FUN_801d4040`) and runs it
+/// through the same award routine (`FUN_801d1af4`), so their scores climb off
+/// the disc's own per-kind bonus row (`DAT_801d41a4`) and they spend their three
+/// triangles on the disc's own schedule (`DAT_801d41e4`). Drive a hands-off run
+/// on the real overlay tables and assert exactly that.
+#[test]
+fn real_tables_drive_the_rival_dancers() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    let tables = legaia_asset::dance_chart::parse_tables(&overlay).expect("scoring tables decode");
+    // Every kind's bonus row is the retail `k, 2k, 3k` shape - the (lane + 1)
+    // scaling is baked into the data, not applied by the code.
+    for kind in 0..4 {
+        let base = tables.bonus(kind, 0);
+        assert!(base > 0, "kind {kind} has a sequence-bonus row");
+        assert_eq!(tables.bonus(kind, 1), base * 2);
+        assert_eq!(tables.bonus(kind, 2), base * 3);
+    }
+
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart + tables load");
+    assert_eq!(
+        game.dancer_count(),
+        3,
+        "the qualifier floor is three dancers"
+    );
+    assert_eq!(game.dancer_kind(0), 0, "slot 0 is Noa (the human)");
+    for i in 0..3 {
+        assert_eq!(game.dancer_triangles(i), 3, "three groovy moves per song");
+    }
+
+    // Hands off the pad: only the CPU auto-feed runs.
+    let mut climbed = [0u32; 2];
+    while !game.song_over() {
+        game.advance(1);
+        for (n, c) in climbed.iter_mut().enumerate() {
+            *c = game.dancer_score(n + 1);
+        }
+    }
+    assert_eq!(game.score(), 0, "the human never pressed");
+    for (n, score) in climbed.iter().enumerate() {
+        assert!(*score > 0, "rival {} scored off the real chart", n + 1);
+    }
+    // Both rivals spent at least one triangle on the disc schedule, and no rival
+    // ever exceeded its stock of three.
+    let spent: Vec<u32> = (1..3).map(|i| 3 - game.dancer_triangles(i)).collect();
+    assert!(
+        spent.iter().any(|&s| s > 0),
+        "the disc schedule fires a CPU groovy move during the song"
+    );
+    assert!(spent.iter().all(|&s| s <= 3));
+    assert!(
+        !game.beating_rivals(),
+        "a player who never presses loses the qualifier"
+    );
+    eprintln!(
+        "[dance] hands-off run: rivals {:?} (kinds {:?}), triangles spent {:?}",
+        climbed,
+        [game.dancer_kind(1), game.dancer_kind(2)],
+        spent
+    );
+}
+
 /// Mirror the **play-window K-key path** exactly: open the disc as a
 /// [`ProtIndex`], read the dance overlay through `entry_bytes_extended`, lift it
 /// to loaded form, parse the chart, then drive it through `World::enter_dance` +

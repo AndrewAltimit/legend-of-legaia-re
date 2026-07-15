@@ -115,23 +115,44 @@ impl Archive {
                 break;
             }
             let start_lba = toc[p + 2];
-            let indexed_size_sectors = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
+            // A fully-zeroed TOC row is tail padding, not an entry - but the
+            // "+4" in the indexed formula makes it look like a sane 4-sector
+            // entry at LBA 0 (the archive header). Skip it before the size
+            // heuristics run.
+            if start_lba == 0 && toc[p + 3] == 0 && toc[p + 5] == 0 {
+                continue;
+            }
+            let indexed_raw = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
             // Trailing-gap candidate: bytes from start_lba to next entry's
             // start_lba. Use wrapping_sub so unsorted entries don't blow up
             // - they fall back to the indexed size.
             let next_start_lba = toc[p + 3];
             let footprint_sectors = next_start_lba.wrapping_sub(start_lba);
+            let footprint_sane =
+                footprint_sectors > 0 && footprint_sectors <= MAX_REASONABLE_FOOTPRINT_SECTORS;
+            // The last TOC page rows sit against a zeroed tail: for the final
+            // real entries `toc[p+5]` (and eventually `toc[p+3]`) are 0, so
+            // the indexed formula underflows to a huge wrapped value. Those
+            // entries are real on-disc content (retail extraction 1231 is the
+            // dance minigame's SFX VAB, 1232 the last data sector) - fall back
+            // to the LBA footprint instead of silently dropping them.
+            let indexed_size_sectors = if indexed_raw <= MAX_REASONABLE_FOOTPRINT_SECTORS {
+                indexed_raw
+            } else if footprint_sane {
+                footprint_sectors
+            } else {
+                // Neither formula yields a sane size: a phantom row in the
+                // zeroed tail. Skip it.
+                continue;
+            };
             // Only honor the trailing extension when it's a sane positive
             // number (entries aren't always strictly sorted; an unsorted
             // pair would produce a huge wrapped value).
-            let extended_size_sectors = if footprint_sectors <= MAX_REASONABLE_FOOTPRINT_SECTORS
-                && footprint_sectors > indexed_size_sectors
-            {
+            let size_sectors = if footprint_sane && footprint_sectors > indexed_size_sectors {
                 footprint_sectors
             } else {
                 indexed_size_sectors
             };
-            let size_sectors = extended_size_sectors;
             let byte_offset = (start_lba as u64) * (SECTOR as u64);
             let size_bytes = (size_sectors as u64) * (SECTOR as u64);
             let indexed_size_bytes = (indexed_size_sectors as u64) * (SECTOR as u64);
@@ -244,4 +265,66 @@ fn detect_header(reader: &mut dyn ReadSeek, len: u64) -> Result<Header> {
         });
     }
     bail!("PROT-style header not found at offset 0x000 or 0x800");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a synthetic PROT.DAT whose TOC tail mirrors the retail shape:
+    /// the last real rows read `toc[p+5]` (and then `toc[p+3]`) out of the
+    /// zeroed padding past the TOC, so the indexed size formula underflows.
+    fn tail_shaped_prot() -> Vec<u8> {
+        let sectors = 20u32;
+        let mut img = vec![0u8; (sectors * SECTOR) as usize];
+        // Header: [pad, file_num - 1, header_sectors]
+        img[4..8].copy_from_slice(&6u32.to_le_bytes());
+        img[8..12].copy_from_slice(&1u32.to_le_bytes());
+        // TOC (starts at +8, entry p reads toc[p+2], toc[p+3], toc[p+5]):
+        // start LBAs 1, 3, 10, 15, 19, 20, then the zeroed tail.
+        for (i, lba) in [1u32, 3, 10, 15, 19, 20].iter().enumerate() {
+            let off = 8 + (2 + i) * 4;
+            img[off..off + 4].copy_from_slice(&lba.to_le_bytes());
+        }
+        img
+    }
+
+    /// The last entries before the zeroed TOC tail must resolve via the LBA
+    /// footprint rather than being silently dropped (retail extraction 1231 -
+    /// the dance minigame's SFX VAB - and 1232 are exactly this shape).
+    #[test]
+    fn toc_tail_entries_resolve_by_footprint() {
+        let arch = Archive::from_bytes(tail_shaped_prot()).expect("synthetic archive parses");
+        // Ordinary interior entry: the indexed formula applies untouched.
+        let e2 = arch.entries.iter().find(|e| e.index == 2).expect("entry 2");
+        assert_eq!(e2.start_lba, 10);
+        assert_eq!(e2.indexed_size_sectors, 9); // toc[7]=20 - toc[5]=15 + 4
+        // Entry 3: `toc[p+5]` is in the zeroed tail, so the indexed formula
+        // underflows; the footprint (19 - 15) is the real size.
+        let e3 = arch
+            .entries
+            .iter()
+            .find(|e| e.index == 3)
+            .expect("entry 3 kept");
+        assert_eq!(e3.start_lba, 15);
+        assert_eq!(e3.size_sectors, 4);
+        assert_eq!(e3.indexed_size_sectors, 4);
+        // Entry 4: both `toc[p+4]` and `toc[p+5]` are zero; footprint = 1.
+        let e4 = arch
+            .entries
+            .iter()
+            .find(|e| e.index == 4)
+            .expect("entry 4 kept");
+        assert_eq!(e4.start_lba, 19);
+        assert_eq!(e4.size_sectors, 1);
+        // Entry 5 starts at the file end with no next LBA: a phantom row of
+        // the zeroed tail, still dropped.
+        assert!(arch.entries.iter().all(|e| e.index != 5));
+        // Rows past entry 5 are all-zero padding: the "+4" indexed formula
+        // would read each as a sane 4-sector entry at LBA 0 (the header) -
+        // the zero-row guard must drop them (retail: a phantom idx-1234
+        // entry that inflated the archive to 1234 entries).
+        assert!(arch.entries.iter().all(|e| e.start_lba != 0));
+        assert_eq!(arch.entries.last().map(|e| e.index), Some(4));
+    }
 }

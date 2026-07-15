@@ -18,8 +18,11 @@ use legaia_prot::archive::Archive;
 // Pinned baselines (NA SCUS-94254, project author's dump)
 // ============================================================================
 
-/// Total entries we expect from PROT.DAT.
-const EXPECTED_PROT_ENTRIES: usize = 1232;
+/// Total entries we expect from PROT.DAT: indices 0..=1232 (1231 = the
+/// dance-minigame SFX VAB, 1232 = the last data sector; the zeroed TOC
+/// tail rows past 1232 are padding, dropped by the archive's zero-row
+/// guard).
+const EXPECTED_PROT_ENTRIES: usize = 1233;
 
 /// Class breakdown from `categorize::classify` over every PROT entry's
 /// **full on-disc footprint** (indexed payload + any trailing-overlay
@@ -59,11 +62,14 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // gained non-zero trailing-overlay content that shifts them out of the
     // dominant-zero bucket.
     ("mostly_zeros", 70),
-    // `overlay_data_blob` (27 → 27 - unchanged; trailing-overlay bytes are
-    // mostly code or already-classified data, not the mixed-text shape).
-    ("overlay_data_blob", 27),
+    // `overlay_data_blob` 27 → 26: the phantom zeroed-TOC-row entry
+    // (offset 0 = the archive header bytes, mixed-text shape) is dropped
+    // by the archive's zero-row guard.
+    ("overlay_data_blob", 26),
     ("overlay_ptr_table", 42),
-    ("pochi_filler", 265),
+    // `pochi_filler` 265 → 266: the recovered final TOC entry (index 1232,
+    // the archive's last data sector) is a single padding sector.
+    ("pochi_filler", 266),
     // `scene_asset_table` 80 → 88: the detector now also accepts the
     // count=6 header variant used by the early standalone towns (first
     // descriptor anchored at 0x38, MAN at descriptor index 1/2). Eight
@@ -73,7 +79,9 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `scene_tmd_stream` jumped (148 → 182) as 34 entries' trailing-overlay
     // bytes happened to fit the streaming-with-bare-TMD shape.
     ("scene_tmd_stream", 182),
-    ("scene_vab_stream", 217),
+    // `scene_vab_stream` 217 → 218: the recovered TOC-tail entry 1231 is
+    // the dance minigame's SFX VAB.
+    ("scene_vab_stream", 218),
     ("scene_v12_table", 97),
     ("scene_scripted_asset_table", 79),
     ("scene_event_scripts", 21),

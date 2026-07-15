@@ -167,30 +167,50 @@ impl World {
         sparring_idx
     }
 
-    /// Install walk-touch entries for the scene's **gate-0 tile-trigger
-    /// object binds** (house doors): each bind sits at its trigger tile's
-    /// world centre and fires the partition-0 record's decoded effect
-    /// (see [`crate::man_field_scripts::p0_record_walk_touch_event`]) on
-    /// player contact, through the same [`Self::check_field_walk_touch`]
-    /// dispatch as placement contacts.
+    /// Install walk-touch entries for the scene's **`.MAP` object binds**
+    /// (house doors): each bind sits at the object's contact-box centre
+    /// (`FUN_801CFC40`) and fires the MAN record the object's key tile
+    /// resolves (`FUN_8003A55C`) on player contact, through the same
+    /// [`Self::check_field_walk_touch`] dispatch as placement contacts.
     ///
     /// Keyed from [`Self::TRIGGER_WALK_TOUCH_SLOT_BASE`] so the synthetic
     /// slots never collide with partition-1 placement indices. Call after
     /// [`Self::install_field_carriers_from_man`] (whose inner install clears
     /// `field_walk_touch`); idempotent per scene - re-installing replaces the
     /// previous bind set.
-    // REF: FUN_8003A55C, FUN_801d5b5c
+    // REF: FUN_8003A55C, FUN_801CFC40, FUN_801d5b5c
     pub fn install_trigger_walk_touch(
         &mut self,
         binds: &[((i16, i16), crate::man_field_scripts::WalkTouchEvent)],
     ) {
+        self.install_trigger_walk_touch_with_records(
+            &binds.iter().map(|&(p, e)| (p, e, None)).collect::<Vec<_>>(),
+        );
+    }
+
+    /// [`Self::install_trigger_walk_touch`] plus each bind's **flat MAN record
+    /// index**, so the touch dispatch can re-resolve the record's story-flag
+    /// branch at contact time (see [`Self::field_walk_touch_records`]).
+    pub fn install_trigger_walk_touch_with_records(
+        &mut self,
+        binds: &[(
+            (i16, i16),
+            crate::man_field_scripts::WalkTouchEvent,
+            Option<usize>,
+        )],
+    ) {
         self.field_walk_touch
             .retain(|slot, _| *slot < Self::TRIGGER_WALK_TOUCH_SLOT_BASE);
-        for (i, (pos, event)) in binds.iter().enumerate() {
+        self.field_walk_touch_records
+            .retain(|slot, _| *slot < Self::TRIGGER_WALK_TOUCH_SLOT_BASE);
+        for (i, (pos, event, record)) in binds.iter().enumerate() {
             let Some(slot) = Self::TRIGGER_WALK_TOUCH_SLOT_BASE.checked_add(i as u8) else {
                 break;
             };
             self.field_walk_touch.insert(slot, (*pos, *event));
+            if let Some(record) = record {
+                self.field_walk_touch_records.insert(slot, *record);
+            }
         }
     }
 
@@ -348,6 +368,17 @@ impl World {
         let confirm = self.input.just_pressed(PadButton::Cross);
         let cancel = self.input.just_pressed(PadButton::Circle);
 
+        // A prop record run (door swing / cupboard search) owns the frame's
+        // input: its own stepper routes the confirm edges
+        // ([`Self::step_prop_interaction`]).
+        if self
+            .inline_dialogue
+            .as_ref()
+            .is_some_and(|id| id.prop_anchor.is_some())
+        {
+            return;
+        }
+
         if self.current_dialog.is_some() {
             // A carrier's spar menu owns the input while it is up (navigate +
             // confirm the fight option); only then does the generic dismiss run.
@@ -368,7 +399,7 @@ impl World {
             return;
         }
 
-        if self.dialog_input_consumed || !confirm || self.field_npc_positions.is_empty() {
+        if self.dialog_input_consumed || !confirm {
             return;
         }
         // Retail geometry: a single facing-indexed compass probe 64 units
@@ -378,10 +409,24 @@ impl World {
         // face-the-NPC step retail applies to moving-class partners
         // (`flags & 0x20010 == 0x20000`), which every talk NPC is
         // (capture-pinned by `rimelm_npc_press_tetsu`).
-        if let Some(npc_slot) = self.field_interact_probe_slot() {
+        if !self.field_npc_positions.is_empty()
+            && let Some(npc_slot) = self.field_interact_probe_slot()
+        {
             self.dialog_input_consumed = true;
             self.trigger_field_interact(0, npc_slot);
             self.face_field_npc(npc_slot);
+            return;
+        }
+        // The same button probe fires the **interact-gated props** (retail's
+        // `FUN_801CF9F4` walks one actor list; the `+0x10 & 0x40020000` class
+        // - Rim Elm's cupboards, `31 1E` in the spawn prologue - is only ever
+        // posted from here, never from body contact). The prop's bind record
+        // then runs through the field VM: swing open, grant + message, swing
+        // shut on dismiss.
+        if let Some(anchor) = self.field_interact_prop_anchor()
+            && self.start_prop_interaction(anchor)
+        {
+            self.dialog_input_consumed = true;
         }
     }
 

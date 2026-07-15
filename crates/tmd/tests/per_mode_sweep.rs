@@ -17,6 +17,7 @@
 //! Per the project memory's TMD walker note this should pass on all
 //! 16830 TMDs without exception.
 
+use legaia_tmd::legaia_prims::MODULATION_NEUTRAL;
 use legaia_tmd::{legaia_prims, parse};
 use std::path::{Path, PathBuf};
 
@@ -65,8 +66,11 @@ fn per_mode_descriptor_sweep_validates_every_tmd() {
     let mut count_mismatch = 0usize;
     let mut iter_fail = 0usize;
     let mut parse_fail = 0usize;
-    // Colour-decode invariants: untextured prims expose per-vertex colours +
-    // no UVs; textured prims expose no colours. Counters keep it non-vacuous.
+    // Colour-decode invariants: EVERY prim exposes one colour per vertex -
+    // that colour is the field's lighting signal (the PSX GPU modulates a
+    // textured prim's texel by it, `texel * colour / 128`, and fills an
+    // untextured prim with it outright). Untextured prims additionally expose
+    // no UVs. Counters keep it non-vacuous.
     let mut color_invariant_fail = 0usize;
     let mut untextured_prims_with_colors = 0usize;
     let mut modes_seen: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
@@ -113,6 +117,7 @@ fn per_mode_descriptor_sweep_validates_every_tmd() {
                 }
                 let desc = legaia_tmd::descriptor::Descriptor::for_flags(g.header.flags);
                 let is_textured = desc.is_some_and(|d| d.packet_shape.is_textured());
+                let texblock_off = desc.and_then(|d| d.texture_block_offset);
                 let n_verts = g.header.n_vertices();
                 for prim in &g.prims {
                     let idxs = prim.vertex_indices();
@@ -121,15 +126,27 @@ fn per_mode_descriptor_sweep_validates_every_tmd() {
                         file_ok = false;
                         break;
                     }
-                    // Colour decode: textured prims carry no colours; untextured
-                    // prims carry exactly one colour per vertex and no UVs.
+                    // Colour decode: one colour per vertex, always. A textured
+                    // prim on a baked-colour row reads its own colour block; one
+                    // on a light-source-lit row (which has none) reads the
+                    // neutral 0x80, so it draws at the raw texel. An untextured
+                    // prim carries colours and no UVs.
+                    if prim.colors.len() != n_verts {
+                        color_invariant_fail += 1;
+                        file_ok = false;
+                    }
                     if is_textured {
-                        if !prim.colors.is_empty() {
+                        // A lit prim's texture block sits at offset 0; reading a
+                        // colour there would hand the renderer `[u0, v0, cba_lo]`
+                        // as an RGB. Neutral is the only correct answer.
+                        if texblock_off == Some(0)
+                            && prim.colors.iter().any(|&c| c != [MODULATION_NEUTRAL; 3])
+                        {
                             color_invariant_fail += 1;
                             file_ok = false;
                         }
                     } else {
-                        if prim.colors.len() != n_verts || !prim.uvs.is_empty() {
+                        if !prim.uvs.is_empty() {
                             color_invariant_fail += 1;
                             file_ok = false;
                         }

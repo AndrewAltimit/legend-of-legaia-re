@@ -24,6 +24,16 @@ impl ApplicationHandler for PlayWindowApp {
             r.set_psx_mode(true);
             log::info!("play-window: PSX-faithful render mode enabled");
         }
+        // Opt-in dynamic-lighting enhancement (`--dynamic-lighting`, or the
+        // `I` key at runtime): soft warm directional light + screen-centred
+        // light pool over the baked shading. Off by default - retail has no
+        // field light source, and the disabled path is pixel-identical.
+        if self.dynamic_lighting
+            && let Some(r) = self.win.renderer.as_ref()
+        {
+            r.set_dynamic_lighting(true);
+            log::info!("play-window: dynamic-lighting enhancement enabled (I toggles)");
+        }
         self.upload_assets();
         self.win.request_redraw();
     }
@@ -51,6 +61,35 @@ impl ApplicationHandler for PlayWindowApp {
                 ..
             } => {
                 self.handle_keyboard(evl, code, state);
+            }
+            // Left-mouse drag-orbit: horizontal drag rotates the field
+            // camera around the player (`Camera::manual_orbit`). The
+            // movement compass reads the same field, so the d-pad remap
+            // tracks the orbited view (see `field_follow_camera_mvp`).
+            // Field free-roam only - world map / battle / menus keep their
+            // own cameras.
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(last) = self.orbit_drag_last_x {
+                    let dx = (position.x - last) as f32;
+                    if dx != 0.0
+                        && !self.boot_ui.is_active()
+                        && self.session.host.world.mode == SceneMode::Field
+                    {
+                        const ORBIT_RAD_PER_PX: f32 = 0.008;
+                        self.session.camera.manual_orbit = (self.session.camera.manual_orbit
+                            + dx * ORBIT_RAD_PER_PX)
+                            .rem_euclid(std::f32::consts::TAU);
+                    }
+                    self.orbit_drag_last_x = Some(position.x);
+                }
+                self.cursor_x = position.x;
+            }
+            WindowEvent::MouseInput {
+                state,
+                button: winit::event::MouseButton::Left,
+                ..
+            } => {
+                self.orbit_drag_last_x = (state == ElementState::Pressed).then_some(self.cursor_x);
             }
             WindowEvent::RedrawRequested => {
                 self.handle_redraw();

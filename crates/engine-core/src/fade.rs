@@ -195,8 +195,9 @@ pub fn spawn_fade(template: &FadeTemplate, id: i16, slot_free: bool) -> Option<F
 /// REF: FUN_8002735C (far colour → GTE cr21-23)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorGrade {
-    /// Gold/sepia direction the pixel luminance is tinted toward, linear
-    /// `0.0..=1.0` per channel.
+    /// Gold/sepia direction the pixel luminance is tinted toward, `0.0..=1.0`
+    /// per channel, in the same display-referred space as every other colour
+    /// the engine handles (PSX framebuffer values; nothing re-encodes them).
     pub gold: [f32; 3],
     /// Cross-fade strength `0.0..=1.0` (`0` = untouched, `1` = full collapse).
     pub strength: f32,
@@ -204,16 +205,14 @@ pub struct ColorGrade {
 
 impl ColorGrade {
     /// The `opdeene` opening-prologue grade, matching the retail cutscene's
-    /// measured warm amber. The retail *display* direction is `(1.0, 0.90,
-    /// 0.24)` (R≈G, blue crushed to ¼ - the traced far-colour ratio
-    /// 255:230:62). These coefficients are stored in **linear** space because
-    /// the mesh shader multiplies before the sRGB framebuffer encode (gamma
-    /// ≈ 2.0), so each value is the display target squared:
-    /// `(1.0, 0.90², 0.24²) = (1.0, 0.81, 0.058)`. Verified pixel-aligned:
-    /// the encoded output lands `G/R ≈ 0.90`, `B/R ≈ 0.24`, all green/blue
-    /// gone. Full strength (`1.0`).
+    /// measured warm amber: the display direction is `(1.0, 0.90, 0.24)`
+    /// (R≈G, blue crushed to ¼ - the traced far-colour ratio 255:230:62).
+    /// The shader multiplies these into a pixel that is already a PSX
+    /// framebuffer value, and the attachment is UNORM, so nothing re-encodes
+    /// the product: the coefficients *are* the display ratios. Full strength
+    /// (`1.0`).
     pub const PROLOGUE_SEPIA: ColorGrade = ColorGrade {
-        gold: [1.0, 0.81, 0.058],
+        gold: [1.0, 0.90, 0.24],
         strength: 1.0,
     };
 }
@@ -309,11 +308,12 @@ mod tests {
         assert_eq!(g.gold[0], 1.0, "red is the anchor channel");
         assert!(g.gold[1] < g.gold[0], "green below red");
         assert!(g.gold[2] < g.gold[1], "blue crushed below green");
-        // Stored linear; the sRGB framebuffer encode (~gamma 2.0) raises each
-        // channel's *display* ratio to sqrt(linear). Retail's measured display
-        // direction is G/R ≈ 0.90, B/R ≈ 0.24.
-        let disp_g = g.gold[1].sqrt();
-        let disp_b = g.gold[2].sqrt();
+        // Display-referred, like every colour the engine handles: nothing on
+        // the path re-encodes the shaded pixel (the attachment is UNORM), so
+        // the stored coefficients are retail's measured display direction
+        // as-is - G/R ~= 0.90, B/R ~= 0.24.
+        let disp_g = g.gold[1] / g.gold[0];
+        let disp_b = g.gold[2] / g.gold[0];
         assert!(
             (disp_g - 0.90).abs() < 0.02,
             "display G/R ~= 0.90, got {disp_g:.3}"

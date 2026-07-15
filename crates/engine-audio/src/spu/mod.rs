@@ -28,6 +28,7 @@
 
 pub mod adpcm;
 pub mod adsr;
+pub mod gauss;
 pub mod ram;
 pub mod reverb;
 pub mod voice;

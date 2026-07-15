@@ -516,17 +516,29 @@ pub(super) fn decode_menu_ctrl(
             }
         }
         7 => {
-            need(6)?;
+            // Two operand shapes (`FUN_801de840` case 7): sub-0 (`& 0x0F`,
+            // clear walls) and sub-1 (`| 0xF0`, block all four sub-cells)
+            // ignore the mask, so they carry only the four range bytes and
+            // are **6-byte** ops (`s8 += 6`). sub-2 (`& ~(mask << 4)`) and
+            // sub-3 (`| mask << 4`) consume a trailing mask byte and are
+            // **7-byte** ops (`return param_2 + 7`). Reading a phantom mask
+            // byte on sub-0/sub-1 - and advancing 7 - desyncs every
+            // subsequent instruction in the record, which is what a linear
+            // walk past a collision paint used to do. The executing VM
+            // (`legaia-engine-vm`, field `menu_ctrl` nibble 7) advances by
+            // exactly these widths.
             let sub = op0 & 0x0F;
+            let has_mask = sub >= 2;
+            need(if has_mask { 6 } else { 5 })?;
             mk(
-                header_size + 6,
+                header_size + if has_mask { 6 } else { 5 },
                 MenuCtrlKind::Nibble7Tile {
                     sub,
                     x0: bytecode[operand + 1],
                     z0: bytecode[operand + 2],
                     x1: bytecode[operand + 3],
                     z1: bytecode[operand + 4],
-                    mask: bytecode[operand + 5],
+                    mask: if has_mask { bytecode[operand + 5] } else { 0 },
                 },
             )
         }

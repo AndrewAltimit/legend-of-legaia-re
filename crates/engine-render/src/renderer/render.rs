@@ -24,11 +24,20 @@ impl Renderer {
             .surface
             .get_current_texture()
             .context("get current swapchain texture")?;
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        // Viewed as UNORM even when the surface itself is sRGB: the shaders
+        // write PSX framebuffer bytes, which must reach the display unencoded
+        // (see `choose_surface_format`).
+        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.view_format),
+            ..Default::default()
+        });
+        // `acquire` is the swapchain wait: under vsync (and under a full frame
+        // queue with vsync off) this is where the CPU blocks, so keeping it as
+        // its own profiler stage stops it from being misread as GPU-submit cost.
+        crate::profile::mark("acquire");
         self.encode_frame(target, &view)?;
         frame.present();
+        crate::profile::mark("present");
         Ok(())
     }
 
@@ -60,7 +69,7 @@ impl Renderer {
                     bytemuck::cast_slice(&[MeshUniforms {
                         mvp: mvp.to_cols_array_2d(),
                         // Light coming from upper-back-left in world space.
-                        light_dir: normalize3([0.4, -0.8, 0.4]),
+                        depth_cue: self.depth_cue.get(),
                         psx_params: [
                             self.config.width as f32,
                             self.config.height as f32,
@@ -69,6 +78,14 @@ impl Renderer {
                         ],
                         tex_window: self.tex_window.get(),
                         grade: self.color_grade.get(),
+                        flags: [
+                            self.backface_cull.get(),
+                            if self.semi_blend.get() { 1.0 } else { 0.0 },
+                            0.0,
+                            0.0,
+                        ],
+                        light_dir: self.dyn_light_dir_uniform(),
+                        light_color: self.dyn_light_color_uniform(),
                     }]),
                 );
             }
@@ -102,6 +119,7 @@ impl Renderer {
             }
             RenderTarget::Clear => {}
         }
+        crate::profile::mark("uniforms");
 
         let view = color_view;
         let mut enc = self
@@ -203,7 +221,7 @@ impl Renderer {
                     // by per-prim depth (the retail ordering-table walk),
                     // selecting the matching ABR blend pipeline per run.
                     // Gated like the rest of the faithful extras.
-                    if self.psx_mode.get() && mesh.has_semi_prims() {
+                    if self.semi_blend.get() && mesh.has_semi_prims() {
                         let c = psx_blend::MODE0_BLEND_CONSTANT;
                         rp.set_blend_constant(wgpu::Color {
                             r: c,
@@ -297,7 +315,7 @@ impl Renderer {
                     // the retail LIFO bucket order (`AddPrim` prepends).
                     let any_semi = scene.draws.iter().any(|d| d.mesh.has_semi_prims())
                         || scene.color_draws.iter().any(|d| d.mesh.has_semi_prims());
-                    if self.psx_mode.get() && any_semi {
+                    if self.semi_blend.get() && any_semi {
                         let c = psx_blend::MODE0_BLEND_CONSTANT;
                         rp.set_blend_constant(wgpu::Color {
                             r: c,
@@ -419,7 +437,9 @@ impl Renderer {
                 }
             }
         }
+        crate::profile::mark("encode");
         self.queue.submit(std::iter::once(enc.finish()));
+        crate::profile::mark("submit");
         Ok(())
     }
 
@@ -440,7 +460,9 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: self.config.format,
+            // UNORM, like the presented frame: a screenshot must read back the
+            // exact bytes the window shows (see `choose_surface_format`).
+            format: self.view_format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
@@ -501,7 +523,7 @@ impl Renderer {
         // Swizzle BGRA->RGBA when the surface uses a Bgra format (typical on
         // desktop swapchains); Rgba formats pass through unchanged.
         let bgra = matches!(
-            self.config.format,
+            self.view_format,
             wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
         );
         let mut rgba = Vec::with_capacity((unpadded as usize) * (height as usize));
@@ -574,13 +596,24 @@ impl Renderer {
         ];
         let tex_window = self.tex_window.get();
         let grade = self.color_grade.get();
+        let flags = [
+            self.backface_cull.get(),
+            if self.semi_blend.get() { 1.0 } else { 0.0 },
+            0.0,
+            0.0,
+        ];
+        let light_dir = self.dyn_light_dir_uniform();
+        let light_color = self.dyn_light_color_uniform();
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
             let u = MeshUniforms {
                 mvp: mvp.to_cols_array_2d(),
-                light_dir: normalize3([0.4, -0.8, 0.4]),
+                depth_cue: self.depth_cue.get(),
                 psx_params,
                 tex_window,
                 grade,
+                flags,
+                light_dir,
+                light_color,
             };
             let off = slot * stride;
             let n = std::mem::size_of::<MeshUniforms>();

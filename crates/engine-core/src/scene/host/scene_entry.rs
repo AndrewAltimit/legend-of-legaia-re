@@ -5,6 +5,80 @@
 use super::*;
 
 impl SceneHost {
+    /// Install the placed-prop collision + interaction layer for the current
+    /// field scene: one [`crate::world::FieldPropCollider`] per placed `.MAP`
+    /// object (retail's collision candidate list, `FUN_801CF754` - **solid by
+    /// default**, a closed door blocks), classed by its bind record's
+    /// spawn-prologue `0x31` ops (`31 1E` = interact-gated cupboard class,
+    /// `31 00` = born collision-exempt), plus the
+    /// [`crate::field_env::PropAnimBank`] whose entries carry each posed
+    /// prop's clip runtime and its bind record - the script a touch /
+    /// interact runs through the field VM.
+    ///
+    /// REF: FUN_8003A55C, FUN_801CF754, FUN_801CFC40
+    fn install_field_props(
+        &mut self,
+        man_file: &legaia_asset::man_section::ManFile,
+        man_bytes: &[u8],
+    ) {
+        let Some(scene) = self.scene.as_ref() else {
+            return;
+        };
+        let placements = match scene.field_object_placements(&self.index) {
+            Ok(Some(p)) => p,
+            Ok(None) => return,
+            Err(err) => {
+                eprintln!("[scene] field prop-collider load skipped: {err:#}");
+                return;
+            }
+        };
+        let binds = match scene.field_object_binds(&self.index) {
+            Ok(b) => b.unwrap_or_default(),
+            Err(err) => {
+                eprintln!("[scene] field object-bind load skipped: {err:#}");
+                Default::default()
+            }
+        };
+        // The scene ANM bundle resolves each posed prop's clip metadata
+        // (frame count + step scaling) for the bank's end-latch timing.
+        let bundle = scene.entries.iter().find_map(|e| {
+            [3usize, 5, 6, 7]
+                .into_iter()
+                .find_map(|d| legaia_asset::player_anm::find_in_entry(&e.bytes, d).pop())
+        });
+        let clip = |anim: u8| -> Option<(u16, bool, u8)> {
+            let b = bundle.as_ref()?;
+            let r = b.record(anim.checked_sub(1)? as usize).ok()?;
+            Some((r.frame_count, (r.a >> 8) & 1 != 0, (r.flag & 0xFF) as u8))
+        };
+        self.world.field_prop_bank =
+            crate::field_env::PropAnimBank::build(&placements, &binds, man_file, man_bytes, clip);
+        self.world.field_prop_colliders = placements
+            .iter()
+            .map(|p| {
+                let anchor = (p.anchor_col, p.anchor_row);
+                let bind = binds.get(&anchor);
+                let cflags = bind
+                    .map(|b| {
+                        crate::field_env::record_spawn_cflags(
+                            man_file,
+                            man_bytes,
+                            b.record as usize,
+                        )
+                    })
+                    .unwrap_or(0);
+                crate::world::FieldPropCollider {
+                    anchor: bind.map(|_| anchor),
+                    center: (p.collider_x, p.collider_z),
+                    live: (p.world_x, p.world_z),
+                    moving_box: cflags & 0x0102_0000 != 0,
+                    interact: cflags & 0x4002_0000 != 0,
+                    solid: cflags & 3 == 0,
+                }
+            })
+            .collect();
+    }
+
     /// Lazily load + cache the monster stat archive (PROT 867, extended
     /// footprint - the archive lives in the entry's trailing-gap sectors,
     /// not the small indexed payload, so `entry_bytes` would truncate it).
@@ -127,6 +201,14 @@ impl SceneHost {
             (record.to_vec(), scripts.bytes.to_vec())
         };
         self.world.mode = crate::world::SceneMode::Field;
+        // Cold-boot default init: entering a scene with no party / save ever
+        // loaded seeds the retail new-game defaults (template party, starting
+        // bag, starting gold) when the host carries them, so the pause menu
+        // always has valid data to read. The roster guard inside makes this a
+        // no-op on every later entry (door transitions, save-loaded sessions).
+        if let Some(defaults) = self.new_game_defaults.as_ref() {
+            self.world.seed_cold_boot_defaults(defaults);
+        }
         // Prescript-record-as-field-VM is a MAN-less fallback only: the
         // consumer census resolved every prescript record as a move-VM
         // stager (record 0 = the master ambient record), with no retail
@@ -142,13 +224,19 @@ impl SceneHost {
         // (This also clears the collision grid; we repopulate it below.)
         // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
         self.world.install_field_player(0);
-        // Cold field entry: place the player at the retail cold-boot spawn.
+        // Cold field entry: seed the player at the retail cold-boot spawn.
         // `FUN_801D6704` creates the player actor at the camera-window centre
         // `(0xA40, 0, 0xA40)` on a non-warp entry; for the New Game opening
         // (town01) this is Vahn's authored Rim Elm spawn, and it also seeds the
         // follow camera onto the right region. Engines that arrive via a warp
         // override X/Z from the saved transition coords before the first tick.
-        // See [`crate::world::FIELD_COLD_SPAWN_XZ`].
+        // This is provisional: once the scene's collision grid + object cells
+        // load (just below) the spawn is resolved to an in-bounds, standable
+        // tile via `World::resolve_cold_field_spawn` - which keeps this exact
+        // seat for town01 (and any scene where `0xA40` is standable, reachable,
+        // and not a teleport-door tile) and relocates every other scene onto a
+        // door-arrival anchor or the centroid of its largest connected walkable
+        // region. See [`crate::world::FIELD_COLD_SPAWN_XZ`].
         if let Some(player) = self.world.actors.get_mut(0) {
             player.move_state.world_x = crate::world::FIELD_COLD_SPAWN_XZ;
             player.move_state.world_y = 0;
@@ -172,6 +260,95 @@ impl SceneHost {
         };
         if let Some(grid) = base_grid {
             self.world.load_field_collision_grid(&grid);
+        }
+        // The floor sampler's second input: the `.MAP` object-grid cell words
+        // (`+0x8000`) and the kind-2 elevation-override records (the `+0x10000`
+        // trigger block's third sub-table, plus the `+0x12000` fallback block
+        // the retail loader reads contiguously). Together they carry the
+        // scene's ramps and staircases - a tile with the `0x800` cell bit takes
+        // its height from its override record, NOT from the collision grid's
+        // corner nibbles (see `World::sample_field_floor_height`). Installed
+        // unconditionally (cleared when absent) so a stale scene's ramps never
+        // leak across a transition.
+        let map_bytes: Option<Vec<u8>> = self.scene.as_ref().and_then(|scene| {
+            let idx = scene.field_map_index(&self.index)?;
+            match self.index.entry_bytes_extended(idx) {
+                Ok(bytes) => Some(bytes),
+                Err(err) => {
+                    eprintln!("[scene] field elevation-override load skipped: {err:#}");
+                    None
+                }
+            }
+        });
+        match map_bytes {
+            Some(bytes) => {
+                self.world.load_field_object_cells(
+                    bytes
+                        .get(legaia_asset::field_objects::OBJECT_GRID_OFFSET..)
+                        .unwrap_or_default(),
+                );
+                self.world.load_field_elevation_overrides(
+                    bytes
+                        .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..)
+                        .unwrap_or_default(),
+                    bytes
+                        .get(crate::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
+                        .unwrap_or_default(),
+                );
+            }
+            None => {
+                self.world.field_object_cells.clear();
+                self.world.field_elevation_overrides.clear();
+            }
+        }
+        // Resolve the provisional cold spawn against the just-loaded collision
+        // grid + object cells. `resolve_cold_field_spawn` returns the retail
+        // seat unchanged when it is standable, inside the scene's largest
+        // connected open-floor region, AND not on a kind-0 intra-scene
+        // teleport tile (a door pad - spawning on one warps the player on the
+        // first tile-crossing dispatch), so town01's opening stays
+        // byte-identical; every other scene relocates to a retail-authored
+        // kind-0 door-arrival anchor in that region, or to the region's
+        // centroid, and snaps Y onto that spot's floor so the player isn't
+        // left floating / sunk before the first locomotion step. Only
+        // overrides when the resolver actually moved the spawn, keeping the
+        // seed (incl. `world_y = 0`) intact otherwise.
+        let teleport_tiles: Vec<(u8, u8)> = self
+            .field_intra_teleports
+            .0
+            .iter()
+            .chain(self.field_intra_teleports.1.iter())
+            .map(|t| (t.tile_x, t.tile_z))
+            .collect();
+        let anchors: Vec<(i16, i16)> = self
+            .field_intra_teleports
+            .0
+            .iter()
+            .chain(self.field_intra_teleports.1.iter())
+            .map(|t| t.dest_world())
+            .collect();
+        let resolved = self
+            .world
+            .resolve_cold_field_spawn(&teleport_tiles, &anchors);
+        // Remembered for the helper-context teardown rescue: a spawned
+        // record that ends with the player inside a wall re-seats them here
+        // (see `World::step_helper_contexts`).
+        self.world.resolved_cold_spawn = Some(resolved);
+        if resolved
+            != (
+                crate::world::FIELD_COLD_SPAWN_XZ,
+                crate::world::FIELD_COLD_SPAWN_XZ,
+            )
+        {
+            let floor_y = self
+                .world
+                .sample_field_floor_height(resolved.0 as i32, resolved.1 as i32)
+                as i16;
+            if let Some(player) = self.world.actors.get_mut(0) {
+                player.move_state.world_x = resolved.0;
+                player.move_state.world_z = resolved.1;
+                player.move_state.world_y = floor_y;
+            }
         }
         // Per-scene region / zone tables: the `.MAP` `+0x10000` region-record
         // block + the MAN section-3 camera-region table. Drives the per-tile
@@ -202,26 +379,14 @@ impl SceneHost {
         };
         self.world
             .load_field_region_tables(&region_block, &zone_table);
-        // Static prop colliders: one box centre per placed `.MAP` object
-        // (spawn position + the record's collision-footprint offset - the
-        // static-entity arm of the actor probe). Installed unconditionally
-        // (empty for scenes with no field map) so a stale scene's props
-        // never leak across a transition; blocking stays behind the opt-in
-        // `World::solid_field_npcs` flag.
-        self.world.field_prop_colliders = match self.scene.as_ref() {
-            Some(scene) => match scene.field_object_placements(&self.index) {
-                Ok(Some(placements)) => placements
-                    .iter()
-                    .map(|p| (p.collider_x, p.collider_z))
-                    .collect(),
-                Ok(None) => Vec::new(),
-                Err(err) => {
-                    eprintln!("[scene] field prop-collider load skipped: {err:#}");
-                    Vec::new()
-                }
-            },
-            None => Vec::new(),
-        };
+        // Placed-prop colliders + interaction bank are installed further
+        // down, once the scene MAN is parsed (the bind records carry each
+        // prop's collision class and its touch script). Cleared here so a
+        // stale scene's props never leak across a transition into a scene
+        // whose MAN fails to parse.
+        self.world.field_prop_colliders = Vec::new();
+        self.world.field_prop_bank = Default::default();
+        self.world.pending_prop_touch = None;
         // The 16-entry floor-height LUT the collision grid's low nibble
         // indexes - resident so the floor-height sampler
         // (`World::sample_field_floor_height`, port of `FUN_80019278`) can
@@ -362,40 +527,78 @@ impl SceneHost {
                     // never-walked NPC stands with its retail facing.
                     // REF: FUN_8003A1E4
                     self.world.seed_field_npc_facings(&man_file, &man_bytes);
-                    // Gate-0 tile-trigger object binds (retail scene-init
-                    // `FUN_8003A55C`): each gate-0 kind-1 trigger binds its
-                    // partition-0 record as a touch object at the trigger
-                    // tile. House doors are these - the record's script
-                    // cross-context-teleports the player (ＩＮ/ＯＵＴ
-                    // pairs), decoded here into walk-touch entries so
-                    // walking into a door works. Installed after the carrier
-                    // install above (which clears `field_walk_touch`).
-                    let binds: Vec<((i16, i16), crate::man_field_scripts::WalkTouchEvent)> = self
+                    // Placed-prop colliders + the prop animation/interaction
+                    // bank: every placed `.MAP` object is a solid actor in
+                    // retail's collision candidate list (`FUN_801CF754`),
+                    // classed by its bind record's spawn-prologue `0x31` ops;
+                    // a bound, posed prop additionally gets a bank entry
+                    // whose record runs through the field VM on touch /
+                    // interact (the door swing, the cupboard search).
+                    self.install_field_props(&man_file, &man_bytes);
+                    // `.MAP` **object** binds (retail scene-init `FUN_8003A55C`):
+                    // the object layer is walked, each spawnable object's key
+                    // tile (`object_tile + descriptor (dx,dz)`) resolves a
+                    // kind-1 trigger, and the trigger's `record` byte selects a
+                    // MAN record by **flat** index - that record IS the object's
+                    // script. House doors are these; their scripts
+                    // cross-context-teleport the player (`0x23` MOVE_TO or the
+                    // `0x4C 0x51` teleport-plus-anim form).
+                    //
+                    // The bind sits at the object's **contact-box centre**
+                    // (`FUN_801CFC40`), not at the trigger tile: the trigger
+                    // tile is a lookup key and is routinely a wall the player
+                    // can never stand on (Rim Elm's own house-door key tile
+                    // (38,25) is inside the house's collision wall). Falls back
+                    // to the trigger-tile centre only when the scene has no
+                    // readable `.MAP` object layer.
+                    // REF: FUN_8003A55C, FUN_801CFC40
+                    let map_bytes = self
+                        .scene
+                        .as_ref()
+                        .and_then(|s| s.field_map_index(&self.index))
+                        .and_then(|idx| self.index.entry_bytes_extended(idx).ok());
+                    let triggers: Vec<crate::field_regions::TileTrigger> = self
                         .field_triggers
                         .0
                         .iter()
                         .chain(self.field_triggers.1.iter())
-                        .filter(|t| t.gate == 0)
-                        .filter_map(|t| {
-                            let event = crate::man_field_scripts::p0_record_walk_touch_event(
-                                &man_file,
-                                &man_bytes,
-                                t.record as usize,
-                            )?;
-                            let pos = (
-                                i16::from(t.tile_x) * 128 + 0x40,
-                                i16::from(t.tile_z) * 128 + 0x40,
-                            );
-                            Some((pos, event))
-                        })
+                        .copied()
                         .collect();
+                    type Bind = (
+                        (i16, i16),
+                        crate::man_field_scripts::WalkTouchEvent,
+                        Option<usize>,
+                    );
+                    let binds: Vec<Bind> = match map_bytes.as_deref() {
+                        Some(map) => crate::man_field_scripts::object_walk_touch_binds(
+                            map, &triggers, &man_file, &man_bytes,
+                        )
+                        .into_iter()
+                        .map(|b| (b.contact, b.event, Some(b.record)))
+                        .collect(),
+                        None => triggers
+                            .iter()
+                            .filter(|t| t.gate == 0)
+                            .filter_map(|t| {
+                                let record = t.record as usize;
+                                let event = crate::man_field_scripts::flat_record_walk_touch_event(
+                                    &man_file, &man_bytes, record,
+                                )?;
+                                let pos = (
+                                    i16::from(t.tile_x) * 128 + 0x40,
+                                    i16::from(t.tile_z) * 128 + 0x40,
+                                );
+                                Some((pos, event, Some(record)))
+                            })
+                            .collect(),
+                    };
                     if !binds.is_empty() {
                         log::info!(
-                            "field: installed {} gate-0 door bind(s) from tile triggers",
+                            "field: installed {} object door bind(s) from the .MAP object layer",
                             binds.len()
                         );
                     }
-                    self.world.install_trigger_walk_touch(&binds);
+                    self.world.install_trigger_walk_touch_with_records(&binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban
                     // stager P1[3]): partition-1 records carrying the
                     // scripted-battle op `3E FF <row>`, armed as approach /
@@ -1023,10 +1226,13 @@ impl SceneHost {
         let Some(actor) = self.world.actors.get(slot as usize) else {
             return;
         };
-        // Retail tile quantisation: `tile = (world - 0x40) >> 7` (the
-        // locomotion-cluster form; the inverse of the `tile*128 + 0x40`
-        // placement mapping).
-        let quant = |w: i16| -> i32 { (i32::from(w) - 0x40) >> 7 };
+        // Retail's tile quantisation **in this dispatcher** is the raw
+        // `world >> 7` (`FUN_801D1EC4` at `0x801d2068`: `sll 0x10; sra 0x17`
+        // on each of `player+0x14` / `+0x18`), not the `(world - 0x40) >> 7`
+        // form the region refresh uses. The two agree at tile centres and
+        // differ by a half-tile band elsewhere; the kind-0 door tiles are one
+        // tile deep, so the band matters.
+        let quant = |w: i16| -> i32 { i32::from(w) >> 7 };
         let (tx, tz) = (
             quant(actor.move_state.world_x),
             quant(actor.move_state.world_z),
@@ -1039,6 +1245,19 @@ impl SceneHost {
             return; // same tile as last tick - triggers fire on crossings
         }
         self.last_trigger_tile = Some(tile);
+        self.dispatch_kind1_walk_on(tile, on_world_map);
+        // Retail runs the kind-0 arm on the SAME crossing, after the kind-1
+        // spawn (`FUN_801D1EC4` falls through to `0x801d21c0`), so a tile can
+        // both spawn its record and teleport.
+        if !on_world_map {
+            self.dispatch_intra_scene_teleport(tile);
+        }
+    }
+
+    /// The kind-1 arm of the tile-crossing dispatch: a gate-1 trigger spawns
+    /// its partition-2 record.
+    // REF: FUN_801D1EC4, FUN_8003BDE0
+    fn dispatch_kind1_walk_on(&mut self, tile: (u8, u8), on_world_map: bool) {
         let (primary, fallback) = &self.field_triggers;
         let Some(trigger) =
             crate::field_regions::lookup_tile_trigger(primary, fallback, tile.0, tile.1)
@@ -1075,6 +1294,70 @@ impl SceneHost {
                 trigger.record,
             );
         }
+    }
+
+    /// The **kind-0** arm: the `.MAP`'s intra-scene-teleport table - the door
+    /// class whose destination is map data, not a MAN script.
+    ///
+    /// This is how most house **exits** work. The interior is a sub-area of the
+    /// same collision grid; the exit is a plain tile just inside the doorway
+    /// carrying a kind-0 record, and crossing onto it repositions the player.
+    /// No object, no script, no ＩＮ/ＯＵＴ record name - so a MAN-only door
+    /// census cannot see it, and an engine that dispatches only the kind-1
+    /// table lets the player walk in and never back out.
+    ///
+    /// Retail seats the player, re-samples the floor height, resets the camera
+    /// and then re-queries the **kind-1** table at the landing tile so the
+    /// arrival's own record spawns; the engine gets the arrival record by
+    /// leaving the last-tile compare stale, which fires it on the next tick.
+    /// (Retail also runs a ~0x26-frame fade across the reposition; the engine
+    /// warps instantly.)
+    ///
+    /// PORT: FUN_801D1EC4 (kind-0 arm, `0x801d21c0..0x801d2268`)
+    fn dispatch_intra_scene_teleport(&mut self, tile: (u8, u8)) {
+        let (primary, fallback) = &self.field_intra_teleports;
+        let Some(tp) =
+            crate::field_regions::lookup_intra_scene_teleport(primary, fallback, tile.0, tile.1)
+        else {
+            return;
+        };
+        let Some(slot) = self.world.player_actor_slot else {
+            return;
+        };
+        let Some(actor) = self.world.actors.get(slot as usize) else {
+            return;
+        };
+        // Retail skips the teleport while the player's movement-disabled flag
+        // (`+0x10 & 0x80000`) is set - an encounter / cutscene owns the body.
+        if actor.move_state.flags & 0x0008_0000 != 0 {
+            return;
+        }
+        let (wx, wz) = tp.dest_world();
+        let y = self
+            .world
+            .sample_field_floor_height(i32::from(wx), i32::from(wz)) as i16;
+        if let Some(actor) = self.world.actors.get_mut(slot as usize) {
+            actor.move_state.world_x = wx;
+            actor.move_state.world_z = wz;
+            actor.move_state.world_y = y;
+        }
+        // Arrival tile is a fresh crossing: leaving the compare stale makes the
+        // next tick run the landing tile's own kind-1 record (retail queries it
+        // inline at `0x801d2030`).
+        self.last_trigger_tile = None;
+        self.world
+            .pending_field_events
+            .push(crate::field_events::FieldEvent::MoveTo {
+                world_x: wx as u16,
+                world_z: wz as u16,
+                is_player: true,
+            });
+        log::info!(
+            "field: intra-scene teleport at ({},{}) -> world ({wx},{wz}) tile {:?}",
+            tile.0,
+            tile.1,
+            tp.dest_tile(),
+        );
     }
 
     /// One frame: tick the world, materialize any actor-spawn requests

@@ -47,6 +47,36 @@ fn make_uniform_bind_group(
     (bgl, buf, bg)
 }
 
+/// Pick the swapchain format to configure, and the format the frame is
+/// *viewed* (and so rendered) as.
+///
+/// The shaders emit **PSX framebuffer values**, not linear light. The final
+/// stage of every 3D shader is [`psx_dither`](crate::psx_dither), which
+/// quantises each channel to 5 bits and expands it back with
+/// `(c5 << 3) | (c5 >> 2)` - exactly the 8-bit value the console clocks out to
+/// the display. Those values are already display-referred, so the attachment
+/// must not re-encode them: an sRGB view treats the shader's output as linear
+/// and applies the linear->sRGB transfer on store, which lifts every midtone
+/// (a 5-bit `16`, retail byte `132`, would present as `192`) and rounds the
+/// 5-bit quantisation the dither exists to model straight back out. It also
+/// forces the PSX semi-transparency blends ([`psx_blend`](crate::psx_blend))
+/// to happen in linear space, where retail blends the raw 5-bit values.
+///
+/// So the frame is always viewed as UNORM: what a shader writes is what the
+/// display gets. The two formats differ only when the surface offers nothing
+/// but sRGB formats, in which case the sRGB surface texture is viewed as its
+/// UNORM twin (declared in `view_formats`).
+pub(crate) fn choose_surface_format(
+    formats: &[wgpu::TextureFormat],
+) -> (wgpu::TextureFormat, wgpu::TextureFormat) {
+    let format = formats
+        .iter()
+        .copied()
+        .find(|f| !f.is_srgb())
+        .unwrap_or(formats[0]);
+    (format, format.remove_srgb_suffix())
+}
+
 impl Renderer {
     /// Constructs a renderer attached to a winit-style window. Caller passes
     /// an `Arc<Window>` so the Surface can outlive the borrow.
@@ -88,22 +118,38 @@ impl Renderer {
             .await
             .context("request device")?;
 
+        let info = adapter.get_info();
+        log::info!(
+            "wgpu adapter: {} ({:?}, {:?} backend, driver {})",
+            info.name,
+            info.device_type,
+            info.backend,
+            info.driver
+        );
+
         let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
+        let (format, view_format) = choose_surface_format(&caps.formats);
+        // `LEGAIA_VSYNC=off` uncaps the present rate so a profiling run reads the
+        // engine's own frame cost rather than the display's refresh interval.
+        // Default stays vsync'd (tear-free, and the sim is fixed-timestep anyway).
+        let present_mode = if crate::profile::no_vsync() {
+            wgpu::PresentMode::AutoNoVsync
+        } else {
+            wgpu::PresentMode::AutoVsync
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: width.max(1),
             height: height.max(1),
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode,
             desired_maximum_frame_latency: 2,
             alpha_mode: caps.alpha_modes[0],
-            view_formats: vec![],
+            view_formats: if view_format == format {
+                vec![]
+            } else {
+                vec![view_format]
+            },
         };
         surface.configure(&device, &config);
 
@@ -162,7 +208,7 @@ impl Renderer {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -195,10 +241,19 @@ impl Renderer {
             "mesh uniforms",
             bytemuck::cast_slice(&[MeshUniforms {
                 mvp: Mat4::IDENTITY.to_cols_array_2d(),
-                light_dir: [0.4, -0.8, 0.4, 0.0],
+                depth_cue: [0.0, 0.0, 0.0, 0.0],
                 psx_params: [width as f32, height as f32, 0.0, 0.0],
                 tex_window: [0; 4],
                 grade: [1.0, 1.0, 1.0, 0.0],
+                flags: [0.0; 4],
+                // Dynamic lighting off (w = 0) = the retail-identical path.
+                light_dir: [0.0; 4],
+                light_color: [
+                    DYN_LIGHT_TINT[0],
+                    DYN_LIGHT_TINT[1],
+                    DYN_LIGHT_TINT[2],
+                    DYN_LIGHT_AMBIENT,
+                ],
             }]),
             wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
         );
@@ -233,7 +288,7 @@ impl Renderer {
                 module: &mesh_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -300,7 +355,7 @@ impl Renderer {
                     module: &textured_mesh_shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -350,9 +405,13 @@ impl Renderer {
             push_constant_ranges: &[],
         });
         // 12 (pos) + 4 (uv as Uint8x4) + 4 (cba/tsb as Uint16x2) + 12
-        // (normal as Float32x3) = 32 bytes
+        // (normal as Float32x3) + 4 (prim colour as Uint8x4) = 36 bytes.
+        //
+        // The colour is the TMD prim's baked colour word, kept as raw bytes
+        // (never converted): the GPU modulates the texel by it as
+        // `texel * colour / 128`, which is retail's whole field lighting model.
         let vram_vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: 32,
+            array_stride: 36,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -375,6 +434,11 @@ impl Renderer {
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float32x3,
                 },
+                wgpu::VertexAttribute {
+                    offset: 32,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Uint8x4,
+                },
             ],
         };
         let vram_mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -390,7 +454,7 @@ impl Renderer {
                 module: &vram_mesh_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -454,7 +518,7 @@ impl Renderer {
                 module: &lines_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -531,39 +595,18 @@ impl Renderer {
                 vertex: wgpu::VertexState {
                     module: &vram_mesh_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: 32,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 0,
-                                format: wgpu::VertexFormat::Float32x3,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 12,
-                                shader_location: 1,
-                                format: wgpu::VertexFormat::Uint8x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 16,
-                                shader_location: 2,
-                                format: wgpu::VertexFormat::Uint16x2,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 20,
-                                shader_location: 3,
-                                format: wgpu::VertexFormat::Float32x3,
-                            },
-                        ],
-                    }],
+                    // Same vertex layout as the non-scene VRAM pipeline - share
+                    // it rather than restating it, so the two cannot drift (an
+                    // earlier hand-rolled copy silently omitted the prim-colour
+                    // attribute and failed pipeline validation).
+                    buffers: std::slice::from_ref(&vram_vertex_layout),
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &vram_mesh_shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -620,7 +663,7 @@ impl Renderer {
                     module,
                     entry_point: Some(entry),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: Some(psx_blend::blend_state(mode)),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -695,7 +738,7 @@ impl Renderer {
                 module: &lines_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -768,7 +811,7 @@ impl Renderer {
                     module: &color_mesh_shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -881,7 +924,7 @@ impl Renderer {
                 module: &text_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: view_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -986,7 +1029,7 @@ impl Renderer {
                     module: &screen_overlay_shader,
                     entry_point: Some("fs_opaque"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: view_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -1038,6 +1081,7 @@ impl Renderer {
             device,
             queue,
             config,
+            view_format,
             pipeline,
             sampler,
             bind_group_layout,
@@ -1075,6 +1119,13 @@ impl Renderer {
             vram_upload_counter: std::cell::Cell::new(0),
             tex_window: std::cell::Cell::new([0; 4]),
             color_grade: std::cell::Cell::new([1.0, 1.0, 1.0, 0.0]),
+            depth_cue: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
+            backface_cull: std::cell::Cell::new(0.0),
+            // Semi-transparency (ABE) blending on by default: retail's GPU
+            // always blends ABE prims, so field water / glass / effects should
+            // composite in the clean render, not just under LEGAIA_PSX_RENDER.
+            semi_blend: std::cell::Cell::new(true),
+            dyn_lighting: std::cell::Cell::new(false),
             screen_overlay_pipeline,
             screen_overlay_blend_pipelines,
             screen_overlay_vbuf: std::cell::RefCell::new(screen_overlay_vbuf),

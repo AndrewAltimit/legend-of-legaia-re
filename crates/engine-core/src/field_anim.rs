@@ -80,6 +80,15 @@ impl FieldClipPlayer {
         self.frames.len()
     }
 
+    /// Index of the frame the *next* [`Self::tick`] will emit. A clip is a
+    /// short loop over a fixed set of poses, so this doubles as a cache key: a
+    /// host that rebuilds a posed mesh per frame can memoise it on
+    /// `(actor, frame())` and skip the rebuild whenever the playhead revisits a
+    /// frame it has already seen.
+    pub fn frame(&self) -> usize {
+        self.frame
+    }
+
     /// Restart the clip at frame 0 (called on an idle↔walk switch so the
     /// incoming loop starts at its first keyframe).
     pub fn rewind(&mut self) {

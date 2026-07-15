@@ -21,6 +21,7 @@ legaia-vab = { path = "../vab" }
 legaia-xa = { path = "../xa" }
 legaia-mdec = { path = "../mdec" }
 legaia-engine-vm = { path = "../engine-vm" }
+legaia-save = { path = "../save" }
 legaia-engine-core = { path = "../engine-core" }
 legaia-engine-audio = { path = "../engine-audio", features = ["audio-webaudio"] }
 legaia-mednafen = { path = "../mednafen" }
@@ -42,6 +43,7 @@ features = [
 ]
 
 [dev-dependencies]
+legaia-art = { path = "../art" }
 sha2 = "0.10"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 

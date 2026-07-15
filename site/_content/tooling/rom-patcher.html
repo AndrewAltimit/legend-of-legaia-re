@@ -17,6 +17,43 @@
       <input type="text" id="rom-seed" placeholder="any word or number (blank = random)">
     </label>
 
+    <!-- ---- Language patch (opt-in; default None) ---- -->
+    <details class="rom-group" id="rom-lang-group">
+      <summary>Language <span class="rom-summary-note">translation patch (optional)</span></summary>
+      <div class="rom-group-body">
+        <p class="rom-legend-item" style="margin:0 0 .6rem">
+          Off by default. A language patch swaps the game's on-screen text for a
+          community translation - it composes with any randomizer options above.
+          The retail font is a plain-ASCII glyph set, so the shipped packs are
+          <em>ASCII-folded</em> (accents dropped: <code>e</code> for
+          <code>&eacute;</code>, <code>ss</code> for <code>&szlig;</code>) and
+          cover the item / magic / arts / menu tables plus the recurring system
+          messages; the bulk story dialog is not translated yet.
+        </p>
+        <label class="rom-row">
+          <span class="rom-label">Language</span>
+          <select id="rom-lang">
+            <option value="" selected>None (English - no patch)</option>
+            <option value="es">Spanish / Espanol</option>
+            <option value="fr">French / Francais</option>
+            <option value="de">German / Deutsch</option>
+            <option value="it">Italian / Italiano</option>
+            <option value="pl">Polish / Polski</option>
+            <option value="__custom">Import my own pack (.yaml) ...</option>
+          </select>
+        </label>
+        <label class="rom-row" id="rom-lang-file-row" hidden>
+          <span class="rom-label">Pack file (<code>legaia-text-pack-v1</code> YAML)</span>
+          <input type="file" id="rom-lang-file" accept=".yaml,.yml,text/yaml,application/x-yaml">
+        </label>
+        <div class="rom-row">
+          <button type="button" id="rom-lang-validate" class="rom-button rom-button-ghost">Check pack against my disc</button>
+          <button type="button" id="rom-lang-export" class="rom-button rom-button-ghost">Export a starter pack from my disc</button>
+        </div>
+        <div id="rom-lang-status" class="rom-status"></div>
+      </div>
+    </details>
+
     <!-- Presets: one click sets every toggle below. Editing any toggle flips
          the chip row back to "Custom". -->
     <div class="rom-row">
@@ -414,6 +451,9 @@
   .rom-button { padding: 0.55rem 1.2rem; font-weight: 600; cursor: pointer; background: var(--accent); color: #06231f; border: none; border-radius: 6px; }
   .rom-button:hover { background: var(--accent-hi); }
   .rom-button:disabled { opacity: 0.6; cursor: progress; }
+  .rom-button-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); margin-right: 0.5rem; }
+  .rom-button-ghost:hover { background: var(--bg-card-hi); border-color: var(--border-hi); }
+  .rom-group-body { padding: 0.7rem 0.85rem; }
   .rom-status { margin-top: 0.8rem; font-family: var(--font-mono, monospace); font-size: 0.9em; }
   .rom-status-ok { color: var(--done); }
   .rom-status-err { color: var(--open); }

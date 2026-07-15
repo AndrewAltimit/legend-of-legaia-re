@@ -471,10 +471,10 @@ impl SaveFile {
     /// Build a [`SaveFile`] from a retail SC save block (8 KiB block whose
     /// first two bytes are [`crate::SAVE_BLOCK_MAGIC`]).
     ///
-    /// Reads party records, the 512-byte story-flag bitmap, and the 72-slot
-    /// inventory at their pinned offsets. `money` defaults to `0` since the
-    /// retail gold offset (`game_data+0x025C`) is documented but not yet
-    /// exposed as a read helper. Empty inventory slots (`(0, 0)`) are
+    /// Reads party records, the 512-byte story-flag bitmap, the 72-slot
+    /// inventory, and the party gold
+    /// ([`crate::card::RETAIL_GOLD_OFFSET`], mirrors RAM `0x8008459C`) at
+    /// their pinned offsets. Empty inventory slots (`(0, 0)`) are
     /// dropped so the returned [`SaveExt::inventory`] is compact.
     ///
     /// `max_records` caps the party walk - retail saves never hold more
@@ -497,12 +497,13 @@ impl SaveFile {
             .get(..4)
             .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
             .unwrap_or(0);
+        let money = crate::card::read_retail_gold(sc_block).unwrap_or(0);
         Ok(Self {
             party,
             ext: SaveExt {
                 story_flags,
                 story_flag_bits,
-                money: 0,
+                money,
                 inventory,
             },
             ext_v2: SaveExtV2::default(),
@@ -518,9 +519,9 @@ impl SaveFile {
     /// with zeros; longer is truncated. Inventory slots past the 72-slot
     /// retail cap are dropped.
     ///
-    /// `money` is NOT written: the retail gold offset isn't exposed as a
-    /// write helper yet. Engines that need to update gold via this path can
-    /// write the 4 bytes directly at `RETAIL_GAME_DATA_OFFSET + 0x025C`.
+    /// `money` is written to the pinned retail gold slot
+    /// ([`crate::card::RETAIL_GOLD_OFFSET`]), so gold round-trips through
+    /// the retail block like the party / flags / inventory do.
     pub fn write_into_retail_sc_block(&self, sc_block: &mut [u8]) -> Result<()> {
         if sc_block.len() < 2 {
             bail!("sc_block too small to hold SC magic");
@@ -530,6 +531,7 @@ impl SaveFile {
         crate::card::write_retail_char_records(sc_block, &records)?;
         crate::card::write_retail_story_flags(sc_block, &self.ext.story_flag_bits)?;
         crate::card::write_retail_inventory(sc_block, &self.ext.inventory)?;
+        crate::card::write_retail_gold(sc_block, self.ext.money)?;
         Ok(())
     }
 }

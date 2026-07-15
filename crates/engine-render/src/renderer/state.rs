@@ -4,11 +4,36 @@
 
 use super::*;
 
+/// Dynamic-lighting tunables (the opt-in enhancement - see
+/// [`Renderer::set_dynamic_lighting`]). Kept as named constants so the look
+/// is easy to iterate on; the WGSL-side weights (`DYN_DIFFUSE` / `DYN_POOL` /
+/// `DYN_MAX_GAIN` / the pool geometry) live in the `dyn_light` helper in
+/// `shaders.rs`.
+///
+/// Unit direction TOWARD the light, in mesh model space: mostly "up"
+/// (TMD/PSX space is Y-down, so up is `-Y`) with a slight X/Z tilt so
+/// differently-facing wall planes read at different brightness. The
+/// orientation term is `|N.L|`, so the vertical component is sign-tolerant.
+pub const DYN_LIGHT_DIR: [f32; 3] = [0.32, -0.89, 0.31];
+/// Warm (slightly amber) light tint multiplied into the diffuse + pool
+/// terms. Red-heavy on purpose - the reference look is "PSX game + modern
+/// soft warm lighting", not a neutral studio light.
+pub const DYN_LIGHT_TINT: [f32; 3] = [1.0, 0.93, 0.80];
+/// Ambient floor: the gain a surface gets with no diffuse and no pool
+/// contribution at all (a wall facing exactly along the light at a screen
+/// corner). Keeps the enhancement a *shading*, not a blackout.
+pub const DYN_LIGHT_AMBIENT: f32 = 0.55;
+
 pub struct Renderer {
     pub(super) surface: wgpu::Surface<'static>,
     pub(super) device: wgpu::Device,
     pub(super) queue: wgpu::Queue,
     pub(super) config: wgpu::SurfaceConfiguration,
+    /// Format every colour attachment is rendered through - the UNORM twin of
+    /// [`Self::config`]'s format (see `choose_surface_format`). The shaders
+    /// emit PSX framebuffer bytes, so the attachment must never re-encode
+    /// them to sRGB.
+    pub(super) view_format: wgpu::TextureFormat,
     /// Quad pipeline (Phase 1 TIM viewer).
     pub(super) pipeline: wgpu::RenderPipeline,
     pub(super) sampler: wgpu::Sampler,
@@ -114,6 +139,35 @@ pub struct Renderer {
     /// Defaults to `(1, 1, 1, 0)` = identity (no grade). Set with
     /// [`Renderer::set_color_grade`]; drives the opening prologue sepia.
     pub(super) color_grade: std::cell::Cell<[f32; 4]>,
+    /// GTE depth cue `(far_r, far_g, far_b, ir0)` staged into every field
+    /// `MeshUniforms`. Defaults to all-zero = `ir0 = 0` = identity, which is
+    /// what the field passes for an unfogged scene. Set with
+    /// [`Renderer::set_depth_cue`].
+    pub(super) depth_cue: std::cell::Cell<[f32; 4]>,
+    /// Backface-cull mode staged into `MeshUniforms.flags[0]` (see there).
+    /// `0.0` (default) = draw both sides; `1.0` / `2.0` = discard back /
+    /// front-facing fragments. Set with [`Renderer::set_backface_cull`].
+    pub(super) backface_cull: std::cell::Cell<f32>,
+    /// PSX semi-transparency (ABE) blending, staged into `MeshUniforms.flags[1]`.
+    /// When `true` (the default), a semi-transparent prim's blended fragments
+    /// are deferred out of the opaque pass and re-drawn by the per-ABR-mode
+    /// blend pass, so water / glass / additive effects composite with the
+    /// framebuffer as they do on retail. When `false` those prims draw fully
+    /// opaque. This is decoupled from [`Self::psx_mode`] on purpose: the
+    /// modulation-correct blend is retail behaviour worth having in the clean
+    /// "enhanced" render too, whereas the GTE vertex jitter / affine UVs /
+    /// 15-bit dither that `psx_mode` also enables are strict-PS1 artefacts.
+    /// Set with [`Renderer::set_semi_blend`].
+    pub(super) semi_blend: std::cell::Cell<bool>,
+    /// Opt-in dynamic-lighting enhancement, staged into
+    /// `MeshUniforms.light_dir[3]`. `false` (the default) keeps every mesh
+    /// path pixel-identical to the faithful baked-shading render - retail's
+    /// field path has NO light source (see [`crate::psx_light`]), so this is
+    /// explicitly a non-retail enhancement. When `true` the VRAM / colour
+    /// mesh shaders layer a soft warm directional light (off the smoothed
+    /// per-vertex normals) + a screen-space light pool over the baked
+    /// colours, capped at ~1.3x. Set with [`Renderer::set_dynamic_lighting`].
+    pub(super) dyn_lighting: std::cell::Cell<bool>,
     /// Screen-space 2D overlay pass (see [`crate::screen_overlay`]): PSX
     /// `POLY_FT4` textured quads + flat quads in NDC, ordering-table order,
     /// per-ABR semi-transparency. Opaque pipeline (replace).
@@ -150,6 +204,69 @@ impl Renderer {
     /// Read current PSX-mode flag.
     pub fn psx_mode(&self) -> bool {
         self.psx_mode.get()
+    }
+
+    /// Toggle PSX semi-transparency (ABE) blending on the VRAM / colour mesh
+    /// passes. When `true` (the default) a semi-transparent prim's blended
+    /// texels are deferred out of the opaque pass and composited by the
+    /// per-ABR-mode blend pass, so field water (e.g. the Hunter's Spring
+    /// fountain), glass and additive effects show the framebuffer through
+    /// them the way retail's GPU blend does. When `false` those prims draw
+    /// fully opaque (the harsh-edged "solid water" look). Independent of
+    /// [`Self::set_psx_mode`]: blending is correct in the clean render, so it
+    /// is on regardless of the strict-PS1 jitter / dither knobs.
+    pub fn set_semi_blend(&self, enable: bool) {
+        self.semi_blend.set(enable);
+    }
+
+    /// Read the current semi-transparency-blend flag.
+    pub fn semi_blend(&self) -> bool {
+        self.semi_blend.get()
+    }
+
+    /// Toggle the opt-in **dynamic-lighting enhancement** on the VRAM /
+    /// colour mesh passes. Off by default, and OFF IS RETAIL: the field
+    /// path has no runtime light source (shading is baked into the TMD
+    /// colour words - see [`crate::psx_light`]), so the disabled path is
+    /// pixel-identical to the faithful render and the parity oracles are
+    /// unaffected.
+    ///
+    /// When enabled, each fragment's baked colour is scaled by
+    /// `ambient + (diffuse * |N.L| + pool) * warm_tint`, where `N` is the
+    /// smoothed per-vertex normal already carried by the VRAM-mesh vertex
+    /// format (with a screen-space-derivative fallback for the normal-less
+    /// colour-mesh prims), `L` is [`DYN_LIGHT_DIR`], and `pool` is a soft
+    /// screen-centred light pool - the "modern soft warm lighting over
+    /// crisp PSX texels" look. The gain is capped at ~1.3x the baked
+    /// brightness. Tunables: [`DYN_LIGHT_DIR`] / [`DYN_LIGHT_TINT`] /
+    /// [`DYN_LIGHT_AMBIENT`] plus the `DYN_*` consts in the `dyn_light`
+    /// WGSL helper.
+    pub fn set_dynamic_lighting(&self, enable: bool) {
+        self.dyn_lighting.set(enable);
+    }
+
+    /// Read the current dynamic-lighting flag.
+    pub fn dynamic_lighting(&self) -> bool {
+        self.dyn_lighting.get()
+    }
+
+    /// The `MeshUniforms.light_dir` word for the current frame:
+    /// `[dir_x, dir_y, dir_z, enable]`. All-zero `w` = the identity
+    /// (default off) path.
+    pub(super) fn dyn_light_dir_uniform(&self) -> [f32; 4] {
+        let on = if self.dyn_lighting.get() { 1.0 } else { 0.0 };
+        [DYN_LIGHT_DIR[0], DYN_LIGHT_DIR[1], DYN_LIGHT_DIR[2], on]
+    }
+
+    /// The `MeshUniforms.light_color` word: `[tint_r, tint_g, tint_b,
+    /// ambient]`. Constant; only read by the shader when the enable is set.
+    pub(super) fn dyn_light_color_uniform(&self) -> [f32; 4] {
+        [
+            DYN_LIGHT_TINT[0],
+            DYN_LIGHT_TINT[1],
+            DYN_LIGHT_TINT[2],
+            DYN_LIGHT_AMBIENT,
+        ]
     }
 
     /// Set the GP0(0xE2) "Texture Window setting" register state used by
@@ -192,6 +309,50 @@ impl Renderer {
     pub fn set_color_grade(&self, gold: [f32; 3], strength: f32) {
         self.color_grade
             .set([gold[0], gold[1], gold[2], strength.clamp(0.0, 1.0)]);
+    }
+
+    /// Set the GTE **depth cue** the field mesh shaders apply after the
+    /// texture-modulation pass - a port of `DPCS` (`cop2 0x780010`), the only
+    /// colour op either retail TMD renderer (`FUN_8002735c`, `FUN_80029888`)
+    /// executes.
+    ///
+    /// `far` is the GTE far colour (cr21-23) in `0..1`; `ir0` is the blend
+    /// factor (`IR0`, hardware `0..0x1000`) in `0..1`. Each shaded pixel
+    /// becomes `c + (far - c) * ir0`, so `ir0 = 0` (the default) is the
+    /// identity. Retail sets both per drawn object; an unfogged field scene
+    /// passes `ir0 = 0`, which is why a town0c capture shows the baked prim
+    /// colours emerging from the GTE's RGB FIFO byte-unchanged.
+    pub fn set_depth_cue(&self, far: [f32; 3], ir0: f32) {
+        self.depth_cue.set([
+            far[0].clamp(0.0, 1.0),
+            far[1].clamp(0.0, 1.0),
+            far[2].clamp(0.0, 1.0),
+            ir0.clamp(0.0, 1.0),
+        ]);
+    }
+
+    /// Read the current depth cue `(far_r, far_g, far_b, ir0)`.
+    pub fn depth_cue(&self) -> [f32; 4] {
+        self.depth_cue.get()
+    }
+
+    /// Enable/disable the shader-side backface cull on the VRAM / colour
+    /// mesh passes - the port of retail's GTE **NCLIP** screen-winding
+    /// rejection (`FUN_8002735c` skips a prim whose projected winding is
+    /// negative). The engine's rasterizer pipelines draw both sides
+    /// (`cull_mode: None`) because winding parity differs per render frame
+    /// (battle composes a per-model Y-flip, field a camera-side one), so
+    /// this is a per-fragment discard keyed off `front_facing` instead:
+    /// mode `1` discards back-facing fragments, `2` front-facing (pick the
+    /// one that matches the active frame's parity), `0` (default) draws
+    /// both sides.
+    ///
+    /// Without it a camera placed *inside* a closed mesh shell renders the
+    /// shell's near wall over the whole scene - the opdeene prologue's
+    /// crater-rim tableau shot sits inside the cave-wall backdrop mesh, and
+    /// retail's NCLIP is what makes the near wall invisible.
+    pub fn set_backface_cull(&self, mode: u32) {
+        self.backface_cull.set(mode.min(2) as f32);
     }
 
     /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.

@@ -138,6 +138,7 @@ impl App {
                         &payload.uvs,
                         &payload.cba_tsb,
                         &payload.normals,
+                        &payload.colors,
                         &payload.indices,
                     );
                     let vram_res = r.upload_vram(&payload.vram);

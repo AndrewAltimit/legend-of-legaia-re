@@ -118,6 +118,19 @@ The crate-level Rust port of this pager lives in [`crates/engine-vm`](../../crat
 
 Max lines per box is stored at `_DAT_801F2740`. The overlay's `case 6` / `case 9` init arms (the two box-open states) **both pin this to 3** - the standard dialog box scrolls in up to three lines, then state `0xD` advances to the "page full, wait for input" state `0xE`. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.
 
+The picker arms write their box rect literally: `x = 0x26`, `y = 0x94 + ((4-N)*0xF)/2`, `w = 0xF4`, `h = 0x38 - (4-N)*0xF` - a 244-wide box whose height shrinks 15 px per absent option, recentred on the 4-option anchor `y = 0x94`. Fields `+0x3C/+0x3E` are the slide-animation start position (the resize state `0x11` uses the same pair).
+
+### Box render
+
+The pager draws the window each frame through the shared SCUS box emitter: `FUN_80034B6C(skin)` stages the window-skin index (standard reading box = skin `0x61`; a box whose `ctx+0x10` class byte is `2` resets to skin `0`), then `FUN_8002C69C(x, y, w, h)` emits the box. For the main reading box the call is `FUN_8002C69C(ctx+0x12, ctx+0x14 + scroll, 0xF4, lines*0xF + 5 - 8)`; the picker box passes its own rect. Draw order inside the frame is text first, box last (a later-submitted prim lands in a deeper OT slot, so the box renders behind its glyphs).
+
+`FUN_8002C69C` composes two layers (see `ghidra/scripts/funcs/8002c69c.txt`):
+
+- **Frame**: 4 corner + 4 tiled edge sprites from the skin's records in the corner/edge table `DAT_80073A00` (32-byte stride, indexed via the class table `DAT_800732A4`, 12-byte stride) - the gold 9-slice family of the system-UI sheet, shared with every menu window.
+- **Interior fill** (hardcoded in the function body, not skin data): **two identical semi-transparent gouraud `POLY_G4` quads** (prim code `0x3B`, blend mode 0 = `B/2 + F/2`) spanning the box rect, top vertices RGB `(0x18,0x18,0x28)`, bottom vertices RGB `(0x40,0x40,0xA0)`. Applying mode-0 twice composes to `0.25*back + 0.75*gradient` - the translucent deep-blue panel. The engine mirror bakes the gradient at alpha `191/255` (`engine-core::save_menu_atlas::ATLAS_RECT_DIALOG_FILL`) and draws it as one source-over sprite (`engine-render::dialog_window_chrome_draws_for`).
+
+Hand sprites come from the cursor family `FUN_8002B994`: the **page-advance hand** (kind 1) draws at `(0x10A, box_y + lines*0xF - 0x13)` while state `0x19` waits for confirm; the **option-picker hand** (kind 0) draws at `(box_x - 6, box_y + cursor*0xF)` on the selected row. Option labels render CLUT-7 white (`_DAT_8007B454 = 7`) at `box_x + 0x10`, 15-px row pitch.
+
 ### Multi-segment box packing
 
 A field NPC's interaction text is a flat pool of `0x1F`-lead lines, each `0x1F <glyphs> 0x00`. The SM packs **consecutive** lines into one window of `_DAT_801F2740 = 3` rows: the byte after a line's `0x00` terminator being another `0x1F` means "same box, next row". A box ends after at most three rows, at the post-page control byte the pager reads in state `0x19` (the table below). So a three-line speech box is three back-to-back `0x1F` lines followed by a single `0x24` (next page); multi-page speech is several such boxes chained by `0x24`.

@@ -138,7 +138,7 @@ A scene-named container that bundles a small runtime-fixup header with a full ev
 +0x800 + offsets[i]              ;   per-record field-VM bytecode
 ```
 
-The header's `u16[0]`, `u16[5]`, `u16[7]` are algebraically tied to a single per-scene constant `N`: `u16[0] = N + 4`, `u16[5] = N`, `u16[7] = N + 2`, and `N = 4 * param + 22` (= byte distance from the file head to the first runtime fixup slot). Strict structural checks combine the three constant words, the algebraic ties, and the `N/param` algebra. Across the entire 1234-entry PROT corpus this matches **97** entries with zero false positives - and **every** match parses cleanly as a scene-event-scripts prescript at `+0x800`.
+The header's `u16[0]`, `u16[5]`, `u16[7]` are algebraically tied to a single per-scene constant `N`: `u16[0] = N + 4`, `u16[5] = N`, `u16[7] = N + 2`, and `N = 4 * param + 22` (= byte distance from the file head to the first runtime fixup slot). Strict structural checks combine the three constant words, the algebraic ties, and the `N/param` algebra. Across the entire 1233-entry PROT corpus this matches **97** entries with zero false positives - and **every** match parses cleanly as a scene-event-scripts prescript at `+0x800`.
 
 The post-header dense data is the [scene_event_scripts](#scene_event_scripts---prescript-only) prescript - a word-aligned per-scene actor/event command structure, **not** field-VM (`FUN_801DE840`) bytecode (see that section for the falsification). The pre-header table at `+0x14` is per-scene runtime metadata: `param` records of 4 bytes each, grouped by the third byte (`b2`) into 1..N scene regions; the last byte is always `0x01` (probably a "live" flag). See [`scene-v12-table.md`](scene-v12-table.md) for the per-byte semantics.
 

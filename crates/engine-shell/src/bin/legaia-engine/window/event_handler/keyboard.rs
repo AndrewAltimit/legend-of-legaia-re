@@ -494,6 +494,45 @@ impl PlayWindowApp {
             }
             return;
         }
+        // `V`: master audio mute toggle. Flips the engine-only `muted`
+        // options knob, pushes it into the mixer's master gate (output
+        // silenced; sequencer + SPU keep ticking so unmute stays in sync),
+        // and persists it to the options config file. The HUD status line
+        // reflects the state ("audio muted").
+        if matches!(code, KeyCode::KeyV) && state == ElementState::Pressed {
+            self.options_state.muted = !self.options_state.muted;
+            self.persist_and_apply_options();
+            log::info!(
+                "audio: {}",
+                if self.options_state.muted {
+                    "muted (V to unmute)"
+                } else {
+                    "unmuted"
+                }
+            );
+            return;
+        }
+        // `I`: toggle the opt-in dynamic-lighting enhancement (the
+        // `--dynamic-lighting` flag's runtime twin). NON-RETAIL: the field
+        // path has no light source, so OFF (the default) is the faithful
+        // pixel-identical render; ON layers a soft warm directional light +
+        // screen-centred light pool over the baked shading (capped ~1.3x).
+        // Pure renderer state - no world/sim effect, replays unaffected.
+        if matches!(code, KeyCode::KeyI) && state == ElementState::Pressed {
+            self.dynamic_lighting = !self.dynamic_lighting;
+            if let Some(r) = self.win.renderer.as_ref() {
+                r.set_dynamic_lighting(self.dynamic_lighting);
+            }
+            log::info!(
+                "render: dynamic lighting {}",
+                if self.dynamic_lighting {
+                    "ON (enhancement - not retail)"
+                } else {
+                    "off (faithful baked shading)"
+                }
+            );
+            return;
+        }
         // `C`: toggle the field camera between the retail follow view
         // (savestate-pinned pitch/yaw/H, player-anchored - the
         // faithful framing) and the wide debug orbit vantage (better
@@ -509,6 +548,44 @@ impl PlayWindowApp {
                     "debug orbit"
                 } else {
                     "retail follow"
+                }
+            );
+            return;
+        }
+        // `T`: cycle the field camera-distance preset (retail -> far ->
+        // farther). A pure framing knob on the follow / debug-orbit
+        // cameras - it never feeds the world simulation. Persisted to the
+        // options config file; the interactive default is `far`.
+        if matches!(code, KeyCode::KeyT)
+            && state == ElementState::Pressed
+            && !self.boot_ui.is_active()
+        {
+            let next = self.session.camera.distance.cycle();
+            self.session.camera.distance = next;
+            self.options_state.camera_distance = next;
+            self.persist_and_apply_options();
+            log::info!("camera: distance = {} (T cycles)", next.label());
+            return;
+        }
+        // `R`: toggle precise movement (opt-in, NON-RETAIL): free-angle
+        // camera-relative locomotion instead of retail's 4/8-way
+        // quantisation - key diagonals walk true 45-degree vectors and an
+        // analog stick's angle passes through continuously. Persisted to
+        // the options config file; default off (the faithful remap).
+        if matches!(code, KeyCode::KeyR)
+            && state == ElementState::Pressed
+            && !self.boot_ui.is_active()
+        {
+            let on = !self.options_state.precise_movement;
+            self.options_state.precise_movement = on;
+            self.session.host.world.precise_movement = on;
+            self.persist_and_apply_options();
+            log::info!(
+                "movement: precise {}",
+                if on {
+                    "ON (free-angle - not retail)"
+                } else {
+                    "off (retail 8-way remap)"
                 }
             );
             return;

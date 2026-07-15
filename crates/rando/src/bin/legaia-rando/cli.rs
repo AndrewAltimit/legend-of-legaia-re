@@ -71,6 +71,15 @@ pub(crate) enum Cmd {
         #[arg(long)]
         input: PathBuf,
     },
+    /// Read-only: list the `.MAP` kind-0 intra-scene teleports (the map-data
+    /// door class most house exits belong to - no script, no MAN record),
+    /// grouped by scene, with each record's walk-component class. The
+    /// population `--house-doors shuffle` rewires alongside the script warps.
+    MapDoors {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+    },
     /// Read-only: show the new game's current starting inventory (the
     /// `(item, count)` slots a New Game begins with - vanilla is Healing Leaf
     /// ×5).
@@ -153,6 +162,128 @@ pub(crate) enum Cmd {
         /// Optionally write the patched image here (for local play only).
         #[arg(long)]
         output: Option<PathBuf>,
+    },
+    /// Translation / language-pack tools: export the disc's text to an
+    /// editable YAML pack, generate per-language skeletons, check coverage,
+    /// and import a filled pack back onto a disc copy.
+    Translate {
+        #[command(subcommand)]
+        cmd: TranslateCmd,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum TranslateCmd {
+    /// Export every cataloged user-facing string (item / spell / art /
+    /// accessory / party names, scene dialog, event-script text) from a disc
+    /// into a YAML language pack with empty `translation:` fields.
+    ///
+    /// The exported pack contains the game's copyrighted text - keep it
+    /// local / share only filled translations per your jurisdiction's rules;
+    /// never commit it to this repository.
+    Export {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+        /// Where to write the pack (YAML).
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+    /// Produce an empty per-language skeleton from an exported pack: same
+    /// keys / sources / budgets, cleared translations, stamped header.
+    ///
+    /// `--resume` seeds it with the translations of an already-published
+    /// (source-less) pack, so a translator can pick up where a shipped pack
+    /// left off without anyone redistributing the source text.
+    Init {
+        /// Target language code (e.g. fr, de, es, it, pt-BR, ja, ru, zh, ko -
+        /// note: non-Latin scripts also need a font patch, see the docs).
+        #[arg(long)]
+        lang: String,
+        /// An existing exported pack to derive from...
+        #[arg(long, conflicts_with = "input", required_unless_present = "input")]
+        from: Option<PathBuf>,
+        /// ...or export straight from a disc image.
+        #[arg(long, required_unless_present = "from")]
+        input: Option<PathBuf>,
+        /// Contributor names for the pack header (repeatable).
+        #[arg(long)]
+        contributor: Vec<String>,
+        /// Pre-fill from an existing (working or distributable) pack, matched
+        /// by key - e.g. one of the shipped `site/lang/*.yaml` packs.
+        #[arg(long)]
+        resume: Option<PathBuf>,
+        /// Also split the skeleton into chunk files of at most N entries each
+        /// (`<output stem>.001.yaml`, ...) for a parallel / bulk fill pass.
+        /// Recombine them with `translate merge`.
+        #[arg(long, value_name = "N")]
+        chunk: Option<usize>,
+        /// Where to write the skeleton (YAML).
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+    /// Strip a filled pack down to the **distributable** shape: the filled
+    /// entries only, keys + your translations + the byte-budget hint, with
+    /// every `source:` / `context:` field (the game's own text) removed.
+    ///
+    /// This is the shape that is safe to publish / commit.
+    Strip {
+        /// The filled working pack (YAML).
+        #[arg(long)]
+        pack: PathBuf,
+        /// Where to write the distributable pack (YAML).
+        #[arg(long, short)]
+        output: PathBuf,
+        /// Overwrite the pack's `notes:` header line.
+        #[arg(long)]
+        notes: Option<String>,
+    },
+    /// Merge the filled entries of several packs (chunks of a bulk fill, a
+    /// shipped pack + your edits, ...) into the first one, matched by key.
+    Merge {
+        /// Base pack - defines the entry set (keys / sources / budgets).
+        #[arg(long)]
+        base: PathBuf,
+        /// Packs whose translations are merged onto the base, in order.
+        #[arg(long = "pack", required = true)]
+        packs: Vec<PathBuf>,
+        /// Where to write the merged pack (YAML).
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+    /// Coverage + validation report for a pack: per-section translated/total
+    /// counts, plus encodability and budget checks on every filled entry.
+    ///
+    /// Without `--input` this is an offline check against the pack's own
+    /// budgets. With `--input` it is a full dry run against a real disc: every
+    /// entry is planned exactly as `import` would (in memory, nothing is
+    /// written), which is the only way to validate a distributable pack's
+    /// budgets - they are hints until a disc is there to measure.
+    Stats {
+        /// The language pack (YAML).
+        #[arg(long)]
+        pack: PathBuf,
+        /// Dry-run the pack against this disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: Option<PathBuf>,
+    },
+    /// Apply a filled pack to a copy of a disc. Untranslated entries are
+    /// left byte-identical; every write is same-size in place and each
+    /// touched sector's EDC/ECC is re-encoded.
+    Import {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+        /// The filled language pack (YAML).
+        #[arg(long)]
+        pack: PathBuf,
+        /// Write the patched image here (contains Sony bytes - local play
+        /// only, never redistribute).
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Write a portable PPF 3.0 patch here (safe to share).
+        #[arg(long)]
+        patch: Option<PathBuf>,
     },
 }
 
@@ -337,9 +468,14 @@ pub(crate) struct RandomizeArgs {
     #[arg(long, value_enum, default_value_t = CouplingArg::Coupled)]
     pub(crate) door_coupling: CouplingArg,
     /// How intra-town (house / interior) doors are reassigned. Only `shuffle`
-    /// is meaningful (a per-scene, class-preserving shuffle of the player
-    /// door-warp target tiles: interior landings permute among house entries,
-    /// exterior doorsteps among exits); `random` is treated as `none`.
+    /// is meaningful; `random` is treated as `none`. Covers both intra-town
+    /// door classes: the scripted door warps (a per-scene, class-preserving
+    /// shuffle of the player door-warp target tiles: interior landings permute
+    /// among house entries, exterior doorsteps among exits) and the `.MAP`
+    /// kind-0 intra-scene teleports (most house exits; a per-scene shuffle
+    /// accepted only when the scene's walk-component reachability is
+    /// preserved, so no rewire can strand the player). `legaia-rando
+    /// house-doors` / `map-doors` list the two populations.
     #[arg(long, value_enum, default_value_t = DropArg::None)]
     pub(crate) house_doors: DropArg,
     /// Number of random starting items the new game begins with (`0` = leave the

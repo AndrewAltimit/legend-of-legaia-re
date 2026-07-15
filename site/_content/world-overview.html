@@ -3,6 +3,7 @@
   <h1>World overview</h1>
   <p class="lede">
     Each kingdom's overworld in real-time WebGL 3D, straight from your disc image - no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately. Your disc is cached locally in the browser (shared with the viewer, audio, and monster pages), so it auto-loads on reload - use <em>Forget</em> on the chip to clear. The <strong>&#11015; Download .glb</strong> button under the canvas exports the assembled continent - terrain heightfield, placed landmarks and trees, textures baked from VRAM - as a single binary <a href="https://www.khronos.org/gltf/">glTF</a> that drops straight into Blender, three.js, or any glTF viewer (same format as the enemy-table model export).
+    With a VR headset, the <strong>VR</strong> button in the canvas bar presents the continent over WebXR - as a diorama or standing on the terrain - in Chrome/Edge with SteamVR as the active OpenXR runtime, served from <code>http://localhost</code> or https (WebXR needs a secure context; the button explains what's missing if it can't start).
   </p>
 </header>
 
@@ -244,7 +245,8 @@
      below this point relies on, so users don't hit a stale cached copy. -->
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
+<script src="js/vr-mode.js?v=vr-3"></script>
 <script src="js/webgl-shaders.js?v=orbit-controls-1"></script>
 <script src="js/webgl-math.js?v=orbit-controls-1"></script>
 <script src="js/webgl-tmd.js?v=orbit-controls-1"></script>
-<script src="js/world-overview-app.js?v=scene-export-1"></script>
+<script src="js/world-overview-app.js?v=vr-fp-1"></script>

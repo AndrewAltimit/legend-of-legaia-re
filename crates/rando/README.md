@@ -6,7 +6,8 @@ Edits gameplay data on the user's own `.bin` and writes it back: monster item
 drops (plus an optional additive low-chance bonus equipment drop, injected into
 the battle-end reward routine), random-encounter formations (plus an optional
 experience reward on a successful escape, injected into the escape teardown),
-treasure-chest contents, steal items, Tactical-Arts button combos, doors,
+treasure-chest contents, steal items, Tactical-Arts button combos, doors
+(scene-transition, house-script and `.MAP` kind-0 map doors),
 starting items,
 starting level, equipment passive stat bonuses, weapon specialty (which class
 each character favors), and a set of battle-tuning tables (monster combat stats,
@@ -40,6 +41,7 @@ full design.
   - [Arts](#arts)
   - [Doors](#doors)
   - [House doors](#house-doors)
+  - [Map doors](#map-doors)
   - [Shops](#shops)
   - [Casino](#casino)
   - [Starting items](#starting-items)
@@ -47,6 +49,7 @@ full design.
   - [Item prices](#item-prices)
   - [Unused content](#unused-content)
   - [Name injection](#name-injection)
+- [Translation packs](#translation-packs)
 - [Orchestration (`apply`)](#orchestration-apply)
 - [Door coupling](#door-coupling)
 - [PPF output (`ppf`)](#ppf-output-ppf)
@@ -508,6 +511,16 @@ reached via the partition-2 record-offset table (see
 
 - `SceneDoors::locate` enumerates a scene's door sites
   (`legaia_asset::man_edit::scene_change_sites`).
+- `classify_sites` gates the shuffle pool (`DoorSiteClass`): only
+  **walk-through doors** shuffle - partition-2 records referenced by a `.MAP`
+  kind-1 **gate-1** walk trigger (primary `+0x10000` block or the `+0x12000`
+  sibling-entry fallback window, both of which retail's lookup scans), with
+  neither endpoint a kingdom-overworld hub (`map01`/`map02`/`map03`).
+  Script/cutscene-invoked records (no trigger reference - e.g. the world-map
+  hubs' story-return records like the Genesis-Tree-revival return to Rim Elm)
+  and every town↔overworld transition stay vanilla; shuffling them replays
+  cutscene hops at random doors. Byte-identity of the excluded records is
+  asserted by the disc-gated `door_exclusions_real` test.
 - `rebuild` applies destination rewrites through the **variable-length** `man_edit`
   relocation engine, recompresses, validates, and reports whether it fits the
   footprint.
@@ -536,7 +549,34 @@ prop / cutscene) positioning and are never touched.
   interior-to-interior softlock is constructible.
 
 Shuffle-only. Census + signature + the runtime-captured Mei's-house anchor are
-pinned by the disc-gated `house_door_classifier_real` test.
+pinned by the disc-gated `house_door_classifier_real` test. The same option
+also runs the [map-door pass](#map-doors).
+
+## Map doors
+
+`.MAP` kind-0 intra-scene-teleport randomizer (`map_door` module) - the door
+class most house **exits** belong to, and the largest door population on the
+disc: `[tile_x][tile_z][dest_x][dest_z]` records in the per-scene `.MAP`
+file's `+0x10000` trigger block, no script and no MAN record (retail arm
+`FUN_801D1EC4` at `0x801d21c0`; destinations in half-tiles,
+`world = (dest_x*64 + 64, (dest_z+1)*64)`).
+
+- `SceneMapDoors::locate` parses a `.MAP` entry's kind-0 sub-table and
+  attributes each record's trigger tile + destination to the scene's
+  4-connected walk components (the spawn-resolver samplers: object-grid
+  walk-visible floor minus collision wall bits).
+- `plan_shuffle` permutes the attributable destinations per scene and accepts
+  a permutation only when the resulting component graph preserves every
+  retail reachability pair and creates no new one-way trap from the main
+  component (bounded deterministic retries; unverifiable scenes stay
+  vanilla).
+- Edits are same-size 2-byte in-place writes into the raw (uncompressed)
+  `.MAP` sectors; records past the `.MAP`'s own `0x12000` footprint (the
+  fallback window is the next PROT entry) are never touched.
+
+Shuffle-only, driven by the same `--house-doors` option. Round-tripped by the
+disc-gated `map_door_patch_real` test and the engine-side
+`map_door_randomizer_runtime_e2e` dispatch oracle.
 
 ## Shops
 
@@ -706,6 +746,32 @@ gap flanked by rodata constants proven preserved file→RAM; **not** the data-se
 zero-fill tail, which is `.sbss` scratch the game clobbers, nor an arbitrary
 always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 `name_ptr_slot`, leaving the other empty-name ids blank.
+
+## Translation packs
+
+`translation` module + the `legaia-rando translate` subcommands
+(`export` / `init` / `strip` / `merge` / `stats` / `import`): community
+language packs. Exports every cataloged user-facing string into an editable YAML
+pack - the SCUS name pools (items, item types, spells, Tactical Arts, accessory
+passives, new-game party names) and the `0x1F`-segment dialog corpus
+(scene-bundle MANs, LZS-decompressed; plus raw carriers - v12 event-script
+prescripts and the streaming-MAN dungeon scenes). Import applies filled
+`translation:` fields as same-size in-place patches (strings re-terminated -
+budget reclaims the 4-byte-alignment zero padding; dialog segments space-padded
+to their exact framing; a scene whose recompress overflows its LZS footprint
+rolls back its longest lines one at a time), with per-character encodability
+errors for anything outside the retail ASCII glyph set. Untranslated entries
+stay byte-identical.
+
+Two pack shapes: a **working** pack carries `source:` (the game's own text - the
+translator's reference, gitignored, never committed) while a **distributable**
+pack (`translate strip`) drops the source and keeps only `key -> translation`,
+so it holds no original script and *is* committable - the shipped
+`site/lang/*.yaml` packs are this shape, byte-budget-validated against the disc
+at import (the in-pack budget is a hint only). `translate init --resume`
+seeds a fresh working pack from a shipped one, `--chunk` splits for a parallel
+bulk fill, `merge` recombines. Full workflow + schema:
+[`docs/tooling/translation.md`](../../docs/tooling/translation.md).
 
 ## Orchestration (`apply`)
 

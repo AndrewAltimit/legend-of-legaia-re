@@ -44,7 +44,7 @@
 //! Shares the F0/F1 filter constants with [`legaia_xa`] - the algorithm is
 //! identical to XA-ADPCM, only the block packaging differs.
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 /// On-disk bytes are `p B A V` (`0x70 0x42 0x41 0x56`); read as a little-endian
@@ -361,6 +361,69 @@ pub fn find_vabs(buf: &[u8]) -> Vec<usize> {
 /// Decode one VAG sample body (a stream of 16-byte SPU ADPCM blocks) into
 /// signed 16-bit PCM. Stops at end-of-buffer or at a block whose flag byte
 /// has the loop-end bit (bit 0) set.
+/// How many 16-byte blocks starting at `align` carry a **legal** SPU-ADPCM
+/// filter index (`0..=4`). The probe behind [`decode_vag_aligned`].
+fn legal_filter_blocks(buf: &[u8], align: usize) -> (usize, usize) {
+    if align >= buf.len() {
+        return (0, 0);
+    }
+    let blocks = (buf.len() - align) / VAG_BLOCK_BYTES;
+    let good = (0..blocks)
+        .filter(|b| ((buf[align + b * VAG_BLOCK_BYTES] >> 4) & 0x0F) <= 4)
+        .count();
+    (good, blocks)
+}
+
+/// Decode a VAG body whose ADPCM block grid may not start at byte 0.
+///
+/// **Why this exists.** The sample spans [`parse`] reports start **4 bytes
+/// before** the real ADPCM grid on every VAB in the retail corpus: the declared
+/// section sizes (header + ProgAtr + VagAtr + VAG size table) sum to a body
+/// origin 4 bytes below where the blocks actually begin, so a span's first four
+/// bytes are the tail of the previous sample. Feeding such a body straight to
+/// [`decode_vag`] decodes nothing at all - the misaligned first block reads as a
+/// filter index of 8 (or an end flag), and the decoder stops on the sentinel.
+///
+/// The skew is not a guess. An SPU-ADPCM block header's high nibble is the
+/// filter index and only `0..=4` are legal, which makes the alignment
+/// **measurable**: across the retail VABs, the grid at `+4` yields legal filters
+/// in *100%* of blocks while every other alignment sits at chance (~55%). This
+/// decoder probes the alignment, requires one to be unambiguously clean, and
+/// decodes from there - so a body that does *not* have a self-consistent grid
+/// fails loudly instead of returning plausible noise.
+///
+/// [`decode_vag`] and [`parse`] are left alone: their `byte_offset` is what
+/// every existing consumer (including the SPU upload path) already indexes with.
+/// Correcting the origin belongs in `parse`, but that shifts a value other
+/// subsystems depend on and wants its own change.
+pub fn decode_vag_aligned(buf: &[u8]) -> Result<Vec<i16>> {
+    // Only 0 and 4 are plausible origins (a block is 16 bytes and the skew is a
+    // whole number of words); probe both and demand a clean winner.
+    let mut best: Option<(usize, f64)> = None;
+    for align in [0usize, 4] {
+        let (good, blocks) = legal_filter_blocks(buf, align);
+        if blocks == 0 {
+            continue;
+        }
+        let score = good as f64 / blocks as f64;
+        if best.map(|(_, s)| score > s).unwrap_or(true) {
+            best = Some((align, score));
+        }
+    }
+    let (align, score) = best.context("VAG body too small to hold an ADPCM block")?;
+    if score < 0.99 {
+        bail!(
+            "no self-consistent ADPCM block grid in this VAG body (best alignment +{align} scores {:.0}% legal filters)",
+            score * 100.0
+        );
+    }
+    // Trim to a whole number of blocks - the 4-byte lead-in leaves a partial
+    // block's worth of the *next* sample dangling off the end of the span.
+    let body = &buf[align..];
+    let whole = body.len() / VAG_BLOCK_BYTES * VAG_BLOCK_BYTES;
+    decode_vag(&body[..whole])
+}
+
 pub fn decode_vag(buf: &[u8]) -> Result<Vec<i16>> {
     if !buf.len().is_multiple_of(VAG_BLOCK_BYTES) {
         bail!(

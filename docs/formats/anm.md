@@ -454,13 +454,42 @@ in the corpus has the last 8 bytes set to zero). The runtime pointer
 animated-object count.
 
 - `a & 0xFF` = **bone count** (number of animated TMD objects in this
-  clip). The high byte of `a` appears to be a sub-format selector: clear
-  for records 0..8 of every field-form bundle, set to `0x01` for records
-  9+ and for every record in the Baka Fighter bundle.
+  clip). The high byte of `a` is a **step-scaling selector**: with bit 0
+  set, the playback advancer scales its per-tick step to
+  `(rate * 2 + div - 1) / div` instead of using `rate` verbatim. Clear for
+  records 0..8 of every field-form bundle, set to `0x01` for records 9+ and
+  for every record in the Baka Fighter bundle.
 - `b` = **frame count** of this animation clip (3..60 across the corpus;
   longer clips like Vahn's run-loop have higher counts).
-- `flag` = secondary sub-format byte (`0x02` / `0x04` in the field corpus;
-  `0x0201` / `0x0401` / `0x0402` in the Baka Fighter bundle).
+- `flag` = the scaled step's **divisor** in its low byte (`0x02` / `0x04` in
+  the field corpus; `0x0201` / `0x0401` / `0x0402` in the Baka Fighter
+  bundle).
+
+Those three header fields are exactly what the playback advancer
+[`FUN_800204F8`](../../ghidra/scripts/funcs/800204f8.txt) reads: it takes the
+bone count at clip `+0`, the scaling flag at clip `+1`, the **frame count** at
+clip `+2` and the divisor at clip `+6`.
+
+### Playback: the frame cursor
+
+`FUN_800204F8` is the per-frame clip driver, called from the actor tick
+`FUN_80021DF4`. It binds the clip (`actor+0x4C = pack_base + offsets[id]`,
+rebinding whenever the requested id `actor+0x5C` differs from the bound id
+`actor+0x5E`, which also resets the cursor and selects draw kind `1`), then
+advances the **frame cursor** `actor+0x68`.
+
+The cursor is in **1/16-frame units**: `FUN_8001B964` poses from
+`frame = (i16)(actor+0x68) >> 4`, and the clip's last position is
+`frame_count * 16 - 1`. The per-tick step is `actor+0x6A` (through the header
+scaling above), and the mode word `actor+0x62` carries hold (`0x0002`), clamp
+(`0x0008`, clear = loop), reverse (`0x0080`), an end latch (`0x0100`) the tick
+sets on reaching either end, and a restart request (`0x0200`) the next tick
+consumes. Scripts drive all of it through the field-VM ops `0x2B` / `0x2C` /
+`0x2D` (set / clear / spin on a bit of `actor+0x62`), `0x4C` nibble-4 sub-1 (the
+rate) and `0x4C` nibble-3 sub-5 / sub-6 (the two pose snaps); `0x22 <id>` is
+SET_ANIM. This is what swings a town's house doors open -
+see [`field-locomotion.md`](../subsystems/field-locomotion.md#the-door-swing-how-a-bind-script-drives-the-clip).
+Engine port: `legaia_engine_core::field_env::PropAnim`.
 
 The detector at `legaia_asset::player_anm::find_in_entry` validates the
 size invariant on every record before declaring a bundle parsed; the

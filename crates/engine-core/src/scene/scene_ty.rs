@@ -345,6 +345,40 @@ impl Scene {
         Ok((primary, fallback))
     }
 
+    /// The scene's `.MAP` **kind-0** intra-scene-teleport tables
+    /// (`(primary, fallback)`), the door class that carries its destination in
+    /// the `.MAP` rather than in a MAN script. Same block + fallback
+    /// resolution as [`Self::field_tile_triggers`].
+    ///
+    /// See [`crate::field_regions::IntraSceneTeleport`].
+    // REF: FUN_801D1EC4, FUN_801D5630
+    pub fn field_intra_scene_teleports(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<(
+        Vec<crate::field_regions::IntraSceneTeleport>,
+        Vec<crate::field_regions::IntraSceneTeleport>,
+    )> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        let primary = bytes
+            .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..)
+            .map(crate::field_regions::parse_intra_scene_teleports)
+            .unwrap_or_default();
+        let mut fallback = bytes
+            .get(crate::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
+            .map(crate::field_regions::parse_intra_scene_teleports)
+            .unwrap_or_default();
+        if fallback.is_empty()
+            && let Ok(sibling) = index.entry_bytes_extended(idx + 1)
+        {
+            fallback = crate::field_regions::parse_intra_scene_teleports(&sibling);
+        }
+        Ok((primary, fallback))
+    }
+
     /// The scene's static-object placements: one entry per placed tile of the
     /// field map file's object-index grid (`+0x8000`), positioned in world
     /// space from the `+0x0000` object-record table. This is the source for
@@ -364,6 +398,33 @@ impl Scene {
         };
         let bytes = index.entry_bytes_extended(idx)?;
         Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
+    }
+
+    /// The scene's **object binds**: for every `.MAP` tile carrying a kind-1
+    /// trigger, the MAN partition-0 record retail attaches to a placed object
+    /// anchored there, plus that record's animation id
+    /// ([`crate::field_env::ObjectBind`]).
+    ///
+    /// A placed object with no bind at its footprint-anchor tile is never
+    /// spawned; one whose bind names a nonzero anim id is drawn **posed** from
+    /// that clip's frame 0 (the rest state) rather than at its raw object-local
+    /// vertices. Mirrors the `func_0x801d5630` lookup inside `FUN_8003A55C`.
+    /// Returns `Ok(None)` if the scene has no field map or no MAN.
+    pub fn field_object_binds(
+        &self,
+        index: &ProtIndex,
+    ) -> Result<Option<std::collections::HashMap<(u8, u8), crate::field_env::ObjectBind>>> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok(None);
+        };
+        let Some(man) = self.field_man_payload(index)? else {
+            return Ok(None);
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            return Ok(None);
+        };
+        let map = index.entry_bytes_extended(idx)?;
+        Ok(Some(crate::field_env::object_binds(&map, &man_file, &man)))
     }
 
     /// The scene's **bulk terrain** tiles: one entry per visible cell of the

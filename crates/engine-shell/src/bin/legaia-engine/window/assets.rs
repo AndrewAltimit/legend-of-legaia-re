@@ -3,10 +3,36 @@
 use super::*;
 
 impl PlayWindowApp {
+    /// The per-scene ANM bundle in the player-ANM frame-stream layout (the pose
+    /// source `FUN_8001B964` walks): the type-`0x05` section of the scene's
+    /// first PROT slot. It poses BOTH the MAN placement NPCs/props and the
+    /// `.MAP` placed static objects whose bind names an anim id.
+    ///
+    /// `find_in_entry`'s descriptor-count seed varies per scene: town01's bundle
+    /// resolves at 3, but the opening prologue scenes stash theirs deeper -
+    /// opdeene (PROT entry 749), opstati (754), opurud (764) only surface it at
+    /// descriptor count >= 5. Try the counts each scene needs and take the first
+    /// bundle any entry yields.
+    pub(super) fn find_scene_anm_bundle(
+        &self,
+    ) -> Option<legaia_asset::player_anm::PlayerAnmBundle> {
+        self.session.host.scene.as_ref().and_then(|s| {
+            s.entries.iter().find_map(|e| {
+                [3usize, 5, 6, 7].into_iter().find_map(|desc| {
+                    legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
+                        .into_iter()
+                        .next()
+                })
+            })
+        })
+    }
+
     pub(super) fn upload_assets(&mut self) {
         let Some(res) = self.scene_res.take() else {
             return;
         };
+        // Pose source for the scene's animated actors + placed static objects.
+        let scene_bundle = self.find_scene_anm_bundle();
         let (
             vram_opt,
             font_opt,
@@ -15,6 +41,8 @@ impl PlayWindowApp {
             tmd_src_index,
             color_meshes,
             color_tmd_src_index,
+            posed_placement_meshes,
+            posed_tmds,
             lo,
             hi,
             world_map_hf,
@@ -84,7 +112,31 @@ impl PlayWindowApp {
                 // matches the asset-viewer's cleanup and avoids the "flat
                 // green CLUT[0]" shells over correctly-textured geometry
                 // that the unfiltered builder produces.
-                let vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
+                let mut vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
+                // Prologue dim ambient on the LIT prim rows. Retail stages the
+                // GTE back/ambient colour `DAT_8007B788` = `0x00202020` (dim,
+                // R=G=B=32) for the prologue cutscene legs vs `0x00FFFFFF` in
+                // town01 (`FUN_80043390` stages it into GTE cr13-15; byte-exact
+                // across save states - see docs/subsystems/cutscene.md "Full-
+                // scene sepia grade"). The lit rows (0/1) carry no baked colour
+                // word - the builder marks them MODULATION_NEUTRAL - and in
+                // retail their GPU modulation colour comes out of the GTE
+                // lighting sum, whose prologue floor is that dim ambient. Give
+                // them the pinned ambient so the opdeene cave-wall shells
+                // render dark like the retail tableau backdrop instead of
+                // full-bright gold walls that bury the crater-rim camera
+                // (the baked-colour rows - the monument / wings - keep their
+                // own words, which is exactly retail's bright-on-dark
+                // contrast). Scoped to the prologue legs by the same gate as
+                // the sepia grade; everything else keeps neutral.
+                if self.session.host.world.scene_color_grade().is_some() {
+                    const PROLOGUE_AMBIENT: u8 = 0x20; // DAT_8007B788 low byte
+                    for c in &mut vmesh.colors {
+                        if *c == [legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3] {
+                            *c = [PROLOGUE_AMBIENT; 3];
+                        }
+                    }
+                }
                 if vmesh.indices.is_empty() {
                     if std::env::var_os("LEGAIA_DIAG_PLACE").is_some() {
                         let (_, stats) = rtmd.build_filtered_vram_mesh_reasoned(&res.vram);
@@ -135,11 +187,53 @@ impl PlayWindowApp {
                         hi[ax] = mhi[ax];
                     }
                 }
+                // Diag: `LEGAIA_DIAG_MESHTEX=<res index>` dumps a KEPT mesh's
+                // surviving texture references (distinct CBA/TSB pairs) + AABB,
+                // for chasing a mesh that renders flat / mis-textured.
+                if std::env::var("LEGAIA_DIAG_MESHTEX")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    == Some(src_i)
+                {
+                    let mut pairs = std::collections::BTreeSet::new();
+                    for ct in &vmesh.cba_tsb {
+                        pairs.insert((ct[0], ct[1]));
+                    }
+                    let decoded: Vec<String> = pairs
+                        .iter()
+                        .map(|&(cba, tsb)| {
+                            format!(
+                                "cba={cba:#x} CLUT({},{}) tsb={tsb:#x} page({},{}) bpp{}",
+                                (cba & 0x3f) * 16,
+                                cba >> 6,
+                                (tsb & 0xf) * 64,
+                                ((tsb >> 4) & 1) * 256,
+                                4 << ((tsb >> 7) & 3)
+                            )
+                        })
+                        .collect();
+                    let mut color_hist = std::collections::BTreeMap::new();
+                    for c in &vmesh.colors {
+                        *color_hist.entry(*c).or_insert(0usize) += 1;
+                    }
+                    log::info!(
+                        "DIAG mesh tex: res {} (entry {} off {:#x}) verts {} tris {} \
+                         aabb {mlo:?}..{mhi:?} refs: {} colors: {:?}",
+                        src_i,
+                        rtmd.entry_idx,
+                        rtmd.offset,
+                        vmesh.positions.len(),
+                        vmesh.indices.len() / 3,
+                        decoded.join(" | "),
+                        color_hist
+                    );
+                }
                 match r.upload_vram_mesh(
                     &vmesh.positions,
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
+                    &vmesh.colors,
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
@@ -150,6 +244,109 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("TMD upload skipped: {e:#}"),
                 }
             }
+            // **Posed** static-object meshes. A placed `.MAP` object whose bind
+            // names an anim id (`field_env::ObjectBind`) is a multi-object prop
+            // whose TMD objects are the *bones* of that clip - Rim Elm's
+            // cupboard is the canonical one: object 0 is the cabinet, objects 1
+            // and 2 are its two doors, authored about their own hinges. Retail
+            // draws such an actor through `FUN_8001b964`, which applies the
+            // clip's per-bone rigid transform to each object; drawing them raw
+            // leaves the doors floating inside the cabinet, below the floor.
+            //
+            // The rest state is **frame 0** (doors closed); the clip's later
+            // frames are the door swinging open, which retail steps once the
+            // object's bind script is resumed by body contact. Frame 0 is baked
+            // once per (mesh, anim) pair and instanced - the cheap path every
+            // prop sits on until it is touched - while a prop whose clip has
+            // moved off frame 0 is re-posed per frame at the draw site (see
+            // `PlayWindowApp::field_posed_props` / `field_prop_anims`).
+            let mut posed_placement_meshes = PosedPlacementMeshes::new();
+            let mut posed_tmds: Vec<(legaia_tmd::Tmd, Vec<u8>)> = Vec::new();
+            if let Some(bundle) = scene_bundle.as_ref() {
+                for (res_tmd, anim_id) in self.posed_placement_keys(&res) {
+                    let rtmd = &res.tmds[res_tmd];
+                    let rec_idx = (anim_id - 1) as usize;
+                    let Ok(rec) = bundle.record(rec_idx) else {
+                        log::warn!(
+                            "play-window: placed object wants ANM record {rec_idx} \
+                             (anim {anim_id}); the scene bundle has no such record"
+                        );
+                        continue;
+                    };
+                    let bones = rec.bone_count as usize;
+                    // Retail's count-equality contract (`FUN_8001b964` refuses
+                    // to draw when the mesh chain and the clip disagree).
+                    if bones != rtmd.tmd.objects.len() {
+                        log::warn!(
+                            "play-window: ANM record {rec_idx} has {bones} bones but env mesh \
+                             (res {res_tmd}) has {} objects - not posing",
+                            rtmd.tmd.objects.len()
+                        );
+                        continue;
+                    }
+                    let offsets: Vec<([i16; 3], [i16; 3])> = (0..bones)
+                        .map(|b| match bundle.bone_transform(rec_idx, 0, b) {
+                            Some(t) => (
+                                [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                                [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                            ),
+                            None => ([0; 3], [0; 3]),
+                        })
+                        .collect();
+                    let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                        &rtmd.tmd, &rtmd.raw, &offsets,
+                    );
+                    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
+                        &rtmd.tmd, &rtmd.raw, &offsets,
+                    );
+                    // Retain the raw TMD so the draw pass can re-pose this prop
+                    // at whatever frame its clip is on.
+                    let mut slot = PosedMesh {
+                        tmd: Some(posed_tmds.len()),
+                        ..Default::default()
+                    };
+                    posed_tmds.push((rtmd.tmd.clone(), rtmd.raw.clone()));
+                    if !vmesh.indices.is_empty() {
+                        match r.upload_vram_mesh(
+                            &vmesh.positions,
+                            &vmesh.uvs,
+                            &vmesh.cba_tsb,
+                            &vmesh.normals,
+                            &vmesh.colors,
+                            &vmesh.indices,
+                        ) {
+                            Ok(m) => {
+                                slot.vram = Some(meshes.len());
+                                meshes.push(m);
+                                tmd_data.push((rtmd.tmd.clone(), rtmd.raw.clone()));
+                            }
+                            Err(e) => log::warn!("posed placement mesh upload skipped: {e:#}"),
+                        }
+                    }
+                    if !cmesh.is_empty() {
+                        match r.upload_color_mesh_blended(
+                            &cmesh.positions,
+                            &cmesh.colors,
+                            &cmesh.indices,
+                            &cmesh.blend,
+                        ) {
+                            Ok(m) => {
+                                slot.color = Some(color_meshes.len());
+                                color_meshes.push(m);
+                            }
+                            Err(e) => log::warn!("posed placement colour upload skipped: {e:#}"),
+                        }
+                    }
+                    posed_placement_meshes.insert((res_tmd, anim_id), slot);
+                }
+                if !posed_placement_meshes.is_empty() {
+                    log::info!(
+                        "play-window: {} posed static-object meshes (frame-0 rest pose)",
+                        posed_placement_meshes.len()
+                    );
+                }
+            }
+
             // Bulk **ground** heightfield: the surface built from the `.MAP`
             // floor grid (the pack meshes are only the placed objects /
             // landmarks, not a per-cell ground mesh), textured per cell from
@@ -176,6 +373,7 @@ impl PlayWindowApp {
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
+                    &vmesh.colors,
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
@@ -197,6 +395,8 @@ impl PlayWindowApp {
                 tmd_src_index,
                 color_meshes,
                 color_tmd_src_index,
+                posed_placement_meshes,
+                posed_tmds,
                 lo,
                 hi,
                 world_map_hf,
@@ -226,11 +426,21 @@ impl PlayWindowApp {
         // environment object -> its scene-pack mesh -> a world transform.
         // Built here (not per-frame) because the placement table + pack are
         // fixed for the scene; the field draw branch just replays the list.
-        let field_placement_draws = self.resolve_field_placement_draws(&res, &tmd_src_index);
+        // Posed placed props (house doors, cupboards, the windmill): one draw
+        // per placement + its live clip state, so each keeps its own cursor.
+        // Resolved before the placement lists, which hand these props over.
+        let posed_props =
+            self.resolve_posed_props(&res, &posed_placement_meshes, scene_bundle.as_ref());
+        let field_placement_draws =
+            self.resolve_field_placement_draws(&res, &tmd_src_index, &posed_placement_meshes, true);
         // Same resolver, but bridged through the colour-mesh list: the untextured
         // props' placement transforms map to `color_meshes` indices.
-        let field_placement_color_draws =
-            self.resolve_field_placement_draws(&res, &color_tmd_src_index);
+        let field_placement_color_draws = self.resolve_field_placement_draws(
+            &res,
+            &color_tmd_src_index,
+            &posed_placement_meshes,
+            false,
+        );
         let field_terrain_draws = self.resolve_field_terrain_draws(&res, &tmd_src_index);
         // Untextured ground tiles resolve through the colour-mesh bridge (the
         // textured bridge has no entry for them - they'd render as floor holes).
@@ -370,6 +580,7 @@ impl PlayWindowApp {
                         gauge_digits: atlas_data.band_gauge_digits(),
                         gauge_100: atlas_data.band_gauge_100(),
                         gauge_fill: atlas_data.band_gauge_fill(),
+                        dialog_fill: atlas_data.band_dialog_fill(),
                         icon_weapon: atlas_data.band_icon_weapon(),
                         icon_helmet: atlas_data.band_icon_helmet(),
                         icon_armor: atlas_data.band_icon_armor(),
@@ -400,6 +611,10 @@ impl PlayWindowApp {
         self.field_placement_draws = field_placement_draws;
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
+        // The posed props own their own draws (one per placement, so each keeps
+        // its own clip cursor) and their own live animation state.
+        self.field_posed_tmds = posed_tmds;
+        self.field_posed_props = posed_props;
         self.world_map_terrain_draws = world_map_terrain_draws;
         self.ground_heightfield = world_map_hf;
         self.world_map_slot4_lines = world_map_slot4_lines;
@@ -514,6 +729,7 @@ impl PlayWindowApp {
                         &vmesh.uvs,
                         &vmesh.cba_tsb,
                         &vmesh.normals,
+                        &vmesh.colors,
                         &vmesh.indices,
                     ) {
                         Ok(m) => {
@@ -613,36 +829,20 @@ impl PlayWindowApp {
         self.field_npc_draws.clear();
         self.npc_clip_players.clear();
         self.npc_anim_srcs.clear();
+        // The posed-mesh memo is keyed by `(slot, clip frame)`; the incoming
+        // scene reuses both, so it must not survive the clip-player rebuild.
+        self.npc_pose_cache.clear();
+        self.npc_pose_verify.clear();
         self.npc_anim_bundles = (None, None);
         self.npc_bundle_special.clear();
         if world.mode == SceneMode::Field
             && let Some(r) = self.win.renderer.as_ref()
         {
-            // The per-scene ANM bundle in the player-ANM frame-stream layout
-            // (the pose source `FUN_8001B964` walks): the type-0x05 section
-            // of the scene's first PROT slot (`player_anm::find_in_entry`;
-            // field builds don't surface it through `res.anm_packs`).
-            //
-            // `find_in_entry`'s descriptor-count seed varies per scene: town01's
-            // bundle resolves at 3, but the opening prologue scenes stash theirs
-            // deeper - opdeene (PROT entry 749), opstati (754), opurud (764) only
-            // surface it at descriptor count >= 5. Hardcoding 3 returned `None`
-            // for all three, so their vignette actors got no clip player and
-            // rendered as a FROZEN tableau under the narration crawl (the "3D
-            // isn't playing while the text scrolls" gap). Try the counts each
-            // scene needs and take the first bundle any entry yields, so the
-            // creation-myth actors animate through the halt-suspended crawl -
-            // exactly retail's per-actor anim tick, which runs independent of the
-            // parked timeline script (see docs/subsystems/cutscene.md).
-            let scene_bundle = self.session.host.scene.as_ref().and_then(|s| {
-                s.entries.iter().find_map(|e| {
-                    [3usize, 5, 6, 7].into_iter().find_map(|desc| {
-                        legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
-                            .into_iter()
-                            .next()
-                    })
-                })
-            });
+            // The per-scene ANM bundle (see `find_scene_anm_bundle`): field
+            // builds don't surface it through `res.anm_packs`, and the prologue
+            // scenes' vignette actors need it or they render as a FROZEN tableau
+            // under the narration crawl. Resolved once at the top of this fn -
+            // the placed static objects pose from the same bundle.
             let locomotion_bundle = self
                 .session
                 .host
@@ -736,6 +936,7 @@ impl PlayWindowApp {
                         &vmesh.uvs,
                         &vmesh.cba_tsb,
                         &vmesh.normals,
+                        &vmesh.colors,
                         &vmesh.indices,
                     ) {
                         Ok(m) => {

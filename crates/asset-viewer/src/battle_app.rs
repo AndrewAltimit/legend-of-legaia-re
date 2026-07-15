@@ -179,6 +179,7 @@ impl BattleSceneApp {
                 &vmesh.uvs,
                 &vmesh.cba_tsb,
                 &vmesh.normals,
+                &vmesh.colors,
                 &vmesh.indices,
             ) {
                 Ok(mesh) => self.meshes.push(WorldActorMesh {

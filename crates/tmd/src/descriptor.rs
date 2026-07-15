@@ -132,15 +132,52 @@ impl Descriptor {
         let is_quad = (f_shifted & 1) == 1;
 
         let (byte1, byte3, byte4) = TABLE[table_row as usize];
-        // vertex_offset replicates the same logic as
-        // legaia_prims::vertex_offset_bytes - kept here so the descriptor
-        // is self-contained.
+        // Vertex-index offset, in u16 units, keyed off the row's byte 3.
+        //
+        // Triangles read the table's byte 4 directly (both renderers agree).
+        // Quads take the per-byte3 chain of `FUN_80029888` (the light-source
+        // renderer - the one the field/town env meshes go through):
+        //
+        //     byte3 == 0 -> 2     byte3 == 1 -> 8
+        //     byte3 == 2 -> 8     byte3 == 3 -> 0xE
+        //     else (5, 7)         -> the lit-textured rows 0 / 1
+        //
+        // The sibling renderer `FUN_8002735c` instead falls back to
+        // `byte4 + 2` for any byte3 it doesn't special-case, which lands rows
+        // 0/1's quads (9 and 8 u16 = byte 18 / 16) inside the *normal*-index
+        // block that trails the vertices - the indices then blow past the
+        // object's vertex count and every such prim is dropped. That is what
+        // shredded the lit town houses (Rim Elm object 137: 105 of 163 prims
+        // dropped).
+        //
+        // Rows 0/1 quads are pinned to 6 u16 (byte 12) from the packets
+        // themselves, which is where both the geometry and the arithmetic land:
+        //
+        //   * a lit textured quad is `[12-byte texture block][4 vertex
+        //     indices][normal indices]` - the texture block packs u3/v3 into
+        //     the tri layout's trailing pad half-word, so it stays 12 bytes for
+        //     both tris and quads;
+        //   * an object's `n_normal` is exactly `1*FT4 + 3*GT3 + 4*GT4` over
+        //     its lit groups (Rim Elm slot 36 object 0: 8 + 132 + 400 = 540,
+        //     its declared normal count), so the words after the vertices are
+        //     the normal block, one entry per corner (per prim, for flat FT4);
+        //   * read at 12 the four indices are in range and coplanar (worst
+        //     out-of-plane distance 2.2 units); read at 14 or 16 they are not
+        //     (up to 177), and the trailing word walks 0,1,2,... - the flat
+        //     prims' per-face normal index, not a vertex.
+        //
+        // `FUN_80029888`'s chain already yields 12 for row 1 (byte4 = 6); row 0
+        // (byte4 = 7) is the one place the retail arithmetic and the on-disc
+        // packets disagree - 7 u16 is where row 0's *triangle* keeps its
+        // vertices (the flat normal precedes them: `[tex][n0][v0 v1 v2]`),
+        // while its quad puts the four vertices first.
+        const LIT_TEXTURED_QUAD_VERTEX_OFFSET: u8 = 6;
         let i_var2: u8 = if is_quad {
             match byte3 {
                 0 => byte4,
-                1 => 8,
+                1 | 2 => 8,
                 3 => 0xE,
-                _ => byte4 + 2,
+                _ => LIT_TEXTURED_QUAD_VERTEX_OFFSET,
             }
         } else {
             byte4

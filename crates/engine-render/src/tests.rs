@@ -6,6 +6,7 @@ use glam::Mat4;
 
 mod battle_hud;
 mod blend;
+mod color_space;
 mod menu_overlays;
 mod screen_overlay_gpu;
 mod text_dialog;

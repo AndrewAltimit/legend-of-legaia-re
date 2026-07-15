@@ -103,62 +103,13 @@ impl GroupHeader {
 }
 
 /// Look up the byte offset within a primitive where vertex indices begin,
-/// for a given group `flags` value.
-///
-/// The renderer indexes a 6-entry table at `DAT_8007326c` via
-/// `((flags >> 1) - 8) >> 1`. The byte offset depends on whether the
-/// primitive is a triangle or a quad, AND on the table entry's byte-3
-/// "type" tag (which the renderer uses to override the offset for some
-/// quad variants).
-///
-/// Triangle case (`(flags >> 1) & 1 == 0`):
-///   `iVar2 = entry.byte4` (in u16 units)
-///
-/// Quad case (`(flags >> 1) & 1 == 1`):
-///   `iVar2 = entry.byte4 + 2`, then override per byte 3:
-///     byte3 == 0  -> iVar2 = entry.byte4   (cancel the +2)
-///     byte3 == 1  -> iVar2 = 8             (override to 8)
-///     byte3 == 3  -> iVar2 = 0xE           (override to 14)
-///     else        -> iVar2 = entry.byte4 + 2 (no override)
+/// for a given group `flags` value. Thin wrapper over
+/// [`Descriptor::vertex_offset`](crate::descriptor::Descriptor::vertex_offset) -
+/// see that module for the table and the per-row derivation.
 ///
 /// Returns `None` for flags outside the known range.
 pub fn vertex_offset_bytes(flags: u16) -> Option<usize> {
-    let f_shifted = (flags as u32) >> 1;
-    if !(8..=0x13).contains(&f_shifted) {
-        return None;
-    }
-    let table_idx = ((f_shifted - 8) >> 1) as usize;
-    // Each 8-byte table entry from DAT_8007326c. (byte3 of first u32, byte4
-    // of second u32). Extracted from
-    // `ghidra/scripts/funcs/data_8007325c_around_DAT_8007326c.txt`.
-    //
-    //   entry 0 = [04 00 00 05 07 00 00 00]  byte3=0x05  byte4=0x07
-    //   entry 1 = [09 00 00 07 06 00 00 00]  byte3=0x07  byte4=0x06
-    //   entry 2 = [04 00 00 00 02 00 00 00]  byte3=0x00  byte4=0x02
-    //   entry 3 = [06 00 00 02 06 00 00 00]  byte3=0x02  byte4=0x06
-    //   entry 4 = [07 03 00 01 07 00 00 00]  byte3=0x01  byte4=0x07
-    //   entry 5 = [09 03 00 03 0B 00 00 00]  byte3=0x03  byte4=0x0B
-    const TABLE: [(u8, u8); 6] = [
-        (0x05, 0x07),
-        (0x07, 0x06),
-        (0x00, 0x02),
-        (0x02, 0x06),
-        (0x01, 0x07),
-        (0x03, 0x0B),
-    ];
-    let (byte3, byte4) = TABLE[table_idx];
-    let is_quad = (f_shifted & 1) == 1;
-    let i_var2: u8 = if is_quad {
-        match byte3 {
-            0 => byte4,
-            1 => 8,
-            3 => 0xE,
-            _ => byte4 + 2,
-        }
-    } else {
-        byte4
-    };
-    Some(i_var2 as usize * 2)
+    Descriptor::for_flags(flags).map(|d| d.vertex_offset)
 }
 
 /// One decoded primitive within a group.
@@ -181,14 +132,19 @@ pub struct Prim {
     /// Texture sub-base / "tpage" (raw 16-bit value). Decode with `tpage_xy()`
     /// for the VRAM page.
     pub tsb: u16,
-    /// Per-vertex `[R, G, B]` colours for **untextured** prims (`F*`/`G*`), in
-    /// the same stored order as [`vertex_indices_raw`](Self::vertex_indices_raw)
-    /// - `colors[i]` pairs with `vertex_indices_raw[i]`. A **flat** prim stores
-    ///   one colour word at the prim start, replicated to every vertex here; a
-    ///   **gouraud** prim stores one colour word per vertex at a 4-byte stride.
-    ///   Empty for textured prims (their pre-vertex block is UV/CBA/TSB, exposed
-    ///   via [`uvs`](Self::uvs)/[`cba`](Self::cba)/[`tsb`](Self::tsb)). The 4th
-    ///   byte of each colour word is the SDK GP0 code byte and is dropped here.
+    /// Per-vertex `[R, G, B]` colours, in the same stored order as
+    /// [`vertex_indices_raw`](Self::vertex_indices_raw) - `colors[i]` pairs with
+    /// `vertex_indices_raw[i]`. A **flat** prim stores one colour word at the
+    /// prim start, replicated to every vertex here; a **gouraud** prim stores one
+    /// colour word per vertex at a 4-byte stride. The 4th byte of each colour
+    /// word is the SDK GP0 code byte and is dropped here.
+    ///
+    /// This is the **field's entire lighting signal**: the PSX GPU modulates a
+    /// textured prim's texel by it (`texel * colour / 128`, so `0x80` is neutral,
+    /// below darkens and above brightens up to ~2x), and draws an untextured
+    /// prim in it directly. Populated for every prim, textured or not; the
+    /// light-source-lit rows (0/1), which carry no colour block of their own, get
+    /// [`MODULATION_NEUTRAL`] so they draw at the raw texel.
     pub colors: Vec<[u8; 3]>,
 }
 
@@ -278,15 +234,27 @@ fn extract_textures(
     (uvs, cba, tsb)
 }
 
-/// Extract the per-vertex `[R, G, B]` colour block of an **untextured** prim.
+/// The PSX GPU's neutral texture-modulation colour.
 ///
-/// The colour block sits at the prim's start (before the vertex indices). A
-/// **flat** prim (`F3`/`F4`) stores one colour word at offset 0 shared by every
-/// vertex; a **gouraud** prim (`G3`/`G4`) stores one colour word per vertex at a
-/// 4-byte stride. The returned colours are in stored order - `colors[i]` pairs
-/// with the prim's `vertex_indices_raw[i]`. The colour word's 4th byte (the SDK
-/// GP0 code) is dropped. Returns `n_verts` entries; a colour word that runs past
-/// the buffer falls back to mid-grey so a malformed tail can't panic.
+/// A textured primitive's texel is modulated by the packet colour as
+/// `texel * colour / 128`, so `0x80` leaves the texel untouched, `0x00`
+/// blacks it out and `0xFF` very nearly doubles it. Prims with no colour
+/// block of their own (the light-source-lit rows 0/1) get this, which is
+/// the same thing as drawing the raw texel.
+pub const MODULATION_NEUTRAL: u8 = 0x80;
+
+/// Extract the per-vertex `[R, G, B]` colour block of a primitive.
+///
+/// The colour block sits at the prim's start (before the texture block, if any,
+/// and before the vertex indices). A **flat** prim (`F3`/`F4`/`FT3`/`FT4`) stores
+/// one colour word at offset 0 shared by every vertex; a **gouraud** prim
+/// (`G3`/`G4`/`GT3`/`GT4`) stores one colour word per vertex at a 4-byte stride.
+/// The returned colours are in stored order - `colors[i]` pairs with the prim's
+/// `vertex_indices_raw[i]`. The colour word's 4th byte (the SDK GP0 code -
+/// `0x20`/`0x24`/`0x28`/`0x2C`/`0x30`/`0x34`/`0x38`/`0x3C`, plus `|2` for the
+/// semi-transparent variants) is dropped. Returns `n_verts` entries; a colour
+/// word that runs past the buffer falls back to mid-grey so a malformed tail
+/// can't panic.
 fn extract_colors(buf: &[u8], prim_off: usize, n_verts: usize, is_gouraud: bool) -> Vec<[u8; 3]> {
     (0..n_verts)
         .map(|corner| {
@@ -423,7 +391,20 @@ fn decode_prim(
             Some(off) => extract_textures(buf, prim_off, n_verts, off),
             None => (Vec::new(), 0, 0),
         };
-        (uvs, cba, tsb, Vec::new())
+        // Textured prims on the *baked-colour* rows (4/5, `byte1 = 3`) carry
+        // the same leading colour block as the untextured rows - it is what
+        // pushes the texture block off offset 0. The PSX GPU modulates the
+        // texel by it (`texel * colour / 128`), so it is the field's entire
+        // lighting signal and must not be dropped.
+        //
+        // The *lit* rows (0/1, `byte1 = 0`) have no colour block - the texture
+        // block starts at offset 0 - so they get the neutral 0x80 the GPU
+        // treats as "texel unchanged". See `MODULATION_NEUTRAL`.
+        let colors = match texblock_off {
+            Some(off) if off > 0 => extract_colors(buf, prim_off, n_verts, is_gouraud),
+            _ => vec![[MODULATION_NEUTRAL; 3]; n_verts],
+        };
+        (uvs, cba, tsb, colors)
     } else {
         // Untextured (F*/G*): per-vertex colour block at the prim start.
         (
@@ -798,6 +779,123 @@ mod tests {
                 [0x11, 0x22, 0x33],
                 [0x11, 0x22, 0x33]
             ]
+        );
+    }
+
+    /// **Textured** prims on the baked-colour rows carry a colour block too -
+    /// it is exactly what pushes their texture block off offset 0. Dropping it
+    /// (as the walker used to, returning `colors` empty for anything textured)
+    /// throws away the field's entire lighting signal: the GPU modulates the
+    /// texel by this word as `texel * colour / 128`.
+    ///
+    /// Flat textured triangle (`FT3`, flags `0x21` -> row 4, byte1 = 3): one
+    /// colour word at offset 0, the 12-byte texture block at 4, vertices at
+    /// `byte4 = 7` u16 = byte 14. Bytes mirror a real town0c prim.
+    #[test]
+    fn flat_textured_triangle_keeps_its_baked_colour() {
+        let mut buf = Vec::new();
+        // count=1, flags=0x21, olen=7, ilen=5 (20-byte prim), flag=0, mode=0x24.
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&0x0021u16.to_le_bytes());
+        buf.extend_from_slice(&[7, 5, 0, 0x24]);
+        let mut prim = vec![0u8; 20];
+        // [0..4) colour word: RGB + the GP0 code byte for POLY_FT3 (0x24).
+        prim[0..4].copy_from_slice(&[0x80, 0x80, 0x80, 0x24]);
+        // [4..16) texture block: u0 v0 cba | u1 v1 tsb | u2 v2.
+        prim[4..16].copy_from_slice(&[
+            0x3D, 0x32, 0x00, 0x7D, 0x21, 0x45, 0x0C, 0x00, 0x21, 0x20, 0, 0,
+        ]);
+        // Vertices at byte 14 (they overlap the block's trailing pad halfword).
+        for (vi, &raw) in [0x150u16, 0x108, 0x168].iter().enumerate() {
+            let off = 14 + vi * 2;
+            prim[off..off + 2].copy_from_slice(&raw.to_le_bytes());
+        }
+        buf.extend_from_slice(&prim);
+        buf.extend_from_slice(&[0u8; 20]);
+        buf.extend_from_slice(&0u32.to_le_bytes());
+
+        let groups = iter_groups(&buf, 0, buf.len()).unwrap();
+        let p = &groups[0].prims[0];
+        // The texture block still decodes from offset 4.
+        assert_eq!(p.cba, 0x7D00);
+        assert_eq!(p.tsb, 0x000C);
+        assert!(!p.uvs.is_empty());
+        // ...and the colour word is now kept, replicated to all three corners.
+        assert_eq!(p.colors, vec![[0x80, 0x80, 0x80]; 3]);
+    }
+
+    /// Gouraud textured triangle (`GT3`, flags `0x25` -> row 5): one colour word
+    /// per corner at offset 0, texture block at 12. The per-corner ramp is the
+    /// baked shading - here `0x80 / 0x60 / 0x50`, i.e. the same texel drawn at
+    /// 1.0x, 0.75x and 0.625x across the face.
+    #[test]
+    fn gouraud_textured_triangle_keeps_its_per_corner_ramp() {
+        let mut buf = Vec::new();
+        // count=1, flags=0x25, olen=9, ilen=7 (28-byte prim), flag=0, mode=0x34.
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&0x0025u16.to_le_bytes());
+        buf.extend_from_slice(&[9, 7, 0, 0x34]);
+        let mut prim = vec![0u8; 28];
+        prim[0..4].copy_from_slice(&[0x80, 0x80, 0x80, 0x34]);
+        prim[4..8].copy_from_slice(&[0x60, 0x60, 0x60, 0x34]);
+        prim[8..12].copy_from_slice(&[0x50, 0x50, 0x50, 0x34]);
+        prim[12..22].copy_from_slice(&[0x4F, 0x9C, 0x80, 0x7A, 0x6F, 0x8D, 0x1A, 0x00, 0x6F, 0xAD]);
+        for (vi, &raw) in [0x128u16, 0x118, 0x120].iter().enumerate() {
+            let off = 22 + vi * 2;
+            prim[off..off + 2].copy_from_slice(&raw.to_le_bytes());
+        }
+        buf.extend_from_slice(&prim);
+        buf.extend_from_slice(&[0u8; 28]);
+        buf.extend_from_slice(&0u32.to_le_bytes());
+
+        let groups = iter_groups(&buf, 0, buf.len()).unwrap();
+        let p = &groups[0].prims[0];
+        assert_eq!(p.cba, 0x7A80);
+        assert_eq!(p.tsb, 0x001A);
+        assert_eq!(
+            p.colors,
+            vec![[0x80, 0x80, 0x80], [0x60, 0x60, 0x60], [0x50, 0x50, 0x50]]
+        );
+    }
+
+    /// The **light-source-lit** rows (0/1) carry NO colour block - their texture
+    /// block starts at offset 0 and normal indices trail the vertices. They must
+    /// come back as [`MODULATION_NEUTRAL`], not as the texture block reinterpreted
+    /// as a colour (which would paint them with whatever `[u0, v0, cba_lo]`
+    /// happens to be) and not as black.
+    ///
+    /// Gouraud textured lit quad (`GT4`, flags `0x17` -> row 1): 12-byte texture
+    /// block at 0, four vertex indices at 12, four normal indices at 20.
+    #[test]
+    fn lit_row_prims_are_neutral_not_texture_bytes() {
+        let mut buf = Vec::new();
+        // count=1, flags=0x17, olen=9, ilen=7 (28-byte prim), flag=0, mode=0x3C.
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&0x0017u16.to_le_bytes());
+        buf.extend_from_slice(&[9, 7, 0, 0x3C]);
+        let mut prim = vec![0u8; 28];
+        // Texture block at offset 0 - the bytes an offset-0 colour read would
+        // wrongly pick up as an RGB (0x11, 0xE5, 0x89).
+        prim[0..12].copy_from_slice(&[
+            0x11, 0xE5, 0x89, 0x7A, 0x11, 0xEF, 0x1A, 0x00, 0x16, 0xE5, 0x16, 0xEF,
+        ]);
+        for (vi, &raw) in [0u16, 8, 0x90, 0x98].iter().enumerate() {
+            let off = 12 + vi * 2;
+            prim[off..off + 2].copy_from_slice(&raw.to_le_bytes());
+        }
+        buf.extend_from_slice(&prim);
+        buf.extend_from_slice(&[0u8; 28]);
+        buf.extend_from_slice(&0u32.to_le_bytes());
+
+        let groups = iter_groups(&buf, 0, buf.len()).unwrap();
+        let p = &groups[0].prims[0];
+        assert_eq!(p.cba, 0x7A89, "lit rows read their texture block at 0");
+        assert_eq!(p.tsb, 0x001A);
+        assert_eq!(p.vertex_indices(), vec![0, 1, 18, 19]);
+        assert_eq!(
+            p.colors,
+            vec![[MODULATION_NEUTRAL; 3]; 4],
+            "a lit prim has no colour word; it must draw at the raw texel"
         );
     }
 }

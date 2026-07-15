@@ -71,6 +71,12 @@
 /// CDNAME / PROT index of the Baka Fighter overlay (`data\OTHER5`).
 pub const BAKA_OVERLAY_PROT_INDEX: usize = 976;
 
+/// Extraction PROT entry of the duel's BGM (`music_01` bank slot 53, the
+/// boss-overture theme): the overlay init `FUN_801CF00C` loads it via
+/// `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5, ...)` (raw loader index
+/// `0x415` = extraction 1043). See `docs/subsystems/minigame-baka-fighter.md`.
+pub const BAKA_BGM_PROT_INDEX: usize = 1043;
+
 /// Load base of the Baka Fighter overlay (the shared slot-A minigame base).
 pub const BAKA_OVERLAY_BASE_VA: u32 = 0x801C_E818;
 
@@ -293,6 +299,189 @@ pub fn is_valid_pattern(pattern: &[u8]) -> bool {
     !pattern.is_empty() && pattern.iter().all(|&s| (1..=3).contains(&s))
 }
 
+// ---------------------------------------------------------------------------
+// Presentation assets: the HUD widget table, the HUD/banner art entry, and the
+// per-rung fighter packs the duel actually draws with.
+// ---------------------------------------------------------------------------
+
+/// Extraction PROT entry of the minigame's HUD / banner art + stage meshes +
+/// battle-form ANM banks (`other5`): descriptor 0 is a `TIM_LIST` of 9 TIMs,
+/// descriptor 1 a pack of 4 Legaia TMDs (the title/duel stage set), descriptor
+/// 2 the 30-record battle-form ANM bank (see `docs/formats/anm.md`).
+pub const BAKA_HUD_ART_PROT_INDEX: usize = 1203;
+
+/// Extraction PROT entry of the first ladder fighter's pack. The per-fighter
+/// mesh installer `FUN_801D4C50` loads raw TOC `char_index + 0x4b6`, i.e.
+/// extraction `1206 + n` for roster id `3 + n` (`n` in `0..14`).
+pub const FIGHTER_PACK_FIRST_PROT_INDEX: usize = 1206;
+
+/// Roster id of the fighter carried by [`FIGHTER_PACK_FIRST_PROT_INDEX`].
+pub const FIGHTER_PACK_FIRST_ROSTER_ID: usize = 3;
+
+/// Number of per-fighter packs (roster ids `3..=16`; entry 1220 breaks the
+/// pattern).
+pub const FIGHTER_PACK_COUNT: usize = 14;
+
+/// Extraction PROT entry carrying ladder fighter `roster_id`'s own
+/// `[TIM][TMD][anim]` pack, or `None` for the three player-side records.
+pub fn fighter_pack_prot_index(roster_id: usize) -> Option<usize> {
+    if (FIGHTER_PACK_FIRST_ROSTER_ID..FIGHTER_PACK_FIRST_ROSTER_ID + FIGHTER_PACK_COUNT)
+        .contains(&roster_id)
+    {
+        Some(FIGHTER_PACK_FIRST_PROT_INDEX + roster_id - FIGHTER_PACK_FIRST_ROSTER_ID)
+    } else {
+        None
+    }
+}
+
+/// Runtime VA of the HUD widget descriptor table (`DAT_801d7160`), read by the
+/// overlay's textured-quad emitter `FUN_801d5ed0`. 20-byte stride, same family
+/// as the slot machine's `DAT_801d347c` but with per-quad gradient RGB fields.
+pub const HUD_WIDGET_TABLE_VA: u32 = 0x801D_7160;
+
+/// File offset of the HUD widget table within the as-loaded overlay image.
+pub const HUD_WIDGET_TABLE_FILE_OFFSET: usize =
+    (HUD_WIDGET_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+
+/// Stride of one HUD widget descriptor.
+pub const HUD_WIDGET_STRIDE: usize = 0x14;
+
+/// Populated records in the widget table (record 51 onward is string rodata).
+pub const HUD_WIDGET_COUNT: usize = 51;
+
+/// One record of the Baka Fighter HUD widget table (`DAT_801d7160`).
+///
+/// `FUN_801d5ed0(x, y, id, brightness, size)` draws widget `id` as a textured
+/// quad **centred** on `(x, y)`: half-extent = `w * scale >> 13 * size >> 12`
+/// (so `scale = 0x1000`, `size = 0x1000` is pixel-exact `w/2`), texpage attr =
+/// `texpage + abr * 0x20` (the fold lands in the attribute's semi-transparency
+/// rate field, bits 5..6 - `abr = 1` is the additive `B + F` blend the banner
+/// glyphs glow with), and the quad's gouraud colours run `rgb_top` (verts 0/1)
+/// to `rgb_bottom` (verts 2/3), each scaled by `brightness / 256`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BakaHudWidget {
+    /// `+0x00` base-size scale, 20.12 fixed point (`0x1000` = 1.0).
+    pub scale: i32,
+    /// `+0x04` texpage attribute (before the `page_bank` fold).
+    pub texpage: u16,
+    /// `+0x06` CLUT id (PSX encoding: bits 0..=5 = `x/16`, bits 6..=14 = `y`).
+    pub clut: u16,
+    /// `+0x08` texture cell origin within the page.
+    pub u: u8,
+    pub v: u8,
+    /// `+0x0A` cell size.
+    pub w: u8,
+    pub h: u8,
+    /// `+0x0C` top-edge gouraud RGB.
+    pub rgb_top: [u8; 3],
+    /// `+0x0F` semi-transparency bit (`(bit << 1) | 0x3C` is the poly code).
+    pub semi: u8,
+    /// `+0x10` bottom-edge gouraud RGB.
+    pub rgb_bottom: [u8; 3],
+    /// `+0x13` semi-transparency rate: `* 0x20` is added to the texpage
+    /// attribute, landing in the ABR field (bits 5..6). `1` = additive.
+    pub abr: u8,
+}
+
+impl BakaHudWidget {
+    /// VRAM x of the page the widget samples.
+    pub fn page_x(&self) -> u16 {
+        (self.texpage & 0xF) * 64
+    }
+    /// VRAM y of the page the widget samples.
+    pub fn page_y(&self) -> u16 {
+        ((self.texpage >> 4) & 1) * 256
+    }
+    /// Palette column within a CLUT strip that starts at column 0 of its row.
+    pub fn palette_index(&self) -> usize {
+        (self.clut & 0x3F) as usize
+    }
+}
+
+/// Parse the [`HUD_WIDGET_COUNT`] widget descriptors out of the **as-loaded**
+/// Baka Fighter overlay image (PROT entry [`BAKA_OVERLAY_PROT_INDEX`]).
+pub fn parse_baka_hud(overlay: &[u8]) -> Option<Vec<BakaHudWidget>> {
+    let end = HUD_WIDGET_TABLE_FILE_OFFSET + HUD_WIDGET_COUNT * HUD_WIDGET_STRIDE;
+    if overlay.len() < end {
+        return None;
+    }
+    let rd16 = |o: usize| u16::from_le_bytes([overlay[o], overlay[o + 1]]);
+    Some(
+        (0..HUD_WIDGET_COUNT)
+            .map(|i| {
+                let o = HUD_WIDGET_TABLE_FILE_OFFSET + i * HUD_WIDGET_STRIDE;
+                BakaHudWidget {
+                    scale: read_i32(overlay, o),
+                    texpage: rd16(o + 4),
+                    clut: rd16(o + 6),
+                    u: overlay[o + 8],
+                    v: overlay[o + 9],
+                    w: overlay[o + 0x0A],
+                    h: overlay[o + 0x0B],
+                    rgb_top: [overlay[o + 0x0C], overlay[o + 0x0D], overlay[o + 0x0E]],
+                    semi: overlay[o + 0x0F],
+                    rgb_bottom: [overlay[o + 0x10], overlay[o + 0x11], overlay[o + 0x12]],
+                    abr: overlay[o + 0x13],
+                }
+            })
+            .collect(),
+    )
+}
+
+/// Chunk type byte of the fighter pack's TIM atlas (a standard PSX TIM).
+pub const FIGHTER_CHUNK_TIM: u8 = 0;
+/// Chunk type byte of the fighter pack's Legaia TMD (the `TMD2` streaming
+/// class, same as the PROT 1204 slots).
+pub const FIGHTER_CHUNK_TMD: u8 = 9;
+/// Chunk type byte of the fighter pack's animation bank (a canonical ANM
+/// container: `[u32 count][u32 offsets][records]`, records per
+/// `docs/formats/anm.md` - decode with `crate::player_anm::parse`).
+pub const FIGHTER_CHUNK_ANIM: u8 = 11;
+
+/// One ladder fighter's decoded pack (extraction PROT `1206..=1219`): a raw
+/// `[u32 (type << 24) | size][payload]` chunk chain walked by `FUN_801D4C50`
+/// and dispatched through `FUN_8001F05C` with the already-decompressed flag.
+#[derive(Debug, Clone, Default)]
+pub struct BakaFighterPack {
+    /// The fighter's 256x256 4bpp texture atlas (chunk type 0). Standard PSX
+    /// TIM; its bundled 256x1 CLUT strip declares the row the TMD's CBAs
+    /// sample (496 / 497 / 498 across the corpus).
+    pub tim_bytes: Vec<u8>,
+    /// The fighter's Legaia TMD (chunk type 9, magic `0x80000002`).
+    pub tmd_bytes: Vec<u8>,
+    /// The fighter's 8-record animation bank (chunk type 11; record 0 = idle,
+    /// `bone_count` == the TMD's `nobj`).
+    pub anim_bytes: Vec<u8>,
+}
+
+/// Walk one fighter pack's chunk chain (raw PROT entry bytes). Stops at a zero
+/// word or the end of the buffer; returns `None` when any of the three
+/// expected chunks is missing.
+pub fn parse_fighter_pack(entry: &[u8]) -> Option<BakaFighterPack> {
+    let mut pack = BakaFighterPack::default();
+    let mut off = 0usize;
+    while off + 4 <= entry.len() {
+        let word = u32::from_le_bytes(entry[off..off + 4].try_into().unwrap());
+        if word == 0 {
+            break;
+        }
+        let typ = (word >> 24) as u8;
+        let size = (word & 0x00FF_FFFF) as usize;
+        let body = entry.get(off + 4..off + 4 + size)?;
+        match typ {
+            FIGHTER_CHUNK_TIM => pack.tim_bytes = body.to_vec(),
+            FIGHTER_CHUNK_TMD => pack.tmd_bytes = body.to_vec(),
+            FIGHTER_CHUNK_ANIM => pack.anim_bytes = body.to_vec(),
+            _ => {}
+        }
+        off += 4 + size;
+    }
+    if pack.tim_bytes.is_empty() || pack.tmd_bytes.is_empty() || pack.anim_bytes.is_empty() {
+        return None;
+    }
+    Some(pack)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,5 +570,65 @@ mod tests {
     fn too_short_is_none() {
         assert!(parse_at(&[0u8; 4], 0, 1).is_none());
         assert!(parse_actions(&[0u8; 4]).is_none());
+    }
+
+    #[test]
+    fn hud_widget_table_offset_and_parse() {
+        // VA 0x801d7160 - base 0x801CE818 = 0x8948.
+        assert_eq!(HUD_WIDGET_TABLE_FILE_OFFSET, 0x8948);
+        let end = HUD_WIDGET_TABLE_FILE_OFFSET + HUD_WIDGET_COUNT * HUD_WIDGET_STRIDE;
+        let mut buf = vec![0u8; end];
+        let o = HUD_WIDGET_TABLE_FILE_OFFSET + 2 * HUD_WIDGET_STRIDE;
+        buf[o..o + 4].copy_from_slice(&0x1000i32.to_le_bytes());
+        buf[o + 4..o + 6].copy_from_slice(&0x0005u16.to_le_bytes());
+        buf[o + 6..o + 8].copy_from_slice(&0x7D84u16.to_le_bytes());
+        buf[o + 8] = 48; // u
+        buf[o + 9] = 48; // v
+        buf[o + 0x0A] = 112; // w
+        buf[o + 0x0B] = 16; // h
+        buf[o + 0x13] = 1; // abr -> additive blend
+        let widgets = parse_baka_hud(&buf).expect("parses");
+        assert_eq!(widgets.len(), HUD_WIDGET_COUNT);
+        let w = widgets[2];
+        assert_eq!(w.scale, 0x1000);
+        assert_eq!((w.u, w.v, w.w, w.h), (48, 48, 112, 16));
+        // texpage 5 -> page (320, 0); the abr byte is a blend mode, not a bank.
+        assert_eq!(w.page_x(), 320);
+        assert_eq!(w.page_y(), 0);
+        assert_eq!(w.abr, 1);
+        assert_eq!(w.palette_index(), 4);
+        assert!(parse_baka_hud(&buf[..end - 1]).is_none());
+    }
+
+    #[test]
+    fn fighter_pack_chain_walk() {
+        // [TIM][TMD][anim] chain with a trailing zero word.
+        let mut buf = Vec::new();
+        let chunk = |buf: &mut Vec<u8>, typ: u8, body: &[u8]| {
+            let word = ((typ as u32) << 24) | body.len() as u32;
+            buf.extend_from_slice(&word.to_le_bytes());
+            buf.extend_from_slice(body);
+        };
+        chunk(&mut buf, FIGHTER_CHUNK_TIM, &[0x10, 0, 0, 0, 8, 0, 0, 0]);
+        chunk(&mut buf, FIGHTER_CHUNK_TMD, &[0x02, 0, 0, 0x80, 0, 0, 0, 0]);
+        chunk(&mut buf, FIGHTER_CHUNK_ANIM, &[1, 0, 0, 0, 2, 0, 0, 0]);
+        buf.extend_from_slice(&[0u8; 4]);
+        let pack = parse_fighter_pack(&buf).expect("parses");
+        assert_eq!(pack.tim_bytes[0], 0x10);
+        assert_eq!(pack.tmd_bytes[3], 0x80);
+        assert_eq!(pack.anim_bytes[0], 1);
+        // A chain missing the TMD is refused.
+        let mut short = Vec::new();
+        chunk(&mut short, FIGHTER_CHUNK_TIM, &[0x10]);
+        short.extend_from_slice(&[0u8; 4]);
+        assert!(parse_fighter_pack(&short).is_none());
+    }
+
+    #[test]
+    fn fighter_pack_prot_indices() {
+        assert_eq!(fighter_pack_prot_index(3), Some(1206));
+        assert_eq!(fighter_pack_prot_index(16), Some(1219));
+        assert_eq!(fighter_pack_prot_index(2), None);
+        assert_eq!(fighter_pack_prot_index(17), None);
     }
 }

@@ -17,6 +17,9 @@ mod state;
 mod upload;
 mod uploaded;
 
+/// Re-exported for `tests::color_space`; `new_async` calls it via `core`.
+#[cfg(test)]
+pub(crate) use core::choose_surface_format;
 pub(crate) use helpers::*;
 pub use render::CaptureImage;
 pub use state::*;

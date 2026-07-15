@@ -290,23 +290,27 @@ fn town01_dropped_placements_split_untextured_vs_missing_clut() {
         dropped_meshes.len()
     );
 
-    // 44 of 46 placements draw; only the 2 untextured props drop from the
-    // textured path (recovered below on the colour pipeline). The 6
-    // previously-dropped missing-CLUT placements (pack[74], obj 347) now
-    // keep: their CBA row 510 / texpage (960,256) source is the boot-
-    // resident system-UI bundle the build layers underneath.
-    assert_eq!(placements_drawn, 44, "town01 placements that draw");
-    assert_eq!(placements_dropped, 2, "town01 placements dropped");
-    assert_eq!(dropped_untextured, 2, "dropped because all-untextured");
+    // All but one placement draws; the lone untextured prop drops from the
+    // textured path (recovered below on the colour pipeline). No placement
+    // drops for a missing CLUT: the pack[74] / obj-347 CBA row 510 /
+    // texpage (960,256) source is the boot-resident system-UI bundle the
+    // build layers underneath - that is what this test primarily guards.
+    //
+    // Object 114 draws because its mesh id is the record's `+0x10` (retail
+    // `FUN_80020f88`), which resolves to the textured pack[84] - matching the
+    // live battle-scene actor list. It only *looked* untextured under the
+    // falsified positional rule (`pack = obj_idx - 5` = 109 for id 114).
+    assert_eq!(placements_drawn, 45, "town01 placements that draw");
+    assert_eq!(placements_dropped, 1, "town01 placements dropped");
+    assert_eq!(dropped_untextured, 1, "dropped because all-untextured");
     assert_eq!(
         dropped_missing_clut, 0,
         "no placement may drop for a missing CLUT with the system-UI bundle resident"
     );
 
-    // The two distinct dropped meshes (pack index -> obj id, untextured?).
+    // The one dropped mesh (pack index -> obj id, untextured?).
     let expect: &[(u16, u16, bool)] = &[
-        (31, 315, true),  // untextured prop
-        (109, 114, true), // untextured prop
+        (31, 315, true), // untextured prop
     ];
     assert_eq!(
         dropped_meshes.len(),

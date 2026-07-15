@@ -34,6 +34,29 @@ pub struct VramMesh {
     /// screen-space derivative normals for; this happens for degenerate or
     /// untextured prims that don't contribute to the position bins.
     pub normals: Vec<[f32; 3]>,
+    /// Per-vertex `[R, G, B]` **texture-modulation** colour, one per entry in
+    /// `positions` - the prim's baked colour word (see
+    /// [`legaia_prims::Prim::colors`]).
+    ///
+    /// This is retail's field lighting. The PSX GPU blends a textured prim as
+    /// `texel * colour / 128`: `0x80` is neutral, below darkens, above
+    /// brightens (up to nearly 2x at `0xFF`). The renderer must apply it -
+    /// dropping it flattens the scene to the raw texel and loses both tails of
+    /// the contrast. Lit-row prims, which carry no colour word, are
+    /// [`legaia_prims::MODULATION_NEUTRAL`] here.
+    pub colors: Vec<[u8; 3]>,
+}
+
+/// The corner colour a mesh builder should emit for `prim`'s `corner`-th
+/// vertex. Falls back to the prim's first colour (flat prims store one word)
+/// and then to [`legaia_prims::MODULATION_NEUTRAL`], so a prim whose colour
+/// block was truncated still draws its raw texel rather than black.
+pub(crate) fn prim_color(prim: &legaia_prims::Prim, corner: usize) -> [u8; 3] {
+    prim.colors
+        .get(corner)
+        .or_else(|| prim.colors.first())
+        .copied()
+        .unwrap_or([legaia_prims::MODULATION_NEUTRAL; 3])
 }
 
 impl VramMesh {
@@ -83,6 +106,7 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
+    let mut colors = Vec::new();
     let mut indices = Vec::new();
     let mut object_ids = Vec::new();
 
@@ -111,6 +135,7 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
                     let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
+                    colors.push(prim_color(prim, uv_idx));
                     object_ids.push(o_idx as u32);
                     i
                 };
@@ -142,6 +167,7 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
             cba_tsb,
             indices,
             normals,
+            colors,
         },
         object_ids,
     )
@@ -158,6 +184,7 @@ pub fn tmd_to_vram_mesh_with_object_ids_lenient(tmd: &Tmd, buf: &[u8]) -> (VramM
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
+    let mut colors = Vec::new();
     let mut indices = Vec::new();
     let mut object_ids = Vec::new();
 
@@ -183,6 +210,7 @@ pub fn tmd_to_vram_mesh_with_object_ids_lenient(tmd: &Tmd, buf: &[u8]) -> (VramM
                     let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
+                    colors.push(prim_color(prim, uv_idx));
                     object_ids.push(o_idx as u32);
                     i
                 };
@@ -214,6 +242,7 @@ pub fn tmd_to_vram_mesh_with_object_ids_lenient(tmd: &Tmd, buf: &[u8]) -> (VramM
             cba_tsb,
             indices,
             normals,
+            colors,
         },
         object_ids,
     )
@@ -256,9 +285,10 @@ pub fn tmd_to_vram_mesh_field_hybrid(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u3
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
+    let mut colors = Vec::new();
     let mut indices = Vec::new();
     let mut object_ids = Vec::new();
-    let mut colors = Vec::new();
+    let mut shading_colors = Vec::new();
     let mut textured_flags = Vec::new();
 
     for (o_idx, o) in tmd.objects.iter().enumerate() {
@@ -296,8 +326,9 @@ pub fn tmd_to_vram_mesh_field_hybrid(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u3
                     let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
+                    colors.push(prim_color(prim, uv_idx));
                     object_ids.push(o_idx as u32);
-                    colors.push(color_of(prim, corner));
+                    shading_colors.push(color_of(prim, corner));
                     textured_flags.push(tex_flag);
                     i
                 };
@@ -329,10 +360,11 @@ pub fn tmd_to_vram_mesh_field_hybrid(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u3
             cba_tsb,
             indices,
             normals,
+            colors,
         },
         object_ids,
         VertexShading {
-            colors,
+            colors: shading_colors,
             textured: textured_flags,
         },
     )

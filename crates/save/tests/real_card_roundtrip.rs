@@ -172,3 +172,98 @@ fn synthetic_character_record_round_trip_preserves_typed_fields() {
     assert_eq!(snap.spell_ids[0], 0x10);
     assert_eq!(snap.equipment_slots, vec![1, 2, 3, 4, 5, 6, 7, 8]);
 }
+
+/// Real-card **coin patch** oracle: the site's minigame flow imports a
+/// player's retail card, banks won casino coins into the pinned coin slot
+/// (`RETAIL_COINS_OFFSET`, RAM `0x800845A4`), and exports the card back.
+/// The patch must:
+///
+/// - read back the new value through `read_retail_coins`,
+/// - leave every other byte of the card untouched (a no-op patch is
+///   byte-identical - the export-what-you-imported baseline),
+/// - keep the block parsing as a valid retail save
+///   (`SaveFile::from_retail_sc_block` yields the same party records),
+/// - keep every directory-frame XOR checksum self-consistent (the only
+///   checksum a card image carries; the retail SC payload itself is a
+///   plain RAM memcpy with no checksum - see `docs/subsystems/save-screen.md`).
+#[test]
+fn real_card_coin_patch_round_trips_and_stays_valid() {
+    let Some(card_path) = locate_card() else {
+        eprintln!("[skip] no Legaia memory-card image at ~/.mednafen/sav/");
+        return;
+    };
+    let bytes = std::fs::read(&card_path).expect("read memory card");
+    let view = legaia_save::emu::detect(&bytes).expect("detect card container");
+    assert_eq!(view.format, legaia_save::emu::Format::RawCard);
+    let saves = view.saves(&bytes).expect("list saves");
+    assert!(!saves.is_empty());
+    let block_idx = saves[0].block;
+
+    // Baseline: a detected view over unmodified bytes IS the original file.
+    let block = view.sc_block(&bytes, block_idx).expect("sc block");
+    let coins_before = legaia_save::read_retail_coins(block).expect("read coins");
+    let gold_before = legaia_save::read_retail_gold(block).expect("read gold");
+    let before_save =
+        legaia_save::ext::SaveFile::from_retail_sc_block(block, 4).expect("block parses");
+    eprintln!(
+        "[real-card] block {block_idx}: gold={gold_before} coins={coins_before} party={}",
+        before_save.party.members.len()
+    );
+
+    // No-op round-trip: nothing written -> byte-identical by construction
+    // (the view borrows; there is no re-serialisation step to drift).
+    let mut untouched = bytes.clone();
+    let _ = view.sc_block_mut(&mut untouched, block_idx).unwrap();
+    assert_eq!(untouched, bytes, "no-op export is byte-identical");
+
+    // Patch: bank new coins.
+    let new_coins = coins_before.wrapping_add(777).min(9_999_999);
+    let mut patched = bytes.clone();
+    let pblock = view.sc_block_mut(&mut patched, block_idx).unwrap();
+    legaia_save::write_retail_coins(pblock, new_coins).expect("patch coins");
+
+    // Re-walk the patched card from scratch, as a fresh import would.
+    let view2 = legaia_save::emu::detect(&patched).expect("re-detect");
+    let block2 = view2.sc_block(&patched, block_idx).expect("re-read block");
+    assert_eq!(legaia_save::read_retail_coins(block2), Some(new_coins));
+    assert_eq!(
+        legaia_save::read_retail_gold(block2),
+        Some(gold_before),
+        "gold untouched by the coin patch"
+    );
+    let after_save =
+        legaia_save::ext::SaveFile::from_retail_sc_block(block2, 4).expect("still a valid save");
+    assert_eq!(
+        after_save.party.members.len(),
+        before_save.party.members.len()
+    );
+    for (a, b) in after_save
+        .party
+        .members
+        .iter()
+        .zip(before_save.party.members.iter())
+    {
+        assert_eq!(a.raw, b.raw, "party records untouched");
+    }
+
+    // Exactly 4 bytes changed, all inside the coin slot.
+    let base = legaia_save::BLOCK_SIZE * block_idx as usize + legaia_save::RETAIL_COINS_OFFSET;
+    let diff: Vec<usize> = bytes
+        .iter()
+        .zip(patched.iter())
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .map(|(i, _)| i)
+        .collect();
+    assert!(
+        diff.iter().all(|&i| (base..base + 4).contains(&i)),
+        "only the coin slot may change: {diff:?}"
+    );
+
+    // Directory-frame checksums stay self-consistent (we never touch frames).
+    for i in 1..=legaia_save::DIR_FRAMES {
+        let f = &patched[0x80 * i..0x80 * i + 0x80];
+        let xor = f[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
+        assert_eq!(f[0x7F], xor, "directory frame {i} checksum intact");
+    }
+}

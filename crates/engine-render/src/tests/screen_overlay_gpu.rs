@@ -11,10 +11,10 @@ use crate::screen_overlay::{
 };
 use wgpu::util::DeviceExt;
 
-const TARGET: usize = 4; // 4x4 offscreen render target
+pub(super) const TARGET: usize = 4; // 4x4 offscreen render target
 
 /// Attempt to get a headless device+queue; `None` when no adapter exists.
-fn headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+pub(super) fn headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,
         ..Default::default()
@@ -68,7 +68,7 @@ fn vram_attributes() -> [wgpu::VertexAttribute; 5] {
 
 /// Build the full test harness: opaque + per-mode blend pipelines, a small
 /// VRAM texture (one red 15bpp texel at (5,5)) and its bind group.
-struct Harness {
+pub(super) struct Harness {
     device: wgpu::Device,
     queue: wgpu::Queue,
     opaque: wgpu::RenderPipeline,
@@ -79,6 +79,18 @@ struct Harness {
 }
 
 fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness {
+    build_harness_with(device, queue, wgpu::TextureFormat::Rgba8Unorm, 0x001F)
+}
+
+/// [`build_harness`] with the colour-attachment format and the VRAM texel at
+/// (5,5) chosen by the caller - the colour-space tests render the same texel
+/// to a UNORM and an sRGB target to show the two disagree.
+pub(super) fn build_harness_with(
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    color_format: wgpu::TextureFormat,
+    texel: u16,
+) -> Harness {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("test screen overlay shader"),
         source: wgpu::ShaderSource::Wgsl(SCREEN_OVERLAY_SHADER_SRC.into()),
@@ -128,7 +140,7 @@ fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness {
                 module: &shader,
                 entry_point: Some(entry),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    format: color_format,
                     blend,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -171,7 +183,7 @@ fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness {
         view_formats: &[],
     });
     let mut words = vec![0u16; 64 * 64];
-    words[5 * 64 + 5] = 0x001F; // red, STP implied by non-zero
+    words[5 * 64 + 5] = texel; // STP implied by non-zero
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture: &vram,
@@ -211,7 +223,7 @@ fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness {
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
+        format: color_format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
@@ -243,7 +255,7 @@ fn build_harness(device: wgpu::Device, queue: wgpu::Queue) -> Harness {
 
 /// Render one primitive list over a clear colour and read back the centre
 /// pixel as RGBA8.
-fn render_center_pixel(h: &Harness, prims: &[ScreenPrim], clear: [f64; 4]) -> [u8; 4] {
+pub(super) fn render_center_pixel(h: &Harness, prims: &[ScreenPrim], clear: [f64; 4]) -> [u8; 4] {
     let geo = build_geometry(prims, TARGET as u32, TARGET as u32);
     // Empty geometry -> clear only (an empty buffer slice is invalid).
     let buffers = (!geo.is_empty()).then(|| {
