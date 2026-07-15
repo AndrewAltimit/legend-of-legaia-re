@@ -236,7 +236,13 @@
         if (!this.cueFrames || !this.cueFrames.has(f)) return;
         this.cueLog.push({ frame: f, t: Date.now() });
         if (this.cueLog.length > 200) this.cueLog.shift();
-        if (window.LegaiaSfx) LegaiaSfx.play('arts', 'strike');
+        /* The strike/impact "punch" SFX is intentionally NOT played: we have
+         * not yet faithfully recreated that cue, and the placeholder rendered
+         * off the SFX descriptor table is a high-pitched annoyance. The impact
+         * frames are still tracked (cueLog / the headless __artsState hook) so
+         * the timing stays observable; only the audible cue is suppressed. The
+         * VOICE shout (playArt's playPcm path) is a separate, faithful cue and
+         * still fires. */
       };
     }
 
@@ -324,12 +330,9 @@
       const dev = bank[first].name && norm(bank[first].name) !== norm(art.name)
         ? ` (dev name "${bank[first].name}")` : '';
       const segNote = chain.length > 1 ? `, ${chain.length} chained segments` : '';
-      /* Sound, and what is and isn't retail about it. */
-      const sfxNote = (window.LegaiaSfx && LegaiaSfx.ready() && cues.size)
-        ? `; strike cue 0x${LegaiaSfx.cueFor('arts', 'strike').toString(16).toUpperCase()}`
-          + ` on ${cues.size} impact frame${cues.size > 1 ? 's' : ''}`
-          + ' (retail cue id, timing fitted from the clip)'
-        : '';
+      /* Sound note: only the VOICE shout is surfaced. The strike/impact SFX is
+       * not played (see _armCues) - the placeholder punch cue is not yet a
+       * faithful recreation - so the page no longer claims a strike cue fires. */
       const voiceNote = (this.voiceKey && this.charState.voice)
         ? `; voice XA30 ch${this.charState.voice.channel} (retail cue)`
         : '';
@@ -337,7 +340,7 @@
         `${this.charName} - ${art.name}${dev}`;
       this.els.note.textContent =
         `record 0x${bank[first].anim_id.toString(16).toUpperCase()}` +
-        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${sfxNote}${voiceNote}`;
+        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${voiceNote}`;
     }
   }
 
