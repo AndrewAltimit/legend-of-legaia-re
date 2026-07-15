@@ -13,6 +13,11 @@
   flex: 1; min-width: 14rem;
 }
 
+/* The rich save bar sits directly under the disc chooser, above the boot
+   modes, so importing/resuming a save is the first thing offered next to the
+   playable content. The component styles itself (js/legaia-saves.js). */
+.play-saves-strip { display: block; }
+
 /* Boot-mode presets. */
 .play-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.6rem; }
 .play-mode {
@@ -66,6 +71,15 @@
 .play-dialog.is-hidden { display: none; }
 .play-dialog-opt { color: #b9c6ff; }
 .play-dialog-opt.is-sel { color: #fff2a8; }
+
+/* Retail pause menu (Start): the real window-descriptor draw path. The engine
+   serves the byte-pinned gold 9-slice chrome + proportional font glyphs as
+   textured quads; this overlay canvas sits pixel-for-pixel over the GL view and
+   the quads blit onto it (see play-app.js `_drawMenu` / `AtlasBlitter`). */
+.play-menu-overlay {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; image-rendering: pixelated;
+}
 
 .play-hud {
   display: flex; gap: 0.9rem; flex-wrap: wrap;
@@ -136,7 +150,7 @@
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
-<script src="js/legaia-saves.js?v=saves-1"></script>
+<script src="js/legaia-saves.js?v=saves-3"></script>
 -->
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; play</div>
@@ -163,17 +177,23 @@
       </span>
     </div>
 
-    <!-- "Your games" resume strip (js/legaia-saves.js). Hidden until a
-         session or minigame progress exists in this browser. -->
-    <div id="play-saves-strip" style="display: none;"></div>
+    <!-- Rich save bar (LegaiaSaves.createRichBar, js/legaia-saves.js) - the
+         SAME polished memory-card tiles the minigames page shows: the SC
+         block's baked lead-face icon, the party's disc portraits, and
+         lead / displayed level / gold / location off the save block. Always
+         visible so "load your save here" can't be missed; its own empty state
+         invites the first import. Resume drops a stored save straight into the
+         running engine. Nothing is uploaded. -->
+    <div id="play-saves-strip" class="play-saves-strip"></div>
 
     <div class="play-modes" id="play-modes" style="display: none;">
       <button class="play-mode" type="button" data-mode="newgame">
         <span class="play-mode-tag">boot</span>
         <span class="play-mode-name">New game</span>
-        <span class="play-mode-desc">Start where a new game starts: Rim Elm, the scene the disc's
-          own new-game table names as the opening. The pre-title FMV, the title screen, and the
-          prologue cutscene chain are native-only for now - this drops you straight into the town.</span>
+        <span class="play-mode-desc">Boots the retail title card off your disc's own art - Press Start,
+          then New Game - and drops you where a new game starts: Rim Elm, the scene the disc's
+          new-game table names as the opening. The pre-title FMV, the Continue save-slot grid, and the
+          prologue cutscene chain are native-only for now.</span>
       </button>
       <button class="play-mode" type="button" data-mode="scene">
         <span class="play-mode-tag">explore</span>
@@ -187,6 +207,7 @@
       <div>
         <div class="play-canvas-wrap">
           <canvas id="play-canvas" class="play-canvas" width="960" height="720" tabindex="0"></canvas>
+          <canvas id="play-menu-canvas" class="play-menu-overlay" width="960" height="720"></canvas>
           <div class="play-focus-veil" id="play-veil">Click to take the controls</div>
           <div class="play-dialog is-hidden" id="play-dialog"></div>
         </div>
@@ -260,17 +281,26 @@
       runs and the field VM plays out their dialogue, branches and all.</li>
     <li><strong>Doors.</strong> Walk into one and the engine loads the destination scene under you;
       the page rebuilds the geometry around the transition.</li>
+    <li><strong>The pause menu.</strong> Press <kbd>Enter</kbd> in the field for the real retail menu:
+      the gold 9-slice window chrome + navy filigree come straight off your disc's menu-UI atlas and
+      the glyphs off the dialog font, drawn by the same window-descriptor code the native engine uses.
+      Up/Down move the cursor, <kbd>Z</kbd> opens a row, <kbd>X</kbd> backs out. Items, Magic, Equip,
+      Status and Options all run their live engine sub-sessions and render through the exact same draw
+      builders the native <code>play-window</code> uses &mdash; it is the same menu, just a different
+      framebuffer. Only Load and Save keep a plain frame here, since the page's own save-loader owns
+      disc-backed saving.</li>
   </ul>
   <p>What does <em>not</em> run here yet, and why:</p>
   <ul>
     <li><strong>Battles.</strong> The battle state machine and its formulas are ported and tested,
       but the battle stage's render path lives in the native window. Random encounters are therefore
       left disarmed in the browser rather than dropping you into a black screen.</li>
-    <li><strong>The title screen and the opening prologue.</strong> The boot chain, the narration
-      crawl, and the cutscene camera all run natively; their draw path is the native one. "New game"
-      here starts you at the scene the disc's new-game table names, not at the title card.</li>
-    <li><strong>The pause menu, shops, and the inn.</strong> The runtime state is all there; the
-      menu's window-descriptor draw path has not been ported to the WebGL renderer.</li>
+    <li><strong>The pre-title FMV and the opening prologue.</strong> The title card now renders in the
+      browser off your disc's art (New game boots into it), but the pre-title movie, the narration
+      crawl, and the prologue cutscene chain still run only in the native window. Publisher logos and
+      the Continue save-slot grid are not wired here yet either.</li>
+    <li><strong>Shops and the inn.</strong> The runtime state is all there, but their menu screens
+      are not surfaced on this page yet.</li>
     <li><strong>Audio.</strong> The sequencer and the SPU are ported and the WebAudio backend exists,
       but the BGM director is not wired into this page yet.</li>
     <li><strong>The overworld.</strong> World-map scenes load, but their locomotion and camera are a
@@ -333,6 +363,7 @@
   const canvas    = document.getElementById('play-canvas');
   const veil      = document.getElementById('play-veil');
   const dialogEl  = document.getElementById('play-dialog');
+  const menuCanvas = document.getElementById('play-menu-canvas');
   const listEl    = document.getElementById('play-scene-list');
   const searchEl  = document.getElementById('play-scene-search');
   const keysEl    = document.getElementById('play-keys');
@@ -406,7 +437,11 @@
     for (const el of modesEl.querySelectorAll('.play-mode')) el.classList.remove('is-active');
     b.classList.add('is-active');
     if (b.dataset.mode === 'newgame') {
-      enter(OPENING_SCENE);
+      /* Boot chain: show the retail title card (New Game / Continue) off the
+       * disc's own title art, then drop into the opening scene the seed names.
+       * Continue has no browser save-slot grid yet, so every confirmed outcome
+       * proceeds to New Game. */
+      runBootTitle(() => enter(OPENING_SCENE));
     } else {
       /* The scene list lives inside #play-stage, which starts hidden. Reveal
        * the stage so the picker is visible and selectable without first
@@ -441,6 +476,9 @@
       modesEl.style.display = 'grid';
       window.__playRuntime = runtime;
       setSaveUi(true);
+      /* The disc is up: re-render the save bar so it decodes the party
+       * portrait faces + card icons now that WASM + disc bytes are available. */
+      renderSavesStrip();
       /* ?resume=<id>: auto-resume a stored session once the disc is up. */
       if (resumePending) {
         const entry = LegaiaSaves.listSessions().find(s => s.id === resumePending);
@@ -464,6 +502,7 @@
       if (!view) {
         view = new window.PlayView(runtime, canvas, {
           onState: onState,
+          menuOverlay: menuCanvas,
           onScene: (name) => { active = name; renderList(searchEl.value); },
           onError: (msg) => {
             /* A WASM trap poisons the engine instance; rebuild it from the
@@ -486,6 +525,71 @@
       console.warn(err);
     }
   }
+
+  /* ---------------- boot title screen (the --boot-ui chain) ---------------- */
+
+  /* Run the retail title card over the overlay canvas, then call `then(outcome)`
+   * once the player confirms. The engine's TitleSession drives it; the page
+   * blits the disc's title-TIM bands (title atlas) + font glyphs onto the
+   * black overlay and feeds it edge-triggered pad words. This runs BEFORE any
+   * scene / PlayView exists, so it owns a tiny self-contained RAF + key loop. */
+  let bootTitleRAF = 0;
+  const BOOT_PAD = { ArrowUp: 0x0010, ArrowDown: 0x0040, KeyW: 0x0010, KeyS: 0x0040,
+    KeyZ: 0x4000, Space: 0x4000, KeyX: 0x2000, Enter: 0x0008 };
+  function runBootTitle(then) {
+    if (!runtime) { then('new_game'); return; }
+    try { runtime.boot_title_start(); } catch (e) { console.warn('boot title', e); then('new_game'); return; }
+    if (!runtime.boot_title_is_active()) { then('new_game'); return; }   /* no disc art path */
+    stageEl.style.display = 'grid';
+    statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
+    const ctx = menuCanvas.getContext('2d');
+    /* Blitters: title art for the bands, the dialog font for any text stand-in. */
+    let titleBlit = null, fontBlit = null;
+    try {
+      const td = runtime.boot_title_atlas_dims();
+      if (runtime.boot_title_has_atlas() && td[0] > 0)
+        titleBlit = new window.LegaiaAtlasBlitter(runtime.boot_title_atlas_rgba(), td[0], td[1]);
+      const fd = runtime.play_menu_font_dims();
+      if (fd[0] > 0) fontBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_font_rgba(), fd[0], fd[1]);
+    } catch (e) { console.warn('boot title atlas', e); }
+    const pulse = new Set();
+    const onKey = (e) => {
+      if (BOOT_PAD[e.code] === undefined) return;
+      e.preventDefault();
+      pulse.add(e.code);
+    };
+    window.addEventListener('keydown', onKey);
+    canvas.focus();
+    const finish = (outcome) => {
+      if (bootTitleRAF) cancelAnimationFrame(bootTitleRAF);
+      bootTitleRAF = 0;
+      window.removeEventListener('keydown', onKey);
+      ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+      try { then(outcome); } catch (e) { console.warn('boot title -> then', e); }
+    };
+    const frame = () => {
+      bootTitleRAF = requestAnimationFrame(frame);
+      let edge = 0;
+      for (const k of pulse) edge |= (BOOT_PAD[k] || 0);
+      pulse.clear();
+      let outcome = '';
+      try { outcome = runtime.boot_title_step(edge); } catch (e) { return finish('new_game'); }
+      /* Draw the card: black backdrop, title bands, then any text stand-in. */
+      let draws;
+      try { draws = JSON.parse(runtime.boot_title_draws_json(menuCanvas.width, menuCanvas.height)); }
+      catch (e) { draws = null; }
+      ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+      if (draws && draws.active) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
+        if (titleBlit) titleBlit.blit(ctx, draws.sprites);
+        if (fontBlit) fontBlit.blit(ctx, draws.texts);
+      }
+      if (outcome) finish(outcome);   /* new_game / continue / options */
+    };
+    bootTitleRAF = requestAnimationFrame(frame);
+  }
+  window.__bootTitle = runBootTitle;
 
   /* Rebuild a fresh engine after a WASM trap and re-enter the current scene,
    * reusing the existing renderer/canvas and the cached disc bytes (no
@@ -530,6 +634,12 @@
       recovering = false;
     }
   }
+
+  /* ---------------- field pause menu overlay (Bug 1) ---------------- */
+
+  /* The pause menu is drawn by the view itself (engine-driven retail chrome +
+   * font glyphs blitted onto the overlay canvas - see play-app.js `_drawMenu`),
+   * so the HUD no longer renders a DOM menu. */
 
   /* ---------------- per-frame HUD ---------------- */
 
@@ -732,8 +842,77 @@
     });
   }
 
+  /* The WASM save tools (card_icon_rgba / save_summary_json / disc_portrait_rgba)
+   * are stateless free functions. Reuse the engine module once the disc is up;
+   * before that, lazily import it (ESM caching dedupes with the engine load, so
+   * this never pulls a second copy of the bundle). */
+  let saveToolsPromise = null;
+  function saveTools() {
+    if (wasm) return Promise.resolve(wasm);
+    if (!saveToolsPromise) {
+      saveToolsPromise = import('./wasm/legaia_web_viewer.js')
+        .then(m => m.default().then(() => m));
+    }
+    return saveToolsPromise;
+  }
+
+  /* Decode the three load-screen portrait TIMs (Vahn / Noa / Gala) off the
+   * loaded disc so the bar can draw the party roster faces beside each tile,
+   * exactly as the minigames bar does. Async (needs WASM + disc bytes); the
+   * rich bar's synchronous harvest() only kicks this off once and re-renders
+   * when the cached faces land. */
+  let portraitHarvestBusy = false;
+  function harvestPortraits() {
+    if (LegaiaSaves.portraitCanvases()) return false;
+    if (portraitHarvestBusy || !discBytes) return false;
+    portraitHarvestBusy = true;
+    saveTools().then(mod => {
+      if (typeof mod.disc_portrait_rgba !== 'function') return;
+      const rgba = [];
+      for (let i = 0; i < 3; i++) {
+        const buf = mod.disc_portrait_rgba(discBytes, i);
+        if (!buf || buf.length !== 16 * 16 * 4) { portraitHarvestBusy = false; return; }
+        rgba.push(buf);
+      }
+      if (LegaiaSaves.cachePortraits(rgba)) renderSavesStrip();
+    }).catch(() => { portraitHarvestBusy = false; });
+    return false;
+  }
+
+  /* Import a picked save file straight into the running engine (and persist
+   * it), the same path the rail's file input takes. */
+  function addSaveFile(file) {
+    return file.arrayBuffer().then(buf => {
+      importSaveBytes(new Uint8Array(buf), {
+        name: file.name.replace(/\.[^.]+$/, ''),
+        format: (file.name.match(/\.(mcr|mcd|gme|mcs)$/i) || [])[1] || null,
+      });
+    }).catch(err => {
+      saveMsg(`Could not read ${file.name}: ${err.message || err}`, true);
+    });
+  }
+
+  let savesBar = null;
   function renderSavesStrip() {
-    LegaiaSaves.renderStrip(savesStripEl, { onResume: resumeSession });
+    if (!savesBar) {
+      savesBar = LegaiaSaves.createRichBar(savesStripEl, {
+        heading: 'Your saves',
+        wasm: saveTools,
+        harvest: harvestPortraits,
+        acceptExts: '.lgsf,.mcr,.mcd,.gme,.mcs',
+        onAdd: addSaveFile,
+        primaryButton: (meta) => ({
+          text: 'Resume', cls: 'lgrb-primary',
+          title: 'Load this save into the running engine',
+          onClick: resumeSession,
+        }),
+        emptyText:
+          'No saves in this browser yet. Import an engine <b>.lgsf</b> or an emulator '
+          + 'memory-card save (<b>.mcr / .gme / .mcs</b>) to pick up your party - it persists '
+          + 'here and resumes straight into the running engine. Nothing is uploaded.',
+      });
+    }
+    savesBar.render();
   }
 
   saveExportBtn.addEventListener('click', exportSession);

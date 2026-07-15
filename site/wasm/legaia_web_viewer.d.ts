@@ -28,13 +28,15 @@ export class LegaiaArts {
      */
     art_strike_frames(index: number): Uint32Array;
     /**
-     * The current character's arts-voice PCM: mono i16 at the rate reported
-     * in `set_character`'s `voice.rate` (37 800 Hz on retail). This is the
-     * XA channel the battle overlay plays for the character's Tactical Arts
-     * (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL`]). Empty when the character
-     * has no voice (raw `PROT.DAT` load, Terra, or demux failure).
+     * The arts-voice PCM for the art at bank index `art_index`: mono i16 at
+     * the rate reported in `set_character`'s `voice.channels[..].rate`
+     * (37 800 Hz). The clip is the XA channel the art's `FUN_8004C140`
+     * candidate pool selects (the art's `voice_channel`), trimmed of its
+     * trailing silence. Empty when the character has no voice bank (raw
+     * `PROT.DAT` load, Terra, demux failure) or the art has no voice entry.
+     * Also exposed by-channel via [`Self::voice_channel_pcm_i16`].
      */
-    art_voice_pcm_i16(): Int16Array;
+    art_voice_pcm_i16(art_index: number): Int16Array;
     /**
      * The idle loop's pose frames (see [`flatten_pose_frames`] layout).
      * Empty when the character has no decodable idle stream.
@@ -43,8 +45,8 @@ export class LegaiaArts {
     /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
      * TOC. Returns `{"entries": N}` JSON; errors throw. On a full disc the
-     * arts-voice bank ([`VOICE_XA_FILE`]) is sliced out alongside `PROT.DAT`;
-     * a raw `PROT.DAT` load simply has no voice audio.
+     * arts-voice banks ([`VOICE_XA_FILE`] = `XA2.XA` / `XA4.XA` / `XA6.XA`) are sliced out
+     * alongside `PROT.DAT`; a raw `PROT.DAT` load simply has no voice audio.
      */
     load_disc(bytes: Uint8Array): string;
     /**
@@ -93,6 +95,13 @@ export class LegaiaArts {
      * both. `{"ok":false,"why":...}` when the character doesn't assemble.
      */
     set_character(cslot: number): string;
+    /**
+     * The arts-voice PCM of the current character's XA channel `channel`,
+     * regardless of any art mapping. Lets the page (and the listening aid)
+     * address a specific voice clip directly. Empty when out of range or the
+     * character has no voice bank.
+     */
+    voice_channel_pcm_i16(channel: number): Int16Array;
     /**
      * The 1 MB PSX VRAM for the current character: band-0 texture pixels at
      * the pinned retail placement + the character's decoded battle palette.
@@ -1115,6 +1124,43 @@ export class LegaiaRuntime {
      */
     audio_init(): boolean;
     /**
+     * `[width, height]` of the title atlas; `[0, 0]` when none.
+     */
+    boot_title_atlas_dims(): Uint32Array;
+    /**
+     * The title art atlas (RGBA8) the sprite bands sample. Empty when none.
+     */
+    boot_title_atlas_rgba(): Uint8Array;
+    /**
+     * Abort the title flow (page navigated away / cancelled).
+     */
+    boot_title_close(): void;
+    /**
+     * Draw lists for the current title state, in surface pixels:
+     * `{ "active": true, "sprites": [...title-atlas quads...],
+     *    "texts": [...font quads...] }`. Rendered over black by the page.
+     */
+    boot_title_draws_json(surface_w: number, surface_h: number): string;
+    /**
+     * `true` once the disc title art resolved (else the card renders text-only).
+     */
+    boot_title_has_atlas(): boolean;
+    boot_title_is_active(): boolean;
+    /**
+     * Start the boot title screen. No-op with no disc loaded. Continue is left
+     * disabled (the browser boot does not preload an engine save); the fade-in
+     * is skipped so the card shows immediately.
+     */
+    boot_title_start(): void;
+    /**
+     * Advance the title one frame with an edge-triggered PSX pad word. Returns
+     * `""` while the title runs, or the chosen outcome once the player
+     * confirms: `"new_game"`, `"continue"`, or `"options"`. The caller acts on
+     * the outcome (seed + enter the opening scene for New Game) and the title
+     * clears itself.
+     */
+    boot_title_step(edge: number): string;
+    /**
      * `true` if a disc has been loaded.
      */
     disc_loaded(): boolean;
@@ -1142,6 +1188,22 @@ export class LegaiaRuntime {
     field_ground_quad_count(): number;
     field_ground_uvs(): Uint8Array;
     /**
+     * Field pause-menu model: the party (battle order) + inventory + gold the
+     * page's menu overlay renders when the player presses Start. Shape:
+     * ```text
+     * { "gold": 240,
+     *   "party": [{ "name": "Vahn", "level": 1, "hp": 60, "hp_max": 60,
+     *               "mp": 8, "mp_max": 8 }, ...],
+     *   "items": [{ "id": 32, "name": "Healing Leaf", "count": 3 }, ...] }
+     * ```
+     * `null` before a disc scene is entered. Item labels come from the SCUS
+     * item-name table ([`Self::load_disc`]); a PROT.DAT-only load falls back to
+     * the raw id. The retail pause menu is a native-only draw path (glyph atlas
+     * + window-descriptor table); this feeds the browser's HTML overlay
+     * equivalent so Start still surfaces the party / items on the play page.
+     */
+    field_menu_model_json(): string;
+    /**
      * Select + build environment-pack slot `slot`; subsequent `field_mesh_*`
      * reads return that mesh.
      */
@@ -1161,6 +1223,17 @@ export class LegaiaRuntime {
      * plain unposed build ([`Self::field_mesh`]).
      */
     field_mesh_posed(slot: number, anim_id: number): number;
+    /**
+     * Positions of environment-pack slot `slot` **posed at clip frame
+     * `frame`** of scene ANM record `anim_id - 1` - the per-frame re-pose the
+     * draw walker (`FUN_8001B964`) does off a placed prop's live cursor.
+     * Same vertex order as [`Self::field_mesh_posed`]'s frame-0 build (the two
+     * differ only in the per-object transform), so the page can upload the
+     * mesh once and rewrite just its positions each frame. Empty when the pose
+     * can't resolve (no bundle / bone-count mismatch) - the caller then leaves
+     * the prop at its rest pose.
+     */
+    field_mesh_posed_frame_positions(slot: number, anim_id: number, frame: number): Float32Array;
     field_mesh_positions(): Float32Array;
     field_mesh_uvs(): Uint8Array;
     /**
@@ -1170,6 +1243,17 @@ export class LegaiaRuntime {
      * prop's multi-object parts heap on the origin.
      */
     field_placement_anim_ids(): Uint32Array;
+    /**
+     * Live clip frame of each placement (parallel to
+     * [`Self::field_placement_slots`]): `-1` for a static prop (no anim, or
+     * no live prop-bank entry), else the prop's current cursor frame
+     * (`PropAnimBank::frame`, the `actor+0x68 >> 4` the draw walker poses
+     * from). The world advances every prop's cursor each field tick
+     * (`tick_prop_interactions` -> `PropAnimBank::tick_anims`, retail's
+     * `FUN_800204F8`), so an animated prop - the windmill sails, a swinging
+     * door mid-swing - reports a changing frame, and the page re-poses it.
+     */
+    field_placement_frames(): Int32Array;
     field_placement_positions(): Float32Array;
     field_placement_rot_y(): Uint16Array;
     /**
@@ -1234,6 +1318,59 @@ export class LegaiaRuntime {
      * retail pause menu's screens are a native-only draw path today).
      */
     open_menu(): void;
+    /**
+     * `[width, height]` of the chrome atlas; `[0, 0]` when none.
+     */
+    play_menu_chrome_dims(): Uint32Array;
+    /**
+     * The assembled menu-chrome atlas (RGBA8) the sprite draws sample. Empty
+     * when no chrome resolved.
+     */
+    play_menu_chrome_rgba(): Uint8Array;
+    /**
+     * Close the menu (and any open sub-screen).
+     */
+    play_menu_close(): void;
+    /**
+     * Build the two draw lists for the current menu state, in surface pixels.
+     * Shape:
+     * ```text
+     * { "open": true,
+     *   "sprites": [ { "dst":[x,y,w,h], "src":[x,y,w,h], "color":[r,g,b,a] } ],
+     *   "texts":   [ ... ] }
+     * ```
+     * `sprites` sample the chrome atlas, `texts` the font atlas. `open` is
+     * `false` (and the lists empty) when no menu is up.
+     */
+    play_menu_draws_json(surface_w: number, surface_h: number): string;
+    /**
+     * `[width, height]` of the font atlas.
+     */
+    play_menu_font_dims(): Uint32Array;
+    /**
+     * The whitewashed font atlas (RGBA8) the text draws sample. Stable across
+     * the session; the page uploads it once.
+     */
+    play_menu_font_rgba(): Uint8Array;
+    /**
+     * `true` once the gold chrome atlas resolved from the disc; `false` means
+     * the menu renders glyphs only (PROT.DAT-only load).
+     */
+    play_menu_has_chrome(): boolean;
+    /**
+     * Drive the menu one frame from an edge-triggered PSX pad word (same bit
+     * layout as [`Self::set_pad`]). Navigation:
+     * - top-level: Up/Down move the cursor, Cross opens the row, Circle closes.
+     * - a sub-screen: routes the edges to its session; Circle (or the session
+     *   finishing) drops back to the top-level list.
+     */
+    play_menu_input(edge: number): void;
+    play_menu_is_open(): boolean;
+    /**
+     * Open the retail pause menu. No-op with no disc loaded. The field is
+     * frozen by the page while [`Self::play_menu_is_open`] is true.
+     */
+    play_menu_open(): void;
     /**
      * The scene's NPC / actor catalog. Shape:
      * `{"anm_prot": 4, "npcs": [{"i", "slot", "model", "anim", "nobj",
@@ -2506,6 +2643,21 @@ export function card_read_coins(bytes: Uint8Array, block: number): number;
 export function card_saves_json(bytes: Uint8Array): string;
 
 /**
+ * One of the three retail 16x16 **save-file portrait** TIMs decoded to a
+ * 1024-byte RGBA8 buffer: `0` = Vahn, `1` = Noa, `2` = Gala. Accepts either
+ * a full Mode2/2352 disc image or raw `PROT.DAT` bytes - the same input
+ * [`LegaiaRuntime::load_disc`] takes - so the play page can draw the party
+ * roster faces beside each save tile from the disc it already loaded, exactly
+ * as the minigames save bar does from its `LegaiaMinigames`
+ * (`save_portrait_rgba`). These are the load-screen slot-grid portraits
+ * pinned in the pre-`init_data` gap of `PROT.DAT` (offset `0x1AC90`, 192-byte
+ * stride); retail bakes the lead's copy into every SC block, so they are the
+ * exact faces a retail save carries. Empty when no PROT is found or the TIM
+ * doesn't parse - the bar falls back to initial chips.
+ */
+export function disc_portrait_rgba(bytes: Uint8Array, char_id: number): Uint8Array;
+
+/**
  * Export a **working** language pack (source-bearing, all `translation:`
  * fields empty) from the user's own disc, as YAML text they can download and
  * fill in. This is the authoring on-ramp - the community can produce their own
@@ -2628,11 +2780,12 @@ export interface InitOutput {
     readonly card_patch_coins: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly card_read_coins: (a: number, b: number, c: number) => [number, number, number];
     readonly card_saves_json: (a: number, b: number) => [number, number, number, number];
+    readonly disc_portrait_rgba: (a: number, b: number, c: number) => [number, number];
     readonly export_lang_pack: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly legaiaarts_art_pose_frames: (a: number, b: number) => [number, number];
     readonly legaiaarts_art_strike_cue: (a: number) => number;
     readonly legaiaarts_art_strike_frames: (a: number, b: number) => [number, number];
-    readonly legaiaarts_art_voice_pcm_i16: (a: number) => [number, number];
+    readonly legaiaarts_art_voice_pcm_i16: (a: number, b: number) => [number, number];
     readonly legaiaarts_idle_pose_frames: (a: number) => [number, number];
     readonly legaiaarts_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaarts_mesh_bounds: (a: number) => [number, number];
@@ -2643,6 +2796,7 @@ export interface InitOutput {
     readonly legaiaarts_mesh_uvs: (a: number) => [number, number];
     readonly legaiaarts_new: () => number;
     readonly legaiaarts_set_character: (a: number, b: number) => [number, number];
+    readonly legaiaarts_voice_channel_pcm_i16: (a: number, b: number) => [number, number];
     readonly legaiaarts_vram_bytes: (a: number) => [number, number];
     readonly legaiaaudio_bgm_device_rate: (a: number) => number;
     readonly legaiaaudio_bgm_render_rate: (a: number) => number;
@@ -2771,6 +2925,14 @@ export interface InitOutput {
     readonly legaiaminigames_slot_symbol_rgba: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_tick: (a: number) => number;
     readonly legaiaruntime_audio_init: (a: number) => number;
+    readonly legaiaruntime_boot_title_atlas_dims: (a: number) => [number, number];
+    readonly legaiaruntime_boot_title_atlas_rgba: (a: number) => [number, number];
+    readonly legaiaruntime_boot_title_close: (a: number) => void;
+    readonly legaiaruntime_boot_title_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_boot_title_has_atlas: (a: number) => number;
+    readonly legaiaruntime_boot_title_is_active: (a: number) => number;
+    readonly legaiaruntime_boot_title_start: (a: number) => void;
+    readonly legaiaruntime_boot_title_step: (a: number, b: number) => [number, number];
     readonly legaiaruntime_disc_loaded: (a: number) => number;
     readonly legaiaruntime_enter_field: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaruntime_export_save: (a: number) => [number, number];
@@ -2779,14 +2941,17 @@ export interface InitOutput {
     readonly legaiaruntime_field_ground_positions: (a: number) => [number, number];
     readonly legaiaruntime_field_ground_quad_count: (a: number) => number;
     readonly legaiaruntime_field_ground_uvs: (a: number) => [number, number];
+    readonly legaiaruntime_field_menu_model_json: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaruntime_field_mesh_cba_tsb: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_flat_rgba: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_indices: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_posed: (a: number, b: number, c: number) => [number, number, number];
+    readonly legaiaruntime_field_mesh_posed_frame_positions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaruntime_field_mesh_positions: (a: number) => [number, number];
     readonly legaiaruntime_field_mesh_uvs: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_anim_ids: (a: number) => [number, number];
+    readonly legaiaruntime_field_placement_frames: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_positions: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_rot_y: (a: number) => [number, number];
     readonly legaiaruntime_field_placement_slots: (a: number) => [number, number];
@@ -2804,6 +2969,16 @@ export interface InitOutput {
     readonly legaiaruntime_menu_tick: (a: number, b: number) => any;
     readonly legaiaruntime_new: () => number;
     readonly legaiaruntime_open_menu: (a: number) => void;
+    readonly legaiaruntime_play_menu_chrome_dims: (a: number) => [number, number];
+    readonly legaiaruntime_play_menu_chrome_rgba: (a: number) => [number, number];
+    readonly legaiaruntime_play_menu_close: (a: number) => void;
+    readonly legaiaruntime_play_menu_draws_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaruntime_play_menu_font_dims: (a: number) => [number, number];
+    readonly legaiaruntime_play_menu_font_rgba: (a: number) => [number, number];
+    readonly legaiaruntime_play_menu_has_chrome: (a: number) => number;
+    readonly legaiaruntime_play_menu_input: (a: number, b: number) => void;
+    readonly legaiaruntime_play_menu_is_open: (a: number) => number;
+    readonly legaiaruntime_play_menu_open: (a: number) => void;
     readonly legaiaruntime_play_npc_catalog_json: (a: number) => [number, number];
     readonly legaiaruntime_play_npc_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaruntime_play_npc_mesh_cba_tsb: (a: number) => [number, number];

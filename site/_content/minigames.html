@@ -179,8 +179,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/load-progress.js"></script>
-<script src="js/legaia-saves.js?v=saves-2"></script>
-<script src="js/minigame-saves.js"></script>
+<script src="js/legaia-saves.js?v=saves-3"></script>
+<script src="js/minigame-saves.js?v=mgsaves-2"></script>
 <script src="js/webgl-math.js"></script>
 <script src="js/webgl-shaders.js"></script>
 <script src="js/webgl-tmd.js"></script>
@@ -227,17 +227,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   </p>
 </header>
 
-<!-- The save bar (js/minigame-saves.js): the ALWAYS-VISIBLE slim strip of
-     saves stored in this browser. Each save is a retail-style memory-card
-     tile - the SC block's own baked icon (the lead's face) + party
-     portraits decoded from your disc + lead/level/gold/coins/location.
-     Load imports a save's casino coin bank into the session across all
-     three game tabs; Export writes the session balance back into that save
-     slot (RAM 0x800845A4's 4 bytes inside the SC block - the save still
-     loads in an emulator); the tile's download button hands the container
-     back as a file. Nothing is uploaded. -->
-<div id="mg-save-bar" style="margin-bottom: 1rem;"></div>
-
 <section class="doc-section" id="play">
   <h2>Play them</h2>
   <p>
@@ -249,6 +238,18 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     of its runtime overlay in the disc image you load below. Nothing is uploaded;
     the disc stays in your browser.
   </p>
+
+  <!-- The save bar (js/minigame-saves.js): the ALWAYS-VISIBLE rich strip of
+       saves stored in this browser, sitting directly above the player so
+       "load your save here" can't be missed. Each save is a retail-style
+       memory-card tile - the SC block's own baked icon (the lead's face) +
+       party portraits decoded from your disc + lead/level/gold/coins/location.
+       Load imports a save's casino coin bank into the session across all three
+       game tabs; Export writes the session balance back into that save slot
+       (RAM 0x800845A4's 4 bytes inside the SC block - the save still loads in
+       an emulator); the tile's download button hands the container back as a
+       file. Nothing is uploaded. -->
+  <div id="mg-save-bar" style="margin-bottom: 1rem;"></div>
 
   <div class="mg-shell">
     <div class="file-input-group">

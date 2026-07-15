@@ -56,6 +56,60 @@
   const SWALLOW = new Set(Object.keys(PAD).concat(['Space', 'ArrowUp', 'ArrowDown',
     'ArrowLeft', 'ArrowRight']));
 
+  /* Blits sub-rects of a source atlas (font glyphs or the menu-chrome sheet)
+   * with a per-quad RGBA multiply tint, over a 2D canvas. The retail pause menu
+   * emits its geometry as `{ dst, src, color }` quads (the shipped
+   * `legaia-engine-ui` draw builders); this is the browser twin of the native
+   * window's textured-quad overlay pass.
+   *
+   * The tint is a colour MULTIPLY that preserves the source alpha - identity for
+   * white (`(1,1,1)`), so plain chrome blits straight through, while the
+   * whitewashed font atlas takes the ink colour and the navy filigree takes its
+   * darkening tint. Multiplied full-atlas copies are cached per colour, so the
+   * per-quad cost is a single `drawImage`. */
+  class AtlasBlitter {
+    constructor(rgba, w, h) {
+      this.w = w; this.h = h;
+      this.base = document.createElement('canvas');
+      this.base.width = w; this.base.height = h;
+      const bctx = this.base.getContext('2d');
+      bctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0);
+      this.cache = new Map();
+    }
+    _tinted(col) {
+      const r = Math.round(col[0] * 255), g = Math.round(col[1] * 255), b = Math.round(col[2] * 255);
+      if (r === 255 && g === 255 && b === 255) return this.base;   /* identity multiply */
+      const key = (r << 16) | (g << 8) | b;
+      let cv = this.cache.get(key);
+      if (cv) return cv;
+      cv = document.createElement('canvas');
+      cv.width = this.w; cv.height = this.h;
+      const cx = cv.getContext('2d');
+      cx.drawImage(this.base, 0, 0);
+      cx.globalCompositeOperation = 'multiply';
+      cx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+      cx.fillRect(0, 0, this.w, this.h);
+      /* Restore the source alpha the flat fill just clobbered on the transparent
+       * texels, so only the glyph / sprite footprint remains. */
+      cx.globalCompositeOperation = 'destination-in';
+      cx.drawImage(this.base, 0, 0);
+      cx.globalCompositeOperation = 'source-over';
+      this.cache.set(key, cv);
+      return cv;
+    }
+    blit(ctx, draws) {
+      if (!draws) return;
+      for (const d of draws) {
+        const s = d.src, dst = d.dst, col = d.color;
+        if (!s || !dst || s[2] <= 0 || s[3] <= 0 || dst[2] <= 0 || dst[3] <= 0) continue;
+        ctx.globalAlpha = col ? col[3] : 1;
+        ctx.drawImage(this._tinted(col || [1, 1, 1, 1]),
+          s[0], s[1], s[2], s[3], dst[0], dst[1], dst[2], dst[3]);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
   /* The engine takes the camera's azimuth and quantises it to a quarter turn to
    * remap the d-pad ("up" walks away from the camera, "right" walks screen-right).
    *
@@ -200,6 +254,24 @@
       this.staticDraws = [];
       this.player = null;    /* { basePositions } */
       this.npcs = [];        /* [{ meshId, base, objectIds, frames, partCount, frameCount, out }] */
+      /* Animated environment props (a placement whose object bind names a
+       * clip: the Rim Elm windmill, swinging house doors). Each gets its own
+       * mesh instance so its clip advances independently; re-posed per frame
+       * from the engine's live prop-bank cursor. See `_frame`. */
+      this.animProps = [];   /* [{ meshId, i, slot, anim, lastFrame }] */
+      /* Retail pause menu (Start): the state + navigation live in the engine
+       * (`LegaiaRuntime::play_menu_*`), which serves the byte-pinned window
+       * chrome + font glyphs as `{ dst, src, color }` quads. This page owns only
+       * the two atlas textures + a 2D overlay canvas the quads blit onto; the
+       * field freezes while the menu is up (retail's `SceneMode::Menu`). */
+      this.menuOverlay = (opts && opts.menuOverlay) || null;   /* <canvas> over the GL view */
+      this._menuCtx = null;
+      this._menuFont = null;      /* AtlasBlitter for the dialog-font atlas */
+      this._menuChrome = undefined;  /* AtlasBlitter | null (null once resolved to "no chrome") */
+      this._menuWasOpen = false;
+      /* Last engine state handed to the HUD - lets the menu gate on Field
+       * mode / no-dialog before opening. */
+      this._hudState = null;
       /* Follow camera. `halfWidth` is the ortho-equivalent half-window the shared
        * orbit projection consumes (smaller = closer); 520 frames a ~130-unit
        * character at roughly the on-screen height retail's follow camera gives
@@ -213,6 +285,16 @@
       this._fpsAccum = 0;
       this._fpsFrames = 0;
       this._fpsLast = performance.now();
+      /* Fixed-timestep sim clock. The engine's field / motion VMs are authored
+       * for a fixed 60 Hz tick (retail's vsync-locked field loop; the native
+       * window drives it off a wall-clock accumulator, `Window::drain_ticks`,
+       * `TICK_DT = 1/60`). requestAnimationFrame fires at the DISPLAY refresh -
+       * 120/144 Hz on a high-refresh monitor - so ticking once per rAF ran the
+       * whole world (NPC walkers included) at 2-2.4x speed, which is the "NPCs
+       * zip around" symptom. Accumulate real elapsed time and run only as many
+       * 1/60 s ticks as have actually elapsed (capped so a stall can't spiral). */
+      this._simAccum = 0;
+      this._simLast = performance.now();
       /* Last frame's draw list + world extent, kept on the instance so the VR
        * loop can re-issue the same draw once per eye without re-ticking the
        * engine. */
@@ -418,6 +500,7 @@
       this.staticDraws = [];
       this.player = null;
       this.npcs = [];
+      this.animProps = [];
 
       this.renderer.uploadVram(rt.field_vram_bytes());
 
@@ -454,12 +537,38 @@
         used.add(key);
         return meshId;
       };
+      /* Per-animated-placement mesh id space (above the shared env-slot ids and
+       * the posed frame-0 variants, below the player / NPC ids). One mesh per
+       * animated placement so two props sharing an env slot can sit on
+       * different clip frames. */
+      const ANIM_PROP_BASE = 800000;
+      const uploadPosedInstance = (meshId, slot, anim) => {
+        try { rt.field_mesh_posed(slot, anim); }
+        catch (e) { return false; }
+        const pos = rt.field_mesh_positions();
+        const idx = rt.field_mesh_indices();
+        if (!pos.length || !idx.length) return false;
+        const flat = rt.field_mesh_flat_rgba();
+        this.renderer.uploadSceneMesh(meshId, pos, rt.field_mesh_uvs(),
+          rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
+        return true;
+      };
       const isSky = (window.FieldSceneView && window.FieldSceneView.isSkyMesh)
         || (() => false);
       const push = (slots, pos, rots, anims) => {
         for (let i = 0; i < slots.length; i++) {
-          const meshId = ensure(slots[i], anims ? anims[i] : 0);
-          if (meshId < 0) continue;
+          const anim = anims ? anims[i] : 0;
+          let meshId, animRec = null;
+          if (anim) {
+            /* Animated prop: its own instance, uploaded at the rest pose
+             * (frame 0) and re-posed per frame from the engine's live cursor. */
+            meshId = ANIM_PROP_BASE + i;
+            if (!uploadPosedInstance(meshId, slots[i], anim)) continue;
+            animRec = { meshId, i, slot: slots[i], anim, lastFrame: 0 };
+          } else {
+            meshId = ensure(slots[i], 0);
+            if (meshId < 0) continue;
+          }
           /* Sky domes and kilometre-wide horizon planes read as sky only from
            * the retail in-world camera; from a follow camera inside them they
            * are a wall in front of the lens. Same classifier the full-map view
@@ -475,6 +584,7 @@
           /* World box for the occluder test, baked once (see `_frame`). */
           draw.box = placementWorldBox(aabb, draw);
           this.staticDraws.push(draw);
+          if (animRec) this.animProps.push(animRec);
         }
       };
       push(rt.field_terrain_slots(), rt.field_terrain_positions(), rt.field_terrain_rot_y(), null);
@@ -593,6 +703,123 @@
     /* Held-key state, for the on-screen control legend. */
     heldKeys() { return Array.from(this.held); }
 
+    /* ---------- retail pause menu (engine-driven) ---------- */
+
+    /* Drive the retail pause menu from this frame's just-pressed edges (the
+     * `pulse` set, read before the engine tick consumes it). The state machine
+     * + navigation live in the engine (`play_menu_input`); this only opens it on
+     * Start, closes it on Start, and forwards the remaining edges. Returns `true`
+     * while the menu is up, so `_frame` freezes the field - retail holds the
+     * world in SceneMode::Menu. */
+    _updateFieldMenu() {
+      const rt = this.rt;
+      const p = this.pulse;
+      const startEdge = p.has('Enter');
+      let open;
+      try { open = rt.play_menu_is_open(); } catch (e) { return false; }
+      if (!open) {
+        if (startEdge && this._canOpenFieldMenu()) {
+          try { rt.play_menu_open(); } catch (e) { return false; }
+          this._ensureMenuBlitters();
+          p.clear();
+          this._repack();
+          return rt.play_menu_is_open();
+        }
+        return false;
+      }
+      /* Menu up: Start toggles it shut; every other edge is the engine's. */
+      if (startEdge) {
+        try { rt.play_menu_close(); } catch (e) {}
+      } else {
+        let edge = 0;
+        for (const k of p) edge |= (PAD[k] || 0);
+        if (edge) { try { rt.play_menu_input(edge); } catch (e) {} }
+      }
+      /* The menu owns every edge while it is up - clear them so none leak into
+       * the frozen field on the next tick. */
+      p.clear();
+      this._repack();
+      try { return rt.play_menu_is_open(); } catch (e) { return false; }
+    }
+
+    /* Start only opens the menu in ordinary field play - not on the world map,
+     * in battle, or while a dialogue box is up (Start is inert there in
+     * retail). */
+    _canOpenFieldMenu() {
+      let mode = '';
+      try { mode = this.rt.scene_mode(); } catch (e) { return false; }
+      if (mode !== 'Field') return false;
+      if (this._hudState && this._hudState.dialog) return false;
+      return true;
+    }
+
+    /* Upload the pause-menu atlases (font glyphs + the disc's menu-chrome sheet)
+     * as `AtlasBlitter`s the first time the menu opens. Idempotent; the chrome
+     * blitter stays `null` on a PROT.DAT-only load (glyphs only, no gold frame). */
+    _ensureMenuBlitters() {
+      if (this._menuFont && this._menuChrome !== undefined) return;
+      const rt = this.rt;
+      try {
+        const fd = rt.play_menu_font_dims();
+        if (!this._menuFont && fd && fd.length === 2 && fd[0] > 0 && fd[1] > 0) {
+          const rgba = rt.play_menu_font_rgba();
+          if (rgba && rgba.length) this._menuFont = new AtlasBlitter(rgba, fd[0], fd[1]);
+        }
+        if (this._menuChrome === undefined) {
+          if (rt.play_menu_has_chrome()) {
+            const cd = rt.play_menu_chrome_dims();
+            const rgba = rt.play_menu_chrome_rgba();
+            if (cd && cd.length === 2 && cd[0] > 0 && rgba && rgba.length) {
+              this._menuChrome = new AtlasBlitter(rgba, cd[0], cd[1]);
+            } else {
+              this._menuChrome = null;
+            }
+          } else {
+            this._menuChrome = null;
+          }
+        }
+      } catch (e) { console.warn('play menu: atlas upload', e); this._menuChrome = null; }
+    }
+
+    /* Blit the current pause-menu draw lists onto the 2D overlay canvas: the
+     * gold 9-slice / filigree chrome from the menu sheet, then the font glyphs.
+     * A no-op (and a one-shot clear) when the menu is closed. */
+    _drawMenu() {
+      const ov = this.menuOverlay;
+      if (!ov) return;
+      const ctx = this._menuCtx || (this._menuCtx = ov.getContext('2d'));
+      /* PSX UI is nearest-neighbour: the native wgpu overlay samples the atlas
+       * with no filtering, so the integer-scaled tiles butt edge-to-edge. Canvas
+       * 2D defaults to bilinear (`imageSmoothingEnabled` true), which bleeds a
+       * half-texel across every tile boundary - the visible seams in the 9-slice
+       * chrome's repeated fill. Force nearest so the repeat is seamless and the
+       * glyphs stay crisp, matching native. */
+      ctx.imageSmoothingEnabled = false;
+      let open = false;
+      try { open = this.rt.play_menu_is_open(); } catch (e) {}
+      if (!open) {
+        if (this._menuWasOpen) { ctx.clearRect(0, 0, ov.width, ov.height); this._menuWasOpen = false; }
+        return;
+      }
+      this._menuWasOpen = true;
+      this._ensureMenuBlitters();
+      let draws;
+      try { draws = JSON.parse(this.rt.play_menu_draws_json(ov.width, ov.height)); }
+      catch (e) { return; }
+      if (!draws || !draws.open) return;
+      /* Native blacks the whole framebuffer while the pause menu is up
+       * (`boot_ui.is_active()` clears to black + suppresses every 3D draw) - the
+       * frozen scene is NOT visible around the windows. This overlay canvas sits
+       * over the GL view, so paint it fully opaque black first, then blit the
+       * menu on top: same result as native's black backdrop. */
+      ctx.clearRect(0, 0, ov.width, ov.height);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, ov.width, ov.height);
+      if (this._menuChrome) this._menuChrome.blit(ctx, draws.sprites);
+      if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
+    }
+
     /* ---------- loop ---------- */
 
     start() {
@@ -628,42 +855,78 @@
     /* One engine frame + one draw (the draw is skipped while VR presents). */
     _frame(skipDraw) {
       const rt = this.rt;
-      const advance = !this.paused || this.stepOnce;
+      const stepping = this.stepOnce;
+      const advance = !this.paused || stepping;
       this.stepOnce = false;
 
-      if (advance) {
-        /* VR first-person owns the azimuth (the gaze) and merges its stick
-         * pad word over the keyboard's; otherwise the follow camera rules. */
-        if (this._vrDrive) {
-          rt.set_camera_azimuth(this._vrDrive.azimuth);
-          rt.set_pad(this.pad | this._vrDrive.pad);
+      /* Field pause menu (Start): consumes this frame's edges and, while up,
+       * freezes the field. Must run before the tick reads the pad. */
+      const menuOpen = this._updateFieldMenu();
+
+      if (advance && !menuOpen) {
+        /* Run the engine at a fixed 60 Hz regardless of the display refresh
+         * (see the `_simAccum` note in the constructor). `Step 1 frame` forces
+         * exactly one tick; free play consumes the real elapsed time. */
+        const TICK_DT = 1000 / 60;
+        let steps;
+        if (stepping) {
+          steps = 1;
+          this._simAccum = 0;
+          this._simLast = performance.now();
         } else {
-          rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
-          rt.set_pad(this.pad);
+          const now = performance.now();
+          this._simAccum += now - this._simLast;
+          this._simLast = now;
+          /* Cap the backlog so a long stall (hidden tab, GC pause) can't
+           * unleash a burst of catch-up ticks - the native window caps at
+           * 4 ticks/frame the same way. */
+          if (this._simAccum > TICK_DT * 4) this._simAccum = TICK_DT * 4;
+          steps = Math.floor(this._simAccum / TICK_DT);
+          this._simAccum -= steps * TICK_DT;
         }
-        /* The latched press edges have now been seen by exactly one tick. */
-        this.pulse.clear();
-        this._repack();
-        let entered = '';
-        try { entered = rt.tick_frame(); } catch (e) {
-          this._onEngineTrap('engine tick', e);
-          return;
-        }
-        if (entered) {
-          /* The engine walked through a door: its scene swapped under us, so the
-           * geometry has to swap too. A trap while rebuilding the new scene's
-           * geometry is just as fatal as one in the tick, so route it through
-           * recovery too. */
-          try {
-            this.scene = entered;
-            this._rebuild();
-            if (this.vr) this.vr.respawn();
-            if (this.opts.onScene) this.opts.onScene(entered);
-          } catch (e) {
-            this._onEngineTrap('scene rebuild', e);
+        for (let s = 0; s < steps; s++) {
+          /* VR first-person owns the azimuth (the gaze) and merges its stick
+           * pad word over the keyboard's; otherwise the follow camera rules. */
+          if (this._vrDrive) {
+            rt.set_camera_azimuth(this._vrDrive.azimuth);
+            rt.set_pad(this.pad | this._vrDrive.pad);
+          } else {
+            rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+            rt.set_pad(this.pad);
+          }
+          /* A tap's just-pressed edge fires on the first tick of this frame
+           * only; later catch-up ticks see the held set, so a one-frame tap
+           * lands as exactly one edge however many ticks the frame runs. */
+          this.pulse.clear();
+          this._repack();
+          let entered = '';
+          try { entered = rt.tick_frame(); } catch (e) {
+            this._onEngineTrap('engine tick', e);
             return;
           }
+          if (entered) {
+            /* The engine walked through a door: its scene swapped under us, so
+             * the geometry has to swap too. A trap while rebuilding the new
+             * scene's geometry is just as fatal as one in the tick, so route it
+             * through recovery too. */
+            try {
+              this.scene = entered;
+              this._rebuild();
+              if (this.vr) this.vr.respawn();
+              if (this.opts.onScene) this.opts.onScene(entered);
+            } catch (e) {
+              this._onEngineTrap('scene rebuild', e);
+              return;
+            }
+            /* Don't keep feeding this frame's input into the freshly-loaded
+             * scene - resume ticking it next frame. */
+            break;
+          }
         }
+      } else {
+        /* Keep the sim clock current while paused so unpausing doesn't dump the
+         * accumulated wall-clock gap as a burst of catch-up ticks. */
+        this._simLast = performance.now();
       }
 
       /* The per-frame READ of the engine's live pose + NPC transforms runs the
@@ -709,6 +972,24 @@
         });
       }
 
+      /* Animated environment props: advance each to the engine's live prop-bank
+       * cursor. The windmill's sails spin continuously; a house door swings on
+       * contact. A prop resting on frame 0 is left as its uploaded rest pose,
+       * and one whose cursor has moved is re-posed - only when the frame
+       * actually changed, not once per rendered frame. */
+      if (advance && this.animProps.length) {
+        const pf = rt.field_placement_frames();
+        for (const p of this.animProps) {
+          const f = (p.i < pf.length) ? pf[p.i] : -1;
+          if (f < 0 || f === p.lastFrame) continue;
+          const posed = rt.field_mesh_posed_frame_positions(p.slot, p.anim, f);
+          if (posed.length) {
+            this.renderer.updateSceneMeshPositions(p.meshId, posed);
+            p.lastFrame = f;
+          }
+        }
+      }
+
       /* NPCs: advance each clip and draw at the world's live position. A clip is
        * a short loop, so the pose only rebuilds when the playhead actually moves
        * to a new keyframe - not once per rendered frame. */
@@ -751,9 +1032,16 @@
         this._fpsLast = now;
       }
       if (this.opts.onState) {
-        try { this.opts.onState(JSON.parse(rt.state_json()), this.fps); }
-        catch (e) { /* a malformed frame must not kill the loop */ }
+        try {
+          const st = JSON.parse(rt.state_json());
+          this._hudState = st;
+          this.opts.onState(st, this.fps);
+        } catch (e) { /* a malformed frame must not kill the loop */ }
       }
+
+      /* The retail pause menu overlay: engine-driven, blitted onto the 2D
+       * overlay canvas over the (frozen) GL view. Skipped while VR presents. */
+      if (!skipDraw) this._drawMenu();
     }
 
     /* Where the shared orbit projection puts the eye for the current camera
@@ -792,4 +1080,7 @@
   }
 
   window.PlayView = PlayView;
+  /* Shared by the boot-title controller in play.html, which renders the retail
+   * title card onto the same overlay canvas before a scene exists. */
+  window.LegaiaAtlasBlitter = AtlasBlitter;
 })();

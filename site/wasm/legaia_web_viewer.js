@@ -53,15 +53,18 @@ export class LegaiaArts {
         return v1;
     }
     /**
-     * The current character's arts-voice PCM: mono i16 at the rate reported
-     * in `set_character`'s `voice.rate` (37 800 Hz on retail). This is the
-     * XA channel the battle overlay plays for the character's Tactical Arts
-     * (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL`]). Empty when the character
-     * has no voice (raw `PROT.DAT` load, Terra, or demux failure).
+     * The arts-voice PCM for the art at bank index `art_index`: mono i16 at
+     * the rate reported in `set_character`'s `voice.channels[..].rate`
+     * (37 800 Hz). The clip is the XA channel the art's `FUN_8004C140`
+     * candidate pool selects (the art's `voice_channel`), trimmed of its
+     * trailing silence. Empty when the character has no voice bank (raw
+     * `PROT.DAT` load, Terra, demux failure) or the art has no voice entry.
+     * Also exposed by-channel via [`Self::voice_channel_pcm_i16`].
+     * @param {number} art_index
      * @returns {Int16Array}
      */
-    art_voice_pcm_i16() {
-        const ret = wasm.legaiaarts_art_voice_pcm_i16(this.__wbg_ptr);
+    art_voice_pcm_i16(art_index) {
+        const ret = wasm.legaiaarts_art_voice_pcm_i16(this.__wbg_ptr, art_index);
         var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
         return v1;
@@ -80,8 +83,8 @@ export class LegaiaArts {
     /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
      * TOC. Returns `{"entries": N}` JSON; errors throw. On a full disc the
-     * arts-voice bank ([`VOICE_XA_FILE`]) is sliced out alongside `PROT.DAT`;
-     * a raw `PROT.DAT` load simply has no voice audio.
+     * arts-voice banks ([`VOICE_XA_FILE`] = `XA2.XA` / `XA4.XA` / `XA6.XA`) are sliced out
+     * alongside `PROT.DAT`; a raw `PROT.DAT` load simply has no voice audio.
      * @param {Uint8Array} bytes
      * @returns {string}
      */
@@ -204,6 +207,20 @@ export class LegaiaArts {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * The arts-voice PCM of the current character's XA channel `channel`,
+     * regardless of any art mapping. Lets the page (and the listening aid)
+     * address a specific voice clip directly. Empty when out of range or the
+     * character has no voice bank.
+     * @param {number} channel
+     * @returns {Int16Array}
+     */
+    voice_channel_pcm_i16(channel) {
+        const ret = wasm.legaiaarts_voice_channel_pcm_i16(this.__wbg_ptr, channel);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
     }
     /**
      * The 1 MB PSX VRAM for the current character: band-0 texture pixels at
@@ -2258,6 +2275,96 @@ export class LegaiaRuntime {
         return ret !== 0;
     }
     /**
+     * `[width, height]` of the title atlas; `[0, 0]` when none.
+     * @returns {Uint32Array}
+     */
+    boot_title_atlas_dims() {
+        const ret = wasm.legaiaruntime_boot_title_atlas_dims(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The title art atlas (RGBA8) the sprite bands sample. Empty when none.
+     * @returns {Uint8Array}
+     */
+    boot_title_atlas_rgba() {
+        const ret = wasm.legaiaruntime_boot_title_atlas_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Abort the title flow (page navigated away / cancelled).
+     */
+    boot_title_close() {
+        wasm.legaiaruntime_boot_title_close(this.__wbg_ptr);
+    }
+    /**
+     * Draw lists for the current title state, in surface pixels:
+     * `{ "active": true, "sprites": [...title-atlas quads...],
+     *    "texts": [...font quads...] }`. Rendered over black by the page.
+     * @param {number} surface_w
+     * @param {number} surface_h
+     * @returns {string}
+     */
+    boot_title_draws_json(surface_w, surface_h) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_boot_title_draws_json(this.__wbg_ptr, surface_w, surface_h);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * `true` once the disc title art resolved (else the card renders text-only).
+     * @returns {boolean}
+     */
+    boot_title_has_atlas() {
+        const ret = wasm.legaiaruntime_boot_title_has_atlas(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {boolean}
+     */
+    boot_title_is_active() {
+        const ret = wasm.legaiaruntime_boot_title_is_active(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Start the boot title screen. No-op with no disc loaded. Continue is left
+     * disabled (the browser boot does not preload an engine save); the fade-in
+     * is skipped so the card shows immediately.
+     */
+    boot_title_start() {
+        wasm.legaiaruntime_boot_title_start(this.__wbg_ptr);
+    }
+    /**
+     * Advance the title one frame with an edge-triggered PSX pad word. Returns
+     * `""` while the title runs, or the chosen outcome once the player
+     * confirms: `"new_game"`, `"continue"`, or `"options"`. The caller acts on
+     * the outcome (seed + enter the opening scene for New Game) and the title
+     * clears itself.
+     * @param {number} edge
+     * @returns {string}
+     */
+    boot_title_step(edge) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_boot_title_step(this.__wbg_ptr, edge);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * `true` if a disc has been loaded.
      * @returns {boolean}
      */
@@ -2354,6 +2461,34 @@ export class LegaiaRuntime {
         return v1;
     }
     /**
+     * Field pause-menu model: the party (battle order) + inventory + gold the
+     * page's menu overlay renders when the player presses Start. Shape:
+     * ```text
+     * { "gold": 240,
+     *   "party": [{ "name": "Vahn", "level": 1, "hp": 60, "hp_max": 60,
+     *               "mp": 8, "mp_max": 8 }, ...],
+     *   "items": [{ "id": 32, "name": "Healing Leaf", "count": 3 }, ...] }
+     * ```
+     * `null` before a disc scene is entered. Item labels come from the SCUS
+     * item-name table ([`Self::load_disc`]); a PROT.DAT-only load falls back to
+     * the raw id. The retail pause menu is a native-only draw path (glyph atlas
+     * + window-descriptor table); this feeds the browser's HTML overlay
+     * equivalent so Start still surfaces the party / items on the play page.
+     * @returns {string}
+     */
+    field_menu_model_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_field_menu_model_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Select + build environment-pack slot `slot`; subsequent `field_mesh_*`
      * reads return that mesh.
      * @param {number} slot
@@ -2415,6 +2550,26 @@ export class LegaiaRuntime {
         return ret[0] >>> 0;
     }
     /**
+     * Positions of environment-pack slot `slot` **posed at clip frame
+     * `frame`** of scene ANM record `anim_id - 1` - the per-frame re-pose the
+     * draw walker (`FUN_8001B964`) does off a placed prop's live cursor.
+     * Same vertex order as [`Self::field_mesh_posed`]'s frame-0 build (the two
+     * differ only in the per-object transform), so the page can upload the
+     * mesh once and rewrite just its positions each frame. Empty when the pose
+     * can't resolve (no bundle / bone-count mismatch) - the caller then leaves
+     * the prop at its rest pose.
+     * @param {number} slot
+     * @param {number} anim_id
+     * @param {number} frame
+     * @returns {Float32Array}
+     */
+    field_mesh_posed_frame_positions(slot, anim_id, frame) {
+        const ret = wasm.legaiaruntime_field_mesh_posed_frame_positions(this.__wbg_ptr, slot, anim_id, frame);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * @returns {Float32Array}
      */
     field_mesh_positions() {
@@ -2442,6 +2597,23 @@ export class LegaiaRuntime {
     field_placement_anim_ids() {
         const ret = wasm.legaiaruntime_field_placement_anim_ids(this.__wbg_ptr);
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Live clip frame of each placement (parallel to
+     * [`Self::field_placement_slots`]): `-1` for a static prop (no anim, or
+     * no live prop-bank entry), else the prop's current cursor frame
+     * (`PropAnimBank::frame`, the `actor+0x68 >> 4` the draw walker poses
+     * from). The world advances every prop's cursor each field tick
+     * (`tick_prop_interactions` -> `PropAnimBank::tick_anims`, retail's
+     * `FUN_800204F8`), so an animated prop - the windmill sails, a swinging
+     * door mid-swing - reports a changing frame, and the page re-poses it.
+     * @returns {Int32Array}
+     */
+    field_placement_frames() {
+        const ret = wasm.legaiaruntime_field_placement_frames(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
@@ -2664,6 +2836,114 @@ export class LegaiaRuntime {
      */
     open_menu() {
         wasm.legaiaruntime_open_menu(this.__wbg_ptr);
+    }
+    /**
+     * `[width, height]` of the chrome atlas; `[0, 0]` when none.
+     * @returns {Uint32Array}
+     */
+    play_menu_chrome_dims() {
+        const ret = wasm.legaiaruntime_play_menu_chrome_dims(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The assembled menu-chrome atlas (RGBA8) the sprite draws sample. Empty
+     * when no chrome resolved.
+     * @returns {Uint8Array}
+     */
+    play_menu_chrome_rgba() {
+        const ret = wasm.legaiaruntime_play_menu_chrome_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Close the menu (and any open sub-screen).
+     */
+    play_menu_close() {
+        wasm.legaiaruntime_play_menu_close(this.__wbg_ptr);
+    }
+    /**
+     * Build the two draw lists for the current menu state, in surface pixels.
+     * Shape:
+     * ```text
+     * { "open": true,
+     *   "sprites": [ { "dst":[x,y,w,h], "src":[x,y,w,h], "color":[r,g,b,a] } ],
+     *   "texts":   [ ... ] }
+     * ```
+     * `sprites` sample the chrome atlas, `texts` the font atlas. `open` is
+     * `false` (and the lists empty) when no menu is up.
+     * @param {number} surface_w
+     * @param {number} surface_h
+     * @returns {string}
+     */
+    play_menu_draws_json(surface_w, surface_h) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaruntime_play_menu_draws_json(this.__wbg_ptr, surface_w, surface_h);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * `[width, height]` of the font atlas.
+     * @returns {Uint32Array}
+     */
+    play_menu_font_dims() {
+        const ret = wasm.legaiaruntime_play_menu_font_dims(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * The whitewashed font atlas (RGBA8) the text draws sample. Stable across
+     * the session; the page uploads it once.
+     * @returns {Uint8Array}
+     */
+    play_menu_font_rgba() {
+        const ret = wasm.legaiaruntime_play_menu_font_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * `true` once the gold chrome atlas resolved from the disc; `false` means
+     * the menu renders glyphs only (PROT.DAT-only load).
+     * @returns {boolean}
+     */
+    play_menu_has_chrome() {
+        const ret = wasm.legaiaruntime_play_menu_has_chrome(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Drive the menu one frame from an edge-triggered PSX pad word (same bit
+     * layout as [`Self::set_pad`]). Navigation:
+     * - top-level: Up/Down move the cursor, Cross opens the row, Circle closes.
+     * - a sub-screen: routes the edges to its session; Circle (or the session
+     *   finishing) drops back to the top-level list.
+     * @param {number} edge
+     */
+    play_menu_input(edge) {
+        wasm.legaiaruntime_play_menu_input(this.__wbg_ptr, edge);
+    }
+    /**
+     * @returns {boolean}
+     */
+    play_menu_is_open() {
+        const ret = wasm.legaiaruntime_play_menu_is_open(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Open the retail pause menu. No-op with no disc loaded. The field is
+     * frozen by the page while [`Self::play_menu_is_open`] is true.
+     */
+    play_menu_open() {
+        wasm.legaiaruntime_play_menu_open(this.__wbg_ptr);
     }
     /**
      * The scene's NPC / actor catalog. Shape:
@@ -5470,6 +5750,31 @@ export function card_saves_json(bytes) {
 }
 
 /**
+ * One of the three retail 16x16 **save-file portrait** TIMs decoded to a
+ * 1024-byte RGBA8 buffer: `0` = Vahn, `1` = Noa, `2` = Gala. Accepts either
+ * a full Mode2/2352 disc image or raw `PROT.DAT` bytes - the same input
+ * [`LegaiaRuntime::load_disc`] takes - so the play page can draw the party
+ * roster faces beside each save tile from the disc it already loaded, exactly
+ * as the minigames save bar does from its `LegaiaMinigames`
+ * (`save_portrait_rgba`). These are the load-screen slot-grid portraits
+ * pinned in the pre-`init_data` gap of `PROT.DAT` (offset `0x1AC90`, 192-byte
+ * stride); retail bakes the lead's copy into every SC block, so they are the
+ * exact faces a retail save carries. Empty when no PROT is found or the TIM
+ * doesn't parse - the bar falls back to initial chips.
+ * @param {Uint8Array} bytes
+ * @param {number} char_id
+ * @returns {Uint8Array}
+ */
+export function disc_portrait_rgba(bytes, char_id) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.disc_portrait_rgba(ptr0, len0, char_id);
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
  * Export a **working** language pack (source-bearing, all `translation:`
  * fields empty) from the user's own disc, as YAML text they can download and
  * fill in. This is the authoring on-ramp - the community can produce their own
@@ -5943,7 +6248,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 110, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 112, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h68646c9fea2fce23);
             return ret;
         },

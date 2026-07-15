@@ -20,11 +20,14 @@
  * bone poser). Requires webgl-math.js, webgl-shaders.js, webgl-tmd.js and
  * mesh-view.js first; rom-cache.js + load-progress.js for the disc input.
  *
- * Playback extras, both retail-mechanism:
- *   - VOICE: the character's arts shout is the XA30.XA channel the battle
- *     overlay plays through FUN_8003D53C(0x1D, chan, dur) -> CdlSetfilter
- *     (Vahn ch0 / Noa ch4 / Gala ch6; keyed on the character, not the art;
- *     Terra has no case). Demuxed by the WASM side, fired at art start.
+ * Playback extras:
+ *   - VOICE (per-art): the arts shouts are the RE'd retail cue (FUN_8004C140,
+ *     capture-verified) - each character's own 16-channel short-mono XA file
+ *     (Vahn=XA2, Noa=XA4, Gala=XA6; Terra none), and each art plays a real
+ *     member of its action constant's candidate channel pool (the record's
+ *     voice_channel). XA30.XA is the ordinary directional-attack grunt (not
+ *     the arts voice); XA3/XA5 are the stereo Miracle fanfares. Demuxed +
+ *     trimmed by the WASM side, fired at art start.
  *   - TRAIL: the tinted after-image (Vahn red / Noa green / Gala blue) -
  *     delayed poses of the same mesh re-drawn additively via
  *     MeshView.setTrail (the PSX ABE semi-transparency trick).
@@ -121,8 +124,10 @@
       this.currentArt = null; /* the playing art's display name, or null=idle */
       this.cueFrames = null;  /* Set of clip frames that fire the strike cue */
       this.cueLog = [];       /* [{frame, t}] - the headless-check hook */
-      this.voiceKey = null;   /* LegaiaSfx PCM key of the character's arts
-                               * voice (XA30 channel), or null when absent */
+      this.voice = null;      /* set_character().voice: the character's arts
+                               * voice bank ({file, base, count, channels}) -
+                               * per-ART clips in XA2 (Vahn/Noa) / XA4 (Gala),
+                               * or null when the disc has no voice audio. */
     }
 
     get ready() { return !!(this.api && this.charState && this.charState.ok); }
@@ -180,22 +185,15 @@
         this.els.now.textContent = `${name}: ${this.charState.why || 'did not assemble'}`;
         return false;
       }
-      /* Arts VOICE: the character's XA30.XA channel (the battle overlay's
-       * FUN_8003D53C(0x1D, chan, dur) cue - Vahn ch0 / Noa ch4 / Gala ch6),
-       * demuxed by the WASM side off the loaded disc. Registered once per
-       * character; null on a raw PROT.DAT load or for Terra. */
-      this.voiceKey = null;
-      if (this.charState.voice && window.LegaiaSfx && this.api.art_voice_pcm_i16) {
-        const key = `arts-voice:${name}`;
-        if (!LegaiaSfx.hasPcm(key)) {
-          const pcm = this.api.art_voice_pcm_i16();
-          if (pcm && pcm.length) {
-            LegaiaSfx.registerPcm(key, pcm,
-              this.charState.voice.rate, this.charState.voice.stereo);
-          }
-        }
-        if (LegaiaSfx.hasPcm(key)) this.voiceKey = key;
-      }
+      /* Arts VOICE: the character's per-art shout bank - the RE'd retail cue
+       * (FUN_8004C140), not an ear guess. Vahn=XA2, Noa=XA4, Gala=XA6 (16-channel
+       * short-mono XA). Each art's channel is a real member of its action
+       * constant's candidate pool, carried in the bank record's `voice_channel`;
+       * the WASM side demuxes + trims each channel off the loaded disc. Registered
+       * lazily per (character, channel) in playArt. Null on a raw PROT.DAT load,
+       * for Terra, or an art the retail build plays silent. */
+      this.voice = (this.charState.voice && window.LegaiaSfx
+        && this.api.art_voice_pcm_i16) ? this.charState.voice : null;
       if (!this.view) {
         this.view = new window.MeshView(this.els.canvas, {
           cam: { yaw: Math.PI / 2, pitch: 0.05, distance: 2.2, autoRotate: false },
@@ -236,7 +234,13 @@
         if (!this.cueFrames || !this.cueFrames.has(f)) return;
         this.cueLog.push({ frame: f, t: Date.now() });
         if (this.cueLog.length > 200) this.cueLog.shift();
-        if (window.LegaiaSfx) LegaiaSfx.play('arts', 'strike');
+        /* The strike/impact "punch" SFX is intentionally NOT played: we have
+         * not yet faithfully recreated that cue, and the placeholder rendered
+         * off the SFX descriptor table is a high-pitched annoyance. The impact
+         * frames are still tracked (cueLog / the headless __artsState hook) so
+         * the timing stays observable; only the audible cue is suppressed. The
+         * VOICE shout (playArt's playPcm path) is a separate, faithful cue and
+         * still fires. */
       };
     }
 
@@ -300,12 +304,22 @@
       }
       this._armCues(cues);
       this.currentArt = art.name;
-      /* VOICE: retail starts the character's shout as the art begins
-       * executing - one XA channel per character (XA30.XA: Vahn ch0 /
-       * Noa ch4 / Gala ch6), the same clip for every art of that
-       * character. Fired once per activation, not per loop. */
-      if (this.voiceKey && window.LegaiaSfx) {
-        LegaiaSfx.playPcm(this.voiceKey, 'arts.voice');
+      /* VOICE: play THIS art's shout as the art begins executing. The channel
+       * is the real FUN_8004C140 pool member the WASM resolved for this record
+       * (`voice_channel`); registered lazily per (character, channel) so each
+       * distinct clip is decoded once. Fired once per activation, not per loop.
+       * Some arts have no arts-voice entry (retail plays them silent). */
+      const voiceCh = this.voice ? bank[first].voice_channel : null;
+      if (this.voice && voiceCh != null && window.LegaiaSfx) {
+        const key = `arts-voice:${this.charName}:${voiceCh}`;
+        if (!LegaiaSfx.hasPcm(key)) {
+          const pcm = this.api.art_voice_pcm_i16(first);
+          const meta = (this.voice.channels || []).find((c) => c.channel === voiceCh) || {};
+          if (pcm && pcm.length) {
+            LegaiaSfx.registerPcm(key, pcm, meta.rate || 37800, !!meta.stereo);
+          }
+        }
+        if (LegaiaSfx.hasPcm(key)) LegaiaSfx.playPcm(key, 'arts.voice');
       }
       /* Per-character tinted after-image echoes (the retail arts trail). */
       this.view.setTrail({
@@ -324,20 +338,17 @@
       const dev = bank[first].name && norm(bank[first].name) !== norm(art.name)
         ? ` (dev name "${bank[first].name}")` : '';
       const segNote = chain.length > 1 ? `, ${chain.length} chained segments` : '';
-      /* Sound, and what is and isn't retail about it. */
-      const sfxNote = (window.LegaiaSfx && LegaiaSfx.ready() && cues.size)
-        ? `; strike cue 0x${LegaiaSfx.cueFor('arts', 'strike').toString(16).toUpperCase()}`
-          + ` on ${cues.size} impact frame${cues.size > 1 ? 's' : ''}`
-          + ' (retail cue id, timing fitted from the clip)'
-        : '';
-      const voiceNote = (this.voiceKey && this.charState.voice)
-        ? `; voice XA30 ch${this.charState.voice.channel} (retail cue)`
+      /* Sound note: only the VOICE shout is surfaced. The strike/impact SFX is
+       * not played (see _armCues) - the placeholder punch cue is not yet a
+       * faithful recreation - so the page no longer claims a strike cue fires. */
+      const voiceNote = this.voice && bank[first].voice_channel != null
+        ? `; voice ${this.voice.file} ch${bank[first].voice_channel}`
         : '';
       this.els.now.textContent =
         `${this.charName} - ${art.name}${dev}`;
       this.els.note.textContent =
         `record 0x${bank[first].anim_id.toString(16).toUpperCase()}` +
-        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${sfxNote}${voiceNote}`;
+        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${voiceNote}`;
     }
   }
 
@@ -401,9 +412,9 @@
         : null,
       ghostPasses: app.view && app.view.renderer && app.view.renderer.ghostTrail
         ? app.view.renderer.ghostTrail.passes.length : 0,
-      /* Voice: the character's XA30 channel metadata + registered key. */
+      /* Voice: the character's per-art arts-voice bank (XA2/XA4 slice). */
       voice: app.charState ? app.charState.voice || null : null,
-      voiceKey: app.voiceKey,
+      voiceReady: !!app.voice,
       sfxReady: !!(window.LegaiaSfx && LegaiaSfx.ready()),
       sfxInfo: window.LegaiaSfx && LegaiaSfx.ready() ? LegaiaSfx.info() : null,
       sfxLog: window.LegaiaSfx ? LegaiaSfx.log() : [],

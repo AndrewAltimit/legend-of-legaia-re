@@ -31,7 +31,8 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
 
-use legaia_asset::{item_names, new_game};
+use legaia_asset::man_edit::{self, TextEdit};
+use legaia_asset::{item_names, new_game, scene_asset_table};
 
 use crate::disc::DiscPatcher;
 
@@ -57,6 +58,12 @@ pub struct ImportReport {
     pub applied_keys: Vec<String>,
     /// Keys of the entries counted in [`Self::already_applied`].
     pub already_keys: Vec<String>,
+    /// Scene MAN PROT entries grown by a whole-sector **disc relayout** (only
+    /// when relayout is enabled). Each is a MAN whose full-length dialog would
+    /// not fit its original compressed footprint and was given `+N` sectors.
+    pub relayout_entries: usize,
+    /// Total sectors added across all relayout-grown entries.
+    pub relayout_sectors_added: u32,
 }
 
 /// Per-section outcome row (see [`ImportReport::section_counts`]).
@@ -90,6 +97,8 @@ impl ImportReport {
         self.issues.extend(other.issues);
         self.applied_keys.extend(other.applied_keys);
         self.already_keys.extend(other.already_keys);
+        self.relayout_entries += other.relayout_entries;
+        self.relayout_sectors_added += other.relayout_sectors_added;
     }
 
     /// Fold this report against the pack it came from into per-section
@@ -525,9 +534,214 @@ fn apply_segment_edit(
     Some(len)
 }
 
+/// A dialog segment inside a scene MAN, validated against the disc and ready
+/// to write: its decompressed-domain offset, current on-disc byte length (the
+/// `0x1F .. 0x00` framing span), and the encoded translated bytes.
+struct ReadyMan<'a> {
+    off: usize,
+    old_len: usize,
+    translated: Vec<u8>,
+    entry: &'a Entry,
+}
+
+/// Outcome of validating one dialog segment against the disc before a write.
+enum SegPrep {
+    /// Ready to write; `old_len` is its current framing span.
+    Ready { old_len: usize },
+    /// The translation is already on the disc (counted; no write needed).
+    Already,
+    /// A diagnostic was recorded; skip.
+    Skip,
+}
+
+/// Validate a dialog segment against the bytes actually on the disc (framing,
+/// already-applied, wrong-disc guard) *without* mutating - the same checks as
+/// [`apply_segment_edit`], but returning the current framing span so the caller
+/// can choose the same-size or grow path. See [`apply_segment_edit`] for the
+/// budget rationale.
+fn prepare_segment(
+    buf: &[u8],
+    entry: &Entry,
+    off: usize,
+    source: Option<&[u8]>,
+    translated: &[u8],
+    report: &mut ImportReport,
+) -> SegPrep {
+    let framed = off > 0
+        && buf.get(off - 1) == Some(&0x1F)
+        && segments::walk_to_terminator(buf, off).is_some_and(|t| buf[t] == 0x00);
+    if !framed {
+        report.issue(
+            &entry.key,
+            "segment framing not found at the keyed offset - skipped",
+        );
+        return SegPrep::Skip;
+    }
+    let term = segments::walk_to_terminator(buf, off).expect("framing checked");
+    let old_len = term - off;
+    let cur = &buf[off..term];
+    // Already applied: exact (a grown/shrunk write) or space-padded (same-size).
+    if cur == translated || cur == pad_segment(translated, old_len).as_slice() {
+        report.already_applied += 1;
+        report.already_keys.push(entry.key.clone());
+        return SegPrep::Already;
+    }
+    match source {
+        Some(src) if cur != src => {
+            report.issue(
+                &entry.key,
+                "disc bytes don't match the pack source (different disc revision or \
+                 a conflicting patch) - skipped",
+            );
+            SegPrep::Skip
+        }
+        None if !hint_agrees(entry, old_len, report) => SegPrep::Skip,
+        _ => SegPrep::Ready { old_len },
+    }
+}
+
+/// Attempt the **generalized rewriter** path for one scene MAN: grow/shrink
+/// every ready segment to its exact translated bytes, relocate all crossing
+/// references ([`man_edit::apply_text_edits`]), verify the rewrite is the same
+/// program relocated ([`man_edit::text_edits_preserve_scripts`]), and recompress
+/// within the MAN's on-disc footprint. Returns `(recompressed_stream,
+/// new_decompressed_size)` on success, or `None` when the growth can't be done
+/// safely / won't fit (caller falls back to same-size + abbreviation).
+fn try_grow_man(man: &SceneManText, ready: &[ReadyMan]) -> Option<(Vec<u8>, u32)> {
+    let edits: Vec<TextEdit> = ready
+        .iter()
+        .map(|r| TextEdit {
+            offset: r.off,
+            old_len: r.old_len,
+            new_bytes: r.translated.clone(),
+        })
+        .collect();
+    let grown = man_edit::apply_text_edits(&man.decoded, &edits).ok()?;
+    if !man_edit::text_edits_preserve_scripts(&man.decoded, &grown) {
+        return None;
+    }
+    // Recompress within the descriptor-boundary footprint (fast greedy parse,
+    // then the optimal parse when it just misses - same policy as `repack`).
+    let stream = legaia_lzs::compress(&grown);
+    let stream = if stream.len() <= man.compressed_budget {
+        stream
+    } else {
+        let opt = legaia_lzs::compress_optimal(&grown);
+        if opt.len() <= man.compressed_budget {
+            opt
+        } else {
+            return None;
+        }
+    };
+    Some((stream, grown.len() as u32))
+}
+
+/// Build entry `entry_idx`'s new **full-footprint payload**, growing the scene
+/// MAN by whole sectors so its full-length dialog fits. Used only when the
+/// in-place grow ([`try_grow_man`]) overflowed the MAN's compressed footprint and
+/// a disc relayout is permitted.
+///
+/// Steps (see `docs/tooling/pal-localizations.md`): relocate all crossing
+/// references + verify the program is preserved, recompress with no budget cap,
+/// then within the entry insert `ceil(overflow / 2048)` sectors after the MAN's
+/// compressed region, shift every later sub-asset, and bump their
+/// `scene_asset_table` descriptor `data_offset`s (+ the MAN decompressed-size
+/// word). Returns `(new_footprint_payload, grown_sectors)`, or `None` when the
+/// grow can't be done safely.
+fn build_grown_entry_payload(
+    patcher: &DiscPatcher,
+    entry_idx: usize,
+    man: &SceneManText,
+    ready: &[ReadyMan],
+) -> Option<(Vec<u8>, u32)> {
+    let edits: Vec<TextEdit> = ready
+        .iter()
+        .map(|r| TextEdit {
+            offset: r.off,
+            old_len: r.old_len,
+            new_bytes: r.translated.clone(),
+        })
+        .collect();
+    let grown = man_edit::apply_text_edits(&man.decoded, &edits).ok()?;
+    if !man_edit::text_edits_preserve_scripts(&man.decoded, &grown) {
+        return None;
+    }
+    let greedy = legaia_lzs::compress(&grown);
+    let optimal = legaia_lzs::compress_optimal(&grown);
+    let stream = if optimal.len() < greedy.len() {
+        optimal
+    } else {
+        greedy
+    };
+
+    const SECTOR: usize = 2048;
+    let extra = stream.len().checked_sub(man.compressed_budget)?;
+    if extra == 0 {
+        return None; // fits in place; caller should have used try_grow_man
+    }
+    let grown_sectors = extra.div_ceil(SECTOR);
+    let insert = grown_sectors * SECTOR;
+
+    // The entry's TRUE footprint bytes (the real per-scene allocation), not the
+    // indexed-size over-read `read_entry` returns.
+    let foot = patcher.read_entry_footprint(entry_idx).ok()?;
+    let table = scene_asset_table::detect(&foot)?;
+    let man_i = table.descriptor_index(0x03)?;
+    let man_off = man.man_offset;
+    let next_sub_off = man_off.checked_add(man.compressed_budget)?;
+    if next_sub_off > foot.len() || man_off + stream.len() > next_sub_off + insert {
+        return None;
+    }
+
+    // Insert `insert` blank bytes at the MAN's compressed-region end; later
+    // sub-assets shift up by `insert`.
+    let mut new = Vec::with_capacity(foot.len() + insert);
+    new.extend_from_slice(&foot[..next_sub_off]);
+    new.resize(new.len() + insert, 0);
+    new.extend_from_slice(&foot[next_sub_off..]);
+    new[man_off..man_off + stream.len()].copy_from_slice(&stream);
+
+    // Bump the descriptor `data_offset` of every sub-asset after the MAN.
+    for (i, d) in table.used().iter().enumerate() {
+        if d.data_offset as usize > man_off {
+            let off = scene_asset_table::SceneAssetTable::size_word_offset(i) + 4;
+            if off + 4 > new.len() {
+                return None;
+            }
+            let nv = d.data_offset + insert as u32;
+            new[off..off + 4].copy_from_slice(&nv.to_le_bytes());
+        }
+    }
+    // Rewrite the MAN descriptor's decompressed-size word.
+    let sw = scene_asset_table::SceneAssetTable::size_word_offset(man_i);
+    if sw + 4 > new.len() {
+        return None;
+    }
+    let size_word = scene_asset_table::encode_size_word(0x03, grown.len() as u32);
+    new[sw..sw + 4].copy_from_slice(&size_word.to_le_bytes());
+
+    debug_assert_eq!(new.len(), foot.len() + insert);
+    debug_assert_eq!(new.len() % SECTOR, 0);
+    Some((new, grown_sectors as u32))
+}
+
 /// Apply `pack` to the patcher's image. Untranslated entries are untouched.
+/// No disc relayout: MANs whose full-length dialog overflows their compressed
+/// footprint fall back to same-size + abbreviation.
 pub fn import_pack(patcher: &mut DiscPatcher, pack: &LanguagePack) -> Result<ImportReport> {
-    import_pack_phase(patcher, pack, ImportPhase::All)
+    import_pack_phase(patcher, pack, ImportPhase::All, false)
+}
+
+/// [`import_pack`] with the whole-sector **disc relayout** enabled: a scene MAN
+/// whose full-length dialog can't fit its compressed footprint is given `+N`
+/// sectors (the PROT entry grows, the disc is relaid out) so the dialog imports
+/// byte-faithfully instead of being abbreviated. See [`ImportReport`]'s
+/// `relayout_*` counters.
+pub fn import_pack_relayout(
+    patcher: &mut DiscPatcher,
+    pack: &LanguagePack,
+) -> Result<ImportReport> {
+    import_pack_phase(patcher, pack, ImportPhase::All, true)
 }
 
 /// [`import_pack`] restricted to one key population (see [`ImportPhase`]).
@@ -539,8 +753,15 @@ pub fn import_pack_phase(
     patcher: &mut DiscPatcher,
     pack: &LanguagePack,
     phase: ImportPhase,
+    allow_relayout: bool,
 ) -> Result<ImportReport> {
     let mut report = ImportReport::default();
+    // Scene MAN entries whose full-length dialog overflows their compressed
+    // footprint and needs a whole-sector disc relayout. Collected across the MAN
+    // loop, then applied in one relayout pass so the PROT index space (and every
+    // later index-keyed edit) is preserved.
+    let mut pending_growth: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
+    let mut pending_meta: Vec<(usize, Vec<String>, u32)> = Vec::new();
 
     // Group the work by write mechanism.
     let mut scus_work: Vec<&Entry> = Vec::new();
@@ -624,9 +845,10 @@ pub fn import_pack_phase(
             }
             continue;
         };
-        // Apply every edit, remembering the original bytes so an individual
-        // line can be rolled back if the scene's MAN won't recompress.
-        let mut applied: Vec<(usize, Vec<u8>, &Entry)> = Vec::new();
+
+        // Validate each segment against the disc once (framing / already-applied
+        // / wrong-disc guard), collecting the ready set with its current span.
+        let mut ready: Vec<ReadyMan> = Vec::new();
         for (off, en) in &edits {
             let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
                 continue;
@@ -634,21 +856,83 @@ pub fn import_pack_phase(
             let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
                 continue;
             };
-            let before = segments::walk_to_terminator(&man.decoded, *off)
-                .map(|end| man.decoded[*off..end].to_vec());
-            if apply_segment_edit(
-                &mut man.decoded,
+            if let SegPrep::Ready { old_len } = prepare_segment(
+                &man.decoded,
                 en,
                 *off,
                 source.as_deref(),
                 &translated,
                 &mut report,
-            )
-            .is_some()
-                && let Some(before) = before
-            {
-                applied.push((*off, before, en));
+            ) {
+                ready.push(ReadyMan {
+                    off: *off,
+                    old_len,
+                    translated,
+                    entry: en,
+                });
             }
+        }
+        if ready.is_empty() {
+            continue;
+        }
+
+        // Escape hatch: if any line overflows its own byte span, try to grow the
+        // whole MAN (budget = the MAN's own on-disc footprint, not each string).
+        // On success the segment framing moves but every crossing reference is
+        // relocated, so the pager still walks it correctly.
+        if ready.iter().any(|r| r.translated.len() > r.old_len) {
+            if let Some((stream, new_size)) = try_grow_man(&man, &ready) {
+                patcher.patch_prot_entry(entry_idx, man.man_offset as u64, &stream)?;
+                patcher.patch_prot_entry(
+                    entry_idx,
+                    man.man_descriptor_off as u64,
+                    &scene_asset_table::encode_size_word(0x03, new_size).to_le_bytes(),
+                )?;
+                report.applied += ready.len();
+                report
+                    .applied_keys
+                    .extend(ready.iter().map(|r| r.entry.key.clone()));
+                continue;
+            }
+            // The full-length dialog overflows the MAN's compressed footprint.
+            // With relayout enabled, stage a whole-sector grow of this PROT entry
+            // (applied together, after the loop) instead of abbreviating.
+            if allow_relayout
+                && let Some((payload, grown_sectors)) =
+                    build_grown_entry_payload(patcher, entry_idx, &man, &ready)
+            {
+                pending_growth.insert(entry_idx, payload);
+                pending_meta.push((
+                    entry_idx,
+                    ready.iter().map(|r| r.entry.key.clone()).collect(),
+                    grown_sectors,
+                ));
+                continue;
+            }
+        }
+
+        // Same-size (fast, byte-identical) path: apply the fitting lines in
+        // place, report the over-budget ones (the MAN couldn't be grown to fit
+        // them), then recompress with a longest-first rollback if the scene's
+        // dialog no longer fits its compressed footprint.
+        let mut applied: Vec<(usize, Vec<u8>, &Entry)> = Vec::new();
+        for r in &ready {
+            if r.translated.len() > r.old_len {
+                report.issue(
+                    &r.entry.key,
+                    format!(
+                        "translation needs {} bytes but the in-place budget is {} and the \
+                         scene MAN could not be grown to fit it (shorten this line)",
+                        r.translated.len(),
+                        r.old_len
+                    ),
+                );
+                continue;
+            }
+            let before = man.decoded[r.off..r.off + r.old_len].to_vec();
+            let padded = pad_segment(&r.translated, r.old_len);
+            man.decoded[r.off..r.off + r.old_len].copy_from_slice(&padded);
+            applied.push((r.off, before, r.entry));
         }
         if applied.is_empty() {
             continue;
@@ -689,6 +973,29 @@ pub fn import_pack_phase(
                     .extend(applied.iter().map(|(_, _, en)| en.key.clone()));
             }
             _ => {}
+        }
+    }
+
+    // Apply all staged whole-sector MAN grows in one disc relayout, so the PROT
+    // index space (and every later index-keyed edit) is preserved. Same-size
+    // edits above are already in the image and carried through the rebuild.
+    if !pending_growth.is_empty() {
+        match patcher.grow_prot_entries(&pending_growth) {
+            Ok(()) => {
+                for (_, keys, grown_sectors) in &pending_meta {
+                    report.relayout_entries += 1;
+                    report.relayout_sectors_added += grown_sectors;
+                    report.applied += keys.len();
+                    report.applied_keys.extend(keys.iter().cloned());
+                }
+            }
+            Err(e) => {
+                for (entry_idx, keys, _) in &pending_meta {
+                    for k in keys {
+                        report.issue(k, format!("scene {entry_idx}: disc relayout failed: {e}"));
+                    }
+                }
+            }
         }
     }
 

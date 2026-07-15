@@ -769,6 +769,196 @@ pub fn apply_insertions(man: &[u8], insertions: &[Insertion]) -> Result<Vec<u8>,
     rebuild_man(man, &mf, splices, &jump_fixups)
 }
 
+/// One text-span rewrite inside a decompressed MAN's **record script** region:
+/// replace the `old_len` bytes at `offset` with `new_bytes` (any length). This
+/// is the generalization of [`DestEdit`] from a door's destination name to an
+/// arbitrary interior run - the dialog-segment text a translation grows or
+/// shrinks. `offset` addresses the first byte of the run (for a `0x1F`-lead
+/// dialog segment, the byte after the `0x1F`); the `0x1F` lead and `0x00`
+/// terminator stay put and bound the run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEdit {
+    /// First byte of the run being replaced (absolute, decompressed-MAN coords).
+    pub offset: usize,
+    /// Length of the run being replaced.
+    pub old_len: usize,
+    /// Replacement bytes (the new run; may be longer or shorter than `old_len`).
+    pub new_bytes: Vec<u8>,
+}
+
+/// Apply a set of interior text-run edits to a decompressed MAN, returning the
+/// rebuilt buffer with every crossing internal reference relocated (partition
+/// record-offset tables, `u24_at_28`, intra-record relative jumps - the same
+/// [`rebuild_man`] machinery the door editor uses). This is the generalized
+/// dialog rewriter: it lets a localized line grow past its USA byte span while
+/// the surrounding script stays valid, so the budget becomes the MAN's own
+/// footprint rather than each string's fixed span.
+///
+/// Every edit must land in the **record region** (before section 0), inside a
+/// partition record's script body; an edit that touches the section chain, or a
+/// record carrying an absolute-reference op (`0x4E` abs-jump / `0x45 0xC0`
+/// camera-apply), is refused (a byte shift can't safely relocate those). The
+/// caller recompresses the result, rewrites the external descriptor size word
+/// ([`crate::scene_asset_table::encode_size_word`]), and should confirm the
+/// rewrite with [`text_edits_preserve_scripts`] as a round-trip backstop.
+pub fn apply_text_edits(man: &[u8], edits: &[TextEdit]) -> Result<Vec<u8>, ManEditError> {
+    use std::collections::BTreeSet;
+    let mf = man_section::parse(man).map_err(|_| ManEditError::Parse)?;
+    // Section 0 begins right after the record region; every editable run must
+    // lie strictly before it (dialog is field-VM script = partition records,
+    // never a data section, whose length prefixes this pass does not fix).
+    let sec0_abs = mf.data_region_offset + mf.header.u24_at_28 as usize;
+
+    let mut splices: Vec<Splice> = Vec::new();
+    let mut jump_fixups: Vec<RelJump> = Vec::new();
+    let mut scanned: BTreeSet<usize> = BTreeSet::new();
+    for e in edits {
+        if e.offset + e.old_len > sec0_abs {
+            // Touches (or crosses into) the section chain - out of scope.
+            return Err(ManEditError::RecordNotFound { op_pc: e.offset });
+        }
+        let (rstart, pc0, rend) = record_for(&mf, man, e.offset)
+            .ok_or(ManEditError::RecordNotFound { op_pc: e.offset })?;
+        // `record_for` also indexes section starts; a record-region offset must
+        // resolve to a partition record (its start is before section 0).
+        if rstart >= sec0_abs || e.offset < rstart + pc0 || e.offset + e.old_len > rend {
+            return Err(ManEditError::RecordNotFound { op_pc: e.offset });
+        }
+        // Scan each edited record's control flow exactly once (rejects abs refs).
+        if scanned.insert(rstart) {
+            jump_fixups.extend(scan_record_refs(man, rstart, pc0, rend, e.offset)?);
+        }
+        splices.push(Splice {
+            block_start: e.offset,
+            old_len: e.old_len,
+            delta: e.new_bytes.len() as i64 - e.old_len as i64,
+            tail: e.offset + e.old_len,
+            new_bytes: e.new_bytes.clone(),
+        });
+    }
+    if splices.is_empty() {
+        return Ok(man.to_vec());
+    }
+    rebuild_man(man, &mf, splices, &jump_fixups)
+}
+
+/// Absolute control-flow targets an instruction references (relative jumps +
+/// the absolute camera-apply / abs-jump). Empty for straight-line ops.
+fn control_targets(insn: &InsnInfo) -> Vec<usize> {
+    match insn {
+        InsnInfo::JmpRel { target, .. } | InsnInfo::CondJmp { target, .. } => vec![*target],
+        InsnInfo::BBoxTest { skip_target, .. } => vec![*skip_target],
+        InsnInfo::SystemFlag {
+            target: Some(t), ..
+        } => vec![*t],
+        InsnInfo::InventoryCmp {
+            kind:
+                InventoryCmpKind::Compare { skip_target, .. }
+                | InventoryCmpKind::PartyBank { skip_target, .. },
+            ..
+        } => vec![*skip_target],
+        InsnInfo::Camera {
+            kind: CameraKind::Apply { abs_target },
+            ..
+        } => vec![*abs_target],
+        _ => vec![],
+    }
+}
+
+/// Per-record normalized instruction signature: for each instruction in a clean
+/// fall-through walk of `[start+pc0, end)`, its opcode and the **ordinals**
+/// (indices within this walk) of its control-flow targets, or `None` for a
+/// target that doesn't land on a walked instruction boundary.
+fn record_signature(
+    man: &[u8],
+    start: usize,
+    pc0: usize,
+    end: usize,
+) -> Vec<(u8, Vec<Option<usize>>)> {
+    let mut insns: Vec<field_disasm::Insn> = Vec::new();
+    let mut pc = start + pc0;
+    while pc < end {
+        let Ok(insn) = field_disasm::decode(man, pc) else {
+            break;
+        };
+        if insn.size == 0 || insn.pc >= end {
+            break;
+        }
+        pc += insn.size;
+        insns.push(insn);
+    }
+    let ordinal_of = |target: usize| insns.iter().position(|i| i.pc == target);
+    insns
+        .iter()
+        .map(|i| {
+            (
+                i.opcode,
+                control_targets(&i.info)
+                    .iter()
+                    .map(|&t| ordinal_of(t))
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// Round-trip backstop for [`apply_text_edits`]: confirm the `rebuilt` MAN is
+/// the **same program** as `original`, relocated. It re-parses, and for every
+/// partition record walks both buffers from the record's `pc0` and requires an
+/// identical instruction stream - same opcodes in order, and every control-flow
+/// target resolving to the same instruction ordinal. A mis-relocated jump (a
+/// straddling delta the fixup missed) diverges the ordinal and is caught; a
+/// target that no longer lands on an instruction boundary reads as `None` on
+/// one side. Returns `false` on any divergence, so the caller can drop the
+/// growth and fall back to same-size abbreviation for that scene.
+pub fn text_edits_preserve_scripts(original: &[u8], rebuilt: &[u8]) -> bool {
+    let (Ok(a), Ok(b)) = (man_section::parse(original), man_section::parse(rebuilt)) else {
+        return false;
+    };
+    if a.header.partition_counts != b.header.partition_counts {
+        return false;
+    }
+    let starts_a = record_starts(&a);
+    let starts_b = record_starts(&b);
+    let dro_a = a.data_region_offset;
+    let dro_b = b.data_region_offset;
+    for (p, part) in a.partitions.iter().enumerate() {
+        for (ri, &off_a) in part.iter().enumerate() {
+            let start_a = dro_a + off_a as usize;
+            let start_b = dro_b + b.partitions[p][ri] as usize;
+            if start_a >= original.len() || start_b >= rebuilt.len() {
+                return false;
+            }
+            let pc0 = |man: &[u8], start: usize| -> Option<usize> {
+                if p == 2 {
+                    p2_pc0(man, start)
+                } else {
+                    man.get(start).map(|&l| 1 + l as usize * 2 + 4)
+                }
+            };
+            let (Some(pc0a), Some(pc0b)) = (pc0(original, start_a), pc0(rebuilt, start_b)) else {
+                return false;
+            };
+            let end_a = starts_a
+                .iter()
+                .copied()
+                .find(|&s| s > start_a)
+                .unwrap_or(original.len());
+            let end_b = starts_b
+                .iter()
+                .copied()
+                .find(|&s| s > start_b)
+                .unwrap_or(rebuilt.len());
+            if record_signature(original, start_a, pc0a, end_a)
+                != record_signature(rebuilt, start_b, pc0b, end_b)
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 /// Re-parse the rebuilt MAN and confirm it walks cleanly: the structure parses
 /// and each `op_pc` (mapped through the edits) now decodes as a `0x3F`
 /// scene-change carrying the intended name. A final backstop the caller uses to

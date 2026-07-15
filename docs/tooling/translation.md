@@ -212,20 +212,27 @@ capped by `budget`:
 
 - SCUS strings: the original string's byte span (shorter is fine - the string
   is re-terminated; bytes past the NUL are never read).
-- Dialog segments: the original segment's exact byte length. Shorter
-  translations are padded with spaces so the `0x1F ... 0x00` framing (and
-  every script offset around it) never moves. There is **no record resize**
-  for dialog: segment pools interleave with script bytecode whose relative
-  jumps assume fixed offsets, so in-place is the safe contract.
+- Dialog segments: same-size in place is the fast default - shorter
+  translations are space-padded so the `0x1F ... 0x00` framing (and every
+  script offset around it) never moves. When a line overflows its own span,
+  the importer tries the **generalized rewriter** escape hatch: it grows every
+  filled segment in that scene MAN to full length and relocates all crossing
+  references (partition tables, `u24_at_28`, straddling relative jumps -
+  `man_edit::apply_text_edits`), verified as the same program by re-walking
+  both buffers (`text_edits_preserve_scripts`). The budget then becomes the
+  MAN's own footprint, not each string. See
+  [`man-relocation.md`](../formats/man-relocation.md).
 - A whole scene's edits must additionally recompress into the MAN's original
-  LZS footprint. Text compresses well, and the repack falls back to an
-  optimal-parse LZS encoder (`legaia_lzs::compress_optimal` - exact
+  LZS footprint at the same LBA. Text compresses well, and the repack falls
+  back to an optimal-parse LZS encoder (`legaia_lzs::compress_optimal` - exact
   shortest-encoding DP, incl. back-references into the decoder's initial zero
-  window) when the fast greedy parse just misses the budget, so even the
-  couple of retail MANs with zero compressed slack stay editable. If a scene
-  still overflows, the import rolls back its longest lines one at a time
-  (each with a per-key diagnostic) rather than dropping the whole scene -
-  shorten the reported lines and re-run.
+  window) when the fast greedy parse just misses the budget. The retail scene
+  entries are sector-aligned with **zero compressed slack**, though, so an
+  in-place grow only fits when the rewritten MAN recompresses no larger than
+  the original; a scene that still overflows falls back to same-size and rolls
+  back its longest lines one at a time (each with a per-key diagnostic) - shorten
+  the reported lines and re-run, or land the disc-level +1-sector relayout the
+  [PAL fit report](pal-localizations.md) motivates.
 
 `translate stats` checks all of this offline. On import each target is also
 verified against the pack's `source`; a mismatch (wrong disc revision, or a
@@ -280,7 +287,10 @@ UI-icon sprites (no text string to translate).
 
 Not covered (out of scope for this pipeline):
 
-- textures with baked-in text (title screen, the prologue caption TIM);
+- textures with baked-in text (title screen, save/load UI, boot logos, the
+  in-battle command ring); these are enumerated with their footprint
+  constraints under [Textures with baked-in text](#textures-with-baked-in-text)
+  below;
 - the segment scanner is conservative by design - a dialog line that fails
   its quality gate is simply not exported and stays English. Junk entries the
   scanner does export (dev-debug strings, the odd data run that reads as
@@ -289,6 +299,42 @@ Not covered (out of scope for this pipeline):
 The dialog exports the raw source lines including substitution escapes;
 translations must keep grammatical agreement working around them (the
 substituted names come from the tables you also translate).
+
+## Textures with baked-in text
+
+Some UI text is not a string at all - it is pixels in a TIM. Those are outside
+the string/dialog/`ui_menu` scope: replacing one means authoring new glyph art
+at the **exact same TIM footprint** (identical width / height / bpp / CLUT
+layout) so the same-size in-place `DiscPatcher` write applies. The `tim` crate
+can encode a PNG back to a TIM, so a byte-identical-footprint swap is
+mechanically possible; the blocker is art authoring (and, for logos, rights),
+not the pipeline. None are patched here - each is a scoped follow-up. Legally,
+the boot / publisher logos must be left untouched regardless.
+
+The text-bearing textures on the retail disc:
+
+| Texture | Where | Baked text | Footprint / notes |
+|---|---|---|---|
+| Title wordmark | PROT 0888 (dup 0889 / 0890), `legaia_asset::title_pak` | "Legend of Legaia" logo, `PRESS START BUTTON`, TM / (C) copyright bands; an unused `<DEMO>` band retail never samples | Bands are sub-rects of one 256x256 TIM (`TITLE_BAND_*`). The logo is title art (a proper noun); `PRESS START BUTTON` is a candidate for a same-footprint band swap. Copyright bands must stay. |
+| Title menu `NEW GAME` / `CONTINUE` | title overlay (unindexed `PROT.DAT` gap between TOC 899 and 900) | rendered at runtime from the **dialog-font glyph atlas**, not a baked band (retail ignores the embedded footer band) | So this is *text*, but it lives in the title overlay code region the pipeline does not address by coordinate. Follow-up: pin the two label strings' VA window like a `ui_menu` pool. |
+| Save/Load UI | PROT 0899 `+0x16908` (`SLOT n` pill) + the pre-`init_data` `PROT.DAT` gap (`Load` panel TIM) + the title-overlay memcard atlas `0x801E5120` | baked `SLOT 1..` pill label, the `Load` panel wordmark, and Japanese memcard strings in the atlas | Small 4bpp TIMs at fixed offsets; a same-footprint pill/panel swap is feasible. See [`save-screen.md`](../subsystems/save-screen.md). |
+| Config-screen TIMs | PROT 0899 `+0x169DC` / `+0x1F91C` | small option-screen chrome TIMs that sit after the config **string** pool (the strings are the `ui_menu` menu labels, already translatable) | Chrome art; only replace if a label is baked rather than drawn from the string pool. |
+| In-battle command ring | battle overlay UI-icon sprites | `Attack` / `Arts` / `Magic` / `Item` are drawn as **icon sprites**, not text | No string exists; a worded localization would need new icon art. This is why the `ui_menu` battle pool covers `Spirit` / `Defense` / `Escape` / `Begin` (real strings) but not the four ring commands. |
+| Boot / publisher logos | PROT 0895 `init.pak` (`legaia_asset::init_pak`) - PROKION, SCEA / Sony | brand logos ("licensed by", studio marks) | **Do not alter** - trademark art, not localizable text. Listed only so a sweep does not mistake them for translatable UI. |
+| Opening prologue caption | opening-sequence baked caption TIM (the narration **crawl** itself is `0x1F`-framed text and *is* covered via the dialog corpus) | a baked caption still shows English under the crawl | The crawl narration translates through `scene_dialog` / `inline_text`; only the baked caption TIM would need an art swap. |
+
+A font patch (new glyph tiles + width table in the menu glyph atlas at
+`PROT.DAT` offset `0x11218`, see [`boot.md`](../subsystems/boot.md) and
+[`dialog-font.md`](../formats/dialog-font.md)) is the separate, larger effort
+that would lift the printable-ASCII-only limitation for accented Latin / other
+scripts across *all* text, not just these textures; it is out of scope here.
+The official PAL discs already carry such an atlas: see
+[`pal-localizations.md`](pal-localizations.md) for the CP437-aligned accent
+byte→glyph map, the enumerated font-patch cell set, how the official
+French/German/Italian text aligns id-/order-for-order to the USA disc
+(`legaia-rando translate diff-disc`), how to lift it onto USA coordinates
+(`translate lift-official`), and the per-string vs per-MAN fit rate
+(`translate fit-report`).
 
 ## AI example packs
 

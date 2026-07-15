@@ -225,7 +225,7 @@ pub fn patch_rom(
     };
     let mut lang_report = ImportReport::default();
     if let Some(pack) = &parsed_pack {
-        let report = import_pack_phase(&mut patcher, pack, ImportPhase::DialogOnly)
+        let report = import_pack_phase(&mut patcher, pack, ImportPhase::DialogOnly, false)
             .map_err(|e| err(format!("apply language pack (dialog): {e}")))?;
         lang_report.merge(report);
     }
@@ -633,7 +633,7 @@ pub fn patch_rom(
     let mut lang_line = String::from("language: untouched (English)\n");
     let mut lang_json = JsValue::NULL;
     if let Some(pack) = &parsed_pack {
-        let report = import_pack_phase(&mut patcher, pack, ImportPhase::NamesOnly)
+        let report = import_pack_phase(&mut patcher, pack, ImportPhase::NamesOnly, false)
             .map_err(|e| err(format!("apply language pack (names): {e}")))?;
         lang_report.merge(report);
         let sections = lang_report.section_counts(pack);

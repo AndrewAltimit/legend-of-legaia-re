@@ -236,6 +236,20 @@ impl LegaiaRuntime {
         anim_id: u8,
         res_idx: usize,
     ) -> Option<Vec<([i16; 3], [i16; 3])>> {
+        self.frame_bone_offsets(anim_id, res_idx, 0)
+    }
+
+    /// Bone transforms of scene ANM record `anim_id - 1` at clip frame `frame`,
+    /// under retail's count-equality contract (see [`Self::frame0_bone_offsets`]).
+    /// Frame `0` is the rest pose; a live prop's cursor (`PropAnim::frame`)
+    /// advances it, which is what makes the Rim Elm windmill's sails turn.
+    /// `None` = the clip / mesh disagree on the part count, so pose nothing.
+    fn frame_bone_offsets(
+        &self,
+        anim_id: u8,
+        res_idx: usize,
+        frame: usize,
+    ) -> Option<Vec<([i16; 3], [i16; 3])>> {
         let bundle = self.scene_anm.as_ref()?;
         let rec_idx = (anim_id as usize).checked_sub(1)?;
         let rec = bundle.record(rec_idx).ok()?;
@@ -248,9 +262,10 @@ impl LegaiaRuntime {
             ));
             return None;
         }
+        let f = frame.min((rec.frame_count as usize).saturating_sub(1));
         Some(
             (0..bones)
-                .map(|b| match bundle.bone_transform(rec_idx, 0, b) {
+                .map(|b| match bundle.bone_transform(rec_idx, f, b) {
                     Some(t) => (
                         [t.t_x as i16, t.t_y as i16, t.t_z as i16],
                         [t.r_x as i16, t.r_y as i16, t.r_z as i16],
@@ -408,6 +423,68 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|f| f.placements.iter().map(|d| d.anim_id as u32).collect())
             .unwrap_or_default()
+    }
+
+    /// Live clip frame of each placement (parallel to
+    /// [`Self::field_placement_slots`]): `-1` for a static prop (no anim, or
+    /// no live prop-bank entry), else the prop's current cursor frame
+    /// (`PropAnimBank::frame`, the `actor+0x68 >> 4` the draw walker poses
+    /// from). The world advances every prop's cursor each field tick
+    /// (`tick_prop_interactions` -> `PropAnimBank::tick_anims`, retail's
+    /// `FUN_800204F8`), so an animated prop - the windmill sails, a swinging
+    /// door mid-swing - reports a changing frame, and the page re-poses it.
+    pub fn field_placement_frames(&self) -> Vec<i32> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        f.placements
+            .iter()
+            .map(|d| {
+                if d.anim_id == 0 {
+                    return -1;
+                }
+                h.world
+                    .field_prop_bank
+                    .frame(d.anchor)
+                    .map(|fr| fr as i32)
+                    .unwrap_or(-1)
+            })
+            .collect()
+    }
+
+    /// Positions of environment-pack slot `slot` **posed at clip frame
+    /// `frame`** of scene ANM record `anim_id - 1` - the per-frame re-pose the
+    /// draw walker (`FUN_8001B964`) does off a placed prop's live cursor.
+    /// Same vertex order as [`Self::field_mesh_posed`]'s frame-0 build (the two
+    /// differ only in the per-object transform), so the page can upload the
+    /// mesh once and rewrite just its positions each frame. Empty when the pose
+    /// can't resolve (no bundle / bone-count mismatch) - the caller then leaves
+    /// the prop at its rest pose.
+    pub fn field_mesh_posed_frame_positions(
+        &self,
+        slot: u32,
+        anim_id: u32,
+        frame: u32,
+    ) -> Vec<f32> {
+        let s = slot as usize;
+        let anim = anim_id.min(u8::MAX as u32) as u8;
+        let Some(f) = self.field.as_ref() else {
+            return Vec::new();
+        };
+        let Some(&res_idx) = f.env_tmds.get(s) else {
+            return Vec::new();
+        };
+        let Some(offsets) = self.frame_bone_offsets(anim, res_idx, frame as usize) else {
+            return Vec::new();
+        };
+        let Some(res) = self.res() else {
+            return Vec::new();
+        };
+        let Some(rtmd) = res.tmds.get(res_idx) else {
+            return Vec::new();
+        };
+        let (mesh, _flat) = crate::field_scene::build_hybrid_env_mesh_posed(rtmd, &offsets);
+        mesh.positions.iter().flatten().copied().collect()
     }
 
     pub fn field_terrain_slots(&self) -> Vec<u32> {

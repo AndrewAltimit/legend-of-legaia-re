@@ -1294,6 +1294,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "legaia-asset",
+ "legaia-engine-ui",
  "legaia-font",
  "legaia-tim",
  "log",
@@ -1341,6 +1342,19 @@ dependencies = [
  "tempfile",
  "toml",
  "winit",
+]
+
+[[package]]
+name = "legaia-engine-ui"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "legaia-asset",
+ "legaia-font",
+ "legaia-tim",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1558,7 +1572,9 @@ dependencies = [
  "legaia-asset",
  "legaia-engine-audio",
  "legaia-engine-core",
+ "legaia-engine-ui",
  "legaia-engine-vm",
+ "legaia-font",
  "legaia-iso",
  "legaia-lzs",
  "legaia-mdec",

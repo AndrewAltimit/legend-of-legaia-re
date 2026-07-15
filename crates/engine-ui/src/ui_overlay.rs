@@ -459,7 +459,7 @@ pub struct HudSlotMeta {
 /// `status_active` models retail's per-character status byte (record `+0x36`,
 /// `*(short *)(char*0x414 - 0x7ff7b7ca)`), which forces the caution tier even
 /// above half HP; the engine approximates it with "any active status icon".
-pub(crate) fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
+pub fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
     if cur == 0 {
         return 2;
     }
@@ -480,7 +480,7 @@ pub(crate) fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 
 /// `cur <= max/4` / `cur <= max/2` ratio tiers (index 9 danger, 6 caution,
 /// 7 normal) but with no K.O. (2) state and no status-flag override - MP has no
 /// "empty = dead" colour, so a depleted bar simply reads as danger.
-pub(crate) fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
+pub fn mp_bar_color_index(cur: u16, max: u16) -> u8 {
     if (max >> 2) < cur {
         if cur <= (max >> 1) { 6 } else { 7 }
     } else {
@@ -656,7 +656,7 @@ pub fn battle_hud_draws_for(
     out
 }
 
-pub(crate) fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
+pub fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
     [
         color[0],
         color[1],

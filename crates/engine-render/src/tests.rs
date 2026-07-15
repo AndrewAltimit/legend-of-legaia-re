@@ -1,7 +1,9 @@
 use super::*;
 use crate::renderer::letterbox_scale;
 use crate::shaders::*;
-use crate::ui_overlay::{apply_alpha, hp_bar_color_index, mp_bar_color_index};
+// These UI helpers now live in `legaia-engine-ui` and are re-exported at the
+// crate root via `pub use legaia_engine_ui::*`.
+use crate::{apply_alpha, hp_bar_color_index, mp_bar_color_index};
 use glam::Mat4;
 
 mod battle_hud;

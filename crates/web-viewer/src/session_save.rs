@@ -233,6 +233,44 @@ pub fn card_icon_rgba(bytes: Vec<u8>, block: u8) -> Result<Vec<u8>, JsValue> {
     sc_icon_rgba_core(&bytes, block).map_err(|e| JsValue::from_str(&e))
 }
 
+/// One of the three retail 16x16 **save-file portrait** TIMs decoded to a
+/// 1024-byte RGBA8 buffer: `0` = Vahn, `1` = Noa, `2` = Gala. Accepts either
+/// a full Mode2/2352 disc image or raw `PROT.DAT` bytes - the same input
+/// [`LegaiaRuntime::load_disc`] takes - so the play page can draw the party
+/// roster faces beside each save tile from the disc it already loaded, exactly
+/// as the minigames save bar does from its `LegaiaMinigames`
+/// (`save_portrait_rgba`). These are the load-screen slot-grid portraits
+/// pinned in the pre-`init_data` gap of `PROT.DAT` (offset `0x1AC90`, 192-byte
+/// stride); retail bakes the lead's copy into every SC block, so they are the
+/// exact faces a retail save carries. Empty when no PROT is found or the TIM
+/// doesn't parse - the bar falls back to initial chips.
+#[wasm_bindgen]
+pub fn disc_portrait_rgba(bytes: Vec<u8>, char_id: usize) -> Vec<u8> {
+    use crate::disc::{extract_prot_dat, is_mode2_2352_disc};
+    use legaia_asset::title_pak::{
+        OVERLAY_LOAD_PORTRAIT_COUNT, OVERLAY_LOAD_PORTRAIT_STRIDE, OVERLAY_LOAD_PORTRAIT_TIM_OFFSET,
+    };
+    if char_id >= OVERLAY_LOAD_PORTRAIT_COUNT {
+        return Vec::new();
+    }
+    let prot = if is_mode2_2352_disc(&bytes) {
+        match extract_prot_dat(&bytes) {
+            Some(p) => p,
+            None => return Vec::new(),
+        }
+    } else {
+        bytes
+    };
+    let off = OVERLAY_LOAD_PORTRAIT_TIM_OFFSET + char_id * OVERLAY_LOAD_PORTRAIT_STRIDE;
+    let Some(tim_bytes) = prot.get(off..off + OVERLAY_LOAD_PORTRAIT_STRIDE) else {
+        return Vec::new();
+    };
+    let Ok(parsed) = legaia_tim::parse(tim_bytes) else {
+        return Vec::new();
+    };
+    legaia_tim::decode_rgba8(&parsed, 0).unwrap_or_default()
+}
+
 impl LegaiaRuntime {
     /// JsValue-free core of [`Self::import_save`].
     fn import_save_core(&mut self, bytes: &[u8]) -> Result<String, String> {

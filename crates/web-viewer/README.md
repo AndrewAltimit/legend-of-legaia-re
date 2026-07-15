@@ -76,6 +76,48 @@ Two things the browser host has to do that the native one gets for free:
   so `site/js/play-app.js` culls any mesh straddling the camera-to-player line -
   without it a cave roof or a house's upper storey fills the screen.
 
+## Retail pause menu (`play_menu`)
+
+Start (Enter) opens the real retail field menu, drawn from the same wgpu-free
+`legaia-engine-ui` builders the native `play-window` uses - not a DOM stand-in.
+`LegaiaRuntime::play_menu_*` owns the state + navigation and serves two draw
+lists (`play_menu_draws_json`): the gold 9-slice + navy-filigree window chrome
+as sprite quads off the disc's menu-UI atlas (`save_menu_atlas::build_atlas`
+over PROT 0899 + the PROT.DAT system-UI sheet), and the labels as font-glyph
+quads sampling the **real retail proportional dialog font** decoded straight
+from the disc (`legaia_font::Font::from_disc_tim_and_scus` over the PROT.DAT font
+TIM at `0x7F40` + the SCUS width table - byte-identical to the save-state
+extraction, no `extracted/` artifacts needed). Window geometry is the disc-parsed
+descriptor table
+(`legaia_asset::menu_windows`) with the native window's pinned fallback. The two
+atlases upload once (`play_menu_font_rgba` / `play_menu_chrome_rgba`); the page's
+`AtlasBlitter` (an `image-rendering: pixelated` overlay `<canvas>` over the GL
+view) blits the quads with a per-quad multiply tint. The top-level command list
+plus the Items / Magic / Equip / Status / Options sub-screens all run the real
+`legaia_engine_core::field_menu_dispatch::FieldMenuSubsession` the native
+`play-window` builds (the disc equipment / spell / item catalogs are installed on
+the host world at `load_disc`), and render through the exact same
+`legaia-engine-ui` draw builders (`inventory_use_draws_for` /
+`spell_menu_draws_for` / `equip_screen_draws_for` / `status_screen_draws_for` /
+`options_draws_for`) - the site is just a different framebuffer over the same
+menu. Only Load / Save keep the generic framed window: the play page's own DOM
+save-loader owns disc-backed saving, so the in-canvas save-select screen is not
+wired. Parity is asserted by the disc-gated `tests/menu_parity.rs` oracle.
+
+## Boot title screen (`boot_title`)
+
+The front of the native `--boot-ui` chain (publisher logos -> title ->
+save-select -> field). "New game" boots the retail title card off the disc's own
+art: `LegaiaRuntime::boot_title_*` drives the engine's `TitleSession` (FadeIn ->
+PressStart -> MainMenu) and serves the title-TIM bands (wordmark, Press Start,
+NEW GAME / CONTINUE, copyright) as sprite quads off `title_screen_atlas`
+(PROT 0888), blitted onto the same overlay canvas the pause menu uses, over
+black. `site/js/play-app.js` exposes the `AtlasBlitter`; the page's small boot
+controller runs before any scene exists, feeds the title edge-triggered pad
+words, and on the New Game outcome seeds the retail defaults + enters the
+opening scene (the existing `enter_field_scene` path). Publisher logos and the
+Continue save-slot grid are not yet wired.
+
 ## Assembled full-scene maps (`field_scene`)
 
 `LegaiaViewer::set_scene_field(name)` loads a CDNAME field/town scene

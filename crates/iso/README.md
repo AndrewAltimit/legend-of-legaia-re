@@ -38,6 +38,15 @@ cross-reference [Redump](http://redump.org/disc/425/) for per-track hashes.
 
 ## Tests
 
+`relayout` grows a file (specifically `PROT.DAT`) by **whole sectors** and
+cascades every downstream disc LBA reference - the disc-integrity operation the
+official PAL discs used at mastering to fit longer localized dialog. It rebuilds
+`PROT.DAT` (fresh EDC/ECC + correct MSF headers), relocates every sector after it
+(MSF header only - Form 1 EDC/ECC do not cover the header), and renumbers the PVD
+volume space / path tables / directory records / `PROT.DAT` record size. Generic
+ISO9660 + ECMA-130 (no game bytes). See
+[`docs/formats/disc.md` § Full-ISO relayout](../../docs/formats/disc.md#full-iso-relayout).
+
 `tests/disc_pipeline.rs` is a disc-gated integration test: it asserts file
 count, key file SHA-256s, and that the ISO9660 walk reaches every entry.
 `tests/ecc_real.rs` is the write-side disc-gated test: it confirms the EDC/ECC

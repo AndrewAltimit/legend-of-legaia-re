@@ -1,0 +1,32 @@
+# legaia-engine-ui
+
+Pure, renderer-agnostic UI draw-list builders for the Legaia engine port. The
+wgpu-free leaf that both the native renderer (`legaia-engine-render`) and the
+browser play page (`legaia-web-viewer`) share.
+
+## Scope
+
+Every function projects a renderer-agnostic *view* struct - built by the host
+from the live `World` - into a `Vec` of `TextDraw` / `SpriteDraw` primitives.
+Each primitive is a screen rectangle plus a source rect into either the
+proportional font atlas (`legaia-font`) or a VRAM sprite page, with an RGBA
+tint. The host renderer rasterises them; neither the geometry nor the menu
+navigation logic depends on the GPU backend.
+
+- `ui_overlay` - dialog box, cutscene narration, battle HUD, encounter banner,
+  stage-scale text, per-glyph sprite emit helpers.
+- `ui_menu` - pause-menu field / status / spell / inventory / equipment panels,
+  options + key-rebind, name entry, game-over, tactical-arts editor.
+- `ui_title_save` - title menu, 9-slice window chrome, save-select, save-slot
+  grid + info panel, "Now checking" dialog.
+
+## Composition
+
+`legaia-engine-render` re-exports every item here at its historical crate-root
+path (`pub use legaia_engine_ui::*`) so native shell code, the asset-viewer, and
+tests reference the builders unchanged. The GPU-resident batch wrappers
+(`TextOverlay` / `SpriteOverlay` / `UploadedSpriteAtlas`) stay in
+`legaia-engine-render` because they hold wgpu handles.
+
+Depends only on `legaia-asset`, `legaia-font`, `legaia-tim`, `glam`, `serde`,
+and `bytemuck` - no wgpu, no winit - so it links into the lean WASM play build.

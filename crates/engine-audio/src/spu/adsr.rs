@@ -174,7 +174,12 @@ impl AdsrState {
                     let delta = if cfg.sustain_exp {
                         compute_delta_exp_decrease(cfg.sustain_shift, cfg.sustain_step, self.level)
                     } else {
-                        compute_delta_linear(cfg.sustain_shift, cfg.sustain_step, false)
+                        // Linear sustain-*decrease*: the step is negative
+                        // (`-8 + step_bits`, magnitude `8 - step_bits`), the
+                        // same StepValue table the exponential decrease uses -
+                        // NOT the increase table (`7 - step_bits`). Passing the
+                        // increase sign here would fade sustain ~1 step slow.
+                        compute_delta_linear(cfg.sustain_shift, cfg.sustain_step, true)
                     };
                     self.level = self.level.saturating_sub(delta as u16);
                     if self.level == 0 {
@@ -194,7 +199,11 @@ impl AdsrState {
                 let delta = if cfg.release_exp {
                     compute_delta_exp_decrease(cfg.release_shift, 0, self.level)
                 } else {
-                    compute_delta_linear(cfg.release_shift, 0, false)
+                    // Linear release always steps by the fixed `-8` StepValue
+                    // (magnitude 8), so pass the decrease sign. The prior
+                    // `false` used the `+7` increase magnitude, making a
+                    // linear-release voice fade ~12.5% slow.
+                    compute_delta_linear(cfg.release_shift, 0, true)
                 };
                 self.level = self.level.saturating_sub(delta as u16);
                 if self.level == 0 {
@@ -332,6 +341,62 @@ mod tests {
         }
         assert_eq!(s.phase, Phase::Off);
         assert_eq!(s.level, 0);
+    }
+
+    /// Linear release steps by the fixed `-8` StepValue (magnitude 8), not the
+    /// `+7` increase magnitude. With `release_shift = 0` one tick subtracts
+    /// `8 << (11 - 0) = 0x4000`, so peak `0x7FFF` drops to `0x3FFF`. The old
+    /// (wrong) increase sign gave `7 << 11 = 0x3800` -> `0x47FF`.
+    #[test]
+    fn linear_release_uses_decrease_step_magnitude() {
+        let cfg = AdsrConfig {
+            release_exp: false,
+            release_shift: 0,
+            ..AdsrConfig::default()
+        };
+        let mut s = AdsrState {
+            phase: Phase::Release,
+            level: 0x7FFF,
+        };
+        assert_eq!(s.tick(&cfg), 0x3FFF);
+    }
+
+    /// Linear sustain-*decrease* uses the same `-8 + step_bits` decrease table.
+    /// With `sustain_step = 0`, `sustain_shift = 0` one tick subtracts
+    /// `8 << 11 = 0x4000` (not the `+7` increase `0x3800`).
+    #[test]
+    fn linear_sustain_decrease_uses_decrease_step_magnitude() {
+        let cfg = AdsrConfig {
+            sustain_exp: false,
+            sustain_decrease: true,
+            sustain_shift: 0,
+            sustain_step: 0,
+            ..AdsrConfig::default()
+        };
+        let mut s = AdsrState {
+            phase: Phase::Sustain,
+            level: 0x7FFF,
+        };
+        assert_eq!(s.tick(&cfg), 0x3FFF);
+    }
+
+    /// A higher `sustain_step` shrinks the linear-decrease magnitude by the
+    /// decrease table (`8 - step_bits`): step_bits 3 -> magnitude 5, so one
+    /// tick at shift 0 subtracts `5 << 11 = 0x2800`.
+    #[test]
+    fn linear_sustain_decrease_step_bits_scale_by_decrease_table() {
+        let cfg = AdsrConfig {
+            sustain_exp: false,
+            sustain_decrease: true,
+            sustain_shift: 0,
+            sustain_step: 3,
+            ..AdsrConfig::default()
+        };
+        let mut s = AdsrState {
+            phase: Phase::Sustain,
+            level: 0x7FFF,
+        };
+        assert_eq!(s.tick(&cfg), 0x7FFF - 0x2800);
     }
 
     /// AdsrConfig::from_words round-trips the bit layout we care about.

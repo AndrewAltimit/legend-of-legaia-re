@@ -267,6 +267,53 @@ pub(crate) enum TranslateCmd {
         #[arg(long)]
         input: Option<PathBuf>,
     },
+    /// Cross-region corpus alignment report: compare a **target** disc (the
+    /// one the importer would patch, e.g. the retail NTSC/USA build) against an
+    /// **official localization** disc (a PAL SCES build) and quantify how well
+    /// the dialog corpus aligns id-/order-for-order and how much of the
+    /// official text fits the target's same-size budget. Emits counts and byte
+    /// values only - no game text - so it is safe to run and log. Use it to
+    /// judge whether an official translation can be lifted into a distributable
+    /// pack for the target disc.
+    DiffDisc {
+        /// The target disc the importer patches (`.bin`, Mode 2/2352).
+        #[arg(long)]
+        input: PathBuf,
+        /// The other (official-localization) disc to align against.
+        #[arg(long)]
+        other: PathBuf,
+    },
+    /// Lift an **official PAL localization** (FR/DE/IT SCES disc) into a
+    /// USA-keyed working pack: name tables id-for-id, dialog by positional
+    /// segment pairing. Emits a filled pack (source = USA text, translation =
+    /// official localized text) to `-o`.
+    ///
+    /// The output carries the game's copyrighted text - keep it local, never
+    /// commit it. Only `translate strip`-ed distributable packs are shareable.
+    LiftOfficial {
+        /// The official-localization disc to lift from (`.bin`, a PAL SCES
+        /// build - SCES_019.44 FR / .45 DE / .46 IT).
+        #[arg(long)]
+        from: PathBuf,
+        /// The USA target disc whose coordinate space the pack is keyed to.
+        #[arg(long)]
+        target: PathBuf,
+        /// Where to write the filled working pack (YAML). Scratchpad only.
+        #[arg(long, short)]
+        output: PathBuf,
+    },
+    /// Measure how much of an official localization fits the USA target under
+    /// the per-string vs per-MAN (generalized rewriter) budget, and how many
+    /// scene MANs remain sector-crossers. Counts only - no text - so it is safe
+    /// to run and log.
+    FitReport {
+        /// The official-localization disc (PAL SCES build).
+        #[arg(long)]
+        from: PathBuf,
+        /// The USA target disc.
+        #[arg(long)]
+        target: PathBuf,
+    },
     /// Apply a filled pack to a copy of a disc. Untranslated entries are
     /// left byte-identical; every write is same-size in place and each
     /// touched sector's EDC/ECC is re-encoded.
@@ -284,6 +331,12 @@ pub(crate) enum TranslateCmd {
         /// Write a portable PPF 3.0 patch here (safe to share).
         #[arg(long)]
         patch: Option<PathBuf>,
+        /// Allow a whole-sector **disc relayout**: scene MANs whose full-length
+        /// dialog overflows their compressed footprint gain `+N` sectors (the
+        /// PROT entry grows and the disc is relaid out) so the dialog imports
+        /// byte-faithfully instead of being abbreviated. Grows the image.
+        #[arg(long)]
+        allow_relayout: bool,
     },
 }
 

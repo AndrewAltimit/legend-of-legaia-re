@@ -84,7 +84,25 @@ fn main() -> Result<()> {
                 pack,
                 output,
                 patch,
-            } => translate::cmd_import(&input, &pack, output.as_deref(), patch.as_deref()),
+                allow_relayout,
+            } => translate::cmd_import(
+                &input,
+                &pack,
+                output.as_deref(),
+                patch.as_deref(),
+                allow_relayout,
+            ),
+            cli::TranslateCmd::LiftOfficial {
+                from,
+                target,
+                output,
+            } => translate::cmd_lift_official(&from, &target, &output),
+            cli::TranslateCmd::FitReport { from, target } => {
+                translate::cmd_fit_report(&from, &target)
+            }
+            cli::TranslateCmd::DiffDisc { input, other } => {
+                translate::cmd_diff_disc(&input, &other)
+            }
         },
     }
 }

@@ -82,56 +82,14 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   <div class="breadcrumb"><a href="index.html">home</a> &middot; tactical arts</div>
   <h1>Tactical Arts</h1>
   <p class="lede">
-    Per-character art lists with direction-token inputs and AP costs. Each row is one of the four kinds the engine distinguishes - <strong>Regular Arts</strong> (taught from level 1, learned by use), <strong>Hyper Arts</strong> (chain-combos with longer inputs), <strong>Super Arts</strong> (unlocked via story / shrine triggers), and the single per-character <strong>Miracle Art</strong>. Data is driven by <a href="reference/gamedata.html"><code>data/gamedata/arts.toml</code></a> and cross-validated against the per-character art-name tables in <code>crates/art</code>.
+    Every character's arts - the direction-input combos they chain in battle. Load a disc and watch each one <em>performed</em> by the character's real battle mesh, assembled and animated in your browser. Four kinds: <strong>Regular</strong> (learned by use), <strong>Hyper</strong> (longer combos), <strong>Super</strong> (story-unlocked), and one <strong>Miracle Art</strong> apiece.
   </p>
 </header>
-
-<section class="doc-section" id="overview">
-  <h2>Input legend</h2>
-  <div class="arts-legend">
-    <div class="arts-legend-block">
-      <div class="arts-legend-row">
-        <svg class="ar-icon"><use href="#ar-up-y"/></svg>
-        <svg class="ar-icon"><use href="#ar-dn-y"/></svg>
-        <svg class="ar-icon"><use href="#ar-lt-y"/></svg>
-        <svg class="ar-icon"><use href="#ar-rt-y"/></svg>
-        <span><strong>Yellow</strong> = trigger input (the finisher that lands the art)</span>
-      </div>
-      <div class="arts-legend-row">
-        <svg class="ar-icon"><use href="#ar-up-p"/></svg>
-        <svg class="ar-icon"><use href="#ar-dn-p"/></svg>
-        <svg class="ar-icon"><use href="#ar-lt-p"/></svg>
-        <svg class="ar-icon"><use href="#ar-rt-p"/></svg>
-        <span><strong>Purple</strong> = setup input (queued combo step)</span>
-      </div>
-    </div>
-    <div class="arts-legend-block">
-      <p class="arts-legend-note">
-        Direction is the raw D-pad byte the engine stores in the Art Record (<code>1=L</code>, <code>2=R</code>, <code>3=D</code>, <code>4=U</code>). Token mapping per character is:
-      </p>
-      <table class="arts-legend-table">
-        <thead><tr><th></th><th>Vahn / Gala</th><th>Noa</th></tr></thead>
-        <tbody>
-          <tr><td>Arms</td>   <td>L</td><td>R</td></tr>
-          <tr><td>Ra-Seru</td><td>R</td><td>L</td></tr>
-          <tr><td>High</td>   <td>U</td><td>U</td></tr>
-          <tr><td>Low</td>    <td>D</td><td>D</td></tr>
-        </tbody>
-      </table>
-      <p class="arts-legend-note arts-legend-note-dim">
-        Noa is left-handed - her Arms is the right D-pad, mirroring Vahn and Gala. Same animation, mirrored input. <a href="formats/art-data.html">Art-data format reference &rarr;</a>
-      </p>
-    </div>
-  </div>
-</section>
 
 <section class="doc-section" id="arts-motion">
   <h2>Watch the arts</h2>
   <p>
-    Load your own disc image and every art card below becomes clickable: the canvas shows the character <em>performing</em> that art, exactly as a battle stages it. The model is <strong>assembled in your browser</strong> from the character's player battle file (the equipment-section splice the retail battle loader runs - <a href="formats/character-mesh.html">character-mesh reference</a>), textured from the same file's texture pools and decoded battle palette, and posed from the art's on-disc keyframe stream: the art-animation bank at record[0]&nbsp;<code>+0x58</code>, its clips resolved through the <code>readef.DAT</code> "ME" archives (<a href="formats/summon-readef.html">side-band reference</a>). Between arts the character holds the record[0] battle-idle loop. Nothing is uploaded; the disc never leaves your machine.
-  </p>
-  <p>
-    Playback carries two retail battle-presentation layers. The character's <strong>voice</strong> is the XA cue the battle overlay fires as an art starts executing: one channel of <code>XA/XA30.XA</code> per character (Vahn&nbsp;ch0, Noa&nbsp;ch4, Gala&nbsp;ch6 - retail keys the shout on the <em>character</em>, not the individual art), played through the <code>CdlSetfilter</code> path documented in the <a href="subsystems/battle-action.html">battle-action reference</a> and demuxed here straight off your disc. The <strong>after-image trail</strong> is retail's tinted echo - a delayed copy of the animated mesh re-drawn translucently in the character's colour (Vahn <span style="color:#e0524a">red</span>, Noa <span style="color:#4ac05a">green</span>, Gala <span style="color:#5a7ae8">blue</span>), the classic PSX additive semi-transparency trick.
+    Load your own disc image and every art card below becomes clickable: the canvas shows the character <em>performing</em> that art, exactly as a battle stages it. The model is <strong>assembled in your browser</strong> from the character's own battle file, textured and posed from the art's on-disc keyframes; between arts it holds the battle-idle loop. Retail's two presentation layers ride along - the character's <strong>voice</strong> shout and the tinted <strong>after-image trail</strong> (Vahn <span style="color:#e0524a">red</span>, Noa <span style="color:#4ac05a">green</span>, Gala <span style="color:#5a7ae8">blue</span>). Nothing is uploaded; the disc never leaves your machine.
   </p>
   <div class="file-input-group">
     <label for="arts-file"><strong>Choose file:</strong></label>
@@ -156,11 +114,41 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   </div>
 </section>
 
-<section class="doc-section" id="related">
-  <h2>Related</h2>
-  <p>
-    How these connect to the on-disc bytes &middot; <a href="formats/art-data.html">Art-data format reference</a> for the per-record schema (<code>action_constant</code>, direction prefix, power bytes, AP cost). The <code>command</code> tokens shown here are the player-facing view; the in-battle matcher reads the same combo data from the per-character player battle files, while the arts menu shows a separate display copy.
+<section class="doc-section" id="overview">
+  <h2>Reading the inputs</h2>
+  <div class="arts-legend">
+    <div class="arts-legend-block">
+      <div class="arts-legend-row">
+        <svg class="ar-icon"><use href="#ar-up-y"/></svg>
+        <svg class="ar-icon"><use href="#ar-dn-y"/></svg>
+        <svg class="ar-icon"><use href="#ar-lt-y"/></svg>
+        <svg class="ar-icon"><use href="#ar-rt-y"/></svg>
+        <span><strong>Yellow</strong> = trigger input (the finisher that lands the art)</span>
+      </div>
+      <div class="arts-legend-row">
+        <svg class="ar-icon"><use href="#ar-up-p"/></svg>
+        <svg class="ar-icon"><use href="#ar-dn-p"/></svg>
+        <svg class="ar-icon"><use href="#ar-lt-p"/></svg>
+        <svg class="ar-icon"><use href="#ar-rt-p"/></svg>
+        <span><strong>Purple</strong> = setup input (queued combo step)</span>
+      </div>
+    </div>
+  </div>
+  <p class="arts-legend-note arts-legend-note-dim" style="margin-top:0.75rem;">
+    Regular arts light only the trigger input yellow; Hyper, Super and Miracle arts light every input. Noa is left-handed, so her Arms input mirrors Vahn and Gala - same animation, mirrored direction.
   </p>
+</section>
+
+<section class="doc-section" id="related">
+  <h2>Under the hood</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="formats/art-data.html">Art-data format</a>
+    <a href="formats/character-mesh.html">Character mesh</a>
+    <a href="formats/summon-readef.html">Animation side-band</a>
+    <a href="subsystems/battle-action.html">Battle action</a>
+    <a href="reference/gamedata.html">Arts gamedata</a>
+  </div>
 </section>
 
 <script>

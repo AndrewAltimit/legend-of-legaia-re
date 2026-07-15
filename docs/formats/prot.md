@@ -28,6 +28,8 @@ size_bytes            = size_sectors * 0x800
 
 `toc[p+5]` is the absolute LBA of entry `p+3` (an end-marker that aliases the next-entry's start), so `toc[p+5] - toc[p+3] + 4` recovers the indexed size in sectors.
 
+**The TOC LBAs are `PROT.DAT`-relative, not absolute disc LBAs.** `byte_offset = start_lba * 0x800` is an offset *into* `PROT.DAT`, and the in-RAM TOC is raw `PROT.DAT` bytes, so the values are position-independent w.r.t. where `PROT.DAT` sits on the disc. Verified by diffing USA against the PAL discs: entry-0's TOC start LBA is identical on every disc despite `PROT.DAT` living at a different disc LBA per region. This is what makes a whole-sector entry-growth **relayout** tractable - growing an interior entry needs only an internal-TOC shift of the later entries' start-LBA words (at `PROT.DAT` byte `8 + (j+2)*4`), not a disc-wide cascade. See [disc.md § Full-ISO relayout](disc.md#full-iso-relayout).
+
 ### Trailing-overlay sectors (`indexed_size` vs `size`)
 
 For ~24% of entries the on-disc contiguous range to the next entry's start LBA is **larger** than the indexed payload - the trailing sectors carry overlay content the SCUS boot loader reads via a multi-sector `ReadN` past the TOC-claimed end. PROT entry 899 is the canonical example: indexed payload is 14 sectors (28 KiB, the options menu), but the on-disc footprint is 74 sectors - the trailing 60 sectors are the title-screen overlay code (see [`subsystems/boot.md`](../subsystems/boot.md#title-overlay-source-on-disc)).

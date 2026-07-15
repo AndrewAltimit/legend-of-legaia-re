@@ -52,6 +52,25 @@ pub struct LegaiaRuntime {
     /// The PROT 0874 §1 party locomotion bundle - the pose source for the
     /// global-pool specials (save point / party heads).
     pub(crate) locomotion_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    /// SCUS item-name table, parsed once at `load_disc` - the labels the field
+    /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
+    pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
+    /// The real proportional retail dialog font, decoded straight from the disc
+    /// (`PROT.DAT` font TIM + the SCUS width table) at `load_disc` - the same
+    /// glyphs + advances the native pause menu draws. `None` (built-in
+    /// placeholder used instead) on a PROT.DAT-only load or if the font TIM
+    /// doesn't resolve.
+    pub(crate) menu_font: Option<legaia_font::Font>,
+    /// Disc-sourced pause-menu chrome + font + window table, built lazily the
+    /// first time the retail pause menu opens ([`crate::play_menu`]).
+    pub(crate) menu_assets: Option<crate::play_menu::PlayMenuAssets>,
+    /// Live pause-menu navigation state; `Some` while the menu is up.
+    pub(crate) play_menu: Option<crate::play_menu::PlayMenu>,
+    /// Boot-chain title-screen session; `Some` while the title runs before a
+    /// scene is entered ([`crate::boot_title`]).
+    pub(crate) boot_title: Option<legaia_engine_core::title::TitleSession>,
+    /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
+    pub(crate) title_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
     #[cfg(target_arch = "wasm32")]
     audio_out: Option<WebAudioOut>,
 }
@@ -74,6 +93,12 @@ impl LegaiaRuntime {
             npcs: None,
             scene_anm: None,
             locomotion_anm: None,
+            item_names: None,
+            menu_font: None,
+            menu_assets: None,
+            play_menu: None,
+            boot_title: None,
+            title_atlas: None,
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
         }
@@ -112,13 +137,69 @@ impl LegaiaRuntime {
         // template party + starting bag, so the engine never runs a zeroed
         // scaffold roster. Best-effort - a PROT.DAT-only load has no SCUS and
         // keeps the old behaviour.
-        if let Some(scus) = scus
-            && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(&scus)
+        // Item-name labels for the field menu's Item screen (executable-only;
+        // a PROT.DAT load has no SCUS and the menu shows raw ids instead).
+        self.item_names = scus
+            .as_ref()
+            .and_then(|s| legaia_asset::item_names::ItemNameTable::from_scus(s));
+        // The real retail proportional dialog font, decoded straight from the
+        // disc (no save state): the 4bpp font TIM in PROT.DAT + the SCUS width
+        // table. This is the exact font the native pause menu draws; without it
+        // the menu falls back to the built-in placeholder (fixed-width blocks).
+        self.menu_font = host
+            .index
+            .prot_dat_raw_bytes(
+                legaia_font::FONT_TIM_PROT_DAT_OFFSET,
+                legaia_font::FONT_TIM_LEN,
+            )
+            .ok()
+            .zip(scus.as_ref())
+            .and_then(|(tim, scus)| {
+                legaia_font::Font::from_disc_tim_and_scus(&tim, scus)
+                    .map_err(|e| crate::console_log(&format!("dialog font decode failed: {e}")))
+                    .ok()
+            });
+        if let Some(scus) = scus.as_ref()
+            && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(scus)
         {
             host.new_game_defaults = Some(legaia_engine_core::new_game::NewGameDefaults {
                 party,
-                inventory: legaia_asset::new_game::StartingInventory::from_scus(&scus),
+                inventory: legaia_asset::new_game::StartingInventory::from_scus(scus),
             });
+        }
+
+        // Install the equipment / spell / item catalogs on the host world so the
+        // pause menu's Equip / Magic / Items sub-screens read real disc data -
+        // the same tables the native `play-window` boot installs in
+        // `BootSession::enter_field_live`. Each prefers the disc-accurate
+        // real-id table (parsed from `SCUS_942.54`) and falls back to the
+        // fabricated-id vanilla catalog on a PROT.DAT-only load. Set once here;
+        // they persist across scene entry (`enter_field_scene` never clears
+        // them). Without them the sub-sessions build from empty catalogs and the
+        // menu falls back to a generic frame.
+        host.world.set_equipment_table(
+            scus.as_ref()
+                .and_then(|s| legaia_asset::equip_stats::EquipStatTable::from_scus(s))
+                .map(|t| legaia_engine_core::equipment::equip_modifier_table_from_disc(&t))
+                .unwrap_or_else(|| {
+                    legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
+                }),
+        );
+        host.world.set_spell_catalog(
+            scus.as_ref()
+                .and_then(|s| legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(s))
+                .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
+        );
+        host.world
+            .set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+        // Real item-effect usability flags (cure/revive = battle-only, etc.);
+        // applied after `set_item_catalog` since it rewrites the catalog. Absent
+        // on a PROT.DAT-only load (catalog keeps its curated flags).
+        if let Some(effects) = scus
+            .as_ref()
+            .and_then(|s| legaia_asset::item_effect::ItemEffectTable::from_scus(s))
+        {
+            host.world.set_item_effects(effects);
         }
 
         let count = host.index.entry_count() as u32;
@@ -126,6 +207,12 @@ impl LegaiaRuntime {
         self.field = None;
         self.player = None;
         self.npcs = None;
+        // A new disc means a new PROT: drop any cached menu chrome / open menu /
+        // title art.
+        self.menu_assets = None;
+        self.play_menu = None;
+        self.boot_title = None;
+        self.title_atlas = None;
         Ok(count)
     }
 
@@ -280,6 +367,63 @@ impl LegaiaRuntime {
             "dialog": self.dialog_value(),
         })
         .to_string()
+    }
+
+    /// Field pause-menu model: the party (battle order) + inventory + gold the
+    /// page's menu overlay renders when the player presses Start. Shape:
+    /// ```text
+    /// { "gold": 240,
+    ///   "party": [{ "name": "Vahn", "level": 1, "hp": 60, "hp_max": 60,
+    ///               "mp": 8, "mp_max": 8 }, ...],
+    ///   "items": [{ "id": 32, "name": "Healing Leaf", "count": 3 }, ...] }
+    /// ```
+    /// `null` before a disc scene is entered. Item labels come from the SCUS
+    /// item-name table ([`Self::load_disc`]); a PROT.DAT-only load falls back to
+    /// the raw id. The retail pause menu is a native-only draw path (glyph atlas
+    /// + window-descriptor table); this feeds the browser's HTML overlay
+    /// equivalent so Start still surfaces the party / items on the play page.
+    pub fn field_menu_model_json(&self) -> String {
+        let Some(h) = self.scene_host.as_ref() else {
+            return "null".to_string();
+        };
+        let w = &h.world;
+        let order: Vec<usize> = if w.active_party.is_empty() {
+            (0..w.roster.members.len()).collect()
+        } else {
+            w.active_party.iter().map(|&s| s as usize).collect()
+        };
+        let party: Vec<serde_json::Value> = order
+            .iter()
+            .filter_map(|&slot| {
+                let m = w.roster.members.get(slot)?;
+                // A never-populated roster slot decodes to an all-zero record
+                // (empty name) - skip it so the menu shows only real members.
+                let name = m.name();
+                if name.trim().is_empty() {
+                    return None;
+                }
+                let hms = m.hp_mp_sp();
+                Some(serde_json::json!({
+                    "name": name,
+                    "level": m.level(),
+                    "hp": hms.hp_cur, "hp_max": hms.hp_max,
+                    "mp": hms.mp_cur, "mp_max": hms.mp_max,
+                }))
+            })
+            .collect();
+        let items: Vec<serde_json::Value> = MenuRuntime::inventory_items(w)
+            .into_iter()
+            .map(|(id, count)| {
+                let name = self
+                    .item_names
+                    .as_ref()
+                    .and_then(|t| t.name(id))
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("Item {id:#04x}"));
+                serde_json::json!({ "id": id, "name": name, "count": count })
+            })
+            .collect();
+        serde_json::json!({ "gold": w.money, "party": party, "items": items }).to_string()
     }
 
     /// Attempt to start the WebAudio backend. Must be called from a user-gesture
