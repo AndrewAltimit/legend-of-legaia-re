@@ -511,6 +511,16 @@ reached via the partition-2 record-offset table (see
 
 - `SceneDoors::locate` enumerates a scene's door sites
   (`legaia_asset::man_edit::scene_change_sites`).
+- `classify_sites` gates the shuffle pool (`DoorSiteClass`): only
+  **walk-through doors** shuffle - partition-2 records referenced by a `.MAP`
+  kind-1 **gate-1** walk trigger (primary `+0x10000` block or the `+0x12000`
+  sibling-entry fallback window, both of which retail's lookup scans), with
+  neither endpoint a kingdom-overworld hub (`map01`/`map02`/`map03`).
+  Script/cutscene-invoked records (no trigger reference - e.g. the world-map
+  hubs' story-return records like the Genesis-Tree-revival return to Rim Elm)
+  and every town↔overworld transition stay vanilla; shuffling them replays
+  cutscene hops at random doors. Byte-identity of the excluded records is
+  asserted by the disc-gated `door_exclusions_real` test.
 - `rebuild` applies destination rewrites through the **variable-length** `man_edit`
   relocation engine, recompresses, validates, and reports whether it fits the
   footprint.

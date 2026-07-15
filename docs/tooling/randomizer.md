@@ -208,7 +208,9 @@ The read-only `drops`, `chests`, `shops`, `casino`, `steals`, `arts`, `doors`,
 by scene via CDNAME). `chests` lists the exact 275-site treasure population the
 chest randomizer reassigns, which is the natural place to audit for quest / key
 items a run might want to keep static. `doors` lists every scene-transition exit
-(home scene → destination + entry tile) - the 160-site door population.
+(home scene → destination + entry tile) with its shuffle class - walk-door
+(the pool) vs excluded script/cutscene-invoked or world-map transition (see
+[Doors](#doors-scene-transitions)).
 
 ### Keep-static items
 
@@ -991,6 +993,32 @@ partition2[slot]` and runs the record - pinned by a PCSX-Redux dispatch trace;
 see [MAN relocation](../formats/man-relocation.md)). On the retail disc there are
 160 doors across 48 scenes; the overworld scenes (`map01`/`map02`/`map03`) are
 the hubs.
+
+**Not every `0x3F` site is a walk-through door**, so the shuffle pool is gated
+(`door::DoorSiteClass`; `legaia-rando doors` prints each site's class):
+
+- **Walk-trigger evidence.** A genuine door's partition-2 record is spawned by
+  a `.MAP` **kind-1 gate-1** tile trigger (`[tile_x, tile_z, record, gate]`,
+  retail `FUN_801D1EC4` → `FUN_8003BDE0`), looked up in the primary trigger
+  block (`+0x10000`) and the `+0x12000` fallback window (the sibling PROT
+  entry's first sectors - retail scans both). A site whose carrying record no
+  gate-1 trigger references is **script/cutscene-invoked** (event warps, the
+  Retock wall gates' scripted passages) and stays vanilla: shuffling one hands
+  a cutscene a random destination *and* gives a random door the cutscene's
+  descriptor - walking through that door re-enters the cutscene.
+- **World-map endpoints.** Any site whose home scene *or* destination is a
+  kingdom-overworld hub stays vanilla, in both directions of every
+  town↔overworld connection. The hubs' own records are dominated by
+  story/arrival scripts - e.g. the Drake hub's Genesis-Tree-revival return to
+  Rim Elm (`dest town0b`, entry `(0x7f,0x7f)` "keep position"), which runs at
+  world-map arrival under story state; shuffled, it replays on every overworld
+  arrival and warps the player to one arbitrary town.
+- Non-partition-2 sites (the handful of P0/P1 `0x3F` ops) are script
+  choreography by construction and stay vanilla.
+
+Excluded records come through byte-identical (asserted per seed and per
+coupling by `door_exclusions_real`); the report + manifest carry the
+`excluded_script` / `excluded_world_map` counts.
 
 Because the destination name is variable length, `apply::randomize_doors` is the
 only randomizer that **resizes** an asset: it rewrites the `0x3F` op through the

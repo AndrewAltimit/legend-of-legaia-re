@@ -36,10 +36,49 @@ pub struct DoorSite {
     pub entry_z: u8,
     /// Facing/depth selector byte.
     pub dir: u8,
+    /// Shuffle-pool eligibility (see [`crate::door::DoorSiteClass`]): only
+    /// [`DoorSiteClass::WalkDoor`] sites randomize; script/cutscene-invoked
+    /// and world-map-endpoint sites stay vanilla.
+    pub class: DoorSiteClass,
 }
 
-/// Read every scene-transition door on the disc (the randomizable population),
-/// in PROT-entry then op-offset order. Purely read-only; decodes each scene MAN
+/// The partition-2 record slots a walk-on trigger spawns, for the scene at
+/// `entry_idx`: the union of the kind-1 gate-1 references in the scene's
+/// `.MAP` **primary** trigger block (`+0x10000`) and the **fallback** block
+/// (`+0x12000` = the next PROT entry's first sectors - the second table
+/// retail's per-tile lookup scans, and where many scenes keep their door
+/// triggers; same sibling-entry resolution as the engine's
+/// `field_tile_triggers`). The `.MAP` is the CDNAME block's **first** entry
+/// with the exact `0x12000` field-map footprint (the same structural rule as
+/// [`locate_map_doors`]). `None` when the block has no such entry - the
+/// caller then treats every site as script-invoked (nothing is provably a
+/// walk door without the trigger tables).
+fn walk_trigger_slots_for_scene(
+    patcher: &DiscPatcher,
+    cd: &std::collections::BTreeMap<u32, String>,
+    entry_idx: usize,
+) -> Option<std::collections::BTreeSet<usize>> {
+    let block_start = cd
+        .keys()
+        .filter_map(|&raw| raw.checked_sub(legaia_prot::cdname::RAW_TOC_INDEX_OFFSET))
+        .map(|i| i as usize)
+        .filter(|&i| i <= entry_idx)
+        .max()?;
+    if patcher.entry_footprint(block_start) != Some(crate::map_door::FIELD_MAP_LEN as u64) {
+        return None;
+    }
+    let map_entry = patcher.read_entry(block_start).ok()?;
+    let mut slots =
+        crate::door::walk_trigger_p2_slots(map_entry.get(crate::map_door::TRIGGER_BLOCK_OFFSET..)?);
+    if let Ok(sibling) = patcher.read_entry(block_start + 1) {
+        slots.extend(crate::door::walk_trigger_p2_slots(&sibling));
+    }
+    Some(slots)
+}
+
+/// Read every scene-transition door on the disc, classified (the audit
+/// surface; only `WalkDoor` sites are the randomizable population), in
+/// PROT-entry then op-offset order. Purely read-only; decodes each scene MAN
 /// once via [`SceneDoors::locate`] and labels the home scene from `CDNAME.TXT`.
 pub fn current_doors(patcher: &DiscPatcher) -> Result<Vec<DoorSite>> {
     let cd = cdname_map(patcher);
@@ -54,7 +93,9 @@ pub fn current_doors(patcher: &DiscPatcher) -> Result<Vec<DoorSite>> {
         let home = legaia_prot::cdname::block_for(&cd, idx as u32)
             .unwrap_or("?")
             .to_string();
-        for s in &doors.sites {
+        let walk_slots = walk_trigger_slots_for_scene(patcher, &cd, idx);
+        let classes = doors.classify_sites(&home, walk_slots.as_ref());
+        for (s, class) in doors.sites.iter().zip(classes) {
             out.push(DoorSite {
                 entry_idx: idx,
                 home_scene: home.clone(),
@@ -65,6 +106,7 @@ pub fn current_doors(patcher: &DiscPatcher) -> Result<Vec<DoorSite>> {
                 entry_x: s.entry_x,
                 entry_z: s.entry_z,
                 dir: s.dir,
+                class,
             });
         }
     }
@@ -104,8 +146,16 @@ pub struct DoorApplyReport {
     pub scenes_changed: usize,
     /// Total door sites whose destination changed.
     pub sites_changed: usize,
-    /// Total door sites found (the randomizable population).
+    /// Walk-door sites in the shuffle pool (the randomizable population).
     pub sites_total: usize,
+    /// Sites excluded as script/cutscene-invoked (no walk trigger spawns the
+    /// carrying record) - kept vanilla so scripted scene changes still land
+    /// where the story expects.
+    pub excluded_script: usize,
+    /// Sites excluded because the home scene or destination is a
+    /// kingdom-overworld hub - kept vanilla so overworld arrivals/story
+    /// returns are untouched.
+    pub excluded_world_map: usize,
     /// Coupled mode only: door sites with no reverse partner (dead-end / one-way
     /// story warps, or doors orphaned by an unequal-direction connection), left
     /// at their original destination because they can't be made two-way.
@@ -292,40 +342,56 @@ pub fn randomize_doors(
 
     let cd = cdname_map(patcher);
 
-    // Pass 1: collect every scene's doors (decoded MAN held for pass 2).
+    // Pass 1: collect every scene's doors + per-site shuffle classification
+    // (decoded MAN held for pass 2). Only `WalkDoor` sites enter the pool -
+    // script/cutscene-invoked records and world-map-endpoint transitions stay
+    // vanilla (see `crate::door::DoorSiteClass`).
     let mut scenes: Vec<SceneDoors> = Vec::new();
+    let mut scene_classes: Vec<Vec<DoorSiteClass>> = Vec::new();
+    let mut scene_homes: Vec<String> = Vec::new();
     for idx in 0..patcher.entry_count() {
         let entry = patcher
             .read_entry(idx)
             .with_context(|| format!("read PROT entry {idx}"))?;
         if let Some(d) = SceneDoors::locate(&entry, idx) {
+            let home = legaia_prot::cdname::block_for(&cd, idx as u32)
+                .unwrap_or("?")
+                .to_string();
+            let walk_slots = walk_trigger_slots_for_scene(patcher, &cd, idx);
+            scene_classes.push(d.classify_sites(&home, walk_slots.as_ref()));
+            scene_homes.push(home);
             scenes.push(d);
         }
     }
 
-    // Flatten to a global ordered list of original destinations + home labels.
+    // Flatten the eligible sites to a global ordered list of original
+    // destinations + home labels. `global_sites[g] = (scene index, site
+    // index)`; excluded sites appear in no list and contribute no edit, so
+    // their records keep their vanilla bytes.
+    let mut report = DoorApplyReport::default();
     let mut origs: Vec<Dest> = Vec::new();
     let mut homes: Vec<String> = Vec::new();
-    for s in &scenes {
-        let home = legaia_prot::cdname::block_for(&cd, s.entry_idx as u32)
-            .unwrap_or("?")
-            .to_string();
-        for site in &s.sites {
-            origs.push(Dest {
-                index: site.index,
-                name: site.name.clone().into_bytes(),
-                entry_x: site.entry_x,
-                entry_z: site.entry_z,
-                dir: site.dir,
-            });
-            homes.push(home.clone());
+    let mut global_sites: Vec<(usize, usize)> = Vec::new();
+    for (si, s) in scenes.iter().enumerate() {
+        for (k, site) in s.sites.iter().enumerate() {
+            match scene_classes[si][k] {
+                DoorSiteClass::WalkDoor => {
+                    origs.push(Dest {
+                        index: site.index,
+                        name: site.name.clone().into_bytes(),
+                        entry_x: site.entry_x,
+                        entry_z: site.entry_z,
+                        dir: site.dir,
+                    });
+                    homes.push(scene_homes[si].clone());
+                    global_sites.push((si, k));
+                }
+                DoorSiteClass::ScriptInvoked => report.excluded_script += 1,
+                DoorSiteClass::WorldMap => report.excluded_world_map += 1,
+            }
         }
     }
-
-    let mut report = DoorApplyReport {
-        sites_total: origs.len(),
-        ..Default::default()
-    };
+    report.sites_total = origs.len();
     if origs.is_empty() {
         return Ok(report);
     }
@@ -359,16 +425,12 @@ pub fn randomize_doors(
         },
     };
 
-    // Map each global site index to its scene (for the coupled revert pass).
-    let mut site_scene = vec![0usize; origs.len()];
-    {
-        let mut g = 0usize;
-        for (si, s) in scenes.iter().enumerate() {
-            for _ in 0..s.sites.len() {
-                site_scene[g] = si;
-                g += 1;
-            }
-        }
+    // Map each global site index to its scene (for the coupled revert pass)
+    // and group the pool per scene for pass 2.
+    let site_scene: Vec<usize> = global_sites.iter().map(|&(si, _)| si).collect();
+    let mut per_scene: Vec<Vec<(usize, usize)>> = vec![Vec::new(); scenes.len()];
+    for (g, &(si, k)) in global_sites.iter().enumerate() {
+        per_scene[si].push((g, k));
     }
 
     // Pass 2: rebuild each scene from the planned destinations and collect the
@@ -392,16 +454,14 @@ pub fn randomize_doors(
     loop {
         streams.clear();
         skipped_scenes.clear();
-        let mut g = 0usize;
         for (si, scene) in scenes.iter().enumerate() {
-            let base = g;
-            g += scene.sites.len();
             let mut edits: Vec<DestEdit> = Vec::new();
-            for (k, site) in scene.sites.iter().enumerate() {
-                if forced.contains(&(base + k)) {
+            for &(g, k) in &per_scene[si] {
+                let site = &scene.sites[k];
+                if forced.contains(&g) {
                     continue; // pinned to original - no edit
                 }
-                let d = &new_descs[base + k];
+                let d = &new_descs[g];
                 let unchanged = d.index == site.index
                     && d.name == site.name.as_bytes()
                     && d.entry_x == site.entry_x

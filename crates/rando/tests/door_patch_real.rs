@@ -149,8 +149,12 @@ fn coupled_doors_round_trip_on_disc() {
         apply::DoorCoupling::Coupled,
     )
     .expect("coupled");
+    // The pool is the walk-door class only (script/cutscene-invoked and
+    // world-map-endpoint sites are excluded - see `door::DoorSiteClass`), and
+    // coupled mode additionally needs mirror-direction, length-compatible
+    // partners, so the re-paired population is a modest subset.
     assert!(
-        report.sites_changed > 40,
+        report.sites_changed > 10,
         "changed {}",
         report.sites_changed
     );
@@ -176,11 +180,14 @@ fn coupled_doors_round_trip_on_disc() {
     // Bidirectionality at the whole-graph level: coupled mode uses only
     // length-preserving swaps, so no scene overflows and nothing is skipped -
     // which means coupling must not introduce a single NEW one-way connection.
-    // Concretely, the set of scene-level edges (home -> dest) that lack a reverse
-    // (dest -> home) in the patched graph must be a SUBSET of that set in the
-    // original graph (the inherent dead-end / one-way story warps). This is the
-    // exact regression for the "marked bidirectional but the return trip warped
-    // somewhere else" bug.
+    // Concretely, over the **movable class** (`WalkDoor` - script/cutscene and
+    // world-map sites are static by construction, byte-identity asserted by
+    // `door_exclusions_real`, and a static scripted edge may legitimately lose
+    // its walk-door reverse to a re-pairing), the set of scene-level edges
+    // (home -> dest) that lack a reverse (dest -> home) in the patched graph
+    // must be a SUBSET of that set in the original graph (the inherent
+    // dead-end / one-way passages). This is the exact regression for the
+    // "marked bidirectional but the return trip warped somewhere else" bug.
     assert!(
         report.skipped.is_empty(),
         "coupled swaps are same-size, nothing should overflow: {:?}",
@@ -189,6 +196,7 @@ fn coupled_doors_round_trip_on_disc() {
     let asym = |doors: &[apply::DoorSite]| -> std::collections::BTreeSet<(String, String)> {
         let edges: Vec<(String, String)> = doors
             .iter()
+            .filter(|d| d.class == apply::DoorSiteClass::WalkDoor)
             .map(|d| (d.home_scene.clone(), d.dest_scene.clone()))
             .collect();
         edges

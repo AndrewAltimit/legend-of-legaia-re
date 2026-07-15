@@ -11,6 +11,7 @@ pub(crate) use anyhow::{Context, Result};
 pub(crate) use crate::casino::{self, CasinoExchange};
 pub(crate) use crate::chest::SceneChests;
 pub(crate) use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+pub use crate::door::DoorSiteClass;
 pub(crate) use crate::door::SceneDoors;
 pub(crate) use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 pub(crate) use crate::encounter::SceneEncounters;
