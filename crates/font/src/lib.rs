@@ -42,6 +42,32 @@ pub const NEWLINE: u8 = 0x7C;
 /// renderer's hard-coded line spacing).
 pub const LINE_HEIGHT: u32 = 14;
 
+/// `PROT.DAT` file offset of the proportional dialog-font TIM: a 4bpp
+/// 256×256 tile-page whose image framebuffer is `(896, 0)` (the runtime
+/// font VRAM page) with its 16-entry CLUT at `(0, 510)`. Pinned by a
+/// PROT.DAT-wide TIM scan for that framebuffer - it is the on-disc carrier
+/// of the glyph bitmaps [`crate::Font`] otherwise sources from a live VRAM
+/// capture, so a disc-only consumer can build the real font without a save
+/// state. See [`docs/formats/dialog-font.md`](../../../docs/formats/dialog-font.md).
+pub const FONT_TIM_PROT_DAT_OFFSET: u64 = 0x7F40;
+
+/// Byte length to slice from [`FONT_TIM_PROT_DAT_OFFSET`] to cover the whole
+/// font TIM (8-byte header + 44-byte CLUT block + 12-byte image header +
+/// 32768-byte 4bpp page = 32832; rounded up).
+pub const FONT_TIM_LEN: usize = 0x8100;
+
+/// SCUS RAM address of the 256-byte per-character advance table.
+const WIDTH_TABLE_RAM: u32 = 0x8007_3F1C;
+/// PSX-EXE `t_addr` header field offset + header size + the default load
+/// address used when the executable header is absent/unparseable.
+const PSX_EXE_T_ADDR_OFFSET: usize = 0x18;
+const PSX_EXE_HEADER: u32 = 0x800;
+const SCUS_LOAD_ADDR_FALLBACK: u32 = 0x8001_0000;
+/// Font-page CLUT indices: 0 = transparent background, 14 = drop-shadow,
+/// everything else = glyph fill (whitewashed to pure white so the engine's
+/// `texel.rgb * tint` shader can reach any retail ink colour).
+const FONT_SHADOW_INDEX: u8 = 14;
+
 /// One glyph in a laid-out string. Coordinates are pixel-space relative to
 /// the layout origin; atlas coordinates are pixel-space inside the source
 /// PNG.
@@ -207,6 +233,31 @@ impl Font {
             atlas_w,
             atlas_h,
         }
+    }
+
+    /// Build the real proportional dialog font straight from a disc, no
+    /// mednafen save state required: the 4bpp font TIM carried in `PROT.DAT`
+    /// (at [`FONT_TIM_PROT_DAT_OFFSET`]) supplies the glyph bitmaps, and
+    /// `SCUS_942.54` the per-character advance table (VA `0x80073F1C`).
+    ///
+    /// Produces the identical whitewashed atlas [`Font::load_from_extracted`]
+    /// yields from `extracted/font/` (fill texels → pure white, the
+    /// `(32,32,32)` drop-shadow texels preserved), so a disc-only consumer -
+    /// the WASM site - renders text byte-for-byte like native without the
+    /// extracted artifacts.
+    ///
+    /// `font_tim` is the TIM slice starting at [`FONT_TIM_PROT_DAT_OFFSET`]
+    /// (read at least [`FONT_TIM_LEN`] bytes); `scus` is the whole executable.
+    pub fn from_disc_tim_and_scus(font_tim: &[u8], scus: &[u8]) -> Result<Self> {
+        let indexed = decode_font_tim(font_tim).context("decode dialog-font TIM")?;
+        let atlas_rgba = pack_stencil_atlas(&indexed);
+        let widths = read_scus_widths(scus).context("read dialog-font width table")?;
+        Ok(Self {
+            widths,
+            atlas_rgba,
+            atlas_w: COLS * GLYPH_W,
+            atlas_h: ROWS * GLYPH_H,
+        })
     }
 
     /// Try to load from `extracted/`, falling back to a placeholder font
@@ -503,6 +554,136 @@ fn parse_widths_csv(path: &Path) -> Result<[u8; 256]> {
             .with_context(|| format!("parse width on line {}: {:?}", line_no + 1, width_str))?;
         widths[byte as usize] = width;
     }
+    Ok(widths)
+}
+
+/// Decode the 4bpp dialog-font TIM (`font_tim` starting at the TIM magic) into
+/// a 256×256 row-major indexed buffer (one byte per pixel, 0..=15). Validates
+/// the header + the framebuffer `(896, 0)` so a wrong slice fails loudly rather
+/// than producing garbage glyphs.
+fn decode_font_tim(font_tim: &[u8]) -> Result<Vec<u8>> {
+    let rd_u32 = |o: usize| -> Result<u32> {
+        font_tim
+            .get(o..o + 4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            .ok_or_else(|| anyhow::anyhow!("font TIM truncated at 0x{o:X}"))
+    };
+    let rd_u16 = |o: usize| -> Result<u16> {
+        font_tim
+            .get(o..o + 2)
+            .map(|b| u16::from_le_bytes(b.try_into().unwrap()))
+            .ok_or_else(|| anyhow::anyhow!("font TIM truncated at 0x{o:X}"))
+    };
+    if rd_u32(0)? != 0x10 {
+        bail!("not a TIM (bad magic)");
+    }
+    let flags = rd_u32(4)?;
+    let bpp = flags & 0x7;
+    if bpp != 0 {
+        bail!("font TIM is not 4bpp (bpp mode {bpp})");
+    }
+    let mut p = 8usize;
+    // Skip the CLUT block if present (bit 3): `[u32 block_len][block_len bytes]`.
+    if flags & 0x8 != 0 {
+        let clut_len = rd_u32(p)? as usize;
+        p = p
+            .checked_add(clut_len)
+            .filter(|&e| e <= font_tim.len())
+            .ok_or_else(|| anyhow::anyhow!("font TIM CLUT block overruns"))?;
+    }
+    // Image block: `[u32 len][u16 dx][u16 dy][u16 w16][u16 h][pixels]`.
+    let _img_len = rd_u32(p)?;
+    let (dx, dy, w16, h) = (
+        rd_u16(p + 4)?,
+        rd_u16(p + 6)?,
+        rd_u16(p + 8)?,
+        rd_u16(p + 10)?,
+    );
+    if (dx, dy) != (896, 0) || w16 != 64 || h != 256 {
+        bail!("font TIM framebuffer ({dx},{dy}) {w16}x{h} != expected (896,0) 64x256");
+    }
+    let pixels = &font_tim[p + 12..];
+    let stride = (w16 as usize) * 2; // bytes per row (2 px per byte)
+    let width = w16 as usize * 4; // = 256 pixels
+    let height = h as usize;
+    let need = stride * height;
+    if pixels.len() < need {
+        bail!("font TIM pixel data truncated ({} < {need})", pixels.len());
+    }
+    let mut indexed = vec![0u8; width * height];
+    for y in 0..height {
+        for x in 0..width {
+            let byte = pixels[y * stride + x / 2];
+            // Low nibble = even pixel, high nibble = odd (PSX 4bpp order).
+            indexed[y * width + x] = if x & 1 == 0 { byte & 0xF } else { byte >> 4 };
+        }
+    }
+    Ok(indexed)
+}
+
+/// Pack the 256×256 indexed font page into the 224×210 (16×14 cells of 14×15)
+/// atlas [`Font`] expects, as a whitewashed stencil: cell `c` lives in the page
+/// at `U = (c & 0x0F) * 16`, `V = (c & 0xF0) - 0x20` (`docs/formats/dialog-font.md`),
+/// and its upper-left 14×15 pixels copy to `glyph_origin(c)`. Index 0 → fully
+/// transparent, [`FONT_SHADOW_INDEX`] → the `(32,32,32)` drop shadow, every
+/// other index → pure white fill.
+fn pack_stencil_atlas(indexed: &[u8]) -> Vec<u8> {
+    const PAGE: usize = 256;
+    let aw = (COLS * GLYPH_W) as usize;
+    let ah = (ROWS * GLYPH_H) as usize;
+    let mut atlas = vec![0u8; aw * ah * 4];
+    for c in FIRST_CHAR..=0xFFu8 {
+        let Some((ox, oy)) = Font::glyph_origin(c) else {
+            continue;
+        };
+        let src_u = ((c & 0x0F) as usize) * 16;
+        let src_v = ((c as usize) & 0xF0).wrapping_sub(0x20);
+        if src_v + GLYPH_H as usize > PAGE {
+            continue;
+        }
+        for gy in 0..GLYPH_H as usize {
+            for gx in 0..GLYPH_W as usize {
+                let idx = indexed[(src_v + gy) * PAGE + (src_u + gx)];
+                let px = match idx {
+                    0 => [0, 0, 0, 0],
+                    FONT_SHADOW_INDEX => [32, 32, 32, 255],
+                    _ => [255, 255, 255, 255],
+                };
+                let dx = ox as usize + gx;
+                let dy = oy as usize + gy;
+                let off = (dy * aw + dx) * 4;
+                atlas[off..off + 4].copy_from_slice(&px);
+            }
+        }
+    }
+    atlas
+}
+
+/// Read the 256-byte per-character advance table from `SCUS_942.54` (RAM
+/// [`WIDTH_TABLE_RAM`]). Resolves the file offset through the PSX-EXE `t_addr`
+/// header, falling back to the retail load address when the header is absent.
+fn read_scus_widths(scus: &[u8]) -> Result<[u8; 256]> {
+    let t_addr = if scus.len() >= 0x40 && &scus[0..8] == b"PS-X EXE" {
+        u32::from_le_bytes(
+            scus[PSX_EXE_T_ADDR_OFFSET..PSX_EXE_T_ADDR_OFFSET + 4]
+                .try_into()
+                .unwrap(),
+        )
+    } else {
+        SCUS_LOAD_ADDR_FALLBACK
+    };
+    let ram_off = WIDTH_TABLE_RAM
+        .checked_sub(t_addr)
+        .ok_or_else(|| anyhow::anyhow!("width table below t_addr"))?;
+    let file_off = ram_off
+        .checked_add(PSX_EXE_HEADER)
+        .map(|v| v as usize)
+        .ok_or_else(|| anyhow::anyhow!("width table offset overflow"))?;
+    let slice = scus
+        .get(file_off..file_off + 256)
+        .ok_or_else(|| anyhow::anyhow!("width table past SCUS end"))?;
+    let mut widths = [0u8; 256];
+    widths.copy_from_slice(slice);
     Ok(widths)
 }
 
@@ -855,5 +1036,111 @@ mod tests {
         let widths = parse_widths_csv(&good).unwrap();
         assert_eq!(widths[0x41], 12);
         let _ = std::fs::remove_file(&good);
+    }
+
+    /// Build a minimal 4bpp font TIM (only cell 'A' painted) + a PSX-EXE with a
+    /// one-entry width table and assert `from_disc_tim_and_scus` places the
+    /// stencilled glyph + advance where the atlas expects them.
+    #[test]
+    fn from_disc_tim_and_scus_stencils_and_reads_widths() {
+        // 256x256 4bpp page: 64 halfwords * 2 = 128 bytes per row.
+        let stride = 64 * 2;
+        let mut page = vec![0u8; stride * 256];
+        // 'A' (0x41) cell: U = 1*16 = 16, V = (0x40)-0x20 = 32. Paint the
+        // top-left glyph pixel fill (index 15) and the one to its right shadow
+        // (index 14).
+        let put = |page: &mut [u8], x: usize, y: usize, idx: u8| {
+            let b = &mut page[y * stride + x / 2];
+            if x & 1 == 0 {
+                *b = (*b & 0xF0) | idx;
+            } else {
+                *b = (*b & 0x0F) | (idx << 4);
+            }
+        };
+        put(&mut page, 16, 32, 15); // fill -> white
+        put(&mut page, 17, 32, 14); // shadow -> (32,32,32)
+
+        // Wrap the page in a TIM: header + CLUT block (16 entries) + image block.
+        let mut tim = Vec::new();
+        tim.extend_from_slice(&0x10u32.to_le_bytes()); // magic
+        tim.extend_from_slice(&0x8u32.to_le_bytes()); // flags: 4bpp + CLUT
+        let clut_body = 4 + 8 + 16 * 2; // len(4) + dst rect(8) + 16 entries(32) = 44
+        tim.extend_from_slice(&(clut_body as u32).to_le_bytes());
+        tim.extend_from_slice(&0u16.to_le_bytes()); // clut dx
+        tim.extend_from_slice(&510u16.to_le_bytes()); // clut dy
+        tim.extend_from_slice(&16u16.to_le_bytes()); // clut w
+        tim.extend_from_slice(&1u16.to_le_bytes()); // clut h
+        tim.extend_from_slice(&[0u8; 32]); // 16 CLUT entries (ignored)
+        let img_len = 4 + 8 + page.len();
+        tim.extend_from_slice(&(img_len as u32).to_le_bytes());
+        tim.extend_from_slice(&896u16.to_le_bytes()); // img dx
+        tim.extend_from_slice(&0u16.to_le_bytes()); // img dy
+        tim.extend_from_slice(&64u16.to_le_bytes()); // img w16
+        tim.extend_from_slice(&256u16.to_le_bytes()); // img h
+        tim.extend_from_slice(&page);
+
+        // Minimal PSX-EXE: magic + t_addr at 0x18, width table at file offset
+        // (WIDTH_TABLE_RAM - t_addr) + 0x800.
+        let t_addr = SCUS_LOAD_ADDR_FALLBACK;
+        let file_off = (WIDTH_TABLE_RAM - t_addr) as usize + PSX_EXE_HEADER as usize;
+        let mut scus = vec![0u8; file_off + 256];
+        scus[0..8].copy_from_slice(b"PS-X EXE");
+        scus[0x18..0x1C].copy_from_slice(&t_addr.to_le_bytes());
+        scus[file_off + 0x41] = 12; // width['A'] = 12
+
+        let font = Font::from_disc_tim_and_scus(&tim, &scus).unwrap();
+        assert_eq!(font.atlas_dimensions(), (COLS * GLYPH_W, ROWS * GLYPH_H));
+        // 'A' advance = width + inter-glyph pad.
+        assert_eq!(font.advance_of(b'A'), 12 + INTER_GLYPH_PAD as u32);
+        // The painted cell's top-left is fill (white, opaque); the pixel to its
+        // right is the dark shadow.
+        let (ox, oy) = Font::glyph_origin(b'A').unwrap();
+        let aw = (COLS * GLYPH_W) as usize;
+        let at = |x: u32, y: u32| -> [u8; 4] {
+            let o = ((y as usize) * aw + x as usize) * 4;
+            font.atlas_rgba()[o..o + 4].try_into().unwrap()
+        };
+        assert_eq!(at(ox, oy), [255, 255, 255, 255]);
+        assert_eq!(at(ox + 1, oy), [32, 32, 32, 255]);
+    }
+
+    /// Byte-exact parity oracle: the font decoded straight from the disc
+    /// (`PROT.DAT` TIM + SCUS width table) must equal the save-state extraction
+    /// the native engine loads from `extracted/font/`. Skips (passes) when the
+    /// extracted artifacts aren't present. Proves the WASM site's disc-only
+    /// font is identical to native's.
+    #[test]
+    fn disc_font_matches_extracted_artifacts() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extracted");
+        let prot = root.join("PROT.DAT");
+        let scus = root.join("SCUS_942.54");
+        let atlas_png = root.join("font/dialog_font_atlas.png");
+        let widths_csv = root.join("font/dialog_font_widths.csv");
+        if !(prot.exists() && scus.exists() && atlas_png.exists() && widths_csv.exists()) {
+            eprintln!("[skip] extracted/ font artifacts absent - disc-font parity");
+            return;
+        }
+        let prot_bytes = std::fs::read(&prot).unwrap();
+        let scus_bytes = std::fs::read(&scus).unwrap();
+        let off = FONT_TIM_PROT_DAT_OFFSET as usize;
+        let tim = &prot_bytes[off..off + FONT_TIM_LEN];
+        let disc = Font::from_disc_tim_and_scus(tim, &scus_bytes).unwrap();
+        let extracted = Font::load_paths(&atlas_png, &widths_csv).unwrap();
+        assert_eq!(
+            disc.atlas_dimensions(),
+            extracted.atlas_dimensions(),
+            "atlas dims diverge"
+        );
+        assert!(
+            disc.atlas_rgba() == extracted.atlas_rgba(),
+            "disc-decoded font atlas differs from the extracted (save-state) atlas"
+        );
+        for c in 0u16..256 {
+            assert_eq!(
+                disc.advance_of(c as u8),
+                extracted.advance_of(c as u8),
+                "advance for byte 0x{c:02X} diverges"
+            );
+        }
     }
 }

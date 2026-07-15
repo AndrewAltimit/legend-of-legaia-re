@@ -181,7 +181,14 @@ impl LegaiaRuntime {
         if self.menu_assets.is_some() {
             return true;
         }
-        let font = legaia_font::Font::placeholder();
+        // The real retail proportional dialog font decoded from the disc at
+        // `load_disc` (byte-identical to what the native pause menu draws); the
+        // built-in placeholder only stands in on a PROT.DAT-only load where the
+        // font TIM / SCUS width table weren't available.
+        let font = self
+            .menu_font
+            .clone()
+            .unwrap_or_else(legaia_font::Font::placeholder);
         // Chrome atlas + window table off the loaded PROT, best-effort: a
         // PROT.DAT-only load may lack the overlay slices, in which case the
         // menu still renders its glyphs (no gold frame).

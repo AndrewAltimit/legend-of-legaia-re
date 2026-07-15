@@ -6,7 +6,23 @@ The font has three pieces of static data, all in `SCUS_942.54`:
 
 1. A **256-byte width table** at `0x80073F1C`, indexed by character byte.
 2. A **38-entry escape-sequence table** at `0x80074050`, indexed by the byte that follows a `0xCE` runtime escape.
-3. The **glyph bitmaps**, which sit in VRAM at `(896, 0)..(960, 256)` (a 4bpp tile-page covering 256×256 source pixels). They're loaded from disc into VRAM by an overlay-resident routine; the on-disc PROT entry that carries them has not yet been classified by the static categorizer.
+3. The **glyph bitmaps**, which sit in VRAM at `(896, 0)..(960, 256)` (a 4bpp tile-page covering 256×256 source pixels). They're loaded from disc into VRAM by an overlay-resident routine.
+
+### On-disc carrier
+
+The glyph tile-page is a plain PSX TIM at **`PROT.DAT` file offset `0x7F40`**: a
+4bpp image whose framebuffer is `(896, 0)`, `64` halfwords wide × `256` tall
+(= 256×256 4bpp pixels), with a 16-entry CLUT block declaring destination
+`(0, 510)`. The font page uses only three palette indices: `0` = transparent
+background, `14` = the `(32,32,32)` drop-shadow, `15` = the glyph fill.
+
+This means the font is decodable **straight from the disc, no save state
+required** - `legaia_font::Font::from_disc_tim_and_scus` reads this TIM plus the
+SCUS width table and produces the same whitewashed atlas the save-state
+extraction (`font-extract`) yields. Pinned by a PROT.DAT-wide TIM scan for that
+framebuffer (constant `legaia_font::FONT_TIM_PROT_DAT_OFFSET`), byte-verified
+against `extracted/font/dialog_font_atlas.png`
+(`font::disc_font_matches_extracted_artifacts`).
 
 ## Glyph layout in VRAM
 

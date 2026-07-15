@@ -788,6 +788,13 @@
       const ov = this.menuOverlay;
       if (!ov) return;
       const ctx = this._menuCtx || (this._menuCtx = ov.getContext('2d'));
+      /* PSX UI is nearest-neighbour: the native wgpu overlay samples the atlas
+       * with no filtering, so the integer-scaled tiles butt edge-to-edge. Canvas
+       * 2D defaults to bilinear (`imageSmoothingEnabled` true), which bleeds a
+       * half-texel across every tile boundary - the visible seams in the 9-slice
+       * chrome's repeated fill. Force nearest so the repeat is seamless and the
+       * glyphs stay crisp, matching native. */
+      ctx.imageSmoothingEnabled = false;
       let open = false;
       try { open = this.rt.play_menu_is_open(); } catch (e) {}
       if (!open) {
@@ -800,7 +807,15 @@
       try { draws = JSON.parse(this.rt.play_menu_draws_json(ov.width, ov.height)); }
       catch (e) { return; }
       if (!draws || !draws.open) return;
+      /* Native blacks the whole framebuffer while the pause menu is up
+       * (`boot_ui.is_active()` clears to black + suppresses every 3D draw) - the
+       * frozen scene is NOT visible around the windows. This overlay canvas sits
+       * over the GL view, so paint it fully opaque black first, then blit the
+       * menu on top: same result as native's black backdrop. */
       ctx.clearRect(0, 0, ov.width, ov.height);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, ov.width, ov.height);
       if (this._menuChrome) this._menuChrome.blit(ctx, draws.sprites);
       if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
     }

@@ -84,7 +84,11 @@ Start (Enter) opens the real retail field menu, drawn from the same wgpu-free
 lists (`play_menu_draws_json`): the gold 9-slice + navy-filigree window chrome
 as sprite quads off the disc's menu-UI atlas (`save_menu_atlas::build_atlas`
 over PROT 0899 + the PROT.DAT system-UI sheet), and the labels as font-glyph
-quads. Window geometry is the disc-parsed descriptor table
+quads sampling the **real retail proportional dialog font** decoded straight
+from the disc (`legaia_font::Font::from_disc_tim_and_scus` over the PROT.DAT font
+TIM at `0x7F40` + the SCUS width table - byte-identical to the save-state
+extraction, no `extracted/` artifacts needed). Window geometry is the disc-parsed
+descriptor table
 (`legaia_asset::menu_windows`) with the native window's pinned fallback. The two
 atlases upload once (`play_menu_font_rgba` / `play_menu_chrome_rgba`); the page's
 `AtlasBlitter` (an `image-rendering: pixelated` overlay `<canvas>` over the GL
