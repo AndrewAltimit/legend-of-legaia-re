@@ -89,9 +89,16 @@ quads. Window geometry is the disc-parsed descriptor table
 atlases upload once (`play_menu_font_rgba` / `play_menu_chrome_rgba`); the page's
 `AtlasBlitter` (an `image-rendering: pixelated` overlay `<canvas>` over the GL
 view) blits the quads with a per-quad multiply tint. The top-level command list
-plus the Status and Options sub-screens run their live `legaia-engine-core`
-sessions (`StatusScreenSession` / `OptionsSession`); the remaining rows open the
-generic framed window the native shell also uses for its not-yet-pinned screens.
+plus the Items / Magic / Equip / Status / Options sub-screens all run the real
+`legaia_engine_core::field_menu_dispatch::FieldMenuSubsession` the native
+`play-window` builds (the disc equipment / spell / item catalogs are installed on
+the host world at `load_disc`), and render through the exact same
+`legaia-engine-ui` draw builders (`inventory_use_draws_for` /
+`spell_menu_draws_for` / `equip_screen_draws_for` / `status_screen_draws_for` /
+`options_draws_for`) - the site is just a different framebuffer over the same
+menu. Only Load / Save keep the generic framed window: the play page's own DOM
+save-loader owns disc-backed saving, so the in-canvas save-select screen is not
+wired. Parity is asserted by the disc-gated `tests/menu_parity.rs` oracle.
 
 ## Boot title screen (`boot_title`)
 

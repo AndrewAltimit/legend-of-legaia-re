@@ -135,13 +135,47 @@ impl LegaiaRuntime {
         self.item_names = scus
             .as_ref()
             .and_then(|s| legaia_asset::item_names::ItemNameTable::from_scus(s));
-        if let Some(scus) = scus
-            && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(&scus)
+        if let Some(scus) = scus.as_ref()
+            && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(scus)
         {
             host.new_game_defaults = Some(legaia_engine_core::new_game::NewGameDefaults {
                 party,
-                inventory: legaia_asset::new_game::StartingInventory::from_scus(&scus),
+                inventory: legaia_asset::new_game::StartingInventory::from_scus(scus),
             });
+        }
+
+        // Install the equipment / spell / item catalogs on the host world so the
+        // pause menu's Equip / Magic / Items sub-screens read real disc data -
+        // the same tables the native `play-window` boot installs in
+        // `BootSession::enter_field_live`. Each prefers the disc-accurate
+        // real-id table (parsed from `SCUS_942.54`) and falls back to the
+        // fabricated-id vanilla catalog on a PROT.DAT-only load. Set once here;
+        // they persist across scene entry (`enter_field_scene` never clears
+        // them). Without them the sub-sessions build from empty catalogs and the
+        // menu falls back to a generic frame.
+        host.world.set_equipment_table(
+            scus.as_ref()
+                .and_then(|s| legaia_asset::equip_stats::EquipStatTable::from_scus(s))
+                .map(|t| legaia_engine_core::equipment::equip_modifier_table_from_disc(&t))
+                .unwrap_or_else(|| {
+                    legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
+                }),
+        );
+        host.world.set_spell_catalog(
+            scus.as_ref()
+                .and_then(|s| legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(s))
+                .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
+        );
+        host.world
+            .set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+        // Real item-effect usability flags (cure/revive = battle-only, etc.);
+        // applied after `set_item_catalog` since it rewrites the catalog. Absent
+        // on a PROT.DAT-only load (catalog keeps its curated flags).
+        if let Some(effects) = scus
+            .as_ref()
+            .and_then(|s| legaia_asset::item_effect::ItemEffectTable::from_scus(s))
+        {
+            host.world.set_item_effects(effects);
         }
 
         let count = host.index.entry_count() as u32;

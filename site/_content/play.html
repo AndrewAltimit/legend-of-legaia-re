@@ -284,9 +284,11 @@
     <li><strong>The pause menu.</strong> Press <kbd>Enter</kbd> in the field for the real retail menu:
       the gold 9-slice window chrome + navy filigree come straight off your disc's menu-UI atlas and
       the glyphs off the dialog font, drawn by the same window-descriptor code the native engine uses.
-      Up/Down move the cursor, <kbd>Z</kbd> opens a row, <kbd>X</kbd> backs out. The Status and Options
-      screens run their live engine sessions; the other rows open their framed window while their
-      multi-panel layouts are wired up.</li>
+      Up/Down move the cursor, <kbd>Z</kbd> opens a row, <kbd>X</kbd> backs out. Items, Magic, Equip,
+      Status and Options all run their live engine sub-sessions and render through the exact same draw
+      builders the native <code>play-window</code> uses &mdash; it is the same menu, just a different
+      framebuffer. Only Load and Save keep a plain frame here, since the page's own save-loader owns
+      disc-backed saving.</li>
   </ul>
   <p>What does <em>not</em> run here yet, and why:</p>
   <ul>
