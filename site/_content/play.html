@@ -143,6 +143,10 @@
   <h1>Play the port</h1>
   <p class="lede">
     The clean-room engine, running in your browser, on your own disc. This is not a video and it is not an emulator: it is the actual Rust port compiled to WebAssembly - the <a href="subsystems/script-vm.html">field VM</a>, the <a href="subsystems/field-locomotion.html">free-movement controller</a> with its per-scene walkability grid, the floor-height sampler, the NPC motion VMs, the interaction probe - stepping once per frame while WebGL draws the world it is simulating. Pick a disc, pick a place, and walk around inside it. Nothing is uploaded; the image never leaves your machine.
+    Have a VR headset? The <strong>VR</strong> button under the canvas presents the running scene over WebXR
+    (spectator or first-person) - use Chrome or Edge with SteamVR as the active OpenXR runtime, and reach this
+    page via <code>http://localhost</code> or https (WebXR needs a secure context; if it can't start, the
+    button says exactly what is missing).
   </p>
 </header>
 
@@ -312,7 +316,7 @@
   </div>
 </section>
 
-<script src="js/vr-mode.js?v=vr-2"></script>
+<script src="js/vr-mode.js?v=vr-3"></script>
 <script src="js/webgl-shaders.js?v=play-1"></script>
 <script src="js/webgl-math.js?v=play-1"></script>
 <script src="js/webgl-tmd.js?v=play-1"></script>

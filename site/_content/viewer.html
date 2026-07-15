@@ -277,7 +277,7 @@
 <section class="doc-section" id="using-the-viewer">
   <h2>Using the viewer</h2>
   <p>The top viewer lists every PROT entry that carries a Legaia TMD; pick one from the sidebar or jump by PROT index. By default it renders textured (WebGL2; the same paletted fragment shader the native engine uses); toggle "textured" off for a flat-shaded fallback. Below it, the <strong>PROT.DAT TIM catalog</strong> grid shows every raw 2D texture and the <strong>compressed textures</strong> grid shows the LZS-embedded ones - click a thumbnail in either to load it full-size and switch CLUT (palette) variants.</p>
-  <p>Everything on this page exports. The <strong>&#11015; .glb</strong> button downloads the current 3D view - the single mesh, or the whole assembled town in full-map mode - as a binary <a href="https://www.khronos.org/gltf/">glTF</a> with the textures baked from VRAM into one atlas, ready for Blender, three.js, or any glTF viewer (the same format as the enemy-table model export). The <strong>&#11015; PNG</strong> buttons in the two texture grids download the selected texture in its current palette.</p>
+  <p>Everything on this page exports. The <strong>&#11015; .glb</strong> button downloads the current 3D view - the single mesh, or the whole assembled town in full-map mode - as a binary <a href="https://www.khronos.org/gltf/">glTF</a> with the textures baked from VRAM into one atlas, ready for Blender, three.js, or any glTF viewer (the same format as the enemy-table model export). The <strong>&#11015; PNG</strong> buttons in the two texture grids download the selected texture in its current palette. In full-map mode a <strong>VR</strong> button also appears: it presents the assembled town over WebXR - Chrome/Edge with SteamVR as the active OpenXR runtime, served from <code>http://localhost</code> or https (WebXR needs a secure context; the button explains what's missing if it can't start).</p>
   <p class="hint">Sound and cutscene video on disc live on the <a href="media.html">media browser</a>. The native build adds stage geometry and cross-PROT-entry CLUT chains (via <code>--vram-extra-dir</code>):</p>
   <div class="cli"><code>./target/release/asset-viewer prot extracted/PROT.DAT</code></div>
 </section>
@@ -293,7 +293,7 @@
   </div>
 </section>
 
-<script src="js/vr-mode.js?v=vr-2"></script>
+<script src="js/vr-mode.js?v=vr-3"></script>
 <script src="js/webgl-shaders.js?v=orbit-controls-1"></script>
 <script src="js/webgl-math.js?v=orbit-controls-1"></script>
 <script src="js/webgl-tmd.js?v=orbit-controls-1"></script>

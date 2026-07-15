@@ -36,9 +36,19 @@
  *     mount, renderer: () => r, draw: () => r.renderAssembled(draws, ext, cam),
  *     cam: () => cam, extent: () => ext, unitsPerMeter: 76,
  *   });
- *   vr.setReady(true);      // scene loaded: reveal the button (if supported)
+ *   vr.setReady(true);      // scene loaded: the button arms for entry
  *   vr.end();               // force-exit (e.g. the scene is being swapped)
  *   vr.destroy();
+ *
+ * The button itself is ALWAYS visible once attached. Availability only
+ * changes what it says and does: supported + ready = enter; supported but
+ * still loading = "scene is loading" note; no `navigator.xr` / unsupported /
+ * probe timeout = "VR unavailable" with the specific diagnostic on hover and
+ * on click (click also re-probes). WebXR requires a secure context - a page
+ * served over plain http on a LAN IP has no `navigator.xr` at all, and the
+ * diagnostic says to use https or http://localhost. The probe re-runs on the
+ * XRSystem `devicechange` event, so starting SteamVR after page load arms the
+ * button without a reload.
  */
 (function () {
   'use strict';
@@ -171,20 +181,110 @@
     };
   }
 
-  /* ---------- support probe ---------------------------------------------- */
+  /* ---------- support probe ----------------------------------------------
+   *
+   * The probe never hides the button. Its status drives what the button says
+   * and what a click does, so "no VR button" can't happen silently - a page
+   * served over plain http on a LAN IP (no `navigator.xr`: WebXR requires a
+   * secure context), a browser with no WebXR at all, or a runtime that never
+   * answers all still get a visible, clickable affordance that names the
+   * specific problem.
+   *
+   * States: 'probing' | 'supported' | 'no-xr' | 'unsupported' | 'timeout'
+   *         | 'error'. Everything but 'supported' carries a diagnostic in
+   * `probe.detail`. The probe re-runs on the XRSystem's `devicechange` (start
+   * SteamVR / plug the headset after page load) and on a click of the
+   * unavailable button (for browsers that never fire `devicechange`). */
 
-  let supportPromise = null;
+  const PROBE_TIMEOUT_MS = 4000;
+  const probe = { status: 'probing', detail: 'Checking for a VR headset…' };
+  const probeWatchers = new Set();
+  let probeGen = 0;
+  let deviceListenerInstalled = false;
+
+  function setProbe(status, detail) {
+    probe.status = status;
+    probe.detail = detail;
+    if (status === 'supported') installContextHook();
+    for (const w of Array.from(probeWatchers)) {
+      try { w(); } catch (e) { /* one bad watcher must not starve the rest */ }
+    }
+  }
+
+  function noXrDiagnostic() {
+    if (typeof window.isSecureContext === 'boolean' && !window.isSecureContext) {
+      return 'No WebXR: this page is not a secure context ('
+        + location.origin + '). WebXR requires https:// or http://localhost - '
+        + 'open the site via localhost (an SSH tunnel works) or https, in '
+        + 'Chrome/Edge with SteamVR as the active OpenXR runtime.';
+    }
+    return 'No WebXR in this browser (navigator.xr is missing). On desktop '
+      + 'use Chrome or Edge with SteamVR set as the active OpenXR runtime; '
+      + 'Firefox has no working WebXR.';
+  }
+
+  function runProbe() {
+    const gen = ++probeGen;
+    const xr = navigator.xr;
+    if (!xr || typeof xr.isSessionSupported !== 'function') {
+      setProbe('no-xr', noXrDiagnostic());
+      return;
+    }
+    if (!deviceListenerInstalled && typeof xr.addEventListener === 'function') {
+      deviceListenerInstalled = true;
+      xr.addEventListener('devicechange', () => runProbe());
+    }
+    setProbe('probing', 'Checking for a VR headset…');
+    let settled = false;
+    /* `isSessionSupported` is specified to settle but a browser that exposes
+     * `navigator.xr` with no backing runtime can leave it pending forever
+     * (headless Chromium does) - the same hazard as `makeXRCompatible`. */
+    const timer = setTimeout(() => {
+      if (gen !== probeGen || settled) return;
+      settled = true;
+      setProbe('timeout', 'XR device check timed out - the browser exposes '
+        + 'WebXR but no runtime answered. Start SteamVR (or your headset’s '
+        + 'OpenXR runtime), then press the VR button to re-check.');
+    }, PROBE_TIMEOUT_MS);
+    xr.isSessionSupported('immersive-vr').then(
+      (ok) => {
+        if (gen !== probeGen || settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (ok) {
+          setProbe('supported', '');
+        } else {
+          setProbe('unsupported', 'immersive-vr is not supported by this '
+            + 'browser/runtime. On desktop: start SteamVR, set it as the '
+            + 'active OpenXR runtime (SteamVR settings → OpenXR), and use '
+            + 'Chrome or Edge; Firefox has no working WebXR.');
+        }
+      },
+      (err) => {
+        if (gen !== probeGen || settled) return;
+        settled = true;
+        clearTimeout(timer);
+        setProbe('error', 'XR device check failed: '
+          + ((err && err.message) || err)
+          + '. Is SteamVR (or another OpenXR runtime) running?');
+      });
+  }
+  runProbe();
+
+  /* Kept API: resolves once the probe has settled (true iff immersive-vr is
+   * available right now). */
   function supported() {
-    if (supportPromise) return supportPromise;
-    supportPromise = (async () => {
-      const xr = navigator.xr;
-      if (!xr || typeof xr.isSessionSupported !== 'function') return false;
-      let ok = false;
-      try { ok = await xr.isSessionSupported('immersive-vr'); } catch (e) { ok = false; }
-      if (ok) installContextHook();
-      return !!ok;
-    })();
-    return supportPromise;
+    if (probe.status !== 'probing') {
+      return Promise.resolve(probe.status === 'supported');
+    }
+    return new Promise((res) => {
+      const w = () => {
+        if (probe.status === 'probing') return;
+        probeWatchers.delete(w);
+        res(probe.status === 'supported');
+      };
+      probeWatchers.add(w);
+    });
   }
 
   /* ---------- button chrome ---------------------------------------------- */
@@ -204,6 +304,18 @@
 .legaia-vr-btn:hover { color: var(--accent, #7f9cff); }
 .legaia-vr-btn[disabled] { opacity: 0.45; cursor: not-allowed; }
 .legaia-vr-btn.is-active { background: var(--accent, #7f9cff); color: #0d0f1c; }
+.legaia-vr-btn.is-wait { opacity: 0.6; cursor: progress; }
+.legaia-vr-btn.is-unavailable {
+  opacity: 0.55; border-style: dashed; cursor: help;
+}
+.legaia-vr-note {
+  position: fixed; right: 1rem; bottom: 1rem; z-index: 2147483000;
+  max-width: 24rem; padding: 0.6rem 0.8rem; cursor: pointer;
+  background: var(--bg-card, #1a1c2c); color: var(--text, #dfe3ff);
+  border: 1px solid var(--accent, #7f9cff); border-radius: 4px;
+  font-family: var(--font-mono, monospace); font-size: 0.74rem;
+  line-height: 1.45; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+}
 .legaia-vr-mode-btn {
   background: var(--bg-card, #1a1c2c); color: var(--text, #dfe3ff);
   border: 1px solid var(--accent, #7f9cff); border-radius: 3px;
@@ -213,6 +325,26 @@
 .legaia-vr-mode-btn:hover { color: var(--accent, #7f9cff); }
 `;
     document.head.appendChild(st);
+  }
+
+  /* One-line diagnostic toast (why VR is unavailable / not ready yet). One
+   * per page, click to dismiss, auto-dismisses. */
+  const NOTE_ID = 'legaia-vr-note';
+  let noteTimer = 0;
+  function showNote(msg) {
+    ensureStyle();
+    let n = document.getElementById(NOTE_ID);
+    if (!n) {
+      n = document.createElement('div');
+      n.id = NOTE_ID;
+      n.className = 'legaia-vr-note';
+      n.title = 'Click to dismiss.';
+      n.addEventListener('click', () => n.remove());
+      document.body.appendChild(n);
+    }
+    n.textContent = msg;
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => { n.remove(); }, 14000);
   }
 
   /* ---------- the session ------------------------------------------------- */
@@ -254,10 +386,12 @@
       this.onEndBound = () => this._teardown();
       this._buildButton();
       this._buildModeButton();
-      supported().then((ok) => {
-        this.supportedFlag = ok;
-        this._sync();
-      });
+      /* Track the availability probe live (it re-runs on `devicechange`, so
+       * starting SteamVR after page load flips the button to `Enter VR`
+       * without a reload). */
+      this._probeWatch = () => this._sync();
+      probeWatchers.add(this._probeWatch);
+      this._sync();
     }
 
     /* The active mode record ({} when the host configured no modes). */
@@ -293,13 +427,26 @@
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'legaia-vr-btn';
-      b.hidden = true;
       b.textContent = 'Enter VR';
-      b.title = 'View this scene in a VR headset (WebXR immersive-vr). '
-        + 'Left stick moves, right stick turns / flies, grips scale the world.';
+      /* The button is ALWAYS visible - `_sync` picks its label/title from the
+       * probe status, and a click either enters VR or explains exactly why it
+       * can't (never silently absent). */
       b.addEventListener('click', () => {
-        if (this.session) this.end();
-        else this.enter().catch(err => this._fail(err));
+        if (this.session) { this.end(); return; }
+        if (probe.status === 'supported') {
+          if (!this.ready) {
+            showNote('The scene is still loading - the VR button arms as soon '
+              + 'as it is on screen.');
+            return;
+          }
+          this.enter().catch(err => this._fail(err));
+          return;
+        }
+        /* Unavailable (or still probing): surface the specific diagnostic and
+         * re-run the probe - the runtime may have appeared since (SteamVR
+         * started after page load, browsers that never fire devicechange). */
+        showNote(probe.detail);
+        if (probe.status !== 'probing') runProbe();
       });
       mount.appendChild(b);
       this.btn = b;
@@ -343,18 +490,45 @@
     }
 
     _sync() {
-      if (!this.btn) return;
-      const show = !!(this.supportedFlag && this.ready);
-      this.btn.hidden = !show;
-      this.btn.textContent = this.session ? 'Exit VR' : 'Enter VR';
-      this.btn.classList.toggle('is-active', !!this.session);
-      if (this.modeBtn) this.modeBtn.hidden = !show;
+      const b = this.btn;
+      if (!b) return;
+      b.classList.toggle('is-active', !!this.session);
+      b.classList.remove('is-wait', 'is-unavailable');
+      if (this.session) {
+        b.textContent = 'Exit VR';
+        b.title = 'Leave the VR session.';
+      } else if (probe.status === 'supported') {
+        b.textContent = 'Enter VR';
+        if (this.ready) {
+          b.title = 'View this scene in a VR headset (WebXR immersive-vr). '
+            + 'Left stick moves, right stick turns / flies, grips scale the world.';
+        } else {
+          b.classList.add('is-wait');
+          b.title = 'VR headset detected - waiting for the scene to finish loading.';
+        }
+      } else if (probe.status === 'probing') {
+        b.textContent = 'VR…';
+        b.classList.add('is-wait');
+        b.title = probe.detail;
+      } else {
+        b.textContent = 'VR unavailable';
+        b.classList.add('is-unavailable');
+        b.title = probe.detail + ' Click to re-check.';
+      }
+      /* The mode toggle is a secondary control - only meaningful when a
+       * session could actually start. */
+      if (this.modeBtn) {
+        this.modeBtn.hidden = !(probe.status === 'supported' && this.ready);
+      }
     }
 
     _fail(err) {
       const msg = (err && err.message) || String(err);
       if (this.cfg.onError) this.cfg.onError(msg);
       else console.warn('[vr]', msg);
+      /* Entering failed after the user pressed the button - say so on the
+       * page, not just the console (e.g. SteamVR closed since the probe). */
+      showNote('Could not start the VR session: ' + msg);
       this._teardown();
     }
 
@@ -664,6 +838,7 @@
 
     destroy() {
       this.end();
+      probeWatchers.delete(this._probeWatch);
       if (this.btn) { this.btn.remove(); this.btn = null; }
       if (this.modeBtn) { this.modeBtn.remove(); this.modeBtn = null; }
     }

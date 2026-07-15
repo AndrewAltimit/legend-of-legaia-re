@@ -87,9 +87,9 @@
       this.draws = [];
       this.ext = [16384, 16384];
       this.spawn = { x: 0, y: 0, z: 0 };
-      /* VR: present this scene in a headset. The button is created hidden and
-       * only unhides when `navigator.xr` reports an immersive-vr device, so a
-       * flat browser sees nothing new. */
+      /* VR: present this scene in a headset. The button is always visible;
+       * without an immersive-vr device it reads "VR unavailable" and click /
+       * hover explain why (secure context, runtime, browser). */
       this.vr = window.LegaiaVr ? window.LegaiaVr.attach({
         mount: o.vrMount || canvas.parentElement,
         unitsPerMeter: VR_UNITS_PER_METER,

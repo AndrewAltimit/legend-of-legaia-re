@@ -7,8 +7,11 @@ scene to a VR headset over WebXR: stereo rendering through the
 `XRWebGLLayer`, head tracking, and thumbstick locomotion through the world.
 
 Nothing about the flat path changes. A browser that reports no
-`immersive-vr` device runs exactly the code it ran before: the button
-stays hidden, no global is shadowed, no GL context attribute is altered.
+`immersive-vr` device runs exactly the render code it ran before: no
+global is shadowed, no GL context attribute is altered. The VR button
+still renders - as a `VR unavailable` affordance whose hover/click text
+names the specific reason - so the feature is never silently absent (see
+[Availability + diagnostics](#availability--diagnostics)).
 
 Implementation: [`site/js/vr-mode.js`](../../site/js/vr-mode.js), plus
 per-page hooks in `world-overview-app.js`, `field-scene-view.js` and
@@ -22,6 +25,7 @@ per-page hooks in `world-overview-app.js`, `field-scene-view.js` and
 - [Viewing modes: first-person](#viewing-modes-first-person)
 - [Spawn placement](#spawn-placement)
 - [Locomotion + controls](#locomotion--controls)
+- [Availability + diagnostics](#availability--diagnostics)
 - [Session lifecycle](#session-lifecycle)
 - [Verification](#verification)
 
@@ -224,9 +228,56 @@ home reset are inert (the rig is anchored to the player).
 Axes are read `xr-standard`-first (thumbstick on axes 2/3), falling back to
 axes 0/1 for simpler mappings, with a dead zone.
 
+## Availability + diagnostics
+
+The VR button is always rendered on a 3D page's control bar - availability
+only changes what it says and what a click does. The probe drives five
+button states:
+
+| Probe result | Button | Click |
+|---|---|---|
+| `immersive-vr` supported, scene loaded | `Enter VR` | starts the session |
+| supported, scene still loading | `Enter VR` (dimmed) | "the scene is still loading" note |
+| probe still running | `VR…` | shows the probing note |
+| no `navigator.xr` / unsupported / probe timeout | `VR unavailable` (dashed) | shows the specific diagnostic **and re-runs the probe** |
+
+Each unavailable state carries its own diagnostic, on the button's hover
+title and in a dismissible on-page note on click:
+
+- **No `navigator.xr`, insecure context.** WebXR only exists in a
+  [secure context](https://developer.mozilla.org/docs/Web/Security/Secure_Contexts) -
+  a page served over plain `http://` from a LAN IP (the natural way to
+  serve a local static site: `python3 -m http.server` and browse to
+  `http://192.168.x.x:8000`) has **no `navigator.xr` at all**. The
+  diagnostic names the current origin and says to reopen the site via
+  `http://localhost` (an SSH tunnel / port-forward works from another
+  machine) or https.
+- **No `navigator.xr`, secure context.** The browser has no WebXR
+  (Firefox's is effectively dead). The diagnostic says to use Chrome or
+  Edge on desktop with SteamVR set as the active OpenXR runtime.
+- **`isSessionSupported('immersive-vr')` answers no / rejects.** The
+  browser has WebXR but no usable VR runtime. The diagnostic says to start
+  SteamVR and set it as the active OpenXR runtime (SteamVR settings →
+  OpenXR).
+- **The probe never settles.** `isSessionSupported` is specified to
+  settle, but a browser that exposes `navigator.xr` with no backing
+  runtime can leave it pending forever (headless Chromium does). The probe
+  is raced against a timeout and reports "XR device check timed out".
+
+The probe re-runs on the `XRSystem`'s `devicechange` event and on any
+click of the unavailable button, so starting SteamVR or plugging the
+headset in *after* page load arms the button without a reload.
+
+**Serving for a desktop headset (Valve Index et al.):** SteamVR running
+and selected as the OpenXR runtime, Chrome or Edge, and the site reached
+over `http://localhost:<port>` or https - `cd site && python3 -m
+http.server 8000`, then browse `http://localhost:8000` on the same
+machine (or SSH-forward the port from the VR machine).
+
 ## Session lifecycle
 
-`navigator.xr.isSessionSupported('immersive-vr')` is probed once per page.
+`navigator.xr.isSessionSupported('immersive-vr')` is probed at script load
+(and re-probed on `devicechange` / an unavailable-button click, see above).
 Only when it answers yes does the module install its `getContext` hook,
 which adds `xrCompatible: true` to WebGL context creation from then on -
 so contexts built after the probe never need the retro-fit
@@ -238,8 +289,8 @@ leave it pending forever, and a hung await would wedge the button. If the
 context genuinely cannot present, the `XRWebGLLayer` constructor throws and
 that is the error the page reports.
 
-The button appears only when the device is present *and* the page has a
-scene to show; it flips to `Exit VR` while presenting. The host pauses its
+The button arms for entry only when the device is present *and* the page
+has a scene to show; it flips to `Exit VR` while presenting. The host pauses its
 own `requestAnimationFrame` loop on entry (the XR frame loop drives the
 draw, and on the play page also the engine tick, so NPCs keep moving and
 the keyboard still steers the character) and resumes it on exit, with the
@@ -279,7 +330,11 @@ from inside the frame callback. That pins:
   sampler's height under it at spawn, after locomotion, and under an
   attempted altitude push (no free-fly), at 76 units/m;
 - and, with no `navigator.xr` at all, every page loads with zero console
-  errors and no VR affordance.
+  errors and a visible `VR unavailable` button whose hover title and
+  on-click note carry the secure-context diagnostic; with a mock whose
+  `isSessionSupported` never settles, the timeout diagnostic; and a mock
+  `devicechange` that flips support on rewrites the button to `Enter VR`
+  without a reload.
 
 What a mock cannot pin: real headset presentation - compositor timing,
 reprojection, the physical comfort of the chosen scale and speeds, and

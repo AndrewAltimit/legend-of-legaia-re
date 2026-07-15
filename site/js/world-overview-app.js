@@ -360,8 +360,9 @@
 
   /* ---------- VR ----------- */
   /* Attached once; the button lives in the canvas control bar (which survives
-   * the per-load canvas swap) and stays hidden unless the browser reports an
-   * immersive-vr device AND a kingdom is assembled. */
+   * the per-load canvas swap) and is always visible - it arms when the browser
+   * reports an immersive-vr device AND a kingdom is assembled, and otherwise
+   * explains what is missing on hover / click. */
   if (window.LegaiaVr) {
     vr = window.LegaiaVr.attach({
       mount: document.querySelector('.wo-canvas-controls'),

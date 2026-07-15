@@ -235,7 +235,8 @@
        *   - First-person: the rig is anchored at the player's position at eye
        *     height ("what Vahn sees"); the left stick drives the REAL player
        *     through the engine's collision / walkability grid.
-       * Button stays hidden unless an immersive-vr device is reported. */
+       * The button is always visible; without an immersive-vr device it reads
+       * "VR unavailable" and click / hover explain why. */
       this.vr = window.LegaiaVr ? window.LegaiaVr.attach({
         mount: (this.opts.vrMount || document.querySelector('.play-btn-row')
           || canvas.parentElement),

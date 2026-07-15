@@ -82,6 +82,7 @@ canvas.world-canvas {
   <h1>Game world</h1>
   <p class="lede">
     Every town, dungeon, and battlefield in the game - rendered here, in 3D, from your own disc image. Pick a location from the navigator and its full map assembles in the browser: the terrain, the buildings, the props, all textured from the real PSX VRAM. Each location also carries its enemy roster, bosses, and shops. Under the hood, every one ties back to a scene label on the disc via the <a href="formats/cdname.html">CDNAME map</a>. Nothing leaves your machine.
+    With a VR headset, the <strong>VR</strong> button next to the assembled map steps inside it over WebXR - Chrome/Edge with SteamVR as the active OpenXR runtime, served from <code>http://localhost</code> or https (WebXR needs a secure context; the button explains what's missing if it can't start).
   </p>
 </header>
 
@@ -152,7 +153,7 @@ canvas.world-canvas {
   </div>
 </section>
 
-<script src="js/vr-mode.js?v=vr-2"></script>
+<script src="js/vr-mode.js?v=vr-3"></script>
 <script src="js/webgl-shaders.js?v=world-map-1"></script>
 <script src="js/webgl-math.js?v=world-map-1"></script>
 <script src="js/webgl-tmd.js?v=world-map-1"></script>
