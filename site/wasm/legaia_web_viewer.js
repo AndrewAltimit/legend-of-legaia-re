@@ -53,6 +53,20 @@ export class LegaiaArts {
         return v1;
     }
     /**
+     * The current character's arts-voice PCM: mono i16 at the rate reported
+     * in `set_character`'s `voice.rate` (37 800 Hz on retail). This is the
+     * XA channel the battle overlay plays for the character's Tactical Arts
+     * (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL`]). Empty when the character
+     * has no voice (raw `PROT.DAT` load, Terra, or demux failure).
+     * @returns {Int16Array}
+     */
+    art_voice_pcm_i16() {
+        const ret = wasm.legaiaarts_art_voice_pcm_i16(this.__wbg_ptr);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
      * The idle loop's pose frames (see [`flatten_pose_frames`] layout).
      * Empty when the character has no decodable idle stream.
      * @returns {Int32Array}
@@ -65,7 +79,9 @@ export class LegaiaArts {
     }
     /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
-     * TOC. Returns `{"entries": N}` JSON; errors throw.
+     * TOC. Returns `{"entries": N}` JSON; errors throw. On a full disc the
+     * arts-voice bank ([`VOICE_XA_FILE`]) is sliced out alongside `PROT.DAT`;
+     * a raw `PROT.DAT` load simply has no voice audio.
      * @param {Uint8Array} bytes
      * @returns {string}
      */
@@ -1654,6 +1670,27 @@ export class LegaiaMinigames {
         return this;
     }
     /**
+     * One of the three retail 16x16 **save-file portrait** TIMs as a 1024-byte
+     * RGBA8 buffer: `0` = Vahn, `1` = Noa, `2` = Gala.
+     *
+     * These are the load-screen slot-grid portraits, pinned in the unindexed
+     * pre-`init_data` gap of `PROT.DAT` (offset `0x1AC90`, 192-byte stride;
+     * `legaia_asset::title_pak::extract_overlay_load_portrait_tim`). Retail
+     * bakes the lead's copy into every SC save block as the memory-card icon,
+     * so these are exactly the faces a retail save carries. The site's save
+     * bar decodes them once from the visitor's own disc and caches the pixels
+     * locally - no art ships with the page. Empty when no disc is loaded or
+     * the TIM doesn't parse.
+     * @param {number} char_id
+     * @returns {Uint8Array}
+     */
+    save_portrait_rgba(char_id) {
+        const ret = wasm.legaiaminigames_save_portrait_rgba(this.__wbg_ptr, char_id);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Whether the slot machine's art pack decoded off this disc. When `false`
      * the page must fall back to symbol *ids*, not to invented artwork.
      * @returns {boolean}
@@ -2802,6 +2839,16 @@ export class LegaiaRuntime {
         wasm.legaiaruntime_set_camera_azimuth(this.__wbg_ptr, units);
     }
     /**
+     * Route this frame's left analog stick into the engine. PSX convention:
+     * signed bytes, X right-positive, Y **down**-positive; only read by the
+     * precise-locomotion decode ([`Self::set_precise_movement`]).
+     * @param {number} x
+     * @param {number} y
+     */
+    set_left_stick(x, y) {
+        wasm.legaiaruntime_set_left_stick(this.__wbg_ptr, x, y);
+    }
+    /**
      * Route this frame's pad word into the engine. Bit layout is the PSX digital
      * pad ([`legaia_engine_core::input::PadButton`]): `0x0008` Start, `0x0010`
      * Up, `0x0020` Right, `0x0040` Down, `0x0080` Left, `0x1000` Triangle,
@@ -2811,6 +2858,19 @@ export class LegaiaRuntime {
      */
     set_pad(mask) {
         wasm.legaiaruntime_set_pad(this.__wbg_ptr, mask);
+    }
+    /**
+     * Opt in / out of the engine's continuous locomotion decode
+     * ([`legaia_engine_core::world::World::precise_movement`]): the camera
+     * azimuth rotates the movement vector at full angular resolution and the
+     * left analog stick ([`Self::set_left_stick`]) supplies an arbitrary
+     * screen angle. The play page's VR first-person mode drives this so
+     * "stick forward" walks exactly where the headset looks; the keyboard
+     * path keeps the retail quantised 8-way remap.
+     * @param {boolean} on
+     */
+    set_precise_movement(on) {
+        wasm.legaiaruntime_set_precise_movement(this.__wbg_ptr, on);
     }
     /**
      * One-line engine state for the HUD:
@@ -5252,6 +5312,28 @@ export class LegaiaViewer {
 if (Symbol.dispose) LegaiaViewer.prototype[Symbol.dispose] = LegaiaViewer.prototype.free;
 
 /**
+ * The 16x16 memory-card icon baked into save block `block` of a card
+ * container, as 1024 RGBA8 bytes. For Legaia saves this is the lead
+ * character's portrait - the retail save writer copies the load-screen
+ * portrait TIM into the SC block (palette `+0x60`, 4bpp pixels `+0x80`).
+ * The site's save bar draws it as the slot's face.
+ * @param {Uint8Array} bytes
+ * @param {number} block
+ * @returns {Uint8Array}
+ */
+export function card_icon_rgba(bytes, block) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.card_icon_rgba(ptr0, len0, block);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
  * Bank a coin balance into save block `block` of a card container,
  * returning the whole container with **only those 4 bytes changed** - the
  * same format it came in, still a valid retail save (the retail payload
@@ -5707,6 +5789,10 @@ function __wbg_get_imports() {
             const ret = new Object();
             return ret;
         },
+        __wbg_new_3baa8d9866155c79: function() {
+            const ret = new Array();
+            return ret;
+        },
         __wbg_new_a6b46eaf9085fbeb: function() { return handleError(function () {
             const ret = new lAudioContext();
             return ret;
@@ -5723,6 +5809,10 @@ function __wbg_get_imports() {
             const ret = arg0.outputBuffer;
             return ret;
         }, arguments); },
+        __wbg_push_60a5366c0bb22a7d: function(arg0, arg1) {
+            const ret = arg0.push(arg1);
+            return ret;
+        },
         __wbg_putImageData_3c24c64a03f8b92f: function() { return handleError(function (arg0, arg1, arg2, arg3) {
             arg0.putImageData(arg1, arg2, arg3);
         }, arguments); },

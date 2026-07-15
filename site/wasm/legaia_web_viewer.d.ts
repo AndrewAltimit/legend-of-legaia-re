@@ -28,13 +28,23 @@ export class LegaiaArts {
      */
     art_strike_frames(index: number): Uint32Array;
     /**
+     * The current character's arts-voice PCM: mono i16 at the rate reported
+     * in `set_character`'s `voice.rate` (37 800 Hz on retail). This is the
+     * XA channel the battle overlay plays for the character's Tactical Arts
+     * (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL`]). Empty when the character
+     * has no voice (raw `PROT.DAT` load, Terra, or demux failure).
+     */
+    art_voice_pcm_i16(): Int16Array;
+    /**
      * The idle loop's pose frames (see [`flatten_pose_frames`] layout).
      * Empty when the character has no decodable idle stream.
      */
     idle_pose_frames(): Int32Array;
     /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
-     * TOC. Returns `{"entries": N}` JSON; errors throw.
+     * TOC. Returns `{"entries": N}` JSON; errors throw. On a full disc the
+     * arts-voice bank ([`VOICE_XA_FILE`]) is sliced out alongside `PROT.DAT`;
+     * a raw `PROT.DAT` load simply has no voice audio.
      */
     load_disc(bytes: Uint8Array): string;
     /**
@@ -773,6 +783,20 @@ export class LegaiaMinigames {
     load_disc(bytes: Uint8Array): string;
     constructor();
     /**
+     * One of the three retail 16x16 **save-file portrait** TIMs as a 1024-byte
+     * RGBA8 buffer: `0` = Vahn, `1` = Noa, `2` = Gala.
+     *
+     * These are the load-screen slot-grid portraits, pinned in the unindexed
+     * pre-`init_data` gap of `PROT.DAT` (offset `0x1AC90`, 192-byte stride;
+     * `legaia_asset::title_pak::extract_overlay_load_portrait_tim`). Retail
+     * bakes the lead's copy into every SC save block as the memory-card icon,
+     * so these are exactly the faces a retail save carries. The site's save
+     * bar decodes them once from the visitor's own disc and caches the pixels
+     * locally - no art ships with the page. Empty when no disc is loaded or
+     * the TIM doesn't parse.
+     */
+    save_portrait_rgba(char_id: number): Uint8Array;
+    /**
      * Whether the slot machine's art pack decoded off this disc. When `false`
      * the page must fall back to symbol *ids*, not to invented artwork.
      */
@@ -1276,6 +1300,12 @@ export class LegaiaRuntime {
      */
     set_camera_azimuth(units: number): void;
     /**
+     * Route this frame's left analog stick into the engine. PSX convention:
+     * signed bytes, X right-positive, Y **down**-positive; only read by the
+     * precise-locomotion decode ([`Self::set_precise_movement`]).
+     */
+    set_left_stick(x: number, y: number): void;
+    /**
      * Route this frame's pad word into the engine. Bit layout is the PSX digital
      * pad ([`legaia_engine_core::input::PadButton`]): `0x0008` Start, `0x0010`
      * Up, `0x0020` Right, `0x0040` Down, `0x0080` Left, `0x1000` Triangle,
@@ -1283,6 +1313,16 @@ export class LegaiaRuntime {
      * engine's - just hand it the held set each frame.
      */
     set_pad(mask: number): void;
+    /**
+     * Opt in / out of the engine's continuous locomotion decode
+     * ([`legaia_engine_core::world::World::precise_movement`]): the camera
+     * azimuth rotates the movement vector at full angular resolution and the
+     * left analog stick ([`Self::set_left_stick`]) supplies an arbitrary
+     * screen angle. The play page's VR first-person mode drives this so
+     * "stick forward" walks exactly where the headset looks; the keyboard
+     * path keeps the retail quantised 8-way remap.
+     */
+    set_precise_movement(on: boolean): void;
     /**
      * One-line engine state for the HUD:
      * ```text
@@ -2406,6 +2446,15 @@ export class LegaiaViewer {
 }
 
 /**
+ * The 16x16 memory-card icon baked into save block `block` of a card
+ * container, as 1024 RGBA8 bytes. For Legaia saves this is the lead
+ * character's portrait - the retail save writer copies the load-screen
+ * portrait TIM into the SC block (palette `+0x60`, 4bpp pixels `+0x80`).
+ * The site's save bar draws it as the slot's face.
+ */
+export function card_icon_rgba(bytes: Uint8Array, block: number): Uint8Array;
+
+/**
  * Bank a coin balance into save block `block` of a card container,
  * returning the whole container with **only those 4 bytes changed** - the
  * same format it came in, still a valid retail save (the retail payload
@@ -2548,6 +2597,7 @@ export interface InitOutput {
     readonly __wbg_legaiaruntime_free: (a: number, b: number) => void;
     readonly __wbg_legaiasfx_free: (a: number, b: number) => void;
     readonly __wbg_legaiaviewer_free: (a: number, b: number) => void;
+    readonly card_icon_rgba: (a: number, b: number, c: number) => [number, number, number, number];
     readonly card_patch_coins: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly card_read_coins: (a: number, b: number, c: number) => [number, number, number];
     readonly card_saves_json: (a: number, b: number) => [number, number, number, number];
@@ -2555,6 +2605,7 @@ export interface InitOutput {
     readonly legaiaarts_art_pose_frames: (a: number, b: number) => [number, number];
     readonly legaiaarts_art_strike_cue: (a: number) => number;
     readonly legaiaarts_art_strike_frames: (a: number, b: number) => [number, number];
+    readonly legaiaarts_art_voice_pcm_i16: (a: number) => [number, number];
     readonly legaiaarts_idle_pose_frames: (a: number) => [number, number];
     readonly legaiaarts_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaarts_mesh_bounds: (a: number) => [number, number];
@@ -2661,6 +2712,7 @@ export interface InitOutput {
     readonly legaiaminigames_dance_widgets_json: (a: number) => [number, number];
     readonly legaiaminigames_load_disc: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaminigames_new: () => number;
+    readonly legaiaminigames_save_portrait_rgba: (a: number, b: number) => [number, number];
     readonly legaiaminigames_slot_art_ready: (a: number) => number;
     readonly legaiaminigames_slot_bonus_json: (a: number) => [number, number];
     readonly legaiaminigames_slot_bonus_number_rgba: (a: number, b: number) => [number, number];
@@ -2741,7 +2793,9 @@ export interface InitOutput {
     readonly legaiaruntime_player_transform: (a: number) => [number, number];
     readonly legaiaruntime_scene_mode: (a: number) => [number, number];
     readonly legaiaruntime_set_camera_azimuth: (a: number, b: number) => void;
+    readonly legaiaruntime_set_left_stick: (a: number, b: number, c: number) => void;
     readonly legaiaruntime_set_pad: (a: number, b: number) => void;
+    readonly legaiaruntime_set_precise_movement: (a: number, b: number) => void;
     readonly legaiaruntime_state_json: (a: number) => [number, number];
     readonly legaiaruntime_tick_frame: (a: number) => [number, number, number, number];
     readonly legaiasfx_art_cues_json: (a: number) => [number, number];
