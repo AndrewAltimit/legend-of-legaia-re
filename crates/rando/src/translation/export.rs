@@ -27,6 +27,7 @@ use crate::disc::DiscPatcher;
 use super::markup;
 use super::pack::{Entry, LanguagePack};
 use super::segments;
+use super::ui;
 
 /// MAN asset type byte in a scene bundle's descriptor table.
 const MAN_TYPE: u8 = 0x03;
@@ -329,6 +330,26 @@ fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
     Ok(())
 }
 
+/// Overlay UI menu strings: the pinned menu / battle overlay string pools
+/// (`ui:<prot>:0x<va>` keys). Each pool is read once from its PROT overlay
+/// entry and scanned NUL-to-NUL inside its VA window (see [`ui`]).
+fn collect_ui_sections(patcher: &DiscPatcher, pack: &mut LanguagePack) {
+    for pool in ui::UI_STRING_POOLS {
+        let Ok(entry) = patcher.read_entry(pool.prot_index) else {
+            continue;
+        };
+        for s in ui::scan_pool(&entry, pool) {
+            pack.sections.ui_menu.push(Entry {
+                key: format!("ui:{}:0x{:08x}", pool.prot_index, s.va),
+                context: format!("{} overlay UI label", pool.label),
+                source: markup::decode(&s.bytes),
+                translation: String::new(),
+                budget: s.budget,
+            });
+        }
+    }
+}
+
 /// Per-PROT-entry scan length: the entry's footprint clamped to the next
 /// entry's start, so overlapping extended footprints don't export the same
 /// disc bytes twice under two keys.
@@ -363,6 +384,7 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
         .read_named_file("SCUS_942.54")
         .context("SCUS_942.54 not found in disc image")?;
     collect_scus_sections(&scus, &mut pack)?;
+    collect_ui_sections(patcher, &mut pack);
 
     let cdname = patcher.cdname();
     let scene_of = |idx: usize| -> String {

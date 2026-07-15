@@ -54,6 +54,18 @@ const SPU_RAM_BYTES: u32 = 512 * 1024;
 /// Byte offset reserved for voice-0 / scratchpad - banks are allocated
 /// above this. Mirrors the asset-viewer SEQ playback path.
 const SPU_RESERVED_BYTES: u32 = 0x1000;
+/// SPU RAM reserved at the TOP of the map for the resident class-2 SFX bank
+/// (PROT 0869). Its VAG bodies total ~184 KiB, so a 192 KiB window holds it
+/// with headroom. On real hardware the SFX bank and the BGM VAB coexist in
+/// the 512 KiB SPU RAM; carving a dedicated top region models that so a
+/// scene-BGM upload can't stomp the SFX samples. The BGM region is capped
+/// below it (staged scene VABs run well under the remaining ~316 KiB).
+const SFX_BANK_SPU_BYTES: u32 = 0x30000;
+/// The class-2 SFX program bank the battle scene loader (`FUN_800520F0`,
+/// `a1 = 2`) and the Baka Fighter init (`FUN_801CF00C`) load explicitly -
+/// extraction PROT 0869 (raw loader index `0x367`). Its low programs carry
+/// the battle strike + duel-hit cues. See `docs/formats/sfx-table.md`.
+const SFX_BANK_PROT_INDEX: u32 = 869;
 
 /// One-time configuration for [`BootSession::open`].
 #[derive(Debug, Clone)]
@@ -261,7 +273,9 @@ fn read_sfx_bank(source: &SceneSource<'_>) -> Option<legaia_engine_audio::SfxBan
     };
     let table = legaia_asset::sfx_table::SfxTable::from_scus(&scus)?;
     Some(legaia_engine_audio::SfxBank::from_descriptors(
-        table.active().map(|(id, d)| (id, d.program, d.note)),
+        table
+            .active()
+            .map(|(id, d)| (id, d.program, d.tone, d.note, d.voice_count())),
     ))
 }
 
@@ -519,11 +533,20 @@ impl BootSession {
                         log::warn!("BGM bank not staged (scene VAB resolution failed): {e:#}");
                     }
                     // Decode the static SFX descriptor bank from the same
-                    // executable once; it plays one-shot battle/field cues
-                    // through the per-scene VAB. Best-effort - an empty bank
-                    // just no-ops resolved cues.
+                    // executable once; it names the program/tone/voice-count
+                    // for each cue id. Best-effort - an empty bank just no-ops
+                    // resolved cues.
                     if let Some(sfx) = read_sfx_bank(&source) {
                         director.set_sfx_bank(sfx);
+                    }
+                    // Stage the resident class-2 SFX program bank (PROT 0869)
+                    // into its own SPU region so battle / minigame cues resolve
+                    // against the bank the retail battle loader loads, not
+                    // whatever BGM VAB is open. Best-effort.
+                    if let Err(e) = stage_sfx_vab(&mut director, audio.as_ref(), &host) {
+                        log::warn!(
+                            "class-2 SFX bank (PROT {SFX_BANK_PROT_INDEX}) not staged: {e:#}"
+                        );
                     }
                     (Some(audio), Some(director))
                 }
@@ -876,10 +899,43 @@ fn stage_scene_vab(
     };
     let report = legaia_vab::parse(&bytes, 0).context("parse scene VAB header")?;
     let bank = audio.with_spu(|spu: &mut Spu| {
-        let mut alloc = SpuAllocator::new(SPU_RESERVED_BYTES, SPU_RAM_BYTES - SPU_RESERVED_BYTES);
+        // Cap the BGM region below the resident class-2 SFX bank at the top of
+        // SPU RAM, so a scene-BGM upload never stomps the SFX samples.
+        let mut alloc = SpuAllocator::new(
+            SPU_RESERVED_BYTES,
+            SPU_RAM_BYTES - SPU_RESERVED_BYTES - SFX_BANK_SPU_BYTES,
+        );
         VabBank::upload(spu, &mut alloc, &report, &bytes)
     });
     director.set_bank(bank);
+    Ok(())
+}
+
+/// Read the class-2 SFX program bank (PROT [`SFX_BANK_PROT_INDEX`]), parse its
+/// VAB, upload the samples into the dedicated top region of SPU RAM, and stash
+/// the resulting [`VabBank`] in the director. The entry is a scene-VAB-style
+/// stream (`[u32 chunk header][VAB]...`), so the VAB starts at `+4` (with a
+/// `+0` fallback for a bare bank). Uploaded once at boot; it stays resident
+/// across scene transitions because the BGM region is capped below it.
+fn stage_sfx_vab(
+    director: &mut AudioBgmDirector,
+    audio: &AudioOut,
+    host: &SceneHost,
+) -> Result<()> {
+    let bytes = host
+        .index
+        .entry_bytes_extended(SFX_BANK_PROT_INDEX)
+        .with_context(|| format!("read PROT {SFX_BANK_PROT_INDEX}"))?;
+    let (report, vab_off) = [4usize, 0]
+        .into_iter()
+        .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+        .context("no VAB header at +4 or +0 in the class-2 SFX bank")?;
+    let body = &bytes[vab_off..];
+    let bank = audio.with_spu(|spu: &mut Spu| {
+        let mut alloc = SpuAllocator::new(SPU_RAM_BYTES - SFX_BANK_SPU_BYTES, SFX_BANK_SPU_BYTES);
+        VabBank::upload(spu, &mut alloc, &report, body)
+    });
+    director.set_sfx_vab(bank);
     Ok(())
 }
 

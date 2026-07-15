@@ -3,6 +3,44 @@
 use super::*;
 
 impl PlayWindowApp {
+    /// Drain the Baka Fighter duel's queued SFX cues and enqueue them into the
+    /// BGM director's SFX scheduler, so the punch/exchange hit (`BAKA_CUE_HIT`
+    /// = `0x09`, written by the rules kernel's damage step) actually sounds in
+    /// the live engine. Mirrors the battle strike-SFX path
+    /// (`drain_and_log_battle_events` → `enqueue_sfx`); the director's
+    /// per-frame `tick_sfx_frame` (driven from `drain_and_log_battle_events`)
+    /// fires the enqueued cues against the resident class-2 SFX bank the same
+    /// frame. The cues carry no gameplay state, so nothing here affects
+    /// determinism. No-op outside the duel / when no audio is attached; the
+    /// fight's cue buffer is drained regardless so it never accumulates.
+    pub(super) fn drain_baka_sfx_cues(&mut self) {
+        if self.session.host.world.mode != SceneMode::BakaFighter {
+            return;
+        }
+        let cues: Vec<u8> = self
+            .session
+            .host
+            .world
+            .baka_fighter
+            .as_mut()
+            .map(|f| f.take_cues())
+            .unwrap_or_default();
+        if cues.is_empty() {
+            return;
+        }
+        if let Some(bgm) = self.session.bgm.as_mut() {
+            // Fire on the same frame (strike-relative delay 0); the duel has no
+            // actor/target slots, so pass 0/0 for the HUD-context fields.
+            for id in &cues {
+                bgm.enqueue_sfx(*id as u16, 0, 0, 0);
+            }
+        } else {
+            for id in &cues {
+                log::debug!("baka SFX cue {id:#04x} (no audio)");
+            }
+        }
+    }
+
     /// The monster stat archive (PROT 867) bytes, decoded + cached on first
     /// use. `None` if no disc is attached or the entry can't be read.
     pub(super) fn monster_archive_bytes(&mut self) -> Option<std::sync::Arc<Vec<u8>>> {

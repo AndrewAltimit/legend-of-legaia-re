@@ -136,6 +136,15 @@ fn full_fill_import_only_touches_carriers_mans_and_scus() {
     for s in 0..scus_size.div_ceil(2048) {
         allowed.insert(scus_lba + s);
     }
+    // The overlay UI menu-string pools (menu 0899 / battle 0898) are patched in
+    // place by the `ui_menu` section, so their entry sectors are allowed too.
+    for pool in legaia_rando::translation::ui::UI_STRING_POOLS {
+        if let Some((lba, secs)) = clamped_sectors(pool.prot_index) {
+            for s in 0..secs {
+                allowed.insert(lba + s);
+            }
+        }
+    }
     let mut carrier_entries = 0usize;
     for idx in 0..n {
         let Ok(entry) = base.read_entry(idx) else {

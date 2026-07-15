@@ -53,6 +53,16 @@ pub struct AudioBgmDirector {
     /// is set once at boot; the per-scene VAB it plays through is the same
     /// [`Self::bank`] the BGM sequencer uses.
     sfx_bank: SfxBank,
+    /// Resident **class-2 sound bank** (extraction PROT 0869, raw loader
+    /// index `0x367`) the battle scene loader and the Baka Fighter init load
+    /// explicitly - its low programs (`0`, `3`) carry the strike / duel-hit
+    /// cues (see `sfx-table.md`). Uploaded once at boot into a dedicated SPU
+    /// RAM region so battle / minigame cues resolve regardless of which BGM
+    /// VAB happens to be open. `None` when the bank couldn't be staged (a
+    /// disc-free boot); [`Self::tick_sfx_frame`] then falls back to the scene
+    /// BGM bank ([`Self::bank`]), matching the retail field-scene path where a
+    /// cue sounds out of whichever bank the libsnd current-bank globals hold.
+    sfx_vab: Option<VabBank>,
     /// Frame-timed one-shot cue queue. [`Self::enqueue_sfx`] adds a cue at
     /// its strike-relative delay; [`Self::tick_sfx_frame`] advances one frame
     /// and fires matured cues through the SPU.
@@ -70,6 +80,7 @@ impl AudioBgmDirector {
             last_started: None,
             pending: None,
             sfx_bank: SfxBank::new(),
+            sfx_vab: None,
             sfx_sched: SfxScheduler::new(),
         }
     }
@@ -78,6 +89,19 @@ impl AudioBgmDirector {
     /// `SCUS_942.54` `DAT_8006F198` table at boot). Replaces any prior bank.
     pub fn set_sfx_bank(&mut self, bank: SfxBank) {
         self.sfx_bank = bank;
+    }
+
+    /// Install the resident class-2 SFX program bank (PROT 0869), uploaded
+    /// into its own SPU RAM region at boot. Battle / minigame cues fire
+    /// against this bank so their programs are always resident; see
+    /// [`Self::sfx_vab`].
+    pub fn set_sfx_vab(&mut self, bank: VabBank) {
+        self.sfx_vab = Some(bank);
+    }
+
+    /// Whether the resident class-2 SFX bank was staged.
+    pub fn has_sfx_vab(&self) -> bool {
+        self.sfx_vab.is_some()
     }
 
     /// Borrow the active SFX bank - useful for tests / inspection.
@@ -95,17 +119,23 @@ impl AudioBgmDirector {
     }
 
     /// Advance the SFX scheduler one frame and fire any matured cue through
-    /// the SPU using the active scene VAB. Returns the `(cue_id, voice)`
-    /// pairs that keyed on. A cue is silently dropped when no scene VAB is
-    /// staged, its id isn't in the bank, or no SPU voice is free (matching
-    /// the retail "no voice -> skip" behaviour). Call once per simulation
-    /// tick so delayed cues advance even when none are enqueued that frame.
+    /// the SPU. Cues resolve against the resident class-2 SFX bank
+    /// ([`Self::sfx_vab`]) when it is staged - the retail battle / minigame
+    /// path, whose programs are always resident - and fall back to the active
+    /// scene BGM bank ([`Self::bank`]) otherwise (the retail field-scene
+    /// path). Returns the `(cue_id, voice)` pairs that keyed on. A cue is
+    /// silently dropped when no bank is staged, its id isn't in the descriptor
+    /// bank, its program / tone isn't resident, or no SPU voice is free
+    /// (matching the retail "no voice / no program -> skip" behaviour). Call
+    /// once per simulation tick so delayed cues advance even when none are
+    /// enqueued that frame.
     pub fn tick_sfx_frame(&mut self) -> Vec<(u16, u8)> {
         let batch = self.sfx_sched.tick_frame();
         if batch.is_empty() {
             return Vec::new();
         }
-        let Some(vab) = self.bank.as_ref() else {
+        // Prefer the resident class-2 SFX bank; fall back to the scene BGM VAB.
+        let Some(vab) = self.sfx_vab.as_ref().or(self.bank.as_ref()) else {
             return Vec::new();
         };
         let bank = &self.sfx_bank;

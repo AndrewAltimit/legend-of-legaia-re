@@ -98,9 +98,13 @@ Pinned from the save-state catalogue:
 
 Because scene banks differ in size, a cue resolves only where its `program` /
 `tone` exists - SFX availability is **scene-dependent**, not a guaranteed
-reservation. The engine therefore needs no separate SFX bank load:
-`SfxBank::from_descriptors(...)` (this table) plays through the scene's
-already-loaded BGM `VabBank` via `SfxBank::play_one_shot(spu, vab)`.
+reservation. In the field, the engine plays a cue through the scene's
+already-loaded BGM `VabBank`; in battle / minigame contexts it plays through
+the resident class-2 bank (below), matching retail. `SfxBank::from_descriptors`
+carries the full descriptor (program + tone-region index + note + voice count),
+and `SfxBank::play_one_shot(spu, vab)` fires it via `VabBank::play_tone` across
+the cue's `voices` consecutive regions - by explicit tone **index**, not by
+key range.
 
 ### The class-2 sound bank (PROT 0869)
 
@@ -119,6 +123,17 @@ scene's cues sound out of this bank or out of the scene's music VAB depends on
 which bank the libsnd current-bank globals hold at the time; the two readings
 are not in conflict for battle/minigame cues, which is where the traced loads
 are.
+
+The live engine mirrors this: `BootSession` uploads PROT 0869 into its own
+dedicated top region of SPU RAM once at boot (`stage_sfx_vab`, capping the
+scene-BGM allocator below it so a BGM upload can't stomp the SFX samples), and
+`AudioBgmDirector::tick_sfx_frame` fires cues against that resident class-2 bank
+when present, falling back to the scene BGM `VabBank` otherwise. So the battle
+Tactical-Arts strike cue (`0x1A`) and the Baka Fighter exchange-hit cue (`0x09`,
+queued by the duel rules kernel and drained by the play-window) both sound out
+of the bank the retail battle loader loads. The disc-gated
+`sfx_cue_resident_bank` test (engine-shell) proves both cues key a voice through
+this bank via the tone-index path.
 
 ## Provenance
 

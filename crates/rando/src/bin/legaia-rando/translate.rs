@@ -147,7 +147,7 @@ fn offline_check(pack: &LanguagePack) -> usize {
             if !e.is_filled() {
                 continue;
             }
-            let target = if e.key.starts_with("scus:") {
+            let target = if e.key.starts_with("scus:") || e.key.starts_with("ui:") {
                 Target::CString
             } else {
                 Target::Segment

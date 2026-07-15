@@ -75,10 +75,15 @@
 
   /* ---------- occluder cull (see the note in `_frame`) ---------- */
 
-  /* Drop a body that sits between the lens and the player. This is an OCCLUSION
-   * test, never a distance / budget one - set it to `false` and every body a
-   * scene loads is drawn every frame, unconditionally. */
-  const OCCLUDER_CULL = true;
+  /* Occluder cull, DISABLED. The native renderer draws the whole scene every
+   * frame with no distance / frustum / occlusion culling (docs/subsystems/
+   * renderer.md), and the browser matches it. The per-frame lens->player slab
+   * test below bounded each body by an axis-aligned box over whole terrain
+   * tiles / walls / buildings, so neighbouring bodies blinked out as the camera
+   * orbited or the player walked (the reported "meshes cull while walking"
+   * symptom). Leave this `false`; every body a scene loads is drawn every
+   * frame, unconditionally. */
+  const OCCLUDER_CULL = false;
 
   /* World AABB of one placement: the mesh's local box carried through the draw
    * model `T(x, y, z) . Ry(rotY) . diag(sc, -sc, sc)` (`placementModelScaledY`).
@@ -390,6 +395,21 @@
       return state;
     }
 
+    /* Swap in a freshly-instantiated engine (after a WASM trap poisoned the
+     * previous one) and re-enter `label`, then resume the loop. Reuses the
+     * existing GL renderer + canvas + input listeners - only the engine handle
+     * changes, so every callback that reads `this.rt` picks up the new one.
+     * The page's `recoverRuntime` builds the fresh runtime from cached disc
+     * bytes and drives this (Bug-3 recovery). */
+    recover(newRuntime, label) {
+      this.rt = newRuntime;
+      this.stop();               /* the trapped loop is dead; clear its raf id */
+      this._vrDrive = null;
+      const st = this.enter(label);
+      this.start();
+      return st;
+    }
+
     /* Rebuild the GPU-side scene from whatever the engine currently holds.
      * Runs on entry and whenever the engine walks through a door. */
     _rebuild() {
@@ -593,6 +613,18 @@
     setPaused(on) { this.paused = !!on; }
     step() { this.stepOnce = true; }
 
+    /* A WASM trap (or any throw from an engine call) during the frame poisons
+     * the engine instance. Stop the dead loop and hand the message to the page,
+     * whose `onError` rebuilds a fresh runtime from cached disc bytes and
+     * resumes - no page reload (Bug-3 recovery). Unifies every in-frame engine
+     * call (tick, scene rebuild, per-frame pose reads, draw) onto one path so
+     * none can escape uncaught and freeze the loop. */
+    _onEngineTrap(where, e) {
+      console.warn(where, e);
+      this.stop();
+      if (this.opts.onError) this.opts.onError((e && e.message) || String(e));
+    }
+
     /* One engine frame + one draw (the draw is skipped while VR presents). */
     _frame(skipDraw) {
       const rt = this.rt;
@@ -614,45 +646,39 @@
         this._repack();
         let entered = '';
         try { entered = rt.tick_frame(); } catch (e) {
-          console.warn('engine tick', e);
-          this.stop();
-          if (this.opts.onError) this.opts.onError(e.message || String(e));
+          this._onEngineTrap('engine tick', e);
           return;
         }
         if (entered) {
           /* The engine walked through a door: its scene swapped under us, so the
-           * geometry has to swap too. */
-          this.scene = entered;
-          this._rebuild();
-          if (this.vr) this.vr.respawn();
-          if (this.opts.onScene) this.opts.onScene(entered);
+           * geometry has to swap too. A trap while rebuilding the new scene's
+           * geometry is just as fatal as one in the tick, so route it through
+           * recovery too. */
+          try {
+            this.scene = entered;
+            this._rebuild();
+            if (this.vr) this.vr.respawn();
+            if (this.opts.onScene) this.opts.onScene(entered);
+          } catch (e) {
+            this._onEngineTrap('scene rebuild', e);
+            return;
+          }
         }
       }
 
-      /* Occluder cull - EXACT, and off by default.
-       *
-       * Nothing is culled for distance / budget reasons: every body a scene
-       * loads stays resident and drawn. The only thing this page ever wants to
-       * drop is a body that literally sits between the lens and the player (a
-       * cave roof, a house's upper storey), because the page has one follow
-       * camera where retail had per-scene authored ones.
-       *
-       * The old test bounded each body by a SPHERE of its longest half-extent
-       * and dropped it whenever that sphere came near the camera-to-player
-       * line. A floor slab or a staircase is wide and thin, so its sphere is
-       * enormous (a 1024-unit-wide floor gets a 512-unit sphere) - the line
-       * swept into those spheres constantly while walking and whole floors,
-       * stairs and wall sections blinked out. It also placed the body's centre
-       * at `d.x - a.cx` (the local centroid *subtracted*, un-rotated), so the
-       * sphere often wasn't even where the body was.
-       *
-       * The test is now an exact segment-vs-world-AABB (slab) intersection
-       * against the body's real box (`d.box`, baked once per placement in
-       * `_rebuild`), and only the stretch of the segment strictly between the
-       * lens and the player counts. A body you stand on, walk past, or climb
-       * cannot satisfy it; only one the camera genuinely looks through does.
-       * `OCCLUDER_CULL = false` disables even that and draws every body,
-       * always. */
+      /* The per-frame READ of the engine's live pose + NPC transforms runs the
+       * WASM engine too, so a trap here poisons the instance exactly like the
+       * tick does - and, being outside the tick's guard, would otherwise escape
+       * uncaught and freeze the loop without ever reaching recovery. Guard the
+       * whole draw-build so any engine trap routes through `onError`. */
+      try {
+      /* Occluder cull, DISABLED (`OCCLUDER_CULL = false`; see the note at its
+       * definition). Even the exact segment-vs-world-AABB form culled legit
+       * bodies: the boxes are axis-aligned over whole terrain tiles / walls /
+       * buildings, so as the camera orbited or the player walked, the
+       * lens->player segment pierced a neighbour's box and blinked it out. The
+       * native renderer draws the whole scene unconditionally, and this page
+       * matches it - the branch stays for reference but is never taken. */
       const pt = rt.player_transform();
       let draws;
       /* In VR first-person there is no third-person lens: the eye IS the
@@ -711,6 +737,10 @@
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
        * once per eye with the XR view matrices. */
       if (!skipDraw) this.renderer.renderAssembled(this._draws, this._ext, this.cam);
+      } catch (e) {
+        this._onEngineTrap('engine draw', e);
+        return;
+      }
 
       /* FPS + HUD, sampled twice a second. */
       this._fpsFrames++;

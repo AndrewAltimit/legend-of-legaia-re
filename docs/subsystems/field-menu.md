@@ -316,6 +316,27 @@ gray to CLUT 0 when blocked: Load when the dialog-context pointer
 `DAT_8007b450` targets an `0x0D` byte, Save when the save-enabled flag
 `DAT_8007b6a8` is clear.
 
+The seven labels are **NUL-terminated C strings** in the menu overlay's
+leading rodata string pool (PROT 0899, base `0x801CE818`): `@Items` at
+`0x801CE9D0`, then `@Magic` / `@Equip` / `@Status` / `@Options` / `@Load` /
+`@Save` in order. `FUN_801CFD68` loads each by a `lui`+`addiu` pair
+(`addiu a0, a0, -0x1630` at base+0x1560 = `0x801CE9D0`), so the pointer
+targets the leading `0x40` (`@`) marker byte the string primitive
+`FUN_80036888` consumes; the visible label is the tail. The same pool
+(`0x801CE81C..0x801CEC78`) holds the options-screen choices, the derived
+stat labels (`ATK`/`UDF`/`LDF`/`SPD`/`INT`/`AGL`, `Experience`,
+`Next Level`), and the shop / equip / status command strings
+(`@Best Equipment`, `@Condition`, `@Moves`, `@MP Used`, `@AP Used`,
+`@Command:`, `@Buy`/`@Sell`/`@Quit`, ...). The **battle** overlay
+(PROT 0898, same base) keeps its own command / result pool at
+`0x801F4B98..0x801F4D2A`: `Spirit` / `Defense` (the Defend command) /
+`Escape` / `Begin` plus the victory / defeat / escape / ambush messages -
+the `Attack` / `Arts` / `Magic` / `Item` command-ring labels are UI-icon
+sprites, not text. These pools are the coordinate windows the translation
+pipeline's `ui_menu` section patches same-size in place
+(`legaia_rando::translation::ui`; see
+[`translation.md`](../tooling/translation.md)).
+
 **Money / play-time box (id 49, `FUN_801D0148`)**: money pictogram (ICO
 `0x62`) at `(WX, WY+2)` with the amount as an 8-digit field
 (`FUN_80034b78`) at `(WX+0x28, WY)`. When the casino-coin flag
