@@ -16,6 +16,8 @@
  *   await LegaiaSfx.init(wasmModule, discBytes)   // renders every cue
  *   LegaiaSfx.play('baka', 'hit')                 // fire by event name
  *   LegaiaSfx.playCue(0x1A)                       // fire by raw cue id
+ *   LegaiaSfx.registerPcm(key, i16, rate, st)     // stash a raw PCM clip
+ *   LegaiaSfx.playPcm(key)                        // fire a registered clip
  *   LegaiaSfx.ready()                             // cues rendered?
  *   LegaiaSfx.info()                              // { bank, rate, cues, maps }
  *
@@ -37,6 +39,10 @@
   var ctx = null;        /* AudioContext (lazily built inside a gesture) */
   var master = null;     /* master GainNode */
   var buffers = {};      /* cue id -> { buf: AudioBuffer, gain: number } */
+  var pcmBank = {};      /* key -> { data, rate, stereo, buf, gain } - raw
+                          * PCM clips registered by pages (e.g. the arts
+                          * page's XA voice channels), independent of the
+                          * cue renderer. */
   var maps = {};         /* table name -> { event: {cue, source, why} } */
   var meta = { bank: 0, rate: 0, cues: [] };
   var live = [];         /* sounding AudioBufferSourceNodes */
@@ -85,6 +91,52 @@
     }
     buffers[id] = { buf: buf, gain: Math.min(MAX_GAIN, PEAK_TARGET / peak) };
     return buffers[id];
+  }
+
+  /* Build (once) the AudioBuffer for a registered raw-PCM clip. */
+  function pcmBufferFor(key) {
+    var p = pcmBank[key];
+    if (!p || !p.data || !p.data.length) return null;
+    if (p.buf) return p;
+    var c = audio();
+    if (!c) return null;
+    var chs = p.stereo ? 2 : 1;
+    var frames = Math.floor(p.data.length / chs);
+    if (!frames) return null;
+    var buf = c.createBuffer(chs, frames, p.rate || 37800);
+    for (var ch = 0; ch < chs; ch++) {
+      var d = buf.getChannelData(ch);
+      for (var i = 0; i < frames; i++) d[i] = p.data[i * chs + ch] / 32768;
+    }
+    var d0 = buf.getChannelData(0);
+    var peak = 0;
+    for (var j = 0; j < d0.length; j++) {
+      var v = Math.abs(d0[j]);
+      if (v > peak) peak = v;
+    }
+    p.buf = buf;
+    /* XA-decoded voice is near full scale already; cap the boost low. */
+    p.gain = peak > 0 ? Math.min(4, PEAK_TARGET / peak) : 1;
+    return p;
+  }
+
+  /* Start one prepared { buf, gain } through the master chain. */
+  function startBuffer(b) {
+    var c = audio();
+    if (!c) return false;
+    var src = c.createBufferSource();
+    src.buffer = b.buf;
+    var g = c.createGain();
+    g.gain.value = b.gain;
+    src.connect(g);
+    g.connect(master);
+    src.onended = function () {
+      var i = live.indexOf(src);
+      if (i >= 0) live.splice(i, 1);
+    };
+    live.push(src);
+    src.start();
+    return true;
   }
 
   function stopAll() {
@@ -158,21 +210,32 @@
       if (!api || !soundOn()) return false;
       var b = bufferFor(id);
       if (!b) return false;
-      var c = audio();
-      if (!c) return false;
-      var src = c.createBufferSource();
-      src.buffer = b.buf;
-      var g = c.createGain();
-      g.gain.value = b.gain;
-      src.connect(g);
-      g.connect(master);
-      src.onended = function () {
-        var i = live.indexOf(src);
-        if (i >= 0) live.splice(i, 1);
-      };
-      live.push(src);
-      src.start();
+      if (!startBuffer(b)) return false;
       log.push({ cue: id, event: event || null, t: Date.now() });
+      if (log.length > 400) log.shift();
+      return true;
+    },
+
+    /* Register a raw i16 PCM clip under `key` (e.g. the arts page's
+     * disc-demuxed XA voice channels). `data` is an Int16Array (interleaved
+     * L/R when `stereo`); `rate` in Hz. Independent of the cue renderer -
+     * works even when the descriptor-table decode was skipped. */
+    registerPcm: function (key, data, rate, stereo) {
+      if (!key || !data || !data.length) return false;
+      pcmBank[key] = { data: data, rate: rate || 37800, stereo: !!stereo,
+                       buf: null, gain: 1 };
+      return true;
+    },
+
+    hasPcm: function (key) { return !!pcmBank[key]; },
+
+    /* Fire one registered PCM clip. Logged like a cue (cue: key). */
+    playPcm: function (key, event) {
+      if (!soundOn()) return false;
+      var b = pcmBufferFor(key);
+      if (!b) return false;
+      if (!startBuffer(b)) return false;
+      log.push({ cue: key, event: event || null, t: Date.now() });
       if (log.length > 400) log.shift();
       return true;
     },

@@ -210,6 +210,12 @@ uniform int u_semi_pass;
  * the fog color when u_fog_lut hasn't been bound to a captured LUT yet
  * so the LUT-less path still produces a visually-meaningful gradient. */
 uniform vec3 u_fog_color;
+/* After-image ("ghost") pass: rgb = tint, a = intensity. When a > 0 the
+ * fragment collapses to a tinted-luminance silhouette of the lit texel -
+ * the caller draws it additively over the opaque pose (the retail arts
+ * trail is a delayed mesh copy drawn as a PSX ABE additive prim). a == 0
+ * (the GL uniform default) leaves every existing draw untouched. */
+uniform vec4 u_ghost;
 
 in vec3 v_world;
 in vec2 v_uv;
@@ -357,6 +363,16 @@ void main() {
       ? v_fog_t
       : clamp(lut_factor, 0.0, 1.0);
     lit = mix(lit, u_fog_color, factor);
+  }
+
+  /* Ghost (after-image) draw: keep the cutout silhouette (the discard above
+   * already ran) but replace the colour with the caller's tint, weighted by
+   * the lit texel's luminance so the echo keeps the pose's internal shading
+   * structure. Blending is the caller's (additive, depth-read-only). */
+  if (u_ghost.a > 0.0) {
+    float luma = dot(lit, vec3(0.299, 0.587, 0.114));
+    o_color = vec4(u_ghost.rgb * (0.35 + 0.65 * luma) * u_ghost.a, 1.0);
+    return;
   }
 
   o_color = vec4(lit, 1.0);

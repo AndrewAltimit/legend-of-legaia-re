@@ -20,6 +20,15 @@
  * bone poser). Requires webgl-math.js, webgl-shaders.js, webgl-tmd.js and
  * mesh-view.js first; rom-cache.js + load-progress.js for the disc input.
  *
+ * Playback extras, both retail-mechanism:
+ *   - VOICE: the character's arts shout is the XA30.XA channel the battle
+ *     overlay plays through FUN_8003D53C(0x1D, chan, dur) -> CdlSetfilter
+ *     (Vahn ch0 / Noa ch4 / Gala ch6; keyed on the character, not the art;
+ *     Terra has no case). Demuxed by the WASM side, fired at art start.
+ *   - TRAIL: the tinted after-image (Vahn red / Noa green / Gala blue) -
+ *     delayed poses of the same mesh re-drawn additively via
+ *     MeshView.setTrail (the PSX ABE semi-transparency trick).
+ *
  * Graceful fallback contract: an art whose clip did not resolve/decode
  * plays the battle idle loop with a visible per-art note - never a broken
  * canvas.
@@ -30,6 +39,25 @@
   const CHAR_SLOT = { Vahn: 0, Noa: 1, Gala: 2, Terra: 3 };
   /* FUN_80047430 advances rate/8 keyframes per 60 Hz tick. */
   const fpsForRate = (rate) => (rate > 0 ? 7.5 * rate : 15);
+
+  /* Retail draws a delayed translucent after-image of the character during
+   * an art, tinted per character: Vahn RED, Noa GREEN, Gala BLUE (a PSX ABE
+   * additive re-draw of the animated mesh a few frames behind). The tints
+   * are the site's match of the retail look; the mechanism (delayed tinted
+   * additive mesh copy) is the retail one. Terra performs no arts - her row
+   * gets a neutral violet in case a bank record ever resolves. */
+  const TRAIL_TINT = {
+    Vahn: [1.0, 0.16, 0.10],
+    Noa:  [0.18, 1.0, 0.22],
+    Gala: [0.16, 0.36, 1.0],
+    Terra: [0.7, 0.4, 1.0],
+  };
+  /* Echo train: pose delays (clip keyframes) + additive intensities. */
+  const TRAIL_ECHOES = [
+    { delay: 4, alpha: 0.40 },
+    { delay: 8, alpha: 0.22 },
+    { delay: 12, alpha: 0.11 },
+  ];
 
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -93,6 +121,8 @@
       this.currentArt = null; /* the playing art's display name, or null=idle */
       this.cueFrames = null;  /* Set of clip frames that fire the strike cue */
       this.cueLog = [];       /* [{frame, t}] - the headless-check hook */
+      this.voiceKey = null;   /* LegaiaSfx PCM key of the character's arts
+                               * voice (XA30 channel), or null when absent */
     }
 
     get ready() { return !!(this.api && this.charState && this.charState.ok); }
@@ -150,6 +180,22 @@
         this.els.now.textContent = `${name}: ${this.charState.why || 'did not assemble'}`;
         return false;
       }
+      /* Arts VOICE: the character's XA30.XA channel (the battle overlay's
+       * FUN_8003D53C(0x1D, chan, dur) cue - Vahn ch0 / Noa ch4 / Gala ch6),
+       * demuxed by the WASM side off the loaded disc. Registered once per
+       * character; null on a raw PROT.DAT load or for Terra. */
+      this.voiceKey = null;
+      if (this.charState.voice && window.LegaiaSfx && this.api.art_voice_pcm_i16) {
+        const key = `arts-voice:${name}`;
+        if (!LegaiaSfx.hasPcm(key)) {
+          const pcm = this.api.art_voice_pcm_i16();
+          if (pcm && pcm.length) {
+            LegaiaSfx.registerPcm(key, pcm,
+              this.charState.voice.rate, this.charState.voice.stereo);
+          }
+        }
+        if (LegaiaSfx.hasPcm(key)) this.voiceKey = key;
+      }
       if (!this.view) {
         this.view = new window.MeshView(this.els.canvas, {
           cam: { yaw: Math.PI / 2, pitch: 0.05, distance: 2.2, autoRotate: false },
@@ -198,6 +244,7 @@
       if (!this.ready || !this.view) return;
       this.currentArt = null;
       this._armCues(null);          /* the idle loop is silent */
+      this.view.setTrail(null);     /* no after-image outside an art */
       const idle = this.charState.idle;
       const frames = this.api.idle_pose_frames();
       if (idle && frames.length) {
@@ -253,6 +300,18 @@
       }
       this._armCues(cues);
       this.currentArt = art.name;
+      /* VOICE: retail starts the character's shout as the art begins
+       * executing - one XA channel per character (XA30.XA: Vahn ch0 /
+       * Noa ch4 / Gala ch6), the same clip for every art of that
+       * character. Fired once per activation, not per loop. */
+      if (this.voiceKey && window.LegaiaSfx) {
+        LegaiaSfx.playPcm(this.voiceKey, 'arts.voice');
+      }
+      /* Per-character tinted after-image echoes (the retail arts trail). */
+      this.view.setTrail({
+        tint: TRAIL_TINT[this.charName] || [1, 1, 1],
+        echoes: TRAIL_ECHOES,
+      });
       this.view.setAnimation({
         partCount: parts,
         frameCount: total / (parts * 6),
@@ -271,11 +330,14 @@
           + ` on ${cues.size} impact frame${cues.size > 1 ? 's' : ''}`
           + ' (retail cue id, timing fitted from the clip)'
         : '';
+      const voiceNote = (this.voiceKey && this.charState.voice)
+        ? `; voice XA30 ch${this.charState.voice.channel} (retail cue)`
+        : '';
       this.els.now.textContent =
         `${this.charName} - ${art.name}${dev}`;
       this.els.note.textContent =
         `record 0x${bank[first].anim_id.toString(16).toUpperCase()}` +
-        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${sfxNote}`;
+        `, ${total / (parts * 6)} keyframes @ rate ${bank[first].rate}${segNote}${sfxNote}${voiceNote}`;
     }
   }
 
@@ -333,6 +395,15 @@
        * WASM cue renderer decoded off the disc. */
       cueFrames: app.cueFrames ? Array.from(app.cueFrames).sort((a, b) => a - b) : null,
       cueLog: app.cueLog.slice(),
+      /* Trail: the configured tint + how many echo passes drew last frame. */
+      trail: app.view && app.view.trail
+        ? { tint: app.view.trail.tint, echoes: app.view.trail.echoes.length }
+        : null,
+      ghostPasses: app.view && app.view.renderer && app.view.renderer.ghostTrail
+        ? app.view.renderer.ghostTrail.passes.length : 0,
+      /* Voice: the character's XA30 channel metadata + registered key. */
+      voice: app.charState ? app.charState.voice || null : null,
+      voiceKey: app.voiceKey,
       sfxReady: !!(window.LegaiaSfx && LegaiaSfx.ready()),
       sfxInfo: window.LegaiaSfx && LegaiaSfx.ready() ? LegaiaSfx.info() : null,
       sfxLog: window.LegaiaSfx ? LegaiaSfx.log() : [],

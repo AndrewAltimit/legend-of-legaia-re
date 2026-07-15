@@ -374,3 +374,49 @@ fn probe_dump_bank_names() {
         }
     }
 }
+
+/// The Tactical-Arts VOICE join: the battle overlay plays one XA30.XA channel
+/// per character (`FUN_8003D53C(0x1D, chan, dur)` -> CdlSetfilter: Vahn ch0 /
+/// Noa ch4 / Gala ch6; Terra has no case). Assert the WASM surface demuxes a
+/// real, non-silent mono clip for the three heroes and none for Terra.
+#[test]
+fn arts_voice_channels_demux_per_character() {
+    let Some((mut arts, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let expect: [Option<u64>; 4] = [Some(0), Some(4), Some(6), None];
+    for (cslot, want_ch) in expect.iter().enumerate() {
+        let st: serde_json::Value =
+            serde_json::from_str(&arts.set_character(cslot as u32)).unwrap();
+        assert_eq!(st["ok"], true, "char {cslot} assembles");
+        let name = st["character"].as_str().unwrap().to_string();
+        match want_ch {
+            Some(ch) => {
+                let v = &st["voice"];
+                assert!(v.is_object(), "{name}: voice metadata present");
+                assert_eq!(v["file"], "XA30.XA", "{name}: voice file");
+                assert_eq!(v["channel"].as_u64(), Some(*ch), "{name}: channel");
+                assert_eq!(v["rate"].as_u64(), Some(37_800), "{name}: XA rate");
+                assert_eq!(v["stereo"], false, "{name}: voice is mono");
+                let pcm = arts.art_voice_pcm_i16();
+                assert!(!pcm.is_empty(), "{name}: voice PCM decodes");
+                assert_eq!(
+                    pcm.len() as u64,
+                    v["samples"].as_u64().unwrap(),
+                    "{name}: sample count matches metadata"
+                );
+                // A real shout, not digital silence: peak above 10% of scale
+                // and between half a second and five seconds long.
+                let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap();
+                assert!(peak > 3200, "{name}: voice peak {peak}");
+                let secs = pcm.len() as f64 / 37_800.0;
+                assert!((0.5..5.0).contains(&secs), "{name}: duration {secs}s");
+            }
+            None => {
+                assert!(st["voice"].is_null(), "{name}: no retail voice case");
+                assert!(arts.art_voice_pcm_i16().is_empty(), "{name}: empty PCM");
+            }
+        }
+    }
+}

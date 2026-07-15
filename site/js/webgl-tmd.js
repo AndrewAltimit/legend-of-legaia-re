@@ -96,6 +96,7 @@ class TmdRenderer {
     this.locFogFarRef   = gl.getUniformLocation(this.program, 'u_fog_far_ref');
     this.locFogZShift   = gl.getUniformLocation(this.program, 'u_fog_z_shift');
     this.locUseFlatColors = gl.getUniformLocation(this.program, 'u_use_flat_colors');
+    this.locGhost   = gl.getUniformLocation(this.program, 'u_ghost');
     this.locPos     = gl.getAttribLocation(this.program, 'a_position');
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
@@ -123,6 +124,13 @@ class TmdRenderer {
      * read as opaque grey slabs without it. Off by default (every existing
      * consumer keeps the one-pass draw-everything behaviour). */
     this.semiTwoPass = false;
+
+    /* After-image trail for the single-mesh `render()` path (the arts page's
+     * per-character tinted echoes). `{ passes: [{ positions, tint: [r,g,b],
+     * alpha }], restore: Float32Array }` or null. Each pass re-draws the mesh
+     * additively at a delayed pose; `restore` puts the live pose back in the
+     * position buffer afterwards (MeshView only re-uploads on frame change). */
+    this.ghostTrail = null;
 
     this.vao    = gl.createVertexArray();
     this.posBuf = gl.createBuffer();
@@ -553,6 +561,8 @@ class TmdRenderer {
     /* Field-character hybrid: untextured prims use their vertex colour. Set
      * explicitly every frame (the uniform persists on the shared program). */
     gl.uniform1i(this.locUseFlatColors, this.useFlatColors ? 1 : 0);
+    /* Ghost tint OFF for the opaque pose (the trail pass sets it per echo). */
+    gl.uniform4f(this.locGhost, 0, 0, 0, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
@@ -577,6 +587,39 @@ class TmdRenderer {
     } else {
       gl.uniform1i(this.locSemiPass, -1);
       gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+    }
+
+    /* After-image trail: re-draw the mesh at each delayed pose, tinted and
+     * additive (PSX ABE mode 1 - the retail arts after-image is a delayed
+     * mesh copy drawn as a semi-transparent prim). Depth-tested against the
+     * opaque pose but not depth-written, so echoes never occlude it. */
+    const trail = this.ghostTrail;
+    if (trail && trail.passes && trail.passes.length) {
+      gl.enable(gl.BLEND);
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.depthMask(false);
+      /* Strictly-nearer depth test: where an echo coincides with the live
+       * pose (equal depth) it is rejected, so the character stays readable
+       * and the tint only builds where the delayed pose has separated -
+       * matching the retail look of a trail *behind* the motion. */
+      gl.depthFunc(gl.LESS);
+      gl.uniform1i(this.locSemiPass, -1);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+      for (const p of trail.passes) {
+        if (!p.positions || p.positions.byteLength !== this.posByteLength) continue;
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, p.positions);
+        gl.uniform4f(this.locGhost, p.tint[0], p.tint[1], p.tint[2], p.alpha);
+        gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+      }
+      gl.uniform4f(this.locGhost, 0, 0, 0, 0);
+      gl.depthMask(true);
+      gl.depthFunc(gl.LEQUAL);
+      gl.disable(gl.BLEND);
+      /* Put the live pose back - MeshView only re-uploads on frame change. */
+      if (trail.restore && trail.restore.byteLength === this.posByteLength) {
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, trail.restore);
+      }
     }
     gl.bindVertexArray(null);
   }

@@ -130,6 +130,9 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   <p>
     Load your own disc image and every art card below becomes clickable: the canvas shows the character <em>performing</em> that art, exactly as a battle stages it. The model is <strong>assembled in your browser</strong> from the character's player battle file (the equipment-section splice the retail battle loader runs - <a href="formats/character-mesh.html">character-mesh reference</a>), textured from the same file's texture pools and decoded battle palette, and posed from the art's on-disc keyframe stream: the art-animation bank at record[0]&nbsp;<code>+0x58</code>, its clips resolved through the <code>readef.DAT</code> "ME" archives (<a href="formats/summon-readef.html">side-band reference</a>). Between arts the character holds the record[0] battle-idle loop. Nothing is uploaded; the disc never leaves your machine.
   </p>
+  <p>
+    Playback carries two retail battle-presentation layers. The character's <strong>voice</strong> is the XA cue the battle overlay fires as an art starts executing: one channel of <code>XA/XA30.XA</code> per character (Vahn&nbsp;ch0, Noa&nbsp;ch4, Gala&nbsp;ch6 - retail keys the shout on the <em>character</em>, not the individual art), played through the <code>CdlSetfilter</code> path documented in the <a href="subsystems/battle-action.html">battle-action reference</a> and demuxed here straight off your disc. The <strong>after-image trail</strong> is retail's tinted echo - a delayed copy of the animated mesh re-drawn translucently in the character's colour (Vahn <span style="color:#e0524a">red</span>, Noa <span style="color:#4ac05a">green</span>, Gala <span style="color:#5a7ae8">blue</span>), the classic PSX additive semi-transparency trick.
+  </p>
   <div class="file-input-group">
     <label for="arts-file"><strong>Choose file:</strong></label>
     <input type="file" id="arts-file" accept=".bin,.DAT,.dat">

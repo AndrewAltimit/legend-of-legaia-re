@@ -61,6 +61,11 @@
       this._basePos = null;   /* pristine Float32Array(vertices * 3) */
       this._objIds = null;    /* Uint32Array, per-vertex object index */
       this.anim = null;
+      /* After-image trail config: { tint: [r,g,b], echoes: [{delay, alpha}] }
+       * or null. Echo poses are re-derived per frame from the clip itself
+       * (pose(frame - delay)), so no ring buffer of copies is needed. */
+      this.trail = null;
+      this._ghostBufs = [];   /* per-echo Float32Array scratch poses */
       this._frameOverride = -1;
       this.playing = false;
       this._startMs = 0;
@@ -97,6 +102,8 @@
       this.anim = null;
       this.playing = false;
       this._frameOverride = -1;
+      this.renderer.ghostTrail = null;
+      this._ghostBufs = [];
     }
 
     /* Bake the model currently on screen into a textured binary glTF, through
@@ -132,6 +139,7 @@
           !this._objIds || !this._basePos) {
         this.anim = null;
         this.playing = false;
+        this.renderer.ghostTrail = null;
         if (this._basePos) this.renderer.updatePositions(this._basePos);
         return;
       }
@@ -211,9 +219,20 @@
     _poseAt(frameIdx, upload) {
       const A = this.anim;
       if (!A) return;
+      this._poseInto(frameIdx, A.out);
+      if (upload !== false) {
+        this.renderer.updatePositions(A.out);
+        this._updateTrail(frameIdx);
+      }
+    }
+
+    /* Pose frame `frameIdx` of the current clip into `out` (a
+     * Float32Array the size of the base positions), without uploading. */
+    _poseInto(frameIdx, out) {
+      const A = this.anim;
+      if (!A) return;
       const ff = ((frameIdx % A.frameCount) + A.frameCount) % A.frameCount;
       const base = this._basePos;
-      const out = A.out;
       const ids = this._objIds, n = base.length / 3;
       /* Precompute each bone's sin/cos + translation once per frame. */
       const sin = new Float32Array(A.partCount * 3);
@@ -249,7 +268,42 @@
         out[v*3+1] = y + tr[o*3+1];
         out[v*3+2] = z + tr[o*3+2];
       }
-      if (upload !== false) this.renderer.updatePositions(out);
+    }
+
+    /* Configure the after-image trail: `{ tint: [r, g, b], echoes:
+     * [{ delay, alpha }, ...] }` (delays in clip keyframes) or null to turn
+     * it off. Takes effect on the next posed frame. */
+    setTrail(opts) {
+      this.trail = opts || null;
+      if (!this.trail) this.renderer.ghostTrail = null;
+    }
+
+    /* Rebuild the renderer's ghost passes for display frame `frameIdx`: one
+     * delayed pose per configured echo. Echoes before the clip's first frame
+     * are skipped, so a trail "grows in" at the start instead of wrapping a
+     * stale pose from the clip's tail. */
+    _updateTrail(frameIdx) {
+      const T = this.trail, A = this.anim;
+      if (!T || !A || !T.echoes || !T.echoes.length) {
+        this.renderer.ghostTrail = null;
+        return;
+      }
+      const passes = [];
+      for (let i = 0; i < T.echoes.length; i++) {
+        const e = T.echoes[i];
+        const gf = frameIdx - e.delay;
+        if (gf < 0) continue;
+        let buf = this._ghostBufs[i];
+        if (!buf || buf.length !== this._basePos.length) {
+          buf = new Float32Array(this._basePos.length);
+          this._ghostBufs[i] = buf;
+        }
+        this._poseInto(gf, buf);
+        passes.push({ positions: buf, tint: T.tint, alpha: e.alpha });
+      }
+      this.renderer.ghostTrail = passes.length
+        ? { passes, restore: A.out }
+        : null;
     }
 
     setSpin(on) {

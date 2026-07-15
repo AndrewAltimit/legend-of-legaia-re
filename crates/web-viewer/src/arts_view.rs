@@ -46,6 +46,18 @@ fn arts_log(s: &str) {
 /// Player battle files (`data\battle\PLAYER1..4`) start at extraction PROT
 /// entry 863 (Vahn), one per character slot.
 const PLAYER_FILE_BASE: u32 = 863;
+/// The battle Tactical-Arts VOICE bank: `XA/XA30.XA`. The battle-action
+/// overlay fires the character's arts shout through the SCUS XA-clip player
+/// `FUN_8003D53C(0x1D, chan, dur)` (clip-table slot `0x1D` = `XA30.XA`),
+/// whose sequencer `FUN_8003D764` runs `CdlSetfilter{file 1, chan}` before
+/// `CdlReadS` - so the voice is one XA channel of this file, selected by the
+/// acting character (see `docs/subsystems/battle-action.md`).
+const VOICE_XA_FILE: &str = "XA30.XA";
+/// Character slot -> XA channel inside [`VOICE_XA_FILE`], from the overlay's
+/// per-character dispatch (`DAT_8007bd10[slot]`: Vahn -> chan 0 / dur 0x26,
+/// Noa -> chan 4 / dur 0x2E, Gala -> chan 6 / dur 0x1A). Terra has no case -
+/// retail plays no arts voice for character id 4.
+const VOICE_CHANNEL: [Option<u8>; 4] = [Some(0), Some(4), Some(6), None];
 /// `readef.DAT` (extraction PROT 894) - the battle side-band file carrying
 /// the per-character art `"ME"` stream archives.
 const READEF_PROT_INDEX: u32 = 894;
@@ -77,6 +89,10 @@ struct LoadedCharacter {
     /// Idle loop (record[0] slot 0), expanded per object.
     idle: Option<MonsterAnimation>,
     arts: Vec<ArtSlot>,
+    /// The character's decoded arts-voice XA channel (see [`VOICE_XA_FILE`]).
+    /// `None` on a raw `PROT.DAT` load (no XA files to read), for Terra, or
+    /// when the channel didn't demux.
+    voice: Option<audio::DecodedXa>,
 }
 
 /// The site's Tactical-Arts animation host: a disc, plus one character's
@@ -87,6 +103,10 @@ pub struct LegaiaArts {
     prot: Vec<u8>,
     /// PROT TOC.
     entries: Vec<disc::EntryMeta>,
+    /// Raw 2352-byte sectors of [`VOICE_XA_FILE`] (the XA demuxer needs the
+    /// CD-XA subheaders, which a 2048-byte ISO file view drops). `None` when
+    /// the page was fed a raw `PROT.DAT` instead of a full disc image.
+    voice_raw: Option<Vec<u8>>,
     /// The character currently on the canvas.
     current: Option<LoadedCharacter>,
 }
@@ -204,12 +224,43 @@ fn strike_frames(anim: &MonsterAnimation) -> Vec<u32> {
     hits
 }
 
+/// Slice the raw 2352-byte sectors of [`VOICE_XA_FILE`] out of a full
+/// Mode2/2352 disc image, so the arts-voice channel can demux after the
+/// disc bytes are dropped.
+fn extract_voice_raw(disc_bytes: &[u8]) -> Option<Vec<u8>> {
+    let f = audio::enumerate_xa_files(disc_bytes)
+        .into_iter()
+        .find(|f| {
+            let name = f.path.rsplit(['/', '\\']).next().unwrap_or(&f.path);
+            let name = name.split(';').next().unwrap_or(name);
+            name.eq_ignore_ascii_case(VOICE_XA_FILE)
+        })?;
+    // ISO9660 reports the Form-1 (2048-byte) size; the on-disc footprint is
+    // the same sector count of raw 2352-byte sectors.
+    let sectors = f.size.div_ceil(2048) as usize;
+    let start = f.lba as usize * 2352;
+    let end = start.checked_add(sectors * 2352)?.min(disc_bytes.len());
+    (start < end).then(|| disc_bytes[start..end].to_vec())
+}
+
+/// Demux + decode character `cslot`'s arts-voice channel out of the raw
+/// [`VOICE_XA_FILE`] sectors (see [`VOICE_CHANNEL`] for the retail join).
+fn decode_voice(voice_raw: Option<&[u8]>, cslot: usize) -> Option<audio::DecodedXa> {
+    let raw = voice_raw?;
+    let ch = (*VOICE_CHANNEL.get(cslot)?)?;
+    let sectors = (raw.len() / 2352) as u32;
+    audio::decode_xa_in_memory(raw, 0, sectors * 2048)
+        .into_iter()
+        .find(|s| s.ch_no == ch && !s.pcm.is_empty())
+}
+
 /// Build one character's full bundle off the PROT bytes. `Err(reason)` names
 /// the first stage that failed; per-art stream failures degrade to
 /// `ArtSlot::why` instead (the page falls that art back to the idle pose).
 fn build_character(
     prot: &[u8],
     entries: &[disc::EntryMeta],
+    voice_raw: Option<&[u8]>,
     cslot: usize,
 ) -> Result<LoadedCharacter, String> {
     let prot_index = PLAYER_FILE_BASE + cslot as u32;
@@ -326,6 +377,7 @@ fn build_character(
         vram: vram.as_bytes().to_vec(),
         idle,
         arts,
+        voice: decode_voice(voice_raw, cslot),
     })
 }
 
@@ -338,14 +390,19 @@ impl LegaiaArts {
         Self {
             prot: Vec::new(),
             entries: Vec::new(),
+            voice_raw: None,
             current: None,
         }
     }
 
     /// Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
-    /// TOC. Returns `{"entries": N}` JSON; errors throw.
+    /// TOC. Returns `{"entries": N}` JSON; errors throw. On a full disc the
+    /// arts-voice bank ([`VOICE_XA_FILE`]) is sliced out alongside `PROT.DAT`;
+    /// a raw `PROT.DAT` load simply has no voice audio.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
+        let mut voice_raw = None;
         let prot = if disc::is_mode2_2352_disc(&bytes) {
+            voice_raw = extract_voice_raw(&bytes);
             disc::extract_prot_dat(&bytes)
                 .ok_or_else(|| JsValue::from_str("arts: PROT.DAT not found in this disc image"))?
         } else {
@@ -360,6 +417,7 @@ impl LegaiaArts {
         ));
         self.prot = prot;
         self.entries = entries;
+        self.voice_raw = voice_raw;
         self.current = None;
         Ok(format!("{{\"entries\":{}}}", self.entries.len()))
     }
@@ -385,7 +443,7 @@ impl LegaiaArts {
             self.current = None;
             return r#"{"ok":false,"why":"character slot out of range"}"#.to_string();
         }
-        match build_character(&self.prot, &self.entries, cslot) {
+        match build_character(&self.prot, &self.entries, self.voice_raw.as_deref(), cslot) {
             Ok(c) => {
                 let arts: Vec<serde_json::Value> = c
                     .arts
@@ -414,6 +472,15 @@ impl LegaiaArts {
                         "rate": i.rate,
                     })),
                     "arts": arts,
+                    // The character's retail arts-voice XA channel (null on a
+                    // raw PROT.DAT load, for Terra, or if the demux failed).
+                    "voice": c.voice.as_ref().map(|v| serde_json::json!({
+                        "file": VOICE_XA_FILE,
+                        "channel": v.ch_no,
+                        "rate": v.sample_rate,
+                        "stereo": v.stereo,
+                        "samples": v.pcm.len(),
+                    })),
                 })
                 .to_string();
                 self.current = Some(c);
@@ -541,5 +608,18 @@ impl LegaiaArts {
     /// [`crate::sfx_view::LegaiaSfx`].
     pub fn art_strike_cue(&self) -> u32 {
         crate::sfx_view::CUE_ART_STRIKE as u32
+    }
+
+    /// The current character's arts-voice PCM: mono i16 at the rate reported
+    /// in `set_character`'s `voice.rate` (37 800 Hz on retail). This is the
+    /// XA channel the battle overlay plays for the character's Tactical Arts
+    /// (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL`]). Empty when the character
+    /// has no voice (raw `PROT.DAT` load, Terra, or demux failure).
+    pub fn art_voice_pcm_i16(&self) -> Vec<i16> {
+        self.current
+            .as_ref()
+            .and_then(|c| c.voice.as_ref())
+            .map(|v| v.pcm.clone())
+            .unwrap_or_default()
     }
 }
