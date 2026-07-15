@@ -177,9 +177,11 @@ fn full_fill_import_only_touches_carriers_mans_and_scus() {
     }
 
     let mut patcher = DiscPatcher::open(original.clone()).expect("open disc");
-    let mut report =
-        import_pack_phase(&mut patcher, &pack, ImportPhase::DialogOnly).expect("dialog import");
-    report.merge(import_pack_phase(&mut patcher, &pack, ImportPhase::NamesOnly).expect("names"));
+    let mut report = import_pack_phase(&mut patcher, &pack, ImportPhase::DialogOnly, false)
+        .expect("dialog import");
+    report.merge(
+        import_pack_phase(&mut patcher, &pack, ImportPhase::NamesOnly, false).expect("names"),
+    );
     let patched = patcher.into_image();
     assert_eq!(patched.len(), original.len());
 
@@ -246,7 +248,8 @@ fn import_refuses_a_poison_entry_aimed_at_a_binary_bank() {
     });
 
     let mut patcher = DiscPatcher::open(original.clone()).expect("open disc");
-    let report = import_pack_phase(&mut patcher, &pack, ImportPhase::DialogOnly).expect("import");
+    let report =
+        import_pack_phase(&mut patcher, &pack, ImportPhase::DialogOnly, false).expect("import");
     assert_eq!(report.applied, 0, "poison entry must not be applied");
     assert!(
         report
@@ -291,7 +294,7 @@ fn imported_scus_strings_terminate_within_their_pool() {
     }
 
     let mut patcher = DiscPatcher::open(original).expect("open disc");
-    import_pack_phase(&mut patcher, &pack, ImportPhase::NamesOnly).expect("names import");
+    import_pack_phase(&mut patcher, &pack, ImportPhase::NamesOnly, false).expect("names import");
     let scus = patcher
         .read_named_file("SCUS_942.54")
         .expect("SCUS in patched image");

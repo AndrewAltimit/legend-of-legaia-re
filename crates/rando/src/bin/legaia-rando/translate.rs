@@ -404,14 +404,37 @@ pub(crate) fn cmd_import(
     pack_path: &Path,
     output: Option<&Path>,
     patch: Option<&Path>,
+    allow_relayout: bool,
 ) -> Result<()> {
     if output.is_none() && patch.is_none() {
         bail!("pass --output <patched.bin> and/or --patch <out.ppf>");
     }
+    if allow_relayout && patch.is_some() {
+        // A relayout inserts sectors + shifts LBAs, so the patched image is not a
+        // same-size overlay of the original; the PPF diff model can't express it.
+        bail!("--allow-relayout grows the image; write --output <patched.bin>, not --patch");
+    }
     let pack = read_pack(pack_path)?;
     let original = load_image(input)?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
-    let report = import_pack(&mut patcher, &pack)?;
+    let report = if allow_relayout {
+        legaia_rando::translation::import_pack_relayout(&mut patcher, &pack)?
+    } else {
+        import_pack(&mut patcher, &pack)?
+    };
+    if report.relayout_entries > 0 {
+        println!(
+            "disc relayout: grew {} scene MAN entr{} by {} sector(s) total (image +{} bytes)",
+            report.relayout_entries,
+            if report.relayout_entries == 1 {
+                "y"
+            } else {
+                "ies"
+            },
+            report.relayout_sectors_added,
+            report.relayout_sectors_added as usize * 2352,
+        );
+    }
 
     println!(
         "applied {} entr{}, {} already applied, {} untranslated (left vanilla)",

@@ -331,6 +331,12 @@ pub(crate) enum TranslateCmd {
         /// Write a portable PPF 3.0 patch here (safe to share).
         #[arg(long)]
         patch: Option<PathBuf>,
+        /// Allow a whole-sector **disc relayout**: scene MANs whose full-length
+        /// dialog overflows their compressed footprint gain `+N` sectors (the
+        /// PROT entry grows and the disc is relaid out) so the dialog imports
+        /// byte-faithfully instead of being abbreviated. Grows the image.
+        #[arg(long)]
+        allow_relayout: bool,
     },
 }
 

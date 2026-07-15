@@ -763,6 +763,18 @@ rolls back its longest lines one at a time), with per-character encodability
 errors for anything outside the retail ASCII glyph set. Untranslated entries
 stay byte-identical.
 
+`translate import --allow-relayout` (for official PAL localizations, whose dialog
+overruns USA's zero-slack sectors) closes the residual: a scene MAN whose
+full-length dialog won't fit its compressed footprint gains `+N` whole sectors via
+a **full-ISO relayout** (`DiscPatcher::grow_prot_entries` ->
+`legaia_iso::relayout`), so the dialog imports byte-faithfully instead of being
+abbreviated. It grows the PROT entry (shifting the later sub-assets + rewriting
+their `scene_asset_table` descriptor offsets), shifts the PROT-relative internal
+TOC, and cascades every ISO9660 / PVD LBA reference - preserving the PROT index
+space so index-keyed randomizer edits still resolve. Grows the image, so it writes
+`--output`, not a same-size `--patch`. See
+[`docs/tooling/pal-localizations.md`](../../docs/tooling/pal-localizations.md).
+
 Two pack shapes: a **working** pack carries `source:` (the game's own text - the
 translator's reference, gitignored, never committed) while a **distributable**
 pack (`translate strip`) drops the source and keeps only `key -> translation`,

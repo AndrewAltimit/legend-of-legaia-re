@@ -176,24 +176,65 @@ it is ~65-70 large scene MANs (holding most of the corpus) that each need a
 under one 2048-byte sector** (max ~1.4 KB across all three languages). This is
 exactly the **+1-sector-per-entry** growth the PAL discs applied at mastering.
 
-### Residual handling
+### Full-ISO relayout (closes the residual)
 
-The importer ships the in-place rewriter (Part 2 above) plus a same-size +
-longest-first-abbreviation fallback for residual sector-crossers, which it
-reports per key. Closing the residual entirely needs a disc-level entry-growth
-relayout: because the entries are packed with zero slack, that is a **full-ISO
-+1-sector rebuild** (grow `PROT.DAT`, shift every subsequent PROT-TOC LBA + every
-ISO file after `PROT.DAT`, rewrite PVD / path tables / directory records). The
-rewriter is the correct building block - once an entry's footprint is enlarged by
-one sector, the same growth path fits it - so the disc relayout is the clear next
-step toward shippable DE/FR/IT packs.
+`translate import --allow-relayout` grows each residual sector-crossing scene MAN
+by whole sectors so its full-length dialog imports **byte-faithfully** instead of
+being abbreviated - the same operation the official PAL discs did at mastering.
+This is safe because of the disc's reference graph (below), not by luck.
+
+**Why a relayout is safe.** Two structural facts (proven by diffing USA against
+all three PAL discs):
+
+- The `PROT.DAT` internal TOC stores **PROT.DAT-relative** LBAs, not absolute disc
+  LBAs (entry-0's TOC start is identical on every disc despite `PROT.DAT` sitting
+  at a different disc LBA). Growing an interior entry needs only an internal-TOC
+  start-LBA shift, not a disc-wide LBA cascade.
+- **No file is located by a hardcoded absolute LBA** in the executable: every file
+  (`PROT.DAT`, the boot exe, `XA*`, `MV*`, `DMY.DAT`) is found by ISO9660
+  name/directory lookup - no post-`PROT.DAT` file's disc LBA appears as a
+  little-endian literal in any USA or PAL executable. Shifting files after
+  `PROT.DAT` is safe once the directory records / path tables / PVD are fixed.
+
+**The cascade.** When `PROT.DAT` grows by `G` sectors, the complete set of
+references reduces to one rule: **every ISO9660 LBA value `> prot_lba` gains `+G`;
+`PROT.DAT`'s directory-record size gains `+G*2048`; the PVD volume-space size
+gains `+G`.** Concretely: the PROT-relative internal TOC start LBAs of entries
+after a grown one; the single PVD's volume space (LE @80 + BE @84); the LE/BE path
+tables (the `MOV`/`XA` directory extents live after `PROT.DAT`); the root +
+`MOV` + `XA` directory extents' file-record LBAs (+ each moved directory's self
+`.` record). Every sector after `PROT.DAT` is relocated - its sync + MSF header
+(`BCD(lba+150)`) rewritten - but Form 1 EDC/ECC do **not** cover the header, so a
+pure relocation needs no ECC recompute; EDC/ECC are recomputed only for sectors
+whose user data changes.
+
+**Layers.** The disc-level relayout is `legaia_iso::relayout::grow_prot_dat`
+(generic ISO9660 + ECMA-130; embeds no game bytes) driven by
+`DiscPatcher::grow_prot_entries` (rebuilds `PROT.DAT` with the PROT-relative TOC
+shift). Above it, the importer builds each grown scene-bundle payload: because a
+scene MAN (asset type `0x03`) is never the last sub-asset, growing its compressed
+footprint inserts `ceil(deficit/2048)` sectors after the MAN, shifts every later
+sub-asset, and bumps their `scene_asset_table` descriptor `data_offset`s (+ the
+MAN decompressed-size word). The PROT entry **index space is preserved**, so every
+same-size index-keyed edit (the randomizer features) still resolves after a
+relayout. Disc-gated oracle: `crates/rando/tests/translate_relayout_import_real.rs`
+(all three PAL languages) asserts the patched image re-parses, every relocated
+sector is EDC/ECC-valid + MSF-correct, and every applied line is present at full
+length. See [disc.md](../formats/disc.md#full-iso-relayout) for the reference
+graph.
+
+The 22 scene MANs the generalized rewriter cannot grow at all (an absolute-ref op
+/ section-region segment / validate divergence in `apply_text_edits`) still fall
+back to abbreviation - a limitation of the in-MAN rewriter, orthogonal to the
+relayout, which supplies the room but cannot produce grown bytes for them.
 
 ### Recommended path to a distributable pack
 
 1. `translate lift-official` -> working pack (scratchpad only).
 2. `translate fit-report` -> the residual budget picture.
-3. Abbreviate the flagged residual lines, or land the +1-sector disc relayout to
-   avoid abbreviation.
+3. `translate import --allow-relayout --output <patched.bin>` -> byte-faithful
+   dialog for every non-structural MAN (no `--patch`: a relayout grows the image,
+   so it is not a same-size PPF overlay).
 4. Font patch (separate deliverable) so accents render instead of folding to
    ASCII.
 5. `translate strip` -> a source-free distributable `site/lang/{de,fr,it}.yaml`.

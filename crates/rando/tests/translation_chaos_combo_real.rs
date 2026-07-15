@@ -170,11 +170,12 @@ fn language_pack_plus_chaos_preset_composes() {
 
     // patch_rom order: dialog sections, every randomizer pass, name sections.
     let mut patcher = DiscPatcher::open(original.clone()).expect("open disc");
-    let mut report =
-        import_pack_phase(&mut patcher, &pack, ImportPhase::DialogOnly).expect("dialog import");
+    let mut report = import_pack_phase(&mut patcher, &pack, ImportPhase::DialogOnly, false)
+        .expect("dialog import");
     run_chaos_passes(&mut patcher, seed);
     report.merge(
-        import_pack_phase(&mut patcher, &pack, ImportPhase::NamesOnly).expect("names import"),
+        import_pack_phase(&mut patcher, &pack, ImportPhase::NamesOnly, false)
+            .expect("names import"),
     );
     assert!(
         report.applied + report.already_applied > expect.len() * 95 / 100,

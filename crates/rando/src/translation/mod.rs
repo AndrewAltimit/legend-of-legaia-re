@@ -38,5 +38,7 @@ pub mod segments;
 pub mod ui;
 
 pub use export::export_pack;
-pub use import::{ImportPhase, ImportReport, SectionCounts, import_pack, import_pack_phase};
+pub use import::{
+    ImportPhase, ImportReport, SectionCounts, import_pack, import_pack_phase, import_pack_relayout,
+};
 pub use pack::{Entry, LanguagePack, PACK_FORMAT};
