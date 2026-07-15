@@ -15,6 +15,7 @@ legaia-lzs = { path = "../lzs" }
 legaia-iso = { path = "../iso" }
 legaia-rando = { path = "../rando" }
 legaia-tmd = { path = "../tmd" }
+legaia-art = { path = "../art" }
 legaia-mes = { path = "../mes" }
 legaia-seq = { path = "../seq" }
 legaia-vab = { path = "../vab" }
@@ -45,7 +46,6 @@ features = [
 ]
 
 [dev-dependencies]
-legaia-art = { path = "../art" }
 sha2 = "0.10"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 

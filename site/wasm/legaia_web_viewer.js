@@ -55,11 +55,11 @@ export class LegaiaArts {
     /**
      * The arts-voice PCM for the art at bank index `art_index`: mono i16 at
      * the rate reported in `set_character`'s `voice.channels[..].rate`
-     * (37 800 Hz). The clip is the character's voice-slice local channel
-     * `art_index % count` (see [`VOICE_XA_FILE`] / [`VOICE_CHANNEL_BASE`]) -
-     * a curated per-art mapping, trimmed of its trailing silence. Empty when
-     * the character has no voice bank (raw `PROT.DAT` load, Terra, or demux
-     * failure). Also exposed positionally via [`Self::voice_channel_pcm_i16`].
+     * (37 800 Hz). The clip is the XA channel the art's `FUN_8004C140`
+     * candidate pool selects (the art's `voice_channel`), trimmed of its
+     * trailing silence. Empty when the character has no voice bank (raw
+     * `PROT.DAT` load, Terra, demux failure) or the art has no voice entry.
+     * Also exposed by-channel via [`Self::voice_channel_pcm_i16`].
      * @param {number} art_index
      * @returns {Int16Array}
      */
@@ -83,7 +83,7 @@ export class LegaiaArts {
     /**
      * Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
      * TOC. Returns `{"entries": N}` JSON; errors throw. On a full disc the
-     * arts-voice banks ([`VOICE_XA_FILE`] = `XA2.XA` / `XA4.XA`) are sliced out
+     * arts-voice banks ([`VOICE_XA_FILE`] = `XA2.XA` / `XA4.XA` / `XA6.XA`) are sliced out
      * alongside `PROT.DAT`; a raw `PROT.DAT` load simply has no voice audio.
      * @param {Uint8Array} bytes
      * @returns {string}
@@ -209,15 +209,15 @@ export class LegaiaArts {
         }
     }
     /**
-     * The arts-voice PCM of the current character's voice-slice **local**
-     * channel `local` (`0..count`), regardless of any art mapping. Lets the
-     * page (and the listening aid) address a specific voice clip directly.
-     * Empty when out of range or the character has no voice bank.
-     * @param {number} local
+     * The arts-voice PCM of the current character's XA channel `channel`,
+     * regardless of any art mapping. Lets the page (and the listening aid)
+     * address a specific voice clip directly. Empty when out of range or the
+     * character has no voice bank.
+     * @param {number} channel
      * @returns {Int16Array}
      */
-    voice_channel_pcm_i16(local) {
-        const ret = wasm.legaiaarts_voice_channel_pcm_i16(this.__wbg_ptr, local);
+    voice_channel_pcm_i16(channel) {
+        const ret = wasm.legaiaarts_voice_channel_pcm_i16(this.__wbg_ptr, channel);
         var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
         return v1;

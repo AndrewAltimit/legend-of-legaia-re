@@ -35,6 +35,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod arts_table;
+pub mod arts_voice;
 pub mod miracle;
 pub mod parse;
 pub mod power;
