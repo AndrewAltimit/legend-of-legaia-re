@@ -350,6 +350,13 @@
   let scenes = [];
   let active = null;
 
+  /* Disc bytes cached from the initial upload so a poisoned engine instance can
+   * be re-instantiated without re-reading the file (Bug-3 recovery). */
+  let discBytes = null;
+  /* Re-entrancy + rapid-failure guards for the recovery path. */
+  let recovering = false;
+  let recoveryTimes = [];
+
   /* The scene the disc's new-game table names as the opening (Rim Elm). Kept in
    * sync with `legaia_asset::new_game::OPENING_SCENE`. */
   const OPENING_SCENE = 'town01';
@@ -425,6 +432,9 @@
       runtime = new wasm.LegaiaRuntime();
       prog.indeterminate('Walking ISO9660 + parsing PROT.DAT…');
       await prog.paint();   /* the parse below blocks the main thread */
+      /* Keep the raw disc bytes so a trapped engine can be rebuilt in place
+       * (no re-upload) - see `recoverRuntime`. */
+      discBytes = bytes;
       const count = runtime.load_disc(bytes, '');
       prog.done(`${count} PROT entries. Pick a boot mode.`);
       statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
@@ -455,7 +465,13 @@
         view = new window.PlayView(runtime, canvas, {
           onState: onState,
           onScene: (name) => { active = name; renderList(searchEl.value); },
-          onError: (msg) => { statusEl.textContent = `Engine stopped: ${msg}`; },
+          onError: (msg) => {
+            /* A WASM trap poisons the engine instance; rebuild it from the
+             * cached disc bytes and re-enter, so a single bad frame doesn't
+             * cost a page refresh (Bug-3 belt-and-suspenders). */
+            statusEl.textContent = `Engine hiccup - recovering… (${msg})`;
+            recoverRuntime();
+          },
         });
         window.__playView = view;
       }
@@ -468,6 +484,50 @@
       statusEl.textContent = `${label}: ${err.message || err}`;
       window.__playState = null;
       console.warn(err);
+    }
+  }
+
+  /* Rebuild a fresh engine after a WASM trap and re-enter the current scene,
+   * reusing the existing renderer/canvas and the cached disc bytes (no
+   * re-upload). Guarded against re-entrancy and against a scene that traps every
+   * frame: after a few rapid failures it falls back to the opening scene, then
+   * gives up (a page refresh clears everything). */
+  function recoverRuntime() {
+    if (recovering || !discBytes || !wasm || !view) return;
+    recovering = true;
+
+    const now = performance.now();
+    recoveryTimes = recoveryTimes.filter(t => now - t < 6000);
+    recoveryTimes.push(now);
+
+    try {
+      /* A fresh LegaiaRuntime allocates a clean SceneHost; loading the cached
+       * disc bytes re-parses PROT.DAT in place. */
+      const fresh = new wasm.LegaiaRuntime();
+      fresh.load_disc(discBytes, '');
+      runtime = fresh;
+      window.__playRuntime = runtime;
+
+      /* Too many failures in a short window -> the scene itself is the problem;
+       * retreat to the opening scene, and if even that keeps failing, stop and
+       * ask for a refresh rather than spin. */
+      let label = active || OPENING_SCENE;
+      if (recoveryTimes.length > 3) label = OPENING_SCENE;
+      if (recoveryTimes.length > 6) {
+        view.stop();
+        statusEl.textContent = 'Engine kept failing - please reload the page.';
+        return;
+      }
+
+      const st = view.recover(fresh, label);
+      window.__playState = st;
+      statusEl.textContent = `Recovered. Running ${label}. Click the canvas to continue.`;
+    } catch (e) {
+      view.stop();
+      statusEl.textContent = `Recovery failed: ${e.message || e}. Please reload the page.`;
+      console.warn('recovery failed', e);
+    } finally {
+      recovering = false;
     }
   }
 
